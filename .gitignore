@@ -1,0 +1,11 @@
+node_modules
+bun.lockb
+.DS_Store
+.env
+.env.*
+dist
+coverage
+*.log
+*.tmp
+.vscode
+.idea

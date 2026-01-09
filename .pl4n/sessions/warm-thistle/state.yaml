@@ -1,0 +1,11 @@
+turn: 3
+phase: approved
+updated_at: '2026-01-09T18:48:48.761Z'
+archived: false
+agents:
+  opus: done
+  codex: done
+agent_plan_ids:
+  opus: brave-flare
+  codex: white-delta
+session_token: jkNmOO8RXdL7xJcL

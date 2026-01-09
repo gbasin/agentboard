@@ -1,0 +1,87 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --ink: #1b1a16;
+  --muted: #6f665d;
+  --surface: rgba(255, 255, 255, 0.75);
+  --surface-strong: #f9f4ec;
+  --accent: #1f6f78;
+  --accent-soft: #cfe7e5;
+  --working: #1f6f78;
+  --approval: #f3b24f;
+  --waiting: #3c7dc1;
+  --idle: #9a9489;
+  --danger: #d75b5b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: "Space Grotesk", sans-serif;
+  color: var(--ink);
+  background:
+    radial-gradient(900px circle at 12% -10%, rgba(255, 242, 216, 0.9), transparent 60%),
+    radial-gradient(800px circle at 95% 10%, rgba(210, 237, 244, 0.85), transparent 55%),
+    linear-gradient(180deg, #f2ece4 0%, #f7f1ea 55%, #f0ebe3 100%);
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(120deg, rgba(255, 255, 255, 0.6) 0%, rgba(255, 255, 255, 0) 55%),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.25) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.2) 1px, transparent 1px);
+  background-size: 100% 100%, 28px 28px, 28px 28px;
+  opacity: 0.45;
+  z-index: -1;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+::selection {
+  background: rgba(31, 111, 120, 0.2);
+}
+
+@layer components {
+  .glass-card {
+    @apply border border-white/60 shadow-glow backdrop-blur-md;
+    background-color: var(--surface);
+  }
+
+  .status-pill {
+    @apply inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold tracking-wide;
+  }
+}
+
+.xterm {
+  font-family: "JetBrains Mono", monospace;
+}
+
+.xterm .xterm-viewport {
+  scrollbar-color: rgba(27, 26, 22, 0.3) transparent;
+}
+
+.xterm .xterm-viewport::-webkit-scrollbar {
+  width: 10px;
+}
+
+.xterm .xterm-viewport::-webkit-scrollbar-thumb {
+  background: rgba(27, 26, 22, 0.2);
+  border-radius: 999px;
+}
+
+.terminal-shell {
+  touch-action: pan-y;
+}

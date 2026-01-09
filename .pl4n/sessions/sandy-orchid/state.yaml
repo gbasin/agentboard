@@ -1,7 +1,7 @@
 turn: 1
 phase: user_review
 updated_at: '2026-01-09T17:03:20.335Z'
-archived: false
+archived: true
 agents:
   opus: done
   codex: error

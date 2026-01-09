@@ -1,7 +1,7 @@
 turn: 1
 phase: peer_review
 updated_at: '2026-01-09T16:56:10.759Z'
-archived: false
+archived: true
 agents:
   opus: working
   codex: error
