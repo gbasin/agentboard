@@ -16,23 +16,20 @@ const statusBarClass: Record<Session['status'], string> = {
   working: 'status-bar-working',
   needs_approval: 'status-bar-approval',
   waiting: 'status-bar-waiting',
-  idle: 'status-bar-idle',
-  unknown: 'status-bar-idle',
+  unknown: 'status-bar-waiting',
 }
 
 const statusLabel: Record<Session['status'], string> = {
   working: 'Working',
   needs_approval: 'Approval',
   waiting: 'Waiting',
-  idle: 'Idle',
-  unknown: 'Idle',
+  unknown: 'Unknown',
 }
 
 const statusTextClass: Record<Session['status'], string> = {
   working: 'text-working',
   needs_approval: 'text-approval',
   waiting: 'text-waiting',
-  idle: 'text-muted',
   unknown: 'text-muted',
 }
 

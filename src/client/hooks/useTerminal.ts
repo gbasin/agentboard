@@ -11,6 +11,7 @@ interface UseTerminalOptions {
   sendMessage: (message: any) => void
   subscribe: (listener: (message: ServerMessage) => void) => () => void
   theme: ITheme
+  fontSize: number
   onScrollChange?: (isAtBottom: boolean) => void
 }
 
@@ -19,6 +20,7 @@ export function useTerminal({
   sendMessage,
   subscribe,
   theme,
+  fontSize,
   onScrollChange,
 }: UseTerminalOptions) {
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -186,6 +188,26 @@ export function useTerminal({
       terminalRef.current.options.theme = theme
     }
   }, [theme])
+
+  // Update font size
+  useEffect(() => {
+    const terminal = terminalRef.current
+    const fitAddon = fitAddonRef.current
+    if (terminal && fitAddon) {
+      terminal.options.fontSize = fontSize
+      fitAddon.fit()
+      // Notify server of new dimensions
+      const attached = attachedSessionRef.current
+      if (attached) {
+        sendMessageRef.current({
+          type: 'terminal-resize',
+          sessionId: attached,
+          cols: terminal.cols,
+          rows: terminal.rows,
+        })
+      }
+    }
+  }, [fontSize])
 
   // Handle session changes - attach/detach
   useEffect(() => {

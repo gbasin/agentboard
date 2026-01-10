@@ -1,7 +1,6 @@
 import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import type { Session } from '../shared/types'
-import { config } from './config'
 import { discoverLogFiles, type LogFileInfo } from './logDiscovery'
 import { parseLogLine } from './logParser'
 import { transitionStatus } from './statusMachine'
@@ -24,7 +23,6 @@ const TOOL_STALL_THRESHOLD_MS = 3000
 
 export class StatusWatcher {
   private states = new Map<string, WatchState>()
-  private idleTimer: NodeJS.Timeout | null = null
   private stallTimer: NodeJS.Timeout | null = null
 
   constructor(private registry: SessionRegistry) {
@@ -34,13 +32,9 @@ export class StatusWatcher {
   }
 
   start(): void {
-    if (this.idleTimer) {
+    if (this.stallTimer) {
       return
     }
-
-    this.idleTimer = setInterval(() => {
-      this.checkIdle()
-    }, Math.min(config.idleTimeoutMs / 2, 60000))
 
     // Check for stalled tool uses frequently (every 200ms)
     this.stallTimer = setInterval(() => {
@@ -49,11 +43,6 @@ export class StatusWatcher {
   }
 
   stop(): void {
-    if (this.idleTimer) {
-      clearInterval(this.idleTimer)
-      this.idleTimer = null
-    }
-
     if (this.stallTimer) {
       clearInterval(this.stallTimer)
       this.stallTimer = null
@@ -338,22 +327,4 @@ export class StatusWatcher {
     }
   }
 
-  private checkIdle(): void {
-    const now = Date.now()
-    for (const state of this.states.values()) {
-      if (state.status === 'needs_approval') {
-        continue
-      }
-
-      if (now - state.lastActivity >= config.idleTimeoutMs) {
-        if (state.status !== 'idle') {
-          state.status = transitionStatus(state.status, { type: 'idle_timeout' })
-          this.registry.updateSession(state.sessionId, {
-            status: state.status,
-            lastActivity: new Date(state.lastActivity).toISOString(),
-          })
-        }
-      }
-    }
-  }
 }

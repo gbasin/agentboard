@@ -2,7 +2,6 @@ export type SessionStatus =
   | 'working'
   | 'needs_approval'
   | 'waiting'
-  | 'idle'
   | 'unknown'
 
 export type SessionSource = 'managed' | 'external'

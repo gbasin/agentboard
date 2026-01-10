@@ -7,10 +7,12 @@ import TerminalControls from './TerminalControls'
 
 interface TerminalProps {
   session: Session | null
+  sessions: Session[]
   connectionStatus: ConnectionStatus
   sendMessage: (message: any) => void
   subscribe: (listener: any) => () => void
   onClose: () => void
+  onSelectSession: (sessionId: string) => void
   pendingApprovals: number
 }
 
@@ -18,7 +20,6 @@ const statusText: Record<Session['status'], string> = {
   working: 'Working',
   needs_approval: 'Approval',
   waiting: 'Waiting',
-  idle: 'Idle',
   unknown: 'Unknown',
 }
 
@@ -26,29 +27,43 @@ const statusClass: Record<Session['status'], string> = {
   working: 'text-working',
   needs_approval: 'text-approval',
   waiting: 'text-waiting',
-  idle: 'text-muted',
   unknown: 'text-muted',
 }
 
 export default function Terminal({
   session,
+  sessions,
   connectionStatus,
   sendMessage,
   subscribe,
   onClose,
+  onSelectSession,
   pendingApprovals,
 }: TerminalProps) {
   const theme = useThemeStore((state) => state.theme)
   const terminalTheme = terminalThemes[theme]
   const [showScrollButton, setShowScrollButton] = useState(false)
+  const [fontSize, setFontSize] = useState(() => {
+    const saved = localStorage.getItem('terminal-font-size')
+    return saved ? parseInt(saved, 10) : 13
+  })
   const lastTouchY = useRef<number | null>(null)
   const accumulatedDelta = useRef<number>(0)
+
+  const adjustFontSize = useCallback((delta: number) => {
+    setFontSize((prev) => {
+      const newSize = Math.max(8, Math.min(24, prev + delta))
+      localStorage.setItem('terminal-font-size', String(newSize))
+      return newSize
+    })
+  }, [])
 
   const { containerRef, terminalRef } = useTerminal({
     sessionId: session?.id ?? null,
     sendMessage,
     subscribe,
     theme: terminalTheme,
+    fontSize,
     onScrollChange: (isAtBottom) => {
       setShowScrollButton(!isAtBottom)
     },
@@ -166,6 +181,23 @@ export default function Terminal({
                 {connectionStatus}
               </span>
             )}
+            {/* Font size controls - mobile only */}
+            <div className="flex items-center gap-1 md:hidden">
+              <button
+                onClick={() => adjustFontSize(-1)}
+                className="flex h-7 w-7 items-center justify-center rounded bg-surface border border-border text-secondary active:bg-hover"
+                title="Decrease font size"
+              >
+                <span className="text-sm font-bold">−</span>
+              </button>
+              <button
+                onClick={() => adjustFontSize(1)}
+                className="flex h-7 w-7 items-center justify-center rounded bg-surface border border-border text-secondary active:bg-hover"
+                title="Increase font size"
+              >
+                <span className="text-sm font-bold">+</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -209,6 +241,9 @@ export default function Terminal({
         <TerminalControls
           onSendKey={handleSendKey}
           disabled={connectionStatus !== 'connected'}
+          sessions={sessions.map(s => ({ id: s.id, name: s.name, status: s.status }))}
+          currentSessionId={session.id}
+          onSelectSession={onSelectSession}
         />
       )}
     </section>

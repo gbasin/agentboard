@@ -174,10 +174,12 @@ export default function App() {
         {/* Terminal - hero element */}
         <Terminal
           session={selectedSession}
+          sessions={sortedSessions}
           connectionStatus={connectionStatus}
           sendMessage={sendMessage}
           subscribe={subscribe}
           onClose={() => setSelectedSessionId(null)}
+          onSelectSession={setSelectedSessionId}
           pendingApprovals={needsApprovalCount}
         />
       </div>

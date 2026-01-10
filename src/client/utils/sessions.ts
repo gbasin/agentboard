@@ -4,8 +4,7 @@ const SESSION_STATUS_ORDER: Record<Session['status'], number> = {
   needs_approval: 0,
   working: 1,
   waiting: 2,
-  idle: 3,
-  unknown: 4,
+  unknown: 3,
 }
 
 export function sortSessions(sessions: Session[]): Session[] {

@@ -1,11 +1,23 @@
 /**
  * TerminalControls - On-screen control strip for mobile terminal interaction
  * Provides quick access to ESC, numbers (for Claude prompts), arrows, Enter, and Ctrl+C
+ * Top row shows session switcher buttons to quickly jump between sessions
  */
+
+import type { Session } from '@shared/types'
+
+interface SessionInfo {
+  id: string
+  name: string
+  status: Session['status']
+}
 
 interface TerminalControlsProps {
   onSendKey: (key: string) => void
   disabled?: boolean
+  sessions: SessionInfo[]
+  currentSessionId: string | null
+  onSelectSession: (sessionId: string) => void
 }
 
 interface ControlKey {
@@ -29,7 +41,7 @@ const CONTROL_KEYS: ControlKey[] = [
   { label: '3', key: '3' },
   { label: '↑', key: '\x1b[A' },
   { label: '↓', key: '\x1b[B' },
-  { label: BackspaceIcon, key: '\x7f' },
+  { label: BackspaceIcon, key: '\x17' }, // Ctrl+W: delete word backward
   { label: 'return', key: '\r', grow: true, className: 'bg-accent/20 text-accent border-accent/40' },
   { label: '^C', key: '\x03', className: 'text-danger border-danger/40' },
 ]
@@ -40,16 +52,19 @@ function triggerHaptic() {
   }
 }
 
-// Tmux copy-mode sequences
-const TMUX_PREFIX = '\x02' // Ctrl+B
-const TMUX_COPY_MODE = '['
-const TMUX_PAGE_UP = '\x1b[5~'
-const TMUX_PAGE_DOWN = '\x1b[6~'
-const TMUX_EXIT_COPY = 'q'
+const statusDot: Record<Session['status'], string> = {
+  working: 'bg-working',
+  needs_approval: 'bg-approval',
+  waiting: 'bg-waiting',
+  unknown: 'bg-muted',
+}
 
 export default function TerminalControls({
   onSendKey,
   disabled = false,
+  sessions,
+  currentSessionId,
+  onSelectSession,
 }: TerminalControlsProps) {
   const handlePress = (key: string) => {
     if (disabled) return
@@ -57,70 +72,43 @@ export default function TerminalControls({
     onSendKey(key)
   }
 
-  // Enter tmux copy-mode, page up, then exit
-  const handleScrollUp = () => {
-    if (disabled) return
+  const handleSessionSelect = (sessionId: string) => {
     triggerHaptic()
-    // Enter copy mode, page up, exit
-    onSendKey(TMUX_PREFIX)
-    setTimeout(() => {
-      onSendKey(TMUX_COPY_MODE)
-      setTimeout(() => {
-        onSendKey(TMUX_PAGE_UP)
-      }, 50)
-    }, 50)
+    onSelectSession(sessionId)
   }
 
-  // Enter tmux copy-mode, page down, then exit
-  const handleScrollDown = () => {
-    if (disabled) return
-    triggerHaptic()
-    onSendKey(TMUX_PREFIX)
-    setTimeout(() => {
-      onSendKey(TMUX_COPY_MODE)
-      setTimeout(() => {
-        onSendKey(TMUX_PAGE_DOWN)
-      }, 50)
-    }, 50)
-  }
-
-  // Exit copy mode
-  const handleExitScroll = () => {
-    if (disabled) return
-    triggerHaptic()
-    onSendKey(TMUX_EXIT_COPY)
-  }
+  // Only show session row if there are multiple sessions
+  const showSessionRow = sessions.length > 1
 
   return (
     <div className="terminal-controls flex flex-col gap-1.5 px-2 py-2.5 bg-elevated border-t border-border md:hidden">
-      {/* Scroll row - tmux copy-mode */}
-      <div className="flex items-center gap-1.5">
-        <button
-          type="button"
-          className="terminal-key flex-1 flex items-center justify-center h-9 text-xs font-medium bg-surface border border-border rounded-md active:bg-hover active:scale-95 transition-transform duration-75 select-none touch-manipulation text-secondary"
-          onClick={handleScrollUp}
-          disabled={disabled}
-        >
-          ▲ PgUp
-        </button>
-        <button
-          type="button"
-          className="terminal-key flex-1 flex items-center justify-center h-9 text-xs font-medium bg-surface border border-border rounded-md active:bg-hover active:scale-95 transition-transform duration-75 select-none touch-manipulation text-secondary"
-          onClick={handleScrollDown}
-          disabled={disabled}
-        >
-          ▼ PgDn
-        </button>
-        <button
-          type="button"
-          className="terminal-key flex items-center justify-center h-9 px-4 text-xs font-medium rounded-md active:scale-95 transition-transform duration-75 select-none touch-manipulation bg-accent/20 text-accent border border-accent/40"
-          onClick={handleExitScroll}
-          disabled={disabled}
-          title="Exit scroll mode to type"
-        >
-          Done
-        </button>
-      </div>
+      {/* Session switcher row */}
+      {showSessionRow && (
+        <div className="flex items-center gap-1">
+          {sessions.slice(0, 6).map((session, index) => {
+            const isActive = session.id === currentSessionId
+            return (
+              <button
+                key={session.id}
+                type="button"
+                className={`
+                  terminal-key flex-1 flex items-center justify-center gap-1.5
+                  h-8 px-1 text-xs font-medium rounded-md
+                  active:scale-95 transition-transform duration-75
+                  select-none touch-manipulation
+                  ${isActive
+                    ? 'bg-accent/20 text-accent border border-accent/40'
+                    : 'bg-surface border border-border text-secondary'}
+                `}
+                onClick={() => handleSessionSelect(session.id)}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusDot[session.status]}`} />
+                <span className="truncate">{index + 1}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
       {/* Key row */}
       <div className="flex items-center gap-1.5">
         {CONTROL_KEYS.map((control, i) => (
