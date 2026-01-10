@@ -1,4 +1,6 @@
+import { useState, useRef, useEffect } from 'react'
 import type { Session } from '@shared/types'
+import { sortSessions } from '../utils/sessions'
 
 interface SessionListProps {
   sessions: Session[]
@@ -7,6 +9,7 @@ interface SessionListProps {
   error: string | null
   onSelect: (sessionId: string) => void
   onKill: (sessionId: string) => void
+  onRename: (sessionId: string, newName: string) => void
 }
 
 const statusBarClass: Record<Session['status'], string> = {
@@ -40,21 +43,10 @@ export default function SessionList({
   error,
   onSelect,
   onKill,
+  onRename,
 }: SessionListProps) {
-  // Sort: needs_approval first, then working, then waiting, then idle
-  const sortedSessions = [...sessions].sort((a, b) => {
-    const order: Record<string, number> = {
-      needs_approval: 0,
-      working: 1,
-      waiting: 2,
-      idle: 3,
-      unknown: 4,
-    }
-    const aOrder = order[a.status] ?? 4
-    const bOrder = order[b.status] ?? 4
-    if (aOrder !== bOrder) return aOrder - bOrder
-    return Date.parse(b.lastActivity) - Date.parse(a.lastActivity)
-  })
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
+  const sortedSessions = sortSessions(sessions)
 
   const handleKill = (session: Session) => {
     if (session.source !== 'managed') return
@@ -64,6 +56,11 @@ export default function SessionList({
     if (confirmed) {
       onKill(session.id)
     }
+  }
+
+  const handleRename = (sessionId: string, newName: string) => {
+    onRename(sessionId, newName)
+    setEditingSessionId(null)
   }
 
   return (
@@ -97,13 +94,18 @@ export default function SessionList({
           </div>
         ) : (
           <div className="py-1">
-            {sortedSessions.map((session) => (
+            {sortedSessions.map((session, index) => (
               <SessionRow
                 key={session.id}
                 session={session}
                 isSelected={session.id === selectedSessionId}
+                isEditing={session.id === editingSessionId}
+                shortcutIndex={index}
                 onSelect={() => onSelect(session.id)}
                 onKill={() => handleKill(session)}
+                onStartEdit={() => setEditingSessionId(session.id)}
+                onCancelEdit={() => setEditingSessionId(null)}
+                onRename={(newName) => handleRename(session.id, newName)}
               />
             ))}
           </div>
@@ -116,13 +118,77 @@ export default function SessionList({
 interface SessionRowProps {
   session: Session
   isSelected: boolean
+  isEditing: boolean
+  shortcutIndex: number
   onSelect: () => void
   onKill: () => void
+  onStartEdit: () => void
+  onCancelEdit: () => void
+  onRename: (newName: string) => void
 }
 
-function SessionRow({ session, isSelected, onSelect, onKill }: SessionRowProps) {
+function SessionRow({
+  session,
+  isSelected,
+  isEditing,
+  shortcutIndex,
+  onSelect,
+  onKill,
+  onStartEdit,
+  onCancelEdit,
+  onRename,
+}: SessionRowProps) {
   const lastActivity = formatRelativeTime(session.lastActivity)
   const isApproval = session.status === 'needs_approval'
+  const shortcutLabel =
+    !isEditing && shortcutIndex < 9 ? String(shortcutIndex + 1) : null
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [editValue, setEditValue] = useState(session.name)
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus()
+      inputRef.current.select()
+    }
+  }, [isEditing])
+
+  useEffect(() => {
+    setEditValue(session.name)
+  }, [session.name])
+
+  const handleSubmit = () => {
+    const trimmed = editValue.trim()
+    if (trimmed && trimmed !== session.name) {
+      onRename(trimmed)
+    } else {
+      onCancelEdit()
+    }
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      handleSubmit()
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      setEditValue(session.name)
+      onCancelEdit()
+    }
+  }
+
+  const handleTouchStart = () => {
+    longPressTimer.current = setTimeout(() => {
+      onStartEdit()
+    }, 500)
+  }
+
+  const handleTouchEnd = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current)
+      longPressTimer.current = null
+    }
+  }
 
   return (
     <div
@@ -135,16 +201,39 @@ function SessionRow({ session, isSelected, onSelect, onKill }: SessionRowProps) 
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') onSelect()
       }}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchEnd}
     >
       <div className={`status-bar ${statusBarClass[session.status]}`} />
 
       <div className="flex items-start justify-between gap-2 pl-2">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className="truncate text-sm font-medium text-primary">
-              {session.name}
-            </span>
+            {isEditing ? (
+              <input
+                ref={inputRef}
+                type="text"
+                value={editValue}
+                onChange={(e) => setEditValue(e.target.value)}
+                onBlur={handleSubmit}
+                onKeyDown={handleKeyDown}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full rounded border border-border bg-surface px-1.5 py-0.5 text-sm font-medium text-primary outline-none focus:border-accent"
+              />
+            ) : (
+              <span className="truncate text-sm font-medium text-primary">
+                {session.name}
+              </span>
+            )}
           </div>
+          {session.command && (
+            <div className="mt-0.5">
+              <span className="rounded bg-surface px-1.5 py-0.5 font-mono text-[10px] text-muted">
+                {session.command}
+              </span>
+            </div>
+          )}
           <div className="mt-0.5 flex items-center gap-2 text-xs">
             <span className={statusTextClass[session.status]}>
               {statusLabel[session.status]}
@@ -153,19 +242,82 @@ function SessionRow({ session, isSelected, onSelect, onKill }: SessionRowProps) 
           </div>
         </div>
 
-        {session.source === 'managed' && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              onKill()
-            }}
-            className="btn btn-danger hidden py-0.5 text-[10px] group-hover:flex"
-          >
-            Kill
-          </button>
-        )}
+        <div className="flex items-center gap-1">
+          {!isEditing && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                onStartEdit()
+              }}
+              className="rounded p-1 text-muted opacity-0 transition-opacity hover:bg-surface hover:text-primary group-hover:opacity-100"
+              title="Rename session"
+            >
+              <GearIcon />
+            </button>
+          )}
+          {session.source === 'managed' && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                onKill()
+              }}
+              className="btn btn-danger hidden py-0.5 text-[10px] group-hover:flex"
+            >
+              Kill
+            </button>
+          )}
+          {shortcutLabel && (
+            <span
+              className="shortcut-badge hidden md:inline-flex"
+              title={`Shortcut: Cmd/Ctrl+${shortcutLabel}`}
+              aria-label={`Shortcut Cmd/Ctrl+${shortcutLabel}`}
+            >
+              <CommandIcon />
+              <span className="shortcut-plus">+</span>
+              <span>{shortcutLabel}</span>
+            </span>
+          )}
+        </div>
       </div>
     </div>
+  )
+}
+
+function GearIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  )
+}
+
+function CommandIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="10"
+      height="10"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M18 3a3 3 0 0 0-3 3v1a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1V6a3 3 0 1 0-3 3h1a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H6a3 3 0 1 0 3 3v-1a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1a3 3 0 1 0 3-3h-1a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1h1a3 3 0 0 0 0-6z" />
+    </svg>
   )
 }
 

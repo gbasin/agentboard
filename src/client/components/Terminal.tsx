@@ -1,8 +1,9 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import type { Session } from '@shared/types'
 import type { ConnectionStatus } from '../stores/sessionStore'
 import { useTerminal } from '../hooks/useTerminal'
 import { useThemeStore, terminalThemes } from '../stores/themeStore'
+import TerminalControls from './TerminalControls'
 
 interface TerminalProps {
   session: Session | null
@@ -40,6 +41,8 @@ export default function Terminal({
   const theme = useThemeStore((state) => state.theme)
   const terminalTheme = terminalThemes[theme]
   const [showScrollButton, setShowScrollButton] = useState(false)
+  const lastTouchY = useRef<number | null>(null)
+  const accumulatedDelta = useRef<number>(0)
 
   const { containerRef, terminalRef } = useTerminal({
     sessionId: session?.id ?? null,
@@ -54,6 +57,78 @@ export default function Terminal({
   const scrollToBottom = useCallback(() => {
     terminalRef.current?.scrollToBottom()
   }, [terminalRef])
+
+  // Touch scroll - send mouse wheel escape sequences to tmux
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container || !session) return
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 1) {
+        lastTouchY.current = e.touches[0].clientY
+        accumulatedDelta.current = 0
+      }
+    }
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length !== 1 || lastTouchY.current === null) return
+
+      const y = e.touches[0].clientY
+      const deltaY = lastTouchY.current - y
+      lastTouchY.current = y
+
+      accumulatedDelta.current += deltaY
+      const threshold = 30 // pixels per scroll event
+      const scrollEvents = Math.trunc(accumulatedDelta.current / threshold)
+
+      if (scrollEvents !== 0) {
+        // Send mouse wheel escape sequences (SGR mode)
+        // Button 64 = scroll up (show older), Button 65 = scroll down (show newer)
+        // Drag down (negative scrollEvents) = scroll up (older content)
+        const button = scrollEvents < 0 ? 64 : 65
+        const count = Math.abs(scrollEvents)
+
+        // SGR mouse format: \x1b[<button;col;rowM
+        // Use middle of terminal as coordinates
+        const cols = terminalRef.current?.cols ?? 80
+        const rows = terminalRef.current?.rows ?? 24
+        const col = Math.floor(cols / 2)
+        const row = Math.floor(rows / 2)
+
+        for (let i = 0; i < count; i++) {
+          sendMessage({
+            type: 'terminal-input',
+            sessionId: session.id,
+            data: `\x1b[<${button};${col};${row}M`
+          })
+        }
+        accumulatedDelta.current -= scrollEvents * threshold
+      }
+    }
+
+    const handleTouchEnd = () => {
+      lastTouchY.current = null
+      accumulatedDelta.current = 0
+    }
+
+    container.addEventListener('touchstart', handleTouchStart, { passive: true })
+    container.addEventListener('touchmove', handleTouchMove, { passive: true })
+    container.addEventListener('touchend', handleTouchEnd, { passive: true })
+
+    return () => {
+      container.removeEventListener('touchstart', handleTouchStart)
+      container.removeEventListener('touchmove', handleTouchMove)
+      container.removeEventListener('touchend', handleTouchEnd)
+    }
+  }, [session, sendMessage, containerRef, terminalRef])
+
+  const handleSendKey = useCallback(
+    (key: string) => {
+      if (!session) return
+      sendMessage({ type: 'terminal-input', sessionId: session.id, data: key })
+    },
+    [session, sendMessage]
+  )
 
   const hasSession = Boolean(session)
 
@@ -128,6 +203,14 @@ export default function Terminal({
           </button>
         )}
       </div>
+
+      {/* Mobile control strip */}
+      {session && (
+        <TerminalControls
+          onSendKey={handleSendKey}
+          disabled={connectionStatus !== 'connected'}
+        />
+      )}
     </section>
   )
 }

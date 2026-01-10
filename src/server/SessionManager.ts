@@ -8,6 +8,7 @@ interface WindowInfo {
   name: string
   path: string
   activity: number
+  command: string
 }
 
 export class SessionManager {
@@ -79,6 +80,34 @@ export class SessionManager {
     runTmux(['kill-window', '-t', tmuxWindow])
   }
 
+  renameWindow(tmuxWindow: string, newName: string): void {
+    const trimmed = newName.trim()
+    if (!trimmed) {
+      throw new Error('Name cannot be empty')
+    }
+
+    // Validate: alphanumeric, hyphens, underscores only
+    if (!/^[\w-]+$/.test(trimmed)) {
+      throw new Error(
+        'Name can only contain letters, numbers, hyphens, and underscores'
+      )
+    }
+
+    const sessionName = this.resolveSessionName(tmuxWindow)
+    const targetWindowId = this.extractWindowId(tmuxWindow)
+    const existingNames = new Set(
+      this.listWindowsForSession(sessionName, 'managed')
+        .filter((s) => this.extractWindowId(s.tmuxWindow) !== targetWindowId)
+        .map((s) => s.name)
+    )
+
+    if (existingNames.has(trimmed)) {
+      throw new Error(`A session named "${trimmed}" already exists`)
+    }
+
+    runTmux(['rename-window', '-t', tmuxWindow, trimmed])
+  }
+
   private listExternalWindows(): Session[] {
     if (config.discoverPrefixes.length === 0) {
       return []
@@ -114,7 +143,7 @@ export class SessionManager {
       '-t',
       sessionName,
       '-F',
-      '#{window_id}\t#{window_name}\t#{pane_current_path}\t#{window_activity}',
+      '#{window_id}\t#{window_name}\t#{pane_current_path}\t#{window_activity}\t#{pane_current_command}',
     ])
 
     return output
@@ -132,6 +161,7 @@ export class SessionManager {
           window.activity ? window.activity * 1000 : Date.now()
         ).toISOString(),
         source,
+        command: window.command || undefined,
       }))
   }
 
@@ -147,10 +177,38 @@ export class SessionManager {
 
     return `${base}-${suffix}`
   }
+
+  private resolveSessionName(tmuxWindow: string): string {
+    const colonIndex = tmuxWindow.indexOf(':')
+    if (colonIndex > 0) {
+      return tmuxWindow.slice(0, colonIndex)
+    }
+
+    const resolved = runTmux([
+      'display-message',
+      '-p',
+      '-t',
+      tmuxWindow,
+      '#{session_name}',
+    ]).trim()
+
+    if (!resolved) {
+      throw new Error('Unable to resolve session for window')
+    }
+
+    return resolved
+  }
+
+  private extractWindowId(tmuxWindow: string): string {
+    const parts = tmuxWindow.split(':')
+    const windowTarget = parts[parts.length - 1] || tmuxWindow
+    const paneSplit = windowTarget.split('.')
+    return paneSplit[0] || windowTarget
+  }
 }
 
 function parseWindow(line: string): WindowInfo {
-  const [id, name, panePath, activityRaw] = line.split('\t')
+  const [id, name, panePath, activityRaw, command] = line.split('\t')
   const activity = Number.parseInt(activityRaw || '0', 10)
 
   return {
@@ -158,6 +216,7 @@ function parseWindow(line: string): WindowInfo {
     name: name || 'unknown',
     path: panePath || '',
     activity: Number.isNaN(activity) ? 0 : activity,
+    command: command || '',
   }
 }
 

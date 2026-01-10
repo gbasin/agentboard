@@ -1,12 +1,11 @@
-import * as pty from 'node-pty'
-
 interface TerminalCallbacks {
   onData: (data: string) => void
   onExit?: () => void
 }
 
 export class TerminalProxy {
-  private ptyProcess: pty.IPty | null = null
+  private process: ReturnType<typeof Bun.spawn> | null = null
+  private decoder = new TextDecoder()
   private cols = 80
   private rows = 24
 
@@ -16,63 +15,68 @@ export class TerminalProxy {
   ) {}
 
   start(): void {
-    if (this.ptyProcess) {
+    if (this.process) {
       return
     }
 
-    const proc = pty.spawn('tmux', ['attach', '-t', this.tmuxWindow], {
-      name: 'xterm-256color',
-      cols: this.cols,
-      rows: this.rows,
-      cwd: process.cwd(),
+    const proc = Bun.spawn(['tmux', 'attach', '-t', this.tmuxWindow], {
       env: {
         ...process.env,
         TERM: 'xterm-256color',
       },
+      terminal: {
+        cols: this.cols,
+        rows: this.rows,
+        name: 'xterm-256color',
+        data: (_terminal, data) => {
+          const text = this.decoder.decode(data, { stream: true })
+          if (text) {
+            this.callbacks.onData(text)
+          }
+        },
+        exit: () => {
+          const tail = this.decoder.decode()
+          if (tail) {
+            this.callbacks.onData(tail)
+          }
+        },
+      },
     })
 
-    this.ptyProcess = proc
+    this.process = proc
 
-    proc.onData((data) => {
-      this.callbacks.onData(data)
-    })
-
-    proc.onExit(() => {
-      this.ptyProcess = null
+    proc.exited.then(() => {
+      this.process = null
       this.callbacks.onExit?.()
     })
   }
 
   write(data: string): void {
-    if (!this.ptyProcess) {
-      return
-    }
-    this.ptyProcess.write(data)
+    this.process?.terminal?.write(data)
   }
 
   resize(cols: number, rows: number): void {
     this.cols = cols
     this.rows = rows
 
-    if (this.ptyProcess) {
-      try {
-        this.ptyProcess.resize(cols, rows)
-      } catch {
-        // Ignore resize errors
-      }
+    try {
+      this.process?.terminal?.resize(cols, rows)
+    } catch {
+      // Ignore resize errors
     }
   }
 
   dispose(): void {
-    if (!this.ptyProcess) {
+    if (!this.process) {
       return
     }
 
     try {
-      this.ptyProcess.kill()
+      this.process.kill()
+      this.process.terminal?.close()
     } catch {
       // Ignore if already exited
     }
-    this.ptyProcess = null
+    this.process = null
   }
 }

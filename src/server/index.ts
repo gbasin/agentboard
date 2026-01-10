@@ -148,6 +148,9 @@ async function handleMessage(
     case 'session-kill':
       await handleKill(message.sessionId, ws)
       return
+    case 'session-rename':
+      await handleRename(message.sessionId, message.newName, ws)
+      return
     case 'terminal-attach':
       attachTerminal(ws, message.sessionId)
       return
@@ -189,6 +192,29 @@ async function handleKill(
       type: 'error',
       message:
         error instanceof Error ? error.message : 'Unable to kill session',
+    })
+  }
+}
+
+async function handleRename(
+  sessionId: string,
+  newName: string,
+  ws: ServerWebSocket<WSData>
+) {
+  const session = registry.get(sessionId)
+  if (!session) {
+    send(ws, { type: 'error', message: 'Session not found' })
+    return
+  }
+
+  try {
+    sessionManager.renameWindow(session.tmuxWindow, newName)
+    await refreshSessions()
+  } catch (error) {
+    send(ws, {
+      type: 'error',
+      message:
+        error instanceof Error ? error.message : 'Unable to rename session',
     })
   }
 }

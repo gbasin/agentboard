@@ -6,8 +6,14 @@ describe('statusMachine', () => {
     expect(transitionStatus('unknown', { type: 'log_found' })).toBe('idle')
   })
 
-  it('marks tool use as needs_approval', () => {
+  it('keeps working on tool use (stall detection handles approval)', () => {
     expect(transitionStatus('working', { type: 'assistant_tool_use' })).toBe(
+      'working'
+    )
+  })
+
+  it('marks tool_stall as needs_approval', () => {
+    expect(transitionStatus('working', { type: 'tool_stall' })).toBe(
       'needs_approval'
     )
   })
@@ -29,6 +35,14 @@ describe('statusMachine', () => {
     expect(transitionStatus('needs_approval', { type: 'idle_timeout' })).toBe(
       'needs_approval'
     )
+  })
+
+  it('keeps working during idle timeout (Claude may still be thinking)', () => {
+    expect(transitionStatus('working', { type: 'idle_timeout' })).toBe('working')
+  })
+
+  it('transitions waiting to idle on timeout', () => {
+    expect(transitionStatus('waiting', { type: 'idle_timeout' })).toBe('idle')
   })
 
   it('turn_end moves to waiting', () => {

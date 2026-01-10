@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "concurrently -k \"bun run dev:server\" \"bun run dev:client\"",
     "dev:server": "bun --watch src/server/index.ts",
-    "dev:client": "vite",
+    "dev:client": "vite --host",
     "build": "vite build",
     "start": "bun src/server/index.ts",
     "lint": "oxlint .",

@@ -9,6 +9,8 @@ import { useThemeStore } from './stores/themeStore'
 import { useWebSocket } from './hooks/useWebSocket'
 import { useNotifications } from './hooks/useNotifications'
 import { useFaviconBadge } from './hooks/useFaviconBadge'
+import { useVisualViewport } from './hooks/useVisualViewport'
+import { sortSessions } from './utils/sessions'
 
 export default function App() {
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -33,6 +35,9 @@ export default function App() {
 
   const { sendMessage, subscribe } = useWebSocket()
   const { notify, requestPermission } = useNotifications()
+
+  // Handle mobile keyboard viewport adjustments
+  useVisualViewport()
 
   useEffect(() => {
     requestPermission()
@@ -59,6 +64,8 @@ export default function App() {
     return sessions.find((session) => session.id === selectedSessionId) || null
   }, [selectedSessionId, sessions])
 
+  const sortedSessions = useMemo(() => sortSessions(sessions), [sessions])
+
   const needsApprovalCount = useMemo(
     () => sessions.filter((session) => session.status === 'needs_approval').length,
     [sessions]
@@ -82,6 +89,42 @@ export default function App() {
     }
   }, [notify, sessions])
 
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || isModalOpen) return
+      if (!(event.metaKey || event.ctrlKey)) return
+      if (event.shiftKey || event.altKey) return
+
+      const activeElement = document.activeElement
+      if (activeElement instanceof HTMLElement) {
+        const tagName = activeElement.tagName
+        const isTerminalFocus = activeElement.closest('.xterm') !== null
+        if (
+          activeElement.isContentEditable ||
+          (!isTerminalFocus &&
+            (tagName === 'INPUT' ||
+              tagName === 'TEXTAREA' ||
+              tagName === 'SELECT'))
+        ) {
+          return
+        }
+      }
+
+      const key = event.key
+      if (!/^[1-9]$/.test(key)) return
+
+      const index = Number(key) - 1
+      const target = sortedSessions[index]
+      if (!target) return
+
+      event.preventDefault()
+      setSelectedSessionId(target.id)
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isModalOpen, setSelectedSessionId, sortedSessions])
+
   const handleNewSession = () => setIsModalOpen(true)
 
   const handleCreateSession = (projectPath: string, name?: string) => {
@@ -90,6 +133,10 @@ export default function App() {
 
   const handleKillSession = (sessionId: string) => {
     sendMessage({ type: 'session-kill', sessionId })
+  }
+
+  const handleRenameSession = (sessionId: string, newName: string) => {
+    sendMessage({ type: 'session-rename', sessionId, newName })
   }
 
   const handleRefresh = () => {
@@ -118,6 +165,7 @@ export default function App() {
             selectedSessionId={selectedSessionId}
             onSelect={setSelectedSessionId}
             onKill={handleKillSession}
+            onRename={handleRenameSession}
             loading={!hasLoaded}
             error={connectionError || serverError}
           />

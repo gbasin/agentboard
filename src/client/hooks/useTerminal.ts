@@ -27,6 +27,7 @@ export function useTerminal({
   const webglAddonRef = useRef<WebglAddon | null>(null)
   const resizeTimer = useRef<number | null>(null)
   const scrollTimer = useRef<number | null>(null)
+  const fitTimer = useRef<number | null>(null)
 
   // Track the currently attached session to prevent race conditions
   const attachedSessionRef = useRef<string | null>(null)
@@ -49,6 +50,24 @@ export function useTerminal({
     const buffer = terminal.buffer.active
     const isAtBottom = buffer.viewportY >= buffer.baseY
     onScrollChangeRef.current(isAtBottom)
+  }, [])
+
+  const fitAndResize = useCallback(() => {
+    const terminal = terminalRef.current
+    const fitAddon = fitAddonRef.current
+    if (!terminal || !fitAddon) return
+
+    fitAddon.fit()
+
+    const attached = attachedSessionRef.current
+    if (attached) {
+      sendMessageRef.current({
+        type: 'terminal-resize',
+        sessionId: attached,
+        cols: terminal.cols,
+        rows: terminal.rows,
+      })
+    }
   }, [])
 
   // Terminal initialization - only once on mount
@@ -98,6 +117,16 @@ export function useTerminal({
           return false
         }
       }
+
+      // Ctrl+Backspace: delete word backward (browser eats this otherwise)
+      if (event.ctrlKey && event.key === 'Backspace' && event.type === 'keydown') {
+        const attached = attachedSessionRef.current
+        if (attached) {
+          sendMessageRef.current({ type: 'terminal-input', sessionId: attached, data: '\x17' })
+        }
+        return false
+      }
+
       return true
     })
 
@@ -116,6 +145,14 @@ export function useTerminal({
 
     terminalRef.current = terminal
     fitAddonRef.current = fitAddon
+
+    if (document.fonts?.ready) {
+      document.fonts.ready.then(() => {
+        fitAndResize()
+      }).catch(() => {
+        // Ignore font readiness errors
+      })
+    }
 
     return () => {
       if (webglAddonRef.current) {
@@ -136,9 +173,12 @@ export function useTerminal({
       }
       terminalRef.current = null
       fitAddonRef.current = null
+      if (fitTimer.current) {
+        window.clearTimeout(fitTimer.current)
+      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [fitAndResize])
 
   // Update theme
   useEffect(() => {
@@ -168,6 +208,14 @@ export function useTerminal({
       sendMessage({ type: 'terminal-attach', sessionId })
       // Mark as attached
       attachedSessionRef.current = sessionId
+
+      // Fit and resize after the session switch so tmux matches current viewport
+      if (fitTimer.current) {
+        window.clearTimeout(fitTimer.current)
+      }
+      fitTimer.current = window.setTimeout(() => {
+        fitAndResize()
+      }, 50)
 
       // Scroll to bottom after content loads
       if (scrollTimer.current) {
@@ -221,16 +269,7 @@ export function useTerminal({
 
       // Longer debounce to prevent rapid resize events
       resizeTimer.current = window.setTimeout(() => {
-        fitAddon.fit()
-        const attached = attachedSessionRef.current
-        if (attached) {
-          sendMessageRef.current({
-            type: 'terminal-resize',
-            sessionId: attached,
-            cols: terminal.cols,
-            rows: terminal.rows,
-          })
-        }
+        fitAndResize()
       }, 150)
     }
 

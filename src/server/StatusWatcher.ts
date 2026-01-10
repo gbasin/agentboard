@@ -15,11 +15,17 @@ interface WatchState {
   remainder: string
   status: Session['status']
   lastActivity: number
+  pendingToolUse: number | null // timestamp when tool_use was seen, null if no pending tool
 }
+
+// How long to wait after tool_use before showing needs_approval
+// Short delay so quick auto-approved tools don't flash the notification
+const TOOL_STALL_THRESHOLD_MS = 3000
 
 export class StatusWatcher {
   private states = new Map<string, WatchState>()
   private idleTimer: NodeJS.Timeout | null = null
+  private stallTimer: NodeJS.Timeout | null = null
 
   constructor(private registry: SessionRegistry) {
     this.registry.on('session-removed', (sessionId) => {
@@ -35,12 +41,22 @@ export class StatusWatcher {
     this.idleTimer = setInterval(() => {
       this.checkIdle()
     }, Math.min(config.idleTimeoutMs / 2, 60000))
+
+    // Check for stalled tool uses frequently (every 200ms)
+    this.stallTimer = setInterval(() => {
+      this.checkStalls()
+    }, 200)
   }
 
   stop(): void {
     if (this.idleTimer) {
       clearInterval(this.idleTimer)
       this.idleTimer = null
+    }
+
+    if (this.stallTimer) {
+      clearInterval(this.stallTimer)
+      this.stallTimer = null
     }
 
     for (const sessionId of this.states.keys()) {
@@ -172,6 +188,7 @@ export class StatusWatcher {
       remainder: '',
       status: session.status,
       lastActivity: Date.parse(session.lastActivity) || Date.now(),
+      pendingToolUse: null,
     }
 
     this.states.set(session.id, state)
@@ -276,6 +293,14 @@ export class StatusWatcher {
       for (const line of lines) {
         const event = parseLogLine(line)
         if (event) {
+          // Track pending tool uses for stall detection
+          if (event.type === 'assistant_tool_use') {
+            state.pendingToolUse = Date.now()
+          } else if (event.type === 'tool_result' || event.type === 'turn_end') {
+            // Tool result or turn end clears pending state
+            state.pendingToolUse = null
+          }
+
           nextStatus = transitionStatus(nextStatus, event)
           state.lastActivity = Date.now()
           updated = true
@@ -291,6 +316,25 @@ export class StatusWatcher {
       }
     } catch {
       // ignore read errors
+    }
+  }
+
+  private checkStalls(): void {
+    const now = Date.now()
+    for (const state of this.states.values()) {
+      // Skip if already in needs_approval or no pending tool use
+      if (state.status === 'needs_approval' || state.pendingToolUse === null) {
+        continue
+      }
+
+      // Check if tool_use has been pending longer than threshold
+      if (now - state.pendingToolUse >= TOOL_STALL_THRESHOLD_MS) {
+        state.status = transitionStatus(state.status, { type: 'tool_stall' })
+        this.registry.updateSession(state.sessionId, {
+          status: state.status,
+          lastActivity: new Date(state.lastActivity).toISOString(),
+        })
+      }
     }
   }
 

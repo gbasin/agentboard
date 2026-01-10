@@ -16,6 +16,7 @@ export interface Session {
   lastActivity: string
   logFile?: string
   source: SessionSource
+  command?: string
 }
 
 export type ServerMessage =
@@ -31,4 +32,5 @@ export type ClientMessage =
   | { type: 'terminal-resize'; sessionId: string; cols: number; rows: number }
   | { type: 'session-create'; projectPath: string; name?: string }
   | { type: 'session-kill'; sessionId: string }
+  | { type: 'session-rename'; sessionId: string; newName: string }
   | { type: 'session-refresh' }
