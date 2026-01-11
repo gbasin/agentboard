@@ -131,7 +131,7 @@ export default function Terminal({
     }
   }, [isRenaming])
 
-  // Focus end session button when confirm modal opens
+  // Focus kill session button when confirm modal opens
   useEffect(() => {
     if (showEndConfirm && endSessionButtonRef.current) {
       endSessionButtonRef.current.focus()
@@ -536,12 +536,12 @@ export default function Terminal({
               <PlusIcon width={16} height={16} />
             </button>
 
-            {/* End session button - only for managed sessions */}
+            {/* Kill session button - only for managed sessions */}
             {session.source === 'managed' && (
               <button
                 onClick={() => setShowEndConfirm(true)}
                 className="flex h-7 w-7 items-center justify-center rounded bg-danger/10 border border-danger/30 text-danger hover:bg-danger/20 active:scale-95 transition-all"
-                title={`End session (${getNavShortcutMod()}X)`}
+                title={`Kill session (${getNavShortcutMod()}X)`}
               >
                 <XCloseIcon width={16} height={16} />
               </button>
@@ -695,15 +695,15 @@ export default function Terminal({
         />
       )}
 
-      {/* End session confirmation modal */}
+      {/* Kill session confirmation modal */}
       {showEndConfirm && session && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="mx-4 w-full max-w-sm rounded-lg border border-border bg-elevated p-4 shadow-xl">
             <h3 className="text-base font-medium text-primary mb-2">
-              End Session
+              Kill Session
             </h3>
             <p className="text-sm text-secondary mb-4">
-              End "{session.name}"? The process will be terminated. Conversation history is preserved in logs.
+              Kill "{session.name}"? The process will be terminated. Conversation history is preserved in logs.
             </p>
             <div className="flex justify-end gap-2">
               <button
@@ -717,7 +717,7 @@ export default function Terminal({
                 onClick={handleEndSession}
                 className="btn btn-danger py-1.5 px-3 text-sm"
               >
-                End Session
+                Kill Session
               </button>
             </div>
           </div>
