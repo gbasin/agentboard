@@ -448,6 +448,23 @@ export default function Terminal({
     [session, sendMessage]
   )
 
+  const handleRefocus = useCallback(() => {
+    const container = containerRef.current
+    if (!container) return
+    const textarea = container.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement | null
+    if (textarea) {
+      textarea.removeAttribute('disabled')
+      textarea.focus()
+    }
+  }, [containerRef])
+
+  const isKeyboardVisible = useCallback(() => {
+    const container = containerRef.current
+    if (!container) return false
+    const textarea = container.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement | null
+    return textarea ? document.activeElement === textarea : false
+  }, [containerRef])
+
   const hasSession = Boolean(session)
 
   return (
@@ -649,6 +666,8 @@ export default function Terminal({
           currentSessionId={session.id}
           onSelectSession={onSelectSession}
           hideSessionSwitcher
+          onRefocus={handleRefocus}
+          isKeyboardVisible={isKeyboardVisible}
         />
       )}
 
