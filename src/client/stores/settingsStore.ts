@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { persist, createJSONStorage } from 'zustand/middleware'
+import { safeStorage } from '../utils/storage'
 
 const DEFAULT_PROJECT_DIR = '~/Documents/GitHub'
 const DEFAULT_COMMAND = 'claude'
@@ -35,7 +36,10 @@ export const useSettingsStore = create<SettingsState>()(
       setSessionSortDirection: (direction) =>
         set({ sessionSortDirection: direction }),
     }),
-    { name: 'agentboard-settings' }
+    {
+      name: 'agentboard-settings',
+      storage: createJSONStorage(() => safeStorage),
+    }
   )
 )
 

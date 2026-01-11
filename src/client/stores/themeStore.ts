@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { persist, createJSONStorage } from 'zustand/middleware'
+import { safeStorage } from '../utils/storage'
 
 export type Theme = 'dark' | 'light'
 
@@ -19,6 +20,7 @@ export const useThemeStore = create<ThemeState>()(
     }),
     {
       name: 'agentboard-theme',
+      storage: createJSONStorage(() => safeStorage),
     }
   )
 )
