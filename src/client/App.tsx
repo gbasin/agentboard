@@ -139,8 +139,8 @@ export default function App() {
         }
       }
 
-      // Cmd+1-9 or Cmd+Option+1-9: Switch sessions (Option variant for Safari compatibility)
-      if (!/^[1-9]$/.test(key)) return
+      // Ctrl+1-9: Switch sessions (works in Safari without conflicts)
+      if (!event.ctrlKey || event.metaKey || !/^[1-9]$/.test(key)) return
 
       const index = Number(key) - 1
       const target = sortedSessions[index]

@@ -49,9 +49,8 @@ const PasteIcon = (
   </svg>
 )
 
-// Keys before the numpad
+// Keys before the numpad (Ctrl toggle handled separately)
 const CONTROL_KEYS_LEFT: ControlKey[] = [
-  { label: '^C', key: '\x03', className: 'text-danger border-danger/40' },
   { label: 'esc', key: '\x1b' },
 ]
 
@@ -87,6 +86,7 @@ export default function TerminalControls({
   const [showPasteInput, setShowPasteInput] = useState(false)
   const [pasteValue, setPasteValue] = useState('')
   const [isUploading, setIsUploading] = useState(false)
+  const [ctrlActive, setCtrlActive] = useState(false)
   const pasteInputRef = useRef<HTMLInputElement>(null)
   const pasteZoneRef = useRef<HTMLDivElement>(null)
 
@@ -141,11 +141,42 @@ export default function TerminalControls({
     // Check if keyboard was visible before we do anything
     const wasKeyboardVisible = isKeyboardVisible?.() ?? false
     triggerHaptic()
-    onSendKey(key)
+
+    // Apply Ctrl modifier if active (convert letter to control character)
+    let keyToSend = key
+    if (ctrlActive && key.length === 1) {
+      const code = key.toUpperCase().charCodeAt(0)
+      // Convert A-Z to Ctrl+A through Ctrl+Z (0x01-0x1A)
+      if (code >= 65 && code <= 90) {
+        keyToSend = String.fromCharCode(code - 64)
+      }
+      setCtrlActive(false)
+    }
+
+    onSendKey(keyToSend)
     // Only refocus if keyboard was already visible (don't bring it up if it wasn't)
     if (wasKeyboardVisible) {
       onRefocus?.()
     }
+  }
+
+  const handleCtrlToggle = () => {
+    if (disabled) return
+    triggerHaptic()
+    setCtrlActive(!ctrlActive)
+  }
+
+  // Wrapper for child components (NumPad, DPad) to apply Ctrl modifier
+  const handleSendKeyWithCtrl = (key: string) => {
+    let keyToSend = key
+    if (ctrlActive && key.length === 1) {
+      const code = key.toUpperCase().charCodeAt(0)
+      if (code >= 65 && code <= 90) {
+        keyToSend = String.fromCharCode(code - 64)
+      }
+      setCtrlActive(false)
+    }
+    onSendKey(keyToSend)
   }
 
   const handlePasteButtonClick = async () => {
@@ -275,6 +306,30 @@ export default function TerminalControls({
       )}
       {/* Key row */}
       <div className="flex items-center gap-1.5">
+        {/* Ctrl toggle */}
+        <button
+          type="button"
+          className={`
+            terminal-key
+            flex items-center justify-center
+            h-11 min-w-[2.75rem] px-2.5
+            text-sm font-medium
+            rounded-md
+            active:scale-95
+            transition-transform duration-75
+            select-none touch-manipulation
+            ${ctrlActive
+              ? 'bg-accent/20 text-accent border border-accent/40'
+              : 'bg-surface border border-border text-secondary'}
+            ${disabled ? 'opacity-50' : ''}
+          `}
+          onMouseDown={(e) => e.preventDefault()}
+          onTouchStart={(e) => e.preventDefault()}
+          onClick={handleCtrlToggle}
+          disabled={disabled}
+        >
+          ctrl
+        </button>
         {/* Left controls */}
         {CONTROL_KEYS_LEFT.map((control, i) => (
           <button
@@ -304,7 +359,7 @@ export default function TerminalControls({
 
         {/* NumPad for number input */}
         <NumPad
-          onSendKey={onSendKey}
+          onSendKey={handleSendKeyWithCtrl}
           disabled={disabled}
           onRefocus={onRefocus}
           isKeyboardVisible={isKeyboardVisible}
@@ -312,7 +367,7 @@ export default function TerminalControls({
 
         {/* D-pad for arrow keys */}
         <DPad
-          onSendKey={onSendKey}
+          onSendKey={handleSendKeyWithCtrl}
           disabled={disabled}
           onRefocus={onRefocus}
           isKeyboardVisible={isKeyboardVisible}

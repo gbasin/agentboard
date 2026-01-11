@@ -205,6 +205,14 @@ export function useTerminal({
       })
     }
 
+    // Desktop Safari + Retina: force refresh to fix blurry WebGL canvas
+    const isSafariDesktop = /^((?!chrome|android).)*safari/i.test(navigator.userAgent) && !isiOS
+    if (isSafariDesktop && window.devicePixelRatio > 1) {
+      setTimeout(() => {
+        terminal.refresh(0, terminal.rows - 1)
+      }, 100)
+    }
+
     return () => {
       terminal.element?.removeEventListener('paste', handlePaste)
       textarea?.removeEventListener('paste', handlePaste)
@@ -292,13 +300,15 @@ export function useTerminal({
         fitAndResize()
       }, 50)
 
-      // Scroll to bottom after content loads
+      // Scroll to bottom and focus after content loads
       if (scrollTimer.current) {
         window.clearTimeout(scrollTimer.current)
       }
       scrollTimer.current = window.setTimeout(() => {
         terminal.scrollToBottom()
         checkScrollPosition()
+        // Focus terminal so user can start typing immediately
+        terminal.focus()
       }, 300)
     }
 

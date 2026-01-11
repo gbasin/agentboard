@@ -1,10 +1,9 @@
-import { useState, useRef, useEffect, useMemo } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import type { Session } from '@shared/types'
 import { sortSessions } from '../utils/sessions'
 import { formatCommandLabel } from '../utils/sessionLabel'
 import { useSettingsStore } from '../stores/settingsStore'
-import { isSafari } from '../utils/device'
 
 interface SessionListProps {
   sessions: Session[]
@@ -147,7 +146,6 @@ function SessionRow({
   const lastActivity = formatRelativeTime(session.lastActivity)
   const shortcutLabel =
     !isEditing && shortcutIndex < 9 ? String(shortcutIndex + 1) : null
-  const useSafariShortcut = useMemo(() => isSafari(), [])
   const inputRef = useRef<HTMLInputElement>(null)
   const [editValue, setEditValue] = useState(session.name)
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -253,68 +251,16 @@ function SessionRow({
           {shortcutLabel && (
             <span
               className="shortcut-badge hidden md:inline-flex"
-              title={
-                useSafariShortcut
-                  ? `Shortcut: Cmd+Option+${shortcutLabel}`
-                  : `Shortcut: Cmd/Ctrl+${shortcutLabel}`
-              }
-              aria-label={
-                useSafariShortcut
-                  ? `Shortcut Cmd+Option+${shortcutLabel}`
-                  : `Shortcut Cmd/Ctrl+${shortcutLabel}`
-              }
+              title={`Shortcut: Ctrl+${shortcutLabel}`}
+              aria-label={`Shortcut Ctrl+${shortcutLabel}`}
             >
-              <CommandIcon />
-              {useSafariShortcut && (
-                <>
-                  <OptionIcon />
-                </>
-              )}
-              <span className="shortcut-plus">+</span>
+              <span>^</span>
               <span>{shortcutLabel}</span>
             </span>
           )}
         </div>
       </div>
     </div>
-  )
-}
-
-function CommandIcon() {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      width="10"
-      height="10"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M18 3a3 3 0 0 0-3 3v1a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1V6a3 3 0 1 0-3 3h1a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H6a3 3 0 1 0 3 3v-1a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1a3 3 0 1 0 3-3h-1a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1h1a3 3 0 0 0 0-6z" />
-    </svg>
-  )
-}
-
-function OptionIcon() {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      width="10"
-      height="10"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M3 6h6l6 12h6M15 6h6" />
-    </svg>
   )
 }
 

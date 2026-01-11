@@ -35,11 +35,18 @@ const statusClass: Record<Session['status'], string> = {
   unknown: 'text-muted',
 }
 
-const statusDot: Record<Session['status'], string> = {
-  working: 'bg-working',
-  waiting: 'bg-waiting',
-  permission: 'bg-approval',
-  unknown: 'bg-muted',
+const statusButtonBase: Record<Session['status'], string> = {
+  working: 'bg-working/25 text-working',
+  waiting: 'bg-waiting/25 text-waiting',
+  permission: 'bg-approval/25 text-approval',
+  unknown: 'bg-muted/25 text-muted',
+}
+
+const statusButtonActive: Record<Session['status'], string> = {
+  working: 'bg-working text-white',
+  waiting: 'bg-waiting text-white',
+  permission: 'bg-approval text-white',
+  unknown: 'bg-muted text-white',
 }
 
 function triggerHaptic() {
@@ -73,6 +80,7 @@ export default function Terminal({
   const [renameValue, setRenameValue] = useState('')
   const moreMenuRef = useRef<HTMLDivElement>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
+  const endSessionButtonRef = useRef<HTMLButtonElement>(null)
   const [fontSize, setFontSize] = useState(() => {
     const saved = localStorage.getItem('terminal-font-size')
     return saved ? parseInt(saved, 10) : 13
@@ -122,6 +130,13 @@ export default function Terminal({
       renameInputRef.current.select()
     }
   }, [isRenaming])
+
+  // Focus end session button when confirm modal opens
+  useEffect(() => {
+    if (showEndConfirm && endSessionButtonRef.current) {
+      endSessionButtonRef.current.focus()
+    }
+  }, [showEndConfirm])
 
   const handleEndSession = () => {
     if (!session) return
@@ -613,21 +628,18 @@ export default function Terminal({
                   key={s.id}
                   type="button"
                   className={`
-                    flex items-center justify-center gap-1.5 shrink-0 snap-start
-                    h-8 min-w-[3rem] px-2.5 text-xs font-medium rounded-md
-                    active:scale-95 transition-transform duration-75
+                    flex items-center justify-center shrink-0 snap-start
+                    h-8 w-8 text-sm font-bold rounded-lg
+                    active:scale-95 transition-all duration-75
                     select-none touch-manipulation
-                    ${isActive
-                      ? 'bg-accent/30 text-accent border border-accent'
-                      : 'bg-surface border border-border text-secondary'}
+                    ${isActive ? statusButtonActive[s.status] : statusButtonBase[s.status]}
                   `}
                   onClick={() => {
                     triggerHaptic()
                     onSelectSession(s.id)
                   }}
                 >
-                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusDot[s.status]}`} />
-                  <span className="truncate">{index + 1}</span>
+                  {index + 1}
                 </button>
               )
             })}
@@ -701,6 +713,7 @@ export default function Terminal({
                 Cancel
               </button>
               <button
+                ref={endSessionButtonRef}
                 onClick={handleEndSession}
                 className="btn btn-danger py-1.5 px-3 text-sm"
               >
