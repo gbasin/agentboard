@@ -21,6 +21,7 @@ export class TerminalProxy {
     spawn?: SpawnFn
   ) {
     this.spawn = spawn ?? Bun.spawn
+    console.log('DEBUG TerminalProxy constructor: spawn param type:', typeof spawn, 'this.spawn type:', typeof this.spawn)
   }
 
   start(): void {
