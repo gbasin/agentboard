@@ -5,3 +5,8 @@ export function isIOSDevice(): boolean {
   const iPadOS = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1
   return iOS || iPadOS
 }
+
+export function isIOSPWA(): boolean {
+  if (typeof navigator === 'undefined') return false
+  return isIOSDevice() && (navigator as { standalone?: boolean }).standalone === true
+}

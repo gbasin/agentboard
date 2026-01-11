@@ -3,6 +3,12 @@ import { createRoot } from 'react-dom/client'
 import App from './App'
 import './styles/index.css'
 import 'xterm/css/xterm.css'
+import { isIOSPWA } from './utils/device'
+
+// Add class for iOS PWA safe area handling
+if (isIOSPWA()) {
+  document.documentElement.classList.add('ios-pwa')
+}
 
 const container = document.getElementById('root')
 if (!container) {

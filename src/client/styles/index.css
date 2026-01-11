@@ -331,3 +331,12 @@ body {
 .terminal-key:active {
   background: var(--bg-hover);
 }
+
+/* iOS PWA safe area padding for home indicator */
+.ios-pwa #root {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.ios-pwa .terminal-mobile-overlay {
+  bottom: calc(var(--keyboard-inset, 0px) + env(safe-area-inset-bottom, 0px));
+}
