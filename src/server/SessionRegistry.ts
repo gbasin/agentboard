@@ -8,7 +8,12 @@ export interface RegistryEvents {
 }
 
 export class SessionRegistry extends EventEmitter {
-  private sessions = new Map<string, Session>()
+  private sessions: Map<string, Session>
+
+  constructor() {
+    super()
+    this.sessions = new Map<string, Session>()
+  }
 
   getAll(): Session[] {
     return Array.from(this.sessions.values())

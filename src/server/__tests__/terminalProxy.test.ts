@@ -53,8 +53,6 @@ describe('TerminalProxy', () => {
   test('spawns tmux attach once and forwards data', () => {
     const spawnStub = createSpawnStub()
     const received: string[] = []
-    console.log('DEBUG: spawnStub.spawn type:', typeof spawnStub.spawn)
-    console.log('DEBUG: spawnStub.spawn:', spawnStub.spawn)
     const proxy = new TerminalProxy(
       'agentboard:1',
       {
@@ -62,12 +60,8 @@ describe('TerminalProxy', () => {
       },
       spawnStub.spawn
     )
-    console.log('DEBUG: proxy created, typeof proxy.start:', typeof proxy.start)
-    // @ts-expect-error - accessing private for debug
-    console.log('DEBUG: proxy.spawn type:', typeof proxy.spawn)
 
     proxy.start()
-    console.log('DEBUG: after start, calls:', spawnStub.calls.length)
     proxy.start()
 
     expect(spawnStub.calls).toHaveLength(1)

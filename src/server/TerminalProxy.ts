@@ -13,12 +13,15 @@ export class TerminalProxy {
   private decoder = new TextDecoder()
   private cols = 80
   private rows = 24
+  private spawn: SpawnFn
 
   constructor(
     private tmuxWindow: string,
     private callbacks: TerminalCallbacks,
-    private spawn: SpawnFn = Bun.spawn
-  ) {}
+    spawn?: SpawnFn
+  ) {
+    this.spawn = spawn ?? Bun.spawn
+  }
 
   start(): void {
     if (this.process) {
