@@ -81,10 +81,10 @@ export default function SettingsModal({
         onSubmit={handleSubmit}
         className="w-full max-w-md border border-border bg-elevated p-6"
       >
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-primary">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-primary text-balance">
           Settings
         </h2>
-        <p className="mt-2 text-xs text-muted">
+        <p className="mt-2 text-xs text-muted text-pretty">
           Set the default directory for new sessions. Tilde (~) resolves to your
           home directory on the server.
         </p>

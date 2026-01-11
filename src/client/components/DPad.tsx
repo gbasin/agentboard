@@ -252,6 +252,7 @@ export default function DPad({
       {/* Trigger button */}
       <button
         type="button"
+        aria-label="Arrow keys"
         className={`
           terminal-key
           flex items-center justify-center

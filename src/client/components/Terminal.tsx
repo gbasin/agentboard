@@ -532,6 +532,7 @@ export default function Terminal({
               onClick={onNewSession}
               className="flex h-7 w-7 items-center justify-center rounded bg-accent text-white hover:bg-accent/90 active:scale-95 transition-all md:hidden"
               title={`New session (${getNavShortcutMod()}N)`}
+              aria-label="New session"
             >
               <PlusIcon width={16} height={16} />
             </button>
@@ -542,6 +543,7 @@ export default function Terminal({
                 onClick={() => setShowEndConfirm(true)}
                 className="flex h-7 w-7 items-center justify-center rounded bg-danger/10 border border-danger/30 text-danger hover:bg-danger/20 active:scale-95 transition-all"
                 title={`Kill session (${getNavShortcutMod()}X)`}
+                aria-label="Kill session"
               >
                 <XCloseIcon width={16} height={16} />
               </button>
@@ -553,6 +555,7 @@ export default function Terminal({
                 onClick={() => setShowMoreMenu(!showMoreMenu)}
                 className="flex h-7 w-7 items-center justify-center rounded bg-surface border border-border text-secondary hover:bg-hover hover:text-primary active:scale-95 transition-all"
                 title="More options"
+                aria-label="More options"
               >
                 <DotsVerticalIcon width={16} height={16} />
               </button>
@@ -662,6 +665,7 @@ export default function Terminal({
             onClick={scrollToBottom}
             className="absolute bottom-4 right-4 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-surface border border-border shadow-lg hover:bg-hover transition-colors"
             title="Scroll to bottom"
+            aria-label="Scroll to bottom"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -699,10 +703,10 @@ export default function Terminal({
       {showEndConfirm && session && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="mx-4 w-full max-w-sm rounded-lg border border-border bg-elevated p-4 shadow-xl">
-            <h3 className="text-base font-medium text-primary mb-2">
+            <h3 className="text-base font-medium text-primary mb-2 text-balance">
               Kill Session
             </h3>
-            <p className="text-sm text-secondary mb-4">
+            <p className="text-sm text-secondary mb-4 text-pretty">
               Kill "{session.name}"? The process will be terminated. Conversation history is preserved in logs.
             </p>
             <div className="flex justify-end gap-2">

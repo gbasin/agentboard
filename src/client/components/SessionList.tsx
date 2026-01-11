@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
 import type { Session } from '@shared/types'
 import { sortSessions } from '../utils/sessions'
 import { formatCommandLabel } from '../utils/sessionLabel'
@@ -45,6 +45,7 @@ export default function SessionList({
   onRename,
 }: SessionListProps) {
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
+  const prefersReducedMotion = useReducedMotion()
   const sessionSortMode = useSettingsStore((state) => state.sessionSortMode)
   const sessionSortDirection = useSettingsStore(
     (state) => state.sessionSortDirection
@@ -94,11 +95,11 @@ export default function SessionList({
               {sortedSessions.map((session, index) => (
                 <motion.div
                   key={session.id}
-                  layout
-                  initial={{ opacity: 0, y: -10 }}
+                  layout={!prefersReducedMotion}
+                  initial={prefersReducedMotion ? false : { opacity: 0, y: -10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  transition={{
+                  exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -10 }}
+                  transition={prefersReducedMotion ? { duration: 0 } : {
                     layout: { type: 'spring', stiffness: 500, damping: 35 },
                     opacity: { duration: 0.15 },
                   }}

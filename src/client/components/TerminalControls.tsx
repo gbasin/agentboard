@@ -32,6 +32,7 @@ interface ControlKey {
   key: string
   className?: string
   grow?: boolean
+  ariaLabel?: string
 }
 
 // Backspace icon (solid, clear)
@@ -56,8 +57,8 @@ const CONTROL_KEYS_LEFT: ControlKey[] = [
 
 // Keys after the d-pad
 const CONTROL_KEYS_RIGHT: ControlKey[] = [
-  { label: BackspaceIcon, key: '\x17' }, // Ctrl+W: delete word backward
-  { label: <CornerDownLeftIcon width={18} height={18} />, key: '\r', grow: true, className: 'bg-accent/20 text-accent border-accent/40' },
+  { label: BackspaceIcon, key: '\x17', ariaLabel: 'Delete word' }, // Ctrl+W: delete word backward
+  { label: <CornerDownLeftIcon width={18} height={18} />, key: '\r', grow: true, className: 'bg-accent/20 text-accent border-accent/40', ariaLabel: 'Enter' },
 ]
 
 function triggerHaptic() {
@@ -378,6 +379,7 @@ export default function TerminalControls({
           <button
             key={`right-${i}`}
             type="button"
+            aria-label={control.ariaLabel}
             className={`
               terminal-key
               flex items-center justify-center
@@ -402,6 +404,7 @@ export default function TerminalControls({
         {/* Paste button */}
         <button
           type="button"
+          aria-label="Paste"
           className={`
             terminal-key
             flex items-center justify-center
@@ -430,8 +433,8 @@ export default function TerminalControls({
             ref={pasteZoneRef}
             className="mx-4 w-full max-w-sm rounded-lg border border-border bg-elevated p-4 shadow-xl"
           >
-            <h3 className="text-base font-medium text-primary mb-1">Paste</h3>
-            <p className="text-xs text-muted mb-3">Text or image (long-press → Paste)</p>
+            <h3 className="text-base font-medium text-primary mb-1 text-balance">Paste</h3>
+            <p className="text-xs text-muted mb-3 text-pretty">Text or image (long-press → Paste)</p>
             {isUploading ? (
               <div className="w-full h-11 flex items-center justify-center bg-surface border border-border rounded-md text-secondary">
                 Uploading image...

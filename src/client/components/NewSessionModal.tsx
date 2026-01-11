@@ -181,10 +181,10 @@ export default function NewSessionModal({
         onSubmit={handleSubmit}
         className="w-full max-w-md border border-border bg-elevated p-6"
       >
-        <h2 id="new-session-title" className="text-sm font-semibold uppercase tracking-wider text-primary">
+        <h2 id="new-session-title" className="text-sm font-semibold uppercase tracking-wider text-primary text-balance">
           New Session
         </h2>
-        <p className="mt-2 text-xs text-muted">
+        <p className="mt-2 text-xs text-muted text-pretty">
           Enter an absolute project path or a folder name. Relative paths use
           the base directory.
         </p>
