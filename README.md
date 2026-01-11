@@ -29,7 +29,7 @@ bun install
 bun run dev
 ```
 
-Open `http://<your-machine>:5173`. Backend runs on 4040.
+Open `http://<your-machine>:5173` (Vite dev server). In production, UI is served from the backend port (default 4040).
 
 Production:
 ```bash
