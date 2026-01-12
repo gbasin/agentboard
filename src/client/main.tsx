@@ -2,7 +2,7 @@ import React from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
 import './styles/index.css'
-import 'xterm/css/xterm.css'
+import '@xterm/xterm/css/xterm.css'
 import { isIOSPWA } from './utils/device'
 
 // Add class for iOS PWA safe area handling
