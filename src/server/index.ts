@@ -9,14 +9,29 @@ import { TerminalProxy } from './TerminalProxy'
 import type { ClientMessage, ServerMessage } from '../shared/types'
 
 function checkPortAvailable(port: number): void {
-  const result = Bun.spawnSync(['lsof', '-i', `:${port}`, '-t'])
-  const pids = result.stdout.toString().trim()
+  let result: ReturnType<typeof Bun.spawnSync>
+  try {
+    result = Bun.spawnSync(['lsof', '-i', `:${port}`, '-t'], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+  } catch {
+    return
+  }
+  const pids = result.stdout?.toString().trim() ?? ''
   if (pids) {
     const pidList = pids.split('\n').filter(Boolean)
     const pid = pidList[0]
     // Get process name
-    const nameResult = Bun.spawnSync(['ps', '-p', pid, '-o', 'comm='])
-    const processName = nameResult.stdout.toString().trim() || 'unknown'
+    let processName = 'unknown'
+    try {
+      const nameResult = Bun.spawnSync(['ps', '-p', pid, '-o', 'comm='], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+      })
+      processName = nameResult.stdout?.toString().trim() || 'unknown'
+    } catch {
+    }
     console.error(`\nPort ${port} already in use by PID ${pid} (${processName})`)
     console.error(`Run: kill ${pid}\n`)
     process.exit(1)

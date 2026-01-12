@@ -3,11 +3,15 @@ import fs from 'node:fs'
 import net from 'node:net'
 
 const tmuxAvailable = (() => {
-  const result = Bun.spawnSync(['tmux', '-V'], {
-    stdout: 'ignore',
-    stderr: 'ignore',
-  })
-  return result.exitCode === 0
+  try {
+    const result = Bun.spawnSync(['tmux', '-V'], {
+      stdout: 'ignore',
+      stderr: 'ignore',
+    })
+    return result.exitCode === 0
+  } catch {
+    return false
+  }
 })()
 
 if (!tmuxAvailable) {
