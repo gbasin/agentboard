@@ -283,22 +283,6 @@ export function useTerminal({
     terminal.loadAddon(webLinksAddon)
     webLinksAddonRef.current = webLinksAddon
 
-    // Handle paste events - listen on both terminal element and the hidden textarea
-    const handlePaste = (e: Event) => {
-      const clipboardEvent = e as ClipboardEvent
-      const text = clipboardEvent.clipboardData?.getData('text')
-      const attached = attachedSessionRef.current
-      if (text && attached) {
-        e.preventDefault()
-        sendMessageRef.current({ type: 'terminal-input', sessionId: attached, data: text })
-      }
-      // Don't preventDefault for non-text (images, files) - let native behavior happen
-    }
-    terminal.element?.addEventListener('paste', handlePaste)
-    // Also listen on the helper textarea where focus actually goes
-    const textarea = terminal.element?.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement | null
-    textarea?.addEventListener('paste', handlePaste)
-
     terminal.attachCustomKeyEventHandler((event) => {
       // Cmd/Ctrl+C: copy selection
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
@@ -356,8 +340,6 @@ export function useTerminal({
     }
 
     return () => {
-      terminal.element?.removeEventListener('paste', handlePaste)
-      textarea?.removeEventListener('paste', handlePaste)
       // Remove tooltip element
       if (linkTooltipRef.current) {
         linkTooltipRef.current.remove()
