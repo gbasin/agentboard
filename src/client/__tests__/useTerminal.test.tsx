@@ -139,7 +139,7 @@ mock.module('@xterm/addon-serialize', () => ({ SerializeAddon: SerializeAddonMoc
 mock.module('@xterm/addon-progress', () => ({ ProgressAddon: ProgressAddonMock }))
 mock.module('@xterm/addon-web-links', () => ({ WebLinksAddon: class {} }))
 
-const { forceTextPresentation, useTerminal } = await import('../hooks/useTerminal')
+const { forceTextPresentation, sanitizeLink, useTerminal } = await import('../hooks/useTerminal')
 
 function createContainerMock() {
   const textareaListeners = new Map<string, EventListener>()
@@ -244,6 +244,21 @@ describe('forceTextPresentation', () => {
   })
 })
 
+describe('sanitizeLink', () => {
+  test('strips trailing punctuation and unmatched brackets', () => {
+    expect(sanitizeLink('https://github.com/tmux-plugins/tmux-resurrect))')).toBe(
+      'https://github.com/tmux-plugins/tmux-resurrect'
+    )
+    expect(sanitizeLink('https://example.com/path).')).toBe('https://example.com/path')
+  })
+
+  test('preserves balanced brackets', () => {
+    expect(sanitizeLink('https://en.wikipedia.org/wiki/Foo_(bar)')).toBe(
+      'https://en.wikipedia.org/wiki/Foo_(bar)'
+    )
+  })
+})
+
 describe('useTerminal', () => {
   test('attaches, forwards input/output, and handles key events', () => {
     const clipboardWrites: string[] = []
@@ -327,7 +342,8 @@ describe('useTerminal', () => {
       })
     })
 
-    expect(terminal.writes).toEqual([`x\u23FA\uFE0Ey`])
+    // Output is wrapped in synchronized output sequences (BSU/ESU)
+    expect(terminal.writes).toEqual([`\x1b[?2026hx\u23FA\uFE0Ey\x1b[?2026l`])
 
     terminal.buffer.active.baseY = 10
     terminal.buffer.active.viewportY = 0

@@ -11,6 +11,42 @@ import type { ServerMessage } from '@shared/types'
 
 // URL regex that matches standard URLs and IP:port patterns
 const URL_REGEX = /https?:\/\/[^\s"'<>]+|\b(?:localhost|\d{1,3}(?:\.\d{1,3}){3}):\d{1,5}(?:\/[^\s"'<>]*)?\b/
+const TRAILING_PUNCTUATION_REGEX = /[.,;:!?]+$/
+const BRACKET_PAIRS: Array<[string, string]> = [
+  ['(', ')'],
+  ['[', ']'],
+  ['{', '}'],
+]
+
+const countOccurrences = (text: string, char: string) => text.split(char).length - 1
+
+export function sanitizeLink(text: string): string {
+  let result = text.trim()
+  if (!result) return result
+
+  const stripTrailingPunctuation = () => {
+    result = result.replace(TRAILING_PUNCTUATION_REGEX, '')
+  }
+
+  stripTrailingPunctuation()
+
+  let trimmed = true
+  while (trimmed) {
+    trimmed = false
+    for (const [open, close] of BRACKET_PAIRS) {
+      if (!result.endsWith(close)) continue
+      const openCount = countOccurrences(result, open)
+      const closeCount = countOccurrences(result, close)
+      if (closeCount > openCount) {
+        result = result.slice(0, -1)
+        trimmed = true
+      }
+    }
+  }
+
+  stripTrailingPunctuation()
+  return result
+}
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform)
 
@@ -105,9 +141,19 @@ export function useTerminal({
   const onScrollChangeRef = useRef(onScrollChange)
   const useWebGLRef = useRef(useWebGL)
 
-  // Output buffering to reduce flicker - collect writes within a frame
+  // Synchronized Output (DECSET 2026) - makes xterm.js render atomically
+  // See: https://contour-terminal.org/vt-extensions/synchronized-output/
+  const BSU = '\x1b[?2026h' // Begin Synchronized Update
+  const ESU = '\x1b[?2026l' // End Synchronized Update
+
+  // Output buffering with idle-based flushing + synchronized output
   const outputBufferRef = useRef<string>('')
-  const rafIdRef = useRef<number | null>(null)
+  const idleTimerRef = useRef<number | null>(null)
+  const maxTimerRef = useRef<number | null>(null)
+
+  // Tuning: flush when idle for 2ms, or at most every 16ms
+  const IDLE_FLUSH_MS = 2
+  const MAX_FLUSH_MS = 16
 
   useEffect(() => {
     sendMessageRef.current = sendMessage
@@ -243,9 +289,11 @@ export function useTerminal({
 
     const showTooltip = (event: MouseEvent, text: string) => {
       if (!terminal.element || !tooltip || !tooltipUrl || !tooltipHint) return
+      const sanitized = sanitizeLink(text)
+      if (!sanitized) return
       const rect = terminal.element.getBoundingClientRect()
       // Truncate long URLs
-      const displayUrl = text.length > 60 ? text.slice(0, 57) + '...' : text
+      const displayUrl = sanitized.length > 60 ? sanitized.slice(0, 57) + '...' : sanitized
       tooltipUrl.textContent = displayUrl
       tooltipHint.textContent = `${isMac ? '⌘' : 'Ctrl'}+click to open`
       tooltip.style.left = `${event.clientX - rect.left + 10}px`
@@ -261,7 +309,9 @@ export function useTerminal({
     const linkHandler = {
       activate: (event: MouseEvent, text: string) => {
         if (event.metaKey || event.ctrlKey) {
-          window.open(text, '_blank', 'noopener')
+          const sanitized = sanitizeLink(text)
+          if (!sanitized) return
+          window.open(sanitized, '_blank', 'noopener')
         }
       },
       hover: (event: MouseEvent, text: string) => showTooltip(event, text),
@@ -493,16 +543,43 @@ export function useTerminal({
     }
   }, [sessionId, sendMessage, checkScrollPosition])
 
-  // Subscribe to terminal output with frame-based buffering to reduce flicker
+  // Subscribe to terminal output with idle-based buffering + synchronized output
+  // This prevents flicker by: (1) batching output until stream goes idle,
+  // (2) wrapping in BSU/ESU so xterm.js renders atomically
   useEffect(() => {
-    const flushBuffer = () => {
-      const terminal = terminalRef.current
-      if (terminal && outputBufferRef.current) {
-        terminal.write(outputBufferRef.current)
-        outputBufferRef.current = ''
-        checkScrollPosition()
+    const flush = () => {
+      if (idleTimerRef.current !== null) {
+        window.clearTimeout(idleTimerRef.current)
+        idleTimerRef.current = null
       }
-      rafIdRef.current = null
+      if (maxTimerRef.current !== null) {
+        window.clearTimeout(maxTimerRef.current)
+        maxTimerRef.current = null
+      }
+
+      const terminal = terminalRef.current
+      const data = outputBufferRef.current
+      if (!terminal || !data) return
+
+      outputBufferRef.current = ''
+
+      // Wrap in synchronized output sequences so xterm renders atomically
+      terminal.write(BSU + data + ESU, () => {
+        checkScrollPosition()
+      })
+    }
+
+    const scheduleFlush = () => {
+      // Reset idle timer on each new chunk
+      if (idleTimerRef.current !== null) {
+        window.clearTimeout(idleTimerRef.current)
+      }
+      idleTimerRef.current = window.setTimeout(flush, IDLE_FLUSH_MS)
+
+      // Start max timer if not already running
+      if (maxTimerRef.current === null) {
+        maxTimerRef.current = window.setTimeout(flush, MAX_FLUSH_MS)
+      }
     }
 
     const unsubscribe = subscribe((message) => {
@@ -513,26 +590,15 @@ export function useTerminal({
         attachedSession &&
         message.sessionId === attachedSession
       ) {
-        // Buffer output and schedule flush on next frame
         outputBufferRef.current += forceTextPresentation(message.data)
-        if (rafIdRef.current === null) {
-          rafIdRef.current = requestAnimationFrame(flushBuffer)
-        }
+        scheduleFlush()
       }
     })
 
     return () => {
       unsubscribe()
       // Flush any remaining buffer on cleanup
-      if (rafIdRef.current !== null) {
-        cancelAnimationFrame(rafIdRef.current)
-        rafIdRef.current = null
-      }
-      const terminal = terminalRef.current
-      if (terminal && outputBufferRef.current) {
-        terminal.write(outputBufferRef.current)
-        outputBufferRef.current = ''
-      }
+      flush()
     }
   }, [subscribe, checkScrollPosition])
 
