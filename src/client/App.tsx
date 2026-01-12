@@ -67,6 +67,17 @@ export default function App() {
       if (message.type === 'session-created') {
         setSelectedSessionId(message.session.id)
       }
+      if (message.type === 'terminal-error') {
+        if (!message.sessionId || message.sessionId === selectedSessionId) {
+          setServerError(`${message.code}: ${message.message}`)
+          window.setTimeout(() => setServerError(null), 6000)
+        }
+      }
+      if (message.type === 'terminal-ready') {
+        if (message.sessionId === selectedSessionId) {
+          setServerError(null)
+        }
+      }
       if (message.type === 'error') {
         setServerError(message.message)
         window.setTimeout(() => setServerError(null), 6000)
@@ -74,7 +85,14 @@ export default function App() {
     })
 
     return () => { unsubscribe() }
-  }, [sendMessage, setSelectedSessionId, setSessions, subscribe, updateSession])
+  }, [
+    selectedSessionId,
+    sendMessage,
+    setSelectedSessionId,
+    setSessions,
+    subscribe,
+    updateSession,
+  ])
 
   const selectedSession = useMemo(() => {
     return sessions.find((session) => session.id === selectedSessionId) || null

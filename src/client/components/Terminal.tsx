@@ -113,6 +113,7 @@ export default function Terminal({
 
   const { containerRef, terminalRef } = useTerminal({
     sessionId: session?.id ?? null,
+    tmuxTarget: session?.tmuxWindow ?? null,
     sendMessage,
     subscribe,
     theme: terminalTheme,

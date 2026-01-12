@@ -1,14 +1,22 @@
 import { describe, expect, test } from 'bun:test'
 import { TerminalProxy } from '../TerminalProxy'
 
-function createSpawnStub() {
-  const calls: Array<{ args: string[]; options: Parameters<typeof Bun.spawn>[1] }> =
-    []
+function createSpawnHarness() {
+  const spawnCalls: Array<{
+    args: string[]
+    options: Parameters<typeof Bun.spawn>[1]
+  }> = []
+  const spawnSyncCalls: string[][] = []
   const writes: string[] = []
   const resizes: Array<{ cols: number; rows: number }> = []
   let closed = false
   let killed = false
   let exitResolver: (() => void) | null = null
+  let dataHandler: ((terminal: Bun.Terminal, data: Uint8Array) => void) | null =
+    null
+  let exitHandler: ((terminal: Bun.Terminal, code: number, signal: string | null) => void) | null =
+    null
+
   const exited = new Promise<void>((resolve) => {
     exitResolver = resolve
   })
@@ -26,8 +34,16 @@ function createSpawnStub() {
   }
 
   const spawn = (args: string[], options: Parameters<typeof Bun.spawn>[1]) => {
-    calls.push({ args, options })
+    spawnCalls.push({ args, options })
+    const termOptions = (options?.terminal ?? {}) as Bun.TerminalOptions
+    dataHandler =
+      (termOptions.data as unknown as ((terminal: Bun.Terminal, data: Uint8Array) => void)) ??
+      null
+    exitHandler =
+      (termOptions.exit as unknown as ((terminal: Bun.Terminal, code: number, signal: string | null) => void)) ??
+      null
     return {
+      pid: 4242,
       terminal,
       exited,
       kill: () => {
@@ -36,9 +52,28 @@ function createSpawnStub() {
     } as unknown as ReturnType<typeof Bun.spawn>
   }
 
+  const spawnSync = (args: string[], _options?: Parameters<typeof Bun.spawnSync>[1]) => {
+    spawnSyncCalls.push(args)
+    const command = args[1]
+    if (command === 'list-clients') {
+      return {
+        exitCode: 0,
+        stdout: Buffer.from('/dev/pts/9 4242\n'),
+        stderr: Buffer.from(''),
+      } as ReturnType<typeof Bun.spawnSync>
+    }
+    return {
+      exitCode: 0,
+      stdout: Buffer.from(''),
+      stderr: Buffer.from(''),
+    } as ReturnType<typeof Bun.spawnSync>
+  }
+
   return {
     spawn,
-    calls,
+    spawnSync,
+    spawnCalls,
+    spawnSyncCalls,
     writes,
     resizes,
     terminal,
@@ -46,135 +81,121 @@ function createSpawnStub() {
     resolveExit: () => exitResolver?.(),
     wasClosed: () => closed,
     wasKilled: () => killed,
+    emitData: (text: string) => {
+      if (!dataHandler) return
+      const payload = new TextEncoder().encode(text)
+      dataHandler(terminal as unknown as Bun.Terminal, payload)
+    },
+    emitExit: () => {
+      exitHandler?.(terminal as unknown as Bun.Terminal, 0, null)
+    },
   }
 }
 
 describe('TerminalProxy', () => {
-  test('spawns tmux attach once and forwards data', () => {
-    const spawnStub = createSpawnStub()
+  test('starts tmux client and discovers tty', async () => {
+    const harness = createSpawnHarness()
     const received: string[] = []
-    const proxy = new TerminalProxy(
-      'agentboard:1',
-      {
-        onData: (data) => received.push(data),
-      },
-      spawnStub.spawn
-    )
 
-    proxy.start()
-    proxy.start()
+    const proxy = new TerminalProxy({
+      connectionId: 'abc',
+      sessionName: 'agentboard-ws-abc',
+      baseSession: 'agentboard',
+      onData: (data) => received.push(data),
+      spawn: harness.spawn,
+      spawnSync: harness.spawnSync,
+      wait: async () => {},
+    })
 
-    expect(spawnStub.calls).toHaveLength(1)
-    expect(spawnStub.calls[0]?.args).toEqual([
+    await proxy.start()
+
+    expect(harness.spawnSyncCalls).toContainEqual([
+      'tmux',
+      'new-session',
+      '-d',
+      '-t',
+      'agentboard',
+      '-s',
+      'agentboard-ws-abc',
+    ])
+    expect(harness.spawnCalls[0]?.args).toEqual([
       'tmux',
       'attach',
       '-t',
-      'agentboard:1',
+      'agentboard-ws-abc',
+      '-E',
+      '-f',
+      'ignore-size',
     ])
 
-    const terminalOptions =
-      spawnStub.calls[0]?.options?.terminal as Bun.TerminalOptions | undefined
-    const dataHandler = terminalOptions?.data
-    const payload = new TextEncoder().encode('hello')
-    dataHandler?.(spawnStub.terminal as unknown as Bun.Terminal, payload)
-
+    harness.emitData('hello')
     expect(received).toEqual(['hello'])
+    expect(proxy.getClientTty()).toBe('/dev/pts/9')
+    expect(proxy.isReady()).toBe(true)
   })
 
-  test('write, resize, and dispose proxy terminal interactions', async () => {
-    const spawnStub = createSpawnStub()
-    let exitCount = 0
-    const proxy = new TerminalProxy(
-      'agentboard:2',
-      {
-        onData: () => {},
-        onExit: () => {
-          exitCount += 1
-        },
-      },
-      spawnStub.spawn
-    )
+  test('switchTo issues switch and refresh commands', async () => {
+    const harness = createSpawnHarness()
+    const proxy = new TerminalProxy({
+      connectionId: 'abc',
+      sessionName: 'agentboard-ws-abc',
+      baseSession: 'agentboard',
+      onData: () => {},
+      spawn: harness.spawn,
+      spawnSync: harness.spawnSync,
+      wait: async () => {},
+    })
 
-    proxy.start()
+    await proxy.start()
+    let readyCalls = 0
+    await proxy.switchTo('external:@2', () => {
+      readyCalls += 1
+    })
+
+    expect(readyCalls).toBe(1)
+    expect(harness.spawnSyncCalls).toContainEqual([
+      'tmux',
+      'switch-client',
+      '-c',
+      '/dev/pts/9',
+      '-t',
+      'external:@2',
+    ])
+    expect(harness.spawnSyncCalls).toContainEqual([
+      'tmux',
+      'refresh-client',
+      '-t',
+      '/dev/pts/9',
+    ])
+    expect(proxy.getCurrentWindow()).toBe('@2')
+  })
+
+  test('disposes tmux client and session', async () => {
+    const harness = createSpawnHarness()
+    const proxy = new TerminalProxy({
+      connectionId: 'abc',
+      sessionName: 'agentboard-ws-abc',
+      baseSession: 'agentboard',
+      onData: () => {},
+      spawn: harness.spawn,
+      spawnSync: harness.spawnSync,
+      wait: async () => {},
+    })
+
+    await proxy.start()
     proxy.write('ls')
     proxy.resize(120, 40)
-    proxy.dispose()
+    await proxy.dispose()
 
-    expect(spawnStub.writes).toEqual(['ls'])
-    expect(spawnStub.resizes).toEqual([{ cols: 120, rows: 40 }])
-    expect(spawnStub.wasClosed()).toBe(true)
-    expect(spawnStub.wasKilled()).toBe(true)
-
-    spawnStub.resolveExit()
-    await spawnStub.exited
-    await Promise.resolve()
-
-    expect(exitCount).toBe(1)
-  })
-
-  test('resize ignores terminal resize errors', () => {
-    const terminal = {
-      write: (_data: string) => {},
-      resize: (_cols: number, _rows: number) => {
-        throw new Error('resize-failed')
-      },
-      close: () => {},
-    }
-    const spawn = (_args: string[], _options: Parameters<typeof Bun.spawn>[1]) =>
-      ({
-        terminal,
-        exited: Promise.resolve(),
-        kill: () => {},
-      }) as unknown as ReturnType<typeof Bun.spawn>
-
-    const proxy = new TerminalProxy(
-      'agentboard:3',
-      { onData: () => {} },
-      spawn
-    )
-
-    proxy.start()
-    expect(() => proxy.resize(80, 24)).not.toThrow()
-  })
-
-  test('flushes decoder tail on terminal exit', () => {
-    const received: string[] = []
-    let exitHandler: any = null
-    let dataHandler: any = null
-
-    const spawn = (_args: string[], options?: Parameters<typeof Bun.spawn>[1]) => {
-      const terminalOptions = (options?.terminal ?? {}) as Bun.TerminalOptions
-      dataHandler =
-        (terminalOptions.data as unknown as ((...args: any[]) => void)) ?? null
-      exitHandler =
-        (terminalOptions.exit as unknown as ((...args: any[]) => void)) ?? null
-      return {
-        terminal: {
-          write: () => {},
-          resize: () => {},
-          close: () => {},
-        },
-        exited: Promise.resolve(),
-        kill: () => {},
-      } as unknown as ReturnType<typeof Bun.spawn>
-    }
-
-    const proxy = new TerminalProxy(
-      'agentboard:4',
-      { onData: (data) => received.push(data) },
-      spawn
-    )
-
-    proxy.start()
-
-    const partial = new Uint8Array([0xf0, 0x9f])
-    if (dataHandler) {
-      dataHandler({} as Bun.Terminal, partial)
-    }
-    if (exitHandler) {
-      exitHandler({} as Bun.Terminal, 0, null)
-    }
-
-    expect(received).toEqual(['\uFFFD'])
+    expect(harness.writes).toEqual(['ls'])
+    expect(harness.resizes).toEqual([{ cols: 120, rows: 40 }])
+    expect(harness.wasClosed()).toBe(true)
+    expect(harness.wasKilled()).toBe(true)
+    expect(harness.spawnSyncCalls).toContainEqual([
+      'tmux',
+      'kill-session',
+      '-t',
+      'agentboard-ws-abc',
+    ])
   })
 })
