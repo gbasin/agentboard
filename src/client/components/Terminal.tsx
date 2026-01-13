@@ -624,8 +624,8 @@ export default function Terminal({
             <PlusIcon width={16} height={16} />
           </button>
 
-          {/* Kill session button - only for managed sessions */}
-          {session?.source === 'managed' && (
+          {/* Kill session button - available for all sessions */}
+          {session && (
             <button
               onClick={() => setShowEndConfirm(true)}
               className="flex h-7 w-7 items-center justify-center rounded bg-danger/10 border border-danger/30 text-danger hover:bg-danger/20 active:scale-95 transition-all"

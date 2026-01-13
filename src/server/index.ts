@@ -275,10 +275,6 @@ function handleKill(sessionId: string, ws: ServerWebSocket<WSData>) {
     send(ws, { type: 'error', message: 'Session not found' })
     return
   }
-  if (session.source !== 'managed') {
-    send(ws, { type: 'error', message: 'Cannot kill external sessions' })
-    return
-  }
 
   try {
     sessionManager.killWindow(session.tmuxWindow)
