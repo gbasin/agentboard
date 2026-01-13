@@ -113,6 +113,7 @@ export default function Terminal({
 
   const { containerRef, terminalRef } = useTerminal({
     sessionId: session?.id ?? null,
+    tmuxTarget: session?.tmuxWindow ?? null,
     sendMessage,
     subscribe,
     theme: terminalTheme,
@@ -145,6 +146,56 @@ export default function Terminal({
       setIsDrawerOpen(false)
     }
   }, [isDrawerOpen, isMobileLayout])
+
+  // Swipe from left edge to open drawer
+  useEffect(() => {
+    if (!isMobileLayout) return
+
+    const EDGE_THRESHOLD = 30 // pixels from left edge to start
+    const SWIPE_DISTANCE = 50 // min horizontal swipe distance
+    const SWIPE_RATIO = 1.5 // horizontal distance must be > vertical * ratio
+
+    let touchStartX = 0
+    let touchStartY = 0
+    let isEdgeSwipe = false
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (isDrawerOpen) return
+      const touch = e.touches[0]
+      // Only start tracking if touch begins near left edge
+      if (touch.clientX <= EDGE_THRESHOLD) {
+        touchStartX = touch.clientX
+        touchStartY = touch.clientY
+        isEdgeSwipe = true
+      } else {
+        isEdgeSwipe = false
+      }
+    }
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (!isEdgeSwipe || isDrawerOpen) return
+
+      const touch = e.changedTouches[0]
+      const deltaX = touch.clientX - touchStartX
+      const deltaY = Math.abs(touch.clientY - touchStartY)
+
+      // Check if swipe was primarily horizontal and far enough
+      if (deltaX >= SWIPE_DISTANCE && deltaX > deltaY * SWIPE_RATIO) {
+        setIsDrawerOpen(true)
+        triggerHaptic()
+      }
+
+      isEdgeSwipe = false
+    }
+
+    document.addEventListener('touchstart', handleTouchStart, { passive: true })
+    document.addEventListener('touchend', handleTouchEnd, { passive: true })
+
+    return () => {
+      document.removeEventListener('touchstart', handleTouchStart)
+      document.removeEventListener('touchend', handleTouchEnd)
+    }
+  }, [isMobileLayout, isDrawerOpen])
 
   // Close more menu when clicking outside
   useEffect(() => {

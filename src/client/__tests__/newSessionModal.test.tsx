@@ -1,10 +1,9 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import TestRenderer, { act } from 'react-test-renderer'
 import NewSessionModal, {
-  getCommandMode,
-  resolveCommand,
   resolveProjectPath,
 } from '../components/NewSessionModal'
+import { DEFAULT_PRESETS } from '../stores/settingsStore'
 
 const globalAny = globalThis as typeof globalThis & {
   window?: Window & typeof globalThis
@@ -77,15 +76,6 @@ describe('NewSessionModal helpers', () => {
     })
     expect(resolvedWindows).toBe('C:\\work\\app')
   })
-
-  test('derives command modes and final commands', () => {
-    expect(getCommandMode('claude')).toBe('claude')
-    expect(getCommandMode('codex')).toBe('codex')
-    expect(getCommandMode('bun run dev')).toBe('custom')
-
-    expect(resolveCommand('custom', ' bun ')).toBe('bun')
-    expect(resolveCommand('claude', 'ignored')).toBe('claude')
-  })
 })
 
 describe('NewSessionModal component', () => {
@@ -94,6 +84,7 @@ describe('NewSessionModal component', () => {
 
     const created: Array<{ path: string; name?: string; command?: string }> = []
     let closed = 0
+    const updatedModifiers: Array<{ presetId: string; modifiers: string }> = []
 
     let renderer!: TestRenderer.ReactTestRenderer
 
@@ -108,7 +99,11 @@ describe('NewSessionModal component', () => {
             created.push({ path, name, command })
           }}
           defaultProjectDir="/base"
-          defaultCommand="codex"
+          commandPresets={DEFAULT_PRESETS}
+          defaultPresetId="claude"
+          onUpdateModifiers={(presetId, modifiers) => {
+            updatedModifiers.push({ presetId, modifiers })
+          }}
           lastProjectPath="/last"
           activeProjectPath="/active"
         />
@@ -172,7 +167,9 @@ describe('NewSessionModal component', () => {
           }}
           onCreate={() => {}}
           defaultProjectDir="/base"
-          defaultCommand="claude"
+          commandPresets={DEFAULT_PRESETS}
+          defaultPresetId="claude"
+          onUpdateModifiers={() => {}}
         />
       )
     })
@@ -188,6 +185,61 @@ describe('NewSessionModal component', () => {
     })
 
     expect(closed).toBe(2)
+
+    act(() => {
+      renderer.unmount()
+    })
+  })
+
+  test('auto-saves modifiers when changed', () => {
+    setupDom()
+
+    const created: Array<{ path: string; name?: string; command?: string }> = []
+    const updatedModifiers: Array<{ presetId: string; modifiers: string }> = []
+
+    let renderer!: TestRenderer.ReactTestRenderer
+
+    act(() => {
+      renderer = TestRenderer.create(
+        <NewSessionModal
+          isOpen
+          onClose={() => {}}
+          onCreate={(path, name, command) => {
+            created.push({ path, name, command })
+          }}
+          defaultProjectDir="/base"
+          commandPresets={DEFAULT_PRESETS}
+          defaultPresetId="claude"
+          onUpdateModifiers={(presetId, modifiers) => {
+            updatedModifiers.push({ presetId, modifiers })
+          }}
+          lastProjectPath="/last"
+          activeProjectPath="/active"
+        />
+      )
+    })
+
+    // Find the modifiers input (third input after project path and name)
+    const inputs = renderer.root.findAllByType('input')
+    const modifiersInput = inputs[2]
+
+    act(() => {
+      modifiersInput.props.onChange({ target: { value: '--model opus' } })
+    })
+
+    const form = renderer.root.findByType('form')
+
+    act(() => {
+      form.props.onSubmit({ preventDefault: () => {} })
+    })
+
+    // Should have auto-saved the modifier
+    expect(updatedModifiers).toEqual([
+      { presetId: 'claude', modifiers: '--model opus' },
+    ])
+
+    // Command should include the modifier
+    expect(created[0].command).toBe('claude --model opus')
 
     act(() => {
       renderer.unmount()
