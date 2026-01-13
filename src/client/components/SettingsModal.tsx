@@ -86,6 +86,25 @@ export default function SettingsModal({
       setNewBaseCommand('')
       setNewModifiers('')
       setNewAgentType('')
+      // Disable terminal textarea when modal opens to prevent keyboard capture
+      if (typeof document !== 'undefined') {
+        const textarea = document.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement | null
+        if (textarea && typeof textarea.setAttribute === 'function') {
+          if (typeof textarea.blur === 'function') textarea.blur()
+          textarea.setAttribute('disabled', 'true')
+        }
+      }
+    } else {
+      // Re-enable terminal textarea when modal closes
+      if (typeof document !== 'undefined') {
+        setTimeout(() => {
+          const textarea = document.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement | null
+          if (textarea) {
+            textarea.removeAttribute('disabled')
+            textarea.focus()
+          }
+        }, 300)
+      }
     }
   }, [
     commandPresets,
@@ -98,6 +117,21 @@ export default function SettingsModal({
     shortcutModifier,
     isOpen,
   ])
+
+  // Handle keyboard events - stop propagation to prevent terminal/App.tsx handlers
+  useEffect(() => {
+    if (!isOpen) return
+    if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (typeof e.stopPropagation === 'function') e.stopPropagation()
+      if (e.key === 'Escape') {
+        onClose()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown, true)
+    return () => window.removeEventListener('keydown', handleKeyDown, true)
+  }, [isOpen, onClose])
 
   if (!isOpen) {
     return null

@@ -68,6 +68,14 @@ export default function NewSessionModal({
       }, 300)
       return
     }
+    // Disable terminal textarea when modal opens to prevent keyboard capture
+    if (typeof document !== 'undefined') {
+      const textarea = document.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement | null
+      if (textarea && typeof textarea.setAttribute === 'function') {
+        if (typeof textarea.blur === 'function') textarea.blur()
+        textarea.setAttribute('disabled', 'true')
+      }
+    }
     // Initialize state when opening
     const basePath =
       activeProjectPath?.trim() || lastProjectPath || defaultProjectDir
@@ -99,6 +107,7 @@ export default function NewSessionModal({
 
   useEffect(() => {
     if (!isOpen) return
+    if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return
 
     const getFocusableElements = () => {
       if (!formRef.current) return []
@@ -109,6 +118,9 @@ export default function NewSessionModal({
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (showBrowser) return
+
+      // Stop propagation to prevent terminal and App.tsx handlers from receiving events
+      if (typeof e.stopPropagation === 'function') e.stopPropagation()
 
       if (e.key === 'Escape') {
         onClose()
@@ -142,8 +154,8 @@ export default function NewSessionModal({
         focusableElements[nextIndex]?.focus()
       }
     }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
+    window.addEventListener('keydown', handleKeyDown, true)
+    return () => window.removeEventListener('keydown', handleKeyDown, true)
   }, [isOpen, onClose, showBrowser])
 
   if (!isOpen) {
