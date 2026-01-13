@@ -44,7 +44,11 @@ export default function App() {
   const defaultProjectDir = useSettingsStore(
     (state) => state.defaultProjectDir
   )
-  const defaultCommand = useSettingsStore((state) => state.defaultCommand)
+  const commandPresets = useSettingsStore((state) => state.commandPresets)
+  const defaultPresetId = useSettingsStore((state) => state.defaultPresetId)
+  const updatePresetModifiers = useSettingsStore(
+    (state) => state.updatePresetModifiers
+  )
   const lastProjectPath = useSettingsStore((state) => state.lastProjectPath)
   const setLastProjectPath = useSettingsStore(
     (state) => state.setLastProjectPath
@@ -67,6 +71,17 @@ export default function App() {
       if (message.type === 'session-created') {
         setSelectedSessionId(message.session.id)
       }
+      if (message.type === 'terminal-error') {
+        if (!message.sessionId || message.sessionId === selectedSessionId) {
+          setServerError(`${message.code}: ${message.message}`)
+          window.setTimeout(() => setServerError(null), 6000)
+        }
+      }
+      if (message.type === 'terminal-ready') {
+        if (message.sessionId === selectedSessionId) {
+          setServerError(null)
+        }
+      }
       if (message.type === 'error') {
         setServerError(message.message)
         window.setTimeout(() => setServerError(null), 6000)
@@ -74,7 +89,14 @@ export default function App() {
     })
 
     return () => { unsubscribe() }
-  }, [sendMessage, setSelectedSessionId, setSessions, subscribe, updateSession])
+  }, [
+    selectedSessionId,
+    sendMessage,
+    setSelectedSessionId,
+    setSessions,
+    subscribe,
+    updateSession,
+  ])
 
   const selectedSession = useMemo(() => {
     return sessions.find((session) => session.id === selectedSessionId) || null
@@ -223,7 +245,9 @@ export default function App() {
         onClose={() => setIsModalOpen(false)}
         onCreate={handleCreateSession}
         defaultProjectDir={defaultProjectDir}
-        defaultCommand={defaultCommand}
+        commandPresets={commandPresets}
+        defaultPresetId={defaultPresetId}
+        onUpdateModifiers={updatePresetModifiers}
         lastProjectPath={lastProjectPath}
         activeProjectPath={selectedSession?.projectPath}
       />

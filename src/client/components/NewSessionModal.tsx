@@ -1,31 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
+import { type CommandPreset, getFullCommand } from '../stores/settingsStore'
 
 interface NewSessionModalProps {
   isOpen: boolean
   onClose: () => void
   onCreate: (projectPath: string, name?: string, command?: string) => void
   defaultProjectDir: string
-  defaultCommand: string
+  commandPresets: CommandPreset[]
+  defaultPresetId: string
+  onUpdateModifiers: (presetId: string, modifiers: string) => void
   lastProjectPath?: string | null
   activeProjectPath?: string
-}
-
-export type CommandMode = 'claude' | 'codex' | 'custom'
-
-const COMMAND_PRESETS = [
-  { label: 'Claude', value: 'claude' },
-  { label: 'Codex', value: 'codex' },
-  { label: 'Custom', value: '' },
-] as const
-
-export function getCommandMode(defaultCommand: string): CommandMode {
-  if (defaultCommand === 'claude') return 'claude'
-  if (defaultCommand === 'codex') return 'codex'
-  return 'custom'
-}
-
-export function resolveCommand(commandMode: CommandMode, command: string): string {
-  return commandMode === 'custom' ? command.trim() : commandMode
 }
 
 export function resolveProjectPath({
@@ -64,23 +49,41 @@ export default function NewSessionModal({
   onClose,
   onCreate,
   defaultProjectDir,
-  defaultCommand,
+  commandPresets,
+  defaultPresetId,
+  onUpdateModifiers,
   lastProjectPath,
   activeProjectPath,
 }: NewSessionModalProps) {
   const [projectPath, setProjectPath] = useState('')
   const [name, setName] = useState('')
-  const [command, setCommand] = useState('')
-  const [commandMode, setCommandMode] = useState<CommandMode>('claude')
+  const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null)
+  const [modifiers, setModifiers] = useState('')
+  const [customCommand, setCustomCommand] = useState('')
+  const [isCustomMode, setIsCustomMode] = useState(false)
   const formRef = useRef<HTMLFormElement>(null)
+
+  // Get current preset
+  const selectedPreset = selectedPresetId
+    ? commandPresets.find(p => p.id === selectedPresetId)
+    : null
+
+  // Compute preview command
+  const previewCommand = isCustomMode
+    ? customCommand.trim()
+    : selectedPreset
+      ? getFullCommand({ ...selectedPreset, modifiers })
+      : ''
 
   useEffect(() => {
     if (!isOpen) {
       setProjectPath('')
       setName('')
-      setCommand('')
-      setCommandMode('claude')
-      // Focus terminal after modal closes (with delay to let it settle)
+      setSelectedPresetId(null)
+      setModifiers('')
+      setCustomCommand('')
+      setIsCustomMode(false)
+      // Focus terminal after modal closes
       setTimeout(() => {
         const textarea = document.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement | null
         if (textarea) {
@@ -90,22 +93,32 @@ export default function NewSessionModal({
       }, 300)
       return
     }
-    // Priority: active session -> last used -> default
+    // Initialize state when opening
     const basePath =
       activeProjectPath?.trim() || lastProjectPath || defaultProjectDir
     setProjectPath(basePath)
     setName('')
-    const nextMode = getCommandMode(defaultCommand)
-    setCommandMode(nextMode)
-    setCommand(nextMode === 'custom' ? defaultCommand : '')
-  }, [activeProjectPath, defaultCommand, defaultProjectDir, isOpen, lastProjectPath])
+    // Select default preset
+    const defaultPreset = commandPresets.find(p => p.id === defaultPresetId)
+    if (defaultPreset) {
+      setSelectedPresetId(defaultPresetId)
+      setModifiers(defaultPreset.modifiers)
+      setIsCustomMode(false)
+    } else if (commandPresets.length > 0) {
+      setSelectedPresetId(commandPresets[0].id)
+      setModifiers(commandPresets[0].modifiers)
+      setIsCustomMode(false)
+    } else {
+      setIsCustomMode(true)
+    }
+    setCustomCommand('')
+  }, [activeProjectPath, commandPresets, defaultPresetId, defaultProjectDir, isOpen, lastProjectPath])
 
   useEffect(() => {
     if (!isOpen) return
 
     const getFocusableElements = () => {
       if (!formRef.current) return []
-      // Only get elements that are actually tabbable (not tabindex="-1")
       const selector =
         'input:not([disabled]), button:not([disabled]):not([tabindex="-1"]), [tabindex="0"]'
       return Array.from(formRef.current.querySelectorAll<HTMLElement>(selector))
@@ -117,14 +130,12 @@ export default function NewSessionModal({
         return
       }
 
-      // Enter key submits form from anywhere (except input fields which handle it natively)
       if (e.key === 'Enter' && document.activeElement?.tagName !== 'INPUT') {
         e.preventDefault()
         formRef.current?.requestSubmit()
         return
       }
 
-      // Focus trap: manually handle all Tab navigation within the modal
       if (e.key === 'Tab') {
         e.preventDefault()
         const focusableElements = getFocusableElements()
@@ -135,10 +146,8 @@ export default function NewSessionModal({
 
         let nextIndex: number
         if (e.shiftKey) {
-          // Shift+Tab: go backwards
           nextIndex = currentIndex <= 0 ? focusableElements.length - 1 : currentIndex - 1
         } else {
-          // Tab: go forwards
           nextIndex = currentIndex >= focusableElements.length - 1 ? 0 : currentIndex + 1
         }
 
@@ -153,6 +162,20 @@ export default function NewSessionModal({
     return null
   }
 
+  const handlePresetSelect = (presetId: string) => {
+    const preset = commandPresets.find(p => p.id === presetId)
+    if (preset) {
+      setSelectedPresetId(presetId)
+      setModifiers(preset.modifiers)
+      setIsCustomMode(false)
+    }
+  }
+
+  const handleCustomSelect = () => {
+    setIsCustomMode(true)
+    setSelectedPresetId(null)
+  }
+
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault()
     const resolvedPath = resolveProjectPath({
@@ -164,7 +187,21 @@ export default function NewSessionModal({
     if (!resolvedPath) {
       return
     }
-    const finalCommand = resolveCommand(commandMode, command)
+
+    let finalCommand: string
+    if (isCustomMode) {
+      finalCommand = customCommand.trim()
+    } else if (selectedPreset) {
+      // Auto-save modifier if changed
+      const trimmedModifiers = modifiers.trim()
+      if (trimmedModifiers !== selectedPreset.modifiers.trim()) {
+        onUpdateModifiers(selectedPreset.id, trimmedModifiers)
+      }
+      finalCommand = getFullCommand({ ...selectedPreset, modifiers: trimmedModifiers })
+    } else {
+      finalCommand = ''
+    }
+
     onCreate(
       resolvedPath,
       name.trim() || undefined,
@@ -172,6 +209,12 @@ export default function NewSessionModal({
     )
     onClose()
   }
+
+  // Build button list: presets + Custom
+  const allOptions = [
+    ...commandPresets.map(p => ({ id: p.id, label: p.label, isCustom: false })),
+    { id: 'custom', label: 'Custom', isCustom: true },
+  ]
 
   return (
     <div
@@ -234,55 +277,79 @@ export default function NewSessionModal({
             <label className="mb-1.5 block text-xs text-secondary">
               Command
             </label>
-            <div className="flex gap-2" role="radiogroup" aria-label="Command type">
-              {COMMAND_PRESETS.map((preset, index) => {
-                const mode = preset.value || 'custom'
-                const isActive = commandMode === mode
-                const modes = COMMAND_PRESETS.map((p) => p.value || 'custom')
+            <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Command preset">
+              {allOptions.map((option, index) => {
+                const isActive = option.isCustom ? isCustomMode : selectedPresetId === option.id
                 return (
                   <button
-                    key={mode}
+                    key={option.id}
                     type="button"
                     role="radio"
                     aria-checked={isActive}
                     tabIndex={isActive ? 0 : -1}
                     onClick={() => {
-                      setCommandMode(mode as CommandMode)
-                      if (mode !== 'custom') setCommand('')
+                      if (option.isCustom) {
+                        handleCustomSelect()
+                      } else {
+                        handlePresetSelect(option.id)
+                      }
                     }}
                     onKeyDown={(e) => {
                       let newIndex = index
                       if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
                         e.preventDefault()
-                        newIndex = (index + 1) % modes.length
+                        newIndex = (index + 1) % allOptions.length
                       } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
                         e.preventDefault()
-                        newIndex = (index - 1 + modes.length) % modes.length
+                        newIndex = (index - 1 + allOptions.length) % allOptions.length
                       } else {
                         return
                       }
-                      const newMode = modes[newIndex] as CommandMode
-                      setCommandMode(newMode)
-                      if (newMode !== 'custom') setCommand('')
-                      // Focus the new button
+                      const newOption = allOptions[newIndex]
+                      if (newOption.isCustom) {
+                        handleCustomSelect()
+                      } else {
+                        handlePresetSelect(newOption.id)
+                      }
                       const container = e.currentTarget.parentElement
                       const buttons = container?.querySelectorAll<HTMLButtonElement>('[role="radio"]')
                       buttons?.[newIndex]?.focus()
                     }}
-                    className={`btn flex-1 text-xs ${isActive ? 'btn-primary' : ''}`}
+                    className={`btn text-xs ${isActive ? 'btn-primary' : ''}`}
                   >
-                    {preset.label}
+                    {option.label}
                   </button>
                 )
               })}
             </div>
-            {commandMode === 'custom' && (
+
+            {/* Modifier input for presets */}
+            {!isCustomMode && selectedPreset && (
+              <div className="mt-2">
+                <input
+                  value={modifiers}
+                  onChange={(event) => setModifiers(event.target.value)}
+                  placeholder="Modifiers (e.g., --model opus)"
+                  className="input font-mono text-sm"
+                />
+              </div>
+            )}
+
+            {/* Custom command input */}
+            {isCustomMode && (
               <input
-                value={command}
-                onChange={(event) => setCommand(event.target.value)}
+                value={customCommand}
+                onChange={(event) => setCustomCommand(event.target.value)}
                 placeholder="Enter custom command..."
                 className="input mt-2 font-mono"
               />
+            )}
+
+            {/* Command preview */}
+            {previewCommand && (
+              <p className="mt-2 text-xs text-muted font-mono truncate">
+                Will run: {previewCommand}
+              </p>
             )}
           </div>
         </div>

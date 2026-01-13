@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import TestRenderer, { act } from 'react-test-renderer'
 import SettingsModal from '../components/SettingsModal'
 import {
-  DEFAULT_COMMAND,
+  DEFAULT_PRESETS,
   DEFAULT_PROJECT_DIR,
   useSettingsStore,
 } from '../stores/settingsStore'
@@ -38,6 +38,8 @@ beforeEach(() => {
   useSettingsStore.setState({
     defaultProjectDir: '/projects',
     defaultCommand: 'codex',
+    commandPresets: DEFAULT_PRESETS,
+    defaultPresetId: 'codex',
     lastProjectPath: null,
     sessionSortMode: 'created',
     sessionSortDirection: 'desc',
@@ -48,7 +50,9 @@ afterEach(() => {
   globalAny.localStorage = originalLocalStorage
   useSettingsStore.setState({
     defaultProjectDir: DEFAULT_PROJECT_DIR,
-    defaultCommand: DEFAULT_COMMAND,
+    defaultCommand: 'claude',
+    commandPresets: DEFAULT_PRESETS,
+    defaultPresetId: 'claude',
     lastProjectPath: null,
     sessionSortMode: 'created',
     sessionSortDirection: 'desc',
@@ -67,10 +71,10 @@ describe('SettingsModal', () => {
     })
 
     const inputs = renderer.root.findAllByType('input')
+    const dirInput = inputs[0]
 
     act(() => {
-      inputs[0].props.onChange({ target: { value: '   ' } })
-      inputs[1].props.onChange({ target: { value: '   ' } })
+      dirInput.props.onChange({ target: { value: '   ' } })
     })
 
     const statusButton = renderer.root
@@ -93,9 +97,9 @@ describe('SettingsModal', () => {
 
     const state = useSettingsStore.getState()
     expect(state.defaultProjectDir).toBe(DEFAULT_PROJECT_DIR)
-    expect(state.defaultCommand).toBe(DEFAULT_COMMAND)
     expect(state.sessionSortMode).toBe('status')
     expect(state.sessionSortDirection).toBe('desc')
+    expect(state.commandPresets.length).toBe(2)
     expect(closed).toBe(1)
 
     act(() => {
@@ -114,16 +118,16 @@ describe('SettingsModal', () => {
     })
 
     let inputs = renderer.root.findAllByType('input')
+    const dirInput = inputs[0]
 
     act(() => {
-      inputs[0].props.onChange({ target: { value: '/dirty' } })
-      inputs[1].props.onChange({ target: { value: 'dirty' } })
+      dirInput.props.onChange({ target: { value: '/dirty' } })
     })
 
     act(() => {
       useSettingsStore.setState({
         defaultProjectDir: '/next',
-        defaultCommand: 'claude',
+        defaultPresetId: 'claude',
         sessionSortMode: 'status',
         sessionSortDirection: 'asc',
       })
@@ -139,7 +143,6 @@ describe('SettingsModal', () => {
 
     inputs = renderer.root.findAllByType('input')
     expect(inputs[0].props.value).toBe('/next')
-    expect(inputs[1].props.value).toBe('claude')
 
     const statusButton = renderer.root
       .findAllByType('button')
@@ -150,6 +153,46 @@ describe('SettingsModal', () => {
     }
 
     expect(statusButton.props.className).toContain('btn-primary')
+
+    act(() => {
+      renderer.unmount()
+    })
+  })
+
+  test('updates preset modifiers', () => {
+    let renderer!: TestRenderer.ReactTestRenderer
+
+    act(() => {
+      renderer = TestRenderer.create(
+        <SettingsModal isOpen onClose={() => {}} />
+      )
+    })
+
+    // Find the modifiers input for Claude preset (first preset)
+    const inputs = renderer.root.findAllByType('input')
+    // Input layout: [dir, Claude label, Claude base, Claude modifiers, Codex label, Codex base, Codex modifiers]
+    // The modifiers input for Claude is the 4th input (index 3)
+    const claudeModifiersInput = inputs.find((input) =>
+      input.props.placeholder === '--flag value'
+    )
+
+    if (!claudeModifiersInput) {
+      throw new Error('Expected modifiers input')
+    }
+
+    act(() => {
+      claudeModifiersInput.props.onChange({ target: { value: '--model opus' } })
+    })
+
+    const form = renderer.root.findByType('form')
+
+    act(() => {
+      form.props.onSubmit({ preventDefault: () => {} })
+    })
+
+    const state = useSettingsStore.getState()
+    const claudePreset = state.commandPresets.find(p => p.id === 'claude')
+    expect(claudePreset?.modifiers).toBe('--model opus')
 
     act(() => {
       renderer.unmount()

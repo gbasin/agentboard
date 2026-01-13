@@ -1,7 +1,7 @@
 /**
  * SessionDrawer - Mobile slide-out drawer for session list
  * Slides in from left side, covers ~75% of screen width
- * Tap backdrop or press Escape to close
+ * Close by: tap backdrop, press Escape, or swipe left
  */
 
 import { useEffect, useRef } from 'react'
@@ -64,6 +64,46 @@ export default function SessionDrawer({
       previousFocusRef.current = null
     }
   }, [isOpen])
+
+  // Swipe left to close drawer
+  useEffect(() => {
+    if (!isOpen) return
+
+    const drawer = drawerRef.current
+    if (!drawer) return
+
+    const SWIPE_DISTANCE = 50 // min horizontal swipe distance
+    const SWIPE_RATIO = 1.5 // horizontal distance must be > vertical * ratio
+
+    let touchStartX = 0
+    let touchStartY = 0
+
+    const handleTouchStart = (e: TouchEvent) => {
+      const touch = e.touches[0]
+      touchStartX = touch.clientX
+      touchStartY = touch.clientY
+    }
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      const touch = e.changedTouches[0]
+      const deltaX = touchStartX - touch.clientX // positive = swipe left
+      const deltaY = Math.abs(touch.clientY - touchStartY)
+
+      // Check if swipe was primarily horizontal (leftward) and far enough
+      if (deltaX >= SWIPE_DISTANCE && deltaX > deltaY * SWIPE_RATIO) {
+        if ('vibrate' in navigator) navigator.vibrate(10)
+        onClose()
+      }
+    }
+
+    drawer.addEventListener('touchstart', handleTouchStart, { passive: true })
+    drawer.addEventListener('touchend', handleTouchEnd, { passive: true })
+
+    return () => {
+      drawer.removeEventListener('touchstart', handleTouchStart)
+      drawer.removeEventListener('touchend', handleTouchEnd)
+    }
+  }, [isOpen, onClose])
 
   // Handle session selection - close drawer after selecting
   const handleSelect = (sessionId: string) => {

@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import {
-  DEFAULT_COMMAND,
   DEFAULT_PROJECT_DIR,
+  MAX_PRESETS,
   useSettingsStore,
+  type CommandPreset,
   type SessionSortDirection,
   type SessionSortMode,
   type ShortcutModifier,
@@ -27,8 +28,10 @@ export default function SettingsModal({
   const setDefaultProjectDir = useSettingsStore(
     (state) => state.setDefaultProjectDir
   )
-  const defaultCommand = useSettingsStore((state) => state.defaultCommand)
-  const setDefaultCommand = useSettingsStore((state) => state.setDefaultCommand)
+  const commandPresets = useSettingsStore((state) => state.commandPresets)
+  const setCommandPresets = useSettingsStore((state) => state.setCommandPresets)
+  const defaultPresetId = useSettingsStore((state) => state.defaultPresetId)
+  const setDefaultPresetId = useSettingsStore((state) => state.setDefaultPresetId)
   const sessionSortMode = useSettingsStore((state) => state.sessionSortMode)
   const setSessionSortMode = useSettingsStore(
     (state) => state.setSessionSortMode
@@ -47,7 +50,8 @@ export default function SettingsModal({
   )
 
   const [draftDir, setDraftDir] = useState(defaultProjectDir)
-  const [draftCommand, setDraftCommand] = useState(defaultCommand)
+  const [draftPresets, setDraftPresets] = useState<CommandPreset[]>(commandPresets)
+  const [draftDefaultPresetId, setDraftDefaultPresetId] = useState(defaultPresetId)
   const [draftSortMode, setDraftSortMode] =
     useState<SessionSortMode>(sessionSortMode)
   const [draftSortDirection, setDraftSortDirection] =
@@ -57,17 +61,31 @@ export default function SettingsModal({
     ShortcutModifier | 'auto'
   >(shortcutModifier)
 
+  // New preset form state
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [newLabel, setNewLabel] = useState('')
+  const [newBaseCommand, setNewBaseCommand] = useState('')
+  const [newModifiers, setNewModifiers] = useState('')
+  const [newAgentType, setNewAgentType] = useState<'claude' | 'codex' | ''>('')
+
   useEffect(() => {
     if (isOpen) {
       setDraftDir(defaultProjectDir)
-      setDraftCommand(defaultCommand)
+      setDraftPresets(commandPresets)
+      setDraftDefaultPresetId(defaultPresetId)
       setDraftSortMode(sessionSortMode)
       setDraftSortDirection(sessionSortDirection)
       setDraftUseWebGL(useWebGL)
       setDraftShortcutModifier(shortcutModifier)
+      setShowAddForm(false)
+      setNewLabel('')
+      setNewBaseCommand('')
+      setNewModifiers('')
+      setNewAgentType('')
     }
   }, [
-    defaultCommand,
+    commandPresets,
+    defaultPresetId,
     defaultProjectDir,
     sessionSortMode,
     sessionSortDirection,
@@ -83,16 +101,58 @@ export default function SettingsModal({
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault()
     const trimmedDir = draftDir.trim()
-    const trimmedCommand = draftCommand.trim()
     const webglChanged = draftUseWebGL !== useWebGL
     setDefaultProjectDir(trimmedDir || DEFAULT_PROJECT_DIR)
-    setDefaultCommand(trimmedCommand || DEFAULT_COMMAND)
+    setCommandPresets(draftPresets)
+    setDefaultPresetId(draftDefaultPresetId)
     setSessionSortMode(draftSortMode)
     setSessionSortDirection(draftSortDirection)
     setUseWebGL(draftUseWebGL)
     setShortcutModifier(draftShortcutModifier)
     onClose({ webglChanged })
   }
+
+  const handleUpdatePreset = (presetId: string, updates: Partial<CommandPreset>) => {
+    setDraftPresets(presets =>
+      presets.map(p => p.id === presetId ? { ...p, ...updates } : p)
+    )
+  }
+
+  const handleDeletePreset = (presetId: string) => {
+    const preset = draftPresets.find(p => p.id === presetId)
+    if (!preset || preset.isBuiltIn) return
+
+    const filtered = draftPresets.filter(p => p.id !== presetId)
+    setDraftPresets(filtered)
+
+    // Update default if deleted preset was default
+    if (presetId === draftDefaultPresetId) {
+      setDraftDefaultPresetId(filtered[0]?.id || 'claude')
+    }
+  }
+
+  const handleAddPreset = () => {
+    if (!newLabel.trim() || !newBaseCommand.trim()) return
+    if (draftPresets.length >= MAX_PRESETS) return
+
+    const newPreset: CommandPreset = {
+      id: `custom-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      label: newLabel.trim(),
+      baseCommand: newBaseCommand.trim(),
+      modifiers: newModifiers.trim(),
+      isBuiltIn: false,
+      agentType: newAgentType || undefined,
+    }
+
+    setDraftPresets([...draftPresets, newPreset])
+    setShowAddForm(false)
+    setNewLabel('')
+    setNewBaseCommand('')
+    setNewModifiers('')
+    setNewAgentType('')
+  }
+
+  const canAddPreset = draftPresets.length < MAX_PRESETS
 
   return (
     <div
@@ -103,14 +163,13 @@ export default function SettingsModal({
     >
       <form
         onSubmit={handleSubmit}
-        className="w-full max-w-md border border-border bg-elevated p-6"
+        className="w-full max-w-lg max-h-[90vh] overflow-y-auto border border-border bg-elevated p-6"
       >
         <h2 className="text-sm font-semibold uppercase tracking-wider text-primary text-balance">
           Settings
         </h2>
         <p className="mt-2 text-xs text-muted text-pretty">
-          Set the default directory for new sessions. Tilde (~) resolves to your
-          home directory on the server.
+          Configure default directory, command presets, and display options.
         </p>
 
         <div className="mt-5 space-y-4">
@@ -126,16 +185,160 @@ export default function SettingsModal({
               autoFocus
             />
           </div>
-          <div>
-            <label className="mb-1.5 block text-xs text-secondary">
-              Default Command
-            </label>
-            <input
-              value={draftCommand}
-              onChange={(event) => setDraftCommand(event.target.value)}
-              placeholder={DEFAULT_COMMAND}
-              className="input font-mono"
-            />
+
+          {/* Command Presets Section */}
+          <div className="border-t border-border pt-4">
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs text-secondary">
+                Command Presets
+              </label>
+              <select
+                value={draftDefaultPresetId}
+                onChange={(e) => setDraftDefaultPresetId(e.target.value)}
+                className="input text-xs py-1 px-2 w-auto"
+              >
+                {draftPresets.map(p => (
+                  <option key={p.id} value={p.id}>{p.label}</option>
+                ))}
+              </select>
+            </div>
+            <p className="text-[10px] text-muted mb-3">
+              Default preset is pre-selected when creating new sessions.
+            </p>
+
+            <div className="space-y-3">
+              {draftPresets.map(preset => (
+                <div
+                  key={preset.id}
+                  className="border border-border p-3 space-y-2"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      {preset.isBuiltIn && (
+                        <span className="text-[10px] text-muted">🔒</span>
+                      )}
+                      <input
+                        value={preset.label}
+                        onChange={(e) => handleUpdatePreset(preset.id, { label: e.target.value })}
+                        className="input text-sm py-1 px-2 w-32"
+                        placeholder="Label"
+                      />
+                    </div>
+                    {!preset.isBuiltIn && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeletePreset(preset.id)}
+                        className="btn text-xs px-2 py-1 text-error hover:bg-error/10"
+                      >
+                        Delete
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] text-muted block mb-1">Base Command</label>
+                      <input
+                        value={preset.baseCommand}
+                        onChange={(e) => handleUpdatePreset(preset.id, { baseCommand: e.target.value })}
+                        className="input text-xs py-1 px-2 font-mono"
+                        placeholder="command"
+                        disabled={preset.isBuiltIn}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-muted block mb-1">Modifiers</label>
+                      <input
+                        value={preset.modifiers}
+                        onChange={(e) => handleUpdatePreset(preset.id, { modifiers: e.target.value })}
+                        className="input text-xs py-1 px-2 font-mono"
+                        placeholder="--flag value"
+                      />
+                    </div>
+                  </div>
+
+                  {!preset.isBuiltIn && (
+                    <div>
+                      <label className="text-[10px] text-muted block mb-1">Icon</label>
+                      <select
+                        value={preset.agentType || ''}
+                        onChange={(e) => handleUpdatePreset(preset.id, {
+                          agentType: e.target.value as 'claude' | 'codex' | undefined || undefined
+                        })}
+                        className="input text-xs py-1 px-2 w-auto"
+                      >
+                        <option value="">Terminal</option>
+                        <option value="claude">Claude</option>
+                        <option value="codex">Codex</option>
+                      </select>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Add Preset Form */}
+            {showAddForm ? (
+              <div className="mt-3 border border-border p-3 space-y-2">
+                <div className="text-xs text-secondary mb-2">New Preset</div>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    value={newLabel}
+                    onChange={(e) => setNewLabel(e.target.value)}
+                    className="input text-xs py-1 px-2"
+                    placeholder="Label"
+                  />
+                  <input
+                    value={newBaseCommand}
+                    onChange={(e) => setNewBaseCommand(e.target.value)}
+                    className="input text-xs py-1 px-2 font-mono"
+                    placeholder="command"
+                  />
+                </div>
+                <input
+                  value={newModifiers}
+                  onChange={(e) => setNewModifiers(e.target.value)}
+                  className="input text-xs py-1 px-2 font-mono w-full"
+                  placeholder="Modifiers (optional)"
+                />
+                <div className="flex items-center gap-2">
+                  <select
+                    value={newAgentType}
+                    onChange={(e) => setNewAgentType(e.target.value as 'claude' | 'codex' | '')}
+                    className="input text-xs py-1 px-2 w-auto"
+                  >
+                    <option value="">Terminal Icon</option>
+                    <option value="claude">Claude Icon</option>
+                    <option value="codex">Codex Icon</option>
+                  </select>
+                  <div className="flex-1" />
+                  <button
+                    type="button"
+                    onClick={() => setShowAddForm(false)}
+                    className="btn text-xs px-2 py-1"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleAddPreset}
+                    disabled={!newLabel.trim() || !newBaseCommand.trim()}
+                    className="btn btn-primary text-xs px-2 py-1"
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowAddForm(true)}
+                disabled={!canAddPreset}
+                className="btn text-xs mt-3 w-full"
+              >
+                {canAddPreset ? '+ Add Preset' : `Max ${MAX_PRESETS} presets`}
+              </button>
+            )}
           </div>
 
           <div className="border-t border-border pt-4">

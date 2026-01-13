@@ -177,6 +177,7 @@ function createContainerMock() {
 
 function TerminalHarness(props: {
   sessionId: string | null
+  tmuxTarget?: string | null
   sendMessage: (message: any) => void
   subscribe: (listener: (message: ServerMessage) => void) => () => void
   theme: ITheme
@@ -184,7 +185,11 @@ function TerminalHarness(props: {
   useWebGL?: boolean
   onScrollChange?: (isAtBottom: boolean) => void
 }) {
-  const { containerRef } = useTerminal({ ...props, useWebGL: props.useWebGL ?? true })
+  const { containerRef } = useTerminal({
+    ...props,
+    tmuxTarget: props.tmuxTarget ?? null,
+    useWebGL: props.useWebGL ?? true,
+  })
   return <div ref={containerRef} />
 }
 
@@ -286,6 +291,7 @@ describe('useTerminal', () => {
       renderer = TestRenderer.create(
         <TerminalHarness
           sessionId="session-1"
+          tmuxTarget="agentboard:@1"
           sendMessage={(message) => sendCalls.push(message)}
           subscribe={(listener) => {
             listeners.push(listener)
@@ -358,6 +364,7 @@ describe('useTerminal', () => {
       renderer.update(
         <TerminalHarness
           sessionId="session-1"
+          tmuxTarget="agentboard:@1"
           sendMessage={(message) => sendCalls.push(message)}
           subscribe={(listener) => {
             listeners.push(listener)
@@ -391,6 +398,7 @@ describe('useTerminal', () => {
       renderer = TestRenderer.create(
         <TerminalHarness
           sessionId="session-1"
+          tmuxTarget="agentboard:@1"
           sendMessage={(message) => sendCalls.push(message)}
           subscribe={() => () => {}}
           theme={{ background: '#000' }}
@@ -406,6 +414,7 @@ describe('useTerminal', () => {
       renderer.update(
         <TerminalHarness
           sessionId="session-2"
+          tmuxTarget="agentboard:@2"
           sendMessage={(message) => sendCalls.push(message)}
           subscribe={() => () => {}}
           theme={{ background: '#000' }}
@@ -421,6 +430,9 @@ describe('useTerminal', () => {
     expect(sendCalls).toContainEqual({
       type: 'terminal-attach',
       sessionId: 'session-2',
+      tmuxTarget: 'agentboard:@2',
+      cols: 80,
+      rows: 24,
     })
 
     act(() => {
