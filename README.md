@@ -37,6 +37,8 @@ bun run build
 bun run start
 ```
 
+For persistent deployment on Linux, see [systemd/README.md](systemd/README.md).
+
 ## Keyboard Shortcuts
 
 | Action | Mac | Windows/Linux |
