@@ -11,3 +11,4 @@ coverage
 .idea
 playwright-report
 test-results
+systemd/agentboard.service
