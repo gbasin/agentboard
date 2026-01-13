@@ -1,5 +1,6 @@
 export const config = {
   port: Number(process.env.PORT) || 4040,
+  hostname: process.env.HOSTNAME || '0.0.0.0',
   tmuxSession: process.env.TMUX_SESSION || 'agentboard',
   refreshIntervalMs: Number(process.env.REFRESH_INTERVAL_MS) || 2000,
   discoverPrefixes: (process.env.DISCOVER_PREFIXES || '')

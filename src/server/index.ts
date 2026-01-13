@@ -136,6 +136,7 @@ const tlsEnabled = config.tlsCert && config.tlsKey
 
 Bun.serve<WSData>({
   port: config.port,
+  hostname: config.hostname,
   ...(tlsEnabled && {
     tls: {
       cert: Bun.file(config.tlsCert),
@@ -169,7 +170,14 @@ Bun.serve<WSData>({
 })
 
 const protocol = tlsEnabled ? 'https' : 'http'
-console.log(`Agentboard server running on ${protocol}://localhost:${config.port}`)
+const displayHost = config.hostname === '0.0.0.0' ? 'localhost' : config.hostname
+console.log(`Agentboard server running on ${protocol}://${displayHost}:${config.port}`)
+if (config.hostname === '0.0.0.0') {
+  const tsIp = getTailscaleIp()
+  if (tsIp) {
+    console.log(`  Also accessible at: ${protocol}://${tsIp}:${config.port}`)
+  }
+}
 
 // Cleanup all terminals on server shutdown
 function cleanupAllTerminals() {
