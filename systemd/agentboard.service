@@ -1,0 +1,15 @@
+[Unit]
+Description=Agentboard - Terminal session dashboard
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/repos/agentboard
+ExecStart=/home/brenner/.bun/bin/bun run start
+Restart=on-failure
+RestartSec=5
+Environment=NODE_ENV=production
+Environment=PATH=/home/brenner/.bun/bin:/home/brenner/.local/bin:/home/brenner/bin:/home/brenner/.local/share/pnpm:/home/brenner/.nvm/versions/node/v22.18.0/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin
+
+[Install]
+WantedBy=default.target

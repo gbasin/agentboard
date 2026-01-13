@@ -11,7 +11,7 @@
     "start": "bun src/server/index.ts",
     "lint": "oxlint .",
     "typecheck": "tsc --noEmit",
-    "test": "bun test src/server/__tests__ src/client/__tests__",
+    "test": "bun test src/server/__tests__/*.test.ts src/client/__tests__ && bun test src/server/__tests__/isolated/",
     "test:coverage": "bun test --coverage --coverage-reporter=lcov src/server/__tests__ src/client/__tests__ && bun run coverage:all",
     "coverage:all": "bun scripts/coverage-all.ts",
     "test:e2e": "playwright test",
