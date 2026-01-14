@@ -173,7 +173,7 @@ export function computeSimilarityWithMode(
   left: string,
   right: string,
   {
-    mode = 'jaccard',
+    mode = 'containment',
     minTokens = MIN_TOKEN_COUNT,
   }: {
     mode?: SimilarityMode
@@ -189,7 +189,7 @@ export function scoreLogAgainstWindows(
   logContent: string,
   windows: Session[],
   scrollbackLines = DEFAULT_SCROLLBACK_LINES,
-  similarityMode: SimilarityMode = 'jaccard',
+  similarityMode: SimilarityMode = 'containment',
   minTokens = MIN_TOKEN_COUNT
 ): WindowScore[] {
   const logTokens = tokenizeForSimilarity(logContent)
@@ -226,7 +226,7 @@ export function findMatchingWindow(
     logLineLimit = DEFAULT_LOG_LINE_LIMIT,
     logByteLimit = DEFAULT_LOG_BYTE_LIMIT,
     logTextMode = 'assistant-user',
-    similarityMode = 'jaccard',
+    similarityMode = 'containment',
     matchScope = 'full',
     minTokens = MIN_TOKEN_COUNT,
   }: {

@@ -210,7 +210,6 @@ export class LogPoller {
           createdAt,
           lastActivityAt,
           currentWindow,
-          sessionSource: 'log',
         })
         newSessions += 1
         if (currentWindow) {

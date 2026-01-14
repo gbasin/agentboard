@@ -1,10 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { createHash } from 'node:crypto'
 import { Database as SQLiteDatabase } from 'bun:sqlite'
 import type { AgentType } from '../shared/types'
-
-export type SessionSource = 'log' | 'synthetic'
 
 export interface AgentSessionRecord {
   id: number
@@ -16,7 +13,6 @@ export interface AgentSessionRecord {
   createdAt: string
   lastActivityAt: string
   currentWindow: string | null
-  sessionSource: SessionSource
 }
 
 export interface SessionDatabase {
@@ -41,8 +37,7 @@ const DEFAULT_DATA_DIR = path.join(
 )
 const DEFAULT_DB_PATH = path.join(DEFAULT_DATA_DIR, 'agentboard.db')
 
-const CREATE_TABLE_SQL = `
-CREATE TABLE IF NOT EXISTS agent_sessions (
+const AGENT_SESSIONS_COLUMNS_SQL = `
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   session_id TEXT UNIQUE,
   log_file_path TEXT NOT NULL UNIQUE,
@@ -51,10 +46,16 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
   display_name TEXT,
   created_at TEXT NOT NULL,
   last_activity_at TEXT NOT NULL,
-  current_window TEXT,
-  session_source TEXT NOT NULL CHECK (session_source IN ('log', 'synthetic'))
-);
+  current_window TEXT
+`
 
+const CREATE_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS agent_sessions (
+${AGENT_SESSIONS_COLUMNS_SQL}
+);
+`
+
+const CREATE_INDEXES_SQL = `
 CREATE INDEX IF NOT EXISTS idx_session_id
   ON agent_sessions (session_id);
 CREATE INDEX IF NOT EXISTS idx_log_file_path
@@ -68,12 +69,14 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
   ensureDataDir(dbPath)
 
   const db = new SQLiteDatabase(dbPath)
+  migrateDatabase(db)
   db.exec(CREATE_TABLE_SQL)
+  db.exec(CREATE_INDEXES_SQL)
 
   const insertStmt = db.prepare(
     `INSERT INTO agent_sessions
-      (session_id, log_file_path, project_path, agent_type, display_name, created_at, last_activity_at, current_window, session_source)
-     VALUES ($sessionId, $logFilePath, $projectPath, $agentType, $displayName, $createdAt, $lastActivityAt, $currentWindow, $sessionSource)`
+      (session_id, log_file_path, project_path, agent_type, display_name, created_at, last_activity_at, current_window)
+     VALUES ($sessionId, $logFilePath, $projectPath, $agentType, $displayName, $createdAt, $lastActivityAt, $currentWindow)`
   )
 
   const selectBySessionId = db.prepare(
@@ -111,7 +114,6 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
         $createdAt: session.createdAt,
         $lastActivityAt: session.lastActivityAt,
         $currentWindow: session.currentWindow,
-        $sessionSource: session.sessionSource,
       })
       const row = selectBySessionId.get({ $sessionId: session.sessionId }) as
         | Record<string, unknown>
@@ -139,7 +141,6 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
         createdAt: 'created_at',
         lastActivityAt: 'last_activity_at',
         currentWindow: 'current_window',
-        sessionSource: 'session_source',
       }
 
       const fields: string[] = []
@@ -205,11 +206,6 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
   }
 }
 
-export function generateSyntheticId(logFilePath: string): string {
-  const hash = createHash('sha1').update(logFilePath).digest('hex')
-  return `synthetic-${hash.slice(0, 16)}`
-}
-
 function ensureDataDir(dbPath: string) {
   if (dbPath === ':memory:') {
     return
@@ -245,6 +241,63 @@ function mapRow(row: Record<string, unknown>): AgentSessionRecord {
       row.current_window === null || row.current_window === undefined
         ? null
         : String(row.current_window),
-    sessionSource: row.session_source as SessionSource,
   }
+}
+
+function migrateDatabase(db: SQLiteDatabase) {
+  const columns = getColumnNames(db, 'agent_sessions')
+  if (columns.length === 0 || !columns.includes('session_source')) {
+    return
+  }
+
+  db.exec('BEGIN')
+  try {
+    db.exec('ALTER TABLE agent_sessions RENAME TO agent_sessions_old')
+    createAgentSessionsTable(db, 'agent_sessions')
+    db.exec(`
+      INSERT INTO agent_sessions (
+        id,
+        session_id,
+        log_file_path,
+        project_path,
+        agent_type,
+        display_name,
+        created_at,
+        last_activity_at,
+        current_window
+      )
+      SELECT
+        id,
+        session_id,
+        log_file_path,
+        project_path,
+        agent_type,
+        display_name,
+        created_at,
+        last_activity_at,
+        current_window
+      FROM agent_sessions_old
+      WHERE session_source = 'log'
+    `)
+    db.exec('DROP TABLE agent_sessions_old')
+    db.exec('COMMIT')
+  } catch (error) {
+    db.exec('ROLLBACK')
+    throw error
+  }
+}
+
+function createAgentSessionsTable(db: SQLiteDatabase, tableName: string) {
+  db.exec(`
+    CREATE TABLE ${tableName} (
+${AGENT_SESSIONS_COLUMNS_SQL}
+    );
+  `)
+}
+
+function getColumnNames(db: SQLiteDatabase, tableName: string): string[] {
+  const rows = db
+    .prepare(`PRAGMA table_info(${tableName})`)
+    .all() as Array<{ name?: string }>
+  return rows.map((row) => String(row.name ?? '')).filter(Boolean)
 }
