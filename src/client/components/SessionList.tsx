@@ -324,7 +324,7 @@ function SessionRow({
           )}
           {sessionIdSuffix && (
             <span
-              className="shrink-0 rounded bg-border px-1.5 py-px text-[10px] font-mono leading-snug text-muted"
+              className="shrink-0 text-[11px] font-mono text-muted/70"
               title={agentSessionId}
             >
               #{sessionIdSuffix}
