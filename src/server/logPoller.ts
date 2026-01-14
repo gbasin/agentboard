@@ -16,6 +16,7 @@ const MIN_INTERVAL_MS = 2000
 const DEFAULT_INTERVAL_MS = 5000
 const DEFAULT_MAX_LOGS = 25
 const MIN_LOG_TOKENS_FOR_INSERT = 10
+const REMATCH_COOLDOWN_MS = 5 * 60 * 1000 // 5 minutes between re-match attempts
 
 const debugMatch = process.env.DEBUG?.includes('agentboard:match') ?? false
 
@@ -37,6 +38,8 @@ export class LogPoller {
   private maxLogsPerPoll: number
   // Cache of empty logs: logPath -> mtime when checked (re-check if mtime changes)
   private emptyLogCache: Map<string, number> = new Map()
+  // Cache of re-match attempts: sessionId -> timestamp of last attempt
+  private rematchAttemptCache: Map<string, number> = new Map()
 
   constructor(
     db: SessionDatabase,
@@ -135,8 +138,34 @@ export class LogPoller {
 
         const existingById = this.db.getSessionById(sessionId)
         if (existingById) {
-          if (entry.mtime > Date.parse(existingById.lastActivityAt)) {
+          const hasActivity = entry.mtime > Date.parse(existingById.lastActivityAt)
+          if (hasActivity) {
             this.db.updateSession(sessionId, { lastActivityAt })
+          }
+
+          // Re-attempt matching for orphaned sessions (no currentWindow)
+          if (!existingById.currentWindow && hasActivity) {
+            const lastAttempt = this.rematchAttemptCache.get(sessionId) ?? 0
+            if (Date.now() - lastAttempt > REMATCH_COOLDOWN_MS) {
+              this.rematchAttemptCache.set(sessionId, Date.now())
+              const result = findMatchingWindow(entry.logPath, windows)
+              if (result.match) {
+                const claimed = this.db.getSessionByWindow(result.match.tmuxWindow)
+                if (!claimed) {
+                  this.db.updateSession(sessionId, {
+                    currentWindow: result.match.tmuxWindow,
+                    displayName: result.match.name,
+                  })
+                  logger.info('session_rematched', {
+                    sessionId,
+                    window: result.match.tmuxWindow,
+                    displayName: result.match.name,
+                    score: result.bestScore,
+                  })
+                  this.onSessionActivated?.(sessionId, result.match.tmuxWindow)
+                }
+              }
+            }
           }
           continue
         }
