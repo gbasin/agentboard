@@ -26,13 +26,28 @@ const TMUX_PROMPT_PREFIX = /^[\s>*#$❯]+/
 export interface WindowScore {
   window: Session
   score: number
+  leftTokens?: number
+  rightTokens?: number
 }
+
+export type MatchReason =
+  | 'matched'
+  | 'no_windows'
+  | 'too_few_tokens'
+  | 'low_score'
+  | 'low_gap'
 
 export interface MatchResult {
   match: Session | null
   bestScore: number
   secondScore: number
   scores: WindowScore[]
+  reason: MatchReason
+  minScore: number
+  minGap: number
+  minTokens: number
+  bestLeftTokens?: number
+  bestRightTokens?: number
 }
 
 export type LogTextMode = 'all' | 'assistant' | 'user' | 'assistant-user'
@@ -222,7 +237,16 @@ export function findMatchingWindow(
   } = {}
 ): MatchResult {
   if (windows.length === 0) {
-    return { match: null, bestScore: 0, secondScore: 0, scores: [] }
+    return {
+      match: null,
+      bestScore: 0,
+      secondScore: 0,
+      scores: [],
+      reason: 'no_windows',
+      minScore,
+      minGap,
+      minTokens,
+    }
   }
 
   let scores: WindowScore[] = []
@@ -276,9 +300,30 @@ export function findMatchingWindow(
   const bestScore = scores[0]?.score ?? 0
   const secondScore = scores[1]?.score ?? 0
   const gap = bestScore - secondScore
-  const match = bestScore >= minScore && gap >= minGap ? scores[0]?.window ?? null : null
 
-  return { match, bestScore, secondScore, scores }
+  let match: Session | null = null
+  let reason: MatchReason = 'matched'
+
+  if (bestScore < minScore) {
+    reason = 'low_score'
+  } else if (gap < minGap) {
+    reason = 'low_gap'
+  } else {
+    match = scores[0]?.window ?? null
+  }
+
+  return {
+    match,
+    bestScore,
+    secondScore,
+    scores,
+    reason,
+    minScore,
+    minGap,
+    minTokens,
+    bestLeftTokens: scores[0]?.leftTokens,
+    bestRightTokens: scores[0]?.rightTokens,
+  }
 }
 
 function tokenizeNormalized(text: string): string[] {
