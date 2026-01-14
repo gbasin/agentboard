@@ -9,13 +9,14 @@ import {
   inferAgentTypeFromPath,
   scanAllLogDirs,
 } from './logDiscovery'
-import { findMatchingWindow } from './logMatcher'
+import { findMatchingWindow, getLogTokenCount } from './logMatcher'
 import { deriveDisplayName } from './agentSessions'
 import type { SessionRegistry } from './SessionRegistry'
 
 const MIN_INTERVAL_MS = 2000
 const DEFAULT_INTERVAL_MS = 5000
-const DEFAULT_MAX_LOGS = 200
+const DEFAULT_MAX_LOGS = 25
+const MIN_LOG_TOKENS_FOR_INSERT = 10
 
 const debugMatch = process.env.DEBUG?.includes('agentboard:match') ?? false
 
@@ -35,6 +36,8 @@ export class LogPoller {
   private onSessionOrphaned?: (sessionId: string) => void
   private onSessionActivated?: (sessionId: string, window: string) => void
   private maxLogsPerPoll: number
+  // Cache of empty logs: logPath -> mtime when checked (re-check if mtime changes)
+  private emptyLogCache: Map<string, number> = new Map()
 
   constructor(
     db: SessionDatabase,
@@ -108,6 +111,12 @@ export class LogPoller {
           continue
         }
 
+        // Skip logs we've already checked and found empty (unless mtime changed)
+        const cachedMtime = this.emptyLogCache.get(entry.logPath)
+        if (cachedMtime !== undefined && cachedMtime >= entry.mtime) {
+          continue
+        }
+
         const agentType = inferAgentTypeFromPath(entry.logPath)
         if (!agentType) {
           continue
@@ -136,10 +145,16 @@ export class LogPoller {
           logPath: entry.logPath,
           windowCount: windows.length,
           matched: Boolean(result.match),
+          reason: result.reason,
           matchedWindow: result.match?.tmuxWindow ?? null,
           matchedName: result.match?.name ?? null,
           bestScore: Number(result.bestScore.toFixed(4)),
           secondScore: Number(result.secondScore.toFixed(4)),
+          minScore: result.minScore,
+          minGap: result.minGap,
+          minTokens: result.minTokens,
+          bestLeftTokens: result.bestLeftTokens ?? null,
+          bestRightTokens: result.bestRightTokens ?? null,
         })
         if (debugMatch && result.scores.length > 0) {
           logger.debug('log_match_scores', {
@@ -151,6 +166,20 @@ export class LogPoller {
             bestScore: result.bestScore,
             secondScore: result.secondScore,
           })
+        }
+
+        const logTokenCount =
+          result.bestLeftTokens ?? getLogTokenCount(entry.logPath)
+        if (logTokenCount < MIN_LOG_TOKENS_FOR_INSERT) {
+          // Cache this empty log so we don't re-check it every poll
+          this.emptyLogCache.set(entry.logPath, entry.mtime)
+          logger.info('log_match_skipped', {
+            logPath: entry.logPath,
+            reason: 'too_few_tokens',
+            minTokens: MIN_LOG_TOKENS_FOR_INSERT,
+            logTokens: logTokenCount,
+          })
+          continue
         }
 
         const matchedWindow = result.match

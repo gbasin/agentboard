@@ -324,7 +324,7 @@ function SessionRow({
           )}
           {sessionIdSuffix && (
             <span
-              className="shrink-0 rounded bg-border px-1.5 py-0.5 text-[10px] font-mono text-muted"
+              className="shrink-0 rounded bg-border px-1.5 py-px text-[10px] font-mono leading-snug text-muted"
               title={agentSessionId}
             >
               #{sessionIdSuffix}
@@ -333,7 +333,7 @@ function SessionRow({
           {needsInput ? (
             <HandIcon className="h-4 w-4 shrink-0 text-approval" aria-label="Needs input" />
           ) : (
-            <span className="shrink-0 text-xs tabular-nums text-muted">{lastActivity}</span>
+            <span className="ml-1 w-8 shrink-0 text-right text-xs tabular-nums text-muted">{lastActivity}</span>
           )}
         </div>
 

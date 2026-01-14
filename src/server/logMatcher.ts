@@ -4,7 +4,10 @@ import type { Session } from '../shared/types'
 const DEFAULT_LOG_LINE_LIMIT = 2000
 const DEFAULT_LOG_BYTE_LIMIT = 200 * 1024
 const DEFAULT_SCROLLBACK_LINES = 2000
-const MIN_TOKEN_COUNT = 50
+const MIN_TOKEN_COUNT = 10
+const DEFAULT_MIN_SCORE = 0.7
+const SHORT_SESSION_TOKENS = 300
+const SHORT_SESSION_MIN_SCORE = 0.3
 const LAST_EXCHANGE_MIN_TOKENS = 5
 
 const TMUX_DECORATIVE_LINE_PATTERN =
@@ -146,6 +149,22 @@ export function extractLogText(
   return chunks.join('\n')
 }
 
+export function getLogTokenCount(
+  logPath: string,
+  {
+    mode = 'assistant-user',
+    lineLimit = DEFAULT_LOG_LINE_LIMIT,
+    byteLimit = DEFAULT_LOG_BYTE_LIMIT,
+  }: {
+    mode?: LogTextMode
+    lineLimit?: number
+    byteLimit?: number
+  } = {}
+): number {
+  const content = extractLogText(logPath, { mode, lineLimit, byteLimit })
+  return tokenizeForSimilarity(content).length
+}
+
 export function computeSimilarity(left: string, right: string): number {
   return computeSimilarityWithMode(left, right)
 }
@@ -161,8 +180,192 @@ export function computeSimilarityWithMode(
     minTokens?: number
   } = {}
 ): number {
-  const leftTokens = tokenizeNormalized(normalizeText(left))
-  const rightTokens = tokenizeNormalized(normalizeText(right))
+  const leftTokens = tokenizeForSimilarity(left)
+  const rightTokens = tokenizeForSimilarity(right)
+  return computeSimilarityFromTokens(leftTokens, rightTokens, mode, minTokens)
+}
+
+export function scoreLogAgainstWindows(
+  logContent: string,
+  windows: Session[],
+  scrollbackLines = DEFAULT_SCROLLBACK_LINES,
+  similarityMode: SimilarityMode = 'jaccard',
+  minTokens = MIN_TOKEN_COUNT
+): WindowScore[] {
+  const logTokens = tokenizeForSimilarity(logContent)
+  const logTokenCount = logTokens.length
+  return windows
+    .map((window) => {
+      const scrollback = getTerminalScrollback(
+        window.tmuxWindow,
+        scrollbackLines
+      )
+      const rightTokens = tokenizeForSimilarity(scrollback)
+      return {
+        window,
+        score: computeSimilarityFromTokens(
+          logTokens,
+          rightTokens,
+          similarityMode,
+          minTokens
+        ),
+        leftTokens: logTokenCount,
+        rightTokens: rightTokens.length,
+      }
+    })
+    .sort((a, b) => b.score - a.score)
+}
+
+export function findMatchingWindow(
+  logPath: string,
+  windows: Session[],
+  {
+    minScore = DEFAULT_MIN_SCORE,
+    minGap = 0.02,
+    scrollbackLines = DEFAULT_SCROLLBACK_LINES,
+    logLineLimit = DEFAULT_LOG_LINE_LIMIT,
+    logByteLimit = DEFAULT_LOG_BYTE_LIMIT,
+    logTextMode = 'assistant-user',
+    similarityMode = 'jaccard',
+    matchScope = 'full',
+    minTokens = MIN_TOKEN_COUNT,
+  }: {
+    minScore?: number
+    minGap?: number
+    scrollbackLines?: number
+    logLineLimit?: number
+    logByteLimit?: number
+    logTextMode?: LogTextMode
+    similarityMode?: SimilarityMode
+    matchScope?: MatchScope
+    minTokens?: number
+  } = {}
+): MatchResult {
+  const minTokensUsed =
+    matchScope === 'last-exchange' && minTokens === MIN_TOKEN_COUNT
+      ? LAST_EXCHANGE_MIN_TOKENS
+      : minTokens
+  if (windows.length === 0) {
+    return {
+      match: null,
+      bestScore: 0,
+      secondScore: 0,
+      scores: [],
+      reason: 'no_windows',
+      minScore,
+      minGap,
+      minTokens: minTokensUsed,
+    }
+  }
+
+  let scores: WindowScore[] = []
+  if (matchScope === 'last-exchange') {
+    const logPair = extractLastConversationFromLog(logPath, {
+      lineLimit: logLineLimit,
+      byteLimit: logByteLimit,
+    })
+    const logCombined = [logPair.user, logPair.assistant]
+      .filter(Boolean)
+      .join('\n')
+    scores = windows
+      .map((window) => {
+        const tmuxContent = getTerminalScrollback(
+          window.tmuxWindow,
+          scrollbackLines
+        )
+        const tmuxPair = extractLastConversationFromTmux(tmuxContent)
+        const tmuxCombined = [tmuxPair.user, tmuxPair.assistant]
+          .filter(Boolean)
+          .join('\n')
+        const logAssistantOnly =
+          !tmuxPair.user && tmuxPair.assistant && logPair.assistant
+        const left = logAssistantOnly ? logPair.assistant : logCombined
+        const right = logAssistantOnly ? tmuxPair.assistant : tmuxCombined
+        const leftTokens = tokenizeForSimilarity(left)
+        const rightTokens = tokenizeForSimilarity(right)
+        return {
+          window,
+          score: computeSimilarityFromTokens(
+            leftTokens,
+            rightTokens,
+            similarityMode,
+            minTokensUsed
+          ),
+          leftTokens: leftTokens.length,
+          rightTokens: rightTokens.length,
+        }
+      })
+      .sort((a, b) => b.score - a.score)
+  } else {
+    const logContent = extractLogText(logPath, {
+      mode: logTextMode,
+      lineLimit: logLineLimit,
+      byteLimit: logByteLimit,
+    })
+    scores = scoreLogAgainstWindows(
+      logContent,
+      windows,
+      scrollbackLines,
+      similarityMode,
+      minTokensUsed
+    )
+  }
+  const bestScore = scores[0]?.score ?? 0
+  const secondScore = scores[1]?.score ?? 0
+  const gap = bestScore - secondScore
+
+  let match: Session | null = null
+  let reason: MatchReason = 'matched'
+  const bestLeftTokens = scores[0]?.leftTokens
+  const bestRightTokens = scores[0]?.rightTokens
+  const effectiveMinScore =
+    bestLeftTokens !== undefined && bestLeftTokens < SHORT_SESSION_TOKENS
+      ? Math.min(minScore, SHORT_SESSION_MIN_SCORE)
+      : minScore
+
+  if (
+    (bestLeftTokens !== undefined && bestLeftTokens < minTokensUsed) ||
+    (bestRightTokens !== undefined && bestRightTokens < minTokensUsed)
+  ) {
+    reason = 'too_few_tokens'
+  } else if (bestScore < effectiveMinScore) {
+    reason = 'low_score'
+  } else if (gap < minGap) {
+    reason = 'low_gap'
+  } else {
+    match = scores[0]?.window ?? null
+  }
+
+  return {
+    match,
+    bestScore,
+    secondScore,
+    scores,
+    reason,
+    minScore: effectiveMinScore,
+    minGap,
+    minTokens: minTokensUsed,
+    bestLeftTokens,
+    bestRightTokens,
+  }
+}
+
+function tokenizeNormalized(text: string): string[] {
+  return text.split(/\s+/).map((token) => token.trim()).filter(Boolean)
+}
+
+function tokenizeForSimilarity(text: string): string[] {
+  const normalized = normalizeText(text)
+  if (!normalized) return []
+  return tokenizeNormalized(normalized)
+}
+
+function computeSimilarityFromTokens(
+  leftTokens: string[],
+  rightTokens: string[],
+  mode: SimilarityMode,
+  minTokens: number
+): number {
   if (leftTokens.length < minTokens || rightTokens.length < minTokens) {
     return 0
   }
@@ -190,144 +393,6 @@ export function computeSimilarityWithMode(
   }
 
   return jaccard
-}
-
-export function scoreLogAgainstWindows(
-  logContent: string,
-  windows: Session[],
-  scrollbackLines = DEFAULT_SCROLLBACK_LINES,
-  similarityMode: SimilarityMode = 'jaccard',
-  minTokens = MIN_TOKEN_COUNT
-): WindowScore[] {
-  return windows
-    .map((window) => ({
-      window,
-      score: computeSimilarityWithMode(
-        logContent,
-        getTerminalScrollback(window.tmuxWindow, scrollbackLines),
-        { mode: similarityMode, minTokens }
-      ),
-    }))
-    .sort((a, b) => b.score - a.score)
-}
-
-export function findMatchingWindow(
-  logPath: string,
-  windows: Session[],
-  {
-    minScore = 0.9,
-    minGap = 0.02,
-    scrollbackLines = DEFAULT_SCROLLBACK_LINES,
-    logLineLimit = DEFAULT_LOG_LINE_LIMIT,
-    logByteLimit = DEFAULT_LOG_BYTE_LIMIT,
-    logTextMode = 'assistant-user',
-    similarityMode = 'jaccard',
-    matchScope = 'full',
-    minTokens = MIN_TOKEN_COUNT,
-  }: {
-    minScore?: number
-    minGap?: number
-    scrollbackLines?: number
-    logLineLimit?: number
-    logByteLimit?: number
-    logTextMode?: LogTextMode
-    similarityMode?: SimilarityMode
-    matchScope?: MatchScope
-    minTokens?: number
-  } = {}
-): MatchResult {
-  if (windows.length === 0) {
-    return {
-      match: null,
-      bestScore: 0,
-      secondScore: 0,
-      scores: [],
-      reason: 'no_windows',
-      minScore,
-      minGap,
-      minTokens,
-    }
-  }
-
-  let scores: WindowScore[] = []
-  if (matchScope === 'last-exchange') {
-    const logPair = extractLastConversationFromLog(logPath, {
-      lineLimit: logLineLimit,
-      byteLimit: logByteLimit,
-    })
-    const logCombined = [logPair.user, logPair.assistant]
-      .filter(Boolean)
-      .join('\n')
-    const effectiveMinTokens =
-      minTokens === MIN_TOKEN_COUNT ? LAST_EXCHANGE_MIN_TOKENS : minTokens
-    scores = windows
-      .map((window) => {
-        const tmuxContent = getTerminalScrollback(
-          window.tmuxWindow,
-          scrollbackLines
-        )
-        const tmuxPair = extractLastConversationFromTmux(tmuxContent)
-        const tmuxCombined = [tmuxPair.user, tmuxPair.assistant]
-          .filter(Boolean)
-          .join('\n')
-        const logAssistantOnly =
-          !tmuxPair.user && tmuxPair.assistant && logPair.assistant
-        const left = logAssistantOnly ? logPair.assistant : logCombined
-        const right = logAssistantOnly ? tmuxPair.assistant : tmuxCombined
-        return {
-          window,
-          score: computeSimilarityWithMode(left, right, {
-            mode: similarityMode,
-            minTokens: effectiveMinTokens,
-          }),
-        }
-      })
-      .sort((a, b) => b.score - a.score)
-  } else {
-    const logContent = extractLogText(logPath, {
-      mode: logTextMode,
-      lineLimit: logLineLimit,
-      byteLimit: logByteLimit,
-    })
-    scores = scoreLogAgainstWindows(
-      logContent,
-      windows,
-      scrollbackLines,
-      similarityMode,
-      minTokens
-    )
-  }
-  const bestScore = scores[0]?.score ?? 0
-  const secondScore = scores[1]?.score ?? 0
-  const gap = bestScore - secondScore
-
-  let match: Session | null = null
-  let reason: MatchReason = 'matched'
-
-  if (bestScore < minScore) {
-    reason = 'low_score'
-  } else if (gap < minGap) {
-    reason = 'low_gap'
-  } else {
-    match = scores[0]?.window ?? null
-  }
-
-  return {
-    match,
-    bestScore,
-    secondScore,
-    scores,
-    reason,
-    minScore,
-    minGap,
-    minTokens,
-    bestLeftTokens: scores[0]?.leftTokens,
-    bestRightTokens: scores[0]?.rightTokens,
-  }
-}
-
-function tokenizeNormalized(text: string): string[] {
-  return text.split(/\s+/).map((token) => token.trim()).filter(Boolean)
 }
 
 function stripAnsi(text: string): string {
@@ -501,22 +566,58 @@ function extractLastConversationFromTmux(content: string): ConversationPair {
     rawLines.pop()
   }
 
-  const isPromptLine = (line: string) => {
+  // Claude Code: ❯ for prompts, ⏺ for responses
+  // Codex: › for prompts, • for responses
+  const isClaudePromptLine = (line: string) => {
     const trimmed = line.trim()
-    if (!trimmed) {
-      return false
-    }
-    if (trimmed.includes('↵')) {
-      return true
-    }
-    return TMUX_PROMPT_PREFIX.test(trimmed)
+    if (!trimmed) return false
+    if (trimmed.includes('↵')) return true
+    return /^[\s>*#$❯]+/.test(trimmed) && trimmed.includes('❯')
   }
+
+  const isCodexPromptLine = (line: string) => {
+    const trimmed = line.trim()
+    if (!trimmed) return false
+    // Codex prompt: › at start of line
+    return /^›/.test(trimmed)
+  }
+
+  const isPromptLine = (line: string) => isClaudePromptLine(line) || isCodexPromptLine(line)
 
   const isDecorativeLine = (line: string) =>
     TMUX_DECORATIVE_LINE_PATTERN.test(line)
 
   const isMetadataLine = (line: string) =>
     TMUX_METADATA_PATTERNS.some((pattern) => pattern.test(line))
+
+  // Claude: ⏺ for assistant response bullet
+  const isClaudeBulletLine = (line: string) => /^\s*⏺/.test(line)
+
+  // Codex: • for assistant response bullet
+  const isCodexBulletLine = (line: string) => /^\s*•/.test(line)
+
+  // Any assistant bullet (Claude or Codex)
+  const isBulletLine = (line: string) => isClaudeBulletLine(line) || isCodexBulletLine(line)
+
+  // Detect tool call bullets - these start with tool names like Write(, Bash(, Read(, etc.
+  const isToolCallBullet = (line: string) => {
+    const trimmed = line.trim()
+    if (!isBulletLine(line)) return false
+    // Remove the bullet and check for tool call patterns
+    const afterBullet = trimmed.replace(/^[⏺•]\s*/, '')
+    // Claude tool patterns
+    if (/^(Write|Bash|Read|Glob|Grep|Edit|Task|WebFetch|WebSearch|TodoWrite)\s*\(/.test(afterBullet)) {
+      return true
+    }
+    // Codex tool patterns: "Ran <command>", "Read <file>", etc.
+    if (/^(Ran|Read|Wrote|Created|Updated|Deleted)\s+/.test(afterBullet)) {
+      return true
+    }
+    return false
+  }
+
+  // Check if a bullet is a text response (not a tool call)
+  const isTextBullet = (line: string) => isBulletLine(line) && !isToolCallBullet(line)
 
   const cleanLine = (line: string) =>
     stripAnsi(line)
@@ -527,80 +628,87 @@ function extractLastConversationFromTmux(content: string): ConversationPair {
 
   const extractUserFromPrompt = (line: string) => {
     let cleaned = stripAnsi(line).trim()
+    // Remove Claude prompt prefix (❯)
     cleaned = cleaned.replace(TMUX_PROMPT_PREFIX, '').trim()
+    // Remove Codex prompt prefix (›)
+    cleaned = cleaned.replace(/^›\s*/, '').trim()
     cleaned = cleaned.replace(/\s*↵\s*send\s*$/i, '').trim()
     cleaned = cleaned.replace(TMUX_UI_GLYPH_PATTERN, ' ')
     cleaned = cleaned.replace(/\s+/g, ' ').trim()
     return cleaned
   }
 
-  let promptIndex = -1
-  for (let i = rawLines.length - 1; i >= 0; i -= 1) {
-    if (isPromptLine(rawLines[i] ?? '')) {
-      promptIndex = i
-      break
+  // Extract assistant text from a range of lines, stopping at tool calls or prompts
+  const extractAssistantText = (startIdx: number, endIdx: number): string => {
+    const assistantLines: string[] = []
+    for (let i = startIdx; i < endIdx; i += 1) {
+      const line = rawLines[i] ?? ''
+      const trimmed = line.trim()
+      // Stop if we hit a tool call bullet
+      if (i > startIdx && isToolCallBullet(line)) break
+      // Stop if we hit another text bullet (next response)
+      if (i > startIdx && isTextBullet(line)) break
+      if (!trimmed) continue
+      if (isDecorativeLine(trimmed) || isMetadataLine(trimmed)) continue
+      assistantLines.push(cleanLine(line))
+      if (assistantLines.length >= 60) break
     }
+    return assistantLines.join('\n')
   }
 
-  let user = ''
-  let assistant = ''
-  if (promptIndex >= 0) {
-    const promptLine = rawLines[promptIndex] ?? ''
+  // Extract a specific exchange by index (0 = most recent, 1 = previous, etc.)
+  const tryExtractExchange = (exchangeIndex: number): ConversationPair | null => {
+    // Find all prompts
+    const prompts: number[] = []
+    for (let i = rawLines.length - 1; i >= 0; i--) {
+      if (isPromptLine(rawLines[i] ?? '')) {
+        prompts.push(i)
+      }
+    }
+
+    // Need at least exchangeIndex + 2 prompts (current + previous for the exchange)
+    if (prompts.length < exchangeIndex + 2) return null
+
+    // Get the target prompt pair
+    const currentPromptIdx = prompts[exchangeIndex]
+    const prevPromptIdx = prompts[exchangeIndex + 1]
+
+    const promptLine = rawLines[currentPromptIdx] ?? ''
     const pendingSend = promptLine.includes('↵')
-    user = pendingSend ? '' : extractUserFromPrompt(promptLine)
-    const assistantLines: string[] = []
-    let blankStreak = 0
-    for (let i = promptIndex - 1; i >= 0; i -= 1) {
-      const line = rawLines[i] ?? ''
-      const trimmed = line.trim()
-      if (!trimmed) {
-        if (assistantLines.length > 0) {
-          blankStreak += 1
-          if (blankStreak > 2) {
-            break
-          }
-        }
-        continue
-      }
-      blankStreak = 0
-      if (isPromptLine(line)) {
-        break
-      }
-      if (isDecorativeLine(trimmed) || isMetadataLine(trimmed)) {
-        continue
-      }
-      assistantLines.push(cleanLine(line))
-      if (assistantLines.length >= 60) {
-        break
+    const user = pendingSend ? '' : extractUserFromPrompt(promptLine)
+
+    // Find text bullets between prev prompt and current prompt (skip tool call bullets)
+    const textBullets: number[] = []
+    for (let i = prevPromptIdx + 1; i < currentPromptIdx; i++) {
+      if (isTextBullet(rawLines[i] ?? '')) {
+        textBullets.push(i)
       }
     }
-    assistant = assistantLines.reverse().join('\n')
-  } else {
-    const assistantLines: string[] = []
-    let blankStreak = 0
-    for (let i = rawLines.length - 1; i >= 0; i -= 1) {
-      const line = rawLines[i] ?? ''
-      const trimmed = line.trim()
-      if (!trimmed) {
-        if (assistantLines.length > 0) {
-          blankStreak += 1
-          if (blankStreak > 2) {
-            break
-          }
-        }
-        continue
-      }
-      blankStreak = 0
-      if (isDecorativeLine(trimmed) || isMetadataLine(trimmed)) {
-        continue
-      }
-      assistantLines.push(cleanLine(line))
-      if (assistantLines.length >= 60) {
-        break
-      }
+
+    // Use the first text bullet for assistant response
+    let assistant = ''
+    if (textBullets.length > 0) {
+      const firstTextBullet = textBullets[0]
+      assistant = extractAssistantText(firstTextBullet, currentPromptIdx)
     }
-    assistant = assistantLines.reverse().join('\n')
+
+    // If we got meaningful content, return it
+    if (user.length > 0 || assistant.length > 10) {
+      return { user, assistant }
+    }
+
+    return null
   }
 
-  return { user, assistant }
+  // Try most recent exchange first, then go back up to 3 exchanges
+  // Require meaningful assistant content (not just user) for a valid exchange
+  for (let i = 0; i < 3; i++) {
+    const result = tryExtractExchange(i)
+    if (result && result.assistant.length > 10) {
+      return result
+    }
+  }
+
+  // Fallback: no valid extraction found
+  return { user: '', assistant: '' }
 }

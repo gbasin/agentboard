@@ -77,7 +77,7 @@ describe('config', () => {
     expect(config.tlsCert).toBe('')
     expect(config.tlsKey).toBe('')
     expect(config.logPollIntervalMs).toBe(5000)
-    expect(config.logPollMax).toBe(200)
+    expect(config.logPollMax).toBe(25)
     expect(config.claudeResumeCmd).toBe('claude --resume {sessionId}')
     expect(config.codexResumeCmd).toBe('codex resume {sessionId}')
   })

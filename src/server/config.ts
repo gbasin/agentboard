@@ -15,7 +15,7 @@ const logPollIntervalMs = Number.isFinite(logPollIntervalMsRaw)
   ? logPollIntervalMsRaw
   : 5000
 const logPollMaxRaw = Number(process.env.AGENTBOARD_LOG_POLL_MAX)
-const logPollMax = Number.isFinite(logPollMaxRaw) ? logPollMaxRaw : 200
+const logPollMax = Number.isFinite(logPollMaxRaw) ? logPollMaxRaw : 25
 
 const claudeConfigDir =
   process.env.CLAUDE_CONFIG_DIR || path.join(homeDir, '.claude')
