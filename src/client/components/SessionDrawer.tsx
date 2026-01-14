@@ -152,7 +152,10 @@ export default function SessionDrawer({
         />
 
         {/* New session button at bottom */}
-        <div className="shrink-0 border-t border-border p-2">
+        <div
+          className="shrink-0 border-t border-border px-2 pt-2"
+          style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom, 0.5rem))' }}
+        >
           <button
             onClick={() => {
               onNewSession()

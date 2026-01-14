@@ -397,7 +397,6 @@ body {
     width: 75vw;
     max-width: 300px;
     padding-top: env(safe-area-inset-top, 0px);
-    padding-bottom: env(safe-area-inset-bottom, 0px);
     background: var(--bg-elevated);
     border-right: 1px solid var(--border);
     transform: translateX(-100%);
