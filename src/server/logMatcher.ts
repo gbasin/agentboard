@@ -659,8 +659,8 @@ function extractLastConversationFromTmux(content: string): ConversationPair {
     }
   }
 
-  // Need two prompts to extract an exchange
-  if (currentPromptIdx === -1 || prevPromptIdx === -1) {
+  // No prompts found at all
+  if (currentPromptIdx === -1) {
     return { user: '', assistant: '' }
   }
 
@@ -668,6 +668,31 @@ function extractLastConversationFromTmux(content: string): ConversationPair {
   const pendingSend = promptLine.includes('↵')
   const user = pendingSend ? '' : extractUserFromPrompt(promptLine)
 
+  // Single prompt case (new session): extract user input and any assistant content below
+  if (prevPromptIdx === -1) {
+    // Look for assistant content below the prompt
+    let assistant = ''
+    const assistantLines: string[] = []
+    for (let i = currentPromptIdx + 1; i < rawLines.length; i++) {
+      const line = rawLines[i] ?? ''
+      const trimmed = line.trim()
+      if (!trimmed) continue
+      if (isPromptLine(line)) break // Stop if we hit another prompt
+      if (
+        isDecorativeLine(trimmed) ||
+        isMetadataLine(trimmed, TMUX_METADATA_MATCH_PATTERNS)
+      ) {
+        continue
+      }
+      if (isToolCallBullet(line)) continue // Skip tool calls
+      assistantLines.push(cleanTmuxLine(line))
+      if (assistantLines.length >= 60) break
+    }
+    assistant = assistantLines.join('\n')
+    return { user, assistant }
+  }
+
+  // Two prompts case: extract exchange between prev and current prompt
   // Find text bullets between prev prompt and current prompt (skip tool call bullets)
   let firstTextBulletIdx = -1
   for (let i = prevPromptIdx + 1; i < currentPromptIdx; i++) {
