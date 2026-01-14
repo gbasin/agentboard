@@ -1,6 +1,5 @@
 import { logger } from './logger'
 import type { SessionDatabase } from './db'
-import { generateSyntheticId } from './db'
 import {
   extractProjectPath,
   extractSessionId,
@@ -122,10 +121,12 @@ export class LogPoller {
           continue
         }
 
-        const extractedSessionId = extractSessionId(entry.logPath)
-        const sessionId =
-          extractedSessionId ?? generateSyntheticId(entry.logPath)
-        const sessionSource = extractedSessionId ? 'log' : 'synthetic'
+        const sessionId = extractSessionId(entry.logPath)
+        if (!sessionId) {
+          // No session ID yet - cache and retry on next poll when log has more content
+          this.emptyLogCache.set(entry.logPath, entry.mtime)
+          continue
+        }
         const projectPath = extractProjectPath(entry.logPath) ?? ''
         const createdAt =
           getLogBirthtime(entry.logPath)?.toISOString() ??
@@ -209,7 +210,7 @@ export class LogPoller {
           createdAt,
           lastActivityAt,
           currentWindow,
-          sessionSource,
+          sessionSource: 'log',
         })
         newSessions += 1
         if (currentWindow) {
