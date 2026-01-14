@@ -52,7 +52,7 @@ export default function SessionList({
 }: SessionListProps) {
   useTimestampRefresh()
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
-  const [showInactive, setShowInactive] = useState(true)
+  const [showInactive, setShowInactive] = useState(false)
   const prefersReducedMotion = useReducedMotion()
   const shortcutModifier = useSettingsStore((state) => state.shortcutModifier)
   const modDisplay = getModifierDisplay(getEffectiveModifier(shortcutModifier))
