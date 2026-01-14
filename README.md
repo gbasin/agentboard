@@ -11,10 +11,11 @@ Run your desktop/server, then connect from your phone or laptop over Tailscale/L
   - Touch scrolling
   - Virtual arrow keys / d-pad
   - Quick keys toolbar (ctrl, esc, etc.)
+- Tracks Claude and Codex sessions by parsing their logs, auto-matching to active tmux windows. Inactive sessions can be restored with one click.
 
-| Desktop | Mobile |
-| :---: | :---: |
-| <img src="assets/desktop.png" alt="Desktop" width="500"/> | <img src="assets/mobile.jpeg" alt="Mobile" width="200"/><br/><img src="assets/mobile-controls.jpeg" alt="Mobile controls" width="200"/> |
+| Desktop | Mobile | Sessions |
+| :---: | :---: | :---: |
+| <img src="assets/desktop.png" alt="Desktop" width="500"/> | <img src="assets/mobile.jpeg" alt="Mobile" width="200"/><br/><img src="assets/mobile-controls.jpeg" alt="Mobile controls" width="200"/> | <img src="assets/sessions.png" alt="Sessions" width="200"/> |
 
 ## Requirements
 

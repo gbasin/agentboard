@@ -58,25 +58,51 @@ export default function SessionList({
   const [previewSession, setPreviewSession] = useState<AgentSession | null>(null)
   const prefersReducedMotion = useReducedMotion()
 
+  // Animation sequencing constants (in ms)
+  const EXIT_DURATION = 200
+  const COUNTER_DELAY = EXIT_DURATION
+  const COUNTER_DURATION = 300
+  const ENTRY_DELAY = COUNTER_DELAY + COUNTER_DURATION
+
   // Track counts for counter animations
   const prevActiveCountRef = useRef(sessions.length)
   const prevInactiveCountRef = useRef(inactiveSessions.length)
   const [activeCounterBump, setActiveCounterBump] = useState(false)
   const [inactiveCounterBump, setInactiveCounterBump] = useState(false)
 
+  // Track pending counter bumps (delayed until exit animation completes)
+  const pendingActiveCounterRef = useRef(false)
+  const pendingInactiveCounterRef = useRef(false)
+
+  // Detect count changes and queue delayed counter bumps
   useEffect(() => {
     if (sessions.length !== prevActiveCountRef.current) {
-      setActiveCounterBump(true)
+      pendingActiveCounterRef.current = true
+      const timer = setTimeout(() => {
+        if (pendingActiveCounterRef.current) {
+          setActiveCounterBump(true)
+          pendingActiveCounterRef.current = false
+        }
+      }, COUNTER_DELAY)
+      prevActiveCountRef.current = sessions.length
+      return () => clearTimeout(timer)
     }
-    prevActiveCountRef.current = sessions.length
-  }, [sessions.length])
+  }, [sessions.length, COUNTER_DELAY])
 
   useEffect(() => {
     if (inactiveSessions.length > prevInactiveCountRef.current) {
-      setInactiveCounterBump(true)
+      pendingInactiveCounterRef.current = true
+      const timerId = setTimeout(() => {
+        if (pendingInactiveCounterRef.current) {
+          setInactiveCounterBump(true)
+          pendingInactiveCounterRef.current = false
+        }
+      }, COUNTER_DELAY)
+      prevInactiveCountRef.current = inactiveSessions.length
+      return () => clearTimeout(timerId)
     }
     prevInactiveCountRef.current = inactiveSessions.length
-  }, [inactiveSessions.length])
+  }, [inactiveSessions.length, COUNTER_DELAY])
 
   // Track newly added sessions for entry animations
   const prevActiveIdsRef = useRef<Set<string>>(new Set(sessions.map((s) => s.id)))
@@ -177,6 +203,8 @@ export default function SessionList({
             <AnimatePresence initial={false}>
               {sortedSessions.map((session) => {
                 const isNew = newlyActiveIds.has(session.id)
+                // Delay entry animation for cards transitioning from inactive
+                const entryDelay = isNew ? ENTRY_DELAY / 1000 : 0
                 return (
                 <motion.div
                   key={session.id}
@@ -191,10 +219,10 @@ export default function SessionList({
                   }
                   exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 20, scale: 0.9 }}
                   transition={prefersReducedMotion ? { duration: 0 } : {
-                    layout: { type: 'spring', stiffness: 500, damping: 35 },
-                    opacity: { duration: 0.15 },
-                    y: { duration: 0.3, ease: 'easeOut' },
-                    scale: { duration: 0.4, ease: [0.34, 1.56, 0.64, 1] },
+                    layout: { type: 'spring', stiffness: 500, damping: 35, delay: entryDelay },
+                    opacity: { duration: EXIT_DURATION / 1000, delay: entryDelay },
+                    y: { duration: EXIT_DURATION / 1000, ease: 'easeOut', delay: entryDelay },
+                    scale: { duration: 0.4, ease: [0.34, 1.56, 0.64, 1], delay: entryDelay },
                   }}
                 >
                   <SessionRow
@@ -248,6 +276,8 @@ export default function SessionList({
                 >
                   {inactiveSessions.map((session) => {
                     const isNew = newlyInactiveIds.has(session.sessionId)
+                    // Delay entry animation for cards transitioning from active
+                    const entryDelay = isNew ? ENTRY_DELAY / 1000 : 0
                     return (
                     <motion.div
                       key={session.sessionId}
@@ -265,8 +295,8 @@ export default function SessionList({
                       }
                       transition={{
                         duration: 0.3,
-                        delay: 0.1,
-                        scale: { duration: 0.4, ease: [0.34, 1.56, 0.64, 1] },
+                        delay: entryDelay,
+                        scale: { duration: 0.4, ease: [0.34, 1.56, 0.64, 1], delay: entryDelay },
                       }}
                     >
                       <InactiveSessionItem
