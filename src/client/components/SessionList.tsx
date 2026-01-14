@@ -483,7 +483,7 @@ function SessionRow({
           )}
           {sessionIdSuffix && (
             <span
-              className="shrink-0 text-[11px] font-mono text-muted/70"
+              className="shrink-0 text-[11px] font-mono text-muted opacity-50"
               title={agentSessionId}
             >
               #{sessionIdSuffix}
