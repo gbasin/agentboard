@@ -210,3 +210,30 @@ function getProjectPathFromEntry(entry: Record<string, unknown>): string | null 
 
   return null
 }
+
+/**
+ * Check if a Codex log file is from a subagent (not a main CLI session).
+ * Subagents have payload.source as an object like { subagent: "review" },
+ * while CLI sessions have payload.source as the string "cli".
+ */
+export function isCodexSubagent(logPath: string): boolean {
+  const head = readLogHead(logPath)
+  if (!head) return false
+
+  // Check only the first line (session_meta)
+  const firstLine = head.split('\n')[0]?.trim()
+  if (!firstLine) return false
+
+  const entry = safeParseJson(firstLine)
+  if (!entry) return false
+
+  // Only check session_meta entries
+  if (entry.type !== 'session_meta') return false
+
+  const payload = entry.payload as Record<string, unknown> | undefined
+  if (!payload) return false
+
+  // CLI sessions have source: "cli" (string)
+  // Subagents have source: { subagent: "review" } (object)
+  return typeof payload.source === 'object' && payload.source !== null
+}

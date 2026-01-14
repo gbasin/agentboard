@@ -6,6 +6,7 @@ import {
   encodeProjectPath,
   extractProjectPath,
   extractSessionId,
+  isCodexSubagent,
   scanAllLogDirs,
 } from '../logDiscovery'
 
@@ -101,5 +102,67 @@ describe('log discovery', () => {
 
     expect(extractSessionId(logPath)).toBe('codex-session-456')
     expect(extractProjectPath(logPath)).toBe('/Users/example/codex-project')
+  })
+})
+
+describe('isCodexSubagent', () => {
+  test('returns false for CLI sessions (source is string)', async () => {
+    const codexLogDir = path.join(codexDir, 'sessions', '2026', '01', '10')
+    await fs.mkdir(codexLogDir, { recursive: true })
+    const logPath = path.join(codexLogDir, 'cli-session.jsonl')
+    const line = JSON.stringify({
+      type: 'session_meta',
+      payload: {
+        id: 'cli-session-123',
+        cwd: '/Users/example/project',
+        source: 'cli',
+      },
+    })
+    await fs.writeFile(logPath, `${line}\n`)
+
+    expect(isCodexSubagent(logPath)).toBe(false)
+  })
+
+  test('returns true for subagent sessions (source is object)', async () => {
+    const codexLogDir = path.join(codexDir, 'sessions', '2026', '01', '10')
+    await fs.mkdir(codexLogDir, { recursive: true })
+    const logPath = path.join(codexLogDir, 'subagent-session.jsonl')
+    const line = JSON.stringify({
+      type: 'session_meta',
+      payload: {
+        id: 'subagent-session-456',
+        cwd: '/Users/example/project',
+        source: { subagent: 'review' },
+      },
+    })
+    await fs.writeFile(logPath, `${line}\n`)
+
+    expect(isCodexSubagent(logPath)).toBe(true)
+  })
+
+  test('returns false for non-existent files', () => {
+    expect(isCodexSubagent('/nonexistent/path.jsonl')).toBe(false)
+  })
+
+  test('returns false for empty files', async () => {
+    const codexLogDir = path.join(codexDir, 'sessions', '2026', '01', '10')
+    await fs.mkdir(codexLogDir, { recursive: true })
+    const logPath = path.join(codexLogDir, 'empty.jsonl')
+    await fs.writeFile(logPath, '')
+
+    expect(isCodexSubagent(logPath)).toBe(false)
+  })
+
+  test('returns false for non-session_meta first line', async () => {
+    const codexLogDir = path.join(codexDir, 'sessions', '2026', '01', '10')
+    await fs.mkdir(codexLogDir, { recursive: true })
+    const logPath = path.join(codexLogDir, 'other.jsonl')
+    const line = JSON.stringify({
+      type: 'response_item',
+      payload: { role: 'user' },
+    })
+    await fs.writeFile(logPath, `${line}\n`)
+
+    expect(isCodexSubagent(logPath)).toBe(false)
   })
 })

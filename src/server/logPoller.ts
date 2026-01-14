@@ -6,6 +6,7 @@ import {
   getLogBirthtime,
   getLogMtime,
   inferAgentTypeFromPath,
+  isCodexSubagent,
   scanAllLogDirs,
 } from './logDiscovery'
 import { findMatchingWindow, getLogTokenCount } from './logMatcher'
@@ -127,6 +128,11 @@ export class LogPoller {
 
         const agentType = inferAgentTypeFromPath(entry.logPath)
         if (!agentType) {
+          continue
+        }
+
+        // Skip Codex subagent logs (e.g., review agents spawned by CLI)
+        if (agentType === 'codex' && isCodexSubagent(entry.logPath)) {
           continue
         }
 
