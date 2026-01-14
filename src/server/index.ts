@@ -186,6 +186,7 @@ const logPoller = new LogPoller(db, registry, {
     }
   },
   maxLogsPerPoll: config.logPollMax,
+  matchScope: config.logMatchScope,
 })
 
 interface WSData {

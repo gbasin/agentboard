@@ -9,6 +9,7 @@ import {
   scanAllLogDirs,
 } from './logDiscovery'
 import { findMatchingWindow, getLogTokenCount } from './logMatcher'
+import type { MatchScope } from './logMatcher'
 import { deriveDisplayName } from './agentSessions'
 import type { SessionRegistry } from './SessionRegistry'
 
@@ -16,6 +17,7 @@ const MIN_INTERVAL_MS = 2000
 const DEFAULT_INTERVAL_MS = 5000
 const DEFAULT_MAX_LOGS = 25
 const MIN_LOG_TOKENS_FOR_INSERT = 10
+const DEFAULT_MATCH_SCOPE: MatchScope = 'last-exchange'
 const REMATCH_COOLDOWN_MS = 5 * 60 * 1000 // 5 minutes between re-match attempts
 
 const debugMatch = process.env.DEBUG?.includes('agentboard:match') ?? false
@@ -36,6 +38,7 @@ export class LogPoller {
   private onSessionOrphaned?: (sessionId: string) => void
   private onSessionActivated?: (sessionId: string, window: string) => void
   private maxLogsPerPoll: number
+  private matchScope: MatchScope
   // Cache of empty logs: logPath -> mtime when checked (re-check if mtime changes)
   private emptyLogCache: Map<string, number> = new Map()
   // Cache of re-match attempts: sessionId -> timestamp of last attempt
@@ -48,10 +51,12 @@ export class LogPoller {
       onSessionOrphaned,
       onSessionActivated,
       maxLogsPerPoll,
+      matchScope,
     }: {
       onSessionOrphaned?: (sessionId: string) => void
       onSessionActivated?: (sessionId: string, window: string) => void
       maxLogsPerPoll?: number
+      matchScope?: MatchScope
     } = {}
   ) {
     this.db = db
@@ -60,6 +65,7 @@ export class LogPoller {
     this.onSessionActivated = onSessionActivated
     const limit = maxLogsPerPoll ?? DEFAULT_MAX_LOGS
     this.maxLogsPerPoll = Math.max(1, limit)
+    this.matchScope = matchScope ?? DEFAULT_MATCH_SCOPE
   }
 
   start(intervalMs = DEFAULT_INTERVAL_MS): void {
@@ -170,7 +176,9 @@ export class LogPoller {
           continue
         }
 
-        const result = findMatchingWindow(entry.logPath, windows)
+        const result = findMatchingWindow(entry.logPath, windows, {
+          matchScope: this.matchScope,
+        })
         logger.info('log_match_attempt', {
           logPath: entry.logPath,
           windowCount: windows.length,

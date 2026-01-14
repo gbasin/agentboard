@@ -2,8 +2,6 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { resolveProjectPath } from './paths'
 
-const DEFAULT_LINE_LIMIT = 2000
-const DEFAULT_BYTE_LIMIT = 200 * 1024
 const LOG_HEAD_BYTE_LIMIT = 64 * 1024
 
 function getHomeDir(): string {
@@ -33,32 +31,6 @@ export function scanAllLogDirs(): string[] {
   paths.push(...scanDirForJsonl(codexRoot, 4))
 
   return paths
-}
-
-export function readLogContent(
-  logPath: string,
-  lineLimit = DEFAULT_LINE_LIMIT,
-  byteLimit = DEFAULT_BYTE_LIMIT
-): string {
-  try {
-    const buffer = fs.readFileSync(logPath)
-    let content = buffer.toString('utf8')
-
-    if (byteLimit > 0 && content.length > byteLimit) {
-      content = content.slice(-byteLimit)
-    }
-
-    if (lineLimit > 0) {
-      const lines = content.split('\n')
-      if (lines.length > lineLimit) {
-        content = lines.slice(-lineLimit).join('\n')
-      }
-    }
-
-    return content
-  } catch {
-    return ''
-  }
 }
 
 export function extractSessionId(logPath: string): string | null {

@@ -1,36 +1,75 @@
 import fs from 'node:fs'
 import type { Session } from '../shared/types'
+import {
+  cleanTmuxLine,
+  isDecorativeLine,
+  isMetadataLine,
+  stripAnsi,
+  TMUX_METADATA_MATCH_PATTERNS,
+  TMUX_PROMPT_PREFIX,
+  TMUX_UI_GLYPH_PATTERN,
+} from './terminal/tmuxText'
 
-const DEFAULT_LOG_LINE_LIMIT = 2000
-const DEFAULT_LOG_BYTE_LIMIT = 200 * 1024
-const DEFAULT_SCROLLBACK_LINES = 2000
-const MIN_TOKEN_COUNT = 10
-const DEFAULT_MIN_SCORE = 0.7
+export type LogTextMode = 'all' | 'assistant' | 'user' | 'assistant-user'
+export type SimilarityMode = 'jaccard' | 'containment' | 'hybrid'
+export type MatchScope = 'full' | 'last-exchange'
+
+export interface LogReadOptions {
+  lineLimit: number
+  byteLimit: number
+}
+
+export interface LogTextOptionsInput {
+  mode?: LogTextMode
+  logRead?: Partial<LogReadOptions>
+}
+
+export interface MatchOptions {
+  minScore: number
+  minGap: number
+  scrollbackLines: number
+  logTextMode: LogTextMode
+  similarityMode: SimilarityMode
+  matchScope: MatchScope
+  minTokens: number
+  logRead: LogReadOptions
+}
+
+export type MatchOptionsInput = Partial<Omit<MatchOptions, 'logRead'>> & {
+  logRead?: Partial<LogReadOptions>
+}
+
+const DEFAULT_LOG_READ_OPTIONS: LogReadOptions = {
+  lineLimit: 2000,
+  byteLimit: 200 * 1024,
+}
+
+export const DEFAULT_MATCH_OPTIONS: MatchOptions = {
+  minScore: 0.7,
+  minGap: 0.02,
+  scrollbackLines: 2000,
+  logTextMode: 'assistant-user',
+  similarityMode: 'containment',
+  matchScope: 'last-exchange',
+  minTokens: 10,
+  logRead: DEFAULT_LOG_READ_OPTIONS,
+}
+
 const SHORT_SESSION_TOKENS = 300
 const SHORT_SESSION_MIN_SCORE = 0.3
 const LAST_EXCHANGE_MIN_TOKENS = 5
-
-const TMUX_DECORATIVE_LINE_PATTERN =
-  /^[\s─━│┃┄┅┆┇┈┉┊┋┌┐└┘├┤┬┴┼╔╗╚╝╠╣╦╩╬═╭╮╯╰▔▁]+$/
-const TMUX_METADATA_PATTERNS: RegExp[] = [
-  /context left/i,
-  /background terminal running/i,
-  /for shortcuts/i,
-  /todos?\b/i,
-  /accept edits/i,
-  /baked for/i,
-  /opus .* on /i,
-  /^\s*[☐☑■□]/,
-]
-const TMUX_TIMER_PATTERN = /\(\d+s[^)]*\)/g
-const TMUX_UI_GLYPH_PATTERN = /[•❯⏵⏺↵]/g
-const TMUX_PROMPT_PREFIX = /^[\s>*#$❯]+/
 
 export interface WindowScore {
   window: Session
   score: number
   leftTokens?: number
   rightTokens?: number
+}
+
+interface ScoreOptions {
+  scrollbackLines: number
+  similarityMode: SimilarityMode
+  minTokens: number
 }
 
 export type MatchReason =
@@ -53,10 +92,6 @@ export interface MatchResult {
   bestRightTokens?: number
 }
 
-export type LogTextMode = 'all' | 'assistant' | 'user' | 'assistant-user'
-export type SimilarityMode = 'jaccard' | 'containment' | 'hybrid'
-export type MatchScope = 'full' | 'last-exchange'
-
 interface ConversationPair {
   user: string
   assistant: string
@@ -70,9 +105,36 @@ export function normalizeText(text: string): string {
   return cleaned.replace(/\s+/g, ' ').trim()
 }
 
+function resolveLogReadOptions(
+  overrides: Partial<LogReadOptions> = {}
+): LogReadOptions {
+  return {
+    lineLimit: overrides.lineLimit ?? DEFAULT_LOG_READ_OPTIONS.lineLimit,
+    byteLimit: overrides.byteLimit ?? DEFAULT_LOG_READ_OPTIONS.byteLimit,
+  }
+}
+
+function resolveMatchOptions(
+  overrides: MatchOptionsInput = {}
+): MatchOptions {
+  const logRead = resolveLogReadOptions(overrides.logRead)
+  return {
+    minScore: overrides.minScore ?? DEFAULT_MATCH_OPTIONS.minScore,
+    minGap: overrides.minGap ?? DEFAULT_MATCH_OPTIONS.minGap,
+    scrollbackLines:
+      overrides.scrollbackLines ?? DEFAULT_MATCH_OPTIONS.scrollbackLines,
+    logTextMode: overrides.logTextMode ?? DEFAULT_MATCH_OPTIONS.logTextMode,
+    similarityMode:
+      overrides.similarityMode ?? DEFAULT_MATCH_OPTIONS.similarityMode,
+    matchScope: overrides.matchScope ?? DEFAULT_MATCH_OPTIONS.matchScope,
+    minTokens: overrides.minTokens ?? DEFAULT_MATCH_OPTIONS.minTokens,
+    logRead,
+  }
+}
+
 export function getTerminalScrollback(
   tmuxWindow: string,
-  lines = DEFAULT_SCROLLBACK_LINES
+  lines = DEFAULT_MATCH_OPTIONS.scrollbackLines
 ): string {
   const safeLines = Math.max(1, lines)
   const result = Bun.spawnSync(
@@ -87,8 +149,7 @@ export function getTerminalScrollback(
 
 export function readLogContent(
   logPath: string,
-  lineLimit = DEFAULT_LOG_LINE_LIMIT,
-  byteLimit = DEFAULT_LOG_BYTE_LIMIT
+  { lineLimit, byteLimit }: LogReadOptions = DEFAULT_LOG_READ_OPTIONS
 ): string {
   try {
     const buffer = fs.readFileSync(logPath)
@@ -113,17 +174,10 @@ export function readLogContent(
 
 export function extractLogText(
   logPath: string,
-  {
-    mode = 'assistant-user',
-    lineLimit = DEFAULT_LOG_LINE_LIMIT,
-    byteLimit = DEFAULT_LOG_BYTE_LIMIT,
-  }: {
-    mode?: LogTextMode
-    lineLimit?: number
-    byteLimit?: number
-  } = {}
+  { mode = DEFAULT_MATCH_OPTIONS.logTextMode, logRead }: LogTextOptionsInput = {}
 ): string {
-  const raw = readLogContent(logPath, lineLimit, byteLimit)
+  const resolvedRead = resolveLogReadOptions(logRead)
+  const raw = readLogContent(logPath, resolvedRead)
   if (!raw || mode === 'all') {
     return raw
   }
@@ -151,17 +205,9 @@ export function extractLogText(
 
 export function getLogTokenCount(
   logPath: string,
-  {
-    mode = 'assistant-user',
-    lineLimit = DEFAULT_LOG_LINE_LIMIT,
-    byteLimit = DEFAULT_LOG_BYTE_LIMIT,
-  }: {
-    mode?: LogTextMode
-    lineLimit?: number
-    byteLimit?: number
-  } = {}
+  { mode = DEFAULT_MATCH_OPTIONS.logTextMode, logRead }: LogTextOptionsInput = {}
 ): number {
-  const content = extractLogText(logPath, { mode, lineLimit, byteLimit })
+  const content = extractLogText(logPath, { mode, logRead })
   return tokenizeForSimilarity(content).length
 }
 
@@ -174,7 +220,7 @@ export function computeSimilarityWithMode(
   right: string,
   {
     mode = 'containment',
-    minTokens = MIN_TOKEN_COUNT,
+    minTokens = DEFAULT_MATCH_OPTIONS.minTokens,
   }: {
     mode?: SimilarityMode
     minTokens?: number
@@ -188,9 +234,7 @@ export function computeSimilarityWithMode(
 export function scoreLogAgainstWindows(
   logContent: string,
   windows: Session[],
-  scrollbackLines = DEFAULT_SCROLLBACK_LINES,
-  similarityMode: SimilarityMode = 'containment',
-  minTokens = MIN_TOKEN_COUNT
+  { scrollbackLines, similarityMode, minTokens }: ScoreOptions
 ): WindowScore[] {
   const logTokens = tokenizeForSimilarity(logContent)
   const logTokenCount = logTokens.length
@@ -219,30 +263,21 @@ export function scoreLogAgainstWindows(
 export function findMatchingWindow(
   logPath: string,
   windows: Session[],
-  {
-    minScore = DEFAULT_MIN_SCORE,
-    minGap = 0.02,
-    scrollbackLines = DEFAULT_SCROLLBACK_LINES,
-    logLineLimit = DEFAULT_LOG_LINE_LIMIT,
-    logByteLimit = DEFAULT_LOG_BYTE_LIMIT,
-    logTextMode = 'assistant-user',
-    similarityMode = 'containment',
-    matchScope = 'full',
-    minTokens = MIN_TOKEN_COUNT,
-  }: {
-    minScore?: number
-    minGap?: number
-    scrollbackLines?: number
-    logLineLimit?: number
-    logByteLimit?: number
-    logTextMode?: LogTextMode
-    similarityMode?: SimilarityMode
-    matchScope?: MatchScope
-    minTokens?: number
-  } = {}
+  overrides: MatchOptionsInput = {}
 ): MatchResult {
+  const {
+    minScore,
+    minGap,
+    scrollbackLines,
+    logTextMode,
+    similarityMode,
+    matchScope,
+    minTokens,
+    logRead,
+  } = resolveMatchOptions(overrides)
   const minTokensUsed =
-    matchScope === 'last-exchange' && minTokens === MIN_TOKEN_COUNT
+    matchScope === 'last-exchange' &&
+    minTokens === DEFAULT_MATCH_OPTIONS.minTokens
       ? LAST_EXCHANGE_MIN_TOKENS
       : minTokens
   if (windows.length === 0) {
@@ -260,10 +295,7 @@ export function findMatchingWindow(
 
   let scores: WindowScore[] = []
   if (matchScope === 'last-exchange') {
-    const logPair = extractLastConversationFromLog(logPath, {
-      lineLimit: logLineLimit,
-      byteLimit: logByteLimit,
-    })
+    const logPair = extractLastConversationFromLog(logPath, logRead)
     const logCombined = [logPair.user, logPair.assistant]
       .filter(Boolean)
       .join('\n')
@@ -299,15 +331,16 @@ export function findMatchingWindow(
   } else {
     const logContent = extractLogText(logPath, {
       mode: logTextMode,
-      lineLimit: logLineLimit,
-      byteLimit: logByteLimit,
+      logRead,
     })
     scores = scoreLogAgainstWindows(
       logContent,
       windows,
-      scrollbackLines,
-      similarityMode,
-      minTokensUsed
+      {
+        scrollbackLines,
+        similarityMode,
+        minTokens: minTokensUsed,
+      }
     )
   }
   const bestScore = scores[0]?.score ?? 0
@@ -393,14 +426,6 @@ function computeSimilarityFromTokens(
   }
 
   return jaccard
-}
-
-function stripAnsi(text: string): string {
-  return text.replace(
-    // eslint-disable-next-line no-control-regex -- need to match ANSI escapes
-    /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g,
-    ''
-  )
 }
 
 function extractTextFromEntry(entry: unknown, mode: LogTextMode): string[] {
@@ -522,15 +547,10 @@ function extractRoleTextFromEntry(
 
 function extractLastConversationFromLog(
   logPath: string,
-  {
-    lineLimit = DEFAULT_LOG_LINE_LIMIT,
-    byteLimit = DEFAULT_LOG_BYTE_LIMIT,
-  }: {
-    lineLimit?: number
-    byteLimit?: number
-  } = {}
+  logRead: Partial<LogReadOptions> = {}
 ): ConversationPair {
-  const raw = readLogContent(logPath, lineLimit, byteLimit)
+  const resolvedRead = resolveLogReadOptions(logRead)
+  const raw = readLogContent(logPath, resolvedRead)
   if (!raw) {
     return { user: '', assistant: '' }
   }
@@ -584,12 +604,6 @@ function extractLastConversationFromTmux(content: string): ConversationPair {
 
   const isPromptLine = (line: string) => isClaudePromptLine(line) || isCodexPromptLine(line)
 
-  const isDecorativeLine = (line: string) =>
-    TMUX_DECORATIVE_LINE_PATTERN.test(line)
-
-  const isMetadataLine = (line: string) =>
-    TMUX_METADATA_PATTERNS.some((pattern) => pattern.test(line))
-
   // Claude: ⏺ for assistant response bullet
   const isClaudeBulletLine = (line: string) => /^\s*⏺/.test(line)
 
@@ -618,13 +632,6 @@ function extractLastConversationFromTmux(content: string): ConversationPair {
 
   // Check if a bullet is a text response (not a tool call)
   const isTextBullet = (line: string) => isBulletLine(line) && !isToolCallBullet(line)
-
-  const cleanLine = (line: string) =>
-    stripAnsi(line)
-      .replace(TMUX_TIMER_PATTERN, '')
-      .replace(TMUX_UI_GLYPH_PATTERN, ' ')
-      .replace(/\s+/g, ' ')
-      .trim()
 
   const extractUserFromPrompt = (line: string) => {
     let cleaned = stripAnsi(line).trim()
@@ -682,8 +689,13 @@ function extractLastConversationFromTmux(content: string): ConversationPair {
       // Stop if we hit another text bullet (next response)
       if (i > firstTextBulletIdx && isTextBullet(line)) break
       if (!trimmed) continue
-      if (isDecorativeLine(trimmed) || isMetadataLine(trimmed)) continue
-      assistantLines.push(cleanLine(line))
+      if (
+        isDecorativeLine(trimmed) ||
+        isMetadataLine(trimmed, TMUX_METADATA_MATCH_PATTERNS)
+      ) {
+        continue
+      }
+      assistantLines.push(cleanTmuxLine(line))
       if (assistantLines.length >= 60) break
     }
     assistant = assistantLines.join('\n')

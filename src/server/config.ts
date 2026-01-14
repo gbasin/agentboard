@@ -1,4 +1,5 @@
 import path from 'node:path'
+import type { MatchScope } from './logMatcher'
 
 const terminalModeRaw = process.env.TERMINAL_MODE
 const terminalMode =
@@ -16,6 +17,12 @@ const logPollIntervalMs = Number.isFinite(logPollIntervalMsRaw)
   : 5000
 const logPollMaxRaw = Number(process.env.AGENTBOARD_LOG_POLL_MAX)
 const logPollMax = Number.isFinite(logPollMaxRaw) ? logPollMaxRaw : 25
+
+const logMatchScopeRaw = process.env.AGENTBOARD_LOG_MATCH_SCOPE
+const logMatchScope: MatchScope =
+  logMatchScopeRaw === 'full' || logMatchScopeRaw === 'last-exchange'
+    ? logMatchScopeRaw
+    : 'last-exchange'
 
 const claudeConfigDir =
   process.env.CLAUDE_CONFIG_DIR || path.join(homeDir, '.claude')
@@ -41,6 +48,8 @@ export const config = {
   tlsKey: process.env.TLS_KEY || '',
   logPollIntervalMs,
   logPollMax,
+  // Log matching default: use the last exchange; set AGENTBOARD_LOG_MATCH_SCOPE=full for full log matching.
+  logMatchScope,
   claudeConfigDir,
   codexHomeDir,
   claudeResumeCmd: process.env.CLAUDE_RESUME_CMD || 'claude --resume {sessionId}',

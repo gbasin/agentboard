@@ -13,6 +13,7 @@ const ORIGINAL_ENV = {
   TLS_KEY: process.env.TLS_KEY,
   AGENTBOARD_LOG_POLL_MS: process.env.AGENTBOARD_LOG_POLL_MS,
   AGENTBOARD_LOG_POLL_MAX: process.env.AGENTBOARD_LOG_POLL_MAX,
+  AGENTBOARD_LOG_MATCH_SCOPE: process.env.AGENTBOARD_LOG_MATCH_SCOPE,
   CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR,
   CODEX_HOME: process.env.CODEX_HOME,
   CLAUDE_RESUME_CMD: process.env.CLAUDE_RESUME_CMD,
@@ -48,6 +49,7 @@ async function loadConfig(tag: string) {
     tlsKey: string
     logPollIntervalMs: number
     logPollMax: number
+    logMatchScope: string
     claudeConfigDir: string
     codexHomeDir: string
     claudeResumeCmd: string
@@ -78,6 +80,7 @@ describe('config', () => {
     expect(config.tlsKey).toBe('')
     expect(config.logPollIntervalMs).toBe(5000)
     expect(config.logPollMax).toBe(25)
+    expect(config.logMatchScope).toBe('last-exchange')
     expect(config.claudeResumeCmd).toBe('claude --resume {sessionId}')
     expect(config.codexResumeCmd).toBe('codex resume {sessionId}')
   })
@@ -95,6 +98,7 @@ describe('config', () => {
     process.env.TLS_KEY = '/tmp/key.pem'
     process.env.AGENTBOARD_LOG_POLL_MS = '7000'
     process.env.AGENTBOARD_LOG_POLL_MAX = '123'
+    process.env.AGENTBOARD_LOG_MATCH_SCOPE = 'full'
     process.env.CLAUDE_CONFIG_DIR = '/tmp/claude'
     process.env.CODEX_HOME = '/tmp/codex'
     process.env.CLAUDE_RESUME_CMD = 'claude --resume={sessionId}'
@@ -113,6 +117,7 @@ describe('config', () => {
     expect(config.tlsKey).toBe('/tmp/key.pem')
     expect(config.logPollIntervalMs).toBe(7000)
     expect(config.logPollMax).toBe(123)
+    expect(config.logMatchScope).toBe('full')
     expect(config.claudeConfigDir).toBe('/tmp/claude')
     expect(config.codexHomeDir).toBe('/tmp/codex')
     expect(config.claudeResumeCmd).toBe('claude --resume={sessionId}')

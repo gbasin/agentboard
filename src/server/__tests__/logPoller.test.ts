@@ -32,6 +32,10 @@ function setTmuxOutput(target: string, content: string) {
   tmuxOutputs.set(target, content)
 }
 
+function buildLastExchangeOutput(tokens: string): string {
+  return `❯ previous\n⏺ ${tokens}\n❯ ${tokens}\n`
+}
+
 beforeEach(async () => {
   tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-poller-'))
   process.env.CLAUDE_CONFIG_DIR = path.join(tempRoot, 'claude')
@@ -73,7 +77,7 @@ describe('LogPoller', () => {
     registry.replaceSessions([baseSession])
 
     const tokens = Array.from({ length: 60 }, (_, i) => `token${i}`).join(' ')
-    setTmuxOutput(baseSession.tmuxWindow, tokens)
+    setTmuxOutput(baseSession.tmuxWindow, buildLastExchangeOutput(tokens))
 
     const projectPath = baseSession.projectPath
     const encoded = encodeProjectPath(projectPath)
@@ -90,7 +94,11 @@ describe('LogPoller', () => {
       cwd: projectPath,
       content: tokens,
     })
-    await fs.writeFile(logPath, `${line}\n`)
+    const assistantLine = JSON.stringify({
+      type: 'assistant',
+      content: tokens,
+    })
+    await fs.writeFile(logPath, `${line}\n${assistantLine}\n`)
 
     const poller = new LogPoller(db, registry)
     const stats = poller.pollOnce()
@@ -108,7 +116,7 @@ describe('LogPoller', () => {
     registry.replaceSessions([baseSession])
 
     const tokens = Array.from({ length: 60 }, (_, i) => `token${i}`).join(' ')
-    setTmuxOutput(baseSession.tmuxWindow, tokens)
+    setTmuxOutput(baseSession.tmuxWindow, buildLastExchangeOutput(tokens))
 
     const projectPath = baseSession.projectPath
     const encoded = encodeProjectPath(projectPath)
@@ -126,7 +134,11 @@ describe('LogPoller', () => {
       cwd: projectPath,
       content: tokens,
     })
-    await fs.writeFile(logPathA, `${lineA}\n`)
+    const assistantLineA = JSON.stringify({
+      type: 'assistant',
+      content: tokens,
+    })
+    await fs.writeFile(logPathA, `${lineA}\n${assistantLineA}\n`)
 
     const poller = new LogPoller(db, registry)
     poller.pollOnce()
@@ -138,7 +150,11 @@ describe('LogPoller', () => {
       cwd: projectPath,
       content: tokens,
     })
-    await fs.writeFile(logPathB, `${lineB}\n`)
+    const assistantLineB = JSON.stringify({
+      type: 'assistant',
+      content: tokens,
+    })
+    await fs.writeFile(logPathB, `${lineB}\n${assistantLineB}\n`)
 
     poller.pollOnce()
 

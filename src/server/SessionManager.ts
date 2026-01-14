@@ -3,6 +3,13 @@ import { config } from './config'
 import { generateSessionName } from './nameGenerator'
 import { logger } from './logger'
 import { resolveProjectPath } from './paths'
+import {
+  stripAnsi,
+  TMUX_DECORATIVE_LINE_PATTERN,
+  TMUX_METADATA_STATUS_PATTERNS,
+  TMUX_TIMER_PATTERN,
+  TMUX_UI_GLYPH_PATTERN,
+} from './terminal/tmuxText'
 import type { AgentType, Session, SessionStatus } from '../shared/types'
 
 interface WindowInfo {
@@ -472,31 +479,19 @@ function inferStatus(
   return { status: contentChanged || isActivelyWorking ? 'working' : 'waiting', lastChanged }
 }
 
-// Box-drawing and decorative characters (borders, lines, spacers)
-const DECORATIVE_LINE_PATTERN =
-  /^[\s─━│┃┄┅┆┇┈┉┊┋┌┐└┘├┤┬┴┼╔╗╚╝╠╣╦╩╬═╭╮╯╰▔▁]*$/
-const METADATA_LINE_PATTERNS: RegExp[] = [
-  /context left/i,
-  /background terminal running/i,
-  /\/ps to view/i,
-  /esc to interrupt/i,
-  /for shortcuts/i,
-]
-const TIMER_SEGMENT_PATTERN = /\(\d+s[^)]*\)/g
-const UI_GLYPH_PATTERN = /[•❯⏵⏺↵]/g
-
 function normalizeContent(content: string): string {
   const lines = stripAnsi(content).split('\n')
   return lines
     .slice(-20)
     .map((line) => line.trim())
     .filter(Boolean)
-    .filter((line) => !DECORATIVE_LINE_PATTERN.test(line))
+    .filter((line) => !TMUX_DECORATIVE_LINE_PATTERN.test(line))
     .filter(
-      (line) => !METADATA_LINE_PATTERNS.some((pattern) => pattern.test(line))
+      (line) =>
+        !TMUX_METADATA_STATUS_PATTERNS.some((pattern) => pattern.test(line))
     )
-    .map((line) => line.replace(TIMER_SEGMENT_PATTERN, '').trim())
-    .map((line) => line.replace(UI_GLYPH_PATTERN, ' ').trim())
+    .map((line) => line.replace(TMUX_TIMER_PATTERN, '').trim())
+    .map((line) => line.replace(TMUX_UI_GLYPH_PATTERN, ' ').trim())
     .filter(Boolean)
     .join(' ')
     .replace(/\s+/g, ' ')
@@ -631,16 +626,6 @@ function inferAgentType(command: string): AgentType | undefined {
   }
 
   return undefined
-}
-
-// Strip ANSI escape codes from terminal output
-function stripAnsi(text: string): string {
-  // Matches ANSI escape sequences: CSI sequences, OSC sequences, and simple escapes
-  return text.replace(
-    // eslint-disable-next-line no-control-regex -- need to match ANSI escapes
-    /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g,
-    ''
-  )
 }
 
 // Permission prompt patterns for Claude Code and Codex CLI
