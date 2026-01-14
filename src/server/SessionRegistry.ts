@@ -1,18 +1,23 @@
 import { EventEmitter } from 'node:events'
-import type { Session } from '../shared/types'
+import type { AgentSession, Session } from '../shared/types'
 
 export interface RegistryEvents {
   sessions: (sessions: Session[]) => void
   'session-update': (session: Session) => void
   'session-removed': (sessionId: string) => void
+  'agent-sessions': (payload: { active: AgentSession[]; inactive: AgentSession[] }) => void
 }
 
 export class SessionRegistry extends EventEmitter {
   private sessions: Map<string, Session>
+  private agentSessions: { active: AgentSession[]; inactive: AgentSession[] }
+  private agentSessionsSnapshot: string
 
   constructor() {
     super()
     this.sessions = new Map<string, Session>()
+    this.agentSessions = { active: [], inactive: [] }
+    this.agentSessionsSnapshot = ''
   }
 
   getAll(): Session[] {
@@ -82,6 +87,21 @@ export class SessionRegistry extends EventEmitter {
     this.emit('session-update', updated)
     return updated
   }
+
+  getAgentSessions(): { active: AgentSession[]; inactive: AgentSession[] } {
+    return this.agentSessions
+  }
+
+  setAgentSessions(active: AgentSession[], inactive: AgentSession[]): void {
+    const snapshot = JSON.stringify({ active, inactive })
+    if (snapshot === this.agentSessionsSnapshot) {
+      return
+    }
+
+    this.agentSessions = { active, inactive }
+    this.agentSessionsSnapshot = snapshot
+    this.emit('agent-sessions', this.agentSessions)
+  }
 }
 
 function pickLatestActivity(
@@ -116,6 +136,8 @@ function sessionsEqual(a: Session, b: Session): boolean {
     a.lastActivity === b.lastActivity &&
     a.projectPath === b.projectPath &&
     a.agentType === b.agentType &&
-    a.command === b.command
+    a.command === b.command &&
+    a.agentSessionId === b.agentSessionId &&
+    a.agentSessionName === b.agentSessionName
   )
 }
