@@ -50,11 +50,11 @@ export default function SettingsModal({
   const setShortcutModifier = useSettingsStore(
     (state) => state.setShortcutModifier
   )
-  const showSessionIdSuffix = useSettingsStore(
-    (state) => state.showSessionIdSuffix
+  const showSessionIdPrefix = useSettingsStore(
+    (state) => state.showSessionIdPrefix
   )
-  const setShowSessionIdSuffix = useSettingsStore(
-    (state) => state.setShowSessionIdSuffix
+  const setShowSessionIdPrefix = useSettingsStore(
+    (state) => state.setShowSessionIdPrefix
   )
 
   const [draftDir, setDraftDir] = useState(defaultProjectDir)
@@ -69,8 +69,8 @@ export default function SettingsModal({
   const [draftShortcutModifier, setDraftShortcutModifier] = useState<
     ShortcutModifier | 'auto'
   >(shortcutModifier)
-  const [draftShowSessionIdSuffix, setDraftShowSessionIdSuffix] = useState(
-    showSessionIdSuffix
+  const [draftShowSessionIdPrefix, setDraftShowSessionIdSuffix] = useState(
+    showSessionIdPrefix
   )
 
   // New preset form state
@@ -96,7 +96,7 @@ export default function SettingsModal({
       setDraftUseWebGL(useWebGL)
       setDraftLineHeight(lineHeight)
       setDraftShortcutModifier(shortcutModifier)
-      setDraftShowSessionIdSuffix(showSessionIdSuffix)
+      setDraftShowSessionIdSuffix(showSessionIdPrefix)
       setShowAddForm(false)
       setNewLabel('')
       setNewBaseCommand('')
@@ -140,7 +140,7 @@ export default function SettingsModal({
     useWebGL,
     lineHeight,
     shortcutModifier,
-    showSessionIdSuffix,
+    showSessionIdPrefix,
     isOpen,
   ])
 
@@ -175,7 +175,7 @@ export default function SettingsModal({
     setUseWebGL(draftUseWebGL)
     setLineHeight(draftLineHeight)
     setShortcutModifier(draftShortcutModifier)
-    setShowSessionIdSuffix(draftShowSessionIdSuffix)
+    setShowSessionIdPrefix(draftShowSessionIdPrefix)
     onClose({ webglChanged })
   }
 
@@ -461,13 +461,13 @@ export default function SettingsModal({
 
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-sm text-primary">Session ID Suffix</div>
+              <div className="text-sm text-primary">Session ID Prefix</div>
               <div className="text-[10px] text-muted">
-                Show last 5 characters of agent session IDs in the list.
+                Show first 5 characters of agent session IDs in the list.
               </div>
             </div>
             <Switch
-              checked={draftShowSessionIdSuffix}
+              checked={draftShowSessionIdPrefix}
               onCheckedChange={setDraftShowSessionIdSuffix}
             />
           </div>

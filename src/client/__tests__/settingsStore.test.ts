@@ -59,7 +59,7 @@ beforeEach(() => {
     useWebGL: true,
     lineHeight: 1.4,
     shortcutModifier: 'auto',
-    showSessionIdSuffix: false,
+    showSessionIdPrefix: false,
   })
 })
 

@@ -1,19 +1,19 @@
 import type { AgentSession } from '@shared/types'
 import { getPathLeaf } from '../utils/sessionLabel'
-import { getSessionIdSuffix } from '../utils/sessionId'
+import { getSessionIdPrefix } from '../utils/sessionId'
 import { formatRelativeTime } from '../utils/time'
 import AgentIcon from './AgentIcon'
 
 interface InactiveSessionItemProps {
   session: AgentSession
-  showSessionIdSuffix: boolean
+  showSessionIdPrefix: boolean
   onResume: (sessionId: string) => void
   onPreview: (session: AgentSession) => void
 }
 
 export default function InactiveSessionItem({
   session,
-  showSessionIdSuffix,
+  showSessionIdPrefix,
   onResume,
   onPreview,
 }: InactiveSessionItemProps) {
@@ -21,8 +21,8 @@ export default function InactiveSessionItem({
   const directoryLeaf = getPathLeaf(session.projectPath)
   const displayName =
     session.displayName || directoryLeaf || session.sessionId.slice(0, 8)
-  const sessionIdSuffix = showSessionIdSuffix
-    ? getSessionIdSuffix(session.sessionId)
+  const sessionIdPrefix = showSessionIdPrefix
+    ? getSessionIdPrefix(session.sessionId)
     : ''
 
   return (
@@ -62,12 +62,12 @@ export default function InactiveSessionItem({
           <span className="min-w-0 flex-1 truncate text-sm font-medium text-primary">
             {displayName}
           </span>
-          {sessionIdSuffix && (
+          {sessionIdPrefix && (
             <span
               className="shrink-0 text-[11px] font-mono text-muted opacity-50"
               title={session.sessionId}
             >
-              #{sessionIdSuffix}
+              #{sessionIdPrefix}
             </span>
           )}
           <span className="ml-1 w-8 shrink-0 text-right text-xs tabular-nums text-muted">

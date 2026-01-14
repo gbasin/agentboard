@@ -165,7 +165,7 @@ beforeEach(() => {
   useSettingsStore.setState({
     sessionSortMode: 'created',
     sessionSortDirection: 'asc',
-    showSessionIdSuffix: false,
+    showSessionIdPrefix: false,
   })
 
   useThemeStore.setState({ theme: 'dark' })
@@ -185,7 +185,7 @@ afterEach(() => {
   useSettingsStore.setState({
     sessionSortMode: 'created',
     sessionSortDirection: 'desc',
-    showSessionIdSuffix: false,
+    showSessionIdPrefix: false,
   })
 })
 

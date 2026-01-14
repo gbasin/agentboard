@@ -7,7 +7,7 @@ import type { AgentSession, Session } from '@shared/types'
 import { sortSessions } from '../utils/sessions'
 import { formatRelativeTime } from '../utils/time'
 import { getPathLeaf } from '../utils/sessionLabel'
-import { getSessionIdSuffix } from '../utils/sessionId'
+import { getSessionIdPrefix } from '../utils/sessionId'
 import { useSettingsStore } from '../stores/settingsStore'
 import { getEffectiveModifier, getModifierDisplay } from '../utils/device'
 import AgentIcon from './AgentIcon'
@@ -149,8 +149,8 @@ export default function SessionList({
   const sessionSortDirection = useSettingsStore(
     (state) => state.sessionSortDirection
   )
-  const showSessionIdSuffix = useSettingsStore(
-    (state) => state.showSessionIdSuffix
+  const showSessionIdPrefix = useSettingsStore(
+    (state) => state.showSessionIdPrefix
   )
   const sortedSessions = sortSessions(sessions, {
     mode: sessionSortMode,
@@ -229,7 +229,7 @@ export default function SessionList({
                     session={session}
                     isSelected={session.id === selectedSessionId}
                     isEditing={session.id === editingSessionId}
-                    showSessionIdSuffix={showSessionIdSuffix}
+                    showSessionIdPrefix={showSessionIdPrefix}
                     onSelect={() => onSelect(session.id)}
                     onStartEdit={() => setEditingSessionId(session.id)}
                     onCancelEdit={() => setEditingSessionId(null)}
@@ -301,7 +301,7 @@ export default function SessionList({
                     >
                       <InactiveSessionItem
                         session={session}
-                        showSessionIdSuffix={showSessionIdSuffix}
+                        showSessionIdPrefix={showSessionIdPrefix}
                         onResume={(sessionId) => onResume?.(sessionId)}
                         onPreview={setPreviewSession}
                       />
@@ -341,7 +341,7 @@ interface SessionRowProps {
   session: Session
   isSelected: boolean
   isEditing: boolean
-  showSessionIdSuffix: boolean
+  showSessionIdPrefix: boolean
   onSelect: () => void
   onStartEdit: () => void
   onCancelEdit: () => void
@@ -352,7 +352,7 @@ function SessionRow({
   session,
   isSelected,
   isEditing,
-  showSessionIdSuffix,
+  showSessionIdPrefix,
   onSelect,
   onStartEdit,
   onCancelEdit,
@@ -366,9 +366,9 @@ function SessionRow({
   const directoryLeaf = getPathLeaf(session.projectPath)
   const needsInput = session.status === 'permission'
   const agentSessionId = session.agentSessionId?.trim()
-  const sessionIdSuffix =
-    showSessionIdSuffix && agentSessionId
-      ? getSessionIdSuffix(agentSessionId)
+  const sessionIdPrefix =
+    showSessionIdPrefix && agentSessionId
+      ? getSessionIdPrefix(agentSessionId)
       : ''
 
   // Track previous status for transition animation
@@ -481,12 +481,12 @@ function SessionRow({
               {displayName}
             </span>
           )}
-          {sessionIdSuffix && (
+          {sessionIdPrefix && (
             <span
               className="shrink-0 text-[11px] font-mono text-muted opacity-50"
               title={agentSessionId}
             >
-              #{sessionIdSuffix}
+              #{sessionIdPrefix}
             </span>
           )}
           {needsInput ? (
