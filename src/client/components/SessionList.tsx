@@ -181,20 +181,20 @@ export default function SessionList({
                 <motion.div
                   key={session.id}
                   layout={!prefersReducedMotion}
-                  initial={prefersReducedMotion ? false : { opacity: 0, y: -10, scale: 0.95 }}
+                  initial={prefersReducedMotion ? false : { opacity: 0, y: -16, scale: 0.85 }}
                   animate={
                     prefersReducedMotion
                       ? { opacity: 1, y: 0 }
                       : isNew
-                        ? { opacity: 1, y: 0, scale: [0.95, 1.02, 1] }
+                        ? { opacity: 1, y: 0, scale: [0.85, 1.08, 0.98, 1] }
                         : { opacity: 1, y: 0, scale: 1 }
                   }
-                  exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 20 }}
+                  exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 20, scale: 0.9 }}
                   transition={prefersReducedMotion ? { duration: 0 } : {
                     layout: { type: 'spring', stiffness: 500, damping: 35 },
-                    opacity: { duration: 0.2 },
-                    y: { duration: 0.25 },
-                    scale: { duration: 0.3 },
+                    opacity: { duration: 0.15 },
+                    y: { duration: 0.3, ease: 'easeOut' },
+                    scale: { duration: 0.4, ease: [0.34, 1.56, 0.64, 1] },
                   }}
                 >
                   <SessionRow
@@ -254,16 +254,20 @@ export default function SessionList({
                       initial={
                         prefersReducedMotion || !isNew
                           ? false
-                          : { opacity: 0, y: -20, scale: 0.95 }
+                          : { opacity: 0, y: -16, scale: 0.85 }
                       }
                       animate={
                         prefersReducedMotion
                           ? { opacity: 1, y: 0 }
                           : isNew
-                            ? { opacity: 1, y: 0, scale: [0.95, 1.02, 1] }
+                            ? { opacity: 1, y: 0, scale: [0.85, 1.08, 0.98, 1] }
                             : { opacity: 1, y: 0, scale: 1 }
                       }
-                      transition={{ duration: 0.25, delay: 0.1, scale: { duration: 0.3 } }}
+                      transition={{
+                        duration: 0.3,
+                        delay: 0.1,
+                        scale: { duration: 0.4, ease: [0.34, 1.56, 0.64, 1] },
+                      }}
                     >
                       <InactiveSessionItem
                         session={session}
