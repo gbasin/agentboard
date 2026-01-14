@@ -68,6 +68,8 @@ TERMINAL_MONITOR_TARGETS=true
 `TERMINAL_MODE` selects terminal I/O strategy: `pty` (default, grouped session) or `pipe-pane` (PTY-less, works in daemon/systemd/docker without `-t`).
 `TERMINAL_MONITOR_TARGETS` (pipe-pane only) polls tmux to detect closed targets (set to `false` to disable).
 
+Session data (log-to-window mappings) is stored in `~/.agentboard/agentboard.db`.
+
 ## Troubleshooting
 
 ### "open terminal failed: not a terminal" errors
