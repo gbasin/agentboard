@@ -19,7 +19,7 @@ const DEFAULT_INTERVAL_MS = 5000
 const DEFAULT_MAX_LOGS = 25
 const MIN_LOG_TOKENS_FOR_INSERT = 10
 const DEFAULT_MATCH_SCOPE: MatchScope = 'last-exchange'
-const REMATCH_COOLDOWN_MS = 5 * 60 * 1000 // 5 minutes between re-match attempts
+const REMATCH_COOLDOWN_MS = 60 * 1000 // 1 minute between re-match attempts
 
 const debugMatch = process.env.DEBUG?.includes('agentboard:match') ?? false
 
