@@ -214,7 +214,7 @@ export default function SessionList({
                     prefersReducedMotion
                       ? { opacity: 1, y: 0 }
                       : isNew
-                        ? { opacity: 1, y: 0, scale: [0.85, 1.08, 0.98, 1] }
+                        ? { opacity: 1, y: 0, scale: [1.06, 0.98, 1] }
                         : { opacity: 1, y: 0, scale: 1 }
                   }
                   exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 20, scale: 0.9 }}
@@ -290,7 +290,7 @@ export default function SessionList({
                         prefersReducedMotion
                           ? { opacity: 1, y: 0 }
                           : isNew
-                            ? { opacity: 1, y: 0, scale: [0.85, 1.08, 0.98, 1] }
+                            ? { opacity: 1, y: 0, scale: [1.06, 0.98, 1] }
                             : { opacity: 1, y: 0, scale: 1 }
                       }
                       transition={{
