@@ -54,6 +54,48 @@ export default function SessionList({
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
   const [showInactive, setShowInactive] = useState(false)
   const prefersReducedMotion = useReducedMotion()
+
+  // Track counts for counter animations
+  const prevActiveCountRef = useRef(sessions.length)
+  const prevInactiveCountRef = useRef(inactiveSessions.length)
+  const [activeCounterBump, setActiveCounterBump] = useState(false)
+  const [inactiveCounterBump, setInactiveCounterBump] = useState(false)
+
+  useEffect(() => {
+    if (sessions.length !== prevActiveCountRef.current) {
+      setActiveCounterBump(true)
+    }
+    prevActiveCountRef.current = sessions.length
+  }, [sessions.length])
+
+  useEffect(() => {
+    if (inactiveSessions.length > prevInactiveCountRef.current) {
+      setInactiveCounterBump(true)
+    }
+    prevInactiveCountRef.current = inactiveSessions.length
+  }, [inactiveSessions.length])
+
+  // Track newly added inactive sessions for entry animation
+  const prevInactiveIdsRef = useRef<Set<string>>(new Set(inactiveSessions.map((s) => s.sessionId)))
+  const [newlyInactiveIds, setNewlyInactiveIds] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    const currentIds = new Set(inactiveSessions.map((s) => s.sessionId))
+    const newIds = new Set<string>()
+    for (const id of currentIds) {
+      if (!prevInactiveIdsRef.current.has(id)) {
+        newIds.add(id)
+      }
+    }
+    prevInactiveIdsRef.current = currentIds
+
+    if (newIds.size > 0) {
+      setNewlyInactiveIds(newIds)
+      // Clear after animation completes
+      const timer = setTimeout(() => setNewlyInactiveIds(new Set()), 500)
+      return () => clearTimeout(timer)
+    }
+  }, [inactiveSessions])
   const shortcutModifier = useSettingsStore((state) => state.shortcutModifier)
   const modDisplay = getModifierDisplay(getEffectiveModifier(shortcutModifier))
   const sessionSortMode = useSettingsStore((state) => state.sessionSortMode)
@@ -79,7 +121,14 @@ export default function SessionList({
         <span className="text-xs font-medium uppercase tracking-wider text-muted">
           Sessions
         </span>
-        <span className="text-xs text-muted">{sessions.length}</span>
+        <motion.span
+          className="text-xs text-muted"
+          animate={activeCounterBump && !prefersReducedMotion ? { scale: [1, 1.3, 1] } : {}}
+          transition={{ duration: 0.3 }}
+          onAnimationComplete={() => setActiveCounterBump(false)}
+        >
+          {sessions.length}
+        </motion.span>
       </div>
 
       {error && (
@@ -111,10 +160,11 @@ export default function SessionList({
                   layout={!prefersReducedMotion}
                   initial={prefersReducedMotion ? false : { opacity: 0, y: -10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -10 }}
+                  exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 20 }}
                   transition={prefersReducedMotion ? { duration: 0 } : {
                     layout: { type: 'spring', stiffness: 500, damping: 35 },
-                    opacity: { duration: 0.15 },
+                    opacity: { duration: 0.2 },
+                    y: { duration: 0.25 },
                   }}
                 >
                   <SessionRow
@@ -148,20 +198,45 @@ export default function SessionList({
                 )}
                 Inactive Sessions
               </span>
-              <span className="text-xs">{inactiveSessions.length}</span>
+              <motion.span
+                className="text-xs"
+                animate={inactiveCounterBump && !prefersReducedMotion ? { scale: [1, 1.3, 1] } : {}}
+                transition={{ duration: 0.3 }}
+                onAnimationComplete={() => setInactiveCounterBump(false)}
+              >
+                {inactiveSessions.length}
+              </motion.span>
             </button>
-            {showInactive && (
-              <div className="py-1">
-                {inactiveSessions.map((session) => (
-                  <InactiveSessionItem
-                    key={session.sessionId}
-                    session={session}
-                    showSessionIdSuffix={showSessionIdSuffix}
-                    onResume={(sessionId) => onResume?.(sessionId)}
-                  />
-                ))}
-              </div>
-            )}
+            <AnimatePresence initial={false}>
+              {showInactive && (
+                <motion.div
+                  className="py-1 overflow-hidden"
+                  initial={prefersReducedMotion ? false : { height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={prefersReducedMotion ? { opacity: 0 } : { height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  {inactiveSessions.map((session) => (
+                    <motion.div
+                      key={session.sessionId}
+                      initial={
+                        prefersReducedMotion || !newlyInactiveIds.has(session.sessionId)
+                          ? false
+                          : { opacity: 0, y: -20 }
+                      }
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.25, delay: 0.1 }}
+                    >
+                      <InactiveSessionItem
+                        session={session}
+                        showSessionIdSuffix={showSessionIdSuffix}
+                        onResume={(sessionId) => onResume?.(sessionId)}
+                      />
+                    </motion.div>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         )}
       </div>
