@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect, useReducer } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
 import { HandIcon } from '@untitledui-icons/react/line'
+import ChevronDownIcon from '@untitledui-icons/react/line/esm/ChevronDownIcon'
+import ChevronRightIcon from '@untitledui-icons/react/line/esm/ChevronRightIcon'
 import type { AgentSession, Session } from '@shared/types'
 import { sortSessions } from '../utils/sessions'
 import { formatRelativeTime } from '../utils/time'
@@ -139,9 +141,11 @@ export default function SessionList({
               className="flex w-full items-center justify-between px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-muted hover:text-primary"
             >
               <span className="flex items-center gap-2">
-                <span className="inline-flex h-4 w-4 items-center justify-center rounded border border-border text-[10px]">
-                  {showInactive ? 'v' : '>'}
-                </span>
+                {showInactive ? (
+                  <ChevronDownIcon className="h-4 w-4" />
+                ) : (
+                  <ChevronRightIcon className="h-4 w-4" />
+                )}
                 Inactive Sessions
               </span>
               <span className="text-xs">{inactiveSessions.length}</span>
