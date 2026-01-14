@@ -92,6 +92,8 @@ interface SettingsState {
   setShortcutModifier: (modifier: ShortcutModifier | 'auto') => void
   showSessionIdSuffix: boolean
   setShowSessionIdSuffix: (enabled: boolean) => void
+  inactiveSessionsExpanded: boolean
+  setInactiveSessionsExpanded: (expanded: boolean) => void
   // Command presets
   commandPresets: CommandPreset[]
   setCommandPresets: (presets: CommandPreset[]) => void
@@ -128,6 +130,8 @@ export const useSettingsStore = create<SettingsState>()(
       setShortcutModifier: (modifier) => set({ shortcutModifier: modifier }),
       showSessionIdSuffix: false,
       setShowSessionIdSuffix: (enabled) => set({ showSessionIdSuffix: enabled }),
+      inactiveSessionsExpanded: false,
+      setInactiveSessionsExpanded: (expanded) => set({ inactiveSessionsExpanded: expanded }),
       // Command presets
       commandPresets: DEFAULT_PRESETS,
       setCommandPresets: (presets) => set({ commandPresets: presets }),

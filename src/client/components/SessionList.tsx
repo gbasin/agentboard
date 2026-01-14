@@ -53,7 +53,8 @@ export default function SessionList({
 }: SessionListProps) {
   useTimestampRefresh()
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
-  const [showInactive, setShowInactive] = useState(false)
+  const showInactive = useSettingsStore((state) => state.inactiveSessionsExpanded)
+  const setShowInactive = useSettingsStore((state) => state.setInactiveSessionsExpanded)
   const [previewSession, setPreviewSession] = useState<AgentSession | null>(null)
   const prefersReducedMotion = useReducedMotion()
 
@@ -216,7 +217,7 @@ export default function SessionList({
           <div className="border-t border-border">
             <button
               type="button"
-              onClick={() => setShowInactive((value) => !value)}
+              onClick={() => setShowInactive(!showInactive)}
               className="flex w-full items-center justify-between px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-muted hover:text-primary"
             >
               <span className="flex items-center gap-2">
