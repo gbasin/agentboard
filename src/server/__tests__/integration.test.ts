@@ -34,6 +34,7 @@ if (!tmuxAvailable) {
           PORT: String(port),
           TMUX_SESSION: sessionName,
           DISCOVER_PREFIXES: '',
+          AGENTBOARD_LOG_POLL_MS: '0',
         },
         stdout: 'pipe',
         stderr: 'pipe',

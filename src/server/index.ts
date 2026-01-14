@@ -7,6 +7,9 @@ import { config } from './config'
 import { ensureTmux } from './prerequisites'
 import { SessionManager } from './SessionManager'
 import { SessionRegistry } from './SessionRegistry'
+import { initDatabase } from './db'
+import { LogPoller } from './logPoller'
+import { toAgentSession } from './agentSessions'
 import {
   createTerminalProxy,
   resolveTerminalMode,
@@ -20,6 +23,9 @@ import type {
   TerminalErrorCode,
   DirectoryListing,
   DirectoryErrorResponse,
+  AgentSession,
+  ResumeError,
+  Session,
 } from '../shared/types'
 import { logger } from './logger'
 
@@ -161,14 +167,95 @@ logger.info('terminal_mode_resolved', {
 const app = new Hono()
 const sessionManager = new SessionManager()
 const registry = new SessionRegistry()
+const db = initDatabase()
+const logPoller = new LogPoller(db, registry, {
+  onSessionOrphaned: (sessionId) => {
+    const session = db.getSessionById(sessionId)
+    if (session) {
+      broadcast({ type: 'session-orphaned', session: toAgentSession(session) })
+    }
+  },
+  onSessionActivated: (sessionId, window) => {
+    const session = db.getSessionById(sessionId)
+    if (session) {
+      broadcast({
+        type: 'session-activated',
+        session: toAgentSession(session),
+        window,
+      })
+    }
+  },
+  maxLogsPerPoll: config.logPollMax,
+})
+
+interface WSData {
+  terminal: ITerminalProxy | null
+  currentSessionId: string | null
+  connectionId: string
+}
+
+const sockets = new Set<ServerWebSocket<WSData>>()
+
+function updateAgentSessions() {
+  const active = db.getActiveSessions().map(toAgentSession)
+  const inactive = db.getInactiveSessions().map(toAgentSession)
+  registry.setAgentSessions(active, inactive)
+}
+
+function hydrateSessionsWithAgentSessions(sessions: Session[]): Session[] {
+  const activeSessions = db.getActiveSessions()
+  const windowSet = new Set(sessions.map((session) => session.tmuxWindow))
+  const activeMap = new Map<string, typeof activeSessions[number]>()
+  const orphaned: AgentSession[] = []
+
+  for (const agentSession of activeSessions) {
+    if (!agentSession.currentWindow || !windowSet.has(agentSession.currentWindow)) {
+      const orphanedSession = db.orphanSession(agentSession.sessionId)
+      if (orphanedSession) {
+        orphaned.push(toAgentSession(orphanedSession))
+      }
+      continue
+    }
+    activeMap.set(agentSession.currentWindow, agentSession)
+  }
+
+  const hydrated = sessions.map((session) => {
+    const agentSession = activeMap.get(session.tmuxWindow)
+    if (!agentSession) {
+      return session
+    }
+    if (agentSession.displayName !== session.name) {
+      db.updateSession(agentSession.sessionId, { displayName: session.name })
+      agentSession.displayName = session.name
+    }
+    return {
+      ...session,
+      agentSessionId: agentSession.sessionId,
+      agentSessionName: agentSession.displayName,
+    }
+  })
+
+  if (orphaned.length > 0) {
+    for (const session of orphaned) {
+      broadcast({ type: 'session-orphaned', session })
+    }
+  }
+
+  updateAgentSessions()
+  return hydrated
+}
 
 function refreshSessions() {
   const sessions = sessionManager.listWindows()
-  registry.replaceSessions(sessions)
+  const hydrated = hydrateSessionsWithAgentSessions(sessions)
+  registry.replaceSessions(hydrated)
 }
 
 refreshSessions()
 setInterval(refreshSessions, config.refreshIntervalMs)
+if (config.logPollIntervalMs > 0) {
+  logPoller.start(config.logPollIntervalMs)
+}
 
 registry.on('session-update', (session) => {
   broadcast({ type: 'session-update', session })
@@ -176,6 +263,10 @@ registry.on('session-update', (session) => {
 
 registry.on('sessions', (sessions) => {
   broadcast({ type: 'sessions', sessions })
+})
+
+registry.on('agent-sessions', ({ active, inactive }) => {
+  broadcast({ type: 'agent-sessions', active, inactive })
 })
 
 app.get('/api/health', (c) => c.json({ ok: true }))
@@ -354,14 +445,6 @@ app.post('/api/paste-image', async (c) => {
 
 app.use('/*', serveStatic({ root: './dist/client' }))
 
-interface WSData {
-  terminal: ITerminalProxy | null
-  currentSessionId: string | null
-  connectionId: string
-}
-
-const sockets = new Set<ServerWebSocket<WSData>>()
-
 const tlsEnabled = config.tlsCert && config.tlsKey
 
 Bun.serve<WSData>({
@@ -396,6 +479,12 @@ Bun.serve<WSData>({
     open(ws) {
       sockets.add(ws)
       send(ws, { type: 'sessions', sessions: registry.getAll() })
+      const agentSessions = registry.getAgentSessions()
+      send(ws, {
+        type: 'agent-sessions',
+        active: agentSessions.active,
+        inactive: agentSessions.inactive,
+      })
       initializePersistentTerminal(ws)
     },
     message(ws, message) {
@@ -423,6 +512,8 @@ function cleanupAllTerminals() {
   for (const ws of sockets) {
     cleanupTerminals(ws)
   }
+  logPoller.stop()
+  db.close()
 }
 
 process.on('SIGINT', () => {
@@ -519,6 +610,9 @@ function handleMessage(
       // Exit tmux copy-mode when user starts typing after scrolling
       handleCancelCopyMode(message.sessionId)
       return
+    case 'session-resume':
+      handleSessionResume(message, ws)
+      return
     default:
       send(ws, { type: 'error', message: 'Unknown message type' })
   }
@@ -582,6 +676,76 @@ function handleRename(
       message:
         error instanceof Error ? error.message : 'Unable to rename session',
     })
+  }
+}
+
+function handleSessionResume(
+  message: Extract<ClientMessage, { type: 'session-resume' }>,
+  ws: ServerWebSocket<WSData>
+) {
+  const sessionId = message.sessionId
+  if (!isValidSessionId(sessionId)) {
+    const error: ResumeError = {
+      code: 'NOT_FOUND',
+      message: 'Invalid session id',
+    }
+    send(ws, { type: 'session-resume-result', sessionId, ok: false, error })
+    return
+  }
+
+  const record = db.getSessionById(sessionId)
+  if (!record) {
+    const error: ResumeError = { code: 'NOT_FOUND', message: 'Session not found' }
+    send(ws, { type: 'session-resume-result', sessionId, ok: false, error })
+    return
+  }
+
+  if (record.currentWindow) {
+    const error: ResumeError = {
+      code: 'ALREADY_ACTIVE',
+      message: 'Session is already active',
+    }
+    send(ws, { type: 'session-resume-result', sessionId, ok: false, error })
+    return
+  }
+
+  const resumeTemplate =
+    record.agentType === 'claude' ? config.claudeResumeCmd : config.codexResumeCmd
+  const command = resumeTemplate.replace('{sessionId}', sessionId)
+  const projectPath =
+    record.projectPath ||
+    process.env.HOME ||
+    process.env.USERPROFILE ||
+    '.'
+
+  try {
+    const created = sessionManager.createWindow(
+      projectPath,
+      message.name ?? record.displayName,
+      command
+    )
+    db.updateSession(sessionId, {
+      currentWindow: created.tmuxWindow,
+      displayName: created.name,
+    })
+    refreshSessions()
+    send(ws, { type: 'session-resume-result', sessionId, ok: true })
+    broadcast({
+      type: 'session-activated',
+      session: toAgentSession({
+        ...record,
+        currentWindow: created.tmuxWindow,
+        displayName: created.name,
+      }),
+      window: created.tmuxWindow,
+    })
+  } catch (error) {
+    const err: ResumeError = {
+      code: 'RESUME_FAILED',
+      message:
+        error instanceof Error ? error.message : 'Unable to resume session',
+    }
+    send(ws, { type: 'session-resume-result', sessionId, ok: false, error: err })
   }
 }
 
