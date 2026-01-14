@@ -356,6 +356,58 @@ registry.on('agent-sessions', ({ active, inactive }) => {
 
 app.get('/api/health', (c) => c.json({ ok: true }))
 app.get('/api/sessions', (c) => c.json(registry.getAll()))
+
+app.get('/api/session-preview/:sessionId', async (c) => {
+  const sessionId = c.req.param('sessionId')
+  if (!sessionId || sessionId.length > MAX_FIELD_LENGTH || !SESSION_ID_PATTERN.test(sessionId)) {
+    return c.json({ error: 'Invalid session id' }, 400)
+  }
+
+  const record = db.getSessionById(sessionId)
+  if (!record) {
+    return c.json({ error: 'Session not found' }, 404)
+  }
+
+  const logPath = record.logFilePath
+  if (!logPath) {
+    return c.json({ error: 'No log file for session' }, 404)
+  }
+
+  try {
+    const stats = await fs.stat(logPath)
+    if (!stats.isFile()) {
+      return c.json({ error: 'Log file not found' }, 404)
+    }
+
+    // Read last 64KB of the file
+    const TAIL_BYTES = 64 * 1024
+    const fileSize = stats.size
+    const offset = Math.max(0, fileSize - TAIL_BYTES)
+    const fd = await fs.open(logPath, 'r')
+    const buffer = Buffer.alloc(Math.min(TAIL_BYTES, fileSize))
+    await fd.read(buffer, 0, buffer.length, offset)
+    await fd.close()
+
+    const content = buffer.toString('utf8')
+    // Take last 100 lines
+    const lines = content.split('\n').slice(-100)
+
+    return c.json({
+      sessionId,
+      displayName: record.displayName,
+      projectPath: record.projectPath,
+      agentType: record.agentType,
+      lastActivityAt: record.lastActivityAt,
+      lines,
+    })
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException
+    if (err.code === 'ENOENT') {
+      return c.json({ error: 'Log file not found' }, 404)
+    }
+    return c.json({ error: 'Unable to read log file' }, 500)
+  }
+})
 app.get('/api/directories', async (c) => {
   const requestedPath = c.req.query('path') ?? '~'
 

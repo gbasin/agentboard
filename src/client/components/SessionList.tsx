@@ -12,6 +12,7 @@ import { useSettingsStore } from '../stores/settingsStore'
 import { getEffectiveModifier, getModifierDisplay } from '../utils/device'
 import AgentIcon from './AgentIcon'
 import InactiveSessionItem from './InactiveSessionItem'
+import SessionPreviewModal from './SessionPreviewModal'
 
 interface SessionListProps {
   sessions: Session[]
@@ -53,6 +54,7 @@ export default function SessionList({
   useTimestampRefresh()
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
   const [showInactive, setShowInactive] = useState(false)
+  const [previewSession, setPreviewSession] = useState<AgentSession | null>(null)
   const prefersReducedMotion = useReducedMotion()
 
   // Track counts for counter animations
@@ -75,9 +77,28 @@ export default function SessionList({
     prevInactiveCountRef.current = inactiveSessions.length
   }, [inactiveSessions.length])
 
-  // Track newly added inactive sessions for entry animation
+  // Track newly added sessions for entry animations
+  const prevActiveIdsRef = useRef<Set<string>>(new Set(sessions.map((s) => s.id)))
   const prevInactiveIdsRef = useRef<Set<string>>(new Set(inactiveSessions.map((s) => s.sessionId)))
+  const [newlyActiveIds, setNewlyActiveIds] = useState<Set<string>>(new Set())
   const [newlyInactiveIds, setNewlyInactiveIds] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    const currentIds = new Set(sessions.map((s) => s.id))
+    const newIds = new Set<string>()
+    for (const id of currentIds) {
+      if (!prevActiveIdsRef.current.has(id)) {
+        newIds.add(id)
+      }
+    }
+    prevActiveIdsRef.current = currentIds
+
+    if (newIds.size > 0) {
+      setNewlyActiveIds(newIds)
+      const timer = setTimeout(() => setNewlyActiveIds(new Set()), 500)
+      return () => clearTimeout(timer)
+    }
+  }, [sessions])
 
   useEffect(() => {
     const currentIds = new Set(inactiveSessions.map((s) => s.sessionId))
@@ -91,7 +112,6 @@ export default function SessionList({
 
     if (newIds.size > 0) {
       setNewlyInactiveIds(newIds)
-      // Clear after animation completes
       const timer = setTimeout(() => setNewlyInactiveIds(new Set()), 500)
       return () => clearTimeout(timer)
     }
@@ -154,17 +174,26 @@ export default function SessionList({
         ) : (
           <div>
             <AnimatePresence initial={false}>
-              {sortedSessions.map((session) => (
+              {sortedSessions.map((session) => {
+                const isNew = newlyActiveIds.has(session.id)
+                return (
                 <motion.div
                   key={session.id}
                   layout={!prefersReducedMotion}
-                  initial={prefersReducedMotion ? false : { opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
+                  initial={prefersReducedMotion ? false : { opacity: 0, y: -10, scale: 0.95 }}
+                  animate={
+                    prefersReducedMotion
+                      ? { opacity: 1, y: 0 }
+                      : isNew
+                        ? { opacity: 1, y: 0, scale: [0.95, 1.02, 1] }
+                        : { opacity: 1, y: 0, scale: 1 }
+                  }
                   exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 20 }}
                   transition={prefersReducedMotion ? { duration: 0 } : {
                     layout: { type: 'spring', stiffness: 500, damping: 35 },
                     opacity: { duration: 0.2 },
                     y: { duration: 0.25 },
+                    scale: { duration: 0.3 },
                   }}
                 >
                   <SessionRow
@@ -178,7 +207,7 @@ export default function SessionList({
                     onRename={(newName) => handleRename(session.id, newName)}
                   />
                 </motion.div>
-              ))}
+              )})}
             </AnimatePresence>
           </div>
         )}
@@ -216,24 +245,33 @@ export default function SessionList({
                   exit={prefersReducedMotion ? { opacity: 0 } : { height: 0, opacity: 0 }}
                   transition={{ duration: 0.2 }}
                 >
-                  {inactiveSessions.map((session) => (
+                  {inactiveSessions.map((session) => {
+                    const isNew = newlyInactiveIds.has(session.sessionId)
+                    return (
                     <motion.div
                       key={session.sessionId}
                       initial={
-                        prefersReducedMotion || !newlyInactiveIds.has(session.sessionId)
+                        prefersReducedMotion || !isNew
                           ? false
-                          : { opacity: 0, y: -20 }
+                          : { opacity: 0, y: -20, scale: 0.95 }
                       }
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.25, delay: 0.1 }}
+                      animate={
+                        prefersReducedMotion
+                          ? { opacity: 1, y: 0 }
+                          : isNew
+                            ? { opacity: 1, y: 0, scale: [0.95, 1.02, 1] }
+                            : { opacity: 1, y: 0, scale: 1 }
+                      }
+                      transition={{ duration: 0.25, delay: 0.1, scale: { duration: 0.3 } }}
                     >
                       <InactiveSessionItem
                         session={session}
                         showSessionIdSuffix={showSessionIdSuffix}
                         onResume={(sessionId) => onResume?.(sessionId)}
+                        onPreview={setPreviewSession}
                       />
                     </motion.div>
-                  ))}
+                  )})}
                 </motion.div>
               )}
             </AnimatePresence>
@@ -249,6 +287,17 @@ export default function SessionList({
           <span>{modDisplay}X kill</span>
         </div>
       </div>
+
+      {previewSession && (
+        <SessionPreviewModal
+          session={previewSession}
+          onClose={() => setPreviewSession(null)}
+          onResume={(sessionId) => {
+            setPreviewSession(null)
+            onResume?.(sessionId)
+          }}
+        />
+      )}
     </aside>
   )
 }
