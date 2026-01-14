@@ -208,8 +208,30 @@ function hydrateSessionsWithAgentSessions(sessions: Session[]): Session[] {
   const activeMap = new Map<string, typeof activeSessions[number]>()
   const orphaned: AgentSession[] = []
 
+  // Safeguard: don't mass-orphan if window list seems incomplete
+  // This can happen if tmux commands fail temporarily on server restart
+  const wouldOrphanCount = activeSessions.filter(
+    (s) => s.currentWindow && !windowSet.has(s.currentWindow)
+  ).length
+  if (wouldOrphanCount > 0 && wouldOrphanCount === activeSessions.length) {
+    logger.warn('hydrate_would_orphan_all', {
+      activeSessionCount: activeSessions.length,
+      windowCount: windowSet.size,
+      wouldOrphanCount,
+      message: 'Would orphan ALL active sessions - skipping to prevent data loss',
+    })
+    return sessions
+  }
+
   for (const agentSession of activeSessions) {
     if (!agentSession.currentWindow || !windowSet.has(agentSession.currentWindow)) {
+      logger.info('session_orphaned', {
+        sessionId: agentSession.sessionId,
+        displayName: agentSession.displayName,
+        currentWindow: agentSession.currentWindow,
+        windowSetSize: windowSet.size,
+        windowSetSample: Array.from(windowSet).slice(0, 5),
+      })
       const orphanedSession = db.orphanSession(agentSession.sessionId)
       if (orphanedSession) {
         orphaned.push(toAgentSession(orphanedSession))
@@ -250,6 +272,69 @@ function refreshSessions() {
   const hydrated = hydrateSessionsWithAgentSessions(sessions)
   registry.replaceSessions(hydrated)
 }
+
+// Try to re-match orphaned sessions to windows by display name
+function recoverOrphanedSessions() {
+  const orphanedSessions = db.getInactiveSessions()
+  const windows = sessionManager.listWindows()
+  const activeSessions = db.getActiveSessions()
+
+  // Build set of windows that already have sessions
+  const claimedWindows = new Set(
+    activeSessions.map((s) => s.currentWindow).filter(Boolean)
+  )
+
+  // Build map of window name -> window for unclaimed windows
+  const unclaimedByName = new Map<string, typeof windows[number]>()
+  for (const window of windows) {
+    if (!claimedWindows.has(window.tmuxWindow)) {
+      unclaimedByName.set(window.name, window)
+    }
+  }
+
+  let recovered = 0
+  for (const session of orphanedSessions) {
+    const matchingWindow = unclaimedByName.get(session.displayName)
+    if (matchingWindow) {
+      db.updateSession(session.sessionId, {
+        currentWindow: matchingWindow.tmuxWindow,
+      })
+      unclaimedByName.delete(session.displayName)
+      recovered += 1
+      logger.info('session_recovered', {
+        sessionId: session.sessionId,
+        displayName: session.displayName,
+        window: matchingWindow.tmuxWindow,
+      })
+    }
+  }
+
+  if (recovered > 0) {
+    logger.info('recovery_complete', { recoveredCount: recovered })
+  }
+
+  return recovered
+}
+
+// Log startup state for debugging orphan issues
+const startupActiveSessions = db.getActiveSessions()
+const startupWindows = sessionManager.listWindows()
+logger.info('startup_state', {
+  activeSessionCount: startupActiveSessions.length,
+  windowCount: startupWindows.length,
+  activeWindows: startupActiveSessions.map((s) => ({
+    sessionId: s.sessionId.slice(0, 8),
+    name: s.displayName,
+    window: s.currentWindow,
+  })),
+  tmuxWindows: startupWindows.map((w) => ({
+    tmuxWindow: w.tmuxWindow,
+    name: w.name,
+  })),
+})
+
+// Try to recover orphaned sessions by matching display names to windows
+recoverOrphanedSessions()
 
 refreshSessions()
 setInterval(refreshSessions, config.refreshIntervalMs)

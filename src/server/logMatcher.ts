@@ -579,7 +579,7 @@ function extractLastConversationFromTmux(content: string): ConversationPair {
     const trimmed = line.trim()
     if (!trimmed) return false
     // Codex prompt: › at start of line
-    return /^›/.test(trimmed)
+    return trimmed.startsWith('›')
   }
 
   const isPromptLine = (line: string) => isClaudePromptLine(line) || isCodexPromptLine(line)
@@ -638,77 +638,56 @@ function extractLastConversationFromTmux(content: string): ConversationPair {
     return cleaned
   }
 
-  // Extract assistant text from a range of lines, stopping at tool calls or prompts
-  const extractAssistantText = (startIdx: number, endIdx: number): string => {
+  // Find the two most recent prompts to bound the last exchange
+  let currentPromptIdx = -1
+  let prevPromptIdx = -1
+  for (let i = rawLines.length - 1; i >= 0; i--) {
+    if (isPromptLine(rawLines[i] ?? '')) {
+      if (currentPromptIdx === -1) {
+        currentPromptIdx = i
+      } else {
+        prevPromptIdx = i
+        break
+      }
+    }
+  }
+
+  // Need two prompts to extract an exchange
+  if (currentPromptIdx === -1 || prevPromptIdx === -1) {
+    return { user: '', assistant: '' }
+  }
+
+  const promptLine = rawLines[currentPromptIdx] ?? ''
+  const pendingSend = promptLine.includes('↵')
+  const user = pendingSend ? '' : extractUserFromPrompt(promptLine)
+
+  // Find text bullets between prev prompt and current prompt (skip tool call bullets)
+  let firstTextBulletIdx = -1
+  for (let i = prevPromptIdx + 1; i < currentPromptIdx; i++) {
+    if (isTextBullet(rawLines[i] ?? '')) {
+      firstTextBulletIdx = i
+      break
+    }
+  }
+
+  // Extract assistant text starting from the first text bullet
+  let assistant = ''
+  if (firstTextBulletIdx !== -1) {
     const assistantLines: string[] = []
-    for (let i = startIdx; i < endIdx; i += 1) {
+    for (let i = firstTextBulletIdx; i < currentPromptIdx; i++) {
       const line = rawLines[i] ?? ''
       const trimmed = line.trim()
       // Stop if we hit a tool call bullet
-      if (i > startIdx && isToolCallBullet(line)) break
+      if (i > firstTextBulletIdx && isToolCallBullet(line)) break
       // Stop if we hit another text bullet (next response)
-      if (i > startIdx && isTextBullet(line)) break
+      if (i > firstTextBulletIdx && isTextBullet(line)) break
       if (!trimmed) continue
       if (isDecorativeLine(trimmed) || isMetadataLine(trimmed)) continue
       assistantLines.push(cleanLine(line))
       if (assistantLines.length >= 60) break
     }
-    return assistantLines.join('\n')
+    assistant = assistantLines.join('\n')
   }
 
-  // Extract a specific exchange by index (0 = most recent, 1 = previous, etc.)
-  const tryExtractExchange = (exchangeIndex: number): ConversationPair | null => {
-    // Find all prompts
-    const prompts: number[] = []
-    for (let i = rawLines.length - 1; i >= 0; i--) {
-      if (isPromptLine(rawLines[i] ?? '')) {
-        prompts.push(i)
-      }
-    }
-
-    // Need at least exchangeIndex + 2 prompts (current + previous for the exchange)
-    if (prompts.length < exchangeIndex + 2) return null
-
-    // Get the target prompt pair
-    const currentPromptIdx = prompts[exchangeIndex]
-    const prevPromptIdx = prompts[exchangeIndex + 1]
-
-    const promptLine = rawLines[currentPromptIdx] ?? ''
-    const pendingSend = promptLine.includes('↵')
-    const user = pendingSend ? '' : extractUserFromPrompt(promptLine)
-
-    // Find text bullets between prev prompt and current prompt (skip tool call bullets)
-    const textBullets: number[] = []
-    for (let i = prevPromptIdx + 1; i < currentPromptIdx; i++) {
-      if (isTextBullet(rawLines[i] ?? '')) {
-        textBullets.push(i)
-      }
-    }
-
-    // Use the first text bullet for assistant response
-    let assistant = ''
-    if (textBullets.length > 0) {
-      const firstTextBullet = textBullets[0]
-      assistant = extractAssistantText(firstTextBullet, currentPromptIdx)
-    }
-
-    // If we got meaningful content, return it
-    if (user.length > 0 || assistant.length > 10) {
-      return { user, assistant }
-    }
-
-    return null
-  }
-
-  // Try most recent exchange first, then go back up to 3 exchanges
-  // Require meaningful assistant content (not just user) for a valid exchange
-  for (let i = 0; i < 3; i++) {
-    const result = tryExtractExchange(i)
-    if (result && result.assistant.length > 10) {
-      return result
-    }
-  }
-
-  // Fallback: no valid extraction found
-  return { user: '', assistant: '' }
+  return { user, assistant }
 }

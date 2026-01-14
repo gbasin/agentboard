@@ -390,7 +390,8 @@ describe('server message handlers', () => {
     )
     websocket.message?.(ws as never, refreshPayload)
 
-    expect(listCalls).toBe(2)
+    // 4 calls: startup logging + recoverOrphanedSessions + initial refresh + message refresh
+    expect(listCalls).toBe(4)
     expect(replaceSessionsCalls).toHaveLength(2)
 
     websocket.message?.(
