@@ -3,10 +3,11 @@
  * Uses brand logos for Claude (Anthropic) and Codex (OpenAI), falls back to terminal
  */
 import { TerminalIcon } from '@untitledui-icons/react/line'
-import type { Session } from '@shared/types'
+import type { AgentType } from '@shared/types'
 
 interface AgentIconProps {
-  session: Session
+  agentType?: AgentType
+  command?: string
   className?: string
 }
 
@@ -43,8 +44,12 @@ const iconMap: Record<string, IconComponent> = {
   codex: OpenAIIcon,
 }
 
-export default function AgentIcon({ session, className = '' }: AgentIconProps) {
-  const key = session.agentType || session.command?.split(' ')[0] || ''
+export default function AgentIcon({
+  agentType,
+  command,
+  className = '',
+}: AgentIconProps) {
+  const key = agentType || command?.split(' ')[0] || ''
   const Icon = iconMap[key.toLowerCase()]
 
   if (Icon) {

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
-import type { Session } from '@shared/types'
+import type { AgentSession, Session } from '@shared/types'
 import { sortSessions } from '../utils/sessions'
 import { useSettingsStore } from './settingsStore'
 import { safeStorage } from '../utils/storage'
@@ -14,11 +14,13 @@ export type ConnectionStatus =
 
 interface SessionState {
   sessions: Session[]
+  agentSessions: { active: AgentSession[]; inactive: AgentSession[] }
   selectedSessionId: string | null
   hasLoaded: boolean
   connectionStatus: ConnectionStatus
   connectionError: string | null
   setSessions: (sessions: Session[]) => void
+  setAgentSessions: (active: AgentSession[], inactive: AgentSession[]) => void
   updateSession: (session: Session) => void
   setSelectedSessionId: (sessionId: string | null) => void
   setConnectionStatus: (status: ConnectionStatus) => void
@@ -29,6 +31,7 @@ export const useSessionStore = create<SessionState>()(
   persist(
     (set, get) => ({
       sessions: [],
+      agentSessions: { active: [], inactive: [] },
       selectedSessionId: null,
       hasLoaded: false,
       connectionStatus: 'connecting',
@@ -55,6 +58,10 @@ export const useSessionStore = create<SessionState>()(
           selectedSessionId: newSelectedId,
         })
       },
+      setAgentSessions: (active, inactive) =>
+        set({
+          agentSessions: { active, inactive },
+        }),
       updateSession: (session) =>
         set((state) => ({
           sessions: state.sessions.map((existing) =>

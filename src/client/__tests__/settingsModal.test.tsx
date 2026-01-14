@@ -43,6 +43,7 @@ beforeEach(() => {
     lastProjectPath: null,
     sessionSortMode: 'created',
     sessionSortDirection: 'desc',
+    showSessionIdSuffix: false,
   })
 })
 
@@ -56,6 +57,7 @@ afterEach(() => {
     lastProjectPath: null,
     sessionSortMode: 'created',
     sessionSortDirection: 'desc',
+    showSessionIdSuffix: false,
   })
 })
 

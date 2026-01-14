@@ -327,6 +327,7 @@ describe('component rendering', () => {
         onNewSession={() => {}}
         onKillSession={() => {}}
         onRenameSession={() => {}}
+        onResumeSession={() => {}}
         onOpenSettings={() => {}}
       />
     )
@@ -346,6 +347,7 @@ describe('component rendering', () => {
         onNewSession={() => {}}
         onKillSession={() => {}}
         onRenameSession={() => {}}
+        onResumeSession={() => {}}
         onOpenSettings={() => {}}
       />
     )
@@ -372,6 +374,7 @@ describe('component rendering', () => {
         onNewSession={() => {}}
         onKillSession={() => {}}
         onRenameSession={() => {}}
+        onResumeSession={() => {}}
         onOpenSettings={() => {}}
       />
     )

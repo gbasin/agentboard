@@ -61,6 +61,7 @@ beforeEach(() => {
   globalAny.WebSocket = FakeWebSocket as unknown as typeof WebSocket
   useSessionStore.setState({
     sessions: [],
+    agentSessions: { active: [], inactive: [] },
     selectedSessionId: null,
     hasLoaded: false,
     connectionStatus: 'connecting',

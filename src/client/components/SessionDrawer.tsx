@@ -6,16 +6,18 @@
 
 import { useEffect, useRef } from 'react'
 import { useReducedMotion } from 'motion/react'
-import type { Session } from '@shared/types'
+import type { AgentSession, Session } from '@shared/types'
 import SessionList from './SessionList'
 
 interface SessionDrawerProps {
   isOpen: boolean
   onClose: () => void
   sessions: Session[]
+  inactiveSessions?: AgentSession[]
   selectedSessionId: string | null
   onSelect: (sessionId: string) => void
   onRename: (sessionId: string, newName: string) => void
+  onResume?: (sessionId: string) => void
   onNewSession: () => void
   loading: boolean
   error: string | null
@@ -25,9 +27,11 @@ export default function SessionDrawer({
   isOpen,
   onClose,
   sessions,
+  inactiveSessions = [],
   selectedSessionId,
   onSelect,
   onRename,
+  onResume,
   onNewSession,
   loading,
   error,
@@ -138,9 +142,11 @@ export default function SessionDrawer({
       >
         <SessionList
           sessions={sessions}
+          inactiveSessions={inactiveSessions}
           selectedSessionId={selectedSessionId}
           onSelect={handleSelect}
           onRename={onRename}
+          onResume={onResume}
           loading={loading}
           error={error}
         />

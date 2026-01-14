@@ -90,6 +90,8 @@ interface SettingsState {
   setLineHeight: (height: number) => void
   shortcutModifier: ShortcutModifier | 'auto'
   setShortcutModifier: (modifier: ShortcutModifier | 'auto') => void
+  showSessionIdSuffix: boolean
+  setShowSessionIdSuffix: (enabled: boolean) => void
   // Command presets
   commandPresets: CommandPreset[]
   setCommandPresets: (presets: CommandPreset[]) => void
@@ -124,6 +126,8 @@ export const useSettingsStore = create<SettingsState>()(
       setLineHeight: (height) => set({ lineHeight: Math.max(1.0, Math.min(2.0, height)) }),
       shortcutModifier: 'auto',
       setShortcutModifier: (modifier) => set({ shortcutModifier: modifier }),
+      showSessionIdSuffix: false,
+      setShowSessionIdSuffix: (enabled) => set({ showSessionIdSuffix: enabled }),
       // Command presets
       commandPresets: DEFAULT_PRESETS,
       setCommandPresets: (presets) => set({ commandPresets: presets }),

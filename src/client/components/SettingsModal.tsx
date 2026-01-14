@@ -50,6 +50,12 @@ export default function SettingsModal({
   const setShortcutModifier = useSettingsStore(
     (state) => state.setShortcutModifier
   )
+  const showSessionIdSuffix = useSettingsStore(
+    (state) => state.showSessionIdSuffix
+  )
+  const setShowSessionIdSuffix = useSettingsStore(
+    (state) => state.setShowSessionIdSuffix
+  )
 
   const [draftDir, setDraftDir] = useState(defaultProjectDir)
   const [draftPresets, setDraftPresets] = useState<CommandPreset[]>(commandPresets)
@@ -63,6 +69,9 @@ export default function SettingsModal({
   const [draftShortcutModifier, setDraftShortcutModifier] = useState<
     ShortcutModifier | 'auto'
   >(shortcutModifier)
+  const [draftShowSessionIdSuffix, setDraftShowSessionIdSuffix] = useState(
+    showSessionIdSuffix
+  )
 
   // New preset form state
   const [showAddForm, setShowAddForm] = useState(false)
@@ -87,6 +96,7 @@ export default function SettingsModal({
       setDraftUseWebGL(useWebGL)
       setDraftLineHeight(lineHeight)
       setDraftShortcutModifier(shortcutModifier)
+      setDraftShowSessionIdSuffix(showSessionIdSuffix)
       setShowAddForm(false)
       setNewLabel('')
       setNewBaseCommand('')
@@ -130,6 +140,7 @@ export default function SettingsModal({
     useWebGL,
     lineHeight,
     shortcutModifier,
+    showSessionIdSuffix,
     isOpen,
   ])
 
@@ -164,6 +175,7 @@ export default function SettingsModal({
     setUseWebGL(draftUseWebGL)
     setLineHeight(draftLineHeight)
     setShortcutModifier(draftShortcutModifier)
+    setShowSessionIdSuffix(draftShowSessionIdSuffix)
     onClose({ webglChanged })
   }
 
@@ -446,6 +458,19 @@ export default function SettingsModal({
               </div>
             </div>
           )}
+
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm text-primary">Session ID Suffix</div>
+              <div className="text-[10px] text-muted">
+                Show last 5 characters of agent session IDs in the list.
+              </div>
+            </div>
+            <Switch
+              checked={draftShowSessionIdSuffix}
+              onCheckedChange={setDraftShowSessionIdSuffix}
+            />
+          </div>
 
           <div className="border-t border-border pt-4">
             <label className="mb-2 block text-xs text-secondary">

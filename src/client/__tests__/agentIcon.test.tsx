@@ -1,6 +1,5 @@
 import { describe, expect, test, mock } from 'bun:test'
 import TestRenderer from 'react-test-renderer'
-import type { Session } from '@shared/types'
 
 const iconStub =
   (testId: string) =>
@@ -22,21 +21,10 @@ mock.module('@untitledui-icons/react/line', () => ({
 
 const { default: AgentIcon } = await import('../components/AgentIcon')
 
-const baseSession: Session = {
-  id: 'session-1',
-  name: 'alpha',
-  tmuxWindow: 'agentboard:1',
-  projectPath: '/tmp/alpha',
-  status: 'working',
-  lastActivity: '2024-01-01T00:00:00.000Z',
-  createdAt: '2024-01-01T00:00:00.000Z',
-  source: 'managed',
-}
-
 describe('AgentIcon', () => {
   test('renders Anthropic icon for claude sessions', () => {
     const renderer = TestRenderer.create(
-      <AgentIcon session={{ ...baseSession, agentType: 'claude' }} className="icon" />
+      <AgentIcon agentType="claude" className="icon" />
     )
 
     const icon = renderer.root.findByProps({ 'aria-label': 'Anthropic' })
@@ -45,7 +33,7 @@ describe('AgentIcon', () => {
 
   test('renders OpenAI icon based on command', () => {
     const renderer = TestRenderer.create(
-      <AgentIcon session={{ ...baseSession, command: 'Codex --help' }} />
+      <AgentIcon command="Codex --help" />
     )
 
     expect(renderer.root.findByProps({ 'aria-label': 'OpenAI' })).toBeTruthy()
@@ -53,7 +41,7 @@ describe('AgentIcon', () => {
 
   test('falls back to terminal icon for unknown agent', () => {
     const renderer = TestRenderer.create(
-      <AgentIcon session={{ ...baseSession, command: 'bash' }} className="fallback" />
+      <AgentIcon command="bash" className="fallback" />
     )
 
     const fallback = renderer.root.findByProps({ 'data-testid': 'terminal-icon' })

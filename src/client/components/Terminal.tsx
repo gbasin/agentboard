@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
-import type { Session } from '@shared/types'
+import type { AgentSession, Session } from '@shared/types'
 import type { ConnectionStatus } from '../stores/sessionStore'
 import { useTerminal } from '../hooks/useTerminal'
 import { useThemeStore, terminalThemes } from '../stores/themeStore'
@@ -12,6 +12,7 @@ import { PlusIcon, XCloseIcon, DotsVerticalIcon, Menu01Icon } from '@untitledui-
 interface TerminalProps {
   session: Session | null
   sessions: Session[]
+  inactiveSessions?: AgentSession[]
   connectionStatus: ConnectionStatus
   sendMessage: (message: any) => void
   subscribe: (listener: any) => () => void
@@ -20,6 +21,7 @@ interface TerminalProps {
   onNewSession: () => void
   onKillSession: (sessionId: string) => void
   onRenameSession: (sessionId: string, newName: string) => void
+  onResumeSession: (sessionId: string) => void
   onOpenSettings: () => void
   loading?: boolean
   error?: string | null
@@ -62,6 +64,7 @@ function triggerHaptic() {
 export default function Terminal({
   session,
   sessions,
+  inactiveSessions = [],
   connectionStatus,
   sendMessage,
   subscribe,
@@ -70,6 +73,7 @@ export default function Terminal({
   onNewSession,
   onKillSession,
   onRenameSession,
+  onResumeSession,
   onOpenSettings,
   loading = false,
   error = null,
@@ -243,7 +247,7 @@ export default function Terminal({
 
   const handleStartRename = () => {
     if (!session) return
-    setRenameValue(session.name)
+    setRenameValue(session.agentSessionName || session.name)
     setIsRenaming(true)
     setShowMoreMenu(false)
   }
@@ -251,7 +255,8 @@ export default function Terminal({
   const handleRenameSubmit = () => {
     if (!session) return
     const trimmed = renameValue.trim()
-    if (trimmed && trimmed !== session.name) {
+    const displayName = session.agentSessionName || session.name
+    if (trimmed && trimmed !== displayName) {
       onRenameSession(session.id, trimmed)
     }
     setIsRenaming(false)
@@ -893,7 +898,7 @@ export default function Terminal({
                 />
               ) : (
                 <span className="text-sm font-medium text-primary truncate">
-                  {session.name}
+                  {session.agentSessionName || session.name}
                 </span>
               )}
               <span className={`text-xs shrink-0 ${statusClass[session.status]}`}>
@@ -1094,9 +1099,11 @@ export default function Terminal({
           isOpen={isDrawerOpen}
           onClose={() => setIsDrawerOpen(false)}
           sessions={sessions}
+          inactiveSessions={inactiveSessions}
           selectedSessionId={session?.id ?? null}
           onSelect={onSelectSession}
           onRename={onRenameSession}
+          onResume={onResumeSession}
           onNewSession={onNewSession}
           loading={loading}
           error={error}
@@ -1111,7 +1118,7 @@ export default function Terminal({
               Kill Session
             </h3>
             <p className="text-sm text-secondary mb-4 text-pretty">
-              Kill "{session.name}"? The process will be terminated. Conversation history is preserved in logs.
+              Kill "{session.agentSessionName || session.name}"? The process will be terminated. Conversation history is preserved in logs.
             </p>
             <div className="flex justify-end gap-2">
               <button

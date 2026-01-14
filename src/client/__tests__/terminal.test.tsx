@@ -241,6 +241,7 @@ describe('Terminal', () => {
           onNewSession={() => {}}
           onKillSession={() => {}}
           onRenameSession={() => {}}
+          onResumeSession={() => {}}
           onOpenSettings={() => {
             openSettingsCalls += 1
           }}
@@ -344,6 +345,7 @@ describe('Terminal', () => {
           onNewSession={() => {}}
           onKillSession={(id) => killed.push(id)}
           onRenameSession={(id, name) => renamed.push({ id, name })}
+          onResumeSession={() => {}}
           onOpenSettings={() => {}}
         />,
         {

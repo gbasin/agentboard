@@ -47,6 +47,7 @@ beforeEach(() => {
   useSettingsStore.setState({
     sessionSortMode: 'created',
     sessionSortDirection: 'desc',
+    showSessionIdSuffix: false,
   })
 })
 
@@ -59,6 +60,7 @@ afterEach(() => {
   useSettingsStore.setState({
     sessionSortMode: 'created',
     sessionSortDirection: 'desc',
+    showSessionIdSuffix: false,
   })
 })
 

@@ -22,6 +22,7 @@ function makeSession(overrides: Partial<Session> = {}): Session {
 beforeEach(() => {
   useSessionStore.setState({
     sessions: [],
+    agentSessions: { active: [], inactive: [] },
     selectedSessionId: null,
     hasLoaded: false,
     connectionStatus: 'connecting',
@@ -30,6 +31,7 @@ beforeEach(() => {
   useSettingsStore.setState({
     sessionSortMode: 'created',
     sessionSortDirection: 'desc',
+    showSessionIdSuffix: false,
   })
 })
 

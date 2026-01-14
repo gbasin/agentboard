@@ -26,10 +26,12 @@ export default function App() {
   const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null)
 
   const sessions = useSessionStore((state) => state.sessions)
+  const agentSessions = useSessionStore((state) => state.agentSessions)
   const selectedSessionId = useSessionStore(
     (state) => state.selectedSessionId
   )
   const setSessions = useSessionStore((state) => state.setSessions)
+  const setAgentSessions = useSessionStore((state) => state.setAgentSessions)
   const updateSession = useSessionStore((state) => state.updateSession)
   const setSelectedSessionId = useSessionStore(
     (state) => state.setSelectedSessionId
@@ -73,6 +75,13 @@ export default function App() {
         setSelectedSessionId(message.session.id)
         addRecentPath(message.session.projectPath)
       }
+      if (message.type === 'agent-sessions') {
+        setAgentSessions(message.active, message.inactive)
+      }
+      if (message.type === 'session-resume-result' && !message.ok) {
+        setServerError(`${message.error?.code}: ${message.error?.message}`)
+        window.setTimeout(() => setServerError(null), 6000)
+      }
       if (message.type === 'terminal-error') {
         if (!message.sessionId || message.sessionId === selectedSessionId) {
           setServerError(`${message.code}: ${message.message}`)
@@ -97,6 +106,7 @@ export default function App() {
     sendMessage,
     setSelectedSessionId,
     setSessions,
+    setAgentSessions,
     subscribe,
     updateSession,
   ])
@@ -198,6 +208,10 @@ export default function App() {
     setLastProjectPath(projectPath)
   }
 
+  const handleResumeSession = (sessionId: string) => {
+    sendMessage({ type: 'session-resume', sessionId })
+  }
+
   const handleRenameSession = (sessionId: string, newName: string) => {
     sendMessage({ type: 'session-rename', sessionId, newName })
   }
@@ -226,9 +240,11 @@ export default function App() {
         />
         <SessionList
           sessions={sessions}
+          inactiveSessions={agentSessions.inactive}
           selectedSessionId={selectedSessionId}
           onSelect={setSelectedSessionId}
           onRename={handleRenameSession}
+          onResume={handleResumeSession}
           loading={!hasLoaded}
           error={connectionError || serverError}
         />
@@ -247,6 +263,8 @@ export default function App() {
         onKillSession={handleKillSession}
         onRenameSession={handleRenameSession}
         onOpenSettings={handleOpenSettings}
+        onResumeSession={handleResumeSession}
+        inactiveSessions={agentSessions.inactive}
         loading={!hasLoaded}
         error={connectionError || serverError}
       />

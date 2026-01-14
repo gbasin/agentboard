@@ -3,7 +3,9 @@ import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
 import { HandIcon } from '@untitledui-icons/react/line'
 import type { AgentSession, Session } from '@shared/types'
 import { sortSessions } from '../utils/sessions'
+import { formatRelativeTime } from '../utils/time'
 import { getPathLeaf } from '../utils/sessionLabel'
+import { getSessionIdSuffix } from '../utils/sessionId'
 import { useSettingsStore } from '../stores/settingsStore'
 import { getEffectiveModifier, getModifierDisplay } from '../utils/device'
 import AgentIcon from './AgentIcon'
@@ -56,6 +58,9 @@ export default function SessionList({
   const sessionSortDirection = useSettingsStore(
     (state) => state.sessionSortDirection
   )
+  const showSessionIdSuffix = useSettingsStore(
+    (state) => state.showSessionIdSuffix
+  )
   const sortedSessions = sortSessions(sessions, {
     mode: sessionSortMode,
     direction: sessionSortDirection,
@@ -96,7 +101,7 @@ export default function SessionList({
             No sessions
           </div>
         ) : (
-          <div className="pb-1">
+          <div>
             <AnimatePresence initial={false}>
               {sortedSessions.map((session) => (
                 <motion.div
@@ -114,6 +119,7 @@ export default function SessionList({
                     session={session}
                     isSelected={session.id === selectedSessionId}
                     isEditing={session.id === editingSessionId}
+                    showSessionIdSuffix={showSessionIdSuffix}
                     onSelect={() => onSelect(session.id)}
                     onStartEdit={() => setEditingSessionId(session.id)}
                     onCancelEdit={() => setEditingSessionId(null)}
@@ -146,6 +152,7 @@ export default function SessionList({
                   <InactiveSessionItem
                     key={session.sessionId}
                     session={session}
+                    showSessionIdSuffix={showSessionIdSuffix}
                     onResume={(sessionId) => onResume?.(sessionId)}
                   />
                 ))}
@@ -171,6 +178,7 @@ interface SessionRowProps {
   session: Session
   isSelected: boolean
   isEditing: boolean
+  showSessionIdSuffix: boolean
   onSelect: () => void
   onStartEdit: () => void
   onCancelEdit: () => void
@@ -181,6 +189,7 @@ function SessionRow({
   session,
   isSelected,
   isEditing,
+  showSessionIdSuffix,
   onSelect,
   onStartEdit,
   onCancelEdit,
@@ -193,6 +202,11 @@ function SessionRow({
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const directoryLeaf = getPathLeaf(session.projectPath)
   const needsInput = session.status === 'permission'
+  const agentSessionId = session.agentSessionId?.trim()
+  const sessionIdSuffix =
+    showSessionIdSuffix && agentSessionId
+      ? getSessionIdSuffix(agentSessionId)
+      : ''
 
   // Track previous status for transition animation
   const prevStatusRef = useRef<Session['status']>(session.status)
@@ -304,6 +318,14 @@ function SessionRow({
               {displayName}
             </span>
           )}
+          {sessionIdSuffix && (
+            <span
+              className="shrink-0 rounded bg-border px-1.5 py-0.5 text-[10px] font-mono text-muted"
+              title={agentSessionId}
+            >
+              #{sessionIdSuffix}
+            </span>
+          )}
           {needsInput ? (
             <HandIcon className="h-4 w-4 shrink-0 text-approval" aria-label="Needs input" />
           ) : (
@@ -325,18 +347,4 @@ function SessionRow({
   )
 }
 
-export function formatRelativeTime(iso: string): string {
-  const timestamp = Date.parse(iso)
-  if (Number.isNaN(timestamp)) return ''
-
-  const delta = Date.now() - timestamp
-  const minutes = Math.floor(delta / 60000)
-  if (minutes < 1) return 'now'
-  if (minutes < 60) return `${minutes}m`
-
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h`
-
-  const days = Math.floor(hours / 24)
-  return `${days}d`
-}
+export { formatRelativeTime }

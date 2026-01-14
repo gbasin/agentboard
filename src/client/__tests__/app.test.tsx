@@ -155,6 +155,7 @@ beforeEach(() => {
 
   useSessionStore.setState({
     sessions: [],
+    agentSessions: { active: [], inactive: [] },
     selectedSessionId: null,
     hasLoaded: false,
     connectionStatus: 'connected',
@@ -164,6 +165,7 @@ beforeEach(() => {
   useSettingsStore.setState({
     sessionSortMode: 'created',
     sessionSortDirection: 'asc',
+    showSessionIdSuffix: false,
   })
 
   useThemeStore.setState({ theme: 'dark' })
@@ -183,6 +185,7 @@ afterEach(() => {
   useSettingsStore.setState({
     sessionSortMode: 'created',
     sessionSortDirection: 'desc',
+    showSessionIdSuffix: false,
   })
 })
 
