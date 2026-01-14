@@ -89,7 +89,7 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
     'SELECT * FROM agent_sessions WHERE current_window IS NOT NULL'
   )
   const selectInactive = db.prepare(
-    'SELECT * FROM agent_sessions WHERE current_window IS NULL'
+    'SELECT * FROM agent_sessions WHERE current_window IS NULL ORDER BY last_activity_at DESC'
   )
 
   const updateStmt = (fields: string[]) =>
