@@ -21,6 +21,19 @@ export interface Session {
   agentType?: AgentType
   source: SessionSource
   command?: string
+  agentSessionId?: string
+  agentSessionName?: string
+}
+
+export interface AgentSession {
+  sessionId: string
+  logFilePath: string
+  projectPath: string
+  agentType: AgentType
+  displayName: string
+  createdAt: string
+  lastActivityAt: string
+  isActive: boolean
 }
 
 // Directory browser types
@@ -45,6 +58,10 @@ export type ServerMessage =
   | { type: 'sessions'; sessions: Session[] }
   | { type: 'session-update'; session: Session }
   | { type: 'session-created'; session: Session }
+  | { type: 'agent-sessions'; active: AgentSession[]; inactive: AgentSession[] }
+  | { type: 'session-orphaned'; session: AgentSession }
+  | { type: 'session-activated'; session: AgentSession; window: string }
+  | { type: 'session-resume-result'; sessionId: string; ok: boolean; error?: ResumeError }
   | { type: 'terminal-output'; sessionId: string; data: string }
   | {
       type: 'terminal-error'
@@ -55,6 +72,11 @@ export type ServerMessage =
     }
   | { type: 'terminal-ready'; sessionId: string }
   | { type: 'error'; message: string }
+
+export interface ResumeError {
+  code: 'NOT_FOUND' | 'ALREADY_ACTIVE' | 'RESUME_FAILED'
+  message: string
+}
 
 export type ClientMessage =
   | {
@@ -72,3 +94,4 @@ export type ClientMessage =
   | { type: 'session-rename'; sessionId: string; newName: string }
   | { type: 'session-refresh' }
   | { type: 'tmux-cancel-copy-mode'; sessionId: string }
+  | { type: 'session-resume'; sessionId: string; name?: string }
