@@ -242,9 +242,11 @@ export class SessionManager {
           this.capturePaneContent,
           this.now
         )
+        // For external sessions, use session name as display name (more meaningful than window name)
+        const displayName = source === 'external' ? sessionName : window.name
         return {
           id: `${sessionName}:${window.id}`,
-          name: window.name,
+          name: displayName,
           tmuxWindow,
           projectPath: window.path,
           status,
