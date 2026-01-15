@@ -307,12 +307,16 @@ export class SessionManager {
       return base
     }
 
-    let suffix = 2
-    while (checkExists(`${base}-${suffix}`)) {
+    // If base already ends with -N, strip it and increment from there
+    const suffixMatch = base.match(/^(.+)-(\d+)$/)
+    const baseName = suffixMatch ? suffixMatch[1] : base
+    let suffix = suffixMatch ? Number.parseInt(suffixMatch[2], 10) + 1 : 2
+
+    while (checkExists(`${baseName}-${suffix}`)) {
       suffix += 1
     }
 
-    return `${base}-${suffix}`
+    return `${baseName}-${suffix}`
   }
 
   private findNextAvailableWindowIndex(): number {

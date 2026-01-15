@@ -170,7 +170,7 @@ logger.info('terminal_mode_resolved', {
 const app = new Hono()
 const db = initDatabase()
 const sessionManager = new SessionManager(undefined, {
-  displayNameExists: (name) => db.displayNameExists(name),
+  displayNameExists: (name, excludeSessionId) => db.displayNameExists(name, excludeSessionId),
 })
 const registry = new SessionRegistry()
 const logPoller = new LogPoller(db, registry, {
@@ -757,6 +757,9 @@ function handleMessage(
           message.name,
           message.command
         )
+        // Add session to registry immediately so terminal can attach
+        const currentSessions = registry.getAll()
+        registry.replaceSessions([created, ...currentSessions])
         refreshSessions()
         send(ws, { type: 'session-created', session: created })
       } catch (error) {
@@ -939,8 +942,12 @@ function handleSessionResume(
       currentWindow: created.tmuxWindow,
       displayName: created.name,
     })
+    // Add session to registry immediately so terminal can attach
+    // (async refresh will update with any additional data later)
+    const currentSessions = registry.getAll()
+    registry.replaceSessions([created, ...currentSessions])
     refreshSessions()
-    send(ws, { type: 'session-resume-result', sessionId, ok: true })
+    send(ws, { type: 'session-resume-result', sessionId, ok: true, session: created })
     broadcast({
       type: 'session-activated',
       session: toAgentSession({

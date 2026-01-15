@@ -72,6 +72,11 @@ export default function App() {
         updateSession(message.session)
       }
       if (message.type === 'session-created') {
+        // Add session to list immediately (don't wait for async refresh)
+        const currentSessions = useSessionStore.getState().sessions
+        if (!currentSessions.some((s) => s.id === message.session.id)) {
+          setSessions([message.session, ...currentSessions])
+        }
         setSelectedSessionId(message.session.id)
         addRecentPath(message.session.projectPath)
       }
@@ -96,9 +101,18 @@ export default function App() {
           setSessions(nextSessions)
         }
       }
-      if (message.type === 'session-resume-result' && !message.ok) {
-        setServerError(`${message.error?.code}: ${message.error?.message}`)
-        window.setTimeout(() => setServerError(null), 6000)
+      if (message.type === 'session-resume-result') {
+        if (message.ok && message.session) {
+          // Add resumed session to list immediately
+          const currentSessions = useSessionStore.getState().sessions
+          if (!currentSessions.some((s) => s.id === message.session!.id)) {
+            setSessions([message.session, ...currentSessions])
+          }
+          setSelectedSessionId(message.session.id)
+        } else if (!message.ok) {
+          setServerError(`${message.error?.code}: ${message.error?.message}`)
+          window.setTimeout(() => setServerError(null), 6000)
+        }
       }
       if (message.type === 'terminal-error') {
         if (!message.sessionId || message.sessionId === selectedSessionId) {

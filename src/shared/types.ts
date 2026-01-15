@@ -62,7 +62,7 @@ export type ServerMessage =
   | { type: 'agent-sessions'; active: AgentSession[]; inactive: AgentSession[] }
   | { type: 'session-orphaned'; session: AgentSession }
   | { type: 'session-activated'; session: AgentSession; window: string }
-  | { type: 'session-resume-result'; sessionId: string; ok: boolean; error?: ResumeError }
+  | { type: 'session-resume-result'; sessionId: string; ok: boolean; session?: Session; error?: ResumeError }
   | { type: 'terminal-output'; sessionId: string; data: string }
   | {
       type: 'terminal-error'
