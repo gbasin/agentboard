@@ -371,7 +371,7 @@ export default function SessionList({
   }
 
   return (
-    <aside className="flex h-full flex-col border-r border-border bg-elevated">
+    <aside className="flex min-h-0 flex-1 flex-col border-r border-border bg-elevated">
       <div className="flex h-10 shrink-0 items-center justify-between border-b border-border px-3">
         <span className="text-xs font-medium uppercase tracking-wider text-muted">
           Sessions

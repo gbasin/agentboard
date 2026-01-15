@@ -160,14 +160,18 @@ export default function App() {
   const sessionSortDirection = useSettingsStore(
     (state) => state.sessionSortDirection
   )
+  const manualSessionOrder = useSettingsStore(
+    (state) => state.manualSessionOrder
+  )
 
   const sortedSessions = useMemo(
     () =>
       sortSessions(sessions, {
         mode: sessionSortMode,
         direction: sessionSortDirection,
+        manualOrder: manualSessionOrder,
       }),
-    [sessions, sessionSortMode, sessionSortDirection]
+    [sessions, sessionSortMode, sessionSortDirection, manualSessionOrder]
   )
 
   // Auto-select first session on mobile when sessions load
