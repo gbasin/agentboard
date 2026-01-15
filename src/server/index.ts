@@ -10,6 +10,8 @@ import { SessionRegistry } from './SessionRegistry'
 import { initDatabase } from './db'
 import { LogPoller } from './logPoller'
 import { toAgentSession } from './agentSessions'
+import { getLogSearchDirs } from './logDiscovery'
+import { verifyWindowLogAssociation } from './logMatcher'
 import {
   createTerminalProxy,
   resolveTerminalMode,
@@ -214,6 +216,7 @@ function hydrateSessionsWithAgentSessions(sessions: Session[]): Session[] {
   const windowSet = new Set(sessions.map((session) => session.tmuxWindow))
   const activeMap = new Map<string, typeof activeSessions[number]>()
   const orphaned: AgentSession[] = []
+  const logDirs = getLogSearchDirs()
 
   // Safeguard: don't mass-orphan if window list seems incomplete
   // This can happen if tmux commands fail temporarily on server restart
@@ -245,6 +248,30 @@ function hydrateSessionsWithAgentSessions(sessions: Session[]): Session[] {
       }
       continue
     }
+
+    // Verify the association by checking terminal content matches the log
+    // This catches stale associations from tmux restarts where window IDs changed
+    const verified = verifyWindowLogAssociation(
+      agentSession.currentWindow,
+      agentSession.logFilePath,
+      logDirs,
+      { agentType: agentSession.agentType, projectPath: agentSession.projectPath }
+    )
+
+    if (!verified) {
+      logger.info('session_verification_failed', {
+        sessionId: agentSession.sessionId,
+        displayName: agentSession.displayName,
+        currentWindow: agentSession.currentWindow,
+        logFilePath: agentSession.logFilePath,
+      })
+      const orphanedSession = db.orphanSession(agentSession.sessionId)
+      if (orphanedSession) {
+        orphaned.push(toAgentSession(orphanedSession))
+      }
+      continue
+    }
+
     activeMap.set(agentSession.currentWindow, agentSession)
   }
 
@@ -787,9 +814,25 @@ function handleKill(sessionId: string, ws: ServerWebSocket<WSData>) {
       session.tmuxWindow,
       Date.now() + PENDING_KILL_TTL_MS
     )
-    if (session.agentSessionId) {
-      db.orphanSession(session.agentSessionId)
+    const orphaned = new Map<string, AgentSession>()
+    const orphanById = (agentSessionId?: string | null) => {
+      if (!agentSessionId || orphaned.has(agentSessionId)) return
+      const orphanedSession = db.orphanSession(agentSessionId)
+      if (orphanedSession) {
+        orphaned.set(agentSessionId, toAgentSession(orphanedSession))
+      }
+    }
+
+    orphanById(session.agentSessionId)
+    const recordByWindow = db.getSessionByWindow(session.tmuxWindow)
+    if (recordByWindow) {
+      orphanById(recordByWindow.sessionId)
+    }
+    if (orphaned.size > 0) {
       updateAgentSessions()
+      for (const orphanedSession of orphaned.values()) {
+        broadcast({ type: 'session-orphaned', session: orphanedSession })
+      }
     }
     const remaining = registry.getAll().filter((item) => item.id !== sessionId)
     registry.replaceSessions(remaining)

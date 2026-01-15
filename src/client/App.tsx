@@ -78,6 +78,15 @@ export default function App() {
       if (message.type === 'agent-sessions') {
         setAgentSessions(message.active, message.inactive)
       }
+      if (message.type === 'session-orphaned') {
+        const currentSessions = useSessionStore.getState().sessions
+        const nextSessions = currentSessions.filter(
+          (session) => session.agentSessionId?.trim() !== message.session.sessionId
+        )
+        if (nextSessions.length !== currentSessions.length) {
+          setSessions(nextSessions)
+        }
+      }
       if (message.type === 'session-resume-result' && !message.ok) {
         setServerError(`${message.error?.code}: ${message.error?.message}`)
         window.setTimeout(() => setServerError(null), 6000)
@@ -111,25 +120,11 @@ export default function App() {
     updateSession,
   ])
 
-  const inactiveSessionIds = useMemo(
-    () => new Set(agentSessions.inactive.map((session) => session.sessionId)),
-    [agentSessions.inactive]
-  )
-
-  const visibleSessions = useMemo(
-    () =>
-      sessions.filter((session) => {
-        const agentId = session.agentSessionId?.trim()
-        return !agentId || !inactiveSessionIds.has(agentId)
-      }),
-    [sessions, inactiveSessionIds]
-  )
-
   const selectedSession = useMemo(() => {
     return (
-      visibleSessions.find((session) => session.id === selectedSessionId) || null
+      sessions.find((session) => session.id === selectedSessionId) || null
     )
-  }, [selectedSessionId, visibleSessions])
+  }, [selectedSessionId, sessions])
 
   // Track last viewed project path
   useEffect(() => {
@@ -145,11 +140,11 @@ export default function App() {
 
   const sortedSessions = useMemo(
     () =>
-      sortSessions(visibleSessions, {
+      sortSessions(sessions, {
         mode: sessionSortMode,
         direction: sessionSortDirection,
       }),
-    [visibleSessions, sessionSortMode, sessionSortDirection]
+    [sessions, sessionSortMode, sessionSortDirection]
   )
 
   // Auto-select first session on mobile when sessions load
@@ -255,7 +250,7 @@ export default function App() {
           tailscaleIp={serverInfo?.tailscaleIp ?? null}
         />
         <SessionList
-          sessions={visibleSessions}
+          sessions={sessions}
           inactiveSessions={agentSessions.inactive}
           selectedSessionId={selectedSessionId}
           onSelect={setSelectedSessionId}

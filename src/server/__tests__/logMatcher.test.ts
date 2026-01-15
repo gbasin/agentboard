@@ -8,6 +8,7 @@ import {
   normalizeText,
   matchWindowsToLogsByExactRg,
   tryExactMatchWindowToLog,
+  verifyWindowLogAssociation,
 } from '../logMatcher'
 
 const bunAny = Bun as typeof Bun & { spawnSync: typeof Bun.spawnSync }
@@ -258,6 +259,56 @@ describe('logMatcher', () => {
     const results = matchWindowsToLogsByExactRg(windows, tempDir)
     expect(results.get(logPathA)?.tmuxWindow).toBe('agentboard:1')
     expect(results.get(logPathB)?.tmuxWindow).toBe('agentboard:2')
+
+    await fs.rm(tempDir, { recursive: true, force: true })
+  })
+
+  test('verifyWindowLogAssociation returns true when content matches', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-verify-'))
+    const logPath = path.join(tempDir, 'session.jsonl')
+    const messages = ['verify test one', 'verify test two']
+
+    await fs.writeFile(
+      logPath,
+      messages.map((m) => JSON.stringify({ type: 'user', content: m })).join('\n')
+    )
+    setTmuxOutput('agentboard:1', buildPromptScrollback(messages))
+
+    const result = verifyWindowLogAssociation('agentboard:1', logPath, [tempDir])
+    expect(result).toBe(true)
+
+    await fs.rm(tempDir, { recursive: true, force: true })
+  })
+
+  test('verifyWindowLogAssociation returns false when content does not match', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-verify-'))
+    const logPath = path.join(tempDir, 'session.jsonl')
+
+    // Log has different content than the tmux window
+    await fs.writeFile(
+      logPath,
+      JSON.stringify({ type: 'user', content: 'log content here' })
+    )
+    setTmuxOutput('agentboard:1', buildPromptScrollback(['different window content']))
+
+    const result = verifyWindowLogAssociation('agentboard:1', logPath, [tempDir])
+    expect(result).toBe(false)
+
+    await fs.rm(tempDir, { recursive: true, force: true })
+  })
+
+  test('verifyWindowLogAssociation returns false for empty terminal', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-verify-'))
+    const logPath = path.join(tempDir, 'session.jsonl')
+
+    await fs.writeFile(
+      logPath,
+      JSON.stringify({ type: 'user', content: 'some content' })
+    )
+    setTmuxOutput('agentboard:1', '') // Empty terminal
+
+    const result = verifyWindowLogAssociation('agentboard:1', logPath, [tempDir])
+    expect(result).toBe(false)
 
     await fs.rm(tempDir, { recursive: true, force: true })
   })

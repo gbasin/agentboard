@@ -1142,3 +1142,25 @@ export function tryExactMatchLogToWindow(
 
   return null
 }
+
+/**
+ * Verify that a window's terminal content matches a specific log file.
+ * Used on startup to validate stored currentWindow associations before trusting them.
+ * Returns true if the window content matches the log, false otherwise.
+ */
+export function verifyWindowLogAssociation(
+  tmuxWindow: string,
+  logPath: string,
+  logDirs: string[],
+  context: ExactMatchContext = {},
+  scrollbackLines = DEFAULT_SCROLLBACK_LINES
+): boolean {
+  const result = tryExactMatchWindowToLog(
+    tmuxWindow,
+    logDirs,
+    scrollbackLines,
+    context,
+    { logPaths: [logPath] }
+  )
+  return result !== null && result.logPath === logPath
+}

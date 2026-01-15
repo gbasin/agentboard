@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useReducer, useCallback, useMemo } from 'react'
+import { useState, useRef, useEffect, useReducer, useCallback } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
 import {
   DndContext,
@@ -80,21 +80,8 @@ export default function SessionList({
   const COUNTER_DURATION = 300
   const ENTRY_DELAY = COUNTER_DELAY + COUNTER_DURATION
 
-  const inactiveSessionIds = useMemo(
-    () => new Set(inactiveSessions.map((session) => session.sessionId)),
-    [inactiveSessions]
-  )
-  const displaySessions = useMemo(
-    () =>
-      sessions.filter((session) => {
-        const agentId = session.agentSessionId?.trim()
-        return !agentId || !inactiveSessionIds.has(agentId)
-      }),
-    [sessions, inactiveSessionIds]
-  )
-
   // Track counts for counter animations
-  const prevActiveCountRef = useRef(displaySessions.length)
+  const prevActiveCountRef = useRef(sessions.length)
   const prevInactiveCountRef = useRef(inactiveSessions.length)
   const [activeCounterBump, setActiveCounterBump] = useState(false)
   const [inactiveCounterBump, setInactiveCounterBump] = useState(false)
@@ -105,7 +92,7 @@ export default function SessionList({
 
   // Detect count changes and queue delayed counter bumps
   useEffect(() => {
-    if (displaySessions.length !== prevActiveCountRef.current) {
+    if (sessions.length !== prevActiveCountRef.current) {
       pendingActiveCounterRef.current = true
       const timer = setTimeout(() => {
         if (pendingActiveCounterRef.current) {
@@ -113,10 +100,10 @@ export default function SessionList({
           pendingActiveCounterRef.current = false
         }
       }, COUNTER_DELAY)
-      prevActiveCountRef.current = displaySessions.length
+      prevActiveCountRef.current = sessions.length
       return () => clearTimeout(timer)
     }
-  }, [displaySessions.length, COUNTER_DELAY])
+  }, [sessions.length, COUNTER_DELAY])
 
   useEffect(() => {
     if (inactiveSessions.length > prevInactiveCountRef.current) {
@@ -134,9 +121,7 @@ export default function SessionList({
   }, [inactiveSessions.length, COUNTER_DELAY])
 
   // Track newly added sessions for entry animations
-  const prevActiveIdsRef = useRef<Set<string>>(
-    new Set(displaySessions.map((s) => s.id))
-  )
+  const prevActiveIdsRef = useRef<Set<string>>(new Set(sessions.map((s) => s.id)))
   const prevInactiveIdsRef = useRef<Set<string>>(new Set(inactiveSessions.map((s) => s.sessionId)))
   const prevInactiveIdsForActiveRef = useRef<Set<string>>(
     new Set(inactiveSessions.map((s) => s.sessionId))
@@ -145,7 +130,7 @@ export default function SessionList({
   const [newlyInactiveIds, setNewlyInactiveIds] = useState<Set<string>>(new Set())
 
   useEffect(() => {
-    const currentIds = new Set(displaySessions.map((s) => s.id))
+    const currentIds = new Set(sessions.map((s) => s.id))
     const currentInactiveIds = new Set(
       inactiveSessions.map((s) => s.sessionId)
     )
@@ -155,7 +140,7 @@ export default function SessionList({
         newIds.add(id)
       }
     }
-    for (const session of displaySessions) {
+    for (const session of sessions) {
       const agentId = session.agentSessionId?.trim()
       if (
         agentId &&
@@ -173,7 +158,7 @@ export default function SessionList({
       const timer = setTimeout(() => setNewlyActiveIds(new Set()), 500)
       return () => clearTimeout(timer)
     }
-  }, [displaySessions, inactiveSessions])
+  }, [sessions, inactiveSessions])
 
   useEffect(() => {
     const currentIds = new Set(inactiveSessions.map((s) => s.sessionId))
@@ -221,7 +206,7 @@ export default function SessionList({
     }
   }, [sessions, inactiveSessions, manualSessionOrder, setManualSessionOrder])
 
-  const sortedSessions = sortSessions(displaySessions, {
+  const sortedSessions = sortSessions(sessions, {
     mode: sessionSortMode,
     direction: sessionSortDirection,
     manualOrder: manualSessionOrder,
@@ -294,7 +279,7 @@ export default function SessionList({
 
   useEffect(() => {
     if (!activeId && !overId) return
-    const currentIds = new Set(displaySessions.map((s) => s.id))
+    const currentIds = new Set(sessions.map((s) => s.id))
     let shouldReset = false
     if (activeId && !currentIds.has(activeId)) {
       setActiveId(null)
@@ -307,7 +292,7 @@ export default function SessionList({
     if (shouldReset) {
       setLayoutAnimationsDisabled(false)
     }
-  }, [displaySessions, activeId, overId])
+  }, [sessions, activeId, overId])
 
   const handleRename = (sessionId: string, newName: string) => {
     onRename(sessionId, newName)
@@ -326,7 +311,7 @@ export default function SessionList({
           transition={{ duration: 0.3 }}
           onAnimationComplete={() => setActiveCounterBump(false)}
         >
-          {displaySessions.length}
+            {sessions.length}
         </motion.span>
       </div>
 
@@ -745,7 +730,7 @@ function SessionRow({
             </span>
           )}
           {needsInput ? (
-            <HandIcon className="h-4 w-4 shrink-0 text-approval" aria-label="Needs input" />
+            <HandIcon className="ml-1 h-4 w-4 shrink-0 text-approval" aria-label="Needs input" />
           ) : (
             <span className="ml-1 w-8 shrink-0 text-right text-xs tabular-nums text-muted">{lastActivity}</span>
           )}
