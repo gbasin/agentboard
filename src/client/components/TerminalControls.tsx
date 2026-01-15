@@ -142,6 +142,37 @@ export default function TerminalControls({
     }
   }, [disabled, isKeyboardVisible])
 
+  // Intercept keyboard input when ctrl is active to send control characters
+  useEffect(() => {
+    if (!ctrlActive || disabled || typeof document === 'undefined') return
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Only intercept single character keys
+      if (e.key.length === 1) {
+        e.preventDefault()
+        e.stopPropagation()
+        const code = e.key.toUpperCase().charCodeAt(0)
+        let ctrlChar: string
+        // Convert A-Z to Ctrl+A through Ctrl+Z (0x01-0x1A)
+        if (code >= 65 && code <= 90) {
+          ctrlChar = String.fromCharCode(code - 64)
+        } else {
+          // For other characters, send with ctrl modifier via escape sequence
+          ctrlChar = e.key
+        }
+        triggerHaptic()
+        onSendKey(ctrlChar)
+        setCtrlActive(false)
+      }
+    }
+
+    // Use capture phase to intercept before the terminal gets it
+    document.addEventListener('keydown', handleKeyDown, { capture: true })
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown, { capture: true })
+    }
+  }, [ctrlActive, disabled, onSendKey])
+
   // Handle paste events in the modal (for images via native paste gesture)
   useEffect(() => {
     if (!showPasteInput) return
