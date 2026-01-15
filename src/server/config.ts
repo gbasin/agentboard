@@ -27,6 +27,11 @@ const logMatchProfile =
   process.env.AGENTBOARD_LOG_MATCH_PROFILE === 'true' ||
   process.env.AGENTBOARD_LOG_MATCH_PROFILE === '1'
 
+const enterRefreshDelayMsRaw = Number(process.env.AGENTBOARD_ENTER_REFRESH_MS)
+const enterRefreshDelayMs = Number.isFinite(enterRefreshDelayMsRaw)
+  ? enterRefreshDelayMsRaw
+  : 50
+
 const claudeConfigDir =
   process.env.CLAUDE_CONFIG_DIR || path.join(homeDir, '.claude')
 const codexHomeDir =
@@ -58,4 +63,5 @@ export const config = {
   codexHomeDir,
   claudeResumeCmd: process.env.CLAUDE_RESUME_CMD || 'claude --resume {sessionId}',
   codexResumeCmd: process.env.CODEX_RESUME_CMD || 'codex resume {sessionId}',
+  enterRefreshDelayMs,
 }

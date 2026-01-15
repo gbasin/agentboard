@@ -278,6 +278,19 @@ function refreshSessions() {
   registry.replaceSessions(hydrated)
 }
 
+// Debounced refresh triggered by Enter key in terminal input
+let enterRefreshTimer: Timer | null = null
+
+function scheduleEnterRefresh() {
+  if (enterRefreshTimer) {
+    clearTimeout(enterRefreshTimer)
+  }
+  enterRefreshTimer = setTimeout(() => {
+    enterRefreshTimer = null
+    refreshSessions()
+  }, config.enterRefreshDelayMs)
+}
+
 // Try to re-match orphaned sessions to windows by display name
 function recoverOrphanedSessions() {
   const orphanedSessions = db.getInactiveSessions()
@@ -1043,6 +1056,11 @@ function handleTerminalInputPersistent(
     return
   }
   ws.data.terminal?.write(data)
+
+  // Schedule a quick status refresh after Enter key to catch working/waiting changes
+  if (data.includes('\r') || data.includes('\n')) {
+    scheduleEnterRefresh()
+  }
 }
 
 function handleTerminalResizePersistent(
