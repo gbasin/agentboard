@@ -15,7 +15,7 @@ Run your desktop/server, then connect from your phone or laptop over Tailscale/L
 
 | Desktop | Mobile | Sessions |
 | :---: | :---: | :---: |
-| <img src="assets/desktop.png" alt="Desktop" width="500"/> | <img src="assets/mobile.jpeg" alt="Mobile" width="200"/> <img src="assets/mobile-controls.jpeg" alt="Mobile controls" width="200"/> | <img src="assets/sessions.png" alt="Sessions" width="200"/> |
+| <img src="assets/desktop.png" alt="Desktop" width="500"/> | <table><tr><td><img src="assets/mobile.jpeg" alt="Mobile" width="200"/></td><td><img src="assets/mobile-controls.jpeg" alt="Mobile controls" width="200"/></td></tr></table> | <img src="assets/sessions.png" alt="Sessions" width="200"/> |
 
 ## Requirements
 
