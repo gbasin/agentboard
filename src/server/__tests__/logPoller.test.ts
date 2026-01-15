@@ -265,4 +265,54 @@ describe('LogPoller', () => {
 
     db.close()
   })
+
+  test('rematches orphaned sessions on startup without new activity', async () => {
+    const db = initDatabase({ path: ':memory:' })
+    const registry = new SessionRegistry()
+    registry.replaceSessions([baseSession])
+
+    const tokens = Array.from({ length: 60 }, (_, i) => `token${i}`).join(' ')
+    setTmuxOutput(baseSession.tmuxWindow, buildLastExchangeOutput(tokens))
+
+    const projectPath = baseSession.projectPath
+    const encoded = encodeProjectPath(projectPath)
+    const logDir = path.join(
+      process.env.CLAUDE_CONFIG_DIR ?? '',
+      'projects',
+      encoded
+    )
+    await fs.mkdir(logDir, { recursive: true })
+    const logPath = path.join(logDir, 'session-orphan.jsonl')
+    const line = JSON.stringify({
+      type: 'user',
+      sessionId: 'claude-session-orphan',
+      cwd: projectPath,
+      content: tokens,
+    })
+    const assistantLine = JSON.stringify({
+      type: 'assistant',
+      content: tokens,
+    })
+    await fs.writeFile(logPath, `${line}\n${assistantLine}\n`)
+
+    const stats = await fs.stat(logPath)
+    db.insertSession({
+      sessionId: 'claude-session-orphan',
+      logFilePath: logPath,
+      projectPath,
+      agentType: 'claude',
+      displayName: 'orphan',
+      createdAt: stats.birthtime.toISOString(),
+      lastActivityAt: stats.mtime.toISOString(),
+      currentWindow: null,
+    })
+
+    const poller = new LogPoller(db, registry, { matchWorker: false })
+    await poller.pollOnce()
+
+    const updated = db.getSessionById('claude-session-orphan')
+    expect(updated?.currentWindow).toBe(baseSession.tmuxWindow)
+
+    db.close()
+  })
 })

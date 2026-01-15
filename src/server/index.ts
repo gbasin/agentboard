@@ -146,6 +146,7 @@ const MAX_DIRECTORY_ENTRIES = 200
 const SESSION_ID_PATTERN = /^[A-Za-z0-9_.:@-]+$/
 const TMUX_TARGET_PATTERN =
   /^(?:[A-Za-z0-9_.-]+:)?(?:@[0-9]+|[A-Za-z0-9_.-]+)$/
+const PENDING_KILL_TTL_MS = 2000
 
 function createConnectionId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -200,6 +201,7 @@ interface WSData {
 }
 
 const sockets = new Set<ServerWebSocket<WSData>>()
+const pendingKillWindows = new Map<string, number>()
 
 function updateAgentSessions() {
   const active = db.getActiveSessions().map(toAgentSession)
@@ -283,6 +285,26 @@ function refreshSessions() {
   registry.replaceSessions(hydrated)
 }
 
+function filterPendingKills(sessions: Session[]): Session[] {
+  if (pendingKillWindows.size === 0) {
+    return sessions
+  }
+
+  const now = Date.now()
+  const windowSet = new Set(sessions.map((session) => session.tmuxWindow))
+  for (const [tmuxWindow, deadline] of pendingKillWindows) {
+    if (!windowSet.has(tmuxWindow) || deadline <= now) {
+      pendingKillWindows.delete(tmuxWindow)
+    }
+  }
+
+  if (pendingKillWindows.size === 0) {
+    return sessions
+  }
+
+  return sessions.filter((session) => !pendingKillWindows.has(session.tmuxWindow))
+}
+
 // Debounced refresh triggered by Enter key in terminal input
 let enterRefreshTimer: Timer | null = null
 
@@ -325,7 +347,7 @@ registry.on('session-update', (session) => {
 })
 
 registry.on('sessions', (sessions) => {
-  broadcast({ type: 'sessions', sessions })
+  broadcast({ type: 'sessions', sessions: filterPendingKills(sessions) })
 })
 
 registry.on('agent-sessions', ({ active, inactive }) => {
@@ -333,7 +355,7 @@ registry.on('agent-sessions', ({ active, inactive }) => {
 })
 
 app.get('/api/health', (c) => c.json({ ok: true }))
-app.get('/api/sessions', (c) => c.json(registry.getAll()))
+app.get('/api/sessions', (c) => c.json(filterPendingKills(registry.getAll())))
 
 app.get('/api/session-preview/:sessionId', async (c) => {
   const sessionId = c.req.param('sessionId')
@@ -593,7 +615,7 @@ Bun.serve<WSData>({
   websocket: {
     open(ws) {
       sockets.add(ws)
-      send(ws, { type: 'sessions', sessions: registry.getAll() })
+      send(ws, { type: 'sessions', sessions: filterPendingKills(registry.getAll()) })
       const agentSessions = registry.getAgentSessions()
       send(ws, {
         type: 'agent-sessions',
@@ -761,6 +783,10 @@ function handleKill(sessionId: string, ws: ServerWebSocket<WSData>) {
 
   try {
     sessionManager.killWindow(session.tmuxWindow)
+    pendingKillWindows.set(
+      session.tmuxWindow,
+      Date.now() + PENDING_KILL_TTL_MS
+    )
     if (session.agentSessionId) {
       db.orphanSession(session.agentSessionId)
       updateAgentSessions()
@@ -783,10 +809,14 @@ function handleRename(
   newName: string,
   ws: ServerWebSocket<WSData>
 ) {
-  const session = registry.get(sessionId)
+  let session = registry.get(sessionId)
   if (!session) {
-    send(ws, { type: 'error', message: 'Session not found' })
-    return
+    refreshSessions()
+    session = registry.get(sessionId)
+    if (!session) {
+      send(ws, { type: 'error', message: 'Session not found' })
+      return
+    }
   }
 
   try {

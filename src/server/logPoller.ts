@@ -1,10 +1,12 @@
+import os from 'node:os'
 import { performance } from 'node:perf_hooks'
 import { logger } from './logger'
 import type { SessionDatabase } from './db'
-import { getLogSearchDirs } from './logDiscovery'
+import { getLogSearchDirs, getLogTimes, isCodexSubagent } from './logDiscovery'
 import {
   DEFAULT_SCROLLBACK_LINES,
   createExactMatchProfiler,
+  getLogTokenCount,
   matchWindowsToLogsByExactRg,
 } from './logMatcher'
 import { deriveDisplayName } from './agentSessions'
@@ -44,6 +46,7 @@ export class LogPoller {
   private rgThreads?: number
   private matchWorker: LogMatchWorkerClient | null
   private pollInFlight = false
+  private forceOrphanRematch = true
   // Cache of empty logs: logPath -> mtime when checked (re-check if mtime changes)
   private emptyLogCache: Map<string, number> = new Map()
   // Cache of re-match attempts: sessionId -> timestamp of last attempt
@@ -111,6 +114,10 @@ export class LogPoller {
       }
     }
     this.pollInFlight = true
+    const forceOrphanRematch = this.forceOrphanRematch
+    if (this.forceOrphanRematch) {
+      this.forceOrphanRematch = false
+    }
     const start = Date.now()
     let logsScanned = 0
     let newSessions = 0
@@ -122,16 +129,25 @@ export class LogPoller {
       const windows = this.registry.getAll()
       const logDirs = getLogSearchDirs()
       let entries: LogEntrySnapshot[] = []
-      const sessions: SessionSnapshot[] = [
+      const sessionRecords = [
         ...this.db.getActiveSessions(),
         ...this.db.getInactiveSessions(),
-      ].map((session) => ({
+      ]
+      const sessions: SessionSnapshot[] = sessionRecords.map((session) => ({
         sessionId: session.sessionId,
         logFilePath: session.logFilePath,
         currentWindow: session.currentWindow,
         lastActivityAt: session.lastActivityAt,
       }))
+      const matchSessions = forceOrphanRematch
+        ? sessions.map((session) =>
+            session.currentWindow
+              ? session
+              : { ...session, lastActivityAt: '' }
+          )
+        : sessions
       let exactWindowMatches = new Map<string, Session>()
+      let entriesToMatch: LogEntrySnapshot[] = []
       let scanMs = 0
       let sortMs = 0
       let matchMs = 0
@@ -146,7 +162,7 @@ export class LogPoller {
             windows,
             logDirs,
             maxLogsPerPoll: this.maxLogsPerPoll,
-            sessions,
+            sessions: matchSessions,
             scrollbackLines: DEFAULT_SCROLLBACK_LINES,
             minTokensForMatch: MIN_LOG_TOKENS_FOR_INSERT,
             search: {
@@ -171,6 +187,9 @@ export class LogPoller {
             if (!window) continue
             exactWindowMatches.set(match.logPath, window)
           }
+          entriesToMatch = getEntriesNeedingMatch(entries, matchSessions, {
+            minTokens: MIN_LOG_TOKENS_FOR_INSERT,
+          })
         } catch (error) {
           logger.warn('log_match_worker_error', {
             message: error instanceof Error ? error.message : String(error),
@@ -183,7 +202,7 @@ export class LogPoller {
           if (this.matchProfile) {
             matchProfile = createExactMatchProfiler()
           }
-          const entriesToMatch = getEntriesNeedingMatch(entries, sessions, {
+          entriesToMatch = getEntriesNeedingMatch(entries, matchSessions, {
             minTokens: MIN_LOG_TOKENS_FOR_INSERT,
           })
           if (entriesToMatch.length === 0) {
@@ -214,7 +233,7 @@ export class LogPoller {
         if (this.matchProfile) {
           matchProfile = createExactMatchProfiler()
         }
-        const entriesToMatch = getEntriesNeedingMatch(entries, sessions, {
+        entriesToMatch = getEntriesNeedingMatch(entries, matchSessions, {
           minTokens: MIN_LOG_TOKENS_FOR_INSERT,
         })
         if (entriesToMatch.length === 0) {
@@ -251,15 +270,108 @@ export class LogPoller {
         })
       }
 
+      const orphanEntries: LogEntrySnapshot[] = []
+      if (forceOrphanRematch) {
+        const existingLogPaths = new Set(entries.map((entry) => entry.logPath))
+        for (const record of sessionRecords) {
+          if (record.currentWindow) continue
+          const logPath = record.logFilePath
+          if (!logPath || existingLogPaths.has(logPath)) continue
+
+          const agentType = record.agentType
+          if (agentType === 'codex' && isCodexSubagent(logPath)) {
+            continue
+          }
+
+          const times = getLogTimes(logPath)
+          if (!times) continue
+          const logTokenCount = getLogTokenCount(logPath)
+          if (logTokenCount < MIN_LOG_TOKENS_FOR_INSERT) {
+            continue
+          }
+
+          orphanEntries.push({
+            logPath,
+            mtime: times.mtime.getTime(),
+            birthtime: times.birthtime.getTime(),
+            sessionId: record.sessionId,
+            projectPath: record.projectPath ?? null,
+            agentType,
+            isCodexSubagent: false,
+            logTokenCount,
+          })
+        }
+      }
+
+      if (orphanEntries.length > 0) {
+        const startupRgThreads = Math.max(
+          this.rgThreads ?? 1,
+          Math.min(os.cpus().length, 4)
+        )
+        const orphanMatches = matchWindowsToLogsByExactRg(
+          windows,
+          logDirs,
+          DEFAULT_SCROLLBACK_LINES,
+          {
+            logPaths: orphanEntries.map((entry) => entry.logPath),
+            rgThreads: startupRgThreads,
+            profile: matchProfile ?? undefined,
+          }
+        )
+        for (const [logPath, window] of orphanMatches) {
+          if (!exactWindowMatches.has(logPath)) {
+            exactWindowMatches.set(logPath, window)
+          }
+        }
+        entries = [...entries, ...orphanEntries]
+      }
+
+      const matchEligibleLogPaths = new Set(
+        entriesToMatch.map((entry) => entry.logPath)
+      )
+      for (const entry of orphanEntries) {
+        matchEligibleLogPaths.add(entry.logPath)
+      }
+
       for (const entry of entries) {
         logsScanned += 1
         try {
           const existing = this.db.getSessionByLogPath(entry.logPath)
           if (existing) {
-            if (entry.mtime > Date.parse(existing.lastActivityAt)) {
+            const hasActivity = entry.mtime > Date.parse(existing.lastActivityAt)
+            if (hasActivity) {
               this.db.updateSession(existing.sessionId, {
                 lastActivityAt: new Date(entry.mtime).toISOString(),
               })
+            }
+            const shouldAttemptRematch =
+              !existing.currentWindow &&
+              (hasActivity || matchEligibleLogPaths.has(entry.logPath))
+            if (shouldAttemptRematch) {
+              const lastAttempt =
+                this.rematchAttemptCache.get(existing.sessionId) ?? 0
+              if (Date.now() - lastAttempt > REMATCH_COOLDOWN_MS) {
+                this.rematchAttemptCache.set(existing.sessionId, Date.now())
+                const exactMatch = exactWindowMatches.get(entry.logPath) ?? null
+                if (exactMatch) {
+                  const claimed = this.db.getSessionByWindow(exactMatch.tmuxWindow)
+                  if (!claimed) {
+                    this.db.updateSession(existing.sessionId, {
+                      currentWindow: exactMatch.tmuxWindow,
+                      displayName: exactMatch.name,
+                    })
+                    logger.info('session_rematched', {
+                      sessionId: existing.sessionId,
+                      window: exactMatch.tmuxWindow,
+                      displayName: exactMatch.name,
+                    })
+                    this.onSessionActivated?.(
+                      existing.sessionId,
+                      exactMatch.tmuxWindow
+                    )
+                  }
+                }
+              }
             }
             continue
           }
@@ -298,7 +410,10 @@ export class LogPoller {
             }
 
             // Re-attempt matching for orphaned sessions (no currentWindow)
-            if (!existingById.currentWindow && hasActivity) {
+            const shouldAttemptRematch =
+              !existingById.currentWindow &&
+              (hasActivity || matchEligibleLogPaths.has(entry.logPath))
+            if (shouldAttemptRematch) {
               const lastAttempt = this.rematchAttemptCache.get(sessionId) ?? 0
               if (Date.now() - lastAttempt > REMATCH_COOLDOWN_MS) {
                 this.rematchAttemptCache.set(sessionId, Date.now())
