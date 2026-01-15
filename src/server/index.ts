@@ -259,6 +259,8 @@ function hydrateSessionsWithAgentSessions(sessions: Session[]): Session[] {
       agentType: session.agentType ?? agentSession.agentType,
       agentSessionId: agentSession.sessionId,
       agentSessionName: agentSession.displayName,
+      // Use persisted log activity time (survives server restarts)
+      lastActivity: agentSession.lastActivityAt,
     }
   })
 
