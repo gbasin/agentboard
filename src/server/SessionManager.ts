@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import { config } from './config'
+import { normalizeProjectPath } from './logDiscovery'
 import { generateSessionName } from './nameGenerator'
 import { logger } from './logger'
 import { resolveProjectPath } from './paths'
@@ -265,11 +266,12 @@ export class SessionManager {
         )
         // For external sessions, use session name as display name (more meaningful than window name)
         const displayName = source === 'external' ? sessionName : window.name
+        const normalizedPath = normalizeProjectPath(window.path)
         return {
           id: `${sessionName}:${window.id}`,
           name: displayName,
           tmuxWindow,
-          projectPath: window.path,
+          projectPath: normalizedPath || window.path,
           status,
           lastActivity: new Date(lastChanged).toISOString(),
           createdAt: new Date(creationTimestamp).toISOString(),
