@@ -1,8 +1,11 @@
 import fs from 'node:fs'
 import { performance } from 'node:perf_hooks'
 import type { AgentType, Session } from '../shared/types'
-import { extractProjectPath, inferAgentTypeFromPath } from './logDiscovery'
-import { resolveProjectPath } from './paths'
+import {
+  extractProjectPath,
+  inferAgentTypeFromPath,
+  normalizeProjectPath,
+} from './logDiscovery'
 import {
   cleanTmuxLine,
   isDecorativeLine,
@@ -283,8 +286,7 @@ export function normalizeText(text: string): string {
 
 function normalizePath(value: string): string {
   if (!value) return ''
-  const resolved = resolveProjectPath(value)
-  return resolved.replace(/\\/g, '/').replace(/\/+$/, '')
+  return normalizeProjectPath(value)
 }
 
 function isSameOrChildPath(left: string, right: string): boolean {

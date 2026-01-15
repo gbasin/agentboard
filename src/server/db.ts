@@ -28,6 +28,7 @@ export interface SessionDatabase {
   getActiveSessions: () => AgentSessionRecord[]
   getInactiveSessions: () => AgentSessionRecord[]
   orphanSession: (sessionId: string) => AgentSessionRecord | null
+  displayNameExists: (displayName: string, excludeSessionId?: string) => boolean
   close: () => void
 }
 
@@ -72,6 +73,7 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
   migrateDatabase(db)
   db.exec(CREATE_TABLE_SQL)
   db.exec(CREATE_INDEXES_SQL)
+  migrateDeduplicateDisplayNames(db)
 
   const insertStmt = db.prepare(
     `INSERT INTO agent_sessions
@@ -93,6 +95,12 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
   )
   const selectInactive = db.prepare(
     'SELECT * FROM agent_sessions WHERE current_window IS NULL ORDER BY last_activity_at DESC'
+  )
+  const selectByDisplayName = db.prepare(
+    'SELECT 1 FROM agent_sessions WHERE display_name = $displayName LIMIT 1'
+  )
+  const selectByDisplayNameExcluding = db.prepare(
+    'SELECT 1 FROM agent_sessions WHERE display_name = $displayName AND session_id != $excludeSessionId LIMIT 1'
   )
 
   const updateStmt = (fields: string[]) =>
@@ -200,6 +208,15 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
         | undefined
       return row ? mapRow(row) : null
     },
+    displayNameExists: (displayName, excludeSessionId) => {
+      const row = excludeSessionId
+        ? selectByDisplayNameExcluding.get({
+            $displayName: displayName,
+            $excludeSessionId: excludeSessionId,
+          })
+        : selectByDisplayName.get({ $displayName: displayName })
+      return row != null
+    },
     close: () => {
       db.close()
     },
@@ -293,6 +310,60 @@ function createAgentSessionsTable(db: SQLiteDatabase, tableName: string) {
 ${AGENT_SESSIONS_COLUMNS_SQL}
     );
   `)
+}
+
+function migrateDeduplicateDisplayNames(db: SQLiteDatabase) {
+  // Find all display names that have duplicates
+  const duplicates = db
+    .prepare(
+      `SELECT display_name, COUNT(*) as count
+       FROM agent_sessions
+       GROUP BY display_name
+       HAVING count > 1`
+    )
+    .all() as Array<{ display_name: string; count: number }>
+
+  if (duplicates.length === 0) {
+    return
+  }
+
+  const updateStmt = db.prepare(
+    'UPDATE agent_sessions SET display_name = $newName WHERE session_id = $sessionId'
+  )
+
+  for (const { display_name } of duplicates) {
+    // Get all sessions with this name, ordered by created_at (oldest first)
+    const sessions = db
+      .prepare(
+        `SELECT session_id, display_name
+         FROM agent_sessions
+         WHERE display_name = $displayName
+         ORDER BY created_at ASC`
+      )
+      .all({ $displayName: display_name }) as Array<{
+      session_id: string
+      display_name: string
+    }>
+
+    // Keep first one as-is, rename the rest
+    for (let i = 1; i < sessions.length; i++) {
+      const suffix = i + 1
+      let newName = `${display_name}-${suffix}`
+
+      // Make sure the new name doesn't already exist
+      while (
+        db
+          .prepare(
+            'SELECT 1 FROM agent_sessions WHERE display_name = $name LIMIT 1'
+          )
+          .get({ $name: newName }) != null
+      ) {
+        newName = `${display_name}-${suffix}-${Date.now().toString(36).slice(-4)}`
+      }
+
+      updateStmt.run({ $newName: newName, $sessionId: sessions[i].session_id })
+    }
+  }
 }
 
 function getColumnNames(db: SQLiteDatabase, tableName: string): string[] {

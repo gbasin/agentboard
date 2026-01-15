@@ -8,6 +8,7 @@ import {
   matchWindowsToLogsByExactRg,
 } from './logMatcher'
 import { deriveDisplayName } from './agentSessions'
+import { generateUniqueSessionName } from './nameGenerator'
 import type { SessionRegistry } from './SessionRegistry'
 import { LogMatchWorkerClient } from './logMatchWorkerClient'
 import type { Session } from '../shared/types'
@@ -357,11 +358,18 @@ export class LogPoller {
             }
           }
 
-          const displayName = deriveDisplayName(
+          let displayName = deriveDisplayName(
             projectPath,
             sessionId,
             matchedWindow?.name
           )
+
+          // Ensure display name is unique across all sessions
+          if (this.db.displayNameExists(displayName)) {
+            displayName = generateUniqueSessionName((name) =>
+              this.db.displayNameExists(name)
+            )
+          }
 
           this.db.insertSession({
             sessionId,

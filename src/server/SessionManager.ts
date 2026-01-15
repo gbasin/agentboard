@@ -50,6 +50,7 @@ export class SessionManager {
   private runTmux: TmuxRunner
   private capturePaneContent: CapturePane
   private now: NowFn
+  private displayNameExists: (name: string, excludeSessionId?: string) => boolean
 
   constructor(
     sessionName = config.tmuxSession,
@@ -57,16 +58,19 @@ export class SessionManager {
       runTmux: runTmuxOverride,
       capturePaneContent: captureOverride,
       now,
+      displayNameExists,
     }: {
       runTmux?: TmuxRunner
       capturePaneContent?: CapturePane
       now?: NowFn
+      displayNameExists?: (name: string, excludeSessionId?: string) => boolean
     } = {}
   ) {
     this.sessionName = sessionName
     this.runTmux = runTmuxOverride ?? runTmux
     this.capturePaneContent = captureOverride ?? capturePaneWithDimensions
     this.now = now ?? Date.now
+    this.displayNameExists = displayNameExists ?? (() => false)
   }
 
   ensureSession(): void {
@@ -95,7 +99,12 @@ export class SessionManager {
     return allSessions
   }
 
-  createWindow(projectPath: string, name?: string, command?: string): Session {
+  createWindow(
+    projectPath: string,
+    name?: string,
+    command?: string,
+    options?: { excludeSessionId?: string }
+  ): Session {
     this.ensureSession()
 
     const resolvedPath = resolveProjectPath(projectPath)
@@ -107,24 +116,29 @@ export class SessionManager {
       throw new Error(`Project path does not exist: ${resolvedPath}`)
     }
 
-    const existingNames = new Set(
+    const existingWindowNames = new Set(
       this.listWindowsForSession(this.sessionName, 'managed').map(
         (session) => session.name
       )
     )
 
+    // Check both tmux windows and DB for name collisions
+    const excludeSessionId = options?.excludeSessionId
+    const nameExists = (n: string) =>
+      existingWindowNames.has(n) || this.displayNameExists(n, excludeSessionId)
+
     let baseName = name?.trim()
     if (baseName) {
       baseName = baseName.replace(/\s+/g, '-')
     } else {
-      // Generate random name, retry if collision
+      // Generate random name, retry if collision with tmux windows or DB
       do {
         baseName = generateSessionName()
-      } while (existingNames.has(baseName))
+      } while (nameExists(baseName))
     }
 
     const finalCommand = command?.trim() || 'claude'
-    const finalName = this.findAvailableName(baseName, existingNames)
+    const finalName = this.findAvailableName(baseName, existingWindowNames, nameExists)
     const nextIndex = this.findNextAvailableWindowIndex()
 
     const tmuxArgs = [
@@ -280,13 +294,19 @@ export class SessionManager {
     return this.runTmux([...args, WINDOW_LIST_FORMAT_FALLBACK])
   }
 
-  private findAvailableName(base: string, existing: Set<string>): string {
-    if (!existing.has(base)) {
+  private findAvailableName(
+    base: string,
+    existing: Set<string>,
+    nameExists?: (name: string) => boolean
+  ): string {
+    const checkExists = nameExists ?? ((n: string) => existing.has(n))
+
+    if (!checkExists(base)) {
       return base
     }
 
     let suffix = 2
-    while (existing.has(`${base}-${suffix}`)) {
+    while (checkExists(`${base}-${suffix}`)) {
       suffix += 1
     }
 

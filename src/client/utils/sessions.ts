@@ -17,6 +17,11 @@ export interface SortOptions {
   manualOrder?: string[]
 }
 
+export function getSessionOrderKey(session: Session): string {
+  const agentId = session.agentSessionId?.trim()
+  return agentId && agentId.length > 0 ? agentId : session.id
+}
+
 const DEFAULT_SORT_OPTIONS: SortOptions = {
   mode: 'created',
   direction: 'desc',
@@ -32,8 +37,10 @@ export function sortSessions(
   if (mode === 'manual' && manualOrder && manualOrder.length > 0) {
     const orderMap = new Map(manualOrder.map((id, idx) => [id, idx]))
     return [...sessions].sort((a, b) => {
-      const aIdx = orderMap.get(a.id) ?? Infinity
-      const bIdx = orderMap.get(b.id) ?? Infinity
+      const aKey = getSessionOrderKey(a)
+      const bKey = getSessionOrderKey(b)
+      const aIdx = orderMap.get(aKey) ?? orderMap.get(a.id) ?? Infinity
+      const bIdx = orderMap.get(bKey) ?? orderMap.get(b.id) ?? Infinity
       if (aIdx === Infinity && bIdx === Infinity) {
         // Both are new sessions, sort by createdAt desc
         return Date.parse(b.createdAt) - Date.parse(a.createdAt)

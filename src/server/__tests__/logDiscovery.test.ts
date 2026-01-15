@@ -6,6 +6,7 @@ import {
   encodeProjectPath,
   extractProjectPath,
   extractSessionId,
+  getLogSearchDirs,
   isCodexSubagent,
   scanAllLogDirs,
 } from '../logDiscovery'
@@ -102,6 +103,36 @@ describe('log discovery', () => {
 
     expect(extractSessionId(logPath)).toBe('codex-session-456')
     expect(extractProjectPath(logPath)).toBe('/Users/example/codex-project')
+  })
+
+  test('expands tilde overrides for log roots', () => {
+    const home = process.env.HOME || process.env.USERPROFILE || ''
+    if (!home) {
+      return
+    }
+
+    process.env.CLAUDE_CONFIG_DIR = '~/claude-config'
+    process.env.CODEX_HOME = '~/codex-config/'
+    const [claudeRoot, codexRoot] = getLogSearchDirs()
+
+    expect(claudeRoot).toBe(path.join(home, 'claude-config', 'projects'))
+    expect(codexRoot).toBe(path.join(home, 'codex-config', 'sessions'))
+  })
+
+  test('normalizes Windows project paths from logs', async () => {
+    const codexLogDir = path.join(codexDir, 'sessions', '2026', '01', '10')
+    await fs.mkdir(codexLogDir, { recursive: true })
+    const logPath = path.join(codexLogDir, 'session-win.jsonl')
+    const line = JSON.stringify({
+      type: 'session_meta',
+      payload: {
+        id: 'codex-session-win',
+        cwd: 'C:\\Users\\Example\\project\\',
+      },
+    })
+    await fs.writeFile(logPath, `${line}\n`)
+
+    expect(extractProjectPath(logPath)).toBe('c:/Users/Example/project')
   })
 })
 

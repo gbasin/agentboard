@@ -165,9 +165,11 @@ logger.info('terminal_mode_resolved', {
 })
 
 const app = new Hono()
-const sessionManager = new SessionManager()
-const registry = new SessionRegistry()
 const db = initDatabase()
+const sessionManager = new SessionManager(undefined, {
+  displayNameExists: (name) => db.displayNameExists(name),
+})
+const registry = new SessionRegistry()
 const logPoller = new LogPoller(db, registry, {
   onSessionOrphaned: (sessionId) => {
     const session = db.getSessionById(sessionId)
@@ -880,7 +882,8 @@ function handleSessionResume(
     const created = sessionManager.createWindow(
       projectPath,
       message.name ?? record.displayName,
-      command
+      command,
+      { excludeSessionId: sessionId }
     )
     db.updateSession(sessionId, {
       currentWindow: created.tmuxWindow,

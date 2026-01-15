@@ -69,6 +69,19 @@ describe('db', () => {
     expect(orphaned?.currentWindow).toBeNull()
   })
 
+  test('displayNameExists returns true for existing names', () => {
+    const uniqueName = `test-name-${Date.now()}`
+    const session = makeSession({
+      sessionId: `session-${Date.now()}`,
+      logFilePath: `/tmp/session-${Date.now()}.jsonl`,
+      displayName: uniqueName,
+    })
+    db.insertSession(session)
+
+    expect(db.displayNameExists(uniqueName)).toBe(true)
+    expect(db.displayNameExists('definitely-nonexistent-xyz123')).toBe(false)
+  })
+
   test('migrates legacy schema without session_source', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentboard-'))
     const dbPath = path.join(tempDir, 'agentboard.db')

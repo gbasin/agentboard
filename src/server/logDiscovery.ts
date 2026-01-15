@@ -3,17 +3,58 @@ import path from 'node:path'
 import { resolveProjectPath } from './paths'
 
 const LOG_HEAD_BYTE_LIMIT = 64 * 1024
+const WINDOWS_ABSOLUTE_PATH = /^[a-zA-Z]:[\\/]/
+
+function isWindowsAbsolutePath(value: string): boolean {
+  return (
+    WINDOWS_ABSOLUTE_PATH.test(value) ||
+    value.startsWith('\\\\') ||
+    value.startsWith('//') ||
+    value.startsWith('\\')
+  )
+}
+
+function normalizeDriveLetter(value: string): string {
+  if (/^[A-Z]:/.test(value)) {
+    return value[0].toLowerCase() + value.slice(1)
+  }
+  return value
+}
+
+function stripTrailingSlashes(value: string): string {
+  return value.replace(/\/+$/, '')
+}
+
+function normalizeWindowsPath(value: string): string {
+  const normalized = path.win32.normalize(value)
+  const withSlashes = normalized.replace(/\\/g, '/')
+  return stripTrailingSlashes(normalizeDriveLetter(withSlashes))
+}
+
+function normalizePosixPath(value: string): string {
+  return stripTrailingSlashes(value.replace(/\\/g, '/'))
+}
 
 function getHomeDir(): string {
   return process.env.HOME || process.env.USERPROFILE || ''
 }
 
 function getClaudeConfigDir(): string {
-  return process.env.CLAUDE_CONFIG_DIR || path.join(getHomeDir(), '.claude')
+  const override = process.env.CLAUDE_CONFIG_DIR
+  if (override && override.trim()) {
+    const normalized = normalizeProjectPath(override)
+    return normalized || override.trim()
+  }
+  return path.join(getHomeDir(), '.claude')
 }
 
 function getCodexHomeDir(): string {
-  return process.env.CODEX_HOME || path.join(getHomeDir(), '.codex')
+  const override = process.env.CODEX_HOME
+  if (override && override.trim()) {
+    const normalized = normalizeProjectPath(override)
+    return normalized || override.trim()
+  }
+  return path.join(getHomeDir(), '.codex')
 }
 
 export function getLogSearchDirs(): string[] {
@@ -23,10 +64,29 @@ export function getLogSearchDirs(): string[] {
   ]
 }
 
-export function encodeProjectPath(projectPath: string): string {
-  const resolved = resolveProjectPath(projectPath)
+export function normalizeProjectPath(value: string): string {
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  if (isWindowsAbsolutePath(trimmed)) {
+    return normalizeWindowsPath(trimmed)
+  }
+
+  const resolved = resolveProjectPath(trimmed)
   if (!resolved) return ''
-  return resolved.replace(/[\\/]/g, '-')
+  if (isWindowsAbsolutePath(resolved)) {
+    return normalizeWindowsPath(resolved)
+  }
+  return normalizePosixPath(resolved)
+}
+
+export function encodeProjectPath(projectPath: string): string {
+  const normalized = normalizeProjectPath(projectPath)
+  if (!normalized) return ''
+  let encoded = normalized.replace(/[\\/]/g, '-')
+  if (isWindowsAbsolutePath(normalized)) {
+    encoded = encoded.replace(/:/g, '')
+  }
+  return encoded
 }
 
 export function scanAllLogDirs(): string[] {
@@ -66,7 +126,10 @@ export function extractProjectPath(logPath: string): string | null {
     const entry = safeParseJson(trimmed)
     if (!entry) continue
     const projectPath = getProjectPathFromEntry(entry)
-    if (projectPath) return projectPath
+    if (projectPath) {
+      const normalized = normalizeProjectPath(projectPath)
+      if (normalized) return normalized
+    }
   }
 
   return null

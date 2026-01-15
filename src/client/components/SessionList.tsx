@@ -20,7 +20,7 @@ import { HandIcon } from '@untitledui-icons/react/line'
 import ChevronDownIcon from '@untitledui-icons/react/line/esm/ChevronDownIcon'
 import ChevronRightIcon from '@untitledui-icons/react/line/esm/ChevronRightIcon'
 import type { AgentSession, Session } from '@shared/types'
-import { sortSessions } from '../utils/sessions'
+import { getSessionOrderKey, sortSessions } from '../utils/sessions'
 import { formatRelativeTime } from '../utils/time'
 import { getPathLeaf } from '../utils/sessionLabel'
 import { getSessionIdPrefix } from '../utils/sessionId'
@@ -175,12 +175,19 @@ export default function SessionList({
   // Clean up manualSessionOrder when sessions are removed
   useEffect(() => {
     if (manualSessionOrder.length === 0) return
-    const currentIds = new Set(sessions.map((s) => s.id))
+    const currentIds = new Set<string>()
+    for (const session of sessions) {
+      currentIds.add(getSessionOrderKey(session))
+      currentIds.add(session.id)
+    }
+    for (const session of inactiveSessions) {
+      currentIds.add(session.sessionId)
+    }
     const validOrder = manualSessionOrder.filter((id) => currentIds.has(id))
     if (validOrder.length !== manualSessionOrder.length) {
       setManualSessionOrder(validOrder)
     }
-  }, [sessions, manualSessionOrder, setManualSessionOrder])
+  }, [sessions, inactiveSessions, manualSessionOrder, setManualSessionOrder])
 
   const sortedSessions = sortSessions(sessions, {
     mode: sessionSortMode,
@@ -232,7 +239,7 @@ export default function SessionList({
       }
 
       // Create new order array
-      const newOrder = sortedSessions.map((s) => s.id)
+      const newOrder = sortedSessions.map((s) => getSessionOrderKey(s))
       const [removed] = newOrder.splice(oldIndex, 1)
       newOrder.splice(newIndex, 0, removed)
 
