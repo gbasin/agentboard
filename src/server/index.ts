@@ -296,48 +296,6 @@ function scheduleEnterRefresh() {
   }, config.enterRefreshDelayMs)
 }
 
-// Try to re-match orphaned sessions to windows by display name
-function recoverOrphanedSessions() {
-  const orphanedSessions = db.getInactiveSessions()
-  const windows = sessionManager.listWindows()
-  const activeSessions = db.getActiveSessions()
-
-  // Build set of windows that already have sessions
-  const claimedWindows = new Set(
-    activeSessions.map((s) => s.currentWindow).filter(Boolean)
-  )
-
-  // Build map of window name -> window for unclaimed windows
-  const unclaimedByName = new Map<string, typeof windows[number]>()
-  for (const window of windows) {
-    if (!claimedWindows.has(window.tmuxWindow)) {
-      unclaimedByName.set(window.name, window)
-    }
-  }
-
-  let recovered = 0
-  for (const session of orphanedSessions) {
-    const matchingWindow = unclaimedByName.get(session.displayName)
-    if (matchingWindow) {
-      db.updateSession(session.sessionId, {
-        currentWindow: matchingWindow.tmuxWindow,
-      })
-      unclaimedByName.delete(session.displayName)
-      recovered += 1
-      logger.info('session_recovered', {
-        sessionId: session.sessionId,
-        displayName: session.displayName,
-        window: matchingWindow.tmuxWindow,
-      })
-    }
-  }
-
-  if (recovered > 0) {
-    logger.info('recovery_complete', { recoveredCount: recovered })
-  }
-
-  return recovered
-}
 
 // Log startup state for debugging orphan issues
 const startupActiveSessions = db.getActiveSessions()
@@ -355,9 +313,6 @@ logger.info('startup_state', {
     name: w.name,
   })),
 })
-
-// Try to recover orphaned sessions by matching display names to windows
-recoverOrphanedSessions()
 
 refreshSessions()
 setInterval(refreshSessions, config.refreshIntervalMs)
@@ -806,7 +761,14 @@ function handleKill(sessionId: string, ws: ServerWebSocket<WSData>) {
 
   try {
     sessionManager.killWindow(session.tmuxWindow)
+    if (session.agentSessionId) {
+      db.orphanSession(session.agentSessionId)
+      updateAgentSessions()
+    }
+    const remaining = registry.getAll().filter((item) => item.id !== sessionId)
+    registry.replaceSessions(remaining)
     refreshSessions()
+    setTimeout(refreshSessions, 150)
   } catch (error) {
     send(ws, {
       type: 'error',

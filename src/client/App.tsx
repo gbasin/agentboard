@@ -111,9 +111,25 @@ export default function App() {
     updateSession,
   ])
 
+  const inactiveSessionIds = useMemo(
+    () => new Set(agentSessions.inactive.map((session) => session.sessionId)),
+    [agentSessions.inactive]
+  )
+
+  const visibleSessions = useMemo(
+    () =>
+      sessions.filter((session) => {
+        const agentId = session.agentSessionId?.trim()
+        return !agentId || !inactiveSessionIds.has(agentId)
+      }),
+    [sessions, inactiveSessionIds]
+  )
+
   const selectedSession = useMemo(() => {
-    return sessions.find((session) => session.id === selectedSessionId) || null
-  }, [selectedSessionId, sessions])
+    return (
+      visibleSessions.find((session) => session.id === selectedSessionId) || null
+    )
+  }, [selectedSessionId, visibleSessions])
 
   // Track last viewed project path
   useEffect(() => {
@@ -129,11 +145,11 @@ export default function App() {
 
   const sortedSessions = useMemo(
     () =>
-      sortSessions(sessions, {
+      sortSessions(visibleSessions, {
         mode: sessionSortMode,
         direction: sessionSortDirection,
       }),
-    [sessions, sessionSortMode, sessionSortDirection]
+    [visibleSessions, sessionSortMode, sessionSortDirection]
   )
 
   // Auto-select first session on mobile when sessions load
@@ -239,7 +255,7 @@ export default function App() {
           tailscaleIp={serverInfo?.tailscaleIp ?? null}
         />
         <SessionList
-          sessions={sessions}
+          sessions={visibleSessions}
           inactiveSessions={agentSessions.inactive}
           selectedSessionId={selectedSessionId}
           onSelect={setSelectedSessionId}
