@@ -66,8 +66,9 @@ class SafeClipboardProvider implements IClipboardProvider {
   }
 
   async writeText(selection: ClipboardSelectionType, text: string): Promise<void> {
-    // Only write to system clipboard, and only if there's actual content
-    if (selection !== 'c' || !text) return
+    // Only write to system clipboard, and only if there's actual non-whitespace content
+    // This prevents OSC 52 sequences from clearing images/rich content from the clipboard
+    if (selection !== 'c' || !text?.trim()) return
     try {
       await navigator.clipboard.writeText(text)
     } catch {
@@ -349,11 +350,11 @@ export function useTerminal({
     webLinksAddonRef.current = webLinksAddon
 
     terminal.attachCustomKeyEventHandler((event) => {
-      // Cmd/Ctrl+C: copy selection
+      // Cmd/Ctrl+C: copy selection (only non-whitespace to avoid clearing images from clipboard)
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
         if (terminal.hasSelection()) {
           const selection = terminal.getSelection()
-          if (selection && navigator.clipboard) {
+          if (selection?.trim() && navigator.clipboard) {
             void navigator.clipboard.writeText(selection)
           }
           return false
