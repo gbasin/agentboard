@@ -30,6 +30,7 @@ import type {
   Session,
 } from '../shared/types'
 import { logger } from './logger'
+import { SessionRefreshWorkerClient } from './sessionRefreshWorkerClient'
 
 function checkPortAvailable(port: number): void {
   let result: ReturnType<typeof Bun.spawnSync>
@@ -148,7 +149,6 @@ const MAX_DIRECTORY_ENTRIES = 200
 const SESSION_ID_PATTERN = /^[A-Za-z0-9_.:@-]+$/
 const TMUX_TARGET_PATTERN =
   /^(?:[A-Za-z0-9_.-]+:)?(?:@[0-9]+|[A-Za-z0-9_.-]+)$/
-const PENDING_KILL_TTL_MS = 2000
 
 function createConnectionId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -195,6 +195,7 @@ const logPoller = new LogPoller(db, registry, {
   matchProfile: config.logMatchProfile,
   matchWorker: config.logMatchWorker,
 })
+const sessionRefreshWorker = new SessionRefreshWorkerClient()
 
 interface WSData {
   terminal: ITerminalProxy | null
@@ -203,7 +204,6 @@ interface WSData {
 }
 
 const sockets = new Set<ServerWebSocket<WSData>>()
-const pendingKillWindows = new Map<string, number>()
 
 function updateAgentSessions() {
   const active = db.getActiveSessions().map(toAgentSession)
@@ -211,7 +211,10 @@ function updateAgentSessions() {
   registry.setAgentSessions(active, inactive)
 }
 
-function hydrateSessionsWithAgentSessions(sessions: Session[]): Session[] {
+function hydrateSessionsWithAgentSessions(
+  sessions: Session[],
+  { verifyAssociations = false }: { verifyAssociations?: boolean } = {}
+): Session[] {
   const activeSessions = db.getActiveSessions()
   const windowSet = new Set(sessions.map((session) => session.tmuxWindow))
   const activeMap = new Map<string, typeof activeSessions[number]>()
@@ -251,25 +254,28 @@ function hydrateSessionsWithAgentSessions(sessions: Session[]): Session[] {
 
     // Verify the association by checking terminal content matches the log
     // This catches stale associations from tmux restarts where window IDs changed
-    const verified = verifyWindowLogAssociation(
-      agentSession.currentWindow,
-      agentSession.logFilePath,
-      logDirs,
-      { agentType: agentSession.agentType, projectPath: agentSession.projectPath }
-    )
+    // Only run on startup to avoid blocking periodic refreshes
+    if (verifyAssociations) {
+      const verified = verifyWindowLogAssociation(
+        agentSession.currentWindow,
+        agentSession.logFilePath,
+        logDirs,
+        { agentType: agentSession.agentType, projectPath: agentSession.projectPath }
+      )
 
-    if (!verified) {
-      logger.info('session_verification_failed', {
-        sessionId: agentSession.sessionId,
-        displayName: agentSession.displayName,
-        currentWindow: agentSession.currentWindow,
-        logFilePath: agentSession.logFilePath,
-      })
-      const orphanedSession = db.orphanSession(agentSession.sessionId)
-      if (orphanedSession) {
-        orphaned.push(toAgentSession(orphanedSession))
+      if (!verified) {
+        logger.info('session_verification_failed', {
+          sessionId: agentSession.sessionId,
+          displayName: agentSession.displayName,
+          currentWindow: agentSession.currentWindow,
+          logFilePath: agentSession.logFilePath,
+        })
+        const orphanedSession = db.orphanSession(agentSession.sessionId)
+        if (orphanedSession) {
+          orphaned.push(toAgentSession(orphanedSession))
+        }
+        continue
       }
-      continue
     }
 
     activeMap.set(agentSession.currentWindow, agentSession)
@@ -306,30 +312,40 @@ function hydrateSessionsWithAgentSessions(sessions: Session[]): Session[] {
   return hydrated
 }
 
-function refreshSessions() {
-  const sessions = sessionManager.listWindows()
-  const hydrated = hydrateSessionsWithAgentSessions(sessions)
-  registry.replaceSessions(hydrated)
+let refreshInFlight = false
+
+async function refreshSessionsAsync(): Promise<void> {
+  if (refreshInFlight) return
+  refreshInFlight = true
+  try {
+    const sessions = await sessionRefreshWorker.refresh(
+      config.tmuxSession,
+      config.discoverPrefixes
+    )
+    const hydrated = hydrateSessionsWithAgentSessions(sessions)
+    registry.replaceSessions(hydrated)
+  } catch (error) {
+    // Fallback to sync on worker failure
+    logger.warn('session_refresh_worker_error', {
+      message: error instanceof Error ? error.message : String(error),
+    })
+    const sessions = sessionManager.listWindows()
+    const hydrated = hydrateSessionsWithAgentSessions(sessions)
+    registry.replaceSessions(hydrated)
+  } finally {
+    refreshInFlight = false
+  }
 }
 
-function filterPendingKills(sessions: Session[]): Session[] {
-  if (pendingKillWindows.size === 0) {
-    return sessions
-  }
+function refreshSessions() {
+  void refreshSessionsAsync()
+}
 
-  const now = Date.now()
-  const windowSet = new Set(sessions.map((session) => session.tmuxWindow))
-  for (const [tmuxWindow, deadline] of pendingKillWindows) {
-    if (!windowSet.has(tmuxWindow) || deadline <= now) {
-      pendingKillWindows.delete(tmuxWindow)
-    }
-  }
-
-  if (pendingKillWindows.size === 0) {
-    return sessions
-  }
-
-  return sessions.filter((session) => !pendingKillWindows.has(session.tmuxWindow))
+// Sync version for startup - ensures sessions are ready before server starts
+function refreshSessionsSync({ verifyAssociations = false } = {}) {
+  const sessions = sessionManager.listWindows()
+  const hydrated = hydrateSessionsWithAgentSessions(sessions, { verifyAssociations })
+  registry.replaceSessions(hydrated)
 }
 
 // Debounced refresh triggered by Enter key in terminal input
@@ -363,8 +379,8 @@ logger.info('startup_state', {
   })),
 })
 
-refreshSessions()
-setInterval(refreshSessions, config.refreshIntervalMs)
+refreshSessionsSync({ verifyAssociations: true }) // Sync for startup - ensures sessions are ready
+setInterval(refreshSessions, config.refreshIntervalMs) // Async for periodic
 if (config.logPollIntervalMs > 0) {
   logPoller.start(config.logPollIntervalMs)
 }
@@ -374,7 +390,11 @@ registry.on('session-update', (session) => {
 })
 
 registry.on('sessions', (sessions) => {
-  broadcast({ type: 'sessions', sessions: filterPendingKills(sessions) })
+  broadcast({ type: 'sessions', sessions })
+})
+
+registry.on('session-removed', (sessionId) => {
+  broadcast({ type: 'session-removed', sessionId })
 })
 
 registry.on('agent-sessions', ({ active, inactive }) => {
@@ -382,7 +402,7 @@ registry.on('agent-sessions', ({ active, inactive }) => {
 })
 
 app.get('/api/health', (c) => c.json({ ok: true }))
-app.get('/api/sessions', (c) => c.json(filterPendingKills(registry.getAll())))
+app.get('/api/sessions', (c) => c.json(registry.getAll()))
 
 app.get('/api/session-preview/:sessionId', async (c) => {
   const sessionId = c.req.param('sessionId')
@@ -642,7 +662,7 @@ Bun.serve<WSData>({
   websocket: {
     open(ws) {
       sockets.add(ws)
-      send(ws, { type: 'sessions', sessions: filterPendingKills(registry.getAll()) })
+      send(ws, { type: 'sessions', sessions: registry.getAll() })
       const agentSessions = registry.getAgentSessions()
       send(ws, {
         type: 'agent-sessions',
@@ -810,10 +830,6 @@ function handleKill(sessionId: string, ws: ServerWebSocket<WSData>) {
 
   try {
     sessionManager.killWindow(session.tmuxWindow)
-    pendingKillWindows.set(
-      session.tmuxWindow,
-      Date.now() + PENDING_KILL_TTL_MS
-    )
     const orphaned = new Map<string, AgentSession>()
     const orphanById = (agentSessionId?: string | null) => {
       if (!agentSessionId || orphaned.has(agentSessionId)) return
@@ -837,7 +853,6 @@ function handleKill(sessionId: string, ws: ServerWebSocket<WSData>) {
     const remaining = registry.getAll().filter((item) => item.id !== sessionId)
     registry.replaceSessions(remaining)
     refreshSessions()
-    setTimeout(refreshSessions, 150)
   } catch (error) {
     send(ws, {
       type: 'error',
@@ -854,7 +869,7 @@ function handleRename(
 ) {
   let session = registry.get(sessionId)
   if (!session) {
-    refreshSessions()
+    refreshSessionsSync() // Use sync for inline operations needing immediate results
     session = registry.get(sessionId)
     if (!session) {
       send(ws, { type: 'error', message: 'Session not found' })

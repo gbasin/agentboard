@@ -58,6 +58,7 @@ export type ServerMessage =
   | { type: 'sessions'; sessions: Session[] }
   | { type: 'session-update'; session: Session }
   | { type: 'session-created'; session: Session }
+  | { type: 'session-removed'; sessionId: string }
   | { type: 'agent-sessions'; active: AgentSession[]; inactive: AgentSession[] }
   | { type: 'session-orphaned'; session: AgentSession }
   | { type: 'session-activated'; session: AgentSession; window: string }

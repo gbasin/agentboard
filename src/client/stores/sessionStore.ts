@@ -15,6 +15,8 @@ export type ConnectionStatus =
 interface SessionState {
   sessions: Session[]
   agentSessions: { active: AgentSession[]; inactive: AgentSession[] }
+  // Sessions being animated out - keyed by session ID, value is the session data
+  exitingSessions: Map<string, Session>
   selectedSessionId: string | null
   hasLoaded: boolean
   connectionStatus: ConnectionStatus
@@ -25,6 +27,10 @@ interface SessionState {
   setSelectedSessionId: (sessionId: string | null) => void
   setConnectionStatus: (status: ConnectionStatus) => void
   setConnectionError: (error: string | null) => void
+  // Mark a session as exiting (preserves data for exit animation)
+  markSessionExiting: (sessionId: string) => void
+  // Clear a session from exiting state (after animation completes)
+  clearExitingSession: (sessionId: string) => void
 }
 
 export const useSessionStore = create<SessionState>()(
@@ -32,6 +38,7 @@ export const useSessionStore = create<SessionState>()(
     (set, get) => ({
       sessions: [],
       agentSessions: { active: [], inactive: [] },
+      exitingSessions: new Map(),
       selectedSessionId: null,
       hasLoaded: false,
       connectionStatus: 'connecting',
@@ -71,6 +78,19 @@ export const useSessionStore = create<SessionState>()(
       setSelectedSessionId: (sessionId) => set({ selectedSessionId: sessionId }),
       setConnectionStatus: (status) => set({ connectionStatus: status }),
       setConnectionError: (error) => set({ connectionError: error }),
+      markSessionExiting: (sessionId) => {
+        const session = get().sessions.find((s) => s.id === sessionId)
+        if (session) {
+          const next = new Map(get().exitingSessions)
+          next.set(sessionId, session)
+          set({ exitingSessions: next })
+        }
+      },
+      clearExitingSession: (sessionId) => {
+        const next = new Map(get().exitingSessions)
+        next.delete(sessionId)
+        set({ exitingSessions: next })
+      },
     }),
     {
       name: 'agentboard-session',

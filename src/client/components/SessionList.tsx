@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useReducer, useCallback } from 'react'
+import { useState, useRef, useEffect, useReducer, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
 import {
   DndContext,
@@ -25,6 +25,7 @@ import { formatRelativeTime } from '../utils/time'
 import { getPathLeaf } from '../utils/sessionLabel'
 import { getSessionIdPrefix } from '../utils/sessionId'
 import { useSettingsStore } from '../stores/settingsStore'
+import { useSessionStore } from '../stores/sessionStore'
 import { getEffectiveModifier, getModifierDisplay } from '../utils/device'
 import AgentIcon from './AgentIcon'
 import InactiveSessionItem from './InactiveSessionItem'
@@ -189,6 +190,48 @@ export default function SessionList({
     (state) => state.showSessionIdPrefix
   )
 
+  // Get exiting sessions from store (sessions being animated out)
+  const exitingSessions = useSessionStore((state) => state.exitingSessions)
+  const clearExitingSession = useSessionStore((state) => state.clearExitingSession)
+
+  // Merge props.sessions with exiting sessions to keep them in DOM during exit animation
+  const sessionsWithExiting = useMemo(() => {
+    const currentIds = new Set(sessions.map((s) => s.id))
+    const exiting = Array.from(exitingSessions.values()).filter(
+      (s) => !currentIds.has(s.id)
+    )
+    return [...sessions, ...exiting]
+  }, [sessions, exitingSessions])
+
+  // Clear exiting sessions after exit animation completes
+  useEffect(() => {
+    const currentIds = new Set(sessions.map((s) => s.id))
+    const exitingIds = Array.from(exitingSessions.keys()).filter(
+      (id) => !currentIds.has(id)
+    )
+    if (exitingIds.length === 0) return
+
+    // Set timeout to clear exiting sessions after animation duration
+    const timers = exitingIds.map((id) =>
+      setTimeout(() => clearExitingSession(id), EXIT_DURATION + 50)
+    )
+    return () => timers.forEach(clearTimeout)
+  }, [sessions, exitingSessions, clearExitingSession, EXIT_DURATION])
+
+  // Filter inactive sessions to exclude any still exiting from active list
+  const filteredInactiveSessions = useMemo(() => {
+    if (exitingSessions.size === 0) return inactiveSessions
+    // Get agent session IDs of exiting sessions
+    const exitingAgentIds = new Set(
+      Array.from(exitingSessions.values())
+        .map((s) => s.agentSessionId?.trim())
+        .filter(Boolean)
+    )
+    return inactiveSessions.filter(
+      (s) => !exitingAgentIds.has(s.sessionId)
+    )
+  }, [inactiveSessions, exitingSessions])
+
   // Clean up manualSessionOrder when sessions are removed
   useEffect(() => {
     if (manualSessionOrder.length === 0) return
@@ -206,7 +249,7 @@ export default function SessionList({
     }
   }, [sessions, inactiveSessions, manualSessionOrder, setManualSessionOrder])
 
-  const sortedSessions = sortSessions(sessions, {
+  const sortedSessions = sortSessions(sessionsWithExiting, {
     mode: sessionSortMode,
     direction: sessionSortDirection,
     manualOrder: manualSessionOrder,
@@ -416,7 +459,7 @@ export default function SessionList({
                   exit={prefersReducedMotion ? { opacity: 0 } : { height: 0, opacity: 0 }}
                   transition={{ duration: 0.2 }}
                 >
-                  {inactiveSessions.map((session) => {
+                  {filteredInactiveSessions.map((session) => {
                     const isNew = newlyInactiveIds.has(session.sessionId)
                     // Delay entry animation for cards transitioning from active
                     const entryDelay = isNew ? ENTRY_DELAY / 1000 : 0

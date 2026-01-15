@@ -75,6 +75,15 @@ export default function App() {
         setSelectedSessionId(message.session.id)
         addRecentPath(message.session.projectPath)
       }
+      if (message.type === 'session-removed') {
+        const currentSessions = useSessionStore.getState().sessions
+        const nextSessions = currentSessions.filter(
+          (session) => session.id !== message.sessionId
+        )
+        if (nextSessions.length !== currentSessions.length) {
+          setSessions(nextSessions)
+        }
+      }
       if (message.type === 'agent-sessions') {
         setAgentSessions(message.active, message.inactive)
       }
@@ -155,9 +164,13 @@ export default function App() {
     }
   }, [hasLoaded, selectedSessionId, sortedSessions, setSelectedSessionId])
 
+  const markSessionExiting = useSessionStore((state) => state.markSessionExiting)
+
   const handleKillSession = useCallback((sessionId: string) => {
+    // Mark as exiting before sending kill to preserve session data for exit animation
+    markSessionExiting(sessionId)
     sendMessage({ type: 'session-kill', sessionId })
-  }, [sendMessage])
+  }, [markSessionExiting, sendMessage])
 
   useEffect(() => {
     const effectiveModifier = getEffectiveModifier(shortcutModifier)

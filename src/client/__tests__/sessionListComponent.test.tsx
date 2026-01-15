@@ -3,6 +3,7 @@ import TestRenderer, { act } from 'react-test-renderer'
 import type { Session } from '@shared/types'
 import SessionList from '../components/SessionList'
 import { useSettingsStore } from '../stores/settingsStore'
+import { useSessionStore } from '../stores/sessionStore'
 
 const globalAny = globalThis as typeof globalThis & {
   setTimeout?: typeof setTimeout
@@ -49,6 +50,10 @@ beforeEach(() => {
     sessionSortDirection: 'desc',
     showSessionIdPrefix: false,
   })
+
+  useSessionStore.setState({
+    exitingSessions: new Map(),
+  })
 })
 
 afterEach(() => {
@@ -61,6 +66,9 @@ afterEach(() => {
     sessionSortMode: 'created',
     sessionSortDirection: 'desc',
     showSessionIdPrefix: false,
+  })
+  useSessionStore.setState({
+    exitingSessions: new Map(),
   })
 })
 
