@@ -193,8 +193,9 @@ export default function SessionList({
   // Get exiting sessions from store (sessions being animated out)
   const exitingSessions = useSessionStore((state) => state.exitingSessions)
   const clearExitingSession = useSessionStore((state) => state.clearExitingSession)
+  const exitTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
 
-  // Merge props.sessions with exiting sessions to keep them in DOM during exit animation
+  // Merge exiting sessions back into the list to maintain position during exit animation
   const sessionsWithExiting = useMemo(() => {
     const currentIds = new Set(sessions.map((s) => s.id))
     const exiting = Array.from(exitingSessions.values()).filter(
@@ -203,20 +204,46 @@ export default function SessionList({
     return [...sessions, ...exiting]
   }, [sessions, exitingSessions])
 
-  // Clear exiting sessions after exit animation completes
+  // Track which session IDs are currently exiting (for disabling sortable)
+  const exitingIds = useMemo(() => {
+    const currentIds = new Set(sessions.map((s) => s.id))
+    return new Set(
+      Array.from(exitingSessions.keys()).filter((id) => !currentIds.has(id))
+    )
+  }, [sessions, exitingSessions])
+
+  // Clear exiting sessions after exit animation completes without resetting on frequent updates
   useEffect(() => {
     const currentIds = new Set(sessions.map((s) => s.id))
-    const exitingIds = Array.from(exitingSessions.keys()).filter(
-      (id) => !currentIds.has(id)
-    )
-    if (exitingIds.length === 0) return
+    const exitingIdSet = new Set(exitingSessions.keys())
 
-    // Set timeout to clear exiting sessions after animation duration
-    const timers = exitingIds.map((id) =>
-      setTimeout(() => clearExitingSession(id), EXIT_DURATION + 50)
-    )
-    return () => timers.forEach(clearTimeout)
+    for (const id of exitingIdSet) {
+      if (currentIds.has(id) || exitTimersRef.current.has(id)) {
+        continue
+      }
+      const timer = setTimeout(() => {
+        clearExitingSession(id)
+        exitTimersRef.current.delete(id)
+      }, EXIT_DURATION + 50)
+      exitTimersRef.current.set(id, timer)
+    }
+
+    for (const [id, timer] of exitTimersRef.current) {
+      if (!exitingIdSet.has(id) || currentIds.has(id)) {
+        clearTimeout(timer)
+        exitTimersRef.current.delete(id)
+      }
+    }
   }, [sessions, exitingSessions, clearExitingSession, EXIT_DURATION])
+
+  useEffect(() => {
+    return () => {
+      for (const timer of exitTimersRef.current.values()) {
+        clearTimeout(timer)
+      }
+      exitTimersRef.current.clear()
+    }
+  }, [])
 
   // Filter inactive sessions to exclude any still exiting from active list
   const filteredInactiveSessions = useMemo(() => {
@@ -249,6 +276,7 @@ export default function SessionList({
     }
   }, [sessions, inactiveSessions, manualSessionOrder, setManualSessionOrder])
 
+  // Use sessionsWithExiting to maintain position during exit animation
   const sortedSessions = sortSessions(sessionsWithExiting, {
     mode: sessionSortMode,
     direction: sessionSortDirection,
@@ -387,8 +415,9 @@ export default function SessionList({
             onDragEnd={handleDragEnd}
             onDragCancel={handleDragCancel}
           >
+            {/* Exclude exiting sessions from SortableContext to prevent useSortable interference */}
             <SortableContext
-              items={sortedSessions.map((s) => s.id)}
+              items={sortedSessions.filter((s) => !exitingIds.has(s.id)).map((s) => s.id)}
               strategy={verticalListSortingStrategy}
             >
               <div>
@@ -396,6 +425,7 @@ export default function SessionList({
                   {sortedSessions.map((session, index) => {
                     const isNew = newlyActiveIds.has(session.id)
                     const entryDelay = isNew ? ENTRY_DELAY / 1000 : 0
+                    const isExiting = exitingIds.has(session.id)
                     // Calculate drop indicator position
                     const activeIndex = activeId ? sortedSessions.findIndex((s) => s.id === activeId) : -1
                     const isOver = overId === session.id && activeId !== session.id
@@ -405,6 +435,7 @@ export default function SessionList({
                         key={session.id}
                         session={session}
                         isNew={isNew}
+                        isExiting={isExiting}
                         entryDelay={entryDelay}
                         exitDuration={EXIT_DURATION}
                         prefersReducedMotion={prefersReducedMotion}
@@ -525,6 +556,7 @@ export default function SessionList({
 interface SortableSessionItemProps {
   session: Session
   isNew: boolean
+  isExiting: boolean
   entryDelay: number
   exitDuration: number
   prefersReducedMotion: boolean | null
@@ -542,6 +574,7 @@ interface SortableSessionItemProps {
 function SortableSessionItem({
   session,
   isNew,
+  isExiting,
   entryDelay,
   exitDuration,
   prefersReducedMotion,
@@ -562,9 +595,10 @@ function SortableSessionItem({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: session.id })
+  } = useSortable({ id: session.id, disabled: isExiting })
 
-  const style = {
+  // Don't apply sortable transforms for exiting items
+  const style = isExiting ? undefined : {
     transform: CSS.Transform.toString(transform),
     transition,
     zIndex: isDragging ? 10 : undefined,
@@ -573,10 +607,10 @@ function SortableSessionItem({
 
   return (
     <motion.div
-      ref={setNodeRef}
+      ref={isExiting ? undefined : setNodeRef}
       style={style}
       className="relative"
-      layout={!prefersReducedMotion && !isDragging && !layoutAnimationsDisabled}
+      layout={!prefersReducedMotion && !isDragging && !layoutAnimationsDisabled && !isExiting}
       initial={prefersReducedMotion ? false : { opacity: 0, y: -16, scale: 0.85 }}
       animate={
         prefersReducedMotion
@@ -588,12 +622,12 @@ function SortableSessionItem({
       exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 20, scale: 0.9 }}
       transition={prefersReducedMotion ? { duration: 0 } : {
         layout: { type: 'spring', stiffness: 500, damping: 35, delay: entryDelay },
-        opacity: { duration: exitDuration / 1000, delay: entryDelay },
-        y: { duration: exitDuration / 1000, ease: 'easeOut', delay: entryDelay },
-        scale: { duration: 0.4, ease: [0.34, 1.56, 0.64, 1], delay: entryDelay },
+        opacity: { duration: exitDuration / 1000, delay: isExiting ? 0 : entryDelay },
+        y: { duration: exitDuration / 1000, ease: 'easeOut', delay: isExiting ? 0 : entryDelay },
+        scale: { duration: 0.4, ease: [0.34, 1.56, 0.64, 1], delay: isExiting ? 0 : entryDelay },
       }}
-      {...attributes}
-      {...listeners}
+      {...(isExiting ? {} : attributes)}
+      {...(isExiting ? {} : listeners)}
     >
       {/* Drop indicator line */}
       {dropIndicator === 'above' && (
