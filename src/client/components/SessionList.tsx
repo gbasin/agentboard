@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useReducer, useCallback } from 'react'
+import { useState, useRef, useEffect, useReducer, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
 import {
   DndContext,
@@ -20,11 +20,12 @@ import { HandIcon } from '@untitledui-icons/react/line'
 import ChevronDownIcon from '@untitledui-icons/react/line/esm/ChevronDownIcon'
 import ChevronRightIcon from '@untitledui-icons/react/line/esm/ChevronRightIcon'
 import type { AgentSession, Session } from '@shared/types'
-import { sortSessions } from '../utils/sessions'
+import { getSessionOrderKey, sortSessions } from '../utils/sessions'
 import { formatRelativeTime } from '../utils/time'
 import { getPathLeaf } from '../utils/sessionLabel'
 import { getSessionIdPrefix } from '../utils/sessionId'
 import { useSettingsStore } from '../stores/settingsStore'
+import { useSessionStore } from '../stores/sessionStore'
 import { getEffectiveModifier, getModifierDisplay } from '../utils/device'
 import AgentIcon from './AgentIcon'
 import InactiveSessionItem from './InactiveSessionItem'
@@ -123,25 +124,42 @@ export default function SessionList({
   // Track newly added sessions for entry animations
   const prevActiveIdsRef = useRef<Set<string>>(new Set(sessions.map((s) => s.id)))
   const prevInactiveIdsRef = useRef<Set<string>>(new Set(inactiveSessions.map((s) => s.sessionId)))
+  const prevInactiveIdsForActiveRef = useRef<Set<string>>(
+    new Set(inactiveSessions.map((s) => s.sessionId))
+  )
   const [newlyActiveIds, setNewlyActiveIds] = useState<Set<string>>(new Set())
   const [newlyInactiveIds, setNewlyInactiveIds] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     const currentIds = new Set(sessions.map((s) => s.id))
+    const currentInactiveIds = new Set(
+      inactiveSessions.map((s) => s.sessionId)
+    )
     const newIds = new Set<string>()
     for (const id of currentIds) {
       if (!prevActiveIdsRef.current.has(id)) {
         newIds.add(id)
       }
     }
+    for (const session of sessions) {
+      const agentId = session.agentSessionId?.trim()
+      if (
+        agentId &&
+        prevInactiveIdsForActiveRef.current.has(agentId) &&
+        !currentInactiveIds.has(agentId)
+      ) {
+        newIds.add(session.id)
+      }
+    }
     prevActiveIdsRef.current = currentIds
+    prevInactiveIdsForActiveRef.current = currentInactiveIds
 
     if (newIds.size > 0) {
       setNewlyActiveIds(newIds)
       const timer = setTimeout(() => setNewlyActiveIds(new Set()), 500)
       return () => clearTimeout(timer)
     }
-  }, [sessions])
+  }, [sessions, inactiveSessions])
 
   useEffect(() => {
     const currentIds = new Set(inactiveSessions.map((s) => s.sessionId))
@@ -172,17 +190,94 @@ export default function SessionList({
     (state) => state.showSessionIdPrefix
   )
 
+  // Get exiting sessions from store (sessions being animated out)
+  const exitingSessions = useSessionStore((state) => state.exitingSessions)
+  const clearExitingSession = useSessionStore((state) => state.clearExitingSession)
+  const exitTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+
+  // Merge exiting sessions back into the list to maintain position during exit animation
+  const sessionsWithExiting = useMemo(() => {
+    const currentIds = new Set(sessions.map((s) => s.id))
+    const exiting = Array.from(exitingSessions.values()).filter(
+      (s) => !currentIds.has(s.id)
+    )
+    return [...sessions, ...exiting]
+  }, [sessions, exitingSessions])
+
+  // Track which session IDs are currently exiting (for disabling sortable)
+  const exitingIds = useMemo(() => {
+    const currentIds = new Set(sessions.map((s) => s.id))
+    return new Set(
+      Array.from(exitingSessions.keys()).filter((id) => !currentIds.has(id))
+    )
+  }, [sessions, exitingSessions])
+
+  // Clear exiting sessions after exit animation completes without resetting on frequent updates
+  useEffect(() => {
+    const currentIds = new Set(sessions.map((s) => s.id))
+    const exitingIdSet = new Set(exitingSessions.keys())
+
+    for (const id of exitingIdSet) {
+      if (currentIds.has(id) || exitTimersRef.current.has(id)) {
+        continue
+      }
+      const timer = setTimeout(() => {
+        clearExitingSession(id)
+        exitTimersRef.current.delete(id)
+      }, EXIT_DURATION + 50)
+      exitTimersRef.current.set(id, timer)
+    }
+
+    for (const [id, timer] of exitTimersRef.current) {
+      if (!exitingIdSet.has(id) || currentIds.has(id)) {
+        clearTimeout(timer)
+        exitTimersRef.current.delete(id)
+      }
+    }
+  }, [sessions, exitingSessions, clearExitingSession, EXIT_DURATION])
+
+  useEffect(() => {
+    return () => {
+      for (const timer of exitTimersRef.current.values()) {
+        clearTimeout(timer)
+      }
+      exitTimersRef.current.clear()
+    }
+  }, [])
+
+  // Filter inactive sessions to exclude any still exiting from active list
+  const filteredInactiveSessions = useMemo(() => {
+    if (exitingSessions.size === 0) return inactiveSessions
+    // Get agent session IDs of exiting sessions
+    const exitingAgentIds = new Set(
+      Array.from(exitingSessions.values())
+        .map((s) => s.agentSessionId?.trim())
+        .filter(Boolean)
+    )
+    return inactiveSessions.filter(
+      (s) => !exitingAgentIds.has(s.sessionId)
+    )
+  }, [inactiveSessions, exitingSessions])
+
   // Clean up manualSessionOrder when sessions are removed
   useEffect(() => {
     if (manualSessionOrder.length === 0) return
-    const currentIds = new Set(sessions.map((s) => s.id))
+    const currentIds = new Set<string>()
+    for (const session of sessions) {
+      currentIds.add(getSessionOrderKey(session))
+      currentIds.add(session.id)
+    }
+    for (const session of inactiveSessions) {
+      currentIds.add(session.sessionId)
+    }
     const validOrder = manualSessionOrder.filter((id) => currentIds.has(id))
     if (validOrder.length !== manualSessionOrder.length) {
       setManualSessionOrder(validOrder)
     }
-  }, [sessions, manualSessionOrder, setManualSessionOrder])
+  }, [sessions, inactiveSessions, manualSessionOrder, setManualSessionOrder])
 
-  const sortedSessions = sortSessions(sessions, {
+  // Use sessionsWithExiting to maintain position during exit animation
+  const sortedSessions = sortSessions(sessionsWithExiting, {
     mode: sessionSortMode,
     direction: sessionSortDirection,
     manualOrder: manualSessionOrder,
@@ -232,7 +327,7 @@ export default function SessionList({
       }
 
       // Create new order array
-      const newOrder = sortedSessions.map((s) => s.id)
+      const newOrder = sortedSessions.map((s) => getSessionOrderKey(s))
       const [removed] = newOrder.splice(oldIndex, 1)
       newOrder.splice(newIndex, 0, removed)
 
@@ -253,13 +348,30 @@ export default function SessionList({
     setTimeout(() => setLayoutAnimationsDisabled(false), 100)
   }, [])
 
+  useEffect(() => {
+    if (!activeId && !overId) return
+    const currentIds = new Set(sessions.map((s) => s.id))
+    let shouldReset = false
+    if (activeId && !currentIds.has(activeId)) {
+      setActiveId(null)
+      shouldReset = true
+    }
+    if (overId && !currentIds.has(overId)) {
+      setOverId(null)
+      shouldReset = true
+    }
+    if (shouldReset) {
+      setLayoutAnimationsDisabled(false)
+    }
+  }, [sessions, activeId, overId])
+
   const handleRename = (sessionId: string, newName: string) => {
     onRename(sessionId, newName)
     setEditingSessionId(null)
   }
 
   return (
-    <aside className="flex h-full flex-col border-r border-border bg-elevated">
+    <aside className="flex min-h-0 flex-1 flex-col border-r border-border bg-elevated">
       <div className="flex h-10 shrink-0 items-center justify-between border-b border-border px-3">
         <span className="text-xs font-medium uppercase tracking-wider text-muted">
           Sessions
@@ -270,7 +382,7 @@ export default function SessionList({
           transition={{ duration: 0.3 }}
           onAnimationComplete={() => setActiveCounterBump(false)}
         >
-          {sessions.length}
+            {sessions.length}
         </motion.span>
       </div>
 
@@ -303,8 +415,9 @@ export default function SessionList({
             onDragEnd={handleDragEnd}
             onDragCancel={handleDragCancel}
           >
+            {/* Exclude exiting sessions from SortableContext to prevent useSortable interference */}
             <SortableContext
-              items={sortedSessions.map((s) => s.id)}
+              items={sortedSessions.filter((s) => !exitingIds.has(s.id)).map((s) => s.id)}
               strategy={verticalListSortingStrategy}
             >
               <div>
@@ -312,6 +425,7 @@ export default function SessionList({
                   {sortedSessions.map((session, index) => {
                     const isNew = newlyActiveIds.has(session.id)
                     const entryDelay = isNew ? ENTRY_DELAY / 1000 : 0
+                    const isExiting = exitingIds.has(session.id)
                     // Calculate drop indicator position
                     const activeIndex = activeId ? sortedSessions.findIndex((s) => s.id === activeId) : -1
                     const isOver = overId === session.id && activeId !== session.id
@@ -321,6 +435,7 @@ export default function SessionList({
                         key={session.id}
                         session={session}
                         isNew={isNew}
+                        isExiting={isExiting}
                         entryDelay={entryDelay}
                         exitDuration={EXIT_DURATION}
                         prefersReducedMotion={prefersReducedMotion}
@@ -375,7 +490,7 @@ export default function SessionList({
                   exit={prefersReducedMotion ? { opacity: 0 } : { height: 0, opacity: 0 }}
                   transition={{ duration: 0.2 }}
                 >
-                  {inactiveSessions.map((session) => {
+                  {filteredInactiveSessions.map((session) => {
                     const isNew = newlyInactiveIds.has(session.sessionId)
                     // Delay entry animation for cards transitioning from active
                     const entryDelay = isNew ? ENTRY_DELAY / 1000 : 0
@@ -441,6 +556,7 @@ export default function SessionList({
 interface SortableSessionItemProps {
   session: Session
   isNew: boolean
+  isExiting: boolean
   entryDelay: number
   exitDuration: number
   prefersReducedMotion: boolean | null
@@ -458,6 +574,7 @@ interface SortableSessionItemProps {
 function SortableSessionItem({
   session,
   isNew,
+  isExiting,
   entryDelay,
   exitDuration,
   prefersReducedMotion,
@@ -478,9 +595,10 @@ function SortableSessionItem({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: session.id })
+  } = useSortable({ id: session.id, disabled: isExiting })
 
-  const style = {
+  // Don't apply sortable transforms for exiting items
+  const style = isExiting ? undefined : {
     transform: CSS.Transform.toString(transform),
     transition,
     zIndex: isDragging ? 10 : undefined,
@@ -489,10 +607,10 @@ function SortableSessionItem({
 
   return (
     <motion.div
-      ref={setNodeRef}
+      ref={isExiting ? undefined : setNodeRef}
       style={style}
       className="relative"
-      layout={!prefersReducedMotion && !isDragging && !layoutAnimationsDisabled}
+      layout={!prefersReducedMotion && !isDragging && !layoutAnimationsDisabled && !isExiting}
       initial={prefersReducedMotion ? false : { opacity: 0, y: -16, scale: 0.85 }}
       animate={
         prefersReducedMotion
@@ -504,12 +622,12 @@ function SortableSessionItem({
       exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 20, scale: 0.9 }}
       transition={prefersReducedMotion ? { duration: 0 } : {
         layout: { type: 'spring', stiffness: 500, damping: 35, delay: entryDelay },
-        opacity: { duration: exitDuration / 1000, delay: entryDelay },
-        y: { duration: exitDuration / 1000, ease: 'easeOut', delay: entryDelay },
-        scale: { duration: 0.4, ease: [0.34, 1.56, 0.64, 1], delay: entryDelay },
+        opacity: { duration: exitDuration / 1000, delay: isExiting ? 0 : entryDelay },
+        y: { duration: exitDuration / 1000, ease: 'easeOut', delay: isExiting ? 0 : entryDelay },
+        scale: { duration: 0.4, ease: [0.34, 1.56, 0.64, 1], delay: isExiting ? 0 : entryDelay },
       }}
-      {...attributes}
-      {...listeners}
+      {...(isExiting ? {} : attributes)}
+      {...(isExiting ? {} : listeners)}
     >
       {/* Drop indicator line */}
       {dropIndicator === 'above' && (
@@ -689,7 +807,9 @@ function SessionRow({
             </span>
           )}
           {needsInput ? (
-            <HandIcon className="h-4 w-4 shrink-0 text-approval" aria-label="Needs input" />
+            <span className="ml-1 flex w-8 shrink-0 justify-end">
+              <HandIcon className="h-4 w-4 text-approval" aria-label="Needs input" />
+            </span>
           ) : (
             <span className="ml-1 w-8 shrink-0 text-right text-xs tabular-nums text-muted">{lastActivity}</span>
           )}

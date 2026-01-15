@@ -35,19 +35,6 @@ Should filter be reflected in URL for shareability/bookmarking?
 
 **Recommendation:** Start with localStorage, add URL sync later if needed. Structure the store setter to make this easy to add.
 
-### Path Normalization
-
-**Existing issue:** `projectPath` values come directly from agent log files without normalization. The same project could appear as `/foo/bar` and `/foo/bar/` (trailing slash) or with different separators on Windows.
-
-There's already a `normalizePath()` in `logMatcher.ts` that strips trailing slashes and normalizes separators, but it's only used for matching, not storage.
-
-**Options:**
-1. Normalize in `getUniqueProjects()` for filtering only (minimal change)
-2. Normalize paths at the source when parsing logs (broader fix)
-3. Both - normalize at source and in filter for defense
-
-**Recommendation:** Option 1 for this feature, file separate issue for Option 2.
-
 ---
 
 ## Implementation Steps
@@ -114,11 +101,6 @@ Implementation:
 **File:** `src/client/utils/sessions.ts`
 
 ```ts
-// Normalize path for comparison (strip trailing slash, normalize separators)
-export function normalizeProjectPath(path: string): string {
-  return path.replace(/\\/g, '/').replace(/\/+$/, '')
-}
-
 export function getUniqueProjects(
   sessions: Session[],
   inactiveSessions: AgentSession[]
@@ -126,10 +108,10 @@ export function getUniqueProjects(
   const paths = new Set<string>()
 
   for (const s of sessions) {
-    if (s.projectPath) paths.add(normalizeProjectPath(s.projectPath))
+    if (s.projectPath) paths.add(s.projectPath)
   }
   for (const s of inactiveSessions) {
-    if (s.projectPath) paths.add(normalizeProjectPath(s.projectPath))
+    if (s.projectPath) paths.add(s.projectPath)
   }
 
   return Array.from(paths).sort()
@@ -137,9 +119,10 @@ export function getUniqueProjects(
 ```
 
 - Extract `projectPath` from both arrays
-- **Normalize paths** before deduping (handles trailing slashes, separators)
-- Sort alphabetically
+- Dedupe and sort alphabetically
 - Memoize in component to avoid recalc on every render
+
+**Note:** Path normalization is already done server-side in `logDiscovery.ts` before paths are sent to the client.
 
 ---
 
@@ -180,20 +163,16 @@ export function getDisambiguatedProjectNames(
    )
    ```
 
-4. Filter sessions (using normalized comparison):
+4. Filter sessions:
    ```ts
    const filteredSessions = useMemo(() => {
      if (!projectFilter) return sortedSessions
-     return sortedSessions.filter(
-       s => normalizeProjectPath(s.projectPath) === projectFilter
-     )
+     return sortedSessions.filter(s => s.projectPath === projectFilter)
    }, [sortedSessions, projectFilter])
 
    const filteredInactiveSessions = useMemo(() => {
      if (!projectFilter) return inactiveSessions
-     return inactiveSessions.filter(
-       s => normalizeProjectPath(s.projectPath) === projectFilter
-     )
+     return inactiveSessions.filter(s => s.projectPath === projectFilter)
    }, [inactiveSessions, projectFilter])
    ```
 
@@ -202,8 +181,7 @@ export function getDisambiguatedProjectNames(
    const hiddenPermissionCount = useMemo(() => {
      if (!projectFilter) return 0
      return sortedSessions.filter(
-       s => normalizeProjectPath(s.projectPath) !== projectFilter
-         && s.status === 'permission'
+       s => s.projectPath !== projectFilter && s.status === 'permission'
      ).length
    }, [sortedSessions, projectFilter])
    ```
@@ -272,16 +250,14 @@ In `ProjectFilterDropdown`:
 | Mobile viewport | Truncate names, use native select if needed |
 | Rapid session changes | Memoize project extraction |
 | Permission + filtered | Orange dot (active only), click to clear |
-| Trailing slashes in paths | Normalize before comparison |
-| Mixed path separators | Normalize `\` to `/` |
+| Path normalization | Already handled server-side in `logDiscovery.ts` |
 
 ---
 
 ## Testing
 
 1. **Unit tests** (`src/client/utils/`)
-   - `normalizeProjectPath` - trailing slashes, backslashes
-   - `getUniqueProjects` - deduplication, sorting, normalization
+   - `getUniqueProjects` - deduplication, sorting
    - `getDisambiguatedProjectNames` - various duplicate scenarios
 
 2. **Manual/integration testing**
@@ -312,12 +288,6 @@ In `ProjectFilterDropdown`:
 | `src/client/stores/settingsStore.ts` | Add `projectFilter` state |
 | `src/client/components/ProjectFilterDropdown.tsx` | New component |
 | `src/client/components/SessionList.tsx` | Integrate filter |
-| `src/client/utils/sessions.ts` | Add `normalizeProjectPath`, `getUniqueProjects` |
+| `src/client/utils/sessions.ts` | Add `getUniqueProjects` |
 | `src/client/utils/sessionLabel.ts` | Add `getDisambiguatedProjectNames` |
 | `src/client/styles/index.css` | Orange dot styles (if needed) |
-
----
-
-## Related Issues
-
-- **Path normalization at source**: Currently `projectPath` values from log files aren't normalized before storage. This should be addressed separately in `logDiscovery.ts` to prevent path inconsistencies across the app.

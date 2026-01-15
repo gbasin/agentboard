@@ -20,6 +20,15 @@ afterEach(() => {
   globalAny.document = originalDocument
 })
 
+function createMockClassList() {
+  const classes = new Set<string>()
+  return {
+    add: (cls: string) => classes.add(cls),
+    remove: (cls: string) => classes.delete(cls),
+    has: (cls: string) => classes.has(cls),
+  }
+}
+
 describe('useVisualViewport', () => {
   test('registers viewport listeners and clears inset on cleanup', () => {
     const events = new Map<string, EventListener>()
@@ -33,6 +42,7 @@ describe('useVisualViewport', () => {
         style.value = ''
       },
     }
+    const classList = createMockClassList()
 
     const viewport = {
       height: 700,
@@ -50,7 +60,7 @@ describe('useVisualViewport', () => {
     } as unknown as Window & typeof globalThis
 
     globalAny.document = {
-      documentElement: { style },
+      documentElement: { style, classList },
     } as unknown as Document
 
     let renderer!: TestRenderer.ReactTestRenderer

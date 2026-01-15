@@ -1,4 +1,7 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test'
+import fs from 'node:fs/promises'
+import path from 'node:path'
+import os from 'node:os'
 
 const bunAny = Bun as typeof Bun & {
   serve: typeof Bun.serve
@@ -14,6 +17,16 @@ const originalSpawnSync = bunAny.spawnSync
 const originalProcessExit = processAny.exit
 const originalConsoleError = console.error
 const originalSetInterval = globalThis.setInterval
+const originalDbPath = process.env.AGENTBOARD_DB_PATH
+let tempDbPath: string | null = null
+
+beforeAll(() => {
+  const suffix = `port-check-${process.pid}-${Date.now()}-${Math.random()
+    .toString(36)
+    .slice(2, 8)}`
+  tempDbPath = path.join(os.tmpdir(), `agentboard-${suffix}.db`)
+  process.env.AGENTBOARD_DB_PATH = tempDbPath
+})
 
 afterEach(() => {
   bunAny.serve = originalServe
@@ -21,6 +34,17 @@ afterEach(() => {
   processAny.exit = originalProcessExit
   console.error = originalConsoleError
   globalThis.setInterval = originalSetInterval
+})
+
+afterAll(() => {
+  if (originalDbPath === undefined) {
+    delete process.env.AGENTBOARD_DB_PATH
+  } else {
+    process.env.AGENTBOARD_DB_PATH = originalDbPath
+  }
+  if (tempDbPath) {
+    fs.rm(tempDbPath, { force: true }).catch(() => {})
+  }
 })
 
 describe('port availability', () => {

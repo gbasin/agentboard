@@ -1,8 +1,11 @@
 import fs from 'node:fs'
 import { performance } from 'node:perf_hooks'
 import type { AgentType, Session } from '../shared/types'
-import { extractProjectPath, inferAgentTypeFromPath } from './logDiscovery'
-import { resolveProjectPath } from './paths'
+import {
+  extractProjectPath,
+  inferAgentTypeFromPath,
+  normalizeProjectPath,
+} from './logDiscovery'
 import {
   cleanTmuxLine,
   isDecorativeLine,
@@ -283,8 +286,7 @@ export function normalizeText(text: string): string {
 
 function normalizePath(value: string): string {
   if (!value) return ''
-  const resolved = resolveProjectPath(value)
-  return resolved.replace(/\\/g, '/').replace(/\/+$/, '')
+  return normalizeProjectPath(value)
 }
 
 function isSameOrChildPath(left: string, right: string): boolean {
@@ -1139,4 +1141,26 @@ export function tryExactMatchLogToWindow(
   }
 
   return null
+}
+
+/**
+ * Verify that a window's terminal content matches a specific log file.
+ * Used on startup to validate stored currentWindow associations before trusting them.
+ * Returns true if the window content matches the log, false otherwise.
+ */
+export function verifyWindowLogAssociation(
+  tmuxWindow: string,
+  logPath: string,
+  logDirs: string[],
+  context: ExactMatchContext = {},
+  scrollbackLines = DEFAULT_SCROLLBACK_LINES
+): boolean {
+  const result = tryExactMatchWindowToLog(
+    tmuxWindow,
+    logDirs,
+    scrollbackLines,
+    context,
+    { logPaths: [logPath] }
+  )
+  return result !== null && result.logPath === logPath
 }

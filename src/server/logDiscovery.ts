@@ -3,17 +3,59 @@ import path from 'node:path'
 import { resolveProjectPath } from './paths'
 
 const LOG_HEAD_BYTE_LIMIT = 64 * 1024
+const LOG_HEAD_MAX_LIMIT = 1024 * 1024 // 1MB cap for progressive expansion
+const WINDOWS_ABSOLUTE_PATH = /^[a-zA-Z]:[\\/]/
+
+function isWindowsAbsolutePath(value: string): boolean {
+  return (
+    WINDOWS_ABSOLUTE_PATH.test(value) ||
+    value.startsWith('\\\\') ||
+    value.startsWith('//') ||
+    value.startsWith('\\')
+  )
+}
+
+function normalizeDriveLetter(value: string): string {
+  if (/^[A-Z]:/.test(value)) {
+    return value[0].toLowerCase() + value.slice(1)
+  }
+  return value
+}
+
+function stripTrailingSlashes(value: string): string {
+  return value.replace(/\/+$/, '')
+}
+
+function normalizeWindowsPath(value: string): string {
+  const normalized = path.win32.normalize(value)
+  const withSlashes = normalized.replace(/\\/g, '/')
+  return stripTrailingSlashes(normalizeDriveLetter(withSlashes))
+}
+
+function normalizePosixPath(value: string): string {
+  return stripTrailingSlashes(value.replace(/\\/g, '/'))
+}
 
 function getHomeDir(): string {
   return process.env.HOME || process.env.USERPROFILE || ''
 }
 
 function getClaudeConfigDir(): string {
-  return process.env.CLAUDE_CONFIG_DIR || path.join(getHomeDir(), '.claude')
+  const override = process.env.CLAUDE_CONFIG_DIR
+  if (override && override.trim()) {
+    const normalized = normalizeProjectPath(override)
+    return normalized || override.trim()
+  }
+  return path.join(getHomeDir(), '.claude')
 }
 
 function getCodexHomeDir(): string {
-  return process.env.CODEX_HOME || path.join(getHomeDir(), '.codex')
+  const override = process.env.CODEX_HOME
+  if (override && override.trim()) {
+    const normalized = normalizeProjectPath(override)
+    return normalized || override.trim()
+  }
+  return path.join(getHomeDir(), '.codex')
 }
 
 export function getLogSearchDirs(): string[] {
@@ -23,10 +65,29 @@ export function getLogSearchDirs(): string[] {
   ]
 }
 
-export function encodeProjectPath(projectPath: string): string {
-  const resolved = resolveProjectPath(projectPath)
+export function normalizeProjectPath(value: string): string {
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  if (isWindowsAbsolutePath(trimmed)) {
+    return normalizeWindowsPath(trimmed)
+  }
+
+  const resolved = resolveProjectPath(trimmed)
   if (!resolved) return ''
-  return resolved.replace(/[\\/]/g, '-')
+  if (isWindowsAbsolutePath(resolved)) {
+    return normalizeWindowsPath(resolved)
+  }
+  return normalizePosixPath(resolved)
+}
+
+export function encodeProjectPath(projectPath: string): string {
+  const normalized = normalizeProjectPath(projectPath)
+  if (!normalized) return ''
+  let encoded = normalized.replace(/[\\/]/g, '-')
+  if (isWindowsAbsolutePath(normalized)) {
+    encoded = encoded.replace(/:/g, '')
+  }
+  return encoded
 }
 
 export function scanAllLogDirs(): string[] {
@@ -41,14 +102,9 @@ export function scanAllLogDirs(): string[] {
 }
 
 export function extractSessionId(logPath: string): string | null {
-  const head = readLogHead(logPath)
-  if (!head) return null
+  const entries = parseLogHeadEntries(logPath)
 
-  for (const line of head.split('\n')) {
-    const trimmed = line.trim()
-    if (!trimmed) continue
-    const entry = safeParseJson(trimmed)
-    if (!entry) continue
+  for (const entry of entries) {
     const sessionId = getSessionIdFromEntry(entry)
     if (sessionId) return sessionId
   }
@@ -57,16 +113,14 @@ export function extractSessionId(logPath: string): string | null {
 }
 
 export function extractProjectPath(logPath: string): string | null {
-  const head = readLogHead(logPath)
-  if (!head) return null
+  const entries = parseLogHeadEntries(logPath)
 
-  for (const line of head.split('\n')) {
-    const trimmed = line.trim()
-    if (!trimmed) continue
-    const entry = safeParseJson(trimmed)
-    if (!entry) continue
+  for (const entry of entries) {
     const projectPath = getProjectPathFromEntry(entry)
-    if (projectPath) return projectPath
+    if (projectPath) {
+      const normalized = normalizeProjectPath(projectPath)
+      if (normalized) return normalized
+    }
   }
 
   return null
@@ -175,6 +229,56 @@ function safeParseJson(line: string): Record<string, unknown> | null {
   } catch {
     return null
   }
+}
+
+/**
+ * Parse complete JSONL lines from head of log file with progressive expansion.
+ * Starts with initial byte limit and expands up to max limit if lines are truncated.
+ */
+function parseLogHeadEntries(
+  logPath: string,
+  initialLimit = LOG_HEAD_BYTE_LIMIT,
+  maxLimit = LOG_HEAD_MAX_LIMIT
+): Array<Record<string, unknown>> {
+  let byteLimit = initialLimit
+
+  while (byteLimit <= maxLimit) {
+    const head = readLogHead(logPath, byteLimit)
+    if (!head) return []
+
+    const lines = head.split('\n')
+    const entries: Array<Record<string, unknown>> = []
+    let hadTruncatedLine = false
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim()
+      if (!line) continue
+
+      const entry = safeParseJson(line)
+      if (entry) {
+        entries.push(entry)
+      } else if (i === lines.length - 1 || (i === lines.length - 2 && !lines[lines.length - 1].trim())) {
+        // Last non-empty line failed to parse - likely truncated
+        hadTruncatedLine = true
+      }
+    }
+
+    // If we found entries and no truncation issue, return what we have
+    if (entries.length > 0 && !hadTruncatedLine) {
+      return entries
+    }
+
+    // If we had a truncated line and haven't hit the cap, expand
+    if (hadTruncatedLine && byteLimit < maxLimit) {
+      byteLimit = Math.min(byteLimit * 4, maxLimit)
+      continue
+    }
+
+    // Return whatever we have
+    return entries
+  }
+
+  return []
 }
 
 function getSessionIdFromEntry(entry: Record<string, unknown>): string | null {

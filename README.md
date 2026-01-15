@@ -61,6 +61,7 @@ PRUNE_WS_SESSIONS=true
 TERMINAL_MODE=pty
 TERMINAL_MONITOR_TARGETS=true
 VITE_ALLOWED_HOSTS=nuc,myserver
+AGENTBOARD_DB_PATH=~/.agentboard/agentboard.db
 ```
 
 `HOSTNAME` controls which interfaces the server binds to (default `0.0.0.0` for network access; use `127.0.0.1` for local-only).
@@ -71,6 +72,7 @@ VITE_ALLOWED_HOSTS=nuc,myserver
 `VITE_ALLOWED_HOSTS` allows access to the Vite dev server from other hostnames. Useful with Tailscale MagicDNS - add your machine name (e.g., `nuc`) to access the dev server at `http://nuc:5173` from other devices on your tailnet.
 
 Session data (log-to-window mappings) is stored in `~/.agentboard/agentboard.db`.
+Override with `AGENTBOARD_DB_PATH`.
 
 ## Troubleshooting
 

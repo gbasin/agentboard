@@ -1,4 +1,7 @@
-import { afterAll, describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import fs from 'node:fs/promises'
+import path from 'node:path'
+import os from 'node:os'
 
 const bunAny = Bun as typeof Bun & {
   serve: typeof Bun.serve
@@ -9,11 +12,21 @@ const originalServe = bunAny.serve
 const originalSpawnSync = bunAny.spawnSync
 const originalSetInterval = globalThis.setInterval
 const originalMatchWorker = process.env.AGENTBOARD_LOG_MATCH_WORKER
+const originalDbPath = process.env.AGENTBOARD_DB_PATH
+let tempDbPath: string | null = null
 
 const serveCalls: Array<{ port: number }> = []
 const importIndex = (suffix: string) => import(`../index?test=${suffix}`)
 
 describe('server entrypoint', () => {
+  beforeAll(() => {
+    const suffix = `index-${process.pid}-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`
+    tempDbPath = path.join(os.tmpdir(), `agentboard-${suffix}.db`)
+    process.env.AGENTBOARD_DB_PATH = tempDbPath
+  })
+
   test('starts server without side effects', async () => {
     serveCalls.length = 0
     process.env.AGENTBOARD_LOG_MATCH_WORKER = 'false'
@@ -68,6 +81,14 @@ afterAll(() => {
   bunAny.serve = originalServe
   bunAny.spawnSync = originalSpawnSync
   globalThis.setInterval = originalSetInterval
+  if (originalDbPath === undefined) {
+    delete process.env.AGENTBOARD_DB_PATH
+  } else {
+    process.env.AGENTBOARD_DB_PATH = originalDbPath
+  }
+  if (tempDbPath) {
+    fs.rm(tempDbPath, { force: true }).catch(() => {})
+  }
   if (originalMatchWorker === undefined) {
     delete process.env.AGENTBOARD_LOG_MATCH_WORKER
   } else {

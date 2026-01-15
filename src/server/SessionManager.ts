@@ -1,16 +1,17 @@
 import fs from 'node:fs'
+import { inferAgentType } from './agentDetection'
 import { config } from './config'
+import { normalizeProjectPath } from './logDiscovery'
 import { generateSessionName } from './nameGenerator'
 import { logger } from './logger'
 import { resolveProjectPath } from './paths'
 import {
-  stripAnsi,
-  TMUX_DECORATIVE_LINE_PATTERN,
-  TMUX_METADATA_STATUS_PATTERNS,
-  TMUX_TIMER_PATTERN,
-  TMUX_UI_GLYPH_PATTERN,
-} from './terminal/tmuxText'
-import type { AgentType, Session, SessionStatus } from '../shared/types'
+  detectsActiveWorking,
+  detectsPermissionPrompt,
+  isMeaningfulResizeChange,
+  normalizeContent,
+} from './statusInference'
+import type { Session, SessionStatus } from '../shared/types'
 
 interface WindowInfo {
   id: string
@@ -50,6 +51,7 @@ export class SessionManager {
   private runTmux: TmuxRunner
   private capturePaneContent: CapturePane
   private now: NowFn
+  private displayNameExists: (name: string, excludeSessionId?: string) => boolean
 
   constructor(
     sessionName = config.tmuxSession,
@@ -57,16 +59,19 @@ export class SessionManager {
       runTmux: runTmuxOverride,
       capturePaneContent: captureOverride,
       now,
+      displayNameExists,
     }: {
       runTmux?: TmuxRunner
       capturePaneContent?: CapturePane
       now?: NowFn
+      displayNameExists?: (name: string, excludeSessionId?: string) => boolean
     } = {}
   ) {
     this.sessionName = sessionName
     this.runTmux = runTmuxOverride ?? runTmux
     this.capturePaneContent = captureOverride ?? capturePaneWithDimensions
     this.now = now ?? Date.now
+    this.displayNameExists = displayNameExists ?? (() => false)
   }
 
   ensureSession(): void {
@@ -95,7 +100,12 @@ export class SessionManager {
     return allSessions
   }
 
-  createWindow(projectPath: string, name?: string, command?: string): Session {
+  createWindow(
+    projectPath: string,
+    name?: string,
+    command?: string,
+    options?: { excludeSessionId?: string }
+  ): Session {
     this.ensureSession()
 
     const resolvedPath = resolveProjectPath(projectPath)
@@ -107,24 +117,29 @@ export class SessionManager {
       throw new Error(`Project path does not exist: ${resolvedPath}`)
     }
 
-    const existingNames = new Set(
+    const existingWindowNames = new Set(
       this.listWindowsForSession(this.sessionName, 'managed').map(
         (session) => session.name
       )
     )
 
+    // Check both tmux windows and DB for name collisions
+    const excludeSessionId = options?.excludeSessionId
+    const nameExists = (n: string) =>
+      existingWindowNames.has(n) || this.displayNameExists(n, excludeSessionId)
+
     let baseName = name?.trim()
     if (baseName) {
       baseName = baseName.replace(/\s+/g, '-')
     } else {
-      // Generate random name, retry if collision
+      // Generate random name, retry if collision with tmux windows or DB
       do {
         baseName = generateSessionName()
-      } while (existingNames.has(baseName))
+      } while (nameExists(baseName))
     }
 
     const finalCommand = command?.trim() || 'claude'
-    const finalName = this.findAvailableName(baseName, existingNames)
+    const finalName = this.findAvailableName(baseName, existingWindowNames, nameExists)
     const nextIndex = this.findNextAvailableWindowIndex()
 
     const tmuxArgs = [
@@ -251,11 +266,12 @@ export class SessionManager {
         )
         // For external sessions, use session name as display name (more meaningful than window name)
         const displayName = source === 'external' ? sessionName : window.name
+        const normalizedPath = normalizeProjectPath(window.path)
         return {
           id: `${sessionName}:${window.id}`,
           name: displayName,
           tmuxWindow,
-          projectPath: window.path,
+          projectPath: normalizedPath || window.path,
           status,
           lastActivity: new Date(lastChanged).toISOString(),
           createdAt: new Date(creationTimestamp).toISOString(),
@@ -280,17 +296,27 @@ export class SessionManager {
     return this.runTmux([...args, WINDOW_LIST_FORMAT_FALLBACK])
   }
 
-  private findAvailableName(base: string, existing: Set<string>): string {
-    if (!existing.has(base)) {
+  private findAvailableName(
+    base: string,
+    existing: Set<string>,
+    nameExists?: (name: string) => boolean
+  ): string {
+    const checkExists = nameExists ?? ((n: string) => existing.has(n))
+
+    if (!checkExists(base)) {
       return base
     }
 
-    let suffix = 2
-    while (existing.has(`${base}-${suffix}`)) {
+    // If base already ends with -N, strip it and increment from there
+    const suffixMatch = base.match(/^(.+)-(\d+)$/)
+    const baseName = suffixMatch ? suffixMatch[1] : base
+    let suffix = suffixMatch ? Number.parseInt(suffixMatch[2], 10) + 1 : 2
+
+    while (checkExists(`${baseName}-${suffix}`)) {
       suffix += 1
     }
 
-    return `${base}-${suffix}`
+    return `${baseName}-${suffix}`
   }
 
   private findNextAvailableWindowIndex(): number {
@@ -412,21 +438,6 @@ interface StatusResult {
   lastChanged: number
 }
 
-// Patterns that indicate the agent is actively working (thinking/processing)
-const ACTIVE_WORKING_PATTERNS: RegExp[] = [
-  // Codex: "(19s • esc to interrupt)" timer pattern
-  /esc to interrupt/i,
-  // Claude Code: "✳ Lollygagging… (ctrl+c to interrupt)" spinner pattern
-  /ctrl\+c to interrupt/i,
-]
-
-// Detects if terminal content shows active working indicators
-function detectsActiveWorking(content: string): boolean {
-  const cleaned = stripAnsi(content)
-  // Check entire content - status bars can be anywhere (top or bottom)
-  return ACTIVE_WORKING_PATTERNS.some((pattern) => pattern.test(cleaned))
-}
-
 function inferStatus(
   tmuxWindow: string,
   capture: CapturePane = capturePaneWithDimensions,
@@ -479,65 +490,6 @@ function inferStatus(
   return { status: contentChanged || isActivelyWorking ? 'working' : 'waiting', lastChanged }
 }
 
-function normalizeContent(content: string): string {
-  const lines = stripAnsi(content).split('\n')
-  return lines
-    .slice(-20)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .filter((line) => !TMUX_DECORATIVE_LINE_PATTERN.test(line))
-    .filter(
-      (line) =>
-        !TMUX_METADATA_STATUS_PATTERNS.some((pattern) => pattern.test(line))
-    )
-    .map((line) => line.replace(TMUX_TIMER_PATTERN, '').trim())
-    .map((line) => line.replace(TMUX_UI_GLYPH_PATTERN, ' ').trim())
-    .filter(Boolean)
-    .join(' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
-function tokenizeNormalized(content: string): string[] {
-  return content
-    .split(/\s+/)
-    .map((token) => token.trim())
-    .filter(Boolean)
-}
-
-function getTokenOverlapStats(left: string, right: string) {
-  const leftTokens = tokenizeNormalized(left)
-  const rightTokens = tokenizeNormalized(right)
-  const leftSet = new Set(leftTokens)
-  const rightSet = new Set(rightTokens)
-  let overlap = 0
-  for (const token of leftSet) {
-    if (rightSet.has(token)) {
-      overlap += 1
-    }
-  }
-  const leftSize = leftSet.size
-  const rightSize = rightSet.size
-  const minSize = Math.min(leftSize, rightSize)
-  const maxSize = Math.max(leftSize, rightSize)
-  const ratioMin = minSize === 0 ? 1 : overlap / minSize
-  const ratioMax = maxSize === 0 ? 1 : overlap / maxSize
-  return { overlap, leftSize, rightSize, ratioMin, ratioMax }
-}
-
-function isMeaningfulResizeChange(oldNormalized: string, newNormalized: string) {
-  if (oldNormalized === newNormalized) {
-    return { changed: false, ...getTokenOverlapStats(oldNormalized, newNormalized) }
-  }
-  const stats = getTokenOverlapStats(oldNormalized, newNormalized)
-  const maxSize = Math.max(stats.leftSize, stats.rightSize)
-  if (maxSize < 8) {
-    return { changed: true, ...stats }
-  }
-  const changed = stats.ratioMin < 0.9
-  return { changed, ...stats }
-}
-
 function capturePaneWithDimensions(tmuxWindow: string): PaneCapture | null {
   try {
     const dimsResult = Bun.spawnSync(
@@ -584,80 +536,5 @@ function capturePaneWithDimensions(tmuxWindow: string): PaneCapture | null {
   }
 }
 
-function inferAgentType(command: string): AgentType | undefined {
-  if (!command) {
-    return undefined
-  }
-
-  // Extract the base command name, handling:
-  // - Full paths: /usr/local/bin/claude -> claude
-  // - Package runners: npx codex, bunx claude -> codex, claude
-  // - Flags: claude --help, codex --search -> claude, codex
-  // - Quoted commands: "codex --search" -> codex
-  const normalized = command.toLowerCase().trim().replace(/^["']|["']$/g, '')
-  const parts = normalized.split(/\s+/)
-
-  for (const part of parts) {
-    // Skip common package runners/prefixes
-    if (['npx', 'bunx', 'pnpm', 'yarn', 'env'].includes(part)) {
-      continue
-    }
-    // Skip environment variable assignments (KEY=value)
-    if (part.includes('=')) {
-      continue
-    }
-    // Skip flags
-    if (part.startsWith('-')) {
-      continue
-    }
-
-    // Extract base name from path
-    const baseName = part.split('/').pop() || part
-
-    if (baseName === 'claude') {
-      return 'claude'
-    }
-    if (baseName === 'codex') {
-      return 'codex'
-    }
-
-    // Found a non-skippable command that isn't a known agent
-    break
-  }
-
-  return undefined
-}
-
-// Permission prompt patterns for Claude Code and Codex CLI
-const PERMISSION_PATTERNS: RegExp[] = [
-  // Claude Code: numbered options like "❯ 1. Yes" or "1. Yes"
-  /[❯>]?\s*1\.\s*(Yes|Allow)/i,
-  // Claude Code: "Do you want to proceed?" or similar
-  /do you want to (proceed|continue|allow|run)\?/i,
-  // Claude Code: "Yes, and don't ask again" style options
-  /yes,?\s*(and\s+)?(don't|do not|never)\s+ask\s+again/i,
-  // Claude Code: permission prompt with session option
-  /yes,?\s*(for|during)\s+this\s+session/i,
-  // Codex CLI: approve/reject inline prompts
-  /\[(approve|accept)\].*\[(reject|deny)\]/i,
-  // Codex CLI: "approve this" prompts
-  /approve\s+this\s+(command|change|action)/i,
-  // Generic: "allow" / "deny" choice pattern
-  /\[allow\].*\[deny\]/i,
-  // Generic: "y/n" or "[Y/n]" prompts at end of question
-  /\?\s*\[?[yY](es)?\/[nN](o)?\]?\s*$/m,
-]
-
-// Detects if terminal content shows a permission prompt
-export function detectsPermissionPrompt(content: string): boolean {
-  const cleaned = stripAnsi(content)
-  // Focus on the last ~30 lines where prompts typically appear
-  // First strip trailing blank lines (terminal buffer often has many)
-  const lines = cleaned.split('\n')
-  while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
-    lines.pop()
-  }
-  const recentContent = lines.slice(-30).join('\n')
-
-  return PERMISSION_PATTERNS.some((pattern) => pattern.test(recentContent))
-}
+// Re-export for external use
+export { detectsPermissionPrompt } from './statusInference'

@@ -424,17 +424,18 @@ body {
   background: var(--bg-hover);
 }
 
-/* iOS PWA safe area padding for home indicator - only when keyboard is down */
-/* Uses :has() to detect focused inputs (keyboard open) */
-.ios-pwa:not(:has(input:focus-visible, textarea:focus-visible, [contenteditable]:focus-visible)) #root {
+/* iOS safe area padding for home indicator - only when keyboard is hidden */
+/* Uses 'keyboard-visible' class toggled by useVisualViewport hook */
+/* Applies to both PWA and regular Safari on iOS */
+.ios:not(.keyboard-visible) #root {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-.ios-pwa .terminal-mobile-overlay {
+.ios .terminal-mobile-overlay {
   bottom: var(--keyboard-inset, 0px);
 }
 
-.ios-pwa:not(:has(input:focus-visible, textarea:focus-visible, [contenteditable]:focus-visible)) .terminal-mobile-overlay {
+.ios:not(.keyboard-visible) .terminal-mobile-overlay {
   bottom: calc(var(--keyboard-inset, 0px) + env(safe-area-inset-bottom, 0px));
 }
 

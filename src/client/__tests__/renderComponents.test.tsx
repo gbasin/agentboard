@@ -205,7 +205,7 @@ mock.module('../hooks/useWebSocket', () => ({
   }),
 }))
 
-const [{ default: App }, { default: Header }, { default: SessionList }, { default: Terminal }, { default: TerminalControls }, { default: NewSessionModal }, { default: SettingsModal }, { default: DPad }, { default: NumPad }] =
+const [{ default: App }, { default: Header }, { default: SessionList }, { default: Terminal }, { default: TerminalControls }, { default: NewSessionModal }, { default: SettingsModal }, { default: DPad }, { default: NumPad }, { useSessionStore }] =
   await Promise.all([
     import('../App'),
     import('../components/Header'),
@@ -216,7 +216,11 @@ const [{ default: App }, { default: Header }, { default: SessionList }, { defaul
     import('../components/SettingsModal'),
     import('../components/DPad'),
     import('../components/NumPad'),
+    import('../stores/sessionStore'),
   ])
+
+// Initialize sessionStore with empty exitingSessions for tests
+useSessionStore.setState({ exitingSessions: new Map() })
 
 const baseSession: Session = {
   id: 'session-1',

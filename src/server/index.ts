@@ -10,6 +10,8 @@ import { SessionRegistry } from './SessionRegistry'
 import { initDatabase } from './db'
 import { LogPoller } from './logPoller'
 import { toAgentSession } from './agentSessions'
+import { getLogSearchDirs } from './logDiscovery'
+import { verifyWindowLogAssociation } from './logMatcher'
 import {
   createTerminalProxy,
   resolveTerminalMode,
@@ -28,6 +30,7 @@ import type {
   Session,
 } from '../shared/types'
 import { logger } from './logger'
+import { SessionRefreshWorkerClient } from './sessionRefreshWorkerClient'
 
 function checkPortAvailable(port: number): void {
   let result: ReturnType<typeof Bun.spawnSync>
@@ -165,9 +168,11 @@ logger.info('terminal_mode_resolved', {
 })
 
 const app = new Hono()
-const sessionManager = new SessionManager()
-const registry = new SessionRegistry()
 const db = initDatabase()
+const sessionManager = new SessionManager(undefined, {
+  displayNameExists: (name, excludeSessionId) => db.displayNameExists(name, excludeSessionId),
+})
+const registry = new SessionRegistry()
 const logPoller = new LogPoller(db, registry, {
   onSessionOrphaned: (sessionId) => {
     const session = db.getSessionById(sessionId)
@@ -190,6 +195,7 @@ const logPoller = new LogPoller(db, registry, {
   matchProfile: config.logMatchProfile,
   matchWorker: config.logMatchWorker,
 })
+const sessionRefreshWorker = new SessionRefreshWorkerClient()
 
 interface WSData {
   terminal: ITerminalProxy | null
@@ -205,11 +211,15 @@ function updateAgentSessions() {
   registry.setAgentSessions(active, inactive)
 }
 
-function hydrateSessionsWithAgentSessions(sessions: Session[]): Session[] {
+function hydrateSessionsWithAgentSessions(
+  sessions: Session[],
+  { verifyAssociations = false }: { verifyAssociations?: boolean } = {}
+): Session[] {
   const activeSessions = db.getActiveSessions()
   const windowSet = new Set(sessions.map((session) => session.tmuxWindow))
   const activeMap = new Map<string, typeof activeSessions[number]>()
   const orphaned: AgentSession[] = []
+  const logDirs = getLogSearchDirs()
 
   // Safeguard: don't mass-orphan if window list seems incomplete
   // This can happen if tmux commands fail temporarily on server restart
@@ -241,6 +251,33 @@ function hydrateSessionsWithAgentSessions(sessions: Session[]): Session[] {
       }
       continue
     }
+
+    // Verify the association by checking terminal content matches the log
+    // This catches stale associations from tmux restarts where window IDs changed
+    // Only run on startup to avoid blocking periodic refreshes
+    if (verifyAssociations) {
+      const verified = verifyWindowLogAssociation(
+        agentSession.currentWindow,
+        agentSession.logFilePath,
+        logDirs,
+        { agentType: agentSession.agentType, projectPath: agentSession.projectPath }
+      )
+
+      if (!verified) {
+        logger.info('session_verification_failed', {
+          sessionId: agentSession.sessionId,
+          displayName: agentSession.displayName,
+          currentWindow: agentSession.currentWindow,
+          logFilePath: agentSession.logFilePath,
+        })
+        const orphanedSession = db.orphanSession(agentSession.sessionId)
+        if (orphanedSession) {
+          orphaned.push(toAgentSession(orphanedSession))
+        }
+        continue
+      }
+    }
+
     activeMap.set(agentSession.currentWindow, agentSession)
   }
 
@@ -275,9 +312,39 @@ function hydrateSessionsWithAgentSessions(sessions: Session[]): Session[] {
   return hydrated
 }
 
+let refreshInFlight = false
+
+async function refreshSessionsAsync(): Promise<void> {
+  if (refreshInFlight) return
+  refreshInFlight = true
+  try {
+    const sessions = await sessionRefreshWorker.refresh(
+      config.tmuxSession,
+      config.discoverPrefixes
+    )
+    const hydrated = hydrateSessionsWithAgentSessions(sessions)
+    registry.replaceSessions(hydrated)
+  } catch (error) {
+    // Fallback to sync on worker failure
+    logger.warn('session_refresh_worker_error', {
+      message: error instanceof Error ? error.message : String(error),
+    })
+    const sessions = sessionManager.listWindows()
+    const hydrated = hydrateSessionsWithAgentSessions(sessions)
+    registry.replaceSessions(hydrated)
+  } finally {
+    refreshInFlight = false
+  }
+}
+
 function refreshSessions() {
+  void refreshSessionsAsync()
+}
+
+// Sync version for startup - ensures sessions are ready before server starts
+function refreshSessionsSync({ verifyAssociations = false } = {}) {
   const sessions = sessionManager.listWindows()
-  const hydrated = hydrateSessionsWithAgentSessions(sessions)
+  const hydrated = hydrateSessionsWithAgentSessions(sessions, { verifyAssociations })
   registry.replaceSessions(hydrated)
 }
 
@@ -294,48 +361,6 @@ function scheduleEnterRefresh() {
   }, config.enterRefreshDelayMs)
 }
 
-// Try to re-match orphaned sessions to windows by display name
-function recoverOrphanedSessions() {
-  const orphanedSessions = db.getInactiveSessions()
-  const windows = sessionManager.listWindows()
-  const activeSessions = db.getActiveSessions()
-
-  // Build set of windows that already have sessions
-  const claimedWindows = new Set(
-    activeSessions.map((s) => s.currentWindow).filter(Boolean)
-  )
-
-  // Build map of window name -> window for unclaimed windows
-  const unclaimedByName = new Map<string, typeof windows[number]>()
-  for (const window of windows) {
-    if (!claimedWindows.has(window.tmuxWindow)) {
-      unclaimedByName.set(window.name, window)
-    }
-  }
-
-  let recovered = 0
-  for (const session of orphanedSessions) {
-    const matchingWindow = unclaimedByName.get(session.displayName)
-    if (matchingWindow) {
-      db.updateSession(session.sessionId, {
-        currentWindow: matchingWindow.tmuxWindow,
-      })
-      unclaimedByName.delete(session.displayName)
-      recovered += 1
-      logger.info('session_recovered', {
-        sessionId: session.sessionId,
-        displayName: session.displayName,
-        window: matchingWindow.tmuxWindow,
-      })
-    }
-  }
-
-  if (recovered > 0) {
-    logger.info('recovery_complete', { recoveredCount: recovered })
-  }
-
-  return recovered
-}
 
 // Log startup state for debugging orphan issues
 const startupActiveSessions = db.getActiveSessions()
@@ -354,11 +379,8 @@ logger.info('startup_state', {
   })),
 })
 
-// Try to recover orphaned sessions by matching display names to windows
-recoverOrphanedSessions()
-
-refreshSessions()
-setInterval(refreshSessions, config.refreshIntervalMs)
+refreshSessionsSync({ verifyAssociations: true }) // Sync for startup - ensures sessions are ready
+setInterval(refreshSessions, config.refreshIntervalMs) // Async for periodic
 if (config.logPollIntervalMs > 0) {
   logPoller.start(config.logPollIntervalMs)
 }
@@ -369,6 +391,10 @@ registry.on('session-update', (session) => {
 
 registry.on('sessions', (sessions) => {
   broadcast({ type: 'sessions', sessions })
+})
+
+registry.on('session-removed', (sessionId) => {
+  broadcast({ type: 'session-removed', sessionId })
 })
 
 registry.on('agent-sessions', ({ active, inactive }) => {
@@ -731,6 +757,9 @@ function handleMessage(
           message.name,
           message.command
         )
+        // Add session to registry immediately so terminal can attach
+        const currentSessions = registry.getAll()
+        registry.replaceSessions([created, ...currentSessions])
         refreshSessions()
         send(ws, { type: 'session-created', session: created })
       } catch (error) {
@@ -804,6 +833,28 @@ function handleKill(sessionId: string, ws: ServerWebSocket<WSData>) {
 
   try {
     sessionManager.killWindow(session.tmuxWindow)
+    const orphaned = new Map<string, AgentSession>()
+    const orphanById = (agentSessionId?: string | null) => {
+      if (!agentSessionId || orphaned.has(agentSessionId)) return
+      const orphanedSession = db.orphanSession(agentSessionId)
+      if (orphanedSession) {
+        orphaned.set(agentSessionId, toAgentSession(orphanedSession))
+      }
+    }
+
+    orphanById(session.agentSessionId)
+    const recordByWindow = db.getSessionByWindow(session.tmuxWindow)
+    if (recordByWindow) {
+      orphanById(recordByWindow.sessionId)
+    }
+    if (orphaned.size > 0) {
+      updateAgentSessions()
+      for (const orphanedSession of orphaned.values()) {
+        broadcast({ type: 'session-orphaned', session: orphanedSession })
+      }
+    }
+    const remaining = registry.getAll().filter((item) => item.id !== sessionId)
+    registry.replaceSessions(remaining)
     refreshSessions()
   } catch (error) {
     send(ws, {
@@ -819,10 +870,14 @@ function handleRename(
   newName: string,
   ws: ServerWebSocket<WSData>
 ) {
-  const session = registry.get(sessionId)
+  let session = registry.get(sessionId)
   if (!session) {
-    send(ws, { type: 'error', message: 'Session not found' })
-    return
+    refreshSessionsSync() // Use sync for inline operations needing immediate results
+    session = registry.get(sessionId)
+    if (!session) {
+      send(ws, { type: 'error', message: 'Session not found' })
+      return
+    }
   }
 
   try {
@@ -880,14 +935,19 @@ function handleSessionResume(
     const created = sessionManager.createWindow(
       projectPath,
       message.name ?? record.displayName,
-      command
+      command,
+      { excludeSessionId: sessionId }
     )
     db.updateSession(sessionId, {
       currentWindow: created.tmuxWindow,
       displayName: created.name,
     })
+    // Add session to registry immediately so terminal can attach
+    // (async refresh will update with any additional data later)
+    const currentSessions = registry.getAll()
+    registry.replaceSessions([created, ...currentSessions])
     refreshSessions()
-    send(ws, { type: 'session-resume-result', sessionId, ok: true })
+    send(ws, { type: 'session-resume-result', sessionId, ok: true, session: created })
     broadcast({
       type: 'session-activated',
       session: toAgentSession({

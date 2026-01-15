@@ -72,15 +72,47 @@ export default function App() {
         updateSession(message.session)
       }
       if (message.type === 'session-created') {
+        // Add session to list immediately (don't wait for async refresh)
+        const currentSessions = useSessionStore.getState().sessions
+        if (!currentSessions.some((s) => s.id === message.session.id)) {
+          setSessions([message.session, ...currentSessions])
+        }
         setSelectedSessionId(message.session.id)
         addRecentPath(message.session.projectPath)
+      }
+      if (message.type === 'session-removed') {
+        const currentSessions = useSessionStore.getState().sessions
+        const nextSessions = currentSessions.filter(
+          (session) => session.id !== message.sessionId
+        )
+        if (nextSessions.length !== currentSessions.length) {
+          setSessions(nextSessions)
+        }
       }
       if (message.type === 'agent-sessions') {
         setAgentSessions(message.active, message.inactive)
       }
-      if (message.type === 'session-resume-result' && !message.ok) {
-        setServerError(`${message.error?.code}: ${message.error?.message}`)
-        window.setTimeout(() => setServerError(null), 6000)
+      if (message.type === 'session-orphaned') {
+        const currentSessions = useSessionStore.getState().sessions
+        const nextSessions = currentSessions.filter(
+          (session) => session.agentSessionId?.trim() !== message.session.sessionId
+        )
+        if (nextSessions.length !== currentSessions.length) {
+          setSessions(nextSessions)
+        }
+      }
+      if (message.type === 'session-resume-result') {
+        if (message.ok && message.session) {
+          // Add resumed session to list immediately
+          const currentSessions = useSessionStore.getState().sessions
+          if (!currentSessions.some((s) => s.id === message.session!.id)) {
+            setSessions([message.session, ...currentSessions])
+          }
+          setSelectedSessionId(message.session.id)
+        } else if (!message.ok) {
+          setServerError(`${message.error?.code}: ${message.error?.message}`)
+          window.setTimeout(() => setServerError(null), 6000)
+        }
       }
       if (message.type === 'terminal-error') {
         if (!message.sessionId || message.sessionId === selectedSessionId) {
@@ -112,7 +144,9 @@ export default function App() {
   ])
 
   const selectedSession = useMemo(() => {
-    return sessions.find((session) => session.id === selectedSessionId) || null
+    return (
+      sessions.find((session) => session.id === selectedSessionId) || null
+    )
   }, [selectedSessionId, sessions])
 
   // Track last viewed project path
@@ -126,14 +160,18 @@ export default function App() {
   const sessionSortDirection = useSettingsStore(
     (state) => state.sessionSortDirection
   )
+  const manualSessionOrder = useSettingsStore(
+    (state) => state.manualSessionOrder
+  )
 
   const sortedSessions = useMemo(
     () =>
       sortSessions(sessions, {
         mode: sessionSortMode,
         direction: sessionSortDirection,
+        manualOrder: manualSessionOrder,
       }),
-    [sessions, sessionSortMode, sessionSortDirection]
+    [sessions, sessionSortMode, sessionSortDirection, manualSessionOrder]
   )
 
   // Auto-select first session on mobile when sessions load
@@ -144,9 +182,13 @@ export default function App() {
     }
   }, [hasLoaded, selectedSessionId, sortedSessions, setSelectedSessionId])
 
+  const markSessionExiting = useSessionStore((state) => state.markSessionExiting)
+
   const handleKillSession = useCallback((sessionId: string) => {
+    // Mark as exiting before sending kill to preserve session data for exit animation
+    markSessionExiting(sessionId)
     sendMessage({ type: 'session-kill', sessionId })
-  }, [sendMessage])
+  }, [markSessionExiting, sendMessage])
 
   useEffect(() => {
     const effectiveModifier = getEffectiveModifier(shortcutModifier)
