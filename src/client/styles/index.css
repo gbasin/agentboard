@@ -313,7 +313,9 @@ body {
 }
 
 .session-row.selected {
-  background: var(--bg-surface);
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-left: none;
 }
 
 .session-row.selected:hover {
