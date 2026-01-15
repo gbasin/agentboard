@@ -16,7 +16,27 @@ class PipePaneTerminalProxyMock {
 }
 
 const configMock = {
+  port: 4040,
+  hostname: '0.0.0.0',
+  tmuxSession: 'agentboard',
+  refreshIntervalMs: 2000,
+  discoverPrefixes: [] as string[],
+  pruneWsSessions: true,
   terminalMode: 'auto' as 'auto' | 'pty' | 'pipe-pane',
+  terminalMonitorTargets: true,
+  allowKillExternal: false,
+  tlsCert: '',
+  tlsKey: '',
+  logPollIntervalMs: 5000,
+  logPollMax: 25,
+  rgThreads: 1,
+  logMatchWorker: false,
+  logMatchProfile: false,
+  claudeConfigDir: '/tmp/claude',
+  codexHomeDir: '/tmp/codex',
+  claudeResumeCmd: 'claude --resume {sessionId}',
+  codexResumeCmd: 'codex resume {sessionId}',
+  enterRefreshDelayMs: 50,
 }
 
 mock.module('../config', () => ({
