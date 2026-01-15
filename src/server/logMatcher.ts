@@ -1,5 +1,8 @@
 import fs from 'node:fs'
-import type { Session } from '../shared/types'
+import { performance } from 'node:perf_hooks'
+import type { AgentType, Session } from '../shared/types'
+import { extractProjectPath, inferAgentTypeFromPath } from './logDiscovery'
+import { resolveProjectPath } from './paths'
 import {
   cleanTmuxLine,
   isDecorativeLine,
@@ -11,8 +14,6 @@ import {
 } from './terminal/tmuxText'
 
 export type LogTextMode = 'all' | 'assistant' | 'user' | 'assistant-user'
-export type SimilarityMode = 'jaccard' | 'containment' | 'hybrid'
-export type MatchScope = 'full' | 'last-exchange'
 
 export interface LogReadOptions {
   lineLimit: number
@@ -24,19 +25,48 @@ export interface LogTextOptionsInput {
   logRead?: Partial<LogReadOptions>
 }
 
-export interface MatchOptions {
-  minScore: number
-  minGap: number
-  scrollbackLines: number
-  logTextMode: LogTextMode
-  similarityMode: SimilarityMode
-  matchScope: MatchScope
-  minTokens: number
-  logRead: LogReadOptions
+export interface ExactMatchProfiler {
+  windowMatchRuns: number
+  windowMatchMs: number
+  tmuxCaptures: number
+  tmuxCaptureMs: number
+  messageExtractRuns: number
+  messageExtractMs: number
+  tailReads: number
+  tailReadMs: number
+  rgListRuns: number
+  rgListMs: number
+  rgJsonRuns: number
+  rgJsonMs: number
+  tailScoreRuns: number
+  tailScoreMs: number
+  rgScoreRuns: number
+  rgScoreMs: number
+  tieBreakRgRuns: number
+  tieBreakRgMs: number
 }
 
-export type MatchOptionsInput = Partial<Omit<MatchOptions, 'logRead'>> & {
-  logRead?: Partial<LogReadOptions>
+export function createExactMatchProfiler(): ExactMatchProfiler {
+  return {
+    windowMatchRuns: 0,
+    windowMatchMs: 0,
+    tmuxCaptures: 0,
+    tmuxCaptureMs: 0,
+    messageExtractRuns: 0,
+    messageExtractMs: 0,
+    tailReads: 0,
+    tailReadMs: 0,
+    rgListRuns: 0,
+    rgListMs: 0,
+    rgJsonRuns: 0,
+    rgJsonMs: 0,
+    tailScoreRuns: 0,
+    tailScoreMs: 0,
+    rgScoreRuns: 0,
+    rgScoreMs: 0,
+    tieBreakRgRuns: 0,
+    tieBreakRgMs: 0,
+  }
 }
 
 const DEFAULT_LOG_READ_OPTIONS: LogReadOptions = {
@@ -44,52 +74,198 @@ const DEFAULT_LOG_READ_OPTIONS: LogReadOptions = {
   byteLimit: 200 * 1024,
 }
 
-export const DEFAULT_MATCH_OPTIONS: MatchOptions = {
-  minScore: 0.7,
-  minGap: 0.02,
-  scrollbackLines: 2000,
-  logTextMode: 'assistant-user',
-  similarityMode: 'containment',
-  matchScope: 'last-exchange',
-  minTokens: 10,
-  logRead: DEFAULT_LOG_READ_OPTIONS,
+export const DEFAULT_SCROLLBACK_LINES = 10000
+const DEFAULT_LOG_TEXT_MODE: LogTextMode = 'assistant-user'
+const DEFAULT_LOG_TAIL_BYTES = 96 * 1024
+const MIN_TAIL_MATCH_COUNT = 2
+const MAX_RECENT_USER_MESSAGES = 8
+
+// Minimum length for exact match search
+const MIN_EXACT_MATCH_LENGTH = 5
+
+/**
+ * Escape special regex characters in a string.
+ */
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-const SHORT_SESSION_TOKENS = 300
-const SHORT_SESSION_MIN_SCORE = 0.3
-const LAST_EXCHANGE_MIN_TOKENS = 5
-
-export interface WindowScore {
-  window: Session
-  score: number
-  leftTokens?: number
-  rightTokens?: number
+/**
+ * Convert a user message to a regex pattern that matches with flexible whitespace.
+ * This handles cases where tmux and log files have different whitespace representations.
+ */
+function messageToFlexiblePattern(message: string): string {
+  // Normalize to single spaces first
+  const normalized = message.replace(/\s+/g, ' ').trim()
+  // Escape regex special chars, then replace spaces with \s+ for flexible matching
+  return escapeRegex(normalized).replace(/ /g, '\\s+')
 }
 
-interface ScoreOptions {
-  scrollbackLines: number
-  similarityMode: SimilarityMode
-  minTokens: number
+/**
+ * Search for logs containing an exact user message using ripgrep.
+ * Searches both Claude and Codex log directories.
+ * Uses flexible whitespace matching to handle differences between tmux and log content.
+ * Returns list of matching log file paths.
+ */
+export interface ExactMatchSearchOptions {
+  logPaths?: string[]
+  tailBytes?: number
+  rgThreads?: number
+  profile?: ExactMatchProfiler
 }
 
-export type MatchReason =
-  | 'matched'
-  | 'no_windows'
-  | 'too_few_tokens'
-  | 'low_score'
-  | 'low_gap'
+export interface ExactMessageSearchOptions extends ExactMatchSearchOptions {
+  minLength?: number
+}
 
-export interface MatchResult {
-  match: Session | null
-  bestScore: number
-  secondScore: number
-  scores: WindowScore[]
-  reason: MatchReason
-  minScore: number
-  minGap: number
-  minTokens: number
-  bestLeftTokens?: number
-  bestRightTokens?: number
+function readLogTail(logPath: string, byteLimit = DEFAULT_LOG_TAIL_BYTES): string {
+  if (byteLimit <= 0) return ''
+  try {
+    const stats = fs.statSync(logPath)
+    const size = stats.size
+    if (size <= 0) return ''
+    const start = Math.max(0, size - byteLimit)
+    if (start === 0) {
+      return fs.readFileSync(logPath, 'utf8')
+    }
+
+    const fd = fs.openSync(logPath, 'r')
+    try {
+      const length = size - start
+      const buffer = Buffer.alloc(length)
+      fs.readSync(fd, buffer, 0, length, start)
+      let text = buffer.toString('utf8')
+      const firstNewline = text.indexOf('\n')
+      if (firstNewline >= 0) {
+        text = text.slice(firstNewline + 1)
+      }
+      return text
+    } finally {
+      fs.closeSync(fd)
+    }
+  } catch {
+    return ''
+  }
+}
+
+export function findLogsWithExactMessage(
+  userMessage: string,
+  logDirs: string | string[],
+  {
+    minLength = MIN_EXACT_MATCH_LENGTH,
+    logPaths,
+    tailBytes,
+    rgThreads,
+    profile,
+  }: ExactMessageSearchOptions = {}
+): string[] {
+  if (!userMessage || userMessage.length < minLength) {
+    return []
+  }
+
+  const candidatePaths = (logPaths ?? []).filter(Boolean)
+  if (candidatePaths.length > 0) {
+    return findLogsWithExactMessageInPaths(userMessage, candidatePaths, {
+      minLength,
+      tailBytes,
+      rgThreads,
+      profile,
+    })
+  }
+
+  const dirs = Array.isArray(logDirs) ? logDirs : [logDirs]
+  const allMatches: string[] = []
+
+  // Convert to regex pattern with flexible whitespace
+  const pattern = messageToFlexiblePattern(userMessage)
+
+  for (const logDir of dirs) {
+    // Use **/*.jsonl to search nested directories (Codex uses YYYY/MM/DD structure)
+    // Use -e for regex pattern instead of --fixed-strings
+    const args = ['rg', '-l', '-e', pattern]
+    if (rgThreads && rgThreads > 0) {
+      args.push('--threads', String(rgThreads))
+    }
+    args.push('--glob', '**/*.jsonl', logDir)
+    const start = performance.now()
+    const result = Bun.spawnSync(args, { stdout: 'pipe', stderr: 'pipe' })
+    if (profile) {
+      profile.rgListRuns += 1
+      profile.rgListMs += performance.now() - start
+    }
+
+    if (result.exitCode === 0) {
+      const matches = result.stdout
+        .toString()
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+      allMatches.push(...matches)
+    }
+  }
+
+  return Array.from(new Set(allMatches))
+}
+
+function findLogsWithExactMessageInPaths(
+  userMessage: string,
+  logPaths: string[],
+  {
+    minLength = MIN_EXACT_MATCH_LENGTH,
+    tailBytes = DEFAULT_LOG_TAIL_BYTES,
+    rgThreads,
+    profile,
+  }: ExactMessageSearchOptions = {}
+): string[] {
+  if (!userMessage || userMessage.length < minLength) {
+    return []
+  }
+  const uniquePaths = Array.from(new Set(logPaths)).filter(Boolean)
+  if (uniquePaths.length === 0) return []
+
+  const pattern = messageToFlexiblePattern(userMessage)
+  const regex = new RegExp(pattern, 'm')
+
+  const tailMatches: string[] = []
+  if (tailBytes > 0) {
+    for (const logPath of uniquePaths) {
+      const start = performance.now()
+      const tail = readLogTail(logPath, tailBytes)
+      if (profile) {
+        profile.tailReads += 1
+        profile.tailReadMs += performance.now() - start
+      }
+      if (!tail) continue
+      if (regex.test(tail)) {
+        tailMatches.push(logPath)
+      }
+    }
+  }
+
+  if (tailMatches.length === 1) {
+    return tailMatches
+  }
+
+  const args = ['rg', '-l', '-e', pattern]
+  if (rgThreads && rgThreads > 0) {
+    args.push('--threads', String(rgThreads))
+  }
+  args.push(...uniquePaths)
+  const start = performance.now()
+  const result = Bun.spawnSync(args, { stdout: 'pipe', stderr: 'pipe' })
+  if (profile) {
+    profile.rgListRuns += 1
+    profile.rgListMs += performance.now() - start
+  }
+  if (result.exitCode !== 0) {
+    return tailMatches.length > 0 ? tailMatches : []
+  }
+  const matches = result.stdout
+    .toString()
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+  return matches.length > 0 ? matches : tailMatches
 }
 
 interface ConversationPair {
@@ -105,6 +281,239 @@ export function normalizeText(text: string): string {
   return cleaned.replace(/\s+/g, ' ').trim()
 }
 
+function normalizePath(value: string): string {
+  if (!value) return ''
+  const resolved = resolveProjectPath(value)
+  return resolved.replace(/\\/g, '/').replace(/\/+$/, '')
+}
+
+function isSameOrChildPath(left: string, right: string): boolean {
+  if (!left || !right) return false
+  if (left === right) return true
+  return left.startsWith(`${right}/`) || right.startsWith(`${left}/`)
+}
+
+function intersectCandidates(base: string[], next: string[]): string[] {
+  if (base.length === 0) return next
+  const nextSet = new Set(next)
+  return base.filter((item) => nextSet.has(item))
+}
+
+interface OrderedMatchScore {
+  matchedCount: number
+  matchedLength: number
+  source?: 'tail' | 'rg'
+}
+
+function getRgMatchLines(
+  pattern: string,
+  logPath: string,
+  search: ExactMatchSearchOptions = {}
+): number[] {
+  const args = ['rg', '--json', '-e', pattern]
+  if (search.rgThreads && search.rgThreads > 0) {
+    args.push('--threads', String(search.rgThreads))
+  }
+  args.push(logPath)
+  const start = performance.now()
+  const result = Bun.spawnSync(args, { stdout: 'pipe', stderr: 'pipe' })
+  if (search.profile) {
+    search.profile.rgJsonRuns += 1
+    search.profile.rgJsonMs += performance.now() - start
+  }
+  if (result.exitCode !== 0 && result.exitCode !== 1) {
+    return []
+  }
+
+  const lines: number[] = []
+  const output = result.stdout.toString()
+  for (const line of output.split('\n')) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+    let entry: unknown
+    try {
+      entry = JSON.parse(trimmed)
+    } catch {
+      continue
+    }
+    const record = entry as { type?: string; data?: { line_number?: number } }
+    if (record.type !== 'match') continue
+    const lineNumber = record.data?.line_number
+    if (typeof lineNumber === 'number') {
+      lines.push(lineNumber)
+    }
+  }
+
+  return lines.sort((a, b) => a - b)
+}
+
+function scoreOrderedMessageMatchesInText(
+  text: string,
+  messages: string[]
+): OrderedMatchScore {
+  let matchedCount = 0
+  let matchedLength = 0
+  let cursor = 0
+
+  for (const message of messages) {
+    if (!message) continue
+    const pattern = messageToFlexiblePattern(message)
+    const regex = new RegExp(pattern, 'g')
+    regex.lastIndex = cursor
+    const match = regex.exec(text)
+    if (!match) {
+      continue
+    }
+    matchedCount += 1
+    matchedLength += message.length
+    cursor = match.index + match[0].length
+  }
+
+  return { matchedCount, matchedLength }
+}
+
+function scoreOrderedMessageMatchesWithRg(
+  logPath: string,
+  messages: string[],
+  search: ExactMatchSearchOptions = {}
+): OrderedMatchScore {
+  let matchedCount = 0
+  let matchedLength = 0
+  let lastLine = 0
+
+  for (const message of messages) {
+    if (!message) continue
+    const pattern = messageToFlexiblePattern(message)
+    const matchLines = getRgMatchLines(pattern, logPath, search)
+    if (matchLines.length === 0) {
+      continue
+    }
+    const nextLine = matchLines.find((line) => line > lastLine)
+    if (nextLine === undefined) {
+      continue
+    }
+    matchedCount += 1
+    matchedLength += message.length
+    lastLine = nextLine
+  }
+
+  return { matchedCount, matchedLength }
+}
+
+function scoreOrderedMessageMatches(
+  logPath: string,
+  messages: string[],
+  search: ExactMatchSearchOptions = {}
+): OrderedMatchScore {
+  const { tailBytes = DEFAULT_LOG_TAIL_BYTES, profile } = search
+  if (messages.length === 0) {
+    return { matchedCount: 0, matchedLength: 0, source: 'rg' }
+  }
+
+  if (tailBytes > 0) {
+    const tailStart = performance.now()
+    const tail = readLogTail(logPath, tailBytes)
+    if (profile) {
+      profile.tailReads += 1
+      profile.tailReadMs += performance.now() - tailStart
+    }
+    if (tail) {
+      const start = performance.now()
+      const tailScore = scoreOrderedMessageMatchesInText(tail, messages)
+      if (profile) {
+        profile.tailScoreRuns += 1
+        profile.tailScoreMs += performance.now() - start
+      }
+      const minTailMatches = Math.min(messages.length, MIN_TAIL_MATCH_COUNT)
+      if (tailScore.matchedCount >= minTailMatches) {
+        return { ...tailScore, source: 'tail' }
+      }
+    }
+  }
+
+  const rgStart = performance.now()
+  const fullScore = scoreOrderedMessageMatchesWithRg(logPath, messages, search)
+  if (profile) {
+    profile.rgScoreRuns += 1
+    profile.rgScoreMs += performance.now() - rgStart
+  }
+  return { ...fullScore, source: 'rg' }
+}
+
+function compareOrderedScores(a: OrderedMatchScore, b: OrderedMatchScore): number {
+  if (a.matchedCount !== b.matchedCount) {
+    return b.matchedCount - a.matchedCount
+  }
+  return b.matchedLength - a.matchedLength
+}
+
+const TMUX_PROMPT_DETECT_PREFIX = /^[\s>*#$]+/
+
+function stripPromptPrefixForDetection(line: string): string {
+  return stripAnsi(line).trim().replace(TMUX_PROMPT_DETECT_PREFIX, '')
+}
+
+function isClaudePromptLine(line: string): boolean {
+  const cleaned = stripPromptPrefixForDetection(line)
+  if (!cleaned) return false
+  return cleaned.startsWith('❯')
+}
+
+function isCodexPromptLine(line: string): boolean {
+  const cleaned = stripPromptPrefixForDetection(line)
+  if (!cleaned) return false
+  return cleaned.startsWith('›')
+}
+
+function isPromptLine(line: string): boolean {
+  return isClaudePromptLine(line) || isCodexPromptLine(line)
+}
+
+function extractUserFromPrompt(line: string): string {
+  let cleaned = stripAnsi(line).trim()
+  cleaned = cleaned.replace(TMUX_PROMPT_PREFIX, '').trim()
+  cleaned = cleaned.replace(/^›\s*/, '').trim()
+  cleaned = cleaned.replace(/\s*↵\s*send\s*$/i, '').trim()
+  cleaned = cleaned.replace(TMUX_UI_GLYPH_PATTERN, ' ')
+  cleaned = cleaned.replace(/\s+/g, ' ').trim()
+  return cleaned
+}
+
+function isCurrentInputField(rawLines: string[], promptIdx: number): boolean {
+  for (let i = promptIdx + 1; i < Math.min(promptIdx + 4, rawLines.length); i++) {
+    const line = rawLines[i]?.trim() ?? ''
+    if (/\d+%\s*context\s*left/i.test(line)) return true
+    if (/\[\d+%\]/.test(line)) return true
+    if (/\?\s*for\s*shortcuts/i.test(line)) return true
+  }
+  return false
+}
+
+function extractRecentUserMessagesFromTmux(
+  content: string,
+  maxMessages = MAX_RECENT_USER_MESSAGES
+): string[] {
+  const rawLines = stripAnsi(content).split('\n')
+  while (rawLines.length > 0 && rawLines[rawLines.length - 1]?.trim() === '') {
+    rawLines.pop()
+  }
+
+  const messages: string[] = []
+  for (let i = rawLines.length - 1; i >= 0 && messages.length < maxMessages; i--) {
+    const line = rawLines[i] ?? ''
+    if (!isPromptLine(line)) continue
+    if (isCurrentInputField(rawLines, i)) continue
+    if (line.includes('↵')) continue
+    const message = extractUserFromPrompt(line)
+    if (!message) continue
+    if (!messages.includes(message)) {
+      messages.push(message)
+    }
+  }
+
+  return messages
+}
+
 function resolveLogReadOptions(
   overrides: Partial<LogReadOptions> = {}
 ): LogReadOptions {
@@ -114,27 +523,9 @@ function resolveLogReadOptions(
   }
 }
 
-function resolveMatchOptions(
-  overrides: MatchOptionsInput = {}
-): MatchOptions {
-  const logRead = resolveLogReadOptions(overrides.logRead)
-  return {
-    minScore: overrides.minScore ?? DEFAULT_MATCH_OPTIONS.minScore,
-    minGap: overrides.minGap ?? DEFAULT_MATCH_OPTIONS.minGap,
-    scrollbackLines:
-      overrides.scrollbackLines ?? DEFAULT_MATCH_OPTIONS.scrollbackLines,
-    logTextMode: overrides.logTextMode ?? DEFAULT_MATCH_OPTIONS.logTextMode,
-    similarityMode:
-      overrides.similarityMode ?? DEFAULT_MATCH_OPTIONS.similarityMode,
-    matchScope: overrides.matchScope ?? DEFAULT_MATCH_OPTIONS.matchScope,
-    minTokens: overrides.minTokens ?? DEFAULT_MATCH_OPTIONS.minTokens,
-    logRead,
-  }
-}
-
 export function getTerminalScrollback(
   tmuxWindow: string,
-  lines = DEFAULT_MATCH_OPTIONS.scrollbackLines
+  lines = DEFAULT_SCROLLBACK_LINES
 ): string {
   const safeLines = Math.max(1, lines)
   const result = Bun.spawnSync(
@@ -174,7 +565,7 @@ export function readLogContent(
 
 export function extractLogText(
   logPath: string,
-  { mode = DEFAULT_MATCH_OPTIONS.logTextMode, logRead }: LogTextOptionsInput = {}
+  { mode = DEFAULT_LOG_TEXT_MODE, logRead }: LogTextOptionsInput = {}
 ): string {
   const resolvedRead = resolveLogReadOptions(logRead)
   const raw = readLogContent(logPath, resolvedRead)
@@ -205,227 +596,15 @@ export function extractLogText(
 
 export function getLogTokenCount(
   logPath: string,
-  { mode = DEFAULT_MATCH_OPTIONS.logTextMode, logRead }: LogTextOptionsInput = {}
+  { mode = DEFAULT_LOG_TEXT_MODE, logRead }: LogTextOptionsInput = {}
 ): number {
   const content = extractLogText(logPath, { mode, logRead })
-  return tokenizeForSimilarity(content).length
+  return countTokens(content)
 }
-
-export function computeSimilarity(left: string, right: string): number {
-  return computeSimilarityWithMode(left, right)
-}
-
-export function computeSimilarityWithMode(
-  left: string,
-  right: string,
-  {
-    mode = 'containment',
-    minTokens = DEFAULT_MATCH_OPTIONS.minTokens,
-  }: {
-    mode?: SimilarityMode
-    minTokens?: number
-  } = {}
-): number {
-  const leftTokens = tokenizeForSimilarity(left)
-  const rightTokens = tokenizeForSimilarity(right)
-  return computeSimilarityFromTokens(leftTokens, rightTokens, mode, minTokens)
-}
-
-export function scoreLogAgainstWindows(
-  logContent: string,
-  windows: Session[],
-  { scrollbackLines, similarityMode, minTokens }: ScoreOptions
-): WindowScore[] {
-  const logTokens = tokenizeForSimilarity(logContent)
-  const logTokenCount = logTokens.length
-  return windows
-    .map((window) => {
-      const scrollback = getTerminalScrollback(
-        window.tmuxWindow,
-        scrollbackLines
-      )
-      const rightTokens = tokenizeForSimilarity(scrollback)
-      return {
-        window,
-        score: computeSimilarityFromTokens(
-          logTokens,
-          rightTokens,
-          similarityMode,
-          minTokens
-        ),
-        leftTokens: logTokenCount,
-        rightTokens: rightTokens.length,
-      }
-    })
-    .sort((a, b) => b.score - a.score)
-}
-
-export function findMatchingWindow(
-  logPath: string,
-  windows: Session[],
-  overrides: MatchOptionsInput = {}
-): MatchResult {
-  const {
-    minScore,
-    minGap,
-    scrollbackLines,
-    logTextMode,
-    similarityMode,
-    matchScope,
-    minTokens,
-    logRead,
-  } = resolveMatchOptions(overrides)
-  const minTokensUsed =
-    matchScope === 'last-exchange' &&
-    minTokens === DEFAULT_MATCH_OPTIONS.minTokens
-      ? LAST_EXCHANGE_MIN_TOKENS
-      : minTokens
-  if (windows.length === 0) {
-    return {
-      match: null,
-      bestScore: 0,
-      secondScore: 0,
-      scores: [],
-      reason: 'no_windows',
-      minScore,
-      minGap,
-      minTokens: minTokensUsed,
-    }
-  }
-
-  let scores: WindowScore[] = []
-  if (matchScope === 'last-exchange') {
-    const logPair = extractLastConversationFromLog(logPath, logRead)
-    const logCombined = [logPair.user, logPair.assistant]
-      .filter(Boolean)
-      .join('\n')
-    scores = windows
-      .map((window) => {
-        const tmuxContent = getTerminalScrollback(
-          window.tmuxWindow,
-          scrollbackLines
-        )
-        const tmuxPair = extractLastConversationFromTmux(tmuxContent)
-        const tmuxCombined = [tmuxPair.user, tmuxPair.assistant]
-          .filter(Boolean)
-          .join('\n')
-        const logAssistantOnly =
-          !tmuxPair.user && tmuxPair.assistant && logPair.assistant
-        const left = logAssistantOnly ? logPair.assistant : logCombined
-        const right = logAssistantOnly ? tmuxPair.assistant : tmuxCombined
-        const leftTokens = tokenizeForSimilarity(left)
-        const rightTokens = tokenizeForSimilarity(right)
-        return {
-          window,
-          score: computeSimilarityFromTokens(
-            leftTokens,
-            rightTokens,
-            similarityMode,
-            minTokensUsed
-          ),
-          leftTokens: leftTokens.length,
-          rightTokens: rightTokens.length,
-        }
-      })
-      .sort((a, b) => b.score - a.score)
-  } else {
-    const logContent = extractLogText(logPath, {
-      mode: logTextMode,
-      logRead,
-    })
-    scores = scoreLogAgainstWindows(
-      logContent,
-      windows,
-      {
-        scrollbackLines,
-        similarityMode,
-        minTokens: minTokensUsed,
-      }
-    )
-  }
-  const bestScore = scores[0]?.score ?? 0
-  const secondScore = scores[1]?.score ?? 0
-  const gap = bestScore - secondScore
-
-  let match: Session | null = null
-  let reason: MatchReason = 'matched'
-  const bestLeftTokens = scores[0]?.leftTokens
-  const bestRightTokens = scores[0]?.rightTokens
-  const effectiveMinScore =
-    bestLeftTokens !== undefined && bestLeftTokens < SHORT_SESSION_TOKENS
-      ? Math.min(minScore, SHORT_SESSION_MIN_SCORE)
-      : minScore
-
-  if (
-    (bestLeftTokens !== undefined && bestLeftTokens < minTokensUsed) ||
-    (bestRightTokens !== undefined && bestRightTokens < minTokensUsed)
-  ) {
-    reason = 'too_few_tokens'
-  } else if (bestScore < effectiveMinScore) {
-    reason = 'low_score'
-  } else if (gap < minGap) {
-    reason = 'low_gap'
-  } else {
-    match = scores[0]?.window ?? null
-  }
-
-  return {
-    match,
-    bestScore,
-    secondScore,
-    scores,
-    reason,
-    minScore: effectiveMinScore,
-    minGap,
-    minTokens: minTokensUsed,
-    bestLeftTokens,
-    bestRightTokens,
-  }
-}
-
-function tokenizeNormalized(text: string): string[] {
-  return text.split(/\s+/).map((token) => token.trim()).filter(Boolean)
-}
-
-function tokenizeForSimilarity(text: string): string[] {
+function countTokens(text: string): number {
   const normalized = normalizeText(text)
-  if (!normalized) return []
-  return tokenizeNormalized(normalized)
-}
-
-function computeSimilarityFromTokens(
-  leftTokens: string[],
-  rightTokens: string[],
-  mode: SimilarityMode,
-  minTokens: number
-): number {
-  if (leftTokens.length < minTokens || rightTokens.length < minTokens) {
-    return 0
-  }
-
-  const leftSet = new Set(leftTokens)
-  const rightSet = new Set(rightTokens)
-  let overlap = 0
-  for (const token of leftSet) {
-    if (rightSet.has(token)) {
-      overlap += 1
-    }
-  }
-
-  if (mode === 'containment') {
-    const minSize = Math.min(leftSet.size, rightSet.size)
-    return minSize === 0 ? 0 : overlap / minSize
-  }
-
-  const union = leftSet.size + rightSet.size - overlap
-  const jaccard = union === 0 ? 0 : overlap / union
-  if (mode === 'hybrid') {
-    const minSize = Math.min(leftSet.size, rightSet.size)
-    const containment = minSize === 0 ? 0 : overlap / minSize
-    return (jaccard + containment) / 2
-  }
-
-  return jaccard
+  if (!normalized) return 0
+  return normalized.split(/\s+/).filter(Boolean).length
 }
 
 function extractTextFromEntry(entry: unknown, mode: LogTextMode): string[] {
@@ -586,24 +765,6 @@ function extractLastConversationFromTmux(content: string): ConversationPair {
     rawLines.pop()
   }
 
-  // Claude Code: ❯ for prompts, ⏺ for responses
-  // Codex: › for prompts, • for responses
-  const isClaudePromptLine = (line: string) => {
-    const trimmed = line.trim()
-    if (!trimmed) return false
-    if (trimmed.includes('↵')) return true
-    return /^[\s>*#$❯]+/.test(trimmed) && trimmed.includes('❯')
-  }
-
-  const isCodexPromptLine = (line: string) => {
-    const trimmed = line.trim()
-    if (!trimmed) return false
-    // Codex prompt: › at start of line
-    return trimmed.startsWith('›')
-  }
-
-  const isPromptLine = (line: string) => isClaudePromptLine(line) || isCodexPromptLine(line)
-
   // Claude: ⏺ for assistant response bullet
   const isClaudeBulletLine = (line: string) => /^\s*⏺/.test(line)
 
@@ -623,108 +784,359 @@ function extractLastConversationFromTmux(content: string): ConversationPair {
     if (/^(Write|Bash|Read|Glob|Grep|Edit|Task|WebFetch|WebSearch|TodoWrite)\s*\(/.test(afterBullet)) {
       return true
     }
-    // Codex tool patterns: "Ran <command>", "Read <file>", etc.
-    if (/^(Ran|Read|Wrote|Created|Updated|Deleted)\s+/.test(afterBullet)) {
-      return true
-    }
-    return false
+  // Codex tool patterns: "Ran <command>", "Read <file>", etc.
+  if (/^(Ran|Read|Wrote|Created|Updated|Deleted)\s+/.test(afterBullet)) {
+    return true
+  }
+  return false
   }
 
   // Check if a bullet is a text response (not a tool call)
   const isTextBullet = (line: string) => isBulletLine(line) && !isToolCallBullet(line)
+  const isToolOutputLine = (line: string) => /^\s*⎿/.test(line)
 
-  const extractUserFromPrompt = (line: string) => {
-    let cleaned = stripAnsi(line).trim()
-    // Remove Claude prompt prefix (❯)
-    cleaned = cleaned.replace(TMUX_PROMPT_PREFIX, '').trim()
-    // Remove Codex prompt prefix (›)
-    cleaned = cleaned.replace(/^›\s*/, '').trim()
-    cleaned = cleaned.replace(/\s*↵\s*send\s*$/i, '').trim()
-    cleaned = cleaned.replace(TMUX_UI_GLYPH_PATTERN, ' ')
-    cleaned = cleaned.replace(/\s+/g, ' ').trim()
-    return cleaned
-  }
-
-  // Find the two most recent prompts to bound the last exchange
-  let currentPromptIdx = -1
-  let prevPromptIdx = -1
-  for (let i = rawLines.length - 1; i >= 0; i--) {
+  // Find prompt lines, collecting up to 3 most recent
+  const promptIndices: number[] = []
+  for (let i = rawLines.length - 1; i >= 0 && promptIndices.length < 3; i--) {
     if (isPromptLine(rawLines[i] ?? '')) {
-      if (currentPromptIdx === -1) {
-        currentPromptIdx = i
-      } else {
-        prevPromptIdx = i
-        break
-      }
+      promptIndices.push(i)
     }
   }
 
   // No prompts found at all
-  if (currentPromptIdx === -1) {
+  if (promptIndices.length === 0) {
     return { user: '', assistant: '' }
+  }
+
+  // Determine which prompt is the real last submitted message
+  let currentPromptIdx = promptIndices[0] ?? -1
+  let inputFieldIdx = -1 // Track the input field if present
+
+  // If the most recent prompt is the input field (has status line after) AND there's
+  // a previous prompt, use the previous one as the real last message.
+  // If it's the only prompt, use it anyway (first message case)
+  if (isCurrentInputField(rawLines, currentPromptIdx) && promptIndices.length > 1) {
+    inputFieldIdx = currentPromptIdx
+    currentPromptIdx = promptIndices[1] ?? -1
   }
 
   const promptLine = rawLines[currentPromptIdx] ?? ''
   const pendingSend = promptLine.includes('↵')
   const user = pendingSend ? '' : extractUserFromPrompt(promptLine)
 
-  // Single prompt case (new session): extract user input and any assistant content below
-  if (prevPromptIdx === -1) {
-    // Look for assistant content below the prompt
-    let assistant = ''
-    const assistantLines: string[] = []
-    for (let i = currentPromptIdx + 1; i < rawLines.length; i++) {
-      const line = rawLines[i] ?? ''
-      const trimmed = line.trim()
-      if (!trimmed) continue
-      if (isPromptLine(line)) break // Stop if we hit another prompt
-      if (
-        isDecorativeLine(trimmed) ||
-        isMetadataLine(trimmed, TMUX_METADATA_MATCH_PATTERNS)
-      ) {
-        continue
-      }
-      if (isToolCallBullet(line)) continue // Skip tool calls
-      assistantLines.push(cleanTmuxLine(line))
-      if (assistantLines.length >= 60) break
-    }
-    assistant = assistantLines.join('\n')
-    return { user, assistant }
-  }
+  // Extract assistant content AFTER the user prompt
+  // Stop at input field if present, otherwise go to end of scrollback
+  const stopIdx = inputFieldIdx !== -1 ? inputFieldIdx : rawLines.length
+  const assistantLines: string[] = []
+  const fallbackLines: string[] = []
+  let sawTextBullet = false
 
-  // Two prompts case: extract exchange between prev and current prompt
-  // Find text bullets between prev prompt and current prompt (skip tool call bullets)
-  let firstTextBulletIdx = -1
-  for (let i = prevPromptIdx + 1; i < currentPromptIdx; i++) {
-    if (isTextBullet(rawLines[i] ?? '')) {
-      firstTextBulletIdx = i
-      break
+  for (let i = currentPromptIdx + 1; i < stopIdx; i++) {
+    const line = rawLines[i] ?? ''
+    const trimmed = line.trim()
+    if (!trimmed) continue
+    if (isPromptLine(line)) break // Stop if we hit another prompt
+    if (
+      isDecorativeLine(trimmed) ||
+      isMetadataLine(trimmed, TMUX_METADATA_MATCH_PATTERNS)
+    ) {
+      continue
     }
-  }
-
-  // Extract assistant text starting from the first text bullet
-  let assistant = ''
-  if (firstTextBulletIdx !== -1) {
-    const assistantLines: string[] = []
-    for (let i = firstTextBulletIdx; i < currentPromptIdx; i++) {
-      const line = rawLines[i] ?? ''
-      const trimmed = line.trim()
-      // Stop if we hit a tool call bullet
-      if (i > firstTextBulletIdx && isToolCallBullet(line)) break
-      // Stop if we hit another text bullet (next response)
-      if (i > firstTextBulletIdx && isTextBullet(line)) break
-      if (!trimmed) continue
-      if (
-        isDecorativeLine(trimmed) ||
-        isMetadataLine(trimmed, TMUX_METADATA_MATCH_PATTERNS)
-      ) {
-        continue
-      }
+    if (isToolCallBullet(line)) continue // Skip tool calls
+    if (isToolOutputLine(line)) continue // Skip tool output summaries
+    if (isTextBullet(line)) {
+      sawTextBullet = true
       assistantLines.push(cleanTmuxLine(line))
-      if (assistantLines.length >= 60) break
+    } else {
+      fallbackLines.push(cleanTmuxLine(line))
     }
-    assistant = assistantLines.join('\n')
+    if (assistantLines.length + fallbackLines.length >= 60) break
   }
+  const assistant = (sawTextBullet ? assistantLines : fallbackLines).join('\n')
 
   return { user, assistant }
+}
+
+// Keep the old complex logic for reference but simplify to the above
+// The key insight: we want user message + assistant response AFTER that message
+// Not the assistant response that preceded the user message
+
+// Export for use in matching
+export { extractLastConversationFromTmux }
+
+export interface ExactMatchContext {
+  agentType?: AgentType
+  projectPath?: string
+}
+
+export interface ExactMatchResult {
+  logPath: string
+  userMessage: string
+  matchedCount: number
+  matchedLength: number
+}
+
+/**
+ * Try to find a log file that matches a window's content.
+ * Strategy:
+ * 1. Extract recent user messages from tmux
+ * 2. rg search for the longest messages → get candidate logs
+ * 3. Narrow down with agent type/project path if available
+ * 4. Break ties by ordered user-message matches in the log
+ */
+export function tryExactMatchWindowToLog(
+  tmuxWindow: string,
+  logDirs: string | string[],
+  scrollbackLines = DEFAULT_SCROLLBACK_LINES,
+  context: ExactMatchContext = {},
+  search: ExactMatchSearchOptions = {}
+): ExactMatchResult | null {
+  const profile = search.profile
+  const tmuxStart = performance.now()
+  const scrollback = getTerminalScrollback(tmuxWindow, scrollbackLines)
+  if (profile) {
+    profile.tmuxCaptures += 1
+    profile.tmuxCaptureMs += performance.now() - tmuxStart
+  }
+  const extractStart = performance.now()
+  const recentUserMessages = extractRecentUserMessagesFromTmux(scrollback)
+  if (profile) {
+    profile.messageExtractRuns += 1
+    profile.messageExtractMs += performance.now() - extractStart
+  }
+  const user = recentUserMessages[0] ?? ''
+  if (!user) return null
+
+  const hasDisambiguators = Boolean(context.agentType || context.projectPath)
+  const longMessages = recentUserMessages.filter(
+    (message) => message.length >= MIN_EXACT_MATCH_LENGTH
+  )
+  const messagesToSearch =
+    longMessages.length > 0 ? longMessages : hasDisambiguators ? recentUserMessages : []
+  if (messagesToSearch.length === 0) return null
+
+  const sortedMessages = [...messagesToSearch].sort((a, b) => b.length - a.length)
+  let candidates: string[] = []
+
+  for (const message of sortedMessages) {
+    const minLength = message.length >= MIN_EXACT_MATCH_LENGTH ? MIN_EXACT_MATCH_LENGTH : 1
+    const matches = findLogsWithExactMessage(message, logDirs, {
+      minLength,
+      logPaths: search.logPaths,
+      tailBytes: search.tailBytes,
+      rgThreads: search.rgThreads,
+      profile: search.profile,
+    })
+    if (matches.length === 0) continue
+    candidates = intersectCandidates(candidates, matches)
+    if (candidates.length <= 1) break
+  }
+
+  if (candidates.length === 0) {
+    return null
+  }
+
+  if (context.agentType) {
+    const filtered = candidates.filter(
+      (candidate) => inferAgentTypeFromPath(candidate) === context.agentType
+    )
+    if (filtered.length > 0) {
+      candidates = filtered
+    }
+  }
+
+  if (context.projectPath) {
+    const target = normalizePath(context.projectPath)
+    const filtered = candidates.filter((candidate) => {
+      const projectPath = extractProjectPath(candidate)
+      if (!projectPath) return false
+      const normalized = normalizePath(projectPath)
+      return isSameOrChildPath(normalized, target)
+    })
+    if (filtered.length > 0) {
+      candidates = filtered
+    }
+  }
+
+  const orderedMessages = recentUserMessages
+    .filter((message) => message.length >= MIN_EXACT_MATCH_LENGTH)
+    .slice()
+    .reverse()
+
+  if (orderedMessages.length === 0) {
+    return null
+  }
+
+  if (candidates.length === 1) {
+    const score = scoreOrderedMessageMatches(candidates[0], orderedMessages, search)
+    if (score.matchedCount === 0) {
+      return null
+    }
+    return {
+      logPath: candidates[0],
+      userMessage: user,
+      matchedCount: score.matchedCount,
+      matchedLength: score.matchedLength,
+    }
+  }
+
+  let scored = candidates.map((logPath) => ({
+    logPath,
+    score: scoreOrderedMessageMatches(logPath, orderedMessages, search),
+  }))
+
+  scored.sort((left, right) => compareOrderedScores(left.score, right.score))
+  let best = scored[0]
+  let second = scored[1]
+
+  if (!best || best.score.matchedCount === 0) {
+    return null
+  }
+
+  if (second) {
+    const isTied =
+      best.score.matchedCount === second.score.matchedCount &&
+      best.score.matchedLength === second.score.matchedLength
+    if (isTied) {
+      const tied = scored.filter(
+        (entry) => compareOrderedScores(entry.score, best.score) === 0
+      )
+      const needsFull = tied.some((entry) => entry.score.source === 'tail')
+      if (needsFull) {
+        const tieStart = performance.now()
+        const updatedScores = new Map(
+          tied.map((entry) => [
+            entry.logPath,
+            {
+              ...scoreOrderedMessageMatchesWithRg(
+                entry.logPath,
+                orderedMessages,
+                search
+              ),
+              source: 'rg' as const,
+            },
+          ])
+        )
+        if (profile) {
+          profile.tieBreakRgRuns += tied.length
+          profile.tieBreakRgMs += performance.now() - tieStart
+        }
+        scored = scored.map((entry) => {
+          const updated = updatedScores.get(entry.logPath)
+          if (!updated) return entry
+          return { ...entry, score: updated }
+        })
+        scored.sort((left, right) => compareOrderedScores(left.score, right.score))
+        best = scored[0]
+        second = scored[1]
+      }
+    }
+  }
+
+  if (
+    second &&
+    best.score.matchedCount === second.score.matchedCount &&
+    best.score.matchedLength === second.score.matchedLength
+  ) {
+    return null
+  }
+
+  return {
+    logPath: best.logPath,
+    userMessage: user,
+    matchedCount: best.score.matchedCount,
+    matchedLength: best.score.matchedLength,
+  }
+}
+
+export function matchWindowsToLogsByExactRg(
+  windows: Session[],
+  logDirs: string | string[],
+  scrollbackLines = DEFAULT_SCROLLBACK_LINES,
+  search: ExactMatchSearchOptions = {}
+): Map<string, Session> {
+  const matches = new Map<
+    string,
+    { window: Session; score: OrderedMatchScore }
+  >()
+  const blocked = new Set<string>()
+  const profile = search.profile
+
+  for (const window of windows) {
+    const start = performance.now()
+    const result = tryExactMatchWindowToLog(
+      window.tmuxWindow,
+      logDirs,
+      scrollbackLines,
+      { agentType: window.agentType, projectPath: window.projectPath },
+      search
+    )
+    if (profile) {
+      profile.windowMatchRuns += 1
+      profile.windowMatchMs += performance.now() - start
+    }
+    if (!result) continue
+
+    const score = {
+      matchedCount: result.matchedCount,
+      matchedLength: result.matchedLength,
+    }
+    const existing = matches.get(result.logPath)
+
+    if (blocked.has(result.logPath)) {
+      continue
+    }
+    if (!existing) {
+      matches.set(result.logPath, { window, score })
+      continue
+    }
+
+    const comparison = compareOrderedScores(score, existing.score)
+    if (comparison === 0) {
+      matches.delete(result.logPath)
+      blocked.add(result.logPath)
+      continue
+    }
+    if (comparison < 0) {
+      matches.set(result.logPath, { window, score })
+    }
+  }
+
+  const resolved = new Map<string, Session>()
+  for (const [logPath, entry] of matches) {
+    resolved.set(logPath, entry.window)
+  }
+
+  return resolved
+}
+
+/**
+ * For a log file, try to find a window whose tmux user message exactly matches
+ * the log's last user message. Returns the matching window or null.
+ */
+export function tryExactMatchLogToWindow(
+  logPath: string,
+  windows: Session[],
+  scrollbackLines = DEFAULT_SCROLLBACK_LINES,
+  logRead: Partial<LogReadOptions> = {}
+): Session | null {
+  const logPair = extractLastConversationFromLog(logPath, logRead)
+  const logUser = logPair.user
+
+  if (!logUser || logUser.length < MIN_EXACT_MATCH_LENGTH) {
+    return null
+  }
+
+  // Check each window for exact match
+  for (const window of windows) {
+    const scrollback = getTerminalScrollback(window.tmuxWindow, scrollbackLines)
+    const { user: tmuxUser } = extractLastConversationFromTmux(scrollback)
+
+    // Exact match (normalized)
+    if (normalizeText(logUser) === normalizeText(tmuxUser)) {
+      return window
+    }
+  }
+
+  return null
 }

@@ -486,7 +486,7 @@ function SessionRow({
               className="shrink-0 text-[11px] font-mono text-muted opacity-50"
               title={agentSessionId}
             >
-              #{sessionIdPrefix}
+              {sessionIdPrefix}
             </span>
           )}
           {needsInput ? (

@@ -185,6 +185,9 @@ mock.module('../../config', () => ({
     terminalMonitorTargets: true,
     tlsCert: '',
     tlsKey: '',
+    rgThreads: 1,
+    logMatchWorker: false,
+    logMatchProfile: false,
   },
 }))
 mock.module('../../SessionManager', () => ({

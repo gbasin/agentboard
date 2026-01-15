@@ -16,6 +16,13 @@ function getCodexHomeDir(): string {
   return process.env.CODEX_HOME || path.join(getHomeDir(), '.codex')
 }
 
+export function getLogSearchDirs(): string[] {
+  return [
+    path.join(getClaudeConfigDir(), 'projects'),
+    path.join(getCodexHomeDir(), 'sessions'),
+  ]
+}
+
 export function encodeProjectPath(projectPath: string): string {
   const resolved = resolveProjectPath(projectPath)
   if (!resolved) return ''
@@ -66,18 +73,24 @@ export function extractProjectPath(logPath: string): string | null {
 }
 
 export function getLogMtime(logPath: string): Date | null {
-  try {
-    const stats = fs.statSync(logPath)
-    return stats.mtime
-  } catch {
-    return null
-  }
+  const times = getLogTimes(logPath)
+  return times?.mtime ?? null
 }
 
 export function getLogBirthtime(logPath: string): Date | null {
+  const times = getLogTimes(logPath)
+  return times?.birthtime ?? null
+}
+
+export function getLogTimes(
+  logPath: string
+): { mtime: Date; birthtime: Date } | null {
   try {
     const stats = fs.statSync(logPath)
-    return stats.birthtime ?? stats.mtime
+    return {
+      mtime: stats.mtime,
+      birthtime: stats.birthtime ?? stats.mtime,
+    }
   } catch {
     return null
   }

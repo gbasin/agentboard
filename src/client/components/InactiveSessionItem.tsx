@@ -67,7 +67,7 @@ export default function InactiveSessionItem({
               className="shrink-0 text-[11px] font-mono text-muted opacity-50"
               title={session.sessionId}
             >
-              #{sessionIdPrefix}
+              {sessionIdPrefix}
             </span>
           )}
           <span className="ml-1 w-8 shrink-0 text-right text-xs tabular-nums text-muted">

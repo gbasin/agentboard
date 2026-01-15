@@ -8,6 +8,7 @@ const bunAny = Bun as typeof Bun & {
 const originalServe = bunAny.serve
 const originalSpawnSync = bunAny.spawnSync
 const originalSetInterval = globalThis.setInterval
+const originalMatchWorker = process.env.AGENTBOARD_LOG_MATCH_WORKER
 
 const serveCalls: Array<{ port: number }> = []
 const importIndex = (suffix: string) => import(`../index?test=${suffix}`)
@@ -15,6 +16,7 @@ const importIndex = (suffix: string) => import(`../index?test=${suffix}`)
 describe('server entrypoint', () => {
   test('starts server without side effects', async () => {
     serveCalls.length = 0
+    process.env.AGENTBOARD_LOG_MATCH_WORKER = 'false'
     bunAny.spawnSync = () =>
       ({
         exitCode: 0,
@@ -36,6 +38,7 @@ describe('server entrypoint', () => {
 
   test('starts server when lsof is unavailable', async () => {
     serveCalls.length = 0
+    process.env.AGENTBOARD_LOG_MATCH_WORKER = 'false'
     bunAny.spawnSync = ((...args: Parameters<typeof Bun.spawnSync>) => {
       const command = Array.isArray(args[0]) ? args[0][0] : ''
       if (command === 'lsof') {
@@ -65,4 +68,9 @@ afterAll(() => {
   bunAny.serve = originalServe
   bunAny.spawnSync = originalSpawnSync
   globalThis.setInterval = originalSetInterval
+  if (originalMatchWorker === undefined) {
+    delete process.env.AGENTBOARD_LOG_MATCH_WORKER
+  } else {
+    process.env.AGENTBOARD_LOG_MATCH_WORKER = originalMatchWorker
+  }
 })

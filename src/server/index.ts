@@ -186,7 +186,9 @@ const logPoller = new LogPoller(db, registry, {
     }
   },
   maxLogsPerPoll: config.logPollMax,
-  matchScope: config.logMatchScope,
+  rgThreads: config.rgThreads,
+  matchProfile: config.logMatchProfile,
+  matchWorker: config.logMatchWorker,
 })
 
 interface WSData {
@@ -253,6 +255,8 @@ function hydrateSessionsWithAgentSessions(sessions: Session[]): Session[] {
     }
     return {
       ...session,
+      // Use log-based agentType if command-based detection failed
+      agentType: session.agentType ?? agentSession.agentType,
       agentSessionId: agentSession.sessionId,
       agentSessionName: agentSession.displayName,
     }
