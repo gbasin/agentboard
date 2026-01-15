@@ -263,6 +263,7 @@ interface HistorySession {
 | `HISTORY_TMUX_SESSION` | `agentboard` | tmux session name |
 | `CLAUDE_CONFIG_DIR` | `~/.claude` | Claude base dir |
 | `CODEX_HOME` | `~/.codex` | Codex base dir |
+| `AGENTBOARD_DB_PATH` | `~/.agentboard/agentboard.db` | Session database path |
 | `CLAUDE_RESUME_CMD` | `claude --resume {sessionId}` | Resume command template |
 | `CODEX_RESUME_CMD` | `codex --resume {sessionId}` | Resume command template |
 

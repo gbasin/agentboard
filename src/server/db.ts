@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { Database as SQLiteDatabase } from 'bun:sqlite'
 import type { AgentType } from '../shared/types'
+import { resolveProjectPath } from './paths'
 
 export interface AgentSessionRecord {
   id: number
@@ -37,6 +38,7 @@ const DEFAULT_DATA_DIR = path.join(
   '.agentboard'
 )
 const DEFAULT_DB_PATH = path.join(DEFAULT_DATA_DIR, 'agentboard.db')
+const DB_PATH_ENV = 'AGENTBOARD_DB_PATH'
 
 const AGENT_SESSIONS_COLUMNS_SQL = `
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -66,7 +68,10 @@ CREATE INDEX IF NOT EXISTS idx_current_window
 `
 
 export function initDatabase(options: { path?: string } = {}): SessionDatabase {
-  const dbPath = options.path ?? DEFAULT_DB_PATH
+  const envPath = process.env[DB_PATH_ENV]?.trim()
+  const resolvedEnvPath =
+    envPath && envPath !== ':memory:' ? resolveProjectPath(envPath) : envPath
+  const dbPath = options.path ?? resolvedEnvPath ?? DEFAULT_DB_PATH
   ensureDataDir(dbPath)
 
   const db = new SQLiteDatabase(dbPath)

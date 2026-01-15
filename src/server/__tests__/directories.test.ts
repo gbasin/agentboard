@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
@@ -24,6 +24,9 @@ const originalConsoleLog = console.log
 const originalConsoleError = console.error
 const originalProcessOn = processAny.on
 const originalProcessExit = processAny.exit
+const originalDbPath = process.env.AGENTBOARD_DB_PATH
+
+let tempDbPath: string | null = null
 
 let serveOptions: Parameters<typeof Bun.serve>[0] | null = null
 let spawnSyncImpl: typeof Bun.spawnSync
@@ -57,6 +60,14 @@ async function fetchDirectories(requestedPath: string) {
   return response
 }
 
+beforeAll(() => {
+  const suffix = `directories-${process.pid}-${Date.now()}-${Math.random()
+    .toString(36)
+    .slice(2, 8)}`
+  tempDbPath = path.join(os.tmpdir(), `agentboard-${suffix}.db`)
+  process.env.AGENTBOARD_DB_PATH = tempDbPath
+})
+
 beforeEach(() => {
   serveOptions = null
   spawnSyncImpl = () =>
@@ -78,6 +89,21 @@ beforeEach(() => {
   console.error = () => {}
   processAny.on = (() => processAny) as typeof processAny.on
   processAny.exit = (() => {}) as typeof processAny.exit
+})
+
+afterAll(async () => {
+  if (originalDbPath === undefined) {
+    delete process.env.AGENTBOARD_DB_PATH
+  } else {
+    process.env.AGENTBOARD_DB_PATH = originalDbPath
+  }
+  if (tempDbPath) {
+    try {
+      await fs.rm(tempDbPath, { force: true })
+    } catch {
+      // ignore cleanup failures
+    }
+  }
 })
 
 afterEach(() => {

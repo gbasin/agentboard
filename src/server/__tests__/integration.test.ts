@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import fs from 'node:fs'
 import net from 'node:net'
+import path from 'node:path'
+import os from 'node:os'
 
 const tmuxAvailable = (() => {
   try {
@@ -21,6 +23,12 @@ if (!tmuxAvailable) {
     const sessionName = `agentboard-test-${Date.now()}-${Math.random()
       .toString(36)
       .slice(2, 8)}`
+    const dbPath = path.join(
+      os.tmpdir(),
+      `agentboard-integration-${process.pid}-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2, 8)}.db`
+    )
     let serverProcess: ReturnType<typeof Bun.spawn> | null = null
     let port = 0
 
@@ -35,6 +43,7 @@ if (!tmuxAvailable) {
           TMUX_SESSION: sessionName,
           DISCOVER_PREFIXES: '',
           AGENTBOARD_LOG_POLL_MS: '0',
+          AGENTBOARD_DB_PATH: dbPath,
         },
         stdout: 'pipe',
         stderr: 'pipe',
@@ -61,6 +70,11 @@ if (!tmuxAvailable) {
           stdout: 'ignore',
           stderr: 'ignore',
         })
+      } catch {
+        // ignore cleanup errors
+      }
+      try {
+        fs.unlinkSync(dbPath)
       } catch {
         // ignore cleanup errors
       }
