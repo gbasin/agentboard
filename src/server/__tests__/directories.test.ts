@@ -31,7 +31,17 @@ let importCounter = 0
 
 async function loadIndex() {
   importCounter += 1
-  await import(`../index?directories=${importCounter}`)
+  const originalLogPoll = process.env.AGENTBOARD_LOG_POLL_MS
+  process.env.AGENTBOARD_LOG_POLL_MS = '0'
+  try {
+    await import(`../index?directories=${importCounter}`)
+  } finally {
+    if (originalLogPoll === undefined) {
+      delete process.env.AGENTBOARD_LOG_POLL_MS
+    } else {
+      process.env.AGENTBOARD_LOG_POLL_MS = originalLogPoll
+    }
+  }
   if (!serveOptions) {
     throw new Error('Bun.serve was not called')
   }

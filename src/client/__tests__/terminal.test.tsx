@@ -111,6 +111,17 @@ const baseSession: Session = {
   source: 'managed',
 }
 
+const secondSession: Session = {
+  id: 'session-2',
+  name: 'beta',
+  tmuxWindow: 'agentboard:2',
+  projectPath: '/tmp/beta',
+  status: 'waiting',
+  lastActivity: new Date().toISOString(),
+  createdAt: new Date().toISOString(),
+  source: 'managed',
+}
+
 function createStorage(): Storage {
   const store = new Map<string, string>()
   return {
@@ -155,6 +166,7 @@ function createContainerMock() {
         listeners.delete(event)
       }
     },
+    focus: () => {},
     querySelector: (selector: string) =>
       selector === '.xterm-helper-textarea' ? textarea : null,
   } as unknown as HTMLDivElement
@@ -195,6 +207,7 @@ beforeEach(() => {
     fonts: { ready: Promise.resolve() },
     addEventListener: () => {},
     removeEventListener: () => {},
+    querySelector: () => null,
   } as unknown as Document
 
   globalAny.ResizeObserver = class ResizeObserverMock {
@@ -414,6 +427,100 @@ describe('Terminal', () => {
     })
 
     expect(killed).toEqual([baseSession.id])
+
+    act(() => {
+      renderer.unmount()
+    })
+  })
+
+  test('mobile layout opens drawer and switches sessions', () => {
+    let selectCalls: string[] = []
+    let vibrateCalls = 0
+
+    globalAny.navigator = {
+      userAgent: 'Chrome',
+      platform: 'MacIntel',
+      maxTouchPoints: 0,
+      clipboard: { writeText: () => Promise.resolve() },
+      vibrate: () => {
+        vibrateCalls += 1
+        return true
+      },
+    } as unknown as Navigator
+
+    if (globalAny.window) {
+      globalAny.window.matchMedia = (() => ({
+        matches: true,
+        media: '',
+        onchange: null,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        addListener: () => {},
+        removeListener: () => {},
+        dispatchEvent: () => false,
+      })) as unknown as typeof window.matchMedia
+    }
+
+    const { createNodeMock } = createContainerMock()
+    let renderer!: TestRenderer.ReactTestRenderer
+
+    act(() => {
+      renderer = TestRenderer.create(
+        <Terminal
+          session={baseSession}
+          sessions={[baseSession, secondSession]}
+          connectionStatus="connected"
+          sendMessage={() => {}}
+          subscribe={() => () => {}}
+          onClose={() => {}}
+          onSelectSession={(id) => selectCalls.push(id)}
+          onNewSession={() => {}}
+          onKillSession={() => {}}
+          onRenameSession={() => {}}
+          onResumeSession={() => {}}
+          onOpenSettings={() => {}}
+        />,
+        {
+          createNodeMock,
+        }
+      )
+    })
+
+    const openButton = renderer.root.findByProps({ 'aria-label': 'Open session menu' })
+    act(() => {
+      openButton.props.onClick()
+    })
+
+    let html = JSON.stringify(renderer.toJSON())
+    expect(html).toContain('session-drawer open')
+
+    const backdrop = renderer.root.findAllByProps({ className: 'session-drawer-backdrop open' })[0]
+    if (!backdrop) {
+      throw new Error('Expected drawer backdrop')
+    }
+
+    act(() => {
+      backdrop.props.onClick()
+    })
+
+    html = JSON.stringify(renderer.toJSON())
+    expect(html).not.toContain('session-drawer open')
+
+    const switchButton = renderer.root.findAllByType('button').find((button) => {
+      const children = button.props.children
+      return children === 2 || (Array.isArray(children) && children.includes(2))
+    })
+
+    if (!switchButton) {
+      throw new Error('Expected session switcher button')
+    }
+
+    act(() => {
+      switchButton.props.onClick()
+    })
+
+    expect(selectCalls).toEqual([secondSession.id])
+    expect(vibrateCalls).toBe(1)
 
     act(() => {
       renderer.unmount()
