@@ -123,25 +123,42 @@ export default function SessionList({
   // Track newly added sessions for entry animations
   const prevActiveIdsRef = useRef<Set<string>>(new Set(sessions.map((s) => s.id)))
   const prevInactiveIdsRef = useRef<Set<string>>(new Set(inactiveSessions.map((s) => s.sessionId)))
+  const prevInactiveIdsForActiveRef = useRef<Set<string>>(
+    new Set(inactiveSessions.map((s) => s.sessionId))
+  )
   const [newlyActiveIds, setNewlyActiveIds] = useState<Set<string>>(new Set())
   const [newlyInactiveIds, setNewlyInactiveIds] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     const currentIds = new Set(sessions.map((s) => s.id))
+    const currentInactiveIds = new Set(
+      inactiveSessions.map((s) => s.sessionId)
+    )
     const newIds = new Set<string>()
     for (const id of currentIds) {
       if (!prevActiveIdsRef.current.has(id)) {
         newIds.add(id)
       }
     }
+    for (const session of sessions) {
+      const agentId = session.agentSessionId?.trim()
+      if (
+        agentId &&
+        prevInactiveIdsForActiveRef.current.has(agentId) &&
+        !currentInactiveIds.has(agentId)
+      ) {
+        newIds.add(session.id)
+      }
+    }
     prevActiveIdsRef.current = currentIds
+    prevInactiveIdsForActiveRef.current = currentInactiveIds
 
     if (newIds.size > 0) {
       setNewlyActiveIds(newIds)
       const timer = setTimeout(() => setNewlyActiveIds(new Set()), 500)
       return () => clearTimeout(timer)
     }
-  }, [sessions])
+  }, [sessions, inactiveSessions])
 
   useEffect(() => {
     const currentIds = new Set(inactiveSessions.map((s) => s.sessionId))
@@ -259,6 +276,23 @@ export default function SessionList({
     setOverId(null)
     setTimeout(() => setLayoutAnimationsDisabled(false), 100)
   }, [])
+
+  useEffect(() => {
+    if (!activeId && !overId) return
+    const currentIds = new Set(sessions.map((s) => s.id))
+    let shouldReset = false
+    if (activeId && !currentIds.has(activeId)) {
+      setActiveId(null)
+      shouldReset = true
+    }
+    if (overId && !currentIds.has(overId)) {
+      setOverId(null)
+      shouldReset = true
+    }
+    if (shouldReset) {
+      setLayoutAnimationsDisabled(false)
+    }
+  }, [sessions, activeId, overId])
 
   const handleRename = (sessionId: string, newName: string) => {
     onRename(sessionId, newName)
