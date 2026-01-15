@@ -730,7 +730,9 @@ function SessionRow({
             </span>
           )}
           {needsInput ? (
-            <HandIcon className="ml-1 h-4 w-4 shrink-0 text-approval" aria-label="Needs input" />
+            <span className="ml-1 flex w-8 shrink-0 justify-end">
+              <HandIcon className="h-4 w-4 text-approval" aria-label="Needs input" />
+            </span>
           ) : (
             <span className="ml-1 w-8 shrink-0 text-right text-xs tabular-nums text-muted">{lastActivity}</span>
           )}
