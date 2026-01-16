@@ -15,12 +15,14 @@ Run your desktop/server, then connect from your phone or laptop over Tailscale/L
 - Shows the last user prompt for each session, so you can remember what each agent is working on
 
 ### Desktop
-<img src="assets/desktop.png" alt="Desktop" width="700"/>
+| Terminal | Sessions |
+| :---: | :---: |
+| <img src="assets/desktop.png" alt="Terminal" height="400"/> | <img src="assets/sessions.png" alt="Sessions" height="400"/> |
 
 ### Mobile
-| Terminal | Controls | Sessions |
-| :---: | :---: | :---: |
-| <img src="assets/mobile.jpeg" alt="Terminal" height="400"/> | <img src="assets/mobile-controls.jpeg" alt="Controls" height="400"/> | <img src="assets/sessions.png" alt="Sessions" height="400"/> |
+| Terminal | Controls |
+| :---: | :---: |
+| <img src="assets/mobile.jpeg" alt="Terminal" height="400"/> | <img src="assets/mobile-controls.jpeg" alt="Controls" height="400"/> |
 
 ## Requirements
 
