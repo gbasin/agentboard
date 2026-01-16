@@ -9,6 +9,7 @@ import {
   matchWindowsToLogsByExactRg,
   tryExactMatchWindowToLog,
   verifyWindowLogAssociation,
+  extractRecentTraceLinesFromTmux,
   extractRecentUserMessagesFromTmux,
   extractActionFromUserAction,
 } from '../logMatcher'
@@ -216,6 +217,45 @@ describe('logMatcher', () => {
     await fs.rm(tempDir, { recursive: true, force: true })
   })
 
+  test('tryExactMatchWindowToLog falls back to trace lines and skips subagents', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-logmatch-'))
+    const logPathMain = path.join(tempDir, 'session-main.jsonl')
+    const logPathSub = path.join(tempDir, 'session-sub.jsonl')
+    const traceLine =
+      'The new last-user-message feature can get stuck showing stale values because log updates are ignored once a message is set.'
+
+    await fs.writeFile(
+      logPathMain,
+      [
+        JSON.stringify({ type: 'session_meta', payload: { source: 'cli' } }),
+        JSON.stringify({
+          type: 'event_msg',
+          payload: { type: 'agent_reasoning', text: traceLine },
+        }),
+      ].join('\n')
+    )
+    await fs.writeFile(
+      logPathSub,
+      [
+        JSON.stringify({
+          type: 'session_meta',
+          payload: { source: { subagent: 'review' } },
+        }),
+        JSON.stringify({
+          type: 'event_msg',
+          payload: { type: 'agent_reasoning', text: traceLine },
+        }),
+      ].join('\n')
+    )
+
+    setTmuxOutput('agentboard:1', CODEX_REVIEW_SCROLLBACK)
+
+    const result = tryExactMatchWindowToLog('agentboard:1', tempDir)
+    expect(result?.logPath).toBe(logPathMain)
+
+    await fs.rm(tempDir, { recursive: true, force: true })
+  })
+
   test('matchWindowsToLogsByExactRg returns unique matches', async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-logmatch-'))
     const logPathA = path.join(tempDir, 'session-a.jsonl')
@@ -314,6 +354,26 @@ describe('logMatcher', () => {
 
     await fs.rm(tempDir, { recursive: true, force: true })
   })
+
+  test('tryExactMatchWindowToLog matches messages with JSON-escaped quotes', async () => {
+    // Regression test: terminal shows "working" but log has \"working\" (JSON-escaped)
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-quotes-'))
+    const logPath = path.join(tempDir, 'session.jsonl')
+    const messageWithQuotes = 'why is it appearing as "working" in the UI?'
+
+    // JSON.stringify escapes quotes as \" in the log file
+    await fs.writeFile(
+      logPath,
+      JSON.stringify({ type: 'user', content: messageWithQuotes })
+    )
+    // Terminal shows unescaped quotes
+    setTmuxOutput('agentboard:1', buildPromptScrollback([messageWithQuotes]))
+
+    const result = tryExactMatchWindowToLog('agentboard:1', tempDir)
+    expect(result?.logPath).toBe(logPath)
+
+    await fs.rm(tempDir, { recursive: true, force: true })
+  })
 })
 
 // Regression test fixtures from real tmux sessions
@@ -381,6 +441,13 @@ describe('message extraction regression tests', () => {
     const userMessages = extractRecentUserMessagesFromTmux(CODEX_REVIEW_SCROLLBACK)
     // The only › line is a UI tip in the input field, not a real user message
     expect(userMessages).toEqual([])
+  })
+
+  test('Codex /review: extracts trace lines for fallback', () => {
+    const traces = extractRecentTraceLinesFromTmux(CODEX_REVIEW_SCROLLBACK)
+    expect(traces).toContain(
+      'The new last-user-message feature can get stuck showing stale values because log updates are ignored once a message is set.'
+    )
   })
 
   test('Claude: returns submitted userMessages, not pending', () => {

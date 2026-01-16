@@ -4,9 +4,17 @@ import type { AgentType, Session } from '../shared/types'
 import {
   extractProjectPath,
   inferAgentTypeFromPath,
+  isCodexSubagent,
   normalizeProjectPath,
 } from './logDiscovery'
-import { stripAnsi, TMUX_PROMPT_PREFIX, TMUX_UI_GLYPH_PATTERN } from './terminal/tmuxText'
+import {
+  cleanTmuxLine,
+  isMetadataLine,
+  stripAnsi,
+  TMUX_METADATA_STATUS_PATTERNS,
+  TMUX_PROMPT_PREFIX,
+  TMUX_UI_GLYPH_PATTERN,
+} from './terminal/tmuxText'
 
 export type LogTextMode = 'all' | 'assistant' | 'user' | 'assistant-user'
 
@@ -74,10 +82,26 @@ export const DEFAULT_SCROLLBACK_LINES = 10000
 const DEFAULT_LOG_TEXT_MODE: LogTextMode = 'assistant-user'
 const DEFAULT_LOG_TAIL_BYTES = 96 * 1024
 const MIN_TAIL_MATCH_COUNT = 2
-const MAX_RECENT_USER_MESSAGES = 8
+const MAX_RECENT_USER_MESSAGES = 25
+const MAX_RECENT_TRACE_LINES = 12
 
 // Minimum length for exact match search
 const MIN_EXACT_MATCH_LENGTH = 5
+const TRACE_EXCLUDE_PREFIXES = [
+  /^explored\b/i,
+  /^ran\b/i,
+  /^search\b/i,
+  /^read\b/i,
+  /^use\b/i,
+] as const
+const TRACE_STATUS_TRAILER = /\s*\(([^)]*)\)\s*$/
+const TRACE_STATUS_HINTS = [
+  /esc to interrupt/i,
+  /context left/i,
+  /for shortcuts/i,
+  /background terminal running/i,
+  /\b\d+\s*(?:ms|s|m|h|d)\b/i,
+] as const
 
 /**
  * Escape special regex characters in a string.
@@ -89,12 +113,16 @@ function escapeRegex(str: string): string {
 /**
  * Convert a user message to a regex pattern that matches with flexible whitespace.
  * This handles cases where tmux and log files have different whitespace representations.
+ * Also handles JSON-escaped quotes since logs store text in JSON format where " becomes \".
  */
 function messageToFlexiblePattern(message: string): string {
   // Normalize to single spaces first
   const normalized = message.replace(/\s+/g, ' ').trim()
   // Escape regex special chars, then replace spaces with \s+ for flexible matching
-  return escapeRegex(normalized).replace(/ /g, '\\s+')
+  // Replace quotes with pattern matching: nothing, ", or \" (JSON-escaped)
+  return escapeRegex(normalized)
+    .replace(/ /g, '\\s+')
+    .replace(/"/g, '(?:\\\\?")?')
 }
 
 /**
@@ -547,6 +575,45 @@ export function extractRecentUserMessagesFromTmux(
   return messages
 }
 
+function stripTraceStatusSuffix(line: string): string {
+  const match = line.match(TRACE_STATUS_TRAILER)
+  if (!match) return line
+  const inner = match[1] ?? ''
+  if (!TRACE_STATUS_HINTS.some((pattern) => pattern.test(inner))) {
+    return line
+  }
+  return line.slice(0, match.index).trim()
+}
+
+export function extractRecentTraceLinesFromTmux(
+  content: string,
+  maxLines = MAX_RECENT_TRACE_LINES
+): string[] {
+  const rawLines = stripAnsi(content).split('\n')
+  while (rawLines.length > 0 && rawLines[rawLines.length - 1]?.trim() === '') {
+    rawLines.pop()
+  }
+
+  const traces: string[] = []
+  for (let i = rawLines.length - 1; i >= 0 && traces.length < maxLines; i--) {
+    const raw = rawLines[i] ?? ''
+    const trimmed = raw.trim()
+    if (!trimmed.startsWith('•')) continue
+    let cleaned = cleanTmuxLine(raw)
+    if (!cleaned) continue
+    cleaned = stripTraceStatusSuffix(cleaned)
+    if (!cleaned) continue
+    if (TRACE_EXCLUDE_PREFIXES.some((prefix) => prefix.test(cleaned))) continue
+    if (isMetadataLine(cleaned, TMUX_METADATA_STATUS_PATTERNS)) continue
+    if (cleaned.length < MIN_EXACT_MATCH_LENGTH) continue
+    if (!traces.includes(cleaned)) {
+      traces.push(cleaned)
+    }
+  }
+
+  return traces
+}
+
 function resolveLogReadOptions(
   overrides: Partial<LogReadOptions> = {}
 ): LogReadOptions {
@@ -902,14 +969,22 @@ export function tryExactMatchWindowToLog(
     profile.messageExtractMs += performance.now() - extractStart
   }
 
-  if (userMessages.length === 0) return null
+  let messages = userMessages
+  let usingTraceFallback = false
+  if (messages.length === 0) {
+    const traces = extractRecentTraceLinesFromTmux(scrollback)
+    if (traces.length === 0) return null
+    messages = traces
+    usingTraceFallback = true
+  }
 
   const hasDisambiguators = Boolean(context.agentType || context.projectPath)
-  const longMessages = userMessages.filter(
+  const longMessages = messages.filter(
     (message) => message.length >= MIN_EXACT_MATCH_LENGTH
   )
+  const allowShortMessages = hasDisambiguators || usingTraceFallback
   const messagesToSearch =
-    longMessages.length > 0 ? longMessages : hasDisambiguators ? userMessages : []
+    longMessages.length > 0 ? longMessages : allowShortMessages ? messages : []
   if (messagesToSearch.length === 0) return null
 
   const sortedMessages = [...messagesToSearch].sort((a, b) => b.length - a.length)
@@ -931,6 +1006,14 @@ export function tryExactMatchWindowToLog(
 
   if (candidates.length === 0) {
     return null
+  }
+
+  if (usingTraceFallback) {
+    const filtered = candidates.filter((candidate) => !isCodexSubagent(candidate))
+    if (filtered.length === 0) {
+      return null
+    }
+    candidates = filtered
   }
 
   if (context.agentType) {
@@ -955,7 +1038,7 @@ export function tryExactMatchWindowToLog(
     }
   }
 
-  const orderedMessages = userMessages
+  const orderedMessages = messages
     .filter((message: string) => message.length >= MIN_EXACT_MATCH_LENGTH)
     .slice()
     .reverse()
@@ -971,7 +1054,7 @@ export function tryExactMatchWindowToLog(
     }
     return {
       logPath: candidates[0],
-      userMessage: userMessages[0] ?? '',
+      userMessage: messages[0] ?? '',
       matchedCount: score.matchedCount,
       matchedLength: score.matchedLength,
     }
@@ -1040,7 +1123,7 @@ export function tryExactMatchWindowToLog(
 
   return {
     logPath: best.logPath,
-    userMessage: userMessages[0] ?? '',
+    userMessage: messages[0] ?? '',
     matchedCount: best.score.matchedCount,
     matchedLength: best.score.matchedLength,
   }
