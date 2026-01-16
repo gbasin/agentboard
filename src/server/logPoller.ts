@@ -46,6 +46,7 @@ export class LogPoller {
   private registry: SessionRegistry
   private onSessionOrphaned?: (sessionId: string) => void
   private onSessionActivated?: (sessionId: string, window: string) => void
+  private isLastUserMessageLocked?: (tmuxWindow: string) => boolean
   private maxLogsPerPoll: number
   private matchProfile: boolean
   private rgThreads?: number
@@ -65,6 +66,7 @@ export class LogPoller {
     {
       onSessionOrphaned,
       onSessionActivated,
+      isLastUserMessageLocked,
       maxLogsPerPoll,
       matchProfile,
       rgThreads,
@@ -73,6 +75,7 @@ export class LogPoller {
     }: {
       onSessionOrphaned?: (sessionId: string) => void
       onSessionActivated?: (sessionId: string, window: string) => void
+      isLastUserMessageLocked?: (tmuxWindow: string) => boolean
       maxLogsPerPoll?: number
       matchProfile?: boolean
       rgThreads?: number
@@ -84,6 +87,7 @@ export class LogPoller {
     this.registry = registry
     this.onSessionOrphaned = onSessionOrphaned
     this.onSessionActivated = onSessionActivated
+    this.isLastUserMessageLocked = isLastUserMessageLocked
     const limit = maxLogsPerPoll ?? DEFAULT_MAX_LOGS
     this.maxLogsPerPoll = Math.max(1, limit)
     this.matchProfile = matchProfile ?? false
@@ -335,12 +339,16 @@ export class LogPoller {
               update.lastActivityAt = new Date(entry.mtime).toISOString()
             }
             if (entry.lastUserMessage && !isToolNotificationText(entry.lastUserMessage)) {
-              const shouldReplace =
-                !existing.lastUserMessage ||
-                isToolNotificationText(existing.lastUserMessage) ||
-                (hasActivity && entry.lastUserMessage !== existing.lastUserMessage)
-              if (shouldReplace) {
-                update.lastUserMessage = entry.lastUserMessage
+              // Skip if Enter-key capture recently set a value (prevents stale log overwrites)
+              const isLocked = existing.currentWindow && this.isLastUserMessageLocked?.(existing.currentWindow)
+              if (!isLocked) {
+                const shouldReplace =
+                  !existing.lastUserMessage ||
+                  isToolNotificationText(existing.lastUserMessage) ||
+                  (hasActivity && entry.lastUserMessage !== existing.lastUserMessage)
+                if (shouldReplace) {
+                  update.lastUserMessage = entry.lastUserMessage
+                }
               }
             }
             if (Object.keys(update).length > 0) {
@@ -412,13 +420,17 @@ export class LogPoller {
               update.lastActivityAt = lastActivityAt
             }
             if (entry.lastUserMessage && !isToolNotificationText(entry.lastUserMessage)) {
-              const shouldReplace =
-                !existingById.lastUserMessage ||
-                isToolNotificationText(existingById.lastUserMessage) ||
-                (hasActivity &&
-                  entry.lastUserMessage !== existingById.lastUserMessage)
-              if (shouldReplace) {
-                update.lastUserMessage = entry.lastUserMessage
+              // Skip if Enter-key capture recently set a value (prevents stale log overwrites)
+              const isLocked = existingById.currentWindow && this.isLastUserMessageLocked?.(existingById.currentWindow)
+              if (!isLocked) {
+                const shouldReplace =
+                  !existingById.lastUserMessage ||
+                  isToolNotificationText(existingById.lastUserMessage) ||
+                  (hasActivity &&
+                    entry.lastUserMessage !== existingById.lastUserMessage)
+                if (shouldReplace) {
+                  update.lastUserMessage = entry.lastUserMessage
+                }
               }
             }
             if (Object.keys(update).length > 0) {
