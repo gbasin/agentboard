@@ -376,23 +376,17 @@ const CLAUDE_PROMPT_SCROLLBACK = `  Right now it's reading every file every poll
 `
 
 describe('message extraction regression tests', () => {
-  test('Codex /review: returns empty userMessages and extracts assistantText (prompt swallowed)', () => {
-    const { userMessages, assistantText } = extractRecentUserMessagesFromTmux(CODEX_REVIEW_SCROLLBACK)
+  test('Codex /review: returns empty userMessages when prompt is swallowed', () => {
+    const userMessages = extractRecentUserMessagesFromTmux(CODEX_REVIEW_SCROLLBACK)
     // The only › line is a UI tip in the input field, not a real user message
     expect(userMessages).toEqual([])
-    // Should extract assistant bullet content as fallback
-    expect(assistantText.length).toBeGreaterThan(0)
-    // Should include the actual response (not just traces)
-    expect(assistantText).toContain('The new last-user-message feature can get stuck')
   })
 
-  test('Claude: returns submitted userMessages, not pending, no assistantText when messages found', () => {
-    const { userMessages, assistantText } = extractRecentUserMessagesFromTmux(CLAUDE_PROMPT_SCROLLBACK)
+  test('Claude: returns submitted userMessages, not pending', () => {
+    const userMessages = extractRecentUserMessagesFromTmux(CLAUDE_PROMPT_SCROLLBACK)
     // Should find the submitted message
     expect(userMessages).toContain('yes create a test and then fix it')
     // Should NOT include the pending message (has ↵ send indicator)
     expect(userMessages).not.toContain('commit these changes')
-    // assistantText is only populated when no user messages found
-    expect(assistantText).toBe('')
   })
 })

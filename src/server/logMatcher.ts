@@ -6,15 +6,7 @@ import {
   inferAgentTypeFromPath,
   normalizeProjectPath,
 } from './logDiscovery'
-import {
-  cleanTmuxLine,
-  isDecorativeLine,
-  isMetadataLine,
-  stripAnsi,
-  TMUX_METADATA_MATCH_PATTERNS,
-  TMUX_PROMPT_PREFIX,
-  TMUX_UI_GLYPH_PATTERN,
-} from './terminal/tmuxText'
+import { stripAnsi, TMUX_PROMPT_PREFIX, TMUX_UI_GLYPH_PATTERN } from './terminal/tmuxText'
 
 export type LogTextMode = 'all' | 'assistant' | 'user' | 'assistant-user'
 
@@ -97,16 +89,12 @@ function escapeRegex(str: string): string {
 /**
  * Convert a user message to a regex pattern that matches with flexible whitespace.
  * This handles cases where tmux and log files have different whitespace representations.
- * Also handles quote escaping differences: tmux shows " but logs store \"
  */
 function messageToFlexiblePattern(message: string): string {
   // Normalize to single spaces first
   const normalized = message.replace(/\s+/g, ' ').trim()
   // Escape regex special chars, then replace spaces with \s+ for flexible matching
-  // Also handle quotes that may be escaped in JSON logs as \"
-  return escapeRegex(normalized)
-    .replace(/ /g, '\\s+')
-    .replace(/"/g, '\\\\?"')
+  return escapeRegex(normalized).replace(/ /g, '\\s+')
 }
 
 /**
@@ -514,66 +502,15 @@ function isCurrentInputField(rawLines: string[], promptIdx: number): boolean {
   return false
 }
 
-// Assistant bullet detection helpers
-function isClaudeBulletLine(line: string): boolean {
-  return /^\s*⏺/.test(line)
-}
-
-function isCodexBulletLine(line: string): boolean {
-  return /^\s*•/.test(line)
-}
-
-function isBulletLine(line: string): boolean {
-  return isClaudeBulletLine(line) || isCodexBulletLine(line)
-}
-
-function isToolCallBullet(line: string): boolean {
-  const trimmed = line.trim()
-  if (!isBulletLine(line)) return false
-  const afterBullet = trimmed.replace(/^[⏺•]\s*/, '')
-  // Claude tool patterns
-  if (/^(Write|Bash|Read|Glob|Grep|Edit|Task|WebFetch|WebSearch|TodoWrite|Update|NotebookEdit)\s*\(/.test(afterBullet)) {
-    return true
-  }
-  // Codex tool patterns: "Ran <command>", "Read <file>", etc.
-  if (/^(Ran|Read|Wrote|Created|Updated|Deleted|Explored)\s+/.test(afterBullet)) {
-    return true
-  }
-  return false
-}
-
-function isTextBullet(line: string): boolean {
-  return isBulletLine(line) && !isToolCallBullet(line)
-}
-
-function isToolOutputLine(line: string): boolean {
-  return /^\s*⎿/.test(line)
-}
-
-export interface TmuxExtraction {
-  userMessages: string[]
-  assistantText: string
-}
-
 export function extractRecentUserMessagesFromTmux(
   content: string,
   maxMessages = MAX_RECENT_USER_MESSAGES
-): TmuxExtraction {
+): string[] {
   const rawLines = stripAnsi(content).split('\n')
   while (rawLines.length > 0 && rawLines[rawLines.length - 1]?.trim() === '') {
     rawLines.pop()
   }
 
-  // Find the input field index (if present)
-  let inputFieldIdx = -1
-  for (let i = rawLines.length - 1; i >= 0; i--) {
-    if (isPromptLine(rawLines[i] ?? '') && isCurrentInputField(rawLines, i)) {
-      inputFieldIdx = i
-      break
-    }
-  }
-
-  // Extract user messages
   const messages: string[] = []
   for (let i = rawLines.length - 1; i >= 0 && messages.length < maxMessages; i--) {
     const line = rawLines[i] ?? ''
@@ -587,31 +524,7 @@ export function extractRecentUserMessagesFromTmux(
     }
   }
 
-  // If no user messages found, extract assistant text as fallback (for Codex /review etc.)
-  let assistantText = ''
-  if (messages.length === 0) {
-    const stopIdx = inputFieldIdx !== -1 ? inputFieldIdx : rawLines.length
-    const assistantLines: string[] = []
-
-    // Scan backwards from stopIdx to get most recent content first
-    for (let i = stopIdx - 1; i >= 0; i--) {
-      const line = rawLines[i] ?? ''
-      const trimmed = line.trim()
-      if (!trimmed) continue
-      if (isPromptLine(line)) continue
-      if (isDecorativeLine(trimmed) || isMetadataLine(trimmed, TMUX_METADATA_MATCH_PATTERNS)) {
-        continue
-      }
-      if (isToolCallBullet(line)) continue
-      if (isToolOutputLine(line)) continue
-      if (isTextBullet(line)) {
-        assistantLines.unshift(cleanTmuxLine(line))
-      }
-    }
-    assistantText = assistantLines.join('\n')
-  }
-
-  return { userMessages: messages, assistantText }
+  return messages
 }
 
 function resolveLogReadOptions(
@@ -944,37 +857,13 @@ export function tryExactMatchWindowToLog(
     profile.tmuxCaptureMs += performance.now() - tmuxStart
   }
   const extractStart = performance.now()
-  const { userMessages, assistantText } = extractRecentUserMessagesFromTmux(scrollback)
+  const userMessages = extractRecentUserMessagesFromTmux(scrollback)
   if (profile) {
     profile.messageExtractRuns += 1
     profile.messageExtractMs += performance.now() - extractStart
   }
 
-  // If no user messages, try assistant text fallback (for Codex /review etc.)
-  if (userMessages.length === 0) {
-    if (assistantText.length >= MIN_EXACT_MATCH_LENGTH) {
-      // Use first substantive line of assistant text for matching
-      const firstLine = assistantText.split('\n').find(l => l.length >= MIN_EXACT_MATCH_LENGTH)
-      if (firstLine) {
-        const matches = findLogsWithExactMessage(firstLine, logDirs, {
-          minLength: MIN_EXACT_MATCH_LENGTH,
-          logPaths: search.logPaths,
-          tailBytes: search.tailBytes,
-          rgThreads: search.rgThreads,
-          profile: search.profile,
-        })
-        if (matches.length === 1) {
-          return {
-            logPath: matches[0],
-            userMessage: firstLine,
-            matchedCount: 1,
-            matchedLength: firstLine.length,
-          }
-        }
-      }
-    }
-    return null
-  }
+  if (userMessages.length === 0) return null
 
   const hasDisambiguators = Boolean(context.agentType || context.projectPath)
   const longMessages = userMessages.filter(

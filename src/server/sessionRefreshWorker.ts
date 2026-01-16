@@ -95,8 +95,7 @@ ctx.onmessage = (event: MessageEvent<RefreshWorkerRequest>) => {
         payload.tmuxWindow,
         payload.scrollbackLines ?? LAST_USER_MESSAGE_SCROLLBACK_LINES
       )
-      const message =
-        extractRecentUserMessagesFromTmux(scrollback, 1).userMessages[0] ?? null
+      const message = extractRecentUserMessagesFromTmux(scrollback, 1)[0] ?? null
       const response: RefreshWorkerResponse = {
         id: payload.id,
         kind: 'last-user-message',
