@@ -346,6 +346,65 @@ describe('LogPoller', () => {
     db.close()
   })
 
+  test('updates lastUserMessage when newer log entry arrives', async () => {
+    const db = initDatabase({ path: ':memory:' })
+    const registry = new SessionRegistry()
+    registry.replaceSessions([baseSession])
+
+    const projectPath = baseSession.projectPath
+    const encoded = encodeProjectPath(projectPath)
+    const logDir = path.join(
+      process.env.CLAUDE_CONFIG_DIR ?? '',
+      'projects',
+      encoded
+    )
+    await fs.mkdir(logDir, { recursive: true })
+    const logPath = path.join(logDir, 'session.jsonl')
+
+    const sessionId = 'claude-session-a'
+    const oldMessage = 'old prompt'
+    const newMessage = 'new prompt'
+    const logLines = [
+      JSON.stringify({
+        type: 'user',
+        sessionId,
+        cwd: projectPath,
+        content: oldMessage,
+      }),
+      JSON.stringify({ type: 'assistant', content: 'ack' }),
+      JSON.stringify({
+        type: 'user',
+        sessionId,
+        cwd: projectPath,
+        content: newMessage,
+      }),
+    ].join('\n')
+    await fs.writeFile(logPath, `${logLines}\n`)
+
+    const stats = await fs.stat(logPath)
+    db.insertSession({
+      sessionId,
+      logFilePath: logPath,
+      projectPath,
+      agentType: 'claude',
+      displayName: 'alpha',
+      createdAt: stats.birthtime.toISOString(),
+      lastActivityAt: new Date(stats.mtime.getTime() - 1000).toISOString(),
+      lastUserMessage: oldMessage,
+      currentWindow: baseSession.tmuxWindow,
+    })
+
+    const poller = new LogPoller(db, registry, {
+      matchWorkerClient: new InlineMatchWorkerClient(),
+    })
+    await poller.pollOnce()
+
+    const updated = db.getSessionById(sessionId)
+    expect(updated?.lastUserMessage).toBe(newMessage)
+
+    db.close()
+  })
+
   test('rematches orphaned sessions on startup without new activity', async () => {
     const db = initDatabase({ path: ':memory:' })
     const registry = new SessionRegistry()

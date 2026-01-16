@@ -334,12 +334,14 @@ export class LogPoller {
             if (hasActivity) {
               update.lastActivityAt = new Date(entry.mtime).toISOString()
             }
-            if (
-              (!existing.lastUserMessage ||
-                isToolNotificationText(existing.lastUserMessage)) &&
-              entry.lastUserMessage
-            ) {
-              update.lastUserMessage = entry.lastUserMessage
+            if (entry.lastUserMessage && !isToolNotificationText(entry.lastUserMessage)) {
+              const shouldReplace =
+                !existing.lastUserMessage ||
+                isToolNotificationText(existing.lastUserMessage) ||
+                (hasActivity && entry.lastUserMessage !== existing.lastUserMessage)
+              if (shouldReplace) {
+                update.lastUserMessage = entry.lastUserMessage
+              }
             }
             if (Object.keys(update).length > 0) {
               this.db.updateSession(existing.sessionId, update)
@@ -409,12 +411,15 @@ export class LogPoller {
             if (hasActivity) {
               update.lastActivityAt = lastActivityAt
             }
-            if (
-              (!existingById.lastUserMessage ||
-                isToolNotificationText(existingById.lastUserMessage)) &&
-              entry.lastUserMessage
-            ) {
-              update.lastUserMessage = entry.lastUserMessage
+            if (entry.lastUserMessage && !isToolNotificationText(entry.lastUserMessage)) {
+              const shouldReplace =
+                !existingById.lastUserMessage ||
+                isToolNotificationText(existingById.lastUserMessage) ||
+                (hasActivity &&
+                  entry.lastUserMessage !== existingById.lastUserMessage)
+              if (shouldReplace) {
+                update.lastUserMessage = entry.lastUserMessage
+              }
             }
             if (Object.keys(update).length > 0) {
               this.db.updateSession(sessionId, update)

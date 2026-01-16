@@ -136,6 +136,22 @@ export function isToolNotificationText(text: string): boolean {
   return TOOL_NOTIFICATION_MARKERS.some((marker) => normalized.includes(marker))
 }
 
+/**
+ * Extract the action name from a <user_action> XML block.
+ * Returns the action (e.g., "review") or null if not a user_action block.
+ */
+export function extractActionFromUserAction(text: string): string | null {
+  const trimmed = text.trim()
+  if (!trimmed.toLowerCase().startsWith('<user_action>')) {
+    return null
+  }
+  const actionMatch = trimmed.match(/<action>\s*([^<]+)\s*<\/action>/i)
+  if (actionMatch?.[1]) {
+    return actionMatch[1].trim()
+  }
+  return null
+}
+
 function readLogTail(logPath: string, byteLimit = DEFAULT_LOG_TAIL_BYTES): string {
   if (byteLimit <= 0) return ''
   try {
@@ -679,6 +695,18 @@ function shouldIncludeRole(role: string, mode: LogTextMode): boolean {
   return role === mode
 }
 
+/**
+ * Process user message text - filters tool notifications and extracts actions from user_action blocks.
+ * Returns the processed text or null if it should be skipped.
+ */
+function processUserMessageText(text: string): string | null {
+  if (!text.trim()) return null
+  if (isToolNotificationText(text)) return null
+  const action = extractActionFromUserAction(text)
+  if (action) return action
+  return text
+}
+
 function extractRoleTextFromEntry(
   entry: unknown
 ): Array<{ role: string; text: string }> {
@@ -696,10 +724,10 @@ function extractRoleTextFromEntry(
       const role = (payload.role as string | undefined) ?? ''
       const texts = extractTextFromContent(payload.content)
       for (const text of texts) {
-        if (text.trim()) {
-          if (role === 'user' && isToolNotificationText(text)) {
-            continue
-          }
+        if (role === 'user') {
+          const processed = processUserMessageText(text)
+          if (processed) chunks.push({ role, text: processed })
+        } else if (text.trim()) {
           chunks.push({ role, text })
         }
       }
@@ -713,10 +741,10 @@ function extractRoleTextFromEntry(
       (message.role as string | undefined) ?? (record.type as string | undefined) ?? ''
     const texts = extractTextFromContent(message.content)
     for (const text of texts) {
-      if (text.trim()) {
-        if (role === 'user' && isToolNotificationText(text)) {
-          continue
-        }
+      if (role === 'user') {
+        const processed = processUserMessageText(text)
+        if (processed) chunks.push({ role, text: processed })
+      } else if (text.trim()) {
         chunks.push({ role, text })
       }
     }
@@ -724,15 +752,18 @@ function extractRoleTextFromEntry(
     const role = record.type as string
     const direct = extractTextFromContent(record.content)
     for (const text of direct) {
-      if (text.trim()) {
-        if (role === 'user' && isToolNotificationText(text)) {
-          continue
-        }
+      if (role === 'user') {
+        const processed = processUserMessageText(text)
+        if (processed) chunks.push({ role, text: processed })
+      } else if (text.trim()) {
         chunks.push({ role, text })
       }
     }
-    if (record.text && typeof record.text === 'string' && record.text.trim()) {
-      if (!(role === 'user' && isToolNotificationText(record.text))) {
+    if (record.text && typeof record.text === 'string') {
+      if (role === 'user') {
+        const processed = processUserMessageText(record.text)
+        if (processed) chunks.push({ role, text: processed })
+      } else if (record.text.trim()) {
         chunks.push({ role, text: record.text })
       }
     }
@@ -743,8 +774,9 @@ function extractRoleTextFromEntry(
     const payload = record.payload as Record<string, unknown> | undefined
     if (payload && payload.type === 'user_message') {
       const text = payload.message
-      if (typeof text === 'string' && text.trim()) {
-        chunks.push({ role: 'user', text })
+      if (typeof text === 'string') {
+        const processed = processUserMessageText(text)
+        if (processed) chunks.push({ role: 'user', text: processed })
       }
     }
   }

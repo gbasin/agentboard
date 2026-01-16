@@ -10,6 +10,7 @@ import {
   tryExactMatchWindowToLog,
   verifyWindowLogAssociation,
   extractRecentUserMessagesFromTmux,
+  extractActionFromUserAction,
 } from '../logMatcher'
 
 const bunAny = Bun as typeof Bun & { spawnSync: typeof Bun.spawnSync }
@@ -388,5 +389,37 @@ describe('message extraction regression tests', () => {
     expect(userMessages).toContain('yes create a test and then fix it')
     // Should NOT include the pending message (has ↵ send indicator)
     expect(userMessages).not.toContain('commit these changes')
+  })
+})
+
+describe('extractActionFromUserAction', () => {
+  test('extracts action from valid user_action XML', () => {
+    const xml = `<user_action>
+  <context>User initiated a review task.</context>
+  <action>review</action>
+  <results>Some review results here</results>
+</user_action>`
+    expect(extractActionFromUserAction(xml)).toBe('review')
+  })
+
+  test('extracts action with whitespace', () => {
+    const xml = '<user_action><action>  commit  </action></user_action>'
+    expect(extractActionFromUserAction(xml)).toBe('commit')
+  })
+
+  test('returns null for non-user_action text', () => {
+    expect(extractActionFromUserAction('hello world')).toBeNull()
+    expect(extractActionFromUserAction('<other_tag>content</other_tag>')).toBeNull()
+    expect(extractActionFromUserAction('')).toBeNull()
+  })
+
+  test('returns null when no action tag present', () => {
+    const xml = '<user_action><context>No action here</context></user_action>'
+    expect(extractActionFromUserAction(xml)).toBeNull()
+  })
+
+  test('handles case-insensitive matching', () => {
+    const xml = '<USER_ACTION><action>test</action></USER_ACTION>'
+    expect(extractActionFromUserAction(xml)).toBe('test')
   })
 })
