@@ -30,7 +30,7 @@ const logMatchProfile =
 const enterRefreshDelayMsRaw = Number(process.env.AGENTBOARD_ENTER_REFRESH_MS)
 const enterRefreshDelayMs = Number.isFinite(enterRefreshDelayMsRaw)
   ? enterRefreshDelayMsRaw
-  : 50
+  : 1000
 
 const claudeConfigDir =
   process.env.CLAUDE_CONFIG_DIR || path.join(homeDir, '.claude')

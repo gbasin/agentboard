@@ -11,6 +11,8 @@ import {
 
 // Permission prompt patterns for Claude Code and Codex CLI
 export const PERMISSION_PATTERNS: RegExp[] = [
+  // Claude Code: numbered selection menu with navigation hint (AskUserQuestion)
+  /❯\s*\d+\.\s+\S+[\s\S]*?Esc to cancel/,
   // Claude Code: numbered options like "❯ 1. Yes" or "1. Yes"
   /[❯>]?\s*1\.\s*(Yes|Allow)/i,
   // Claude Code: "Do you want to proceed?" or similar

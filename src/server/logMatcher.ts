@@ -121,6 +121,10 @@ const TOOL_NOTIFICATION_MARKERS = [
   '<status>',
   '<summary>',
   'read the output file to retrieve the result',
+  // Codex system messages
+  '<instructions>',
+  '# agents.md instructions',
+  '<environment_context>',
 ] as const
 
 export function isToolNotificationText(text: string): boolean {
@@ -693,6 +697,9 @@ function extractRoleTextFromEntry(
       const texts = extractTextFromContent(payload.content)
       for (const text of texts) {
         if (text.trim()) {
+          if (role === 'user' && isToolNotificationText(text)) {
+            continue
+          }
           chunks.push({ role, text })
         }
       }
