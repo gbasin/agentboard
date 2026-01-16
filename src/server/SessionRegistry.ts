@@ -138,6 +138,7 @@ function sessionsEqual(a: Session, b: Session): boolean {
     a.agentType === b.agentType &&
     a.command === b.command &&
     a.agentSessionId === b.agentSessionId &&
-    a.agentSessionName === b.agentSessionName
+    a.agentSessionName === b.agentSessionName &&
+    a.lastUserMessage === b.lastUserMessage
   )
 }

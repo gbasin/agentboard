@@ -23,6 +23,7 @@ export interface Session {
   command?: string
   agentSessionId?: string
   agentSessionName?: string
+  lastUserMessage?: string
 }
 
 export interface AgentSession {
@@ -34,6 +35,7 @@ export interface AgentSession {
   createdAt: string
   lastActivityAt: string
   isActive: boolean
+  lastUserMessage?: string
 }
 
 // Directory browser types

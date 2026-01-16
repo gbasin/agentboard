@@ -52,6 +52,16 @@ export default function SettingsModal({
   const setShortcutModifier = useSettingsStore(
     (state) => state.setShortcutModifier
   )
+  const showProjectName = useSettingsStore((state) => state.showProjectName)
+  const setShowProjectName = useSettingsStore(
+    (state) => state.setShowProjectName
+  )
+  const showLastUserMessage = useSettingsStore(
+    (state) => state.showLastUserMessage
+  )
+  const setShowLastUserMessage = useSettingsStore(
+    (state) => state.setShowLastUserMessage
+  )
   const showSessionIdPrefix = useSettingsStore(
     (state) => state.showSessionIdPrefix
   )
@@ -72,6 +82,11 @@ export default function SettingsModal({
   const [draftShortcutModifier, setDraftShortcutModifier] = useState<
     ShortcutModifier | 'auto'
   >(shortcutModifier)
+  const [draftShowProjectName, setDraftShowProjectName] =
+    useState(showProjectName)
+  const [draftShowLastUserMessage, setDraftShowLastUserMessage] = useState(
+    showLastUserMessage
+  )
   const [draftShowSessionIdPrefix, setDraftShowSessionIdSuffix] = useState(
     showSessionIdPrefix
   )
@@ -100,6 +115,8 @@ export default function SettingsModal({
       setDraftFontSize(fontSize)
       setDraftLineHeight(lineHeight)
       setDraftShortcutModifier(shortcutModifier)
+      setDraftShowProjectName(showProjectName)
+      setDraftShowLastUserMessage(showLastUserMessage)
       setDraftShowSessionIdSuffix(showSessionIdPrefix)
       setShowAddForm(false)
       setNewLabel('')
@@ -145,6 +162,8 @@ export default function SettingsModal({
     fontSize,
     lineHeight,
     shortcutModifier,
+    showProjectName,
+    showLastUserMessage,
     showSessionIdPrefix,
     isOpen,
   ])
@@ -181,6 +200,8 @@ export default function SettingsModal({
     setFontSize(draftFontSize)
     setLineHeight(draftLineHeight)
     setShortcutModifier(draftShortcutModifier)
+    setShowProjectName(draftShowProjectName)
+    setShowLastUserMessage(draftShowLastUserMessage)
     setShowSessionIdPrefix(draftShowSessionIdPrefix)
     onClose({ webglChanged })
   }
@@ -474,17 +495,46 @@ export default function SettingsModal({
             </div>
           )}
 
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm text-primary">Session ID Prefix</div>
-              <div className="text-[10px] text-muted">
-                Show first 5 characters of agent session IDs in the list.
+          <div className="border-t border-border pt-4 space-y-3">
+            <label className="mb-1 block text-xs text-secondary">
+              Session List Details
+            </label>
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm text-primary">Project Name</div>
+                <div className="text-[10px] text-muted">
+                  Show the project folder name under each session.
+                </div>
               </div>
+              <Switch
+                checked={draftShowProjectName}
+                onCheckedChange={setDraftShowProjectName}
+              />
             </div>
-            <Switch
-              checked={draftShowSessionIdPrefix}
-              onCheckedChange={setDraftShowSessionIdSuffix}
-            />
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm text-primary">Last User Message</div>
+                <div className="text-[10px] text-muted">
+                  Show the most recent user input next to the project name.
+                </div>
+              </div>
+              <Switch
+                checked={draftShowLastUserMessage}
+                onCheckedChange={setDraftShowLastUserMessage}
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm text-primary">Session ID Prefix</div>
+                <div className="text-[10px] text-muted">
+                  Show first 5 characters of agent session IDs in the list.
+                </div>
+              </div>
+              <Switch
+                checked={draftShowSessionIdPrefix}
+                onCheckedChange={setDraftShowSessionIdSuffix}
+              />
+            </div>
           </div>
 
           <div className="border-t border-border pt-4">

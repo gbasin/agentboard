@@ -11,6 +11,7 @@ const baseRecord: AgentSessionRecord = {
   displayName: 'Alpha Project',
   createdAt: '2024-01-01T00:00:00.000Z',
   lastActivityAt: '2024-01-02T00:00:00.000Z',
+  lastUserMessage: null,
   currentWindow: 'agentboard:1',
 }
 

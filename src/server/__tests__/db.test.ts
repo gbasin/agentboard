@@ -16,6 +16,7 @@ function makeSession(overrides: Partial<{
   displayName: string
   createdAt: string
   lastActivityAt: string
+  lastUserMessage: string | null
   currentWindow: string | null
 }> = {}) {
   return {
@@ -26,6 +27,7 @@ function makeSession(overrides: Partial<{
     displayName: 'alpha',
     createdAt: now,
     lastActivityAt: now,
+    lastUserMessage: null,
     currentWindow: 'agentboard:1',
     ...overrides,
   }
@@ -126,6 +128,7 @@ describe('db', () => {
     const columnNames = columns.map((column) => String(column.name ?? ''))
 
     expect(columnNames).not.toContain('session_source')
+    expect(columnNames).toContain('last_user_message')
     expect(migrated.getSessionById('session-log')).not.toBeNull()
     expect(migrated.getSessionById('session-synthetic')).toBeNull()
 

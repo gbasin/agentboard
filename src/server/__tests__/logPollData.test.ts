@@ -104,6 +104,56 @@ describe('collectLogEntryBatch', () => {
     expect(result.entries[0]?.projectPath).toBe('/project/a')
   })
 
+  test('skips enrichment for known sessions and sets logTokenCount to -1', async () => {
+    const claudeLog = path.join(
+      claudeDir,
+      'projects',
+      'project-known',
+      'session-known.jsonl'
+    )
+
+    await writeJsonl(claudeLog, [
+      JSON.stringify({
+        type: 'user',
+        sessionId: 'session-known-id',
+        cwd: '/project/known',
+        content: 'hello world with many tokens for counting',
+      }),
+    ])
+
+    // First call without known sessions - should read file and count tokens
+    const result1 = collectLogEntryBatch(10)
+    expect(result1.entries).toHaveLength(1)
+    expect(result1.entries[0]?.sessionId).toBe('session-known-id')
+    expect(result1.entries[0]?.projectPath).toBe('/project/known')
+    expect(result1.entries[0]?.logTokenCount).toBeGreaterThan(0)
+
+    const actualTokenCount = result1.entries[0]?.logTokenCount ?? 0
+
+    // Second call with known session - should skip enrichment
+    const result2 = collectLogEntryBatch(10, {
+      knownSessions: [
+        {
+          logFilePath: claudeLog,
+          sessionId: 'session-known-id',
+          projectPath: '/project/known',
+          agentType: 'claude',
+        },
+      ],
+    })
+
+    expect(result2.entries).toHaveLength(1)
+    // Should use cached values from knownSessions
+    expect(result2.entries[0]?.sessionId).toBe('session-known-id')
+    expect(result2.entries[0]?.projectPath).toBe('/project/known')
+    expect(result2.entries[0]?.agentType).toBe('claude')
+    // logTokenCount = -1 indicates enrichment was skipped
+    expect(result2.entries[0]?.logTokenCount).toBe(-1)
+
+    // Verify that actual token count would have been positive
+    expect(actualTokenCount).toBeGreaterThan(0)
+  })
+
   test('clamps maxLogs to at least one entry', async () => {
     const claudeLog = path.join(
       claudeDir,

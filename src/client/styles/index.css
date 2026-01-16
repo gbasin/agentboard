@@ -189,6 +189,19 @@ body {
   }
 }
 
+@layer utilities {
+  .line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .scrollbar-gutter-stable {
+    scrollbar-gutter: stable;
+  }
+}
+
 /* Status bar indicator */
 .status-bar {
   position: absolute;

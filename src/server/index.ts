@@ -296,6 +296,7 @@ function hydrateSessionsWithAgentSessions(
       agentType: session.agentType ?? agentSession.agentType,
       agentSessionId: agentSession.sessionId,
       agentSessionName: agentSession.displayName,
+      lastUserMessage: agentSession.lastUserMessage ?? session.lastUserMessage,
       // Use persisted log times (survives server restarts, works when tmux lacks creation time)
       lastActivity: agentSession.lastActivityAt,
       createdAt: agentSession.createdAt,
@@ -350,6 +351,7 @@ function refreshSessionsSync({ verifyAssociations = false } = {}) {
 
 // Debounced refresh triggered by Enter key in terminal input
 let enterRefreshTimer: Timer | null = null
+const lastUserMessageTimers = new Map<string, Timer>()
 
 function scheduleEnterRefresh() {
   if (enterRefreshTimer) {
@@ -359,6 +361,40 @@ function scheduleEnterRefresh() {
     enterRefreshTimer = null
     refreshSessions()
   }, config.enterRefreshDelayMs)
+}
+
+function scheduleLastUserMessageCapture(sessionId: string) {
+  const session = registry.get(sessionId)
+  if (!session) return
+  const tmuxWindow = session.tmuxWindow
+  const existing = lastUserMessageTimers.get(tmuxWindow)
+  if (existing) {
+    clearTimeout(existing)
+  }
+  const timer = setTimeout(() => {
+    lastUserMessageTimers.delete(tmuxWindow)
+    void captureLastUserMessage(tmuxWindow)
+  }, config.enterRefreshDelayMs)
+  lastUserMessageTimers.set(tmuxWindow, timer)
+}
+
+async function captureLastUserMessage(tmuxWindow: string) {
+  try {
+    const message = await sessionRefreshWorker.getLastUserMessage(tmuxWindow)
+    if (!message || !message.trim()) return
+    const record = db.getSessionByWindow(tmuxWindow)
+    if (!record) return
+    if (record.lastUserMessage === message) return
+    const updated = db.updateSession(record.sessionId, { lastUserMessage: message })
+    if (!updated) return
+    registry.updateSession(tmuxWindow, { lastUserMessage: message })
+    updateAgentSessions()
+  } catch (error) {
+    logger.warn('last_user_message_capture_error', {
+      tmuxWindow,
+      message: error instanceof Error ? error.message : String(error),
+    })
+  }
 }
 
 
@@ -1124,6 +1160,7 @@ function handleTerminalInputPersistent(
   // Schedule a quick status refresh after Enter key to catch working/waiting changes
   if (data.includes('\r') || data.includes('\n')) {
     scheduleEnterRefresh()
+    scheduleLastUserMessageCapture(sessionId)
   }
 }
 

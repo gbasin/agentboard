@@ -22,6 +22,8 @@ describe('InactiveSessionItem', () => {
         <InactiveSessionItem
           session={baseSession}
           showSessionIdPrefix
+          showProjectName
+          showLastUserMessage
           onResume={() => {}}
           onPreview={() => {}}
         />
@@ -47,6 +49,8 @@ describe('InactiveSessionItem', () => {
         <InactiveSessionItem
           session={{ ...baseSession, projectPath: '', displayName: '' }}
           showSessionIdPrefix={false}
+          showProjectName={false}
+          showLastUserMessage={false}
           onResume={() => {
             resumeCalls += 1
           }}

@@ -35,7 +35,12 @@ export class SessionRefreshWorkerClient {
     }
 
     const id = `${Date.now()}-${this.counter++}`
-    const payload: RefreshWorkerRequest = { id, managedSession, discoverPrefixes }
+    const payload: RefreshWorkerRequest = {
+      id,
+      kind: 'refresh',
+      managedSession,
+      discoverPrefixes,
+    }
 
     return new Promise<Session[]>((resolve, reject) => {
       const timeoutId = setTimeout(() => {
@@ -45,10 +50,56 @@ export class SessionRefreshWorkerClient {
 
       this.pending.set(id, {
         resolve: (response) => {
-          if (response.type === 'result' && response.sessions) {
+          if (response.type === 'result' && response.kind === 'refresh') {
             resolve(response.sessions)
           } else {
-            reject(new Error(response.error ?? 'Session refresh failed'))
+            const message =
+              response.type === 'error' ? response.error : 'Session refresh failed'
+            reject(new Error(message))
+          }
+        },
+        reject,
+        timeoutId,
+      })
+      this.worker?.postMessage(payload)
+    })
+  }
+
+  async getLastUserMessage(
+    tmuxWindow: string,
+    scrollbackLines?: number
+  ): Promise<string | null> {
+    if (this.disposed) {
+      throw new Error('Session refresh worker is disposed')
+    }
+    if (!this.worker) {
+      this.spawnWorker()
+    }
+
+    const id = `${Date.now()}-${this.counter++}`
+    const payload: RefreshWorkerRequest = {
+      id,
+      kind: 'last-user-message',
+      tmuxWindow,
+      scrollbackLines,
+    }
+
+    return new Promise<string | null>((resolve, reject) => {
+      const timeoutId = setTimeout(() => {
+        this.pending.delete(id)
+        reject(new Error('Session refresh worker timed out'))
+      }, DEFAULT_TIMEOUT_MS)
+
+      this.pending.set(id, {
+        resolve: (response) => {
+          if (response.type === 'result' && response.kind === 'last-user-message') {
+            resolve(response.message ?? null)
+          } else {
+            const message =
+              response.type === 'error'
+                ? response.error
+                : 'Last user message refresh failed'
+            reject(new Error(message))
           }
         },
         reject,

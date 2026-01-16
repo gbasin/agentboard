@@ -1,20 +1,34 @@
 /// <reference lib="webworker" />
 import os from 'node:os'
 import { performance } from 'node:perf_hooks'
-import { getLogSearchDirs, getLogTimes, isCodexSubagent } from './logDiscovery'
+import {
+  getLogSearchDirs,
+  getLogTimes,
+  inferAgentTypeFromPath,
+  isCodexSubagent,
+} from './logDiscovery'
 import {
   DEFAULT_SCROLLBACK_LINES,
   createExactMatchProfiler,
+  extractLastUserMessageFromLog,
   getLogTokenCount,
+  isToolNotificationText,
   matchWindowsToLogsByExactRg,
 } from './logMatcher'
 import { getEntriesNeedingMatch } from './logMatchGate'
 import { collectLogEntryBatch, type LogEntrySnapshot } from './logPollData'
 import type {
+  LastMessageCandidate,
   MatchWorkerRequest,
   MatchWorkerResponse,
   OrphanCandidate,
 } from './logMatchWorkerTypes'
+
+const LAST_USER_MESSAGE_READ_OPTIONS = {
+  lineLimit: 200,
+  byteLimit: 32 * 1024,
+  maxByteLimit: 2 * 1024 * 1024,
+}
 
 const ctx =
   typeof self === 'undefined'
@@ -26,8 +40,9 @@ export function handleMatchWorkerRequest(
 ): MatchWorkerResponse {
   try {
     const search = payload.search ?? {}
-    const { entries, scanMs, sortMs } = collectLogEntryBatch(
-      payload.maxLogsPerPoll
+    let { entries, scanMs, sortMs } = collectLogEntryBatch(
+      payload.maxLogsPerPoll,
+      { knownSessions: payload.knownSessions }
     )
     const logDirs = payload.logDirs ?? getLogSearchDirs()
     const profile = search.profile ? createExactMatchProfiler() : undefined
@@ -38,6 +53,11 @@ export function handleMatchWorkerRequest(
     let resolved: Array<{ logPath: string; tmuxWindow: string }> = []
     let orphanEntries: LogEntrySnapshot[] = []
     let orphanMatches: Array<{ logPath: string; tmuxWindow: string }> = []
+    const sessionByLogPath = new Map(
+      payload.sessions
+        .filter((session) => session.logFilePath)
+        .map((session) => [session.logFilePath, session] as const)
+    )
 
     const entriesToMatch = getEntriesNeedingMatch(entries, payload.sessions, {
       minTokens: payload.minTokensForMatch ?? 0,
@@ -96,6 +116,25 @@ export function handleMatchWorkerRequest(
           })
         )
       }
+    }
+
+    const lastMessageCandidates = payload.lastMessageCandidates ?? []
+    if (lastMessageCandidates.length > 0) {
+      const lastMessageEntries = buildLastMessageEntries(
+        lastMessageCandidates,
+        entries,
+        orphanEntries
+      )
+      if (lastMessageEntries.length > 0) {
+        entries = [...entries, ...lastMessageEntries]
+      }
+    }
+
+    for (const entry of entries) {
+      attachLastUserMessage(entry, sessionByLogPath)
+    }
+    for (const entry of orphanEntries) {
+      attachLastUserMessage(entry, sessionByLogPath)
     }
 
     return {
@@ -160,6 +199,84 @@ function buildOrphanEntries(
   }
 
   return orphanEntries
+}
+
+function buildLastMessageEntries(
+  candidates: LastMessageCandidate[],
+  entries: LogEntrySnapshot[],
+  orphanEntries: LogEntrySnapshot[]
+): LogEntrySnapshot[] {
+  const existingLogPaths = new Set(
+    [...entries, ...orphanEntries].map((entry) => entry.logPath)
+  )
+  const nextEntries: LogEntrySnapshot[] = []
+
+  for (const record of candidates) {
+    const logPath = record.logFilePath
+    if (!logPath || existingLogPaths.has(logPath)) continue
+
+    const resolvedAgentType =
+      record.agentType ?? inferAgentTypeFromPath(logPath) ?? null
+    const codexSubagent =
+      resolvedAgentType === 'codex' ? isCodexSubagent(logPath) : false
+    if (resolvedAgentType === 'codex' && codexSubagent) {
+      continue
+    }
+
+    const times = getLogTimes(logPath)
+    if (!times) continue
+
+    nextEntries.push({
+      logPath,
+      mtime: times.mtime.getTime(),
+      birthtime: times.birthtime.getTime(),
+      sessionId: record.sessionId,
+      projectPath: record.projectPath ?? null,
+      agentType: resolvedAgentType,
+      isCodexSubagent: codexSubagent,
+      logTokenCount: 0,
+    })
+  }
+
+  return nextEntries
+}
+
+function attachLastUserMessage(
+  entry: LogEntrySnapshot,
+  sessionByLogPath: Map<
+    string,
+    {
+      lastActivityAt: string
+      logFilePath: string
+      currentWindow: string | null
+      lastUserMessage?: string | null
+    }
+  >
+) {
+  const snapshot = sessionByLogPath.get(entry.logPath)
+  if (snapshot) {
+    if (!snapshot.lastUserMessage || isToolNotificationText(snapshot.lastUserMessage)) {
+      const lastUserMessage = extractLastUserMessageFromLog(
+        entry.logPath,
+        LAST_USER_MESSAGE_READ_OPTIONS
+      )
+      if (lastUserMessage) {
+        entry.lastUserMessage = lastUserMessage
+      }
+      return
+    }
+    const lastActivity = Date.parse(snapshot.lastActivityAt)
+    if (!Number.isNaN(lastActivity) && entry.mtime <= lastActivity) {
+      return
+    }
+  }
+  const lastUserMessage = extractLastUserMessageFromLog(
+    entry.logPath,
+    LAST_USER_MESSAGE_READ_OPTIONS
+  )
+  if (lastUserMessage) {
+    entry.lastUserMessage = lastUserMessage
+  }
 }
 
 if (ctx) {

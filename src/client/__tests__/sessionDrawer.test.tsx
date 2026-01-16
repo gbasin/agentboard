@@ -109,6 +109,8 @@ beforeEach(() => {
   useSettingsStore.setState({
     sessionSortMode: 'created',
     sessionSortDirection: 'desc',
+    showProjectName: true,
+    showLastUserMessage: true,
     showSessionIdPrefix: false,
   })
 })
@@ -122,6 +124,8 @@ afterEach(() => {
   useSettingsStore.setState({
     sessionSortMode: 'created',
     sessionSortDirection: 'desc',
+    showProjectName: true,
+    showLastUserMessage: true,
     showSessionIdPrefix: false,
   })
 })

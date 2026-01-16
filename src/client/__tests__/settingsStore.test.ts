@@ -59,6 +59,8 @@ beforeEach(() => {
     useWebGL: true,
     lineHeight: 1.4,
     shortcutModifier: 'auto',
+    showProjectName: true,
+    showLastUserMessage: true,
     showSessionIdPrefix: false,
     projectFilters: [],
   })

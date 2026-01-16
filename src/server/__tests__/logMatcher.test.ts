@@ -9,6 +9,7 @@ import {
   matchWindowsToLogsByExactRg,
   tryExactMatchWindowToLog,
   verifyWindowLogAssociation,
+  extractRecentUserMessagesFromTmux,
 } from '../logMatcher'
 
 const bunAny = Bun as typeof Bun & { spawnSync: typeof Bun.spawnSync }
@@ -311,5 +312,87 @@ describe('logMatcher', () => {
     expect(result).toBe(false)
 
     await fs.rm(tempDir, { recursive: true, force: true })
+  })
+})
+
+// Regression test fixtures from real tmux sessions
+// Codex session after running /review command - no visible user prompt (swallowed by slash command)
+const CODEX_REVIEW_SCROLLBACK = `• Explored
+  └ Read logPoller.ts
+
+• The update code sets lastUserMessage only if missing or a tool notification.
+
+• Explored
+  └ Read SessionList.tsx
+
+• I'm verifying that lastUserMessage updates correctly.
+
+  Identifying stale lastUserMessage update bug
+
+  I found that logPoller only updates lastUserMessage when the existing message is missing.
+
+<< Code review finished >>
+
+─ Worked for 12m 25s ─────────────────────────────────────────────────────────
+
+• The new last-user-message feature can get stuck showing stale values because log updates are ignored once a message is set.
+
+  Review comment:
+
+  - [P2] Update lastUserMessage when newer log input arrives
+    The log poller only writes lastUserMessage when the stored value is empty.
+
+
+› Find and fix a bug in @filename
+
+  100% context left · ? for shortcuts
+`
+
+// Claude session with submitted prompt and assistant response, plus pending input
+const CLAUDE_PROMPT_SCROLLBACK = `  Right now it's reading every file every poll cycle just to throw away the data.
+
+✻ Brewed for 33s
+
+❯ yes create a test and then fix it
+
+⏺ I'll create a test first to verify the optimization, then fix the code. Let me start by understanding the test structure.
+
+⏺ Read(src/server/__tests__/logPollData.test.ts)
+  ⎿  Read 139 lines
+
+⏺ Read(src/server/__tests__/logPoller.test.ts)
+  ⎿  Read 345 lines
+
+⏺ Now I understand the full flow. Let me write a test and then fix the code.
+
+⏺ Update(src/server/__tests__/logPoller.test.ts)
+  ⎿  Added 57 lines
+
+────────────────────────────────────────────────────────────────────────────────
+❯ commit these changes                                                   ↵ send
+────────────────────────────────────────────────────────────────────────────────
+  Opus 4.5 in agentboard on master [20%]
+  ⏵⏵ accept edits on (shift+tab to cycle)
+`
+
+describe('message extraction regression tests', () => {
+  test('Codex /review: returns empty userMessages and extracts assistantText (prompt swallowed)', () => {
+    const { userMessages, assistantText } = extractRecentUserMessagesFromTmux(CODEX_REVIEW_SCROLLBACK)
+    // The only › line is a UI tip in the input field, not a real user message
+    expect(userMessages).toEqual([])
+    // Should extract assistant bullet content as fallback
+    expect(assistantText.length).toBeGreaterThan(0)
+    // Should include the actual response (not just traces)
+    expect(assistantText).toContain('The new last-user-message feature can get stuck')
+  })
+
+  test('Claude: returns submitted userMessages, not pending, no assistantText when messages found', () => {
+    const { userMessages, assistantText } = extractRecentUserMessagesFromTmux(CLAUDE_PROMPT_SCROLLBACK)
+    // Should find the submitted message
+    expect(userMessages).toContain('yes create a test and then fix it')
+    // Should NOT include the pending message (has ↵ send indicator)
+    expect(userMessages).not.toContain('commit these changes')
+    // assistantText is only populated when no user messages found
+    expect(assistantText).toBe('')
   })
 })

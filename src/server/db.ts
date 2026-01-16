@@ -13,6 +13,7 @@ export interface AgentSessionRecord {
   displayName: string
   createdAt: string
   lastActivityAt: string
+  lastUserMessage: string | null
   currentWindow: string | null
 }
 
@@ -49,6 +50,7 @@ const AGENT_SESSIONS_COLUMNS_SQL = `
   display_name TEXT,
   created_at TEXT NOT NULL,
   last_activity_at TEXT NOT NULL,
+  last_user_message TEXT,
   current_window TEXT
 `
 
@@ -78,12 +80,13 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
   migrateDatabase(db)
   db.exec(CREATE_TABLE_SQL)
   db.exec(CREATE_INDEXES_SQL)
+  migrateLastUserMessageColumn(db)
   migrateDeduplicateDisplayNames(db)
 
   const insertStmt = db.prepare(
     `INSERT INTO agent_sessions
-      (session_id, log_file_path, project_path, agent_type, display_name, created_at, last_activity_at, current_window)
-     VALUES ($sessionId, $logFilePath, $projectPath, $agentType, $displayName, $createdAt, $lastActivityAt, $currentWindow)`
+      (session_id, log_file_path, project_path, agent_type, display_name, created_at, last_activity_at, last_user_message, current_window)
+     VALUES ($sessionId, $logFilePath, $projectPath, $agentType, $displayName, $createdAt, $lastActivityAt, $lastUserMessage, $currentWindow)`
   )
 
   const selectBySessionId = db.prepare(
@@ -126,6 +129,7 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
         $displayName: session.displayName,
         $createdAt: session.createdAt,
         $lastActivityAt: session.lastActivityAt,
+        $lastUserMessage: session.lastUserMessage,
         $currentWindow: session.currentWindow,
       })
       const row = selectBySessionId.get({ $sessionId: session.sessionId }) as
@@ -153,6 +157,7 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
         displayName: 'display_name',
         createdAt: 'created_at',
         lastActivityAt: 'last_activity_at',
+        lastUserMessage: 'last_user_message',
         currentWindow: 'current_window',
       }
 
@@ -259,6 +264,10 @@ function mapRow(row: Record<string, unknown>): AgentSessionRecord {
     displayName: String(row.display_name ?? ''),
     createdAt: String(row.created_at ?? ''),
     lastActivityAt: String(row.last_activity_at ?? ''),
+    lastUserMessage:
+      row.last_user_message === null || row.last_user_message === undefined
+        ? null
+        : String(row.last_user_message),
     currentWindow:
       row.current_window === null || row.current_window === undefined
         ? null
@@ -286,6 +295,7 @@ function migrateDatabase(db: SQLiteDatabase) {
         display_name,
         created_at,
         last_activity_at,
+        last_user_message,
         current_window
       )
       SELECT
@@ -297,6 +307,7 @@ function migrateDatabase(db: SQLiteDatabase) {
         display_name,
         created_at,
         last_activity_at,
+        NULL AS last_user_message,
         current_window
       FROM agent_sessions_old
       WHERE session_source = 'log'
@@ -315,6 +326,14 @@ function createAgentSessionsTable(db: SQLiteDatabase, tableName: string) {
 ${AGENT_SESSIONS_COLUMNS_SQL}
     );
   `)
+}
+
+function migrateLastUserMessageColumn(db: SQLiteDatabase) {
+  const columns = getColumnNames(db, 'agent_sessions')
+  if (columns.length === 0 || columns.includes('last_user_message')) {
+    return
+  }
+  db.exec('ALTER TABLE agent_sessions ADD COLUMN last_user_message TEXT')
 }
 
 function migrateDeduplicateDisplayNames(db: SQLiteDatabase) {

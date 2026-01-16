@@ -7,6 +7,8 @@ import AgentIcon from './AgentIcon'
 interface InactiveSessionItemProps {
   session: AgentSession
   showSessionIdPrefix: boolean
+  showProjectName: boolean
+  showLastUserMessage: boolean
   onResume: (sessionId: string) => void
   onPreview: (session: AgentSession) => void
 }
@@ -14,6 +16,8 @@ interface InactiveSessionItemProps {
 export default function InactiveSessionItem({
   session,
   showSessionIdPrefix,
+  showProjectName,
+  showLastUserMessage,
   onResume,
   onPreview,
 }: InactiveSessionItemProps) {
@@ -21,6 +25,8 @@ export default function InactiveSessionItem({
   const directoryLeaf = getPathLeaf(session.projectPath)
   const displayName =
     session.displayName || directoryLeaf || session.sessionId.slice(0, 8)
+  const showDirectory = showProjectName && Boolean(directoryLeaf)
+  const showMessage = showLastUserMessage && Boolean(session.lastUserMessage)
   const sessionIdPrefix = showSessionIdPrefix
     ? getSessionIdPrefix(session.sessionId)
     : ''
@@ -74,13 +80,18 @@ export default function InactiveSessionItem({
             {lastActivity}
           </span>
         </div>
-        {/* Line 2: Directory */}
-        {directoryLeaf && (
+        {/* Line 2: Directory + last user message (or just directory) */}
+        {(showDirectory || showMessage) && (
           <span
             className="truncate pl-[1.375rem] text-xs text-muted"
-            title={session.projectPath}
+            title={showDirectory ? session.projectPath : undefined}
           >
-            {directoryLeaf}
+            {showDirectory ? directoryLeaf : null}
+            {showMessage ? (
+              <span className="italic">
+                {showDirectory ? `: "${session.lastUserMessage}"` : `"${session.lastUserMessage}"`}
+              </span>
+            ) : null}
           </span>
         )}
       </div>
