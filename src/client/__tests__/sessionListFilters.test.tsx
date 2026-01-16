@@ -1,6 +1,8 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, mock } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import TestRenderer, { act } from 'react-test-renderer'
 import type { Session } from '@shared/types'
+import ProjectFilterDropdown from '../components/ProjectFilterDropdown'
+import SessionList from '../components/SessionList'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useSessionStore } from '../stores/sessionStore'
 
@@ -10,26 +12,7 @@ const globalAny = globalThis as typeof globalThis & {
 
 const originalWindow = globalAny.window
 
-let SessionList: typeof import('../components/SessionList').default
-let dropdownProps: {
-  projects: string[]
-  selectedProjects: string[]
-  hasHiddenPermissions: boolean
-} | null = null
-
-mock.module('../components/ProjectFilterDropdown', () => ({
-  default: (props: typeof dropdownProps) => {
-    dropdownProps = props
-    return null
-  },
-}))
-
-beforeAll(async () => {
-  SessionList = (await import('../components/SessionList')).default
-})
-
 beforeEach(() => {
-  dropdownProps = null
   globalAny.window = {
     matchMedia: () => ({
       matches: false,
@@ -73,10 +56,6 @@ afterEach(() => {
   })
 })
 
-afterAll(() => {
-  mock.restore()
-})
-
 const baseSession: Session = {
   id: 'session-1',
   name: 'alpha',
@@ -112,11 +91,12 @@ describe('SessionList project filters', () => {
       )
     })
 
-    expect(dropdownProps?.selectedProjects).toEqual(['/tmp/visible'])
-    expect(dropdownProps?.projects).toEqual(
+    const dropdown = renderer.root.findByType(ProjectFilterDropdown)
+    expect(dropdown.props.selectedProjects).toEqual(['/tmp/visible'])
+    expect(dropdown.props.projects).toEqual(
       expect.arrayContaining(['/tmp/visible', '/tmp/hidden'])
     )
-    expect(dropdownProps?.hasHiddenPermissions).toBe(true)
+    expect(dropdown.props.hasHiddenPermissions).toBe(true)
 
     act(() => {
       renderer.unmount()
