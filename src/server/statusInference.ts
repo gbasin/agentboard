@@ -31,14 +31,6 @@ export const PERMISSION_PATTERNS: RegExp[] = [
   /\?\s*\[?[yY](es)?\/[nN](o)?\]?\s*$/m,
 ]
 
-// Patterns that indicate the agent is actively working (thinking/processing)
-export const ACTIVE_WORKING_PATTERNS: RegExp[] = [
-  // Codex: "(19s • esc to interrupt)" timer pattern
-  /esc to interrupt/i,
-  // Claude Code: "✳ Lollygagging… (ctrl+c to interrupt)" spinner pattern
-  /ctrl\+c to interrupt/i,
-]
-
 // Detects if terminal content shows a permission prompt
 export function detectsPermissionPrompt(content: string): boolean {
   const cleaned = stripAnsi(content)
@@ -50,13 +42,6 @@ export function detectsPermissionPrompt(content: string): boolean {
   }
   const recentContent = lines.slice(-30).join('\n')
   return PERMISSION_PATTERNS.some((pattern) => pattern.test(recentContent))
-}
-
-// Detects if terminal content shows active working indicators
-export function detectsActiveWorking(content: string): boolean {
-  const cleaned = stripAnsi(content)
-  // Check entire content - status bars can be anywhere (top or bottom)
-  return ACTIVE_WORKING_PATTERNS.some((pattern) => pattern.test(cleaned))
 }
 
 // Normalize content for comparison - strips noise from terminal output
