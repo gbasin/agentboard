@@ -23,7 +23,7 @@ import type { AgentSession, Session } from '@shared/types'
 import { getSessionOrderKey, getUniqueProjects, sortSessions } from '../utils/sessions'
 import { formatRelativeTime } from '../utils/time'
 import { getPathLeaf } from '../utils/sessionLabel'
-import { getSessionIdPrefix } from '../utils/sessionId'
+import { getSessionIdShort } from '../utils/sessionId'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useSessionStore } from '../stores/sessionStore'
 import { getEffectiveModifier, getModifierDisplay } from '../utils/device'
@@ -764,7 +764,7 @@ function SessionRow({
   const agentSessionId = session.agentSessionId?.trim()
   const sessionIdPrefix =
     showSessionIdPrefix && agentSessionId
-      ? getSessionIdPrefix(agentSessionId)
+      ? getSessionIdShort(agentSessionId)
       : ''
   const showDirectory = showProjectName && Boolean(directoryLeaf)
   const showMessage = showLastUserMessage && Boolean(session.lastUserMessage)

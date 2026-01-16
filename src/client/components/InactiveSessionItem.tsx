@@ -1,6 +1,6 @@
 import type { AgentSession } from '@shared/types'
 import { getPathLeaf } from '../utils/sessionLabel'
-import { getSessionIdPrefix } from '../utils/sessionId'
+import { getSessionIdShort } from '../utils/sessionId'
 import { formatRelativeTime } from '../utils/time'
 import AgentIcon from './AgentIcon'
 
@@ -28,7 +28,7 @@ export default function InactiveSessionItem({
   const showDirectory = showProjectName && Boolean(directoryLeaf)
   const showMessage = showLastUserMessage && Boolean(session.lastUserMessage)
   const sessionIdPrefix = showSessionIdPrefix
-    ? getSessionIdPrefix(session.sessionId)
+    ? getSessionIdShort(session.sessionId)
     : ''
 
   return (
