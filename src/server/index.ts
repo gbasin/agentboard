@@ -168,7 +168,7 @@ logger.info('terminal_mode_resolved', {
 })
 
 const app = new Hono()
-const db = initDatabase()
+export const db = initDatabase()
 const sessionManager = new SessionManager(undefined, {
   displayNameExists: (name, excludeSessionId) => db.displayNameExists(name, excludeSessionId),
 })
@@ -219,21 +219,27 @@ function updateAgentSessions() {
   registry.setAgentSessions(active, inactive)
 }
 
-function hydrateSessionsWithAgentSessions(
+export function hydrateSessionsWithAgentSessions(
   sessions: Session[],
   { verifyAssociations = false }: { verifyAssociations?: boolean } = {}
 ): Session[] {
   const activeSessions = db.getActiveSessions()
   const windowSet = new Set(sessions.map((session) => session.tmuxWindow))
+  const windowsByName = new Map(sessions.map((s) => [s.name, s]))
   const activeMap = new Map<string, typeof activeSessions[number]>()
   const orphaned: AgentSession[] = []
   const logDirs = getLogSearchDirs()
 
   // Safeguard: don't mass-orphan if window list seems incomplete
   // This can happen if tmux commands fail temporarily on server restart
-  const wouldOrphanCount = activeSessions.filter(
-    (s) => s.currentWindow && !windowSet.has(s.currentWindow)
-  ).length
+  const wouldOrphanCount = activeSessions.filter((s) => {
+    const missingWindow = s.currentWindow && !windowSet.has(s.currentWindow)
+    if (!missingWindow) return false
+    // If session is recoverable by name, don't count it as an orphan for the safeguard
+    if (windowsByName.has(s.displayName)) return false
+    return true
+  }).length
+
   if (wouldOrphanCount > 0 && wouldOrphanCount === activeSessions.length) {
     logger.warn('hydrate_would_orphan_all', {
       activeSessionCount: activeSessions.length,
@@ -245,7 +251,27 @@ function hydrateSessionsWithAgentSessions(
   }
 
   for (const agentSession of activeSessions) {
-    if (!agentSession.currentWindow || !windowSet.has(agentSession.currentWindow)) {
+    let matchedWindowId = agentSession.currentWindow
+
+    // Try to recover session if window ID is missing but name matches
+    if (matchedWindowId && !windowSet.has(matchedWindowId)) {
+      const potentialMatch = windowsByName.get(agentSession.displayName)
+      if (potentialMatch) {
+        logger.info('session_recovered', {
+          sessionId: agentSession.sessionId,
+          displayName: agentSession.displayName,
+          oldWindow: matchedWindowId,
+          newWindow: potentialMatch.tmuxWindow,
+        })
+        matchedWindowId = potentialMatch.tmuxWindow
+        db.updateSession(agentSession.sessionId, {
+          currentWindow: matchedWindowId,
+        })
+        agentSession.currentWindow = matchedWindowId
+      }
+    }
+
+    if (!matchedWindowId || !windowSet.has(matchedWindowId)) {
       logger.info('session_orphaned', {
         sessionId: agentSession.sessionId,
         displayName: agentSession.displayName,
