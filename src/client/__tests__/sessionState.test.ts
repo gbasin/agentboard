@@ -31,6 +31,8 @@ beforeEach(() => {
   useSettingsStore.setState({
     sessionSortMode: 'created',
     sessionSortDirection: 'desc',
+    showProjectName: true,
+    showLastUserMessage: true,
     showSessionIdPrefix: false,
   })
 })

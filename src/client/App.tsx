@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ServerMessage } from '@shared/types'
 import Header from './components/Header'
 import SessionList from './components/SessionList'
@@ -6,7 +6,11 @@ import Terminal from './components/Terminal'
 import NewSessionModal from './components/NewSessionModal'
 import SettingsModal from './components/SettingsModal'
 import { useSessionStore } from './stores/sessionStore'
-import { useSettingsStore } from './stores/settingsStore'
+import {
+  useSettingsStore,
+  SIDEBAR_MAX_WIDTH,
+  SIDEBAR_MIN_WIDTH,
+} from './stores/settingsStore'
 import { useThemeStore } from './stores/themeStore'
 import { useWebSocket } from './hooks/useWebSocket'
 import { useVisualViewport } from './hooks/useVisualViewport'
@@ -58,11 +62,53 @@ export default function App() {
   )
   const addRecentPath = useSettingsStore((state) => state.addRecentPath)
   const shortcutModifier = useSettingsStore((state) => state.shortcutModifier)
+  const sidebarWidth = useSettingsStore((state) => state.sidebarWidth)
+  const setSidebarWidth = useSettingsStore((state) => state.setSidebarWidth)
 
   const { sendMessage, subscribe } = useWebSocket()
 
   // Handle mobile keyboard viewport adjustments
   useVisualViewport()
+
+  // Sidebar resize handling
+  const isResizing = useRef(false)
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    isResizing.current = true
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+  }, [])
+
+  useEffect(() => {
+    // Guard for SSR/test environments where document.addEventListener may not exist
+    if (typeof document === 'undefined' || typeof document.addEventListener !== 'function') {
+      return
+    }
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing.current) return
+      const newWidth = e.clientX
+      setSidebarWidth(
+        Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, newWidth))
+      )
+    }
+
+    const handleMouseUp = () => {
+      if (isResizing.current) {
+        isResizing.current = false
+        document.body.style.cursor = ''
+        document.body.style.userSelect = ''
+      }
+    }
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [setSidebarWidth])
 
   useEffect(() => {
     const unsubscribe = subscribe((message: ServerMessage) => {
@@ -282,7 +328,10 @@ export default function App() {
   return (
     <div className="flex h-full overflow-hidden">
       {/* Left column: header + sidebar - always hidden on mobile (drawer handles it) */}
-      <div className="hidden h-full w-60 flex-col md:flex lg:w-72 md:shrink-0">
+      <div
+        className="hidden h-full flex-col md:flex md:shrink-0"
+        style={{ width: sidebarWidth }}
+      >
         <Header
           connectionStatus={connectionStatus}
           onNewSession={handleNewSession}
@@ -299,6 +348,12 @@ export default function App() {
           error={connectionError || serverError}
         />
       </div>
+
+      {/* Sidebar resize handle */}
+      <div
+        className="hidden md:block w-1 shrink-0 cursor-col-resize bg-transparent transition-colors hover:bg-white/10 active:bg-white/20"
+        onMouseDown={handleResizeStart}
+      />
 
       {/* Terminal - full height on desktop */}
       <Terminal

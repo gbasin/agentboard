@@ -6,7 +6,6 @@ import { generateSessionName } from './nameGenerator'
 import { logger } from './logger'
 import { resolveProjectPath } from './paths'
 import {
-  detectsActiveWorking,
   detectsPermissionPrompt,
   isMeaningfulResizeChange,
   normalizeContent,
@@ -456,10 +455,6 @@ function inferStatus(
     return { status: 'permission', lastChanged: cached?.lastChanged ?? now() }
   }
 
-  // Check for active working indicators (timer with "esc to interrupt")
-  // This catches cases where the only visible change is the timer incrementing
-  const isActivelyWorking = detectsActiveWorking(content)
-
   const cached = paneContentCache.get(tmuxWindow)
   let contentChanged = false
   if (cached !== undefined) {
@@ -486,8 +481,8 @@ function inferStatus(
     return { status: 'waiting', lastChanged }
   }
 
-  // If content changed OR active working indicator detected, it's working
-  return { status: contentChanged || isActivelyWorking ? 'working' : 'waiting', lastChanged }
+  // If content changed, it's working; otherwise waiting
+  return { status: contentChanged ? 'working' : 'waiting', lastChanged }
 }
 
 function capturePaneWithDimensions(tmuxWindow: string): PaneCapture | null {

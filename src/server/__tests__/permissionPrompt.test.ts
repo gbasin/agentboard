@@ -24,4 +24,22 @@ describe('detectsPermissionPrompt', () => {
     const content = ['hello', 'world', 'done'].join('\n')
     expect(detectsPermissionPrompt(content)).toBe(false)
   })
+
+  test('matches AskUserQuestion selection menu', () => {
+    const content = [
+      'Which issue would you like me to investigate?',
+      '',
+      '❯ 1. Fix orphaned sessions',
+      '     Update logPoller.ts to backfill lastUserMessage',
+      '  2. Fix stale data check',
+      '     Modify logMatchWorker.ts to re-extract when stored value might be wrong',
+      '  3. Debug specific sessions',
+      '  4. Add logging/diagnostics',
+      '  5. Type something.',
+      '',
+      'Enter to select · ↑/↓ to navigate · Esc to cancel',
+    ].join('\n')
+
+    expect(detectsPermissionPrompt(content)).toBe(true)
+  })
 })

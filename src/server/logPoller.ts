@@ -1,13 +1,13 @@
 import { logger } from './logger'
 import type { SessionDatabase } from './db'
 import { getLogSearchDirs } from './logDiscovery'
-import { DEFAULT_SCROLLBACK_LINES } from './logMatcher'
+import { DEFAULT_SCROLLBACK_LINES, isToolNotificationText } from './logMatcher'
 import { deriveDisplayName } from './agentSessions'
 import { generateUniqueSessionName } from './nameGenerator'
 import type { SessionRegistry } from './SessionRegistry'
 import { LogMatchWorkerClient } from './logMatchWorkerClient'
 import type { Session } from '../shared/types'
-import type { LogEntrySnapshot } from './logPollData'
+import type { KnownSession, LogEntrySnapshot } from './logPollData'
 import {
   getEntriesNeedingMatch,
   type SessionSnapshot,
@@ -16,11 +16,13 @@ import type {
   MatchWorkerRequest,
   MatchWorkerResponse,
   OrphanCandidate,
+  LastMessageCandidate,
 } from './logMatchWorkerTypes'
 
 const MIN_INTERVAL_MS = 2000
 const DEFAULT_INTERVAL_MS = 5000
 const DEFAULT_MAX_LOGS = 25
+const STARTUP_LAST_MESSAGE_BACKFILL_MAX = 100
 const MIN_LOG_TOKENS_FOR_INSERT = 10
 const REMATCH_COOLDOWN_MS = 60 * 1000 // 1 minute between re-match attempts
 
@@ -44,6 +46,7 @@ export class LogPoller {
   private registry: SessionRegistry
   private onSessionOrphaned?: (sessionId: string) => void
   private onSessionActivated?: (sessionId: string, window: string) => void
+  private isLastUserMessageLocked?: (tmuxWindow: string) => boolean
   private maxLogsPerPoll: number
   private matchProfile: boolean
   private rgThreads?: number
@@ -51,6 +54,7 @@ export class LogPoller {
   private pollInFlight = false
   private forceOrphanRematch = true
   private warnedWorkerDisabled = false
+  private startupLastMessageBackfillPending = true
   // Cache of empty logs: logPath -> mtime when checked (re-check if mtime changes)
   private emptyLogCache: Map<string, number> = new Map()
   // Cache of re-match attempts: sessionId -> timestamp of last attempt
@@ -62,6 +66,7 @@ export class LogPoller {
     {
       onSessionOrphaned,
       onSessionActivated,
+      isLastUserMessageLocked,
       maxLogsPerPoll,
       matchProfile,
       rgThreads,
@@ -70,6 +75,7 @@ export class LogPoller {
     }: {
       onSessionOrphaned?: (sessionId: string) => void
       onSessionActivated?: (sessionId: string, window: string) => void
+      isLastUserMessageLocked?: (tmuxWindow: string) => boolean
       maxLogsPerPoll?: number
       matchProfile?: boolean
       rgThreads?: number
@@ -81,6 +87,7 @@ export class LogPoller {
     this.registry = registry
     this.onSessionOrphaned = onSessionOrphaned
     this.onSessionActivated = onSessionActivated
+    this.isLastUserMessageLocked = isLastUserMessageLocked
     const limit = maxLogsPerPoll ?? DEFAULT_MAX_LOGS
     this.maxLogsPerPoll = Math.max(1, limit)
     this.matchProfile = matchProfile ?? false
@@ -141,12 +148,33 @@ export class LogPoller {
         ...this.db.getActiveSessions(),
         ...this.db.getInactiveSessions(),
       ]
+      let shouldBackfillLastMessage = false
+      if (this.startupLastMessageBackfillPending) {
+        shouldBackfillLastMessage = sessionRecords.some(
+          (session) =>
+            !session.lastUserMessage ||
+            isToolNotificationText(session.lastUserMessage)
+        )
+        if (!shouldBackfillLastMessage) {
+          this.startupLastMessageBackfillPending = false
+        }
+      }
       const sessions: SessionSnapshot[] = sessionRecords.map((session) => ({
         sessionId: session.sessionId,
         logFilePath: session.logFilePath,
         currentWindow: session.currentWindow,
         lastActivityAt: session.lastActivityAt,
+        lastUserMessage: session.lastUserMessage,
       }))
+      // Build known sessions list to skip expensive file reads for already-tracked logs
+      const knownSessions: KnownSession[] = sessionRecords
+        .filter((session) => session.logFilePath)
+        .map((session) => ({
+          logFilePath: session.logFilePath,
+          sessionId: session.sessionId,
+          projectPath: session.projectPath ?? null,
+          agentType: session.agentType ?? null,
+        }))
       const matchSessions = forceOrphanRematch
         ? sessions.map((session) =>
             session.currentWindow
@@ -166,6 +194,7 @@ export class LogPoller {
       let matchSkipped = false
 
       const orphanCandidates: OrphanCandidate[] = []
+      const lastMessageCandidates: LastMessageCandidate[] = []
       if (forceOrphanRematch) {
         for (const record of sessionRecords) {
           if (record.currentWindow) continue
@@ -177,6 +206,25 @@ export class LogPoller {
             projectPath: record.projectPath ?? null,
             agentType: record.agentType ?? null,
             currentWindow: record.currentWindow ?? null,
+          })
+        }
+      }
+      if (this.startupLastMessageBackfillPending) {
+        for (const record of sessionRecords) {
+          if (!record.currentWindow) continue
+          if (
+            record.lastUserMessage &&
+            !isToolNotificationText(record.lastUserMessage)
+          ) {
+            continue
+          }
+          const logFilePath = record.logFilePath
+          if (!logFilePath) continue
+          lastMessageCandidates.push({
+            sessionId: record.sessionId,
+            logFilePath,
+            projectPath: record.projectPath ?? null,
+            agentType: record.agentType ?? null,
           })
         }
       }
@@ -198,17 +246,24 @@ export class LogPoller {
           const response = await this.matchWorker.poll({
             windows,
             logDirs,
-            maxLogsPerPoll: this.maxLogsPerPoll,
+            maxLogsPerPoll: shouldBackfillLastMessage
+              ? Math.max(this.maxLogsPerPoll, STARTUP_LAST_MESSAGE_BACKFILL_MAX)
+              : this.maxLogsPerPoll,
             sessions: matchSessions,
+            knownSessions,
             scrollbackLines: DEFAULT_SCROLLBACK_LINES,
             minTokensForMatch: MIN_LOG_TOKENS_FOR_INSERT,
             forceOrphanRematch,
             orphanCandidates,
+            lastMessageCandidates,
             search: {
               rgThreads: this.rgThreads,
               profile: this.matchProfile,
             },
           })
+          if (this.startupLastMessageBackfillPending && shouldBackfillLastMessage) {
+            this.startupLastMessageBackfillPending = false
+          }
           entries = response.entries ?? []
           orphanEntries = response.orphanEntries ?? []
           scanMs = response.scanMs ?? 0
@@ -279,10 +334,25 @@ export class LogPoller {
           const existing = this.db.getSessionByLogPath(entry.logPath)
           if (existing) {
             const hasActivity = entry.mtime > Date.parse(existing.lastActivityAt)
+            const update: Partial<typeof existing> = {}
             if (hasActivity) {
-              this.db.updateSession(existing.sessionId, {
-                lastActivityAt: new Date(entry.mtime).toISOString(),
-              })
+              update.lastActivityAt = new Date(entry.mtime).toISOString()
+            }
+            if (entry.lastUserMessage && !isToolNotificationText(entry.lastUserMessage)) {
+              // Skip if Enter-key capture recently set a value (prevents stale log overwrites)
+              const isLocked = existing.currentWindow && this.isLastUserMessageLocked?.(existing.currentWindow)
+              if (!isLocked) {
+                const shouldReplace =
+                  !existing.lastUserMessage ||
+                  isToolNotificationText(existing.lastUserMessage) ||
+                  (hasActivity && entry.lastUserMessage !== existing.lastUserMessage)
+                if (shouldReplace) {
+                  update.lastUserMessage = entry.lastUserMessage
+                }
+              }
+            }
+            if (Object.keys(update).length > 0) {
+              this.db.updateSession(existing.sessionId, update)
             }
             const shouldAttemptRematch =
               !existing.currentWindow &&
@@ -345,8 +415,26 @@ export class LogPoller {
           const existingById = this.db.getSessionById(sessionId)
           if (existingById) {
             const hasActivity = entry.mtime > Date.parse(existingById.lastActivityAt)
+            const update: Partial<typeof existingById> = {}
             if (hasActivity) {
-              this.db.updateSession(sessionId, { lastActivityAt })
+              update.lastActivityAt = lastActivityAt
+            }
+            if (entry.lastUserMessage && !isToolNotificationText(entry.lastUserMessage)) {
+              // Skip if Enter-key capture recently set a value (prevents stale log overwrites)
+              const isLocked = existingById.currentWindow && this.isLastUserMessageLocked?.(existingById.currentWindow)
+              if (!isLocked) {
+                const shouldReplace =
+                  !existingById.lastUserMessage ||
+                  isToolNotificationText(existingById.lastUserMessage) ||
+                  (hasActivity &&
+                    entry.lastUserMessage !== existingById.lastUserMessage)
+                if (shouldReplace) {
+                  update.lastUserMessage = entry.lastUserMessage
+                }
+              }
+            }
+            if (Object.keys(update).length > 0) {
+              this.db.updateSession(sessionId, update)
             }
 
             // Re-attempt matching for orphaned sessions (no currentWindow)
@@ -434,6 +522,7 @@ export class LogPoller {
             displayName,
             createdAt,
             lastActivityAt,
+            lastUserMessage: currentWindow ? null : (entry.lastUserMessage ?? null),
             currentWindow,
           })
           newSessions += 1

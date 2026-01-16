@@ -9,6 +9,9 @@ import {
   matchWindowsToLogsByExactRg,
   tryExactMatchWindowToLog,
   verifyWindowLogAssociation,
+  extractRecentTraceLinesFromTmux,
+  extractRecentUserMessagesFromTmux,
+  extractActionFromUserAction,
 } from '../logMatcher'
 
 const bunAny = Bun as typeof Bun & { spawnSync: typeof Bun.spawnSync }
@@ -214,6 +217,45 @@ describe('logMatcher', () => {
     await fs.rm(tempDir, { recursive: true, force: true })
   })
 
+  test('tryExactMatchWindowToLog falls back to trace lines and skips subagents', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-logmatch-'))
+    const logPathMain = path.join(tempDir, 'session-main.jsonl')
+    const logPathSub = path.join(tempDir, 'session-sub.jsonl')
+    const traceLine =
+      'The new last-user-message feature can get stuck showing stale values because log updates are ignored once a message is set.'
+
+    await fs.writeFile(
+      logPathMain,
+      [
+        JSON.stringify({ type: 'session_meta', payload: { source: 'cli' } }),
+        JSON.stringify({
+          type: 'event_msg',
+          payload: { type: 'agent_reasoning', text: traceLine },
+        }),
+      ].join('\n')
+    )
+    await fs.writeFile(
+      logPathSub,
+      [
+        JSON.stringify({
+          type: 'session_meta',
+          payload: { source: { subagent: 'review' } },
+        }),
+        JSON.stringify({
+          type: 'event_msg',
+          payload: { type: 'agent_reasoning', text: traceLine },
+        }),
+      ].join('\n')
+    )
+
+    setTmuxOutput('agentboard:1', CODEX_REVIEW_SCROLLBACK)
+
+    const result = tryExactMatchWindowToLog('agentboard:1', tempDir)
+    expect(result?.logPath).toBe(logPathMain)
+
+    await fs.rm(tempDir, { recursive: true, force: true })
+  })
+
   test('matchWindowsToLogsByExactRg returns unique matches', async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-logmatch-'))
     const logPathA = path.join(tempDir, 'session-a.jsonl')
@@ -311,5 +353,140 @@ describe('logMatcher', () => {
     expect(result).toBe(false)
 
     await fs.rm(tempDir, { recursive: true, force: true })
+  })
+
+  test('tryExactMatchWindowToLog matches messages with JSON-escaped quotes', async () => {
+    // Regression test: terminal shows "working" but log has \"working\" (JSON-escaped)
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-quotes-'))
+    const logPath = path.join(tempDir, 'session.jsonl')
+    const messageWithQuotes = 'why is it appearing as "working" in the UI?'
+
+    // JSON.stringify escapes quotes as \" in the log file
+    await fs.writeFile(
+      logPath,
+      JSON.stringify({ type: 'user', content: messageWithQuotes })
+    )
+    // Terminal shows unescaped quotes
+    setTmuxOutput('agentboard:1', buildPromptScrollback([messageWithQuotes]))
+
+    const result = tryExactMatchWindowToLog('agentboard:1', tempDir)
+    expect(result?.logPath).toBe(logPath)
+
+    await fs.rm(tempDir, { recursive: true, force: true })
+  })
+})
+
+// Regression test fixtures from real tmux sessions
+// Codex session after running /review command - no visible user prompt (swallowed by slash command)
+const CODEX_REVIEW_SCROLLBACK = `• Explored
+  └ Read logPoller.ts
+
+• The update code sets lastUserMessage only if missing or a tool notification.
+
+• Explored
+  └ Read SessionList.tsx
+
+• I'm verifying that lastUserMessage updates correctly.
+
+  Identifying stale lastUserMessage update bug
+
+  I found that logPoller only updates lastUserMessage when the existing message is missing.
+
+<< Code review finished >>
+
+─ Worked for 12m 25s ─────────────────────────────────────────────────────────
+
+• The new last-user-message feature can get stuck showing stale values because log updates are ignored once a message is set.
+
+  Review comment:
+
+  - [P2] Update lastUserMessage when newer log input arrives
+    The log poller only writes lastUserMessage when the stored value is empty.
+
+
+› Find and fix a bug in @filename
+
+  100% context left · ? for shortcuts
+`
+
+// Claude session with submitted prompt and assistant response, plus pending input
+const CLAUDE_PROMPT_SCROLLBACK = `  Right now it's reading every file every poll cycle just to throw away the data.
+
+✻ Brewed for 33s
+
+❯ yes create a test and then fix it
+
+⏺ I'll create a test first to verify the optimization, then fix the code. Let me start by understanding the test structure.
+
+⏺ Read(src/server/__tests__/logPollData.test.ts)
+  ⎿  Read 139 lines
+
+⏺ Read(src/server/__tests__/logPoller.test.ts)
+  ⎿  Read 345 lines
+
+⏺ Now I understand the full flow. Let me write a test and then fix the code.
+
+⏺ Update(src/server/__tests__/logPoller.test.ts)
+  ⎿  Added 57 lines
+
+────────────────────────────────────────────────────────────────────────────────
+❯ commit these changes                                                   ↵ send
+────────────────────────────────────────────────────────────────────────────────
+  Opus 4.5 in agentboard on master [20%]
+  ⏵⏵ accept edits on (shift+tab to cycle)
+`
+
+describe('message extraction regression tests', () => {
+  test('Codex /review: returns empty userMessages when prompt is swallowed', () => {
+    const userMessages = extractRecentUserMessagesFromTmux(CODEX_REVIEW_SCROLLBACK)
+    // The only › line is a UI tip in the input field, not a real user message
+    expect(userMessages).toEqual([])
+  })
+
+  test('Codex /review: extracts trace lines for fallback', () => {
+    const traces = extractRecentTraceLinesFromTmux(CODEX_REVIEW_SCROLLBACK)
+    expect(traces).toContain(
+      'The new last-user-message feature can get stuck showing stale values because log updates are ignored once a message is set.'
+    )
+  })
+
+  test('Claude: returns submitted userMessages, not pending', () => {
+    const userMessages = extractRecentUserMessagesFromTmux(CLAUDE_PROMPT_SCROLLBACK)
+    // Should find the submitted message
+    expect(userMessages).toContain('yes create a test and then fix it')
+    // Should NOT include the pending message (has ↵ send indicator)
+    expect(userMessages).not.toContain('commit these changes')
+  })
+})
+
+describe('extractActionFromUserAction', () => {
+  test('extracts action from valid user_action XML', () => {
+    const xml = `<user_action>
+  <context>User initiated a review task.</context>
+  <action>review</action>
+  <results>Some review results here</results>
+</user_action>`
+    expect(extractActionFromUserAction(xml)).toBe('review')
+  })
+
+  test('extracts action with whitespace', () => {
+    const xml = '<user_action><action>  commit  </action></user_action>'
+    expect(extractActionFromUserAction(xml)).toBe('commit')
+  })
+
+  test('returns null for non-user_action text', () => {
+    expect(extractActionFromUserAction('hello world')).toBeNull()
+    expect(extractActionFromUserAction('<other_tag>content</other_tag>')).toBeNull()
+    expect(extractActionFromUserAction('')).toBeNull()
+  })
+
+  test('returns null when no action tag present', () => {
+    const xml = '<user_action><context>No action here</context></user_action>'
+    expect(extractActionFromUserAction(xml)).toBeNull()
+  })
+
+  test('handles case-insensitive matching', () => {
+    const xml = '<USER_ACTION><action>test</action></USER_ACTION>'
+    expect(extractActionFromUserAction(xml)).toBe('test')
   })
 })

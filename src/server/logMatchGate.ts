@@ -5,6 +5,7 @@ export interface SessionSnapshot {
   logFilePath: string
   currentWindow: string | null
   lastActivityAt: string
+  lastUserMessage?: string | null
 }
 
 export function getEntriesNeedingMatch(
@@ -23,7 +24,8 @@ export function getEntriesNeedingMatch(
 
   for (const entry of entries) {
     if (!entry.sessionId) continue
-    if (minTokens > 0 && entry.logTokenCount < minTokens) continue
+    // logTokenCount = -1 means enrichment was skipped (known session, already validated)
+    if (minTokens > 0 && entry.logTokenCount >= 0 && entry.logTokenCount < minTokens) continue
     const session =
       sessionsByLogPath.get(entry.logPath) ??
       sessionsById.get(entry.sessionId)

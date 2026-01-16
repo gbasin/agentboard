@@ -6,7 +6,10 @@
 import { inferAgentType } from './agentDetection'
 import { normalizeProjectPath } from './logDiscovery'
 import {
-  detectsActiveWorking,
+  extractRecentUserMessagesFromTmux,
+  getTerminalScrollback,
+} from './logMatcher'
+import {
   detectsPermissionPrompt,
   isMeaningfulResizeChange,
   normalizeContent,
@@ -18,6 +21,8 @@ const BATCH_WINDOW_FORMAT =
   '#{session_name}\t#{window_id}\t#{window_name}\t#{pane_current_path}\t#{window_activity}\t#{window_creation_time}\t#{pane_start_command}\t#{pane_width}\t#{pane_height}'
 const BATCH_WINDOW_FORMAT_FALLBACK =
   '#{session_name}\t#{window_id}\t#{window_name}\t#{pane_current_path}\t#{window_activity}\t#{window_activity}\t#{pane_current_command}\t#{pane_width}\t#{pane_height}'
+
+const LAST_USER_MESSAGE_SCROLLBACK_LINES = 200
 
 interface WindowData {
   sessionName: string
@@ -41,18 +46,39 @@ interface PaneCache {
 // Cache persists across worker invocations
 const paneContentCache = new Map<string, PaneCache>()
 
-export interface RefreshWorkerRequest {
-  id: string
-  managedSession: string
-  discoverPrefixes: string[]
-}
+export type RefreshWorkerRequest =
+  | {
+      id: string
+      kind: 'refresh'
+      managedSession: string
+      discoverPrefixes: string[]
+    }
+  | {
+      id: string
+      kind: 'last-user-message'
+      tmuxWindow: string
+      scrollbackLines?: number
+    }
 
-export interface RefreshWorkerResponse {
-  id: string
-  type: 'result' | 'error'
-  sessions?: Session[]
-  error?: string
-}
+export type RefreshWorkerResponse =
+  | {
+      id: string
+      kind: 'refresh'
+      type: 'result'
+      sessions: Session[]
+    }
+  | {
+      id: string
+      kind: 'last-user-message'
+      type: 'result'
+      message: string | null
+    }
+  | {
+      id: string
+      kind: 'error'
+      type: 'error'
+      error: string
+    }
 
 const ctx = self as DedicatedWorkerGlobalScope
 
@@ -63,6 +89,22 @@ ctx.onmessage = (event: MessageEvent<RefreshWorkerRequest>) => {
   }
 
   try {
+    if (payload.kind === 'last-user-message') {
+      const scrollback = getTerminalScrollback(
+        payload.tmuxWindow,
+        payload.scrollbackLines ?? LAST_USER_MESSAGE_SCROLLBACK_LINES
+      )
+      const message = extractRecentUserMessagesFromTmux(scrollback, 1)[0] ?? null
+      const response: RefreshWorkerResponse = {
+        id: payload.id,
+        kind: 'last-user-message',
+        type: 'result',
+        message,
+      }
+      ctx.postMessage(response)
+      return
+    }
+
     const sessions = listAllWindows(payload.managedSession, payload.discoverPrefixes)
 
     // Clean up cache entries for windows that no longer exist
@@ -75,6 +117,7 @@ ctx.onmessage = (event: MessageEvent<RefreshWorkerRequest>) => {
 
     const response: RefreshWorkerResponse = {
       id: payload.id,
+      kind: 'refresh',
       type: 'result',
       sessions,
     }
@@ -82,6 +125,7 @@ ctx.onmessage = (event: MessageEvent<RefreshWorkerRequest>) => {
   } catch (error) {
     const response: RefreshWorkerResponse = {
       id: payload.id,
+      kind: 'error',
       type: 'error',
       error: error instanceof Error ? error.message : String(error),
     }
@@ -236,10 +280,6 @@ function inferStatus(
     return { status: 'permission', lastChanged: cached?.lastChanged ?? now }
   }
 
-  // Check for active working indicators (timer with "esc to interrupt")
-  // This catches cases where the only visible change is the timer incrementing
-  const isActivelyWorking = detectsActiveWorking(content)
-
   const cached = paneContentCache.get(tmuxWindow)
   let contentChanged = false
   if (cached !== undefined) {
@@ -262,6 +302,6 @@ function inferStatus(
     return { status: 'waiting', lastChanged }
   }
 
-  // If content changed OR active working indicator detected, it's working
-  return { status: contentChanged || isActivelyWorking ? 'working' : 'waiting', lastChanged }
+  // If content changed, it's working; otherwise waiting
+  return { status: contentChanged ? 'working' : 'waiting', lastChanged }
 }

@@ -12,6 +12,7 @@ export function toAgentSession(record: AgentSessionRecord): AgentSession {
     createdAt: record.createdAt,
     lastActivityAt: record.lastActivityAt,
     isActive: record.currentWindow !== null,
+    lastUserMessage: record.lastUserMessage ?? undefined,
   }
 }
 

@@ -4,14 +4,14 @@ import type { AgentType, Session } from '../shared/types'
 import {
   extractProjectPath,
   inferAgentTypeFromPath,
+  isCodexSubagent,
   normalizeProjectPath,
 } from './logDiscovery'
 import {
   cleanTmuxLine,
-  isDecorativeLine,
   isMetadataLine,
   stripAnsi,
-  TMUX_METADATA_MATCH_PATTERNS,
+  TMUX_METADATA_STATUS_PATTERNS,
   TMUX_PROMPT_PREFIX,
   TMUX_UI_GLYPH_PATTERN,
 } from './terminal/tmuxText'
@@ -21,6 +21,7 @@ export type LogTextMode = 'all' | 'assistant' | 'user' | 'assistant-user'
 export interface LogReadOptions {
   lineLimit: number
   byteLimit: number
+  maxByteLimit?: number
 }
 
 export interface LogTextOptionsInput {
@@ -81,10 +82,26 @@ export const DEFAULT_SCROLLBACK_LINES = 10000
 const DEFAULT_LOG_TEXT_MODE: LogTextMode = 'assistant-user'
 const DEFAULT_LOG_TAIL_BYTES = 96 * 1024
 const MIN_TAIL_MATCH_COUNT = 2
-const MAX_RECENT_USER_MESSAGES = 8
+const MAX_RECENT_USER_MESSAGES = 25
+const MAX_RECENT_TRACE_LINES = 12
 
 // Minimum length for exact match search
 const MIN_EXACT_MATCH_LENGTH = 5
+const TRACE_EXCLUDE_PREFIXES = [
+  /^explored\b/i,
+  /^ran\b/i,
+  /^search\b/i,
+  /^read\b/i,
+  /^use\b/i,
+] as const
+const TRACE_STATUS_TRAILER = /\s*\(([^)]*)\)\s*$/
+const TRACE_STATUS_HINTS = [
+  /esc to interrupt/i,
+  /context left/i,
+  /for shortcuts/i,
+  /background terminal running/i,
+  /\b\d+\s*(?:ms|s|m|h|d)\b/i,
+] as const
 
 /**
  * Escape special regex characters in a string.
@@ -96,12 +113,16 @@ function escapeRegex(str: string): string {
 /**
  * Convert a user message to a regex pattern that matches with flexible whitespace.
  * This handles cases where tmux and log files have different whitespace representations.
+ * Also handles JSON-escaped quotes since logs store text in JSON format where " becomes \".
  */
 function messageToFlexiblePattern(message: string): string {
   // Normalize to single spaces first
   const normalized = message.replace(/\s+/g, ' ').trim()
   // Escape regex special chars, then replace spaces with \s+ for flexible matching
-  return escapeRegex(normalized).replace(/ /g, '\\s+')
+  // Replace quotes with pattern matching: nothing, ", or \" (JSON-escaped)
+  return escapeRegex(normalized)
+    .replace(/ /g, '\\s+')
+    .replace(/"/g, '(?:\\\\?")?')
 }
 
 /**
@@ -119,6 +140,44 @@ export interface ExactMatchSearchOptions {
 
 export interface ExactMessageSearchOptions extends ExactMatchSearchOptions {
   minLength?: number
+}
+
+const TOOL_NOTIFICATION_MARKERS = [
+  '<task-notification>',
+  '<task-id>',
+  '<output-file>',
+  '<status>',
+  '<summary>',
+  'read the output file to retrieve the result',
+  // Codex system messages
+  '<instructions>',
+  '# agents.md instructions',
+  '<environment_context>',
+] as const
+
+export function isToolNotificationText(text: string): boolean {
+  const normalized = text.trim().toLowerCase()
+  if (!normalized) return false
+  if (normalized.startsWith('<task-notification>')) {
+    return true
+  }
+  return TOOL_NOTIFICATION_MARKERS.some((marker) => normalized.includes(marker))
+}
+
+/**
+ * Extract the action name from a <user_action> XML block.
+ * Returns the action (e.g., "review") or null if not a user_action block.
+ */
+export function extractActionFromUserAction(text: string): string | null {
+  const trimmed = text.trim()
+  if (!trimmed.toLowerCase().startsWith('<user_action>')) {
+    return null
+  }
+  const actionMatch = trimmed.match(/<action>\s*([^<]+)\s*<\/action>/i)
+  if (actionMatch?.[1]) {
+    return actionMatch[1].trim()
+  }
+  return null
 }
 
 function readLogTail(logPath: string, byteLimit = DEFAULT_LOG_TAIL_BYTES): string {
@@ -491,7 +550,7 @@ function isCurrentInputField(rawLines: string[], promptIdx: number): boolean {
   return false
 }
 
-function extractRecentUserMessagesFromTmux(
+export function extractRecentUserMessagesFromTmux(
   content: string,
   maxMessages = MAX_RECENT_USER_MESSAGES
 ): string[] {
@@ -514,6 +573,45 @@ function extractRecentUserMessagesFromTmux(
   }
 
   return messages
+}
+
+function stripTraceStatusSuffix(line: string): string {
+  const match = line.match(TRACE_STATUS_TRAILER)
+  if (!match) return line
+  const inner = match[1] ?? ''
+  if (!TRACE_STATUS_HINTS.some((pattern) => pattern.test(inner))) {
+    return line
+  }
+  return line.slice(0, match.index).trim()
+}
+
+export function extractRecentTraceLinesFromTmux(
+  content: string,
+  maxLines = MAX_RECENT_TRACE_LINES
+): string[] {
+  const rawLines = stripAnsi(content).split('\n')
+  while (rawLines.length > 0 && rawLines[rawLines.length - 1]?.trim() === '') {
+    rawLines.pop()
+  }
+
+  const traces: string[] = []
+  for (let i = rawLines.length - 1; i >= 0 && traces.length < maxLines; i--) {
+    const raw = rawLines[i] ?? ''
+    const trimmed = raw.trim()
+    if (!trimmed.startsWith('•')) continue
+    let cleaned = cleanTmuxLine(raw)
+    if (!cleaned) continue
+    cleaned = stripTraceStatusSuffix(cleaned)
+    if (!cleaned) continue
+    if (TRACE_EXCLUDE_PREFIXES.some((prefix) => prefix.test(cleaned))) continue
+    if (isMetadataLine(cleaned, TMUX_METADATA_STATUS_PATTERNS)) continue
+    if (cleaned.length < MIN_EXACT_MATCH_LENGTH) continue
+    if (!traces.includes(cleaned)) {
+      traces.push(cleaned)
+    }
+  }
+
+  return traces
 }
 
 function resolveLogReadOptions(
@@ -664,6 +762,18 @@ function shouldIncludeRole(role: string, mode: LogTextMode): boolean {
   return role === mode
 }
 
+/**
+ * Process user message text - filters tool notifications and extracts actions from user_action blocks.
+ * Returns the processed text or null if it should be skipped.
+ */
+function processUserMessageText(text: string): string | null {
+  if (!text.trim()) return null
+  if (isToolNotificationText(text)) return null
+  const action = extractActionFromUserAction(text)
+  if (action) return action
+  return text
+}
+
 function extractRoleTextFromEntry(
   entry: unknown
 ): Array<{ role: string; text: string }> {
@@ -681,7 +791,10 @@ function extractRoleTextFromEntry(
       const role = (payload.role as string | undefined) ?? ''
       const texts = extractTextFromContent(payload.content)
       for (const text of texts) {
-        if (text.trim()) {
+        if (role === 'user') {
+          const processed = processUserMessageText(text)
+          if (processed) chunks.push({ role, text: processed })
+        } else if (text.trim()) {
           chunks.push({ role, text })
         }
       }
@@ -695,7 +808,10 @@ function extractRoleTextFromEntry(
       (message.role as string | undefined) ?? (record.type as string | undefined) ?? ''
     const texts = extractTextFromContent(message.content)
     for (const text of texts) {
-      if (text.trim()) {
+      if (role === 'user') {
+        const processed = processUserMessageText(text)
+        if (processed) chunks.push({ role, text: processed })
+      } else if (text.trim()) {
         chunks.push({ role, text })
       }
     }
@@ -703,12 +819,20 @@ function extractRoleTextFromEntry(
     const role = record.type as string
     const direct = extractTextFromContent(record.content)
     for (const text of direct) {
-      if (text.trim()) {
+      if (role === 'user') {
+        const processed = processUserMessageText(text)
+        if (processed) chunks.push({ role, text: processed })
+      } else if (text.trim()) {
         chunks.push({ role, text })
       }
     }
-    if (record.text && typeof record.text === 'string' && record.text.trim()) {
-      chunks.push({ role, text: record.text })
+    if (record.text && typeof record.text === 'string') {
+      if (role === 'user') {
+        const processed = processUserMessageText(record.text)
+        if (processed) chunks.push({ role, text: processed })
+      } else if (record.text.trim()) {
+        chunks.push({ role, text: record.text })
+      }
     }
   }
 
@@ -717,8 +841,9 @@ function extractRoleTextFromEntry(
     const payload = record.payload as Record<string, unknown> | undefined
     if (payload && payload.type === 'user_message') {
       const text = payload.message
-      if (typeof text === 'string' && text.trim()) {
-        chunks.push({ role: 'user', text })
+      if (typeof text === 'string') {
+        const processed = processUserMessageText(text)
+        if (processed) chunks.push({ role: 'user', text: processed })
       }
     }
   }
@@ -726,16 +851,7 @@ function extractRoleTextFromEntry(
   return chunks
 }
 
-function extractLastConversationFromLog(
-  logPath: string,
-  logRead: Partial<LogReadOptions> = {}
-): ConversationPair {
-  const resolvedRead = resolveLogReadOptions(logRead)
-  const raw = readLogContent(logPath, resolvedRead)
-  if (!raw) {
-    return { user: '', assistant: '' }
-  }
-  const lines = raw.split('\n').map((line) => line.trim()).filter(Boolean)
+function extractLastConversationFromLines(lines: string[]): ConversationPair {
   let lastUser = ''
   let lastAssistant = ''
   for (let i = lines.length - 1; i >= 0; i -= 1) {
@@ -761,110 +877,56 @@ function extractLastConversationFromLog(
   return { user: lastUser, assistant: lastAssistant }
 }
 
-function extractLastConversationFromTmux(content: string): ConversationPair {
-  const rawLines = stripAnsi(content).split('\n')
-  while (rawLines.length > 0 && rawLines[rawLines.length - 1]?.trim() === '') {
-    rawLines.pop()
-  }
+function extractLastConversationFromLog(
+  logPath: string,
+  logRead: Partial<LogReadOptions> = {}
+): ConversationPair {
+  const resolvedRead = resolveLogReadOptions(logRead)
+  const initialByteLimit = Math.max(0, resolvedRead.byteLimit)
+  const maxByteLimit = Math.max(
+    initialByteLimit,
+    typeof logRead.maxByteLimit === 'number' ? logRead.maxByteLimit : initialByteLimit
+  )
+  const useProgressive = maxByteLimit > initialByteLimit
+  const lineLimit = useProgressive ? 0 : resolvedRead.lineLimit
 
-  // Claude: ⏺ for assistant response bullet
-  const isClaudeBulletLine = (line: string) => /^\s*⏺/.test(line)
-
-  // Codex: • for assistant response bullet
-  const isCodexBulletLine = (line: string) => /^\s*•/.test(line)
-
-  // Any assistant bullet (Claude or Codex)
-  const isBulletLine = (line: string) => isClaudeBulletLine(line) || isCodexBulletLine(line)
-
-  // Detect tool call bullets - these start with tool names like Write(, Bash(, Read(, etc.
-  const isToolCallBullet = (line: string) => {
-    const trimmed = line.trim()
-    if (!isBulletLine(line)) return false
-    // Remove the bullet and check for tool call patterns
-    const afterBullet = trimmed.replace(/^[⏺•]\s*/, '')
-    // Claude tool patterns
-    if (/^(Write|Bash|Read|Glob|Grep|Edit|Task|WebFetch|WebSearch|TodoWrite)\s*\(/.test(afterBullet)) {
-      return true
-    }
-  // Codex tool patterns: "Ran <command>", "Read <file>", etc.
-  if (/^(Ran|Read|Wrote|Created|Updated|Deleted)\s+/.test(afterBullet)) {
-    return true
-  }
-  return false
-  }
-
-  // Check if a bullet is a text response (not a tool call)
-  const isTextBullet = (line: string) => isBulletLine(line) && !isToolCallBullet(line)
-  const isToolOutputLine = (line: string) => /^\s*⎿/.test(line)
-
-  // Find prompt lines, collecting up to 3 most recent
-  const promptIndices: number[] = []
-  for (let i = rawLines.length - 1; i >= 0 && promptIndices.length < 3; i--) {
-    if (isPromptLine(rawLines[i] ?? '')) {
-      promptIndices.push(i)
-    }
-  }
-
-  // No prompts found at all
-  if (promptIndices.length === 0) {
+  if (initialByteLimit <= 0) {
     return { user: '', assistant: '' }
   }
 
-  // Determine which prompt is the real last submitted message
-  let currentPromptIdx = promptIndices[0] ?? -1
-  let inputFieldIdx = -1 // Track the input field if present
+  let byteLimit = initialByteLimit
+  let lastPair: ConversationPair = { user: '', assistant: '' }
 
-  // If the most recent prompt is the input field (has status line after) AND there's
-  // a previous prompt, use the previous one as the real last message.
-  // If it's the only prompt, use it anyway (first message case)
-  if (isCurrentInputField(rawLines, currentPromptIdx) && promptIndices.length > 1) {
-    inputFieldIdx = currentPromptIdx
-    currentPromptIdx = promptIndices[1] ?? -1
+  while (byteLimit <= maxByteLimit) {
+    const raw = readLogTail(logPath, byteLimit)
+    if (!raw) {
+      return { user: '', assistant: '' }
+    }
+    let lines = raw.split('\n').map((line) => line.trim()).filter(Boolean)
+    if (lineLimit > 0 && lines.length > lineLimit) {
+      lines = lines.slice(-lineLimit)
+    }
+    const pair = extractLastConversationFromLines(lines)
+    lastPair = pair
+    if (pair.user) {
+      return pair
+    }
+    if (byteLimit >= maxByteLimit) {
+      break
+    }
+    byteLimit = Math.min(byteLimit * 4, maxByteLimit)
   }
 
-  const promptLine = rawLines[currentPromptIdx] ?? ''
-  const pendingSend = promptLine.includes('↵')
-  const user = pendingSend ? '' : extractUserFromPrompt(promptLine)
-
-  // Extract assistant content AFTER the user prompt
-  // Stop at input field if present, otherwise go to end of scrollback
-  const stopIdx = inputFieldIdx !== -1 ? inputFieldIdx : rawLines.length
-  const assistantLines: string[] = []
-  const fallbackLines: string[] = []
-  let sawTextBullet = false
-
-  for (let i = currentPromptIdx + 1; i < stopIdx; i++) {
-    const line = rawLines[i] ?? ''
-    const trimmed = line.trim()
-    if (!trimmed) continue
-    if (isPromptLine(line)) break // Stop if we hit another prompt
-    if (
-      isDecorativeLine(trimmed) ||
-      isMetadataLine(trimmed, TMUX_METADATA_MATCH_PATTERNS)
-    ) {
-      continue
-    }
-    if (isToolCallBullet(line)) continue // Skip tool calls
-    if (isToolOutputLine(line)) continue // Skip tool output summaries
-    if (isTextBullet(line)) {
-      sawTextBullet = true
-      assistantLines.push(cleanTmuxLine(line))
-    } else {
-      fallbackLines.push(cleanTmuxLine(line))
-    }
-    if (assistantLines.length + fallbackLines.length >= 60) break
-  }
-  const assistant = (sawTextBullet ? assistantLines : fallbackLines).join('\n')
-
-  return { user, assistant }
+  return lastPair
 }
 
-// Keep the old complex logic for reference but simplify to the above
-// The key insight: we want user message + assistant response AFTER that message
-// Not the assistant response that preceded the user message
-
-// Export for use in matching
-export { extractLastConversationFromTmux }
+export function extractLastUserMessageFromLog(
+  logPath: string,
+  logRead: Partial<LogReadOptions> = {}
+): string | null {
+  const { user } = extractLastConversationFromLog(logPath, logRead)
+  return user && user.trim() ? user.trim() : null
+}
 
 export interface ExactMatchContext {
   agentType?: AgentType
@@ -901,20 +963,28 @@ export function tryExactMatchWindowToLog(
     profile.tmuxCaptureMs += performance.now() - tmuxStart
   }
   const extractStart = performance.now()
-  const recentUserMessages = extractRecentUserMessagesFromTmux(scrollback)
+  const userMessages = extractRecentUserMessagesFromTmux(scrollback)
   if (profile) {
     profile.messageExtractRuns += 1
     profile.messageExtractMs += performance.now() - extractStart
   }
-  const user = recentUserMessages[0] ?? ''
-  if (!user) return null
+
+  let messages = userMessages
+  let usingTraceFallback = false
+  if (messages.length === 0) {
+    const traces = extractRecentTraceLinesFromTmux(scrollback)
+    if (traces.length === 0) return null
+    messages = traces
+    usingTraceFallback = true
+  }
 
   const hasDisambiguators = Boolean(context.agentType || context.projectPath)
-  const longMessages = recentUserMessages.filter(
+  const longMessages = messages.filter(
     (message) => message.length >= MIN_EXACT_MATCH_LENGTH
   )
+  const allowShortMessages = hasDisambiguators || usingTraceFallback
   const messagesToSearch =
-    longMessages.length > 0 ? longMessages : hasDisambiguators ? recentUserMessages : []
+    longMessages.length > 0 ? longMessages : allowShortMessages ? messages : []
   if (messagesToSearch.length === 0) return null
 
   const sortedMessages = [...messagesToSearch].sort((a, b) => b.length - a.length)
@@ -936,6 +1006,14 @@ export function tryExactMatchWindowToLog(
 
   if (candidates.length === 0) {
     return null
+  }
+
+  if (usingTraceFallback) {
+    const filtered = candidates.filter((candidate) => !isCodexSubagent(candidate))
+    if (filtered.length === 0) {
+      return null
+    }
+    candidates = filtered
   }
 
   if (context.agentType) {
@@ -960,8 +1038,8 @@ export function tryExactMatchWindowToLog(
     }
   }
 
-  const orderedMessages = recentUserMessages
-    .filter((message) => message.length >= MIN_EXACT_MATCH_LENGTH)
+  const orderedMessages = messages
+    .filter((message: string) => message.length >= MIN_EXACT_MATCH_LENGTH)
     .slice()
     .reverse()
 
@@ -976,7 +1054,7 @@ export function tryExactMatchWindowToLog(
     }
     return {
       logPath: candidates[0],
-      userMessage: user,
+      userMessage: messages[0] ?? '',
       matchedCount: score.matchedCount,
       matchedLength: score.matchedLength,
     }
@@ -1045,7 +1123,7 @@ export function tryExactMatchWindowToLog(
 
   return {
     logPath: best.logPath,
-    userMessage: user,
+    userMessage: messages[0] ?? '',
     matchedCount: best.score.matchedCount,
     matchedLength: best.score.matchedLength,
   }
@@ -1110,37 +1188,6 @@ export function matchWindowsToLogsByExactRg(
   }
 
   return resolved
-}
-
-/**
- * For a log file, try to find a window whose tmux user message exactly matches
- * the log's last user message. Returns the matching window or null.
- */
-export function tryExactMatchLogToWindow(
-  logPath: string,
-  windows: Session[],
-  scrollbackLines = DEFAULT_SCROLLBACK_LINES,
-  logRead: Partial<LogReadOptions> = {}
-): Session | null {
-  const logPair = extractLastConversationFromLog(logPath, logRead)
-  const logUser = logPair.user
-
-  if (!logUser || logUser.length < MIN_EXACT_MATCH_LENGTH) {
-    return null
-  }
-
-  // Check each window for exact match
-  for (const window of windows) {
-    const scrollback = getTerminalScrollback(window.tmuxWindow, scrollbackLines)
-    const { user: tmuxUser } = extractLastConversationFromTmux(scrollback)
-
-    // Exact match (normalized)
-    if (normalizeText(logUser) === normalizeText(tmuxUser)) {
-      return window
-    }
-  }
-
-  return null
 }
 
 /**

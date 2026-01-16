@@ -12,6 +12,7 @@ Run your desktop/server, then connect from your phone or laptop over Tailscale/L
   - Virtual arrow keys / d-pad
   - Quick keys toolbar (ctrl, esc, etc.)
 - Tracks Claude and Codex sessions by parsing their logs, auto-matching to active tmux windows. Inactive sessions can be restored with one click.
+- Shows the last user prompt for each session, so you can remember what each agent is working on
 
 | Desktop | Mobile | Sessions |
 | :---: | :---: | :---: |

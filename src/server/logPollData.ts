@@ -19,6 +19,7 @@ export interface LogEntrySnapshot {
   agentType: AgentType | null
   isCodexSubagent: boolean
   logTokenCount: number
+  lastUserMessage?: string
 }
 
 export interface LogEntryBatch {
@@ -27,7 +28,28 @@ export interface LogEntryBatch {
   sortMs: number
 }
 
-export function collectLogEntryBatch(maxLogs: number): LogEntryBatch {
+/** Known session info to skip expensive file reads for already-tracked logs */
+export interface KnownSession {
+  logFilePath: string
+  sessionId: string
+  projectPath: string | null
+  agentType: AgentType | null
+}
+
+export interface CollectLogEntryBatchOptions {
+  /** Known sessions to skip enrichment for (avoids re-reading file contents) */
+  knownSessions?: KnownSession[]
+}
+
+export function collectLogEntryBatch(
+  maxLogs: number,
+  options: CollectLogEntryBatchOptions = {}
+): LogEntryBatch {
+  const { knownSessions = [] } = options
+  const knownByPath = new Map(
+    knownSessions.map((s) => [s.logFilePath, s])
+  )
+
   const scanStart = performance.now()
   const logPaths = scanAllLogDirs()
   const scanMs = performance.now() - scanStart
@@ -54,6 +76,24 @@ export function collectLogEntryBatch(maxLogs: number): LogEntryBatch {
   const sortMs = performance.now() - sortStart
 
   const entries = limited.map((entry) => {
+    // Check if this log is already known - skip expensive file reads
+    const known = knownByPath.get(entry.logPath)
+    if (known) {
+      // Use cached metadata from DB, skip file content reads
+      // logTokenCount = -1 indicates enrichment was skipped (already validated)
+      return {
+        logPath: entry.logPath,
+        mtime: entry.mtime,
+        birthtime: entry.birthtime,
+        sessionId: known.sessionId,
+        projectPath: known.projectPath,
+        agentType: known.agentType,
+        isCodexSubagent: false,
+        logTokenCount: -1,
+      } satisfies LogEntrySnapshot
+    }
+
+    // Unknown log - do full enrichment (read file contents)
     const agentType = inferAgentTypeFromPath(entry.logPath)
     const sessionId = extractSessionId(entry.logPath)
     const projectPath = extractProjectPath(entry.logPath)

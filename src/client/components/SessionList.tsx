@@ -187,6 +187,10 @@ export default function SessionList({
   )
   const manualSessionOrder = useSettingsStore((state) => state.manualSessionOrder)
   const setManualSessionOrder = useSettingsStore((state) => state.setManualSessionOrder)
+  const showProjectName = useSettingsStore((state) => state.showProjectName)
+  const showLastUserMessage = useSettingsStore(
+    (state) => state.showLastUserMessage
+  )
   const showSessionIdPrefix = useSettingsStore(
     (state) => state.showSessionIdPrefix
   )
@@ -425,35 +429,34 @@ export default function SessionList({
 
   return (
     <aside className="flex min-h-0 flex-1 flex-col border-r border-border bg-elevated">
-      <div className="flex h-10 shrink-0 items-center justify-between border-b border-border px-3">
-        <span className="text-xs font-medium uppercase tracking-wider text-muted">
-          Sessions
-        </span>
-        <div className="flex items-center gap-2">
-          <ProjectFilterDropdown
-            projects={uniqueProjects}
-            selectedProjects={projectFilters}
-            onSelect={setProjectFilters}
-            hasHiddenPermissions={hiddenPermissionCount > 0}
-          />
-          <motion.span
-            className="text-xs text-muted"
-            animate={activeCounterBump && !prefersReducedMotion ? { scale: [1, 1.3, 1] } : {}}
-            transition={{ duration: 0.3 }}
-            onAnimationComplete={() => setActiveCounterBump(false)}
-          >
-              {filteredSessions.length}
-          </motion.span>
-        </div>
-      </div>
-
       {error && (
-        <div className="border-b border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">
+        <div className="shrink-0 border-b border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">
           {error}
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="sticky top-0 z-10 flex h-10 items-center justify-between border-b border-border bg-elevated px-3">
+          <span className="text-xs font-medium uppercase tracking-wider text-muted">
+            Sessions
+          </span>
+          <div className="flex items-center gap-4">
+            <ProjectFilterDropdown
+              projects={uniqueProjects}
+              selectedProjects={projectFilters}
+              onSelect={setProjectFilters}
+              hasHiddenPermissions={hiddenPermissionCount > 0}
+            />
+            <motion.span
+              className="w-8 text-right text-xs text-muted"
+              animate={activeCounterBump && !prefersReducedMotion ? { scale: [1, 1.3, 1] } : {}}
+              transition={{ duration: 0.3 }}
+              onAnimationComplete={() => setActiveCounterBump(false)}
+            >
+              {filteredSessions.length}
+            </motion.span>
+          </div>
+        </div>
         {loading ? (
           <div className="space-y-1 p-2">
             {[0, 1, 2].map((i) => (
@@ -506,6 +509,8 @@ export default function SessionList({
                         isSelected={session.id === selectedSessionId}
                         isEditing={session.id === editingSessionId}
                         showSessionIdPrefix={showSessionIdPrefix}
+                        showProjectName={showProjectName}
+                        showLastUserMessage={showLastUserMessage}
                         dropIndicator={showDropIndicator}
                         onSelect={() => onSelect(session.id)}
                         onStartEdit={() => setEditingSessionId(session.id)}
@@ -536,7 +541,7 @@ export default function SessionList({
                 Inactive Sessions
               </span>
               <motion.span
-                className="text-xs"
+                className="w-8 text-right text-xs"
                 animate={inactiveCounterBump && !prefersReducedMotion ? { scale: [1, 1.3, 1] } : {}}
                 transition={{ duration: 0.3 }}
                 onAnimationComplete={() => setInactiveCounterBump(false)}
@@ -581,6 +586,8 @@ export default function SessionList({
                       <InactiveSessionItem
                         session={session}
                         showSessionIdPrefix={showSessionIdPrefix}
+                        showProjectName={showProjectName}
+                        showLastUserMessage={showLastUserMessage}
                         onResume={(sessionId) => onResume?.(sessionId)}
                         onPreview={setPreviewSession}
                       />
@@ -627,6 +634,8 @@ interface SortableSessionItemProps {
   isSelected: boolean
   isEditing: boolean
   showSessionIdPrefix: boolean
+  showProjectName: boolean
+  showLastUserMessage: boolean
   dropIndicator: 'above' | 'below' | null
   onSelect: () => void
   onStartEdit: () => void
@@ -645,6 +654,8 @@ function SortableSessionItem({
   isSelected,
   isEditing,
   showSessionIdPrefix,
+  showProjectName,
+  showLastUserMessage,
   dropIndicator,
   onSelect,
   onStartEdit,
@@ -701,6 +712,8 @@ function SortableSessionItem({
         isSelected={isSelected}
         isEditing={isEditing}
         showSessionIdPrefix={showSessionIdPrefix}
+        showProjectName={showProjectName}
+        showLastUserMessage={showLastUserMessage}
         isDragging={isDragging}
         onSelect={onSelect}
         onStartEdit={onStartEdit}
@@ -719,6 +732,8 @@ interface SessionRowProps {
   isSelected: boolean
   isEditing: boolean
   showSessionIdPrefix: boolean
+  showProjectName: boolean
+  showLastUserMessage: boolean
   isDragging?: boolean
   onSelect: () => void
   onStartEdit: () => void
@@ -731,6 +746,8 @@ function SessionRow({
   isSelected,
   isEditing,
   showSessionIdPrefix,
+  showProjectName,
+  showLastUserMessage,
   isDragging = false,
   onSelect,
   onStartEdit,
@@ -749,6 +766,8 @@ function SessionRow({
     showSessionIdPrefix && agentSessionId
       ? getSessionIdPrefix(agentSessionId)
       : ''
+  const showDirectory = showProjectName && Boolean(directoryLeaf)
+  const showMessage = showLastUserMessage && Boolean(session.lastUserMessage)
 
   // Track previous status for transition animation
   const prevStatusRef = useRef<Session['status']>(session.status)
@@ -878,13 +897,18 @@ function SessionRow({
           )}
         </div>
 
-        {/* Line 2: Directory */}
-        {directoryLeaf && (
+        {/* Line 2: Directory + last user message (up to 2 lines total) */}
+        {(showDirectory || showMessage) && (
           <span
-            className="truncate pl-[1.375rem] text-xs text-muted"
-            title={session.projectPath}
+            className="line-clamp-2 pl-[1.375rem] text-xs text-muted"
+            title={showDirectory ? session.projectPath : undefined}
           >
-            {directoryLeaf}
+            {showDirectory ? directoryLeaf : null}
+            {showMessage ? (
+              <span className="italic">
+                {showDirectory ? `: "${session.lastUserMessage}"` : `"${session.lastUserMessage}"`}
+              </span>
+            ) : null}
           </span>
         )}
       </div>

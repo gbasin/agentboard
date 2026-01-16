@@ -71,6 +71,11 @@ export function resolveDefaultPresetId(
   return presets.some(p => p.id === currentId) ? currentId : presets[0]?.id || 'claude'
 }
 
+// Sidebar width constraints
+const SIDEBAR_MIN_WIDTH = 180
+const SIDEBAR_MAX_WIDTH = 400
+const SIDEBAR_DEFAULT_WIDTH = 240
+
 interface SettingsState {
   defaultProjectDir: string
   setDefaultProjectDir: (dir: string) => void
@@ -94,10 +99,16 @@ interface SettingsState {
   setLineHeight: (height: number) => void
   shortcutModifier: ShortcutModifier | 'auto'
   setShortcutModifier: (modifier: ShortcutModifier | 'auto') => void
+  showProjectName: boolean
+  setShowProjectName: (enabled: boolean) => void
+  showLastUserMessage: boolean
+  setShowLastUserMessage: (enabled: boolean) => void
   showSessionIdPrefix: boolean
   setShowSessionIdPrefix: (enabled: boolean) => void
   inactiveSessionsExpanded: boolean
   setInactiveSessionsExpanded: (expanded: boolean) => void
+  sidebarWidth: number
+  setSidebarWidth: (width: number) => void
   projectFilters: string[]
   setProjectFilters: (filters: string[]) => void
   // Command presets
@@ -138,10 +149,19 @@ export const useSettingsStore = create<SettingsState>()(
       setLineHeight: (height) => set({ lineHeight: Math.max(1.0, Math.min(2.0, height)) }),
       shortcutModifier: 'auto',
       setShortcutModifier: (modifier) => set({ shortcutModifier: modifier }),
+      showProjectName: true,
+      setShowProjectName: (enabled) => set({ showProjectName: enabled }),
+      showLastUserMessage: true,
+      setShowLastUserMessage: (enabled) => set({ showLastUserMessage: enabled }),
       showSessionIdPrefix: false,
       setShowSessionIdPrefix: (enabled) => set({ showSessionIdPrefix: enabled }),
       inactiveSessionsExpanded: false,
       setInactiveSessionsExpanded: (expanded) => set({ inactiveSessionsExpanded: expanded }),
+      sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
+      setSidebarWidth: (width) =>
+        set({
+          sidebarWidth: Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, width)),
+        }),
       projectFilters: [],
       setProjectFilters: (filters) => set({ projectFilters: filters }),
       // Command presets
@@ -259,4 +279,11 @@ export const useSettingsStore = create<SettingsState>()(
   )
 )
 
-export { DEFAULT_PROJECT_DIR, DEFAULT_COMMAND, MAX_PRESETS }
+export {
+  DEFAULT_PROJECT_DIR,
+  DEFAULT_COMMAND,
+  MAX_PRESETS,
+  SIDEBAR_MIN_WIDTH,
+  SIDEBAR_MAX_WIDTH,
+  SIDEBAR_DEFAULT_WIDTH,
+}

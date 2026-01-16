@@ -1,6 +1,6 @@
 import type { AgentType, Session } from '../shared/types'
 import type { ExactMatchProfiler } from './logMatcher'
-import type { LogEntrySnapshot } from './logPollData'
+import type { KnownSession, LogEntrySnapshot } from './logPollData'
 import type { SessionSnapshot } from './logMatchGate'
 
 export interface MatchWorkerSearchOptions {
@@ -17,16 +17,26 @@ export interface OrphanCandidate {
   currentWindow: string | null
 }
 
+export interface LastMessageCandidate {
+  sessionId: string
+  logFilePath: string
+  projectPath: string | null
+  agentType: AgentType | null
+}
+
 export interface MatchWorkerRequest {
   id: string
   windows: Session[]
   maxLogsPerPoll: number
   logDirs?: string[]
   sessions: SessionSnapshot[]
+  /** Known sessions to skip expensive file reads during log collection */
+  knownSessions?: KnownSession[]
   scrollbackLines: number
   minTokensForMatch?: number
   forceOrphanRematch?: boolean
   orphanCandidates?: OrphanCandidate[]
+  lastMessageCandidates?: LastMessageCandidate[]
   search?: MatchWorkerSearchOptions
 }
 
