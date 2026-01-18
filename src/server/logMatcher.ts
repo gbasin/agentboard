@@ -271,10 +271,21 @@ const TOOL_NOTIFICATION_MARKERS = [
   '<environment_context>',
 ] as const
 
+/**
+ * Pattern for Codex CLI tool-use warnings injected as user messages.
+ * Example: "Warning: apply_patch was requested via exec_command. Use the apply_patch tool instead."
+ */
+const CODEX_TOOL_WARNING_PATTERN = /^warning:\s+\w+\s+was\s+requested\s+via\s+exec_command/i
+
 export function isToolNotificationText(text: string): boolean {
-  const normalized = text.trim().toLowerCase()
-  if (!normalized) return false
+  const trimmed = text.trim()
+  if (!trimmed) return false
+  const normalized = trimmed.toLowerCase()
   if (normalized.startsWith('<task-notification>')) {
+    return true
+  }
+  // Filter Codex CLI tool-use warnings (e.g., "Warning: apply_patch was requested via exec_command")
+  if (CODEX_TOOL_WARNING_PATTERN.test(trimmed)) {
     return true
   }
   return TOOL_NOTIFICATION_MARKERS.some((marker) => normalized.includes(marker))

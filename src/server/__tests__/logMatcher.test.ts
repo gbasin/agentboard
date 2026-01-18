@@ -13,6 +13,7 @@ import {
   extractRecentUserMessagesFromTmux,
   extractActionFromUserAction,
   hasMessageInValidUserContext,
+  isToolNotificationText,
 } from '../logMatcher'
 
 const bunAny = Bun as typeof Bun & { spawnSync: typeof Bun.spawnSync }
@@ -715,5 +716,60 @@ describe('integration: JSON field pattern filters terminal captures', () => {
     expect(result?.logPath).toBe(logPathCorrect)
 
     await fs.rm(tempDir, { recursive: true, force: true })
+  })
+})
+
+describe('isToolNotificationText', () => {
+  describe('should filter (return true)', () => {
+    test('filters Codex CLI apply_patch warning', () => {
+      const warning = 'Warning: apply_patch was requested via exec_command. Use the apply_patch tool instead of exec_command.'
+      expect(isToolNotificationText(warning)).toBe(true)
+    })
+
+    test('filters other tool warnings via exec_command', () => {
+      expect(isToolNotificationText('Warning: some_tool was requested via exec_command. Use the proper tool.')).toBe(true)
+    })
+
+    test('filters task notifications', () => {
+      expect(isToolNotificationText('<task-notification>Task completed</task-notification>')).toBe(true)
+    })
+
+    test('filters messages with task-id', () => {
+      expect(isToolNotificationText('Task <task-id>abc123</task-id> is running')).toBe(true)
+    })
+
+    test('filters messages with instructions tag', () => {
+      expect(isToolNotificationText('<instructions>Follow these steps</instructions>')).toBe(true)
+    })
+  })
+
+  describe('should NOT filter (return false)', () => {
+    test('allows normal user messages', () => {
+      expect(isToolNotificationText('Please fix the bug in the login form')).toBe(false)
+    })
+
+    test('allows messages mentioning warnings in conversation', () => {
+      expect(isToolNotificationText('I saw a warning in the console, can you help?')).toBe(false)
+    })
+
+    test('allows messages discussing exec_command', () => {
+      expect(isToolNotificationText('How do I use exec_command properly?')).toBe(false)
+    })
+
+    test('allows messages with Warning not at start', () => {
+      expect(isToolNotificationText('The compiler showed: Warning: unused variable')).toBe(false)
+    })
+
+    test('allows messages that mention apply_patch normally', () => {
+      expect(isToolNotificationText('Can you apply_patch to fix the issue?')).toBe(false)
+    })
+
+    test('allows empty string', () => {
+      expect(isToolNotificationText('')).toBe(false)
+    })
+
+    test('allows whitespace only', () => {
+      expect(isToolNotificationText('   ')).toBe(false)
+    })
   })
 })
