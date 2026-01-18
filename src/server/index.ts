@@ -177,7 +177,7 @@ const registry = new SessionRegistry()
 // Lock map for Enter-key lastUserMessage capture: tmuxWindow -> expiry timestamp
 // Prevents stale log data from overwriting fresh terminal captures
 const lastUserMessageLocks = new Map<string, number>()
-const LAST_USER_MESSAGE_LOCK_MS = 10_000 // 10 seconds
+const LAST_USER_MESSAGE_LOCK_MS = 60_000 // 60 seconds
 
 const logPoller = new LogPoller(db, registry, {
   onSessionOrphaned: (sessionId) => {
