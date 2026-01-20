@@ -24,12 +24,7 @@ export function updateKeyboardInset({
 
   const offsetTop = Math.max(0, viewport.offsetTop || 0)
   const offsetLeft = Math.max(0, viewport.offsetLeft || 0)
-  const docHeight =
-    typeof doc.documentElement?.clientHeight === 'number'
-      ? doc.documentElement.clientHeight
-      : 0
-  const baseHeight = Math.max(0, win.innerHeight, docHeight)
-  const keyboardHeight = baseHeight - (viewport.height + offsetTop)
+  const keyboardHeight = win.innerHeight - (viewport.height + offsetTop)
   const clampedKeyboardHeight = Math.max(0, keyboardHeight)
   const viewportHeight = Math.max(0, viewport.height || 0)
   const viewportWidth = Math.max(0, viewport.width || 0)

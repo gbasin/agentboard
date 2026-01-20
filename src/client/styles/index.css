@@ -160,25 +160,6 @@ body {
   }
 }
 
-.debug-ui #root {
-  outline: 2px solid rgba(255, 0, 0, 0.7);
-}
-
-.debug-ui .terminal-mobile-overlay {
-  outline: 2px solid rgba(0, 255, 0, 0.7);
-}
-
-.debug-ui .terminal-controls {
-  outline: 2px solid rgba(255, 255, 0, 0.7);
-}
-
-.debug-ui .terminal-controls button {
-  outline: 1px dashed rgba(255, 255, 0, 0.6);
-}
-
-.debug-ui .xterm {
-  outline: 2px solid rgba(0, 153, 255, 0.7);
-}
 
 /* Keyboard inset variable (set by useVisualViewport hook) */
 :root {
