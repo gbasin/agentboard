@@ -147,9 +147,46 @@ body {
   overflow: hidden;
 }
 
+/* Align app root to the visual viewport on iOS PWA to keep hit-testing accurate */
+@media (max-width: 767px) {
+  .ios #root {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: var(--visual-viewport-width, 100vw);
+    height: var(--visual-viewport-height, 100dvh);
+    transform: translate3d(var(--viewport-offset-left, 0px), var(--viewport-offset-top, 0px), 0);
+    transform-origin: top left;
+  }
+}
+
+.debug-ui #root {
+  outline: 2px solid rgba(255, 0, 0, 0.7);
+}
+
+.debug-ui .terminal-mobile-overlay {
+  outline: 2px solid rgba(0, 255, 0, 0.7);
+}
+
+.debug-ui .terminal-controls {
+  outline: 2px solid rgba(255, 255, 0, 0.7);
+}
+
+.debug-ui .terminal-controls button {
+  outline: 1px dashed rgba(255, 255, 0, 0.6);
+}
+
+.debug-ui .xterm {
+  outline: 2px solid rgba(0, 153, 255, 0.7);
+}
+
 /* Keyboard inset variable (set by useVisualViewport hook) */
 :root {
   --keyboard-inset: 0px;
+  --viewport-offset-top: 0px;
+  --viewport-offset-left: 0px;
+  --visual-viewport-height: 100dvh;
+  --visual-viewport-width: 100vw;
 }
 
 ::selection {
@@ -327,6 +364,8 @@ body {
   caret-color: transparent;
   width: 1px;
   height: 1px;
+  font-size: 16px;
+  line-height: 16px;
   pointer-events: none;
   -webkit-user-select: text;
   user-select: text;
@@ -406,16 +445,13 @@ body {
 /* Mobile terminal overlay */
 @media (max-width: 767px) {
   .terminal-mobile-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: var(--keyboard-inset, 0px);
+    position: relative;
+    height: 100%;
     z-index: 30;
     display: flex;
     flex-direction: column;
     background: var(--bg-base);
-    transition: bottom 0.1s ease-out;
+    transition: height 0.1s ease-out;
   }
 }
 
@@ -489,11 +525,15 @@ body {
 }
 
 .ios .terminal-mobile-overlay {
-  bottom: var(--keyboard-inset, 0px);
+  height: var(--visual-viewport-height, 100dvh);
+}
+
+.ios-pwa .terminal-mobile-overlay {
+  height: 100%;
 }
 
 .ios:not(.keyboard-visible) .terminal-mobile-overlay {
-  bottom: calc(var(--keyboard-inset, 0px) + env(safe-area-inset-bottom, 0px));
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* Hide scrollbar but allow scrolling */

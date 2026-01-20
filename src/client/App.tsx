@@ -5,6 +5,7 @@ import SessionList from './components/SessionList'
 import Terminal from './components/Terminal'
 import NewSessionModal from './components/NewSessionModal'
 import SettingsModal from './components/SettingsModal'
+import DebugOverlay from './components/DebugOverlay'
 import { useSessionStore } from './stores/sessionStore'
 import {
   useSettingsStore,
@@ -24,6 +25,10 @@ interface ServerInfo {
 }
 
 export default function App() {
+  const debugUI = useMemo(() => {
+    if (typeof window === 'undefined' || !window.location) return false
+    return new URLSearchParams(window.location.search).has('debug-ui')
+  }, [])
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
@@ -413,6 +418,8 @@ export default function App() {
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
       />
+
+      {debugUI && <DebugOverlay />}
     </div>
   )
 }

@@ -34,18 +34,19 @@ describe('useVisualViewport', () => {
     const events = new Map<string, EventListener>()
     const removed: string[] = []
     const style = {
-      value: '',
+      values: new Map<string, string>(),
       setProperty: (_key: string, val: string) => {
-        style.value = val
+        style.values.set(_key, val)
       },
       removeProperty: (_key: string) => {
-        style.value = ''
+        style.values.delete(_key)
       },
     }
     const classList = createMockClassList()
 
     const viewport = {
       height: 700,
+      width: 800,
       addEventListener: (event: string, handler: EventListener) => {
         events.set(event, handler)
       },
@@ -69,18 +70,26 @@ describe('useVisualViewport', () => {
       renderer = TestRenderer.create(<HookHarness />)
     })
 
-    expect(style.value).toBe('200px')
+    expect(style.values.get('--keyboard-inset')).toBe('200px')
+    expect(style.values.get('--viewport-offset-top')).toBe('0px')
+    expect(style.values.get('--viewport-offset-left')).toBe('0px')
+    expect(style.values.get('--visual-viewport-height')).toBe('700px')
+    expect(style.values.get('--visual-viewport-width')).toBe('800px')
     expect(events.has('resize')).toBe(true)
     expect(events.has('scroll')).toBe(true)
 
     events.get('resize')?.({} as Event)
-    expect(style.value).toBe('200px')
+    expect(style.values.get('--keyboard-inset')).toBe('200px')
 
     act(() => {
       renderer.unmount()
     })
 
     expect(removed).toEqual(['resize', 'scroll'])
-    expect(style.value).toBe('')
+    expect(style.values.has('--keyboard-inset')).toBe(false)
+    expect(style.values.has('--viewport-offset-top')).toBe(false)
+    expect(style.values.has('--viewport-offset-left')).toBe(false)
+    expect(style.values.has('--visual-viewport-height')).toBe(false)
+    expect(style.values.has('--visual-viewport-width')).toBe(false)
   })
 })
