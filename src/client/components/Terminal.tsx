@@ -837,10 +837,27 @@ export default function Terminal({
   }, [session, sendMessage, containerRef, inTmuxCopyModeRef, setTmuxCopyMode])
 
   const isKeyboardVisible = useCallback(() => {
+    if (typeof document === 'undefined') return false
     const container = containerRef.current
     if (!container) return false
     const textarea = container.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement | null
-    return textarea ? document.activeElement === textarea : false
+    if (textarea && document.activeElement === textarea) {
+      return true
+    }
+
+    const activeElement = document.activeElement
+    const inputActive =
+      typeof HTMLInputElement !== 'undefined' && activeElement instanceof HTMLInputElement
+    const textareaActive =
+      typeof HTMLTextAreaElement !== 'undefined' && activeElement instanceof HTMLTextAreaElement
+    if (inputActive || textareaActive) {
+      return false
+    }
+    if (activeElement && (activeElement as HTMLElement).isContentEditable) {
+      return false
+    }
+
+    return !!document.documentElement?.classList?.contains('keyboard-visible')
   }, [containerRef])
 
   useEffect(() => {
