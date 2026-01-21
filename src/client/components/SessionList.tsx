@@ -16,9 +16,11 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { HandIcon } from '@untitledui-icons/react/line'
+import { HandIcon, XCloseIcon } from '@untitledui-icons/react/line'
 import ChevronDownIcon from '@untitledui-icons/react/line/esm/ChevronDownIcon'
 import ChevronRightIcon from '@untitledui-icons/react/line/esm/ChevronRightIcon'
+import Edit05Icon from '@untitledui-icons/react/line/esm/Edit05Icon'
+import Settings01Icon from '@untitledui-icons/react/line/esm/Settings01Icon'
 import type { AgentSession, Session } from '@shared/types'
 import { getSessionOrderKey, getUniqueProjects, sortSessions } from '../utils/sessions'
 import { formatRelativeTime } from '../utils/time'
@@ -42,6 +44,8 @@ interface SessionListProps {
   onSelect: (sessionId: string) => void
   onRename: (sessionId: string, newName: string) => void
   onResume?: (sessionId: string) => void
+  onKill?: (sessionId: string) => void
+  onOpenSettings?: () => void
 }
 
 const statusBarClass: Record<Session['status'], string> = {
@@ -69,6 +73,8 @@ export default function SessionList({
   onSelect,
   onRename,
   onResume,
+  onKill,
+  onOpenSettings,
 }: SessionListProps) {
   useTimestampRefresh()
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
@@ -598,6 +604,8 @@ export default function SessionList({
                         onStartEdit={() => setEditingSessionId(session.id)}
                         onCancelEdit={() => setEditingSessionId(null)}
                         onRename={(newName) => handleRename(session.id, newName)}
+                        onKill={onKill ? () => onKill(session.id) : undefined}
+                        onOpenSettings={onOpenSettings}
                       />
                     )
                   })}
@@ -723,6 +731,8 @@ interface SortableSessionItemProps {
   onStartEdit: () => void
   onCancelEdit: () => void
   onRename: (newName: string) => void
+  onKill?: () => void
+  onOpenSettings?: () => void
 }
 
 const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>(function SortableSessionItem({
@@ -743,6 +753,8 @@ const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>
   onStartEdit,
   onCancelEdit,
   onRename,
+  onKill,
+  onOpenSettings,
 }, ref) {
   const {
     attributes,
@@ -828,6 +840,8 @@ const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>
         onStartEdit={onStartEdit}
         onCancelEdit={onCancelEdit}
         onRename={onRename}
+        onKill={onKill}
+        onOpenSettings={onOpenSettings}
       />
       {dropIndicator === 'below' && (
         <div className="absolute -bottom-px left-3 right-3 h-0.5 border-t-2 border-dashed border-accent" />
@@ -850,6 +864,8 @@ interface SessionRowProps {
   onStartEdit: () => void
   onCancelEdit: () => void
   onRename: (newName: string) => void
+  onKill?: () => void
+  onOpenSettings?: () => void
 }
 
 function SessionRow({
@@ -864,15 +880,19 @@ function SessionRow({
   onStartEdit,
   onCancelEdit,
   onRename,
+  onKill,
+  onOpenSettings,
 }: SessionRowProps) {
   const lastActivity = formatRelativeTime(session.lastActivity)
   const inputRef = useRef<HTMLInputElement>(null)
+  const contextMenuRef = useRef<HTMLDivElement>(null)
   const displayName =
     session.agentSessionName?.trim() ||
     session.name?.trim() ||
     session.id
   const [editValue, setEditValue] = useState(displayName)
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const directoryLeaf = getPathLeaf(session.projectPath)
   const needsInput = session.status === 'permission'
   const agentSessionId = session.agentSessionId?.trim()
@@ -950,6 +970,38 @@ function SessionRow({
     }
   }
 
+  // Close context menu on click outside or escape
+  useEffect(() => {
+    if (!contextMenu) return
+
+    const handleClickOutside = (e: MouseEvent | TouchEvent) => {
+      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
+        setContextMenu(null)
+      }
+    }
+
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setContextMenu(null)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    document.addEventListener('touchstart', handleClickOutside)
+    document.addEventListener('keydown', handleEscape)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('touchstart', handleClickOutside)
+      document.removeEventListener('keydown', handleEscape)
+    }
+  }, [contextMenu])
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setContextMenu({ x: e.clientX, y: e.clientY })
+  }
+
   return (
     <div
       className={`session-row group cursor-pointer px-3 py-2 ${isSelected ? 'selected' : ''} ${isDragging ? 'cursor-grabbing shadow-lg ring-1 ring-accent/30 bg-elevated' : 'cursor-grab'}`}
@@ -961,6 +1013,7 @@ function SessionRow({
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') onSelect()
       }}
+      onContextMenu={handleContextMenu}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
       onTouchCancel={handleTouchEnd}
@@ -1025,6 +1078,60 @@ function SessionRow({
           </div>
         )}
       </div>
+
+      {/* Context menu */}
+      {contextMenu && (
+        <div
+          ref={contextMenuRef}
+          className="fixed z-50 min-w-[160px] rounded-md border border-border bg-elevated shadow-lg py-1"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          role="menu"
+        >
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              setContextMenu(null)
+              onStartEdit()
+            }}
+            className="w-full px-3 py-2 text-left text-sm text-secondary hover:bg-hover hover:text-primary flex items-center gap-2"
+            role="menuitem"
+          >
+            <Edit05Icon width={14} height={14} />
+            Rename
+          </button>
+          {onOpenSettings && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                setContextMenu(null)
+                onOpenSettings()
+              }}
+              className="w-full px-3 py-2 text-left text-sm text-secondary hover:bg-hover hover:text-primary flex items-center gap-2"
+              role="menuitem"
+            >
+              <Settings01Icon width={14} height={14} />
+              Settings
+            </button>
+          )}
+          {onKill && (
+            <>
+              <div className="my-1 border-t border-border" />
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setContextMenu(null)
+                  onKill()
+                }}
+                className="w-full px-3 py-2 text-left text-sm text-danger hover:bg-danger/10 flex items-center gap-2"
+                role="menuitem"
+              >
+                <XCloseIcon width={14} height={14} />
+                Kill Session
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   )
 }

@@ -367,6 +367,8 @@ export default function App() {
           onSelect={setSelectedSessionId}
           onRename={handleRenameSession}
           onResume={handleResumeSession}
+          onKill={handleKillSession}
+          onOpenSettings={handleOpenSettings}
           loading={!hasLoaded}
           error={connectionError || serverError}
         />
