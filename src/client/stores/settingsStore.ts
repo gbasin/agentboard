@@ -146,6 +146,11 @@ interface SettingsState {
   setSidebarWidth: (width: number) => void
   projectFilters: string[]
   setProjectFilters: (filters: string[]) => void
+  // Sound notifications
+  soundOnPermission: boolean
+  setSoundOnPermission: (enabled: boolean) => void
+  soundOnIdle: boolean
+  setSoundOnIdle: (enabled: boolean) => void
   // Command presets
   commandPresets: CommandPreset[]
   setCommandPresets: (presets: CommandPreset[]) => void
@@ -205,6 +210,11 @@ export const useSettingsStore = create<SettingsState>()(
         }),
       projectFilters: [],
       setProjectFilters: (filters) => set({ projectFilters: filters }),
+      // Sound notifications
+      soundOnPermission: false,
+      setSoundOnPermission: (enabled) => set({ soundOnPermission: enabled }),
+      soundOnIdle: false,
+      setSoundOnIdle: (enabled) => set({ soundOnIdle: enabled }),
       // Command presets
       commandPresets: DEFAULT_PRESETS,
       setCommandPresets: (presets) => set({ commandPresets: presets }),

@@ -13,6 +13,7 @@ import {
 import { useThemeStore, type Theme } from '../stores/themeStore'
 import { getEffectiveModifier, getModifierDisplay } from '../utils/device'
 import { Switch } from './Switch'
+import { playPermissionSound, playIdleSound, primeAudio } from '../utils/sound'
 
 interface SettingsChangeFlags {
   webglChanged: boolean
@@ -79,6 +80,10 @@ export default function SettingsModal({
   )
   const theme = useThemeStore((state) => state.theme)
   const setTheme = useThemeStore((state) => state.setTheme)
+  const soundOnPermission = useSettingsStore((state) => state.soundOnPermission)
+  const setSoundOnPermission = useSettingsStore((state) => state.setSoundOnPermission)
+  const soundOnIdle = useSettingsStore((state) => state.soundOnIdle)
+  const setSoundOnIdle = useSettingsStore((state) => state.setSoundOnIdle)
 
   const [draftDir, setDraftDir] = useState(defaultProjectDir)
   const [draftPresets, setDraftPresets] = useState<CommandPreset[]>(commandPresets)
@@ -105,6 +110,8 @@ export default function SettingsModal({
     showSessionIdPrefix
   )
   const [draftTheme, setDraftTheme] = useState<Theme>(theme)
+  const [draftSoundOnPermission, setDraftSoundOnPermission] = useState(soundOnPermission)
+  const [draftSoundOnIdle, setDraftSoundOnIdle] = useState(soundOnIdle)
 
   // New preset form state
   const [showAddForm, setShowAddForm] = useState(false)
@@ -137,6 +144,8 @@ export default function SettingsModal({
       setDraftShowLastUserMessage(showLastUserMessage)
       setDraftShowSessionIdSuffix(showSessionIdPrefix)
       setDraftTheme(theme)
+      setDraftSoundOnPermission(soundOnPermission)
+      setDraftSoundOnIdle(soundOnIdle)
       setShowAddForm(false)
       setNewLabel('')
       setNewBaseCommand('')
@@ -188,6 +197,8 @@ export default function SettingsModal({
     showLastUserMessage,
     showSessionIdPrefix,
     theme,
+    soundOnPermission,
+    soundOnIdle,
     isOpen,
   ])
 
@@ -230,6 +241,8 @@ export default function SettingsModal({
     setShowLastUserMessage(draftShowLastUserMessage)
     setShowSessionIdPrefix(draftShowSessionIdPrefix)
     setTheme(draftTheme)
+    setSoundOnPermission(draftSoundOnPermission)
+    setSoundOnIdle(draftSoundOnIdle)
     onClose({ webglChanged })
   }
 
@@ -561,6 +574,60 @@ export default function SettingsModal({
                 checked={draftShowSessionIdPrefix}
                 onCheckedChange={setDraftShowSessionIdSuffix}
               />
+            </div>
+          </div>
+
+          <div className="border-t border-border pt-4 space-y-3">
+            <label className="mb-1 block text-xs text-secondary">
+              Notifications
+            </label>
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <div className="text-sm text-primary">Permission Sound</div>
+                <div className="text-[10px] text-muted">
+                  Play a ping when any session needs permission.
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void playPermissionSound()}
+                  className="btn text-xs px-2 py-1"
+                >
+                  Test
+                </button>
+                <Switch
+                  checked={draftSoundOnPermission}
+                  onCheckedChange={(checked) => {
+                    setDraftSoundOnPermission(checked)
+                    if (checked) void primeAudio() // Unlock audio on user gesture
+                  }}
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <div className="text-sm text-primary">Idle Sound</div>
+                <div className="text-[10px] text-muted">
+                  Play a chime when a session finishes working.
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void playIdleSound()}
+                  className="btn text-xs px-2 py-1"
+                >
+                  Test
+                </button>
+                <Switch
+                  checked={draftSoundOnIdle}
+                  onCheckedChange={(checked) => {
+                    setDraftSoundOnIdle(checked)
+                    if (checked) void primeAudio() // Unlock audio on user gesture
+                  }}
+                />
+              </div>
             </div>
           </div>
 

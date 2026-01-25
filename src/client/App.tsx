@@ -16,6 +16,7 @@ import { useWebSocket } from './hooks/useWebSocket'
 import { useVisualViewport } from './hooks/useVisualViewport'
 import { sortSessions } from './utils/sessions'
 import { getEffectiveModifier, matchesModifier } from './utils/device'
+import { playPermissionSound, playIdleSound } from './utils/sound'
 
 interface ServerInfo {
   port: number
@@ -118,7 +119,26 @@ export default function App() {
         setSessions(message.sessions)
       }
       if (message.type === 'session-update') {
+        // Detect status transitions for sound notifications
+        // Capture previous status BEFORE updating to ensure we have the old value
+        const currentSessions = useSessionStore.getState().sessions
+        const prevSession = currentSessions.find((s) => s.id === message.session.id)
+        const prevStatus = prevSession?.status
+        const nextStatus = message.session.status
+
         updateSession(message.session)
+
+        // Only play sounds for known sessions (skip new/unknown sessions)
+        if (prevStatus) {
+          const { soundOnPermission, soundOnIdle } = useSettingsStore.getState()
+
+          if (prevStatus !== 'permission' && nextStatus === 'permission' && soundOnPermission) {
+            void playPermissionSound()
+          }
+          if (prevStatus === 'working' && nextStatus === 'waiting' && soundOnIdle) {
+            void playIdleSound()
+          }
+        }
       }
       if (message.type === 'session-created') {
         // Add session to list immediately (don't wait for async refresh)
