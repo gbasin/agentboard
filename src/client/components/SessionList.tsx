@@ -22,7 +22,6 @@ import ChevronDownIcon from '@untitledui-icons/react/line/esm/ChevronDownIcon'
 import ChevronRightIcon from '@untitledui-icons/react/line/esm/ChevronRightIcon'
 import Edit05Icon from '@untitledui-icons/react/line/esm/Edit05Icon'
 import Pin02Icon from '@untitledui-icons/react/line/esm/Pin02Icon'
-import Settings01Icon from '@untitledui-icons/react/line/esm/Settings01Icon'
 import type { AgentSession, Session } from '@shared/types'
 import { getSessionOrderKey, getUniqueProjects, sortSessions } from '../utils/sessions'
 import { formatRelativeTime } from '../utils/time'
@@ -49,7 +48,6 @@ interface SessionListProps {
   onKill?: (sessionId: string) => void
   onDuplicate?: (sessionId: string) => void
   onSetPinned?: (sessionId: string, isPinned: boolean) => void
-  onOpenSettings?: () => void
 }
 
 const statusBarClass: Record<Session['status'], string> = {
@@ -80,7 +78,6 @@ export default function SessionList({
   onKill,
   onDuplicate,
   onSetPinned,
-  onOpenSettings,
 }: SessionListProps) {
   useTimestampRefresh()
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
@@ -613,7 +610,6 @@ export default function SessionList({
                         onKill={onKill ? () => onKill(session.id) : undefined}
                         onDuplicate={onDuplicate ? () => onDuplicate(session.id) : undefined}
                         onSetPinned={onSetPinned && session.agentSessionId ? (isPinned) => onSetPinned(session.agentSessionId!.trim(), isPinned) : undefined}
-                        onOpenSettings={onOpenSettings}
                       />
                     )
                   })}
@@ -688,6 +684,7 @@ export default function SessionList({
                         showLastUserMessage={showLastUserMessage}
                         onResume={(sessionId) => onResume?.(sessionId)}
                         onPreview={setPreviewSession}
+                        onSetPinned={onSetPinned}
                       />
                     </motion.div>
                   )})}
@@ -742,7 +739,6 @@ interface SortableSessionItemProps {
   onKill?: () => void
   onDuplicate?: () => void
   onSetPinned?: (isPinned: boolean) => void
-  onOpenSettings?: () => void
 }
 
 const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>(function SortableSessionItem({
@@ -766,7 +762,6 @@ const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>
   onKill,
   onDuplicate,
   onSetPinned,
-  onOpenSettings,
 }, ref) {
   const {
     attributes,
@@ -855,7 +850,6 @@ const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>
         onKill={onKill}
         onDuplicate={onDuplicate}
         onSetPinned={onSetPinned}
-        onOpenSettings={onOpenSettings}
       />
       {dropIndicator === 'below' && (
         <div className="absolute -bottom-px left-3 right-3 h-0.5 border-t-2 border-dashed border-accent" />
@@ -881,7 +875,6 @@ interface SessionRowProps {
   onKill?: () => void
   onDuplicate?: () => void
   onSetPinned?: (isPinned: boolean) => void
-  onOpenSettings?: () => void
 }
 
 function SessionRow({
@@ -899,7 +892,6 @@ function SessionRow({
   onKill,
   onDuplicate,
   onSetPinned,
-  onOpenSettings,
 }: SessionRowProps) {
   const lastActivity = formatRelativeTime(session.lastActivity)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -1124,20 +1116,6 @@ function SessionRow({
             <Edit05Icon width={14} height={14} />
             Rename
           </button>
-          {onOpenSettings && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                setContextMenu(null)
-                onOpenSettings()
-              }}
-              className="w-full px-3 py-2 text-left text-sm text-secondary hover:bg-hover hover:text-primary flex items-center gap-2"
-              role="menuitem"
-            >
-              <Settings01Icon width={14} height={14} />
-              Settings
-            </button>
-          )}
           {onDuplicate && (
             <button
               onClick={(e) => {

@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import AlertTriangleIcon from '@untitledui-icons/react/line/esm/AlertTriangleIcon'
 import Pin02Icon from '@untitledui-icons/react/line/esm/Pin02Icon'
 import type { AgentSession } from '@shared/types'
@@ -14,6 +15,7 @@ interface InactiveSessionItemProps {
   showLastUserMessage: boolean
   onResume: (sessionId: string) => void
   onPreview: (session: AgentSession) => void
+  onSetPinned?: (sessionId: string, isPinned: boolean) => void
 }
 
 export default function InactiveSessionItem({
@@ -23,6 +25,7 @@ export default function InactiveSessionItem({
   showLastUserMessage,
   onResume,
   onPreview,
+  onSetPinned,
 }: InactiveSessionItemProps) {
   const lastActivity = formatRelativeTime(session.lastActivityAt)
   const directoryLeaf = getPathLeaf(session.projectPath)
@@ -33,6 +36,41 @@ export default function InactiveSessionItem({
   const sessionIdPrefix = showSessionIdPrefix
     ? getSessionIdShort(session.sessionId)
     : ''
+
+  const contextMenuRef = useRef<HTMLDivElement>(null)
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
+
+  // Close context menu on click outside or escape
+  useEffect(() => {
+    if (!contextMenu) return
+
+    const handleClickOutside = (e: MouseEvent | TouchEvent) => {
+      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
+        setContextMenu(null)
+      }
+    }
+
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setContextMenu(null)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    document.addEventListener('touchstart', handleClickOutside)
+    document.addEventListener('keydown', handleEscape)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('touchstart', handleClickOutside)
+      document.removeEventListener('keydown', handleEscape)
+    }
+  }, [contextMenu])
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setContextMenu({ x: e.clientX, y: e.clientY })
+  }
 
   return (
     <div
@@ -47,6 +85,7 @@ export default function InactiveSessionItem({
           onPreview(session)
         }
       }}
+      onContextMenu={handleContextMenu}
     >
       {/* Play icon for quick resume - absolutely positioned, appears on hover */}
       <button
@@ -111,6 +150,32 @@ export default function InactiveSessionItem({
           </div>
         )}
       </div>
+
+      {/* Context menu */}
+      {contextMenu && (
+        <div
+          ref={contextMenuRef}
+          className="fixed z-50 min-w-[160px] rounded-md border border-border bg-elevated shadow-lg py-1"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          role="menu"
+        >
+          {onSetPinned && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                setContextMenu(null)
+                onSetPinned(session.sessionId, !session.isPinned)
+              }}
+              className="w-full px-3 py-2 text-left text-sm text-secondary hover:bg-hover hover:text-primary flex items-center gap-2"
+              role="menuitem"
+              title={session.isPinned ? 'Remove from auto-resume list' : 'Auto-resume on server restart'}
+            >
+              <Pin02Icon width={14} height={14} />
+              {session.isPinned ? 'Unpin' : 'Pin'}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   )
 }

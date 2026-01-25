@@ -460,7 +460,6 @@ export default function App() {
           onKill={handleKillSession}
           onDuplicate={handleDuplicateSession}
           onSetPinned={handleSetPinned}
-          onOpenSettings={handleOpenSettings}
           loading={!hasLoaded}
           error={connectionError || serverError}
         />
