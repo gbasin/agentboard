@@ -188,6 +188,8 @@ mock.module('../../config', () => ({
     rgThreads: 1,
     logMatchWorker: false,
     logMatchProfile: false,
+    claudeResumeCmd: 'claude --resume {sessionId}',
+    codexResumeCmd: 'codex resume {sessionId}',
   },
 }))
 mock.module('../../SessionManager', () => ({

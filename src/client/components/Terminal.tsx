@@ -1064,7 +1064,8 @@ export default function Terminal({
         {showScrollButton && session && !isSelectingText && (
           <button
             onClick={scrollToBottom}
-            className="absolute bottom-4 right-4 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-accent text-white shadow-lg hover:bg-accent/90 active:scale-95 transition-all"
+            className="absolute bottom-8 left-1/2 z-20 flex h-10 px-4 items-center justify-center gap-1.5 rounded-full bg-accent/80 text-white shadow-lg hover:bg-accent active:scale-95 transition-all"
+            style={{ transform: 'translateX(-50%)' }}
             title="Scroll to bottom"
             aria-label="Scroll to bottom"
           >
@@ -1081,6 +1082,7 @@ export default function Terminal({
             >
               <path d="M12 5v14M5 12l7 7 7-7" />
             </svg>
+            <span className="text-sm font-medium">Jump to bottom</span>
           </button>
         )}
 
