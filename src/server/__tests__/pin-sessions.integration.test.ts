@@ -4,6 +4,7 @@ import net from 'node:net'
 import path from 'node:path'
 import os from 'node:os'
 import { initDatabase } from '../db'
+import type { AgentSessionRecord } from '../db'
 
 const tmuxAvailable = (() => {
   try {
@@ -153,10 +154,18 @@ if (!tmuxAvailable) {
 
       await startServer()
 
-      const resurrected = await waitForResurrectedSession(resurrectSessionId, port)
-      expect(resurrected.agentSessionId).toBe(resurrectSessionId)
+      const resurrected = await waitForResurrectedSessionInDb(
+        resurrectSessionId,
+        dbPath
+      )
       expect(resurrected.isPinned).toBe(true)
-      expect(resurrected.tmuxWindow.startsWith(`${sessionName}:`)).toBe(true)
+      expect(resurrected.lastResumeError).toBe(null)
+      expect(resurrected.currentWindow).not.toBe(null)
+      if (!resurrected.currentWindow) {
+        throw new Error('Resurrected session missing current window')
+      }
+      expect(resurrected.currentWindow.startsWith(`${sessionName}:`)).toBe(true)
+      assertTmuxWindowExists(sessionName, resurrected.currentWindow)
       },
       15000
     )
@@ -235,29 +244,24 @@ async function waitForHealth(port: number, timeoutMs = 8000): Promise<void> {
   throw new Error('Server did not become healthy in time')
 }
 
-type SessionPayload = {
-  agentSessionId?: string
-  isPinned?: boolean
-  tmuxWindow: string
-}
-
-async function waitForResurrectedSession(
+async function waitForResurrectedSessionInDb(
   sessionId: string,
-  port: number,
+  dbPath: string,
   timeoutMs = 8000
-): Promise<SessionPayload> {
+): Promise<AgentSessionRecord> {
   const start = Date.now()
   while (Date.now() - start < timeoutMs) {
     try {
-      const response = await fetch(`http://localhost:${port}/api/sessions`)
-      if (response.ok) {
-        const sessions = (await response.json()) as SessionPayload[]
-        const match = sessions.find(
-          (session) => session.agentSessionId === sessionId && session.isPinned
-        )
-        if (match) {
-          return match
-        }
+      const db = initDatabase({ path: dbPath })
+      const record = db.getSessionById(sessionId)
+      db.close()
+      if (
+        record &&
+        record.isPinned &&
+        record.currentWindow &&
+        !record.lastResumeError
+      ) {
+        return record
       }
     } catch {
       // retry
@@ -265,6 +269,24 @@ async function waitForResurrectedSession(
     await delay(150)
   }
   throw new Error('Pinned session did not resurrect in time')
+}
+
+function assertTmuxWindowExists(sessionName: string, tmuxWindow: string) {
+  const result = Bun.spawnSync(
+    ['tmux', 'list-windows', '-t', sessionName, '-F', '#{session_name}:#{window_id}'],
+    { stdout: 'pipe', stderr: 'pipe' }
+  )
+  if (result.exitCode !== 0) {
+    throw new Error('tmux list-windows failed')
+  }
+  const windows = result.stdout
+    .toString()
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+  if (!windows.includes(tmuxWindow)) {
+    throw new Error(`tmux window not found: ${tmuxWindow}`)
+  }
 }
 
 async function waitForOpen(ws: WebSocket, timeoutMs = 5000): Promise<void> {
