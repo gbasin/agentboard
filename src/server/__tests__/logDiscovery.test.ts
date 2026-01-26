@@ -7,6 +7,7 @@ import {
   extractProjectPath,
   extractSessionId,
   getLogSearchDirs,
+  isCodexExec,
   isCodexSubagent,
   scanAllLogDirs,
 } from '../logDiscovery'
@@ -195,5 +196,72 @@ describe('isCodexSubagent', () => {
     await fs.writeFile(logPath, `${line}\n`)
 
     expect(isCodexSubagent(logPath)).toBe(false)
+  })
+})
+
+describe('isCodexExec', () => {
+  test('returns false for CLI sessions (source is "cli")', async () => {
+    const codexLogDir = path.join(codexDir, 'sessions', '2026', '01', '10')
+    await fs.mkdir(codexLogDir, { recursive: true })
+    const logPath = path.join(codexLogDir, 'cli-session.jsonl')
+    const line = JSON.stringify({
+      type: 'session_meta',
+      payload: {
+        id: 'cli-session-123',
+        cwd: '/Users/example/project',
+        source: 'cli',
+      },
+    })
+    await fs.writeFile(logPath, `${line}\n`)
+
+    expect(isCodexExec(logPath)).toBe(false)
+  })
+
+  test('returns true for exec sessions (source is "exec")', async () => {
+    const codexLogDir = path.join(codexDir, 'sessions', '2026', '01', '10')
+    await fs.mkdir(codexLogDir, { recursive: true })
+    const logPath = path.join(codexLogDir, 'exec-session.jsonl')
+    const line = JSON.stringify({
+      type: 'session_meta',
+      payload: {
+        id: 'exec-session-456',
+        cwd: '/private/var/folders/tmp',
+        source: 'exec',
+        originator: 'codex_exec',
+      },
+    })
+    await fs.writeFile(logPath, `${line}\n`)
+
+    expect(isCodexExec(logPath)).toBe(true)
+  })
+
+  test('returns false for subagent sessions', async () => {
+    const codexLogDir = path.join(codexDir, 'sessions', '2026', '01', '10')
+    await fs.mkdir(codexLogDir, { recursive: true })
+    const logPath = path.join(codexLogDir, 'subagent.jsonl')
+    const line = JSON.stringify({
+      type: 'session_meta',
+      payload: {
+        id: 'subagent-789',
+        cwd: '/Users/example/project',
+        source: { subagent: 'review' },
+      },
+    })
+    await fs.writeFile(logPath, `${line}\n`)
+
+    expect(isCodexExec(logPath)).toBe(false)
+  })
+
+  test('returns false for non-existent files', () => {
+    expect(isCodexExec('/nonexistent/path.jsonl')).toBe(false)
+  })
+
+  test('returns false for empty files', async () => {
+    const codexLogDir = path.join(codexDir, 'sessions', '2026', '01', '10')
+    await fs.mkdir(codexLogDir, { recursive: true })
+    const logPath = path.join(codexLogDir, 'empty-exec.jsonl')
+    await fs.writeFile(logPath, '')
+
+    expect(isCodexExec(logPath)).toBe(false)
   })
 })

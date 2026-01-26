@@ -5,6 +5,7 @@ import {
   getLogSearchDirs,
   getLogTimes,
   inferAgentTypeFromPath,
+  isCodexExec,
   isCodexSubagent,
 } from './logDiscovery'
 import {
@@ -15,7 +16,7 @@ import {
   isToolNotificationText,
   matchWindowsToLogsByExactRg,
 } from './logMatcher'
-import { getEntriesNeedingMatch } from './logMatchGate'
+import { getEntriesNeedingMatch, shouldSkipMatching } from './logMatchGate'
 import { collectLogEntryBatch, type LogEntrySnapshot } from './logPollData'
 import type {
   LastMessageCandidate,
@@ -61,6 +62,7 @@ export function handleMatchWorkerRequest(
 
     const entriesToMatch = getEntriesNeedingMatch(entries, payload.sessions, {
       minTokens: payload.minTokensForMatch ?? 0,
+      skipMatchingPatterns: payload.skipMatchingPatterns ?? [],
     })
     if (entriesToMatch.length === 0) {
       matchSkipped = true
@@ -89,11 +91,11 @@ export function handleMatchWorkerRequest(
 
     const orphanCandidates = payload.orphanCandidates ?? []
     if (payload.forceOrphanRematch && orphanCandidates.length > 0) {
-      orphanEntries = buildOrphanEntries(
-        orphanCandidates,
-        entries,
-        payload.minTokensForMatch ?? 0
-      )
+      const skipPatterns = payload.skipMatchingPatterns ?? []
+      orphanEntries = buildOrphanEntries(orphanCandidates, entries, {
+        minTokens: payload.minTokensForMatch ?? 0,
+        skipPatterns,
+      })
       if (orphanEntries.length > 0) {
         const startupRgThreads = Math.max(
           search.rgThreads ?? 1,
@@ -161,10 +163,15 @@ export function handleMatchWorkerRequest(
   }
 }
 
+interface BuildOrphanEntriesOptions {
+  minTokens: number
+  skipPatterns: string[]
+}
+
 function buildOrphanEntries(
   candidates: OrphanCandidate[],
   _entries: LogEntrySnapshot[],
-  minTokens: number
+  { minTokens, skipPatterns }: BuildOrphanEntriesOptions
 ): LogEntrySnapshot[] {
   // Note: We intentionally don't skip logs that are in `entries`.
   // For orphan rematch, we want to match ALL orphan candidates to windows,
@@ -184,6 +191,25 @@ function buildOrphanEntries(
     const times = getLogTimes(logPath)
     if (!times) continue
 
+    // Check skip patterns BEFORE expensive token counting
+    const codexExec = agentType === 'codex' ? isCodexExec(logPath) : false
+    if (skipPatterns.length > 0) {
+      const preEntry: LogEntrySnapshot = {
+        logPath,
+        mtime: times.mtime.getTime(),
+        birthtime: times.birthtime.getTime(),
+        sessionId: record.sessionId,
+        projectPath: record.projectPath ?? null,
+        agentType: agentType ?? null,
+        isCodexSubagent: false,
+        isCodexExec: codexExec,
+        logTokenCount: 0,
+      }
+      if (shouldSkipMatching(preEntry, skipPatterns)) {
+        continue
+      }
+    }
+
     const logTokenCount = getLogTokenCount(logPath)
     if (minTokens > 0 && logTokenCount < minTokens) {
       continue
@@ -197,6 +223,7 @@ function buildOrphanEntries(
       projectPath: record.projectPath ?? null,
       agentType: agentType ?? null,
       isCodexSubagent: false,
+      isCodexExec: codexExec,
       logTokenCount,
     })
   }
@@ -229,6 +256,7 @@ function buildLastMessageEntries(
     const times = getLogTimes(logPath)
     if (!times) continue
 
+    const codexExec = resolvedAgentType === 'codex' ? isCodexExec(logPath) : false
     nextEntries.push({
       logPath,
       mtime: times.mtime.getTime(),
@@ -237,6 +265,7 @@ function buildLastMessageEntries(
       projectPath: record.projectPath ?? null,
       agentType: resolvedAgentType,
       isCodexSubagent: codexSubagent,
+      isCodexExec: codexExec,
       logTokenCount: 0,
     })
   }

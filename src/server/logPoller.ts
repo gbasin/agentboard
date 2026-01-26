@@ -253,6 +253,7 @@ export class LogPoller {
           forceOrphanRematch: true,
           orphanCandidates,
           lastMessageCandidates: [],
+          skipMatchingPatterns: config.skipMatchingPatterns,
           search: {
             rgThreads: this.rgThreads,
           },
@@ -483,6 +484,7 @@ export class LogPoller {
             forceOrphanRematch: false, // Orphan rematch runs in background separately
             orphanCandidates: [],
             lastMessageCandidates,
+            skipMatchingPatterns: config.skipMatchingPatterns,
             search: {
               rgThreads: this.rgThreads,
               profile: this.matchProfile,
@@ -511,6 +513,7 @@ export class LogPoller {
           }
           entriesToMatch = getEntriesNeedingMatch(entries, sessions, {
             minTokens: MIN_LOG_TOKENS_FOR_INSERT,
+            skipMatchingPatterns: config.skipMatchingPatterns,
           })
         } catch (error) {
           errors += 1

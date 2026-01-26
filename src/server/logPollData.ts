@@ -5,6 +5,7 @@ import {
   extractSessionId,
   getLogTimes,
   inferAgentTypeFromPath,
+  isCodexExec,
   isCodexSubagent,
   scanAllLogDirs,
 } from './logDiscovery'
@@ -18,6 +19,7 @@ export interface LogEntrySnapshot {
   projectPath: string | null
   agentType: AgentType | null
   isCodexSubagent: boolean
+  isCodexExec: boolean
   logTokenCount: number
   lastUserMessage?: string
 }
@@ -81,6 +83,8 @@ export function collectLogEntryBatch(
     if (known) {
       // Use cached metadata from DB, skip file content reads
       // logTokenCount = -1 indicates enrichment was skipped (already validated)
+      // Still need to check isCodexExec for matching decisions
+      const codexExec = known.agentType === 'codex' ? isCodexExec(entry.logPath) : false
       return {
         logPath: entry.logPath,
         mtime: entry.mtime,
@@ -89,6 +93,7 @@ export function collectLogEntryBatch(
         projectPath: known.projectPath,
         agentType: known.agentType,
         isCodexSubagent: false,
+        isCodexExec: codexExec,
         logTokenCount: -1,
       } satisfies LogEntrySnapshot
     }
@@ -98,6 +103,7 @@ export function collectLogEntryBatch(
     const sessionId = extractSessionId(entry.logPath)
     const projectPath = extractProjectPath(entry.logPath)
     const codexSubagent = agentType === 'codex' ? isCodexSubagent(entry.logPath) : false
+    const codexExec = agentType === 'codex' ? isCodexExec(entry.logPath) : false
     const shouldCountTokens = Boolean(sessionId) && !codexSubagent && Boolean(agentType)
     const logTokenCount = shouldCountTokens ? getLogTokenCount(entry.logPath) : 0
 
@@ -109,6 +115,7 @@ export function collectLogEntryBatch(
       projectPath,
       agentType: agentType ?? null,
       isCodexSubagent: codexSubagent,
+      isCodexExec: codexExec,
       logTokenCount,
     } satisfies LogEntrySnapshot
   })

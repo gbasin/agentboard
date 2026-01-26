@@ -52,6 +52,27 @@ const excludeProjects = (process.env.AGENTBOARD_EXCLUDE_PROJECTS || '')
   .map((p) => p.trim())
   .filter(Boolean)
 
+// Default patterns for sessions that should skip window matching when orphaned.
+// These sessions are still tracked in the DB but won't trigger expensive
+// ripgrep scans trying to match them to tmux windows.
+// Special markers:
+//   <codex-exec> - Codex sessions started via `codex exec` (headless)
+// Path patterns support trailing * for prefix matching.
+const defaultSkipMatchingPatterns = [
+  '<codex-exec>',
+  '/private/tmp/*',
+  '/private/var/folders/*',
+  '/var/folders/*',
+  '/tmp/*',
+]
+
+// Allow override via env var (comma-separated). If set (even empty), replaces defaults.
+// Set to empty string to disable skip matching entirely.
+const skipMatchingPatternsRaw = process.env.AGENTBOARD_SKIP_MATCHING_PATTERNS
+const skipMatchingPatterns = skipMatchingPatternsRaw !== undefined
+  ? skipMatchingPatternsRaw.split(',').map((p) => p.trim()).filter(Boolean)
+  : defaultSkipMatchingPatterns
+
 // Logging config
 const logLevelRaw = process.env.LOG_LEVEL?.toLowerCase()
 const logLevel = ['debug', 'info', 'warn', 'error'].includes(logLevelRaw || '')
@@ -95,6 +116,7 @@ export const config = {
   workingGracePeriodMs,
   inactiveSessionMaxAgeHours,
   excludeProjects,
+  skipMatchingPatterns,
   logLevel,
   logFile,
 }

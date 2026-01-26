@@ -152,41 +152,51 @@ export class SessionManager {
     ]
     this.runTmux(tmuxArgs)
 
-    const sessions = this.listWindowsForSession(this.sessionName, 'managed')
-    let created = sessions.find((session) => session.name === finalName)
+    // Retry finding the created window - tmux may have slight delay making it visible
+    const maxRetries = 5
+    const retryDelayMs = 50
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      const sessions = this.listWindowsForSession(this.sessionName, 'managed')
+      let created = sessions.find((session) => session.name === finalName)
 
-    if (!created) {
-      // Fallback: identify the new window by diffing IDs (handles auto-rename)
-      const newWindows = sessions.filter(
-        (session) => !existingWindowIds.has(session.tmuxWindow)
-      )
-      if (newWindows.length === 1) {
-        created = newWindows[0]
-      } else if (newWindows.length > 1) {
-        const normalizedPath = normalizeProjectPath(resolvedPath)
-        const commandToken = finalCommand.split(/\s+/)[0] || ''
-        created =
-          newWindows.find(
-            (session) =>
-              session.projectPath === normalizedPath &&
-              (commandToken ? session.command?.includes(commandToken) : true)
-          ) ??
-          newWindows.find(
-            (session) => session.projectPath === normalizedPath
-          ) ??
-          newWindows.find(
-            (session) =>
-              commandToken ? session.command?.includes(commandToken) : false
-          ) ??
-          newWindows[0]
+      if (!created) {
+        // Fallback: identify the new window by diffing IDs (handles auto-rename)
+        const newWindows = sessions.filter(
+          (session) => !existingWindowIds.has(session.tmuxWindow)
+        )
+        if (newWindows.length === 1) {
+          created = newWindows[0]
+        } else if (newWindows.length > 1) {
+          const normalizedPath = normalizeProjectPath(resolvedPath)
+          const commandToken = finalCommand.split(/\s+/)[0] || ''
+          created =
+            newWindows.find(
+              (session) =>
+                session.projectPath === normalizedPath &&
+                (commandToken ? session.command?.includes(commandToken) : true)
+            ) ??
+            newWindows.find(
+              (session) => session.projectPath === normalizedPath
+            ) ??
+            newWindows.find(
+              (session) =>
+                commandToken ? session.command?.includes(commandToken) : false
+            ) ??
+            newWindows[0]
+        }
+      }
+
+      if (created) {
+        return created
+      }
+
+      // Window not visible yet - wait and retry (except on last attempt)
+      if (attempt < maxRetries) {
+        Bun.sleepSync(retryDelayMs)
       }
     }
 
-    if (!created) {
-      throw new Error('Failed to create tmux window')
-    }
-
-    return created
+    throw new Error('Failed to create tmux window')
   }
 
   killWindow(tmuxWindow: string): void {

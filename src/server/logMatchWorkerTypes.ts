@@ -38,6 +38,8 @@ export interface MatchWorkerRequest {
   orphanCandidates?: OrphanCandidate[]
   lastMessageCandidates?: LastMessageCandidate[]
   search?: MatchWorkerSearchOptions
+  /** Patterns for sessions that should skip window matching when orphaned */
+  skipMatchingPatterns?: string[]
 }
 
 export interface MatchWorkerResponse {

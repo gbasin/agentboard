@@ -354,3 +354,28 @@ export function isCodexSubagent(logPath: string): boolean {
   // Subagents have source: { subagent: "review" } (object)
   return typeof payload.source === 'object' && payload.source !== null
 }
+
+/**
+ * Check if a Codex log file is from a headless exec session.
+ * Exec sessions have payload.source === "exec", indicating they were
+ * started via `codex exec` rather than the interactive CLI.
+ */
+export function isCodexExec(logPath: string): boolean {
+  const head = readLogHead(logPath)
+  if (!head) return false
+
+  // Check only the first line (session_meta)
+  const firstLine = head.split('\n')[0]?.trim()
+  if (!firstLine) return false
+
+  const entry = safeParseJson(firstLine)
+  if (!entry) return false
+
+  // Only check session_meta entries
+  if (entry.type !== 'session_meta') return false
+
+  const payload = entry.payload as Record<string, unknown> | undefined
+  if (!payload) return false
+
+  return payload.source === 'exec'
+}
