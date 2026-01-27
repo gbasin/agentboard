@@ -1,7 +1,7 @@
 export type SessionStatus = 'working' | 'waiting' | 'permission' | 'unknown'
 
 export type SessionSource = 'managed' | 'external'
-export type AgentType = 'claude' | 'codex'
+export type AgentType = 'claude' | 'claude-rp' | 'codex'
 export type TerminalErrorCode =
   | 'ERR_INVALID_WINDOW'
   | 'ERR_SESSION_CREATE_FAILED'

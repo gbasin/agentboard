@@ -62,7 +62,7 @@ export function isValidPreset(p: unknown): p is CommandPreset {
     typeof obj.label === 'string' && obj.label.trim().length >= 1 && obj.label.length <= 64 &&
     typeof obj.command === 'string' && obj.command.trim().length >= 1 && obj.command.length <= 1024 &&
     typeof obj.isBuiltIn === 'boolean' &&
-    (obj.agentType === undefined || obj.agentType === 'claude' || obj.agentType === 'codex')
+    (obj.agentType === undefined || obj.agentType === 'claude' || obj.agentType === 'claude-rp' || obj.agentType === 'codex')
   )
 }
 
