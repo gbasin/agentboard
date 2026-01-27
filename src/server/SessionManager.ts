@@ -73,6 +73,8 @@ export class SessionManager {
     } catch {
       this.runTmux(['new-session', '-d', '-s', this.sessionName])
     }
+    // Enable mouse mode for scroll wheel support (SGR mouse sequences)
+    this.runTmux(['set-option', '-g', 'mouse', 'on'])
   }
 
   listWindows(): Session[] {

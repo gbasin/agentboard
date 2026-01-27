@@ -122,6 +122,11 @@ function createTmuxRunner(sessions: SessionState[], baseIndex = 0) {
       return sessionName ?? ''
     }
 
+    if (command === 'set-option') {
+      // Handle set-option commands (e.g., mouse mode)
+      return ''
+    }
+
     throw new Error(`Unhandled tmux command: ${args.join(' ')}`)
   }
 
@@ -635,6 +640,10 @@ describe('SessionManager', () => {
           throw new Error('unknown format: window_creation_time')
         }
         return '1\talpha\t/tmp/alpha\t1700000000\t1700000000\tclaude'
+      }
+
+      if (command === 'set-option') {
+        return ''
       }
 
       throw new Error(`Unhandled tmux command: ${args.join(' ')}`)
