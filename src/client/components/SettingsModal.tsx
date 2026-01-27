@@ -333,14 +333,18 @@ export default function SettingsModal({
     >
       <form
         onSubmit={handleSubmit}
-        className="w-full max-w-lg max-h-[90vh] overflow-y-auto border border-border bg-elevated p-6"
+        className="w-full max-w-lg max-h-[90vh] flex flex-col border border-border bg-elevated"
       >
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-primary text-balance">
-          Settings
-        </h2>
-        <p className="mt-2 text-xs text-muted text-pretty">
-          Configure default directory, command presets, and display options.
-        </p>
+        <div className="p-6 pb-0">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-primary text-balance">
+            Settings
+          </h2>
+          <p className="mt-2 text-xs text-muted text-pretty">
+            Configure default directory, command presets, and display options.
+          </p>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-6 pb-4">
 
         <div className="mt-5 space-y-4">
           <div>
@@ -845,7 +849,9 @@ export default function SettingsModal({
           </div>
         </div>
 
-        <div className="mt-6 flex justify-end gap-2">
+        </div>
+
+        <div className="flex justify-end gap-2 p-6 pt-4 border-t border-border bg-elevated">
           <button type="button" onClick={() => onClose()} className="btn">
             Cancel
           </button>
