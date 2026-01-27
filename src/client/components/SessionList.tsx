@@ -18,6 +18,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { HandIcon, XCloseIcon } from '@untitledui-icons/react/line'
 import Copy01Icon from '@untitledui-icons/react/line/esm/Copy01Icon'
+import File06Icon from '@untitledui-icons/react/line/esm/File06Icon'
 import ChevronDownIcon from '@untitledui-icons/react/line/esm/ChevronDownIcon'
 import ChevronRightIcon from '@untitledui-icons/react/line/esm/ChevronRightIcon'
 import Edit05Icon from '@untitledui-icons/react/line/esm/Edit05Icon'
@@ -974,6 +975,23 @@ function SessionRow({
             >
               <Pin02Icon width={14} height={14} />
               {session.isPinned ? 'Unpin' : 'Pin'}
+            </button>
+          )}
+          {session.logFilePath && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                if (session.logFilePath) {
+                  void navigator.clipboard.writeText(session.logFilePath).catch(() => {})
+                }
+                setContextMenu(null)
+              }}
+              className="w-full px-3 py-2 text-left text-sm text-secondary hover:bg-hover hover:text-primary flex items-center gap-2"
+              role="menuitem"
+              title={session.logFilePath}
+            >
+              <File06Icon width={14} height={14} />
+              Copy Log Path
             </button>
           )}
           {onKill && (

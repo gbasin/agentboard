@@ -56,9 +56,6 @@ export default function App() {
   )
   const commandPresets = useSettingsStore((state) => state.commandPresets)
   const defaultPresetId = useSettingsStore((state) => state.defaultPresetId)
-  const updatePresetModifiers = useSettingsStore(
-    (state) => state.updatePresetModifiers
-  )
   const lastProjectPath = useSettingsStore((state) => state.lastProjectPath)
   const setLastProjectPath = useSettingsStore(
     (state) => state.setLastProjectPath
@@ -498,7 +495,6 @@ export default function App() {
         defaultProjectDir={defaultProjectDir}
         commandPresets={commandPresets}
         defaultPresetId={defaultPresetId}
-        onUpdateModifiers={updatePresetModifiers}
         lastProjectPath={lastProjectPath}
         activeProjectPath={selectedSession?.projectPath}
       />

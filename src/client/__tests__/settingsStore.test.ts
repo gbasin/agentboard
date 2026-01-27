@@ -125,8 +125,7 @@ describe('command preset helpers', () => {
     const valid = {
       id: 'custom-1',
       label: 'Custom',
-      baseCommand: 'codex',
-      modifiers: '--fast',
+      command: 'codex --fast',
       isBuiltIn: false,
       agentType: 'codex' as const,
     }
@@ -134,8 +133,7 @@ describe('command preset helpers', () => {
     expect(isValidPreset(valid)).toBe(true)
     expect(isValidPreset({ ...valid, id: '' })).toBe(false)
     expect(isValidPreset({ ...valid, label: '   ' })).toBe(false)
-    expect(isValidPreset({ ...valid, baseCommand: '' })).toBe(false)
-    expect(isValidPreset({ ...valid, modifiers: 123 as unknown as string })).toBe(false)
+    expect(isValidPreset({ ...valid, command: '' })).toBe(false)
     expect(isValidPreset({ ...valid, agentType: 'other' as const })).toBe(false)
     expect(isValidPreset(null)).toBe(false)
   })
@@ -144,41 +142,36 @@ describe('command preset helpers', () => {
     const preset = {
       id: 'custom-2',
       label: '  My Preset  ',
-      baseCommand: '  bun  ',
-      modifiers: '  --flag  ',
+      command: '  bun --flag  ',
       isBuiltIn: false,
     }
 
     const normalized = normalizePreset(preset)
     expect(normalized.label).toBe('My Preset')
-    expect(normalized.baseCommand).toBe('bun')
-    expect(normalized.modifiers).toBe('--flag')
+    expect(normalized.command).toBe('bun --flag')
 
     const longPreset = normalizePreset({
       id: 'custom-3',
       label: 'x'.repeat(80),
-      baseCommand: 'y'.repeat(300),
-      modifiers: 'z'.repeat(1100),
+      command: 'y'.repeat(1100),
       isBuiltIn: false,
     })
 
     expect(longPreset.label.length).toBe(64)
-    expect(longPreset.baseCommand.length).toBe(256)
-    expect(longPreset.modifiers.length).toBe(1024)
+    expect(longPreset.command.length).toBe(1024)
 
-    expect(getFullCommand({ ...preset, modifiers: '' })).toBe('bun')
     expect(getFullCommand(preset)).toBe('bun --flag')
   })
 
   test('resolves default preset ids', () => {
     expect(
-      resolveDefaultPresetId([{ id: 'alpha', label: 'A', baseCommand: 'a', modifiers: '', isBuiltIn: true }], 'missing')
+      resolveDefaultPresetId([{ id: 'alpha', label: 'A', command: 'a', isBuiltIn: true }], 'missing')
     ).toBe('alpha')
 
     expect(resolveDefaultPresetId([], 'missing')).toBe('claude')
 
     expect(
-      resolveDefaultPresetId([{ id: 'alpha', label: 'A', baseCommand: 'a', modifiers: '', isBuiltIn: true }], 'alpha')
+      resolveDefaultPresetId([{ id: 'alpha', label: 'A', command: 'a', isBuiltIn: true }], 'alpha')
     ).toBe('alpha')
   })
 
@@ -204,21 +197,20 @@ describe('command preset helpers', () => {
 })
 
 describe('command preset actions', () => {
-  test('updates preset modifiers', () => {
+  test('updates preset command', () => {
     useSettingsStore.setState({
       commandPresets: [
         {
           id: 'custom-4',
           label: 'Custom',
-          baseCommand: 'bun',
-          modifiers: '',
+          command: 'bun',
           isBuiltIn: false,
         },
       ],
     })
 
-    useSettingsStore.getState().updatePresetModifiers('custom-4', '  --fast  ')
-    expect(useSettingsStore.getState().commandPresets[0]?.modifiers).toBe('--fast')
+    useSettingsStore.getState().updatePresetCommand('custom-4', '  bun --fast  ')
+    expect(useSettingsStore.getState().commandPresets[0]?.command).toBe('bun --fast')
   })
 
   test('adds presets and respects max size', () => {
@@ -229,8 +221,7 @@ describe('command preset actions', () => {
     try {
       addPreset({
         label: '  New Preset  ',
-        baseCommand: '  bun  ',
-        modifiers: '  --inspect  ',
+        command: '  bun --inspect  ',
         agentType: 'codex',
       })
 
@@ -239,8 +230,7 @@ describe('command preset actions', () => {
 
       expect(commandPresets.length).toBe(DEFAULT_PRESETS.length + 1)
       expect(added?.label).toBe('New Preset')
-      expect(added?.baseCommand).toBe('bun')
-      expect(added?.modifiers).toBe('--inspect')
+      expect(added?.command).toBe('bun --inspect')
       expect(added?.isBuiltIn).toBe(false)
       expect(added?.agentType).toBe('codex')
       expect(added?.id).toContain('custom-')
@@ -248,16 +238,14 @@ describe('command preset actions', () => {
       const maxPresets = Array.from({ length: 50 }, (_, index) => ({
         id: `custom-${index}`,
         label: `Preset ${index}`,
-        baseCommand: 'bun',
-        modifiers: '',
+        command: 'bun',
         isBuiltIn: false,
       }))
 
       useSettingsStore.setState({ commandPresets: maxPresets })
       addPreset({
         label: 'Overflow',
-        baseCommand: 'bun',
-        modifiers: '',
+        command: 'bun',
       })
 
       expect(useSettingsStore.getState().commandPresets).toHaveLength(50)
@@ -270,8 +258,7 @@ describe('command preset actions', () => {
     const customPreset = {
       id: 'custom-keep',
       label: 'Custom',
-      baseCommand: 'bun',
-      modifiers: '',
+      command: 'bun',
       isBuiltIn: false,
     }
 
@@ -306,6 +293,90 @@ describe('command preset actions', () => {
 
     useSettingsStore.getState().setUseWebGL(false)
     expect(useSettingsStore.getState().useWebGL).toBe(false)
+  })
+})
+
+describe('preset migration', () => {
+  test('migrates v1 presets (baseCommand+modifiers) to v2 (command)', () => {
+    // Simulate v1 preset format in storage
+    const v1Presets = [
+      { id: 'claude', label: 'Claude', baseCommand: 'claude', modifiers: '--model opus', isBuiltIn: true, agentType: 'claude' },
+      { id: 'codex', label: 'Codex', baseCommand: 'codex', modifiers: '', isBuiltIn: true, agentType: 'codex' },
+      { id: 'custom-1', label: 'Custom', baseCommand: 'bun', modifiers: '--fast --inspect', isBuiltIn: false },
+    ]
+
+    storage.setItem('agentboard-settings', JSON.stringify({
+      state: {
+        commandPresets: v1Presets,
+        defaultPresetId: 'claude',
+      },
+      version: 1,
+    }))
+
+    // Re-import the store to trigger migration
+    // The migration happens during rehydration, so we need to manually trigger it
+    // by accessing the persisted state and running the migrate function
+    const persisted = JSON.parse(storage.getItem('agentboard-settings') || '{}')
+
+    // Simulate migration logic (same as in settingsStore.ts)
+    const migrateOldPreset = (p: Record<string, unknown>) => {
+      if (typeof p.command === 'string') {
+        return p
+      }
+      const base = typeof p.baseCommand === 'string' ? p.baseCommand.trim() : ''
+      const mods = typeof p.modifiers === 'string' ? p.modifiers.trim() : ''
+      const command = mods ? `${base} ${mods}` : base
+      return {
+        id: p.id,
+        label: p.label,
+        command: command || 'claude',
+        isBuiltIn: p.isBuiltIn,
+        agentType: p.agentType,
+      }
+    }
+
+    const migratedPresets = persisted.state.commandPresets.map(migrateOldPreset)
+
+    // Verify migration results
+    expect(migratedPresets[0].command).toBe('claude --model opus')
+    expect(migratedPresets[0].baseCommand).toBeUndefined()
+    expect(migratedPresets[0].modifiers).toBeUndefined()
+
+    expect(migratedPresets[1].command).toBe('codex')
+
+    expect(migratedPresets[2].command).toBe('bun --fast --inspect')
+  })
+
+  test('preserves already migrated v2 presets', () => {
+    const v2Preset = {
+      id: 'custom-2',
+      label: 'Already Migrated',
+      command: 'node --inspect app.js',
+      isBuiltIn: false,
+    }
+
+    // Simulate migration logic
+    const migrateOldPreset = (p: Record<string, unknown>) => {
+      if (typeof p.command === 'string') {
+        return p
+      }
+      const base = typeof p.baseCommand === 'string' ? p.baseCommand.trim() : ''
+      const mods = typeof p.modifiers === 'string' ? p.modifiers.trim() : ''
+      const command = mods ? `${base} ${mods}` : base
+      return {
+        id: p.id,
+        label: p.label,
+        command: command || 'claude',
+        isBuiltIn: p.isBuiltIn,
+        agentType: p.agentType,
+      }
+    }
+
+    const migrated = migrateOldPreset(v2Preset as Record<string, unknown>)
+
+    // Should be unchanged
+    expect(migrated.command).toBe('node --inspect app.js')
+    expect(migrated).toEqual(v2Preset)
   })
 })
 

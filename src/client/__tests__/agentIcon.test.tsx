@@ -31,6 +31,15 @@ describe('AgentIcon', () => {
     expect(icon.props.className).toBe('icon')
   })
 
+  test('renders Anthropic icon for claude-prefixed agents', () => {
+    const renderer = TestRenderer.create(
+      <AgentIcon agentType="claude-rp" className="icon" />
+    )
+
+    const icon = renderer.root.findByProps({ 'aria-label': 'Anthropic' })
+    expect(icon.props.className).toBe('icon')
+  })
+
   test('renders OpenAI icon based on command', () => {
     const renderer = TestRenderer.create(
       <AgentIcon command="Codex --help" />

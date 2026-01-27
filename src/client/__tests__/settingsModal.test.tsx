@@ -168,7 +168,7 @@ describe('SettingsModal', () => {
     })
   })
 
-  test('updates preset modifiers', () => {
+  test('updates preset command', () => {
     let renderer!: TestRenderer.ReactTestRenderer
 
     act(() => {
@@ -177,20 +177,20 @@ describe('SettingsModal', () => {
       )
     })
 
-    // Find the modifiers input for Claude preset (first preset)
+    // Find the command input for Claude preset (first preset)
     const inputs = renderer.root.findAllByType('input')
-    // Input layout: [dir, Claude label, Claude base, Claude modifiers, Codex label, Codex base, Codex modifiers]
-    // The modifiers input for Claude is the 4th input (index 3)
-    const claudeModifiersInput = inputs.find((input) =>
-      input.props.placeholder === '--flag value'
+    // Input layout: [dir, Claude label, Claude command, Codex label, Codex command]
+    // The command input for Claude has placeholder 'command --flags'
+    const claudeCommandInput = inputs.find((input) =>
+      input.props.placeholder === 'command --flags'
     )
 
-    if (!claudeModifiersInput) {
-      throw new Error('Expected modifiers input')
+    if (!claudeCommandInput) {
+      throw new Error('Expected command input')
     }
 
     act(() => {
-      claudeModifiersInput.props.onChange({ target: { value: '--model opus' } })
+      claudeCommandInput.props.onChange({ target: { value: 'claude --model opus' } })
     })
 
     const form = renderer.root.findByType('form')
@@ -201,7 +201,7 @@ describe('SettingsModal', () => {
 
     const state = useSettingsStore.getState()
     const claudePreset = state.commandPresets.find(p => p.id === 'claude')
-    expect(claudePreset?.modifiers).toBe('--model opus')
+    expect(claudePreset?.command).toBe('claude --model opus')
 
     act(() => {
       renderer.unmount()

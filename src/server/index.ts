@@ -19,15 +19,17 @@ import {
 } from './terminal'
 import type { ITerminalProxy } from './terminal'
 import { resolveProjectPath } from './paths'
-import type {
-  ClientMessage,
-  ServerMessage,
-  TerminalErrorCode,
-  DirectoryListing,
-  DirectoryErrorResponse,
-  AgentSession,
-  ResumeError,
-  Session,
+import {
+  INACTIVE_MAX_AGE_MIN_HOURS,
+  INACTIVE_MAX_AGE_MAX_HOURS,
+  type ClientMessage,
+  type ServerMessage,
+  type TerminalErrorCode,
+  type DirectoryListing,
+  type DirectoryErrorResponse,
+  type AgentSession,
+  type ResumeError,
+  type Session,
 } from '../shared/types'
 import { logger } from './logger'
 import { SessionRefreshWorkerClient } from './sessionRefreshWorkerClient'
@@ -180,6 +182,16 @@ const TMUX_MOUSE_MODE_KEY = 'tmux_mouse_mode'
 const storedMouseMode = db.getAppSetting(TMUX_MOUSE_MODE_KEY)
 const initialMouseMode = storedMouseMode === null ? true : storedMouseMode === 'true'
 
+// Read inactive max age hours setting from DB (default: 24)
+const INACTIVE_MAX_AGE_HOURS_KEY = 'inactive_max_age_hours'
+const storedInactiveMaxAgeHours = db.getAppSetting(INACTIVE_MAX_AGE_HOURS_KEY)
+let runtimeInactiveMaxAgeHours = storedInactiveMaxAgeHours !== null
+  ? Number(storedInactiveMaxAgeHours)
+  : config.inactiveSessionMaxAgeHours
+if (!Number.isFinite(runtimeInactiveMaxAgeHours) || runtimeInactiveMaxAgeHours < 1) {
+  runtimeInactiveMaxAgeHours = 24
+}
+
 const sessionManager = new SessionManager(undefined, {
   displayNameExists: (name, excludeSessionId) => db.displayNameExists(name, excludeSessionId),
   mouseMode: initialMouseMode,
@@ -228,7 +240,7 @@ const sockets = new Set<ServerWebSocket<WSData>>()
 
 function updateAgentSessions() {
   const active = db.getActiveSessions().map(toAgentSession)
-  let inactive = db.getInactiveSessions({ maxAgeHours: config.inactiveSessionMaxAgeHours }).map(toAgentSession)
+  let inactive = db.getInactiveSessions({ maxAgeHours: runtimeInactiveMaxAgeHours }).map(toAgentSession)
   // Filter out sessions from excluded project directories
   // Use "<empty>" as a special marker to exclude sessions with no project path
   if (config.excludeProjects?.length > 0) {
@@ -358,6 +370,7 @@ function hydrateSessionsWithAgentSessions(
       agentType: session.agentType ?? agentSession.agentType,
       agentSessionId: agentSession.sessionId,
       agentSessionName: agentSession.displayName,
+      logFilePath: agentSession.logFilePath,
       lastUserMessage: agentSession.lastUserMessage ?? session.lastUserMessage,
       // Use persisted log times (survives server restarts, works when tmux lacks creation time)
       lastActivity: agentSession.lastActivityAt,
@@ -730,6 +743,28 @@ app.put('/api/settings/tmux-mouse-mode', async (c) => {
     db.setAppSetting(TMUX_MOUSE_MODE_KEY, String(body.enabled))
     sessionManager.setMouseMode(body.enabled)
     return c.json({ enabled: body.enabled })
+  } catch {
+    return c.json({ error: 'Invalid request body' }, 400)
+  }
+})
+
+// Inactive sessions max age setting
+app.get('/api/settings/inactive-max-age-hours', (c) => {
+  return c.json({ hours: runtimeInactiveMaxAgeHours })
+})
+
+app.put('/api/settings/inactive-max-age-hours', async (c) => {
+  try {
+    const body = await c.req.json()
+    const hours = Number(body.hours)
+    if (!Number.isFinite(hours) || hours < INACTIVE_MAX_AGE_MIN_HOURS || hours > INACTIVE_MAX_AGE_MAX_HOURS) {
+      return c.json({ error: `hours must be a number between ${INACTIVE_MAX_AGE_MIN_HOURS} and ${INACTIVE_MAX_AGE_MAX_HOURS}` }, 400)
+    }
+    runtimeInactiveMaxAgeHours = hours
+    db.setAppSetting(INACTIVE_MAX_AGE_HOURS_KEY, String(hours))
+    // Re-broadcast agent sessions with new max age
+    updateAgentSessions()
+    return c.json({ hours })
   } catch {
     return c.json({ error: 'Invalid request body' }, 400)
   }

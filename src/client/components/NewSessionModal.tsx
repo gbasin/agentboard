@@ -9,7 +9,6 @@ interface NewSessionModalProps {
   defaultProjectDir: string
   commandPresets: CommandPreset[]
   defaultPresetId: string
-  onUpdateModifiers: (presetId: string, modifiers: string) => void
   lastProjectPath?: string | null
   activeProjectPath?: string
 }
@@ -21,41 +20,24 @@ export default function NewSessionModal({
   defaultProjectDir,
   commandPresets,
   defaultPresetId,
-  onUpdateModifiers,
   lastProjectPath,
   activeProjectPath,
 }: NewSessionModalProps) {
   const [projectPath, setProjectPath] = useState('')
   const [name, setName] = useState('')
   const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null)
-  const [modifiers, setModifiers] = useState('')
-  const [customCommand, setCustomCommand] = useState('')
-  const [isCustomMode, setIsCustomMode] = useState(false)
+  const [command, setCommand] = useState('')
   const [showBrowser, setShowBrowser] = useState(false)
   const formRef = useRef<HTMLFormElement>(null)
   const projectPathRef = useRef<HTMLInputElement>(null)
   const defaultButtonRef = useRef<HTMLButtonElement>(null)
-
-  // Get current preset
-  const selectedPreset = selectedPresetId
-    ? commandPresets.find(p => p.id === selectedPresetId)
-    : null
-
-  // Compute preview command
-  const previewCommand = isCustomMode
-    ? customCommand.trim()
-    : selectedPreset
-      ? getFullCommand({ ...selectedPreset, modifiers })
-      : ''
 
   useEffect(() => {
     if (!isOpen) {
       setProjectPath('')
       setName('')
       setSelectedPresetId(null)
-      setModifiers('')
-      setCustomCommand('')
-      setIsCustomMode(false)
+      setCommand('')
       setShowBrowser(false)
       // Focus terminal after modal closes
       setTimeout(() => {
@@ -81,20 +63,18 @@ export default function NewSessionModal({
       activeProjectPath?.trim() || lastProjectPath || defaultProjectDir
     setProjectPath(basePath)
     setName('')
-    // Select default preset
+    // Select default preset and set full command
     const defaultPreset = commandPresets.find(p => p.id === defaultPresetId)
     if (defaultPreset) {
       setSelectedPresetId(defaultPresetId)
-      setModifiers(defaultPreset.modifiers)
-      setIsCustomMode(false)
+      setCommand(getFullCommand(defaultPreset))
     } else if (commandPresets.length > 0) {
       setSelectedPresetId(commandPresets[0].id)
-      setModifiers(commandPresets[0].modifiers)
-      setIsCustomMode(false)
+      setCommand(getFullCommand(commandPresets[0]))
     } else {
-      setIsCustomMode(true)
+      setSelectedPresetId(null)
+      setCommand('')
     }
-    setCustomCommand('')
     // Focus default button and scroll project path after DOM update
     setTimeout(() => {
       defaultButtonRef.current?.focus()
@@ -166,15 +146,16 @@ export default function NewSessionModal({
     const preset = commandPresets.find(p => p.id === presetId)
     if (preset) {
       setSelectedPresetId(presetId)
-      setModifiers(preset.modifiers)
-      setIsCustomMode(false)
+      setCommand(getFullCommand(preset))
     }
   }
 
   const handleCustomSelect = () => {
-    setIsCustomMode(true)
     setSelectedPresetId(null)
+    setCommand('')
   }
+
+  const isCustomMode = selectedPresetId === null
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault()
@@ -183,20 +164,7 @@ export default function NewSessionModal({
       return
     }
 
-    let finalCommand: string
-    if (isCustomMode) {
-      finalCommand = customCommand.trim()
-    } else if (selectedPreset) {
-      // Auto-save modifier if changed
-      const trimmedModifiers = modifiers.trim()
-      if (trimmedModifiers !== selectedPreset.modifiers.trim()) {
-        onUpdateModifiers(selectedPreset.id, trimmedModifiers)
-      }
-      finalCommand = getFullCommand({ ...selectedPreset, modifiers: trimmedModifiers })
-    } else {
-      finalCommand = ''
-    }
-
+    const finalCommand = command.trim()
     onCreate(
       trimmedPath,
       name.trim() || undefined,
@@ -284,34 +252,13 @@ export default function NewSessionModal({
               })}
             </div>
 
-            {/* Modifier input for presets */}
-            {!isCustomMode && selectedPreset && (
-              <div className="mt-2">
-                <input
-                  value={modifiers}
-                  onChange={(event) => setModifiers(event.target.value)}
-                  placeholder="Modifiers (e.g., --model opus)"
-                  className="input font-mono text-xs"
-                />
-              </div>
-            )}
-
-            {/* Custom command input */}
-            {isCustomMode && (
-              <input
-                value={customCommand}
-                onChange={(event) => setCustomCommand(event.target.value)}
-                placeholder="Enter custom command..."
-                className="input mt-2 font-mono text-xs"
-              />
-            )}
-
-            {/* Command preview */}
-            {previewCommand && (
-              <p className="mt-2 text-xs text-muted font-mono truncate">
-                Will run: {previewCommand}
-              </p>
-            )}
+            {/* Full command input */}
+            <input
+              value={command}
+              onChange={(event) => setCommand(event.target.value)}
+              placeholder="Enter command..."
+              className="input mt-2 font-mono text-xs"
+            />
           </div>
           <div>
             <label className="mb-1.5 block text-xs text-secondary">

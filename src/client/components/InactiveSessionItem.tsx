@@ -1,5 +1,6 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import AlertTriangleIcon from '@untitledui-icons/react/line/esm/AlertTriangleIcon'
+import File06Icon from '@untitledui-icons/react/line/esm/File06Icon'
 import Pin02Icon from '@untitledui-icons/react/line/esm/Pin02Icon'
 import type { AgentSession } from '@shared/types'
 import { getPathLeaf } from '../utils/sessionLabel'
@@ -174,6 +175,21 @@ export default memo(function InactiveSessionItem({
             >
               <Pin02Icon width={14} height={14} />
               {session.isPinned ? 'Unpin' : 'Pin'}
+            </button>
+          )}
+          {session.logFilePath && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                void navigator.clipboard.writeText(session.logFilePath).catch(() => {})
+                setContextMenu(null)
+              }}
+              className="w-full px-3 py-2 text-left text-sm text-secondary hover:bg-hover hover:text-primary flex items-center gap-2"
+              role="menuitem"
+              title={session.logFilePath}
+            >
+              <File06Icon width={14} height={14} />
+              Copy Log Path
             </button>
           )}
         </div>

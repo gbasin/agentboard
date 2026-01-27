@@ -39,21 +39,23 @@ function OpenAIIcon({ className }: { className?: string }) {
 
 type IconComponent = ({ className }: { className?: string }) => JSX.Element
 
-const iconMap: Record<string, IconComponent> = {
-  claude: AnthropicIcon,
-  codex: OpenAIIcon,
-}
+/** Prefix patterns mapped to icons - order matters, first match wins */
+const iconPrefixes: [string, IconComponent][] = [
+  ['claude', AnthropicIcon],
+  ['codex', OpenAIIcon],
+]
 
 export default function AgentIcon({
   agentType,
   command,
   className = '',
 }: AgentIconProps) {
-  const key = agentType || command?.split(' ')[0] || ''
-  const Icon = iconMap[key.toLowerCase()]
+  const key = (agentType || command?.split(' ')[0] || '').toLowerCase()
 
-  if (Icon) {
-    return <Icon className={className} />
+  for (const [prefix, Icon] of iconPrefixes) {
+    if (key.startsWith(prefix)) {
+      return <Icon className={className} />
+    }
   }
 
   return <TerminalIcon className={className} />

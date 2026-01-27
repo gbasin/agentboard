@@ -420,11 +420,10 @@ describe('component rendering', () => {
         onCreate={() => {}}
         defaultProjectDir="/tmp"
         commandPresets={[
-          { id: 'claude', label: 'Claude', baseCommand: 'claude', modifiers: '', isBuiltIn: true, agentType: 'claude' },
-          { id: 'codex', label: 'Codex', baseCommand: 'codex', modifiers: '', isBuiltIn: true, agentType: 'codex' },
+          { id: 'claude', label: 'Claude', command: 'claude', isBuiltIn: true, agentType: 'claude' },
+          { id: 'codex', label: 'Codex', command: 'codex', isBuiltIn: true, agentType: 'codex' },
         ]}
         defaultPresetId="claude"
-        onUpdateModifiers={() => {}}
         lastProjectPath="/tmp/alpha"
         activeProjectPath="/tmp/alpha"
       />
@@ -440,11 +439,10 @@ describe('component rendering', () => {
         onCreate={() => {}}
         defaultProjectDir="/tmp"
         commandPresets={[
-          { id: 'claude', label: 'Claude', baseCommand: 'claude', modifiers: '', isBuiltIn: true, agentType: 'claude' },
-          { id: 'codex', label: 'Codex', baseCommand: 'codex', modifiers: '', isBuiltIn: true, agentType: 'codex' },
+          { id: 'claude', label: 'Claude', command: 'claude', isBuiltIn: true, agentType: 'claude' },
+          { id: 'codex', label: 'Codex', command: 'codex', isBuiltIn: true, agentType: 'codex' },
         ]}
         defaultPresetId="claude"
-        onUpdateModifiers={() => {}}
         lastProjectPath="/tmp/alpha"
         activeProjectPath="/tmp/alpha"
       />

@@ -11,6 +11,7 @@ import {
   type ShortcutModifier,
 } from '../stores/settingsStore'
 import { useThemeStore, type Theme } from '../stores/themeStore'
+import { INACTIVE_MAX_AGE_MIN_HOURS, INACTIVE_MAX_AGE_MAX_HOURS } from '@shared/types'
 import { getEffectiveModifier, getModifierDisplay } from '../utils/device'
 import { Switch } from './Switch'
 import { playPermissionSound, playIdleSound, primeAudio } from '../utils/sound'
@@ -116,12 +117,13 @@ export default function SettingsModal({
   // Server-side settings (fetched from API)
   const [tmuxMouseMode, setTmuxMouseMode] = useState(true)
   const [tmuxMouseModeLoading, setTmuxMouseModeLoading] = useState(false)
+  const [inactiveMaxAgeHours, setInactiveMaxAgeHours] = useState(24)
+  const [inactiveMaxAgeHoursLoading, setInactiveMaxAgeHoursLoading] = useState(false)
 
   // New preset form state
   const [showAddForm, setShowAddForm] = useState(false)
   const [newLabel, setNewLabel] = useState('')
-  const [newBaseCommand, setNewBaseCommand] = useState('')
-  const [newModifiers, setNewModifiers] = useState('')
+  const [newCommand, setNewCommand] = useState('')
   const [newAgentType, setNewAgentType] = useState<'claude' | 'codex' | ''>('')
   const reenableTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -152,13 +154,16 @@ export default function SettingsModal({
       setDraftSoundOnIdle(soundOnIdle)
       setShowAddForm(false)
       setNewLabel('')
-      setNewBaseCommand('')
-      setNewModifiers('')
+      setNewCommand('')
       setNewAgentType('')
       // Fetch server-side settings
       fetch('/api/settings/tmux-mouse-mode')
         .then((res) => res.json())
         .then((data: { enabled: boolean }) => setTmuxMouseMode(data.enabled))
+        .catch(() => {})
+      fetch('/api/settings/inactive-max-age-hours')
+        .then((res) => res.json())
+        .then((data: { hours: number }) => setInactiveMaxAgeHours(data.hours))
         .catch(() => {})
       // Disable terminal textarea when modal opens to prevent keyboard capture
       if (typeof document !== 'undefined') {
@@ -275,14 +280,13 @@ export default function SettingsModal({
   }
 
   const handleAddPreset = () => {
-    if (!newLabel.trim() || !newBaseCommand.trim()) return
+    if (!newLabel.trim() || !newCommand.trim()) return
     if (draftPresets.length >= MAX_PRESETS) return
 
     const newPreset: CommandPreset = {
       id: `custom-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       label: newLabel.trim(),
-      baseCommand: newBaseCommand.trim(),
-      modifiers: newModifiers.trim(),
+      command: newCommand.trim(),
       isBuiltIn: false,
       agentType: newAgentType || undefined,
     }
@@ -290,8 +294,7 @@ export default function SettingsModal({
     setDraftPresets([...draftPresets, newPreset])
     setShowAddForm(false)
     setNewLabel('')
-    setNewBaseCommand('')
-    setNewModifiers('')
+    setNewCommand('')
     setNewAgentType('')
   }
 
@@ -309,6 +312,19 @@ export default function SettingsModal({
       .finally(() => setTmuxMouseModeLoading(false))
   }
 
+  const handleInactiveMaxAgeHoursChange = (hours: number) => {
+    const prevHours = inactiveMaxAgeHours
+    setInactiveMaxAgeHoursLoading(true)
+    setInactiveMaxAgeHours(hours)
+    fetch('/api/settings/inactive-max-age-hours', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hours }),
+    })
+      .catch(() => setInactiveMaxAgeHours(prevHours)) // Revert on error
+      .finally(() => setInactiveMaxAgeHoursLoading(false))
+  }
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
@@ -318,14 +334,18 @@ export default function SettingsModal({
     >
       <form
         onSubmit={handleSubmit}
-        className="w-full max-w-lg max-h-[90vh] overflow-y-auto border border-border bg-elevated p-6"
+        className="w-full max-w-lg max-h-[90vh] flex flex-col border border-border bg-elevated"
       >
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-primary text-balance">
-          Settings
-        </h2>
-        <p className="mt-2 text-xs text-muted text-pretty">
-          Configure default directory, command presets, and display options.
-        </p>
+        <div className="p-6 pb-0">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-primary text-balance">
+            Settings
+          </h2>
+          <p className="mt-2 text-xs text-muted text-pretty">
+            Configure default directory, command presets, and display options.
+          </p>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-6 pb-4">
 
         <div className="mt-5 space-y-4">
           <div>
@@ -369,9 +389,6 @@ export default function SettingsModal({
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      {preset.isBuiltIn && (
-                        <span className="text-[10px] text-muted">🔒</span>
-                      )}
                       <input
                         value={preset.label}
                         onChange={(e) => handleUpdatePreset(preset.id, { label: e.target.value })}
@@ -390,26 +407,14 @@ export default function SettingsModal({
                     )}
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-[10px] text-muted block mb-1">Base Command</label>
-                      <input
-                        value={preset.baseCommand}
-                        onChange={(e) => handleUpdatePreset(preset.id, { baseCommand: e.target.value })}
-                        className="input text-xs py-1 px-2 font-mono"
-                        placeholder="command"
-                        disabled={preset.isBuiltIn}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-muted block mb-1">Modifiers</label>
-                      <input
-                        value={preset.modifiers}
-                        onChange={(e) => handleUpdatePreset(preset.id, { modifiers: e.target.value })}
-                        className="input text-xs py-1 px-2 font-mono"
-                        placeholder="--flag value"
-                      />
-                    </div>
+                  <div>
+                    <label className="text-[10px] text-muted block mb-1">Command</label>
+                    <input
+                      value={preset.command}
+                      onChange={(e) => handleUpdatePreset(preset.id, { command: e.target.value })}
+                      className="input text-xs py-1 px-2 font-mono w-full"
+                      placeholder="command --flags"
+                    />
                   </div>
 
                   {!preset.isBuiltIn && (
@@ -436,25 +441,17 @@ export default function SettingsModal({
             {showAddForm ? (
               <div className="mt-3 border border-border p-3 space-y-2">
                 <div className="text-xs text-secondary mb-2">New Preset</div>
-                <div className="grid grid-cols-2 gap-2">
-                  <input
-                    value={newLabel}
-                    onChange={(e) => setNewLabel(e.target.value)}
-                    className="input text-xs py-1 px-2"
-                    placeholder="Label"
-                  />
-                  <input
-                    value={newBaseCommand}
-                    onChange={(e) => setNewBaseCommand(e.target.value)}
-                    className="input text-xs py-1 px-2 font-mono"
-                    placeholder="command"
-                  />
-                </div>
                 <input
-                  value={newModifiers}
-                  onChange={(e) => setNewModifiers(e.target.value)}
+                  value={newLabel}
+                  onChange={(e) => setNewLabel(e.target.value)}
+                  className="input text-xs py-1 px-2 w-full"
+                  placeholder="Label"
+                />
+                <input
+                  value={newCommand}
+                  onChange={(e) => setNewCommand(e.target.value)}
                   className="input text-xs py-1 px-2 font-mono w-full"
-                  placeholder="Modifiers (optional)"
+                  placeholder="command --flags"
                 />
                 <div className="flex items-center gap-2">
                   <select
@@ -477,7 +474,7 @@ export default function SettingsModal({
                   <button
                     type="button"
                     onClick={handleAddPreset}
-                    disabled={!newLabel.trim() || !newBaseCommand.trim()}
+                    disabled={!newLabel.trim() || !newCommand.trim()}
                     className="btn btn-primary text-xs px-2 py-1"
                   >
                     Add
@@ -595,6 +592,31 @@ export default function SettingsModal({
                 checked={draftShowSessionIdPrefix}
                 onCheckedChange={setDraftShowSessionIdSuffix}
               />
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm text-primary">Inactive Sessions Lookback</div>
+                <div className="text-[10px] text-muted">
+                  Show inactive sessions from the last N hours ({INACTIVE_MAX_AGE_MIN_HOURS}-{INACTIVE_MAX_AGE_MAX_HOURS}).
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={INACTIVE_MAX_AGE_MIN_HOURS}
+                  max={INACTIVE_MAX_AGE_MAX_HOURS}
+                  value={inactiveMaxAgeHours}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value, 10)
+                    if (val >= INACTIVE_MAX_AGE_MIN_HOURS && val <= INACTIVE_MAX_AGE_MAX_HOURS) {
+                      handleInactiveMaxAgeHoursChange(val)
+                    }
+                  }}
+                  disabled={inactiveMaxAgeHoursLoading}
+                  className="input text-xs py-1 px-2 w-16 text-center"
+                />
+                <span className="text-xs text-muted">hrs</span>
+              </div>
             </div>
           </div>
 
@@ -828,7 +850,9 @@ export default function SettingsModal({
           </div>
         </div>
 
-        <div className="mt-6 flex justify-end gap-2">
+        </div>
+
+        <div className="flex justify-end gap-2 p-6 pt-4 border-t border-border bg-elevated">
           <button type="button" onClick={() => onClose()} className="btn">
             Cancel
           </button>

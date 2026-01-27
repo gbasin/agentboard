@@ -1,7 +1,11 @@
+// Inactive sessions lookback limits (in hours)
+export const INACTIVE_MAX_AGE_MIN_HOURS = 1
+export const INACTIVE_MAX_AGE_MAX_HOURS = 168 // 7 days
+
 export type SessionStatus = 'working' | 'waiting' | 'permission' | 'unknown'
 
 export type SessionSource = 'managed' | 'external'
-export type AgentType = 'claude' | 'codex'
+export type AgentType = 'claude' | 'claude-rp' | 'codex'
 export type TerminalErrorCode =
   | 'ERR_INVALID_WINDOW'
   | 'ERR_SESSION_CREATE_FAILED'
@@ -23,6 +27,7 @@ export interface Session {
   command?: string
   agentSessionId?: string
   agentSessionName?: string
+  logFilePath?: string
   lastUserMessage?: string
   isPinned?: boolean
 }

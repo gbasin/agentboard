@@ -46,7 +46,6 @@ describe('NewSessionModal component', () => {
 
     const created: Array<{ path: string; name?: string; command?: string }> = []
     let closed = 0
-    const updatedModifiers: Array<{ presetId: string; modifiers: string }> = []
 
     let renderer!: TestRenderer.ReactTestRenderer
 
@@ -63,9 +62,6 @@ describe('NewSessionModal component', () => {
           defaultProjectDir="/base"
           commandPresets={DEFAULT_PRESETS}
           defaultPresetId="claude"
-          onUpdateModifiers={(presetId, modifiers) => {
-            updatedModifiers.push({ presetId, modifiers })
-          }}
           lastProjectPath="/last"
           activeProjectPath="/active"
         />
@@ -133,7 +129,6 @@ describe('NewSessionModal component', () => {
           defaultProjectDir="/base"
           commandPresets={DEFAULT_PRESETS}
           defaultPresetId="claude"
-          onUpdateModifiers={() => {}}
         />
       )
     })
@@ -155,11 +150,10 @@ describe('NewSessionModal component', () => {
     })
   })
 
-  test('auto-saves modifiers when changed', () => {
+  test('allows editing full command', () => {
     setupDom()
 
     const created: Array<{ path: string; name?: string; command?: string }> = []
-    const updatedModifiers: Array<{ presetId: string; modifiers: string }> = []
 
     let renderer!: TestRenderer.ReactTestRenderer
 
@@ -174,21 +168,19 @@ describe('NewSessionModal component', () => {
           defaultProjectDir="/base"
           commandPresets={DEFAULT_PRESETS}
           defaultPresetId="claude"
-          onUpdateModifiers={(presetId, modifiers) => {
-            updatedModifiers.push({ presetId, modifiers })
-          }}
           lastProjectPath="/last"
           activeProjectPath="/active"
         />
       )
     })
 
-    // Find the modifiers input (first input, now that Command is moved up)
+    // Command input is the first input field
     const inputs = renderer.root.findAllByType('input')
-    const modifiersInput = inputs[0]
+    const commandInput = inputs[0]
 
+    // Edit the full command (preset starts with 'claude')
     act(() => {
-      modifiersInput.props.onChange({ target: { value: '--model opus' } })
+      commandInput.props.onChange({ target: { value: 'claude --model opus --dangerously-skip-permissions' } })
     })
 
     const form = renderer.root.findByType('form')
@@ -197,13 +189,8 @@ describe('NewSessionModal component', () => {
       form.props.onSubmit({ preventDefault: () => {} })
     })
 
-    // Should have auto-saved the modifier
-    expect(updatedModifiers).toEqual([
-      { presetId: 'claude', modifiers: '--model opus' },
-    ])
-
-    // Command should include the modifier
-    expect(created[0].command).toBe('claude --model opus')
+    // Command should be the full edited command
+    expect(created[0].command).toBe('claude --model opus --dangerously-skip-permissions')
 
     act(() => {
       renderer.unmount()
