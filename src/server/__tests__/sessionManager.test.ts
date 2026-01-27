@@ -1039,4 +1039,57 @@ describe('SessionManager', () => {
       config.discoverPrefixes = originalPrefixes
     }
   })
+
+  test('mouse mode can be disabled via constructor option', () => {
+    const sessionName = 'agentboard-mouse-test'
+    const runner = createTmuxRunner(
+      [{ name: sessionName, windows: [] }],
+      1
+    )
+
+    const manager = new SessionManager(sessionName, {
+      runTmux: runner.runTmux,
+      capturePaneContent: () => null,
+      mouseMode: false,
+    })
+
+    manager.listWindows() // Triggers ensureSession
+
+    // Should set mouse off when disabled
+    const setOptionCall = runner.calls.find(
+      (call) => call[0] === 'set-option' && call.includes('mouse')
+    )
+    expect(setOptionCall).toBeTruthy()
+    expect(setOptionCall).toContain('off')
+    expect(setOptionCall).toContain('-t')
+    expect(setOptionCall).toContain(sessionName)
+  })
+
+  test('setMouseMode applies change immediately', () => {
+    const sessionName = 'agentboard-setmouse-test'
+    const runner = createTmuxRunner(
+      [{ name: sessionName, windows: [] }],
+      1
+    )
+
+    const manager = new SessionManager(sessionName, {
+      runTmux: runner.runTmux,
+      capturePaneContent: () => null,
+      mouseMode: true,
+    })
+
+    manager.listWindows() // Triggers ensureSession with mouse on
+
+    // Clear calls to track new calls
+    runner.calls.length = 0
+
+    // Toggle mouse mode off
+    manager.setMouseMode(false)
+
+    const setOptionCall = runner.calls.find(
+      (call) => call[0] === 'set-option' && call.includes('mouse')
+    )
+    expect(setOptionCall).toBeTruthy()
+    expect(setOptionCall).toContain('off')
+  })
 })

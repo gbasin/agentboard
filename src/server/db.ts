@@ -35,6 +35,9 @@ export interface SessionDatabase {
   displayNameExists: (displayName: string, excludeSessionId?: string) => boolean
   setPinned: (sessionId: string, isPinned: boolean) => AgentSessionRecord | null
   getPinnedOrphaned: () => AgentSessionRecord[]
+  // App settings
+  getAppSetting: (key: string) => string | null
+  setAppSetting: (key: string, value: string) => void
   close: () => void
 }
 
@@ -66,6 +69,13 @@ ${AGENT_SESSIONS_COLUMNS_SQL}
 );
 `
 
+const CREATE_APP_SETTINGS_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS app_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+`
+
 const CREATE_INDEXES_SQL = `
 CREATE INDEX IF NOT EXISTS idx_session_id
   ON agent_sessions (session_id);
@@ -86,6 +96,7 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
   migrateDatabase(db)
   db.exec(CREATE_TABLE_SQL)
   db.exec(CREATE_INDEXES_SQL)
+  db.exec(CREATE_APP_SETTINGS_TABLE_SQL)
   migrateLastUserMessageColumn(db)
   migrateDeduplicateDisplayNames(db)
   migrateIsPinnedColumn(db)
@@ -128,6 +139,14 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
         .map((field) => `${field} = $${field}`)
         .join(', ')} WHERE session_id = $sessionId`
     )
+
+  // App settings prepared statements
+  const selectAppSetting = db.prepare(
+    'SELECT value FROM app_settings WHERE key = $key'
+  )
+  const upsertAppSetting = db.prepare(
+    'INSERT OR REPLACE INTO app_settings (key, value) VALUES ($key, $value)'
+  )
 
   return {
     db,
@@ -269,6 +288,16 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
         )
         .all() as Record<string, unknown>[]
       return rows.map(mapRow)
+    },
+    // App settings
+    getAppSetting: (key) => {
+      const row = selectAppSetting.get({ $key: key }) as
+        | { value: string }
+        | undefined
+      return row?.value ?? null
+    },
+    setAppSetting: (key, value) => {
+      upsertAppSetting.run({ $key: key, $value: value })
     },
     close: () => {
       db.close()

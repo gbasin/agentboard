@@ -318,6 +318,8 @@ mock.module('../../db', () => ({
       Array.from(dbState.records.values()).filter(
         (record) => record.isPinned && record.currentWindow === null
       ),
+    getAppSetting: () => null,
+    setAppSetting: () => {},
     close: () => {},
   }),
 }))

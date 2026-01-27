@@ -185,4 +185,26 @@ describe('db', () => {
     migrated.close()
     fs.rmSync(tempDir, { recursive: true, force: true })
   })
+
+  test('app settings get/set', () => {
+    // Initially null
+    expect(db.getAppSetting('test_key')).toBeNull()
+
+    // Set a value
+    db.setAppSetting('test_key', 'test_value')
+    expect(db.getAppSetting('test_key')).toBe('test_value')
+
+    // Update the value
+    db.setAppSetting('test_key', 'updated_value')
+    expect(db.getAppSetting('test_key')).toBe('updated_value')
+
+    // Different key
+    db.setAppSetting('another_key', 'another_value')
+    expect(db.getAppSetting('another_key')).toBe('another_value')
+    expect(db.getAppSetting('test_key')).toBe('updated_value')
+
+    // Cleanup
+    db.db.exec("DELETE FROM app_settings WHERE key = 'test_key'")
+    db.db.exec("DELETE FROM app_settings WHERE key = 'another_key'")
+  })
 })

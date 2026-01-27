@@ -174,8 +174,15 @@ logger.info('terminal_mode_resolved', {
 
 const app = new Hono()
 const db = initDatabase()
+
+// Read mouse mode setting from DB (default: true)
+const TMUX_MOUSE_MODE_KEY = 'tmux_mouse_mode'
+const storedMouseMode = db.getAppSetting(TMUX_MOUSE_MODE_KEY)
+const initialMouseMode = storedMouseMode === null ? true : storedMouseMode === 'true'
+
 const sessionManager = new SessionManager(undefined, {
   displayNameExists: (name, excludeSessionId) => db.displayNameExists(name, excludeSessionId),
+  mouseMode: initialMouseMode,
 })
 const registry = new SessionRegistry()
 
@@ -720,6 +727,27 @@ app.get('/api/server-info', (c) => {
     tailscaleIp,
     protocol: tlsEnabled ? 'https' : 'http',
   })
+})
+
+// Tmux mouse mode setting
+app.get('/api/settings/tmux-mouse-mode', (c) => {
+  const stored = db.getAppSetting(TMUX_MOUSE_MODE_KEY)
+  const enabled = stored === null ? true : stored === 'true'
+  return c.json({ enabled })
+})
+
+app.put('/api/settings/tmux-mouse-mode', async (c) => {
+  try {
+    const body = await c.req.json()
+    if (typeof body.enabled !== 'boolean') {
+      return c.json({ error: 'enabled must be a boolean' }, 400)
+    }
+    db.setAppSetting(TMUX_MOUSE_MODE_KEY, String(body.enabled))
+    sessionManager.setMouseMode(body.enabled)
+    return c.json({ enabled: body.enabled })
+  } catch {
+    return c.json({ error: 'Invalid request body' }, 400)
+  }
 })
 
 // Image upload endpoint for iOS clipboard paste

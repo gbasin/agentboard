@@ -45,6 +45,7 @@ export class SessionManager {
   private capturePaneContent: CapturePane
   private now: NowFn
   private displayNameExists: (name: string, excludeSessionId?: string) => boolean
+  private mouseMode: boolean
 
   constructor(
     sessionName = config.tmuxSession,
@@ -53,11 +54,13 @@ export class SessionManager {
       capturePaneContent: captureOverride,
       now,
       displayNameExists,
+      mouseMode = true,
     }: {
       runTmux?: TmuxRunner
       capturePaneContent?: CapturePane
       now?: NowFn
       displayNameExists?: (name: string, excludeSessionId?: string) => boolean
+      mouseMode?: boolean
     } = {}
   ) {
     this.sessionName = sessionName
@@ -65,6 +68,7 @@ export class SessionManager {
     this.capturePaneContent = captureOverride ?? capturePaneWithDimensions
     this.now = now ?? Date.now
     this.displayNameExists = displayNameExists ?? (() => false)
+    this.mouseMode = mouseMode
   }
 
   ensureSession(): void {
@@ -73,8 +77,30 @@ export class SessionManager {
     } catch {
       this.runTmux(['new-session', '-d', '-s', this.sessionName])
     }
-    // Enable mouse mode for scroll wheel support (SGR mouse sequences)
-    this.runTmux(['set-option', '-g', 'mouse', 'on'])
+    // Set mouse mode for scroll wheel support (SGR mouse sequences)
+    // Scoped to this session only (-t) rather than global (-g)
+    if (this.mouseMode) {
+      this.runTmux(['set-option', '-t', this.sessionName, 'mouse', 'on'])
+    } else {
+      this.runTmux(['set-option', '-t', this.sessionName, 'mouse', 'off'])
+    }
+  }
+
+  setMouseMode(enabled: boolean): void {
+    this.mouseMode = enabled
+    // Apply immediately if session exists
+    try {
+      this.runTmux(['has-session', '-t', this.sessionName])
+      this.runTmux([
+        'set-option',
+        '-t',
+        this.sessionName,
+        'mouse',
+        enabled ? 'on' : 'off',
+      ])
+    } catch {
+      // Session doesn't exist yet, will be applied on next ensureSession
+    }
   }
 
   listWindows(): Session[] {

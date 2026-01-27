@@ -113,6 +113,10 @@ export default function SettingsModal({
   const [draftSoundOnPermission, setDraftSoundOnPermission] = useState(soundOnPermission)
   const [draftSoundOnIdle, setDraftSoundOnIdle] = useState(soundOnIdle)
 
+  // Server-side settings (fetched from API)
+  const [tmuxMouseMode, setTmuxMouseMode] = useState(true)
+  const [tmuxMouseModeLoading, setTmuxMouseModeLoading] = useState(false)
+
   // New preset form state
   const [showAddForm, setShowAddForm] = useState(false)
   const [newLabel, setNewLabel] = useState('')
@@ -151,6 +155,11 @@ export default function SettingsModal({
       setNewBaseCommand('')
       setNewModifiers('')
       setNewAgentType('')
+      // Fetch server-side settings
+      fetch('/api/settings/tmux-mouse-mode')
+        .then((res) => res.json())
+        .then((data: { enabled: boolean }) => setTmuxMouseMode(data.enabled))
+        .catch(() => {})
       // Disable terminal textarea when modal opens to prevent keyboard capture
       if (typeof document !== 'undefined') {
         const textarea = document.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement | null
@@ -287,6 +296,18 @@ export default function SettingsModal({
   }
 
   const canAddPreset = draftPresets.length < MAX_PRESETS
+
+  const handleTmuxMouseModeChange = (enabled: boolean) => {
+    setTmuxMouseModeLoading(true)
+    setTmuxMouseMode(enabled)
+    fetch('/api/settings/tmux-mouse-mode', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    })
+      .catch(() => setTmuxMouseMode(!enabled)) // Revert on error
+      .finally(() => setTmuxMouseModeLoading(false))
+  }
 
   return (
     <div
@@ -652,6 +673,20 @@ export default function SettingsModal({
                 Terminal will reload when saved
               </p>
             )}
+
+            <div className="mt-4 flex items-center justify-between">
+              <div>
+                <div className="text-sm text-primary">Mouse Mode</div>
+                <div className="text-[10px] text-muted">
+                  Enable tmux mouse mode for trackpad/scroll wheel support.
+                </div>
+              </div>
+              <Switch
+                checked={tmuxMouseMode}
+                onCheckedChange={handleTmuxMouseModeChange}
+                disabled={tmuxMouseModeLoading}
+              />
+            </div>
 
             <div className="mt-4 flex items-center justify-between">
               <div>
