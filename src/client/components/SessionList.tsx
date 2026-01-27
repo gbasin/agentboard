@@ -981,7 +981,7 @@ function SessionRow({
             <button
               onClick={(e) => {
                 e.stopPropagation()
-                navigator.clipboard.writeText(session.logFilePath!)
+                void navigator.clipboard.writeText(session.logFilePath!).catch(() => {})
                 setContextMenu(null)
               }}
               className="w-full px-3 py-2 text-left text-sm text-secondary hover:bg-hover hover:text-primary flex items-center gap-2"
