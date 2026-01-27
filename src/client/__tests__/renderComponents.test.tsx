@@ -424,7 +424,6 @@ describe('component rendering', () => {
           { id: 'codex', label: 'Codex', baseCommand: 'codex', modifiers: '', isBuiltIn: true, agentType: 'codex' },
         ]}
         defaultPresetId="claude"
-        onUpdateModifiers={() => {}}
         lastProjectPath="/tmp/alpha"
         activeProjectPath="/tmp/alpha"
       />
@@ -444,7 +443,6 @@ describe('component rendering', () => {
           { id: 'codex', label: 'Codex', baseCommand: 'codex', modifiers: '', isBuiltIn: true, agentType: 'codex' },
         ]}
         defaultPresetId="claude"
-        onUpdateModifiers={() => {}}
         lastProjectPath="/tmp/alpha"
         activeProjectPath="/tmp/alpha"
       />
