@@ -116,6 +116,8 @@ export default function SettingsModal({
   // Server-side settings (fetched from API)
   const [tmuxMouseMode, setTmuxMouseMode] = useState(true)
   const [tmuxMouseModeLoading, setTmuxMouseModeLoading] = useState(false)
+  const [inactiveMaxAgeHours, setInactiveMaxAgeHours] = useState(24)
+  const [inactiveMaxAgeHoursLoading, setInactiveMaxAgeHoursLoading] = useState(false)
 
   // New preset form state
   const [showAddForm, setShowAddForm] = useState(false)
@@ -159,6 +161,10 @@ export default function SettingsModal({
       fetch('/api/settings/tmux-mouse-mode')
         .then((res) => res.json())
         .then((data: { enabled: boolean }) => setTmuxMouseMode(data.enabled))
+        .catch(() => {})
+      fetch('/api/settings/inactive-max-age-hours')
+        .then((res) => res.json())
+        .then((data: { hours: number }) => setInactiveMaxAgeHours(data.hours))
         .catch(() => {})
       // Disable terminal textarea when modal opens to prevent keyboard capture
       if (typeof document !== 'undefined') {
@@ -307,6 +313,19 @@ export default function SettingsModal({
     })
       .catch(() => setTmuxMouseMode(!enabled)) // Revert on error
       .finally(() => setTmuxMouseModeLoading(false))
+  }
+
+  const handleInactiveMaxAgeHoursChange = (hours: number) => {
+    const prevHours = inactiveMaxAgeHours
+    setInactiveMaxAgeHoursLoading(true)
+    setInactiveMaxAgeHours(hours)
+    fetch('/api/settings/inactive-max-age-hours', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hours }),
+    })
+      .catch(() => setInactiveMaxAgeHours(prevHours)) // Revert on error
+      .finally(() => setInactiveMaxAgeHoursLoading(false))
   }
 
   return (
@@ -595,6 +614,31 @@ export default function SettingsModal({
                 checked={draftShowSessionIdPrefix}
                 onCheckedChange={setDraftShowSessionIdSuffix}
               />
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm text-primary">Inactive Sessions Lookback</div>
+                <div className="text-[10px] text-muted">
+                  Show inactive sessions from the last N hours (1-168).
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  max={168}
+                  value={inactiveMaxAgeHours}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value, 10)
+                    if (val >= 1 && val <= 168) {
+                      handleInactiveMaxAgeHoursChange(val)
+                    }
+                  }}
+                  disabled={inactiveMaxAgeHoursLoading}
+                  className="input text-xs py-1 px-2 w-16 text-center"
+                />
+                <span className="text-xs text-muted">hrs</span>
+              </div>
             </div>
           </div>
 

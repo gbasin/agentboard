@@ -23,6 +23,7 @@ export interface Session {
   command?: string
   agentSessionId?: string
   agentSessionName?: string
+  logFilePath?: string
   lastUserMessage?: string
   isPinned?: boolean
 }

@@ -151,6 +151,9 @@ interface SettingsState {
   setSoundOnPermission: (enabled: boolean) => void
   soundOnIdle: boolean
   setSoundOnIdle: (enabled: boolean) => void
+  // Inactive sessions
+  inactiveMaxAgeHours: number
+  setInactiveMaxAgeHours: (hours: number) => void
   // Command presets
   commandPresets: CommandPreset[]
   setCommandPresets: (presets: CommandPreset[]) => void
@@ -215,6 +218,9 @@ export const useSettingsStore = create<SettingsState>()(
       setSoundOnPermission: (enabled) => set({ soundOnPermission: enabled }),
       soundOnIdle: false,
       setSoundOnIdle: (enabled) => set({ soundOnIdle: enabled }),
+      // Inactive sessions
+      inactiveMaxAgeHours: 24,
+      setInactiveMaxAgeHours: (hours) => set({ inactiveMaxAgeHours: Math.max(1, Math.min(168, hours)) }),
       // Command presets
       commandPresets: DEFAULT_PRESETS,
       setCommandPresets: (presets) => set({ commandPresets: presets }),
