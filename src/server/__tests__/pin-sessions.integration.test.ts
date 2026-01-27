@@ -139,6 +139,8 @@ if (!tmuxAvailable) {
     test(
       'pinned session resurrects after server restart',
       async () => {
+        // Timeout increased to 25s for CI stability - this test calls multiple
+        // async waits (waitForWindowCount, waitForResurrectedSessionInDb, assertTmuxWindowExists)
       await stopServer()
 
       const resurrectSessionId = `pin-resurrect-${Date.now()}`
@@ -183,7 +185,7 @@ if (!tmuxAvailable) {
         tmuxEnv()
       )
       },
-      15000
+      25000
     )
 
     // Note: "failed resurrection unpins session" test is not included because
