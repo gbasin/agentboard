@@ -1,3 +1,7 @@
+// Inactive sessions lookback limits (in hours)
+export const INACTIVE_MAX_AGE_MIN_HOURS = 1
+export const INACTIVE_MAX_AGE_MAX_HOURS = 168 // 7 days
+
 export type SessionStatus = 'working' | 'waiting' | 'permission' | 'unknown'
 
 export type SessionSource = 'managed' | 'external'

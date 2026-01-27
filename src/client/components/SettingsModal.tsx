@@ -11,6 +11,7 @@ import {
   type ShortcutModifier,
 } from '../stores/settingsStore'
 import { useThemeStore, type Theme } from '../stores/themeStore'
+import { INACTIVE_MAX_AGE_MIN_HOURS, INACTIVE_MAX_AGE_MAX_HOURS } from '@shared/types'
 import { getEffectiveModifier, getModifierDisplay } from '../utils/device'
 import { Switch } from './Switch'
 import { playPermissionSound, playIdleSound, primeAudio } from '../utils/sound'
@@ -596,18 +597,18 @@ export default function SettingsModal({
               <div>
                 <div className="text-sm text-primary">Inactive Sessions Lookback</div>
                 <div className="text-[10px] text-muted">
-                  Show inactive sessions from the last N hours (1-168).
+                  Show inactive sessions from the last N hours ({INACTIVE_MAX_AGE_MIN_HOURS}-{INACTIVE_MAX_AGE_MAX_HOURS}).
                 </div>
               </div>
               <div className="flex items-center gap-2">
                 <input
                   type="number"
-                  min={1}
-                  max={168}
+                  min={INACTIVE_MAX_AGE_MIN_HOURS}
+                  max={INACTIVE_MAX_AGE_MAX_HOURS}
                   value={inactiveMaxAgeHours}
                   onChange={(e) => {
                     const val = parseInt(e.target.value, 10)
-                    if (val >= 1 && val <= 168) {
+                    if (val >= INACTIVE_MAX_AGE_MIN_HOURS && val <= INACTIVE_MAX_AGE_MAX_HOURS) {
                       handleInactiveMaxAgeHoursChange(val)
                     }
                   }}

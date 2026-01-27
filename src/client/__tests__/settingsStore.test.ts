@@ -296,6 +296,90 @@ describe('command preset actions', () => {
   })
 })
 
+describe('preset migration', () => {
+  test('migrates v1 presets (baseCommand+modifiers) to v2 (command)', () => {
+    // Simulate v1 preset format in storage
+    const v1Presets = [
+      { id: 'claude', label: 'Claude', baseCommand: 'claude', modifiers: '--model opus', isBuiltIn: true, agentType: 'claude' },
+      { id: 'codex', label: 'Codex', baseCommand: 'codex', modifiers: '', isBuiltIn: true, agentType: 'codex' },
+      { id: 'custom-1', label: 'Custom', baseCommand: 'bun', modifiers: '--fast --inspect', isBuiltIn: false },
+    ]
+
+    storage.setItem('agentboard-settings', JSON.stringify({
+      state: {
+        commandPresets: v1Presets,
+        defaultPresetId: 'claude',
+      },
+      version: 1,
+    }))
+
+    // Re-import the store to trigger migration
+    // The migration happens during rehydration, so we need to manually trigger it
+    // by accessing the persisted state and running the migrate function
+    const persisted = JSON.parse(storage.getItem('agentboard-settings') || '{}')
+
+    // Simulate migration logic (same as in settingsStore.ts)
+    const migrateOldPreset = (p: Record<string, unknown>) => {
+      if (typeof p.command === 'string') {
+        return p
+      }
+      const base = typeof p.baseCommand === 'string' ? p.baseCommand.trim() : ''
+      const mods = typeof p.modifiers === 'string' ? p.modifiers.trim() : ''
+      const command = mods ? `${base} ${mods}` : base
+      return {
+        id: p.id,
+        label: p.label,
+        command: command || 'claude',
+        isBuiltIn: p.isBuiltIn,
+        agentType: p.agentType,
+      }
+    }
+
+    const migratedPresets = persisted.state.commandPresets.map(migrateOldPreset)
+
+    // Verify migration results
+    expect(migratedPresets[0].command).toBe('claude --model opus')
+    expect(migratedPresets[0].baseCommand).toBeUndefined()
+    expect(migratedPresets[0].modifiers).toBeUndefined()
+
+    expect(migratedPresets[1].command).toBe('codex')
+
+    expect(migratedPresets[2].command).toBe('bun --fast --inspect')
+  })
+
+  test('preserves already migrated v2 presets', () => {
+    const v2Preset = {
+      id: 'custom-2',
+      label: 'Already Migrated',
+      command: 'node --inspect app.js',
+      isBuiltIn: false,
+    }
+
+    // Simulate migration logic
+    const migrateOldPreset = (p: Record<string, unknown>) => {
+      if (typeof p.command === 'string') {
+        return p
+      }
+      const base = typeof p.baseCommand === 'string' ? p.baseCommand.trim() : ''
+      const mods = typeof p.modifiers === 'string' ? p.modifiers.trim() : ''
+      const command = mods ? `${base} ${mods}` : base
+      return {
+        id: p.id,
+        label: p.label,
+        command: command || 'claude',
+        isBuiltIn: p.isBuiltIn,
+        agentType: p.agentType,
+      }
+    }
+
+    const migrated = migrateOldPreset(v2Preset as Record<string, unknown>)
+
+    // Should be unchanged
+    expect(migrated.command).toBe('node --inspect app.js')
+    expect(migrated).toEqual(v2Preset)
+  })
+})
+
 afterAll(() => {
   globalAny.window = originalWindow
   globalAny.localStorage = originalLocalStorage

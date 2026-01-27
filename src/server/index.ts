@@ -19,15 +19,17 @@ import {
 } from './terminal'
 import type { ITerminalProxy } from './terminal'
 import { resolveProjectPath } from './paths'
-import type {
-  ClientMessage,
-  ServerMessage,
-  TerminalErrorCode,
-  DirectoryListing,
-  DirectoryErrorResponse,
-  AgentSession,
-  ResumeError,
-  Session,
+import {
+  INACTIVE_MAX_AGE_MIN_HOURS,
+  INACTIVE_MAX_AGE_MAX_HOURS,
+  type ClientMessage,
+  type ServerMessage,
+  type TerminalErrorCode,
+  type DirectoryListing,
+  type DirectoryErrorResponse,
+  type AgentSession,
+  type ResumeError,
+  type Session,
 } from '../shared/types'
 import { logger } from './logger'
 import { SessionRefreshWorkerClient } from './sessionRefreshWorkerClient'
@@ -770,8 +772,8 @@ app.put('/api/settings/inactive-max-age-hours', async (c) => {
   try {
     const body = await c.req.json()
     const hours = Number(body.hours)
-    if (!Number.isFinite(hours) || hours < 1 || hours > 168) {
-      return c.json({ error: 'hours must be a number between 1 and 168' }, 400)
+    if (!Number.isFinite(hours) || hours < INACTIVE_MAX_AGE_MIN_HOURS || hours > INACTIVE_MAX_AGE_MAX_HOURS) {
+      return c.json({ error: `hours must be a number between ${INACTIVE_MAX_AGE_MIN_HOURS} and ${INACTIVE_MAX_AGE_MAX_HOURS}` }, 400)
     }
     runtimeInactiveMaxAgeHours = hours
     db.setAppSetting(INACTIVE_MAX_AGE_HOURS_KEY, String(hours))
