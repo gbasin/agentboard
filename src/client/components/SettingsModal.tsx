@@ -122,8 +122,7 @@ export default function SettingsModal({
   // New preset form state
   const [showAddForm, setShowAddForm] = useState(false)
   const [newLabel, setNewLabel] = useState('')
-  const [newBaseCommand, setNewBaseCommand] = useState('')
-  const [newModifiers, setNewModifiers] = useState('')
+  const [newCommand, setNewCommand] = useState('')
   const [newAgentType, setNewAgentType] = useState<'claude' | 'codex' | ''>('')
   const reenableTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -154,8 +153,7 @@ export default function SettingsModal({
       setDraftSoundOnIdle(soundOnIdle)
       setShowAddForm(false)
       setNewLabel('')
-      setNewBaseCommand('')
-      setNewModifiers('')
+      setNewCommand('')
       setNewAgentType('')
       // Fetch server-side settings
       fetch('/api/settings/tmux-mouse-mode')
@@ -281,14 +279,13 @@ export default function SettingsModal({
   }
 
   const handleAddPreset = () => {
-    if (!newLabel.trim() || !newBaseCommand.trim()) return
+    if (!newLabel.trim() || !newCommand.trim()) return
     if (draftPresets.length >= MAX_PRESETS) return
 
     const newPreset: CommandPreset = {
       id: `custom-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       label: newLabel.trim(),
-      baseCommand: newBaseCommand.trim(),
-      modifiers: newModifiers.trim(),
+      command: newCommand.trim(),
       isBuiltIn: false,
       agentType: newAgentType || undefined,
     }
@@ -296,8 +293,7 @@ export default function SettingsModal({
     setDraftPresets([...draftPresets, newPreset])
     setShowAddForm(false)
     setNewLabel('')
-    setNewBaseCommand('')
-    setNewModifiers('')
+    setNewCommand('')
     setNewAgentType('')
   }
 
@@ -388,9 +384,6 @@ export default function SettingsModal({
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      {preset.isBuiltIn && (
-                        <span className="text-[10px] text-muted">🔒</span>
-                      )}
                       <input
                         value={preset.label}
                         onChange={(e) => handleUpdatePreset(preset.id, { label: e.target.value })}
@@ -409,26 +402,14 @@ export default function SettingsModal({
                     )}
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-[10px] text-muted block mb-1">Base Command</label>
-                      <input
-                        value={preset.baseCommand}
-                        onChange={(e) => handleUpdatePreset(preset.id, { baseCommand: e.target.value })}
-                        className="input text-xs py-1 px-2 font-mono"
-                        placeholder="command"
-                        disabled={preset.isBuiltIn}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-muted block mb-1">Modifiers</label>
-                      <input
-                        value={preset.modifiers}
-                        onChange={(e) => handleUpdatePreset(preset.id, { modifiers: e.target.value })}
-                        className="input text-xs py-1 px-2 font-mono"
-                        placeholder="--flag value"
-                      />
-                    </div>
+                  <div>
+                    <label className="text-[10px] text-muted block mb-1">Command</label>
+                    <input
+                      value={preset.command}
+                      onChange={(e) => handleUpdatePreset(preset.id, { command: e.target.value })}
+                      className="input text-xs py-1 px-2 font-mono w-full"
+                      placeholder="command --flags"
+                    />
                   </div>
 
                   {!preset.isBuiltIn && (
@@ -455,25 +436,17 @@ export default function SettingsModal({
             {showAddForm ? (
               <div className="mt-3 border border-border p-3 space-y-2">
                 <div className="text-xs text-secondary mb-2">New Preset</div>
-                <div className="grid grid-cols-2 gap-2">
-                  <input
-                    value={newLabel}
-                    onChange={(e) => setNewLabel(e.target.value)}
-                    className="input text-xs py-1 px-2"
-                    placeholder="Label"
-                  />
-                  <input
-                    value={newBaseCommand}
-                    onChange={(e) => setNewBaseCommand(e.target.value)}
-                    className="input text-xs py-1 px-2 font-mono"
-                    placeholder="command"
-                  />
-                </div>
                 <input
-                  value={newModifiers}
-                  onChange={(e) => setNewModifiers(e.target.value)}
+                  value={newLabel}
+                  onChange={(e) => setNewLabel(e.target.value)}
+                  className="input text-xs py-1 px-2 w-full"
+                  placeholder="Label"
+                />
+                <input
+                  value={newCommand}
+                  onChange={(e) => setNewCommand(e.target.value)}
                   className="input text-xs py-1 px-2 font-mono w-full"
-                  placeholder="Modifiers (optional)"
+                  placeholder="command --flags"
                 />
                 <div className="flex items-center gap-2">
                   <select
@@ -496,7 +469,7 @@ export default function SettingsModal({
                   <button
                     type="button"
                     onClick={handleAddPreset}
-                    disabled={!newLabel.trim() || !newBaseCommand.trim()}
+                    disabled={!newLabel.trim() || !newCommand.trim()}
                     className="btn btn-primary text-xs px-2 py-1"
                   >
                     Add

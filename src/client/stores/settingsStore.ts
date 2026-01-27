@@ -43,15 +43,14 @@ export type ShortcutModifier = 'ctrl-option' | 'ctrl-shift' | 'cmd-option' | 'cm
 export interface CommandPreset {
   id: string
   label: string
-  baseCommand: string
-  modifiers: string
+  command: string
   isBuiltIn: boolean
   agentType?: 'claude' | 'codex'
 }
 
 export const DEFAULT_PRESETS: CommandPreset[] = [
-  { id: 'claude', label: 'Claude', baseCommand: 'claude', modifiers: '', isBuiltIn: true, agentType: 'claude' },
-  { id: 'codex', label: 'Codex', baseCommand: 'codex', modifiers: '', isBuiltIn: true, agentType: 'codex' },
+  { id: 'claude', label: 'Claude', command: 'claude', isBuiltIn: true, agentType: 'claude' },
+  { id: 'codex', label: 'Codex', command: 'codex', isBuiltIn: true, agentType: 'codex' },
 ]
 
 // Validation and helper functions
@@ -61,9 +60,7 @@ export function isValidPreset(p: unknown): p is CommandPreset {
   return (
     typeof obj.id === 'string' && obj.id.length >= 1 && obj.id.length <= 128 &&
     typeof obj.label === 'string' && obj.label.trim().length >= 1 && obj.label.length <= 64 &&
-    typeof obj.baseCommand === 'string' && obj.baseCommand.trim().length >= 1 && obj.baseCommand.length <= 256 &&
-    (typeof obj.modifiers === 'string' || obj.modifiers === undefined) &&
-    (obj.modifiers === undefined || obj.modifiers.length <= 1024) &&
+    typeof obj.command === 'string' && obj.command.trim().length >= 1 && obj.command.length <= 1024 &&
     typeof obj.isBuiltIn === 'boolean' &&
     (obj.agentType === undefined || obj.agentType === 'claude' || obj.agentType === 'codex')
   )
@@ -73,15 +70,12 @@ export function normalizePreset(p: CommandPreset): CommandPreset {
   return {
     ...p,
     label: p.label.trim().slice(0, 64),
-    baseCommand: p.baseCommand.trim().slice(0, 256),
-    modifiers: (p.modifiers || '').trim().slice(0, 1024),
+    command: p.command.trim().slice(0, 1024),
   }
 }
 
 export function getFullCommand(preset: CommandPreset): string {
-  const base = preset.baseCommand.trim()
-  const mods = preset.modifiers.trim()
-  return mods ? `${base} ${mods}` : base
+  return preset.command.trim()
 }
 
 export function generatePresetId(existing: Set<string>): string {
@@ -159,7 +153,7 @@ interface SettingsState {
   setCommandPresets: (presets: CommandPreset[]) => void
   defaultPresetId: string
   setDefaultPresetId: (id: string) => void
-  updatePresetModifiers: (presetId: string, modifiers: string) => void
+  updatePresetCommand: (presetId: string, command: string) => void
   addPreset: (preset: Omit<CommandPreset, 'id' | 'isBuiltIn'>) => void
   removePreset: (presetId: string) => void
 }
@@ -226,10 +220,10 @@ export const useSettingsStore = create<SettingsState>()(
       setCommandPresets: (presets) => set({ commandPresets: presets }),
       defaultPresetId: 'claude',
       setDefaultPresetId: (id) => set({ defaultPresetId: id }),
-      updatePresetModifiers: (presetId, modifiers) => {
+      updatePresetCommand: (presetId, command) => {
         const { commandPresets } = get()
         const updated = commandPresets.map(p =>
-          p.id === presetId ? { ...p, modifiers: modifiers.trim().slice(0, 1024) } : p
+          p.id === presetId ? { ...p, command: command.trim().slice(0, 1024) } : p
         )
         set({ commandPresets: updated })
       },
@@ -261,7 +255,7 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: 'agentboard-settings',
       storage: createJSONStorage(() => safeStorage),
-      version: 1,
+      version: 2,
       partialize: (state) => {
         // Exclude manualSessionOrder from persistence (session-only state)
         const { manualSessionOrder: _, ...rest } = state
@@ -269,6 +263,25 @@ export const useSettingsStore = create<SettingsState>()(
       },
       migrate: (persistedState: unknown, version: number) => {
         const state = persistedState as Record<string, unknown>
+
+        // Helper to migrate old preset format (baseCommand+modifiers) to new (command)
+        const migrateOldPreset = (p: Record<string, unknown>): CommandPreset => {
+          // Check if already new format
+          if (typeof p.command === 'string') {
+            return p as unknown as CommandPreset
+          }
+          // Migrate from baseCommand+modifiers
+          const base = typeof p.baseCommand === 'string' ? p.baseCommand.trim() : ''
+          const mods = typeof p.modifiers === 'string' ? p.modifiers.trim() : ''
+          const command = mods ? `${base} ${mods}` : base
+          return {
+            id: p.id as string,
+            label: p.label as string,
+            command: command || 'claude',
+            isBuiltIn: p.isBuiltIn as boolean,
+            agentType: p.agentType as 'claude' | 'codex' | undefined,
+          }
+        }
 
         if (version === 0 || !Array.isArray(state.commandPresets)) {
           // Migrate from old defaultCommand to new preset system
@@ -285,15 +298,14 @@ export const useSettingsStore = create<SettingsState>()(
             const customPreset: CommandPreset = {
               id: generatePresetId(existingIds),
               label: 'Migrated',
-              baseCommand: oldCmd,
-              modifiers: '',
+              command: oldCmd,
               isBuiltIn: false,
             }
             presets.push(customPreset)
             defaultPresetId = customPreset.id
           }
 
-          console.info('[agentboard:settings] Migrated from v0 to v1')
+          console.info('[agentboard:settings] Migrated from v0 to v2')
           return {
             ...state,
             commandPresets: presets,
@@ -303,8 +315,12 @@ export const useSettingsStore = create<SettingsState>()(
           }
         }
 
-        // Validate existing presets
-        const validPresets = (state.commandPresets as unknown[]).filter(isValidPreset)
+        // Migrate v1 presets (baseCommand+modifiers) to v2 (single command)
+        const rawPresets = state.commandPresets as Record<string, unknown>[]
+        const migratedPresets = rawPresets.map(migrateOldPreset)
+
+        // Validate migrated presets
+        const validPresets = migratedPresets.filter(isValidPreset)
         const hasBuiltIns = validPresets.some(p => p.id === 'claude') &&
                            validPresets.some(p => p.id === 'codex')
 
@@ -322,6 +338,10 @@ export const useSettingsStore = create<SettingsState>()(
           ? [...validPresets.filter(p => p.isBuiltIn),
              ...validPresets.filter(p => !p.isBuiltIn).slice(0, MAX_PRESETS - 2)]
           : validPresets
+
+        if (version === 1) {
+          console.info('[agentboard:settings] Migrated from v1 to v2')
+        }
 
         return {
           ...state,
