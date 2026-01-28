@@ -295,6 +295,11 @@ export function useTerminal({
 
       terminal.open(container)
       fitAddon.fit()
+
+      // Append tooltip after terminal.open() sets terminal.element
+      if (tooltip && terminal.element) {
+        terminal.element.appendChild(tooltip)
+      }
     }
 
     // Wait for fonts to be ready before opening terminal to ensure WebGL
@@ -338,7 +343,6 @@ export function useTerminal({
       tooltipHint.style.fontSize = '11px'
       tooltip.appendChild(tooltipHint)
 
-      terminal.element?.appendChild(tooltip)
       linkTooltipRef.current = tooltip
     }
 
@@ -364,6 +368,10 @@ export function useTerminal({
     const linkHandler = {
       activate: (event: MouseEvent, text: string) => {
         if (event.metaKey || event.ctrlKey) {
+          // Prevent event from propagating to xterm.js which would send a mouse
+          // sequence to tmux and exit copy-mode before the link can be opened
+          event.preventDefault()
+          event.stopPropagation()
           const sanitized = sanitizeLink(text)
           if (!sanitized) return
           window.open(sanitized, '_blank', 'noopener')
