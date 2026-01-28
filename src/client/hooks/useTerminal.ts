@@ -364,22 +364,38 @@ export function useTerminal({
       if (tooltip) tooltip.style.display = 'none'
     }
 
+    // Track the currently hovered link URL so we can open it on mousedown
+    // before xterm.js sends mouse sequences to tmux that exit copy-mode
+    let hoveredLinkUrl: string | null = null
+
     // Link handler with hover/leave callbacks - used for both OSC 8 and WebLinksAddon
     const linkHandler = {
-      activate: (event: MouseEvent, text: string) => {
-        if (event.metaKey || event.ctrlKey) {
-          // Prevent event from propagating to xterm.js which would send a mouse
-          // sequence to tmux and exit copy-mode before the link can be opened
-          event.preventDefault()
-          event.stopPropagation()
-          const sanitized = sanitizeLink(text)
-          if (!sanitized) return
-          window.open(sanitized, '_blank', 'noopener')
-        }
+      activate: (_event: MouseEvent, _text: string) => {
+        // Link opening is now handled in mousedown to beat the race condition
+        // where xterm.js sends mouse sequences before click fires
       },
-      hover: (event: MouseEvent, text: string) => showTooltip(event, text),
-      leave: () => hideTooltip(),
+      hover: (event: MouseEvent, text: string) => {
+        const sanitized = sanitizeLink(text)
+        hoveredLinkUrl = sanitized || null
+        showTooltip(event, text)
+      },
+      leave: () => {
+        hoveredLinkUrl = null
+        hideTooltip()
+      },
     }
+
+    // Open links on mousedown instead of click to beat the race condition where
+    // xterm.js sends mouse sequences to tmux (exiting copy-mode) before the
+    // link addon's click handler fires
+    const handleLinkMouseDown = (e: MouseEvent) => {
+      if (hoveredLinkUrl && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault()
+        e.stopPropagation()
+        window.open(hoveredLinkUrl, '_blank', 'noopener')
+      }
+    }
+    container.addEventListener('mousedown', handleLinkMouseDown, true)
 
     // Set linkHandler for OSC 8 hyperlinks
     terminal.options.linkHandler = linkHandler
@@ -515,6 +531,8 @@ export function useTerminal({
     return () => {
       // Cancel any pending async operations (font loading)
       cancelled = true
+      // Remove link mousedown handler
+      container.removeEventListener('mousedown', handleLinkMouseDown, true)
       // Remove tooltip element
       if (linkTooltipRef.current) {
         linkTooltipRef.current.remove()
