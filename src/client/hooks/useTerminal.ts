@@ -313,8 +313,25 @@ export function useTerminal({
       linkTooltipRef.current = tooltip
     }
 
-    // Mousedown handler ref - will be set after linkHandler is defined
-    let linkMouseDownHandler: ((event: MouseEvent) => void) | null = null
+    // Track whether we're currently hovering over a link (for pointerdown interception)
+    let isHoveringLink = false
+    let hoveredLinkUrl = ''
+    let linkOpenedOnPointerDown = false
+
+    // Intercept pointerdown on links with cmd/ctrl to prevent xterm.js from sending
+    // the event to tmux (which would exit copy-mode before the click handler runs).
+    // We open the link here on pointerdown and stop propagation so xterm.js never
+    // forwards the mouse event to tmux.
+    const handleLinkPointerDown = (event: PointerEvent) => {
+      if (isHoveringLink && hoveredLinkUrl && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault()
+        event.stopPropagation()
+        linkOpenedOnPointerDown = true
+        window.open(hoveredLinkUrl, '_blank', 'noopener')
+        // Reset flag after a short delay (in case click event still fires)
+        setTimeout(() => { linkOpenedOnPointerDown = false }, 100)
+      }
+    }
 
     // Function to complete terminal initialization after fonts are ready
     // This ensures the WebGL renderer builds its texture atlas with correct font metrics
@@ -339,10 +356,10 @@ export function useTerminal({
         terminal.element.appendChild(tooltip)
       }
 
-      // Attach mousedown handler for link clicks (must be after terminal.open())
+      // Attach pointerdown handler for link clicks (must be after terminal.open())
       // Using capture phase to intercept before xterm.js processes the event
-      if (linkMouseDownHandler && terminal.element) {
-        terminal.element.addEventListener('mousedown', linkMouseDownHandler, true)
+      if (terminal.element) {
+        terminal.element.addEventListener('pointerdown', handleLinkPointerDown, true)
       }
     }
 
@@ -373,31 +390,25 @@ export function useTerminal({
       if (tooltip) tooltip.style.display = 'none'
     }
 
-    // Track whether we're currently hovering over a link (for mousedown interception)
-    let isHoveringLink = false
-    let hoveredLinkText = ''
-
     // Link handler with hover/leave callbacks - used for both OSC 8 and WebLinksAddon
     const linkHandler = {
       activate: (event: MouseEvent, text: string) => {
+        // Skip if already opened by pointerdown handler (prevents double-open)
+        if (linkOpenedOnPointerDown) return
         if (event.metaKey || event.ctrlKey) {
           const sanitized = sanitizeLink(text)
           if (!sanitized) return
-          // Prevent the click from propagating to xterm.js, which would send it to tmux
-          // and exit copy-mode (scrolling to bottom)
-          event.preventDefault()
-          event.stopPropagation()
           window.open(sanitized, '_blank', 'noopener')
         }
       },
       hover: (event: MouseEvent, text: string) => {
         isHoveringLink = true
-        hoveredLinkText = text
+        hoveredLinkUrl = sanitizeLink(text)
         showTooltip(event, text)
       },
       leave: () => {
         isHoveringLink = false
-        hoveredLinkText = ''
+        hoveredLinkUrl = ''
         hideTooltip()
       },
     }
@@ -416,21 +427,6 @@ export function useTerminal({
     )
     terminal.loadAddon(webLinksAddon)
     webLinksAddonRef.current = webLinksAddon
-
-    // Intercept mousedown on links with cmd/ctrl to prevent xterm.js from sending
-    // the event to tmux (which would exit copy-mode before the click handler runs)
-    const handleLinkMouseDown = (event: MouseEvent) => {
-      if (isHoveringLink && (event.metaKey || event.ctrlKey)) {
-        event.preventDefault()
-        event.stopPropagation()
-        // Open the link on mousedown since we're preventing the click
-        const sanitized = sanitizeLink(hoveredLinkText)
-        if (sanitized) {
-          window.open(sanitized, '_blank', 'noopener')
-        }
-      }
-    }
-    linkMouseDownHandler = handleLinkMouseDown
 
     terminal.attachCustomKeyEventHandler((event) => {
       // Cmd/Ctrl+C: copy selection (only non-whitespace to avoid clearing images from clipboard)
@@ -539,9 +535,9 @@ export function useTerminal({
     return () => {
       // Cancel any pending async operations (font loading)
       cancelled = true
-      // Remove mousedown handler for link clicks
-      if (linkMouseDownHandler && terminal.element) {
-        terminal.element.removeEventListener('mousedown', linkMouseDownHandler, true)
+      // Remove pointerdown handler for link clicks
+      if (terminal.element) {
+        terminal.element.removeEventListener('pointerdown', handleLinkPointerDown, true)
       }
       // Remove tooltip element
       if (linkTooltipRef.current) {

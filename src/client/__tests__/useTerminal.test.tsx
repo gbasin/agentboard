@@ -38,8 +38,35 @@ class TerminalMock {
 
   loadAddon() {}
 
-  open(container: HTMLElement) {
-    this.element = container
+  open(_container: HTMLElement) {
+    // Create a mock element with event listener tracking
+    const listeners = new Map<string, { handler: EventListener; capture: boolean }[]>()
+    this.element = {
+      appendChild: () => {},
+      addEventListener: (type: string, handler: EventListener, options?: boolean | AddEventListenerOptions) => {
+        const capture = typeof options === 'boolean' ? options : options?.capture ?? false
+        if (!listeners.has(type)) listeners.set(type, [])
+        listeners.get(type)!.push({ handler, capture })
+      },
+      removeEventListener: (type: string, handler: EventListener, options?: boolean | AddEventListenerOptions) => {
+        const capture = typeof options === 'boolean' ? options : options?.capture ?? false
+        const list = listeners.get(type)
+        if (list) {
+          const idx = list.findIndex(l => l.handler === handler && l.capture === capture)
+          if (idx >= 0) list.splice(idx, 1)
+        }
+      },
+      getEventListeners: (type: string) => listeners.get(type) ?? [],
+      dispatchEvent: (event: Event) => {
+        const list = listeners.get(event.type)
+        if (list) {
+          for (const { handler } of list) {
+            handler(event)
+          }
+        }
+        return true
+      },
+    } as unknown as HTMLElement
   }
 
   reset() {
@@ -138,7 +165,25 @@ mock.module('@xterm/addon-webgl', () => ({ WebglAddon: WebglAddonMock }))
 mock.module('@xterm/addon-search', () => ({ SearchAddon: SearchAddonMock }))
 mock.module('@xterm/addon-serialize', () => ({ SerializeAddon: SerializeAddonMock }))
 mock.module('@xterm/addon-progress', () => ({ ProgressAddon: ProgressAddonMock }))
-mock.module('@xterm/addon-web-links', () => ({ WebLinksAddon: class {} }))
+class WebLinksAddonMock {
+  static instances: WebLinksAddonMock[] = []
+  activateHandler?: (event: MouseEvent, uri: string) => void
+  hoverHandler?: (event: MouseEvent, text: string) => void
+  leaveHandler?: () => void
+
+  constructor(
+    handler: (event: MouseEvent, uri: string) => void,
+    options?: { hover?: (event: MouseEvent, text: string) => void; leave?: () => void }
+  ) {
+    this.activateHandler = handler
+    this.hoverHandler = options?.hover
+    this.leaveHandler = options?.leave
+    WebLinksAddonMock.instances.push(this)
+  }
+
+  dispose() {}
+}
+mock.module('@xterm/addon-web-links', () => ({ WebLinksAddon: WebLinksAddonMock }))
 
 const { forceTextPresentation, sanitizeLink, useTerminal } = await import('../hooks/useTerminal')
 
@@ -204,6 +249,7 @@ beforeEach(() => {
   TerminalMock.instances = []
   FitAddonMock.instances = []
   WebglAddonMock.instances = []
+  WebLinksAddonMock.instances = []
 
   globalAny.window = {
     setTimeout: ((callback: () => void) => {
@@ -454,5 +500,105 @@ describe('useTerminal', () => {
     expect(terminal?.disposed).toBe(true)
     expect(webglAddon?.disposed).toBe(true)
     expect(container.innerHTML).toBe('')
+  })
+
+  test('pointerdown handler prevents propagation when hovering link with cmd/ctrl', async () => {
+    const openCalls: string[] = []
+    globalAny.window = {
+      ...globalAny.window,
+      open: (url: string) => {
+        openCalls.push(url)
+        return null
+      },
+    } as unknown as Window & typeof globalThis
+
+    globalAny.navigator = {
+      userAgent: 'Safari',
+      platform: 'MacIntel',
+      maxTouchPoints: 0,
+      clipboard: { writeText: () => Promise.resolve() },
+    } as unknown as Navigator
+
+    const { container } = createContainerMock()
+
+    let renderer!: TestRenderer.ReactTestRenderer
+
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          sendMessage={() => {}}
+          subscribe={() => () => {}}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+        {
+          createNodeMock: () => container,
+        }
+      )
+      await Promise.resolve()
+    })
+
+    const terminal = TerminalMock.instances[0]
+    const webLinksAddon = WebLinksAddonMock.instances[0]
+    if (!terminal || !webLinksAddon) {
+      throw new Error('Expected terminal and webLinksAddon instances')
+    }
+
+    const element = terminal.element as unknown as {
+      getEventListeners: (type: string) => Array<{ handler: EventListener; capture: boolean }>
+      dispatchEvent: (event: Event) => boolean
+    }
+
+    // Verify pointerdown handler is attached in capture phase
+    const pointerdownListeners = element.getEventListeners('pointerdown')
+    expect(pointerdownListeners.length).toBe(1)
+    expect(pointerdownListeners[0].capture).toBe(true)
+
+    // Simulate hovering over a link
+    webLinksAddon.hoverHandler?.({ clientX: 100, clientY: 100 } as MouseEvent, 'https://example.com')
+
+    // Create a pointerdown event with metaKey (cmd on Mac)
+    let preventDefaultCalled = false
+    let stopPropagationCalled = false
+    const pointerEvent = {
+      type: 'pointerdown',
+      metaKey: true,
+      ctrlKey: false,
+      preventDefault: () => { preventDefaultCalled = true },
+      stopPropagation: () => { stopPropagationCalled = true },
+    } as unknown as PointerEvent
+
+    element.dispatchEvent(pointerEvent)
+
+    expect(preventDefaultCalled).toBe(true)
+    expect(stopPropagationCalled).toBe(true)
+    // Link should be opened on pointerdown
+    expect(openCalls).toEqual(['https://example.com'])
+
+    // The click event's activate handler should be skipped (linkOpenedOnPointerDown flag)
+    webLinksAddon.activateHandler?.({ metaKey: true, ctrlKey: false } as MouseEvent, 'https://example.com')
+    // Should still be just one open call (no double-open)
+    expect(openCalls).toEqual(['https://example.com'])
+
+    // Test that leaving the link resets the hover state
+    webLinksAddon.leaveHandler?.()
+
+    // Now pointerdown with cmd should NOT prevent (not hovering anymore)
+    preventDefaultCalled = false
+    stopPropagationCalled = false
+    element.dispatchEvent(pointerEvent)
+
+    expect(preventDefaultCalled).toBe(false)
+    expect(stopPropagationCalled).toBe(false)
+
+    act(() => {
+      renderer.unmount()
+    })
+
+    // Verify handler is removed on cleanup
+    const remainingListeners = element.getEventListeners('pointerdown')
+    expect(remainingListeners.length).toBe(0)
   })
 })
