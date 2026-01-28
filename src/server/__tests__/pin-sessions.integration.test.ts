@@ -40,32 +40,41 @@ if (!tmuxAvailable) {
     // Session ID for pin/unpin test - seeded before server starts
     const wsTestSessionId = `ws-pin-test-${Date.now()}`
 
-    async function startServer() {
-      port = await getFreePort()
-      const resumeCommand = 'sh -c "sleep 30" -- {sessionId}'
-      const env: NodeJS.ProcessEnv = {
-        ...process.env,
-        PORT: String(port),
-        TMUX_SESSION: sessionName,
-        DISCOVER_PREFIXES: '',
-        AGENTBOARD_LOG_POLL_MS: '0',
-        AGENTBOARD_DB_PATH: dbPath,
-        // Use a long-lived command so windows stay open during the test
-        CLAUDE_RESUME_CMD: resumeCommand,
-        CODEX_RESUME_CMD: resumeCommand,
-        // Ensure consistent startup regardless of CI terminal mode
-        TERMINAL_MODE: 'pty',
+    async function startServer(retries = 2) {
+      for (let attempt = 1; attempt <= retries; attempt++) {
+        port = await getFreePort()
+        const resumeCommand = 'sh -c "sleep 30" -- {sessionId}'
+        const env: NodeJS.ProcessEnv = {
+          ...process.env,
+          PORT: String(port),
+          TMUX_SESSION: sessionName,
+          DISCOVER_PREFIXES: '',
+          AGENTBOARD_LOG_POLL_MS: '0',
+          AGENTBOARD_DB_PATH: dbPath,
+          // Use a long-lived command so windows stay open during the test
+          CLAUDE_RESUME_CMD: resumeCommand,
+          CODEX_RESUME_CMD: resumeCommand,
+          // Ensure consistent startup regardless of CI terminal mode
+          TERMINAL_MODE: 'pty',
+        }
+        if (tmuxTmpDir) {
+          env.TMUX_TMPDIR = tmuxTmpDir
+        }
+        serverProcess = Bun.spawn(['bun', 'src/server/index.ts'], {
+          cwd: process.cwd(),
+          env,
+          stdout: 'ignore',
+          stderr: 'ignore',
+        })
+        try {
+          await waitForHealth(port, serverProcess)
+          return
+        } catch (err) {
+          serverProcess.kill()
+          await serverProcess.exited.catch(() => {})
+          if (attempt === retries) throw err
+        }
       }
-      if (tmuxTmpDir) {
-        env.TMUX_TMPDIR = tmuxTmpDir
-      }
-      serverProcess = Bun.spawn(['bun', 'src/server/index.ts'], {
-        cwd: process.cwd(),
-        env,
-        stdout: 'ignore',
-        stderr: 'ignore',
-      })
-      await waitForHealth(port)
     }
 
     async function stopServer() {
@@ -246,9 +255,17 @@ async function getFreePort(): Promise<number> {
   })
 }
 
-async function waitForHealth(port: number, timeoutMs = 8000): Promise<void> {
+async function waitForHealth(
+  port: number,
+  proc: ReturnType<typeof Bun.spawn>,
+  timeoutMs = 10000
+): Promise<void> {
   const start = Date.now()
   while (Date.now() - start < timeoutMs) {
+    // Fail fast if process crashed
+    if (proc.exitCode !== null) {
+      throw new Error(`Server process exited with code ${proc.exitCode}`)
+    }
     try {
       const response = await fetch(`http://localhost:${port}/api/health`)
       if (response.ok) {
@@ -257,7 +274,7 @@ async function waitForHealth(port: number, timeoutMs = 8000): Promise<void> {
     } catch {
       // retry
     }
-    await delay(150)
+    await delay(100)
   }
   throw new Error('Server did not become healthy in time')
 }

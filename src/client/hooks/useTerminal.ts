@@ -416,7 +416,15 @@ export function useTerminal({
     terminal.onData((data) => {
       const attached = attachedSessionRef.current
       if (attached) {
-        // If we scrolled in tmux copy-mode, exit it before sending input
+        // When in copy-mode, filter out mouse sequences so clicks don't exit copy-mode
+        // This allows text selection to work while scrolled back (Safari desktop bug fix)
+        // SGR mouse sequences: ESC [ < params M (press) or m (release)
+        // eslint-disable-next-line no-control-regex
+        if (inTmuxCopyModeRef.current && /^\x1b\[<[\d;]+[Mm]$/.test(data)) {
+          return // Drop mouse event, let xterm handle selection locally
+        }
+
+        // If we scrolled in tmux copy-mode, exit it before sending keyboard input
         if (inTmuxCopyModeRef.current) {
           sendMessageRef.current({ type: 'tmux-cancel-copy-mode', sessionId: attached })
           setTmuxCopyMode(false)
