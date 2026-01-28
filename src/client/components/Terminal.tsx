@@ -295,7 +295,34 @@ export default function Terminal({
       setTimeout(clearIOSSelection, 0)
     }
 
+    // Track touch movement to distinguish taps from drags
+    const TAP_MOVE_THRESHOLD = 10
+    let selectionTouchStart: { x: number; y: number } | null = null
+    let selectionTouchMoved = false
+
+    const onTouchStart = (event: TouchEvent) => {
+      if (event.touches.length === 1) {
+        const touch = event.touches[0]
+        selectionTouchStart = { x: touch.clientX, y: touch.clientY }
+        selectionTouchMoved = false
+      }
+    }
+
+    const onTouchMove = (event: TouchEvent) => {
+      if (selectionTouchMoved || !selectionTouchStart || event.touches.length !== 1) return
+      const touch = event.touches[0]
+      const dx = Math.abs(touch.clientX - selectionTouchStart.x)
+      const dy = Math.abs(touch.clientY - selectionTouchStart.y)
+      if (dx > TAP_MOVE_THRESHOLD || dy > TAP_MOVE_THRESHOLD) {
+        selectionTouchMoved = true
+      }
+    }
+
     const onTouchEnd = (event: TouchEvent) => {
+      const wasDrag = selectionTouchMoved
+      selectionTouchStart = null
+      selectionTouchMoved = false
+
       const sel = window.getSelection()
       if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
         setIsSelectingText(false)
@@ -310,6 +337,12 @@ export default function Terminal({
         return
       }
 
+      // If user was dragging (extending selection), don't clear - they're still selecting
+      if (wasDrag) {
+        return
+      }
+
+      // Only clear on taps outside the selection (to dismiss it)
       const target = event.target as Node | null
       const targetInTree = target ? a11yTree.contains(target) : false
 
@@ -329,11 +362,15 @@ export default function Terminal({
 
     document.addEventListener('selectionchange', onSelectionChange)
     document.addEventListener('copy', onCopy)
+    document.addEventListener('touchstart', onTouchStart, { passive: true })
+    document.addEventListener('touchmove', onTouchMove, { passive: true })
     document.addEventListener('touchend', onTouchEnd, { passive: true })
 
     return () => {
       document.removeEventListener('selectionchange', onSelectionChange)
       document.removeEventListener('copy', onCopy)
+      document.removeEventListener('touchstart', onTouchStart)
+      document.removeEventListener('touchmove', onTouchMove)
       document.removeEventListener('touchend', onTouchEnd)
       clearIOSSelectionRef.current = null
       lastSelectionInsideRef.current = false
