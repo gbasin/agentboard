@@ -278,35 +278,7 @@ export function useTerminal({
     terminal.loadAddon(progressAddon)
     progressAddonRef.current = progressAddon
 
-    // Function to complete terminal initialization after fonts are ready
-    // This ensures the WebGL renderer builds its texture atlas with correct font metrics
-    const openTerminal = () => {
-      if (cancelled) return
-
-      if (useWebGLRef.current) {
-        try {
-          const webglAddon = new WebglAddon()
-          terminal.loadAddon(webglAddon)
-          webglAddonRef.current = webglAddon
-        } catch {
-          // WebGL addon is optional
-        }
-      }
-
-      terminal.open(container)
-      fitAddon.fit()
-    }
-
-    // Wait for fonts to be ready before opening terminal to ensure WebGL
-    // texture atlas is built with correct glyph metrics for all font weights
-    if (document.fonts?.ready) {
-      document.fonts.ready.then(openTerminal).catch(openTerminal)
-    } else {
-      // Fallback for environments without document.fonts
-      openTerminal()
-    }
-
-    // Create tooltip element inside terminal (with xterm-hover class to prevent interference)
+    // Create tooltip element (with xterm-hover class to prevent interference)
     // Guard for test environments where document.createElement may not be available
     let tooltip: HTMLDivElement | null = null
     let tooltipUrl: HTMLDivElement | null = null
@@ -338,8 +310,49 @@ export function useTerminal({
       tooltipHint.style.fontSize = '11px'
       tooltip.appendChild(tooltipHint)
 
-      terminal.element?.appendChild(tooltip)
       linkTooltipRef.current = tooltip
+    }
+
+    // Mousedown handler ref - will be set after linkHandler is defined
+    let linkMouseDownHandler: ((event: MouseEvent) => void) | null = null
+
+    // Function to complete terminal initialization after fonts are ready
+    // This ensures the WebGL renderer builds its texture atlas with correct font metrics
+    const openTerminal = () => {
+      if (cancelled) return
+
+      if (useWebGLRef.current) {
+        try {
+          const webglAddon = new WebglAddon()
+          terminal.loadAddon(webglAddon)
+          webglAddonRef.current = webglAddon
+        } catch {
+          // WebGL addon is optional
+        }
+      }
+
+      terminal.open(container)
+      fitAddon.fit()
+
+      // Attach tooltip to terminal element (must be after terminal.open())
+      if (tooltip && terminal.element) {
+        terminal.element.appendChild(tooltip)
+      }
+
+      // Attach mousedown handler for link clicks (must be after terminal.open())
+      // Using capture phase to intercept before xterm.js processes the event
+      if (linkMouseDownHandler && terminal.element) {
+        terminal.element.addEventListener('mousedown', linkMouseDownHandler, true)
+      }
+    }
+
+    // Wait for fonts to be ready before opening terminal to ensure WebGL
+    // texture atlas is built with correct glyph metrics for all font weights
+    if (document.fonts?.ready) {
+      document.fonts.ready.then(openTerminal).catch(openTerminal)
+    } else {
+      // Fallback for environments without document.fonts
+      openTerminal()
     }
 
     const showTooltip = (event: MouseEvent, text: string) => {
@@ -360,17 +373,33 @@ export function useTerminal({
       if (tooltip) tooltip.style.display = 'none'
     }
 
+    // Track whether we're currently hovering over a link (for mousedown interception)
+    let isHoveringLink = false
+    let hoveredLinkText = ''
+
     // Link handler with hover/leave callbacks - used for both OSC 8 and WebLinksAddon
     const linkHandler = {
       activate: (event: MouseEvent, text: string) => {
         if (event.metaKey || event.ctrlKey) {
           const sanitized = sanitizeLink(text)
           if (!sanitized) return
+          // Prevent the click from propagating to xterm.js, which would send it to tmux
+          // and exit copy-mode (scrolling to bottom)
+          event.preventDefault()
+          event.stopPropagation()
           window.open(sanitized, '_blank', 'noopener')
         }
       },
-      hover: (event: MouseEvent, text: string) => showTooltip(event, text),
-      leave: () => hideTooltip(),
+      hover: (event: MouseEvent, text: string) => {
+        isHoveringLink = true
+        hoveredLinkText = text
+        showTooltip(event, text)
+      },
+      leave: () => {
+        isHoveringLink = false
+        hoveredLinkText = ''
+        hideTooltip()
+      },
     }
 
     // Set linkHandler for OSC 8 hyperlinks
@@ -387,6 +416,21 @@ export function useTerminal({
     )
     terminal.loadAddon(webLinksAddon)
     webLinksAddonRef.current = webLinksAddon
+
+    // Intercept mousedown on links with cmd/ctrl to prevent xterm.js from sending
+    // the event to tmux (which would exit copy-mode before the click handler runs)
+    const handleLinkMouseDown = (event: MouseEvent) => {
+      if (isHoveringLink && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault()
+        event.stopPropagation()
+        // Open the link on mousedown since we're preventing the click
+        const sanitized = sanitizeLink(hoveredLinkText)
+        if (sanitized) {
+          window.open(sanitized, '_blank', 'noopener')
+        }
+      }
+    }
+    linkMouseDownHandler = handleLinkMouseDown
 
     terminal.attachCustomKeyEventHandler((event) => {
       // Cmd/Ctrl+C: copy selection (only non-whitespace to avoid clearing images from clipboard)
@@ -495,6 +539,10 @@ export function useTerminal({
     return () => {
       // Cancel any pending async operations (font loading)
       cancelled = true
+      // Remove mousedown handler for link clicks
+      if (linkMouseDownHandler && terminal.element) {
+        terminal.element.removeEventListener('mousedown', linkMouseDownHandler, true)
+      }
       // Remove tooltip element
       if (linkTooltipRef.current) {
         linkTooltipRef.current.remove()
