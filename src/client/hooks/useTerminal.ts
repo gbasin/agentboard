@@ -418,9 +418,13 @@ export function useTerminal({
       if (attached) {
         // When in copy-mode, filter out mouse sequences so clicks don't exit copy-mode
         // This allows text selection to work while scrolled back (Safari desktop bug fix)
-        // SGR mouse sequences: ESC [ < params M (press) or m (release)
+        // Mouse sequence formats:
+        // - SGR extended: ESC [ < Ps ; Ps ; Ps M/m (most common with tmux)
+        // - URXVT: ESC [ Ps ; Ps ; Ps M
+        // - Normal/UTF-8: ESC [ M followed by encoded bytes (3+ chars after M)
         // eslint-disable-next-line no-control-regex
-        if (inTmuxCopyModeRef.current && /^\x1b\[<[\d;]+[Mm]$/.test(data)) {
+        const isMouseSequence = /^\x1b\[(<[\d;]+[Mm]|[\d;]+M|\x00?M[\s\S]{3,})$/.test(data)
+        if (inTmuxCopyModeRef.current && isMouseSequence) {
           return // Drop mouse event, let xterm handle selection locally
         }
 
@@ -626,6 +630,8 @@ export function useTerminal({
       sendMessage({ type: 'terminal-detach', sessionId: prevAttached })
       attachedSessionRef.current = null
       attachedTargetRef.current = null
+      // Reset copy-mode state - each session has its own scroll position
+      inTmuxCopyModeRef.current = false
     }
 
     // Attach to new session
@@ -650,6 +656,9 @@ export function useTerminal({
       // Mark as attached
       attachedSessionRef.current = sessionId
       attachedTargetRef.current = tmuxTarget ?? null
+
+      // Check if this session is already in copy-mode (scrolled back)
+      sendMessage({ type: 'tmux-check-copy-mode', sessionId })
 
       // Scroll to bottom and focus after content loads
       if (scrollTimer.current) {
