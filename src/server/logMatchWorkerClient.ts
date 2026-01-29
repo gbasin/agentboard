@@ -98,6 +98,7 @@ export class LogMatchWorkerClient {
         if (this.readyResolve) {
           this.readyResolve = null
           this.readyReject = null
+          this.readyPromise = null
           this.initFailed = true
           resolve() // Resolve instead of reject so poll() can handle gracefully
         }

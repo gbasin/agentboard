@@ -60,10 +60,12 @@ function applyLogEntryToExistingRecord(
 
   // Use file size to detect actual log changes (mtime can change from backups/syncs)
   const lastKnownSize = record.lastKnownLogSize ?? 0
+  const isFirstObservation = record.lastKnownLogSize === null
   const sizeChanged = entry.size !== lastKnownSize
   const hasGrown = entry.size > lastKnownSize
 
-  if (sizeChanged) {
+  // Enter block on size change OR first observation (to initialize null -> actual size)
+  if (sizeChanged || isFirstObservation) {
     // Log size changed - could be growth or truncation/rotation
     if (hasGrown) {
       // Log grew - extract timestamp from the last entry
@@ -180,11 +182,12 @@ export class LogPoller {
     this.interval = setInterval(() => {
       void this.pollOnce()
     }, safeInterval)
-    void this.pollOnce()
-    // Start orphan rematch in background - doesn't block regular polling
-    if (this.orphanRematchPending && !this.orphanRematchInProgress) {
-      this.orphanRematchPromise = this.runOrphanRematchInBackground()
-    }
+  // Start orphan rematch after first poll completes to avoid worker contention
+    void this.pollOnce().then(() => {
+      if (this.orphanRematchPending && !this.orphanRematchInProgress) {
+        this.orphanRematchPromise = this.runOrphanRematchInBackground()
+      }
+    })
   }
 
   /** Wait for the background orphan rematch to complete (for testing) */
