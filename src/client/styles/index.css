@@ -433,6 +433,8 @@ body {
     flex-direction: column;
     background: var(--bg-base);
     transition: height 0.1s ease-out;
+    overflow: hidden;
+    max-width: 100vw;
   }
 }
 

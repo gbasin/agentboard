@@ -991,7 +991,7 @@ export default function Terminal({
 
       {/* Mobile session switcher - top of terminal */}
       {session && sessions.length > 1 && (
-        <div className="relative bg-elevated border-b border-border md:hidden">
+        <div className="relative overflow-hidden bg-elevated border-b border-border md:hidden">
           {/* Left fade indicator */}
           <div className="absolute left-0 top-0 bottom-0 w-4 bg-gradient-to-r from-elevated to-transparent z-10 pointer-events-none" />
           {/* Right fade indicator */}
