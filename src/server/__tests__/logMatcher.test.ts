@@ -14,6 +14,7 @@ import {
   extractActionFromUserAction,
   hasMessageInValidUserContext,
   isToolNotificationText,
+  extractLastEntryTimestamp,
 } from '../logMatcher'
 
 const bunAny = Bun as typeof Bun & { spawnSync: typeof Bun.spawnSync }
@@ -771,5 +772,90 @@ describe('isToolNotificationText', () => {
     test('allows whitespace only', () => {
       expect(isToolNotificationText('   ')).toBe(false)
     })
+  })
+})
+
+describe('extractLastEntryTimestamp', () => {
+  let tmpDir: string
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'extract-timestamp-'))
+  })
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true })
+  })
+
+  test('extracts timestamp from last entry', async () => {
+    const logPath = path.join(tmpDir, 'test.jsonl')
+    await fs.writeFile(
+      logPath,
+      [
+        JSON.stringify({ timestamp: '2025-01-01T00:00:00Z', type: 'message' }),
+        JSON.stringify({ timestamp: '2025-01-02T00:00:00Z', type: 'message' }),
+        JSON.stringify({ timestamp: '2025-01-03T00:00:00Z', type: 'message' }),
+      ].join('\n')
+    )
+    expect(extractLastEntryTimestamp(logPath)).toBe('2025-01-03T00:00:00Z')
+  })
+
+  test('returns null for empty file', async () => {
+    const logPath = path.join(tmpDir, 'empty.jsonl')
+    await fs.writeFile(logPath, '')
+    expect(extractLastEntryTimestamp(logPath)).toBe(null)
+  })
+
+  test('returns null for non-existent file', () => {
+    const logPath = path.join(tmpDir, 'nonexistent.jsonl')
+    expect(extractLastEntryTimestamp(logPath)).toBe(null)
+  })
+
+  test('skips malformed JSON lines', async () => {
+    const logPath = path.join(tmpDir, 'malformed.jsonl')
+    await fs.writeFile(
+      logPath,
+      [
+        JSON.stringify({ timestamp: '2025-01-01T00:00:00Z', type: 'message' }),
+        'this is not valid json',
+        '{ broken json',
+      ].join('\n')
+    )
+    // Should find the first (only valid) entry
+    expect(extractLastEntryTimestamp(logPath)).toBe('2025-01-01T00:00:00Z')
+  })
+
+  test('returns null when no entries have timestamp field', async () => {
+    const logPath = path.join(tmpDir, 'no-timestamp.jsonl')
+    await fs.writeFile(
+      logPath,
+      [
+        JSON.stringify({ type: 'message', content: 'hello' }),
+        JSON.stringify({ type: 'message', content: 'world' }),
+      ].join('\n')
+    )
+    expect(extractLastEntryTimestamp(logPath)).toBe(null)
+  })
+
+  test('finds timestamp even if last line has none', async () => {
+    const logPath = path.join(tmpDir, 'mixed.jsonl')
+    await fs.writeFile(
+      logPath,
+      [
+        JSON.stringify({ timestamp: '2025-01-01T00:00:00Z', type: 'message' }),
+        JSON.stringify({ timestamp: '2025-01-02T00:00:00Z', type: 'message' }),
+        JSON.stringify({ type: 'status', content: 'no timestamp here' }),
+      ].join('\n')
+    )
+    // Should iterate backwards and find the second entry's timestamp
+    expect(extractLastEntryTimestamp(logPath)).toBe('2025-01-02T00:00:00Z')
+  })
+
+  test('handles trailing newline', async () => {
+    const logPath = path.join(tmpDir, 'trailing.jsonl')
+    await fs.writeFile(
+      logPath,
+      JSON.stringify({ timestamp: '2025-01-01T00:00:00Z', type: 'message' }) + '\n'
+    )
+    expect(extractLastEntryTimestamp(logPath)).toBe('2025-01-01T00:00:00Z')
   })
 })

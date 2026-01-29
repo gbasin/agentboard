@@ -11,6 +11,13 @@ interface PendingRequest {
 const DEFAULT_TIMEOUT_MS = 15000
 const READY_TIMEOUT_MS = 10000
 
+class WorkerInitError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'WorkerInitError'
+  }
+}
+
 export class LogMatchWorkerClient {
   private worker: Worker | null = null
   private disposed = false
@@ -19,7 +26,6 @@ export class LogMatchWorkerClient {
   private readyPromise: Promise<void> | null = null
   private readyResolve: (() => void) | null = null
   private readyReject: ((error: Error) => void) | null = null
-  private initFailed = false
 
   constructor() {
     this.spawnWorker()
@@ -38,21 +44,25 @@ export class LogMatchWorkerClient {
 
     // Wait for the worker to be ready before sending the first message
     if (this.readyPromise) {
-      await this.readyPromise
+      try {
+        await this.readyPromise
+      } catch (error) {
+        // Worker failed to initialize - restart and retry once
+        if (error instanceof WorkerInitError) {
+          if (this.disposed) {
+            throw new Error('Log match worker is disposed')
+          }
+          this.restartWorker()
+          if (this.readyPromise) {
+            await this.readyPromise // This will throw if restart also fails
+          }
+        } else {
+          throw error
+        }
+      }
     }
     if (this.disposed) {
       throw new Error('Log match worker is disposed')
-    }
-    // If init failed, restart worker and retry
-    if (this.initFailed) {
-      this.initFailed = false
-      this.restartWorker()
-      if (this.readyPromise) {
-        await this.readyPromise
-      }
-      if (this.initFailed) {
-        throw new Error('Log match worker failed to initialize after restart')
-      }
     }
 
     const id = `${Date.now()}-${this.counter++}`
@@ -89,18 +99,17 @@ export class LogMatchWorkerClient {
     if (this.disposed) return
 
     // Set up ready promise before creating the worker
-    this.initFailed = false
     this.readyPromise = new Promise<void>((resolve, reject) => {
       this.readyResolve = resolve
       this.readyReject = reject
       // Timeout if worker doesn't become ready
       setTimeout(() => {
-        if (this.readyResolve) {
+        if (this.readyReject) {
+          const rejectFn = this.readyReject
           this.readyResolve = null
           this.readyReject = null
           this.readyPromise = null
-          this.initFailed = true
-          resolve() // Resolve instead of reject so poll() can handle gracefully
+          rejectFn(new WorkerInitError('Log match worker failed to initialize'))
         }
       }, READY_TIMEOUT_MS)
     })

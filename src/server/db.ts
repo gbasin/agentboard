@@ -63,6 +63,8 @@ const AGENT_SESSIONS_COLUMNS_SQL = `
   current_window TEXT,
   is_pinned INTEGER NOT NULL DEFAULT 0,
   last_resume_error TEXT,
+  -- NULL means "unknown" (e.g., after upgrade). First poll will initialize to actual size.
+  -- This triggers a one-time match check for upgraded sessions.
   last_known_log_size INTEGER,
   is_codex_exec INTEGER NOT NULL DEFAULT 0
 `
