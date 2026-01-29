@@ -367,12 +367,19 @@ export function useTerminal({
     // Track the currently hovered link URL so we can open it on mousedown
     // before xterm.js sends mouse sequences to tmux that exit copy-mode
     let hoveredLinkUrl: string | null = null
+    let linkOpenedOnMouseDown = false
 
     // Link handler with hover/leave callbacks - used for both OSC 8 and WebLinksAddon
     const linkHandler = {
-      activate: (_event: MouseEvent, _text: string) => {
-        // Link opening is now handled in mousedown to beat the race condition
-        // where xterm.js sends mouse sequences before click fires
+      activate: (event: MouseEvent, text: string) => {
+        // Skip if already opened by mousedown handler (prevents double-open)
+        if (linkOpenedOnMouseDown) return
+        // Fallback for cases where mousedown didn't intercept
+        if (event.metaKey || event.ctrlKey) {
+          const sanitized = sanitizeLink(text)
+          if (!sanitized) return
+          window.open(sanitized, '_blank', 'noopener')
+        }
       },
       hover: (event: MouseEvent, text: string) => {
         const sanitized = sanitizeLink(text)
@@ -392,7 +399,10 @@ export function useTerminal({
       if (hoveredLinkUrl && (e.metaKey || e.ctrlKey)) {
         e.preventDefault()
         e.stopPropagation()
+        linkOpenedOnMouseDown = true
         window.open(hoveredLinkUrl, '_blank', 'noopener')
+        // Reset flag after a short delay (in case click event still fires)
+        setTimeout(() => { linkOpenedOnMouseDown = false }, 100)
       }
     }
     container.addEventListener('mousedown', handleLinkMouseDown, true)
