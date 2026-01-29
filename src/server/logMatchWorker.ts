@@ -285,6 +285,7 @@ function attachLastUserMessage(
       logFilePath: string
       currentWindow: string | null
       lastUserMessage?: string | null
+      lastKnownLogSize?: number | null
     }
   >
 ) {
@@ -300,8 +301,9 @@ function attachLastUserMessage(
       }
       return
     }
-    const lastActivity = Date.parse(snapshot.lastActivityAt)
-    if (!Number.isNaN(lastActivity) && entry.mtime <= lastActivity) {
+    // Use file size to detect actual log growth (mtime is unreliable due to backups/syncs)
+    const knownSize = snapshot.lastKnownLogSize ?? 0
+    if (entry.size <= knownSize) {
       return
     }
   }

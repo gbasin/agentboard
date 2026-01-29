@@ -1110,7 +1110,7 @@ export function extractLastEntryTimestamp(
   const raw = readLogTail(logPath, tailBytes)
   if (!raw) return null
 
-  const lines = raw.split('\n').filter(Boolean)
+  const lines = raw.split('\n').map(l => l.trim()).filter(Boolean)
   // Iterate from the end to find the last entry with a timestamp
   for (let i = lines.length - 1; i >= 0; i--) {
     try {

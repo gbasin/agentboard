@@ -41,10 +41,11 @@ interface SessionRecord {
   isPinned: boolean
   lastResumeError: string | null
   lastKnownLogSize: number | null
+  isCodexExec: boolean
 }
 
 // Fields that applyLogEntryToExistingRecord may update
-type SessionUpdate = Pick<SessionRecord, 'lastActivityAt' | 'lastUserMessage' | 'lastKnownLogSize'>
+type SessionUpdate = Pick<SessionRecord, 'lastActivityAt' | 'lastUserMessage' | 'lastKnownLogSize' | 'isCodexExec'>
 
 /**
  * Computes the update object for an existing session record based on a log entry.
@@ -57,6 +58,11 @@ function applyLogEntryToExistingRecord(
   opts: { isLastUserMessageLocked: boolean; logPath: string }
 ): Partial<SessionUpdate> | null {
   const update: Partial<SessionUpdate> = {}
+
+  // Backfill isCodexExec if the entry detected it but record doesn't have it
+  if (entry.isCodexExec && !record.isCodexExec) {
+    update.isCodexExec = true
+  }
 
   // Use file size to detect actual log changes (mtime can change from backups/syncs)
   const lastKnownSize = record.lastKnownLogSize ?? 0
@@ -131,7 +137,7 @@ export class LogPoller {
   private orphanRematchPromise: Promise<void> | null = null
   private warnedWorkerDisabled = false
   private startupLastMessageBackfillPending = true
-  // Cache of empty logs: logPath -> mtime when checked (re-check if mtime changes)
+  // Cache of empty logs: logPath -> size when checked (re-check if size changes)
   private emptyLogCache: Map<string, number> = new Map()
   // Cache of re-match attempts: sessionId -> timestamp of last attempt
   private rematchAttemptCache: Map<string, number> = new Map()
@@ -617,9 +623,9 @@ export class LogPoller {
             continue
           }
 
-          // Skip logs we've already checked and found empty (unless mtime changed)
-          const cachedMtime = this.emptyLogCache.get(entry.logPath)
-          if (cachedMtime !== undefined && cachedMtime >= entry.mtime) {
+          // Skip logs we've already checked and found empty (unless size changed)
+          const cachedSize = this.emptyLogCache.get(entry.logPath)
+          if (cachedSize !== undefined && cachedSize >= entry.size) {
             continue
           }
 
@@ -636,7 +642,7 @@ export class LogPoller {
           const sessionId = entry.sessionId
           if (!sessionId) {
             // No session ID yet - cache and retry on next poll when log has more content
-            this.emptyLogCache.set(entry.logPath, entry.mtime)
+            this.emptyLogCache.set(entry.logPath, entry.size)
             continue
           }
           const projectPath = entry.projectPath ?? ''
@@ -697,7 +703,7 @@ export class LogPoller {
           const logTokenCount = entry.logTokenCount
           if (logTokenCount < MIN_LOG_TOKENS_FOR_INSERT) {
             // Cache this empty log so we don't re-check it every poll
-            this.emptyLogCache.set(entry.logPath, entry.mtime)
+            this.emptyLogCache.set(entry.logPath, entry.size)
             logger.info('log_match_skipped', {
               logPath: entry.logPath,
               reason: 'too_few_tokens',

@@ -23,8 +23,6 @@ export interface LogEntrySnapshot {
   isCodexExec: boolean
   logTokenCount: number
   lastUserMessage?: string
-  /** Timestamp from the last log entry (ISO string), if parsed */
-  lastEntryTimestamp?: string
 }
 
 export interface LogEntryBatch {
@@ -89,6 +87,10 @@ export function collectLogEntryBatch(
     if (known) {
       // Use cached metadata from DB, skip file content reads
       // logTokenCount = -1 indicates enrichment was skipped (already validated)
+      // For codex sessions, backfill isCodexExec if not yet set (cheap header check)
+      const codexExec = known.agentType === 'codex' && !known.isCodexExec
+        ? isCodexExec(entry.logPath)
+        : known.isCodexExec
       return {
         logPath: entry.logPath,
         mtime: entry.mtime,
@@ -98,7 +100,7 @@ export function collectLogEntryBatch(
         projectPath: known.projectPath,
         agentType: known.agentType,
         isCodexSubagent: false,
-        isCodexExec: known.isCodexExec,
+        isCodexExec: codexExec,
         logTokenCount: -1,
       } satisfies LogEntrySnapshot
     }
