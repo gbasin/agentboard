@@ -368,6 +368,7 @@ export function useTerminal({
     // before xterm.js sends mouse sequences to tmux that exit copy-mode
     let hoveredLinkUrl: string | null = null
     let linkOpenedOnMouseDown = false
+    let linkOpenedResetTimer: ReturnType<typeof setTimeout> | null = null
 
     // Link handler with hover/leave callbacks - used for both OSC 8 and WebLinksAddon
     const linkHandler = {
@@ -402,7 +403,8 @@ export function useTerminal({
         linkOpenedOnMouseDown = true
         window.open(hoveredLinkUrl, '_blank', 'noopener')
         // Reset flag after a short delay (in case click event still fires)
-        setTimeout(() => { linkOpenedOnMouseDown = false }, 100)
+        if (linkOpenedResetTimer) clearTimeout(linkOpenedResetTimer)
+        linkOpenedResetTimer = setTimeout(() => { linkOpenedOnMouseDown = false }, 100)
       }
     }
     container.addEventListener('mousedown', handleLinkMouseDown, true)
@@ -451,13 +453,13 @@ export function useTerminal({
       const attached = attachedSessionRef.current
       if (attached) {
         // When in copy-mode, filter out mouse sequences so clicks don't exit copy-mode
-        // This allows text selection to work while scrolled back (Safari desktop bug fix)
+        // This prevents accidental copy-mode exit when clicking in scrollback (Safari desktop)
         // Mouse sequence formats:
         // - SGR extended: ESC [ < Ps ; Ps ; Ps M/m (most common with tmux)
         // - URXVT: ESC [ Ps ; Ps ; Ps M
-        // - Normal/UTF-8: ESC [ M followed by encoded bytes (3+ chars after M)
+        // - Normal/UTF-8: ESC [ M followed by exactly 3 encoded bytes
         // eslint-disable-next-line no-control-regex
-        const isMouseSequence = /^\x1b\[(<[\d;]+[Mm]|[\d;]+M|\x00?M[\s\S]{3,})$/.test(data)
+        const isMouseSequence = /^\x1b\[(<[\d;]+[Mm]|[\d;]+M|M[\x20-\xff]{3})$/.test(data)
         if (inTmuxCopyModeRef.current && isMouseSequence) {
           return // Drop mouse event, let xterm handle selection locally
         }
@@ -541,6 +543,9 @@ export function useTerminal({
     return () => {
       // Cancel any pending async operations (font loading)
       cancelled = true
+      // Clean up link handling state
+      if (linkOpenedResetTimer) clearTimeout(linkOpenedResetTimer)
+      hoveredLinkUrl = null
       // Remove link mousedown handler
       container.removeEventListener('mousedown', handleLinkMouseDown, true)
       // Remove tooltip element
