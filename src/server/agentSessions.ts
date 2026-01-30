@@ -1,5 +1,6 @@
 import path from 'node:path'
 import type { AgentSession } from '../shared/types'
+import { config } from './config'
 import type { AgentSessionRecord } from './db'
 
 export function toAgentSession(record: AgentSessionRecord): AgentSession {
@@ -12,6 +13,7 @@ export function toAgentSession(record: AgentSessionRecord): AgentSession {
     createdAt: record.createdAt,
     lastActivityAt: record.lastActivityAt,
     isActive: record.currentWindow !== null,
+    host: config.hostLabel,
     lastUserMessage: record.lastUserMessage ?? undefined,
     isPinned: record.isPinned,
     lastResumeError: record.lastResumeError ?? undefined,

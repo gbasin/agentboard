@@ -63,6 +63,7 @@ beforeEach(() => {
     showLastUserMessage: true,
     showSessionIdPrefix: false,
     projectFilters: [],
+    hostFilters: [],
   })
 })
 
@@ -74,6 +75,7 @@ describe('useSettingsStore', () => {
     expect(state.lastProjectPath).toBeNull()
     expect(state.recentPaths).toEqual([])
     expect(state.projectFilters).toEqual([])
+    expect(state.hostFilters).toEqual([])
   })
 
   test('updates default project dir', () => {

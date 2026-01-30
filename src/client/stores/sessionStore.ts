@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
-import type { AgentSession, Session } from '@shared/types'
+import type { AgentSession, HostStatus, Session } from '@shared/types'
 import { sortSessions } from '../utils/sessions'
 import { useSettingsStore } from './settingsStore'
 import { safeStorage } from '../utils/storage'
@@ -15,6 +15,7 @@ export type ConnectionStatus =
 interface SessionState {
   sessions: Session[]
   agentSessions: { active: AgentSession[]; inactive: AgentSession[] }
+  hostStatuses: HostStatus[]
   // Sessions being animated out - keyed by session ID, value is the session data
   exitingSessions: Map<string, Session>
   selectedSessionId: string | null
@@ -23,6 +24,7 @@ interface SessionState {
   connectionError: string | null
   setSessions: (sessions: Session[]) => void
   setAgentSessions: (active: AgentSession[], inactive: AgentSession[]) => void
+  setHostStatuses: (hosts: HostStatus[]) => void
   updateSession: (session: Session) => void
   setSelectedSessionId: (sessionId: string | null) => void
   setConnectionStatus: (status: ConnectionStatus) => void
@@ -38,6 +40,7 @@ export const useSessionStore = create<SessionState>()(
     (set, get) => ({
       sessions: [],
       agentSessions: { active: [], inactive: [] },
+      hostStatuses: [],
       exitingSessions: new Map(),
       selectedSessionId: null,
       hasLoaded: false,
@@ -96,6 +99,7 @@ export const useSessionStore = create<SessionState>()(
         set({
           agentSessions: { active, inactive },
         }),
+      setHostStatuses: (hosts) => set({ hostStatuses: hosts }),
       updateSession: (session) =>
         set((state) => ({
           sessions: state.sessions.map((existing) =>

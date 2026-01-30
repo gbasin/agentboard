@@ -462,8 +462,14 @@ describe('server message handlers', () => {
     }
     websocket.open?.(ws as never)
 
-    expect(sent[0]).toEqual({ type: 'sessions', sessions: [baseSession] })
-    expect(sent[1]).toMatchObject({ type: 'agent-sessions' })
+    expect(sent.find((message) => message.type === 'sessions')).toEqual({
+      type: 'sessions',
+      sessions: [baseSession],
+    })
+    expect(sent.find((message) => message.type === 'host-status')).toBeTruthy()
+    expect(sent.find((message) => message.type === 'agent-sessions')).toMatchObject({
+      type: 'agent-sessions',
+    })
 
     const nextSession = { ...baseSession, id: 'session-2', name: 'beta' }
     registryInstance.emit('session-update', nextSession)

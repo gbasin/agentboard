@@ -34,6 +34,7 @@ beforeEach(() => {
     showProjectName: true,
     showLastUserMessage: true,
     showSessionIdPrefix: false,
+    hostFilters: [],
   })
 })
 

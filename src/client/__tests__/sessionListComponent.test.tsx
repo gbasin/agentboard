@@ -59,6 +59,7 @@ beforeEach(() => {
     showLastUserMessage: true,
     showSessionIdPrefix: false,
     projectFilters: [],
+    hostFilters: [],
   })
 
   useSessionStore.setState({
@@ -80,6 +81,7 @@ afterEach(() => {
     showLastUserMessage: true,
     showSessionIdPrefix: false,
     projectFilters: [],
+    hostFilters: [],
   })
   useSessionStore.setState({
     exitingSessions: new Map(),

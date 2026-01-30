@@ -28,6 +28,7 @@ import {
   type DirectoryListing,
   type DirectoryErrorResponse,
   type AgentSession,
+  type HostStatus,
   type ResumeError,
   type Session,
 } from '../shared/types'
@@ -42,6 +43,7 @@ import {
   isValidSessionId,
   isValidTmuxTarget,
 } from './validators'
+import { RemoteSessionPoller } from './remoteSessions'
 
 function checkPortAvailable(port: number): void {
   let result: ReturnType<typeof Bun.spawnSync>
@@ -198,6 +200,70 @@ const sessionManager = new SessionManager(undefined, {
 })
 const registry = new SessionRegistry()
 
+interface WSData {
+  terminal: ITerminalProxy | null
+  currentSessionId: string | null
+  currentTmuxTarget: string | null
+  connectionId: string
+}
+
+const sockets = new Set<ServerWebSocket<WSData>>()
+const localHostLabel = config.hostLabel
+
+function stampLocalSession(session: Session): Session {
+  return {
+    ...session,
+    host: localHostLabel,
+    remote: false,
+  }
+}
+
+function stampLocalSessions(sessions: Session[]): Session[] {
+  return sessions.map(stampLocalSession)
+}
+
+function mergeRemoteSessions(sessions: Session[]): Session[] {
+  const remoteSessions = remotePoller?.getSessions() ?? []
+  return [...stampLocalSessions(sessions), ...remoteSessions]
+}
+
+let hostStatuses: HostStatus[] = []
+let hostStatusSnapshot = ''
+
+function updateHostStatuses(remoteStatuses: HostStatus[]) {
+  const next = [
+    {
+      host: localHostLabel,
+      ok: true,
+      lastUpdated: new Date().toISOString(),
+    },
+    ...remoteStatuses,
+  ]
+  const snapshot = JSON.stringify(next)
+  if (snapshot === hostStatusSnapshot) return
+  hostStatusSnapshot = snapshot
+  hostStatuses = next
+  broadcast({ type: 'host-status', hosts: hostStatuses })
+}
+
+const remotePoller = config.remoteHosts.length > 0
+  ? new RemoteSessionPoller({
+      hosts: config.remoteHosts,
+      pollIntervalMs: config.remotePollMs,
+      timeoutMs: config.remoteTimeoutMs,
+      staleAfterMs: config.remoteStaleMs,
+      sshOptions: config.remoteSshOpts,
+      onUpdate: (statuses) => updateHostStatuses(statuses),
+    })
+  : null
+
+if (remotePoller) {
+  remotePoller.start()
+  updateHostStatuses(remotePoller.getHostStatuses())
+} else {
+  updateHostStatuses([])
+}
+
 // Lock map for Enter-key lastUserMessage capture: tmuxWindow -> expiry timestamp
 // Prevents stale log data from overwriting fresh terminal captures
 const lastUserMessageLocks = new Map<string, number>()
@@ -228,15 +294,6 @@ const logPoller = new LogPoller(db, registry, {
   matchWorker: config.logMatchWorker,
 })
 const sessionRefreshWorker = new SessionRefreshWorkerClient()
-
-interface WSData {
-  terminal: ITerminalProxy | null
-  currentSessionId: string | null
-  currentTmuxTarget: string | null
-  connectionId: string
-}
-
-const sockets = new Set<ServerWebSocket<WSData>>()
 
 function updateAgentSessions() {
   const active = db.getActiveSessions().map(toAgentSession)
@@ -401,7 +458,7 @@ async function refreshSessionsAsync(): Promise<void> {
     )
     const hydrated = hydrateSessionsWithAgentSessions(sessions)
     const withOverrides = applyForceWorkingOverrides(hydrated)
-    registry.replaceSessions(withOverrides)
+    registry.replaceSessions(mergeRemoteSessions(withOverrides))
   } catch (error) {
     // Fallback to sync on worker failure
     logger.warn('session_refresh_worker_error', {
@@ -410,7 +467,7 @@ async function refreshSessionsAsync(): Promise<void> {
     const sessions = sessionManager.listWindows()
     const hydrated = hydrateSessionsWithAgentSessions(sessions)
     const withOverrides = applyForceWorkingOverrides(hydrated)
-    registry.replaceSessions(withOverrides)
+    registry.replaceSessions(mergeRemoteSessions(withOverrides))
   } finally {
     refreshInFlight = false
   }
@@ -424,7 +481,7 @@ function refreshSessions() {
 function refreshSessionsSync({ verifyAssociations = false } = {}) {
   const sessions = sessionManager.listWindows()
   const hydrated = hydrateSessionsWithAgentSessions(sessions, { verifyAssociations })
-  registry.replaceSessions(hydrated)
+  registry.replaceSessions(mergeRemoteSessions(hydrated))
 }
 
 // Debounced refresh triggered by Enter key in terminal input
@@ -834,6 +891,7 @@ Bun.serve<WSData>({
     open(ws) {
       sockets.add(ws)
       send(ws, { type: 'sessions', sessions: registry.getAll() })
+      send(ws, { type: 'host-status', hosts: hostStatuses })
       const agentSessions = registry.getAgentSessions()
       send(ws, {
         type: 'agent-sessions',
@@ -868,6 +926,7 @@ function cleanupAllTerminals() {
     cleanupTerminals(ws)
   }
   logPoller.stop()
+  remotePoller?.stop()
   db.close()
 }
 
@@ -924,11 +983,11 @@ function handleMessage(
       return
     case 'session-create':
       try {
-        const created = sessionManager.createWindow(
+        const created = stampLocalSession(sessionManager.createWindow(
           message.projectPath,
           message.name,
           message.command
-        )
+        ))
         // Add session to registry immediately so terminal can attach
         const currentSessions = registry.getAll()
         registry.replaceSessions([created, ...currentSessions])
@@ -997,6 +1056,7 @@ function resolveCopyModeTarget(
 function handleCancelCopyMode(sessionId: string, ws: ServerWebSocket<WSData>) {
   const session = registry.get(sessionId)
   if (!session) return
+  if (session.remote) return
 
   try {
     // Exit tmux copy-mode quietly.
@@ -1013,6 +1073,7 @@ function handleCancelCopyMode(sessionId: string, ws: ServerWebSocket<WSData>) {
 function handleCheckCopyMode(sessionId: string, ws: ServerWebSocket<WSData>) {
   const session = registry.get(sessionId)
   if (!session) return
+  if (session.remote) return
 
   try {
     const target = resolveCopyModeTarget(sessionId, ws, session)
@@ -1034,6 +1095,10 @@ function handleKill(sessionId: string, ws: ServerWebSocket<WSData>) {
   const session = registry.get(sessionId)
   if (!session) {
     send(ws, { type: 'kill-failed', sessionId, message: 'Session not found' })
+    return
+  }
+  if (session.remote) {
+    send(ws, { type: 'kill-failed', sessionId, message: 'Remote sessions are read-only' })
     return
   }
   if (session.source !== 'managed' && !config.allowKillExternal) {
@@ -1089,6 +1154,10 @@ function handleRename(
       send(ws, { type: 'error', message: 'Session not found' })
       return
     }
+  }
+  if (session.remote) {
+    send(ws, { type: 'error', message: 'Remote sessions are read-only' })
+    return
   }
 
   try {
@@ -1287,12 +1356,12 @@ function handleSessionResume(
     '.'
 
   try {
-    const created = sessionManager.createWindow(
+    const created = stampLocalSession(sessionManager.createWindow(
       projectPath,
       message.name ?? record.displayName,
       command,
       { excludeSessionId: sessionId }
-    )
+    ))
     db.updateSession(sessionId, {
       currentWindow: created.tmuxWindow,
       displayName: created.name,
@@ -1404,6 +1473,10 @@ async function attachTerminalPersistent(
   const session = registry.get(sessionId)
   if (!session) {
     sendTerminalError(ws, sessionId, 'ERR_INVALID_WINDOW', 'Session not found', false)
+    return
+  }
+  if (session.remote) {
+    sendTerminalError(ws, sessionId, 'ERR_INVALID_WINDOW', 'Remote sessions are read-only', false)
     return
   }
 
@@ -1532,4 +1605,3 @@ function handleTerminalError(
     error instanceof Error ? error.message : 'Terminal operation failed'
   sendTerminalError(ws, sessionId, fallbackCode, message, true)
 }
-

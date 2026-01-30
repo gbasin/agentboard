@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
+import os from 'node:os'
 
 const ORIGINAL_ENV = {
   PORT: process.env.PORT,
@@ -20,6 +21,13 @@ const ORIGINAL_ENV = {
   CODEX_HOME: process.env.CODEX_HOME,
   CLAUDE_RESUME_CMD: process.env.CLAUDE_RESUME_CMD,
   CODEX_RESUME_CMD: process.env.CODEX_RESUME_CMD,
+  AGENTBOARD_HOST: process.env.AGENTBOARD_HOST,
+  AGENTBOARD_REMOTE_HOSTS: process.env.AGENTBOARD_REMOTE_HOSTS,
+  AGENTBOARD_REMOTE_POLL_MS: process.env.AGENTBOARD_REMOTE_POLL_MS,
+  AGENTBOARD_REMOTE_TIMEOUT_MS: process.env.AGENTBOARD_REMOTE_TIMEOUT_MS,
+  AGENTBOARD_REMOTE_STALE_MS: process.env.AGENTBOARD_REMOTE_STALE_MS,
+  AGENTBOARD_REMOTE_SSH_OPTS: process.env.AGENTBOARD_REMOTE_SSH_OPTS,
+  AGENTBOARD_REMOTE_ALLOW_CONTROL: process.env.AGENTBOARD_REMOTE_ALLOW_CONTROL,
 }
 
 const ENV_KEYS = Object.keys(ORIGINAL_ENV) as Array<keyof typeof ORIGINAL_ENV>
@@ -58,6 +66,13 @@ async function loadConfig(tag: string) {
     codexHomeDir: string
     claudeResumeCmd: string
     codexResumeCmd: string
+    hostLabel: string
+    remoteHosts: string[]
+    remotePollMs: number
+    remoteTimeoutMs: number
+    remoteStaleMs: number
+    remoteSshOpts: string
+    remoteAllowControl: boolean
   }
 }
 
@@ -89,6 +104,13 @@ describe('config', () => {
     expect(config.logMatchProfile).toBe(false)
     expect(config.claudeResumeCmd).toBe('claude --resume {sessionId}')
     expect(config.codexResumeCmd).toBe('codex resume {sessionId}')
+    expect(config.hostLabel).toBe(os.hostname())
+    expect(config.remoteHosts).toEqual([])
+    expect(config.remotePollMs).toBe(15000)
+    expect(config.remoteTimeoutMs).toBe(4000)
+    expect(config.remoteStaleMs).toBe(45000)
+    expect(config.remoteSshOpts).toBe('')
+    expect(config.remoteAllowControl).toBe(false)
   })
 
   test('parses env overrides and trims discover prefixes', async () => {
@@ -111,6 +133,13 @@ describe('config', () => {
     process.env.CODEX_HOME = '/tmp/codex'
     process.env.CLAUDE_RESUME_CMD = 'claude --resume={sessionId}'
     process.env.CODEX_RESUME_CMD = 'codex --resume={sessionId}'
+    process.env.AGENTBOARD_HOST = 'blade'
+    process.env.AGENTBOARD_REMOTE_HOSTS = 'mba,carbon,worm'
+    process.env.AGENTBOARD_REMOTE_POLL_MS = '12000'
+    process.env.AGENTBOARD_REMOTE_TIMEOUT_MS = '9000'
+    process.env.AGENTBOARD_REMOTE_STALE_MS = '50000'
+    process.env.AGENTBOARD_REMOTE_SSH_OPTS = '-o StrictHostKeyChecking=accept-new'
+    process.env.AGENTBOARD_REMOTE_ALLOW_CONTROL = 'true'
 
     const config = await loadConfig('overrides')
     expect(config.port).toBe(9090)
@@ -132,5 +161,12 @@ describe('config', () => {
     expect(config.codexHomeDir).toBe('/tmp/codex')
     expect(config.claudeResumeCmd).toBe('claude --resume={sessionId}')
     expect(config.codexResumeCmd).toBe('codex --resume={sessionId}')
+    expect(config.hostLabel).toBe('blade')
+    expect(config.remoteHosts).toEqual(['mba', 'carbon', 'worm'])
+    expect(config.remotePollMs).toBe(12000)
+    expect(config.remoteTimeoutMs).toBe(9000)
+    expect(config.remoteStaleMs).toBe(50000)
+    expect(config.remoteSshOpts).toBe('-o StrictHostKeyChecking=accept-new')
+    expect(config.remoteAllowControl).toBe(true)
   })
 })

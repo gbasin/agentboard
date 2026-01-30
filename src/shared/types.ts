@@ -24,6 +24,8 @@ export interface Session {
   createdAt: string
   agentType?: AgentType
   source: SessionSource
+  host?: string
+  remote?: boolean
   command?: string
   agentSessionId?: string
   agentSessionName?: string
@@ -41,9 +43,17 @@ export interface AgentSession {
   createdAt: string
   lastActivityAt: string
   isActive: boolean
+  host?: string
   lastUserMessage?: string
   isPinned?: boolean
   lastResumeError?: string
+}
+
+export interface HostStatus {
+  host: string
+  ok: boolean
+  lastUpdated: string
+  error?: string
 }
 
 // Directory browser types
@@ -69,6 +79,7 @@ export type ServerMessage =
   | { type: 'session-update'; session: Session }
   | { type: 'session-created'; session: Session }
   | { type: 'session-removed'; sessionId: string }
+  | { type: 'host-status'; hosts: HostStatus[] }
   | { type: 'agent-sessions'; active: AgentSession[]; inactive: AgentSession[] }
   | { type: 'session-orphaned'; session: AgentSession }
   | { type: 'session-activated'; session: AgentSession; window: string }

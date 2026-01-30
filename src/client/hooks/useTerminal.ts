@@ -106,6 +106,7 @@ export function forceTextPresentation(data: string): string {
 interface UseTerminalOptions {
   sessionId: string | null
   tmuxTarget: string | null
+  allowAttach?: boolean
   sendMessage: SendClientMessage
   subscribe: SubscribeServerMessage
   theme: ITheme
@@ -120,6 +121,7 @@ interface UseTerminalOptions {
 export function useTerminal({
   sessionId,
   tmuxTarget,
+  allowAttach = true,
   sendMessage,
   subscribe,
   theme,
@@ -666,6 +668,17 @@ export function useTerminal({
     const prevAttached = attachedSessionRef.current
     const prevTarget = attachedTargetRef.current
 
+    if (!allowAttach) {
+      if (prevAttached) {
+        sendMessage({ type: 'terminal-detach', sessionId: prevAttached })
+        attachedSessionRef.current = null
+        attachedTargetRef.current = null
+        inTmuxCopyModeRef.current = false
+      }
+      terminal.reset()
+      return
+    }
+
     // Detach from previous session first
     if (prevAttached && prevAttached !== sessionId) {
       sendMessage({ type: 'terminal-detach', sessionId: prevAttached })
@@ -718,7 +731,7 @@ export function useTerminal({
       attachedSessionRef.current = null
       attachedTargetRef.current = null
     }
-  }, [sessionId, tmuxTarget, sendMessage, checkScrollPosition])
+  }, [sessionId, tmuxTarget, allowAttach, sendMessage, checkScrollPosition])
 
   // Subscribe to terminal output with idle-based buffering + synchronized output
   // This prevents flicker by: (1) batching output until stream goes idle,

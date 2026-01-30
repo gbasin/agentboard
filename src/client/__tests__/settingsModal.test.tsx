@@ -47,6 +47,7 @@ beforeEach(() => {
     showProjectName: true,
     showLastUserMessage: true,
     showSessionIdPrefix: false,
+    hostFilters: [],
   })
   useThemeStore.setState({ theme: 'dark' })
 })
@@ -64,6 +65,7 @@ afterEach(() => {
     showProjectName: true,
     showLastUserMessage: true,
     showSessionIdPrefix: false,
+    hostFilters: [],
   })
   useThemeStore.setState({ theme: 'dark' })
 })

@@ -141,6 +141,8 @@ function sessionsEqual(a: Session, b: Session): boolean {
     a.agentSessionName === b.agentSessionName &&
     a.logFilePath === b.logFilePath &&
     a.lastUserMessage === b.lastUserMessage &&
-    a.isPinned === b.isPinned
+    a.isPinned === b.isPinned &&
+    a.host === b.host &&
+    a.remote === b.remote
   )
 }

@@ -103,3 +103,38 @@ export function getUniqueProjects(
     return bTime - aTime
   })
 }
+
+export function getUniqueHosts(
+  sessions: Session[],
+  inactiveSessions: AgentSession[]
+): string[] {
+  const hostActivity = new Map<string, number>()
+
+  for (const session of sessions) {
+    const host = session.host?.trim()
+    if (host) {
+      const timestamp = Date.parse(session.lastActivity) || 0
+      const existing = hostActivity.get(host) || 0
+      if (timestamp > existing) {
+        hostActivity.set(host, timestamp)
+      }
+    }
+  }
+
+  for (const session of inactiveSessions) {
+    const host = session.host?.trim()
+    if (host) {
+      const timestamp = Date.parse(session.lastActivityAt) || 0
+      const existing = hostActivity.get(host) || 0
+      if (timestamp > existing) {
+        hostActivity.set(host, timestamp)
+      }
+    }
+  }
+
+  return Array.from(hostActivity.keys()).sort((a, b) => {
+    const aTime = hostActivity.get(a) || 0
+    const bTime = hostActivity.get(b) || 0
+    return bTime - aTime
+  })
+}

@@ -38,6 +38,7 @@ export default function App() {
   )
   const setSessions = useSessionStore((state) => state.setSessions)
   const setAgentSessions = useSessionStore((state) => state.setAgentSessions)
+  const setHostStatuses = useSessionStore((state) => state.setHostStatuses)
   const updateSession = useSessionStore((state) => state.updateSession)
   const setSelectedSessionId = useSessionStore(
     (state) => state.setSelectedSessionId
@@ -65,6 +66,7 @@ export default function App() {
   const sidebarWidth = useSettingsStore((state) => state.sidebarWidth)
   const setSidebarWidth = useSettingsStore((state) => state.setSidebarWidth)
   const projectFilters = useSettingsStore((state) => state.projectFilters)
+  const hostFilters = useSettingsStore((state) => state.hostFilters)
   const soundOnPermission = useSettingsStore((state) => state.soundOnPermission)
   const soundOnIdle = useSettingsStore((state) => state.soundOnIdle)
 
@@ -158,6 +160,9 @@ export default function App() {
         }
 
         setSessions(message.sessions)
+      }
+      if (message.type === 'host-status') {
+        setHostStatuses(message.hosts)
       }
       if (message.type === 'session-update') {
         // Detect status transitions for sound notifications
@@ -277,6 +282,7 @@ export default function App() {
     setSelectedSessionId,
     setSessions,
     setAgentSessions,
+    setHostStatuses,
     subscribe,
     updateSession,
   ])
@@ -312,13 +318,17 @@ export default function App() {
     [sessions, sessionSortMode, sessionSortDirection, manualSessionOrder]
   )
 
-  // Apply project filters to sorted sessions for keyboard navigation
+  // Apply filters to sorted sessions for keyboard navigation
   const filteredSortedSessions = useMemo(() => {
-    if (projectFilters.length === 0) return sortedSessions
-    return sortedSessions.filter((session) =>
-      projectFilters.includes(session.projectPath)
-    )
-  }, [sortedSessions, projectFilters])
+    let next = sortedSessions
+    if (projectFilters.length > 0) {
+      next = next.filter((session) => projectFilters.includes(session.projectPath))
+    }
+    if (hostFilters.length > 0) {
+      next = next.filter((session) => hostFilters.includes(session.host ?? ''))
+    }
+    return next
+  }, [sortedSessions, projectFilters, hostFilters])
 
   // Auto-select first visible session when current selection is filtered out
   useEffect(() => {

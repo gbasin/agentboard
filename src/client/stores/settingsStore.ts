@@ -140,6 +140,8 @@ interface SettingsState {
   setSidebarWidth: (width: number) => void
   projectFilters: string[]
   setProjectFilters: (filters: string[]) => void
+  hostFilters: string[]
+  setHostFilters: (filters: string[]) => void
   // Sound notifications
   soundOnPermission: boolean
   setSoundOnPermission: (enabled: boolean) => void
@@ -205,6 +207,8 @@ export const useSettingsStore = create<SettingsState>()(
         }),
       projectFilters: [],
       setProjectFilters: (filters) => set({ projectFilters: filters }),
+      hostFilters: [],
+      setHostFilters: (filters) => set({ hostFilters: filters }),
       // Sound notifications
       soundOnPermission: false,
       setSoundOnPermission: (enabled) => set({ soundOnPermission: enabled }),

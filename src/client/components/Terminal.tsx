@@ -112,10 +112,12 @@ export default function Terminal({
   const moreMenuRef = useRef<HTMLDivElement>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
   const endSessionButtonRef = useRef<HTMLButtonElement>(null)
+  const isRemoteSession = session?.remote === true
 
   const { containerRef, terminalRef, inTmuxCopyModeRef, setTmuxCopyMode } = useTerminal({
     sessionId: session?.id ?? null,
     tmuxTarget: session?.tmuxWindow ?? null,
+    allowAttach: !isRemoteSession,
     sendMessage,
     subscribe,
     theme: terminalTheme,
@@ -131,11 +133,11 @@ export default function Terminal({
 
   const scrollToBottom = useCallback(() => {
     // Exit tmux copy-mode to return to live output (oracle recommendation)
-    if (!session) return
+    if (!session || isRemoteSession) return
     sendMessage({ type: 'tmux-cancel-copy-mode', sessionId: session.id })
     setTmuxCopyMode(false)
     terminalRef.current?.scrollToBottom()
-  }, [session, sendMessage, setTmuxCopyMode, terminalRef])
+  }, [session, isRemoteSession, sendMessage, setTmuxCopyMode, terminalRef])
 
   // Edge swipe to open drawer
   const handleOpenDrawer = useCallback(() => {
@@ -782,10 +784,10 @@ export default function Terminal({
 
   const handleSendKey = useCallback(
     (key: string) => {
-      if (!session) return
+      if (!session || isRemoteSession) return
       sendMessage({ type: 'terminal-input', sessionId: session.id, data: key })
     },
-    [session, sendMessage]
+    [session, isRemoteSession, sendMessage]
   )
 
   const handleRefocus = useCallback(() => {
@@ -800,7 +802,8 @@ export default function Terminal({
 
   // Enter text mode: exit copy-mode and focus input (for keyboard button)
   const handleEnterTextMode = useCallback(() => {
-    if (session && inTmuxCopyModeRef.current) {
+    if (!session || isRemoteSession) return
+    if (inTmuxCopyModeRef.current) {
       sendMessage({ type: 'tmux-cancel-copy-mode', sessionId: session.id })
       setTmuxCopyMode(false)
     }
@@ -884,7 +887,7 @@ export default function Terminal({
             <Menu01Icon width={16} height={16} />
           </button>
           {/* Kill session button - desktop only, left of session name */}
-          {session && (
+          {session && !isRemoteSession && (
             <button
               onClick={() => setShowEndConfirm(true)}
               className="hidden md:flex h-7 w-7 items-center justify-center rounded bg-danger/10 border border-danger/30 text-danger hover:bg-danger/20 active:scale-95 transition-all shrink-0"
@@ -940,7 +943,7 @@ export default function Terminal({
           </button>
 
           {/* Kill session button - mobile only (desktop has it on left) */}
-          {session && (
+          {session && !isRemoteSession && (
             <button
               onClick={() => setShowEndConfirm(true)}
               className="flex md:hidden h-7 w-7 items-center justify-center rounded bg-danger/10 border border-danger/30 text-danger hover:bg-danger/20 active:scale-95 transition-all"
@@ -965,13 +968,15 @@ export default function Terminal({
 
               {showMoreMenu && (
                 <div className="absolute right-0 top-full mt-1 z-20 min-w-[140px] rounded-md border border-border bg-elevated shadow-lg py-1">
-                  <button
-                    onClick={handleStartRename}
-                    className="w-full px-3 py-2 text-left text-sm text-secondary hover:bg-hover hover:text-primary flex items-center gap-2"
-                  >
-                    <Edit05Icon width={14} height={14} />
-                    Rename
-                  </button>
+                  {!isRemoteSession && (
+                    <button
+                      onClick={handleStartRename}
+                      className="w-full px-3 py-2 text-left text-sm text-secondary hover:bg-hover hover:text-primary flex items-center gap-2"
+                    >
+                      <Edit05Icon width={14} height={14} />
+                      Rename
+                    </button>
+                  )}
                   <button
                     onClick={() => {
                       onOpenSettings()
@@ -1034,6 +1039,11 @@ export default function Terminal({
             Select a session to view terminal
           </div>
         )}
+        {session && isRemoteSession && (
+          <div className="absolute inset-0 flex items-center justify-center text-center text-sm text-muted">
+            Remote session (read-only). Use SSH to attach on the host.
+          </div>
+        )}
 
         {/* Scroll to bottom button */}
         {showScrollButton && session && !isSelectingText && (
@@ -1067,7 +1077,7 @@ export default function Terminal({
       {session && (
         <TerminalControls
           onSendKey={handleSendKey}
-          disabled={connectionStatus !== 'connected'}
+          disabled={connectionStatus !== 'connected' || isRemoteSession}
           sessions={sessions.map(s => ({ id: s.id, name: s.name, status: s.status }))}
           currentSessionId={session.id}
           onSelectSession={onSelectSession}

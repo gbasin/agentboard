@@ -112,6 +112,7 @@ beforeEach(() => {
     showProjectName: true,
     showLastUserMessage: true,
     showSessionIdPrefix: false,
+    hostFilters: [],
   })
 })
 
@@ -127,6 +128,7 @@ afterEach(() => {
     showProjectName: true,
     showLastUserMessage: true,
     showSessionIdPrefix: false,
+    hostFilters: [],
   })
 })
 

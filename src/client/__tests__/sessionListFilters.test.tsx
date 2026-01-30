@@ -32,6 +32,7 @@ beforeEach(() => {
     showLastUserMessage: true,
     showSessionIdPrefix: false,
     projectFilters: [],
+    hostFilters: [],
   })
 
   useSessionStore.setState({
@@ -50,6 +51,7 @@ afterEach(() => {
     showLastUserMessage: true,
     showSessionIdPrefix: false,
     projectFilters: [],
+    hostFilters: [],
   })
   useSessionStore.setState({
     exitingSessions: new Map(),
@@ -69,7 +71,7 @@ const baseSession: Session = {
 
 describe('SessionList project filters', () => {
   test('marks hidden permission sessions when filters exclude them', () => {
-    useSettingsStore.setState({ projectFilters: ['/tmp/visible'] })
+    useSettingsStore.setState({ projectFilters: ['/tmp/visible'], hostFilters: [] })
 
     const sessions: Session[] = [
       { ...baseSession, id: 'visible', projectPath: '/tmp/visible', status: 'working' },

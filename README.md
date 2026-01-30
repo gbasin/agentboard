@@ -72,6 +72,13 @@ VITE_ALLOWED_HOSTS=nuc,myserver
 AGENTBOARD_DB_PATH=~/.agentboard/agentboard.db
 AGENTBOARD_INACTIVE_MAX_AGE_HOURS=24
 AGENTBOARD_EXCLUDE_PROJECTS=<empty>,/workspace
+AGENTBOARD_HOST=blade
+AGENTBOARD_REMOTE_HOSTS=mba,carbon,worm
+AGENTBOARD_REMOTE_POLL_MS=15000
+AGENTBOARD_REMOTE_TIMEOUT_MS=4000
+AGENTBOARD_REMOTE_STALE_MS=45000
+AGENTBOARD_REMOTE_SSH_OPTS=-o BatchMode=yes -o ConnectTimeout=3
+AGENTBOARD_REMOTE_ALLOW_CONTROL=false
 ```
 
 `HOSTNAME` controls which interfaces the server binds to (default `0.0.0.0` for network access; use `127.0.0.1` for local-only).
@@ -93,6 +100,16 @@ All persistent data is stored in `~/.agentboard/`: session database (`agentboard
 `AGENTBOARD_EXCLUDE_PROJECTS` filters out sessions from specific project directories (comma-separated). Use `<empty>` to exclude sessions with no project path. Useful for hiding automated/spam sessions.
 
 `AGENTBOARD_SKIP_MATCHING_PATTERNS` controls which orphan sessions skip expensive window matching (comma-separated). Defaults: `<codex-exec>` (headless Codex exec sessions), `/private/tmp/*`, `/private/var/folders/*`, `/var/folders/*`, `/tmp/*`. Patterns support trailing `*` for prefix matching. Set to empty string to disable skip matching entirely.
+
+`AGENTBOARD_HOST` sets the host label for local sessions (default: `hostname`).
+
+`AGENTBOARD_REMOTE_HOSTS` enables remote tmux polling over SSH. Provide a comma-separated list of hosts (e.g., `mba,carbon,worm`).
+
+`AGENTBOARD_REMOTE_POLL_MS`, `AGENTBOARD_REMOTE_TIMEOUT_MS`, and `AGENTBOARD_REMOTE_STALE_MS` control remote poll cadence, SSH timeout, and stale host cutoff.
+
+`AGENTBOARD_REMOTE_SSH_OPTS` appends extra SSH options (space-separated).
+
+`AGENTBOARD_REMOTE_ALLOW_CONTROL` is reserved for future remote control support (read-only in MVP).
 
 ## Logging
 
