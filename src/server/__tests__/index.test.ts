@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
@@ -16,7 +16,8 @@ const originalDbPath = process.env.AGENTBOARD_DB_PATH
 let tempDbPath: string | null = null
 
 const serveCalls: Array<{ port: number }> = []
-const importIndex = (suffix: string) => import(`../index?test=${suffix}`)
+let importCounter = 0
+let spawnSyncImpl: typeof Bun.spawnSync
 
 describe('server entrypoint', () => {
   beforeAll(() => {
@@ -27,22 +28,36 @@ describe('server entrypoint', () => {
     process.env.AGENTBOARD_DB_PATH = tempDbPath
   })
 
-  test('starts server without side effects', async () => {
+  beforeEach(() => {
     serveCalls.length = 0
     process.env.AGENTBOARD_LOG_MATCH_WORKER = 'false'
-    bunAny.spawnSync = () =>
+    
+    // Default mock: port not in use
+    spawnSyncImpl = () =>
       ({
         exitCode: 0,
         stdout: Buffer.from(''),
         stderr: Buffer.from(''),
       }) as ReturnType<typeof Bun.spawnSync>
+
+    bunAny.spawnSync = ((...args: Parameters<typeof Bun.spawnSync>) =>
+      spawnSyncImpl(...args)) as typeof Bun.spawnSync
     bunAny.serve = ((options: { port?: number }) => {
       serveCalls.push({ port: options.port ?? 0 })
       return {} as ReturnType<typeof Bun.serve>
     }) as unknown as typeof Bun.serve
     globalThis.setInterval = (() => 0) as unknown as typeof globalThis.setInterval
+  })
 
-    await importIndex('no-side-effects')
+  afterEach(() => {
+    bunAny.serve = originalServe
+    bunAny.spawnSync = originalSpawnSync
+    globalThis.setInterval = originalSetInterval
+  })
+
+  test('starts server without side effects', async () => {
+    importCounter += 1
+    await import(`../index?test=no-side-effects-${importCounter}`)
 
     const expectedPort = Number(process.env.PORT) || 4040
     expect(serveCalls).toHaveLength(1)
@@ -50,9 +65,8 @@ describe('server entrypoint', () => {
   })
 
   test('starts server when lsof is unavailable', async () => {
-    serveCalls.length = 0
-    process.env.AGENTBOARD_LOG_MATCH_WORKER = 'false'
-    bunAny.spawnSync = ((...args: Parameters<typeof Bun.spawnSync>) => {
+    // Override spawnSyncImpl to throw for lsof
+    spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
       const command = Array.isArray(args[0]) ? args[0][0] : ''
       if (command === 'lsof') {
         throw new Error('missing lsof')
@@ -63,13 +77,9 @@ describe('server entrypoint', () => {
         stderr: Buffer.from(''),
       } as ReturnType<typeof Bun.spawnSync>
     }) as typeof Bun.spawnSync
-    bunAny.serve = ((options: { port?: number }) => {
-      serveCalls.push({ port: options.port ?? 0 })
-      return {} as ReturnType<typeof Bun.serve>
-    }) as unknown as typeof Bun.serve
-    globalThis.setInterval = (() => 0) as unknown as typeof globalThis.setInterval
 
-    await importIndex('missing-lsof')
+    importCounter += 1
+    await import(`../index?test=missing-lsof-${importCounter}`)
 
     const expectedPort = Number(process.env.PORT) || 4040
     expect(serveCalls).toHaveLength(1)

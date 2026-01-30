@@ -198,6 +198,7 @@ function buildOrphanEntries(
         logPath,
         mtime: times.mtime.getTime(),
         birthtime: times.birthtime.getTime(),
+        size: times.size,
         sessionId: record.sessionId,
         projectPath: record.projectPath ?? null,
         agentType: agentType ?? null,
@@ -219,6 +220,7 @@ function buildOrphanEntries(
       logPath,
       mtime: times.mtime.getTime(),
       birthtime: times.birthtime.getTime(),
+      size: times.size,
       sessionId: record.sessionId,
       projectPath: record.projectPath ?? null,
       agentType: agentType ?? null,
@@ -261,6 +263,7 @@ function buildLastMessageEntries(
       logPath,
       mtime: times.mtime.getTime(),
       birthtime: times.birthtime.getTime(),
+      size: times.size,
       sessionId: record.sessionId,
       projectPath: record.projectPath ?? null,
       agentType: resolvedAgentType,
@@ -282,6 +285,7 @@ function attachLastUserMessage(
       logFilePath: string
       currentWindow: string | null
       lastUserMessage?: string | null
+      lastKnownLogSize?: number | null
     }
   >
 ) {
@@ -297,8 +301,9 @@ function attachLastUserMessage(
       }
       return
     }
-    const lastActivity = Date.parse(snapshot.lastActivityAt)
-    if (!Number.isNaN(lastActivity) && entry.mtime <= lastActivity) {
+    // Use file size to detect actual log growth (mtime is unreliable due to backups/syncs)
+    const knownSize = snapshot.lastKnownLogSize ?? 0
+    if (entry.size <= knownSize) {
       return
     }
   }

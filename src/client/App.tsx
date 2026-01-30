@@ -189,6 +189,12 @@ export default function App() {
         }
         setSelectedSessionId(message.session.id)
         addRecentPath(message.session.projectPath)
+
+        // Auto-add to filter if filters are active and project isn't included
+        const { projectFilters, setProjectFilters } = useSettingsStore.getState()
+        if (projectFilters.length > 0 && !projectFilters.includes(message.session.projectPath)) {
+          setProjectFilters([...projectFilters, message.session.projectPath])
+        }
       }
       if (message.type === 'session-removed') {
         // setSessions handles marking removed sessions as exiting for animation

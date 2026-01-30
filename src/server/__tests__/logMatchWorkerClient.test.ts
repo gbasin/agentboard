@@ -131,7 +131,7 @@ describe('LogMatchWorkerClient', () => {
     await waitForMessage(worker)
     client.dispose()
 
-    await expect(promise).rejects.toThrow('Log match worker disposed')
+    await expect(promise).rejects.toThrow('Log match worker is disposed')
     expect(worker.terminated).toBe(true)
   })
 

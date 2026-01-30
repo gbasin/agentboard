@@ -138,6 +138,7 @@ describe('collectLogEntryBatch', () => {
           sessionId: 'session-known-id',
           projectPath: '/project/known',
           agentType: 'claude',
+          isCodexExec: false,
         },
       ],
     })

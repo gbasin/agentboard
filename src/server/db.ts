@@ -17,6 +17,8 @@ export interface AgentSessionRecord {
   currentWindow: string | null
   isPinned: boolean
   lastResumeError: string | null
+  lastKnownLogSize: number | null
+  isCodexExec: boolean
 }
 
 export interface SessionDatabase {
@@ -60,7 +62,11 @@ const AGENT_SESSIONS_COLUMNS_SQL = `
   last_user_message TEXT,
   current_window TEXT,
   is_pinned INTEGER NOT NULL DEFAULT 0,
-  last_resume_error TEXT
+  last_resume_error TEXT,
+  -- NULL means "unknown" (e.g., after upgrade). First poll will initialize to actual size.
+  -- This triggers a one-time match check for upgraded sessions.
+  last_known_log_size INTEGER,
+  is_codex_exec INTEGER NOT NULL DEFAULT 0
 `
 
 const CREATE_TABLE_SQL = `
@@ -101,11 +107,13 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
   migrateDeduplicateDisplayNames(db)
   migrateIsPinnedColumn(db)
   migrateLastResumeErrorColumn(db)
+  migrateLastKnownLogSizeColumn(db)
+  migrateIsCodexExecColumn(db)
 
   const insertStmt = db.prepare(
     `INSERT INTO agent_sessions
-      (session_id, log_file_path, project_path, agent_type, display_name, created_at, last_activity_at, last_user_message, current_window, is_pinned, last_resume_error)
-     VALUES ($sessionId, $logFilePath, $projectPath, $agentType, $displayName, $createdAt, $lastActivityAt, $lastUserMessage, $currentWindow, $isPinned, $lastResumeError)`
+      (session_id, log_file_path, project_path, agent_type, display_name, created_at, last_activity_at, last_user_message, current_window, is_pinned, last_resume_error, last_known_log_size, is_codex_exec)
+     VALUES ($sessionId, $logFilePath, $projectPath, $agentType, $displayName, $createdAt, $lastActivityAt, $lastUserMessage, $currentWindow, $isPinned, $lastResumeError, $lastKnownLogSize, $isCodexExec)`
   )
 
   const selectBySessionId = db.prepare(
@@ -163,6 +171,8 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
         $currentWindow: session.currentWindow,
         $isPinned: session.isPinned ? 1 : 0,
         $lastResumeError: session.lastResumeError,
+        $lastKnownLogSize: session.lastKnownLogSize,
+        $isCodexExec: session.isCodexExec ? 1 : 0,
       })
       const row = selectBySessionId.get({ $sessionId: session.sessionId }) as
         | Record<string, unknown>
@@ -193,6 +203,8 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
         currentWindow: 'current_window',
         isPinned: 'is_pinned',
         lastResumeError: 'last_resume_error',
+        lastKnownLogSize: 'last_known_log_size',
+        isCodexExec: 'is_codex_exec',
       }
 
       const fields: string[] = []
@@ -203,8 +215,8 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
         const field = fieldMap[key]
         if (!field) continue
         fields.push(field)
-        // Normalize isPinned to 0/1 for SQLite
-        if (key === 'isPinned') {
+        // Normalize boolean fields to 0/1 for SQLite
+        if (key === 'isPinned' || key === 'isCodexExec') {
           params[`$${field}`] = value ? 1 : 0
         } else {
           params[`$${field}`] = value as string | number | null
@@ -349,6 +361,13 @@ function mapRow(row: Record<string, unknown>): AgentSessionRecord {
       row.last_resume_error === null || row.last_resume_error === undefined
         ? null
         : String(row.last_resume_error),
+    // Note: null lastKnownLogSize is treated as "unknown", triggering a match check
+    // on first poll after upgrade. This is intentional (one-time cost).
+    lastKnownLogSize:
+      row.last_known_log_size === null || row.last_known_log_size === undefined
+        ? null
+        : Number(row.last_known_log_size),
+    isCodexExec: Number(row.is_codex_exec) === 1,
   }
 }
 
@@ -427,6 +446,22 @@ function migrateLastResumeErrorColumn(db: SQLiteDatabase) {
     return
   }
   db.exec('ALTER TABLE agent_sessions ADD COLUMN last_resume_error TEXT')
+}
+
+function migrateLastKnownLogSizeColumn(db: SQLiteDatabase) {
+  const columns = getColumnNames(db, 'agent_sessions')
+  if (columns.length === 0 || columns.includes('last_known_log_size')) {
+    return
+  }
+  db.exec('ALTER TABLE agent_sessions ADD COLUMN last_known_log_size INTEGER')
+}
+
+function migrateIsCodexExecColumn(db: SQLiteDatabase) {
+  const columns = getColumnNames(db, 'agent_sessions')
+  if (columns.length === 0 || columns.includes('is_codex_exec')) {
+    return
+  }
+  db.exec('ALTER TABLE agent_sessions ADD COLUMN is_codex_exec INTEGER NOT NULL DEFAULT 0')
 }
 
 function migrateDeduplicateDisplayNames(db: SQLiteDatabase) {

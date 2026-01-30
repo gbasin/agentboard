@@ -15,6 +15,7 @@ export interface LogEntrySnapshot {
   logPath: string
   mtime: number
   birthtime: number
+  size: number
   sessionId: string | null
   projectPath: string | null
   agentType: AgentType | null
@@ -36,6 +37,7 @@ export interface KnownSession {
   sessionId: string
   projectPath: string | null
   agentType: AgentType | null
+  isCodexExec: boolean
 }
 
 export interface CollectLogEntryBatchOptions {
@@ -64,12 +66,14 @@ export function collectLogEntryBatch(
         logPath,
         mtime: times.mtime.getTime(),
         birthtime: times.birthtime.getTime(),
+        size: times.size,
       }
     })
     .filter(Boolean) as Array<{
     logPath: string
     mtime: number
     birthtime: number
+    size: number
   }>
 
   const sortStart = performance.now()
@@ -83,12 +87,15 @@ export function collectLogEntryBatch(
     if (known) {
       // Use cached metadata from DB, skip file content reads
       // logTokenCount = -1 indicates enrichment was skipped (already validated)
-      // Still need to check isCodexExec for matching decisions
-      const codexExec = known.agentType === 'codex' ? isCodexExec(entry.logPath) : false
+      // For codex sessions, backfill isCodexExec if not yet set (cheap header check)
+      const codexExec = known.agentType === 'codex' && !known.isCodexExec
+        ? isCodexExec(entry.logPath)
+        : known.isCodexExec
       return {
         logPath: entry.logPath,
         mtime: entry.mtime,
         birthtime: entry.birthtime,
+        size: entry.size,
         sessionId: known.sessionId,
         projectPath: known.projectPath,
         agentType: known.agentType,
@@ -111,6 +118,7 @@ export function collectLogEntryBatch(
       logPath: entry.logPath,
       mtime: entry.mtime,
       birthtime: entry.birthtime,
+      size: entry.size,
       sessionId,
       projectPath,
       agentType: agentType ?? null,

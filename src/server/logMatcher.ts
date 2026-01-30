@@ -1099,6 +1099,32 @@ export function extractLastUserMessageFromLog(
   return user && user.trim() ? user.trim() : null
 }
 
+/**
+ * Extract the timestamp from the last entry in a log file.
+ * Returns an ISO timestamp string, or null if not found.
+ */
+export function extractLastEntryTimestamp(
+  logPath: string,
+  tailBytes = 32 * 1024
+): string | null {
+  const raw = readLogTail(logPath, tailBytes)
+  if (!raw) return null
+
+  const lines = raw.split('\n').map(l => l.trim()).filter(Boolean)
+  // Iterate from the end to find the last entry with a timestamp
+  for (let i = lines.length - 1; i >= 0; i--) {
+    try {
+      const entry = JSON.parse(lines[i])
+      if (entry && typeof entry.timestamp === 'string') {
+        return entry.timestamp
+      }
+    } catch {
+      // Skip malformed lines
+    }
+  }
+  return null
+}
+
 export interface ExactMatchContext {
   agentType?: AgentType
   projectPath?: string

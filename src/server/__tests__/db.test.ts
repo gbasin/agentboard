@@ -20,6 +20,8 @@ function makeSession(overrides: Partial<{
   currentWindow: string | null
   isPinned: boolean
   lastResumeError: string | null
+  lastKnownLogSize: number | null
+  isCodexExec: boolean
 }> = {}) {
   return {
     sessionId: 'session-abc',
@@ -33,6 +35,8 @@ function makeSession(overrides: Partial<{
     currentWindow: 'agentboard:1',
     isPinned: false,
     lastResumeError: null,
+    lastKnownLogSize: null,
+    isCodexExec: false,
     ...overrides,
   }
 }

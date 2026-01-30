@@ -85,6 +85,8 @@ function makeRecord(overrides: Partial<AgentSessionRecord> = {}): AgentSessionRe
     currentWindow: null,
     isPinned: false,
     lastResumeError: null,
+    lastKnownLogSize: null,
+    isCodexExec: false,
     ...overrides,
   }
 }

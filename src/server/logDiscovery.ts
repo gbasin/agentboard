@@ -138,12 +138,13 @@ export function getLogBirthtime(logPath: string): Date | null {
 
 export function getLogTimes(
   logPath: string
-): { mtime: Date; birthtime: Date } | null {
+): { mtime: Date; birthtime: Date; size: number } | null {
   try {
     const stats = fs.statSync(logPath)
     return {
       mtime: stats.mtime,
       birthtime: stats.birthtime ?? stats.mtime,
+      size: stats.size,
     }
   } catch {
     return null

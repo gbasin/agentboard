@@ -6,6 +6,7 @@ export interface SessionSnapshot {
   currentWindow: string | null
   lastActivityAt: string
   lastUserMessage?: string | null
+  lastKnownLogSize?: number | null
 }
 
 /**
@@ -90,8 +91,8 @@ export function getEntriesNeedingMatch(
       if (shouldSkipMatching(entry, skipMatchingPatterns)) {
         continue
       }
-      const lastActivity = Date.parse(session.lastActivityAt)
-      if (!Number.isFinite(lastActivity) || entry.mtime > lastActivity) {
+      // Gate on size change - if size differs, content changed and we should re-match
+      if (entry.size !== session.lastKnownLogSize) {
         needs.push(entry)
       }
     }

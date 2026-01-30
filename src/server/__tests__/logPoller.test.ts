@@ -385,6 +385,8 @@ describe('LogPoller', () => {
       currentWindow: baseSession.tmuxWindow,
       isPinned: false,
       lastResumeError: null,
+      lastKnownLogSize: 0,
+      isCodexExec: false,
     })
 
     const poller = new LogPoller(db, registry, {
@@ -435,6 +437,8 @@ describe('LogPoller', () => {
       currentWindow: null,
       isPinned: false,
       lastResumeError: null,
+      lastKnownLogSize: null,
+      isCodexExec: false,
     })
 
     const poller = new LogPoller(db, registry, {
@@ -497,6 +501,8 @@ describe('LogPoller', () => {
       currentWindow: null,
       isPinned: false,
       lastResumeError: null,
+      lastKnownLogSize: null,
+      isCodexExec: false,
     })
 
     const poller = new LogPoller(db, registry, {

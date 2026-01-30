@@ -11,6 +11,13 @@ interface PendingRequest {
 const DEFAULT_TIMEOUT_MS = 15000
 const READY_TIMEOUT_MS = 10000
 
+class WorkerInitError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'WorkerInitError'
+  }
+}
+
 export class LogMatchWorkerClient {
   private worker: Worker | null = null
   private disposed = false
@@ -37,7 +44,22 @@ export class LogMatchWorkerClient {
 
     // Wait for the worker to be ready before sending the first message
     if (this.readyPromise) {
-      await this.readyPromise
+      try {
+        await this.readyPromise
+      } catch (error) {
+        // Worker failed to initialize - restart and retry once
+        if (error instanceof WorkerInitError) {
+          if (this.disposed) {
+            throw new Error('Log match worker is disposed')
+          }
+          this.restartWorker()
+          if (this.readyPromise) {
+            await this.readyPromise // This will throw if restart also fails
+          }
+        } else {
+          throw error
+        }
+      }
     }
     if (this.disposed) {
       throw new Error('Log match worker is disposed')
@@ -61,12 +83,12 @@ export class LogMatchWorkerClient {
   dispose(): void {
     this.disposed = true
     if (this.readyReject) {
-      this.readyReject(new Error('Log match worker disposed'))
+      this.readyReject(new Error('Log match worker is disposed'))
       this.readyReject = null
     }
     this.readyResolve = null
     this.readyPromise = null
-    this.failAll(new Error('Log match worker disposed'))
+    this.failAll(new Error('Log match worker is disposed'))
     if (this.worker) {
       this.worker.terminate()
       this.worker = null
@@ -82,14 +104,14 @@ export class LogMatchWorkerClient {
       this.readyReject = reject
       // Timeout if worker doesn't become ready
       setTimeout(() => {
-        if (this.readyResolve) {
+        if (this.readyReject) {
+          const rejectFn = this.readyReject
           this.readyResolve = null
           this.readyReject = null
-          reject(new Error('Log match worker failed to initialize'))
+          this.readyPromise = null
+          rejectFn(new WorkerInitError('Log match worker failed to initialize'))
         }
       }, READY_TIMEOUT_MS)
-    }).catch(() => {
-      // Swallow the error - poll() will handle the timeout
     })
 
     const worker = new Worker(new URL('./logMatchWorker.ts', import.meta.url).href, {

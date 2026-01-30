@@ -10,6 +10,7 @@ function makeEntry(
     logPath: 'log-1',
     mtime: 1_700_000_000_000,
     birthtime: 1_699_000_000_000,
+    size: 1000,
     sessionId: 'session-1',
     projectPath: '/proj',
     agentType: 'claude',
@@ -49,18 +50,21 @@ describe('logMatchGate', () => {
         logFilePath: 'log-stale',
         currentWindow: null,
         lastActivityAt: '2025-01-01T00:00:00Z',
+        lastKnownLogSize: 500, // Different from entry.size (1000), so needs match
       },
       {
         sessionId: 'session-active',
         logFilePath: 'log-active',
         currentWindow: '2',
         lastActivityAt: '2025-01-01T00:00:00Z',
+        lastKnownLogSize: 1000,
       },
       {
         sessionId: 'session-invalid',
         logFilePath: 'log-invalid',
         currentWindow: null,
         lastActivityAt: 'not-a-date',
+        lastKnownLogSize: 500, // Different from entry.size (1000), so needs match
       },
     ]
 
@@ -133,12 +137,14 @@ describe('logMatchGate', () => {
         logFilePath: 'log-orphan-exec',
         currentWindow: null,
         lastActivityAt: '2025-01-01T00:00:00Z',
+        lastKnownLogSize: 500, // Different size to trigger re-match check
       },
       {
         sessionId: 'session-orphan-normal',
         logFilePath: 'log-orphan-normal',
         currentWindow: null,
         lastActivityAt: '2025-01-01T00:00:00Z',
+        lastKnownLogSize: 500, // Different size to trigger re-match
       },
     ]
 
@@ -146,7 +152,7 @@ describe('logMatchGate', () => {
       minTokens: 0,
       skipMatchingPatterns: ['<codex-exec>'],
     })
-    // Only the normal orphan should need matching
+    // Only the normal orphan should need matching (codex-exec is always skipped)
     expect(needs.map((e) => e.sessionId)).toEqual(['session-orphan-normal'])
   })
 
@@ -171,12 +177,14 @@ describe('logMatchGate', () => {
         logFilePath: 'log-orphan-tmp',
         currentWindow: null,
         lastActivityAt: '2025-01-01T00:00:00Z',
+        lastKnownLogSize: 500, // Different size
       },
       {
         sessionId: 'session-orphan-normal',
         logFilePath: 'log-orphan-normal',
         currentWindow: null,
         lastActivityAt: '2025-01-01T00:00:00Z',
+        lastKnownLogSize: 500, // Different size to trigger re-match
       },
     ]
 
@@ -204,10 +212,11 @@ describe('logMatchGate', () => {
         logFilePath: 'log-orphan-exec',
         currentWindow: null,
         lastActivityAt: '2025-01-01T00:00:00Z',
+        lastKnownLogSize: 500, // Different size
       },
     ]
 
-    // Should work with different case variations
+    // Should work with different case variations - codex exec is always skipped
     for (const pattern of ['<codex-exec>', '<CODEX-EXEC>', '<Codex-Exec>']) {
       const needs = getEntriesNeedingMatch(entries, sessions, {
         minTokens: 0,
@@ -229,12 +238,14 @@ describe('logMatchGate', () => {
         logFilePath: 'log-tmp',
         currentWindow: null,
         lastActivityAt: '2025-01-01T00:00:00Z',
+        lastKnownLogSize: 500, // Different size
       },
       {
         sessionId: 'session-normal',
         logFilePath: 'log-normal',
         currentWindow: null,
         lastActivityAt: '2025-01-01T00:00:00Z',
+        lastKnownLogSize: 500, // Different size to trigger re-match
       },
     ]
 

@@ -2,7 +2,7 @@ import { logger } from './logger'
 import { config } from './config'
 import type { SessionDatabase } from './db'
 import { getLogSearchDirs } from './logDiscovery'
-import { DEFAULT_SCROLLBACK_LINES, isToolNotificationText } from './logMatcher'
+import { DEFAULT_SCROLLBACK_LINES, extractLastEntryTimestamp, isToolNotificationText } from './logMatcher'
 import { deriveDisplayName } from './agentSessions'
 import { generateUniqueSessionName } from './nameGenerator'
 import type { SessionRegistry } from './SessionRegistry'
@@ -40,25 +40,51 @@ interface SessionRecord {
   currentWindow: string | null
   isPinned: boolean
   lastResumeError: string | null
+  lastKnownLogSize: number | null
+  isCodexExec: boolean
 }
 
 // Fields that applyLogEntryToExistingRecord may update
-type SessionUpdate = Pick<SessionRecord, 'lastActivityAt' | 'lastUserMessage'>
+type SessionUpdate = Pick<SessionRecord, 'lastActivityAt' | 'lastUserMessage' | 'lastKnownLogSize' | 'isCodexExec'>
 
 /**
  * Computes the update object for an existing session record based on a log entry.
  * Shared logic between the "existing by logPath" and "existing by sessionId" branches.
+ * Uses file size comparison to detect actual log growth (not just mtime changes from backups/syncs).
  */
 function applyLogEntryToExistingRecord(
   record: SessionRecord,
   entry: LogEntrySnapshot,
-  opts: { isLastUserMessageLocked: boolean }
+  opts: { isLastUserMessageLocked: boolean; logPath: string }
 ): Partial<SessionUpdate> | null {
-  const hasActivity = entry.mtime > Date.parse(record.lastActivityAt)
   const update: Partial<SessionUpdate> = {}
 
-  if (hasActivity) {
-    update.lastActivityAt = new Date(entry.mtime).toISOString()
+  // Backfill isCodexExec if the entry detected it but record doesn't have it
+  if (entry.isCodexExec && !record.isCodexExec) {
+    update.isCodexExec = true
+  }
+
+  // Use file size to detect actual log changes (mtime can change from backups/syncs)
+  const lastKnownSize = record.lastKnownLogSize ?? 0
+  const isFirstObservation = record.lastKnownLogSize === null
+  const sizeChanged = entry.size !== lastKnownSize
+  const hasGrown = entry.size > lastKnownSize
+
+  // Enter block on size change OR first observation (to initialize null -> actual size)
+  if (sizeChanged || isFirstObservation) {
+    // Log size changed - could be growth or truncation/rotation
+    if (hasGrown) {
+      // Log grew - extract timestamp from the last entry
+      const logTimestamp = extractLastEntryTimestamp(opts.logPath)
+      if (logTimestamp) {
+        update.lastActivityAt = logTimestamp
+      } else {
+        // Fallback to mtime if we can't parse a timestamp
+        update.lastActivityAt = new Date(entry.mtime).toISOString()
+      }
+    }
+    // Always update lastKnownLogSize on any size change (including truncation)
+    update.lastKnownLogSize = entry.size
   }
 
   if (entry.lastUserMessage && !isToolNotificationText(entry.lastUserMessage)) {
@@ -67,7 +93,7 @@ function applyLogEntryToExistingRecord(
       const shouldReplace =
         !record.lastUserMessage ||
         isToolNotificationText(record.lastUserMessage) ||
-        (hasActivity && entry.lastUserMessage !== record.lastUserMessage)
+        (sizeChanged && entry.lastUserMessage !== record.lastUserMessage)
       if (shouldReplace) {
         update.lastUserMessage = entry.lastUserMessage
       }
@@ -111,7 +137,7 @@ export class LogPoller {
   private orphanRematchPromise: Promise<void> | null = null
   private warnedWorkerDisabled = false
   private startupLastMessageBackfillPending = true
-  // Cache of empty logs: logPath -> mtime when checked (re-check if mtime changes)
+  // Cache of empty logs: logPath -> size when checked (re-check if size changes)
   private emptyLogCache: Map<string, number> = new Map()
   // Cache of re-match attempts: sessionId -> timestamp of last attempt
   private rematchAttemptCache: Map<string, number> = new Map()
@@ -162,11 +188,12 @@ export class LogPoller {
     this.interval = setInterval(() => {
       void this.pollOnce()
     }, safeInterval)
-    void this.pollOnce()
-    // Start orphan rematch in background - doesn't block regular polling
-    if (this.orphanRematchPending && !this.orphanRematchInProgress) {
-      this.orphanRematchPromise = this.runOrphanRematchInBackground()
-    }
+  // Start orphan rematch after first poll completes to avoid worker contention
+    void this.pollOnce().then(() => {
+      if (this.orphanRematchPending && !this.orphanRematchInProgress) {
+        this.orphanRematchPromise = this.runOrphanRematchInBackground()
+      }
+    })
   }
 
   /** Wait for the background orphan rematch to complete (for testing) */
@@ -236,8 +263,9 @@ export class LogPoller {
         sessionId: session.sessionId,
         logFilePath: session.logFilePath,
         currentWindow: session.currentWindow,
-        lastActivityAt: '', // Force re-check for orphan matching
+        lastActivityAt: session.lastActivityAt,
         lastUserMessage: session.lastUserMessage,
+        lastKnownLogSize: null, // Force re-check for orphan matching
       }))
 
       // Use longer timeout for orphan rematch since it processes many files
@@ -418,6 +446,7 @@ export class LogPoller {
         currentWindow: session.currentWindow,
         lastActivityAt: session.lastActivityAt,
         lastUserMessage: session.lastUserMessage,
+        lastKnownLogSize: session.lastKnownLogSize,
       }))
       // Build known sessions list to skip expensive file reads for already-tracked logs
       const knownSessions: KnownSession[] = sessionRecords
@@ -427,6 +456,7 @@ export class LogPoller {
           sessionId: session.sessionId,
           projectPath: session.projectPath ?? null,
           agentType: session.agentType ?? null,
+          isCodexExec: session.isCodexExec,
         }))
       let exactWindowMatches = new Map<string, Session>()
       let entriesToMatch: LogEntrySnapshot[] = []
@@ -554,15 +584,16 @@ export class LogPoller {
         try {
           const existing = this.db.getSessionByLogPath(entry.logPath)
           if (existing) {
-            const hasActivity = entry.mtime > Date.parse(existing.lastActivityAt)
+            // Use file size to detect actual log growth (mtime is unreliable due to backups/syncs)
+            const hasGrown = entry.size > (existing.lastKnownLogSize ?? 0)
             const isLocked = Boolean(existing.currentWindow && this.isLastUserMessageLocked?.(existing.currentWindow))
-            const update = applyLogEntryToExistingRecord(existing, entry, { isLastUserMessageLocked: isLocked })
+            const update = applyLogEntryToExistingRecord(existing, entry, { isLastUserMessageLocked: isLocked, logPath: entry.logPath })
             if (update) {
               this.db.updateSession(existing.sessionId, update)
             }
             const shouldAttemptRematch =
               !existing.currentWindow &&
-              (hasActivity || matchEligibleLogPaths.has(entry.logPath))
+              (hasGrown || matchEligibleLogPaths.has(entry.logPath))
             if (shouldAttemptRematch) {
               const lastAttempt =
                 this.rematchAttemptCache.get(existing.sessionId) ?? 0
@@ -592,9 +623,9 @@ export class LogPoller {
             continue
           }
 
-          // Skip logs we've already checked and found empty (unless mtime changed)
-          const cachedMtime = this.emptyLogCache.get(entry.logPath)
-          if (cachedMtime !== undefined && cachedMtime >= entry.mtime) {
+          // Skip logs we've already checked and found empty (unless size changed)
+          const cachedSize = this.emptyLogCache.get(entry.logPath)
+          if (cachedSize !== undefined && cachedSize >= entry.size) {
             continue
           }
 
@@ -611,18 +642,21 @@ export class LogPoller {
           const sessionId = entry.sessionId
           if (!sessionId) {
             // No session ID yet - cache and retry on next poll when log has more content
-            this.emptyLogCache.set(entry.logPath, entry.mtime)
+            this.emptyLogCache.set(entry.logPath, entry.size)
             continue
           }
           const projectPath = entry.projectPath ?? ''
           const createdAt = new Date(entry.birthtime || entry.mtime).toISOString()
-          const lastActivityAt = new Date(entry.mtime).toISOString()
+          // Extract timestamp from log entry for accurate activity time (mtime is unreliable due to backups/syncs)
+          const logTimestamp = extractLastEntryTimestamp(entry.logPath)
+          const lastActivityAt = logTimestamp || new Date(entry.mtime).toISOString()
 
           const existingById = this.db.getSessionById(sessionId)
           if (existingById) {
-            const hasActivity = entry.mtime > Date.parse(existingById.lastActivityAt)
+            // Use file size to detect actual log growth
+            const hasGrown = entry.size > (existingById.lastKnownLogSize ?? 0)
             const isLocked = Boolean(existingById.currentWindow && this.isLastUserMessageLocked?.(existingById.currentWindow))
-            const updateById = applyLogEntryToExistingRecord(existingById, entry, { isLastUserMessageLocked: isLocked })
+            const updateById = applyLogEntryToExistingRecord(existingById, entry, { isLastUserMessageLocked: isLocked, logPath: entry.logPath })
             if (updateById) {
               this.db.updateSession(sessionId, updateById)
             }
@@ -630,7 +664,7 @@ export class LogPoller {
             // Re-attempt matching for orphaned sessions (no currentWindow)
             const shouldAttemptRematch =
               !existingById.currentWindow &&
-              (hasActivity || matchEligibleLogPaths.has(entry.logPath))
+              (hasGrown || matchEligibleLogPaths.has(entry.logPath))
             if (shouldAttemptRematch) {
               const lastAttempt = this.rematchAttemptCache.get(sessionId) ?? 0
               if (Date.now() - lastAttempt > REMATCH_COOLDOWN_MS) {
@@ -669,7 +703,7 @@ export class LogPoller {
           const logTokenCount = entry.logTokenCount
           if (logTokenCount < MIN_LOG_TOKENS_FOR_INSERT) {
             // Cache this empty log so we don't re-check it every poll
-            this.emptyLogCache.set(entry.logPath, entry.mtime)
+            this.emptyLogCache.set(entry.logPath, entry.size)
             logger.info('log_match_skipped', {
               logPath: entry.logPath,
               reason: 'too_few_tokens',
@@ -724,6 +758,8 @@ export class LogPoller {
             currentWindow,
             isPinned: false,
             lastResumeError: null,
+            lastKnownLogSize: entry.size,
+            isCodexExec: entry.isCodexExec,
           })
           newSessions += 1
           if (currentWindow) {

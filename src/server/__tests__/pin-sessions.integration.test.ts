@@ -113,6 +113,8 @@ if (!tmuxAvailable) {
         currentWindow: `${sessionName}:1`, // active
         isPinned: false,
         lastResumeError: null,
+        lastKnownLogSize: null,
+        isCodexExec: false,
       })
       db.close()
 
@@ -166,6 +168,8 @@ if (!tmuxAvailable) {
         currentWindow: null,
         isPinned: true,
         lastResumeError: null,
+        lastKnownLogSize: null,
+        isCodexExec: false,
       })
       db.close()
 
