@@ -246,7 +246,7 @@ function updateHostStatuses(remoteStatuses: HostStatus[]) {
   broadcast({ type: 'host-status', hosts: hostStatuses })
 }
 
-const remotePoller = config.remoteHosts.length > 0
+const remotePoller = (config.remoteHosts?.length ?? 0) > 0
   ? new RemoteSessionPoller({
       hosts: config.remoteHosts,
       pollIntervalMs: config.remotePollMs,
