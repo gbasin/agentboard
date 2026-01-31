@@ -140,7 +140,6 @@ async function pollHost(
   sshOptions: string[],
   timeoutMs: number
 ): Promise<RemoteHostSnapshot> {
-  const startedAt = Date.now()
   const args = ['ssh', ...sshOptions, host, 'tmux', 'list-windows', '-a', '-F', TMUX_LIST_FORMAT]
   const proc = Bun.spawn(args, { stdout: 'pipe', stderr: 'pipe' })
 
@@ -253,3 +252,6 @@ function splitSshOptions(value: string): string[] {
   if (!value.trim()) return []
   return value.split(/\s+/).map((part) => part.trim()).filter(Boolean)
 }
+
+// Export for testing
+export { parseTmuxWindows, buildRemoteSessionId, toIsoFromSeconds, splitSshOptions }

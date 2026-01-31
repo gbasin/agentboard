@@ -237,6 +237,9 @@ export default function SessionList({
     return merged
   }, [sessions, inactiveSessions, hostStatuses])
 
+  // Auto-show host info when multiple hosts are present
+  const showHostInfo = useMemo(() => uniqueHosts.length > 1, [uniqueHosts])
+
   const filteredSessions = useMemo(() => {
     let next = sortedSessions
     if (projectFilters.length > 0) {
@@ -446,12 +449,14 @@ export default function SessionList({
             Sessions
           </span>
           <div className="flex items-center gap-4">
-            <HostFilterDropdown
-              hosts={uniqueHosts}
-              selectedHosts={hostFilters}
-              onSelect={setHostFilters}
-              statuses={hostStatuses}
-            />
+            {showHostInfo && (
+              <HostFilterDropdown
+                hosts={uniqueHosts}
+                selectedHosts={hostFilters}
+                onSelect={setHostFilters}
+                statuses={hostStatuses}
+              />
+            )}
             <ProjectFilterDropdown
               projects={uniqueProjects}
               selectedProjects={projectFilters}
@@ -521,6 +526,7 @@ export default function SessionList({
                         showSessionIdPrefix={showSessionIdPrefix}
                         showProjectName={showProjectName}
                         showLastUserMessage={showLastUserMessage}
+                        showHostInfo={showHostInfo}
                         dropIndicator={showDropIndicator}
                         onSelect={() => onSelect(session.id)}
                         onStartEdit={() => setEditingSessionId(session.id)}
@@ -625,6 +631,7 @@ interface SortableSessionItemProps {
   showSessionIdPrefix: boolean
   showProjectName: boolean
   showLastUserMessage: boolean
+  showHostInfo: boolean
   dropIndicator: 'above' | 'below' | null
   onSelect: () => void
   onStartEdit: () => void
@@ -646,6 +653,7 @@ const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>
   showSessionIdPrefix,
   showProjectName,
   showLastUserMessage,
+  showHostInfo,
   dropIndicator,
   onSelect,
   onStartEdit,
@@ -727,6 +735,7 @@ const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>
         showSessionIdPrefix={showSessionIdPrefix}
         showProjectName={showProjectName}
         showLastUserMessage={showLastUserMessage}
+        showHostInfo={showHostInfo}
         isDragging={isDragging}
         onSelect={onSelect}
         onStartEdit={onStartEdit}
@@ -752,6 +761,7 @@ interface SessionRowProps {
   showSessionIdPrefix: boolean
   showProjectName: boolean
   showLastUserMessage: boolean
+  showHostInfo: boolean
   isDragging?: boolean
   onSelect: () => void
   onStartEdit: () => void
@@ -769,6 +779,7 @@ function SessionRow({
   showSessionIdPrefix,
   showProjectName,
   showLastUserMessage,
+  showHostInfo,
   isDragging = false,
   onSelect,
   onStartEdit,
@@ -797,7 +808,7 @@ function SessionRow({
       ? getSessionIdShort(agentSessionId)
       : ''
   const showDirectory = showProjectName && Boolean(directoryLeaf)
-  const showHostBadge = Boolean(hostLabel)
+  const showHostBadge = showHostInfo && Boolean(hostLabel)
   const showMessage = showLastUserMessage && Boolean(session.lastUserMessage)
 
   // Track previous status for transition animation

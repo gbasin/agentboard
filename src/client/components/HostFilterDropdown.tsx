@@ -88,7 +88,11 @@ export default function HostFilterDropdown({
           role="menu"
           className="absolute right-0 z-20 mt-1 w-48 rounded border border-border bg-surface p-2 text-xs shadow-lg"
         >
-          <label className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-primary hover:bg-hover">
+          <label
+            role="menuitemcheckbox"
+            aria-checked={selectedHosts.length === 0}
+            className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-primary hover:bg-hover"
+          >
             <input
               type="checkbox"
               checked={selectedHosts.length === 0}
@@ -108,6 +112,8 @@ export default function HostFilterDropdown({
                 return (
                   <label
                     key={host}
+                    role="menuitemcheckbox"
+                    aria-checked={selectedSet.has(host)}
                     className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-primary hover:bg-hover"
                     title={status?.error ? `${host}: ${status.error}` : host}
                   >

@@ -89,10 +89,25 @@ const codexHomeDir =
 
 const hostLabel = process.env.AGENTBOARD_HOST?.trim() || os.hostname()
 
+// RFC 1123 hostname validation
+// Each label: 1-63 chars, alphanumeric + hyphen, no leading/trailing hyphen
+const HOSTNAME_REGEX = /^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9])(\.([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]))*$/
+
+export function isValidHostname(hostname: string): boolean {
+  return hostname.length > 0 && hostname.length <= 253 && HOSTNAME_REGEX.test(hostname)
+}
+
 const remoteHosts = (process.env.AGENTBOARD_REMOTE_HOSTS || '')
   .split(',')
   .map((value) => value.trim())
-  .filter(Boolean)
+  .filter((value) => {
+    if (!value) return false
+    if (!isValidHostname(value)) {
+      console.warn(`[agentboard] Invalid hostname in AGENTBOARD_REMOTE_HOSTS: "${value}"`)
+      return false
+    }
+    return true
+  })
 
 const remotePollMsRaw = Number(process.env.AGENTBOARD_REMOTE_POLL_MS)
 const remotePollMs = Number.isFinite(remotePollMsRaw) ? remotePollMsRaw : 15000

@@ -39,6 +39,7 @@ let dbState: {
 const defaultConfig = {
   port: 4040,
   hostname: '0.0.0.0',
+  hostLabel: 'test-host',
   refreshIntervalMs: 1000,
   tmuxSession: 'agentboard',
   discoverPrefixes: [],
@@ -52,6 +53,12 @@ const defaultConfig = {
   logMatchProfile: false,
   claudeResumeCmd: 'claude --resume {sessionId}',
   codexResumeCmd: 'codex resume {sessionId}',
+  remoteHosts: [] as string[],
+  remotePollMs: 15000,
+  remoteTimeoutMs: 4000,
+  remoteStaleMs: 45000,
+  remoteSshOpts: '',
+  remoteAllowControl: false,
 }
 
 const configState = { ...defaultConfig }
@@ -357,6 +364,8 @@ const baseSession: Session = {
   lastActivity: new Date().toISOString(),
   createdAt: new Date().toISOString(),
   source: 'managed',
+  host: 'test-host',
+  remote: false,
 }
 
 function createWs() {
