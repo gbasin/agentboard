@@ -11,6 +11,7 @@ import {
   verifyWindowLogAssociation,
   extractRecentTraceLinesFromTmux,
   extractRecentUserMessagesFromTmux,
+  extractPiUserMessagesFromAnsi,
   extractActionFromUserAction,
   hasMessageInValidUserContext,
   isToolNotificationText,
@@ -453,6 +454,42 @@ describe('message extraction regression tests', () => {
     const userMessages = extractRecentUserMessagesFromTmux(CODEX_REVIEW_SCROLLBACK)
     // The only › line is a UI tip in the input field, not a real user message
     expect(userMessages).toEqual([])
+  })
+
+  test('Pi TUI: extracts user messages from background color', () => {
+    // Pi uses RGB(52,53,65) background for user messages
+    // Using \x1b for ESC character
+    const ESC = '\x1b'
+    const piScrollback = `
+${ESC}[38;2;129;162;190m─────────────────────────────────────────────────────────────────────────────────
+${ESC}[48;2;52;53;65m
+ hello world
+
+
+${ESC}[49m Hello! How can I help?
+${ESC}[38;2;129;162;190m─────────────────────────────────────────────────────────────────────────────────
+`
+    const messages = extractPiUserMessagesFromAnsi(piScrollback)
+    expect(messages).toContain('hello world')
+  })
+
+  test('Pi TUI: extracts multiple user messages', () => {
+    const ESC = '\x1b'
+    const piScrollback = `
+${ESC}[48;2;52;53;65m first message ${ESC}[49m Response 1
+${ESC}[48;2;52;53;65m second message ${ESC}[49m Response 2
+`
+    const messages = extractPiUserMessagesFromAnsi(piScrollback)
+    expect(messages).toHaveLength(2)
+    // Most recent first
+    expect(messages[0]).toBe('second message')
+    expect(messages[1]).toBe('first message')
+  })
+
+  test('Pi TUI: returns empty array for non-pi content', () => {
+    const claudeScrollback = '❯ hello world'
+    const messages = extractPiUserMessagesFromAnsi(claudeScrollback)
+    expect(messages).toEqual([])
   })
 
   test('Codex /review: extracts trace lines for fallback', () => {

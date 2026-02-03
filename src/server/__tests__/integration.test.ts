@@ -53,7 +53,7 @@ if (!tmuxAvailable) {
       drainStream(serverProcess.stderr)
 
       await waitForHealth(port)
-    })
+    }, 10000)
 
     afterAll(async () => {
       if (serverProcess) {

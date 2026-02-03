@@ -701,6 +701,46 @@ function isPromptLine(line: string): boolean {
   return isClaudePromptLine(line) || isCodexPromptLine(line)
 }
 
+// Pi TUI uses a specific background color (RGB 52,53,65) for user messages
+// Pattern: \x1b[48;2;52;53;65m...message...\x1b[49m (or end of content)
+// eslint-disable-next-line no-control-regex
+const PI_USER_MESSAGE_BG_START = /\x1b\[48;2;52;53;65m/g
+// eslint-disable-next-line no-control-regex
+const PI_USER_MESSAGE_BG_END = /\x1b\[49m/
+
+/**
+ * Extract user messages from pi's TUI by detecting the background color pattern.
+ * Pi uses RGB(52,53,65) background for user messages.
+ */
+export function extractPiUserMessagesFromAnsi(
+  ansiContent: string,
+  maxMessages = MAX_RECENT_USER_MESSAGES
+): string[] {
+  const messages: string[] = []
+  const matches = [...ansiContent.matchAll(PI_USER_MESSAGE_BG_START)]
+
+  // Process from end (most recent) to beginning
+  for (let i = matches.length - 1; i >= 0 && messages.length < maxMessages; i--) {
+    const match = matches[i]
+    if (!match || match.index === undefined) continue
+
+    const startIdx = match.index + match[0].length
+    const rest = ansiContent.slice(startIdx)
+    const endMatch = rest.match(PI_USER_MESSAGE_BG_END)
+    const endIdx = endMatch ? endMatch.index! : rest.length
+
+    const rawMessage = rest.slice(0, endIdx)
+    // Strip any remaining ANSI codes and clean up
+    const cleaned = stripAnsi(rawMessage).trim()
+
+    if (cleaned && cleaned.length > 0 && !messages.includes(cleaned)) {
+      messages.push(cleaned)
+    }
+  }
+
+  return messages
+}
+
 function extractUserFromPrompt(line: string): string {
   let cleaned = stripAnsi(line).trim()
   cleaned = cleaned.replace(TMUX_PROMPT_PREFIX, '').trim()
@@ -801,6 +841,25 @@ export function getTerminalScrollback(
   const safeLines = Math.max(1, lines)
   const result = Bun.spawnSync(
     ['tmux', 'capture-pane', '-t', tmuxWindow, '-p', '-J', '-S', `-${safeLines}`],
+    { stdout: 'pipe', stderr: 'pipe' }
+  )
+  if (result.exitCode !== 0) {
+    return ''
+  }
+  return result.stdout.toString()
+}
+
+/**
+ * Get terminal scrollback with ANSI escape codes preserved.
+ * Used for detecting pi's TUI which uses background colors for user messages.
+ */
+export function getTerminalScrollbackWithAnsi(
+  tmuxWindow: string,
+  lines = DEFAULT_SCROLLBACK_LINES
+): string {
+  const safeLines = Math.max(1, lines)
+  const result = Bun.spawnSync(
+    ['tmux', 'capture-pane', '-t', tmuxWindow, '-p', '-J', '-e', '-S', `-${safeLines}`],
     { stdout: 'pipe', stderr: 'pipe' }
   )
   if (result.exitCode !== 0) {
@@ -1163,7 +1222,14 @@ export function tryExactMatchWindowToLog(
     profile.tmuxCaptureMs += performance.now() - tmuxStart
   }
   const extractStart = performance.now()
-  const userMessages = extractRecentUserMessagesFromTmux(scrollback)
+  let userMessages = extractRecentUserMessagesFromTmux(scrollback)
+
+  // If no Claude/Codex prompts found, try pi TUI detection (uses ANSI background colors)
+  if (userMessages.length === 0) {
+    const ansiScrollback = getTerminalScrollbackWithAnsi(tmuxWindow, scrollbackLines)
+    userMessages = extractPiUserMessagesFromAnsi(ansiScrollback)
+  }
+
   if (profile) {
     profile.messageExtractRuns += 1
     profile.messageExtractMs += performance.now() - extractStart
