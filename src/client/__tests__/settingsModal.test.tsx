@@ -110,7 +110,7 @@ describe('SettingsModal', () => {
     expect(state.defaultProjectDir).toBe(DEFAULT_PROJECT_DIR)
     expect(state.sessionSortMode).toBe('status')
     expect(state.sessionSortDirection).toBe('desc')
-    expect(state.commandPresets.length).toBe(2)
+    expect(state.commandPresets.length).toBe(3)
     expect(closed).toBe(1)
 
     act(() => {

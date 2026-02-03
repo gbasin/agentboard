@@ -149,7 +149,7 @@ describe('db', () => {
         session_id TEXT UNIQUE,
         log_file_path TEXT NOT NULL UNIQUE,
         project_path TEXT,
-        agent_type TEXT NOT NULL CHECK (agent_type IN ('claude', 'codex')),
+        agent_type TEXT NOT NULL CHECK (agent_type IN ('claude', 'codex', 'pi')),
         display_name TEXT,
         created_at TEXT NOT NULL,
         last_activity_at TEXT NOT NULL,

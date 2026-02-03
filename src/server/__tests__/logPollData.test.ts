@@ -7,8 +7,10 @@ import { collectLogEntryBatch } from '../logPollData'
 let tempRoot: string
 let claudeDir: string
 let codexDir: string
+let piDir: string
 const originalClaude = process.env.CLAUDE_CONFIG_DIR
 const originalCodex = process.env.CODEX_HOME
+const originalPi = process.env.PI_HOME
 
 async function writeJsonl(filePath: string, lines: string[]): Promise<void> {
   await fs.mkdir(path.dirname(filePath), { recursive: true })
@@ -19,8 +21,10 @@ beforeEach(async () => {
   tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-logpolldata-'))
   claudeDir = path.join(tempRoot, 'claude')
   codexDir = path.join(tempRoot, 'codex')
+  piDir = path.join(tempRoot, 'pi')
   process.env.CLAUDE_CONFIG_DIR = claudeDir
   process.env.CODEX_HOME = codexDir
+  process.env.PI_HOME = piDir
 })
 
 afterEach(async () => {
@@ -28,6 +32,8 @@ afterEach(async () => {
   else delete process.env.CLAUDE_CONFIG_DIR
   if (originalCodex) process.env.CODEX_HOME = originalCodex
   else delete process.env.CODEX_HOME
+  if (originalPi) process.env.PI_HOME = originalPi
+  else delete process.env.PI_HOME
   await fs.rm(tempRoot, { recursive: true, force: true })
 })
 

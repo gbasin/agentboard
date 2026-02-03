@@ -45,12 +45,13 @@ export interface CommandPreset {
   label: string
   command: string
   isBuiltIn: boolean
-  agentType?: 'claude' | 'codex'
+  agentType?: 'claude' | 'codex' | 'pi'
 }
 
 export const DEFAULT_PRESETS: CommandPreset[] = [
   { id: 'claude', label: 'Claude', command: 'claude', isBuiltIn: true, agentType: 'claude' },
   { id: 'codex', label: 'Codex', command: 'codex', isBuiltIn: true, agentType: 'codex' },
+  { id: 'pi', label: 'Pi', command: 'pi', isBuiltIn: true, agentType: 'pi' },
 ]
 
 // Validation and helper functions
@@ -62,7 +63,7 @@ export function isValidPreset(p: unknown): p is CommandPreset {
     typeof obj.label === 'string' && obj.label.trim().length >= 1 && obj.label.length <= 64 &&
     typeof obj.command === 'string' && obj.command.trim().length >= 1 && obj.command.length <= 1024 &&
     typeof obj.isBuiltIn === 'boolean' &&
-    (obj.agentType === undefined || obj.agentType === 'claude' || obj.agentType === 'codex')
+    (obj.agentType === undefined || obj.agentType === 'claude' || obj.agentType === 'codex' || obj.agentType === 'pi')
   )
 }
 
@@ -255,7 +256,7 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: 'agentboard-settings',
       storage: createJSONStorage(() => safeStorage),
-      version: 2,
+      version: 4,
       partialize: (state) => {
         // Exclude manualSessionOrder from persistence (session-only state)
         const { manualSessionOrder: _, ...rest } = state
@@ -279,7 +280,7 @@ export const useSettingsStore = create<SettingsState>()(
             label: p.label as string,
             command: command || 'claude',
             isBuiltIn: p.isBuiltIn as boolean,
-            agentType: p.agentType as 'claude' | 'codex' | undefined,
+            agentType: p.agentType as 'claude' | 'codex' | 'pi' | undefined,
           }
         }
 
@@ -339,13 +340,18 @@ export const useSettingsStore = create<SettingsState>()(
              ...validPresets.filter(p => !p.isBuiltIn).slice(0, MAX_PRESETS - 2)]
           : validPresets
 
-        if (version === 1) {
-          console.info('[agentboard:settings] Migrated from v1 to v2')
+        // Ensure all built-in presets from DEFAULT_PRESETS are present
+        const existingIds = new Set(trimmedPresets.map(p => p.id))
+        const missingBuiltIns = DEFAULT_PRESETS.filter(p => p.isBuiltIn && !existingIds.has(p.id))
+        const finalPresets = [...trimmedPresets, ...missingBuiltIns]
+
+        if (version < 4) {
+          console.info(`[agentboard:settings] Migrated from v${version} to v4 (ensured all built-in presets)`)
         }
 
         return {
           ...state,
-          commandPresets: trimmedPresets.map(normalizePreset),
+          commandPresets: finalPresets.map(normalizePreset),
           defaultPresetId: resolveDefaultPresetId(
             trimmedPresets,
             state.defaultPresetId as string

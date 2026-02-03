@@ -37,12 +37,35 @@ function OpenAIIcon({ className }: { className?: string }) {
   )
 }
 
+function PiIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      className={className}
+      aria-label="Pi"
+    >
+      <text
+        x="12"
+        y="19"
+        textAnchor="middle"
+        fontSize="26"
+        fontWeight="bold"
+        fontFamily="system-ui, sans-serif"
+      >
+        π
+      </text>
+    </svg>
+  )
+}
+
 type IconComponent = ({ className }: { className?: string }) => JSX.Element
 
 /** Prefix patterns mapped to icons - order matters, first match wins */
 const iconPrefixes: [string, IconComponent][] = [
   ['claude', AnthropicIcon],
   ['codex', OpenAIIcon],
+  ['pi', PiIcon],
 ]
 
 export default function AgentIcon({

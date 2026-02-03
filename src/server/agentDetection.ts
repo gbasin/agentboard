@@ -42,6 +42,9 @@ export function inferAgentType(command: string): AgentType | undefined {
     if (baseName === 'codex') {
       return 'codex'
     }
+    if (baseName === 'pi') {
+      return 'pi'
+    }
 
     // Found a non-skippable command that isn't a known agent
     break

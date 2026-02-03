@@ -58,10 +58,20 @@ function getCodexHomeDir(): string {
   return path.join(getHomeDir(), '.codex')
 }
 
+function getPiHomeDir(): string {
+  const override = process.env.PI_HOME
+  if (override && override.trim()) {
+    const normalized = normalizeProjectPath(override)
+    return normalized || override.trim()
+  }
+  return path.join(getHomeDir(), '.pi')
+}
+
 export function getLogSearchDirs(): string[] {
   return [
     path.join(getClaudeConfigDir(), 'projects'),
     path.join(getCodexHomeDir(), 'sessions'),
+    path.join(getPiHomeDir(), 'agent', 'sessions'),
   ]
 }
 
@@ -94,9 +104,11 @@ export function scanAllLogDirs(): string[] {
   const paths: string[] = []
   const claudeRoot = path.join(getClaudeConfigDir(), 'projects')
   const codexRoot = path.join(getCodexHomeDir(), 'sessions')
+  const piRoot = path.join(getPiHomeDir(), 'agent', 'sessions')
 
   paths.push(...scanDirForJsonl(claudeRoot, 3))
   paths.push(...scanDirForJsonl(codexRoot, 4))
+  paths.push(...scanDirForJsonl(piRoot, 4))
 
   return paths
 }
@@ -151,17 +163,20 @@ export function getLogTimes(
   }
 }
 
-export function inferAgentTypeFromPath(logPath: string): 'claude' | 'codex' | null {
+export function inferAgentTypeFromPath(logPath: string): 'claude' | 'codex' | 'pi' | null {
   const normalized = path.resolve(logPath)
   const claudeRoot = path.resolve(getClaudeConfigDir())
   const codexRoot = path.resolve(getCodexHomeDir())
+  const piRoot = path.resolve(getPiHomeDir())
 
   if (normalized.startsWith(claudeRoot + path.sep)) return 'claude'
   if (normalized.startsWith(codexRoot + path.sep)) return 'codex'
+  if (normalized.startsWith(piRoot + path.sep)) return 'pi'
 
   const fallback = logPath.replace(/\\/g, '/')
   if (fallback.includes('/.claude/')) return 'claude'
   if (fallback.includes('/.codex/')) return 'codex'
+  if (fallback.includes('/.pi/')) return 'pi'
   return null
 }
 
@@ -288,6 +303,10 @@ function getSessionIdFromEntry(entry: Record<string, unknown>): string | null {
   }
   if (typeof entry.session_id === 'string' && entry.session_id.trim()) {
     return entry.session_id.trim()
+  }
+  // Pi uses top-level "id" field with type: "session"
+  if (entry.type === 'session' && typeof entry.id === 'string' && entry.id.trim()) {
+    return entry.id.trim()
   }
 
   if (entry.payload && typeof entry.payload === 'object') {

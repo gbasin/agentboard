@@ -5,7 +5,7 @@ export const INACTIVE_MAX_AGE_MAX_HOURS = 168 // 7 days
 export type SessionStatus = 'working' | 'waiting' | 'permission' | 'unknown'
 
 export type SessionSource = 'managed' | 'external'
-export type AgentType = 'claude' | 'claude-rp' | 'codex'
+export type AgentType = 'claude' | 'claude-rp' | 'codex' | 'pi'
 export type TerminalErrorCode =
   | 'ERR_INVALID_WINDOW'
   | 'ERR_SESSION_CREATE_FAILED'

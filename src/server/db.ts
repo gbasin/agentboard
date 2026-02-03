@@ -55,7 +55,7 @@ const AGENT_SESSIONS_COLUMNS_SQL = `
   session_id TEXT UNIQUE,
   log_file_path TEXT NOT NULL UNIQUE,
   project_path TEXT,
-  agent_type TEXT NOT NULL CHECK (agent_type IN ('claude', 'codex')),
+  agent_type TEXT NOT NULL CHECK (agent_type IN ('claude', 'codex', 'pi')),
   display_name TEXT,
   created_at TEXT NOT NULL,
   last_activity_at TEXT NOT NULL,
@@ -109,6 +109,7 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
   migrateLastResumeErrorColumn(db)
   migrateLastKnownLogSizeColumn(db)
   migrateIsCodexExecColumn(db)
+  migratePiAgentType(db)
 
   const insertStmt = db.prepare(
     `INSERT INTO agent_sessions
@@ -515,6 +516,71 @@ function migrateDeduplicateDisplayNames(db: SQLiteDatabase) {
 
       updateStmt.run({ $newName: newName, $sessionId: sessions[i].session_id })
     }
+  }
+}
+
+/**
+ * Migrate agent_type CHECK constraint to include 'pi'.
+ * SQLite doesn't support modifying constraints, so we recreate the table.
+ */
+function migratePiAgentType(db: SQLiteDatabase) {
+  // Check if table exists and if constraint already includes 'pi'
+  const tableInfo = db
+    .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='agent_sessions'")
+    .get() as { sql: string } | undefined
+
+  if (!tableInfo?.sql) {
+    return // Table doesn't exist yet, will be created with correct constraint
+  }
+
+  // If 'pi' is already in the constraint, no migration needed
+  if (tableInfo.sql.includes("'pi'")) {
+    return
+  }
+
+  db.exec('BEGIN')
+  try {
+    db.exec('ALTER TABLE agent_sessions RENAME TO agent_sessions_old_pi_migrate')
+    createAgentSessionsTable(db, 'agent_sessions')
+    db.exec(`
+      INSERT INTO agent_sessions (
+        id,
+        session_id,
+        log_file_path,
+        project_path,
+        agent_type,
+        display_name,
+        created_at,
+        last_activity_at,
+        last_user_message,
+        current_window,
+        is_pinned,
+        last_resume_error,
+        last_known_log_size,
+        is_codex_exec
+      )
+      SELECT
+        id,
+        session_id,
+        log_file_path,
+        project_path,
+        agent_type,
+        display_name,
+        created_at,
+        last_activity_at,
+        last_user_message,
+        current_window,
+        is_pinned,
+        last_resume_error,
+        last_known_log_size,
+        is_codex_exec
+      FROM agent_sessions_old_pi_migrate
+    `)
+    db.exec('DROP TABLE agent_sessions_old_pi_migrate')
+    db.exec('COMMIT')
+  } catch (error) {
+    db.exec('ROLLBACK')
+    throw error
   }
 }
 
