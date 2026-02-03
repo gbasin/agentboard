@@ -1031,6 +1031,9 @@ function handleMessage(
     case 'tmux-check-copy-mode':
       handleCheckCopyMode(message.sessionId, ws)
       return
+    case 'tmux-scroll':
+      handleTmuxScroll(message.sessionId, message.direction, message.lines, ws)
+      return
     case 'session-resume':
       handleSessionResume(message, ws)
       return
@@ -1088,6 +1091,48 @@ function handleCheckCopyMode(sessionId: string, ws: ServerWebSocket<WSData>) {
   } catch {
     // On error, assume not in copy mode
     send(ws, { type: 'tmux-copy-mode-status', sessionId, inCopyMode: false })
+  }
+}
+
+function handleTmuxScroll(
+  sessionId: string,
+  direction: 'up' | 'down',
+  lines: number,
+  ws: ServerWebSocket<WSData>
+) {
+  const session = registry.get(sessionId)
+  if (!session) return
+  if (session.remote) return
+
+  try {
+    const target = resolveCopyModeTarget(sessionId, ws, session)
+
+    // Enter copy-mode if not already in it
+    Bun.spawnSync(['tmux', 'copy-mode', '-t', target], {
+      stdout: 'ignore',
+      stderr: 'ignore',
+    })
+
+    // Scroll in copy-mode using tmux's native scroll commands
+    const scrollCmd = direction === 'up' ? 'scroll-up' : 'scroll-down'
+    Bun.spawnSync(
+      ['tmux', 'send-keys', '-X', '-t', target, '-N', lines.toString(), scrollCmd],
+      {
+        stdout: 'ignore',
+        stderr: 'ignore',
+      }
+    )
+
+    // Optimistically report copy-mode status (scrolling up enters it)
+    if (direction === 'up') {
+      send(ws, {
+        type: 'tmux-copy-mode-status',
+        sessionId,
+        inCopyMode: true,
+      })
+    }
+  } catch {
+    // Silently ignore scroll errors
   }
 }
 

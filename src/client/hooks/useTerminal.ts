@@ -510,12 +510,6 @@ export function useTerminal({
       const STEP = 30
       wheelAccumRef.current += ev.deltaY
 
-      // Get approximate cell position for SGR mouse event
-      const cols = terminal.cols
-      const rows = terminal.rows
-      const col = Math.floor(cols / 2)
-      const row = Math.floor(rows / 2)
-
       let scrolledUp = false
       let didScroll = false
       while (Math.abs(wheelAccumRef.current) >= STEP) {
@@ -523,13 +517,13 @@ export function useTerminal({
         const down = wheelAccumRef.current > 0
         wheelAccumRef.current += down ? -STEP : STEP
 
-        // SGR mouse wheel: button 64 = scroll up, 65 = scroll down
-        const button = down ? 65 : 64
+        // Send tmux scroll command directly to enter copy-mode and scroll
         if (!down) scrolledUp = true
         sendMessageRef.current({
-          type: 'terminal-input',
+          type: 'tmux-scroll',
           sessionId: attached,
-          data: `\x1b[<${button};${col};${row}M`
+          direction: down ? 'down' : 'up',
+          lines: 1
         })
       }
 

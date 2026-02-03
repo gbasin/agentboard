@@ -115,6 +115,7 @@ export type ClientMessage =
   | { type: 'terminal-detach'; sessionId: string }
   | { type: 'terminal-input'; sessionId: string; data: string }
   | { type: 'terminal-resize'; sessionId: string; cols: number; rows: number }
+  | { type: 'tmux-scroll'; sessionId: string; direction: 'up' | 'down'; lines: number }
   | { type: 'session-create'; projectPath: string; name?: string; command?: string }
   | { type: 'session-kill'; sessionId: string }
   | { type: 'session-rename'; sessionId: string; newName: string }
