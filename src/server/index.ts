@@ -1123,14 +1123,19 @@ function handleTmuxScroll(
       }
     )
 
-    // Optimistically report copy-mode status (scrolling up enters it)
-    if (direction === 'up') {
-      send(ws, {
-        type: 'tmux-copy-mode-status',
-        sessionId,
-        inCopyMode: true,
-      })
-    }
+    // Check copy-mode status after scrolling
+    const checkResult = Bun.spawnSync(
+      ['tmux', 'display-message', '-p', '-t', target, '#{pane_in_mode}'],
+      { stdout: 'pipe', stderr: 'ignore' }
+    )
+    const inCopyMode = checkResult.stdout.toString().trim() === '1'
+
+    // Report current copy-mode status to client
+    send(ws, {
+      type: 'tmux-copy-mode-status',
+      sessionId,
+      inCopyMode,
+    })
   } catch {
     // Silently ignore scroll errors
   }
