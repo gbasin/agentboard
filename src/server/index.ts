@@ -1123,6 +1123,24 @@ function handleTmuxScroll(
       }
     )
 
+    // When scrolling down, check if we've reached the bottom (scroll position 0)
+    // If so, explicitly exit copy-mode
+    if (direction === 'down') {
+      const scrollPosResult = Bun.spawnSync(
+        ['tmux', 'display-message', '-p', '-t', target, '#{scroll_position}'],
+        { stdout: 'pipe', stderr: 'ignore' }
+      )
+      const scrollPosition = Number.parseInt(scrollPosResult.stdout.toString().trim(), 10)
+
+      // At position 0 (bottom), exit copy-mode automatically
+      if (scrollPosition === 0) {
+        Bun.spawnSync(['tmux', 'send-keys', '-X', '-t', target, 'cancel'], {
+          stdout: 'ignore',
+          stderr: 'ignore',
+        })
+      }
+    }
+
     // Check copy-mode status after scrolling
     const checkResult = Bun.spawnSync(
       ['tmux', 'display-message', '-p', '-t', target, '#{pane_in_mode}'],
