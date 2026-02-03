@@ -11,7 +11,7 @@ Run your desktop/server, then connect from your phone or laptop over Tailscale/L
   - Touch scrolling
   - Virtual arrow keys / d-pad
   - Quick keys toolbar (ctrl, esc, etc.)
-- Tracks Claude and Codex sessions by parsing their logs, auto-matching to active tmux windows. Inactive sessions can be restored with one click.
+- Out-of-the-box log tracking and matching for Claude, Codex, and Pi — auto-matches sessions to active tmux windows, with one-click restore for inactive sessions.
 - Shows the last user prompt for each session, so you can remember what each agent is working on
 - Pin agent TUI sessions to auto-resume them when the server restarts (useful if your machine reboots or tmux dies)
 
