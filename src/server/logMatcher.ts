@@ -701,7 +701,10 @@ function isPromptLine(line: string): boolean {
   return isClaudePromptLine(line) || isCodexPromptLine(line)
 }
 
-// Pi TUI uses a specific background color (RGB 52,53,65) for user messages
+// Pi TUI uses a specific background color (RGB 52,53,65) for user messages.
+// This color is defined in Pi's built-in "tokyo-night" theme (userMessageBg).
+// See: https://github.com/anthropics/pi/blob/main/src/themes/tokyo-night.ts
+// NOTE: If Pi changes this color or the user selects a different theme, detection will fail.
 // Pattern: \x1b[48;2;52;53;65m...message...\x1b[49m (or end of content)
 // eslint-disable-next-line no-control-regex
 const PI_USER_MESSAGE_BG_START = /\x1b\[48;2;52;53;65m/g
@@ -709,8 +712,9 @@ const PI_USER_MESSAGE_BG_START = /\x1b\[48;2;52;53;65m/g
 const PI_USER_MESSAGE_BG_END = /\x1b\[49m/
 
 /**
- * Extract user messages from pi's TUI by detecting the background color pattern.
- * Pi uses RGB(52,53,65) background for user messages.
+ * Extract user messages from Pi's TUI by detecting the background color pattern.
+ * Pi uses RGB(52,53,65) background for user messages in the default tokyo-night theme.
+ * Returns empty array if no Pi-style messages are detected (e.g., different theme).
  */
 export function extractPiUserMessagesFromAnsi(
   ansiContent: string,
