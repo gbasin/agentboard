@@ -58,6 +58,7 @@ class PipePaneTerminalProxy extends TerminalProxyBase {
       const sgrMousePattern = /\x1b\[<(\d+);(\d+);(\d+)([Mm])/g
       let remaining = data
       let hasScrollEvents = false
+      let hasScrollDown = false
       const nonScrollParts: string[] = []
       let lastIndex = 0
 
@@ -82,7 +83,29 @@ class PipePaneTerminalProxy extends TerminalProxyBase {
           }
 
           const direction = baseButton === 64 ? 'scroll-up' : 'scroll-down'
+          if (baseButton === 65) {
+            hasScrollDown = true
+          }
           this.runTmux(['send-keys', '-X', '-t', this.currentTarget, direction])
+        }
+      }
+
+      // After scroll-down events, check if we've reached the bottom and exit copy-mode
+      // This prevents getting stuck in copy-mode from incidental scroll-down input
+      if (hasScrollDown) {
+        try {
+          const scrollPos = this.runTmux([
+            'display-message',
+            '-t',
+            this.currentTarget,
+            '-p',
+            '#{scroll_position}',
+          ]).trim()
+          if (scrollPos === '0') {
+            this.runTmux(['send-keys', '-X', '-t', this.currentTarget, 'cancel'])
+          }
+        } catch {
+          // Ignore errors checking scroll position
         }
       }
 

@@ -576,4 +576,104 @@ describe('PipePaneTerminalProxy', () => {
 
     await proxy.dispose()
   })
+
+  test('exits copy-mode when scroll-down reaches bottom (scroll_position=0)', async () => {
+    let scrollPosition = '5' // Start scrolled up
+    const harness = createPipeHarness()
+
+    // Override spawnSync to return scroll position
+    const originalSpawnSync = harness.spawnSync
+    const spawnSyncWithScrollPos = (
+      args: string[],
+      options?: Parameters<typeof Bun.spawnSync>[1]
+    ) => {
+      if (args[1] === 'display-message' && args.includes('#{scroll_position}')) {
+        return {
+          exitCode: 0,
+          stdout: Buffer.from(scrollPosition),
+          stderr: Buffer.from(''),
+        } as ReturnType<typeof Bun.spawnSync>
+      }
+      return originalSpawnSync(args, options)
+    }
+
+    const proxy = new PipePaneTerminalProxy({
+      connectionId: 'conn-scroll-exit',
+      sessionName: 'agentboard-ws-conn-scroll-exit',
+      baseSession: 'agentboard',
+      onData: () => {},
+      spawn: harness.spawn,
+      spawnSync: spawnSyncWithScrollPos,
+      monitorTargets: false,
+    })
+
+    await proxy.start()
+    await proxy.switchTo('agentboard:@1')
+    harness.tmuxCalls.length = 0
+
+    // Scroll down when NOT at bottom - should NOT cancel
+    proxy.write('\x1b[<65;40;12M')
+    let cancelCalls = harness.tmuxCalls.filter((call) => call.includes('cancel'))
+    expect(cancelCalls.length).toBe(0)
+
+    // Now simulate being at bottom
+    scrollPosition = '0'
+    harness.tmuxCalls.length = 0
+
+    // Scroll down at bottom - should cancel copy-mode
+    proxy.write('\x1b[<65;40;12M')
+    cancelCalls = harness.tmuxCalls.filter((call) => call.includes('cancel'))
+    expect(cancelCalls.length).toBe(1)
+    expect(harness.tmuxCalls).toContainEqual([
+      'tmux',
+      'send-keys',
+      '-X',
+      '-t',
+      'agentboard:@1',
+      'cancel',
+    ])
+
+    await proxy.dispose()
+  })
+
+  test('scroll-up does not check scroll position or cancel', async () => {
+    const harness = createPipeHarness()
+
+    // Override spawnSync to track display-message calls
+    const originalSpawnSync = harness.spawnSync
+    let displayMessageCalled = false
+    const spawnSyncTracking = (
+      args: string[],
+      options?: Parameters<typeof Bun.spawnSync>[1]
+    ) => {
+      if (args[1] === 'display-message') {
+        displayMessageCalled = true
+      }
+      return originalSpawnSync(args, options)
+    }
+
+    const proxy = new PipePaneTerminalProxy({
+      connectionId: 'conn-scroll-up-no-cancel',
+      sessionName: 'agentboard-ws-conn-scroll-up-no-cancel',
+      baseSession: 'agentboard',
+      onData: () => {},
+      spawn: harness.spawn,
+      spawnSync: spawnSyncTracking,
+      monitorTargets: false,
+    })
+
+    await proxy.start()
+    await proxy.switchTo('agentboard:@1')
+    harness.tmuxCalls.length = 0
+    displayMessageCalled = false
+
+    // Scroll up - should NOT check scroll position
+    proxy.write('\x1b[<64;40;12M')
+
+    expect(displayMessageCalled).toBe(false)
+    const cancelCalls = harness.tmuxCalls.filter((call) => call.includes('cancel'))
+    expect(cancelCalls.length).toBe(0)
+
+    await proxy.dispose()
+  })
 })
