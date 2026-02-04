@@ -44,21 +44,60 @@ class PipePaneTerminalProxy extends TerminalProxyBase {
         return
       }
 
-      // Check for SGR mouse scroll sequences: ESC[<64;col;rowM (up) or ESC[<65;col;rowM (down)
-      // These need special handling in pipe-pane mode since send-keys -l sends them to the shell
-      // instead of tmux's mouse handler
+      // Handle SGR mouse scroll sequences that may be batched with other input.
+      // In pipe-pane mode, send-keys -l passes escape sequences to the pane program
+      // (shell/app) instead of tmux's mouse handler, so we intercept scroll events
+      // and translate them to tmux copy-mode commands.
+      //
+      // SGR mouse encoding: ESC[<button;col;rowM (press) or ESC[<button;col;rowm (release)
+      // Wheel up = button 64, wheel down = button 65
+      // Modifier keys are OR'd as bit flags: Shift (+4), Alt (+8), Ctrl (+16)
+      // So wheel-up with Shift = 68, wheel-up with Ctrl = 80, etc.
+      // We mask with 0b1000011 (67) to extract the base button (64 or 65).
       // eslint-disable-next-line no-control-regex
-      const scrollMatch = data.match(/^\x1b\[<(64|65);\d+;\d+M$/)
-      if (scrollMatch) {
-        const direction = scrollMatch[1] === '64' ? 'scroll-up' : 'scroll-down'
-        // Enter copy-mode if not already (idempotent)
-        this.runTmux(['copy-mode', '-t', this.currentTarget])
-        // Send scroll command
-        this.runTmux(['send-keys', '-X', '-t', this.currentTarget, direction])
+      const sgrMousePattern = /\x1b\[<(\d+);(\d+);(\d+)([Mm])/g
+      let remaining = data
+      let hasScrollEvents = false
+      const nonScrollParts: string[] = []
+      let lastIndex = 0
+
+      let match: RegExpExecArray | null
+      while ((match = sgrMousePattern.exec(data)) !== null) {
+        const button = parseInt(match[1], 10)
+        const baseButton = button & 67 // Mask off modifier bits (keep bits 0,1,6)
+        const isPress = match[4] === 'M'
+
+        // Only handle wheel events on press (not release)
+        if (isPress && (baseButton === 64 || baseButton === 65)) {
+          // Collect any text before this scroll sequence
+          if (match.index > lastIndex) {
+            nonScrollParts.push(data.slice(lastIndex, match.index))
+          }
+          lastIndex = match.index + match[0].length
+
+          if (!hasScrollEvents) {
+            // Enter copy-mode once (idempotent, but avoid repeated calls)
+            this.runTmux(['copy-mode', '-t', this.currentTarget])
+            hasScrollEvents = true
+          }
+
+          const direction = baseButton === 64 ? 'scroll-up' : 'scroll-down'
+          this.runTmux(['send-keys', '-X', '-t', this.currentTarget, direction])
+        }
+      }
+
+      // Collect any remaining text after the last scroll sequence
+      if (lastIndex < data.length) {
+        nonScrollParts.push(data.slice(lastIndex))
+      }
+
+      // If we only had scroll events with no other input, we're done
+      remaining = nonScrollParts.join('')
+      if (!remaining) {
         return
       }
 
-      const lines = data.split('\n')
+      const lines = remaining.split('\n')
       for (let index = 0; index < lines.length; index += 1) {
         const line = lines[index]
         if (line) {

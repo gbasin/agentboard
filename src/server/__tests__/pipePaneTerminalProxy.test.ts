@@ -412,4 +412,168 @@ describe('PipePaneTerminalProxy', () => {
 
     await proxy.dispose()
   })
+
+  test('handles scroll with modifier keys (shift, ctrl, alt)', async () => {
+    const harness = createPipeHarness()
+
+    const proxy = new PipePaneTerminalProxy({
+      connectionId: 'conn-scroll-mod',
+      sessionName: 'agentboard-ws-conn-scroll-mod',
+      baseSession: 'agentboard',
+      onData: () => {},
+      spawn: harness.spawn,
+      spawnSync: harness.spawnSync,
+      monitorTargets: false,
+    })
+
+    await proxy.start()
+    await proxy.switchTo('agentboard:@1')
+
+    // Test Shift+scroll-up (64 + 4 = 68)
+    harness.tmuxCalls.length = 0
+    proxy.write('\x1b[<68;40;12M')
+    expect(harness.tmuxCalls).toContainEqual(['tmux', 'copy-mode', '-t', 'agentboard:@1'])
+    expect(harness.tmuxCalls).toContainEqual([
+      'tmux',
+      'send-keys',
+      '-X',
+      '-t',
+      'agentboard:@1',
+      'scroll-up',
+    ])
+
+    // Test Ctrl+scroll-down (65 + 16 = 81)
+    harness.tmuxCalls.length = 0
+    proxy.write('\x1b[<81;40;12M')
+    expect(harness.tmuxCalls).toContainEqual([
+      'tmux',
+      'send-keys',
+      '-X',
+      '-t',
+      'agentboard:@1',
+      'scroll-down',
+    ])
+
+    // Test Alt+Shift+scroll-up (64 + 4 + 8 = 76)
+    harness.tmuxCalls.length = 0
+    proxy.write('\x1b[<76;40;12M')
+    expect(harness.tmuxCalls).toContainEqual([
+      'tmux',
+      'send-keys',
+      '-X',
+      '-t',
+      'agentboard:@1',
+      'scroll-up',
+    ])
+
+    await proxy.dispose()
+  })
+
+  test('handles batched scroll sequences in single write', async () => {
+    const harness = createPipeHarness()
+
+    const proxy = new PipePaneTerminalProxy({
+      connectionId: 'conn-scroll-batch',
+      sessionName: 'agentboard-ws-conn-scroll-batch',
+      baseSession: 'agentboard',
+      onData: () => {},
+      spawn: harness.spawn,
+      spawnSync: harness.spawnSync,
+      monitorTargets: false,
+    })
+
+    await proxy.start()
+    await proxy.switchTo('agentboard:@1')
+    harness.tmuxCalls.length = 0
+
+    // Send multiple scroll-up sequences in one write (simulates WS batching)
+    proxy.write('\x1b[<64;40;12M\x1b[<64;40;12M\x1b[<64;40;12M')
+
+    // Should only call copy-mode once
+    const copyModeCalls = harness.tmuxCalls.filter((call) => call.includes('copy-mode'))
+    expect(copyModeCalls.length).toBe(1)
+
+    // Should call scroll-up three times
+    const scrollUpCalls = harness.tmuxCalls.filter((call) => call.includes('scroll-up'))
+    expect(scrollUpCalls.length).toBe(3)
+
+    await proxy.dispose()
+  })
+
+  test('handles mixed scroll and text input in single write', async () => {
+    const harness = createPipeHarness()
+
+    const proxy = new PipePaneTerminalProxy({
+      connectionId: 'conn-scroll-mixed',
+      sessionName: 'agentboard-ws-conn-scroll-mixed',
+      baseSession: 'agentboard',
+      onData: () => {},
+      spawn: harness.spawn,
+      spawnSync: harness.spawnSync,
+      monitorTargets: false,
+    })
+
+    await proxy.start()
+    await proxy.switchTo('agentboard:@1')
+    harness.tmuxCalls.length = 0
+
+    // Send text, then scroll, then more text
+    proxy.write('hello\x1b[<64;40;12M world')
+
+    // Should call copy-mode and scroll-up for the scroll sequence
+    expect(harness.tmuxCalls).toContainEqual(['tmux', 'copy-mode', '-t', 'agentboard:@1'])
+    expect(harness.tmuxCalls).toContainEqual([
+      'tmux',
+      'send-keys',
+      '-X',
+      '-t',
+      'agentboard:@1',
+      'scroll-up',
+    ])
+
+    // Should also send the non-scroll text via send-keys -l
+    expect(harness.tmuxCalls).toContainEqual([
+      'tmux',
+      'send-keys',
+      '-t',
+      'agentboard:@1',
+      '-l',
+      '--',
+      'hello world',
+    ])
+
+    await proxy.dispose()
+  })
+
+  test('ignores scroll release events (lowercase m)', async () => {
+    const harness = createPipeHarness()
+
+    const proxy = new PipePaneTerminalProxy({
+      connectionId: 'conn-scroll-release',
+      sessionName: 'agentboard-ws-conn-scroll-release',
+      baseSession: 'agentboard',
+      onData: () => {},
+      spawn: harness.spawn,
+      spawnSync: harness.spawnSync,
+      monitorTargets: false,
+    })
+
+    await proxy.start()
+    await proxy.switchTo('agentboard:@1')
+    harness.tmuxCalls.length = 0
+
+    // Send scroll release event (lowercase 'm' = release)
+    proxy.write('\x1b[<64;40;12m')
+
+    // Should NOT call copy-mode for release events
+    const copyModeCall = harness.tmuxCalls.find((call) => call.includes('copy-mode'))
+    expect(copyModeCall).toBeUndefined()
+
+    // Should pass through as regular input (or be stripped - either is acceptable)
+    // The key is that it doesn't trigger scroll handling
+    const scrollCall = harness.tmuxCalls.find((call) => call.includes('scroll-up'))
+    expect(scrollCall).toBeUndefined()
+
+    await proxy.dispose()
+  })
 })
