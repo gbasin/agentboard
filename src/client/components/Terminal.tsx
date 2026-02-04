@@ -549,16 +549,22 @@ export default function Terminal({
       const currentSessionId = sessionIdRef.current
       if (!currentSessionId || lines === 0) return false
 
-      const scrolledUp = lines < 0
-      const count = Math.abs(lines)
+      const terminal = terminalRef.current
+      const cols = terminal?.cols ?? 80
+      const rows = terminal?.rows ?? 24
+      const col = Math.floor(cols / 2)
+      const row = Math.floor(rows / 2)
 
-      // Send tmux scroll command directly to enter copy-mode and scroll
+      // SGR mouse wheel: button 64 = scroll up, 65 = scroll down
+      const button = lines > 0 ? 65 : 64
+      const count = Math.abs(lines)
+      const scrolledUp = lines < 0
+
       for (let i = 0; i < count; i++) {
         sendMessageRef.current({
-          type: 'tmux-scroll',
+          type: 'terminal-input',
           sessionId: currentSessionId,
-          direction: lines > 0 ? 'down' : 'up',
-          lines: 1
+          data: `\x1b[<${button};${col};${row}M`
         })
       }
 

@@ -43,6 +43,21 @@ class PipePaneTerminalProxy extends TerminalProxyBase {
       if (!data) {
         return
       }
+
+      // Check for SGR mouse scroll sequences: ESC[<64;col;rowM (up) or ESC[<65;col;rowM (down)
+      // These need special handling in pipe-pane mode since send-keys -l sends them to the shell
+      // instead of tmux's mouse handler
+      // eslint-disable-next-line no-control-regex
+      const scrollMatch = data.match(/^\x1b\[<(64|65);\d+;\d+M$/)
+      if (scrollMatch) {
+        const direction = scrollMatch[1] === '64' ? 'scroll-up' : 'scroll-down'
+        // Enter copy-mode if not already (idempotent)
+        this.runTmux(['copy-mode', '-t', this.currentTarget])
+        // Send scroll command
+        this.runTmux(['send-keys', '-X', '-t', this.currentTarget, direction])
+        return
+      }
+
       const lines = data.split('\n')
       for (let index = 0; index < lines.length; index += 1) {
         const line = lines[index]

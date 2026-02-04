@@ -248,4 +248,168 @@ describe('PipePaneTerminalProxy', () => {
 
     await proxy.dispose()
   })
+
+  test('handles SGR scroll-up sequence with tmux copy-mode instead of send-keys -l', async () => {
+    const harness = createPipeHarness()
+
+    const proxy = new PipePaneTerminalProxy({
+      connectionId: 'conn-scroll-1',
+      sessionName: 'agentboard-ws-conn-scroll-1',
+      baseSession: 'agentboard',
+      onData: () => {},
+      spawn: harness.spawn,
+      spawnSync: harness.spawnSync,
+      monitorTargets: false,
+    })
+
+    await proxy.start()
+    await proxy.switchTo('agentboard:@1')
+    harness.tmuxCalls.length = 0 // Clear setup calls
+
+    // Send SGR scroll-up sequence (button 64)
+    proxy.write('\x1b[<64;40;12M')
+
+    // Should call copy-mode first
+    expect(harness.tmuxCalls).toContainEqual([
+      'tmux',
+      'copy-mode',
+      '-t',
+      'agentboard:@1',
+    ])
+
+    // Should call scroll-up command
+    expect(harness.tmuxCalls).toContainEqual([
+      'tmux',
+      'send-keys',
+      '-X',
+      '-t',
+      'agentboard:@1',
+      'scroll-up',
+    ])
+
+    // Should NOT use send-keys -l (the broken approach)
+    const literalSendKeys = harness.tmuxCalls.find(
+      (call) => call.includes('-l') && call.includes('\x1b')
+    )
+    expect(literalSendKeys).toBeUndefined()
+
+    await proxy.dispose()
+  })
+
+  test('handles SGR scroll-down sequence with tmux copy-mode', async () => {
+    const harness = createPipeHarness()
+
+    const proxy = new PipePaneTerminalProxy({
+      connectionId: 'conn-scroll-2',
+      sessionName: 'agentboard-ws-conn-scroll-2',
+      baseSession: 'agentboard',
+      onData: () => {},
+      spawn: harness.spawn,
+      spawnSync: harness.spawnSync,
+      monitorTargets: false,
+    })
+
+    await proxy.start()
+    await proxy.switchTo('agentboard:@1')
+    harness.tmuxCalls.length = 0
+
+    // Send SGR scroll-down sequence (button 65)
+    proxy.write('\x1b[<65;40;12M')
+
+    // Should call copy-mode
+    expect(harness.tmuxCalls).toContainEqual([
+      'tmux',
+      'copy-mode',
+      '-t',
+      'agentboard:@1',
+    ])
+
+    // Should call scroll-down command
+    expect(harness.tmuxCalls).toContainEqual([
+      'tmux',
+      'send-keys',
+      '-X',
+      '-t',
+      'agentboard:@1',
+      'scroll-down',
+    ])
+
+    await proxy.dispose()
+  })
+
+  test('regular input still uses send-keys -l', async () => {
+    const harness = createPipeHarness()
+
+    const proxy = new PipePaneTerminalProxy({
+      connectionId: 'conn-scroll-3',
+      sessionName: 'agentboard-ws-conn-scroll-3',
+      baseSession: 'agentboard',
+      onData: () => {},
+      spawn: harness.spawn,
+      spawnSync: harness.spawnSync,
+      monitorTargets: false,
+    })
+
+    await proxy.start()
+    await proxy.switchTo('agentboard:@1')
+    harness.tmuxCalls.length = 0
+
+    // Send regular input
+    proxy.write('hello')
+
+    // Should use send-keys -l for regular input
+    expect(harness.tmuxCalls).toContainEqual([
+      'tmux',
+      'send-keys',
+      '-t',
+      'agentboard:@1',
+      '-l',
+      '--',
+      'hello',
+    ])
+
+    // Should NOT call copy-mode for regular input
+    const copyModeCall = harness.tmuxCalls.find((call) => call.includes('copy-mode'))
+    expect(copyModeCall).toBeUndefined()
+
+    await proxy.dispose()
+  })
+
+  test('handles other mouse sequences (non-scroll) with send-keys -l', async () => {
+    const harness = createPipeHarness()
+
+    const proxy = new PipePaneTerminalProxy({
+      connectionId: 'conn-scroll-4',
+      sessionName: 'agentboard-ws-conn-scroll-4',
+      baseSession: 'agentboard',
+      onData: () => {},
+      spawn: harness.spawn,
+      spawnSync: harness.spawnSync,
+      monitorTargets: false,
+    })
+
+    await proxy.start()
+    await proxy.switchTo('agentboard:@1')
+    harness.tmuxCalls.length = 0
+
+    // Send SGR mouse click sequence (button 0 = left click)
+    proxy.write('\x1b[<0;40;12M')
+
+    // Should use send-keys -l for non-scroll mouse events
+    expect(harness.tmuxCalls).toContainEqual([
+      'tmux',
+      'send-keys',
+      '-t',
+      'agentboard:@1',
+      '-l',
+      '--',
+      '\x1b[<0;40;12M',
+    ])
+
+    // Should NOT call copy-mode for clicks
+    const copyModeCall = harness.tmuxCalls.find((call) => call.includes('copy-mode'))
+    expect(copyModeCall).toBeUndefined()
+
+    await proxy.dispose()
+  })
 })
