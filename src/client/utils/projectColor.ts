@@ -21,19 +21,13 @@ function hashString(str: string): number {
 
 /**
  * Get color styles for a project name.
- * Text is muted gray with a subtle color tint, background is the colored pill.
+ * Sets a --badge-hue custom property; actual colors are theme-aware via CSS.
  */
-export function getProjectColorStyle(projectName: string): {
-  backgroundColor: string
-  color: string
-} {
+export function getProjectColorStyle(projectName: string): Record<string, string> {
   const hue = hashString(projectName) % HUE_COUNT
 
   return {
-    // Colored pill background
-    backgroundColor: `hsl(${hue} 60% 50% / 0.2)`,
-    // Muted text with subtle color tint (low saturation, similar lightness to --text-muted #737373 ≈ 45%)
-    color: `hsl(${hue} 20% 55%)`,
+    '--badge-hue': `${hue}`,
   }
 }
 

@@ -521,6 +521,17 @@ body {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
+/* Project badge - theme-aware colors using --badge-hue custom property */
+.project-badge {
+  background-color: hsl(var(--badge-hue) 60% 50% / 0.2);
+  color: hsl(var(--badge-hue) 30% 80%);
+}
+
+[data-theme="light"] .project-badge {
+  background-color: hsl(var(--badge-hue) 60% 50% / 0.15);
+  color: hsl(var(--badge-hue) 50% 25%);
+}
+
 /* Hide scrollbar but allow scrolling */
 .scrollbar-none {
   -ms-overflow-style: none;
