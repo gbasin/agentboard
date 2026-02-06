@@ -459,7 +459,7 @@ export function useTerminal({
       // Claude Code treats it as typed text and doesn't read the clipboard.
       // For non-file pastes, we fall back to terminal.paste() (bracket paste).
       // Only on macOS (Finder-specific) — other platforms use native xterm paste.
-      if (isMac && event.metaKey && event.key.toLowerCase() === 'v' && event.type === 'keydown') {
+      if (isMac && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'v' && event.type === 'keydown') {
         // Only intercept if clipboard API is available; otherwise let xterm
         // handle natively (e.g. non-secure HTTP contexts like Tailscale)
         if (!navigator.clipboard?.readText) {
