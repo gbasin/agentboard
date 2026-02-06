@@ -854,6 +854,36 @@ app.post('/api/paste-image', async (c) => {
   }
 })
 
+// Get file path from macOS clipboard (for Finder file copies).
+// When a user copies a file in Finder, the browser clipboard only exposes the
+// file icon, not the actual contents. This endpoint extracts the real file path
+// via AppleScript so the client can send it to the terminal.
+app.get('/api/clipboard-file-path', async (c) => {
+  if (process.platform !== 'darwin') {
+    return c.json({ path: null })
+  }
+  try {
+    const proc = Bun.spawn(
+      ['osascript', '-e', 'POSIX path of (the clipboard as «class furl»)'],
+      { stdout: 'pipe', stderr: 'pipe' }
+    )
+    const text = await new Response(proc.stdout).text()
+    const exitCode = await proc.exited
+    const filePath = text.trim()
+    if (exitCode === 0 && filePath.startsWith('/')) {
+      // Verify the file actually exists
+      const file = Bun.file(filePath)
+      if (await file.exists()) {
+        c.header('Cache-Control', 'no-store')
+        return c.json({ path: filePath })
+      }
+    }
+    return c.json({ path: null })
+  } catch {
+    return c.json({ path: null })
+  }
+})
+
 app.use('/*', serveStatic({ root: './dist/client' }))
 
 const tlsEnabled = config.tlsCert && config.tlsKey

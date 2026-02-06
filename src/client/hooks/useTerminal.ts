@@ -451,6 +451,49 @@ export function useTerminal({
         }
       }
 
+      // Cmd+V on macOS: intercept paste to handle Finder file copies.
+      // Claude Code detects bracket paste and reads the macOS system clipboard
+      // directly, getting the Finder file icon instead of the actual file.
+      // We intercept Cmd+V, check for a Finder file URL via osascript, and if
+      // found, send the real path as raw terminal input (no bracket paste) so
+      // Claude Code treats it as typed text and doesn't read the clipboard.
+      // For non-file pastes, we fall back to terminal.paste() (bracket paste).
+      // Only on macOS (Finder-specific) — other platforms use native xterm paste.
+      if (isMac && event.metaKey && event.key.toLowerCase() === 'v' && event.type === 'keydown') {
+        // Only intercept if clipboard API is available; otherwise let xterm
+        // handle natively (e.g. non-secure HTTP contexts like Tailscale)
+        if (!navigator.clipboard?.readText) {
+          return true
+        }
+        void (async () => {
+          const attached = attachedSessionRef.current
+          if (!attached) return
+
+          // Check for Finder file copy (macOS server only)
+          try {
+            const res = await fetch('/api/clipboard-file-path')
+            if (res.ok) {
+              const { path } = (await res.json()) as { path: string | null }
+              if (path) {
+                // Send as raw input (no bracket paste) so Claude Code
+                // doesn't detect a paste and read the system clipboard
+                sendMessageRef.current({ type: 'terminal-input', sessionId: attached, data: path })
+                return
+              }
+            }
+          } catch { /* not on macOS or endpoint unavailable */ }
+
+          // Normal paste - use terminal.paste() for proper bracket paste behavior
+          try {
+            const text = await navigator.clipboard.readText()
+            if (text) {
+              terminal.paste(text)
+            }
+          } catch { /* clipboard not available */ }
+        })()
+        return false // Prevent xterm.js native paste handling
+      }
+
       // Ctrl+Backspace: delete word backward (browser eats this otherwise)
       if (event.ctrlKey && event.key === 'Backspace' && event.type === 'keydown') {
         const attached = attachedSessionRef.current
