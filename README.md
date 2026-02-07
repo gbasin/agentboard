@@ -27,11 +27,27 @@ Run your desktop/server, then connect from your phone or laptop over Tailscale/L
 
 ## Requirements
 
-- **Bun 1.3.6+** (required - see [Troubleshooting](#troubleshooting))
 - tmux
-- A network path to your machine (Tailscale, LAN, etc.)
+- [Tailscale](https://tailscale.com/download) (recommended) or any network path to your machine
 
-## Usage
+## Install
+
+### npm
+
+```bash
+npm install -g agentboard
+agentboard
+```
+
+Or run directly:
+
+```bash
+npx agentboard
+```
+
+### From source
+
+Requires **Bun 1.3.6+** (see [Troubleshooting](#troubleshooting)).
 
 ```bash
 bun install
@@ -41,6 +57,7 @@ bun run dev
 Open `http://<your-machine>:5173` (Vite dev server). In production, UI is served from the backend port (default 4040).
 
 Production:
+
 ```bash
 bun run build
 bun run start
