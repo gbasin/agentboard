@@ -12,10 +12,10 @@ if (!version) {
 const pkg = JSON.parse(readFileSync("package.json", "utf8"));
 
 pkg.optionalDependencies = {
-  "agentboard-darwin-arm64": version,
-  "agentboard-darwin-x64": version,
-  "agentboard-linux-x64": version,
-  "agentboard-linux-arm64": version,
+  "@gbasin/agentboard-darwin-arm64": version,
+  "@gbasin/agentboard-darwin-x64": version,
+  "@gbasin/agentboard-linux-x64": version,
+  "@gbasin/agentboard-linux-arm64": version,
 };
 
 writeFileSync("package.json", JSON.stringify(pkg, null, 2) + "\n");

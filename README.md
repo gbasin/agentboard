@@ -35,14 +35,14 @@ Run your desktop/server, then connect from your phone or laptop over Tailscale/L
 ### npm
 
 ```bash
-npm install -g agentboard
+npm install -g @gbasin/agentboard
 agentboard
 ```
 
 Or run directly:
 
 ```bash
-npx agentboard
+npx @gbasin/agentboard
 ```
 
 Then open `http://localhost:4040` (or `http://<your-machine>:4040` from another device).

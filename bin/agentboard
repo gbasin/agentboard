@@ -7,10 +7,10 @@ import { dirname, join } from "node:path";
 const require = createRequire(import.meta.url);
 
 const PLATFORMS = {
-  "darwin-arm64": "agentboard-darwin-arm64",
-  "darwin-x64": "agentboard-darwin-x64",
-  "linux-x64": "agentboard-linux-x64",
-  "linux-arm64": "agentboard-linux-arm64",
+  "darwin-arm64": "@gbasin/agentboard-darwin-arm64",
+  "darwin-x64": "@gbasin/agentboard-darwin-x64",
+  "linux-x64": "@gbasin/agentboard-linux-x64",
+  "linux-arm64": "@gbasin/agentboard-linux-arm64",
 };
 
 function getBinaryPath() {

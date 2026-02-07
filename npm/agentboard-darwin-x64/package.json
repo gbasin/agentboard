@@ -1,5 +1,5 @@
 {
-  "name": "agentboard-darwin-x64",
+  "name": "@gbasin/agentboard-darwin-x64",
   "version": "0.1.0",
   "description": "agentboard binary for darwin-x64",
   "repository": {

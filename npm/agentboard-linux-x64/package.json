@@ -1,5 +1,5 @@
 {
-  "name": "agentboard-linux-x64",
+  "name": "@gbasin/agentboard-linux-x64",
   "version": "0.1.0",
   "description": "agentboard binary for linux-x64",
   "repository": {

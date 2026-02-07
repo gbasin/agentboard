@@ -277,7 +277,7 @@ async function bumpVersion(expectedVersion: string): Promise<string> {
     packageJson.version = expectedVersion;
     if (packageJson.optionalDependencies) {
       for (const key of Object.keys(packageJson.optionalDependencies)) {
-        if (key.startsWith("agentboard-")) {
+        if (key.startsWith("@gbasin/agentboard-")) {
           packageJson.optionalDependencies[key] = expectedVersion;
         }
       }
