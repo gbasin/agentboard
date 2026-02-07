@@ -27,7 +27,7 @@ Run your desktop/server, then connect from your phone or laptop over Tailscale/L
 
 ## Requirements
 
-- tmux
+- tmux (`brew install tmux` / `apt install tmux`)
 - [Tailscale](https://tailscale.com/download) (recommended) or any network path to your machine
 
 ## Install
