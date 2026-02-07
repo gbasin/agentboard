@@ -1,0 +1,17 @@
+{
+  "name": "agentboard-darwin-x64",
+  "version": "0.0.0",
+  "description": "agentboard binary for darwin-x64",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gbasin/agentboard.git"
+  },
+  "license": "MIT",
+  "os": ["darwin"],
+  "cpu": ["x64"],
+  "bin": {
+    "agentboard": "./bin/agentboard"
+  },
+  "files": ["bin/agentboard", "dist/client/**"],
+  "preferUnplugged": true
+}

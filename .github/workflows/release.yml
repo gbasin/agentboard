@@ -1,0 +1,118 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            target: bun-darwin-arm64
+            artifact: agentboard-darwin-arm64
+          - os: macos-13
+            target: bun-darwin-x64
+            artifact: agentboard-darwin-x64
+          - os: ubuntu-latest
+            target: bun-linux-x64
+            artifact: agentboard-linux-x64
+          - os: ubuntu-24.04-arm
+            target: bun-linux-arm64
+            artifact: agentboard-linux-arm64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build frontend
+        run: bun run build
+
+      - name: Build server binary
+        run: bun build src/server/index.ts --compile --outfile ${{ matrix.artifact }}
+
+      - name: Package binary and frontend
+        run: |
+          mkdir -p package/bin package/dist
+          mv ${{ matrix.artifact }} package/bin/agentboard
+          cp -r dist/client package/dist/client
+          chmod +x package/bin/agentboard
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: package/
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Get version from tag
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Publish platform packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+
+          for platform in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do
+            echo "Publishing agentboard-$platform@$VERSION"
+            cd npm/agentboard-$platform
+            mkdir -p bin dist
+            cp ../../artifacts/agentboard-$platform/bin/agentboard ./bin/agentboard
+            cp -r ../../artifacts/agentboard-$platform/dist/client ./dist/client
+            chmod +x ./bin/agentboard
+            npm version $VERSION --no-git-tag-version
+            npm publish
+            cd ../..
+          done
+
+      - name: Update main package optionalDependencies
+        run: node scripts/update-optional-deps.js ${{ steps.version.outputs.version }}
+
+      - name: Publish main package
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Collect binaries for GitHub Release
+        run: |
+          mkdir -p release-binaries
+          for platform in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do
+            cp artifacts/agentboard-$platform/bin/agentboard release-binaries/agentboard-$platform
+          done
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-binaries/agentboard-*
+          generate_release_notes: true
