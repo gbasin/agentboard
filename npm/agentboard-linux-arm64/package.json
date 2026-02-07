@@ -1,6 +1,6 @@
 {
   "name": "agentboard-linux-arm64",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "agentboard binary for linux-arm64",
   "repository": {
     "type": "git",
