@@ -884,7 +884,8 @@ app.get('/api/clipboard-file-path', async (c) => {
   }
 })
 
-app.use('/*', serveStatic({ root: './dist/client' }))
+const staticDir = process.env.AGENTBOARD_STATIC_DIR || './dist/client'
+app.use('/*', serveStatic({ root: staticDir }))
 
 const tlsEnabled = config.tlsCert && config.tlsKey
 

@@ -1,0 +1,63 @@
+#!/usr/bin/env node
+
+import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
+
+const require = createRequire(import.meta.url);
+
+const PLATFORMS = {
+  "darwin-arm64": "@gbasin/agentboard-darwin-arm64",
+  "darwin-x64": "@gbasin/agentboard-darwin-x64",
+  "linux-x64": "@gbasin/agentboard-linux-x64",
+  "linux-arm64": "@gbasin/agentboard-linux-arm64",
+};
+
+function getBinaryPath() {
+  const platform = process.platform;
+  const supportedArch = { x64: "x64", arm64: "arm64" };
+  const arch = supportedArch[process.arch];
+  if (!arch) {
+    console.error(`Unsupported architecture: ${process.arch}`);
+    console.error(`Supported: ${Object.keys(supportedArch).join(", ")}`);
+    process.exit(1);
+  }
+  const key = `${platform}-${arch}`;
+
+  const pkg = PLATFORMS[key];
+  if (!pkg) {
+    console.error(`Unsupported platform: ${key}`);
+    console.error(`Supported: ${Object.keys(PLATFORMS).join(", ")}`);
+    process.exit(1);
+  }
+
+  try {
+    return require.resolve(`${pkg}/bin/agentboard`);
+  } catch {
+    console.error(`Platform package not installed: ${pkg}`);
+    console.error(`Try: npm install ${pkg}`);
+    process.exit(1);
+  }
+}
+
+function getPackageRoot(binaryPath) {
+  // Binary is at <pkg>/bin/agentboard, package root is <pkg>/
+  return dirname(dirname(binaryPath));
+}
+
+try {
+  const binaryPath = getBinaryPath();
+  const packageRoot = getPackageRoot(binaryPath);
+
+  execFileSync(binaryPath, process.argv.slice(2), {
+    stdio: "inherit",
+    env: {
+      ...process.env,
+      // Tell the server where to find dist/client relative to the platform package
+      AGENTBOARD_STATIC_DIR: join(packageRoot, "dist", "client"),
+    },
+  });
+} catch (e) {
+  if (e && e.status) process.exit(e.status);
+  throw e;
+}

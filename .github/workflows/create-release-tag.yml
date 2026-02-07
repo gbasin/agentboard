@@ -1,0 +1,52 @@
+name: Create Release Tag
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - master
+
+permissions:
+  contents: write
+
+jobs:
+  create-tag:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check version and create tag if needed
+        id: check_version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          TAG_NAME="v$VERSION"
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$TAG_NAME" >> $GITHUB_OUTPUT
+
+          if git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
+            echo "should_tag=false" >> $GITHUB_OUTPUT
+            echo "Tag $TAG_NAME already exists, skipping"
+          else
+            echo "should_tag=true" >> $GITHUB_OUTPUT
+            echo "Will create tag $TAG_NAME"
+          fi
+
+      - name: Create and push tag
+        if: steps.check_version.outputs.should_tag == 'true'
+        run: |
+          TAG_NAME="${{ steps.check_version.outputs.tag }}"
+
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+
+          git tag -a "$TAG_NAME" -m "Release $TAG_NAME"
+          git push origin "$TAG_NAME"
+
+          echo "Created and pushed tag: $TAG_NAME"
+          echo "This will trigger the Release workflow to build and publish binaries"

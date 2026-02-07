@@ -1,0 +1,20 @@
+{
+  "name": "@gbasin/agentboard-linux-x64",
+  "version": "0.1.0",
+  "description": "agentboard binary for linux-x64",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gbasin/agentboard.git"
+  },
+  "license": "MIT",
+  "os": ["linux"],
+  "cpu": ["x64"],
+  "bin": {
+    "agentboard": "./bin/agentboard"
+  },
+  "files": ["bin/agentboard", "dist/client/**"],
+  "preferUnplugged": true,
+  "engines": {
+    "node": ">=18"
+  }
+}
