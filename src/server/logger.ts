@@ -37,36 +37,39 @@ let fileDestination: pino.DestinationStream | null = null
 function createLogger(): pino.Logger {
   const logLevel = getLogLevel()
   const logFile = getLogFile()
-  // Compiled Bun binaries run from /$bunfs/ and can't use pino transports
-  // (they spawn worker_threads that dynamically require modules)
-  const isCompiledBinary = process.argv[0]?.includes('/$bunfs/')
-  const isDev = process.env.NODE_ENV !== 'production' && !isCompiledBinary
+  const isDev = process.env.NODE_ENV !== 'production'
 
   // Dev mode: use pino-pretty for console, optionally also log to file
+  // Wrapped in try-catch because compiled Bun binaries can't use pino transports
+  // (they spawn worker_threads that dynamically require modules)
   if (isDev) {
-    const targets: pino.TransportTargetOptions[] = [
-      {
-        target: 'pino-pretty',
-        options: {
-          colorize: true,
-          translateTime: 'SYS:standard',
-          ignore: 'pid,hostname',
+    try {
+      const targets: pino.TransportTargetOptions[] = [
+        {
+          target: 'pino-pretty',
+          options: {
+            colorize: true,
+            translateTime: 'SYS:standard',
+            ignore: 'pid,hostname',
+          },
+          level: logLevel,
         },
-        level: logLevel,
-      },
-    ]
+      ]
 
-    // Also log to file in dev if LOG_FILE is explicitly set via env var
-    // (don't use config default in dev to avoid noisy file logging)
-    if (process.env.LOG_FILE) {
-      targets.push({
-        target: 'pino/file',
-        options: { destination: logFile, mkdir: true },
-        level: logLevel,
-      })
+      // Also log to file in dev if LOG_FILE is explicitly set via env var
+      // (don't use config default in dev to avoid noisy file logging)
+      if (process.env.LOG_FILE) {
+        targets.push({
+          target: 'pino/file',
+          options: { destination: logFile, mkdir: true },
+          level: logLevel,
+        })
+      }
+
+      return pino({ level: logLevel, transport: { targets } })
+    } catch {
+      // Fall through to production logger (compiled binary or missing pino-pretty)
     }
-
-    return pino({ level: logLevel, transport: { targets } })
   }
 
   // Production: use sync destinations for reliable flushing
