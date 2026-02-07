@@ -105,7 +105,7 @@ describe('SessionRefreshWorkerClient', () => {
     await expect(promise).resolves.toBe('hello')
   })
 
-  test('dispose rejects pending requests and terminates worker', async () => {
+  test('dispose rejects pending requests and abandons worker', async () => {
     const client = new SessionRefreshWorkerClient()
     const worker = WorkerMock.instances[WorkerMock.instances.length - 1]
     if (!worker) throw new Error('Worker not created')
@@ -115,7 +115,8 @@ describe('SessionRefreshWorkerClient', () => {
     client.dispose()
 
     await expect(promise).rejects.toThrow('Session refresh worker disposed')
-    expect(worker.terminated).toBe(true)
+    // Worker is abandoned, not terminated (Bun bug BUN-118B)
+    expect(worker.terminated).toBe(false)
   })
 
   test('worker errors reject pending and restart worker', async () => {
@@ -129,7 +130,8 @@ describe('SessionRefreshWorkerClient', () => {
     worker.emitError('broken')
 
     await expect(promise).rejects.toThrow('Session refresh worker error')
-    expect(worker.terminated).toBe(true)
+    // Worker is abandoned, not terminated (Bun bug BUN-118B)
+    expect(worker.terminated).toBe(false)
     expect(WorkerMock.instances.length).toBe(instancesBefore + 1)
   })
 
@@ -144,7 +146,8 @@ describe('SessionRefreshWorkerClient', () => {
     worker.emitMessageError()
 
     await expect(promise).rejects.toThrow('Session refresh worker message error')
-    expect(worker.terminated).toBe(true)
+    // Worker is abandoned, not terminated (Bun bug BUN-118B)
+    expect(worker.terminated).toBe(false)
     expect(WorkerMock.instances.length).toBe(instancesBefore + 1)
   })
 

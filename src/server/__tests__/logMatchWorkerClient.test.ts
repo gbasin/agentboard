@@ -132,7 +132,8 @@ describe('LogMatchWorkerClient', () => {
     client.dispose()
 
     await expect(promise).rejects.toThrow('Log match worker is disposed')
-    expect(worker.terminated).toBe(true)
+    // Worker is abandoned, not terminated (Bun bug BUN-118B)
+    expect(worker.terminated).toBe(false)
   })
 
   test('dispose during readiness wait rejects poll immediately', async () => {
@@ -169,7 +170,8 @@ describe('LogMatchWorkerClient', () => {
     worker.emitError('broken')
 
     await expect(promise).rejects.toThrow('Log match worker error')
-    expect(worker.terminated).toBe(true)
+    // Worker is abandoned, not terminated (Bun bug BUN-118B)
+    expect(worker.terminated).toBe(false)
     expect(WorkerMock.instances.length).toBe(instancesBefore + 1)
   })
 
@@ -191,7 +193,8 @@ describe('LogMatchWorkerClient', () => {
     worker.emitMessageError()
 
     await expect(promise).rejects.toThrow('Log match worker message error')
-    expect(worker.terminated).toBe(true)
+    // Worker is abandoned, not terminated (Bun bug BUN-118B)
+    expect(worker.terminated).toBe(false)
     expect(WorkerMock.instances.length).toBe(instancesBefore + 1)
   })
 })
