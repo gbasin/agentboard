@@ -275,6 +275,13 @@ async function bumpVersion(expectedVersion: string): Promise<string> {
   try {
     const packageJson = await Bun.file("package.json").json();
     packageJson.version = expectedVersion;
+    if (packageJson.optionalDependencies) {
+      for (const key of Object.keys(packageJson.optionalDependencies)) {
+        if (key.startsWith("agentboard-")) {
+          packageJson.optionalDependencies[key] = expectedVersion;
+        }
+      }
+    }
     await Bun.write("package.json", JSON.stringify(packageJson, null, 2) + "\n");
 
     spin.succeed(`Version bumped to: ${green(`v${expectedVersion}`)}`);

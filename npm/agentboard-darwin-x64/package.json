@@ -13,5 +13,8 @@
     "agentboard": "./bin/agentboard"
   },
   "files": ["bin/agentboard", "dist/client/**"],
-  "preferUnplugged": true
+  "preferUnplugged": true,
+  "engines": {
+    "node": ">=18"
+  }
 }

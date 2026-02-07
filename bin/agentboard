@@ -15,7 +15,13 @@ const PLATFORMS = {
 
 function getBinaryPath() {
   const platform = process.platform;
-  const arch = process.arch === "x64" ? "x64" : process.arch;
+  const supportedArch = { x64: "x64", arm64: "arm64" };
+  const arch = supportedArch[process.arch];
+  if (!arch) {
+    console.error(`Unsupported architecture: ${process.arch}`);
+    console.error(`Supported: ${Object.keys(supportedArch).join(", ")}`);
+    process.exit(1);
+  }
   const key = `${platform}-${arch}`;
 
   const pkg = PLATFORMS[key];

@@ -82,6 +82,7 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
+          set -e
           VERSION=${{ steps.version.outputs.version }}
 
           for platform in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do
@@ -92,7 +93,7 @@ jobs:
             cp -r ../../artifacts/agentboard-$platform/dist/client ./dist/client
             chmod +x ./bin/agentboard
             npm version $VERSION --no-git-tag-version
-            npm publish
+            npm publish --provenance
             cd ../..
           done
 
