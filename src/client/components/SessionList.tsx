@@ -175,6 +175,7 @@ export default function SessionList({
   const exitingSessions = useSessionStore((state) => state.exitingSessions)
   const clearExitingSession = useSessionStore((state) => state.clearExitingSession)
   const hostStatuses = useSessionStore((state) => state.hostStatuses)
+  const remoteAllowControl = useSessionStore((state) => state.remoteAllowControl)
 
   // Clean up exiting session state after animations
   useExitCleanup(sessions, exitingSessions, clearExitingSession, EXIT_DURATION)
@@ -532,7 +533,7 @@ export default function SessionList({
                         onStartEdit={() => setEditingSessionId(session.id)}
                         onCancelEdit={() => setEditingSessionId(null)}
                         onRename={(newName) => handleRename(session.id, newName)}
-                        onKill={onKill && !isRemote ? () => onKill(session.id) : undefined}
+                        onKill={onKill && (!isRemote || remoteAllowControl) ? () => onKill(session.id) : undefined}
                         onDuplicate={onDuplicate && !isRemote ? () => onDuplicate(session.id) : undefined}
                         onSetPinned={onSetPinned && session.agentSessionId ? (isPinned) => onSetPinned(session.agentSessionId!.trim(), isPinned) : undefined}
                       />

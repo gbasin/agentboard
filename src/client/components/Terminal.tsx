@@ -889,7 +889,7 @@ export default function Terminal({
             <Menu01Icon width={16} height={16} />
           </button>
           {/* Kill session button - desktop only, left of session name */}
-          {session && !isRemoteSession && (
+          {session && !isReadOnly && (
             <button
               onClick={() => setShowEndConfirm(true)}
               className="hidden md:flex h-7 w-7 items-center justify-center rounded bg-danger/10 border border-danger/30 text-danger hover:bg-danger/20 active:scale-95 transition-all shrink-0"
@@ -945,7 +945,7 @@ export default function Terminal({
           </button>
 
           {/* Kill session button - mobile only (desktop has it on left) */}
-          {session && !isRemoteSession && (
+          {session && !isReadOnly && (
             <button
               onClick={() => setShowEndConfirm(true)}
               className="flex md:hidden h-7 w-7 items-center justify-center rounded bg-danger/10 border border-danger/30 text-danger hover:bg-danger/20 active:scale-95 transition-all"
@@ -970,7 +970,7 @@ export default function Terminal({
 
               {showMoreMenu && (
                 <div className="absolute right-0 top-full mt-1 z-20 min-w-[140px] rounded-md border border-border bg-elevated shadow-lg py-1">
-                  {!isRemoteSession && (
+                  {!isReadOnly && (
                     <button
                       onClick={handleStartRename}
                       className="w-full px-3 py-2 text-left text-sm text-secondary hover:bg-hover hover:text-primary flex items-center gap-2"

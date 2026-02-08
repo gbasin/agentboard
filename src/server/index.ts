@@ -1144,8 +1144,28 @@ function handleKill(sessionId: string, ws: ServerWebSocket<WSData>) {
     send(ws, { type: 'kill-failed', sessionId, message: 'Session not found' })
     return
   }
-  if (session.remote) {
+  if (session.remote && !config.remoteAllowControl) {
     send(ws, { type: 'kill-failed', sessionId, message: 'Remote sessions are read-only' })
+    return
+  }
+  if (session.remote && config.remoteAllowControl && session.host) {
+    try {
+      const result = runRemoteTmux(session.host, ['kill-window', '-t', session.tmuxWindow])
+      if (result.exitCode !== 0) {
+        const stderr = result.stderr?.toString().trim() ?? 'Unknown error'
+        send(ws, { type: 'kill-failed', sessionId, message: stderr })
+        return
+      }
+      const remaining = registry.getAll().filter((item) => item.id !== sessionId)
+      registry.replaceSessions(remaining)
+      refreshSessions()
+    } catch (error) {
+      send(ws, {
+        type: 'kill-failed',
+        sessionId,
+        message: error instanceof Error ? error.message : 'Unable to kill remote session',
+      })
+    }
     return
   }
   if (session.source !== 'managed' && !config.allowKillExternal) {
@@ -1202,8 +1222,34 @@ function handleRename(
       return
     }
   }
-  if (session.remote) {
+  if (session.remote && !config.remoteAllowControl) {
     send(ws, { type: 'error', message: 'Remote sessions are read-only' })
+    return
+  }
+  if (session.remote && config.remoteAllowControl && session.host) {
+    const trimmed = newName.trim()
+    if (!trimmed) {
+      send(ws, { type: 'error', message: 'Name cannot be empty' })
+      return
+    }
+    if (!/^[\w-]+$/.test(trimmed)) {
+      send(ws, { type: 'error', message: 'Name can only contain letters, numbers, hyphens, and underscores' })
+      return
+    }
+    try {
+      const result = runRemoteTmux(session.host, ['rename-window', '-t', session.tmuxWindow, trimmed])
+      if (result.exitCode !== 0) {
+        const stderr = result.stderr?.toString().trim() ?? 'Unknown error'
+        send(ws, { type: 'error', message: stderr })
+        return
+      }
+      refreshSessions()
+    } catch (error) {
+      send(ws, {
+        type: 'error',
+        message: error instanceof Error ? error.message : 'Unable to rename remote session',
+      })
+    }
     return
   }
 
