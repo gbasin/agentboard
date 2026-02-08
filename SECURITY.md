@@ -24,8 +24,8 @@ Instead, please report them via:
 
 | Version | Supported |
 |---------|-----------|
-| Latest release on master branch | Yes |
-| Latest npm release (`@gbasin/agentboard`) | Yes |
+| Latest commit on the default branch | Yes |
+| Latest published npm package (`@gbasin/agentboard`) | Yes |
 | All other versions | No |
 
 
