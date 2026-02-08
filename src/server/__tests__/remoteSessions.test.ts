@@ -1,11 +1,18 @@
-import { describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect, test } from 'bun:test'
 import {
   parseTmuxWindows,
   buildRemoteSessionId,
   toIsoFromSeconds,
   splitSshOptions,
+  buildBatchCaptureCommand,
+  parseBatchCaptureOutput,
+  enrichSessionsWithStatus,
+  cleanupRemoteContentCache,
+  remoteContentCache,
+  PANE_SEPARATOR,
 } from '../remoteSessions'
 import { isValidHostname } from '../config'
+import type { Session } from '../../shared/types'
 
 describe('parseTmuxWindows', () => {
   const defaultPrefix = 'agentboard'
@@ -328,5 +335,344 @@ describe('isValidHostname', () => {
   test('rejects labels exceeding 63 characters', () => {
     const longLabel = 'a'.repeat(64)
     expect(isValidHostname(longLabel)).toBe(false)
+  })
+})
+
+// Helper to create a minimal Session for testing
+function makeSession(overrides: Partial<Session> & { id: string; tmuxWindow: string }): Session {
+  return {
+    name: 'test',
+    projectPath: '/home/user/project',
+    status: 'unknown',
+    lastActivity: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
+    agentType: 'claude',
+    source: 'external',
+    host: 'remote-host',
+    remote: true,
+    ...overrides,
+  }
+}
+
+describe('buildBatchCaptureCommand', () => {
+  test('returns empty string for empty sessions', () => {
+    expect(buildBatchCaptureCommand([])).toBe('')
+  })
+
+  test('generates command for a single session', () => {
+    const sessions = [makeSession({ id: 's1', tmuxWindow: 'main:0' })]
+    const cmd = buildBatchCaptureCommand(sessions)
+
+    expect(cmd).toContain('tmux display-message -t main:0')
+    expect(cmd).toContain("'#{pane_width} #{pane_height}'")
+    expect(cmd).toContain('tmux capture-pane -t main:0 -p -J')
+    expect(cmd).toContain(`echo '${PANE_SEPARATOR}'`)
+    expect(cmd).toContain('2>/dev/null')
+  })
+
+  test('generates batched command for multiple sessions', () => {
+    const sessions = [
+      makeSession({ id: 's1', tmuxWindow: 'main:0' }),
+      makeSession({ id: 's2', tmuxWindow: 'dev:1' }),
+    ]
+    const cmd = buildBatchCaptureCommand(sessions)
+
+    expect(cmd).toContain('tmux display-message -t main:0')
+    expect(cmd).toContain('tmux capture-pane -t main:0 -p -J')
+    expect(cmd).toContain('tmux display-message -t dev:1')
+    expect(cmd).toContain('tmux capture-pane -t dev:1 -p -J')
+    // Should have two separator echos
+    const sepCount = cmd.split(PANE_SEPARATOR).length - 1
+    expect(sepCount).toBe(2)
+  })
+
+  test('shell-quotes window targets with special characters', () => {
+    const sessions = [makeSession({ id: 's1', tmuxWindow: "my session:0" })]
+    const cmd = buildBatchCaptureCommand(sessions)
+
+    // shellQuote wraps strings with spaces in single quotes
+    expect(cmd).toContain("'my session:0'")
+  })
+})
+
+describe('parseBatchCaptureOutput', () => {
+  test('parses single session capture', () => {
+    const sessions = [makeSession({ id: 's1', tmuxWindow: 'main:0' })]
+    const output = `120 40\n$ claude\nThinking about your request...\n${PANE_SEPARATOR}\n`
+
+    const result = parseBatchCaptureOutput(output, sessions)
+
+    expect(result.size).toBe(1)
+    const pane = result.get('s1')!
+    expect(pane.width).toBe(120)
+    expect(pane.height).toBe(40)
+    expect(pane.content).toContain('$ claude')
+    expect(pane.content).toContain('Thinking about your request...')
+  })
+
+  test('parses multiple session captures', () => {
+    const sessions = [
+      makeSession({ id: 's1', tmuxWindow: 'main:0' }),
+      makeSession({ id: 's2', tmuxWindow: 'dev:1' }),
+    ]
+    const output = [
+      '80 24',
+      'content for session 1',
+      PANE_SEPARATOR,
+      '200 50',
+      'content for session 2',
+      PANE_SEPARATOR,
+    ].join('\n')
+
+    const result = parseBatchCaptureOutput(output, sessions)
+
+    expect(result.size).toBe(2)
+
+    const pane1 = result.get('s1')!
+    expect(pane1.width).toBe(80)
+    expect(pane1.height).toBe(24)
+    expect(pane1.content).toBe('content for session 1')
+
+    const pane2 = result.get('s2')!
+    expect(pane2.width).toBe(200)
+    expect(pane2.height).toBe(50)
+    expect(pane2.content).toBe('content for session 2')
+  })
+
+  test('skips empty segments (failed captures)', () => {
+    const sessions = [
+      makeSession({ id: 's1', tmuxWindow: 'main:0' }),
+      makeSession({ id: 's2', tmuxWindow: 'dead:1' }),
+      makeSession({ id: 's3', tmuxWindow: 'alive:2' }),
+    ]
+    // Second session failed (empty segment)
+    const output = [
+      '80 24',
+      'content 1',
+      PANE_SEPARATOR,
+      '', // empty segment for dead window
+      PANE_SEPARATOR,
+      '100 30',
+      'content 3',
+      PANE_SEPARATOR,
+    ].join('\n')
+
+    const result = parseBatchCaptureOutput(output, sessions)
+
+    expect(result.size).toBe(2)
+    expect(result.has('s1')).toBe(true)
+    expect(result.has('s2')).toBe(false)
+    expect(result.has('s3')).toBe(true)
+  })
+
+  test('strips trailing empty lines from content', () => {
+    const sessions = [makeSession({ id: 's1', tmuxWindow: 'main:0' })]
+    const output = [
+      '80 24',
+      'actual content',
+      '',
+      '',
+      '',
+      PANE_SEPARATOR,
+    ].join('\n')
+
+    const result = parseBatchCaptureOutput(output, sessions)
+    const pane = result.get('s1')!
+    expect(pane.content).toBe('actual content')
+  })
+
+  test('takes last 30 lines of content', () => {
+    const sessions = [makeSession({ id: 's1', tmuxWindow: 'main:0' })]
+    const contentLines = Array.from({ length: 50 }, (_, i) => `line ${i + 1}`)
+    const output = ['80 24', ...contentLines, PANE_SEPARATOR].join('\n')
+
+    const result = parseBatchCaptureOutput(output, sessions)
+    const pane = result.get('s1')!
+    const lines = pane.content.split('\n')
+    expect(lines).toHaveLength(30)
+    expect(lines[0]).toBe('line 21')
+    expect(lines[29]).toBe('line 50')
+  })
+
+  test('defaults dimensions to 80x24 for invalid values', () => {
+    const sessions = [makeSession({ id: 's1', tmuxWindow: 'main:0' })]
+    const output = `bad dims\ncontent\n${PANE_SEPARATOR}\n`
+
+    const result = parseBatchCaptureOutput(output, sessions)
+    const pane = result.get('s1')!
+    expect(pane.width).toBe(80)
+    expect(pane.height).toBe(24)
+  })
+
+  test('handles empty output', () => {
+    const sessions = [makeSession({ id: 's1', tmuxWindow: 'main:0' })]
+    const result = parseBatchCaptureOutput('', sessions)
+    expect(result.size).toBe(0)
+  })
+})
+
+describe('enrichSessionsWithStatus', () => {
+  beforeEach(() => {
+    remoteContentCache.clear()
+  })
+
+  test('sets status to waiting on first capture (no previous cache)', () => {
+    const sessions = [makeSession({ id: 's1', tmuxWindow: 'main:0' })]
+    const captures = new Map([
+      ['s1', { content: '$ claude\nReady for input', width: 80, height: 24 }],
+    ])
+
+    enrichSessionsWithStatus(sessions, captures, 1000, 4000)
+
+    expect(sessions[0].status).toBe('waiting')
+    expect(remoteContentCache.has('s1')).toBe(true)
+  })
+
+  test('sets status to working when content changes', () => {
+    // First call — establishes cache
+    const sessions1 = [makeSession({ id: 's1', tmuxWindow: 'main:0' })]
+    const captures1 = new Map([
+      ['s1', { content: 'initial content', width: 80, height: 24 }],
+    ])
+    enrichSessionsWithStatus(sessions1, captures1, 1000, 4000)
+    expect(sessions1[0].status).toBe('waiting')
+
+    // Second call — content changed
+    const sessions2 = [makeSession({ id: 's1', tmuxWindow: 'main:0' })]
+    const captures2 = new Map([
+      ['s1', { content: 'new different content', width: 80, height: 24 }],
+    ])
+    enrichSessionsWithStatus(sessions2, captures2, 2000, 4000)
+
+    expect(sessions2[0].status).toBe('working')
+  })
+
+  test('sets status to waiting when content unchanged and grace period expired', () => {
+    const sessions = [makeSession({ id: 's1', tmuxWindow: 'main:0' })]
+    const content = 'stable content'
+
+    // First call
+    const captures1 = new Map([['s1', { content, width: 80, height: 24 }]])
+    enrichSessionsWithStatus(sessions, captures1, 1000, 4000)
+
+    // Second call — content changed to establish hasEverChanged
+    const captures2 = new Map([['s1', { content: 'changed!', width: 80, height: 24 }]])
+    enrichSessionsWithStatus(sessions, captures2, 2000, 4000)
+
+    // Third call — content stable, but within grace period
+    const captures3 = new Map([['s1', { content: 'changed!', width: 80, height: 24 }]])
+    enrichSessionsWithStatus(sessions, captures3, 3000, 4000)
+    expect(sessions[0].status).toBe('working') // still within 4s grace
+
+    // Fourth call — content stable, grace period expired
+    const captures4 = new Map([['s1', { content: 'changed!', width: 80, height: 24 }]])
+    enrichSessionsWithStatus(sessions, captures4, 7000, 4000)
+    expect(sessions[0].status).toBe('waiting')
+  })
+
+  test('sets status to permission when prompt detected', () => {
+    const sessions = [makeSession({ id: 's1', tmuxWindow: 'main:0' })]
+    const content = '❯ 1. Yes\n2. No\nEsc to cancel'
+
+    // First call — establishes cache
+    const captures1 = new Map([
+      ['s1', { content: 'initial', width: 80, height: 24 }],
+    ])
+    enrichSessionsWithStatus(sessions, captures1, 1000, 4000)
+
+    // Second call — permission prompt, content unchanged (grace expired)
+    const captures2 = new Map([
+      ['s1', { content, width: 80, height: 24 }],
+    ])
+    enrichSessionsWithStatus(sessions, captures2, 10000, 4000)
+
+    // The content changed from 'initial' to the prompt, so this is 'working'
+    expect(sessions[0].status).toBe('working')
+
+    // Third call — same permission prompt, unchanged, grace expired
+    const captures3 = new Map([
+      ['s1', { content, width: 80, height: 24 }],
+    ])
+    enrichSessionsWithStatus(sessions, captures3, 20000, 4000)
+
+    expect(sessions[0].status).toBe('permission')
+  })
+
+  test('skips sessions without captures', () => {
+    const sessions = [
+      makeSession({ id: 's1', tmuxWindow: 'main:0' }),
+      makeSession({ id: 's2', tmuxWindow: 'dev:1' }),
+    ]
+    // Only s1 has a capture
+    const captures = new Map([
+      ['s1', { content: 'content', width: 80, height: 24 }],
+    ])
+
+    enrichSessionsWithStatus(sessions, captures, 1000, 4000)
+
+    expect(sessions[0].status).toBe('waiting')
+    expect(sessions[1].status).toBe('unknown') // unchanged
+  })
+
+  test('updates remoteContentCache', () => {
+    const sessions = [makeSession({ id: 's1', tmuxWindow: 'main:0' })]
+    const captures = new Map([
+      ['s1', { content: 'cached content', width: 100, height: 50 }],
+    ])
+
+    enrichSessionsWithStatus(sessions, captures, 5000, 4000)
+
+    const cached = remoteContentCache.get('s1')!
+    expect(cached.content).toBe('cached content')
+    expect(cached.width).toBe(100)
+    expect(cached.height).toBe(50)
+    expect(cached.lastChanged).toBe(5000)
+  })
+})
+
+describe('cleanupRemoteContentCache', () => {
+  beforeEach(() => {
+    remoteContentCache.clear()
+  })
+
+  test('removes entries not in active sessions', () => {
+    remoteContentCache.set('s1', {
+      content: 'a', width: 80, height: 24, lastChanged: 0, hasEverChanged: false,
+    })
+    remoteContentCache.set('s2', {
+      content: 'b', width: 80, height: 24, lastChanged: 0, hasEverChanged: false,
+    })
+    remoteContentCache.set('s3', {
+      content: 'c', width: 80, height: 24, lastChanged: 0, hasEverChanged: false,
+    })
+
+    const activeSessions = [
+      makeSession({ id: 's1', tmuxWindow: 'main:0' }),
+      makeSession({ id: 's3', tmuxWindow: 'dev:2' }),
+    ]
+
+    cleanupRemoteContentCache(activeSessions)
+
+    expect(remoteContentCache.has('s1')).toBe(true)
+    expect(remoteContentCache.has('s2')).toBe(false)
+    expect(remoteContentCache.has('s3')).toBe(true)
+  })
+
+  test('clears all entries when no active sessions', () => {
+    remoteContentCache.set('s1', {
+      content: 'a', width: 80, height: 24, lastChanged: 0, hasEverChanged: false,
+    })
+
+    cleanupRemoteContentCache([])
+
+    expect(remoteContentCache.size).toBe(0)
+  })
+
+  test('handles empty cache gracefully', () => {
+    cleanupRemoteContentCache([
+      makeSession({ id: 's1', tmuxWindow: 'main:0' }),
+    ])
+
+    expect(remoteContentCache.size).toBe(0)
   })
 })
