@@ -48,10 +48,10 @@
         "vite": "^5.4.11",
       },
       "optionalDependencies": {
-        "@gbasin/agentboard-darwin-arm64": "0.1.0",
-        "@gbasin/agentboard-darwin-x64": "0.1.0",
-        "@gbasin/agentboard-linux-arm64": "0.1.0",
-        "@gbasin/agentboard-linux-x64": "0.1.0",
+        "@gbasin/agentboard-darwin-arm64": "0.1.9",
+        "@gbasin/agentboard-darwin-x64": "0.1.9",
+        "@gbasin/agentboard-linux-arm64": "0.1.9",
+        "@gbasin/agentboard-linux-x64": "0.1.9",
       },
     },
   },
@@ -165,6 +165,14 @@
     "@floating-ui/utils": ["@floating-ui/utils@0.2.10", "", {}, "sha512-aGTxbpbg8/b5JfU1HXSrbH3wXZuLPJcNEcZQFMxLs3oSzgtVu6nFPkbbGGUvBcUjKV2YyB9Wxxabo+HEH9tcRQ=="],
 
     "@fontsource-variable/jetbrains-mono": ["@fontsource-variable/jetbrains-mono@5.2.8", "", {}, "sha512-WBA9elru6Jdp5df2mES55wuOO0WIrn3kpXnI4+W2ek5u3ZgLS9XS4gmIlcQhiZOWEKl95meYdvK7xI+ETLCq/Q=="],
+
+    "@gbasin/agentboard-darwin-arm64": ["@gbasin/agentboard-darwin-arm64@0.1.9", "", { "os": "darwin", "cpu": "arm64" }, "sha512-d6Wll2pIq900tJUR2oCcZe0iUKJ864gf/iyLB1Lb5e81KkuS5v4PeRAT/YV3eXwCPVHAI8Zcy/euOizf24v6pg=="],
+
+    "@gbasin/agentboard-darwin-x64": ["@gbasin/agentboard-darwin-x64@0.1.9", "", { "os": "darwin", "cpu": "x64" }, "sha512-YJ4aZP84fe1mCAxau2hybamirom3+DNvgPuhSpHsMaA5IL7KELl/jAZAA1omy713SZ0DkkfLIucZ9t+xJgOW2g=="],
+
+    "@gbasin/agentboard-linux-arm64": ["@gbasin/agentboard-linux-arm64@0.1.9", "", { "os": "linux", "cpu": "arm64" }, "sha512-A0LRH+zObgLdPgsvtj+VjNL5bXZmIM5t8b2t5PR8np0BXBh6ZEVKCh1rSSb+dOsdxnL3tEDXqWKBNdSNhjXbpQ=="],
+
+    "@gbasin/agentboard-linux-x64": ["@gbasin/agentboard-linux-x64@0.1.9", "", { "os": "linux", "cpu": "x64" }, "sha512-KawmhdJbTDdtMloI9BSmd8ARw8/Hnr5XPpswx1IFi5BNDEUiqoU5cpK94yrrfh0lRA1Q6bNBojAp4nPjkdRBFg=="],
 
     "@jridgewell/gen-mapping": ["@jridgewell/gen-mapping@0.3.13", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.5.0", "@jridgewell/trace-mapping": "^0.3.24" } }, "sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA=="],
 
