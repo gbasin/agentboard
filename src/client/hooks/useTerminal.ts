@@ -465,6 +465,9 @@ export function useTerminal({
         if (!navigator.clipboard?.readText) {
           return true
         }
+        // Block the browser's native paste event so the ClipboardAddon
+        // doesn't also paste — we handle everything in the async block below.
+        event.preventDefault()
         void (async () => {
           const attached = attachedSessionRef.current
           if (!attached) return
@@ -483,13 +486,19 @@ export function useTerminal({
             }
           } catch { /* not on macOS or endpoint unavailable */ }
 
-          // Normal paste - use terminal.paste() for proper bracket paste behavior
+          // Paste via bracket paste so the terminal app (e.g. Claude Code)
+          // receives the paste signal. For text this pastes normally; for
+          // images the text is empty but Claude Code detects the bracket
+          // paste and reads the macOS system clipboard for image data.
           try {
             const text = await navigator.clipboard.readText()
-            if (text) {
-              terminal.paste(text)
-            }
-          } catch { /* clipboard not available */ }
+            terminal.paste(text)
+          } catch {
+            // Clipboard read failed (permissions revoked, etc.) — send
+            // empty bracket paste so the terminal app can still try to
+            // read the system clipboard directly.
+            terminal.paste('')
+          }
         })()
         return false // Prevent xterm.js native paste handling
       }
