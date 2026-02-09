@@ -45,7 +45,8 @@ import {
 } from './validators'
 import { RemoteSessionPoller, splitSshOptions, buildRemoteSessionId } from './remoteSessions'
 import { generateSessionName } from './nameGenerator'
-import { shellQuote, SshTerminalProxy } from './terminal/SshTerminalProxy'
+import { shellQuote } from './shellQuote'
+import { SshTerminalProxy } from './terminal/SshTerminalProxy'
 
 function checkPortAvailable(port: number): void {
   let result: ReturnType<typeof Bun.spawnSync>
@@ -1293,6 +1294,10 @@ function handleKill(sessionId: string, ws: ServerWebSocket<WSData>) {
     send(ws, { type: 'kill-failed', sessionId, message: 'Session not found' })
     return
   }
+  if (session.remote && !session.host) {
+    send(ws, { type: 'kill-failed', sessionId, message: 'Remote session has no host' })
+    return
+  }
   if (session.remote && !config.remoteAllowControl) {
     send(ws, { type: 'kill-failed', sessionId, message: 'Remote sessions are read-only' })
     return
@@ -1376,6 +1381,10 @@ function handleRename(
       send(ws, { type: 'error', message: 'Session not found' })
       return
     }
+  }
+  if (session.remote && !session.host) {
+    send(ws, { type: 'error', message: 'Remote session has no host' })
+    return
   }
   if (session.remote && !config.remoteAllowControl) {
     send(ws, { type: 'error', message: 'Remote sessions are read-only' })

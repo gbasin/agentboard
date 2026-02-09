@@ -6,7 +6,7 @@ import {
   type PaneCacheState,
   type PaneSnapshot,
 } from './statusInference'
-import { shellQuote } from './terminal/SshTerminalProxy'
+import { shellQuote } from './shellQuote'
 import type { HostStatus, Session } from '../shared/types'
 
 const DEFAULT_SSH_OPTIONS = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=3']

@@ -295,6 +295,7 @@ export default function App() {
     setAgentSessions,
     setHostStatuses,
     setRemoteAllowControl,
+    setRemoteAllowAttach,
     setHostLabel,
     subscribe,
     updateSession,

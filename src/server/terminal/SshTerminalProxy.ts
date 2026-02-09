@@ -3,18 +3,9 @@
 // and tunnels all tmux interactions via SSH.
 
 import { logger } from '../logger'
+import { shellQuote } from '../shellQuote'
 import { TerminalProxyBase } from './TerminalProxyBase'
 import { TerminalProxyError, TerminalState } from './types'
-
-/**
- * Shell-quote a string for safe passage through a remote bash shell.
- * Simple args (alphanumeric + common safe chars) pass through unquoted.
- * Everything else gets single-quoted with internal quotes escaped.
- */
-function shellQuote(s: string): string {
-  if (/^[a-zA-Z0-9._\-/:@+=]+$/.test(s)) return s
-  return "'" + s.replace(/'/g, "'\\''") + "'"
-}
 
 class SshTerminalProxy extends TerminalProxyBase {
   private process: ReturnType<typeof Bun.spawn> | null = null
@@ -351,4 +342,4 @@ class SshTerminalProxy extends TerminalProxyBase {
   }
 }
 
-export { shellQuote, SshTerminalProxy }
+export { SshTerminalProxy }

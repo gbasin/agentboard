@@ -225,6 +225,7 @@ export default function NewSessionModal({
                 value={selectedHost}
                 onChange={(event) => {
                   setSelectedHost(event.target.value)
+                  setShowBrowser(false)
                   // Clear project path when switching to/from remote since local paths don't apply
                   if (event.target.value && !selectedHost) {
                     setProjectPath('')

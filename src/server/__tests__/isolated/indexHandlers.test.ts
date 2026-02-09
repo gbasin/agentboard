@@ -359,6 +359,23 @@ mock.module('../../terminal', () => ({
   resolveTerminalMode: () => 'pty',
   TerminalProxyError: TerminalProxyErrorMock,
 }))
+mock.module('../../shellQuote', () => ({
+  shellQuote: (s: string) => {
+    if (/^[a-zA-Z0-9._\-/:@+=]+$/.test(s)) return s
+    return "'" + s.replace(/'/g, "'\\''") + "'"
+  },
+}))
+
+class SshTerminalProxyMock extends TerminalProxyMock {
+  host: string
+  constructor(options: ConstructorParameters<typeof TerminalProxyMock>[0] & { host?: string }) {
+    super(options)
+    this.host = options.host ?? ''
+  }
+}
+mock.module('../../terminal/SshTerminalProxy', () => ({
+  SshTerminalProxy: SshTerminalProxyMock,
+}))
 
 const baseSession: Session = {
   id: 'session-1',
@@ -2358,5 +2375,118 @@ describe('remoteAllowAttach permission split', () => {
       type: 'error',
       message: 'Remote session creation is disabled',
     })
+  })
+
+  test('blocks remote terminal-attach when remoteAllowAttach is false', async () => {
+    const remoteSession: Session = {
+      ...baseSession,
+      id: 'remote-1',
+      remote: true,
+      host: 'remote-host',
+      tmuxWindow: 'remote:1',
+    }
+    const { serveOptions, registryInstance } = await loadIndex()
+    registryInstance.sessions = [remoteSession]
+
+    const { ws, sent } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) throw new Error('WebSocket handlers not configured')
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({
+        type: 'terminal-attach',
+        sessionId: 'remote-1',
+        tmuxTarget: 'remote:1',
+      })
+    )
+
+    await new Promise((r) => setTimeout(r, 0))
+
+    const errorMsg = sent.find((m) => m.type === 'terminal-error')
+    expect(errorMsg).toBeTruthy()
+    if (errorMsg && errorMsg.type === 'terminal-error') {
+      expect(errorMsg.message).toContain('read-only')
+    }
+  })
+
+  test('allows remote terminal-attach when remoteAllowAttach is true and uses SSH proxy', async () => {
+    configState.remoteAllowAttach = true
+    const remoteSession: Session = {
+      ...baseSession,
+      id: 'remote-1',
+      remote: true,
+      host: 'remote-host',
+      tmuxWindow: 'remote:1',
+    }
+    const { serveOptions, registryInstance } = await loadIndex()
+    registryInstance.sessions = [remoteSession]
+
+    const { ws, sent } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) throw new Error('WebSocket handlers not configured')
+
+    websocket.open?.(ws as never)
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({
+        type: 'terminal-attach',
+        sessionId: 'remote-1',
+        tmuxTarget: 'remote:1',
+      })
+    )
+
+    await new Promise((r) => setTimeout(r, 50))
+
+    // Should have sent terminal-ready (not an error)
+    const readyMsg = sent.find(
+      (m) => m.type === 'terminal-ready' && 'sessionId' in m && m.sessionId === 'remote-1'
+    )
+    expect(readyMsg).toBeTruthy()
+
+    // Should NOT have sent terminal-error for this session
+    const errorMsg = sent.find(
+      (m) => m.type === 'terminal-error' && 'sessionId' in m && m.sessionId === 'remote-1'
+    )
+    expect(errorMsg).toBeUndefined()
+
+    // ws.data should track the remote host
+    expect(ws.data.currentSessionId).toBe('remote-1')
+  })
+
+  test('blocks remote terminal-input when remoteAllowAttach is false', async () => {
+    const remoteSession: Session = {
+      ...baseSession,
+      id: 'remote-1',
+      remote: true,
+      host: 'remote-host',
+      tmuxWindow: 'remote:1',
+    }
+    const { serveOptions, registryInstance } = await loadIndex()
+    registryInstance.sessions = [remoteSession]
+
+    const { ws } = createWs()
+    ws.data.currentSessionId = 'remote-1'
+    ws.data.terminal = new TerminalProxyMock({
+      connectionId: 'ws-test',
+      sessionName: 'test',
+      baseSession: '',
+      onData: () => {},
+    })
+    const websocket = serveOptions.websocket
+    if (!websocket) throw new Error('WebSocket handlers not configured')
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({
+        type: 'terminal-input',
+        sessionId: 'remote-1',
+        data: 'hello',
+      })
+    )
+
+    // Input should be silently dropped (not forwarded to terminal)
+    expect(ws.data.terminal.writes).toEqual([])
   })
 })

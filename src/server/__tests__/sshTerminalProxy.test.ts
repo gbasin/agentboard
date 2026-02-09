@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { shellQuote, SshTerminalProxy } from '../terminal/SshTerminalProxy'
+import { shellQuote } from '../shellQuote'
+import { SshTerminalProxy } from '../terminal/SshTerminalProxy'
 import type { SpawnSyncFn, TerminalProxyOptions } from '../terminal/types'
 
 // Subclass to expose protected runTmux for testing
@@ -93,6 +94,39 @@ describe('shellQuote', () => {
     expect(shellQuote('#{pane_width} #{pane_height}')).toBe(
       "'#{pane_width} #{pane_height}'"
     )
+  })
+
+  test('neutralizes injection attempts in project paths and commands', () => {
+    // Semicolons cannot break out of quoting — entire payload is single-quoted
+    const quoted1 = shellQuote('/tmp; rm -rf /')
+    expect(quoted1).toBe("'/tmp; rm -rf /'")
+    expect(quoted1.startsWith("'")).toBe(true)
+    expect(quoted1.endsWith("'")).toBe(true)
+
+    // Subshell $() expansion is quoted
+    const quoted2 = shellQuote('$(whoami)')
+    expect(quoted2).toBe("'$(whoami)'")
+
+    // Backtick expansion is quoted
+    const quoted3 = shellQuote('`cat /etc/passwd`')
+    expect(quoted3).toBe("'`cat /etc/passwd`'")
+
+    // Single quotes within injection payloads are escaped
+    const quoted4 = shellQuote("'; rm -rf / '")
+    expect(quoted4).toBe("''\\''; rm -rf / '\\'''")
+    // Starts and ends with single quotes (properly wrapped)
+    expect(quoted4.startsWith("'")).toBe(true)
+    expect(quoted4.endsWith("'")).toBe(true)
+
+    // Pipe and redirect operators are quoted
+    expect(shellQuote('/tmp | cat /etc/shadow')).toBe("'/tmp | cat /etc/shadow'")
+    expect(shellQuote('/tmp > /etc/crontab')).toBe("'/tmp > /etc/crontab'")
+
+    // Newlines (command separator) are quoted
+    expect(shellQuote('/tmp\nrm -rf /')).toBe("'/tmp\nrm -rf /'")
+
+    // Null bytes are quoted
+    expect(shellQuote('/tmp\0evil')).toBe("'/tmp\0evil'")
   })
 })
 

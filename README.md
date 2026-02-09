@@ -22,7 +22,7 @@ Run your desktop/server, then connect from your phone or laptop over Tailscale/L
 
 ```
 ┌─────────────┐    SSH     ┌─────────────┐
-│ Remote Host ├───────────►│             │   WebSocket    ┌────────────┐
+│ Remote Host ├───────────►│             │   WebSocket   ┌────────────┐
 │ (tmux)      │            │  Agentboard ├──────────────►│  Browser   │
 └─────────────┘    tmux    │  Server     │               │  (React +  │
 ┌─────────────┐    CLI     │             │               │  xterm.js) │
@@ -31,7 +31,7 @@ Run your desktop/server, then connect from your phone or laptop over Tailscale/L
 └─────────────┘            │  - parse    │
 ┌─────────────┐    read    │    agent    │
 │ Agent logs  ├───────────►│    logs     │
-│ (~/.claude/) │            └─────────────┘
+│ ~/.claude/  │            └─────────────┘
 └─────────────┘
 ```
 
