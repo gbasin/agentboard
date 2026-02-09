@@ -163,4 +163,11 @@ export const config = {
   remoteStaleMs,
   remoteSshOpts,
   remoteAllowControl,
+  // Optional command allowlist for session-create (defense-in-depth against RCE)
+  // Comma-separated binary names, e.g. "claude,codex,aider"
+  // Empty/unset = allow all commands that pass metacharacter check
+  allowedCommands: (process.env.AGENTBOARD_ALLOWED_COMMANDS || '')
+    .split(',')
+    .map((c) => c.trim())
+    .filter(Boolean),
 }

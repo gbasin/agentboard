@@ -42,6 +42,7 @@ import {
   MAX_FIELD_LENGTH,
   isValidSessionId,
   isValidTmuxTarget,
+  isValidSessionCommand,
 } from './validators'
 import { RemoteSessionPoller } from './remoteSessions'
 
@@ -901,6 +902,29 @@ Bun.serve<WSData>({
   fetch(req, server) {
     const url = new URL(req.url)
     if (url.pathname === '/ws') {
+      // Origin validation — prevent cross-site WebSocket hijacking (CSWSH)
+      const origin = req.headers.get('origin')
+      if (origin) {
+        try {
+          const originUrl = new URL(origin)
+          const requestHost = url.hostname
+          const originHost = originUrl.hostname
+          const isSameHost = originHost === requestHost
+          const isLocalhost =
+            originHost === 'localhost' ||
+            originHost === '127.0.0.1' ||
+            originHost === '[::1]'
+          if (!isSameHost && !isLocalhost) {
+            logger.warn('ws_origin_rejected', { origin, requestHost })
+            return new Response('Forbidden: origin not allowed', { status: 403 })
+          }
+        } catch {
+          logger.warn('ws_origin_invalid', { origin })
+          return new Response('Forbidden: invalid origin', { status: 403 })
+        }
+      }
+      // null / missing origin = non-browser client (curl, etc.) — allow
+
       if (
         server.upgrade(req, {
           data: {
@@ -1012,7 +1036,12 @@ function handleMessage(
     case 'session-refresh':
       refreshSessions()
       return
-    case 'session-create':
+    case 'session-create': {
+      const cmdCheck = isValidSessionCommand(message.command, config.allowedCommands)
+      if (!cmdCheck.valid) {
+        send(ws, { type: 'error', message: cmdCheck.reason ?? 'Invalid command' })
+        return
+      }
       try {
         const created = stampLocalSession(sessionManager.createWindow(
           message.projectPath,
@@ -1032,6 +1061,7 @@ function handleMessage(
         })
       }
       return
+    }
     case 'session-kill':
       handleKill(message.sessionId, ws)
       return
