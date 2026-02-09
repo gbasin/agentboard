@@ -1,4 +1,4 @@
-import { inferAgentType } from './agentDetection'
+import { inferAgentType, normalizePaneStartCommand } from './agentDetection'
 import { config } from './config'
 import { logger } from './logger'
 import {
@@ -405,7 +405,8 @@ function parseTmuxWindows(
     const tmuxWindow = `${sessionName}:${stableId}`
     const createdAt = toIsoFromSeconds(createdRaw, now)
     const lastActivity = toIsoFromSeconds(activityRaw, now)
-    const agentType = inferAgentType(command || '')
+    const normalizedCommand = normalizePaneStartCommand(command || '')
+    const agentType = inferAgentType(normalizedCommand)
     const id = buildRemoteSessionId(host, sessionName, windowIndex, windowId)
     const displayName = windowName || sessionName || tmuxWindow
 
@@ -421,7 +422,7 @@ function parseTmuxWindows(
       source: 'external',
       host,
       remote: true,
-      command: command || undefined,
+      command: normalizedCommand || undefined,
     })
   }
 

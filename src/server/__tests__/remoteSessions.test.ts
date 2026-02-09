@@ -40,6 +40,26 @@ describe('parseTmuxWindows', () => {
     expect(sessions[1].tmuxWindow).toBe('main:@2')
   })
 
+  test('unwraps bash -lc/-lic wrappers from pane_start_command', () => {
+    const output = [
+      "main\\t0\\t@1\\twindow-name\\t/home/user/project\\t1706745600\\t1706745000\\tbash -lic claude",
+      "main\\t1\\t@2\\teditor\\t/home/user/code\\t1706745700\\t1706745100\\tbash -lc 'claude --model opus'",
+      "main\\t2\\t@3\\tshell\\t/home/user\\t1706745800\\t1706745200\\tbash -lic bash",
+    ].join('\n')
+
+    const sessions = parseTmuxWindows('remote-host', output, defaultPrefix, noPrefixes)
+
+    expect(sessions).toHaveLength(3)
+    expect(sessions[0].command).toBe('claude')
+    expect(sessions[0].agentType).toBe('claude')
+
+    expect(sessions[1].command).toBe('claude --model opus')
+    expect(sessions[1].agentType).toBe('claude')
+
+    expect(sessions[2].command).toBe('bash')
+    expect(sessions[2].agentType).toBeUndefined()
+  })
+
   test('skips malformed lines with fewer than 8 fields', () => {
     const output = [
       'incomplete\\tline\\tonly',
