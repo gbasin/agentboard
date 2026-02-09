@@ -113,8 +113,8 @@ export default function Terminal({
   const renameInputRef = useRef<HTMLInputElement>(null)
   const endSessionButtonRef = useRef<HTMLButtonElement>(null)
   const isRemoteSession = session?.remote === true
-  const remoteAllowControl = useSessionStore((s) => s.remoteAllowControl)
-  const isReadOnly = isRemoteSession && !remoteAllowControl
+  const remoteAllowAttach = useSessionStore((s) => s.remoteAllowAttach)
+  const isReadOnly = isRemoteSession && !remoteAllowAttach
 
   const { containerRef, terminalRef, inTmuxCopyModeRef, setTmuxCopyMode } = useTerminal({
     sessionId: session?.id ?? null,

@@ -122,6 +122,7 @@ const remoteStaleMs = Number.isFinite(remoteStaleMsRaw)
 
 const remoteSshOpts = process.env.AGENTBOARD_REMOTE_SSH_OPTS || ''
 const remoteAllowControl = process.env.AGENTBOARD_REMOTE_ALLOW_CONTROL === 'true'
+const remoteAllowAttach = process.env.AGENTBOARD_REMOTE_ALLOW_ATTACH === 'true' || remoteAllowControl
 
 export const config = {
   port: Number(process.env.PORT) || 4040,
@@ -163,4 +164,5 @@ export const config = {
   remoteStaleMs,
   remoteSshOpts,
   remoteAllowControl,
+  remoteAllowAttach,
 }

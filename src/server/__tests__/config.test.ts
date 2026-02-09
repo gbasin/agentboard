@@ -28,6 +28,7 @@ const ORIGINAL_ENV = {
   AGENTBOARD_REMOTE_STALE_MS: process.env.AGENTBOARD_REMOTE_STALE_MS,
   AGENTBOARD_REMOTE_SSH_OPTS: process.env.AGENTBOARD_REMOTE_SSH_OPTS,
   AGENTBOARD_REMOTE_ALLOW_CONTROL: process.env.AGENTBOARD_REMOTE_ALLOW_CONTROL,
+  AGENTBOARD_REMOTE_ALLOW_ATTACH: process.env.AGENTBOARD_REMOTE_ALLOW_ATTACH,
 }
 
 const ENV_KEYS = Object.keys(ORIGINAL_ENV) as Array<keyof typeof ORIGINAL_ENV>
@@ -73,6 +74,7 @@ async function loadConfig(tag: string) {
     remoteStaleMs: number
     remoteSshOpts: string
     remoteAllowControl: boolean
+    remoteAllowAttach: boolean
   }
 }
 
@@ -111,6 +113,7 @@ describe('config', () => {
     expect(config.remoteStaleMs).toBe(15000)
     expect(config.remoteSshOpts).toBe('')
     expect(config.remoteAllowControl).toBe(false)
+    expect(config.remoteAllowAttach).toBe(false)
   })
 
   test('parses env overrides and trims discover prefixes', async () => {
@@ -168,5 +171,28 @@ describe('config', () => {
     expect(config.remoteStaleMs).toBe(50000)
     expect(config.remoteSshOpts).toBe('-o StrictHostKeyChecking=accept-new')
     expect(config.remoteAllowControl).toBe(true)
+    expect(config.remoteAllowAttach).toBe(true)
+  })
+
+  test('REMOTE_ALLOW_ATTACH=true works without REMOTE_ALLOW_CONTROL', async () => {
+    for (const key of ENV_KEYS) {
+      delete process.env[key]
+    }
+    process.env.AGENTBOARD_REMOTE_ALLOW_ATTACH = 'true'
+
+    const config = await loadConfig('attach-only')
+    expect(config.remoteAllowAttach).toBe(true)
+    expect(config.remoteAllowControl).toBe(false)
+  })
+
+  test('REMOTE_ALLOW_CONTROL=true implies REMOTE_ALLOW_ATTACH=true', async () => {
+    for (const key of ENV_KEYS) {
+      delete process.env[key]
+    }
+    process.env.AGENTBOARD_REMOTE_ALLOW_CONTROL = 'true'
+
+    const config = await loadConfig('control-implies-attach')
+    expect(config.remoteAllowControl).toBe(true)
+    expect(config.remoteAllowAttach).toBe(true)
   })
 })

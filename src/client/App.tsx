@@ -51,6 +51,7 @@ export default function App() {
   const clearExitingSession = useSessionStore((state) => state.clearExitingSession)
   const markSessionExiting = useSessionStore((state) => state.markSessionExiting)
   const setRemoteAllowControl = useSessionStore((state) => state.setRemoteAllowControl)
+  const setRemoteAllowAttach = useSessionStore((state) => state.setRemoteAllowAttach)
   const setHostLabel = useSessionStore((state) => state.setHostLabel)
   const hostStatuses = useSessionStore((state) => state.hostStatuses)
   const hostLabel = useSessionStore((state) => state.hostLabel)
@@ -171,6 +172,7 @@ export default function App() {
       }
       if (message.type === 'server-config') {
         setRemoteAllowControl(message.remoteAllowControl)
+        setRemoteAllowAttach(message.remoteAllowAttach)
         setHostLabel(message.hostLabel)
       }
       if (message.type === 'session-update') {

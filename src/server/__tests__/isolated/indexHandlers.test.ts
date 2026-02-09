@@ -59,6 +59,7 @@ const defaultConfig = {
   remoteStaleMs: 45000,
   remoteSshOpts: '',
   remoteAllowControl: false,
+  remoteAllowAttach: false,
 }
 
 const configState = { ...defaultConfig }
@@ -2189,5 +2190,173 @@ describe('server startup side effects', () => {
     )
     expect(killCalls).toHaveLength(1)
     expect(killCalls[0]).toEqual(['tmux', 'kill-session', '-t', 'agentboard-ws-1'])
+  })
+})
+
+describe('remoteAllowAttach permission split', () => {
+  test('server-config message includes remoteAllowAttach', async () => {
+    configState.remoteAllowAttach = true
+    const { serveOptions, registryInstance } = await loadIndex()
+    registryInstance.sessions = []
+
+    const { ws, sent } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) throw new Error('WebSocket handlers not configured')
+    websocket.open?.(ws as never)
+
+    const configMsg = sent.find((m) => m.type === 'server-config')
+    expect(configMsg).toMatchObject({
+      type: 'server-config',
+      remoteAllowAttach: true,
+      remoteAllowControl: false,
+    })
+  })
+
+  test('blocks remote kill on external remote session even with control=true', async () => {
+    configState.remoteAllowControl = true
+    configState.remoteAllowAttach = true
+    const externalRemote: Session = {
+      ...baseSession,
+      id: 'ext-remote-1',
+      remote: true,
+      host: 'remote-host',
+      tmuxWindow: 'remote:1',
+      source: 'external',
+    }
+    const { serveOptions, registryInstance } = await loadIndex()
+    registryInstance.sessions = [externalRemote]
+
+    const { ws, sent } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) throw new Error('WebSocket handlers not configured')
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({ type: 'session-kill', sessionId: 'ext-remote-1' })
+    )
+
+    expect(sent[sent.length - 1]).toEqual({
+      type: 'kill-failed',
+      sessionId: 'ext-remote-1',
+      message: 'Cannot kill external remote sessions',
+    })
+  })
+
+  test('blocks remote rename on external remote session even with control=true', async () => {
+    configState.remoteAllowControl = true
+    configState.remoteAllowAttach = true
+    const externalRemote: Session = {
+      ...baseSession,
+      id: 'ext-remote-1',
+      remote: true,
+      host: 'remote-host',
+      tmuxWindow: 'remote:1',
+      source: 'external',
+    }
+    const { serveOptions, registryInstance } = await loadIndex()
+    registryInstance.sessions = [externalRemote]
+
+    const { ws, sent } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) throw new Error('WebSocket handlers not configured')
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({ type: 'session-rename', sessionId: 'ext-remote-1', newName: 'new-name' })
+    )
+
+    expect(sent[sent.length - 1]).toEqual({
+      type: 'error',
+      message: 'Cannot rename external remote sessions',
+    })
+  })
+
+  test('allows kill of managed remote session with control=true', async () => {
+    configState.remoteAllowControl = true
+    configState.remoteAllowAttach = true
+    const managedRemote: Session = {
+      ...baseSession,
+      id: 'managed-remote-1',
+      remote: true,
+      host: 'remote-host',
+      tmuxWindow: 'remote:1',
+      source: 'managed',
+    }
+    const { serveOptions, registryInstance } = await loadIndex()
+    registryInstance.sessions = [managedRemote]
+    sessionManagerState.listWindows = () => []
+
+    spawnSyncImpl = ((..._args: Parameters<typeof Bun.spawnSync>) => ({
+      exitCode: 0,
+      stdout: Buffer.from(''),
+      stderr: Buffer.from(''),
+    })) as typeof Bun.spawnSync
+
+    const { ws, sent } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) throw new Error('WebSocket handlers not configured')
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({ type: 'session-kill', sessionId: 'managed-remote-1' })
+    )
+
+    // Should not send kill-failed
+    expect(sent.find((m) => m.type === 'kill-failed')).toBeUndefined()
+    // Session should be removed from registry
+    expect(registryInstance.sessions.find((s) => s.id === 'managed-remote-1')).toBeUndefined()
+  })
+
+  test('allows rename of managed remote session with control=true', async () => {
+    configState.remoteAllowControl = true
+    configState.remoteAllowAttach = true
+    const managedRemote: Session = {
+      ...baseSession,
+      id: 'managed-remote-1',
+      remote: true,
+      host: 'remote-host',
+      tmuxWindow: 'remote:1',
+      source: 'managed',
+    }
+    const { serveOptions, registryInstance } = await loadIndex()
+    registryInstance.sessions = [managedRemote]
+
+    spawnSyncImpl = ((..._args: Parameters<typeof Bun.spawnSync>) => ({
+      exitCode: 0,
+      stdout: Buffer.from(''),
+      stderr: Buffer.from(''),
+    })) as typeof Bun.spawnSync
+
+    const { ws, sent } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) throw new Error('WebSocket handlers not configured')
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({ type: 'session-rename', sessionId: 'managed-remote-1', newName: 'renamed' })
+    )
+
+    // Should not send error
+    expect(sent.find((m) => m.type === 'error')).toBeUndefined()
+  })
+
+  test('blocks remote session creation when only attach is enabled', async () => {
+    configState.remoteAllowAttach = true
+    configState.remoteHosts = ['remote-host']
+    const { serveOptions } = await loadIndex()
+
+    const { ws, sent } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) throw new Error('WebSocket handlers not configured')
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({ type: 'session-create', projectPath: '/tmp/test', host: 'remote-host' })
+    )
+
+    expect(sent[sent.length - 1]).toEqual({
+      type: 'error',
+      message: 'Remote session creation is disabled',
+    })
   })
 })

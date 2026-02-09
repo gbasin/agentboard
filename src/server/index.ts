@@ -929,7 +929,7 @@ Bun.serve<WSData>({
       sockets.add(ws)
       send(ws, { type: 'sessions', sessions: registry.getAll() })
       send(ws, { type: 'host-status', hosts: hostStatuses })
-      send(ws, { type: 'server-config', remoteAllowControl: config.remoteAllowControl, hostLabel: localHostLabel })
+      send(ws, { type: 'server-config', remoteAllowControl: config.remoteAllowControl, remoteAllowAttach: config.remoteAllowAttach, hostLabel: localHostLabel })
       const agentSessions = registry.getAgentSessions()
       send(ws, {
         type: 'agent-sessions',
@@ -1243,7 +1243,7 @@ function handleRemoteCreate(
 function handleCancelCopyMode(sessionId: string, ws: ServerWebSocket<WSData>) {
   const session = registry.get(sessionId)
   if (!session) return
-  if (session.remote && !config.remoteAllowControl) return
+  if (session.remote && !config.remoteAllowAttach) return
 
   try {
     // Exit tmux copy-mode quietly.
@@ -1264,7 +1264,7 @@ function handleCancelCopyMode(sessionId: string, ws: ServerWebSocket<WSData>) {
 function handleCheckCopyMode(sessionId: string, ws: ServerWebSocket<WSData>) {
   const session = registry.get(sessionId)
   if (!session) return
-  if (session.remote && !config.remoteAllowControl) return
+  if (session.remote && !config.remoteAllowAttach) return
 
   try {
     const target = resolveCopyModeTarget(sessionId, ws, session)
@@ -1295,6 +1295,10 @@ function handleKill(sessionId: string, ws: ServerWebSocket<WSData>) {
   }
   if (session.remote && !config.remoteAllowControl) {
     send(ws, { type: 'kill-failed', sessionId, message: 'Remote sessions are read-only' })
+    return
+  }
+  if (session.remote && session.source !== 'managed') {
+    send(ws, { type: 'kill-failed', sessionId, message: 'Cannot kill external remote sessions' })
     return
   }
   if (session.remote && config.remoteAllowControl && session.host) {
@@ -1375,6 +1379,10 @@ function handleRename(
   }
   if (session.remote && !config.remoteAllowControl) {
     send(ws, { type: 'error', message: 'Remote sessions are read-only' })
+    return
+  }
+  if (session.remote && session.source !== 'managed') {
+    send(ws, { type: 'error', message: 'Cannot rename external remote sessions' })
     return
   }
   if (session.remote && config.remoteAllowControl && session.host) {
@@ -1812,7 +1820,7 @@ async function attachTerminalPersistent(
     sendTerminalError(ws, sessionId, 'ERR_INVALID_WINDOW', 'Session not found', false)
     return
   }
-  if (session.remote && !config.remoteAllowControl) {
+  if (session.remote && !config.remoteAllowAttach) {
     const host = session.host ? ` on ${session.host}` : ''
     sendTerminalError(ws, sessionId, 'ERR_INVALID_WINDOW', `Remote session${host} is read-only`, false)
     return
@@ -1934,7 +1942,7 @@ function handleTerminalInputPersistent(
   }
 
   const session = registry.get(sessionId)
-  if (session?.remote && !config.remoteAllowControl) return
+  if (session?.remote && !config.remoteAllowAttach) return
 
   ws.data.terminal?.write(data)
 
@@ -1959,7 +1967,7 @@ function handleTerminalResizePersistent(
   }
 
   const session = registry.get(sessionId)
-  if (session?.remote && !config.remoteAllowControl) return
+  if (session?.remote && !config.remoteAllowAttach) return
 
   ws.data.terminal?.resize(cols, rows)
 }
