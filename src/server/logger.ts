@@ -3,9 +3,30 @@
 //   LOG_LEVEL: debug | info | warn | error (default: info)
 //   LOG_FILE: path to log file (optional, enables file logging)
 
+import { createRequire } from 'node:module'
 import path from 'node:path'
 import pino from 'pino'
 import { config } from './config'
+
+// Override pino/thread-stream worker path resolution for compiled Bun binaries.
+// Without this, compiled binaries resolve worker paths relative to the CI build
+// environment (/Users/runner/work/...) which doesn't exist on the user's machine.
+// Worse: if the user runs the binary from a directory with node_modules (e.g. a
+// project checkout), Bun leaks cwd module resolution into the bundled code,
+// causing pino to spawn transport workers that crash and segfault the process —
+// even when NODE_ENV=production should skip transports entirely.
+try {
+  const _require = createRequire(import.meta.url)
+  ;(globalThis as Record<string, unknown>).__bundlerPathsOverrides = {
+    'thread-stream-worker': _require.resolve('thread-stream/lib/worker.js'),
+    'pino-worker': _require.resolve('pino/lib/worker.js'),
+    'pino/file': _require.resolve('pino/file'),
+    'pino-pretty': _require.resolve('pino-pretty'),
+  }
+} catch {
+  // Resolution failed (compiled binary without node_modules on disk).
+  // createLogger() falls back to sync destinations below.
+}
 
 type LogData = Record<string, unknown>
 type LogLevel = 'debug' | 'info' | 'warn' | 'error'
