@@ -13,6 +13,27 @@ Run your desktop/server, then connect from your phone or laptop over Tailscale/L
 - Shows the last user prompt for each session, so you can remember what each agent is working on
 - Pin agent TUI sessions to auto-resume them when the server restarts (useful if your machine reboots or tmux dies)
 
+## How It Works
+
+```
+┌─────────────┐    SSH     ┌─────────────┐
+│ Remote Host ├───────────►│             │   WebSocket    ┌────────────┐
+│ (tmux)      │            │  Agentboard ├──────────────►│  Browser   │
+└─────────────┘    tmux    │  Server     │               │  (React +  │
+┌─────────────┐    CLI     │             │               │  xterm.js) │
+│ Local tmux  ├───────────►│  - discover │               └────────────┘
+│ sessions    │            │    sessions │
+└─────────────┘            │  - parse    │
+┌─────────────┐    read    │    agent    │
+│ Agent logs  ├───────────►│    logs     │
+│ (~/.claude/) │            └─────────────┘
+└─────────────┘
+```
+
+- **Session discovery** — polls local tmux windows and (optionally) remote hosts over SSH
+- **Status inference** — reads pane content and Claude/Codex JSONL logs to determine if each agent is *working*, *waiting for input*, or *asking for permission*
+- **Live terminal** — streams I/O through the server so you can interact with any session from any device
+
 ### Desktop
 | Terminal | Sessions | Pinning |
 | :---: | :---: | :---: |

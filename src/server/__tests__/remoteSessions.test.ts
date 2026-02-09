@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test } from 'bun:test'
 import {
   parseTmuxWindows,
   buildRemoteSessionId,
+  sanitizeForId,
   toIsoFromSeconds,
   splitSshOptions,
   buildBatchCaptureCommand,
@@ -155,6 +156,19 @@ describe('parseTmuxWindows', () => {
     expect(sessions.map(s => s.name)).toEqual(['main-win', 'dev-project', 'billy-work'])
   })
 
+  test('sets source to managed for tmuxSessionPrefix sessions, external for others', () => {
+    const output = [
+      'agentboard\t0\t@1\tmain-win\t/home\t1706745600\t1706745000\tclaude',
+      'other-session\t0\t@2\tdev-win\t/home\t1706745600\t1706745000\tclaude',
+    ].join('\n')
+
+    const sessions = parseTmuxWindows('host', output, 'agentboard', [])
+
+    expect(sessions).toHaveLength(2)
+    expect(sessions[0].source).toBe('managed')
+    expect(sessions[1].source).toBe('external')
+  })
+
   test('excludes proxy sessions and non-matching sessions together', () => {
     const output = [
       'agentboard\t0\t@1\tmain-win\t/home\t1706745600\t1706745000\tclaude',
@@ -189,6 +203,36 @@ describe('buildRemoteSessionId', () => {
   test('trims whitespace from windowId', () => {
     const id = buildRemoteSessionId('host', 'session', '0', '  @456  ')
     expect(id).toBe('remote:host:session:@456')
+  })
+
+  test('sanitizes session names with spaces', () => {
+    const id = buildRemoteSessionId('host', 'my session', '0', '@5')
+    expect(id).toBe('remote:host:my_session:@5')
+  })
+
+  test('sanitizes session names with special characters', () => {
+    const id = buildRemoteSessionId('host', 'test&session;rm', '0', '@1')
+    expect(id).toBe('remote:host:test_session_rm:@1')
+  })
+})
+
+describe('sanitizeForId', () => {
+  test('passes through valid characters unchanged', () => {
+    expect(sanitizeForId('agentboard')).toBe('agentboard')
+    expect(sanitizeForId('my-session_v2.0')).toBe('my-session_v2.0')
+    expect(sanitizeForId('user@host:port')).toBe('user@host:port')
+  })
+
+  test('replaces spaces with underscores', () => {
+    expect(sanitizeForId('my session')).toBe('my_session')
+  })
+
+  test('replaces shell metacharacters', () => {
+    expect(sanitizeForId('a;b&c|d')).toBe('a_b_c_d')
+  })
+
+  test('handles empty string', () => {
+    expect(sanitizeForId('')).toBe('')
   })
 })
 

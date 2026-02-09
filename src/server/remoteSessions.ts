@@ -188,8 +188,10 @@ export class RemoteSessionPoller {
         if (!host) return
         if (result.status === 'fulfilled') {
           this.snapshots.set(host, result.value)
-          // Clear optimistic entries for this host — the poll has caught up
-          this.clearOptimisticForHost(host)
+          // Clear optimistic entries only on successful poll — the poll has caught up
+          if (result.value.ok) {
+            this.clearOptimisticForHost(host)
+          }
         } else {
           this.snapshots.set(host, {
             host,
@@ -198,8 +200,8 @@ export class RemoteSessionPoller {
             error: result.reason instanceof Error ? result.reason.message : String(result.reason),
             updatedAt: Date.now(),
           })
-          // Also clear optimistic entries on failure to prevent unbounded growth
-          this.clearOptimisticForHost(host)
+          // Keep optimistic entries on failure — they'll be cleared on next
+          // successful poll. Growth is bounded by user-initiated actions.
         }
       })
 
@@ -487,7 +489,7 @@ function parseTmuxWindows(
       lastActivity,
       createdAt,
       agentType,
-      source: 'external',
+      source: isManagedSession ? 'managed' : 'external',
       host,
       remote: true,
       command: command || undefined,
@@ -497,6 +499,11 @@ function parseTmuxWindows(
   return sessions
 }
 
+/** Replace chars not valid in SESSION_ID_PATTERN with underscores. */
+function sanitizeForId(s: string): string {
+  return s.replace(/[^A-Za-z0-9_.:@-]/g, '_')
+}
+
 function buildRemoteSessionId(
   host: string,
   sessionName: string,
@@ -504,7 +511,7 @@ function buildRemoteSessionId(
   windowId?: string
 ): string {
   const suffix = windowId?.trim() ? windowId.trim() : windowIndex.trim()
-  return `remote:${host}:${sessionName}:${suffix}`
+  return `remote:${host}:${sanitizeForId(sessionName)}:${suffix}`
 }
 
 function toIsoFromSeconds(value: string | undefined, fallbackMs: number): string {
@@ -557,6 +564,7 @@ function splitSshOptions(value: string): string[] {
 export {
   parseTmuxWindows,
   buildRemoteSessionId,
+  sanitizeForId,
   toIsoFromSeconds,
   splitSshOptions,
   buildBatchCaptureCommand,

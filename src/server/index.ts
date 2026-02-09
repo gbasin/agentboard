@@ -1896,7 +1896,7 @@ function runRemoteSsh(host: string, remoteCmd: string): ReturnType<typeof Bun.sp
   return Bun.spawnSync(['ssh', ...opts, host, remoteCmd], {
     stdout: 'pipe',
     stderr: 'pipe',
-    timeout: 10_000,
+    timeout: config.remoteTimeoutMs,
   })
 }
 
