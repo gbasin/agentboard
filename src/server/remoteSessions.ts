@@ -401,18 +401,13 @@ function parseTmuxWindows(
       }
     }
 
-    const tmuxWindow = `${sessionName}:${windowIndex}`
+    const stableId = windowId?.trim() || windowIndex
+    const tmuxWindow = `${sessionName}:${stableId}`
     const createdAt = toIsoFromSeconds(createdRaw, now)
     const lastActivity = toIsoFromSeconds(activityRaw, now)
     const agentType = inferAgentType(command || '')
     const id = buildRemoteSessionId(host, sessionName, windowIndex, windowId)
-    // For external sessions, use session name as display name (more meaningful
-    // than window name which defaults to the running command, e.g. "bash").
-    // Mirrors SessionManager.listWindowsForSession logic.
-    const isManagedSession = sessionName === tmuxSessionPrefix
-    const displayName = isManagedSession
-      ? (windowName || tmuxWindow)
-      : (sessionName || tmuxWindow)
+    const displayName = windowName || sessionName || tmuxWindow
 
     sessions.push({
       id,

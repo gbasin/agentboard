@@ -17,6 +17,9 @@ function shellQuote(s: string): string {
 }
 
 class SshTerminalProxy extends TerminalProxyBase {
+  /** Maximum time (ms) to wait for SSH startup before aborting. */
+  static STARTUP_TIMEOUT_MS = 30_000
+
   private process: ReturnType<typeof Bun.spawn> | null = null
   private decoder = new TextDecoder()
   private cols = 80
@@ -71,7 +74,7 @@ class SshTerminalProxy extends TerminalProxyBase {
     }
 
     try {
-      this.runTmux(['kill-session', '-t', this.options.sessionName])
+      await this.runTmuxAsync(['kill-session', '-t', this.options.sessionName])
       this.logEvent('terminal_session_cleanup', {
         sessionName: this.options.sessionName,
       })
@@ -86,23 +89,39 @@ class SshTerminalProxy extends TerminalProxyBase {
   }
 
   /**
-   * Run a tmux command on the remote host via SSH.
-   * The entire tmux command is passed as a single string argument to SSH
-   * so the remote shell doesn't mangle special characters like #{...}.
+   * Run a tmux command on the remote host via SSH (async).
+   * Uses Bun.spawn instead of spawnSync so the event loop is not blocked
+   * while waiting for SSH round-trips.
    */
-  protected override runTmux(args: string[]): string {
+  protected async runTmuxAsync(args: string[]): Promise<string> {
     const remoteCmd = `tmux ${args.map(a => shellQuote(a)).join(' ')}`
-    const result = this.spawnSync([...this.sshArgs, remoteCmd], {
+    const proc = this.spawn([...this.sshArgs, remoteCmd], {
       stdout: 'pipe',
       stderr: 'pipe',
-      timeout: 10_000,
     })
 
-    if (result.exitCode !== 0) {
-      const stderr = result.stderr?.toString() || 'tmux command failed'
+    const timeout = setTimeout(() => {
+      try { proc.kill() } catch {}
+    }, 10_000)
+
+    let exitCode: number
+    let stdoutText: string
+    let stderrText: string
+    try {
+      [exitCode, stdoutText, stderrText] = await Promise.all([
+        proc.exited,
+        new Response(proc.stdout as ReadableStream).text(),
+        new Response(proc.stderr as ReadableStream).text(),
+      ])
+    } finally {
+      clearTimeout(timeout)
+    }
+
+    if (exitCode !== 0) {
+      const stderr = stderrText || 'tmux command failed'
       logger.warn('ssh_tmux_command_failed', {
         remoteCmd,
-        exitCode: result.exitCode,
+        exitCode,
         stderr: stderr.slice(0, 500),
         sessionName: this.options.sessionName,
         connectionId: this.options.connectionId,
@@ -110,7 +129,7 @@ class SshTerminalProxy extends TerminalProxyBase {
       throw new Error(stderr)
     }
 
-    return result.stdout?.toString() ?? ''
+    return stdoutText
   }
 
   protected async doStart(): Promise<void> {
@@ -118,6 +137,45 @@ class SshTerminalProxy extends TerminalProxyBase {
       return
     }
 
+    const core = this.doStartCore()
+    core.catch(() => {}) // Prevent unhandled rejection if timeout wins
+
+    let timer: ReturnType<typeof setTimeout>
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        logger.error('ssh_start_timeout', {
+          sessionName: this.options.sessionName,
+          host: this.options.host,
+          timeoutMs: SshTerminalProxy.STARTUP_TIMEOUT_MS,
+        })
+        if (this.process) {
+          try {
+            this.process.kill()
+            this.process.terminal?.close()
+          } catch {
+            // Ignore if already exited
+          }
+          this.process = null
+        }
+        this.state = TerminalState.DEAD
+        reject(
+          new TerminalProxyError(
+            'ERR_START_TIMEOUT',
+            `SSH startup timed out after ${SshTerminalProxy.STARTUP_TIMEOUT_MS}ms`,
+            true
+          )
+        )
+      }, SshTerminalProxy.STARTUP_TIMEOUT_MS)
+    })
+
+    try {
+      await Promise.race([core, timeout])
+    } finally {
+      clearTimeout(timer!)
+    }
+  }
+
+  private async doStartCore(): Promise<void> {
     const startedAt = this.now()
     this.state = TerminalState.ATTACHING
 
@@ -129,7 +187,7 @@ class SshTerminalProxy extends TerminalProxyBase {
     })
 
     try {
-      this.runTmux([
+      await this.runTmuxAsync([
         'new-session',
         '-d',
         '-s',
@@ -269,7 +327,7 @@ class SshTerminalProxy extends TerminalProxyBase {
     })
 
     try {
-      this.runTmux(['switch-client', '-c', this.clientTty, '-t', target])
+      await this.runTmuxAsync(['switch-client', '-c', this.clientTty, '-t', target])
       if (onReady) {
         try {
           onReady()
@@ -280,7 +338,7 @@ class SshTerminalProxy extends TerminalProxyBase {
       this.outputSuppressed = false
       this.setCurrentWindow(target)
       try {
-        this.runTmux(['refresh-client', '-t', this.clientTty])
+        await this.runTmuxAsync(['refresh-client', '-t', this.clientTty])
       } catch {
         // Ignore refresh failures
       }
@@ -320,7 +378,7 @@ class SshTerminalProxy extends TerminalProxyBase {
     while (this.now() - start <= maxWaitMs) {
       let output = ''
       try {
-        output = this.runTmux([
+        output = await this.runTmuxAsync([
           'list-clients',
           '-t',
           this.options.sessionName,

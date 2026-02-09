@@ -9,6 +9,7 @@ export type AgentType = 'claude' | 'claude-rp' | 'codex' | 'pi'
 export type TerminalErrorCode =
   | 'ERR_INVALID_WINDOW'
   | 'ERR_SESSION_CREATE_FAILED'
+  | 'ERR_START_TIMEOUT'
   | 'ERR_TMUX_ATTACH_FAILED'
   | 'ERR_TMUX_SWITCH_FAILED'
   | 'ERR_TTY_DISCOVERY_TIMEOUT'
@@ -96,7 +97,7 @@ export type ServerMessage =
     }
   | { type: 'terminal-ready'; sessionId: string }
   | { type: 'tmux-copy-mode-status'; sessionId: string; inCopyMode: boolean }
-  | { type: 'server-config'; remoteAllowControl: boolean }
+  | { type: 'server-config'; remoteAllowControl: boolean; hostLabel: string }
   | { type: 'error'; message: string }
   | { type: 'kill-failed'; sessionId: string; message: string }
 

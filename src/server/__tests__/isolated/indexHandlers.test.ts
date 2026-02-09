@@ -7,6 +7,7 @@ import type { AgentSessionRecord } from '../../db'
 
 const bunAny = Bun as typeof Bun & {
   serve: typeof Bun.serve
+  spawn: typeof Bun.spawn
   spawnSync: typeof Bun.spawnSync
   write: typeof Bun.write
 }
@@ -17,6 +18,7 @@ const processAny = process as typeof process & {
 }
 
 const originalServe = bunAny.serve
+const originalSpawn = bunAny.spawn
 const originalSpawnSync = bunAny.spawnSync
 const originalWrite = bunAny.write
 const originalSetInterval = globalThis.setInterval
@@ -434,6 +436,34 @@ beforeEach(() => {
 
   bunAny.spawnSync = ((...args: Parameters<typeof Bun.spawnSync>) =>
     spawnSyncImpl(...args)) as typeof Bun.spawnSync
+  // Mock Bun.spawn for async SSH calls — delegates to spawnSyncImpl for results
+  bunAny.spawn = ((...args: Parameters<typeof Bun.spawn>) => {
+    const cmd = Array.isArray(args[0]) ? args[0] : [String(args[0])]
+    const opts = typeof args[1] === 'object' ? args[1] : undefined
+    const syncResult = spawnSyncImpl(
+      cmd as Parameters<typeof Bun.spawnSync>[0],
+      opts as Parameters<typeof Bun.spawnSync>[1]
+    )
+    const stdoutBuf = syncResult.stdout ?? Buffer.from('')
+    const stderrBuf = syncResult.stderr ?? Buffer.from('')
+    return {
+      exited: Promise.resolve(syncResult.exitCode ?? 0),
+      stdout: new ReadableStream({
+        start(controller) {
+          controller.enqueue(typeof stdoutBuf === 'string' ? new TextEncoder().encode(stdoutBuf) : stdoutBuf)
+          controller.close()
+        },
+      }),
+      stderr: new ReadableStream({
+        start(controller) {
+          controller.enqueue(typeof stderrBuf === 'string' ? new TextEncoder().encode(stderrBuf) : stderrBuf)
+          controller.close()
+        },
+      }),
+      kill: () => {},
+      pid: 12345,
+    } as unknown as ReturnType<typeof Bun.spawn>
+  }) as typeof Bun.spawn
   bunAny.serve = ((options: Parameters<typeof Bun.serve>[0]) => {
     serveOptions = options
     return {} as ReturnType<typeof Bun.serve>
@@ -450,6 +480,7 @@ beforeEach(() => {
 
 afterEach(() => {
   bunAny.serve = originalServe
+  bunAny.spawn = originalSpawn
   bunAny.spawnSync = originalSpawnSync
   bunAny.write = originalWrite
   globalThis.setInterval = originalSetInterval
@@ -751,6 +782,7 @@ describe('server message handlers', () => {
       ws as never,
       JSON.stringify({ type: 'session-kill', sessionId: 'remote-1' })
     )
+    await new Promise((r) => setTimeout(r, 0))
 
     const sshKillCall = sshCalls.find(
       (cmd) => cmd[0] === 'ssh' && cmd.some((a) => a.includes('kill-window'))
@@ -789,6 +821,7 @@ describe('server message handlers', () => {
       ws as never,
       JSON.stringify({ type: 'session-kill', sessionId: 'remote-1' })
     )
+    await new Promise((r) => setTimeout(r, 0))
 
     expect(sent[sent.length - 1]).toEqual({
       type: 'kill-failed',
@@ -855,6 +888,7 @@ describe('server message handlers', () => {
       ws as never,
       JSON.stringify({ type: 'session-rename', sessionId: 'remote-1', newName: 'new-name' })
     )
+    await new Promise((r) => setTimeout(r, 0))
 
     const sshRenameCall = sshCalls.find(
       (cmd) => cmd[0] === 'ssh' && cmd.some((a) => a.includes('rename-window'))
@@ -928,6 +962,7 @@ describe('server message handlers', () => {
       ws as never,
       JSON.stringify({ type: 'session-rename', sessionId: 'remote-1', newName: 'valid-name' })
     )
+    await new Promise((r) => setTimeout(r, 0))
 
     expect(sent[sent.length - 1]).toEqual({
       type: 'error',
@@ -1041,6 +1076,7 @@ describe('server message handlers', () => {
         host: 'remote-host',
       })
     )
+    await new Promise((r) => setTimeout(r, 0))
 
     expect(sent[sent.length - 1]).toEqual({
       type: 'error',
@@ -1068,7 +1104,31 @@ describe('server message handlers', () => {
 
     expect(sent[sent.length - 1]).toEqual({
       type: 'error',
-      message: 'Project path must be absolute',
+      message: 'Project path must be an absolute path (starting with /)',
+    })
+  })
+
+  test('rejects remote create with ~ path', async () => {
+    configState.remoteAllowControl = true
+    configState.remoteHosts = ['remote-host']
+    const { serveOptions } = await loadIndex()
+
+    const { ws, sent } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) throw new Error('WebSocket handlers not configured')
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({
+        type: 'session-create',
+        projectPath: '~/project',
+        host: 'remote-host',
+      })
+    )
+
+    expect(sent[sent.length - 1]).toEqual({
+      type: 'error',
+      message: 'Project path must be an absolute path (starting with /)',
     })
   })
 
@@ -1138,6 +1198,7 @@ describe('server message handlers', () => {
         host: 'remote-host',
       })
     )
+    await new Promise((r) => setTimeout(r, 0))
 
     // Should have made SSH calls for: test -d, has-session, new-window
     const sshCommands = sshCalls.filter((cmd) => cmd[0] === 'ssh')
@@ -1157,8 +1218,8 @@ describe('server message handlers', () => {
       expect(createdMsg.session.projectPath).toBe('/home/user/project')
       expect(createdMsg.session.name).toBe('test-name')
       expect(createdMsg.session.id).toBe('remote:remote-host:agentboard:@5')
-      // tmuxWindow should use windowIndex
-      expect(createdMsg.session.tmuxWindow).toBe('agentboard:1')
+      // tmuxWindow should use stable windowId
+      expect(createdMsg.session.tmuxWindow).toBe('agentboard:@5')
     }
 
     // Session should be in registry
@@ -1214,6 +1275,7 @@ describe('server message handlers', () => {
         host: 'remote-host',
       })
     )
+    await new Promise((r) => setTimeout(r, 0))
 
     // Should NOT have called new-window (used new-session instead)
     const newWindowCall = sshCalls.find((cmd) => cmd.some((a) => typeof a === 'string' && a.includes('new-window')))
@@ -1232,8 +1294,8 @@ describe('server message handlers', () => {
       expect(createdMsg.session.remote).toBe(true)
       expect(createdMsg.session.name).toBe('my-session')
       expect(createdMsg.session.id).toBe('remote:remote-host:agentboard:@1')
-      // Window should be at index 0 (no orphan window)
-      expect(createdMsg.session.tmuxWindow).toBe('agentboard:0')
+      // tmuxWindow should use stable windowId
+      expect(createdMsg.session.tmuxWindow).toBe('agentboard:@1')
     }
 
     expect(registryInstance.sessions.some((s) => s.remote && s.host === 'remote-host')).toBe(true)
@@ -1275,6 +1337,7 @@ describe('server message handlers', () => {
         host: 'remote-host',
       })
     )
+    await new Promise((r) => setTimeout(r, 0))
 
     expect(sent[sent.length - 1]).toEqual({
       type: 'error',
@@ -1326,6 +1389,7 @@ describe('server message handlers', () => {
         host: 'remote-host',
       })
     )
+    await new Promise((r) => setTimeout(r, 0))
 
     expect(sent[sent.length - 1]).toEqual({
       type: 'error',
@@ -1378,6 +1442,7 @@ describe('server message handlers', () => {
         host: 'remote-host',
       })
     )
+    await new Promise((r) => setTimeout(r, 0))
 
     // Should NOT have added session to registry
     expect(registryInstance.sessions.some((s) => s.remote && s.host === 'remote-host')).toBe(false)

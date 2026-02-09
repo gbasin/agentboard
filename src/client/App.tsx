@@ -30,6 +30,7 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
   const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null)
+  const [localHostLabel, setLocalHostLabel] = useState<string | null>(null)
 
   const sessions = useSessionStore((state) => state.sessions)
   const agentSessions = useSessionStore((state) => state.agentSessions)
@@ -169,6 +170,7 @@ export default function App() {
       }
       if (message.type === 'server-config') {
         setRemoteAllowControl(message.remoteAllowControl)
+        setLocalHostLabel(message.hostLabel)
       }
       if (message.type === 'session-update') {
         // Detect status transitions for sound notifications
@@ -463,6 +465,11 @@ export default function App() {
       .catch(() => {})
   }, [])
 
+  const remoteHostStatuses = useMemo(() => {
+    if (!localHostLabel) return hostStatuses
+    return hostStatuses.filter((hostStatus) => hostStatus.host !== localHostLabel)
+  }, [hostStatuses, localHostLabel])
+
   return (
     <div className="flex h-full overflow-hidden">
       {/* Left column: header + sidebar - always hidden on mobile (drawer handles it) */}
@@ -526,7 +533,7 @@ export default function App() {
         defaultPresetId={defaultPresetId}
         lastProjectPath={lastProjectPath}
         activeProjectPath={selectedSession?.projectPath}
-        remoteHosts={hostStatuses}
+        remoteHosts={remoteHostStatuses}
         remoteAllowControl={remoteAllowControl}
       />
 
