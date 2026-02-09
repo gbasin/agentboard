@@ -51,7 +51,9 @@ export default function App() {
   const clearExitingSession = useSessionStore((state) => state.clearExitingSession)
   const markSessionExiting = useSessionStore((state) => state.markSessionExiting)
   const setRemoteAllowControl = useSessionStore((state) => state.setRemoteAllowControl)
+  const setHostLabel = useSessionStore((state) => state.setHostLabel)
   const hostStatuses = useSessionStore((state) => state.hostStatuses)
+  const hostLabel = useSessionStore((state) => state.hostLabel)
   const remoteAllowControl = useSessionStore((state) => state.remoteAllowControl)
 
   const theme = useThemeStore((state) => state.theme)
@@ -169,6 +171,7 @@ export default function App() {
       }
       if (message.type === 'server-config') {
         setRemoteAllowControl(message.remoteAllowControl)
+        setHostLabel(message.hostLabel)
       }
       if (message.type === 'session-update') {
         // Detect status transitions for sound notifications
@@ -290,6 +293,7 @@ export default function App() {
     setAgentSessions,
     setHostStatuses,
     setRemoteAllowControl,
+    setHostLabel,
     subscribe,
     updateSession,
   ])
@@ -526,7 +530,7 @@ export default function App() {
         defaultPresetId={defaultPresetId}
         lastProjectPath={lastProjectPath}
         activeProjectPath={selectedSession?.projectPath}
-        remoteHosts={hostStatuses}
+        remoteHosts={hostLabel ? hostStatuses.filter((h) => h.host !== hostLabel) : hostStatuses}
         remoteAllowControl={remoteAllowControl}
       />
 

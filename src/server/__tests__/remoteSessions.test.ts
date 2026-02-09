@@ -10,6 +10,7 @@ import {
   cleanupRemoteContentCache,
   remoteContentCache,
   PANE_SEPARATOR,
+  RemoteSessionPoller,
 } from '../remoteSessions'
 import { isValidHostname } from '../config'
 import type { Session } from '../../shared/types'
@@ -20,8 +21,8 @@ describe('parseTmuxWindows', () => {
 
   test('parses valid tmux output with multiple windows', () => {
     const output = [
-      'main\\t0\\t@1\\twindow-name\\t/home/user/project\\t1706745600\\t1706745000\\tclaude',
-      'main\\t1\\t@2\\teditor\\t/home/user/code\\t1706745700\\t1706745100\\tvim',
+      'main\t0\t@1\twindow-name\t/home/user/project\t1706745600\t1706745000\tclaude',
+      'main\t1\t@2\teditor\t/home/user/code\t1706745700\t1706745100\tvim',
     ].join('\n')
 
     const sessions = parseTmuxWindows('remote-host', output, defaultPrefix, noPrefixes)
@@ -43,9 +44,9 @@ describe('parseTmuxWindows', () => {
 
   test('skips malformed lines with fewer than 8 fields', () => {
     const output = [
-      'incomplete\\tline\\tonly',
-      'main\\t0\\t@1\\twindow\\t/path\\t1706745600\\t1706745000\\tclaude',
-      'also\\tincomplete',
+      'incomplete\tline\tonly',
+      'main\t0\t@1\twindow\t/path\t1706745600\t1706745000\tclaude',
+      'also\tincomplete',
     ].join('\n')
 
     const sessions = parseTmuxWindows('host', output, defaultPrefix, noPrefixes)
@@ -66,7 +67,7 @@ describe('parseTmuxWindows', () => {
 
   test('handles lines with empty optional fields', () => {
     // Empty window name and command
-    const output = 'session\\t0\\t@1\\t\\t/path\\t1706745600\\t1706745000\\t'
+    const output = 'session\t0\t@1\t\t/path\t1706745600\t1706745000\t'
 
     const sessions = parseTmuxWindows('host', output, defaultPrefix, noPrefixes)
 
@@ -77,7 +78,7 @@ describe('parseTmuxWindows', () => {
   })
 
   test('uses fallback timestamp for invalid activity/created values', () => {
-    const output = 'session\\t0\\t@1\\twindow\\t/path\\tinvalid\\tbadtime\\tclaude'
+    const output = 'session\t0\t@1\twindow\t/path\tinvalid\tbadtime\tclaude'
 
     const before = Date.now()
     const sessions = parseTmuxWindows('host', output, defaultPrefix, noPrefixes)
@@ -96,11 +97,11 @@ describe('parseTmuxWindows', () => {
   test('filters proxy sessions using tmuxSessionPrefix, not broad includes', () => {
     const output = [
       // This IS a proxy session for prefix "agentboard"
-      'agentboard-ws-abc123\\t0\\t@1\\tproxy\\t/tmp\\t1706745600\\t1706745000\\tssh',
+      'agentboard-ws-abc123\t0\t@1\tproxy\t/tmp\t1706745600\t1706745000\tssh',
       // This is NOT a proxy session — legitimate session name containing "-ws-"
-      'my-ws-project\\t0\\t@2\\twork\\t/home/user\\t1706745600\\t1706745000\\tclaude',
+      'my-ws-project\t0\t@2\twork\t/home/user\t1706745600\t1706745000\tclaude',
       // Normal session
-      'dev\\t0\\t@3\\tdev-win\\t/home/user/dev\\t1706745600\\t1706745000\\tclaude',
+      'dev\t0\t@3\tdev-win\t/home/user/dev\t1706745600\t1706745000\tclaude',
     ].join('\n')
 
     const sessions = parseTmuxWindows('host', output, 'agentboard', noPrefixes)
@@ -113,9 +114,9 @@ describe('parseTmuxWindows', () => {
 
   test('filters proxy sessions with custom tmuxSessionPrefix', () => {
     const output = [
-      'myboard-ws-conn1\\t0\\t@1\\tproxy\\t/tmp\\t1706745600\\t1706745000\\tssh',
-      'agentboard-ws-conn2\\t0\\t@2\\tproxy2\\t/tmp\\t1706745600\\t1706745000\\tssh',
-      'main\\t0\\t@3\\twork\\t/home/user\\t1706745600\\t1706745000\\tclaude',
+      'myboard-ws-conn1\t0\t@1\tproxy\t/tmp\t1706745600\t1706745000\tssh',
+      'agentboard-ws-conn2\t0\t@2\tproxy2\t/tmp\t1706745600\t1706745000\tssh',
+      'main\t0\t@3\twork\t/home/user\t1706745600\t1706745000\tclaude',
     ].join('\n')
 
     // With prefix "myboard", only myboard-ws-* is filtered
@@ -129,9 +130,9 @@ describe('parseTmuxWindows', () => {
 
   test('includes all sessions when discoverPrefixes is empty', () => {
     const output = [
-      'agentboard\\t0\\t@1\\tmain-win\\t/home\\t1706745600\\t1706745000\\tclaude',
-      'dev-project\\t0\\t@2\\tdev-win\\t/home\\t1706745600\\t1706745000\\tclaude',
-      'random\\t0\\t@3\\trand-win\\t/home\\t1706745600\\t1706745000\\tvim',
+      'agentboard\t0\t@1\tmain-win\t/home\t1706745600\t1706745000\tclaude',
+      'dev-project\t0\t@2\tdev-win\t/home\t1706745600\t1706745000\tclaude',
+      'random\t0\t@3\trand-win\t/home\t1706745600\t1706745000\tvim',
     ].join('\n')
 
     const sessions = parseTmuxWindows('host', output, 'agentboard', [])
@@ -141,10 +142,10 @@ describe('parseTmuxWindows', () => {
 
   test('filters by discoverPrefixes, always includes tmuxSessionPrefix session', () => {
     const output = [
-      'agentboard\\t0\\t@1\\tmain-win\\t/home\\t1706745600\\t1706745000\\tclaude',
-      'dev-project\\t0\\t@2\\tdev-win\\t/home\\t1706745600\\t1706745000\\tclaude',
-      'billy-work\\t0\\t@3\\tbilly-win\\t/home\\t1706745600\\t1706745000\\tclaude',
-      'random\\t0\\t@4\\trand-win\\t/home\\t1706745600\\t1706745000\\tvim',
+      'agentboard\t0\t@1\tmain-win\t/home\t1706745600\t1706745000\tclaude',
+      'dev-project\t0\t@2\tdev-win\t/home\t1706745600\t1706745000\tclaude',
+      'billy-work\t0\t@3\tbilly-win\t/home\t1706745600\t1706745000\tclaude',
+      'random\t0\t@4\trand-win\t/home\t1706745600\t1706745000\tvim',
     ].join('\n')
 
     const sessions = parseTmuxWindows('host', output, 'agentboard', ['dev-', 'billy-'])
@@ -156,10 +157,10 @@ describe('parseTmuxWindows', () => {
 
   test('excludes proxy sessions and non-matching sessions together', () => {
     const output = [
-      'agentboard\\t0\\t@1\\tmain-win\\t/home\\t1706745600\\t1706745000\\tclaude',
-      'agentboard-ws-abc\\t0\\t@2\\tproxy\\t/tmp\\t1706745600\\t1706745000\\tssh',
-      'dev-project\\t0\\t@3\\tdev-win\\t/home\\t1706745600\\t1706745000\\tclaude',
-      'unrelated\\t0\\t@4\\tother\\t/home\\t1706745600\\t1706745000\\tvim',
+      'agentboard\t0\t@1\tmain-win\t/home\t1706745600\t1706745000\tclaude',
+      'agentboard-ws-abc\t0\t@2\tproxy\t/tmp\t1706745600\t1706745000\tssh',
+      'dev-project\t0\t@3\tdev-win\t/home\t1706745600\t1706745000\tclaude',
+      'unrelated\t0\t@4\tother\t/home\t1706745600\t1706745000\tvim',
     ].join('\n')
 
     const sessions = parseTmuxWindows('host', output, 'agentboard', ['dev-'])
@@ -674,5 +675,61 @@ describe('cleanupRemoteContentCache', () => {
     ])
 
     expect(remoteContentCache.size).toBe(0)
+  })
+})
+
+describe('RemoteSessionPoller optimistic updates', () => {
+  function createPoller() {
+    // Poller with no hosts — we only test optimistic get/set, not real polling
+    return new RemoteSessionPoller({
+      hosts: [],
+      pollIntervalMs: 60_000,
+      timeoutMs: 5_000,
+      staleAfterMs: 60_000,
+      tmuxSessionPrefix: 'agentboard',
+      discoverPrefixes: [],
+    })
+  }
+
+  test('addOptimisticSession includes session in getSessions', () => {
+    const poller = createPoller()
+    const session = makeSession({ id: 'remote:mba:agentboard:@5', tmuxWindow: 'agentboard:3', host: 'mba' })
+
+    poller.addOptimisticSession(session)
+
+    const sessions = poller.getSessions()
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0].id).toBe('remote:mba:agentboard:@5')
+  })
+
+  test('removeOptimisticSession excludes session from getSessions', () => {
+    const poller = createPoller()
+    const session = makeSession({ id: 'remote:mba:agentboard:@5', tmuxWindow: 'agentboard:3', host: 'mba' })
+
+    // First add, then remove
+    poller.addOptimisticSession(session)
+    expect(poller.getSessions()).toHaveLength(1)
+
+    poller.removeOptimisticSession('remote:mba:agentboard:@5', 'mba')
+    expect(poller.getSessions()).toHaveLength(0)
+  })
+
+  test('addOptimisticSession overrides removeOptimisticSession', () => {
+    const poller = createPoller()
+    const session = makeSession({ id: 'remote:mba:agentboard:@5', tmuxWindow: 'agentboard:3', host: 'mba' })
+
+    poller.removeOptimisticSession('remote:mba:agentboard:@5', 'mba')
+    poller.addOptimisticSession(session)
+
+    expect(poller.getSessions()).toHaveLength(1)
+  })
+
+  test('ignores optimistic session without host', () => {
+    const poller = createPoller()
+    const session = makeSession({ id: 'local:0', tmuxWindow: 'main:0', host: undefined })
+
+    poller.addOptimisticSession(session)
+
+    expect(poller.getSessions()).toHaveLength(0)
   })
 })

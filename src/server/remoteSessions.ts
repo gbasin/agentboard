@@ -11,7 +11,7 @@ import type { HostStatus, Session } from '../shared/types'
 
 const DEFAULT_SSH_OPTIONS = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=3']
 const TMUX_LIST_FORMAT =
-  '#{session_name}\\t#{window_index}\\t#{window_id}\\t#{window_name}\\t#{pane_current_path}\\t#{window_activity}\\t#{window_creation_time}\\t#{pane_start_command}'
+  '#{session_name}\t#{window_index}\t#{window_id}\t#{window_name}\t#{pane_current_path}\t#{window_activity}\t#{window_creation_time}\t#{pane_start_command}'
 
 const PANE_SEPARATOR = '__AGENTBOARD_PANE_SEP__'
 
@@ -50,6 +50,10 @@ export class RemoteSessionPoller {
   private inFlight = false
   private lastStatusSnapshot = ''
   private snapshots = new Map<string, RemoteHostSnapshot>()
+  // Optimistic sessions: sessions added/removed via create/kill that haven't
+  // been picked up by the next poll cycle yet. Keyed by session ID.
+  private optimisticAdds = new Map<string, { session: Session; host: string }>()
+  private optimisticRemoves = new Set<string>()
 
   constructor(options: RemoteSessionPollerOptions) {
     this.hosts = options.hosts
@@ -90,7 +94,61 @@ export class RemoteSessionPoller {
       if (now - snapshot.updatedAt > this.staleAfterMs) continue
       sessions.push(...snapshot.sessions)
     }
-    return sessions
+
+    // Fast path: no optimistic entries pending
+    if (this.optimisticAdds.size === 0 && this.optimisticRemoves.size === 0) {
+      return sessions
+    }
+
+    // Apply optimistic removes
+    const filtered = this.optimisticRemoves.size > 0
+      ? sessions.filter((s) => !this.optimisticRemoves.has(s.id))
+      : sessions
+
+    // Apply optimistic adds (only if not already present from poll)
+    if (this.optimisticAdds.size === 0) {
+      return filtered
+    }
+    const existingIds = new Set(filtered.map((s) => s.id))
+    const adds: Session[] = []
+    for (const { session } of this.optimisticAdds.values()) {
+      if (!existingIds.has(session.id)) {
+        adds.push(session)
+      }
+    }
+
+    return [...adds, ...filtered]
+  }
+
+  /** Register a session that was just created remotely. Cleared on next successful poll for its host. */
+  addOptimisticSession(session: Session): void {
+    if (!session.host) return
+    this.optimisticAdds.set(session.id, { session, host: session.host })
+    this.optimisticRemoves.delete(session.id)
+  }
+
+  /** Register a session that was just killed remotely. Cleared on next successful poll for its host. */
+  removeOptimisticSession(sessionId: string, host: string): void {
+    this.optimisticRemoves.add(sessionId)
+    this.optimisticAdds.delete(sessionId)
+    // Store host so we can clear on next poll
+    this._removeHosts.set(sessionId, host)
+  }
+
+  private _removeHosts = new Map<string, string>()
+
+  private clearOptimisticForHost(host: string): void {
+    for (const [id, entry] of this.optimisticAdds) {
+      if (entry.host === host) {
+        this.optimisticAdds.delete(id)
+      }
+    }
+    for (const id of this.optimisticRemoves) {
+      if (this._removeHosts.get(id) === host) {
+        this.optimisticRemoves.delete(id)
+        this._removeHosts.delete(id)
+      }
+    }
   }
 
   getHostStatuses(): HostStatus[] {
@@ -130,6 +188,8 @@ export class RemoteSessionPoller {
         if (!host) return
         if (result.status === 'fulfilled') {
           this.snapshots.set(host, result.value)
+          // Clear optimistic entries for this host — the poll has caught up
+          this.clearOptimisticForHost(host)
         } else {
           this.snapshots.set(host, {
             host,
@@ -138,6 +198,8 @@ export class RemoteSessionPoller {
             error: result.reason instanceof Error ? result.reason.message : String(result.reason),
             updatedAt: Date.now(),
           })
+          // Also clear optimistic entries on failure to prevent unbounded growth
+          this.clearOptimisticForHost(host)
         }
       })
 
@@ -364,13 +426,15 @@ function parseTmuxWindows(
   tmuxSessionPrefix: string,
   discoverPrefixes: string[]
 ): Session[] {
-  const lines = output.split('\n').map((line) => line.trim()).filter(Boolean)
+  // Filter empty lines without trim() — trim() removes trailing tabs when
+  // fields are empty (e.g., pane_start_command=''), losing the 8th field
+  const lines = output.split('\n').filter((line) => /\S/.test(line))
   const now = Date.now()
   const sessions: Session[] = []
   const wsPrefix = `${tmuxSessionPrefix}-ws-`
 
   for (const line of lines) {
-    const parts = line.split('\\t')
+    const parts = line.split('\t')
     if (parts.length < 8) {
       continue
     }

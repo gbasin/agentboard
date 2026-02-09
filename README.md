@@ -128,7 +128,7 @@ All persistent data is stored in `~/.agentboard/`: session database (`agentboard
 
 `AGENTBOARD_REMOTE_SSH_OPTS` appends extra SSH options (space-separated).
 
-`AGENTBOARD_REMOTE_ALLOW_CONTROL` is reserved for future remote control support (read-only in MVP).
+`AGENTBOARD_REMOTE_ALLOW_CONTROL` enables remote session management (create, kill, rename) via the UI. When `false` (default), remote sessions are read-only.
 
 **SSH multiplexing (recommended):** Each poll cycle opens SSH connections to every remote host. Enable SSH connection multiplexing to reuse connections and reduce overhead from ~200-500ms to ~5ms per poll. Add to your `~/.ssh/config`:
 

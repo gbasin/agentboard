@@ -929,7 +929,7 @@ Bun.serve<WSData>({
       sockets.add(ws)
       send(ws, { type: 'sessions', sessions: registry.getAll() })
       send(ws, { type: 'host-status', hosts: hostStatuses })
-      send(ws, { type: 'server-config', remoteAllowControl: config.remoteAllowControl })
+      send(ws, { type: 'server-config', remoteAllowControl: config.remoteAllowControl, hostLabel: localHostLabel })
       const agentSessions = registry.getAgentSessions()
       send(ws, {
         type: 'agent-sessions',
@@ -1223,6 +1223,10 @@ function handleRemoteCreate(
       command: windowCommand,
     }
 
+    // Register optimistic add so the session survives the next refresh cycle
+    // (the poller hasn't picked it up yet; cleared on next successful poll)
+    remotePoller?.addOptimisticSession(createdSession)
+
     // Add to registry so it appears immediately
     const currentSessions = registry.getAll()
     registry.replaceSessions([createdSession, ...currentSessions])
@@ -1301,6 +1305,8 @@ function handleKill(sessionId: string, ws: ServerWebSocket<WSData>) {
         send(ws, { type: 'kill-failed', sessionId, message: stderr })
         return
       }
+      // Register optimistic remove so the session stays hidden until next poll
+      remotePoller?.removeOptimisticSession(sessionId, session.host)
       const remaining = registry.getAll().filter((item) => item.id !== sessionId)
       registry.replaceSessions(remaining)
       refreshSessions()
