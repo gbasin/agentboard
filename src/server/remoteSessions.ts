@@ -511,7 +511,7 @@ function buildRemoteSessionId(
   windowId?: string
 ): string {
   const suffix = windowId?.trim() ? windowId.trim() : windowIndex.trim()
-  return `remote:${host}:${sanitizeForId(sessionName)}:${suffix}`
+  return `remote:${host}:${sanitizeForId(sessionName)}:${sanitizeForId(suffix)}`
 }
 
 function toIsoFromSeconds(value: string | undefined, fallbackMs: number): string {

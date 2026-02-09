@@ -1767,6 +1767,7 @@ function createAndStartSshProxy(
     baseSession: '', // not used for SSH standalone sessions
     host,
     sshOptions,
+    commandTimeoutMs: config.remoteTimeoutMs,
     onData: (data) => {
       const sessionId = ws.data.currentSessionId
       if (!sessionId) return

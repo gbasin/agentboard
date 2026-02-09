@@ -46,6 +46,7 @@ interface TerminalProxyOptions {
   monitorTargets?: boolean
   host?: string
   sshOptions?: string[]
+  commandTimeoutMs?: number
 }
 
 interface ITerminalProxy {

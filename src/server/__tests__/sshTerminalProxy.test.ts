@@ -114,7 +114,7 @@ describe('SshTerminalProxy', () => {
       const args = mock.calls[0].args
       expect(args[0]).toBe('ssh')
       expect(args).toContain('BatchMode=yes')
-      expect(args).toContain('ControlPath=none')
+      expect(args).toContain('ControlMaster=no')
       expect(args).toContain('remote-host')
       // Last arg is the remote tmux command
       const remoteCmd = args[args.length - 1]
@@ -147,7 +147,7 @@ describe('SshTerminalProxy', () => {
       )
     })
 
-    test('includes ControlPath=none to prevent SSH multiplexing issues', () => {
+    test('includes ControlMaster=no to prevent SSH multiplexing issues', () => {
       const mock = createMockSpawnSync(0, '')
       const proxy = new TestableSshProxy(
         createOptions({
@@ -159,7 +159,7 @@ describe('SshTerminalProxy', () => {
       proxy.testRunTmux(['has-session', '-t', 'test'])
 
       const args = mock.calls[0].args
-      const controlIdx = args.indexOf('ControlPath=none')
+      const controlIdx = args.indexOf('ControlMaster=no')
       expect(controlIdx).toBeGreaterThan(0)
       expect(args[controlIdx - 1]).toBe('-o')
     })
@@ -178,10 +178,10 @@ describe('SshTerminalProxy', () => {
       const args = mock.calls[0].args
       expect(args[0]).toBe('ssh')
       expect(args).toContain('remote-host')
-      expect(args).toContain('ControlPath=none')
+      expect(args).toContain('ControlMaster=no')
     })
 
-    test('passes timeout to spawnSync', () => {
+    test('passes default timeout to spawnSync', () => {
       const mock = createMockSpawnSync(0, '')
       const proxy = new TestableSshProxy(createOptions({ spawnSync: mock }))
 
@@ -189,6 +189,16 @@ describe('SshTerminalProxy', () => {
 
       const options = mock.calls[0].options as Record<string, unknown>
       expect(options.timeout).toBe(10_000)
+    })
+
+    test('passes custom commandTimeoutMs to spawnSync', () => {
+      const mock = createMockSpawnSync(0, '')
+      const proxy = new TestableSshProxy(createOptions({ spawnSync: mock, commandTimeoutMs: 5000 }))
+
+      proxy.testRunTmux(['list-windows'])
+
+      const options = mock.calls[0].options as Record<string, unknown>
+      expect(options.timeout).toBe(5000)
     })
   })
 

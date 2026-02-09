@@ -23,14 +23,16 @@ class SshTerminalProxy extends TerminalProxyBase {
   private rows = 24
   private clientTty: string | null = null
   private sshArgs: string[]
+  private readonly commandTimeoutMs: number
 
   constructor(options: ConstructorParameters<typeof TerminalProxyBase>[0]) {
     super(options)
     const host = this.options.host ?? ''
     const sshOptions = this.options.sshOptions ?? []
+    this.commandTimeoutMs = options.commandTimeoutMs ?? 10_000
     // Disable SSH multiplexing for command-channel calls to prevent hangs
     // from stale control sockets when the long-running attach process dies.
-    this.sshArgs = ['ssh', ...sshOptions, '-o', 'ControlPath=none', host]
+    this.sshArgs = ['ssh', ...sshOptions, '-o', 'ControlMaster=no', host]
   }
 
   getMode(): 'ssh' {
@@ -95,7 +97,7 @@ class SshTerminalProxy extends TerminalProxyBase {
     const result = this.spawnSync([...this.sshArgs, remoteCmd], {
       stdout: 'pipe',
       stderr: 'pipe',
-      timeout: 10_000,
+      timeout: this.commandTimeoutMs,
     })
 
     if (result.exitCode !== 0) {
