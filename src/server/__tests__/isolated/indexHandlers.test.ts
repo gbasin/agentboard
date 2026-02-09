@@ -1353,6 +1353,145 @@ describe('server message handlers', () => {
     expect(registryInstance.sessions.some((s) => s.id === createdId)).toBe(true)
   })
 
+  test('remote kill is not resurrected by stale poller snapshot on next refresh', async () => {
+    configState.remoteAllowControl = true
+    configState.remoteHosts = ['remote-host']
+
+    const nowSeconds = Math.floor(Date.now() / 1000)
+    const listWindowsLine =
+      `agentboard\\t1\\t@5\\told-name\\t/home/user/project\\t${nowSeconds}\\t${nowSeconds}\\tclaude\\n`
+
+    spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
+      const command = Array.isArray(args[0]) ? args[0] : [String(args[0])]
+      const cmdStr = command.join(' ')
+      if (cmdStr.includes('list-windows')) {
+        return {
+          exitCode: 0,
+          stdout: Buffer.from(listWindowsLine),
+          stderr: Buffer.from(''),
+        } as ReturnType<typeof Bun.spawnSync>
+      }
+      return {
+        exitCode: 0,
+        stdout: Buffer.from(''),
+        stderr: Buffer.from(''),
+      } as ReturnType<typeof Bun.spawnSync>
+    }) as typeof Bun.spawnSync
+
+    const { serveOptions, registryInstance } = await loadIndex()
+    sessionManagerState.listWindows = () => []
+    await new Promise((r) => setTimeout(r, 0)) // allow initial remote poll to populate snapshot
+
+    const remoteSession: Session = {
+      id: 'remote:remote-host:agentboard:@5',
+      name: 'old-name',
+      tmuxWindow: 'agentboard:@5',
+      projectPath: '/home/user/project',
+      status: 'unknown',
+      lastActivity: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      source: 'external',
+      host: 'remote-host',
+      remote: true,
+      command: 'claude',
+    }
+    registryInstance.sessions = [remoteSession]
+
+    const { ws } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) throw new Error('WebSocket handlers not configured')
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({ type: 'session-kill', sessionId: remoteSession.id })
+    )
+    await new Promise((r) => setTimeout(r, 0))
+    expect(registryInstance.sessions.some((s) => s.id === remoteSession.id)).toBe(
+      false
+    )
+
+    const baselineReplaceCalls = replaceSessionsCalls.length
+    websocket.message?.(ws as never, JSON.stringify({ type: 'session-refresh' }))
+    for (let i = 0; i < 100 && replaceSessionsCalls.length === baselineReplaceCalls; i++) {
+      await new Promise((r) => setTimeout(r, 5))
+    }
+
+    expect(replaceSessionsCalls.length).toBeGreaterThan(baselineReplaceCalls)
+    expect(registryInstance.sessions.some((s) => s.id === remoteSession.id)).toBe(
+      false
+    )
+  })
+
+  test('remote rename is not reverted by stale poller snapshot on next refresh', async () => {
+    configState.remoteAllowControl = true
+    configState.remoteHosts = ['remote-host']
+
+    const nowSeconds = Math.floor(Date.now() / 1000)
+    const listWindowsLine =
+      `agentboard\\t1\\t@5\\told-name\\t/home/user/project\\t${nowSeconds}\\t${nowSeconds}\\tclaude\\n`
+
+    spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
+      const command = Array.isArray(args[0]) ? args[0] : [String(args[0])]
+      const cmdStr = command.join(' ')
+      if (cmdStr.includes('list-windows')) {
+        return {
+          exitCode: 0,
+          stdout: Buffer.from(listWindowsLine),
+          stderr: Buffer.from(''),
+        } as ReturnType<typeof Bun.spawnSync>
+      }
+      return {
+        exitCode: 0,
+        stdout: Buffer.from(''),
+        stderr: Buffer.from(''),
+      } as ReturnType<typeof Bun.spawnSync>
+    }) as typeof Bun.spawnSync
+
+    const { serveOptions, registryInstance } = await loadIndex()
+    sessionManagerState.listWindows = () => []
+    await new Promise((r) => setTimeout(r, 0))
+
+    const remoteSession: Session = {
+      id: 'remote:remote-host:agentboard:@5',
+      name: 'old-name',
+      tmuxWindow: 'agentboard:@5',
+      projectPath: '/home/user/project',
+      status: 'unknown',
+      lastActivity: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      source: 'external',
+      host: 'remote-host',
+      remote: true,
+      command: 'claude',
+    }
+    registryInstance.sessions = [remoteSession]
+
+    const { ws } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) throw new Error('WebSocket handlers not configured')
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({
+        type: 'session-rename',
+        sessionId: remoteSession.id,
+        newName: 'new-name',
+      })
+    )
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(registryInstance.get(remoteSession.id)?.name).toBe('new-name')
+
+    const baselineReplaceCalls = replaceSessionsCalls.length
+    websocket.message?.(ws as never, JSON.stringify({ type: 'session-refresh' }))
+    for (let i = 0; i < 100 && replaceSessionsCalls.length === baselineReplaceCalls; i++) {
+      await new Promise((r) => setTimeout(r, 5))
+    }
+
+    expect(replaceSessionsCalls.length).toBeGreaterThan(baselineReplaceCalls)
+    expect(registryInstance.get(remoteSession.id)?.name).toBe('new-name')
+  })
+
   test('sends error when remote new-window fails', async () => {
     configState.remoteAllowControl = true
     configState.remoteHosts = ['remote-host']

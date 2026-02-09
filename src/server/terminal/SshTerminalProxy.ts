@@ -26,6 +26,7 @@ class SshTerminalProxy extends TerminalProxyBase {
   private rows = 24
   private clientTty: string | null = null
   private sshArgs: string[]
+  private startAttemptId = 0
 
   constructor(options: ConstructorParameters<typeof TerminalProxyBase>[0]) {
     super(options)
@@ -137,12 +138,17 @@ class SshTerminalProxy extends TerminalProxyBase {
       return
     }
 
-    const core = this.doStartCore()
+    const attemptId = ++this.startAttemptId
+    const core = this.doStartCore(attemptId)
     core.catch(() => {}) // Prevent unhandled rejection if timeout wins
 
-    let timer: ReturnType<typeof setTimeout>
+    let timer: ReturnType<typeof setTimeout> | null = null
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
+        if (attemptId !== this.startAttemptId) return
+        // Invalidate this attempt so any in-flight core path bails out before mutating state.
+        this.startAttemptId += 1
+
         logger.error('ssh_start_timeout', {
           sessionName: this.options.sessionName,
           host: this.options.host,
@@ -171,11 +177,15 @@ class SshTerminalProxy extends TerminalProxyBase {
     try {
       await Promise.race([core, timeout])
     } finally {
-      clearTimeout(timer!)
+      if (timer) clearTimeout(timer)
     }
   }
 
-  private async doStartCore(): Promise<void> {
+  private isStartAttemptCurrent(attemptId: number): boolean {
+    return attemptId === this.startAttemptId
+  }
+
+  private async doStartCore(attemptId: number): Promise<void> {
     const startedAt = this.now()
     this.state = TerminalState.ATTACHING
 
@@ -193,6 +203,10 @@ class SshTerminalProxy extends TerminalProxyBase {
         '-s',
         this.options.sessionName,
       ])
+      if (!this.isStartAttemptCurrent(attemptId)) {
+        await this.dispose()
+        return
+      }
       logger.info('ssh_session_created', {
         sessionName: this.options.sessionName,
         host: this.options.host,
@@ -230,6 +244,10 @@ class SshTerminalProxy extends TerminalProxyBase {
 
     let proc: ReturnType<typeof Bun.spawn>
     try {
+      if (!this.isStartAttemptCurrent(attemptId)) {
+        await this.dispose()
+        return
+      }
       proc = this.spawn(
         spawnArgs,
         {
@@ -270,6 +288,17 @@ class SshTerminalProxy extends TerminalProxyBase {
       )
     }
 
+    if (!this.isStartAttemptCurrent(attemptId)) {
+      try {
+        proc.kill()
+        proc.terminal?.close()
+      } catch {
+        // Ignore if already exited
+      }
+      await this.dispose()
+      return
+    }
+
     this.process = proc
 
     proc.exited.then((exitCode) => {
@@ -286,6 +315,10 @@ class SshTerminalProxy extends TerminalProxyBase {
 
     try {
       const tty = await this.discoverClientTty()
+      if (!this.isStartAttemptCurrent(attemptId)) {
+        await this.dispose()
+        return
+      }
       this.clientTty = tty
       this.readyAt = this.now()
       this.state = TerminalState.READY

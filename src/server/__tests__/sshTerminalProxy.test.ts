@@ -196,6 +196,48 @@ describe('SshTerminalProxy', () => {
     expect(harness.wasTerminalClosed()).toBe(true)
   })
 
+  test('startup timeout does not allow a late READY transition if TTY appears after timeout', async () => {
+    savedTimeout = SshTerminalProxy.STARTUP_TIMEOUT_MS
+    SshTerminalProxy.STARTUP_TIMEOUT_MS = 20
+
+    let listClientsCalls = 0
+    const harness = createSshHarness({
+      ttyAvailable: false,
+      spawnPipeOverride: (args) => {
+        const cmd = args.join(' ')
+        if (cmd.includes('list-clients')) {
+          listClientsCalls += 1
+          // Simulate a slow TTY discovery: empty first, then present.
+          if (listClientsCalls >= 2) {
+            return { exitCode: 0, stdout: '/dev/pts/42\n', stderr: '' }
+          }
+          return { exitCode: 0, stdout: '', stderr: '' }
+        }
+        return { exitCode: 0, stdout: '', stderr: '' }
+      },
+    })
+
+    const proxy = new SshTerminalProxy({
+      connectionId: 'conn-late-tty',
+      sessionName: 'test-late-tty-session',
+      baseSession: 'agentboard',
+      host: 'slow-host',
+      onData: () => {},
+      spawn: harness.spawn,
+      spawnSync: harness.spawnSync,
+    })
+
+    await expect(proxy.start()).rejects.toMatchObject({
+      code: 'ERR_START_TIMEOUT',
+      retryable: true,
+    })
+
+    // If the core path isn't cancelled, it could still discover a TTY and flip to READY.
+    await new Promise((r) => setTimeout(r, 150))
+    expect(proxy.isReady()).toBe(false)
+    expect(proxy.getClientTty()).toBeNull()
+  })
+
   test('runTmuxAsync routes commands through SSH with pipe mode', async () => {
     const harness = createSshHarness({ ttyAvailable: true })
     const proxy = new SshTerminalProxy({

@@ -231,16 +231,56 @@ function stampLocalSessions(sessions: Session[]): Session[] {
 const PROTECTED_REMOTE_SESSION_TTL_MS = 30_000
 const protectedRemoteSessionIds = new Map<string, number>()
 
+// Remote control operations (kill/rename) are also optimistic, but refresh cycles rebuild
+// remote sessions from the poller snapshot. Track short-lived overrides so stale snapshots
+// don't resurrect killed sessions or revert renames.
+const REMOTE_SESSION_MUTATION_TTL_MS = 30_000
+const remoteSessionTombstones = new Map<string, number>()
+const remoteSessionNameOverrides = new Map<string, { name: string; setAt: number }>()
+
 function mergeRemoteSessions(sessions: Session[]): Session[] {
   const remoteSessions = remotePoller?.getSessions() ?? []
-  if (protectedRemoteSessionIds.size === 0) {
+  const needsMerge =
+    protectedRemoteSessionIds.size > 0 ||
+    remoteSessionTombstones.size > 0 ||
+    remoteSessionNameOverrides.size > 0
+  if (!needsMerge) {
     return [...stampLocalSessions(sessions), ...remoteSessions]
   }
 
   const now = Date.now()
   const remoteIds = new Set(remoteSessions.map((session) => session.id))
+  const remoteById = new Map(remoteSessions.map((session) => [session.id, session]))
   const byId = new Map(registry.getAll().map((session) => [session.id, session]))
   const protectedSessions: Session[] = []
+
+  for (const [id, killedAt] of remoteSessionTombstones) {
+    if (now - killedAt > REMOTE_SESSION_MUTATION_TTL_MS) {
+      remoteSessionTombstones.delete(id)
+      continue
+    }
+    if (!remoteIds.has(id)) {
+      // Poller has confirmed it's gone; no longer needs a tombstone.
+      remoteSessionTombstones.delete(id)
+    }
+  }
+
+  for (const [id, override] of remoteSessionNameOverrides) {
+    if (now - override.setAt > REMOTE_SESSION_MUTATION_TTL_MS) {
+      remoteSessionNameOverrides.delete(id)
+      continue
+    }
+    const polled = remoteById.get(id)
+    if (!polled) {
+      // Session disappeared (killed/host stale); stop overriding.
+      remoteSessionNameOverrides.delete(id)
+      continue
+    }
+    if (polled.name === override.name) {
+      // Poller has picked up the rename.
+      remoteSessionNameOverrides.delete(id)
+    }
+  }
 
   for (const [id, addedAt] of protectedRemoteSessionIds) {
     if (now - addedAt > PROTECTED_REMOTE_SESSION_TTL_MS) {
@@ -261,7 +301,21 @@ function mergeRemoteSessions(sessions: Session[]): Session[] {
     }
   }
 
-  return [...stampLocalSessions(sessions), ...protectedSessions, ...remoteSessions]
+  const mergedRemote: Session[] = []
+  for (const session of remoteSessions) {
+    const killedAt = remoteSessionTombstones.get(session.id)
+    if (killedAt && now - killedAt <= REMOTE_SESSION_MUTATION_TTL_MS) {
+      continue
+    }
+    const override = remoteSessionNameOverrides.get(session.id)
+    if (override && now - override.setAt <= REMOTE_SESSION_MUTATION_TTL_MS) {
+      mergedRemote.push({ ...session, name: override.name })
+    } else {
+      mergedRemote.push(session)
+    }
+  }
+
+  return [...stampLocalSessions(sessions), ...protectedSessions, ...mergedRemote]
 }
 
 let hostStatuses: HostStatus[] = []
@@ -1344,6 +1398,8 @@ async function handleKill(sessionId: string, ws: ServerWebSocket<WSData>) {
         send(ws, { type: 'kill-failed', sessionId, message: stderr })
         return
       }
+      remoteSessionNameOverrides.delete(sessionId)
+      remoteSessionTombstones.set(sessionId, Date.now())
       const remaining = registry.getAll().filter((item) => item.id !== sessionId)
       registry.replaceSessions(remaining)
     } catch (error) {
@@ -1430,6 +1486,7 @@ async function handleRename(
         send(ws, { type: 'error', message: stderr })
         return
       }
+      remoteSessionNameOverrides.set(sessionId, { name: trimmed, setAt: Date.now() })
       const currentSessions = registry.getAll()
       const nextSessions = currentSessions.map((item) =>
         item.id === sessionId ? { ...item, name: trimmed } : item
@@ -1927,6 +1984,10 @@ function sshOptionsForHost(): string[] {
   return [
     '-o', 'BatchMode=yes',
     '-o', 'ConnectTimeout=3',
+    // Avoid using stale multiplex control sockets for control-plane commands.
+    // Users can still enable multiplexing for poller connections via ~/.ssh/config.
+    '-o', 'ControlMaster=no',
+    '-o', 'ControlPath=none',
     ...splitSshOptions(config.remoteSshOpts),
   ]
 }
