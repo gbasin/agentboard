@@ -131,7 +131,7 @@ export default function NewSessionModal({
       return Array.from(formRef.current.querySelectorAll<HTMLElement>(selector))
     }
 
-    const handleKeyDown = (e: KeyboardEvent) => {
+      const handleKeyDown = (e: KeyboardEvent) => {
       if (showBrowser) return
 
       if (e.key === 'Escape') {
@@ -140,7 +140,15 @@ export default function NewSessionModal({
         return
       }
 
-      if (e.key === 'Enter' && document.activeElement?.tagName !== 'INPUT') {
+      if (e.key === 'Enter') {
+        const activeEl = document.activeElement as HTMLElement | null
+        if (!activeEl) return
+        if (activeEl.tagName === 'INPUT') return
+        // Don't auto-submit from the host picker; Enter should only select the host chip.
+        if (activeEl.closest('[data-testid="host-select"]')) return
+        // Preserve the "Enter submits" behavior when focus is on command preset chips.
+        if (!activeEl.closest('[data-testid="command-select"]')) return
+
         e.preventDefault()
         if (typeof e.stopPropagation === 'function') e.stopPropagation()
         formRef.current?.requestSubmit()
@@ -303,7 +311,12 @@ export default function NewSessionModal({
             <label className="mb-1.5 block text-xs text-secondary">
               Command
             </label>
-            <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Command preset">
+            <div
+              className="flex flex-wrap gap-2"
+              role="radiogroup"
+              aria-label="Command preset"
+              data-testid="command-select"
+            >
               {allOptions.map((option, index) => {
                 const isActive = option.isCustom ? isCustomMode : selectedPresetId === option.id
                 return (

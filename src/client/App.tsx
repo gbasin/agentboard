@@ -307,10 +307,10 @@ export default function App() {
 
   // Track last viewed project path
   useEffect(() => {
-    if (selectedSession?.projectPath) {
+    if (selectedSession?.projectPath && !selectedSession.remote) {
       setLastProjectPath(selectedSession.projectPath)
     }
-  }, [selectedSession?.projectPath, setLastProjectPath])
+  }, [selectedSession?.projectPath, selectedSession?.remote, setLastProjectPath])
 
   const sessionSortMode = useSettingsStore((state) => state.sessionSortMode)
   const sessionSortDirection = useSettingsStore(
@@ -538,7 +538,7 @@ export default function App() {
         commandPresets={commandPresets}
         defaultPresetId={defaultPresetId}
         lastProjectPath={lastProjectPath}
-        activeProjectPath={selectedSession?.projectPath}
+        activeProjectPath={selectedSession && !selectedSession.remote ? selectedSession.projectPath : undefined}
         remoteHosts={remoteHostStatuses}
         remoteAllowControl={remoteAllowControl}
         initialHost={newSessionInitialHost}
