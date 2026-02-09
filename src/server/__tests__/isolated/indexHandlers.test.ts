@@ -1226,6 +1226,65 @@ describe('server message handlers', () => {
     expect(registryInstance.sessions.some((s) => s.remote && s.host === 'remote-host')).toBe(true)
   })
 
+  test('sends error when created remote window exits immediately', async () => {
+    configState.remoteAllowControl = true
+    configState.remoteHosts = ['remote-host']
+    const { serveOptions, registryInstance } = await loadIndex()
+    sessionManagerState.listWindows = () => []
+
+    const sshCalls: string[][] = []
+    spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
+      const command = Array.isArray(args[0]) ? args[0] : [String(args[0])]
+      sshCalls.push(command as string[])
+      const cmdStr = command.join(' ')
+      if (cmdStr.includes('new-window')) {
+        return {
+          exitCode: 0,
+          stdout: Buffer.from('1\t@5\n'),
+          stderr: Buffer.from(''),
+        } as ReturnType<typeof Bun.spawnSync>
+      }
+      // Verify check fails for the new window target (window was created then exited)
+      if (cmdStr.includes('has-session') && cmdStr.includes('agentboard:@5')) {
+        return {
+          exitCode: 1,
+          stdout: Buffer.from(''),
+          stderr: Buffer.from("can't find window: @5\n"),
+        } as ReturnType<typeof Bun.spawnSync>
+      }
+      return {
+        exitCode: 0,
+        stdout: Buffer.from(''),
+        stderr: Buffer.from(''),
+      } as ReturnType<typeof Bun.spawnSync>
+    }) as typeof Bun.spawnSync
+
+    const { ws, sent } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) throw new Error('WebSocket handlers not configured')
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({
+        type: 'session-create',
+        projectPath: '/home/user/project',
+        command: 'bash -lic bash',
+        host: 'remote-host',
+      })
+    )
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(sent.some((m) => m.type === 'session-created')).toBe(false)
+    expect(sent[sent.length - 1]).toMatchObject({
+      type: 'error',
+      message: expect.stringContaining('Remote window exited immediately on remote-host'),
+    })
+    expect(registryInstance.sessions.some((s) => s.id === 'remote:remote-host:agentboard:@5')).toBe(false)
+
+    // Ensure we attempted to verify the created window target
+    expect(sshCalls.some((cmd) => cmd.join(' ').includes('has-session') && cmd.join(' ').includes('agentboard:@5'))).toBe(true)
+  })
+
   test('creates remote session via new-session when tmux session does not exist', async () => {
     configState.remoteAllowControl = true
     configState.remoteHosts = ['remote-host']

@@ -1293,16 +1293,31 @@ async function handleRemoteCreate(
       return
     }
 
-    // Verify the session actually persists (command may have exited immediately,
-    // e.g. if the shell binary doesn't exist on the remote host)
-    const verifyResult = await runRemoteTmux(host, ['has-session', '-t', tmuxSession])
+    const windowIndex = parts[0].trim()
+    const windowId = (parts[1] ?? '').trim()
+    const stableTarget = windowId || windowIndex
+
+    // Verify the window actually persists. When adding a new window to an existing session,
+    // `tmux has-session -t <session>` can still succeed even if the new window exited
+    // immediately (and was cleaned up by tmux).
+    const verifyResult = await runRemoteTmux(host, ['has-session', '-t', `${tmuxSession}:${stableTarget}`])
     if (verifyResult.exitCode !== 0) {
-      send(ws, { type: 'error', message: `Remote session was created but exited immediately — is "${windowCommand}" installed on ${host}?` })
+      logger.warn('remote_window_exited_immediately', {
+        host,
+        tmuxSession,
+        windowName,
+        windowIndex,
+        windowId: windowId || undefined,
+        stableTarget,
+        command: windowCommand,
+        wrappedCommand,
+      })
+      send(ws, {
+        type: 'error',
+        message: `Remote window exited immediately on ${host} — command "${windowCommand}" may have failed`,
+      })
       return
     }
-
-    const [windowIndex, windowId] = parts
-    const stableTarget = windowId?.trim() || windowIndex
     const id = buildRemoteSessionId(host, tmuxSession, windowIndex, windowId)
     const createdSession: Session = {
       id,
