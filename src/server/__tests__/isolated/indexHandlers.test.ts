@@ -1420,7 +1420,7 @@ describe('server message handlers', () => {
 
     const nowSeconds = Math.floor(Date.now() / 1000)
     const listWindowsLine =
-      `agentboard\\t1\\t@5\\told-name\\t/home/user/project\\t${nowSeconds}\\t${nowSeconds}\\tclaude\\n`
+      `agentboard\t1\t@5\told-name\t/home/user/project\t${nowSeconds}\t${nowSeconds}\tclaude\n`
 
     spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
       const command = Array.isArray(args[0]) ? args[0] : [String(args[0])]
@@ -1489,7 +1489,7 @@ describe('server message handlers', () => {
 
     const nowSeconds = Math.floor(Date.now() / 1000)
     const listWindowsLine =
-      `agentboard\\t1\\t@5\\told-name\\t/home/user/project\\t${nowSeconds}\\t${nowSeconds}\\tclaude\\n`
+      `agentboard\t1\t@5\told-name\t/home/user/project\t${nowSeconds}\t${nowSeconds}\tclaude\n`
 
     spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
       const command = Array.isArray(args[0]) ? args[0] : [String(args[0])]

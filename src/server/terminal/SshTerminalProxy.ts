@@ -27,7 +27,7 @@ class SshTerminalProxy extends TerminalProxyBase {
     this.commandTimeoutMs = this.options.commandTimeoutMs ?? 10_000
     // Disable SSH multiplexing for command-channel calls to prevent hangs
     // from stale control sockets when the long-running attach process dies.
-    this.sshArgs = ['ssh', ...sshOptions, '-o', 'ControlPath=none', host]
+    this.sshArgs = ['ssh', ...sshOptions, '-o', 'ControlMaster=no', host]
   }
 
   getMode(): 'ssh' {

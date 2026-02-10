@@ -1,10 +1,13 @@
 # Agentboard
 
-Web UI for tmux, optimized for agent TUI's (`claude`, `codex`, etc).
+[![CI](https://img.shields.io/github/actions/workflow/status/gbasin/agentboard/ci.yml?branch=master&logo=github)](https://github.com/gbasin/agentboard/actions)
+[![npm](https://img.shields.io/npm/v/@gbasin/agentboard?logo=npm)](https://www.npmjs.com/package/@gbasin/agentboard)
+[![License: MIT](https://img.shields.io/github/license/gbasin/agentboard)](https://github.com/gbasin/agentboard/blob/master/LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 
-Made this because I got sick of using tmux kb shortcuts on my phone, and using Blink.
+Agentboard is a Web GUI for `tmux` that's optimized for agent TUI's (`claude`, `codex`, etc). A lighter-weight, agent-optimized alternative to Blink, Termux, etc.
 
-Run your desktop/server, then connect from your phone or laptop over Tailscale/LAN. Shared workspace across devices.
+Run your desktop/server, then connect from your phone or laptop over Tailscale/LAN. You get a shared workspace across devices.
 
 - iOS Safari mobile experience with:
   - Paste support (including images)
@@ -14,6 +17,27 @@ Run your desktop/server, then connect from your phone or laptop over Tailscale/L
 - Out-of-the-box log tracking and matching for Claude, Codex, and Pi — auto-matches sessions to active tmux windows, with one-click restore for inactive sessions.
 - Shows the last user prompt for each session, so you can remember what each agent is working on
 - Pin agent TUI sessions to auto-resume them when the server restarts (useful if your machine reboots or tmux dies)
+
+## How It Works
+
+```
+┌─────────────┐    SSH     ┌─────────────┐
+│ Remote Host ├───────────►│             │   WebSocket   ┌────────────┐
+│ (tmux)      │            │  Agentboard ├──────────────►│  Browser   │
+└─────────────┘    tmux    │  Server     │               │  (React +  │
+┌─────────────┐    CLI     │             │               │  xterm.js) │
+│ Local tmux  ├───────────►│  - discover │               └────────────┘
+│ sessions    │            │    sessions │
+└─────────────┘            │  - parse    │
+┌─────────────┐    read    │    agent    │
+│ Agent logs  ├───────────►│    logs     │
+│ ~/.claude/  │            └─────────────┘
+└─────────────┘
+```
+
+- **Session discovery** — polls local tmux windows and (optionally) remote hosts over SSH
+- **Status inference** — reads pane content and Claude/Codex JSONL logs to determine if each agent is *working*, *waiting for input*, or *asking for permission*
+- **Live terminal** — streams I/O through the server so you can interact with any session from any device
 
 ### Desktop
 | Terminal | Sessions | Pinning |
@@ -99,6 +123,7 @@ AGENTBOARD_REMOTE_POLL_MS=2000
 AGENTBOARD_REMOTE_TIMEOUT_MS=4000
 AGENTBOARD_REMOTE_STALE_MS=45000
 AGENTBOARD_REMOTE_SSH_OPTS=-o BatchMode=yes -o ConnectTimeout=3
+AGENTBOARD_REMOTE_ALLOW_ATTACH=false
 AGENTBOARD_REMOTE_ALLOW_CONTROL=false
 ```
 
@@ -130,7 +155,9 @@ All persistent data is stored in `~/.agentboard/`: session database (`agentboard
 
 `AGENTBOARD_REMOTE_SSH_OPTS` appends extra SSH options (space-separated).
 
-`AGENTBOARD_REMOTE_ALLOW_CONTROL` is reserved for future remote control support (read-only in MVP).
+`AGENTBOARD_REMOTE_ALLOW_ATTACH` enables interactive terminal attach to remote sessions (input, resize, copy-mode). When `false` (default), remote sessions are view-only.
+
+`AGENTBOARD_REMOTE_ALLOW_CONTROL` enables destructive remote session management (create, kill, rename) via the UI. Setting this to `true` implies `REMOTE_ALLOW_ATTACH=true`. Kill and rename are restricted to agentboard-managed sessions — externally-discovered remote sessions cannot be killed or renamed even with control enabled.
 
 **SSH multiplexing (recommended):** Each poll cycle opens SSH connections to every remote host. Enable SSH connection multiplexing to reuse connections and reduce overhead from ~200-500ms to ~5ms per poll. Add to your `~/.ssh/config`:
 

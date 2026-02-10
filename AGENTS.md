@@ -39,6 +39,7 @@ Run `bun run lint && bun run typecheck && bun run test` after changes.
 - Atomic commits; push only when asked
 - Never destructive ops (`reset --hard`, `force push`) without explicit consent
 - Conventional Commits: `feat:`, `fix:`, `docs:`, `refactor:`
+- Commit early and often — make small, incremental commits as you work rather than one large commit at the end.
 
 ## Critical Thinking
 
