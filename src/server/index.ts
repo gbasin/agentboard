@@ -1861,11 +1861,14 @@ async function ensureCorrectProxyType(
 
   // Type mismatch — dispose old proxy and create new one
   if (ws.data.terminal) {
-    await ws.data.terminal.dispose()
+    const oldTerminal = ws.data.terminal
+    // Clear references BEFORE dispose so the onExit guard sees the proxy was replaced
+    // (dispose triggers process exit → onExit callback, which checks ws.data.terminal !== terminal)
     ws.data.terminal = null
     ws.data.terminalHost = null
     ws.data.currentSessionId = null
     ws.data.currentTmuxTarget = null
+    await oldTerminal.dispose()
   }
 
   if (needsSsh) {
