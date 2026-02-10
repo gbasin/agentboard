@@ -33,7 +33,6 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
   const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null)
-  const [localHostLabel, setLocalHostLabel] = useState<string | null>(null)
 
   const sessions = useSessionStore((state) => state.sessions)
   const agentSessions = useSessionStore((state) => state.agentSessions)
@@ -55,8 +54,11 @@ export default function App() {
   const clearExitingSession = useSessionStore((state) => state.clearExitingSession)
   const markSessionExiting = useSessionStore((state) => state.markSessionExiting)
   const setRemoteAllowControl = useSessionStore((state) => state.setRemoteAllowControl)
+  const setRemoteAllowAttach = useSessionStore((state) => state.setRemoteAllowAttach)
+  const setHostLabel = useSessionStore((state) => state.setHostLabel)
   const hostStatuses = useSessionStore((state) => state.hostStatuses)
   const remoteAllowControl = useSessionStore((state) => state.remoteAllowControl)
+  const hostLabel = useSessionStore((state) => state.hostLabel)
 
   const theme = useThemeStore((state) => state.theme)
   const defaultProjectDir = useSettingsStore(
@@ -173,7 +175,8 @@ export default function App() {
       }
       if (message.type === 'server-config') {
         setRemoteAllowControl(message.remoteAllowControl)
-        setLocalHostLabel(message.hostLabel)
+        setRemoteAllowAttach(message.remoteAllowAttach)
+        setHostLabel(message.hostLabel)
       }
       if (message.type === 'session-update') {
         // Detect status transitions for sound notifications
@@ -295,6 +298,8 @@ export default function App() {
     setAgentSessions,
     setHostStatuses,
     setRemoteAllowControl,
+    setRemoteAllowAttach,
+    setHostLabel,
     subscribe,
     updateSession,
   ])
@@ -446,13 +451,14 @@ export default function App() {
 
   const handleDuplicateSession = useCallback((sessionId: string) => {
     const session = sessions.find((s) => s.id === sessionId)
-    if (session) {
-      setNewSessionInitialHost(session.remote && session.host ? session.host : undefined)
-      setNewSessionInitialPath(session.projectPath)
-      setNewSessionInitialCommand(session.command || undefined)
-      setIsModalOpen(true)
-    }
-  }, [sessions])
+    if (!session) return
+    sendMessage({
+      type: 'session-create',
+      projectPath: session.projectPath,
+      command: session.command || undefined,
+      host: session.remote && session.host ? session.host : undefined,
+    })
+  }, [sessions, sendMessage])
 
   const handleSetPinned = useCallback((sessionId: string, isPinned: boolean) => {
     sendMessage({ type: 'session-pin', sessionId, isPinned })
@@ -472,9 +478,9 @@ export default function App() {
   }, [])
 
   const remoteHostStatuses = useMemo(() => {
-    if (!localHostLabel) return hostStatuses
-    return hostStatuses.filter((hostStatus) => hostStatus.host !== localHostLabel)
-  }, [hostStatuses, localHostLabel])
+    if (!hostLabel) return hostStatuses
+    return hostStatuses.filter((hostStatus) => hostStatus.host !== hostLabel)
+  }, [hostStatuses, hostLabel])
 
   return (
     <div className="flex h-full overflow-hidden">

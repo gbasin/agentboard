@@ -31,6 +31,10 @@ interface SessionState {
   setConnectionError: (error: string | null) => void
   remoteAllowControl: boolean
   setRemoteAllowControl: (value: boolean) => void
+  remoteAllowAttach: boolean
+  setRemoteAllowAttach: (value: boolean) => void
+  hostLabel: string | null
+  setHostLabel: (value: string | null) => void
   // Mark a session as exiting (preserves data for exit animation)
   markSessionExiting: (sessionId: string) => void
   // Clear a session from exiting state (after animation completes)
@@ -49,6 +53,8 @@ export const useSessionStore = create<SessionState>()(
       connectionStatus: 'connecting',
       connectionError: null,
       remoteAllowControl: false,
+      remoteAllowAttach: false,
+      hostLabel: null,
       setSessions: (sessions) => {
         const state = get()
         const selected = state.selectedSessionId
@@ -113,6 +119,8 @@ export const useSessionStore = create<SessionState>()(
       setConnectionStatus: (status) => set({ connectionStatus: status }),
       setConnectionError: (error) => set({ connectionError: error }),
       setRemoteAllowControl: (value) => set({ remoteAllowControl: value }),
+      setRemoteAllowAttach: (value) => set({ remoteAllowAttach: value }),
+      setHostLabel: (value) => set({ hostLabel: value }),
       markSessionExiting: (sessionId) => {
         const session = get().sessions.find((s) => s.id === sessionId)
         if (session) {

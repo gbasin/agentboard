@@ -506,6 +506,8 @@ export default function SessionList({
                     const isTrulyNew = newlyActiveIds.has(session.id)
                     const isFilteredIn = newlyFilteredInIds.has(session.id)
                     const isRemote = session.remote === true
+                    const isManaged = session.source === 'managed'
+                    const canControl = !isRemote || (remoteAllowControl && isManaged)
                     // Calculate drop indicator position
                     const activeIndex = activeId
                       ? filteredSessions.findIndex((s) => s.id === activeId)
@@ -530,11 +532,11 @@ export default function SessionList({
                         showHostInfo={showHostInfo}
                         dropIndicator={showDropIndicator}
                         onSelect={() => onSelect(session.id)}
-                        onStartEdit={() => setEditingSessionId(session.id)}
+                        onStartEdit={canControl ? () => setEditingSessionId(session.id) : undefined}
                         onCancelEdit={() => setEditingSessionId(null)}
                         onRename={(newName) => handleRename(session.id, newName)}
-                        onKill={onKill && (!isRemote || remoteAllowControl) ? () => onKill(session.id) : undefined}
-                        onDuplicate={onDuplicate && (!isRemote || remoteAllowControl) ? () => onDuplicate(session.id) : undefined}
+                        onKill={onKill && canControl ? () => onKill(session.id) : undefined}
+                        onDuplicate={onDuplicate && canControl ? () => onDuplicate(session.id) : undefined}
                         onSetPinned={onSetPinned && session.agentSessionId ? (isPinned) => onSetPinned(session.agentSessionId!.trim(), isPinned) : undefined}
                       />
                     )
@@ -635,7 +637,7 @@ interface SortableSessionItemProps {
   showHostInfo: boolean
   dropIndicator: 'above' | 'below' | null
   onSelect: () => void
-  onStartEdit: () => void
+  onStartEdit?: () => void
   onCancelEdit: () => void
   onRename: (newName: string) => void
   onKill?: () => void
@@ -765,7 +767,7 @@ interface SessionRowProps {
   showHostInfo: boolean
   isDragging?: boolean
   onSelect: () => void
-  onStartEdit: () => void
+  onStartEdit?: () => void
   onCancelEdit: () => void
   onRename: (newName: string) => void
   onKill?: () => void
@@ -1015,18 +1017,20 @@ function SessionRow({
           style={{ left: contextMenu.x, top: contextMenu.y }}
           role="menu"
         >
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              setContextMenu(null)
-              onStartEdit()
-            }}
-            className="w-full px-3 py-2 text-left text-sm text-secondary hover:bg-hover hover:text-primary flex items-center gap-2"
-            role="menuitem"
-          >
-            <Edit05Icon width={14} height={14} />
-            Rename
-          </button>
+          {onStartEdit && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                setContextMenu(null)
+                onStartEdit()
+              }}
+              className="w-full px-3 py-2 text-left text-sm text-secondary hover:bg-hover hover:text-primary flex items-center gap-2"
+              role="menuitem"
+            >
+              <Edit05Icon width={14} height={14} />
+              Rename
+            </button>
+          )}
           {onDuplicate && (
             <button
               onClick={(e) => {

@@ -75,8 +75,10 @@ function unwrapBashLoginWrapper(command: string): string | null {
 export function normalizePaneStartCommand(command: string): string {
   const trimmed = command.trim()
   if (!trimmed) return ''
-  const unwrapped = unwrapBashLoginWrapper(trimmed)
-  return unwrapped ?? trimmed
+  // tmux #{pane_start_command} may wrap the entire command in quotes
+  const unquoted = unquoteShellString(trimmed)
+  const unwrapped = unwrapBashLoginWrapper(unquoted)
+  return unwrapped ?? unquoted
 }
 
 /**

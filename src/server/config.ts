@@ -122,6 +122,12 @@ const remoteStaleMs = Number.isFinite(remoteStaleMsRaw)
 
 const remoteSshOpts = process.env.AGENTBOARD_REMOTE_SSH_OPTS || ''
 const remoteAllowControl = process.env.AGENTBOARD_REMOTE_ALLOW_CONTROL === 'true'
+// Allow attaching to (viewing/interacting with) remote terminals.
+// Defaults to true when remoteAllowControl is enabled; can be set independently.
+const remoteAllowAttachRaw = process.env.AGENTBOARD_REMOTE_ALLOW_ATTACH
+const remoteAllowAttach = remoteAllowAttachRaw !== undefined
+  ? remoteAllowAttachRaw === 'true'
+  : remoteAllowControl
 
 export const config = {
   port: Number(process.env.PORT) || 4040,
@@ -163,4 +169,5 @@ export const config = {
   remoteStaleMs,
   remoteSshOpts,
   remoteAllowControl,
+  remoteAllowAttach,
 }

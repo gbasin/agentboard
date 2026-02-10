@@ -44,8 +44,10 @@ import {
   isValidTmuxTarget,
 } from './validators'
 import { RemoteSessionPoller, splitSshOptions, buildRemoteSessionId } from './remoteSessions'
+import { normalizePaneStartCommand } from './agentDetection'
 import { generateSessionName } from './nameGenerator'
-import { shellQuote, SshTerminalProxy } from './terminal/SshTerminalProxy'
+import { shellQuote } from './shellQuote'
+import { SshTerminalProxy } from './terminal/SshTerminalProxy'
 
 function checkPortAvailable(port: number): void {
   let result: ReturnType<typeof Bun.spawnSync>
@@ -1020,6 +1022,7 @@ Bun.serve<WSData>({
       send(ws, {
         type: 'server-config',
         remoteAllowControl: config.remoteAllowControl,
+        remoteAllowAttach: config.remoteAllowAttach,
         hostLabel: config.hostLabel,
       })
       const agentSessions = registry.getAgentSessions()
@@ -1051,23 +1054,29 @@ logger.info('server_started', {
 })
 
 // Cleanup all terminals on server shutdown
-function cleanupAllTerminals() {
+async function cleanupAllTerminals() {
+  const disposePromises: Promise<void>[] = []
   for (const ws of sockets) {
-    cleanupTerminals(ws)
+    if (ws.data.terminal) {
+      disposePromises.push(ws.data.terminal.dispose())
+      ws.data.terminal = null
+    }
+    ws.data.currentSessionId = null
+    ws.data.currentTmuxTarget = null
+    ws.data.terminalHost = null
   }
+  await Promise.allSettled(disposePromises)
   logPoller.stop()
   remotePoller?.stop()
   db.close()
 }
 
 process.on('SIGINT', () => {
-  cleanupAllTerminals()
-  process.exit(0)
+  void cleanupAllTerminals().finally(() => process.exit(0))
 })
 
 process.on('SIGTERM', () => {
-  cleanupAllTerminals()
-  process.exit(0)
+  void cleanupAllTerminals().finally(() => process.exit(0))
 })
 
 function cleanupTerminals(ws: ServerWebSocket<WSData>) {
@@ -1251,7 +1260,7 @@ async function handleRemoteCreate(
     const hasSessionResult = await runRemoteTmux(host, ['has-session', '-t', tmuxSession])
     const sessionExists = hasSessionResult.exitCode === 0
 
-    const windowCommand = command?.trim() || 'claude'
+    const windowCommand = normalizePaneStartCommand(command?.trim() || '') || 'claude'
     // Wrap in interactive login shell so .bashrc PATH is available
     // (non-interactive shells skip .bashrc due to [ -z "$PS1" ] && return guard).
     // Fall back to raw command on systems without bash (e.g. Alpine).
@@ -1350,7 +1359,7 @@ async function handleRemoteCreate(
 async function handleCancelCopyMode(sessionId: string, ws: ServerWebSocket<WSData>) {
   const session = registry.get(sessionId)
   if (!session) return
-  if (session.remote && !config.remoteAllowControl) return
+  if (session.remote && !config.remoteAllowAttach) return
 
   try {
     // Exit tmux copy-mode quietly.
@@ -1371,7 +1380,7 @@ async function handleCancelCopyMode(sessionId: string, ws: ServerWebSocket<WSDat
 async function handleCheckCopyMode(sessionId: string, ws: ServerWebSocket<WSData>) {
   const session = registry.get(sessionId)
   if (!session) return
-  if (session.remote && !config.remoteAllowControl) return
+  if (session.remote && !config.remoteAllowAttach) return
 
   try {
     const target = resolveCopyModeTarget(sessionId, ws, session)
@@ -1406,6 +1415,10 @@ async function handleKill(sessionId: string, ws: ServerWebSocket<WSData>) {
     return
   }
   if (session.remote && config.remoteAllowControl && session.host) {
+    if (session.source !== 'managed') {
+      send(ws, { type: 'kill-failed', sessionId, message: 'Cannot kill external remote sessions' })
+      return
+    }
     try {
       const result = await runRemoteTmux(session.host, ['kill-window', '-t', session.tmuxWindow])
       if (result.exitCode !== 0) {
@@ -1485,6 +1498,10 @@ async function handleRename(
     return
   }
   if (session.remote && config.remoteAllowControl && session.host) {
+    if (session.source !== 'managed') {
+      send(ws, { type: 'error', message: 'Cannot rename external remote sessions' })
+      return
+    }
     const trimmed = newName.trim()
     if (!trimmed) {
       send(ws, { type: 'error', message: 'Name cannot be empty' })
@@ -1871,6 +1888,7 @@ function createAndStartSshProxy(
     baseSession: '', // not used for SSH standalone sessions
     host,
     sshOptions,
+    commandTimeoutMs: config.remoteTimeoutMs,
     onData: (data) => {
       const sessionId = ws.data.currentSessionId
       if (!sessionId) return
@@ -1924,7 +1942,7 @@ async function attachTerminalPersistent(
     sendTerminalError(ws, sessionId, 'ERR_INVALID_WINDOW', 'Session not found', false)
     return
   }
-  if (session.remote && !config.remoteAllowControl) {
+  if (session.remote && !config.remoteAllowAttach) {
     const host = session.host ? ` on ${session.host}` : ''
     sendTerminalError(ws, sessionId, 'ERR_INVALID_WINDOW', `Remote session${host} is read-only`, false)
     return
@@ -2071,7 +2089,7 @@ function handleTerminalInputPersistent(
   }
 
   const session = registry.get(sessionId)
-  if (session?.remote && !config.remoteAllowControl) return
+  if (session?.remote && !config.remoteAllowAttach) return
 
   ws.data.terminal?.write(data)
 
@@ -2096,7 +2114,7 @@ function handleTerminalResizePersistent(
   }
 
   const session = registry.get(sessionId)
-  if (session?.remote && !config.remoteAllowControl) return
+  if (session?.remote && !config.remoteAllowAttach) return
 
   ws.data.terminal?.resize(cols, rows)
 }

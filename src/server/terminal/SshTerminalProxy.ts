@@ -3,18 +3,9 @@
 // and tunnels all tmux interactions via SSH.
 
 import { logger } from '../logger'
+import { shellQuote } from '../shellQuote'
 import { TerminalProxyBase } from './TerminalProxyBase'
 import { TerminalProxyError, TerminalState } from './types'
-
-/**
- * Shell-quote a string for safe passage through a remote bash shell.
- * Simple args (alphanumeric + common safe chars) pass through unquoted.
- * Everything else gets single-quoted with internal quotes escaped.
- */
-function shellQuote(s: string): string {
-  if (/^[a-zA-Z0-9._\-/:@+=]+$/.test(s)) return s
-  return "'" + s.replace(/'/g, "'\\''") + "'"
-}
 
 class SshTerminalProxy extends TerminalProxyBase {
   /** Maximum time (ms) to wait for SSH startup before aborting. */
@@ -26,12 +17,14 @@ class SshTerminalProxy extends TerminalProxyBase {
   private rows = 24
   private clientTty: string | null = null
   private sshArgs: string[]
+  private commandTimeoutMs: number
   private startAttemptId = 0
 
   constructor(options: ConstructorParameters<typeof TerminalProxyBase>[0]) {
     super(options)
     const host = this.options.host ?? ''
     const sshOptions = this.options.sshOptions ?? []
+    this.commandTimeoutMs = this.options.commandTimeoutMs ?? 10_000
     // Disable SSH multiplexing for command-channel calls to prevent hangs
     // from stale control sockets when the long-running attach process dies.
     this.sshArgs = ['ssh', ...sshOptions, '-o', 'ControlPath=none', host]
@@ -103,7 +96,7 @@ class SshTerminalProxy extends TerminalProxyBase {
 
     const timeout = setTimeout(() => {
       try { proc.kill() } catch {}
-    }, 10_000)
+    }, this.commandTimeoutMs)
 
     let exitCode: number
     let stdoutText: string
@@ -440,4 +433,5 @@ class SshTerminalProxy extends TerminalProxyBase {
   }
 }
 
-export { shellQuote, SshTerminalProxy }
+export { SshTerminalProxy }
+export { shellQuote } from '../shellQuote'

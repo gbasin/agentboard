@@ -1,19 +1,25 @@
 import { inferAgentType, normalizePaneStartCommand } from './agentDetection'
 import { config } from './config'
 import { logger } from './logger'
+import { shellQuote } from './shellQuote'
 import {
   inferSessionStatus,
   type PaneCacheState,
   type PaneSnapshot,
 } from './statusInference'
-import { shellQuote } from './terminal/SshTerminalProxy'
 import type { HostStatus, Session } from '../shared/types'
+
+/**
+ * Replace characters that are not safe for use in session IDs.
+ * Only allows alphanumeric, underscore, dot, colon, at-sign, and hyphen.
+ */
+function sanitizeForId(s: string): string {
+  return s.replace(/[^A-Za-z0-9_.:@-]/g, '_')
+}
 
 const DEFAULT_SSH_OPTIONS = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=3']
 const TMUX_LIST_FORMAT =
-  '#{session_name}\\t#{window_index}\\t#{window_id}\\t#{window_name}\\t#{pane_current_path}\\t#{window_activity}\\t#{window_creation_time}\\t#{pane_start_command}'
-
-const PANE_SEPARATOR = '__AGENTBOARD_PANE_SEP__'
+  '#{session_name}\t#{window_index}\t#{window_id}\t#{window_name}\t#{pane_current_path}\t#{window_activity}\t#{window_creation_time}\t#{pane_start_command}'
 
 // Cache of remote pane content for change detection (mirrors paneContentCache in SessionManager)
 const remoteContentCache = new Map<string, PaneCacheState>()
@@ -164,7 +170,7 @@ export class RemoteSessionPoller {
  * Build a single shell command that captures pane dimensions + content
  * for all sessions, separated by a known marker.
  */
-function buildBatchCaptureCommand(sessions: Session[]): string {
+function buildBatchCaptureCommand(sessions: Session[], separator: string): string {
   if (sessions.length === 0) return ''
   return sessions
     .map((s) => {
@@ -172,7 +178,7 @@ function buildBatchCaptureCommand(sessions: Session[]): string {
       // Group dims + capture; suppress stderr so failures produce empty segments
       return (
         `{ tmux display-message -t ${target} -p '#{pane_width} #{pane_height}'` +
-        ` && tmux capture-pane -t ${target} -p -J; } 2>/dev/null; echo ${shellQuote(PANE_SEPARATOR)};`
+        ` && tmux capture-pane -t ${target} -p -J; } 2>/dev/null; echo ${shellQuote(separator)};`
       )
     })
     .join(' ')
@@ -184,10 +190,11 @@ function buildBatchCaptureCommand(sessions: Session[]): string {
  */
 function parseBatchCaptureOutput(
   output: string,
-  sessions: Session[]
+  sessions: Session[],
+  separator: string
 ): Map<string, PaneSnapshot> {
   const result = new Map<string, PaneSnapshot>()
-  const segments = output.split(PANE_SEPARATOR)
+  const segments = output.split(separator)
 
   for (let i = 0; i < sessions.length && i < segments.length; i++) {
     const segment = segments[i]!.trim()
@@ -264,7 +271,8 @@ async function captureRemotePaneStatus(
   sshOptions: string[],
   timeoutMs: number
 ): Promise<void> {
-  const cmd = buildBatchCaptureCommand(sessions)
+  const separator = crypto.randomUUID()
+  const cmd = buildBatchCaptureCommand(sessions, separator)
   if (!cmd) return
 
   const args = ['ssh', ...sshOptions, host, cmd]
@@ -296,7 +304,7 @@ async function captureRemotePaneStatus(
     return
   }
 
-  const captures = parseBatchCaptureOutput(stdout, sessions)
+  const captures = parseBatchCaptureOutput(stdout, sessions, separator)
   enrichSessionsWithStatus(
     sessions,
     captures,
@@ -364,13 +372,13 @@ function parseTmuxWindows(
   tmuxSessionPrefix: string,
   discoverPrefixes: string[]
 ): Session[] {
-  const lines = output.split('\n').map((line) => line.trim()).filter(Boolean)
+  const lines = output.split('\n').filter((line) => /\S/.test(line))
   const now = Date.now()
   const sessions: Session[] = []
   const wsPrefix = `${tmuxSessionPrefix}-ws-`
 
   for (const line of lines) {
-    const parts = line.split('\\t')
+    const parts = line.split('\t')
     if (parts.length < 8) {
       continue
     }
@@ -408,7 +416,10 @@ function parseTmuxWindows(
     const normalizedCommand = normalizePaneStartCommand(command || '')
     const agentType = inferAgentType(normalizedCommand)
     const id = buildRemoteSessionId(host, sessionName, windowIndex, windowId)
-    const displayName = windowName || sessionName || tmuxWindow
+    const isManagedSession = sessionName === tmuxSessionPrefix
+    const displayName = isManagedSession
+      ? (windowName || tmuxWindow)
+      : (sessionName || tmuxWindow)
 
     sessions.push({
       id,
@@ -419,7 +430,7 @@ function parseTmuxWindows(
       lastActivity,
       createdAt,
       agentType,
-      source: 'external',
+      source: isManagedSession ? 'managed' : 'external',
       host,
       remote: true,
       command: normalizedCommand || undefined,
@@ -436,7 +447,7 @@ function buildRemoteSessionId(
   windowId?: string
 ): string {
   const suffix = windowId?.trim() ? windowId.trim() : windowIndex.trim()
-  return `remote:${host}:${sessionName}:${suffix}`
+  return `remote:${host}:${sanitizeForId(sessionName)}:${sanitizeForId(suffix)}`
 }
 
 function toIsoFromSeconds(value: string | undefined, fallbackMs: number): string {
@@ -487,6 +498,7 @@ function splitSshOptions(value: string): string[] {
 
 // Export for testing
 export {
+  sanitizeForId,
   parseTmuxWindows,
   buildRemoteSessionId,
   toIsoFromSeconds,
@@ -496,5 +508,4 @@ export {
   enrichSessionsWithStatus,
   cleanupRemoteContentCache,
   remoteContentCache,
-  PANE_SEPARATOR,
 }

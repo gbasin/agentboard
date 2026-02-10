@@ -61,6 +61,7 @@ const defaultConfig = {
   remoteStaleMs: 45000,
   remoteSshOpts: '',
   remoteAllowControl: false,
+  remoteAllowAttach: false,
 }
 
 const configState = { ...defaultConfig }
@@ -382,6 +383,7 @@ function createWs() {
       currentSessionId: null as string | null,
       currentTmuxTarget: null as string | null,
       connectionId: 'ws-test',
+      terminalHost: null as string | null,
     },
     send: (payload: string) => {
       sent.push(JSON.parse(payload) as ServerMessage)
@@ -1449,7 +1451,7 @@ describe('server message handlers', () => {
       status: 'unknown',
       lastActivity: new Date().toISOString(),
       createdAt: new Date().toISOString(),
-      source: 'external',
+      source: 'managed',
       host: 'remote-host',
       remote: true,
       command: 'claude',
@@ -1518,7 +1520,7 @@ describe('server message handlers', () => {
       status: 'unknown',
       lastActivity: new Date().toISOString(),
       createdAt: new Date().toISOString(),
-      source: 'external',
+      source: 'managed',
       host: 'remote-host',
       remote: true,
       command: 'claude',
@@ -2172,6 +2174,9 @@ describe('server signal handlers', () => {
 
     handlers.get('SIGINT')?.()
     handlers.get('SIGTERM')?.()
+
+    // cleanupAllTerminals is async — wait for the .finally() callbacks
+    await new Promise((r) => setTimeout(r, 0))
 
     expect(attached?.disposed).toBe(true)
     expect(exitCodes).toEqual([0, 0])
