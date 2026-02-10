@@ -1,6 +1,6 @@
 {
   "name": "@gbasin/agentboard",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "type": "module",
   "description": "A terminal dashboard for tracking agent coding sessions",
   "author": "gbasin",
@@ -20,10 +20,10 @@
     "bun": ">=1.3.6"
   },
   "optionalDependencies": {
-    "@gbasin/agentboard-darwin-arm64": "0.1.9",
-    "@gbasin/agentboard-darwin-x64": "0.1.9",
-    "@gbasin/agentboard-linux-x64": "0.1.9",
-    "@gbasin/agentboard-linux-arm64": "0.1.9"
+    "@gbasin/agentboard-darwin-arm64": "0.1.10",
+    "@gbasin/agentboard-darwin-x64": "0.1.10",
+    "@gbasin/agentboard-linux-x64": "0.1.10",
+    "@gbasin/agentboard-linux-arm64": "0.1.10"
   },
   "scripts": {
     "dev": "concurrently -k \"bun run dev:server\" \"bun run dev:client\"",

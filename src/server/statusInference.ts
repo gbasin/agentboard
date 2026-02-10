@@ -36,13 +36,14 @@ export const PERMISSION_PATTERNS: RegExp[] = [
 // Detects if terminal content shows a permission prompt
 export function detectsPermissionPrompt(content: string): boolean {
   const cleaned = stripAnsi(content)
-  // Focus on the last ~30 lines where prompts typically appear
+  // Focus on the last ~10 lines where active prompts appear at the bottom
+  // Narrow window avoids false positives from permission text quoted in earlier output
   // First strip trailing blank lines (terminal buffer often has many)
   const lines = cleaned.split('\n')
   while (lines.length > 0 && lines[lines.length - 1]?.trim() === '') {
     lines.pop()
   }
-  const recentContent = lines.slice(-30).join('\n')
+  const recentContent = lines.slice(-10).join('\n')
   return PERMISSION_PATTERNS.some((pattern) => pattern.test(recentContent))
 }
 

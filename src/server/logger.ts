@@ -34,26 +34,33 @@ function getLogFile(): string {
 // Track file destination for cleanup
 let fileDestination: pino.DestinationStream | null = null
 
+const PRETTY_OPTIONS = {
+  colorize: true,
+  translateTime: 'SYS:standard',
+  ignore: 'pid,hostname',
+}
+
+function hasPinoPretty(): boolean {
+  try {
+    require.resolve('pino-pretty')
+    return true
+  } catch {
+    return false
+  }
+}
+
 function createLogger(): pino.Logger {
   const logLevel = getLogLevel()
   const logFile = getLogFile()
   const isDev = process.env.NODE_ENV !== 'production'
+  const canPretty = hasPinoPretty()
 
   // Dev mode: use pino-pretty for console, optionally also log to file
-  // Wrapped in try-catch because compiled Bun binaries can't use pino transports
-  // (they spawn worker_threads that dynamically require modules)
-  if (isDev) {
+  // Requires pino transports (worker_threads) — unavailable in compiled Bun binaries
+  if (isDev && canPretty) {
     try {
       const targets: pino.TransportTargetOptions[] = [
-        {
-          target: 'pino-pretty',
-          options: {
-            colorize: true,
-            translateTime: 'SYS:standard',
-            ignore: 'pid,hostname',
-          },
-          level: logLevel,
-        },
+        { target: 'pino-pretty', options: PRETTY_OPTIONS, level: logLevel },
       ]
 
       // Also log to file in dev if LOG_FILE is explicitly set via env var
@@ -72,18 +79,43 @@ function createLogger(): pino.Logger {
     }
   }
 
-  // Production: use sync destinations for reliable flushing
+  // Production (or dev fallback): human-readable stdout, structured JSON file
+  // Uses pino-pretty for stdout when available (npx installs), otherwise raw JSON
+  // with ISO timestamps as fallback (compiled binaries)
+  const baseOptions: pino.LoggerOptions = {
+    level: logLevel,
+    base: {},                              // strip pid, hostname
+    timestamp: pino.stdTimeFunctions.isoTime, // ISO 8601 instead of epoch ms
+  }
+
   if (logFile) {
     fileDestination = pino.destination({ dest: logFile, sync: true, mkdir: true })
+
+    if (canPretty) {
+      try {
+        const prettyStdout = pino.transport({ target: 'pino-pretty', options: PRETTY_OPTIONS })
+        const streams: pino.StreamEntry[] = [
+          { level: logLevel, stream: prettyStdout },
+          { level: logLevel, stream: fileDestination },
+        ]
+        return pino(baseOptions, pino.multistream(streams))
+      } catch { /* fall through */ }
+    }
+
     const streams: pino.StreamEntry[] = [
       { level: logLevel, stream: pino.destination({ dest: 1, sync: true }) },
       { level: logLevel, stream: fileDestination },
     ]
-    return pino({ level: logLevel }, pino.multistream(streams))
+    return pino(baseOptions, pino.multistream(streams))
   }
 
-  // Production without file: simple stdout
-  return pino({ level: logLevel })
+  // Without log file: pretty stdout or plain JSON
+  if (canPretty) {
+    try {
+      return pino(baseOptions, pino.transport({ target: 'pino-pretty', options: PRETTY_OPTIONS }))
+    } catch { /* fall through */ }
+  }
+  return pino(baseOptions)
 }
 
 const pinoLogger: pino.Logger = createLogger()

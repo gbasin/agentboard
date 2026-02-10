@@ -296,7 +296,8 @@ async function commitChanges(version: string): Promise<void> {
   const spin = spinner("Committing changes...");
 
   try {
-    await $`git add package.json`.quiet();
+    await $`bun install`.quiet();
+    await $`git add package.json bun.lock`.quiet();
     await $`git commit -m ${"chore: bump version to v" + version}`.quiet();
     spin.succeed("Changes committed");
   } catch (error) {

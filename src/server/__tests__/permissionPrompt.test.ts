@@ -13,7 +13,7 @@ describe('detectsPermissionPrompt', () => {
   })
 
   test('ignores prompts outside the recent window', () => {
-    const lines = Array.from({ length: 31 }, (_, index) =>
+    const lines = Array.from({ length: 11 }, (_, index) =>
       index === 0 ? 'Do you want to proceed?' : `line-${index}`
     )
 

@@ -48,7 +48,7 @@ export function sanitizeLink(text: string): string {
   return result
 }
 
-const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform)
+const getIsMac = () => typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform)
 
 /**
  * Custom clipboard provider that prevents empty writes (matching Ghostty's behavior).
@@ -369,7 +369,7 @@ export function useTerminal({
       // Truncate long URLs
       const displayUrl = sanitized.length > 60 ? sanitized.slice(0, 57) + '...' : sanitized
       tooltipUrl.textContent = displayUrl
-      tooltipHint.textContent = `${isMac ? '⌘' : 'Ctrl'}+click to open`
+      tooltipHint.textContent = `${getIsMac() ? '⌘' : 'Ctrl'}+click to open`
       tooltip.style.left = `${event.clientX - rect.left + 10}px`
       tooltip.style.top = `${event.clientY - rect.top + 10}px`
       tooltip.style.display = 'block'
@@ -439,6 +439,15 @@ export function useTerminal({
     terminal.loadAddon(webLinksAddon)
     webLinksAddonRef.current = webLinksAddon
 
+    // Paste interception state: each keydown creates a resolver that the
+    // capture-phase paste listener fulfills with clipboardData text.
+    // This per-request model prevents race conditions with rapid pastes
+    // and avoids double-paste without depending on the async Clipboard API.
+    let pasteResolver: ((text: string) => void) | null = null
+    let pasteTimeoutId: ReturnType<typeof setTimeout> | null = null
+
+    const pasteModifier = getIsMac() ? 'metaKey' : 'ctrlKey' as const
+
     terminal.attachCustomKeyEventHandler((event) => {
       // Cmd/Ctrl+C: copy selection (only non-whitespace to avoid clearing images from clipboard)
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
@@ -451,45 +460,81 @@ export function useTerminal({
         }
       }
 
-      // Cmd+V on macOS: intercept paste to handle Finder file copies.
+      // Ctrl+V on macOS desktop: send bracket paste signal for Claude Code image paste.
       // Claude Code detects bracket paste and reads the macOS system clipboard
-      // directly, getting the Finder file icon instead of the actual file.
-      // We intercept Cmd+V, check for a Finder file URL via osascript, and if
-      // found, send the real path as raw terminal input (no bracket paste) so
-      // Claude Code treats it as typed text and doesn't read the clipboard.
-      // For non-file pastes, we fall back to terminal.paste() (bracket paste).
-      // Only on macOS (Finder-specific) — other platforms use native xterm paste.
-      if (isMac && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'v' && event.type === 'keydown') {
-        // Only intercept if clipboard API is available; otherwise let xterm
-        // handle natively (e.g. non-secure HTTP contexts like Tailscale)
-        if (!navigator.clipboard?.readText) {
-          return true
+      // for image data. Ctrl+V doesn't trigger a browser paste event, so there's
+      // no double-paste risk — we just need to convert it to a bracket paste signal.
+      // Excluded on iOS: no Finder/osascript, and Ctrl+V with hardware keyboard
+      // should not trigger bracket paste.
+      if (getIsMac() && !isiOS && event.ctrlKey && !event.metaKey && event.key.toLowerCase() === 'v' && event.type === 'keydown') {
+        if (attachedSessionRef.current) {
+          terminal.paste('')
         }
+        return !attachedSessionRef.current // Only swallow when attached
+      }
+
+      // Cmd+V on macOS / Ctrl+V on other platforms: intercept paste to handle
+      // Finder file copies and normal text paste.
+      // We use a capture-phase paste listener (installed below) to grab
+      // clipboardData synchronously and suppress ClipboardAddon, avoiding
+      // double-paste without any Clipboard API permission dependency.
+      if (event[pasteModifier] && event.key.toLowerCase() === 'v' && event.type === 'keydown') {
+        // Create a per-request promise so the capture-phase paste listener
+        // can deliver clipboardData text directly to this paste attempt.
+        // Timeout ensures we don't hang if the paste event never fires.
+        // Cancel any pending paste request to prevent overlapping resolvers
+        if (pasteTimeoutId !== null) {
+          clearTimeout(pasteTimeoutId)
+          pasteTimeoutId = null
+        }
+        pasteResolver = null
+        const pastePromise = new Promise<string | null>((resolve) => {
+          pasteTimeoutId = setTimeout(() => {
+            pasteTimeoutId = null
+            pasteResolver = null
+            resolve(null)
+          }, 100)
+          pasteResolver = (text: string) => {
+            if (pasteTimeoutId !== null) {
+              clearTimeout(pasteTimeoutId)
+              pasteTimeoutId = null
+            }
+            resolve(text)
+          }
+        })
         void (async () => {
-          const attached = attachedSessionRef.current
-          if (!attached) return
-
-          // Check for Finder file copy (macOS server only)
           try {
-            const res = await fetch('/api/clipboard-file-path')
-            if (res.ok) {
-              const { path } = (await res.json()) as { path: string | null }
-              if (path) {
-                // Send as raw input (no bracket paste) so Claude Code
-                // doesn't detect a paste and read the system clipboard
-                sendMessageRef.current({ type: 'terminal-input', sessionId: attached, data: path })
-                return
-              }
-            }
-          } catch { /* not on macOS or endpoint unavailable */ }
+            const attached = attachedSessionRef.current
+            if (!attached) return
 
-          // Normal paste - use terminal.paste() for proper bracket paste behavior
-          try {
-            const text = await navigator.clipboard.readText()
-            if (text) {
-              terminal.paste(text)
+            // Wait for the paste event to deliver text (up to 100ms timeout).
+            // Falls back to clipboard API if paste event didn't fire.
+            let text = await pastePromise
+            if (text == null) {
+              try { text = await navigator.clipboard.readText() } catch { text = '' }
             }
-          } catch { /* clipboard not available */ }
+
+            // If paste text is empty and on macOS desktop, check for Finder file copy.
+            // Only hits the server when needed (no latency cost for normal text pastes).
+            if (!text && getIsMac() && !isiOS) {
+              try {
+                const res = await fetch('/api/clipboard-file-path')
+                if (res.ok) {
+                  const { path } = (await res.json()) as { path: string | null }
+                  if (path) {
+                    // Send as raw input (no bracket paste) so Claude Code
+                    // doesn't detect a paste and read the system clipboard
+                    sendMessageRef.current({ type: 'terminal-input', sessionId: attached, data: path })
+                    return
+                  }
+                }
+              } catch { /* not on macOS or endpoint unavailable */ }
+            }
+
+            if (text) terminal.paste(text)
+          } finally {
+            pasteResolver = null
+          }
         })()
         return false // Prevent xterm.js native paste handling
       }
@@ -505,6 +550,21 @@ export function useTerminal({
 
       return true
     })
+
+    // Capture-phase paste listener: when our keydown handler has an active
+    // pasteResolver, grab the clipboard text synchronously from clipboardData
+    // (no permissions needed) and suppress the event so ClipboardAddon doesn't
+    // also paste (preventing double-paste).
+    const handlePaste = (e: ClipboardEvent) => {
+      if (!pasteResolver) return
+      e.preventDefault()
+      e.stopPropagation()
+      const text = e.clipboardData?.getData('text/plain') ?? ''
+      const resolver = pasteResolver
+      pasteResolver = null
+      resolver(text)
+    }
+    container.addEventListener('paste', handlePaste, { capture: true })
 
     // Handle input - only send to attached session
     terminal.onData((data) => {
@@ -598,6 +658,13 @@ export function useTerminal({
       hoveredLinkUrl = null
       // Remove link mousedown handler
       container.removeEventListener('mousedown', handleLinkMouseDown, true)
+      // Remove paste intercept handler
+      container.removeEventListener('paste', handlePaste, true)
+      if (pasteTimeoutId !== null) {
+        clearTimeout(pasteTimeoutId)
+        pasteTimeoutId = null
+      }
+      pasteResolver = null
       // Remove tooltip element
       if (linkTooltipRef.current) {
         linkTooltipRef.current.remove()
