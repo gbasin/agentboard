@@ -7,3 +7,4 @@
 - **onboarding** — First-run onboarding UX → [docs/onboarding-ux-proposal.md](docs/onboarding-ux-proposal.md)
 - **file-refs** — File reference detection in agent output → [docs/file-reference-detection.md](docs/file-reference-detection.md)
 - **mac-app** — Native macOS app packaging → [docs/MAC_APP_PLAN.md](docs/MAC_APP_PLAN.md)
+- **log-watcher** — Replace setInterval log polling with chokidar file watching → [docs/log-watcher-migration.md](docs/log-watcher-migration.md)
