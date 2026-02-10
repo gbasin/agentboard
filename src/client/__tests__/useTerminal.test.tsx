@@ -413,7 +413,7 @@ describe('useTerminal', () => {
     })
 
     // Output is wrapped in synchronized output sequences (BSU/ESU)
-    expect(terminal.writes).toEqual([`\x1b[?2026hx\u23FA\uFE0Ey\x1b[?2026l`])
+    expect(terminal.writes).toEqual([`\x1b[?2026hx\u23FAy\x1b[?2026l`])
 
     terminal.selection = ''
 
@@ -442,6 +442,53 @@ describe('useTerminal', () => {
 
     expect(terminal.options.fontSize).toBe(14)
     expect(sendCalls.some((call) => call.type === 'terminal-resize')).toBe(true)
+  })
+
+  test('adds text presentation selectors to output on iOS only', async () => {
+    globalAny.navigator = {
+      userAgent: 'iPhone',
+      platform: 'iPhone',
+      maxTouchPoints: 0,
+      clipboard: { writeText: () => Promise.resolve() },
+    } as unknown as Navigator
+
+    const listeners: Array<(message: ServerMessage) => void> = []
+    const { container } = createContainerMock()
+
+    await act(async () => {
+      TestRenderer.create(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          sendMessage={() => {}}
+          subscribe={(listener) => {
+            listeners.push(listener)
+            return () => {}
+          }}
+          theme={{ background: '#000' }}
+          fontSize={12}
+          onScrollChange={() => {}}
+        />,
+        {
+          createNodeMock: () => container,
+        }
+      )
+    })
+
+    const terminal = TerminalMock.instances[0]
+    if (!terminal) {
+      throw new Error('Expected terminal instance')
+    }
+
+    act(() => {
+      listeners[0]?.({
+        type: 'terminal-output',
+        sessionId: 'session-1',
+        data: `x\u23FAy`,
+      })
+    })
+
+    expect(terminal.writes).toEqual([`\x1b[?2026hx\u23FA\uFE0Ey\x1b[?2026l`])
   })
 
   test('detaches previous session and cleans up on unmount', async () => {
