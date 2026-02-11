@@ -100,7 +100,8 @@ class PtyTerminalProxy extends TerminalProxyBase {
     }
 
     if (attemptId !== this.startAttemptId) {
-      await this.dispose()
+      // Stale — clean up the session we just created without a full re-entrant dispose.
+      try { this.runTmux(['kill-session', '-t', this.options.sessionName]) } catch {}
       return
     }
 
@@ -140,13 +141,13 @@ class PtyTerminalProxy extends TerminalProxyBase {
     }
 
     if (attemptId !== this.startAttemptId) {
+      // Stale — kill the local proc without a full re-entrant dispose.
       try {
         proc.kill()
         proc.terminal?.close()
       } catch {
         // Ignore if already exited
       }
-      await this.dispose()
       return
     }
 
@@ -166,7 +167,7 @@ class PtyTerminalProxy extends TerminalProxyBase {
     try {
       const tty = await this.discoverClientTty(proc.pid)
       if (attemptId !== this.startAttemptId) {
-        await this.dispose()
+        // Stale — owner already disposed or replaced this proxy.
         return
       }
       this.clientTty = tty

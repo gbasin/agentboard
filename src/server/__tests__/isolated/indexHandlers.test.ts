@@ -1790,6 +1790,44 @@ describe('server message handlers', () => {
     expect(outputCountAfter).toBe(outputCount)
   })
 
+  test('rapid terminal-attach race: only latest attach sends terminal-ready', async () => {
+    const { serveOptions, registryInstance } = await loadIndex()
+    const sessionA: Session = { ...baseSession, id: 'session-A', name: 'alpha', tmuxWindow: 'agentboard:1' }
+    const sessionB: Session = { ...baseSession, id: 'session-B', name: 'beta', tmuxWindow: 'agentboard:2' }
+    registryInstance.sessions = [sessionA, sessionB]
+
+    const { ws, sent } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) throw new Error('WebSocket handlers not configured')
+
+    websocket.open?.(ws as never)
+
+    // Fire two terminal-attach messages synchronously (before any microtask runs).
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({ type: 'terminal-attach', sessionId: sessionA.id, tmuxTarget: sessionA.tmuxWindow })
+    )
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({ type: 'terminal-attach', sessionId: sessionB.id, tmuxTarget: sessionB.tmuxWindow })
+    )
+
+    // Let all microtasks settle.
+    await new Promise((r) => setTimeout(r, 0))
+
+    // Only session B should receive terminal-ready.
+    const readyMessages = sent.filter((m) => m.type === 'terminal-ready')
+    expect(readyMessages).toEqual([{ type: 'terminal-ready', sessionId: sessionB.id }])
+
+    // No terminal-error should be sent for the stale attach A.
+    const errorMessages = sent.filter((m) => m.type === 'terminal-error')
+    expect(errorMessages).toEqual([])
+
+    // Final state should reflect session B.
+    expect(ws.data.currentSessionId).toBe(sessionB.id)
+    expect(ws.data.currentTmuxTarget).toBe(sessionB.tmuxWindow)
+  })
+
   test('validates tmux target on terminal attach', async () => {
     const { serveOptions, registryInstance } = await loadIndex()
     registryInstance.sessions = [baseSession]

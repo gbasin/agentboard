@@ -1162,13 +1162,13 @@ function handleMessage(
     case 'session-rename':
       fireAndForget(handleRename(message.sessionId, message.newName, ws), 'handleRename')
       return
-	    case 'terminal-attach':
-	      ws.data.terminalAttachSeq += 1
-	      fireAndForget(attachTerminalPersistent(ws, message, ws.data.terminalAttachSeq), 'attachTerminalPersistent')
-	      return
-	    case 'terminal-detach':
-	      detachTerminalPersistent(ws, message.sessionId)
-	      return
+    case 'terminal-attach':
+      ws.data.terminalAttachSeq += 1
+      fireAndForget(attachTerminalPersistent(ws, message, ws.data.terminalAttachSeq), 'attachTerminalPersistent')
+      return
+    case 'terminal-detach':
+      detachTerminalPersistent(ws, message.sessionId)
+      return
     case 'terminal-input':
       handleTerminalInputPersistent(ws, message.sessionId, message.data)
       return
@@ -1826,6 +1826,7 @@ function isTerminalAttachCurrent(ws: ServerWebSocket<WSData>, attachSeq: number)
   return ws.data.terminalAttachSeq === attachSeq
 }
 
+/** @throws on start failure — caller must catch and report via handleTerminalError. */
 async function ensurePersistentTerminal(
   ws: ServerWebSocket<WSData>,
   attachSeq: number
@@ -1859,6 +1860,7 @@ async function ensurePersistentTerminal(
   }
 }
 
+/** @throws on start failure — caller must catch and report via handleTerminalError. */
 async function ensureCorrectProxyType(
   ws: ServerWebSocket<WSData>,
   session: Session,
@@ -1972,12 +1974,12 @@ async function createAndStartSshProxy(
 
   try {
     await terminal.start()
-    if (!isTerminalAttachCurrent(ws, attachSeq)) {
-      await terminal.dispose()
-      return null
-    }
-    if (ws.data.terminal !== terminal) {
-      // Another attach request replaced this proxy while it was starting.
+    if (!isTerminalAttachCurrent(ws, attachSeq) || ws.data.terminal !== terminal) {
+      // Stale or replaced — clean up references before disposing.
+      if (ws.data.terminal === terminal) {
+        ws.data.terminal = null
+        ws.data.terminalHost = null
+      }
       await terminal.dispose()
       return null
     }
@@ -2003,32 +2005,24 @@ async function attachTerminalPersistent(
   }
 
   if (!isValidSessionId(sessionId)) {
-    if (isTerminalAttachCurrent(ws, attachSeq)) {
-      sendTerminalError(ws, sessionId, 'ERR_INVALID_WINDOW', 'Invalid session id', false)
-    }
+    sendTerminalError(ws, sessionId, 'ERR_INVALID_WINDOW', 'Invalid session id', false)
     return
   }
 
   const session = registry.get(sessionId)
   if (!session) {
-    if (isTerminalAttachCurrent(ws, attachSeq)) {
-      sendTerminalError(ws, sessionId, 'ERR_INVALID_WINDOW', 'Session not found', false)
-    }
+    sendTerminalError(ws, sessionId, 'ERR_INVALID_WINDOW', 'Session not found', false)
     return
   }
   if (session.remote && !config.remoteAllowAttach) {
     const host = session.host ? ` on ${session.host}` : ''
-    if (isTerminalAttachCurrent(ws, attachSeq)) {
-      sendTerminalError(ws, sessionId, 'ERR_INVALID_WINDOW', `Remote session${host} is read-only`, false)
-    }
+    sendTerminalError(ws, sessionId, 'ERR_INVALID_WINDOW', `Remote session${host} is read-only`, false)
     return
   }
 
   const target = tmuxTarget ?? session.tmuxWindow
   if (!isValidTmuxTarget(target)) {
-    if (isTerminalAttachCurrent(ws, attachSeq)) {
-      sendTerminalError(ws, sessionId, 'ERR_INVALID_WINDOW', 'Invalid tmux target', false)
-    }
+    sendTerminalError(ws, sessionId, 'ERR_INVALID_WINDOW', 'Invalid tmux target', false)
     return
   }
 
