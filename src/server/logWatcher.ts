@@ -1,14 +1,11 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import chokidar, { type FSWatcher } from 'chokidar'
 import { logger } from './logger'
 
 interface LogWatcherOptions {
   /** Directories to watch recursively */
   dirs: string[]
-  /** Max recursive depth per watched directory */
-  depth: number
   /** Quiet period before flushing pending paths */
   debounceMs?: number
   /** Max wait before forcing a flush */
@@ -21,7 +18,7 @@ const DEFAULT_DEBOUNCE_MS = 2000
 const DEFAULT_MAX_WAIT_MS = 5000
 
 export class LogWatcher {
-  private watcher: FSWatcher | null = null
+  private watchers: fs.FSWatcher[] = []
   private pending = new Set<string>()
   private debounceTimer: ReturnType<typeof setTimeout> | null = null
   private firstEventTime: number | null = null
@@ -36,41 +33,52 @@ export class LogWatcher {
   }
 
   start(): void {
-    if (this.watcher) return
+    if (this.watchers.length > 0) return
 
     const watchDirs = this.resolveWatchDirs(this.options.dirs)
-    this.watcher = chokidar.watch(watchDirs, {
-      persistent: true,
-      ignoreInitial: true,
-      depth: this.options.depth,
-      followSymlinks: false,
-      ignored: (filePath, stats) => !this.shouldWatchPath(filePath, stats),
-      usePolling: false,
-    })
+    const startMs = Date.now()
 
-    this.watcher
-      .on('add', (filePath) => this.handleEvent(filePath))
-      .on('change', (filePath) => this.handleEvent(filePath))
-      .on('error', (error) => {
-        logger.warn('log_watcher_error', {
+    for (const dir of watchDirs) {
+      try {
+        const watcher = fs.watch(dir, { recursive: true }, (_eventType, filename) => {
+          if (!filename || !filename.endsWith('.jsonl')) return
+          this.handleEvent(path.join(dir, filename))
+        })
+        watcher.on('error', (error) => {
+          logger.warn('log_watcher_error', {
+            dir,
+            message: error instanceof Error ? error.message : String(error),
+          })
+        })
+        this.watchers.push(watcher)
+      } catch (error) {
+        logger.warn('log_watcher_setup_error', {
+          dir,
           message: error instanceof Error ? error.message : String(error),
         })
-      })
+      }
+    }
+
+    logger.info('log_watcher_started', {
+      dirs: watchDirs,
+      watcherCount: this.watchers.length,
+      setupMs: Date.now() - startMs,
+    })
   }
 
   stop(): void {
     this.flush()
-    if (!this.watcher) return
-    const watcher = this.watcher
-    this.watcher = null
-    void watcher.close().catch((error) => {
-      logger.warn('log_watcher_close_error', {
-        message: error instanceof Error ? error.message : String(error),
-      })
-    })
+    for (const watcher of this.watchers) {
+      try {
+        watcher.close()
+      } catch {
+        // Ignore close errors
+      }
+    }
+    this.watchers = []
   }
 
-  private resolveWatchDirs(dirs: string[]): string[] {
+  resolveWatchDirs(dirs: string[]): string[] {
     const home = os.homedir()
     const resolved: string[] = []
     for (const dir of dirs) {
@@ -89,13 +97,6 @@ export class LogWatcher {
       resolved.push(candidate)
     }
     return Array.from(new Set(resolved))
-  }
-
-  private shouldWatchPath(filePath: string, stats?: fs.Stats): boolean {
-    if (!stats) return true
-    if (stats.isDirectory()) return true
-    if (!stats.isFile()) return false
-    return filePath.endsWith('.jsonl')
   }
 
   private handleEvent(filePath: string): void {

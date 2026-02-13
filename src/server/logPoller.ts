@@ -1,7 +1,7 @@
 import { logger } from './logger'
 import { config } from './config'
 import type { SessionDatabase } from './db'
-import { getLogSearchDirs, getLogWatchParentDirs } from './logDiscovery'
+import { getLogSearchDirs } from './logDiscovery'
 import { DEFAULT_SCROLLBACK_LINES, extractLastEntryTimestamp, isToolNotificationText } from './logMatcher'
 import { deriveDisplayName } from './agentSessions'
 import { generateUniqueSessionName } from './nameGenerator'
@@ -207,10 +207,9 @@ export class LogPoller {
   }
 
   private startWatchMode(fallbackIntervalMs: number): void {
-    const watchDirs = getLogWatchParentDirs()
+    const watchDirs = getLogSearchDirs()
     this.logWatcher = new LogWatcher({
       dirs: watchDirs,
-      depth: 5,
       debounceMs: 2000,
       maxWaitMs: 5000,
       onBatch: (paths) => void this.pollChanged(paths),

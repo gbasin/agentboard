@@ -8,10 +8,6 @@ let LogWatcher: typeof import('../logWatcher').LogWatcher
 /** Single cast point for accessing LogWatcher internals in tests */
 interface LogWatcherInternals {
   handleEvent: (filePath: string) => void
-  shouldWatchPath: (
-    filePath: string,
-    stats?: { isFile(): boolean; isDirectory(): boolean }
-  ) => boolean
   resolveWatchDirs: (dirs: string[]) => string[]
 }
 
@@ -45,7 +41,6 @@ describe('LogWatcher', () => {
     const batches: string[][] = []
     const watcher = new LogWatcher({
       dirs: [],
-      depth: 5,
       debounceMs: 2000,
       maxWaitMs: 5000,
       onBatch: (paths) => batches.push(paths),
@@ -67,7 +62,6 @@ describe('LogWatcher', () => {
     const batches: string[][] = []
     const watcher = new LogWatcher({
       dirs: [],
-      depth: 5,
       debounceMs: 2000,
       maxWaitMs: 5000,
       onBatch: (paths) => batches.push(paths),
@@ -87,7 +81,6 @@ describe('LogWatcher', () => {
     const batches: string[][] = []
     const watcher = new LogWatcher({
       dirs: [],
-      depth: 5,
       debounceMs: 50,
       maxWaitMs: 5000,
       onBatch: (paths) => batches.push(paths),
@@ -107,7 +100,6 @@ describe('LogWatcher', () => {
     const batches: string[][] = []
     const watcher = new LogWatcher({
       dirs: [],
-      depth: 5,
       debounceMs: 2000,
       maxWaitMs: 5000,
       onBatch: (paths) => batches.push(paths),
@@ -120,32 +112,23 @@ describe('LogWatcher', () => {
     expect(batches[0]).toEqual(['/tmp/pending.jsonl'])
   })
 
-  test('filters paths to jsonl files while allowing directory traversal', () => {
+  test('handleEvent ignores non-jsonl files', () => {
+    jest.useFakeTimers()
+    const batches: string[][] = []
     const watcher = new LogWatcher({
       dirs: [],
-      depth: 5,
-      onBatch: () => {},
+      debounceMs: 50,
+      maxWaitMs: 5000,
+      onBatch: (paths) => batches.push(paths),
     })
-    const { shouldWatchPath } = internals(watcher)
 
-    expect(
-      shouldWatchPath('/tmp/included.jsonl', {
-        isFile: () => true,
-        isDirectory: () => false,
-      })
-    ).toBe(true)
-    expect(
-      shouldWatchPath('/tmp/ignored.txt', {
-        isFile: () => true,
-        isDirectory: () => false,
-      })
-    ).toBe(false)
-    expect(
-      shouldWatchPath('/tmp/some-dir', {
-        isFile: () => false,
-        isDirectory: () => true,
-      })
-    ).toBe(true)
+    internals(watcher).handleEvent('/tmp/included.jsonl')
+    internals(watcher).handleEvent('/tmp/ignored.txt')
+    internals(watcher).handleEvent('/tmp/ignored.json')
+
+    jest.advanceTimersByTime(50)
+    expect(batches).toHaveLength(1)
+    expect(batches[0]).toEqual(['/tmp/included.jsonl'])
   })
 
   test('resolves non-existent watch directories to existing ancestors', async () => {
@@ -154,7 +137,6 @@ describe('LogWatcher', () => {
     const missingDir = path.join(tempRoot, 'later', 'nested')
     const watcher = new LogWatcher({
       dirs: [missingDir],
-      depth: 5,
       onBatch: () => {},
     })
     const resolved = internals(watcher).resolveWatchDirs([missingDir])
@@ -171,7 +153,6 @@ describe('LogWatcher', () => {
   test('skips directories that would resolve to home or root', () => {
     const watcher = new LogWatcher({
       dirs: [],
-      depth: 5,
       onBatch: () => {},
     })
     const { resolveWatchDirs } = internals(watcher)
