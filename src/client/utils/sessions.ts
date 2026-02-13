@@ -36,7 +36,7 @@ export function sortSessions(
   // Manual mode: sort by the order array, new sessions go to the end
   if (mode === 'manual' && manualOrder && manualOrder.length > 0) {
     const orderMap = new Map(manualOrder.map((id, idx) => [id, idx]))
-    return sessions.slice().sort((a, b) => {
+    return sessions.toSorted((a, b) => {
       const aKey = getSessionOrderKey(a)
       const bKey = getSessionOrderKey(b)
       const aIdx = orderMap.get(aKey) ?? orderMap.get(a.id) ?? Infinity
@@ -49,7 +49,7 @@ export function sortSessions(
     })
   }
 
-  return sessions.slice().sort((a, b) => {
+  return sessions.toSorted((a, b) => {
     if (mode === 'status') {
       // Sort by status priority, then by lastActivity descending
       const aOrder =
@@ -97,7 +97,7 @@ export function getUniqueProjects(
   }
 
   // Sort by most recent activity (descending)
-  return Array.from(projectActivity.keys()).slice().sort((a, b) => {
+  return Array.from(projectActivity.keys()).toSorted((a, b) => {
     const aTime = projectActivity.get(a) || 0
     const bTime = projectActivity.get(b) || 0
     return bTime - aTime
@@ -132,7 +132,7 @@ export function getUniqueHosts(
     }
   }
 
-  return Array.from(hostActivity.keys()).slice().sort((a, b) => {
+  return Array.from(hostActivity.keys()).toSorted((a, b) => {
     const aTime = hostActivity.get(a) || 0
     const bTime = hostActivity.get(b) || 0
     return bTime - aTime
