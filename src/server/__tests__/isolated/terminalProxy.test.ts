@@ -1,26 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { PtyTerminalProxy as TerminalProxy } from '../terminal'
-
-// DEBUG: diagnose CI failure
-console.log('[DEBUG] TerminalProxy import:', typeof TerminalProxy, TerminalProxy?.name)
-if (TerminalProxy) {
-  const proto = Object.getOwnPropertyNames(TerminalProxy.prototype)
-  console.log('[DEBUG] prototype methods:', proto)
-  const inst = Object.create(TerminalProxy.prototype)
-  console.log('[DEBUG] inst.start type:', typeof inst.start)
-}
-
-try {
-  // Also try direct import
-  const mod = require('../terminal/PtyTerminalProxy')
-  console.log('[DEBUG] direct import keys:', Object.keys(mod))
-  console.log('[DEBUG] direct PtyTerminalProxy:', typeof mod.PtyTerminalProxy, mod.PtyTerminalProxy?.name)
-  if (mod.PtyTerminalProxy) {
-    console.log('[DEBUG] direct prototype:', Object.getOwnPropertyNames(mod.PtyTerminalProxy.prototype))
-  }
-} catch (e) {
-  console.log('[DEBUG] direct import error:', e)
-}
+import { PtyTerminalProxy as TerminalProxy } from '../../terminal'
 
 function createSpawnHarness() {
   const spawnCalls: Array<{
