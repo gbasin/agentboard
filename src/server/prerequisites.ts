@@ -12,7 +12,8 @@ export function ensureTmux(): void {
     const message =
       error instanceof Error ? error.message : 'tmux not found'
     throw new Error(
-      `tmux is required to run Agentboard. Install it with: brew install tmux. (${message})`
+      `tmux is required to run Agentboard. Install it with: brew install tmux. (${message})`,
+      { cause: error }
     )
   }
 }

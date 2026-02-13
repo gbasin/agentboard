@@ -50,7 +50,7 @@ export class LogMatchWorkerClient {
         // Worker failed to initialize - restart and retry once
         if (error instanceof WorkerInitError) {
           if (this.disposed) {
-            throw new Error('Log match worker is disposed')
+            throw new Error('Log match worker is disposed', { cause: error })
           }
           this.restartWorker()
           if (this.readyPromise) {

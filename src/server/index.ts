@@ -807,7 +807,7 @@ app.get('/api/directories', async (c) => {
           path: path.join(resolved, name),
         }
       })
-      .sort((a, b) => {
+      .toSorted((a, b) => {
         const aDot = a.name.startsWith('.')
         const bDot = b.name.startsWith('.')
         if (aDot !== bDot) {

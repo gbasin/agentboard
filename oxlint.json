@@ -1,5 +1,13 @@
 {
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error"
+  },
   "rules": {
-    "no-debugger": "error"
+    "no-debugger": "error",
+    "no-extraneous-class": "off",
+    "require-post-message-target-origin": "off",
+    "consistent-function-scoping": "off",
+    "prefer-add-event-listener": "off"
   }
 }

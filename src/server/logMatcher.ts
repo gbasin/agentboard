@@ -576,7 +576,7 @@ function getRgMatchLines(
     }
   }
 
-  return lines.sort((a, b) => a - b)
+  return lines.toSorted((a, b) => a - b)
 }
 
 function scoreOrderedMessageMatchesInText(
@@ -1257,7 +1257,7 @@ export function tryExactMatchWindowToLog(
     longMessages.length > 0 ? longMessages : allowShortMessages ? messages : []
   if (messagesToSearch.length === 0) return null
 
-  const sortedMessages = [...messagesToSearch].sort((a, b) => b.length - a.length)
+  const sortedMessages = messagesToSearch.toSorted((a, b) => b.length - a.length)
   let candidates: string[] = []
 
   for (const message of sortedMessages) {
@@ -1319,8 +1319,7 @@ export function tryExactMatchWindowToLog(
 
   const orderedMessages = messages
     .filter((message: string) => message.length >= MIN_EXACT_MATCH_LENGTH)
-    .slice()
-    .reverse()
+    .toReversed()
 
   if (orderedMessages.length === 0) {
     return null

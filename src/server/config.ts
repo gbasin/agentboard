@@ -23,7 +23,7 @@ const rgThreads = Number.isFinite(rgThreadsRaw) && rgThreadsRaw > 0
   : 1
 const logMatchWorkerRaw = process.env.AGENTBOARD_LOG_MATCH_WORKER
 const logMatchWorker =
-  logMatchWorkerRaw === 'false' || logMatchWorkerRaw === '0' ? false : true
+  !(logMatchWorkerRaw === 'false' || logMatchWorkerRaw === '0')
 const logMatchProfile =
   process.env.AGENTBOARD_LOG_MATCH_PROFILE === 'true' ||
   process.env.AGENTBOARD_LOG_MATCH_PROFILE === '1'

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { PtyTerminalProxy as TerminalProxy } from '../terminal'
+import { PtyTerminalProxy as TerminalProxy } from '../../terminal'
 
 function createSpawnHarness() {
   const spawnCalls: Array<{
