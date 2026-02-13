@@ -6,6 +6,7 @@ import {
   encodeProjectPath,
   extractProjectPath,
   extractSessionId,
+  getLogWatchParentDirs,
   getLogSearchDirs,
   isCodexExec,
   isCodexSubagent,
@@ -124,6 +125,14 @@ describe('log discovery', () => {
 
     expect(claudeRoot).toBe(path.join(home, 'claude-config', 'projects'))
     expect(codexRoot).toBe(path.join(home, 'codex-config', 'sessions'))
+  })
+
+  test('returns parent directories for file watching', () => {
+    const [claudeParent, codexParent, piParent] = getLogWatchParentDirs()
+
+    expect(claudeParent).toBe(claudeDir)
+    expect(codexParent).toBe(codexDir)
+    expect(piParent).toBe(path.join(piDir, 'agent'))
   })
 
   test('normalizes Windows project paths from logs', async () => {
