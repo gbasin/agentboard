@@ -29,6 +29,12 @@ export interface MatchWorkerRequest {
   windows: Session[]
   maxLogsPerPoll: number
   logDirs?: string[]
+  /**
+   * Paths provided by LogWatcher.
+   * When set and non-empty, worker skips full directory scanning and enriches
+   * only these paths.
+   */
+  preFilteredPaths?: string[]
   sessions: SessionSnapshot[]
   /** Known sessions to skip expensive file reads during log collection */
   knownSessions?: KnownSession[]

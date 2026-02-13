@@ -662,7 +662,7 @@ resurrectPinnedSessions() // Resurrect pinned sessions that lost their tmux wind
 refreshSessionsSync() // Re-hydrate after resurrection
 setInterval(refreshSessions, config.refreshIntervalMs) // Async for periodic
 if (config.logPollIntervalMs > 0) {
-  logPoller.start(config.logPollIntervalMs)
+  logPoller.start(config.logPollIntervalMs, config.logWatchMode)
 }
 
 registry.on('session-update', (session) => {

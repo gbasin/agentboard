@@ -45,6 +45,59 @@ export interface CollectLogEntryBatchOptions {
   knownSessions?: KnownSession[]
 }
 
+// Shared per-file enrichment used by full scans and pre-filtered path batches.
+export function enrichLogEntry(
+  logPath: string,
+  mtime: number,
+  birthtime: number,
+  size: number,
+  knownByPath: Map<string, KnownSession>
+): LogEntrySnapshot {
+  const known = knownByPath.get(logPath)
+  if (known) {
+    // Use cached metadata from DB, skip file content reads
+    // logTokenCount = -1 indicates enrichment was skipped (already validated)
+    // For codex sessions, backfill isCodexExec if not yet set (cheap header check)
+    const codexExec = known.agentType === 'codex' && !known.isCodexExec
+      ? isCodexExec(logPath)
+      : known.isCodexExec
+    return {
+      logPath,
+      mtime,
+      birthtime,
+      size,
+      sessionId: known.sessionId,
+      projectPath: known.projectPath,
+      agentType: known.agentType,
+      isCodexSubagent: false,
+      isCodexExec: codexExec,
+      logTokenCount: -1,
+    } satisfies LogEntrySnapshot
+  }
+
+  // Unknown log - do full enrichment (read file contents)
+  const agentType = inferAgentTypeFromPath(logPath)
+  const sessionId = extractSessionId(logPath)
+  const projectPath = extractProjectPath(logPath)
+  const codexSubagent = agentType === 'codex' ? isCodexSubagent(logPath) : false
+  const codexExec = agentType === 'codex' ? isCodexExec(logPath) : false
+  const shouldCountTokens = Boolean(sessionId) && !codexSubagent && Boolean(agentType)
+  const logTokenCount = shouldCountTokens ? getLogTokenCount(logPath) : 0
+
+  return {
+    logPath,
+    mtime,
+    birthtime,
+    size,
+    sessionId,
+    projectPath,
+    agentType: agentType ?? null,
+    isCodexSubagent: codexSubagent,
+    isCodexExec: codexExec,
+    logTokenCount,
+  } satisfies LogEntrySnapshot
+}
+
 export function collectLogEntryBatch(
   maxLogs: number,
   options: CollectLogEntryBatchOptions = {}
@@ -81,52 +134,41 @@ export function collectLogEntryBatch(
   const limited = timeEntries.slice(0, Math.max(1, maxLogs))
   const sortMs = performance.now() - sortStart
 
-  const entries = limited.map((entry) => {
-    // Check if this log is already known - skip expensive file reads
-    const known = knownByPath.get(entry.logPath)
-    if (known) {
-      // Use cached metadata from DB, skip file content reads
-      // logTokenCount = -1 indicates enrichment was skipped (already validated)
-      // For codex sessions, backfill isCodexExec if not yet set (cheap header check)
-      const codexExec = known.agentType === 'codex' && !known.isCodexExec
-        ? isCodexExec(entry.logPath)
-        : known.isCodexExec
-      return {
-        logPath: entry.logPath,
-        mtime: entry.mtime,
-        birthtime: entry.birthtime,
-        size: entry.size,
-        sessionId: known.sessionId,
-        projectPath: known.projectPath,
-        agentType: known.agentType,
-        isCodexSubagent: false,
-        isCodexExec: codexExec,
-        logTokenCount: -1,
-      } satisfies LogEntrySnapshot
-    }
-
-    // Unknown log - do full enrichment (read file contents)
-    const agentType = inferAgentTypeFromPath(entry.logPath)
-    const sessionId = extractSessionId(entry.logPath)
-    const projectPath = extractProjectPath(entry.logPath)
-    const codexSubagent = agentType === 'codex' ? isCodexSubagent(entry.logPath) : false
-    const codexExec = agentType === 'codex' ? isCodexExec(entry.logPath) : false
-    const shouldCountTokens = Boolean(sessionId) && !codexSubagent && Boolean(agentType)
-    const logTokenCount = shouldCountTokens ? getLogTokenCount(entry.logPath) : 0
-
-    return {
-      logPath: entry.logPath,
-      mtime: entry.mtime,
-      birthtime: entry.birthtime,
-      size: entry.size,
-      sessionId,
-      projectPath,
-      agentType: agentType ?? null,
-      isCodexSubagent: codexSubagent,
-      isCodexExec: codexExec,
-      logTokenCount,
-    } satisfies LogEntrySnapshot
-  })
+  const entries = limited.map((entry) =>
+    enrichLogEntry(
+      entry.logPath,
+      entry.mtime,
+      entry.birthtime,
+      entry.size,
+      knownByPath
+    )
+  )
 
   return { entries, scanMs, sortMs }
+}
+
+export function collectLogEntriesForPaths(
+  logPaths: string[],
+  knownSessions: KnownSession[] = []
+): LogEntrySnapshot[] {
+  const knownByPath = new Map(
+    knownSessions.map((session) => [session.logFilePath, session])
+  )
+  const entries: LogEntrySnapshot[] = []
+
+  for (const logPath of new Set(logPaths)) {
+    const times = getLogTimes(logPath)
+    if (!times) continue
+    entries.push(
+      enrichLogEntry(
+        logPath,
+        times.mtime.getTime(),
+        times.birthtime.getTime(),
+        times.size,
+        knownByPath
+      )
+    )
+  }
+
+  return entries
 }

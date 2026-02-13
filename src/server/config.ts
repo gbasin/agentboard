@@ -27,6 +27,9 @@ const logMatchWorker =
 const logMatchProfile =
   process.env.AGENTBOARD_LOG_MATCH_PROFILE === 'true' ||
   process.env.AGENTBOARD_LOG_MATCH_PROFILE === '1'
+const logWatchModeRaw = process.env.AGENTBOARD_LOG_WATCH_MODE
+const logWatchMode: 'watch' | 'poll' =
+  logWatchModeRaw === 'poll' ? 'poll' : 'watch'
 
 const enterRefreshDelayMsRaw = Number(process.env.AGENTBOARD_ENTER_REFRESH_MS)
 const enterRefreshDelayMs = Number.isFinite(enterRefreshDelayMsRaw)
@@ -152,6 +155,7 @@ export const config = {
   rgThreads,
   logMatchWorker,
   logMatchProfile,
+  logWatchMode,
   claudeConfigDir,
   codexHomeDir,
   claudeResumeCmd: process.env.CLAUDE_RESUME_CMD || 'claude --resume {sessionId}',
