@@ -165,7 +165,7 @@ function collectCoverableLines(
     token = scanner.scan()
   }
 
-  return Array.from(lines).toSorted((a, b) => a - b)
+  return Array.from(lines).sort((a, b) => a - b)
 }
 
 function collectExcludedRanges(sourceFile: ts.SourceFile): Range[] {
@@ -222,7 +222,7 @@ function collectExcludedRanges(sourceFile: ts.SourceFile): Range[] {
 }
 
 function mergeRanges(ranges: Range[]): Range[] {
-  const sorted = ranges.toSorted((a, b) => a[0] - b[0])
+  const sorted = ranges.slice().sort((a, b) => a[0] - b[0])
   const merged: Range[] = []
   for (const range of sorted) {
     const last = merged[merged.length - 1]
