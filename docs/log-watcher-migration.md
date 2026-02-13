@@ -1,6 +1,19 @@
 # Log Watcher Migration: setInterval Polling → Chokidar File Watching
 
-Replace the current `setInterval`-based log polling with event-driven file watching using chokidar v4. Near-instant detection when agents are active, near-zero CPU when idle.
+Replace the current `setInterval`-based log polling with event-driven file watching using chokidar v4.
+
+## Goals
+
+1. Reduce idle CPU usage by eliminating frequent directory scans when no agents are active.
+2. Reduce log change detection latency from 2–5s polling to near-instant via file events.
+3. Maintain functional parity with existing polling behavior via a 60s fallback scan.
+
+## Non-Goals
+
+1. No changes to log parsing, match logic, session DB schema, or UI behavior.
+2. No changes to log file formats or agent-side logging.
+3. No support for remote or networked file watching.
+4. No changes to the session refresh loop (2s tmux pane capture) — it is independent of log polling.
 
 ## Problem
 
@@ -282,9 +295,15 @@ export function handleMatchWorkerRequest(payload: MatchWorkerRequest): MatchWork
   let sortMs = 0
 
   if (payload.preFilteredPaths && payload.preFilteredPaths.length > 0) {
+    // Validate: only allow paths under configured log roots
+    const logRoots = getLogSearchDirs()
+    const validPaths = payload.preFilteredPaths.filter((p) =>
+      p.endsWith('.jsonl') && logRoots.some((root) => p.startsWith(root))
+    )
+
     // Watch mode: skip full scan, enrich only the changed files
     entries = collectLogEntriesForPaths(
-      payload.preFilteredPaths,
+      validPaths,
       payload.knownSessions
     )
   } else {
@@ -423,9 +442,7 @@ Changes to `src/server/logPoller.ts`:
          },
        })
 
-       // Process response — same as pollOnce's entry processing loop.
-       // (The existing entry-processing logic in pollOnce should be extracted
-       // into a shared method like processMatchResponse() to avoid duplication.)
+       // See Step 5b — shared response processing
        this.processMatchResponse(response, windows, sessionRecords)
      } catch (error) {
        logger.warn('log_poll_changed_error', {
@@ -438,7 +455,28 @@ Changes to `src/server/logPoller.ts`:
    }
    ```
 
-   > **Implementation note:** The entry-processing loop in `pollOnce()` (~200 lines) should be extracted into a shared `processMatchResponse()` method that both `pollOnce()` and `pollChanged()` call. This avoids duplicating the DB update logic, rematch logic, display name generation, etc.
+### Step 5b: Extract `processMatchResponse()` from `pollOnce()`
+
+The entry-processing loop in `pollOnce()` (~200 lines, starting after the `matchWorker.poll()` call) handles DB inserts/updates, rematch logic, display name generation, and orphan processing. This must be extracted into a shared method so both `pollOnce()` and `pollChanged()` can use it without duplication.
+
+```typescript
+private processMatchResponse(
+  response: MatchWorkerResponse,
+  windows: Session[],
+  sessionRecords: SessionRecord[]
+): PollStats {
+  // Contains the existing entry-processing loop from pollOnce():
+  // - Build exactWindowMatches from response.matches
+  // - Iterate response.entries + orphanEntries
+  // - For each entry: check existing by logPath, existing by sessionId, or insert new
+  // - Handle rematch attempts for orphaned sessions
+  // - Apply applyLogEntryToExistingRecord for updates
+  // - Generate unique display names
+  // - Fire onSessionActivated / onSessionOrphaned callbacks
+}
+```
+
+After extraction, `pollOnce()` calls `this.processMatchResponse(response, windows, sessionRecords)` in place of the inline loop, and `pollChanged()` does the same.
 
 5. **Modify `stop()`** to clean up watcher:
    ```typescript
@@ -588,7 +626,7 @@ export function getLogWatchParentDirs(): string[] {
 18. **macOS: verify FSEvents path in compiled binary**
     - Build Bun compiled binary
     - Run the `logWatcher.test.ts` suite against it
-    - Verify chokidar uses FSEvents (not polling fallback)
+    - Run with `DEBUG=chokidar:*` and verify output includes FSEvents initialization (not polling fallback)
 
 19. **Linux: verify inotify path in CI**
     - Run integration tests in CI (Linux)
