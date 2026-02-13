@@ -1373,6 +1373,7 @@ async function handleCancelCopyMode(sessionId: string, ws: ServerWebSocket<WSDat
       Bun.spawnSync(['tmux', 'send-keys', '-X', '-t', target, 'cancel'], {
         stdout: 'pipe',
         stderr: 'pipe',
+        timeout: 5000,
       })
     }
   } catch {
@@ -1395,7 +1396,7 @@ async function handleCheckCopyMode(sessionId: string, ws: ServerWebSocket<WSData
     } else {
       const result = Bun.spawnSync(
         ['tmux', 'display-message', '-p', '-t', target, '#{pane_in_mode}'],
-        { stdout: 'pipe', stderr: 'pipe' }
+        { stdout: 'pipe', stderr: 'pipe', timeout: 5000 }
       )
       output = result.stdout?.toString().trim() ?? ''
     }
