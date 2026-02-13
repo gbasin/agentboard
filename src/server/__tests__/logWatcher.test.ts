@@ -5,6 +5,20 @@ import path from 'node:path'
 const originalLogFile = process.env.LOG_FILE
 let LogWatcher: typeof import('../logWatcher').LogWatcher
 
+/** Single cast point for accessing LogWatcher internals in tests */
+interface LogWatcherInternals {
+  handleEvent: (filePath: string) => void
+  shouldWatchPath: (
+    filePath: string,
+    stats?: { isFile(): boolean; isDirectory(): boolean }
+  ) => boolean
+  resolveWatchDirs: (dirs: string[]) => string[]
+}
+
+function internals(watcher: InstanceType<typeof LogWatcher>): LogWatcherInternals {
+  return watcher as unknown as LogWatcherInternals
+}
+
 afterEach(() => {
   jest.useRealTimers()
 })
@@ -37,9 +51,9 @@ describe('LogWatcher', () => {
       onBatch: (paths) => batches.push(paths),
     })
 
-    ;(watcher as unknown as { handleEvent: (filePath: string) => void }).handleEvent('/tmp/one.jsonl')
+    internals(watcher).handleEvent('/tmp/one.jsonl')
     jest.advanceTimersByTime(1000)
-    ;(watcher as unknown as { handleEvent: (filePath: string) => void }).handleEvent('/tmp/two.jsonl')
+    internals(watcher).handleEvent('/tmp/two.jsonl')
     jest.advanceTimersByTime(1999)
     expect(batches).toHaveLength(0)
 
@@ -60,7 +74,7 @@ describe('LogWatcher', () => {
     })
 
     for (let i = 0; i < 11; i += 1) {
-      ;(watcher as unknown as { handleEvent: (filePath: string) => void }).handleEvent(`/tmp/${i}.jsonl`)
+      internals(watcher).handleEvent(`/tmp/${i}.jsonl`)
       jest.advanceTimersByTime(500)
     }
 
@@ -79,10 +93,9 @@ describe('LogWatcher', () => {
       onBatch: (paths) => batches.push(paths),
     })
 
-    const method = watcher as unknown as { handleEvent: (filePath: string) => void }
-    method.handleEvent('/tmp/duplicate.jsonl')
-    method.handleEvent('/tmp/duplicate.jsonl')
-    method.handleEvent('/tmp/duplicate.jsonl')
+    internals(watcher).handleEvent('/tmp/duplicate.jsonl')
+    internals(watcher).handleEvent('/tmp/duplicate.jsonl')
+    internals(watcher).handleEvent('/tmp/duplicate.jsonl')
 
     jest.advanceTimersByTime(50)
     expect(batches).toHaveLength(1)
@@ -100,7 +113,7 @@ describe('LogWatcher', () => {
       onBatch: (paths) => batches.push(paths),
     })
 
-    ;(watcher as unknown as { handleEvent: (filePath: string) => void }).handleEvent('/tmp/pending.jsonl')
+    internals(watcher).handleEvent('/tmp/pending.jsonl')
     watcher.stop()
 
     expect(batches).toHaveLength(1)
@@ -113,27 +126,22 @@ describe('LogWatcher', () => {
       depth: 5,
       onBatch: () => {},
     })
-    const shouldWatchPath = watcher as unknown as {
-      shouldWatchPath: (
-        filePath: string,
-        stats?: { isFile(): boolean; isDirectory(): boolean }
-      ) => boolean
-    }
+    const { shouldWatchPath } = internals(watcher)
 
     expect(
-      shouldWatchPath.shouldWatchPath('/tmp/included.jsonl', {
+      shouldWatchPath('/tmp/included.jsonl', {
         isFile: () => true,
         isDirectory: () => false,
       })
     ).toBe(true)
     expect(
-      shouldWatchPath.shouldWatchPath('/tmp/ignored.txt', {
+      shouldWatchPath('/tmp/ignored.txt', {
         isFile: () => true,
         isDirectory: () => false,
       })
     ).toBe(false)
     expect(
-      shouldWatchPath.shouldWatchPath('/tmp/some-dir', {
+      shouldWatchPath('/tmp/some-dir', {
         isFile: () => false,
         isDirectory: () => true,
       })
@@ -149,10 +157,7 @@ describe('LogWatcher', () => {
       depth: 5,
       onBatch: () => {},
     })
-    const resolveWatchDirs = watcher as unknown as {
-      resolveWatchDirs: (dirs: string[]) => string[]
-    }
-    const resolved = resolveWatchDirs.resolveWatchDirs([missingDir])
+    const resolved = internals(watcher).resolveWatchDirs([missingDir])
 
     try {
       expect(resolved).toEqual([tempRoot])
@@ -161,5 +166,21 @@ describe('LogWatcher', () => {
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true })
     }
+  })
+
+  test('skips directories that would resolve to home or root', () => {
+    const watcher = new LogWatcher({
+      dirs: [],
+      depth: 5,
+      onBatch: () => {},
+    })
+    const { resolveWatchDirs } = internals(watcher)
+
+    // A non-existent child of home walks up to home — should be skipped
+    const fakeDir = path.join(os.homedir(), 'nonexistent-agent-dir-xyz')
+    expect(resolveWatchDirs([fakeDir])).toEqual([])
+
+    // Root should also be skipped
+    expect(resolveWatchDirs(['/'])).toEqual([])
   })
 })

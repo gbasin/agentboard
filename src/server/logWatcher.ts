@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import chokidar, { type FSWatcher } from 'chokidar'
 import { logger } from './logger'
@@ -70,6 +71,7 @@ export class LogWatcher {
   }
 
   private resolveWatchDirs(dirs: string[]): string[] {
+    const home = os.homedir()
     const resolved: string[] = []
     for (const dir of dirs) {
       if (!dir) continue
@@ -79,6 +81,10 @@ export class LogWatcher {
         const parent = path.dirname(candidate)
         if (parent === candidate) break
         candidate = parent
+      }
+      // Never watch home directory or filesystem root — scope is too broad
+      if (candidate === home || path.dirname(candidate) === candidate) {
+        continue
       }
       resolved.push(candidate)
     }
