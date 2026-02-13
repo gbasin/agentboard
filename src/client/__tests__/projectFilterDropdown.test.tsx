@@ -108,9 +108,8 @@ describe('ProjectFilterDropdown', () => {
       'aria-label': 'Clear project filters',
     })
 
-    const stopPropagation = () => {}
     act(() => {
-      clearButton.props.onClick({ stopPropagation })
+      clearButton.props.onClick({ stopPropagation: () => {} })
     })
 
     expect(selections).toEqual([[]])

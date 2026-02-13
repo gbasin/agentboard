@@ -139,7 +139,6 @@ function setupDom() {
   } as unknown as Navigator
 
   globalAny.ResizeObserver = class ResizeObserverMock {
-    constructor(_: ResizeObserverCallback) {}
     observe() {}
     unobserve() {}
     disconnect() {}
