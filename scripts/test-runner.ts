@@ -42,9 +42,11 @@ async function main() {
     for await (const file of serverGlob.scan({ onlyFiles: true })) {
       serverTests.push(file)
     }
+    const sharedTestsDir = 'src/shared/__tests__'
+    const clientTestsDir = 'src/client/__tests__'
 
     await runCommand(
-      ['bun', 'test', ...passthroughArgs, ...serverTests, 'src/client/__tests__'],
+      ['bun', 'test', ...passthroughArgs, ...serverTests, sharedTestsDir, clientTestsDir],
       env
     )
 
