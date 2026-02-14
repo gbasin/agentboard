@@ -147,6 +147,20 @@ describe('SessionPreviewModal', () => {
           type: 'event_msg',
           payload: { type: 'user_message', message: 'From event msg' },
         }),
+        JSON.stringify({
+          type: 'event_msg',
+          payload: {
+            type: 'user_message',
+            message: {
+              role: 'user',
+              content: [{ type: 'input_text', text: 'From structured event msg' }],
+            },
+          },
+        }),
+        JSON.stringify({
+          type: 'event_msg',
+          payload: { type: 'assistant_message', message: 'Assistant from event msg' },
+        }),
         JSON.stringify({ type: 'tool_use', name: 'search' }),
         JSON.stringify({ type: 'result', result: 'Done' }),
         'plain text line',
@@ -176,6 +190,8 @@ describe('SessionPreviewModal', () => {
     expect(html).toContain('World')
     expect(html).toContain('From response item')
     expect(html).toContain('From event msg')
+    expect(html).toContain('From structured event msg')
+    expect(html).toContain('Assistant from event msg')
     expect(html).toContain('[Tool: search]')
     expect(html).toContain('Done')
     expect(html).toContain('plain text line')

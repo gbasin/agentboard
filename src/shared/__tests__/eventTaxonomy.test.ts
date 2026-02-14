@@ -54,6 +54,36 @@ describe('eventTaxonomy', () => {
     ])
   })
 
+  test('normalizes mixed event_msg message payload variants', () => {
+    const userObjectMessage = normalizeAgentLogEntry({
+      type: 'event_msg',
+      payload: {
+        type: 'user_message',
+        message: {
+          role: 'user',
+          content: [{ type: 'input_text', text: 'from structured user message' }],
+        },
+      },
+    })
+    const assistantMessage = normalizeAgentLogEntry({
+      type: 'event_msg',
+      payload: {
+        type: 'assistant_message',
+        message: 'assistant payload message',
+      },
+    })
+
+    expect(userObjectMessage).toHaveLength(1)
+    expect(userObjectMessage[0]?.role).toBe('user')
+    expect(userObjectMessage[0]?.text).toBe('from structured user message')
+    expect(userObjectMessage[0]?.source.family).toBe('codex')
+
+    expect(assistantMessage).toHaveLength(1)
+    expect(assistantMessage[0]?.role).toBe('assistant')
+    expect(assistantMessage[0]?.text).toBe('assistant payload message')
+    expect(assistantMessage[0]?.source.payloadType).toBe('assistant_message')
+  })
+
   test('normalizes user and assistant message variants', () => {
     const userEvents = normalizeAgentLogEntry({
       type: 'user',
@@ -71,6 +101,38 @@ describe('eventTaxonomy', () => {
     expect(userEvents[0]?.text).toBe('hello world')
     expect(assistantEvents[0]?.role).toBe('assistant')
     expect(assistantEvents[0]?.text).toBe('hello back')
+  })
+
+  test('keeps payload message/content fallback coverage for unknown event payload types', () => {
+    const events = normalizeAgentLogEntry({
+      type: 'event_msg',
+      payload: {
+        type: 'custom_preview_payload',
+        message: 'payload fallback message',
+      },
+    })
+    expect(events).toEqual([
+      {
+        kind: 'unknown',
+        role: 'other',
+        text: 'payload fallback message',
+        source: {
+          family: 'codex',
+          rawType: 'event_msg',
+          payloadType: 'custom_preview_payload',
+        },
+      },
+    ])
+  })
+
+  test('prefers explicit pi metadata when type overlaps with other schemas', () => {
+    const events = normalizeAgentLogEntry({
+      type: 'user',
+      source: 'pi',
+      message: { role: 'user', content: 'hello from pi' },
+    })
+
+    expect(events[0]?.source.family).toBe('pi')
   })
 
   test('normalizes tool events and tool-result markers', () => {

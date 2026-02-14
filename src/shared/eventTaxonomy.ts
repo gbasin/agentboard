@@ -48,7 +48,7 @@ function asString(value: unknown): string | null {
 function normalizeRole(value: unknown): NormalizedEventRole {
   if (value === 'user') return 'user'
   if (value === 'assistant') return 'assistant'
-  if (value === 'system') return 'system'
+  if (value === 'system' || value === 'developer') return 'system'
   if (value === 'tool') return 'tool'
   return 'other'
 }
@@ -60,6 +60,9 @@ function inferSourceFamily(record: Record<string, unknown>): NormalizedSourceFam
   const source = asString(record.source) ?? asString(payload?.source) ?? ''
   const agent = asString(record.agent) ?? ''
 
+  if (source.toLowerCase() === 'pi' || agent.toLowerCase() === 'pi') {
+    return 'pi'
+  }
   if (typeValue === 'response_item' || typeValue === 'event_msg') {
     return 'codex'
   }
@@ -75,9 +78,6 @@ function inferSourceFamily(record: Record<string, unknown>): NormalizedSourceFam
   }
   if (payloadType === 'user_message' || payloadType === 'assistant_message') {
     return 'codex'
-  }
-  if (source.toLowerCase() === 'pi' || agent.toLowerCase() === 'pi') {
-    return 'pi'
   }
   return 'unknown'
 }
@@ -133,7 +133,10 @@ function extractTextFromContent(content: unknown): string[] {
     if (text && text.trim()) {
       return [text]
     }
-    return []
+    return [
+      ...extractTextFromContent(contentRecord.content),
+      ...extractTextFromContent(contentRecord.message),
+    ]
   }
   return []
 }
@@ -161,18 +164,40 @@ function normalizeEventMsgMessage(
 ): NormalizedEvent[] {
   if (record.type !== 'event_msg') return []
   const payload = asRecord(record.payload)
-  if (!payload || payload.type !== 'user_message') return []
-  const text = asString(payload.message)
-  if (!text || !text.trim()) return []
+  if (!payload) return []
 
-  return [
-    {
-      kind: 'message',
-      role: 'user',
-      text,
-      source,
-    },
-  ]
+  const payloadType = asString(payload.type)
+  let role: NormalizedEventRole | null = null
+
+  if (payloadType === 'user_message') {
+    role = 'user'
+  } else if (payloadType === 'assistant_message') {
+    role = 'assistant'
+  } else if (payloadType === 'system_message') {
+    role = 'system'
+  } else if (payloadType === 'message') {
+    role = normalizeRole(payload.role)
+  }
+
+  if (!role || !['user', 'assistant', 'system'].includes(role)) {
+    return []
+  }
+
+  const chunks = Array.from(
+    new Set([
+      ...extractTextFromContent(payload.message),
+      ...extractTextFromContent(payload.content),
+      ...extractTextFromContent(payload.text),
+    ])
+  )
+  if (chunks.length === 0) return []
+
+  return chunks.map((text) => ({
+    kind: 'message' as const,
+    role,
+    text,
+    source,
+  }))
 }
 
 function normalizeTopLevelMessage(
@@ -184,7 +209,12 @@ function normalizeTopLevelMessage(
 
   if (message) {
     const role = normalizeRole(message.role ?? record.type)
-    return extractTextFromContent(message.content).map((text) => ({
+    const chunks = [
+      ...extractTextFromContent(message.content),
+      ...extractTextFromContent(message.text),
+      ...extractTextFromContent(message.message),
+    ]
+    return chunks.map((text) => ({
       kind: 'message' as const,
       role,
       text,
@@ -272,10 +302,13 @@ function normalizeFallbackMessage(
   record: Record<string, unknown>,
   source: NormalizedEventSource
 ): NormalizedEvent[] {
+  const payload = asRecord(record.payload)
   const chunks = [
     ...extractTextFromContent(record.message),
     ...extractTextFromContent(record.content),
     ...extractTextFromContent(record.text),
+    ...extractTextFromContent(payload?.message),
+    ...extractTextFromContent(payload?.content),
   ]
   if (chunks.length === 0) return []
   return chunks.map((text) => ({

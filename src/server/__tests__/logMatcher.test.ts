@@ -235,6 +235,45 @@ describe('logMatcher', () => {
     await fs.rm(tempDir, { recursive: true, force: true })
   })
 
+  test('extractLastUserMessageFromLog handles mixed Codex response_item and event_msg schemas', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-last-user-'))
+    const logPath = path.join(tempDir, 'session.jsonl')
+
+    await fs.writeFile(
+      logPath,
+      [
+        JSON.stringify({
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [{ type: 'input_text', text: 'older response item user message' }],
+          },
+        }),
+        JSON.stringify({
+          type: 'event_msg',
+          payload: {
+            type: 'user_message',
+            message: {
+              role: 'user',
+              content: [{ type: 'input_text', text: 'latest structured event user message' }],
+            },
+          },
+        }),
+        JSON.stringify({
+          type: 'event_msg',
+          payload: {
+            type: 'assistant_message',
+            message: 'assistant follows user',
+          },
+        }),
+      ].join('\n')
+    )
+
+    expect(extractLastUserMessageFromLog(logPath)).toBe('latest structured event user message')
+    await fs.rm(tempDir, { recursive: true, force: true })
+  })
+
   test('tryExactMatchWindowToLog uses ordered prompts to disambiguate', async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-logmatch-'))
     const logPathA = path.join(tempDir, 'session-a.jsonl')
@@ -677,6 +716,20 @@ describe('hasMessageInValidUserContext', () => {
     test('matches Codex event_msg format with "message" field', () => {
       const codexLog = '{"type":"event_msg","payload":{"type":"user_message","message":"can you fix the bug"}}'
       expect(hasMessageInValidUserContext(codexLog, 'can you fix the bug')).toBe(true)
+    })
+
+    test('matches Codex event_msg format with structured user message payload', () => {
+      const codexLog = JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'user_message',
+          message: {
+            role: 'user',
+            content: [{ type: 'input_text', text: 'structured user payload text' }],
+          },
+        },
+      })
+      expect(hasMessageInValidUserContext(codexLog, 'structured user payload text')).toBe(true)
     })
 
     test('matches message with flexible whitespace', () => {
