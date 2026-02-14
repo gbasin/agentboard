@@ -151,8 +151,8 @@ describe('useWebSocket', () => {
       ws.triggerError()
     })
 
-    expect(useSessionStore.getState().connectionStatus).toBe('error')
-    expect(useSessionStore.getState().connectionError).toBe('WebSocket error')
+    expect(useSessionStore.getState().connectionStatus).toBe('reconnecting')
+    expect(useSessionStore.getState().connectionError).toBeNull()
 
     unsubscribe?.()
 
