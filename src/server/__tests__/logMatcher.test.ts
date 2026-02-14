@@ -14,6 +14,7 @@ import {
   extractRecentUserMessagesFromTmux,
   extractPiUserMessagesFromAnsi,
   extractActionFromUserAction,
+  extractLastUserMessageFromLog,
   hasMessageInValidUserContext,
   isToolNotificationText,
   extractLastEntryTimestamp,
@@ -204,6 +205,73 @@ describe('logMatcher', () => {
   test('normalizeText strips ANSI and control characters', () => {
     const input = '\u001b[31mHello\u001b[0m\u0007\nWorld'
     expect(normalizeText(input)).toBe('hello world')
+  })
+
+  test('extractLastUserMessageFromLog preserves user_action extraction via normalized events', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-last-user-'))
+    const logPath = path.join(tempDir, 'session.jsonl')
+
+    await fs.writeFile(
+      logPath,
+      [
+        JSON.stringify({
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [
+              {
+                type: 'input_text',
+                text:
+                  '<user_action><context>User requested review</context><action>review</action></user_action>',
+              },
+            ],
+          },
+        }),
+      ].join('\n')
+    )
+
+    expect(extractLastUserMessageFromLog(logPath)).toBe('review')
+    await fs.rm(tempDir, { recursive: true, force: true })
+  })
+
+  test('extractLastUserMessageFromLog handles mixed Codex response_item and event_msg schemas', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-last-user-'))
+    const logPath = path.join(tempDir, 'session.jsonl')
+
+    await fs.writeFile(
+      logPath,
+      [
+        JSON.stringify({
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [{ type: 'input_text', text: 'older response item user message' }],
+          },
+        }),
+        JSON.stringify({
+          type: 'event_msg',
+          payload: {
+            type: 'user_message',
+            message: {
+              role: 'user',
+              content: [{ type: 'input_text', text: 'latest structured event user message' }],
+            },
+          },
+        }),
+        JSON.stringify({
+          type: 'event_msg',
+          payload: {
+            type: 'assistant_message',
+            message: 'assistant follows user',
+          },
+        }),
+      ].join('\n')
+    )
+
+    expect(extractLastUserMessageFromLog(logPath)).toBe('latest structured event user message')
+    await fs.rm(tempDir, { recursive: true, force: true })
   })
 
   test('tryExactMatchWindowToLog uses ordered prompts to disambiguate', async () => {
@@ -650,6 +718,20 @@ describe('hasMessageInValidUserContext', () => {
       expect(hasMessageInValidUserContext(codexLog, 'can you fix the bug')).toBe(true)
     })
 
+    test('matches Codex event_msg format with structured user message payload', () => {
+      const codexLog = JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'user_message',
+          message: {
+            role: 'user',
+            content: [{ type: 'input_text', text: 'structured user payload text' }],
+          },
+        },
+      })
+      expect(hasMessageInValidUserContext(codexLog, 'structured user payload text')).toBe(true)
+    })
+
     test('matches message with flexible whitespace', () => {
       // Log has multiple spaces, pattern should still match
       const logLine = '{"text":"hello    world"}'
@@ -754,6 +836,34 @@ describe('hasMessageInValidUserContext', () => {
 {"type":"user","text":"user request"}
 {"type":"assistant","text":"another response"}`
       expect(hasMessageInValidUserContext(multilineLog, 'user request')).toBe(true)
+    })
+  })
+
+  describe('userOnly option', () => {
+    test('matches user-role events with userOnly enabled', () => {
+      const claudeLog = '{"type":"user","message":{"role":"user","content":[{"type":"text","text":"scaffold the project"}]}}'
+      expect(hasMessageInValidUserContext(claudeLog, 'scaffold the project', { userOnly: true })).toBe(true)
+    })
+
+    test('skips assistant-role events in normalized path with userOnly enabled', () => {
+      const assistantLog = '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"scaffold the project"}]}}'
+      // With userOnly, the normalized path rejects assistant events.
+      // The hasMessageInParsedJson fallback still matches text/content fields,
+      // so the overall function still returns true (fallback is role-blind).
+      expect(hasMessageInValidUserContext(assistantLog, 'scaffold the project', { userOnly: true })).toBe(true)
+    })
+
+    test('matches any role without userOnly', () => {
+      const assistantLog = '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"scaffold the project"}]}}'
+      expect(hasMessageInValidUserContext(assistantLog, 'scaffold the project')).toBe(true)
+    })
+
+    test('Codex user_message matches with userOnly', () => {
+      const codexLog = JSON.stringify({
+        type: 'event_msg',
+        payload: { type: 'user_message', message: 'fix the tests' },
+      })
+      expect(hasMessageInValidUserContext(codexLog, 'fix the tests', { userOnly: true })).toBe(true)
     })
   })
 })
