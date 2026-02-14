@@ -36,12 +36,10 @@ Total: ~1.4s per session × 5 sessions = **~7s blocked on the main thread**.
 
 ## Non-Goals
 
-1. No changes to periodic polling — it already uses a worker thread.
-2. No conversion of `SessionManager.runTmux()` — it's used broadly and is fast per call.
-3. No async refactor of `logMatcher.ts` internals — the functions are shared with the sync worker thread. Only the startup call site changes.
-4. No concurrency limiter — 5-15 concurrent tmux/rg processes is well within OS limits.
+1. No conversion of `SessionManager.runTmux()` — it's used broadly and is fast per call.
+2. No concurrency limiter — 5-15 concurrent tmux/rg processes is well within OS limits.
 
-## Approach: async Bun.spawn + Promise.all
+## Approach: Full async Bun.spawn conversion
 
 ### Why not worker threads?
 
@@ -53,81 +51,110 @@ Session verification is **I/O-bound** (waiting on tmux server + ripgrep disk I/O
 - Stdout is a `ReadableStream` consumed via `new Response(proc.stdout).text()`
 - Supports `timeout` option natively for safety
 
-### Pattern
+### Why full async (not sync+async duplication)?
+
+**Decision:** Convert all `Bun.spawnSync` calls in logMatcher.ts to `Bun.spawn` — no sync copies retained. The worker threads (`logMatchWorker.ts`, `sessionRefreshWorker.ts`) also convert to async. This eliminates ~300 LOC of duplication that would otherwise drift over time.
+
+Workers will allow concurrent message processing since operations target independent sessions and are read-only (tmux captures + ripgrep searches).
+
+### Architecture: Separate verification from hydration
+
+**Decision:** Create a standalone `verifyAllSessions()` async function that returns `Map<sessionId, VerificationResult>`. The existing `hydrateSessionsWithAgentSessions` gains a `precomputedVerifications?: Map` parameter — when provided, it uses the map instead of calling verification inline.
+
+This cleanly separates concerns:
+- `verifyAllSessions()` — pure I/O, parallelizable, no side effects
+- `hydrateSessionsWithAgentSessions()` — state mutations, broadcasts, sequential
 
 ```typescript
-// Before (serial, blocking main thread):
-for (const session of activeSessions) {
-  const result = verifyWindowLogAssociationDetailed(session.currentWindow, ...)
-  // ... orphan/keep decision
+// New standalone verification function
+async function verifyAllSessions(
+  sessions: AgentSession[],
+  logDirs: string[]
+): Promise<Map<string, WindowLogVerificationResult>> {
+  const results = new Map()
+  await Promise.all(
+    sessions.map(async (session) => {
+      try {
+        const result = await verifyWindowLogAssociationDetailed(
+          session.currentWindow, session.logFilePath, logDirs, { ... }
+        )
+        results.set(session.sessionId, result)
+      } catch (error) {
+        logger.warn('session_verification_error', { sessionId: session.sessionId, error: String(error) })
+        results.set(session.sessionId, { status: 'verified', bestMatch: null })
+      }
+    })
+  )
+  return results
 }
 
-// After (parallel, non-blocking):
-const verifications = await Promise.all(
-  sessionsToVerify.map(async (session) => {
-    const result = await verifyWindowLogAssociationDetailedAsync(session.currentWindow, ...)
-    return { session, result }
-  })
-)
-for (const { session, result } of verifications) {
-  // ... same orphan/keep decision logic (unchanged)
-}
+// Existing hydration consumes pre-computed results
+const verifications = await verifyAllSessions(activeSessions, logDirs)
+const hydrated = hydrateSessionsWithAgentSessions(sessions, {
+  verifyAssociations: true,
+  precomputedVerifications: verifications,
+})
 ```
 
 ## Scope of Changes
 
-### Phase 1: Async verification wrappers (startup path only)
+### Phase 1: Convert logMatcher.ts to async
 
-Create async versions of the two subprocess-calling functions used during verification:
-
-**`logMatcher.ts` — new async functions:**
-
-| Function | Current (sync) | New (async) |
-|----------|---------------|-------------|
-| `getTerminalScrollback` | `Bun.spawnSync(['tmux', 'capture-pane', ...])` | `Bun.spawn` + `await proc.stdout` |
-| `getTerminalScrollbackWithAnsi` | `Bun.spawnSync(['tmux', 'capture-pane', '-e', ...])` | `Bun.spawn` + `await proc.stdout` |
-| `findLogsWithExactMessage` | `Bun.spawnSync(['rg', '-l', ...])` | `Bun.spawn` + `await proc.stdout` |
-| `findLogsWithExactMessageInPaths` | `Bun.spawnSync(['rg', '-l', ...])` | `Bun.spawn` + `await proc.stdout` |
-| `getRgMatchLines` | `Bun.spawnSync(['rg', '--json', ...])` | `Bun.spawn` + `await proc.stdout` |
-
-These become the building blocks for:
-
-| Function | Current | New |
-|----------|---------|-----|
-| `tryExactMatchWindowToLog` | sync, calls above sync functions | `tryExactMatchWindowToLogAsync` — same logic, calls async versions |
-| `verifyWindowLogAssociationDetailed` | sync | `verifyWindowLogAssociationDetailedAsync` — same logic, calls async `tryExactMatchWindowToLogAsync` |
-
-**Keep the sync versions.** They are used by the log match worker thread (`logMatchWorker.ts`, `sessionRefreshWorker.ts`) where sync is correct and desired. The async versions are only for the startup path.
-
-**`index.ts` — modified functions:**
+Replace `Bun.spawnSync` with `Bun.spawn` in all subprocess-calling functions:
 
 | Function | Change |
 |----------|--------|
-| `hydrateSessionsWithAgentSessions` | Add async overload: when `verifyAssociations: true`, returns `Promise<Session[]>` and runs verifications in parallel via `Promise.all` |
-| `refreshSessionsSync` | Rename to `refreshSessionsAsync` for the verification startup call. Keep sync version for the non-verification calls. |
-| Startup sequence (lines 660-662) | Restructure: start HTTP server first, then run async verification, then resurrect pinned sessions |
+| `getTerminalScrollback` | `Bun.spawnSync` → `async Bun.spawn` + `await proc.stdout` |
+| `getTerminalScrollbackWithAnsi` | `Bun.spawnSync` → `async Bun.spawn` + `await proc.stdout` |
+| `findLogsWithExactMessage` | `Bun.spawnSync` → `async Bun.spawn` + `await proc.stdout` |
+| `findLogsWithExactMessageInPaths` | `Bun.spawnSync` → `async Bun.spawn` + `await proc.stdout` |
+| `getRgMatchLines` | `Bun.spawnSync` → `async Bun.spawn` + `await proc.stdout` |
+| `tryExactMatchWindowToLog` | becomes `async`, calls async versions above |
+| `verifyWindowLogAssociationDetailed` | becomes `async`, calls async `tryExactMatchWindowToLog` |
 
-### Phase 2: Reorder startup to serve HTTP earlier
+**No sync copies retained.** All callers (startup, workers) use the async versions.
+
+### Phase 2: Convert worker threads to async
+
+| File | Change |
+|------|--------|
+| `logMatchWorker.ts` | Message handler becomes async. Allows concurrent processing of independent session messages. |
+| `sessionRefreshWorker.ts` | Same async conversion. Independent session operations can overlap. |
+
+Workers allow concurrent message handling — no queue needed. Operations target different sessions and are read-only (tmux captures + ripgrep searches).
+
+### Phase 3: Startup reorder + parallel verification
+
+**New `verifyAllSessions()` function in index.ts:**
+- Standalone async function, runs `Promise.all` over all active sessions
+- Returns `Map<sessionId, WindowLogVerificationResult>`
+- Per-session try/catch — one failure doesn't block others
+- On error/timeout: returns `{ status: 'verified' }` (keep current association)
+
+**`hydrateSessionsWithAgentSessions` modification:**
+- New optional param: `precomputedVerifications?: Map<string, WindowLogVerificationResult>`
+- When provided, uses the map instead of calling verification inline
+- All existing decision logic (orphan/keep/name-fallback) unchanged
 
 Current startup order:
 ```
 1. checkPortAvailable + ensureTmux + pruneOrphaned    (~200ms)
 2. DB init + manager setup                             (~50ms)
-3. refreshSessionsSync({ verifyAssociations: true })   (~7000ms) ← BLOCKS HTTP
+3. refreshSessionsSync({ verifyAssociations: true })   (~7000ms) <- BLOCKS HTTP
 4. resurrectPinnedSessions()                           (~300ms)
 5. refreshSessionsSync()                               (~200ms)
 6. logPoller.start()                                   (~100ms)
-7. Bun.serve()                                         (~50ms)  ← HTTP ready
+7. Bun.serve()                                         (~50ms)  <- HTTP ready
 ```
 
 New startup order:
 ```
 1. checkPortAvailable + ensureTmux + pruneOrphaned     (~200ms)
 2. DB init + manager setup                              (~50ms)
-3. refreshSessionsSync() (no verification)              (~200ms)  ← sessions from DB, no verify
-4. Bun.serve()                                          (~50ms)  ← HTTP ready immediately
+3. refreshSessionsSync() (no verification)              (~200ms)  <- sessions from DB
+4. Bun.serve()                                          (~50ms)  <- HTTP ready immediately
 5. logPoller.start()                                    (~100ms)
-6. await verifySessionAssociations()                    (~1500ms) ← async, parallel
+6. await verifyAllSessions() + hydrate with results     (~1500ms) <- async, parallel
 7. resurrectPinnedSessions()                            (~300ms)
 8. refreshSessionsSync()                                (~200ms)
 ```
@@ -136,16 +163,17 @@ The UI can connect and see sessions at **~500ms** (from DB state). Verification 
 
 ### Error handling
 
-Use per-session try/catch inside `Promise.all` — one verification failing should not block others:
+Per-session try/catch inside `Promise.all`. On any error (including timeout), **keep the current association** — benefit of the doubt. Only orphan on definitive mismatch:
 
 ```typescript
 const results = await Promise.all(
   sessionsToVerify.map(async (session) => {
     try {
-      return { session, result: await verifyAsync(session) }
+      return { session, result: await verifyWindowLogAssociationDetailed(...) }
     } catch (error) {
       logger.warn('session_verification_error', { sessionId: session.sessionId, error: String(error) })
-      return { session, result: { status: 'inconclusive' as const, bestMatch: null, reason: 'error' } }
+      // Keep current association — timeout/error should not orphan a session
+      return { session, result: { status: 'verified' as const, bestMatch: null } }
     }
   })
 )
@@ -153,21 +181,35 @@ const results = await Promise.all(
 
 ### Timeouts
 
-All async spawns should have timeouts to prevent hung processes from blocking startup:
+Per-subprocess timeouts prevent hung processes from blocking startup:
 
 | Command | Timeout |
 |---------|---------|
 | `tmux capture-pane` | 5s (matches existing copy-mode timeout) |
 | `rg -l` / `rg --json` | 10s (large log directories) |
 
+No per-session or global deadline needed — `Promise.all` means one slow session doesn't block others, and per-subprocess timeouts cap the worst case.
+
+## Race conditions considered and accepted
+
+1. **UI flicker**: UI connects before verification finishes, shows sessions that may later be orphaned. Accepted — the UI already handles runtime orphaning gracefully. Sessions can be orphaned at any time during normal operation.
+
+2. **Log poller overlap**: `logPoller.start()` runs before verification completes. The poller may fire during async verification, causing duplicate tmux captures. Accepted — both are read-only operations, the ~1.5s overlap is harmless and slightly wasteful at worst.
+
+3. **Periodic refresh overlap**: `setInterval(refreshSessions, ...)` could fire during verification. Accepted — same reasoning as log poller overlap, read-only operations.
+
+4. **Resurrection ordering**: `resurrectPinnedSessions` runs after verification, same as today. Claude/Codex reuse the same JSONL log file on `--resume`, so the log path in DB stays valid after resurrection. No stale association issue.
+
 ## Files Changed
 
 | File | Type | Description |
 |------|------|-------------|
-| `src/server/logMatcher.ts` | Modified | Add async versions of `getTerminalScrollback`, `getTerminalScrollbackWithAnsi`, `findLogsWithExactMessage`, `findLogsWithExactMessageInPaths`, `getRgMatchLines`, `tryExactMatchWindowToLog`, `verifyWindowLogAssociationDetailed` |
-| `src/server/index.ts` | Modified | Restructure startup order; make `hydrateSessionsWithAgentSessions` support async verification; move `Bun.serve()` before verification |
-| `src/server/__tests__/logMatcher.test.ts` | Modified | Add tests for async verification functions |
-| `src/server/__tests__/index.test.ts` | Modified | Update startup sequence tests if applicable |
+| `src/server/logMatcher.ts` | Modified | Convert all spawn functions from sync to async (`Bun.spawnSync` → `Bun.spawn`) |
+| `src/server/logMatchWorker.ts` | Modified | Convert message handler to async, allow concurrent processing |
+| `src/server/sessionRefreshWorker.ts` | Modified | Convert message handler to async, allow concurrent processing |
+| `src/server/index.ts` | Modified | Add `verifyAllSessions()`, add `precomputedVerifications` param to hydrate, restructure startup order, move `Bun.serve()` before verification |
+| `src/server/__tests__/logMatcher.test.ts` | Modified | Update tests for async function signatures |
+| `src/server/__tests__/index.test.ts` | Modified | Update startup sequence tests |
 
 ## Estimated Impact
 
@@ -179,14 +221,6 @@ All async spawns should have timeouts to prevent hung processes from blocking st
 
 The biggest win is HTTP-ready time: the UI loads almost instantly instead of waiting 11 seconds.
 
-## Risks
-
-1. **Race condition**: UI connects before verification finishes → shows sessions that might get orphaned seconds later. Mitigation: verification broadcasts `session-removed` events, UI handles gracefully (already does — sessions can be orphaned at any time during normal operation).
-
-2. **tmux server contention**: 5 concurrent `tmux capture-pane` + 5 concurrent `rg` processes. tmux serializes internally via its Unix socket, so captures queue but don't contend. rg processes compete for disk I/O but are read-only. Tested: tmux handles 20+ concurrent client commands without issues.
-
-3. **Keeping sync+async in logMatcher.ts**: Duplication of the wrapper layer. Mitigation: the async functions are thin wrappers that delegate to the same parsing/scoring logic. Only the spawn call differs. Consider a shared helper that accepts a spawn strategy.
-
 ## Pre-merge Checklist
 
 - [ ] All 532+ tests pass
@@ -195,3 +229,4 @@ The biggest win is HTTP-ready time: the UI loads almost instantly instead of wai
 - [ ] Manual test: verify orphaned sessions are correctly detected after async verification
 - [ ] Manual test: UI shows sessions immediately, then updates if verification orphans any
 - [ ] Startup log shows parallel verification completing in ~1.5s
+- [ ] Worker threads handle concurrent messages correctly (no race conditions in output)
