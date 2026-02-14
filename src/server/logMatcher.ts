@@ -242,7 +242,8 @@ function hasMessageInParsedJson(value: unknown, pattern: RegExp): boolean {
  */
 export function hasMessageInValidUserContext(
   logContent: string,
-  userMessage: string
+  userMessage: string,
+  { userOnly = false }: { userOnly?: boolean } = {}
 ): boolean {
   const basePattern = messageToFlexiblePattern(userMessage)
   const baseRegex = new RegExp(basePattern, 'm')
@@ -258,6 +259,7 @@ export function hasMessageInValidUserContext(
       if (
         normalized.some((event) => {
           if (event.kind === 'tool_result') return false
+          if (userOnly && event.role !== 'user') return false
           if (!event.text) return false
           return matchesMessageWithPrefixLimit(event.text, baseRegex)
         })
@@ -315,6 +317,8 @@ export interface ExactMatchSearchOptions {
   profile?: ExactMatchProfiler
   /** Log paths to exclude from matching (e.g., logs belonging to other active windows) */
   excludeLogPaths?: string[]
+  /** When true, only match events with role === 'user' in the normalized path */
+  userOnly?: boolean
 }
 
 export interface ExactMessageSearchOptions extends ExactMatchSearchOptions {
@@ -411,13 +415,14 @@ function hasMessageInValidUserContextProgressive(
   logPath: string,
   userMessage: string,
   initialTailBytes = DEFAULT_LOG_TAIL_BYTES,
-  maxTailBytes = MAX_PROGRESSIVE_TAIL_BYTES
+  maxTailBytes = MAX_PROGRESSIVE_TAIL_BYTES,
+  { userOnly = false }: { userOnly?: boolean } = {}
 ): boolean {
   let tailBytes = initialTailBytes
   while (tailBytes <= maxTailBytes) {
     const tail = readLogTail(logPath, tailBytes)
     if (!tail) return false
-    if (hasMessageInValidUserContext(tail, userMessage)) {
+    if (hasMessageInValidUserContext(tail, userMessage, { userOnly })) {
       return true
     }
     if (tailBytes >= maxTailBytes) break
@@ -435,6 +440,7 @@ export function findLogsWithExactMessage(
     tailBytes,
     rgThreads,
     profile,
+    userOnly,
   }: ExactMessageSearchOptions = {}
 ): string[] {
   if (!userMessage || userMessage.length < minLength) {
@@ -448,6 +454,7 @@ export function findLogsWithExactMessage(
       tailBytes,
       rgThreads,
       profile,
+      userOnly,
     })
   }
 
@@ -483,7 +490,13 @@ export function findLogsWithExactMessage(
   // Post-filter to exclude tool_result false positives
   // Use progressive tail reading to handle large logs with lots of assistant output
   const validMatches = uniqueMatches.filter((logPath) =>
-    hasMessageInValidUserContextProgressive(logPath, userMessage, tailBytes ?? DEFAULT_LOG_TAIL_BYTES)
+    hasMessageInValidUserContextProgressive(
+      logPath,
+      userMessage,
+      tailBytes ?? DEFAULT_LOG_TAIL_BYTES,
+      undefined,
+      { userOnly }
+    )
   )
 
   return validMatches.length > 0 ? validMatches : []
@@ -498,6 +511,7 @@ export async function findLogsWithExactMessageAsync(
     tailBytes,
     rgThreads,
     profile,
+    userOnly,
   }: ExactMessageSearchOptions = {}
 ): Promise<string[]> {
   if (!userMessage || userMessage.length < minLength) {
@@ -511,6 +525,7 @@ export async function findLogsWithExactMessageAsync(
       tailBytes,
       rgThreads,
       profile,
+      userOnly,
     })
   }
 
@@ -542,7 +557,9 @@ export async function findLogsWithExactMessageAsync(
     hasMessageInValidUserContextProgressive(
       logPath,
       userMessage,
-      tailBytes ?? DEFAULT_LOG_TAIL_BYTES
+      tailBytes ?? DEFAULT_LOG_TAIL_BYTES,
+      undefined,
+      { userOnly }
     )
   )
 
@@ -557,6 +574,7 @@ function findLogsWithExactMessageInPaths(
     tailBytes = DEFAULT_LOG_TAIL_BYTES,
     rgThreads,
     profile,
+    userOnly,
   }: ExactMessageSearchOptions = {}
 ): string[] {
   if (!userMessage || userMessage.length < minLength) {
@@ -579,7 +597,7 @@ function findLogsWithExactMessageInPaths(
       }
       if (!tail) continue
       // Use context validation to filter out tool_result false positives
-      if (hasMessageInValidUserContext(tail, userMessage)) {
+      if (hasMessageInValidUserContext(tail, userMessage, { userOnly })) {
         tailMatches.push(logPath)
       }
     }
@@ -609,7 +627,9 @@ function findLogsWithExactMessageInPaths(
   // Post-filter ripgrep results to exclude tool_result false positives
   // Use progressive tail reading to handle large logs with lots of assistant output
   const validMatches = rgMatches.filter((logPath) =>
-    hasMessageInValidUserContextProgressive(logPath, userMessage, tailBytes)
+    hasMessageInValidUserContextProgressive(logPath, userMessage, tailBytes, undefined, {
+      userOnly,
+    })
   )
 
   return validMatches.length > 0 ? validMatches : tailMatches
@@ -623,6 +643,7 @@ async function findLogsWithExactMessageInPathsAsync(
     tailBytes = DEFAULT_LOG_TAIL_BYTES,
     rgThreads,
     profile,
+    userOnly,
   }: ExactMessageSearchOptions = {}
 ): Promise<string[]> {
   if (!userMessage || userMessage.length < minLength) {
@@ -643,7 +664,7 @@ async function findLogsWithExactMessageInPathsAsync(
         profile.tailReadMs += performance.now() - start
       }
       if (!tail) continue
-      if (hasMessageInValidUserContext(tail, userMessage)) {
+      if (hasMessageInValidUserContext(tail, userMessage, { userOnly })) {
         tailMatches.push(logPath)
       }
     }
@@ -669,7 +690,9 @@ async function findLogsWithExactMessageInPathsAsync(
   }
   const rgMatches = result.stdout.trim().split('\n').filter(Boolean)
   const validMatches = rgMatches.filter((logPath) =>
-    hasMessageInValidUserContextProgressive(logPath, userMessage, tailBytes)
+    hasMessageInValidUserContextProgressive(logPath, userMessage, tailBytes, undefined, {
+      userOnly,
+    })
   )
 
   return validMatches.length > 0 ? validMatches : tailMatches
@@ -1483,6 +1506,7 @@ export function tryExactMatchWindowToLog(
       tailBytes: search.tailBytes,
       rgThreads: search.rgThreads,
       profile: search.profile,
+      userOnly: !usingTraceFallback,
     })
     if (matches.length === 0) continue
     candidates = intersectCandidates(candidates, matches)
@@ -1682,6 +1706,7 @@ export async function tryExactMatchWindowToLogAsync(
       tailBytes: search.tailBytes,
       rgThreads: search.rgThreads,
       profile: search.profile,
+      userOnly: !usingTraceFallback,
     })
     if (matches.length === 0) continue
     candidates = intersectCandidates(candidates, matches)

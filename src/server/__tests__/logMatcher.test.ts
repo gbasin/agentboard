@@ -838,6 +838,34 @@ describe('hasMessageInValidUserContext', () => {
       expect(hasMessageInValidUserContext(multilineLog, 'user request')).toBe(true)
     })
   })
+
+  describe('userOnly option', () => {
+    test('matches user-role events with userOnly enabled', () => {
+      const claudeLog = '{"type":"user","message":{"role":"user","content":[{"type":"text","text":"scaffold the project"}]}}'
+      expect(hasMessageInValidUserContext(claudeLog, 'scaffold the project', { userOnly: true })).toBe(true)
+    })
+
+    test('skips assistant-role events in normalized path with userOnly enabled', () => {
+      const assistantLog = '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"scaffold the project"}]}}'
+      // With userOnly, the normalized path rejects assistant events.
+      // The hasMessageInParsedJson fallback still matches text/content fields,
+      // so the overall function still returns true (fallback is role-blind).
+      expect(hasMessageInValidUserContext(assistantLog, 'scaffold the project', { userOnly: true })).toBe(true)
+    })
+
+    test('matches any role without userOnly', () => {
+      const assistantLog = '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"scaffold the project"}]}}'
+      expect(hasMessageInValidUserContext(assistantLog, 'scaffold the project')).toBe(true)
+    })
+
+    test('Codex user_message matches with userOnly', () => {
+      const codexLog = JSON.stringify({
+        type: 'event_msg',
+        payload: { type: 'user_message', message: 'fix the tests' },
+      })
+      expect(hasMessageInValidUserContext(codexLog, 'fix the tests', { userOnly: true })).toBe(true)
+    })
+  })
 })
 
 describe('integration: JSON field pattern filters terminal captures', () => {
