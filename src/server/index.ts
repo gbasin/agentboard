@@ -7,11 +7,15 @@ import { config, isValidHostname } from './config'
 import { ensureTmux } from './prerequisites'
 import { SessionManager } from './SessionManager'
 import { SessionRegistry } from './SessionRegistry'
-import { initDatabase } from './db'
+import { initDatabase, type AgentSessionRecord } from './db'
 import { LogPoller } from './logPoller'
 import { toAgentSession } from './agentSessions'
 import { getLogSearchDirs } from './logDiscovery'
-import { verifyWindowLogAssociationDetailed } from './logMatcher'
+import {
+  verifyWindowLogAssociationDetailed,
+  verifyWindowLogAssociationDetailedAsync,
+  type WindowLogVerificationResult,
+} from './logMatcher'
 import {
   createTerminalProxy,
   resolveTerminalMode,
@@ -408,18 +412,107 @@ function updateAgentSessions() {
   registry.setAgentSessions(active, inactive)
 }
 
+interface VerificationDecision {
+  verification: WindowLogVerificationResult
+  nameMatches: boolean
+  windowExists: boolean
+}
+
+interface HydrateSessionsOptions {
+  verifyAssociations?: boolean
+  precomputedVerifications?: Map<string, VerificationDecision>
+}
+
+async function verifyAllSessions(
+  activeSessions: AgentSessionRecord[],
+  sessions: Session[],
+  logDirs: string[]
+): Promise<Map<string, VerificationDecision>> {
+  const windowSet = new Set(sessions.map((session) => session.tmuxWindow))
+  const windowByTarget = new Map(sessions.map((session) => [session.tmuxWindow, session]))
+  const allLogPaths = activeSessions
+    .filter((session) => session.currentWindow)
+    .map((session) => ({ sessionId: session.sessionId, logPath: session.logFilePath }))
+
+  const entries: Array<[string, VerificationDecision]> = await Promise.all(
+    activeSessions.map(async (agentSession): Promise<[string, VerificationDecision]> => {
+      const currentWindow = agentSession.currentWindow
+      if (!currentWindow || !windowSet.has(currentWindow)) {
+        const decision: VerificationDecision = {
+          verification: {
+            status: 'inconclusive',
+            bestMatch: null,
+            reason: 'no_match',
+          },
+          nameMatches: false,
+          windowExists: false,
+        }
+        return [agentSession.sessionId, decision]
+      }
+
+      const excludeLogPaths = allLogPaths
+        .filter((entry) => entry.sessionId !== agentSession.sessionId)
+        .map((entry) => entry.logPath)
+
+      try {
+        const verification = await verifyWindowLogAssociationDetailedAsync(
+          currentWindow,
+          agentSession.logFilePath,
+          logDirs,
+          {
+            context: {
+              agentType: agentSession.agentType,
+              projectPath: agentSession.projectPath,
+            },
+            excludeLogPaths,
+          }
+        )
+        const window = windowByTarget.get(currentWindow)
+        const nameMatches = Boolean(window && window.name === agentSession.displayName)
+        const decision: VerificationDecision = {
+          verification,
+          nameMatches,
+          windowExists: true,
+        }
+        return [agentSession.sessionId, decision]
+      } catch (error) {
+        logger.warn('session_verification_error', {
+          sessionId: agentSession.sessionId,
+          error: String(error),
+        })
+        const decision: VerificationDecision = {
+          verification: { status: 'verified', bestMatch: null },
+          nameMatches: true,
+          windowExists: true,
+        }
+        return [agentSession.sessionId, decision]
+      }
+    })
+  )
+
+  return new Map(entries)
+}
+
 function hydrateSessionsWithAgentSessions(
   sessions: Session[],
-  { verifyAssociations = false }: { verifyAssociations?: boolean } = {}
+  { verifyAssociations = false, precomputedVerifications }: HydrateSessionsOptions = {}
 ): Session[] {
   const activeSessions = db.getActiveSessions()
   const windowSet = new Set(sessions.map((session) => session.tmuxWindow))
   const activeMap = new Map<string, typeof activeSessions[number]>()
   const orphaned: AgentSession[] = []
-  const logDirs = getLogSearchDirs()
+  const logDirs = verifyAssociations && !precomputedVerifications
+    ? getLogSearchDirs()
+    : []
 
   for (const agentSession of activeSessions) {
-    if (!agentSession.currentWindow || !windowSet.has(agentSession.currentWindow)) {
+    const precomputed = precomputedVerifications?.get(agentSession.sessionId)
+    const currentWindow = agentSession.currentWindow
+    const windowExists = precomputed
+      ? precomputed.windowExists
+      : Boolean(currentWindow && windowSet.has(currentWindow))
+
+    if (!windowExists || !currentWindow) {
       logger.info('session_orphaned', {
         sessionId: agentSession.sessionId,
         displayName: agentSession.displayName,
@@ -434,46 +527,44 @@ function hydrateSessionsWithAgentSessions(
       continue
     }
 
-    // Verify the association by checking terminal content matches the log
-    // This catches stale associations from tmux restarts where window IDs changed
-    // Only run on startup to avoid blocking periodic refreshes
-    if (verifyAssociations) {
-      // Exclude logs from other active sessions to prevent cross-session pollution
-      // (e.g., discussing session A's content in session B causes B's log to match A's window)
+    let verification: WindowLogVerificationResult | null = null
+    let nameMatches = false
+
+    if (precomputed) {
+      verification = precomputed.verification
+      nameMatches = precomputed.nameMatches
+    } else if (verifyAssociations) {
       const otherSessionLogPaths = activeSessions
         .filter((s) => s.sessionId !== agentSession.sessionId && s.currentWindow)
         .map((s) => s.logFilePath)
 
-      const verification = verifyWindowLogAssociationDetailed(
-        agentSession.currentWindow,
+      verification = verifyWindowLogAssociationDetailed(
+        currentWindow,
         agentSession.logFilePath,
         logDirs,
         {
-          context: { agentType: agentSession.agentType, projectPath: agentSession.projectPath },
+          context: {
+            agentType: agentSession.agentType,
+            projectPath: agentSession.projectPath,
+          },
           excludeLogPaths: otherSessionLogPaths,
         }
       )
 
-      // Get the window to check name match for fallback
-      const window = sessions.find((s) => s.tmuxWindow === agentSession.currentWindow)
-      const nameMatches = Boolean(window && window.name === agentSession.displayName)
+      const window = sessions.find((s) => s.tmuxWindow === currentWindow)
+      nameMatches = Boolean(window && window.name === agentSession.displayName)
+    }
 
-      // Decide whether to orphan based on verification status and name match
+    if (verification) {
       let shouldOrphan = false
       let fallbackUsed = false
 
       if (verification.status === 'verified') {
-        // Content confirms association - keep
         shouldOrphan = false
       } else if (nameMatches) {
-        // Name matches - trust it over content mismatch/inconclusive
-        // Window names are user-intentional signals, so honor them even if
-        // content matching finds a "better" match in another log (which can
-        // happen due to similar content across sessions or limited scrollback)
         shouldOrphan = false
         fallbackUsed = true
       } else {
-        // No name match and content doesn't verify - orphan
         shouldOrphan = true
       }
 
@@ -481,7 +572,7 @@ function hydrateSessionsWithAgentSessions(
         logger.info('session_verification_failed', {
           sessionId: agentSession.sessionId,
           displayName: agentSession.displayName,
-          currentWindow: agentSession.currentWindow,
+          currentWindow,
           logFilePath: agentSession.logFilePath,
           verificationStatus: verification.status,
           verificationReason: verification.reason ?? null,
@@ -499,13 +590,13 @@ function hydrateSessionsWithAgentSessions(
         logger.info('session_verification_name_fallback', {
           sessionId: agentSession.sessionId,
           displayName: agentSession.displayName,
-          currentWindow: agentSession.currentWindow,
+          currentWindow,
           verificationStatus: verification.status,
         })
       }
     }
 
-    activeMap.set(agentSession.currentWindow, agentSession)
+    activeMap.set(currentWindow, agentSession)
   }
 
   const hydrated = sessions.map((session) => {
@@ -657,12 +748,36 @@ logger.info('startup_state', {
   })),
 })
 
-refreshSessionsSync({ verifyAssociations: true }) // Sync for startup - ensures sessions are ready
-resurrectPinnedSessions() // Resurrect pinned sessions that lost their tmux windows
-refreshSessionsSync() // Re-hydrate after resurrection
+refreshSessionsSync() // hydrate from persisted associations without verification
 setInterval(refreshSessions, config.refreshIntervalMs) // Async for periodic
-if (config.logPollIntervalMs > 0) {
-  logPoller.start(config.logPollIntervalMs, config.logWatchMode)
+
+async function completeStartupVerification(): Promise<void> {
+  const activeSessions = db.getActiveSessions()
+  const sessions = registry.getAll()
+  try {
+    if (activeSessions.length > 0 && sessions.length > 0) {
+      const verifications = await verifyAllSessions(
+        activeSessions,
+        sessions,
+        getLogSearchDirs()
+      )
+      const hydrated = hydrateSessionsWithAgentSessions(sessions, {
+        verifyAssociations: true,
+        precomputedVerifications: verifications,
+      })
+      const withOverrides = applyForceWorkingOverrides(hydrated)
+      registry.replaceSessions(mergeRemoteSessions(withOverrides))
+    }
+  } catch (error) {
+    logger.warn('startup_verification_error', {
+      message: error instanceof Error ? error.message : String(error),
+    })
+  }
+
+  if (db.getPinnedOrphaned().length > 0) {
+    resurrectPinnedSessions()
+    refreshSessionsSync()
+  }
 }
 
 registry.on('session-update', (session) => {
@@ -1054,6 +1169,11 @@ logger.info('server_started', {
     return tsIp ? `${protocol}://${tsIp}:${config.port}` : null
   })() : null,
 })
+
+if (config.logPollIntervalMs > 0) {
+  logPoller.start(config.logPollIntervalMs, config.logWatchMode)
+}
+void completeStartupVerification()
 
 // Cleanup all terminals on server shutdown
 async function cleanupAllTerminals() {

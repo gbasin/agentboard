@@ -36,7 +36,9 @@ interface WindowData {
   height: number
 }
 
-// Cache persists across worker invocations
+// Cache persists across worker invocations.
+// This depends on worker message handlers running sequentially; concurrent
+// handling would race status transitions and corrupt per-pane state.
 const paneContentCache = new Map<string, PaneCacheState>()
 
 export type RefreshWorkerRequest =

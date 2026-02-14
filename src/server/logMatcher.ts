@@ -74,6 +74,57 @@ export function createExactMatchProfiler(): ExactMatchProfiler {
   }
 }
 
+interface SpawnResult {
+  exitCode: number
+  stdout: string
+  stderr: string
+}
+
+interface SpawnOptions {
+  timeoutMs?: number
+}
+
+const TMUX_CAPTURE_TIMEOUT_MS = 5000
+const RG_COMMAND_TIMEOUT_MS = 10000
+
+function runCommandSync(args: string[], options: SpawnOptions = {}): SpawnResult {
+  const result = Bun.spawnSync(args, {
+    stdout: 'pipe',
+    stderr: 'pipe',
+    ...(options.timeoutMs && options.timeoutMs > 0
+      ? { timeout: options.timeoutMs }
+      : {}),
+  })
+  return {
+    exitCode: result.exitCode,
+    stdout: result.stdout.toString(),
+    stderr: result.stderr.toString(),
+  }
+}
+
+async function runCommandAsync(
+  args: string[],
+  options: SpawnOptions = {}
+): Promise<SpawnResult> {
+  const proc = Bun.spawn(args, {
+    stdout: 'pipe',
+    stderr: 'pipe',
+    ...(options.timeoutMs && options.timeoutMs > 0
+      ? { timeout: options.timeoutMs }
+      : {}),
+  })
+  const [exitCode, stdout, stderr] = await Promise.all([
+    proc.exited,
+    proc.stdout ? new Response(proc.stdout).text() : '',
+    proc.stderr ? new Response(proc.stderr).text() : '',
+  ])
+  return {
+    exitCode: typeof exitCode === 'number' ? exitCode : 1,
+    stdout,
+    stderr,
+  }
+}
+
 const DEFAULT_LOG_READ_OPTIONS: LogReadOptions = {
   lineLimit: 2000,
   byteLimit: 200 * 1024,
@@ -404,18 +455,14 @@ export function findLogsWithExactMessage(
     }
     args.push('--glob', '**/*.jsonl', logDir)
     const start = performance.now()
-    const result = Bun.spawnSync(args, { stdout: 'pipe', stderr: 'pipe' })
+    const result = runCommandSync(args, { timeoutMs: RG_COMMAND_TIMEOUT_MS })
     if (profile) {
       profile.rgListRuns += 1
       profile.rgListMs += performance.now() - start
     }
 
     if (result.exitCode === 0) {
-      const matches = result.stdout
-        .toString()
-        .trim()
-        .split('\n')
-        .filter(Boolean)
+      const matches = result.stdout.trim().split('\n').filter(Boolean)
       allMatches.push(...matches)
     }
   }
@@ -426,6 +473,66 @@ export function findLogsWithExactMessage(
   // Use progressive tail reading to handle large logs with lots of assistant output
   const validMatches = uniqueMatches.filter((logPath) =>
     hasMessageInValidUserContextProgressive(logPath, userMessage, tailBytes ?? DEFAULT_LOG_TAIL_BYTES)
+  )
+
+  return validMatches.length > 0 ? validMatches : []
+}
+
+export async function findLogsWithExactMessageAsync(
+  userMessage: string,
+  logDirs: string | string[],
+  {
+    minLength = MIN_EXACT_MATCH_LENGTH,
+    logPaths,
+    tailBytes,
+    rgThreads,
+    profile,
+  }: ExactMessageSearchOptions = {}
+): Promise<string[]> {
+  if (!userMessage || userMessage.length < minLength) {
+    return []
+  }
+
+  const candidatePaths = (logPaths ?? []).filter(Boolean)
+  if (candidatePaths.length > 0) {
+    return findLogsWithExactMessageInPathsAsync(userMessage, candidatePaths, {
+      minLength,
+      tailBytes,
+      rgThreads,
+      profile,
+    })
+  }
+
+  const dirs = Array.isArray(logDirs) ? logDirs : [logDirs]
+  const allMatches: string[] = []
+  const flexiblePattern = messageToFlexiblePattern(userMessage)
+
+  for (const logDir of dirs) {
+    const args = ['rg', '-l', '-e', flexiblePattern]
+    if (rgThreads && rgThreads > 0) {
+      args.push('--threads', String(rgThreads))
+    }
+    args.push('--glob', '**/*.jsonl', logDir)
+    const start = performance.now()
+    const result = await runCommandAsync(args, { timeoutMs: RG_COMMAND_TIMEOUT_MS })
+    if (profile) {
+      profile.rgListRuns += 1
+      profile.rgListMs += performance.now() - start
+    }
+
+    if (result.exitCode === 0) {
+      const matches = result.stdout.trim().split('\n').filter(Boolean)
+      allMatches.push(...matches)
+    }
+  }
+
+  const uniqueMatches = Array.from(new Set(allMatches))
+  const validMatches = uniqueMatches.filter((logPath) =>
+    hasMessageInValidUserContextProgressive(
+      logPath,
+      userMessage,
+      tailBytes ?? DEFAULT_LOG_TAIL_BYTES
+    )
   )
 
   return validMatches.length > 0 ? validMatches : []
@@ -478,7 +585,7 @@ function findLogsWithExactMessageInPaths(
   }
   args.push(...uniquePaths)
   const start = performance.now()
-  const result = Bun.spawnSync(args, { stdout: 'pipe', stderr: 'pipe' })
+  const result = runCommandSync(args, { timeoutMs: RG_COMMAND_TIMEOUT_MS })
   if (profile) {
     profile.rgListRuns += 1
     profile.rgListMs += performance.now() - start
@@ -486,14 +593,70 @@ function findLogsWithExactMessageInPaths(
   if (result.exitCode !== 0) {
     return tailMatches.length > 0 ? tailMatches : []
   }
-  const rgMatches = result.stdout
-    .toString()
-    .trim()
-    .split('\n')
-    .filter(Boolean)
+  const rgMatches = result.stdout.trim().split('\n').filter(Boolean)
 
   // Post-filter ripgrep results to exclude tool_result false positives
   // Use progressive tail reading to handle large logs with lots of assistant output
+  const validMatches = rgMatches.filter((logPath) =>
+    hasMessageInValidUserContextProgressive(logPath, userMessage, tailBytes)
+  )
+
+  return validMatches.length > 0 ? validMatches : tailMatches
+}
+
+async function findLogsWithExactMessageInPathsAsync(
+  userMessage: string,
+  logPaths: string[],
+  {
+    minLength = MIN_EXACT_MATCH_LENGTH,
+    tailBytes = DEFAULT_LOG_TAIL_BYTES,
+    rgThreads,
+    profile,
+  }: ExactMessageSearchOptions = {}
+): Promise<string[]> {
+  if (!userMessage || userMessage.length < minLength) {
+    return []
+  }
+  const uniquePaths = Array.from(new Set(logPaths)).filter(Boolean)
+  if (uniquePaths.length === 0) return []
+
+  const flexiblePattern = messageToFlexiblePattern(userMessage)
+
+  const tailMatches: string[] = []
+  if (tailBytes > 0) {
+    for (const logPath of uniquePaths) {
+      const start = performance.now()
+      const tail = readLogTail(logPath, tailBytes)
+      if (profile) {
+        profile.tailReads += 1
+        profile.tailReadMs += performance.now() - start
+      }
+      if (!tail) continue
+      if (hasMessageInValidUserContext(tail, userMessage)) {
+        tailMatches.push(logPath)
+      }
+    }
+  }
+
+  if (tailMatches.length === 1) {
+    return tailMatches
+  }
+
+  const args = ['rg', '-l', '-e', flexiblePattern]
+  if (rgThreads && rgThreads > 0) {
+    args.push('--threads', String(rgThreads))
+  }
+  args.push(...uniquePaths)
+  const start = performance.now()
+  const result = await runCommandAsync(args, { timeoutMs: RG_COMMAND_TIMEOUT_MS })
+  if (profile) {
+    profile.rgListRuns += 1
+    profile.rgListMs += performance.now() - start
+  }
+  if (result.exitCode !== 0) {
+    return tailMatches.length > 0 ? tailMatches : []
+  }
+  const rgMatches = result.stdout.trim().split('\n').filter(Boolean)
   const validMatches = rgMatches.filter((logPath) =>
     hasMessageInValidUserContextProgressive(logPath, userMessage, tailBytes)
   )
@@ -548,7 +711,7 @@ function getRgMatchLines(
   }
   args.push(logPath)
   const start = performance.now()
-  const result = Bun.spawnSync(args, { stdout: 'pipe', stderr: 'pipe' })
+  const result = runCommandSync(args, { timeoutMs: RG_COMMAND_TIMEOUT_MS })
   if (search.profile) {
     search.profile.rgJsonRuns += 1
     search.profile.rgJsonMs += performance.now() - start
@@ -557,8 +720,34 @@ function getRgMatchLines(
     return []
   }
 
+  return parseRgMatchLines(result.stdout)
+}
+
+async function getRgMatchLinesAsync(
+  pattern: string,
+  logPath: string,
+  search: ExactMatchSearchOptions = {}
+): Promise<number[]> {
+  const args = ['rg', '--json', '-e', pattern]
+  if (search.rgThreads && search.rgThreads > 0) {
+    args.push('--threads', String(search.rgThreads))
+  }
+  args.push(logPath)
+  const start = performance.now()
+  const result = await runCommandAsync(args, { timeoutMs: RG_COMMAND_TIMEOUT_MS })
+  if (search.profile) {
+    search.profile.rgJsonRuns += 1
+    search.profile.rgJsonMs += performance.now() - start
+  }
+  if (result.exitCode !== 0 && result.exitCode !== 1) {
+    return []
+  }
+
+  return parseRgMatchLines(result.stdout)
+}
+
+function parseRgMatchLines(output: string): number[] {
   const lines: number[] = []
-  const output = result.stdout.toString()
   for (const line of output.split('\n')) {
     const trimmed = line.trim()
     if (!trimmed) continue
@@ -632,6 +821,34 @@ function scoreOrderedMessageMatchesWithRg(
   return { matchedCount, matchedLength }
 }
 
+async function scoreOrderedMessageMatchesWithRgAsync(
+  logPath: string,
+  messages: string[],
+  search: ExactMatchSearchOptions = {}
+): Promise<OrderedMatchScore> {
+  let matchedCount = 0
+  let matchedLength = 0
+  let lastLine = 0
+
+  for (const message of messages) {
+    if (!message) continue
+    const pattern = messageToFlexiblePattern(message)
+    const matchLines = await getRgMatchLinesAsync(pattern, logPath, search)
+    if (matchLines.length === 0) {
+      continue
+    }
+    const nextLine = matchLines.find((line) => line > lastLine)
+    if (nextLine === undefined) {
+      continue
+    }
+    matchedCount += 1
+    matchedLength += message.length
+    lastLine = nextLine
+  }
+
+  return { matchedCount, matchedLength }
+}
+
 function scoreOrderedMessageMatches(
   logPath: string,
   messages: string[],
@@ -665,6 +882,50 @@ function scoreOrderedMessageMatches(
 
   const rgStart = performance.now()
   const fullScore = scoreOrderedMessageMatchesWithRg(logPath, messages, search)
+  if (profile) {
+    profile.rgScoreRuns += 1
+    profile.rgScoreMs += performance.now() - rgStart
+  }
+  return { ...fullScore, source: 'rg' }
+}
+
+async function scoreOrderedMessageMatchesAsync(
+  logPath: string,
+  messages: string[],
+  search: ExactMatchSearchOptions = {}
+): Promise<OrderedMatchScore> {
+  const { tailBytes = DEFAULT_LOG_TAIL_BYTES, profile } = search
+  if (messages.length === 0) {
+    return { matchedCount: 0, matchedLength: 0, source: 'rg' }
+  }
+
+  if (tailBytes > 0) {
+    const tailStart = performance.now()
+    const tail = readLogTail(logPath, tailBytes)
+    if (profile) {
+      profile.tailReads += 1
+      profile.tailReadMs += performance.now() - tailStart
+    }
+    if (tail) {
+      const start = performance.now()
+      const tailScore = scoreOrderedMessageMatchesInText(tail, messages)
+      if (profile) {
+        profile.tailScoreRuns += 1
+        profile.tailScoreMs += performance.now() - start
+      }
+      const minTailMatches = Math.min(messages.length, MIN_TAIL_MATCH_COUNT)
+      if (tailScore.matchedCount >= minTailMatches) {
+        return { ...tailScore, source: 'tail' }
+      }
+    }
+  }
+
+  const rgStart = performance.now()
+  const fullScore = await scoreOrderedMessageMatchesWithRgAsync(
+    logPath,
+    messages,
+    search
+  )
   if (profile) {
     profile.rgScoreRuns += 1
     profile.rgScoreMs += performance.now() - rgStart
@@ -843,14 +1104,29 @@ export function getTerminalScrollback(
   lines = DEFAULT_SCROLLBACK_LINES
 ): string {
   const safeLines = Math.max(1, lines)
-  const result = Bun.spawnSync(
+  const result = runCommandSync(
     ['tmux', 'capture-pane', '-t', tmuxWindow, '-p', '-J', '-S', `-${safeLines}`],
-    { stdout: 'pipe', stderr: 'pipe' }
+    { timeoutMs: TMUX_CAPTURE_TIMEOUT_MS }
   )
   if (result.exitCode !== 0) {
     return ''
   }
-  return result.stdout.toString()
+  return result.stdout
+}
+
+export async function getTerminalScrollbackAsync(
+  tmuxWindow: string,
+  lines = DEFAULT_SCROLLBACK_LINES
+): Promise<string> {
+  const safeLines = Math.max(1, lines)
+  const result = await runCommandAsync(
+    ['tmux', 'capture-pane', '-t', tmuxWindow, '-p', '-J', '-S', `-${safeLines}`],
+    { timeoutMs: TMUX_CAPTURE_TIMEOUT_MS }
+  )
+  if (result.exitCode !== 0) {
+    return ''
+  }
+  return result.stdout
 }
 
 /**
@@ -862,14 +1138,29 @@ export function getTerminalScrollbackWithAnsi(
   lines = DEFAULT_SCROLLBACK_LINES
 ): string {
   const safeLines = Math.max(1, lines)
-  const result = Bun.spawnSync(
+  const result = runCommandSync(
     ['tmux', 'capture-pane', '-t', tmuxWindow, '-p', '-J', '-e', '-S', `-${safeLines}`],
-    { stdout: 'pipe', stderr: 'pipe' }
+    { timeoutMs: TMUX_CAPTURE_TIMEOUT_MS }
   )
   if (result.exitCode !== 0) {
     return ''
   }
-  return result.stdout.toString()
+  return result.stdout
+}
+
+export async function getTerminalScrollbackWithAnsiAsync(
+  tmuxWindow: string,
+  lines = DEFAULT_SCROLLBACK_LINES
+): Promise<string> {
+  const safeLines = Math.max(1, lines)
+  const result = await runCommandAsync(
+    ['tmux', 'capture-pane', '-t', tmuxWindow, '-p', '-J', '-e', '-S', `-${safeLines}`],
+    { timeoutMs: TMUX_CAPTURE_TIMEOUT_MS }
+  )
+  if (result.exitCode !== 0) {
+    return ''
+  }
+  return result.stdout
 }
 
 export function readLogContent(
@@ -1407,6 +1698,215 @@ export function tryExactMatchWindowToLog(
   }
 }
 
+export async function tryExactMatchWindowToLogAsync(
+  tmuxWindow: string,
+  logDirs: string | string[],
+  scrollbackLines = DEFAULT_SCROLLBACK_LINES,
+  context: ExactMatchContext = {},
+  search: ExactMatchSearchOptions = {}
+): Promise<ExactMatchResult | null> {
+  const profile = search.profile
+  const tmuxStart = performance.now()
+  const scrollback = await getTerminalScrollbackAsync(tmuxWindow, scrollbackLines)
+  if (profile) {
+    profile.tmuxCaptures += 1
+    profile.tmuxCaptureMs += performance.now() - tmuxStart
+  }
+  const extractStart = performance.now()
+  let userMessages = extractRecentUserMessagesFromTmux(scrollback)
+
+  if (userMessages.length === 0) {
+    const ansiScrollback = await getTerminalScrollbackWithAnsiAsync(
+      tmuxWindow,
+      scrollbackLines
+    )
+    userMessages = extractPiUserMessagesFromAnsi(ansiScrollback)
+  }
+
+  if (profile) {
+    profile.messageExtractRuns += 1
+    profile.messageExtractMs += performance.now() - extractStart
+  }
+
+  let messages = userMessages
+  let usingTraceFallback = false
+  if (messages.length === 0) {
+    const traces = extractRecentTraceLinesFromTmux(scrollback)
+    if (traces.length === 0) return null
+    messages = traces
+    usingTraceFallback = true
+  }
+
+  const hasDisambiguators = Boolean(context.agentType || context.projectPath)
+  const longMessages = messages.filter(
+    (message) => message.length >= MIN_EXACT_MATCH_LENGTH
+  )
+  const allowShortMessages = hasDisambiguators || usingTraceFallback
+  const messagesToSearch =
+    longMessages.length > 0 ? longMessages : allowShortMessages ? messages : []
+  if (messagesToSearch.length === 0) return null
+
+  const sortedMessages = messagesToSearch.toSorted((a, b) => b.length - a.length)
+  let candidates: string[] = []
+
+  for (const message of sortedMessages) {
+    const minLength =
+      message.length >= MIN_EXACT_MATCH_LENGTH ? MIN_EXACT_MATCH_LENGTH : 1
+    const matches = await findLogsWithExactMessageAsync(message, logDirs, {
+      minLength,
+      logPaths: search.logPaths,
+      tailBytes: search.tailBytes,
+      rgThreads: search.rgThreads,
+      profile: search.profile,
+    })
+    if (matches.length === 0) continue
+    candidates = intersectCandidates(candidates, matches)
+    if (candidates.length <= 1) break
+  }
+
+  if (candidates.length === 0) {
+    return null
+  }
+
+  if (usingTraceFallback) {
+    const filtered = candidates.filter((candidate) => !isCodexSubagent(candidate))
+    if (filtered.length === 0) {
+      return null
+    }
+    candidates = filtered
+  }
+
+  if (context.agentType) {
+    const filtered = candidates.filter(
+      (candidate) => inferAgentTypeFromPath(candidate) === context.agentType
+    )
+    if (filtered.length > 0) {
+      candidates = filtered
+    }
+  }
+
+  if (context.projectPath) {
+    const target = normalizePath(context.projectPath)
+    const filtered = candidates.filter((candidate) => {
+      const projectPath = extractProjectPath(candidate)
+      if (!projectPath) return false
+      const normalized = normalizePath(projectPath)
+      return isSameOrChildPath(normalized, target)
+    })
+    if (filtered.length > 0) {
+      candidates = filtered
+    }
+  }
+
+  if (search.excludeLogPaths && search.excludeLogPaths.length > 0) {
+    const excludeSet = new Set(search.excludeLogPaths)
+    const filtered = candidates.filter((candidate) => !excludeSet.has(candidate))
+    if (filtered.length > 0) {
+      candidates = filtered
+    }
+  }
+
+  const orderedMessages = messages
+    .filter((message: string) => message.length >= MIN_EXACT_MATCH_LENGTH)
+    .toReversed()
+
+  if (orderedMessages.length === 0) {
+    return null
+  }
+
+  if (candidates.length === 1) {
+    const score = await scoreOrderedMessageMatchesAsync(
+      candidates[0],
+      orderedMessages,
+      search
+    )
+    if (score.matchedCount === 0) {
+      return null
+    }
+    return {
+      logPath: candidates[0],
+      userMessage: messages[0] ?? '',
+      matchedCount: score.matchedCount,
+      matchedLength: score.matchedLength,
+    }
+  }
+
+  let scored = await Promise.all(
+    candidates.map(async (logPath) => ({
+      logPath,
+      score: await scoreOrderedMessageMatchesAsync(logPath, orderedMessages, search),
+    }))
+  )
+
+  scored.sort((left, right) => compareOrderedScores(left.score, right.score))
+  let best = scored[0]
+  let second = scored[1]
+
+  if (!best || best.score.matchedCount === 0) {
+    return null
+  }
+
+  if (second) {
+    const isTied =
+      best.score.matchedCount === second.score.matchedCount &&
+      best.score.matchedLength === second.score.matchedLength
+    if (isTied) {
+      const tied = scored.filter(
+        (entry) => compareOrderedScores(entry.score, best.score) === 0
+      )
+      const needsFull = tied.some((entry) => entry.score.source === 'tail')
+      if (needsFull) {
+        const tieStart = performance.now()
+        const updatedScores = new Map<string, OrderedMatchScore>(
+          await Promise.all(
+            tied.map(async (entry): Promise<[string, OrderedMatchScore]> => {
+              const rgScore = await scoreOrderedMessageMatchesWithRgAsync(
+                entry.logPath,
+                orderedMessages,
+                search
+              )
+              return [
+                entry.logPath,
+                {
+                  ...rgScore,
+                  source: 'rg' as const,
+                },
+              ]
+            })
+          )
+        )
+        if (profile) {
+          profile.tieBreakRgRuns += tied.length
+          profile.tieBreakRgMs += performance.now() - tieStart
+        }
+        scored = scored.map((entry) => {
+          const updated = updatedScores.get(entry.logPath)
+          if (!updated) return entry
+          return { ...entry, score: updated }
+        })
+        scored.sort((left, right) => compareOrderedScores(left.score, right.score))
+        best = scored[0]
+        second = scored[1]
+      }
+    }
+  }
+
+  if (
+    second &&
+    best.score.matchedCount === second.score.matchedCount &&
+    best.score.matchedLength === second.score.matchedLength
+  ) {
+    return null
+  }
+
+  return {
+    logPath: best.logPath,
+    userMessage: messages[0] ?? '',
+    matchedCount: best.score.matchedCount,
+    matchedLength: best.score.matchedLength,
+  }
+}
+
 export function matchWindowsToLogsByExactRg(
   windows: Session[],
   logDirs: string | string[],
@@ -1468,6 +1968,74 @@ export function matchWindowsToLogsByExactRg(
   return resolved
 }
 
+export async function matchWindowsToLogsByExactRgAsync(
+  windows: Session[],
+  logDirs: string | string[],
+  scrollbackLines = DEFAULT_SCROLLBACK_LINES,
+  search: ExactMatchSearchOptions = {}
+): Promise<Map<string, Session>> {
+  const matches = new Map<string, { window: Session; score: OrderedMatchScore }>()
+  const blocked = new Set<string>()
+  const profile = search.profile
+
+  const windowResults = await Promise.all(
+    windows.map(async (window) => {
+      const start = performance.now()
+      const result = await tryExactMatchWindowToLogAsync(
+        window.tmuxWindow,
+        logDirs,
+        scrollbackLines,
+        { agentType: window.agentType, projectPath: window.projectPath },
+        search
+      )
+      return {
+        window,
+        result,
+        elapsedMs: performance.now() - start,
+      }
+    })
+  )
+
+  for (const entry of windowResults) {
+    if (profile) {
+      profile.windowMatchRuns += 1
+      profile.windowMatchMs += entry.elapsedMs
+    }
+    if (!entry.result) continue
+
+    const score = {
+      matchedCount: entry.result.matchedCount,
+      matchedLength: entry.result.matchedLength,
+    }
+    const existing = matches.get(entry.result.logPath)
+
+    if (blocked.has(entry.result.logPath)) {
+      continue
+    }
+    if (!existing) {
+      matches.set(entry.result.logPath, { window: entry.window, score })
+      continue
+    }
+
+    const comparison = compareOrderedScores(score, existing.score)
+    if (comparison === 0) {
+      matches.delete(entry.result.logPath)
+      blocked.add(entry.result.logPath)
+      continue
+    }
+    if (comparison < 0) {
+      matches.set(entry.result.logPath, { window: entry.window, score })
+    }
+  }
+
+  const resolved = new Map<string, Session>()
+  for (const [logPath, entry] of matches) {
+    resolved.set(logPath, entry.window)
+  }
+
+  return resolved
+}
+
 export interface VerifyWindowLogOptions {
   context?: ExactMatchContext
   scrollbackLines?: number
@@ -1508,6 +2076,31 @@ export function verifyWindowLogAssociation(
   // Verify this log is actually the best match for the window
   // This prevents stale associations where shared content (like /plugin)
   // causes a weak match to pass verification
+  return bestMatch !== null && bestMatch.logPath === logPath
+}
+
+export async function verifyWindowLogAssociationAsync(
+  tmuxWindow: string,
+  logPath: string,
+  logDirs: string[],
+  options: VerifyWindowLogOptions = {}
+): Promise<boolean> {
+  const {
+    context = {},
+    scrollbackLines = DEFAULT_SCROLLBACK_LINES,
+    excludeLogPaths = [],
+  } = options
+
+  const excludeSet = new Set(excludeLogPaths)
+  excludeSet.delete(logPath)
+
+  const bestMatch = await tryExactMatchWindowToLogAsync(
+    tmuxWindow,
+    logDirs,
+    scrollbackLines,
+    context,
+    { excludeLogPaths: excludeSet.size > 0 ? [...excludeSet] : undefined }
+  )
   return bestMatch !== null && bestMatch.logPath === logPath
 }
 
@@ -1566,6 +2159,49 @@ export function verifyWindowLogAssociationDetailed(
     return { status: 'mismatch', bestMatch }
   } catch (error) {
     // IO errors, parse errors, etc. - treat as inconclusive
+    logger.warn('verify_window_log_error', {
+      tmuxWindow,
+      logPath,
+      error: String(error),
+    })
+    return { status: 'inconclusive', bestMatch: null, reason: 'error' }
+  }
+}
+
+export async function verifyWindowLogAssociationDetailedAsync(
+  tmuxWindow: string,
+  logPath: string,
+  logDirs: string[],
+  options: VerifyWindowLogOptions = {}
+): Promise<WindowLogVerificationResult> {
+  const {
+    context = {},
+    scrollbackLines = DEFAULT_SCROLLBACK_LINES,
+    excludeLogPaths = [],
+  } = options
+
+  const excludeSet = new Set(excludeLogPaths)
+  excludeSet.delete(logPath)
+
+  try {
+    const bestMatch = await tryExactMatchWindowToLogAsync(
+      tmuxWindow,
+      logDirs,
+      scrollbackLines,
+      context,
+      { excludeLogPaths: excludeSet.size > 0 ? [...excludeSet] : undefined }
+    )
+
+    if (bestMatch === null) {
+      return { status: 'inconclusive', bestMatch: null, reason: 'no_match' }
+    }
+
+    if (bestMatch.logPath === logPath) {
+      return { status: 'verified', bestMatch }
+    }
+
+    return { status: 'mismatch', bestMatch }
+  } catch (error) {
     logger.warn('verify_window_log_error', {
       tmuxWindow,
       logPath,
