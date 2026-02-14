@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import { performance } from 'node:perf_hooks'
+import { normalizeAgentLogEntry } from '../shared/eventTaxonomy'
 import type { AgentType, Session } from '../shared/types'
 import {
   extractProjectPath,
@@ -253,6 +254,16 @@ export function hasMessageInValidUserContext(
 
     try {
       const parsed = JSON.parse(trimmed)
+      const normalized = normalizeAgentLogEntry(parsed)
+      if (
+        normalized.some((event) => {
+          if (event.kind === 'tool_result') return false
+          if (!event.text) return false
+          return matchesMessageWithPrefixLimit(event.text, baseRegex)
+        })
+      ) {
+        return true
+      }
       if (hasMessageInParsedJson(parsed, baseRegex)) {
         return true
       }
@@ -1240,40 +1251,6 @@ function extractTextFromEntry(entry: unknown, mode: LogTextMode): string[] {
     .filter((chunk) => chunk.trim().length > 0)
 }
 
-function extractTextFromContent(content: unknown): string[] {
-  if (!content) {
-    return []
-  }
-  if (typeof content === 'string') {
-    return [content]
-  }
-  if (!Array.isArray(content)) {
-    return []
-  }
-
-  const chunks: string[] = []
-  for (const item of content) {
-    if (!item) {
-      continue
-    }
-    if (typeof item === 'string') {
-      chunks.push(item)
-      continue
-    }
-    if (typeof item === 'object') {
-      const entry = item as Record<string, unknown>
-      const type = typeof entry.type === 'string' ? entry.type : ''
-      if (type && !['text', 'input_text', 'output_text'].includes(type)) {
-        continue
-      }
-      if (typeof entry.text === 'string') {
-        chunks.push(entry.text)
-      }
-    }
-  }
-  return chunks
-}
-
 function shouldIncludeRole(role: string, mode: LogTextMode): boolean {
   if (mode === 'all') {
     return true
@@ -1302,74 +1279,21 @@ function processUserMessageText(text: string): string | null {
 function extractRoleTextFromEntry(
   entry: unknown
 ): Array<{ role: string; text: string }> {
-  if (!entry || typeof entry !== 'object') {
-    return []
-  }
-
-  const record = entry as Record<string, unknown>
+  const normalized = normalizeAgentLogEntry(entry)
   const chunks: Array<{ role: string; text: string }> = []
 
-  // Codex: response_item -> payload message
-  if (record.type === 'response_item') {
-    const payload = record.payload as Record<string, unknown> | undefined
-    if (payload && payload.type === 'message') {
-      const role = (payload.role as string | undefined) ?? ''
-      const texts = extractTextFromContent(payload.content)
-      for (const text of texts) {
-        if (role === 'user') {
-          const processed = processUserMessageText(text)
-          if (processed) chunks.push({ role, text: processed })
-        } else if (text.trim()) {
-          chunks.push({ role, text })
-        }
-      }
+  for (const item of normalized) {
+    if (item.kind !== 'message') {
+      continue
     }
-  }
-
-  // Claude: top-level message field
-  if (record.message && typeof record.message === 'object') {
-    const message = record.message as Record<string, unknown>
-    const role =
-      (message.role as string | undefined) ?? (record.type as string | undefined) ?? ''
-    const texts = extractTextFromContent(message.content)
-    for (const text of texts) {
-      if (role === 'user') {
-        const processed = processUserMessageText(text)
-        if (processed) chunks.push({ role, text: processed })
-      } else if (text.trim()) {
-        chunks.push({ role, text })
-      }
+    if (item.role !== 'user' && item.role !== 'assistant' && item.role !== 'system') {
+      continue
     }
-  } else if (record.type === 'user' || record.type === 'assistant') {
-    const role = record.type as string
-    const direct = extractTextFromContent(record.content)
-    for (const text of direct) {
-      if (role === 'user') {
-        const processed = processUserMessageText(text)
-        if (processed) chunks.push({ role, text: processed })
-      } else if (text.trim()) {
-        chunks.push({ role, text })
-      }
-    }
-    if (record.text && typeof record.text === 'string') {
-      if (role === 'user') {
-        const processed = processUserMessageText(record.text)
-        if (processed) chunks.push({ role, text: processed })
-      } else if (record.text.trim()) {
-        chunks.push({ role, text: record.text })
-      }
-    }
-  }
-
-  // Codex event_msg: user_message (fallback)
-  if (record.type === 'event_msg') {
-    const payload = record.payload as Record<string, unknown> | undefined
-    if (payload && payload.type === 'user_message') {
-      const text = payload.message
-      if (typeof text === 'string') {
-        const processed = processUserMessageText(text)
-        if (processed) chunks.push({ role: 'user', text: processed })
-      }
+    if (item.role === 'user') {
+      const processed = processUserMessageText(item.text)
+      if (processed) chunks.push({ role: 'user', text: processed })
+    } else if (item.text.trim()) {
+      chunks.push({ role: item.role, text: item.text })
     }
   }
 

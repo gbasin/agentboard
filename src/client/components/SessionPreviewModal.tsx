@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react'
+import { parseAndNormalizeAgentLogLine } from '@shared/eventTaxonomy'
 import type { AgentSession } from '@shared/types'
 import { formatRelativeTime } from '../utils/time'
 import { getPathLeaf } from '../utils/sessionLabel'
@@ -25,70 +26,34 @@ interface ParsedEntry {
   raw: string
 }
 
-function parseLogEntry(line: string): ParsedEntry | null {
-  if (!line.trim()) return null
+function mapNormalizedRoleToEntryType(role: string): ParsedEntry['type'] {
+  if (role === 'user') return 'user'
+  if (role === 'assistant') return 'assistant'
+  if (role === 'system') return 'system'
+  return 'other'
+}
 
-  try {
-    const entry = JSON.parse(line) as Record<string, unknown>
+function parseLogEntry(line: string): ParsedEntry[] {
+  const parsed = parseAndNormalizeAgentLogLine(line)
+  if (!parsed) return []
 
-    // Extract message content from various JSONL formats
-    let content = ''
-    let type: ParsedEntry['type'] = 'other'
+  const entries = parsed.events
+    .map((event) => ({
+      type: mapNormalizedRoleToEntryType(event.role),
+      content: event.text.trim(),
+      raw: line,
+    }))
+    .filter((entry) => entry.content.length > 0)
 
-    // Claude format: look for message or content fields
-    if (typeof entry.message === 'string') {
-      content = entry.message
-    } else if (typeof entry.content === 'string') {
-      content = entry.content
-    } else if (entry.type === 'user' && typeof entry.message === 'object') {
-      const msg = entry.message as Record<string, unknown>
-      content = typeof msg.content === 'string' ? msg.content : ''
-      type = 'user'
-    } else if (entry.type === 'assistant' && entry.message) {
-      const msg = entry.message as Record<string, unknown>
-      if (typeof msg.content === 'string') {
-        content = msg.content
-      } else if (Array.isArray(msg.content)) {
-        content = msg.content
-          .filter((block): block is { type: string; text: string } =>
-            typeof block === 'object' && block !== null && 'text' in block
-          )
-          .map((block) => block.text)
-          .join('\n')
-      }
-      type = 'assistant'
-    }
-
-    // Tool use events
-    if (entry.type === 'tool_use' || entry.event === 'tool_use') {
-      const name = (entry as Record<string, unknown>).name ?? 'tool'
-      content = `[Tool: ${name}]`
-      type = 'assistant'
-    }
-
-    // Result events
-    if (entry.type === 'result' && typeof entry.result === 'string') {
-      content = entry.result
-      type = 'system'
-    }
-
-    // Codex format
-    if (entry.payload && typeof entry.payload === 'object') {
-      const payload = entry.payload as Record<string, unknown>
-      if (typeof payload.content === 'string') {
-        content = payload.content
-      } else if (typeof payload.message === 'string') {
-        content = payload.message
-      }
-    }
-
-    if (!content.trim()) return null
-
-    return { type, content: content.trim(), raw: line }
-  } catch {
-    // Not valid JSON, return as raw text
-    return { type: 'other', content: line.trim(), raw: line }
+  if (entries.length > 0) {
+    return entries
   }
+
+  if (!parsed.parsed && line.trim()) {
+    return [{ type: 'other', content: line.trim(), raw: line }]
+  }
+
+  return []
 }
 
 export default function SessionPreviewModal({
@@ -151,10 +116,7 @@ export default function SessionPreviewModal({
   const displayName = session.displayName || getPathLeaf(session.projectPath) || session.sessionId.slice(0, 8)
   const lastActivity = formatRelativeTime(session.lastActivityAt)
 
-  const parsedEntries = previewData?.lines
-    .map(parseLogEntry)
-    .filter((entry): entry is ParsedEntry => entry !== null)
-    .slice(-30) ?? []
+  const parsedEntries = previewData?.lines.flatMap(parseLogEntry).slice(-30) ?? []
 
   return (
     <div
