@@ -753,15 +753,18 @@ setInterval(refreshSessions, config.refreshIntervalMs) // Async for periodic
 
 async function completeStartupVerification(): Promise<void> {
   const activeSessions = db.getActiveSessions()
-  const sessions = registry.getAll()
+  // Use local-only sessions for verification to prevent remote sessions
+  // (whose tmuxWindow values aren't host-namespaced) from causing false
+  // "window exists" decisions or incorrect hydration with local DB overlays.
+  const localSessions = registry.getAll().filter((s) => !s.remote)
   try {
-    if (activeSessions.length > 0 && sessions.length > 0) {
+    if (activeSessions.length > 0 && localSessions.length > 0) {
       const verifications = await verifyAllSessions(
         activeSessions,
-        sessions,
+        localSessions,
         getLogSearchDirs()
       )
-      const hydrated = hydrateSessionsWithAgentSessions(sessions, {
+      const hydrated = hydrateSessionsWithAgentSessions(localSessions, {
         verifyAssociations: true,
         precomputedVerifications: verifications,
       })

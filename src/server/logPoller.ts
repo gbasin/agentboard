@@ -216,9 +216,13 @@ export class LogPoller {
     })
     this.logWatcher.start()
 
+    // On Linux, fs.watch({ recursive: true }) has known bugs (Bun #15939:
+    // doesn't detect files in newly-created subdirectories), so use a shorter
+    // fallback interval to avoid regressing from the default 5s poll mode.
+    const minFallback = process.platform === 'linux' ? 15_000 : 60_000
     this.interval = setInterval(() => {
       void this.pollOnce()
-    }, Math.max(fallbackIntervalMs, 60_000))
+    }, Math.max(fallbackIntervalMs, minFallback))
 
     void this.pollOnce().then(() => {
       if (this.orphanRematchPending && !this.orphanRematchInProgress) {
@@ -425,6 +429,12 @@ export class LogPoller {
     }
   }
 
+  /**
+   * Stop the log poller and dispose all resources.
+   * LogPoller is single-use: after stop(), the match worker is permanently
+   * disposed and the instance cannot be restarted. Create a new instance
+   * if polling needs to resume.
+   */
   stop(): void {
     if (this.interval) {
       clearInterval(this.interval)
@@ -744,6 +754,8 @@ export class LogPoller {
         newSessions += 1
         if (currentWindow) {
           this.onSessionActivated?.(sessionId, currentWindow)
+        } else {
+          orphans += 1
         }
       } catch (error) {
         errors += 1
