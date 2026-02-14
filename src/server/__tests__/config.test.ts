@@ -17,6 +17,7 @@ const ORIGINAL_ENV = {
   AGENTBOARD_RG_THREADS: process.env.AGENTBOARD_RG_THREADS,
   AGENTBOARD_LOG_MATCH_WORKER: process.env.AGENTBOARD_LOG_MATCH_WORKER,
   AGENTBOARD_LOG_MATCH_PROFILE: process.env.AGENTBOARD_LOG_MATCH_PROFILE,
+  AGENTBOARD_LOG_WATCH_MODE: process.env.AGENTBOARD_LOG_WATCH_MODE,
   CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR,
   CODEX_HOME: process.env.CODEX_HOME,
   CLAUDE_RESUME_CMD: process.env.CLAUDE_RESUME_CMD,
@@ -62,6 +63,7 @@ async function loadConfig(tag: string) {
     rgThreads: number
     logMatchWorker: boolean
     logMatchProfile: boolean
+    logWatchMode: 'watch' | 'poll'
     claudeConfigDir: string
     codexHomeDir: string
     claudeResumeCmd: string
@@ -102,6 +104,7 @@ describe('config', () => {
     expect(config.rgThreads).toBe(1)
     expect(config.logMatchWorker).toBe(true)
     expect(config.logMatchProfile).toBe(false)
+    expect(config.logWatchMode).toBe('watch')
     expect(config.claudeResumeCmd).toBe('claude --resume {sessionId}')
     expect(config.codexResumeCmd).toBe('codex resume {sessionId}')
     expect(config.hostLabel).toBe(os.hostname())
@@ -129,6 +132,7 @@ describe('config', () => {
     process.env.AGENTBOARD_RG_THREADS = '4'
     process.env.AGENTBOARD_LOG_MATCH_WORKER = 'false'
     process.env.AGENTBOARD_LOG_MATCH_PROFILE = 'true'
+    process.env.AGENTBOARD_LOG_WATCH_MODE = 'poll'
     process.env.CLAUDE_CONFIG_DIR = '/tmp/claude'
     process.env.CODEX_HOME = '/tmp/codex'
     process.env.CLAUDE_RESUME_CMD = 'claude --resume={sessionId}'
@@ -157,6 +161,7 @@ describe('config', () => {
     expect(config.rgThreads).toBe(4)
     expect(config.logMatchWorker).toBe(false)
     expect(config.logMatchProfile).toBe(true)
+    expect(config.logWatchMode).toBe('poll')
     expect(config.claudeConfigDir).toBe('/tmp/claude')
     expect(config.codexHomeDir).toBe('/tmp/codex')
     expect(config.claudeResumeCmd).toBe('claude --resume={sessionId}')
@@ -168,5 +173,12 @@ describe('config', () => {
     expect(config.remoteStaleMs).toBe(50000)
     expect(config.remoteSshOpts).toBe('-o StrictHostKeyChecking=accept-new')
     expect(config.remoteAllowControl).toBe(true)
+  })
+
+  test('defaults to watch mode for invalid AGENTBOARD_LOG_WATCH_MODE', async () => {
+    process.env.AGENTBOARD_LOG_WATCH_MODE = 'invalid'
+
+    const config = await loadConfig('invalid-watch-mode')
+    expect(config.logWatchMode).toBe('watch')
   })
 })

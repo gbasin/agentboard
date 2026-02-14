@@ -317,4 +317,86 @@ describe('logMatchWorker', () => {
     expect(response.type).toBe('error')
     expect(response.error).toBe('boom')
   })
+
+  test('uses preFilteredPaths and skips full directory scan', async () => {
+    const logDir = path.join(process.env.CLAUDE_CONFIG_DIR as string, 'projects', 'alpha')
+    await fs.mkdir(logDir, { recursive: true })
+
+    const includedLogPath = path.join(logDir, 'included.jsonl')
+    const scannedOnlyLogPath = path.join(logDir, 'scanned-only.jsonl')
+    await fs.writeFile(
+      includedLogPath,
+      buildUserLogEntry('included message', {
+        sessionId: 'session-included',
+        cwd: '/tmp/alpha',
+      })
+    )
+    await fs.writeFile(
+      scannedOnlyLogPath,
+      buildUserLogEntry('scanned only message', {
+        sessionId: 'session-scanned-only',
+        cwd: '/tmp/alpha',
+      })
+    )
+
+    ctx.onmessage?.({
+      data: {
+        id: 'request-prefiltered',
+        windows: [],
+        maxLogsPerPoll: 25,
+        sessions: [],
+        scrollbackLines: 25,
+        preFilteredPaths: [includedLogPath],
+      },
+    } as MessageEvent)
+
+    expect(messages).toHaveLength(1)
+    const response = messages[0] as Record<string, unknown>
+    expect(response.type).toBe('result')
+    const entries = response.entries as Array<{ logPath: string }>
+    expect(entries).toHaveLength(1)
+    expect(entries[0]?.logPath).toBe(includedLogPath)
+  })
+
+  test('falls back to full scan when preFilteredPaths is empty', async () => {
+    const logDir = path.join(process.env.CLAUDE_CONFIG_DIR as string, 'projects', 'alpha')
+    await fs.mkdir(logDir, { recursive: true })
+
+    const firstLogPath = path.join(logDir, 'first.jsonl')
+    const secondLogPath = path.join(logDir, 'second.jsonl')
+    await fs.writeFile(
+      firstLogPath,
+      buildUserLogEntry('first message', {
+        sessionId: 'session-first',
+        cwd: '/tmp/alpha',
+      })
+    )
+    await fs.writeFile(
+      secondLogPath,
+      buildUserLogEntry('second message', {
+        sessionId: 'session-second',
+        cwd: '/tmp/alpha',
+      })
+    )
+
+    ctx.onmessage?.({
+      data: {
+        id: 'request-empty-prefiltered',
+        windows: [],
+        maxLogsPerPoll: 25,
+        sessions: [],
+        scrollbackLines: 25,
+        preFilteredPaths: [],
+      },
+    } as MessageEvent)
+
+    expect(messages).toHaveLength(1)
+    const response = messages[0] as Record<string, unknown>
+    expect(response.type).toBe('result')
+    const entries = (response.entries as Array<{ logPath: string }>).map(
+      (entry) => entry.logPath
+    )
+    expect(entries).toContain(firstLogPath)
+    expect(entries).toContain(secondLogPath)
+  })
 })

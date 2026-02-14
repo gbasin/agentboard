@@ -75,6 +75,14 @@ export function getLogSearchDirs(): string[] {
   ]
 }
 
+export function getLogWatchParentDirs(): string[] {
+  return [
+    getClaudeConfigDir(),
+    getCodexHomeDir(),
+    path.join(getPiHomeDir(), 'agent'),
+  ]
+}
+
 export function normalizeProjectPath(value: string): string {
   const trimmed = value.trim()
   if (!trimmed) return ''

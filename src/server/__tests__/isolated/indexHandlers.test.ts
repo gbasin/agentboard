@@ -584,10 +584,10 @@ describe('server message handlers', () => {
     )
     websocket.message?.(ws as never, refreshPayload)
 
-    // 3 calls: startup logging + initial sync refresh + post-resurrection refresh
+    // 2 calls: startup logging + initial sync refresh
     // (message refresh uses async worker, not sessionManager.listWindows)
-    expect(listCalls).toBe(3)
-    expect(replaceSessionsCalls).toHaveLength(2)
+    expect(listCalls).toBe(2)
+    expect(replaceSessionsCalls).toHaveLength(1)
 
     websocket.message?.(
       ws as never,
@@ -2507,5 +2507,56 @@ describe('server startup side effects', () => {
     )
     expect(killCalls).toHaveLength(1)
     expect(killCalls[0]).toEqual(['tmux', 'kill-session', '-t', 'agentboard-ws-1'])
+  })
+
+  test('does not run sync window verification before startup is ready', async () => {
+    const syncCapturePaneCalls: string[][] = []
+    seedRecord(
+      makeRecord({
+        sessionId: 'session-active',
+        displayName: baseSession.name,
+        currentWindow: baseSession.tmuxWindow,
+        logFilePath: path.join('/tmp', 'session-active.jsonl'),
+      })
+    )
+    sessionManagerState.listWindows = () => [baseSession]
+
+    spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
+      const command = Array.isArray(args[0]) ? args[0] : [String(args[0])]
+      if (command[0] === 'tmux' && command[1] === 'capture-pane') {
+        syncCapturePaneCalls.push(command as string[])
+      }
+      return {
+        exitCode: 0,
+        stdout: Buffer.from(''),
+        stderr: Buffer.from(''),
+      } as ReturnType<typeof Bun.spawnSync>
+    }) as typeof Bun.spawnSync
+    bunAny.spawn = ((...args: Parameters<typeof Bun.spawn>) => {
+      const cmd = Array.isArray(args[0]) ? args[0] : [String(args[0])]
+      return {
+        exited: Promise.resolve(0),
+        stdout: new ReadableStream({
+          start(controller) {
+            if (cmd[0] === 'tmux' && cmd[1] === 'capture-pane') {
+              controller.enqueue(new TextEncoder().encode(''))
+            }
+            controller.close()
+          },
+        }),
+        stderr: new ReadableStream({
+          start(controller) {
+            controller.close()
+          },
+        }),
+        kill: () => {},
+        pid: 12345,
+      } as unknown as ReturnType<typeof Bun.spawn>
+    }) as typeof Bun.spawn
+
+    await loadIndex()
+
+    expect(serveOptions).not.toBeNull()
+    expect(syncCapturePaneCalls).toHaveLength(0)
   })
 })

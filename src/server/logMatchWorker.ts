@@ -1,5 +1,6 @@
 /// <reference lib="webworker" />
 import os from 'node:os'
+import path from 'node:path'
 import { performance } from 'node:perf_hooks'
 import {
   getLogSearchDirs,
@@ -17,7 +18,11 @@ import {
   matchWindowsToLogsByExactRg,
 } from './logMatcher'
 import { getEntriesNeedingMatch, shouldSkipMatching } from './logMatchGate'
-import { collectLogEntryBatch, type LogEntrySnapshot } from './logPollData'
+import {
+  collectLogEntriesForPaths,
+  collectLogEntryBatch,
+  type LogEntrySnapshot,
+} from './logPollData'
 import type {
   LastMessageCandidate,
   MatchWorkerRequest,
@@ -41,11 +46,34 @@ export function handleMatchWorkerRequest(
 ): MatchWorkerResponse {
   try {
     const search = payload.search ?? {}
-    let { entries, scanMs, sortMs } = collectLogEntryBatch(
-      payload.maxLogsPerPoll,
-      { knownSessions: payload.knownSessions }
-    )
     const logDirs = payload.logDirs ?? getLogSearchDirs()
+    const normalizedLogDirs = logDirs.map((logDir) => path.resolve(logDir))
+    let entries: LogEntrySnapshot[]
+    let scanMs = 0
+    let sortMs = 0
+
+    if (payload.preFilteredPaths && payload.preFilteredPaths.length > 0) {
+      // Validate watcher paths before enrichment.
+      // We only accept jsonl paths under known log roots.
+      const validPaths = payload.preFilteredPaths.filter((filePath) => {
+        if (!filePath.endsWith('.jsonl')) return false
+        const resolvedPath = path.resolve(filePath)
+        return normalizedLogDirs.some((logDir) => {
+          const root = logDir.endsWith(path.sep) ? logDir : `${logDir}${path.sep}`
+          return resolvedPath.startsWith(root)
+        })
+      })
+
+      entries = collectLogEntriesForPaths(validPaths, payload.knownSessions ?? [])
+    } else {
+      const batch = collectLogEntryBatch(payload.maxLogsPerPoll, {
+        knownSessions: payload.knownSessions,
+      })
+      entries = batch.entries
+      scanMs = batch.scanMs
+      sortMs = batch.sortMs
+    }
+
     const profile = search.profile ? createExactMatchProfiler() : undefined
     let matchMs = 0
     let matchWindowCount = 0

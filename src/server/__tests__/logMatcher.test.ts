@@ -9,6 +9,7 @@ import {
   matchWindowsToLogsByExactRg,
   tryExactMatchWindowToLog,
   verifyWindowLogAssociation,
+  verifyWindowLogAssociationDetailedAsync,
   extractRecentTraceLinesFromTmux,
   extractRecentUserMessagesFromTmux,
   extractPiUserMessagesFromAnsi,
@@ -18,7 +19,11 @@ import {
   extractLastEntryTimestamp,
 } from '../logMatcher'
 
-const bunAny = Bun as typeof Bun & { spawnSync: typeof Bun.spawnSync }
+const bunAny = Bun as typeof Bun & {
+  spawn: typeof Bun.spawn
+  spawnSync: typeof Bun.spawnSync
+}
+const originalSpawn = bunAny.spawn
 const originalSpawnSync = bunAny.spawnSync
 
 const tmuxOutputs = new Map<string, string>()
@@ -119,6 +124,36 @@ function runRg(args: string[]) {
   return { exitCode: 1, stdout: Buffer.from(''), stderr: Buffer.from('') }
 }
 
+function runCommand(args: string[]) {
+  if (args[0] === 'tmux' && args[1] === 'capture-pane') {
+    const targetIndex = args.indexOf('-t')
+    const target = targetIndex >= 0 ? args[targetIndex + 1] : ''
+    const output = tmuxOutputs.get(target ?? '') ?? ''
+    return {
+      exitCode: 0,
+      stdout: Buffer.from(output),
+      stderr: Buffer.from(''),
+    }
+  }
+  if (args[0] === 'rg') {
+    return runRg(args)
+  }
+  return {
+    exitCode: 0,
+    stdout: Buffer.from(''),
+    stderr: Buffer.from(''),
+  }
+}
+
+function toReadableStream(buffer: Buffer): ReadableStream<Uint8Array> {
+  return new ReadableStream({
+    start(controller) {
+      controller.enqueue(buffer)
+      controller.close()
+    },
+  })
+}
+
 function buildPromptScrollback(
   messages: string[],
   options: { prefix?: string; glyph?: string } = {}
@@ -143,29 +178,24 @@ function buildUserLogEntry(message: string): string {
 }
 
 beforeEach(() => {
-  bunAny.spawnSync = ((args: string[]) => {
-    if (args[0] === 'tmux' && args[1] === 'capture-pane') {
-      const targetIndex = args.indexOf('-t')
-      const target = targetIndex >= 0 ? args[targetIndex + 1] : ''
-      const output = tmuxOutputs.get(target ?? '') ?? ''
-      return {
-        exitCode: 0,
-        stdout: Buffer.from(output),
-        stderr: Buffer.from(''),
-      } as ReturnType<typeof Bun.spawnSync>
-    }
-    if (args[0] === 'rg') {
-      return runRg(args) as ReturnType<typeof Bun.spawnSync>
-    }
+  bunAny.spawn = ((args: string[]) => {
+    const result = runCommand(args)
     return {
-      exitCode: 0,
-      stdout: Buffer.from(''),
-      stderr: Buffer.from(''),
-    } as ReturnType<typeof Bun.spawnSync>
+      exited: Promise.resolve(result.exitCode),
+      stdout: toReadableStream(result.stdout),
+      stderr: toReadableStream(result.stderr),
+      kill: () => {},
+      pid: 12345,
+    } as unknown as ReturnType<typeof Bun.spawn>
+  }) as typeof Bun.spawn
+
+  bunAny.spawnSync = ((args: string[]) => {
+    return runCommand(args) as ReturnType<typeof Bun.spawnSync>
   }) as typeof Bun.spawnSync
 })
 
 afterEach(() => {
+  bunAny.spawn = originalSpawn
   bunAny.spawnSync = originalSpawnSync
   tmuxOutputs.clear()
 })
@@ -364,6 +394,58 @@ describe('logMatcher', () => {
 
     const result = verifyWindowLogAssociation('agentboard:1', logPath, [tempDir], {})
     expect(result).toBe(false)
+
+    await fs.rm(tempDir, { recursive: true, force: true })
+  })
+
+  test('verifyWindowLogAssociationDetailedAsync returns verified when content matches', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-verify-async-'))
+    const logPath = path.join(tempDir, 'session.jsonl')
+    const messages = ['verify async one', 'verify async two']
+
+    await fs.writeFile(
+      logPath,
+      messages.map((m) => buildUserLogEntry(m)).join('\n')
+    )
+    setTmuxOutput('agentboard:1', buildPromptScrollback(messages))
+
+    const result = await verifyWindowLogAssociationDetailedAsync(
+      'agentboard:1',
+      logPath,
+      [tempDir],
+      {}
+    )
+    expect(result.status).toBe('verified')
+    expect(result.bestMatch?.logPath).toBe(logPath)
+
+    await fs.rm(tempDir, { recursive: true, force: true })
+  })
+
+  test('verifyWindowLogAssociationDetailedAsync returns mismatch when another log is best match', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-verify-async-'))
+    const expectedLog = path.join(tempDir, 'expected.jsonl')
+    const otherLog = path.join(tempDir, 'other.jsonl')
+    const expectedMessages = ['alpha one', 'alpha two']
+    const otherMessages = ['beta one', 'beta two']
+
+    await fs.writeFile(
+      expectedLog,
+      expectedMessages.map((m) => buildUserLogEntry(m)).join('\n')
+    )
+    await fs.writeFile(
+      otherLog,
+      otherMessages.map((m) => buildUserLogEntry(m)).join('\n')
+    )
+    setTmuxOutput('agentboard:1', buildPromptScrollback(otherMessages))
+
+    const result = await verifyWindowLogAssociationDetailedAsync(
+      'agentboard:1',
+      expectedLog,
+      [tempDir],
+      {}
+    )
+    expect(result.status).toBe('mismatch')
+    expect(result.bestMatch?.logPath).toBe(otherLog)
 
     await fs.rm(tempDir, { recursive: true, force: true })
   })

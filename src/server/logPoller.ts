@@ -7,6 +7,7 @@ import { deriveDisplayName } from './agentSessions'
 import { generateUniqueSessionName } from './nameGenerator'
 import type { SessionRegistry } from './SessionRegistry'
 import { LogMatchWorkerClient } from './logMatchWorkerClient'
+import { LogWatcher } from './logWatcher'
 import type { Session } from '../shared/types'
 import type { KnownSession, LogEntrySnapshot } from './logPollData'
 import {
@@ -122,6 +123,7 @@ interface MatchWorkerClient {
 
 export class LogPoller {
   private interval: ReturnType<typeof setInterval> | null = null
+  private logWatcher: LogWatcher | null = null
   private db: SessionDatabase
   private registry: SessionRegistry
   private onSessionOrphaned?: (sessionId: string) => void
@@ -179,16 +181,49 @@ export class LogPoller {
       (matchWorker ? (new LogMatchWorkerClient() as MatchWorkerClient) : null)
   }
 
-  start(intervalMs = DEFAULT_INTERVAL_MS): void {
-    if (this.interval) return
+  start(intervalMs = DEFAULT_INTERVAL_MS, mode: 'poll' | 'watch' = 'poll'): void {
+    if (this.interval || this.logWatcher) return
     if (intervalMs <= 0) {
       return
     }
+    if (mode === 'watch') {
+      this.startWatchMode(intervalMs)
+      return
+    }
+    this.startPollMode(intervalMs)
+  }
+
+  private startPollMode(intervalMs: number): void {
     const safeInterval = Math.max(MIN_INTERVAL_MS, intervalMs)
     this.interval = setInterval(() => {
       void this.pollOnce()
     }, safeInterval)
-  // Start orphan rematch after first poll completes to avoid worker contention
+    // Start orphan rematch after first poll completes to avoid worker contention
+    void this.pollOnce().then(() => {
+      if (this.orphanRematchPending && !this.orphanRematchInProgress) {
+        this.orphanRematchPromise = this.runOrphanRematchInBackground()
+      }
+    })
+  }
+
+  private startWatchMode(fallbackIntervalMs: number): void {
+    const watchDirs = getLogSearchDirs()
+    this.logWatcher = new LogWatcher({
+      dirs: watchDirs,
+      debounceMs: 2000,
+      maxWaitMs: 5000,
+      onBatch: (paths) => void this.pollChanged(paths),
+    })
+    this.logWatcher.start()
+
+    // On Linux, fs.watch({ recursive: true }) has known bugs (Bun #15939:
+    // doesn't detect files in newly-created subdirectories), so use a shorter
+    // fallback interval to avoid regressing from the default 5s poll mode.
+    const minFallback = process.platform === 'linux' ? 15_000 : 60_000
+    this.interval = setInterval(() => {
+      void this.pollOnce()
+    }, Math.max(fallbackIntervalMs, minFallback))
+
     void this.pollOnce().then(() => {
       if (this.orphanRematchPending && !this.orphanRematchInProgress) {
         this.orphanRematchPromise = this.runOrphanRematchInBackground()
@@ -394,12 +429,351 @@ export class LogPoller {
     }
   }
 
+  /**
+   * Stop the log poller and dispose all resources.
+   * LogPoller is single-use: after stop(), the match worker is permanently
+   * disposed and the instance cannot be restarted. Create a new instance
+   * if polling needs to resume.
+   */
   stop(): void {
-    if (!this.interval) return
-    clearInterval(this.interval)
+    if (this.interval) {
+      clearInterval(this.interval)
+    }
     this.interval = null
+    this.logWatcher?.stop()
+    this.logWatcher = null
     this.matchWorker?.dispose()
     this.matchWorker = null
+  }
+
+  async pollChanged(changedPaths: string[]): Promise<void> {
+    if (this.pollInFlight) return
+    this.pollInFlight = true
+
+    try {
+      if (!this.matchWorker) return
+
+      const windows = this.registry.getAll()
+      const logDirs = getLogSearchDirs()
+      const sessionRecords = [
+        ...this.db.getActiveSessions(),
+        ...this.db.getInactiveSessions(),
+      ]
+      const sessions: SessionSnapshot[] = sessionRecords.map((session) => ({
+        sessionId: session.sessionId,
+        logFilePath: session.logFilePath,
+        currentWindow: session.currentWindow,
+        lastActivityAt: session.lastActivityAt,
+        lastUserMessage: session.lastUserMessage,
+        lastKnownLogSize: session.lastKnownLogSize,
+      }))
+      const knownSessions: KnownSession[] = sessionRecords
+        .filter((session) => session.logFilePath)
+        .map((session) => ({
+          logFilePath: session.logFilePath,
+          sessionId: session.sessionId,
+          projectPath: session.projectPath ?? null,
+          agentType: session.agentType ?? null,
+          isCodexExec: session.isCodexExec,
+        }))
+
+      const response = await this.matchWorker.poll({
+        windows,
+        logDirs,
+        maxLogsPerPoll: this.maxLogsPerPoll,
+        sessions,
+        knownSessions,
+        scrollbackLines: DEFAULT_SCROLLBACK_LINES,
+        minTokensForMatch: MIN_LOG_TOKENS_FOR_INSERT,
+        forceOrphanRematch: false,
+        orphanCandidates: [],
+        lastMessageCandidates: [],
+        skipMatchingPatterns: config.skipMatchingPatterns,
+        preFilteredPaths: changedPaths,
+        search: {
+          rgThreads: this.rgThreads,
+        },
+      })
+
+      this.processMatchResponse(response, windows, sessionRecords)
+    } catch (error) {
+      logger.warn('log_poll_changed_error', {
+        message: error instanceof Error ? error.message : String(error),
+        pathCount: changedPaths.length,
+      })
+    } finally {
+      this.pollInFlight = false
+    }
+  }
+
+  private processMatchResponse(
+    response: MatchWorkerResponse,
+    windows: Session[],
+    sessionRecords: SessionRecord[]
+  ): PollStats {
+    let logsScanned = 0
+    let newSessions = 0
+    let matches = 0
+    let orphans = 0
+    let errors = 0
+    let entries = response.entries ?? []
+    const orphanEntries = response.orphanEntries ?? []
+    const sessions: SessionSnapshot[] = sessionRecords
+      .filter(
+        (session): session is SessionRecord & { logFilePath: string } =>
+          Boolean(session.logFilePath)
+      )
+      .map((session) => ({
+        sessionId: session.sessionId,
+        logFilePath: session.logFilePath,
+        currentWindow: session.currentWindow,
+        lastActivityAt: session.lastActivityAt,
+        lastUserMessage: session.lastUserMessage,
+        lastKnownLogSize: session.lastKnownLogSize,
+      }))
+
+    const exactWindowMatches = new Map<string, Session>()
+    const windowsByTmux = new Map(
+      windows.map((window) => [window.tmuxWindow, window])
+    )
+    for (const match of response.matches ?? []) {
+      const window = windowsByTmux.get(match.tmuxWindow)
+      if (!window) continue
+      exactWindowMatches.set(match.logPath, window)
+    }
+
+    const entriesToMatch = getEntriesNeedingMatch(response.entries ?? [], sessions, {
+      minTokens: MIN_LOG_TOKENS_FOR_INSERT,
+      skipMatchingPatterns: config.skipMatchingPatterns,
+    })
+    const matchEligibleLogPaths = new Set(
+      entriesToMatch.map((entry) => entry.logPath)
+    )
+    for (const entry of orphanEntries) {
+      matchEligibleLogPaths.add(entry.logPath)
+    }
+
+    if (orphanEntries.length > 0) {
+      entries = [...entries, ...orphanEntries]
+    }
+
+    for (const entry of entries) {
+      logsScanned += 1
+      try {
+        const existing = this.db.getSessionByLogPath(entry.logPath)
+        if (existing) {
+          // Use file size to detect actual log growth (mtime is unreliable due to backups/syncs)
+          const hasGrown = entry.size > (existing.lastKnownLogSize ?? 0)
+          const isLocked = Boolean(
+            existing.currentWindow &&
+            this.isLastUserMessageLocked?.(existing.currentWindow)
+          )
+          const update = applyLogEntryToExistingRecord(existing, entry, {
+            isLastUserMessageLocked: isLocked,
+            logPath: entry.logPath,
+          })
+          if (update) {
+            this.db.updateSession(existing.sessionId, update)
+          }
+          const shouldAttemptRematch =
+            !existing.currentWindow &&
+            (hasGrown || matchEligibleLogPaths.has(entry.logPath))
+          if (shouldAttemptRematch) {
+            const lastAttempt =
+              this.rematchAttemptCache.get(existing.sessionId) ?? 0
+            if (Date.now() - lastAttempt > REMATCH_COOLDOWN_MS) {
+              this.rematchAttemptCache.set(existing.sessionId, Date.now())
+              const exactMatch = exactWindowMatches.get(entry.logPath) ?? null
+              if (exactMatch) {
+                const claimed = this.db.getSessionByWindow(exactMatch.tmuxWindow)
+                if (!claimed) {
+                  this.db.updateSession(existing.sessionId, {
+                    currentWindow: exactMatch.tmuxWindow,
+                    displayName: exactMatch.name,
+                  })
+                  logger.info('session_rematched', {
+                    sessionId: existing.sessionId,
+                    window: exactMatch.tmuxWindow,
+                    displayName: exactMatch.name,
+                  })
+                  this.onSessionActivated?.(
+                    existing.sessionId,
+                    exactMatch.tmuxWindow
+                  )
+                }
+              }
+            }
+          }
+          continue
+        }
+
+        // Skip logs we've already checked and found empty (unless size changed)
+        const cachedSize = this.emptyLogCache.get(entry.logPath)
+        if (cachedSize !== undefined && cachedSize >= entry.size) {
+          continue
+        }
+
+        const agentType = entry.agentType
+        if (!agentType) {
+          continue
+        }
+
+        // Skip Codex subagent logs (e.g., review agents spawned by CLI)
+        if (agentType === 'codex' && entry.isCodexSubagent) {
+          continue
+        }
+
+        const sessionId = entry.sessionId
+        if (!sessionId) {
+          // No session ID yet - cache and retry on next poll when log has more content
+          this.emptyLogCache.set(entry.logPath, entry.size)
+          continue
+        }
+        const projectPath = entry.projectPath ?? ''
+        const createdAt = new Date(entry.birthtime || entry.mtime).toISOString()
+        // Extract timestamp from log entry for accurate activity time (mtime is unreliable due to backups/syncs)
+        const logTimestamp = extractLastEntryTimestamp(entry.logPath)
+        const lastActivityAt = logTimestamp || new Date(entry.mtime).toISOString()
+
+        const existingById = this.db.getSessionById(sessionId)
+        if (existingById) {
+          // Use file size to detect actual log growth
+          const hasGrown = entry.size > (existingById.lastKnownLogSize ?? 0)
+          const isLocked = Boolean(
+            existingById.currentWindow &&
+            this.isLastUserMessageLocked?.(existingById.currentWindow)
+          )
+          const updateById = applyLogEntryToExistingRecord(existingById, entry, {
+            isLastUserMessageLocked: isLocked,
+            logPath: entry.logPath,
+          })
+          if (updateById) {
+            this.db.updateSession(sessionId, updateById)
+          }
+
+          // Re-attempt matching for orphaned sessions (no currentWindow)
+          const shouldAttemptRematch =
+            !existingById.currentWindow &&
+            (hasGrown || matchEligibleLogPaths.has(entry.logPath))
+          if (shouldAttemptRematch) {
+            const lastAttempt = this.rematchAttemptCache.get(sessionId) ?? 0
+            if (Date.now() - lastAttempt > REMATCH_COOLDOWN_MS) {
+              this.rematchAttemptCache.set(sessionId, Date.now())
+              const exactMatch = exactWindowMatches.get(entry.logPath) ?? null
+              if (exactMatch) {
+                const claimed = this.db.getSessionByWindow(exactMatch.tmuxWindow)
+                if (!claimed) {
+                  this.db.updateSession(sessionId, {
+                    currentWindow: exactMatch.tmuxWindow,
+                    displayName: exactMatch.name,
+                  })
+                  logger.info('session_rematched', {
+                    sessionId,
+                    window: exactMatch.tmuxWindow,
+                    displayName: exactMatch.name,
+                  })
+                  this.onSessionActivated?.(sessionId, exactMatch.tmuxWindow)
+                }
+              }
+            }
+          }
+          continue
+        }
+
+        const exactMatch = exactWindowMatches.get(entry.logPath) ?? null
+        logger.info('log_match_attempt', {
+          logPath: entry.logPath,
+          windowCount: windows.length,
+          matched: Boolean(exactMatch),
+          method: 'exact-rg',
+          matchedWindow: exactMatch?.tmuxWindow ?? null,
+          matchedName: exactMatch?.name ?? null,
+        })
+
+        const logTokenCount = entry.logTokenCount
+        if (logTokenCount < MIN_LOG_TOKENS_FOR_INSERT) {
+          // Cache this empty log so we don't re-check it every poll
+          this.emptyLogCache.set(entry.logPath, entry.size)
+          logger.info('log_match_skipped', {
+            logPath: entry.logPath,
+            reason: 'too_few_tokens',
+            minTokens: MIN_LOG_TOKENS_FOR_INSERT,
+            logTokens: logTokenCount,
+          })
+          continue
+        }
+
+        const matchedWindow = exactMatch
+        let currentWindow: string | null = matchedWindow?.tmuxWindow ?? null
+        if (currentWindow) {
+          const existingForWindow = this.db.getSessionByWindow(currentWindow)
+          if (existingForWindow && existingForWindow.sessionId !== sessionId) {
+            // Window already claimed by another session - don't steal it
+            // The new session will be created as orphaned and can match later
+            // if/when the existing session releases the window
+            logger.info('log_match_skipped_window_claimed', {
+              logPath: entry.logPath,
+              sessionId,
+              matchedWindow: currentWindow,
+              claimedBySessionId: existingForWindow.sessionId,
+            })
+            currentWindow = null
+          } else {
+            matches += 1
+          }
+        }
+
+        let displayName = deriveDisplayName(
+          projectPath,
+          sessionId,
+          matchedWindow?.name
+        )
+
+        // Ensure display name is unique across all sessions
+        if (this.db.displayNameExists(displayName)) {
+          displayName = generateUniqueSessionName((name) =>
+            this.db.displayNameExists(name)
+          )
+        }
+
+        this.db.insertSession({
+          sessionId,
+          logFilePath: entry.logPath,
+          projectPath,
+          agentType,
+          displayName,
+          createdAt,
+          lastActivityAt,
+          lastUserMessage: currentWindow ? null : (entry.lastUserMessage ?? null),
+          currentWindow,
+          isPinned: false,
+          lastResumeError: null,
+          lastKnownLogSize: entry.size,
+          isCodexExec: entry.isCodexExec,
+        })
+        newSessions += 1
+        if (currentWindow) {
+          this.onSessionActivated?.(sessionId, currentWindow)
+        } else {
+          orphans += 1
+        }
+      } catch (error) {
+        errors += 1
+        logger.warn('log_poll_error', {
+          logPath: entry.logPath,
+          message: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
+
+    return {
+      logsScanned,
+      newSessions,
+      matches,
+      orphans,
+      errors,
+      durationMs: 0,
+    }
   }
 
   async pollOnce(): Promise<PollStats> {
@@ -415,16 +789,11 @@ export class LogPoller {
     }
     this.pollInFlight = true
     const start = Date.now()
-    let logsScanned = 0
-    let newSessions = 0
-    let matches = 0
-    let orphans = 0
-    let errors = 0
+    let workerErrors = 0
 
     try {
       const windows = this.registry.getAll()
       const logDirs = getLogSearchDirs()
-      let entries: LogEntrySnapshot[] = []
       const sessionRecords = [
         ...this.db.getActiveSessions(),
         ...this.db.getInactiveSessions(),
@@ -448,7 +817,6 @@ export class LogPoller {
         lastUserMessage: session.lastUserMessage,
         lastKnownLogSize: session.lastKnownLogSize,
       }))
-      // Build known sessions list to skip expensive file reads for already-tracked logs
       const knownSessions: KnownSession[] = sessionRecords
         .filter((session) => session.logFilePath)
         .map((session) => ({
@@ -458,16 +826,6 @@ export class LogPoller {
           agentType: session.agentType ?? null,
           isCodexExec: session.isCodexExec,
         }))
-      let exactWindowMatches = new Map<string, Session>()
-      let entriesToMatch: LogEntrySnapshot[] = []
-      let orphanEntries: LogEntrySnapshot[] = []
-      let scanMs = 0
-      let sortMs = 0
-      let matchMs = 0
-      let matchProfile: MatchWorkerResponse['profile'] | null = null
-      let matchWindowCount = 0
-      let matchLogCount = 0
-      let matchSkipped = false
 
       const lastMessageCandidates: LastMessageCandidate[] = []
       if (this.startupLastMessageBackfillPending) {
@@ -490,6 +848,7 @@ export class LogPoller {
         }
       }
 
+      let response: MatchWorkerResponse | null = null
       if (!this.matchWorker) {
         if (!this.warnedWorkerDisabled) {
           this.warnedWorkerDisabled = true
@@ -497,11 +856,10 @@ export class LogPoller {
             message: 'Log polling requires match worker; skipping cycle',
           })
         }
-        errors += 1
-        matchSkipped = true
+        workerErrors += 1
       } else {
         try {
-          const response = await this.matchWorker.poll({
+          response = await this.matchWorker.poll({
             windows,
             logDirs,
             maxLogsPerPoll: shouldBackfillLastMessage
@@ -511,7 +869,7 @@ export class LogPoller {
             knownSessions,
             scrollbackLines: DEFAULT_SCROLLBACK_LINES,
             minTokensForMatch: MIN_LOG_TOKENS_FOR_INSERT,
-            forceOrphanRematch: false, // Orphan rematch runs in background separately
+            forceOrphanRematch: false,
             orphanCandidates: [],
             lastMessageCandidates,
             skipMatchingPatterns: config.skipMatchingPatterns,
@@ -520,271 +878,55 @@ export class LogPoller {
               profile: this.matchProfile,
             },
           })
+
           if (this.startupLastMessageBackfillPending && shouldBackfillLastMessage) {
             this.startupLastMessageBackfillPending = false
           }
-          entries = response.entries ?? []
-          orphanEntries = response.orphanEntries ?? []
-          scanMs = response.scanMs ?? 0
-          sortMs = response.sortMs ?? 0
-          matchMs = response.matchMs ?? 0
-          matchProfile = response.profile ?? null
-          matchWindowCount = response.matchWindowCount ?? 0
-          matchLogCount = response.matchLogCount ?? 0
-          matchSkipped = response.matchSkipped ?? false
-
-          const windowsByTmux = new Map(
-            windows.map((window) => [window.tmuxWindow, window])
-          )
-          for (const match of response.matches ?? []) {
-            const window = windowsByTmux.get(match.tmuxWindow)
-            if (!window) continue
-            exactWindowMatches.set(match.logPath, window)
-          }
-          entriesToMatch = getEntriesNeedingMatch(entries, sessions, {
-            minTokens: MIN_LOG_TOKENS_FOR_INSERT,
-            skipMatchingPatterns: config.skipMatchingPatterns,
-          })
         } catch (error) {
-          errors += 1
+          workerErrors += 1
           logger.warn('log_match_worker_error', {
             message: error instanceof Error ? error.message : String(error),
           })
-          matchSkipped = true
         }
       }
 
-      if (matchProfile) {
+      if (response?.profile) {
         logger.info('log_match_profile', {
           windowCount: windows.length,
-          logCount: entries.length,
-          scanMs,
-          sortMs,
-          matchMs,
-          matchWindowCount,
-          matchLogCount,
-          matchSkipped,
-          ...matchProfile,
+          logCount: (response.entries ?? []).length,
+          scanMs: response.scanMs ?? 0,
+          sortMs: response.sortMs ?? 0,
+          matchMs: response.matchMs ?? 0,
+          matchWindowCount: response.matchWindowCount ?? 0,
+          matchLogCount: response.matchLogCount ?? 0,
+          matchSkipped: response.matchSkipped ?? false,
+          ...response.profile,
         })
       }
 
-      if (orphanEntries.length > 0) {
-        entries = [...entries, ...orphanEntries]
-      }
-
-      const matchEligibleLogPaths = new Set(
-        entriesToMatch.map((entry) => entry.logPath)
-      )
-      for (const entry of orphanEntries) {
-        matchEligibleLogPaths.add(entry.logPath)
-      }
-
-      for (const entry of entries) {
-        logsScanned += 1
-        try {
-          const existing = this.db.getSessionByLogPath(entry.logPath)
-          if (existing) {
-            // Use file size to detect actual log growth (mtime is unreliable due to backups/syncs)
-            const hasGrown = entry.size > (existing.lastKnownLogSize ?? 0)
-            const isLocked = Boolean(existing.currentWindow && this.isLastUserMessageLocked?.(existing.currentWindow))
-            const update = applyLogEntryToExistingRecord(existing, entry, { isLastUserMessageLocked: isLocked, logPath: entry.logPath })
-            if (update) {
-              this.db.updateSession(existing.sessionId, update)
-            }
-            const shouldAttemptRematch =
-              !existing.currentWindow &&
-              (hasGrown || matchEligibleLogPaths.has(entry.logPath))
-            if (shouldAttemptRematch) {
-              const lastAttempt =
-                this.rematchAttemptCache.get(existing.sessionId) ?? 0
-              if (Date.now() - lastAttempt > REMATCH_COOLDOWN_MS) {
-                this.rematchAttemptCache.set(existing.sessionId, Date.now())
-                const exactMatch = exactWindowMatches.get(entry.logPath) ?? null
-                if (exactMatch) {
-                  const claimed = this.db.getSessionByWindow(exactMatch.tmuxWindow)
-                  if (!claimed) {
-                    this.db.updateSession(existing.sessionId, {
-                      currentWindow: exactMatch.tmuxWindow,
-                      displayName: exactMatch.name,
-                    })
-                    logger.info('session_rematched', {
-                      sessionId: existing.sessionId,
-                      window: exactMatch.tmuxWindow,
-                      displayName: exactMatch.name,
-                    })
-                    this.onSessionActivated?.(
-                      existing.sessionId,
-                      exactMatch.tmuxWindow
-                    )
-                  }
-                }
-              }
-            }
-            continue
+      const processed = response
+        ? this.processMatchResponse(response, windows, sessionRecords)
+        : {
+            logsScanned: 0,
+            newSessions: 0,
+            matches: 0,
+            orphans: 0,
+            errors: 0,
+            durationMs: 0,
           }
-
-          // Skip logs we've already checked and found empty (unless size changed)
-          const cachedSize = this.emptyLogCache.get(entry.logPath)
-          if (cachedSize !== undefined && cachedSize >= entry.size) {
-            continue
-          }
-
-          const agentType = entry.agentType
-          if (!agentType) {
-            continue
-          }
-
-          // Skip Codex subagent logs (e.g., review agents spawned by CLI)
-          if (agentType === 'codex' && entry.isCodexSubagent) {
-            continue
-          }
-
-          const sessionId = entry.sessionId
-          if (!sessionId) {
-            // No session ID yet - cache and retry on next poll when log has more content
-            this.emptyLogCache.set(entry.logPath, entry.size)
-            continue
-          }
-          const projectPath = entry.projectPath ?? ''
-          const createdAt = new Date(entry.birthtime || entry.mtime).toISOString()
-          // Extract timestamp from log entry for accurate activity time (mtime is unreliable due to backups/syncs)
-          const logTimestamp = extractLastEntryTimestamp(entry.logPath)
-          const lastActivityAt = logTimestamp || new Date(entry.mtime).toISOString()
-
-          const existingById = this.db.getSessionById(sessionId)
-          if (existingById) {
-            // Use file size to detect actual log growth
-            const hasGrown = entry.size > (existingById.lastKnownLogSize ?? 0)
-            const isLocked = Boolean(existingById.currentWindow && this.isLastUserMessageLocked?.(existingById.currentWindow))
-            const updateById = applyLogEntryToExistingRecord(existingById, entry, { isLastUserMessageLocked: isLocked, logPath: entry.logPath })
-            if (updateById) {
-              this.db.updateSession(sessionId, updateById)
-            }
-
-            // Re-attempt matching for orphaned sessions (no currentWindow)
-            const shouldAttemptRematch =
-              !existingById.currentWindow &&
-              (hasGrown || matchEligibleLogPaths.has(entry.logPath))
-            if (shouldAttemptRematch) {
-              const lastAttempt = this.rematchAttemptCache.get(sessionId) ?? 0
-              if (Date.now() - lastAttempt > REMATCH_COOLDOWN_MS) {
-                this.rematchAttemptCache.set(sessionId, Date.now())
-                const exactMatch = exactWindowMatches.get(entry.logPath) ?? null
-                if (exactMatch) {
-                  const claimed = this.db.getSessionByWindow(exactMatch.tmuxWindow)
-                  if (!claimed) {
-                    this.db.updateSession(sessionId, {
-                      currentWindow: exactMatch.tmuxWindow,
-                      displayName: exactMatch.name,
-                    })
-                    logger.info('session_rematched', {
-                      sessionId,
-                      window: exactMatch.tmuxWindow,
-                      displayName: exactMatch.name,
-                    })
-                    this.onSessionActivated?.(sessionId, exactMatch.tmuxWindow)
-                  }
-                }
-              }
-            }
-            continue
-          }
-
-          const exactMatch = exactWindowMatches.get(entry.logPath) ?? null
-          logger.info('log_match_attempt', {
-            logPath: entry.logPath,
-            windowCount: windows.length,
-            matched: Boolean(exactMatch),
-            method: 'exact-rg',
-            matchedWindow: exactMatch?.tmuxWindow ?? null,
-            matchedName: exactMatch?.name ?? null,
-          })
-
-          const logTokenCount = entry.logTokenCount
-          if (logTokenCount < MIN_LOG_TOKENS_FOR_INSERT) {
-            // Cache this empty log so we don't re-check it every poll
-            this.emptyLogCache.set(entry.logPath, entry.size)
-            logger.info('log_match_skipped', {
-              logPath: entry.logPath,
-              reason: 'too_few_tokens',
-              minTokens: MIN_LOG_TOKENS_FOR_INSERT,
-              logTokens: logTokenCount,
-            })
-            continue
-          }
-
-          const matchedWindow = exactMatch
-          let currentWindow: string | null = matchedWindow?.tmuxWindow ?? null
-          if (currentWindow) {
-            const existingForWindow = this.db.getSessionByWindow(currentWindow)
-            if (existingForWindow && existingForWindow.sessionId !== sessionId) {
-              // Window already claimed by another session - don't steal it
-              // The new session will be created as orphaned and can match later
-              // if/when the existing session releases the window
-              logger.info('log_match_skipped_window_claimed', {
-                logPath: entry.logPath,
-                sessionId,
-                matchedWindow: currentWindow,
-                claimedBySessionId: existingForWindow.sessionId,
-              })
-              currentWindow = null
-            } else {
-              matches += 1
-            }
-          }
-
-          let displayName = deriveDisplayName(
-            projectPath,
-            sessionId,
-            matchedWindow?.name
-          )
-
-          // Ensure display name is unique across all sessions
-          if (this.db.displayNameExists(displayName)) {
-            displayName = generateUniqueSessionName((name) =>
-              this.db.displayNameExists(name)
-            )
-          }
-
-          this.db.insertSession({
-            sessionId,
-            logFilePath: entry.logPath,
-            projectPath,
-            agentType,
-            displayName,
-            createdAt,
-            lastActivityAt,
-            lastUserMessage: currentWindow ? null : (entry.lastUserMessage ?? null),
-            currentWindow,
-            isPinned: false,
-            lastResumeError: null,
-            lastKnownLogSize: entry.size,
-            isCodexExec: entry.isCodexExec,
-          })
-          newSessions += 1
-          if (currentWindow) {
-            this.onSessionActivated?.(sessionId, currentWindow)
-          }
-        } catch (error) {
-          errors += 1
-          logger.warn('log_poll_error', {
-            logPath: entry.logPath,
-            message: error instanceof Error ? error.message : String(error),
-          })
-        }
-      }
 
       const durationMs = Date.now() - start
-      logger.info('log_poll', {
-        logsScanned,
-        newSessions,
-        matches,
-        orphans,
-        errors,
+      const stats: PollStats = {
+        logsScanned: processed.logsScanned,
+        newSessions: processed.newSessions,
+        matches: processed.matches,
+        orphans: processed.orphans,
+        errors: processed.errors + workerErrors,
         durationMs,
-      })
+      }
 
-      return { logsScanned, newSessions, matches, orphans, errors, durationMs }
+      logger.info('log_poll', { ...stats })
+      return stats
     } finally {
       this.pollInFlight = false
     }
