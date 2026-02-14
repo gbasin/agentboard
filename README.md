@@ -134,6 +134,7 @@ AGENTBOARD_REMOTE_STALE_MS=45000
 AGENTBOARD_REMOTE_SSH_OPTS=-o BatchMode=yes -o ConnectTimeout=3
 AGENTBOARD_REMOTE_ALLOW_ATTACH=false
 AGENTBOARD_REMOTE_ALLOW_CONTROL=false
+AGENTBOARD_LOG_WATCH_MODE=watch
 ```
 
 `HOSTNAME` controls which interfaces the server binds to (default `0.0.0.0` for network access; use `127.0.0.1` for local-only).
@@ -167,6 +168,8 @@ All persistent data is stored in `~/.agentboard/`: session database (`agentboard
 `AGENTBOARD_REMOTE_ALLOW_ATTACH` enables interactive terminal attach to remote sessions (input, resize, copy-mode). When `false` (default), remote sessions are view-only.
 
 `AGENTBOARD_REMOTE_ALLOW_CONTROL` enables destructive remote session management (create, kill, rename) via the UI. Setting this to `true` implies `REMOTE_ALLOW_ATTACH=true`. Kill and rename are restricted to agentboard-managed sessions — externally-discovered remote sessions cannot be killed or renamed even with control enabled.
+
+`AGENTBOARD_LOG_WATCH_MODE` selects the log detection strategy: `watch` (default) uses `fs.watch` for instant file-change detection, `poll` falls back to periodic directory scanning. Use `poll` if you experience issues with filesystem notifications (e.g., on network-mounted home directories). On Linux, watch mode automatically includes a 15-second fallback poll since `fs.watch({ recursive: true })` has known platform bugs.
 
 **SSH multiplexing (recommended):** Each poll cycle opens SSH connections to every remote host. Enable SSH connection multiplexing to reuse connections and reduce overhead from ~200-500ms to ~5ms per poll. Add to your `~/.ssh/config`:
 
