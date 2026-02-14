@@ -217,7 +217,7 @@ describe('WebSocketManager', () => {
     expect(ws?.sent).toHaveLength(1)
   })
 
-  test('error events destroy socket and schedule reconnect', () => {
+  test('error events clear connect timer but let onclose handle reconnect', () => {
     const manager = new WebSocketManager()
     const statuses: Array<{ status: string; error: string | null }> = []
     manager.subscribeStatus((status, error) => {
@@ -225,15 +225,45 @@ describe('WebSocketManager', () => {
     })
 
     manager.connect()
-    const ws = FakeWebSocket.instances[0]
-    ws?.triggerError()
+    const ws = FakeWebSocket.instances[0]!
 
+    // Find the connect timeout timer
+    const timeoutTimer = timers.find((t) => t.delay === 10000)
+    expect(timeoutTimer).toBeDefined()
+    const timeoutId = timeoutTimer!.id
+
+    // Fire onerror — should only clear the connect timer, not reconnect
+    ws.triggerError()
+    expect(timers.find((t) => t.id === timeoutId)).toBeUndefined()
+
+    // onclose fires after onerror (per WHATWG spec) — this triggers reconnect
+    ws.close()
     expect(statuses[statuses.length - 1]?.status).toBe('reconnecting')
-    // Socket should be destroyed — a new connect should create a new instance
     const reconnectTimer = timers.find((t) => t.delay === 1000)
     expect(reconnectTimer).toBeDefined()
     reconnectTimer?.callback()
     expect(FakeWebSocket.instances).toHaveLength(2)
+  })
+
+  test('onerror followed by onclose produces exactly one reconnect (no double-fire)', () => {
+    const manager = new WebSocketManager()
+    let reconnectCount = 0
+    manager.subscribeStatus((status) => {
+      if (status === 'reconnecting') reconnectCount++
+    })
+
+    manager.connect()
+    const ws = FakeWebSocket.instances[0]!
+
+    // Simulate the spec-guaranteed onerror → onclose sequence
+    ws.triggerError()
+    ws.close()
+
+    // Should only have one reconnecting transition, not two
+    expect(reconnectCount).toBe(1)
+    // Should only schedule one reconnect timer
+    const reconnectTimers = timers.filter((t) => t.delay >= 1000 && t.delay <= 30000)
+    expect(reconnectTimers).toHaveLength(1)
   })
 })
 
@@ -247,8 +277,8 @@ describe('connect timeout', () => {
     expect(FakeWebSocket.instances).toHaveLength(1)
     const ws = FakeWebSocket.instances[0]!
 
-    // Socket stays in CONNECTING — find and fire the 5s timeout
-    const timeoutTimer = timers.find((t) => t.delay === 5000)
+    // Socket stays in CONNECTING — find and fire the 10s timeout
+    const timeoutTimer = timers.find((t) => t.delay === 10000)
     expect(timeoutTimer).toBeDefined()
     timeoutTimer!.callback()
 
@@ -269,7 +299,7 @@ describe('connect timeout', () => {
     const manager = new WebSocketManager()
     manager.connect()
 
-    const timeoutTimer = timers.find((t) => t.delay === 5000)
+    const timeoutTimer = timers.find((t) => t.delay === 10000)
     expect(timeoutTimer).toBeDefined()
     const timeoutId = timeoutTimer!.id
 
@@ -284,7 +314,7 @@ describe('connect timeout', () => {
     const manager = new WebSocketManager()
     manager.connect()
 
-    const timeoutTimer = timers.find((t) => t.delay === 5000)
+    const timeoutTimer = timers.find((t) => t.delay === 10000)
     const timeoutId = timeoutTimer!.id
 
     const ws = FakeWebSocket.instances[0]!

@@ -17,7 +17,7 @@ type MessageListener = (message: ServerMessage) => void
 type StatusListener = (status: ConnectionStatus, error: string | null) => void
 
 /** How long to wait for a WebSocket to reach OPEN before giving up. */
-const CONNECT_TIMEOUT_MS = 5_000
+const CONNECT_TIMEOUT_MS = 10_000
 
 /**
  * If the interval timer detects a time jump larger than this, the device
@@ -84,9 +84,9 @@ export class WebSocketManager {
     }
 
     ws.onerror = () => {
+      // Don't reconnect here — per the WHATWG spec, onclose always fires
+      // after onerror. Let onclose handle reconnection to avoid double-fire.
       this.clearConnectTimer()
-      this.destroySocket()
-      this.scheduleReconnect()
     }
 
     ws.onclose = () => {

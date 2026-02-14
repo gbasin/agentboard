@@ -147,8 +147,10 @@ describe('useWebSocket', () => {
     expect(ws.sent).toHaveLength(1)
     expect(JSON.parse(ws.sent[0] ?? '')).toEqual({ type: 'session-refresh' })
 
+    // Per WHATWG spec, onerror is always followed by onclose
     act(() => {
       ws.triggerError()
+      ws.close()
     })
 
     expect(useSessionStore.getState().connectionStatus).toBe('reconnecting')
