@@ -41,8 +41,13 @@ export class LogWatcher {
     for (const dir of watchDirs) {
       try {
         const watcher = fs.watch(dir, { recursive: true }, (_eventType, filename) => {
-          if (!filename || !filename.endsWith('.jsonl')) return
-          this.handleEvent(path.join(dir, filename))
+          if (!filename) return
+          // filename can be Buffer on some platforms; coerce to string
+          const name = typeof filename === 'string' ? filename : String(filename)
+          if (!name.endsWith('.jsonl')) return
+          // Skip subagent logs (matches scanDirForJsonl exclusion in logDiscovery)
+          if (name.includes(`${path.sep}subagents${path.sep}`) || name.includes('/subagents/')) return
+          this.handleEvent(path.join(dir, name))
         })
         watcher.on('error', (error) => {
           logger.warn('log_watcher_error', {
@@ -64,6 +69,10 @@ export class LogWatcher {
       watcherCount: this.watchers.length,
       setupMs: Date.now() - startMs,
     })
+  }
+
+  get watcherCount(): number {
+    return this.watchers.length
   }
 
   stop(): void {

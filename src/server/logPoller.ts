@@ -216,6 +216,13 @@ export class LogPoller {
     })
     this.logWatcher.start()
 
+    if (this.logWatcher.watcherCount === 0) {
+      logger.warn('log_watch_mode_no_watchers', {
+        message: 'No fs.watch watchers active — operating in fallback poll-only mode',
+        dirs: watchDirs,
+      })
+    }
+
     // On Linux, fs.watch({ recursive: true }) has known bugs (Bun #15939:
     // doesn't detect files in newly-created subdirectories), so use a shorter
     // fallback interval to avoid regressing from the default 5s poll mode.
