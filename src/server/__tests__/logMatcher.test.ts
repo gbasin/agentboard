@@ -14,6 +14,7 @@ import {
   extractRecentUserMessagesFromTmux,
   extractPiUserMessagesFromAnsi,
   extractActionFromUserAction,
+  extractLastUserMessageFromLog,
   hasMessageInValidUserContext,
   isToolNotificationText,
   extractLastEntryTimestamp,
@@ -204,6 +205,34 @@ describe('logMatcher', () => {
   test('normalizeText strips ANSI and control characters', () => {
     const input = '\u001b[31mHello\u001b[0m\u0007\nWorld'
     expect(normalizeText(input)).toBe('hello world')
+  })
+
+  test('extractLastUserMessageFromLog preserves user_action extraction via normalized events', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-last-user-'))
+    const logPath = path.join(tempDir, 'session.jsonl')
+
+    await fs.writeFile(
+      logPath,
+      [
+        JSON.stringify({
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [
+              {
+                type: 'input_text',
+                text:
+                  '<user_action><context>User requested review</context><action>review</action></user_action>',
+              },
+            ],
+          },
+        }),
+      ].join('\n')
+    )
+
+    expect(extractLastUserMessageFromLog(logPath)).toBe('review')
+    await fs.rm(tempDir, { recursive: true, force: true })
   })
 
   test('tryExactMatchWindowToLog uses ordered prompts to disambiguate', async () => {
