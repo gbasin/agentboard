@@ -566,8 +566,8 @@ describe('zombie OPEN socket detection', () => {
     ws.triggerOpen()
     manager.startLifecycleListeners()
 
-    // Simulate zombie: socket says OPEN but status diverged (e.g. error set it)
-    ;(manager as unknown as { status: string }).status = 'error'
+    // Simulate zombie: socket says OPEN but status diverged (e.g. reconnecting after timeout)
+    ;(manager as unknown as { status: string }).status = 'reconnecting'
 
     fireVisibilityChange('visible')
 

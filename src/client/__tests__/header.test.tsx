@@ -53,9 +53,9 @@ describe('Header', () => {
     })
   })
 
-  test('shows error status styling', () => {
+  test('shows disconnected status styling', () => {
     const renderer = TestRenderer.create(
-      <Header connectionStatus="error" onNewSession={() => {}} onOpenSettings={() => {}} tailscaleIp={null} />
+      <Header connectionStatus="disconnected" onNewSession={() => {}} onOpenSettings={() => {}} tailscaleIp={null} />
     )
 
     const statusDot = renderer.root.findAllByType('span').find((node) =>
