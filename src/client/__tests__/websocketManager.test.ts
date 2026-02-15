@@ -3,11 +3,13 @@ import type { ServerMessage } from '@shared/types'
 import { WebSocketManager } from '../hooks/useWebSocket'
 
 class FakeWebSocket {
+  static CONNECTING = 0
   static OPEN = 1
+  static CLOSING = 2
   static CLOSED = 3
   static instances: FakeWebSocket[] = []
 
-  readyState = FakeWebSocket.OPEN
+  readyState = FakeWebSocket.CONNECTING
   sent: string[] = []
   onopen: (() => void) | null = null
   onmessage: ((event: { data: string }) => void) | null = null
@@ -42,23 +44,26 @@ class FakeWebSocket {
 }
 
 type TimerEntry = { id: number; callback: () => void; delay: number }
+type IntervalEntry = { id: number; callback: () => void; interval: number }
 
 const globalAny = globalThis as typeof globalThis & {
   window?: unknown
   WebSocket?: unknown
+  document?: unknown
 }
 const originalWindow = globalAny.window
 const originalWebSocket = globalAny.WebSocket
+const originalDocument = globalAny.document
 
 let timers: TimerEntry[] = []
+let intervals: IntervalEntry[] = []
 let nextTimerId = 1
+let visibilityListeners: Array<() => void> = []
+let pageshowListeners: Array<(e: { persisted: boolean }) => void> = []
+let mockVisibilityState = 'visible'
 
-beforeEach(() => {
-  timers = []
-  nextTimerId = 1
-  FakeWebSocket.instances = []
-
-  globalAny.window = {
+function makeWindowMock() {
+  return {
     location: { protocol: 'http:', host: 'localhost:1234' },
     setTimeout: (callback: () => void, delay: number) => {
       const id = nextTimerId++
@@ -68,14 +73,70 @@ beforeEach(() => {
     clearTimeout: (id: number) => {
       timers = timers.filter((timer) => timer.id !== id)
     },
+    setInterval: (callback: () => void, interval: number) => {
+      const id = nextTimerId++
+      intervals.push({ id, callback, interval })
+      return id
+    },
+    clearInterval: (id: number) => {
+      intervals = intervals.filter((entry) => entry.id !== id)
+    },
+    addEventListener: (event: string, handler: (...args: unknown[]) => void) => {
+      if (event === 'pageshow') pageshowListeners.push(handler as (e: { persisted: boolean }) => void)
+    },
+    removeEventListener: (event: string, handler: (...args: unknown[]) => void) => {
+      if (event === 'pageshow') pageshowListeners = pageshowListeners.filter((h) => h !== handler)
+    },
   } as typeof window
+}
 
+function makeDocumentMock() {
+  return {
+    get visibilityState() {
+      return mockVisibilityState
+    },
+    addEventListener: (event: string, handler: () => void) => {
+      if (event === 'visibilitychange') visibilityListeners.push(handler)
+    },
+    removeEventListener: (event: string, handler: () => void) => {
+      if (event === 'visibilitychange')
+        visibilityListeners = visibilityListeners.filter((h) => h !== handler)
+    },
+  }
+}
+
+function fireVisibilityChange(state: string) {
+  mockVisibilityState = state
+  for (const listener of visibilityListeners) listener()
+}
+
+function firePageShow(persisted: boolean) {
+  for (const listener of pageshowListeners)
+    listener({ persisted })
+}
+
+function fireAllIntervals() {
+  for (const entry of intervals) entry.callback()
+}
+
+beforeEach(() => {
+  timers = []
+  intervals = []
+  nextTimerId = 1
+  visibilityListeners = []
+  pageshowListeners = []
+  mockVisibilityState = 'visible'
+  FakeWebSocket.instances = []
+
+  globalAny.window = makeWindowMock()
+  globalAny.document = makeDocumentMock() as unknown as Document
   globalAny.WebSocket = FakeWebSocket as unknown as typeof WebSocket
 })
 
 afterEach(() => {
   globalAny.window = originalWindow
   globalAny.WebSocket = originalWebSocket
+  globalAny.document = originalDocument
 })
 
 describe('WebSocketManager', () => {
@@ -119,10 +180,11 @@ describe('WebSocketManager', () => {
     ws?.close()
 
     expect(statuses[statuses.length - 1]).toBe('reconnecting')
-    expect(timers).toHaveLength(1)
-    expect(timers[0]?.delay).toBe(1000)
+    // Reconnect timer + connect timeout timer
+    const reconnectTimer = timers.find((t) => t.delay === 1000)
+    expect(reconnectTimer).toBeDefined()
 
-    timers[0]?.callback()
+    reconnectTimer?.callback()
     expect(FakeWebSocket.instances).toHaveLength(2)
   })
 
@@ -155,7 +217,7 @@ describe('WebSocketManager', () => {
     expect(ws?.sent).toHaveLength(1)
   })
 
-  test('error events update status with message', () => {
+  test('error events clear connect timer but let onclose handle reconnect', () => {
     const manager = new WebSocketManager()
     const statuses: Array<{ status: string; error: string | null }> = []
     manager.subscribeStatus((status, error) => {
@@ -163,12 +225,397 @@ describe('WebSocketManager', () => {
     })
 
     manager.connect()
-    const ws = FakeWebSocket.instances[0]
-    ws?.triggerError()
+    const ws = FakeWebSocket.instances[0]!
 
-    expect(statuses[statuses.length - 1]).toEqual({
-      status: 'error',
-      error: 'WebSocket error',
+    // Find the connect timeout timer
+    const timeoutTimer = timers.find((t) => t.delay === 10000)
+    expect(timeoutTimer).toBeDefined()
+    const timeoutId = timeoutTimer!.id
+
+    // Fire onerror — should only clear the connect timer, not reconnect
+    ws.triggerError()
+    expect(timers.find((t) => t.id === timeoutId)).toBeUndefined()
+
+    // onclose fires after onerror (per WHATWG spec) — this triggers reconnect
+    ws.close()
+    expect(statuses[statuses.length - 1]?.status).toBe('reconnecting')
+    const reconnectTimer = timers.find((t) => t.delay === 1000)
+    expect(reconnectTimer).toBeDefined()
+    reconnectTimer?.callback()
+    expect(FakeWebSocket.instances).toHaveLength(2)
+  })
+
+  test('onerror followed by onclose produces exactly one reconnect (no double-fire)', () => {
+    const manager = new WebSocketManager()
+    let reconnectCount = 0
+    manager.subscribeStatus((status) => {
+      if (status === 'reconnecting') reconnectCount++
     })
+
+    manager.connect()
+    const ws = FakeWebSocket.instances[0]!
+
+    // Simulate the spec-guaranteed onerror → onclose sequence
+    ws.triggerError()
+    ws.close()
+
+    // Should only have one reconnecting transition, not two
+    expect(reconnectCount).toBe(1)
+    // Should only schedule one reconnect timer
+    const reconnectTimers = timers.filter((t) => t.delay >= 1000 && t.delay <= 30000)
+    expect(reconnectTimers).toHaveLength(1)
+  })
+})
+
+describe('connect timeout', () => {
+  test('destroys socket and schedules reconnect if OPEN never reached', () => {
+    const manager = new WebSocketManager()
+    const statuses: string[] = []
+    manager.subscribeStatus((status) => statuses.push(status))
+
+    manager.connect()
+    expect(FakeWebSocket.instances).toHaveLength(1)
+    const ws = FakeWebSocket.instances[0]!
+
+    // Socket stays in CONNECTING — find and fire the 10s timeout
+    const timeoutTimer = timers.find((t) => t.delay === 10000)
+    expect(timeoutTimer).toBeDefined()
+    timeoutTimer!.callback()
+
+    // Should have destroyed the socket (handlers nulled)
+    expect(ws.onopen).toBeNull()
+    expect(ws.onclose).toBeNull()
+
+    // Status should be reconnecting
+    expect(statuses[statuses.length - 1]).toBe('reconnecting')
+
+    // Firing the reconnect timer creates a new socket
+    const reconnectTimer = timers.find((t) => t.delay === 1000)
+    reconnectTimer?.callback()
+    expect(FakeWebSocket.instances).toHaveLength(2)
+  })
+
+  test('clears timeout when socket opens successfully', () => {
+    const manager = new WebSocketManager()
+    manager.connect()
+
+    const timeoutTimer = timers.find((t) => t.delay === 10000)
+    expect(timeoutTimer).toBeDefined()
+    const timeoutId = timeoutTimer!.id
+
+    const ws = FakeWebSocket.instances[0]!
+    ws.triggerOpen()
+
+    // Timeout should have been cleared
+    expect(timers.find((t) => t.id === timeoutId)).toBeUndefined()
+  })
+
+  test('clears timeout on error', () => {
+    const manager = new WebSocketManager()
+    manager.connect()
+
+    const timeoutTimer = timers.find((t) => t.delay === 10000)
+    const timeoutId = timeoutTimer!.id
+
+    const ws = FakeWebSocket.instances[0]!
+    ws.triggerError()
+
+    expect(timers.find((t) => t.id === timeoutId)).toBeUndefined()
+  })
+})
+
+describe('connect() zombie socket guard', () => {
+  test('destroys zombie CONNECTING socket and creates new one', () => {
+    const manager = new WebSocketManager()
+    manager.connect()
+    const ws1 = FakeWebSocket.instances[0]!
+    // ws1 is stuck in CONNECTING (default readyState)
+
+    // Force internal ws reference to exist but not OPEN
+    // Calling connect() again should destroy ws1 and create ws2
+    // We need to get past the `if (this.ws)` guard — simulate by
+    // disconnecting the close handler so onclose won't null ws
+    ;(manager as unknown as { ws: FakeWebSocket }).ws = ws1
+    manager.connect()
+
+    expect(FakeWebSocket.instances).toHaveLength(2)
+    // ws1 should have had its handlers nulled
+    expect(ws1.onopen).toBeNull()
+  })
+
+  test('does not create new socket if already OPEN', () => {
+    const manager = new WebSocketManager()
+    manager.connect()
+    const ws = FakeWebSocket.instances[0]!
+    ws.triggerOpen()
+
+    manager.connect()
+    expect(FakeWebSocket.instances).toHaveLength(1)
+  })
+})
+
+describe('lifecycle listeners', () => {
+  test('startLifecycleListeners is idempotent', () => {
+    const manager = new WebSocketManager()
+    manager.connect()
+    FakeWebSocket.instances[0]?.triggerOpen()
+
+    manager.startLifecycleListeners()
+    manager.startLifecycleListeners()
+    manager.startLifecycleListeners()
+
+    // Only one interval should exist
+    expect(intervals).toHaveLength(1)
+    // Only one visibilitychange listener
+    expect(visibilityListeners).toHaveLength(1)
+    // Only one pageshow listener
+    expect(pageshowListeners).toHaveLength(1)
+  })
+
+  test('stopLifecycleListeners cleans up and allows restart', () => {
+    const manager = new WebSocketManager()
+    manager.connect()
+    FakeWebSocket.instances[0]?.triggerOpen()
+
+    manager.startLifecycleListeners()
+    expect(intervals).toHaveLength(1)
+    expect(visibilityListeners).toHaveLength(1)
+
+    manager.stopLifecycleListeners()
+    expect(intervals).toHaveLength(0)
+    expect(visibilityListeners).toHaveLength(0)
+    expect(pageshowListeners).toHaveLength(0)
+
+    // Can start again after stop
+    manager.startLifecycleListeners()
+    expect(intervals).toHaveLength(1)
+    expect(visibilityListeners).toHaveLength(1)
+  })
+
+  test('stopLifecycleListeners is a no-op if not started', () => {
+    const manager = new WebSocketManager()
+    // Should not throw
+    manager.stopLifecycleListeners()
+    expect(intervals).toHaveLength(0)
+  })
+})
+
+describe('forceReconnect via visibilitychange', () => {
+  test('reconnects when page becomes visible and socket is not OPEN', () => {
+    const manager = new WebSocketManager()
+    manager.connect()
+    const ws = FakeWebSocket.instances[0]!
+    ws.triggerOpen()
+    manager.startLifecycleListeners()
+
+    // Simulate going to background and losing the socket
+    ws.readyState = FakeWebSocket.CLOSED
+    ;(manager as unknown as { ws: null }).ws = null
+    ;(manager as unknown as { status: string }).status = 'reconnecting'
+
+    fireVisibilityChange('visible')
+
+    // Should have created a new socket
+    expect(FakeWebSocket.instances).toHaveLength(2)
+  })
+
+  test('does not reconnect when page becomes visible and socket is healthy', () => {
+    const manager = new WebSocketManager()
+    manager.connect()
+    FakeWebSocket.instances[0]!.triggerOpen()
+    manager.startLifecycleListeners()
+
+    fireVisibilityChange('visible')
+
+    // No new socket — already connected
+    expect(FakeWebSocket.instances).toHaveLength(1)
+  })
+
+  test('does not reconnect if manually disconnected', () => {
+    const manager = new WebSocketManager()
+    manager.connect()
+    FakeWebSocket.instances[0]!.triggerOpen()
+    manager.startLifecycleListeners()
+
+    manager.disconnect()
+    fireVisibilityChange('visible')
+
+    // No new socket
+    expect(FakeWebSocket.instances).toHaveLength(1)
+  })
+
+  test('does not fire when page becomes hidden', () => {
+    const manager = new WebSocketManager()
+    manager.connect()
+    FakeWebSocket.instances[0]!.triggerOpen()
+    manager.startLifecycleListeners()
+
+    // Manually null out the socket to simulate a broken state
+    ;(manager as unknown as { ws: null }).ws = null
+    ;(manager as unknown as { status: string }).status = 'reconnecting'
+
+    fireVisibilityChange('hidden')
+
+    // No new socket — only fires on 'visible'
+    expect(FakeWebSocket.instances).toHaveLength(1)
+  })
+})
+
+describe('forceReconnect via pageshow', () => {
+  test('reconnects on bfcache restore (persisted=true)', () => {
+    const manager = new WebSocketManager()
+    manager.connect()
+    FakeWebSocket.instances[0]!.triggerOpen()
+    manager.startLifecycleListeners()
+
+    // Simulate dead socket
+    ;(manager as unknown as { ws: null }).ws = null
+    ;(manager as unknown as { status: string }).status = 'reconnecting'
+
+    firePageShow(true)
+    expect(FakeWebSocket.instances).toHaveLength(2)
+  })
+
+  test('does not reconnect on normal navigation (persisted=false)', () => {
+    const manager = new WebSocketManager()
+    manager.connect()
+    FakeWebSocket.instances[0]!.triggerOpen()
+    manager.startLifecycleListeners()
+
+    ;(manager as unknown as { ws: null }).ws = null
+    ;(manager as unknown as { status: string }).status = 'reconnecting'
+
+    firePageShow(false)
+    expect(FakeWebSocket.instances).toHaveLength(1)
+  })
+})
+
+describe('forceReconnect via time-jump detector', () => {
+  test('reconnects when time jump > 15s detected', () => {
+    const manager = new WebSocketManager()
+    manager.connect()
+    FakeWebSocket.instances[0]!.triggerOpen()
+    manager.startLifecycleListeners()
+
+    // Simulate dead socket after sleep
+    ;(manager as unknown as { ws: null }).ws = null
+    ;(manager as unknown as { status: string }).status = 'reconnecting'
+
+    // Simulate a time jump by setting lastTick far in the past
+    ;(manager as unknown as { lastTick: number }).lastTick = Date.now() - 20_000
+
+    fireAllIntervals()
+    expect(FakeWebSocket.instances).toHaveLength(2)
+  })
+
+  test('does not reconnect for small time gaps', () => {
+    const manager = new WebSocketManager()
+    manager.connect()
+    FakeWebSocket.instances[0]!.triggerOpen()
+    manager.startLifecycleListeners()
+
+    ;(manager as unknown as { ws: null }).ws = null
+    ;(manager as unknown as { status: string }).status = 'reconnecting'
+
+    // lastTick is recent — no time jump
+    ;(manager as unknown as { lastTick: number }).lastTick = Date.now() - 4_000
+
+    fireAllIntervals()
+    expect(FakeWebSocket.instances).toHaveLength(1)
+  })
+})
+
+describe('forceReconnect resets backoff', () => {
+  test('resets reconnectAttempts to 0 and cancels pending reconnect timer', () => {
+    const manager = new WebSocketManager()
+    const statuses: string[] = []
+    manager.subscribeStatus((status) => statuses.push(status))
+
+    manager.connect()
+    const ws = FakeWebSocket.instances[0]!
+    ws.triggerOpen()
+
+    // Simulate multiple failed reconnects to increase backoff
+    ws.close()
+    // reconnectAttempts is now 1, timer scheduled at 1s
+    const timer1 = timers.find((t) => t.delay === 1000)!
+    timer1.callback()
+    // New socket created, trigger close again
+    FakeWebSocket.instances[1]!.close()
+    // reconnectAttempts is now 2, timer at 2s
+
+    manager.startLifecycleListeners()
+
+    // Now simulate wake — forceReconnect should reset backoff
+    ;(manager as unknown as { ws: null }).ws = null
+    ;(manager as unknown as { status: string }).status = 'reconnecting'
+    fireVisibilityChange('visible')
+
+    // A new socket should be created immediately (not waiting for 4s backoff)
+    const latestWs = FakeWebSocket.instances[FakeWebSocket.instances.length - 1]!
+    latestWs.triggerOpen()
+    expect(statuses[statuses.length - 1]).toBe('connected')
+  })
+})
+
+describe('zombie OPEN socket detection', () => {
+  test('forceReconnect tears down OPEN socket when status is not connected', () => {
+    const manager = new WebSocketManager()
+    manager.connect()
+    const ws = FakeWebSocket.instances[0]!
+    ws.triggerOpen()
+    manager.startLifecycleListeners()
+
+    // Simulate zombie: socket says OPEN but status diverged (e.g. reconnecting after timeout)
+    ;(manager as unknown as { status: string }).status = 'reconnecting'
+
+    fireVisibilityChange('visible')
+
+    // Should have destroyed the zombie and created a new socket
+    expect(FakeWebSocket.instances).toHaveLength(2)
+    expect(ws.onopen).toBeNull() // old socket handlers nulled
+  })
+})
+
+describe('scheduleReconnect while hidden', () => {
+  test('does not schedule timer when page is hidden', () => {
+    mockVisibilityState = 'hidden'
+    const manager = new WebSocketManager()
+    const statuses: string[] = []
+    manager.subscribeStatus((status) => statuses.push(status))
+
+    manager.connect()
+    const ws = FakeWebSocket.instances[0]!
+    ws.triggerOpen()
+
+    // Close while hidden
+    ws.close()
+
+    // Status should be reconnecting but no timer scheduled
+    expect(statuses[statuses.length - 1]).toBe('reconnecting')
+    const reconnectTimers = timers.filter((t) => t.delay >= 1000 && t.delay <= 30000)
+    expect(reconnectTimers).toHaveLength(0)
+  })
+
+  test('forceReconnect on visibility resume after hidden close', () => {
+    const manager = new WebSocketManager()
+    manager.connect()
+    const ws = FakeWebSocket.instances[0]!
+    ws.triggerOpen()
+    manager.startLifecycleListeners()
+
+    // Go hidden, socket closes
+    mockVisibilityState = 'hidden'
+    ws.close()
+
+    // No reconnect timer while hidden
+    const reconnectTimers = timers.filter((t) => t.delay >= 1000 && t.delay <= 30000)
+    expect(reconnectTimers).toHaveLength(0)
+
+    // Come back
+    fireVisibilityChange('visible')
+
+    // Should reconnect immediately
+    expect(FakeWebSocket.instances).toHaveLength(2)
   })
 })

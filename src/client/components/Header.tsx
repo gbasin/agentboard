@@ -18,7 +18,6 @@ const statusDot: Record<ConnectionStatus, string> = {
   connecting: 'bg-approval',
   reconnecting: 'bg-approval',
   disconnected: 'bg-danger',
-  error: 'bg-danger',
 }
 
 export default function Header({

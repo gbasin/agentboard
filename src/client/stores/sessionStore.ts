@@ -10,7 +10,6 @@ export type ConnectionStatus =
   | 'connected'
   | 'reconnecting'
   | 'disconnected'
-  | 'error'
 
 interface SessionState {
   sessions: Session[]
