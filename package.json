@@ -33,6 +33,7 @@
     "start": "bun src/server/index.ts",
     "lint": "oxlint .",
     "typecheck": "tsc --noEmit",
+    "privacy:check": "bun scripts/check-privacy-policy.ts",
     "test": "bun scripts/test-runner.ts",
     "test:coverage": "bun scripts/test-runner.ts --coverage --coverage-reporter=lcov --skip-isolated && bun run coverage:all",
     "coverage:all": "bun scripts/coverage-all.ts",

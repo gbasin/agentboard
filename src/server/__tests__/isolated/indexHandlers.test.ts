@@ -2441,6 +2441,52 @@ describe('server fetch handlers', () => {
     }
   })
 
+  test('returns session preview from x-session-id header', async () => {
+    const { serveOptions } = await loadIndex()
+    const fetchHandler = serveOptions.fetch
+    if (!fetchHandler) {
+      throw new Error('Fetch handler not configured')
+    }
+
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-preview-header-'))
+    const logPath = path.join(tempDir, 'session.jsonl')
+    await fs.writeFile(logPath, 'line-1\nline-2')
+
+    seedRecord(
+      makeRecord({
+        sessionId: 'session-header',
+        logFilePath: logPath,
+        displayName: 'Header',
+        projectPath: '/tmp/header',
+        agentType: 'claude',
+      })
+    )
+
+    try {
+      const response = await fetchHandler.call(
+        {} as Bun.Server<unknown>,
+        new Request('http://localhost/api/session-preview', {
+          headers: {
+            'x-session-id': 'session-header',
+          },
+        }),
+        {} as Bun.Server<unknown>
+      )
+
+      if (!response) {
+        throw new Error('Expected response for header-based session preview')
+      }
+
+      expect(response.ok).toBe(true)
+      const payload = (await response.json()) as {
+        sessionId: string
+      }
+      expect(payload.sessionId).toBe('session-header')
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true })
+    }
+  })
+
   test('returns 404 when session preview log is missing', async () => {
     const { serveOptions } = await loadIndex()
     const fetchHandler = serveOptions.fetch

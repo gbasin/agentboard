@@ -71,7 +71,11 @@ export default function SessionPreviewModal({
   useEffect(() => {
     const fetchPreview = async () => {
       try {
-        const response = await fetch(`/api/session-preview/${session.sessionId}`)
+        const response = await fetch('/api/session-preview', {
+          headers: {
+            'x-session-id': session.sessionId,
+          },
+        })
         if (!response.ok) {
           const data = await response.json()
           throw new Error(data.error || 'Failed to load preview')

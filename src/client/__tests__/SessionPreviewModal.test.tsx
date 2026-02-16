@@ -75,7 +75,7 @@ function createFetchController(responses: Response[], calls: string[] = []) {
     } else {
       url = input.url
     }
-    if (url.startsWith('/api/session-preview/')) {
+    if (url === '/api/session-preview') {
       calls.push(url)
       return new Promise<Response>((resolve) => {
         pending.push(resolve)

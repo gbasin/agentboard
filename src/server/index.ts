@@ -813,8 +813,10 @@ app.post('/api/client-log', async (c) => {
 app.get('/api/health', (c) => c.json({ ok: true }))
 app.get('/api/sessions', (c) => c.json(registry.getAll()))
 
-app.get('/api/session-preview/:sessionId', async (c) => {
-  const sessionId = c.req.param('sessionId')
+async function handleSessionPreviewRequest(
+  c: { json: (payload: unknown, status?: number) => Response },
+  sessionId: string
+) {
   if (!isValidSessionId(sessionId)) {
     return c.json({ error: 'Invalid session id' }, 400)
   }
@@ -863,9 +865,22 @@ app.get('/api/session-preview/:sessionId', async (c) => {
     }
     return c.json({ error: 'Unable to read log file' }, 500)
   }
+}
+
+app.get('/api/session-preview', async (c) => {
+  const sessionId = c.req.header('x-session-id') ?? c.req.query('sessionId') ?? ''
+  return handleSessionPreviewRequest(c, sessionId)
 })
-app.get('/api/directories', async (c) => {
-  const requestedPath = c.req.query('path') ?? '~'
+
+app.get('/api/session-preview/:sessionId', async (c) => {
+  const sessionId = c.req.param('sessionId')
+  return handleSessionPreviewRequest(c, sessionId)
+})
+
+async function handleDirectoriesRequest(
+  c: { json: (payload: DirectoryListing | DirectoryErrorResponse, status?: number) => Response },
+  requestedPath: string
+) {
 
   if (requestedPath.length > MAX_FIELD_LENGTH) {
     const payload: DirectoryErrorResponse = {
@@ -998,6 +1013,11 @@ app.get('/api/directories', async (c) => {
   })
 
   return c.json(response)
+}
+
+app.get('/api/directories', async (c) => {
+  const requestedPath = c.req.header('x-directory-path') ?? c.req.query('path') ?? '~'
+  return handleDirectoriesRequest(c, requestedPath)
 })
 
 app.get('/api/server-info', (c) => {

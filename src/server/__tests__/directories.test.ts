@@ -70,6 +70,27 @@ async function fetchDirectories(requestedPath: string) {
   return response
 }
 
+async function fetchDirectoriesWithHeader(requestedPath: string) {
+  const { fetch } = await loadIndex()
+  if (!fetch) {
+    throw new Error('Fetch handler not configured')
+  }
+  const server = {} as Bun.Server<unknown>
+  const response = await fetch.call(
+    server,
+    new Request('http://localhost/api/directories', {
+      headers: {
+        'x-directory-path': requestedPath,
+      },
+    }),
+    server
+  )
+  if (!response) {
+    throw new Error('Expected response from directory handler')
+  }
+  return response
+}
+
 beforeAll(() => {
   const suffix = `directories-${process.pid}-${Date.now()}-${Math.random()
     .toString(36)
@@ -139,6 +160,18 @@ describe('GET /api/directories', () => {
       expect(payload.path).toBe(tempRoot)
       expect(payload.directories.map((entry) => entry.name)).toEqual(['alpha'])
       expect(payload.truncated).toBe(false)
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true })
+    }
+  })
+
+  test('accepts path from x-directory-path header', async () => {
+    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-dir-header-'))
+    try {
+      const response = await fetchDirectoriesWithHeader(tempRoot)
+      expect(response.status).toBe(200)
+      const payload = (await response.json()) as DirectoryListing
+      expect(payload.path).toBe(tempRoot)
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true })
     }
