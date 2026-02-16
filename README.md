@@ -102,6 +102,18 @@ bun run start
 
 For persistent deployment on Linux, see [systemd/README.md](systemd/README.md).
 
+## Privacy Policy Consistency
+
+Machine-checkable privacy claims live in [docs/privacy-policy.md](docs/privacy-policy.md).
+
+Run the static consistency checker directly:
+
+```bash
+bun run privacy:check
+```
+
+`bun run test` also executes this checker and fails on any policy violation.
+
 ## Keyboard Shortcuts
 
 | Action | Mac | Windows/Linux |
