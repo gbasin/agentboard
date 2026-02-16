@@ -232,6 +232,15 @@ function findFetchViolations(source: string): Array<{
       continue
     }
 
+    if (parsedArgument.isDynamicLiteral) {
+      violations.push({
+        line,
+        message: 'Found fetch() call with dynamic first argument.',
+        fix: 'Use a static string literal local-relative endpoint, not template interpolation.',
+      })
+      continue
+    }
+
     const endpoint = parsedArgument.value.trim()
     if (!isAllowedFetchTarget(endpoint)) {
       violations.push({
@@ -391,6 +400,7 @@ function isFetchMethodDefinition(source: string, fetchTokenIndex: number): boole
 
 function parseFirstArgument(source: string, argumentStart: number): {
   value: string
+  isDynamicLiteral: boolean
 } | null {
   let cursor = argumentStart
 
@@ -415,8 +425,14 @@ function parseFirstArgument(source: string, argumentStart: number): {
       continue
     }
 
+    if (quote === '`' && char === '$' && source[cursor + 1] === '{') {
+      value += '${'
+      cursor += 2
+      continue
+    }
+
     if (char === quote) {
-      return { value }
+      return { value, isDynamicLiteral: quote === '`' && value.includes('${') }
     }
 
     value += char
@@ -450,7 +466,7 @@ function checkPasteImageHandling(rootDir: string, violations: PrivacyPolicyViola
     return
   }
 
-  const routeBlock = extractRouteBlock(source, "app.post('/api/paste-image'")
+  const routeBlock = extractRouteBlock(source, /\bapp\.post\s*\(\s*(['"])\/api\/paste-image\1/)
   if (!routeBlock) {
     violations.push({
       claimId: 'PP-003',
@@ -495,11 +511,12 @@ function checkPasteImageHandling(rootDir: string, violations: PrivacyPolicyViola
   }
 }
 
-function extractRouteBlock(source: string, routeMarker: string): string | null {
-  const routeStart = source.indexOf(routeMarker)
-  if (routeStart === -1) {
+function extractRouteBlock(source: string, routeMatcher: RegExp): string | null {
+  const routeMatch = routeMatcher.exec(source)
+  if (!routeMatch || routeMatch.index === undefined) {
     return null
   }
+  const routeStart = routeMatch.index
 
   const braceStart = source.indexOf('{', routeStart)
   if (braceStart === -1) {
@@ -546,29 +563,77 @@ function checkSafeStorageAndPersistedStores(
   const clientRuntimeFiles = collectRuntimeSourceFiles(path.join(rootDir, 'src/client'))
   for (const absolutePath of clientRuntimeFiles) {
     const source = readFileSafely(absolutePath)
-    if (!source || !/\bpersist\s*\(/.test(source)) {
+    if (!source) {
       continue
     }
 
-    if (!/createJSONStorage\s*\(\s*\(\)\s*=>\s*safeStorage\s*\)/.test(source)) {
-      violations.push({
-        claimId: 'PP-004',
-        message: 'Persisted Zustand store is not using createJSONStorage(() => safeStorage).',
-        fix: 'Use createJSONStorage(() => safeStorage) for persisted stores.',
-        file: toRelative(rootDir, absolutePath),
-      })
+    const persistCalls = findPersistCalls(source)
+    if (persistCalls.length === 0) {
       continue
     }
 
-    if (!/\bsafeStorage\b/.test(source)) {
-      violations.push({
-        claimId: 'PP-004',
-        message: 'Persisted Zustand store references createJSONStorage but not safeStorage.',
-        fix: 'Import and use safeStorage explicitly for persisted browser state.',
-        file: toRelative(rootDir, absolutePath),
-      })
+    for (const persistCall of persistCalls) {
+      if (!persistCall.expression) {
+        violations.push({
+          claimId: 'PP-004',
+          message: 'Unable to statically validate a persisted store definition.',
+          fix: 'Use direct persist(...) calls with createJSONStorage(() => safeStorage).',
+          file: `${toRelative(rootDir, absolutePath)}:${persistCall.line}`,
+        })
+        continue
+      }
+
+      if (!/createJSONStorage\s*\(\s*\(\)\s*=>\s*safeStorage\s*\)/.test(persistCall.expression)) {
+        violations.push({
+          claimId: 'PP-004',
+          message: 'Persisted Zustand store is not using createJSONStorage(() => safeStorage).',
+          fix: 'Use createJSONStorage(() => safeStorage) for each persisted store.',
+          file: `${toRelative(rootDir, absolutePath)}:${persistCall.line}`,
+        })
+      }
     }
   }
+}
+
+function findPersistCalls(source: string): Array<{
+  line: number
+  expression: string | null
+}> {
+  const sanitizedSource = stripStringsAndComments(source)
+  const persistMatcher = /\bpersist\s*\(/g
+  const persistCalls: Array<{
+    line: number
+    expression: string | null
+  }> = []
+
+  for (const match of sanitizedSource.matchAll(persistMatcher)) {
+    const persistIndex = match.index ?? 0
+    const line = lineForOffset(source, persistIndex)
+    const argumentStart = sanitizedSource.indexOf('(', persistIndex)
+    if (argumentStart === -1) {
+      persistCalls.push({ line, expression: null })
+      continue
+    }
+
+    const argumentExpression = extractBalancedSegment(
+      sanitizedSource,
+      argumentStart,
+      '(',
+      ')'
+    )
+    if (!argumentExpression) {
+      persistCalls.push({ line, expression: null })
+      continue
+    }
+
+    const callEnd = argumentStart + argumentExpression.length
+    persistCalls.push({
+      line,
+      expression: source.slice(persistIndex, callEnd),
+    })
+  }
+
+  return persistCalls
 }
 
 function checkSafeStorageFallback(
@@ -806,6 +871,35 @@ function collectRuntimeSourceFiles(rootDir: string): string[] {
   }
 
   return files
+}
+
+function extractBalancedSegment(
+  source: string,
+  startIndex: number,
+  openChar: string,
+  closeChar: string
+): string | null {
+  if (source[startIndex] !== openChar) {
+    return null
+  }
+
+  let depth = 0
+  for (let index = startIndex; index < source.length; index += 1) {
+    const char = source[index]
+    if (char === openChar) {
+      depth += 1
+      continue
+    }
+
+    if (char === closeChar) {
+      depth -= 1
+      if (depth === 0) {
+        return source.slice(startIndex, index + 1)
+      }
+    }
+  }
+
+  return null
 }
 
 function lineForOffset(source: string, offset: number): number {

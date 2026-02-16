@@ -69,6 +69,21 @@ describe('runPrivacyPolicyChecker', () => {
     expect(networkViolations.some((violation) => violation.message.includes('dynamic first argument'))).toBe(true)
   })
 
+  test('fails PP-002 for dynamic template-literal fetch targets', async () => {
+    const rootDir = createFixture({
+      'src/client/App.tsx': [
+        'const sessionId = "abc123"',
+        'void fetch(`/api/session-preview/${sessionId}`)',
+      ].join('\n'),
+    })
+
+    const result = await runPrivacyPolicyChecker({ rootDir })
+    const networkViolations = result.violations.filter((violation) => violation.claimId === 'PP-002')
+
+    expect(networkViolations).toHaveLength(1)
+    expect(networkViolations[0]?.message).toContain('dynamic first argument')
+  })
+
   test('fails PP-003 when paste-image route does not write uploaded bytes', async () => {
     const rootDir = createFixture({
       'src/server/index.ts': [
@@ -85,6 +100,26 @@ describe('runPrivacyPolicyChecker', () => {
     const claimViolations = result.violations.filter((violation) => violation.claimId === 'PP-003')
 
     expect(claimViolations.some((violation) => violation.message.includes('write operation'))).toBe(true)
+  })
+
+  test('accepts PP-003 paste-image route declared with double quotes', async () => {
+    const rootDir = createFixture({
+      'src/server/index.ts': [
+        'const app = { post: (..._args: unknown[]) => {} }',
+        'app.post("/api/paste-image", async (c) => {',
+        '  const filename = `paste-${Date.now()}.png`',
+        '  const filepath = `/tmp/${filename}`',
+        '  const buffer = await (new Blob()).arrayBuffer()',
+        '  await Bun.write(filepath, buffer)',
+        '  return c.json({ path: filepath })',
+        '})',
+      ].join('\n'),
+    })
+
+    const result = await runPrivacyPolicyChecker({ rootDir })
+    const claimViolations = result.violations.filter((violation) => violation.claimId === 'PP-003')
+
+    expect(claimViolations).toHaveLength(0)
   })
 
   test('fails PP-004 when safeStorage loses in-memory fallback behavior', async () => {
@@ -128,6 +163,40 @@ describe('runPrivacyPolicyChecker', () => {
 
     expect(claimViolations.length).toBeGreaterThan(0)
     expect(claimViolations.some((violation) => violation.file?.includes('src/client/state/alternateStore.ts'))).toBe(true)
+  })
+
+  test('fails PP-004 when a file mixes compliant and non-compliant persisted stores', async () => {
+    const rootDir = createFixture({
+      'src/client/stores/mixedStore.ts': [
+        'import { create } from "zustand"',
+        'import { persist, createJSONStorage } from "zustand/middleware"',
+        'import { safeStorage } from "../utils/storage"',
+        'const useGoodStore = create()(',
+        '  persist(',
+        '    () => ({ ok: true }),',
+        '    {',
+        '      name: "good",',
+        '      storage: createJSONStorage(() => safeStorage),',
+        '    }',
+        '  )',
+        ')',
+        'const useBadStore = create()(',
+        '  persist(',
+        '    () => ({ bad: true }),',
+        '    {',
+        '      name: "bad",',
+        '      storage: createJSONStorage(() => localStorage),',
+        '    }',
+        '  )',
+        ')',
+      ].join('\n'),
+    })
+
+    const result = await runPrivacyPolicyChecker({ rootDir })
+    const claimViolations = result.violations.filter((violation) => violation.claimId === 'PP-004')
+
+    expect(claimViolations.length).toBeGreaterThan(0)
+    expect(claimViolations.some((violation) => violation.file?.includes('src/client/stores/mixedStore.ts'))).toBe(true)
   })
 
   test('fails PP-005 when default database path no longer uses ~/.agentboard', async () => {
