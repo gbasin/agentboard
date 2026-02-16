@@ -56,6 +56,8 @@ async function main() {
         env
       )
     }
+
+    await runCommand(['bun', 'run', 'privacy:check'], env)
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true })
   }
