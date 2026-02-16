@@ -8,6 +8,7 @@ import { SearchAddon } from '@xterm/addon-search'
 import { SerializeAddon } from '@xterm/addon-serialize'
 import { ProgressAddon } from '@xterm/addon-progress'
 import type { SendClientMessage, SubscribeServerMessage } from '@shared/types'
+import { clientLog } from '../utils/clientLog'
 
 // URL regex that matches standard URLs and IP:port patterns
 const URL_REGEX = /https?:\/\/[^\s"'<>]+|\b(?:localhost|\d{1,3}(?:\.\d{1,3}){3}):\d{1,5}(?:\/[^\s"'<>]*)?\b/
@@ -164,6 +165,7 @@ export function useTerminal({
   // Track the currently attached session to prevent race conditions
   const attachedSessionRef = useRef<string | null>(null)
   const attachedTargetRef = useRef<string | null>(null)
+  const switchStartRef = useRef<number | null>(null)
   const sendMessageRef = useRef(sendMessage)
   const onScrollChangeRef = useRef(onScrollChange)
   const useWebGLRef = useRef(useWebGL)
@@ -822,14 +824,18 @@ export function useTerminal({
 
     // Attach to new session
     if (sessionId && (sessionId !== prevAttached || tmuxTarget !== prevTarget)) {
+      const switchStart = performance.now()
+
       // Reset terminal before attaching
       terminal.reset()
+      const resetDone = performance.now()
 
       // Fit terminal first to get accurate dimensions
       const fitAddon = fitAddonRef.current
       if (fitAddon) {
         fitAddon.fit()
       }
+      const fitDone = performance.now()
 
       // Send attach message with current dimensions so server spawns at correct size
       sendMessage({
@@ -845,6 +851,17 @@ export function useTerminal({
 
       // Check if this session is already in copy-mode (scrolled back)
       sendMessage({ type: 'tmux-check-copy-mode', sessionId })
+
+      clientLog('switch_attach_sent', {
+        sessionId,
+        resetMs: Math.round(resetDone - switchStart),
+        fitMs: Math.round(fitDone - resetDone),
+        totalMs: Math.round(performance.now() - switchStart),
+        from: prevAttached ?? null,
+      })
+
+      // Store the start time so the output subscriber can measure end-to-end
+      switchStartRef.current = switchStart
 
       // Scroll to bottom and focus after content loads
       if (scrollTimer.current) {
@@ -884,9 +901,20 @@ export function useTerminal({
       if (!terminal || !data) return
 
       outputBufferRef.current = ''
+      const writeStart = performance.now()
+      const dataLen = data.length
 
       // Wrap in synchronized output sequences so xterm renders atomically
       terminal.write(BSU + data + ESU, () => {
+        const writeMs = Math.round(performance.now() - writeStart)
+        // Log slow writes (>50ms) to catch render bottlenecks
+        if (writeMs > 50) {
+          clientLog('switch_write_slow', {
+            sessionId: attachedSessionRef.current,
+            writeMs,
+            bytes: dataLen,
+          })
+        }
         checkScrollPosition()
       })
     }
@@ -912,10 +940,38 @@ export function useTerminal({
         attachedSession &&
         message.sessionId === attachedSession
       ) {
+        // Log time from attach-send to first output (server roundtrip)
+        const switchStart = switchStartRef.current
+        if (switchStart) {
+          clientLog('switch_first_output', {
+            sessionId: message.sessionId,
+            serverRoundtripMs: Math.round(performance.now() - switchStart),
+            bytes: message.data.length,
+          })
+          // Clear so we only log for the first output after a switch
+          switchStartRef.current = null
+        }
+
         outputBufferRef.current += isiOS
           ? forceTextPresentation(message.data)
           : message.data
         scheduleFlush()
+      }
+
+      if (
+        message.type === 'terminal-ready' &&
+        attachedSession &&
+        message.sessionId === attachedSession
+      ) {
+        const readySwitchStart = switchStartRef.current
+        // switchStartRef may already be cleared by terminal-output above; only log if still set
+        if (readySwitchStart) {
+          clientLog('switch_ready', {
+            sessionId: message.sessionId,
+            totalMs: Math.round(performance.now() - readySwitchStart),
+          })
+          switchStartRef.current = null
+        }
       }
 
       // Handle tmux copy-mode status response

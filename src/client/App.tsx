@@ -16,6 +16,7 @@ import { useThemeStore } from './stores/themeStore'
 import { useWebSocket } from './hooks/useWebSocket'
 import { useVisualViewport } from './hooks/useVisualViewport'
 import { sortSessions } from './utils/sessions'
+import { setClientLogLevel } from './utils/clientLog'
 import { getEffectiveModifier, matchesModifier } from './utils/device'
 import { playPermissionSound, playIdleSound, primeAudio, needsUserGesture } from './utils/sound'
 
@@ -179,6 +180,9 @@ export default function App() {
         setRemoteAllowControl(message.remoteAllowControl)
         setRemoteAllowAttach(message.remoteAllowAttach)
         setHostLabel(message.hostLabel)
+        if (message.clientLogLevel) {
+          setClientLogLevel(message.clientLogLevel)
+        }
       }
       if (message.type === 'session-update') {
         // Detect status transitions for sound notifications

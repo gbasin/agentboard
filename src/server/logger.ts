@@ -120,6 +120,9 @@ function createLogger(): pino.Logger {
 
 const pinoLogger: pino.Logger = createLogger()
 
+/** Resolved log level — exposed so server-config can send it to the client. */
+export const logLevel: LogLevel = getLogLevel()
+
 // Flush pending logs
 // Call before process.exit() to ensure logs are written
 export function flushLogger(): void {

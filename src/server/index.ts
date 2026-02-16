@@ -36,7 +36,7 @@ import {
   type ResumeError,
   type Session,
 } from '../shared/types'
-import { logger } from './logger'
+import { logger, logLevel } from './logger'
 import { SessionRefreshWorkerClient } from './sessionRefreshWorkerClient'
 import {
   setForceWorkingUntil,
@@ -799,6 +799,17 @@ registry.on('agent-sessions', ({ active, inactive }) => {
   broadcast({ type: 'agent-sessions', active, inactive })
 })
 
+app.post('/api/client-log', async (c) => {
+  try {
+    const body = await c.req.json() as { level?: string; event: string; data?: Record<string, unknown> }
+    const level = body.level === 'warn' || body.level === 'error' || body.level === 'info' ? body.level : 'debug'
+    logger[level]('client_' + body.event, body.data)
+  } catch {
+    // ignore malformed
+  }
+  return c.json({ ok: true })
+})
+
 app.get('/api/health', (c) => c.json({ ok: true }))
 app.get('/api/sessions', (c) => c.json(registry.getAll()))
 
@@ -1135,6 +1146,8 @@ Bun.serve<WSData>({
     return app.fetch(req)
   },
   websocket: {
+    idleTimeout: 40,
+    sendPings: true,
     open(ws) {
       sockets.add(ws)
       send(ws, { type: 'sessions', sessions: registry.getAll() })
@@ -1144,6 +1157,7 @@ Bun.serve<WSData>({
         remoteAllowControl: config.remoteAllowControl,
         remoteAllowAttach: config.remoteAllowAttach,
         hostLabel: config.hostLabel,
+        clientLogLevel: logLevel,
       })
       const agentSessions = registry.getAgentSessions()
       send(ws, {
@@ -1252,6 +1266,9 @@ function handleMessage(
   }
 
   switch (message.type) {
+    case 'ping':
+      send(ws, { type: 'pong' })
+      return
     case 'session-refresh':
       refreshSessions()
       return
@@ -2156,6 +2173,8 @@ async function attachTerminalPersistent(
     return
   }
 
+  const t0 = performance.now()
+
   let terminal: ITerminalProxy | null = null
   try {
     terminal = await ensureCorrectProxyType(ws, session, attachSeq)
@@ -2166,6 +2185,8 @@ async function attachTerminalPersistent(
     }
     return
   }
+
+  const tProxy = performance.now()
 
   if (!isTerminalAttachCurrent(ws, attachSeq)) {
     return
@@ -2179,6 +2200,8 @@ async function attachTerminalPersistent(
   const history = session.remote && session.host
     ? await captureTmuxHistoryRemote(target, session.host)
     : captureTmuxHistory(target)
+
+  const tCapture = performance.now()
 
   if (!isTerminalAttachCurrent(ws, attachSeq)) {
     return
@@ -2194,12 +2217,23 @@ async function attachTerminalPersistent(
         send(ws, { type: 'terminal-output', sessionId, data: history })
       }
     })
+    const tSwitch = performance.now()
     if (!isTerminalAttachCurrent(ws, attachSeq)) {
       return
     }
     ws.data.currentSessionId = sessionId
     ws.data.currentTmuxTarget = target
-    logger.info('terminal_ready_sent', { sessionId, target, connectionId: ws.data.connectionId })
+    logger.info('terminal_attach_profile', {
+      sessionId,
+      target,
+      remote: !!session.remote,
+      proxyMs: Math.round(tProxy - t0),
+      captureMs: Math.round(tCapture - tProxy),
+      switchMs: Math.round(tSwitch - tCapture),
+      totalMs: Math.round(tSwitch - t0),
+      historyBytes: history?.length ?? 0,
+      connectionId: ws.data.connectionId,
+    })
     send(ws, { type: 'terminal-ready', sessionId })
   } catch (error) {
     if (!isTerminalAttachCurrent(ws, attachSeq)) {
