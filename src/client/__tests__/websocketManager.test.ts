@@ -14,7 +14,7 @@ class FakeWebSocket {
   onopen: (() => void) | null = null
   onmessage: ((event: { data: string }) => void) | null = null
   onerror: (() => void) | null = null
-  onclose: (() => void) | null = null
+  onclose: ((event: CloseEvent) => void) | null = null
 
   constructor(public url: string) {
     FakeWebSocket.instances.push(this)
@@ -26,7 +26,7 @@ class FakeWebSocket {
 
   close() {
     this.readyState = FakeWebSocket.CLOSED
-    this.onclose?.()
+    this.onclose?.({ code: 1000, reason: '', wasClean: true } as CloseEvent)
   }
 
   triggerOpen() {
@@ -364,8 +364,8 @@ describe('lifecycle listeners', () => {
     manager.startLifecycleListeners()
     manager.startLifecycleListeners()
 
-    // Only one interval should exist
-    expect(intervals).toHaveLength(1)
+    // Wake-check interval + heartbeat interval
+    expect(intervals).toHaveLength(2)
     // Only one visibilitychange listener
     expect(visibilityListeners).toHaveLength(1)
     // Only one pageshow listener
@@ -378,17 +378,17 @@ describe('lifecycle listeners', () => {
     FakeWebSocket.instances[0]?.triggerOpen()
 
     manager.startLifecycleListeners()
-    expect(intervals).toHaveLength(1)
+    expect(intervals).toHaveLength(2) // heartbeat + wake-check
     expect(visibilityListeners).toHaveLength(1)
 
     manager.stopLifecycleListeners()
-    expect(intervals).toHaveLength(0)
+    expect(intervals).toHaveLength(1) // heartbeat remains (lifecycle doesn't own it)
     expect(visibilityListeners).toHaveLength(0)
     expect(pageshowListeners).toHaveLength(0)
 
     // Can start again after stop
     manager.startLifecycleListeners()
-    expect(intervals).toHaveLength(1)
+    expect(intervals).toHaveLength(2)
     expect(visibilityListeners).toHaveLength(1)
   })
 

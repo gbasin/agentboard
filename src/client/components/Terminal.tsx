@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
+import { clientLog } from '../hooks/useWebSocket'
 import type { AgentSession, Session, SendClientMessage, SubscribeServerMessage } from '@shared/types'
 import { useSessionStore, type ConnectionStatus } from '../stores/sessionStore'
 import { useTerminal } from '../hooks/useTerminal'
@@ -435,7 +436,12 @@ export default function Terminal({
       container.style.setProperty('--xterm-a11y-letter-spacing', `${letterSpacing}px`)
     }
 
+    const a11yStart = performance.now()
     syncA11yOverlay()
+    const a11yMs = Math.round(performance.now() - a11yStart)
+    if (a11yMs > 10) {
+      clientLog('switch_a11y_overlay', { sessionId: session?.id, a11yMs })
+    }
     const rafId = window.requestAnimationFrame(syncA11yOverlay)
     const retryId = window.setTimeout(syncA11yOverlay, 100)
 

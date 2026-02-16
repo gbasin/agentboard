@@ -13,7 +13,7 @@ class FakeWebSocket {
   onopen: (() => void) | null = null
   onmessage: ((event: { data: string }) => void) | null = null
   onerror: (() => void) | null = null
-  onclose: (() => void) | null = null
+  onclose: ((event: CloseEvent) => void) | null = null
 
   constructor(public url: string) {
     FakeWebSocket.instances.push(this)
@@ -25,7 +25,7 @@ class FakeWebSocket {
 
   close() {
     this.readyState = FakeWebSocket.CLOSED
-    this.onclose?.()
+    this.onclose?.({ code: 1000, reason: '', wasClean: true } as CloseEvent)
   }
 
   triggerOpen() {
@@ -57,6 +57,9 @@ beforeEach(() => {
     setTimeout: (() =>
       1 as unknown as ReturnType<typeof setTimeout>) as unknown as typeof setTimeout,
     clearTimeout: (() => {}) as typeof clearTimeout,
+    setInterval: (() =>
+      1 as unknown as ReturnType<typeof setInterval>) as unknown as typeof setInterval,
+    clearInterval: (() => {}) as typeof clearInterval,
   } as unknown as Window & typeof globalThis
   globalAny.WebSocket = FakeWebSocket as unknown as typeof WebSocket
   useSessionStore.setState({

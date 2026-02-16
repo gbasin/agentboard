@@ -98,6 +98,7 @@ export type ServerMessage =
   | { type: 'terminal-ready'; sessionId: string }
   | { type: 'tmux-copy-mode-status'; sessionId: string; inCopyMode: boolean }
   | { type: 'server-config'; remoteAllowControl: boolean; remoteAllowAttach: boolean; hostLabel: string }
+  | { type: 'pong' }
   | { type: 'error'; message: string }
   | { type: 'kill-failed'; sessionId: string; message: string }
 
@@ -124,6 +125,7 @@ export type ClientMessage =
   | { type: 'tmux-cancel-copy-mode'; sessionId: string }
   | { type: 'tmux-check-copy-mode'; sessionId: string }
   | { type: 'session-resume'; sessionId: string; name?: string }
+  | { type: 'ping' }
   | { type: 'session-pin'; sessionId: string; isPinned: boolean }
 
 // Typed function signatures for client-side messaging

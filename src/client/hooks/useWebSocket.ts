@@ -6,6 +6,7 @@
  * - pageshow listener (bfcache restore)
  * - Time-jump detector (fallback for deep PWA suspension)
  * - Connection timeout (prevents zombie sockets from blocking reconnect)
+ * - Application-level ping/pong heartbeat (detects dead sockets in foreground)
  */
 import { useEffect, useMemo, useState } from 'react'
 import type { ClientMessage, ServerMessage } from '@shared/types'
@@ -15,6 +16,21 @@ import { useSessionStore } from '../stores/sessionStore'
 type MessageListener = (message: ServerMessage) => void
 
 type StatusListener = (status: ConnectionStatus, error: string | null) => void
+
+const WS_STATES = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'] as const
+
+/** Fire-and-forget POST to /api/client-log. Swallows all errors. */
+export function clientLog(event: string, data?: Record<string, unknown>) {
+  try {
+    fetch('/api/client-log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event, data }),
+    }).catch(() => {})
+  } catch {
+    // ignore
+  }
+}
 
 /** How long to wait for a WebSocket to reach OPEN before giving up. */
 const CONNECT_TIMEOUT_MS = 10_000
@@ -27,6 +43,12 @@ const WAKE_JUMP_MS = 15_000
 
 /** Tick interval for the time-jump detector. */
 const WAKE_CHECK_INTERVAL_MS = 5_000
+
+/** How often to send an application-level ping to detect dead sockets. */
+const HEARTBEAT_INTERVAL_MS = 20_000
+
+/** How long to wait for a pong before declaring the socket dead. */
+const PONG_TIMEOUT_MS = 10_000
 
 export class WebSocketManager {
   private ws: WebSocket | null = null
@@ -41,11 +63,21 @@ export class WebSocketManager {
   private lastTick = Date.now()
   private wakeCheckInterval: number | null = null
   private lifecycleStarted = false
+  private heartbeatTimer: number | null = null
+  private pongTimer: number | null = null
+
+  private wsSnap() {
+    return { status: this.status, ws: this.ws ? WS_STATES[this.ws.readyState] : null, attempt: this.reconnectAttempts }
+  }
 
   connect() {
     // Clean up any zombie socket that never opened / already closed
     if (this.ws) {
-      if (this.ws.readyState === WebSocket.OPEN) return
+      if (this.ws.readyState === WebSocket.OPEN) {
+        clientLog('ws_connect_skip', { reason: 'already_open', ...this.wsSnap() })
+        return
+      }
+      clientLog('ws_connect_destroy_zombie', this.wsSnap())
       this.destroySocket()
     }
 
@@ -55,6 +87,7 @@ export class WebSocketManager {
 
     const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws'
     const wsUrl = `${scheme}://${window.location.host}/ws`
+    clientLog('ws_connect', { url: wsUrl, ...this.wsSnap() })
 
     const ws = new WebSocket(wsUrl)
     this.ws = ws
@@ -63,20 +96,28 @@ export class WebSocketManager {
     this.connectTimer = window.setTimeout(() => {
       this.connectTimer = null
       if (ws.readyState !== WebSocket.OPEN) {
+        clientLog('ws_connect_timeout', { wsState: WS_STATES[ws.readyState], ...this.wsSnap() })
         this.destroySocket()
         this.scheduleReconnect()
       }
     }, CONNECT_TIMEOUT_MS)
 
     ws.onopen = () => {
+      clientLog('ws_onopen', this.wsSnap())
       this.clearConnectTimer()
       this.reconnectAttempts = 0
       this.setStatus('connected')
+      this.startHeartbeat()
     }
 
     ws.onmessage = (event) => {
       try {
         const parsed = JSON.parse(event.data as string) as ServerMessage
+        // Intercept pong — clear the dead-socket timeout
+        if (parsed.type === 'pong') {
+          this.clearPongTimer()
+          return
+        }
         this.listeners.forEach((listener) => listener(parsed))
       } catch {
         // Ignore malformed payloads
@@ -84,12 +125,14 @@ export class WebSocketManager {
     }
 
     ws.onerror = () => {
+      clientLog('ws_onerror', this.wsSnap())
       // Don't reconnect here — per the WHATWG spec, onclose always fires
       // after onerror. Let onclose handle reconnection to avoid double-fire.
       this.clearConnectTimer()
     }
 
-    ws.onclose = () => {
+    ws.onclose = (e) => {
+      clientLog('ws_onclose', { code: e.code, reason: e.reason, clean: e.wasClean, ...this.wsSnap() })
       this.clearConnectTimer()
       this.ws = null
       if (!this.manualClose) {
@@ -129,8 +172,10 @@ export class WebSocketManager {
     this.lastTick = Date.now()
     this.wakeCheckInterval = window.setInterval(() => {
       const now = Date.now()
-      if (now - this.lastTick > WAKE_JUMP_MS) {
-        this.forceReconnect()
+      const gap = now - this.lastTick
+      if (gap > WAKE_JUMP_MS) {
+        clientLog('ws_time_jump', { gapMs: gap, ...this.wsSnap() })
+        this.forceReconnect('time_jump')
       }
       this.lastTick = now
     }, WAKE_CHECK_INTERVAL_MS)
@@ -172,14 +217,24 @@ export class WebSocketManager {
   // ── Private ──────────────────────────────────────────────
 
   private onVisibilityChange = () => {
+    clientLog('ws_visibility', { state: document.visibilityState, ...this.wsSnap() })
     if (document.visibilityState === 'visible') {
-      this.forceReconnect()
+      this.forceReconnect('visibilitychange')
+      // Resume heartbeat — connection may still be alive
+      if (this.status === 'connected') {
+        this.startHeartbeat()
+      }
+    } else {
+      // Pause heartbeat when hidden — iOS freezes timers anyway,
+      // and pong timeout would false-positive on wake.
+      this.stopHeartbeat()
     }
   }
 
   private onPageShow = (e: PageTransitionEvent) => {
+    clientLog('ws_pageshow', { persisted: e.persisted, ...this.wsSnap() })
     if (e.persisted) {
-      this.forceReconnect()
+      this.forceReconnect('pageshow')
     }
   }
 
@@ -187,15 +242,21 @@ export class WebSocketManager {
    * If the socket isn't cleanly connected, tear it down and start fresh.
    * Resets the backoff counter so the user doesn't wait up to 30s.
    */
-  private forceReconnect() {
-    if (this.manualClose) return
+  private forceReconnect(trigger: string = 'unknown') {
+    if (this.manualClose) {
+      clientLog('ws_force_skip', { trigger, reason: 'manual_close' })
+      return
+    }
 
     // If socket reports OPEN but our status isn't 'connected', it's a
     // zombie — tear it down. This catches iOS sockets that stay OPEN
     // after wake but are actually dead.
-    if (this.ws?.readyState === WebSocket.OPEN && this.status === 'connected')
+    if (this.ws?.readyState === WebSocket.OPEN && this.status === 'connected') {
+      clientLog('ws_force_skip', { trigger, reason: 'already_connected' })
       return
+    }
 
+    clientLog('ws_force_reconnect', { trigger, ...this.wsSnap() })
     this.reconnectAttempts = 0
     if (this.reconnectTimer) {
       window.clearTimeout(this.reconnectTimer)
@@ -205,6 +266,44 @@ export class WebSocketManager {
     this.connect()
   }
 
+  /**
+   * Send periodic application-level pings to detect dead sockets.
+   * Bun's protocol-level pings (sendPings: true, idleTimeout: 40) keep the
+   * TCP/Tailscale tunnel warm. These application-level pings let the client
+   * proactively detect zombie sockets that protocol pings can't surface
+   * (browsers don't expose protocol-level pong events to JS).
+   */
+  private startHeartbeat() {
+    this.stopHeartbeat()
+    this.heartbeatTimer = window.setInterval(() => {
+      if (this.ws?.readyState !== WebSocket.OPEN) return
+      this.send({ type: 'ping' })
+      // If no pong within timeout, the socket is dead
+      this.clearPongTimer()
+      this.pongTimer = window.setTimeout(() => {
+        this.pongTimer = null
+        clientLog('ws_pong_timeout', this.wsSnap())
+        this.destroySocket()
+        this.scheduleReconnect()
+      }, PONG_TIMEOUT_MS)
+    }, HEARTBEAT_INTERVAL_MS)
+  }
+
+  private stopHeartbeat() {
+    if (this.heartbeatTimer !== null) {
+      window.clearInterval(this.heartbeatTimer)
+      this.heartbeatTimer = null
+    }
+    this.clearPongTimer()
+  }
+
+  private clearPongTimer() {
+    if (this.pongTimer !== null) {
+      window.clearTimeout(this.pongTimer)
+      this.pongTimer = null
+    }
+  }
+
   private setStatus(status: ConnectionStatus, error: string | null = null) {
     this.status = status
     this.error = error
@@ -212,7 +311,9 @@ export class WebSocketManager {
   }
 
   private scheduleReconnect() {
+    this.stopHeartbeat()
     if (this.isHidden()) {
+      clientLog('ws_schedule_skip', { reason: 'hidden', ...this.wsSnap() })
       // Don't reconnect in the background — forceReconnect() handles
       // it when the page becomes visible again.
       this.setStatus('reconnecting')
@@ -221,6 +322,7 @@ export class WebSocketManager {
 
     this.reconnectAttempts += 1
     const delay = Math.min(1000 * 2 ** (this.reconnectAttempts - 1), 30000)
+    clientLog('ws_schedule_reconnect', { delay, ...this.wsSnap() })
     this.setStatus('reconnecting')
     if (this.reconnectTimer) {
       window.clearTimeout(this.reconnectTimer)
@@ -246,6 +348,7 @@ export class WebSocketManager {
   /** Forcefully close and null out the socket without triggering reconnect. */
   private destroySocket() {
     this.clearConnectTimer()
+    this.stopHeartbeat()
     if (!this.ws) return
     const ws = this.ws
     this.ws = null
