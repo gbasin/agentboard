@@ -802,7 +802,7 @@ registry.on('agent-sessions', ({ active, inactive }) => {
 app.post('/api/client-log', async (c) => {
   try {
     const body = await c.req.json() as { level?: string; event: string; data?: Record<string, unknown> }
-    const level = body.level === 'warn' || body.level === 'error' ? body.level : 'debug'
+    const level = body.level === 'warn' || body.level === 'error' || body.level === 'info' ? body.level : 'debug'
     logger[level]('client_' + body.event, body.data)
   } catch {
     // ignore malformed

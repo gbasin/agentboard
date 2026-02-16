@@ -267,11 +267,15 @@ export class WebSocketManager {
 
     // Debounce rapid-fire triggers (e.g. visibilitychange + time-jump
     // both firing on resume). Prevents double reconnection.
-    // Forced triggers (pageshow persisted, time-jump) bypass debounce —
-    // they indicate the socket is definitely stale and must reconnect.
+    // Non-forced triggers use a 500ms debounce window.
+    // Forced triggers use a shorter 200ms window — they indicate the socket
+    // is definitely stale, but back-to-back forced events (e.g. pageshow +
+    // time-jump firing simultaneously) can still tear down a freshly-created
+    // socket if not guarded.
     const now = Date.now()
-    if (!force && now - this.lastForceReconnectTs < 500) {
-      clientLog('ws_force_skip', { trigger, reason: 'debounce' })
+    const debounceMs = force ? 200 : 500
+    if (now - this.lastForceReconnectTs < debounceMs) {
+      clientLog('ws_force_skip', { trigger, reason: 'debounce', force })
       return
     }
 

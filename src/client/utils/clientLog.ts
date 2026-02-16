@@ -1,10 +1,14 @@
 /**
  * clientLog.ts — Fire-and-forget client-side logging to the server.
  *
- * Gated by the server's log level (sent via server-config on WS connect).
- * Default level is 'debug', so logs are suppressed unless the server is
- * running at LOG_LEVEL=debug. Call setClientLogLevel() when server-config
- * arrives to update the threshold.
+ * Each clientLog() call emits at a given level (default: 'debug').
+ * The server advertises its LOG_LEVEL via server-config on WS connect,
+ * and setClientLogLevel() updates the client-side threshold accordingly.
+ * Calls below the threshold are skipped entirely (no fetch()).
+ *
+ * In practice: the server defaults to LOG_LEVEL=info, so all debug-level
+ * profiling logs are zero-cost no-ops unless the server is explicitly
+ * started with LOG_LEVEL=debug.
  */
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error'
@@ -21,8 +25,9 @@ let serverLogLevel: LogLevel = 'info'
 
 /** Called when server-config arrives with the server's log level. */
 export function setClientLogLevel(level: string) {
-  if (level in LEVEL_PRIORITY) {
-    serverLogLevel = level as LogLevel
+  const normalized = level.toLowerCase()
+  if (normalized in LEVEL_PRIORITY) {
+    serverLogLevel = normalized as LogLevel
   }
 }
 

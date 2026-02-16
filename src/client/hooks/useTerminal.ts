@@ -165,6 +165,7 @@ export function useTerminal({
   // Track the currently attached session to prevent race conditions
   const attachedSessionRef = useRef<string | null>(null)
   const attachedTargetRef = useRef<string | null>(null)
+  const switchStartRef = useRef<number | null>(null)
   const sendMessageRef = useRef(sendMessage)
   const onScrollChangeRef = useRef(onScrollChange)
   const useWebGLRef = useRef(useWebGL)
@@ -860,7 +861,7 @@ export function useTerminal({
       })
 
       // Store the start time so the output subscriber can measure end-to-end
-      ;(terminal as unknown as Record<string, unknown>)._switchStart = switchStart
+      switchStartRef.current = switchStart
 
       // Scroll to bottom and focus after content loads
       if (scrollTimer.current) {
@@ -940,10 +941,7 @@ export function useTerminal({
         message.sessionId === attachedSession
       ) {
         // Log time from attach-send to first output (server roundtrip)
-        const terminal = terminalRef.current
-        const switchStart = terminal
-          ? (terminal as unknown as Record<string, unknown>)._switchStart as number | undefined
-          : undefined
+        const switchStart = switchStartRef.current
         if (switchStart) {
           clientLog('switch_first_output', {
             sessionId: message.sessionId,
@@ -951,9 +949,7 @@ export function useTerminal({
             bytes: message.data.length,
           })
           // Clear so we only log for the first output after a switch
-          if (terminal) {
-            ;(terminal as unknown as Record<string, unknown>)._switchStart = undefined
-          }
+          switchStartRef.current = null
         }
 
         outputBufferRef.current += isiOS
@@ -967,17 +963,14 @@ export function useTerminal({
         attachedSession &&
         message.sessionId === attachedSession
       ) {
-        const terminal = terminalRef.current
-        const switchStart = terminal
-          ? (terminal as unknown as Record<string, unknown>)._switchStart as number | undefined
-          : undefined
-        // _switchStart may already be cleared by terminal-output above; only log if still set
-        if (switchStart) {
+        const readySwitchStart = switchStartRef.current
+        // switchStartRef may already be cleared by terminal-output above; only log if still set
+        if (readySwitchStart) {
           clientLog('switch_ready', {
             sessionId: message.sessionId,
-            totalMs: Math.round(performance.now() - switchStart),
+            totalMs: Math.round(performance.now() - readySwitchStart),
           })
-          ;(terminal as unknown as Record<string, unknown>)._switchStart = undefined
+          switchStartRef.current = null
         }
       }
 
