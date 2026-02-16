@@ -2509,6 +2509,73 @@ describe('server startup side effects', () => {
     expect(killCalls[0]).toEqual(['tmux', 'kill-session', '-t', 'agentboard-ws-1'])
   })
 
+  test('ping message returns pong', async () => {
+    const { serveOptions } = await loadIndex()
+    const { ws, sent } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) {
+      throw new Error('WebSocket handlers not configured')
+    }
+
+    websocket.message?.(ws as never, JSON.stringify({ type: 'ping' }))
+
+    expect(sent.some((m) => m.type === 'pong')).toBe(true)
+  })
+
+  test('/api/client-log returns ok for valid JSON', async () => {
+    const { serveOptions } = await loadIndex()
+    const fetchHandler = serveOptions.fetch
+    if (!fetchHandler) {
+      throw new Error('Fetch handler not configured')
+    }
+
+    const server = {} as Bun.Server<unknown>
+    const response = await fetchHandler.call(
+      server,
+      new Request('http://localhost/api/client-log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event: 'test_event', data: { foo: 'bar' } }),
+      }),
+      server
+    )
+
+    if (!response) {
+      throw new Error('Expected response for client-log request')
+    }
+
+    expect(response.status).toBe(200)
+    const payload = (await response.json()) as { ok: boolean }
+    expect(payload.ok).toBe(true)
+  })
+
+  test('/api/client-log handles malformed body gracefully', async () => {
+    const { serveOptions } = await loadIndex()
+    const fetchHandler = serveOptions.fetch
+    if (!fetchHandler) {
+      throw new Error('Fetch handler not configured')
+    }
+
+    const server = {} as Bun.Server<unknown>
+    const response = await fetchHandler.call(
+      server,
+      new Request('http://localhost/api/client-log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{bad-json}',
+      }),
+      server
+    )
+
+    if (!response) {
+      throw new Error('Expected response for malformed client-log')
+    }
+
+    expect(response.status).toBe(200)
+    const payload = (await response.json()) as { ok: boolean }
+    expect(payload.ok).toBe(true)
+  })
+
   test('does not run sync window verification before startup is ready', async () => {
     const syncCapturePaneCalls: string[][] = []
     seedRecord(

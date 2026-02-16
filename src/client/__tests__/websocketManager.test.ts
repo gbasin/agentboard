@@ -613,21 +613,21 @@ describe('scheduleReconnect while hidden', () => {
     expect(reconnectTimers).toHaveLength(0)
   })
 
-  test('debounces rapid forceReconnect calls', () => {
+  test('debounces rapid non-forced forceReconnect calls', () => {
     const manager = new WebSocketManager()
     manager.connect()
     FakeWebSocket.instances[0]!.triggerOpen()
     manager.startLifecycleListeners()
 
-    // Simulate suspension so both calls would force
+    // Simulate suspension so the first call is forced
     ;(manager as unknown as { lastTick: number }).lastTick = Date.now() - 15_000
 
-    // First call should reconnect
+    // First call should reconnect (forced — suspension detected)
     fireVisibilityChange('visible')
     expect(FakeWebSocket.instances).toHaveLength(2)
 
-    // Second rapid call should be debounced (within 500ms)
-    ;(manager as unknown as { lastTick: number }).lastTick = Date.now() - 15_000
+    // Second rapid call — lastTick was normalized by the first handler, so
+    // wasSuspended is false and the non-forced debounce (< 500ms) kicks in
     fireVisibilityChange('visible')
     expect(FakeWebSocket.instances).toHaveLength(2) // still 2, not 3
   })
@@ -651,6 +651,117 @@ describe('scheduleReconnect while hidden', () => {
     fireVisibilityChange('visible')
 
     // Should reconnect immediately
+    expect(FakeWebSocket.instances).toHaveLength(2)
+  })
+})
+
+describe('heartbeat ping/pong', () => {
+  test('pong receipt clears timeout', () => {
+    const manager = new WebSocketManager()
+    manager.connect()
+    const ws = FakeWebSocket.instances[0]!
+    ws.triggerOpen()
+    manager.startLifecycleListeners()
+
+    // Find the heartbeat interval (20000ms)
+    const heartbeatInterval = intervals.find((i) => i.interval === 20000)
+    expect(heartbeatInterval).toBeDefined()
+
+    // Fire it to send a ping
+    heartbeatInterval!.callback()
+    expect(ws.sent).toContain('{"type":"ping"}')
+
+    // A pong timeout timer (10000ms) should now be scheduled
+    const pongTimeout = timers.find((t) => t.delay === 10000)
+    expect(pongTimeout).toBeDefined()
+
+    // Simulate receiving a pong from the server
+    ws.triggerMessage(JSON.stringify({ type: 'pong' }))
+
+    // The pong timeout timer should have been cleared
+    expect(timers.find((t) => t.id === pongTimeout!.id)).toBeUndefined()
+
+    // No new socket was created — connection is healthy
+    expect(FakeWebSocket.instances).toHaveLength(1)
+  })
+
+  test('missing pong triggers destroy and reconnect', () => {
+    const manager = new WebSocketManager()
+    const statuses: string[] = []
+    manager.subscribeStatus((status) => statuses.push(status))
+
+    manager.connect()
+    const ws = FakeWebSocket.instances[0]!
+    ws.triggerOpen()
+    manager.startLifecycleListeners()
+
+    // Fire heartbeat interval to send a ping
+    const heartbeatInterval = intervals.find((i) => i.interval === 20000)
+    expect(heartbeatInterval).toBeDefined()
+    heartbeatInterval!.callback()
+
+    // Find and fire the pong timeout (10000ms) — no pong arrived
+    const pongTimeout = timers.find((t) => t.delay === 10000)
+    expect(pongTimeout).toBeDefined()
+    pongTimeout!.callback()
+
+    // Old socket handlers should be nulled (zombie destroyed)
+    expect(ws.onopen).toBeNull()
+    expect(ws.onclose).toBeNull()
+
+    // Status should be reconnecting
+    expect(statuses[statuses.length - 1]).toBe('reconnecting')
+
+    // A reconnect timer should be scheduled
+    const reconnectTimer = timers.find((t) => t.delay >= 1000 && t.delay <= 30000)
+    expect(reconnectTimer).toBeDefined()
+  })
+})
+
+describe('forceReconnect debounce', () => {
+  test('does not suppress forced pageshow(persisted=true) after non-forced visibilitychange', () => {
+    const manager = new WebSocketManager()
+    manager.connect()
+    FakeWebSocket.instances[0]!.triggerOpen()
+    manager.startLifecycleListeners()
+
+    // lastTick is recent (no suspension) — visibilitychange is non-forced
+    fireVisibilityChange('visible')
+
+    // Should still be 1 socket — non-forced, already connected, hits already_connected
+    expect(FakeWebSocket.instances).toHaveLength(1)
+
+    // Immediately fire pageshow(persisted=true) — bfcache restore should force
+    // reconnect even within the 500ms debounce window
+    firePageShow(true)
+
+    // Should have 2 sockets now — the forced pageshow was NOT debounced
+    expect(FakeWebSocket.instances).toHaveLength(2)
+  })
+})
+
+describe('lastTick normalization on resume', () => {
+  test('prevents wake-check double reconnect', () => {
+    const manager = new WebSocketManager()
+    manager.connect()
+    FakeWebSocket.instances[0]!.triggerOpen()
+    manager.startLifecycleListeners()
+
+    // Set lastTick far in the past (20s ago) to simulate suspension
+    ;(manager as unknown as { lastTick: number }).lastTick = Date.now() - 20_000
+
+    // visibilitychange should detect suspension and force reconnect
+    fireVisibilityChange('visible')
+    expect(FakeWebSocket.instances).toHaveLength(2)
+
+    // Open the new socket so it is connected
+    FakeWebSocket.instances[1]!.triggerOpen()
+
+    // Fire all intervals (including wake-check) — should NOT create another
+    // socket because lastTick was normalized by the visibilitychange handler
+    fireAllIntervals()
+
+    // Still 2 sockets, not 3
     expect(FakeWebSocket.instances).toHaveLength(2)
   })
 })

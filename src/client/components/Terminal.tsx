@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { clientLog } from '../hooks/useWebSocket'
+import { clientLog } from '../utils/clientLog'
 import type { AgentSession, Session, SendClientMessage, SubscribeServerMessage } from '@shared/types'
 import { useSessionStore, type ConnectionStatus } from '../stores/sessionStore'
 import { useTerminal } from '../hooks/useTerminal'

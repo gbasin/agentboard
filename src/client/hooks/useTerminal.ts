@@ -8,7 +8,7 @@ import { SearchAddon } from '@xterm/addon-search'
 import { SerializeAddon } from '@xterm/addon-serialize'
 import { ProgressAddon } from '@xterm/addon-progress'
 import type { SendClientMessage, SubscribeServerMessage } from '@shared/types'
-import { clientLog } from './useWebSocket'
+import { clientLog } from '../utils/clientLog'
 
 // URL regex that matches standard URLs and IP:port patterns
 const URL_REGEX = /https?:\/\/[^\s"'<>]+|\b(?:localhost|\d{1,3}(?:\.\d{1,3}){3}):\d{1,5}(?:\/[^\s"'<>]*)?\b/

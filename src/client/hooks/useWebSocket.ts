@@ -14,25 +14,13 @@ import { useEffect, useMemo, useState } from 'react'
 import type { ClientMessage, ServerMessage } from '@shared/types'
 import type { ConnectionStatus } from '../stores/sessionStore'
 import { useSessionStore } from '../stores/sessionStore'
+import { clientLog } from '../utils/clientLog'
 
 type MessageListener = (message: ServerMessage) => void
 
 type StatusListener = (status: ConnectionStatus, error: string | null) => void
 
 const WS_STATES = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'] as const
-
-/** Fire-and-forget POST to /api/client-log. Swallows all errors. */
-export function clientLog(event: string, data?: Record<string, unknown>) {
-  try {
-    fetch('/api/client-log', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ event, data }),
-    }).catch(() => {})
-  } catch {
-    // ignore
-  }
-}
 
 /** How long to wait for a WebSocket to reach OPEN before giving up. */
 const CONNECT_TIMEOUT_MS = 10_000
@@ -167,7 +155,7 @@ export class WebSocketManager {
    */
   startLifecycleListeners() {
     if (this.lifecycleStarted) return
-    if (typeof document === 'undefined') return
+    if (typeof document === 'undefined' || typeof window === 'undefined') return
 
     this.lifecycleStarted = true
     document.addEventListener('visibilitychange', this.onVisibilityChange)
@@ -225,8 +213,12 @@ export class WebSocketManager {
   private onVisibilityChange = () => {
     clientLog('ws_visibility', { state: document.visibilityState, ...this.wsSnap() })
     if (document.visibilityState === 'visible') {
-      const gap = Date.now() - this.lastTick
+      const now = Date.now()
+      const gap = now - this.lastTick
       const wasSuspended = gap > SUSPEND_THRESHOLD_MS
+      // Reset lastTick before reconnect to prevent the wake-check interval
+      // from seeing a stale gap and firing a second forceReconnect.
+      this.lastTick = now
       this.forceReconnect('visibilitychange', wasSuspended)
       // Restart heartbeat if forceReconnect returned early (non-suspended path).
       // Heartbeat was stopped on hidden; need it running to detect zombies.
@@ -243,6 +235,8 @@ export class WebSocketManager {
   private onPageShow = (e: PageTransitionEvent) => {
     clientLog('ws_pageshow', { persisted: e.persisted, ...this.wsSnap() })
     if (e.persisted) {
+      // Reset lastTick to prevent wake-check double reconnect after bfcache restore
+      this.lastTick = Date.now()
       this.forceReconnect('pageshow', true)
     }
   }
@@ -259,12 +253,13 @@ export class WebSocketManager {
 
     // Debounce rapid-fire triggers (e.g. visibilitychange + time-jump
     // both firing on resume). Prevents double reconnection.
+    // Forced triggers (pageshow persisted, time-jump) bypass debounce —
+    // they indicate the socket is definitely stale and must reconnect.
     const now = Date.now()
-    if (now - this.lastForceReconnectTs < 500) {
+    if (!force && now - this.lastForceReconnectTs < 500) {
       clientLog('ws_force_skip', { trigger, reason: 'debounce' })
       return
     }
-    this.lastForceReconnectTs = now
 
     // When not forced, trust readyState — rely on heartbeat for zombie
     // detection (~30s). When forced (process was suspended), iOS lies
@@ -276,6 +271,7 @@ export class WebSocketManager {
       return
     }
 
+    this.lastForceReconnectTs = now
     clientLog('ws_force_reconnect', { trigger, force, ...this.wsSnap() })
     this.reconnectAttempts = 0
     if (this.reconnectTimer) {
