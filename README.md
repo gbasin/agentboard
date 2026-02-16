@@ -191,6 +191,18 @@ LOG_FILE=~/.agentboard/agentboard.log   # default; set empty to disable file log
 
 Console output is pretty-printed in development, JSON in production (`NODE_ENV=production`). File output is always JSON. Set `LOG_FILE=` (empty) to disable file logging.
 
+## Privacy Policy Consistency
+
+Run the static policy checker:
+
+```bash
+bun run privacy:check
+```
+
+This validates code and dependencies against engineering privacy claims in
+[`docs/privacy-policy.md`](docs/privacy-policy.md). The check is static analysis
+only and is also run as part of `bun run test`.
+
 ## Troubleshooting
 
 ### "open terminal failed: not a terminal" errors
