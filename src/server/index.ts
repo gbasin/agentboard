@@ -36,7 +36,7 @@ import {
   type ResumeError,
   type Session,
 } from '../shared/types'
-import { logger } from './logger'
+import { logger, logLevel } from './logger'
 import { SessionRefreshWorkerClient } from './sessionRefreshWorkerClient'
 import {
   setForceWorkingUntil,
@@ -1157,6 +1157,7 @@ Bun.serve<WSData>({
         remoteAllowControl: config.remoteAllowControl,
         remoteAllowAttach: config.remoteAllowAttach,
         hostLabel: config.hostLabel,
+        clientLogLevel: logLevel,
       })
       const agentSessions = registry.getAgentSessions()
       send(ws, {
