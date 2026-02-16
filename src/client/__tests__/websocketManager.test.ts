@@ -506,6 +506,45 @@ describe('forceReconnect via pageshow', () => {
   })
 })
 
+describe('time-jump detector skips while hidden', () => {
+  test('does not fire forceReconnect when page is hidden', () => {
+    const manager = new WebSocketManager()
+    manager.connect()
+    FakeWebSocket.instances[0]!.triggerOpen()
+    manager.startLifecycleListeners()
+
+    // Go hidden
+    fireVisibilityChange('hidden')
+
+    // Set lastTick far in the past (simulating browser timer clamping)
+    ;(manager as unknown as { lastTick: number }).lastTick = Date.now() - 60_000
+
+    fireAllIntervals()
+
+    // Should NOT have created a new socket — time-jump skipped while hidden
+    expect(FakeWebSocket.instances).toHaveLength(1)
+  })
+})
+
+describe('reconnect timer cleared on hidden', () => {
+  test('clears pending reconnect timer when page goes hidden', () => {
+    const manager = new WebSocketManager()
+    manager.connect()
+    const ws = FakeWebSocket.instances[0]!
+    ws.triggerOpen()
+    manager.startLifecycleListeners()
+
+    // Trigger a close to schedule a reconnect timer
+    ws.close()
+    const reconnectTimer = timers.find((t) => t.delay >= 1000 && t.delay <= 30000)
+    expect(reconnectTimer).toBeDefined()
+
+    // Go hidden — should clear the reconnect timer
+    fireVisibilityChange('hidden')
+    expect(timers.find((t) => t.id === reconnectTimer!.id)).toBeUndefined()
+  })
+})
+
 describe('forceReconnect via time-jump detector', () => {
   test('reconnects when time jump > 15s detected', () => {
     const manager = new WebSocketManager()

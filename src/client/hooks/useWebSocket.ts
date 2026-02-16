@@ -167,6 +167,13 @@ export class WebSocketManager {
     this.wakeCheckInterval = window.setInterval(() => {
       const now = Date.now()
       const gap = now - this.lastTick
+      // Skip while hidden — browser timer clamping causes false positives
+      // (e.g. Chrome clamps hidden-tab timers to ~60s, exceeding WAKE_JUMP_MS).
+      // visibilitychange handler covers the resume path.
+      if (this.isHidden()) {
+        this.lastTick = now
+        return
+      }
       if (gap > WAKE_JUMP_MS) {
         clientLog('ws_time_jump', { gapMs: gap, ...this.wsSnap() })
         this.forceReconnect('time_jump', true)
@@ -229,6 +236,13 @@ export class WebSocketManager {
       // Pause heartbeat when hidden — iOS freezes timers anyway,
       // and pong timeout would false-positive on wake.
       this.stopHeartbeat()
+      // Cancel pending reconnect — it would fire in the background
+      // otherwise (timer was set before the tab was hidden).
+      // forceReconnect() handles reconnection when visible again.
+      if (this.reconnectTimer) {
+        window.clearTimeout(this.reconnectTimer)
+        this.reconnectTimer = null
+      }
     }
   }
 
