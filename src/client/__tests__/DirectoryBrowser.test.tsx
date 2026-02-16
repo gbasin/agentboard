@@ -72,9 +72,36 @@ async function cleanup(renderer: TestRenderer.ReactTestRenderer) {
   })
 }
 
-function createFetchController(responses: Response[], calls: string[] = []) {
+interface DirectoryFetchCall {
+  url: string
+  directoryPath: string | null
+}
+
+function getHeaderValue(headers: HeadersInit | undefined, key: string): string | null {
+  if (!headers) {
+    return null
+  }
+
+  if (headers instanceof Headers) {
+    return headers.get(key)
+  }
+
+  if (Array.isArray(headers)) {
+    const match = headers.find(([name]) => name.toLowerCase() === key.toLowerCase())
+    return match ? match[1] : null
+  }
+
+  for (const [name, value] of Object.entries(headers)) {
+    if (name.toLowerCase() === key.toLowerCase()) {
+      return String(value)
+    }
+  }
+  return null
+}
+
+function createFetchController(responses: Response[], calls: DirectoryFetchCall[] = []) {
   const pending: Array<(value: Response) => void> = []
-  const fetchImpl = (input: RequestInfo | URL) => {
+  const fetchImpl = (input: RequestInfo | URL, init?: RequestInit) => {
     let url: string
     if (typeof input === 'string') {
       url = input
@@ -83,7 +110,10 @@ function createFetchController(responses: Response[], calls: string[] = []) {
     } else {
       url = input.url
     }
-    calls.push(url)
+    calls.push({
+      url,
+      directoryPath: getHeaderValue(init?.headers, 'x-directory-path'),
+    })
     return new Promise<Response>((resolve) => {
       pending.push(resolve)
     })
@@ -284,7 +314,10 @@ describe('DirectoryBrowser', () => {
         'data-testid': 'directory-current-path',
       })
       expect(pathNode.children.join('')).toBe('/root/child')
-      expect(controller.calls[1]).toContain('path=%2Froot%2Fchild')
+      expect(controller.calls[1]).toEqual({
+        url: '/api/directories',
+        directoryPath: '/root/child',
+      })
     } finally {
       await cleanup(renderer)
     }
@@ -337,7 +370,10 @@ describe('DirectoryBrowser', () => {
       await resolveAndFlush(controller)
 
       expect(controller.calls).toHaveLength(2)
-      expect(controller.calls[1]).toContain('path=%2Froot%2Falpha')
+      expect(controller.calls[1]).toEqual({
+        url: '/api/directories',
+        directoryPath: '/root/alpha',
+      })
       const pathNode = renderer.root.findByProps({
         'data-testid': 'directory-current-path',
       })
@@ -377,7 +413,10 @@ describe('DirectoryBrowser', () => {
       })
       await resolveAndFlush(controller)
 
-      expect(controller.calls[1]).toContain('path=%2Ftwo')
+      expect(controller.calls[1]).toEqual({
+        url: '/api/directories',
+        directoryPath: '/two',
+      })
     } finally {
       await cleanup(renderer)
     }

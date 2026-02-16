@@ -35,10 +35,12 @@ export function DirectoryBrowser({
     setCurrentPath(path)
 
     try {
-      const response = await fetch(
-        `/api/directories?path=${encodeURIComponent(path)}`,
-        { signal }
-      )
+      const response = await fetch('/api/directories', {
+        signal,
+        headers: {
+          'x-directory-path': path,
+        },
+      })
       if (!response.ok) {
         const payload = (await response.json()) as { message?: string }
         throw new Error(payload.message || 'Failed to load directory')
