@@ -239,6 +239,7 @@ if (!tmuxAvailable) {
 
       ws.close()
     })
+
   })
 }
 

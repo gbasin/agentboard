@@ -245,6 +245,11 @@ const REMOTE_SESSION_MUTATION_TTL_MS = 30_000
 const remoteSessionTombstones = new Map<string, number>()
 const remoteSessionNameOverrides = new Map<string, { name: string; setAt: number }>()
 
+// Grace period for resurrected pinned sessions — prevents orphaning race
+// where refreshSessions() runs before the resumed command has started.
+const RESURRECTION_GRACE_MS = 15_000
+const resurrectedSessionGrace = new Map<string, number>() // sessionId -> timestamp
+
 function mergeRemoteSessions(sessions: Session[]): Session[] {
   const remoteSessions = remotePoller?.getSessions() ?? []
   const needsMerge =
@@ -513,6 +518,12 @@ function hydrateSessionsWithAgentSessions(
       : Boolean(currentWindow && windowSet.has(currentWindow))
 
     if (!windowExists || !currentWindow) {
+      // Don't orphan recently-resurrected sessions — give resume command time to start
+      const graceStart = resurrectedSessionGrace.get(agentSession.sessionId)
+      if (graceStart && Date.now() - graceStart < RESURRECTION_GRACE_MS) {
+        continue
+      }
+      resurrectedSessionGrace.delete(agentSession.sessionId)
       logger.info('session_orphaned', {
         sessionId: agentSession.sessionId,
         displayName: agentSession.displayName,
@@ -520,12 +531,19 @@ function hydrateSessionsWithAgentSessions(
         windowSetSize: windowSet.size,
         windowSetSample: Array.from(windowSet).slice(0, 5),
       })
+      // Kill any leftover dead window from remain-on-exit
+      if (currentWindow) {
+        try { sessionManager.killWindow(currentWindow) } catch { /* may already be gone */ }
+      }
       const orphanedSession = db.orphanSession(agentSession.sessionId)
       if (orphanedSession) {
         orphaned.push(toAgentSession(orphanedSession))
       }
       continue
     }
+
+    // Session survived — clear grace entry if present
+    resurrectedSessionGrace.delete(agentSession.sessionId)
 
     let verification: WindowLogVerificationResult | null = null
     let nameMatches = false
@@ -1793,6 +1811,10 @@ function resurrectPinnedSessions() {
         command,
         { excludeSessionId: record.sessionId }
       )
+      resurrectedSessionGrace.set(record.sessionId, Date.now())
+      try {
+        sessionManager.setWindowOption(created.tmuxWindow, 'remain-on-exit', 'failed')
+      } catch { /* non-fatal — older tmux may not support 'failed' value */ }
       db.updateSession(record.sessionId, {
         currentWindow: created.tmuxWindow,
         displayName: created.name,

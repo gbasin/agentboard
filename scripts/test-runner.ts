@@ -32,6 +32,9 @@ async function main() {
   const { tempRoot, claudeDir, codexDir } = createTempLogDirs()
   const env = {
     ...process.env,
+    // React's act() requires the development build; force NODE_ENV=test
+    // so tests pass even when the shell has NODE_ENV=production.
+    NODE_ENV: process.env.NODE_ENV === 'production' ? 'test' : (process.env.NODE_ENV || 'test'),
     CLAUDE_CONFIG_DIR: claudeDir,
     CODEX_HOME: codexDir,
   }

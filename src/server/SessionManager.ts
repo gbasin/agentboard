@@ -227,6 +227,10 @@ export class SessionManager {
     throw new Error('Failed to create tmux window')
   }
 
+  setWindowOption(tmuxWindow: string, option: string, value: string): void {
+    this.runTmux(['set-option', '-w', '-t', tmuxWindow, option, value])
+  }
+
   killWindow(tmuxWindow: string): void {
     // Log window info before killing
     try {
