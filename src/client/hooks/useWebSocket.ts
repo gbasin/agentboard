@@ -2,11 +2,13 @@
  * useWebSocket.ts — WebSocket connection manager with iOS Safari PWA support.
  *
  * Handles reconnection after background/foreground transitions via:
- * - visibilitychange listener (most common resume path)
- * - pageshow listener (bfcache restore)
- * - Time-jump detector (fallback for deep PWA suspension)
+ * - visibilitychange listener with suspension detection (force reconnect when
+ *   time gap > 10s indicates OS froze the process — fixes iOS zombie sockets)
+ * - pageshow listener (bfcache restore — always forces reconnect)
+ * - Time-jump detector (fallback for deep PWA suspension — always forces)
  * - Connection timeout (prevents zombie sockets from blocking reconnect)
  * - Application-level ping/pong heartbeat (detects dead sockets in foreground)
+ * - Debounce on forceReconnect (prevents double reconnect from overlapping triggers)
  */
 import { useEffect, useMemo, useState } from 'react'
 import type { ClientMessage, ServerMessage } from '@shared/types'
@@ -44,6 +46,9 @@ const WAKE_JUMP_MS = 15_000
 /** Tick interval for the time-jump detector. */
 const WAKE_CHECK_INTERVAL_MS = 5_000
 
+/** Gap threshold for detecting process suspension on visibility resume. */
+const SUSPEND_THRESHOLD_MS = 10_000
+
 /** How often to send an application-level ping to detect dead sockets. */
 const HEARTBEAT_INTERVAL_MS = 20_000
 
@@ -65,6 +70,7 @@ export class WebSocketManager {
   private lifecycleStarted = false
   private heartbeatTimer: number | null = null
   private pongTimer: number | null = null
+  private lastForceReconnectTs = 0
 
   private wsSnap() {
     return { status: this.status, ws: this.ws ? WS_STATES[this.ws.readyState] : null, attempt: this.reconnectAttempts }
@@ -175,7 +181,7 @@ export class WebSocketManager {
       const gap = now - this.lastTick
       if (gap > WAKE_JUMP_MS) {
         clientLog('ws_time_jump', { gapMs: gap, ...this.wsSnap() })
-        this.forceReconnect('time_jump')
+        this.forceReconnect('time_jump', true)
       }
       this.lastTick = now
     }, WAKE_CHECK_INTERVAL_MS)
@@ -219,8 +225,11 @@ export class WebSocketManager {
   private onVisibilityChange = () => {
     clientLog('ws_visibility', { state: document.visibilityState, ...this.wsSnap() })
     if (document.visibilityState === 'visible') {
-      this.forceReconnect('visibilitychange')
-      // Resume heartbeat — connection may still be alive
+      const gap = Date.now() - this.lastTick
+      const wasSuspended = gap > SUSPEND_THRESHOLD_MS
+      this.forceReconnect('visibilitychange', wasSuspended)
+      // Restart heartbeat if forceReconnect returned early (non-suspended path).
+      // Heartbeat was stopped on hidden; need it running to detect zombies.
       if (this.status === 'connected') {
         this.startHeartbeat()
       }
@@ -234,7 +243,7 @@ export class WebSocketManager {
   private onPageShow = (e: PageTransitionEvent) => {
     clientLog('ws_pageshow', { persisted: e.persisted, ...this.wsSnap() })
     if (e.persisted) {
-      this.forceReconnect('pageshow')
+      this.forceReconnect('pageshow', true)
     }
   }
 
@@ -242,21 +251,32 @@ export class WebSocketManager {
    * If the socket isn't cleanly connected, tear it down and start fresh.
    * Resets the backoff counter so the user doesn't wait up to 30s.
    */
-  private forceReconnect(trigger: string = 'unknown') {
+  private forceReconnect(trigger: string = 'unknown', force = false) {
     if (this.manualClose) {
       clientLog('ws_force_skip', { trigger, reason: 'manual_close' })
       return
     }
 
-    // If socket reports OPEN but our status isn't 'connected', it's a
-    // zombie — tear it down. This catches iOS sockets that stay OPEN
-    // after wake but are actually dead.
-    if (this.ws?.readyState === WebSocket.OPEN && this.status === 'connected') {
+    // Debounce rapid-fire triggers (e.g. visibilitychange + time-jump
+    // both firing on resume). Prevents double reconnection.
+    const now = Date.now()
+    if (now - this.lastForceReconnectTs < 500) {
+      clientLog('ws_force_skip', { trigger, reason: 'debounce' })
+      return
+    }
+    this.lastForceReconnectTs = now
+
+    // When not forced, trust readyState — rely on heartbeat for zombie
+    // detection (~30s). When forced (process was suspended), iOS lies
+    // about readyState so always tear down and start fresh.
+    if (!force &&
+        this.ws?.readyState === WebSocket.OPEN &&
+        this.status === 'connected') {
       clientLog('ws_force_skip', { trigger, reason: 'already_connected' })
       return
     }
 
-    clientLog('ws_force_reconnect', { trigger, ...this.wsSnap() })
+    clientLog('ws_force_reconnect', { trigger, force, ...this.wsSnap() })
     this.reconnectAttempts = 0
     if (this.reconnectTimer) {
       window.clearTimeout(this.reconnectTimer)

@@ -419,16 +419,34 @@ describe('forceReconnect via visibilitychange', () => {
     expect(FakeWebSocket.instances).toHaveLength(2)
   })
 
-  test('does not reconnect when page becomes visible and socket is healthy', () => {
+  test('does not reconnect on non-suspended resume with healthy socket', () => {
     const manager = new WebSocketManager()
     manager.connect()
     FakeWebSocket.instances[0]!.triggerOpen()
     manager.startLifecycleListeners()
 
+    // lastTick is recent — no suspension detected
     fireVisibilityChange('visible')
 
-    // No new socket — already connected
+    // No new socket — already connected, not forced
     expect(FakeWebSocket.instances).toHaveLength(1)
+  })
+
+  test('force reconnects on suspended resume even with healthy socket', () => {
+    const manager = new WebSocketManager()
+    manager.connect()
+    FakeWebSocket.instances[0]!.triggerOpen()
+    manager.startLifecycleListeners()
+
+    // Simulate suspension: lastTick far in the past (>10s gap)
+    ;(manager as unknown as { lastTick: number }).lastTick = Date.now() - 15_000
+
+    fireVisibilityChange('visible')
+
+    // Should have torn down and created a new socket despite OPEN+connected
+    expect(FakeWebSocket.instances).toHaveLength(2)
+    // Old socket handlers should be nulled
+    expect(FakeWebSocket.instances[0]!.onopen).toBeNull()
   })
 
   test('does not reconnect if manually disconnected', () => {
@@ -462,18 +480,16 @@ describe('forceReconnect via visibilitychange', () => {
 })
 
 describe('forceReconnect via pageshow', () => {
-  test('reconnects on bfcache restore (persisted=true)', () => {
+  test('reconnects on bfcache restore (persisted=true) even with healthy socket', () => {
     const manager = new WebSocketManager()
     manager.connect()
     FakeWebSocket.instances[0]!.triggerOpen()
     manager.startLifecycleListeners()
 
-    // Simulate dead socket
-    ;(manager as unknown as { ws: null }).ws = null
-    ;(manager as unknown as { status: string }).status = 'reconnecting'
-
+    // bfcache restore always forces reconnect — socket is stale
     firePageShow(true)
     expect(FakeWebSocket.instances).toHaveLength(2)
+    expect(FakeWebSocket.instances[0]!.onopen).toBeNull() // old socket torn down
   })
 
   test('does not reconnect on normal navigation (persisted=false)', () => {
@@ -595,6 +611,25 @@ describe('scheduleReconnect while hidden', () => {
     expect(statuses[statuses.length - 1]).toBe('reconnecting')
     const reconnectTimers = timers.filter((t) => t.delay >= 1000 && t.delay <= 30000)
     expect(reconnectTimers).toHaveLength(0)
+  })
+
+  test('debounces rapid forceReconnect calls', () => {
+    const manager = new WebSocketManager()
+    manager.connect()
+    FakeWebSocket.instances[0]!.triggerOpen()
+    manager.startLifecycleListeners()
+
+    // Simulate suspension so both calls would force
+    ;(manager as unknown as { lastTick: number }).lastTick = Date.now() - 15_000
+
+    // First call should reconnect
+    fireVisibilityChange('visible')
+    expect(FakeWebSocket.instances).toHaveLength(2)
+
+    // Second rapid call should be debounced (within 500ms)
+    ;(manager as unknown as { lastTick: number }).lastTick = Date.now() - 15_000
+    fireVisibilityChange('visible')
+    expect(FakeWebSocket.instances).toHaveLength(2) // still 2, not 3
   })
 
   test('forceReconnect on visibility resume after hidden close', () => {
