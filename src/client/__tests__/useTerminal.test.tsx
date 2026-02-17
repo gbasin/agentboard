@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, jest, test, mock } from 'bun:t
 import TestRenderer, { act } from 'react-test-renderer'
 import type { ServerMessage } from '@shared/types'
 import type { ITheme } from '@xterm/xterm'
+import type { ConnectionStatus } from '../stores/sessionStore'
 
 const globalAny = globalThis as typeof globalThis & {
   window?: Window
@@ -235,6 +236,7 @@ function createContainerMock() {
 function TerminalHarness(props: {
   sessionId: string | null
   tmuxTarget?: string | null
+  connectionStatus?: ConnectionStatus
   sendMessage: (message: any) => void
   subscribe: (listener: (message: ServerMessage) => void) => () => void
   theme: ITheme
@@ -248,6 +250,7 @@ function TerminalHarness(props: {
   const { containerRef } = useTerminal({
     ...props,
     tmuxTarget: props.tmuxTarget ?? null,
+    connectionStatus: props.connectionStatus ?? 'connected',
     lineHeight: props.lineHeight ?? 1.0,
     letterSpacing: props.letterSpacing ?? 0,
     fontFamily: props.fontFamily ?? '"JetBrains Mono Variable", monospace',
@@ -558,6 +561,78 @@ describe('useTerminal', () => {
     expect(terminal?.disposed).toBe(true)
     expect(webglAddon?.disposed).toBe(true)
     expect(container.innerHTML).toBe('')
+  })
+
+  test('reattaches active session after websocket reconnect', async () => {
+    globalAny.navigator = {
+      userAgent: 'Chrome',
+      platform: 'MacIntel',
+      maxTouchPoints: 0,
+      clipboard: { writeText: () => Promise.resolve() },
+    } as unknown as Navigator
+
+    const sendCalls: Array<Record<string, unknown>> = []
+    const { container } = createContainerMock()
+
+    let renderer!: TestRenderer.ReactTestRenderer
+
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          connectionStatus="connected"
+          sendMessage={(message) => sendCalls.push(message)}
+          subscribe={() => () => {}}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+        {
+          createNodeMock: () => container,
+        }
+      )
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      renderer.update(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          connectionStatus="reconnecting"
+          sendMessage={(message) => sendCalls.push(message)}
+          subscribe={() => () => {}}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />
+      )
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      renderer.update(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          connectionStatus="connected"
+          sendMessage={(message) => sendCalls.push(message)}
+          subscribe={() => () => {}}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />
+      )
+      await Promise.resolve()
+    })
+
+    const attachCalls = sendCalls.filter((call) => call.type === 'terminal-attach')
+    expect(attachCalls).toHaveLength(2)
+    expect(attachCalls[1]).toEqual({
+      type: 'terminal-attach',
+      sessionId: 'session-1',
+      tmuxTarget: 'agentboard:@1',
+      cols: 80,
+      rows: 24,
+    })
   })
 
   test('Cmd+V triggers paste via capture-phase listener', async () => {

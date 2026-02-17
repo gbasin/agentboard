@@ -9,6 +9,7 @@ import { SerializeAddon } from '@xterm/addon-serialize'
 import { ProgressAddon } from '@xterm/addon-progress'
 import type { SendClientMessage, SubscribeServerMessage } from '@shared/types'
 import { clientLog } from '../utils/clientLog'
+import type { ConnectionStatus } from '../stores/sessionStore'
 
 // URL regex that matches standard URLs and IP:port patterns
 const URL_REGEX = /https?:\/\/[^\s"'<>]+|\b(?:localhost|\d{1,3}(?:\.\d{1,3}){3}):\d{1,5}(?:\/[^\s"'<>]*)?\b/
@@ -118,6 +119,7 @@ interface UseTerminalOptions {
   sessionId: string | null
   tmuxTarget: string | null
   allowAttach?: boolean
+  connectionStatus?: ConnectionStatus
   sendMessage: SendClientMessage
   subscribe: SubscribeServerMessage
   theme: ITheme
@@ -133,6 +135,7 @@ export function useTerminal({
   sessionId,
   tmuxTarget,
   allowAttach = true,
+  connectionStatus = 'connected',
   sendMessage,
   subscribe,
   theme,
@@ -794,7 +797,7 @@ export function useTerminal({
     }
   }, [useWebGL])
 
-  // Handle session changes - attach/detach
+  // Handle session changes and websocket reconnects - attach/detach
   useEffect(() => {
     const terminal = terminalRef.current
     if (!terminal) return
@@ -804,7 +807,7 @@ export function useTerminal({
 
     if (!allowAttach) {
       if (prevAttached) {
-        sendMessage({ type: 'terminal-detach', sessionId: prevAttached })
+        sendMessageRef.current({ type: 'terminal-detach', sessionId: prevAttached })
         attachedSessionRef.current = null
         attachedTargetRef.current = null
         inTmuxCopyModeRef.current = false
@@ -813,9 +816,20 @@ export function useTerminal({
       return
     }
 
+    // Reattach when websocket comes back: server-side ws.currentSessionId is
+    // cleared on disconnect, so input is ignored until a fresh terminal-attach.
+    if (connectionStatus !== 'connected') {
+      if (prevAttached) {
+        attachedSessionRef.current = null
+        attachedTargetRef.current = null
+        inTmuxCopyModeRef.current = false
+      }
+      return
+    }
+
     // Detach from previous session first
     if (prevAttached && prevAttached !== sessionId) {
-      sendMessage({ type: 'terminal-detach', sessionId: prevAttached })
+      sendMessageRef.current({ type: 'terminal-detach', sessionId: prevAttached })
       attachedSessionRef.current = null
       attachedTargetRef.current = null
       // Reset copy-mode state - each session has its own scroll position
@@ -838,7 +852,7 @@ export function useTerminal({
       const fitDone = performance.now()
 
       // Send attach message with current dimensions so server spawns at correct size
-      sendMessage({
+      sendMessageRef.current({
         type: 'terminal-attach',
         sessionId,
         tmuxTarget: tmuxTarget ?? undefined,
@@ -850,7 +864,7 @@ export function useTerminal({
       attachedTargetRef.current = tmuxTarget ?? null
 
       // Check if this session is already in copy-mode (scrolled back)
-      sendMessage({ type: 'tmux-check-copy-mode', sessionId })
+      sendMessageRef.current({ type: 'tmux-check-copy-mode', sessionId })
 
       clientLog('switch_attach_sent', {
         sessionId,
@@ -880,7 +894,7 @@ export function useTerminal({
       attachedSessionRef.current = null
       attachedTargetRef.current = null
     }
-  }, [sessionId, tmuxTarget, allowAttach, sendMessage, checkScrollPosition])
+  }, [sessionId, tmuxTarget, allowAttach, connectionStatus, checkScrollPosition])
 
   // Subscribe to terminal output with idle-based buffering + synchronized output
   // This prevents flicker by: (1) batching output until stream goes idle,

@@ -123,6 +123,7 @@ export default function Terminal({
     sessionId: session?.id ?? null,
     tmuxTarget: session?.tmuxWindow ?? null,
     allowAttach: !isReadOnly,
+    connectionStatus,
     sendMessage,
     subscribe,
     theme: terminalTheme,
