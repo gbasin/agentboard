@@ -102,9 +102,9 @@ export class WebSocketManager {
 
     // Guard against connections that hang (common on iOS after background)
     this.connectTimer = window.setTimeout(() => {
-      this.connectTimer = null
       // Ignore stale timeout from an earlier socket that was already replaced.
       if (this.ws !== ws) return
+      this.connectTimer = null
       const isOpen = ws.readyState === WebSocket.OPEN
       const isHealthyOpen = isOpen && this.status === 'connected'
       if (!isHealthyOpen) {

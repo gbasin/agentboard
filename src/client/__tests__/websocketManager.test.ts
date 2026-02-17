@@ -369,8 +369,6 @@ describe('connect timeout', () => {
 
   test('ignores stale timeout callback from a replaced socket', () => {
     const manager = new WebSocketManager()
-    const statuses: string[] = []
-    manager.subscribeStatus((status) => statuses.push(status))
 
     // First connect creates ws1 + timeout1.
     manager.connect()
@@ -380,9 +378,10 @@ describe('connect timeout', () => {
     // Replace socket before timeout fires.
     ;(manager as unknown as { ws: null }).ws = null
     manager.connect()
-    const ws2 = FakeWebSocket.instances[1]!
-    ws2.triggerOpen()
-    expect(statuses[statuses.length - 1]).toBe('connected')
+    const timeout2 = timers.find(
+      (t) => t.delay === 3000 && t.id !== timeout1Id
+    )!
+    const timeout2Id = timeout2.id
 
     // Old timeout should be cleared by the second connect.
     expect(timers.find((t) => t.id === timeout1Id)).toBeUndefined()
@@ -390,9 +389,11 @@ describe('connect timeout', () => {
     // Simulate queued stale callback firing late.
     timeout1.callback()
 
-    // New socket remains healthy and no reconnect is scheduled.
-    expect((manager as unknown as { ws: FakeWebSocket | null }).ws).toBe(ws2)
-    expect(statuses[statuses.length - 1]).toBe('connected')
+    // Stale callback must not clobber the current connect timer reference.
+    manager.disconnect()
+    expect(timers.find((t) => t.id === timeout2Id)).toBeUndefined()
+
+    // Disconnect should not schedule reconnect.
     const reconnectTimers = timers.filter((t) => t.delay >= 1000 && t.delay <= 30000)
     expect(reconnectTimers).toHaveLength(0)
   })
