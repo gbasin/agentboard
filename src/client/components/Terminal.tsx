@@ -21,6 +21,7 @@ interface TerminalProps {
   sessions: Session[]
   inactiveSessions?: AgentSession[]
   connectionStatus: ConnectionStatus
+  connectionEpoch?: number
   sendMessage: SendClientMessage
   subscribe: SubscribeServerMessage
   onClose: () => void
@@ -74,6 +75,7 @@ export default function Terminal({
   sessions,
   inactiveSessions = [],
   connectionStatus,
+  connectionEpoch = 0,
   sendMessage,
   subscribe,
   onClose: _onClose,
@@ -124,6 +126,7 @@ export default function Terminal({
     tmuxTarget: session?.tmuxWindow ?? null,
     allowAttach: !isReadOnly,
     connectionStatus,
+    connectionEpoch,
     sendMessage,
     subscribe,
     theme: terminalTheme,

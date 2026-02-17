@@ -120,6 +120,7 @@ interface UseTerminalOptions {
   tmuxTarget: string | null
   allowAttach?: boolean
   connectionStatus?: ConnectionStatus
+  connectionEpoch?: number
   sendMessage: SendClientMessage
   subscribe: SubscribeServerMessage
   theme: ITheme
@@ -136,6 +137,7 @@ export function useTerminal({
   tmuxTarget,
   allowAttach = true,
   connectionStatus = 'connected',
+  connectionEpoch = 0,
   sendMessage,
   subscribe,
   theme,
@@ -168,6 +170,7 @@ export function useTerminal({
   // Track the currently attached session to prevent race conditions
   const attachedSessionRef = useRef<string | null>(null)
   const attachedTargetRef = useRef<string | null>(null)
+  const attachedConnectionEpochRef = useRef<number>(-1)
   const switchStartRef = useRef<number | null>(null)
   const sendMessageRef = useRef(sendMessage)
   const onScrollChangeRef = useRef(onScrollChange)
@@ -810,6 +813,7 @@ export function useTerminal({
         sendMessageRef.current({ type: 'terminal-detach', sessionId: prevAttached })
         attachedSessionRef.current = null
         attachedTargetRef.current = null
+        attachedConnectionEpochRef.current = -1
         inTmuxCopyModeRef.current = false
       }
       terminal.reset()
@@ -823,6 +827,7 @@ export function useTerminal({
         clientLog('terminal_detach_on_disconnect', { connectionStatus, prevAttached })
         attachedSessionRef.current = null
         attachedTargetRef.current = null
+        attachedConnectionEpochRef.current = -1
         inTmuxCopyModeRef.current = false
       }
       return
@@ -833,13 +838,25 @@ export function useTerminal({
       sendMessageRef.current({ type: 'terminal-detach', sessionId: prevAttached })
       attachedSessionRef.current = null
       attachedTargetRef.current = null
+      attachedConnectionEpochRef.current = -1
       // Reset copy-mode state - each session has its own scroll position
       inTmuxCopyModeRef.current = false
     }
 
     // Attach to new session
-    if (sessionId && (sessionId !== prevAttached || tmuxTarget !== prevTarget)) {
-      clientLog('terminal_attach', { sessionId, tmuxTarget, prevAttached, prevTarget, connectionStatus })
+    const attachedEpoch = attachedConnectionEpochRef.current
+    const needsReattachForConnection = connectionEpoch !== attachedEpoch
+
+    if (sessionId && (sessionId !== prevAttached || tmuxTarget !== prevTarget || needsReattachForConnection)) {
+      clientLog('terminal_attach', {
+        sessionId,
+        tmuxTarget,
+        prevAttached,
+        prevTarget,
+        connectionStatus,
+        connectionEpoch,
+        attachedEpoch,
+      })
       const switchStart = performance.now()
 
       // Reset terminal before attaching
@@ -864,6 +881,7 @@ export function useTerminal({
       // Mark as attached
       attachedSessionRef.current = sessionId
       attachedTargetRef.current = tmuxTarget ?? null
+      attachedConnectionEpochRef.current = connectionEpoch
 
       // Check if this session is already in copy-mode (scrolled back)
       sendMessageRef.current({ type: 'tmux-check-copy-mode', sessionId })
@@ -893,15 +911,21 @@ export function useTerminal({
 
     // No attach needed — already attached to this session+target
     if (sessionId && sessionId === prevAttached && tmuxTarget === prevTarget) {
-      clientLog('terminal_attach_skip', { sessionId, prevAttached, connectionStatus })
+      clientLog('terminal_attach_skip', {
+        sessionId,
+        prevAttached,
+        connectionStatus,
+        connectionEpoch,
+        attachedEpoch,
+      })
     }
-
     // Handle deselection
     if (!sessionId && prevAttached) {
       attachedSessionRef.current = null
       attachedTargetRef.current = null
+      attachedConnectionEpochRef.current = -1
     }
-  }, [sessionId, tmuxTarget, allowAttach, connectionStatus, checkScrollPosition])
+  }, [sessionId, tmuxTarget, allowAttach, connectionStatus, connectionEpoch, checkScrollPosition])
 
   // Subscribe to terminal output with idle-based buffering + synchronized output
   // This prevents flicker by: (1) batching output until stream goes idle,
