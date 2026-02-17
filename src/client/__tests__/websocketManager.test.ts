@@ -695,7 +695,7 @@ describe('scheduleReconnect while hidden', () => {
 })
 
 describe('heartbeat ping/pong', () => {
-  test('pong receipt clears timeout', () => {
+  test('pong receipt with matching seq clears timeout', () => {
     const manager = new WebSocketManager()
     manager.connect()
     const ws = FakeWebSocket.instances[0]!
@@ -708,20 +708,65 @@ describe('heartbeat ping/pong', () => {
 
     // Fire it to send a ping
     heartbeatInterval!.callback()
-    expect(ws.sent).toContain('{"type":"ping"}')
+    const sent = JSON.parse(ws.sent[ws.sent.length - 1]!)
+    expect(sent.type).toBe('ping')
+    expect(sent.seq).toBe(1)
 
     // A pong timeout timer (10000ms) should now be scheduled
     const pongTimeout = timers.find((t) => t.delay === 10000)
     expect(pongTimeout).toBeDefined()
 
-    // Simulate receiving a pong from the server
-    ws.triggerMessage(JSON.stringify({ type: 'pong' }))
+    // Simulate receiving a matching pong from the server
+    ws.triggerMessage(JSON.stringify({ type: 'pong', seq: 1 }))
 
     // The pong timeout timer should have been cleared
     expect(timers.find((t) => t.id === pongTimeout!.id)).toBeUndefined()
 
     // No new socket was created — connection is healthy
     expect(FakeWebSocket.instances).toHaveLength(1)
+  })
+
+  test('pong with wrong seq does not clear timeout', () => {
+    const manager = new WebSocketManager()
+    manager.connect()
+    const ws = FakeWebSocket.instances[0]!
+    ws.triggerOpen()
+    manager.startLifecycleListeners()
+
+    const heartbeatInterval = intervals.find((i) => i.interval === 20000)!
+    heartbeatInterval.callback()
+
+    const pongTimeout = timers.find((t) => t.delay === 10000)
+    expect(pongTimeout).toBeDefined()
+
+    // Send pong with stale seq (0 instead of 1)
+    ws.triggerMessage(JSON.stringify({ type: 'pong', seq: 0 }))
+
+    // Timeout should NOT have been cleared — stale pong
+    expect(timers.find((t) => t.id === pongTimeout!.id)).toBeDefined()
+  })
+
+  test('ping seq increments', () => {
+    const manager = new WebSocketManager()
+    manager.connect()
+    const ws = FakeWebSocket.instances[0]!
+    ws.triggerOpen()
+    manager.startLifecycleListeners()
+
+    const heartbeatInterval = intervals.find((i) => i.interval === 20000)!
+
+    // First ping
+    heartbeatInterval.callback()
+    let sent = JSON.parse(ws.sent[ws.sent.length - 1]!)
+    expect(sent.seq).toBe(1)
+
+    // Clear pong timer to allow next heartbeat
+    ws.triggerMessage(JSON.stringify({ type: 'pong', seq: 1 }))
+
+    // Second ping
+    heartbeatInterval.callback()
+    sent = JSON.parse(ws.sent[ws.sent.length - 1]!)
+    expect(sent.seq).toBe(2)
   })
 
   test('missing pong triggers destroy and reconnect', () => {
@@ -801,6 +846,142 @@ describe('lastTick normalization on resume', () => {
     fireAllIntervals()
 
     // Still 2 sockets, not 3
+    expect(FakeWebSocket.instances).toHaveLength(2)
+  })
+})
+
+describe('lastTick frozen while hidden', () => {
+  test('wake-check does not update lastTick while hidden', () => {
+    const manager = new WebSocketManager()
+    manager.connect()
+    FakeWebSocket.instances[0]!.triggerOpen()
+    manager.startLifecycleListeners()
+
+    const tickBefore = (manager as unknown as { lastTick: number }).lastTick
+
+    // Go hidden
+    fireVisibilityChange('hidden')
+
+    // Fire wake-check interval while hidden
+    fireAllIntervals()
+
+    // lastTick should NOT have been updated (frozen at last visible time)
+    const tickAfter = (manager as unknown as { lastTick: number }).lastTick
+    expect(tickAfter).toBe(tickBefore)
+  })
+
+  test('frozen lastTick causes visibilitychange to detect suspension', () => {
+    const manager = new WebSocketManager()
+    manager.connect()
+    FakeWebSocket.instances[0]!.triggerOpen()
+    manager.startLifecycleListeners()
+
+    // Set lastTick to 12s ago (> SUSPEND_THRESHOLD_MS of 10s)
+    ;(manager as unknown as { lastTick: number }).lastTick = Date.now() - 12_000
+
+    // Go hidden, fire intervals (lastTick stays frozen)
+    fireVisibilityChange('hidden')
+    fireAllIntervals()
+
+    // Come back visible — should detect suspension from frozen lastTick
+    fireVisibilityChange('visible')
+
+    // Should have force reconnected (new socket created)
+    expect(FakeWebSocket.instances).toHaveLength(2)
+    expect(FakeWebSocket.instances[0]!.onopen).toBeNull() // old socket torn down
+  })
+})
+
+describe('verification ping on non-suspended resume', () => {
+  test('sends verification ping when resume is not suspended', () => {
+    const manager = new WebSocketManager()
+    manager.connect()
+    const ws = FakeWebSocket.instances[0]!
+    ws.triggerOpen()
+    manager.startLifecycleListeners()
+
+    // Go hidden then visible (lastTick is recent — not suspended)
+    fireVisibilityChange('hidden')
+    fireVisibilityChange('visible')
+
+    // Should have sent a verification ping (seq-tagged)
+    const lastSent = ws.sent[ws.sent.length - 1]
+    expect(lastSent).toBeDefined()
+    const parsed = JSON.parse(lastSent!)
+    expect(parsed.type).toBe('ping')
+    expect(typeof parsed.seq).toBe('number')
+  })
+
+  test('verification pong timeout triggers immediate reconnect', () => {
+    const manager = new WebSocketManager()
+    manager.connect()
+    const ws = FakeWebSocket.instances[0]!
+    ws.triggerOpen()
+    manager.startLifecycleListeners()
+
+    // Go hidden then visible (non-suspended)
+    fireVisibilityChange('hidden')
+    fireVisibilityChange('visible')
+
+    // Find the 3s verification pong timeout
+    const verifyTimeout = timers.find((t) => t.delay === 3000)
+    expect(verifyTimeout).toBeDefined()
+
+    // Fire timeout — no pong arrived (zombie socket)
+    verifyTimeout!.callback()
+
+    // Should have destroyed old socket and created new one immediately
+    expect(ws.onopen).toBeNull()
+    expect(FakeWebSocket.instances).toHaveLength(2)
+  })
+
+  test('verification pong clears timeout (healthy socket)', () => {
+    const manager = new WebSocketManager()
+    manager.connect()
+    const ws = FakeWebSocket.instances[0]!
+    ws.triggerOpen()
+    manager.startLifecycleListeners()
+
+    // Go hidden then visible (non-suspended)
+    fireVisibilityChange('hidden')
+    fireVisibilityChange('visible')
+
+    // Get the seq from the verification ping
+    const lastSent = JSON.parse(ws.sent[ws.sent.length - 1]!)
+    const seq = lastSent.seq
+
+    // Find the 3s timeout
+    const verifyTimeout = timers.find((t) => t.delay === 3000)
+    expect(verifyTimeout).toBeDefined()
+
+    // Receive matching pong
+    ws.triggerMessage(JSON.stringify({ type: 'pong', seq }))
+
+    // Timeout should be cleared
+    expect(timers.find((t) => t.id === verifyTimeout!.id)).toBeUndefined()
+
+    // No new socket — still healthy
+    expect(FakeWebSocket.instances).toHaveLength(1)
+  })
+
+  test('does not send verification ping on suspended resume (full reconnect instead)', () => {
+    const manager = new WebSocketManager()
+    manager.connect()
+    const ws = FakeWebSocket.instances[0]!
+    ws.triggerOpen()
+    manager.startLifecycleListeners()
+
+    // Simulate suspension: lastTick far in the past
+    ;(manager as unknown as { lastTick: number }).lastTick = Date.now() - 15_000
+
+    const sentBefore = ws.sent.length
+    fireVisibilityChange('visible')
+
+    // Old socket should be destroyed (full reconnect), no verification ping on it
+    expect(ws.onopen).toBeNull()
+    // No new messages sent on the OLD socket after the ones before
+    expect(ws.sent.length).toBe(sentBefore)
+    // New socket created for full reconnect
     expect(FakeWebSocket.instances).toHaveLength(2)
   })
 })

@@ -43,6 +43,9 @@ const HEARTBEAT_INTERVAL_MS = 20_000
 /** How long to wait for a pong before declaring the socket dead. */
 const PONG_TIMEOUT_MS = 10_000
 
+/** How long to wait for a verification pong on non-suspended resume. */
+const RESUME_PONG_TIMEOUT_MS = 3_000
+
 export class WebSocketManager {
   private ws: WebSocket | null = null
   private listeners = new Set<MessageListener>()
@@ -59,6 +62,7 @@ export class WebSocketManager {
   private heartbeatTimer: number | null = null
   private pongTimer: number | null = null
   private lastForceReconnectTs = 0
+  private pingSeq = 0
 
   private wsSnap() {
     return { status: this.status, ws: this.ws ? WS_STATES[this.ws.readyState] : null, attempt: this.reconnectAttempts }
@@ -107,9 +111,11 @@ export class WebSocketManager {
     ws.onmessage = (event) => {
       try {
         const parsed = JSON.parse(event.data as string) as ServerMessage
-        // Intercept pong — clear the dead-socket timeout
+        // Intercept pong — only clear timeout if seq matches current pingSeq
         if (parsed.type === 'pong') {
-          this.clearPongTimer()
+          if (parsed.seq == null || parsed.seq === this.pingSeq) {
+            this.clearPongTimer()
+          }
           return
         }
         this.listeners.forEach((listener) => listener(parsed))
@@ -169,9 +175,9 @@ export class WebSocketManager {
       const gap = now - this.lastTick
       // Skip while hidden — browser timer clamping causes false positives
       // (e.g. Chrome clamps hidden-tab timers to ~60s, exceeding WAKE_JUMP_MS).
-      // visibilitychange handler covers the resume path.
+      // Do NOT update lastTick here — keep it frozen at the last visible time
+      // so visibilitychange correctly detects the real background duration.
       if (this.isHidden()) {
-        this.lastTick = now
         return
       }
       if (gap > WAKE_JUMP_MS) {
@@ -227,10 +233,12 @@ export class WebSocketManager {
       // from seeing a stale gap and firing a second forceReconnect.
       this.lastTick = now
       this.forceReconnect('visibilitychange', wasSuspended)
-      // Restart heartbeat if forceReconnect returned early (non-suspended path).
-      // Heartbeat was stopped on hidden; need it running to detect zombies.
-      if (this.status === 'connected') {
+      // On non-suspended resume: restart heartbeat and send a verification ping
+      // to detect zombie sockets that iOS reports as OPEN for ~18ms after wake.
+      // Desktop: pong arrives in ms, no disruption. iOS zombie: caught in 3s.
+      if (!wasSuspended && this.status === 'connected') {
         this.startHeartbeat()
+        this.sendVerificationPing()
       }
     } else {
       // Pause heartbeat when hidden — iOS freezes timers anyway,
@@ -311,7 +319,8 @@ export class WebSocketManager {
     this.stopHeartbeat()
     this.heartbeatTimer = window.setInterval(() => {
       if (this.ws?.readyState !== WebSocket.OPEN) return
-      this.send({ type: 'ping' })
+      this.pingSeq += 1
+      this.send({ type: 'ping', seq: this.pingSeq })
       // If no pong within timeout, the socket is dead
       this.clearPongTimer()
       this.pongTimer = window.setTimeout(() => {
@@ -321,6 +330,27 @@ export class WebSocketManager {
         this.scheduleReconnect()
       }, PONG_TIMEOUT_MS)
     }, HEARTBEAT_INTERVAL_MS)
+  }
+
+  /**
+   * Send a verification ping with a short timeout to detect zombie sockets
+   * on resume. If no matching pong arrives within RESUME_PONG_TIMEOUT_MS,
+   * tear down and immediately reconnect.
+   */
+  private sendVerificationPing() {
+    if (this.ws?.readyState !== WebSocket.OPEN) return
+    this.pingSeq += 1
+    const seq = this.pingSeq
+    clientLog('ws_resume_verify', { seq, ...this.wsSnap() })
+    this.send({ type: 'ping', seq })
+    this.clearPongTimer()
+    this.pongTimer = window.setTimeout(() => {
+      this.pongTimer = null
+      clientLog('ws_resume_verify_timeout', { seq, ...this.wsSnap() })
+      this.destroySocket()
+      this.reconnectAttempts = 0
+      this.connect()
+    }, RESUME_PONG_TIMEOUT_MS)
   }
 
   private stopHeartbeat() {

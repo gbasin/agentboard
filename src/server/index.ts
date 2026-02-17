@@ -1290,7 +1290,7 @@ function handleMessage(
 
   switch (message.type) {
     case 'ping':
-      send(ws, { type: 'pong' })
+      send(ws, message.seq != null ? { type: 'pong', seq: message.seq } : { type: 'pong' })
       return
     case 'session-refresh':
       refreshSessions()

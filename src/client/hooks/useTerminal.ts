@@ -820,6 +820,7 @@ export function useTerminal({
     // cleared on disconnect, so input is ignored until a fresh terminal-attach.
     if (connectionStatus !== 'connected') {
       if (prevAttached) {
+        clientLog('terminal_detach_on_disconnect', { connectionStatus, prevAttached })
         attachedSessionRef.current = null
         attachedTargetRef.current = null
         inTmuxCopyModeRef.current = false
@@ -838,6 +839,7 @@ export function useTerminal({
 
     // Attach to new session
     if (sessionId && (sessionId !== prevAttached || tmuxTarget !== prevTarget)) {
+      clientLog('terminal_attach', { sessionId, tmuxTarget, prevAttached, prevTarget, connectionStatus })
       const switchStart = performance.now()
 
       // Reset terminal before attaching
@@ -887,6 +889,11 @@ export function useTerminal({
         // Focus terminal so user can start typing immediately
         terminal.focus()
       }, 300)
+    }
+
+    // No attach needed — already attached to this session+target
+    if (sessionId && sessionId === prevAttached && tmuxTarget === prevTarget) {
+      clientLog('terminal_attach_skip', { sessionId, prevAttached, connectionStatus })
     }
 
     // Handle deselection
