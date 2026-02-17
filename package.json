@@ -1,6 +1,6 @@
 {
   "name": "@gbasin/agentboard",
-  "version": "0.2.11",
+  "version": "0.2.12",
   "type": "module",
   "description": "Web GUI for tmux optimized for AI agent TUIs",
   "author": "gbasin",
@@ -27,7 +27,7 @@
   },
   "scripts": {
     "dev": "concurrently -k \"bun run dev:server\" \"bun run dev:client\"",
-    "dev:server": "bun --watch src/server/index.ts",
+    "dev:server": "bun scripts/dev-server.ts",
     "dev:client": "vite --host",
     "build": "vite build",
     "start": "bun src/server/index.ts",

@@ -18,7 +18,11 @@ import { clientLog } from '../utils/clientLog'
 
 type MessageListener = (message: ServerMessage) => void
 
-type StatusListener = (status: ConnectionStatus, error: string | null) => void
+type StatusListener = (
+  status: ConnectionStatus,
+  error: string | null,
+  connectionEpoch: number
+) => void
 
 const WS_STATES = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'] as const
 
@@ -63,6 +67,7 @@ export class WebSocketManager {
   private pongTimer: number | null = null
   private lastForceReconnectTs = 0
   private pingSeq = 0
+  private connectionEpoch = 0
 
   private wsSnap() {
     return { status: this.status, ws: this.ws ? WS_STATES[this.ws.readyState] : null, attempt: this.reconnectAttempts }
@@ -104,6 +109,7 @@ export class WebSocketManager {
       clientLog('ws_onopen', this.wsSnap())
       this.clearConnectTimer()
       this.reconnectAttempts = 0
+      this.connectionEpoch += 1
       this.setStatus('connected')
       this.startHeartbeat()
     }
@@ -225,12 +231,16 @@ export class WebSocketManager {
 
   subscribeStatus(listener: StatusListener) {
     this.statusListeners.add(listener)
-    listener(this.status, this.error)
+    listener(this.status, this.error, this.connectionEpoch)
     return () => this.statusListeners.delete(listener)
   }
 
   getStatus() {
     return this.status
+  }
+
+  getConnectionEpoch() {
+    return this.connectionEpoch
   }
 
   // ── Private ──────────────────────────────────────────────
@@ -383,7 +393,7 @@ export class WebSocketManager {
   private setStatus(status: ConnectionStatus, error: string | null = null) {
     this.status = status
     this.error = error
-    this.statusListeners.forEach((listener) => listener(status, error))
+    this.statusListeners.forEach((listener) => listener(status, error, this.connectionEpoch))
   }
 
   private scheduleReconnect() {
@@ -452,12 +462,16 @@ export function useWebSocket() {
   const [status, setStatus] = useState<ConnectionStatus>(
     manager.getStatus()
   )
+  const [connectionEpoch, setConnectionEpoch] = useState<number>(
+    manager.getConnectionEpoch()
+  )
 
   useEffect(() => {
     manager.connect()
     manager.startLifecycleListeners()
-    const unsubscribe = manager.subscribeStatus((nextStatus, error) => {
+    const unsubscribe = manager.subscribeStatus((nextStatus, error, nextConnectionEpoch) => {
       setStatus(nextStatus)
+      setConnectionEpoch(nextConnectionEpoch)
       setConnectionStatus(nextStatus)
       setConnectionError(error)
     })
@@ -476,6 +490,7 @@ export function useWebSocket() {
 
   return {
     status,
+    connectionEpoch,
     sendMessage,
     subscribe,
   }

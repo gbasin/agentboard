@@ -80,7 +80,7 @@ export default function App() {
   const soundOnPermission = useSettingsStore((state) => state.soundOnPermission)
   const soundOnIdle = useSettingsStore((state) => state.soundOnIdle)
 
-  const { sendMessage, subscribe } = useWebSocket()
+  const { sendMessage, subscribe, connectionEpoch } = useWebSocket()
 
   // Handle mobile keyboard viewport adjustments
   useVisualViewport()
@@ -527,6 +527,7 @@ export default function App() {
         session={selectedSession}
         sessions={filteredSortedSessions}
         connectionStatus={connectionStatus}
+        connectionEpoch={connectionEpoch}
         sendMessage={sendMessage}
         subscribe={subscribe}
         onClose={() => setSelectedSessionId(null)}

@@ -237,6 +237,7 @@ function TerminalHarness(props: {
   sessionId: string | null
   tmuxTarget?: string | null
   connectionStatus?: ConnectionStatus
+  connectionEpoch?: number
   sendMessage: (message: any) => void
   subscribe: (listener: (message: ServerMessage) => void) => () => void
   theme: ITheme
@@ -251,6 +252,7 @@ function TerminalHarness(props: {
     ...props,
     tmuxTarget: props.tmuxTarget ?? null,
     connectionStatus: props.connectionStatus ?? 'connected',
+    connectionEpoch: props.connectionEpoch ?? 0,
     lineHeight: props.lineHeight ?? 1.0,
     letterSpacing: props.letterSpacing ?? 0,
     fontFamily: props.fontFamily ?? '"JetBrains Mono Variable", monospace',
@@ -615,6 +617,65 @@ describe('useTerminal', () => {
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
           connectionStatus="connected"
+          sendMessage={(message) => sendCalls.push(message)}
+          subscribe={() => () => {}}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />
+      )
+      await Promise.resolve()
+    })
+
+    const attachCalls = sendCalls.filter((call) => call.type === 'terminal-attach')
+    expect(attachCalls).toHaveLength(2)
+    expect(attachCalls[1]).toEqual({
+      type: 'terminal-attach',
+      sessionId: 'session-1',
+      tmuxTarget: 'agentboard:@1',
+      cols: 80,
+      rows: 24,
+    })
+  })
+
+  test('reattaches active session when connection epoch changes while connected', async () => {
+    globalAny.navigator = {
+      userAgent: 'Chrome',
+      platform: 'MacIntel',
+      maxTouchPoints: 0,
+      clipboard: { writeText: () => Promise.resolve() },
+    } as unknown as Navigator
+
+    const sendCalls: Array<Record<string, unknown>> = []
+    const { container } = createContainerMock()
+
+    let renderer!: TestRenderer.ReactTestRenderer
+
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          connectionStatus="connected"
+          connectionEpoch={1}
+          sendMessage={(message) => sendCalls.push(message)}
+          subscribe={() => () => {}}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+        {
+          createNodeMock: () => container,
+        }
+      )
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      renderer.update(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          connectionStatus="connected"
+          connectionEpoch={2}
           sendMessage={(message) => sendCalls.push(message)}
           subscribe={() => () => {}}
           theme={{ background: '#000' }}
