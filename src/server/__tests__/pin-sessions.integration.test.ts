@@ -294,8 +294,9 @@ if (!tmuxAvailable) {
           throw new Error('Session was not resurrected within 75s')
         }
 
-        // Kill the tmux window — this simulates the resume command crashing.
-        // The grace period should prevent orphaning for RESURRECTION_GRACE_MS.
+        // Kill the tmux window — simulates the resume command crashing.
+        // Grace is 4s from resurrection, not from kill. We've consumed some
+        // during the resurrection poll above, but locally that's < 1s.
         Bun.spawnSync(['tmux', 'kill-window', '-t', resurrectedWindow], {
           env: tmuxEnv(),
           stdout: 'ignore',
@@ -303,16 +304,16 @@ if (!tmuxAvailable) {
         })
         const killTime = Date.now()
 
-        // Assert still protected: 1.5s after kill, grace (4s from resurrection)
-        // should prevent orphaning even though the window is dead
-        await delay(1500)
+        // Wait 500ms (well under the remaining grace) then verify still protected
+        await delay(500)
         const dbDuringGrace = initDatabase({ path: dbPath })
         const duringGrace = dbDuringGrace.getSessionById(graceSessionId)
         dbDuringGrace.close()
         expect(duringGrace?.currentWindow).not.toBe(null)
 
-        // Assert orphaned after grace expires: poll until currentWindow becomes null
-        const orphanDeadline = killTime + 15_000 // 15s from kill
+        // Poll until orphaned — grace expires 4s after resurrection, then the
+        // next refresh cycle (500ms interval) orphans it
+        const orphanDeadline = killTime + 15_000
         let orphaned = false
         while (Date.now() < orphanDeadline) {
           try {

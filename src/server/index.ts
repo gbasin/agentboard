@@ -245,10 +245,11 @@ const REMOTE_SESSION_MUTATION_TTL_MS = 30_000
 const remoteSessionTombstones = new Map<string, number>()
 const remoteSessionNameOverrides = new Map<string, { name: string; setAt: number }>()
 
-// Grace period for resurrected pinned sessions — prevents orphaning race
-// where refreshSessions() runs before the resumed command has started.
+// Grace period for resurrected pinned sessions. After resurrection, the session
+// is protected from orphaning for this duration — even if the resume command
+// crashes and the window dies, the session won't be immediately orphaned.
 const RESURRECTION_GRACE_MS = Number(process.env.RESURRECTION_GRACE_MS) || 15_000
-const resurrectedSessionGrace = new Map<string, number>() // sessionId -> timestamp
+const resurrectedSessionGrace = new Map<string, number>() // sessionId -> resurrection timestamp
 
 function mergeRemoteSessions(sessions: Session[]): Session[] {
   const remoteSessions = remotePoller?.getSessions() ?? []
@@ -542,11 +543,10 @@ function hydrateSessionsWithAgentSessions(
       continue
     }
 
-    // Session survived — only clear grace entry after TTL expires.
-    // Keep it alive during the TTL so a crash-and-die within the grace window
-    // doesn't cause immediate orphaning on the next refresh.
-    const graceStart2 = resurrectedSessionGrace.get(agentSession.sessionId)
-    if (graceStart2 && Date.now() - graceStart2 >= RESURRECTION_GRACE_MS) {
+    // Session survived — only clean up the grace entry after TTL expires.
+    // While TTL is active, keep it so a crash within the grace window is still protected.
+    const graceStart = resurrectedSessionGrace.get(agentSession.sessionId)
+    if (graceStart && Date.now() - graceStart >= RESURRECTION_GRACE_MS) {
       resurrectedSessionGrace.delete(agentSession.sessionId)
     }
 
