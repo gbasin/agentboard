@@ -97,6 +97,8 @@ describe('useWebSocket', () => {
       renderer = TestRenderer.create(<Harness />)
     })
 
+    expect(hookResult?.connectionEpoch).toBe(0)
+
     const ws = FakeWebSocket.instances[0]
     if (!ws) {
       throw new Error('Expected WebSocket instance')
@@ -109,6 +111,7 @@ describe('useWebSocket', () => {
     expect(useSessionStore.getState().connectionStatus).toBe('connected')
     expect(useSessionStore.getState().connectionError).toBeNull()
     expect(hookResult?.status).toBe('connected')
+    expect(hookResult?.connectionEpoch).toBe(1)
 
     act(() => {
       renderer.unmount()

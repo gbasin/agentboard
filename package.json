@@ -27,7 +27,7 @@
   },
   "scripts": {
     "dev": "concurrently -k \"bun run dev:server\" \"bun run dev:client\"",
-    "dev:server": "LOG_FILE=${LOG_FILE:-$HOME/.agentboard/agentboard.log} bun --watch src/server/index.ts",
+    "dev:server": "bun scripts/dev-server.ts",
     "dev:client": "vite --host",
     "build": "vite build",
     "start": "bun src/server/index.ts",

@@ -910,7 +910,12 @@ export function useTerminal({
     }
 
     // No attach needed — already attached to this session+target
-    if (sessionId && sessionId === prevAttached && tmuxTarget === prevTarget) {
+    if (
+      sessionId &&
+      sessionId === prevAttached &&
+      tmuxTarget === prevTarget &&
+      !needsReattachForConnection
+    ) {
       clientLog('terminal_attach_skip', {
         sessionId,
         prevAttached,
