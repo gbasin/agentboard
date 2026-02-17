@@ -11,7 +11,7 @@
  * - Debounce on forceReconnect (prevents double reconnect from overlapping triggers)
  */
 import { useEffect, useMemo, useState } from 'react'
-import type { ClientMessage, ServerMessage } from '@shared/types'
+import type { ClientMessage, SendClientMessage, ServerMessage } from '@shared/types'
 import type { ConnectionStatus } from '../stores/sessionStore'
 import { useSessionStore } from '../stores/sessionStore'
 import { clientLog } from '../utils/clientLog'
@@ -111,9 +111,9 @@ export class WebSocketManager {
     ws.onmessage = (event) => {
       try {
         const parsed = JSON.parse(event.data as string) as ServerMessage
-        // Intercept pong — only clear timeout if seq matches current pingSeq
+        // Intercept pong — clear timeout only for the current seq.
         if (parsed.type === 'pong') {
-          if (parsed.seq == null || parsed.seq === this.pingSeq) {
+          if (parsed.seq === this.pingSeq) {
             this.clearPongTimer()
           }
           return
@@ -200,9 +200,21 @@ export class WebSocketManager {
     }
   }
 
-  send(message: ClientMessage) {
-    if (this.ws?.readyState === WebSocket.OPEN) {
+  send(message: ClientMessage): boolean {
+    if (this.ws?.readyState !== WebSocket.OPEN) return false
+
+    try {
       this.ws.send(JSON.stringify(message))
+      return true
+    } catch (error) {
+      clientLog('ws_send_error', {
+        messageType: message.type,
+        error: error instanceof Error ? error.message : String(error),
+        ...this.wsSnap(),
+      })
+      this.destroySocket()
+      this.scheduleReconnect()
+      return false
     }
   }
 
@@ -320,7 +332,7 @@ export class WebSocketManager {
     this.heartbeatTimer = window.setInterval(() => {
       if (this.ws?.readyState !== WebSocket.OPEN) return
       this.pingSeq += 1
-      this.send({ type: 'ping', seq: this.pingSeq })
+      if (!this.send({ type: 'ping', seq: this.pingSeq })) return
       // If no pong within timeout, the socket is dead
       this.clearPongTimer()
       this.pongTimer = window.setTimeout(() => {
@@ -342,7 +354,7 @@ export class WebSocketManager {
     this.pingSeq += 1
     const seq = this.pingSeq
     clientLog('ws_resume_verify', { seq, ...this.wsSnap() })
-    this.send({ type: 'ping', seq })
+    if (!this.send({ type: 'ping', seq })) return
     this.clearPongTimer()
     this.pongTimer = window.setTimeout(() => {
       this.pongTimer = null
@@ -456,7 +468,10 @@ export function useWebSocket() {
     }
   }, [setConnectionError, setConnectionStatus])
 
-  const sendMessage = useMemo(() => manager.send.bind(manager), [])
+  const sendMessage = useMemo<SendClientMessage>(
+    () => (message) => { void manager.send(message) },
+    []
+  )
   const subscribe = useMemo(() => manager.subscribe.bind(manager), [])
 
   return {

@@ -15,12 +15,16 @@ class FakeWebSocket {
   onmessage: ((event: { data: string }) => void) | null = null
   onerror: (() => void) | null = null
   onclose: ((event: CloseEvent) => void) | null = null
+  throwOnSend = false
 
   constructor(public url: string) {
     FakeWebSocket.instances.push(this)
   }
 
   send(data: string) {
+    if (this.throwOnSend) {
+      throw new Error('send failed')
+    }
     this.sent.push(data)
   }
 
@@ -215,6 +219,23 @@ describe('WebSocketManager', () => {
     }
     manager.send({ type: 'session-refresh' })
     expect(ws?.sent).toHaveLength(1)
+  })
+
+  test('send failure destroys socket and schedules reconnect', () => {
+    const manager = new WebSocketManager()
+    const statuses: string[] = []
+    manager.subscribeStatus((status) => statuses.push(status))
+    manager.connect()
+    const ws = FakeWebSocket.instances[0]!
+    ws.triggerOpen()
+    ws.throwOnSend = true
+
+    expect(() => manager.send({ type: 'session-refresh' })).not.toThrow()
+
+    expect(ws.onopen).toBeNull()
+    expect(ws.onmessage).toBeNull()
+    expect(statuses[statuses.length - 1]).toBe('reconnecting')
+    expect(timers.some((t) => t.delay === 1000)).toBe(true)
   })
 
   test('error events clear connect timer but let onclose handle reconnect', () => {
@@ -746,6 +767,24 @@ describe('heartbeat ping/pong', () => {
     expect(timers.find((t) => t.id === pongTimeout!.id)).toBeDefined()
   })
 
+  test('pong without seq does not clear timeout', () => {
+    const manager = new WebSocketManager()
+    manager.connect()
+    const ws = FakeWebSocket.instances[0]!
+    ws.triggerOpen()
+    manager.startLifecycleListeners()
+
+    const heartbeatInterval = intervals.find((i) => i.interval === 20000)!
+    heartbeatInterval.callback()
+
+    const pongTimeout = timers.find((t) => t.delay === 10000)
+    expect(pongTimeout).toBeDefined()
+
+    ws.triggerMessage(JSON.stringify({ type: 'pong' }))
+
+    expect(timers.find((t) => t.id === pongTimeout!.id)).toBeDefined()
+  })
+
   test('ping seq increments', () => {
     const manager = new WebSocketManager()
     manager.connect()
@@ -767,6 +806,21 @@ describe('heartbeat ping/pong', () => {
     heartbeatInterval.callback()
     sent = JSON.parse(ws.sent[ws.sent.length - 1]!)
     expect(sent.seq).toBe(2)
+  })
+
+  test('ping send failure schedules reconnect without pong timeout', () => {
+    const manager = new WebSocketManager()
+    manager.connect()
+    const ws = FakeWebSocket.instances[0]!
+    ws.triggerOpen()
+    manager.startLifecycleListeners()
+    ws.throwOnSend = true
+
+    const heartbeatInterval = intervals.find((i) => i.interval === 20000)!
+    heartbeatInterval.callback()
+
+    expect(timers.some((t) => t.delay === 10000)).toBe(false)
+    expect(timers.some((t) => t.delay === 1000)).toBe(true)
   })
 
   test('missing pong triggers destroy and reconnect', () => {
@@ -962,6 +1016,40 @@ describe('verification ping on non-suspended resume', () => {
 
     // No new socket — still healthy
     expect(FakeWebSocket.instances).toHaveLength(1)
+  })
+
+  test('verification pong with wrong seq does not clear timeout', () => {
+    const manager = new WebSocketManager()
+    manager.connect()
+    const ws = FakeWebSocket.instances[0]!
+    ws.triggerOpen()
+    manager.startLifecycleListeners()
+
+    fireVisibilityChange('hidden')
+    fireVisibilityChange('visible')
+
+    const lastSent = JSON.parse(ws.sent[ws.sent.length - 1]!)
+    const verifyTimeout = timers.find((t) => t.delay === 3000)
+    expect(verifyTimeout).toBeDefined()
+
+    ws.triggerMessage(JSON.stringify({ type: 'pong', seq: lastSent.seq + 1 }))
+
+    expect(timers.find((t) => t.id === verifyTimeout!.id)).toBeDefined()
+  })
+
+  test('verification ping send failure schedules reconnect without verify timeout', () => {
+    const manager = new WebSocketManager()
+    manager.connect()
+    const ws = FakeWebSocket.instances[0]!
+    ws.triggerOpen()
+    manager.startLifecycleListeners()
+    ws.throwOnSend = true
+
+    fireVisibilityChange('hidden')
+    fireVisibilityChange('visible')
+
+    expect(timers.some((t) => t.delay === 3000)).toBe(false)
+    expect(timers.some((t) => t.delay === 1000)).toBe(true)
   })
 
   test('does not send verification ping on suspended resume (full reconnect instead)', () => {

@@ -2509,7 +2509,7 @@ describe('server startup side effects', () => {
     expect(killCalls[0]).toEqual(['tmux', 'kill-session', '-t', 'agentboard-ws-1'])
   })
 
-  test('ping message returns pong', async () => {
+  test('ping message returns pong and echoes seq when provided', async () => {
     const { serveOptions } = await loadIndex()
     const { ws, sent } = createWs()
     const websocket = serveOptions.websocket
@@ -2518,8 +2518,10 @@ describe('server startup side effects', () => {
     }
 
     websocket.message?.(ws as never, JSON.stringify({ type: 'ping' }))
+    websocket.message?.(ws as never, JSON.stringify({ type: 'ping', seq: 123 }))
 
-    expect(sent.some((m) => m.type === 'pong')).toBe(true)
+    expect(sent).toContainEqual({ type: 'pong' })
+    expect(sent).toContainEqual({ type: 'pong', seq: 123 })
   })
 
   test('/api/client-log returns ok for valid JSON', async () => {
