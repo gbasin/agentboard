@@ -542,8 +542,13 @@ function hydrateSessionsWithAgentSessions(
       continue
     }
 
-    // Session survived — clear grace entry if present
-    resurrectedSessionGrace.delete(agentSession.sessionId)
+    // Session survived — only clear grace entry after TTL expires.
+    // Keep it alive during the TTL so a crash-and-die within the grace window
+    // doesn't cause immediate orphaning on the next refresh.
+    const graceStart2 = resurrectedSessionGrace.get(agentSession.sessionId)
+    if (graceStart2 && Date.now() - graceStart2 >= RESURRECTION_GRACE_MS) {
+      resurrectedSessionGrace.delete(agentSession.sessionId)
+    }
 
     let verification: WindowLogVerificationResult | null = null
     let nameMatches = false

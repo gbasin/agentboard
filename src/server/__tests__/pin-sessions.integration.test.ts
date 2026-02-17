@@ -266,40 +266,45 @@ if (!tmuxAvailable) {
         })
         db.close()
 
-        // Use `true` as the resume command — it exits immediately with code 0.
-        // With remain-on-exit: failed, the tmux window dies instantly after
-        // creation. This means refreshSessions() always sees the window as gone,
-        // and the grace entry is never cleared (line 546 only fires when the
-        // window exists). The grace period is the only thing preventing orphaning.
         await startServer({
           RESURRECTION_GRACE_MS: '4000',
           REFRESH_INTERVAL_MS: '500',
-          CLAUDE_RESUME_CMD: 'true {sessionId}',
         })
 
         // Wait for resurrection: poll DB until currentWindow becomes non-null.
         // Under parallel test load (CI), startup verification + tmux operations
         // can take 30-60s, so we use a generous timeout.
-        const resurrectionTime = await (async () => {
-          const start = Date.now()
-          while (Date.now() - start < 75_000) {
-            try {
-              const pollDb = initDatabase({ path: dbPath })
-              const record = pollDb.getSessionById(graceSessionId)
-              pollDb.close()
-              if (record?.currentWindow) {
-                return Date.now()
-              }
-            } catch {
-              // retry — DB may be locked
+        let resurrectedWindow: string | null = null
+        const start = Date.now()
+        while (Date.now() - start < 75_000) {
+          try {
+            const pollDb = initDatabase({ path: dbPath })
+            const record = pollDb.getSessionById(graceSessionId)
+            pollDb.close()
+            if (record?.currentWindow) {
+              resurrectedWindow = record.currentWindow
+              break
             }
-            await delay(250)
+          } catch {
+            // retry — DB may be locked
           }
+          await delay(250)
+        }
+        if (!resurrectedWindow) {
           throw new Error('Session was not resurrected within 75s')
-        })()
+        }
 
-        // Assert still protected: 1.5s after resurrection, grace (4s) should
-        // prevent orphaning even though the window is already dead
+        // Kill the tmux window — this simulates the resume command crashing.
+        // The grace period should prevent orphaning for RESURRECTION_GRACE_MS.
+        Bun.spawnSync(['tmux', 'kill-window', '-t', resurrectedWindow], {
+          env: tmuxEnv(),
+          stdout: 'ignore',
+          stderr: 'ignore',
+        })
+        const killTime = Date.now()
+
+        // Assert still protected: 1.5s after kill, grace (4s from resurrection)
+        // should prevent orphaning even though the window is dead
         await delay(1500)
         const dbDuringGrace = initDatabase({ path: dbPath })
         const duringGrace = dbDuringGrace.getSessionById(graceSessionId)
@@ -307,7 +312,7 @@ if (!tmuxAvailable) {
         expect(duringGrace?.currentWindow).not.toBe(null)
 
         // Assert orphaned after grace expires: poll until currentWindow becomes null
-        const orphanDeadline = resurrectionTime + 15_000 // 15s from resurrection
+        const orphanDeadline = killTime + 15_000 // 15s from kill
         let orphaned = false
         while (Date.now() < orphanDeadline) {
           try {
