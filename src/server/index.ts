@@ -247,7 +247,7 @@ const remoteSessionNameOverrides = new Map<string, { name: string; setAt: number
 
 // Grace period for resurrected pinned sessions — prevents orphaning race
 // where refreshSessions() runs before the resumed command has started.
-const RESURRECTION_GRACE_MS = 15_000
+const RESURRECTION_GRACE_MS = Number(process.env.RESURRECTION_GRACE_MS) || 15_000
 const resurrectedSessionGrace = new Map<string, number>() // sessionId -> timestamp
 
 function mergeRemoteSessions(sessions: Session[]): Session[] {
