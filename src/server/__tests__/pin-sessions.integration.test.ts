@@ -40,22 +40,23 @@ if (!tmuxAvailable) {
     // Session ID for pin/unpin test - seeded before server starts
     const wsTestSessionId = `ws-pin-test-${Date.now()}`
 
-    async function startServer(retries = 2) {
+    async function startServer(extraEnv: Record<string, string> = {}, retries = 2) {
       for (let attempt = 1; attempt <= retries; attempt++) {
         port = await getFreePort()
         const resumeCommand = 'sh -c "sleep 30" -- {sessionId}'
         const env: NodeJS.ProcessEnv = {
           ...process.env,
+          // Defaults that extraEnv can override
+          CLAUDE_RESUME_CMD: resumeCommand,
+          CODEX_RESUME_CMD: resumeCommand,
+          TERMINAL_MODE: 'pty',
+          ...extraEnv,
+          // Test-critical fields that must not be overridden
           PORT: String(port),
           TMUX_SESSION: sessionName,
           DISCOVER_PREFIXES: '',
           AGENTBOARD_LOG_POLL_MS: '0',
           AGENTBOARD_DB_PATH: dbPath,
-          // Use a long-lived command so windows stay open during the test
-          CLAUDE_RESUME_CMD: resumeCommand,
-          CODEX_RESUME_CMD: resumeCommand,
-          // Ensure consistent startup regardless of CI terminal mode
-          TERMINAL_MODE: 'pty',
         }
         if (tmuxTmpDir) {
           env.TMUX_TMPDIR = tmuxTmpDir
@@ -239,6 +240,99 @@ if (!tmuxAvailable) {
 
       ws.close()
     })
+
+    test(
+      'resurrected session not orphaned during grace period',
+      async () => {
+        // Stop the shared server — we need custom env vars
+        await stopServer()
+
+        const graceSessionId = `grace-test-${Date.now()}`
+        const db = initDatabase({ path: dbPath })
+        db.insertSession({
+          sessionId: graceSessionId,
+          logFilePath: `/tmp/${graceSessionId}.jsonl`,
+          projectPath,
+          agentType: 'claude',
+          displayName: 'grace-test',
+          createdAt: new Date().toISOString(),
+          lastActivityAt: new Date().toISOString(),
+          lastUserMessage: null,
+          currentWindow: null, // no window — needs resurrection
+          isPinned: true,
+          lastResumeError: null,
+          lastKnownLogSize: null,
+          isCodexExec: false,
+        })
+        db.close()
+
+        await startServer({
+          RESURRECTION_GRACE_MS: '4000',
+          REFRESH_INTERVAL_MS: '500',
+        })
+
+        // Wait for resurrection: poll DB until currentWindow becomes non-null.
+        // Under parallel test load (CI), startup verification + tmux operations
+        // can take 30-60s, so we use a generous timeout.
+        let resurrectedWindow: string | null = null
+        const start = Date.now()
+        while (Date.now() - start < 75_000) {
+          try {
+            const pollDb = initDatabase({ path: dbPath })
+            const record = pollDb.getSessionById(graceSessionId)
+            pollDb.close()
+            if (record?.currentWindow) {
+              resurrectedWindow = record.currentWindow
+              break
+            }
+          } catch {
+            // retry — DB may be locked
+          }
+          await delay(250)
+        }
+        if (!resurrectedWindow) {
+          throw new Error('Session was not resurrected within 75s')
+        }
+
+        // Kill the tmux window — this simulates the resume command crashing.
+        // The grace period should prevent orphaning for RESURRECTION_GRACE_MS.
+        Bun.spawnSync(['tmux', 'kill-window', '-t', resurrectedWindow], {
+          env: tmuxEnv(),
+          stdout: 'ignore',
+          stderr: 'ignore',
+        })
+        const killTime = Date.now()
+
+        // Assert still protected: 1.5s after kill, grace (4s from resurrection)
+        // should prevent orphaning even though the window is dead
+        await delay(1500)
+        const dbDuringGrace = initDatabase({ path: dbPath })
+        const duringGrace = dbDuringGrace.getSessionById(graceSessionId)
+        dbDuringGrace.close()
+        expect(duringGrace?.currentWindow).not.toBe(null)
+
+        // Assert orphaned after grace expires: poll until currentWindow becomes null
+        const orphanDeadline = killTime + 15_000 // 15s from kill
+        let orphaned = false
+        while (Date.now() < orphanDeadline) {
+          try {
+            const pollDb = initDatabase({ path: dbPath })
+            const record = pollDb.getSessionById(graceSessionId)
+            pollDb.close()
+            if (record && record.currentWindow === null) {
+              orphaned = true
+              break
+            }
+          } catch {
+            // retry
+          }
+          await delay(500)
+        }
+        expect(orphaned).toBe(true)
+      },
+      90_000
+    )
+
   })
 }
 
@@ -452,3 +546,4 @@ async function waitForMessage(
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
+

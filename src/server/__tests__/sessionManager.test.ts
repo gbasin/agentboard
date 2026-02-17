@@ -856,6 +856,37 @@ describe('SessionManager', () => {
     expect(killCall).toEqual(['kill-window', '-t', `${sessionName}:1`])
   })
 
+  test('setWindowOption sends tmux set-option -w command', () => {
+    const sessionName = 'agentboard-setopt'
+    const runner = createTmuxRunner(
+      [
+        {
+          name: sessionName,
+          windows: [
+            {
+              id: '1',
+              index: 1,
+              name: 'alpha',
+              path: '/tmp/alpha',
+              activity: 0,
+              command: '',
+            },
+          ],
+        },
+      ],
+      1
+    )
+
+    const manager = new SessionManager(sessionName, {
+      runTmux: runner.runTmux,
+      capturePaneContent: () => makePaneCapture(''),
+    })
+
+    manager.setWindowOption(`${sessionName}:1`, 'remain-on-exit', 'failed')
+    const setOptCall = runner.calls.find((call) => call[0] === 'set-option' && call[1] === '-w')
+    expect(setOptCall).toEqual(['set-option', '-w', '-t', `${sessionName}:1`, 'remain-on-exit', 'failed'])
+  })
+
   test('listWindows uses default capturePaneContent on success', () => {
     const sessionName = 'agentboard-default-capture'
     const runner = createTmuxRunner(
