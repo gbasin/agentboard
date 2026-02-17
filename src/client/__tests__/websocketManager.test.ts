@@ -366,6 +366,36 @@ describe('connect timeout', () => {
 
     expect(timers.find((t) => t.id === timeoutId)).toBeUndefined()
   })
+
+  test('ignores stale timeout callback from a replaced socket', () => {
+    const manager = new WebSocketManager()
+    const statuses: string[] = []
+    manager.subscribeStatus((status) => statuses.push(status))
+
+    // First connect creates ws1 + timeout1.
+    manager.connect()
+    const timeout1 = timers.find((t) => t.delay === 3000)!
+    const timeout1Id = timeout1.id
+
+    // Replace socket before timeout fires.
+    ;(manager as unknown as { ws: null }).ws = null
+    manager.connect()
+    const ws2 = FakeWebSocket.instances[1]!
+    ws2.triggerOpen()
+    expect(statuses[statuses.length - 1]).toBe('connected')
+
+    // Old timeout should be cleared by the second connect.
+    expect(timers.find((t) => t.id === timeout1Id)).toBeUndefined()
+
+    // Simulate queued stale callback firing late.
+    timeout1.callback()
+
+    // New socket remains healthy and no reconnect is scheduled.
+    expect((manager as unknown as { ws: FakeWebSocket | null }).ws).toBe(ws2)
+    expect(statuses[statuses.length - 1]).toBe('connected')
+    const reconnectTimers = timers.filter((t) => t.delay >= 1000 && t.delay <= 30000)
+    expect(reconnectTimers).toHaveLength(0)
+  })
 })
 
 describe('connect() zombie socket guard', () => {
