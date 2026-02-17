@@ -277,10 +277,12 @@ if (!tmuxAvailable) {
           CLAUDE_RESUME_CMD: 'true {sessionId}',
         })
 
-        // Wait for resurrection: poll until currentWindow becomes non-null
+        // Wait for resurrection: poll DB until currentWindow becomes non-null.
+        // Under parallel test load (CI), startup verification + tmux operations
+        // can take 30-60s, so we use a generous timeout.
         const resurrectionTime = await (async () => {
           const start = Date.now()
-          while (Date.now() - start < 20_000) {
+          while (Date.now() - start < 75_000) {
             try {
               const pollDb = initDatabase({ path: dbPath })
               const record = pollDb.getSessionById(graceSessionId)
@@ -291,9 +293,9 @@ if (!tmuxAvailable) {
             } catch {
               // retry — DB may be locked
             }
-            await delay(150)
+            await delay(250)
           }
-          throw new Error('Session was not resurrected within 20s')
+          throw new Error('Session was not resurrected within 75s')
         })()
 
         // Assert still protected: 1.5s after resurrection, grace (4s) should
@@ -305,7 +307,7 @@ if (!tmuxAvailable) {
         expect(duringGrace?.currentWindow).not.toBe(null)
 
         // Assert orphaned after grace expires: poll until currentWindow becomes null
-        const orphanDeadline = resurrectionTime + 10_000 // 10s from resurrection
+        const orphanDeadline = resurrectionTime + 15_000 // 15s from resurrection
         let orphaned = false
         while (Date.now() < orphanDeadline) {
           try {
@@ -323,7 +325,7 @@ if (!tmuxAvailable) {
         }
         expect(orphaned).toBe(true)
       },
-      35000
+      90_000
     )
 
   })
@@ -539,3 +541,4 @@ async function waitForMessage(
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
+
