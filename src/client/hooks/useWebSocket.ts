@@ -27,7 +27,7 @@ type StatusListener = (
 const WS_STATES = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'] as const
 
 /** How long to wait for a WebSocket to reach OPEN before giving up. */
-const CONNECT_TIMEOUT_MS = 10_000
+const CONNECT_TIMEOUT_MS = 3_000
 
 /**
  * If the interval timer detects a time jump larger than this, the device
@@ -76,11 +76,16 @@ export class WebSocketManager {
   connect() {
     // Clean up any zombie socket that never opened / already closed
     if (this.ws) {
-      if (this.ws.readyState === WebSocket.OPEN) {
+      const isOpen = this.ws.readyState === WebSocket.OPEN
+      // Trust OPEN only when our own state machine also says connected.
+      if (isOpen && this.status === 'connected') {
         clientLog('ws_connect_skip', { reason: 'already_open', ...this.wsSnap() })
         return
       }
-      clientLog('ws_connect_destroy_zombie', this.wsSnap())
+      clientLog('ws_connect_destroy_zombie', {
+        reason: isOpen ? 'open_desynced' : 'not_open',
+        ...this.wsSnap(),
+      })
       this.destroySocket()
     }
 
@@ -98,8 +103,16 @@ export class WebSocketManager {
     // Guard against connections that hang (common on iOS after background)
     this.connectTimer = window.setTimeout(() => {
       this.connectTimer = null
-      if (ws.readyState !== WebSocket.OPEN) {
-        clientLog('ws_connect_timeout', { wsState: WS_STATES[ws.readyState], ...this.wsSnap() })
+      // Ignore stale timeout from an earlier socket that was already replaced.
+      if (this.ws !== ws) return
+      const isOpen = ws.readyState === WebSocket.OPEN
+      const isHealthyOpen = isOpen && this.status === 'connected'
+      if (!isHealthyOpen) {
+        clientLog('ws_connect_timeout', {
+          wsState: WS_STATES[ws.readyState],
+          managerStatus: this.status,
+          ...this.wsSnap(),
+        })
         this.destroySocket()
         this.scheduleReconnect()
       }
