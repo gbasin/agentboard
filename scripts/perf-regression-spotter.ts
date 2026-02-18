@@ -16,6 +16,8 @@ interface CliOptions {
 }
 
 const DEFAULT_LOG_PATH = '~/.agentboard/agentboard.log'
+const DEFAULT_BASELINE_MINUTES = 60
+const DEFAULT_RECENT_MINUTES = 15
 
 function expandHome(inputPath: string): string {
   if (!inputPath.startsWith('~/')) return inputPath
@@ -77,6 +79,9 @@ function parseNumberArg(value: string, label: string, rules: NumberArgRules = {}
 function parseNow(value: string): number {
   const asNumber = Number(value)
   if (Number.isFinite(asNumber)) {
+    if (asNumber <= 0) {
+      throw new Error(`Invalid --now value: must be > 0, got ${value}`)
+    }
     return asNumber
   }
   const parsed = Date.parse(value)
@@ -104,13 +109,10 @@ function readRequiredValue(args: string[], index: number, flag: string): string 
 }
 
 function ensureValidWindowOptions(options: PerfRegressionOptions): void {
-  const baselineWindowMs = options.baselineWindowMs
-  const recentWindowMs = options.recentWindowMs
-  if (
-    baselineWindowMs !== undefined &&
-    recentWindowMs !== undefined &&
-    baselineWindowMs < recentWindowMs
-  ) {
+  const baselineWindowMs =
+    options.baselineWindowMs ?? DEFAULT_BASELINE_MINUTES * 60 * 1000
+  const recentWindowMs = options.recentWindowMs ?? DEFAULT_RECENT_MINUTES * 60 * 1000
+  if (baselineWindowMs < recentWindowMs) {
     throw new Error('Invalid window configuration: --baseline-minutes must be >= --recent-minutes')
   }
 }
@@ -240,6 +242,15 @@ function assertAnalysisHasUsableData(analysis: PerfRegressionAnalysis): void {
 
   if (analysis.sampleCount === 0 || analysis.metrics.length === 0) {
     throw new Error('No perf metric samples extracted from parsed events.')
+  }
+
+  const actionableMetrics = analysis.metrics.filter(
+    (metric) => metric.status !== 'insufficient_samples'
+  )
+  if (actionableMetrics.length === 0) {
+    throw new Error(
+      'No metrics met minimum sample requirements in both baseline/recent windows. Increase window sizes or capture more telemetry.'
+    )
   }
 }
 

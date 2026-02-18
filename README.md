@@ -202,6 +202,7 @@ Prerequisites:
 - Enable match profiling (`AGENTBOARD_LOG_MATCH_PROFILE=true`) if you want `log_match_profile.*` metrics in regression checks.
 - Ensure the match worker is enabled (`AGENTBOARD_LOG_MATCH_WORKER` is `true` by default).
 - Capture enough samples in both windows (default minimum: 6 per metric in baseline and recent windows).
+- Keep `--baseline-minutes` greater than or equal to `--recent-minutes` (defaults: baseline `60`, recent `15`).
 
 Quick start:
 
@@ -231,6 +232,7 @@ How to read output:
 - A metric is flagged only when both thresholds are exceeded: absolute delta in milliseconds and relative increase ratio.
 - `baseline` and `recent` are median (`p50`) values over their windows.
 - `insufficient_samples` means that metric was skipped to avoid low-sample false positives.
+- The CLI exits with code `2` when logs are present but no metric has enough baseline/recent samples to produce a trustworthy comparison.
 
 Recommended workflow:
 1. Run with a stable baseline branch and save JSON output.

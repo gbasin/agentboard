@@ -221,6 +221,12 @@ function normalizeOptions(
   if (!Number.isFinite(nowMs)) {
     throw new Error('nowMs must be a finite timestamp')
   }
+  if (nowMs <= 0) {
+    throw new Error('nowMs must be > 0')
+  }
+  if (baselineWindowMs < recentWindowMs) {
+    throw new Error('baselineWindowMs must be >= recentWindowMs')
+  }
 
   return {
     baselineWindowMs,

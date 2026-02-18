@@ -151,6 +151,21 @@ describe('perfRegressionSpotter', () => {
       await fs.rm(dir, { recursive: true, force: true })
     }
   })
+
+  test('rejects invalid option combinations in core analyzer', () => {
+    expect(() =>
+      analyzePerfRegressionSamples([], {
+        nowMs: NOW_MS,
+        baselineWindowMs: 10 * 60 * 1000,
+        recentWindowMs: 15 * 60 * 1000,
+      })
+    ).toThrow('baselineWindowMs must be >= recentWindowMs')
+    expect(() =>
+      analyzePerfRegressionSamples([], {
+        nowMs: 0,
+      })
+    ).toThrow('nowMs must be > 0')
+  })
 })
 
 describe('perf-regression-spotter CLI', () => {
@@ -290,6 +305,46 @@ describe('perf-regression-spotter CLI', () => {
     }
   })
 
+  test('fails with exit code 2 when default window settings conflict with provided baseline', async () => {
+    const { dir, file } = await writeTempLog([buildLogPollLine(NOW_MS - 1000, 10)])
+
+    try {
+      const result = Bun.spawnSync(
+        ['bun', 'scripts/perf-regression-spotter.ts', '--file', file, '--baseline-minutes', '10'],
+        {
+          stdout: 'pipe',
+          stderr: 'pipe',
+          cwd: process.cwd(),
+        }
+      )
+
+      expect(result.exitCode).toBe(2)
+      expect(result.stderr.toString()).toContain('--baseline-minutes must be >= --recent-minutes')
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  test('fails with exit code 2 when --now is non-positive', async () => {
+    const { dir, file } = await writeTempLog([buildLogPollLine(NOW_MS - 1000, 10)])
+
+    try {
+      const result = Bun.spawnSync(
+        ['bun', 'scripts/perf-regression-spotter.ts', '--file', file, '--now', '0'],
+        {
+          stdout: 'pipe',
+          stderr: 'pipe',
+          cwd: process.cwd(),
+        }
+      )
+
+      expect(result.exitCode).toBe(2)
+      expect(result.stderr.toString()).toContain('Invalid --now value: must be > 0')
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true })
+    }
+  })
+
   test('fails with exit code 2 when logs have no target telemetry events', async () => {
     const { dir, file } = await writeTempLog([
       JSON.stringify({
@@ -310,6 +365,34 @@ describe('perf-regression-spotter CLI', () => {
 
       expect(result.exitCode).toBe(2)
       expect(result.stderr.toString()).toContain('No log_poll/log_match_profile events found')
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  test('fails with exit code 2 when no metrics meet sample requirements', async () => {
+    const lines: string[] = []
+    for (let i = 0; i < 3; i += 1) {
+      lines.push(buildLogPollLine(baselineTime(i), 30))
+      lines.push(buildLogPollLine(recentTime(i), 90))
+    }
+
+    const { dir, file } = await writeTempLog(lines)
+
+    try {
+      const result = Bun.spawnSync(
+        ['bun', 'scripts/perf-regression-spotter.ts', '--file', file, '--json'],
+        {
+          stdout: 'pipe',
+          stderr: 'pipe',
+          cwd: process.cwd(),
+        }
+      )
+
+      expect(result.exitCode).toBe(2)
+      expect(result.stderr.toString()).toContain(
+        'No metrics met minimum sample requirements in both baseline/recent windows'
+      )
     } finally {
       await fs.rm(dir, { recursive: true, force: true })
     }
