@@ -1,6 +1,10 @@
 import { useEffect, useState, useRef } from 'react'
 import { parseAndNormalizeAgentLogLine } from '@shared/eventTaxonomy'
-import type { AgentSession } from '@shared/types'
+import type {
+  AgentSession,
+  CostAttributionComponent,
+  SessionPreviewResponse,
+} from '@shared/types'
 import { formatRelativeTime } from '../utils/time'
 import { getPathLeaf } from '../utils/sessionLabel'
 import AgentIcon from './AgentIcon'
@@ -11,19 +15,21 @@ interface SessionPreviewModalProps {
   onResume: (sessionId: string) => void
 }
 
-interface PreviewData {
-  sessionId: string
-  displayName: string
-  projectPath: string
-  agentType: string
-  lastActivityAt: string
-  lines: string[]
+type PreviewData = SessionPreviewResponse & {
+  costAttribution?: SessionPreviewResponse['costAttribution']
 }
 
 interface ParsedEntry {
   type: 'user' | 'assistant' | 'system' | 'other'
   content: string
   raw: string
+}
+
+const COST_COMPONENT_LABELS: Record<CostAttributionComponent, string> = {
+  user_input: 'User Input',
+  assistant_output: 'Assistant Output',
+  tooling: 'Tooling',
+  system_other: 'System / Other',
 }
 
 function mapNormalizedRoleToEntryType(role: string): ParsedEntry['type'] {
@@ -117,6 +123,8 @@ export default function SessionPreviewModal({
   const lastActivity = formatRelativeTime(session.lastActivityAt)
 
   const parsedEntries = previewData?.lines.flatMap(parseLogEntry).slice(-30) ?? []
+  const costAttribution = previewData?.costAttribution
+  const sampledLineCount = costAttribution?.sampling.sampledLineCount ?? previewData?.lines.length ?? 0
 
   return (
     <div
@@ -170,6 +178,53 @@ export default function SessionPreviewModal({
             <div className="flex items-center justify-center py-8 text-danger">
               {error}
             </div>
+          )}
+          {previewData && (
+            <section className="mb-4 border border-border bg-surface p-3 text-[11px]">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <h3 className="text-[11px] font-semibold uppercase tracking-wide text-primary">
+                  Estimated Cost Attribution
+                </h3>
+                <span className="text-muted">
+                  {`Total ${costAttribution?.totalEstimatedUnits.toFixed(2) ?? '0.00'} units`}
+                </span>
+              </div>
+
+              {!costAttribution && (
+                <div className="text-muted">
+                  Cost attribution is unavailable for this preview.
+                </div>
+              )}
+
+              {costAttribution && costAttribution.totalEstimatedUnits <= 0 && (
+                <div className="text-muted">
+                  No cost-attribution signals found in sampled lines.
+                </div>
+              )}
+
+              {costAttribution && costAttribution.totalEstimatedUnits > 0 && (
+                <div className="space-y-1">
+                  {costAttribution.components.map((component) => (
+                    <div
+                      key={component.component}
+                      className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 text-primary"
+                    >
+                      <span className="truncate">{COST_COMPONENT_LABELS[component.component]}</span>
+                      <span className="tabular-nums">
+                        {component.estimatedUnits.toFixed(2)}
+                      </span>
+                      <span className="tabular-nums text-muted">
+                        {component.sharePercent.toFixed(1)}%
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <p className="mt-2 text-[10px] text-muted">
+                {`Heuristic estimate from ${sampledLineCount} sampled lines; not provider billing.`}
+              </p>
+            </section>
           )}
           {previewData && !showRaw && (
             <div className="space-y-2">

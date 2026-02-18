@@ -132,6 +132,49 @@ describe('SessionPreviewModal', () => {
       projectPath: baseSession.projectPath,
       agentType: 'claude',
       lastActivityAt: baseSession.lastActivityAt,
+      costAttribution: {
+        assumptions: 'Heuristic only',
+        totalTokenUnits: 25,
+        totalEstimatedUnits: 12.35,
+        components: [
+          {
+            component: 'user_input',
+            tokenUnits: 11,
+            estimatedUnits: 5.5,
+            sharePercent: 44.5,
+            eventCount: 2,
+          },
+          {
+            component: 'assistant_output',
+            tokenUnits: 8,
+            estimatedUnits: 4,
+            sharePercent: 32.4,
+            eventCount: 3,
+          },
+          {
+            component: 'tooling',
+            tokenUnits: 4,
+            estimatedUnits: 2.5,
+            sharePercent: 20.2,
+            eventCount: 2,
+          },
+          {
+            component: 'system_other',
+            tokenUnits: 2,
+            estimatedUnits: 0.35,
+            sharePercent: 2.9,
+            eventCount: 1,
+          },
+        ],
+        sampling: {
+          sampledLineCount: 9,
+          parsedLineCount: 8,
+          malformedLineCount: 1,
+          emptyLineCount: 0,
+          maxPreviewLines: 100,
+          sampledTailBytes: 512,
+        },
+      },
       lines: [
         JSON.stringify({ type: 'user', message: { content: 'Hello' } }),
         JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'World' }] } }),
@@ -186,6 +229,12 @@ describe('SessionPreviewModal', () => {
     await resolveAndFlush(controller)
 
     html = JSON.stringify(renderer.toJSON())
+    expect(html).toContain('Estimated Cost Attribution')
+    expect(html).toContain('Total 12.35 units')
+    expect(html).toContain('User Input')
+    expect(html).toContain('5.50')
+    expect(html).toContain('44.5')
+    expect(html).toContain('Heuristic estimate from 9 sampled lines; not provider billing.')
     expect(html).toContain('Hello')
     expect(html).toContain('World')
     expect(html).toContain('From response item')
@@ -236,6 +285,78 @@ describe('SessionPreviewModal', () => {
     })
 
     expect(resumed).toEqual([baseSession.sessionId, baseSession.sessionId])
+
+    await cleanup(renderer)
+  })
+
+  test('shows cost attribution empty state when no cost signals are available', async () => {
+    const controller = createFetchController([
+      createJsonResponse({
+        sessionId: baseSession.sessionId,
+        displayName: 'Alpha',
+        projectPath: baseSession.projectPath,
+        agentType: 'claude',
+        lastActivityAt: baseSession.lastActivityAt,
+        costAttribution: {
+          assumptions: 'Heuristic only',
+          totalTokenUnits: 0,
+          totalEstimatedUnits: 0,
+          components: [
+            {
+              component: 'user_input',
+              tokenUnits: 0,
+              estimatedUnits: 0,
+              sharePercent: 0,
+              eventCount: 0,
+            },
+            {
+              component: 'assistant_output',
+              tokenUnits: 0,
+              estimatedUnits: 0,
+              sharePercent: 0,
+              eventCount: 0,
+            },
+            {
+              component: 'tooling',
+              tokenUnits: 0,
+              estimatedUnits: 0,
+              sharePercent: 0,
+              eventCount: 0,
+            },
+            {
+              component: 'system_other',
+              tokenUnits: 0,
+              estimatedUnits: 0,
+              sharePercent: 0,
+              eventCount: 0,
+            },
+          ],
+          sampling: {
+            sampledLineCount: 0,
+            parsedLineCount: 0,
+            malformedLineCount: 0,
+            emptyLineCount: 0,
+            maxPreviewLines: 100,
+            sampledTailBytes: 0,
+          },
+        },
+        lines: [],
+      }),
+    ])
+
+    const renderer = await createModal(
+      <SessionPreviewModal
+        session={baseSession}
+        onClose={() => {}}
+        onResume={() => {}}
+      />
+    )
+
+    await resolveAndFlush(controller)
+
+    const html = JSON.stringify(renderer.toJSON())
+    expect(html).toContain('No cost-attribution signals found in sampled lines.')
+    expect(html).toContain('Heuristic estimate from 0 sampled lines; not provider billing.')
 
     await cleanup(renderer)
   })
