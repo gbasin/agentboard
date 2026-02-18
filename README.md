@@ -191,6 +191,50 @@ LOG_FILE=~/.agentboard/agentboard.log   # default; set empty to disable file log
 
 Console output is pretty-printed in development, JSON in production (`NODE_ENV=production`). File output is always JSON. Set `LOG_FILE=` (empty) to disable file logging.
 
+## Performance Regression Spotter
+
+Use `perf:spot` to detect likely backend performance regressions in the log polling hot path (`log_poll` and `log_match_profile` events).
+
+Prerequisites:
+- Keep file logging enabled (`LOG_FILE` must point to a writable file).
+- Use `LOG_LEVEL=info` or `LOG_LEVEL=debug` so `log_poll`/`log_match_profile` events are emitted.
+- Capture enough samples in both windows (default minimum: 6 per metric in baseline and recent windows).
+
+Quick start:
+
+```bash
+bun run perf:spot -- --file ~/.agentboard/agentboard.log
+```
+
+CI/strict mode (non-zero exit on regression findings):
+
+```bash
+bun run perf:spot -- --file ~/.agentboard/agentboard.log --strict --json
+```
+
+Window/threshold tuning:
+
+```bash
+bun run perf:spot -- \
+  --file ~/.agentboard/agentboard.log \
+  --baseline-minutes 120 \
+  --recent-minutes 30 \
+  --min-samples 8 \
+  --absolute-threshold-ms 20 \
+  --relative-threshold 0.25
+```
+
+How to read output:
+- A metric is flagged only when both thresholds are exceeded: absolute delta in milliseconds and relative increase ratio.
+- `baseline` and `recent` are median (`p50`) values over their windows.
+- `insufficient_samples` means that metric was skipped to avoid low-sample false positives.
+
+Recommended workflow:
+1. Run with a stable baseline branch and save JSON output.
+2. Run again after your change set with the same window/threshold args.
+3. Investigate flagged metrics first (especially `log_poll.durationMs` and `log_match_profile.*MsPerRun`).
+4. Use `--strict` in CI to fail builds only when regression rules are actually met.
+
 ## Troubleshooting
 
 ### "open terminal failed: not a terminal" errors
