@@ -938,6 +938,7 @@ export function useTerminal({
   useEffect(() => {
     // Track pending iOS repaint rAF so we can cancel on cleanup
     let iosRepaintRaf: number | null = null
+    let iosRepaintTimer: number | null = null
 
     const flush = () => {
       if (idleTimerRef.current !== null) {
@@ -1034,12 +1035,23 @@ export function useTerminal({
           flush()
           const container = containerRef.current
           if (container) {
-            iosRepaintRaf = requestAnimationFrame(() => {
+            // Short delay lets xterm process the flushed data, then
+            // double-rAF display toggle forces compositor refresh.
+            if (iosRepaintTimer !== null) window.clearTimeout(iosRepaintTimer)
+            if (iosRepaintRaf !== null) {
+              cancelAnimationFrame(iosRepaintRaf)
               iosRepaintRaf = null
+            }
+            iosRepaintTimer = window.setTimeout(() => {
+              iosRepaintTimer = null
               container.style.display = 'none'
-              void container.offsetHeight
-              container.style.display = ''
-            })
+              iosRepaintRaf = requestAnimationFrame(() => {
+                iosRepaintRaf = requestAnimationFrame(() => {
+                  iosRepaintRaf = null
+                  container.style.display = ''
+                })
+              })
+            }, 50)
           }
         }
       }
@@ -1059,6 +1071,7 @@ export function useTerminal({
       // Flush any remaining buffer on cleanup
       flush()
       // Cancel any pending iOS repaint
+      if (iosRepaintTimer !== null) window.clearTimeout(iosRepaintTimer)
       if (iosRepaintRaf !== null) cancelAnimationFrame(iosRepaintRaf)
     }
   }, [subscribe, checkScrollPosition, setTmuxCopyMode])
@@ -1096,36 +1109,68 @@ export function useTerminal({
     }
   }, [])
 
-  // Force iOS compositor repaint on visibility resume
+  // Force iOS compositor repaint on visibility resume.
+  // iOS WKWebView shows a stale cached snapshot after background/foreground.
+  // The DOM is updated by xterm.js DomRenderer but the compositor doesn't
+  // repaint because layout geometry didn't change. We force a repaint by
+  // removing the container from the render tree and restoring it across
+  // two animation frames — a same-frame toggle can be optimized away by
+  // WebKit without actually repainting.
   useEffect(() => {
     if (!isiOS) return
 
     let repaintTimer: number | null = null
+    let repaintRaf: number | null = null
 
-    const handleVisibilityChange = () => {
-      if (document.visibilityState !== 'visible') return
+    const forceRepaint = () => {
       const container = containerRef.current
       if (!container) return
 
-      // iOS WKWebView can show a stale cached snapshot after PWA resume.
-      // The DOM is updated by xterm.js DomRenderer but the compositor
-      // doesn't repaint because layout geometry didn't change.
-      // Force reflow by removing element from render tree and reinserting it.
-      // The 50ms delay spans at least one rendering frame after resume so
-      // any pending DOM updates land first.
-      if (repaintTimer !== null) window.clearTimeout(repaintTimer)
-      repaintTimer = window.setTimeout(() => {
-        repaintTimer = null
-        container.style.display = 'none'
-        void container.offsetHeight // force synchronous layout
-        container.style.display = ''
-      }, 50)
+      // Split display toggle across two animation frames so the
+      // compositor registers the removal before we restore.
+      container.style.display = 'none'
+      repaintRaf = requestAnimationFrame(() => {
+        repaintRaf = requestAnimationFrame(() => {
+          repaintRaf = null
+          container.style.display = ''
+        })
+      })
     }
 
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    const scheduleRepaint = () => {
       if (repaintTimer !== null) window.clearTimeout(repaintTimer)
+      if (repaintRaf !== null) {
+        cancelAnimationFrame(repaintRaf)
+        repaintRaf = null
+      }
+      // 200ms delay lets iOS finish its resume animation and any
+      // pending DOM updates before we force the repaint.
+      repaintTimer = window.setTimeout(() => {
+        repaintTimer = null
+        forceRepaint()
+      }, 200)
+    }
+
+    const handleVisibility = () => {
+      // Skip hidden transitions. Don't require 'visible' specifically —
+      // visibilityState can be wrong in iOS PWA standalone (WebKit #202399).
+      if (document.visibilityState === 'hidden') return
+      scheduleRepaint()
+    }
+
+    const handlePageShow = (e: PageTransitionEvent) => {
+      // pageshow fires on BFCache/freeze restore — more reliable than
+      // visibilitychange in iOS PWA standalone mode.
+      if (e.persisted) scheduleRepaint()
+    }
+
+    document.addEventListener('visibilitychange', handleVisibility)
+    window.addEventListener('pageshow', handlePageShow)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility)
+      window.removeEventListener('pageshow', handlePageShow)
+      if (repaintTimer !== null) window.clearTimeout(repaintTimer)
+      if (repaintRaf !== null) cancelAnimationFrame(repaintRaf)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

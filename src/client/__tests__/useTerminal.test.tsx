@@ -285,6 +285,8 @@ beforeEach(() => {
     }) as typeof setTimeout,
     clearTimeout: (() => {}) as typeof clearTimeout,
     devicePixelRatio: 1,
+    addEventListener: () => {},
+    removeEventListener: () => {},
   } as unknown as Window & typeof globalThis
 
   // Mock requestAnimationFrame to execute callback synchronously
@@ -1108,7 +1110,7 @@ describe('useTerminal', () => {
   })
 
   test('forces iOS compositor repaint on visibility resume', async () => {
-    // Use deferred timers to verify the 50ms delay behavior
+    // Use deferred timers to verify the 200ms delay behavior
     const pendingTimers: Array<{ callback: () => void; delay: number; id: number }> = []
     let nextTimerId = 100
     globalAny.window = {
@@ -1119,6 +1121,8 @@ describe('useTerminal', () => {
       }) as typeof setTimeout,
       clearTimeout: (() => {}) as typeof clearTimeout,
       devicePixelRatio: 1,
+      addEventListener: () => {},
+      removeEventListener: () => {},
     } as unknown as Window & typeof globalThis
 
     let visibilityState = 'hidden'
@@ -1174,11 +1178,11 @@ describe('useTerminal', () => {
       }
     })
 
-    // No display toggle yet — 50ms timer is pending
+    // No display toggle yet — 200ms timer is pending
     expect(displayLog).toEqual([])
 
-    // Find and execute the 50ms repaint timer
-    const repaintTimer = pendingTimers.find(t => t.delay === 50)
+    // Find and execute the 200ms repaint timer
+    const repaintTimer = pendingTimers.find(t => t.delay === 200)
     expect(repaintTimer).toBeDefined()
     act(() => { repaintTimer!.callback() })
 
@@ -1351,6 +1355,8 @@ describe('useTerminal', () => {
       }) as typeof setTimeout,
       clearTimeout: ((id: number) => { clearedIds.add(id) }) as typeof clearTimeout,
       devicePixelRatio: 1,
+      addEventListener: () => {},
+      removeEventListener: () => {},
     } as unknown as Window & typeof globalThis
 
     const docListeners = new Map<string, Set<EventListener>>()
@@ -1403,7 +1409,7 @@ describe('useTerminal', () => {
         handler(new Event('visibilitychange'))
       }
     })
-    const repaintTimer = pendingTimers.find(t => t.delay === 50)
+    const repaintTimer = pendingTimers.find(t => t.delay === 200)
     expect(repaintTimer).toBeDefined()
 
     act(() => { renderer.unmount() })
@@ -1435,6 +1441,8 @@ describe('useTerminal', () => {
       }) as typeof setTimeout,
       clearTimeout: ((id: number) => { clearedIds.add(id) }) as typeof clearTimeout,
       devicePixelRatio: 1,
+      addEventListener: () => {},
+      removeEventListener: () => {},
     } as unknown as Window & typeof globalThis
 
     let visibilityState = 'hidden'
@@ -1488,7 +1496,7 @@ describe('useTerminal', () => {
         handler(new Event('visibilitychange'))
       }
     })
-    const firstTimer = pendingTimers.find(t => t.delay === 50)
+    const firstTimer = pendingTimers.find(t => t.delay === 200)
     expect(firstTimer).toBeDefined()
 
     act(() => {
@@ -1501,11 +1509,97 @@ describe('useTerminal', () => {
     expect(clearedIds.has(firstTimer!.id)).toBe(true)
 
     // Execute only the latest timer
-    const lastTimer = pendingTimers.filter(t => t.delay === 50).pop()
+    const lastTimer = pendingTimers.filter(t => t.delay === 200).pop()
     act(() => { lastTimer!.callback() })
 
     // Only one repaint should have happened
     expect(displayLog).toEqual(['none', ''])
+
+    act(() => { renderer.unmount() })
+  })
+
+  test('triggers repaint on iOS pageshow with persisted=true', async () => {
+    const pendingTimers: Array<{ callback: () => void; delay: number; id: number }> = []
+    let nextTimerId = 100
+    const winListeners = new Map<string, Set<EventListener>>()
+    globalAny.window = {
+      setTimeout: ((cb: () => void, delay?: number) => {
+        const id = nextTimerId++
+        pendingTimers.push({ callback: cb, delay: delay ?? 0, id })
+        return id
+      }) as typeof setTimeout,
+      clearTimeout: (() => {}) as typeof clearTimeout,
+      devicePixelRatio: 1,
+      addEventListener(event: string, handler: EventListener) {
+        const set = winListeners.get(event) ?? new Set()
+        set.add(handler)
+        winListeners.set(event, set)
+      },
+      removeEventListener(event: string, handler: EventListener) {
+        winListeners.get(event)?.delete(handler)
+      },
+    } as unknown as Window & typeof globalThis
+
+    globalAny.document = {
+      fonts: { ready: Promise.resolve() },
+      visibilityState: 'visible',
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    } as unknown as Document
+
+    globalAny.navigator = {
+      userAgent: 'iPhone',
+      platform: 'iPhone',
+      maxTouchPoints: 5,
+      clipboard: { writeText: () => Promise.resolve() },
+    } as unknown as Navigator
+
+    const { container, displayLog } = createContainerMock()
+
+    let renderer!: TestRenderer.ReactTestRenderer
+
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          sendMessage={() => {}}
+          subscribe={() => () => {}}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+        { createNodeMock: () => container },
+      )
+      await Promise.resolve()
+    })
+
+    pendingTimers.length = 0
+    displayLog.length = 0
+
+    // pageshow with persisted=true should trigger repaint
+    act(() => {
+      for (const handler of winListeners.get('pageshow') ?? []) {
+        handler({ type: 'pageshow', persisted: true } as unknown as Event)
+      }
+    })
+
+    const repaintTimer = pendingTimers.find(t => t.delay === 200)
+    expect(repaintTimer).toBeDefined()
+
+    act(() => { repaintTimer!.callback() })
+    expect(displayLog).toEqual(['none', ''])
+
+    // Reset and test persisted=false — should NOT trigger repaint
+    pendingTimers.length = 0
+    displayLog.length = 0
+
+    act(() => {
+      for (const handler of winListeners.get('pageshow') ?? []) {
+        handler({ type: 'pageshow', persisted: false } as unknown as Event)
+      }
+    })
+
+    expect(pendingTimers.find(t => t.delay === 200)).toBeUndefined()
 
     act(() => { renderer.unmount() })
   })
