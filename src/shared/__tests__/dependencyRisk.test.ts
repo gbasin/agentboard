@@ -38,6 +38,21 @@ describe('dependencyRisk', () => {
     })
   })
 
+  test('reports unsupported bun audit schema instead of silently passing', () => {
+    const parsed = parseBunAuditOutput(
+      JSON.stringify({
+        advisories: {
+          hono: [{ id: 1, title: 'high vuln', severity: 'high' }],
+        },
+      })
+    )
+
+    expect(parsed.findings).toHaveLength(0)
+    expect(parsed.errors).toEqual([
+      'Unable to parse bun audit output: advisory arrays not found in root JSON object.',
+    ])
+  })
+
   test('computes threshold breaches and fail behavior', () => {
     const reportHigh = analyzeDependencyRisk({
       auditOutput: JSON.stringify({

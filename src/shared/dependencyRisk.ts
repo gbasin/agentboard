@@ -179,11 +179,13 @@ export function parseBunAuditOutput(output: string): ParseResult<SecurityFinding
 
   const findings: SecurityFinding[] = []
   const packageNames = Object.keys(record).sort(compareStrings)
+  let sawAdvisoryArray = false
   for (const packageName of packageNames) {
     const advisories = record[packageName]
     if (!Array.isArray(advisories)) {
       continue
     }
+    sawAdvisoryArray = true
 
     for (const advisory of advisories) {
       const advisoryRecord = asRecord(advisory)
@@ -206,6 +208,15 @@ export function parseBunAuditOutput(output: string): ParseResult<SecurityFinding
         cvssScore: asNumber(cvss?.score),
       }
       findings.push(finding)
+    }
+  }
+
+  if (packageNames.length > 0 && !sawAdvisoryArray) {
+    return {
+      findings: [],
+      errors: [
+        'Unable to parse bun audit output: advisory arrays not found in root JSON object.',
+      ],
     }
   }
 

@@ -34,7 +34,6 @@
     "lint": "oxlint .",
     "typecheck": "tsc --noEmit",
     "test": "bun scripts/test-runner.ts",
-    "perf:spot": "bun scripts/perf-regression-spotter.ts",
     "deps:risk": "bun scripts/dependency-risk.ts",
     "deps:risk:ci": "bun scripts/dependency-risk.ts --threshold critical",
     "deps:risk:json": "bun scripts/dependency-risk.ts --json",
