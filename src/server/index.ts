@@ -60,7 +60,11 @@ function checkPortAvailable(port: number): void {
       stdout: 'pipe',
       stderr: 'pipe',
     })
-  } catch {
+  } catch (error) {
+    logger.debug('port_check_failed', {
+      port,
+      ...toErrorLogFields(error),
+    })
     return
   }
   const pids = result.stdout?.toString().trim() ?? ''
@@ -75,7 +79,12 @@ function checkPortAvailable(port: number): void {
         stderr: 'pipe',
       })
       processName = nameResult.stdout?.toString().trim() || 'unknown'
-    } catch {
+    } catch (error) {
+      logger.debug('port_process_lookup_failed', {
+        port,
+        pid,
+        ...toErrorLogFields(error),
+      })
     }
     logger.error('port_in_use', { port, pid, processName })
     process.exit(1)
@@ -99,7 +108,11 @@ function getTailscaleIp(): string | null {
         const ip = result.stdout.toString().trim()
         if (ip) return ip
       }
-    } catch {
+    } catch (error) {
+      logger.debug('tailscale_ip_lookup_failed', {
+        path: tsPath,
+        ...toErrorLogFields(error),
+      })
       // Try next path
     }
   }
@@ -125,7 +138,11 @@ function pruneOrphanedWsSessions(): void {
         stderr: 'pipe',
       }
     )
-  } catch {
+  } catch (error) {
+    logger.debug('ws_sessions_prune_list_failed', {
+      prefix,
+      ...toErrorLogFields(error),
+    })
     return
   }
 
@@ -155,7 +172,11 @@ function pruneOrphanedWsSessions(): void {
       if (killResult.exitCode === 0) {
         pruned += 1
       }
-    } catch {
+    } catch (error) {
+      logger.debug('ws_sessions_prune_kill_failed', {
+        session: name,
+        ...toErrorLogFields(error),
+      })
       // Ignore kill errors
     }
   }
@@ -173,6 +194,33 @@ function createConnectionId(): string {
   }
 
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function toErrorLogFields(error: unknown): {
+  error_message: string
+  error_name?: string
+  error_stack?: string
+} {
+  if (error instanceof Error) {
+    return {
+      error_message: error.message,
+      error_name: error.name,
+      error_stack: error.stack,
+    }
+  }
+  return { error_message: String(error) }
+}
+
+function normalizeClientEventName(rawEvent: unknown): string {
+  if (typeof rawEvent !== 'string') {
+    return 'unknown'
+  }
+  const normalized = rawEvent
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+  return normalized || 'unknown'
 }
 
 checkPortAvailable(config.port)
@@ -534,7 +582,14 @@ function hydrateSessionsWithAgentSessions(
       })
       // Kill any leftover dead window from remain-on-exit
       if (currentWindow) {
-        try { sessionManager.killWindow(currentWindow) } catch { /* may already be gone */ }
+        try {
+          sessionManager.killWindow(currentWindow)
+        } catch (error) {
+          logger.debug('orphan_window_cleanup_failed', {
+            tmuxWindow: currentWindow,
+            ...toErrorLogFields(error),
+          })
+        }
       }
       const orphanedSession = db.orphanSession(agentSession.sessionId)
       if (orphanedSession) {
@@ -824,11 +879,28 @@ registry.on('agent-sessions', ({ active, inactive }) => {
 
 app.post('/api/client-log', async (c) => {
   try {
-    const body = await c.req.json() as { level?: string; event: string; data?: Record<string, unknown> }
-    const level = body.level === 'warn' || body.level === 'error' || body.level === 'info' ? body.level : 'debug'
-    logger[level]('client_' + body.event, body.data)
-  } catch {
-    // ignore malformed
+    const body = await c.req.json() as {
+      level?: string
+      event?: string
+      data?: Record<string, unknown>
+    }
+    const level = body.level === 'warn' || body.level === 'error' || body.level === 'info'
+      ? body.level
+      : 'debug'
+    const normalizedEvent = normalizeClientEventName(body.event)
+    logger[level]('client_log_event', {
+      client_event: normalizedEvent,
+      client_event_raw: body.event,
+      path: c.req.path,
+      method: c.req.method,
+      data: body.data,
+    })
+  } catch (error) {
+    logger.warn('client_log_ingest_failed', {
+      path: c.req.path,
+      method: c.req.method,
+      ...toErrorLogFields(error),
+    })
   }
   return c.json({ ok: true })
 })
@@ -881,6 +953,12 @@ app.get('/api/session-preview/:sessionId', async (c) => {
     })
   } catch (error) {
     const err = error as NodeJS.ErrnoException
+    logger.warn('session_preview_read_failed', {
+      sessionId,
+      logPath,
+      code: err.code,
+      ...toErrorLogFields(error),
+    })
     if (err.code === 'ENOENT') {
       return c.json({ error: 'Log file not found' }, 404)
     }
@@ -915,6 +993,12 @@ app.get('/api/directories', async (c) => {
     stats = await fs.stat(resolved)
   } catch (error) {
     const err = error as NodeJS.ErrnoException
+    logger.warn('directories_stat_failed', {
+      requestedPath: trimmedPath,
+      resolvedPath: resolved,
+      code: err.code,
+      ...toErrorLogFields(error),
+    })
     if (err.code === 'ENOENT' || err.code === 'ENOTDIR') {
       const payload: DirectoryErrorResponse = {
         error: 'not_found',
@@ -977,6 +1061,12 @@ app.get('/api/directories', async (c) => {
       })
   } catch (error) {
     const err = error as NodeJS.ErrnoException
+    logger.warn('directories_read_failed', {
+      requestedPath: trimmedPath,
+      resolvedPath: resolved,
+      code: err.code,
+      ...toErrorLogFields(error),
+    })
     if (err.code === 'EACCES' || err.code === 'EPERM') {
       const payload: DirectoryErrorResponse = {
         error: 'forbidden',
@@ -1048,7 +1138,12 @@ app.put('/api/settings/tmux-mouse-mode', async (c) => {
     db.setAppSetting(TMUX_MOUSE_MODE_KEY, String(body.enabled))
     sessionManager.setMouseMode(body.enabled)
     return c.json({ enabled: body.enabled })
-  } catch {
+  } catch (error) {
+    logger.warn('tmux_mouse_mode_update_failed', {
+      path: c.req.path,
+      method: c.req.method,
+      ...toErrorLogFields(error),
+    })
     return c.json({ error: 'Invalid request body' }, 400)
   }
 })
@@ -1070,7 +1165,12 @@ app.put('/api/settings/inactive-max-age-hours', async (c) => {
     // Re-broadcast agent sessions with new max age
     updateAgentSessions()
     return c.json({ hours })
-  } catch {
+  } catch (error) {
+    logger.warn('inactive_max_age_update_failed', {
+      path: c.req.path,
+      method: c.req.method,
+      ...toErrorLogFields(error),
+    })
     return c.json({ error: 'Invalid request body' }, 400)
   }
 })
@@ -1095,6 +1195,11 @@ app.post('/api/paste-image', async (c) => {
 
     return c.json({ path: filepath })
   } catch (error) {
+    logger.warn('paste_image_upload_failed', {
+      path: c.req.path,
+      method: c.req.method,
+      ...toErrorLogFields(error),
+    })
     return c.json(
       { error: error instanceof Error ? error.message : 'Upload failed' },
       500
@@ -1127,7 +1232,12 @@ app.get('/api/clipboard-file-path', async (c) => {
       }
     }
     return c.json({ path: null })
-  } catch {
+  } catch (error) {
+    logger.warn('clipboard_file_path_read_failed', {
+      path: c.req.path,
+      method: c.req.method,
+      ...toErrorLogFields(error),
+    })
     return c.json({ path: null })
   }
 })
@@ -1283,7 +1393,12 @@ function handleMessage(
   let message: ClientMessage
   try {
     message = JSON.parse(text) as ClientMessage
-  } catch {
+  } catch (error) {
+    logger.warn('ws_message_parse_failed', {
+      connectionId: ws.data.connectionId,
+      payload_bytes: text.length,
+      ...toErrorLogFields(error),
+    })
     send(ws, { type: 'error', message: 'Invalid message payload' })
     return
   }
@@ -1311,6 +1426,12 @@ function handleMessage(
           refreshSessions()
           send(ws, { type: 'session-created', session: created })
         } catch (error) {
+          logger.warn('session_create_failed', {
+            connectionId: ws.data.connectionId,
+            projectPath: message.projectPath,
+            requestedName: message.name,
+            ...toErrorLogFields(error),
+          })
           send(ws, {
             type: 'error',
             message:
@@ -1515,6 +1636,13 @@ async function handleRemoteCreate(
     registry.replaceSessions([createdSession, ...currentSessions])
     send(ws, { type: 'session-created', session: createdSession })
   } catch (error) {
+    logger.warn('remote_session_create_failed', {
+      host,
+      connectionId: ws.data.connectionId,
+      projectPath,
+      requestedName: name,
+      ...toErrorLogFields(error),
+    })
     send(ws, {
       type: 'error',
       message: error instanceof Error ? error.message : 'Unable to create remote session',
@@ -1539,7 +1667,14 @@ async function handleCancelCopyMode(sessionId: string, ws: ServerWebSocket<WSDat
         timeout: 5000,
       })
     }
-  } catch {
+  } catch (error) {
+    logger.debug('copy_mode_cancel_failed', {
+      sessionId,
+      target: session.tmuxWindow,
+      remote: session.remote === true,
+      host: session.host,
+      ...toErrorLogFields(error),
+    })
     // Ignore errors - copy-mode may not be active
   }
 }
@@ -1565,7 +1700,14 @@ async function handleCheckCopyMode(sessionId: string, ws: ServerWebSocket<WSData
     }
     const inCopyMode = output === '1'
     send(ws, { type: 'tmux-copy-mode-status', sessionId, inCopyMode })
-  } catch {
+  } catch (error) {
+    logger.debug('copy_mode_check_failed', {
+      sessionId,
+      target: session.tmuxWindow,
+      remote: session.remote === true,
+      host: session.host,
+      ...toErrorLogFields(error),
+    })
     // On error, assume not in copy mode
     send(ws, { type: 'tmux-copy-mode-status', sessionId, inCopyMode: false })
   }
@@ -1598,6 +1740,12 @@ async function handleKill(sessionId: string, ws: ServerWebSocket<WSData>) {
       const remaining = registry.getAll().filter((item) => item.id !== sessionId)
       registry.replaceSessions(remaining)
     } catch (error) {
+      logger.warn('remote_session_kill_failed', {
+        sessionId,
+        host: session.host,
+        tmuxWindow: session.tmuxWindow,
+        ...toErrorLogFields(error),
+      })
       send(ws, {
         type: 'kill-failed',
         sessionId,
@@ -1637,6 +1785,11 @@ async function handleKill(sessionId: string, ws: ServerWebSocket<WSData>) {
     registry.replaceSessions(remaining)
     refreshSessions()
   } catch (error) {
+    logger.warn('session_kill_failed', {
+      sessionId,
+      tmuxWindow: session.tmuxWindow,
+      ...toErrorLogFields(error),
+    })
     send(ws, {
       type: 'kill-failed',
       sessionId,
@@ -1692,6 +1845,13 @@ async function handleRename(
       )
       registry.replaceSessions(nextSessions)
     } catch (error) {
+      logger.warn('remote_session_rename_failed', {
+        sessionId,
+        host: session.host,
+        tmuxWindow: session.tmuxWindow,
+        requestedName: trimmed,
+        ...toErrorLogFields(error),
+      })
       send(ws, {
         type: 'error',
         message: error instanceof Error ? error.message : 'Unable to rename remote session',
@@ -1704,6 +1864,12 @@ async function handleRename(
     sessionManager.renameWindow(session.tmuxWindow, newName)
     refreshSessions()
   } catch (error) {
+    logger.warn('session_rename_failed', {
+      sessionId,
+      tmuxWindow: session.tmuxWindow,
+      requestedName: newName,
+      ...toErrorLogFields(error),
+    })
     send(ws, {
       type: 'error',
       message:
@@ -1819,7 +1985,13 @@ function resurrectPinnedSessions() {
       resurrectedSessionGrace.set(record.sessionId, Date.now())
       try {
         sessionManager.setWindowOption(created.tmuxWindow, 'remain-on-exit', 'failed')
-      } catch { /* non-fatal — older tmux may not support 'failed' value */ }
+      } catch (error) {
+        logger.debug('remain_on_exit_set_failed', {
+          sessionId: record.sessionId,
+          tmuxWindow: created.tmuxWindow,
+          ...toErrorLogFields(error),
+        })
+      }
       db.updateSession(record.sessionId, {
         currentWindow: created.tmuxWindow,
         displayName: created.name,
@@ -1927,6 +2099,11 @@ function handleSessionResume(
       window: created.tmuxWindow,
     })
   } catch (error) {
+    logger.warn('session_resume_failed', {
+      sessionId,
+      requestedName: message.name,
+      ...toErrorLogFields(error),
+    })
     const err: ResumeError = {
       code: 'RESUME_FAILED',
       message:
@@ -2023,6 +2200,7 @@ async function ensurePersistentTerminal(
     if (ws.data.terminal === terminal) {
       ws.data.terminal = null
     }
+    /* logging-audit:intentional Error is propagated to attach handler for contextual logging. */
     throw error
   }
 }
@@ -2057,6 +2235,7 @@ async function ensureCorrectProxyType(
           ws.data.terminal = null
           ws.data.terminalHost = null
         }
+        /* logging-audit:intentional Error is propagated to attach handler for contextual logging. */
         throw error
       }
     }
@@ -2113,7 +2292,7 @@ async function createAndStartSshProxy(
       // Guard: skip if this proxy was already replaced
       if (ws.data.terminal !== terminal) return
       const sessionId = ws.data.currentSessionId
-      logger.warn('ssh_proxy_onExit', {
+      logger.warn('ssh_proxy_on_exit', {
         sessionName,
         sessionId,
         host,
@@ -2155,6 +2334,7 @@ async function createAndStartSshProxy(
       ws.data.terminal = null
       ws.data.terminalHost = null
     }
+    /* logging-audit:intentional Error is propagated to attach handler for contextual logging. */
     throw error
   }
 }
@@ -2207,6 +2387,7 @@ async function attachTerminalPersistent(
     terminal = await ensureCorrectProxyType(ws, session, attachSeq)
     if (!terminal) return
   } catch (error) {
+    /* logging-audit:intentional handleTerminalError sends structured failure telemetry for this path. */
     if (sockets.has(ws) && isTerminalAttachCurrent(ws, attachSeq)) {
       handleTerminalError(ws, sessionId, error, 'ERR_TMUX_ATTACH_FAILED')
     }
@@ -2295,6 +2476,7 @@ function captureTmuxHistory(target: string): string | null {
     }
     return output
   } catch {
+    /* logging-audit:intentional Scrollback capture is best-effort and silently degrades to live output only. */
     return null
   }
 }
@@ -2316,7 +2498,13 @@ async function runRemoteTmux(host: string, args: string[]): Promise<{ exitCode: 
   const opts = sshOptionsForHost()
   const proc = Bun.spawn(['ssh', ...opts, host, remoteCmd], { stdout: 'pipe', stderr: 'pipe' })
 
-  const timeout = setTimeout(() => { try { proc.kill() } catch {} }, 10_000)
+  const timeout = setTimeout(() => {
+    try {
+      proc.kill()
+    } catch {
+      /* logging-audit:intentional Process may already have exited before timeout cleanup. */
+    }
+  }, 10_000)
   try {
     const [exitCode, stdout, stderr] = await Promise.all([
       proc.exited,
@@ -2333,7 +2521,13 @@ async function runRemoteSsh(host: string, remoteCmd: string): Promise<{ exitCode
   const opts = sshOptionsForHost()
   const proc = Bun.spawn(['ssh', ...opts, host, remoteCmd], { stdout: 'pipe', stderr: 'pipe' })
 
-  const timeout = setTimeout(() => { try { proc.kill() } catch {} }, 10_000)
+  const timeout = setTimeout(() => {
+    try {
+      proc.kill()
+    } catch {
+      /* logging-audit:intentional Process may already have exited before timeout cleanup. */
+    }
+  }, 10_000)
   try {
     const [exitCode, stdout, stderr] = await Promise.all([
       proc.exited,
@@ -2354,6 +2548,7 @@ async function captureTmuxHistoryRemote(target: string, host: string): Promise<s
     if (output.trim().length === 0) return null
     return output
   } catch {
+    /* logging-audit:intentional Remote scrollback capture is best-effort and may fail when panes close. */
     return null
   }
 }

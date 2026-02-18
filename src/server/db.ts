@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { Database as SQLiteDatabase } from 'bun:sqlite'
 import type { AgentType } from '../shared/types'
+import { logger } from './logger'
 import { resolveProjectPath } from './paths'
 
 export interface AgentSessionRecord {
@@ -328,14 +329,20 @@ function ensureDataDir(dbPath: string) {
 
   try {
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
-  } catch {
-    // Ignore mkdir failures; SQLite will surface errors when opening
+  } catch (error) {
+    logger.debug('db_data_dir_create_failed', {
+      dir,
+      ...toErrorLogFields(error),
+    })
   }
 
   try {
     fs.chmodSync(dir, 0o700)
-  } catch {
-    // Ignore chmod failures
+  } catch (error) {
+    logger.debug('db_data_dir_chmod_failed', {
+      dir,
+      ...toErrorLogFields(error),
+    })
   }
 }
 
@@ -412,7 +419,7 @@ function migrateDatabase(db: SQLiteDatabase) {
     db.exec('DROP TABLE agent_sessions_old')
     db.exec('COMMIT')
   } catch (error) {
-    db.exec('ROLLBACK')
+    rollbackMigration(db, 'remove_session_source_column', error)
     throw error
   }
 }
@@ -579,9 +586,45 @@ function migratePiAgentType(db: SQLiteDatabase) {
     db.exec('DROP TABLE agent_sessions_old_pi_migrate')
     db.exec('COMMIT')
   } catch (error) {
-    db.exec('ROLLBACK')
+    rollbackMigration(db, 'add_pi_agent_type_constraint', error)
     throw error
   }
+}
+
+function rollbackMigration(
+  db: SQLiteDatabase,
+  migration: string,
+  originalError: unknown
+) {
+  try {
+    db.exec('ROLLBACK')
+  } catch (rollbackError) {
+    logger.error('db_migration_rollback_failed', {
+      migration,
+      ...toErrorLogFields(rollbackError),
+      original_error_message: toErrorLogFields(originalError).error_message,
+    })
+  }
+
+  logger.error('db_migration_failed', {
+    migration,
+    ...toErrorLogFields(originalError),
+  })
+}
+
+function toErrorLogFields(error: unknown): {
+  error_message: string
+  error_name?: string
+  error_stack?: string
+} {
+  if (error instanceof Error) {
+    return {
+      error_message: error.message,
+      error_name: error.name,
+      error_stack: error.stack,
+    }
+  }
+  return { error_message: String(error) }
 }
 
 function getColumnNames(db: SQLiteDatabase, tableName: string): string[] {

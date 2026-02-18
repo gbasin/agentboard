@@ -183,6 +183,7 @@ export function handleMatchWorkerRequest(
       profile,
     }
   } catch (error) {
+    /* logging-audit:intentional */
     return {
       id: payload.id,
       type: 'error',

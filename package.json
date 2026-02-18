@@ -34,6 +34,7 @@
     "lint": "oxlint .",
     "typecheck": "tsc --noEmit",
     "test": "bun scripts/test-runner.ts",
+    "audit:logging": "bun scripts/logging-audit.ts --fail-on=high",
     "test:coverage": "bun scripts/test-runner.ts --coverage --coverage-reporter=lcov --skip-isolated && bun run coverage:all",
     "coverage:all": "bun scripts/coverage-all.ts",
     "test:e2e": "playwright test",

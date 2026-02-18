@@ -118,6 +118,7 @@ ctx.onmessage = (event: MessageEvent<RefreshWorkerRequest>) => {
     }
     ctx.postMessage(response)
   } catch (error) {
+    /* logging-audit:intentional */
     const response: RefreshWorkerResponse = {
       id: payload.id,
       kind: 'error',
@@ -150,6 +151,7 @@ function listAllWindowData(): WindowData[] {
   try {
     output = runTmux(['list-windows', '-a', '-F', BATCH_WINDOW_FORMAT])
   } catch (error) {
+    /* logging-audit:intentional */
     if (!isTmuxFormatError(error)) {
       throw error
     }
@@ -191,6 +193,7 @@ function capturePane(tmuxWindow: string): string | null {
     }
     return lines.slice(-30).join('\n')
   } catch {
+    /* logging-audit:intentional */
     return null
   }
 }

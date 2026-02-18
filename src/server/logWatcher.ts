@@ -72,6 +72,7 @@ export class LogWatcher {
       try {
         watcher.close()
       } catch {
+        /* logging-audit:intentional */
         // Ignore close errors
       }
     }
