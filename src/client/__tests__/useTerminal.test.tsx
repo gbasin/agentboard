@@ -176,8 +176,20 @@ function createContainerMock() {
   // Legacy single-entry map kept for backward compatibility with existing tests
   const listeners = new Map<string, EventListener>()
 
+  // Track display style changes for iOS compositor repaint tests
+  const displayLog: string[] = []
+  const containerStyle = { cssText: '' } as Record<string, string>
+  Object.defineProperty(containerStyle, 'display', {
+    get() { return displayLog.length ? displayLog[displayLog.length - 1] : '' },
+    set(v: string) { displayLog.push(v) },
+    enumerable: true,
+    configurable: true,
+  })
+
   const container = {
     innerHTML: 'existing',
+    style: containerStyle,
+    get offsetHeight() { return 100 },
     addEventListener: (
       event: string,
       handler: EventListener,
@@ -230,7 +242,7 @@ function createContainerMock() {
     }
   }
 
-  return { container, textarea, listeners, listenerEntries, dispatchEvent }
+  return { container, textarea, listeners, listenerEntries, dispatchEvent, displayLog }
 }
 
 function TerminalHarness(props: {
@@ -284,6 +296,9 @@ beforeEach(() => {
 
   globalAny.document = {
     fonts: { ready: Promise.resolve() },
+    visibilityState: 'visible',
+    addEventListener: () => {},
+    removeEventListener: () => {},
   } as unknown as Document
 
   globalAny.ResizeObserver = class ResizeObserverMock {
@@ -1088,6 +1103,216 @@ describe('useTerminal', () => {
 
     // Should not have pasted anything since no session is attached
     expect(terminal.pasteCalls).toEqual([])
+
+    act(() => { renderer.unmount() })
+  })
+
+  test('forces iOS compositor repaint on visibility resume', async () => {
+    // Mock document with visibilitychange support
+    let visibilityState = 'hidden'
+    const docListeners = new Map<string, Set<EventListener>>()
+    globalAny.document = {
+      fonts: { ready: Promise.resolve() },
+      get visibilityState() { return visibilityState },
+      addEventListener(event: string, handler: EventListener) {
+        const set = docListeners.get(event) ?? new Set()
+        set.add(handler)
+        docListeners.set(event, set)
+      },
+      removeEventListener(event: string, handler: EventListener) {
+        docListeners.get(event)?.delete(handler)
+      },
+    } as unknown as Document
+
+    globalAny.navigator = {
+      userAgent: 'iPhone',
+      platform: 'iPhone',
+      maxTouchPoints: 5,
+      clipboard: { writeText: () => Promise.resolve() },
+    } as unknown as Navigator
+
+    const { container, displayLog } = createContainerMock()
+
+    let renderer!: TestRenderer.ReactTestRenderer
+
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          sendMessage={() => {}}
+          subscribe={() => () => {}}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+        { createNodeMock: () => container },
+      )
+      await Promise.resolve()
+    })
+
+    // Clear any display changes from initialization
+    displayLog.length = 0
+
+    // Simulate PWA resume: visibility changes to 'visible'
+    visibilityState = 'visible'
+    act(() => {
+      for (const handler of docListeners.get('visibilitychange') ?? []) {
+        handler(new Event('visibilitychange'))
+      }
+    })
+
+    // Should have toggled display: 'none' then '' (force repaint)
+    expect(displayLog).toEqual(['none', ''])
+
+    act(() => { renderer.unmount() })
+  })
+
+  test('skips repaint on non-iOS visibility resume', async () => {
+    let visibilityState = 'hidden'
+    const docListeners = new Map<string, Set<EventListener>>()
+    globalAny.document = {
+      fonts: { ready: Promise.resolve() },
+      get visibilityState() { return visibilityState },
+      addEventListener(event: string, handler: EventListener) {
+        const set = docListeners.get(event) ?? new Set()
+        set.add(handler)
+        docListeners.set(event, set)
+      },
+      removeEventListener(event: string, handler: EventListener) {
+        docListeners.get(event)?.delete(handler)
+      },
+    } as unknown as Document
+
+    globalAny.navigator = {
+      userAgent: 'Chrome',
+      platform: 'MacIntel',
+      maxTouchPoints: 0,
+      clipboard: { writeText: () => Promise.resolve() },
+    } as unknown as Navigator
+
+    const { container, displayLog } = createContainerMock()
+
+    let renderer!: TestRenderer.ReactTestRenderer
+
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          sendMessage={() => {}}
+          subscribe={() => () => {}}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+        { createNodeMock: () => container },
+      )
+      await Promise.resolve()
+    })
+
+    displayLog.length = 0
+
+    visibilityState = 'visible'
+    act(() => {
+      for (const handler of docListeners.get('visibilitychange') ?? []) {
+        handler(new Event('visibilitychange'))
+      }
+    })
+
+    // Non-iOS: no display toggle should have happened
+    expect(displayLog).toEqual([])
+
+    act(() => { renderer.unmount() })
+  })
+
+  test('forces repaint after terminal-ready on iOS', async () => {
+    globalAny.navigator = {
+      userAgent: 'iPhone',
+      platform: 'iPhone',
+      maxTouchPoints: 5,
+      clipboard: { writeText: () => Promise.resolve() },
+    } as unknown as Navigator
+
+    const listeners: Array<(message: ServerMessage) => void> = []
+    const { container, displayLog } = createContainerMock()
+
+    let renderer!: TestRenderer.ReactTestRenderer
+
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          sendMessage={() => {}}
+          subscribe={(listener) => {
+            listeners.push(listener)
+            return () => {}
+          }}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+        { createNodeMock: () => container },
+      )
+      await Promise.resolve()
+    })
+
+    displayLog.length = 0
+
+    // Deliver terminal-ready for the attached session
+    act(() => {
+      listeners[0]?.({
+        type: 'terminal-ready',
+        sessionId: 'session-1',
+      })
+    })
+
+    // Should have toggled display for compositor repaint
+    expect(displayLog).toEqual(['none', ''])
+
+    act(() => { renderer.unmount() })
+  })
+
+  test('does not force repaint after terminal-ready on non-iOS', async () => {
+    globalAny.navigator = {
+      userAgent: 'Chrome',
+      platform: 'MacIntel',
+      maxTouchPoints: 0,
+      clipboard: { writeText: () => Promise.resolve() },
+    } as unknown as Navigator
+
+    const listeners: Array<(message: ServerMessage) => void> = []
+    const { container, displayLog } = createContainerMock()
+
+    let renderer!: TestRenderer.ReactTestRenderer
+
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          sendMessage={() => {}}
+          subscribe={(listener) => {
+            listeners.push(listener)
+            return () => {}
+          }}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+        { createNodeMock: () => container },
+      )
+      await Promise.resolve()
+    })
+
+    displayLog.length = 0
+
+    act(() => {
+      listeners[0]?.({
+        type: 'terminal-ready',
+        sessionId: 'session-1',
+      })
+    })
+
+    // Non-iOS: no display toggle
+    expect(displayLog).toEqual([])
 
     act(() => { renderer.unmount() })
   })

@@ -1022,6 +1022,20 @@ export function useTerminal({
           })
           switchStartRef.current = null
         }
+
+        // Force iOS compositor repaint after reconnect data delivery.
+        // The visibilitychange repaint fires early and may only show stale
+        // content; this second repaint catches the fresh data from reconnect.
+        if (isiOS) {
+          const container = containerRef.current
+          if (container) {
+            requestAnimationFrame(() => {
+              container.style.display = 'none'
+              void container.offsetHeight
+              container.style.display = ''
+            })
+          }
+        }
       }
 
       // Handle tmux copy-mode status response
@@ -1072,6 +1086,32 @@ export function useTerminal({
         window.clearTimeout(resizeTimer.current)
       }
     }
+  }, [])
+
+  // Force iOS compositor repaint on visibility resume
+  useEffect(() => {
+    if (!isiOS) return
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') return
+      const container = containerRef.current
+      if (!container) return
+
+      // iOS WKWebView can show a stale cached snapshot after PWA resume.
+      // The DOM is updated by xterm.js DomRenderer but the compositor
+      // doesn't repaint because layout geometry didn't change.
+      // Force reflow by removing element from render tree and reinserting it.
+      // The 50ms delay spans at least one rendering frame after resume so
+      // any pending DOM updates land first.
+      window.setTimeout(() => {
+        container.style.display = 'none'
+        void container.offsetHeight // force synchronous layout
+        container.style.display = ''
+      }, 50)
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
   }, [])
 
   return {
