@@ -5,6 +5,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import type { AgentType } from '../../shared/types'
+import { logger } from '../logger'
 
 const now = new Date('2026-01-01T00:00:00.000Z').toISOString()
 
@@ -188,6 +189,129 @@ describe('db', () => {
 
     migrated.close()
     fs.rmSync(tempDir, { recursive: true, force: true })
+  })
+
+  test('logs migration failure details before rethrowing', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentboard-migrate-fail-'))
+    const dbPath = path.join(tempDir, 'agentboard.db')
+    const legacyDb = new SQLiteDatabase(dbPath)
+
+    legacyDb.exec(`
+      CREATE TABLE agent_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT UNIQUE,
+        log_file_path TEXT NOT NULL UNIQUE,
+        project_path TEXT,
+        agent_type TEXT NOT NULL CHECK (agent_type IN ('claude', 'codex', 'invalid')),
+        display_name TEXT,
+        created_at TEXT NOT NULL,
+        last_activity_at TEXT NOT NULL,
+        current_window TEXT,
+        session_source TEXT NOT NULL CHECK (session_source IN ('log', 'synthetic'))
+      );
+    `)
+
+    // Invalid agent_type for the new schema forces migration INSERT failure.
+    legacyDb.exec(`
+      INSERT INTO agent_sessions (
+        session_id,
+        log_file_path,
+        project_path,
+        agent_type,
+        display_name,
+        created_at,
+        last_activity_at,
+        current_window,
+        session_source
+      ) VALUES (
+        'session-invalid',
+        '/tmp/invalid.jsonl',
+        '/tmp/project',
+        'invalid',
+        'invalid',
+        '${now}',
+        '${now}',
+        NULL,
+        'log'
+      );
+    `)
+    legacyDb.close()
+
+    const originalLoggerError = logger.error
+    const calls: Array<{ event: string; data?: Record<string, unknown> }> = []
+    logger.error = ((event: string, data?: Record<string, unknown>) => {
+      calls.push({ event, data })
+    }) as typeof logger.error
+
+    try {
+      expect(() => initDatabase({ path: dbPath })).toThrow()
+    } finally {
+      logger.error = originalLoggerError
+      fs.rmSync(tempDir, { recursive: true, force: true })
+    }
+
+    const failureLog = calls.find(
+      (call) =>
+        call.event === 'db_migration_failed' &&
+        call.data?.migration === 'remove_session_source_column'
+    )
+    expect(failureLog).toBeDefined()
+    expect(typeof failureLog?.data?.error_message).toBe('string')
+  })
+
+  test('logs non-fatal data-dir permission setup failures', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentboard-data-dir-'))
+    const dbPath = path.join(tempDir, 'nested', 'agentboard.db')
+    const dataDir = path.dirname(dbPath)
+    fs.mkdirSync(dataDir, { recursive: true })
+
+    const originalMkdirSync = fs.mkdirSync
+    const originalChmodSync = fs.chmodSync
+    const originalLoggerDebug = logger.debug
+    const calls: Array<{ event: string; data?: Record<string, unknown> }> = []
+
+    fs.mkdirSync = ((dir: fs.PathLike, options?: fs.MakeDirectoryOptions) => {
+      if (String(dir) === dataDir) {
+        throw new Error('mkdir denied')
+      }
+      return originalMkdirSync(dir, options)
+    }) as typeof fs.mkdirSync
+
+    fs.chmodSync = ((targetPath: fs.PathLike, mode: fs.Mode) => {
+      if (String(targetPath) === dataDir) {
+        throw new Error('chmod denied')
+      }
+      return originalChmodSync(targetPath, mode)
+    }) as typeof fs.chmodSync
+
+    logger.debug = ((event: string, data?: Record<string, unknown>) => {
+      calls.push({ event, data })
+    }) as typeof logger.debug
+
+    try {
+      const localDb = initDatabase({ path: dbPath })
+      localDb.close()
+    } finally {
+      fs.mkdirSync = originalMkdirSync
+      fs.chmodSync = originalChmodSync
+      logger.debug = originalLoggerDebug
+      fs.rmSync(tempDir, { recursive: true, force: true })
+    }
+
+    expect(
+      calls.some((call) =>
+        call.event === 'db_data_dir_create_failed' &&
+        call.data?.dir === dataDir &&
+        call.data?.error_message === 'mkdir denied'
+      )
+    ).toBe(true)
+    expect(
+      calls.some((call) =>
+        call.event === 'db_data_dir_chmod_failed' &&
+        call.data?.dir === dataDir &&
+        call.data?.error_message === 'chmod denied'
+      )
+    ).toBe(true)
   })
 
   test('app settings get/set', () => {

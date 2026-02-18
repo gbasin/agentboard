@@ -105,6 +105,7 @@ class PipePaneTerminalProxy extends TerminalProxyBase {
             this.runTmux(['send-keys', '-X', '-t', this.currentTarget, 'cancel'])
           }
         } catch {
+          /* logging-audit:intentional */
           // Ignore errors checking scroll position
         }
       }
@@ -131,6 +132,7 @@ class PipePaneTerminalProxy extends TerminalProxyBase {
         }
       }
     } catch {
+      /* logging-audit:intentional */
       // Ignore write errors
     }
   }
@@ -158,6 +160,7 @@ class PipePaneTerminalProxy extends TerminalProxyBase {
     try {
       await fs.rm(this.pipeRoot, { recursive: true, force: true })
     } catch {
+      /* logging-audit:intentional */
       // Ignore cleanup failures
     }
 
@@ -185,6 +188,7 @@ class PipePaneTerminalProxy extends TerminalProxyBase {
     try {
       await this.ensurePipeRoot()
     } catch (error) {
+      /* logging-audit:intentional */
       this.state = TerminalState.DEAD
       throw new TerminalProxyError(
         'ERR_TMUX_ATTACH_FAILED',
@@ -236,6 +240,7 @@ class PipePaneTerminalProxy extends TerminalProxyBase {
         try {
           onReady()
         } catch {
+          /* logging-audit:intentional */
           // Ignore onReady failures
         }
       }
@@ -254,6 +259,7 @@ class PipePaneTerminalProxy extends TerminalProxyBase {
       this.state = TerminalState.READY
       return true
     } catch (error) {
+      /* logging-audit:intentional */
       this.outputSuppressed = false
       this.state = TerminalState.READY
       this.logEvent('terminal_switch_failure', {
@@ -275,6 +281,7 @@ class PipePaneTerminalProxy extends TerminalProxyBase {
     try {
       await fs.chmod(this.pipeRoot, 0o700)
     } catch {
+      /* logging-audit:intentional */
       // Ignore chmod failures
     }
   }
@@ -285,6 +292,7 @@ class PipePaneTerminalProxy extends TerminalProxyBase {
     try {
       await fs.chmod(pipeFile, 0o600)
     } catch {
+      /* logging-audit:intentional */
       // Ignore chmod failures
     }
     return pipeFile
@@ -305,6 +313,7 @@ class PipePaneTerminalProxy extends TerminalProxyBase {
         stderr: 'pipe',
       })
     } catch (error) {
+      /* logging-audit:intentional */
       throw new TerminalProxyError(
         'ERR_TMUX_ATTACH_FAILED',
         error instanceof Error ? error.message : 'Failed to start pipe tail',
@@ -336,6 +345,7 @@ class PipePaneTerminalProxy extends TerminalProxyBase {
             this.options.onData(tail)
           }
         } catch {
+          /* logging-audit:intentional */
           // Ignore tail read errors
         }
       }
@@ -368,6 +378,7 @@ class PipePaneTerminalProxy extends TerminalProxyBase {
     try {
       this.tailProcess.kill()
     } catch {
+      /* logging-audit:intentional */
       // Ignore kill failures
     }
     this.tailProcess = null
@@ -394,6 +405,7 @@ class PipePaneTerminalProxy extends TerminalProxyBase {
           '#{pane_id}',
         ])
       } catch {
+        /* logging-audit:intentional */
         output = ''
       }
       if (output.trim()) {
@@ -430,6 +442,7 @@ class PipePaneTerminalProxy extends TerminalProxyBase {
     try {
       this.runTmux(['pipe-pane', '-t', target])
     } catch {
+      /* logging-audit:intentional */
       // Ignore pipe stop failures
     }
   }
@@ -438,6 +451,7 @@ class PipePaneTerminalProxy extends TerminalProxyBase {
     try {
       this.runTmux(['pipe-pane', '-t', target])
     } catch {
+      /* logging-audit:intentional */
       // Ignore pipe reset failures
     }
   }
@@ -457,6 +471,7 @@ class PipePaneTerminalProxy extends TerminalProxyBase {
         rows.toString(),
       ])
     } catch {
+      /* logging-audit:intentional */
       // Ignore resize errors
     }
   }

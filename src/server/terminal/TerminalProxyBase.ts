@@ -119,6 +119,7 @@ abstract class TerminalProxyBase implements ITerminalProxy {
       const result = await this.doSwitch(target, onReady)
       resolvers.forEach((resolver) => resolver.resolve(result))
     } catch (error) {
+      /* logging-audit:intentional */
       resolvers.forEach((resolver) => resolver.reject(error))
     }
   }

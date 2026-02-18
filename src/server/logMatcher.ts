@@ -271,6 +271,7 @@ export function hasMessageInValidUserContext(
       }
       continue
     } catch {
+      /* logging-audit:intentional */
       // Fall back to regex matching for non-JSON lines.
     }
 
@@ -400,6 +401,7 @@ function readLogTail(logPath: string, byteLimit = DEFAULT_LOG_TAIL_BYTES): strin
       fs.closeSync(fd)
     }
   } catch {
+    /* logging-audit:intentional */
     return ''
   }
 }
@@ -789,6 +791,7 @@ function parseRgMatchLines(output: string): number[] {
     try {
       entry = JSON.parse(trimmed)
     } catch {
+      /* logging-audit:intentional */
       continue
     }
     const record = entry as { type?: string; data?: { line_number?: number } }
@@ -1218,6 +1221,7 @@ export function readLogContent(
 
     return content
   } catch {
+    /* logging-audit:intentional */
     return ''
   }
 }
@@ -1242,6 +1246,7 @@ export function extractLogText(
     try {
       entry = JSON.parse(trimmed)
     } catch {
+      /* logging-audit:intentional */
       continue
     }
     const extracted = extractTextFromEntry(entry, mode)
@@ -1331,6 +1336,7 @@ function extractLastConversationFromLines(lines: string[]): ConversationPair {
     try {
       entry = JSON.parse(lines[i])
     } catch {
+      /* logging-audit:intentional */
       continue
     }
     const roleText = extractRoleTextFromEntry(entry)
@@ -1423,6 +1429,7 @@ export function extractLastEntryTimestamp(
         }
       }
     } catch {
+      /* logging-audit:intentional */
       // Skip malformed lines
     }
   }

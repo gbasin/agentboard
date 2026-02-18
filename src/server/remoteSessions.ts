@@ -282,6 +282,7 @@ async function captureRemotePaneStatus(
     try {
       proc.kill()
     } catch {
+      /* logging-audit:intentional */
       // ignore
     }
   }, timeoutMs)
@@ -327,6 +328,7 @@ async function pollHost(
     try {
       proc.kill()
     } catch {
+      /* logging-audit:intentional */
       // ignore
     }
   }, timeoutMs)

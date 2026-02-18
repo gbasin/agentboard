@@ -47,6 +47,7 @@ export class LogMatchWorkerClient {
       try {
         await this.readyPromise
       } catch (error) {
+        /* logging-audit:intentional */
         // Worker failed to initialize - restart and retry once
         if (error instanceof WorkerInitError) {
           if (this.disposed) {

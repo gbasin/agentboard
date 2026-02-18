@@ -9,6 +9,7 @@ export function ensureTmux(): void {
       throw new Error(result.stderr.toString() || 'tmux not found')
     }
   } catch (error) {
+    /* logging-audit:intentional */
     const message =
       error instanceof Error ? error.message : 'tmux not found'
     throw new Error(

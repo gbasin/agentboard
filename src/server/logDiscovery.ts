@@ -167,6 +167,7 @@ export function getLogTimes(
       size: stats.size,
     }
   } catch {
+    /* logging-audit:intentional */
     return null
   }
 }
@@ -206,6 +207,7 @@ function scanDirForJsonl(root: string, maxDepth: number): string[] {
     try {
       entries = fs.readdirSync(dir, { withFileTypes: true })
     } catch {
+      /* logging-audit:intentional */
       continue
     }
 
@@ -241,6 +243,7 @@ function readLogHead(logPath: string, byteLimit = LOG_HEAD_BYTE_LIMIT): string {
     if (bytes <= 0) return ''
     return buffer.slice(0, bytes).toString('utf8')
   } catch {
+    /* logging-audit:intentional */
     return ''
   }
 }
@@ -251,6 +254,7 @@ function safeParseJson(line: string): Record<string, unknown> | null {
     if (!parsed || typeof parsed !== 'object') return null
     return parsed
   } catch {
+    /* logging-audit:intentional */
     return null
   }
 }

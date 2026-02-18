@@ -31,6 +31,11 @@ let serveOptions: Parameters<typeof Bun.serve>[0] | null = null
 let spawnSyncImpl: typeof Bun.spawnSync
 let writeImpl: typeof Bun.write
 let replaceSessionsCalls: Session[][] = []
+let loggerCalls: Array<{
+  level: 'debug' | 'info' | 'warn' | 'error'
+  event: string
+  data?: Record<string, unknown>
+}> = []
 let dbState: {
   records: Map<string, AgentSessionRecord>
   nextId: number
@@ -345,6 +350,25 @@ mock.module('../../SessionManager', () => ({
 mock.module('../../SessionRegistry', () => ({
   SessionRegistry: SessionRegistryMock,
 }))
+mock.module('../../logger', () => ({
+  logger: {
+    debug: (event: string, data?: Record<string, unknown>) => {
+      loggerCalls.push({ level: 'debug', event, data })
+    },
+    info: (event: string, data?: Record<string, unknown>) => {
+      loggerCalls.push({ level: 'info', event, data })
+    },
+    warn: (event: string, data?: Record<string, unknown>) => {
+      loggerCalls.push({ level: 'warn', event, data })
+    },
+    error: (event: string, data?: Record<string, unknown>) => {
+      loggerCalls.push({ level: 'error', event, data })
+    },
+  },
+  logLevel: 'info',
+  flushLogger: () => {},
+  closeLogger: () => {},
+}))
 class TerminalProxyErrorMock extends Error {
   code: string
   retryable: boolean
@@ -417,6 +441,7 @@ async function loadIndex() {
 beforeEach(() => {
   serveOptions = null
   replaceSessionsCalls = []
+  loggerCalls = []
   TerminalProxyMock.instances = []
   SessionManagerMock.instance = null
   SessionRegistryMock.instance = null
@@ -553,6 +578,12 @@ describe('server message handlers', () => {
       type: 'error',
       message: 'Invalid message payload',
     })
+    expect(
+      loggerCalls.some((call) =>
+        call.level === 'warn' &&
+        call.event === 'ws_message_parse_failed'
+      )
+    ).toBe(true)
     expect(sent[1]).toEqual({ type: 'error', message: 'Unknown message type' })
     expect(sent[2]).toEqual({
       type: 'terminal-error',
@@ -617,6 +648,13 @@ describe('server message handlers', () => {
       type: 'error',
       message: 'explode',
     })
+    expect(
+      loggerCalls.some((call) =>
+        call.level === 'warn' &&
+        call.event === 'session_create_failed' &&
+        call.data?.projectPath === '/tmp/new'
+      )
+    ).toBe(true)
   })
 
   test('returns errors for kill and rename when sessions are missing', async () => {
@@ -724,6 +762,20 @@ describe('server message handlers', () => {
 
     expect(sent[sent.length - 2]).toEqual({ type: 'kill-failed', sessionId: baseSession.id, message: 'boom' })
     expect(sent[sent.length - 1]).toEqual({ type: 'error', message: 'nope' })
+    expect(
+      loggerCalls.some((call) =>
+        call.level === 'warn' &&
+        call.event === 'session_kill_failed' &&
+        call.data?.sessionId === baseSession.id
+      )
+    ).toBe(true)
+    expect(
+      loggerCalls.some((call) =>
+        call.level === 'warn' &&
+        call.event === 'session_rename_failed' &&
+        call.data?.sessionId === baseSession.id
+      )
+    ).toBe(true)
   })
 
   test('blocks remote kill when remoteAllowControl is false', async () => {
@@ -2113,6 +2165,47 @@ describe('server message handlers', () => {
     expect(registryInstance.sessions[0]?.id).toBe(createdSession.id)
   })
 
+  test('logs warning when session resume creation fails', async () => {
+    const { serveOptions } = await loadIndex()
+    const { ws, sent } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) {
+      throw new Error('WebSocket handlers not configured')
+    }
+
+    seedRecord(
+      makeRecord({
+        sessionId: 'resume-fail',
+        displayName: 'resume-fail',
+        projectPath: '/tmp/resume-fail',
+        currentWindow: null,
+      })
+    )
+
+    sessionManagerState.createWindow = () => {
+      throw new Error('resume exploded')
+    }
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({ type: 'session-resume', sessionId: 'resume-fail' })
+    )
+
+    expect(sent[sent.length - 1]).toEqual({
+      type: 'session-resume-result',
+      sessionId: 'resume-fail',
+      ok: false,
+      error: { code: 'RESUME_FAILED', message: 'resume exploded' },
+    })
+    expect(
+      loggerCalls.some((call) =>
+        call.level === 'warn' &&
+        call.event === 'session_resume_failed' &&
+        call.data?.sessionId === 'resume-fail'
+      )
+    ).toBe(true)
+  })
+
   test('websocket close disposes all terminals', async () => {
     const { serveOptions } = await loadIndex()
     const websocket = serveOptions.websocket
@@ -2468,6 +2561,11 @@ describe('server fetch handlers', () => {
     expect(response.status).toBe(404)
     const payload = (await response.json()) as { error: string }
     expect(payload.error).toBe('Log file not found')
+    expect(loggerCalls.some((call) =>
+      call.level === 'warn' &&
+      call.event === 'session_preview_read_failed' &&
+      call.data?.sessionId === 'missing-log'
+    )).toBe(true)
   })
 })
 
@@ -2549,6 +2647,13 @@ describe('server startup side effects', () => {
     expect(response.status).toBe(200)
     const payload = (await response.json()) as { ok: boolean }
     expect(payload.ok).toBe(true)
+    const loggedClientEvent = loggerCalls.find(
+      (call) =>
+        call.level === 'debug' &&
+        call.event === 'client_log_event'
+    )
+    expect(loggedClientEvent).toBeDefined()
+    expect(loggedClientEvent?.data?.client_event).toBe('test_event')
   })
 
   test('/api/client-log handles malformed body gracefully', async () => {
@@ -2576,6 +2681,10 @@ describe('server startup side effects', () => {
     expect(response.status).toBe(200)
     const payload = (await response.json()) as { ok: boolean }
     expect(payload.ok).toBe(true)
+    expect(loggerCalls.some((call) =>
+      call.level === 'warn' &&
+      call.event === 'client_log_ingest_failed'
+    )).toBe(true)
   })
 
   test('does not run sync window verification before startup is ready', async () => {
