@@ -175,6 +175,33 @@ function createConnectionId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
 
+function toErrorLogFields(error: unknown): {
+  error_message: string
+  error_name?: string
+  error_stack?: string
+} {
+  if (error instanceof Error) {
+    return {
+      error_message: error.message,
+      error_name: error.name,
+      error_stack: error.stack,
+    }
+  }
+  return { error_message: String(error) }
+}
+
+function normalizeClientEventName(rawEvent: unknown): string {
+  if (typeof rawEvent !== 'string') {
+    return 'unknown'
+  }
+  const normalized = rawEvent
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+  return normalized || 'unknown'
+}
+
 checkPortAvailable(config.port)
 ensureTmux()
 pruneOrphanedWsSessions()
@@ -824,11 +851,28 @@ registry.on('agent-sessions', ({ active, inactive }) => {
 
 app.post('/api/client-log', async (c) => {
   try {
-    const body = await c.req.json() as { level?: string; event: string; data?: Record<string, unknown> }
-    const level = body.level === 'warn' || body.level === 'error' || body.level === 'info' ? body.level : 'debug'
-    logger[level]('client_' + body.event, body.data)
-  } catch {
-    // ignore malformed
+    const body = await c.req.json() as {
+      level?: string
+      event?: string
+      data?: Record<string, unknown>
+    }
+    const level = body.level === 'warn' || body.level === 'error' || body.level === 'info'
+      ? body.level
+      : 'debug'
+    const normalizedEvent = normalizeClientEventName(body.event)
+    logger[level]('client_log_event', {
+      client_event: normalizedEvent,
+      client_event_raw: body.event,
+      path: c.req.path,
+      method: c.req.method,
+      data: body.data,
+    })
+  } catch (error) {
+    logger.warn('client_log_ingest_failed', {
+      path: c.req.path,
+      method: c.req.method,
+      ...toErrorLogFields(error),
+    })
   }
   return c.json({ ok: true })
 })
@@ -881,6 +925,12 @@ app.get('/api/session-preview/:sessionId', async (c) => {
     })
   } catch (error) {
     const err = error as NodeJS.ErrnoException
+    logger.warn('session_preview_read_failed', {
+      sessionId,
+      logPath,
+      code: err.code,
+      ...toErrorLogFields(error),
+    })
     if (err.code === 'ENOENT') {
       return c.json({ error: 'Log file not found' }, 404)
     }
@@ -915,6 +965,12 @@ app.get('/api/directories', async (c) => {
     stats = await fs.stat(resolved)
   } catch (error) {
     const err = error as NodeJS.ErrnoException
+    logger.warn('directories_stat_failed', {
+      requestedPath: trimmedPath,
+      resolvedPath: resolved,
+      code: err.code,
+      ...toErrorLogFields(error),
+    })
     if (err.code === 'ENOENT' || err.code === 'ENOTDIR') {
       const payload: DirectoryErrorResponse = {
         error: 'not_found',
@@ -977,6 +1033,12 @@ app.get('/api/directories', async (c) => {
       })
   } catch (error) {
     const err = error as NodeJS.ErrnoException
+    logger.warn('directories_read_failed', {
+      requestedPath: trimmedPath,
+      resolvedPath: resolved,
+      code: err.code,
+      ...toErrorLogFields(error),
+    })
     if (err.code === 'EACCES' || err.code === 'EPERM') {
       const payload: DirectoryErrorResponse = {
         error: 'forbidden',
@@ -1048,7 +1110,12 @@ app.put('/api/settings/tmux-mouse-mode', async (c) => {
     db.setAppSetting(TMUX_MOUSE_MODE_KEY, String(body.enabled))
     sessionManager.setMouseMode(body.enabled)
     return c.json({ enabled: body.enabled })
-  } catch {
+  } catch (error) {
+    logger.warn('tmux_mouse_mode_update_failed', {
+      path: c.req.path,
+      method: c.req.method,
+      ...toErrorLogFields(error),
+    })
     return c.json({ error: 'Invalid request body' }, 400)
   }
 })
@@ -1070,7 +1137,12 @@ app.put('/api/settings/inactive-max-age-hours', async (c) => {
     // Re-broadcast agent sessions with new max age
     updateAgentSessions()
     return c.json({ hours })
-  } catch {
+  } catch (error) {
+    logger.warn('inactive_max_age_update_failed', {
+      path: c.req.path,
+      method: c.req.method,
+      ...toErrorLogFields(error),
+    })
     return c.json({ error: 'Invalid request body' }, 400)
   }
 })
@@ -1095,6 +1167,11 @@ app.post('/api/paste-image', async (c) => {
 
     return c.json({ path: filepath })
   } catch (error) {
+    logger.warn('paste_image_upload_failed', {
+      path: c.req.path,
+      method: c.req.method,
+      ...toErrorLogFields(error),
+    })
     return c.json(
       { error: error instanceof Error ? error.message : 'Upload failed' },
       500
@@ -1127,7 +1204,12 @@ app.get('/api/clipboard-file-path', async (c) => {
       }
     }
     return c.json({ path: null })
-  } catch {
+  } catch (error) {
+    logger.warn('clipboard_file_path_read_failed', {
+      path: c.req.path,
+      method: c.req.method,
+      ...toErrorLogFields(error),
+    })
     return c.json({ path: null })
   }
 })
@@ -2113,7 +2195,7 @@ async function createAndStartSshProxy(
       // Guard: skip if this proxy was already replaced
       if (ws.data.terminal !== terminal) return
       const sessionId = ws.data.currentSessionId
-      logger.warn('ssh_proxy_onExit', {
+      logger.warn('ssh_proxy_on_exit', {
         sessionName,
         sessionId,
         host,
