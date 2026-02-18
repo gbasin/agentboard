@@ -30,6 +30,8 @@ async function runCommand(cmd: string[], env: NodeJS.ProcessEnv) {
 
 async function main() {
   const { tempRoot, claudeDir, codexDir } = createTempLogDirs()
+  const tempLogFile = path.join(tempRoot, 'agentboard.log')
+  const tempDbPath = path.join(tempRoot, 'agentboard.db')
   const env = {
     ...process.env,
     // React's act() requires the development build; force NODE_ENV=test
@@ -37,6 +39,8 @@ async function main() {
     NODE_ENV: process.env.NODE_ENV === 'production' ? 'test' : (process.env.NODE_ENV || 'test'),
     CLAUDE_CONFIG_DIR: claudeDir,
     CODEX_HOME: codexDir,
+    LOG_FILE: tempLogFile,
+    AGENTBOARD_DB_PATH: tempDbPath,
   }
 
   try {

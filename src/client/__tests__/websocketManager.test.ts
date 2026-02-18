@@ -249,7 +249,7 @@ describe('WebSocketManager', () => {
     const ws = FakeWebSocket.instances[0]!
 
     // Find the connect timeout timer
-    const timeoutTimer = timers.find((t) => t.delay === 10000)
+    const timeoutTimer = timers.find((t) => t.delay === 3000)
     expect(timeoutTimer).toBeDefined()
     const timeoutId = timeoutTimer!.id
 
@@ -298,8 +298,8 @@ describe('connect timeout', () => {
     expect(FakeWebSocket.instances).toHaveLength(1)
     const ws = FakeWebSocket.instances[0]!
 
-    // Socket stays in CONNECTING — find and fire the 10s timeout
-    const timeoutTimer = timers.find((t) => t.delay === 10000)
+    // Socket stays in CONNECTING — find and fire the 3s timeout
+    const timeoutTimer = timers.find((t) => t.delay === 3000)
     expect(timeoutTimer).toBeDefined()
     timeoutTimer!.callback()
 
@@ -316,11 +316,34 @@ describe('connect timeout', () => {
     expect(FakeWebSocket.instances).toHaveLength(2)
   })
 
+  test('reconnects if socket reports OPEN but status never became connected', () => {
+    const manager = new WebSocketManager()
+    const statuses: string[] = []
+    manager.subscribeStatus((status) => statuses.push(status))
+
+    manager.connect()
+    expect(FakeWebSocket.instances).toHaveLength(1)
+    const ws = FakeWebSocket.instances[0]!
+
+    // Simulate iOS lifecycle glitch: readyState flips OPEN without onopen.
+    ws.readyState = FakeWebSocket.OPEN
+
+    // 3s timeout should still treat this as unhealthy and recover.
+    const timeoutTimer = timers.find((t) => t.delay === 3000)
+    expect(timeoutTimer).toBeDefined()
+    timeoutTimer!.callback()
+
+    expect(ws.onopen).toBeNull()
+    expect(ws.onclose).toBeNull()
+    expect(statuses[statuses.length - 1]).toBe('reconnecting')
+    expect(timers.some((t) => t.delay === 1000)).toBe(true)
+  })
+
   test('clears timeout when socket opens successfully', () => {
     const manager = new WebSocketManager()
     manager.connect()
 
-    const timeoutTimer = timers.find((t) => t.delay === 10000)
+    const timeoutTimer = timers.find((t) => t.delay === 3000)
     expect(timeoutTimer).toBeDefined()
     const timeoutId = timeoutTimer!.id
 
@@ -335,13 +358,44 @@ describe('connect timeout', () => {
     const manager = new WebSocketManager()
     manager.connect()
 
-    const timeoutTimer = timers.find((t) => t.delay === 10000)
+    const timeoutTimer = timers.find((t) => t.delay === 3000)
     const timeoutId = timeoutTimer!.id
 
     const ws = FakeWebSocket.instances[0]!
     ws.triggerError()
 
     expect(timers.find((t) => t.id === timeoutId)).toBeUndefined()
+  })
+
+  test('ignores stale timeout callback from a replaced socket', () => {
+    const manager = new WebSocketManager()
+
+    // First connect creates ws1 + timeout1.
+    manager.connect()
+    const timeout1 = timers.find((t) => t.delay === 3000)!
+    const timeout1Id = timeout1.id
+
+    // Replace socket before timeout fires.
+    ;(manager as unknown as { ws: null }).ws = null
+    manager.connect()
+    const timeout2 = timers.find(
+      (t) => t.delay === 3000 && t.id !== timeout1Id
+    )!
+    const timeout2Id = timeout2.id
+
+    // Old timeout should be cleared by the second connect.
+    expect(timers.find((t) => t.id === timeout1Id)).toBeUndefined()
+
+    // Simulate queued stale callback firing late.
+    timeout1.callback()
+
+    // Stale callback must not clobber the current connect timer reference.
+    manager.disconnect()
+    expect(timers.find((t) => t.id === timeout2Id)).toBeUndefined()
+
+    // Disconnect should not schedule reconnect.
+    const reconnectTimers = timers.filter((t) => t.delay >= 1000 && t.delay <= 30000)
+    expect(reconnectTimers).toHaveLength(0)
   })
 })
 
@@ -372,6 +426,20 @@ describe('connect() zombie socket guard', () => {
 
     manager.connect()
     expect(FakeWebSocket.instances).toHaveLength(1)
+  })
+
+  test('destroys OPEN socket when status is desynced from connected', () => {
+    const manager = new WebSocketManager()
+    manager.connect()
+    const ws = FakeWebSocket.instances[0]!
+    ws.triggerOpen()
+
+    // Simulate desync observed after background/foreground lifecycle glitches.
+    ;(manager as unknown as { status: string }).status = 'reconnecting'
+    manager.connect()
+
+    expect(FakeWebSocket.instances).toHaveLength(2)
+    expect(ws.onopen).toBeNull()
   })
 })
 
