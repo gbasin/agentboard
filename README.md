@@ -187,6 +187,7 @@ Then create the sockets directory: `mkdir -p ~/.ssh/sockets && chmod 700 ~/.ssh/
 ```
 LOG_LEVEL=info                          # debug | info | warn | error (default: info)
 LOG_FILE=~/.agentboard/agentboard.log   # default; set empty to disable file logging
+AGENTBOARD_LOG_MATCH_PROFILE=false      # set true/1 to emit detailed log_match_profile telemetry
 ```
 
 Console output is pretty-printed in development, JSON in production (`NODE_ENV=production`). File output is always JSON. Set `LOG_FILE=` (empty) to disable file logging.
@@ -198,6 +199,8 @@ Use `perf:spot` to detect likely backend performance regressions in the log poll
 Prerequisites:
 - Keep file logging enabled (`LOG_FILE` must point to a writable file).
 - Use `LOG_LEVEL=info` or `LOG_LEVEL=debug` so `log_poll`/`log_match_profile` events are emitted.
+- Enable match profiling (`AGENTBOARD_LOG_MATCH_PROFILE=true`) if you want `log_match_profile.*` metrics in regression checks.
+- Ensure the match worker is enabled (`AGENTBOARD_LOG_MATCH_WORKER` is `true` by default).
 - Capture enough samples in both windows (default minimum: 6 per metric in baseline and recent windows).
 
 Quick start:
