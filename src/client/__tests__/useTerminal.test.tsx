@@ -86,7 +86,8 @@ class TerminalMock {
     return this.selection
   }
 
-  refresh() {}
+  refreshCalls: Array<[number, number]> = []
+  refresh(start: number, end: number) { this.refreshCalls.push([start, end]) }
 
   dispose() {
     this.disposed = true
@@ -1600,6 +1601,146 @@ describe('useTerminal', () => {
     })
 
     expect(pendingTimers.find(t => t.delay === 200)).toBeUndefined()
+
+    act(() => { renderer.unmount() })
+  })
+
+  test('triggers repaint on iOS window focus (fallback for PWA foreground)', async () => {
+    const pendingTimers: Array<{ callback: () => void; delay: number; id: number }> = []
+    let nextTimerId = 100
+    const winListeners = new Map<string, Set<EventListener>>()
+    globalAny.window = {
+      setTimeout: ((cb: () => void, delay?: number) => {
+        const id = nextTimerId++
+        pendingTimers.push({ callback: cb, delay: delay ?? 0, id })
+        return id
+      }) as typeof setTimeout,
+      clearTimeout: (() => {}) as typeof clearTimeout,
+      devicePixelRatio: 1,
+      addEventListener(event: string, handler: EventListener) {
+        const set = winListeners.get(event) ?? new Set()
+        set.add(handler)
+        winListeners.set(event, set)
+      },
+      removeEventListener(event: string, handler: EventListener) {
+        winListeners.get(event)?.delete(handler)
+      },
+    } as unknown as Window & typeof globalThis
+
+    globalAny.document = {
+      fonts: { ready: Promise.resolve() },
+      visibilityState: 'visible',
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    } as unknown as Document
+
+    globalAny.navigator = {
+      userAgent: 'iPhone',
+      platform: 'iPhone',
+      maxTouchPoints: 5,
+      clipboard: { writeText: () => Promise.resolve() },
+    } as unknown as Navigator
+
+    const { container, displayLog } = createContainerMock()
+
+    let renderer!: TestRenderer.ReactTestRenderer
+
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          sendMessage={() => {}}
+          subscribe={() => () => {}}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+        { createNodeMock: () => container },
+      )
+      await Promise.resolve()
+    })
+
+    pendingTimers.length = 0
+    displayLog.length = 0
+
+    // window 'focus' should trigger repaint on iOS
+    act(() => {
+      for (const handler of winListeners.get('focus') ?? []) {
+        handler(new Event('focus'))
+      }
+    })
+
+    const repaintTimer = pendingTimers.find(t => t.delay === 200)
+    expect(repaintTimer).toBeDefined()
+
+    act(() => { repaintTimer!.callback() })
+    expect(displayLog).toEqual(['none', ''])
+
+    // Verify terminal.refresh was called to force xterm re-render
+    const terminal = TerminalMock.instances[0]
+    expect(terminal?.refreshCalls.length).toBeGreaterThan(0)
+    expect(terminal?.refreshCalls[0]).toEqual([0, 23])
+
+    act(() => { renderer.unmount() })
+  })
+
+  test('does not trigger repaint on non-iOS window focus', async () => {
+    const winListeners = new Map<string, Set<EventListener>>()
+    globalAny.window = {
+      setTimeout: ((callback: () => void) => {
+        callback()
+        return 1 as unknown as ReturnType<typeof setTimeout>
+      }) as typeof setTimeout,
+      clearTimeout: (() => {}) as typeof clearTimeout,
+      devicePixelRatio: 1,
+      addEventListener(event: string, handler: EventListener) {
+        const set = winListeners.get(event) ?? new Set()
+        set.add(handler)
+        winListeners.set(event, set)
+      },
+      removeEventListener(event: string, handler: EventListener) {
+        winListeners.get(event)?.delete(handler)
+      },
+    } as unknown as Window & typeof globalThis
+
+    globalAny.document = {
+      fonts: { ready: Promise.resolve() },
+      visibilityState: 'visible',
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    } as unknown as Document
+
+    globalAny.navigator = {
+      userAgent: 'Chrome',
+      platform: 'MacIntel',
+      maxTouchPoints: 0,
+      clipboard: { writeText: () => Promise.resolve() },
+    } as unknown as Navigator
+
+    const { container, displayLog } = createContainerMock()
+
+    let renderer!: TestRenderer.ReactTestRenderer
+
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          sendMessage={() => {}}
+          subscribe={() => () => {}}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+        { createNodeMock: () => container },
+      )
+      await Promise.resolve()
+    })
+
+    displayLog.length = 0
+
+    // window 'focus' should NOT register a listener on non-iOS
+    const focusHandlers = winListeners.get('focus')
+    expect(focusHandlers?.size ?? 0).toBe(0)
 
     act(() => { renderer.unmount() })
   })

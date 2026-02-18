@@ -223,6 +223,10 @@ export function useTerminal({
 
     iosRepaintTimerRef.current = window.setTimeout(() => {
       iosRepaintTimerRef.current = null
+      // Force xterm.js to re-render all visible rows so the DOM has
+      // fresh content before the compositor is forced to repaint.
+      const terminal = terminalRef.current
+      if (terminal) terminal.refresh(0, terminal.rows - 1)
       iosRepaintPrevRef.current = container.style.display
       container.style.display = 'none'
       // Split restore across two animation frames so the compositor
@@ -1153,11 +1157,20 @@ export function useTerminal({
       if (e.persisted) scheduleIosRepaint(200)
     }
 
+    const handleFocus = () => {
+      // Fallback: window 'focus' reliably fires when an iOS PWA returns
+      // to the foreground, even when visibilitychange doesn't fire
+      // (WebKit #202399) and the WebSocket stays alive (no reconnect).
+      scheduleIosRepaint(200)
+    }
+
     document.addEventListener('visibilitychange', handleVisibility)
     window.addEventListener('pageshow', handlePageShow)
+    window.addEventListener('focus', handleFocus)
     return () => {
       document.removeEventListener('visibilitychange', handleVisibility)
       window.removeEventListener('pageshow', handlePageShow)
+      window.removeEventListener('focus', handleFocus)
       cancelIosRepaint()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
