@@ -45,6 +45,7 @@ function hasPinoPretty(): boolean {
     require.resolve('pino-pretty')
     return true
   } catch {
+    /* logging-audit:intentional */
     return false
   }
 }
@@ -75,6 +76,7 @@ function createLogger(): pino.Logger {
 
       return pino({ level: logLevel, transport: { targets } })
     } catch {
+      /* logging-audit:intentional */
       // Fall through to production logger (compiled binary or missing pino-pretty)
     }
   }
@@ -99,7 +101,10 @@ function createLogger(): pino.Logger {
           { level: logLevel, stream: fileDestination },
         ]
         return pino(baseOptions, pino.multistream(streams))
-      } catch { /* fall through */ }
+      } catch {
+        /* logging-audit:intentional */
+        /* fall through */
+      }
     }
 
     const streams: pino.StreamEntry[] = [
@@ -113,7 +118,10 @@ function createLogger(): pino.Logger {
   if (canPretty) {
     try {
       return pino(baseOptions, pino.transport({ target: 'pino-pretty', options: PRETTY_OPTIONS }))
-    } catch { /* fall through */ }
+    } catch {
+      /* logging-audit:intentional */
+      /* fall through */
+    }
   }
   return pino(baseOptions)
 }

@@ -74,7 +74,11 @@ export class SessionManager {
   ensureSession(): void {
     try {
       this.runTmux(['has-session', '-t', this.sessionName])
-    } catch {
+    } catch (error) {
+      logger.debug('tmux_session_missing_create', {
+        sessionName: this.sessionName,
+        ...toErrorLogFields(error),
+      })
       this.runTmux(['new-session', '-d', '-s', this.sessionName])
     }
     // Set mouse mode for scroll wheel support (SGR mouse sequences)
@@ -98,7 +102,12 @@ export class SessionManager {
         'mouse',
         enabled ? 'on' : 'off',
       ])
-    } catch {
+    } catch (error) {
+      logger.debug('tmux_mouse_mode_apply_deferred', {
+        sessionName: this.sessionName,
+        enabled,
+        ...toErrorLogFields(error),
+      })
       // Session doesn't exist yet, will be applied on next ensureSession
     }
   }
@@ -305,7 +314,11 @@ export class SessionManager {
         .split('\n')
         .map((line) => line.trim())
         .filter(Boolean)
-    } catch {
+    } catch (error) {
+      logger.debug('tmux_list_sessions_failed', {
+        sessionName: this.sessionName,
+        ...toErrorLogFields(error),
+      })
       return []
     }
   }
@@ -358,6 +371,10 @@ export class SessionManager {
       if (!isTmuxFormatError(error)) {
         throw error
       }
+      logger.debug('tmux_window_list_format_fallback', {
+        sessionName,
+        ...toErrorLogFields(error),
+      })
     }
 
     return this.runTmux([...args, WINDOW_LIST_FORMAT_FALLBACK])
@@ -409,7 +426,11 @@ export class SessionManager {
     try {
       const output = this.runTmux(['show-options', '-gv', 'base-index'])
       return Number.parseInt(output.trim(), 10) || 0
-    } catch {
+    } catch (error) {
+      logger.debug('tmux_base_index_defaulted', {
+        sessionName: this.sessionName,
+        ...toErrorLogFields(error),
+      })
       return 0
     }
   }
@@ -427,7 +448,11 @@ export class SessionManager {
         .split('\n')
         .map((line) => Number.parseInt(line.trim(), 10))
         .filter((n) => !Number.isNaN(n))
-    } catch {
+    } catch (error) {
+      logger.debug('tmux_window_indices_unavailable', {
+        sessionName: this.sessionName,
+        ...toErrorLogFields(error),
+      })
       return []
     }
   }
@@ -572,9 +597,26 @@ function capturePaneWithDimensions(tmuxWindow: string): PaneCapture | null {
     const content = lines.slice(-30).join('\n')
     return { content, width, height }
   } catch {
+    // logging-audit:intentional Pane capture runs at poll cadence; transient
+    // failures are expected when panes close and logging each one would flood logs.
     return null
   }
 }
 
 // Re-export for external use
 export { detectsPermissionPrompt } from './statusInference'
+
+function toErrorLogFields(error: unknown): {
+  error_message: string
+  error_name?: string
+  error_stack?: string
+} {
+  if (error instanceof Error) {
+    return {
+      error_message: error.message,
+      error_name: error.name,
+      error_stack: error.stack,
+    }
+  }
+  return { error_message: String(error) }
+}
