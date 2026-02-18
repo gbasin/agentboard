@@ -1727,6 +1727,109 @@ describe('useTerminal', () => {
     act(() => { renderer.unmount() })
   })
 
+  test('visibility + terminal-ready triggers coalesce into single repaint', async () => {
+    // Both triggers fire close together (reconnect + resume scenario).
+    // The 50ms terminal-ready repaint should supersede the 200ms visibility
+    // repaint, resulting in exactly one hide/restore cycle.
+    const pendingTimers: Array<{ callback: () => void; delay: number; id: number }> = []
+    let nextTimerId = 100
+    const clearedTimerIds = new Set<number>()
+
+    globalAny.window = {
+      setTimeout: ((cb: () => void, delay?: number) => {
+        const id = nextTimerId++
+        pendingTimers.push({ callback: cb, delay: delay ?? 0, id })
+        return id
+      }) as typeof setTimeout,
+      clearTimeout: ((id: number) => { clearedTimerIds.add(id) }) as typeof clearTimeout,
+      devicePixelRatio: 1,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    } as unknown as Window & typeof globalThis
+
+    let visibilityState = 'hidden'
+    const docListeners = new Map<string, Set<EventListener>>()
+    globalAny.document = {
+      fonts: { ready: Promise.resolve() },
+      get visibilityState() { return visibilityState },
+      addEventListener(event: string, handler: EventListener) {
+        const set = docListeners.get(event) ?? new Set()
+        set.add(handler)
+        docListeners.set(event, set)
+      },
+      removeEventListener(event: string, handler: EventListener) {
+        docListeners.get(event)?.delete(handler)
+      },
+    } as unknown as Document
+
+    globalAny.navigator = {
+      userAgent: 'iPhone',
+      platform: 'iPhone',
+      maxTouchPoints: 5,
+      clipboard: { writeText: () => Promise.resolve() },
+    } as unknown as Navigator
+
+    const listeners: Array<(message: ServerMessage) => void> = []
+    const { container, displayLog } = createContainerMock()
+
+    let renderer!: TestRenderer.ReactTestRenderer
+
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          sendMessage={() => {}}
+          subscribe={(listener) => {
+            listeners.push(listener)
+            return () => {}
+          }}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+        { createNodeMock: () => container },
+      )
+      await Promise.resolve()
+    })
+
+    pendingTimers.length = 0
+    displayLog.length = 0
+
+    // 1. Visibility resume fires → schedules 200ms repaint
+    visibilityState = 'visible'
+    act(() => {
+      for (const handler of docListeners.get('visibilitychange') ?? []) {
+        handler(new Event('visibilitychange'))
+      }
+    })
+
+    const visibilityTimer = pendingTimers.find(t => t.delay === 200)
+    expect(visibilityTimer).toBeDefined()
+
+    // 2. terminal-ready fires shortly after → schedules 50ms repaint,
+    //    which cancels the 200ms visibility repaint
+    act(() => {
+      listeners[0]?.({ type: 'terminal-ready', sessionId: 'session-1' })
+    })
+
+    const readyTimer = pendingTimers.find(t => t.delay === 50)
+    expect(readyTimer).toBeDefined()
+
+    // The 200ms visibility timer should have been cleared
+    expect(clearedTimerIds.has(visibilityTimer!.id)).toBe(true)
+
+    // No display toggle yet — only 50ms timer is pending
+    expect(displayLog).toEqual([])
+
+    // 3. Execute the 50ms timer (the only one that should fire)
+    act(() => { readyTimer!.callback() })
+
+    // Exactly one hide/restore cycle
+    expect(displayLog).toEqual(['none', ''])
+
+    act(() => { renderer.unmount() })
+  })
+
   test('paste capture-phase listener is cleaned up on unmount', async () => {
     globalAny.navigator = {
       userAgent: 'Chrome',
