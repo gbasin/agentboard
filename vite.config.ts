@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
+import { VitePWA } from 'vite-plugin-pwa'
 import path from 'node:path'
 
 function isConnRefused(err: unknown): boolean {
@@ -28,7 +29,56 @@ export default defineConfig(({ mode }) => {
   const backendPort = env.PORT || '4040'
 
   return {
-    plugins: [react()],
+    plugins: [
+      react(),
+      VitePWA({
+        registerType: 'autoUpdate',
+        manifest: {
+          name: 'Agent Board',
+          short_name: 'AgentBoard',
+          description: 'Web GUI for tmux optimized for AI agent TUIs',
+          theme_color: '#0f172a',
+          background_color: '#0f172a',
+          display: 'standalone',
+          orientation: 'any',
+          start_url: '/',
+          icons: [
+            {
+              src: '/icons/pwa-192x192.png',
+              sizes: '192x192',
+              type: 'image/png',
+            },
+            {
+              src: '/icons/pwa-512x512.png',
+              sizes: '512x512',
+              type: 'image/png',
+            },
+            {
+              src: '/icons/pwa-512x512.png',
+              sizes: '512x512',
+              type: 'image/png',
+              purpose: 'any maskable',
+            },
+          ],
+        },
+        workbox: {
+          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+          navigateFallback: '/index.html',
+          navigateFallbackDenylist: [/^\/api/, /^\/ws/],
+          runtimeCaching: [
+            {
+              urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'google-fonts-cache',
+                expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 365 },
+                cacheableResponse: { statuses: [0, 200] },
+              },
+            },
+          ],
+        },
+      }),
+    ],
     resolve: {
       alias: {
         '@shared': path.resolve(__dirname, 'src/shared'),
