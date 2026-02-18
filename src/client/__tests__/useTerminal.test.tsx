@@ -1604,6 +1604,129 @@ describe('useTerminal', () => {
     act(() => { renderer.unmount() })
   })
 
+  test('restores display when repaint canceled mid-toggle', async () => {
+    // Deferred timers AND deferred rAF to test cancel between hide and restore
+    const pendingTimers: Array<{ callback: () => void; delay: number; id: number }> = []
+    let nextTimerId = 100
+    const clearedTimerIds = new Set<number>()
+
+    const pendingRafs: Array<{ callback: FrameRequestCallback; id: number }> = []
+    let nextRafId = 500
+    const canceledRafIds = new Set<number>()
+
+    globalAny.window = {
+      setTimeout: ((cb: () => void, delay?: number) => {
+        const id = nextTimerId++
+        pendingTimers.push({ callback: cb, delay: delay ?? 0, id })
+        return id
+      }) as typeof setTimeout,
+      clearTimeout: ((id: number) => { clearedTimerIds.add(id) }) as typeof clearTimeout,
+      devicePixelRatio: 1,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    } as unknown as Window & typeof globalThis
+
+    globalAny.requestAnimationFrame = (cb: FrameRequestCallback) => {
+      const id = nextRafId++
+      pendingRafs.push({ callback: cb, id })
+      return id
+    }
+    globalAny.cancelAnimationFrame = (id: number) => { canceledRafIds.add(id) }
+
+    let visibilityState = 'hidden'
+    const docListeners = new Map<string, Set<EventListener>>()
+    globalAny.document = {
+      fonts: { ready: Promise.resolve() },
+      get visibilityState() { return visibilityState },
+      addEventListener(event: string, handler: EventListener) {
+        const set = docListeners.get(event) ?? new Set()
+        set.add(handler)
+        docListeners.set(event, set)
+      },
+      removeEventListener(event: string, handler: EventListener) {
+        docListeners.get(event)?.delete(handler)
+      },
+    } as unknown as Document
+
+    globalAny.navigator = {
+      userAgent: 'iPhone',
+      platform: 'iPhone',
+      maxTouchPoints: 5,
+      clipboard: { writeText: () => Promise.resolve() },
+    } as unknown as Navigator
+
+    const { container, displayLog } = createContainerMock()
+
+    let renderer!: TestRenderer.ReactTestRenderer
+
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          sendMessage={() => {}}
+          subscribe={() => () => {}}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+        { createNodeMock: () => container },
+      )
+      await Promise.resolve()
+    })
+
+    pendingTimers.length = 0
+    pendingRafs.length = 0
+    displayLog.length = 0
+
+    // Fire first resume
+    visibilityState = 'visible'
+    act(() => {
+      for (const handler of docListeners.get('visibilitychange') ?? []) {
+        handler(new Event('visibilitychange'))
+      }
+    })
+
+    // Execute the 200ms timer → forceRepaint → display='none', raf1 queued
+    const timer1 = pendingTimers.find(t => t.delay === 200)
+    expect(timer1).toBeDefined()
+    act(() => { timer1!.callback() })
+    expect(displayLog).toEqual(['none'])
+
+    // raf1 is pending but NOT executed yet
+    expect(pendingRafs.length).toBeGreaterThan(0)
+
+    // Fire second resume BEFORE raf1 completes — should cancel and restore
+    pendingTimers.length = 0
+    act(() => {
+      for (const handler of docListeners.get('visibilitychange') ?? []) {
+        handler(new Event('visibilitychange'))
+      }
+    })
+
+    // cancelIosRepaint should have restored display to original value
+    expect(displayLog).toEqual(['none', ''])
+
+    // Now let the second repaint run to completion
+    const timer2 = pendingTimers.find(t => t.delay === 200)
+    expect(timer2).toBeDefined()
+    act(() => { timer2!.callback() })
+    // display='none' again
+    expect(displayLog).toEqual(['none', '', 'none'])
+
+    // Run both rAFs
+    while (pendingRafs.length > 0) {
+      const raf = pendingRafs.shift()!
+      if (!canceledRafIds.has(raf.id)) {
+        act(() => { raf.callback(0) })
+      }
+    }
+
+    // Should be restored
+    expect(displayLog[displayLog.length - 1]).toBe('')
+
+    act(() => { renderer.unmount() })
+  })
+
   test('paste capture-phase listener is cleaned up on unmount', async () => {
     globalAny.navigator = {
       userAgent: 'Chrome',
