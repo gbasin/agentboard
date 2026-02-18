@@ -102,6 +102,33 @@ bun run start
 
 For persistent deployment on Linux, see [systemd/README.md](systemd/README.md).
 
+## Dependency Risk Scanner
+
+Use the built-in scanner to report security and maintenance risk for direct dependencies:
+
+```bash
+bun run deps:risk
+```
+
+Machine-readable output:
+
+```bash
+bun run deps:risk:json
+```
+
+Policy:
+
+- Security risk comes from `bun audit --json` findings and is aggregated by severity (`low`, `moderate`, `high`, `critical`).
+- Maintenance risk comes from `bun outdated` and classifies version lag as `major`, `minor`, or `patch` behind latest.
+- Local default threshold is `high` (`high` + `critical` fail).
+- CI enforces security threshold breaches at `critical` only (`bun run deps:risk:ci`) while existing upstream `high` advisories are tracked; maintenance findings are warnings for prioritization.
+
+You can override the security threshold with `--threshold` (or `DEPENDENCY_RISK_FAIL_ON`):
+
+```bash
+bun run deps:risk -- --threshold moderate
+```
+
 ## Keyboard Shortcuts
 
 | Action | Mac | Windows/Linux |
