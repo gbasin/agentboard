@@ -3,6 +3,7 @@ import path from 'node:path'
 import {
   analyzePerfRegressionLogs,
   formatPerfRegressionSummary,
+  type PerfRegressionAnalysis,
   type PerfRegressionOptions,
 } from '../src/server/perfRegressionSpotter'
 
@@ -43,14 +44,33 @@ Examples:
   bun run perf:spot -- --file ~/.agentboard/agentboard.log
   bun run perf:spot -- --file ~/.agentboard/agentboard.log --strict --json
   bun run perf:spot -- --file ./agentboard.log --baseline-minutes 120 --recent-minutes 30
-`)
+ `)
 }
 
-function parseNumberArg(value: string, label: string): number {
+interface NumberArgRules {
+  minimum?: number
+  minimumExclusive?: number
+  integer?: boolean
+}
+
+function parseNumberArg(value: string, label: string, rules: NumberArgRules = {}): number {
   const parsed = Number(value)
   if (!Number.isFinite(parsed)) {
     throw new Error(`Invalid ${label}: ${value}`)
   }
+
+  if (rules.integer && !Number.isInteger(parsed)) {
+    throw new Error(`Invalid ${label}: expected an integer, got ${value}`)
+  }
+
+  if (rules.minimumExclusive !== undefined && parsed <= rules.minimumExclusive) {
+    throw new Error(`Invalid ${label}: must be > ${rules.minimumExclusive}`)
+  }
+
+  if (rules.minimum !== undefined && parsed < rules.minimum) {
+    throw new Error(`Invalid ${label}: must be >= ${rules.minimum}`)
+  }
+
   return parsed
 }
 
@@ -61,9 +81,38 @@ function parseNow(value: string): number {
   }
   const parsed = Date.parse(value)
   if (Number.isFinite(parsed)) {
+    if (parsed <= 0) {
+      throw new Error(`Invalid --now value: must be > 0, got ${value}`)
+    }
     return parsed
   }
   throw new Error(`Invalid --now value: ${value}`)
+}
+
+function readRequiredValue(args: string[], index: number, flag: string): string {
+  const next = args[index + 1]
+  if (
+    next === undefined ||
+    next.length === 0 ||
+    next === '-h' ||
+    next === '--help' ||
+    next.startsWith('--')
+  ) {
+    throw new Error(`Missing value for ${flag}`)
+  }
+  return next
+}
+
+function ensureValidWindowOptions(options: PerfRegressionOptions): void {
+  const baselineWindowMs = options.baselineWindowMs
+  const recentWindowMs = options.recentWindowMs
+  if (
+    baselineWindowMs !== undefined &&
+    recentWindowMs !== undefined &&
+    baselineWindowMs < recentWindowMs
+  ) {
+    throw new Error('Invalid window configuration: --baseline-minutes must be >= --recent-minutes')
+  }
 }
 
 function parseArgs(args: string[]): CliOptions {
@@ -93,48 +142,59 @@ function parseArgs(args: string[]): CliOptions {
       continue
     }
 
-    const next = args[index + 1]
-    if (!next) {
-      throw new Error(`Missing value for ${arg}`)
-    }
-
     if (arg === '--file') {
+      const next = readRequiredValue(args, index, arg)
       options.files.push(expandHome(next))
       index += 1
       continue
     }
 
     if (arg === '--baseline-minutes') {
-      options.analysis.baselineWindowMs = parseNumberArg(next, arg) * 60 * 1000
+      const next = readRequiredValue(args, index, arg)
+      options.analysis.baselineWindowMs =
+        parseNumberArg(next, arg, { minimumExclusive: 0 }) * 60 * 1000
       index += 1
       continue
     }
 
     if (arg === '--recent-minutes') {
-      options.analysis.recentWindowMs = parseNumberArg(next, arg) * 60 * 1000
+      const next = readRequiredValue(args, index, arg)
+      options.analysis.recentWindowMs =
+        parseNumberArg(next, arg, { minimumExclusive: 0 }) * 60 * 1000
       index += 1
       continue
     }
 
     if (arg === '--min-samples') {
-      options.analysis.minSamplesPerWindow = parseNumberArg(next, arg)
+      const next = readRequiredValue(args, index, arg)
+      options.analysis.minSamplesPerWindow = parseNumberArg(next, arg, {
+        integer: true,
+        minimum: 1,
+      })
       index += 1
       continue
     }
 
     if (arg === '--relative-threshold') {
-      options.analysis.relativeIncreaseThreshold = parseNumberArg(next, arg)
+      const next = readRequiredValue(args, index, arg)
+      options.analysis.relativeIncreaseThreshold = parseNumberArg(next, arg, {
+        minimum: 0,
+      })
       index += 1
       continue
     }
 
     if (arg === '--absolute-threshold-ms') {
-      options.analysis.absoluteIncreaseThresholdMs = parseNumberArg(next, arg)
+      const next = readRequiredValue(args, index, arg)
+      options.analysis.absoluteIncreaseThresholdMs = parseNumberArg(next, arg, {
+        minimum: 0,
+      })
       index += 1
       continue
     }
 
     if (arg === '--format') {
+      const next = readRequiredValue(args, index, arg)
       if (next !== 'human' && next !== 'json') {
         throw new Error(`Invalid --format value: ${next}`)
       }
@@ -144,6 +204,7 @@ function parseArgs(args: string[]): CliOptions {
     }
 
     if (arg === '--now') {
+      const next = readRequiredValue(args, index, arg)
       options.analysis.nowMs = parseNow(next)
       index += 1
       continue
@@ -158,6 +219,8 @@ function parseArgs(args: string[]): CliOptions {
     options.files.push(expandHome(fallbackPath))
   }
 
+  ensureValidWindowOptions(options.analysis)
+
   return options
 }
 
@@ -168,7 +231,19 @@ function validateFiles(files: string[]): void {
   }
 }
 
-function run(): number {
+function assertAnalysisHasUsableData(analysis: PerfRegressionAnalysis): void {
+  if (analysis.parse.eventsParsed === 0) {
+    throw new Error(
+      'No log_poll/log_match_profile events found. Check LOG_LEVEL and AGENTBOARD_LOG_MATCH_PROFILE telemetry settings.'
+    )
+  }
+
+  if (analysis.sampleCount === 0 || analysis.metrics.length === 0) {
+    throw new Error('No perf metric samples extracted from parsed events.')
+  }
+}
+
+async function run(): Promise<number> {
   const options = parseArgs(process.argv.slice(2))
 
   if (options.showHelp) {
@@ -178,7 +253,8 @@ function run(): number {
 
   validateFiles(options.files)
 
-  const analysis = analyzePerfRegressionLogs(options.files, options.analysis)
+  const analysis = await analyzePerfRegressionLogs(options.files, options.analysis)
+  assertAnalysisHasUsableData(analysis)
   if (options.format === 'json') {
     console.log(JSON.stringify(analysis, null, 2))
   } else {
@@ -192,10 +268,12 @@ function run(): number {
   return 0
 }
 
-try {
-  process.exitCode = run()
-} catch (error) {
-  const message = error instanceof Error ? error.message : String(error)
-  console.error(`perf-regression-spotter: ${message}`)
-  process.exitCode = 2
-}
+void (async () => {
+  try {
+    process.exitCode = await run()
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.error(`perf-regression-spotter: ${message}`)
+    process.exitCode = 2
+  }
+})()

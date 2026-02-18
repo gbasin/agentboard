@@ -104,7 +104,7 @@ describe('perfRegressionSpotter', () => {
     const { dir, file } = await writeTempLog(lines)
 
     try {
-      const analysis = analyzePerfRegressionLogs([file], {
+      const analysis = await analyzePerfRegressionLogs([file], {
         nowMs: NOW_MS,
         baselineWindowMs: BASELINE_WINDOW_MS,
         recentWindowMs: RECENT_WINDOW_MS,
@@ -137,7 +137,7 @@ describe('perfRegressionSpotter', () => {
     const { dir, file } = await writeTempLog(lines)
 
     try {
-      const analysis = analyzePerfRegressionLogs([file], {
+      const analysis = await analyzePerfRegressionLogs([file], {
         nowMs: NOW_MS,
         baselineWindowMs: BASELINE_WINDOW_MS,
         recentWindowMs: RECENT_WINDOW_MS,
@@ -245,6 +245,71 @@ describe('perf-regression-spotter CLI', () => {
       const stdout = result.stdout.toString()
       expect(stdout).toContain('Performance Regression Spotter')
       expect(stdout).toContain('Regressions:')
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  test('fails with exit code 2 when an option is missing its value', async () => {
+    const { dir, file } = await writeTempLog([buildLogPollLine(NOW_MS - 1000, 10)])
+
+    try {
+      const result = Bun.spawnSync(
+        ['bun', 'scripts/perf-regression-spotter.ts', '--file', file, '--baseline-minutes'],
+        {
+          stdout: 'pipe',
+          stderr: 'pipe',
+          cwd: process.cwd(),
+        }
+      )
+
+      expect(result.exitCode).toBe(2)
+      expect(result.stderr.toString()).toContain('Missing value for --baseline-minutes')
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  test('fails with exit code 2 on out-of-range numeric arguments', async () => {
+    const { dir, file } = await writeTempLog([buildLogPollLine(NOW_MS - 1000, 10)])
+
+    try {
+      const result = Bun.spawnSync(
+        ['bun', 'scripts/perf-regression-spotter.ts', '--file', file, '--min-samples', '0'],
+        {
+          stdout: 'pipe',
+          stderr: 'pipe',
+          cwd: process.cwd(),
+        }
+      )
+
+      expect(result.exitCode).toBe(2)
+      expect(result.stderr.toString()).toContain('Invalid --min-samples: must be >= 1')
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  test('fails with exit code 2 when logs have no target telemetry events', async () => {
+    const { dir, file } = await writeTempLog([
+      JSON.stringify({
+        time: new Date(NOW_MS).toISOString(),
+        event: 'startup_state',
+      }),
+    ])
+
+    try {
+      const result = Bun.spawnSync(
+        ['bun', 'scripts/perf-regression-spotter.ts', '--file', file, '--json'],
+        {
+          stdout: 'pipe',
+          stderr: 'pipe',
+          cwd: process.cwd(),
+        }
+      )
+
+      expect(result.exitCode).toBe(2)
+      expect(result.stderr.toString()).toContain('No log_poll/log_match_profile events found')
     } finally {
       await fs.rm(dir, { recursive: true, force: true })
     }

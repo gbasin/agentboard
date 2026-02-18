@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import { createInterface } from 'node:readline'
 
 export type PerfEventName = 'log_poll' | 'log_match_profile'
 
@@ -177,6 +178,24 @@ function readTimestampMs(payload: Record<string, unknown>): number | null {
   return null
 }
 
+function validatePositive(name: string, value: number): void {
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(`${name} must be > 0`)
+  }
+}
+
+function validateNonNegative(name: string, value: number): void {
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error(`${name} must be >= 0`)
+  }
+}
+
+function validateIntegerAtLeast(name: string, value: number, minimum: number): void {
+  if (!Number.isFinite(value) || !Number.isInteger(value) || value < minimum) {
+    throw new Error(`${name} must be an integer >= ${minimum}`)
+  }
+}
+
 function normalizeOptions(
   options: PerfRegressionOptions,
   nowMsFromData: number
@@ -194,6 +213,15 @@ function normalizeOptions(
     options.nowMs ??
     (Number.isFinite(nowMsFromData) ? nowMsFromData : Date.now())
 
+  validatePositive('baselineWindowMs', baselineWindowMs)
+  validatePositive('recentWindowMs', recentWindowMs)
+  validateIntegerAtLeast('minSamplesPerWindow', minSamplesPerWindow, 1)
+  validateNonNegative('relativeIncreaseThreshold', relativeIncreaseThreshold)
+  validateNonNegative('absoluteIncreaseThresholdMs', absoluteIncreaseThresholdMs)
+  if (!Number.isFinite(nowMs)) {
+    throw new Error('nowMs must be a finite timestamp')
+  }
+
   return {
     baselineWindowMs,
     recentWindowMs,
@@ -201,6 +229,57 @@ function normalizeOptions(
     relativeIncreaseThreshold,
     absoluteIncreaseThresholdMs,
     nowMs,
+  }
+}
+
+interface ParseLineResult {
+  event: ParsedPerfEvent | null
+  malformed: boolean
+  ignored: boolean
+}
+
+function parsePerfLine(
+  rawLine: string,
+  source: string,
+  lineNumber: number
+): ParseLineResult {
+  const line = rawLine.trim()
+  if (!line) {
+    return { event: null, malformed: false, ignored: false }
+  }
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(line)
+  } catch {
+    return { event: null, malformed: true, ignored: false }
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { event: null, malformed: false, ignored: true }
+  }
+
+  const payload = parsed as Record<string, unknown>
+  const event = payload.event
+  if (typeof event !== 'string' || !TARGET_EVENTS.has(event as PerfEventName)) {
+    return { event: null, malformed: false, ignored: true }
+  }
+
+  const timeMs = readTimestampMs(payload)
+  if (timeMs === null) {
+    return { event: null, malformed: false, ignored: true }
+  }
+
+  return {
+    event: {
+      event: event as PerfEventName,
+      timeMs,
+      payload,
+      source,
+      lineNumber,
+    },
+    malformed: false,
+    ignored: false,
   }
 }
 
@@ -215,44 +294,18 @@ export function parsePerfEventsFromText(
   let ignoredLines = 0
 
   for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index]?.trim() ?? ''
-    if (!line) {
+    const result = parsePerfLine(lines[index] ?? '', source, index + 1)
+    if (result.event) {
+      events.push(result.event)
       continue
     }
-
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(line)
-    } catch {
+    if (result.malformed) {
       malformedLines += 1
       continue
     }
-
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    if (result.ignored) {
       ignoredLines += 1
-      continue
     }
-
-    const payload = parsed as Record<string, unknown>
-    const event = payload.event
-    if (typeof event !== 'string' || !TARGET_EVENTS.has(event as PerfEventName)) {
-      ignoredLines += 1
-      continue
-    }
-
-    const timeMs = readTimestampMs(payload)
-    if (timeMs === null) {
-      ignoredLines += 1
-      continue
-    }
-
-    events.push({
-      event: event as PerfEventName,
-      timeMs,
-      payload,
-      source,
-      lineNumber: index + 1,
-    })
   }
 
   return {
@@ -263,7 +316,7 @@ export function parsePerfEventsFromText(
   }
 }
 
-export function parsePerfEventsFromFiles(filePaths: string[]): PerfParseResult {
+export async function parsePerfEventsFromFiles(filePaths: string[]): Promise<PerfParseResult> {
   const aggregate: PerfParseResult = {
     events: [],
     totalLines: 0,
@@ -272,12 +325,29 @@ export function parsePerfEventsFromFiles(filePaths: string[]): PerfParseResult {
   }
 
   for (const filePath of filePaths) {
-    const text = fs.readFileSync(filePath, 'utf8')
-    const parsed = parsePerfEventsFromText(text, filePath)
-    aggregate.events.push(...parsed.events)
-    aggregate.totalLines += parsed.totalLines
-    aggregate.malformedLines += parsed.malformedLines
-    aggregate.ignoredLines += parsed.ignoredLines
+    const stream = fs.createReadStream(filePath, { encoding: 'utf8' })
+    const lineReader = createInterface({
+      input: stream,
+      crlfDelay: Infinity,
+    })
+
+    let lineNumber = 0
+    for await (const line of lineReader) {
+      lineNumber += 1
+      aggregate.totalLines += 1
+      const result = parsePerfLine(line, filePath, lineNumber)
+      if (result.event) {
+        aggregate.events.push(result.event)
+        continue
+      }
+      if (result.malformed) {
+        aggregate.malformedLines += 1
+        continue
+      }
+      if (result.ignored) {
+        aggregate.ignoredLines += 1
+      }
+    }
   }
 
   return aggregate
@@ -533,11 +603,11 @@ export function analyzePerfRegressionSamples(
   }
 }
 
-export function analyzePerfRegressionLogs(
+export async function analyzePerfRegressionLogs(
   filePaths: string[],
   options: PerfRegressionOptions = {}
-): PerfRegressionAnalysis {
-  const parsed = parsePerfEventsFromFiles(filePaths)
+): Promise<PerfRegressionAnalysis> {
+  const parsed = await parsePerfEventsFromFiles(filePaths)
   const samples = extractPerfMetricSamples(parsed.events)
   const analysis = analyzePerfRegressionSamples(samples, options)
 
