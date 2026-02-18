@@ -46,6 +46,9 @@ mock.module('@xterm/addon-serialize', () => ({ SerializeAddon: class {} }))
 mock.module('@xterm/addon-progress', () => ({ ProgressAddon: class {} }))
 mock.module('@xterm/addon-web-links', () => ({ WebLinksAddon: class {} }))
 mock.module('@xterm/xterm/css/xterm.css', () => ({}))
+mock.module('virtual:pwa-register', () => ({
+  registerSW: () => () => {},
+}))
 
 const stylesPath = new URL('../styles/index.css', import.meta.url).pathname
 mock.module(stylesPath, () => ({}))

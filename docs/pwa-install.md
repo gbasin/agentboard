@@ -1,6 +1,6 @@
 # PWA Installation
 
-Agent Board can be installed as a Progressive Web App (PWA) for a full-screen, app-like experience with no browser chrome — ideal for a tmux controller on mobile devices.
+Agentboard can be installed as a Progressive Web App (PWA) for a full-screen, app-like experience with no browser chrome — ideal for a tmux controller on mobile devices.
 
 ## Requirements
 
@@ -10,7 +10,7 @@ PWA installation requires the page to be served over **HTTPS** (or localhost). C
 
 ## Option A: Tailscale HTTPS (Recommended)
 
-If you access Agent Board over Tailscale, you can use Tailscale's built-in HTTPS certificates.
+If you access Agentboard over Tailscale, you can use Tailscale's built-in HTTPS certificates.
 
 ### 1. Enable cert generation (one-time)
 
@@ -28,7 +28,7 @@ tailscale cert \
   "$HOSTNAME"
 ```
 
-### 3. Restart Agent Board
+### 3. Restart Agentboard
 
 The dev server automatically detects certs in `~/.agentboard/` and enables HTTPS. Just restart:
 
@@ -36,7 +36,7 @@ The dev server automatically detects certs in `~/.agentboard/` and enables HTTPS
 bun run dev
 ```
 
-You'll see `https://` URLs in the output. Access Agent Board at:
+You'll see `https://` URLs in the output. Access Agentboard at:
 
 ```
 https://<your-machine>.tail<xxxxx>.ts.net:5173
@@ -52,15 +52,15 @@ https://<your-machine>.tail<xxxxx>.ts.net:5173
 
 ## Option B: Without Tailscale (HTTP)
 
-If you're not using Tailscale, Agent Board serves over HTTP. Browsers require HTTPS for PWA installation, but you can work around this with a Chrome flag.
+If you're not using Tailscale, Agentboard serves over HTTP. Browsers require HTTPS for PWA installation, but you can work around this with a Chrome flag.
 
 ### Android / Desktop Chrome
 
 1. Open `chrome://flags` in Chrome
 2. Search for `unsafely-treat-insecure-origin-as-secure`
-3. Add your Agent Board URL, e.g. `http://192.168.1.100:5173`
+3. Add your Agentboard URL, e.g. `http://192.168.1.100:5173`
 4. Set to **Enabled** and tap **Relaunch**
-5. Navigate to your Agent Board URL
+5. Navigate to your Agentboard URL
 6. Three-dot menu → "Install app" or "Add to Home Screen"
 
 ### iOS Safari
@@ -79,7 +79,7 @@ iOS Safari does not support Chrome flags. You'll need HTTPS via one of:
 
 ## What the PWA Does NOT Do
 
-- **No offline mode:** Agent Board requires a live tmux/WebSocket connection. The service worker only caches static assets, not API responses.
+- **No offline mode:** Agentboard requires a live tmux/WebSocket connection. The service worker only caches static assets, not API responses.
 - **No push notifications**
 - **No app store packaging**
 
@@ -87,7 +87,7 @@ iOS Safari does not support Chrome flags. You'll need HTTPS via one of:
 
 **"Install" option doesn't appear:**
 - Verify the page is served over HTTPS (or the Chrome flag is set)
-- Check DevTools → Application → Manifest — it should show the Agent Board manifest
+- Check DevTools → Application → Manifest — it should show the Agentboard manifest
 - Check DevTools → Application → Service Workers — should be registered
 
 **iOS doesn't show full-screen:**

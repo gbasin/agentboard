@@ -35,8 +35,8 @@ export default defineConfig(({ mode }) => {
       VitePWA({
         registerType: 'autoUpdate',
         manifest: {
-          name: 'Agent Board',
-          short_name: 'AgentBoard',
+          name: 'Agentboard',
+          short_name: 'Agentboard',
           description: 'Web GUI for tmux optimized for AI agent TUIs',
           theme_color: '#0f172a',
           background_color: '#0f172a',
@@ -65,18 +65,7 @@ export default defineConfig(({ mode }) => {
         workbox: {
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
           navigateFallback: '/index.html',
-          navigateFallbackDenylist: [/^\/api/, /^\/ws/],
-          runtimeCaching: [
-            {
-              urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
-              handler: 'CacheFirst',
-              options: {
-                cacheName: 'google-fonts-cache',
-                expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 365 },
-                cacheableResponse: { statuses: [0, 200] },
-              },
-            },
-          ],
+          navigateFallbackDenylist: [/^\/api(?:\/|$)/, /^\/ws(?:\/|$)/],
         },
       }),
     ],
@@ -88,10 +77,19 @@ export default defineConfig(({ mode }) => {
     server: {
       allowedHosts,
       https: (() => {
-        const certFile = path.join(process.env.HOME || '', '.agentboard', 'tls-cert.pem')
-        const keyFile = path.join(process.env.HOME || '', '.agentboard', 'tls-key.pem')
+        const homeDir = process.env.HOME
+        if (!homeDir) {
+          return undefined
+        }
+        const certFile = path.join(homeDir, '.agentboard', 'tls-cert.pem')
+        const keyFile = path.join(homeDir, '.agentboard', 'tls-key.pem')
         if (fs.existsSync(certFile) && fs.existsSync(keyFile)) {
-          return { cert: fs.readFileSync(certFile), key: fs.readFileSync(keyFile) }
+          try {
+            return { cert: fs.readFileSync(certFile), key: fs.readFileSync(keyFile) }
+          } catch {
+            // Fall back to HTTP when local certs are unreadable/invalid.
+            return undefined
+          }
         }
         return undefined
       })(),
