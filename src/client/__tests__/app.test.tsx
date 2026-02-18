@@ -259,6 +259,67 @@ describe('App', () => {
 
   })
 
+  test('normalizes websocket error messages before rendering', () => {
+    let renderer!: TestRenderer.ReactTestRenderer
+
+    act(() => {
+      renderer = TestRenderer.create(<App />)
+    })
+    activeRenderer = renderer
+
+    if (!subscribeListener) {
+      throw new Error('Expected websocket subscription')
+    }
+
+    const getSidebarError = () => {
+      const lists = renderer.root.findAllByType(SessionList)
+      if (lists.length === 0) {
+        throw new Error('Expected SessionList')
+      }
+      return lists[0]?.props.error
+    }
+
+    act(() => {
+      subscribeListener?.({
+        type: 'session-resume-result',
+        sessionId: 'resume-1',
+        ok: false,
+        error: { code: 'NOT_FOUND', message: 'Session not found' },
+      })
+    })
+    expect(getSidebarError()).toBe('Session was not found. Refresh the list and try again.')
+
+    act(() => {
+      subscribeListener?.({
+        type: 'terminal-error',
+        sessionId: null,
+        code: 'ERR_NOT_READY',
+        message: 'ERR_NOT_READY: pending',
+        retryable: true,
+      })
+    })
+    expect(getSidebarError()).toBe('Terminal is still starting. Try again in a moment.')
+
+    act(() => {
+      subscribeListener?.({
+        type: 'kill-failed',
+        sessionId: 'session-1',
+        message: 'remote control disabled on this host',
+      })
+    })
+    expect(getSidebarError()).toBe('Remote sessions cannot be closed because remote control is disabled.')
+
+    act(() => {
+      subscribeListener?.({
+        type: 'session-pin-result',
+        sessionId: 'session-1',
+        ok: false,
+        error: 'Permission denied',
+      })
+    })
+    expect(getSidebarError()).toBe('Permission denied while updating pin state. Try again.')
+  })
+
   test('handles keyboard shortcuts for navigation and actions', () => {
     const sessionB = {
       ...baseSession,
