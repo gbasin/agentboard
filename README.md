@@ -39,6 +39,7 @@ Run your desktop/server, then connect from your phone or laptop over Tailscale/L
 - **Session discovery** — polls local tmux windows and (optionally) remote hosts over SSH
 - **Status inference** — reads pane content and Claude/Codex JSONL logs to determine if each agent is *working*, *waiting for input*, or *asking for permission*
 - **Live terminal** — streams I/O through the server so you can interact with any session from any device
+- **Edge-case reference** — session lifecycle/status pipeline matrix: [docs/edge-case-enumerator.md](docs/edge-case-enumerator.md)
 
 ### Desktop
 | Terminal | Sessions | Pinning |
