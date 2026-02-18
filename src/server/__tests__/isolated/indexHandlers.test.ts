@@ -31,6 +31,11 @@ let serveOptions: Parameters<typeof Bun.serve>[0] | null = null
 let spawnSyncImpl: typeof Bun.spawnSync
 let writeImpl: typeof Bun.write
 let replaceSessionsCalls: Session[][] = []
+let loggerCalls: Array<{
+  level: 'debug' | 'info' | 'warn' | 'error'
+  event: string
+  data?: Record<string, unknown>
+}> = []
 let dbState: {
   records: Map<string, AgentSessionRecord>
   nextId: number
@@ -345,6 +350,25 @@ mock.module('../../SessionManager', () => ({
 mock.module('../../SessionRegistry', () => ({
   SessionRegistry: SessionRegistryMock,
 }))
+mock.module('../../logger', () => ({
+  logger: {
+    debug: (event: string, data?: Record<string, unknown>) => {
+      loggerCalls.push({ level: 'debug', event, data })
+    },
+    info: (event: string, data?: Record<string, unknown>) => {
+      loggerCalls.push({ level: 'info', event, data })
+    },
+    warn: (event: string, data?: Record<string, unknown>) => {
+      loggerCalls.push({ level: 'warn', event, data })
+    },
+    error: (event: string, data?: Record<string, unknown>) => {
+      loggerCalls.push({ level: 'error', event, data })
+    },
+  },
+  logLevel: 'info',
+  flushLogger: () => {},
+  closeLogger: () => {},
+}))
 class TerminalProxyErrorMock extends Error {
   code: string
   retryable: boolean
@@ -417,6 +441,7 @@ async function loadIndex() {
 beforeEach(() => {
   serveOptions = null
   replaceSessionsCalls = []
+  loggerCalls = []
   TerminalProxyMock.instances = []
   SessionManagerMock.instance = null
   SessionRegistryMock.instance = null
@@ -2468,6 +2493,11 @@ describe('server fetch handlers', () => {
     expect(response.status).toBe(404)
     const payload = (await response.json()) as { error: string }
     expect(payload.error).toBe('Log file not found')
+    expect(loggerCalls.some((call) =>
+      call.level === 'warn' &&
+      call.event === 'session_preview_read_failed' &&
+      call.data?.sessionId === 'missing-log'
+    )).toBe(true)
   })
 })
 
@@ -2549,6 +2579,13 @@ describe('server startup side effects', () => {
     expect(response.status).toBe(200)
     const payload = (await response.json()) as { ok: boolean }
     expect(payload.ok).toBe(true)
+    const loggedClientEvent = loggerCalls.find(
+      (call) =>
+        call.level === 'debug' &&
+        call.event === 'client_log_event'
+    )
+    expect(loggedClientEvent).toBeDefined()
+    expect(loggedClientEvent?.data?.client_event).toBe('test_event')
   })
 
   test('/api/client-log handles malformed body gracefully', async () => {
@@ -2576,6 +2613,10 @@ describe('server startup side effects', () => {
     expect(response.status).toBe(200)
     const payload = (await response.json()) as { ok: boolean }
     expect(payload.ok).toBe(true)
+    expect(loggerCalls.some((call) =>
+      call.level === 'warn' &&
+      call.event === 'client_log_ingest_failed'
+    )).toBe(true)
   })
 
   test('does not run sync window verification before startup is ready', async () => {
