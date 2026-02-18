@@ -1108,7 +1108,19 @@ describe('useTerminal', () => {
   })
 
   test('forces iOS compositor repaint on visibility resume', async () => {
-    // Mock document with visibilitychange support
+    // Use deferred timers to verify the 50ms delay behavior
+    const pendingTimers: Array<{ callback: () => void; delay: number; id: number }> = []
+    let nextTimerId = 100
+    globalAny.window = {
+      setTimeout: ((cb: () => void, delay?: number) => {
+        const id = nextTimerId++
+        pendingTimers.push({ callback: cb, delay: delay ?? 0, id })
+        return id
+      }) as typeof setTimeout,
+      clearTimeout: (() => {}) as typeof clearTimeout,
+      devicePixelRatio: 1,
+    } as unknown as Window & typeof globalThis
+
     let visibilityState = 'hidden'
     const docListeners = new Map<string, Set<EventListener>>()
     globalAny.document = {
@@ -1150,10 +1162,11 @@ describe('useTerminal', () => {
       await Promise.resolve()
     })
 
-    // Clear any display changes from initialization
+    // Clear initialization artifacts
+    pendingTimers.length = 0
     displayLog.length = 0
 
-    // Simulate PWA resume: visibility changes to 'visible'
+    // Simulate resume: visibility changes to 'visible'
     visibilityState = 'visible'
     act(() => {
       for (const handler of docListeners.get('visibilitychange') ?? []) {
@@ -1161,7 +1174,15 @@ describe('useTerminal', () => {
       }
     })
 
-    // Should have toggled display: 'none' then '' (force repaint)
+    // No display toggle yet — 50ms timer is pending
+    expect(displayLog).toEqual([])
+
+    // Find and execute the 50ms repaint timer
+    const repaintTimer = pendingTimers.find(t => t.delay === 50)
+    expect(repaintTimer).toBeDefined()
+    act(() => { repaintTimer!.callback() })
+
+    // Now display should be toggled
     expect(displayLog).toEqual(['none', ''])
 
     act(() => { renderer.unmount() })
@@ -1317,11 +1338,25 @@ describe('useTerminal', () => {
     act(() => { renderer.unmount() })
   })
 
-  test('cleans up iOS visibilitychange listener on unmount', async () => {
+  test('cleans up iOS visibilitychange listener and pending timer on unmount', async () => {
+    // Deferred timers to verify pending timer cancellation
+    const pendingTimers: Array<{ callback: () => void; delay: number; id: number }> = []
+    let nextTimerId = 100
+    const clearedIds = new Set<number>()
+    globalAny.window = {
+      setTimeout: ((cb: () => void, delay?: number) => {
+        const id = nextTimerId++
+        pendingTimers.push({ callback: cb, delay: delay ?? 0, id })
+        return id
+      }) as typeof setTimeout,
+      clearTimeout: ((id: number) => { clearedIds.add(id) }) as typeof clearTimeout,
+      devicePixelRatio: 1,
+    } as unknown as Window & typeof globalThis
+
     const docListeners = new Map<string, Set<EventListener>>()
     globalAny.document = {
       fonts: { ready: Promise.resolve() },
-      visibilityState: 'hidden',
+      visibilityState: 'visible',
       addEventListener(event: string, handler: EventListener) {
         const set = docListeners.get(event) ?? new Set()
         set.add(handler)
@@ -1361,11 +1396,24 @@ describe('useTerminal', () => {
     // Listener should be registered
     expect(docListeners.get('visibilitychange')?.size).toBe(1)
 
+    // Fire visibilitychange to create a pending repaint timer
+    pendingTimers.length = 0
+    act(() => {
+      for (const handler of docListeners.get('visibilitychange') ?? []) {
+        handler(new Event('visibilitychange'))
+      }
+    })
+    const repaintTimer = pendingTimers.find(t => t.delay === 50)
+    expect(repaintTimer).toBeDefined()
+
     act(() => { renderer.unmount() })
 
     // After unmount, listener should be removed
     const remaining = docListeners.get('visibilitychange')?.size ?? 0
     expect(remaining).toBe(0)
+
+    // Pending repaint timer should have been cleared
+    expect(clearedIds.has(repaintTimer!.id)).toBe(true)
 
     // Fire visibilitychange after unmount — should not toggle display
     displayLog.length = 0
@@ -1373,6 +1421,93 @@ describe('useTerminal', () => {
       handler(new Event('visibilitychange'))
     }
     expect(displayLog).toEqual([])
+  })
+
+  test('coalesces rapid iOS visibility resumes into single repaint', async () => {
+    const pendingTimers: Array<{ callback: () => void; delay: number; id: number }> = []
+    let nextTimerId = 100
+    const clearedIds = new Set<number>()
+    globalAny.window = {
+      setTimeout: ((cb: () => void, delay?: number) => {
+        const id = nextTimerId++
+        pendingTimers.push({ callback: cb, delay: delay ?? 0, id })
+        return id
+      }) as typeof setTimeout,
+      clearTimeout: ((id: number) => { clearedIds.add(id) }) as typeof clearTimeout,
+      devicePixelRatio: 1,
+    } as unknown as Window & typeof globalThis
+
+    let visibilityState = 'hidden'
+    const docListeners = new Map<string, Set<EventListener>>()
+    globalAny.document = {
+      fonts: { ready: Promise.resolve() },
+      get visibilityState() { return visibilityState },
+      addEventListener(event: string, handler: EventListener) {
+        const set = docListeners.get(event) ?? new Set()
+        set.add(handler)
+        docListeners.set(event, set)
+      },
+      removeEventListener(event: string, handler: EventListener) {
+        docListeners.get(event)?.delete(handler)
+      },
+    } as unknown as Document
+
+    globalAny.navigator = {
+      userAgent: 'iPhone',
+      platform: 'iPhone',
+      maxTouchPoints: 5,
+      clipboard: { writeText: () => Promise.resolve() },
+    } as unknown as Navigator
+
+    const { container, displayLog } = createContainerMock()
+
+    let renderer!: TestRenderer.ReactTestRenderer
+
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          sendMessage={() => {}}
+          subscribe={() => () => {}}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+        { createNodeMock: () => container },
+      )
+      await Promise.resolve()
+    })
+
+    pendingTimers.length = 0
+    displayLog.length = 0
+
+    // Fire visibilitychange twice rapidly
+    visibilityState = 'visible'
+    act(() => {
+      for (const handler of docListeners.get('visibilitychange') ?? []) {
+        handler(new Event('visibilitychange'))
+      }
+    })
+    const firstTimer = pendingTimers.find(t => t.delay === 50)
+    expect(firstTimer).toBeDefined()
+
+    act(() => {
+      for (const handler of docListeners.get('visibilitychange') ?? []) {
+        handler(new Event('visibilitychange'))
+      }
+    })
+
+    // First timer should have been cleared
+    expect(clearedIds.has(firstTimer!.id)).toBe(true)
+
+    // Execute only the latest timer
+    const lastTimer = pendingTimers.filter(t => t.delay === 50).pop()
+    act(() => { lastTimer!.callback() })
+
+    // Only one repaint should have happened
+    expect(displayLog).toEqual(['none', ''])
+
+    act(() => { renderer.unmount() })
   })
 
   test('paste capture-phase listener is cleaned up on unmount', async () => {

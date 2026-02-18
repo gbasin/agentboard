@@ -1029,7 +1029,9 @@ export function useTerminal({
         // Force iOS compositor repaint after reconnect data delivery.
         // The visibilitychange repaint fires early and may only show stale
         // content; this second repaint catches the fresh data from reconnect.
+        // Flush pending output first so the repaint captures fresh data.
         if (isiOS) {
+          flush()
           const container = containerRef.current
           if (container) {
             iosRepaintRaf = requestAnimationFrame(() => {
@@ -1111,6 +1113,7 @@ export function useTerminal({
       // Force reflow by removing element from render tree and reinserting it.
       // The 50ms delay spans at least one rendering frame after resume so
       // any pending DOM updates land first.
+      if (repaintTimer !== null) window.clearTimeout(repaintTimer)
       repaintTimer = window.setTimeout(() => {
         repaintTimer = null
         container.style.display = 'none'
