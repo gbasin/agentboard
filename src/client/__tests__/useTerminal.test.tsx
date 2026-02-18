@@ -1317,6 +1317,64 @@ describe('useTerminal', () => {
     act(() => { renderer.unmount() })
   })
 
+  test('cleans up iOS visibilitychange listener on unmount', async () => {
+    const docListeners = new Map<string, Set<EventListener>>()
+    globalAny.document = {
+      fonts: { ready: Promise.resolve() },
+      visibilityState: 'hidden',
+      addEventListener(event: string, handler: EventListener) {
+        const set = docListeners.get(event) ?? new Set()
+        set.add(handler)
+        docListeners.set(event, set)
+      },
+      removeEventListener(event: string, handler: EventListener) {
+        docListeners.get(event)?.delete(handler)
+      },
+    } as unknown as Document
+
+    globalAny.navigator = {
+      userAgent: 'iPhone',
+      platform: 'iPhone',
+      maxTouchPoints: 5,
+      clipboard: { writeText: () => Promise.resolve() },
+    } as unknown as Navigator
+
+    const { container, displayLog } = createContainerMock()
+
+    let renderer!: TestRenderer.ReactTestRenderer
+
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          sendMessage={() => {}}
+          subscribe={() => () => {}}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+        { createNodeMock: () => container },
+      )
+      await Promise.resolve()
+    })
+
+    // Listener should be registered
+    expect(docListeners.get('visibilitychange')?.size).toBe(1)
+
+    act(() => { renderer.unmount() })
+
+    // After unmount, listener should be removed
+    const remaining = docListeners.get('visibilitychange')?.size ?? 0
+    expect(remaining).toBe(0)
+
+    // Fire visibilitychange after unmount — should not toggle display
+    displayLog.length = 0
+    for (const handler of docListeners.get('visibilitychange') ?? []) {
+      handler(new Event('visibilitychange'))
+    }
+    expect(displayLog).toEqual([])
+  })
+
   test('paste capture-phase listener is cleaned up on unmount', async () => {
     globalAny.navigator = {
       userAgent: 'Chrome',

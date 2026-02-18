@@ -936,6 +936,9 @@ export function useTerminal({
   // This prevents flicker by: (1) batching output until stream goes idle,
   // (2) wrapping in BSU/ESU so xterm.js renders atomically
   useEffect(() => {
+    // Track pending iOS repaint rAF so we can cancel on cleanup
+    let iosRepaintRaf: number | null = null
+
     const flush = () => {
       if (idleTimerRef.current !== null) {
         window.clearTimeout(idleTimerRef.current)
@@ -1029,7 +1032,8 @@ export function useTerminal({
         if (isiOS) {
           const container = containerRef.current
           if (container) {
-            requestAnimationFrame(() => {
+            iosRepaintRaf = requestAnimationFrame(() => {
+              iosRepaintRaf = null
               container.style.display = 'none'
               void container.offsetHeight
               container.style.display = ''
@@ -1052,6 +1056,8 @@ export function useTerminal({
       unsubscribe()
       // Flush any remaining buffer on cleanup
       flush()
+      // Cancel any pending iOS repaint
+      if (iosRepaintRaf !== null) cancelAnimationFrame(iosRepaintRaf)
     }
   }, [subscribe, checkScrollPosition, setTmuxCopyMode])
 
@@ -1092,6 +1098,8 @@ export function useTerminal({
   useEffect(() => {
     if (!isiOS) return
 
+    let repaintTimer: number | null = null
+
     const handleVisibilityChange = () => {
       if (document.visibilityState !== 'visible') return
       const container = containerRef.current
@@ -1103,7 +1111,8 @@ export function useTerminal({
       // Force reflow by removing element from render tree and reinserting it.
       // The 50ms delay spans at least one rendering frame after resume so
       // any pending DOM updates land first.
-      window.setTimeout(() => {
+      repaintTimer = window.setTimeout(() => {
+        repaintTimer = null
         container.style.display = 'none'
         void container.offsetHeight // force synchronous layout
         container.style.display = ''
@@ -1111,7 +1120,11 @@ export function useTerminal({
     }
 
     document.addEventListener('visibilitychange', handleVisibilityChange)
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      if (repaintTimer !== null) window.clearTimeout(repaintTimer)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   return {
