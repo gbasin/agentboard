@@ -19,6 +19,13 @@ import { sortSessions } from './utils/sessions'
 import { setClientLogLevel } from './utils/clientLog'
 import { getEffectiveModifier, matchesModifier } from './utils/device'
 import { playPermissionSound, playIdleSound, primeAudio, needsUserGesture } from './utils/sound'
+import {
+  formatKillFailedError,
+  formatResumeError,
+  formatServerError,
+  formatSessionPinError,
+  formatTerminalError,
+} from './utils/errorMessages'
 
 interface ServerInfo {
   port: number
@@ -252,13 +259,19 @@ export default function App() {
           }
           setSelectedSessionId(message.session.id)
         } else if (!message.ok) {
-          setServerError(`${message.error?.code}: ${message.error?.message}`)
+          setServerError(formatResumeError(message.error))
           window.setTimeout(() => setServerError(null), 6000)
         }
       }
       if (message.type === 'terminal-error') {
         if (!message.sessionId || message.sessionId === selectedSessionId) {
-          setServerError(`${message.code}: ${message.message}`)
+          setServerError(
+            formatTerminalError({
+              code: message.code,
+              message: message.message,
+              retryable: message.retryable,
+            })
+          )
           window.setTimeout(() => setServerError(null), 6000)
         }
       }
@@ -268,18 +281,18 @@ export default function App() {
         }
       }
       if (message.type === 'error') {
-        setServerError(message.message)
+        setServerError(formatServerError(message.message))
         window.setTimeout(() => setServerError(null), 6000)
       }
       if (message.type === 'kill-failed') {
         // Clear from exiting state since kill failed - session remains active
         clearExitingSession(message.sessionId)
-        setServerError(message.message)
+        setServerError(formatKillFailedError(message.message))
         window.setTimeout(() => setServerError(null), 6000)
       }
       if (message.type === 'session-pin-result') {
         if (!message.ok && message.error) {
-          setServerError(message.error)
+          setServerError(formatSessionPinError(message.error))
           window.setTimeout(() => setServerError(null), 6000)
         }
       }
