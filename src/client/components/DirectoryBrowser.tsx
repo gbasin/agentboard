@@ -2,11 +2,25 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { DirectoryListing } from '@shared/types'
 import { FolderIcon } from '@untitledui-icons/react/line'
 import { useSettingsStore } from '../stores/settingsStore'
+import {
+  formatDirectoryError,
+  isLikelyNetworkError,
+  toApiErrorPayload,
+} from '../utils/errorMessages'
 
 interface DirectoryBrowserProps {
   onSelect: (path: string) => void
   onCancel: () => void
   initialPath?: string
+}
+
+async function readErrorPayload(response: Response) {
+  try {
+    const payload = (await response.json()) as unknown
+    return toApiErrorPayload(payload)
+  } catch {
+    return null
+  }
 }
 
 export function DirectoryBrowser({
@@ -40,8 +54,17 @@ export function DirectoryBrowser({
         { signal }
       )
       if (!response.ok) {
-        const payload = (await response.json()) as { message?: string }
-        throw new Error(payload.message || 'Failed to load directory')
+        const payload = await readErrorPayload(response)
+        if (abortRef.current !== controller) {
+          return
+        }
+        setError(
+          formatDirectoryError({
+            status: response.status,
+            payload,
+          })
+        )
+        return
       }
       const data = (await response.json()) as DirectoryListing
       if (abortRef.current !== controller) {
@@ -55,7 +78,12 @@ export function DirectoryBrowser({
       }
       const errorObj = fetchError as { name?: string; message?: string }
       if (errorObj?.name !== 'AbortError') {
-        setError(errorObj?.message || 'Failed to load directory')
+        setError(
+          formatDirectoryError({
+            message: errorObj?.message,
+            isNetworkError: isLikelyNetworkError(errorObj?.message),
+          })
+        )
       }
     } finally {
       if (abortRef.current === controller) {

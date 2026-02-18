@@ -3,6 +3,11 @@ import { parseAndNormalizeAgentLogLine } from '@shared/eventTaxonomy'
 import type { AgentSession } from '@shared/types'
 import { formatRelativeTime } from '../utils/time'
 import { getPathLeaf } from '../utils/sessionLabel'
+import {
+  formatPreviewError,
+  isLikelyNetworkError,
+  toApiErrorPayload,
+} from '../utils/errorMessages'
 import AgentIcon from './AgentIcon'
 
 interface SessionPreviewModalProps {
@@ -24,6 +29,15 @@ interface ParsedEntry {
   type: 'user' | 'assistant' | 'system' | 'other'
   content: string
   raw: string
+}
+
+async function readPreviewErrorPayload(response: Response) {
+  try {
+    const payload = (await response.json()) as unknown
+    return toApiErrorPayload(payload)
+  } catch {
+    return null
+  }
 }
 
 function mapNormalizedRoleToEntryType(role: string): ParsedEntry['type'] {
@@ -73,13 +87,25 @@ export default function SessionPreviewModal({
       try {
         const response = await fetch(`/api/session-preview/${session.sessionId}`)
         if (!response.ok) {
-          const data = await response.json()
-          throw new Error(data.error || 'Failed to load preview')
+          const payload = await readPreviewErrorPayload(response)
+          setError(
+            formatPreviewError({
+              status: response.status,
+              payload,
+            })
+          )
+          return
         }
         const data = await response.json() as PreviewData
         setPreviewData(data)
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load preview')
+        const message = err instanceof Error ? err.message : null
+        setError(
+          formatPreviewError({
+            message,
+            isNetworkError: isLikelyNetworkError(message),
+          })
+        )
       } finally {
         setLoading(false)
       }
