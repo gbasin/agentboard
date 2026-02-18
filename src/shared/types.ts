@@ -75,6 +75,47 @@ export interface DirectoryErrorResponse {
   message: string
 }
 
+export type CostAttributionComponent =
+  | 'user_input'
+  | 'assistant_output'
+  | 'tooling'
+  | 'system_other'
+
+export interface CostAttributionComponentEstimate {
+  component: CostAttributionComponent
+  tokenUnits: number
+  estimatedUnits: number
+  sharePercent: number
+  eventCount: number
+}
+
+export interface CostAttributionSampling {
+  sampledLineCount: number
+  parsedLineCount: number
+  malformedLineCount: number
+  emptyLineCount: number
+  maxPreviewLines: number
+  sampledTailBytes: number
+}
+
+export interface CostAttribution {
+  assumptions: string
+  components: CostAttributionComponentEstimate[]
+  totalTokenUnits: number
+  totalEstimatedUnits: number
+  sampling: CostAttributionSampling
+}
+
+export interface SessionPreviewResponse {
+  sessionId: string
+  displayName: string
+  projectPath: string
+  agentType: AgentType
+  lastActivityAt: string
+  lines: string[]
+  costAttribution: CostAttribution
+}
+
 export type ServerMessage =
   | { type: 'sessions'; sessions: Session[] }
   | { type: 'session-update'; session: Session }
