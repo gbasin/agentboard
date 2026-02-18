@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, test, mock } from 'b
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import type { Session, ServerMessage } from '@shared/types'
+import type { Session, ServerMessage, SessionPreviewResponse } from '@shared/types'
 import type { AgentSessionRecord } from '../../db'
 
 const bunAny = Bun as typeof Bun & {
@@ -2423,19 +2423,101 @@ describe('server fetch handlers', () => {
       }
 
       expect(response.ok).toBe(true)
-      const payload = (await response.json()) as {
-        sessionId: string
-        displayName: string
-        projectPath: string
-        agentType: string
-        lines: string[]
-      }
+      const payload = (await response.json()) as SessionPreviewResponse
       expect(payload.sessionId).toBe('session-preview')
       expect(payload.displayName).toBe('Preview')
       expect(payload.projectPath).toBe('/tmp/preview')
       expect(payload.agentType).toBe('codex')
       expect(payload.lines).toHaveLength(100)
       expect(payload.lines[0]).toBe('line-20')
+      expect(payload.costAttribution.totalTokenUnits).toBe(200)
+      expect(payload.costAttribution.totalEstimatedUnits).toBe(100)
+      expect(payload.costAttribution.components).toEqual([
+        {
+          component: 'user_input',
+          tokenUnits: 0,
+          estimatedUnits: 0,
+          sharePercent: 0,
+          eventCount: 0,
+        },
+        {
+          component: 'assistant_output',
+          tokenUnits: 0,
+          estimatedUnits: 0,
+          sharePercent: 0,
+          eventCount: 0,
+        },
+        {
+          component: 'tooling',
+          tokenUnits: 0,
+          estimatedUnits: 0,
+          sharePercent: 0,
+          eventCount: 0,
+        },
+        {
+          component: 'system_other',
+          tokenUnits: 200,
+          estimatedUnits: 100,
+          sharePercent: 100,
+          eventCount: 100,
+        },
+      ])
+      expect(payload.costAttribution.sampling).toEqual({
+        sampledLineCount: 100,
+        parsedLineCount: 0,
+        malformedLineCount: 100,
+        emptyLineCount: 0,
+        maxPreviewLines: 100,
+        sampledTailBytes: 969,
+      })
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true })
+    }
+  })
+
+  test('returns zeroed cost attribution when preview log is empty', async () => {
+    const { serveOptions } = await loadIndex()
+    const fetchHandler = serveOptions.fetch
+    if (!fetchHandler) {
+      throw new Error('Fetch handler not configured')
+    }
+
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-preview-empty-'))
+    const logPath = path.join(tempDir, 'empty-session.jsonl')
+    await fs.writeFile(logPath, '')
+
+    seedRecord(
+      makeRecord({
+        sessionId: 'empty-preview',
+        logFilePath: logPath,
+      })
+    )
+
+    try {
+      const response = await fetchHandler.call(
+        {} as Bun.Server<unknown>,
+        new Request('http://localhost/api/session-preview/empty-preview'),
+        {} as Bun.Server<unknown>
+      )
+
+      if (!response) {
+        throw new Error('Expected response for empty session preview')
+      }
+
+      expect(response.ok).toBe(true)
+      const payload = (await response.json()) as SessionPreviewResponse
+      expect(payload.lines).toEqual([])
+      expect(payload.costAttribution.totalTokenUnits).toBe(0)
+      expect(payload.costAttribution.totalEstimatedUnits).toBe(0)
+      expect(payload.costAttribution.components.every((component) => component.sharePercent === 0)).toBe(true)
+      expect(payload.costAttribution.sampling).toEqual({
+        sampledLineCount: 0,
+        parsedLineCount: 0,
+        malformedLineCount: 0,
+        emptyLineCount: 0,
+        maxPreviewLines: 100,
+        sampledTailBytes: 0,
+      })
     } finally {
       await fs.rm(tempDir, { recursive: true, force: true })
     }

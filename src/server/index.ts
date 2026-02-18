@@ -36,6 +36,7 @@ import {
   type ResumeError,
   type Session,
 } from '../shared/types'
+import { estimateCostAttribution } from '../shared/costAttribution'
 import { logger, logLevel } from './logger'
 import { SessionRefreshWorkerClient } from './sessionRefreshWorkerClient'
 import {
@@ -860,6 +861,7 @@ app.get('/api/session-preview/:sessionId', async (c) => {
 
     // Read last 64KB of the file
     const TAIL_BYTES = 64 * 1024
+    const MAX_PREVIEW_LINES = 100
     const fileSize = stats.size
     const offset = Math.max(0, fileSize - TAIL_BYTES)
     const fd = await fs.open(logPath, 'r')
@@ -868,8 +870,11 @@ app.get('/api/session-preview/:sessionId', async (c) => {
     await fd.close()
 
     const content = buffer.toString('utf8')
-    // Take last 100 lines
-    const lines = content.split('\n').slice(-100)
+    const lines = content ? content.split('\n').slice(-MAX_PREVIEW_LINES) : []
+    const costAttribution = estimateCostAttribution(lines, {
+      maxPreviewLines: MAX_PREVIEW_LINES,
+      sampledTailBytes: buffer.length,
+    })
 
     return c.json({
       sessionId,
@@ -878,6 +883,7 @@ app.get('/api/session-preview/:sessionId', async (c) => {
       agentType: record.agentType,
       lastActivityAt: record.lastActivityAt,
       lines,
+      costAttribution,
     })
   } catch (error) {
     const err = error as NodeJS.ErrnoException
