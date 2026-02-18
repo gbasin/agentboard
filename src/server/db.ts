@@ -329,14 +329,20 @@ function ensureDataDir(dbPath: string) {
 
   try {
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
-  } catch {
-    // Ignore mkdir failures; SQLite will surface errors when opening
+  } catch (error) {
+    logger.debug('db_data_dir_create_failed', {
+      dir,
+      ...toErrorLogFields(error),
+    })
   }
 
   try {
     fs.chmodSync(dir, 0o700)
-  } catch {
-    // Ignore chmod failures
+  } catch (error) {
+    logger.debug('db_data_dir_chmod_failed', {
+      dir,
+      ...toErrorLogFields(error),
+    })
   }
 }
 
