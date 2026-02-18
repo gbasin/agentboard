@@ -2,6 +2,7 @@ import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import path from 'node:path'
+import fs from 'node:fs'
 
 function isConnRefused(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false
@@ -86,6 +87,14 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       allowedHosts,
+      https: (() => {
+        const certFile = path.join(process.env.HOME || '', '.agentboard', 'tls-cert.pem')
+        const keyFile = path.join(process.env.HOME || '', '.agentboard', 'tls-key.pem')
+        if (fs.existsSync(certFile) && fs.existsSync(keyFile)) {
+          return { cert: fs.readFileSync(certFile), key: fs.readFileSync(keyFile) }
+        }
+        return undefined
+      })(),
       proxy: {
         '/api': {
           target: `http://localhost:${backendPort}`,
