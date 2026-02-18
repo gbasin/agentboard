@@ -196,7 +196,7 @@ Console output is pretty-printed in development, JSON in production (`NODE_ENV=p
 - Event names must be `snake_case`
 - Catch blocks in server runtime paths must either:
   - emit a structured log event, or
-  - be explicitly documented as intentional with `logging-audit:intentional`
+  - be explicitly documented as intentional with `logging-audit:intentional` and a brief rationale
 - `logger.warn` and `logger.error` used in catch paths must include useful error context fields (`error_message`, `error_name`, `error_stack`, `code`, etc.)
 
 Run the logging auditor:

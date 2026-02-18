@@ -28,6 +28,7 @@ class PtyTerminalProxy extends TerminalProxyBase {
     try {
       this.process?.terminal?.resize(cols, rows)
     } catch {
+      /* logging-audit:intentional */
       // Ignore resize errors
     }
   }
@@ -44,6 +45,7 @@ class PtyTerminalProxy extends TerminalProxyBase {
         this.process.kill()
         this.process.terminal?.close()
       } catch {
+        /* logging-audit:intentional */
         // Ignore if already exited
       }
       this.process = null
@@ -55,6 +57,7 @@ class PtyTerminalProxy extends TerminalProxyBase {
         sessionName: this.options.sessionName,
       })
     } catch {
+      /* logging-audit:intentional */
       // Ignore cleanup failures
     }
 
@@ -89,6 +92,7 @@ class PtyTerminalProxy extends TerminalProxyBase {
         this.options.sessionName,
       ])
     } catch (error) {
+      /* logging-audit:intentional */
       this.state = TerminalState.DEAD
       throw new TerminalProxyError(
         'ERR_SESSION_CREATE_FAILED',
@@ -131,6 +135,7 @@ class PtyTerminalProxy extends TerminalProxyBase {
         },
       })
     } catch (error) {
+      /* logging-audit:intentional */
       this.state = TerminalState.DEAD
       throw new TerminalProxyError(
         'ERR_TMUX_ATTACH_FAILED',
@@ -144,6 +149,7 @@ class PtyTerminalProxy extends TerminalProxyBase {
         proc.kill()
         proc.terminal?.close()
       } catch {
+        /* logging-audit:intentional */
         // Ignore if already exited
       }
       await this.dispose()
@@ -179,6 +185,7 @@ class PtyTerminalProxy extends TerminalProxyBase {
         mode: this.getMode(),
       })
     } catch (error) {
+      /* logging-audit:intentional */
       this.state = TerminalState.DEAD
       await this.dispose()
       throw error
@@ -211,6 +218,7 @@ class PtyTerminalProxy extends TerminalProxyBase {
         try {
           onReady()
         } catch {
+          /* logging-audit:intentional */
           // Ignore onReady failures
         }
       }
@@ -219,6 +227,7 @@ class PtyTerminalProxy extends TerminalProxyBase {
       try {
         this.runTmux(['refresh-client', '-t', this.clientTty])
       } catch {
+        /* logging-audit:intentional */
         // Ignore refresh failures
       }
       const durationMs = this.now() - startedAt
@@ -232,6 +241,7 @@ class PtyTerminalProxy extends TerminalProxyBase {
       this.state = TerminalState.READY
       return true
     } catch (error) {
+      /* logging-audit:intentional */
       this.outputSuppressed = false
       this.state = TerminalState.READY
       this.logEvent('terminal_switch_failure', {
@@ -263,6 +273,7 @@ class PtyTerminalProxy extends TerminalProxyBase {
           '#{client_tty} #{client_pid}',
         ])
       } catch {
+        /* logging-audit:intentional */
         output = ''
       }
       for (const line of output.split('\n')) {

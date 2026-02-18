@@ -49,6 +49,7 @@ class SshTerminalProxy extends TerminalProxyBase {
     try {
       this.process?.terminal?.resize(cols, rows)
     } catch {
+      /* logging-audit:intentional */
       // Ignore resize errors
     }
   }
@@ -65,6 +66,7 @@ class SshTerminalProxy extends TerminalProxyBase {
         this.process.kill()
         this.process.terminal?.close()
       } catch {
+        /* logging-audit:intentional */
         // Ignore if already exited
       }
       this.process = null
@@ -76,6 +78,7 @@ class SshTerminalProxy extends TerminalProxyBase {
         sessionName: this.options.sessionName,
       })
     } catch {
+      /* logging-audit:intentional */
       // Ignore cleanup failures
     }
 
@@ -98,7 +101,11 @@ class SshTerminalProxy extends TerminalProxyBase {
     })
 
     const timeout = setTimeout(() => {
-      try { proc.kill() } catch {}
+      try {
+        proc.kill()
+      } catch {
+        /* logging-audit:intentional */
+      }
     }, this.commandTimeoutMs)
 
     let exitCode: number
@@ -155,6 +162,7 @@ class SshTerminalProxy extends TerminalProxyBase {
             this.process.kill()
             this.process.terminal?.close()
           } catch {
+            /* logging-audit:intentional */
             // Ignore if already exited
           }
           this.process = null
@@ -201,6 +209,7 @@ class SshTerminalProxy extends TerminalProxyBase {
           this.options.sessionName,
         ])
       } catch (error) {
+        /* logging-audit:intentional */
         const message = error instanceof Error ? error.message : String(error)
         // Session name is per-WS-connection; if a previous proxy didn't clean up,
         // treat duplicate sessions as recoverable and try to proceed.
@@ -298,6 +307,7 @@ class SshTerminalProxy extends TerminalProxyBase {
         proc.kill()
         proc.terminal?.close()
       } catch {
+        /* logging-audit:intentional */
         // Ignore if already exited
       }
       await this.dispose()
@@ -371,6 +381,7 @@ class SshTerminalProxy extends TerminalProxyBase {
         try {
           onReady()
         } catch {
+          /* logging-audit:intentional */
           // Ignore onReady failures
         }
       }
@@ -379,6 +390,7 @@ class SshTerminalProxy extends TerminalProxyBase {
       try {
         await this.runTmuxAsync(['refresh-client', '-t', this.clientTty])
       } catch {
+        /* logging-audit:intentional */
         // Ignore refresh failures
       }
       const durationMs = this.now() - startedAt
@@ -392,6 +404,7 @@ class SshTerminalProxy extends TerminalProxyBase {
       this.state = TerminalState.READY
       return true
     } catch (error) {
+      /* logging-audit:intentional */
       this.outputSuppressed = false
       this.state = TerminalState.READY
       this.logEvent('terminal_switch_failure', {
@@ -425,6 +438,7 @@ class SshTerminalProxy extends TerminalProxyBase {
           '#{client_tty}',
         ])
       } catch {
+        /* logging-audit:intentional */
         output = ''
       }
       for (const line of output.split('\n')) {

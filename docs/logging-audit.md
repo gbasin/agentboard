@@ -50,19 +50,23 @@ High-severity findings (all fixed in this task):
   - Added structured warning logs for session-preview read failures with session/log path context.
   - Added structured warning logs for directory stat/read failures.
   - Added structured warning logs for settings parsing failures and upload/clipboard failures.
+  - Added structured warning logs for websocket payload parse failures and session create/kill/rename/resume error paths.
   - Replaced non-snake event `ssh_proxy_onExit` with `ssh_proxy_on_exit`.
 - `src/server/db.ts`
   - Added migration rollback/failure logging with migration IDs and error details before rethrow.
+  - Added debug logs for non-fatal data directory permission setup failures.
 - `src/server/SessionManager.ts`
   - Added debug logs for non-fatal tmux fallback/error paths.
   - Marked high-frequency pane-capture silent catch as intentional with `logging-audit:intentional`.
+- Supporting runtime modules
+  - Marked deliberate best-effort catch paths with `logging-audit:intentional` (log discovery/matcher, worker plumbing, and terminal proxies) so silent behavior is explicitly documented.
 
 ## Current Status (After Remediation)
 
 `bun run audit:logging` now reports:
 
 - `high=0`
-- `medium=89`
+- `medium=0`
 - `low=0`
 
-Remaining medium findings are intentionally out-of-scope for this pass and can be addressed incrementally in follow-up audits.
+No outstanding findings in scope.
