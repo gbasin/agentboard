@@ -190,6 +190,57 @@ export function useTerminal({
   const IDLE_FLUSH_MS = 2
   const MAX_FLUSH_MS = 16
 
+  // iOS compositor repaint state — shared by visibility and subscriber effects.
+  // Unified so only one repaint can be in-flight at a time.
+  const iosRepaintTimerRef = useRef<number | null>(null)
+  const iosRepaintRafRef = useRef<number | null>(null)
+  const iosRepaintPrevRef = useRef<string | null>(null) // non-null when mid-toggle
+
+  // Cancel any pending iOS repaint, restoring display if mid-toggle.
+  const cancelIosRepaint = () => {
+    if (iosRepaintTimerRef.current !== null) {
+      window.clearTimeout(iosRepaintTimerRef.current)
+      iosRepaintTimerRef.current = null
+    }
+    if (iosRepaintRafRef.current !== null) {
+      cancelAnimationFrame(iosRepaintRafRef.current)
+      iosRepaintRafRef.current = null
+    }
+    if (iosRepaintPrevRef.current !== null) {
+      const container = containerRef.current
+      if (container) container.style.display = iosRepaintPrevRef.current
+      iosRepaintPrevRef.current = null
+    }
+  }
+
+  // Schedule an iOS compositor repaint after delayMs.
+  // Cancels any in-flight repaint first (safely restoring display).
+  const scheduleIosRepaint = (delayMs: number) => {
+    const container = containerRef.current
+    if (!container) return
+
+    cancelIosRepaint()
+
+    iosRepaintTimerRef.current = window.setTimeout(() => {
+      iosRepaintTimerRef.current = null
+      // Force xterm.js to re-render all visible rows so the DOM has
+      // fresh content before the compositor is forced to repaint.
+      const terminal = terminalRef.current
+      if (terminal) terminal.refresh(0, terminal.rows - 1)
+      iosRepaintPrevRef.current = container.style.display
+      container.style.display = 'none'
+      // Split restore across two animation frames so the compositor
+      // registers the removal before we restore.
+      iosRepaintRafRef.current = requestAnimationFrame(() => {
+        iosRepaintRafRef.current = requestAnimationFrame(() => {
+          iosRepaintRafRef.current = null
+          container.style.display = iosRepaintPrevRef.current ?? ''
+          iosRepaintPrevRef.current = null
+        })
+      })
+    }, delayMs)
+  }
+
   useEffect(() => {
     sendMessageRef.current = sendMessage
   }, [sendMessage])
@@ -1022,6 +1073,17 @@ export function useTerminal({
           })
           switchStartRef.current = null
         }
+
+        // Force iOS compositor repaint after reconnect data delivery.
+        // The visibilitychange repaint fires early and may only show stale
+        // content; this second repaint catches the fresh data from reconnect.
+        // Flush pending output first so the repaint captures fresh data.
+        // Uses shared scheduleIosRepaint so it coalesces with any pending
+        // visibility-triggered repaint (no double-flicker).
+        if (isiOS) {
+          flush()
+          scheduleIosRepaint(50)
+        }
       }
 
       // Handle tmux copy-mode status response
@@ -1038,6 +1100,7 @@ export function useTerminal({
       unsubscribe()
       // Flush any remaining buffer on cleanup
       flush()
+      cancelIosRepaint()
     }
   }, [subscribe, checkScrollPosition, setTmuxCopyMode])
 
@@ -1072,6 +1135,45 @@ export function useTerminal({
         window.clearTimeout(resizeTimer.current)
       }
     }
+  }, [])
+
+  // Force iOS compositor repaint on visibility resume.
+  // iOS WKWebView shows a stale cached snapshot after background/foreground.
+  // Uses shared scheduleIosRepaint/cancelIosRepaint so the visibility and
+  // terminal-ready repaint paths can't interfere with each other.
+  useEffect(() => {
+    if (!isiOS) return
+
+    const handleVisibility = () => {
+      // Skip hidden transitions. Don't require 'visible' specifically —
+      // visibilityState can be wrong in iOS PWA standalone (WebKit #202399).
+      if (document.visibilityState === 'hidden') return
+      scheduleIosRepaint(200)
+    }
+
+    const handlePageShow = (e: PageTransitionEvent) => {
+      // pageshow fires on BFCache/freeze restore — more reliable than
+      // visibilitychange in iOS PWA standalone mode.
+      if (e.persisted) scheduleIosRepaint(200)
+    }
+
+    const handleFocus = () => {
+      // Fallback: window 'focus' reliably fires when an iOS PWA returns
+      // to the foreground, even when visibilitychange doesn't fire
+      // (WebKit #202399) and the WebSocket stays alive (no reconnect).
+      scheduleIosRepaint(200)
+    }
+
+    document.addEventListener('visibilitychange', handleVisibility)
+    window.addEventListener('pageshow', handlePageShow)
+    window.addEventListener('focus', handleFocus)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility)
+      window.removeEventListener('pageshow', handlePageShow)
+      window.removeEventListener('focus', handleFocus)
+      cancelIosRepaint()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   return {
