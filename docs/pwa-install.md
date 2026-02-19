@@ -4,7 +4,9 @@ Agentboard can be installed as a Progressive Web App (PWA) for a full-screen, ap
 
 ## Requirements
 
-PWA installation requires the page to be served over **HTTPS** (or localhost). Choose the setup that matches your environment.
+PWA installation requires the page to be served over **HTTPS** (or `localhost` / `127.0.0.1`). This applies to all platforms — iOS Safari, Chrome, Android, and desktop browsers.
+
+> **Note:** iOS Safari's "Add to Home Screen" can create a basic home screen shortcut over HTTP, but this is a bookmark — not a PWA install. A proper PWA install (with service worker caching and auto-updates) requires HTTPS.
 
 ---
 
@@ -44,17 +46,15 @@ https://<your-machine>.tail<xxxxx>.ts.net:5173
 
 ### 4. Install the PWA
 
-- **Android Chrome:** Navigate to the URL → three-dot menu → "Install app"
 - **iOS Safari:** Navigate to the URL → Share → "Add to Home Screen"
+- **Android Chrome:** Navigate to the URL → three-dot menu → "Install app"
 - **Desktop Chrome/Edge:** Navigate to the URL → install icon in address bar
 
 ---
 
-## Option B: Without Tailscale (HTTP)
+## Option B: Chrome Flag (No HTTPS)
 
-If you're not using Tailscale, Agentboard serves over HTTP. Browsers require HTTPS for PWA installation, but you can work around this with a Chrome flag.
-
-### Android / Desktop Chrome
+If you don't have HTTPS, you can tell Chrome to treat your HTTP origin as secure:
 
 1. Open `chrome://flags` in Chrome
 2. Search for `unsafely-treat-insecure-origin-as-secure`
@@ -63,11 +63,7 @@ If you're not using Tailscale, Agentboard serves over HTTP. Browsers require HTT
 5. Navigate to your Agentboard URL
 6. Three-dot menu → "Install app" or "Add to Home Screen"
 
-### iOS Safari
-
-iOS Safari does not support Chrome flags. You'll need HTTPS via one of:
-- A reverse proxy (nginx/caddy) with a self-signed or Let's Encrypt cert
-- Tailscale (see Option A)
+> **iOS Safari** does not support Chrome flags. For iOS without Tailscale, you'll need HTTPS via a reverse proxy (nginx/caddy) with a self-signed or Let's Encrypt cert.
 
 ---
 
@@ -86,7 +82,7 @@ iOS Safari does not support Chrome flags. You'll need HTTPS via one of:
 ## Troubleshooting
 
 **"Install" option doesn't appear:**
-- Verify the page is served over HTTPS (or the Chrome flag is set)
+- Verify the page is served over HTTPS (or the Chrome flag is set, or using localhost)
 - Check DevTools → Application → Manifest — it should show the Agentboard manifest
 - Check DevTools → Application → Service Workers — should be registered
 
