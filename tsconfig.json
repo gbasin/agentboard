@@ -12,7 +12,7 @@
     "forceConsistentCasingInFileNames": true,
     "allowSyntheticDefaultImports": true,
     "resolveJsonModule": true,
-    "types": ["bun-types", "vite/client"],
+    "types": ["bun-types", "vite/client", "vite-plugin-pwa/client"],
     "baseUrl": ".",
     "paths": {
       "@shared/*": ["src/shared/*"]
