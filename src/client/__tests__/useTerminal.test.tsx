@@ -130,6 +130,10 @@ class WebglAddonMock {
   dispose() {
     this.disposed = true
   }
+
+  onContextLoss(_callback: () => void) {
+    // no-op in tests
+  }
 }
 
 class ClipboardAddonMock {}
@@ -435,8 +439,7 @@ describe('useTerminal', () => {
       })
     })
 
-    // Output is wrapped in synchronized output sequences (BSU/ESU)
-    expect(terminal.writes).toEqual([`\x1b[?2026hx\u23FAy\x1b[?2026l`])
+    expect(terminal.writes).toEqual([`x\u23FAy`])
 
     terminal.selection = ''
 
@@ -511,7 +514,7 @@ describe('useTerminal', () => {
       })
     })
 
-    expect(terminal.writes).toEqual([`\x1b[?2026hx\u23FA\uFE0Ey\x1b[?2026l`])
+    expect(terminal.writes).toEqual([`x\u23FA\uFE0Ey`])
   })
 
   test('detaches previous session and cleans up on unmount', async () => {
