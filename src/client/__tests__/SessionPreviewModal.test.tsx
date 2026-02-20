@@ -240,9 +240,9 @@ describe('SessionPreviewModal', () => {
     await cleanup(renderer)
   })
 
-  test('handles errors, closes on escape and backdrop, and disables resume', async () => {
+  test('maps unreadable log errors, closes on escape and backdrop, and disables resume', async () => {
     const controller = createFetchController([
-      createJsonResponse({ error: 'No preview available' }, { status: 500 }),
+      createJsonResponse({ error: 'Unable to read log file' }, { status: 500 }),
     ])
 
     let closed = 0
@@ -263,7 +263,7 @@ describe('SessionPreviewModal', () => {
     await resolveAndFlush(controller)
 
     const html = JSON.stringify(renderer.toJSON())
-    expect(html).toContain('No preview available')
+    expect(html).toContain('Log preview is unavailable right now. Try again in a moment.')
 
     const resumeButton = renderer.root
       .findAllByType('button')
@@ -310,5 +310,72 @@ describe('SessionPreviewModal', () => {
     expect(closed).toBe(2)
 
     await cleanup(renderer)
+  })
+
+  test('maps invalid-session preview errors', async () => {
+    const controller = createFetchController([
+      createJsonResponse({ error: 'Invalid session id' }, { status: 400 }),
+    ])
+
+    const renderer = await createModal(
+      <SessionPreviewModal
+        session={baseSession}
+        onClose={() => {}}
+        onResume={() => {}}
+      />
+    )
+
+    try {
+      await resolveAndFlush(controller)
+      const html = JSON.stringify(renderer.toJSON())
+      expect(html).toContain('This session id is invalid. Close the preview and try again.')
+    } finally {
+      await cleanup(renderer)
+    }
+  })
+
+  test('maps missing-log preview errors', async () => {
+    const controller = createFetchController([
+      createJsonResponse({ error: 'No log file for session' }, { status: 404 }),
+    ])
+
+    const renderer = await createModal(
+      <SessionPreviewModal
+        session={baseSession}
+        onClose={() => {}}
+        onResume={() => {}}
+      />
+    )
+
+    try {
+      await resolveAndFlush(controller)
+      const html = JSON.stringify(renderer.toJSON())
+      expect(html).toContain('No log file is available for this session yet.')
+    } finally {
+      await cleanup(renderer)
+    }
+  })
+
+  test('maps network preview failures', async () => {
+    globalAny.fetch = (() =>
+      Promise.reject(new TypeError('Failed to fetch'))) as unknown as typeof fetch
+
+    const renderer = await createModal(
+      <SessionPreviewModal
+        session={baseSession}
+        onClose={() => {}}
+        onResume={() => {}}
+      />
+    )
+
+    try {
+      await act(async () => {
+        await flushUpdates()
+      })
+      const html = JSON.stringify(renderer.toJSON())
+      expect(html).toContain('Could not load the session preview. Check your connection and try again.')
+    } finally {
+      await cleanup(renderer)
+    }
   })
 })
