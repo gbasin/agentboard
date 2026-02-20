@@ -122,17 +122,24 @@ class FitAddonMock {
 class WebglAddonMock {
   static instances: WebglAddonMock[] = []
   disposed = false
+  disposeCalls = 0
+  private onContextLossHandler?: () => void
 
   constructor() {
     WebglAddonMock.instances.push(this)
   }
 
   dispose() {
+    this.disposeCalls += 1
     this.disposed = true
   }
 
-  onContextLoss(_callback: () => void) {
-    // no-op in tests
+  onContextLoss(callback: () => void) {
+    this.onContextLossHandler = callback
+  }
+
+  emitContextLoss() {
+    this.onContextLossHandler?.()
   }
 }
 
@@ -517,6 +524,83 @@ describe('useTerminal', () => {
     expect(terminal.writes).toEqual([`x\u23FA\uFE0Ey`])
   })
 
+  test('buffers split escape sequences across output chunks without injecting sync markers', async () => {
+    const pendingTimers = new Map<number, { callback: () => void; delay: number }>()
+    let nextTimerId = 1
+    globalAny.window = {
+      setTimeout: ((callback: () => void, delay?: number) => {
+        const id = nextTimerId++
+        pendingTimers.set(id, { callback, delay: delay ?? 0 })
+        return id as unknown as ReturnType<typeof setTimeout>
+      }) as typeof setTimeout,
+      clearTimeout: ((id: ReturnType<typeof setTimeout>) => {
+        pendingTimers.delete(id as unknown as number)
+      }) as typeof clearTimeout,
+      devicePixelRatio: 1,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    } as unknown as Window & typeof globalThis
+
+    globalAny.navigator = {
+      userAgent: 'Chrome',
+      platform: 'MacIntel',
+      maxTouchPoints: 0,
+      clipboard: { writeText: () => Promise.resolve() },
+    } as unknown as Navigator
+
+    const listeners: Array<(message: ServerMessage) => void> = []
+    const { container } = createContainerMock()
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          sendMessage={() => {}}
+          subscribe={(listener) => {
+            listeners.push(listener)
+            return () => {}
+          }}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+        { createNodeMock: () => container },
+      )
+      await Promise.resolve()
+    })
+
+    const terminal = TerminalMock.instances[0]
+    if (!terminal) throw new Error('Expected terminal instance')
+
+    act(() => {
+      listeners[0]?.({
+        type: 'terminal-output',
+        sessionId: 'session-1',
+        data: '\x1b[31',
+      })
+      listeners[0]?.({
+        type: 'terminal-output',
+        sessionId: 'session-1',
+        data: 'mHELLO\x1b[0m',
+      })
+    })
+
+    const idleFlushTimer = [...pendingTimers.values()].find(timer => timer.delay === 2)
+    expect(idleFlushTimer).toBeDefined()
+
+    act(() => {
+      idleFlushTimer?.callback()
+    })
+
+    expect(terminal.writes).toEqual(['\x1b[31mHELLO\x1b[0m'])
+    expect(terminal.writes[0]?.includes('\x1b[?2026')).toBe(false)
+
+    act(() => {
+      renderer.unmount()
+    })
+  })
+
   test('detaches previous session and cleans up on unmount', async () => {
     globalAny.navigator = {
       userAgent: 'Chrome',
@@ -584,6 +668,81 @@ describe('useTerminal', () => {
     expect(terminal?.disposed).toBe(true)
     expect(webglAddon?.disposed).toBe(true)
     expect(container.innerHTML).toBe('')
+  })
+
+  test('disposes WebGL addon on context loss and clears it for future toggles', async () => {
+    globalAny.navigator = {
+      userAgent: 'Chrome',
+      platform: 'MacIntel',
+      maxTouchPoints: 0,
+      clipboard: { writeText: () => Promise.resolve() },
+    } as unknown as Navigator
+
+    const { container } = createContainerMock()
+    let renderer!: TestRenderer.ReactTestRenderer
+
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          useWebGL
+          sendMessage={() => {}}
+          subscribe={() => () => {}}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+        { createNodeMock: () => container },
+      )
+      await Promise.resolve()
+    })
+
+    const firstWebglAddon = WebglAddonMock.instances[0]
+    if (!firstWebglAddon) throw new Error('Expected initial WebGL addon')
+
+    act(() => {
+      firstWebglAddon.emitContextLoss()
+    })
+    expect(firstWebglAddon.disposed).toBe(true)
+    expect(firstWebglAddon.disposeCalls).toBe(1)
+
+    await act(async () => {
+      renderer.update(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          useWebGL={false}
+          sendMessage={() => {}}
+          subscribe={() => () => {}}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+      )
+      await Promise.resolve()
+    })
+    expect(firstWebglAddon.disposeCalls).toBe(1)
+
+    await act(async () => {
+      renderer.update(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          useWebGL
+          sendMessage={() => {}}
+          subscribe={() => () => {}}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+      )
+      await Promise.resolve()
+    })
+
+    expect(WebglAddonMock.instances.length).toBe(2)
+    expect(WebglAddonMock.instances[1]).not.toBe(firstWebglAddon)
+
+    act(() => {
+      renderer.unmount()
+    })
   })
 
   test('reattaches active session after websocket reconnect', async () => {
