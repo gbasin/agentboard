@@ -176,12 +176,7 @@ export function useTerminal({
   const onScrollChangeRef = useRef(onScrollChange)
   const useWebGLRef = useRef(useWebGL)
 
-  // Synchronized Output (DECSET 2026) - makes xterm.js render atomically
-  // See: https://contour-terminal.org/vt-extensions/synchronized-output/
-  const BSU = '\x1b[?2026h' // Begin Synchronized Update
-  const ESU = '\x1b[?2026l' // End Synchronized Update
-
-  // Output buffering with idle-based flushing + synchronized output
+  // Output buffering with idle-based flushing
   const outputBufferRef = useRef<string>('')
   const idleTimerRef = useRef<number | null>(null)
   const maxTimerRef = useRef<number | null>(null)
@@ -370,6 +365,12 @@ export function useTerminal({
       if (useWebGLRef.current) {
         try {
           const webglAddon = new WebglAddon()
+          // Dispose on context loss so xterm falls back to canvas renderer
+          // instead of trying to render through a dead WebGL context (causes artifacts)
+          webglAddon.onContextLoss(() => {
+            try { webglAddon.dispose() } catch { /* ignore */ }
+            webglAddonRef.current = null
+          })
           terminal.loadAddon(webglAddon)
           webglAddonRef.current = webglAddon
         } catch {
@@ -832,6 +833,10 @@ export function useTerminal({
       if (!webglAddonRef.current) {
         try {
           const webglAddon = new WebglAddon()
+          webglAddon.onContextLoss(() => {
+            try { webglAddon.dispose() } catch { /* ignore */ }
+            webglAddonRef.current = null
+          })
           terminal.loadAddon(webglAddon)
           webglAddonRef.current = webglAddon
         } catch {
@@ -983,9 +988,8 @@ export function useTerminal({
     }
   }, [sessionId, tmuxTarget, allowAttach, connectionStatus, connectionEpoch, checkScrollPosition])
 
-  // Subscribe to terminal output with idle-based buffering + synchronized output
-  // This prevents flicker by: (1) batching output until stream goes idle,
-  // (2) wrapping in BSU/ESU so xterm.js renders atomically
+  // Subscribe to terminal output with idle-based buffering
+  // Batches chunks until the stream goes idle to avoid splitting escape sequences
   useEffect(() => {
     const flush = () => {
       if (idleTimerRef.current !== null) {
@@ -1005,8 +1009,7 @@ export function useTerminal({
       const writeStart = performance.now()
       const dataLen = data.length
 
-      // Wrap in synchronized output sequences so xterm renders atomically
-      terminal.write(BSU + data + ESU, () => {
+      terminal.write(data, () => {
         const writeMs = Math.round(performance.now() - writeStart)
         // Log slow writes (>50ms) to catch render bottlenecks
         if (writeMs > 50) {
