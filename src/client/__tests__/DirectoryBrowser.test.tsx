@@ -183,12 +183,15 @@ describe('DirectoryBrowser', () => {
     }
   })
 
-  test('renders error state with retry', async () => {
+  test('renders mapped not-found error state with retry', async () => {
     const listing = makeListing({
       directories: [{ name: 'alpha', path: '/root/alpha' }],
     })
     const controller = createFetchController([
-      createJsonResponse({ message: 'Nope' }, { status: 404 }),
+      createJsonResponse(
+        { error: 'not_found', message: 'Path does not exist' },
+        { status: 404 }
+      ),
       createJsonResponse(listing),
     ])
 
@@ -205,7 +208,9 @@ describe('DirectoryBrowser', () => {
       const error = renderer.root.findByProps({
         'data-testid': 'directory-error',
       })
-      expect(error.findByType('p').children.join('')).toContain('Nope')
+      expect(error.findByType('p').children.join('')).toBe(
+        'Directory not found. Check the path and try again.'
+      )
 
       const retryButton = renderer.root.findAllByType('button')
         .find((button) => button.props.children === 'Retry')
@@ -223,6 +228,60 @@ describe('DirectoryBrowser', () => {
         'data-testid': 'directory-entry',
       })
       expect(entries).toHaveLength(1)
+    } finally {
+      await cleanup(renderer)
+    }
+  })
+
+  test('renders mapped forbidden error state', async () => {
+    const controller = createFetchController([
+      createJsonResponse(
+        { error: 'forbidden', message: 'Permission denied' },
+        { status: 403 }
+      ),
+    ])
+
+    const renderer = await createBrowser(
+      <DirectoryBrowser
+        initialPath="/root"
+        onSelect={() => {}}
+        onCancel={() => {}}
+      />
+    )
+
+    try {
+      await resolveAndFlush(controller)
+      const error = renderer.root.findByProps({
+        'data-testid': 'directory-error',
+      })
+      expect(error.findByType('p').children.join('')).toBe(
+        'You do not have permission to open this directory. Choose another folder.'
+      )
+    } finally {
+      await cleanup(renderer)
+    }
+  })
+
+  test('renders mapped network error state', async () => {
+    globalAny.fetch = (() =>
+      Promise.reject(new TypeError('Failed to fetch'))) as unknown as typeof fetch
+
+    const renderer = await createBrowser(
+      <DirectoryBrowser
+        initialPath="/root"
+        onSelect={() => {}}
+        onCancel={() => {}}
+      />
+    )
+
+    try {
+      await flushBrowser()
+      const error = renderer.root.findByProps({
+        'data-testid': 'directory-error',
+      })
+      expect(error.findByType('p').children.join('')).toBe(
+        'Could not reach the server. Check your connection and try again.'
+      )
     } finally {
       await cleanup(renderer)
     }
