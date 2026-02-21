@@ -3,21 +3,17 @@ import fs from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'
 import os from 'node:os'
+import { canBindLocalhost, isTmuxAvailable } from './testEnvironment'
 
-const tmuxAvailable = (() => {
-  try {
-    const result = Bun.spawnSync(['tmux', '-V'], {
-      stdout: 'ignore',
-      stderr: 'ignore',
-    })
-    return result.exitCode === 0
-  } catch {
-    return false
-  }
-})()
+const tmuxAvailable = isTmuxAvailable()
+const localhostBindable = canBindLocalhost()
+const testHost = '127.0.0.1'
 
-if (!tmuxAvailable) {
-  test.skip('tmux not available - skipping integration test', () => {})
+if (!tmuxAvailable || !localhostBindable) {
+  const reasons: string[] = []
+  if (!tmuxAvailable) reasons.push('tmux not available')
+  if (!localhostBindable) reasons.push('localhost sockets unavailable')
+  test.skip(`${reasons.join(' and ')} - skipping integration test`, () => {})
 } else {
   describe('integration', () => {
     const sessionName = `agentboard-test-${Date.now()}-${Math.random()
@@ -81,14 +77,14 @@ if (!tmuxAvailable) {
     })
 
     test('health endpoint responds', async () => {
-      const response = await fetch(`http://localhost:${port}/api/health`)
+      const response = await fetch(`http://${testHost}:${port}/api/health`)
       expect(response.ok).toBe(true)
       const payload = (await response.json()) as { ok: boolean }
       expect(payload.ok).toBe(true)
     })
 
     test('sessions endpoint returns tmux windows', async () => {
-      const response = await fetch(`http://localhost:${port}/api/sessions`)
+      const response = await fetch(`http://${testHost}:${port}/api/sessions`)
       expect(response.ok).toBe(true)
       const sessions = (await response.json()) as Array<{
         tmuxWindow: string
@@ -116,7 +112,7 @@ if (!tmuxAvailable) {
       })
       formData.append('image', blob, 'paste.png')
 
-      const response = await fetch(`http://localhost:${port}/api/paste-image`, {
+      const response = await fetch(`http://${testHost}:${port}/api/paste-image`, {
         method: 'POST',
         body: formData,
       })
@@ -130,7 +126,7 @@ if (!tmuxAvailable) {
     })
 
     test('paste-image endpoint rejects empty payloads', async () => {
-      const response = await fetch(`http://localhost:${port}/api/paste-image`, {
+      const response = await fetch(`http://${testHost}:${port}/api/paste-image`, {
         method: 'POST',
         body: new FormData(),
       })
@@ -145,7 +141,7 @@ async function getFreePort(): Promise<number> {
     const server = net.createServer()
     server.unref()
     server.once('error', reject)
-    server.listen(0, () => {
+    server.listen({ port: 0, host: testHost }, () => {
       const address = server.address()
       if (address && typeof address === 'object') {
         const { port } = address
@@ -161,7 +157,7 @@ async function waitForHealth(port: number, timeoutMs = 8000): Promise<void> {
   const start = Date.now()
   while (Date.now() - start < timeoutMs) {
     try {
-      const response = await fetch(`http://localhost:${port}/api/health`)
+      const response = await fetch(`http://${testHost}:${port}/api/health`)
       if (response.ok) {
         return
       }
@@ -178,7 +174,7 @@ async function waitForWebSocketSessions(
   timeoutMs = 5000
 ): Promise<{ type: string; sessions: unknown[] }> {
   return await new Promise((resolve, reject) => {
-    const socket = new WebSocket(`ws://localhost:${port}/ws`)
+    const socket = new WebSocket(`ws://${testHost}:${port}/ws`)
     const timeout = setTimeout(() => {
       socket.close()
       reject(new Error('Timed out waiting for sessions message'))

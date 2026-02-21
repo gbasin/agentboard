@@ -132,6 +132,18 @@ export function extractSessionId(logPath: string): string | null {
   return null
 }
 
+export function extractSlug(logPath: string): string | null {
+  const entries = parseLogHeadEntries(logPath)
+
+  for (const entry of entries) {
+    if (typeof entry.slug === 'string' && entry.slug.trim()) {
+      return entry.slug.trim()
+    }
+  }
+
+  return null
+}
+
 export function extractProjectPath(logPath: string): string | null {
   const entries = parseLogHeadEntries(logPath)
 

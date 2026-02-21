@@ -5,21 +5,17 @@ import path from 'node:path'
 import os from 'node:os'
 import { initDatabase } from '../db'
 import type { AgentSessionRecord } from '../db'
+import { canBindLocalhost, isTmuxAvailable } from './testEnvironment'
 
-const tmuxAvailable = (() => {
-  try {
-    const result = Bun.spawnSync(['tmux', '-V'], {
-      stdout: 'ignore',
-      stderr: 'ignore',
-    })
-    return result.exitCode === 0
-  } catch {
-    return false
-  }
-})()
+const tmuxAvailable = isTmuxAvailable()
+const localhostBindable = canBindLocalhost()
+const testHost = '127.0.0.1'
 
-if (!tmuxAvailable) {
-  test.skip('tmux not available - skipping pin sessions integration test', () => {})
+if (!tmuxAvailable || !localhostBindable) {
+  const reasons: string[] = []
+  if (!tmuxAvailable) reasons.push('tmux not available')
+  if (!localhostBindable) reasons.push('localhost sockets unavailable')
+  test.skip(`${reasons.join(' and ')} - skipping pin sessions integration test`, () => {})
 } else {
   describe('pin sessions integration', () => {
     const sessionName = `agentboard-pin-test-${Date.now()}-${Math.random()
@@ -106,6 +102,7 @@ if (!tmuxAvailable) {
         sessionId: wsTestSessionId,
         logFilePath: `/tmp/ws-${wsTestSessionId}.jsonl`,
         projectPath,
+        slug: null,
         agentType: 'claude',
         displayName: 'ws-pin-test',
         createdAt: new Date().toISOString(),
@@ -161,6 +158,7 @@ if (!tmuxAvailable) {
         sessionId: resurrectSessionId,
         logFilePath: `/tmp/${resurrectSessionId}.jsonl`,
         projectPath,
+        slug: null,
         agentType: 'claude',
         displayName: 'pin-resurrect',
         createdAt: new Date().toISOString(),
@@ -207,7 +205,7 @@ if (!tmuxAvailable) {
     // The unpin-on-failure path is only hit if tmux itself fails (rare).
 
     test('pin/unpin via websocket', async () => {
-      const ws = new WebSocket(`ws://localhost:${port}/ws`)
+      const ws = new WebSocket(`ws://${testHost}:${port}/ws`)
       await waitForOpen(ws)
 
       // Session was seeded in beforeAll to avoid SQLite locking issues
@@ -253,6 +251,7 @@ if (!tmuxAvailable) {
           sessionId: graceSessionId,
           logFilePath: `/tmp/${graceSessionId}.jsonl`,
           projectPath,
+          slug: null,
           agentType: 'claude',
           displayName: 'grace-test',
           createdAt: new Date().toISOString(),
@@ -342,7 +341,7 @@ async function getFreePort(): Promise<number> {
     const server = net.createServer()
     server.unref()
     server.once('error', reject)
-    server.listen(0, () => {
+    server.listen({ port: 0, host: testHost }, () => {
       const address = server.address()
       if (address && typeof address === 'object') {
         const { port } = address
@@ -366,7 +365,7 @@ async function waitForHealth(
       throw new Error(`Server process exited with code ${proc.exitCode}`)
     }
     try {
-      const response = await fetch(`http://localhost:${port}/api/health`)
+      const response = await fetch(`http://${testHost}:${port}/api/health`)
       if (response.ok) {
         return
       }
@@ -547,4 +546,3 @@ async function waitForMessage(
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
-

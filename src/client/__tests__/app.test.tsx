@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, mock } from 'bun:test'
 import TestRenderer, { act } from 'react-test-renderer'
-import type { ServerMessage, Session } from '@shared/types'
+import type { AgentSession, ServerMessage, Session } from '@shared/types'
 import SessionList from '../components/SessionList'
 import NewSessionModal from '../components/NewSessionModal'
 import { useSessionStore } from '../stores/sessionStore'
@@ -206,6 +206,19 @@ const baseSession: Session = {
   source: 'managed',
 }
 
+const baseAgentSession: AgentSession = {
+  sessionId: 'agent-session-a',
+  logFilePath: '/tmp/agent-a.jsonl',
+  projectPath: '/tmp/alpha',
+  agentType: 'claude',
+  displayName: 'alpha',
+  createdAt: '2024-01-01T00:00:00.000Z',
+  lastActivityAt: '2024-01-01T00:00:00.000Z',
+  isActive: true,
+  isPinned: false,
+  lastUserMessage: 'draft a plan',
+}
+
 function getKeyHandler() {
   const handler = keyHandlers.get('keydown')
   if (!handler) {
@@ -257,6 +270,85 @@ describe('App', () => {
     expect(sessionLists.length).toBeGreaterThan(0)
     expect(sessionLists[0].props.error).toBe('Boom')
 
+  })
+
+  test('keeps card on supersede-orphan and updates metadata on activation', () => {
+    useSessionStore.setState({
+      sessions: [
+        {
+          ...baseSession,
+          agentSessionId: baseAgentSession.sessionId,
+          agentSessionName: baseAgentSession.displayName,
+          logFilePath: baseAgentSession.logFilePath,
+          isPinned: false,
+          lastUserMessage: 'draft a plan',
+        },
+      ],
+      selectedSessionId: baseSession.id,
+      hasLoaded: true,
+    })
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<App />)
+    })
+    activeRenderer = renderer
+
+    if (!subscribeListener) {
+      throw new Error('Expected websocket subscription')
+    }
+
+    const activatedSession: AgentSession = {
+      ...baseAgentSession,
+      sessionId: 'agent-session-b',
+      logFilePath: '/tmp/agent-b.jsonl',
+      displayName: 'alpha-exec',
+      isPinned: true,
+      lastUserMessage: 'implement the plan',
+    }
+
+    // Supersede-orphan should not remove the session card.
+    act(() => {
+      subscribeListener?.({
+        type: 'session-orphaned',
+        session: {
+          ...baseAgentSession,
+          isActive: false,
+        },
+        supersededBy: activatedSession.sessionId,
+      })
+    })
+
+    const afterSupersedeOrphan = useSessionStore.getState().sessions
+    expect(afterSupersedeOrphan).toHaveLength(1)
+    expect(afterSupersedeOrphan[0]?.agentSessionId).toBe(baseAgentSession.sessionId)
+
+    // Activation should update the existing card in place by tmux window.
+    act(() => {
+      subscribeListener?.({
+        type: 'session-activated',
+        session: activatedSession,
+        window: baseSession.tmuxWindow,
+      })
+    })
+
+    const updated = useSessionStore.getState().sessions[0]
+    expect(updated?.id).toBe(baseSession.id)
+    expect(updated?.agentSessionId).toBe(activatedSession.sessionId)
+    expect(updated?.agentSessionName).toBe(activatedSession.displayName)
+    expect(updated?.logFilePath).toBe(activatedSession.logFilePath)
+    expect(updated?.isPinned).toBe(true)
+    expect(updated?.lastUserMessage).toBe(activatedSession.lastUserMessage)
+
+    // A true orphan (no supersededBy) should still remove the card.
+    act(() => {
+      subscribeListener?.({
+        type: 'session-orphaned',
+        session: { ...activatedSession, isActive: false },
+      })
+    })
+
+    expect(useSessionStore.getState().sessions).toHaveLength(0)
   })
 
   test('handles keyboard shortcuts for navigation and actions', () => {

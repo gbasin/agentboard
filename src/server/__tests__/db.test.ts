@@ -12,6 +12,7 @@ function makeSession(overrides: Partial<{
   sessionId: string
   logFilePath: string
   projectPath: string
+  slug: string | null
   agentType: AgentType
   displayName: string
   createdAt: string
@@ -27,6 +28,7 @@ function makeSession(overrides: Partial<{
     sessionId: 'session-abc',
     logFilePath: '/tmp/session-abc.jsonl',
     projectPath: '/tmp/alpha',
+    slug: null as string | null,
     agentType: 'claude' as const,
     displayName: 'alpha',
     createdAt: now,

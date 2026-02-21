@@ -82,7 +82,7 @@ export type ServerMessage =
   | { type: 'session-removed'; sessionId: string }
   | { type: 'host-status'; hosts: HostStatus[] }
   | { type: 'agent-sessions'; active: AgentSession[]; inactive: AgentSession[] }
-  | { type: 'session-orphaned'; session: AgentSession }
+  | { type: 'session-orphaned'; session: AgentSession; supersededBy?: string }
   | { type: 'session-activated'; session: AgentSession; window: string }
   | { type: 'session-resume-result'; sessionId: string; ok: boolean; session?: Session; error?: ResumeError }
   | { type: 'session-pin-result'; sessionId: string; ok: boolean; error?: string }

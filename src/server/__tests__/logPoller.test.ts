@@ -292,7 +292,154 @@ describe('LogPoller', () => {
     db.close()
   })
 
-  test('does not steal window from existing session when new log matches', async () => {
+  test('supersedes existing session via slug match (plan→execute transition)', async () => {
+    const db = initDatabase({ path: ':memory:' })
+    const registry = new SessionRegistry()
+    registry.replaceSessions([baseSession])
+
+    const tokensA = Array.from({ length: 60 }, (_, i) => `token${i}`).join(' ')
+    setTmuxOutput(baseSession.tmuxWindow, buildLastExchangeOutput(tokensA))
+
+    const projectPath = baseSession.projectPath
+    const encoded = encodeProjectPath(projectPath)
+    const logDir = path.join(
+      process.env.CLAUDE_CONFIG_DIR ?? '',
+      'projects',
+      encoded
+    )
+    await fs.mkdir(logDir, { recursive: true })
+
+    // Session A: planning session with slug
+    const logPathA = path.join(logDir, 'session-a.jsonl')
+    const lineA = buildUserLogEntry(tokensA, {
+      sessionId: 'claude-session-a',
+      cwd: projectPath,
+      slug: 'starry-leaping-orbit',
+    })
+    const assistantLineA = JSON.stringify({
+      type: 'assistant',
+      message: { content: [{ type: 'text', text: tokensA }] },
+    })
+    await fs.writeFile(logPathA, `${lineA}\n${assistantLineA}\n`)
+
+    const poller = new LogPoller(db, registry, {
+      matchWorkerClient: new InlineMatchWorkerClient(),
+    })
+    await poller.pollOnce()
+
+    // Session A now has the window
+    const recordA = db.getSessionById('claude-session-a')
+    expect(recordA?.currentWindow).toBe(baseSession.tmuxWindow)
+
+    // Session B: execution session with SAME slug (plan→execute transition)
+    const tokensB = Array.from({ length: 60 }, (_, i) => `next${i}`).join(' ')
+    setTmuxOutput(baseSession.tmuxWindow, buildLastExchangeOutput(tokensB))
+
+    const logPathB = path.join(logDir, 'session-b.jsonl')
+    const lineB = buildUserLogEntry(tokensB, {
+      sessionId: 'claude-session-b',
+      cwd: projectPath,
+      slug: 'starry-leaping-orbit',
+    })
+    const assistantLineB = JSON.stringify({
+      type: 'assistant',
+      message: { content: [{ type: 'text', text: tokensB }] },
+    })
+    await fs.writeFile(logPathB, `${lineB}\n${assistantLineB}\n`)
+
+    await poller.pollOnce()
+
+    // Session A should be orphaned (superseded)
+    const oldRecord = db.getSessionById('claude-session-a')
+    expect(oldRecord?.currentWindow).toBeNull()
+
+    // Session B should claim the window via slug supersede
+    const newRecord = db.getSessionById('claude-session-b')
+    expect(newRecord?.currentWindow).toBe(baseSession.tmuxWindow)
+
+    db.close()
+  })
+
+  test('backfills missing slug on existing session and then supersedes by slug', async () => {
+    const db = initDatabase({ path: ':memory:' })
+    const registry = new SessionRegistry()
+    registry.replaceSessions([baseSession])
+
+    const projectPath = baseSession.projectPath
+    const encoded = encodeProjectPath(projectPath)
+    const logDir = path.join(
+      process.env.CLAUDE_CONFIG_DIR ?? '',
+      'projects',
+      encoded
+    )
+    await fs.mkdir(logDir, { recursive: true })
+
+    const tokensA = Array.from({ length: 60 }, (_, i) => `token${i}`).join(' ')
+    const logPathA = path.join(logDir, 'session-a.jsonl')
+    const lineA = buildUserLogEntry(tokensA, {
+      sessionId: 'claude-session-a',
+      cwd: projectPath,
+      slug: 'backfill-slug',
+    })
+    const assistantLineA = JSON.stringify({
+      type: 'assistant',
+      message: { content: [{ type: 'text', text: tokensA }] },
+    })
+    await fs.writeFile(logPathA, `${lineA}\n${assistantLineA}\n`)
+
+    db.insertSession({
+      sessionId: 'claude-session-a',
+      logFilePath: logPathA,
+      projectPath,
+      slug: null,
+      agentType: 'claude',
+      displayName: 'mint-reed',
+      createdAt: new Date().toISOString(),
+      lastActivityAt: new Date().toISOString(),
+      lastUserMessage: null,
+      currentWindow: baseSession.tmuxWindow,
+      isPinned: false,
+      lastResumeError: null,
+      lastKnownLogSize: null,
+      isCodexExec: false,
+    })
+
+    const poller = new LogPoller(db, registry, {
+      matchWorkerClient: new InlineMatchWorkerClient(),
+    })
+
+    // Existing record should learn slug from log metadata even when DB slug is null.
+    await poller.pollOnce()
+    const backfilled = db.getSessionById('claude-session-a')
+    expect(backfilled?.slug).toBe('backfill-slug')
+    expect(backfilled?.currentWindow).toBe(baseSession.tmuxWindow)
+
+    // New impl session with same slug should supersede existing session.
+    const tokensB = Array.from({ length: 60 }, (_, i) => `next${i}`).join(' ')
+    setTmuxOutput(baseSession.tmuxWindow, buildLastExchangeOutput(tokensB))
+    const logPathB = path.join(logDir, 'session-b.jsonl')
+    const lineB = buildUserLogEntry(tokensB, {
+      sessionId: 'claude-session-b',
+      cwd: projectPath,
+      slug: 'backfill-slug',
+    })
+    const assistantLineB = JSON.stringify({
+      type: 'assistant',
+      message: { content: [{ type: 'text', text: tokensB }] },
+    })
+    await fs.writeFile(logPathB, `${lineB}\n${assistantLineB}\n`)
+
+    await poller.pollOnce()
+
+    const oldRecord = db.getSessionById('claude-session-a')
+    const newRecord = db.getSessionById('claude-session-b')
+    expect(oldRecord?.currentWindow).toBeNull()
+    expect(newRecord?.currentWindow).toBe(baseSession.tmuxWindow)
+
+    db.close()
+  })
+
+  test('does not supersede when slugs differ', async () => {
     const db = initDatabase({ path: ':memory:' })
     const registry = new SessionRegistry()
     registry.replaceSessions([baseSession])
@@ -310,7 +457,11 @@ describe('LogPoller', () => {
     await fs.mkdir(logDir, { recursive: true })
 
     const logPathA = path.join(logDir, 'session-a.jsonl')
-    const lineA = buildUserLogEntry(tokensA, { sessionId: 'claude-session-a', cwd: projectPath })
+    const lineA = buildUserLogEntry(tokensA, {
+      sessionId: 'claude-session-a',
+      cwd: projectPath,
+      slug: 'slug-alpha',
+    })
     const assistantLineA = JSON.stringify({
       type: 'assistant',
       message: { content: [{ type: 'text', text: tokensA }] },
@@ -322,16 +473,19 @@ describe('LogPoller', () => {
     })
     await poller.pollOnce()
 
-    // Session A now has the window
     const recordA = db.getSessionById('claude-session-a')
     expect(recordA?.currentWindow).toBe(baseSession.tmuxWindow)
 
-    // Change terminal content to match a different log
+    // Different slug → no supersede
     const tokensB = Array.from({ length: 60 }, (_, i) => `next${i}`).join(' ')
     setTmuxOutput(baseSession.tmuxWindow, buildLastExchangeOutput(tokensB))
 
     const logPathB = path.join(logDir, 'session-b.jsonl')
-    const lineB = buildUserLogEntry(tokensB, { sessionId: 'claude-session-b', cwd: projectPath })
+    const lineB = buildUserLogEntry(tokensB, {
+      sessionId: 'claude-session-b',
+      cwd: projectPath,
+      slug: 'slug-beta',
+    })
     const assistantLineB = JSON.stringify({
       type: 'assistant',
       message: { content: [{ type: 'text', text: tokensB }] },
@@ -340,13 +494,375 @@ describe('LogPoller', () => {
 
     await poller.pollOnce()
 
-    // Session A should KEEP the window (not be orphaned)
+    // Session A should KEEP the window (different slug = no supersede)
     const oldRecord = db.getSessionById('claude-session-a')
     expect(oldRecord?.currentWindow).toBe(baseSession.tmuxWindow)
 
-    // Session B should be created as orphaned (no window)
+    // Session B should be orphaned
     const newRecord = db.getSessionById('claude-session-b')
     expect(newRecord?.currentWindow).toBeNull()
+
+    db.close()
+  })
+
+  test('does not supersede when same slug but different project', async () => {
+    const db = initDatabase({ path: ':memory:' })
+    const registry = new SessionRegistry()
+    registry.replaceSessions([baseSession])
+
+    const tokensA = Array.from({ length: 60 }, (_, i) => `token${i}`).join(' ')
+    setTmuxOutput(baseSession.tmuxWindow, buildLastExchangeOutput(tokensA))
+
+    const projectPath = baseSession.projectPath
+    const encoded = encodeProjectPath(projectPath)
+    const logDir = path.join(
+      process.env.CLAUDE_CONFIG_DIR ?? '',
+      'projects',
+      encoded
+    )
+    await fs.mkdir(logDir, { recursive: true })
+
+    const logPathA = path.join(logDir, 'session-a.jsonl')
+    const lineA = buildUserLogEntry(tokensA, {
+      sessionId: 'claude-session-a',
+      cwd: projectPath,
+      slug: 'shared-slug',
+    })
+    const assistantLineA = JSON.stringify({
+      type: 'assistant',
+      message: { content: [{ type: 'text', text: tokensA }] },
+    })
+    await fs.writeFile(logPathA, `${lineA}\n${assistantLineA}\n`)
+
+    const poller = new LogPoller(db, registry, {
+      matchWorkerClient: new InlineMatchWorkerClient(),
+    })
+    await poller.pollOnce()
+
+    const recordA = db.getSessionById('claude-session-a')
+    expect(recordA?.currentWindow).toBe(baseSession.tmuxWindow)
+
+    // Same slug but different project → no supersede
+    const differentProject = path.join(process.cwd(), 'fixtures', 'beta')
+    const encodedBeta = encodeProjectPath(differentProject)
+    const logDirBeta = path.join(
+      process.env.CLAUDE_CONFIG_DIR ?? '',
+      'projects',
+      encodedBeta
+    )
+    await fs.mkdir(logDirBeta, { recursive: true })
+
+    const tokensB = Array.from({ length: 60 }, (_, i) => `next${i}`).join(' ')
+    setTmuxOutput(baseSession.tmuxWindow, buildLastExchangeOutput(tokensB))
+
+    const logPathB = path.join(logDirBeta, 'session-b.jsonl')
+    const lineB = buildUserLogEntry(tokensB, {
+      sessionId: 'claude-session-b',
+      cwd: differentProject,
+      slug: 'shared-slug',
+    })
+    const assistantLineB = JSON.stringify({
+      type: 'assistant',
+      message: { content: [{ type: 'text', text: tokensB }] },
+    })
+    await fs.writeFile(logPathB, `${lineB}\n${assistantLineB}\n`)
+
+    await poller.pollOnce()
+
+    // Session A should KEEP the window (different project = no supersede)
+    const oldRecord = db.getSessionById('claude-session-a')
+    expect(oldRecord?.currentWindow).toBe(baseSession.tmuxWindow)
+
+    // Session B should be orphaned
+    const newRecord = db.getSessionById('claude-session-b')
+    expect(newRecord?.currentWindow).toBeNull()
+
+    db.close()
+  })
+
+  test('supersedes same-project session when another project has newer activity with same slug', async () => {
+    const db = initDatabase({ path: ':memory:' })
+    const registry = new SessionRegistry()
+    registry.replaceSessions([baseSession])
+
+    const sharedSlug = 'shared-collision-slug'
+    const projectPath = baseSession.projectPath
+    const encoded = encodeProjectPath(projectPath)
+    const logDir = path.join(
+      process.env.CLAUDE_CONFIG_DIR ?? '',
+      'projects',
+      encoded
+    )
+    await fs.mkdir(logDir, { recursive: true })
+
+    const tokensA = Array.from({ length: 60 }, (_, i) => `token${i}`).join(' ')
+    setTmuxOutput(baseSession.tmuxWindow, buildLastExchangeOutput(tokensA))
+
+    const logPathA = path.join(logDir, 'session-a.jsonl')
+    const lineA = buildUserLogEntry(tokensA, {
+      sessionId: 'claude-session-a',
+      cwd: projectPath,
+      slug: sharedSlug,
+    })
+    const assistantLineA = JSON.stringify({
+      type: 'assistant',
+      message: { content: [{ type: 'text', text: tokensA }] },
+    })
+    await fs.writeFile(logPathA, `${lineA}\n${assistantLineA}\n`)
+
+    const poller = new LogPoller(db, registry, {
+      matchWorkerClient: new InlineMatchWorkerClient(),
+    })
+    await poller.pollOnce()
+
+    const activeA = db.getSessionById('claude-session-a')
+    expect(activeA?.currentWindow).toBe(baseSession.tmuxWindow)
+
+    const differentProject = path.join(process.cwd(), 'fixtures', 'beta')
+    db.insertSession({
+      sessionId: 'claude-session-other-project',
+      logFilePath: path.join(
+        process.env.CLAUDE_CONFIG_DIR ?? '',
+        'projects',
+        encodeProjectPath(differentProject),
+        'session-other-project.jsonl'
+      ),
+      projectPath: differentProject,
+      slug: sharedSlug,
+      agentType: 'claude',
+      displayName: 'other-project',
+      createdAt: new Date().toISOString(),
+      lastActivityAt: new Date(Date.now() + 60_000).toISOString(),
+      lastUserMessage: null,
+      currentWindow: 'agentboard:99',
+      isPinned: false,
+      lastResumeError: null,
+      lastKnownLogSize: null,
+      isCodexExec: false,
+    })
+
+    const tokensB = Array.from({ length: 60 }, (_, i) => `next${i}`).join(' ')
+    setTmuxOutput(baseSession.tmuxWindow, buildLastExchangeOutput(tokensB))
+
+    const logPathB = path.join(logDir, 'session-b.jsonl')
+    const lineB = buildUserLogEntry(tokensB, {
+      sessionId: 'claude-session-b',
+      cwd: projectPath,
+      slug: sharedSlug,
+    })
+    const assistantLineB = JSON.stringify({
+      type: 'assistant',
+      message: { content: [{ type: 'text', text: tokensB }] },
+    })
+    await fs.writeFile(logPathB, `${lineB}\n${assistantLineB}\n`)
+
+    await poller.pollOnce()
+
+    const oldRecord = db.getSessionById('claude-session-a')
+    expect(oldRecord?.currentWindow).toBeNull()
+
+    const newRecord = db.getSessionById('claude-session-b')
+    expect(newRecord?.currentWindow).toBe(baseSession.tmuxWindow)
+
+    const otherProjectRecord = db.getSessionById('claude-session-other-project')
+    expect(otherProjectRecord?.currentWindow).toBe('agentboard:99')
+
+    db.close()
+  })
+
+  test('transfers pin state when superseding via slug', async () => {
+    const db = initDatabase({ path: ':memory:' })
+    const registry = new SessionRegistry()
+    registry.replaceSessions([baseSession])
+
+    const tokensA = Array.from({ length: 60 }, (_, i) => `token${i}`).join(' ')
+    setTmuxOutput(baseSession.tmuxWindow, buildLastExchangeOutput(tokensA))
+
+    const projectPath = baseSession.projectPath
+    const encoded = encodeProjectPath(projectPath)
+    const logDir = path.join(
+      process.env.CLAUDE_CONFIG_DIR ?? '',
+      'projects',
+      encoded
+    )
+    await fs.mkdir(logDir, { recursive: true })
+
+    const logPathA = path.join(logDir, 'session-a.jsonl')
+    const lineA = buildUserLogEntry(tokensA, {
+      sessionId: 'claude-session-a',
+      cwd: projectPath,
+      slug: 'pinned-slug',
+    })
+    const assistantLineA = JSON.stringify({
+      type: 'assistant',
+      message: { content: [{ type: 'text', text: tokensA }] },
+    })
+    await fs.writeFile(logPathA, `${lineA}\n${assistantLineA}\n`)
+
+    const poller = new LogPoller(db, registry, {
+      matchWorkerClient: new InlineMatchWorkerClient(),
+    })
+    await poller.pollOnce()
+
+    // Pin session A
+    db.setPinned('claude-session-a', true)
+    const pinnedA = db.getSessionById('claude-session-a')
+    expect(pinnedA?.isPinned).toBe(true)
+
+    // Session B with same slug supersedes pinned session A
+    const tokensB = Array.from({ length: 60 }, (_, i) => `next${i}`).join(' ')
+    setTmuxOutput(baseSession.tmuxWindow, buildLastExchangeOutput(tokensB))
+
+    const logPathB = path.join(logDir, 'session-b.jsonl')
+    const lineB = buildUserLogEntry(tokensB, {
+      sessionId: 'claude-session-b',
+      cwd: projectPath,
+      slug: 'pinned-slug',
+    })
+    const assistantLineB = JSON.stringify({
+      type: 'assistant',
+      message: { content: [{ type: 'text', text: tokensB }] },
+    })
+    await fs.writeFile(logPathB, `${lineB}\n${assistantLineB}\n`)
+
+    await poller.pollOnce()
+
+    // Session B should inherit the pin
+    const newRecord = db.getSessionById('claude-session-b')
+    expect(newRecord?.currentWindow).toBe(baseSession.tmuxWindow)
+    expect(newRecord?.isPinned).toBe(true)
+
+    // Session A should be orphaned
+    const oldRecord = db.getSessionById('claude-session-a')
+    expect(oldRecord?.currentWindow).toBeNull()
+    expect(oldRecord?.isPinned).toBe(false)
+
+    db.close()
+  })
+
+  test('fires onSessionOrphaned callback when superseding via slug', async () => {
+    const db = initDatabase({ path: ':memory:' })
+    const registry = new SessionRegistry()
+    registry.replaceSessions([baseSession])
+
+    const tokensA = Array.from({ length: 60 }, (_, i) => `token${i}`).join(' ')
+    setTmuxOutput(baseSession.tmuxWindow, buildLastExchangeOutput(tokensA))
+
+    const projectPath = baseSession.projectPath
+    const encoded = encodeProjectPath(projectPath)
+    const logDir = path.join(
+      process.env.CLAUDE_CONFIG_DIR ?? '',
+      'projects',
+      encoded
+    )
+    await fs.mkdir(logDir, { recursive: true })
+
+    const logPathA = path.join(logDir, 'session-a.jsonl')
+    const lineA = buildUserLogEntry(tokensA, {
+      sessionId: 'claude-session-a',
+      cwd: projectPath,
+      slug: 'callback-slug',
+    })
+    const assistantLineA = JSON.stringify({
+      type: 'assistant',
+      message: { content: [{ type: 'text', text: tokensA }] },
+    })
+    await fs.writeFile(logPathA, `${lineA}\n${assistantLineA}\n`)
+
+    const orphanedIds: { id: string; supersededBy?: string }[] = []
+    const poller = new LogPoller(db, registry, {
+      matchWorkerClient: new InlineMatchWorkerClient(),
+      onSessionOrphaned: (sessionId, supersededBy) => orphanedIds.push({ id: sessionId, supersededBy }),
+    })
+    await poller.pollOnce()
+
+    // Session B with same slug
+    const tokensB = Array.from({ length: 60 }, (_, i) => `next${i}`).join(' ')
+    setTmuxOutput(baseSession.tmuxWindow, buildLastExchangeOutput(tokensB))
+
+    const logPathB = path.join(logDir, 'session-b.jsonl')
+    const lineB = buildUserLogEntry(tokensB, {
+      sessionId: 'claude-session-b',
+      cwd: projectPath,
+      slug: 'callback-slug',
+    })
+    const assistantLineB = JSON.stringify({
+      type: 'assistant',
+      message: { content: [{ type: 'text', text: tokensB }] },
+    })
+    await fs.writeFile(logPathB, `${lineB}\n${assistantLineB}\n`)
+
+    await poller.pollOnce()
+
+    // onSessionOrphaned should have been called for session A with supersededBy
+    expect(orphanedIds).toHaveLength(1)
+    expect(orphanedIds[0]!.id).toBe('claude-session-a')
+    expect(orphanedIds[0]!.supersededBy).toBe('claude-session-b')
+
+    db.close()
+  })
+
+  test('inherits display name from superseded session via slug', async () => {
+    const db = initDatabase({ path: ':memory:' })
+    const registry = new SessionRegistry()
+    registry.replaceSessions([baseSession])
+
+    const tokensA = Array.from({ length: 60 }, (_, i) => `token${i}`).join(' ')
+    setTmuxOutput(baseSession.tmuxWindow, buildLastExchangeOutput(tokensA))
+
+    const projectPath = baseSession.projectPath
+    const encoded = encodeProjectPath(projectPath)
+    const logDir = path.join(
+      process.env.CLAUDE_CONFIG_DIR ?? '',
+      'projects',
+      encoded
+    )
+    await fs.mkdir(logDir, { recursive: true })
+
+    const logPathA = path.join(logDir, 'session-a.jsonl')
+    const lineA = buildUserLogEntry(tokensA, {
+      sessionId: 'claude-session-a',
+      cwd: projectPath,
+      slug: 'inherit-name-slug',
+    })
+    const assistantLineA = JSON.stringify({
+      type: 'assistant',
+      message: { content: [{ type: 'text', text: tokensA }] },
+    })
+    await fs.writeFile(logPathA, `${lineA}\n${assistantLineA}\n`)
+
+    const poller = new LogPoller(db, registry, {
+      matchWorkerClient: new InlineMatchWorkerClient(),
+    })
+    await poller.pollOnce()
+
+    // Session A gets a display name based on the window
+    const recordA = db.getSessionById('claude-session-a')
+    expect(recordA?.currentWindow).toBe(baseSession.tmuxWindow)
+    const originalDisplayName = recordA!.displayName
+
+    // Session B with same slug supersedes
+    const tokensB = Array.from({ length: 60 }, (_, i) => `next${i}`).join(' ')
+    setTmuxOutput(baseSession.tmuxWindow, buildLastExchangeOutput(tokensB))
+
+    const logPathB = path.join(logDir, 'session-b.jsonl')
+    const lineB = buildUserLogEntry(tokensB, {
+      sessionId: 'claude-session-b',
+      cwd: projectPath,
+      slug: 'inherit-name-slug',
+    })
+    const assistantLineB = JSON.stringify({
+      type: 'assistant',
+      message: { content: [{ type: 'text', text: tokensB }] },
+    })
+    await fs.writeFile(logPathB, `${lineB}\n${assistantLineB}\n`)
+
+    await poller.pollOnce()
+
+    // Session B should inherit Session A's display name
+    const newRecord = db.getSessionById('claude-session-b')
+    expect(newRecord?.currentWindow).toBe(baseSession.tmuxWindow)
+    expect(newRecord?.displayName).toBe(originalDisplayName)
 
     db.close()
   })
@@ -381,6 +897,7 @@ describe('LogPoller', () => {
       sessionId,
       logFilePath: logPath,
       projectPath,
+      slug: null,
       agentType: 'claude',
       displayName: 'alpha',
       createdAt: stats.birthtime.toISOString(),
@@ -433,6 +950,7 @@ describe('LogPoller', () => {
       sessionId: 'claude-session-orphan',
       logFilePath: logPath,
       projectPath,
+      slug: null,
       agentType: 'claude',
       displayName: 'orphan',
       createdAt: stats.birthtime.toISOString(),
@@ -497,6 +1015,7 @@ describe('LogPoller', () => {
       sessionId: 'claude-session-orphan',
       logFilePath: logPath,
       projectPath,
+      slug: null,
       agentType: 'claude',
       displayName: 'orphan',
       createdAt: stats.birthtime.toISOString(),

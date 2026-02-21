@@ -33,6 +33,7 @@ interface SessionRecord {
   sessionId: string
   logFilePath: string | null
   projectPath: string | null
+  slug: string | null
   agentType: string | null
   displayName: string
   createdAt: string
@@ -46,7 +47,14 @@ interface SessionRecord {
 }
 
 // Fields that applyLogEntryToExistingRecord may update
-type SessionUpdate = Pick<SessionRecord, 'lastActivityAt' | 'lastUserMessage' | 'lastKnownLogSize' | 'isCodexExec'>
+type SessionUpdate = Pick<
+  SessionRecord,
+  | 'lastActivityAt'
+  | 'lastUserMessage'
+  | 'lastKnownLogSize'
+  | 'isCodexExec'
+  | 'slug'
+>
 
 /**
  * Computes the update object for an existing session record based on a log entry.
@@ -63,6 +71,10 @@ function applyLogEntryToExistingRecord(
   // Backfill isCodexExec if the entry detected it but record doesn't have it
   if (entry.isCodexExec && !record.isCodexExec) {
     update.isCodexExec = true
+  }
+  // Backfill slug/project for older records that were inserted before metadata was available.
+  if (!record.slug && entry.slug) {
+    update.slug = entry.slug
   }
 
   // Use file size to detect actual log changes (mtime can change from backups/syncs)
@@ -126,7 +138,7 @@ export class LogPoller {
   private logWatcher: LogWatcher | null = null
   private db: SessionDatabase
   private registry: SessionRegistry
-  private onSessionOrphaned?: (sessionId: string) => void
+  private onSessionOrphaned?: (sessionId: string, supersededBy?: string) => void
   private onSessionActivated?: (sessionId: string, window: string) => void
   private isLastUserMessageLocked?: (tmuxWindow: string) => boolean
   private maxLogsPerPoll: number
@@ -157,7 +169,7 @@ export class LogPoller {
       matchWorker,
       matchWorkerClient,
     }: {
-      onSessionOrphaned?: (sessionId: string) => void
+      onSessionOrphaned?: (sessionId: string, supersededBy?: string) => void
       onSessionActivated?: (sessionId: string, window: string) => void
       isLastUserMessageLocked?: (tmuxWindow: string) => boolean
       maxLogsPerPoll?: number
@@ -473,6 +485,7 @@ export class LogPoller {
           logFilePath: session.logFilePath,
           sessionId: session.sessionId,
           projectPath: session.projectPath ?? null,
+          slug: session.slug ?? null,
           agentType: session.agentType ?? null,
           isCodexExec: session.isCodexExec,
         }))
@@ -703,8 +716,38 @@ export class LogPoller {
           continue
         }
 
+        // Slug-based supersede: if this session shares a slug with an active session
+        // in the same project, it's a plan→execute transition. Supersede the old session.
+        const slug = entry.slug ?? null
+        let supersededWindow: string | null = null
+        let inheritPinned = false
+        let inheritDisplayName: string | null = null
+        if (slug) {
+          const slugMatch = this.db.getActiveSessionBySlugAndProject(
+            slug,
+            projectPath
+          )
+          if (slugMatch && slugMatch.sessionId !== sessionId) {
+            supersededWindow = slugMatch.currentWindow
+            inheritPinned = slugMatch.isPinned
+            inheritDisplayName = slugMatch.displayName
+            this.db.updateSession(slugMatch.sessionId, {
+              currentWindow: null,
+              isPinned: false,
+            })
+            this.onSessionOrphaned?.(slugMatch.sessionId, sessionId)
+            logger.info('session_superseded_by_slug', {
+              oldSessionId: slugMatch.sessionId,
+              newSessionId: sessionId,
+              slug,
+              window: supersededWindow,
+              pinTransferred: inheritPinned,
+            })
+          }
+        }
+
         const matchedWindow = exactMatch
-        let currentWindow: string | null = matchedWindow?.tmuxWindow ?? null
+        let currentWindow: string | null = supersededWindow ?? matchedWindow?.tmuxWindow ?? null
         if (currentWindow) {
           const existingForWindow = this.db.getSessionByWindow(currentWindow)
           if (existingForWindow && existingForWindow.sessionId !== sessionId) {
@@ -723,14 +766,14 @@ export class LogPoller {
           }
         }
 
-        let displayName = deriveDisplayName(
+        let displayName = inheritDisplayName ?? deriveDisplayName(
           projectPath,
           sessionId,
           matchedWindow?.name
         )
 
-        // Ensure display name is unique across all sessions
-        if (this.db.displayNameExists(displayName)) {
+        // Ensure display name is unique across all sessions (skip check for inherited names)
+        if (!inheritDisplayName && this.db.displayNameExists(displayName)) {
           displayName = generateUniqueSessionName((name) =>
             this.db.displayNameExists(name)
           )
@@ -740,13 +783,14 @@ export class LogPoller {
           sessionId,
           logFilePath: entry.logPath,
           projectPath,
+          slug,
           agentType,
           displayName,
           createdAt,
           lastActivityAt,
           lastUserMessage: currentWindow ? null : (entry.lastUserMessage ?? null),
           currentWindow,
-          isPinned: false,
+          isPinned: inheritPinned,
           lastResumeError: null,
           lastKnownLogSize: entry.size,
           isCodexExec: entry.isCodexExec,
@@ -823,6 +867,7 @@ export class LogPoller {
           logFilePath: session.logFilePath,
           sessionId: session.sessionId,
           projectPath: session.projectPath ?? null,
+          slug: session.slug ?? null,
           agentType: session.agentType ?? null,
           isCodexExec: session.isCodexExec,
         }))
