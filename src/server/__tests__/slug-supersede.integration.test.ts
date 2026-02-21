@@ -408,12 +408,13 @@ if (!tmuxAvailable) {
         expect(execRecord!.currentWindow).not.toBeNull()
         expect(execRecord!.isPinned).toBe(true)
 
-        // Planning session should be orphaned
+        // Planning session should be orphaned and unpinned (pin transferred)
         const finalDb = initDatabase({ path: dbPath })
         const planRecord = finalDb.getSessionById(pinnedPlanId)
         finalDb.close()
         expect(planRecord).not.toBeNull()
         expect(planRecord!.currentWindow).toBeNull()
+        expect(planRecord!.isPinned).toBe(false)
       },
       40_000
     )

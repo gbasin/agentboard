@@ -711,12 +711,18 @@ export class LogPoller {
         let inheritPinned = false
         let inheritDisplayName: string | null = null
         if (slug) {
-          const slugMatch = this.db.getActiveSessionBySlug(slug)
-          if (slugMatch && slugMatch.sessionId !== sessionId && slugMatch.projectPath === projectPath) {
+          const slugMatch = this.db.getActiveSessionBySlugAndProject(
+            slug,
+            projectPath
+          )
+          if (slugMatch && slugMatch.sessionId !== sessionId) {
             supersededWindow = slugMatch.currentWindow
             inheritPinned = slugMatch.isPinned
             inheritDisplayName = slugMatch.displayName
-            this.db.orphanSession(slugMatch.sessionId)
+            this.db.updateSession(slugMatch.sessionId, {
+              currentWindow: null,
+              isPinned: false,
+            })
             this.onSessionOrphaned?.(slugMatch.sessionId, sessionId)
             logger.info('session_superseded_by_slug', {
               oldSessionId: slugMatch.sessionId,

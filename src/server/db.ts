@@ -38,7 +38,10 @@ export interface SessionDatabase {
   displayNameExists: (displayName: string, excludeSessionId?: string) => boolean
   setPinned: (sessionId: string, isPinned: boolean) => AgentSessionRecord | null
   getPinnedOrphaned: () => AgentSessionRecord[]
-  getActiveSessionBySlug: (slug: string) => AgentSessionRecord | null
+  getActiveSessionBySlugAndProject: (
+    slug: string,
+    projectPath: string
+  ) => AgentSessionRecord | null
   // App settings
   getAppSetting: (key: string) => string | null
   setAppSetting: (key: string, value: string) => void
@@ -145,8 +148,8 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
   const selectByDisplayNameExcluding = db.prepare(
     'SELECT 1 FROM agent_sessions WHERE display_name = $displayName AND session_id != $excludeSessionId LIMIT 1'
   )
-  const selectActiveBySlug = db.prepare(
-    'SELECT * FROM agent_sessions WHERE slug = $slug AND current_window IS NOT NULL ORDER BY last_activity_at DESC LIMIT 1'
+  const selectActiveBySlugAndProject = db.prepare(
+    'SELECT * FROM agent_sessions WHERE slug = $slug AND project_path = $projectPath AND current_window IS NOT NULL ORDER BY last_activity_at DESC LIMIT 1'
   )
 
   const updateStmt = (fields: string[]) =>
@@ -311,8 +314,11 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
         .all() as Record<string, unknown>[]
       return rows.map(mapRow)
     },
-    getActiveSessionBySlug: (slug) => {
-      const row = selectActiveBySlug.get({ $slug: slug }) as
+    getActiveSessionBySlugAndProject: (slug, projectPath) => {
+      const row = selectActiveBySlugAndProject.get({
+        $slug: slug,
+        $projectPath: projectPath,
+      }) as
         | Record<string, unknown>
         | undefined
       return row ? mapRow(row) : null
