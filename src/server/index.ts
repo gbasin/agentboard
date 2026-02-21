@@ -376,10 +376,10 @@ const lastUserMessageLocks = new Map<string, number>()
 const LAST_USER_MESSAGE_LOCK_MS = 60_000 // 60 seconds
 
 const logPoller = new LogPoller(db, registry, {
-  onSessionOrphaned: (sessionId) => {
+  onSessionOrphaned: (sessionId, supersededBy) => {
     const session = db.getSessionById(sessionId)
     if (session) {
-      broadcast({ type: 'session-orphaned', session: toAgentSession(session) })
+      broadcast({ type: 'session-orphaned', session: toAgentSession(session), supersededBy })
     }
   },
   onSessionActivated: (sessionId, window) => {

@@ -235,12 +235,33 @@ export default function App() {
         setAgentSessions(message.active, message.inactive)
       }
       if (message.type === 'session-orphaned') {
-        const currentSessions = useSessionStore.getState().sessions
-        const nextSessions = currentSessions.filter(
-          (session) => session.agentSessionId?.trim() !== message.session.sessionId
+        // When a session is superseded by slug (plan→execute transition),
+        // don't remove the card — session-activated will update it in place.
+        if (!message.supersededBy) {
+          const currentSessions = useSessionStore.getState().sessions
+          const nextSessions = currentSessions.filter(
+            (session) => session.agentSessionId?.trim() !== message.session.sessionId
+          )
+          if (nextSessions.length !== currentSessions.length) {
+            setSessions(nextSessions)
+          }
+        }
+      }
+      if (message.type === 'session-activated') {
+        // Update the session card's agent metadata in place (e.g., after slug supersede
+        // or orphan rematch). Merges onto existing card — no-op if no card matches.
+        const existing = useSessionStore.getState().sessions.find(
+          (s) => s.tmuxWindow === message.window
         )
-        if (nextSessions.length !== currentSessions.length) {
-          setSessions(nextSessions)
+        if (existing) {
+          updateSession({
+            ...existing,
+            agentSessionId: message.session.sessionId,
+            agentSessionName: message.session.displayName,
+            logFilePath: message.session.logFilePath,
+            isPinned: message.session.isPinned,
+            lastUserMessage: message.session.lastUserMessage ?? existing.lastUserMessage,
+          })
         }
       }
       if (message.type === 'session-resume-result') {

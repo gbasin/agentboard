@@ -126,7 +126,7 @@ export class LogPoller {
   private logWatcher: LogWatcher | null = null
   private db: SessionDatabase
   private registry: SessionRegistry
-  private onSessionOrphaned?: (sessionId: string) => void
+  private onSessionOrphaned?: (sessionId: string, supersededBy?: string) => void
   private onSessionActivated?: (sessionId: string, window: string) => void
   private isLastUserMessageLocked?: (tmuxWindow: string) => boolean
   private maxLogsPerPoll: number
@@ -157,7 +157,7 @@ export class LogPoller {
       matchWorker,
       matchWorkerClient,
     }: {
-      onSessionOrphaned?: (sessionId: string) => void
+      onSessionOrphaned?: (sessionId: string, supersededBy?: string) => void
       onSessionActivated?: (sessionId: string, window: string) => void
       isLastUserMessageLocked?: (tmuxWindow: string) => boolean
       maxLogsPerPoll?: number
@@ -709,13 +709,15 @@ export class LogPoller {
         const slug = entry.slug ?? null
         let supersededWindow: string | null = null
         let inheritPinned = false
+        let inheritDisplayName: string | null = null
         if (slug) {
           const slugMatch = this.db.getActiveSessionBySlug(slug)
           if (slugMatch && slugMatch.sessionId !== sessionId && slugMatch.projectPath === projectPath) {
             supersededWindow = slugMatch.currentWindow
             inheritPinned = slugMatch.isPinned
+            inheritDisplayName = slugMatch.displayName
             this.db.orphanSession(slugMatch.sessionId)
-            this.onSessionOrphaned?.(slugMatch.sessionId)
+            this.onSessionOrphaned?.(slugMatch.sessionId, sessionId)
             logger.info('session_superseded_by_slug', {
               oldSessionId: slugMatch.sessionId,
               newSessionId: sessionId,
@@ -746,14 +748,14 @@ export class LogPoller {
           }
         }
 
-        let displayName = deriveDisplayName(
+        let displayName = inheritDisplayName ?? deriveDisplayName(
           projectPath,
           sessionId,
           matchedWindow?.name
         )
 
-        // Ensure display name is unique across all sessions
-        if (this.db.displayNameExists(displayName)) {
+        // Ensure display name is unique across all sessions (skip check for inherited names)
+        if (!inheritDisplayName && this.db.displayNameExists(displayName)) {
           displayName = generateUniqueSessionName((name) =>
             this.db.displayNameExists(name)
           )
