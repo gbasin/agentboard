@@ -64,14 +64,18 @@ export function enrichLogEntry(
     const codexExec = known.agentType === 'codex' && !known.isCodexExec
       ? isCodexExec(logPath)
       : known.isCodexExec
+    // For Claude sessions, backfill slug when older DB rows have null slug.
+    const slug = known.slug ?? (known.agentType === 'claude' ? extractSlug(logPath) : null)
+    // Backfill project path if missing in known metadata.
+    const projectPath = known.projectPath ?? extractProjectPath(logPath)
     return {
       logPath,
       mtime,
       birthtime,
       size,
       sessionId: known.sessionId,
-      projectPath: known.projectPath,
-      slug: known.slug,
+      projectPath,
+      slug,
       agentType: known.agentType,
       isCodexSubagent: false,
       isCodexExec: codexExec,

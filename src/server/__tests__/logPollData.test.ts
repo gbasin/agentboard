@@ -245,6 +245,50 @@ describe('enrichLogEntry', () => {
     expect(entry.logTokenCount).toBe(-1)
   })
 
+  test('backfills slug for known Claude sessions when DB slug is null', async () => {
+    const claudeLog = path.join(
+      claudeDir,
+      'projects',
+      'project-known',
+      'session-known-slug.jsonl'
+    )
+    await writeJsonl(claudeLog, [
+      JSON.stringify({
+        type: 'user',
+        sessionId: 'known-session-id',
+        cwd: '/project/known',
+        slug: 'known-backfill-slug',
+        content: 'some content',
+      }),
+    ])
+
+    const stat = await fs.stat(claudeLog)
+    const knownByPath = new Map([
+      [
+        claudeLog,
+        {
+          logFilePath: claudeLog,
+          sessionId: 'known-session-id',
+          projectPath: '/project/known',
+          slug: null,
+          agentType: 'claude' as const,
+          isCodexExec: false,
+        },
+      ],
+    ])
+
+    const entry = enrichLogEntry(
+      claudeLog,
+      stat.mtime.getTime(),
+      stat.birthtime.getTime(),
+      stat.size,
+      knownByPath
+    )
+
+    expect(entry.slug).toBe('known-backfill-slug')
+    expect(entry.logTokenCount).toBe(-1)
+  })
+
   test('enriches unknown session metadata from the log file', async () => {
     const claudeLog = path.join(
       claudeDir,

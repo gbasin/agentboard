@@ -33,6 +33,7 @@ interface SessionRecord {
   sessionId: string
   logFilePath: string | null
   projectPath: string | null
+  slug: string | null
   agentType: string | null
   displayName: string
   createdAt: string
@@ -46,7 +47,14 @@ interface SessionRecord {
 }
 
 // Fields that applyLogEntryToExistingRecord may update
-type SessionUpdate = Pick<SessionRecord, 'lastActivityAt' | 'lastUserMessage' | 'lastKnownLogSize' | 'isCodexExec'>
+type SessionUpdate = Pick<
+  SessionRecord,
+  | 'lastActivityAt'
+  | 'lastUserMessage'
+  | 'lastKnownLogSize'
+  | 'isCodexExec'
+  | 'slug'
+>
 
 /**
  * Computes the update object for an existing session record based on a log entry.
@@ -63,6 +71,10 @@ function applyLogEntryToExistingRecord(
   // Backfill isCodexExec if the entry detected it but record doesn't have it
   if (entry.isCodexExec && !record.isCodexExec) {
     update.isCodexExec = true
+  }
+  // Backfill slug/project for older records that were inserted before metadata was available.
+  if (!record.slug && entry.slug) {
+    update.slug = entry.slug
   }
 
   // Use file size to detect actual log changes (mtime can change from backups/syncs)

@@ -501,7 +501,7 @@ export default function SessionList({
               strategy={verticalListSortingStrategy}
             >
               <div key={filterKey}>
-                <AnimatePresence initial={false}>
+                <AnimatePresence initial={false} mode="popLayout">
                   {filteredSessions.map((session, index) => {
                     const isTrulyNew = newlyActiveIds.has(session.id)
                     const isFilteredIn = newlyFilteredInIds.has(session.id)
