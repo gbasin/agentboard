@@ -293,8 +293,10 @@ if (!tmuxAvailable || !localhostBindable) {
           .map((l) => l.trim())
           .filter(Boolean)[0]!
 
-        // Seed pinned planning session
+        // Orphan sessions from test 1 so they don't hold the window
         const db = initDatabase({ path: dbPath })
+        db.orphanSession(planSessionId)
+        db.orphanSession(execSessionId)
         db.insertSession({
           sessionId: pinnedPlanId,
           logFilePath: path.join(
