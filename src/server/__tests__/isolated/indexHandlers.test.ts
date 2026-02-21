@@ -87,6 +87,7 @@ function makeRecord(overrides: Partial<AgentSessionRecord> = {}): AgentSessionRe
     sessionId,
     logFilePath,
     projectPath: '/tmp/project',
+    slug: null,
     agentType: 'claude',
     displayName: 'alpha',
     createdAt: baseRecordTimestamp,

@@ -13,6 +13,7 @@ function makeEntry(
     size: 1000,
     sessionId: 'session-1',
     projectPath: '/proj',
+    slug: null,
     agentType: 'claude',
     isCodexSubagent: false,
     isCodexExec: false,

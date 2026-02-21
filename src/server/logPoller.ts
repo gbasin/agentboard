@@ -473,6 +473,7 @@ export class LogPoller {
           logFilePath: session.logFilePath,
           sessionId: session.sessionId,
           projectPath: session.projectPath ?? null,
+          slug: session.slug ?? null,
           agentType: session.agentType ?? null,
           isCodexExec: session.isCodexExec,
         }))
@@ -703,8 +704,30 @@ export class LogPoller {
           continue
         }
 
+        // Slug-based supersede: if this session shares a slug with an active session
+        // in the same project, it's a plan→execute transition. Supersede the old session.
+        const slug = entry.slug ?? null
+        let supersededWindow: string | null = null
+        let inheritPinned = false
+        if (slug) {
+          const slugMatch = this.db.getActiveSessionBySlug(slug)
+          if (slugMatch && slugMatch.sessionId !== sessionId && slugMatch.projectPath === projectPath) {
+            supersededWindow = slugMatch.currentWindow
+            inheritPinned = slugMatch.isPinned
+            this.db.orphanSession(slugMatch.sessionId)
+            this.onSessionOrphaned?.(slugMatch.sessionId)
+            logger.info('session_superseded_by_slug', {
+              oldSessionId: slugMatch.sessionId,
+              newSessionId: sessionId,
+              slug,
+              window: supersededWindow,
+              pinTransferred: inheritPinned,
+            })
+          }
+        }
+
         const matchedWindow = exactMatch
-        let currentWindow: string | null = matchedWindow?.tmuxWindow ?? null
+        let currentWindow: string | null = supersededWindow ?? matchedWindow?.tmuxWindow ?? null
         if (currentWindow) {
           const existingForWindow = this.db.getSessionByWindow(currentWindow)
           if (existingForWindow && existingForWindow.sessionId !== sessionId) {
@@ -740,13 +763,14 @@ export class LogPoller {
           sessionId,
           logFilePath: entry.logPath,
           projectPath,
+          slug,
           agentType,
           displayName,
           createdAt,
           lastActivityAt,
           lastUserMessage: currentWindow ? null : (entry.lastUserMessage ?? null),
           currentWindow,
-          isPinned: false,
+          isPinned: inheritPinned,
           lastResumeError: null,
           lastKnownLogSize: entry.size,
           isCodexExec: entry.isCodexExec,
@@ -823,6 +847,7 @@ export class LogPoller {
           logFilePath: session.logFilePath,
           sessionId: session.sessionId,
           projectPath: session.projectPath ?? null,
+          slug: session.slug ?? null,
           agentType: session.agentType ?? null,
           isCodexExec: session.isCodexExec,
         }))

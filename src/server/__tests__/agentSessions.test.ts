@@ -7,6 +7,7 @@ const baseRecord: AgentSessionRecord = {
   sessionId: 'session-12345678-abcdef',
   logFilePath: '/tmp/session.jsonl',
   projectPath: '/projects/alpha',
+  slug: null,
   agentType: 'claude',
   displayName: 'Alpha Project',
   createdAt: '2024-01-01T00:00:00.000Z',

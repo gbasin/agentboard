@@ -9,6 +9,7 @@ export interface AgentSessionRecord {
   sessionId: string
   logFilePath: string
   projectPath: string
+  slug: string | null
   agentType: AgentType
   displayName: string
   createdAt: string
@@ -37,6 +38,7 @@ export interface SessionDatabase {
   displayNameExists: (displayName: string, excludeSessionId?: string) => boolean
   setPinned: (sessionId: string, isPinned: boolean) => AgentSessionRecord | null
   getPinnedOrphaned: () => AgentSessionRecord[]
+  getActiveSessionBySlug: (slug: string) => AgentSessionRecord | null
   // App settings
   getAppSetting: (key: string) => string | null
   setAppSetting: (key: string, value: string) => void
@@ -66,7 +68,8 @@ const AGENT_SESSIONS_COLUMNS_SQL = `
   -- NULL means "unknown" (e.g., after upgrade). First poll will initialize to actual size.
   -- This triggers a one-time match check for upgraded sessions.
   last_known_log_size INTEGER,
-  is_codex_exec INTEGER NOT NULL DEFAULT 0
+  is_codex_exec INTEGER NOT NULL DEFAULT 0,
+  slug TEXT
 `
 
 const CREATE_TABLE_SQL = `
@@ -109,12 +112,13 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
   migrateLastResumeErrorColumn(db)
   migrateLastKnownLogSizeColumn(db)
   migrateIsCodexExecColumn(db)
+  migrateSlugColumn(db)
   migratePiAgentType(db)
 
   const insertStmt = db.prepare(
     `INSERT INTO agent_sessions
-      (session_id, log_file_path, project_path, agent_type, display_name, created_at, last_activity_at, last_user_message, current_window, is_pinned, last_resume_error, last_known_log_size, is_codex_exec)
-     VALUES ($sessionId, $logFilePath, $projectPath, $agentType, $displayName, $createdAt, $lastActivityAt, $lastUserMessage, $currentWindow, $isPinned, $lastResumeError, $lastKnownLogSize, $isCodexExec)`
+      (session_id, log_file_path, project_path, slug, agent_type, display_name, created_at, last_activity_at, last_user_message, current_window, is_pinned, last_resume_error, last_known_log_size, is_codex_exec)
+     VALUES ($sessionId, $logFilePath, $projectPath, $slug, $agentType, $displayName, $createdAt, $lastActivityAt, $lastUserMessage, $currentWindow, $isPinned, $lastResumeError, $lastKnownLogSize, $isCodexExec)`
   )
 
   const selectBySessionId = db.prepare(
@@ -141,6 +145,9 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
   const selectByDisplayNameExcluding = db.prepare(
     'SELECT 1 FROM agent_sessions WHERE display_name = $displayName AND session_id != $excludeSessionId LIMIT 1'
   )
+  const selectActiveBySlug = db.prepare(
+    'SELECT * FROM agent_sessions WHERE slug = $slug AND current_window IS NOT NULL ORDER BY last_activity_at DESC LIMIT 1'
+  )
 
   const updateStmt = (fields: string[]) =>
     db.prepare(
@@ -164,6 +171,7 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
         $sessionId: session.sessionId,
         $logFilePath: session.logFilePath,
         $projectPath: session.projectPath,
+        $slug: session.slug ?? null,
         $agentType: session.agentType,
         $displayName: session.displayName,
         $createdAt: session.createdAt,
@@ -196,6 +204,7 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
       const fieldMap: Record<string, string> = {
         logFilePath: 'log_file_path',
         projectPath: 'project_path',
+        slug: 'slug',
         agentType: 'agent_type',
         displayName: 'display_name',
         createdAt: 'created_at',
@@ -302,6 +311,12 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
         .all() as Record<string, unknown>[]
       return rows.map(mapRow)
     },
+    getActiveSessionBySlug: (slug) => {
+      const row = selectActiveBySlug.get({ $slug: slug }) as
+        | Record<string, unknown>
+        | undefined
+      return row ? mapRow(row) : null
+    },
     // App settings
     getAppSetting: (key) => {
       const row = selectAppSetting.get({ $key: key }) as
@@ -345,6 +360,10 @@ function mapRow(row: Record<string, unknown>): AgentSessionRecord {
     sessionId: String(row.session_id ?? ''),
     logFilePath: String(row.log_file_path ?? ''),
     projectPath: String(row.project_path ?? ''),
+    slug:
+      row.slug === null || row.slug === undefined
+        ? null
+        : String(row.slug),
     agentType: row.agent_type as AgentType,
     displayName: String(row.display_name ?? ''),
     createdAt: String(row.created_at ?? ''),
@@ -465,6 +484,14 @@ function migrateIsCodexExecColumn(db: SQLiteDatabase) {
   db.exec('ALTER TABLE agent_sessions ADD COLUMN is_codex_exec INTEGER NOT NULL DEFAULT 0')
 }
 
+function migrateSlugColumn(db: SQLiteDatabase) {
+  const columns = getColumnNames(db, 'agent_sessions')
+  if (columns.length === 0 || columns.includes('slug')) {
+    return
+  }
+  db.exec('ALTER TABLE agent_sessions ADD COLUMN slug TEXT')
+}
+
 function migrateDeduplicateDisplayNames(db: SQLiteDatabase) {
   // Find all display names that have duplicates
   const duplicates = db
@@ -548,6 +575,7 @@ function migratePiAgentType(db: SQLiteDatabase) {
         session_id,
         log_file_path,
         project_path,
+        slug,
         agent_type,
         display_name,
         created_at,
@@ -564,6 +592,7 @@ function migratePiAgentType(db: SQLiteDatabase) {
         session_id,
         log_file_path,
         project_path,
+        slug,
         agent_type,
         display_name,
         created_at,

@@ -3,6 +3,7 @@ import type { AgentType } from '../shared/types'
 import {
   extractProjectPath,
   extractSessionId,
+  extractSlug,
   getLogTimes,
   inferAgentTypeFromPath,
   isCodexExec,
@@ -18,6 +19,7 @@ export interface LogEntrySnapshot {
   size: number
   sessionId: string | null
   projectPath: string | null
+  slug: string | null
   agentType: AgentType | null
   isCodexSubagent: boolean
   isCodexExec: boolean
@@ -36,6 +38,7 @@ export interface KnownSession {
   logFilePath: string
   sessionId: string
   projectPath: string | null
+  slug: string | null
   agentType: AgentType | null
   isCodexExec: boolean
 }
@@ -68,6 +71,7 @@ export function enrichLogEntry(
       size,
       sessionId: known.sessionId,
       projectPath: known.projectPath,
+      slug: known.slug,
       agentType: known.agentType,
       isCodexSubagent: false,
       isCodexExec: codexExec,
@@ -79,6 +83,7 @@ export function enrichLogEntry(
   const agentType = inferAgentTypeFromPath(logPath)
   const sessionId = extractSessionId(logPath)
   const projectPath = extractProjectPath(logPath)
+  const slug = agentType === 'claude' ? extractSlug(logPath) : null
   const codexSubagent = agentType === 'codex' ? isCodexSubagent(logPath) : false
   const codexExec = agentType === 'codex' ? isCodexExec(logPath) : false
   const shouldCountTokens = Boolean(sessionId) && !codexSubagent && Boolean(agentType)
@@ -91,6 +96,7 @@ export function enrichLogEntry(
     size,
     sessionId,
     projectPath,
+    slug,
     agentType: agentType ?? null,
     isCodexSubagent: codexSubagent,
     isCodexExec: codexExec,
