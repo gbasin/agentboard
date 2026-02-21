@@ -35,8 +35,14 @@ if (!tmuxAvailable) {
     let port = 0
     let tmuxTmpDir: string | null = null
     let claudeConfigDir: string | null = null
+    const extraAgentHomeDirs: string[] = []
     const tmuxEnv = (): NodeJS.ProcessEnv =>
       tmuxTmpDir ? { ...process.env, TMUX_TMPDIR: tmuxTmpDir } : { ...process.env }
+    const createAgentHomeDir = (prefix: string): string => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix))
+      extraAgentHomeDirs.push(dir)
+      return dir
+    }
 
     const planSessionId = `plan-session-${Date.now()}`
     const execSessionId = `exec-session-${Date.now()}`
@@ -140,8 +146,8 @@ if (!tmuxAvailable) {
 
       // Start the server with log polling ENABLED so it discovers session B's log
       port = await getFreePort()
-      const codexDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentboard-codex-'))
-      const piDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentboard-pi-'))
+      const codexDir = createAgentHomeDir('agentboard-codex-')
+      const piDir = createAgentHomeDir('agentboard-pi-')
       const env: NodeJS.ProcessEnv = {
         ...process.env,
         PORT: String(port),
@@ -195,6 +201,13 @@ if (!tmuxAvailable) {
       if (claudeConfigDir) {
         try {
           fs.rmSync(claudeConfigDir, { recursive: true, force: true })
+        } catch {
+          // ignore cleanup errors
+        }
+      }
+      for (const dir of extraAgentHomeDirs) {
+        try {
+          fs.rmSync(dir, { recursive: true, force: true })
         } catch {
           // ignore cleanup errors
         }
@@ -359,8 +372,8 @@ if (!tmuxAvailable) {
 
         // Restart server
         port = await getFreePort()
-        const codexDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentboard-codex-'))
-        const piDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentboard-pi-'))
+        const codexDir = createAgentHomeDir('agentboard-codex-')
+        const piDir = createAgentHomeDir('agentboard-pi-')
         const env: NodeJS.ProcessEnv = {
           ...process.env,
           PORT: String(port),
