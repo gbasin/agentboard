@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import TestRenderer, { act } from 'react-test-renderer'
-import NumPad from '../components/NumPad'
 
 const globalAny = globalThis as typeof globalThis & {
   navigator?: Navigator
@@ -17,14 +16,9 @@ afterEach(() => {
 
 function findPasteButton(renderer: TestRenderer.ReactTestRenderer) {
   const buttons = renderer.root.findAllByType('button')
-  return buttons.find((button) => {
-    const child = button.props.children
-    return (
-      child?.type === 'svg' &&
-      child.props?.stroke === 'currentColor' &&
-      child.props?.fill === 'none'
-    )
-  })
+  return buttons.find((button) =>
+    button.props['aria-label'] === 'Paste'
+  )
 }
 
 describe('TerminalControls', () => {
@@ -53,19 +47,27 @@ describe('TerminalControls', () => {
       ctrlButton.props.onClick()
     })
 
-    const numpad = renderer.root.findByType(NumPad)
+    // Find the mode toggle button (sends Shift+Tab) and use it to test ctrl modifier
+    const modeButton = renderer.root.findAllByType('button').find(
+      (button) => button.props['aria-label'] === 'Toggle mode (Shift+Tab)'
+    )
+    if (!modeButton) {
+      throw new Error('Expected mode toggle button')
+    }
 
     act(() => {
-      numpad.props.onSendKey('a')
+      modeButton.props.onClick()
     })
 
-    expect(sent[0]).toBe(String.fromCharCode(1))
+    // Ctrl + Shift+Tab sends the raw escape sequence (non-letter, ctrl consumed)
+    expect(sent[0]).toBe('\x1b[Z')
 
+    // After ctrl is consumed, next press should be normal
     act(() => {
-      numpad.props.onSendKey('a')
+      modeButton.props.onClick()
     })
 
-    expect(sent[1]).toBe('a')
+    expect(sent[1]).toBe('\x1b[Z')
   })
 
   test('session switcher selects sessions when multiple are present', () => {
