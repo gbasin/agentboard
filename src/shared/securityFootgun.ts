@@ -146,7 +146,7 @@ function compareStrings(a: string, b: string): number {
 }
 
 function normalizePath(path: string): string {
-  const normalized = path.replaceAll('\\\\', '/')
+  const normalized = path.replaceAll('\\', '/')
   if (normalized.startsWith('./')) {
     return normalized.slice(2)
   }

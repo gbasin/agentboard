@@ -123,9 +123,18 @@ describe('securityFootgun', () => {
 
   test('filters only target TypeScript files in src/scripts and excludes tests', () => {
     expect(isSecurityFootgunTargetFile('src/server/index.ts')).toBe(true)
+    expect(isSecurityFootgunTargetFile('src\\server\\index.ts')).toBe(true)
+    expect(isSecurityFootgunTargetFile('.\\scripts\\dependency-risk.ts')).toBe(true)
     expect(isSecurityFootgunTargetFile('scripts/dependency-risk.ts')).toBe(true)
     expect(isSecurityFootgunTargetFile('src/shared/__tests__/securityFootgun.test.ts')).toBe(false)
     expect(isSecurityFootgunTargetFile('notes/draft.ts')).toBe(false)
     expect(isSecurityFootgunTargetFile('src/server/index.js')).toBe(false)
+  })
+
+  test('detects findings for Windows-style source paths', () => {
+    const report = scan('eval(input)', { path: 'src\\server\\security-sample.ts' })
+
+    expect(report.findings).toHaveLength(1)
+    expect(report.findings[0]?.ruleId).toBe('dangerous-eval')
   })
 })
