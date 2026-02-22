@@ -1092,8 +1092,7 @@ describe('SessionManager', () => {
     )
     expect(setOptionCall).toBeTruthy()
     expect(setOptionCall).toContain('off')
-    expect(setOptionCall).toContain('-t')
-    expect(setOptionCall).toContain(sessionName)
+    expect(setOptionCall).toContain('-g')
   })
 
   test('setMouseMode applies change immediately', () => {

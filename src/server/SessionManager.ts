@@ -77,29 +77,22 @@ export class SessionManager {
     } catch {
       this.runTmux(['new-session', '-d', '-s', this.sessionName])
     }
-    // Set mouse mode for scroll wheel support (SGR mouse sequences)
-    // Scoped to this session only (-t) rather than global (-g)
+    // Set mouse mode globally for scroll wheel support (SGR mouse sequences)
+    // Using -g so grouped sessions (agentboard-ws-*) also inherit the setting
     if (this.mouseMode) {
-      this.runTmux(['set-option', '-t', this.sessionName, 'mouse', 'on'])
+      this.runTmux(['set-option', '-g', 'mouse', 'on'])
     } else {
-      this.runTmux(['set-option', '-t', this.sessionName, 'mouse', 'off'])
+      this.runTmux(['set-option', '-g', 'mouse', 'off'])
     }
   }
 
   setMouseMode(enabled: boolean): void {
     this.mouseMode = enabled
-    // Apply immediately if session exists
+    // Apply globally so grouped sessions also get the setting
     try {
-      this.runTmux(['has-session', '-t', this.sessionName])
-      this.runTmux([
-        'set-option',
-        '-t',
-        this.sessionName,
-        'mouse',
-        enabled ? 'on' : 'off',
-      ])
+      this.runTmux(['set-option', '-g', 'mouse', enabled ? 'on' : 'off'])
     } catch {
-      // Session doesn't exist yet, will be applied on next ensureSession
+      // tmux not running, will be applied on next ensureSession
     }
   }
 

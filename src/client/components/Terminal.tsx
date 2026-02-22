@@ -804,6 +804,23 @@ export default function Terminal({
     [session, isReadOnly, sendMessage]
   )
 
+  const handleSendScroll = useCallback(
+    (direction: 'up' | 'down') => {
+      if (!session || isReadOnly) return
+      const terminal = terminalRef.current
+      const cols = terminal?.cols ?? 80
+      const rows = terminal?.rows ?? 24
+      const col = Math.floor(cols / 2)
+      const row = Math.floor(rows / 2)
+      const button = direction === 'up' ? 64 : 65
+      sendMessage({ type: 'terminal-input', sessionId: session.id, data: `\x1b[<${button};${col};${row}M` })
+      if (direction === 'up') {
+        setTmuxCopyMode(true)
+      }
+    },
+    [session, isReadOnly, sendMessage]
+  )
+
   const handleRefocus = useCallback(() => {
     const container = containerRef.current
     if (!container) return
@@ -1090,6 +1107,7 @@ export default function Terminal({
       {session && (
         <TerminalControls
           onSendKey={handleSendKey}
+          onSendScroll={handleSendScroll}
           disabled={connectionStatus !== 'connected' || isReadOnly}
           sessions={sessions.map(s => ({ id: s.id, name: s.name, status: s.status }))}
           currentSessionId={session.id}
