@@ -129,6 +129,44 @@ You can override the security threshold with `--threshold` (or `DEPENDENCY_RISK_
 bun run deps:risk -- --threshold moderate
 ```
 
+## Security Foot-Gun Finder
+
+Use the foot-gun scanner to catch common high-risk anti-patterns in `src/` and `scripts/` TypeScript files:
+
+```bash
+bun run security:footgun
+```
+
+Machine-readable output:
+
+```bash
+bun run security:footgun:json
+```
+
+Policy:
+
+- The scanner uses static heuristics and reports severities (`low`, `moderate`, `high`, `critical`) with a default fail threshold of `high`.
+- CI runs with a conservative threshold of `critical` (`bun run security:footgun:ci`) to avoid blocking on lower-severity debt.
+- You can override local policy with `--threshold` (or `SECURITY_FOOTGUN_FAIL_ON`), for example:
+
+```bash
+bun run security:footgun -- --threshold critical
+```
+
+Current high-signal rule families:
+
+- Dynamic shell command interpolation at command execution sinks.
+- Dynamic code evaluation (`eval`, `new Function`).
+- Unsafe HTML injection patterns (`innerHTML`, `insertAdjacentHTML`, `dangerouslySetInnerHTML`).
+- TLS verification bypass flags (`NODE_TLS_REJECT_UNAUTHORIZED=0`, `rejectUnauthorized: false`, `strictSSL: false`).
+- Insecure temporary file path construction.
+
+Limitations:
+
+- This is not a full SAST engine and does not prove exploitability.
+- Findings are heuristic and may include false positives/false negatives.
+- Rule suppressions are inline comments only (`security-footgun-ignore` and `security-footgun-ignore-next-line`).
+
 ## Keyboard Shortcuts
 
 | Action | Mac | Windows/Linux |
