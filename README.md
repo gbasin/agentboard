@@ -129,6 +129,44 @@ You can override the security threshold with `--threshold` (or `DEPENDENCY_RISK_
 bun run deps:risk -- --threshold moderate
 ```
 
+## Security Foot-Gun Finder
+
+Use the static foot-gun scanner to catch common insecure coding patterns in TypeScript files under `src/` and `scripts/`:
+
+```bash
+bun run security:footgun
+```
+
+Machine-readable output:
+
+```bash
+bun run security:footgun:json
+```
+
+Policy:
+
+- Findings are grouped by severity (`low`, `moderate`, `high`, `critical`) and evaluated against a fail threshold.
+- Local default threshold is `high` (can be overridden with `--threshold` or `SECURITY_FOOTGUN_FAIL_ON`).
+- CI uses `critical` threshold (`bun run security:footgun:ci`) to avoid blocking on lower-severity backlog while still preventing critical foot-guns from merging.
+- Inline suppressions are supported via comments:
+  - `// security-footgun-ignore-line <rule-id>`
+  - `// security-footgun-ignore-next-line <rule-id>`
+  - Use `*` to suppress all rules on the target line only.
+
+Current heuristic rule families:
+
+- Dynamic shell command interpolation at execution sinks (`exec`, `execSync`, `spawn` with shell mode)
+- Dynamic code execution (`eval`, `new Function`)
+- Unsafe HTML injection (`innerHTML`, `insertAdjacentHTML`, `dangerouslySetInnerHTML`)
+- TLS verification bypass (`rejectUnauthorized: false`, `NODE_TLS_REJECT_UNAUTHORIZED=0`, curl `-k/--insecure`)
+- Predictable temp-file path construction in temp directories (`/tmp` + `Date.now`/`Math.random`)
+
+Limitations:
+
+- This is not a full SAST engine and does not prove exploitability.
+- It relies on high-signal heuristics and can miss complex data-flow or sanitization context.
+- Treat findings as early warning signals that require human review.
+
 ## Keyboard Shortcuts
 
 | Action | Mac | Windows/Linux |
