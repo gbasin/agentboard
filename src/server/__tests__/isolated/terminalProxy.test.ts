@@ -167,6 +167,66 @@ describe('TerminalProxy', () => {
     expect(proxy.getCurrentWindow()).toBe('@2')
   })
 
+  test('copies mouse setting from base session to grouped session', async () => {
+    const spawnSyncCalls: string[][] = []
+    const spawnSync = (args: string[], _options?: Parameters<typeof Bun.spawnSync>[1]) => {
+      spawnSyncCalls.push(args)
+      const command = args[1]
+      if (command === 'list-clients') {
+        return {
+          exitCode: 0,
+          stdout: Buffer.from('/dev/pts/9 4242\n'),
+          stderr: Buffer.from(''),
+        } as ReturnType<typeof Bun.spawnSync>
+      }
+      if (command === 'show-option' && args.includes('mouse')) {
+        return {
+          exitCode: 0,
+          stdout: Buffer.from('on\n'),
+          stderr: Buffer.from(''),
+        } as ReturnType<typeof Bun.spawnSync>
+      }
+      return {
+        exitCode: 0,
+        stdout: Buffer.from(''),
+        stderr: Buffer.from(''),
+      } as ReturnType<typeof Bun.spawnSync>
+    }
+
+    const harness = createSpawnHarness()
+    const proxy = new TerminalProxy({
+      connectionId: 'mouse-test',
+      sessionName: 'agentboard-ws-mouse-test',
+      baseSession: 'agentboard',
+      onData: () => {},
+      spawn: harness.spawn,
+      spawnSync,
+      wait: async () => {},
+    })
+
+    await proxy.start()
+
+    // Should read mouse from the base session
+    expect(spawnSyncCalls).toContainEqual([
+      'tmux',
+      'show-option',
+      '-t',
+      'agentboard',
+      '-v',
+      'mouse',
+    ])
+
+    // Should set mouse on the grouped session
+    expect(spawnSyncCalls).toContainEqual([
+      'tmux',
+      'set-option',
+      '-t',
+      'agentboard-ws-mouse-test',
+      'mouse',
+      'on',
+    ])
+  })
+
   test('disposes tmux client and session', async () => {
     const harness = createSpawnHarness()
     const proxy = new TerminalProxy({

@@ -77,8 +77,9 @@ export class SessionManager {
     } catch {
       this.runTmux(['new-session', '-d', '-s', this.sessionName])
     }
-    // Set mouse mode for scroll wheel support (SGR mouse sequences)
-    // Scoped to this session only (-t) rather than global (-g)
+    // Set mouse mode for scroll wheel support (SGR mouse sequences).
+    // Scoped to this session only (-t) rather than global (-g).
+    // Note: PtyTerminalProxy copies this setting onto grouped client sessions.
     if (this.mouseMode) {
       this.runTmux(['set-option', '-t', this.sessionName, 'mouse', 'on'])
     } else {
