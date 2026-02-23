@@ -227,6 +227,217 @@ describe('TerminalProxy', () => {
     ])
   })
 
+  test('copies mouse=off setting from base session to grouped session', async () => {
+    const spawnSyncCalls: string[][] = []
+    const spawnSync = (args: string[], _options?: Parameters<typeof Bun.spawnSync>[1]) => {
+      spawnSyncCalls.push(args)
+      const command = args[1]
+      if (command === 'list-clients') {
+        return {
+          exitCode: 0,
+          stdout: Buffer.from('/dev/pts/9 4242\n'),
+          stderr: Buffer.from(''),
+        } as ReturnType<typeof Bun.spawnSync>
+      }
+      if (command === 'show-option' && args.includes('mouse')) {
+        return {
+          exitCode: 0,
+          stdout: Buffer.from('off\n'),
+          stderr: Buffer.from(''),
+        } as ReturnType<typeof Bun.spawnSync>
+      }
+      return {
+        exitCode: 0,
+        stdout: Buffer.from(''),
+        stderr: Buffer.from(''),
+      } as ReturnType<typeof Bun.spawnSync>
+    }
+
+    const harness = createSpawnHarness()
+    const proxy = new TerminalProxy({
+      connectionId: 'mouse-off-test',
+      sessionName: 'agentboard-ws-mouse-off-test',
+      baseSession: 'agentboard',
+      onData: () => {},
+      spawn: harness.spawn,
+      spawnSync,
+      wait: async () => {},
+    })
+
+    await proxy.start()
+
+    expect(spawnSyncCalls).toContainEqual([
+      'tmux',
+      'set-option',
+      '-t',
+      'agentboard-ws-mouse-off-test',
+      'mouse',
+      'off',
+    ])
+  })
+
+  test('does not set grouped mouse option when base mouse setting is empty', async () => {
+    const spawnSyncCalls: string[][] = []
+    const spawnSync = (args: string[], _options?: Parameters<typeof Bun.spawnSync>[1]) => {
+      spawnSyncCalls.push(args)
+      const command = args[1]
+      if (command === 'list-clients') {
+        return {
+          exitCode: 0,
+          stdout: Buffer.from('/dev/pts/9 4242\n'),
+          stderr: Buffer.from(''),
+        } as ReturnType<typeof Bun.spawnSync>
+      }
+      if (command === 'show-option' && args.includes('mouse')) {
+        return {
+          exitCode: 0,
+          stdout: Buffer.from('\n'),
+          stderr: Buffer.from(''),
+        } as ReturnType<typeof Bun.spawnSync>
+      }
+      return {
+        exitCode: 0,
+        stdout: Buffer.from(''),
+        stderr: Buffer.from(''),
+      } as ReturnType<typeof Bun.spawnSync>
+    }
+
+    const harness = createSpawnHarness()
+    const proxy = new TerminalProxy({
+      connectionId: 'mouse-empty-test',
+      sessionName: 'agentboard-ws-mouse-empty-test',
+      baseSession: 'agentboard',
+      onData: () => {},
+      spawn: harness.spawn,
+      spawnSync,
+      wait: async () => {},
+    })
+
+    await proxy.start()
+
+    expect(
+      spawnSyncCalls.some(
+        (call) => call[1] === 'set-option' && call.includes('mouse')
+      )
+    ).toBe(false)
+  })
+
+  test('continues when reading base mouse setting fails', async () => {
+    const spawnSyncCalls: string[][] = []
+    const spawnSync = (args: string[], _options?: Parameters<typeof Bun.spawnSync>[1]) => {
+      spawnSyncCalls.push(args)
+      const command = args[1]
+      if (command === 'list-clients') {
+        return {
+          exitCode: 0,
+          stdout: Buffer.from('/dev/pts/9 4242\n'),
+          stderr: Buffer.from(''),
+        } as ReturnType<typeof Bun.spawnSync>
+      }
+      if (command === 'show-option' && args.includes('mouse')) {
+        return {
+          exitCode: 1,
+          stdout: Buffer.from(''),
+          stderr: Buffer.from('unknown option'),
+        } as ReturnType<typeof Bun.spawnSync>
+      }
+      return {
+        exitCode: 0,
+        stdout: Buffer.from(''),
+        stderr: Buffer.from(''),
+      } as ReturnType<typeof Bun.spawnSync>
+    }
+
+    const harness = createSpawnHarness()
+    const proxy = new TerminalProxy({
+      connectionId: 'mouse-fail-test',
+      sessionName: 'agentboard-ws-mouse-fail-test',
+      baseSession: 'agentboard',
+      onData: () => {},
+      spawn: harness.spawn,
+      spawnSync,
+      wait: async () => {},
+    })
+
+    await proxy.start()
+
+    expect(
+      spawnSyncCalls.some(
+        (call) => call[1] === 'set-option' && call.includes('mouse')
+      )
+    ).toBe(false)
+    expect(proxy.isReady()).toBe(true)
+  })
+
+  test('continues when applying grouped mouse setting fails', async () => {
+    const spawnSyncCalls: string[][] = []
+    const spawnSync = (args: string[], _options?: Parameters<typeof Bun.spawnSync>[1]) => {
+      spawnSyncCalls.push(args)
+      const command = args[1]
+      if (command === 'list-clients') {
+        return {
+          exitCode: 0,
+          stdout: Buffer.from('/dev/pts/9 4242\n'),
+          stderr: Buffer.from(''),
+        } as ReturnType<typeof Bun.spawnSync>
+      }
+      if (command === 'show-option' && args.includes('mouse')) {
+        return {
+          exitCode: 0,
+          stdout: Buffer.from('on\n'),
+          stderr: Buffer.from(''),
+        } as ReturnType<typeof Bun.spawnSync>
+      }
+      if (
+        command === 'set-option' &&
+        args.includes('agentboard-ws-mouse-apply-fail-test') &&
+        args.includes('mouse')
+      ) {
+        return {
+          exitCode: 1,
+          stdout: Buffer.from(''),
+          stderr: Buffer.from('set failed'),
+        } as ReturnType<typeof Bun.spawnSync>
+      }
+      return {
+        exitCode: 0,
+        stdout: Buffer.from(''),
+        stderr: Buffer.from(''),
+      } as ReturnType<typeof Bun.spawnSync>
+    }
+
+    const harness = createSpawnHarness()
+    const proxy = new TerminalProxy({
+      connectionId: 'mouse-apply-fail-test',
+      sessionName: 'agentboard-ws-mouse-apply-fail-test',
+      baseSession: 'agentboard',
+      onData: () => {},
+      spawn: harness.spawn,
+      spawnSync,
+      wait: async () => {},
+    })
+
+    await proxy.start()
+
+    expect(spawnSyncCalls).toContainEqual([
+      'tmux',
+      'show-option',
+      '-t',
+      'agentboard',
+      '-v',
+      'mouse',
+    ])
+    expect(spawnSyncCalls).toContainEqual([
+      'tmux',
+      'set-option',
+      '-t',
+      'agentboard-ws-mouse-apply-fail-test',
+      'mouse',
+      'on',
+    ])
+    expect(proxy.isReady()).toBe(true)
+  })
+
   test('disposes tmux client and session', async () => {
     const harness = createSpawnHarness()
     const proxy = new TerminalProxy({
