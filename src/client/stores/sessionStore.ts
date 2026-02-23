@@ -5,7 +5,8 @@ import { sortSessions } from '../utils/sessions'
 import { useSettingsStore } from './settingsStore'
 import { createTabStorage } from '../utils/storage'
 
-const tabStorage = createTabStorage()
+const SESSION_PERSIST_KEY = 'agentboard-session'
+const tabStorage = createTabStorage(SESSION_PERSIST_KEY)
 
 export type ConnectionStatus =
   | 'connecting'
@@ -137,7 +138,7 @@ export const useSessionStore = create<SessionState>()(
       },
     }),
     {
-      name: 'agentboard-session',
+      name: SESSION_PERSIST_KEY,
       storage: createJSONStorage(() => tabStorage),
       partialize: (state) => ({ selectedSessionId: state.selectedSessionId }),
     }

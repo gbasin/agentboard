@@ -78,7 +78,7 @@ describe('createTabStorage', () => {
     store.set('key', 'from-localstorage')
     globalAny.localStorage = storage
 
-    const tab = createTabStorage()
+    const tab = createTabStorage('key')
     expect(tab.getItem('key')).toBe('from-localstorage')
   })
 
@@ -87,7 +87,7 @@ describe('createTabStorage', () => {
     store.set('key', 'initial')
     globalAny.localStorage = storage
 
-    const tab = createTabStorage()
+    const tab = createTabStorage('key')
     // Hydration read
     tab.getItem('key')
 
@@ -102,7 +102,7 @@ describe('createTabStorage', () => {
     const { storage, store } = createStorage()
     globalAny.localStorage = storage
 
-    const tab = createTabStorage()
+    const tab = createTabStorage('key')
     // Trigger hydration
     tab.getItem('key')
 
@@ -118,7 +118,7 @@ describe('createTabStorage', () => {
     store.set('key', 'value')
     globalAny.localStorage = storage
 
-    const tab = createTabStorage()
+    const tab = createTabStorage('key')
     // Hydrate then remove
     tab.getItem('key')
     tab.removeItem('key')
@@ -130,7 +130,12 @@ describe('createTabStorage', () => {
   test('returns null gracefully when localStorage is unavailable', () => {
     delete globalAny.localStorage
 
-    const tab = createTabStorage()
+    const tab = createTabStorage('missing')
     expect(tab.getItem('missing')).toBeNull()
+  })
+
+  test('throws when called with an unexpected key in non-production environments', () => {
+    const tab = createTabStorage('agentboard-session')
+    expect(() => tab.getItem('unexpected-key')).toThrow(/unexpected key/)
   })
 })
