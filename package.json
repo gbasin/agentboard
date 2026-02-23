@@ -1,6 +1,6 @@
 {
   "name": "@gbasin/agentboard",
-  "version": "0.2.17",
+  "version": "0.2.18",
   "type": "module",
   "description": "Web GUI for tmux optimized for AI agent TUIs",
   "author": "gbasin",

@@ -9,6 +9,8 @@
  * - Connection timeout (prevents zombie sockets from blocking reconnect)
  * - Application-level ping/pong heartbeat (detects dead sockets in foreground)
  * - Debounce on forceReconnect (prevents double reconnect from overlapping triggers)
+ * - Leaked socket tracking (force-closes all prior sockets to avoid browser limits)
+ * - Resume delay (waits for iOS to restore network before first connect attempt)
  */
 import { useEffect, useMemo, useState } from 'react'
 import type { ClientMessage, SendClientMessage, ServerMessage } from '@shared/types'
@@ -30,6 +32,13 @@ const WS_STATES = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'] as const
 const CONNECT_TIMEOUT_MS = 3_000
 
 /**
+ * Longer timeout for the first connect attempt after a resume — Tailscale /
+ * VPN tunnels need extra time and packets may be silently dropped (no ICMP),
+ * so the standard 3 s timeout is too aggressive.
+ */
+const RESUME_CONNECT_TIMEOUT_MS = 8_000
+
+/**
  * If the interval timer detects a time jump larger than this, the device
  * likely slept or the PWA was suspended. Force a fresh reconnect.
  */
@@ -38,8 +47,9 @@ const WAKE_JUMP_MS = 15_000
 /** Tick interval for the time-jump detector. */
 const WAKE_CHECK_INTERVAL_MS = 5_000
 
-/** Gap threshold for detecting process suspension on visibility resume. */
-const SUSPEND_THRESHOLD_MS = 10_000
+// SUSPEND_THRESHOLD_MS (10_000) — removed: we now always force-reconnect
+// on resume regardless of gap duration.  The short-vs-long distinction
+// was unreliable and the verification ping wasted 3 s on zombie sockets.
 
 /** How often to send an application-level ping to detect dead sockets. */
 const HEARTBEAT_INTERVAL_MS = 20_000
@@ -47,8 +57,23 @@ const HEARTBEAT_INTERVAL_MS = 20_000
 /** How long to wait for a pong before declaring the socket dead. */
 const PONG_TIMEOUT_MS = 10_000
 
-/** How long to wait for a verification pong on non-suspended resume. */
-const RESUME_PONG_TIMEOUT_MS = 3_000
+// RESUME_PONG_TIMEOUT_MS (3_000) — removed: short resumes now always
+// force-reconnect instead of sending a verification ping on the zombie.
+
+/**
+ * Delay before the first reconnect attempt after a resume event.
+ * Gives iOS time to restore WiFi / VPN networking — visibilitychange fires
+ * before the network stack is ready (confirmed by Apple Developer Forums).
+ */
+const RESUME_SETTLE_MS = 750
+
+/**
+ * After this many consecutive failed connect attempts, insert an extra delay
+ * and aggressively clean up any leaked sockets.  Prevents a tight
+ * connect-timeout → reconnect loop from chewing resources.
+ */
+const STALL_THRESHOLD = 4
+const STALL_COOLDOWN_MS = 5_000
 
 export class WebSocketManager {
   private ws: WebSocket | null = null
@@ -68,9 +93,26 @@ export class WebSocketManager {
   private lastForceReconnectTs = 0
   private pingSeq = 0
   private connectionEpoch = 0
+  /** Consecutive connect attempts that failed (timeout, error, close). */
+  private consecutiveFailures = 0
+  /** Whether the current connect attempt is the first after a resume. */
+  private isResumeAttempt = false
+  /**
+   * Track all WebSocket instances ever created so we can force-close leaked
+   * zombies that Safari keeps alive at the TCP level even after ws.close().
+   * Prevents hitting the browser's per-origin connection limit.
+   */
+  private leakedSockets = new Set<WebSocket>()
 
   private wsSnap() {
-    return { status: this.status, ws: this.ws ? WS_STATES[this.ws.readyState] : null, attempt: this.reconnectAttempts }
+    return {
+      status: this.status,
+      ws: this.ws ? WS_STATES[this.ws.readyState] : null,
+      attempt: this.reconnectAttempts,
+      failures: this.consecutiveFailures,
+      leaked: this.leakedSockets.size,
+      online: typeof navigator !== 'undefined' ? navigator.onLine : undefined,
+    }
   }
 
   connect() {
@@ -95,10 +137,16 @@ export class WebSocketManager {
 
     const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws'
     const wsUrl = `${scheme}://${window.location.host}/ws`
-    clientLog('ws_connect', { url: wsUrl, ...this.wsSnap() })
+    clientLog('ws_connect', { url: wsUrl, resume: this.isResumeAttempt, ...this.wsSnap() })
 
     const ws = new WebSocket(wsUrl)
     this.ws = ws
+    this.leakedSockets.add(ws)
+
+    // Use a longer timeout for the first attempt after resume — VPN tunnels
+    // need extra time and silently drop SYN packets with no error feedback.
+    const timeout = this.isResumeAttempt ? RESUME_CONNECT_TIMEOUT_MS : CONNECT_TIMEOUT_MS
+    this.isResumeAttempt = false
 
     // Guard against connections that hang (common on iOS after background)
     this.connectTimer = window.setTimeout(() => {
@@ -111,18 +159,23 @@ export class WebSocketManager {
         clientLog('ws_connect_timeout', {
           wsState: WS_STATES[ws.readyState],
           managerStatus: this.status,
+          timeoutMs: timeout,
           ...this.wsSnap(),
         })
+        this.consecutiveFailures += 1
         this.destroySocket()
         this.scheduleReconnect()
       }
-    }, CONNECT_TIMEOUT_MS)
+    }, timeout)
 
     ws.onopen = () => {
       clientLog('ws_onopen', this.wsSnap())
       this.clearConnectTimer()
       this.reconnectAttempts = 0
+      this.consecutiveFailures = 0
       this.connectionEpoch += 1
+      // Socket opened successfully — remove from leaked tracking
+      this.leakedSockets.delete(ws)
       this.setStatus('connected')
       this.startHeartbeat()
     }
@@ -153,6 +206,7 @@ export class WebSocketManager {
     ws.onclose = (e) => {
       clientLog('ws_onclose', { code: e.code, reason: e.reason, clean: e.wasClean, ...this.wsSnap() })
       this.clearConnectTimer()
+      this.consecutiveFailures += 1
       this.ws = null
       if (!this.manualClose) {
         this.scheduleReconnect()
@@ -263,18 +317,17 @@ export class WebSocketManager {
     if (document.visibilityState === 'visible') {
       const now = Date.now()
       const gap = now - this.lastTick
-      const wasSuspended = gap > SUSPEND_THRESHOLD_MS
       // Reset lastTick before reconnect to prevent the wake-check interval
       // from seeing a stale gap and firing a second forceReconnect.
       this.lastTick = now
-      this.forceReconnect('visibilitychange', wasSuspended)
-      // On non-suspended resume: restart heartbeat and send a verification ping
-      // to detect zombie sockets that iOS reports as OPEN for ~18ms after wake.
-      // Desktop: pong arrives in ms, no disruption. iOS zombie: caught in 3s.
-      if (!wasSuspended && this.status === 'connected') {
-        this.startHeartbeat()
-        this.sendVerificationPing()
-      }
+
+      // Always force-reconnect on resume with force=true.  Even short
+      // backgrounds (<10 s) can leave zombie sockets on iOS Safari — the
+      // verification-ping approach wasted 3 s on a zombie that can never
+      // respond.  Instead, tear down immediately and reconnect with a short
+      // settle delay so iOS has time to bring the network back.
+      clientLog('ws_resume', { gapMs: gap })
+      this.forceReconnect('visibilitychange', true)
     } else {
       // Pause heartbeat when hidden — iOS freezes timers anyway,
       // and pong timeout would false-positive on wake.
@@ -301,6 +354,11 @@ export class WebSocketManager {
   /**
    * If the socket isn't cleanly connected, tear it down and start fresh.
    * Resets the backoff counter so the user doesn't wait up to 30s.
+   *
+   * When `force` is true (resume / suspension), we:
+   *   1. Purge all leaked sockets to free browser connection slots
+   *   2. Wait RESUME_SETTLE_MS for iOS to restore networking
+   *   3. Use a longer connect timeout for the first attempt
    */
   private forceReconnect(trigger: string = 'unknown', force = false) {
     if (this.manualClose) {
@@ -335,12 +393,32 @@ export class WebSocketManager {
     this.lastForceReconnectTs = now
     clientLog('ws_force_reconnect', { trigger, force, ...this.wsSnap() })
     this.reconnectAttempts = 0
+    this.consecutiveFailures = 0
     if (this.reconnectTimer) {
       window.clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
     }
     this.destroySocket()
-    this.connect()
+
+    if (force) {
+      // Purge all leaked sockets — iOS Safari keeps zombie TCP connections
+      // alive even after ws.close(), which can exhaust the per-origin limit
+      // and prevent new connections from being established.
+      this.purgeLeakedSockets()
+
+      // Wait for iOS to restore networking before attempting to connect.
+      // visibilitychange fires before the network stack is ready (confirmed
+      // by WebKit and Apple Developer Forums).  Without this delay, the first
+      // connect attempt would hit a dead network and start the backoff loop.
+      this.isResumeAttempt = true
+      this.setStatus('reconnecting')
+      this.reconnectTimer = window.setTimeout(() => {
+        this.reconnectTimer = null
+        this.connect()
+      }, RESUME_SETTLE_MS)
+    } else {
+      this.connect()
+    }
   }
 
   /**
@@ -365,27 +443,6 @@ export class WebSocketManager {
         this.scheduleReconnect()
       }, PONG_TIMEOUT_MS)
     }, HEARTBEAT_INTERVAL_MS)
-  }
-
-  /**
-   * Send a verification ping with a short timeout to detect zombie sockets
-   * on resume. If no matching pong arrives within RESUME_PONG_TIMEOUT_MS,
-   * tear down and immediately reconnect.
-   */
-  private sendVerificationPing() {
-    if (this.ws?.readyState !== WebSocket.OPEN) return
-    this.pingSeq += 1
-    const seq = this.pingSeq
-    clientLog('ws_resume_verify', { seq, ...this.wsSnap() })
-    if (!this.send({ type: 'ping', seq })) return
-    this.clearPongTimer()
-    this.pongTimer = window.setTimeout(() => {
-      this.pongTimer = null
-      clientLog('ws_resume_verify_timeout', { seq, ...this.wsSnap() })
-      this.destroySocket()
-      this.reconnectAttempts = 0
-      this.connect()
-    }, RESUME_PONG_TIMEOUT_MS)
   }
 
   private stopHeartbeat() {
@@ -416,6 +473,25 @@ export class WebSocketManager {
       // Don't reconnect in the background — forceReconnect() handles
       // it when the page becomes visible again.
       this.setStatus('reconnecting')
+      return
+    }
+
+    // If we've hit the stall threshold, aggressively clean up and add extra
+    // cooldown time.  Leaked zombie sockets at the browser level may be
+    // exhausting per-origin connection slots, which would explain why
+    // force-closing the app (killing all TCP connections) fixes it instantly.
+    if (this.consecutiveFailures >= STALL_THRESHOLD) {
+      clientLog('ws_stall_detected', this.wsSnap())
+      this.purgeLeakedSockets()
+      // Give the browser extra time to clean up TCP connections
+      this.consecutiveFailures = 0
+      this.reconnectAttempts = 0
+      this.isResumeAttempt = true
+      this.setStatus('reconnecting')
+      this.reconnectTimer = window.setTimeout(() => {
+        this.reconnectTimer = null
+        this.connect()
+      }, STALL_COOLDOWN_MS)
       return
     }
 
@@ -460,6 +536,35 @@ export class WebSocketManager {
     } catch {
       // Already closed / invalid state
     }
+  }
+
+  /**
+   * Force-close all previously created sockets that may still be lingering
+   * at the browser/TCP level.  On iOS Safari, ws.close() on a zombie socket
+   * may have no effect (confirmed by WebKit Bug #247943 and graphql-ws #289),
+   * so the browser retains the underlying TCP connection.  If enough zombies
+   * accumulate, they can exhaust Safari's per-origin connection limit and
+   * prevent new WebSocket connections from being established.
+   *
+   * This explains why force-closing the PWA fixes the loop instantly — iOS
+   * kills all TCP connections belonging to the process.
+   */
+  private purgeLeakedSockets() {
+    if (this.leakedSockets.size === 0) return
+    clientLog('ws_purge_leaked', { count: this.leakedSockets.size })
+    for (const leaked of this.leakedSockets) {
+      try {
+        // Null out handlers to prevent any late-firing events
+        leaked.onopen = null
+        leaked.onmessage = null
+        leaked.onerror = null
+        leaked.onclose = null
+        leaked.close()
+      } catch {
+        // Already closed / invalid state
+      }
+    }
+    this.leakedSockets.clear()
   }
 }
 
