@@ -49,3 +49,35 @@ export const safeStorage: StateStorage = {
     }
   },
 }
+
+/**
+ * Tab-scoped storage adapter for Zustand persist.
+ *
+ * Reads from localStorage once on hydration (good default for new tabs
+ * and iOS PWA relaunches). After that, reads from an in-memory Map so
+ * each browser tab maintains independent state. Writes always update
+ * both in-memory and localStorage (keeping the global default fresh).
+ */
+export function createTabStorage(): StateStorage {
+  const mem = new Map<string, string>()
+  let hydrated = false
+
+  return {
+    getItem(key: string): string | null {
+      if (hydrated) return mem.get(key) ?? null
+      hydrated = true
+      // safeStorage is synchronous (defined above) — assertion is safe
+      const value = safeStorage.getItem(key) as string | null
+      if (value !== null) mem.set(key, value)
+      return value
+    },
+    setItem(key: string, value: string) {
+      mem.set(key, value)
+      safeStorage.setItem(key, value)
+    },
+    removeItem(key: string) {
+      mem.delete(key)
+      safeStorage.removeItem(key)
+    },
+  }
+}

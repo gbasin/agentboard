@@ -3,7 +3,9 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 import type { AgentSession, HostStatus, Session } from '@shared/types'
 import { sortSessions } from '../utils/sessions'
 import { useSettingsStore } from './settingsStore'
-import { safeStorage } from '../utils/storage'
+import { createTabStorage } from '../utils/storage'
+
+const tabStorage = createTabStorage()
 
 export type ConnectionStatus =
   | 'connecting'
@@ -136,7 +138,7 @@ export const useSessionStore = create<SessionState>()(
     }),
     {
       name: 'agentboard-session',
-      storage: createJSONStorage(() => safeStorage),
+      storage: createJSONStorage(() => tabStorage),
       partialize: (state) => ({ selectedSessionId: state.selectedSessionId }),
     }
   )
