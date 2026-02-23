@@ -229,6 +229,7 @@ class PtyTerminalProxy extends TerminalProxyBase {
       )
     }
 
+    const effectiveTarget = this.resolveSwitchTargetForGroupedSession(target)
     this.state = TerminalState.SWITCHING
     this.outputSuppressed = true
     const startedAt = this.now()
@@ -236,12 +237,13 @@ class PtyTerminalProxy extends TerminalProxyBase {
     this.logEvent('terminal_switch_attempt', {
       sessionName: this.options.sessionName,
       tmuxWindow: target,
+      effectiveTarget,
       clientTty: this.clientTty,
       mode: this.getMode(),
     })
 
     try {
-      this.runTmux(['switch-client', '-c', this.clientTty, '-t', target])
+      this.runTmux(['switch-client', '-c', this.clientTty, '-t', effectiveTarget])
       if (onReady) {
         try {
           onReady()
@@ -250,7 +252,7 @@ class PtyTerminalProxy extends TerminalProxyBase {
         }
       }
       this.outputSuppressed = false
-      this.setCurrentWindow(target)
+      this.setCurrentWindow(effectiveTarget)
       try {
         this.runTmux(['refresh-client', '-t', this.clientTty])
       } catch {
@@ -260,6 +262,7 @@ class PtyTerminalProxy extends TerminalProxyBase {
       this.logEvent('terminal_switch_success', {
         sessionName: this.options.sessionName,
         tmuxWindow: target,
+        effectiveTarget,
         clientTty: this.clientTty,
         durationMs,
         mode: this.getMode(),
@@ -272,6 +275,7 @@ class PtyTerminalProxy extends TerminalProxyBase {
       this.logEvent('terminal_switch_failure', {
         sessionName: this.options.sessionName,
         tmuxWindow: target,
+        effectiveTarget,
         clientTty: this.clientTty,
         error: error instanceof Error ? error.message : 'tmux switch failed',
         mode: this.getMode(),
@@ -282,6 +286,24 @@ class PtyTerminalProxy extends TerminalProxyBase {
         true
       )
     }
+  }
+
+  /**
+   * Keep each browser connection pinned to its own grouped tmux session.
+   * If we switch directly to the base session target, clients can converge
+   * onto the same session and mirror window changes across tabs.
+   */
+  private resolveSwitchTargetForGroupedSession(target: string): string {
+    if (!this.options.baseSession) return target
+
+    const colonIndex = target.indexOf(':')
+    if (colonIndex <= 0) return target
+
+    const sessionName = target.slice(0, colonIndex)
+    if (sessionName !== this.options.baseSession) return target
+
+    const windowPart = target.slice(colonIndex + 1)
+    return `${this.options.sessionName}:${windowPart}`
   }
 
   private async discoverClientTty(pid: number): Promise<string> {
