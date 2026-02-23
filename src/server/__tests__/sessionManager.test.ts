@@ -1099,7 +1099,12 @@ describe('SessionManager', () => {
   test('setMouseMode applies change immediately', () => {
     const sessionName = 'agentboard-setmouse-test'
     const runner = createTmuxRunner(
-      [{ name: sessionName, windows: [] }],
+      [
+        { name: sessionName, windows: [] },
+        { name: `${sessionName}-ws-a`, windows: [] },
+        { name: `${sessionName}-ws-b`, windows: [] },
+        { name: 'other-session', windows: [] },
+      ],
       1
     )
 
@@ -1117,10 +1122,32 @@ describe('SessionManager', () => {
     // Toggle mouse mode off
     manager.setMouseMode(false)
 
-    const setOptionCall = runner.calls.find(
+    const mouseSetCalls = runner.calls.filter(
       (call) => call[0] === 'set-option' && call.includes('mouse')
     )
-    expect(setOptionCall).toBeTruthy()
-    expect(setOptionCall).toContain('off')
+    expect(mouseSetCalls).toContainEqual([
+      'set-option',
+      '-t',
+      sessionName,
+      'mouse',
+      'off',
+    ])
+    expect(mouseSetCalls).toContainEqual([
+      'set-option',
+      '-t',
+      `${sessionName}-ws-a`,
+      'mouse',
+      'off',
+    ])
+    expect(mouseSetCalls).toContainEqual([
+      'set-option',
+      '-t',
+      `${sessionName}-ws-b`,
+      'mouse',
+      'off',
+    ])
+    expect(mouseSetCalls.some((call) => call.includes('other-session'))).toBe(
+      false
+    )
   })
 })

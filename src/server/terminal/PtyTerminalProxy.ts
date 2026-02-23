@@ -99,6 +99,41 @@ class PtyTerminalProxy extends TerminalProxyBase {
       )
     }
 
+    // Grouped sessions get their own session options from the global default,
+    // not from the base session. Copy the base session's mouse setting so
+    // SGR mouse sequences from the browser aren't silently dropped.
+    let mouseValue = ''
+    try {
+      mouseValue = this.runTmux([
+        'show-option',
+        '-t',
+        this.options.baseSession,
+        '-v',
+        'mouse',
+      ]).trim()
+    } catch {
+      // Base session may not have an explicit mouse override; ignore
+    }
+
+    if (mouseValue) {
+      try {
+        this.runTmux([
+          'set-option',
+          '-t',
+          this.options.sessionName,
+          'mouse',
+          mouseValue,
+        ])
+      } catch (error) {
+        this.logEvent('terminal_mouse_mode_sync_failed', {
+          sessionName: this.options.sessionName,
+          baseSession: this.options.baseSession,
+          mouseValue,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
+
     if (attemptId !== this.startAttemptId) {
       await this.dispose()
       return

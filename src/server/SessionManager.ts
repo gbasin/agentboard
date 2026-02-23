@@ -77,8 +77,9 @@ export class SessionManager {
     } catch {
       this.runTmux(['new-session', '-d', '-s', this.sessionName])
     }
-    // Set mouse mode for scroll wheel support (SGR mouse sequences)
-    // Scoped to this session only (-t) rather than global (-g)
+    // Set mouse mode for scroll wheel support (SGR mouse sequences).
+    // Scoped to this session only (-t) rather than global (-g).
+    // Note: PtyTerminalProxy copies this setting onto grouped client sessions.
     if (this.mouseMode) {
       this.runTmux(['set-option', '-t', this.sessionName, 'mouse', 'on'])
     } else {
@@ -88,6 +89,8 @@ export class SessionManager {
 
   setMouseMode(enabled: boolean): void {
     this.mouseMode = enabled
+    const mouseValue = enabled ? 'on' : 'off'
+
     // Apply immediately if session exists
     try {
       this.runTmux(['has-session', '-t', this.sessionName])
@@ -96,10 +99,24 @@ export class SessionManager {
         '-t',
         this.sessionName,
         'mouse',
-        enabled ? 'on' : 'off',
+        mouseValue,
       ])
     } catch {
       // Session doesn't exist yet, will be applied on next ensureSession
+    }
+
+    // Keep existing grouped websocket client sessions in sync with the
+    // base session mouse mode toggle.
+    const wsPrefix = `${this.sessionName}-ws-`
+    const groupedSessions = this.listSessions().filter((name) =>
+      name.startsWith(wsPrefix)
+    )
+    for (const groupedSession of groupedSessions) {
+      try {
+        this.runTmux(['set-option', '-t', groupedSession, 'mouse', mouseValue])
+      } catch {
+        // Session may have exited between list-sessions and set-option
+      }
     }
   }
 
