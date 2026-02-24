@@ -1,5 +1,6 @@
 import { TerminalProxyBase } from './TerminalProxyBase'
 import { TerminalProxyError, TerminalState } from './types'
+import { resolveGroupedSessionSwitchTarget } from './groupedSessionTarget'
 
 class PtyTerminalProxy extends TerminalProxyBase {
   private process: ReturnType<typeof Bun.spawn> | null = null
@@ -229,7 +230,11 @@ class PtyTerminalProxy extends TerminalProxyBase {
       )
     }
 
-    const effectiveTarget = this.resolveSwitchTargetForGroupedSession(target)
+    const effectiveTarget = resolveGroupedSessionSwitchTarget(
+      target,
+      this.options.baseSession,
+      this.options.sessionName
+    )
     this.state = TerminalState.SWITCHING
     this.outputSuppressed = true
     const startedAt = this.now()
@@ -286,28 +291,6 @@ class PtyTerminalProxy extends TerminalProxyBase {
         true
       )
     }
-  }
-
-  /**
-   * Keep each browser connection pinned to its own grouped tmux session.
-   * If we switch directly to the base session target, clients can converge
-   * onto the same session and mirror window changes across tabs.
-   */
-  private resolveSwitchTargetForGroupedSession(target: string): string {
-    if (!this.options.baseSession) return target
-
-    if (target === this.options.baseSession) {
-      return this.options.sessionName
-    }
-
-    const colonIndex = target.indexOf(':')
-    if (colonIndex <= 0) return target
-
-    const sessionName = target.slice(0, colonIndex)
-    if (sessionName !== this.options.baseSession) return target
-
-    const windowPart = target.slice(colonIndex + 1)
-    return `${this.options.sessionName}:${windowPart}`
   }
 
   private async discoverClientTty(pid: number): Promise<string> {
