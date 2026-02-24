@@ -193,6 +193,32 @@ describe('TerminalProxy', () => {
     expect(proxy.getCurrentWindow()).toBe('@2')
   })
 
+  test('switchTo rewrites session-only base-session targets to grouped session', async () => {
+    const harness = createSpawnHarness()
+    const proxy = new TerminalProxy({
+      connectionId: 'abc',
+      sessionName: 'agentboard-ws-abc',
+      baseSession: 'agentboard',
+      onData: () => {},
+      spawn: harness.spawn,
+      spawnSync: harness.spawnSync,
+      wait: async () => {},
+    })
+
+    await proxy.start()
+    await proxy.switchTo('agentboard')
+
+    expect(harness.spawnSyncCalls).toContainEqual([
+      'tmux',
+      'switch-client',
+      '-c',
+      '/dev/pts/9',
+      '-t',
+      'agentboard-ws-abc',
+    ])
+    expect(proxy.getCurrentWindow()).toBe('agentboard-ws-abc')
+  })
+
   test('copies mouse setting from base session to grouped session', async () => {
     const spawnSyncCalls: string[][] = []
     const spawnSync = (args: string[], _options?: Parameters<typeof Bun.spawnSync>[1]) => {

@@ -296,6 +296,10 @@ class PtyTerminalProxy extends TerminalProxyBase {
   private resolveSwitchTargetForGroupedSession(target: string): string {
     if (!this.options.baseSession) return target
 
+    if (target === this.options.baseSession) {
+      return this.options.sessionName
+    }
+
     const colonIndex = target.indexOf(':')
     if (colonIndex <= 0) return target
 
