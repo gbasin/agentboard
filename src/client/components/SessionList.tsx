@@ -28,6 +28,7 @@ import { getSessionOrderKey, getUniqueHosts, getUniqueProjects, sortSessions } f
 import { formatRelativeTime } from '../utils/time'
 import { getPathLeaf } from '../utils/sessionLabel'
 import { getSessionIdShort } from '../utils/sessionId'
+import { composeSortableTransform } from '../utils/sortableTransform'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useSessionStore } from '../stores/sessionStore'
 import { getEffectiveModifier, getModifierDisplay } from '../utils/device'
@@ -717,14 +718,14 @@ const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>
       layout={!prefersReducedMotion && !isDragging && !layoutAnimationsDisabled && !isNew
         ? (useSafariLayoutFallback ? false : true)
         : false}
-      transformTemplate={(_, generatedTransform) => {
-        if (useSafariLayoutFallback && !isDragging) {
-          return generatedTransform
-        }
-        if (!dndTransform) return generatedTransform
-        if (!generatedTransform || generatedTransform === 'none') return dndTransform
-        return `${dndTransform} ${generatedTransform}`
-      }}
+      transformTemplate={(_, generatedTransform) =>
+        composeSortableTransform({
+          useSafariLayoutFallback,
+          isDragging,
+          dndTransform,
+          generatedTransform,
+        })
+      }
       initial={
         prefersReducedMotion || !isNew
           ? false

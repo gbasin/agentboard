@@ -189,6 +189,25 @@ describe('useSessionStore', () => {
     expect(useSessionStore.getState().selectedSessionId).toBe('session-1')
   })
 
+  test('setSessions applies lastActivity-only updates', () => {
+    const first = makeSession({
+      id: 'same-id',
+      status: 'waiting',
+      lastActivity: new Date('2024-01-01T00:00:00.000Z').toISOString(),
+    })
+    const second = {
+      ...first,
+      lastActivity: new Date('2024-01-01T00:00:30.000Z').toISOString(),
+    }
+
+    useSessionStore.getState().setSessions([first])
+    useSessionStore.getState().setSessions([second])
+
+    expect(useSessionStore.getState().sessions[0]?.lastActivity).toBe(
+      second.lastActivity
+    )
+  })
+
   test('setConnectionStatus and error update state', () => {
     useSessionStore.getState().setConnectionStatus('connected')
     useSessionStore.getState().setConnectionError('boom')

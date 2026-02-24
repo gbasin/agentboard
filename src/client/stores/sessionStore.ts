@@ -8,27 +8,37 @@ import { createTabStorage } from '../utils/storage'
 const SESSION_PERSIST_KEY = 'agentboard-session'
 const tabStorage = createTabStorage(SESSION_PERSIST_KEY)
 
-/** Compare two session arrays for structural equality (excluding volatile fields). */
+function sessionsEqualById(a: Session, b: Session): boolean {
+  return (
+    a.id === b.id &&
+    a.name === b.name &&
+    a.tmuxWindow === b.tmuxWindow &&
+    a.projectPath === b.projectPath &&
+    a.status === b.status &&
+    a.lastActivity === b.lastActivity &&
+    a.createdAt === b.createdAt &&
+    a.source === b.source &&
+    a.host === b.host &&
+    a.remote === b.remote &&
+    a.command === b.command &&
+    a.agentType === b.agentType &&
+    a.agentSessionId === b.agentSessionId &&
+    a.agentSessionName === b.agentSessionName &&
+    a.logFilePath === b.logFilePath &&
+    a.isPinned === b.isPinned &&
+    a.lastUserMessage === b.lastUserMessage
+  )
+}
+
+/** Compare two session arrays for structural equality, ignoring order. */
 function sessionsEqual(a: Session[], b: Session[]): boolean {
   if (a.length !== b.length) return false
-  for (let i = 0; i < a.length; i++) {
-    const sa = a[i], sb = b[i]
-    if (
-      sa.id !== sb.id ||
-      sa.name !== sb.name ||
-      sa.status !== sb.status ||
-      sa.projectPath !== sb.projectPath ||
-      sa.source !== sb.source ||
-      sa.host !== sb.host ||
-      sa.remote !== sb.remote ||
-      sa.command !== sb.command ||
-      sa.agentType !== sb.agentType ||
-      sa.agentSessionId !== sb.agentSessionId ||
-      sa.agentSessionName !== sb.agentSessionName ||
-      sa.logFilePath !== sb.logFilePath ||
-      sa.isPinned !== sb.isPinned ||
-      sa.lastUserMessage !== sb.lastUserMessage
-    ) return false
+  const byId = new Map(a.map((session) => [session.id, session]))
+  for (const next of b) {
+    const current = byId.get(next.id)
+    if (!current || !sessionsEqualById(current, next)) {
+      return false
+    }
   }
   return true
 }
@@ -88,8 +98,8 @@ export const useSessionStore = create<SessionState>()(
         const currentSessions = state.sessions
         const exitingSessions = state.exitingSessions
 
-        // Skip redundant updates that would disrupt active exit animations.
-        // Excludes lastActivity (changes every ~2s), tmuxWindow and createdAt (immutable).
+        // Skip redundant snapshots to avoid unnecessary re-renders/animation churn.
+        // Keep activity timestamps in equality so status sorting and badges stay fresh.
         if (state.hasLoaded && sessionsEqual(currentSessions, sessions)) {
           return
         }
