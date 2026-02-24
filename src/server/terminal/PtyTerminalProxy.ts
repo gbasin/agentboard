@@ -18,6 +18,14 @@ class PtyTerminalProxy extends TerminalProxyBase {
     return this.clientTty
   }
 
+  resolveEffectiveTarget(target: string): string {
+    return resolveGroupedSessionSwitchTarget(
+      target,
+      this.options.baseSession,
+      this.options.sessionName
+    )
+  }
+
   write(data: string): void {
     this.process?.terminal?.write(data)
   }
@@ -230,11 +238,7 @@ class PtyTerminalProxy extends TerminalProxyBase {
       )
     }
 
-    const effectiveTarget = resolveGroupedSessionSwitchTarget(
-      target,
-      this.options.baseSession,
-      this.options.sessionName
-    )
+    const effectiveTarget = this.resolveEffectiveTarget(target)
     this.state = TerminalState.SWITCHING
     this.outputSuppressed = true
     const startedAt = this.now()

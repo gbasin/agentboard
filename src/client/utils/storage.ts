@@ -67,12 +67,13 @@ export function createTabStorage(expectedKey: string): StateStorage {
 
   const assertExpectedKey = (key: string) => {
     const metaEnv = (import.meta as { env?: { DEV?: boolean } }).env
+    const bunMain = (globalThis as { Bun?: { main?: string } }).Bun?.main ?? ''
+    const isBunTestRuntime = /\.test\.[cm]?[jt]sx?$/.test(bunMain)
     const isDev =
       typeof metaEnv?.DEV === 'boolean'
         ? metaEnv.DEV
-        : typeof process !== 'undefined'
-          ? process.env.NODE_ENV !== 'production'
-          : false
+        : isBunTestRuntime ||
+          (typeof process !== 'undefined' && process.env.NODE_ENV !== 'production')
 
     if (isDev && key !== expectedKey) {
       throw new Error(

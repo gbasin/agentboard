@@ -241,6 +241,17 @@ class TerminalProxyMock {
     return Promise.resolve(true)
   }
 
+  resolveEffectiveTarget(target: string) {
+    if (target === this.options.baseSession) {
+      return this.options.sessionName
+    }
+    const prefix = `${this.options.baseSession}:`
+    if (target.startsWith(prefix)) {
+      return `${this.options.sessionName}:${target.slice(prefix.length)}`
+    }
+    return target
+  }
+
   write(data: string) {
     this.writes.push(data)
   }

@@ -22,7 +22,6 @@ import {
   TerminalProxyError,
 } from './terminal'
 import type { ITerminalProxy } from './terminal'
-import { resolveGroupedSessionSwitchTarget } from './terminal/groupedSessionTarget'
 import { resolveProjectPath } from './paths'
 import {
   INACTIVE_MAX_AGE_MIN_HOURS,
@@ -1995,18 +1994,6 @@ function isTerminalAttachCurrent(ws: ServerWebSocket<WSData>, attachSeq: number)
   return ws.data.terminalAttachSeq === attachSeq
 }
 
-function resolveAttachEffectiveTarget(terminal: ITerminalProxy, target: string): string {
-  if (terminal.getMode() !== 'pty') {
-    return target
-  }
-
-  return resolveGroupedSessionSwitchTarget(
-    target,
-    config.tmuxSession,
-    terminal.getSessionName()
-  )
-}
-
 async function ensurePersistentTerminal(
   ws: ServerWebSocket<WSData>,
   attachSeq: number
@@ -2236,7 +2223,7 @@ async function attachTerminalPersistent(
     terminal.resize(cols, rows)
   }
 
-  const effectiveTarget = resolveAttachEffectiveTarget(terminal, target)
+  const effectiveTarget = terminal.resolveEffectiveTarget(target)
 
   // Capture scrollback history BEFORE switching to avoid race with live output
   const history = session.remote && session.host

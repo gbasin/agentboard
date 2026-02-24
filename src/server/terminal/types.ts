@@ -52,6 +52,7 @@ interface TerminalProxyOptions {
 interface ITerminalProxy {
   start(): Promise<void>
   switchTo(target: string, onReady?: () => void): Promise<boolean>
+  resolveEffectiveTarget(target: string): string
   write(data: string): void
   resize(cols: number, rows: number): void
   dispose(): Promise<void>
