@@ -8,6 +8,31 @@ import { createTabStorage } from '../utils/storage'
 const SESSION_PERSIST_KEY = 'agentboard-session'
 const tabStorage = createTabStorage(SESSION_PERSIST_KEY)
 
+/** Compare two session arrays for structural equality (excluding volatile fields). */
+function sessionsEqual(a: Session[], b: Session[]): boolean {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    const sa = a[i], sb = b[i]
+    if (
+      sa.id !== sb.id ||
+      sa.name !== sb.name ||
+      sa.status !== sb.status ||
+      sa.projectPath !== sb.projectPath ||
+      sa.source !== sb.source ||
+      sa.host !== sb.host ||
+      sa.remote !== sb.remote ||
+      sa.command !== sb.command ||
+      sa.agentType !== sb.agentType ||
+      sa.agentSessionId !== sb.agentSessionId ||
+      sa.agentSessionName !== sb.agentSessionName ||
+      sa.logFilePath !== sb.logFilePath ||
+      sa.isPinned !== sb.isPinned ||
+      sa.lastUserMessage !== sb.lastUserMessage
+    ) return false
+  }
+  return true
+}
+
 export type ConnectionStatus =
   | 'connecting'
   | 'connected'
@@ -62,6 +87,12 @@ export const useSessionStore = create<SessionState>()(
         const selected = state.selectedSessionId
         const currentSessions = state.sessions
         const exitingSessions = state.exitingSessions
+
+        // Skip redundant updates that would disrupt active exit animations.
+        // Excludes lastActivity (changes every ~2s), tmuxWindow and createdAt (immutable).
+        if (state.hasLoaded && sessionsEqual(currentSessions, sessions)) {
+          return
+        }
 
         // Detect sessions removed by external sources (other tabs, devices, tmux).
         // Mark them as exiting so SessionList can animate them out gracefully.
