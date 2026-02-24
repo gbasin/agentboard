@@ -241,6 +241,17 @@ class TerminalProxyMock {
     return Promise.resolve(true)
   }
 
+  resolveEffectiveTarget(target: string) {
+    if (target === this.options.baseSession) {
+      return this.options.sessionName
+    }
+    const prefix = `${this.options.baseSession}:`
+    if (target.startsWith(prefix)) {
+      return `${this.options.sessionName}:${target.slice(prefix.length)}`
+    }
+    return target
+  }
+
   write(data: string) {
     this.writes.push(data)
   }
@@ -251,6 +262,14 @@ class TerminalProxyMock {
 
   dispose() {
     this.disposed = true
+  }
+
+  getMode() {
+    return 'pty' as const
+  }
+
+  getSessionName() {
+    return this.options.sessionName
   }
 
   emitData(data: string) {
@@ -1789,6 +1808,67 @@ describe('server message handlers', () => {
       (message) => message.type === 'terminal-output'
     ).length
     expect(outputCountAfter).toBe(outputCount)
+  })
+
+  test('session-only attach stays valid and tracks grouped target in pty mode', async () => {
+    const { serveOptions, registryInstance } = await loadIndex()
+    registryInstance.sessions = [baseSession]
+
+    const { ws } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) {
+      throw new Error('WebSocket handlers not configured')
+    }
+
+    let captureTarget = ''
+    let copyModeTarget = ''
+    spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
+      const command = Array.isArray(args[0]) ? args[0] : [String(args[0])]
+      if (command[0] === 'tmux' && command[1] === 'capture-pane') {
+        captureTarget = command[3] ?? ''
+      }
+      if (command[0] === 'tmux' && command[1] === 'display-message') {
+        copyModeTarget = command[4] ?? ''
+        return {
+          exitCode: 0,
+          stdout: Buffer.from('0\n'),
+          stderr: Buffer.from(''),
+        } as ReturnType<typeof Bun.spawnSync>
+      }
+      return {
+        exitCode: 0,
+        stdout: Buffer.from(''),
+        stderr: Buffer.from(''),
+      } as ReturnType<typeof Bun.spawnSync>
+    }) as typeof Bun.spawnSync
+
+    websocket.open?.(ws as never)
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({
+        type: 'terminal-attach',
+        sessionId: baseSession.id,
+        tmuxTarget: 'agentboard',
+      })
+    )
+
+    await new Promise((r) => setTimeout(r, 0))
+
+    const attached = ws.data.terminal
+    if (!attached) {
+      throw new Error('Expected terminal to be created')
+    }
+
+    const groupedTarget = `${configState.tmuxSession}-ws-${ws.data.connectionId}`
+    expect(attached.switchTargets).toEqual(['agentboard'])
+    expect(captureTarget).toBe(groupedTarget)
+    expect(ws.data.currentTmuxTarget).toBe(groupedTarget)
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({ type: 'tmux-check-copy-mode', sessionId: baseSession.id })
+    )
+    expect(copyModeTarget).toBe(groupedTarget)
   })
 
   test('validates tmux target on terminal attach', async () => {

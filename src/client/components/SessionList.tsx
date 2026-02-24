@@ -28,6 +28,7 @@ import { getSessionOrderKey, getUniqueHosts, getUniqueProjects, sortSessions } f
 import { formatRelativeTime } from '../utils/time'
 import { getPathLeaf } from '../utils/sessionLabel'
 import { getSessionIdShort } from '../utils/sessionId'
+import { composeSortableTransform } from '../utils/sortableTransform'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useSessionStore } from '../stores/sessionStore'
 import { getEffectiveModifier, getModifierDisplay } from '../utils/device'
@@ -85,12 +86,17 @@ export default function SessionList({
   onSetPinned,
 }: SessionListProps) {
   useTimestampRefresh()
+  const isSafari = useMemo(() => {
+    if (typeof navigator === 'undefined') return false
+    return /^((?!chrome|android).)*safari/i.test(navigator.userAgent)
+  }, [])
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
   const showInactive = useSettingsStore((state) => state.inactiveSessionsExpanded)
   const setShowInactive = useSettingsStore((state) => state.setInactiveSessionsExpanded)
   const [previewSession, setPreviewSession] = useState<AgentSession | null>(null)
   const [inactiveLimit, setInactiveLimit] = useState(20)
   const prefersReducedMotion = useReducedMotion()
+  const useSafariLayoutFallback = isSafari && !prefersReducedMotion
 
   // Reset pagination when inactive panel is collapsed
   useEffect(() => {
@@ -501,7 +507,10 @@ export default function SessionList({
               strategy={verticalListSortingStrategy}
             >
               <div key={filterKey}>
-                <AnimatePresence initial={false} mode="popLayout">
+                <AnimatePresence
+                  initial={false}
+                  mode={useSafariLayoutFallback ? 'sync' : 'popLayout'}
+                >
                   {filteredSessions.map((session, index) => {
                     const isTrulyNew = newlyActiveIds.has(session.id)
                     const isFilteredIn = newlyFilteredInIds.has(session.id)
@@ -523,6 +532,7 @@ export default function SessionList({
                         isNew={isNew}
                         exitDuration={EXIT_DURATION}
                         prefersReducedMotion={prefersReducedMotion}
+                        useSafariLayoutFallback={useSafariLayoutFallback}
                         layoutAnimationsDisabled={layoutAnimationsDisabled}
                         isSelected={session.id === selectedSessionId}
                         isEditing={session.id === editingSessionId}
@@ -628,6 +638,7 @@ interface SortableSessionItemProps {
   isNew: boolean
   exitDuration: number
   prefersReducedMotion: boolean | null
+  useSafariLayoutFallback: boolean
   layoutAnimationsDisabled: boolean
   isSelected: boolean
   isEditing: boolean
@@ -650,6 +661,7 @@ const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>
   isNew,
   exitDuration,
   prefersReducedMotion,
+  useSafariLayoutFallback,
   layoutAnimationsDisabled,
   isSelected,
   isEditing,
@@ -703,27 +715,53 @@ const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>
       ref={setRefs}
       style={{ ...style, overflow: 'hidden' }}
       className="relative"
-      layout={!prefersReducedMotion && !isDragging && !layoutAnimationsDisabled && !isNew}
-      transformTemplate={(_, generatedTransform) => {
-        if (!dndTransform) return generatedTransform
-        if (!generatedTransform || generatedTransform === 'none') return dndTransform
-        return `${dndTransform} ${generatedTransform}`
-      }}
-      initial={prefersReducedMotion || !isNew ? false : { opacity: 0, scale: 0.97 }}
+      layout={!prefersReducedMotion && !isDragging && !layoutAnimationsDisabled && !isNew
+        ? (useSafariLayoutFallback ? false : true)
+        : false}
+      transformTemplate={(_, generatedTransform) =>
+        composeSortableTransform({
+          useSafariLayoutFallback,
+          isDragging,
+          dndTransform,
+          generatedTransform,
+        })
+      }
+      initial={
+        prefersReducedMotion || !isNew
+          ? false
+          : useSafariLayoutFallback
+            ? { opacity: 0 }
+            : { opacity: 0, scale: 0.97 }
+      }
       animate={
         prefersReducedMotion
           ? { opacity: 1 }
           : isNew
-            ? { opacity: 1, scale: [1.02, 0.99, 1] }
+            ? useSafariLayoutFallback
+              ? { opacity: 1 }
+              : { opacity: 1, scale: [1.02, 0.99, 1] }
             : { opacity: 1, scale: 1 }
       }
-      exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0, scale: 0.97 }}
-      transition={prefersReducedMotion ? { duration: 0 } : {
-        layout: { type: 'spring', stiffness: 500, damping: 35 },
-        opacity: { duration: exitDuration / 1000 },
-        scale: { duration: exitDuration / 1000, ease: [0.34, 1.56, 0.64, 1] },
-        height: { duration: exitDuration / 1000, ease: 'easeOut' },
-      }}
+      exit={prefersReducedMotion
+        ? { opacity: 0 }
+        : useSafariLayoutFallback
+          ? { opacity: 0, height: 0 }
+          : { opacity: 0, height: 0, scale: 0.97 }}
+      transition={
+        prefersReducedMotion
+          ? { duration: 0 }
+          : useSafariLayoutFallback
+            ? {
+              opacity: { duration: exitDuration / 1000 },
+              height: { duration: exitDuration / 1000, ease: 'easeOut' },
+            }
+            : {
+              layout: { type: 'spring', stiffness: 500, damping: 35 },
+              opacity: { duration: exitDuration / 1000 },
+              scale: { duration: exitDuration / 1000, ease: [0.34, 1.56, 0.64, 1] },
+              height: { duration: exitDuration / 1000, ease: 'easeOut' },
+            }
+      }
       {...attributes}
       {...listeners}
     >

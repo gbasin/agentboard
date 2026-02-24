@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { safeStorage } from '../utils/storage'
+import { safeStorage, createTabStorage } from '../utils/storage'
 
 const globalAny = globalThis as any
 const originalLocalStorage = globalAny.localStorage
@@ -69,5 +69,73 @@ describe('safeStorage', () => {
 
     safeStorage.removeItem('fallback-key')
     expect(safeStorage.getItem('fallback-key')).toBeNull()
+  })
+})
+
+describe('createTabStorage', () => {
+  test('first getItem reads from localStorage (hydration)', () => {
+    const { storage, store } = createStorage()
+    store.set('key', 'from-localstorage')
+    globalAny.localStorage = storage
+
+    const tab = createTabStorage('key')
+    expect(tab.getItem('key')).toBe('from-localstorage')
+  })
+
+  test('after hydration, getItem reads from in-memory (ignores localStorage)', () => {
+    const { storage, store } = createStorage()
+    store.set('key', 'initial')
+    globalAny.localStorage = storage
+
+    const tab = createTabStorage('key')
+    // Hydration read
+    tab.getItem('key')
+
+    // External localStorage change (simulating another tab writing)
+    store.set('key', 'changed-by-other-tab')
+
+    // Should still return the in-memory value, not the updated localStorage
+    expect(tab.getItem('key')).toBe('initial')
+  })
+
+  test('setItem writes to both in-memory and localStorage', () => {
+    const { storage, store } = createStorage()
+    globalAny.localStorage = storage
+
+    const tab = createTabStorage('key')
+    // Trigger hydration
+    tab.getItem('key')
+
+    tab.setItem('key', 'new-value')
+    // In-memory read
+    expect(tab.getItem('key')).toBe('new-value')
+    // localStorage also updated
+    expect(store.get('key')).toBe('new-value')
+  })
+
+  test('removeItem clears both in-memory and localStorage', () => {
+    const { storage, store } = createStorage()
+    store.set('key', 'value')
+    globalAny.localStorage = storage
+
+    const tab = createTabStorage('key')
+    // Hydrate then remove
+    tab.getItem('key')
+    tab.removeItem('key')
+
+    expect(tab.getItem('key')).toBeNull()
+    expect(store.has('key')).toBe(false)
+  })
+
+  test('returns null gracefully when localStorage is unavailable', () => {
+    delete globalAny.localStorage
+
+    const tab = createTabStorage('missing')
+    expect(tab.getItem('missing')).toBeNull()
+  })
+
+  test('throws when called with an unexpected key in non-production environments', () => {
+    const tab = createTabStorage('agentboard-session')
+    expect(() => tab.getItem('unexpected-key')).toThrow(/unexpected key/)
   })
 })

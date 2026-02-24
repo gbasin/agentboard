@@ -1,5 +1,6 @@
 import { TerminalProxyBase } from './TerminalProxyBase'
 import { TerminalProxyError, TerminalState } from './types'
+import { resolveGroupedSessionSwitchTarget } from './groupedSessionTarget'
 
 class PtyTerminalProxy extends TerminalProxyBase {
   private process: ReturnType<typeof Bun.spawn> | null = null
@@ -15,6 +16,14 @@ class PtyTerminalProxy extends TerminalProxyBase {
 
   getClientTty(): string | null {
     return this.clientTty
+  }
+
+  resolveEffectiveTarget(target: string): string {
+    return resolveGroupedSessionSwitchTarget(
+      target,
+      this.options.baseSession,
+      this.options.sessionName
+    )
   }
 
   write(data: string): void {
@@ -229,6 +238,7 @@ class PtyTerminalProxy extends TerminalProxyBase {
       )
     }
 
+    const effectiveTarget = this.resolveEffectiveTarget(target)
     this.state = TerminalState.SWITCHING
     this.outputSuppressed = true
     const startedAt = this.now()
@@ -236,12 +246,13 @@ class PtyTerminalProxy extends TerminalProxyBase {
     this.logEvent('terminal_switch_attempt', {
       sessionName: this.options.sessionName,
       tmuxWindow: target,
+      effectiveTarget,
       clientTty: this.clientTty,
       mode: this.getMode(),
     })
 
     try {
-      this.runTmux(['switch-client', '-c', this.clientTty, '-t', target])
+      this.runTmux(['switch-client', '-c', this.clientTty, '-t', effectiveTarget])
       if (onReady) {
         try {
           onReady()
@@ -250,7 +261,7 @@ class PtyTerminalProxy extends TerminalProxyBase {
         }
       }
       this.outputSuppressed = false
-      this.setCurrentWindow(target)
+      this.setCurrentWindow(effectiveTarget)
       try {
         this.runTmux(['refresh-client', '-t', this.clientTty])
       } catch {
@@ -260,6 +271,7 @@ class PtyTerminalProxy extends TerminalProxyBase {
       this.logEvent('terminal_switch_success', {
         sessionName: this.options.sessionName,
         tmuxWindow: target,
+        effectiveTarget,
         clientTty: this.clientTty,
         durationMs,
         mode: this.getMode(),
@@ -272,6 +284,7 @@ class PtyTerminalProxy extends TerminalProxyBase {
       this.logEvent('terminal_switch_failure', {
         sessionName: this.options.sessionName,
         tmuxWindow: target,
+        effectiveTarget,
         clientTty: this.clientTty,
         error: error instanceof Error ? error.message : 'tmux switch failed',
         mode: this.getMode(),

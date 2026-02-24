@@ -3,7 +3,45 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 import type { AgentSession, HostStatus, Session } from '@shared/types'
 import { sortSessions } from '../utils/sessions'
 import { useSettingsStore } from './settingsStore'
-import { safeStorage } from '../utils/storage'
+import { createTabStorage } from '../utils/storage'
+
+const SESSION_PERSIST_KEY = 'agentboard-session'
+const tabStorage = createTabStorage(SESSION_PERSIST_KEY)
+
+function sessionsEqualById(a: Session, b: Session): boolean {
+  return (
+    a.id === b.id &&
+    a.name === b.name &&
+    a.tmuxWindow === b.tmuxWindow &&
+    a.projectPath === b.projectPath &&
+    a.status === b.status &&
+    a.lastActivity === b.lastActivity &&
+    a.createdAt === b.createdAt &&
+    a.source === b.source &&
+    a.host === b.host &&
+    a.remote === b.remote &&
+    a.command === b.command &&
+    a.agentType === b.agentType &&
+    a.agentSessionId === b.agentSessionId &&
+    a.agentSessionName === b.agentSessionName &&
+    a.logFilePath === b.logFilePath &&
+    a.isPinned === b.isPinned &&
+    a.lastUserMessage === b.lastUserMessage
+  )
+}
+
+/** Compare two session arrays for structural equality, ignoring order. */
+function sessionsEqual(a: Session[], b: Session[]): boolean {
+  if (a.length !== b.length) return false
+  const byId = new Map(a.map((session) => [session.id, session]))
+  for (const next of b) {
+    const current = byId.get(next.id)
+    if (!current || !sessionsEqualById(current, next)) {
+      return false
+    }
+  }
+  return true
+}
 
 export type ConnectionStatus =
   | 'connecting'
@@ -59,6 +97,12 @@ export const useSessionStore = create<SessionState>()(
         const selected = state.selectedSessionId
         const currentSessions = state.sessions
         const exitingSessions = state.exitingSessions
+
+        // Skip redundant snapshots to avoid unnecessary re-renders/animation churn.
+        // Keep activity timestamps in equality so status sorting and badges stay fresh.
+        if (state.hasLoaded && sessionsEqual(currentSessions, sessions)) {
+          return
+        }
 
         // Detect sessions removed by external sources (other tabs, devices, tmux).
         // Mark them as exiting so SessionList can animate them out gracefully.
@@ -135,8 +179,8 @@ export const useSessionStore = create<SessionState>()(
       },
     }),
     {
-      name: 'agentboard-session',
-      storage: createJSONStorage(() => safeStorage),
+      name: SESSION_PERSIST_KEY,
+      storage: createJSONStorage(() => tabStorage),
       partialize: (state) => ({ selectedSessionId: state.selectedSessionId }),
     }
   )
