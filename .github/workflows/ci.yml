@@ -22,6 +22,9 @@ jobs:
       - name: Dependency risk scan
         run: bun run deps:risk:ci
 
+      - name: Security foot-gun scan
+        run: bun run security:footgun:ci
+
       - name: Lint
         run: bun run lint
 
