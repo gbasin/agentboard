@@ -553,7 +553,10 @@ export default function SessionList({
                         showLastUserMessage={showLastUserMessage}
                         showHostInfo={showHostInfo}
                         dropIndicator={showDropIndicator}
-                        onSelect={() => onSelect(session.id)}
+                        onSelect={() => {
+                          useSessionStore.getState().markSessionRead(session.id)
+                          onSelect(session.id)
+                        }}
                         onStartEdit={canControl ? () => setEditingSessionId(session.id) : undefined}
                         onCancelEdit={() => setEditingSessionId(null)}
                         onRename={(newName) => handleRename(session.id, newName)}
@@ -867,6 +870,8 @@ function SessionRow({
   // Track previous status for transition animation
   const prevStatusRef = useRef<Session['status']>(session.status)
   const [isPulsingComplete, setIsPulsingComplete] = useState(false)
+  const markSessionUnread = useSessionStore((state) => state.markSessionUnread)
+  const isUnread = useSessionStore((state) => state.unreadSessionIds.has(session.id))
 
   useEffect(() => {
     const prevStatus = prevStatusRef.current
@@ -875,11 +880,15 @@ function SessionRow({
     // Detect transition from working → waiting (not permission, which needs immediate attention)
     if (prevStatus === 'working' && currentStatus === 'waiting') {
       setIsPulsingComplete(true)
+      // Mark as unread if the user isn't currently viewing this session
+      if (!isSelected) {
+        markSessionUnread(session.id)
+      }
       // Don't update ref yet - will update when animation ends
     } else {
       prevStatusRef.current = currentStatus
     }
-  }, [session.status])
+  }, [session.status, isSelected, session.id, markSessionUnread])
 
   const handlePulseAnimationEnd = () => {
     setIsPulsingComplete(false)
@@ -1023,6 +1032,9 @@ function SessionRow({
             >
               {sessionIdPrefix}
             </span>
+          )}
+          {isUnread && !isSelected && (
+            <span className="unread-dot" aria-label="Unread" />
           )}
           {needsInput ? (
             <span

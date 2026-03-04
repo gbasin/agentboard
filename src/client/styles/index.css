@@ -309,6 +309,21 @@ body {
   animation: pulse-complete 5s ease-out;
 }
 
+/* Unread indicator dot for newly completed sessions */
+@keyframes unread-fade-in {
+  from { opacity: 0; transform: scale(0.5); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.unread-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: unread-fade-in 0.2s ease-out;
+  flex-shrink: 0;
+}
+
 /* Terminal styles */
 .xterm {
   font-family: "JetBrains Mono Variable", "JetBrains Mono", "SF Mono", "Fira Code", ui-monospace, monospace;
@@ -557,6 +572,10 @@ body {
 
   .pulse-approval,
   .pulse-complete {
+    animation: none;
+  }
+
+  .unread-dot {
     animation: none;
   }
 }
