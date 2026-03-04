@@ -124,7 +124,7 @@ export default function SettingsModal({
   const [showAddForm, setShowAddForm] = useState(false)
   const [newLabel, setNewLabel] = useState('')
   const [newCommand, setNewCommand] = useState('')
-  const [newAgentType, setNewAgentType] = useState<'claude' | 'codex' | ''>('')
+  const [newAgentType, setNewAgentType] = useState<'claude' | 'codex' | 'gemini' | ''>('')
   const reenableTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -160,11 +160,11 @@ export default function SettingsModal({
       fetch('/api/settings/tmux-mouse-mode')
         .then((res) => res.json())
         .then((data: { enabled: boolean }) => setTmuxMouseMode(data.enabled))
-        .catch(() => {})
+        .catch(() => { })
       fetch('/api/settings/inactive-max-age-hours')
         .then((res) => res.json())
         .then((data: { hours: number }) => setInactiveMaxAgeHours(data.hours))
-        .catch(() => {})
+        .catch(() => { })
       // Disable terminal textarea when modal opens to prevent keyboard capture
       if (typeof document !== 'undefined') {
         const textarea = document.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement | null
@@ -347,508 +347,510 @@ export default function SettingsModal({
 
         <div className="flex-1 overflow-y-auto px-6 pb-4">
 
-        <div className="mt-5 space-y-4">
-          <div>
-            <label className="mb-1.5 block text-xs text-secondary">
-              Default Project Directory
-            </label>
-            <input
-              value={draftDir}
-              onChange={(event) => setDraftDir(event.target.value)}
-              placeholder={DEFAULT_PROJECT_DIR}
-              className="input"
-              autoFocus
-            />
-          </div>
-
-          {/* Command Presets Section */}
-          <div className="border-t border-border pt-4">
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-xs text-secondary">
-                Command Presets
+          <div className="mt-5 space-y-4">
+            <div>
+              <label className="mb-1.5 block text-xs text-secondary">
+                Default Project Directory
               </label>
-              <select
-                value={draftDefaultPresetId}
-                onChange={(e) => setDraftDefaultPresetId(e.target.value)}
-                className="input text-xs py-1 px-2 w-auto"
-              >
-                {draftPresets.map(p => (
-                  <option key={p.id} value={p.id}>{p.label}</option>
-                ))}
-              </select>
+              <input
+                value={draftDir}
+                onChange={(event) => setDraftDir(event.target.value)}
+                placeholder={DEFAULT_PROJECT_DIR}
+                className="input"
+                autoFocus
+              />
             </div>
-            <p className="text-[10px] text-muted mb-3">
-              Default preset is pre-selected when creating new sessions.
-            </p>
 
-            <div className="space-y-3">
-              {draftPresets.map(preset => (
-                <div
-                  key={preset.id}
-                  className="border border-border p-3 space-y-2"
+            {/* Command Presets Section */}
+            <div className="border-t border-border pt-4">
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs text-secondary">
+                  Command Presets
+                </label>
+                <select
+                  value={draftDefaultPresetId}
+                  onChange={(e) => setDraftDefaultPresetId(e.target.value)}
+                  className="input text-xs py-1 px-2 w-auto"
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
+                  {draftPresets.map(p => (
+                    <option key={p.id} value={p.id}>{p.label}</option>
+                  ))}
+                </select>
+              </div>
+              <p className="text-[10px] text-muted mb-3">
+                Default preset is pre-selected when creating new sessions.
+              </p>
+
+              <div className="space-y-3">
+                {draftPresets.map(preset => (
+                  <div
+                    key={preset.id}
+                    className="border border-border p-3 space-y-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <input
+                          value={preset.label}
+                          onChange={(e) => handleUpdatePreset(preset.id, { label: e.target.value })}
+                          className="input text-sm py-1 px-2 w-32"
+                          placeholder="Label"
+                        />
+                      </div>
+                      {!preset.isBuiltIn && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeletePreset(preset.id)}
+                          className="btn text-xs px-2 py-1 text-error hover:bg-error/10"
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] text-muted block mb-1">Command</label>
                       <input
-                        value={preset.label}
-                        onChange={(e) => handleUpdatePreset(preset.id, { label: e.target.value })}
-                        className="input text-sm py-1 px-2 w-32"
-                        placeholder="Label"
+                        value={preset.command}
+                        onChange={(e) => handleUpdatePreset(preset.id, { command: e.target.value })}
+                        className="input text-xs py-1 px-2 font-mono w-full"
+                        placeholder="command --flags"
                       />
                     </div>
+
                     {!preset.isBuiltIn && (
-                      <button
-                        type="button"
-                        onClick={() => handleDeletePreset(preset.id)}
-                        className="btn text-xs px-2 py-1 text-error hover:bg-error/10"
-                      >
-                        Delete
-                      </button>
+                      <div>
+                        <label className="text-[10px] text-muted block mb-1">Icon</label>
+                        <select
+                          value={preset.agentType || ''}
+                          onChange={(e) => handleUpdatePreset(preset.id, {
+                            agentType: e.target.value as 'claude' | 'codex' | 'gemini' | undefined || undefined
+                          })}
+                          className="input text-xs py-1 px-2 w-auto"
+                        >
+                          <option value="">Terminal</option>
+                          <option value="claude">Claude</option>
+                          <option value="codex">Codex</option>
+                          <option value="gemini">Gemini</option>
+                        </select>
+                      </div>
                     )}
                   </div>
-
-                  <div>
-                    <label className="text-[10px] text-muted block mb-1">Command</label>
-                    <input
-                      value={preset.command}
-                      onChange={(e) => handleUpdatePreset(preset.id, { command: e.target.value })}
-                      className="input text-xs py-1 px-2 font-mono w-full"
-                      placeholder="command --flags"
-                    />
-                  </div>
-
-                  {!preset.isBuiltIn && (
-                    <div>
-                      <label className="text-[10px] text-muted block mb-1">Icon</label>
-                      <select
-                        value={preset.agentType || ''}
-                        onChange={(e) => handleUpdatePreset(preset.id, {
-                          agentType: e.target.value as 'claude' | 'codex' | undefined || undefined
-                        })}
-                        className="input text-xs py-1 px-2 w-auto"
-                      >
-                        <option value="">Terminal</option>
-                        <option value="claude">Claude</option>
-                        <option value="codex">Codex</option>
-                      </select>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            {/* Add Preset Form */}
-            {showAddForm ? (
-              <div className="mt-3 border border-border p-3 space-y-2">
-                <div className="text-xs text-secondary mb-2">New Preset</div>
-                <input
-                  value={newLabel}
-                  onChange={(e) => setNewLabel(e.target.value)}
-                  className="input text-xs py-1 px-2 w-full"
-                  placeholder="Label"
-                />
-                <input
-                  value={newCommand}
-                  onChange={(e) => setNewCommand(e.target.value)}
-                  className="input text-xs py-1 px-2 font-mono w-full"
-                  placeholder="command --flags"
-                />
-                <div className="flex items-center gap-2">
-                  <select
-                    value={newAgentType}
-                    onChange={(e) => setNewAgentType(e.target.value as 'claude' | 'codex' | '')}
-                    className="input text-xs py-1 px-2 w-auto"
-                  >
-                    <option value="">Terminal Icon</option>
-                    <option value="claude">Claude Icon</option>
-                    <option value="codex">Codex Icon</option>
-                  </select>
-                  <div className="flex-1" />
-                  <button
-                    type="button"
-                    onClick={() => setShowAddForm(false)}
-                    className="btn text-xs px-2 py-1"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleAddPreset}
-                    disabled={!newLabel.trim() || !newCommand.trim()}
-                    className="btn btn-primary text-xs px-2 py-1"
-                  >
-                    Add
-                  </button>
-                </div>
+                ))}
               </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setShowAddForm(true)}
-                disabled={!canAddPreset}
-                className="btn text-xs mt-3 w-full"
-              >
-                {canAddPreset ? '+ Add Preset' : `Max ${MAX_PRESETS} presets`}
-              </button>
-            )}
-          </div>
 
-          <div className="border-t border-border pt-4">
-            <label className="mb-2 block text-xs text-secondary">
-              Session List Order
-            </label>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                className={`btn flex-1 ${draftSortMode === 'created' ? 'btn-primary' : ''}`}
-                onClick={() => setDraftSortMode('created')}
-              >
-                Created
-              </button>
-              <button
-                type="button"
-                className={`btn flex-1 ${draftSortMode === 'status' ? 'btn-primary' : ''}`}
-                onClick={() => setDraftSortMode('status')}
-              >
-                Status
-              </button>
-              <button
-                type="button"
-                className={`btn flex-1 ${draftSortMode === 'manual' ? 'btn-primary' : ''}`}
-                onClick={() => setDraftSortMode('manual')}
-              >
-                Manual
-              </button>
+              {/* Add Preset Form */}
+              {showAddForm ? (
+                <div className="mt-3 border border-border p-3 space-y-2">
+                  <div className="text-xs text-secondary mb-2">New Preset</div>
+                  <input
+                    value={newLabel}
+                    onChange={(e) => setNewLabel(e.target.value)}
+                    className="input text-xs py-1 px-2 w-full"
+                    placeholder="Label"
+                  />
+                  <input
+                    value={newCommand}
+                    onChange={(e) => setNewCommand(e.target.value)}
+                    className="input text-xs py-1 px-2 font-mono w-full"
+                    placeholder="command --flags"
+                  />
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={newAgentType}
+                      onChange={(e) => setNewAgentType(e.target.value as 'claude' | 'codex' | 'gemini' | '')}
+                      className="input text-xs py-1 px-2 w-auto"
+                    >
+                      <option value="">Terminal Icon</option>
+                      <option value="claude">Claude Icon</option>
+                      <option value="codex">Codex Icon</option>
+                      <option value="gemini">Gemini Icon</option>
+                    </select>
+                    <div className="flex-1" />
+                    <button
+                      type="button"
+                      onClick={() => setShowAddForm(false)}
+                      className="btn text-xs px-2 py-1"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleAddPreset}
+                      disabled={!newLabel.trim() || !newCommand.trim()}
+                      className="btn btn-primary text-xs px-2 py-1"
+                    >
+                      Add
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowAddForm(true)}
+                  disabled={!canAddPreset}
+                  className="btn text-xs mt-3 w-full"
+                >
+                  {canAddPreset ? '+ Add Preset' : `Max ${MAX_PRESETS} presets`}
+                </button>
+              )}
             </div>
-            <p className="mt-1.5 text-[10px] text-muted">
-              {draftSortMode === 'status'
-                ? 'Sessions auto-resort by status (waiting, working, unknown)'
-                : draftSortMode === 'manual'
-                  ? 'Drag sessions to reorder manually'
-                  : 'Sessions stay in creation order'}
-            </p>
-          </div>
 
-          {draftSortMode === 'created' && (
-            <div>
+            <div className="border-t border-border pt-4">
               <label className="mb-2 block text-xs text-secondary">
-                Sort Direction
+                Session List Order
               </label>
               <div className="flex gap-2">
                 <button
                   type="button"
-                  className={`btn flex-1 ${draftSortDirection === 'desc' ? 'btn-primary' : ''}`}
-                  onClick={() => setDraftSortDirection('desc')}
+                  className={`btn flex-1 ${draftSortMode === 'created' ? 'btn-primary' : ''}`}
+                  onClick={() => setDraftSortMode('created')}
                 >
-                  Newest First
+                  Created
                 </button>
                 <button
                   type="button"
-                  className={`btn flex-1 ${draftSortDirection === 'asc' ? 'btn-primary' : ''}`}
-                  onClick={() => setDraftSortDirection('asc')}
+                  className={`btn flex-1 ${draftSortMode === 'status' ? 'btn-primary' : ''}`}
+                  onClick={() => setDraftSortMode('status')}
                 >
-                  Oldest First
+                  Status
                 </button>
-              </div>
-            </div>
-          )}
-
-          <div className="border-t border-border pt-4 space-y-3">
-            <label className="mb-1 block text-xs text-secondary">
-              Session List Details
-            </label>
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm text-primary">Project Name</div>
-                <div className="text-[10px] text-muted">
-                  Show the project folder name under each session.
-                </div>
-              </div>
-              <Switch
-                checked={draftShowProjectName}
-                onCheckedChange={setDraftShowProjectName}
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm text-primary">Last User Message</div>
-                <div className="text-[10px] text-muted">
-                  Show the most recent user input next to the project name.
-                </div>
-              </div>
-              <Switch
-                checked={draftShowLastUserMessage}
-                onCheckedChange={setDraftShowLastUserMessage}
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm text-primary">Session ID Prefix</div>
-                <div className="text-[10px] text-muted">
-                  Show first 5 characters of agent session IDs in the list.
-                </div>
-              </div>
-              <Switch
-                checked={draftShowSessionIdPrefix}
-                onCheckedChange={setDraftShowSessionIdSuffix}
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm text-primary">Inactive Sessions Lookback</div>
-                <div className="text-[10px] text-muted">
-                  Show inactive sessions from the last N hours ({INACTIVE_MAX_AGE_MIN_HOURS}-{INACTIVE_MAX_AGE_MAX_HOURS}).
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min={INACTIVE_MAX_AGE_MIN_HOURS}
-                  max={INACTIVE_MAX_AGE_MAX_HOURS}
-                  value={inactiveMaxAgeHours}
-                  onChange={(e) => {
-                    const val = parseInt(e.target.value, 10)
-                    if (val >= INACTIVE_MAX_AGE_MIN_HOURS && val <= INACTIVE_MAX_AGE_MAX_HOURS) {
-                      handleInactiveMaxAgeHoursChange(val)
-                    }
-                  }}
-                  disabled={inactiveMaxAgeHoursLoading}
-                  className="input text-xs py-1 px-2 w-16 text-center"
-                />
-                <span className="text-xs text-muted">hrs</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="border-t border-border pt-4 space-y-3">
-            <label className="mb-1 block text-xs text-secondary">
-              Notifications
-            </label>
-            <div className="flex items-center justify-between">
-              <div className="flex-1">
-                <div className="text-sm text-primary">Permission Sound</div>
-                <div className="text-[10px] text-muted">
-                  Play a ping when any session needs permission.
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => void playPermissionSound()}
-                  className="btn text-xs px-2 py-1"
+                  className={`btn flex-1 ${draftSortMode === 'manual' ? 'btn-primary' : ''}`}
+                  onClick={() => setDraftSortMode('manual')}
                 >
-                  Test
+                  Manual
                 </button>
-                <Switch
-                  checked={draftSoundOnPermission}
-                  onCheckedChange={(checked) => {
-                    setDraftSoundOnPermission(checked)
-                    if (checked) void primeAudio() // Unlock audio on user gesture
-                  }}
-                />
               </div>
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="flex-1">
-                <div className="text-sm text-primary">Idle Sound</div>
-                <div className="text-[10px] text-muted">
-                  Play a chime when a session finishes working.
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => void playIdleSound()}
-                  className="btn text-xs px-2 py-1"
-                >
-                  Test
-                </button>
-                <Switch
-                  checked={draftSoundOnIdle}
-                  onCheckedChange={(checked) => {
-                    setDraftSoundOnIdle(checked)
-                    if (checked) void primeAudio() // Unlock audio on user gesture
-                  }}
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="border-t border-border pt-4">
-            <label className="mb-2 block text-xs text-secondary">
-              Terminal Rendering
-            </label>
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm text-primary">WebGL Acceleration</div>
-                <div className="text-[10px] text-muted">
-                  GPU rendering for better performance. Turn off if text looks fuzzy or flickering.
-                </div>
-              </div>
-              <Switch
-                checked={draftUseWebGL}
-                onCheckedChange={setDraftUseWebGL}
-              />
-            </div>
-            {draftUseWebGL !== useWebGL && (
-              <p className="mt-2 text-[10px] text-approval">
-                Terminal will reload when saved
+              <p className="mt-1.5 text-[10px] text-muted">
+                {draftSortMode === 'status'
+                  ? 'Sessions auto-resort by status (waiting, working, unknown)'
+                  : draftSortMode === 'manual'
+                    ? 'Drag sessions to reorder manually'
+                    : 'Sessions stay in creation order'}
               </p>
+            </div>
+
+            {draftSortMode === 'created' && (
+              <div>
+                <label className="mb-2 block text-xs text-secondary">
+                  Sort Direction
+                </label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className={`btn flex-1 ${draftSortDirection === 'desc' ? 'btn-primary' : ''}`}
+                    onClick={() => setDraftSortDirection('desc')}
+                  >
+                    Newest First
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn flex-1 ${draftSortDirection === 'asc' ? 'btn-primary' : ''}`}
+                    onClick={() => setDraftSortDirection('asc')}
+                  >
+                    Oldest First
+                  </button>
+                </div>
+              </div>
             )}
 
-            <div className="mt-4 flex items-center justify-between">
-              <div>
-                <div className="text-sm text-primary">Mouse Mode</div>
-                <div className="text-[10px] text-muted">
-                  Enable tmux mouse mode for trackpad/scroll wheel support.
-                </div>
-              </div>
-              <Switch
-                checked={tmuxMouseMode}
-                onCheckedChange={handleTmuxMouseModeChange}
-                disabled={tmuxMouseModeLoading}
-              />
-            </div>
-
-            <div className="mt-4 flex items-center justify-between">
-              <div>
-                <div className="text-sm text-primary">Font Size</div>
-                <div className="text-[10px] text-muted">
-                  Terminal text size in pixels (6-24)
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setDraftFontSize(Math.max(6, draftFontSize - 1))}
-                  className="flex h-7 w-7 items-center justify-center rounded bg-surface border border-border text-secondary hover:bg-hover"
-                >
-                  <span className="text-sm font-bold">−</span>
-                </button>
-                <span className="text-sm text-secondary w-6 text-center">{draftFontSize}</span>
-                <button
-                  type="button"
-                  onClick={() => setDraftFontSize(Math.min(24, draftFontSize + 1))}
-                  className="flex h-7 w-7 items-center justify-center rounded bg-surface border border-border text-secondary hover:bg-hover"
-                >
-                  <span className="text-sm font-bold">+</span>
-                </button>
-              </div>
-            </div>
-
-            <div className="mt-4 flex items-center justify-between">
-              <div>
-                <div className="text-sm text-primary">Line Height</div>
-                <div className="text-[10px] text-muted">
-                  Vertical spacing (1.0 = compact, 2.0 = spacious)
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="range"
-                  min="1.0"
-                  max="2.0"
-                  step="0.1"
-                  value={draftLineHeight}
-                  onChange={(e) => setDraftLineHeight(parseFloat(e.target.value))}
-                  className="w-20 h-1 bg-border rounded-lg appearance-none cursor-pointer accent-accent"
-                />
-                <span className="text-xs text-secondary w-8 text-right">{draftLineHeight.toFixed(1)}</span>
-              </div>
-            </div>
-
-            <div className="mt-4 flex items-center justify-between">
-              <div>
-                <div className="text-sm text-primary">Letter Spacing</div>
-                <div className="text-[10px] text-muted">
-                  Horizontal spacing between characters in pixels
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="range"
-                  min="-3"
-                  max="3"
-                  step="1"
-                  value={draftLetterSpacing}
-                  onChange={(e) => setDraftLetterSpacing(parseInt(e.target.value, 10))}
-                  className="w-20 h-1 bg-border rounded-lg appearance-none cursor-pointer accent-accent"
-                />
-                <span className="text-xs text-secondary w-8 text-right">{draftLetterSpacing}px</span>
-              </div>
-            </div>
-
-            <div className="mt-4">
+            <div className="border-t border-border pt-4 space-y-3">
+              <label className="mb-1 block text-xs text-secondary">
+                Session List Details
+              </label>
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-sm text-primary">Font Family</div>
+                  <div className="text-sm text-primary">Project Name</div>
                   <div className="text-[10px] text-muted">
-                    Terminal typeface
+                    Show the project folder name under each session.
                   </div>
                 </div>
-                <select
-                  value={draftFontOption}
-                  onChange={(e) => setDraftFontOption(e.target.value as FontOption)}
-                  className="input text-xs py-1 px-2 w-auto"
-                >
-                  {FONT_OPTIONS.map((opt) => (
-                    <option key={opt.id} value={opt.id}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              {draftFontOption === 'custom' && (
-                <input
-                  value={draftCustomFontFamily}
-                  onChange={(e) => setDraftCustomFontFamily(e.target.value)}
-                  placeholder='"Fira Code", monospace'
-                  className="input text-xs mt-2 font-mono"
+                <Switch
+                  checked={draftShowProjectName}
+                  onCheckedChange={setDraftShowProjectName}
                 />
-              )}
-            </div>
-
-            <div className="mt-4 flex items-center justify-between">
-              <div>
-                <div className="text-sm text-primary">Dark Mode</div>
-                <div className="text-[10px] text-muted">
-                  Switch between dark and light themes.
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm text-primary">Last User Message</div>
+                  <div className="text-[10px] text-muted">
+                    Show the most recent user input next to the project name.
+                  </div>
+                </div>
+                <Switch
+                  checked={draftShowLastUserMessage}
+                  onCheckedChange={setDraftShowLastUserMessage}
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm text-primary">Session ID Prefix</div>
+                  <div className="text-[10px] text-muted">
+                    Show first 5 characters of agent session IDs in the list.
+                  </div>
+                </div>
+                <Switch
+                  checked={draftShowSessionIdPrefix}
+                  onCheckedChange={setDraftShowSessionIdSuffix}
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm text-primary">Inactive Sessions Lookback</div>
+                  <div className="text-[10px] text-muted">
+                    Show inactive sessions from the last N hours ({INACTIVE_MAX_AGE_MIN_HOURS}-{INACTIVE_MAX_AGE_MAX_HOURS}).
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={INACTIVE_MAX_AGE_MIN_HOURS}
+                    max={INACTIVE_MAX_AGE_MAX_HOURS}
+                    value={inactiveMaxAgeHours}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value, 10)
+                      if (val >= INACTIVE_MAX_AGE_MIN_HOURS && val <= INACTIVE_MAX_AGE_MAX_HOURS) {
+                        handleInactiveMaxAgeHoursChange(val)
+                      }
+                    }}
+                    disabled={inactiveMaxAgeHoursLoading}
+                    className="input text-xs py-1 px-2 w-16 text-center"
+                  />
+                  <span className="text-xs text-muted">hrs</span>
                 </div>
               </div>
-              <Switch
-                checked={draftTheme === 'dark'}
-                onCheckedChange={(checked) => setDraftTheme(checked ? 'dark' : 'light')}
-              />
             </div>
-          </div>
 
-          <div className="border-t border-border pt-4">
-            <label className="mb-2 block text-xs text-secondary">
-              Keyboard Shortcut Modifier
-            </label>
-            <div className="grid grid-cols-5 gap-1">
-              {(
-                ['auto', 'ctrl-option', 'ctrl-shift', 'cmd-option', 'cmd-shift'] as const
-              ).map((mod) => (
-                <button
-                  key={mod}
-                  type="button"
-                  className={`btn text-xs px-2 ${draftShortcutModifier === mod ? 'btn-primary' : ''}`}
-                  onClick={() => setDraftShortcutModifier(mod)}
-                >
-                  {mod === 'auto'
-                    ? 'Auto'
-                    : getModifierDisplay(mod)}
-                </button>
-              ))}
+            <div className="border-t border-border pt-4 space-y-3">
+              <label className="mb-1 block text-xs text-secondary">
+                Notifications
+              </label>
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <div className="text-sm text-primary">Permission Sound</div>
+                  <div className="text-[10px] text-muted">
+                    Play a ping when any session needs permission.
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void playPermissionSound()}
+                    className="btn text-xs px-2 py-1"
+                  >
+                    Test
+                  </button>
+                  <Switch
+                    checked={draftSoundOnPermission}
+                    onCheckedChange={(checked) => {
+                      setDraftSoundOnPermission(checked)
+                      if (checked) void primeAudio() // Unlock audio on user gesture
+                    }}
+                  />
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <div className="text-sm text-primary">Idle Sound</div>
+                  <div className="text-[10px] text-muted">
+                    Play a chime when a session finishes working.
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void playIdleSound()}
+                    className="btn text-xs px-2 py-1"
+                  >
+                    Test
+                  </button>
+                  <Switch
+                    checked={draftSoundOnIdle}
+                    onCheckedChange={(checked) => {
+                      setDraftSoundOnIdle(checked)
+                      if (checked) void primeAudio() // Unlock audio on user gesture
+                    }}
+                  />
+                </div>
+              </div>
             </div>
-            <p className="mt-1.5 text-[10px] text-muted">
-              {draftShortcutModifier === 'auto'
-                ? `Platform default: ${getModifierDisplay(getEffectiveModifier('auto'))}`
-                : `Shortcuts: ${getModifierDisplay(draftShortcutModifier)}+[N/X/[/]]`}
-            </p>
+
+            <div className="border-t border-border pt-4">
+              <label className="mb-2 block text-xs text-secondary">
+                Terminal Rendering
+              </label>
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm text-primary">WebGL Acceleration</div>
+                  <div className="text-[10px] text-muted">
+                    GPU rendering for better performance. Turn off if text looks fuzzy or flickering.
+                  </div>
+                </div>
+                <Switch
+                  checked={draftUseWebGL}
+                  onCheckedChange={setDraftUseWebGL}
+                />
+              </div>
+              {draftUseWebGL !== useWebGL && (
+                <p className="mt-2 text-[10px] text-approval">
+                  Terminal will reload when saved
+                </p>
+              )}
+
+              <div className="mt-4 flex items-center justify-between">
+                <div>
+                  <div className="text-sm text-primary">Mouse Mode</div>
+                  <div className="text-[10px] text-muted">
+                    Enable tmux mouse mode for trackpad/scroll wheel support.
+                  </div>
+                </div>
+                <Switch
+                  checked={tmuxMouseMode}
+                  onCheckedChange={handleTmuxMouseModeChange}
+                  disabled={tmuxMouseModeLoading}
+                />
+              </div>
+
+              <div className="mt-4 flex items-center justify-between">
+                <div>
+                  <div className="text-sm text-primary">Font Size</div>
+                  <div className="text-[10px] text-muted">
+                    Terminal text size in pixels (6-24)
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setDraftFontSize(Math.max(6, draftFontSize - 1))}
+                    className="flex h-7 w-7 items-center justify-center rounded bg-surface border border-border text-secondary hover:bg-hover"
+                  >
+                    <span className="text-sm font-bold">−</span>
+                  </button>
+                  <span className="text-sm text-secondary w-6 text-center">{draftFontSize}</span>
+                  <button
+                    type="button"
+                    onClick={() => setDraftFontSize(Math.min(24, draftFontSize + 1))}
+                    className="flex h-7 w-7 items-center justify-center rounded bg-surface border border-border text-secondary hover:bg-hover"
+                  >
+                    <span className="text-sm font-bold">+</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-4 flex items-center justify-between">
+                <div>
+                  <div className="text-sm text-primary">Line Height</div>
+                  <div className="text-[10px] text-muted">
+                    Vertical spacing (1.0 = compact, 2.0 = spacious)
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="range"
+                    min="1.0"
+                    max="2.0"
+                    step="0.1"
+                    value={draftLineHeight}
+                    onChange={(e) => setDraftLineHeight(parseFloat(e.target.value))}
+                    className="w-20 h-1 bg-border rounded-lg appearance-none cursor-pointer accent-accent"
+                  />
+                  <span className="text-xs text-secondary w-8 text-right">{draftLineHeight.toFixed(1)}</span>
+                </div>
+              </div>
+
+              <div className="mt-4 flex items-center justify-between">
+                <div>
+                  <div className="text-sm text-primary">Letter Spacing</div>
+                  <div className="text-[10px] text-muted">
+                    Horizontal spacing between characters in pixels
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="range"
+                    min="-3"
+                    max="3"
+                    step="1"
+                    value={draftLetterSpacing}
+                    onChange={(e) => setDraftLetterSpacing(parseInt(e.target.value, 10))}
+                    className="w-20 h-1 bg-border rounded-lg appearance-none cursor-pointer accent-accent"
+                  />
+                  <span className="text-xs text-secondary w-8 text-right">{draftLetterSpacing}px</span>
+                </div>
+              </div>
+
+              <div className="mt-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm text-primary">Font Family</div>
+                    <div className="text-[10px] text-muted">
+                      Terminal typeface
+                    </div>
+                  </div>
+                  <select
+                    value={draftFontOption}
+                    onChange={(e) => setDraftFontOption(e.target.value as FontOption)}
+                    className="input text-xs py-1 px-2 w-auto"
+                  >
+                    {FONT_OPTIONS.map((opt) => (
+                      <option key={opt.id} value={opt.id}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {draftFontOption === 'custom' && (
+                  <input
+                    value={draftCustomFontFamily}
+                    onChange={(e) => setDraftCustomFontFamily(e.target.value)}
+                    placeholder='"Fira Code", monospace'
+                    className="input text-xs mt-2 font-mono"
+                  />
+                )}
+              </div>
+
+              <div className="mt-4 flex items-center justify-between">
+                <div>
+                  <div className="text-sm text-primary">Dark Mode</div>
+                  <div className="text-[10px] text-muted">
+                    Switch between dark and light themes.
+                  </div>
+                </div>
+                <Switch
+                  checked={draftTheme === 'dark'}
+                  onCheckedChange={(checked) => setDraftTheme(checked ? 'dark' : 'light')}
+                />
+              </div>
+            </div>
+
+            <div className="border-t border-border pt-4">
+              <label className="mb-2 block text-xs text-secondary">
+                Keyboard Shortcut Modifier
+              </label>
+              <div className="grid grid-cols-5 gap-1">
+                {(
+                  ['auto', 'ctrl-option', 'ctrl-shift', 'cmd-option', 'cmd-shift'] as const
+                ).map((mod) => (
+                  <button
+                    key={mod}
+                    type="button"
+                    className={`btn text-xs px-2 ${draftShortcutModifier === mod ? 'btn-primary' : ''}`}
+                    onClick={() => setDraftShortcutModifier(mod)}
+                  >
+                    {mod === 'auto'
+                      ? 'Auto'
+                      : getModifierDisplay(mod)}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1.5 text-[10px] text-muted">
+                {draftShortcutModifier === 'auto'
+                  ? `Platform default: ${getModifierDisplay(getEffectiveModifier('auto'))}`
+                  : `Shortcuts: ${getModifierDisplay(draftShortcutModifier)}+[N/X/[/]]`}
+              </p>
+            </div>
           </div>
-        </div>
 
         </div>
 

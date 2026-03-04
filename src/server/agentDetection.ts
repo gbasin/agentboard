@@ -115,11 +115,14 @@ export function inferAgentType(command: string): AgentType | undefined {
     // Extract base name from path
     const baseName = part.split('/').pop() || part
 
-    if (baseName === 'claude') {
+    if (baseName === 'claude' || baseName === 'mlflow') {
       return 'claude'
     }
     if (baseName === 'codex') {
       return 'codex'
+    }
+    if (baseName === 'gemini') {
+      return 'gemini'
     }
     if (baseName === 'pi') {
       return 'pi'
