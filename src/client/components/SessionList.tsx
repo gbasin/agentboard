@@ -40,6 +40,7 @@ import ProjectBadge from './ProjectBadge'
 import HostBadge from './HostBadge'
 import HostFilterDropdown from './HostFilterDropdown'
 import ProjectFilterDropdown from './ProjectFilterDropdown'
+import StatusFilterDropdown from './StatusFilterDropdown'
 import SessionPreviewModal from './SessionPreviewModal'
 
 interface SessionListProps {
@@ -176,6 +177,8 @@ export default function SessionList({
   const setProjectFilters = useSettingsStore((state) => state.setProjectFilters)
   const hostFilters = useSettingsStore((state) => state.hostFilters)
   const setHostFilters = useSettingsStore((state) => state.setHostFilters)
+  const statusFilters = useSettingsStore((state) => state.statusFilters)
+  const setStatusFilters = useSettingsStore((state) => state.setStatusFilters)
 
   // Get exiting sessions from store (for kill-failed rollback only)
   const exitingSessions = useSessionStore((state) => state.exitingSessions)
@@ -255,16 +258,20 @@ export default function SessionList({
     if (hostFilters.length > 0) {
       next = next.filter((session) => hostFilters.includes(session.host ?? ''))
     }
+    if (statusFilters.length > 0) {
+      next = next.filter((session) => statusFilters.includes(session.status))
+    }
     return next
-  }, [sortedSessions, projectFilters, hostFilters])
+  }, [sortedSessions, projectFilters, hostFilters, statusFilters])
 
   const filterKey = useMemo(
     () => {
       const projectKey = projectFilters.length === 0 ? 'all-projects' : projectFilters.join('|')
       const hostKey = hostFilters.length === 0 ? 'all-hosts' : hostFilters.join('|')
-      return `${projectKey}::${hostKey}`
+      const statusKey = statusFilters.length === 0 ? 'all-statuses' : statusFilters.join('|')
+      return `${projectKey}::${hostKey}::${statusKey}`
     },
-    [projectFilters, hostFilters]
+    [projectFilters, hostFilters, statusFilters]
   )
 
   // Track sessions that became visible due to filter changes (for entry animation)
@@ -309,6 +316,7 @@ export default function SessionList({
     if (hostFilters.length > 0) {
       next = next.filter((session) => hostFilters.includes(session.host ?? ''))
     }
+    // Inactive sessions don't have runtime status; skip status filtering for them
     return next
   }, [inactiveSessions, projectFilters, hostFilters])
 
@@ -469,6 +477,10 @@ export default function SessionList({
               selectedProjects={projectFilters}
               onSelect={setProjectFilters}
               hasHiddenPermissions={hiddenPermissionCount > 0}
+            />
+            <StatusFilterDropdown
+              selectedStatuses={statusFilters}
+              onSelect={setStatusFilters}
             />
             <motion.span
               className="w-8 text-right text-xs text-muted"
@@ -1118,7 +1130,7 @@ function SessionRow({
                     document.execCommand('copy')
                   } catch {
                     // Fallback to clipboard API
-                    void navigator.clipboard.writeText(pathToCopy).catch(() => {})
+                    void navigator.clipboard.writeText(pathToCopy).catch(() => { })
                   }
                   document.body.removeChild(textarea)
                 }

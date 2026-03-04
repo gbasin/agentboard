@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
+import type { SessionStatus } from '@shared/types'
 import { safeStorage } from '../utils/storage'
 
 const DEFAULT_PROJECT_DIR = '~/Documents/GitHub'
@@ -149,6 +150,8 @@ interface SettingsState {
   setProjectFilters: (filters: string[]) => void
   hostFilters: string[]
   setHostFilters: (filters: string[]) => void
+  statusFilters: SessionStatus[]
+  setStatusFilters: (filters: SessionStatus[]) => void
   // Sound notifications
   soundOnPermission: boolean
   setSoundOnPermission: (enabled: boolean) => void
@@ -216,6 +219,8 @@ export const useSettingsStore = create<SettingsState>()(
       setProjectFilters: (filters) => set({ projectFilters: filters }),
       hostFilters: [],
       setHostFilters: (filters) => set({ hostFilters: filters }),
+      statusFilters: [] as SessionStatus[],
+      setStatusFilters: (filters) => set({ statusFilters: filters }),
       // Sound notifications
       soundOnPermission: false,
       setSoundOnPermission: (enabled) => set({ soundOnPermission: enabled }),
