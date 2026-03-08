@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import TestRenderer, { act } from 'react-test-renderer'
 import type { Session } from '@shared/types'
 import ProjectFilterDropdown from '../components/ProjectFilterDropdown'
+import StatusFilterDropdown from '../components/StatusFilterDropdown'
 import SessionList from '../components/SessionList'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useSessionStore } from '../stores/sessionStore'
@@ -16,10 +17,10 @@ beforeEach(() => {
   globalAny.window = {
     matchMedia: () => ({
       matches: false,
-      addEventListener: () => {},
-      removeEventListener: () => {},
-      addListener: () => {},
-      removeListener: () => {},
+      addEventListener: () => { },
+      removeEventListener: () => { },
+      addListener: () => { },
+      removeListener: () => { },
     }),
   } as unknown as Window & typeof globalThis
 
@@ -33,6 +34,7 @@ beforeEach(() => {
     showSessionIdPrefix: false,
     projectFilters: [],
     hostFilters: [],
+    statusFilters: [],
   })
 
   useSessionStore.setState({
@@ -52,6 +54,7 @@ afterEach(() => {
     showSessionIdPrefix: false,
     projectFilters: [],
     hostFilters: [],
+    statusFilters: [],
   })
   useSessionStore.setState({
     exitingSessions: new Map(),
@@ -87,8 +90,8 @@ describe('SessionList project filters', () => {
           selectedSessionId={null}
           loading={false}
           error={null}
-          onSelect={() => {}}
-          onRename={() => {}}
+          onSelect={() => { }}
+          onRename={() => { }}
         />
       )
     })
@@ -99,6 +102,75 @@ describe('SessionList project filters', () => {
       expect.arrayContaining(['/tmp/visible', '/tmp/hidden'])
     )
     expect(dropdown.props.hasHiddenPermissions).toBe(true)
+
+    act(() => {
+      renderer.unmount()
+    })
+  })
+})
+
+describe('SessionList status filters', () => {
+  test('filters active sessions by status', () => {
+    useSettingsStore.setState({ statusFilters: ['working'] })
+
+    const sessions: Session[] = [
+      { ...baseSession, id: 's1', status: 'working' },
+      { ...baseSession, id: 's2', status: 'waiting' },
+      { ...baseSession, id: 's3', status: 'permission' },
+    ]
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(
+        <SessionList
+          sessions={sessions}
+          inactiveSessions={[]}
+          selectedSessionId={null}
+          loading={false}
+          error={null}
+          onSelect={() => { }}
+          onRename={() => { }}
+        />
+      )
+    })
+
+    const statusDropdown = renderer.root.findByType(StatusFilterDropdown)
+    expect(statusDropdown.props.selectedStatuses).toEqual(['working'])
+
+    act(() => {
+      renderer.unmount()
+    })
+  })
+
+  test('combines project and status filters', () => {
+    useSettingsStore.setState({
+      projectFilters: ['/tmp/alpha'],
+      statusFilters: ['permission'],
+    })
+
+    const sessions: Session[] = [
+      { ...baseSession, id: 's1', projectPath: '/tmp/alpha', status: 'working' },
+      { ...baseSession, id: 's2', projectPath: '/tmp/alpha', status: 'permission' },
+      { ...baseSession, id: 's3', projectPath: '/tmp/beta', status: 'permission' },
+    ]
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(
+        <SessionList
+          sessions={sessions}
+          inactiveSessions={[]}
+          selectedSessionId={null}
+          loading={false}
+          error={null}
+          onSelect={() => { }}
+          onRename={() => { }}
+        />
+      )
+    })
+
+    const statusDropdown = renderer.root.findByType(StatusFilterDropdown)
+    expect(statusDropdown.props.selectedStatuses).toEqual(['permission'])
 
     act(() => {
       renderer.unmount()

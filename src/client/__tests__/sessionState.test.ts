@@ -229,4 +229,37 @@ describe('useSessionStore', () => {
 
     expect(useSessionStore.getState().sessions).toEqual(sessions)
   })
+
+  test('markSessionUnread adds session id to unreadSessionIds', () => {
+    useSessionStore.setState({ unreadSessionIds: new Set() })
+    useSessionStore.getState().markSessionUnread('session-1')
+    expect(useSessionStore.getState().unreadSessionIds.has('session-1')).toBe(true)
+  })
+
+  test('markSessionRead removes session id from unreadSessionIds', () => {
+    useSessionStore.setState({ unreadSessionIds: new Set(['session-1', 'session-2']) })
+    useSessionStore.getState().markSessionRead('session-1')
+    const unread = useSessionStore.getState().unreadSessionIds
+    expect(unread.has('session-1')).toBe(false)
+    expect(unread.has('session-2')).toBe(true)
+  })
+
+  test('markSessionRead is a no-op for unknown session ids', () => {
+    const original = new Set(['session-1'])
+    useSessionStore.setState({ unreadSessionIds: original })
+    useSessionStore.getState().markSessionRead('unknown')
+    // Should be the same Set reference (no unnecessary update)
+    expect(useSessionStore.getState().unreadSessionIds).toBe(original)
+  })
+
+  test('setSessions cleans up removed sessions from unreadSessionIds', () => {
+    useSessionStore.setState({
+      unreadSessionIds: new Set(['session-1', 'session-2']),
+    })
+    // Only session-1 survives in the new session list
+    useSessionStore.getState().setSessions([makeSession({ id: 'session-1' })])
+    const unread = useSessionStore.getState().unreadSessionIds
+    expect(unread.has('session-1')).toBe(true)
+    expect(unread.has('session-2')).toBe(false)
+  })
 })

@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
+import type { SessionStatus } from '@shared/types'
 import { safeStorage } from '../utils/storage'
 
 const DEFAULT_PROJECT_DIR = '~/Documents/GitHub'
@@ -51,11 +52,11 @@ export interface CommandPreset {
   label: string
   command: string
   isBuiltIn: boolean
-  agentType?: 'claude' | 'codex' | 'pi'
+  agentType?: 'claude' | 'codex' | 'gemini' | 'pi'
 }
 
 export const DEFAULT_PRESETS: CommandPreset[] = [
-  { id: 'claude', label: 'Claude', command: 'claude', isBuiltIn: true, agentType: 'claude' },
+  { id: 'claude', label: 'Claude', command: 'mlflow', isBuiltIn: true, agentType: 'claude' },
   { id: 'codex', label: 'Codex', command: 'codex', isBuiltIn: true, agentType: 'codex' },
   { id: 'pi', label: 'Pi', command: 'pi', isBuiltIn: true, agentType: 'pi' },
 ]
@@ -69,7 +70,7 @@ export function isValidPreset(p: unknown): p is CommandPreset {
     typeof obj.label === 'string' && obj.label.trim().length >= 1 && obj.label.length <= 64 &&
     typeof obj.command === 'string' && obj.command.trim().length >= 1 && obj.command.length <= 1024 &&
     typeof obj.isBuiltIn === 'boolean' &&
-    (obj.agentType === undefined || obj.agentType === 'claude' || obj.agentType === 'codex' || obj.agentType === 'pi')
+    (obj.agentType === undefined || obj.agentType === 'claude' || obj.agentType === 'codex' || obj.agentType === 'gemini' || obj.agentType === 'pi')
   )
 }
 
@@ -149,6 +150,8 @@ interface SettingsState {
   setProjectFilters: (filters: string[]) => void
   hostFilters: string[]
   setHostFilters: (filters: string[]) => void
+  statusFilters: SessionStatus[]
+  setStatusFilters: (filters: SessionStatus[]) => void
   // Sound notifications
   soundOnPermission: boolean
   setSoundOnPermission: (enabled: boolean) => void
@@ -193,9 +196,9 @@ export const useSettingsStore = create<SettingsState>()(
       setLineHeight: (height) => set({ lineHeight: Math.max(1.0, Math.min(2.0, height)) }),
       letterSpacing: 0,
       setLetterSpacing: (spacing) => set({ letterSpacing: Math.max(-3, Math.min(3, spacing)) }),
-      fontOption: 'jetbrains-mono',
+      fontOption: 'custom',
       setFontOption: (option) => set({ fontOption: option }),
-      customFontFamily: '',
+      customFontFamily: '"Hack Nerd Font"',
       setCustomFontFamily: (family) => set({ customFontFamily: family.slice(0, 256) }),
       shortcutModifier: 'auto',
       setShortcutModifier: (modifier) => set({ shortcutModifier: modifier }),
@@ -216,6 +219,8 @@ export const useSettingsStore = create<SettingsState>()(
       setProjectFilters: (filters) => set({ projectFilters: filters }),
       hostFilters: [],
       setHostFilters: (filters) => set({ hostFilters: filters }),
+      statusFilters: [] as SessionStatus[],
+      setStatusFilters: (filters) => set({ statusFilters: filters }),
       // Sound notifications
       soundOnPermission: false,
       setSoundOnPermission: (enabled) => set({ soundOnPermission: enabled }),
@@ -286,7 +291,7 @@ export const useSettingsStore = create<SettingsState>()(
             label: p.label as string,
             command: command || 'claude',
             isBuiltIn: p.isBuiltIn as boolean,
-            agentType: p.agentType as 'claude' | 'codex' | 'pi' | undefined,
+            agentType: p.agentType as 'claude' | 'codex' | 'gemini' | 'pi' | undefined,
           }
         }
 
@@ -329,7 +334,7 @@ export const useSettingsStore = create<SettingsState>()(
         // Validate migrated presets
         const validPresets = migratedPresets.filter(isValidPreset)
         const hasBuiltIns = validPresets.some(p => p.id === 'claude') &&
-                           validPresets.some(p => p.id === 'codex')
+          validPresets.some(p => p.id === 'codex')
 
         if (!hasBuiltIns || validPresets.length === 0) {
           console.warn('[agentboard:settings] Invalid presets, resetting to defaults')
@@ -343,7 +348,7 @@ export const useSettingsStore = create<SettingsState>()(
         // Trim to max if needed
         const trimmedPresets = validPresets.length > MAX_PRESETS
           ? [...validPresets.filter(p => p.isBuiltIn),
-             ...validPresets.filter(p => !p.isBuiltIn).slice(0, MAX_PRESETS - 2)]
+          ...validPresets.filter(p => !p.isBuiltIn).slice(0, MAX_PRESETS - 2)]
           : validPresets
 
         // Ensure all built-in presets from DEFAULT_PRESETS are present
