@@ -18,8 +18,11 @@ function sanitizeForId(s: string): string {
 }
 
 const DEFAULT_SSH_OPTIONS = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=3']
+// Uses '|||' as separator instead of '\t' because tmux replaces tab characters
+// with underscores when LANG is unset (common in launchd/systemd environments).
+const FIELD_SEPARATOR = '|||'
 const TMUX_LIST_FORMAT =
-  '#{session_name}\t#{window_index}\t#{window_id}\t#{window_name}\t#{pane_current_path}\t#{window_activity}\t#{window_creation_time}\t#{pane_start_command}'
+  `#{session_name}${FIELD_SEPARATOR}#{window_index}${FIELD_SEPARATOR}#{window_id}${FIELD_SEPARATOR}#{window_name}${FIELD_SEPARATOR}#{pane_current_path}${FIELD_SEPARATOR}#{window_activity}${FIELD_SEPARATOR}#{window_creation_time}${FIELD_SEPARATOR}#{pane_start_command}`
 
 // Cache of remote pane content for change detection (mirrors paneContentCache in SessionManager)
 const remoteContentCache = new Map<string, PaneCacheState>()
@@ -378,7 +381,7 @@ function parseTmuxWindows(
   const wsPrefix = `${tmuxSessionPrefix}-ws-`
 
   for (const line of lines) {
-    const parts = line.split('\t')
+    const parts = line.split(FIELD_SEPARATOR)
     if (parts.length < 8) {
       continue
     }

@@ -119,7 +119,7 @@ function pruneOrphanedWsSessions(): void {
   let result: ReturnType<typeof Bun.spawnSync>
   try {
     result = Bun.spawnSync(
-      ['tmux', 'list-sessions', '-F', '#{session_name}\t#{session_attached}'],
+      ['tmux', 'list-sessions', '-F', '#{session_name}|||#{session_attached}'],
       {
         stdout: 'pipe',
         stderr: 'pipe',
@@ -143,7 +143,7 @@ function pruneOrphanedWsSessions(): void {
   for (const line of lines) {
     const trimmed = line.trim()
     if (!trimmed) continue
-    const [name, attachedRaw] = trimmed.split('\t')
+    const [name, attachedRaw] = trimmed.split('|||')
     if (!name || !name.startsWith(prefix)) continue
     const attached = Number.parseInt(attachedRaw ?? '', 10)
     if (Number.isNaN(attached) || attached > 0) continue
@@ -1440,7 +1440,7 @@ async function handleRemoteCreate(
       // Session exists — add a new window to it
       createResult = await runRemoteTmux(host, [
         'new-window', '-P',
-        '-F', '#{window_index}\t#{window_id}',
+        '-F', '#{window_index}|||#{window_id}',
         '-t', tmuxSession, '-n', windowName, '-c', trimmedPath, wrappedCommand,
       ])
     } else {
@@ -1448,7 +1448,7 @@ async function handleRemoteCreate(
       // (avoids an orphan window 0 from a separate new-session call)
       createResult = await runRemoteTmux(host, [
         'new-session', '-d', '-P',
-        '-F', '#{window_index}\t#{window_id}',
+        '-F', '#{window_index}|||#{window_id}',
         '-s', tmuxSession, '-n', windowName, '-c', trimmedPath, wrappedCommand,
       ])
     }
@@ -1458,9 +1458,9 @@ async function handleRemoteCreate(
       return
     }
 
-    // Parse window info from -P output (e.g. "3\t@5")
+    // Parse window info from -P output (e.g. "3|||@5")
     const printOutput = createResult.stdout?.trim() ?? ''
-    const parts = printOutput.split('\t')
+    const parts = printOutput.split('|||')
     const now = Date.now()
 
     if (parts.length < 2 || !parts[0]) {

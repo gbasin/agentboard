@@ -16,11 +16,14 @@ import {
 } from './statusInference'
 import type { Session, SessionStatus, SessionSource } from '../shared/types'
 
-// Format string for batched window listing
+// Format string for batched window listing.
+// Uses '|||' as separator instead of '\t' because tmux replaces tab characters
+// with underscores when LANG is unset (common in launchd/systemd environments).
+const FIELD_SEPARATOR = '|||'
 const BATCH_WINDOW_FORMAT =
-  '#{session_name}\t#{window_id}\t#{window_name}\t#{pane_current_path}\t#{window_activity}\t#{window_creation_time}\t#{pane_start_command}\t#{pane_width}\t#{pane_height}'
+  `#{session_name}${FIELD_SEPARATOR}#{window_id}${FIELD_SEPARATOR}#{window_name}${FIELD_SEPARATOR}#{pane_current_path}${FIELD_SEPARATOR}#{window_activity}${FIELD_SEPARATOR}#{window_creation_time}${FIELD_SEPARATOR}#{pane_start_command}${FIELD_SEPARATOR}#{pane_width}${FIELD_SEPARATOR}#{pane_height}`
 const BATCH_WINDOW_FORMAT_FALLBACK =
-  '#{session_name}\t#{window_id}\t#{window_name}\t#{pane_current_path}\t#{window_activity}\t#{window_activity}\t#{pane_current_command}\t#{pane_width}\t#{pane_height}'
+  `#{session_name}${FIELD_SEPARATOR}#{window_id}${FIELD_SEPARATOR}#{window_name}${FIELD_SEPARATOR}#{pane_current_path}${FIELD_SEPARATOR}#{window_activity}${FIELD_SEPARATOR}#{window_activity}${FIELD_SEPARATOR}#{pane_current_command}${FIELD_SEPARATOR}#{pane_width}${FIELD_SEPARATOR}#{pane_height}`
 
 const LAST_USER_MESSAGE_SCROLLBACK_LINES = 200
 
@@ -161,7 +164,7 @@ function listAllWindowData(): WindowData[] {
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line) => {
-      const parts = line.split('\t')
+      const parts = line.split(FIELD_SEPARATOR)
       return {
         sessionName: parts[0] ?? '',
         windowId: parts[1] ?? '',

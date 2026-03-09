@@ -34,10 +34,13 @@ type CapturePane = (tmuxWindow: string) => PaneCapture | null
 
 // Cache of pane content, dimensions, and last-changed timestamp for change detection
 const paneContentCache = new Map<string, PaneCacheState>()
+// Uses '|||' as separator instead of '\t' because tmux replaces tab characters
+// with underscores when LANG is unset (common in launchd/systemd environments).
+const FIELD_SEPARATOR = '|||'
 const WINDOW_LIST_FORMAT =
-  '#{window_id}\t#{window_name}\t#{pane_current_path}\t#{window_activity}\t#{window_creation_time}\t#{pane_start_command}'
+  `#{window_id}${FIELD_SEPARATOR}#{window_name}${FIELD_SEPARATOR}#{pane_current_path}${FIELD_SEPARATOR}#{window_activity}${FIELD_SEPARATOR}#{window_creation_time}${FIELD_SEPARATOR}#{pane_start_command}`
 const WINDOW_LIST_FORMAT_FALLBACK =
-  '#{window_id}\t#{window_name}\t#{pane_current_path}\t#{window_activity}\t#{window_activity}\t#{pane_current_command}'
+  `#{window_id}${FIELD_SEPARATOR}#{window_name}${FIELD_SEPARATOR}#{pane_current_path}${FIELD_SEPARATOR}#{window_activity}${FIELD_SEPARATOR}#{window_activity}${FIELD_SEPARATOR}#{pane_current_command}`
 
 export class SessionManager {
   private sessionName: string
@@ -256,9 +259,9 @@ export class SessionManager {
         '-t',
         tmuxWindow,
         '-p',
-        '#{window_name}\t#{pane_current_path}',
+        `#{window_name}${FIELD_SEPARATOR}#{pane_current_path}`,
       ])
-      const [name, path] = info.trim().split('\t')
+      const [name, path] = info.trim().split(FIELD_SEPARATOR)
       logger.info('window_killed', { tmuxWindow, name, path })
     } catch {
       // Window may already be gone, log what we know
@@ -480,7 +483,7 @@ export class SessionManager {
 
 function parseWindow(line: string): WindowInfo {
   const [id, name, panePath, activityRaw, creationRaw, command] =
-    line.split('\t')
+    line.split(FIELD_SEPARATOR)
   const activity = Number.parseInt(activityRaw || '0', 10)
   const creation = Number.parseInt(creationRaw || '0', 10)
 
@@ -556,7 +559,7 @@ function capturePaneWithDimensions(tmuxWindow: string): PaneCapture | null {
         '-t',
         tmuxWindow,
         '-p',
-        '#{pane_width}\t#{pane_height}',
+        `#{pane_width}${FIELD_SEPARATOR}#{pane_height}`,
       ],
       { stdout: 'pipe', stderr: 'pipe' }
     )
@@ -567,7 +570,7 @@ function capturePaneWithDimensions(tmuxWindow: string): PaneCapture | null {
     const [widthText, heightText] = dimsResult.stdout
       .toString()
       .trim()
-      .split('\t')
+      .split(FIELD_SEPARATOR)
     const width = Number.parseInt(widthText ?? '', 10) || 80
     const height = Number.parseInt(heightText ?? '', 10) || 24
 
