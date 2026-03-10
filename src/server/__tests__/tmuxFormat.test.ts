@@ -8,13 +8,14 @@ import {
 } from '../tmuxFormat'
 
 describe('tmuxFormat', () => {
-  test('buildTmuxFormat joins fields with the unit separator', () => {
+  test('buildTmuxFormat joins fields with tabs for parsed tmux output', () => {
     const format = buildTmuxFormat([
       '#{session_name}',
       '#{window_id}',
       '#{pane_current_path}',
     ])
 
+    expect(TMUX_FIELD_SEPARATOR).toBe('\t')
     expect(format).toBe(
       `#{session_name}${TMUX_FIELD_SEPARATOR}#{window_id}${TMUX_FIELD_SEPARATOR}#{pane_current_path}`
     )

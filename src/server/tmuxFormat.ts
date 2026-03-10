@@ -1,4 +1,7 @@
-const TMUX_FIELD_SEPARATOR = '\x1f'
+// Keep parsed tmux formats on tabs. `tmux -u` preserves tabs under minimal
+// locales, while the raw unit-separator transport regressed real Linux tmux
+// discovery in CI.
+const TMUX_FIELD_SEPARATOR = '\t'
 const TMUX_UTF8_FLAG = '-u'
 
 function withTmuxUtf8Flag(args: string[]): string[] {
