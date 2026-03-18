@@ -1060,6 +1060,48 @@ function isCurrentInputField(rawLines: string[], promptIdx: number): boolean {
   return false
 }
 
+/**
+ * Detect AskUserQuestion interactive selection lines.
+ * Claude Code's AskUserQuestion UI uses ❯ to mark the selected option,
+ * which collides with the ❯ prompt symbol for user messages.
+ *
+ * Detection requires TWO independent signals:
+ * 1. The text after ❯ starts with "N. " (numbered option pattern)
+ * 2. At least one corroborating indicator nearby:
+ *    a. Sibling numbered options in adjacent lines (e.g., "  2. ...", "  3. ...")
+ *    b. "Enter to select" navigation hint within 20 lines below
+ */
+function isAskUserQuestionOption(rawLines: string[], promptIdx: number): boolean {
+  const line = rawLines[promptIdx] ?? ''
+  // Strip the prompt prefix (❯/›) and check if what remains is a numbered item
+  const afterPrompt = stripAnsi(line)
+    .replace(TMUX_PROMPT_PREFIX, '')
+    .replace(/^›\s*/, '')
+    .trim()
+
+  // Signal 1: the text after ❯/› starts with "N. ..."
+  if (!/^\d+\.\s/.test(afterPrompt)) {
+    return false
+  }
+
+  // Signal 2a: "Enter to select" navigation hint below (always present in AskUserQuestion)
+  for (let i = promptIdx + 1; i < Math.min(promptIdx + 20, rawLines.length); i++) {
+    const below = (rawLines[i] ?? '').trim()
+    if (/enter\s+to\s+select/i.test(below)) return true
+  }
+
+  // Signal 2b: immediately adjacent sibling numbered options (within 2 lines),
+  // with no assistant output markers (⏺) between them
+  for (let i = promptIdx + 1; i < Math.min(promptIdx + 3, rawLines.length); i++) {
+    const raw = rawLines[i] ?? ''
+    if (/⏺/.test(raw)) break // hit assistant output, stop looking
+    const sibling = stripAnsi(raw).trim()
+    if (/^\d+\.\s/.test(sibling)) return true
+  }
+
+  return false
+}
+
 export function extractRecentUserMessagesFromTmux(
   content: string,
   maxMessages = MAX_RECENT_USER_MESSAGES
@@ -1074,6 +1116,7 @@ export function extractRecentUserMessagesFromTmux(
     const line = rawLines[i] ?? ''
     if (!isPromptLine(line)) continue
     if (isCurrentInputField(rawLines, i)) continue
+    if (isAskUserQuestionOption(rawLines, i)) continue
     if (line.includes('↵')) continue
     const message = extractUserFromPrompt(line)
     if (!message) continue

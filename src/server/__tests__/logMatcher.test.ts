@@ -656,6 +656,113 @@ ${ESC}[48;2;52;53;65m second message ${ESC}[49m Response 2
     // Should NOT include the pending message (has ↵ send indicator)
     expect(userMessages).not.toContain('commit these changes')
   })
+
+  test('Claude: skips AskUserQuestion option lines with ❯ selector', () => {
+    const scrollback = `❯ before implementing the feature, let me ask some questions
+
+⏺ Great idea. Let me ask a few questions to narrow this down.
+
+─────────────────────────────────────────────────────────────────────────
+←  ☒ Audience  ☐ Format  ☐ Granularity  ✔ Submit  →
+
+What's the primary audience for this deliverable?
+
+❯ 1. Just us (dev alignment) ✔
+     You and I use it to validate the flow.
+  2. Internal team / stakeholders
+     Something you could share with teammates.
+  3. Demo rehearsal tool
+     A presenter could walk through it.
+  4. Type something.
+─────────────────────────────────────────────────────────────────────────
+  5. Chat about this
+
+Enter to select · Tab/Arrow keys to navigate · Esc to cancel`
+
+    const userMessages = extractRecentUserMessagesFromTmux(scrollback)
+    // Should NOT include the AskUserQuestion option
+    expect(userMessages).not.toContainEqual(
+      expect.stringContaining('Just us')
+    )
+    // Should find the real user message
+    expect(userMessages).toContain(
+      'before implementing the feature, let me ask some questions'
+    )
+  })
+
+  test('Codex: skips question tool option lines with › selector', () => {
+    const scrollback = `› implement the auth module
+
+⏺ Let me ask about the requirements first.
+
+─────────────────────────────────────────────────────────────────────────
+Which auth strategy?
+
+› 1. OAuth 2.0 with PKCE
+  2. Session-based JWT
+  3. Type something.
+
+Enter to select · Tab/Arrow keys to navigate · Esc to cancel`
+
+    const userMessages = extractRecentUserMessagesFromTmux(scrollback)
+    expect(userMessages).not.toContainEqual(
+      expect.stringContaining('OAuth')
+    )
+    expect(userMessages).toContain('implement the auth module')
+  })
+
+  test('does NOT false-positive on user messages that start with numbers', () => {
+    const scrollback = `❯ 3. fix the validation logic in handleSubmit
+
+⏺ I'll fix the validation logic now. Let me read the file first.
+
+⏺ Read(src/handlers.ts)
+  ⎿  Read 200 lines`
+
+    const userMessages = extractRecentUserMessagesFromTmux(scrollback)
+    // Should include the numbered user message — no sibling numbered items nearby
+    expect(userMessages).toContain('3. fix the validation logic in handleSubmit')
+  })
+
+  test('does NOT false-positive when numbered list is far away in assistant output', () => {
+    const scrollback = `❯ 1. rename the field to camelCase
+
+⏺ Done. Here's what I changed:
+
+  1. Updated the schema
+  2. Updated the handler
+  3. Updated the tests
+
+✻ Brewed for 5s
+
+❯ looks good, ship it`
+
+    const userMessages = extractRecentUserMessagesFromTmux(scrollback)
+    // "1. rename..." has numbered siblings in the assistant output, but they're
+    // more than 6 lines away. Only "looks good, ship it" should be first.
+    expect(userMessages[0]).toBe('looks good, ship it')
+    // "1. rename..." is also a valid user message (numbered siblings are far away)
+    expect(userMessages).toContain('1. rename the field to camelCase')
+  })
+
+  test('handles AskUserQuestion with only two options', () => {
+    const scrollback = `❯ should we proceed?
+
+⏺ Let me confirm.
+
+Continue with the refactor?
+
+❯ 1. Yes, proceed
+  2. No, cancel
+
+Enter to select · Esc to cancel`
+
+    const userMessages = extractRecentUserMessagesFromTmux(scrollback)
+    expect(userMessages).not.toContainEqual(
+      expect.stringContaining('Yes, proceed')
+    )
+    expect(userMessages).toContain('should we proceed?')
+  })
 })
 
 describe('extractActionFromUserAction', () => {
