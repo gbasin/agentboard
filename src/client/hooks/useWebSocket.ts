@@ -224,7 +224,7 @@ export class WebSocketManager {
         const parseMs = performance.now() - t0
         // Attach timing metadata for switch diagnostics (read by useTerminal)
         ;(parsed as Record<string, unknown>)._parseMs = Math.round(parseMs)
-        ;(parsed as Record<string, unknown>)._rawBytes = raw.length
+        ;(parsed as Record<string, unknown>)._rawLength = raw.length
         // Intercept pong — clear timeout only for the current seq.
         if (parsed.type === 'pong') {
           if (parsed.seq === this.pingSeq) {

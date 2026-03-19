@@ -192,7 +192,7 @@ export default memo(function InactiveSessionItem({
                   textarea.focus()
                   textarea.select()
                   try {
-                    document.execCommand('copy')
+                    if (!document.execCommand('copy')) throw 0
                   } catch {
                     navigator.clipboard?.writeText(pathToCopy).catch(() => {})
                   }
