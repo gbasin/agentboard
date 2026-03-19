@@ -7,7 +7,7 @@ import { ClipboardAddon, type ClipboardSelectionType, type IClipboardProvider } 
 import { SearchAddon } from '@xterm/addon-search'
 import { SerializeAddon } from '@xterm/addon-serialize'
 import { ProgressAddon } from '@xterm/addon-progress'
-import type { SendClientMessage, SubscribeServerMessage } from '@shared/types'
+import type { SendClientMessage, ServerMessageWithDiagnostics, SubscribeServerMessage } from '@shared/types'
 import { clientLog } from '../utils/clientLog'
 import type { ConnectionStatus } from '../stores/sessionStore'
 
@@ -1051,8 +1051,8 @@ export function useTerminal({
             sessionId: message.sessionId,
             serverRoundtripMs: Math.round(performance.now() - switchStart),
             bytes: message.data.length,
-            parseMs: (message as Record<string, unknown>)._parseMs ?? -1,
-            rawLength: (message as Record<string, unknown>)._rawLength ?? -1,
+            parseMs: (message as ServerMessageWithDiagnostics)._parseMs ?? -1,
+            rawLength: (message as ServerMessageWithDiagnostics)._rawLength ?? -1,
           })
           // Clear so we only log for the first output after a switch
           switchStartRef.current = null
