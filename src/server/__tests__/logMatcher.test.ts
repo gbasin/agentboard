@@ -829,6 +829,26 @@ Enter to select · Esc to cancel`
     // The ⏺ after the block proves this was a submitted message, not AskUserQuestion
     expect(userMessages).toContain('1. Audit auth flow')
   })
+
+  test('Codex: skips suggested message in idle input field with "N% left" status', () => {
+    // Codex shows a suggested next message in the input field when idle.
+    // The status line below uses "N% left" without the word "context".
+    const scrollback = `› is there any benefit for Effect on client side
+
+⏺ Yes, but mostly for client workflows, not for rendering itself.
+
+› Explain this codebase
+
+  gpt-5.4 xhigh fast · 68% left · ~/Documents/GitHub/usonia`
+
+    const userMessages = extractRecentUserMessagesFromTmux(scrollback)
+    // Should NOT include the suggested message in the input field
+    expect(userMessages).not.toContain('Explain this codebase')
+    // Should find the real submitted message
+    expect(userMessages).toContain(
+      'is there any benefit for Effect on client side'
+    )
+  })
 })
 
 describe('extractActionFromUserAction', () => {
