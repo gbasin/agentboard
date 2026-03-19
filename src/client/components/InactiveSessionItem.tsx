@@ -181,8 +181,23 @@ export default memo(function InactiveSessionItem({
             <button
               onClick={(e) => {
                 e.stopPropagation()
-                void navigator.clipboard.writeText(session.logFilePath).catch(() => {})
+                const pathToCopy = session.logFilePath
                 setContextMenu(null)
+                if (pathToCopy) {
+                  const textarea = document.createElement('textarea')
+                  textarea.value = pathToCopy
+                  textarea.style.position = 'fixed'
+                  textarea.style.left = '-9999px'
+                  document.body.appendChild(textarea)
+                  textarea.focus()
+                  textarea.select()
+                  try {
+                    document.execCommand('copy')
+                  } catch {
+                    navigator.clipboard?.writeText(pathToCopy).catch(() => {})
+                  }
+                  document.body.removeChild(textarea)
+                }
               }}
               className="w-full px-3 py-2 text-left text-sm text-secondary hover:bg-hover hover:text-primary flex items-center gap-2"
               role="menuitem"

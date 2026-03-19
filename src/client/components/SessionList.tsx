@@ -1117,8 +1117,7 @@ function SessionRow({
                   try {
                     document.execCommand('copy')
                   } catch {
-                    // Fallback to clipboard API
-                    void navigator.clipboard.writeText(pathToCopy).catch(() => {})
+                    navigator.clipboard?.writeText(pathToCopy).catch(() => {})
                   }
                   document.body.removeChild(textarea)
                 }
