@@ -1095,7 +1095,8 @@ function isAskUserQuestionOption(rawLines: string[], promptIdx: number): boolean
     const trimmed = below.trim()
     // Stop at structural boundaries — we've left the selector block
     if (/⏺/.test(below) || isPromptLine(below)) break
-    if (/enter\s+to\s+select/i.test(trimmed)) return true
+    // Claude: "Enter to select", Codex: "enter to submit answer"
+    if (/enter\s+to\s+(select|submit\s+answer)/i.test(trimmed)) return true
   }
 
   // Signal 2b: sibling numbered options within a bounded block.

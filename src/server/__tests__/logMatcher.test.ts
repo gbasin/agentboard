@@ -690,19 +690,23 @@ Enter to select · Tab/Arrow keys to navigate · Esc to cancel`
     )
   })
 
-  test('Codex: skips question tool option lines with › selector', () => {
+  test('Codex: skips request_user_input option lines with › selector', () => {
+    // Matches actual Codex TUI rendering from snapshot tests:
+    // - Uses › (not ❯) for selected option
+    // - Footer: "tab to add notes | enter to submit answer | esc to interrupt"
+    // - Options show "N. Label  Description" in two columns
     const scrollback = `› implement the auth module
 
 ⏺ Let me ask about the requirements first.
 
-─────────────────────────────────────────────────────────────────────────
-Which auth strategy?
+  Question 1/1 (1 unanswered)
+  Which auth strategy?
 
-› 1. OAuth 2.0 with PKCE
-  2. Session-based JWT
-  3. Type something.
+  › 1. OAuth 2.0 with PKCE      Recommended for SPAs and mobile apps.
+    2. Session-based JWT          Simpler but less secure for public clients.
+    3. API key auth               For internal services only.
 
-Enter to select · Tab/Arrow keys to navigate · Esc to cancel`
+  tab to add notes | enter to submit answer | esc to interrupt`
 
     const userMessages = extractRecentUserMessagesFromTmux(scrollback)
     expect(userMessages).not.toContainEqual(
