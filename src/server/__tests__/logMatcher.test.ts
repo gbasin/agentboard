@@ -813,6 +813,18 @@ Enter to select · Esc to cancel`
     )
     expect(userMessages).toContain('what format?')
   })
+
+  test('does NOT drop a real multiline numbered user message (pasted)', () => {
+    const scrollback = `❯ 1. Audit auth flow
+  2. Fix validation
+  3. Add regression tests
+
+⏺ Sounds good. I'll start with the auth audit.`
+
+    const userMessages = extractRecentUserMessagesFromTmux(scrollback)
+    // The ⏺ after the block proves this was a submitted message, not AskUserQuestion
+    expect(userMessages).toContain('1. Audit auth flow')
+  })
 })
 
 describe('extractActionFromUserAction', () => {

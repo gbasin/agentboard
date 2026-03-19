@@ -1070,8 +1070,9 @@ function isCurrentInputField(rawLines: string[], promptIdx: number): boolean {
  * 2. At least one corroborating indicator nearby:
  *    a. "Enter to select" navigation hint below, with no structural
  *       boundaries (⏺ assistant markers, other ❯ prompts) between
- *    b. Sibling numbered options within a bounded block (scanning both
- *       above and below, stopping at structural boundaries)
+ *    b. Sibling numbered options within a bounded block AND no ⏺
+ *       assistant output follows the block (distinguishes active
+ *       AskUserQuestion from submitted multi-line user messages)
  */
 function isAskUserQuestionOption(rawLines: string[], promptIdx: number): boolean {
   const line = rawLines[promptIdx] ?? ''
@@ -1099,7 +1100,7 @@ function isAskUserQuestionOption(rawLines: string[], promptIdx: number): boolean
 
   // Signal 2b: sibling numbered options within a bounded block.
   // Scan both above and below, stopping at structural boundaries
-  // (⏺ markers, ❯/› prompts, horizontal rules ───).
+  // (⏺ markers, ❯/› prompts).
   const hasSibling = (start: number, step: number, maxSteps: number): boolean => {
     for (let n = 1; n <= maxSteps; n++) {
       const idx = start + step * n
@@ -1114,6 +1115,15 @@ function isAskUserQuestionOption(rawLines: string[], promptIdx: number): boolean
   }
 
   if (hasSibling(promptIdx, 1, 4) || hasSibling(promptIdx, -1, 4)) {
+    // Distinguish active AskUserQuestion from submitted multi-line user messages:
+    // a submitted message always has ⏺ assistant output after it, while an active
+    // AskUserQuestion card does not (it's waiting for user selection).
+    // Scan forward past the block to check.
+    for (let i = promptIdx + 1; i < Math.min(promptIdx + 10, rawLines.length); i++) {
+      const raw = rawLines[i] ?? ''
+      if (/⏺/.test(raw)) return false // assistant responded → submitted user message
+      if (isPromptLine(raw)) break // another prompt → stop
+    }
     return true
   }
 
