@@ -1,4 +1,5 @@
 import type { ServerWebSocket } from 'bun'
+import os from 'node:os'
 import path from 'node:path'
 import fs from 'node:fs/promises'
 import { Hono } from 'hono'
@@ -1181,6 +1182,7 @@ Bun.serve<WSData>({
   websocket: {
     idleTimeout: 40,
     sendPings: true,
+    perMessageDeflate: true,
     open(ws) {
       sockets.add(ws)
       send(ws, { type: 'sessions', sessions: registry.getAll() })
@@ -2253,7 +2255,18 @@ async function attachTerminalPersistent(
       ws.data.currentTmuxTarget = effectiveTarget
       // Send history in onReady callback, before output suppression is lifted
       if (history) {
-        send(ws, { type: 'terminal-output', sessionId, data: history })
+        const tStr = performance.now()
+        const payload = JSON.stringify({ type: 'terminal-output', sessionId, data: history })
+        const stringifyMs = Math.round(performance.now() - tStr)
+        const sendResult = ws.send(payload)
+        logger.debug('terminal_history_send', {
+          sessionId,
+          stringifyMs,
+          payloadBytes: payload.length,
+          historyChars: history.length,
+          sendResult,
+          connectionId: ws.data.connectionId,
+        })
       }
     })
     const tSwitch = performance.now()

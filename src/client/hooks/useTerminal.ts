@@ -1051,6 +1051,8 @@ export function useTerminal({
             sessionId: message.sessionId,
             serverRoundtripMs: Math.round(performance.now() - switchStart),
             bytes: message.data.length,
+            parseMs: (message as Record<string, unknown>)._parseMs ?? -1,
+            rawBytes: (message as Record<string, unknown>)._rawBytes ?? -1,
           })
           // Clear so we only log for the first output after a switch
           switchStartRef.current = null

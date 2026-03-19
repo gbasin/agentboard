@@ -218,7 +218,13 @@ export class WebSocketManager {
 
     ws.onmessage = (event) => {
       try {
-        const parsed = JSON.parse(event.data as string) as ServerMessage
+        const raw = event.data as string
+        const t0 = performance.now()
+        const parsed = JSON.parse(raw) as ServerMessage
+        const parseMs = performance.now() - t0
+        // Attach timing metadata for switch diagnostics (read by useTerminal)
+        ;(parsed as Record<string, unknown>)._parseMs = Math.round(parseMs)
+        ;(parsed as Record<string, unknown>)._rawBytes = raw.length
         // Intercept pong — clear timeout only for the current seq.
         if (parsed.type === 'pong') {
           if (parsed.seq === this.pingSeq) {
