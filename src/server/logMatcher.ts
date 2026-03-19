@@ -1053,7 +1053,7 @@ function extractUserFromPrompt(line: string): string {
 function isCurrentInputField(rawLines: string[], promptIdx: number): boolean {
   for (let i = promptIdx + 1; i < Math.min(promptIdx + 4, rawLines.length); i++) {
     const line = rawLines[i]?.trim() ?? ''
-    if (/\d+%\s*context\s*left/i.test(line)) return true
+    if (/\d+%\s*(?:context\s*)?left/i.test(line)) return true
     if (/\[\d+%\]/.test(line)) return true
     if (/\?\s*for\s*shortcuts/i.test(line)) return true
   }
