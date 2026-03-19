@@ -795,7 +795,7 @@ setInterval(() => {
   elLastTick = now
   if (lagMs > 100) {
     const [load1, load5, load15] = os.loadavg()
-    logger.warn('event_loop_lag', {
+    logger.debug('event_loop_lag', {
       lagMs,
       load1: Math.round(load1 * 100) / 100,
       load5: Math.round(load5 * 100) / 100,
