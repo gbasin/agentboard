@@ -763,6 +763,56 @@ Enter to select · Esc to cancel`
     )
     expect(userMessages).toContain('should we proceed?')
   })
+
+  test('does NOT false-positive when assistant prose contains "Enter to select"', () => {
+    const scrollback = `❯ 1. Do this thing
+
+⏺ Sure — press Enter to select the template you want to use.`
+
+    const userMessages = extractRecentUserMessagesFromTmux(scrollback)
+    // The ⏺ boundary should stop the "Enter to select" scan
+    expect(userMessages).toContain('1. Do this thing')
+  })
+
+  test('detects AskUserQuestion when selected option is last (siblings above)', () => {
+    const scrollback = `❯ pick a strategy
+
+⏺ Let me ask.
+
+Which approach?
+
+  1. Fast
+  2. Thorough
+❯ 3. Balanced
+
+Enter to select · Esc to cancel`
+
+    const userMessages = extractRecentUserMessagesFromTmux(scrollback)
+    expect(userMessages).not.toContainEqual(
+      expect.stringContaining('Balanced')
+    )
+    expect(userMessages).toContain('pick a strategy')
+  })
+
+  test('detects AskUserQuestion with multi-line option descriptions', () => {
+    const scrollback = `❯ what format?
+
+⏺ Let me ask.
+
+❯ 1. ASCII storyboard
+     Markdown file with dual-panel ASCII art.
+     Lightweight and easy to annotate.
+  2. HTML clickthrough
+     Single HTML file with screens.
+
+Enter to select · Esc to cancel`
+
+    const userMessages = extractRecentUserMessagesFromTmux(scrollback)
+    expect(userMessages).not.toContainEqual(
+      expect.stringContaining('ASCII storyboard')
+    )
+    expect(userMessages).toContain('what format?')
+  })
 })
 
 describe('extractActionFromUserAction', () => {

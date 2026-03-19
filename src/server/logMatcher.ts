@@ -1068,8 +1068,10 @@ function isCurrentInputField(rawLines: string[], promptIdx: number): boolean {
  * Detection requires TWO independent signals:
  * 1. The text after ❯ starts with "N. " (numbered option pattern)
  * 2. At least one corroborating indicator nearby:
- *    a. Sibling numbered options in adjacent lines (e.g., "  2. ...", "  3. ...")
- *    b. "Enter to select" navigation hint within 20 lines below
+ *    a. "Enter to select" navigation hint below, with no structural
+ *       boundaries (⏺ assistant markers, other ❯ prompts) between
+ *    b. Sibling numbered options within a bounded block (scanning both
+ *       above and below, stopping at structural boundaries)
  */
 function isAskUserQuestionOption(rawLines: string[], promptIdx: number): boolean {
   const line = rawLines[promptIdx] ?? ''
@@ -1084,19 +1086,35 @@ function isAskUserQuestionOption(rawLines: string[], promptIdx: number): boolean
     return false
   }
 
-  // Signal 2a: "Enter to select" navigation hint below (always present in AskUserQuestion)
+  // Signal 2a: "Enter to select" navigation hint below, stopping at structural
+  // boundaries (assistant output ⏺, another prompt ❯/›) to avoid false positives
+  // from assistant text that happens to contain the phrase.
   for (let i = promptIdx + 1; i < Math.min(promptIdx + 20, rawLines.length); i++) {
-    const below = (rawLines[i] ?? '').trim()
-    if (/enter\s+to\s+select/i.test(below)) return true
+    const below = rawLines[i] ?? ''
+    const trimmed = below.trim()
+    // Stop at structural boundaries — we've left the selector block
+    if (/⏺/.test(below) || isPromptLine(below)) break
+    if (/enter\s+to\s+select/i.test(trimmed)) return true
   }
 
-  // Signal 2b: immediately adjacent sibling numbered options (within 2 lines),
-  // with no assistant output markers (⏺) between them
-  for (let i = promptIdx + 1; i < Math.min(promptIdx + 3, rawLines.length); i++) {
-    const raw = rawLines[i] ?? ''
-    if (/⏺/.test(raw)) break // hit assistant output, stop looking
-    const sibling = stripAnsi(raw).trim()
-    if (/^\d+\.\s/.test(sibling)) return true
+  // Signal 2b: sibling numbered options within a bounded block.
+  // Scan both above and below, stopping at structural boundaries
+  // (⏺ markers, ❯/› prompts, horizontal rules ───).
+  const hasSibling = (start: number, step: number, maxSteps: number): boolean => {
+    for (let n = 1; n <= maxSteps; n++) {
+      const idx = start + step * n
+      if (idx < 0 || idx >= rawLines.length) break
+      const raw = rawLines[idx] ?? ''
+      // Stop at structural boundaries
+      if (/⏺/.test(raw) || isPromptLine(raw)) break
+      const sibling = stripAnsi(raw).trim()
+      if (/^\d+\.\s/.test(sibling)) return true
+    }
+    return false
+  }
+
+  if (hasSibling(promptIdx, 1, 4) || hasSibling(promptIdx, -1, 4)) {
+    return true
   }
 
   return false
