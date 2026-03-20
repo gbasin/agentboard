@@ -522,7 +522,7 @@ export default function SessionList({
               <div key={filterKey}>
                 <AnimatePresence
                   initial={false}
-                  mode={useSafariLayoutFallback ? 'sync' : 'popLayout'}
+                  mode="sync"
                 >
                   {filteredSessions.map((session, index) => {
                     const isTrulyNew = newlyActiveIds.has(session.id)
