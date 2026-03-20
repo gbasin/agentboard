@@ -4,6 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import type { Session, ServerMessage } from '@shared/types'
 import type { AgentSessionRecord } from '../../db'
+import { TMUX_FIELD_SEPARATOR } from '../../tmuxFormat'
 
 const bunAny = Bun as typeof Bun & {
   serve: typeof Bun.serve
@@ -393,6 +394,21 @@ const baseSession: Session = {
   source: 'managed',
   host: 'test-host',
   remote: false,
+}
+
+function getTmuxArgs(command: string[]): string[] {
+  if (command[0] !== 'tmux') {
+    return []
+  }
+  return command[1] === '-u' ? command.slice(2) : command.slice(1)
+}
+
+function tmuxLine(...fields: string[]): string {
+  return fields.join(TMUX_FIELD_SEPARATOR)
+}
+
+function tmuxOutput(...rows: string[][]): string {
+  return rows.map((row) => tmuxLine(...row)).join('\n')
 }
 
 function createWs() {
@@ -1196,7 +1212,7 @@ describe('server message handlers', () => {
       if (cmdStr.includes('new-window')) {
         return {
           exitCode: 0,
-          stdout: Buffer.from('1\t@5\n'),
+          stdout: Buffer.from(tmuxOutput(['1', '@5'])),
           stderr: Buffer.from(''),
         } as ReturnType<typeof Bun.spawnSync>
       }
@@ -1230,6 +1246,7 @@ describe('server message handlers', () => {
     // new-window call should include -P flag for print
     const newWindowCall = sshCalls.find((cmd) => cmd.some((a) => typeof a === 'string' && a.includes('new-window')))
     expect(newWindowCall).toBeTruthy()
+    expect(newWindowCall!.some((a) => typeof a === 'string' && a.includes('tmux -u new-window'))).toBe(true)
     expect(newWindowCall!.some((a) => typeof a === 'string' && a.includes('-P'))).toBe(true)
 
     // Should have sent session-created
@@ -1263,7 +1280,7 @@ describe('server message handlers', () => {
       if (cmdStr.includes('new-window')) {
         return {
           exitCode: 0,
-          stdout: Buffer.from('1\t@5\n'),
+          stdout: Buffer.from(tmuxOutput(['1', '@5'])),
           stderr: Buffer.from(''),
         } as ReturnType<typeof Bun.spawnSync>
       }
@@ -1333,7 +1350,7 @@ describe('server message handlers', () => {
         sessionCreated = true
         return {
           exitCode: 0,
-          stdout: Buffer.from('0\t@1\n'),
+          stdout: Buffer.from(tmuxOutput(['0', '@1'])),
           stderr: Buffer.from(''),
         } as ReturnType<typeof Bun.spawnSync>
       }
@@ -1366,6 +1383,7 @@ describe('server message handlers', () => {
     // new-session call should include -P and -d flags
     const newSessionCall = sshCalls.find((cmd) => cmd.some((a) => typeof a === 'string' && a.includes('new-session')))
     expect(newSessionCall).toBeTruthy()
+    expect(newSessionCall!.some((a) => typeof a === 'string' && a.includes('tmux -u new-session'))).toBe(true)
     expect(newSessionCall!.some((a) => typeof a === 'string' && a.includes('-P'))).toBe(true)
 
     // Should have sent session-created with window at index 0
@@ -1395,7 +1413,7 @@ describe('server message handlers', () => {
       if (cmdStr.includes('new-window')) {
         return {
           exitCode: 0,
-          stdout: Buffer.from('1\t@5\n'),
+          stdout: Buffer.from(tmuxOutput(['1', '@5'])),
           stderr: Buffer.from(''),
         } as ReturnType<typeof Bun.spawnSync>
       }
@@ -1683,7 +1701,7 @@ describe('server message handlers', () => {
       if (cmdStr.includes('new-session') && cmdStr.includes('-P')) {
         return {
           exitCode: 0,
-          stdout: Buffer.from('0\t@1\n'),
+          stdout: Buffer.from(tmuxOutput(['0', '@1'])),
           stderr: Buffer.from(''),
         } as ReturnType<typeof Bun.spawnSync>
       }
@@ -1824,11 +1842,12 @@ describe('server message handlers', () => {
     let copyModeTarget = ''
     spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
       const command = Array.isArray(args[0]) ? args[0] : [String(args[0])]
-      if (command[0] === 'tmux' && command[1] === 'capture-pane') {
-        captureTarget = command[3] ?? ''
+      const tmuxArgs = getTmuxArgs(command as string[])
+      if (tmuxArgs[0] === 'capture-pane') {
+        captureTarget = tmuxArgs[2] ?? ''
       }
-      if (command[0] === 'tmux' && command[1] === 'display-message') {
-        copyModeTarget = command[4] ?? ''
+      if (tmuxArgs[0] === 'display-message') {
+        copyModeTarget = tmuxArgs[3] ?? ''
         return {
           exitCode: 0,
           stdout: Buffer.from('0\n'),
@@ -1911,11 +1930,12 @@ describe('server message handlers', () => {
     let displayTarget = ''
     spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
       const command = Array.isArray(args[0]) ? args[0] : [String(args[0])]
-      if (command[0] === 'tmux' && command[1] === 'send-keys') {
-        sendKeysTarget = command[4] ?? ''
+      const tmuxArgs = getTmuxArgs(command as string[])
+      if (tmuxArgs[0] === 'send-keys') {
+        sendKeysTarget = tmuxArgs[3] ?? ''
       }
-      if (command[0] === 'tmux' && command[1] === 'display-message') {
-        displayTarget = command[4] ?? ''
+      if (tmuxArgs[0] === 'display-message') {
+        displayTarget = tmuxArgs[3] ?? ''
         return {
           exitCode: 0,
           stdout: Buffer.from('1\n'),
@@ -2558,16 +2578,21 @@ describe('server startup side effects', () => {
     spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
       const command = Array.isArray(args[0]) ? args[0] : [String(args[0])]
       calls.push(command as string[])
-      if (command[0] === 'tmux' && command[1] === 'list-sessions') {
+      const tmuxArgs = getTmuxArgs(command as string[])
+      if (tmuxArgs[0] === 'list-sessions') {
         return {
           exitCode: 0,
           stdout: Buffer.from(
-            ['agentboard-ws-1\t0', 'agentboard-ws-2\t1', 'other\t0'].join('\n')
+            tmuxOutput(
+              ['agentboard-ws-1', '0'],
+              ['agentboard-ws-2', '1'],
+              ['other', '0']
+            )
           ),
           stderr: Buffer.from(''),
         } as ReturnType<typeof Bun.spawnSync>
       }
-      if (command[0] === 'tmux' && command[1] === 'kill-session') {
+      if (tmuxArgs[0] === 'kill-session') {
         return {
           exitCode: 0,
           stdout: Buffer.from(''),
@@ -2584,7 +2609,7 @@ describe('server startup side effects', () => {
     await loadIndex()
 
     const killCalls = calls.filter(
-      (command) => command[0] === 'tmux' && command[1] === 'kill-session'
+      (command) => getTmuxArgs(command)[0] === 'kill-session'
     )
     expect(killCalls).toHaveLength(1)
     expect(killCalls[0]).toEqual(['tmux', 'kill-session', '-t', 'agentboard-ws-1'])

@@ -1,4 +1,5 @@
 import { logger } from '../logger'
+import { withTmuxUtf8Flag } from '../tmuxFormat'
 import type {
   ITerminalProxy,
   SpawnFn,
@@ -100,6 +101,10 @@ abstract class TerminalProxyBase implements ITerminalProxy {
     }
 
     return result.stdout?.toString() ?? ''
+  }
+
+  protected runParsedTmux(args: string[]): string {
+    return this.runTmux(withTmuxUtf8Flag(args))
   }
 
   protected logEvent(event: string, payload: Record<string, unknown> = {}): void {

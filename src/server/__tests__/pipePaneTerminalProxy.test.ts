@@ -3,6 +3,11 @@ import { PipePaneTerminalProxy } from '../terminal/PipePaneTerminalProxy'
 
 const encoder = new TextEncoder()
 
+function getTmuxCommand(args: string[]): string {
+  const tmuxArgs = args[0] === 'tmux' ? args.slice(1) : args
+  return tmuxArgs[0] === '-u' ? tmuxArgs[1] ?? '' : tmuxArgs[0] ?? ''
+}
+
 function createPipeHarness() {
   const spawnCalls: Array<{ args: string[]; options: Parameters<typeof Bun.spawn>[1] }> = []
   const tmuxCalls: string[][] = []
@@ -40,7 +45,7 @@ function createPipeHarness() {
     _options?: Parameters<typeof Bun.spawnSync>[1]
   ) => {
     tmuxCalls.push(args)
-    if (args[1] === 'list-panes') {
+    if (getTmuxCommand(args) === 'list-panes') {
       return {
         exitCode: 0,
         stdout: Buffer.from(listPanesOutput),
@@ -212,6 +217,7 @@ describe('PipePaneTerminalProxy', () => {
 
       expect(harness.tmuxCalls).toContainEqual([
         'tmux',
+        '-u',
         'list-panes',
         '-t',
         'agentboard:@3',
@@ -587,7 +593,7 @@ describe('PipePaneTerminalProxy', () => {
       args: string[],
       options?: Parameters<typeof Bun.spawnSync>[1]
     ) => {
-      if (args[1] === 'display-message' && args.includes('#{scroll_position}')) {
+      if (getTmuxCommand(args) === 'display-message' && args.includes('#{scroll_position}')) {
         return {
           exitCode: 0,
           stdout: Buffer.from(scrollPosition),
@@ -646,7 +652,7 @@ describe('PipePaneTerminalProxy', () => {
       args: string[],
       options?: Parameters<typeof Bun.spawnSync>[1]
     ) => {
-      if (args[1] === 'display-message') {
+      if (getTmuxCommand(args) === 'display-message') {
         displayMessageCalled = true
       }
       return originalSpawnSync(args, options)

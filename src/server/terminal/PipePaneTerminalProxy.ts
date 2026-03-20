@@ -94,7 +94,7 @@ class PipePaneTerminalProxy extends TerminalProxyBase {
       // This prevents getting stuck in copy-mode from incidental scroll-down input
       if (hasScrollDown) {
         try {
-          const scrollPos = this.runTmux([
+          const scrollPos = this.runParsedTmux([
             'display-message',
             '-t',
             this.currentTarget,
@@ -386,7 +386,7 @@ class PipePaneTerminalProxy extends TerminalProxyBase {
       }
       let output = ''
       try {
-        output = this.runTmux([
+        output = this.runParsedTmux([
           'list-panes',
           '-t',
           monitorTarget,

@@ -3,6 +3,7 @@ import AlertTriangleIcon from '@untitledui-icons/react/line/esm/AlertTriangleIco
 import File06Icon from '@untitledui-icons/react/line/esm/File06Icon'
 import Pin02Icon from '@untitledui-icons/react/line/esm/Pin02Icon'
 import type { AgentSession } from '@shared/types'
+import { copyText } from '../utils/copyText'
 import { getPathLeaf } from '../utils/sessionLabel'
 import { getSessionIdShort } from '../utils/sessionId'
 import { formatRelativeTime } from '../utils/time'
@@ -181,8 +182,10 @@ export default memo(function InactiveSessionItem({
             <button
               onClick={(e) => {
                 e.stopPropagation()
-                void navigator.clipboard.writeText(session.logFilePath).catch(() => {})
                 setContextMenu(null)
+                if (session.logFilePath) {
+                  copyText(session.logFilePath)
+                }
               }}
               className="w-full px-3 py-2 text-left text-sm text-secondary hover:bg-hover hover:text-primary flex items-center gap-2"
               role="menuitem"

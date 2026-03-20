@@ -11,16 +11,40 @@ import {
   getTerminalScrollback,
 } from './logMatcher'
 import {
+  buildTmuxFormat,
+  splitTmuxFields,
+  splitTmuxLines,
+  withTmuxUtf8Flag,
+} from './tmuxFormat'
+import {
   inferSessionStatus,
   type PaneCacheState,
 } from './statusInference'
 import type { Session, SessionStatus, SessionSource } from '../shared/types'
 
 // Format string for batched window listing
-const BATCH_WINDOW_FORMAT =
-  '#{session_name}\t#{window_id}\t#{window_name}\t#{pane_current_path}\t#{window_activity}\t#{window_creation_time}\t#{pane_start_command}\t#{pane_width}\t#{pane_height}'
-const BATCH_WINDOW_FORMAT_FALLBACK =
-  '#{session_name}\t#{window_id}\t#{window_name}\t#{pane_current_path}\t#{window_activity}\t#{window_activity}\t#{pane_current_command}\t#{pane_width}\t#{pane_height}'
+const BATCH_WINDOW_FORMAT = buildTmuxFormat([
+  '#{session_name}',
+  '#{window_id}',
+  '#{window_name}',
+  '#{pane_current_path}',
+  '#{window_activity}',
+  '#{window_creation_time}',
+  '#{pane_start_command}',
+  '#{pane_width}',
+  '#{pane_height}',
+])
+const BATCH_WINDOW_FORMAT_FALLBACK = buildTmuxFormat([
+  '#{session_name}',
+  '#{window_id}',
+  '#{window_name}',
+  '#{pane_current_path}',
+  '#{window_activity}',
+  '#{window_activity}',
+  '#{pane_current_command}',
+  '#{pane_width}',
+  '#{pane_height}',
+])
 
 const LAST_USER_MESSAGE_SCROLLBACK_LINES = 200
 
@@ -139,6 +163,10 @@ function runTmux(args: string[]): string {
   return result.stdout.toString()
 }
 
+function runParsedTmux(args: string[]): string {
+  return runTmux(withTmuxUtf8Flag(args))
+}
+
 function isTmuxFormatError(error: unknown): boolean {
   if (!(error instanceof Error)) return false
   const msg = error.message.toLowerCase()
@@ -148,20 +176,20 @@ function isTmuxFormatError(error: unknown): boolean {
 function listAllWindowData(): WindowData[] {
   let output: string
   try {
-    output = runTmux(['list-windows', '-a', '-F', BATCH_WINDOW_FORMAT])
+    output = runParsedTmux(['list-windows', '-a', '-F', BATCH_WINDOW_FORMAT])
   } catch (error) {
     if (!isTmuxFormatError(error)) {
       throw error
     }
-    output = runTmux(['list-windows', '-a', '-F', BATCH_WINDOW_FORMAT_FALLBACK])
+    output = runParsedTmux(['list-windows', '-a', '-F', BATCH_WINDOW_FORMAT_FALLBACK])
   }
 
-  return output
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const parts = line.split('\t')
+  return splitTmuxLines(output)
+    .flatMap((line) => {
+      const parts = splitTmuxFields(line, 9)
+      if (!parts) {
+        return []
+      }
       return {
         sessionName: parts[0] ?? '',
         windowId: parts[1] ?? '',

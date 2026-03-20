@@ -1,4 +1,5 @@
 import type { ServerWebSocket } from 'bun'
+import os from 'node:os'
 import path from 'node:path'
 import fs from 'node:fs/promises'
 import { Hono } from 'hono'
@@ -52,6 +53,12 @@ import { normalizePaneStartCommand } from './agentDetection'
 import { generateSessionName } from './nameGenerator'
 import { shellQuote } from './shellQuote'
 import { SshTerminalProxy } from './terminal/SshTerminalProxy'
+import {
+  buildTmuxFormat,
+  splitTmuxFields,
+  splitTmuxLines,
+  withTmuxUtf8Flag,
+} from './tmuxFormat'
 
 function checkPortAvailable(port: number): void {
   let result: ReturnType<typeof Bun.spawnSync>
@@ -119,7 +126,11 @@ function pruneOrphanedWsSessions(): void {
   let result: ReturnType<typeof Bun.spawnSync>
   try {
     result = Bun.spawnSync(
-      ['tmux', 'list-sessions', '-F', '#{session_name}\t#{session_attached}'],
+      ['tmux', ...withTmuxUtf8Flag([
+        'list-sessions',
+        '-F',
+        buildTmuxFormat(['#{session_name}', '#{session_attached}']),
+      ])],
       {
         stdout: 'pipe',
         stderr: 'pipe',
@@ -137,13 +148,13 @@ function pruneOrphanedWsSessions(): void {
   if (!output) {
     return
   }
-  const lines = output.split('\n')
+  const lines = splitTmuxLines(output)
   let pruned = 0
 
   for (const line of lines) {
-    const trimmed = line.trim()
-    if (!trimmed) continue
-    const [name, attachedRaw] = trimmed.split('\t')
+    const parts = splitTmuxFields(line, 2)
+    if (!parts) continue
+    const [name, attachedRaw] = parts
     if (!name || !name.startsWith(prefix)) continue
     const attached = Number.parseInt(attachedRaw ?? '', 10)
     if (Number.isNaN(attached) || attached > 0) continue
@@ -774,6 +785,28 @@ logger.info('startup_state', {
 refreshSessionsSync() // hydrate from persisted associations without verification
 setInterval(refreshSessions, config.refreshIntervalMs) // Async for periodic
 
+// Event loop lag monitor — detects when spawnSync or other blocking work
+// starves the event loop, causing typing lag and slow WebSocket delivery.
+if (logLevel === 'debug') {
+  const EL_CHECK_MS = 500
+  let elLastTick = performance.now()
+  setInterval(() => {
+    const now = performance.now()
+    const lagMs = Math.round(now - elLastTick - EL_CHECK_MS)
+    elLastTick = now
+    if (lagMs > 100) {
+      const [load1, load5, load15] = os.loadavg()
+      logger.debug('event_loop_lag', {
+        lagMs,
+        load1: Math.round(load1 * 100) / 100,
+        load5: Math.round(load5 * 100) / 100,
+        load15: Math.round(load15 * 100) / 100,
+        cpus: os.cpus().length,
+      })
+    }
+  }, EL_CHECK_MS)
+}
+
 async function completeStartupVerification(): Promise<void> {
   const activeSessions = db.getActiveSessions()
   // Use local-only sessions for verification to prevent remote sessions
@@ -1171,6 +1204,7 @@ Bun.serve<WSData>({
   websocket: {
     idleTimeout: 40,
     sendPings: true,
+    perMessageDeflate: true,
     open(ws) {
       sockets.add(ws)
       send(ws, { type: 'sessions', sessions: registry.getAll() })
@@ -1440,7 +1474,7 @@ async function handleRemoteCreate(
       // Session exists — add a new window to it
       createResult = await runRemoteTmux(host, [
         'new-window', '-P',
-        '-F', '#{window_index}\t#{window_id}',
+        '-F', buildTmuxFormat(['#{window_index}', '#{window_id}']),
         '-t', tmuxSession, '-n', windowName, '-c', trimmedPath, wrappedCommand,
       ])
     } else {
@@ -1448,7 +1482,7 @@ async function handleRemoteCreate(
       // (avoids an orphan window 0 from a separate new-session call)
       createResult = await runRemoteTmux(host, [
         'new-session', '-d', '-P',
-        '-F', '#{window_index}\t#{window_id}',
+        '-F', buildTmuxFormat(['#{window_index}', '#{window_id}']),
         '-s', tmuxSession, '-n', windowName, '-c', trimmedPath, wrappedCommand,
       ])
     }
@@ -1460,10 +1494,10 @@ async function handleRemoteCreate(
 
     // Parse window info from -P output (e.g. "3\t@5")
     const printOutput = createResult.stdout?.trim() ?? ''
-    const parts = printOutput.split('\t')
+    const parts = splitTmuxFields(printOutput, 2)
     const now = Date.now()
 
-    if (parts.length < 2 || !parts[0]) {
+    if (!parts || !parts[0]) {
       send(ws, { type: 'error', message: 'Failed to verify remote session creation' })
       return
     }
@@ -1558,7 +1592,7 @@ async function handleCheckCopyMode(sessionId: string, ws: ServerWebSocket<WSData
       output = result.stdout?.trim() ?? ''
     } else {
       const result = Bun.spawnSync(
-        ['tmux', 'display-message', '-p', '-t', target, '#{pane_in_mode}'],
+        ['tmux', ...withTmuxUtf8Flag(['display-message', '-p', '-t', target, '#{pane_in_mode}'])],
         { stdout: 'pipe', stderr: 'pipe', timeout: 5000 }
       )
       output = result.stdout?.toString().trim() ?? ''
@@ -2243,7 +2277,18 @@ async function attachTerminalPersistent(
       ws.data.currentTmuxTarget = effectiveTarget
       // Send history in onReady callback, before output suppression is lifted
       if (history) {
-        send(ws, { type: 'terminal-output', sessionId, data: history })
+        const tStr = performance.now()
+        const payload = JSON.stringify({ type: 'terminal-output', sessionId, data: history })
+        const stringifyMs = Math.round(performance.now() - tStr)
+        const sendResult = ws.send(payload)
+        logger.debug('terminal_history_send', {
+          sessionId,
+          stringifyMs,
+          payloadBytes: payload.length,
+          historyChars: history.length,
+          sendResult,
+          connectionId: ws.data.connectionId,
+        })
       }
     })
     const tSwitch = performance.now()
@@ -2316,7 +2361,7 @@ function sshOptionsForHost(): string[] {
 }
 
 async function runRemoteTmux(host: string, args: string[]): Promise<{ exitCode: number; stdout: string; stderr: string }> {
-  const remoteCmd = `tmux ${args.map(a => shellQuote(a)).join(' ')}`
+  const remoteCmd = `tmux -u ${args.map(a => shellQuote(a)).join(' ')}`
   const opts = sshOptionsForHost()
   const proc = Bun.spawn(['ssh', ...opts, host, remoteCmd], { stdout: 'pipe', stderr: 'pipe' })
 

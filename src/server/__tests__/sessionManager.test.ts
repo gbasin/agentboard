@@ -4,6 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { config } from '../config'
 import { SessionManager } from '../SessionManager'
+import { TMUX_FIELD_SEPARATOR } from '../tmuxFormat'
 
 const bunAny = Bun as typeof Bun & {
   spawnSync: typeof Bun.spawnSync
@@ -26,6 +27,24 @@ interface SessionState {
   windows: WindowState[]
 }
 
+function normalizeParsedTmuxArgs(args: string[]): string[] {
+  return args[0] === '-u' ? args.slice(1) : args
+}
+
+function getTmuxCommand(args: string[]): string {
+  return normalizeParsedTmuxArgs(args)[0] ?? ''
+}
+
+function getTmuxFormatArg(args: string[]): string {
+  const normalizedArgs = normalizeParsedTmuxArgs(args)
+  const formatIndex = normalizedArgs.indexOf('-F')
+  return formatIndex >= 0 ? normalizedArgs[formatIndex + 1] ?? '' : ''
+}
+
+function buildTmuxRow(fields: Array<string | number>): string {
+  return fields.map(String).join(TMUX_FIELD_SEPARATOR)
+}
+
 function createTmuxRunner(sessions: SessionState[], baseIndex = 0) {
   const sessionMap = new Map<string, WindowState[]>(
     sessions.map((session) => [session.name, [...session.windows]])
@@ -34,10 +53,11 @@ function createTmuxRunner(sessions: SessionState[], baseIndex = 0) {
 
   const runTmux = (args: string[]) => {
     calls.push(args)
-    const command = args[0]
+    const normalizedArgs = normalizeParsedTmuxArgs(args)
+    const command = normalizedArgs[0]
 
     if (command === 'has-session') {
-      const sessionName = args[2]
+      const sessionName = normalizedArgs[2]
       if (sessionMap.has(sessionName)) {
         return ''
       }
@@ -45,7 +65,7 @@ function createTmuxRunner(sessions: SessionState[], baseIndex = 0) {
     }
 
     if (command === 'new-session') {
-      const sessionName = args[3]
+      const sessionName = normalizedArgs[3]
       sessionMap.set(sessionName, [])
       return ''
     }
@@ -59,25 +79,31 @@ function createTmuxRunner(sessions: SessionState[], baseIndex = 0) {
     }
 
     if (command === 'list-windows') {
-      const sessionName = args[2]
-      const format = args[4]
+      const sessionName = normalizedArgs[2]
+      const format = normalizedArgs[4]
       const windows = sessionMap.get(sessionName) ?? []
       if (format === '#{window_index}') {
         return windows.map((window) => String(window.index)).join('\n')
       }
       return windows
         .map(
-          (window) =>
-            `${window.id}\t${window.name}\t${window.path}\t${window.activity}\t${window.creation ?? window.activity}\t${window.command}`
+          (window) => buildTmuxRow([
+            window.id,
+            window.name,
+            window.path,
+            window.activity,
+            window.creation ?? window.activity,
+            window.command,
+          ])
         )
         .join('\n')
     }
 
     if (command === 'new-window') {
-      const target = args[2]
-      const name = args[4]
-      const cwd = args[6]
-      const startCommand = args[7]
+      const target = normalizedArgs[2]
+      const name = normalizedArgs[4]
+      const cwd = normalizedArgs[6]
+      const startCommand = normalizedArgs[7]
       const [sessionName, indexText] = target.split(':')
       const index = Number.parseInt(indexText ?? '', 10)
       const windows = sessionMap.get(sessionName) ?? []
@@ -94,8 +120,8 @@ function createTmuxRunner(sessions: SessionState[], baseIndex = 0) {
     }
 
     if (command === 'rename-window') {
-      const target = args[2]
-      const newName = args[3]
+      const target = normalizedArgs[2]
+      const newName = normalizedArgs[3]
       const [sessionName, windowId] = target.split(':')
       const windows = sessionMap.get(sessionName) ?? []
       const window = windows.find((item) => item.id === windowId)
@@ -106,7 +132,7 @@ function createTmuxRunner(sessions: SessionState[], baseIndex = 0) {
     }
 
     if (command === 'kill-window') {
-      const target = args[2]
+      const target = normalizedArgs[2]
       const [sessionName, windowId] = target.split(':')
       const windows = sessionMap.get(sessionName) ?? []
       sessionMap.set(
@@ -117,9 +143,27 @@ function createTmuxRunner(sessions: SessionState[], baseIndex = 0) {
     }
 
     if (command === 'display-message') {
-      const target = args[3]
-      const [sessionName] = target.split(':')
-      return sessionName ?? ''
+      const targetIndex = normalizedArgs.indexOf('-t')
+      const target =
+        targetIndex >= 0 ? normalizedArgs[targetIndex + 1] ?? '' : ''
+      const format = normalizedArgs[normalizedArgs.length - 1] ?? ''
+      const [sessionName, windowId] = target.split(':')
+      if (!sessionName) {
+        return ''
+      }
+      if (format === '#{session_name}') {
+        return sessionName
+      }
+      if (format.includes('#{window_name}') && format.includes('#{pane_current_path}')) {
+        const window = (sessionMap.get(sessionName) ?? []).find(
+          (item) => item.id === windowId || String(item.index) === windowId
+        )
+        if (!window) {
+          return ''
+        }
+        return buildTmuxRow([window.name, window.path])
+      }
+      return sessionName
     }
 
     if (command === 'set-option') {
@@ -621,7 +665,7 @@ describe('SessionManager', () => {
 
     const runTmux = (args: string[]) => {
       calls.push(args)
-      const command = args[0]
+      const command = getTmuxCommand(args)
 
       if (command === 'has-session') {
         return ''
@@ -632,14 +676,21 @@ describe('SessionManager', () => {
       }
 
       if (command === 'list-windows') {
-        const format = args[4] ?? ''
+        const format = getTmuxFormatArg(args)
         if (
           format.includes('window_creation_time') ||
           format.includes('pane_start_command')
         ) {
           throw new Error('unknown format: window_creation_time')
         }
-        return '1\talpha\t/tmp/alpha\t1700000000\t1700000000\tclaude'
+        return buildTmuxRow([
+          '1',
+          'alpha',
+          '/tmp/alpha',
+          '1700000000',
+          '1700000000',
+          'claude',
+        ])
       }
 
       if (command === 'set-option') {
@@ -662,15 +713,15 @@ describe('SessionManager', () => {
     expect(
       calls.some(
         (call) =>
-          call[0] === 'list-windows' &&
-          String(call[4]).includes('window_creation_time')
+          getTmuxCommand(call) === 'list-windows' &&
+          getTmuxFormatArg(call).includes('window_creation_time')
       )
     ).toBe(true)
     expect(
       calls.some(
         (call) =>
-          call[0] === 'list-windows' &&
-          String(call[4]).includes('pane_current_command')
+          getTmuxCommand(call) === 'list-windows' &&
+          getTmuxFormatArg(call).includes('pane_current_command')
       )
     ).toBe(true)
   })
@@ -911,11 +962,11 @@ describe('SessionManager', () => {
     const originalPrefixes = config.discoverPrefixes
     config.discoverPrefixes = []
     bunAny.spawnSync = (args) => {
-      const command = Array.isArray(args) ? args[1] : ''
+      const command = Array.isArray(args) ? getTmuxCommand(args.slice(1)) : ''
       if (command === 'display-message') {
         return {
           exitCode: 0,
-          stdout: Buffer.from('80\t24'),
+          stdout: Buffer.from(buildTmuxRow([80, 24])),
           stderr: Buffer.from(''),
         } as ReturnType<typeof Bun.spawnSync>
       }

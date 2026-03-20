@@ -1053,10 +1053,81 @@ function extractUserFromPrompt(line: string): string {
 function isCurrentInputField(rawLines: string[], promptIdx: number): boolean {
   for (let i = promptIdx + 1; i < Math.min(promptIdx + 4, rawLines.length); i++) {
     const line = rawLines[i]?.trim() ?? ''
-    if (/\d+%\s*context\s*left/i.test(line)) return true
+    if (/\d+%\s*(?:context\s*)?left/i.test(line)) return true
     if (/\[\d+%\]/.test(line)) return true
     if (/\?\s*for\s*shortcuts/i.test(line)) return true
   }
+  return false
+}
+
+/**
+ * Detect AskUserQuestion interactive selection lines.
+ * Claude Code's AskUserQuestion UI uses ❯ to mark the selected option,
+ * which collides with the ❯ prompt symbol for user messages.
+ *
+ * Detection requires TWO independent signals:
+ * 1. The text after ❯ starts with "N. " (numbered option pattern)
+ * 2. At least one corroborating indicator nearby:
+ *    a. "Enter to select" navigation hint below, with no structural
+ *       boundaries (⏺ assistant markers, other ❯ prompts) between
+ *    b. Sibling numbered options within a bounded block AND no ⏺
+ *       assistant output follows the block (distinguishes active
+ *       AskUserQuestion from submitted multi-line user messages)
+ */
+function isAskUserQuestionOption(rawLines: string[], promptIdx: number): boolean {
+  const line = rawLines[promptIdx] ?? ''
+  // Strip the prompt prefix (❯/›) and check if what remains is a numbered item
+  const afterPrompt = stripAnsi(line)
+    .replace(TMUX_PROMPT_PREFIX, '')
+    .replace(/^›\s*/, '')
+    .trim()
+
+  // Signal 1: the text after ❯/› starts with "N. ..."
+  if (!/^\d+\.\s/.test(afterPrompt)) {
+    return false
+  }
+
+  // Signal 2a: "Enter to select" navigation hint below, stopping at structural
+  // boundaries (assistant output ⏺, another prompt ❯/›) to avoid false positives
+  // from assistant text that happens to contain the phrase.
+  for (let i = promptIdx + 1; i < Math.min(promptIdx + 20, rawLines.length); i++) {
+    const below = rawLines[i] ?? ''
+    const trimmed = below.trim()
+    // Stop at structural boundaries — we've left the selector block
+    if (/⏺/.test(below) || isPromptLine(below)) break
+    // Claude: "Enter to select", Codex: "enter to submit answer"
+    if (/enter\s+to\s+(select|submit\s+answer)/i.test(trimmed)) return true
+  }
+
+  // Signal 2b: sibling numbered options within a bounded block.
+  // Scan both above and below, stopping at structural boundaries
+  // (⏺ markers, ❯/› prompts).
+  const hasSibling = (start: number, step: number, maxSteps: number): boolean => {
+    for (let n = 1; n <= maxSteps; n++) {
+      const idx = start + step * n
+      if (idx < 0 || idx >= rawLines.length) break
+      const raw = rawLines[idx] ?? ''
+      // Stop at structural boundaries
+      if (/⏺/.test(raw) || isPromptLine(raw)) break
+      const sibling = stripAnsi(raw).trim()
+      if (/^\d+\.\s/.test(sibling)) return true
+    }
+    return false
+  }
+
+  if (hasSibling(promptIdx, 1, 4) || hasSibling(promptIdx, -1, 4)) {
+    // Distinguish active AskUserQuestion from submitted multi-line user messages:
+    // a submitted message always has ⏺ assistant output after it, while an active
+    // AskUserQuestion card does not (it's waiting for user selection).
+    // Scan forward past the block to check.
+    for (let i = promptIdx + 1; i < Math.min(promptIdx + 10, rawLines.length); i++) {
+      const raw = rawLines[i] ?? ''
+      if (/⏺/.test(raw)) return false // assistant responded → submitted user message
+      if (isPromptLine(raw)) break // another prompt → stop
+    }
+    return true
+  }
+
   return false
 }
 
@@ -1074,6 +1145,7 @@ export function extractRecentUserMessagesFromTmux(
     const line = rawLines[i] ?? ''
     if (!isPromptLine(line)) continue
     if (isCurrentInputField(rawLines, i)) continue
+    if (isAskUserQuestionOption(rawLines, i)) continue
     if (line.includes('↵')) continue
     const message = extractUserFromPrompt(line)
     if (!message) continue

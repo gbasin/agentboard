@@ -3,6 +3,11 @@ import { config } from './config'
 import { logger } from './logger'
 import { shellQuote } from './shellQuote'
 import {
+  buildTmuxFormat,
+  splitTmuxFields,
+  splitTmuxLines,
+} from './tmuxFormat'
+import {
   inferSessionStatus,
   type PaneCacheState,
   type PaneSnapshot,
@@ -18,8 +23,20 @@ function sanitizeForId(s: string): string {
 }
 
 const DEFAULT_SSH_OPTIONS = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=3']
-const TMUX_LIST_FORMAT =
-  '#{session_name}\t#{window_index}\t#{window_id}\t#{window_name}\t#{pane_current_path}\t#{window_activity}\t#{window_creation_time}\t#{pane_start_command}'
+const TMUX_LIST_FORMAT = buildTmuxFormat([
+  '#{session_name}',
+  '#{window_index}',
+  '#{window_id}',
+  '#{window_name}',
+  '#{pane_current_path}',
+  '#{window_activity}',
+  '#{window_creation_time}',
+  '#{pane_start_command}',
+])
+const PANE_DIMENSIONS_FORMAT = buildTmuxFormat([
+  '#{pane_width}',
+  '#{pane_height}',
+])
 
 // Cache of remote pane content for change detection (mirrors paneContentCache in SessionManager)
 const remoteContentCache = new Map<string, PaneCacheState>()
@@ -177,8 +194,8 @@ function buildBatchCaptureCommand(sessions: Session[], separator: string): strin
       const target = shellQuote(s.tmuxWindow)
       // Group dims + capture; suppress stderr so failures produce empty segments
       return (
-        `{ tmux display-message -t ${target} -p '#{pane_width} #{pane_height}'` +
-        ` && tmux capture-pane -t ${target} -p -J; } 2>/dev/null; echo ${shellQuote(separator)};`
+        `{ tmux -u display-message -t ${target} -p ${shellQuote(PANE_DIMENSIONS_FORMAT)}` +
+        ` && tmux -u capture-pane -t ${target} -p -J; } 2>/dev/null; echo ${shellQuote(separator)};`
       )
     })
     .join(' ')
@@ -204,7 +221,9 @@ function parseBatchCaptureOutput(
     const dimsLine = lines[0]?.trim()
     if (!dimsLine) continue
 
-    const dimsParts = dimsLine.split(' ')
+    const dimsParts = splitTmuxFields(dimsLine, 2)
+    if (!dimsParts) continue
+
     const width = Number.parseInt(dimsParts[0] ?? '', 10) || 80
     const height = Number.parseInt(dimsParts[1] ?? '', 10) || 24
 
@@ -320,7 +339,7 @@ async function pollHost(
   tmuxSessionPrefix: string,
   discoverPrefixes: string[]
 ): Promise<RemoteHostSnapshot> {
-  const args = ['ssh', ...sshOptions, host, `tmux list-windows -a -F '${TMUX_LIST_FORMAT}'`]
+  const args = ['ssh', ...sshOptions, host, `tmux -u list-windows -a -F ${shellQuote(TMUX_LIST_FORMAT)}`]
   const proc = Bun.spawn(args, { stdout: 'pipe', stderr: 'pipe' })
 
   const timeout = setTimeout(() => {
@@ -372,14 +391,14 @@ function parseTmuxWindows(
   tmuxSessionPrefix: string,
   discoverPrefixes: string[]
 ): Session[] {
-  const lines = output.split('\n').filter((line) => /\S/.test(line))
+  const lines = splitTmuxLines(output)
   const now = Date.now()
   const sessions: Session[] = []
   const wsPrefix = `${tmuxSessionPrefix}-ws-`
 
   for (const line of lines) {
-    const parts = line.split('\t')
-    if (parts.length < 8) {
+    const parts = splitTmuxFields(line, 8)
+    if (!parts) {
       continue
     }
     const [

@@ -1,6 +1,12 @@
 import { TerminalProxyBase } from './TerminalProxyBase'
 import { TerminalProxyError, TerminalState } from './types'
 import { resolveGroupedSessionSwitchTarget } from './groupedSessionTarget'
+import { buildTmuxFormat, splitTmuxFields } from '../tmuxFormat'
+
+const CLIENT_TTY_FORMAT = buildTmuxFormat([
+  '#{client_tty}',
+  '#{client_pid}',
+])
 
 class PtyTerminalProxy extends TerminalProxyBase {
   private process: ReturnType<typeof Bun.spawn> | null = null
@@ -305,10 +311,10 @@ class PtyTerminalProxy extends TerminalProxyBase {
     while (this.now() - start <= maxWaitMs) {
       let output = ''
       try {
-        output = this.runTmux([
+        output = this.runParsedTmux([
           'list-clients',
           '-F',
-          '#{client_tty} #{client_pid}',
+          CLIENT_TTY_FORMAT,
         ])
       } catch {
         output = ''
@@ -316,7 +322,9 @@ class PtyTerminalProxy extends TerminalProxyBase {
       for (const line of output.split('\n')) {
         const trimmed = line.trim()
         if (!trimmed) continue
-        const [tty, pidValue] = trimmed.split(/\s+/)
+        const parts = splitTmuxFields(trimmed, 2)
+        if (!parts) continue
+        const [tty, pidValue] = parts
         if (!tty || !pidValue) continue
         if (Number.parseInt(pidValue, 10) === pid) {
           return tty

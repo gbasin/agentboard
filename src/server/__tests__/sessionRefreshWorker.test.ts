@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import type { RefreshWorkerRequest, RefreshWorkerResponse } from '../sessionRefreshWorker'
+import { TMUX_FIELD_SEPARATOR } from '../tmuxFormat'
 import type { Session } from '../../shared/types'
 
 const bunAny = Bun as typeof Bun & { spawnSync: typeof Bun.spawnSync }
@@ -12,6 +13,17 @@ const originalSelf = globalAny.self
 
 let messages: RefreshWorkerResponse[] = []
 let ctx: DedicatedWorkerGlobalScope
+
+function joinTmuxFields(fields: string[]): string {
+  return fields.join(TMUX_FIELD_SEPARATOR)
+}
+
+function getTmuxSubcommand(args: string[]): string | undefined {
+  if (args[0] !== 'tmux') {
+    return undefined
+  }
+  return args[1] === '-u' ? args[2] : args[1]
+}
 
 async function loadWorker(tag: string) {
   messages = []
@@ -52,26 +64,26 @@ describe('sessionRefreshWorker', () => {
     await loadWorker('refresh-filter')
 
     const listOutput = [
-      'agentboard\t1\talpha\t/Users/test/project\t100\t1700000000\tcodex --search\t80\t24',
-      'agentboard-ws-foo\t2\tws\t/Users/test/ws\t100\t1700000001\tbash\t80\t24',
-      'external-session\t3\text\t/Users/test/ext\t100\t1700000002\tclaude\t100\t40',
-      'other\t4\tother\t/Users/test/other\t100\t1700000003\tbash\t80\t24',
+      joinTmuxFields(['agentboard', '1', 'alpha|||view', '/Users/test/project|||main', '100', '1700000000', 'codex --search', '80', '24']),
+      joinTmuxFields(['agentboard-ws-foo', '2', 'ws', '/Users/test/ws', '100', '1700000001', 'bash', '80', '24']),
+      joinTmuxFields(['external-|||session', '3', 'ext', '/Users/test/ext|||path', '100', '1700000002', 'claude', '100', '40']),
+      joinTmuxFields(['other', '4', 'other', '/Users/test/other', '100', '1700000003', 'bash', '80', '24']),
     ].join('\n')
 
     const captureOutputs = new Map<string, string>([
       ['agentboard:1', 'ready'],
-      ['external-session:3', 'waiting'],
+      ['external-|||session:3', 'waiting'],
     ])
 
     bunAny.spawnSync = ((args: string[]) => {
-      if (args[0] === 'tmux' && args[1] === 'list-windows') {
+      if (getTmuxSubcommand(args) === 'list-windows') {
         return {
           exitCode: 0,
           stdout: Buffer.from(listOutput),
           stderr: Buffer.from(''),
         } as ReturnType<typeof Bun.spawnSync>
       }
-      if (args[0] === 'tmux' && args[1] === 'capture-pane') {
+      if (getTmuxSubcommand(args) === 'capture-pane') {
         const targetIndex = args.indexOf('-t')
         const target = targetIndex >= 0 ? args[targetIndex + 1] : ''
         const output = captureOutputs.get(target ?? '')
@@ -113,12 +125,13 @@ describe('sessionRefreshWorker', () => {
       (session) => session.tmuxWindow === 'agentboard:1'
     )
     const external = response.sessions.find(
-      (session) => session.tmuxWindow === 'external-session:3'
+      (session) => session.tmuxWindow === 'external-|||session:3'
     )
 
     expect(managed).toEqual(
       expect.objectContaining({
-        name: 'alpha',
+        name: 'alpha|||view',
+        projectPath: '/Users/test/project|||main',
         source: 'managed',
         status: 'waiting',
         agentType: 'codex',
@@ -126,7 +139,8 @@ describe('sessionRefreshWorker', () => {
     )
     expect(external).toEqual(
       expect.objectContaining({
-        name: 'external-session',
+        name: 'external-|||session',
+        projectPath: '/Users/test/ext|||path',
         source: 'external',
         status: 'waiting',
         agentType: 'claude',
@@ -138,13 +152,13 @@ describe('sessionRefreshWorker', () => {
     await loadWorker('format-fallback')
 
     const listOutput = [
-      'agentboard\t1\talpha\t/Users/test/project\t100\t1700000000\tcodex\t80\t24',
+      joinTmuxFields(['agentboard', '1', 'alpha', '/Users/test/project', '100', '1700000000', 'codex', '80', '24']),
     ].join('\n')
 
     let listCalls = 0
 
     bunAny.spawnSync = ((args: string[]) => {
-      if (args[0] === 'tmux' && args[1] === 'list-windows') {
+      if (getTmuxSubcommand(args) === 'list-windows') {
         listCalls += 1
         if (listCalls === 1) {
           return {
@@ -159,7 +173,7 @@ describe('sessionRefreshWorker', () => {
           stderr: Buffer.from(''),
         } as ReturnType<typeof Bun.spawnSync>
       }
-      if (args[0] === 'tmux' && args[1] === 'capture-pane') {
+      if (getTmuxSubcommand(args) === 'capture-pane') {
         return {
           exitCode: 0,
           stdout: Buffer.from('ready'),
@@ -193,7 +207,7 @@ describe('sessionRefreshWorker', () => {
     await loadWorker('last-user-message')
 
     bunAny.spawnSync = ((args: string[]) => {
-      if (args[0] === 'tmux' && args[1] === 'capture-pane') {
+      if (getTmuxSubcommand(args) === 'capture-pane') {
         return {
           exitCode: 0,
           stdout: Buffer.from('❯ First message\nok\n❯ Second message\n'),
@@ -225,7 +239,7 @@ describe('sessionRefreshWorker', () => {
     await loadWorker('refresh-error')
 
     bunAny.spawnSync = ((args: string[]) => {
-      if (args[0] === 'tmux' && args[1] === 'list-windows') {
+      if (getTmuxSubcommand(args) === 'list-windows') {
         return {
           exitCode: 1,
           stdout: Buffer.from(''),
@@ -262,7 +276,7 @@ describe('sessionRefreshWorker', () => {
       await loadWorker('status-changes')
 
       const listOutput = [
-        'agentboard\t1\talpha\t/Users/test/project\t100\t1700000000\tcodex\t80\t24',
+        joinTmuxFields(['agentboard', '1', 'alpha', '/Users/test/project', '100', '1700000000', 'codex', '80', '24']),
       ].join('\n')
 
       const captureSequence = [
@@ -274,14 +288,14 @@ describe('sessionRefreshWorker', () => {
       let captureIndex = 0
 
       bunAny.spawnSync = ((args: string[]) => {
-        if (args[0] === 'tmux' && args[1] === 'list-windows') {
+        if (getTmuxSubcommand(args) === 'list-windows') {
           return {
             exitCode: 0,
             stdout: Buffer.from(listOutput),
             stderr: Buffer.from(''),
           } as ReturnType<typeof Bun.spawnSync>
         }
-        if (args[0] === 'tmux' && args[1] === 'capture-pane') {
+        if (getTmuxSubcommand(args) === 'capture-pane') {
           const output = captureSequence[captureIndex] ?? ''
           captureIndex += 1
           return {
@@ -349,21 +363,21 @@ describe('sessionRefreshWorker', () => {
       await loadWorker('status-first-observation')
 
       const listOutput = [
-        'agentboard\t1\talpha\t/Users/test/project\t100\t1700000000\tcodex\t80\t24',
+        joinTmuxFields(['agentboard', '1', 'alpha', '/Users/test/project', '100', '1700000000', 'codex', '80', '24']),
       ].join('\n')
 
       const captureSequence = ['idle', 'idle']
       let captureIndex = 0
 
       bunAny.spawnSync = ((args: string[]) => {
-        if (args[0] === 'tmux' && args[1] === 'list-windows') {
+        if (getTmuxSubcommand(args) === 'list-windows') {
           return {
             exitCode: 0,
             stdout: Buffer.from(listOutput),
             stderr: Buffer.from(''),
           } as ReturnType<typeof Bun.spawnSync>
         }
-        if (args[0] === 'tmux' && args[1] === 'capture-pane') {
+        if (getTmuxSubcommand(args) === 'capture-pane') {
           const output = captureSequence[captureIndex] ?? ''
           captureIndex += 1
           return {

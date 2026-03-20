@@ -6,6 +6,12 @@ import { generateSessionName } from './nameGenerator'
 import { logger } from './logger'
 import { resolveProjectPath } from './paths'
 import {
+  buildTmuxFormat,
+  splitTmuxFields,
+  splitTmuxLines,
+  withTmuxUtf8Flag,
+} from './tmuxFormat'
+import {
   detectsPermissionPrompt,
   inferSessionStatus,
   type PaneCacheState,
@@ -34,10 +40,30 @@ type CapturePane = (tmuxWindow: string) => PaneCapture | null
 
 // Cache of pane content, dimensions, and last-changed timestamp for change detection
 const paneContentCache = new Map<string, PaneCacheState>()
-const WINDOW_LIST_FORMAT =
-  '#{window_id}\t#{window_name}\t#{pane_current_path}\t#{window_activity}\t#{window_creation_time}\t#{pane_start_command}'
-const WINDOW_LIST_FORMAT_FALLBACK =
-  '#{window_id}\t#{window_name}\t#{pane_current_path}\t#{window_activity}\t#{window_activity}\t#{pane_current_command}'
+const WINDOW_LIST_FORMAT = buildTmuxFormat([
+  '#{window_id}',
+  '#{window_name}',
+  '#{pane_current_path}',
+  '#{window_activity}',
+  '#{window_creation_time}',
+  '#{pane_start_command}',
+])
+const WINDOW_LIST_FORMAT_FALLBACK = buildTmuxFormat([
+  '#{window_id}',
+  '#{window_name}',
+  '#{pane_current_path}',
+  '#{window_activity}',
+  '#{window_activity}',
+  '#{pane_current_command}',
+])
+const WINDOW_INFO_FORMAT = buildTmuxFormat([
+  '#{window_name}',
+  '#{pane_current_path}',
+])
+const PANE_DIMENSIONS_FORMAT = buildTmuxFormat([
+  '#{pane_width}',
+  '#{pane_height}',
+])
 
 export class SessionManager {
   private sessionName: string
@@ -251,14 +277,16 @@ export class SessionManager {
   killWindow(tmuxWindow: string): void {
     // Log window info before killing
     try {
-      const info = this.runTmux([
+      const info = this.runParsedTmux([
         'display-message',
         '-t',
         tmuxWindow,
         '-p',
-        '#{window_name}\t#{pane_current_path}',
+        WINDOW_INFO_FORMAT,
       ])
-      const [name, path] = info.trim().split('\t')
+      const parts = splitTmuxFields(info.trim(), 2)
+      const name = parts?.[0]
+      const path = parts?.[1]
       logger.info('window_killed', { tmuxWindow, name, path })
     } catch {
       // Window may already be gone, log what we know
@@ -317,11 +345,8 @@ export class SessionManager {
 
   private listSessions(): string[] {
     try {
-      const output = this.runTmux(['list-sessions', '-F', '#{session_name}'])
-      return output
-        .split('\n')
-        .map((line) => line.trim())
-        .filter(Boolean)
+      const output = this.runParsedTmux(['list-sessions', '-F', '#{session_name}'])
+      return splitTmuxLines(output)
     } catch {
       return []
     }
@@ -333,11 +358,11 @@ export class SessionManager {
   ): Session[] {
     const output = this.listWindowOutput(sessionName)
 
-    return output
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => parseWindow(line))
+    return splitTmuxLines(output)
+      .flatMap((line) => {
+        const window = parseWindow(line)
+        return window ? [window] : []
+      })
       .map((window) => {
         const tmuxWindow = `${sessionName}:${window.id}`
         const creationTimestamp = window.creation
@@ -370,14 +395,14 @@ export class SessionManager {
     const args = ['list-windows', '-t', sessionName, '-F']
 
     try {
-      return this.runTmux([...args, WINDOW_LIST_FORMAT])
+      return this.runParsedTmux([...args, WINDOW_LIST_FORMAT])
     } catch (error) {
       if (!isTmuxFormatError(error)) {
         throw error
       }
     }
 
-    return this.runTmux([...args, WINDOW_LIST_FORMAT_FALLBACK])
+    return this.runParsedTmux([...args, WINDOW_LIST_FORMAT_FALLBACK])
   }
 
   private findAvailableName(
@@ -424,7 +449,7 @@ export class SessionManager {
 
   private getTmuxBaseIndex(): number {
     try {
-      const output = this.runTmux(['show-options', '-gv', 'base-index'])
+      const output = this.runParsedTmux(['show-options', '-gv', 'base-index'])
       return Number.parseInt(output.trim(), 10) || 0
     } catch {
       return 0
@@ -433,16 +458,15 @@ export class SessionManager {
 
   private getWindowIndices(): number[] {
     try {
-      const output = this.runTmux([
+      const output = this.runParsedTmux([
         'list-windows',
         '-t',
         this.sessionName,
         '-F',
         '#{window_index}',
       ])
-      return output
-        .split('\n')
-        .map((line) => Number.parseInt(line.trim(), 10))
+      return splitTmuxLines(output)
+        .map((line) => Number.parseInt(line, 10))
         .filter((n) => !Number.isNaN(n))
     } catch {
       return []
@@ -455,7 +479,7 @@ export class SessionManager {
       return tmuxWindow.slice(0, colonIndex)
     }
 
-    const resolved = this.runTmux([
+    const resolved = this.runParsedTmux([
       'display-message',
       '-p',
       '-t',
@@ -476,11 +500,19 @@ export class SessionManager {
     const paneSplit = windowTarget.split('.')
     return paneSplit[0] || windowTarget
   }
+
+  private runParsedTmux(args: string[]): string {
+    return this.runTmux(withTmuxUtf8Flag(args))
+  }
 }
 
-function parseWindow(line: string): WindowInfo {
-  const [id, name, panePath, activityRaw, creationRaw, command] =
-    line.split('\t')
+function parseWindow(line: string): WindowInfo | null {
+  const parts = splitTmuxFields(line, 6)
+  if (!parts) {
+    return null
+  }
+
+  const [id, name, panePath, activityRaw, creationRaw, command] = parts
   const activity = Number.parseInt(activityRaw || '0', 10)
   const creation = Number.parseInt(creationRaw || '0', 10)
 
@@ -550,24 +582,30 @@ function inferStatus(
 function capturePaneWithDimensions(tmuxWindow: string): PaneCapture | null {
   try {
     const dimsResult = Bun.spawnSync(
-      [
-        'tmux',
+      ['tmux',
+        ...withTmuxUtf8Flag([
         'display-message',
         '-t',
         tmuxWindow,
         '-p',
-        '#{pane_width}\t#{pane_height}',
-      ],
+        PANE_DIMENSIONS_FORMAT,
+      ])],
       { stdout: 'pipe', stderr: 'pipe' }
     )
     if (dimsResult.exitCode !== 0) {
       return null
     }
 
-    const [widthText, heightText] = dimsResult.stdout
+    const parts = splitTmuxFields(
+      dimsResult.stdout
       .toString()
-      .trim()
-      .split('\t')
+      .trim(),
+      2
+    )
+    if (!parts) {
+      return null
+    }
+    const [widthText, heightText] = parts
     const width = Number.parseInt(widthText ?? '', 10) || 80
     const height = Number.parseInt(heightText ?? '', 10) || 24
 

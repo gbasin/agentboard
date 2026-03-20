@@ -656,6 +656,199 @@ ${ESC}[48;2;52;53;65m second message ${ESC}[49m Response 2
     // Should NOT include the pending message (has ↵ send indicator)
     expect(userMessages).not.toContain('commit these changes')
   })
+
+  test('Claude: skips AskUserQuestion option lines with ❯ selector', () => {
+    const scrollback = `❯ before implementing the feature, let me ask some questions
+
+⏺ Great idea. Let me ask a few questions to narrow this down.
+
+─────────────────────────────────────────────────────────────────────────
+←  ☒ Audience  ☐ Format  ☐ Granularity  ✔ Submit  →
+
+What's the primary audience for this deliverable?
+
+❯ 1. Just us (dev alignment) ✔
+     You and I use it to validate the flow.
+  2. Internal team / stakeholders
+     Something you could share with teammates.
+  3. Demo rehearsal tool
+     A presenter could walk through it.
+  4. Type something.
+─────────────────────────────────────────────────────────────────────────
+  5. Chat about this
+
+Enter to select · Tab/Arrow keys to navigate · Esc to cancel`
+
+    const userMessages = extractRecentUserMessagesFromTmux(scrollback)
+    // Should NOT include the AskUserQuestion option
+    expect(userMessages).not.toContainEqual(
+      expect.stringContaining('Just us')
+    )
+    // Should find the real user message
+    expect(userMessages).toContain(
+      'before implementing the feature, let me ask some questions'
+    )
+  })
+
+  test('Codex: skips request_user_input option lines with › selector', () => {
+    // Matches actual Codex TUI rendering from snapshot tests:
+    // - Uses › (not ❯) for selected option
+    // - Footer: "tab to add notes | enter to submit answer | esc to interrupt"
+    // - Options show "N. Label  Description" in two columns
+    const scrollback = `› implement the auth module
+
+⏺ Let me ask about the requirements first.
+
+  Question 1/1 (1 unanswered)
+  Which auth strategy?
+
+  › 1. OAuth 2.0 with PKCE      Recommended for SPAs and mobile apps.
+    2. Session-based JWT          Simpler but less secure for public clients.
+    3. API key auth               For internal services only.
+
+  tab to add notes | enter to submit answer | esc to interrupt`
+
+    const userMessages = extractRecentUserMessagesFromTmux(scrollback)
+    expect(userMessages).not.toContainEqual(
+      expect.stringContaining('OAuth')
+    )
+    expect(userMessages).toContain('implement the auth module')
+  })
+
+  test('does NOT false-positive on user messages that start with numbers', () => {
+    const scrollback = `❯ 3. fix the validation logic in handleSubmit
+
+⏺ I'll fix the validation logic now. Let me read the file first.
+
+⏺ Read(src/handlers.ts)
+  ⎿  Read 200 lines`
+
+    const userMessages = extractRecentUserMessagesFromTmux(scrollback)
+    // Should include the numbered user message — no sibling numbered items nearby
+    expect(userMessages).toContain('3. fix the validation logic in handleSubmit')
+  })
+
+  test('does NOT false-positive when numbered list is far away in assistant output', () => {
+    const scrollback = `❯ 1. rename the field to camelCase
+
+⏺ Done. Here's what I changed:
+
+  1. Updated the schema
+  2. Updated the handler
+  3. Updated the tests
+
+✻ Brewed for 5s
+
+❯ looks good, ship it`
+
+    const userMessages = extractRecentUserMessagesFromTmux(scrollback)
+    // "1. rename..." has numbered siblings in the assistant output, but they're
+    // more than 6 lines away. Only "looks good, ship it" should be first.
+    expect(userMessages[0]).toBe('looks good, ship it')
+    // "1. rename..." is also a valid user message (numbered siblings are far away)
+    expect(userMessages).toContain('1. rename the field to camelCase')
+  })
+
+  test('handles AskUserQuestion with only two options', () => {
+    const scrollback = `❯ should we proceed?
+
+⏺ Let me confirm.
+
+Continue with the refactor?
+
+❯ 1. Yes, proceed
+  2. No, cancel
+
+Enter to select · Esc to cancel`
+
+    const userMessages = extractRecentUserMessagesFromTmux(scrollback)
+    expect(userMessages).not.toContainEqual(
+      expect.stringContaining('Yes, proceed')
+    )
+    expect(userMessages).toContain('should we proceed?')
+  })
+
+  test('does NOT false-positive when assistant prose contains "Enter to select"', () => {
+    const scrollback = `❯ 1. Do this thing
+
+⏺ Sure — press Enter to select the template you want to use.`
+
+    const userMessages = extractRecentUserMessagesFromTmux(scrollback)
+    // The ⏺ boundary should stop the "Enter to select" scan
+    expect(userMessages).toContain('1. Do this thing')
+  })
+
+  test('detects AskUserQuestion when selected option is last (siblings above)', () => {
+    const scrollback = `❯ pick a strategy
+
+⏺ Let me ask.
+
+Which approach?
+
+  1. Fast
+  2. Thorough
+❯ 3. Balanced
+
+Enter to select · Esc to cancel`
+
+    const userMessages = extractRecentUserMessagesFromTmux(scrollback)
+    expect(userMessages).not.toContainEqual(
+      expect.stringContaining('Balanced')
+    )
+    expect(userMessages).toContain('pick a strategy')
+  })
+
+  test('detects AskUserQuestion with multi-line option descriptions', () => {
+    const scrollback = `❯ what format?
+
+⏺ Let me ask.
+
+❯ 1. ASCII storyboard
+     Markdown file with dual-panel ASCII art.
+     Lightweight and easy to annotate.
+  2. HTML clickthrough
+     Single HTML file with screens.
+
+Enter to select · Esc to cancel`
+
+    const userMessages = extractRecentUserMessagesFromTmux(scrollback)
+    expect(userMessages).not.toContainEqual(
+      expect.stringContaining('ASCII storyboard')
+    )
+    expect(userMessages).toContain('what format?')
+  })
+
+  test('does NOT drop a real multiline numbered user message (pasted)', () => {
+    const scrollback = `❯ 1. Audit auth flow
+  2. Fix validation
+  3. Add regression tests
+
+⏺ Sounds good. I'll start with the auth audit.`
+
+    const userMessages = extractRecentUserMessagesFromTmux(scrollback)
+    // The ⏺ after the block proves this was a submitted message, not AskUserQuestion
+    expect(userMessages).toContain('1. Audit auth flow')
+  })
+
+  test('Codex: skips suggested message in idle input field with "N% left" status', () => {
+    // Codex shows a suggested next message in the input field when idle.
+    // The status line below uses "N% left" without the word "context".
+    const scrollback = `› is there any benefit for Effect on client side
+
+⏺ Yes, but mostly for client workflows, not for rendering itself.
+
+› Explain this codebase
+
+  gpt-5.4 xhigh fast · 68% left · ~/Documents/GitHub/usonia`
+
+    const userMessages = extractRecentUserMessagesFromTmux(scrollback)
+    // Should NOT include the suggested message in the input field
+    expect(userMessages).not.toContain('Explain this codebase')
+    // Should find the real submitted message
+    expect(userMessages).toContain(
+      'is there any benefit for Effect on client side'
+    )
+  })
 })
 
 describe('extractActionFromUserAction', () => {

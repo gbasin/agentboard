@@ -12,7 +12,12 @@ import {
   remoteContentCache,
 } from '../remoteSessions'
 import { isValidHostname } from '../config'
+import { TMUX_FIELD_SEPARATOR } from '../tmuxFormat'
 import type { Session } from '../../shared/types'
+
+function joinTmuxFields(fields: string[]): string {
+  return fields.join(TMUX_FIELD_SEPARATOR)
+}
 
 describe('parseTmuxWindows', () => {
   const defaultPrefix = 'agentboard'
@@ -20,8 +25,8 @@ describe('parseTmuxWindows', () => {
 
   test('parses valid tmux output with multiple windows', () => {
     const output = [
-      'main\t0\t@1\twindow-name\t/home/user/project\t1706745600\t1706745000\tclaude',
-      'main\t1\t@2\teditor\t/home/user/code\t1706745700\t1706745100\tvim',
+      joinTmuxFields(['main', '0', '@1', 'window-name', '/home/user/project', '1706745600', '1706745000', 'claude']),
+      joinTmuxFields(['main', '1', '@2', 'editor', '/home/user/code', '1706745700', '1706745100', 'vim']),
     ].join('\n')
 
     const sessions = parseTmuxWindows('remote-host', output, defaultPrefix, noPrefixes)
@@ -44,9 +49,9 @@ describe('parseTmuxWindows', () => {
 
   test('unwraps bash -lc/-lic wrappers from pane_start_command', () => {
     const output = [
-      "main\t0\t@1\twindow-name\t/home/user/project\t1706745600\t1706745000\tbash -lic claude",
-      "main\t1\t@2\teditor\t/home/user/code\t1706745700\t1706745100\tbash -lc 'claude --model opus'",
-      "main\t2\t@3\tshell\t/home/user\t1706745800\t1706745200\tbash -lic bash",
+      joinTmuxFields(['main', '0', '@1', 'window-name', '/home/user/project', '1706745600', '1706745000', 'bash -lic claude']),
+      joinTmuxFields(['main', '1', '@2', 'editor', '/home/user/code', '1706745700', '1706745100', "bash -lc 'claude --model opus'"]),
+      joinTmuxFields(['main', '2', '@3', 'shell', '/home/user', '1706745800', '1706745200', 'bash -lic bash']),
     ].join('\n')
 
     const sessions = parseTmuxWindows('remote-host', output, defaultPrefix, noPrefixes)
@@ -65,9 +70,9 @@ describe('parseTmuxWindows', () => {
   test('unwraps double-quoted pane_start_command from tmux', () => {
     // Some tmux versions wrap #{pane_start_command} in double quotes
     const output = [
-      'main\t0\t@1\twindow-name\t/home/user/project\t1706745600\t1706745000\t"bash -lic claude"',
-      'main\t1\t@2\teditor\t/home/user/code\t1706745700\t1706745100\t"bash -lic \'claude --model opus\'"',
-      'main\t2\t@3\tshell\t/home/user\t1706745800\t1706745200\t"claude"',
+      joinTmuxFields(['main', '0', '@1', 'window-name', '/home/user/project', '1706745600', '1706745000', '"bash -lic claude"']),
+      joinTmuxFields(['main', '1', '@2', 'editor', '/home/user/code', '1706745700', '1706745100', '"bash -lic \'claude --model opus\'"']),
+      joinTmuxFields(['main', '2', '@3', 'shell', '/home/user', '1706745800', '1706745200', '"claude"']),
     ].join('\n')
 
     const sessions = parseTmuxWindows('remote-host', output, defaultPrefix, noPrefixes)
@@ -87,7 +92,7 @@ describe('parseTmuxWindows', () => {
   test('skips malformed lines with fewer than 8 fields', () => {
     const output = [
       'incomplete\tline\tonly',
-      'main\t0\t@1\twindow\t/path\t1706745600\t1706745000\tclaude',
+      joinTmuxFields(['main', '0', '@1', 'window', '/path', '1706745600', '1706745000', 'claude']),
       'also\tincomplete',
     ].join('\n')
 
@@ -109,7 +114,7 @@ describe('parseTmuxWindows', () => {
 
   test('handles lines with empty optional fields', () => {
     // Empty window name and command
-    const output = 'session\t0\t@1\t\t/path\t1706745600\t1706745000\t'
+    const output = joinTmuxFields(['session', '0', '@1', '', '/path', '1706745600', '1706745000', ''])
 
     const sessions = parseTmuxWindows('host', output, defaultPrefix, noPrefixes)
 
@@ -119,7 +124,7 @@ describe('parseTmuxWindows', () => {
   })
 
   test('uses fallback timestamp for invalid activity/created values', () => {
-    const output = 'session\t0\t@1\twindow\t/path\tinvalid\tbadtime\tclaude'
+    const output = joinTmuxFields(['session', '0', '@1', 'window', '/path', 'invalid', 'badtime', 'claude'])
 
     const before = Date.now()
     const sessions = parseTmuxWindows('host', output, defaultPrefix, noPrefixes)
@@ -138,11 +143,11 @@ describe('parseTmuxWindows', () => {
   test('filters proxy sessions using tmuxSessionPrefix, not broad includes', () => {
     const output = [
       // This IS a proxy session for prefix "agentboard"
-      'agentboard-ws-abc123\t0\t@1\tproxy\t/tmp\t1706745600\t1706745000\tssh',
+      joinTmuxFields(['agentboard-ws-abc123', '0', '@1', 'proxy', '/tmp', '1706745600', '1706745000', 'ssh']),
       // This is NOT a proxy session — legitimate session name containing "-ws-"
-      'my-ws-project\t0\t@2\twork\t/home/user\t1706745600\t1706745000\tclaude',
+      joinTmuxFields(['my-ws-project', '0', '@2', 'work', '/home/user', '1706745600', '1706745000', 'claude']),
       // Normal session
-      'dev\t0\t@3\tdev-win\t/home/user/dev\t1706745600\t1706745000\tclaude',
+      joinTmuxFields(['dev', '0', '@3', 'dev-win', '/home/user/dev', '1706745600', '1706745000', 'claude']),
     ].join('\n')
 
     const sessions = parseTmuxWindows('host', output, 'agentboard', noPrefixes)
@@ -154,9 +159,9 @@ describe('parseTmuxWindows', () => {
 
   test('filters proxy sessions with custom tmuxSessionPrefix', () => {
     const output = [
-      'myboard-ws-conn1\t0\t@1\tproxy\t/tmp\t1706745600\t1706745000\tssh',
-      'agentboard-ws-conn2\t0\t@2\tproxy2\t/tmp\t1706745600\t1706745000\tssh',
-      'main\t0\t@3\twork\t/home/user\t1706745600\t1706745000\tclaude',
+      joinTmuxFields(['myboard-ws-conn1', '0', '@1', 'proxy', '/tmp', '1706745600', '1706745000', 'ssh']),
+      joinTmuxFields(['agentboard-ws-conn2', '0', '@2', 'proxy2', '/tmp', '1706745600', '1706745000', 'ssh']),
+      joinTmuxFields(['main', '0', '@3', 'work', '/home/user', '1706745600', '1706745000', 'claude']),
     ].join('\n')
 
     // With prefix "myboard", only myboard-ws-* is filtered
@@ -169,9 +174,9 @@ describe('parseTmuxWindows', () => {
 
   test('includes all sessions when discoverPrefixes is empty', () => {
     const output = [
-      'agentboard\t0\t@1\tmain-win\t/home\t1706745600\t1706745000\tclaude',
-      'dev-project\t0\t@2\tdev-win\t/home\t1706745600\t1706745000\tclaude',
-      'random\t0\t@3\trand-win\t/home\t1706745600\t1706745000\tvim',
+      joinTmuxFields(['agentboard', '0', '@1', 'main-win', '/home', '1706745600', '1706745000', 'claude']),
+      joinTmuxFields(['dev-project', '0', '@2', 'dev-win', '/home', '1706745600', '1706745000', 'claude']),
+      joinTmuxFields(['random', '0', '@3', 'rand-win', '/home', '1706745600', '1706745000', 'vim']),
     ].join('\n')
 
     const sessions = parseTmuxWindows('host', output, 'agentboard', [])
@@ -181,10 +186,10 @@ describe('parseTmuxWindows', () => {
 
   test('filters by discoverPrefixes, always includes tmuxSessionPrefix session', () => {
     const output = [
-      'agentboard\t0\t@1\tmain-win\t/home\t1706745600\t1706745000\tclaude',
-      'dev-project\t0\t@2\tdev-win\t/home\t1706745600\t1706745000\tclaude',
-      'billy-work\t0\t@3\tbilly-win\t/home\t1706745600\t1706745000\tclaude',
-      'random\t0\t@4\trand-win\t/home\t1706745600\t1706745000\tvim',
+      joinTmuxFields(['agentboard', '0', '@1', 'main-win', '/home', '1706745600', '1706745000', 'claude']),
+      joinTmuxFields(['dev-project', '0', '@2', 'dev-win', '/home', '1706745600', '1706745000', 'claude']),
+      joinTmuxFields(['billy-work', '0', '@3', 'billy-win', '/home', '1706745600', '1706745000', 'claude']),
+      joinTmuxFields(['random', '0', '@4', 'rand-win', '/home', '1706745600', '1706745000', 'vim']),
     ].join('\n')
 
     const sessions = parseTmuxWindows('host', output, 'agentboard', ['dev-', 'billy-'])
@@ -195,16 +200,40 @@ describe('parseTmuxWindows', () => {
 
   test('excludes proxy sessions and non-matching sessions together', () => {
     const output = [
-      'agentboard\t0\t@1\tmain-win\t/home\t1706745600\t1706745000\tclaude',
-      'agentboard-ws-abc\t0\t@2\tproxy\t/tmp\t1706745600\t1706745000\tssh',
-      'dev-project\t0\t@3\tdev-win\t/home\t1706745600\t1706745000\tclaude',
-      'unrelated\t0\t@4\tother\t/home\t1706745600\t1706745000\tvim',
+      joinTmuxFields(['agentboard', '0', '@1', 'main-win', '/home', '1706745600', '1706745000', 'claude']),
+      joinTmuxFields(['agentboard-ws-abc', '0', '@2', 'proxy', '/tmp', '1706745600', '1706745000', 'ssh']),
+      joinTmuxFields(['dev-project', '0', '@3', 'dev-win', '/home', '1706745600', '1706745000', 'claude']),
+      joinTmuxFields(['unrelated', '0', '@4', 'other', '/home', '1706745600', '1706745000', 'vim']),
     ].join('\n')
 
     const sessions = parseTmuxWindows('host', output, 'agentboard', ['dev-'])
 
     expect(sessions).toHaveLength(2)
     expect(sessions.map(s => s.name)).toEqual(['main-win', 'dev-project'])
+  })
+
+  test('parses printable text like ||| inside fields without splitting', () => {
+    const output = joinTmuxFields([
+      'agentboard',
+      '0',
+      '@1',
+      'window|||name',
+      '/home/user/project|||branch',
+      '1706745600',
+      '1706745000',
+      'codex ||| --search',
+    ])
+
+    const sessions = parseTmuxWindows('host', output, 'agentboard', noPrefixes)
+
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0]).toEqual(
+      expect.objectContaining({
+        name: 'window|||name',
+        projectPath: '/home/user/project|||branch',
+        command: 'codex ||| --search',
+      })
+    )
   })
 })
 
@@ -431,9 +460,9 @@ describe('buildBatchCaptureCommand', () => {
     const sessions = [makeSession({ id: 's1', tmuxWindow: 'main:0' })]
     const cmd = buildBatchCaptureCommand(sessions, SEP)
 
-    expect(cmd).toContain('tmux display-message -t main:0')
-    expect(cmd).toContain("'#{pane_width} #{pane_height}'")
-    expect(cmd).toContain('tmux capture-pane -t main:0 -p -J')
+    expect(cmd).toContain('tmux -u display-message -t main:0')
+    expect(cmd).toContain(`'#{pane_width}${TMUX_FIELD_SEPARATOR}#{pane_height}'`)
+    expect(cmd).toContain('tmux -u capture-pane -t main:0 -p -J')
     expect(cmd).toContain(`echo ${SEP}`)
     expect(cmd).toContain('2>/dev/null')
   })
@@ -445,10 +474,10 @@ describe('buildBatchCaptureCommand', () => {
     ]
     const cmd = buildBatchCaptureCommand(sessions, SEP)
 
-    expect(cmd).toContain('tmux display-message -t main:0')
-    expect(cmd).toContain('tmux capture-pane -t main:0 -p -J')
-    expect(cmd).toContain('tmux display-message -t dev:1')
-    expect(cmd).toContain('tmux capture-pane -t dev:1 -p -J')
+    expect(cmd).toContain('tmux -u display-message -t main:0')
+    expect(cmd).toContain('tmux -u capture-pane -t main:0 -p -J')
+    expect(cmd).toContain('tmux -u display-message -t dev:1')
+    expect(cmd).toContain('tmux -u capture-pane -t dev:1 -p -J')
     // Should have two separator echos
     const sepCount = cmd.split(SEP).length - 1
     expect(sepCount).toBe(2)
@@ -468,7 +497,7 @@ describe('parseBatchCaptureOutput', () => {
 
   test('parses single session capture', () => {
     const sessions = [makeSession({ id: 's1', tmuxWindow: 'main:0' })]
-    const output = `120 40\n$ claude\nThinking about your request...\n${SEP}\n`
+    const output = `${joinTmuxFields(['120', '40'])}\n$ claude\nThinking about your request...\n${SEP}\n`
 
     const result = parseBatchCaptureOutput(output, sessions, SEP)
 
@@ -486,10 +515,10 @@ describe('parseBatchCaptureOutput', () => {
       makeSession({ id: 's2', tmuxWindow: 'dev:1' }),
     ]
     const output = [
-      '80 24',
+      joinTmuxFields(['80', '24']),
       'content for session 1',
       SEP,
-      '200 50',
+      joinTmuxFields(['200', '50']),
       'content for session 2',
       SEP,
     ].join('\n')
@@ -517,12 +546,12 @@ describe('parseBatchCaptureOutput', () => {
     ]
     // Second session failed (empty segment)
     const output = [
-      '80 24',
+      joinTmuxFields(['80', '24']),
       'content 1',
       SEP,
       '', // empty segment for dead window
       SEP,
-      '100 30',
+      joinTmuxFields(['100', '30']),
       'content 3',
       SEP,
     ].join('\n')
@@ -538,7 +567,7 @@ describe('parseBatchCaptureOutput', () => {
   test('strips trailing empty lines from content', () => {
     const sessions = [makeSession({ id: 's1', tmuxWindow: 'main:0' })]
     const output = [
-      '80 24',
+      joinTmuxFields(['80', '24']),
       'actual content',
       '',
       '',
@@ -554,7 +583,7 @@ describe('parseBatchCaptureOutput', () => {
   test('takes last 30 lines of content', () => {
     const sessions = [makeSession({ id: 's1', tmuxWindow: 'main:0' })]
     const contentLines = Array.from({ length: 50 }, (_, i) => `line ${i + 1}`)
-    const output = ['80 24', ...contentLines, SEP].join('\n')
+    const output = [joinTmuxFields(['80', '24']), ...contentLines, SEP].join('\n')
 
     const result = parseBatchCaptureOutput(output, sessions, SEP)
     const pane = result.get('s1')!
@@ -564,9 +593,9 @@ describe('parseBatchCaptureOutput', () => {
     expect(lines[29]).toBe('line 50')
   })
 
-  test('defaults dimensions to 80x24 for invalid values', () => {
+  test('defaults dimensions to 80x24 for invalid numeric values', () => {
     const sessions = [makeSession({ id: 's1', tmuxWindow: 'main:0' })]
-    const output = `bad dims\ncontent\n${SEP}\n`
+    const output = `${joinTmuxFields(['bad', 'dims'])}\ncontent\n${SEP}\n`
 
     const result = parseBatchCaptureOutput(output, sessions, SEP)
     const pane = result.get('s1')!

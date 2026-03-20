@@ -293,10 +293,12 @@ if (!tmuxAvailable || !localhostBindable) {
           .map((l) => l.trim())
           .filter(Boolean)[0]!
 
-        // Orphan sessions from test 1 so they don't hold the window
+        // Remove test 1 sessions entirely so startup orphan-rematch cannot
+        // reclaim the shared tmux window before the pinned supersede scenario.
         const db = initDatabase({ path: dbPath })
-        db.orphanSession(planSessionId)
-        db.orphanSession(execSessionId)
+        db.db
+          .query('DELETE FROM agent_sessions WHERE session_id = ?1 OR session_id = ?2')
+          .run(planSessionId, execSessionId)
         db.insertSession({
           sessionId: pinnedPlanId,
           logFilePath: path.join(
@@ -319,6 +321,31 @@ if (!tmuxAvailable || !localhostBindable) {
           isCodexExec: false,
         })
         db.close()
+
+        try {
+          fs.unlinkSync(
+            path.join(
+              claudeConfigDir!,
+              'projects',
+              encodeProjectPath(projectPath),
+              'plan-session.jsonl'
+            )
+          )
+        } catch {
+          // ignore cleanup errors
+        }
+        try {
+          fs.unlinkSync(
+            path.join(
+              claudeConfigDir!,
+              'projects',
+              encodeProjectPath(projectPath),
+              'exec-session.jsonl'
+            )
+          )
+        } catch {
+          // ignore cleanup errors
+        }
 
         // Write execution session log with same slug
         const logDir = path.join(

@@ -72,6 +72,7 @@ const KeyboardIcon = (
 // Keys before the numpad (Ctrl toggle handled separately)
 const CONTROL_KEYS_LEFT: ControlKey[] = [
   { label: 'esc', key: '\x1b' },
+  { label: 'tab', key: '\t' },
 ]
 
 // Keys after the d-pad

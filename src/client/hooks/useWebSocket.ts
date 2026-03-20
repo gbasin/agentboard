@@ -30,7 +30,7 @@
  * - Resume delay (waits for iOS to restore network before first connect attempt)
  */
 import { useEffect, useMemo, useState } from 'react'
-import type { ClientMessage, SendClientMessage, ServerMessage } from '@shared/types'
+import type { ClientMessage, SendClientMessage, ServerMessage, ServerMessageWithDiagnostics } from '@shared/types'
 import type { ConnectionStatus } from '../stores/sessionStore'
 import { useSessionStore } from '../stores/sessionStore'
 import { clientLog } from '../utils/clientLog'
@@ -218,7 +218,14 @@ export class WebSocketManager {
 
     ws.onmessage = (event) => {
       try {
-        const parsed = JSON.parse(event.data as string) as ServerMessage
+        const raw = event.data as string
+        const t0 = performance.now()
+        const parsed = JSON.parse(raw) as ServerMessage
+        const parseMs = performance.now() - t0
+        // Attach timing metadata for switch diagnostics (read by useTerminal)
+        const withDiag = parsed as ServerMessageWithDiagnostics
+        withDiag._parseMs = Math.round(parseMs)
+        withDiag._rawLength = raw.length
         // Intercept pong — clear timeout only for the current seq.
         if (parsed.type === 'pong') {
           if (parsed.seq === this.pingSeq) {

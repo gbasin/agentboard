@@ -28,6 +28,7 @@ import { getSessionOrderKey, getUniqueHosts, getUniqueProjects, sortSessions } f
 import { formatRelativeTime } from '../utils/time'
 import { getPathLeaf } from '../utils/sessionLabel'
 import { getSessionIdShort } from '../utils/sessionId'
+import { copyText } from '../utils/copyText'
 import { composeSortableTransform } from '../utils/sortableTransform'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useSessionStore } from '../stores/sessionStore'
@@ -1127,24 +1128,9 @@ function SessionRow({
             <button
               onClick={(e) => {
                 e.stopPropagation()
-                const pathToCopy = session.logFilePath
                 setContextMenu(null)
-                if (pathToCopy) {
-                  // Use textarea fallback for better mobile support
-                  const textarea = document.createElement('textarea')
-                  textarea.value = pathToCopy
-                  textarea.style.position = 'fixed'
-                  textarea.style.left = '-9999px'
-                  document.body.appendChild(textarea)
-                  textarea.focus()
-                  textarea.select()
-                  try {
-                    document.execCommand('copy')
-                  } catch {
-                    // Fallback to clipboard API
-                    void navigator.clipboard.writeText(pathToCopy).catch(() => { })
-                  }
-                  document.body.removeChild(textarea)
+                if (session.logFilePath) {
+                  copyText(session.logFilePath)
                 }
               }}
               className="w-full px-3 py-2 text-left text-sm text-secondary hover:bg-hover hover:text-primary flex items-center gap-2"

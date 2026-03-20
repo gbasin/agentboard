@@ -128,6 +128,15 @@ export type ClientMessage =
   | { type: 'ping'; seq?: number }
   | { type: 'session-pin'; sessionId: string; isPinned: boolean }
 
+/** Diagnostic metadata attached to parsed ServerMessages by useWebSocket. */
+export interface DiagnosticMeta {
+  _parseMs: number
+  _rawLength: number
+}
+
+/** A ServerMessage with diagnostic timing metadata from the WebSocket layer. */
+export type ServerMessageWithDiagnostics = ServerMessage & DiagnosticMeta
+
 // Typed function signatures for client-side messaging
 export type SendClientMessage = (message: ClientMessage) => void
 export type SubscribeServerMessage = (listener: (message: ServerMessage) => void) => () => void

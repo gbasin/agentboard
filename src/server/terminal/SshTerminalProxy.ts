@@ -4,6 +4,7 @@
 
 import { logger } from '../logger'
 import { shellQuote } from '../shellQuote'
+import { withTmuxUtf8Flag } from '../tmuxFormat'
 import { TerminalProxyBase } from './TerminalProxyBase'
 import { TerminalProxyError, TerminalState } from './types'
 
@@ -127,6 +128,10 @@ class SshTerminalProxy extends TerminalProxyBase {
     }
 
     return stdoutText
+  }
+
+  protected async runParsedTmuxAsync(args: string[]): Promise<string> {
+    return this.runTmuxAsync(withTmuxUtf8Flag(args))
   }
 
   protected async doStart(): Promise<void> {
@@ -417,7 +422,7 @@ class SshTerminalProxy extends TerminalProxyBase {
     while (this.now() - start <= maxWaitMs) {
       let output = ''
       try {
-        output = await this.runTmuxAsync([
+        output = await this.runParsedTmuxAsync([
           'list-clients',
           '-t',
           this.options.sessionName,

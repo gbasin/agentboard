@@ -1,19 +1,5 @@
-import { afterAll, describe, expect, test, mock } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test, mock } from 'bun:test'
 import type { TerminalProxyOptions } from '../terminal/types'
-
-const constructed: Array<{ mode: string; options: TerminalProxyOptions }> = []
-
-class PtyTerminalProxyMock {
-  constructor(options: TerminalProxyOptions) {
-    constructed.push({ mode: 'pty', options })
-  }
-}
-
-class PipePaneTerminalProxyMock {
-  constructor(options: TerminalProxyOptions) {
-    constructed.push({ mode: 'pipe-pane', options })
-  }
-}
 
 const configMock = {
   port: 4040,
@@ -39,32 +25,33 @@ const configMock = {
   enterRefreshDelayMs: 50,
 }
 
-mock.module('../config', () => ({
-  config: configMock,
-}))
+const HOSTNAME_REGEX = /^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9])(\.([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]))*$/
 
-mock.module('../terminal/PtyTerminalProxy', () => ({
-  PtyTerminalProxy: PtyTerminalProxyMock,
-}))
-
-mock.module('../terminal/PipePaneTerminalProxy', () => ({
-  PipePaneTerminalProxy: PipePaneTerminalProxyMock,
-}))
+function isValidHostname(hostname: string): boolean {
+  return hostname.length > 0 && hostname.length <= 253 && HOSTNAME_REGEX.test(hostname)
+}
 
 const originalIsTTY = process.stdin.isTTY
 
-let createTerminalProxy: typeof import('../terminal/TerminalProxyFactory').createTerminalProxy
-let resolveTerminalMode: typeof import('../terminal/TerminalProxyFactory').resolveTerminalMode
+let importCounter = 0
 
-async function loadFactory() {
-  if (!createTerminalProxy || !resolveTerminalMode) {
-    const module = await import('../terminal/TerminalProxyFactory')
-    createTerminalProxy = module.createTerminalProxy
-    resolveTerminalMode = module.resolveTerminalMode
-  }
+function setupModuleMocks(): void {
+  mock.module('../config', () => ({
+    config: configMock,
+    isValidHostname,
+  }))
 }
 
-afterAll(() => {
+async function loadFactory() {
+  importCounter += 1
+  return import(`../terminal/TerminalProxyFactory?terminal-proxy-factory=${importCounter}`)
+}
+
+beforeEach(() => {
+  setupModuleMocks()
+})
+
+afterEach(() => {
   Object.defineProperty(process.stdin, 'isTTY', {
     value: originalIsTTY,
     configurable: true,
@@ -74,7 +61,7 @@ afterAll(() => {
 
 describe('TerminalProxyFactory', () => {
   test('resolveTerminalMode respects config overrides', async () => {
-    await loadFactory()
+    const { resolveTerminalMode } = await loadFactory()
 
     configMock.terminalMode = 'pipe-pane'
     expect(resolveTerminalMode()).toBe('pipe-pane')
@@ -84,7 +71,7 @@ describe('TerminalProxyFactory', () => {
   })
 
   test('resolveTerminalMode falls back to stdin tty', async () => {
-    await loadFactory()
+    const { resolveTerminalMode } = await loadFactory()
 
     configMock.terminalMode = 'auto'
     Object.defineProperty(process.stdin, 'isTTY', {
@@ -101,7 +88,7 @@ describe('TerminalProxyFactory', () => {
   })
 
   test('createTerminalProxy instantiates correct proxy', async () => {
-    await loadFactory()
+    const { createTerminalProxy } = await loadFactory()
 
     const options: TerminalProxyOptions = {
       connectionId: 'conn-1',
@@ -110,14 +97,10 @@ describe('TerminalProxyFactory', () => {
       onData: () => {},
     }
 
-    constructed.length = 0
     configMock.terminalMode = 'pty'
-    createTerminalProxy(options)
-    expect(constructed[0]?.mode).toBe('pty')
+    expect(createTerminalProxy(options).getMode()).toBe('pty')
 
-    constructed.length = 0
     configMock.terminalMode = 'pipe-pane'
-    createTerminalProxy(options)
-    expect(constructed[0]?.mode).toBe('pipe-pane')
+    expect(createTerminalProxy(options).getMode()).toBe('pipe-pane')
   })
 })

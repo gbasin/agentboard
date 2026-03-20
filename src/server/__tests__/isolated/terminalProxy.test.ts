@@ -1,5 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import { PtyTerminalProxy as TerminalProxy } from '../../terminal'
+import { buildTmuxFormat } from '../../tmuxFormat'
+
+const CLIENT_TTY_OUTPUT = `${buildTmuxFormat(['/dev/pts/9', '4242'])}\n`
+
+function getTmuxCommand(args: string[]): string {
+  const tmuxArgs = args[0] === 'tmux' ? args.slice(1) : args
+  return tmuxArgs[0] === '-u' ? tmuxArgs[1] ?? '' : tmuxArgs[0] ?? ''
+}
 
 function createSpawnHarness() {
   const spawnCalls: Array<{
@@ -54,11 +62,11 @@ function createSpawnHarness() {
 
   const spawnSync = (args: string[], _options?: Parameters<typeof Bun.spawnSync>[1]) => {
     spawnSyncCalls.push(args)
-    const command = args[1]
+    const command = getTmuxCommand(args)
     if (command === 'list-clients') {
       return {
         exitCode: 0,
-        stdout: Buffer.from('/dev/pts/9 4242\n'),
+        stdout: Buffer.from(CLIENT_TTY_OUTPUT),
         stderr: Buffer.from(''),
       } as ReturnType<typeof Bun.spawnSync>
     }
@@ -223,11 +231,11 @@ describe('TerminalProxy', () => {
     const spawnSyncCalls: string[][] = []
     const spawnSync = (args: string[], _options?: Parameters<typeof Bun.spawnSync>[1]) => {
       spawnSyncCalls.push(args)
-      const command = args[1]
+      const command = getTmuxCommand(args)
       if (command === 'list-clients') {
         return {
           exitCode: 0,
-          stdout: Buffer.from('/dev/pts/9 4242\n'),
+          stdout: Buffer.from(CLIENT_TTY_OUTPUT),
           stderr: Buffer.from(''),
         } as ReturnType<typeof Bun.spawnSync>
       }
@@ -283,11 +291,11 @@ describe('TerminalProxy', () => {
     const spawnSyncCalls: string[][] = []
     const spawnSync = (args: string[], _options?: Parameters<typeof Bun.spawnSync>[1]) => {
       spawnSyncCalls.push(args)
-      const command = args[1]
+      const command = getTmuxCommand(args)
       if (command === 'list-clients') {
         return {
           exitCode: 0,
-          stdout: Buffer.from('/dev/pts/9 4242\n'),
+          stdout: Buffer.from(CLIENT_TTY_OUTPUT),
           stderr: Buffer.from(''),
         } as ReturnType<typeof Bun.spawnSync>
       }
@@ -332,11 +340,11 @@ describe('TerminalProxy', () => {
     const spawnSyncCalls: string[][] = []
     const spawnSync = (args: string[], _options?: Parameters<typeof Bun.spawnSync>[1]) => {
       spawnSyncCalls.push(args)
-      const command = args[1]
+      const command = getTmuxCommand(args)
       if (command === 'list-clients') {
         return {
           exitCode: 0,
-          stdout: Buffer.from('/dev/pts/9 4242\n'),
+          stdout: Buffer.from(CLIENT_TTY_OUTPUT),
           stderr: Buffer.from(''),
         } as ReturnType<typeof Bun.spawnSync>
       }
@@ -369,7 +377,7 @@ describe('TerminalProxy', () => {
 
     expect(
       spawnSyncCalls.some(
-        (call) => call[1] === 'set-option' && call.includes('mouse')
+        (call) => getTmuxCommand(call) === 'set-option' && call.includes('mouse')
       )
     ).toBe(false)
   })
@@ -378,11 +386,11 @@ describe('TerminalProxy', () => {
     const spawnSyncCalls: string[][] = []
     const spawnSync = (args: string[], _options?: Parameters<typeof Bun.spawnSync>[1]) => {
       spawnSyncCalls.push(args)
-      const command = args[1]
+      const command = getTmuxCommand(args)
       if (command === 'list-clients') {
         return {
           exitCode: 0,
-          stdout: Buffer.from('/dev/pts/9 4242\n'),
+          stdout: Buffer.from(CLIENT_TTY_OUTPUT),
           stderr: Buffer.from(''),
         } as ReturnType<typeof Bun.spawnSync>
       }
@@ -415,7 +423,7 @@ describe('TerminalProxy', () => {
 
     expect(
       spawnSyncCalls.some(
-        (call) => call[1] === 'set-option' && call.includes('mouse')
+        (call) => getTmuxCommand(call) === 'set-option' && call.includes('mouse')
       )
     ).toBe(false)
     expect(proxy.isReady()).toBe(true)
@@ -425,11 +433,11 @@ describe('TerminalProxy', () => {
     const spawnSyncCalls: string[][] = []
     const spawnSync = (args: string[], _options?: Parameters<typeof Bun.spawnSync>[1]) => {
       spawnSyncCalls.push(args)
-      const command = args[1]
+      const command = getTmuxCommand(args)
       if (command === 'list-clients') {
         return {
           exitCode: 0,
-          stdout: Buffer.from('/dev/pts/9 4242\n'),
+          stdout: Buffer.from(CLIENT_TTY_OUTPUT),
           stderr: Buffer.from(''),
         } as ReturnType<typeof Bun.spawnSync>
       }

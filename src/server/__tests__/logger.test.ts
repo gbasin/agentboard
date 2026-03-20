@@ -1,7 +1,28 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import fs from 'node:fs'
+import fsp from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+
+async function removeDirWithRetries(dirPath: string): Promise<void> {
+  let lastError: unknown = null
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      await fsp.rm(dirPath, { recursive: true, force: true })
+      return
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (code !== 'EBUSY' && code !== 'ENOTEMPTY') {
+        throw error
+      }
+      lastError = error
+      await Bun.sleep(25 * (attempt + 1))
+    }
+  }
+
+  throw lastError
+}
 
 describe('logger', () => {
   const ORIGINAL_LOG_LEVEL = process.env.LOG_LEVEL
@@ -68,7 +89,7 @@ describe('logger', () => {
 
     mod.closeLogger()
     closeLogger = null
-    fs.rmSync(tmpDir, { recursive: true })
+    await removeDirWithRetries(tmpDir)
   })
 
   test('logger respects log level from env', async () => {
@@ -94,7 +115,7 @@ describe('logger', () => {
 
     mod.closeLogger()
     closeLogger = null
-    fs.rmSync(tmpDir, { recursive: true })
+    await removeDirWithRetries(tmpDir)
   })
 
   test('defaults to info level when LOG_LEVEL not set', async () => {
@@ -118,7 +139,7 @@ describe('logger', () => {
 
     mod.closeLogger()
     closeLogger = null
-    fs.rmSync(tmpDir, { recursive: true })
+    await removeDirWithRetries(tmpDir)
   })
 
   test('handles invalid LOG_LEVEL gracefully', async () => {
@@ -143,7 +164,7 @@ describe('logger', () => {
 
     mod.closeLogger()
     closeLogger = null
-    fs.rmSync(tmpDir, { recursive: true })
+    await removeDirWithRetries(tmpDir)
   })
 
   test('log entries include event name in output', async () => {
@@ -170,7 +191,7 @@ describe('logger', () => {
 
     mod.closeLogger()
     closeLogger = null
-    fs.rmSync(tmpDir, { recursive: true })
+    await removeDirWithRetries(tmpDir)
   })
 
   test('event field is not overwritten by data', async () => {
@@ -196,6 +217,6 @@ describe('logger', () => {
 
     mod.closeLogger()
     closeLogger = null
-    fs.rmSync(tmpDir, { recursive: true })
+    await removeDirWithRetries(tmpDir)
   })
 })
