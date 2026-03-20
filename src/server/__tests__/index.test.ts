@@ -53,6 +53,11 @@ describe('server entrypoint', () => {
     bunAny.serve = originalServe
     bunAny.spawnSync = originalSpawnSync
     globalThis.setInterval = originalSetInterval
+    if (originalMatchWorker === undefined) {
+      delete process.env.AGENTBOARD_LOG_MATCH_WORKER
+    } else {
+      process.env.AGENTBOARD_LOG_MATCH_WORKER = originalMatchWorker
+    }
   })
 
   test('starts server without side effects', async () => {
