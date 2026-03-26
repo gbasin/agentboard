@@ -671,9 +671,10 @@ function hydrateSessionsWithAgentSessions(
     for (const session of orphaned) {
       broadcast({ type: 'session-orphaned', session })
     }
+    updateInactiveAgentSessions()
+  } else {
+    updateActiveAgentSessions()
   }
-
-  updateActiveAgentSessions()
   return hydrated
 }
 
@@ -793,7 +794,6 @@ logger.info('startup_state', {
 })
 
 refreshSessionsSync() // hydrate from persisted associations without verification
-updateInactiveAgentSessions() // load inactive sessions once at startup
 setInterval(refreshSessions, config.refreshIntervalMs) // Async for periodic
 
 // Event loop lag monitor — detects when spawnSync or other blocking work
@@ -848,6 +848,10 @@ async function completeStartupVerification(): Promise<void> {
     resurrectPinnedSessions()
     refreshSessionsSync()
   }
+
+  // Load inactive sessions after startup verification and resurrection
+  // so the list reflects the final active/inactive split.
+  updateInactiveAgentSessions()
 }
 
 registry.on('session-update', (session) => {
@@ -1990,6 +1994,7 @@ function handleSessionResume(
     // (async refresh will update with any additional data later)
     const currentSessions = registry.getAll()
     registry.replaceSessions([created, ...currentSessions])
+    updateInactiveAgentSessions()
     refreshSessions()
     send(ws, { type: 'session-resume-result', sessionId, ok: true, session: created })
     broadcast({

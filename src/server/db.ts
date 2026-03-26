@@ -137,13 +137,13 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
     'SELECT * FROM agent_sessions WHERE current_window = $currentWindow'
   )
   const selectActive = db.prepare(
-    'SELECT * FROM agent_sessions WHERE current_window IS NOT NULL'
+    'SELECT * FROM agent_sessions WHERE current_window IS NOT NULL ORDER BY session_id'
   )
   const selectInactive = db.prepare(
-    'SELECT * FROM agent_sessions WHERE current_window IS NULL ORDER BY last_activity_at DESC'
+    'SELECT * FROM agent_sessions WHERE current_window IS NULL ORDER BY last_activity_at DESC, session_id'
   )
   const selectInactiveRecent = db.prepare(
-    'SELECT * FROM agent_sessions WHERE current_window IS NULL AND last_activity_at > $cutoff ORDER BY last_activity_at DESC'
+    'SELECT * FROM agent_sessions WHERE current_window IS NULL AND last_activity_at > $cutoff ORDER BY last_activity_at DESC, session_id'
   )
   const selectByDisplayName = db.prepare(
     'SELECT 1 FROM agent_sessions WHERE display_name = $displayName LIMIT 1'
