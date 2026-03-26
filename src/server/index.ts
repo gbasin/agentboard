@@ -765,7 +765,7 @@ async function captureLastUserMessage(tmuxWindow: string) {
     const updated = db.updateSession(record.sessionId, { lastUserMessage: message })
     if (!updated) return
     registry.updateSession(tmuxWindow, { lastUserMessage: message })
-    updateInactiveAgentSessions()
+    updateActiveAgentSessions()
   } catch (error) {
     logger.warn('last_user_message_capture_error', {
       tmuxWindow,
@@ -793,6 +793,7 @@ logger.info('startup_state', {
 })
 
 refreshSessionsSync() // hydrate from persisted associations without verification
+updateInactiveAgentSessions() // load inactive sessions once at startup
 setInterval(refreshSessions, config.refreshIntervalMs) // Async for periodic
 
 // Event loop lag monitor — detects when spawnSync or other blocking work
