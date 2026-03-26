@@ -798,22 +798,23 @@ describe('server message handlers', () => {
   })
 
   test('stale in-flight refresh does not resurrect killed session', async () => {
+    const otherSession: Session = { ...baseSession, id: 'other', name: 'other', tmuxWindow: 'agentboard:2' }
     const { serveOptions, registryInstance } = await loadIndex()
     registryInstance.sessions = [baseSession]
     sessionManagerState.killWindow = () => {}
-    sessionManagerState.listWindows = () => []
+    // After kill, only otherSession should remain
+    sessionManagerState.listWindows = () => [otherSession]
 
     const { ws } = createWs()
     const websocket = serveOptions.websocket
     if (!websocket) throw new Error('WebSocket handlers not configured')
 
-    // 1. Start an async refresh BEFORE the kill — this simulates the 2s periodic refresh
+    // 1. Start an async refresh BEFORE the kill — simulates the 2s periodic refresh
     refreshWorkerDeferred = true
     websocket.message?.(
       ws as never,
       JSON.stringify({ type: 'session-refresh' })
     )
-    // Capture the deferred resolve — this is the "in-flight" refresh
     const staleResolve = refreshWorkerResolve
     expect(staleResolve).not.toBeNull()
 
@@ -827,17 +828,21 @@ describe('server message handlers', () => {
     const afterKill = replaceSessionsCalls[replaceSessionsCalls.length - 1] ?? []
     expect(afterKill.some((s: Session) => s.id === baseSession.id)).toBe(false)
 
-    // 3. Resolve the stale worker result (returns list including the killed session).
-    //    The refreshGeneration guard should cause this result to be discarded.
+    // 3. Resolve the stale worker result (includes the killed session).
+    //    The generation guard should discard this and trigger a re-refresh.
     replaceSessionsCalls = []
-    staleResolve!([baseSession])
-    // Allow microtasks/re-refresh to settle
+    // Switch mock to immediate mode so the retry refresh completes
+    refreshWorkerDeferred = false
+    refreshWorkerSessions = [otherSession]
+    staleResolve!([baseSession, otherSession])
     await new Promise((r) => setTimeout(r, 50))
 
-    // The stale result should NOT have been applied — killed session must not reappear
+    // Stale result must not have been applied — killed session must not reappear
     for (const call of replaceSessionsCalls) {
       expect(call.some((s: Session) => s.id === baseSession.id)).toBe(false)
     }
+    // Re-refresh must have fired and applied fresh data
+    expect(replaceSessionsCalls.length).toBeGreaterThan(0)
   })
 
   test('blocks remote kill when remoteAllowControl is false', async () => {

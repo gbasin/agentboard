@@ -679,38 +679,44 @@ function hydrateSessionsWithAgentSessions(
 }
 
 let refreshInFlight = false
-// Bumped on kills so in-flight refreshes that started before the kill
-// discard their stale window list instead of re-adding the dead session.
+// Bumped on optimistic registry mutations (kill, create, resume) so
+// in-flight refreshes that started before the mutation discard their stale
+// window list instead of reverting the optimistic update.
 let refreshGeneration = 0
 
 async function refreshSessionsAsync(): Promise<void> {
   if (refreshInFlight) return
   refreshInFlight = true
-  const gen = refreshGeneration
   try {
-    const sessions = await sessionRefreshWorker.refresh(
-      config.tmuxSession,
-      config.discoverPrefixes
-    )
-    // Kill happened while we were listing windows — discard stale result
-    // and re-refresh with fresh data so we don't lose other status updates.
-    if (gen !== refreshGeneration) {
-      refreshInFlight = false
-      return refreshSessionsAsync()
+    // Loop: retry once if an optimistic mutation invalidated our snapshot.
+    // At most one retry — if another mutation lands during the retry,
+    // the next scheduled refresh will pick it up.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const gen = refreshGeneration
+      try {
+        const sessions = await sessionRefreshWorker.refresh(
+          config.tmuxSession,
+          config.discoverPrefixes
+        )
+        // Mutation happened while we were listing windows — discard and retry
+        if (gen !== refreshGeneration) continue
+        const hydrated = hydrateSessionsWithAgentSessions(sessions)
+        const withOverrides = applyForceWorkingOverrides(hydrated)
+        registry.replaceSessions(mergeRemoteSessions(withOverrides))
+        return
+      } catch (error) {
+        // Fallback to sync on worker failure — sync listWindows sees
+        // post-mutation state so no generation check needed here.
+        logger.warn('session_refresh_worker_error', {
+          message: error instanceof Error ? error.message : String(error),
+        })
+        const sessions = sessionManager.listWindows()
+        const hydrated = hydrateSessionsWithAgentSessions(sessions)
+        const withOverrides = applyForceWorkingOverrides(hydrated)
+        registry.replaceSessions(mergeRemoteSessions(withOverrides))
+        return
+      }
     }
-    const hydrated = hydrateSessionsWithAgentSessions(sessions)
-    const withOverrides = applyForceWorkingOverrides(hydrated)
-    registry.replaceSessions(mergeRemoteSessions(withOverrides))
-  } catch (error) {
-    // Fallback to sync on worker failure — sync listWindows sees post-kill
-    // state so no generation check needed here.
-    logger.warn('session_refresh_worker_error', {
-      message: error instanceof Error ? error.message : String(error),
-    })
-    const sessions = sessionManager.listWindows()
-    const hydrated = hydrateSessionsWithAgentSessions(sessions)
-    const withOverrides = applyForceWorkingOverrides(hydrated)
-    registry.replaceSessions(mergeRemoteSessions(withOverrides))
   } finally {
     refreshInFlight = false
   }
@@ -1370,6 +1376,7 @@ function handleMessage(
             message.command
           ))
           // Add session to registry immediately so terminal can attach
+          refreshGeneration++
           const currentSessions = registry.getAll()
           registry.replaceSessions([created, ...currentSessions])
           refreshSessions()
@@ -2005,6 +2012,7 @@ function handleSessionResume(
     })
     // Add session to registry immediately so terminal can attach
     // (async refresh will update with any additional data later)
+    refreshGeneration++
     const currentSessions = registry.getAll()
     registry.replaceSessions([created, ...currentSessions])
     updateInactiveAgentSessions()
