@@ -33,6 +33,7 @@ import {
   type DirectoryListing,
   type DirectoryErrorResponse,
   type AgentSession,
+  type AgentType,
   type HostStatus,
   type ResumeError,
   type Session,
@@ -1789,6 +1790,50 @@ function handleSessionPin(
   updateAgentSessions()
 }
 
+/**
+ * Build a resume command by injecting stored launch flags into the resume template.
+ * e.g. stored "claude --dangerously-skip-permissions" + template "claude --resume {sessionId}"
+ *   → "claude --dangerously-skip-permissions --resume <id>"
+ * e.g. stored "codex --yolo --search" + template "codex resume {sessionId}"
+ *   → "codex --yolo --search resume <id>"
+ */
+function buildResumeCommand(
+  launchCommand: string | null,
+  sessionId: string,
+  agentType: AgentType
+): string {
+  const resumeTemplate =
+    agentType === 'claude' || agentType === 'claude-rp'
+      ? config.claudeResumeCmd
+      : config.codexResumeCmd
+
+  const baseResumeCmd = resumeTemplate.replace('{sessionId}', sessionId)
+
+  if (!launchCommand) {
+    return baseResumeCmd
+  }
+
+  // Extract flags from the stored command: strip the executable (first token)
+  // and any existing resume subcommand/flag + its session ID argument.
+  const flags = launchCommand
+    .trim()
+    .replace(/^\S+\s*/, '')             // strip executable
+    .replace(/--resume\s+\S+/g, '')     // strip --resume <id> (Claude)
+    .replace(/\bresume\s+\S+/g, '')     // strip resume <id> (Codex subcommand)
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  if (!flags) {
+    return baseResumeCmd
+  }
+
+  // Inject flags after the executable in the resume command
+  const firstSpace = baseResumeCmd.indexOf(' ')
+  const exe = baseResumeCmd.slice(0, firstSpace)
+  const rest = baseResumeCmd.slice(firstSpace + 1)
+  return `${exe} ${flags} ${rest}`
+}
+
 function resurrectPinnedSessions() {
   const orphanedPinned = db.getPinnedOrphaned()
   if (orphanedPinned.length === 0) {
@@ -1815,28 +1860,7 @@ function resurrectPinnedSessions() {
       continue
     }
 
-    const resumeTemplate =
-      record.agentType === 'claude' ? config.claudeResumeCmd : config.codexResumeCmd
-
-    // Validate template contains {sessionId} placeholder
-    if (!resumeTemplate.includes('{sessionId}')) {
-      const errorMsg = `Resume command template missing {sessionId} placeholder: ${resumeTemplate}`
-      db.updateSession(record.sessionId, { isPinned: false, lastResumeError: errorMsg })
-      broadcast({
-        type: 'session-resurrection-failed',
-        sessionId: record.sessionId,
-        displayName: record.displayName,
-        error: errorMsg,
-      })
-      logger.error('resurrect_pinned_session_invalid_template', {
-        sessionId: record.sessionId,
-        displayName: record.displayName,
-        template: resumeTemplate,
-      })
-      continue
-    }
-
-    const command = resumeTemplate.replace('{sessionId}', record.sessionId)
+    const command = buildResumeCommand(record.launchCommand, record.sessionId, record.agentType)
     const projectPath =
       record.projectPath ||
       process.env.HOME ||
@@ -1913,20 +1937,23 @@ function handleSessionResume(
     return
   }
 
-  const resumeTemplate =
-    record.agentType === 'claude' ? config.claudeResumeCmd : config.codexResumeCmd
-
-  // Validate template contains {sessionId} placeholder
-  if (!resumeTemplate.includes('{sessionId}')) {
-    const error: ResumeError = {
-      code: 'RESUME_FAILED',
-      message: `Resume command template missing {sessionId} placeholder`,
+  // Validate template when falling back to global config (no stored launch command)
+  if (!record.launchCommand) {
+    const resumeTemplate =
+      record.agentType === 'claude' || record.agentType === 'claude-rp'
+        ? config.claudeResumeCmd
+        : config.codexResumeCmd
+    if (!resumeTemplate.includes('{sessionId}')) {
+      const error: ResumeError = {
+        code: 'RESUME_FAILED',
+        message: 'Resume command template missing {sessionId} placeholder',
+      }
+      send(ws, { type: 'session-resume-result', sessionId, ok: false, error })
+      return
     }
-    send(ws, { type: 'session-resume-result', sessionId, ok: false, error })
-    return
   }
 
-  const command = resumeTemplate.replace('{sessionId}', sessionId)
+  const command = buildResumeCommand(record.launchCommand, sessionId, record.agentType)
   const projectPath =
     record.projectPath ||
     process.env.HOME ||

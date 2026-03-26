@@ -402,6 +402,7 @@ describe('LogPoller', () => {
       lastResumeError: null,
       lastKnownLogSize: null,
       isCodexExec: false,
+      launchCommand: null,
     })
 
     const poller = new LogPoller(db, registry, {
@@ -639,6 +640,7 @@ describe('LogPoller', () => {
       lastResumeError: null,
       lastKnownLogSize: null,
       isCodexExec: false,
+      launchCommand: null,
     })
 
     const tokensB = Array.from({ length: 60 }, (_, i) => `next${i}`).join(' ')
@@ -908,6 +910,7 @@ describe('LogPoller', () => {
       lastResumeError: null,
       lastKnownLogSize: 0,
       isCodexExec: false,
+      launchCommand: null,
     })
 
     const poller = new LogPoller(db, registry, {
@@ -961,6 +964,7 @@ describe('LogPoller', () => {
       lastResumeError: null,
       lastKnownLogSize: null,
       isCodexExec: false,
+      launchCommand: null,
     })
 
     const poller = new LogPoller(db, registry, {
@@ -1026,6 +1030,7 @@ describe('LogPoller', () => {
       lastResumeError: null,
       lastKnownLogSize: null,
       isCodexExec: false,
+      launchCommand: null,
     })
 
     const poller = new LogPoller(db, registry, {

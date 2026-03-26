@@ -23,6 +23,7 @@ function makeSession(overrides: Partial<{
   lastResumeError: string | null
   lastKnownLogSize: number | null
   isCodexExec: boolean
+  launchCommand: string | null
 }> = {}) {
   return {
     sessionId: 'session-abc',
@@ -39,6 +40,7 @@ function makeSession(overrides: Partial<{
     lastResumeError: null,
     lastKnownLogSize: null,
     isCodexExec: false,
+    launchCommand: null,
     ...overrides,
   }
 }
@@ -190,6 +192,34 @@ describe('db', () => {
 
     migrated.close()
     fs.rmSync(tempDir, { recursive: true, force: true })
+  })
+
+  test('launchCommand is stored and retrieved', () => {
+    const session = makeSession({
+      sessionId: 'launch-cmd-test',
+      logFilePath: '/tmp/launch-cmd.jsonl',
+      launchCommand: 'claude --dangerously-skip-permissions',
+    })
+    const inserted = db.insertSession(session)
+    expect(inserted.launchCommand).toBe('claude --dangerously-skip-permissions')
+
+    const fetched = db.getSessionById('launch-cmd-test')
+    expect(fetched?.launchCommand).toBe('claude --dangerously-skip-permissions')
+
+    // Update launchCommand
+    const updated = db.updateSession('launch-cmd-test', {
+      launchCommand: 'claude --model opus --dangerously-skip-permissions',
+    })
+    expect(updated?.launchCommand).toBe('claude --model opus --dangerously-skip-permissions')
+
+    // Null launchCommand (default)
+    const session2 = makeSession({
+      sessionId: 'no-launch-cmd',
+      logFilePath: '/tmp/no-launch-cmd.jsonl',
+      launchCommand: null,
+    })
+    const inserted2 = db.insertSession(session2)
+    expect(inserted2.launchCommand).toBeNull()
   })
 
   test('app settings get/set', () => {

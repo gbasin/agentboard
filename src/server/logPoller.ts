@@ -368,6 +368,7 @@ export class LogPoller {
           this.db.updateSession(existing.sessionId, {
             currentWindow: match.tmuxWindow,
             displayName: window.name,
+            ...(window.command && !existing.launchCommand ? { launchCommand: window.command } : {}),
           })
           claimedWindows.add(match.tmuxWindow)
           matchedOrphanSessionIds.add(existing.sessionId)
@@ -414,6 +415,7 @@ export class LogPoller {
             this.db.updateSession(existing.sessionId, {
               currentWindow: window.tmuxWindow,
               displayName: window.name,
+              ...(window.command && !existing.launchCommand ? { launchCommand: window.command } : {}),
             })
             claimedWindows.add(window.tmuxWindow)
             unclaimedByName.delete(existing.displayName)
@@ -603,6 +605,7 @@ export class LogPoller {
                   this.db.updateSession(existing.sessionId, {
                     currentWindow: exactMatch.tmuxWindow,
                     displayName: exactMatch.name,
+                    ...(exactMatch.command && !existing.launchCommand ? { launchCommand: exactMatch.command } : {}),
                   })
                   logger.info('session_rematched', {
                     sessionId: existing.sessionId,
@@ -679,6 +682,7 @@ export class LogPoller {
                   this.db.updateSession(sessionId, {
                     currentWindow: exactMatch.tmuxWindow,
                     displayName: exactMatch.name,
+                    ...(exactMatch.command && !existingById.launchCommand ? { launchCommand: exactMatch.command } : {}),
                   })
                   logger.info('session_rematched', {
                     sessionId,
@@ -794,6 +798,7 @@ export class LogPoller {
           lastResumeError: null,
           lastKnownLogSize: entry.size,
           isCodexExec: entry.isCodexExec,
+          launchCommand: matchedWindow?.command ?? null,
         })
         newSessions += 1
         if (currentWindow) {

@@ -113,6 +113,7 @@ if (!tmuxAvailable || !localhostBindable) {
         lastResumeError: null,
         lastKnownLogSize: null,
         isCodexExec: false,
+        launchCommand: null,
       })
       db.close()
 
@@ -169,6 +170,7 @@ if (!tmuxAvailable || !localhostBindable) {
         lastResumeError: null,
         lastKnownLogSize: null,
         isCodexExec: false,
+        launchCommand: null,
       })
       db.close()
 
@@ -262,6 +264,7 @@ if (!tmuxAvailable || !localhostBindable) {
           lastResumeError: null,
           lastKnownLogSize: null,
           isCodexExec: false,
+          launchCommand: null,
         })
         db.close()
 

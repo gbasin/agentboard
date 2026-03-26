@@ -99,6 +99,7 @@ function makeRecord(overrides: Partial<AgentSessionRecord> = {}): AgentSessionRe
     lastResumeError: null,
     lastKnownLogSize: null,
     isCodexExec: false,
+    launchCommand: null,
     ...overrides,
   }
 }

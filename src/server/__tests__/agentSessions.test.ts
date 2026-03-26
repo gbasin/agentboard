@@ -18,6 +18,7 @@ const baseRecord: AgentSessionRecord = {
   lastResumeError: null,
   lastKnownLogSize: null,
   isCodexExec: false,
+  launchCommand: null,
 }
 
 describe('agentSessions', () => {

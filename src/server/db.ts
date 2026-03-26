@@ -20,6 +20,7 @@ export interface AgentSessionRecord {
   lastResumeError: string | null
   lastKnownLogSize: number | null
   isCodexExec: boolean
+  launchCommand: string | null
 }
 
 export interface SessionDatabase {
@@ -72,7 +73,8 @@ const AGENT_SESSIONS_COLUMNS_SQL = `
   -- This triggers a one-time match check for upgraded sessions.
   last_known_log_size INTEGER,
   is_codex_exec INTEGER NOT NULL DEFAULT 0,
-  slug TEXT
+  slug TEXT,
+  launch_command TEXT
 `
 
 const CREATE_TABLE_SQL = `
@@ -117,11 +119,12 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
   migrateIsCodexExecColumn(db)
   migrateSlugColumn(db)
   migratePiAgentType(db)
+  migrateLaunchCommandColumn(db)
 
   const insertStmt = db.prepare(
     `INSERT INTO agent_sessions
-      (session_id, log_file_path, project_path, slug, agent_type, display_name, created_at, last_activity_at, last_user_message, current_window, is_pinned, last_resume_error, last_known_log_size, is_codex_exec)
-     VALUES ($sessionId, $logFilePath, $projectPath, $slug, $agentType, $displayName, $createdAt, $lastActivityAt, $lastUserMessage, $currentWindow, $isPinned, $lastResumeError, $lastKnownLogSize, $isCodexExec)`
+      (session_id, log_file_path, project_path, slug, agent_type, display_name, created_at, last_activity_at, last_user_message, current_window, is_pinned, last_resume_error, last_known_log_size, is_codex_exec, launch_command)
+     VALUES ($sessionId, $logFilePath, $projectPath, $slug, $agentType, $displayName, $createdAt, $lastActivityAt, $lastUserMessage, $currentWindow, $isPinned, $lastResumeError, $lastKnownLogSize, $isCodexExec, $launchCommand)`
   )
 
   const selectBySessionId = db.prepare(
@@ -185,6 +188,7 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
         $lastResumeError: session.lastResumeError,
         $lastKnownLogSize: session.lastKnownLogSize,
         $isCodexExec: session.isCodexExec ? 1 : 0,
+        $launchCommand: session.launchCommand ?? null,
       })
       const row = selectBySessionId.get({ $sessionId: session.sessionId }) as
         | Record<string, unknown>
@@ -218,6 +222,7 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
         lastResumeError: 'last_resume_error',
         lastKnownLogSize: 'last_known_log_size',
         isCodexExec: 'is_codex_exec',
+        launchCommand: 'launch_command',
       }
 
       const fields: string[] = []
@@ -394,6 +399,10 @@ function mapRow(row: Record<string, unknown>): AgentSessionRecord {
         ? null
         : Number(row.last_known_log_size),
     isCodexExec: Number(row.is_codex_exec) === 1,
+    launchCommand:
+      row.launch_command === null || row.launch_command === undefined
+        ? null
+        : String(row.launch_command),
   }
 }
 
@@ -496,6 +505,14 @@ function migrateSlugColumn(db: SQLiteDatabase) {
     return
   }
   db.exec('ALTER TABLE agent_sessions ADD COLUMN slug TEXT')
+}
+
+function migrateLaunchCommandColumn(db: SQLiteDatabase) {
+  const columns = getColumnNames(db, 'agent_sessions')
+  if (columns.length === 0 || columns.includes('launch_command')) {
+    return
+  }
+  db.exec('ALTER TABLE agent_sessions ADD COLUMN launch_command TEXT')
 }
 
 function migrateDeduplicateDisplayNames(db: SQLiteDatabase) {
