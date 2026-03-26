@@ -83,26 +83,24 @@ if (!tmuxAvailable || !localhostBindable) {
       expect(payload.ok).toBe(true)
     })
 
-    test('sessions endpoint returns tmux windows', async () => {
+    test('sessions endpoint has no orphan shell window from managed session', async () => {
       const response = await fetch(`http://${testHost}:${port}/api/sessions`)
       expect(response.ok).toBe(true)
       const sessions = (await response.json()) as Array<{
         tmuxWindow: string
       }>
       expect(Array.isArray(sessions)).toBe(true)
-      expect(sessions.length).toBeGreaterThan(0)
-      expect(
-        sessions.some((session) =>
-          session.tmuxWindow.startsWith(`${sessionName}:`)
-        )
-      ).toBe(true)
+      // No orphan shell window — session is only created when a window is explicitly added
+      const managedSessions = sessions.filter((s) =>
+        s.tmuxWindow.startsWith(`${sessionName}:`)
+      )
+      expect(managedSessions.length).toBe(0)
     })
 
     test('websocket emits sessions payload', async () => {
       const message = await waitForWebSocketSessions(port)
       expect(message.type).toBe('sessions')
       expect(Array.isArray(message.sessions)).toBe(true)
-      expect(message.sessions.length).toBeGreaterThan(0)
     })
 
     test('paste-image endpoint stores uploads', async () => {

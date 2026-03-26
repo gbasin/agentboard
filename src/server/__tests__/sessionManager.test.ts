@@ -65,8 +65,36 @@ function createTmuxRunner(sessions: SessionState[], baseIndex = 0) {
     }
 
     if (command === 'new-session') {
-      const sessionName = normalizedArgs[3]
-      sessionMap.set(sessionName, [])
+      // Parse: new-session -d -s <session> [-n <name>] [-c <path>] [command]
+      const sIdx = normalizedArgs.indexOf('-s')
+      const sessionName = sIdx >= 0 ? normalizedArgs[sIdx + 1] ?? '' : ''
+      const nIdx = normalizedArgs.indexOf('-n')
+      const windowName = nIdx >= 0 ? normalizedArgs[nIdx + 1] ?? '' : ''
+      const cIdx = normalizedArgs.indexOf('-c')
+      const windowPath = cIdx >= 0 ? normalizedArgs[cIdx + 1] ?? '' : ''
+
+      // Everything after the last known flag/value is the shell command
+      const flagPositions = [sIdx, sIdx + 1, nIdx, nIdx + 1, cIdx, cIdx + 1]
+        .filter((i) => i >= 0 && i < normalizedArgs.length)
+      const maxFlagPos = Math.max(0, ...flagPositions)
+      // Also skip -d which doesn't take a value
+      const startCommand = normalizedArgs
+        .slice(maxFlagPos + 1)
+        .filter((a) => a !== '-d')
+        .join(' ')
+
+      const windows: WindowState[] = []
+      if (windowName) {
+        windows.push({
+          id: '0',
+          index: 0,
+          name: windowName,
+          path: windowPath,
+          activity: 0,
+          command: startCommand,
+        })
+      }
+      sessionMap.set(sessionName, windows)
       return ''
     }
 
@@ -1120,6 +1148,104 @@ describe('SessionManager', () => {
     } finally {
       config.discoverPrefixes = originalPrefixes
     }
+  })
+
+  test('listWindows returns empty when session does not exist (no orphan shell window)', () => {
+    const sessionName = 'agentboard-fresh-boot'
+    // Session does NOT exist in tmux — simulates a fresh reboot
+    const runner = createTmuxRunner([], 0)
+
+    const manager = new SessionManager(sessionName, {
+      runTmux: runner.runTmux,
+      capturePaneContent: () => null,
+    })
+
+    const originalPrefixes = config.discoverPrefixes
+    config.discoverPrefixes = []
+    try {
+      const sessions = manager.listWindows()
+      expect(sessions).toEqual([])
+
+      // Should NOT have called new-session (the old bug)
+      const newSessionCalls = runner.calls.filter(
+        (call) => getTmuxCommand(call) === 'new-session'
+      )
+      expect(newSessionCalls.length).toBe(0)
+    } finally {
+      config.discoverPrefixes = originalPrefixes
+    }
+  })
+
+  test('createWindow uses new-session when session does not exist', () => {
+    const sessionName = 'agentboard-first-window'
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentboard-'))
+    // Session does NOT exist — simulates first window creation after reboot
+    const runner = createTmuxRunner([], 0)
+
+    const manager = new SessionManager(sessionName, {
+      runTmux: runner.runTmux,
+      capturePaneContent: () => makePaneCapture(''),
+      now: () => 1700000000000,
+    })
+
+    const created = manager.createWindow(tempDir, 'my-project', 'claude')
+
+    // Should have used new-session (not new-window) to avoid orphan shell
+    const newSessionCalls = runner.calls.filter(
+      (call) => getTmuxCommand(call) === 'new-session'
+    )
+    expect(newSessionCalls.length).toBe(1)
+    expect(newSessionCalls[0]).toContain(sessionName)
+    expect(newSessionCalls[0]).toContain('my-project')
+    expect(newSessionCalls[0]).toContain('claude')
+
+    // Should NOT have called new-window
+    const newWindowCalls = runner.calls.filter(
+      (call) => getTmuxCommand(call) === 'new-window'
+    )
+    expect(newWindowCalls.length).toBe(0)
+
+    // Created session should have exactly one window — no orphan shell
+    expect(created.name).toBe('my-project')
+    expect(created.command).toBe('claude')
+
+    fs.rmSync(tempDir, { recursive: true, force: true })
+  })
+
+  test('createWindow uses new-window when session already exists', () => {
+    const sessionName = 'agentboard-existing'
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentboard-'))
+    const runner = createTmuxRunner(
+      [{ name: sessionName, windows: [
+        { id: '0', index: 0, name: 'existing', path: tempDir, activity: 0, command: 'claude' },
+      ] }],
+      0
+    )
+
+    const manager = new SessionManager(sessionName, {
+      runTmux: runner.runTmux,
+      capturePaneContent: () => makePaneCapture(''),
+      now: () => 1700000000000,
+    })
+
+    const created = manager.createWindow(tempDir, 'second', 'codex')
+
+    // Should have used new-window (session already exists)
+    const newWindowCalls = runner.calls.filter(
+      (call) => getTmuxCommand(call) === 'new-window'
+    )
+    expect(newWindowCalls.length).toBe(1)
+
+    // Should NOT have called new-session
+    const newSessionCalls = runner.calls.filter(
+      (call) => getTmuxCommand(call) === 'new-session'
+    )
+    expect(newSessionCalls.length).toBe(0)
+
+    expect(created.name).toBe('second')
+    expect(created.command).toBe('codex')
+
+    fs.rmSync(tempDir, { recursive: true, force: true })
   })
 
   test('mouse mode can be disabled via constructor option', () => {

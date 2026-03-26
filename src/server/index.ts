@@ -64,7 +64,9 @@ import {
 function checkPortAvailable(port: number): void {
   let result: ReturnType<typeof Bun.spawnSync>
   try {
-    result = Bun.spawnSync(['lsof', '-i', `:${port}`, '-t'], {
+    // Use -sTCP:LISTEN to only match processes actually listening on the port,
+    // not stale/closed connections from other processes (e.g. Playwright/Chrome)
+    result = Bun.spawnSync(['lsof', '-i', `:${port}`, '-sTCP:LISTEN', '-t'], {
       stdout: 'pipe',
       stderr: 'pipe',
     })

@@ -103,14 +103,24 @@ export class SessionManager {
     } catch {
       this.runTmux(['new-session', '-d', '-s', this.sessionName])
     }
+    this.configureSession()
+  }
+
+  private sessionExists(): boolean {
+    try {
+      this.runTmux(['has-session', '-t', this.sessionName])
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  private configureSession(): void {
     // Set mouse mode for scroll wheel support (SGR mouse sequences).
     // Scoped to this session only (-t) rather than global (-g).
     // Note: PtyTerminalProxy copies this setting onto grouped client sessions.
-    if (this.mouseMode) {
-      this.runTmux(['set-option', '-t', this.sessionName, 'mouse', 'on'])
-    } else {
-      this.runTmux(['set-option', '-t', this.sessionName, 'mouse', 'off'])
-    }
+    const mouseValue = this.mouseMode ? 'on' : 'off'
+    this.runTmux(['set-option', '-t', this.sessionName, 'mouse', mouseValue])
   }
 
   setMouseMode(enabled: boolean): void {
@@ -147,9 +157,17 @@ export class SessionManager {
   }
 
   listWindows(): Session[] {
-    this.ensureSession()
+    // Don't create the session just to list windows — that would leave an
+    // orphan shell window (e.g. "zsh") visible in the UI.  Only configure
+    // mouse mode when the session already exists.
+    const exists = this.sessionExists()
+    if (exists) {
+      this.configureSession()
+    }
 
-    const managed = this.listWindowsForSession(this.sessionName, 'managed')
+    const managed = exists
+      ? this.listWindowsForSession(this.sessionName, 'managed')
+      : []
     const externals = this.listExternalWindows()
     const allSessions = [...managed, ...externals]
 
@@ -170,7 +188,7 @@ export class SessionManager {
     command?: string,
     options?: { excludeSessionId?: string }
   ): Session {
-    this.ensureSession()
+    const sessionExisted = this.sessionExists()
 
     const resolvedPath = resolveProjectPath(projectPath)
     if (!resolvedPath) {
@@ -181,10 +199,9 @@ export class SessionManager {
       throw new Error(`Project path does not exist: ${resolvedPath}`)
     }
 
-    const existingSessions = this.listWindowsForSession(
-      this.sessionName,
-      'managed'
-    )
+    const existingSessions = sessionExisted
+      ? this.listWindowsForSession(this.sessionName, 'managed')
+      : []
     const existingWindowNames = new Set(
       existingSessions.map((session) => session.name)
     )
@@ -209,19 +226,27 @@ export class SessionManager {
 
     const finalCommand = command?.trim() || 'claude'
     const finalName = this.findAvailableName(baseName, existingWindowNames, nameExists)
-    const nextIndex = this.findNextAvailableWindowIndex()
 
-    const tmuxArgs = [
-      'new-window',
-      '-t',
-      `${this.sessionName}:${nextIndex}`,
-      '-n',
-      finalName,
-      '-c',
-      resolvedPath,
-      finalCommand,
-    ]
-    this.runTmux(tmuxArgs)
+    if (!sessionExisted) {
+      // Create session + window in one step to avoid orphan shell window
+      this.runTmux([
+        'new-session', '-d',
+        '-s', this.sessionName,
+        '-n', finalName,
+        '-c', resolvedPath,
+        finalCommand,
+      ])
+      this.configureSession()
+    } else {
+      const nextIndex = this.findNextAvailableWindowIndex()
+      this.runTmux([
+        'new-window',
+        '-t', `${this.sessionName}:${nextIndex}`,
+        '-n', finalName,
+        '-c', resolvedPath,
+        finalCommand,
+      ])
+    }
 
     // Retry finding the created window - tmux may have slight delay making it visible
     const maxRetries = 5
