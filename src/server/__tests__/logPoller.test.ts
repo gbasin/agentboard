@@ -1046,4 +1046,138 @@ describe('LogPoller', () => {
     poller.stop()
     db.close()
   })
+
+  test('defers orphan insertion when booting window shares project path', async () => {
+    const db = initDatabase({ path: ':memory:' })
+    const registry = new SessionRegistry()
+    // Window has empty tmux output (still booting)
+    const bootingWindow: Session = {
+      ...baseSession,
+      id: 'window-booting',
+      name: 'booting',
+      tmuxWindow: 'agentboard:5',
+    }
+    registry.replaceSessions([bootingWindow])
+
+    // Empty terminal: no user messages, no trace lines
+    setTmuxOutput('agentboard:5', '')
+
+    const projectPath = baseSession.projectPath
+    const encoded = encodeProjectPath(projectPath)
+    const logDir = path.join(
+      process.env.CLAUDE_CONFIG_DIR ?? '',
+      'projects',
+      encoded
+    )
+    await fs.mkdir(logDir, { recursive: true })
+
+    // Create a log file in the same project path
+    const logPath = path.join(logDir, 'session-deferred.jsonl')
+    const tokens = Array.from({ length: 60 }, (_, i) => `defer${i}`).join(' ')
+    const line = buildUserLogEntry(tokens, {
+      sessionId: 'claude-session-deferred',
+      cwd: projectPath,
+    })
+    const assistantLine = JSON.stringify({
+      type: 'assistant',
+      message: { content: [{ type: 'text', text: tokens }] },
+    })
+    await fs.writeFile(logPath, `${line}\n${assistantLine}\n`)
+
+    const poller = new LogPoller(db, registry, {
+      matchWorkerClient: new InlineMatchWorkerClient(),
+    })
+
+    // First poll: session should be deferred (window is booting, shares project path)
+    const stats1 = await poller.pollOnce()
+    expect(stats1.newSessions).toBe(0)
+    const deferredRecord = db.getSessionByLogPath(logPath)
+    expect(deferredRecord).toBeNull()
+
+    // Now the window has content that matches the log
+    setTmuxOutput('agentboard:5', buildLastExchangeOutput(tokens))
+
+    // Second poll: session should now be inserted with currentWindow set
+    const stats2 = await poller.pollOnce()
+    expect(stats2.newSessions).toBe(1)
+
+    const record = db.getSessionByLogPath(logPath)
+    expect(record?.sessionId).toBe('claude-session-deferred')
+    expect(record?.currentWindow).toBe('agentboard:5')
+
+    db.close()
+  })
+
+  test('does NOT defer when no-message window is already claimed', async () => {
+    const db = initDatabase({ path: ':memory:' })
+    const registry = new SessionRegistry()
+    // Window has empty tmux output (still booting)
+    const bootingWindow: Session = {
+      ...baseSession,
+      id: 'window-claimed',
+      name: 'claimed',
+      tmuxWindow: 'agentboard:6',
+    }
+    registry.replaceSessions([bootingWindow])
+
+    // Empty terminal: no user messages, no trace lines
+    setTmuxOutput('agentboard:6', '')
+
+    const projectPath = baseSession.projectPath
+    const encoded = encodeProjectPath(projectPath)
+    const logDir = path.join(
+      process.env.CLAUDE_CONFIG_DIR ?? '',
+      'projects',
+      encoded
+    )
+    await fs.mkdir(logDir, { recursive: true })
+
+    // Pre-insert a session that claims the booting window
+    db.insertSession({
+      sessionId: 'claude-session-existing',
+      logFilePath: path.join(logDir, 'session-existing.jsonl'),
+      projectPath,
+      slug: null,
+      agentType: 'claude',
+      displayName: 'existing',
+      createdAt: new Date().toISOString(),
+      lastActivityAt: new Date().toISOString(),
+      lastUserMessage: null,
+      currentWindow: 'agentboard:6',
+      isPinned: false,
+      lastResumeError: null,
+      lastKnownLogSize: null,
+      isCodexExec: false,
+      launchCommand: null,
+    })
+
+    // Create a new log file in the same project path
+    const logPath = path.join(logDir, 'session-new.jsonl')
+    const tokens = Array.from({ length: 60 }, (_, i) => `newt${i}`).join(' ')
+    const line = buildUserLogEntry(tokens, {
+      sessionId: 'claude-session-new',
+      cwd: projectPath,
+    })
+    const assistantLine = JSON.stringify({
+      type: 'assistant',
+      message: { content: [{ type: 'text', text: tokens }] },
+    })
+    await fs.writeFile(logPath, `${line}\n${assistantLine}\n`)
+
+    const poller = new LogPoller(db, registry, {
+      matchWorkerClient: new InlineMatchWorkerClient(),
+    })
+
+    // Poll: despite booting window sharing project path, it's already claimed,
+    // so the new session should NOT be deferred — it should be inserted as orphan
+    const stats = await poller.pollOnce()
+    expect(stats.newSessions).toBe(1)
+
+    const record = db.getSessionByLogPath(logPath)
+    expect(record?.sessionId).toBe('claude-session-new')
+    // No window match since the terminal is empty, so it's orphaned
+    expect(record?.currentWindow).toBeNull()
+
+    db.close()
+  })
 })

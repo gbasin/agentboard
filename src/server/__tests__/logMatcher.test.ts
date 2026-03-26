@@ -416,6 +416,59 @@ describe('logMatcher', () => {
     await fs.rm(tempDir, { recursive: true, force: true })
   })
 
+  test('matchWindowsToLogsByExactRg returns noMessageWindows for empty terminals', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-nomsg-'))
+    const logPath = path.join(tempDir, 'session.jsonl')
+    const messages = ['gamma one', 'gamma two']
+
+    await fs.writeFile(
+      logPath,
+      messages.map((message) => buildUserLogEntry(message)).join('\n')
+    )
+
+    const windows: Session[] = [
+      {
+        id: 'window-empty',
+        name: 'booting',
+        tmuxWindow: 'agentboard:3',
+        projectPath: '/tmp/booting',
+        status: 'unknown',
+        lastActivity: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        source: 'managed',
+      },
+      {
+        id: 'window-content',
+        name: 'gamma',
+        tmuxWindow: 'agentboard:4',
+        projectPath: '/tmp/gamma',
+        status: 'waiting',
+        lastActivity: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        source: 'managed',
+      },
+    ]
+
+    // Empty terminal: no user messages and no trace lines
+    setTmuxOutput('agentboard:3', '')
+    // Window with real content that matches the log
+    setTmuxOutput('agentboard:4', buildPromptScrollback(messages))
+
+    const { matches: results, noMessageWindows } = matchWindowsToLogsByExactRg(
+      windows,
+      tempDir
+    )
+
+    // The empty window should be in noMessageWindows
+    expect(noMessageWindows.has('agentboard:3')).toBe(true)
+    // The content window should NOT be in noMessageWindows
+    expect(noMessageWindows.has('agentboard:4')).toBe(false)
+    // The content window should still match its log
+    expect(results.get(logPath)?.tmuxWindow).toBe('agentboard:4')
+
+    await fs.rm(tempDir, { recursive: true, force: true })
+  })
+
   test('verifyWindowLogAssociation returns true when content matches', async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-verify-'))
     const logPath = path.join(tempDir, 'session.jsonl')

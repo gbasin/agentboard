@@ -2,7 +2,7 @@ import { logger } from './logger'
 import { config } from './config'
 import type { SessionDatabase } from './db'
 import { getLogSearchDirs, normalizeProjectPath } from './logDiscovery'
-import { DEFAULT_SCROLLBACK_LINES, extractLastEntryTimestamp, isToolNotificationText } from './logMatcher'
+import { DEFAULT_SCROLLBACK_LINES, extractLastEntryTimestamp, isSameOrChildPath, isToolNotificationText } from './logMatcher'
 import { deriveDisplayName } from './agentSessions'
 import { generateUniqueSessionName } from './nameGenerator'
 import type { SessionRegistry } from './SessionRegistry'
@@ -557,13 +557,16 @@ export class LogPoller {
       exactWindowMatches.set(match.logPath, window)
     }
 
-    // Build set of normalized project paths for windows with no extractable messages.
-    // Used to defer orphan insertion when the correct window may still be booting.
-    const noMessageProjectPaths = new Set<string>()
+    // Build list of unclaimed no-message windows for deferral checks.
+    // Only unclaimed windows (not already matched to a session) can trigger deferral,
+    // preventing a booting window in project A from suppressing unrelated sessions in A.
+    const deferralCandidates: Array<{ projectPath: string; agentType: string | null }> = []
     for (const nmw of response.noMessageWindows ?? []) {
       if (!nmw.projectPath) continue
+      // Skip windows already claimed by another session
+      if (this.db.getSessionByWindow(nmw.tmuxWindow)) continue
       const normalized = normalizeProjectPath(nmw.projectPath)
-      if (normalized) noMessageProjectPaths.add(normalized)
+      if (normalized) deferralCandidates.push({ projectPath: normalized, agentType: nmw.agentType })
     }
 
     const entriesToMatch = getEntriesNeedingMatch(response.entries ?? [], sessions, {
@@ -780,19 +783,25 @@ export class LogPoller {
         }
 
         // Defer orphan insertion when the correct window may still be booting.
-        // If no match was found and a window with the same project path has no
-        // extractable messages yet (empty terminal or Claude banner without ❯ prompt),
-        // skip insertion so the log is re-discovered next poll when the terminal is ready.
-        if (!currentWindow && projectPath) {
+        // Only defers when an unclaimed window with overlapping project path (and
+        // compatible agent type) has no extractable messages yet.
+        if (!currentWindow && projectPath && deferralCandidates.length > 0) {
           const normalizedProject = normalizeProjectPath(projectPath)
-          if (normalizedProject && noMessageProjectPaths.has(normalizedProject)) {
-            logger.info('log_match_deferred', {
-              logPath: entry.logPath,
-              sessionId,
-              projectPath,
-              reason: 'no_message_window_booting',
-            })
-            continue
+          if (normalizedProject) {
+            const hasBoot = deferralCandidates.some(
+              (c) =>
+                isSameOrChildPath(normalizedProject, c.projectPath) &&
+                (!c.agentType || !agentType || c.agentType === agentType)
+            )
+            if (hasBoot) {
+              logger.info('log_match_deferred', {
+                logPath: entry.logPath,
+                sessionId,
+                projectPath,
+                reason: 'no_message_window_booting',
+              })
+              continue
+            }
           }
         }
 

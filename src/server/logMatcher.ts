@@ -716,7 +716,7 @@ function normalizePath(value: string): string {
   return normalizeProjectPath(value)
 }
 
-function isSameOrChildPath(left: string, right: string): boolean {
+export function isSameOrChildPath(left: string, right: string): boolean {
   if (!left || !right) return false
   if (left === right) return true
   return left.startsWith(`${right}/`) || right.startsWith(`${left}/`)
@@ -1763,7 +1763,8 @@ export async function tryExactMatchWindowToLogAsync(
   logDirs: string | string[],
   scrollbackLines = DEFAULT_SCROLLBACK_LINES,
   context: ExactMatchContext = {},
-  search: ExactMatchSearchOptions = {}
+  search: ExactMatchSearchOptions = {},
+  noMessageWindows?: Set<string>
 ): Promise<ExactMatchResult | null> {
   const profile = search.profile
   const tmuxStart = performance.now()
@@ -1792,7 +1793,10 @@ export async function tryExactMatchWindowToLogAsync(
   let usingTraceFallback = false
   if (messages.length === 0) {
     const traces = extractRecentTraceLinesFromTmux(scrollback)
-    if (traces.length === 0) return null
+    if (traces.length === 0) {
+      noMessageWindows?.add(tmuxWindow)
+      return null
+    }
     messages = traces
     usingTraceFallback = true
   }
@@ -2037,16 +2041,15 @@ export function matchWindowsToLogsByExactRg(
   return { matches: resolved, noMessageWindows }
 }
 
-// TODO: propagate noMessageWindows here if this path is ever used by the worker/poller,
-// so the deferral logic in logPoller.ts also applies to async matching.
 export async function matchWindowsToLogsByExactRgAsync(
   windows: Session[],
   logDirs: string | string[],
   scrollbackLines = DEFAULT_SCROLLBACK_LINES,
   search: ExactMatchSearchOptions = {}
-): Promise<Map<string, Session>> {
+): Promise<ExactMatchRgResult> {
   const matches = new Map<string, { window: Session; score: OrderedMatchScore }>()
   const blocked = new Set<string>()
+  const noMessageWindows = new Set<string>()
   const profile = search.profile
 
   const windowResults = await Promise.all(
@@ -2057,7 +2060,8 @@ export async function matchWindowsToLogsByExactRgAsync(
         logDirs,
         scrollbackLines,
         { agentType: window.agentType, projectPath: window.projectPath },
-        search
+        search,
+        noMessageWindows
       )
       return {
         window,
@@ -2104,7 +2108,7 @@ export async function matchWindowsToLogsByExactRgAsync(
     resolved.set(logPath, entry.window)
   }
 
-  return resolved
+  return { matches: resolved, noMessageWindows }
 }
 
 export interface VerifyWindowLogOptions {
