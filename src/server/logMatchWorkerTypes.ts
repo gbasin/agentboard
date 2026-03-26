@@ -53,6 +53,7 @@ export interface NoMessageWindow {
   tmuxWindow: string
   projectPath: string | null
   agentType: AgentType | null
+  source: 'managed' | 'external' | null
 }
 
 export interface MatchWorkerResponse {

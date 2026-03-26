@@ -557,13 +557,14 @@ export class LogPoller {
       exactWindowMatches.set(match.logPath, window)
     }
 
-    // Build list of unclaimed no-message windows for deferral checks.
-    // Only unclaimed windows (not already matched to a session) can trigger deferral,
-    // preventing a booting window in project A from suppressing unrelated sessions in A.
+    // Build list of unclaimed, managed no-message windows for deferral checks.
+    // Only unclaimed managed windows can trigger deferral — external windows and
+    // windows already matched to a session are excluded to prevent unrelated blank
+    // windows from suppressing legitimate session insertions.
     const deferralCandidates: Array<{ projectPath: string; agentType: string | null }> = []
     for (const nmw of response.noMessageWindows ?? []) {
       if (!nmw.projectPath) continue
-      // Skip windows already claimed by another session
+      if (nmw.source !== 'managed') continue
       if (this.db.getSessionByWindow(nmw.tmuxWindow)) continue
       const normalized = normalizeProjectPath(nmw.projectPath)
       if (normalized) deferralCandidates.push({ projectPath: normalized, agentType: nmw.agentType })

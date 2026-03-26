@@ -7,6 +7,7 @@ import type { Session } from '../../shared/types'
 import {
   normalizeText,
   matchWindowsToLogsByExactRg,
+  matchWindowsToLogsByExactRgAsync,
   tryExactMatchWindowToLog,
   verifyWindowLogAssociation,
   verifyWindowLogAssociationDetailedAsync,
@@ -465,6 +466,52 @@ describe('logMatcher', () => {
     expect(noMessageWindows.has('agentboard:4')).toBe(false)
     // The content window should still match its log
     expect(results.get(logPath)?.tmuxWindow).toBe('agentboard:4')
+
+    await fs.rm(tempDir, { recursive: true, force: true })
+  })
+
+  test('matchWindowsToLogsByExactRgAsync returns noMessageWindows (parity with sync)', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-async-nomsg-'))
+    const logPath = path.join(tempDir, 'session.jsonl')
+    const messages = ['delta one', 'delta two']
+
+    await fs.writeFile(
+      logPath,
+      messages.map((message) => buildUserLogEntry(message)).join('\n')
+    )
+
+    const windows: Session[] = [
+      {
+        id: 'window-empty-async',
+        name: 'booting-async',
+        tmuxWindow: 'agentboard:5',
+        projectPath: '/tmp/booting-async',
+        status: 'unknown',
+        lastActivity: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        source: 'managed',
+      },
+      {
+        id: 'window-content-async',
+        name: 'delta',
+        tmuxWindow: 'agentboard:6',
+        projectPath: '/tmp/delta',
+        status: 'waiting',
+        lastActivity: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        source: 'managed',
+      },
+    ]
+
+    setTmuxOutput('agentboard:5', '')
+    setTmuxOutput('agentboard:6', buildPromptScrollback(messages))
+
+    const { matches: results, noMessageWindows } =
+      await matchWindowsToLogsByExactRgAsync(windows, tempDir)
+
+    expect(noMessageWindows.has('agentboard:5')).toBe(true)
+    expect(noMessageWindows.has('agentboard:6')).toBe(false)
+    expect(results.get(logPath)?.tmuxWindow).toBe('agentboard:6')
 
     await fs.rm(tempDir, { recursive: true, force: true })
   })

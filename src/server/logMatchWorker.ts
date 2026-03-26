@@ -122,7 +122,7 @@ export function handleMatchWorkerRequest(
       }))
       noMessageWindows = Array.from(matchResult.noMessageWindows).map((tmuxWindow) => {
         const w = windowsByTmux.get(tmuxWindow)
-        return { tmuxWindow, projectPath: w?.projectPath ?? null, agentType: w?.agentType ?? null }
+        return { tmuxWindow, projectPath: w?.projectPath ?? null, agentType: w?.agentType ?? null, source: w?.source ?? null }
       })
     }
 

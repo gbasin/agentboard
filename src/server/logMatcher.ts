@@ -1240,30 +1240,46 @@ export function getTerminalScrollback(
   tmuxWindow: string,
   lines = DEFAULT_SCROLLBACK_LINES
 ): string {
+  return captureTerminalScrollback(tmuxWindow, lines).content
+}
+
+/** Capture terminal scrollback with success/failure indicator. */
+export function captureTerminalScrollback(
+  tmuxWindow: string,
+  lines = DEFAULT_SCROLLBACK_LINES
+): { ok: boolean; content: string } {
   const safeLines = Math.max(1, lines)
   const result = runCommandSync(
     ['tmux', 'capture-pane', '-t', tmuxWindow, '-p', '-J', '-S', `-${safeLines}`],
     { timeoutMs: TMUX_CAPTURE_TIMEOUT_MS }
   )
   if (result.exitCode !== 0) {
-    return ''
+    return { ok: false, content: '' }
   }
-  return result.stdout
+  return { ok: true, content: result.stdout }
 }
 
 export async function getTerminalScrollbackAsync(
   tmuxWindow: string,
   lines = DEFAULT_SCROLLBACK_LINES
 ): Promise<string> {
+  return (await captureTerminalScrollbackAsync(tmuxWindow, lines)).content
+}
+
+/** Async capture terminal scrollback with success/failure indicator. */
+export async function captureTerminalScrollbackAsync(
+  tmuxWindow: string,
+  lines = DEFAULT_SCROLLBACK_LINES
+): Promise<{ ok: boolean; content: string }> {
   const safeLines = Math.max(1, lines)
   const result = await runCommandAsync(
     ['tmux', 'capture-pane', '-t', tmuxWindow, '-p', '-J', '-S', `-${safeLines}`],
     { timeoutMs: TMUX_CAPTURE_TIMEOUT_MS }
   )
   if (result.exitCode !== 0) {
-    return ''
+    return { ok: false, content: '' }
   }
-  return result.stdout
+  return { ok: true, content: result.stdout }
 }
 
 /**
@@ -1567,7 +1583,8 @@ export function tryExactMatchWindowToLog(
 ): ExactMatchResult | null {
   const profile = search.profile
   const tmuxStart = performance.now()
-  const scrollback = getTerminalScrollback(tmuxWindow, scrollbackLines)
+  const captureResult = captureTerminalScrollback(tmuxWindow, scrollbackLines)
+  const scrollback = captureResult.content
   if (profile) {
     profile.tmuxCaptures += 1
     profile.tmuxCaptureMs += performance.now() - tmuxStart
@@ -1591,7 +1608,9 @@ export function tryExactMatchWindowToLog(
   if (messages.length === 0) {
     const traces = extractRecentTraceLinesFromTmux(scrollback)
     if (traces.length === 0) {
-      noMessageWindows?.add(tmuxWindow)
+      // Only mark as "no messages" if the capture succeeded — a capture failure
+      // (stale/invalid tmux target) should not trigger deferral.
+      if (captureResult.ok) noMessageWindows?.add(tmuxWindow)
       return null
     }
     messages = traces
@@ -1768,7 +1787,8 @@ export async function tryExactMatchWindowToLogAsync(
 ): Promise<ExactMatchResult | null> {
   const profile = search.profile
   const tmuxStart = performance.now()
-  const scrollback = await getTerminalScrollbackAsync(tmuxWindow, scrollbackLines)
+  const captureResult = await captureTerminalScrollbackAsync(tmuxWindow, scrollbackLines)
+  const scrollback = captureResult.content
   if (profile) {
     profile.tmuxCaptures += 1
     profile.tmuxCaptureMs += performance.now() - tmuxStart
@@ -1794,7 +1814,7 @@ export async function tryExactMatchWindowToLogAsync(
   if (messages.length === 0) {
     const traces = extractRecentTraceLinesFromTmux(scrollback)
     if (traces.length === 0) {
-      noMessageWindows?.add(tmuxWindow)
+      if (captureResult.ok) noMessageWindows?.add(tmuxWindow)
       return null
     }
     messages = traces
