@@ -222,6 +222,97 @@ describe('db', () => {
     expect(inserted2.launchCommand).toBeNull()
   })
 
+  test('getActiveSessions returns results in deterministic order by session_id', () => {
+    // Insert sessions with session_ids that would sort differently than insertion order
+    db.insertSession(makeSession({
+      sessionId: 'zebra',
+      logFilePath: '/tmp/zebra.jsonl',
+      displayName: 'zebra',
+      currentWindow: 'agentboard:3',
+    }))
+    db.insertSession(makeSession({
+      sessionId: 'alpha',
+      logFilePath: '/tmp/alpha.jsonl',
+      displayName: 'alpha',
+      currentWindow: 'agentboard:1',
+    }))
+    db.insertSession(makeSession({
+      sessionId: 'middle',
+      logFilePath: '/tmp/middle.jsonl',
+      displayName: 'middle',
+      currentWindow: 'agentboard:2',
+    }))
+
+    const active = db.getActiveSessions()
+    expect(active).toHaveLength(3)
+    expect(active[0].sessionId).toBe('alpha')
+    expect(active[1].sessionId).toBe('middle')
+    expect(active[2].sessionId).toBe('zebra')
+  })
+
+  test('getInactiveSessions returns results ordered by last_activity_at DESC with session_id tiebreaker', () => {
+    const recent = '2026-01-02T00:00:00.000Z'
+    const older = '2026-01-01T00:00:00.000Z'
+
+    // Two sessions with the same last_activity_at to test the tiebreaker
+    db.insertSession(makeSession({
+      sessionId: 'tie-zebra',
+      logFilePath: '/tmp/tie-zebra.jsonl',
+      displayName: 'tie-zebra',
+      currentWindow: null,
+      lastActivityAt: older,
+    }))
+    db.insertSession(makeSession({
+      sessionId: 'tie-alpha',
+      logFilePath: '/tmp/tie-alpha.jsonl',
+      displayName: 'tie-alpha',
+      currentWindow: null,
+      lastActivityAt: older,
+    }))
+    // One session with more recent activity (should come first)
+    db.insertSession(makeSession({
+      sessionId: 'recent-one',
+      logFilePath: '/tmp/recent.jsonl',
+      displayName: 'recent',
+      currentWindow: null,
+      lastActivityAt: recent,
+    }))
+
+    const inactive = db.getInactiveSessions()
+    expect(inactive).toHaveLength(3)
+    // Most recent activity first
+    expect(inactive[0].sessionId).toBe('recent-one')
+    // Same activity timestamp: alphabetical session_id tiebreaker
+    expect(inactive[1].sessionId).toBe('tie-alpha')
+    expect(inactive[2].sessionId).toBe('tie-zebra')
+  })
+
+  test('getInactiveSessions with maxAgeHours also uses session_id tiebreaker', () => {
+    const now = new Date()
+    const recentTime = new Date(now.getTime() - 30 * 60 * 1000).toISOString() // 30 min ago
+
+    db.insertSession(makeSession({
+      sessionId: 'age-zebra',
+      logFilePath: '/tmp/age-zebra.jsonl',
+      displayName: 'age-zebra',
+      currentWindow: null,
+      lastActivityAt: recentTime,
+    }))
+    db.insertSession(makeSession({
+      sessionId: 'age-alpha',
+      logFilePath: '/tmp/age-alpha.jsonl',
+      displayName: 'age-alpha',
+      currentWindow: null,
+      lastActivityAt: recentTime,
+    }))
+
+    const inactive = db.getInactiveSessions({ maxAgeHours: 1 })
+    expect(inactive).toHaveLength(2)
+    // Same timestamp: alphabetical session_id tiebreaker
+    expect(inactive[0].sessionId).toBe('age-alpha')
+    expect(inactive[1].sessionId).toBe('age-zebra')
+  })
+
   test('app settings get/set', () => {
     // Initially null
     expect(db.getAppSetting('test_key')).toBeNull()

@@ -693,12 +693,17 @@ async function refreshSessionsAsync(): Promise<void> {
       config.discoverPrefixes
     )
     // Kill happened while we were listing windows — discard stale result
-    if (gen !== refreshGeneration) return
+    // and re-refresh with fresh data so we don't lose other status updates.
+    if (gen !== refreshGeneration) {
+      refreshInFlight = false
+      return refreshSessionsAsync()
+    }
     const hydrated = hydrateSessionsWithAgentSessions(sessions)
     const withOverrides = applyForceWorkingOverrides(hydrated)
     registry.replaceSessions(mergeRemoteSessions(withOverrides))
   } catch (error) {
-    // Fallback to sync on worker failure
+    // Fallback to sync on worker failure — sync listWindows sees post-kill
+    // state so no generation check needed here.
     logger.warn('session_refresh_worker_error', {
       message: error instanceof Error ? error.message : String(error),
     })

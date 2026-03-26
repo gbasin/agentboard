@@ -351,6 +351,63 @@ describe('App', () => {
     expect(useSessionStore.getState().sessions).toHaveLength(0)
   })
 
+  test('agent-sessions-active message updates active sessions while preserving inactive', () => {
+    const existingInactive: AgentSession[] = [
+      {
+        ...baseAgentSession,
+        sessionId: 'inactive-1',
+        isActive: false,
+        displayName: 'old-inactive',
+      },
+      {
+        ...baseAgentSession,
+        sessionId: 'inactive-2',
+        isActive: false,
+        displayName: 'another-inactive',
+      },
+    ]
+
+    // Pre-populate the store with both active and inactive agent sessions
+    useSessionStore.setState({
+      agentSessions: {
+        active: [{ ...baseAgentSession, sessionId: 'old-active' }],
+        inactive: existingInactive,
+      },
+    })
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<App />)
+    })
+    activeRenderer = renderer
+
+    if (!subscribeListener) {
+      throw new Error('Expected websocket subscription')
+    }
+
+    // Send agent-sessions-active message with new active sessions
+    const newActive: AgentSession[] = [
+      { ...baseAgentSession, sessionId: 'new-active-1', displayName: 'fresh' },
+      { ...baseAgentSession, sessionId: 'new-active-2', displayName: 'fresh-2' },
+    ]
+
+    act(() => {
+      subscribeListener?.({ type: 'agent-sessions-active', active: newActive })
+    })
+
+    const state = useSessionStore.getState().agentSessions
+
+    // Active sessions should be replaced
+    expect(state.active).toHaveLength(2)
+    expect(state.active[0].sessionId).toBe('new-active-1')
+    expect(state.active[1].sessionId).toBe('new-active-2')
+
+    // Inactive sessions should be preserved from the store
+    expect(state.inactive).toHaveLength(2)
+    expect(state.inactive[0].sessionId).toBe('inactive-1')
+    expect(state.inactive[1].sessionId).toBe('inactive-2')
+  })
+
   test('handles keyboard shortcuts for navigation and actions', () => {
     const sessionB = {
       ...baseSession,
