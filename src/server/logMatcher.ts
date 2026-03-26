@@ -1545,6 +1545,26 @@ export interface ExactMatchResult {
 }
 
 /**
+ * Quick check whether a tmux window has any extractable user messages or trace lines.
+ * Used to distinguish "terminal is still booting" (no content) from "has content but
+ * matching failed" — only the former should defer session insertion.
+ */
+export function windowHasExtractableMessages(
+  tmuxWindow: string,
+  scrollbackLines = DEFAULT_SCROLLBACK_LINES
+): boolean {
+  const scrollback = getTerminalScrollback(tmuxWindow, scrollbackLines)
+  let userMessages = extractRecentUserMessagesFromTmux(scrollback)
+  if (userMessages.length === 0) {
+    const ansiScrollback = getTerminalScrollbackWithAnsi(tmuxWindow, scrollbackLines)
+    userMessages = extractPiUserMessagesFromAnsi(ansiScrollback)
+  }
+  if (userMessages.length > 0) return true
+  const traces = extractRecentTraceLinesFromTmux(scrollback)
+  return traces.length > 0
+}
+
+/**
  * Try to find a log file that matches a window's content.
  * Strategy:
  * 1. Extract recent user messages from tmux
@@ -1959,17 +1979,24 @@ export async function tryExactMatchWindowToLogAsync(
   }
 }
 
+export interface ExactMatchRgResult {
+  matches: Map<string, Session>
+  /** Windows where tryExactMatchWindowToLog returned null due to no extractable messages */
+  noMessageWindows: Set<string>
+}
+
 export function matchWindowsToLogsByExactRg(
   windows: Session[],
   logDirs: string | string[],
   scrollbackLines = DEFAULT_SCROLLBACK_LINES,
   search: ExactMatchSearchOptions = {}
-): Map<string, Session> {
+): ExactMatchRgResult {
   const matches = new Map<
     string,
     { window: Session; score: OrderedMatchScore }
   >()
   const blocked = new Set<string>()
+  const noMessageWindows = new Set<string>()
   const profile = search.profile
 
   for (const window of windows) {
@@ -1985,7 +2012,15 @@ export function matchWindowsToLogsByExactRg(
       profile.windowMatchRuns += 1
       profile.windowMatchMs += performance.now() - start
     }
-    if (!result) continue
+    if (!result) {
+      // Only mark as "no messages" if the terminal genuinely has no extractable content.
+      // Windows that have messages but failed matching (no candidates, tie, score=0)
+      // should NOT be in noMessageWindows — they represent real match failures, not booting.
+      if (!windowHasExtractableMessages(window.tmuxWindow, scrollbackLines)) {
+        noMessageWindows.add(window.tmuxWindow)
+      }
+      continue
+    }
 
     const score = {
       matchedCount: result.matchedCount,
@@ -2017,7 +2052,7 @@ export function matchWindowsToLogsByExactRg(
     resolved.set(logPath, entry.window)
   }
 
-  return resolved
+  return { matches: resolved, noMessageWindows }
 }
 
 export async function matchWindowsToLogsByExactRgAsync(

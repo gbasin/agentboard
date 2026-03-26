@@ -409,7 +409,7 @@ describe('logMatcher', () => {
     setTmuxOutput('agentboard:1', buildPromptScrollback(messagesA))
     setTmuxOutput('agentboard:2', buildPromptScrollback(messagesB))
 
-    const results = matchWindowsToLogsByExactRg(windows, tempDir)
+    const { matches: results } = matchWindowsToLogsByExactRg(windows, tempDir)
     expect(results.get(logPathA)?.tmuxWindow).toBe('agentboard:1')
     expect(results.get(logPathB)?.tmuxWindow).toBe('agentboard:2')
 

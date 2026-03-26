@@ -48,6 +48,12 @@ export interface MatchWorkerRequest {
   skipMatchingPatterns?: string[]
 }
 
+/** A window where tryExactMatchWindowToLog returned null due to no extractable messages */
+export interface NoMessageWindow {
+  tmuxWindow: string
+  projectPath: string | null
+}
+
 export interface MatchWorkerResponse {
   id: string
   type: 'result' | 'error'
@@ -61,6 +67,8 @@ export interface MatchWorkerResponse {
   matchSkipped?: boolean
   matches?: Array<{ logPath: string; tmuxWindow: string }>
   orphanMatches?: Array<{ logPath: string; tmuxWindow: string }>
+  /** Windows that had no extractable user messages (terminal empty or still booting) */
+  noMessageWindows?: NoMessageWindow[]
   profile?: ExactMatchProfiler
   error?: string
 }

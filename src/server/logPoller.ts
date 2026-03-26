@@ -1,7 +1,7 @@
 import { logger } from './logger'
 import { config } from './config'
 import type { SessionDatabase } from './db'
-import { getLogSearchDirs } from './logDiscovery'
+import { getLogSearchDirs, normalizeProjectPath } from './logDiscovery'
 import { DEFAULT_SCROLLBACK_LINES, extractLastEntryTimestamp, isToolNotificationText } from './logMatcher'
 import { deriveDisplayName } from './agentSessions'
 import { generateUniqueSessionName } from './nameGenerator'
@@ -557,6 +557,15 @@ export class LogPoller {
       exactWindowMatches.set(match.logPath, window)
     }
 
+    // Build set of normalized project paths for windows with no extractable messages.
+    // Used to defer orphan insertion when the correct window may still be booting.
+    const noMessageProjectPaths = new Set<string>()
+    for (const nmw of response.noMessageWindows ?? []) {
+      if (!nmw.projectPath) continue
+      const normalized = normalizeProjectPath(nmw.projectPath)
+      if (normalized) noMessageProjectPaths.add(normalized)
+    }
+
     const entriesToMatch = getEntriesNeedingMatch(response.entries ?? [], sessions, {
       minTokens: MIN_LOG_TOKENS_FOR_INSERT,
       skipMatchingPatterns: config.skipMatchingPatterns,
@@ -767,6 +776,23 @@ export class LogPoller {
             currentWindow = null
           } else {
             matches += 1
+          }
+        }
+
+        // Defer orphan insertion when the correct window may still be booting.
+        // If no match was found and a window with the same project path has no
+        // extractable messages yet (empty terminal or Claude banner without ❯ prompt),
+        // skip insertion so the log is re-discovered next poll when the terminal is ready.
+        if (!currentWindow && projectPath) {
+          const normalizedProject = normalizeProjectPath(projectPath)
+          if (normalizedProject && noMessageProjectPaths.has(normalizedProject)) {
+            logger.info('log_match_deferred', {
+              logPath: entry.logPath,
+              sessionId,
+              projectPath,
+              reason: 'no_message_window_booting',
+            })
+            continue
           }
         }
 

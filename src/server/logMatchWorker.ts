@@ -27,6 +27,7 @@ import type {
   LastMessageCandidate,
   MatchWorkerRequest,
   MatchWorkerResponse,
+  NoMessageWindow,
   OrphanCandidate,
 } from './logMatchWorkerTypes'
 
@@ -80,12 +81,16 @@ export function handleMatchWorkerRequest(
     let matchLogCount = 0
     let matchSkipped = false
     let resolved: Array<{ logPath: string; tmuxWindow: string }> = []
+    let noMessageWindows: NoMessageWindow[] = []
     let orphanEntries: LogEntrySnapshot[] = []
     let orphanMatches: Array<{ logPath: string; tmuxWindow: string }> = []
     const sessionByLogPath = new Map(
       payload.sessions
         .filter((session) => session.logFilePath)
         .map((session) => [session.logFilePath, session] as const)
+    )
+    const windowsByTmux = new Map(
+      payload.windows.map((w) => [w.tmuxWindow, w] as const)
     )
 
     const entriesToMatch = getEntriesNeedingMatch(entries, payload.sessions, {
@@ -97,7 +102,7 @@ export function handleMatchWorkerRequest(
     } else {
       const matchStart = performance.now()
       const matchLogPaths = entriesToMatch.map((entry) => entry.logPath)
-      const matches = matchWindowsToLogsByExactRg(
+      const matchResult = matchWindowsToLogsByExactRg(
         payload.windows,
         logDirs,
         payload.scrollbackLines ?? DEFAULT_SCROLLBACK_LINES,
@@ -111,10 +116,14 @@ export function handleMatchWorkerRequest(
       matchMs = performance.now() - matchStart
       matchWindowCount = payload.windows.length
       matchLogCount = matchLogPaths.length
-      resolved = Array.from(matches.entries()).map(([logPath, window]) => ({
+      resolved = Array.from(matchResult.matches.entries()).map(([logPath, window]) => ({
         logPath,
         tmuxWindow: window.tmuxWindow,
       }))
+      noMessageWindows = Array.from(matchResult.noMessageWindows).map((tmuxWindow) => {
+        const w = windowsByTmux.get(tmuxWindow)
+        return { tmuxWindow, projectPath: w?.projectPath ?? null }
+      })
     }
 
     const orphanCandidates = payload.orphanCandidates ?? []
@@ -129,7 +138,7 @@ export function handleMatchWorkerRequest(
           search.rgThreads ?? 1,
           Math.min(os.cpus().length, 4)
         )
-        const matches = matchWindowsToLogsByExactRg(
+        const orphanMatchResult = matchWindowsToLogsByExactRg(
           payload.windows,
           logDirs,
           payload.scrollbackLines ?? DEFAULT_SCROLLBACK_LINES,
@@ -139,7 +148,7 @@ export function handleMatchWorkerRequest(
             profile,
           }
         )
-        orphanMatches = Array.from(matches.entries()).map(
+        orphanMatches = Array.from(orphanMatchResult.matches.entries()).map(
           ([logPath, window]) => ({
             logPath,
             tmuxWindow: window.tmuxWindow,
@@ -180,6 +189,7 @@ export function handleMatchWorkerRequest(
       matchSkipped,
       matches: resolved,
       orphanMatches,
+      noMessageWindows,
       profile,
     }
   } catch (error) {
