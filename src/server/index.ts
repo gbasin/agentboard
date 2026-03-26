@@ -679,15 +679,21 @@ function hydrateSessionsWithAgentSessions(
 }
 
 let refreshInFlight = false
+// Bumped on kills so in-flight refreshes that started before the kill
+// discard their stale window list instead of re-adding the dead session.
+let refreshGeneration = 0
 
 async function refreshSessionsAsync(): Promise<void> {
   if (refreshInFlight) return
   refreshInFlight = true
+  const gen = refreshGeneration
   try {
     const sessions = await sessionRefreshWorker.refresh(
       config.tmuxSession,
       config.discoverPrefixes
     )
+    // Kill happened while we were listing windows — discard stale result
+    if (gen !== refreshGeneration) return
     const hydrated = hydrateSessionsWithAgentSessions(sessions)
     const withOverrides = applyForceWorkingOverrides(hydrated)
     registry.replaceSessions(mergeRemoteSessions(withOverrides))
@@ -1666,6 +1672,8 @@ async function handleKill(sessionId: string, ws: ServerWebSocket<WSData>) {
 
   try {
     sessionManager.killWindow(session.tmuxWindow)
+    // Bump generation so any in-flight refresh discards its stale result
+    refreshGeneration++
     const orphaned = new Map<string, AgentSession>()
     const orphanById = (agentSessionId?: string | null) => {
       if (!agentSessionId || orphaned.has(agentSessionId)) return
