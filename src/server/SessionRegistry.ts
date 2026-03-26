@@ -133,16 +133,17 @@ function pickLatestActivity(
 function agentSessionsEqual(a: AgentSession, b: AgentSession): boolean {
   return (
     a.sessionId === b.sessionId &&
-    a.displayName === b.displayName &&
-    a.lastActivityAt === b.lastActivityAt &&
-    a.isActive === b.isActive &&
-    a.lastUserMessage === b.lastUserMessage &&
-    a.isPinned === b.isPinned &&
-    a.lastResumeError === b.lastResumeError &&
+    a.logFilePath === b.logFilePath &&
     a.projectPath === b.projectPath &&
     a.agentType === b.agentType &&
-    a.logFilePath === b.logFilePath &&
-    a.host === b.host
+    a.displayName === b.displayName &&
+    a.createdAt === b.createdAt &&
+    a.lastActivityAt === b.lastActivityAt &&
+    a.isActive === b.isActive &&
+    a.host === b.host &&
+    a.lastUserMessage === b.lastUserMessage &&
+    a.isPinned === b.isPinned &&
+    a.lastResumeError === b.lastResumeError
   )
 }
 
