@@ -11,13 +11,11 @@ export interface RegistryEvents {
 export class SessionRegistry extends EventEmitter {
   private sessions: Map<string, Session>
   private agentSessions: { active: AgentSession[]; inactive: AgentSession[] }
-  private agentSessionsSnapshot: string
 
   constructor() {
     super()
     this.sessions = new Map<string, Session>()
     this.agentSessions = { active: [], inactive: [] }
-    this.agentSessionsSnapshot = ''
   }
 
   getAll(): Session[] {
@@ -93,13 +91,17 @@ export class SessionRegistry extends EventEmitter {
   }
 
   setAgentSessions(active: AgentSession[], inactive: AgentSession[]): void {
-    const snapshot = JSON.stringify({ active, inactive })
-    if (snapshot === this.agentSessionsSnapshot) {
+    const prev = this.agentSessions
+    if (
+      active.length === prev.active.length &&
+      inactive.length === prev.inactive.length &&
+      active.every((a, i) => agentSessionsEqual(a, prev.active[i])) &&
+      inactive.every((a, i) => agentSessionsEqual(a, prev.inactive[i]))
+    ) {
       return
     }
 
     this.agentSessions = { active, inactive }
-    this.agentSessionsSnapshot = snapshot
     this.emit('agent-sessions', this.agentSessions)
   }
 }
@@ -126,6 +128,22 @@ function pickLatestActivity(
   }
 
   return incomingTime > existingTime ? incoming : existing
+}
+
+function agentSessionsEqual(a: AgentSession, b: AgentSession): boolean {
+  return (
+    a.sessionId === b.sessionId &&
+    a.displayName === b.displayName &&
+    a.lastActivityAt === b.lastActivityAt &&
+    a.isActive === b.isActive &&
+    a.lastUserMessage === b.lastUserMessage &&
+    a.isPinned === b.isPinned &&
+    a.lastResumeError === b.lastResumeError &&
+    a.projectPath === b.projectPath &&
+    a.agentType === b.agentType &&
+    a.logFilePath === b.logFilePath &&
+    a.host === b.host
+  )
 }
 
 function sessionsEqual(a: Session, b: Session): boolean {
