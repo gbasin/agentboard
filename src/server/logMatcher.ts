@@ -1545,39 +1545,25 @@ export interface ExactMatchResult {
 }
 
 /**
- * Quick check whether a tmux window has any extractable user messages or trace lines.
- * Used to distinguish "terminal is still booting" (no content) from "has content but
- * matching failed" — only the former should defer session insertion.
- */
-export function windowHasExtractableMessages(
-  tmuxWindow: string,
-  scrollbackLines = DEFAULT_SCROLLBACK_LINES
-): boolean {
-  const scrollback = getTerminalScrollback(tmuxWindow, scrollbackLines)
-  let userMessages = extractRecentUserMessagesFromTmux(scrollback)
-  if (userMessages.length === 0) {
-    const ansiScrollback = getTerminalScrollbackWithAnsi(tmuxWindow, scrollbackLines)
-    userMessages = extractPiUserMessagesFromAnsi(ansiScrollback)
-  }
-  if (userMessages.length > 0) return true
-  const traces = extractRecentTraceLinesFromTmux(scrollback)
-  return traces.length > 0
-}
-
-/**
  * Try to find a log file that matches a window's content.
  * Strategy:
  * 1. Extract recent user messages from tmux
  * 2. rg search for the longest messages → get candidate logs
  * 3. Narrow down with agent type/project path if available
  * 4. Break ties by ordered user-message matches in the log
+ *
+ * @param noMessageWindows Optional set to track windows that returned null because
+ *   the terminal had no extractable messages (empty or still booting). Windows that
+ *   have messages but fail matching for other reasons (short messages without
+ *   disambiguators, no candidates, tie, score=0) are NOT added to this set.
  */
 export function tryExactMatchWindowToLog(
   tmuxWindow: string,
   logDirs: string | string[],
   scrollbackLines = DEFAULT_SCROLLBACK_LINES,
   context: ExactMatchContext = {},
-  search: ExactMatchSearchOptions = {}
+  search: ExactMatchSearchOptions = {},
+  noMessageWindows?: Set<string>
 ): ExactMatchResult | null {
   const profile = search.profile
   const tmuxStart = performance.now()
@@ -1604,7 +1590,10 @@ export function tryExactMatchWindowToLog(
   let usingTraceFallback = false
   if (messages.length === 0) {
     const traces = extractRecentTraceLinesFromTmux(scrollback)
-    if (traces.length === 0) return null
+    if (traces.length === 0) {
+      noMessageWindows?.add(tmuxWindow)
+      return null
+    }
     messages = traces
     usingTraceFallback = true
   }
@@ -1616,7 +1605,7 @@ export function tryExactMatchWindowToLog(
   const allowShortMessages = hasDisambiguators || usingTraceFallback
   const messagesToSearch =
     longMessages.length > 0 ? longMessages : allowShortMessages ? messages : []
-  if (messagesToSearch.length === 0) return null
+  if (messagesToSearch.length === 0) return null  // has messages, but too short — not booting
 
   const sortedMessages = messagesToSearch.toSorted((a, b) => b.length - a.length)
   let candidates: string[] = []
@@ -2006,21 +1995,14 @@ export function matchWindowsToLogsByExactRg(
       logDirs,
       scrollbackLines,
       { agentType: window.agentType, projectPath: window.projectPath },
-      search
+      search,
+      noMessageWindows
     )
     if (profile) {
       profile.windowMatchRuns += 1
       profile.windowMatchMs += performance.now() - start
     }
-    if (!result) {
-      // Only mark as "no messages" if the terminal genuinely has no extractable content.
-      // Windows that have messages but failed matching (no candidates, tie, score=0)
-      // should NOT be in noMessageWindows — they represent real match failures, not booting.
-      if (!windowHasExtractableMessages(window.tmuxWindow, scrollbackLines)) {
-        noMessageWindows.add(window.tmuxWindow)
-      }
-      continue
-    }
+    if (!result) continue
 
     const score = {
       matchedCount: result.matchedCount,
@@ -2055,6 +2037,8 @@ export function matchWindowsToLogsByExactRg(
   return { matches: resolved, noMessageWindows }
 }
 
+// TODO: propagate noMessageWindows here if this path is ever used by the worker/poller,
+// so the deferral logic in logPoller.ts also applies to async matching.
 export async function matchWindowsToLogsByExactRgAsync(
   windows: Session[],
   logDirs: string | string[],
