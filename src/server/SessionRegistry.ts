@@ -6,6 +6,7 @@ export interface RegistryEvents {
   'session-update': (session: Session) => void
   'session-removed': (sessionId: string) => void
   'agent-sessions': (payload: { active: AgentSession[]; inactive: AgentSession[] }) => void
+  'agent-sessions-active': (active: AgentSession[]) => void
 }
 
 export class SessionRegistry extends EventEmitter {
@@ -92,17 +93,25 @@ export class SessionRegistry extends EventEmitter {
 
   setAgentSessions(active: AgentSession[], inactive: AgentSession[]): void {
     const prev = this.agentSessions
-    if (
-      active.length === prev.active.length &&
-      inactive.length === prev.inactive.length &&
-      active.every((a, i) => agentSessionsEqual(a, prev.active[i])) &&
-      inactive.every((a, i) => agentSessionsEqual(a, prev.inactive[i]))
-    ) {
-      return
-    }
+    const activeChanged =
+      active.length !== prev.active.length ||
+      !active.every((a, i) => agentSessionsEqual(a, prev.active[i]))
+    const inactiveChanged =
+      inactive.length !== prev.inactive.length ||
+      !inactive.every((a, i) => agentSessionsEqual(a, prev.inactive[i]))
+
+    if (!activeChanged && !inactiveChanged) return
 
     this.agentSessions = { active, inactive }
-    this.emit('agent-sessions', this.agentSessions)
+
+    // Always send the lightweight active-only update
+    if (activeChanged) {
+      this.emit('agent-sessions-active', active)
+    }
+    // Only send the full payload (with inactive) when inactive actually changed
+    if (inactiveChanged) {
+      this.emit('agent-sessions', this.agentSessions)
+    }
   }
 }
 

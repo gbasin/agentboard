@@ -236,6 +236,10 @@ export default function App() {
       if (message.type === 'agent-sessions') {
         setAgentSessions(message.active, message.inactive)
       }
+      if (message.type === 'agent-sessions-active') {
+        const current = useSessionStore.getState().agentSessions
+        setAgentSessions(message.active, current.inactive)
+      }
       if (message.type === 'session-orphaned') {
         // When a session is superseded by slug (plan→execute transition),
         // don't remove the card — session-activated will update it in place.

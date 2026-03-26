@@ -866,6 +866,10 @@ registry.on('agent-sessions', ({ active, inactive }) => {
   broadcast({ type: 'agent-sessions', active, inactive })
 })
 
+registry.on('agent-sessions-active', (active) => {
+  broadcast({ type: 'agent-sessions-active', active })
+})
+
 app.post('/api/client-log', async (c) => {
   try {
     const body = await c.req.json() as { level?: string; event: string; data?: Record<string, unknown> }
