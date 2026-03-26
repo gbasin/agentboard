@@ -391,12 +391,14 @@ const LAST_USER_MESSAGE_LOCK_MS = 60_000 // 60 seconds
 
 const logPoller = new LogPoller(db, registry, {
   onSessionOrphaned: (sessionId, supersededBy) => {
+    cachedInactiveSessions = null
     const session = db.getSessionById(sessionId)
     if (session) {
       broadcast({ type: 'session-orphaned', session: toAgentSession(session), supersededBy })
     }
   },
   onSessionActivated: (sessionId, window) => {
+    cachedInactiveSessions = null
     const session = db.getSessionById(sessionId)
     if (session) {
       broadcast({
@@ -415,21 +417,30 @@ const logPoller = new LogPoller(db, registry, {
 })
 const sessionRefreshWorker = new SessionRefreshWorkerClient()
 
-function updateAgentSessions() {
+// Cache inactive sessions to avoid 70ms SQLite query on every 2s refresh cycle.
+// Invalidated by updateAgentSessions({ invalidateCache: true }) on mutations.
+let cachedInactiveSessions: AgentSession[] | null = null
+let cachedInactiveMaxAgeHours: number | null = null
+
+function updateAgentSessions({ invalidateCache = false } = {}) {
   const active = db.getActiveSessions().map(toAgentSession)
-  let inactive = db.getInactiveSessions({ maxAgeHours: runtimeInactiveMaxAgeHours }).map(toAgentSession)
-  // Filter out sessions from excluded project directories
-  // Use "<empty>" as a special marker to exclude sessions with no project path
-  if (config.excludeProjects?.length > 0) {
-    inactive = inactive.filter((session) => {
-      const projectPath = session.projectPath || ''
-      return !config.excludeProjects.some((excluded) => {
-        if (excluded === '<empty>') return projectPath === ''
-        return projectPath.startsWith(excluded)
+
+  if (invalidateCache || cachedInactiveSessions === null || cachedInactiveMaxAgeHours !== runtimeInactiveMaxAgeHours) {
+    let inactive = db.getInactiveSessions({ maxAgeHours: runtimeInactiveMaxAgeHours }).map(toAgentSession)
+    if (config.excludeProjects?.length > 0) {
+      inactive = inactive.filter((session) => {
+        const projectPath = session.projectPath || ''
+        return !config.excludeProjects.some((excluded) => {
+          if (excluded === '<empty>') return projectPath === ''
+          return projectPath.startsWith(excluded)
+        })
       })
-    })
+    }
+    cachedInactiveSessions = inactive
+    cachedInactiveMaxAgeHours = runtimeInactiveMaxAgeHours
   }
-  registry.setAgentSessions(active, inactive)
+
+  registry.setAgentSessions(active, cachedInactiveSessions)
 }
 
 interface VerificationDecision {
@@ -758,7 +769,7 @@ async function captureLastUserMessage(tmuxWindow: string) {
     const updated = db.updateSession(record.sessionId, { lastUserMessage: message })
     if (!updated) return
     registry.updateSession(tmuxWindow, { lastUserMessage: message })
-    updateAgentSessions()
+    updateAgentSessions({ invalidateCache: true })
   } catch (error) {
     logger.warn('last_user_message_capture_error', {
       tmuxWindow,
@@ -1104,7 +1115,7 @@ app.put('/api/settings/inactive-max-age-hours', async (c) => {
     runtimeInactiveMaxAgeHours = hours
     db.setAppSetting(INACTIVE_MAX_AGE_HOURS_KEY, String(hours))
     // Re-broadcast agent sessions with new max age
-    updateAgentSessions()
+    updateAgentSessions({ invalidateCache: true })
     return c.json({ hours })
   } catch {
     return c.json({ error: 'Invalid request body' }, 400)
@@ -1665,7 +1676,7 @@ async function handleKill(sessionId: string, ws: ServerWebSocket<WSData>) {
       orphanById(recordByWindow.sessionId)
     }
     if (orphaned.size > 0) {
-      updateAgentSessions()
+      updateAgentSessions({ invalidateCache: true })
       for (const orphanedSession of orphaned.values()) {
         broadcast({ type: 'session-orphaned', session: orphanedSession })
       }
@@ -1789,7 +1800,7 @@ function handleSessionPin(
     }
   }
 
-  updateAgentSessions()
+  updateAgentSessions({ invalidateCache: true })
 }
 
 /**
