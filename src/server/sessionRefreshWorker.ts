@@ -3,7 +3,7 @@
  * Worker for async session refresh.
  * Batches tmux calls and runs status inference off the main thread.
  */
-import { inferAgentType } from './agentDetection'
+import { inferAgentType, normalizePaneStartCommand } from './agentDetection'
 import { config } from './config'
 import { normalizeProjectPath } from './logDiscovery'
 import {
@@ -197,7 +197,7 @@ function listAllWindowData(): WindowData[] {
         path: parts[3] ?? '',
         activity: Number.parseInt(parts[4] ?? '0', 10) || 0,
         creation: Number.parseInt(parts[5] ?? '0', 10) || 0,
-        command: parts[6] ?? '',
+        command: normalizePaneStartCommand(parts[6] ?? ''),
         width: Number.parseInt(parts[7] ?? '80', 10) || 80,
         height: Number.parseInt(parts[8] ?? '24', 10) || 24,
       }

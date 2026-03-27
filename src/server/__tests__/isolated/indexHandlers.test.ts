@@ -2297,6 +2297,132 @@ describe('server message handlers', () => {
     expect(registryInstance.sessions[0]?.id).toBe(createdSession.id)
   })
 
+  test('resumes session with quoted launch_command by stripping tmux quotes', async () => {
+    const { serveOptions } = await loadIndex()
+    const { ws, sent } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) {
+      throw new Error('WebSocket handlers not configured')
+    }
+    websocket.open?.(ws as never)
+
+    const record = makeRecord({
+      sessionId: 'resume-quoted',
+      displayName: 'quoted-session',
+      projectPath: '/tmp/quoted',
+      agentType: 'claude',
+      currentWindow: null,
+      launchCommand: '"claude --dangerously-skip-permissions"',
+    })
+    seedRecord(record)
+
+    let createArgs: { projectPath: string; name?: string; command?: string } | null = null
+    const createdSession: Session = {
+      ...baseSession,
+      id: 'created-quoted',
+      name: 'quoted-session',
+      tmuxWindow: 'agentboard:50',
+    }
+    sessionManagerState.createWindow = (projectPath, name, command) => {
+      createArgs = { projectPath, name, command }
+      return createdSession
+    }
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({ type: 'session-resume', sessionId: 'resume-quoted' })
+    )
+
+    expect(createArgs).not.toBeNull()
+    expect(createArgs!).toEqual({
+      projectPath: '/tmp/quoted',
+      name: 'quoted-session',
+      command: 'claude --dangerously-skip-permissions --resume resume-quoted',
+    })
+  })
+
+  test('resumes codex session with quoted launch_command preserving flags', async () => {
+    const { serveOptions } = await loadIndex()
+    const { ws } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) {
+      throw new Error('WebSocket handlers not configured')
+    }
+    websocket.open?.(ws as never)
+
+    const record = makeRecord({
+      sessionId: 'resume-codex',
+      displayName: 'codex-session',
+      projectPath: '/tmp/codex',
+      agentType: 'codex',
+      currentWindow: null,
+      launchCommand: '"codex --yolo --search"',
+    })
+    seedRecord(record)
+
+    let createArgs: { projectPath: string; name?: string; command?: string } | null = null
+    const createdSession: Session = {
+      ...baseSession,
+      id: 'created-codex',
+      name: 'codex-session',
+      tmuxWindow: 'agentboard:51',
+    }
+    sessionManagerState.createWindow = (projectPath, name, command) => {
+      createArgs = { projectPath, name, command }
+      return createdSession
+    }
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({ type: 'session-resume', sessionId: 'resume-codex' })
+    )
+
+    expect(createArgs).not.toBeNull()
+    // Flags injected after exe, before resume subcommand
+    expect(createArgs!.command).toBe('codex --yolo --search resume resume-codex')
+  })
+
+  test('resumes codex session stripping old resume subcommand from stored launch_command', async () => {
+    const { serveOptions } = await loadIndex()
+    const { ws } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) {
+      throw new Error('WebSocket handlers not configured')
+    }
+    websocket.open?.(ws as never)
+
+    const record = makeRecord({
+      sessionId: 'resume-codex-old',
+      displayName: 'codex-old',
+      projectPath: '/tmp/codex',
+      agentType: 'codex',
+      currentWindow: null,
+      launchCommand: '"codex --search resume old-session-id"',
+    })
+    seedRecord(record)
+
+    let createArgs: { projectPath: string; name?: string; command?: string } | null = null
+    const createdSession: Session = {
+      ...baseSession,
+      id: 'created-codex-old',
+      name: 'codex-old',
+      tmuxWindow: 'agentboard:52',
+    }
+    sessionManagerState.createWindow = (projectPath, name, command) => {
+      createArgs = { projectPath, name, command }
+      return createdSession
+    }
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({ type: 'session-resume', sessionId: 'resume-codex-old' })
+    )
+
+    expect(createArgs).not.toBeNull()
+    // Old 'resume old-session-id' stripped, only --search flag preserved
+    expect(createArgs!.command).toBe('codex --search resume resume-codex-old')
+  })
+
   test('websocket close disposes all terminals', async () => {
     const { serveOptions } = await loadIndex()
     const websocket = serveOptions.websocket
