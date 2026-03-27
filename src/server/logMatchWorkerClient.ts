@@ -26,6 +26,7 @@ export class LogMatchWorkerClient {
   private readyPromise: Promise<void> | null = null
   private readyResolve: (() => void) | null = null
   private readyReject: ((error: Error) => void) | null = null
+  private readyTimeoutId: ReturnType<typeof setTimeout> | null = null
 
   constructor() {
     this.spawnWorker()
@@ -82,6 +83,10 @@ export class LogMatchWorkerClient {
 
   dispose(): void {
     this.disposed = true
+    if (this.readyTimeoutId) {
+      clearTimeout(this.readyTimeoutId)
+      this.readyTimeoutId = null
+    }
     if (this.readyReject) {
       this.readyReject(new Error('Log match worker is disposed'))
       this.readyReject = null
@@ -102,7 +107,8 @@ export class LogMatchWorkerClient {
       this.readyResolve = resolve
       this.readyReject = reject
       // Timeout if worker doesn't become ready
-      setTimeout(() => {
+      this.readyTimeoutId = setTimeout(() => {
+        this.readyTimeoutId = null
         if (this.readyReject) {
           const rejectFn = this.readyReject
           this.readyResolve = null
@@ -112,6 +118,9 @@ export class LogMatchWorkerClient {
         }
       }, READY_TIMEOUT_MS)
     })
+    // Prevent unhandled rejection when readyPromise rejects without being awaited
+    // (e.g. worker created but poll() never called before timeout fires)
+    this.readyPromise.catch(() => {})
 
     // Compiled Bun binaries need string paths; dev mode needs URL resolution
     const workerPath = import.meta.url.includes('$bunfs')
@@ -124,6 +133,10 @@ export class LogMatchWorkerClient {
       const data = event.data as MatchWorkerResponse | { type: 'ready' }
       // Handle ready signal from worker
       if (data && data.type === 'ready') {
+        if (this.readyTimeoutId) {
+          clearTimeout(this.readyTimeoutId)
+          this.readyTimeoutId = null
+        }
         if (this.readyResolve) {
           this.readyResolve()
           this.readyResolve = null
@@ -137,6 +150,10 @@ export class LogMatchWorkerClient {
     worker.onerror = (event) => {
       const message = event instanceof ErrorEvent ? event.message : 'Log match worker error'
       // Reject readiness immediately so callers don't wait for timeout
+      if (this.readyTimeoutId) {
+        clearTimeout(this.readyTimeoutId)
+        this.readyTimeoutId = null
+      }
       if (this.readyReject) {
         const rejectFn = this.readyReject
         this.readyResolve = null
@@ -149,6 +166,10 @@ export class LogMatchWorkerClient {
     }
     worker.onmessageerror = () => {
       // Reject readiness immediately so callers don't wait for timeout
+      if (this.readyTimeoutId) {
+        clearTimeout(this.readyTimeoutId)
+        this.readyTimeoutId = null
+      }
       if (this.readyReject) {
         const rejectFn = this.readyReject
         this.readyResolve = null
