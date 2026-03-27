@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ServerMessage } from '@shared/types'
+import type { ServerMessage, Session } from '@shared/types'
 import Header from './components/Header'
 import SessionList from './components/SessionList'
 import Terminal from './components/Terminal'
@@ -224,6 +224,8 @@ export default function App() {
         }
       }
       if (message.type === 'session-removed') {
+        // Kill confirmed — clear pending-kill snapshot
+        pendingKills.current.delete(message.sessionId)
         // setSessions handles marking removed sessions as exiting for animation
         const currentSessions = useSessionStore.getState().sessions
         const nextSessions = currentSessions.filter(
@@ -299,7 +301,20 @@ export default function App() {
         window.setTimeout(() => setServerError(null), 6000)
       }
       if (message.type === 'kill-failed') {
-        // Clear from exiting state since kill failed - session remains active
+        // Restore optimistically removed session from pending-kill snapshot
+        // (not exitingSessions, which may have been cleared by animation timer)
+        const pending = pendingKills.current.get(message.sessionId)
+        if (pending) {
+          const currentSessions = useSessionStore.getState().sessions
+          // Guard: a `sessions` broadcast may have re-added the session already
+          if (!currentSessions.some(s => s.id === message.sessionId)) {
+            setSessions([pending.session, ...currentSessions])
+          }
+          if (pending.wasSelected) {
+            setSelectedSessionId(message.sessionId)
+          }
+          pendingKills.current.delete(message.sessionId)
+        }
         clearExitingSession(message.sessionId)
         setServerError(message.message)
         window.setTimeout(() => setServerError(null), 6000)
@@ -399,11 +414,24 @@ export default function App() {
     }
   }, [hasLoaded, selectedSessionId, sortedSessions, setSelectedSessionId])
 
+  // Pending kills: snapshot + selection state for rollback on kill-failed.
+  // Separate from exitingSessions (which gets cleaned up by animation timers).
+  const pendingKills = useRef<Map<string, { session: Session; wasSelected: boolean }>>(new Map())
+
   const handleKillSession = useCallback((sessionId: string) => {
-    // Mark as exiting before sending kill to preserve session data for exit animation
+    // Snapshot session and selection state before removal for kill-failed rollback
+    const { sessions: currentSessions, selectedSessionId: currentSelected } = useSessionStore.getState()
+    const session = currentSessions.find(s => s.id === sessionId)
+    if (session) {
+      pendingKills.current.set(sessionId, { session, wasSelected: currentSelected === sessionId })
+    }
+    // Mark as exiting for exit animation
     markSessionExiting(sessionId)
+    // Optimistically remove from session list so the UI updates immediately
+    // even if the server's broadcast is lost (e.g. iOS Safari WS message drops)
+    setSessions(currentSessions.filter(s => s.id !== sessionId))
     sendMessage({ type: 'session-kill', sessionId })
-  }, [markSessionExiting, sendMessage])
+  }, [markSessionExiting, setSessions, sendMessage])
 
   useEffect(() => {
     const effectiveModifier = getEffectiveModifier(shortcutModifier)

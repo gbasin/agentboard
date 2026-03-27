@@ -503,5 +503,162 @@ describe('App', () => {
       sessionId: 'session-1',
     })
 
+    // Optimistic removal: session should be gone from the list immediately
+    expect(useSessionStore.getState().sessions).toHaveLength(1)
+    expect(useSessionStore.getState().sessions[0]?.id).toBe('session-2')
+    // Session data preserved in exitingSessions for animation
+    expect(useSessionStore.getState().exitingSessions.has('session-1')).toBe(true)
+    // pendingKills ref holds rollback snapshot (not directly testable via store,
+    // but kill-failed test below proves it works)
+  })
+
+  test('kill-failed restores optimistically removed session', () => {
+    useSessionStore.setState({
+      sessions: [baseSession],
+      selectedSessionId: baseSession.id,
+      hasLoaded: true,
+    })
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<App />)
+    })
+    activeRenderer = renderer
+
+    if (!subscribeListener) {
+      throw new Error('Expected websocket subscription')
+    }
+
+    // Kill the session (optimistic removal)
+    const keyHandler = getKeyHandler()
+    act(() => {
+      keyHandler({
+        key: 'x', code: 'KeyX',
+        ctrlKey: true, shiftKey: true, altKey: false, metaKey: false,
+        defaultPrevented: false, preventDefault: () => {},
+      } as KeyboardEvent)
+    })
+
+    expect(useSessionStore.getState().sessions).toHaveLength(0)
+    expect(useSessionStore.getState().selectedSessionId).not.toBe('session-1')
+
+    // Server responds with kill-failed
+    act(() => {
+      subscribeListener?.({
+        type: 'kill-failed',
+        sessionId: 'session-1',
+        message: 'Cannot kill external sessions',
+      })
+    })
+
+    // Session restored from pendingKills snapshot
+    expect(useSessionStore.getState().sessions).toHaveLength(1)
+    expect(useSessionStore.getState().sessions[0]?.id).toBe('session-1')
+    // Selection restored since it was the selected session
+    expect(useSessionStore.getState().selectedSessionId).toBe('session-1')
+    // exitingSessions cleaned up
+    expect(useSessionStore.getState().exitingSessions.has('session-1')).toBe(false)
+  })
+
+  test('kill-failed does not duplicate session if broadcast already restored it', () => {
+    useSessionStore.setState({
+      sessions: [baseSession],
+      selectedSessionId: baseSession.id,
+      hasLoaded: true,
+    })
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<App />)
+    })
+    activeRenderer = renderer
+
+    if (!subscribeListener) {
+      throw new Error('Expected websocket subscription')
+    }
+
+    // Kill the session (optimistic removal)
+    const keyHandler = getKeyHandler()
+    act(() => {
+      keyHandler({
+        key: 'x', code: 'KeyX',
+        ctrlKey: true, shiftKey: true, altKey: false, metaKey: false,
+        defaultPrevented: false, preventDefault: () => {},
+      } as KeyboardEvent)
+    })
+
+    expect(useSessionStore.getState().sessions).toHaveLength(0)
+
+    // A sessions broadcast arrives first, re-adding the session
+    act(() => {
+      subscribeListener?.({ type: 'sessions', sessions: [baseSession] })
+    })
+
+    expect(useSessionStore.getState().sessions).toHaveLength(1)
+
+    // Then kill-failed arrives — should NOT duplicate
+    act(() => {
+      subscribeListener?.({
+        type: 'kill-failed',
+        sessionId: 'session-1',
+        message: 'Cannot kill external sessions',
+      })
+    })
+
+    expect(useSessionStore.getState().sessions).toHaveLength(1)
+    expect(useSessionStore.getState().exitingSessions.has('session-1')).toBe(false)
+  })
+
+  test('kill-failed restores session even after exit animation cleanup', () => {
+    useSessionStore.setState({
+      sessions: [baseSession],
+      selectedSessionId: baseSession.id,
+      hasLoaded: true,
+    })
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<App />)
+    })
+    activeRenderer = renderer
+
+    if (!subscribeListener) {
+      throw new Error('Expected websocket subscription')
+    }
+
+    // Kill the session (optimistic removal)
+    const keyHandler = getKeyHandler()
+    act(() => {
+      keyHandler({
+        key: 'x', code: 'KeyX',
+        ctrlKey: true, shiftKey: true, altKey: false, metaKey: false,
+        defaultPrevented: false, preventDefault: () => {},
+      } as KeyboardEvent)
+    })
+
+    expect(useSessionStore.getState().sessions).toHaveLength(0)
+    expect(useSessionStore.getState().exitingSessions.has('session-1')).toBe(true)
+
+    // Simulate exit animation cleanup timer firing (300ms after kill)
+    // This clears exitingSessions — the old rollback source that was too fragile
+    act(() => {
+      useSessionStore.getState().clearExitingSession('session-1')
+    })
+
+    expect(useSessionStore.getState().exitingSessions.has('session-1')).toBe(false)
+
+    // kill-failed arrives AFTER animation cleanup — must still restore
+    act(() => {
+      subscribeListener?.({
+        type: 'kill-failed',
+        sessionId: 'session-1',
+        message: 'Cannot kill external sessions',
+      })
+    })
+
+    // Session restored from pendingKills ref (survives animation cleanup)
+    expect(useSessionStore.getState().sessions).toHaveLength(1)
+    expect(useSessionStore.getState().sessions[0]?.id).toBe('session-1')
+    expect(useSessionStore.getState().selectedSessionId).toBe('session-1')
   })
 })
