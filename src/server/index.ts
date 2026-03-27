@@ -1708,7 +1708,11 @@ async function handleKill(sessionId: string, ws: ServerWebSocket<WSData>) {
     }
     const remaining = registry.getAll().filter((item) => item.id !== sessionId)
     registry.replaceSessions(remaining)
-    refreshSessions()
+    // Don't call refreshSessions() here — the registry is already updated
+    // synchronously.  An async refresh would race with the tmux process
+    // dying and could re-add the killed window to the registry before the
+    // process exits, causing stale broadcasts that resurrect the session
+    // on the client.  The periodic refresh handles reconciliation.
   } catch (error) {
     send(ws, {
       type: 'kill-failed',

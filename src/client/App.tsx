@@ -190,8 +190,9 @@ export default function App() {
         // don't re-add optimistically removed sessions (causes multi-second
         // delay before the session card finally disappears).
         // Note: we intentionally do NOT clear pendingKills here — only
-        // session-removed and kill-failed clear entries, so rollback
-        // snapshots survive even if sessions arrives before kill-failed.
+        // kill-failed clears entries (for rollback).  Entries persist until
+        // reconnect (epoch mismatch) so stale async refreshes can't
+        // resurrect the killed session even after session-removed arrives.
         if (pendingKills.current.size > 0) {
           setSessions(message.sessions.filter(
             (s) => !pendingKills.current.has(s.id)
@@ -249,9 +250,12 @@ export default function App() {
         }
       }
       if (message.type === 'session-removed') {
-        // Kill confirmed — clear pending-kill snapshot
-        pendingKills.current.delete(message.sessionId)
-        // setSessions handles marking removed sessions as exiting for animation
+        // Do NOT clear pendingKills here — stale async refreshes (e.g. the
+        // periodic 2s refresh) can arrive AFTER session-removed and re-add
+        // the killed window if the tmux process hasn't fully exited yet.
+        // Keeping the entry in pendingKills filters
+        // those stale broadcasts.  Cleanup happens on reconnect (epoch mismatch)
+        // or kill-failed (rollback).
         const currentSessions = useSessionStore.getState().sessions
         const nextSessions = currentSessions.filter(
           (session) => session.id !== message.sessionId

@@ -2299,7 +2299,7 @@ describe('server message handlers', () => {
 
   test('resumes session with quoted launch_command by stripping tmux quotes', async () => {
     const { serveOptions } = await loadIndex()
-    const { ws, sent } = createWs()
+    const { ws } = createWs()
     const websocket = serveOptions.websocket
     if (!websocket) {
       throw new Error('WebSocket handlers not configured')

@@ -667,6 +667,52 @@ describe('App', () => {
     expect(useSessionStore.getState().selectedSessionId).toBe('session-1')
   })
 
+  test('stale refresh after session-removed does not re-add killed session', () => {
+    useSessionStore.setState({
+      sessions: [baseSession],
+      selectedSessionId: baseSession.id,
+      hasLoaded: true,
+    })
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<App />)
+    })
+    activeRenderer = renderer
+
+    if (!subscribeListener) {
+      throw new Error('Expected websocket subscription')
+    }
+
+    // Kill the session (optimistic removal)
+    const keyHandler = getKeyHandler()
+    act(() => {
+      keyHandler({
+        key: 'x', code: 'KeyX',
+        ctrlKey: true, shiftKey: true, altKey: false, metaKey: false,
+        defaultPrevented: false, preventDefault: () => {},
+      } as KeyboardEvent)
+    })
+
+    expect(useSessionStore.getState().sessions).toHaveLength(0)
+
+    // Server confirms kill with session-removed
+    act(() => {
+      subscribeListener?.({ type: 'session-removed', sessionId: 'session-1' })
+    })
+
+    expect(useSessionStore.getState().sessions).toHaveLength(0)
+
+    // A stale async refresh arrives AFTER session-removed — the tmux
+    // process hadn't fully exited when the refresh ran. pendingKills must
+    // still filter it out to prevent the session from reappearing.
+    act(() => {
+      subscribeListener?.({ type: 'sessions', sessions: [baseSession] })
+    })
+
+    expect(useSessionStore.getState().sessions).toHaveLength(0)
+  })
+
   test('kill-failed restores session even after exit animation cleanup', () => {
     useSessionStore.setState({
       sessions: [baseSession],
