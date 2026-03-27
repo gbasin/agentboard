@@ -1248,6 +1248,44 @@ describe('SessionManager', () => {
     fs.rmSync(tempDir, { recursive: true, force: true })
   })
 
+  test('listWindows strips tmux double-quotes from pane_start_command', () => {
+    const sessionName = 'agentboard-quote-strip'
+    const runner = createTmuxRunner(
+      [
+        {
+          name: sessionName,
+          windows: [
+            {
+              id: '1',
+              index: 1,
+              name: 'quoted',
+              path: '/tmp/quoted',
+              activity: 0,
+              command: '"claude --dangerously-skip-permissions"',
+            },
+          ],
+        },
+      ],
+      1
+    )
+
+    const manager = new SessionManager(sessionName, {
+      runTmux: runner.runTmux,
+      capturePaneContent: () => makePaneCapture(''),
+      now: () => 1700000000000,
+    })
+
+    const originalPrefixes = config.discoverPrefixes
+    config.discoverPrefixes = []
+    try {
+      const sessions = manager.listWindows()
+      expect(sessions).toHaveLength(1)
+      expect(sessions[0]?.command).toBe('claude --dangerously-skip-permissions')
+    } finally {
+      config.discoverPrefixes = originalPrefixes
+    }
+  })
+
   test('mouse mode can be disabled via constructor option', () => {
     const sessionName = 'agentboard-mouse-test'
     const runner = createTmuxRunner(

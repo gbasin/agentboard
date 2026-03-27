@@ -1,5 +1,5 @@
 import fs from 'node:fs'
-import { inferAgentType } from './agentDetection'
+import { inferAgentType, normalizePaneStartCommand } from './agentDetection'
 import { config } from './config'
 import { normalizeProjectPath } from './logDiscovery'
 import { generateSessionName } from './nameGenerator'
@@ -547,7 +547,7 @@ function parseWindow(line: string): WindowInfo | null {
     path: panePath || '',
     activity: Number.isNaN(activity) ? 0 : activity,
     creation: Number.isNaN(creation) ? 0 : creation,
-    command: command || '',
+    command: normalizePaneStartCommand(command || ''),
   }
 }
 

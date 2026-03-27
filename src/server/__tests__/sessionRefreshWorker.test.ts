@@ -148,6 +148,52 @@ describe('sessionRefreshWorker', () => {
     )
   })
 
+  test('refresh normalizes tmux-quoted pane_start_command', async () => {
+    await loadWorker('refresh-quoted-command')
+
+    const listOutput = [
+      joinTmuxFields(['agentboard', '1', 'alpha', '/Users/test/project', '100', '1700000000', '"claude --dangerously-skip-permissions"', '80', '24']),
+    ].join('\n')
+
+    bunAny.spawnSync = ((args: string[]) => {
+      if (getTmuxSubcommand(args) === 'list-windows') {
+        return {
+          exitCode: 0,
+          stdout: Buffer.from(listOutput),
+          stderr: Buffer.from(''),
+        } as ReturnType<typeof Bun.spawnSync>
+      }
+      if (getTmuxSubcommand(args) === 'capture-pane') {
+        return {
+          exitCode: 0,
+          stdout: Buffer.from('ready'),
+          stderr: Buffer.from(''),
+        } as ReturnType<typeof Bun.spawnSync>
+      }
+      return {
+        exitCode: 0,
+        stdout: Buffer.from(''),
+        stderr: Buffer.from(''),
+      } as ReturnType<typeof Bun.spawnSync>
+    }) as typeof Bun.spawnSync
+
+    emitMessage({
+      id: '1',
+      kind: 'refresh',
+      managedSession: 'agentboard',
+      discoverPrefixes: [],
+    })
+
+    const response = getLastResponse()
+    if (response.type !== 'result' || response.kind !== 'refresh') {
+      throw new Error('Unexpected response type')
+    }
+
+    expect(response.sessions).toHaveLength(1)
+    expect(response.sessions[0]?.command).toBe('claude --dangerously-skip-permissions')
+    expect(response.sessions[0]?.agentType).toBe('claude')
+  })
+
   test('refresh falls back when tmux format is unsupported', async () => {
     await loadWorker('format-fallback')
 

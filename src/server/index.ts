@@ -1853,8 +1853,8 @@ function buildResumeCommand(
 
   // Extract flags from the stored command: strip the executable (first token)
   // and any existing resume subcommand/flag + its session ID argument.
-  const flags = launchCommand
-    .trim()
+  // Normalize first to handle tmux quoting and bash -lc wrappers.
+  const flags = normalizePaneStartCommand(launchCommand)
     .replace(/^\S+\s*/, '')             // strip executable
     .replace(/--resume\s+\S+/g, '')     // strip --resume <id> (Claude)
     .replace(/\bresume\s+\S+/g, '')     // strip resume <id> (Codex subcommand)
