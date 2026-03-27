@@ -1,6 +1,12 @@
 #!/usr/bin/env bun
 
 import { $ } from "bun";
+import {
+  COMMIT_MESSAGE_TYPES,
+  normalizeCommitMessage,
+  parseCommitMessage,
+  type CommitMessageType,
+} from "../src/shared/commitMessage";
 
 // Types
 interface Commit {
@@ -10,16 +16,8 @@ interface Commit {
   author: string;
 }
 
-interface GroupedCommits {
-  feat: Commit[];
-  fix: Commit[];
-  chore: Commit[];
-  docs: Commit[];
-  style: Commit[];
-  refactor: Commit[];
-  perf: Commit[];
-  other: Commit[];
-}
+type ReleaseCommitGroup = CommitMessageType | "other";
+type GroupedCommits = Record<ReleaseCommitGroup, Commit[]>;
 
 type VersionType = "patch" | "minor" | "major";
 
@@ -55,6 +53,24 @@ function spinner(message: string) {
       process.stdout.write(`\r  ${msg || message}\n`);
     },
   };
+}
+
+function createGroupedCommits(): GroupedCommits {
+  const entries = COMMIT_MESSAGE_TYPES.map((type) => [type, [] as Commit[]]);
+  return Object.fromEntries([
+    ...entries,
+    ["other", [] as Commit[]],
+  ]) as GroupedCommits;
+}
+
+function getNormalizedGeneratedCommitMessage(message: string): string {
+  const result = normalizeCommitMessage(message);
+  if (!result.ok) {
+    throw new Error(
+      `Generated commit message is invalid: ${result.error.message}`
+    );
+  }
+  return result.normalizedMessage;
 }
 
 async function checkGitStatus(): Promise<boolean> {
@@ -164,47 +180,44 @@ async function getRepoInfo(): Promise<string | null> {
 function formatCommits(commits: Commit[], repoInfo: string | null): string {
   if (commits.length === 0) return "";
 
-  const grouped: GroupedCommits = {
-    feat: [],
-    fix: [],
-    chore: [],
-    docs: [],
-    style: [],
-    refactor: [],
-    perf: [],
-    other: [],
-  };
+  const grouped = createGroupedCommits();
 
   for (const commit of commits) {
-    const match = commit.subject.match(/^(\w+)(\(.+?\))?:/);
-    const type = match ? match[1] : "other";
-    const group = grouped[type as keyof GroupedCommits] || grouped.other;
-    group.push(commit);
+    const parsed = parseCommitMessage(commit.subject);
+    const type: ReleaseCommitGroup = parsed.ok ? parsed.parsed.type : "other";
+    grouped[type].push(commit);
   }
 
   let changelog = "\n### Changes in this release\n\n";
 
-  const typeLabels: Record<string, string> = {
+  const typeLabels: Record<CommitMessageType, string> = {
+    build: "Build",
+    chore: "Maintenance",
+    ci: "CI",
+    docs: "Documentation",
     feat: "Features",
     fix: "Bug Fixes",
-    chore: "Maintenance",
-    docs: "Documentation",
-    style: "Style",
-    refactor: "Refactoring",
     perf: "Performance",
+    refactor: "Refactoring",
+    revert: "Reverts",
+    style: "Style",
+    test: "Tests",
   };
 
-  for (const [type, commits] of Object.entries(grouped)) {
-    if (commits.length > 0 && type !== "other") {
-      changelog += `#### ${typeLabels[type] || type}\n\n`;
-      for (const commit of commits) {
-        const commitLink = repoInfo
-          ? `[${commit.shortHash}](https://github.com/${repoInfo}/commit/${commit.hash})`
-          : commit.shortHash;
-        changelog += `- ${commit.subject} (${commitLink}) by ${commit.author}\n`;
-      }
-      changelog += "\n";
+  for (const type of COMMIT_MESSAGE_TYPES) {
+    const typedCommits = grouped[type];
+    if (typedCommits.length === 0) {
+      continue;
     }
+
+    changelog += `#### ${typeLabels[type]}\n\n`;
+    for (const commit of typedCommits) {
+      const commitLink = repoInfo
+        ? `[${commit.shortHash}](https://github.com/${repoInfo}/commit/${commit.hash})`
+        : commit.shortHash;
+      changelog += `- ${commit.subject} (${commitLink}) by ${commit.author}\n`;
+    }
+    changelog += "\n";
   }
 
   if (grouped.other.length > 0) {
@@ -296,9 +309,12 @@ async function commitChanges(version: string): Promise<void> {
   const spin = spinner("Committing changes...");
 
   try {
+    const commitMessage = getNormalizedGeneratedCommitMessage(
+      `chore(release): bump version to v${version}`
+    );
     await $`bun install`.quiet();
     await $`git add package.json bun.lock`.quiet();
-    await $`git commit -m ${"chore: bump version to v" + version}`.quiet();
+    await $`git commit -m ${commitMessage}`.quiet();
     spin.succeed("Changes committed");
   } catch (error) {
     spin.fail("Failed to commit changes");
