@@ -200,5 +200,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Formula/agentboard.rb
-          git commit -m "agentboard ${VERSION}"
+          git commit -m "chore(tap): update formula for v${VERSION}"
           git push
