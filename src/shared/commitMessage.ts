@@ -13,6 +13,7 @@ export const COMMIT_MESSAGE_TYPES = [
 ] as const
 
 export type CommitMessageType = (typeof COMMIT_MESSAGE_TYPES)[number]
+export type CommitMessageClassification = CommitMessageType | 'other'
 
 export type CommitMessageValidationErrorCode =
   | 'empty_message'
@@ -257,4 +258,20 @@ export function normalizeCommitMessage(message: string): NormalizeCommitMessageR
     changed: normalizedMessage !== message,
     parsed: parsed.parsed,
   }
+}
+
+export function classifyCommitMessage(
+  message: string
+): CommitMessageClassification {
+  const result = normalizeCommitMessage(message)
+
+  if (!result.ok) {
+    return 'other'
+  }
+
+  if (result.mode === 'passthrough') {
+    return result.generated.kind === 'revert' ? 'revert' : 'other'
+  }
+
+  return result.parsed.type
 }

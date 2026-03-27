@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  classifyCommitMessage,
   normalizeCommitMessage,
   parseCommitMessage,
   type CommitMessageValidationErrorCode,
@@ -163,6 +164,19 @@ describe('commitMessage', () => {
         subject: 'harden release permissions',
       },
     })
+  })
+
+  test('classifies generated revert subjects as reverts for release notes', () => {
+    const message = 'Revert "feat(client): add persistent split view"'
+
+    expect(classifyCommitMessage(message)).toBe('revert')
+  })
+
+  test('classifies unsupported and non-revert generated subjects as other', () => {
+    expect(classifyCommitMessage("Merge branch 'feature/terminal-resize'")).toBe(
+      'other'
+    )
+    expect(classifyCommitMessage('Update release workflow')).toBe('other')
   })
 
   test('rejects freeform subjects instead of guessing intent', () => {

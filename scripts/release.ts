@@ -2,9 +2,9 @@
 
 import { $ } from "bun";
 import {
+  classifyCommitMessage,
   COMMIT_MESSAGE_TYPES,
   normalizeCommitMessage,
-  parseCommitMessage,
   type CommitMessageType,
 } from "../src/shared/commitMessage";
 
@@ -183,8 +183,7 @@ function formatCommits(commits: Commit[], repoInfo: string | null): string {
   const grouped = createGroupedCommits();
 
   for (const commit of commits) {
-    const parsed = parseCommitMessage(commit.subject);
-    const type: ReleaseCommitGroup = parsed.ok ? parsed.parsed.type : "other";
+    const type: ReleaseCommitGroup = classifyCommitMessage(commit.subject);
     grouped[type].push(commit);
   }
 
