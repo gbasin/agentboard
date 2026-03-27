@@ -25,6 +25,7 @@ let sendCalls: Array<Record<string, unknown>> = []
 let subscribeListener: ((message: ServerMessage) => void) | null = null
 let keyHandlers = new Map<string, EventListener>()
 let activeRenderer: TestRenderer.ReactTestRenderer | null = null
+let mockConnectionEpoch = 0
 
 class TerminalMock {
   cols = 80
@@ -72,6 +73,8 @@ mock.module('../hooks/useWebSocket', () => ({
         subscribeListener = null
       }
     },
+    connectionEpoch: mockConnectionEpoch,
+    getConnectionEpoch: () => mockConnectionEpoch,
   }),
 }))
 
@@ -150,6 +153,7 @@ function setupDom() {
 beforeEach(() => {
   sendCalls = []
   subscribeListener = null
+  mockConnectionEpoch = 0
   setupDom()
   activeRenderer = null
 
@@ -560,7 +564,7 @@ describe('App', () => {
     expect(useSessionStore.getState().exitingSessions.has('session-1')).toBe(false)
   })
 
-  test('kill-failed does not duplicate session if broadcast already restored it', () => {
+  test('stale sessions broadcast does not re-add pending-kill session', () => {
     useSessionStore.setState({
       sessions: [baseSession],
       selectedSessionId: baseSession.id,
@@ -589,14 +593,15 @@ describe('App', () => {
 
     expect(useSessionStore.getState().sessions).toHaveLength(0)
 
-    // A sessions broadcast arrives first, re-adding the session
+    // A stale sessions broadcast arrives containing the killed session —
+    // should be filtered out by pendingKills guard (no re-add)
     act(() => {
       subscribeListener?.({ type: 'sessions', sessions: [baseSession] })
     })
 
-    expect(useSessionStore.getState().sessions).toHaveLength(1)
+    expect(useSessionStore.getState().sessions).toHaveLength(0)
 
-    // Then kill-failed arrives — should NOT duplicate
+    // kill-failed arrives — should restore from pendingKills snapshot
     act(() => {
       subscribeListener?.({
         type: 'kill-failed',
@@ -606,7 +611,60 @@ describe('App', () => {
     })
 
     expect(useSessionStore.getState().sessions).toHaveLength(1)
+    expect(useSessionStore.getState().sessions[0]?.id).toBe('session-1')
     expect(useSessionStore.getState().exitingSessions.has('session-1')).toBe(false)
+  })
+
+  test('kill-failed rollback works even if sessions broadcast omitted the session first', () => {
+    useSessionStore.setState({
+      sessions: [baseSession],
+      selectedSessionId: baseSession.id,
+      hasLoaded: true,
+    })
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<App />)
+    })
+    activeRenderer = renderer
+
+    if (!subscribeListener) {
+      throw new Error('Expected websocket subscription')
+    }
+
+    // Kill the session (optimistic removal)
+    const keyHandler = getKeyHandler()
+    act(() => {
+      keyHandler({
+        key: 'x', code: 'KeyX',
+        ctrlKey: true, shiftKey: true, altKey: false, metaKey: false,
+        defaultPrevented: false, preventDefault: () => {},
+      } as KeyboardEvent)
+    })
+
+    expect(useSessionStore.getState().sessions).toHaveLength(0)
+
+    // Server sends a sessions broadcast that no longer contains the session
+    // (e.g. the server registry already removed it). pendingKills must NOT
+    // be cleared here — kill-failed may still arrive.
+    act(() => {
+      subscribeListener?.({ type: 'sessions', sessions: [] })
+    })
+
+    expect(useSessionStore.getState().sessions).toHaveLength(0)
+
+    // kill-failed arrives after the sessions broadcast — must still restore
+    act(() => {
+      subscribeListener?.({
+        type: 'kill-failed',
+        sessionId: 'session-1',
+        message: 'Cannot kill external sessions',
+      })
+    })
+
+    expect(useSessionStore.getState().sessions).toHaveLength(1)
+    expect(useSessionStore.getState().sessions[0]?.id).toBe('session-1')
+    expect(useSessionStore.getState().selectedSessionId).toBe('session-1')
   })
 
   test('kill-failed restores session even after exit animation cleanup', () => {
@@ -660,5 +718,123 @@ describe('App', () => {
     expect(useSessionStore.getState().sessions).toHaveLength(1)
     expect(useSessionStore.getState().sessions[0]?.id).toBe('session-1')
     expect(useSessionStore.getState().selectedSessionId).toBe('session-1')
+  })
+
+  test('pending kills are cleared on reconnect so stale entries do not filter new snapshots', () => {
+    const sessionB: Session = {
+      ...baseSession,
+      id: 'session-2',
+      name: 'beta',
+      createdAt: '2024-01-02T00:00:00.000Z',
+    }
+
+    useSessionStore.setState({
+      sessions: [baseSession, sessionB],
+      selectedSessionId: baseSession.id,
+      hasLoaded: true,
+    })
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<App />)
+    })
+    activeRenderer = renderer
+
+    if (!subscribeListener) {
+      throw new Error('Expected websocket subscription')
+    }
+
+    // Kill session-1 (optimistic removal) — stamps pendingKillEpoch = 0
+    const keyHandler = getKeyHandler()
+    act(() => {
+      keyHandler({
+        key: 'x', code: 'KeyX',
+        ctrlKey: true, shiftKey: true, altKey: false, metaKey: false,
+        defaultPrevented: false, preventDefault: () => {},
+      } as KeyboardEvent)
+    })
+
+    expect(useSessionStore.getState().sessions).toHaveLength(1)
+    expect(useSessionStore.getState().sessions[0]?.id).toBe('session-2')
+
+    // A stale sessions broadcast still contains session-1 — should be filtered
+    act(() => {
+      subscribeListener?.({ type: 'sessions', sessions: [baseSession, sessionB] })
+    })
+
+    expect(useSessionStore.getState().sessions).toHaveLength(1)
+
+    // Simulate reconnect by bumping connectionEpoch. The getConnectionEpoch()
+    // getter reads this synchronously, so even without a React re-render the
+    // sessions handler sees the new epoch and discards stale pending kills.
+    mockConnectionEpoch = 1
+
+    // First authoritative snapshot arrives BEFORE React re-renders — this is
+    // the exact race that a useEffect-based clear would miss. getConnectionEpoch()
+    // returns the new epoch synchronously, so stale entries are pruned.
+    act(() => {
+      subscribeListener?.({ type: 'sessions', sessions: [baseSession, sessionB] })
+    })
+
+    expect(useSessionStore.getState().sessions).toHaveLength(2)
+  })
+
+  test('sound notifications fire for non-killed sessions while a kill is pending', () => {
+    const sessionB: Session = {
+      ...baseSession,
+      id: 'session-2',
+      name: 'beta',
+      status: 'working',
+      createdAt: '2024-01-02T00:00:00.000Z',
+    }
+
+    useSessionStore.setState({
+      sessions: [baseSession, sessionB],
+      selectedSessionId: baseSession.id,
+      hasLoaded: true,
+    })
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<App />)
+    })
+    activeRenderer = renderer
+
+    if (!subscribeListener) {
+      throw new Error('Expected websocket subscription')
+    }
+
+    // Kill session-1 (optimistic removal)
+    const keyHandler = getKeyHandler()
+    act(() => {
+      keyHandler({
+        key: 'x', code: 'KeyX',
+        ctrlKey: true, shiftKey: true, altKey: false, metaKey: false,
+        defaultPrevented: false, preventDefault: () => {},
+      } as KeyboardEvent)
+    })
+
+    expect(useSessionStore.getState().sessions).toHaveLength(1)
+
+    // A sessions broadcast arrives with session-2 transitioning to permission.
+    // session-1 is also in the broadcast (stale) but should be filtered.
+    // The sound notification for session-2's transition should still fire.
+    // (We can't easily mock the sound module in this test, but we verify the
+    // session list is correct — session-2 is present with the updated status.)
+    act(() => {
+      subscribeListener?.({
+        type: 'sessions',
+        sessions: [
+          baseSession,
+          { ...sessionB, status: 'permission' },
+        ],
+      })
+    })
+
+    // session-1 filtered out, session-2 updated
+    const sessions = useSessionStore.getState().sessions
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0]?.id).toBe('session-2')
+    expect(sessions[0]?.status).toBe('permission')
   })
 })

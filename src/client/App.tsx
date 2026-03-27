@@ -82,7 +82,7 @@ export default function App() {
   const soundOnPermission = useSettingsStore((state) => state.soundOnPermission)
   const soundOnIdle = useSettingsStore((state) => state.soundOnIdle)
 
-  const { sendMessage, subscribe, connectionEpoch } = useWebSocket()
+  const { sendMessage, subscribe, connectionEpoch, getConnectionEpoch } = useWebSocket()
 
   // Handle mobile keyboard viewport adjustments
   useVisualViewport()
@@ -173,7 +173,32 @@ export default function App() {
           }
         }
 
-        setSessions(message.sessions)
+        // Discard pending kills from a previous connection — the first
+        // snapshot after reconnect is authoritative.  Uses getConnectionEpoch()
+        // (reads manager directly) instead of a render-dependent ref so the
+        // check is correct even if this message arrives before React re-renders.
+        if (pendingKills.current.size > 0) {
+          const currentEpoch = getConnectionEpoch()
+          for (const [id, entry] of pendingKills.current) {
+            if (entry.epoch !== currentEpoch) {
+              pendingKills.current.delete(id)
+            }
+          }
+        }
+
+        // Filter out sessions with pending kills so stale refresh snapshots
+        // don't re-add optimistically removed sessions (causes multi-second
+        // delay before the session card finally disappears).
+        // Note: we intentionally do NOT clear pendingKills here — only
+        // session-removed and kill-failed clear entries, so rollback
+        // snapshots survive even if sessions arrives before kill-failed.
+        if (pendingKills.current.size > 0) {
+          setSessions(message.sessions.filter(
+            (s) => !pendingKills.current.has(s.id)
+          ))
+        } else {
+          setSessions(message.sessions)
+        }
       }
       if (message.type === 'host-status') {
         setHostStatuses(message.hosts)
@@ -416,14 +441,20 @@ export default function App() {
 
   // Pending kills: snapshot + selection state for rollback on kill-failed.
   // Separate from exitingSessions (which gets cleaned up by animation timers).
-  const pendingKills = useRef<Map<string, { session: Session; wasSelected: boolean }>>(new Map())
+  // Each entry stores the connectionEpoch at which the kill was issued so stale
+  // entries from a previous connection can be discarded on reconnect.
+  const pendingKills = useRef<Map<string, { session: Session; wasSelected: boolean; epoch: number }>>(new Map())
 
   const handleKillSession = useCallback((sessionId: string) => {
     // Snapshot session and selection state before removal for kill-failed rollback
     const { sessions: currentSessions, selectedSessionId: currentSelected } = useSessionStore.getState()
     const session = currentSessions.find(s => s.id === sessionId)
     if (session) {
-      pendingKills.current.set(sessionId, { session, wasSelected: currentSelected === sessionId })
+      pendingKills.current.set(sessionId, {
+        session,
+        wasSelected: currentSelected === sessionId,
+        epoch: getConnectionEpoch(),
+      })
     }
     // Mark as exiting for exit animation
     markSessionExiting(sessionId)

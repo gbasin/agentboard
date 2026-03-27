@@ -739,11 +739,15 @@ export function useWebSocket() {
     []
   )
   const subscribe = useMemo(() => manager.subscribe.bind(manager), [])
+  // Stable getter that reads the manager's epoch synchronously — safe to call
+  // inside subscription callbacks without waiting for a React re-render.
+  const getConnectionEpoch = useMemo(() => () => manager.getConnectionEpoch(), [])
 
   return {
     status,
     connectionEpoch,
     sendMessage,
     subscribe,
+    getConnectionEpoch,
   }
 }
