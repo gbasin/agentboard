@@ -38,7 +38,13 @@ Run `bun run lint && bun run typecheck && bun run test` after changes.
 - Check `git status`/`git diff` before commits
 - Atomic commits; push only when asked
 - Never destructive ops (`reset --hard`, `force push`) without explicit consent
-- Conventional Commits: `feat:`, `fix:`, `docs:`, `refactor:`
+- Conventional Commit subjects are required and normalized by `.githooks/commit-msg`
+- Supported types: `build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `revert`, `style`, `test`
+- Canonical header format: `type(scope): subject` or `type: subject`
+- Optional breaking marker is allowed as `type(scope)!: subject` or `type!: subject`
+- The hook only fixes safe formatting issues: trims surrounding whitespace, lowercases type/scope, and normalizes colon spacing
+- Git-generated merge, revert, and autosquash subjects pass through unchanged so standard Git workflows keep working
+- Ambiguous freeform subjects, unsupported types, invalid scopes, and missing subjects are rejected instead of being guessed
 - Commit early and often — make small, incremental commits as you work rather than one large commit at the end.
 
 ## Critical Thinking

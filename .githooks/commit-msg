@@ -1,0 +1,4 @@
+#!/bin/sh
+set -e
+
+exec bun scripts/normalize-commit-message.ts "$1"
