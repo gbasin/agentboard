@@ -1300,6 +1300,7 @@ async function cleanupAllTerminals() {
     ws.data.currentSessionId = null
     ws.data.currentTmuxTarget = null
     ws.data.terminalHost = null
+    clearAttachDedup(ws)
   }
   await Promise.allSettled(disposePromises)
   logPoller.stop()
@@ -2062,6 +2063,7 @@ function initializePersistentTerminal(ws: ServerWebSocket<WSData>) {
 
   void terminal.start().catch((error) => {
     ws.data.terminal = null
+    clearAttachDedup(ws)
     handleTerminalError(ws, null, error, 'ERR_TMUX_ATTACH_FAILED')
   })
 }
@@ -2139,6 +2141,7 @@ async function ensurePersistentTerminal(
   } catch (error) {
     if (ws.data.terminal === terminal) {
       ws.data.terminal = null
+      clearAttachDedup(ws)
     }
     throw error
   }
@@ -2173,6 +2176,7 @@ async function ensureCorrectProxyType(
         if (ws.data.terminal === terminal) {
           ws.data.terminal = null
           ws.data.terminalHost = null
+          clearAttachDedup(ws)
         }
         throw error
       }
@@ -2273,6 +2277,7 @@ async function createAndStartSshProxy(
     if (ws.data.terminal === terminal) {
       ws.data.terminal = null
       ws.data.terminalHost = null
+      clearAttachDedup(ws)
     }
     throw error
   }
@@ -2525,6 +2530,8 @@ function detachTerminalPersistent(ws: ServerWebSocket<WSData>, sessionId: string
     ws.data.currentSessionId = null
     ws.data.currentTmuxTarget = null
   }
+  // Clear dedup so a fast A→B→A switch doesn't skip scrollback for A
+  clearAttachDedup(ws)
 }
 
 function handleTerminalInputPersistent(
