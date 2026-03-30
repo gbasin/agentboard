@@ -425,19 +425,20 @@ describe('connect timeout', () => {
 })
 
 describe('connect() zombie socket guard', () => {
-  test('destroys zombie CONNECTING socket and creates new one', () => {
+  test('destroys zombie CONNECTING socket and creates new one after debounce', () => {
     const manager = new WebSocketManager()
     manager.connect()
     const ws1 = FakeWebSocket.instances[0]!
     // ws1 is stuck in CONNECTING (default readyState)
 
-    // Force internal ws reference to exist but not OPEN
-    // Calling connect() again should destroy ws1 and create ws2
-    // We need to get past the `if (this.ws)` guard — simulate by
-    // disconnecting the close handler so onclose won't null ws
+    // Calling connect() immediately should be skipped (200ms debounce)
     ;(manager as unknown as { ws: FakeWebSocket }).ws = ws1
     manager.connect()
+    expect(FakeWebSocket.instances).toHaveLength(1) // skipped — too soon
 
+    // After 200ms, connect() should destroy ws1 and create ws2
+    ;(manager as unknown as { lastConnectTs: number }).lastConnectTs = Date.now() - 300
+    manager.connect()
     expect(FakeWebSocket.instances).toHaveLength(2)
     // ws1 should have had its handlers nulled
     expect(ws1.onopen).toBeNull()

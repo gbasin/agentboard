@@ -162,6 +162,7 @@ export function useTerminal({
   const resizeTimer = useRef<number | null>(null)
   const scrollTimer = useRef<number | null>(null)
   const fitTimer = useRef<number | null>(null)
+  const attachDebounceRef = useRef<number | null>(null)
 
   // Wheel event handling for tmux scrollback
   const wheelAccumRef = useRef<number>(0)
@@ -890,6 +891,10 @@ export function useTerminal({
     const prevTarget = attachedTargetRef.current
 
     if (!allowAttach) {
+      if (attachDebounceRef.current !== null) {
+        window.clearTimeout(attachDebounceRef.current)
+        attachDebounceRef.current = null
+      }
       if (prevAttached) {
         sendMessageRef.current({ type: 'terminal-detach', sessionId: prevAttached })
         attachedSessionRef.current = null
@@ -904,6 +909,10 @@ export function useTerminal({
     // Reattach when websocket comes back: server-side ws.currentSessionId is
     // cleared on disconnect, so input is ignored until a fresh terminal-attach.
     if (connectionStatus !== 'connected') {
+      if (attachDebounceRef.current !== null) {
+        window.clearTimeout(attachDebounceRef.current)
+        attachDebounceRef.current = null
+      }
       if (prevAttached) {
         clientLog('terminal_detach_on_disconnect', { connectionStatus, prevAttached })
         attachedSessionRef.current = null
@@ -951,21 +960,36 @@ export function useTerminal({
       }
       const fitDone = performance.now()
 
-      // Send attach message with current dimensions so server spawns at correct size
-      sendMessageRef.current({
-        type: 'terminal-attach',
-        sessionId,
-        tmuxTarget: tmuxTarget ?? undefined,
-        cols: terminal.cols,
-        rows: terminal.rows,
-      })
-      // Mark as attached
+      // Mark as attached before the debounce so refs are up-to-date immediately
       attachedSessionRef.current = sessionId
       attachedTargetRef.current = tmuxTarget ?? null
       attachedConnectionEpochRef.current = connectionEpoch
 
-      // Check if this session is already in copy-mode (scrolled back)
-      sendMessageRef.current({ type: 'tmux-check-copy-mode', sessionId })
+      // Store the start time so the output subscriber can measure end-to-end
+      switchStartRef.current = switchStart
+
+      // Cancel any pending attach from a rapid epoch change
+      if (attachDebounceRef.current !== null) {
+        window.clearTimeout(attachDebounceRef.current)
+        attachDebounceRef.current = null
+      }
+
+      const attachMsg = {
+        type: 'terminal-attach' as const,
+        sessionId,
+        tmuxTarget: tmuxTarget ?? undefined,
+        cols: terminal.cols,
+        rows: terminal.rows,
+      }
+
+      // Debounce the attach send: if epoch changes twice in rapid succession,
+      // only the last attach is sent, avoiding duplicate scrollback payloads.
+      attachDebounceRef.current = window.setTimeout(() => {
+        attachDebounceRef.current = null
+        sendMessageRef.current(attachMsg)
+        // Check if this session is already in copy-mode (scrolled back)
+        sendMessageRef.current({ type: 'tmux-check-copy-mode', sessionId })
+      }, 50)
 
       clientLog('switch_attach_sent', {
         sessionId,
@@ -974,9 +998,6 @@ export function useTerminal({
         totalMs: Math.round(performance.now() - switchStart),
         from: prevAttached ?? null,
       })
-
-      // Store the start time so the output subscriber can measure end-to-end
-      switchStartRef.current = switchStart
 
       // Scroll to bottom and focus after content loads
       if (scrollTimer.current) {
@@ -1204,14 +1225,12 @@ export function useTerminal({
       }
     }
 
-    const handleVisibility = () => {
-      // Skip hidden transitions. Don't require 'visible' specifically —
-      // visibilityState can be wrong in iOS PWA standalone (WebKit #202399).
-      if (document.visibilityState === 'hidden') return
-
-      // iOS can silently kill the WebGL context during background without
-      // firing onContextLoss. Force-recreate the addon to get a fresh context.
-      // Without this, xterm renders through a dead WebGL context → blank screen.
+    // iOS can silently kill the WebGL context during background without
+    // firing onContextLoss. Force-recreate the addon to get a fresh context.
+    // Without this, xterm renders through a dead WebGL context → blank screen.
+    // Called from multiple resume handlers because iOS doesn't reliably fire
+    // visibilitychange (WebKit #202399) — focus is often the only event.
+    const recreateWebGLIfNeeded = (trigger: string) => {
       const terminal = terminalRef.current
       if (terminal && webglAddonRef.current && useWebGLRef.current) {
         try {
@@ -1227,25 +1246,34 @@ export function useTerminal({
           })
           terminal.loadAddon(webglAddon)
           webglAddonRef.current = webglAddon
-          clientLog('ios_webgl_recreated', { trigger: 'visibilitychange' }, 'info')
+          clientLog('ios_webgl_recreated', { trigger }, 'info')
         } catch {
-          clientLog('ios_webgl_recreate_failed', { trigger: 'visibilitychange' }, 'info')
+          clientLog('ios_webgl_recreate_failed', { trigger }, 'info')
         }
       }
+    }
 
+    const handleVisibility = () => {
+      // Skip hidden transitions. Don't require 'visible' specifically —
+      // visibilityState can be wrong in iOS PWA standalone (WebKit #202399).
+      if (document.visibilityState === 'hidden') return
+      recreateWebGLIfNeeded('visibilitychange')
       scheduleIosRepaint(200, 'visibilitychange')
     }
 
     const handlePageShow = (e: PageTransitionEvent) => {
       // pageshow fires on BFCache/freeze restore — more reliable than
       // visibilitychange in iOS PWA standalone mode.
-      if (e.persisted) scheduleIosRepaint(200, 'pageshow')
+      if (!e.persisted) return
+      recreateWebGLIfNeeded('pageshow')
+      scheduleIosRepaint(200, 'pageshow')
     }
 
     const handleFocus = () => {
       // Fallback: window 'focus' reliably fires when an iOS PWA returns
       // to the foreground, even when visibilitychange doesn't fire
       // (WebKit #202399) and the WebSocket stays alive (no reconnect).
+      recreateWebGLIfNeeded('focus')
       scheduleIosRepaint(200, 'focus')
     }
 

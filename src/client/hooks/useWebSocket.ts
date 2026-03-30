@@ -116,6 +116,7 @@ export class WebSocketManager {
   private heartbeatTimer: number | null = null
   private pongTimer: number | null = null
   private lastForceReconnectTs = 0
+  private lastConnectTs = 0
   private pingSeq = 0
   private connectionEpoch = 0
   /** Consecutive connect attempts that failed (timeout, error, close). */
@@ -153,6 +154,14 @@ export class WebSocketManager {
         clientLog('ws_connect_skip', { reason: 'already_open', ...this.wsSnap() })
         return
       }
+      // Don't destroy a socket that's still connecting if connect() was called
+      // very recently — prevents rapid connect-destroy-connect cycles that
+      // cause two onopen events and double terminal-attach.
+      const now = Date.now()
+      if (this.ws.readyState === WebSocket.CONNECTING && now - this.lastConnectTs < 200) {
+        clientLog('ws_connect_skip', { reason: 'already_connecting', ...this.wsSnap() })
+        return
+      }
       clientLog('ws_connect_destroy_zombie', {
         reason: isOpen ? 'open_desynced' : 'not_open',
         ...this.wsSnap(),
@@ -170,6 +179,7 @@ export class WebSocketManager {
 
     const ws = new WebSocket(wsUrl)
     this.ws = ws
+    this.lastConnectTs = Date.now()
     this.leakedSockets.add(ws)
 
     // Use a longer timeout for the first attempt after resume — VPN tunnels

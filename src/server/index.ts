@@ -229,6 +229,8 @@ interface WSData {
   connectionId: string
   terminalHost: string | null
   terminalAttachSeq: number
+  lastAttachKey: string | null
+  lastAttachTs: number
 }
 
 const sockets = new Set<ServerWebSocket<WSData>>()
@@ -1227,6 +1229,8 @@ Bun.serve<WSData>({
             connectionId: createConnectionId(),
             terminalHost: null,
             terminalAttachSeq: 0,
+            lastAttachKey: null,
+            lastAttachTs: 0,
           },
         })
       ) {
@@ -2329,6 +2333,30 @@ async function attachTerminalPersistent(
   }
 
   const effectiveTarget = terminal.resolveEffectiveTarget(target)
+
+  // Deduplicate rapid re-attaches to the same session+target (e.g. two
+  // terminal-attach messages arriving within ~34ms).  Skip the expensive
+  // scrollback capture and just acknowledge readiness.
+  const attachKey = `${sessionId}:${effectiveTarget}`
+  const now = performance.now()
+  const ATTACH_DEDUP_MS = 500
+
+  if (ws.data.lastAttachKey === attachKey &&
+      now - ws.data.lastAttachTs < ATTACH_DEDUP_MS) {
+    logger.debug('terminal_attach_dedup', {
+      sessionId, target, effectiveTarget, attachSeq,
+      elapsedMs: Math.round(now - ws.data.lastAttachTs),
+      connectionId: ws.data.connectionId,
+    })
+    // Still need to set currentSessionId so input works
+    ws.data.currentSessionId = sessionId
+    ws.data.currentTmuxTarget = effectiveTarget
+    send(ws, { type: 'terminal-ready', sessionId })
+    return
+  }
+
+  ws.data.lastAttachKey = attachKey
+  ws.data.lastAttachTs = now
 
   // Capture scrollback history BEFORE switching to avoid race with live output
   const history = session.remote && session.host
