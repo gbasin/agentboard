@@ -210,11 +210,13 @@ export function useTerminal({
 
   // Schedule an iOS compositor repaint after delayMs.
   // Cancels any in-flight repaint first (safely restoring display).
-  const scheduleIosRepaint = (delayMs: number) => {
+  const scheduleIosRepaint = (delayMs: number, trigger?: string) => {
     const container = containerRef.current
     if (!container) return
 
     cancelIosRepaint()
+
+    clientLog('ios_repaint_schedule', { delayMs, trigger, sessionId: attachedSessionRef.current })
 
     iosRepaintTimerRef.current = window.setTimeout(() => {
       iosRepaintTimerRef.current = null
@@ -222,6 +224,15 @@ export function useTerminal({
       // fresh content before the compositor is forced to repaint.
       const terminal = terminalRef.current
       if (terminal) terminal.refresh(0, terminal.rows - 1)
+
+      const hasContent = terminal ? terminal.buffer.active.length > 0 : false
+      clientLog('ios_repaint_exec', {
+        trigger,
+        hasContent,
+        bufferLines: terminal?.buffer.active.length ?? 0,
+        sessionId: attachedSessionRef.current,
+      })
+
       iosRepaintPrevRef.current = container.style.display
       container.style.display = 'none'
       // Split restore across two animation frames so the compositor
@@ -1019,6 +1030,13 @@ export function useTerminal({
             bytes: dataLen,
           })
         }
+        if (isiOS) {
+          clientLog('ios_write_complete', {
+            sessionId: attachedSessionRef.current,
+            writeMs,
+            bytes: dataLen,
+          })
+        }
         checkScrollPosition()
       })
     }
@@ -1087,7 +1105,7 @@ export function useTerminal({
         // visibility-triggered repaint (no double-flicker).
         if (isiOS) {
           flush()
-          scheduleIosRepaint(50)
+          scheduleIosRepaint(50, 'terminal-ready')
         }
       }
 
@@ -1153,20 +1171,20 @@ export function useTerminal({
       // Skip hidden transitions. Don't require 'visible' specifically —
       // visibilityState can be wrong in iOS PWA standalone (WebKit #202399).
       if (document.visibilityState === 'hidden') return
-      scheduleIosRepaint(200)
+      scheduleIosRepaint(200, 'visibilitychange')
     }
 
     const handlePageShow = (e: PageTransitionEvent) => {
       // pageshow fires on BFCache/freeze restore — more reliable than
       // visibilitychange in iOS PWA standalone mode.
-      if (e.persisted) scheduleIosRepaint(200)
+      if (e.persisted) scheduleIosRepaint(200, 'pageshow')
     }
 
     const handleFocus = () => {
       // Fallback: window 'focus' reliably fires when an iOS PWA returns
       // to the foreground, even when visibilitychange doesn't fire
       // (WebKit #202399) and the WebSocket stays alive (no reconnect).
-      scheduleIosRepaint(200)
+      scheduleIosRepaint(200, 'focus')
     }
 
     document.addEventListener('visibilitychange', handleVisibility)
