@@ -2355,9 +2355,6 @@ async function attachTerminalPersistent(
     return
   }
 
-  ws.data.lastAttachKey = attachKey
-  ws.data.lastAttachTs = now
-
   // Capture scrollback history BEFORE switching to avoid race with live output
   const history = session.remote && session.host
     ? await captureTmuxHistoryRemote(effectiveTarget, session.host)
@@ -2396,6 +2393,10 @@ async function attachTerminalPersistent(
     }
     ws.data.currentSessionId = sessionId
     ws.data.currentTmuxTarget = effectiveTarget
+    // Record dedup key only after successful switch — prevents a second
+    // attach from hitting the dedup fast-path while the first is still in flight.
+    ws.data.lastAttachKey = attachKey
+    ws.data.lastAttachTs = performance.now()
     logger.info('terminal_attach_profile', {
       sessionId,
       target,

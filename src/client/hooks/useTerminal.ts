@@ -960,7 +960,11 @@ export function useTerminal({
       }
       const fitDone = performance.now()
 
-      // Mark as attached before the debounce so refs are up-to-date immediately
+      // Mark refs before the debounce so the output subscriber can match
+      // incoming messages to the correct session. Input is naturally suppressed
+      // during the debounce because terminal-input uses attachedSessionRef which
+      // won't reach the server until ws.data.currentSessionId is set by the
+      // server's terminal-attach handler.
       attachedSessionRef.current = sessionId
       attachedTargetRef.current = tmuxTarget ?? null
       attachedConnectionEpochRef.current = connectionEpoch
