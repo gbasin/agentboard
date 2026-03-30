@@ -270,36 +270,35 @@ if (!tmuxAvailable || !localhostBindable) {
         )
         await delay(1000)
 
-        // Only ONE terminal-ready should be emitted (from the winning attach).
-        // The scrollback history (terminal-output) appears BEFORE terminal-ready
-        // in the message stream.  Count how many terminal-output messages appear
-        // before the first terminal-ready — that is the scrollback.  Anything
-        // after terminal-ready is live pty output and should not be counted.
+        // Between the seq mechanism (cancels first attach if still in progress)
+        // and the dedup layer (skips second attach within 500ms), at most one
+        // FULL scrollback capture should happen. The second attach may produce
+        // a terminal-ready (from dedup) but no scrollback output.
         const terminalReadys = messages.filter(
           (m) =>
             m.type === 'terminal-ready' &&
             m.sessionId === discoveredSessionId
         )
-        expect(terminalReadys.length).toBe(1)
+        // 1 ready = seq cancelled first attach; 2 = both ran but dedup skipped second scrollback
+        expect(terminalReadys.length).toBeGreaterThanOrEqual(1)
+        expect(terminalReadys.length).toBeLessThanOrEqual(2)
 
-        // Find the index of the first terminal-ready
-        const readyIndex = messages.findIndex(
+        // Count ALL scrollback outputs (terminal-output before the LAST terminal-ready).
+        // Only one scrollback capture should have produced output.
+        const lastReadyIndex = messages.findLastIndex(
           (m) =>
             m.type === 'terminal-ready' &&
             m.sessionId === discoveredSessionId
         )
-
-        // Count scrollback outputs: terminal-output messages for our session
-        // that arrived BEFORE the terminal-ready.
         const scrollbackOutputs = messages
-          .slice(0, readyIndex)
+          .slice(0, lastReadyIndex)
           .filter(
             (m) =>
               m.type === 'terminal-output' &&
               m.sessionId === discoveredSessionId
           )
 
-        // Exactly one scrollback capture from the winning attach
+        // Exactly one scrollback capture regardless of which layer caught the duplicate
         expect(scrollbackOutputs.length).toBe(1)
 
         ws.close()
