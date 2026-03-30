@@ -73,7 +73,6 @@ mock.module('../hooks/useWebSocket', () => ({
         subscribeListener = null
       }
     },
-    connectionEpoch: mockConnectionEpoch,
     getConnectionEpoch: () => mockConnectionEpoch,
   }),
 }))
@@ -163,6 +162,7 @@ beforeEach(() => {
     selectedSessionId: null,
     hasLoaded: false,
     connectionStatus: 'connected',
+    connectionEpoch: 0,
     connectionError: null,
   })
 

@@ -69,6 +69,7 @@ beforeEach(() => {
     hasLoaded: false,
     connectionStatus: 'connecting',
     connectionError: null,
+    connectionEpoch: 0,
   })
 })
 
@@ -87,9 +88,8 @@ describe('useWebSocket', () => {
     const useWebSocket = await loadHook('status')
     let renderer!: TestRenderer.ReactTestRenderer
 
-    let hookResult: any = null
     function Harness() {
-      hookResult = useWebSocket()
+      useWebSocket()
       return null
     }
 
@@ -97,7 +97,7 @@ describe('useWebSocket', () => {
       renderer = TestRenderer.create(<Harness />)
     })
 
-    expect(hookResult?.connectionEpoch).toBe(0)
+    expect(useSessionStore.getState().connectionEpoch).toBe(0)
 
     const ws = FakeWebSocket.instances[0]
     if (!ws) {
@@ -110,8 +110,7 @@ describe('useWebSocket', () => {
 
     expect(useSessionStore.getState().connectionStatus).toBe('connected')
     expect(useSessionStore.getState().connectionError).toBeNull()
-    expect(hookResult?.status).toBe('connected')
-    expect(hookResult?.connectionEpoch).toBe(1)
+    expect(useSessionStore.getState().connectionEpoch).toBe(1)
 
     act(() => {
       renderer.unmount()

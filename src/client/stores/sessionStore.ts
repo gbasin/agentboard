@@ -59,6 +59,7 @@ interface SessionState {
   hasLoaded: boolean
   connectionStatus: ConnectionStatus
   connectionError: string | null
+  connectionEpoch: number
   setSessions: (sessions: Session[]) => void
   setAgentSessions: (active: AgentSession[], inactive: AgentSession[]) => void
   setHostStatuses: (hosts: HostStatus[]) => void
@@ -66,6 +67,7 @@ interface SessionState {
   setSelectedSessionId: (sessionId: string | null) => void
   setConnectionStatus: (status: ConnectionStatus) => void
   setConnectionError: (error: string | null) => void
+  setConnectionState: (status: ConnectionStatus, error: string | null, epoch: number) => void
   remoteAllowControl: boolean
   setRemoteAllowControl: (value: boolean) => void
   remoteAllowAttach: boolean
@@ -89,6 +91,7 @@ export const useSessionStore = create<SessionState>()(
       hasLoaded: false,
       connectionStatus: 'connecting',
       connectionError: null,
+      connectionEpoch: 0,
       remoteAllowControl: false,
       remoteAllowAttach: false,
       hostLabel: null,
@@ -161,6 +164,7 @@ export const useSessionStore = create<SessionState>()(
       setSelectedSessionId: (sessionId) => set({ selectedSessionId: sessionId }),
       setConnectionStatus: (status) => set({ connectionStatus: status }),
       setConnectionError: (error) => set({ connectionError: error }),
+      setConnectionState: (status, error, epoch) => set({ connectionStatus: status, connectionError: error, connectionEpoch: epoch }),
       setRemoteAllowControl: (value) => set({ remoteAllowControl: value }),
       setRemoteAllowAttach: (value) => set({ remoteAllowAttach: value }),
       setHostLabel: (value) => set({ hostLabel: value }),

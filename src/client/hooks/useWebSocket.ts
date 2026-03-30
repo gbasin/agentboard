@@ -29,7 +29,7 @@
  * - Leaked socket tracking (force-closes all prior sockets to avoid browser limits)
  * - Resume delay (waits for iOS to restore network before first connect attempt)
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo } from 'react'
 import type { ClientMessage, SendClientMessage, ServerMessage, ServerMessageWithDiagnostics } from '@shared/types'
 import type { ConnectionStatus } from '../stores/sessionStore'
 import { useSessionStore } from '../stores/sessionStore'
@@ -705,34 +705,26 @@ export class WebSocketManager {
 const manager = new WebSocketManager()
 
 export function useWebSocket() {
-  const setConnectionStatus = useSessionStore(
-    (state) => state.setConnectionStatus
-  )
-  const setConnectionError = useSessionStore(
-    (state) => state.setConnectionError
-  )
-  const [status, setStatus] = useState<ConnectionStatus>(
-    manager.getStatus()
-  )
-  const [connectionEpoch, setConnectionEpoch] = useState<number>(
-    manager.getConnectionEpoch()
+  const setConnectionState = useSessionStore(
+    (state) => state.setConnectionState
   )
 
   useEffect(() => {
     manager.connect()
     manager.startLifecycleListeners()
     const unsubscribe = manager.subscribeStatus((nextStatus, error, nextConnectionEpoch) => {
-      setStatus(nextStatus)
-      setConnectionEpoch(nextConnectionEpoch)
-      setConnectionStatus(nextStatus)
-      setConnectionError(error)
+      // Atomic Zustand update — connectionStatus and connectionEpoch land in the
+      // same store commit, so useTerminal sees both changes in a single render.
+      // Previously connectionEpoch was in React useState while connectionStatus
+      // was in Zustand, causing two renders and a double terminal-attach.
+      setConnectionState(nextStatus, error, nextConnectionEpoch)
     })
 
     return () => {
       unsubscribe()
       manager.stopLifecycleListeners()
     }
-  }, [setConnectionError, setConnectionStatus])
+  }, [setConnectionState])
 
   const sendMessage = useMemo<SendClientMessage>(
     () => (message) => { void manager.send(message) },
@@ -744,8 +736,6 @@ export function useWebSocket() {
   const getConnectionEpoch = useMemo(() => () => manager.getConnectionEpoch(), [])
 
   return {
-    status,
-    connectionEpoch,
     sendMessage,
     subscribe,
     getConnectionEpoch,

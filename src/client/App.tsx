@@ -82,7 +82,8 @@ export default function App() {
   const soundOnPermission = useSettingsStore((state) => state.soundOnPermission)
   const soundOnIdle = useSettingsStore((state) => state.soundOnIdle)
 
-  const { sendMessage, subscribe, connectionEpoch, getConnectionEpoch } = useWebSocket()
+  const connectionEpoch = useSessionStore((state) => state.connectionEpoch)
+  const { sendMessage, subscribe, getConnectionEpoch } = useWebSocket()
 
   // Handle mobile keyboard viewport adjustments
   useVisualViewport()
