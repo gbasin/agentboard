@@ -1323,6 +1323,9 @@ function cleanupTerminals(ws: ServerWebSocket<WSData>) {
   ws.data.currentSessionId = null
   ws.data.currentTmuxTarget = null
   ws.data.terminalHost = null
+  // Clear dedup state so a fresh proxy doesn't inherit stale attach history
+  ws.data.lastAttachKey = null
+  ws.data.lastAttachTs = 0
 }
 
 function broadcast(message: ServerMessage) {
@@ -2181,6 +2184,9 @@ async function ensureCorrectProxyType(
       ws.data.terminalHost = null
       ws.data.currentSessionId = null
       ws.data.currentTmuxTarget = null
+      // Clear dedup state so the new proxy doesn't inherit stale attach history
+      ws.data.lastAttachKey = null
+      ws.data.lastAttachTs = 0
     }
     await oldTerminal.dispose()
   }
