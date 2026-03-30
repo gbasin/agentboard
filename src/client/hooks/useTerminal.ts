@@ -151,6 +151,7 @@ export function useTerminal({
   const isiOS = isIOSDevice()
   const containerRef = useRef<HTMLDivElement | null>(null)
   const terminalRef = useRef<Terminal | null>(null)
+  const hasLoggedInitRef = useRef(false)
   const fitAddonRef = useRef<FitAddon | null>(null)
   const webglAddonRef = useRef<WebglAddon | null>(null)
   const webLinksAddonRef = useRef<WebLinksAddon | null>(null)
@@ -379,6 +380,7 @@ export function useTerminal({
           // Dispose on context loss so xterm falls back to canvas renderer
           // instead of trying to render through a dead WebGL context (causes artifacts)
           webglAddon.onContextLoss(() => {
+            clientLog('webgl_context_loss', { sessionId }, 'info')
             try { webglAddon.dispose() } catch { /* ignore */ }
             webglAddonRef.current = null
           })
@@ -391,6 +393,18 @@ export function useTerminal({
 
       terminal.open(container)
       fitAddon.fit()
+
+      if (!hasLoggedInitRef.current) {
+        hasLoggedInitRef.current = true
+        clientLog('terminal_init', {
+          isiOS,
+          useWebGL: useWebGLRef.current,
+          hasWebGL: !!webglAddonRef.current,
+          userAgent: navigator.userAgent.slice(0, 120),
+          platform: navigator.platform,
+          maxTouchPoints: navigator.maxTouchPoints,
+        }, 'info')
+      }
 
       // Append tooltip after terminal.open() sets terminal.element
       if (tooltip && terminal.element) {
@@ -1164,13 +1178,61 @@ export function useTerminal({
   // iOS WKWebView shows a stale cached snapshot after background/foreground.
   // Uses shared scheduleIosRepaint/cancelIosRepaint so the visibility and
   // terminal-ready repaint paths can't interfere with each other.
+  //
+  // Also recreate WebGL context — iOS can silently kill it during background.
   useEffect(() => {
-    if (!isiOS) return
+    if (typeof document === 'undefined' || typeof document.addEventListener !== 'function') return
+
+    // Log visibility changes unconditionally for diagnostics
+    const handleVisibilityDiag = () => {
+      if (document.visibilityState !== 'hidden') {
+        clientLog('terminal_visibility_resume', {
+          isiOS,
+          hasWebGL: !!webglAddonRef.current,
+          useWebGL: useWebGLRef.current,
+          hasTerminal: !!terminalRef.current,
+          bufferLines: terminalRef.current?.buffer.active.length ?? 0,
+          sessionId: attachedSessionRef.current,
+        }, 'info')
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityDiag)
+
+    if (!isiOS) {
+      return () => {
+        document.removeEventListener('visibilitychange', handleVisibilityDiag)
+      }
+    }
 
     const handleVisibility = () => {
       // Skip hidden transitions. Don't require 'visible' specifically —
       // visibilityState can be wrong in iOS PWA standalone (WebKit #202399).
       if (document.visibilityState === 'hidden') return
+
+      // iOS can silently kill the WebGL context during background without
+      // firing onContextLoss. Force-recreate the addon to get a fresh context.
+      // Without this, xterm renders through a dead WebGL context → blank screen.
+      const terminal = terminalRef.current
+      if (terminal && webglAddonRef.current && useWebGLRef.current) {
+        try {
+          webglAddonRef.current.dispose()
+        } catch { /* ignore */ }
+        webglAddonRef.current = null
+        try {
+          const webglAddon = new WebglAddon()
+          webglAddon.onContextLoss(() => {
+            clientLog('webgl_context_loss', { sessionId: attachedSessionRef.current }, 'info')
+            try { webglAddon.dispose() } catch { /* ignore */ }
+            webglAddonRef.current = null
+          })
+          terminal.loadAddon(webglAddon)
+          webglAddonRef.current = webglAddon
+          clientLog('ios_webgl_recreated', { trigger: 'visibilitychange' }, 'info')
+        } catch {
+          clientLog('ios_webgl_recreate_failed', { trigger: 'visibilitychange' }, 'info')
+        }
+      }
+
       scheduleIosRepaint(200, 'visibilitychange')
     }
 
@@ -1191,6 +1253,7 @@ export function useTerminal({
     window.addEventListener('pageshow', handlePageShow)
     window.addEventListener('focus', handleFocus)
     return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityDiag)
       document.removeEventListener('visibilitychange', handleVisibility)
       window.removeEventListener('pageshow', handlePageShow)
       window.removeEventListener('focus', handleFocus)

@@ -1562,8 +1562,8 @@ describe('useTerminal', () => {
       await Promise.resolve()
     })
 
-    // Listener should be registered
-    expect(docListeners.get('visibilitychange')?.size).toBe(1)
+    // 2 listeners: iOS repaint handler + unconditional diagnostics handler
+    expect(docListeners.get('visibilitychange')?.size).toBe(2)
 
     // Fire visibilitychange to create a pending repaint timer
     pendingTimers.length = 0
