@@ -1030,11 +1030,23 @@ export function useTerminal({
         attachedEpoch,
       })
     }
-    // Handle deselection
+    // Handle deselection — cancel any pending debounced attach
     if (!sessionId && prevAttached) {
+      if (attachDebounceRef.current !== null) {
+        window.clearTimeout(attachDebounceRef.current)
+        attachDebounceRef.current = null
+      }
       attachedSessionRef.current = null
       attachedTargetRef.current = null
       attachedConnectionEpochRef.current = -1
+    }
+
+    // Cancel pending debounced attach on effect re-run or unmount
+    return () => {
+      if (attachDebounceRef.current !== null) {
+        window.clearTimeout(attachDebounceRef.current)
+        attachDebounceRef.current = null
+      }
     }
   }, [sessionId, tmuxTarget, allowAttach, connectionStatus, connectionEpoch, checkScrollPosition])
 

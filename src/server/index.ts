@@ -1315,6 +1315,12 @@ process.on('SIGTERM', () => {
   void cleanupAllTerminals().finally(() => process.exit(0))
 })
 
+/** Clear attach dedup state so a new/replacement proxy doesn't inherit stale history. */
+function clearAttachDedup(ws: ServerWebSocket<WSData>) {
+  ws.data.lastAttachKey = null
+  ws.data.lastAttachTs = 0
+}
+
 function cleanupTerminals(ws: ServerWebSocket<WSData>) {
   if (ws.data.terminal) {
     void ws.data.terminal.dispose()
@@ -1323,9 +1329,7 @@ function cleanupTerminals(ws: ServerWebSocket<WSData>) {
   ws.data.currentSessionId = null
   ws.data.currentTmuxTarget = null
   ws.data.terminalHost = null
-  // Clear dedup state so a fresh proxy doesn't inherit stale attach history
-  ws.data.lastAttachKey = null
-  ws.data.lastAttachTs = 0
+  clearAttachDedup(ws)
 }
 
 function broadcast(message: ServerMessage) {
@@ -2086,6 +2090,7 @@ function createPersistentTerminal(ws: ServerWebSocket<WSData>) {
       ws.data.currentSessionId = null
       ws.data.currentTmuxTarget = null
       ws.data.terminal = null
+      clearAttachDedup(ws)
       void terminal.dispose()
       if (sockets.has(ws)) {
         sendTerminalError(
@@ -2184,9 +2189,7 @@ async function ensureCorrectProxyType(
       ws.data.terminalHost = null
       ws.data.currentSessionId = null
       ws.data.currentTmuxTarget = null
-      // Clear dedup state so the new proxy doesn't inherit stale attach history
-      ws.data.lastAttachKey = null
-      ws.data.lastAttachTs = 0
+      clearAttachDedup(ws)
     }
     await oldTerminal.dispose()
   }
@@ -2238,6 +2241,7 @@ async function createAndStartSshProxy(
       ws.data.currentTmuxTarget = null
       ws.data.terminal = null
       ws.data.terminalHost = null
+      clearAttachDedup(ws)
       void terminal.dispose()
       if (sockets.has(ws)) {
         sendTerminalError(ws, sessionId, 'ERR_TMUX_ATTACH_FAILED', 'SSH tmux client exited', true)
