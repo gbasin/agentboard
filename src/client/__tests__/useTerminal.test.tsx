@@ -876,6 +876,125 @@ describe('useTerminal', () => {
     })
   })
 
+  test('rapid epoch changes produce only one terminal-attach (debounce)', async () => {
+    // Use deferred timers so we can control when the debounce fires
+    const pendingTimers = new Map<number, { callback: () => void; delay: number }>()
+    let nextTimerId = 1
+    globalAny.window = {
+      setTimeout: ((callback: () => void, delay?: number) => {
+        const id = nextTimerId++
+        pendingTimers.set(id, { callback, delay: delay ?? 0 })
+        return id as unknown as ReturnType<typeof setTimeout>
+      }) as typeof setTimeout,
+      clearTimeout: ((id: ReturnType<typeof setTimeout>) => {
+        pendingTimers.delete(id as unknown as number)
+      }) as typeof clearTimeout,
+      devicePixelRatio: 1,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    } as unknown as Window & typeof globalThis
+
+    globalAny.navigator = {
+      userAgent: 'Chrome',
+      platform: 'MacIntel',
+      maxTouchPoints: 0,
+      clipboard: { writeText: () => Promise.resolve() },
+    } as unknown as Navigator
+
+    const sendCalls: Array<Record<string, unknown>> = []
+    const { container } = createContainerMock()
+
+    let renderer!: TestRenderer.ReactTestRenderer
+
+    // Initial render with epoch=1
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          connectionStatus="connected"
+          connectionEpoch={1}
+          sendMessage={(message) => sendCalls.push(message)}
+          subscribe={() => () => {}}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+        { createNodeMock: () => container },
+      )
+      await Promise.resolve()
+    })
+
+    // Fire all pending timers (initial attach debounce)
+    for (const [id, timer] of pendingTimers) {
+      timer.callback()
+      pendingTimers.delete(id)
+    }
+
+    const initialAttaches = sendCalls.filter((c) => c.type === 'terminal-attach')
+    expect(initialAttaches).toHaveLength(1)
+
+    // Clear for the reconnect test
+    sendCalls.length = 0
+
+    // Rapid epoch changes: 1 → 2 → 3 (simulating double onopen)
+    await act(async () => {
+      renderer.update(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          connectionStatus="connected"
+          connectionEpoch={2}
+          sendMessage={(message) => sendCalls.push(message)}
+          subscribe={() => () => {}}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+      )
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      renderer.update(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          connectionStatus="connected"
+          connectionEpoch={3}
+          sendMessage={(message) => sendCalls.push(message)}
+          subscribe={() => () => {}}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+      )
+      await Promise.resolve()
+    })
+
+    // Before timers fire, no attach should have been sent
+    const attachesBeforeTimer = sendCalls.filter((c) => c.type === 'terminal-attach')
+    expect(attachesBeforeTimer).toHaveLength(0)
+
+    // Fire all pending timers — only the LAST debounced attach should fire
+    for (const [id, timer] of pendingTimers) {
+      timer.callback()
+      pendingTimers.delete(id)
+    }
+
+    const attachesAfterTimer = sendCalls.filter((c) => c.type === 'terminal-attach')
+    // Debounce should have collapsed epoch=2 and epoch=3 into ONE attach
+    expect(attachesAfterTimer).toHaveLength(1)
+    expect(attachesAfterTimer[0]).toEqual({
+      type: 'terminal-attach',
+      sessionId: 'session-1',
+      tmuxTarget: 'agentboard:@1',
+      cols: 80,
+      rows: 24,
+    })
+
+    act(() => {
+      renderer.unmount()
+    })
+  })
+
   test('Cmd+V triggers paste via capture-phase listener', async () => {
     jest.useFakeTimers()
     const originalFetch = globalThis.fetch
