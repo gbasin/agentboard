@@ -2147,6 +2147,18 @@ function createPersistentTerminal(ws: ServerWebSocket<WSData>) {
       if (!sessionId) {
         return
       }
+      // Drop live terminal output when the WebSocket is backpressured.
+      // The client will get full scrollback via history on session switch.
+      // Without this, the buffer grows to 15-20MB when the remote browser
+      // can't drain fast enough (e.g. over Tailscale), causing multi-second
+      // delays for ALL subsequent sends including critical history payloads.
+      const MAX_BUFFER_BYTES = 512_000 // 512KB
+      if (typeof ws.getBufferedAmount === 'function') {
+        const buffered = ws.getBufferedAmount()
+        if (buffered > MAX_BUFFER_BYTES) {
+          return // drop frame — client gets history on next attach
+        }
+      }
       send(ws, { type: 'terminal-output', sessionId, data })
     },
     onExit: () => {
