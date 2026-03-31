@@ -1373,13 +1373,39 @@ function cleanupTerminals(ws: ServerWebSocket<WSData>) {
 
 function broadcast(message: ServerMessage) {
   const payload = JSON.stringify(message)
+  if (payload.length > 50_000) {
+    logger.info('broadcast_large', {
+      type: message.type,
+      payloadBytes: payload.length,
+      clients: sockets.size,
+    })
+  }
   for (const socket of sockets) {
+    const buffered = typeof socket.getBufferedAmount === 'function' ? socket.getBufferedAmount() : -1
+    if (buffered > 1_000_000) {
+      logger.warn('broadcast_backpressure', {
+        type: message.type,
+        payloadBytes: payload.length,
+        bufferedBytes: buffered,
+        connectionId: socket.data.connectionId,
+      })
+    }
     socket.send(payload)
   }
 }
 
 function send(ws: ServerWebSocket<WSData>, message: ServerMessage) {
-  ws.send(JSON.stringify(message))
+  const payload = JSON.stringify(message)
+  const buffered = typeof ws.getBufferedAmount === 'function' ? ws.getBufferedAmount() : -1
+  if (buffered > 1_000_000) {
+    logger.warn('send_backpressure', {
+      type: message.type,
+      payloadBytes: payload.length,
+      bufferedBytes: buffered,
+      connectionId: ws.data.connectionId,
+    })
+  }
+  ws.send(payload)
 }
 
 function fireAndForget(promise: Promise<unknown>, context: string): void {
