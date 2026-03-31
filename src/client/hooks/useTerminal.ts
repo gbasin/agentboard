@@ -1081,8 +1081,8 @@ export function useTerminal({
             bytes: dataLen,
           })
         }
-        if (isiOS) {
-          clientLog('ios_write_complete', {
+        if (isiOS && writeMs > 50) {
+          clientLog('ios_write_slow', {
             sessionId: attachedSessionRef.current,
             writeMs,
             bytes: dataLen,
