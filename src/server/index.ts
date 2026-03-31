@@ -1,4 +1,4 @@
-import type { ServerWebSocket } from 'bun'
+import type { Server, ServerWebSocket } from 'bun'
 import os from 'node:os'
 import path from 'node:path'
 import fs from 'node:fs/promises'
@@ -1095,10 +1095,12 @@ app.get('/api/directories', async (c) => {
 })
 
 app.get('/api/server-info', (c) => {
-  const tailscaleIp = getTailscaleIp()
+  // For 0.0.0.0, detect Tailscale IP for display (already listening on all interfaces).
+  // For localhost, only report if we successfully bound to the Tailscale IP.
+  const tsIp = config.hostname === '0.0.0.0' ? getTailscaleIp() : boundTailscaleIp
   return c.json({
     port: config.port,
-    tailscaleIp,
+    tailscaleIp: tsIp,
     protocol: tlsEnabled ? 'https' : 'http',
   })
 })
@@ -1207,81 +1209,109 @@ const staticDir = process.env.AGENTBOARD_STATIC_DIR || './dist/client'
 app.use('/*', serveStatic({ root: staticDir }))
 
 const tlsEnabled = config.tlsCert && config.tlsKey
+const tlsOptions = tlsEnabled
+  ? { tls: { cert: Bun.file(config.tlsCert), key: Bun.file(config.tlsKey) } }
+  : {}
+
+function serverFetch(req: Request, server: Server<WSData>) {
+  const url = new URL(req.url)
+  if (url.pathname === '/ws') {
+    if (
+      server.upgrade(req, {
+        data: {
+          terminal: null,
+          currentSessionId: null,
+          currentTmuxTarget: null,
+          connectionId: createConnectionId(),
+          terminalHost: null,
+          terminalAttachSeq: 0,
+          lastAttachKey: null,
+          lastAttachTs: 0,
+        },
+      })
+    ) {
+      return
+    }
+    return new Response('WebSocket upgrade failed', { status: 400 })
+  }
+
+  return app.fetch(req)
+}
+
+const websocketHandlers = {
+  idleTimeout: 40,
+  sendPings: true,
+  perMessageDeflate: true,
+  open(ws: ServerWebSocket<WSData>) {
+    sockets.add(ws)
+    send(ws, { type: 'sessions', sessions: registry.getAll() })
+    send(ws, { type: 'host-status', hosts: hostStatuses })
+    send(ws, {
+      type: 'server-config',
+      remoteAllowControl: config.remoteAllowControl,
+      remoteAllowAttach: config.remoteAllowAttach,
+      hostLabel: config.hostLabel,
+      clientLogLevel: logLevel,
+    })
+    const agentSessions = registry.getAgentSessions()
+    send(ws, {
+      type: 'agent-sessions',
+      active: agentSessions.active,
+      inactive: agentSessions.inactive,
+    })
+    initializePersistentTerminal(ws)
+  },
+  message(ws: ServerWebSocket<WSData>, message: string | BufferSource) {
+    handleMessage(ws, message)
+  },
+  close(ws: ServerWebSocket<WSData>) {
+    cleanupTerminals(ws)
+    sockets.delete(ws)
+  },
+}
 
 Bun.serve<WSData>({
   port: config.port,
   hostname: config.hostname,
-  ...(tlsEnabled && {
-    tls: {
-      cert: Bun.file(config.tlsCert),
-      key: Bun.file(config.tlsKey),
-    },
-  }),
-  fetch(req, server) {
-    const url = new URL(req.url)
-    if (url.pathname === '/ws') {
-      if (
-        server.upgrade(req, {
-          data: {
-            terminal: null,
-            currentSessionId: null,
-            currentTmuxTarget: null,
-            connectionId: createConnectionId(),
-            terminalHost: null,
-            terminalAttachSeq: 0,
-            lastAttachKey: null,
-            lastAttachTs: 0,
-          },
-        })
-      ) {
-        return
-      }
-      return new Response('WebSocket upgrade failed', { status: 400 })
-    }
-
-    return app.fetch(req)
-  },
-  websocket: {
-    idleTimeout: 40,
-    sendPings: true,
-    perMessageDeflate: true,
-    open(ws) {
-      sockets.add(ws)
-      send(ws, { type: 'sessions', sessions: registry.getAll() })
-      send(ws, { type: 'host-status', hosts: hostStatuses })
-      send(ws, {
-        type: 'server-config',
-        remoteAllowControl: config.remoteAllowControl,
-        remoteAllowAttach: config.remoteAllowAttach,
-        hostLabel: config.hostLabel,
-        clientLogLevel: logLevel,
-      })
-      const agentSessions = registry.getAgentSessions()
-      send(ws, {
-        type: 'agent-sessions',
-        active: agentSessions.active,
-        inactive: agentSessions.inactive,
-      })
-      initializePersistentTerminal(ws)
-    },
-    message(ws, message) {
-      handleMessage(ws, message)
-    },
-    close(ws) {
-      cleanupTerminals(ws)
-      sockets.delete(ws)
-    },
-  },
+  ...tlsOptions,
+  fetch: serverFetch,
+  websocket: websocketHandlers,
 })
+
+// When bound to localhost, also listen on the Tailscale interface if available.
+// This allows remote access over Tailscale without exposing the LAN interface.
+let boundTailscaleIp: string | null = null
+if (config.hostname === '127.0.0.1') {
+  const detectedIp = getTailscaleIp()
+  if (detectedIp) {
+    try {
+      Bun.serve<WSData>({
+        port: config.port,
+        hostname: detectedIp,
+        ...tlsOptions,
+        fetch: serverFetch,
+        websocket: websocketHandlers,
+      })
+      boundTailscaleIp = detectedIp
+    } catch (error) {
+      logger.warn('tailscale_bind_failed', {
+        ip: detectedIp,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+}
 
 const protocol = tlsEnabled ? 'https' : 'http'
 const displayHost = config.hostname === '0.0.0.0' ? 'localhost' : config.hostname
 logger.info('server_started', {
   url: `${protocol}://${displayHost}:${config.port}`,
-  tailscaleUrl: config.hostname === '0.0.0.0' ? (() => {
-    const tsIp = getTailscaleIp()
+  tailscaleUrl: (() => {
+    // For 0.0.0.0, detect Tailscale for display only (already listening on all interfaces).
+    // For localhost, only show if we successfully bound to the Tailscale IP.
+    const tsIp = boundTailscaleIp ?? (config.hostname === '0.0.0.0' ? getTailscaleIp() : null)
     return tsIp ? `${protocol}://${tsIp}:${config.port}` : null
-  })() : null,
+  })(),
 })
 
 if (config.logPollIntervalMs > 0) {

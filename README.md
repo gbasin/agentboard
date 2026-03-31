@@ -142,7 +142,7 @@ bun run deps:risk -- --threshold moderate
 
 ```
 PORT=4040
-HOSTNAME=0.0.0.0
+HOSTNAME=127.0.0.1
 TMUX_SESSION=agentboard
 REFRESH_INTERVAL_MS=5000
 DISCOVER_PREFIXES=work,external
@@ -164,7 +164,9 @@ AGENTBOARD_REMOTE_ALLOW_CONTROL=false
 AGENTBOARD_LOG_WATCH_MODE=watch
 ```
 
-`HOSTNAME` controls which interfaces the server binds to (default `0.0.0.0` for network access; use `127.0.0.1` for local-only).
+`HOSTNAME` controls which interfaces the server binds to (default `127.0.0.1` for localhost-only). With the default localhost binding, if Tailscale is detected the server also binds to your Tailscale IP automatically. Set to `0.0.0.0` to listen on all interfaces.
+
+> **Security note:** Agentboard has no built-in authentication. Anyone who can reach the server has full access to your terminal sessions, including the ability to run commands as your user. The default localhost binding is safe. Tailscale provides network-level auth for remote access. Avoid setting `HOSTNAME=0.0.0.0` on untrusted networks (public WiFi, shared LANs) without an additional access control layer.
 
 `DISCOVER_PREFIXES` lets you discover and control windows from other tmux sessions. If unset, all sessions except the managed one are discovered.
 

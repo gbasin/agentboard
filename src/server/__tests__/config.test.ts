@@ -90,7 +90,7 @@ describe('config', () => {
 
     const config = await loadConfig('defaults')
     expect(config.port).toBe(4040)
-    expect(config.hostname).toBe('0.0.0.0')
+    expect(config.hostname).toBe('127.0.0.1')
     expect(config.tmuxSession).toBe('agentboard')
     expect(config.refreshIntervalMs).toBe(2000)
     expect(config.discoverPrefixes).toEqual([])

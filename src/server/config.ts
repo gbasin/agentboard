@@ -134,7 +134,7 @@ const remoteAllowAttach = remoteAllowAttachRaw !== undefined
 
 export const config = {
   port: Number(process.env.PORT) || 4040,
-  hostname: process.env.HOSTNAME || '0.0.0.0',
+  hostname: process.env.HOSTNAME || '127.0.0.1',
   hostLabel,
   tmuxSession: process.env.TMUX_SESSION || 'agentboard',
   refreshIntervalMs: Number(process.env.REFRESH_INTERVAL_MS) || 2000,
