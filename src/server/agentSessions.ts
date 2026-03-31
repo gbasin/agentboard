@@ -14,7 +14,9 @@ export function toAgentSession(record: AgentSessionRecord): AgentSession {
     lastActivityAt: record.lastActivityAt,
     isActive: record.currentWindow !== null,
     host: config.hostLabel,
-    lastUserMessage: record.lastUserMessage ?? undefined,
+    lastUserMessage: record.lastUserMessage
+      ? record.lastUserMessage.slice(0, 250)
+      : undefined,
     isPinned: record.isPinned,
     lastResumeError: record.lastResumeError ?? undefined,
   }

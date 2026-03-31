@@ -949,7 +949,7 @@ export function useTerminal({
       })
       const switchStart = performance.now()
 
-      // Reset terminal before attaching
+      // Reset terminal before attaching to clear stale content
       terminal.reset()
       const resetDone = performance.now()
 
@@ -960,11 +960,10 @@ export function useTerminal({
       }
       const fitDone = performance.now()
 
-      // Mark refs before the debounce so the output subscriber can match
+      // Mark refs before sending so the output subscriber can match
       // incoming messages to the correct session. Input is naturally suppressed
-      // during the debounce because terminal-input uses attachedSessionRef which
-      // won't reach the server until ws.data.currentSessionId is set by the
-      // server's terminal-attach handler.
+      // because terminal-input uses attachedSessionRef which won't reach the
+      // server until ws.data.currentSessionId is set by the server's handler.
       attachedSessionRef.current = sessionId
       attachedTargetRef.current = tmuxTarget ?? null
       attachedConnectionEpochRef.current = connectionEpoch
@@ -986,14 +985,28 @@ export function useTerminal({
         rows: terminal.rows,
       }
 
-      // Debounce the attach send: if epoch changes twice in rapid succession,
-      // only the last attach is sent, avoiding duplicate scrollback payloads.
-      attachDebounceRef.current = window.setTimeout(() => {
-        attachDebounceRef.current = null
-        sendMessageRef.current(attachMsg)
-        // Check if this session is already in copy-mode (scrolled back)
-        sendMessageRef.current({ type: 'tmux-check-copy-mode', sessionId })
-      }, 50)
+      const isSessionSwitch = prevAttached !== null && prevAttached !== sessionId
+
+      // Session switch (e.g. after kill): use microtask so the message is sent
+      // after the current React commit phase but before the browser yields to
+      // new tasks — cannot be cancelled by effect cleanup unlike setTimeout.
+      // Reconnection / epoch change: use 50ms debounce to deduplicate rapid
+      // re-attaches from rapid epoch changes.
+      if (isSessionSwitch) {
+        const attachTarget = sessionId
+        queueMicrotask(() => {
+          // Guard: skip if a newer switch already changed the target
+          if (attachedSessionRef.current !== attachTarget) return
+          sendMessageRef.current(attachMsg)
+          sendMessageRef.current({ type: 'tmux-check-copy-mode', sessionId })
+        })
+      } else {
+        attachDebounceRef.current = window.setTimeout(() => {
+          attachDebounceRef.current = null
+          sendMessageRef.current(attachMsg)
+          sendMessageRef.current({ type: 'tmux-check-copy-mode', sessionId })
+        }, 50)
+      }
 
       clientLog('switch_attach_sent', {
         sessionId,
@@ -1001,6 +1014,7 @@ export function useTerminal({
         fitMs: Math.round(fitDone - resetDone),
         totalMs: Math.round(performance.now() - switchStart),
         from: prevAttached ?? null,
+        immediate: isSessionSwitch,
       })
 
       // Scroll to bottom and focus after content loads
@@ -1044,6 +1058,10 @@ export function useTerminal({
     // Cancel pending debounced attach on effect re-run or unmount
     return () => {
       if (attachDebounceRef.current !== null) {
+        clientLog('attach_debounce_cancelled', {
+          sessionId,
+          attachedSession: attachedSessionRef.current,
+        }, 'info')
         window.clearTimeout(attachDebounceRef.current)
         attachDebounceRef.current = null
       }
@@ -1107,6 +1125,19 @@ export function useTerminal({
 
     const unsubscribe = subscribe((message) => {
       const attachedSession = attachedSessionRef.current
+
+      // Log dropped terminal-output to diagnose missing history after kill
+      if (
+        message.type === 'terminal-output' &&
+        (!attachedSession || message.sessionId !== attachedSession)
+      ) {
+        clientLog('terminal_output_dropped', {
+          messageSessionId: message.sessionId,
+          attachedSession,
+          bytes: message.data.length,
+          hasSwitchStart: switchStartRef.current !== null,
+        }, 'info')
+      }
 
       if (
         message.type === 'terminal-output' &&

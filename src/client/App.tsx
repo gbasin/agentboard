@@ -17,6 +17,7 @@ import { useThemeStore } from './stores/themeStore'
 import { useWebSocket } from './hooks/useWebSocket'
 import { useVisualViewport } from './hooks/useVisualViewport'
 import { sortSessions } from './utils/sessions'
+import { flushSync } from 'react-dom'
 import { setClientLogLevel } from './utils/clientLog'
 import { getEffectiveModifier, matchesModifier } from './utils/device'
 import { playPermissionSound, playIdleSound, primeAudio, needsUserGesture } from './utils/sound'
@@ -461,11 +462,13 @@ export default function App() {
         epoch: getConnectionEpoch(),
       })
     }
-    // Mark as exiting for exit animation
-    markSessionExiting(sessionId)
-    // Optimistically remove from session list so the UI updates immediately
-    // even if the server's broadcast is lost (e.g. iOS Safari WS message drops)
-    setSessions(currentSessions.filter(s => s.id !== sessionId))
+    // Force synchronous DOM update so the session card disappears immediately,
+    // even if the browser's main thread is busy with WebSocket messages or
+    // xterm.js rendering. Without flushSync, React 18 may defer the paint.
+    flushSync(() => {
+      markSessionExiting(sessionId)
+      setSessions(currentSessions.filter(s => s.id !== sessionId))
+    })
     sendMessage({ type: 'session-kill', sessionId })
   }, [markSessionExiting, setSessions, sendMessage])
 

@@ -1851,7 +1851,9 @@ describe('server message handlers', () => {
       })
     )
 
-    // Wait for async attach operations to complete
+    // Wait for async attach operations to complete (two ticks: one for
+    // attachTerminalPersistent, one for the post-history yield that flushes WS buffers)
+    await new Promise((r) => setTimeout(r, 0))
     await new Promise((r) => setTimeout(r, 0))
 
     const attached = ws.data.terminal
