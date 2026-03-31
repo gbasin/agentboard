@@ -223,15 +223,17 @@ if (!tmuxAvailable || !localhostBindable) {
 
     /**
      * Creates a TCP proxy that forwards connections to `targetPort`, but
-     * throttles the server->client direction to `bytesPerSecond`.  All
-     * connections through this proxy share the bandwidth pool (simulating
-     * a single congested link).
+     * throttles the server->client direction to `bytesPerSecond` and adds
+     * `latencyMs` of delay to each server->client data delivery (simulating
+     * high-RTT connections like 5G + Tailscale).  All connections through
+     * this proxy share the bandwidth pool (simulating a single congested link).
      *
      * Returns { port, close, getTotalServerToClientBytes }.
      */
     function createThrottleProxy(
       targetPort: number,
-      bytesPerSecond: number
+      bytesPerSecond: number,
+      latencyMs = 0
     ): Promise<{
       port: number
       close: () => void
@@ -300,13 +302,21 @@ if (!tmuxAvailable || !localhostBindable) {
           })
 
           // Server -> Client: buffer into shared pool and drip-feed
+          // Add latency to simulate high-RTT connections (5G + Tailscale)
           serverSocket.on('data', (data) => {
             totalServerToClientBytes += data.length
-            globalBuffer.push({
-              data: Buffer.from(data),
-              clientSocket,
-            })
-            globalBufferedBytes += data.length
+            const bufferData = () => {
+              globalBuffer.push({
+                data: Buffer.from(data),
+                clientSocket,
+              })
+              globalBufferedBytes += data.length
+            }
+            if (latencyMs > 0) {
+              setTimeout(bufferData, latencyMs)
+            } else {
+              bufferData()
+            }
           })
 
           const cleanup = () => {
@@ -514,9 +524,12 @@ if (!tmuxAvailable || !localhostBindable) {
     test(
       'single-attach receives terminal-output faster than double-attach through throttled proxy',
       async () => {
-        // 8KB/s bandwidth: scrollback is ~18KB, so single takes ~2.3s,
-        // double takes ~4.5s as both payloads queue on the shared link.
+        // 8KB/s bandwidth + 100ms latency: simulates 5G + Tailscale.
+        // With chunking (12KB chunks), the first chunk fits in the initial
+        // congestion window and arrives after ~1 RTT instead of waiting
+        // for the full payload to drain.
         const BANDWIDTH_BPS = 8 * 1024
+        const LATENCY_MS = 100
 
         const TRIALS = 3
         const doubleResults: Array<{ timeMs: number; totalOutputBytes: number }> = []
@@ -524,7 +537,7 @@ if (!tmuxAvailable || !localhostBindable) {
 
         for (let trial = 0; trial < TRIALS; trial++) {
           // --- Double-attach trial ---
-          const proxyA = await createThrottleProxy(serverPort, BANDWIDTH_BPS)
+          const proxyA = await createThrottleProxy(serverPort, BANDWIDTH_BPS, LATENCY_MS)
           try {
             // Wait for dedup window to expire
             await delay(600)
@@ -543,7 +556,7 @@ if (!tmuxAvailable || !localhostBindable) {
           }
 
           // --- Single-attach trial ---
-          const proxyB = await createThrottleProxy(serverPort, BANDWIDTH_BPS)
+          const proxyB = await createThrottleProxy(serverPort, BANDWIDTH_BPS, LATENCY_MS)
           try {
             await delay(600)
             const result = await measureSingleAttach(

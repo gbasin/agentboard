@@ -2386,18 +2386,29 @@ async function attachTerminalPersistent(
       if (!isTerminalAttachCurrent(ws, attachSeq)) return
       ws.data.currentSessionId = sessionId
       ws.data.currentTmuxTarget = effectiveTarget
-      // Send history in onReady callback, before output suppression is lifted
+      // Send history in chunks sized to fit TCP's initial congestion window
+      // (~14.6KB). On high-latency connections (5G/Tailscale), the first chunk
+      // arrives before slow start ramps up, letting the client render partial
+      // content immediately instead of waiting for the full payload.
       if (history) {
+        const HISTORY_CHUNK_SIZE = 12_000
         const tStr = performance.now()
-        const payload = JSON.stringify({ type: 'terminal-output', sessionId, data: history })
+        let totalBytes = 0
+        let chunks = 0
+        for (let offset = 0; offset < history.length; offset += HISTORY_CHUNK_SIZE) {
+          const chunk = history.slice(offset, offset + HISTORY_CHUNK_SIZE)
+          const payload = JSON.stringify({ type: 'terminal-output', sessionId, data: chunk })
+          ws.send(payload)
+          totalBytes += payload.length
+          chunks += 1
+        }
         const stringifyMs = Math.round(performance.now() - tStr)
-        const sendResult = ws.send(payload)
         logger.debug('terminal_history_send', {
           sessionId,
           stringifyMs,
-          payloadBytes: payload.length,
+          payloadBytes: totalBytes,
           historyChars: history.length,
-          sendResult,
+          chunks,
           connectionId: ws.data.connectionId,
         })
       }
