@@ -1003,6 +1003,43 @@ describe('SessionManager', () => {
     }
   })
 
+  test('setMouseMode applies base session updates with the mutation timeout and no preflight probe', () => {
+    const sessionName = 'agentboard-setmouse-timeout'
+    const spawnCalls: Array<{ args: string[]; timeout?: number }> = []
+    bunAny.spawnSync = ((args, options) => {
+      spawnCalls.push({
+        args: Array.isArray(args) ? [...args] : [],
+        timeout:
+          typeof options === 'object' && options !== null && 'timeout' in options
+            ? (options.timeout as number | undefined)
+            : undefined,
+      })
+
+      return {
+        exitCode: 0,
+        stdout: Buffer.from(''),
+        stderr: Buffer.from(''),
+      } as ReturnType<typeof Bun.spawnSync>
+    }) as typeof Bun.spawnSync
+
+    try {
+      const manager = new SessionManager(sessionName, {
+        capturePaneContent: () => null,
+        mouseMode: true,
+      })
+
+      manager.setMouseMode(false)
+
+      expect(spawnCalls.some((call) => call.args[1] === 'has-session')).toBe(false)
+      expect(spawnCalls[0]).toEqual({
+        args: ['tmux', 'set-option', '-t', sessionName, 'mouse', 'off'],
+        timeout: config.tmuxMutationTimeoutMs,
+      })
+    } finally {
+      bunAny.spawnSync = originalSpawnSync
+    }
+  })
+
   test('listWindows uses default capturePaneContent on success', () => {
     const sessionName = 'agentboard-default-capture'
     const runner = createTmuxRunner(
@@ -1407,9 +1444,6 @@ describe('SessionManager', () => {
     const sessionName = 'agentboard-setmouse-error'
     const runTmux = (args: string[]) => {
       const command = normalizeParsedTmuxArgs(args)[0]
-      if (command === 'has-session') {
-        return ''
-      }
       if (command === 'set-option') {
         throw new Error('set-option failed')
       }
@@ -1475,9 +1509,6 @@ describe('SessionManager', () => {
     const sessionName = 'agentboard-setmouse-race'
     const runTmux = (args: string[]) => {
       const command = normalizeParsedTmuxArgs(args)[0]
-      if (command === 'has-session') {
-        return ''
-      }
       if (command === 'set-option') {
         throw new Error(`can't find session: ${sessionName}`)
       }
@@ -1547,9 +1578,6 @@ describe('SessionManager', () => {
     let setOptionCount = 0
     const runTmux = (args: string[]) => {
       const normalized = normalizeParsedTmuxArgs(args)
-      if (normalized[0] === 'has-session') {
-        return ''
-      }
       if (normalized[0] === 'set-option') {
         setOptionCount += 1
         return ''

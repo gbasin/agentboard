@@ -143,12 +143,11 @@ export class SessionManager {
 
   setMouseMode(enabled: boolean): void {
     const mouseValue = enabled ? 'on' : 'off'
-    let sessionExists = false
 
-    // Apply immediately if session exists
+    // Apply directly so the longer mutation timeout covers the full update
+    // path; absent sessions will be configured on the next ensureSession.
     try {
-      this.runTmux(['has-session', '-t', this.sessionName])
-      sessionExists = true
+      this.runTmux(['set-option', '-t', this.sessionName, 'mouse', mouseValue])
     } catch (error) {
       if (error instanceof TmuxTimeoutError) {
         throw error
@@ -156,27 +155,7 @@ export class SessionManager {
       if (!isTmuxSessionAbsentError(error)) {
         throw error
       }
-      // Session doesn't exist yet, will be applied on next ensureSession
-    }
-
-    if (sessionExists) {
-      try {
-        this.runTmux([
-          'set-option',
-          '-t',
-          this.sessionName,
-          'mouse',
-          mouseValue,
-        ])
-      } catch (error) {
-        if (error instanceof TmuxTimeoutError) {
-          throw error
-        }
-        if (!isTmuxSessionAbsentError(error)) {
-          throw error
-        }
-        // Session may have exited between has-session and set-option.
-      }
+      // Session doesn't exist yet, will be applied on next ensureSession.
     }
 
     // Keep existing grouped websocket client sessions in sync with the

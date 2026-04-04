@@ -1032,6 +1032,7 @@ describe('server message handlers', () => {
       JSON.stringify({ type: 'session-kill', sessionId: 'remote-1' })
     )
     await new Promise((r) => setTimeout(r, 0))
+    await new Promise((r) => setTimeout(r, 0))
 
     const sshKillCall = sshCalls.find(
       (cmd) => cmd[0] === 'ssh' && cmd.some((a) => a.includes('kill-window'))
@@ -2040,11 +2041,11 @@ describe('server message handlers', () => {
     expect(outputCountAfter).toBe(outputCount)
   })
 
-  test('session-only attach stays valid and tracks grouped target in pty mode', async () => {
+  test('session-only attach replays the current grouped view and keeps copy-mode targeting aligned in pty mode', async () => {
     const { serveOptions, registryInstance } = await loadIndex()
     registryInstance.sessions = [baseSession]
 
-    const { ws } = createWs()
+    const { ws, sent } = createWs()
     const websocket = serveOptions.websocket
     if (!websocket) {
       throw new Error('WebSocket handlers not configured')
@@ -2070,7 +2071,10 @@ describe('server message handlers', () => {
       }
       return {
         exitCode: 0,
-        stdout: Buffer.from(''),
+        stdout:
+          tmuxArgs[0] === 'capture-pane'
+            ? Buffer.from('visible pane line\n')
+            : Buffer.from(''),
         stderr: Buffer.from(''),
       } as ReturnType<typeof Bun.spawnSync>
     }) as typeof Bun.spawnSync
@@ -2095,7 +2099,14 @@ describe('server message handlers', () => {
     const groupedTarget = `${configState.tmuxSession}-ws-${ws.data.connectionId}`
     expect(attached.switchTargets).toEqual(['agentboard'])
     expect(captureTarget).toBe(groupedTarget)
-    expect(captureArgs).toEqual(['capture-pane', '-t', groupedTarget, '-p', '-J'])
+    expect(captureArgs[0]).toBe('capture-pane')
+    const historyIndex = sent.findIndex(
+      (message) =>
+        message.type === 'terminal-output' &&
+        message.sessionId === baseSession.id &&
+        message.data === 'visible pane line\n'
+    )
+    expect(historyIndex).toBeGreaterThanOrEqual(0)
     expect(ws.data.currentTmuxTarget).toBe(groupedTarget)
 
     websocket.message?.(

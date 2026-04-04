@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import { afterAll, describe, expect, test } from 'bun:test'
 import fs from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'
@@ -34,6 +34,7 @@ if (!tmuxAvailable || !localhostBindable) {
     let port = 0
     let tmuxTmpDir: string | null = null
     let baselineWindows: string[] = []
+    let harnessInitialized = false
     const tmuxEnv = (): NodeJS.ProcessEnv =>
       tmuxTmpDir ? { ...process.env, TMUX_TMPDIR: tmuxTmpDir } : { ...process.env }
 
@@ -85,40 +86,47 @@ if (!tmuxAvailable || !localhostBindable) {
       }
     }
 
-    beforeAll(async () => {
-      tmuxTmpDir = createTmuxTmpDir()
+    async function ensureHarnessReady() {
+      if (!harnessInitialized) {
+        tmuxTmpDir = createTmuxTmpDir()
 
-      // Create the tmux session first (required for resurrection to work)
-      Bun.spawnSync(['tmux', 'new-session', '-d', '-s', sessionName], {
-        stdout: 'ignore',
-        stderr: 'ignore',
-        env: tmuxEnv(),
-      })
+        // Create the tmux session first (required for resurrection to work)
+        Bun.spawnSync(['tmux', 'new-session', '-d', '-s', sessionName], {
+          stdout: 'ignore',
+          stderr: 'ignore',
+          env: tmuxEnv(),
+        })
 
-      // Seed the database BEFORE starting the server to avoid SQLite locking issues
-      const db = initDatabase({ path: dbPath })
-      db.insertSession({
-        sessionId: wsTestSessionId,
-        logFilePath: `/tmp/ws-${wsTestSessionId}.jsonl`,
-        projectPath,
-        slug: null,
-        agentType: 'claude',
-        displayName: 'ws-pin-test',
-        createdAt: new Date().toISOString(),
-        lastActivityAt: new Date().toISOString(),
-        lastUserMessage: null,
-        currentWindow: `${sessionName}:1`, // active
-        isPinned: false,
-        lastResumeError: null,
-        lastKnownLogSize: null,
-        isCodexExec: false,
-        launchCommand: null,
-      })
-      db.close()
+        // Seed the database BEFORE starting the server to avoid SQLite locking issues
+        const db = initDatabase({ path: dbPath })
+        db.insertSession({
+          sessionId: wsTestSessionId,
+          logFilePath: `/tmp/ws-${wsTestSessionId}.jsonl`,
+          projectPath,
+          slug: null,
+          agentType: 'claude',
+          displayName: 'ws-pin-test',
+          createdAt: new Date().toISOString(),
+          lastActivityAt: new Date().toISOString(),
+          lastUserMessage: null,
+          currentWindow: `${sessionName}:1`, // active
+          isPinned: false,
+          lastResumeError: null,
+          lastKnownLogSize: null,
+          isCodexExec: false,
+          launchCommand: null,
+        })
+        db.close()
+        harnessInitialized = true
+      }
 
-      await startServer()
-      baselineWindows = listTmuxWindows(sessionName, tmuxEnv())
-    })
+      if (!serverProcess) {
+        await startServer()
+      }
+      if (baselineWindows.length === 0) {
+        baselineWindows = listTmuxWindows(sessionName, tmuxEnv())
+      }
+    }
 
     afterAll(async () => {
       await stopServer()
@@ -150,53 +158,54 @@ if (!tmuxAvailable || !localhostBindable) {
       async () => {
         // Timeout increased to 25s for CI stability - this test calls multiple
         // async waits (waitForWindowCount, waitForResurrectedSessionInDb, assertTmuxWindowExists)
-      await stopServer()
+        await ensureHarnessReady()
+        await stopServer()
 
-      const resurrectSessionId = `pin-resurrect-${Date.now()}`
-      const db = initDatabase({ path: dbPath })
-      db.insertSession({
-        sessionId: resurrectSessionId,
-        logFilePath: `/tmp/${resurrectSessionId}.jsonl`,
-        projectPath,
-        slug: null,
-        agentType: 'claude',
-        displayName: 'pin-resurrect',
-        createdAt: new Date().toISOString(),
-        lastActivityAt: new Date().toISOString(),
-        lastUserMessage: null,
-        currentWindow: null,
-        isPinned: true,
-        lastResumeError: null,
-        lastKnownLogSize: null,
-        isCodexExec: false,
-        launchCommand: null,
-      })
-      db.close()
+        const resurrectSessionId = `pin-resurrect-${Date.now()}`
+        const db = initDatabase({ path: dbPath })
+        db.insertSession({
+          sessionId: resurrectSessionId,
+          logFilePath: `/tmp/${resurrectSessionId}.jsonl`,
+          projectPath,
+          slug: null,
+          agentType: 'claude',
+          displayName: 'pin-resurrect',
+          createdAt: new Date().toISOString(),
+          lastActivityAt: new Date().toISOString(),
+          lastUserMessage: null,
+          currentWindow: null,
+          isPinned: true,
+          lastResumeError: null,
+          lastKnownLogSize: null,
+          isCodexExec: false,
+          launchCommand: null,
+        })
+        db.close()
 
-      await startServer()
-      await waitForWindowCount(
-        sessionName,
-        baselineWindows.length + 1,
-        tmuxEnv(),
-        8000
-      )
+        await startServer()
+        await waitForWindowCount(
+          sessionName,
+          baselineWindows.length + 1,
+          tmuxEnv(),
+          8000
+        )
 
-      const resurrected = await waitForResurrectedSessionInDb(
-        resurrectSessionId,
-        dbPath
-      )
-      expect(resurrected.isPinned).toBe(true)
-      expect(resurrected.lastResumeError).toBe(null)
-      expect(resurrected.currentWindow).not.toBe(null)
-      if (!resurrected.currentWindow) {
-        throw new Error('Resurrected session missing current window')
-      }
-      expect(resurrected.currentWindow.startsWith(`${sessionName}:`)).toBe(true)
-      await assertTmuxWindowExists(
-        sessionName,
-        resurrected.currentWindow,
-        tmuxEnv()
-      )
+        const resurrected = await waitForResurrectedSessionInDb(
+          resurrectSessionId,
+          dbPath
+        )
+        expect(resurrected.isPinned).toBe(true)
+        expect(resurrected.lastResumeError).toBe(null)
+        expect(resurrected.currentWindow).not.toBe(null)
+        if (!resurrected.currentWindow) {
+          throw new Error('Resurrected session missing current window')
+        }
+        expect(resurrected.currentWindow.startsWith(`${sessionName}:`)).toBe(true)
+        await assertTmuxWindowExists(
+          sessionName,
+          resurrected.currentWindow,
+          tmuxEnv()
+        )
       },
       25000
     )
@@ -206,10 +215,11 @@ if (!tmuxAvailable || !localhostBindable) {
     // The unpin-on-failure path is only hit if tmux itself fails (rare).
 
     test('pin/unpin via websocket', async () => {
+      await ensureHarnessReady()
       const ws = new WebSocket(`ws://${testHost}:${port}/ws`)
       await waitForOpen(ws)
 
-      // Session was seeded in beforeAll to avoid SQLite locking issues
+      // Session was seeded during lazy harness setup to avoid SQLite locking issues.
 
       // Pin via websocket
       ws.send(
@@ -243,6 +253,7 @@ if (!tmuxAvailable || !localhostBindable) {
     test(
       'resurrected session not orphaned during grace period',
       async () => {
+        await ensureHarnessReady()
         // Stop the shared server — we need custom env vars
         await stopServer()
 
