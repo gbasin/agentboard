@@ -83,8 +83,7 @@ export class SessionRefreshWorkerClient {
     return new Promise<Session[]>((resolve, reject) => {
       const timeoutMs = getRefreshTimeoutMs(options.expectedWindowCount)
       const timeoutId = setTimeout(() => {
-        this.failGeneration(generation, new SessionRefreshWorkerTimeoutError())
-        this.restartWorker(generation)
+        this.failRequest(id, new SessionRefreshWorkerTimeoutError())
       }, timeoutMs)
 
       this.pending.set(id, {
@@ -129,8 +128,7 @@ export class SessionRefreshWorkerClient {
 
     return new Promise<string | null>((resolve, reject) => {
       const timeoutId = setTimeout(() => {
-        this.failGeneration(generation, new SessionRefreshWorkerTimeoutError())
-        this.restartWorker(generation)
+        this.failRequest(id, new SessionRefreshWorkerTimeoutError())
       }, LAST_USER_MESSAGE_TIMEOUT_MS)
 
       this.pending.set(id, {
@@ -223,6 +221,18 @@ export class SessionRefreshWorkerClient {
       pending.reject(error)
       this.pending.delete(id)
     }
+  }
+
+  private failRequest(id: string, error: Error): void {
+    const pending = this.pending.get(id)
+    if (!pending) {
+      return
+    }
+    if (pending.timeoutId) {
+      clearTimeout(pending.timeoutId)
+    }
+    this.pending.delete(id)
+    pending.reject(error)
   }
 
   private failGeneration(generation: number, error: Error): void {

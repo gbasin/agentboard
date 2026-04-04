@@ -34,8 +34,10 @@ let spawnSyncImpl: typeof Bun.spawnSync
 let writeImpl: typeof Bun.write
 let replaceSessionsCalls: Session[][] = []
 let dbState: {
+  appSettings: Map<string, string>
   records: Map<string, AgentSessionRecord>
   nextId: number
+  setAppSettingCalls: Array<{ key: string; value: string }>
   updateCalls: Array<{ sessionId: string; patch: Partial<AgentSessionRecord> }>
   setPinnedCalls: Array<{ sessionId: string; isPinned: boolean }>
 }
@@ -72,8 +74,10 @@ const baseRecordTimestamp = new Date('2026-01-01T00:00:00.000Z').toISOString()
 
 function resetDbState() {
   dbState = {
+    appSettings: new Map(),
     records: new Map(),
     nextId: 1,
+    setAppSettingCalls: [],
     updateCalls: [],
     setPinnedCalls: [],
   }
@@ -119,6 +123,7 @@ let sessionManagerState: {
   ) => Session
   killWindow: (tmuxWindow: string) => void
   renameWindow: (tmuxWindow: string, newName: string) => void
+  setMouseMode: (enabled: boolean) => void
 }
 
 class SessionManagerMock {
@@ -141,6 +146,10 @@ class SessionManagerMock {
 
   renameWindow(tmuxWindow: string, newName: string) {
     sessionManagerState.renameWindow(tmuxWindow, newName)
+  }
+
+  setMouseMode(enabled: boolean) {
+    sessionManagerState.setMouseMode(enabled)
   }
 }
 
@@ -358,8 +367,11 @@ mock.module('../../db', () => ({
       Array.from(dbState.records.values()).filter(
         (record) => record.isPinned && record.currentWindow === null
       ),
-    getAppSetting: () => null,
-    setAppSetting: () => {},
+    getAppSetting: (key: string) => dbState.appSettings.get(key) ?? null,
+    setAppSetting: (key: string, value: string) => {
+      dbState.appSettings.set(key, value)
+      dbState.setAppSettingCalls.push({ key, value })
+    },
     close: () => {},
   }),
 }))
@@ -522,6 +534,7 @@ beforeEach(() => {
     createWindow: () => ({ ...baseSession, id: 'created' }),
     killWindow: () => {},
     renameWindow: () => {},
+    setMouseMode: () => {},
   }
 
   spawnSyncImpl = () =>
@@ -920,12 +933,14 @@ describe('server message handlers', () => {
       throw new TmuxTimeoutError('list-sessions', 3000)
     }
 
-    await loadIndex()
+    const { registryInstance } = await loadIndex()
+    await Promise.resolve()
 
     expect(replaceSessionsCalls).toHaveLength(0)
     expect(dbState.records.get(activeRecord.sessionId)?.currentWindow).toBe(
       baseSession.tmuxWindow
     )
+    expect(registryInstance.agentSessions.active).toEqual([])
   })
 
   test('blocks remote kill when remoteAllowControl is false', async () => {
@@ -2621,6 +2636,79 @@ describe('server fetch handlers', () => {
     expect(payload.port).toBe(4040)
     expect(payload.protocol).toBe('http')
     expect(payload.tailscaleIp).toBe('100.64.0.42')
+  })
+
+  test('tmux mouse mode timeout returns 504 and does not persist the setting', async () => {
+    let mouseModeCalls = 0
+    sessionManagerState.setMouseMode = () => {
+      mouseModeCalls += 1
+      throw new TmuxTimeoutError('set-option', 3000)
+    }
+
+    const { serveOptions } = await loadIndex()
+    const fetchHandler = serveOptions.fetch
+    if (!fetchHandler) {
+      throw new Error('Fetch handler not configured')
+    }
+
+    const response = await fetchHandler.call(
+      {} as Bun.Server<unknown>,
+      new Request('http://localhost/api/settings/tmux-mouse-mode', {
+        method: 'PUT',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ enabled: false }),
+      }),
+      {} as Bun.Server<unknown>
+    )
+
+    if (!response) {
+      throw new Error('Expected response for tmux mouse mode request')
+    }
+
+    expect(mouseModeCalls).toBe(1)
+    expect(response.status).toBe(504)
+    expect(await response.json()).toEqual({
+      error: 'Timed out applying tmux mouse mode',
+    })
+    expect(dbState.setAppSettingCalls).toEqual([])
+  })
+
+  test('tmux mouse mode persists only after tmux state applies successfully', async () => {
+    const appliedValues: boolean[] = []
+    sessionManagerState.setMouseMode = (enabled: boolean) => {
+      appliedValues.push(enabled)
+    }
+
+    const { serveOptions } = await loadIndex()
+    const fetchHandler = serveOptions.fetch
+    if (!fetchHandler) {
+      throw new Error('Fetch handler not configured')
+    }
+
+    const response = await fetchHandler.call(
+      {} as Bun.Server<unknown>,
+      new Request('http://localhost/api/settings/tmux-mouse-mode', {
+        method: 'PUT',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ enabled: false }),
+      }),
+      {} as Bun.Server<unknown>
+    )
+
+    if (!response) {
+      throw new Error('Expected response for tmux mouse mode request')
+    }
+
+    expect(appliedValues).toEqual([false])
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ enabled: false })
+    expect(dbState.setAppSettingCalls).toEqual([
+      { key: 'tmux_mouse_mode', value: 'false' },
+    ])
   })
 
   test('returns no response for successful websocket upgrades', async () => {

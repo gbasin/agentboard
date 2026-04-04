@@ -438,7 +438,9 @@ const sessionRefreshWorker = new SessionRefreshWorkerClient()
 // Active sessions update on every refresh — cheap (few rows).
 // Inactive sessions query is expensive — only run on actual mutations.
 function updateActiveAgentSessions() {
-  const active = db.getActiveSessions().map(toAgentSession)
+  const active = hasConfirmedLocalSessionSnapshot
+    ? db.getActiveSessions().map(toAgentSession)
+    : []
   registry.setAgentSessions(active, registry.getAgentSessions().inactive)
 }
 
@@ -453,7 +455,9 @@ function updateInactiveAgentSessions() {
       })
     })
   }
-  const active = db.getActiveSessions().map(toAgentSession)
+  const active = hasConfirmedLocalSessionSnapshot
+    ? db.getActiveSessions().map(toAgentSession)
+    : []
   registry.setAgentSessions(active, inactive)
 }
 
@@ -701,6 +705,7 @@ let refreshInFlight = false
 // in-flight refreshes that started before the mutation discard their stale
 // window list instead of reverting the optimistic update.
 let refreshGeneration = 0
+let hasConfirmedLocalSessionSnapshot = false
 let lastSuccessfulRefreshWindowCount = 1
 let refreshWindowCountFloor = 0
 
@@ -709,6 +714,7 @@ function countLocalSessions(sessions: Session[]): number {
 }
 
 function recordSuccessfulRefreshWindowCount(localSessionCount: number): void {
+  hasConfirmedLocalSessionSnapshot = true
   lastSuccessfulRefreshWindowCount = Math.max(
     1,
     Number.isFinite(localSessionCount) ? Math.floor(localSessionCount) : 0
@@ -1212,8 +1218,18 @@ app.put('/api/settings/tmux-mouse-mode', async (c) => {
     if (typeof body.enabled !== 'boolean') {
       return c.json({ error: 'enabled must be a boolean' }, 400)
     }
+    try {
+      sessionManager.setMouseMode(body.enabled)
+    } catch (error) {
+      if (error instanceof TmuxTimeoutError) {
+        return c.json({ error: 'Timed out applying tmux mouse mode' }, 504)
+      }
+      logger.warn('tmux_mouse_mode_update_failed', {
+        message: error instanceof Error ? error.message : String(error),
+      })
+      return c.json({ error: 'Unable to apply tmux mouse mode' }, 500)
+    }
     db.setAppSetting(TMUX_MOUSE_MODE_KEY, String(body.enabled))
-    sessionManager.setMouseMode(body.enabled)
     return c.json({ enabled: body.enabled })
   } catch {
     return c.json({ error: 'Invalid request body' }, 400)
