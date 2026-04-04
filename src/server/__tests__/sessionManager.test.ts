@@ -967,7 +967,7 @@ describe('SessionManager', () => {
     expect(setOptCall).toEqual(['set-option', '-w', '-t', `${sessionName}:1`, 'remain-on-exit', 'failed'])
   })
 
-  test('setWindowOption does not apply the read timeout to tmux writes', () => {
+  test('setWindowOption applies the configured mutation timeout to tmux writes', () => {
     const spawnCalls: Array<{ args: string[]; timeout?: number }> = []
     bunAny.spawnSync = ((args, options) => {
       spawnCalls.push({
@@ -997,7 +997,7 @@ describe('SessionManager', () => {
         'remain-on-exit',
         'failed',
       ])
-      expect(spawnCalls[0]?.timeout).toBeUndefined()
+      expect(spawnCalls[0]?.timeout).toBe(config.tmuxMutationTimeoutMs)
     } finally {
       bunAny.spawnSync = originalSpawnSync
     }

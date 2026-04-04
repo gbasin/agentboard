@@ -619,15 +619,15 @@ function parseWindow(line: string): WindowInfo | null {
 function runTmux(args: string[]): string {
   const command = getTmuxCommand(args)
   const timeout = TMUX_MUTATION_COMMANDS.has(command)
-    ? undefined
+    ? config.tmuxMutationTimeoutMs
     : config.tmuxTimeoutMs
   const result = Bun.spawnSync(['tmux', ...args], {
     stdout: 'pipe',
     stderr: 'pipe',
-    ...(timeout === undefined ? {} : { timeout }),
+    timeout,
   })
   if (result.signalCode === 'SIGTERM' || result.exitCode === null) {
-    throw new TmuxTimeoutError(command, timeout ?? config.tmuxTimeoutMs)
+    throw new TmuxTimeoutError(command, timeout)
   }
 
   if (result.exitCode !== 0) {

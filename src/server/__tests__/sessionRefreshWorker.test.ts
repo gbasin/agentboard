@@ -382,6 +382,7 @@ describe('sessionRefreshWorker', () => {
     expect(response.type).toBe('error')
     if (response.type === 'error') {
       expect(response.errorCode).toBe(TMUX_TIMEOUT_ERROR_CODE)
+      expect(response.error).toContain('list-windows')
       expect(response.error).toContain('timed out')
     }
   })

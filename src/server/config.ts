@@ -136,6 +136,10 @@ const tmuxTimeoutMsRaw = Number(process.env.AGENTBOARD_TMUX_TIMEOUT_MS)
 const tmuxTimeoutMs = Number.isFinite(tmuxTimeoutMsRaw) && tmuxTimeoutMsRaw > 0
   ? Math.floor(tmuxTimeoutMsRaw)
   : 3000
+const tmuxMutationTimeoutMsRaw = Number(process.env.AGENTBOARD_TMUX_MUTATION_TIMEOUT_MS)
+const tmuxMutationTimeoutMs = Number.isFinite(tmuxMutationTimeoutMsRaw) && tmuxMutationTimeoutMsRaw > 0
+  ? Math.max(Math.floor(tmuxMutationTimeoutMsRaw), tmuxTimeoutMs)
+  : Math.max(tmuxTimeoutMs * 5, 15000)
 
 export const config = {
   port: Number(process.env.PORT) || 4040,
@@ -180,4 +184,5 @@ export const config = {
   remoteAllowControl,
   remoteAllowAttach,
   tmuxTimeoutMs,
+  tmuxMutationTimeoutMs,
 }

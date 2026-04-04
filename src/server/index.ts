@@ -708,18 +708,28 @@ let refreshGeneration = 0
 let hasConfirmedLocalSessionSnapshot = false
 let lastSuccessfulRefreshWindowCount = 1
 let refreshWindowCountFloor = 0
+let startupExpectedWindowCount = 1
+
+function normalizeWindowCount(windowCount: number): number {
+  return Math.max(
+    1,
+    Number.isFinite(windowCount) ? Math.floor(windowCount) : 0
+  )
+}
 
 function countLocalSessions(sessions: Session[]): number {
   return sessions.filter((session) => !session.remote).length
 }
 
+function seedRefreshWindowCountEstimate(localSessionCount: number): void {
+  startupExpectedWindowCount = normalizeWindowCount(localSessionCount)
+}
+
 function recordSuccessfulRefreshWindowCount(localSessionCount: number): void {
   hasConfirmedLocalSessionSnapshot = true
-  lastSuccessfulRefreshWindowCount = Math.max(
-    1,
-    Number.isFinite(localSessionCount) ? Math.floor(localSessionCount) : 0
-  )
+  lastSuccessfulRefreshWindowCount = normalizeWindowCount(localSessionCount)
   refreshWindowCountFloor = 0
+  startupExpectedWindowCount = 1
 }
 
 function shouldSkipSyncRefreshFallback(error: unknown): boolean {
@@ -732,7 +742,8 @@ function estimateRefreshWindowCount(): number {
     1,
     localSessionCount,
     lastSuccessfulRefreshWindowCount,
-    refreshWindowCountFloor
+    refreshWindowCountFloor,
+    startupExpectedWindowCount
   )
 }
 
@@ -897,6 +908,7 @@ async function captureLastUserMessage(tmuxWindow: string) {
 
 // Log startup state for debugging orphan issues
 const startupActiveSessions = db.getActiveSessions()
+seedRefreshWindowCountEstimate(startupActiveSessions.length)
 const startupWindows = listWindowsSyncOrNull('startup_state') ?? []
 logger.info('startup_state', {
   activeSessionCount: startupActiveSessions.length,

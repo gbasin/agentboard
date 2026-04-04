@@ -68,6 +68,7 @@ const defaultConfig = {
   remoteAllowControl: false,
   remoteAllowAttach: false,
   tmuxTimeoutMs: 3000,
+  tmuxMutationTimeoutMs: 15000,
 }
 
 const configState = { ...defaultConfig }
@@ -946,6 +947,29 @@ describe('server message handlers', () => {
       baseSession.tmuxWindow
     )
     expect(registryInstance.agentSessions.active).toEqual([])
+  })
+
+  test('startup sync timeout seeds the first worker refresh budget from persisted active sessions', async () => {
+    for (let i = 0; i < 5; i++) {
+      seedRecord(makeRecord({
+        sessionId: `seeded-${i}`,
+        currentWindow: `agentboard:${i + 1}`,
+      }))
+    }
+    sessionManagerState.listWindows = () => {
+      throw new TmuxTimeoutError('list-sessions', 3000)
+    }
+
+    const { serveOptions } = await loadIndex()
+    const { ws } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) throw new Error('WebSocket handlers not configured')
+
+    refreshWorkerExpectedWindowCounts = []
+    websocket.message?.(ws as never, JSON.stringify({ type: 'session-refresh' }))
+    await new Promise((resolve) => setTimeout(resolve, 25))
+
+    expect(refreshWorkerExpectedWindowCounts[0]).toBe(5)
   })
 
   test('blocks remote kill when remoteAllowControl is false', async () => {

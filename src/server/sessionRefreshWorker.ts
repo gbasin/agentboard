@@ -167,22 +167,27 @@ ctx.onmessage = (event: MessageEvent<RefreshWorkerRequest>) => {
 }
 
 function runTmux(args: string[]): string {
+  const command = getTmuxCommand(args)
   const result = Bun.spawnSync(['tmux', ...args], {
     stdout: 'pipe',
     stderr: 'pipe',
     timeout: config.tmuxTimeoutMs,
   })
   if (result.signalCode === 'SIGTERM' || result.exitCode === null) {
-    throw new TmuxTimeoutError(args[0] ?? 'command', config.tmuxTimeoutMs)
+    throw new TmuxTimeoutError(command, config.tmuxTimeoutMs)
   }
   if (result.exitCode !== 0) {
-    throw new Error(`tmux ${args[0]} failed: ${result.stderr.toString()}`)
+    throw new Error(`tmux ${command} failed: ${result.stderr.toString()}`)
   }
   return result.stdout.toString()
 }
 
 function runParsedTmux(args: string[]): string {
   return runTmux(withTmuxUtf8Flag(args))
+}
+
+function getTmuxCommand(args: string[]): string {
+  return args[0] === '-u' ? args[1] ?? 'command' : args[0] ?? 'command'
 }
 
 function isTmuxFormatError(error: unknown): boolean {
