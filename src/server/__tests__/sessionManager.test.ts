@@ -1365,4 +1365,54 @@ describe('SessionManager', () => {
       false
     )
   })
+
+  test('setMouseMode rethrows non-timeout base session failures', () => {
+    const sessionName = 'agentboard-setmouse-error'
+    const runTmux = (args: string[]) => {
+      const command = normalizeParsedTmuxArgs(args)[0]
+      if (command === 'has-session') {
+        return ''
+      }
+      if (command === 'set-option') {
+        throw new Error('set-option failed')
+      }
+      if (command === 'list-sessions') {
+        return sessionName
+      }
+      return ''
+    }
+
+    const manager = new SessionManager(sessionName, {
+      runTmux,
+      capturePaneContent: () => null,
+      mouseMode: true,
+    })
+
+    expect(() => manager.setMouseMode(false)).toThrow('set-option failed')
+  })
+
+  test('setMouseMode ignores base session exit races', () => {
+    const sessionName = 'agentboard-setmouse-race'
+    const runTmux = (args: string[]) => {
+      const command = normalizeParsedTmuxArgs(args)[0]
+      if (command === 'has-session') {
+        return ''
+      }
+      if (command === 'set-option') {
+        throw new Error(`can't find session: ${sessionName}`)
+      }
+      if (command === 'list-sessions') {
+        return ''
+      }
+      return ''
+    }
+
+    const manager = new SessionManager(sessionName, {
+      runTmux,
+      capturePaneContent: () => null,
+      mouseMode: true,
+    })
+
+    expect(() => manager.setMouseMode(false)).not.toThrow()
+  })
 })

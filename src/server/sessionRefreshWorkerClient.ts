@@ -14,7 +14,7 @@ interface PendingRequest {
   timeoutId: ReturnType<typeof setTimeout> | null
 }
 
-const LAST_USER_MESSAGE_TIMEOUT_MS = 10000
+const MIN_LAST_USER_MESSAGE_TIMEOUT_MS = 10000
 const MIN_REFRESH_WINDOW_BUDGET = 1
 const REFRESH_WINDOW_HEADROOM = 1
 const REQUEST_TIMEOUT_OVERHEAD_MS = 2000
@@ -46,6 +46,13 @@ function getRefreshTimeoutMs(expectedWindowCount = 0): number {
 
   // Refresh does one list-windows call plus one capture-pane call per window.
   return ((windowBudget + 1) * config.tmuxTimeoutMs) + REQUEST_TIMEOUT_OVERHEAD_MS
+}
+
+function getLastUserMessageTimeoutMs(): number {
+  return Math.max(
+    MIN_LAST_USER_MESSAGE_TIMEOUT_MS,
+    config.tmuxTimeoutMs + REQUEST_TIMEOUT_OVERHEAD_MS
+  )
 }
 
 export class SessionRefreshWorkerClient {
@@ -129,7 +136,7 @@ export class SessionRefreshWorkerClient {
     return new Promise<string | null>((resolve, reject) => {
       const timeoutId = setTimeout(() => {
         this.failRequest(id, new SessionRefreshWorkerTimeoutError())
-      }, LAST_USER_MESSAGE_TIMEOUT_MS)
+      }, getLastUserMessageTimeoutMs())
 
       this.pending.set(id, {
         generation,
