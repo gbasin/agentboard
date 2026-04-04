@@ -5,6 +5,7 @@ import path from 'node:path'
 import { config } from '../config'
 import { SessionManager } from '../SessionManager'
 import { TMUX_FIELD_SEPARATOR } from '../tmuxFormat'
+import { TmuxTimeoutError } from '../tmuxTimeout'
 
 const bunAny = Bun as typeof Bun & {
   spawnSync: typeof Bun.spawnSync
@@ -966,6 +967,42 @@ describe('SessionManager', () => {
     expect(setOptCall).toEqual(['set-option', '-w', '-t', `${sessionName}:1`, 'remain-on-exit', 'failed'])
   })
 
+  test('setWindowOption does not apply the read timeout to tmux writes', () => {
+    const spawnCalls: Array<{ args: string[]; timeout?: number }> = []
+    bunAny.spawnSync = ((args, options) => {
+      spawnCalls.push({
+        args: Array.isArray(args) ? [...args] : [],
+        timeout:
+          typeof options === 'object' && options !== null && 'timeout' in options
+            ? (options.timeout as number | undefined)
+            : undefined,
+      })
+      return {
+        exitCode: 0,
+        stdout: Buffer.from(''),
+        stderr: Buffer.from(''),
+      } as ReturnType<typeof Bun.spawnSync>
+    }) as typeof Bun.spawnSync
+
+    try {
+      const manager = new SessionManager('agentboard-default-timeout')
+      manager.setWindowOption('agentboard-default-timeout:1', 'remain-on-exit', 'failed')
+
+      expect(spawnCalls[0]?.args).toEqual([
+        'tmux',
+        'set-option',
+        '-w',
+        '-t',
+        'agentboard-default-timeout:1',
+        'remain-on-exit',
+        'failed',
+      ])
+      expect(spawnCalls[0]?.timeout).toBeUndefined()
+    } finally {
+      bunAny.spawnSync = originalSpawnSync
+    }
+  })
+
   test('listWindows uses default capturePaneContent on success', () => {
     const sessionName = 'agentboard-default-capture'
     const runner = createTmuxRunner(
@@ -1503,6 +1540,41 @@ describe('SessionManager', () => {
       'mouse',
       'off',
     ])
+  })
+
+  test('setMouseMode treats grouped session discovery failures as best-effort', () => {
+    const sessionName = 'agentboard-setmouse-discovery'
+    let setOptionCount = 0
+    const runTmux = (args: string[]) => {
+      const normalized = normalizeParsedTmuxArgs(args)
+      if (normalized[0] === 'has-session') {
+        return ''
+      }
+      if (normalized[0] === 'set-option') {
+        setOptionCount += 1
+        return ''
+      }
+      if (normalized[0] === 'list-sessions') {
+        throw new TmuxTimeoutError('list-sessions', 3000)
+      }
+      if (normalized[0] === 'list-windows') {
+        return ''
+      }
+      return ''
+    }
+
+    const manager = new SessionManager(sessionName, {
+      runTmux,
+      capturePaneContent: () => null,
+      mouseMode: true,
+    })
+
+    expect(() => manager.setMouseMode(false)).not.toThrow()
+    expect(setOptionCount).toBe(1)
+
+    setOptionCount = 0
+    manager.ensureSession()
+    expect(setOptionCount).toBe(1)
   })
 
   test('listWindows preserves lastActivity when pane capture times out', () => {

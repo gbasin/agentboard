@@ -66,6 +66,13 @@ const PANE_DIMENSIONS_FORMAT = buildTmuxFormat([
   '#{pane_width}',
   '#{pane_height}',
 ])
+const TMUX_MUTATION_COMMANDS = new Set([
+  'new-session',
+  'new-window',
+  'kill-window',
+  'rename-window',
+  'set-option',
+])
 
 export class SessionManager {
   private sessionName: string
@@ -175,9 +182,20 @@ export class SessionManager {
     // Keep existing grouped websocket client sessions in sync with the
     // base session mouse mode toggle.
     const wsPrefix = `${this.sessionName}-ws-`
-    const groupedSessions = this.listSessions().filter((name) =>
-      name.startsWith(wsPrefix)
-    )
+    let groupedSessions: string[] = []
+    try {
+      groupedSessions = this.listSessions().filter((name) =>
+        name.startsWith(wsPrefix)
+      )
+    } catch (error) {
+      logger.warn('tmux_mouse_mode_group_discovery_failed', {
+        message: error instanceof Error ? error.message : String(error),
+        timedOut: error instanceof TmuxTimeoutError,
+      })
+      this.mouseMode = enabled
+      return
+    }
+
     for (const groupedSession of groupedSessions) {
       try {
         this.runTmux(['set-option', '-t', groupedSession, 'mouse', mouseValue])
@@ -599,13 +617,17 @@ function parseWindow(line: string): WindowInfo | null {
 }
 
 function runTmux(args: string[]): string {
+  const command = getTmuxCommand(args)
+  const timeout = TMUX_MUTATION_COMMANDS.has(command)
+    ? undefined
+    : config.tmuxTimeoutMs
   const result = Bun.spawnSync(['tmux', ...args], {
     stdout: 'pipe',
     stderr: 'pipe',
-    timeout: config.tmuxTimeoutMs,
+    ...(timeout === undefined ? {} : { timeout }),
   })
   if (result.signalCode === 'SIGTERM' || result.exitCode === null) {
-    throw new TmuxTimeoutError(args[0] ?? 'command', config.tmuxTimeoutMs)
+    throw new TmuxTimeoutError(command, timeout ?? config.tmuxTimeoutMs)
   }
 
   if (result.exitCode !== 0) {
@@ -614,6 +636,10 @@ function runTmux(args: string[]): string {
   }
 
   return result.stdout.toString()
+}
+
+function getTmuxCommand(args: string[]): string {
+  return args[0] === '-u' ? args[1] ?? 'command' : args[0] ?? 'command'
 }
 
 function isTmuxSessionAbsentError(error: unknown): boolean {
