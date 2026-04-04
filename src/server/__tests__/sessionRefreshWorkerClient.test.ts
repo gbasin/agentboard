@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test'
 import type { RefreshWorkerResponse } from '../sessionRefreshWorker'
+import { TMUX_TIMEOUT_ERROR_CODE } from '../tmuxTimeout'
 
 class WorkerMock {
   static instances: WorkerMock[] = []
@@ -93,6 +94,27 @@ describe('SessionRefreshWorkerClient', () => {
     worker.emitMessage({ id: payload.id, kind: 'error', type: 'error', error: 'boom' })
 
     await expect(promise).rejects.toThrow('boom')
+  })
+
+  test('refresh preserves tmux timeout classification from worker responses', async () => {
+    const client = new SessionRefreshWorkerClient()
+    const worker = WorkerMock.instances[WorkerMock.instances.length - 1]
+    if (!worker) throw new Error('Worker not created')
+
+    const promise = client.refresh('agentboard', [])
+
+    const payload = worker.lastMessage as { id: string } | null
+    if (!payload?.id) throw new Error('Missing request id')
+
+    worker.emitMessage({
+      id: payload.id,
+      kind: 'error',
+      type: 'error',
+      error: 'tmux list-windows timed out after 3000ms',
+      errorCode: TMUX_TIMEOUT_ERROR_CODE,
+    })
+
+    await expect(promise).rejects.toBeInstanceOf(SessionRefreshWorkerTimeoutError)
   })
 
   test('getLastUserMessage resolves with the worker response', async () => {

@@ -700,6 +700,20 @@ let refreshInFlight = false
 // in-flight refreshes that started before the mutation discard their stale
 // window list instead of reverting the optimistic update.
 let refreshGeneration = 0
+let lastSuccessfulRefreshWindowCount = 1
+let refreshWindowCountFloor = 0
+
+function countLocalSessions(sessions: Session[]): number {
+  return sessions.filter((session) => !session.remote).length
+}
+
+function recordSuccessfulRefreshWindowCount(localSessionCount: number): void {
+  lastSuccessfulRefreshWindowCount = Math.max(
+    1,
+    Number.isFinite(localSessionCount) ? Math.floor(localSessionCount) : 0
+  )
+  refreshWindowCountFloor = 0
+}
 
 function shouldSkipSyncRefreshFallback(error: unknown): boolean {
   return error instanceof SessionRefreshWorkerTimeoutError
@@ -707,7 +721,19 @@ function shouldSkipSyncRefreshFallback(error: unknown): boolean {
 
 function estimateRefreshWindowCount(): number {
   const localSessionCount = registry.getAll().filter((session) => !session.remote).length
-  return Math.max(1, localSessionCount)
+  return Math.max(
+    1,
+    localSessionCount,
+    lastSuccessfulRefreshWindowCount,
+    refreshWindowCountFloor
+  )
+}
+
+function noteRefreshTimeout(): number {
+  const currentEstimate = estimateRefreshWindowCount()
+  const nextEstimate = Math.max(currentEstimate + 4, currentEstimate * 2)
+  refreshWindowCountFloor = nextEstimate
+  return nextEstimate
 }
 
 async function refreshSessionsAsync(): Promise<void> {
@@ -731,6 +757,7 @@ async function refreshSessionsAsync(): Promise<void> {
         await new Promise<void>((resolve) => setTimeout(resolve, 0))
         if (gen !== refreshGeneration) continue
         const tHydrate = performance.now()
+        recordSuccessfulRefreshWindowCount(countLocalSessions(sessions))
         const hydrated = hydrateSessionsWithAgentSessions(sessions)
         const withOverrides = applyForceWorkingOverrides(hydrated)
         registry.replaceSessions(mergeRemoteSessions(withOverrides))
@@ -746,12 +773,15 @@ async function refreshSessionsAsync(): Promise<void> {
           message: error instanceof Error ? error.message : String(error),
         })
         if (shouldSkipSyncRefreshFallback(error)) {
+          const nextExpectedWindowCount = noteRefreshTimeout()
           logger.warn('session_refresh_sync_fallback_skipped', {
             reason: 'worker_timeout',
+            nextExpectedWindowCount,
           })
           return
         }
         const sessions = sessionManager.listWindows()
+        recordSuccessfulRefreshWindowCount(countLocalSessions(sessions))
         const hydrated = hydrateSessionsWithAgentSessions(sessions)
         const withOverrides = applyForceWorkingOverrides(hydrated)
         registry.replaceSessions(mergeRemoteSessions(withOverrides))
@@ -770,6 +800,7 @@ function refreshSessions() {
 // Sync version for startup - ensures sessions are ready before server starts
 function refreshSessionsSync({ verifyAssociations = false } = {}) {
   const sessions = sessionManager.listWindows()
+  recordSuccessfulRefreshWindowCount(countLocalSessions(sessions))
   const hydrated = hydrateSessionsWithAgentSessions(sessions, { verifyAssociations })
   registry.replaceSessions(mergeRemoteSessions(hydrated))
 }

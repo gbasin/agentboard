@@ -5,6 +5,7 @@ import { normalizeProjectPath } from './logDiscovery'
 import { generateSessionName } from './nameGenerator'
 import { logger } from './logger'
 import { resolveProjectPath } from './paths'
+import { TmuxTimeoutError } from './tmuxTimeout'
 import {
   buildTmuxFormat,
   splitTmuxFields,
@@ -558,7 +559,7 @@ function runTmux(args: string[]): string {
     timeout: config.tmuxTimeoutMs,
   })
   if (result.signalCode === 'SIGTERM' || result.exitCode === null) {
-    throw new Error(`tmux ${args[0]} timed out after ${config.tmuxTimeoutMs}ms`)
+    throw new TmuxTimeoutError(args[0] ?? 'command', config.tmuxTimeoutMs)
   }
 
   if (result.exitCode !== 0) {

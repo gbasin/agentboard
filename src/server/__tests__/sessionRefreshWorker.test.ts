@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import type { RefreshWorkerRequest, RefreshWorkerResponse } from '../sessionRefreshWorker'
+import { TMUX_TIMEOUT_ERROR_CODE } from '../tmuxTimeout'
 import { TMUX_FIELD_SEPARATOR } from '../tmuxFormat'
 import type { Session } from '../../shared/types'
 
@@ -310,6 +311,40 @@ describe('sessionRefreshWorker', () => {
     expect(response.type).toBe('error')
     if (response.type === 'error') {
       expect(response.error).toContain('boom')
+    }
+  })
+
+  test('refresh marks tmux timeouts with a structured error code', async () => {
+    await loadWorker('refresh-timeout')
+
+    bunAny.spawnSync = ((args: string[]) => {
+      if (getTmuxSubcommand(args) === 'list-windows') {
+        return {
+          exitCode: null,
+          signalCode: 'SIGTERM',
+          stdout: Buffer.from(''),
+          stderr: Buffer.from(''),
+        } as unknown as ReturnType<typeof Bun.spawnSync>
+      }
+      return {
+        exitCode: 0,
+        stdout: Buffer.from(''),
+        stderr: Buffer.from(''),
+      } as ReturnType<typeof Bun.spawnSync>
+    }) as typeof Bun.spawnSync
+
+    emitMessage({
+      id: 'timeout-1',
+      kind: 'refresh',
+      managedSession: 'agentboard',
+      discoverPrefixes: [],
+    })
+
+    const response = getLastResponse()
+    expect(response.type).toBe('error')
+    if (response.type === 'error') {
+      expect(response.errorCode).toBe(TMUX_TIMEOUT_ERROR_CODE)
+      expect(response.error).toContain('timed out')
     }
   })
 

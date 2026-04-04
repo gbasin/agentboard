@@ -1,4 +1,5 @@
 import { config } from './config'
+import { TmuxTimeoutError } from './tmuxTimeout'
 
 export function ensureTmux(): void {
   try {
@@ -9,7 +10,7 @@ export function ensureTmux(): void {
     })
 
     if (result.signalCode === 'SIGTERM' || result.exitCode === null) {
-      throw new Error(`tmux probe timed out after ${config.tmuxTimeoutMs}ms`)
+      throw new TmuxTimeoutError('probe', config.tmuxTimeoutMs)
     }
 
     if (result.exitCode !== 0) {

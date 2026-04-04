@@ -20,6 +20,11 @@ import {
   inferSessionStatus,
   type PaneCacheState,
 } from './statusInference'
+import {
+  TMUX_TIMEOUT_ERROR_CODE,
+  TmuxTimeoutError,
+  isTmuxTimeoutError,
+} from './tmuxTimeout'
 import type { Session, SessionStatus, SessionSource } from '../shared/types'
 
 // Format string for batched window listing
@@ -97,6 +102,7 @@ export type RefreshWorkerResponse =
       kind: 'error'
       type: 'error'
       error: string
+      errorCode?: typeof TMUX_TIMEOUT_ERROR_CODE
     }
 
 const ctx = self as DedicatedWorkerGlobalScope
@@ -147,6 +153,7 @@ ctx.onmessage = (event: MessageEvent<RefreshWorkerRequest>) => {
       kind: 'error',
       type: 'error',
       error: error instanceof Error ? error.message : String(error),
+      errorCode: isTmuxTimeoutError(error) ? TMUX_TIMEOUT_ERROR_CODE : undefined,
     }
     ctx.postMessage(response)
   }
@@ -159,7 +166,7 @@ function runTmux(args: string[]): string {
     timeout: config.tmuxTimeoutMs,
   })
   if (result.signalCode === 'SIGTERM' || result.exitCode === null) {
-    throw new Error(`tmux ${args[0]} timed out after ${config.tmuxTimeoutMs}ms`)
+    throw new TmuxTimeoutError(args[0] ?? 'command', config.tmuxTimeoutMs)
   }
   if (result.exitCode !== 0) {
     throw new Error(`tmux ${args[0]} failed: ${result.stderr.toString()}`)

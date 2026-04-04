@@ -34,6 +34,18 @@ describe('ensureTmux', () => {
     expect(() => ensureTmux()).toThrow(/tmux is required/i)
   })
 
+  test('throws when tmux probe times out', () => {
+    bunAny.spawnSync = () =>
+      ({
+        exitCode: null,
+        signalCode: 'SIGTERM',
+        stdout: Buffer.from(''),
+        stderr: Buffer.from(''),
+      }) as unknown as ReturnType<typeof Bun.spawnSync>
+
+    expect(() => ensureTmux()).toThrow(/timed out/i)
+  })
+
   test('throws when spawnSync fails', () => {
     bunAny.spawnSync = () => {
       throw new Error('boom')

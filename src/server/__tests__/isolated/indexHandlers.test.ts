@@ -63,6 +63,7 @@ const defaultConfig = {
   remoteSshOpts: '',
   remoteAllowControl: false,
   remoteAllowAttach: false,
+  tmuxTimeoutMs: 3000,
 }
 
 const configState = { ...defaultConfig }
@@ -370,6 +371,7 @@ let refreshWorkerSessions: Session[] = []
 let refreshWorkerResolve: ((sessions: Session[]) => void) | null = null
 let _refreshWorkerReject: ((error: Error) => void) | null = null
 let refreshWorkerError: Error | null = null
+let refreshWorkerExpectedWindowCounts: number[] = []
 
 class SessionRefreshWorkerTimeoutErrorMock extends Error {
   constructor(message = 'Session refresh worker timed out') {
@@ -382,8 +384,9 @@ class SessionRefreshWorkerClientMock {
   refresh(
     _managedSession: string,
     _discoverPrefixes: string[],
-    _options?: { expectedWindowCount?: number }
+    options?: { expectedWindowCount?: number }
   ): Promise<Session[]> {
+    refreshWorkerExpectedWindowCounts.push(options?.expectedWindowCount ?? 0)
     if (refreshWorkerDeferred) {
       return new Promise<Session[]>((resolve, reject) => {
         refreshWorkerResolve = resolve
@@ -506,12 +509,13 @@ beforeEach(() => {
   SessionManagerMock.instance = null
   refreshWorkerDeferred = false
   refreshWorkerSessions = []
-  refreshWorkerResolve = null
-  _refreshWorkerReject = null
-  refreshWorkerError = null
-  SessionRegistryMock.instance = null
-  resetDbState()
-  Object.assign(configState, defaultConfig)
+    refreshWorkerResolve = null
+    _refreshWorkerReject = null
+    refreshWorkerError = null
+    refreshWorkerExpectedWindowCounts = []
+    SessionRegistryMock.instance = null
+    resetDbState()
+    Object.assign(configState, defaultConfig)
   sessionManagerState = {
     listWindows: () => [],
     createWindow: () => ({ ...baseSession, id: 'created' }),
@@ -889,6 +893,7 @@ describe('server message handlers', () => {
 
     expect(listCalls).toBe(2)
     expect(replaceSessionsCalls).toHaveLength(baselineReplaceCalls)
+    expect(refreshWorkerExpectedWindowCounts[0]).toBe(1)
 
     refreshWorkerSessions = [freshSession]
     websocket.message?.(ws as never, JSON.stringify({ type: 'session-refresh' }))
@@ -898,6 +903,9 @@ describe('server message handlers', () => {
 
     expect(replaceSessionsCalls.length).toBeGreaterThan(baselineReplaceCalls)
     expect(replaceSessionsCalls.at(-1)).toEqual([freshSession])
+    expect(refreshWorkerExpectedWindowCounts[1]).toBeGreaterThan(
+      refreshWorkerExpectedWindowCounts[0] ?? 0
+    )
   })
 
   test('blocks remote kill when remoteAllowControl is false', async () => {

@@ -5,6 +5,7 @@
 import { config } from './config'
 import type { Session } from '../shared/types'
 import type { RefreshWorkerRequest, RefreshWorkerResponse } from './sessionRefreshWorker'
+import { TMUX_TIMEOUT_ERROR_CODE } from './tmuxTimeout'
 
 interface PendingRequest {
   generation: number
@@ -23,6 +24,15 @@ export class SessionRefreshWorkerTimeoutError extends Error {
     super(message)
     this.name = 'SessionRefreshWorkerTimeoutError'
   }
+}
+
+function toWorkerResponseError(
+  response: Extract<RefreshWorkerResponse, { type: 'error' }>
+): Error {
+  if (response.errorCode === TMUX_TIMEOUT_ERROR_CODE) {
+    return new SessionRefreshWorkerTimeoutError(response.error)
+  }
+  return new Error(response.error)
 }
 
 function getRefreshTimeoutMs(expectedWindowCount = 0): number {
@@ -83,9 +93,11 @@ export class SessionRefreshWorkerClient {
           if (response.type === 'result' && response.kind === 'refresh') {
             resolve(response.sessions)
           } else {
-            const message =
-              response.type === 'error' ? response.error : 'Session refresh failed'
-            reject(new Error(message))
+            reject(
+              response.type === 'error'
+                ? toWorkerResponseError(response)
+                : new Error('Session refresh failed')
+            )
           }
         },
         reject,
@@ -127,11 +139,11 @@ export class SessionRefreshWorkerClient {
           if (response.type === 'result' && response.kind === 'last-user-message') {
             resolve(response.message ?? null)
           } else {
-            const message =
+            reject(
               response.type === 'error'
-                ? response.error
-                : 'Last user message refresh failed'
-            reject(new Error(message))
+                ? toWorkerResponseError(response)
+                : new Error('Last user message refresh failed')
+            )
           }
         },
         reject,
