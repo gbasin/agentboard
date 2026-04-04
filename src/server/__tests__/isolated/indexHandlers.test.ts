@@ -2051,11 +2051,13 @@ describe('server message handlers', () => {
     }
 
     let captureTarget = ''
+    let captureArgs: string[] = []
     let copyModeTarget = ''
     spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
       const command = Array.isArray(args[0]) ? args[0] : [String(args[0])]
       const tmuxArgs = getTmuxArgs(command as string[])
       if (tmuxArgs[0] === 'capture-pane') {
+        captureArgs = tmuxArgs
         captureTarget = tmuxArgs[2] ?? ''
       }
       if (tmuxArgs[0] === 'display-message') {
@@ -2093,6 +2095,7 @@ describe('server message handlers', () => {
     const groupedTarget = `${configState.tmuxSession}-ws-${ws.data.connectionId}`
     expect(attached.switchTargets).toEqual(['agentboard'])
     expect(captureTarget).toBe(groupedTarget)
+    expect(captureArgs).toEqual(['capture-pane', '-t', groupedTarget, '-p', '-J'])
     expect(ws.data.currentTmuxTarget).toBe(groupedTarget)
 
     websocket.message?.(

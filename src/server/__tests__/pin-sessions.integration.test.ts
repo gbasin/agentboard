@@ -71,8 +71,8 @@ if (!tmuxAvailable || !localhostBindable) {
           await waitForHealth(port, serverProcess)
           return
         } catch (err) {
-          serverProcess.kill()
-          await serverProcess.exited.catch(() => {})
+          await shutdownProcess(serverProcess)
+          serverProcess = null
           if (attempt === retries) throw err
         }
       }
@@ -80,12 +80,7 @@ if (!tmuxAvailable || !localhostBindable) {
 
     async function stopServer() {
       if (serverProcess) {
-        try {
-          serverProcess.kill()
-          await serverProcess.exited
-        } catch {
-          // ignore shutdown errors
-        }
+        await shutdownProcess(serverProcess)
         serverProcess = null
       }
     }
@@ -552,4 +547,29 @@ async function waitForMessage(
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function shutdownProcess(
+  proc: ReturnType<typeof Bun.spawn>,
+  timeoutMs = 3000
+) {
+  try {
+    proc.kill()
+  } catch {
+    return
+  }
+
+  const exited = proc.exited.catch(() => {})
+  const timedOut = new Promise<'timeout'>((resolve) => {
+    setTimeout(() => resolve('timeout'), timeoutMs)
+  })
+
+  if ((await Promise.race([exited, timedOut])) === 'timeout') {
+    try {
+      proc.kill('SIGKILL')
+    } catch {
+      return
+    }
+    await proc.exited.catch(() => {})
+  }
 }

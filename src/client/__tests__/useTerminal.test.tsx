@@ -995,6 +995,89 @@ describe('useTerminal', () => {
     })
   })
 
+  test('does not auto-scroll on attach and focuses when terminal-ready arrives', async () => {
+    const pendingTimers = new Map<number, { callback: () => void; delay: number }>()
+    let nextTimerId = 1
+    globalAny.window = {
+      setTimeout: ((callback: () => void, delay?: number) => {
+        const id = nextTimerId++
+        pendingTimers.set(id, { callback, delay: delay ?? 0 })
+        return id as unknown as ReturnType<typeof setTimeout>
+      }) as typeof setTimeout,
+      clearTimeout: ((id: ReturnType<typeof setTimeout>) => {
+        pendingTimers.delete(id as unknown as number)
+      }) as typeof clearTimeout,
+      devicePixelRatio: 1,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    } as unknown as Window & typeof globalThis
+
+    globalAny.navigator = {
+      userAgent: 'Chrome',
+      platform: 'MacIntel',
+      maxTouchPoints: 0,
+      clipboard: { writeText: () => Promise.resolve() },
+    } as unknown as Navigator
+
+    const sendCalls: Array<Record<string, unknown>> = []
+    const listeners: Array<(message: ServerMessage) => void> = []
+    const { container } = createContainerMock()
+
+    await act(async () => {
+      TestRenderer.create(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          connectionStatus="connected"
+          connectionEpoch={1}
+          sendMessage={(message) => sendCalls.push(message)}
+          subscribe={(listener) => {
+            listeners.push(listener)
+            return () => {}
+          }}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+        { createNodeMock: () => container },
+      )
+      await Promise.resolve()
+    })
+
+    const terminal = TerminalMock.instances[0]
+    if (!terminal) {
+      throw new Error('Expected terminal instance')
+    }
+
+    const runAllTimers = () => {
+      while (pendingTimers.size > 0) {
+        const timers = [...pendingTimers.entries()]
+        pendingTimers.clear()
+        for (const [, timer] of timers) {
+          timer.callback()
+        }
+      }
+    }
+
+    runAllTimers()
+
+    expect(sendCalls).toContainEqual({
+      type: 'terminal-attach',
+      sessionId: 'session-1',
+      tmuxTarget: 'agentboard:@1',
+      cols: 80,
+      rows: 24,
+    })
+    expect(terminal.scrollCalls).toBe(0)
+    expect(terminal.focusCalls).toBe(0)
+
+    act(() => {
+      listeners[0]?.({ type: 'terminal-ready', sessionId: 'session-1' })
+    })
+
+    expect(terminal.scrollCalls).toBe(0)
+    expect(terminal.focusCalls).toBe(1)
+  })
+
   test('Cmd+V triggers paste via capture-phase listener', async () => {
     jest.useFakeTimers()
     const originalFetch = globalThis.fetch

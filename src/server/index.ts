@@ -2633,11 +2633,12 @@ async function attachTerminalPersistent(
 
 function captureTmuxHistory(target: string): string | null {
   try {
-    // Capture full scrollback history (-S - means from start, -E - means to end, -J joins wrapped lines)
-    const result = Bun.spawnSync(
-      ['tmux', 'capture-pane', '-t', target, '-p', '-S', '-', '-E', '-', '-J'],
-      { stdout: 'pipe', stderr: 'pipe' }
-    )
+    // Capture only the visible pane so initial attach paints the current view
+    // immediately instead of replaying the entire scrollback buffer.
+    const result = Bun.spawnSync(['tmux', 'capture-pane', '-t', target, '-p', '-J'], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
     if (result.exitCode !== 0) {
       return null
     }
@@ -2701,7 +2702,7 @@ async function runRemoteSsh(host: string, remoteCmd: string): Promise<{ exitCode
 
 async function captureTmuxHistoryRemote(target: string, host: string): Promise<string | null> {
   try {
-    const result = await runRemoteTmux(host, ['capture-pane', '-t', target, '-p', '-S', '-', '-E', '-', '-J'])
+    const result = await runRemoteTmux(host, ['capture-pane', '-t', target, '-p', '-J'])
     if (result.exitCode !== 0) return null
     const output = result.stdout ?? ''
     if (output.trim().length === 0) return null
