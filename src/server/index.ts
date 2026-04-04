@@ -1213,27 +1213,49 @@ app.get('/api/settings/tmux-mouse-mode', (c) => {
 })
 
 app.put('/api/settings/tmux-mouse-mode', async (c) => {
+  let body: { enabled?: unknown }
   try {
-    const body = await c.req.json()
-    if (typeof body.enabled !== 'boolean') {
-      return c.json({ error: 'enabled must be a boolean' }, 400)
-    }
-    try {
-      sessionManager.setMouseMode(body.enabled)
-    } catch (error) {
-      if (error instanceof TmuxTimeoutError) {
-        return c.json({ error: 'Timed out applying tmux mouse mode' }, 504)
-      }
-      logger.warn('tmux_mouse_mode_update_failed', {
-        message: error instanceof Error ? error.message : String(error),
-      })
-      return c.json({ error: 'Unable to apply tmux mouse mode' }, 500)
-    }
-    db.setAppSetting(TMUX_MOUSE_MODE_KEY, String(body.enabled))
-    return c.json({ enabled: body.enabled })
+    body = await c.req.json()
   } catch {
     return c.json({ error: 'Invalid request body' }, 400)
   }
+
+  if (typeof body.enabled !== 'boolean') {
+    return c.json({ error: 'enabled must be a boolean' }, 400)
+  }
+
+  const previousStored = db.getAppSetting(TMUX_MOUSE_MODE_KEY)
+  const previousEnabled = previousStored === null ? true : previousStored === 'true'
+
+  try {
+    sessionManager.setMouseMode(body.enabled)
+  } catch (error) {
+    if (error instanceof TmuxTimeoutError) {
+      return c.json({ error: 'Timed out applying tmux mouse mode' }, 504)
+    }
+    logger.warn('tmux_mouse_mode_update_failed', {
+      message: error instanceof Error ? error.message : String(error),
+    })
+    return c.json({ error: 'Unable to apply tmux mouse mode' }, 500)
+  }
+
+  try {
+    db.setAppSetting(TMUX_MOUSE_MODE_KEY, String(body.enabled))
+  } catch (error) {
+    logger.warn('tmux_mouse_mode_persist_failed', {
+      message: error instanceof Error ? error.message : String(error),
+    })
+    try {
+      sessionManager.setMouseMode(previousEnabled)
+    } catch (rollbackError) {
+      logger.warn('tmux_mouse_mode_rollback_failed', {
+        message: rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
+      })
+    }
+    return c.json({ error: 'Unable to persist tmux mouse mode' }, 500)
+  }
+
+  return c.json({ enabled: body.enabled })
 })
 
 // Inactive sessions max age setting

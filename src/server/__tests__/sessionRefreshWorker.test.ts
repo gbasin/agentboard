@@ -556,4 +556,76 @@ describe('sessionRefreshWorker', () => {
       }
     }
   })
+
+  test('refresh preserves lastActivity when pane capture times out', async () => {
+    const originalNow = Date.now
+    let now = 1_700_000_000_000
+    Date.now = () => now
+
+    try {
+      await loadWorker('status-timeout-preserve')
+
+      const listOutput = [
+        joinTmuxFields(['agentboard', '1', 'alpha', '/Users/test/project', '100', '1700000000', 'codex', '80', '24']),
+      ].join('\n')
+      const captureSequence = ['idle', null] as const
+      let captureIndex = 0
+
+      bunAny.spawnSync = ((args: string[]) => {
+        if (getTmuxSubcommand(args) === 'list-windows') {
+          return {
+            exitCode: 0,
+            stdout: Buffer.from(listOutput),
+            stderr: Buffer.from(''),
+          } as ReturnType<typeof Bun.spawnSync>
+        }
+        if (getTmuxSubcommand(args) === 'capture-pane') {
+          const output = captureSequence[captureIndex++] ?? null
+          if (output === null) {
+            return {
+              exitCode: null,
+              signalCode: 'SIGTERM',
+              stdout: Buffer.from(''),
+              stderr: Buffer.from(''),
+            } as unknown as ReturnType<typeof Bun.spawnSync>
+          }
+          return {
+            exitCode: 0,
+            stdout: Buffer.from(output),
+            stderr: Buffer.from(''),
+          } as ReturnType<typeof Bun.spawnSync>
+        }
+        return {
+          exitCode: 0,
+          stdout: Buffer.from(''),
+          stderr: Buffer.from(''),
+        } as ReturnType<typeof Bun.spawnSync>
+      }) as typeof Bun.spawnSync
+
+      const runRefresh = () => {
+        emitMessage({
+          id: `refresh-timeout-${now}`,
+          kind: 'refresh',
+          managedSession: 'agentboard',
+          discoverPrefixes: [],
+        })
+        const response = getLastResponse()
+        if (response.type !== 'result' || response.kind !== 'refresh') {
+          throw new Error('Unexpected response type')
+        }
+        return response.sessions[0] as Session
+      }
+
+      const first = runRefresh()
+      const firstActivity = first.lastActivity
+      expect(first.status).toBe('waiting')
+
+      now += 5000
+      const second = runRefresh()
+      expect(second.status).toBe('waiting')
+      expect(second.lastActivity).toBe(firstActivity)
+    } finally {
+      Date.now = originalNow
+    }
+  })
 })

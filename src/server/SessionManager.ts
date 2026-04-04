@@ -13,6 +13,7 @@ import {
   withTmuxUtf8Flag,
 } from './tmuxFormat'
 import {
+  inferCachedSessionStatus,
   detectsPermissionPrompt,
   inferSessionStatus,
   type PaneCacheState,
@@ -134,7 +135,6 @@ export class SessionManager {
   }
 
   setMouseMode(enabled: boolean): void {
-    this.mouseMode = enabled
     const mouseValue = enabled ? 'on' : 'off'
     let sessionExists = false
 
@@ -191,6 +191,8 @@ export class SessionManager {
         // Session may have exited between list-sessions and set-option.
       }
     }
+
+    this.mouseMode = enabled
   }
 
   listWindows(): Session[] {
@@ -645,13 +647,21 @@ function inferStatus(
   capture: CapturePane = capturePaneWithDimensions,
   now: NowFn = Date.now
 ): StatusResult {
+  const currentTime = now()
+  const cached = paneContentCache.get(tmuxWindow)
   const pane = capture(tmuxWindow)
   if (pane === null) {
-    return { status: 'unknown', lastChanged: now() }
+    const fallback = inferCachedSessionStatus({
+      prev: cached,
+      now: currentTime,
+      workingGracePeriodMs: config.workingGracePeriodMs,
+    })
+    if (!fallback) {
+      return { status: 'unknown', lastChanged: currentTime }
+    }
+    paneContentCache.set(tmuxWindow, fallback.nextCache)
+    return { status: fallback.status, lastChanged: fallback.lastChanged }
   }
-
-  const cached = paneContentCache.get(tmuxWindow)
-  const currentTime = now()
 
   const result = inferSessionStatus({
     prev: cached,

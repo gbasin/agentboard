@@ -14,6 +14,7 @@ import {
   withTmuxUtf8Flag,
 } from './tmuxFormat'
 import {
+  inferCachedSessionStatus,
   inferSessionStatus,
   type PaneCacheState,
 } from './statusInference'
@@ -343,11 +344,19 @@ function inferStatus(
   height: number,
   now: number
 ): StatusResult {
-  if (content === null) {
-    return { status: 'unknown', lastChanged: now }
-  }
-
   const cached = paneContentCache.get(tmuxWindow)
+  if (content === null) {
+    const fallback = inferCachedSessionStatus({
+      prev: cached,
+      now,
+      workingGracePeriodMs: config.workingGracePeriodMs,
+    })
+    if (!fallback) {
+      return { status: 'unknown', lastChanged: now }
+    }
+    paneContentCache.set(tmuxWindow, fallback.nextCache)
+    return { status: fallback.status, lastChanged: fallback.lastChanged }
+  }
 
   const result = inferSessionStatus({
     prev: cached,

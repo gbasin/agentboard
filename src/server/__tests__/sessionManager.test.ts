@@ -1391,6 +1391,49 @@ describe('SessionManager', () => {
     expect(() => manager.setMouseMode(false)).toThrow('set-option failed')
   })
 
+  test('setMouseMode keeps previous in-memory value when apply fails', () => {
+    const sessionName = 'agentboard-setmouse-rollback'
+    const runner = createTmuxRunner([
+      {
+        name: sessionName,
+        windows: [],
+      },
+    ])
+    let firstSetOptionFailed = false
+    const runTmux = (args: string[]) => {
+      const normalized = normalizeParsedTmuxArgs(args)
+      const command = normalized[0]
+      if (
+        command === 'set-option' &&
+        !firstSetOptionFailed &&
+        normalized[2] === sessionName
+      ) {
+        firstSetOptionFailed = true
+        throw new Error('set-option failed')
+      }
+      return runner.runTmux(args)
+    }
+
+    const manager = new SessionManager(sessionName, {
+      runTmux,
+      capturePaneContent: () => null,
+      mouseMode: true,
+    })
+
+    expect(() => manager.setMouseMode(false)).toThrow('set-option failed')
+
+    runner.calls.length = 0
+    manager.listWindows()
+
+    expect(runner.calls).toContainEqual([
+      'set-option',
+      '-t',
+      sessionName,
+      'mouse',
+      'on',
+    ])
+  })
+
   test('setMouseMode ignores base session exit races', () => {
     const sessionName = 'agentboard-setmouse-race'
     const runTmux = (args: string[]) => {
@@ -1414,5 +1457,49 @@ describe('SessionManager', () => {
     })
 
     expect(() => manager.setMouseMode(false)).not.toThrow()
+  })
+
+  test('listWindows preserves lastActivity when pane capture times out', () => {
+    const sessionName = 'agentboard-capture-timeout'
+    const runner = createTmuxRunner([
+      {
+        name: sessionName,
+        windows: [
+          {
+            id: '1',
+            index: 1,
+            name: 'alpha',
+            path: '/tmp/project',
+            activity: 0,
+            creation: 0,
+            command: 'codex',
+          },
+        ],
+      },
+    ])
+    const captureSequence = [makePaneCapture('idle'), null] as const
+    let captureIndex = 0
+    let nowValue = 1_700_000_000_000
+
+    const manager = new SessionManager(sessionName, {
+      runTmux: runner.runTmux,
+      capturePaneContent: () => captureSequence[captureIndex++] ?? null,
+      now: () => nowValue,
+      mouseMode: true,
+    })
+
+    const first = manager.listWindows()[0]
+    if (!first) {
+      throw new Error('Expected first session')
+    }
+
+    nowValue += 5000
+    const second = manager.listWindows()[0]
+    if (!second) {
+      throw new Error('Expected second session')
+    }
+
+    expect(second.status).toBe('waiting')
+    expect(second.lastActivity).toBe(first.lastActivity)
   })
 })

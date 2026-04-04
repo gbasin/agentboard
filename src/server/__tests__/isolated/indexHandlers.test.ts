@@ -38,6 +38,7 @@ let dbState: {
   records: Map<string, AgentSessionRecord>
   nextId: number
   setAppSettingCalls: Array<{ key: string; value: string }>
+  setAppSettingError: Error | null
   updateCalls: Array<{ sessionId: string; patch: Partial<AgentSessionRecord> }>
   setPinnedCalls: Array<{ sessionId: string; isPinned: boolean }>
 }
@@ -78,6 +79,7 @@ function resetDbState() {
     records: new Map(),
     nextId: 1,
     setAppSettingCalls: [],
+    setAppSettingError: null,
     updateCalls: [],
     setPinnedCalls: [],
   }
@@ -369,6 +371,9 @@ mock.module('../../db', () => ({
       ),
     getAppSetting: (key: string) => dbState.appSettings.get(key) ?? null,
     setAppSetting: (key: string, value: string) => {
+      if (dbState.setAppSettingError) {
+        throw dbState.setAppSettingError
+      }
       dbState.appSettings.set(key, value)
       dbState.setAppSettingCalls.push({ key, value })
     },
@@ -2709,6 +2714,43 @@ describe('server fetch handlers', () => {
     expect(dbState.setAppSettingCalls).toEqual([
       { key: 'tmux_mouse_mode', value: 'false' },
     ])
+  })
+
+  test('tmux mouse mode persistence failure returns 500 and rolls back runtime state', async () => {
+    dbState.setAppSettingError = new Error('db unavailable')
+    const appliedValues: boolean[] = []
+    sessionManagerState.setMouseMode = (enabled: boolean) => {
+      appliedValues.push(enabled)
+    }
+
+    const { serveOptions } = await loadIndex()
+    const fetchHandler = serveOptions.fetch
+    if (!fetchHandler) {
+      throw new Error('Fetch handler not configured')
+    }
+
+    const response = await fetchHandler.call(
+      {} as Bun.Server<unknown>,
+      new Request('http://localhost/api/settings/tmux-mouse-mode', {
+        method: 'PUT',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ enabled: false }),
+      }),
+      {} as Bun.Server<unknown>
+    )
+
+    if (!response) {
+      throw new Error('Expected response for tmux mouse mode request')
+    }
+
+    expect(appliedValues).toEqual([false, true])
+    expect(response.status).toBe(500)
+    expect(await response.json()).toEqual({
+      error: 'Unable to persist tmux mouse mode',
+    })
+    expect(dbState.setAppSettingCalls).toEqual([])
   })
 
   test('returns no response for successful websocket upgrades', async () => {
