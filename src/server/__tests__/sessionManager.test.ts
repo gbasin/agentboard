@@ -1459,6 +1459,52 @@ describe('SessionManager', () => {
     expect(() => manager.setMouseMode(false)).not.toThrow()
   })
 
+  test('setMouseMode treats grouped session sync failures as best-effort', () => {
+    const sessionName = 'agentboard-setmouse-grouped'
+    const runner = createTmuxRunner([
+      {
+        name: sessionName,
+        windows: [],
+      },
+      {
+        name: `${sessionName}-ws-a`,
+        windows: [],
+      },
+    ])
+    let groupedFailureInjected = false
+    const runTmux = (args: string[]) => {
+      const normalized = normalizeParsedTmuxArgs(args)
+      if (
+        normalized[0] === 'set-option' &&
+        normalized[2] === `${sessionName}-ws-a` &&
+        !groupedFailureInjected
+      ) {
+        groupedFailureInjected = true
+        throw new Error('grouped set-option failed')
+      }
+      return runner.runTmux(args)
+    }
+
+    const manager = new SessionManager(sessionName, {
+      runTmux,
+      capturePaneContent: () => null,
+      mouseMode: true,
+    })
+
+    expect(() => manager.setMouseMode(false)).not.toThrow()
+
+    runner.calls.length = 0
+    manager.listWindows()
+
+    expect(runner.calls).toContainEqual([
+      'set-option',
+      '-t',
+      sessionName,
+      'mouse',
+      'off',
+    ])
+  })
+
   test('listWindows preserves lastActivity when pane capture times out', () => {
     const sessionName = 'agentboard-capture-timeout'
     const runner = createTmuxRunner([

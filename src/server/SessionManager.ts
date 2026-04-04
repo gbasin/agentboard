@@ -182,13 +182,15 @@ export class SessionManager {
       try {
         this.runTmux(['set-option', '-t', groupedSession, 'mouse', mouseValue])
       } catch (error) {
-        if (error instanceof TmuxTimeoutError) {
-          throw error
+        if (isTmuxSessionAbsentError(error)) {
+          // Session may have exited between list-sessions and set-option.
+          continue
         }
-        if (!isTmuxSessionAbsentError(error)) {
-          throw error
-        }
-        // Session may have exited between list-sessions and set-option.
+        logger.warn('tmux_mouse_mode_group_sync_failed', {
+          groupedSession,
+          message: error instanceof Error ? error.message : String(error),
+          timedOut: error instanceof TmuxTimeoutError,
+        })
       }
     }
 

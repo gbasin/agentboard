@@ -17,6 +17,12 @@ export function ensureTmux(): void {
       throw new Error(result.stderr.toString() || 'tmux not found')
     }
   } catch (error) {
+    if (error instanceof TmuxTimeoutError) {
+      throw new Error(
+        `tmux is installed but did not respond to the startup probe within ${config.tmuxTimeoutMs}ms. Ensure tmux is running and responsive. (${error.message})`,
+        { cause: error }
+      )
+    }
     const message =
       error instanceof Error ? error.message : 'tmux not found'
     throw new Error(

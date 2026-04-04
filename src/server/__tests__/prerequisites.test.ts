@@ -43,7 +43,14 @@ describe('ensureTmux', () => {
         stderr: Buffer.from(''),
       }) as unknown as ReturnType<typeof Bun.spawnSync>
 
-    expect(() => ensureTmux()).toThrow(/timed out/i)
+    expect(() => ensureTmux()).toThrow(/did not respond to the startup probe/i)
+
+    try {
+      ensureTmux()
+      throw new Error('Expected ensureTmux to throw')
+    } catch (error) {
+      expect((error as Error).message).not.toContain('brew install tmux')
+    }
   })
 
   test('throws when spawnSync fails', () => {

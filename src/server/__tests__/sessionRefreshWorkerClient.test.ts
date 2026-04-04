@@ -195,7 +195,7 @@ describe('SessionRefreshWorkerClient', () => {
     expect(WorkerMock.instances.length).toBe(instancesBefore + 1)
   })
 
-  test('refresh timeouts fail the pending request without restarting the worker', async () => {
+  test('refresh timeouts fail the generation and restart the worker', async () => {
     globalThis.setTimeout = ((((callback: TimerHandler) => {
       queueMicrotask(() => {
         if (typeof callback === 'function') {
@@ -215,19 +215,13 @@ describe('SessionRefreshWorkerClient', () => {
 
     await expect(promise).rejects.toBeInstanceOf(SessionRefreshWorkerTimeoutError)
     expect(worker.terminated).toBe(false)
-    expect(
-      worker.messages.some(
-        (message) =>
-          typeof message === 'object' &&
-          message !== null &&
-          'kind' in message &&
-          message.kind === 'shutdown'
-      )
-    ).toBe(false)
-    expect(WorkerMock.instances.length).toBe(instancesBefore)
+    expect(worker.messages.at(-1)).toEqual(
+      expect.objectContaining({ kind: 'shutdown' })
+    )
+    expect(WorkerMock.instances.length).toBe(instancesBefore + 1)
   })
 
-  test('timing out one request does not fail later requests on the same worker', async () => {
+  test('timing out one request fails queued work and future requests use a fresh worker', async () => {
     const timeoutCallbacks: Array<() => void> = []
     globalThis.setTimeout = ((((callback: TimerHandler) => {
       if (typeof callback === 'function') {
@@ -238,16 +232,18 @@ describe('SessionRefreshWorkerClient', () => {
     globalThis.clearTimeout = (() => {}) as typeof clearTimeout
 
     const client = new SessionRefreshWorkerClient()
-    const worker = WorkerMock.instances[WorkerMock.instances.length - 1]
-    if (!worker) throw new Error('Worker not created')
+    const firstWorker = WorkerMock.instances[WorkerMock.instances.length - 1]
+    if (!firstWorker) throw new Error('Worker not created')
 
     const firstPromise = client.refresh('agentboard', [])
-    const firstPayload = worker.messages.at(-1) as { id: string } | null
+    const firstPayload = firstWorker.messages.at(-1) as { id: string } | null
     if (!firstPayload?.id) throw new Error('Missing first request id')
 
     const secondPromise = client.refresh('agentboard', [])
-    const secondPayload = worker.messages.at(-1) as { id: string } | null
+    const secondPayload = firstWorker.messages.at(-1) as { id: string } | null
     if (!secondPayload?.id) throw new Error('Missing second request id')
+    const firstOutcome = firstPromise.catch((error) => error)
+    const secondOutcome = secondPromise.catch((error) => error)
 
     const firstTimeout = timeoutCallbacks.shift()
     if (!firstTimeout) {
@@ -255,22 +251,29 @@ describe('SessionRefreshWorkerClient', () => {
     }
     firstTimeout()
 
-    await expect(firstPromise).rejects.toBeInstanceOf(SessionRefreshWorkerTimeoutError)
+    await expect(firstOutcome).resolves.toBeInstanceOf(SessionRefreshWorkerTimeoutError)
+    await expect(secondOutcome).resolves.toBeInstanceOf(SessionRefreshWorkerTimeoutError)
+    expect(firstWorker.messages.at(-1)).toEqual(
+      expect.objectContaining({ kind: 'shutdown' })
+    )
 
-    worker.emitMessage({
-      id: firstPayload.id,
+    const replacementWorker = WorkerMock.instances[WorkerMock.instances.length - 1]
+    if (!replacementWorker || replacementWorker === firstWorker) {
+      throw new Error('Replacement worker was not created')
+    }
+
+    const thirdPromise = client.refresh('agentboard', [])
+    const thirdPayload = replacementWorker.messages.at(-1) as { id: string } | null
+    if (!thirdPayload?.id) throw new Error('Missing third request id')
+
+    replacementWorker.emitMessage({
+      id: thirdPayload.id,
       kind: 'refresh',
       type: 'result',
       sessions: [],
     })
-    worker.emitMessage({
-      id: secondPayload.id,
-      kind: 'refresh',
-      type: 'result',
-      sessions: [],
-    })
 
-    await expect(secondPromise).resolves.toEqual([])
+    await expect(thirdPromise).resolves.toEqual([])
   })
 
   test('refresh timeout stays tight for small installs', async () => {
