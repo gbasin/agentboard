@@ -287,6 +287,39 @@ describe('sessionRefreshWorker', () => {
     expect(response.message).toBe('Second message')
   })
 
+  test('last-user-message marks tmux timeouts with a structured error code', async () => {
+    await loadWorker('last-user-message-timeout')
+
+    bunAny.spawnSync = ((args: string[]) => {
+      if (getTmuxSubcommand(args) === 'capture-pane') {
+        return {
+          exitCode: null,
+          signalCode: 'SIGTERM',
+          stdout: Buffer.from(''),
+          stderr: Buffer.from(''),
+        } as unknown as ReturnType<typeof Bun.spawnSync>
+      }
+      return {
+        exitCode: 0,
+        stdout: Buffer.from(''),
+        stderr: Buffer.from(''),
+      } as ReturnType<typeof Bun.spawnSync>
+    }) as typeof Bun.spawnSync
+
+    emitMessage({
+      id: 'timeout-last-user-message',
+      kind: 'last-user-message',
+      tmuxWindow: 'agentboard:1',
+    })
+
+    const response = getLastResponse()
+    expect(response.type).toBe('error')
+    if (response.type === 'error') {
+      expect(response.errorCode).toBe(TMUX_TIMEOUT_ERROR_CODE)
+      expect(response.error).toContain('timed out')
+    }
+  })
+
   test('refresh responds with error on tmux failure', async () => {
     await loadWorker('refresh-error')
 

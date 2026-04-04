@@ -6,10 +6,7 @@
 import { inferAgentType, normalizePaneStartCommand } from './agentDetection'
 import { config } from './config'
 import { normalizeProjectPath } from './logDiscovery'
-import {
-  extractRecentUserMessagesFromTmux,
-  getTerminalScrollback,
-} from './logMatcher'
+import { extractRecentUserMessagesFromTmux } from './logMatcher'
 import {
   buildTmuxFormat,
   splitTmuxFields,
@@ -124,7 +121,7 @@ ctx.onmessage = (event: MessageEvent<RefreshWorkerRequest>) => {
     }
 
     if (payload.kind === 'last-user-message') {
-      const scrollback = getTerminalScrollback(
+      const scrollback = captureScrollback(
         payload.tmuxWindow,
         payload.scrollbackLines ?? LAST_USER_MESSAGE_SCROLLBACK_LINES
       )
@@ -247,6 +244,32 @@ function capturePane(tmuxWindow: string): string | null {
     return lines.slice(-30).join('\n')
   } catch {
     return null
+  }
+}
+
+function captureScrollback(tmuxWindow: string, lines: number): string {
+  const safeLines = Math.max(1, lines)
+  try {
+    const result = Bun.spawnSync(
+      ['tmux', 'capture-pane', '-t', tmuxWindow, '-p', '-J', '-S', `-${safeLines}`],
+      {
+        stdout: 'pipe',
+        stderr: 'pipe',
+        timeout: config.tmuxTimeoutMs,
+      }
+    )
+    if (result.signalCode === 'SIGTERM' || result.exitCode === null) {
+      throw new TmuxTimeoutError('capture-pane', config.tmuxTimeoutMs)
+    }
+    if (result.exitCode !== 0) {
+      return ''
+    }
+    return result.stdout.toString()
+  } catch (error) {
+    if (isTmuxTimeoutError(error)) {
+      throw error
+    }
+    return ''
   }
 }
 
