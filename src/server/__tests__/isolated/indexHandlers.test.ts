@@ -371,7 +371,11 @@ let refreshWorkerResolve: ((sessions: Session[]) => void) | null = null
 let _refreshWorkerReject: ((error: Error) => void) | null = null
 
 class SessionRefreshWorkerClientMock {
-  refresh(_managedSession: string, _discoverPrefixes: string[]): Promise<Session[]> {
+  refresh(
+    _managedSession: string,
+    _discoverPrefixes: string[],
+    _options?: { expectedWindowCount?: number }
+  ): Promise<Session[]> {
     if (refreshWorkerDeferred) {
       return new Promise<Session[]>((resolve, reject) => {
         refreshWorkerResolve = resolve

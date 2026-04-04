@@ -5,7 +5,11 @@ import path from 'node:path'
 import os from 'node:os'
 import { initDatabase } from '../db'
 import type { AgentSessionRecord } from '../db'
-import { canBindLocalhost, isTmuxAvailable } from './testEnvironment'
+import {
+  canBindLocalhost,
+  createTmuxTmpDir,
+  isTmuxAvailable,
+} from './testEnvironment'
 
 const tmuxAvailable = isTmuxAvailable()
 const localhostBindable = canBindLocalhost()
@@ -87,7 +91,7 @@ if (!tmuxAvailable || !localhostBindable) {
     }
 
     beforeAll(async () => {
-      tmuxTmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentboard-tmux-'))
+      tmuxTmpDir = createTmuxTmpDir()
 
       // Create the tmux session first (required for resurrection to work)
       Bun.spawnSync(['tmux', 'new-session', '-d', '-s', sessionName], {

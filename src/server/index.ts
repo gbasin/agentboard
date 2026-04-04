@@ -128,6 +128,7 @@ function pruneOrphanedWsSessions(): void {
 
   let result: ReturnType<typeof Bun.spawnSync>
   try {
+    const startedAt = Date.now()
     result = Bun.spawnSync(
       ['tmux', ...withTmuxUtf8Flag([
         'list-sessions',
@@ -137,8 +138,17 @@ function pruneOrphanedWsSessions(): void {
       {
         stdout: 'pipe',
         stderr: 'pipe',
+        timeout: config.tmuxTimeoutMs,
       }
     )
+    const elapsedMs = Date.now() - startedAt
+    if (result.signalCode === 'SIGTERM' || result.exitCode === null || elapsedMs >= config.tmuxTimeoutMs) {
+      logger.warn('ws_session_prune_skipped', {
+        reason: 'tmux_timeout',
+        timeoutMs: config.tmuxTimeoutMs,
+      })
+      return
+    }
   } catch {
     return
   }
@@ -162,10 +172,16 @@ function pruneOrphanedWsSessions(): void {
     const attached = Number.parseInt(attachedRaw ?? '', 10)
     if (Number.isNaN(attached) || attached > 0) continue
     try {
+      const killStartedAt = Date.now()
       const killResult = Bun.spawnSync(['tmux', 'kill-session', '-t', name], {
         stdout: 'pipe',
         stderr: 'pipe',
+        timeout: config.tmuxTimeoutMs,
       })
+      const killElapsedMs = Date.now() - killStartedAt
+      if (killResult.signalCode === 'SIGTERM' || killResult.exitCode === null || killElapsedMs >= config.tmuxTimeoutMs) {
+        continue
+      }
       if (killResult.exitCode === 0) {
         pruned += 1
       }
@@ -686,6 +702,16 @@ let refreshInFlight = false
 // window list instead of reverting the optimistic update.
 let refreshGeneration = 0
 
+function shouldSkipSyncRefreshFallback(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  return error.message.toLowerCase().includes('timed out')
+}
+
+function estimateRefreshWindowCount(): number {
+  const localSessionCount = registry.getAll().filter((session) => !session.remote).length
+  return Math.max(1, localSessionCount)
+}
+
 async function refreshSessionsAsync(): Promise<void> {
   if (refreshInFlight) return
   refreshInFlight = true
@@ -698,7 +724,8 @@ async function refreshSessionsAsync(): Promise<void> {
       try {
         const sessions = await sessionRefreshWorker.refresh(
           config.tmuxSession,
-          config.discoverPrefixes
+          config.discoverPrefixes,
+          { expectedWindowCount: estimateRefreshWindowCount() }
         )
         // Mutation happened while we were listing windows — discard and retry
         if (gen !== refreshGeneration) continue
@@ -720,6 +747,12 @@ async function refreshSessionsAsync(): Promise<void> {
         logger.warn('session_refresh_worker_error', {
           message: error instanceof Error ? error.message : String(error),
         })
+        if (shouldSkipSyncRefreshFallback(error)) {
+          logger.warn('session_refresh_sync_fallback_skipped', {
+            reason: 'worker_timeout',
+          })
+          return
+        }
         const sessions = sessionManager.listWindows()
         const hydrated = hydrateSessionsWithAgentSessions(sessions)
         const withOverrides = applyForceWorkingOverrides(hydrated)

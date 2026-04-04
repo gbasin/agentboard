@@ -22,7 +22,12 @@ import fs from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'
 import os from 'node:os'
-import { canBindLocalhost, isTmuxAvailable } from './testEnvironment'
+import {
+  canBindLocalhost,
+  createTmuxTmpDir,
+  isTmuxAvailable,
+  waitForTmuxWindows,
+} from './testEnvironment'
 
 const tmuxAvailable = isTmuxAvailable()
 const localhostBindable = canBindLocalhost()
@@ -62,9 +67,7 @@ if (!tmuxAvailable || !localhostBindable) {
         : { ...process.env }
 
     beforeAll(async () => {
-      tmuxTmpDir = fs.mkdtempSync(
-        path.join(os.tmpdir(), 'agentboard-tmux-')
-      )
+      tmuxTmpDir = createTmuxTmpDir()
 
       // Create a tmux session with a window
       Bun.spawnSync(
@@ -83,25 +86,7 @@ if (!tmuxAvailable || !localhostBindable) {
       )
 
       // Find the default window target
-      const listResult = Bun.spawnSync(
-        [
-          'tmux',
-          'list-windows',
-          '-t',
-          sessionName,
-          '-F',
-          '#{session_name}:#{window_id}',
-        ],
-        { stdout: 'pipe', stderr: 'pipe', env: tmuxEnv() }
-      )
-      const windows = listResult.stdout
-        .toString()
-        .split('\n')
-        .map((l) => l.trim())
-        .filter(Boolean)
-      if (windows.length === 0) {
-        throw new Error('Failed to create tmux session')
-      }
+      const windows = await waitForTmuxWindows(sessionName, tmuxEnv())
       tmuxWindowTarget = windows[0]
 
       // Pump some content into the pane to generate scrollback history so
@@ -376,7 +361,18 @@ if (!tmuxAvailable || !localhostBindable) {
           )
         expect(scrollbacksBeforeFirstReady.length).toBeGreaterThanOrEqual(1)
 
-        // Record the total message count so we can isolate second-attach messages
+        // Wait for the first attach's buffered history to finish arriving before
+        // sending the second attach. The dedup guarantee is "no new scrollback
+        // capture on the second attach", not "no delayed delivery from the first
+        // capture that was already in flight on the wire".
+        await waitForMessageQuiescence(
+          messages,
+          100,
+          300,
+          'first attach history delivery to settle'
+        )
+
+        // Record the total message count so we can isolate second-attach messages.
         const messagesBeforeSecondAttach = messages.length
 
         // Step 2: Send the second terminal-attach immediately (well within 500ms).
@@ -733,4 +729,29 @@ function drainStream(
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function waitForMessageQuiescence(
+  messages: Array<unknown>,
+  quietMs: number,
+  timeoutMs: number,
+  description: string
+): Promise<void> {
+  const startedAt = Date.now()
+  let lastCount = messages.length
+  let stableSince = Date.now()
+
+  while (Date.now() - startedAt < timeoutMs) {
+    await delay(25)
+    if (messages.length !== lastCount) {
+      lastCount = messages.length
+      stableSince = Date.now()
+      continue
+    }
+    if (Date.now() - stableSince >= quietMs) {
+      return
+    }
+  }
+
+  throw new Error(`Timed out waiting for message quiescence: ${description}`)
 }

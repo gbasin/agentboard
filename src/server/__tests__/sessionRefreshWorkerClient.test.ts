@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test'
 import type { RefreshWorkerResponse } from '../sessionRefreshWorker'
 
 class WorkerMock {
@@ -35,6 +35,8 @@ class WorkerMock {
 }
 
 const originalWorker = globalThis.Worker
+const originalSetTimeout = globalThis.setTimeout
+const originalClearTimeout = globalThis.clearTimeout
 
 let SessionRefreshWorkerClient: typeof import('../sessionRefreshWorkerClient').SessionRefreshWorkerClient
 
@@ -46,6 +48,12 @@ beforeAll(async () => {
 
 afterAll(() => {
   globalThis.Worker = originalWorker
+})
+
+afterEach(() => {
+  globalThis.setTimeout = originalSetTimeout
+  globalThis.clearTimeout = originalClearTimeout
+  WorkerMock.instances = []
 })
 
 describe('SessionRefreshWorkerClient', () => {
@@ -149,6 +157,86 @@ describe('SessionRefreshWorkerClient', () => {
     // Worker is abandoned, not terminated (Bun bug BUN-118B)
     expect(worker.terminated).toBe(false)
     expect(WorkerMock.instances.length).toBe(instancesBefore + 1)
+  })
+
+  test('refresh timeouts restart worker and fail pending request', async () => {
+    globalThis.setTimeout = ((((callback: TimerHandler) => {
+      queueMicrotask(() => {
+        if (typeof callback === 'function') {
+          callback()
+        }
+      })
+      return 1 as unknown as ReturnType<typeof setTimeout>
+    }) as unknown) as typeof setTimeout)
+    globalThis.clearTimeout = (() => {}) as typeof clearTimeout
+
+    const client = new SessionRefreshWorkerClient()
+    const worker = WorkerMock.instances[WorkerMock.instances.length - 1]
+    if (!worker) throw new Error('Worker not created')
+    const instancesBefore = WorkerMock.instances.length
+
+    const promise = client.refresh('agentboard', [])
+
+    await expect(promise).rejects.toThrow('Session refresh worker timed out')
+    expect(worker.terminated).toBe(false)
+    expect(WorkerMock.instances.length).toBe(instancesBefore + 1)
+  })
+
+  test('refresh timeout scales with expected window count', async () => {
+    const timeoutDelays: number[] = []
+    globalThis.setTimeout = ((((_callback: TimerHandler, delay?: number) => {
+      timeoutDelays.push(Number(delay))
+      return 1 as unknown as ReturnType<typeof setTimeout>
+    }) as unknown) as typeof setTimeout)
+    globalThis.clearTimeout = (() => {}) as typeof clearTimeout
+
+    const client = new SessionRefreshWorkerClient()
+    const promise = client.refresh('agentboard', [], { expectedWindowCount: 20 })
+    client.dispose()
+
+    await expect(promise).rejects.toThrow('Session refresh worker disposed')
+    expect(timeoutDelays[0]).toBe(77000)
+  })
+
+  test('late errors from an abandoned worker do not fail the replacement worker', async () => {
+    const timeoutCallbacks: Array<() => void> = []
+    globalThis.setTimeout = ((((callback: TimerHandler) => {
+      if (typeof callback === 'function') {
+        timeoutCallbacks.push(callback as () => void)
+      }
+      return timeoutCallbacks.length as unknown as ReturnType<typeof setTimeout>
+    }) as unknown) as typeof setTimeout)
+    globalThis.clearTimeout = (() => {}) as typeof clearTimeout
+
+    const client = new SessionRefreshWorkerClient()
+    const originalWorker = WorkerMock.instances[WorkerMock.instances.length - 1]
+    if (!originalWorker) throw new Error('Worker not created')
+
+    const firstPromise = client.refresh('agentboard', [])
+    const firstTimeout = timeoutCallbacks.shift()
+    if (!firstTimeout) throw new Error('Timeout not scheduled')
+    firstTimeout()
+
+    await expect(firstPromise).rejects.toThrow('Session refresh worker timed out')
+
+    const replacementWorker = WorkerMock.instances[WorkerMock.instances.length - 1]
+    if (!replacementWorker || replacementWorker === originalWorker) {
+      throw new Error('Replacement worker not created')
+    }
+
+    const secondPromise = client.refresh('agentboard', [])
+    const secondPayload = replacementWorker.lastMessage as { id: string } | null
+    if (!secondPayload?.id) throw new Error('Missing second request id')
+
+    originalWorker.emitError('old worker error')
+    replacementWorker.emitMessage({
+      id: secondPayload.id,
+      kind: 'refresh',
+      type: 'result',
+      sessions: [],
+    })
+
+    await expect(secondPromise).resolves.toEqual([])
   })
 
   test('calls after dispose throw', async () => {

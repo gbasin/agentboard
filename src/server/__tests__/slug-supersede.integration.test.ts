@@ -6,7 +6,12 @@ import os from 'node:os'
 import { initDatabase } from '../db'
 import type { AgentSessionRecord } from '../db'
 import { encodeProjectPath } from '../logDiscovery'
-import { canBindLocalhost, isTmuxAvailable } from './testEnvironment'
+import {
+  canBindLocalhost,
+  createTmuxTmpDir,
+  isTmuxAvailable,
+  waitForTmuxWindows,
+} from './testEnvironment'
 
 const tmuxAvailable = isTmuxAvailable()
 const localhostBindable = canBindLocalhost()
@@ -45,7 +50,7 @@ if (!tmuxAvailable || !localhostBindable) {
     const testSlug = `test-supersede-slug-${Date.now()}`
 
     beforeAll(async () => {
-      tmuxTmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentboard-tmux-'))
+      tmuxTmpDir = createTmuxTmpDir()
       claudeConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentboard-claude-'))
 
       // Create the tmux session
@@ -56,15 +61,7 @@ if (!tmuxAvailable || !localhostBindable) {
       })
 
       // Get the default window identifier
-      const listResult = Bun.spawnSync(
-        ['tmux', 'list-windows', '-t', sessionName, '-F', '#{session_name}:#{window_id}'],
-        { stdout: 'pipe', stderr: 'pipe', env: tmuxEnv() }
-      )
-      const defaultWindow = listResult.stdout
-        .toString()
-        .split('\n')
-        .map((l) => l.trim())
-        .filter(Boolean)[0]!
+      const defaultWindow = (await waitForTmuxWindows(sessionName, tmuxEnv()))[0]!
 
       // Seed session A (planning session) in the DB BEFORE starting the server.
       // It already "owns" the default tmux window.

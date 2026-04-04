@@ -552,10 +552,16 @@ function parseWindow(line: string): WindowInfo | null {
 }
 
 function runTmux(args: string[]): string {
+  const startedAt = Date.now()
   const result = Bun.spawnSync(['tmux', ...args], {
     stdout: 'pipe',
     stderr: 'pipe',
+    timeout: config.tmuxTimeoutMs,
   })
+  const elapsedMs = Date.now() - startedAt
+  if (result.signalCode === 'SIGTERM' || result.exitCode === null || elapsedMs >= config.tmuxTimeoutMs) {
+    throw new Error(`tmux ${args[0]} timed out after ${config.tmuxTimeoutMs}ms`)
+  }
 
   if (result.exitCode !== 0) {
     const error = result.stderr.toString() || 'tmux command failed'
@@ -606,6 +612,7 @@ function inferStatus(
 
 function capturePaneWithDimensions(tmuxWindow: string): PaneCapture | null {
   try {
+    const dimsStartedAt = Date.now()
     const dimsResult = Bun.spawnSync(
       ['tmux',
         ...withTmuxUtf8Flag([
@@ -615,8 +622,16 @@ function capturePaneWithDimensions(tmuxWindow: string): PaneCapture | null {
         '-p',
         PANE_DIMENSIONS_FORMAT,
       ])],
-      { stdout: 'pipe', stderr: 'pipe' }
+      {
+        stdout: 'pipe',
+        stderr: 'pipe',
+        timeout: config.tmuxTimeoutMs,
+      }
     )
+    const dimsElapsedMs = Date.now() - dimsStartedAt
+    if (dimsResult.signalCode === 'SIGTERM' || dimsResult.exitCode === null || dimsElapsedMs >= config.tmuxTimeoutMs) {
+      return null
+    }
     if (dimsResult.exitCode !== 0) {
       return null
     }
@@ -636,10 +651,19 @@ function capturePaneWithDimensions(tmuxWindow: string): PaneCapture | null {
 
     // Use -J to unwrap lines and only capture visible content (no scrollback)
     // This prevents false positives from scrollback buffer changes on window focus
+    const captureStartedAt = Date.now()
     const result = Bun.spawnSync(
       ['tmux', 'capture-pane', '-t', tmuxWindow, '-p', '-J'],
-      { stdout: 'pipe', stderr: 'pipe' }
+      {
+        stdout: 'pipe',
+        stderr: 'pipe',
+        timeout: config.tmuxTimeoutMs,
+      }
     )
+    const captureElapsedMs = Date.now() - captureStartedAt
+    if (result.signalCode === 'SIGTERM' || result.exitCode === null || captureElapsedMs >= config.tmuxTimeoutMs) {
+      return null
+    }
     if (result.exitCode !== 0) {
       return null
     }

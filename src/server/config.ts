@@ -132,6 +132,11 @@ const remoteAllowAttach = remoteAllowAttachRaw !== undefined
   ? remoteAllowAttachRaw === 'true'
   : remoteAllowControl
 
+const tmuxTimeoutMsRaw = Number(process.env.AGENTBOARD_TMUX_TIMEOUT_MS)
+const tmuxTimeoutMs = Number.isFinite(tmuxTimeoutMsRaw) && tmuxTimeoutMsRaw > 0
+  ? Math.floor(tmuxTimeoutMsRaw)
+  : 3000
+
 export const config = {
   port: Number(process.env.PORT) || 4040,
   hostname: process.env.HOSTNAME || '127.0.0.1',
@@ -174,4 +179,5 @@ export const config = {
   remoteSshOpts,
   remoteAllowControl,
   remoteAllowAttach,
+  tmuxTimeoutMs,
 }

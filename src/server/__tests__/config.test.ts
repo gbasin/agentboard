@@ -29,6 +29,7 @@ const ORIGINAL_ENV = {
   AGENTBOARD_REMOTE_STALE_MS: process.env.AGENTBOARD_REMOTE_STALE_MS,
   AGENTBOARD_REMOTE_SSH_OPTS: process.env.AGENTBOARD_REMOTE_SSH_OPTS,
   AGENTBOARD_REMOTE_ALLOW_CONTROL: process.env.AGENTBOARD_REMOTE_ALLOW_CONTROL,
+  AGENTBOARD_TMUX_TIMEOUT_MS: process.env.AGENTBOARD_TMUX_TIMEOUT_MS,
 }
 
 const ENV_KEYS = Object.keys(ORIGINAL_ENV) as Array<keyof typeof ORIGINAL_ENV>
@@ -75,6 +76,7 @@ async function loadConfig(tag: string) {
     remoteStaleMs: number
     remoteSshOpts: string
     remoteAllowControl: boolean
+    tmuxTimeoutMs: number
   }
 }
 
@@ -114,6 +116,7 @@ describe('config', () => {
     expect(config.remoteStaleMs).toBe(15000)
     expect(config.remoteSshOpts).toBe('')
     expect(config.remoteAllowControl).toBe(false)
+    expect(config.tmuxTimeoutMs).toBe(3000)
   })
 
   test('parses env overrides and trims discover prefixes', async () => {
@@ -144,6 +147,7 @@ describe('config', () => {
     process.env.AGENTBOARD_REMOTE_STALE_MS = '50000'
     process.env.AGENTBOARD_REMOTE_SSH_OPTS = '-o StrictHostKeyChecking=accept-new'
     process.env.AGENTBOARD_REMOTE_ALLOW_CONTROL = 'true'
+    process.env.AGENTBOARD_TMUX_TIMEOUT_MS = '4500'
 
     const config = await loadConfig('overrides')
     expect(config.port).toBe(9090)
@@ -173,6 +177,7 @@ describe('config', () => {
     expect(config.remoteStaleMs).toBe(50000)
     expect(config.remoteSshOpts).toBe('-o StrictHostKeyChecking=accept-new')
     expect(config.remoteAllowControl).toBe(true)
+    expect(config.tmuxTimeoutMs).toBe(4500)
   })
 
   test('defaults to watch mode for invalid AGENTBOARD_LOG_WATCH_MODE', async () => {
