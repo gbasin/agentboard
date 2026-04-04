@@ -369,6 +369,14 @@ let refreshWorkerDeferred = false
 let refreshWorkerSessions: Session[] = []
 let refreshWorkerResolve: ((sessions: Session[]) => void) | null = null
 let _refreshWorkerReject: ((error: Error) => void) | null = null
+let refreshWorkerError: Error | null = null
+
+class SessionRefreshWorkerTimeoutErrorMock extends Error {
+  constructor(message = 'Session refresh worker timed out') {
+    super(message)
+    this.name = 'SessionRefreshWorkerTimeoutError'
+  }
+}
 
 class SessionRefreshWorkerClientMock {
   refresh(
@@ -382,6 +390,11 @@ class SessionRefreshWorkerClientMock {
         _refreshWorkerReject = reject
       })
     }
+    if (refreshWorkerError) {
+      const error = refreshWorkerError
+      refreshWorkerError = null
+      return Promise.reject(error)
+    }
     return Promise.resolve(refreshWorkerSessions)
   }
 
@@ -394,6 +407,7 @@ class SessionRefreshWorkerClientMock {
 
 mock.module('../../sessionRefreshWorkerClient', () => ({
   SessionRefreshWorkerClient: SessionRefreshWorkerClientMock,
+  SessionRefreshWorkerTimeoutError: SessionRefreshWorkerTimeoutErrorMock,
 }))
 mock.module('../../SessionManager', () => ({
   SessionManager: SessionManagerMock,
@@ -494,6 +508,7 @@ beforeEach(() => {
   refreshWorkerSessions = []
   refreshWorkerResolve = null
   _refreshWorkerReject = null
+  refreshWorkerError = null
   SessionRegistryMock.instance = null
   resetDbState()
   Object.assign(configState, defaultConfig)
@@ -847,6 +862,42 @@ describe('server message handlers', () => {
     }
     // Re-refresh must have fired and applied fresh data
     expect(replaceSessionsCalls.length).toBeGreaterThan(0)
+  })
+
+  test('worker timeout skips sync fallback but allows the next refresh to recover', async () => {
+    const freshSession: Session = {
+      ...baseSession,
+      id: 'fresh',
+      name: 'fresh',
+      tmuxWindow: 'agentboard:2',
+    }
+    let listCalls = 0
+    sessionManagerState.listWindows = () => {
+      listCalls += 1
+      return [freshSession]
+    }
+
+    const { serveOptions } = await loadIndex()
+    const { ws } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) throw new Error('WebSocket handlers not configured')
+
+    const baselineReplaceCalls = replaceSessionsCalls.length
+    refreshWorkerError = new SessionRefreshWorkerTimeoutErrorMock()
+    websocket.message?.(ws as never, JSON.stringify({ type: 'session-refresh' }))
+    await new Promise((resolve) => setTimeout(resolve, 25))
+
+    expect(listCalls).toBe(2)
+    expect(replaceSessionsCalls).toHaveLength(baselineReplaceCalls)
+
+    refreshWorkerSessions = [freshSession]
+    websocket.message?.(ws as never, JSON.stringify({ type: 'session-refresh' }))
+    for (let i = 0; i < 50 && replaceSessionsCalls.length === baselineReplaceCalls; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+
+    expect(replaceSessionsCalls.length).toBeGreaterThan(baselineReplaceCalls)
+    expect(replaceSessionsCalls.at(-1)).toEqual([freshSession])
   })
 
   test('blocks remote kill when remoteAllowControl is false', async () => {

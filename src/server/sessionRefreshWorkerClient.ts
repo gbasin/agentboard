@@ -14,9 +14,16 @@ interface PendingRequest {
 }
 
 const LAST_USER_MESSAGE_TIMEOUT_MS = 10000
-const MIN_REFRESH_WINDOW_BUDGET = 12
-const REFRESH_WINDOW_HEADROOM = 4
+const MIN_REFRESH_WINDOW_BUDGET = 1
+const REFRESH_WINDOW_HEADROOM = 1
 const REQUEST_TIMEOUT_OVERHEAD_MS = 2000
+
+export class SessionRefreshWorkerTimeoutError extends Error {
+  constructor(message = 'Session refresh worker timed out') {
+    super(message)
+    this.name = 'SessionRefreshWorkerTimeoutError'
+  }
+}
 
 function getRefreshTimeoutMs(expectedWindowCount = 0): number {
   const safeExpectedWindowCount = Number.isFinite(expectedWindowCount)
@@ -66,7 +73,7 @@ export class SessionRefreshWorkerClient {
     return new Promise<Session[]>((resolve, reject) => {
       const timeoutMs = getRefreshTimeoutMs(options.expectedWindowCount)
       const timeoutId = setTimeout(() => {
-        this.failGeneration(generation, new Error('Session refresh worker timed out'))
+        this.failGeneration(generation, new SessionRefreshWorkerTimeoutError())
         this.restartWorker(generation)
       }, timeoutMs)
 
@@ -110,7 +117,7 @@ export class SessionRefreshWorkerClient {
 
     return new Promise<string | null>((resolve, reject) => {
       const timeoutId = setTimeout(() => {
-        this.failGeneration(generation, new Error('Session refresh worker timed out'))
+        this.failGeneration(generation, new SessionRefreshWorkerTimeoutError())
         this.restartWorker(generation)
       }, LAST_USER_MESSAGE_TIMEOUT_MS)
 

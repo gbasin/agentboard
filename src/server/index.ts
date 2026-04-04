@@ -39,7 +39,10 @@ import {
   type Session,
 } from '../shared/types'
 import { logger, logLevel } from './logger'
-import { SessionRefreshWorkerClient } from './sessionRefreshWorkerClient'
+import {
+  SessionRefreshWorkerClient,
+  SessionRefreshWorkerTimeoutError,
+} from './sessionRefreshWorkerClient'
 import {
   setForceWorkingUntil,
   applyForceWorkingOverrides,
@@ -128,7 +131,6 @@ function pruneOrphanedWsSessions(): void {
 
   let result: ReturnType<typeof Bun.spawnSync>
   try {
-    const startedAt = Date.now()
     result = Bun.spawnSync(
       ['tmux', ...withTmuxUtf8Flag([
         'list-sessions',
@@ -141,8 +143,7 @@ function pruneOrphanedWsSessions(): void {
         timeout: config.tmuxTimeoutMs,
       }
     )
-    const elapsedMs = Date.now() - startedAt
-    if (result.signalCode === 'SIGTERM' || result.exitCode === null || elapsedMs >= config.tmuxTimeoutMs) {
+    if (result.signalCode === 'SIGTERM' || result.exitCode === null) {
       logger.warn('ws_session_prune_skipped', {
         reason: 'tmux_timeout',
         timeoutMs: config.tmuxTimeoutMs,
@@ -172,14 +173,12 @@ function pruneOrphanedWsSessions(): void {
     const attached = Number.parseInt(attachedRaw ?? '', 10)
     if (Number.isNaN(attached) || attached > 0) continue
     try {
-      const killStartedAt = Date.now()
       const killResult = Bun.spawnSync(['tmux', 'kill-session', '-t', name], {
         stdout: 'pipe',
         stderr: 'pipe',
         timeout: config.tmuxTimeoutMs,
       })
-      const killElapsedMs = Date.now() - killStartedAt
-      if (killResult.signalCode === 'SIGTERM' || killResult.exitCode === null || killElapsedMs >= config.tmuxTimeoutMs) {
+      if (killResult.signalCode === 'SIGTERM' || killResult.exitCode === null) {
         continue
       }
       if (killResult.exitCode === 0) {
@@ -703,8 +702,7 @@ let refreshInFlight = false
 let refreshGeneration = 0
 
 function shouldSkipSyncRefreshFallback(error: unknown): boolean {
-  if (!(error instanceof Error)) return false
-  return error.message.toLowerCase().includes('timed out')
+  return error instanceof SessionRefreshWorkerTimeoutError
 }
 
 function estimateRefreshWindowCount(): number {

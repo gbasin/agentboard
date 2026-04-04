@@ -39,11 +39,13 @@ const originalSetTimeout = globalThis.setTimeout
 const originalClearTimeout = globalThis.clearTimeout
 
 let SessionRefreshWorkerClient: typeof import('../sessionRefreshWorkerClient').SessionRefreshWorkerClient
+let SessionRefreshWorkerTimeoutError: typeof import('../sessionRefreshWorkerClient').SessionRefreshWorkerTimeoutError
 
 beforeAll(async () => {
   globalThis.Worker = WorkerMock as unknown as typeof Worker
-  SessionRefreshWorkerClient = (await import('../sessionRefreshWorkerClient'))
-    .SessionRefreshWorkerClient
+  const mod = await import('../sessionRefreshWorkerClient')
+  SessionRefreshWorkerClient = mod.SessionRefreshWorkerClient
+  SessionRefreshWorkerTimeoutError = mod.SessionRefreshWorkerTimeoutError
 })
 
 afterAll(() => {
@@ -177,9 +179,25 @@ describe('SessionRefreshWorkerClient', () => {
 
     const promise = client.refresh('agentboard', [])
 
-    await expect(promise).rejects.toThrow('Session refresh worker timed out')
+    await expect(promise).rejects.toBeInstanceOf(SessionRefreshWorkerTimeoutError)
     expect(worker.terminated).toBe(false)
     expect(WorkerMock.instances.length).toBe(instancesBefore + 1)
+  })
+
+  test('refresh timeout stays tight for small installs', async () => {
+    const timeoutDelays: number[] = []
+    globalThis.setTimeout = ((((_callback: TimerHandler, delay?: number) => {
+      timeoutDelays.push(Number(delay))
+      return 1 as unknown as ReturnType<typeof setTimeout>
+    }) as unknown) as typeof setTimeout)
+    globalThis.clearTimeout = (() => {}) as typeof clearTimeout
+
+    const client = new SessionRefreshWorkerClient()
+    const promise = client.refresh('agentboard', [], { expectedWindowCount: 1 })
+    client.dispose()
+
+    await expect(promise).rejects.toThrow('Session refresh worker disposed')
+    expect(timeoutDelays[0]).toBe(11000)
   })
 
   test('refresh timeout scales with expected window count', async () => {
@@ -195,7 +213,7 @@ describe('SessionRefreshWorkerClient', () => {
     client.dispose()
 
     await expect(promise).rejects.toThrow('Session refresh worker disposed')
-    expect(timeoutDelays[0]).toBe(77000)
+    expect(timeoutDelays[0]).toBe(68000)
   })
 
   test('late errors from an abandoned worker do not fail the replacement worker', async () => {
@@ -217,7 +235,7 @@ describe('SessionRefreshWorkerClient', () => {
     if (!firstTimeout) throw new Error('Timeout not scheduled')
     firstTimeout()
 
-    await expect(firstPromise).rejects.toThrow('Session refresh worker timed out')
+    await expect(firstPromise).rejects.toBeInstanceOf(SessionRefreshWorkerTimeoutError)
 
     const replacementWorker = WorkerMock.instances[WorkerMock.instances.length - 1]
     if (!replacementWorker || replacementWorker === originalWorker) {

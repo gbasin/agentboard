@@ -2,15 +2,13 @@ import { config } from './config'
 
 export function ensureTmux(): void {
   try {
-    const startedAt = Date.now()
     const result = Bun.spawnSync(['tmux', '-V'], {
       stdout: 'pipe',
       stderr: 'pipe',
       timeout: config.tmuxTimeoutMs,
     })
 
-    const elapsedMs = Date.now() - startedAt
-    if (result.signalCode === 'SIGTERM' || result.exitCode === null || elapsedMs >= config.tmuxTimeoutMs) {
+    if (result.signalCode === 'SIGTERM' || result.exitCode === null) {
       throw new Error(`tmux probe timed out after ${config.tmuxTimeoutMs}ms`)
     }
 

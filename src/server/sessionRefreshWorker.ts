@@ -153,14 +153,12 @@ ctx.onmessage = (event: MessageEvent<RefreshWorkerRequest>) => {
 }
 
 function runTmux(args: string[]): string {
-  const startedAt = Date.now()
   const result = Bun.spawnSync(['tmux', ...args], {
     stdout: 'pipe',
     stderr: 'pipe',
     timeout: config.tmuxTimeoutMs,
   })
-  const elapsedMs = Date.now() - startedAt
-  if (result.signalCode === 'SIGTERM' || result.exitCode === null || elapsedMs >= config.tmuxTimeoutMs) {
+  if (result.signalCode === 'SIGTERM' || result.exitCode === null) {
     throw new Error(`tmux ${args[0]} timed out after ${config.tmuxTimeoutMs}ms`)
   }
   if (result.exitCode !== 0) {
@@ -212,7 +210,6 @@ function listAllWindowData(): WindowData[] {
 
 function capturePane(tmuxWindow: string): string | null {
   try {
-    const startedAt = Date.now()
     const result = Bun.spawnSync(
       ['tmux', 'capture-pane', '-t', tmuxWindow, '-p', '-J'],
       {
@@ -221,8 +218,7 @@ function capturePane(tmuxWindow: string): string | null {
         timeout: config.tmuxTimeoutMs,
       }
     )
-    const elapsedMs = Date.now() - startedAt
-    if (result.signalCode === 'SIGTERM' || result.exitCode === null || elapsedMs >= config.tmuxTimeoutMs) {
+    if (result.signalCode === 'SIGTERM' || result.exitCode === null) {
       return null
     }
     if (result.exitCode !== 0) {
