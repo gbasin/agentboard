@@ -83,6 +83,10 @@ export type RefreshWorkerRequest =
       tmuxWindow: string
       scrollbackLines?: number
     }
+  | {
+      id: string
+      kind: 'shutdown'
+    }
 
 export type RefreshWorkerResponse =
   | {
@@ -114,6 +118,11 @@ ctx.onmessage = (event: MessageEvent<RefreshWorkerRequest>) => {
   }
 
   try {
+    if (payload.kind === 'shutdown') {
+      ctx.close()
+      return
+    }
+
     if (payload.kind === 'last-user-message') {
       const scrollback = getTerminalScrollback(
         payload.tmuxWindow,

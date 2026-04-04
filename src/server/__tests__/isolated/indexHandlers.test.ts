@@ -4,6 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import type { Session, ServerMessage } from '@shared/types'
 import type { AgentSessionRecord } from '../../db'
+import { TmuxTimeoutError } from '../../tmuxTimeout'
 import { TMUX_FIELD_SEPARATOR } from '../../tmuxFormat'
 
 const bunAny = Bun as typeof Bun & {
@@ -905,6 +906,25 @@ describe('server message handlers', () => {
     expect(replaceSessionsCalls.at(-1)).toEqual([freshSession])
     expect(refreshWorkerExpectedWindowCounts[1]).toBeGreaterThan(
       refreshWorkerExpectedWindowCounts[0] ?? 0
+    )
+  })
+
+  test('startup sync timeout skips replacing sessions and leaves DB state intact', async () => {
+    const activeRecord = makeRecord({
+      sessionId: 'active-timeout',
+      currentWindow: baseSession.tmuxWindow,
+    })
+    seedRecord(activeRecord)
+    replaceSessionsCalls = []
+    sessionManagerState.listWindows = () => {
+      throw new TmuxTimeoutError('list-sessions', 3000)
+    }
+
+    await loadIndex()
+
+    expect(replaceSessionsCalls).toHaveLength(0)
+    expect(dbState.records.get(activeRecord.sessionId)?.currentWindow).toBe(
+      baseSession.tmuxWindow
     )
   })
 

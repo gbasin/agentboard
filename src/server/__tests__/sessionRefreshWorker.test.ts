@@ -14,6 +14,7 @@ const originalSelf = globalAny.self
 
 let messages: RefreshWorkerResponse[] = []
 let ctx: DedicatedWorkerGlobalScope
+let closeCalls = 0
 
 function joinTmuxFields(fields: string[]): string {
   return fields.join(TMUX_FIELD_SEPARATOR)
@@ -28,7 +29,11 @@ function getTmuxSubcommand(args: string[]): string | undefined {
 
 async function loadWorker(tag: string) {
   messages = []
+  closeCalls = 0
   ctx = {
+    close: () => {
+      closeCalls += 1
+    },
     postMessage: (message: RefreshWorkerResponse) => {
       messages.push(message)
     },
@@ -346,6 +351,18 @@ describe('sessionRefreshWorker', () => {
       expect(response.errorCode).toBe(TMUX_TIMEOUT_ERROR_CODE)
       expect(response.error).toContain('timed out')
     }
+  })
+
+  test('shutdown closes the worker without posting a response', async () => {
+    await loadWorker('shutdown')
+
+    emitMessage({
+      id: 'shutdown-1',
+      kind: 'shutdown',
+    })
+
+    expect(closeCalls).toBe(1)
+    expect(messages).toHaveLength(0)
   })
 
   test('status changes track content updates and permission prompts', async () => {

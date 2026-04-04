@@ -7,6 +7,7 @@ class WorkerMock {
   onmessage: ((event: MessageEvent) => void) | null = null
   onerror: ((event: ErrorEvent) => void) | null = null
   onmessageerror: (() => void) | null = null
+  messages: unknown[] = []
   lastMessage: unknown = null
   terminated = false
 
@@ -15,6 +16,7 @@ class WorkerMock {
   }
 
   postMessage(payload: unknown) {
+    this.messages.push(payload)
     this.lastMessage = payload
   }
 
@@ -149,6 +151,9 @@ describe('SessionRefreshWorkerClient', () => {
     await expect(promise).rejects.toThrow('Session refresh worker disposed')
     // Worker is abandoned, not terminated (Bun bug BUN-118B)
     expect(worker.terminated).toBe(false)
+    expect(worker.messages.at(-1)).toEqual(
+      expect.objectContaining({ kind: 'shutdown' })
+    )
   })
 
   test('worker errors reject pending and restart worker', async () => {
@@ -164,6 +169,9 @@ describe('SessionRefreshWorkerClient', () => {
     await expect(promise).rejects.toThrow('Session refresh worker error')
     // Worker is abandoned, not terminated (Bun bug BUN-118B)
     expect(worker.terminated).toBe(false)
+    expect(worker.messages.at(-1)).toEqual(
+      expect.objectContaining({ kind: 'shutdown' })
+    )
     expect(WorkerMock.instances.length).toBe(instancesBefore + 1)
   })
 
@@ -180,6 +188,9 @@ describe('SessionRefreshWorkerClient', () => {
     await expect(promise).rejects.toThrow('Session refresh worker message error')
     // Worker is abandoned, not terminated (Bun bug BUN-118B)
     expect(worker.terminated).toBe(false)
+    expect(worker.messages.at(-1)).toEqual(
+      expect.objectContaining({ kind: 'shutdown' })
+    )
     expect(WorkerMock.instances.length).toBe(instancesBefore + 1)
   })
 
@@ -203,6 +214,9 @@ describe('SessionRefreshWorkerClient', () => {
 
     await expect(promise).rejects.toBeInstanceOf(SessionRefreshWorkerTimeoutError)
     expect(worker.terminated).toBe(false)
+    expect(worker.messages.at(-1)).toEqual(
+      expect.objectContaining({ kind: 'shutdown' })
+    )
     expect(WorkerMock.instances.length).toBe(instancesBefore + 1)
   })
 

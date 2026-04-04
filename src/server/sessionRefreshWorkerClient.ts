@@ -157,7 +157,8 @@ export class SessionRefreshWorkerClient {
     this.disposed = true
     this.failAll(new Error('Session refresh worker disposed'))
     // Don't call worker.terminate() — it triggers a segfault in compiled Bun binaries
-    // (known Bun bug BUN-118B). The worker will be cleaned up on process exit.
+    // (known Bun bug BUN-118B). Ask the worker to exit cooperatively instead.
+    this.requestWorkerShutdown(this.worker)
     this.detachWorker(this.worker)
     this.worker = null
   }
@@ -195,7 +196,9 @@ export class SessionRefreshWorkerClient {
     if (expectedGeneration !== undefined && expectedGeneration !== this.generation) {
       return
     }
-    // Don't call worker.terminate() — abandon the old worker instead
+    // Don't call worker.terminate() — it can segfault in compiled Bun binaries.
+    // Ask the old worker to exit after its current handler unwinds, then replace it.
+    this.requestWorkerShutdown(this.worker)
     this.detachWorker(this.worker)
     this.worker = null
     this.spawnWorker()
@@ -240,5 +243,17 @@ export class SessionRefreshWorkerClient {
     worker.onmessage = null
     worker.onerror = null
     worker.onmessageerror = null
+  }
+
+  private requestWorkerShutdown(worker: Worker | null): void {
+    if (!worker) return
+    try {
+      worker.postMessage({
+        id: `shutdown-${Date.now()}-${this.counter++}`,
+        kind: 'shutdown',
+      } satisfies RefreshWorkerRequest)
+    } catch {
+      // Ignore postMessage failures from already-crashed workers.
+    }
   }
 }

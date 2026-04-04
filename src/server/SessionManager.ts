@@ -101,7 +101,10 @@ export class SessionManager {
   ensureSession(): void {
     try {
       this.runTmux(['has-session', '-t', this.sessionName])
-    } catch {
+    } catch (error) {
+      if (error instanceof TmuxTimeoutError) {
+        throw error
+      }
       this.runTmux(['new-session', '-d', '-s', this.sessionName])
     }
     this.configureSession()
@@ -111,8 +114,14 @@ export class SessionManager {
     try {
       this.runTmux(['has-session', '-t', this.sessionName])
       return true
-    } catch {
-      return false
+    } catch (error) {
+      if (error instanceof TmuxTimeoutError) {
+        throw error
+      }
+      if (isTmuxSessionAbsentError(error)) {
+        return false
+      }
+      throw error
     }
   }
 
@@ -138,7 +147,10 @@ export class SessionManager {
         'mouse',
         mouseValue,
       ])
-    } catch {
+    } catch (error) {
+      if (error instanceof TmuxTimeoutError) {
+        throw error
+      }
       // Session doesn't exist yet, will be applied on next ensureSession
     }
 
@@ -373,8 +385,14 @@ export class SessionManager {
     try {
       const output = this.runParsedTmux(['list-sessions', '-F', '#{session_name}'])
       return splitTmuxLines(output)
-    } catch {
-      return []
+    } catch (error) {
+      if (error instanceof TmuxTimeoutError) {
+        throw error
+      }
+      if (isTmuxSessionAbsentError(error)) {
+        return []
+      }
+      throw error
     }
   }
 
@@ -568,6 +586,20 @@ function runTmux(args: string[]): string {
   }
 
   return result.stdout.toString()
+}
+
+function isTmuxSessionAbsentError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false
+  }
+
+  const message = error.message.toLowerCase()
+  return (
+    message.includes("can't find session") ||
+    message.includes('session not found') ||
+    message.includes('failed to connect to server') ||
+    message.includes('no server running')
+  )
 }
 
 function isTmuxFormatError(error: unknown): boolean {

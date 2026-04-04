@@ -47,6 +47,7 @@ import {
   setForceWorkingUntil,
   applyForceWorkingOverrides,
 } from './forceWorkingStatus'
+import { TmuxTimeoutError } from './tmuxTimeout'
 import {
   MAX_FIELD_LENGTH,
   isValidSessionId,
@@ -780,7 +781,10 @@ async function refreshSessionsAsync(): Promise<void> {
           })
           return
         }
-        const sessions = sessionManager.listWindows()
+        const sessions = listWindowsSyncOrNull('worker_fallback')
+        if (!sessions) {
+          return
+        }
         recordSuccessfulRefreshWindowCount(countLocalSessions(sessions))
         const hydrated = hydrateSessionsWithAgentSessions(sessions)
         const withOverrides = applyForceWorkingOverrides(hydrated)
@@ -797,9 +801,29 @@ function refreshSessions() {
   void refreshSessionsAsync()
 }
 
+function listWindowsSyncOrNull(context: string): Session[] | null {
+  try {
+    return sessionManager.listWindows()
+  } catch (error) {
+    if (error instanceof TmuxTimeoutError) {
+      logger.warn('session_refresh_sync_skipped', {
+        context,
+        reason: 'tmux_timeout',
+        timeoutMs: config.tmuxTimeoutMs,
+        message: error.message,
+      })
+      return null
+    }
+    throw error
+  }
+}
+
 // Sync version for startup - ensures sessions are ready before server starts
 function refreshSessionsSync({ verifyAssociations = false } = {}) {
-  const sessions = sessionManager.listWindows()
+  const sessions = listWindowsSyncOrNull('sync_refresh')
+  if (!sessions) {
+    return
+  }
   recordSuccessfulRefreshWindowCount(countLocalSessions(sessions))
   const hydrated = hydrateSessionsWithAgentSessions(sessions, { verifyAssociations })
   registry.replaceSessions(mergeRemoteSessions(hydrated))
@@ -867,7 +891,7 @@ async function captureLastUserMessage(tmuxWindow: string) {
 
 // Log startup state for debugging orphan issues
 const startupActiveSessions = db.getActiveSessions()
-const startupWindows = sessionManager.listWindows()
+const startupWindows = listWindowsSyncOrNull('startup_state') ?? []
 logger.info('startup_state', {
   activeSessionCount: startupActiveSessions.length,
   windowCount: startupWindows.length,
