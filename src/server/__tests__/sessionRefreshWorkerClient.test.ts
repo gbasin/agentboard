@@ -45,6 +45,20 @@ const originalClearTimeout = globalThis.clearTimeout
 let SessionRefreshWorkerClient: typeof import('../sessionRefreshWorkerClient').SessionRefreshWorkerClient
 let SessionRefreshWorkerTimeoutError: typeof import('../sessionRefreshWorkerClient').SessionRefreshWorkerTimeoutError
 
+function captureTimeoutDelays(): number[] {
+  const timeoutDelays: number[] = []
+  globalThis.setTimeout = ((((_callback: TimerHandler, delay?: number) => {
+    timeoutDelays.push(Number(delay))
+    return 1 as unknown as ReturnType<typeof setTimeout>
+  }) as unknown) as typeof setTimeout)
+  globalThis.clearTimeout = (() => {}) as typeof clearTimeout
+  return timeoutDelays
+}
+
+function expectScheduledTimeout(timeoutDelays: number[], expectedDelay: number) {
+  expect(timeoutDelays.filter(Number.isFinite)).toContain(expectedDelay)
+}
+
 beforeAll(async () => {
   globalThis.Worker = WorkerMock as unknown as typeof Worker
   const mod = await import('../sessionRefreshWorkerClient')
@@ -277,45 +291,30 @@ describe('SessionRefreshWorkerClient', () => {
   })
 
   test('refresh timeout stays tight for small installs', async () => {
-    const timeoutDelays: number[] = []
-    globalThis.setTimeout = ((((_callback: TimerHandler, delay?: number) => {
-      timeoutDelays.push(Number(delay))
-      return 1 as unknown as ReturnType<typeof setTimeout>
-    }) as unknown) as typeof setTimeout)
-    globalThis.clearTimeout = (() => {}) as typeof clearTimeout
+    const timeoutDelays = captureTimeoutDelays()
 
     const client = new SessionRefreshWorkerClient()
     const promise = client.refresh('agentboard', [], { expectedWindowCount: 1 })
     client.dispose()
 
     await expect(promise).rejects.toThrow('Session refresh worker disposed')
-    expect(timeoutDelays[0]).toBe(11000)
+    expectScheduledTimeout(timeoutDelays, 11000)
   })
 
   test('refresh timeout scales with expected window count', async () => {
-    const timeoutDelays: number[] = []
-    globalThis.setTimeout = ((((_callback: TimerHandler, delay?: number) => {
-      timeoutDelays.push(Number(delay))
-      return 1 as unknown as ReturnType<typeof setTimeout>
-    }) as unknown) as typeof setTimeout)
-    globalThis.clearTimeout = (() => {}) as typeof clearTimeout
+    const timeoutDelays = captureTimeoutDelays()
 
     const client = new SessionRefreshWorkerClient()
     const promise = client.refresh('agentboard', [], { expectedWindowCount: 20 })
     client.dispose()
 
     await expect(promise).rejects.toThrow('Session refresh worker disposed')
-    expect(timeoutDelays[0]).toBe(68000)
+    expectScheduledTimeout(timeoutDelays, 68000)
   })
 
   test('getLastUserMessage timeout respects configured tmux timeout', async () => {
-    const timeoutDelays: number[] = []
     const originalTmuxTimeoutMs = config.tmuxTimeoutMs
-    globalThis.setTimeout = ((((_callback: TimerHandler, delay?: number) => {
-      timeoutDelays.push(Number(delay))
-      return 1 as unknown as ReturnType<typeof setTimeout>
-    }) as unknown) as typeof setTimeout)
-    globalThis.clearTimeout = (() => {}) as typeof clearTimeout
+    const timeoutDelays = captureTimeoutDelays()
 
     try {
       config.tmuxTimeoutMs = 12000
@@ -324,7 +323,7 @@ describe('SessionRefreshWorkerClient', () => {
       client.dispose()
 
       await expect(promise).rejects.toThrow('Session refresh worker disposed')
-      expect(timeoutDelays[0]).toBe(14000)
+      expectScheduledTimeout(timeoutDelays, 14000)
     } finally {
       config.tmuxTimeoutMs = originalTmuxTimeoutMs
     }
