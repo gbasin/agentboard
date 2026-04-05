@@ -35,7 +35,7 @@ function toWorkerResponseError(
   return new Error(response.error)
 }
 
-function getRefreshTimeoutMs(expectedWindowCount = 0): number {
+export function getRefreshTimeoutMs(expectedWindowCount = 0): number {
   const safeExpectedWindowCount = Number.isFinite(expectedWindowCount)
     ? Math.max(0, Math.floor(expectedWindowCount))
     : 0
@@ -48,7 +48,7 @@ function getRefreshTimeoutMs(expectedWindowCount = 0): number {
   return ((windowBudget + 1) * config.tmuxTimeoutMs) + REQUEST_TIMEOUT_OVERHEAD_MS
 }
 
-function getLastUserMessageTimeoutMs(): number {
+export function getLastUserMessageTimeoutMs(): number {
   return Math.max(
     MIN_LAST_USER_MESSAGE_TIMEOUT_MS,
     config.tmuxTimeoutMs + REQUEST_TIMEOUT_OVERHEAD_MS
