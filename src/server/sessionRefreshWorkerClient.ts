@@ -35,7 +35,10 @@ function toWorkerResponseError(
   return new Error(response.error)
 }
 
-export function getRefreshTimeoutMs(expectedWindowCount = 0): number {
+export function getRefreshTimeoutMs(
+  expectedWindowCount = 0,
+  tmuxTimeoutMs = config.tmuxTimeoutMs
+): number {
   const safeExpectedWindowCount = Number.isFinite(expectedWindowCount)
     ? Math.max(0, Math.floor(expectedWindowCount))
     : 0
@@ -45,13 +48,13 @@ export function getRefreshTimeoutMs(expectedWindowCount = 0): number {
   )
 
   // Refresh does one list-windows call plus one capture-pane call per window.
-  return ((windowBudget + 1) * config.tmuxTimeoutMs) + REQUEST_TIMEOUT_OVERHEAD_MS
+  return ((windowBudget + 1) * tmuxTimeoutMs) + REQUEST_TIMEOUT_OVERHEAD_MS
 }
 
-export function getLastUserMessageTimeoutMs(): number {
+export function getLastUserMessageTimeoutMs(tmuxTimeoutMs = config.tmuxTimeoutMs): number {
   return Math.max(
     MIN_LAST_USER_MESSAGE_TIMEOUT_MS,
-    config.tmuxTimeoutMs + REQUEST_TIMEOUT_OVERHEAD_MS
+    tmuxTimeoutMs + REQUEST_TIMEOUT_OVERHEAD_MS
   )
 }
 

@@ -1,6 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test'
 import type { RefreshWorkerResponse } from '../sessionRefreshWorker'
-import { config } from '../config'
 import { TMUX_TIMEOUT_ERROR_CODE } from '../tmuxTimeout'
 
 class WorkerMock {
@@ -281,22 +280,15 @@ describe('SessionRefreshWorkerClient', () => {
   })
 
   test('refresh timeout stays tight for small installs', async () => {
-    expect(getRefreshTimeoutMs(1)).toBe(11000)
+    expect(getRefreshTimeoutMs(1, 3000)).toBe(11000)
   })
 
   test('refresh timeout scales with expected window count', async () => {
-    expect(getRefreshTimeoutMs(20)).toBe(68000)
+    expect(getRefreshTimeoutMs(20, 3000)).toBe(68000)
   })
 
   test('getLastUserMessage timeout respects configured tmux timeout', async () => {
-    const originalTmuxTimeoutMs = config.tmuxTimeoutMs
-
-    try {
-      config.tmuxTimeoutMs = 12000
-      expect(getLastUserMessageTimeoutMs()).toBe(14000)
-    } finally {
-      config.tmuxTimeoutMs = originalTmuxTimeoutMs
-    }
+    expect(getLastUserMessageTimeoutMs(12000)).toBe(14000)
   })
 
   test('calls after dispose throw', async () => {
