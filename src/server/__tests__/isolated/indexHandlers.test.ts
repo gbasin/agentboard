@@ -391,6 +391,8 @@ let refreshWorkerResolve: ((sessions: Session[]) => void) | null = null
 let _refreshWorkerReject: ((error: Error) => void) | null = null
 let refreshWorkerError: Error | null = null
 let refreshWorkerExpectedWindowCounts: number[] = []
+let lastUserMessageWorkerError: Error | null = null
+let lastUserMessageWorkerMessage: string | null = null
 
 class SessionRefreshWorkerTimeoutErrorMock extends Error {
   constructor(message = 'Session refresh worker timed out') {
@@ -421,7 +423,12 @@ class SessionRefreshWorkerClientMock {
   }
 
   getLastUserMessage(): Promise<string | null> {
-    return Promise.resolve(null)
+    if (lastUserMessageWorkerError) {
+      const error = lastUserMessageWorkerError
+      lastUserMessageWorkerError = null
+      return Promise.reject(error)
+    }
+    return Promise.resolve(lastUserMessageWorkerMessage)
   }
 
   dispose(): void {}
@@ -528,13 +535,15 @@ beforeEach(() => {
   SessionManagerMock.instance = null
   refreshWorkerDeferred = false
   refreshWorkerSessions = []
-    refreshWorkerResolve = null
-    _refreshWorkerReject = null
-    refreshWorkerError = null
-    refreshWorkerExpectedWindowCounts = []
-    SessionRegistryMock.instance = null
-    resetDbState()
-    Object.assign(configState, defaultConfig)
+  refreshWorkerResolve = null
+  _refreshWorkerReject = null
+  refreshWorkerError = null
+  refreshWorkerExpectedWindowCounts = []
+  lastUserMessageWorkerError = null
+  lastUserMessageWorkerMessage = null
+  SessionRegistryMock.instance = null
+  resetDbState()
+  Object.assign(configState, defaultConfig)
   sessionManagerState = {
     listWindows: () => [],
     createWindow: () => ({ ...baseSession, id: 'created' }),
@@ -926,6 +935,49 @@ describe('server message handlers', () => {
     expect(refreshWorkerExpectedWindowCounts[1]).toBeGreaterThan(
       refreshWorkerExpectedWindowCounts[0] ?? 0
     )
+  })
+
+  test('last-user-message timeout does not poison the queued refresh', async () => {
+    const refreshedSession: Session = {
+      ...baseSession,
+      status: 'working',
+      name: 'refreshed',
+    }
+
+    const { serveOptions, registryInstance } = await loadIndex()
+    registryInstance.sessions = [baseSession]
+
+    const { ws } = createWs()
+    ws.data.currentSessionId = baseSession.id
+    ws.data.terminal = {
+      write: () => {},
+    } as never
+
+    const websocket = serveOptions.websocket
+    if (!websocket) throw new Error('WebSocket handlers not configured')
+
+    refreshWorkerSessions = [refreshedSession]
+    lastUserMessageWorkerError = new SessionRefreshWorkerTimeoutErrorMock(
+      'Session refresh worker timed out'
+    )
+
+    const baselineReplaceCalls = replaceSessionsCalls.length
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({
+        type: 'terminal-input',
+        sessionId: baseSession.id,
+        data: '\r',
+      })
+    )
+
+    for (let i = 0; i < 50 && replaceSessionsCalls.length === baselineReplaceCalls; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+
+    expect(replaceSessionsCalls.length).toBeGreaterThan(baselineReplaceCalls)
+    expect(replaceSessionsCalls.at(-1)).toEqual([refreshedSession])
   })
 
   test('startup sync timeout skips replacing sessions and leaves DB state intact', async () => {
@@ -2053,6 +2105,7 @@ describe('server message handlers', () => {
 
     let captureTarget = ''
     let captureArgs: string[] = []
+    let captureOptions: Parameters<typeof Bun.spawnSync>[1] | undefined
     let copyModeTarget = ''
     spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
       const command = Array.isArray(args[0]) ? args[0] : [String(args[0])]
@@ -2060,6 +2113,7 @@ describe('server message handlers', () => {
       if (tmuxArgs[0] === 'capture-pane') {
         captureArgs = tmuxArgs
         captureTarget = tmuxArgs[2] ?? ''
+        captureOptions = args[1]
       }
       if (tmuxArgs[0] === 'display-message') {
         copyModeTarget = tmuxArgs[3] ?? ''
@@ -2100,6 +2154,7 @@ describe('server message handlers', () => {
     expect(attached.switchTargets).toEqual(['agentboard'])
     expect(captureTarget).toBe(groupedTarget)
     expect(captureArgs[0]).toBe('capture-pane')
+    expect(captureOptions?.timeout).toBe(configState.tmuxTimeoutMs)
     const historyIndex = sent.findIndex(
       (message) =>
         message.type === 'terminal-output' &&
@@ -2114,6 +2169,72 @@ describe('server message handlers', () => {
       JSON.stringify({ type: 'tmux-check-copy-mode', sessionId: baseSession.id })
     )
     expect(copyModeTarget).toBe(groupedTarget)
+  })
+
+  test('terminal attach continues when local history capture times out', async () => {
+    const { serveOptions, registryInstance } = await loadIndex()
+    registryInstance.sessions = [baseSession]
+
+    const { ws, sent } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) {
+      throw new Error('WebSocket handlers not configured')
+    }
+
+    let captureTimeout: number | undefined
+    spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
+      const command = Array.isArray(args[0]) ? args[0] : [String(args[0])]
+      if (command[0] === 'tmux' && command[1] === 'capture-pane') {
+        captureTimeout = args[1]?.timeout
+        return {
+          exitCode: null,
+          signalCode: 'SIGTERM',
+          stdout: Buffer.from(''),
+          stderr: Buffer.from(''),
+        } as unknown as ReturnType<typeof Bun.spawnSync>
+      }
+
+      return {
+        exitCode: 0,
+        stdout: Buffer.from(''),
+        stderr: Buffer.from(''),
+      } as ReturnType<typeof Bun.spawnSync>
+    }) as typeof Bun.spawnSync
+
+    websocket.open?.(ws as never)
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({
+        type: 'terminal-attach',
+        sessionId: baseSession.id,
+        tmuxTarget: baseSession.tmuxWindow,
+      })
+    )
+
+    await new Promise((r) => setTimeout(r, 0))
+    await new Promise((r) => setTimeout(r, 0))
+
+    const attached = ws.data.terminal
+    if (!attached) {
+      throw new Error('Expected terminal to be created')
+    }
+
+    expect(captureTimeout).toBe(configState.tmuxTimeoutMs)
+    expect(ws.data.currentSessionId).toBe(baseSession.id)
+    expect(
+      sent.some(
+        (message) =>
+          message.type === 'terminal-ready' &&
+          message.sessionId === baseSession.id
+      )
+    ).toBe(true)
+    expect(
+      sent.some(
+        (message) =>
+          message.type === 'terminal-output' &&
+          message.sessionId === baseSession.id
+      )
+    ).toBe(false)
   })
 
   test('validates tmux target on terminal attach', async () => {

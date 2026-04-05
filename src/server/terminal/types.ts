@@ -47,6 +47,7 @@ interface TerminalProxyOptions {
   host?: string
   sshOptions?: string[]
   commandTimeoutMs?: number
+  mutationTimeoutMs?: number
 }
 
 interface ITerminalProxy {

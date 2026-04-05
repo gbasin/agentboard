@@ -1,5 +1,7 @@
+import { config } from '../config'
 import { logger } from '../logger'
 import { withTmuxUtf8Flag } from '../tmuxFormat'
+import { TmuxTimeoutError } from '../tmuxTimeout'
 import type {
   ITerminalProxy,
   SpawnFn,
@@ -15,6 +17,8 @@ abstract class TerminalProxyBase implements ITerminalProxy {
   protected readonly spawnSync: SpawnSyncFn
   protected readonly now: () => number
   protected readonly wait: WaitFn
+  protected readonly commandTimeoutMs: number
+  protected readonly mutationTimeoutMs: number
   protected state: TerminalState = TerminalState.INITIAL
   protected currentWindow: string | null = null
   protected readyAt: number | null = null
@@ -36,6 +40,8 @@ abstract class TerminalProxyBase implements ITerminalProxy {
     this.now = options.now ?? Date.now
     this.wait =
       options.wait ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)))
+    this.commandTimeoutMs = options.commandTimeoutMs ?? config.tmuxTimeoutMs
+    this.mutationTimeoutMs = options.mutationTimeoutMs ?? config.tmuxMutationTimeoutMs
   }
 
   start(): Promise<void> {
@@ -89,11 +95,20 @@ abstract class TerminalProxyBase implements ITerminalProxy {
     this.currentWindow = extractWindowId(target)
   }
 
-  protected runTmux(args: string[]): string {
+  protected runTmux(
+    args: string[],
+    options: { timeoutMs?: number } = {}
+  ): string {
+    const timeoutMs = options.timeoutMs ?? this.commandTimeoutMs
     const result = this.spawnSync(['tmux', ...args], {
       stdout: 'pipe',
       stderr: 'pipe',
+      timeout: timeoutMs,
     })
+
+    if (result.signalCode === 'SIGTERM' || result.exitCode === null) {
+      throw new TmuxTimeoutError(args.join(' '), timeoutMs)
+    }
 
     if (result.exitCode !== 0) {
       const error = result.stderr?.toString() || 'tmux command failed'
@@ -103,8 +118,15 @@ abstract class TerminalProxyBase implements ITerminalProxy {
     return result.stdout?.toString() ?? ''
   }
 
-  protected runParsedTmux(args: string[]): string {
-    return this.runTmux(withTmuxUtf8Flag(args))
+  protected runTmuxMutation(args: string[]): string {
+    return this.runTmux(args, { timeoutMs: this.mutationTimeoutMs })
+  }
+
+  protected runParsedTmux(
+    args: string[],
+    options: { timeoutMs?: number } = {}
+  ): string {
+    return this.runTmux(withTmuxUtf8Flag(args), options)
   }
 
   protected logEvent(event: string, payload: Record<string, unknown> = {}): void {

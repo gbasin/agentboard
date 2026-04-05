@@ -1250,6 +1250,35 @@ describe('SessionManager', () => {
     }
   })
 
+  test('listWindows returns empty when tmux socket is unavailable', () => {
+    const sessionName = 'agentboard-no-socket'
+    const runTmux = (args: string[]) => {
+      const command = normalizeParsedTmuxArgs(args)[0]
+      if (command === 'has-session') {
+        throw new Error(
+          'error connecting to /private/tmp/tmux-501/missing (No such file or directory)'
+        )
+      }
+      if (command === 'list-sessions') {
+        return ''
+      }
+      return ''
+    }
+
+    const manager = new SessionManager(sessionName, {
+      runTmux,
+      capturePaneContent: () => null,
+    })
+
+    const originalPrefixes = config.discoverPrefixes
+    config.discoverPrefixes = []
+    try {
+      expect(manager.listWindows()).toEqual([])
+    } finally {
+      config.discoverPrefixes = originalPrefixes
+    }
+  })
+
   test('createWindow uses new-session when session does not exist', () => {
     const sessionName = 'agentboard-first-window'
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentboard-'))
@@ -1514,6 +1543,27 @@ describe('SessionManager', () => {
       }
       if (command === 'list-sessions') {
         return ''
+      }
+      return ''
+    }
+
+    const manager = new SessionManager(sessionName, {
+      runTmux,
+      capturePaneContent: () => null,
+      mouseMode: true,
+    })
+
+    expect(() => manager.setMouseMode(false)).not.toThrow()
+  })
+
+  test('setMouseMode ignores missing tmux socket errors', () => {
+    const sessionName = 'agentboard-setmouse-no-socket'
+    const runTmux = (args: string[]) => {
+      const command = normalizeParsedTmuxArgs(args)[0]
+      if (command === 'set-option' || command === 'list-sessions') {
+        throw new Error(
+          'error connecting to /private/tmp/tmux-501/missing (No such file or directory)'
+        )
       }
       return ''
     }

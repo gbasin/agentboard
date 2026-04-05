@@ -434,6 +434,7 @@ const logPoller = new LogPoller(db, registry, {
   matchWorker: config.logMatchWorker,
 })
 const sessionRefreshWorker = new SessionRefreshWorkerClient()
+const lastUserMessageWorker = new SessionRefreshWorkerClient()
 
 // Active sessions update on every refresh — cheap (few rows).
 // Inactive sessions query is expensive — only run on actual mutations.
@@ -888,7 +889,7 @@ function scheduleLastUserMessageCapture(sessionId: string) {
 
 async function captureLastUserMessage(tmuxWindow: string) {
   try {
-    const message = await sessionRefreshWorker.getLastUserMessage(tmuxWindow)
+    const message = await lastUserMessageWorker.getLastUserMessage(tmuxWindow)
     if (!message || !message.trim()) return
     const record = db.getSessionByWindow(tmuxWindow)
     if (!record) return
@@ -2638,6 +2639,7 @@ function captureTmuxHistory(target: string): string | null {
     const result = Bun.spawnSync(['tmux', 'capture-pane', '-t', target, '-p', '-J'], {
       stdout: 'pipe',
       stderr: 'pipe',
+      timeout: config.tmuxTimeoutMs,
     })
     if (result.exitCode !== 0) {
       return null

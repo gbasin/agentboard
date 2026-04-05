@@ -631,7 +631,14 @@ function isTmuxSessionAbsentError(error: unknown): boolean {
     message.includes("can't find session") ||
     message.includes('session not found') ||
     message.includes('failed to connect to server') ||
-    message.includes('no server running')
+    message.includes('no server running') ||
+    (
+      message.includes('error connecting to ') &&
+      (
+        message.includes('no such file or directory') ||
+        message.includes('connection refused')
+      )
+    )
   )
 }
 

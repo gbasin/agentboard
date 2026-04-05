@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { TerminalProxyBase } from '../terminal/TerminalProxyBase'
+import { TmuxTimeoutError } from '../tmuxTimeout'
 import type { SpawnSyncFn, TerminalProxyOptions } from '../terminal/types'
 
 const okSpawnSync: SpawnSyncFn = () =>
@@ -16,6 +17,15 @@ const errorSpawnSync: SpawnSyncFn = () =>
     stderr: Buffer.from('no tmux'),
   }) as ReturnType<typeof Bun.spawnSync>
 
+const timeoutSpawnSync: SpawnSyncFn = (_args, options) =>
+  ({
+    exitCode: null,
+    signalCode: 'SIGTERM',
+    stdout: Buffer.from(''),
+    stderr: Buffer.from(''),
+    timeoutSeen: options?.timeout,
+  }) as unknown as ReturnType<typeof Bun.spawnSync>
+
 function makeOptions(spawnSync: SpawnSyncFn): TerminalProxyOptions {
   return {
     connectionId: 'conn-1',
@@ -23,6 +33,8 @@ function makeOptions(spawnSync: SpawnSyncFn): TerminalProxyOptions {
     baseSession: 'agentboard',
     onData: () => {},
     spawnSync,
+    commandTimeoutMs: 1234,
+    mutationTimeoutMs: 5678,
   }
 }
 
@@ -112,5 +124,13 @@ describe('TerminalProxyBase', () => {
 
     const errorProxy = new TestProxy(makeOptions(errorSpawnSync))
     expect(() => errorProxy.runTmuxCommand(['list-windows'])).toThrow('no tmux')
+  })
+
+  test('runTmux applies a timeout and throws TmuxTimeoutError when tmux hangs', () => {
+    const proxy = new TestProxy(makeOptions(timeoutSpawnSync))
+    expect(() => proxy.runTmuxCommand(['list-windows'])).toThrow(TmuxTimeoutError)
+    expect(() => proxy.runTmuxCommand(['list-windows'])).toThrow(
+      'tmux list-windows timed out after 1234ms'
+    )
   })
 })
