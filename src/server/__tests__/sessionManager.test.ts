@@ -5,6 +5,7 @@ import path from 'node:path'
 import { config } from '../config'
 import { SessionManager } from '../SessionManager'
 import { TMUX_FIELD_SEPARATOR } from '../tmuxFormat'
+import { TmuxTimeoutError } from '../tmuxTimeout'
 
 const bunAny = Bun as typeof Bun & {
   spawnSync: typeof Bun.spawnSync
@@ -966,6 +967,79 @@ describe('SessionManager', () => {
     expect(setOptCall).toEqual(['set-option', '-w', '-t', `${sessionName}:1`, 'remain-on-exit', 'failed'])
   })
 
+  test('setWindowOption applies the configured mutation timeout to tmux writes', () => {
+    const spawnCalls: Array<{ args: string[]; timeout?: number }> = []
+    bunAny.spawnSync = ((args, options) => {
+      spawnCalls.push({
+        args: Array.isArray(args) ? [...args] : [],
+        timeout:
+          typeof options === 'object' && options !== null && 'timeout' in options
+            ? (options.timeout as number | undefined)
+            : undefined,
+      })
+      return {
+        exitCode: 0,
+        stdout: Buffer.from(''),
+        stderr: Buffer.from(''),
+      } as ReturnType<typeof Bun.spawnSync>
+    }) as typeof Bun.spawnSync
+
+    try {
+      const manager = new SessionManager('agentboard-default-timeout')
+      manager.setWindowOption('agentboard-default-timeout:1', 'remain-on-exit', 'failed')
+
+      expect(spawnCalls[0]?.args).toEqual([
+        'tmux',
+        'set-option',
+        '-w',
+        '-t',
+        'agentboard-default-timeout:1',
+        'remain-on-exit',
+        'failed',
+      ])
+      expect(spawnCalls[0]?.timeout).toBe(config.tmuxMutationTimeoutMs)
+    } finally {
+      bunAny.spawnSync = originalSpawnSync
+    }
+  })
+
+  test('setMouseMode applies base session updates with the mutation timeout and no preflight probe', () => {
+    const sessionName = 'agentboard-setmouse-timeout'
+    const spawnCalls: Array<{ args: string[]; timeout?: number }> = []
+    bunAny.spawnSync = ((args, options) => {
+      spawnCalls.push({
+        args: Array.isArray(args) ? [...args] : [],
+        timeout:
+          typeof options === 'object' && options !== null && 'timeout' in options
+            ? (options.timeout as number | undefined)
+            : undefined,
+      })
+
+      return {
+        exitCode: 0,
+        stdout: Buffer.from(''),
+        stderr: Buffer.from(''),
+      } as ReturnType<typeof Bun.spawnSync>
+    }) as typeof Bun.spawnSync
+
+    try {
+      const manager = new SessionManager(sessionName, {
+        capturePaneContent: () => null,
+        mouseMode: true,
+      })
+
+      manager.setMouseMode(false)
+
+      expect(spawnCalls.some((call) => call.args[1] === 'has-session')).toBe(false)
+      expect(spawnCalls[0]).toEqual({
+        args: ['tmux', 'set-option', '-t', sessionName, 'mouse', 'off'],
+        timeout: config.tmuxMutationTimeoutMs,
+      })
+    } finally {
+      bunAny.spawnSync = originalSpawnSync
+    }
+  })
+
   test('listWindows uses default capturePaneContent on success', () => {
     const sessionName = 'agentboard-default-capture'
     const runner = createTmuxRunner(
@@ -1176,6 +1250,35 @@ describe('SessionManager', () => {
     }
   })
 
+  test('listWindows returns empty when tmux socket is unavailable', () => {
+    const sessionName = 'agentboard-no-socket'
+    const runTmux = (args: string[]) => {
+      const command = normalizeParsedTmuxArgs(args)[0]
+      if (command === 'has-session') {
+        throw new Error(
+          'error connecting to /private/tmp/tmux-501/missing (No such file or directory)'
+        )
+      }
+      if (command === 'list-sessions') {
+        return ''
+      }
+      return ''
+    }
+
+    const manager = new SessionManager(sessionName, {
+      runTmux,
+      capturePaneContent: () => null,
+    })
+
+    const originalPrefixes = config.discoverPrefixes
+    config.discoverPrefixes = []
+    try {
+      expect(manager.listWindows()).toEqual([])
+    } finally {
+      config.discoverPrefixes = originalPrefixes
+    }
+  })
+
   test('createWindow uses new-session when session does not exist', () => {
     const sessionName = 'agentboard-first-window'
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentboard-'))
@@ -1364,5 +1467,272 @@ describe('SessionManager', () => {
     expect(mouseSetCalls.some((call) => call.includes('other-session'))).toBe(
       false
     )
+  })
+
+  test('setMouseMode rethrows non-timeout base session failures', () => {
+    const sessionName = 'agentboard-setmouse-error'
+    const runTmux = (args: string[]) => {
+      const command = normalizeParsedTmuxArgs(args)[0]
+      if (command === 'set-option') {
+        throw new Error('set-option failed')
+      }
+      if (command === 'list-sessions') {
+        return sessionName
+      }
+      return ''
+    }
+
+    const manager = new SessionManager(sessionName, {
+      runTmux,
+      capturePaneContent: () => null,
+      mouseMode: true,
+    })
+
+    expect(() => manager.setMouseMode(false)).toThrow('set-option failed')
+  })
+
+  test('setMouseMode keeps previous in-memory value when apply fails', () => {
+    const sessionName = 'agentboard-setmouse-rollback'
+    const runner = createTmuxRunner([
+      {
+        name: sessionName,
+        windows: [],
+      },
+    ])
+    let firstSetOptionFailed = false
+    const runTmux = (args: string[]) => {
+      const normalized = normalizeParsedTmuxArgs(args)
+      const command = normalized[0]
+      if (
+        command === 'set-option' &&
+        !firstSetOptionFailed &&
+        normalized[2] === sessionName
+      ) {
+        firstSetOptionFailed = true
+        throw new Error('set-option failed')
+      }
+      return runner.runTmux(args)
+    }
+
+    const manager = new SessionManager(sessionName, {
+      runTmux,
+      capturePaneContent: () => null,
+      mouseMode: true,
+    })
+
+    expect(() => manager.setMouseMode(false)).toThrow('set-option failed')
+
+    runner.calls.length = 0
+    manager.listWindows()
+
+    expect(runner.calls).toContainEqual([
+      'set-option',
+      '-t',
+      sessionName,
+      'mouse',
+      'on',
+    ])
+  })
+
+  test('setMouseMode ignores base session exit races', () => {
+    const sessionName = 'agentboard-setmouse-race'
+    const runTmux = (args: string[]) => {
+      const command = normalizeParsedTmuxArgs(args)[0]
+      if (command === 'set-option') {
+        throw new Error(`can't find session: ${sessionName}`)
+      }
+      if (command === 'list-sessions') {
+        return ''
+      }
+      return ''
+    }
+
+    const manager = new SessionManager(sessionName, {
+      runTmux,
+      capturePaneContent: () => null,
+      mouseMode: true,
+    })
+
+    expect(() => manager.setMouseMode(false)).not.toThrow()
+  })
+
+  test('setMouseMode ignores missing tmux socket errors', () => {
+    const sessionName = 'agentboard-setmouse-no-socket'
+    const runTmux = (args: string[]) => {
+      const command = normalizeParsedTmuxArgs(args)[0]
+      if (command === 'set-option' || command === 'list-sessions') {
+        throw new Error(
+          'error connecting to /private/tmp/tmux-501/missing (No such file or directory)'
+        )
+      }
+      return ''
+    }
+
+    const manager = new SessionManager(sessionName, {
+      runTmux,
+      capturePaneContent: () => null,
+      mouseMode: true,
+    })
+
+    expect(() => manager.setMouseMode(false)).not.toThrow()
+  })
+
+  test('setMouseMode throws and rolls back when grouped session sync fails', () => {
+    const sessionName = 'agentboard-setmouse-grouped'
+    const runner = createTmuxRunner([
+      {
+        name: sessionName,
+        windows: [],
+      },
+      {
+        name: `${sessionName}-ws-a`,
+        windows: [],
+      },
+      {
+        name: `${sessionName}-ws-b`,
+        windows: [],
+      },
+    ])
+    let groupedFailureInjected = false
+    const runTmux = (args: string[]) => {
+      const normalized = normalizeParsedTmuxArgs(args)
+      if (
+        normalized[0] === 'set-option' &&
+        normalized[2] === `${sessionName}-ws-b` &&
+        !groupedFailureInjected
+      ) {
+        groupedFailureInjected = true
+        throw new Error('grouped set-option failed')
+      }
+      return runner.runTmux(args)
+    }
+
+    const manager = new SessionManager(sessionName, {
+      runTmux,
+      capturePaneContent: () => null,
+      mouseMode: true,
+    })
+
+    expect(() => manager.setMouseMode(false)).toThrow('grouped set-option failed')
+    expect(runner.calls).toContainEqual([
+      'set-option',
+      '-t',
+      sessionName,
+      'mouse',
+      'off',
+    ])
+    expect(runner.calls).toContainEqual([
+      'set-option',
+      '-t',
+      `${sessionName}-ws-a`,
+      'mouse',
+      'off',
+    ])
+    expect(runner.calls).toContainEqual([
+      'set-option',
+      '-t',
+      `${sessionName}-ws-a`,
+      'mouse',
+      'on',
+    ])
+    expect(runner.calls).toContainEqual([
+      'set-option',
+      '-t',
+      sessionName,
+      'mouse',
+      'on',
+    ])
+
+    runner.calls.length = 0
+    manager.listWindows()
+
+    expect(runner.calls).toContainEqual([
+      'set-option',
+      '-t',
+      sessionName,
+      'mouse',
+      'on',
+    ])
+  })
+
+  test('setMouseMode throws and rolls back when grouped session discovery fails', () => {
+    const sessionName = 'agentboard-setmouse-discovery'
+    let setOptionCount = 0
+    let failDiscovery = true
+    const runTmux = (args: string[]) => {
+      const normalized = normalizeParsedTmuxArgs(args)
+      if (normalized[0] === 'set-option') {
+        setOptionCount += 1
+        return ''
+      }
+      if (normalized[0] === 'list-sessions') {
+        if (failDiscovery) {
+          throw new TmuxTimeoutError('list-sessions', 3000)
+        }
+        return ''
+      }
+      if (normalized[0] === 'list-windows') {
+        return ''
+      }
+      return ''
+    }
+
+    const manager = new SessionManager(sessionName, {
+      runTmux,
+      capturePaneContent: () => null,
+      mouseMode: true,
+    })
+
+    expect(() => manager.setMouseMode(false)).toThrow(TmuxTimeoutError)
+    expect(setOptionCount).toBe(2)
+
+    setOptionCount = 0
+    failDiscovery = false
+    manager.ensureSession()
+    expect(setOptionCount).toBe(1)
+  })
+
+  test('listWindows preserves lastActivity when pane capture times out', () => {
+    const sessionName = 'agentboard-capture-timeout'
+    const runner = createTmuxRunner([
+      {
+        name: sessionName,
+        windows: [
+          {
+            id: '1',
+            index: 1,
+            name: 'alpha',
+            path: '/tmp/project',
+            activity: 0,
+            creation: 0,
+            command: 'codex',
+          },
+        ],
+      },
+    ])
+    const captureSequence = [makePaneCapture('idle'), null] as const
+    let captureIndex = 0
+    let nowValue = 1_700_000_000_000
+
+    const manager = new SessionManager(sessionName, {
+      runTmux: runner.runTmux,
+      capturePaneContent: () => captureSequence[captureIndex++] ?? null,
+      now: () => nowValue,
+      mouseMode: true,
+    })
+
+    const first = manager.listWindows()[0]
+    if (!first) {
+      throw new Error('Expected first session')
+    }
+
+    nowValue += 5000
+    const second = manager.listWindows()[0]
+    if (!second) {
+      throw new Error('Expected second session')
+    }
+
+    expect(second.status).toBe('waiting')
+    expect(second.lastActivity).toBe(first.lastActivity)
   })
 })

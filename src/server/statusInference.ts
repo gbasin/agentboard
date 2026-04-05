@@ -150,6 +150,12 @@ export interface InferSessionStatusResult {
   nextCache: PaneCacheState
 }
 
+export interface InferCachedSessionStatusArgs {
+  prev: PaneCacheState | undefined
+  now: number
+  workingGracePeriodMs: number
+}
+
 /**
  * Shared, pure function for inferring session status from pane content.
  * Used by both SessionManager (main thread) and sessionRefreshWorker.
@@ -209,4 +215,24 @@ export function inferSessionStatus(args: InferSessionStatusArgs): InferSessionSt
 
   // Content unchanged and grace period expired
   return { status: 'waiting', lastChanged, nextCache }
+}
+
+export function inferCachedSessionStatus(
+  args: InferCachedSessionStatusArgs
+): InferSessionStatusResult | null {
+  const { prev, now, workingGracePeriodMs } = args
+  if (!prev) {
+    return null
+  }
+
+  return inferSessionStatus({
+    prev,
+    next: {
+      content: prev.content,
+      width: prev.width,
+      height: prev.height,
+    },
+    now,
+    workingGracePeriodMs,
+  })
 }

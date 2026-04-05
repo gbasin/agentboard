@@ -34,6 +34,25 @@ describe('ensureTmux', () => {
     expect(() => ensureTmux()).toThrow(/tmux is required/i)
   })
 
+  test('throws when tmux probe times out', () => {
+    bunAny.spawnSync = () =>
+      ({
+        exitCode: null,
+        signalCode: 'SIGTERM',
+        stdout: Buffer.from(''),
+        stderr: Buffer.from(''),
+      }) as unknown as ReturnType<typeof Bun.spawnSync>
+
+    expect(() => ensureTmux()).toThrow(/did not respond to the startup probe/i)
+
+    try {
+      ensureTmux()
+      throw new Error('Expected ensureTmux to throw')
+    } catch (error) {
+      expect((error as Error).message).not.toContain('brew install tmux')
+    }
+  })
+
   test('throws when spawnSync fails', () => {
     bunAny.spawnSync = () => {
       throw new Error('boom')

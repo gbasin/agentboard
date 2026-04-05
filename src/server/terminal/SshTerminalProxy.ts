@@ -18,14 +18,14 @@ class SshTerminalProxy extends TerminalProxyBase {
   private rows = 24
   private clientTty: string | null = null
   private sshArgs: string[]
-  private commandTimeoutMs: number
+  private sshCommandTimeoutMs: number
   private startAttemptId = 0
 
   constructor(options: ConstructorParameters<typeof TerminalProxyBase>[0]) {
     super(options)
     const host = this.options.host ?? ''
     const sshOptions = this.options.sshOptions ?? []
-    this.commandTimeoutMs = this.options.commandTimeoutMs ?? 10_000
+    this.sshCommandTimeoutMs = this.options.commandTimeoutMs ?? 10_000
     // Disable SSH multiplexing for command-channel calls to prevent hangs
     // from stale control sockets when the long-running attach process dies.
     this.sshArgs = ['ssh', ...sshOptions, '-o', 'ControlMaster=no', host]
@@ -100,7 +100,7 @@ class SshTerminalProxy extends TerminalProxyBase {
 
     const timeout = setTimeout(() => {
       try { proc.kill() } catch {}
-    }, this.commandTimeoutMs)
+    }, this.sshCommandTimeoutMs)
 
     let exitCode: number
     let stdoutText: string

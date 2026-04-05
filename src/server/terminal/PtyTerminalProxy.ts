@@ -65,7 +65,7 @@ class PtyTerminalProxy extends TerminalProxyBase {
     }
 
     try {
-      this.runTmux(['kill-session', '-t', this.options.sessionName])
+      this.runTmuxMutation(['kill-session', '-t', this.options.sessionName])
       this.logEvent('terminal_session_cleanup', {
         sessionName: this.options.sessionName,
       })
@@ -95,7 +95,7 @@ class PtyTerminalProxy extends TerminalProxyBase {
     })
 
     try {
-      this.runTmux([
+      this.runTmuxMutation([
         'new-session',
         '-d',
         '-t',
@@ -132,7 +132,7 @@ class PtyTerminalProxy extends TerminalProxyBase {
 
     if (mouseValue) {
       try {
-        this.runTmux([
+        this.runTmuxMutation([
           'set-option',
           '-t',
           this.options.sessionName,

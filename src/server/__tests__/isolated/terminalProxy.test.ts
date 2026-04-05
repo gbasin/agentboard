@@ -3,6 +3,7 @@ import { PtyTerminalProxy as TerminalProxy } from '../../terminal'
 import { buildTmuxFormat } from '../../tmuxFormat'
 
 const CLIENT_TTY_OUTPUT = `${buildTmuxFormat(['/dev/pts/9', '4242'])}\n`
+const CLIENT_TTY_FORMAT = buildTmuxFormat(['#{client_tty}', '#{client_pid}'])
 
 function getTmuxCommand(args: string[]): string {
   const tmuxArgs = args[0] === 'tmux' ? args.slice(1) : args
@@ -14,7 +15,10 @@ function createSpawnHarness() {
     args: string[]
     options: Parameters<typeof Bun.spawn>[1]
   }> = []
-  const spawnSyncCalls: string[][] = []
+  const spawnSyncCalls: Array<{
+    args: string[]
+    options?: Parameters<typeof Bun.spawnSync>[1]
+  }> = []
   const writes: string[] = []
   const resizes: Array<{ cols: number; rows: number }> = []
   let closed = false
@@ -61,7 +65,7 @@ function createSpawnHarness() {
   }
 
   const spawnSync = (args: string[], _options?: Parameters<typeof Bun.spawnSync>[1]) => {
-    spawnSyncCalls.push(args)
+    spawnSyncCalls.push({ args, options: _options })
     const command = getTmuxCommand(args)
     if (command === 'list-clients') {
       return {
@@ -117,15 +121,26 @@ describe('TerminalProxy', () => {
 
     await proxy.start()
 
-    expect(harness.spawnSyncCalls).toContainEqual([
-      'tmux',
-      'new-session',
-      '-d',
-      '-t',
-      'agentboard',
-      '-s',
-      'agentboard-ws-abc',
-    ])
+    expect(harness.spawnSyncCalls).toEqual(
+      expect.arrayContaining([
+        {
+          args: [
+            'tmux',
+            'new-session',
+            '-d',
+            '-t',
+            'agentboard',
+            '-s',
+            'agentboard-ws-abc',
+          ],
+          options: expect.objectContaining({ timeout: 15000 }),
+        },
+        {
+          args: ['tmux', '-u', 'list-clients', '-F', CLIENT_TTY_FORMAT],
+          options: expect.objectContaining({ timeout: 3000 }),
+        },
+      ])
+    )
     expect(harness.spawnCalls[0]?.args).toEqual([
       'tmux',
       'attach',
@@ -158,20 +173,14 @@ describe('TerminalProxy', () => {
     })
 
     expect(readyCalls).toBe(1)
-    expect(harness.spawnSyncCalls).toContainEqual([
-      'tmux',
-      'switch-client',
-      '-c',
-      '/dev/pts/9',
-      '-t',
-      'external:@2',
-    ])
-    expect(harness.spawnSyncCalls).toContainEqual([
-      'tmux',
-      'refresh-client',
-      '-t',
-      '/dev/pts/9',
-    ])
+    expect(harness.spawnSyncCalls).toContainEqual({
+      args: ['tmux', 'switch-client', '-c', '/dev/pts/9', '-t', 'external:@2'],
+      options: expect.objectContaining({ timeout: 3000 }),
+    })
+    expect(harness.spawnSyncCalls).toContainEqual({
+      args: ['tmux', 'refresh-client', '-t', '/dev/pts/9'],
+      options: expect.objectContaining({ timeout: 3000 }),
+    })
     expect(proxy.getCurrentWindow()).toBe('@2')
   })
 
@@ -190,14 +199,10 @@ describe('TerminalProxy', () => {
     await proxy.start()
     await proxy.switchTo('agentboard:@2')
 
-    expect(harness.spawnSyncCalls).toContainEqual([
-      'tmux',
-      'switch-client',
-      '-c',
-      '/dev/pts/9',
-      '-t',
-      'agentboard-ws-abc:@2',
-    ])
+    expect(harness.spawnSyncCalls).toContainEqual({
+      args: ['tmux', 'switch-client', '-c', '/dev/pts/9', '-t', 'agentboard-ws-abc:@2'],
+      options: expect.objectContaining({ timeout: 3000 }),
+    })
     expect(proxy.getCurrentWindow()).toBe('@2')
   })
 
@@ -216,14 +221,10 @@ describe('TerminalProxy', () => {
     await proxy.start()
     await proxy.switchTo('agentboard')
 
-    expect(harness.spawnSyncCalls).toContainEqual([
-      'tmux',
-      'switch-client',
-      '-c',
-      '/dev/pts/9',
-      '-t',
-      'agentboard-ws-abc',
-    ])
+    expect(harness.spawnSyncCalls).toContainEqual({
+      args: ['tmux', 'switch-client', '-c', '/dev/pts/9', '-t', 'agentboard-ws-abc'],
+      options: expect.objectContaining({ timeout: 3000 }),
+    })
     expect(proxy.getCurrentWindow()).toBe('agentboard-ws-abc')
   })
 
@@ -519,11 +520,9 @@ describe('TerminalProxy', () => {
     expect(harness.resizes).toEqual([{ cols: 120, rows: 40 }])
     expect(harness.wasClosed()).toBe(true)
     expect(harness.wasKilled()).toBe(true)
-    expect(harness.spawnSyncCalls).toContainEqual([
-      'tmux',
-      'kill-session',
-      '-t',
-      'agentboard-ws-abc',
-    ])
+    expect(harness.spawnSyncCalls).toContainEqual({
+      args: ['tmux', 'kill-session', '-t', 'agentboard-ws-abc'],
+      options: expect.objectContaining({ timeout: 15000 }),
+    })
   })
 })

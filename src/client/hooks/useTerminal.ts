@@ -160,7 +160,6 @@ export function useTerminal({
   const serializeAddonRef = useRef<SerializeAddon | null>(null)
   const progressAddonRef = useRef<ProgressAddon | null>(null)
   const resizeTimer = useRef<number | null>(null)
-  const scrollTimer = useRef<number | null>(null)
   const fitTimer = useRef<number | null>(null)
   const attachDebounceRef = useRef<number | null>(null)
 
@@ -173,6 +172,7 @@ export function useTerminal({
   const attachedSessionRef = useRef<string | null>(null)
   const attachedTargetRef = useRef<string | null>(null)
   const attachedConnectionEpochRef = useRef<number>(-1)
+  const focusAfterAttachSessionRef = useRef<string | null>(null)
   const switchStartRef = useRef<number | null>(null)
   const sendMessageRef = useRef(sendMessage)
   const onScrollChangeRef = useRef(onScrollChange)
@@ -900,6 +900,7 @@ export function useTerminal({
         attachedSessionRef.current = null
         attachedTargetRef.current = null
         attachedConnectionEpochRef.current = -1
+        focusAfterAttachSessionRef.current = null
         inTmuxCopyModeRef.current = false
       }
       terminal.reset()
@@ -918,6 +919,7 @@ export function useTerminal({
         attachedSessionRef.current = null
         attachedTargetRef.current = null
         attachedConnectionEpochRef.current = -1
+        focusAfterAttachSessionRef.current = null
         inTmuxCopyModeRef.current = false
       }
       return
@@ -929,6 +931,7 @@ export function useTerminal({
       attachedSessionRef.current = null
       attachedTargetRef.current = null
       attachedConnectionEpochRef.current = -1
+      focusAfterAttachSessionRef.current = null
       // Reset copy-mode state - each session has its own scroll position
       inTmuxCopyModeRef.current = false
     }
@@ -967,6 +970,7 @@ export function useTerminal({
       attachedSessionRef.current = sessionId
       attachedTargetRef.current = tmuxTarget ?? null
       attachedConnectionEpochRef.current = connectionEpoch
+      focusAfterAttachSessionRef.current = sessionId
 
       // Store the start time so the output subscriber can measure end-to-end
       switchStartRef.current = switchStart
@@ -1016,17 +1020,6 @@ export function useTerminal({
         from: prevAttached ?? null,
         immediate: isSessionSwitch,
       })
-
-      // Scroll to bottom and focus after content loads
-      if (scrollTimer.current) {
-        window.clearTimeout(scrollTimer.current)
-      }
-      scrollTimer.current = window.setTimeout(() => {
-        terminal.scrollToBottom()
-        checkScrollPosition()
-        // Focus terminal so user can start typing immediately
-        terminal.focus()
-      }, 300)
     }
 
     // No attach needed — already attached to this session+target
@@ -1053,6 +1046,7 @@ export function useTerminal({
       attachedSessionRef.current = null
       attachedTargetRef.current = null
       attachedConnectionEpochRef.current = -1
+      focusAfterAttachSessionRef.current = null
     }
 
     // Cancel pending debounced attach on effect re-run or unmount
@@ -1177,6 +1171,11 @@ export function useTerminal({
             totalMs: Math.round(performance.now() - readySwitchStart),
           })
           switchStartRef.current = null
+        }
+
+        if (focusAfterAttachSessionRef.current === message.sessionId) {
+          terminalRef.current?.focus()
+          focusAfterAttachSessionRef.current = null
         }
 
         // Force iOS compositor repaint after reconnect data delivery.

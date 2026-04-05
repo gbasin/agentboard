@@ -4,6 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import type { Session, ServerMessage } from '@shared/types'
 import type { AgentSessionRecord } from '../../db'
+import { TmuxTimeoutError } from '../../tmuxTimeout'
 import { TMUX_FIELD_SEPARATOR } from '../../tmuxFormat'
 
 const bunAny = Bun as typeof Bun & {
@@ -33,8 +34,11 @@ let spawnSyncImpl: typeof Bun.spawnSync
 let writeImpl: typeof Bun.write
 let replaceSessionsCalls: Session[][] = []
 let dbState: {
+  appSettings: Map<string, string>
   records: Map<string, AgentSessionRecord>
   nextId: number
+  setAppSettingCalls: Array<{ key: string; value: string }>
+  setAppSettingError: Error | null
   updateCalls: Array<{ sessionId: string; patch: Partial<AgentSessionRecord> }>
   setPinnedCalls: Array<{ sessionId: string; isPinned: boolean }>
 }
@@ -63,6 +67,8 @@ const defaultConfig = {
   remoteSshOpts: '',
   remoteAllowControl: false,
   remoteAllowAttach: false,
+  tmuxTimeoutMs: 3000,
+  tmuxMutationTimeoutMs: 15000,
 }
 
 const configState = { ...defaultConfig }
@@ -70,8 +76,11 @@ const baseRecordTimestamp = new Date('2026-01-01T00:00:00.000Z').toISOString()
 
 function resetDbState() {
   dbState = {
+    appSettings: new Map(),
     records: new Map(),
     nextId: 1,
+    setAppSettingCalls: [],
+    setAppSettingError: null,
     updateCalls: [],
     setPinnedCalls: [],
   }
@@ -117,6 +126,7 @@ let sessionManagerState: {
   ) => Session
   killWindow: (tmuxWindow: string) => void
   renameWindow: (tmuxWindow: string, newName: string) => void
+  setMouseMode: (enabled: boolean) => void
 }
 
 class SessionManagerMock {
@@ -139,6 +149,10 @@ class SessionManagerMock {
 
   renameWindow(tmuxWindow: string, newName: string) {
     sessionManagerState.renameWindow(tmuxWindow, newName)
+  }
+
+  setMouseMode(enabled: boolean) {
+    sessionManagerState.setMouseMode(enabled)
   }
 }
 
@@ -356,8 +370,14 @@ mock.module('../../db', () => ({
       Array.from(dbState.records.values()).filter(
         (record) => record.isPinned && record.currentWindow === null
       ),
-    getAppSetting: () => null,
-    setAppSetting: () => {},
+    getAppSetting: (key: string) => dbState.appSettings.get(key) ?? null,
+    setAppSetting: (key: string, value: string) => {
+      if (dbState.setAppSettingError) {
+        throw dbState.setAppSettingError
+      }
+      dbState.appSettings.set(key, value)
+      dbState.setAppSettingCalls.push({ key, value })
+    },
     close: () => {},
   }),
 }))
@@ -369,20 +389,46 @@ let refreshWorkerDeferred = false
 let refreshWorkerSessions: Session[] = []
 let refreshWorkerResolve: ((sessions: Session[]) => void) | null = null
 let _refreshWorkerReject: ((error: Error) => void) | null = null
+let refreshWorkerError: Error | null = null
+let refreshWorkerExpectedWindowCounts: number[] = []
+let lastUserMessageWorkerError: Error | null = null
+let lastUserMessageWorkerMessage: string | null = null
+
+class SessionRefreshWorkerTimeoutErrorMock extends Error {
+  constructor(message = 'Session refresh worker timed out') {
+    super(message)
+    this.name = 'SessionRefreshWorkerTimeoutError'
+  }
+}
 
 class SessionRefreshWorkerClientMock {
-  refresh(_managedSession: string, _discoverPrefixes: string[]): Promise<Session[]> {
+  refresh(
+    _managedSession: string,
+    _discoverPrefixes: string[],
+    options?: { expectedWindowCount?: number }
+  ): Promise<Session[]> {
+    refreshWorkerExpectedWindowCounts.push(options?.expectedWindowCount ?? 0)
     if (refreshWorkerDeferred) {
       return new Promise<Session[]>((resolve, reject) => {
         refreshWorkerResolve = resolve
         _refreshWorkerReject = reject
       })
     }
+    if (refreshWorkerError) {
+      const error = refreshWorkerError
+      refreshWorkerError = null
+      return Promise.reject(error)
+    }
     return Promise.resolve(refreshWorkerSessions)
   }
 
   getLastUserMessage(): Promise<string | null> {
-    return Promise.resolve(null)
+    if (lastUserMessageWorkerError) {
+      const error = lastUserMessageWorkerError
+      lastUserMessageWorkerError = null
+      return Promise.reject(error)
+    }
+    return Promise.resolve(lastUserMessageWorkerMessage)
   }
 
   dispose(): void {}
@@ -390,6 +436,7 @@ class SessionRefreshWorkerClientMock {
 
 mock.module('../../sessionRefreshWorkerClient', () => ({
   SessionRefreshWorkerClient: SessionRefreshWorkerClientMock,
+  SessionRefreshWorkerTimeoutError: SessionRefreshWorkerTimeoutErrorMock,
 }))
 mock.module('../../SessionManager', () => ({
   SessionManager: SessionManagerMock,
@@ -490,6 +537,10 @@ beforeEach(() => {
   refreshWorkerSessions = []
   refreshWorkerResolve = null
   _refreshWorkerReject = null
+  refreshWorkerError = null
+  refreshWorkerExpectedWindowCounts = []
+  lastUserMessageWorkerError = null
+  lastUserMessageWorkerMessage = null
   SessionRegistryMock.instance = null
   resetDbState()
   Object.assign(configState, defaultConfig)
@@ -498,6 +549,7 @@ beforeEach(() => {
     createWindow: () => ({ ...baseSession, id: 'created' }),
     killWindow: () => {},
     renameWindow: () => {},
+    setMouseMode: () => {},
   }
 
   spawnSyncImpl = () =>
@@ -845,6 +897,133 @@ describe('server message handlers', () => {
     expect(replaceSessionsCalls.length).toBeGreaterThan(0)
   })
 
+  test('worker timeout skips sync fallback but allows the next refresh to recover', async () => {
+    const freshSession: Session = {
+      ...baseSession,
+      id: 'fresh',
+      name: 'fresh',
+      tmuxWindow: 'agentboard:2',
+    }
+    let listCalls = 0
+    sessionManagerState.listWindows = () => {
+      listCalls += 1
+      return [freshSession]
+    }
+
+    const { serveOptions } = await loadIndex()
+    const { ws } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) throw new Error('WebSocket handlers not configured')
+
+    const baselineReplaceCalls = replaceSessionsCalls.length
+    refreshWorkerError = new SessionRefreshWorkerTimeoutErrorMock()
+    websocket.message?.(ws as never, JSON.stringify({ type: 'session-refresh' }))
+    await new Promise((resolve) => setTimeout(resolve, 25))
+
+    expect(listCalls).toBe(2)
+    expect(replaceSessionsCalls).toHaveLength(baselineReplaceCalls)
+    expect(refreshWorkerExpectedWindowCounts[0]).toBe(1)
+
+    refreshWorkerSessions = [freshSession]
+    websocket.message?.(ws as never, JSON.stringify({ type: 'session-refresh' }))
+    for (let i = 0; i < 50 && replaceSessionsCalls.length === baselineReplaceCalls; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+
+    expect(replaceSessionsCalls.length).toBeGreaterThan(baselineReplaceCalls)
+    expect(replaceSessionsCalls.at(-1)).toEqual([freshSession])
+    expect(refreshWorkerExpectedWindowCounts[1]).toBeGreaterThan(
+      refreshWorkerExpectedWindowCounts[0] ?? 0
+    )
+  })
+
+  test('last-user-message timeout does not poison the queued refresh', async () => {
+    const refreshedSession: Session = {
+      ...baseSession,
+      status: 'working',
+      name: 'refreshed',
+    }
+
+    const { serveOptions, registryInstance } = await loadIndex()
+    registryInstance.sessions = [baseSession]
+
+    const { ws } = createWs()
+    ws.data.currentSessionId = baseSession.id
+    ws.data.terminal = {
+      write: () => {},
+    } as never
+
+    const websocket = serveOptions.websocket
+    if (!websocket) throw new Error('WebSocket handlers not configured')
+
+    refreshWorkerSessions = [refreshedSession]
+    lastUserMessageWorkerError = new SessionRefreshWorkerTimeoutErrorMock(
+      'Session refresh worker timed out'
+    )
+
+    const baselineReplaceCalls = replaceSessionsCalls.length
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({
+        type: 'terminal-input',
+        sessionId: baseSession.id,
+        data: '\r',
+      })
+    )
+
+    for (let i = 0; i < 50 && replaceSessionsCalls.length === baselineReplaceCalls; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+
+    expect(replaceSessionsCalls.length).toBeGreaterThan(baselineReplaceCalls)
+    expect(replaceSessionsCalls.at(-1)).toEqual([refreshedSession])
+  })
+
+  test('startup sync timeout skips replacing sessions and leaves DB state intact', async () => {
+    const activeRecord = makeRecord({
+      sessionId: 'active-timeout',
+      currentWindow: baseSession.tmuxWindow,
+    })
+    seedRecord(activeRecord)
+    replaceSessionsCalls = []
+    sessionManagerState.listWindows = () => {
+      throw new TmuxTimeoutError('list-sessions', 3000)
+    }
+
+    const { registryInstance } = await loadIndex()
+    await Promise.resolve()
+
+    expect(replaceSessionsCalls).toHaveLength(0)
+    expect(dbState.records.get(activeRecord.sessionId)?.currentWindow).toBe(
+      baseSession.tmuxWindow
+    )
+    expect(registryInstance.agentSessions.active).toEqual([])
+  })
+
+  test('startup sync timeout seeds the first worker refresh budget from persisted active sessions', async () => {
+    for (let i = 0; i < 5; i++) {
+      seedRecord(makeRecord({
+        sessionId: `seeded-${i}`,
+        currentWindow: `agentboard:${i + 1}`,
+      }))
+    }
+    sessionManagerState.listWindows = () => {
+      throw new TmuxTimeoutError('list-sessions', 3000)
+    }
+
+    const { serveOptions } = await loadIndex()
+    const { ws } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) throw new Error('WebSocket handlers not configured')
+
+    refreshWorkerExpectedWindowCounts = []
+    websocket.message?.(ws as never, JSON.stringify({ type: 'session-refresh' }))
+    await new Promise((resolve) => setTimeout(resolve, 25))
+
+    expect(refreshWorkerExpectedWindowCounts[0]).toBe(5)
+  })
+
   test('blocks remote kill when remoteAllowControl is false', async () => {
     const remoteSession: Session = {
       ...baseSession,
@@ -904,6 +1083,7 @@ describe('server message handlers', () => {
       ws as never,
       JSON.stringify({ type: 'session-kill', sessionId: 'remote-1' })
     )
+    await new Promise((r) => setTimeout(r, 0))
     await new Promise((r) => setTimeout(r, 0))
 
     const sshKillCall = sshCalls.find(
@@ -1913,23 +2093,27 @@ describe('server message handlers', () => {
     expect(outputCountAfter).toBe(outputCount)
   })
 
-  test('session-only attach stays valid and tracks grouped target in pty mode', async () => {
+  test('session-only attach replays the current grouped view and keeps copy-mode targeting aligned in pty mode', async () => {
     const { serveOptions, registryInstance } = await loadIndex()
     registryInstance.sessions = [baseSession]
 
-    const { ws } = createWs()
+    const { ws, sent } = createWs()
     const websocket = serveOptions.websocket
     if (!websocket) {
       throw new Error('WebSocket handlers not configured')
     }
 
     let captureTarget = ''
+    let captureArgs: string[] = []
+    let captureOptions: Parameters<typeof Bun.spawnSync>[1] | undefined
     let copyModeTarget = ''
     spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
       const command = Array.isArray(args[0]) ? args[0] : [String(args[0])]
       const tmuxArgs = getTmuxArgs(command as string[])
       if (tmuxArgs[0] === 'capture-pane') {
+        captureArgs = tmuxArgs
         captureTarget = tmuxArgs[2] ?? ''
+        captureOptions = args[1]
       }
       if (tmuxArgs[0] === 'display-message') {
         copyModeTarget = tmuxArgs[3] ?? ''
@@ -1941,7 +2125,10 @@ describe('server message handlers', () => {
       }
       return {
         exitCode: 0,
-        stdout: Buffer.from(''),
+        stdout:
+          tmuxArgs[0] === 'capture-pane'
+            ? Buffer.from('visible pane line\n')
+            : Buffer.from(''),
         stderr: Buffer.from(''),
       } as ReturnType<typeof Bun.spawnSync>
     }) as typeof Bun.spawnSync
@@ -1966,6 +2153,15 @@ describe('server message handlers', () => {
     const groupedTarget = `${configState.tmuxSession}-ws-${ws.data.connectionId}`
     expect(attached.switchTargets).toEqual(['agentboard'])
     expect(captureTarget).toBe(groupedTarget)
+    expect(captureArgs[0]).toBe('capture-pane')
+    expect(captureOptions?.timeout).toBe(configState.tmuxTimeoutMs)
+    const historyIndex = sent.findIndex(
+      (message) =>
+        message.type === 'terminal-output' &&
+        message.sessionId === baseSession.id &&
+        message.data === 'visible pane line\n'
+    )
+    expect(historyIndex).toBeGreaterThanOrEqual(0)
     expect(ws.data.currentTmuxTarget).toBe(groupedTarget)
 
     websocket.message?.(
@@ -1973,6 +2169,72 @@ describe('server message handlers', () => {
       JSON.stringify({ type: 'tmux-check-copy-mode', sessionId: baseSession.id })
     )
     expect(copyModeTarget).toBe(groupedTarget)
+  })
+
+  test('terminal attach continues when local history capture times out', async () => {
+    const { serveOptions, registryInstance } = await loadIndex()
+    registryInstance.sessions = [baseSession]
+
+    const { ws, sent } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) {
+      throw new Error('WebSocket handlers not configured')
+    }
+
+    let captureTimeout: number | undefined
+    spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
+      const command = Array.isArray(args[0]) ? args[0] : [String(args[0])]
+      if (command[0] === 'tmux' && command[1] === 'capture-pane') {
+        captureTimeout = args[1]?.timeout
+        return {
+          exitCode: null,
+          signalCode: 'SIGTERM',
+          stdout: Buffer.from(''),
+          stderr: Buffer.from(''),
+        } as unknown as ReturnType<typeof Bun.spawnSync>
+      }
+
+      return {
+        exitCode: 0,
+        stdout: Buffer.from(''),
+        stderr: Buffer.from(''),
+      } as ReturnType<typeof Bun.spawnSync>
+    }) as typeof Bun.spawnSync
+
+    websocket.open?.(ws as never)
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({
+        type: 'terminal-attach',
+        sessionId: baseSession.id,
+        tmuxTarget: baseSession.tmuxWindow,
+      })
+    )
+
+    await new Promise((r) => setTimeout(r, 0))
+    await new Promise((r) => setTimeout(r, 0))
+
+    const attached = ws.data.terminal
+    if (!attached) {
+      throw new Error('Expected terminal to be created')
+    }
+
+    expect(captureTimeout).toBe(configState.tmuxTimeoutMs)
+    expect(ws.data.currentSessionId).toBe(baseSession.id)
+    expect(
+      sent.some(
+        (message) =>
+          message.type === 'terminal-ready' &&
+          message.sessionId === baseSession.id
+      )
+    ).toBe(true)
+    expect(
+      sent.some(
+        (message) =>
+          message.type === 'terminal-output' &&
+          message.sessionId === baseSession.id
+      )
+    ).toBe(false)
   })
 
   test('validates tmux target on terminal attach', async () => {
@@ -2538,6 +2800,153 @@ describe('server fetch handlers', () => {
     expect(payload.port).toBe(4040)
     expect(payload.protocol).toBe('http')
     expect(payload.tailscaleIp).toBe('100.64.0.42')
+  })
+
+  test('tmux mouse mode timeout returns 504 and does not persist the setting', async () => {
+    let mouseModeCalls = 0
+    sessionManagerState.setMouseMode = () => {
+      mouseModeCalls += 1
+      throw new TmuxTimeoutError('set-option', 3000)
+    }
+
+    const { serveOptions } = await loadIndex()
+    const fetchHandler = serveOptions.fetch
+    if (!fetchHandler) {
+      throw new Error('Fetch handler not configured')
+    }
+
+    const response = await fetchHandler.call(
+      {} as Bun.Server<unknown>,
+      new Request('http://localhost/api/settings/tmux-mouse-mode', {
+        method: 'PUT',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ enabled: false }),
+      }),
+      {} as Bun.Server<unknown>
+    )
+
+    if (!response) {
+      throw new Error('Expected response for tmux mouse mode request')
+    }
+
+    expect(mouseModeCalls).toBe(1)
+    expect(response.status).toBe(504)
+    expect(await response.json()).toEqual({
+      error: 'Timed out applying tmux mouse mode',
+    })
+    expect(dbState.setAppSettingCalls).toEqual([])
+  })
+
+  test('tmux mouse mode apply failure returns 500 and does not persist the setting', async () => {
+    let mouseModeCalls = 0
+    sessionManagerState.setMouseMode = () => {
+      mouseModeCalls += 1
+      throw new Error('grouped set-option failed')
+    }
+
+    const { serveOptions } = await loadIndex()
+    const fetchHandler = serveOptions.fetch
+    if (!fetchHandler) {
+      throw new Error('Fetch handler not configured')
+    }
+
+    const response = await fetchHandler.call(
+      {} as Bun.Server<unknown>,
+      new Request('http://localhost/api/settings/tmux-mouse-mode', {
+        method: 'PUT',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ enabled: false }),
+      }),
+      {} as Bun.Server<unknown>
+    )
+
+    if (!response) {
+      throw new Error('Expected response for tmux mouse mode request')
+    }
+
+    expect(mouseModeCalls).toBe(1)
+    expect(response.status).toBe(500)
+    expect(await response.json()).toEqual({
+      error: 'Unable to apply tmux mouse mode',
+    })
+    expect(dbState.setAppSettingCalls).toEqual([])
+  })
+
+  test('tmux mouse mode persists only after tmux state applies successfully', async () => {
+    const appliedValues: boolean[] = []
+    sessionManagerState.setMouseMode = (enabled: boolean) => {
+      appliedValues.push(enabled)
+    }
+
+    const { serveOptions } = await loadIndex()
+    const fetchHandler = serveOptions.fetch
+    if (!fetchHandler) {
+      throw new Error('Fetch handler not configured')
+    }
+
+    const response = await fetchHandler.call(
+      {} as Bun.Server<unknown>,
+      new Request('http://localhost/api/settings/tmux-mouse-mode', {
+        method: 'PUT',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ enabled: false }),
+      }),
+      {} as Bun.Server<unknown>
+    )
+
+    if (!response) {
+      throw new Error('Expected response for tmux mouse mode request')
+    }
+
+    expect(appliedValues).toEqual([false])
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ enabled: false })
+    expect(dbState.setAppSettingCalls).toEqual([
+      { key: 'tmux_mouse_mode', value: 'false' },
+    ])
+  })
+
+  test('tmux mouse mode persistence failure returns 500 and rolls back runtime state', async () => {
+    dbState.setAppSettingError = new Error('db unavailable')
+    const appliedValues: boolean[] = []
+    sessionManagerState.setMouseMode = (enabled: boolean) => {
+      appliedValues.push(enabled)
+    }
+
+    const { serveOptions } = await loadIndex()
+    const fetchHandler = serveOptions.fetch
+    if (!fetchHandler) {
+      throw new Error('Fetch handler not configured')
+    }
+
+    const response = await fetchHandler.call(
+      {} as Bun.Server<unknown>,
+      new Request('http://localhost/api/settings/tmux-mouse-mode', {
+        method: 'PUT',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ enabled: false }),
+      }),
+      {} as Bun.Server<unknown>
+    )
+
+    if (!response) {
+      throw new Error('Expected response for tmux mouse mode request')
+    }
+
+    expect(appliedValues).toEqual([false, true])
+    expect(response.status).toBe(500)
+    expect(await response.json()).toEqual({
+      error: 'Unable to persist tmux mouse mode',
+    })
+    expect(dbState.setAppSettingCalls).toEqual([])
   })
 
   test('returns no response for successful websocket upgrades', async () => {

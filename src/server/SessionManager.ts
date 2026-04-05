@@ -5,6 +5,7 @@ import { normalizeProjectPath } from './logDiscovery'
 import { generateSessionName } from './nameGenerator'
 import { logger } from './logger'
 import { resolveProjectPath } from './paths'
+import { TmuxTimeoutError } from './tmuxTimeout'
 import {
   buildTmuxFormat,
   splitTmuxFields,
@@ -12,6 +13,7 @@ import {
   withTmuxUtf8Flag,
 } from './tmuxFormat'
 import {
+  inferCachedSessionStatus,
   detectsPermissionPrompt,
   inferSessionStatus,
   type PaneCacheState,
@@ -64,6 +66,13 @@ const PANE_DIMENSIONS_FORMAT = buildTmuxFormat([
   '#{pane_width}',
   '#{pane_height}',
 ])
+const TMUX_MUTATION_COMMANDS = new Set([
+  'new-session',
+  'new-window',
+  'kill-window',
+  'rename-window',
+  'set-option',
+])
 
 export class SessionManager {
   private sessionName: string
@@ -100,7 +109,10 @@ export class SessionManager {
   ensureSession(): void {
     try {
       this.runTmux(['has-session', '-t', this.sessionName])
-    } catch {
+    } catch (error) {
+      if (error instanceof TmuxTimeoutError) {
+        throw error
+      }
       this.runTmux(['new-session', '-d', '-s', this.sessionName])
     }
     this.configureSession()
@@ -110,8 +122,14 @@ export class SessionManager {
     try {
       this.runTmux(['has-session', '-t', this.sessionName])
       return true
-    } catch {
-      return false
+    } catch (error) {
+      if (error instanceof TmuxTimeoutError) {
+        throw error
+      }
+      if (isTmuxSessionAbsentError(error)) {
+        return false
+      }
+      throw error
     }
   }
 
@@ -120,39 +138,115 @@ export class SessionManager {
     // Scoped to this session only (-t) rather than global (-g).
     // Note: PtyTerminalProxy copies this setting onto grouped client sessions.
     const mouseValue = this.mouseMode ? 'on' : 'off'
-    this.runTmux(['set-option', '-t', this.sessionName, 'mouse', mouseValue])
+    this.applyMouseMode(this.sessionName, mouseValue)
   }
 
   setMouseMode(enabled: boolean): void {
-    this.mouseMode = enabled
     const mouseValue = enabled ? 'on' : 'off'
+    const previousMouseValue = this.mouseMode ? 'on' : 'off'
+    let baseSessionUpdated = false
+    const groupedSessionsUpdated: string[] = []
 
-    // Apply immediately if session exists
     try {
-      this.runTmux(['has-session', '-t', this.sessionName])
-      this.runTmux([
-        'set-option',
-        '-t',
-        this.sessionName,
-        'mouse',
-        mouseValue,
-      ])
-    } catch {
-      // Session doesn't exist yet, will be applied on next ensureSession
+      // Apply directly so the longer mutation timeout covers the full update
+      // path; absent sessions will be configured on the next ensureSession.
+      try {
+        this.applyMouseMode(this.sessionName, mouseValue)
+        baseSessionUpdated = true
+      } catch (error) {
+        if (error instanceof TmuxTimeoutError) {
+          throw error
+        }
+        if (!isTmuxSessionAbsentError(error)) {
+          throw error
+        }
+        // Session doesn't exist yet, will be applied on next ensureSession.
+      }
+
+      // Keep existing grouped websocket client sessions in sync with the
+      // base session mouse mode toggle.
+      const wsPrefix = `${this.sessionName}-ws-`
+      let groupedSessions: string[] = []
+      try {
+        groupedSessions = this.listSessions().filter((name) =>
+          name.startsWith(wsPrefix)
+        )
+      } catch (error) {
+        if (isTmuxSessionAbsentError(error)) {
+          groupedSessions = []
+        } else {
+          logger.warn('tmux_mouse_mode_group_discovery_failed', {
+            message: error instanceof Error ? error.message : String(error),
+            timedOut: error instanceof TmuxTimeoutError,
+          })
+          throw error
+        }
+      }
+
+      for (const groupedSession of groupedSessions) {
+        try {
+          this.applyMouseMode(groupedSession, mouseValue)
+          groupedSessionsUpdated.push(groupedSession)
+        } catch (error) {
+          if (isTmuxSessionAbsentError(error)) {
+            // Session may have exited between list-sessions and set-option.
+            continue
+          }
+          logger.warn('tmux_mouse_mode_group_sync_failed', {
+            groupedSession,
+            message: error instanceof Error ? error.message : String(error),
+            timedOut: error instanceof TmuxTimeoutError,
+          })
+          throw error
+        }
+      }
+
+      this.mouseMode = enabled
+    } catch (error) {
+      this.rollbackMouseMode(previousMouseValue, groupedSessionsUpdated, baseSessionUpdated)
+      throw error
+    }
+  }
+
+  private applyMouseMode(target: string, mouseValue: string): void {
+    this.runTmux(['set-option', '-t', target, 'mouse', mouseValue])
+  }
+
+  private rollbackMouseMode(
+    mouseValue: string,
+    groupedSessions: string[],
+    baseSessionUpdated: boolean
+  ): void {
+    for (const groupedSession of [...groupedSessions].reverse()) {
+      try {
+        this.applyMouseMode(groupedSession, mouseValue)
+      } catch (error) {
+        if (isTmuxSessionAbsentError(error)) {
+          continue
+        }
+        logger.warn('tmux_mouse_mode_rollback_failed', {
+          target: groupedSession,
+          message: error instanceof Error ? error.message : String(error),
+          timedOut: error instanceof TmuxTimeoutError,
+        })
+      }
     }
 
-    // Keep existing grouped websocket client sessions in sync with the
-    // base session mouse mode toggle.
-    const wsPrefix = `${this.sessionName}-ws-`
-    const groupedSessions = this.listSessions().filter((name) =>
-      name.startsWith(wsPrefix)
-    )
-    for (const groupedSession of groupedSessions) {
-      try {
-        this.runTmux(['set-option', '-t', groupedSession, 'mouse', mouseValue])
-      } catch {
-        // Session may have exited between list-sessions and set-option
+    if (!baseSessionUpdated) {
+      return
+    }
+
+    try {
+      this.applyMouseMode(this.sessionName, mouseValue)
+    } catch (error) {
+      if (isTmuxSessionAbsentError(error)) {
+        return
       }
+      logger.warn('tmux_mouse_mode_rollback_failed', {
+        target: this.sessionName,
+        message: error instanceof Error ? error.message : String(error),
+        timedOut: error instanceof TmuxTimeoutError,
+      })
     }
   }
 
@@ -372,8 +466,14 @@ export class SessionManager {
     try {
       const output = this.runParsedTmux(['list-sessions', '-F', '#{session_name}'])
       return splitTmuxLines(output)
-    } catch {
-      return []
+    } catch (error) {
+      if (error instanceof TmuxTimeoutError) {
+        throw error
+      }
+      if (isTmuxSessionAbsentError(error)) {
+        return []
+      }
+      throw error
     }
   }
 
@@ -552,10 +652,18 @@ function parseWindow(line: string): WindowInfo | null {
 }
 
 function runTmux(args: string[]): string {
+  const command = getTmuxCommand(args)
+  const timeout = TMUX_MUTATION_COMMANDS.has(command)
+    ? config.tmuxMutationTimeoutMs
+    : config.tmuxTimeoutMs
   const result = Bun.spawnSync(['tmux', ...args], {
     stdout: 'pipe',
     stderr: 'pipe',
+    timeout,
   })
+  if (result.signalCode === 'SIGTERM' || result.exitCode === null) {
+    throw new TmuxTimeoutError(command, timeout)
+  }
 
   if (result.exitCode !== 0) {
     const error = result.stderr.toString() || 'tmux command failed'
@@ -563,6 +671,31 @@ function runTmux(args: string[]): string {
   }
 
   return result.stdout.toString()
+}
+
+function getTmuxCommand(args: string[]): string {
+  return args[0] === '-u' ? args[1] ?? 'command' : args[0] ?? 'command'
+}
+
+function isTmuxSessionAbsentError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false
+  }
+
+  const message = error.message.toLowerCase()
+  return (
+    message.includes("can't find session") ||
+    message.includes('session not found') ||
+    message.includes('failed to connect to server') ||
+    message.includes('no server running') ||
+    (
+      message.includes('error connecting to ') &&
+      (
+        message.includes('no such file or directory') ||
+        message.includes('connection refused')
+      )
+    )
+  )
 }
 
 function isTmuxFormatError(error: unknown): boolean {
@@ -584,13 +717,21 @@ function inferStatus(
   capture: CapturePane = capturePaneWithDimensions,
   now: NowFn = Date.now
 ): StatusResult {
+  const currentTime = now()
+  const cached = paneContentCache.get(tmuxWindow)
   const pane = capture(tmuxWindow)
   if (pane === null) {
-    return { status: 'unknown', lastChanged: now() }
+    const fallback = inferCachedSessionStatus({
+      prev: cached,
+      now: currentTime,
+      workingGracePeriodMs: config.workingGracePeriodMs,
+    })
+    if (!fallback) {
+      return { status: 'unknown', lastChanged: currentTime }
+    }
+    paneContentCache.set(tmuxWindow, fallback.nextCache)
+    return { status: fallback.status, lastChanged: fallback.lastChanged }
   }
-
-  const cached = paneContentCache.get(tmuxWindow)
-  const currentTime = now()
 
   const result = inferSessionStatus({
     prev: cached,
@@ -615,8 +756,15 @@ function capturePaneWithDimensions(tmuxWindow: string): PaneCapture | null {
         '-p',
         PANE_DIMENSIONS_FORMAT,
       ])],
-      { stdout: 'pipe', stderr: 'pipe' }
+      {
+        stdout: 'pipe',
+        stderr: 'pipe',
+        timeout: config.tmuxTimeoutMs,
+      }
     )
+    if (dimsResult.signalCode === 'SIGTERM' || dimsResult.exitCode === null) {
+      return null
+    }
     if (dimsResult.exitCode !== 0) {
       return null
     }
@@ -638,8 +786,15 @@ function capturePaneWithDimensions(tmuxWindow: string): PaneCapture | null {
     // This prevents false positives from scrollback buffer changes on window focus
     const result = Bun.spawnSync(
       ['tmux', 'capture-pane', '-t', tmuxWindow, '-p', '-J'],
-      { stdout: 'pipe', stderr: 'pipe' }
+      {
+        stdout: 'pipe',
+        stderr: 'pipe',
+        timeout: config.tmuxTimeoutMs,
+      }
     )
+    if (result.signalCode === 'SIGTERM' || result.exitCode === null) {
+      return null
+    }
     if (result.exitCode !== 0) {
       return null
     }

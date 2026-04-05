@@ -22,7 +22,12 @@ import fs from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'
 import os from 'node:os'
-import { canBindLocalhost, isTmuxAvailable } from './testEnvironment'
+import {
+  canBindLocalhost,
+  createTmuxTmpDir,
+  isTmuxAvailable,
+  waitForTmuxWindows,
+} from './testEnvironment'
 
 const tmuxAvailable = isTmuxAvailable()
 const localhostBindable = canBindLocalhost()
@@ -62,9 +67,7 @@ if (!tmuxAvailable || !localhostBindable) {
         : { ...process.env }
 
     beforeAll(async () => {
-      tmuxTmpDir = fs.mkdtempSync(
-        path.join(os.tmpdir(), 'agentboard-tmux-')
-      )
+      tmuxTmpDir = createTmuxTmpDir()
 
       // Create a tmux session with a window
       Bun.spawnSync(
@@ -83,25 +86,7 @@ if (!tmuxAvailable || !localhostBindable) {
       )
 
       // Find the default window target
-      const listResult = Bun.spawnSync(
-        [
-          'tmux',
-          'list-windows',
-          '-t',
-          sessionName,
-          '-F',
-          '#{session_name}:#{window_id}',
-        ],
-        { stdout: 'pipe', stderr: 'pipe', env: tmuxEnv() }
-      )
-      const windows = listResult.stdout
-        .toString()
-        .split('\n')
-        .map((l) => l.trim())
-        .filter(Boolean)
-      if (windows.length === 0) {
-        throw new Error('Failed to create tmux session')
-      }
+      const windows = await waitForTmuxWindows(sessionName, tmuxEnv())
       tmuxWindowTarget = windows[0]
 
       // Pump some content into the pane to generate scrollback history so
@@ -338,6 +323,7 @@ if (!tmuxAvailable || !localhostBindable) {
           'initial sessions/config messages'
         )
         messages.length = 0
+        const logBytesAtTestStart = readTextIfExists(logFilePath).length
 
         // Step 1: Send the first terminal-attach and wait for it to complete
         ws.send(
@@ -375,8 +361,34 @@ if (!tmuxAvailable || !localhostBindable) {
               m.sessionId === discoveredSessionId
           )
         expect(scrollbacksBeforeFirstReady.length).toBeGreaterThanOrEqual(1)
+        await waitUntil(
+          () => {
+            const logDelta = readTextIfExists(logFilePath).slice(logBytesAtTestStart)
+            return (
+              logDelta.includes('terminal_history_send') &&
+              logDelta.includes(`"sessionId":"${discoveredSessionId}"`)
+            )
+          },
+          5000,
+          'first attach history log'
+        )
 
-        // Record the total message count so we can isolate second-attach messages
+        // Wait for the first attach's buffered history to finish arriving before
+        // sending the second attach. The dedup guarantee is "no new scrollback
+        // capture on the second attach", not "no delayed delivery from the first
+        // capture that was already in flight on the wire".
+        await waitForMessageQuiescence(
+          messages,
+          100,
+          300,
+          'first attach history delivery to settle'
+        )
+
+        // Snapshot logs after the first attach settles so we can prove the second
+        // attach only emitted the dedup fast-path and no new history capture.
+        const logBytesBeforeSecondAttach = readTextIfExists(logFilePath).length
+
+        // Record the total message count so we can isolate second-attach messages.
         const messagesBeforeSecondAttach = messages.length
 
         // Step 2: Send the second terminal-attach immediately (well within 500ms).
@@ -404,6 +416,14 @@ if (!tmuxAvailable || !localhostBindable) {
 
         // Give a moment for any trailing messages
         await delay(200)
+        await waitUntil(
+          () => {
+            const logDelta = readTextIfExists(logFilePath).slice(logBytesBeforeSecondAttach)
+            return logDelta.includes('terminal_attach_dedup')
+          },
+          5000,
+          'terminal_attach_dedup log'
+        )
 
         // Look at messages received AFTER the second attach was sent.
         const secondAttachMessages = messages.slice(messagesBeforeSecondAttach)
@@ -416,16 +436,13 @@ if (!tmuxAvailable || !localhostBindable) {
         )
         expect(secondReadyIndex).not.toBe(-1)
 
-        // Count scrollback outputs before the second terminal-ready:
-        // The dedup path should NOT have sent any scrollback.
-        const scrollbacksBeforeSecondReady = secondAttachMessages
-          .slice(0, secondReadyIndex)
-          .filter(
-            (m) =>
-              m.type === 'terminal-output' &&
-              m.sessionId === discoveredSessionId
-          )
-        expect(scrollbacksBeforeSecondReady.length).toBe(0)
+        // Delayed first-attach output may still be in flight here, so validate
+        // the dedup contract via server logs rather than raw message timing.
+        const logDeltaAfterSecondAttach = readTextIfExists(logFilePath).slice(
+          logBytesBeforeSecondAttach
+        )
+        expect(logDeltaAfterSecondAttach).toContain('terminal_attach_dedup')
+        expect(logDeltaAfterSecondAttach).not.toContain('terminal_history_send')
 
         // Total terminal-ready count should be exactly 2
         const totalReadys = messages.filter(
@@ -733,4 +750,37 @@ function drainStream(
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function readTextIfExists(filePath: string): string {
+  try {
+    return fs.readFileSync(filePath, 'utf-8')
+  } catch {
+    return ''
+  }
+}
+
+async function waitForMessageQuiescence(
+  messages: Array<unknown>,
+  quietMs: number,
+  timeoutMs: number,
+  description: string
+): Promise<void> {
+  const startedAt = Date.now()
+  let lastCount = messages.length
+  let stableSince = Date.now()
+
+  while (Date.now() - startedAt < timeoutMs) {
+    await delay(25)
+    if (messages.length !== lastCount) {
+      lastCount = messages.length
+      stableSince = Date.now()
+      continue
+    }
+    if (Date.now() - stableSince >= quietMs) {
+      return
+    }
+  }
+
+  throw new Error(`Timed out waiting for message quiescence: ${description}`)
 }

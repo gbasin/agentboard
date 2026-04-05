@@ -39,11 +39,15 @@ import {
   type Session,
 } from '../shared/types'
 import { logger, logLevel } from './logger'
-import { SessionRefreshWorkerClient } from './sessionRefreshWorkerClient'
+import {
+  SessionRefreshWorkerClient,
+  SessionRefreshWorkerTimeoutError,
+} from './sessionRefreshWorkerClient'
 import {
   setForceWorkingUntil,
   applyForceWorkingOverrides,
 } from './forceWorkingStatus'
+import { TmuxTimeoutError } from './tmuxTimeout'
 import {
   MAX_FIELD_LENGTH,
   isValidSessionId,
@@ -137,8 +141,16 @@ function pruneOrphanedWsSessions(): void {
       {
         stdout: 'pipe',
         stderr: 'pipe',
+        timeout: config.tmuxTimeoutMs,
       }
     )
+    if (result.signalCode === 'SIGTERM' || result.exitCode === null) {
+      logger.warn('ws_session_prune_skipped', {
+        reason: 'tmux_timeout',
+        timeoutMs: config.tmuxTimeoutMs,
+      })
+      return
+    }
   } catch {
     return
   }
@@ -165,7 +177,11 @@ function pruneOrphanedWsSessions(): void {
       const killResult = Bun.spawnSync(['tmux', 'kill-session', '-t', name], {
         stdout: 'pipe',
         stderr: 'pipe',
+        timeout: config.tmuxTimeoutMs,
       })
+      if (killResult.signalCode === 'SIGTERM' || killResult.exitCode === null) {
+        continue
+      }
       if (killResult.exitCode === 0) {
         pruned += 1
       }
@@ -418,11 +434,14 @@ const logPoller = new LogPoller(db, registry, {
   matchWorker: config.logMatchWorker,
 })
 const sessionRefreshWorker = new SessionRefreshWorkerClient()
+const lastUserMessageWorker = new SessionRefreshWorkerClient()
 
 // Active sessions update on every refresh — cheap (few rows).
 // Inactive sessions query is expensive — only run on actual mutations.
 function updateActiveAgentSessions() {
-  const active = db.getActiveSessions().map(toAgentSession)
+  const active = hasConfirmedLocalSessionSnapshot
+    ? db.getActiveSessions().map(toAgentSession)
+    : []
   registry.setAgentSessions(active, registry.getAgentSessions().inactive)
 }
 
@@ -437,7 +456,9 @@ function updateInactiveAgentSessions() {
       })
     })
   }
-  const active = db.getActiveSessions().map(toAgentSession)
+  const active = hasConfirmedLocalSessionSnapshot
+    ? db.getActiveSessions().map(toAgentSession)
+    : []
   registry.setAgentSessions(active, inactive)
 }
 
@@ -685,6 +706,54 @@ let refreshInFlight = false
 // in-flight refreshes that started before the mutation discard their stale
 // window list instead of reverting the optimistic update.
 let refreshGeneration = 0
+let hasConfirmedLocalSessionSnapshot = false
+let lastSuccessfulRefreshWindowCount = 1
+let refreshWindowCountFloor = 0
+let startupExpectedWindowCount = 1
+
+function normalizeWindowCount(windowCount: number): number {
+  return Math.max(
+    1,
+    Number.isFinite(windowCount) ? Math.floor(windowCount) : 0
+  )
+}
+
+function countLocalSessions(sessions: Session[]): number {
+  return sessions.filter((session) => !session.remote).length
+}
+
+function seedRefreshWindowCountEstimate(localSessionCount: number): void {
+  startupExpectedWindowCount = normalizeWindowCount(localSessionCount)
+}
+
+function recordSuccessfulRefreshWindowCount(localSessionCount: number): void {
+  hasConfirmedLocalSessionSnapshot = true
+  lastSuccessfulRefreshWindowCount = normalizeWindowCount(localSessionCount)
+  refreshWindowCountFloor = 0
+  startupExpectedWindowCount = 1
+}
+
+function shouldSkipSyncRefreshFallback(error: unknown): boolean {
+  return error instanceof SessionRefreshWorkerTimeoutError
+}
+
+function estimateRefreshWindowCount(): number {
+  const localSessionCount = registry.getAll().filter((session) => !session.remote).length
+  return Math.max(
+    1,
+    localSessionCount,
+    lastSuccessfulRefreshWindowCount,
+    refreshWindowCountFloor,
+    startupExpectedWindowCount
+  )
+}
+
+function noteRefreshTimeout(): number {
+  const currentEstimate = estimateRefreshWindowCount()
+  const nextEstimate = Math.max(currentEstimate + 4, currentEstimate * 2)
+  refreshWindowCountFloor = nextEstimate
+  return nextEstimate
+}
 
 async function refreshSessionsAsync(): Promise<void> {
   if (refreshInFlight) return
@@ -698,7 +767,8 @@ async function refreshSessionsAsync(): Promise<void> {
       try {
         const sessions = await sessionRefreshWorker.refresh(
           config.tmuxSession,
-          config.discoverPrefixes
+          config.discoverPrefixes,
+          { expectedWindowCount: estimateRefreshWindowCount() }
         )
         // Mutation happened while we were listing windows — discard and retry
         if (gen !== refreshGeneration) continue
@@ -706,6 +776,7 @@ async function refreshSessionsAsync(): Promise<void> {
         await new Promise<void>((resolve) => setTimeout(resolve, 0))
         if (gen !== refreshGeneration) continue
         const tHydrate = performance.now()
+        recordSuccessfulRefreshWindowCount(countLocalSessions(sessions))
         const hydrated = hydrateSessionsWithAgentSessions(sessions)
         const withOverrides = applyForceWorkingOverrides(hydrated)
         registry.replaceSessions(mergeRemoteSessions(withOverrides))
@@ -720,7 +791,19 @@ async function refreshSessionsAsync(): Promise<void> {
         logger.warn('session_refresh_worker_error', {
           message: error instanceof Error ? error.message : String(error),
         })
-        const sessions = sessionManager.listWindows()
+        if (shouldSkipSyncRefreshFallback(error)) {
+          const nextExpectedWindowCount = noteRefreshTimeout()
+          logger.warn('session_refresh_sync_fallback_skipped', {
+            reason: 'worker_timeout',
+            nextExpectedWindowCount,
+          })
+          return
+        }
+        const sessions = listWindowsSyncOrNull('worker_fallback')
+        if (!sessions) {
+          return
+        }
+        recordSuccessfulRefreshWindowCount(countLocalSessions(sessions))
         const hydrated = hydrateSessionsWithAgentSessions(sessions)
         const withOverrides = applyForceWorkingOverrides(hydrated)
         registry.replaceSessions(mergeRemoteSessions(withOverrides))
@@ -736,9 +819,30 @@ function refreshSessions() {
   void refreshSessionsAsync()
 }
 
+function listWindowsSyncOrNull(context: string): Session[] | null {
+  try {
+    return sessionManager.listWindows()
+  } catch (error) {
+    if (error instanceof TmuxTimeoutError) {
+      logger.warn('session_refresh_sync_skipped', {
+        context,
+        reason: 'tmux_timeout',
+        timeoutMs: config.tmuxTimeoutMs,
+        message: error.message,
+      })
+      return null
+    }
+    throw error
+  }
+}
+
 // Sync version for startup - ensures sessions are ready before server starts
 function refreshSessionsSync({ verifyAssociations = false } = {}) {
-  const sessions = sessionManager.listWindows()
+  const sessions = listWindowsSyncOrNull('sync_refresh')
+  if (!sessions) {
+    return
+  }
+  recordSuccessfulRefreshWindowCount(countLocalSessions(sessions))
   const hydrated = hydrateSessionsWithAgentSessions(sessions, { verifyAssociations })
   registry.replaceSessions(mergeRemoteSessions(hydrated))
 }
@@ -785,7 +889,7 @@ function scheduleLastUserMessageCapture(sessionId: string) {
 
 async function captureLastUserMessage(tmuxWindow: string) {
   try {
-    const message = await sessionRefreshWorker.getLastUserMessage(tmuxWindow)
+    const message = await lastUserMessageWorker.getLastUserMessage(tmuxWindow)
     if (!message || !message.trim()) return
     const record = db.getSessionByWindow(tmuxWindow)
     if (!record) return
@@ -805,7 +909,8 @@ async function captureLastUserMessage(tmuxWindow: string) {
 
 // Log startup state for debugging orphan issues
 const startupActiveSessions = db.getActiveSessions()
-const startupWindows = sessionManager.listWindows()
+seedRefreshWindowCountEstimate(startupActiveSessions.length)
+const startupWindows = listWindowsSyncOrNull('startup_state') ?? []
 logger.info('startup_state', {
   activeSessionCount: startupActiveSessions.length,
   windowCount: startupWindows.length,
@@ -1121,17 +1226,49 @@ app.get('/api/settings/tmux-mouse-mode', (c) => {
 })
 
 app.put('/api/settings/tmux-mouse-mode', async (c) => {
+  let body: { enabled?: unknown }
   try {
-    const body = await c.req.json()
-    if (typeof body.enabled !== 'boolean') {
-      return c.json({ error: 'enabled must be a boolean' }, 400)
-    }
-    db.setAppSetting(TMUX_MOUSE_MODE_KEY, String(body.enabled))
-    sessionManager.setMouseMode(body.enabled)
-    return c.json({ enabled: body.enabled })
+    body = await c.req.json()
   } catch {
     return c.json({ error: 'Invalid request body' }, 400)
   }
+
+  if (typeof body.enabled !== 'boolean') {
+    return c.json({ error: 'enabled must be a boolean' }, 400)
+  }
+
+  const previousStored = db.getAppSetting(TMUX_MOUSE_MODE_KEY)
+  const previousEnabled = previousStored === null ? true : previousStored === 'true'
+
+  try {
+    sessionManager.setMouseMode(body.enabled)
+  } catch (error) {
+    if (error instanceof TmuxTimeoutError) {
+      return c.json({ error: 'Timed out applying tmux mouse mode' }, 504)
+    }
+    logger.warn('tmux_mouse_mode_update_failed', {
+      message: error instanceof Error ? error.message : String(error),
+    })
+    return c.json({ error: 'Unable to apply tmux mouse mode' }, 500)
+  }
+
+  try {
+    db.setAppSetting(TMUX_MOUSE_MODE_KEY, String(body.enabled))
+  } catch (error) {
+    logger.warn('tmux_mouse_mode_persist_failed', {
+      message: error instanceof Error ? error.message : String(error),
+    })
+    try {
+      sessionManager.setMouseMode(previousEnabled)
+    } catch (rollbackError) {
+      logger.warn('tmux_mouse_mode_rollback_failed', {
+        message: rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
+      })
+    }
+    return c.json({ error: 'Unable to persist tmux mouse mode' }, 500)
+  }
+
+  return c.json({ enabled: body.enabled })
 })
 
 // Inactive sessions max age setting
@@ -2497,11 +2634,13 @@ async function attachTerminalPersistent(
 
 function captureTmuxHistory(target: string): string | null {
   try {
-    // Capture full scrollback history (-S - means from start, -E - means to end, -J joins wrapped lines)
-    const result = Bun.spawnSync(
-      ['tmux', 'capture-pane', '-t', target, '-p', '-S', '-', '-E', '-', '-J'],
-      { stdout: 'pipe', stderr: 'pipe' }
-    )
+    // Capture only the visible pane so initial attach paints the current view
+    // immediately instead of replaying the entire scrollback buffer.
+    const result = Bun.spawnSync(['tmux', 'capture-pane', '-t', target, '-p', '-J'], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: config.tmuxTimeoutMs,
+    })
     if (result.exitCode !== 0) {
       return null
     }
@@ -2565,7 +2704,7 @@ async function runRemoteSsh(host: string, remoteCmd: string): Promise<{ exitCode
 
 async function captureTmuxHistoryRemote(target: string, host: string): Promise<string | null> {
   try {
-    const result = await runRemoteTmux(host, ['capture-pane', '-t', target, '-p', '-S', '-', '-E', '-', '-J'])
+    const result = await runRemoteTmux(host, ['capture-pane', '-t', target, '-p', '-J'])
     if (result.exitCode !== 0) return null
     const output = result.stdout ?? ''
     if (output.trim().length === 0) return null

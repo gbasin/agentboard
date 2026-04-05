@@ -34,7 +34,12 @@ import fs from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'
 import os from 'node:os'
-import { canBindLocalhost, isTmuxAvailable } from './testEnvironment'
+import {
+  canBindLocalhost,
+  createTmuxTmpDir,
+  isTmuxAvailable,
+  waitForTmuxWindows,
+} from './testEnvironment'
 
 const tmuxAvailable = isTmuxAvailable()
 const localhostBindable = canBindLocalhost()
@@ -74,9 +79,7 @@ if (!tmuxAvailable || !localhostBindable) {
         : { ...process.env }
 
     beforeAll(async () => {
-      tmuxTmpDir = fs.mkdtempSync(
-        path.join(os.tmpdir(), 'agentboard-tmux-throttle-')
-      )
+      tmuxTmpDir = createTmuxTmpDir('agentboard-tt-')
 
       // Create tmux session
       Bun.spawnSync(
@@ -95,25 +98,7 @@ if (!tmuxAvailable || !localhostBindable) {
       )
 
       // Find the default window target
-      const listResult = Bun.spawnSync(
-        [
-          'tmux',
-          'list-windows',
-          '-t',
-          sessionName,
-          '-F',
-          '#{session_name}:#{window_id}',
-        ],
-        { stdout: 'pipe', stderr: 'pipe', env: tmuxEnv() }
-      )
-      const windows = listResult.stdout
-        .toString()
-        .split('\n')
-        .map((l) => l.trim())
-        .filter(Boolean)
-      if (windows.length === 0) {
-        throw new Error('Failed to create tmux session')
-      }
+      const windows = await waitForTmuxWindows(sessionName, tmuxEnv())
       tmuxWindowTarget = windows[0]
 
       // Pump substantial content into the pane for scrollback history.

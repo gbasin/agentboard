@@ -6,10 +6,7 @@
 import { inferAgentType, normalizePaneStartCommand } from './agentDetection'
 import { config } from './config'
 import { normalizeProjectPath } from './logDiscovery'
-import {
-  extractRecentUserMessagesFromTmux,
-  getTerminalScrollback,
-} from './logMatcher'
+import { extractRecentUserMessagesFromTmux } from './logMatcher'
 import {
   buildTmuxFormat,
   splitTmuxFields,
@@ -17,9 +14,15 @@ import {
   withTmuxUtf8Flag,
 } from './tmuxFormat'
 import {
+  inferCachedSessionStatus,
   inferSessionStatus,
   type PaneCacheState,
 } from './statusInference'
+import {
+  TMUX_TIMEOUT_ERROR_CODE,
+  TmuxTimeoutError,
+  isTmuxTimeoutError,
+} from './tmuxTimeout'
 import type { Session, SessionStatus, SessionSource } from '../shared/types'
 
 // Format string for batched window listing
@@ -78,6 +81,10 @@ export type RefreshWorkerRequest =
       tmuxWindow: string
       scrollbackLines?: number
     }
+  | {
+      id: string
+      kind: 'shutdown'
+    }
 
 export type RefreshWorkerResponse =
   | {
@@ -97,6 +104,7 @@ export type RefreshWorkerResponse =
       kind: 'error'
       type: 'error'
       error: string
+      errorCode?: typeof TMUX_TIMEOUT_ERROR_CODE
     }
 
 const ctx = self as DedicatedWorkerGlobalScope
@@ -108,8 +116,13 @@ ctx.onmessage = (event: MessageEvent<RefreshWorkerRequest>) => {
   }
 
   try {
+    if (payload.kind === 'shutdown') {
+      ctx.close()
+      return
+    }
+
     if (payload.kind === 'last-user-message') {
-      const scrollback = getTerminalScrollback(
+      const scrollback = captureScrollback(
         payload.tmuxWindow,
         payload.scrollbackLines ?? LAST_USER_MESSAGE_SCROLLBACK_LINES
       )
@@ -147,24 +160,34 @@ ctx.onmessage = (event: MessageEvent<RefreshWorkerRequest>) => {
       kind: 'error',
       type: 'error',
       error: error instanceof Error ? error.message : String(error),
+      errorCode: isTmuxTimeoutError(error) ? TMUX_TIMEOUT_ERROR_CODE : undefined,
     }
     ctx.postMessage(response)
   }
 }
 
 function runTmux(args: string[]): string {
+  const command = getTmuxCommand(args)
   const result = Bun.spawnSync(['tmux', ...args], {
     stdout: 'pipe',
     stderr: 'pipe',
+    timeout: config.tmuxTimeoutMs,
   })
+  if (result.signalCode === 'SIGTERM' || result.exitCode === null) {
+    throw new TmuxTimeoutError(command, config.tmuxTimeoutMs)
+  }
   if (result.exitCode !== 0) {
-    throw new Error(`tmux ${args[0]} failed: ${result.stderr.toString()}`)
+    throw new Error(`tmux ${command} failed: ${result.stderr.toString()}`)
   }
   return result.stdout.toString()
 }
 
 function runParsedTmux(args: string[]): string {
   return runTmux(withTmuxUtf8Flag(args))
+}
+
+function getTmuxCommand(args: string[]): string {
+  return args[0] === '-u' ? args[1] ?? 'command' : args[0] ?? 'command'
 }
 
 function isTmuxFormatError(error: unknown): boolean {
@@ -208,8 +231,15 @@ function capturePane(tmuxWindow: string): string | null {
   try {
     const result = Bun.spawnSync(
       ['tmux', 'capture-pane', '-t', tmuxWindow, '-p', '-J'],
-      { stdout: 'pipe', stderr: 'pipe' }
+      {
+        stdout: 'pipe',
+        stderr: 'pipe',
+        timeout: config.tmuxTimeoutMs,
+      }
     )
+    if (result.signalCode === 'SIGTERM' || result.exitCode === null) {
+      return null
+    }
     if (result.exitCode !== 0) {
       return null
     }
@@ -220,6 +250,32 @@ function capturePane(tmuxWindow: string): string | null {
     return lines.slice(-30).join('\n')
   } catch {
     return null
+  }
+}
+
+function captureScrollback(tmuxWindow: string, lines: number): string {
+  const safeLines = Math.max(1, lines)
+  try {
+    const result = Bun.spawnSync(
+      ['tmux', 'capture-pane', '-t', tmuxWindow, '-p', '-J', '-S', `-${safeLines}`],
+      {
+        stdout: 'pipe',
+        stderr: 'pipe',
+        timeout: config.tmuxTimeoutMs,
+      }
+    )
+    if (result.signalCode === 'SIGTERM' || result.exitCode === null) {
+      throw new TmuxTimeoutError('capture-pane', config.tmuxTimeoutMs)
+    }
+    if (result.exitCode !== 0) {
+      return ''
+    }
+    return result.stdout.toString()
+  } catch (error) {
+    if (isTmuxTimeoutError(error)) {
+      throw error
+    }
+    return ''
   }
 }
 
@@ -293,11 +349,19 @@ function inferStatus(
   height: number,
   now: number
 ): StatusResult {
-  if (content === null) {
-    return { status: 'unknown', lastChanged: now }
-  }
-
   const cached = paneContentCache.get(tmuxWindow)
+  if (content === null) {
+    const fallback = inferCachedSessionStatus({
+      prev: cached,
+      now,
+      workingGracePeriodMs: config.workingGracePeriodMs,
+    })
+    if (!fallback) {
+      return { status: 'unknown', lastChanged: now }
+    }
+    paneContentCache.set(tmuxWindow, fallback.nextCache)
+    return { status: fallback.status, lastChanged: fallback.lastChanged }
+  }
 
   const result = inferSessionStatus({
     prev: cached,

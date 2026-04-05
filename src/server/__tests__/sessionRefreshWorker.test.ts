@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import type { RefreshWorkerRequest, RefreshWorkerResponse } from '../sessionRefreshWorker'
+import { TMUX_TIMEOUT_ERROR_CODE } from '../tmuxTimeout'
 import { TMUX_FIELD_SEPARATOR } from '../tmuxFormat'
 import type { Session } from '../../shared/types'
 
@@ -13,6 +14,7 @@ const originalSelf = globalAny.self
 
 let messages: RefreshWorkerResponse[] = []
 let ctx: DedicatedWorkerGlobalScope
+let closeCalls = 0
 
 function joinTmuxFields(fields: string[]): string {
   return fields.join(TMUX_FIELD_SEPARATOR)
@@ -27,7 +29,11 @@ function getTmuxSubcommand(args: string[]): string | undefined {
 
 async function loadWorker(tag: string) {
   messages = []
+  closeCalls = 0
   ctx = {
+    close: () => {
+      closeCalls += 1
+    },
     postMessage: (message: RefreshWorkerResponse) => {
       messages.push(message)
     },
@@ -281,6 +287,39 @@ describe('sessionRefreshWorker', () => {
     expect(response.message).toBe('Second message')
   })
 
+  test('last-user-message marks tmux timeouts with a structured error code', async () => {
+    await loadWorker('last-user-message-timeout')
+
+    bunAny.spawnSync = ((args: string[]) => {
+      if (getTmuxSubcommand(args) === 'capture-pane') {
+        return {
+          exitCode: null,
+          signalCode: 'SIGTERM',
+          stdout: Buffer.from(''),
+          stderr: Buffer.from(''),
+        } as unknown as ReturnType<typeof Bun.spawnSync>
+      }
+      return {
+        exitCode: 0,
+        stdout: Buffer.from(''),
+        stderr: Buffer.from(''),
+      } as ReturnType<typeof Bun.spawnSync>
+    }) as typeof Bun.spawnSync
+
+    emitMessage({
+      id: 'timeout-last-user-message',
+      kind: 'last-user-message',
+      tmuxWindow: 'agentboard:1',
+    })
+
+    const response = getLastResponse()
+    expect(response.type).toBe('error')
+    if (response.type === 'error') {
+      expect(response.errorCode).toBe(TMUX_TIMEOUT_ERROR_CODE)
+      expect(response.error).toContain('timed out')
+    }
+  })
+
   test('refresh responds with error on tmux failure', async () => {
     await loadWorker('refresh-error')
 
@@ -311,6 +350,53 @@ describe('sessionRefreshWorker', () => {
     if (response.type === 'error') {
       expect(response.error).toContain('boom')
     }
+  })
+
+  test('refresh marks tmux timeouts with a structured error code', async () => {
+    await loadWorker('refresh-timeout')
+
+    bunAny.spawnSync = ((args: string[]) => {
+      if (getTmuxSubcommand(args) === 'list-windows') {
+        return {
+          exitCode: null,
+          signalCode: 'SIGTERM',
+          stdout: Buffer.from(''),
+          stderr: Buffer.from(''),
+        } as unknown as ReturnType<typeof Bun.spawnSync>
+      }
+      return {
+        exitCode: 0,
+        stdout: Buffer.from(''),
+        stderr: Buffer.from(''),
+      } as ReturnType<typeof Bun.spawnSync>
+    }) as typeof Bun.spawnSync
+
+    emitMessage({
+      id: 'timeout-1',
+      kind: 'refresh',
+      managedSession: 'agentboard',
+      discoverPrefixes: [],
+    })
+
+    const response = getLastResponse()
+    expect(response.type).toBe('error')
+    if (response.type === 'error') {
+      expect(response.errorCode).toBe(TMUX_TIMEOUT_ERROR_CODE)
+      expect(response.error).toContain('list-windows')
+      expect(response.error).toContain('timed out')
+    }
+  })
+
+  test('shutdown closes the worker without posting a response', async () => {
+    await loadWorker('shutdown')
+
+    emitMessage({
+      id: 'shutdown-1',
+      kind: 'shutdown',
+    })
+
+    expect(closeCalls).toBe(1)
+    expect(messages).toHaveLength(0)
   })
 
   test('status changes track content updates and permission prompts', async () => {
@@ -469,6 +555,78 @@ describe('sessionRefreshWorker', () => {
       } else {
         process.env.AGENTBOARD_WORKING_GRACE_MS = originalGraceEnv
       }
+    }
+  })
+
+  test('refresh preserves lastActivity when pane capture times out', async () => {
+    const originalNow = Date.now
+    let now = 1_700_000_000_000
+    Date.now = () => now
+
+    try {
+      await loadWorker('status-timeout-preserve')
+
+      const listOutput = [
+        joinTmuxFields(['agentboard', '1', 'alpha', '/Users/test/project', '100', '1700000000', 'codex', '80', '24']),
+      ].join('\n')
+      const captureSequence = ['idle', null] as const
+      let captureIndex = 0
+
+      bunAny.spawnSync = ((args: string[]) => {
+        if (getTmuxSubcommand(args) === 'list-windows') {
+          return {
+            exitCode: 0,
+            stdout: Buffer.from(listOutput),
+            stderr: Buffer.from(''),
+          } as ReturnType<typeof Bun.spawnSync>
+        }
+        if (getTmuxSubcommand(args) === 'capture-pane') {
+          const output = captureSequence[captureIndex++] ?? null
+          if (output === null) {
+            return {
+              exitCode: null,
+              signalCode: 'SIGTERM',
+              stdout: Buffer.from(''),
+              stderr: Buffer.from(''),
+            } as unknown as ReturnType<typeof Bun.spawnSync>
+          }
+          return {
+            exitCode: 0,
+            stdout: Buffer.from(output),
+            stderr: Buffer.from(''),
+          } as ReturnType<typeof Bun.spawnSync>
+        }
+        return {
+          exitCode: 0,
+          stdout: Buffer.from(''),
+          stderr: Buffer.from(''),
+        } as ReturnType<typeof Bun.spawnSync>
+      }) as typeof Bun.spawnSync
+
+      const runRefresh = () => {
+        emitMessage({
+          id: `refresh-timeout-${now}`,
+          kind: 'refresh',
+          managedSession: 'agentboard',
+          discoverPrefixes: [],
+        })
+        const response = getLastResponse()
+        if (response.type !== 'result' || response.kind !== 'refresh') {
+          throw new Error('Unexpected response type')
+        }
+        return response.sessions[0] as Session
+      }
+
+      const first = runRefresh()
+      const firstActivity = first.lastActivity
+      expect(first.status).toBe('waiting')
+
+      now += 5000
+      const second = runRefresh()
+      expect(second.status).toBe('waiting')
+      expect(second.lastActivity).toBe(firstActivity)
+    } finally {
+      Date.now = originalNow
     }
   })
 })
