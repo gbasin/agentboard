@@ -138,60 +138,116 @@ export class SessionManager {
     // Scoped to this session only (-t) rather than global (-g).
     // Note: PtyTerminalProxy copies this setting onto grouped client sessions.
     const mouseValue = this.mouseMode ? 'on' : 'off'
-    this.runTmux(['set-option', '-t', this.sessionName, 'mouse', mouseValue])
+    this.applyMouseMode(this.sessionName, mouseValue)
   }
 
   setMouseMode(enabled: boolean): void {
     const mouseValue = enabled ? 'on' : 'off'
+    const previousMouseValue = this.mouseMode ? 'on' : 'off'
+    let baseSessionUpdated = false
+    const groupedSessionsUpdated: string[] = []
 
-    // Apply directly so the longer mutation timeout covers the full update
-    // path; absent sessions will be configured on the next ensureSession.
     try {
-      this.runTmux(['set-option', '-t', this.sessionName, 'mouse', mouseValue])
-    } catch (error) {
-      if (error instanceof TmuxTimeoutError) {
-        throw error
-      }
-      if (!isTmuxSessionAbsentError(error)) {
-        throw error
-      }
-      // Session doesn't exist yet, will be applied on next ensureSession.
-    }
-
-    // Keep existing grouped websocket client sessions in sync with the
-    // base session mouse mode toggle.
-    const wsPrefix = `${this.sessionName}-ws-`
-    let groupedSessions: string[] = []
-    try {
-      groupedSessions = this.listSessions().filter((name) =>
-        name.startsWith(wsPrefix)
-      )
-    } catch (error) {
-      logger.warn('tmux_mouse_mode_group_discovery_failed', {
-        message: error instanceof Error ? error.message : String(error),
-        timedOut: error instanceof TmuxTimeoutError,
-      })
-      this.mouseMode = enabled
-      return
-    }
-
-    for (const groupedSession of groupedSessions) {
+      // Apply directly so the longer mutation timeout covers the full update
+      // path; absent sessions will be configured on the next ensureSession.
       try {
-        this.runTmux(['set-option', '-t', groupedSession, 'mouse', mouseValue])
+        this.applyMouseMode(this.sessionName, mouseValue)
+        baseSessionUpdated = true
+      } catch (error) {
+        if (error instanceof TmuxTimeoutError) {
+          throw error
+        }
+        if (!isTmuxSessionAbsentError(error)) {
+          throw error
+        }
+        // Session doesn't exist yet, will be applied on next ensureSession.
+      }
+
+      // Keep existing grouped websocket client sessions in sync with the
+      // base session mouse mode toggle.
+      const wsPrefix = `${this.sessionName}-ws-`
+      let groupedSessions: string[] = []
+      try {
+        groupedSessions = this.listSessions().filter((name) =>
+          name.startsWith(wsPrefix)
+        )
       } catch (error) {
         if (isTmuxSessionAbsentError(error)) {
-          // Session may have exited between list-sessions and set-option.
+          groupedSessions = []
+        } else {
+          logger.warn('tmux_mouse_mode_group_discovery_failed', {
+            message: error instanceof Error ? error.message : String(error),
+            timedOut: error instanceof TmuxTimeoutError,
+          })
+          throw error
+        }
+      }
+
+      for (const groupedSession of groupedSessions) {
+        try {
+          this.applyMouseMode(groupedSession, mouseValue)
+          groupedSessionsUpdated.push(groupedSession)
+        } catch (error) {
+          if (isTmuxSessionAbsentError(error)) {
+            // Session may have exited between list-sessions and set-option.
+            continue
+          }
+          logger.warn('tmux_mouse_mode_group_sync_failed', {
+            groupedSession,
+            message: error instanceof Error ? error.message : String(error),
+            timedOut: error instanceof TmuxTimeoutError,
+          })
+          throw error
+        }
+      }
+
+      this.mouseMode = enabled
+    } catch (error) {
+      this.rollbackMouseMode(previousMouseValue, groupedSessionsUpdated, baseSessionUpdated)
+      throw error
+    }
+  }
+
+  private applyMouseMode(target: string, mouseValue: string): void {
+    this.runTmux(['set-option', '-t', target, 'mouse', mouseValue])
+  }
+
+  private rollbackMouseMode(
+    mouseValue: string,
+    groupedSessions: string[],
+    baseSessionUpdated: boolean
+  ): void {
+    for (const groupedSession of [...groupedSessions].reverse()) {
+      try {
+        this.applyMouseMode(groupedSession, mouseValue)
+      } catch (error) {
+        if (isTmuxSessionAbsentError(error)) {
           continue
         }
-        logger.warn('tmux_mouse_mode_group_sync_failed', {
-          groupedSession,
+        logger.warn('tmux_mouse_mode_rollback_failed', {
+          target: groupedSession,
           message: error instanceof Error ? error.message : String(error),
           timedOut: error instanceof TmuxTimeoutError,
         })
       }
     }
 
-    this.mouseMode = enabled
+    if (!baseSessionUpdated) {
+      return
+    }
+
+    try {
+      this.applyMouseMode(this.sessionName, mouseValue)
+    } catch (error) {
+      if (isTmuxSessionAbsentError(error)) {
+        return
+      }
+      logger.warn('tmux_mouse_mode_rollback_failed', {
+        target: this.sessionName,
+        message: error instanceof Error ? error.message : String(error),
+        timedOut: error instanceof TmuxTimeoutError,
+      })
+    }
   }
 
   listWindows(): Session[] {

@@ -323,6 +323,7 @@ if (!tmuxAvailable || !localhostBindable) {
           'initial sessions/config messages'
         )
         messages.length = 0
+        const logBytesAtTestStart = readTextIfExists(logFilePath).length
 
         // Step 1: Send the first terminal-attach and wait for it to complete
         ws.send(
@@ -360,6 +361,17 @@ if (!tmuxAvailable || !localhostBindable) {
               m.sessionId === discoveredSessionId
           )
         expect(scrollbacksBeforeFirstReady.length).toBeGreaterThanOrEqual(1)
+        await waitUntil(
+          () => {
+            const logDelta = readTextIfExists(logFilePath).slice(logBytesAtTestStart)
+            return (
+              logDelta.includes('terminal_history_send') &&
+              logDelta.includes(`"sessionId":"${discoveredSessionId}"`)
+            )
+          },
+          5000,
+          'first attach history log'
+        )
 
         // Wait for the first attach's buffered history to finish arriving before
         // sending the second attach. The dedup guarantee is "no new scrollback
@@ -371,6 +383,10 @@ if (!tmuxAvailable || !localhostBindable) {
           300,
           'first attach history delivery to settle'
         )
+
+        // Snapshot logs after the first attach settles so we can prove the second
+        // attach only emitted the dedup fast-path and no new history capture.
+        const logBytesBeforeSecondAttach = readTextIfExists(logFilePath).length
 
         // Record the total message count so we can isolate second-attach messages.
         const messagesBeforeSecondAttach = messages.length
@@ -400,6 +416,14 @@ if (!tmuxAvailable || !localhostBindable) {
 
         // Give a moment for any trailing messages
         await delay(200)
+        await waitUntil(
+          () => {
+            const logDelta = readTextIfExists(logFilePath).slice(logBytesBeforeSecondAttach)
+            return logDelta.includes('terminal_attach_dedup')
+          },
+          5000,
+          'terminal_attach_dedup log'
+        )
 
         // Look at messages received AFTER the second attach was sent.
         const secondAttachMessages = messages.slice(messagesBeforeSecondAttach)
@@ -412,16 +436,13 @@ if (!tmuxAvailable || !localhostBindable) {
         )
         expect(secondReadyIndex).not.toBe(-1)
 
-        // Count scrollback outputs before the second terminal-ready:
-        // The dedup path should NOT have sent any scrollback.
-        const scrollbacksBeforeSecondReady = secondAttachMessages
-          .slice(0, secondReadyIndex)
-          .filter(
-            (m) =>
-              m.type === 'terminal-output' &&
-              m.sessionId === discoveredSessionId
-          )
-        expect(scrollbacksBeforeSecondReady.length).toBe(0)
+        // Delayed first-attach output may still be in flight here, so validate
+        // the dedup contract via server logs rather than raw message timing.
+        const logDeltaAfterSecondAttach = readTextIfExists(logFilePath).slice(
+          logBytesBeforeSecondAttach
+        )
+        expect(logDeltaAfterSecondAttach).toContain('terminal_attach_dedup')
+        expect(logDeltaAfterSecondAttach).not.toContain('terminal_history_send')
 
         // Total terminal-ready count should be exactly 2
         const totalReadys = messages.filter(
@@ -729,6 +750,14 @@ function drainStream(
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function readTextIfExists(filePath: string): string {
+  try {
+    return fs.readFileSync(filePath, 'utf-8')
+  } catch {
+    return ''
+  }
 }
 
 async function waitForMessageQuiescence(

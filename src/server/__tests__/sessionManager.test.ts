@@ -1577,7 +1577,7 @@ describe('SessionManager', () => {
     expect(() => manager.setMouseMode(false)).not.toThrow()
   })
 
-  test('setMouseMode treats grouped session sync failures as best-effort', () => {
+  test('setMouseMode throws and rolls back when grouped session sync fails', () => {
     const sessionName = 'agentboard-setmouse-grouped'
     const runner = createTmuxRunner([
       {
@@ -1588,13 +1588,17 @@ describe('SessionManager', () => {
         name: `${sessionName}-ws-a`,
         windows: [],
       },
+      {
+        name: `${sessionName}-ws-b`,
+        windows: [],
+      },
     ])
     let groupedFailureInjected = false
     const runTmux = (args: string[]) => {
       const normalized = normalizeParsedTmuxArgs(args)
       if (
         normalized[0] === 'set-option' &&
-        normalized[2] === `${sessionName}-ws-a` &&
+        normalized[2] === `${sessionName}-ws-b` &&
         !groupedFailureInjected
       ) {
         groupedFailureInjected = true
@@ -1609,7 +1613,35 @@ describe('SessionManager', () => {
       mouseMode: true,
     })
 
-    expect(() => manager.setMouseMode(false)).not.toThrow()
+    expect(() => manager.setMouseMode(false)).toThrow('grouped set-option failed')
+    expect(runner.calls).toContainEqual([
+      'set-option',
+      '-t',
+      sessionName,
+      'mouse',
+      'off',
+    ])
+    expect(runner.calls).toContainEqual([
+      'set-option',
+      '-t',
+      `${sessionName}-ws-a`,
+      'mouse',
+      'off',
+    ])
+    expect(runner.calls).toContainEqual([
+      'set-option',
+      '-t',
+      `${sessionName}-ws-a`,
+      'mouse',
+      'on',
+    ])
+    expect(runner.calls).toContainEqual([
+      'set-option',
+      '-t',
+      sessionName,
+      'mouse',
+      'on',
+    ])
 
     runner.calls.length = 0
     manager.listWindows()
@@ -1619,13 +1651,14 @@ describe('SessionManager', () => {
       '-t',
       sessionName,
       'mouse',
-      'off',
+      'on',
     ])
   })
 
-  test('setMouseMode treats grouped session discovery failures as best-effort', () => {
+  test('setMouseMode throws and rolls back when grouped session discovery fails', () => {
     const sessionName = 'agentboard-setmouse-discovery'
     let setOptionCount = 0
+    let failDiscovery = true
     const runTmux = (args: string[]) => {
       const normalized = normalizeParsedTmuxArgs(args)
       if (normalized[0] === 'set-option') {
@@ -1633,7 +1666,10 @@ describe('SessionManager', () => {
         return ''
       }
       if (normalized[0] === 'list-sessions') {
-        throw new TmuxTimeoutError('list-sessions', 3000)
+        if (failDiscovery) {
+          throw new TmuxTimeoutError('list-sessions', 3000)
+        }
+        return ''
       }
       if (normalized[0] === 'list-windows') {
         return ''
@@ -1647,10 +1683,11 @@ describe('SessionManager', () => {
       mouseMode: true,
     })
 
-    expect(() => manager.setMouseMode(false)).not.toThrow()
-    expect(setOptionCount).toBe(1)
+    expect(() => manager.setMouseMode(false)).toThrow(TmuxTimeoutError)
+    expect(setOptionCount).toBe(2)
 
     setOptionCount = 0
+    failDiscovery = false
     manager.ensureSession()
     expect(setOptionCount).toBe(1)
   })

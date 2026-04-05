@@ -2839,6 +2839,43 @@ describe('server fetch handlers', () => {
     expect(dbState.setAppSettingCalls).toEqual([])
   })
 
+  test('tmux mouse mode apply failure returns 500 and does not persist the setting', async () => {
+    let mouseModeCalls = 0
+    sessionManagerState.setMouseMode = () => {
+      mouseModeCalls += 1
+      throw new Error('grouped set-option failed')
+    }
+
+    const { serveOptions } = await loadIndex()
+    const fetchHandler = serveOptions.fetch
+    if (!fetchHandler) {
+      throw new Error('Fetch handler not configured')
+    }
+
+    const response = await fetchHandler.call(
+      {} as Bun.Server<unknown>,
+      new Request('http://localhost/api/settings/tmux-mouse-mode', {
+        method: 'PUT',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ enabled: false }),
+      }),
+      {} as Bun.Server<unknown>
+    )
+
+    if (!response) {
+      throw new Error('Expected response for tmux mouse mode request')
+    }
+
+    expect(mouseModeCalls).toBe(1)
+    expect(response.status).toBe(500)
+    expect(await response.json()).toEqual({
+      error: 'Unable to apply tmux mouse mode',
+    })
+    expect(dbState.setAppSettingCalls).toEqual([])
+  })
+
   test('tmux mouse mode persists only after tmux state applies successfully', async () => {
     const appliedValues: boolean[] = []
     sessionManagerState.setMouseMode = (enabled: boolean) => {
