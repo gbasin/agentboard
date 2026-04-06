@@ -985,6 +985,144 @@ describe('LogPoller', () => {
     db.close()
   })
 
+  test('matches new session to window when existing session is orphaned between polls', async () => {
+    const db = initDatabase({ path: ':memory:' })
+    const registry = new SessionRegistry()
+    registry.replaceSessions([baseSession])
+
+    const tokensA = Array.from({ length: 60 }, (_, i) => `token${i}`).join(' ')
+    setTmuxOutput(baseSession.tmuxWindow, buildLastExchangeOutput(tokensA))
+
+    const projectPath = baseSession.projectPath
+    const encoded = encodeProjectPath(projectPath)
+    const logDir = path.join(
+      process.env.CLAUDE_CONFIG_DIR ?? '',
+      'projects',
+      encoded
+    )
+    await fs.mkdir(logDir, { recursive: true })
+
+    // Poll 1: Session A is discovered and matched to the window
+    const logPathA = path.join(logDir, 'session-a.jsonl')
+    const lineA = buildUserLogEntry(tokensA, {
+      sessionId: 'claude-session-a',
+      cwd: projectPath,
+    })
+    const assistantLineA = JSON.stringify({
+      type: 'assistant',
+      message: { content: [{ type: 'text', text: tokensA }] },
+    })
+    await fs.writeFile(logPathA, `${lineA}\n${assistantLineA}\n`)
+
+    const poller = new LogPoller(db, registry, {
+      matchWorkerClient: new InlineMatchWorkerClient(),
+    })
+    await poller.pollOnce()
+
+    const recordA = db.getSessionById('claude-session-a')
+    expect(recordA?.currentWindow).toBe(baseSession.tmuxWindow)
+
+    // Between polls: Session A's window claim is removed (simulating orphan cleanup)
+    db.updateSession('claude-session-a', { currentWindow: null })
+    const orphanedA = db.getSessionById('claude-session-a')
+    expect(orphanedA?.currentWindow).toBeNull()
+
+    // Poll 2: Session B appears with different content.
+    // The window is now unclaimed, so the optimization should allow matching.
+    const tokensB = Array.from({ length: 60 }, (_, i) => `next${i}`).join(' ')
+    setTmuxOutput(baseSession.tmuxWindow, buildLastExchangeOutput(tokensB))
+
+    const logPathB = path.join(logDir, 'session-b.jsonl')
+    const lineB = buildUserLogEntry(tokensB, {
+      sessionId: 'claude-session-b',
+      cwd: projectPath,
+    })
+    const assistantLineB = JSON.stringify({
+      type: 'assistant',
+      message: { content: [{ type: 'text', text: tokensB }] },
+    })
+    await fs.writeFile(logPathB, `${lineB}\n${assistantLineB}\n`)
+
+    await poller.pollOnce()
+
+    // Session B should get matched to the now-unclaimed window
+    const newRecord = db.getSessionById('claude-session-b')
+    expect(newRecord?.currentWindow).toBe(baseSession.tmuxWindow)
+
+    db.close()
+  })
+
+  test('new session with slug supersedes claimed window without needing match', async () => {
+    const db = initDatabase({ path: ':memory:' })
+    const registry = new SessionRegistry()
+    registry.replaceSessions([baseSession])
+
+    const tokensA = Array.from({ length: 60 }, (_, i) => `token${i}`).join(' ')
+    setTmuxOutput(baseSession.tmuxWindow, buildLastExchangeOutput(tokensA))
+
+    const projectPath = baseSession.projectPath
+    const encoded = encodeProjectPath(projectPath)
+    const logDir = path.join(
+      process.env.CLAUDE_CONFIG_DIR ?? '',
+      'projects',
+      encoded
+    )
+    await fs.mkdir(logDir, { recursive: true })
+
+    // Poll 1: Session A gets matched to the window (with slug)
+    const logPathA = path.join(logDir, 'session-a.jsonl')
+    const lineA = buildUserLogEntry(tokensA, {
+      sessionId: 'claude-session-a',
+      cwd: projectPath,
+      slug: 'supersede-slug',
+    })
+    const assistantLineA = JSON.stringify({
+      type: 'assistant',
+      message: { content: [{ type: 'text', text: tokensA }] },
+    })
+    await fs.writeFile(logPathA, `${lineA}\n${assistantLineA}\n`)
+
+    const poller = new LogPoller(db, registry, {
+      matchWorkerClient: new InlineMatchWorkerClient(),
+    })
+    await poller.pollOnce()
+
+    const recordA = db.getSessionById('claude-session-a')
+    expect(recordA?.currentWindow).toBe(baseSession.tmuxWindow)
+
+    // Poll 2: Session B appears with the same slug + project.
+    // The window is still claimed by A, so match-based matching is skipped
+    // for this window. However, slug supersede should detach A and give
+    // the window to B without needing rg matching.
+    const tokensB = Array.from({ length: 60 }, (_, i) => `next${i}`).join(' ')
+    setTmuxOutput(baseSession.tmuxWindow, buildLastExchangeOutput(tokensB))
+
+    const logPathB = path.join(logDir, 'session-b.jsonl')
+    const lineB = buildUserLogEntry(tokensB, {
+      sessionId: 'claude-session-b',
+      cwd: projectPath,
+      slug: 'supersede-slug',
+    })
+    const assistantLineB = JSON.stringify({
+      type: 'assistant',
+      message: { content: [{ type: 'text', text: tokensB }] },
+    })
+    await fs.writeFile(logPathB, `${lineB}\n${assistantLineB}\n`)
+
+    await poller.pollOnce()
+
+    // Session A should be detached (superseded by slug)
+    const oldRecord = db.getSessionById('claude-session-a')
+    expect(oldRecord?.currentWindow).toBeNull()
+
+    // Session B should claim the window via slug supersede,
+    // even though the optimization skipped rg matching for claimed windows
+    const newRecord = db.getSessionById('claude-session-b')
+    expect(newRecord?.currentWindow).toBe(baseSession.tmuxWindow)
+
+    db.close()
+  })
+
   test('ignores external windows in name-based orphan fallback', async () => {
     const db = initDatabase({ path: ':memory:' })
     const registry = new SessionRegistry()
