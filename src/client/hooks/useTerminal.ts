@@ -908,6 +908,8 @@ export function useTerminal({
         inTmuxCopyModeRef.current = false
       }
       terminal.reset()
+      needsResetRef.current = false
+      setIsSwitching(false)
       return
     }
 
@@ -926,6 +928,8 @@ export function useTerminal({
         focusAfterAttachSessionRef.current = null
         inTmuxCopyModeRef.current = false
       }
+      needsResetRef.current = false
+      setIsSwitching(false)
       return
     }
 
@@ -1184,9 +1188,13 @@ export function useTerminal({
         attachedSession &&
         message.sessionId === attachedSession
       ) {
-        // If no terminal-output preceded ready (empty pane or server dedup),
-        // reset now to clear stale content from the previous session.
-        if (needsResetRef.current) {
+        // If output is buffered but unflushed, flush now so reset+write
+        // stay atomic (avoids blank flash from resetting before flush fires).
+        // If no output arrived at all (empty pane or server dedup), reset
+        // to clear stale content from the previous session.
+        if (needsResetRef.current && outputBufferRef.current) {
+          flush()
+        } else if (needsResetRef.current) {
           terminalRef.current?.reset()
           needsResetRef.current = false
         }
@@ -1217,6 +1225,16 @@ export function useTerminal({
           flush()
           scheduleIosRepaint(50, 'terminal-ready')
         }
+      }
+
+      // Clear switching state on terminal-error so spinner doesn't get stuck
+      if (
+        message.type === 'terminal-error' &&
+        attachedSession &&
+        (!message.sessionId || message.sessionId === attachedSession)
+      ) {
+        needsResetRef.current = false
+        setIsSwitching(false)
       }
 
       // Handle tmux copy-mode status response
