@@ -146,7 +146,9 @@ class WebglAddonMock {
 class ClipboardAddonMock {}
 
 class SearchAddonMock {}
-class SerializeAddonMock {}
+class SerializeAddonMock {
+  serialize() { return '\x1b[mtest-snapshot-data' }
+}
 class ProgressAddonMock {}
 
 mock.module('@xterm/xterm', () => ({ Terminal: TerminalMock }))
@@ -158,7 +160,7 @@ mock.module('@xterm/addon-serialize', () => ({ SerializeAddon: SerializeAddonMoc
 mock.module('@xterm/addon-progress', () => ({ ProgressAddon: ProgressAddonMock }))
 mock.module('@xterm/addon-web-links', () => ({ WebLinksAddon: class {} }))
 
-const { forceTextPresentation, sanitizeLink, useTerminal } = await import('../hooks/useTerminal')
+const { forceTextPresentation, sanitizeLink, useTerminal, invalidateSnapshotCache, clearSnapshotCache } = await import('../hooks/useTerminal')
 
 // Tracks a registered event listener with its capture flag
 interface ListenerEntry {
@@ -2380,5 +2382,161 @@ describe('useTerminal', () => {
     const pasteEntriesAfter = listenerEntries.get('paste')
     const hasCaptureListenerAfter = pasteEntriesAfter?.some((e) => e.capture) ?? false
     expect(hasCaptureListenerAfter).toBe(false)
+  })
+
+  test('captures terminal snapshot on session switch and restores on switch-back', async () => {
+    globalAny.navigator = {
+      userAgent: 'Chrome',
+      platform: 'MacIntel',
+      maxTouchPoints: 0,
+      clipboard: { writeText: () => Promise.resolve() },
+    } as unknown as Navigator
+
+    // Start fresh
+    clearSnapshotCache()
+
+    const sendCalls: Array<Record<string, unknown>> = []
+    const { container } = createContainerMock()
+
+    let renderer!: TestRenderer.ReactTestRenderer
+
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          sendMessage={(message) => sendCalls.push(message)}
+          subscribe={() => () => {}}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+        { createNodeMock: () => container },
+      )
+      await Promise.resolve()
+    })
+
+    const terminal = TerminalMock.instances[0]
+    if (!terminal) throw new Error('Expected terminal instance')
+
+    // Switch to session-2 — should capture snapshot of session-1
+    await act(async () => {
+      renderer.update(
+        <TerminalHarness
+          sessionId="session-2"
+          tmuxTarget="agentboard:@2"
+          sendMessage={(message) => sendCalls.push(message)}
+          subscribe={() => () => {}}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+      )
+      await Promise.resolve()
+    })
+
+    // Verify detach was sent (snapshot captured before detach)
+    expect(sendCalls).toContainEqual({
+      type: 'terminal-detach',
+      sessionId: 'session-1',
+    })
+
+    // Switch back to session-1 — should write cached snapshot
+    await act(async () => {
+      renderer.update(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          sendMessage={(message) => sendCalls.push(message)}
+          subscribe={() => () => {}}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+      )
+      await Promise.resolve()
+    })
+
+    // Terminal should have had reset() + write(cached) called for the snapshot restore
+    expect(terminal.resetCalls).toBeGreaterThan(0)
+    // The cached snapshot content should have been written
+    expect(terminal.writes).toContainEqual('\x1b[mtest-snapshot-data')
+
+    act(() => {
+      renderer.unmount()
+    })
+  })
+
+  test('invalidateSnapshotCache removes entry and clearSnapshotCache removes all', async () => {
+    clearSnapshotCache()
+
+    globalAny.navigator = {
+      userAgent: 'Chrome',
+      platform: 'MacIntel',
+      maxTouchPoints: 0,
+      clipboard: { writeText: () => Promise.resolve() },
+    } as unknown as Navigator
+
+    const { container } = createContainerMock()
+
+    let renderer!: TestRenderer.ReactTestRenderer
+
+    // Attach to session-1
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          sendMessage={() => {}}
+          subscribe={() => () => {}}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+        { createNodeMock: () => container },
+      )
+      await Promise.resolve()
+    })
+
+    // Switch to session-2 (caches session-1)
+    await act(async () => {
+      renderer.update(
+        <TerminalHarness
+          sessionId="session-2"
+          tmuxTarget="agentboard:@2"
+          sendMessage={() => {}}
+          subscribe={() => () => {}}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+      )
+      await Promise.resolve()
+    })
+
+    const terminal = TerminalMock.instances[0]
+    if (!terminal) throw new Error('Expected terminal instance')
+
+    // Invalidate session-1's cache
+    invalidateSnapshotCache('session-1')
+
+    // Switch back to session-1 — should NOT write cached snapshot (it was invalidated)
+    terminal.writes.length = 0
+    terminal.resetCalls = 0
+    await act(async () => {
+      renderer.update(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          sendMessage={() => {}}
+          subscribe={() => () => {}}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+      )
+      await Promise.resolve()
+    })
+
+    // No snapshot data should have been written (cache was invalidated)
+    expect(terminal.writes).not.toContainEqual('\x1b[mtest-snapshot-data')
+
+    act(() => {
+      renderer.unmount()
+    })
   })
 })

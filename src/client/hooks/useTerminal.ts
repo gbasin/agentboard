@@ -11,6 +11,21 @@ import type { SendClientMessage, ServerMessageWithDiagnostics, SubscribeServerMe
 import { clientLog } from '../utils/clientLog'
 import type { ConnectionStatus } from '../stores/sessionStore'
 
+// Module-level snapshot cache: sessionId → serialized terminal content.
+// Survives component remounts and avoids stale-closure issues in effects.
+const snapshotCache = new Map<string, string>()
+const MAX_SNAPSHOT_ENTRIES = 20
+
+/** Remove a single session's cached terminal snapshot. */
+export function invalidateSnapshotCache(sessionId: string): void {
+  snapshotCache.delete(sessionId)
+}
+
+/** Clear all cached terminal snapshots (e.g. on reconnect). */
+export function clearSnapshotCache(): void {
+  snapshotCache.clear()
+}
+
 // URL regex that matches standard URLs and IP:port patterns
 const URL_REGEX = /https?:\/\/[^\s"'<>]+|\b(?:localhost|\d{1,3}(?:\.\d{1,3}){3}):\d{1,5}(?:\/[^\s"'<>]*)?\b/
 const TRAILING_PUNCTUATION_REGEX = /[.,;:!?]+$/
@@ -928,6 +943,8 @@ export function useTerminal({
         focusAfterAttachSessionRef.current = null
         inTmuxCopyModeRef.current = false
       }
+      // Server state may have changed — all snapshots are potentially stale
+      clearSnapshotCache()
       needsResetRef.current = false
       setIsSwitching(false)
       return
@@ -935,6 +952,20 @@ export function useTerminal({
 
     // Detach from previous session first
     if (prevAttached && prevAttached !== sessionId) {
+      // Capture terminal snapshot before detach for instant restore on switch-back
+      try {
+        const serialized = serializeAddonRef.current?.serialize()
+        if (serialized) {
+          snapshotCache.set(prevAttached, serialized)
+          // Evict oldest entry if over limit
+          if (snapshotCache.size > MAX_SNAPSHOT_ENTRIES) {
+            const oldest = snapshotCache.keys().next().value
+            if (oldest) snapshotCache.delete(oldest)
+          }
+        }
+      } catch {
+        // serialize() can fail on a disposed terminal — ignore
+      }
       sendMessageRef.current({ type: 'terminal-detach', sessionId: prevAttached })
       attachedSessionRef.current = null
       attachedTargetRef.current = null
@@ -974,6 +1005,14 @@ export function useTerminal({
       }
       needsResetRef.current = true
       setIsSwitching(true)
+
+      // Instantly show cached snapshot for the target session (if available)
+      const cached = snapshotCache.get(sessionId)
+      if (cached) {
+        terminal.reset()
+        terminal.write(cached)
+        // needsResetRef stays true — live history will replace the snapshot
+      }
 
       // Fit terminal first to get accurate dimensions
       const fitAddon = fitAddonRef.current

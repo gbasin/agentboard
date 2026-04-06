@@ -15,6 +15,7 @@ import {
 } from './stores/settingsStore'
 import { useThemeStore } from './stores/themeStore'
 import { useWebSocket } from './hooks/useWebSocket'
+import { invalidateSnapshotCache } from './hooks/useTerminal'
 import { useVisualViewport } from './hooks/useVisualViewport'
 import { sortSessions } from './utils/sessions'
 import { flushSync } from 'react-dom'
@@ -258,6 +259,7 @@ export default function App() {
         // Keeping the entry in pendingKills filters
         // those stale broadcasts.  Cleanup happens on reconnect (epoch mismatch)
         // or kill-failed (rollback).
+        invalidateSnapshotCache(message.sessionId)
         const currentSessions = useSessionStore.getState().sessions
         const nextSessions = currentSessions.filter(
           (session) => session.id !== message.sessionId
@@ -452,6 +454,7 @@ export default function App() {
   const pendingKills = useRef<Map<string, { session: Session; wasSelected: boolean; epoch: number }>>(new Map())
 
   const handleKillSession = useCallback((sessionId: string) => {
+    invalidateSnapshotCache(sessionId)
     // Snapshot session and selection state before removal for kill-failed rollback
     const { sessions: currentSessions, selectedSessionId: currentSelected } = useSessionStore.getState()
     const session = currentSessions.find(s => s.id === sessionId)
