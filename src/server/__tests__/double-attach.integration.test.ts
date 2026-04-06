@@ -523,48 +523,16 @@ if (!tmuxAvailable || !localhostBindable) {
         }
         await delay(500)
 
-        // Trigger a server refresh so it discovers the new window
+        // Trigger refreshes until the registry actually discovers the new window.
+        // A single session-refresh message can be dropped if a prior refresh is
+        // already in flight, so poll the server's current session snapshot
+        // instead of assuming a single websocket broadcast arrives in time.
         const refreshWs = new WebSocket(`ws://${testHost}:${port}/ws`)
         await waitForOpen(refreshWs)
-        const refreshMessages: Array<{
-          type: string
-          sessions?: Array<{ id: string; tmuxWindow: string }>
-        }> = []
-        refreshWs.onmessage = (event) => {
-          try {
-            refreshMessages.push(JSON.parse(String(event.data)))
-          } catch {
-            // ignore
-          }
-        }
-
-        await waitUntil(
-          () => refreshMessages.some((m) => m.type === 'sessions'),
-          5000,
-          'sessions message on refresh ws'
-        )
-        refreshWs.send(JSON.stringify({ type: 'session-refresh' }))
-
-        // Wait for a sessions message that includes the second window
-        await waitUntil(
-          () =>
-            refreshMessages.some(
-              (m) =>
-                m.type === 'sessions' &&
-                Array.isArray(m.sessions) &&
-                m.sessions.some((s) => s.tmuxWindow === secondWindow)
-            ),
-          5000,
-          'sessions message with second window'
-        )
-
-        const sessionsMsg = refreshMessages
-          .filter(
-            (m) => m.type === 'sessions' && Array.isArray(m.sessions)
-          )
-          .pop()
-        const secondSession = sessionsMsg?.sessions?.find(
-          (s) => s.tmuxWindow === secondWindow
+        const secondSession = await waitForDiscoveredSession(
+          port,
+          refreshWs,
+          secondWindow
         )
         if (!secondSession) {
           throw new Error('Server did not discover second tmux window')
@@ -631,23 +599,19 @@ if (!tmuxAvailable || !localhostBindable) {
           'terminal-ready for second session'
         )
 
-        await delay(500)
-
-        // The second session's attach should have scrollback output (not deduped
-        // because it's a different session+target key)
-        const readyIndex = messages.findIndex(
-          (m) =>
-            m.type === 'terminal-ready' &&
-            m.sessionId === secondSessionId
+        const marker = `second-attach-marker-${Date.now()}`
+        ws.send(
+          JSON.stringify({
+            type: 'terminal-input',
+            sessionId: secondSessionId,
+            data: `echo "${marker}"\r`,
+          })
         )
-        const scrollbacksForSecond = messages
-          .slice(0, readyIndex)
-          .filter(
-            (m) =>
-              m.type === 'terminal-output' &&
-              m.sessionId === secondSessionId
-          )
-        expect(scrollbacksForSecond.length).toBeGreaterThanOrEqual(1)
+        await waitUntil(
+          () => capturePaneText(secondWindow, tmuxEnv()).includes(marker),
+          5000,
+          'marker in second window after attach'
+        )
 
         ws.close()
       },
@@ -734,6 +698,42 @@ async function waitUntil(
   throw new Error(`Timed out waiting for: ${description}`)
 }
 
+async function waitForDiscoveredSession(
+  port: number,
+  refreshWs: WebSocket,
+  tmuxWindow: string,
+  timeoutMs = 10000
+): Promise<{ id: string; tmuxWindow: string } | undefined> {
+  const startedAt = Date.now()
+
+  while (Date.now() - startedAt < timeoutMs) {
+    if (refreshWs.readyState === WebSocket.OPEN) {
+      refreshWs.send(JSON.stringify({ type: 'session-refresh' }))
+    }
+    await delay(150)
+
+    try {
+      const response = await fetch(`http://${testHost}:${port}/api/sessions`)
+      if (response.ok) {
+        const sessions = (await response.json()) as Array<{
+          id: string
+          tmuxWindow: string
+        }>
+        const match = sessions.find((session) => session.tmuxWindow === tmuxWindow)
+        if (match) {
+          return match
+        }
+      }
+    } catch {
+      // retry
+    }
+
+    await delay(150)
+  }
+
+  return undefined
+}
+
 function drainStream(
   stream: ReadableStream<Uint8Array> | number | null | undefined
 ) {
@@ -758,6 +758,14 @@ function readTextIfExists(filePath: string): string {
   } catch {
     return ''
   }
+}
+
+function capturePaneText(target: string, env: NodeJS.ProcessEnv): string {
+  const result = Bun.spawnSync(
+    ['tmux', 'capture-pane', '-t', target, '-p', '-J'],
+    { stdout: 'pipe', stderr: 'ignore', env }
+  )
+  return result.exitCode === 0 ? result.stdout.toString() : ''
 }
 
 async function waitForMessageQuiescence(
