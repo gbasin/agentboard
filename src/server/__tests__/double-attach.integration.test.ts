@@ -563,6 +563,7 @@ if (!tmuxAvailable || !localhostBindable) {
           'sessions message'
         )
         messages.length = 0
+        const logBytesBeforeAttaches = readTextIfExists(logFilePath).length
 
         // Attach to first session
         ws.send(
@@ -612,6 +613,25 @@ if (!tmuxAvailable || !localhostBindable) {
           5000,
           'marker in second window after attach'
         )
+
+        await waitUntil(
+          () => {
+            const logDelta = readTextIfExists(logFilePath).slice(logBytesBeforeAttaches)
+            return (
+              logDelta.includes('terminal_attach_profile') &&
+              logDelta.includes(`"sessionId":"${secondSessionId}"`)
+            )
+          },
+          5000,
+          'terminal_attach_profile log for second session'
+        )
+
+        const logDeltaAfterAttaches = readTextIfExists(logFilePath).slice(
+          logBytesBeforeAttaches
+        )
+        expect(logDeltaAfterAttaches).toContain('terminal_attach_profile')
+        expect(logDeltaAfterAttaches).toContain(`"sessionId":"${secondSessionId}"`)
+        expect(logDeltaAfterAttaches).not.toContain('terminal_attach_dedup')
 
         ws.close()
       },
