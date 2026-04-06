@@ -93,17 +93,29 @@ export function handleMatchWorkerRequest(
       payload.windows.map((w) => [w.tmuxWindow, w] as const)
     )
 
+    // Only match against unclaimed windows — claimed windows would be
+    // rejected by the main thread anyway (logPoller refuses to steal),
+    // so capturing their scrollback and running rg is wasted work.
+    const claimedWindows = new Set(
+      payload.sessions
+        .map((s) => s.currentWindow)
+        .filter(Boolean) as string[]
+    )
+    const unclaimedWindows = payload.windows.filter(
+      (w) => !claimedWindows.has(w.tmuxWindow)
+    )
+
     const entriesToMatch = getEntriesNeedingMatch(entries, payload.sessions, {
       minTokens: payload.minTokensForMatch ?? 0,
       skipMatchingPatterns: payload.skipMatchingPatterns ?? [],
     })
-    if (entriesToMatch.length === 0) {
+    if (entriesToMatch.length === 0 || unclaimedWindows.length === 0) {
       matchSkipped = true
     } else {
       const matchStart = performance.now()
       const matchLogPaths = entriesToMatch.map((entry) => entry.logPath)
       const matchResult = matchWindowsToLogsByExactRg(
-        payload.windows,
+        unclaimedWindows,
         logDirs,
         payload.scrollbackLines ?? DEFAULT_SCROLLBACK_LINES,
         {
@@ -114,7 +126,7 @@ export function handleMatchWorkerRequest(
         }
       )
       matchMs = performance.now() - matchStart
-      matchWindowCount = payload.windows.length
+      matchWindowCount = unclaimedWindows.length
       matchLogCount = matchLogPaths.length
       resolved = Array.from(matchResult.matches.entries()).map(([logPath, window]) => ({
         logPath,
@@ -139,7 +151,7 @@ export function handleMatchWorkerRequest(
           Math.min(os.cpus().length, 4)
         )
         const orphanMatchResult = matchWindowsToLogsByExactRg(
-          payload.windows,
+          unclaimedWindows,
           logDirs,
           payload.scrollbackLines ?? DEFAULT_SCROLLBACK_LINES,
           {
