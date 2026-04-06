@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
@@ -182,6 +182,10 @@ export function useTerminal({
   const outputBufferRef = useRef<string>('')
   const idleTimerRef = useRef<number | null>(null)
   const maxTimerRef = useRef<number | null>(null)
+
+  // Deferred reset: defer terminal.reset() until history arrives to avoid blank flash
+  const needsResetRef = useRef(false)
+  const [isSwitching, setIsSwitching] = useState(false)
 
   // Tuning: flush when idle for 2ms, or at most every 16ms
   const IDLE_FLUSH_MS = 2
@@ -952,9 +956,20 @@ export function useTerminal({
       })
       const switchStart = performance.now()
 
-      // Reset terminal before attaching to clear stale content
-      terminal.reset()
-      const resetDone = performance.now()
+      // Defer reset until history arrives (no blank flash).
+      // Drain stale output buffer first — prevents old session's data
+      // from consuming the one-shot reset meant for new session's history.
+      outputBufferRef.current = ''
+      if (idleTimerRef.current !== null) {
+        window.clearTimeout(idleTimerRef.current)
+        idleTimerRef.current = null
+      }
+      if (maxTimerRef.current !== null) {
+        window.clearTimeout(maxTimerRef.current)
+        maxTimerRef.current = null
+      }
+      needsResetRef.current = true
+      setIsSwitching(true)
 
       // Fit terminal first to get accurate dimensions
       const fitAddon = fitAddonRef.current
@@ -1014,8 +1029,7 @@ export function useTerminal({
 
       clientLog('switch_attach_sent', {
         sessionId,
-        resetMs: Math.round(resetDone - switchStart),
-        fitMs: Math.round(fitDone - resetDone),
+        fitMs: Math.round(fitDone - switchStart),
         totalMs: Math.round(performance.now() - switchStart),
         from: prevAttached ?? null,
         immediate: isSessionSwitch,
@@ -1080,6 +1094,13 @@ export function useTerminal({
       if (!terminal || !data) return
 
       outputBufferRef.current = ''
+
+      // Atomically swap: reset + write in same JS task = one rAF frame, no blank
+      if (needsResetRef.current) {
+        terminal.reset()
+        needsResetRef.current = false
+      }
+
       const writeStart = performance.now()
       const dataLen = data.length
 
@@ -1163,6 +1184,14 @@ export function useTerminal({
         attachedSession &&
         message.sessionId === attachedSession
       ) {
+        // If no terminal-output preceded ready (empty pane or server dedup),
+        // reset now to clear stale content from the previous session.
+        if (needsResetRef.current) {
+          terminalRef.current?.reset()
+          needsResetRef.current = false
+        }
+        setIsSwitching(false)
+
         const readySwitchStart = switchStartRef.current
         // switchStartRef may already be cleared by terminal-output above; only log if still set
         if (readySwitchStart) {
@@ -1344,5 +1373,6 @@ export function useTerminal({
     progressAddonRef,
     inTmuxCopyModeRef,
     setTmuxCopyMode,
+    isSwitching,
   }
 }

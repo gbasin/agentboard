@@ -121,7 +121,7 @@ export default function Terminal({
   const isReadOnly = isRemoteSession && !remoteAllowAttach
   const canControl = !isRemoteSession || (remoteAllowControl && session?.source === 'managed')
 
-  const { containerRef, terminalRef, inTmuxCopyModeRef, setTmuxCopyMode } = useTerminal({
+  const { containerRef, terminalRef, inTmuxCopyModeRef, setTmuxCopyMode, isSwitching } = useTerminal({
     sessionId: session?.id ?? null,
     tmuxTarget: session?.tmuxWindow ?? null,
     allowAttach: !isReadOnly,
@@ -1047,6 +1047,15 @@ export default function Terminal({
       {/* Terminal content - always rendered so ref is attached */}
       <div className="relative flex-1">
         <div ref={containerRef} className="absolute inset-0" />
+        {isSwitching && session && (
+          <div className="absolute top-2 right-2 z-50 flex items-center gap-1.5 rounded-md bg-surface/80 px-2 py-1 text-xs text-muted backdrop-blur-sm border border-border">
+            <svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            Loading
+          </div>
+        )}
         {!session && (
           <div className="absolute inset-0 flex items-center justify-center text-sm text-muted">
             Select a session to view terminal
