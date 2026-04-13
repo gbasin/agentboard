@@ -1083,7 +1083,7 @@ function isCurrentInputField(rawLines: string[], promptIdx: number): boolean {
     // 1. Any line with both ~/path and · (CurrentDir/ProjectRoot + anything)
     if (/~\//.test(line) && /·/.test(line)) return true
     // 2. Line starting with a known model prefix + · (ModelName + anything)
-    if (/^(?:gpt|o[1-4]|codex|claude)-\S+.*·/.test(line)) return true
+    if (/^(?:gpt|o[1-4]|codex|claude)\S*\s.*·/.test(line)) return true
     // Claude Code input box border — only trust near the bottom of scrollback
     if (nearBottom && BOX_SEPARATOR_PATTERN.test(line)) return true
   }

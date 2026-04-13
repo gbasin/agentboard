@@ -1027,6 +1027,32 @@ Enter to select · Esc to cancel`
     expect(userMessages).toContain('what model are you using')
   })
 
+  test('assistant output with ⏺ on same line as status-like text is not idle', () => {
+    // The ⏺ marker must take precedence over status-line heuristics
+    // even when both appear on the same scanned line.
+    const scrollback = `› show me the config
+
+⏺ gpt-5.4 xhigh fast · main`
+
+    const userMessages = extractRecentUserMessagesFromTmux(scrollback)
+    expect(userMessages).toContain('show me the config')
+  })
+
+  test('Codex: skips suggested message with unhyphenated model name (o3)', () => {
+    // Model names like "o3" have no hyphen after the prefix
+    const scrollback = `› fix the tests
+
+⏺ All tests pass now.
+
+› Add error handling for edge cases
+
+  o3 · main`
+
+    const userMessages = extractRecentUserMessagesFromTmux(scrollback)
+    expect(userMessages).not.toContain('Add error handling for edge cases')
+    expect(userMessages).toContain('fix the tests')
+  })
+
   test('Claude: skips idle input above box-drawing separator', () => {
     // Claude Code draws ─────── as the input field border. Any prompt
     // at the bottom of the scrollback above this separator is the idle
