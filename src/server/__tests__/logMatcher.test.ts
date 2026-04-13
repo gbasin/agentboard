@@ -998,6 +998,35 @@ Enter to select · Esc to cancel`
     expect(userMessages).toContain('deploy to staging')
   })
 
+  test('does not false-positive when assistant output resembles a status line', () => {
+    // If the assistant response contains text that looks like a Codex status
+    // line (e.g., "~/repo · main"), the submitted user message above must NOT
+    // be filtered out. The ⏺ marker between prompt and status-like text proves
+    // the prompt was submitted.
+    const scrollback = `› explain the status line
+
+⏺ Example:
+  ~/projects/myapp · main
+
+› another real question
+
+⏺ Sure, here's the answer.`
+
+    const userMessages = extractRecentUserMessagesFromTmux(scrollback)
+    expect(userMessages).toContain('explain the status line')
+    expect(userMessages).toContain('another real question')
+  })
+
+  test('does not false-positive when assistant mentions a model name with middle dot', () => {
+    const scrollback = `› what model are you using
+
+⏺ I'm running:
+  gpt-5.4 xhigh fast · with streaming enabled`
+
+    const userMessages = extractRecentUserMessagesFromTmux(scrollback)
+    expect(userMessages).toContain('what model are you using')
+  })
+
   test('Claude: skips idle input above box-drawing separator', () => {
     // Claude Code draws ─────── as the input field border. Any prompt
     // at the bottom of the scrollback above this separator is the idle
