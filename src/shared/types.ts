@@ -5,7 +5,7 @@ export const INACTIVE_MAX_AGE_MAX_HOURS = 168 // 7 days
 export type SessionStatus = 'working' | 'waiting' | 'permission' | 'unknown'
 
 export type SessionSource = 'managed' | 'external'
-export type AgentType = 'claude' | 'claude-rp' | 'codex' | 'pi'
+export type AgentType = 'claude' | 'claude-rp' | 'codex' | 'gemini' | 'pi'
 export type TerminalErrorCode =
   | 'ERR_INVALID_WINDOW'
   | 'ERR_SESSION_CREATE_FAILED'
@@ -90,12 +90,12 @@ export type ServerMessage =
   | { type: 'session-resurrection-failed'; sessionId: string; displayName: string; error: string }
   | { type: 'terminal-output'; sessionId: string; data: string }
   | {
-      type: 'terminal-error'
-      sessionId: string | null
-      code: TerminalErrorCode
-      message: string
-      retryable: boolean
-    }
+    type: 'terminal-error'
+    sessionId: string | null
+    code: TerminalErrorCode
+    message: string
+    retryable: boolean
+  }
   | { type: 'terminal-ready'; sessionId: string }
   | { type: 'tmux-copy-mode-status'; sessionId: string; inCopyMode: boolean }
   | { type: 'server-config'; remoteAllowControl: boolean; remoteAllowAttach: boolean; hostLabel: string; clientLogLevel?: string }
@@ -110,12 +110,12 @@ export interface ResumeError {
 
 export type ClientMessage =
   | {
-      type: 'terminal-attach'
-      sessionId: string
-      tmuxTarget?: string
-      cols?: number
-      rows?: number
-    }
+    type: 'terminal-attach'
+    sessionId: string
+    tmuxTarget?: string
+    cols?: number
+    rows?: number
+  }
   | { type: 'terminal-detach'; sessionId: string }
   | { type: 'terminal-input'; sessionId: string; data: string }
   | { type: 'terminal-resize'; sessionId: string; cols: number; rows: number }

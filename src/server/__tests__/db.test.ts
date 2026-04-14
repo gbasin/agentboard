@@ -2,11 +2,32 @@ import { describe, expect, test, afterEach } from 'bun:test'
 import { Database as SQLiteDatabase } from 'bun:sqlite'
 import { initDatabase } from '../db'
 import fs from 'node:fs'
+import fsp from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import type { AgentType } from '../../shared/types'
 
 const now = new Date('2026-01-01T00:00:00.000Z').toISOString()
+
+async function removeDirWithRetries(dirPath: string): Promise<void> {
+  let lastError: unknown = null
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      await fsp.rm(dirPath, { recursive: true, force: true })
+      return
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (code !== 'EBUSY' && code !== 'ENOTEMPTY') {
+        throw error
+      }
+      lastError = error
+      await Bun.sleep(25 * (attempt + 1))
+    }
+  }
+
+  throw lastError
+}
 
 function makeSession(overrides: Partial<{
   sessionId: string
@@ -142,7 +163,7 @@ describe('db', () => {
     expect(db.displayNameExists('definitely-nonexistent-xyz123')).toBe(false)
   })
 
-  test('migrates legacy schema without session_source', () => {
+  test('migrates legacy schema without session_source', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentboard-'))
     const dbPath = path.join(tempDir, 'agentboard.db')
     const legacyDb = new SQLiteDatabase(dbPath)
@@ -191,7 +212,7 @@ describe('db', () => {
     expect(migrated.getSessionById('session-synthetic')).toBeNull()
 
     migrated.close()
-    fs.rmSync(tempDir, { recursive: true, force: true })
+    await removeDirWithRetries(tempDir)
   })
 
   test('launchCommand is stored and retrieved', () => {

@@ -41,6 +41,7 @@ import ProjectBadge from './ProjectBadge'
 import HostBadge from './HostBadge'
 import HostFilterDropdown from './HostFilterDropdown'
 import ProjectFilterDropdown from './ProjectFilterDropdown'
+import StatusFilterDropdown from './StatusFilterDropdown'
 import SessionPreviewModal from './SessionPreviewModal'
 
 interface SessionListProps {
@@ -177,6 +178,8 @@ export default function SessionList({
   const setProjectFilters = useSettingsStore((state) => state.setProjectFilters)
   const hostFilters = useSettingsStore((state) => state.hostFilters)
   const setHostFilters = useSettingsStore((state) => state.setHostFilters)
+  const statusFilters = useSettingsStore((state) => state.statusFilters)
+  const setStatusFilters = useSettingsStore((state) => state.setStatusFilters)
 
   // Get exiting sessions from store (for kill-failed rollback only)
   const exitingSessions = useSessionStore((state) => state.exitingSessions)
@@ -256,16 +259,20 @@ export default function SessionList({
     if (hostFilters.length > 0) {
       next = next.filter((session) => hostFilters.includes(session.host ?? ''))
     }
+    if (statusFilters.length > 0) {
+      next = next.filter((session) => statusFilters.includes(session.status))
+    }
     return next
-  }, [sortedSessions, projectFilters, hostFilters])
+  }, [sortedSessions, projectFilters, hostFilters, statusFilters])
 
   const filterKey = useMemo(
     () => {
       const projectKey = projectFilters.length === 0 ? 'all-projects' : projectFilters.join('|')
       const hostKey = hostFilters.length === 0 ? 'all-hosts' : hostFilters.join('|')
-      return `${projectKey}::${hostKey}`
+      const statusKey = statusFilters.length === 0 ? 'all-statuses' : statusFilters.join('|')
+      return `${projectKey}::${hostKey}::${statusKey}`
     },
-    [projectFilters, hostFilters]
+    [projectFilters, hostFilters, statusFilters]
   )
 
   // Track sessions that became visible due to filter changes (for entry animation)
@@ -310,6 +317,7 @@ export default function SessionList({
     if (hostFilters.length > 0) {
       next = next.filter((session) => hostFilters.includes(session.host ?? ''))
     }
+    // Inactive sessions don't have runtime status; skip status filtering for them
     return next
   }, [inactiveSessions, projectFilters, hostFilters])
 
@@ -471,6 +479,10 @@ export default function SessionList({
               onSelect={setProjectFilters}
               hasHiddenPermissions={hiddenPermissionCount > 0}
             />
+            <StatusFilterDropdown
+              selectedStatuses={statusFilters}
+              onSelect={setStatusFilters}
+            />
             <motion.span
               className="w-8 text-right text-xs text-muted"
               animate={activeCounterBump && !prefersReducedMotion ? { scale: [1, 1.3, 1] } : {}}
@@ -510,7 +522,7 @@ export default function SessionList({
               <div key={filterKey}>
                 <AnimatePresence
                   initial={false}
-                  mode={useSafariLayoutFallback ? 'sync' : 'popLayout'}
+                  mode="sync"
                 >
                   {filteredSessions.map((session, index) => {
                     const isTrulyNew = newlyActiveIds.has(session.id)
@@ -542,7 +554,10 @@ export default function SessionList({
                         showLastUserMessage={showLastUserMessage}
                         showHostInfo={showHostInfo}
                         dropIndicator={showDropIndicator}
-                        onSelect={() => onSelect(session.id)}
+                        onSelect={() => {
+                          useSessionStore.getState().markSessionRead(session.id)
+                          onSelect(session.id)
+                        }}
                         onStartEdit={canControl ? () => setEditingSessionId(session.id) : undefined}
                         onCancelEdit={() => setEditingSessionId(null)}
                         onRename={(newName) => handleRename(session.id, newName)}
@@ -856,6 +871,8 @@ function SessionRow({
   // Track previous status for transition animation
   const prevStatusRef = useRef<Session['status']>(session.status)
   const [isPulsingComplete, setIsPulsingComplete] = useState(false)
+  const markSessionUnread = useSessionStore((state) => state.markSessionUnread)
+  const isUnread = useSessionStore((state) => state.unreadSessionIds.has(session.id))
 
   useEffect(() => {
     const prevStatus = prevStatusRef.current
@@ -864,11 +881,15 @@ function SessionRow({
     // Detect transition from working → waiting (not permission, which needs immediate attention)
     if (prevStatus === 'working' && currentStatus === 'waiting') {
       setIsPulsingComplete(true)
+      // Mark as unread if the user isn't currently viewing this session
+      if (!isSelected) {
+        markSessionUnread(session.id)
+      }
       // Don't update ref yet - will update when animation ends
     } else {
       prevStatusRef.current = currentStatus
     }
-  }, [session.status])
+  }, [session.status, isSelected, session.id, markSessionUnread])
 
   const handlePulseAnimationEnd = () => {
     setIsPulsingComplete(false)
@@ -1012,6 +1033,9 @@ function SessionRow({
             >
               {sessionIdPrefix}
             </span>
+          )}
+          {isUnread && !isSelected && (
+            <span className="unread-dot" aria-label="Unread" />
           )}
           {needsInput ? (
             <span
