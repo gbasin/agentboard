@@ -950,6 +950,109 @@ Enter to select · Esc to cancel`
     )
   })
 
+  test('Codex: skips suggested message in idle input field without "N% left"', () => {
+    // Codex may omit the "N% left" portion from the status line,
+    // showing only "model config · ~/path".
+    const scrollback = `› should we restart windowserver to see if that helps
+
+⏺ I would not restart WindowServer first.
+
+› Run /review on my current changes
+
+  gpt-5.4 xhigh fast · ~/Documents/GitHub`
+
+    const userMessages = extractRecentUserMessagesFromTmux(scrollback)
+    expect(userMessages).not.toContain('Run /review on my current changes')
+    expect(userMessages).toContain(
+      'should we restart windowserver to see if that helps'
+    )
+  })
+
+  test('Codex: skips suggested message with model-only status line (no path)', () => {
+    // Custom /statusline config: model + git branch, no CurrentDir
+    const scrollback = `› fix the flaky test
+
+⏺ Done — the race condition is resolved.
+
+› Refactor the auth module
+
+  gpt-5.4 xhigh fast · main`
+
+    const userMessages = extractRecentUserMessagesFromTmux(scrollback)
+    expect(userMessages).not.toContain('Refactor the auth module')
+    expect(userMessages).toContain('fix the flaky test')
+  })
+
+  test('Codex: skips suggested message with path-first status line', () => {
+    // Custom /statusline config: current-dir comes before other items
+    const scrollback = `› deploy to staging
+
+⏺ Deployed.
+
+› Check the CI pipeline
+
+  ~/projects/myapp · main`
+
+    const userMessages = extractRecentUserMessagesFromTmux(scrollback)
+    expect(userMessages).not.toContain('Check the CI pipeline')
+    expect(userMessages).toContain('deploy to staging')
+  })
+
+  test('does not false-positive when assistant output resembles a status line', () => {
+    // If the assistant response contains text that looks like a Codex status
+    // line (e.g., "~/repo · main"), the submitted user message above must NOT
+    // be filtered out. The ⏺ marker between prompt and status-like text proves
+    // the prompt was submitted.
+    const scrollback = `› explain the status line
+
+⏺ Example:
+  ~/projects/myapp · main
+
+› another real question
+
+⏺ Sure, here's the answer.`
+
+    const userMessages = extractRecentUserMessagesFromTmux(scrollback)
+    expect(userMessages).toContain('explain the status line')
+    expect(userMessages).toContain('another real question')
+  })
+
+  test('does not false-positive when assistant mentions a model name with middle dot', () => {
+    const scrollback = `› what model are you using
+
+⏺ I'm running:
+  gpt-5.4 xhigh fast · with streaming enabled`
+
+    const userMessages = extractRecentUserMessagesFromTmux(scrollback)
+    expect(userMessages).toContain('what model are you using')
+  })
+
+  test('assistant output with ⏺ on same line as status-like text is not idle', () => {
+    // The ⏺ marker must take precedence over status-line heuristics
+    // even when both appear on the same scanned line.
+    const scrollback = `› show me the config
+
+⏺ gpt-5.4 xhigh fast · main`
+
+    const userMessages = extractRecentUserMessagesFromTmux(scrollback)
+    expect(userMessages).toContain('show me the config')
+  })
+
+  test('Codex: skips suggested message with unhyphenated model name (o3)', () => {
+    // Model names like "o3" have no hyphen after the prefix
+    const scrollback = `› fix the tests
+
+⏺ All tests pass now.
+
+› Add error handling for edge cases
+
+  o3 · main`
+
+    const userMessages = extractRecentUserMessagesFromTmux(scrollback)
+    expect(userMessages).not.toContain('Add error handling for edge cases')
+    expect(userMessages).toContain('fix the tests')
+  })
+
   test('Claude: skips idle input above box-drawing separator', () => {
     // Claude Code draws ─────── as the input field border. Any prompt
     // at the bottom of the scrollback above this separator is the idle

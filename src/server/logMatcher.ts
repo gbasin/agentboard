@@ -1071,22 +1071,21 @@ function isCurrentInputField(rawLines: string[], promptIdx: number): boolean {
   const nearBottom = rawLines.length - promptIdx <= BOX_SEPARATOR_BOTTOM_MARGIN
   for (let i = promptIdx + 1; i < Math.min(promptIdx + 4, rawLines.length); i++) {
     const line = rawLines[i]?.trim() ?? ''
+    // Assistant output (⏺) below the prompt means it was submitted, not idle
+    if (/⏺/.test(line)) break
     if (/\d+%\s*(?:context\s*)?left/i.test(line)) return true
     if (/\[\d+%\]/.test(line)) return true
     if (/\?\s*for\s*shortcuts/i.test(line)) return true
+    // Codex configurable status line: items joined by " · " (middle dot).
+    // Default items: model-with-reasoning, context-remaining, current-dir.
+    // context-remaining is caught by the "N% left" check above, but any
+    // other combination may omit it. Two patterns cover the remaining cases:
+    // 1. Any line with both ~/path and · (CurrentDir/ProjectRoot + anything)
+    if (/~\//.test(line) && /·/.test(line)) return true
+    // 2. Line starting with a known model prefix + · (ModelName + anything)
+    if (/^(?:gpt|o[1-4]|codex|claude)\S*\s.*·/.test(line)) return true
     // Claude Code input box border — only trust near the bottom of scrollback
-    // and only if no assistant output (⏺) appears between the prompt and the
-    // separator, which would mean the prompt was already submitted.
-    if (nearBottom && BOX_SEPARATOR_PATTERN.test(line)) {
-      let hasAssistantOutput = false
-      for (let j = promptIdx + 1; j < i; j++) {
-        if (/⏺/.test(rawLines[j] ?? '')) {
-          hasAssistantOutput = true
-          break
-        }
-      }
-      if (!hasAssistantOutput) return true
-    }
+    if (nearBottom && BOX_SEPARATOR_PATTERN.test(line)) return true
   }
   return false
 }
