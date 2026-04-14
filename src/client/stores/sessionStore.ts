@@ -56,6 +56,8 @@ interface SessionState {
   // Sessions being animated out - keyed by session ID, value is the session data
   exitingSessions: Map<string, Session>
   selectedSessionId: string | null
+  // Sessions with new completed output the user hasn't viewed yet
+  unreadSessionIds: Set<string>
   hasLoaded: boolean
   connectionStatus: ConnectionStatus
   connectionError: string | null
@@ -74,6 +76,10 @@ interface SessionState {
   setRemoteAllowAttach: (value: boolean) => void
   hostLabel: string | null
   setHostLabel: (value: string | null) => void
+  // Mark a session as having new unread output
+  markSessionUnread: (sessionId: string) => void
+  // Clear unread state (user has viewed the session)
+  markSessionRead: (sessionId: string) => void
   // Mark a session as exiting (preserves data for exit animation)
   markSessionExiting: (sessionId: string) => void
   // Clear a session from exiting state (after animation completes)
@@ -88,6 +94,7 @@ export const useSessionStore = create<SessionState>()(
       hostStatuses: [],
       exitingSessions: new Map(),
       selectedSessionId: null,
+      unreadSessionIds: new Set(),
       hasLoaded: false,
       connectionStatus: 'connecting',
       connectionError: null,
@@ -115,6 +122,17 @@ export const useSessionStore = create<SessionState>()(
           (s) => !newSessionIds.has(s.id) && !exitingSessions.has(s.id)
         )
 
+        // Clean up unread IDs for removed sessions
+        const unreadSessionIds = state.unreadSessionIds
+        let nextUnread = unreadSessionIds
+        if (unreadSessionIds.size > 0) {
+          const staleIds = [...unreadSessionIds].filter((id) => !newSessionIds.has(id))
+          if (staleIds.length > 0) {
+            nextUnread = new Set(unreadSessionIds)
+            for (const id of staleIds) nextUnread.delete(id)
+          }
+        }
+
         let newSelectedId: string | null = selected
         if (
           selected !== null &&
@@ -130,6 +148,13 @@ export const useSessionStore = create<SessionState>()(
           newSelectedId = sorted[0]?.id ?? null
         }
 
+        const baseUpdate = {
+          sessions,
+          hasLoaded: true,
+          selectedSessionId: newSelectedId,
+          ...(nextUnread !== unreadSessionIds ? { unreadSessionIds: nextUnread } : {}),
+        }
+
         // Only update exitingSessions if there are newly removed sessions
         if (removedSessions.length > 0) {
           const nextExitingSessions = new Map(exitingSessions)
@@ -137,17 +162,11 @@ export const useSessionStore = create<SessionState>()(
             nextExitingSessions.set(session.id, session)
           }
           set({
-            sessions,
-            hasLoaded: true,
-            selectedSessionId: newSelectedId,
+            ...baseUpdate,
             exitingSessions: nextExitingSessions,
           })
         } else {
-          set({
-            sessions,
-            hasLoaded: true,
-            selectedSessionId: newSelectedId,
-          })
+          set(baseUpdate)
         }
       },
       setAgentSessions: (active, inactive) =>
@@ -168,6 +187,18 @@ export const useSessionStore = create<SessionState>()(
       setRemoteAllowControl: (value) => set({ remoteAllowControl: value }),
       setRemoteAllowAttach: (value) => set({ remoteAllowAttach: value }),
       setHostLabel: (value) => set({ hostLabel: value }),
+      markSessionUnread: (sessionId) => {
+        const next = new Set(get().unreadSessionIds)
+        next.add(sessionId)
+        set({ unreadSessionIds: next })
+      },
+      markSessionRead: (sessionId) => {
+        const current = get().unreadSessionIds
+        if (!current.has(sessionId)) return
+        const next = new Set(current)
+        next.delete(sessionId)
+        set({ unreadSessionIds: next })
+      },
       markSessionExiting: (sessionId) => {
         const session = get().sessions.find((s) => s.id === sessionId)
         if (session) {
@@ -185,7 +216,22 @@ export const useSessionStore = create<SessionState>()(
     {
       name: SESSION_PERSIST_KEY,
       storage: createJSONStorage(() => tabStorage),
-      partialize: (state) => ({ selectedSessionId: state.selectedSessionId }),
+      partialize: (state) => ({
+        selectedSessionId: state.selectedSessionId,
+        unreadSessionIds: [...state.unreadSessionIds],
+      }),
+      merge: (persisted, current) => {
+        const data = persisted as Record<string, unknown> | undefined
+        return {
+          ...current,
+          ...(data ?? {}),
+          unreadSessionIds: new Set(
+            Array.isArray(data?.unreadSessionIds)
+              ? (data.unreadSessionIds as string[])
+              : []
+          ),
+        }
+      },
     }
   )
 )
