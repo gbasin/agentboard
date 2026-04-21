@@ -80,7 +80,7 @@ npx @gbasin/agentboard
 
 Then open `http://localhost:4040` (or `http://<your-machine>:4040` from another device).
 
-For persistent deployment on Linux, see [systemd/README.md](systemd/README.md).
+For persistent deployment, see [systemd/README.md](systemd/README.md) (Linux) or [launchd/README.md](launchd/README.md) (macOS).
 
 ### From source
 
@@ -100,7 +100,7 @@ bun run build
 bun run start
 ```
 
-For persistent deployment on Linux, see [systemd/README.md](systemd/README.md).
+For persistent deployment, see [systemd/README.md](systemd/README.md) (Linux) or [launchd/README.md](launchd/README.md) (macOS).
 
 ## Dependency Risk Scanner
 

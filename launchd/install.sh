@@ -23,6 +23,18 @@ if [ -z "$TMUX_PATH" ]; then
 fi
 TMUX_DIR="$(dirname "$TMUX_PATH")"
 
+# Guard against paths containing characters that would corrupt plist XML or
+# break shell quoting in the generated scripts. The LaunchAgent plist is XML,
+# so angle brackets, ampersands, and quotes in any substituted path would
+# produce invalid plists that fail `plutil -lint`.
+for var in HOME REPO_DIR BUN_PATH TMUX_PATH; do
+    case "${!var}" in
+        *[\<\>\&\"\']*)
+            echo "Error: \$$var contains characters unsafe for plist XML: ${!var}"
+            exit 1 ;;
+    esac
+done
+
 mkdir -p "$LAUNCH_AGENTS" "$BIN_DIR"
 
 echo "Installing agentboard LaunchAgents with:"
@@ -106,7 +118,10 @@ cat > "$LAUNCH_AGENTS/com.agentboard.logrotate.plist" << EOF
   <key>ProgramArguments</key>
   <array><string>$BIN_DIR/agentboard-log-rotate.sh</string></array>
   <key>StartInterval</key><integer>3600</integer>
-  <key>RunAtLoad</key><true/>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key><string>$HOME</string>
+  </dict>
   <key>StandardOutPath</key><string>/tmp/agentboard-logrotate.log</string>
   <key>StandardErrorPath</key><string>/tmp/agentboard-logrotate.log</string>
 </dict>

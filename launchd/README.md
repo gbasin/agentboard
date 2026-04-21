@@ -100,6 +100,7 @@ cat > ~/Library/LaunchAgents/com.agentboard.tmux-watchdog.plist << EOF
   <key>StandardErrorPath</key><string>/tmp/agentboard-tmux-watchdog.log</string>
 </dict>
 </plist>
+EOF
 launchctl load -w ~/Library/LaunchAgents/com.agentboard.tmux-watchdog.plist
 ```
 
