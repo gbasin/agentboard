@@ -24,13 +24,15 @@ fi
 TMUX_DIR="$(dirname "$TMUX_PATH")"
 
 # Guard against paths containing characters that would corrupt plist XML or
-# break shell quoting in the generated scripts. The LaunchAgent plist is XML,
-# so angle brackets, ampersands, and quotes in any substituted path would
-# produce invalid plists that fail `plutil -lint`.
+# allow shell re-evaluation inside the generated wrapper. The generated scripts
+# embed these paths inside double-quoted shell strings, so shell metachars
+# (especially $, `, \) could trigger command substitution at service launch
+# even if the user's path only looked unusual (e.g. a repo cloned under
+# /tmp/foo$(bar)). Reject up front instead of trying to escape correctly.
 for var in HOME REPO_DIR BUN_PATH TMUX_PATH; do
     case "${!var}" in
-        *[\<\>\&\"\']*)
-            echo "Error: \$$var contains characters unsafe for plist XML: ${!var}"
+        *[\<\>\&\"\'\$\`\\\;\|\(\)]*)
+            echo "Error: \$$var contains characters unsafe for plist XML or shell: ${!var}"
             exit 1 ;;
     esac
 done
@@ -52,6 +54,7 @@ cat > "$BIN_DIR/agentboard-run.sh" << EOF
 #!/bin/bash
 export PATH="$BUN_DIR:$TMUX_DIR:$HOME/.local/bin:$HOME/bin:$HOME/.cargo/bin:$HOME/go/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin"
 export HOME="$HOME"
+export NODE_ENV=production
 export LANG=en_US.UTF-8
 export LC_ALL=en_US.UTF-8
 export LC_CTYPE=en_US.UTF-8
@@ -64,6 +67,7 @@ chmod +x "$BIN_DIR/agentboard-run.sh"
 cat > "$BIN_DIR/agentboard-log-rotate.sh" << 'EOF'
 #!/bin/bash
 set -u
+export PATH="/usr/bin:/bin:/usr/sbin:/sbin"
 LOG="${LOG_FILE:-$HOME/.agentboard/agentboard.log}"
 MAX_BYTES=$((50 * 1024 * 1024))
 KEEP=5

@@ -104,7 +104,7 @@ EOF
 launchctl load -w ~/Library/LaunchAgents/com.agentboard.tmux-watchdog.plist
 ```
 
-The watchdog checks `tmux has-session -t agentboard` every 30s. If the session is gone (server crashed, or session killed), it runs `launchctl kickstart -k com.agentboard` which triggers agentboard's startup path — `ensureSession()` recreates the base session and `resurrectPinnedSessions()` rebuilds pinned windows from SQLite.
+The watchdog checks `tmux has-session -t agentboard` every 30s. If the session is gone (server crashed, or session killed), it runs `launchctl kickstart -k gui/$(id -u)/com.agentboard` which triggers agentboard's startup path — `ensureSession()` recreates the base session and `resurrectPinnedSessions()` rebuilds pinned windows from SQLite.
 
 Note: if you `tmux kill-session -t agentboard` while agentboard is loaded, the watchdog will restore it within 30s. To stop cleanly, `launchctl unload ~/Library/LaunchAgents/com.agentboard.plist` first.
 
