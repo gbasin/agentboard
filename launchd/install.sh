@@ -45,9 +45,12 @@ echo ""
 
 # --- Wrapper script: sets PATH + UTF-8 locale, then execs bun run start.
 # LaunchAgents start with a bare env; without LANG set, tmux mangles unicode.
+# PATH covers common agent install locations (~/.local/bin for tools like
+# claude and cursor-agent, Homebrew, ~/.cargo/bin, ~/go/bin) so that tmux
+# windows spawned by agentboard can find whichever CLI the user launches.
 cat > "$BIN_DIR/agentboard-run.sh" << EOF
 #!/bin/bash
-export PATH="$BUN_DIR:$TMUX_DIR:/usr/local/bin:/usr/bin:/bin"
+export PATH="$BUN_DIR:$TMUX_DIR:$HOME/.local/bin:$HOME/bin:$HOME/.cargo/bin:$HOME/go/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin"
 export HOME="$HOME"
 export LANG=en_US.UTF-8
 export LC_ALL=en_US.UTF-8
