@@ -13,11 +13,15 @@ interface SessionDrawerProps {
   isOpen: boolean
   onClose: () => void
   sessions: Session[]
+  sleepingSessions?: AgentSession[]
   inactiveSessions?: AgentSession[]
   selectedSessionId: string | null
+  selectedSleepingSessionId?: string | null
   onSelect: (sessionId: string) => void
+  onSelectSleeping?: (sessionId: string) => void
   onRename: (sessionId: string, newName: string) => void
   onResume?: (sessionId: string) => void
+  onSleep?: (sessionId: string) => void
   onSetPinned?: (sessionId: string, isPinned: boolean) => void
   onNewSession: () => boolean | void
   loading: boolean
@@ -28,11 +32,15 @@ export default function SessionDrawer({
   isOpen,
   onClose,
   sessions,
+  sleepingSessions = [],
   inactiveSessions = [],
   selectedSessionId,
+  selectedSleepingSessionId = null,
   onSelect,
+  onSelectSleeping,
   onRename,
   onResume,
+  onSleep,
   onSetPinned,
   onNewSession,
   loading,
@@ -117,6 +125,11 @@ export default function SessionDrawer({
     onClose()
   }
 
+  const handleSelectSleeping = (sessionId: string) => {
+    onSelectSleeping?.(sessionId)
+    onClose()
+  }
+
   // Inline styles for reduced motion
   const transitionStyle = prefersReducedMotion
     ? { transition: 'none' }
@@ -144,11 +157,15 @@ export default function SessionDrawer({
       >
         <SessionList
           sessions={sessions}
+          sleepingSessions={sleepingSessions}
           inactiveSessions={inactiveSessions}
           selectedSessionId={selectedSessionId}
+          selectedSleepingSessionId={selectedSleepingSessionId}
           onSelect={handleSelect}
+          onSelectSleeping={handleSelectSleeping}
           onRename={onRename}
           onResume={onResume}
+          onSleep={onSleep}
           onSetPinned={onSetPinned}
           loading={loading}
           error={error}

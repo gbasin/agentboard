@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, mock } from 'bun:test'
 import TestRenderer, { act } from 'react-test-renderer'
-import type { Session } from '@shared/types'
+import type { AgentSession, Session } from '@shared/types'
 import { useThemeStore } from '../stores/themeStore'
 
 const globalAny = globalThis as typeof globalThis & {
@@ -16,6 +16,7 @@ const originalDocument = globalAny.document
 const originalLocalStorage = globalAny.localStorage
 const originalNavigator = globalAny.navigator
 const originalResizeObserver = globalAny.ResizeObserver
+const originalFetch = globalThis.fetch
 
 class TerminalMock {
   static instances: TerminalMock[] = []
@@ -120,6 +121,19 @@ const secondSession: Session = {
   lastActivity: new Date().toISOString(),
   createdAt: new Date().toISOString(),
   source: 'managed',
+}
+
+const sleepingSession: AgentSession = {
+  sessionId: 'sleeping-1',
+  logFilePath: '/tmp/sleeping-1.jsonl',
+  projectPath: '/tmp/alpha',
+  agentType: 'claude',
+  displayName: 'alpha-sleeping',
+  createdAt: '2024-01-01T00:00:00.000Z',
+  lastActivityAt: '2024-01-01T00:00:00.000Z',
+  isActive: false,
+  isSleeping: true,
+  isPinned: false,
 }
 
 function createStorage(): Storage {
@@ -232,6 +246,7 @@ afterEach(() => {
   globalAny.localStorage = originalLocalStorage
   globalAny.navigator = originalNavigator
   globalAny.ResizeObserver = originalResizeObserver
+  globalThis.fetch = originalFetch
 })
 
 describe('Terminal', () => {
@@ -680,6 +695,88 @@ describe('Terminal', () => {
     })
 
     expect(renamed).toEqual([])
+
+    act(() => {
+      renderer.unmount()
+    })
+  })
+
+  test('renders sleeping placeholder and wakes without attaching terminal', async () => {
+    const resumeCalls: string[] = []
+    const sentMessages: unknown[] = []
+    globalThis.fetch = ((async () =>
+      new Response(
+        JSON.stringify({
+          sessionId: sleepingSession.sessionId,
+          displayName: sleepingSession.displayName,
+          projectPath: sleepingSession.projectPath,
+          agentType: sleepingSession.agentType,
+          lastActivityAt: sleepingSession.lastActivityAt,
+          lines: [
+            JSON.stringify({
+              type: 'user',
+              message: { role: 'user', content: [{ type: 'text', text: 'wake me later' }] },
+            }),
+          ],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      )) as unknown as typeof fetch)
+
+    const { createNodeMock } = createContainerMock()
+    let renderer!: TestRenderer.ReactTestRenderer
+
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <Terminal
+          session={null}
+          sleepingSession={sleepingSession}
+          sessions={[]}
+          connectionStatus="connected"
+          sendMessage={(msg) => { sentMessages.push(msg) }}
+          subscribe={() => () => {}}
+          onClose={() => {}}
+          onSelectSession={() => {}}
+          onNewSession={() => {}}
+          onKillSession={() => {}}
+          onRenameSession={() => {}}
+          onResumeSession={(sessionId) => {
+            resumeCalls.push(sessionId)
+          }}
+          onOpenSettings={() => {}}
+        />,
+        {
+          createNodeMock,
+        }
+      )
+    })
+
+    const html = JSON.stringify(renderer.toJSON())
+    expect(html).toContain('Sleeping')
+    expect(html).toContain('Wake Session')
+    expect(
+      sentMessages.some(
+        (message) =>
+          typeof message === 'object' &&
+          message !== null &&
+          (message as { type?: string }).type === 'terminal-attach'
+      )
+    ).toBe(false)
+
+    const wakeButton = renderer.root.findAllByType('button').find(
+      (button) => button.props.children === 'Wake Session'
+    )
+    if (!wakeButton) {
+      throw new Error('Expected wake button')
+    }
+
+    act(() => {
+      wakeButton.props.onClick()
+    })
+
+    expect(resumeCalls).toEqual([sleepingSession.sessionId])
 
     act(() => {
       renderer.unmount()

@@ -42,16 +42,21 @@ import HostBadge from './HostBadge'
 import HostFilterDropdown from './HostFilterDropdown'
 import ProjectFilterDropdown from './ProjectFilterDropdown'
 import SessionPreviewModal from './SessionPreviewModal'
+import SleepingSessionItem from './SleepingSessionItem'
 
 interface SessionListProps {
   sessions: Session[]
+  sleepingSessions?: AgentSession[]
   inactiveSessions?: AgentSession[]
   selectedSessionId: string | null
+  selectedSleepingSessionId?: string | null
   loading: boolean
   error: string | null
   onSelect: (sessionId: string) => void
+  onSelectSleeping?: (sessionId: string) => void
   onRename: (sessionId: string, newName: string) => void
   onResume?: (sessionId: string) => void
+  onSleep?: (sessionId: string) => void
   onKill?: (sessionId: string) => void
   onDuplicate?: (sessionId: string) => void
   onSetPinned?: (sessionId: string, isPinned: boolean) => void
@@ -75,13 +80,17 @@ function useTimestampRefresh() {
 
 export default function SessionList({
   sessions,
+  sleepingSessions = [],
   inactiveSessions = [],
   selectedSessionId,
+  selectedSleepingSessionId = null,
   loading,
   error,
   onSelect,
+  onSelectSleeping,
   onRename,
   onResume,
+  onSleep,
   onKill,
   onDuplicate,
   onSetPinned,
@@ -98,6 +107,10 @@ export default function SessionList({
   const [inactiveLimit, setInactiveLimit] = useState(20)
   const prefersReducedMotion = useReducedMotion()
   const useSafariLayoutFallback = isSafari && !prefersReducedMotion
+  const dormantSessions = useMemo(
+    () => [...sleepingSessions, ...inactiveSessions],
+    [sleepingSessions, inactiveSessions]
+  )
 
   // Reset pagination when inactive panel is collapsed
   useEffect(() => {
@@ -110,21 +123,26 @@ export default function SessionList({
   const EXIT_DURATION = 200
 
   // Counter bump animations
-  const [activeCounterBump, clearActiveCounterBump] = useCounterBump(sessions.length, EXIT_DURATION)
+  const [activeCounterBump, clearActiveCounterBump] = useCounterBump(
+    sessions.length + sleepingSessions.length,
+    EXIT_DURATION
+  )
   const [inactiveCounterBump, clearInactiveCounterBump] = useCounterBump(inactiveSessions.length, EXIT_DURATION, true)
 
   // Track newly added sessions for entry animations
   const prevActiveIdsRef = useRef<Set<string>>(new Set(sessions.map((s) => s.id)))
-  const prevInactiveIdsForActiveRef = useRef<Set<string>>(
-    new Set(inactiveSessions.map((s) => s.sessionId))
+  const prevDormantIdsForActiveRef = useRef<Set<string>>(
+    new Set(
+      [...sleepingSessions, ...inactiveSessions].map((session) => session.sessionId)
+    )
   )
   const [newlyActiveIds, setNewlyActiveIds] = useState<Set<string>>(new Set())
 
   // Detect newly active sessions
   useEffect(() => {
     const currentIds = new Set(sessions.map((s) => s.id))
-    const currentInactiveIds = new Set(
-      inactiveSessions.map((s) => s.sessionId)
+    const currentDormantIds = new Set(
+      [...sleepingSessions, ...inactiveSessions].map((session) => session.sessionId)
     )
     const newIds = new Set<string>()
     for (const id of currentIds) {
@@ -136,19 +154,19 @@ export default function SessionList({
       const agentId = session.agentSessionId?.trim()
       if (
         agentId &&
-        prevInactiveIdsForActiveRef.current.has(agentId) &&
-        !currentInactiveIds.has(agentId)
+        prevDormantIdsForActiveRef.current.has(agentId) &&
+        !currentDormantIds.has(agentId)
       ) {
         newIds.add(session.id)
       }
     }
     prevActiveIdsRef.current = currentIds
-    prevInactiveIdsForActiveRef.current = currentInactiveIds
+    prevDormantIdsForActiveRef.current = currentDormantIds
 
     if (newIds.size > 0) {
       setNewlyActiveIds(newIds)
     }
-  }, [sessions, inactiveSessions])
+  }, [sessions, sleepingSessions, inactiveSessions])
 
   // Auto-clear newlyActiveIds after delay (separate effect to avoid timer bugs)
   useEffect(() => {
@@ -196,14 +214,14 @@ export default function SessionList({
       currentIds.add(getSessionOrderKey(session))
       currentIds.add(session.id)
     }
-    for (const session of inactiveSessions) {
+    for (const session of dormantSessions) {
       currentIds.add(session.sessionId)
     }
     const validOrder = manualSessionOrder.filter((id) => currentIds.has(id))
     if (validOrder.length !== manualSessionOrder.length) {
       setManualSessionOrder(validOrder)
     }
-  }, [sessions, inactiveSessions, manualSessionOrder, setManualSessionOrder])
+  }, [sessions, dormantSessions, manualSessionOrder, setManualSessionOrder])
 
   const sortedActive = useMemo(
     () =>
@@ -220,12 +238,12 @@ export default function SessionList({
   const sortedSessions = sortedActive
 
   const uniqueProjects = useMemo(
-    () => getUniqueProjects(sessions, inactiveSessions),
-    [sessions, inactiveSessions]
+    () => getUniqueProjects(sessions, dormantSessions),
+    [sessions, dormantSessions]
   )
 
   const uniqueHosts = useMemo(() => {
-    const sessionHosts = getUniqueHosts(sessions, inactiveSessions)
+    const sessionHosts = getUniqueHosts(sessions, dormantSessions)
     const statusHosts = hostStatuses.map((status) => status.host)
     const seen = new Set<string>()
     const merged: string[] = []
@@ -243,7 +261,7 @@ export default function SessionList({
     }
 
     return merged
-  }, [sessions, inactiveSessions, hostStatuses])
+  }, [sessions, dormantSessions, hostStatuses])
 
   // Auto-show host info when multiple hosts are present
   const showHostInfo = useMemo(() => uniqueHosts.length > 1, [uniqueHosts])
@@ -301,6 +319,17 @@ export default function SessionList({
     const timer = setTimeout(() => setNewlyFilteredInIds(new Set()), 500)
     return () => clearTimeout(timer)
   }, [newlyFilteredInIds])
+
+  const filteredSleepingSessions = useMemo(() => {
+    let next = sleepingSessions
+    if (projectFilters.length > 0) {
+      next = next.filter((session) => projectFilters.includes(session.projectPath))
+    }
+    if (hostFilters.length > 0) {
+      next = next.filter((session) => hostFilters.includes(session.host ?? ''))
+    }
+    return next
+  }, [sleepingSessions, projectFilters, hostFilters])
 
   const filteredInactiveSessions = useMemo(() => {
     let next = inactiveSessions
@@ -477,7 +506,7 @@ export default function SessionList({
               transition={{ duration: 0.3 }}
               onAnimationComplete={clearActiveCounterBump}
             >
-              {filteredSessions.length}
+              {filteredSessions.length + filteredSleepingSessions.length}
             </motion.span>
           </div>
         </div>
@@ -490,72 +519,111 @@ export default function SessionList({
               />
             ))}
           </div>
-        ) : filteredSessions.length === 0 ? (
+        ) : filteredSessions.length === 0 && filteredSleepingSessions.length === 0 ? (
           <div className="px-3 py-6 text-center text-xs text-muted">
             No sessions
           </div>
         ) : (
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragStart={handleDragStart}
-            onDragOver={handleDragOver}
-            onDragEnd={handleDragEnd}
-            onDragCancel={handleDragCancel}
-          >
-            <SortableContext
-              items={filteredSessions.map((s) => s.id)}
-              strategy={verticalListSortingStrategy}
-            >
-              <div key={filterKey}>
-                <AnimatePresence
-                  initial={false}
-                  mode={useSafariLayoutFallback ? 'sync' : 'popLayout'}
+          <>
+            {filteredSessions.length > 0 && (
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragStart={handleDragStart}
+                onDragOver={handleDragOver}
+                onDragEnd={handleDragEnd}
+                onDragCancel={handleDragCancel}
+              >
+                <SortableContext
+                  items={filteredSessions.map((s) => s.id)}
+                  strategy={verticalListSortingStrategy}
                 >
-                  {filteredSessions.map((session, index) => {
-                    const isTrulyNew = newlyActiveIds.has(session.id)
-                    const isFilteredIn = newlyFilteredInIds.has(session.id)
-                    const isRemote = session.remote === true
-                    const isManaged = session.source === 'managed'
-                    const canControl = !isRemote || (remoteAllowControl && isManaged)
-                    // Calculate drop indicator position
-                    const activeIndex = activeId
-                      ? filteredSessions.findIndex((s) => s.id === activeId)
-                      : -1
-                    const isOver = overId === session.id && activeId !== session.id
-                    const showDropIndicator = isOver ? (activeIndex > index ? 'above' : 'below') : null
-                    // Show bounce for both new and filter-in, but delay only for truly new
-                    const isNew = isTrulyNew || isFilteredIn
-                    return (
-                      <SortableSessionItem
-                        key={session.id}
-                        session={session}
-                        isNew={isNew}
-                        exitDuration={EXIT_DURATION}
-                        prefersReducedMotion={prefersReducedMotion}
-                        useSafariLayoutFallback={useSafariLayoutFallback}
-                        layoutAnimationsDisabled={layoutAnimationsDisabled}
-                        isSelected={session.id === selectedSessionId}
-                        isEditing={session.id === editingSessionId}
-                        showSessionIdPrefix={showSessionIdPrefix}
-                        showProjectName={showProjectName}
-                        showLastUserMessage={showLastUserMessage}
-                        showHostInfo={showHostInfo}
-                        dropIndicator={showDropIndicator}
-                        onSelect={() => onSelect(session.id)}
-                        onStartEdit={canControl ? () => setEditingSessionId(session.id) : undefined}
-                        onCancelEdit={() => setEditingSessionId(null)}
-                        onRename={(newName) => handleRename(session.id, newName)}
-                        onKill={onKill && canControl ? () => onKill(session.id) : undefined}
-                        onDuplicate={onDuplicate && canControl ? () => onDuplicate(session.id) : undefined}
-                        onSetPinned={onSetPinned && session.agentSessionId ? (isPinned) => onSetPinned(session.agentSessionId!.trim(), isPinned) : undefined}
-                      />
-                    )
-                  })}
-                </AnimatePresence>
+                  <div key={filterKey}>
+                    <AnimatePresence
+                      initial={false}
+                      mode={useSafariLayoutFallback ? 'sync' : 'popLayout'}
+                    >
+                      {filteredSessions.map((session, index) => {
+                        const isTrulyNew = newlyActiveIds.has(session.id)
+                        const isFilteredIn = newlyFilteredInIds.has(session.id)
+                        const isRemote = session.remote === true
+                        const isManaged = session.source === 'managed'
+                        const canControl = !isRemote || (remoteAllowControl && isManaged)
+                        const canSleep = Boolean(
+                          onSleep &&
+                          !isRemote &&
+                          isManaged &&
+                          session.agentSessionId?.trim()
+                        )
+                        // Calculate drop indicator position
+                        const activeIndex = activeId
+                          ? filteredSessions.findIndex((s) => s.id === activeId)
+                          : -1
+                        const isOver = overId === session.id && activeId !== session.id
+                        const showDropIndicator = isOver ? (activeIndex > index ? 'above' : 'below') : null
+                        // Show bounce for both new and filter-in, but delay only for truly new
+                        const isNew = isTrulyNew || isFilteredIn
+                        return (
+                          <SortableSessionItem
+                            key={session.id}
+                            session={session}
+                            isNew={isNew}
+                            exitDuration={EXIT_DURATION}
+                            prefersReducedMotion={prefersReducedMotion}
+                            useSafariLayoutFallback={useSafariLayoutFallback}
+                            layoutAnimationsDisabled={layoutAnimationsDisabled}
+                            isSelected={session.id === selectedSessionId}
+                            isEditing={session.id === editingSessionId}
+                            showSessionIdPrefix={showSessionIdPrefix}
+                            showProjectName={showProjectName}
+                            showLastUserMessage={showLastUserMessage}
+                            showHostInfo={showHostInfo}
+                            dropIndicator={showDropIndicator}
+                            onSelect={() => onSelect(session.id)}
+                            onStartEdit={canControl ? () => setEditingSessionId(session.id) : undefined}
+                            onCancelEdit={() => setEditingSessionId(null)}
+                            onRename={(newName) => handleRename(session.id, newName)}
+                            onSleep={
+                              canSleep
+                                ? () => onSleep?.(session.agentSessionId!.trim())
+                                : undefined
+                            }
+                            onKill={onKill && canControl ? () => onKill(session.id) : undefined}
+                            onDuplicate={onDuplicate && canControl ? () => onDuplicate(session.id) : undefined}
+                            onSetPinned={onSetPinned && session.agentSessionId ? (isPinned) => onSetPinned(session.agentSessionId!.trim(), isPinned) : undefined}
+                          />
+                        )
+                      })}
+                    </AnimatePresence>
+                  </div>
+                </SortableContext>
+              </DndContext>
+            )}
+
+            {filteredSleepingSessions.length > 0 && (
+              <div className={filteredSessions.length > 0 ? 'border-t border-border' : ''}>
+                <div className="flex items-center justify-between px-3 py-2 text-xs font-medium uppercase tracking-wider text-muted">
+                  <span>Sleeping</span>
+                  <span className="w-8 text-right text-xs text-muted">
+                    {filteredSleepingSessions.length}
+                  </span>
+                </div>
+                <div className="py-1">
+                  {filteredSleepingSessions.map((session) => (
+                    <SleepingSessionItem
+                      key={session.sessionId}
+                      session={session}
+                      isSelected={selectedSleepingSessionId === session.sessionId}
+                      showSessionIdPrefix={showSessionIdPrefix}
+                      showProjectName={showProjectName}
+                      showLastUserMessage={showLastUserMessage}
+                      onSelect={(sessionId) => onSelectSleeping?.(sessionId)}
+                    />
+                  ))}
+                </div>
               </div>
-            </SortableContext>
-          </DndContext>
+            )}
+          </>
         )}
 
         {filteredInactiveSessions.length > 0 && (
@@ -652,6 +720,7 @@ interface SortableSessionItemProps {
   onStartEdit?: () => void
   onCancelEdit: () => void
   onRename: (newName: string) => void
+  onSleep?: () => void
   onKill?: () => void
   onDuplicate?: () => void
   onSetPinned?: (isPinned: boolean) => void
@@ -675,6 +744,7 @@ const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>
   onStartEdit,
   onCancelEdit,
   onRename,
+  onSleep,
   onKill,
   onDuplicate,
   onSetPinned,
@@ -783,6 +853,7 @@ const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>
         onStartEdit={onStartEdit}
         onCancelEdit={onCancelEdit}
         onRename={onRename}
+        onSleep={onSleep}
         onKill={onKill}
         onDuplicate={onDuplicate}
         onSetPinned={onSetPinned}
@@ -809,6 +880,7 @@ interface SessionRowProps {
   onStartEdit?: () => void
   onCancelEdit: () => void
   onRename: (newName: string) => void
+  onSleep?: () => void
   onKill?: () => void
   onDuplicate?: () => void
   onSetPinned?: (isPinned: boolean) => void
@@ -827,6 +899,7 @@ function SessionRow({
   onStartEdit,
   onCancelEdit,
   onRename,
+  onSleep,
   onKill,
   onDuplicate,
   onSetPinned,
@@ -1083,6 +1156,23 @@ function SessionRow({
             >
               <Copy01Icon width={14} height={14} />
               Duplicate
+            </button>
+          )}
+          {onSleep && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                setContextMenu(null)
+                onSleep()
+              }}
+              className="w-full px-3 py-2 text-left text-sm text-secondary hover:bg-hover hover:text-primary flex items-center gap-2"
+              role="menuitem"
+              title="Close the live window and keep this session ready to wake"
+            >
+              <span className="inline-flex w-[14px] justify-center text-[10px] font-semibold uppercase">
+                Zz
+              </span>
+              Sleep
             </button>
           )}
           {onSetPinned && (

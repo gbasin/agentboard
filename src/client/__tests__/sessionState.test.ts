@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
-import type { Session } from '@shared/types'
+import type { AgentSession, Session } from '@shared/types'
 import { useSessionStore } from '../stores/sessionStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { sortSessions } from '../utils/sessions'
@@ -19,11 +19,28 @@ function makeSession(overrides: Partial<Session> = {}): Session {
   return { ...baseSession, ...overrides }
 }
 
+function makeAgentSession(overrides: Partial<AgentSession> = {}): AgentSession {
+  return {
+    sessionId: 'agent-1',
+    logFilePath: '/tmp/agent-1.jsonl',
+    projectPath: '/tmp/project',
+    agentType: 'claude',
+    displayName: 'agent-1',
+    createdAt: '2024-01-01T00:00:00.000Z',
+    lastActivityAt: '2024-01-01T00:00:00.000Z',
+    isActive: false,
+    isSleeping: false,
+    isPinned: false,
+    ...overrides,
+  }
+}
+
 beforeEach(() => {
   useSessionStore.setState({
     sessions: [],
-    agentSessions: { active: [], inactive: [] },
+    agentSessions: { active: [], sleeping: [], inactive: [] },
     selectedSessionId: null,
+    selectedSleepingSessionId: null,
     hasLoaded: false,
     connectionStatus: 'connecting',
     connectionError: null,
@@ -187,6 +204,32 @@ describe('useSessionStore', () => {
   test('setSelectedSessionId updates selection', () => {
     useSessionStore.getState().setSelectedSessionId('session-1')
     expect(useSessionStore.getState().selectedSessionId).toBe('session-1')
+  })
+
+  test('setAgentSessions stores sleeping sessions and clears stale sleeping selection', () => {
+    useSessionStore.setState({ selectedSleepingSessionId: 'sleeping-1' })
+
+    useSessionStore.getState().setAgentSessions(
+      [makeAgentSession({ sessionId: 'active-1', isActive: true })],
+      [makeAgentSession({ sessionId: 'sleeping-1', isSleeping: true })],
+      [makeAgentSession({ sessionId: 'inactive-1' })]
+    )
+
+    let state = useSessionStore.getState()
+    expect(state.agentSessions.sleeping.map((session) => session.sessionId)).toEqual([
+      'sleeping-1',
+    ])
+    expect(state.selectedSleepingSessionId).toBe('sleeping-1')
+
+    useSessionStore.getState().setAgentSessions(
+      [makeAgentSession({ sessionId: 'active-1', isActive: true })],
+      [],
+      [makeAgentSession({ sessionId: 'inactive-1' })]
+    )
+
+    state = useSessionStore.getState()
+    expect(state.agentSessions.sleeping).toEqual([])
+    expect(state.selectedSleepingSessionId).toBeNull()
   })
 
   test('setSessions applies lastActivity-only updates', () => {

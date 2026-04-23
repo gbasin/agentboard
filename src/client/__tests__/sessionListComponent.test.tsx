@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import TestRenderer, { act } from 'react-test-renderer'
-import type { Session } from '@shared/types'
+import type { AgentSession, Session } from '@shared/types'
 import SessionList from '../components/SessionList'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useSessionStore } from '../stores/sessionStore'
@@ -34,6 +34,22 @@ const baseSession: Session = {
 
 function makeSession(overrides: Partial<Session>): Session {
   return { ...baseSession, ...overrides }
+}
+
+function makeAgentSession(overrides: Partial<AgentSession> = {}): AgentSession {
+  return {
+    sessionId: 'sleeping-1',
+    logFilePath: '/tmp/sleeping-1.jsonl',
+    projectPath: '/tmp/alpha',
+    agentType: 'claude',
+    displayName: 'alpha-sleeping',
+    createdAt: '2024-01-01T00:00:00.000Z',
+    lastActivityAt: '2024-01-01T00:00:00.000Z',
+    isActive: false,
+    isSleeping: true,
+    isPinned: false,
+    ...overrides,
+  }
 }
 
 beforeEach(() => {
@@ -212,6 +228,44 @@ describe('SessionList component', () => {
     })
 
     expect(renameCalls).toEqual([{ id: 'session-1', name: 'Beta' }])
+
+    act(() => {
+      renderer.unmount()
+    })
+  })
+
+  test('renders sleeping subsection and selects sleeping sessions', () => {
+    const selectedSleeping: string[] = []
+    const sleepingSession = makeAgentSession({ sessionId: 'sleeping-42' })
+
+    const renderer = TestRenderer.create(
+      <SessionList
+        sessions={[baseSession]}
+        sleepingSessions={[sleepingSession]}
+        inactiveSessions={[]}
+        selectedSessionId={null}
+        selectedSleepingSessionId={sleepingSession.sessionId}
+        loading={false}
+        error={null}
+        onSelect={() => {}}
+        onSelectSleeping={(sessionId) => selectedSleeping.push(sessionId)}
+        onRename={() => {}}
+      />
+    )
+
+    const html = JSON.stringify(renderer.toJSON())
+    expect(html).toContain('Sleeping')
+    expect(html).toContain('alpha-sleeping')
+
+    const sleepingButton = renderer.root.findByProps({
+      'data-testid': 'sleeping-session-card',
+    })
+
+    act(() => {
+      sleepingButton.props.onClick()
+    })
+
+    expect(selectedSleeping).toEqual([sleepingSession.sessionId])
 
     act(() => {
       renderer.unmount()

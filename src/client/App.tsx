@@ -43,12 +43,18 @@ export default function App() {
   const selectedSessionId = useSessionStore(
     (state) => state.selectedSessionId
   )
+  const selectedSleepingSessionId = useSessionStore(
+    (state) => state.selectedSleepingSessionId
+  )
   const setSessions = useSessionStore((state) => state.setSessions)
   const setAgentSessions = useSessionStore((state) => state.setAgentSessions)
   const setHostStatuses = useSessionStore((state) => state.setHostStatuses)
   const updateSession = useSessionStore((state) => state.updateSession)
   const setSelectedSessionId = useSessionStore(
     (state) => state.setSelectedSessionId
+  )
+  const setSelectedSleepingSessionId = useSessionStore(
+    (state) => state.setSelectedSleepingSessionId
   )
   const hasLoaded = useSessionStore((state) => state.hasLoaded)
   const connectionStatus = useSessionStore(
@@ -269,11 +275,11 @@ export default function App() {
         }
       }
       if (message.type === 'agent-sessions') {
-        setAgentSessions(message.active, message.inactive)
+        setAgentSessions(message.active, message.sleeping, message.inactive)
       }
       if (message.type === 'agent-sessions-active') {
         const current = useSessionStore.getState().agentSessions
-        setAgentSessions(message.active, current.inactive)
+        setAgentSessions(message.active, current.sleeping, current.inactive)
       }
       if (message.type === 'session-orphaned') {
         // When a session is superseded by slug (plan→execute transition),
@@ -315,6 +321,14 @@ export default function App() {
           setSelectedSessionId(message.session.id)
         } else if (!message.ok) {
           setServerError(`${message.error?.code}: ${message.error?.message}`)
+          window.setTimeout(() => setServerError(null), 6000)
+        }
+      }
+      if (message.type === 'session-sleep-result') {
+        if (message.ok) {
+          setSelectedSleepingSessionId(message.sessionId)
+        } else {
+          setServerError(message.error ?? 'Failed to sleep session')
           window.setTimeout(() => setServerError(null), 6000)
         }
       }
@@ -371,10 +385,12 @@ export default function App() {
     return () => { unsubscribe() }
   }, [
     selectedSessionId,
+    selectedSleepingSessionId,
     addRecentPath,
     clearExitingSession,
     sendMessage,
     setSelectedSessionId,
+    setSelectedSleepingSessionId,
     setSessions,
     setAgentSessions,
     setHostStatuses,
@@ -390,6 +406,13 @@ export default function App() {
       sessions.find((session) => session.id === selectedSessionId) || null
     )
   }, [selectedSessionId, sessions])
+  const selectedSleepingSession = useMemo(() => {
+    return (
+      agentSessions.sleeping.find(
+        (session) => session.sessionId === selectedSleepingSessionId
+      ) || null
+    )
+  }, [agentSessions.sleeping, selectedSleepingSessionId])
 
   // Track last viewed project path
   useEffect(() => {
@@ -430,6 +453,7 @@ export default function App() {
 
   // Auto-select first visible session when current selection is filtered out
   useEffect(() => {
+    if (selectedSleepingSessionId) return
     if (
       selectedSessionId &&
       filteredSortedSessions.length > 0 &&
@@ -437,15 +461,32 @@ export default function App() {
     ) {
       setSelectedSessionId(filteredSortedSessions[0].id)
     }
-  }, [selectedSessionId, filteredSortedSessions, setSelectedSessionId])
+  }, [
+    selectedSessionId,
+    selectedSleepingSessionId,
+    filteredSortedSessions,
+    setSelectedSessionId,
+  ])
 
   // Auto-select first session on mobile when sessions load
   useEffect(() => {
     const isMobile = window.matchMedia('(max-width: 767px)').matches
-    if (isMobile && hasLoaded && selectedSessionId === null && sortedSessions.length > 0) {
+    if (
+      isMobile &&
+      hasLoaded &&
+      selectedSessionId === null &&
+      selectedSleepingSessionId === null &&
+      sortedSessions.length > 0
+    ) {
       setSelectedSessionId(sortedSessions[0].id)
     }
-  }, [hasLoaded, selectedSessionId, sortedSessions, setSelectedSessionId])
+  }, [
+    hasLoaded,
+    selectedSessionId,
+    selectedSleepingSessionId,
+    sortedSessions,
+    setSelectedSessionId,
+  ])
 
   // Pending kills: snapshot + selection state for rollback on kill-failed.
   // Separate from exitingSessions (which gets cleaned up by animation timers).
@@ -550,6 +591,10 @@ export default function App() {
     sendMessage({ type: 'session-resume', sessionId })
   }
 
+  const handleSleepSession = useCallback((sessionId: string) => {
+    sendMessage({ type: 'session-sleep', sessionId })
+  }, [sendMessage])
+
   const handleRenameSession = (sessionId: string, newName: string) => {
     sendMessage({ type: 'session-rename', sessionId, newName })
   }
@@ -602,11 +647,15 @@ export default function App() {
         />
         <SessionList
           sessions={sessions}
+          sleepingSessions={agentSessions.sleeping}
           inactiveSessions={agentSessions.inactive}
           selectedSessionId={selectedSessionId}
+          selectedSleepingSessionId={selectedSleepingSessionId}
           onSelect={setSelectedSessionId}
+          onSelectSleeping={setSelectedSleepingSessionId}
           onRename={handleRenameSession}
           onResume={handleResumeSession}
+          onSleep={handleSleepSession}
           onKill={handleKillSession}
           onDuplicate={handleDuplicateSession}
           onSetPinned={handleSetPinned}
@@ -625,17 +674,21 @@ export default function App() {
       <Terminal
         session={selectedSession}
         sessions={filteredSortedSessions}
+        sleepingSession={selectedSleepingSession}
+        sleepingSessions={agentSessions.sleeping}
         connectionStatus={connectionStatus}
         connectionEpoch={connectionEpoch}
         sendMessage={sendMessage}
         subscribe={subscribe}
         onClose={() => setSelectedSessionId(null)}
         onSelectSession={setSelectedSessionId}
+        onSelectSleepingSession={setSelectedSleepingSessionId}
         onNewSession={handleNewSession}
         onKillSession={handleKillSession}
         onRenameSession={handleRenameSession}
         onOpenSettings={handleOpenSettings}
         onResumeSession={handleResumeSession}
+        onSleepSession={handleSleepSession}
         onSetPinned={handleSetPinned}
         inactiveSessions={agentSessions.inactive}
         loading={!hasLoaded}

@@ -158,8 +158,9 @@ beforeEach(() => {
 
   useSessionStore.setState({
     sessions: [],
-    agentSessions: { active: [], inactive: [] },
+    agentSessions: { active: [], sleeping: [], inactive: [] },
     selectedSessionId: null,
+    selectedSleepingSessionId: null,
     hasLoaded: false,
     connectionStatus: 'connected',
     connectionEpoch: 0,
@@ -355,7 +356,16 @@ describe('App', () => {
     expect(useSessionStore.getState().sessions).toHaveLength(0)
   })
 
-  test('agent-sessions-active message updates active sessions while preserving inactive', () => {
+  test('agent-sessions-active message updates active sessions while preserving sleeping and inactive', () => {
+    const existingSleeping: AgentSession[] = [
+      {
+        ...baseAgentSession,
+        sessionId: 'sleeping-1',
+        isActive: false,
+        isSleeping: true,
+        displayName: 'sleeping-one',
+      },
+    ]
     const existingInactive: AgentSession[] = [
       {
         ...baseAgentSession,
@@ -375,6 +385,7 @@ describe('App', () => {
     useSessionStore.setState({
       agentSessions: {
         active: [{ ...baseAgentSession, sessionId: 'old-active' }],
+        sleeping: existingSleeping,
         inactive: existingInactive,
       },
     })
@@ -406,10 +417,82 @@ describe('App', () => {
     expect(state.active[0].sessionId).toBe('new-active-1')
     expect(state.active[1].sessionId).toBe('new-active-2')
 
-    // Inactive sessions should be preserved from the store
+    // Sleeping and inactive sessions should be preserved from the store
+    expect(state.sleeping).toHaveLength(1)
+    expect(state.sleeping[0].sessionId).toBe('sleeping-1')
     expect(state.inactive).toHaveLength(2)
     expect(state.inactive[0].sessionId).toBe('inactive-1')
     expect(state.inactive[1].sessionId).toBe('inactive-2')
+  })
+
+  test('sleep result selects the sleeping session and wake result restores the live session', () => {
+    useSessionStore.setState({
+      sessions: [baseSession],
+      selectedSessionId: baseSession.id,
+      selectedSleepingSessionId: null,
+      agentSessions: {
+        active: [{ ...baseAgentSession, sessionId: 'agent-live', isActive: true }],
+        sleeping: [],
+        inactive: [],
+      },
+      hasLoaded: true,
+    })
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<App />)
+    })
+    activeRenderer = renderer
+
+    if (!subscribeListener) {
+      throw new Error('Expected websocket subscription')
+    }
+
+    const sleepingSession: AgentSession = {
+      ...baseAgentSession,
+      sessionId: 'agent-live',
+      displayName: 'sleepy',
+      isActive: false,
+      isSleeping: true,
+    }
+
+    act(() => {
+      subscribeListener?.({
+        type: 'agent-sessions',
+        active: [],
+        sleeping: [sleepingSession],
+        inactive: [],
+      })
+      subscribeListener?.({
+        type: 'session-sleep-result',
+        sessionId: sleepingSession.sessionId,
+        ok: true,
+      })
+    })
+
+    let state = useSessionStore.getState()
+    expect(state.selectedSessionId).toBeNull()
+    expect(state.selectedSleepingSessionId).toBe(sleepingSession.sessionId)
+
+    const resumedSession: Session = {
+      ...baseSession,
+      id: 'session-woken',
+      agentSessionId: sleepingSession.sessionId,
+      agentSessionName: sleepingSession.displayName,
+    }
+
+    act(() => {
+      subscribeListener?.({
+        type: 'session-resume-result',
+        sessionId: sleepingSession.sessionId,
+        ok: true,
+        session: resumedSession,
+      })
+    })
+
+    state = useSessionStore.getState()
+    expect(state.selectedSleepingSessionId).toBeNull()
+    expect(state.selectedSessionId).toBe(resumedSession.id)
   })
 
   test('handles keyboard shortcuts for navigation and actions', () => {
