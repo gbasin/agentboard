@@ -497,6 +497,104 @@ describe('App', () => {
     expect(state.selectedSessionId).toBe(resumedSession.id)
   })
 
+  test('tracks the selected live session into sleeping when another client sleeps it', () => {
+    const sleepingSessionId = 'sleeping-remote'
+    const selectedLiveSession: Session = {
+      ...baseSession,
+      id: 'selected-live',
+      agentSessionId: sleepingSessionId,
+      agentSessionName: 'sleepy',
+      logFilePath: '/tmp/sleeping-remote.jsonl',
+    }
+    const fallbackLiveSession: Session = {
+      ...baseSession,
+      id: 'fallback-live',
+      name: 'beta',
+      tmuxWindow: 'agentboard:2',
+      projectPath: '/tmp/beta',
+    }
+    const sleepingSession: AgentSession = {
+      ...baseAgentSession,
+      sessionId: sleepingSessionId,
+      displayName: 'sleepy',
+      logFilePath: '/tmp/sleeping-remote.jsonl',
+      isActive: false,
+      isSleeping: true,
+    }
+
+    useSessionStore.setState({
+      sessions: [selectedLiveSession, fallbackLiveSession],
+      selectedSessionId: selectedLiveSession.id,
+      selectedSleepingSessionId: null,
+      agentSessions: {
+        active: [{ ...baseAgentSession, sessionId: sleepingSessionId, isActive: true }],
+        sleeping: [],
+        inactive: [],
+      },
+      hasLoaded: true,
+    })
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<App />)
+    })
+    activeRenderer = renderer
+
+    if (!subscribeListener) {
+      throw new Error('Expected websocket subscription')
+    }
+
+    act(() => {
+      subscribeListener?.({
+        type: 'sessions',
+        sessions: [fallbackLiveSession],
+      })
+    })
+
+    let state = useSessionStore.getState()
+    expect(state.selectedSessionId).toBe(fallbackLiveSession.id)
+    expect(state.selectedSleepingSessionId).toBeNull()
+
+    act(() => {
+      subscribeListener?.({
+        type: 'agent-sessions',
+        active: [],
+        sleeping: [sleepingSession],
+        inactive: [],
+      })
+    })
+
+    state = useSessionStore.getState()
+    expect(state.selectedSessionId).toBeNull()
+    expect(state.selectedSleepingSessionId).toBe(sleepingSessionId)
+  })
+
+  test('treats missing sleeping bucket from older agent-sessions payloads as empty', () => {
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<App />)
+    })
+    activeRenderer = renderer
+
+    if (!subscribeListener) {
+      throw new Error('Expected websocket subscription')
+    }
+
+    act(() => {
+      subscribeListener?.({
+        type: 'agent-sessions',
+        active: [],
+        inactive: [],
+      } as unknown as ServerMessage)
+    })
+
+    expect(useSessionStore.getState().agentSessions).toEqual({
+      active: [],
+      sleeping: [],
+      inactive: [],
+    })
+  })
+
   test('falls back to a visible live session when filters hide the selected sleeping session', () => {
     const visibleLiveSession: Session = {
       ...baseSession,

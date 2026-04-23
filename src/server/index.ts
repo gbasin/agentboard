@@ -2280,7 +2280,7 @@ function handleSessionResume(
       command,
       { excludeSessionId: sessionId }
     ))
-    db.updateSession(sessionId, {
+    const updatedRecord = db.updateSession(sessionId, {
       currentWindow: created.tmuxWindow,
       displayName: created.name,
       isSleeping: false,
@@ -2296,11 +2296,15 @@ function handleSessionResume(
     send(ws, { type: 'session-resume-result', sessionId, ok: true, session: created })
     broadcast({
       type: 'session-activated',
-      session: toAgentSession({
-        ...record,
-        currentWindow: created.tmuxWindow,
-        displayName: created.name,
-      }),
+      session: toAgentSession(
+        updatedRecord ?? {
+          ...record,
+          currentWindow: created.tmuxWindow,
+          displayName: created.name,
+          isSleeping: false,
+          lastResumeError: null,
+        }
+      ),
       window: created.tmuxWindow,
     })
   } catch (error) {

@@ -232,6 +232,28 @@ describe('useSessionStore', () => {
     expect(state.selectedSleepingSessionId).toBeNull()
   })
 
+  test('persist merge ignores legacy stored agent session shape', () => {
+    const merge = useSessionStore.persist.getOptions().merge
+    if (!merge) {
+      throw new Error('Expected persist merge to be configured')
+    }
+
+    const merged = merge(
+      {
+        sessions: [makeSession({ id: 'legacy-session' })],
+        agentSessions: { active: [], inactive: [] },
+        selectedSessionId: 'legacy-live',
+        selectedSleepingSessionId: 'legacy-sleeping',
+      },
+      useSessionStore.getState()
+    )
+
+    expect(merged.sessions).toEqual([])
+    expect(merged.agentSessions).toEqual({ active: [], sleeping: [], inactive: [] })
+    expect(merged.selectedSessionId).toBe('legacy-live')
+    expect(merged.selectedSleepingSessionId).toBe('legacy-sleeping')
+  })
+
   test('setSessions applies lastActivity-only updates', () => {
     const first = makeSession({
       id: 'same-id',

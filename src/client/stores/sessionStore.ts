@@ -86,6 +86,14 @@ interface SessionState {
   clearExitingSession: (sessionId: string) => void
 }
 
+function normalizePersistedSelectedId(value: unknown): string | null {
+  return typeof value === 'string' && value.length > 0 ? value : null
+}
+
+function normalizeAgentSessionList(value: unknown): AgentSession[] {
+  return Array.isArray(value) ? value : []
+}
+
 export const useSessionStore = create<SessionState>()(
   persist(
     (set, get) => ({
@@ -163,16 +171,24 @@ export const useSessionStore = create<SessionState>()(
         }
       },
       setAgentSessions: (active, sleeping, inactive) =>
-        set((state) => ({
-          agentSessions: { active, sleeping, inactive },
-          selectedSleepingSessionId:
-            state.selectedSleepingSessionId &&
-            !sleeping.some(
-              (session) => session.sessionId === state.selectedSleepingSessionId
-            )
-              ? null
-              : state.selectedSleepingSessionId,
-        })),
+        set((state) => {
+          const nextAgentSessions = {
+            active: normalizeAgentSessionList(active),
+            sleeping: normalizeAgentSessionList(sleeping),
+            inactive: normalizeAgentSessionList(inactive),
+          }
+
+          return {
+            agentSessions: nextAgentSessions,
+            selectedSleepingSessionId:
+              state.selectedSleepingSessionId &&
+              !nextAgentSessions.sleeping.some(
+                (session) => session.sessionId === state.selectedSleepingSessionId
+              )
+                ? null
+                : state.selectedSleepingSessionId,
+          }
+        }),
       setHostStatuses: (hosts) => set({ hostStatuses: hosts }),
       updateSession: (session) =>
         set((state) => ({
@@ -217,6 +233,16 @@ export const useSessionStore = create<SessionState>()(
         selectedSessionId: state.selectedSessionId,
         selectedSleepingSessionId: state.selectedSleepingSessionId,
       }),
+      merge: (persistedState, currentState) => {
+        const state = persistedState as Partial<SessionState> | undefined
+        return {
+          ...currentState,
+          selectedSessionId: normalizePersistedSelectedId(state?.selectedSessionId),
+          selectedSleepingSessionId: normalizePersistedSelectedId(
+            state?.selectedSleepingSessionId
+          ),
+        }
+      },
     }
   )
 )

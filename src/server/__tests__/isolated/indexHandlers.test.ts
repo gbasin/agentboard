@@ -2616,6 +2616,8 @@ describe('server message handlers', () => {
       projectPath: '/tmp/resume',
       agentType: 'claude',
       currentWindow: null,
+      isSleeping: true,
+      lastResumeError: 'resume failed',
     })
     seedRecord(record)
 
@@ -2664,8 +2666,18 @@ describe('server message handlers', () => {
     )
     expect(activatedMessage).toMatchObject({
       type: 'session-activated',
+      session: expect.objectContaining({
+        sessionId: 'resume-ok',
+        displayName: createdSession.name,
+        isSleeping: false,
+      }),
       window: createdSession.tmuxWindow,
     })
+    expect(
+      activatedMessage && 'session' in activatedMessage
+        ? activatedMessage.session.lastResumeError
+        : undefined
+    ).toBeUndefined()
 
     expect(registryInstance.sessions[0]?.id).toBe(createdSession.id)
   })

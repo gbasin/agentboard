@@ -66,7 +66,7 @@ chmod +x "$BIN_DIR/agentboard-run.sh"
 # --- Logrotate script: copytruncate pattern so pino's open fd stays valid.
 cat > "$BIN_DIR/agentboard-log-rotate.sh" << 'EOF'
 #!/bin/bash
-set -u
+set -euo pipefail
 export PATH="/usr/bin:/bin:/usr/sbin:/sbin"
 LOG="${LOG_FILE:-$HOME/.agentboard/agentboard.log}"
 MAX_BYTES=$((50 * 1024 * 1024))
