@@ -13,6 +13,7 @@ export function toAgentSession(record: AgentSessionRecord): AgentSession {
     createdAt: record.createdAt,
     lastActivityAt: record.lastActivityAt,
     isActive: record.currentWindow !== null,
+    isSleeping: record.isSleeping,
     host: config.hostLabel,
     lastUserMessage: record.lastUserMessage
       ? record.lastUserMessage.slice(0, 250)

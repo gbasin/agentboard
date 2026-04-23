@@ -46,6 +46,7 @@ export interface AgentSession {
   isActive: boolean
   host?: string
   lastUserMessage?: string
+  isSleeping?: boolean
   isPinned?: boolean
   lastResumeError?: string
 }
@@ -81,11 +82,12 @@ export type ServerMessage =
   | { type: 'session-created'; session: Session }
   | { type: 'session-removed'; sessionId: string }
   | { type: 'host-status'; hosts: HostStatus[] }
-  | { type: 'agent-sessions'; active: AgentSession[]; inactive: AgentSession[] }
+  | { type: 'agent-sessions'; active: AgentSession[]; sleeping: AgentSession[]; inactive: AgentSession[] }
   | { type: 'agent-sessions-active'; active: AgentSession[] }
   | { type: 'session-orphaned'; session: AgentSession; supersededBy?: string }
   | { type: 'session-activated'; session: AgentSession; window: string }
   | { type: 'session-resume-result'; sessionId: string; ok: boolean; session?: Session; error?: ResumeError }
+  | { type: 'session-sleep-result'; sessionId: string; ok: boolean; error?: string }
   | { type: 'session-pin-result'; sessionId: string; ok: boolean; error?: string }
   | { type: 'session-resurrection-failed'; sessionId: string; displayName: string; error: string }
   | { type: 'terminal-output'; sessionId: string; data: string }
@@ -126,6 +128,7 @@ export type ClientMessage =
   | { type: 'tmux-cancel-copy-mode'; sessionId: string }
   | { type: 'tmux-check-copy-mode'; sessionId: string }
   | { type: 'session-resume'; sessionId: string; name?: string }
+  | { type: 'session-sleep'; sessionId: string }
   | { type: 'ping'; seq?: number }
   | { type: 'session-pin'; sessionId: string; isPinned: boolean }
 

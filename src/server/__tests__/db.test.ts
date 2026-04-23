@@ -19,6 +19,7 @@ function makeSession(overrides: Partial<{
   lastActivityAt: string
   lastUserMessage: string | null
   currentWindow: string | null
+  isSleeping: boolean
   isPinned: boolean
   lastResumeError: string | null
   lastKnownLogSize: number | null
@@ -36,6 +37,7 @@ function makeSession(overrides: Partial<{
     lastActivityAt: now,
     lastUserMessage: null,
     currentWindow: 'agentboard:1',
+    isSleeping: false,
     isPinned: false,
     lastResumeError: null,
     lastKnownLogSize: null,
@@ -109,6 +111,14 @@ describe('db', () => {
       isPinned: true,
       currentWindow: null,
     }))
+    // Pinned + sleeping (should NOT be returned)
+    db.insertSession(makeSession({
+      sessionId: 'sleeping-pinned',
+      logFilePath: '/tmp/sleeping-pinned.jsonl',
+      isPinned: true,
+      isSleeping: true,
+      currentWindow: null,
+    }))
     // Pinned + active (should NOT be returned)
     db.insertSession(makeSession({
       sessionId: 'b',
@@ -127,6 +137,41 @@ describe('db', () => {
     const orphaned = db.getPinnedOrphaned()
     expect(orphaned).toHaveLength(1)
     expect(orphaned[0].sessionId).toBe('a')
+  })
+
+  test('sleeping sessions are stored separately from inactive sessions', () => {
+    db.insertSession(makeSession({
+      sessionId: 'sleeping-one',
+      logFilePath: '/tmp/sleeping-one.jsonl',
+      currentWindow: null,
+      isSleeping: true,
+    }))
+    db.insertSession(makeSession({
+      sessionId: 'inactive-one',
+      logFilePath: '/tmp/inactive-one.jsonl',
+      currentWindow: null,
+      isSleeping: false,
+    }))
+
+    const sleeping = db.getSleepingSessions()
+    const inactive = db.getInactiveSessions()
+
+    expect(sleeping.map((session) => session.sessionId)).toEqual(['sleeping-one'])
+    expect(inactive.map((session) => session.sessionId)).toEqual(['inactive-one'])
+  })
+
+  test('orphanSession clears sleeping state', () => {
+    db.insertSession(makeSession({
+      sessionId: 'sleeping-to-orphan',
+      logFilePath: '/tmp/sleeping-to-orphan.jsonl',
+      currentWindow: 'agentboard:9',
+      isSleeping: true,
+    }))
+
+    const orphaned = db.orphanSession('sleeping-to-orphan')
+
+    expect(orphaned?.currentWindow).toBeNull()
+    expect(orphaned?.isSleeping).toBe(false)
   })
 
   test('displayNameExists returns true for existing names', () => {

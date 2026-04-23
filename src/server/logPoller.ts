@@ -40,6 +40,7 @@ interface SessionRecord {
   lastActivityAt: string
   lastUserMessage: string | null
   currentWindow: string | null
+  isSleeping: boolean
   isPinned: boolean
   lastResumeError: string | null
   lastKnownLogSize: number | null
@@ -270,20 +271,23 @@ export class LogPoller {
       const logDirs = getLogSearchDirs()
       const sessionRecords = [
         ...this.db.getActiveSessions(),
+        ...this.db.getSleepingSessions(),
         ...this.db.getInactiveSessions(),
       ]
+      const excludedProjects = config.excludeProjects ?? []
 
       // Build orphan candidates - sessions without active windows
       const orphanCandidates: OrphanCandidate[] = []
       for (const record of sessionRecords) {
         if (record.currentWindow) continue
+        if (record.isSleeping) continue
         const logFilePath = record.logFilePath
         if (!logFilePath) continue
         // Skip sessions from excluded project directories
         // Use "<empty>" as a special marker to exclude sessions with no project path
-        if (config.excludeProjects?.length > 0) {
+        if (excludedProjects.length > 0) {
           const projectPath = record.projectPath ?? ''
-          const shouldExclude = config.excludeProjects.some((excluded) => {
+          const shouldExclude = excludedProjects.some((excluded) => {
             if (excluded === '<empty>') return projectPath === ''
             return projectPath.startsWith(excluded)
           })
@@ -471,6 +475,7 @@ export class LogPoller {
       const logDirs = getLogSearchDirs()
       const sessionRecords = [
         ...this.db.getActiveSessions(),
+        ...this.db.getSleepingSessions(),
         ...this.db.getInactiveSessions(),
       ]
       const sessions: SessionSnapshot[] = sessionRecords.map((session) => ({
@@ -604,6 +609,7 @@ export class LogPoller {
             this.db.updateSession(existing.sessionId, update)
           }
           const shouldAttemptRematch =
+            !existing.isSleeping &&
             !existing.currentWindow &&
             (hasGrown || matchEligibleLogPaths.has(entry.logPath))
           if (shouldAttemptRematch) {
@@ -682,6 +688,7 @@ export class LogPoller {
 
           // Re-attempt matching for orphaned sessions (no currentWindow)
           const shouldAttemptRematch =
+            !existingById.isSleeping &&
             !existingById.currentWindow &&
             (hasGrown || matchEligibleLogPaths.has(entry.logPath))
           if (shouldAttemptRematch) {
@@ -881,6 +888,7 @@ export class LogPoller {
       const logDirs = getLogSearchDirs()
       const sessionRecords = [
         ...this.db.getActiveSessions(),
+        ...this.db.getSleepingSessions(),
         ...this.db.getInactiveSessions(),
       ]
       let shouldBackfillLastMessage = false

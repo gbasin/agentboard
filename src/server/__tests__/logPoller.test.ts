@@ -292,6 +292,69 @@ describe('LogPoller', () => {
     db.close()
   })
 
+  test('does not orphan-rematch sleeping sessions', async () => {
+    const db = initDatabase({ path: ':memory:' })
+    const registry = new SessionRegistry()
+    registry.replaceSessions([baseSession])
+
+    const projectPath = baseSession.projectPath
+    const encoded = encodeProjectPath(projectPath)
+    const logDir = path.join(
+      process.env.CLAUDE_CONFIG_DIR ?? '',
+      'projects',
+      encoded
+    )
+    await fs.mkdir(logDir, { recursive: true })
+
+    const tokens = Array.from({ length: 60 }, (_, i) => `token${i}`).join(' ')
+    const logPath = path.join(logDir, 'sleeping-session.jsonl')
+    const userLine = buildUserLogEntry(tokens, {
+      sessionId: 'sleeping-session',
+      cwd: projectPath,
+    })
+    const assistantLine = JSON.stringify({
+      type: 'assistant',
+      message: { content: [{ type: 'text', text: tokens }] },
+    })
+    await fs.writeFile(logPath, `${userLine}\n${assistantLine}\n`)
+    setTmuxOutput(baseSession.tmuxWindow, buildLastExchangeOutput(tokens))
+
+    db.insertSession({
+      sessionId: 'sleeping-session',
+      logFilePath: logPath,
+      projectPath,
+      slug: null,
+      agentType: 'claude',
+      displayName: 'alpha',
+      createdAt: new Date().toISOString(),
+      lastActivityAt: new Date().toISOString(),
+      lastUserMessage: null,
+      currentWindow: null,
+      isSleeping: true,
+      isPinned: false,
+      lastResumeError: null,
+      lastKnownLogSize: 0,
+      isCodexExec: false,
+      launchCommand: null,
+    })
+
+    const activated: Array<{ sessionId: string; window: string }> = []
+    const poller = new LogPoller(db, registry, {
+      matchWorkerClient: new InlineMatchWorkerClient(),
+      onSessionActivated: (sessionId, window) => activated.push({ sessionId, window }),
+    })
+
+    await poller.pollOnce()
+    await poller.waitForOrphanRematch()
+
+    const record = db.getSessionById('sleeping-session')
+    expect(record?.currentWindow).toBeNull()
+    expect(record?.isSleeping).toBeTrue()
+    expect(activated).toEqual([])
+
+    db.close()
+  })
+
   test('supersedes existing session via slug match (plan→execute transition)', async () => {
     const db = initDatabase({ path: ':memory:' })
     const registry = new SessionRegistry()

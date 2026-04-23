@@ -104,6 +104,7 @@ function makeRecord(overrides: Partial<AgentSessionRecord> = {}): AgentSessionRe
     lastActivityAt: baseRecordTimestamp,
     lastUserMessage: null,
     currentWindow: null,
+    isSleeping: false,
     isPinned: false,
     lastResumeError: null,
     lastKnownLogSize: null,
@@ -159,8 +160,9 @@ class SessionManagerMock {
 class SessionRegistryMock {
   static instance: SessionRegistryMock | null = null
   sessions: Session[] = []
-  agentSessions: { active: unknown[]; inactive: unknown[] } = {
+  agentSessions: { active: unknown[]; sleeping: unknown[]; inactive: unknown[] } = {
     active: [],
+    sleeping: [],
     inactive: [],
   }
   listeners = new Map<string, Array<(payload: unknown) => void>>()
@@ -208,9 +210,9 @@ class SessionRegistryMock {
     }
   }
 
-  setAgentSessions(active: unknown[], inactive: unknown[]) {
-    this.agentSessions = { active, inactive }
-    this.emit('agent-sessions', { active, inactive })
+  setAgentSessions(active: unknown[], sleeping: unknown[], inactive: unknown[]) {
+    this.agentSessions = { active, sleeping, inactive }
+    this.emit('agent-sessions', { active, sleeping, inactive })
   }
 }
 
@@ -321,7 +323,7 @@ mock.module('../../db', () => ({
       ),
     getInactiveSessions: (options?: { maxAgeHours?: number }) => {
       const inactive = Array.from(dbState.records.values()).filter(
-        (record) => record.currentWindow === null
+        (record) => record.currentWindow === null && !record.isSleeping
       )
       if (!options?.maxAgeHours) {
         return inactive
@@ -331,10 +333,14 @@ mock.module('../../db', () => ({
         (record) => new Date(record.lastActivityAt).getTime() > cutoff
       )
     },
+    getSleepingSessions: () =>
+      Array.from(dbState.records.values()).filter(
+        (record) => record.currentWindow === null && record.isSleeping
+      ),
     orphanSession: (sessionId: string) => {
       const record = dbState.records.get(sessionId)
       if (!record) return null
-      const updated = { ...record, currentWindow: null }
+      const updated = { ...record, currentWindow: null, isSleeping: false }
       dbState.records.set(sessionId, updated)
       return updated
     },
@@ -368,7 +374,7 @@ mock.module('../../db', () => ({
     },
     getPinnedOrphaned: () =>
       Array.from(dbState.records.values()).filter(
-        (record) => record.isPinned && record.currentWindow === null
+        (record) => record.isPinned && record.currentWindow === null && !record.isSleeping
       ),
     getAppSetting: (key: string) => dbState.appSettings.get(key) ?? null,
     setAppSetting: (key: string, value: string) => {
@@ -2423,6 +2429,108 @@ describe('server message handlers', () => {
     expect(registryInstance.sessions[0]?.isPinned).toBe(false)
   })
 
+  test('validates session sleep errors', async () => {
+    const { serveOptions } = await loadIndex()
+    const { ws, sent } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) {
+      throw new Error('WebSocket handlers not configured')
+    }
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({ type: 'session-sleep', sessionId: 'bad id' })
+    )
+    expect(sent[sent.length - 1]).toEqual({
+      type: 'session-sleep-result',
+      sessionId: 'bad id',
+      ok: false,
+      error: 'Invalid session id',
+    })
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({ type: 'session-sleep', sessionId: 'missing' })
+    )
+    expect(sent[sent.length - 1]).toEqual({
+      type: 'session-sleep-result',
+      sessionId: 'missing',
+      ok: false,
+      error: 'Session not found',
+    })
+
+    seedRecord(
+      makeRecord({
+        sessionId: 'already-sleeping',
+        currentWindow: null,
+        isSleeping: true,
+      })
+    )
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({ type: 'session-sleep', sessionId: 'already-sleeping' })
+    )
+    expect(sent[sent.length - 1]).toEqual({
+      type: 'session-sleep-result',
+      sessionId: 'already-sleeping',
+      ok: false,
+      error: 'Session is not active',
+    })
+  })
+
+  test('sleeps active sessions and moves them into the sleeping bucket', async () => {
+    const { serveOptions, registryInstance } = await loadIndex()
+    const liveAgentSessionId = 'sleep-ok'
+    registryInstance.sessions = [
+      { ...baseSession, agentSessionId: liveAgentSessionId },
+    ]
+    seedRecord(
+      makeRecord({
+        sessionId: liveAgentSessionId,
+        currentWindow: baseSession.tmuxWindow,
+      })
+    )
+
+    let killedTarget: string | null = null
+    sessionManagerState.killWindow = (tmuxWindow: string) => {
+      killedTarget = tmuxWindow
+    }
+
+    const { ws, sent } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) {
+      throw new Error('WebSocket handlers not configured')
+    }
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({ type: 'session-sleep', sessionId: liveAgentSessionId })
+    )
+
+    if (!killedTarget) {
+      throw new Error('Expected killWindow to be called')
+    }
+    const killTarget = killedTarget
+    expect(killTarget === baseSession.tmuxWindow).toBe(true)
+    expect(sent[sent.length - 1]).toEqual({
+      type: 'session-sleep-result',
+      sessionId: liveAgentSessionId,
+      ok: true,
+    })
+    expect(dbState.updateCalls.at(-1)?.patch).toMatchObject({
+      currentWindow: null,
+      isSleeping: true,
+    })
+    expect(registryInstance.sessions).toEqual([])
+    expect(registryInstance.agentSessions.sleeping).toMatchObject([
+      expect.objectContaining({
+        sessionId: liveAgentSessionId,
+        isSleeping: true,
+      }),
+    ])
+    expect(registryInstance.agentSessions.inactive).toEqual([])
+  })
+
   test('validates session resume errors', async () => {
     const { serveOptions } = await loadIndex()
     const { ws, sent } = createWs()
@@ -2537,6 +2645,7 @@ describe('server message handlers', () => {
     expect(dbState.updateCalls[0]?.patch).toMatchObject({
       currentWindow: createdSession.tmuxWindow,
       displayName: createdSession.name,
+      isSleeping: false,
       lastResumeError: null,
     })
 

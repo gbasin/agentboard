@@ -409,14 +409,14 @@ const LAST_USER_MESSAGE_LOCK_MS = 60_000 // 60 seconds
 
 const logPoller = new LogPoller(db, registry, {
   onSessionOrphaned: (sessionId, supersededBy) => {
-    updateInactiveAgentSessions()
+    updateDormantAgentSessions()
     const session = db.getSessionById(sessionId)
     if (session) {
       broadcast({ type: 'session-orphaned', session: toAgentSession(session), supersededBy })
     }
   },
   onSessionActivated: (sessionId, window) => {
-    updateInactiveAgentSessions()
+    updateDormantAgentSessions()
     const session = db.getSessionById(sessionId)
     if (session) {
       broadcast({
@@ -438,28 +438,46 @@ const lastUserMessageWorker = new SessionRefreshWorkerClient()
 
 // Active sessions update on every refresh — cheap (few rows).
 // Inactive sessions query is expensive — only run on actual mutations.
+function filterExcludedAgentSessions(sessions: AgentSession[]): AgentSession[] {
+  const excludedProjects = config.excludeProjects ?? []
+  if (excludedProjects.length === 0) {
+    return sessions
+  }
+
+  return sessions.filter((session) => {
+    const projectPath = session.projectPath || ''
+    return !excludedProjects.some((excluded) => {
+      if (excluded === '<empty>') return projectPath === ''
+      return projectPath.startsWith(excluded)
+    })
+  })
+}
+
 function updateActiveAgentSessions() {
   const active = hasConfirmedLocalSessionSnapshot
     ? db.getActiveSessions().map(toAgentSession)
     : []
-  registry.setAgentSessions(active, registry.getAgentSessions().inactive)
+  const current = registry.getAgentSessions()
+  registry.setAgentSessions(
+    active,
+    current.sleeping,
+    current.inactive
+  )
 }
 
-function updateInactiveAgentSessions() {
-  let inactive = db.getInactiveSessions({ maxAgeHours: runtimeInactiveMaxAgeHours }).map(toAgentSession)
-  if (config.excludeProjects?.length > 0) {
-    inactive = inactive.filter((session) => {
-      const projectPath = session.projectPath || ''
-      return !config.excludeProjects.some((excluded) => {
-        if (excluded === '<empty>') return projectPath === ''
-        return projectPath.startsWith(excluded)
-      })
-    })
-  }
+function updateDormantAgentSessions() {
+  const sleeping = filterExcludedAgentSessions(
+    db.getSleepingSessions().map(toAgentSession)
+  )
+  const inactive = filterExcludedAgentSessions(
+    db.getInactiveSessions({ maxAgeHours: runtimeInactiveMaxAgeHours }).map(
+      toAgentSession
+    )
+  )
   const active = hasConfirmedLocalSessionSnapshot
     ? db.getActiveSessions().map(toAgentSession)
     : []
-  registry.setAgentSessions(active, inactive)
+  registry.setAgentSessions(active, sleeping, inactive)
 }
 
 interface VerificationDecision {
@@ -694,7 +712,7 @@ function hydrateSessionsWithAgentSessions(
     for (const session of orphaned) {
       broadcast({ type: 'session-orphaned', session })
     }
-    updateInactiveAgentSessions()
+    updateDormantAgentSessions()
   } else {
     updateActiveAgentSessions()
   }
@@ -981,9 +999,9 @@ async function completeStartupVerification(): Promise<void> {
     refreshSessionsSync()
   }
 
-  // Load inactive sessions after startup verification and resurrection
-  // so the list reflects the final active/inactive split.
-  updateInactiveAgentSessions()
+  // Load dormant sessions after startup verification and resurrection so the
+  // list reflects the final active/sleeping/inactive split.
+  updateDormantAgentSessions()
 }
 
 registry.on('session-update', (session) => {
@@ -998,8 +1016,8 @@ registry.on('session-removed', (sessionId) => {
   broadcast({ type: 'session-removed', sessionId })
 })
 
-registry.on('agent-sessions', ({ active, inactive }) => {
-  broadcast({ type: 'agent-sessions', active, inactive })
+registry.on('agent-sessions', ({ active, sleeping, inactive }) => {
+  broadcast({ type: 'agent-sessions', active, sleeping, inactive })
 })
 
 registry.on('agent-sessions-active', (active) => {
@@ -1286,7 +1304,7 @@ app.put('/api/settings/inactive-max-age-hours', async (c) => {
     runtimeInactiveMaxAgeHours = hours
     db.setAppSetting(INACTIVE_MAX_AGE_HOURS_KEY, String(hours))
     // Re-broadcast agent sessions with new max age
-    updateInactiveAgentSessions()
+    updateDormantAgentSessions()
     return c.json({ hours })
   } catch {
     return c.json({ error: 'Invalid request body' }, 400)
@@ -1402,6 +1420,7 @@ const websocketHandlers = {
     send(ws, {
       type: 'agent-sessions',
       active: agentSessions.active,
+      sleeping: agentSessions.sleeping,
       inactive: agentSessions.inactive,
     })
     initializePersistentTerminal(ws)
@@ -1610,6 +1629,9 @@ function handleMessage(
       return
     case 'session-resume':
       handleSessionResume(message, ws)
+      return
+    case 'session-sleep':
+      handleSessionSleep(message.sessionId, ws)
       return
     case 'session-pin':
       handleSessionPin(message.sessionId, message.isPinned, ws)
@@ -1888,7 +1910,7 @@ async function handleKill(sessionId: string, ws: ServerWebSocket<WSData>) {
       orphanById(recordByWindow.sessionId)
     }
     if (orphaned.size > 0) {
-      updateInactiveAgentSessions()
+      updateDormantAgentSessions()
       for (const orphanedSession of orphaned.values()) {
         broadcast({ type: 'session-orphaned', session: orphanedSession })
       }
@@ -2016,7 +2038,69 @@ function handleSessionPin(
     }
   }
 
-  updateInactiveAgentSessions()
+  updateDormantAgentSessions()
+}
+
+function handleSessionSleep(
+  sessionId: string,
+  ws: ServerWebSocket<WSData>
+) {
+  if (!isValidSessionId(sessionId)) {
+    send(ws, { type: 'session-sleep-result', sessionId, ok: false, error: 'Invalid session id' })
+    return
+  }
+
+  const record = db.getSessionById(sessionId)
+  if (!record) {
+    send(ws, { type: 'session-sleep-result', sessionId, ok: false, error: 'Session not found' })
+    return
+  }
+
+  if (!record.currentWindow) {
+    send(ws, { type: 'session-sleep-result', sessionId, ok: false, error: 'Session is not active' })
+    return
+  }
+
+  const liveSession =
+    registry.get(record.currentWindow) ??
+    registry.getAll().find((session) => session.agentSessionId?.trim() === sessionId)
+
+  if (!liveSession || liveSession.remote || liveSession.source !== 'managed') {
+    send(ws, {
+      type: 'session-sleep-result',
+      sessionId,
+      ok: false,
+      error: 'Only local managed sessions can be slept',
+    })
+    return
+  }
+
+  try {
+    sessionManager.killWindow(record.currentWindow)
+    refreshGeneration++
+    const updated = db.updateSession(sessionId, {
+      currentWindow: null,
+      isSleeping: true,
+    })
+
+    if (!updated) {
+      send(ws, { type: 'session-sleep-result', sessionId, ok: false, error: 'Failed to update session state' })
+      return
+    }
+
+    send(ws, { type: 'session-sleep-result', sessionId, ok: true })
+
+    const remaining = registry.getAll().filter((session) => session.id !== liveSession.id)
+    registry.replaceSessions(remaining)
+    updateDormantAgentSessions()
+  } catch (error) {
+    send(ws, {
+      type: 'session-sleep-result',
+      sessionId,
+      ok: false,
+      error: error instanceof Error ? error.message : 'Unable to sleep session',
+    })
+  }
 }
 
 /**
@@ -2199,6 +2283,7 @@ function handleSessionResume(
     db.updateSession(sessionId, {
       currentWindow: created.tmuxWindow,
       displayName: created.name,
+      isSleeping: false,
       lastResumeError: null, // Clear any previous error on success
     })
     // Add session to registry immediately so terminal can attach
@@ -2206,7 +2291,7 @@ function handleSessionResume(
     refreshGeneration++
     const currentSessions = registry.getAll()
     registry.replaceSessions([created, ...currentSessions])
-    updateInactiveAgentSessions()
+    updateDormantAgentSessions()
     refreshSessions()
     send(ws, { type: 'session-resume-result', sessionId, ok: true, session: created })
     broadcast({

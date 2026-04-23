@@ -5,18 +5,18 @@ export interface RegistryEvents {
   sessions: (sessions: Session[]) => void
   'session-update': (session: Session) => void
   'session-removed': (sessionId: string) => void
-  'agent-sessions': (payload: { active: AgentSession[]; inactive: AgentSession[] }) => void
+  'agent-sessions': (payload: { active: AgentSession[]; sleeping: AgentSession[]; inactive: AgentSession[] }) => void
   'agent-sessions-active': (active: AgentSession[]) => void
 }
 
 export class SessionRegistry extends EventEmitter {
   private sessions: Map<string, Session>
-  private agentSessions: { active: AgentSession[]; inactive: AgentSession[] }
+  private agentSessions: { active: AgentSession[]; sleeping: AgentSession[]; inactive: AgentSession[] }
 
   constructor() {
     super()
     this.sessions = new Map<string, Session>()
-    this.agentSessions = { active: [], inactive: [] }
+    this.agentSessions = { active: [], sleeping: [], inactive: [] }
   }
 
   getAll(): Session[] {
@@ -87,29 +87,32 @@ export class SessionRegistry extends EventEmitter {
     return updated
   }
 
-  getAgentSessions(): { active: AgentSession[]; inactive: AgentSession[] } {
+  getAgentSessions(): { active: AgentSession[]; sleeping: AgentSession[]; inactive: AgentSession[] } {
     return this.agentSessions
   }
 
-  setAgentSessions(active: AgentSession[], inactive: AgentSession[]): void {
+  setAgentSessions(active: AgentSession[], sleeping: AgentSession[], inactive: AgentSession[]): void {
     const prev = this.agentSessions
     const activeChanged =
       active.length !== prev.active.length ||
       !active.every((a, i) => agentSessionsEqual(a, prev.active[i]))
+    const sleepingChanged =
+      sleeping.length !== prev.sleeping.length ||
+      !sleeping.every((a, i) => agentSessionsEqual(a, prev.sleeping[i]))
     const inactiveChanged =
       inactive.length !== prev.inactive.length ||
       !inactive.every((a, i) => agentSessionsEqual(a, prev.inactive[i]))
 
-    if (!activeChanged && !inactiveChanged) return
+    if (!activeChanged && !sleepingChanged && !inactiveChanged) return
 
-    this.agentSessions = { active, inactive }
+    this.agentSessions = { active, sleeping, inactive }
 
     // Always send the lightweight active-only update
     if (activeChanged) {
       this.emit('agent-sessions-active', active)
     }
-    // Only send the full payload (with inactive) when inactive actually changed
-    if (inactiveChanged) {
+    // Only send the full payload when sleeping or inactive actually changed.
+    if (sleepingChanged || inactiveChanged) {
       this.emit('agent-sessions', this.agentSessions)
     }
   }
@@ -149,6 +152,7 @@ function agentSessionsEqual(a: AgentSession, b: AgentSession): boolean {
     a.createdAt === b.createdAt &&
     a.lastActivityAt === b.lastActivityAt &&
     a.isActive === b.isActive &&
+    a.isSleeping === b.isSleeping &&
     a.host === b.host &&
     a.lastUserMessage === b.lastUserMessage &&
     a.isPinned === b.isPinned &&
