@@ -52,6 +52,7 @@ export type ConnectionStatus =
 interface SessionState {
   sessions: Session[]
   agentSessions: { active: AgentSession[]; sleeping: AgentSession[]; inactive: AgentSession[] }
+  agentSessionsEpoch: number
   hostStatuses: HostStatus[]
   // Sessions being animated out - keyed by session ID, value is the session data
   exitingSessions: Map<string, Session>
@@ -100,6 +101,7 @@ export const useSessionStore = create<SessionState>()(
     (set, get) => ({
       sessions: [],
       agentSessions: { active: [], sleeping: [], inactive: [] },
+      agentSessionsEpoch: -1,
       hostStatuses: [],
       exitingSessions: new Map(),
       selectedSessionId: null,
@@ -181,6 +183,7 @@ export const useSessionStore = create<SessionState>()(
 
           return {
             agentSessions: nextAgentSessions,
+            agentSessionsEpoch: state.connectionEpoch,
             selectedSleepingSessionId:
               state.selectedSleepingSessionId &&
               !nextAgentSessions.sleeping.some(

@@ -52,9 +52,12 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
   const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null)
+  const [pendingSleepingSession, setPendingSleepingSession] =
+    useState<AgentSession | null>(null)
 
   const sessions = useSessionStore((state) => state.sessions)
   const agentSessions = useSessionStore((state) => state.agentSessions)
+  const agentSessionsEpoch = useSessionStore((state) => state.agentSessionsEpoch)
   const selectedSessionId = useSessionStore(
     (state) => state.selectedSessionId
   )
@@ -345,7 +348,6 @@ export default function App() {
         const active = Array.isArray(message.active) ? message.active : []
         const sleeping = Array.isArray(message.sleeping) ? message.sleeping : []
         const inactive = Array.isArray(message.inactive) ? message.inactive : []
-        hasReceivedFullAgentSessionsRef.current = true
         const { selectedSleepingSessionId: currentSelectedSleepingSessionId } =
           useSessionStore.getState()
         const pendingSleepSelectionId = pendingSleepSelectionRef.current
@@ -358,6 +360,12 @@ export default function App() {
           pendingWakeSelectionRef.current = currentSelectedSleepingSessionId
         }
         setAgentSessions(active, sleeping, inactive)
+        setPendingSleepingSession((current) =>
+          current &&
+          sleeping.some((session) => session.sessionId === current.sessionId)
+            ? null
+            : current
+        )
         if (
           pendingSleepSelectionId &&
           sleeping.some((session) => session.sessionId === pendingSleepSelectionId)
@@ -403,6 +411,9 @@ export default function App() {
       }
       if (message.type === 'session-resume-result') {
         if (message.ok && message.session) {
+          setPendingSleepingSession((current) =>
+            current?.sessionId === message.sessionId ? null : current
+          )
           // Add resumed session to list immediately
           const currentSessions = useSessionStore.getState().sessions
           if (!currentSessions.some((s) => s.id === message.session!.id)) {
@@ -416,6 +427,9 @@ export default function App() {
       }
       if (message.type === 'session-sleep-result') {
         if (message.ok) {
+          if (message.session) {
+            setPendingSleepingSession(message.session)
+          }
           setSelectedSleepingSessionId(message.sessionId)
         } else {
           setServerError(message.error ?? 'Failed to sleep session')
@@ -481,6 +495,7 @@ export default function App() {
     sendMessage,
     setSelectedSessionId,
     setSelectedSleepingSessionId,
+    setPendingSleepingSession,
     setSessions,
     setAgentSessions,
     setActiveAgentSessions,
@@ -507,9 +522,16 @@ export default function App() {
     return (
       filteredSleepingSessions.find(
         (session) => session.sessionId === selectedSleepingSessionId
-      ) || null
+      ) ||
+      (pendingSleepingSession?.sessionId === selectedSleepingSessionId
+        ? pendingSleepingSession
+        : null)
     )
-  }, [filteredSleepingSessions, selectedSleepingSessionId])
+  }, [
+    filteredSleepingSessions,
+    pendingSleepingSession,
+    selectedSleepingSessionId,
+  ])
 
   // Track last viewed project path
   useEffect(() => {
@@ -553,7 +575,7 @@ export default function App() {
   )
   const pendingSleepSelectionRef = useRef<string | null>(null)
   const pendingWakeSelectionRef = useRef<string | null>(null)
-  const hasReceivedFullAgentSessionsRef = useRef(false)
+  const lastConnectionEpochRef = useRef(connectionEpoch)
 
   const selectFirstVisibleTarget = useCallback(() => {
     if (filteredSortedSessions.length > 0) {
@@ -590,6 +612,23 @@ export default function App() {
     lastSelectedSleepingSessionIdRef.current = selectedSleepingSessionId
   }, [sleepingAgentSessions, selectedSleepingSessionId])
 
+  useEffect(() => {
+    if (!pendingSleepingSession) return
+    if (selectedSleepingSessionId === pendingSleepingSession.sessionId) return
+    setPendingSleepingSession(null)
+  }, [pendingSleepingSession, selectedSleepingSessionId])
+
+  useEffect(() => {
+    if (lastConnectionEpochRef.current === connectionEpoch) {
+      return
+    }
+
+    lastConnectionEpochRef.current = connectionEpoch
+    pendingSleepSelectionRef.current = null
+    pendingWakeSelectionRef.current = null
+    setPendingSleepingSession(null)
+  }, [connectionEpoch])
+
   // Auto-select first visible session when current selection is filtered out
   useEffect(() => {
     if (selectedSleepingSessionId) return
@@ -608,12 +647,10 @@ export default function App() {
 
   useEffect(() => {
     if (!selectedSleepingSessionId) return
-    if (
-      !hasReceivedFullAgentSessionsRef.current &&
-      !sleepingAgentSessions.some(
-        (session) => session.sessionId === selectedSleepingSessionId
-      )
-    ) {
+    if (pendingSleepingSession?.sessionId === selectedSleepingSessionId) {
+      return
+    }
+    if (agentSessionsEpoch !== connectionEpoch) {
       return
     }
     if (
@@ -637,11 +674,13 @@ export default function App() {
   }, [
     filteredSleepingSessions,
     filteredSortedSessions,
-    sleepingAgentSessions,
+    agentSessionsEpoch,
+    pendingSleepingSession,
     selectedSleepingSessionId,
     selectFirstVisibleTarget,
     setSelectedSessionId,
     setSelectedSleepingSessionId,
+    connectionEpoch,
   ])
 
   useEffect(() => {

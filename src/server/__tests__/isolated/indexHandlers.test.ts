@@ -2512,10 +2512,15 @@ describe('server message handlers', () => {
     }
     const killTarget = killedTarget
     expect(killTarget === baseSession.tmuxWindow).toBe(true)
-    expect(sent[sent.length - 1]).toEqual({
+    expect(sent[sent.length - 1]).toMatchObject({
       type: 'session-sleep-result',
       sessionId: liveAgentSessionId,
       ok: true,
+      session: expect.objectContaining({
+        sessionId: liveAgentSessionId,
+        isSleeping: true,
+        isActive: false,
+      }),
     })
     expect(dbState.updateCalls.at(-1)?.patch).toMatchObject({
       currentWindow: null,

@@ -2088,7 +2088,12 @@ function handleSessionSleep(
       return
     }
 
-    send(ws, { type: 'session-sleep-result', sessionId, ok: true })
+    send(ws, {
+      type: 'session-sleep-result',
+      sessionId,
+      ok: true,
+      session: toAgentSession(updated),
+    })
 
     const remaining = registry.getAll().filter((session) => session.id !== liveSession.id)
     registry.replaceSessions(remaining)

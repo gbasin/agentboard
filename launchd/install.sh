@@ -9,14 +9,14 @@ LAUNCH_AGENTS="$HOME/Library/LaunchAgents"
 AGENTBOARD_DIR="$HOME/.agentboard"
 BIN_DIR="$AGENTBOARD_DIR/bin"
 
-BUN_PATH="$(which bun)"
+BUN_PATH="$(command -v bun || true)"
 if [ -z "$BUN_PATH" ]; then
     echo "Error: bun not found in PATH (brew install oven-sh/bun/bun)"
     exit 1
 fi
 BUN_DIR="$(dirname "$BUN_PATH")"
 
-TMUX_PATH="$(which tmux)"
+TMUX_PATH="$(command -v tmux || true)"
 if [ -z "$TMUX_PATH" ]; then
     echo "Error: tmux not found in PATH (brew install tmux)"
     exit 1

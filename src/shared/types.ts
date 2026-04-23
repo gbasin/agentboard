@@ -87,7 +87,13 @@ export type ServerMessage =
   | { type: 'session-orphaned'; session: AgentSession; supersededBy?: string }
   | { type: 'session-activated'; session: AgentSession; window: string }
   | { type: 'session-resume-result'; sessionId: string; ok: boolean; session?: Session; error?: ResumeError }
-  | { type: 'session-sleep-result'; sessionId: string; ok: boolean; error?: string }
+  | {
+      type: 'session-sleep-result'
+      sessionId: string
+      ok: boolean
+      session?: AgentSession
+      error?: string
+    }
   | { type: 'session-pin-result'; sessionId: string; ok: boolean; error?: string }
   | { type: 'session-resurrection-failed'; sessionId: string; displayName: string; error: string }
   | { type: 'terminal-output'; sessionId: string; data: string }

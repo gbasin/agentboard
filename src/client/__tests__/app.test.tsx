@@ -159,6 +159,7 @@ beforeEach(() => {
   useSessionStore.setState({
     sessions: [],
     agentSessions: { active: [], sleeping: [], inactive: [] },
+    agentSessionsEpoch: -1,
     selectedSessionId: null,
     selectedSleepingSessionId: null,
     hasLoaded: false,
@@ -385,6 +386,7 @@ describe('App', () => {
 
     // Pre-populate the store with both active and inactive agent sessions
     useSessionStore.setState({
+      agentSessionsEpoch: 0,
       agentSessions: {
         active: [{ ...baseAgentSession, sessionId: 'old-active' }],
         sleeping: existingSleeping,
@@ -432,6 +434,7 @@ describe('App', () => {
       sessions: [baseSession],
       selectedSessionId: baseSession.id,
       selectedSleepingSessionId: null,
+      agentSessionsEpoch: 0,
       agentSessions: {
         active: [{ ...baseAgentSession, sessionId: 'agent-live', isActive: true }],
         sleeping: [],
@@ -497,20 +500,29 @@ describe('App', () => {
     expect(state.selectedSessionId).toBe(resumedSession.id)
   })
 
-  test('keeps sleeping selection through active-only refreshes until the full sleeping snapshot arrives', () => {
-    const sleepingSessionId = 'sleeping-pending'
+  test('sleep result payload renders the sleeping view before the full snapshot arrives', () => {
+    const sleepingSessionId = 'sleeping-immediate'
     const liveSession: Session = {
       ...baseSession,
-      id: 'live-before-sleep',
+      id: 'live-immediate',
       agentSessionId: sleepingSessionId,
-      agentSessionName: 'sleep me',
-      logFilePath: '/tmp/sleeping-pending.jsonl',
+      agentSessionName: 'sleep now',
+      logFilePath: '/tmp/sleeping-immediate.jsonl',
+    }
+    const sleepingSession: AgentSession = {
+      ...baseAgentSession,
+      sessionId: sleepingSessionId,
+      displayName: 'sleep now',
+      logFilePath: '/tmp/sleeping-immediate.jsonl',
+      isActive: false,
+      isSleeping: true,
     }
 
     useSessionStore.setState({
       sessions: [liveSession],
       selectedSessionId: liveSession.id,
       selectedSleepingSessionId: null,
+      agentSessionsEpoch: 0,
       agentSessions: {
         active: [{ ...baseAgentSession, sessionId: sleepingSessionId, isActive: true }],
         sleeping: [],
@@ -534,6 +546,66 @@ describe('App', () => {
         type: 'session-sleep-result',
         sessionId: sleepingSessionId,
         ok: true,
+        session: sleepingSession,
+      })
+    })
+
+    expect(useSessionStore.getState().selectedSleepingSessionId).toBe(
+      sleepingSessionId
+    )
+    expect(
+      renderer.root
+        .findAllByType('button')
+        .some((button) => button.props.children === 'Wake Session')
+    ).toBe(true)
+  })
+
+  test('keeps sleeping selection through active-only refreshes until the full sleeping snapshot arrives', () => {
+    const sleepingSessionId = 'sleeping-pending'
+    const liveSession: Session = {
+      ...baseSession,
+      id: 'live-before-sleep',
+      agentSessionId: sleepingSessionId,
+      agentSessionName: 'sleep me',
+      logFilePath: '/tmp/sleeping-pending.jsonl',
+    }
+
+    useSessionStore.setState({
+      sessions: [liveSession],
+      selectedSessionId: liveSession.id,
+      selectedSleepingSessionId: null,
+      agentSessionsEpoch: 0,
+      agentSessions: {
+        active: [{ ...baseAgentSession, sessionId: sleepingSessionId, isActive: true }],
+        sleeping: [],
+        inactive: [],
+      },
+      hasLoaded: true,
+    })
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<App />)
+    })
+    activeRenderer = renderer
+
+    if (!subscribeListener) {
+      throw new Error('Expected websocket subscription')
+    }
+
+    act(() => {
+      subscribeListener?.({
+        type: 'session-sleep-result',
+        sessionId: sleepingSessionId,
+        ok: true,
+        session: {
+          ...baseAgentSession,
+          sessionId: sleepingSessionId,
+          displayName: 'sleep me',
+          logFilePath: '/tmp/sleeping-pending.jsonl',
+          isActive: false,
+          isSleeping: true,
+        },
       })
     })
 
@@ -603,6 +675,7 @@ describe('App', () => {
       sessions: [selectedLiveSession, fallbackLiveSession],
       selectedSessionId: selectedLiveSession.id,
       selectedSleepingSessionId: null,
+      agentSessionsEpoch: 0,
       agentSessions: {
         active: [{ ...baseAgentSession, sessionId: sleepingSessionId, isActive: true }],
         sleeping: [],
@@ -679,6 +752,7 @@ describe('App', () => {
       sessions: [],
       selectedSessionId: null,
       selectedSleepingSessionId: sleepingSessionId,
+      agentSessionsEpoch: -1,
       agentSessions: {
         active: [],
         sleeping: [],
@@ -732,6 +806,68 @@ describe('App', () => {
     expect(state.selectedSessionId).toBeNull()
   })
 
+  test('reconnect waits for a fresh full agent-sessions snapshot before clearing sleeping selection', () => {
+    const sleepingSession: AgentSession = {
+      ...baseAgentSession,
+      sessionId: 'sleeping-reconnect',
+      isActive: false,
+      isSleeping: true,
+    }
+
+    useSessionStore.setState({
+      sessions: [],
+      selectedSessionId: null,
+      selectedSleepingSessionId: sleepingSession.sessionId,
+      connectionEpoch: 0,
+      agentSessionsEpoch: 0,
+      agentSessions: {
+        active: [],
+        sleeping: [sleepingSession],
+        inactive: [],
+      },
+      hasLoaded: true,
+    })
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<App />)
+    })
+    activeRenderer = renderer
+
+    act(() => {
+      useSessionStore.getState().setConnectionState('reconnecting', null, 1)
+      useSessionStore.setState({
+        agentSessions: {
+          active: [],
+          sleeping: [],
+          inactive: [],
+        },
+        agentSessionsEpoch: 0,
+      })
+    })
+
+    let state = useSessionStore.getState()
+    expect(state.selectedSleepingSessionId).toBe(sleepingSession.sessionId)
+    expect(state.selectedSessionId).toBeNull()
+
+    if (!subscribeListener) {
+      throw new Error('Expected websocket subscription')
+    }
+
+    act(() => {
+      subscribeListener?.({
+        type: 'agent-sessions',
+        active: [],
+        sleeping: [sleepingSession],
+        inactive: [],
+      })
+    })
+
+    state = useSessionStore.getState()
+    expect(state.selectedSleepingSessionId).toBe(sleepingSession.sessionId)
+    expect(state.selectedSessionId).toBeNull()
+  })
+
   test('falls back to a visible live session when filters hide the selected sleeping session', () => {
     const visibleLiveSession: Session = {
       ...baseSession,
@@ -755,6 +891,7 @@ describe('App', () => {
       sessions: [visibleLiveSession],
       selectedSessionId: null,
       selectedSleepingSessionId: hiddenSleepingSession.sessionId,
+      agentSessionsEpoch: 0,
       agentSessions: {
         active: [],
         sleeping: [hiddenSleepingSession],
@@ -794,6 +931,7 @@ describe('App', () => {
       sessions: [],
       selectedSessionId: null,
       selectedSleepingSessionId: sleepingSession.sessionId,
+      agentSessionsEpoch: 0,
       agentSessions: {
         active: [],
         sleeping: [sleepingSession],

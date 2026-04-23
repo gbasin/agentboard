@@ -39,6 +39,7 @@ beforeEach(() => {
   useSessionStore.setState({
     sessions: [],
     agentSessions: { active: [], sleeping: [], inactive: [] },
+    agentSessionsEpoch: -1,
     selectedSessionId: null,
     selectedSleepingSessionId: null,
     hasLoaded: false,
@@ -235,6 +236,7 @@ describe('useSessionStore', () => {
   test('setActiveAgentSessions updates active sessions without clearing sleeping selection', () => {
     useSessionStore.setState({
       selectedSleepingSessionId: 'sleeping-1',
+      agentSessionsEpoch: 0,
       agentSessions: {
         active: [makeAgentSession({ sessionId: 'active-old', isActive: true })],
         sleeping: [],
