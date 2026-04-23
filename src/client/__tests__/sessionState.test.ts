@@ -232,6 +232,30 @@ describe('useSessionStore', () => {
     expect(state.selectedSleepingSessionId).toBeNull()
   })
 
+  test('setActiveAgentSessions updates active sessions without clearing sleeping selection', () => {
+    useSessionStore.setState({
+      selectedSleepingSessionId: 'sleeping-1',
+      agentSessions: {
+        active: [makeAgentSession({ sessionId: 'active-old', isActive: true })],
+        sleeping: [],
+        inactive: [makeAgentSession({ sessionId: 'inactive-1' })],
+      },
+    })
+
+    useSessionStore.getState().setActiveAgentSessions([
+      makeAgentSession({ sessionId: 'active-new', isActive: true }),
+    ])
+
+    const state = useSessionStore.getState()
+    expect(state.selectedSleepingSessionId).toBe('sleeping-1')
+    expect(state.agentSessions.active.map((session) => session.sessionId)).toEqual([
+      'active-new',
+    ])
+    expect(state.agentSessions.inactive.map((session) => session.sessionId)).toEqual([
+      'inactive-1',
+    ])
+  })
+
   test('persist merge ignores legacy stored agent session shape', () => {
     const merge = useSessionStore.persist.getOptions().merge
     if (!merge) {

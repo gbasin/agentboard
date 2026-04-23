@@ -63,6 +63,9 @@ export default function App() {
   )
   const setSessions = useSessionStore((state) => state.setSessions)
   const setAgentSessions = useSessionStore((state) => state.setAgentSessions)
+  const setActiveAgentSessions = useSessionStore(
+    (state) => state.setActiveAgentSessions
+  )
   const setHostStatuses = useSessionStore((state) => state.setHostStatuses)
   const updateSession = useSessionStore((state) => state.updateSession)
   const setSelectedSessionId = useSessionStore(
@@ -342,6 +345,7 @@ export default function App() {
         const active = Array.isArray(message.active) ? message.active : []
         const sleeping = Array.isArray(message.sleeping) ? message.sleeping : []
         const inactive = Array.isArray(message.inactive) ? message.inactive : []
+        hasReceivedFullAgentSessionsRef.current = true
         const { selectedSleepingSessionId: currentSelectedSleepingSessionId } =
           useSessionStore.getState()
         const pendingSleepSelectionId = pendingSleepSelectionRef.current
@@ -365,12 +369,7 @@ export default function App() {
         }
       }
       if (message.type === 'agent-sessions-active') {
-        const current = useSessionStore.getState().agentSessions
-        setAgentSessions(
-          Array.isArray(message.active) ? message.active : [],
-          current.sleeping ?? [],
-          current.inactive ?? []
-        )
+        setActiveAgentSessions(Array.isArray(message.active) ? message.active : [])
       }
       if (message.type === 'session-orphaned') {
         // When a session is superseded by slug (plan→execute transition),
@@ -484,6 +483,7 @@ export default function App() {
     setSelectedSleepingSessionId,
     setSessions,
     setAgentSessions,
+    setActiveAgentSessions,
     setHostStatuses,
     setRemoteAllowControl,
     setRemoteAllowAttach,
@@ -553,6 +553,7 @@ export default function App() {
   )
   const pendingSleepSelectionRef = useRef<string | null>(null)
   const pendingWakeSelectionRef = useRef<string | null>(null)
+  const hasReceivedFullAgentSessionsRef = useRef(false)
 
   const selectFirstVisibleTarget = useCallback(() => {
     if (filteredSortedSessions.length > 0) {
@@ -608,6 +609,14 @@ export default function App() {
   useEffect(() => {
     if (!selectedSleepingSessionId) return
     if (
+      !hasReceivedFullAgentSessionsRef.current &&
+      !sleepingAgentSessions.some(
+        (session) => session.sessionId === selectedSleepingSessionId
+      )
+    ) {
+      return
+    }
+    if (
       filteredSleepingSessions.some(
         (session) => session.sessionId === selectedSleepingSessionId
       )
@@ -628,6 +637,7 @@ export default function App() {
   }, [
     filteredSleepingSessions,
     filteredSortedSessions,
+    sleepingAgentSessions,
     selectedSleepingSessionId,
     selectFirstVisibleTarget,
     setSelectedSessionId,

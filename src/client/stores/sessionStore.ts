@@ -67,6 +67,7 @@ interface SessionState {
     sleeping: AgentSession[],
     inactive: AgentSession[]
   ) => void
+  setActiveAgentSessions: (active: AgentSession[]) => void
   setHostStatuses: (hosts: HostStatus[]) => void
   updateSession: (session: Session) => void
   setSelectedSessionId: (sessionId: string | null) => void
@@ -189,6 +190,14 @@ export const useSessionStore = create<SessionState>()(
                 : state.selectedSleepingSessionId,
           }
         }),
+      setActiveAgentSessions: (active) =>
+        set((state) => ({
+          agentSessions: {
+            active: normalizeAgentSessionList(active),
+            sleeping: state.agentSessions.sleeping,
+            inactive: state.agentSessions.inactive,
+          },
+        })),
       setHostStatuses: (hosts) => set({ hostStatuses: hosts }),
       updateSession: (session) =>
         set((state) => ({
