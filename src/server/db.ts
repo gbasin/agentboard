@@ -615,6 +615,11 @@ function migratePiAgentType(db: SQLiteDatabase) {
     return
   }
 
+  const existingColumns = getColumnNames(db, 'agent_sessions')
+  const launchCommandSelect = existingColumns.includes('launch_command')
+    ? 'launch_command'
+    : 'NULL AS launch_command'
+
   db.exec('BEGIN')
   try {
     db.exec('ALTER TABLE agent_sessions RENAME TO agent_sessions_old_pi_migrate')
@@ -636,7 +641,8 @@ function migratePiAgentType(db: SQLiteDatabase) {
         is_pinned,
         last_resume_error,
         last_known_log_size,
-        is_codex_exec
+        is_codex_exec,
+        launch_command
       )
       SELECT
         id,
@@ -654,7 +660,8 @@ function migratePiAgentType(db: SQLiteDatabase) {
         is_pinned,
         last_resume_error,
         last_known_log_size,
-        is_codex_exec
+        is_codex_exec,
+        ${launchCommandSelect}
       FROM agent_sessions_old_pi_migrate
     `)
     db.exec('DROP TABLE agent_sessions_old_pi_migrate')

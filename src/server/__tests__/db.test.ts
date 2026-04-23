@@ -239,6 +239,83 @@ describe('db', () => {
     fs.rmSync(tempDir, { recursive: true, force: true })
   })
 
+  test('migratePiAgentType preserves launchCommand during table rebuild', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentboard-'))
+    const dbPath = path.join(tempDir, 'agentboard.db')
+    const legacyDb = new SQLiteDatabase(dbPath)
+
+    legacyDb.exec(`
+      CREATE TABLE agent_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT UNIQUE,
+        log_file_path TEXT NOT NULL UNIQUE,
+        project_path TEXT,
+        slug TEXT,
+        agent_type TEXT NOT NULL CHECK (agent_type IN ('claude', 'codex')),
+        display_name TEXT,
+        created_at TEXT NOT NULL,
+        last_activity_at TEXT NOT NULL,
+        last_user_message TEXT,
+        current_window TEXT,
+        is_sleeping INTEGER NOT NULL DEFAULT 0,
+        is_pinned INTEGER NOT NULL DEFAULT 0,
+        last_resume_error TEXT,
+        last_known_log_size INTEGER,
+        is_codex_exec INTEGER NOT NULL DEFAULT 0,
+        launch_command TEXT
+      );
+    `)
+
+    legacyDb.exec(`
+      INSERT INTO agent_sessions (
+        session_id,
+        log_file_path,
+        project_path,
+        slug,
+        agent_type,
+        display_name,
+        created_at,
+        last_activity_at,
+        last_user_message,
+        current_window,
+        is_sleeping,
+        is_pinned,
+        last_resume_error,
+        last_known_log_size,
+        is_codex_exec,
+        launch_command
+      ) VALUES (
+        'legacy-launch-command',
+        '/tmp/legacy-launch-command.jsonl',
+        '/tmp/project',
+        null,
+        'claude',
+        'legacy',
+        '${now}',
+        '${now}',
+        'continue',
+        null,
+        0,
+        0,
+        null,
+        null,
+        0,
+        'codex --dangerously-bypass-approvals-and-sandbox'
+      );
+    `)
+    legacyDb.close()
+
+    const migrated = initDatabase({ path: dbPath })
+    const session = migrated.getSessionById('legacy-launch-command')
+
+    expect(session?.launchCommand).toBe(
+      'codex --dangerously-bypass-approvals-and-sandbox'
+    )
+
+    migrated.close()
+    fs.rmSync(tempDir, { recursive: true, force: true })
+  })
+
   test('launchCommand is stored and retrieved', () => {
     const session = makeSession({
       sessionId: 'launch-cmd-test',

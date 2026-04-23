@@ -168,6 +168,7 @@ beforeEach(() => {
   })
 
   useSettingsStore.setState({
+    projectFilters: [],
     sessionSortMode: 'created',
     sessionSortDirection: 'asc',
     showProjectName: true,
@@ -191,6 +192,7 @@ afterEach(() => {
   globalAny.ResizeObserver = originalResizeObserver
   globalAny.localStorage = originalLocalStorage
   useSettingsStore.setState({
+    projectFilters: [],
     sessionSortMode: 'created',
     sessionSortDirection: 'desc',
     showProjectName: true,
@@ -493,6 +495,117 @@ describe('App', () => {
     state = useSessionStore.getState()
     expect(state.selectedSleepingSessionId).toBeNull()
     expect(state.selectedSessionId).toBe(resumedSession.id)
+  })
+
+  test('falls back to a visible live session when filters hide the selected sleeping session', () => {
+    const visibleLiveSession: Session = {
+      ...baseSession,
+      id: 'visible-live',
+      name: 'beta',
+      projectPath: '/tmp/beta',
+    }
+    const hiddenSleepingSession: AgentSession = {
+      ...baseAgentSession,
+      sessionId: 'sleeping-hidden',
+      projectPath: '/tmp/alpha',
+      isActive: false,
+      isSleeping: true,
+    }
+
+    useSettingsStore.setState({
+      projectFilters: ['/tmp/beta'],
+      hostFilters: [],
+    })
+    useSessionStore.setState({
+      sessions: [visibleLiveSession],
+      selectedSessionId: null,
+      selectedSleepingSessionId: hiddenSleepingSession.sessionId,
+      agentSessions: {
+        active: [],
+        sleeping: [hiddenSleepingSession],
+        inactive: [],
+      },
+      hasLoaded: true,
+    })
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<App />)
+    })
+    activeRenderer = renderer
+
+    const state = useSessionStore.getState()
+    expect(state.selectedSleepingSessionId).toBeNull()
+    expect(state.selectedSessionId).toBe(visibleLiveSession.id)
+  })
+
+  test('reselects a woken live session after the sleeping selection disappears', () => {
+    const sleepingSession: AgentSession = {
+      ...baseAgentSession,
+      sessionId: 'sleeping-to-wake',
+      displayName: 'wake-me',
+      isActive: false,
+      isSleeping: true,
+    }
+    const wokenSession: Session = {
+      ...baseSession,
+      id: 'woken-session',
+      agentSessionId: sleepingSession.sessionId,
+      agentSessionName: sleepingSession.displayName,
+      logFilePath: sleepingSession.logFilePath,
+    }
+
+    useSessionStore.setState({
+      sessions: [],
+      selectedSessionId: null,
+      selectedSleepingSessionId: sleepingSession.sessionId,
+      agentSessions: {
+        active: [],
+        sleeping: [sleepingSession],
+        inactive: [],
+      },
+      hasLoaded: true,
+    })
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<App />)
+    })
+    activeRenderer = renderer
+
+    if (!subscribeListener) {
+      throw new Error('Expected websocket subscription')
+    }
+
+    act(() => {
+      subscribeListener?.({
+        type: 'agent-sessions',
+        active: [
+          {
+            ...sleepingSession,
+            isActive: true,
+            isSleeping: false,
+          },
+        ],
+        sleeping: [],
+        inactive: [],
+      })
+    })
+
+    let state = useSessionStore.getState()
+    expect(state.selectedSleepingSessionId).toBeNull()
+    expect(state.selectedSessionId).toBeNull()
+
+    act(() => {
+      subscribeListener?.({
+        type: 'sessions',
+        sessions: [wokenSession],
+      })
+    })
+
+    state = useSessionStore.getState()
+    expect(state.selectedSleepingSessionId).toBeNull()
+    expect(state.selectedSessionId).toBe(wokenSession.id)
   })
 
   test('handles keyboard shortcuts for navigation and actions', () => {

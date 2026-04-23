@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ServerMessage, Session } from '@shared/types'
+import type { AgentSession, ServerMessage, Session } from '@shared/types'
 import Header from './components/Header'
 import SessionList from './components/SessionList'
 import Terminal from './components/Terminal'
@@ -27,6 +27,21 @@ interface ServerInfo {
   port: number
   tailscaleIp: string | null
   protocol: string
+}
+
+function filterAgentSessions(
+  sessions: AgentSession[],
+  projectFilters: string[],
+  hostFilters: string[]
+) {
+  let next = sessions
+  if (projectFilters.length > 0) {
+    next = next.filter((session) => projectFilters.includes(session.projectPath))
+  }
+  if (hostFilters.length > 0) {
+    next = next.filter((session) => hostFilters.includes(session.host ?? ''))
+  }
+  return next
 }
 
 export default function App() {
@@ -202,12 +217,45 @@ export default function App() {
         // kill-failed clears entries (for rollback).  Entries persist until
         // reconnect (epoch mismatch) so stale async refreshes can't
         // resurrect the killed session even after session-removed arrives.
-        if (pendingKills.current.size > 0) {
-          setSessions(message.sessions.filter(
-            (s) => !pendingKills.current.has(s.id)
-          ))
-        } else {
-          setSessions(message.sessions)
+        const nextSessions = pendingKills.current.size > 0
+          ? message.sessions.filter((session) => !pendingKills.current.has(session.id))
+          : message.sessions
+
+        setSessions(nextSessions)
+
+        const pendingWakeSelectionId = pendingWakeSelectionRef.current
+        const {
+          selectedSessionId: currentSelectedSessionId,
+          selectedSleepingSessionId: currentSelectedSleepingSessionId,
+        } = useSessionStore.getState()
+        const { projectFilters, hostFilters } = useSettingsStore.getState()
+        if (
+          pendingWakeSelectionId &&
+          currentSelectedSessionId === null &&
+          currentSelectedSleepingSessionId === null
+        ) {
+          const matchingSession = nextSessions.find((session) => {
+            if (session.agentSessionId?.trim() !== pendingWakeSelectionId) {
+              return false
+            }
+            if (
+              projectFilters.length > 0 &&
+              !projectFilters.includes(session.projectPath)
+            ) {
+              return false
+            }
+            if (
+              hostFilters.length > 0 &&
+              !hostFilters.includes(session.host ?? '')
+            ) {
+              return false
+            }
+            return true
+          })
+          if (matchingSession) {
+            pendingWakeSelectionRef.current = null
+            setSelectedSessionId(matchingSession.id)
+          }
         }
       }
       if (message.type === 'host-status') {
@@ -275,6 +323,16 @@ export default function App() {
         }
       }
       if (message.type === 'agent-sessions') {
+        const { selectedSleepingSessionId: currentSelectedSleepingSessionId } =
+          useSessionStore.getState()
+        if (
+          currentSelectedSleepingSessionId &&
+          !message.sleeping.some(
+            (session) => session.sessionId === currentSelectedSleepingSessionId
+          )
+        ) {
+          pendingWakeSelectionRef.current = currentSelectedSleepingSessionId
+        }
         setAgentSessions(message.active, message.sleeping, message.inactive)
       }
       if (message.type === 'agent-sessions-active') {
@@ -406,13 +464,17 @@ export default function App() {
       sessions.find((session) => session.id === selectedSessionId) || null
     )
   }, [selectedSessionId, sessions])
+  const filteredSleepingSessions = useMemo(
+    () => filterAgentSessions(agentSessions.sleeping, projectFilters, hostFilters),
+    [agentSessions.sleeping, projectFilters, hostFilters]
+  )
   const selectedSleepingSession = useMemo(() => {
     return (
-      agentSessions.sleeping.find(
+      filteredSleepingSessions.find(
         (session) => session.sessionId === selectedSleepingSessionId
       ) || null
     )
-  }, [agentSessions.sleeping, selectedSleepingSessionId])
+  }, [filteredSleepingSessions, selectedSleepingSessionId])
 
   // Track last viewed project path
   useEffect(() => {
@@ -451,20 +513,121 @@ export default function App() {
     return next
   }, [sortedSessions, projectFilters, hostFilters])
 
+  const lastSelectedSleepingSessionIdRef = useRef<string | null>(
+    selectedSleepingSessionId
+  )
+  const pendingWakeSelectionRef = useRef<string | null>(null)
+
+  const selectFirstVisibleTarget = useCallback(() => {
+    if (filteredSortedSessions.length > 0) {
+      setSelectedSessionId(filteredSortedSessions[0].id)
+      return true
+    }
+    if (filteredSleepingSessions.length > 0) {
+      setSelectedSleepingSessionId(filteredSleepingSessions[0].sessionId)
+      return true
+    }
+    return false
+  }, [
+    filteredSortedSessions,
+    filteredSleepingSessions,
+    setSelectedSessionId,
+    setSelectedSleepingSessionId,
+  ])
+
+  useEffect(() => {
+    const previousSleepingSelectionId = lastSelectedSleepingSessionIdRef.current
+
+    if (
+      previousSleepingSelectionId &&
+      selectedSleepingSessionId === null &&
+      !agentSessions.sleeping.some(
+        (session) => session.sessionId === previousSleepingSelectionId
+      )
+    ) {
+      pendingWakeSelectionRef.current = previousSleepingSelectionId
+    } else if (selectedSleepingSessionId !== null) {
+      pendingWakeSelectionRef.current = null
+    }
+
+    lastSelectedSleepingSessionIdRef.current = selectedSleepingSessionId
+  }, [agentSessions.sleeping, selectedSleepingSessionId])
+
   // Auto-select first visible session when current selection is filtered out
   useEffect(() => {
     if (selectedSleepingSessionId) return
-    if (
-      selectedSessionId &&
-      filteredSortedSessions.length > 0 &&
-      !filteredSortedSessions.some((s) => s.id === selectedSessionId)
-    ) {
-      setSelectedSessionId(filteredSortedSessions[0].id)
+    if (!selectedSessionId) return
+    if (filteredSortedSessions.some((session) => session.id === selectedSessionId)) {
+      return
     }
+    if (selectFirstVisibleTarget()) return
+    setSelectedSessionId(null)
   }, [
     selectedSessionId,
     selectedSleepingSessionId,
+    selectFirstVisibleTarget,
+    setSelectedSessionId,
+  ])
+
+  useEffect(() => {
+    if (!selectedSleepingSessionId) return
+    if (
+      filteredSleepingSessions.some(
+        (session) => session.sessionId === selectedSleepingSessionId
+      )
+    ) {
+      return
+    }
+
+    const matchingLiveSession = filteredSortedSessions.find(
+      (session) => session.agentSessionId?.trim() === selectedSleepingSessionId
+    )
+    if (matchingLiveSession) {
+      setSelectedSessionId(matchingLiveSession.id)
+      return
+    }
+
+    if (selectFirstVisibleTarget()) return
+    setSelectedSleepingSessionId(null)
+  }, [
+    filteredSleepingSessions,
     filteredSortedSessions,
+    selectedSleepingSessionId,
+    selectFirstVisibleTarget,
+    setSelectedSessionId,
+    setSelectedSleepingSessionId,
+  ])
+
+  useEffect(() => {
+    const pendingWakeSelectionId = pendingWakeSelectionRef.current
+    if (!pendingWakeSelectionId) return
+    if (selectedSleepingSessionId !== null) {
+      pendingWakeSelectionRef.current = null
+      return
+    }
+
+    const matchingLiveSession = filteredSortedSessions.find(
+      (session) => session.agentSessionId?.trim() === pendingWakeSelectionId
+    )
+    if (matchingLiveSession) {
+      pendingWakeSelectionRef.current = null
+      setSelectedSessionId(matchingLiveSession.id)
+      return
+    }
+
+    if (selectedSessionId !== null) {
+      pendingWakeSelectionRef.current = null
+      return
+    }
+
+    if (selectFirstVisibleTarget()) {
+      pendingWakeSelectionRef.current = null
+    }
+  }, [
+    filteredSortedSessions,
+    selectedSessionId,
+    selectedSleepingSessionId,
+    selectFirstVisibleTarget,
     setSelectedSessionId,
   ])
 
@@ -476,16 +639,17 @@ export default function App() {
       hasLoaded &&
       selectedSessionId === null &&
       selectedSleepingSessionId === null &&
-      sortedSessions.length > 0
+      (filteredSortedSessions.length > 0 || filteredSleepingSessions.length > 0)
     ) {
-      setSelectedSessionId(sortedSessions[0].id)
+      selectFirstVisibleTarget()
     }
   }, [
+    filteredSleepingSessions.length,
+    filteredSortedSessions.length,
     hasLoaded,
+    selectFirstVisibleTarget,
     selectedSessionId,
     selectedSleepingSessionId,
-    sortedSessions,
-    setSelectedSessionId,
   ])
 
   // Pending kills: snapshot + selection state for rollback on kill-failed.
