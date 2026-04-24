@@ -64,26 +64,38 @@ EOF
 chmod +x "$BIN_DIR/agentboard-run.sh"
 
 # --- Logrotate script: copytruncate pattern so pino's open fd stays valid.
+# Rotates agentboard.log (pino output) plus the launchd stdout/stderr capture
+# files — without this, KeepAlive crash-loops can fill $HOME with the launchd
+# capture logs while pino's rotation only ever touched agentboard.log.
 cat > "$BIN_DIR/agentboard-log-rotate.sh" << 'EOF'
 #!/bin/bash
 set -euo pipefail
 export PATH="/usr/bin:/bin:/usr/sbin:/sbin"
-LOG="${LOG_FILE:-$HOME/.agentboard/agentboard.log}"
+LOG_DIR="${LOG_DIR:-$HOME/.agentboard}"
 MAX_BYTES=$((50 * 1024 * 1024))
 KEEP=5
 
-[ -f "$LOG" ] || exit 0
-SIZE=$(stat -f%z "$LOG" 2>/dev/null || echo 0)
-[ "$SIZE" -ge "$MAX_BYTES" ] || exit 0
+rotate_if_large() {
+    local log="$1"
+    [ -f "$log" ] || return 0
+    local size
+    size=$(stat -f%z "$log" 2>/dev/null || echo 0)
+    [ "$size" -ge "$MAX_BYTES" ] || return 0
 
-rm -f "$LOG.$KEEP.gz"
-for i in $(seq $((KEEP - 1)) -1 1); do
-    [ -f "$LOG.$i.gz" ] && mv "$LOG.$i.gz" "$LOG.$((i+1)).gz"
-done
+    rm -f "$log.$KEEP.gz"
+    for i in $(seq $((KEEP - 1)) -1 1); do
+        [ -f "$log.$i.gz" ] && mv "$log.$i.gz" "$log.$((i+1)).gz"
+    done
 
-cp "$LOG" "$LOG.1"
-: > "$LOG"
-gzip -f "$LOG.1"
+    cp "$log" "$log.1"
+    : > "$log"
+    gzip -f "$log.1"
+}
+
+# Rotate pino output and the launchd stdout/stderr captures.
+rotate_if_large "$LOG_DIR/agentboard.log"
+rotate_if_large "$LOG_DIR/launchd.out.log"
+rotate_if_large "$LOG_DIR/launchd.err.log"
 EOF
 chmod +x "$BIN_DIR/agentboard-log-rotate.sh"
 
@@ -96,6 +108,7 @@ cat > "$LAUNCH_AGENTS/com.agentboard.plist" << EOF
   <key>Label</key><string>com.agentboard</string>
   <key>ProgramArguments</key>
   <array><string>$BIN_DIR/agentboard-run.sh</string></array>
+  <key>WorkingDirectory</key><string>$REPO_DIR</string>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key>
   <dict>
@@ -128,6 +141,7 @@ cat > "$LAUNCH_AGENTS/com.agentboard.logrotate.plist" << EOF
   <key>EnvironmentVariables</key>
   <dict>
     <key>HOME</key><string>$HOME</string>
+    <key>LOG_DIR</key><string>$AGENTBOARD_DIR</string>
   </dict>
   <key>StandardOutPath</key><string>/tmp/agentboard-logrotate.log</string>
   <key>StandardErrorPath</key><string>/tmp/agentboard-logrotate.log</string>

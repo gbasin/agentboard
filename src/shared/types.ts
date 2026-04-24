@@ -133,7 +133,7 @@ export type ClientMessage =
   | { type: 'session-refresh' }
   | { type: 'tmux-cancel-copy-mode'; sessionId: string }
   | { type: 'tmux-check-copy-mode'; sessionId: string }
-  | { type: 'session-resume'; sessionId: string; name?: string }
+  | { type: 'session-resume'; sessionId: string }
   | { type: 'session-sleep'; sessionId: string }
   | { type: 'ping'; seq?: number }
   | { type: 'session-pin'; sessionId: string; isPinned: boolean }

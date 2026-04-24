@@ -2075,29 +2075,17 @@ function handleSessionSleep(
     return
   }
 
+  // Scope the try/catch narrowly to the kill + DB write so that a later
+  // registry/broadcast error can't produce a failure result after we've
+  // already sent a success.
+  let updated: ReturnType<typeof db.updateSession>
   try {
     sessionManager.killWindow(record.currentWindow)
     refreshGeneration++
-    const updated = db.updateSession(sessionId, {
+    updated = db.updateSession(sessionId, {
       currentWindow: null,
       isSleeping: true,
     })
-
-    if (!updated) {
-      send(ws, { type: 'session-sleep-result', sessionId, ok: false, error: 'Failed to update session state' })
-      return
-    }
-
-    send(ws, {
-      type: 'session-sleep-result',
-      sessionId,
-      ok: true,
-      session: toAgentSession(updated),
-    })
-
-    const remaining = registry.getAll().filter((session) => session.id !== liveSession.id)
-    registry.replaceSessions(remaining)
-    updateDormantAgentSessions()
   } catch (error) {
     send(ws, {
       type: 'session-sleep-result',
@@ -2105,7 +2093,24 @@ function handleSessionSleep(
       ok: false,
       error: error instanceof Error ? error.message : 'Unable to sleep session',
     })
+    return
   }
+
+  if (!updated) {
+    send(ws, { type: 'session-sleep-result', sessionId, ok: false, error: 'Failed to update session state' })
+    return
+  }
+
+  send(ws, {
+    type: 'session-sleep-result',
+    sessionId,
+    ok: true,
+    session: toAgentSession(updated),
+  })
+
+  const remaining = registry.getAll().filter((session) => session.id !== liveSession.id)
+  registry.replaceSessions(remaining)
+  updateDormantAgentSessions()
 }
 
 /**
@@ -2279,9 +2284,12 @@ function handleSessionResume(
     '.'
 
   try {
+	// Name is driven by the stored displayName — createWindow will auto-suffix
+	// on genuine collisions with other live sessions (excludeSessionId keeps
+	// the session's own prior name from matching itself).
     const created = stampLocalSession(sessionManager.createWindow(
       projectPath,
-      message.name ?? record.displayName,
+		record.displayName,
       command,
       { excludeSessionId: sessionId }
     ))
