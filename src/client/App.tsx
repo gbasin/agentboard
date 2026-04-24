@@ -777,19 +777,34 @@ export default function App() {
       const isShortcut = matchesModifier(event, effectiveModifier)
 
       // Bracket navigation: [mod]+[ / ]
+      // When only sleeping sessions are visible, fall back to navigating
+      // within the sleeping bucket so the keyboard shortcut keeps working.
       if (isShortcut && (code === 'BracketLeft' || code === 'BracketRight')) {
         event.preventDefault()
-        // Use filtered sessions so navigation respects project filter
-        const navSessions = filteredSortedSessions
-        if (navSessions.length === 0) return
-        const currentIndex = navSessions.findIndex(s => s.id === selectedSessionId)
-        if (currentIndex === -1) {
-          setSelectedSessionId(navSessions[0].id)
+        const delta = code === 'BracketLeft' ? -1 : 1
+        const activeNav = filteredSortedSessions
+        if (activeNav.length === 0) {
+          const sleepingNav = filteredSleepingSessions
+          if (sleepingNav.length === 0) return
+          const currentIndex = sleepingNav.findIndex(
+            s => s.sessionId === selectedSleepingSessionId
+          )
+          if (currentIndex === -1) {
+            setSelectedSleepingSessionId(sleepingNav[0].sessionId)
+            return
+          }
+          const newIndex =
+            (currentIndex + delta + sleepingNav.length) % sleepingNav.length
+          setSelectedSleepingSessionId(sleepingNav[newIndex].sessionId)
           return
         }
-        const delta = code === 'BracketLeft' ? -1 : 1
-        const newIndex = (currentIndex + delta + navSessions.length) % navSessions.length
-        setSelectedSessionId(navSessions[newIndex].id)
+        const currentIndex = activeNav.findIndex(s => s.id === selectedSessionId)
+        if (currentIndex === -1) {
+          setSelectedSessionId(activeNav[0].id)
+          return
+        }
+        const newIndex = (currentIndex + delta + activeNav.length) % activeNav.length
+        setSelectedSessionId(activeNav[newIndex].id)
         return
       }
 
@@ -814,7 +829,18 @@ export default function App() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isModalOpen, selectedSessionId, setSelectedSessionId, filteredSortedSessions, handleKillSession, shortcutModifier, settingsHydrated])
+  }, [
+    isModalOpen,
+    selectedSessionId,
+    selectedSleepingSessionId,
+    setSelectedSessionId,
+    setSelectedSleepingSessionId,
+    filteredSortedSessions,
+    filteredSleepingSessions,
+    handleKillSession,
+    shortcutModifier,
+    settingsHydrated,
+  ])
 
   const handleNewSession = (): boolean => {
     if (!settingsHydrated) return false

@@ -1060,14 +1060,19 @@ app.get('/api/session-preview/:sessionId', async (c) => {
       return c.json({ error: 'Log file not found' }, 404)
     }
 
-    // Read last 64KB of the file
+    // Read last 64KB of the file. try/finally guarantees the fd is released
+    // if fd.read() throws (e.g., EIO, file unlinked mid-read, permission drop).
     const TAIL_BYTES = 64 * 1024
     const fileSize = stats.size
     const offset = Math.max(0, fileSize - TAIL_BYTES)
     const fd = await fs.open(logPath, 'r')
-    const buffer = Buffer.alloc(Math.min(TAIL_BYTES, fileSize))
-    await fd.read(buffer, 0, buffer.length, offset)
-    await fd.close()
+    let buffer: Buffer
+    try {
+      buffer = Buffer.alloc(Math.min(TAIL_BYTES, fileSize))
+      await fd.read(buffer, 0, buffer.length, offset)
+    } finally {
+      await fd.close()
+    }
 
     const content = buffer.toString('utf8')
     // Take last 100 lines
@@ -2284,12 +2289,12 @@ function handleSessionResume(
     '.'
 
   try {
-	// Name is driven by the stored displayName — createWindow will auto-suffix
-	// on genuine collisions with other live sessions (excludeSessionId keeps
-	// the session's own prior name from matching itself).
+    // Name is driven by the stored displayName — createWindow will auto-suffix
+    // on genuine collisions with other live sessions (excludeSessionId keeps
+    // the session's own prior name from matching itself).
     const created = stampLocalSession(sessionManager.createWindow(
       projectPath,
-		record.displayName,
+      record.displayName,
       command,
       { excludeSessionId: sessionId }
     ))

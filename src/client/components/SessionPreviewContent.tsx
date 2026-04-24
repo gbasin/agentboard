@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { parseAndNormalizeAgentLogLine } from '@shared/eventTaxonomy'
 import type { AgentSession } from '@shared/types'
 
+const PREVIEW_FETCH_TIMEOUT_MS = 10_000
+
 interface PreviewData {
   sessionId: string
   displayName: string
@@ -66,6 +68,9 @@ export default function SessionPreviewContent({
 
   useEffect(() => {
     let cancelled = false
+    const controller = new AbortController()
+    // Safety net so a hung fetch doesn't strand the "Loading preview..." state.
+    const timeoutId = setTimeout(() => controller.abort(), PREVIEW_FETCH_TIMEOUT_MS)
 
     const fetchPreview = async () => {
       setLoading(true)
@@ -73,17 +78,31 @@ export default function SessionPreviewContent({
       setPreviewData(null)
 
       try {
-        const response = await fetch(`/api/session-preview/${session.sessionId}`)
+        const response = await fetch(
+          `/api/session-preview/${session.sessionId}`,
+          { signal: controller.signal }
+        )
         if (!response.ok) {
-          const data = await response.json()
-          throw new Error(data.error || 'Failed to load preview')
+          // Defensive: tolerate non-JSON error bodies (e.g., proxy-injected HTML)
+          // so we surface the HTTP status instead of swallowing it in a parse throw.
+          let message = `Failed to load preview (HTTP ${response.status})`
+          try {
+            const data = (await response.json()) as { error?: string }
+            if (data?.error) message = data.error
+          } catch {
+            // Non-JSON — keep default message.
+          }
+          throw new Error(message)
         }
         const data = (await response.json()) as PreviewData
         if (!cancelled) {
           setPreviewData(data)
         }
       } catch (err) {
-        if (!cancelled) {
+        if (cancelled) return
+        if (controller.signal.aborted) {
+          setError('Preview timed out')
+        } else {
           setError(err instanceof Error ? err.message : 'Failed to load preview')
         }
       } finally {
@@ -96,6 +115,8 @@ export default function SessionPreviewContent({
     void fetchPreview()
     return () => {
       cancelled = true
+      clearTimeout(timeoutId)
+      controller.abort()
     }
   }, [session.sessionId])
 

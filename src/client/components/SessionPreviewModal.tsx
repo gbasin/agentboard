@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AgentSession } from '@shared/types'
 import { formatRelativeTime } from '../utils/time'
 import { getPathLeaf } from '../utils/sessionLabel'
@@ -22,10 +22,11 @@ export default function SessionPreviewModal({
     error: null as string | null,
   })
 
-  const handleResume = () => {
+  // useCallback keeps the keydown effect from re-binding on every render.
+  const handleResume = useCallback(() => {
     if (previewState.loading || previewState.error) return
     onResume(session.sessionId)
-  }
+  }, [previewState.loading, previewState.error, onResume, session.sessionId])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
