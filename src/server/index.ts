@@ -2051,17 +2051,37 @@ function handleSessionSleep(
   ws: ServerWebSocket<WSData>
 ) {
   if (!isValidSessionId(sessionId)) {
+    logger.warn('session_sleep_failed', { sessionId, reason: 'invalid_id' })
     send(ws, { type: 'session-sleep-result', sessionId, ok: false, error: 'Invalid session id' })
     return
   }
 
   const record = db.getSessionById(sessionId)
   if (!record) {
+    logger.warn('session_sleep_failed', { sessionId, reason: 'not_found' })
     send(ws, { type: 'session-sleep-result', sessionId, ok: false, error: 'Session not found' })
     return
   }
 
+  // Idempotent ack: already sleeping. A reconnect-storm replay or a double
+  // click shouldn't surface a spurious error to the user.
+  if (record.isSleeping && !record.currentWindow) {
+    logger.info('session_sleep_noop', {
+      sessionId,
+      agentType: record.agentType,
+      displayName: record.displayName,
+    })
+    send(ws, {
+      type: 'session-sleep-result',
+      sessionId,
+      ok: true,
+      session: toAgentSession(record),
+    })
+    return
+  }
+
   if (!record.currentWindow) {
+    logger.warn('session_sleep_failed', { sessionId, reason: 'not_active' })
     send(ws, { type: 'session-sleep-result', sessionId, ok: false, error: 'Session is not active' })
     return
   }
@@ -2071,6 +2091,11 @@ function handleSessionSleep(
     registry.getAll().find((session) => session.agentSessionId?.trim() === sessionId)
 
   if (!liveSession || liveSession.remote || liveSession.source !== 'managed') {
+    logger.warn('session_sleep_failed', {
+      sessionId,
+      reason: 'not_local_managed',
+      agentType: record.agentType,
+    })
     send(ws, {
       type: 'session-sleep-result',
       sessionId,
@@ -2083,6 +2108,7 @@ function handleSessionSleep(
   // Scope the try/catch narrowly to the kill + DB write so that a later
   // registry/broadcast error can't produce a failure result after we've
   // already sent a success.
+  const startedAt = Date.now()
   let updated: ReturnType<typeof db.updateSession>
   try {
     sessionManager.killWindow(record.currentWindow)
@@ -2092,19 +2118,39 @@ function handleSessionSleep(
       isSleeping: true,
     })
   } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to sleep session'
+    logger.error('session_sleep_failed', {
+      sessionId,
+      reason: 'kill_failed',
+      error: message,
+      agentType: record.agentType,
+    })
     send(ws, {
       type: 'session-sleep-result',
       sessionId,
       ok: false,
-      error: error instanceof Error ? error.message : 'Unable to sleep session',
+      error: message,
     })
     return
   }
 
   if (!updated) {
+    logger.error('session_sleep_failed', {
+      sessionId,
+      reason: 'db_update_failed',
+      agentType: record.agentType,
+    })
     send(ws, { type: 'session-sleep-result', sessionId, ok: false, error: 'Failed to update session state' })
     return
   }
+
+  logger.info('session_sleep_success', {
+    sessionId,
+    agentType: record.agentType,
+    displayName: record.displayName,
+    tmuxWindow: record.currentWindow,
+    durationMs: Date.now() - startedAt,
+  })
 
   send(ws, {
     type: 'session-sleep-result',
@@ -2241,6 +2287,7 @@ function handleSessionResume(
 ) {
   const sessionId = message.sessionId
   if (!isValidSessionId(sessionId)) {
+    logger.warn('session_resume_failed', { sessionId, reason: 'invalid_id' })
     const error: ResumeError = {
       code: 'NOT_FOUND',
       message: 'Invalid session id',
@@ -2251,12 +2298,35 @@ function handleSessionResume(
 
   const record = db.getSessionById(sessionId)
   if (!record) {
+    logger.warn('session_resume_failed', { sessionId, reason: 'not_found' })
     const error: ResumeError = { code: 'NOT_FOUND', message: 'Session not found' }
     send(ws, { type: 'session-resume-result', sessionId, ok: false, error })
     return
   }
 
+  // `wake` = resuming a sleeping session; `resume` = reactivating an
+  // inactive/orphaned session. Tracked separately in telemetry so we can
+  // later measure wake reliability independently.
+  const eventKind = record.isSleeping ? 'wake' : 'resume'
+
   if (record.currentWindow) {
+    // Idempotent ack when the session is already live AND we can confirm it
+    // in the registry — protects against stale messages from a reconnect
+    // storm. If the registry doesn't know about it we fall through to the
+    // error so the client can refresh rather than silently trusting stale DB.
+    const liveSession =
+      registry.get(record.currentWindow) ??
+      registry.getAll().find((session) => session.agentSessionId?.trim() === sessionId)
+    if (liveSession) {
+      logger.info(`session_${eventKind}_noop`, {
+        sessionId,
+        agentType: record.agentType,
+        displayName: record.displayName,
+      })
+      send(ws, { type: 'session-resume-result', sessionId, ok: true, session: liveSession })
+      return
+    }
+    logger.warn(`session_${eventKind}_failed`, { sessionId, reason: 'already_active_stale_registry' })
     const error: ResumeError = {
       code: 'ALREADY_ACTIVE',
       message: 'Session is already active',
@@ -2272,6 +2342,11 @@ function handleSessionResume(
         ? config.claudeResumeCmd
         : config.codexResumeCmd
     if (!resumeTemplate.includes('{sessionId}')) {
+      logger.error(`session_${eventKind}_failed`, {
+        sessionId,
+        reason: 'bad_template',
+        agentType: record.agentType,
+      })
       const error: ResumeError = {
         code: 'RESUME_FAILED',
         message: 'Resume command template missing {sessionId} placeholder',
@@ -2288,6 +2363,7 @@ function handleSessionResume(
     process.env.USERPROFILE ||
     '.'
 
+  const startedAt = Date.now()
   try {
     // Name is driven by the stored displayName — createWindow will auto-suffix
     // on genuine collisions with other live sessions (excludeSessionId keeps
@@ -2325,12 +2401,30 @@ function handleSessionResume(
       ),
       window: created.tmuxWindow,
     })
+    logger.info(`session_${eventKind}_success`, {
+      sessionId,
+      agentType: record.agentType,
+      displayName: record.displayName,
+      tmuxWindow: created.tmuxWindow,
+      durationMs: Date.now() - startedAt,
+    })
   } catch (error) {
-    const err: ResumeError = {
-      code: 'RESUME_FAILED',
-      message:
-        error instanceof Error ? error.message : 'Unable to resume session',
-    }
+    const message =
+      error instanceof Error ? error.message : 'Unable to resume session'
+    // Persist the failure reason so every tab sees an error badge via the
+    // normal agent-sessions broadcast, not just the tab that triggered the
+    // wake. Mirrors resurrectPinnedSessions' failure bookkeeping. Keep
+    // isSleeping untouched so the card stays in the Sleeping rail.
+    db.updateSession(sessionId, { lastResumeError: message })
+    updateDormantAgentSessions()
+    logger.error(`session_${eventKind}_failed`, {
+      sessionId,
+      reason: 'create_window_failed',
+      agentType: record.agentType,
+      error: message,
+      durationMs: Date.now() - startedAt,
+    })
+    const err: ResumeError = { code: 'RESUME_FAILED', message }
     send(ws, { type: 'session-resume-result', sessionId, ok: false, error: err })
   }
 }
