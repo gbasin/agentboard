@@ -24,7 +24,7 @@ The install script will:
 Installs two agents:
 
 - **`com.agentboard`** — supervises agentboard. `KeepAlive` respawns on crash or non-zero exit, `ThrottleInterval: 10` prevents tight restart loops.
-- **`com.agentboard.logrotate`** — hourly. Rotates `~/.agentboard/agentboard.log` at 50MB using a copytruncate pattern (preserves pino's open file descriptor), keeps 5 gzipped archives.
+- **`com.agentboard.logrotate`** — hourly. Rotates `agentboard.log`, `launchd.out.log`, and `launchd.err.log` under `~/.agentboard/` at 50MB each using a copytruncate pattern (preserves pino's open file descriptor), keeps 5 gzipped archives per file.
 
 After install, agentboard listens on `http://localhost:4040`.
 
