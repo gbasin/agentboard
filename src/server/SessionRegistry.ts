@@ -152,7 +152,6 @@ function agentSessionsEqual(a: AgentSession, b: AgentSession): boolean {
     a.createdAt === b.createdAt &&
     a.lastActivityAt === b.lastActivityAt &&
     a.isActive === b.isActive &&
-    a.isSleeping === b.isSleeping &&
     a.host === b.host &&
     a.lastUserMessage === b.lastUserMessage &&
     a.isPinned === b.isPinned &&

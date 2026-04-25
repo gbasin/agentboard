@@ -22,7 +22,8 @@ import File06Icon from '@untitledui-icons/react/line/esm/File06Icon'
 import ChevronDownIcon from '@untitledui-icons/react/line/esm/ChevronDownIcon'
 import ChevronRightIcon from '@untitledui-icons/react/line/esm/ChevronRightIcon'
 import Edit05Icon from '@untitledui-icons/react/line/esm/Edit05Icon'
-import Pin02Icon from '@untitledui-icons/react/line/esm/Pin02Icon'
+import Moon01Icon from '@untitledui-icons/react/line/esm/Moon01Icon'
+import Star01Icon from '@untitledui-icons/react/line/esm/Star01Icon'
 import type { AgentSession, Session } from '@shared/types'
 import { getSessionOrderKey, getUniqueHosts, getUniqueProjects, sortSessions } from '../utils/sessions'
 import { formatRelativeTime } from '../utils/time'
@@ -603,7 +604,7 @@ export default function SessionList({
             {filteredSleepingSessions.length > 0 && (
               <div className={filteredSessions.length > 0 ? 'border-t border-border' : ''}>
                 <div className="flex items-center justify-between px-3 py-2 text-xs font-medium uppercase tracking-wider text-muted">
-                  <span>Sleeping</span>
+                  <span>Snoozed</span>
                   <span className="w-8 text-right text-xs text-muted">
                     {filteredSleepingSessions.length}
                   </span>
@@ -618,6 +619,9 @@ export default function SessionList({
                       showProjectName={showProjectName}
                       showLastUserMessage={showLastUserMessage}
                       onSelect={(sessionId) => onSelectSleeping?.(sessionId)}
+                      onWake={(sessionId) => onResume?.(sessionId)}
+                      onRename={(sessionId, newName) => handleRename(sessionId, newName)}
+                      onRemove={onSetPinned ? (sessionId) => onSetPinned(sessionId, false) : undefined}
                     />
                   ))}
                 </div>
@@ -1072,10 +1076,10 @@ function SessionRow({
             </span>
           )}
           {session.isPinned && (
-            <Pin02Icon
+            <Star01Icon
               className="h-3 w-3 shrink-0 text-primary"
-              aria-label="Pinned"
-              title="Pinned - will auto-resume on server restart"
+              aria-label="Starred"
+              title="Starred - will auto-wake on server restart"
             />
           )}
           {sessionIdPrefix && (
@@ -1169,10 +1173,8 @@ function SessionRow({
               role="menuitem"
               title="Close the live window and keep this session ready to wake"
             >
-              <span className="inline-flex w-[14px] justify-center text-[10px] font-semibold uppercase">
-                Zz
-              </span>
-              Sleep
+              <Moon01Icon width={14} height={14} />
+              Snooze
             </button>
           )}
           {onSetPinned && (
@@ -1184,10 +1186,10 @@ function SessionRow({
               }}
               className="w-full px-3 py-2 text-left text-sm text-secondary hover:bg-hover hover:text-primary flex items-center gap-2"
               role="menuitem"
-              title={session.isPinned ? 'Remove from auto-resume list' : 'Auto-resume on server restart'}
+              title={session.isPinned ? 'Remove star' : 'Auto-wake on server restart'}
             >
-              <Pin02Icon width={14} height={14} />
-              {session.isPinned ? 'Unpin' : 'Pin'}
+              <Star01Icon width={14} height={14} />
+              {session.isPinned ? 'Unstar' : 'Star'}
             </button>
           )}
           {session.logFilePath && (

@@ -40,7 +40,6 @@ interface SessionRecord {
   lastActivityAt: string
   lastUserMessage: string | null
   currentWindow: string | null
-  isSleeping: boolean
   isPinned: boolean
   lastResumeError: string | null
   lastKnownLogSize: number | null
@@ -280,7 +279,7 @@ export class LogPoller {
       const orphanCandidates: OrphanCandidate[] = []
       for (const record of sessionRecords) {
         if (record.currentWindow) continue
-        if (record.isSleeping) continue
+        if (record.isPinned) continue
         const logFilePath = record.logFilePath
         if (!logFilePath) continue
         // Skip sessions from excluded project directories
@@ -609,7 +608,7 @@ export class LogPoller {
             this.db.updateSession(existing.sessionId, update)
           }
           const shouldAttemptRematch =
-            !existing.isSleeping &&
+            !existing.isPinned &&
             !existing.currentWindow &&
             (hasGrown || matchEligibleLogPaths.has(entry.logPath))
           if (shouldAttemptRematch) {
@@ -688,7 +687,7 @@ export class LogPoller {
 
           // Re-attempt matching for orphaned sessions (no currentWindow)
           const shouldAttemptRematch =
-            !existingById.isSleeping &&
+            !existingById.isPinned &&
             !existingById.currentWindow &&
             (hasGrown || matchEligibleLogPaths.has(entry.logPath))
           if (shouldAttemptRematch) {

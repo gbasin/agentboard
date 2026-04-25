@@ -19,9 +19,9 @@ function makeSession(overrides: Partial<{
   lastActivityAt: string
   lastUserMessage: string | null
   currentWindow: string | null
-  isSleeping: boolean
   isPinned: boolean
   lastResumeError: string | null
+  lastResumeAttemptAt: string | null
   lastKnownLogSize: number | null
   isCodexExec: boolean
   launchCommand: string | null
@@ -37,9 +37,9 @@ function makeSession(overrides: Partial<{
     lastActivityAt: now,
     lastUserMessage: null,
     currentWindow: 'agentboard:1',
-    isSleeping: false,
     isPinned: false,
     lastResumeError: null,
+    lastResumeAttemptAt: null,
     lastKnownLogSize: null,
     isCodexExec: false,
     launchCommand: null,
@@ -111,14 +111,6 @@ describe('db', () => {
       isPinned: true,
       currentWindow: null,
     }))
-    // Pinned + sleeping (should NOT be returned)
-    db.insertSession(makeSession({
-      sessionId: 'sleeping-pinned',
-      logFilePath: '/tmp/sleeping-pinned.jsonl',
-      isPinned: true,
-      isSleeping: true,
-      currentWindow: null,
-    }))
     // Pinned + active (should NOT be returned)
     db.insertSession(makeSession({
       sessionId: 'b',
@@ -139,39 +131,39 @@ describe('db', () => {
     expect(orphaned[0].sessionId).toBe('a')
   })
 
-  test('sleeping sessions are stored separately from inactive sessions', () => {
+  test('snoozed sessions are derived from starred sessions without windows', () => {
     db.insertSession(makeSession({
-      sessionId: 'sleeping-one',
-      logFilePath: '/tmp/sleeping-one.jsonl',
+      sessionId: 'snoozed-one',
+      logFilePath: '/tmp/snoozed-one.jsonl',
       currentWindow: null,
-      isSleeping: true,
+      isPinned: true,
     }))
     db.insertSession(makeSession({
       sessionId: 'inactive-one',
       logFilePath: '/tmp/inactive-one.jsonl',
       currentWindow: null,
-      isSleeping: false,
+      isPinned: false,
     }))
 
     const sleeping = db.getSleepingSessions()
     const inactive = db.getInactiveSessions()
 
-    expect(sleeping.map((session) => session.sessionId)).toEqual(['sleeping-one'])
+    expect(sleeping.map((session) => session.sessionId)).toEqual(['snoozed-one'])
     expect(inactive.map((session) => session.sessionId)).toEqual(['inactive-one'])
   })
 
-  test('orphanSession clears sleeping state', () => {
+  test('orphanSession preserves star state', () => {
     db.insertSession(makeSession({
-      sessionId: 'sleeping-to-orphan',
-      logFilePath: '/tmp/sleeping-to-orphan.jsonl',
+      sessionId: 'starred-to-orphan',
+      logFilePath: '/tmp/starred-to-orphan.jsonl',
       currentWindow: 'agentboard:9',
-      isSleeping: true,
+      isPinned: true,
     }))
 
-    const orphaned = db.orphanSession('sleeping-to-orphan')
+    const orphaned = db.orphanSession('starred-to-orphan')
 
     expect(orphaned?.currentWindow).toBeNull()
-    expect(orphaned?.isSleeping).toBe(false)
+    expect(orphaned?.isPinned).toBe(true)
   })
 
   test('displayNameExists returns true for existing names', () => {
@@ -311,6 +303,77 @@ describe('db', () => {
     expect(session?.launchCommand).toBe(
       'codex --dangerously-bypass-approvals-and-sandbox'
     )
+
+    migrated.close()
+    fs.rmSync(tempDir, { recursive: true, force: true })
+  })
+
+  test('migrates legacy sleeping flag into starred derived snooze state', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentboard-'))
+    const dbPath = path.join(tempDir, 'agentboard.db')
+    const legacyDb = new SQLiteDatabase(dbPath)
+
+    legacyDb.exec(`
+      CREATE TABLE agent_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT UNIQUE,
+        log_file_path TEXT NOT NULL UNIQUE,
+        project_path TEXT,
+        slug TEXT,
+        agent_type TEXT NOT NULL CHECK (agent_type IN ('claude', 'codex', 'pi')),
+        display_name TEXT,
+        created_at TEXT NOT NULL,
+        last_activity_at TEXT NOT NULL,
+        last_user_message TEXT,
+        current_window TEXT,
+        is_sleeping INTEGER NOT NULL DEFAULT 0,
+        is_pinned INTEGER NOT NULL DEFAULT 0,
+        last_resume_error TEXT,
+        last_known_log_size INTEGER,
+        is_codex_exec INTEGER NOT NULL DEFAULT 0,
+        launch_command TEXT
+      );
+    `)
+
+    legacyDb.exec(`
+      INSERT INTO agent_sessions (
+        session_id,
+        log_file_path,
+        project_path,
+        slug,
+        agent_type,
+        display_name,
+        created_at,
+        last_activity_at,
+        last_user_message,
+        current_window,
+        is_sleeping,
+        is_pinned,
+        last_resume_error,
+        last_known_log_size,
+        is_codex_exec,
+        launch_command
+      ) VALUES
+        ('legacy-sleeping', '/tmp/legacy-sleeping.jsonl', '/tmp/project', null, 'claude', 'sleeping', '${now}', '${now}', null, null, 1, 0, null, null, 0, null),
+        ('legacy-inactive', '/tmp/legacy-inactive.jsonl', '/tmp/project', null, 'claude', 'inactive', '${now}', '${now}', null, null, 0, 0, null, null, 0, null);
+    `)
+    legacyDb.close()
+
+    const migrated = initDatabase({ path: dbPath })
+    const columns = migrated.db
+      .prepare('PRAGMA table_info(agent_sessions)')
+      .all() as Array<{ name?: string }>
+    const columnNames = columns.map((column) => String(column.name ?? ''))
+
+    expect(columnNames).not.toContain('is_sleeping')
+    expect(columnNames).toContain('last_resume_attempt_at')
+    expect(migrated.getSessionById('legacy-sleeping')?.isPinned).toBe(true)
+    expect(migrated.getSleepingSessions().map((session) => session.sessionId)).toEqual([
+      'legacy-sleeping',
+    ])
+    expect(migrated.getInactiveSessions().map((session) => session.sessionId)).toEqual([
+      'legacy-inactive',
+    ])
 
     migrated.close()
     fs.rmSync(tempDir, { recursive: true, force: true })

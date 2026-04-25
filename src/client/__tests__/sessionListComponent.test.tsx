@@ -46,8 +46,7 @@ function makeAgentSession(overrides: Partial<AgentSession> = {}): AgentSession {
     createdAt: '2024-01-01T00:00:00.000Z',
     lastActivityAt: '2024-01-01T00:00:00.000Z',
     isActive: false,
-    isSleeping: true,
-    isPinned: false,
+    isPinned: true,
     ...overrides,
   }
 }
@@ -236,6 +235,7 @@ describe('SessionList component', () => {
 
   test('renders sleeping subsection and selects sleeping sessions', () => {
     const selectedSleeping: string[] = []
+    const renameCalls: Array<{ id: string; name: string }> = []
     const sleepingSession = makeAgentSession({ sessionId: 'sleeping-42' })
 
     const renderer = TestRenderer.create(
@@ -249,12 +249,14 @@ describe('SessionList component', () => {
         error={null}
         onSelect={() => {}}
         onSelectSleeping={(sessionId) => selectedSleeping.push(sessionId)}
-        onRename={() => {}}
+        onRename={(sessionId, newName) => {
+          renameCalls.push({ id: sessionId, name: newName })
+        }}
       />
     )
 
     const html = JSON.stringify(renderer.toJSON())
-    expect(html).toContain('Sleeping')
+    expect(html).toContain('Snoozed')
     expect(html).toContain('alpha-sleeping')
 
     const sleepingButton = renderer.root.findByProps({
@@ -266,6 +268,44 @@ describe('SessionList component', () => {
     })
 
     expect(selectedSleeping).toEqual([sleepingSession.sessionId])
+
+    act(() => {
+      sleepingButton.props.onContextMenu({
+        preventDefault: () => {},
+        stopPropagation: () => {},
+        clientX: 10,
+        clientY: 20,
+      })
+    })
+
+    const contextMenu = renderer.root.findByProps({ role: 'menu' })
+    const renameButton = contextMenu
+      .findAllByProps({ role: 'menuitem' })
+      .find((button) => {
+        const children = Array.isArray(button.props.children)
+          ? button.props.children
+          : [button.props.children]
+        return children.some((child) => child === 'Rename')
+      })
+    if (!renameButton) {
+      throw new Error('Expected Snoozed rename button')
+    }
+
+    act(() => {
+      renameButton.props.onClick({ stopPropagation: () => {} })
+    })
+
+    const input = renderer.root.findByType('input')
+    act(() => {
+      input.props.onChange({ target: { value: '  renamed-snooze  ' } })
+    })
+    act(() => {
+      input.props.onKeyDown({ key: 'Enter', preventDefault: () => {} })
+    })
+
+    expect(renameCalls).toEqual([
+      { id: sleepingSession.sessionId, name: 'renamed-snooze' },
+    ])
 
     act(() => {
       renderer.unmount()

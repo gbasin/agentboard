@@ -13,6 +13,8 @@ import { LogPoller } from './logPoller'
 import { toAgentSession } from './agentSessions'
 import { getLogSearchDirs } from './logDiscovery'
 import {
+  DEFAULT_SCROLLBACK_LINES,
+  matchWindowsToLogsByExactRg,
   verifyWindowLogAssociationDetailed,
   verifyWindowLogAssociationDetailedAsync,
   type WindowLogVerificationResult,
@@ -35,7 +37,7 @@ import {
   type AgentSession,
   type AgentType,
   type HostStatus,
-  type ResumeError,
+  type WakeError,
   type Session,
 } from '../shared/types'
 import { logger, logLevel } from './logger'
@@ -282,6 +284,9 @@ const remoteSessionNameOverrides = new Map<string, { name: string; setAt: number
 // crashes and the window dies, the session won't be immediately orphaned.
 const RESURRECTION_GRACE_MS = Number(process.env.RESURRECTION_GRACE_MS) || 15_000
 const resurrectedSessionGrace = new Map<string, number>() // sessionId -> resurrection timestamp
+const WAKE_RETRY_COOLDOWN_MS =
+  Number(process.env.AGENTBOARD_WAKE_RETRY_COOLDOWN_MS) || 24 * 60 * 60 * 1000
+const wakeInFlight = new Set<string>()
 
 function mergeRemoteSessions(sessions: Session[]): Session[] {
   const remoteSessions = remotePoller?.getSessions() ?? []
@@ -995,7 +1000,7 @@ async function completeStartupVerification(): Promise<void> {
   }
 
   if (db.getPinnedOrphaned().length > 0) {
-    resurrectPinnedSessions()
+    resurrectStarredSessions()
     refreshSessionsSync()
   }
 
@@ -1632,8 +1637,9 @@ function handleMessage(
     case 'tmux-check-copy-mode':
       fireAndForget(handleCheckCopyMode(message.sessionId, ws), 'handleCheckCopyMode')
       return
+    case 'session-wake':
     case 'session-resume':
-      handleSessionResume(message, ws)
+      handleSessionWake(message, ws)
       return
     case 'session-sleep':
       handleSessionSleep(message.sessionId, ws)
@@ -1947,6 +1953,32 @@ async function handleRename(
     refreshSessionsSync() // Use sync for inline operations needing immediate results
     session = registry.get(sessionId)
     if (!session) {
+      const record = db.getSessionById(sessionId)
+      if (record && !record.currentWindow) {
+        const trimmed = newName.trim()
+        if (!trimmed) {
+          send(ws, { type: 'error', message: 'Name cannot be empty' })
+          return
+        }
+        if (!/^[\w-]+$/.test(trimmed)) {
+          send(ws, {
+            type: 'error',
+            message: 'Name can only contain letters, numbers, hyphens, and underscores',
+          })
+          return
+        }
+        if (db.displayNameExists(trimmed, sessionId)) {
+          send(ws, { type: 'error', message: 'Name already exists' })
+          return
+        }
+        const updated = db.updateSession(sessionId, { displayName: trimmed })
+        if (!updated) {
+          send(ws, { type: 'error', message: 'Unable to rename session' })
+          return
+        }
+        updateDormantAgentSessions()
+        return
+      }
       send(ws, { type: 'error', message: 'Session not found' })
       return
     }
@@ -2063,9 +2095,9 @@ function handleSessionSleep(
     return
   }
 
-  // Idempotent ack: already sleeping. A reconnect-storm replay or a double
+  // Idempotent ack: already snoozed. A reconnect-storm replay or a double
   // click shouldn't surface a spurious error to the user.
-  if (record.isSleeping && !record.currentWindow) {
+  if (record.isPinned && !record.currentWindow) {
     logger.info('session_sleep_noop', {
       sessionId,
       agentType: record.agentType,
@@ -2115,7 +2147,8 @@ function handleSessionSleep(
     refreshGeneration++
     updated = db.updateSession(sessionId, {
       currentWindow: null,
-      isSleeping: true,
+      isPinned: true,
+      lastResumeError: null,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to sleep session'
@@ -2208,29 +2241,223 @@ function buildResumeCommand(
   return `${exe} ${flags} ${rest}`
 }
 
-function resurrectPinnedSessions() {
-  const orphanedPinned = db.getPinnedOrphaned()
+function validateWakeTemplate(record: AgentSessionRecord): WakeError | null {
+  if (record.launchCommand) {
+    return null
+  }
+
+  const resumeTemplate =
+    record.agentType === 'claude' || record.agentType === 'claude-rp'
+      ? config.claudeResumeCmd
+      : config.codexResumeCmd
+  if (resumeTemplate.includes('{sessionId}')) {
+    return null
+  }
+
+  return {
+    code: 'WAKE_FAILED',
+    message: 'Wake command template missing {sessionId} placeholder',
+  }
+}
+
+function shouldSkipAutoWake(record: AgentSessionRecord, now = Date.now()): boolean {
+  if (!record.lastResumeError || !record.lastResumeAttemptAt) {
+    return false
+  }
+  const lastAttempt = Date.parse(record.lastResumeAttemptAt)
+  if (Number.isNaN(lastAttempt)) {
+    return false
+  }
+  return now - lastAttempt < WAKE_RETRY_COOLDOWN_MS
+}
+
+function hydrateWakeSession(
+  session: Session,
+  record: AgentSessionRecord
+): Session {
+  return stampLocalSession({
+    ...session,
+    agentType: session.agentType ?? record.agentType,
+    agentSessionId: record.sessionId,
+    agentSessionName: record.displayName,
+    logFilePath: record.logFilePath,
+    lastUserMessage: record.lastUserMessage ?? session.lastUserMessage,
+    lastActivity: record.lastActivityAt,
+    createdAt: record.createdAt,
+    isPinned: record.isPinned,
+  })
+}
+
+function tryRematchDormantSession(
+  record: AgentSessionRecord
+): { session: Session; record: AgentSessionRecord } | null {
+  refreshSessionsSync()
+
+  const alreadyHydrated = registry.getAll().find(
+    (session) =>
+      !session.remote &&
+      (session.agentSessionId?.trim() === record.sessionId ||
+        session.logFilePath === record.logFilePath)
+  )
+  if (alreadyHydrated) {
+    const updated = db.updateSession(record.sessionId, {
+      currentWindow: alreadyHydrated.tmuxWindow,
+      displayName: alreadyHydrated.name,
+      lastResumeError: null,
+    })
+    const updatedRecord = updated ?? {
+      ...record,
+      currentWindow: alreadyHydrated.tmuxWindow,
+      displayName: alreadyHydrated.name,
+      lastResumeError: null,
+    }
+    const hydrated = hydrateWakeSession(alreadyHydrated, updatedRecord)
+    registry.replaceSessions(
+      registry.getAll().map((session) =>
+        session.id === hydrated.id ? hydrated : session
+      )
+    )
+    updateDormantAgentSessions()
+    return { session: hydrated, record: updatedRecord }
+  }
+
+  if (!record.logFilePath) {
+    return null
+  }
+
+  const claimedWindows = new Set(
+    db.getActiveSessions()
+      .map((session) => session.currentWindow)
+      .filter(Boolean) as string[]
+  )
+  const candidates = registry
+    .getAll()
+    .filter(
+      (session) =>
+        !session.remote && !claimedWindows.has(session.tmuxWindow)
+    )
+  if (candidates.length === 0) {
+    return null
+  }
+
+  try {
+    const result = matchWindowsToLogsByExactRg(
+      candidates,
+      getLogSearchDirs(),
+      DEFAULT_SCROLLBACK_LINES,
+      {
+        logPaths: [record.logFilePath],
+        rgThreads: config.rgThreads,
+      }
+    )
+    const match = result.matches.get(record.logFilePath)
+    if (!match) {
+      return null
+    }
+    if (db.getSessionByWindow(match.tmuxWindow)) {
+      return null
+    }
+
+    const patch: Partial<Omit<AgentSessionRecord, 'id' | 'sessionId'>> = {
+      currentWindow: match.tmuxWindow,
+      displayName: match.name,
+      lastResumeError: null,
+    }
+    if (match.command && !record.launchCommand) {
+      patch.launchCommand = match.command
+    }
+    const updated = db.updateSession(record.sessionId, patch)
+    const updatedRecord = updated ?? {
+      ...record,
+      ...patch,
+    }
+    const hydrated = hydrateWakeSession(match, updatedRecord)
+    registry.replaceSessions(
+      registry.getAll().map((session) =>
+        session.id === hydrated.id ? hydrated : session
+      )
+    )
+    updateDormantAgentSessions()
+    logger.info('session_wake_rematch_success', {
+      sessionId: record.sessionId,
+      window: match.tmuxWindow,
+      displayName: match.name,
+    })
+    return { session: hydrated, record: updatedRecord }
+  } catch (error) {
+    logger.warn('session_wake_rematch_failed', {
+      sessionId: record.sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return null
+  }
+}
+
+function resurrectStarredSessions() {
+  const snoozed = db.getPinnedOrphaned()
+  const orphanedPinned = snoozed.filter((record) => !shouldSkipAutoWake(record))
   if (orphanedPinned.length === 0) {
+    if (snoozed.length > 0) {
+      logger.info('resurrect_starred_sessions_skip', {
+        reason: 'cooldown',
+        count: snoozed.length,
+      })
+    }
     return
   }
 
-  logger.info('resurrect_pinned_sessions_start', { count: orphanedPinned.length })
+  logger.info('resurrect_starred_sessions_start', { count: orphanedPinned.length })
 
   for (const record of orphanedPinned) {
+    if (wakeInFlight.has(record.sessionId)) {
+      logger.info('resurrect_starred_session_skip', {
+        sessionId: record.sessionId,
+        reason: 'wake_in_flight',
+      })
+      continue
+    }
+    wakeInFlight.add(record.sessionId)
+    const attemptAt = new Date().toISOString()
+
     // Validate sessionId before using in command
     if (!isValidSessionId(record.sessionId)) {
       const errorMsg = 'Invalid session id format'
-      db.updateSession(record.sessionId, { isPinned: false, lastResumeError: errorMsg })
+      db.updateSession(record.sessionId, {
+        lastResumeError: errorMsg,
+        lastResumeAttemptAt: attemptAt,
+      })
       broadcast({
         type: 'session-resurrection-failed',
         sessionId: record.sessionId,
         displayName: record.displayName,
         error: errorMsg,
       })
-      logger.error('resurrect_pinned_session_invalid_id', {
+      logger.error('resurrect_starred_session_invalid_id', {
         sessionId: record.sessionId,
         displayName: record.displayName,
       })
+      wakeInFlight.delete(record.sessionId)
+      continue
+    }
+
+    const templateError = validateWakeTemplate(record)
+    if (templateError) {
+      db.updateSession(record.sessionId, {
+        lastResumeError: templateError.message,
+        lastResumeAttemptAt: attemptAt,
+      })
+      broadcast({
+        type: 'session-resurrection-failed',
+        sessionId: record.sessionId,
+        displayName: record.displayName,
+        error: templateError.message,
+      })
+      logger.error('resurrect_starred_session_failed', {
+        sessionId: record.sessionId,
+        displayName: record.displayName,
+        error: templateError.message,
+      })
+      wakeInFlight.delete(record.sessionId)
       continue
     }
 
@@ -2255,59 +2482,61 @@ function resurrectPinnedSessions() {
       db.updateSession(record.sessionId, {
         currentWindow: created.tmuxWindow,
         displayName: created.name,
+        lastResumeAttemptAt: attemptAt,
         lastResumeError: null, // Clear any previous error on success
       })
-      logger.info('resurrect_pinned_session_success', {
+      logger.info('resurrect_starred_session_success', {
         sessionId: record.sessionId,
         displayName: record.displayName,
         tmuxWindow: created.tmuxWindow,
       })
     } catch (error) {
-      // Resurrection failed - unpin the session and persist error
+      // Resurrection failed. Preserve the star so the Snoozed row remains
+      // actionable, but record the failure and throttle future auto-wake tries.
       const errorMsg = error instanceof Error ? error.message : String(error)
-      db.updateSession(record.sessionId, { isPinned: false, lastResumeError: errorMsg })
+      db.updateSession(record.sessionId, {
+        lastResumeError: errorMsg,
+        lastResumeAttemptAt: attemptAt,
+      })
       broadcast({
         type: 'session-resurrection-failed',
         sessionId: record.sessionId,
         displayName: record.displayName,
         error: errorMsg,
       })
-      logger.error('resurrect_pinned_session_failed', {
+      logger.error('resurrect_starred_session_failed', {
         sessionId: record.sessionId,
         displayName: record.displayName,
         error: errorMsg,
       })
+    } finally {
+      wakeInFlight.delete(record.sessionId)
     }
   }
 }
 
-function handleSessionResume(
-  message: Extract<ClientMessage, { type: 'session-resume' }>,
+function handleSessionWake(
+  message: Extract<ClientMessage, { type: 'session-wake' | 'session-resume' }>,
   ws: ServerWebSocket<WSData>
 ) {
   const sessionId = message.sessionId
   if (!isValidSessionId(sessionId)) {
-    logger.warn('session_resume_failed', { sessionId, reason: 'invalid_id' })
-    const error: ResumeError = {
+    logger.warn('session_wake_failed', { sessionId, reason: 'invalid_id' })
+    const error: WakeError = {
       code: 'NOT_FOUND',
       message: 'Invalid session id',
     }
-    send(ws, { type: 'session-resume-result', sessionId, ok: false, error })
+    send(ws, { type: 'session-wake-result', sessionId, ok: false, error })
     return
   }
 
   const record = db.getSessionById(sessionId)
   if (!record) {
-    logger.warn('session_resume_failed', { sessionId, reason: 'not_found' })
-    const error: ResumeError = { code: 'NOT_FOUND', message: 'Session not found' }
-    send(ws, { type: 'session-resume-result', sessionId, ok: false, error })
+    logger.warn('session_wake_failed', { sessionId, reason: 'not_found' })
+    const error: WakeError = { code: 'NOT_FOUND', message: 'Session not found' }
+    send(ws, { type: 'session-wake-result', sessionId, ok: false, error })
     return
   }
-
-  // `wake` = resuming a sleeping session; `resume` = reactivating an
-  // inactive/orphaned session. Tracked separately in telemetry so we can
-  // later measure wake reliability independently.
-  const eventKind = record.isSleeping ? 'wake' : 'resume'
 
   if (record.currentWindow) {
     // Idempotent ack when the session is already live AND we can confirm it
@@ -2318,66 +2547,98 @@ function handleSessionResume(
       registry.get(record.currentWindow) ??
       registry.getAll().find((session) => session.agentSessionId?.trim() === sessionId)
     if (liveSession) {
-      logger.info(`session_${eventKind}_noop`, {
+      logger.info('session_wake_noop', {
         sessionId,
         agentType: record.agentType,
         displayName: record.displayName,
       })
-      send(ws, { type: 'session-resume-result', sessionId, ok: true, session: liveSession })
+      send(ws, { type: 'session-wake-result', sessionId, ok: true, session: liveSession })
       return
     }
-    logger.warn(`session_${eventKind}_failed`, { sessionId, reason: 'already_active_stale_registry' })
-    const error: ResumeError = {
+    logger.warn('session_wake_failed', { sessionId, reason: 'already_active_stale_registry' })
+    const error: WakeError = {
       code: 'ALREADY_ACTIVE',
       message: 'Session is already active',
     }
-    send(ws, { type: 'session-resume-result', sessionId, ok: false, error })
+    send(ws, { type: 'session-wake-result', sessionId, ok: false, error })
     return
   }
 
-  // Validate template when falling back to global config (no stored launch command)
-  if (!record.launchCommand) {
-    const resumeTemplate =
-      record.agentType === 'claude' || record.agentType === 'claude-rp'
-        ? config.claudeResumeCmd
-        : config.codexResumeCmd
-    if (!resumeTemplate.includes('{sessionId}')) {
-      logger.error(`session_${eventKind}_failed`, {
-        sessionId,
-        reason: 'bad_template',
-        agentType: record.agentType,
-      })
-      const error: ResumeError = {
-        code: 'RESUME_FAILED',
-        message: 'Resume command template missing {sessionId} placeholder',
-      }
-      send(ws, { type: 'session-resume-result', sessionId, ok: false, error })
-      return
-    }
+  if (wakeInFlight.has(sessionId)) {
+    logger.info('session_wake_noop', {
+      sessionId,
+      reason: 'wake_in_flight',
+      agentType: record.agentType,
+      displayName: record.displayName,
+    })
+    send(ws, { type: 'session-wake-result', sessionId, ok: true })
+    return
   }
 
-  const command = buildResumeCommand(record.launchCommand, sessionId, record.agentType)
-  const projectPath =
-    record.projectPath ||
-    process.env.HOME ||
-    process.env.USERPROFILE ||
-    '.'
+  wakeInFlight.add(sessionId)
+  const attemptAt = new Date().toISOString()
 
-  const startedAt = Date.now()
   try {
+    const latest = db.getSessionById(sessionId) ?? record
+    if (latest.currentWindow) {
+      const liveSession =
+        registry.get(latest.currentWindow) ??
+        registry.getAll().find((session) => session.agentSessionId?.trim() === sessionId)
+      if (liveSession) {
+        send(ws, { type: 'session-wake-result', sessionId, ok: true, session: liveSession })
+        return
+      }
+    }
+
+    const rematched = tryRematchDormantSession(latest)
+    if (rematched) {
+      send(ws, { type: 'session-wake-result', sessionId, ok: true, session: rematched.session })
+      broadcast({
+        type: 'session-activated',
+        session: toAgentSession(rematched.record),
+        window: rematched.session.tmuxWindow,
+      })
+      return
+    }
+
+    const templateError = validateWakeTemplate(latest)
+    if (templateError) {
+      logger.error('session_wake_failed', {
+        sessionId,
+        reason: 'bad_template',
+        agentType: latest.agentType,
+      })
+      db.updateSession(sessionId, {
+        lastResumeError: templateError.message,
+        lastResumeAttemptAt: attemptAt,
+      })
+      updateDormantAgentSessions()
+      send(ws, { type: 'session-wake-result', sessionId, ok: false, error: templateError })
+      return
+    }
+
+    const command = buildResumeCommand(latest.launchCommand, sessionId, latest.agentType)
+    const projectPath =
+      latest.projectPath ||
+      process.env.HOME ||
+      process.env.USERPROFILE ||
+      '.'
+
+    const startedAt = Date.now()
+    db.updateSession(sessionId, { lastResumeAttemptAt: attemptAt })
     // Name is driven by the stored displayName — createWindow will auto-suffix
     // on genuine collisions with other live sessions (excludeSessionId keeps
     // the session's own prior name from matching itself).
     const created = stampLocalSession(sessionManager.createWindow(
       projectPath,
-      record.displayName,
+      latest.displayName,
       command,
       { excludeSessionId: sessionId }
     ))
     const updatedRecord = db.updateSession(sessionId, {
       currentWindow: created.tmuxWindow,
       displayName: created.name,
-      isSleeping: false,
+      lastResumeAttemptAt: attemptAt,
       lastResumeError: null, // Clear any previous error on success
     })
     // Add session to registry immediately so terminal can attach
@@ -2387,45 +2648,48 @@ function handleSessionResume(
     registry.replaceSessions([created, ...currentSessions])
     updateDormantAgentSessions()
     refreshSessions()
-    send(ws, { type: 'session-resume-result', sessionId, ok: true, session: created })
+    send(ws, { type: 'session-wake-result', sessionId, ok: true, session: created })
     broadcast({
       type: 'session-activated',
       session: toAgentSession(
         updatedRecord ?? {
-          ...record,
+          ...latest,
           currentWindow: created.tmuxWindow,
           displayName: created.name,
-          isSleeping: false,
+          lastResumeAttemptAt: attemptAt,
           lastResumeError: null,
         }
       ),
       window: created.tmuxWindow,
     })
-    logger.info(`session_${eventKind}_success`, {
+    logger.info('session_wake_success', {
       sessionId,
-      agentType: record.agentType,
-      displayName: record.displayName,
+      agentType: latest.agentType,
+      displayName: latest.displayName,
       tmuxWindow: created.tmuxWindow,
       durationMs: Date.now() - startedAt,
     })
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : 'Unable to resume session'
+      error instanceof Error ? error.message : 'Unable to wake session'
     // Persist the failure reason so every tab sees an error badge via the
     // normal agent-sessions broadcast, not just the tab that triggered the
-    // wake. Mirrors resurrectPinnedSessions' failure bookkeeping. Keep
-    // isSleeping untouched so the card stays in the Sleeping rail.
-    db.updateSession(sessionId, { lastResumeError: message })
+    // wake. Starred idle sessions remain in the Snoozed rail.
+    db.updateSession(sessionId, {
+      lastResumeError: message,
+      lastResumeAttemptAt: attemptAt,
+    })
     updateDormantAgentSessions()
-    logger.error(`session_${eventKind}_failed`, {
+    logger.error('session_wake_failed', {
       sessionId,
       reason: 'create_window_failed',
       agentType: record.agentType,
       error: message,
-      durationMs: Date.now() - startedAt,
     })
-    const err: ResumeError = { code: 'RESUME_FAILED', message }
-    send(ws, { type: 'session-resume-result', sessionId, ok: false, error: err })
+    const err: WakeError = { code: 'WAKE_FAILED', message }
+    send(ws, { type: 'session-wake-result', sessionId, ok: false, error: err })
+  } finally {
+    wakeInFlight.delete(sessionId)
   }
 }
 

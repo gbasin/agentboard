@@ -1,7 +1,7 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import AlertTriangleIcon from '@untitledui-icons/react/line/esm/AlertTriangleIcon'
 import File06Icon from '@untitledui-icons/react/line/esm/File06Icon'
-import Pin02Icon from '@untitledui-icons/react/line/esm/Pin02Icon'
+import Star01Icon from '@untitledui-icons/react/line/esm/Star01Icon'
 import type { AgentSession } from '@shared/types'
 import { copyText } from '../utils/copyText'
 import { getPathLeaf } from '../utils/sessionLabel'
@@ -89,11 +89,11 @@ export default memo(function InactiveSessionItem({
       }}
       onContextMenu={handleContextMenu}
     >
-      {/* Play icon for quick resume - absolutely positioned, appears on hover */}
+      {/* Play icon for quick wake - absolutely positioned, appears on hover */}
       <button
         type="button"
         className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted opacity-0 hover:text-primary group-hover:opacity-100"
-        title="Resume directly"
+        title="Wake directly"
         onClick={(e) => {
           e.stopPropagation()
           onResume(session.sessionId)
@@ -115,15 +115,15 @@ export default memo(function InactiveSessionItem({
           {session.lastResumeError && (
             <AlertTriangleIcon
               className="h-3 w-3 shrink-0 text-amber-500"
-              aria-label="Resume failed"
-              title={`Last resume failed: ${session.lastResumeError}`}
+              aria-label="Wake failed"
+              title={`Last wake failed: ${session.lastResumeError}`}
             />
           )}
           {session.isPinned && (
-            <Pin02Icon
+            <Star01Icon
               className="h-3 w-3 shrink-0 text-muted"
-              aria-label="Pinned"
-              title="Pinned - will auto-resume on server restart"
+              aria-label="Starred"
+              title="Starred - will auto-wake on server restart"
             />
           )}
           {sessionIdPrefix && (
@@ -172,10 +172,10 @@ export default memo(function InactiveSessionItem({
               }}
               className="w-full px-3 py-2 text-left text-sm text-secondary hover:bg-hover hover:text-primary flex items-center gap-2"
               role="menuitem"
-              title={session.isPinned ? 'Remove from auto-resume list' : 'Auto-resume on server restart'}
+              title={session.isPinned ? 'Remove star' : 'Auto-wake on server restart'}
             >
-              <Pin02Icon width={14} height={14} />
-              {session.isPinned ? 'Unpin' : 'Pin'}
+              <Star01Icon width={14} height={14} />
+              {session.isPinned ? 'Unstar' : 'Star'}
             </button>
           )}
           {session.logFilePath && (

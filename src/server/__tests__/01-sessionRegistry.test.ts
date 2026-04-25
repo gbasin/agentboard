@@ -257,14 +257,14 @@ describe('SessionRegistry', () => {
     registry.on('agent-sessions-active', (active) => activeEvents.push(active))
 
     const active = [makeAgentSession({ sessionId: 'a1' })]
-    const sleeping = [makeAgentSession({ sessionId: 's1', isActive: false, isSleeping: true })]
+    const sleeping = [makeAgentSession({ sessionId: 's1', isActive: false, isPinned: true })]
     registry.setAgentSessions(active, sleeping, [])
     fullEvents.length = 0
     activeEvents.length = 0
 
     registry.setAgentSessions(
       active,
-      [makeAgentSession({ sessionId: 's2', isActive: false, isSleeping: true })],
+      [makeAgentSession({ sessionId: 's2', isActive: false, isPinned: true })],
       []
     )
 
@@ -273,7 +273,7 @@ describe('SessionRegistry', () => {
     expect(fullEvents[0].sleeping[0]?.sessionId).toBe('s2')
   })
 
-  test('agentSessionsEqual correctly compares all 13 fields of AgentSession', () => {
+  test('agentSessionsEqual correctly compares all 12 fields of AgentSession', () => {
     const registry = new SessionRegistry()
     const activeEvents: AgentSession[][] = []
 
@@ -290,7 +290,6 @@ describe('SessionRegistry', () => {
       isActive: true,
       host: 'host-1',
       lastUserMessage: 'hello',
-      isSleeping: false,
       isPinned: false,
       lastResumeError: undefined,
     })
@@ -303,7 +302,7 @@ describe('SessionRegistry', () => {
     registry.setAgentSessions([{ ...base }], [], [])
     expect(activeEvents).toHaveLength(0)
 
-    // Each field change should emit. Test all 13 fields one at a time.
+    // Each field change should emit. Test all 12 fields one at a time.
     const fieldChanges: Array<Partial<AgentSession>> = [
       { sessionId: 'cmp-changed' },
       { logFilePath: '/tmp/other.jsonl' },
@@ -315,7 +314,6 @@ describe('SessionRegistry', () => {
       { isActive: false },
       { host: 'host-2' },
       { lastUserMessage: 'changed' },
-      { isSleeping: true },
       { isPinned: true },
       { lastResumeError: 'error occurred' },
     ]

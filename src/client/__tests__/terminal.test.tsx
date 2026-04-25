@@ -132,8 +132,7 @@ const sleepingSession: AgentSession = {
   createdAt: '2024-01-01T00:00:00.000Z',
   lastActivityAt: '2024-01-01T00:00:00.000Z',
   isActive: false,
-  isSleeping: true,
-  isPinned: false,
+  isPinned: true,
 }
 
 function createStorage(): Storage {
@@ -754,7 +753,7 @@ describe('Terminal', () => {
     })
 
     const html = JSON.stringify(renderer.toJSON())
-    expect(html).toContain('Sleeping')
+    expect(html).toContain('Snoozed')
     expect(html).toContain('Wake Session')
     expect(
       sentMessages.some(

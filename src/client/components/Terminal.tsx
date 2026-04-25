@@ -16,7 +16,9 @@ import TerminalControls from './TerminalControls'
 import SessionDrawer from './SessionDrawer'
 import SessionPreviewContent from './SessionPreviewContent'
 import { PlusIcon, XCloseIcon, DotsVerticalIcon, Menu01Icon } from '@untitledui-icons/react/line'
+import AlertTriangleIcon from '@untitledui-icons/react/line/esm/AlertTriangleIcon'
 import Edit05Icon from '@untitledui-icons/react/line/esm/Edit05Icon'
+import Moon01Icon from '@untitledui-icons/react/line/esm/Moon01Icon'
 import Settings01Icon from '@untitledui-icons/react/line/esm/Settings01Icon'
 
 interface TerminalProps {
@@ -946,11 +948,11 @@ export default function Terminal({
           {canSleep && (
             <button
               onClick={handleSleepSession}
-              className="hidden md:flex h-7 w-7 items-center justify-center rounded border border-border bg-surface text-secondary hover:bg-hover hover:text-primary active:scale-95 transition-all shrink-0"
-              title="Sleep session"
-              aria-label="Sleep session"
+              className="hidden md:flex h-7 w-7 items-center justify-center rounded border border-border text-secondary hover:bg-hover hover:text-primary active:scale-95 transition-all shrink-0"
+              title="Snooze session"
+              aria-label="Snooze session"
             >
-              <span className="text-[10px] font-semibold uppercase">Zz</span>
+              <Moon01Icon width={16} height={16} />
             </button>
           )}
           {session ? (
@@ -980,7 +982,7 @@ export default function Terminal({
                 {sleepingDisplayName}
               </span>
               <span className="rounded-full bg-blue-500/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-blue-400">
-                Sleeping
+                Snoozed
               </span>
             </div>
           ) : (
@@ -1021,11 +1023,11 @@ export default function Terminal({
           {canSleep && (
             <button
               onClick={handleSleepSession}
-              className="flex md:hidden h-7 w-7 items-center justify-center rounded border border-border bg-surface text-secondary hover:bg-hover hover:text-primary active:scale-95 transition-all"
-              title="Sleep session"
-              aria-label="Sleep session"
+              className="flex md:hidden h-7 w-7 items-center justify-center rounded border border-border text-secondary hover:bg-hover hover:text-primary active:scale-95 transition-all"
+              title="Snooze session"
+              aria-label="Snooze session"
             >
-              <span className="text-[10px] font-semibold uppercase">Zz</span>
+              <Moon01Icon width={16} height={16} />
             </button>
           )}
           {sleepingSession && (
@@ -1065,10 +1067,8 @@ export default function Terminal({
                       onClick={handleSleepSession}
                       className="w-full px-3 py-2 text-left text-sm text-secondary hover:bg-hover hover:text-primary flex items-center gap-2"
                     >
-                      <span className="inline-flex w-[14px] justify-center text-[10px] font-semibold uppercase">
-                        Zz
-                      </span>
-                      Sleep
+                      <Moon01Icon width={14} height={14} />
+                      Snooze
                     </button>
                   )}
                   <button
@@ -1147,18 +1147,22 @@ export default function Terminal({
           </div>
         )}
         {sleepingSession && (
-          <div className="absolute inset-0 overflow-y-auto">
+          <div className="absolute inset-0 overflow-y-auto bg-base">
             <div className="mx-auto flex h-full w-full max-w-4xl flex-col gap-6 p-6">
               <div className="rounded-2xl border border-border bg-elevated p-6">
                 <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                   <div className="space-y-3">
                     <div className="flex items-center gap-2">
                       <span className="rounded-full bg-blue-500/15 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-blue-400">
-                        Sleeping
+                        Snoozed
                       </span>
-                      {sleepingSession.isPinned && (
-                        <span className="rounded-full bg-surface px-2 py-1 text-[11px] text-muted">
-                          Pinned
+                      {sleepingSession.lastResumeError && (
+                        <span
+                          className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-1 text-[11px] text-amber-400"
+                          title={`Last wake failed: ${sleepingSession.lastResumeError}`}
+                        >
+                          <AlertTriangleIcon width={12} height={12} />
+                          Wake failed
                         </span>
                       )}
                     </div>
@@ -1194,6 +1198,15 @@ export default function Terminal({
                     >
                       Wake Session
                     </button>
+                    {onSetPinned && (
+                      <button
+                        type="button"
+                        onClick={() => onSetPinned(sleepingSession.sessionId, false)}
+                        className="btn btn-secondary"
+                      >
+                        Remove
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

@@ -104,9 +104,9 @@ function makeRecord(overrides: Partial<AgentSessionRecord> = {}): AgentSessionRe
     lastActivityAt: baseRecordTimestamp,
     lastUserMessage: null,
     currentWindow: null,
-    isSleeping: false,
     isPinned: false,
     lastResumeError: null,
+    lastResumeAttemptAt: null,
     lastKnownLogSize: null,
     isCodexExec: false,
     launchCommand: null,
@@ -323,7 +323,7 @@ mock.module('../../db', () => ({
       ),
     getInactiveSessions: (options?: { maxAgeHours?: number }) => {
       const inactive = Array.from(dbState.records.values()).filter(
-        (record) => record.currentWindow === null && !record.isSleeping
+        (record) => record.currentWindow === null && !record.isPinned
       )
       if (!options?.maxAgeHours) {
         return inactive
@@ -335,12 +335,12 @@ mock.module('../../db', () => ({
     },
     getSleepingSessions: () =>
       Array.from(dbState.records.values()).filter(
-        (record) => record.currentWindow === null && record.isSleeping
+        (record) => record.currentWindow === null && record.isPinned
       ),
     orphanSession: (sessionId: string) => {
       const record = dbState.records.get(sessionId)
       if (!record) return null
-      const updated = { ...record, currentWindow: null, isSleeping: false }
+      const updated = { ...record, currentWindow: null }
       dbState.records.set(sessionId, updated)
       return updated
     },
@@ -374,7 +374,7 @@ mock.module('../../db', () => ({
     },
     getPinnedOrphaned: () =>
       Array.from(dbState.records.values()).filter(
-        (record) => record.isPinned && record.currentWindow === null && !record.isSleeping
+        (record) => record.isPinned && record.currentWindow === null
       ),
     getAppSetting: (key: string) => dbState.appSettings.get(key) ?? null,
     setAppSetting: (key: string, value: string) => {
@@ -853,6 +853,63 @@ describe('server message handlers', () => {
 
     expect(sent[sent.length - 2]).toEqual({ type: 'kill-failed', sessionId: baseSession.id, message: 'boom' })
     expect(sent[sent.length - 1]).toEqual({ type: 'error', message: 'nope' })
+  })
+
+  test('renames dormant agent sessions without requiring a tmux window', async () => {
+    const { serveOptions, registryInstance } = await loadIndex()
+    const sessionId = 'dormant-rename'
+    seedRecord(
+      makeRecord({
+        sessionId,
+        displayName: 'old-name',
+        currentWindow: null,
+        isPinned: true,
+      })
+    )
+
+    const renamed: Array<{ tmuxWindow: string; name: string }> = []
+    sessionManagerState.renameWindow = (tmuxWindow, newName) => {
+      renamed.push({ tmuxWindow, name: newName })
+    }
+
+    const { ws, sent } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) {
+      throw new Error('WebSocket handlers not configured')
+    }
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({
+        type: 'session-rename',
+        sessionId,
+        newName: '  renamed-dormant  ',
+      })
+    )
+
+    expect(renamed).toEqual([])
+    expect(dbState.records.get(sessionId)?.displayName).toBe('renamed-dormant')
+    expect(registryInstance.agentSessions.sleeping).toMatchObject([
+      expect.objectContaining({
+        sessionId,
+        displayName: 'renamed-dormant',
+      }),
+    ])
+    expect(sent).toEqual([])
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({
+        type: 'session-rename',
+        sessionId,
+        newName: 'bad name!',
+      })
+    )
+
+    expect(sent[sent.length - 1]).toEqual({
+      type: 'error',
+      message: 'Name can only contain letters, numbers, hyphens, and underscores',
+    })
   })
 
   test('stale in-flight refresh does not resurrect killed session', async () => {
@@ -2459,13 +2516,12 @@ describe('server message handlers', () => {
       error: 'Session not found',
     })
 
-    // Truly inactive (never slept) should still error — only already-sleeping
+    // Truly inactive (never snoozed) should still error — only already-snoozed
     // gets the idempotent ack below.
     seedRecord(
       makeRecord({
         sessionId: 'truly-inactive',
         currentWindow: null,
-        isSleeping: false,
       })
     )
     websocket.message?.(
@@ -2480,7 +2536,7 @@ describe('server message handlers', () => {
     })
   })
 
-  test('sleep is idempotent for already-sleeping sessions', async () => {
+  test('snooze is idempotent for already-snoozed sessions', async () => {
     const { serveOptions } = await loadIndex()
     const { ws, sent } = createWs()
     const websocket = serveOptions.websocket
@@ -2492,7 +2548,7 @@ describe('server message handlers', () => {
       makeRecord({
         sessionId: 'already-sleeping',
         currentWindow: null,
-        isSleeping: true,
+        isPinned: true,
       })
     )
 
@@ -2513,7 +2569,7 @@ describe('server message handlers', () => {
       ok: true,
       session: expect.objectContaining({
         sessionId: 'already-sleeping',
-        isSleeping: true,
+        isPinned: true,
         isActive: false,
       }),
     })
@@ -2522,7 +2578,7 @@ describe('server message handlers', () => {
     expect(dbState.updateCalls.length).toBe(updateCallsBefore)
   })
 
-  test('sleeps active sessions and moves them into the sleeping bucket', async () => {
+  test('snoozes active sessions and moves them into the snoozed bucket', async () => {
     const { serveOptions, registryInstance } = await loadIndex()
     const liveAgentSessionId = 'sleep-ok'
     registryInstance.sessions = [
@@ -2562,25 +2618,25 @@ describe('server message handlers', () => {
       ok: true,
       session: expect.objectContaining({
         sessionId: liveAgentSessionId,
-        isSleeping: true,
+        isPinned: true,
         isActive: false,
       }),
     })
     expect(dbState.updateCalls.at(-1)?.patch).toMatchObject({
       currentWindow: null,
-      isSleeping: true,
+      isPinned: true,
     })
     expect(registryInstance.sessions).toEqual([])
     expect(registryInstance.agentSessions.sleeping).toMatchObject([
       expect.objectContaining({
         sessionId: liveAgentSessionId,
-        isSleeping: true,
+        isPinned: true,
       }),
     ])
     expect(registryInstance.agentSessions.inactive).toEqual([])
   })
 
-  test('validates session resume errors', async () => {
+  test('validates session wake errors', async () => {
     const { serveOptions } = await loadIndex()
     const { ws, sent } = createWs()
     const websocket = serveOptions.websocket
@@ -2590,10 +2646,10 @@ describe('server message handlers', () => {
 
     websocket.message?.(
       ws as never,
-      JSON.stringify({ type: 'session-resume', sessionId: 'bad id' })
+      JSON.stringify({ type: 'session-wake', sessionId: 'bad id' })
     )
     expect(sent[sent.length - 1]).toEqual({
-      type: 'session-resume-result',
+      type: 'session-wake-result',
       sessionId: 'bad id',
       ok: false,
       error: { code: 'NOT_FOUND', message: 'Invalid session id' },
@@ -2601,10 +2657,10 @@ describe('server message handlers', () => {
 
     websocket.message?.(
       ws as never,
-      JSON.stringify({ type: 'session-resume', sessionId: 'missing' })
+      JSON.stringify({ type: 'session-wake', sessionId: 'missing' })
     )
     expect(sent[sent.length - 1]).toEqual({
-      type: 'session-resume-result',
+      type: 'session-wake-result',
       sessionId: 'missing',
       ok: false,
       error: { code: 'NOT_FOUND', message: 'Session not found' },
@@ -2618,10 +2674,10 @@ describe('server message handlers', () => {
     )
     websocket.message?.(
       ws as never,
-      JSON.stringify({ type: 'session-resume', sessionId: 'active-session' })
+      JSON.stringify({ type: 'session-wake', sessionId: 'active-session' })
     )
     expect(sent[sent.length - 1]).toEqual({
-      type: 'session-resume-result',
+      type: 'session-wake-result',
       sessionId: 'active-session',
       ok: false,
       error: { code: 'ALREADY_ACTIVE', message: 'Session is already active' },
@@ -2637,20 +2693,26 @@ describe('server message handlers', () => {
     )
     websocket.message?.(
       ws as never,
-      JSON.stringify({ type: 'session-resume', sessionId: 'bad-template' })
+      JSON.stringify({ type: 'session-wake', sessionId: 'bad-template' })
     )
     expect(sent[sent.length - 1]).toEqual({
-      type: 'session-resume-result',
+      type: 'session-wake-result',
       sessionId: 'bad-template',
       ok: false,
       error: {
-        code: 'RESUME_FAILED',
-        message: 'Resume command template missing {sessionId} placeholder',
+        code: 'WAKE_FAILED',
+        message: 'Wake command template missing {sessionId} placeholder',
       },
     })
+    const templateErrorPatch = dbState.updateCalls.find(
+      (call) =>
+        call.sessionId === 'bad-template' &&
+        call.patch.lastResumeError === 'Wake command template missing {sessionId} placeholder'
+    )
+    expect(typeof templateErrorPatch?.patch.lastResumeAttemptAt).toBe('string')
   })
 
-  test('resumes sessions and broadcasts activation', async () => {
+  test('wakes sessions and broadcasts activation', async () => {
     const { serveOptions, registryInstance } = await loadIndex()
     const { ws, sent } = createWs()
     const websocket = serveOptions.websocket
@@ -2665,7 +2727,7 @@ describe('server message handlers', () => {
       projectPath: '/tmp/resume',
       agentType: 'claude',
       currentWindow: null,
-      isSleeping: true,
+      isPinned: true,
       lastResumeError: 'resume failed',
     })
     seedRecord(record)
@@ -2684,7 +2746,7 @@ describe('server message handlers', () => {
 
     websocket.message?.(
       ws as never,
-      JSON.stringify({ type: 'session-resume', sessionId: 'resume-ok' })
+      JSON.stringify({ type: 'session-wake', sessionId: 'resume-ok' })
     )
 
     expect(createArgs).not.toBeNull()
@@ -2693,18 +2755,26 @@ describe('server message handlers', () => {
       name: 'resume',
       command: 'claude --resume resume-ok',
     })
-    expect(dbState.updateCalls[0]?.patch).toMatchObject({
+    const activationPatch = dbState.updateCalls.find(
+      (call) =>
+        call.sessionId === 'resume-ok' &&
+        call.patch.currentWindow === createdSession.tmuxWindow
+    )
+    expect(activationPatch?.patch).toMatchObject({
       currentWindow: createdSession.tmuxWindow,
       displayName: createdSession.name,
-      isSleeping: false,
       lastResumeError: null,
     })
+    expect(typeof activationPatch?.patch.lastResumeAttemptAt).toBe('string')
+    expect(
+      Number.isNaN(Date.parse(String(activationPatch?.patch.lastResumeAttemptAt)))
+    ).toBe(false)
 
     const resumeMessage = sent.find(
-      (message) => message.type === 'session-resume-result' && message.ok
+      (message) => message.type === 'session-wake-result' && message.ok
     )
     expect(resumeMessage).toEqual({
-      type: 'session-resume-result',
+      type: 'session-wake-result',
       sessionId: 'resume-ok',
       ok: true,
       session: createdSession,
@@ -2718,7 +2788,6 @@ describe('server message handlers', () => {
       session: expect.objectContaining({
         sessionId: 'resume-ok',
         displayName: createdSession.name,
-        isSleeping: false,
       }),
       window: createdSession.tmuxWindow,
     })
@@ -2731,7 +2800,181 @@ describe('server message handlers', () => {
     expect(registryInstance.sessions[0]?.id).toBe(createdSession.id)
   })
 
-  test('resumes session with quoted launch_command by stripping tmux quotes', async () => {
+  test('accepts legacy session-resume messages as wake requests', async () => {
+    const { serveOptions } = await loadIndex()
+    const { ws, sent } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) {
+      throw new Error('WebSocket handlers not configured')
+    }
+
+    const record = makeRecord({
+      sessionId: 'legacy-resume',
+      displayName: 'legacy-resume',
+      currentWindow: null,
+      isPinned: true,
+    })
+    seedRecord(record)
+
+    const createdSession: Session = {
+      ...baseSession,
+      id: 'legacy-created',
+      name: 'legacy-resume',
+      tmuxWindow: 'agentboard:70',
+    }
+    sessionManagerState.createWindow = () => createdSession
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({ type: 'session-resume', sessionId: 'legacy-resume' })
+    )
+
+    expect(sent[sent.length - 1]).toEqual({
+      type: 'session-wake-result',
+      sessionId: 'legacy-resume',
+      ok: true,
+      session: createdSession,
+    })
+  })
+
+  test('wake rematches a dormant session to an already-running window', async () => {
+    const { serveOptions, registryInstance } = await loadIndex()
+    const { ws, sent } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) {
+      throw new Error('WebSocket handlers not configured')
+    }
+    websocket.open?.(ws as never)
+
+    const rematchId = 'wake-rematch'
+    const logFilePath = '/tmp/wake-rematch.jsonl'
+    const liveSession: Session = {
+      ...baseSession,
+      id: 'live-rematched-session',
+      name: 'manual-rematch',
+      tmuxWindow: 'agentboard:77',
+      logFilePath,
+    }
+    seedRecord(
+      makeRecord({
+        sessionId: rematchId,
+        displayName: 'stored-rematch',
+        logFilePath,
+        currentWindow: null,
+        isPinned: true,
+        lastResumeError: 'previous wake failed',
+      })
+    )
+    sessionManagerState.listWindows = () => [liveSession]
+
+    let createCalled = false
+    sessionManagerState.createWindow = () => {
+      createCalled = true
+      return liveSession
+    }
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({ type: 'session-wake', sessionId: rematchId })
+    )
+
+    expect(createCalled).toBe(false)
+    expect(dbState.records.get(rematchId)).toMatchObject({
+      currentWindow: liveSession.tmuxWindow,
+      displayName: liveSession.name,
+      lastResumeError: null,
+    })
+    expect(sent[sent.length - 1]).toMatchObject({
+      type: 'session-activated',
+      window: liveSession.tmuxWindow,
+      session: expect.objectContaining({
+        sessionId: rematchId,
+        displayName: liveSession.name,
+      }),
+    })
+    const wakeResult = sent.find(
+      (message) =>
+        message.type === 'session-wake-result' &&
+        message.sessionId === rematchId &&
+        message.ok
+    )
+    expect(wakeResult).toMatchObject({
+      type: 'session-wake-result',
+      sessionId: rematchId,
+      ok: true,
+      session: expect.objectContaining({
+        id: liveSession.id,
+        agentSessionId: rematchId,
+        logFilePath,
+      }),
+    })
+    expect(registryInstance.agentSessions.sleeping).toEqual([])
+    expect(registryInstance.agentSessions.active).toMatchObject([
+      expect.objectContaining({ sessionId: rematchId }),
+    ])
+  })
+
+  test('wake mutex suppresses duplicate create while a wake is in flight', async () => {
+    const { serveOptions } = await loadIndex()
+    const { ws, sent } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) {
+      throw new Error('WebSocket handlers not configured')
+    }
+
+    const sessionId = 'wake-lock'
+    seedRecord(
+      makeRecord({
+        sessionId,
+        displayName: 'wake-lock',
+        currentWindow: null,
+        isPinned: true,
+      })
+    )
+    const createdSession: Session = {
+      ...baseSession,
+      id: 'wake-lock-created',
+      name: 'wake-lock',
+      tmuxWindow: 'agentboard:80',
+    }
+    let createCalls = 0
+    sessionManagerState.createWindow = () => {
+      createCalls += 1
+      if (createCalls === 1) {
+        websocket.message?.(
+          ws as never,
+          JSON.stringify({ type: 'session-wake', sessionId })
+        )
+      }
+      return createdSession
+    }
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({ type: 'session-wake', sessionId })
+    )
+
+    expect(createCalls).toBe(1)
+    const wakeResults = sent.filter(
+      (message) =>
+        message.type === 'session-wake-result' &&
+        message.sessionId === sessionId
+    )
+    expect(wakeResults).toHaveLength(2)
+    expect(wakeResults[0]).toEqual({
+      type: 'session-wake-result',
+      sessionId,
+      ok: true,
+    })
+    expect(wakeResults[1]).toEqual({
+      type: 'session-wake-result',
+      sessionId,
+      ok: true,
+      session: createdSession,
+    })
+  })
+
+  test('wakes session with quoted launch_command by stripping tmux quotes', async () => {
     const { serveOptions } = await loadIndex()
     const { ws } = createWs()
     const websocket = serveOptions.websocket
@@ -2764,7 +3007,7 @@ describe('server message handlers', () => {
 
     websocket.message?.(
       ws as never,
-      JSON.stringify({ type: 'session-resume', sessionId: 'resume-quoted' })
+      JSON.stringify({ type: 'session-wake', sessionId: 'resume-quoted' })
     )
 
     expect(createArgs).not.toBeNull()
@@ -2775,7 +3018,7 @@ describe('server message handlers', () => {
     })
   })
 
-  test('resumes codex session with quoted launch_command preserving flags', async () => {
+  test('wakes codex session with quoted launch_command preserving flags', async () => {
     const { serveOptions } = await loadIndex()
     const { ws } = createWs()
     const websocket = serveOptions.websocket
@@ -2808,7 +3051,7 @@ describe('server message handlers', () => {
 
     websocket.message?.(
       ws as never,
-      JSON.stringify({ type: 'session-resume', sessionId: 'resume-codex' })
+      JSON.stringify({ type: 'session-wake', sessionId: 'resume-codex' })
     )
 
     expect(createArgs).not.toBeNull()
@@ -2816,7 +3059,7 @@ describe('server message handlers', () => {
     expect(createArgs!.command).toBe('codex --yolo --search resume resume-codex')
   })
 
-  test('resumes codex session stripping old resume subcommand from stored launch_command', async () => {
+  test('wakes codex session stripping old resume subcommand from stored launch_command', async () => {
     const { serveOptions } = await loadIndex()
     const { ws } = createWs()
     const websocket = serveOptions.websocket
@@ -2849,7 +3092,7 @@ describe('server message handlers', () => {
 
     websocket.message?.(
       ws as never,
-      JSON.stringify({ type: 'session-resume', sessionId: 'resume-codex-old' })
+      JSON.stringify({ type: 'session-wake', sessionId: 'resume-codex-old' })
     )
 
     expect(createArgs).not.toBeNull()
@@ -2870,8 +3113,8 @@ describe('server message handlers', () => {
       makeRecord({
         sessionId: liveAgentSessionId,
         currentWindow: liveSession.tmuxWindow,
-        // isSleeping=false — session is genuinely live. Still, a stale client
-        // message shouldn't surface ALREADY_ACTIVE; we ack idempotently.
+        // Session is genuinely live. Still, a stale client message shouldn't
+        // surface ALREADY_ACTIVE; we ack idempotently.
       })
     )
 
@@ -2889,19 +3132,19 @@ describe('server message handlers', () => {
 
     websocket.message?.(
       ws as never,
-      JSON.stringify({ type: 'session-resume', sessionId: liveAgentSessionId })
+      JSON.stringify({ type: 'session-wake', sessionId: liveAgentSessionId })
     )
 
     expect(createCalled).toBe(false)
     expect(sent[sent.length - 1]).toMatchObject({
-      type: 'session-resume-result',
+      type: 'session-wake-result',
       sessionId: liveAgentSessionId,
       ok: true,
       session: expect.objectContaining({ id: liveSession.id }),
     })
   })
 
-  test('wake failure persists lastResumeError without clearing isSleeping', async () => {
+  test('wake failure persists lastResumeError without removing star', async () => {
     const { serveOptions } = await loadIndex()
     const sleepingId = 'wake-fails'
     seedRecord(
@@ -2911,7 +3154,7 @@ describe('server message handlers', () => {
         projectPath: '/tmp/wakes-bad',
         agentType: 'claude',
         currentWindow: null,
-        isSleeping: true,
+        isPinned: true,
       })
     )
 
@@ -2928,30 +3171,30 @@ describe('server message handlers', () => {
 
     websocket.message?.(
       ws as never,
-      JSON.stringify({ type: 'session-resume', sessionId: sleepingId })
+      JSON.stringify({ type: 'session-wake', sessionId: sleepingId })
     )
 
     expect(sent[sent.length - 1]).toEqual({
-      type: 'session-resume-result',
+      type: 'session-wake-result',
       sessionId: sleepingId,
       ok: false,
-      error: { code: 'RESUME_FAILED', message: 'resume artifact missing' },
+      error: { code: 'WAKE_FAILED', message: 'resume artifact missing' },
     })
 
     const errorPatch = dbState.updateCalls.find(
       (call) => call.sessionId === sleepingId && 'lastResumeError' in call.patch
     )
     expect(errorPatch?.patch.lastResumeError).toBe('resume artifact missing')
+    expect(typeof errorPatch?.patch.lastResumeAttemptAt).toBe('string')
 
-    // isSleeping must stay true so the card remains in the Sleeping rail —
-    // no update with isSleeping:false should have been recorded.
-    const clearedSleep = dbState.updateCalls.find(
+    // Star must stay true so the card remains in the Snoozed rail.
+    const removedStar = dbState.updateCalls.find(
       (call) =>
         call.sessionId === sleepingId &&
-        'isSleeping' in call.patch &&
-        call.patch.isSleeping === false
+        'isPinned' in call.patch &&
+        call.patch.isPinned === false
     )
-    expect(clearedSleep).toBeUndefined()
+    expect(removedStar).toBeUndefined()
   })
 
   test('websocket close disposes all terminals', async () => {
@@ -3569,6 +3812,43 @@ describe('server startup side effects', () => {
     expect(response.status).toBe(200)
     const payload = (await response.json()) as { ok: boolean }
     expect(payload.ok).toBe(true)
+  })
+
+  test('startup auto-wake skips recently failed starred sessions', async () => {
+    const sessionId = 'startup-cooldown'
+    seedRecord(
+      makeRecord({
+        sessionId,
+        displayName: 'startup-cooldown',
+        currentWindow: null,
+        isPinned: true,
+        lastResumeError: 'resume artifact missing',
+        lastResumeAttemptAt: new Date().toISOString(),
+      })
+    )
+
+    let createCalls = 0
+    sessionManagerState.createWindow = () => {
+      createCalls += 1
+      return {
+        ...baseSession,
+        id: 'startup-cooldown-created',
+        name: 'startup-cooldown',
+        tmuxWindow: 'agentboard:90',
+      }
+    }
+
+    const { registryInstance } = await loadIndex()
+
+    expect(createCalls).toBe(0)
+    expect(dbState.updateCalls).toEqual([])
+    expect(registryInstance.agentSessions.sleeping).toMatchObject([
+      expect.objectContaining({
+        sessionId,
+        isPinned: true,
+        lastResumeError: 'resume artifact missing',
+      }),
+    ])
   })
 
   test('does not run sync window verification before startup is ready', async () => {

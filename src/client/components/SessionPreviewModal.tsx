@@ -98,7 +98,7 @@ export default function SessionPreviewModal({
             className="btn btn-primary"
             disabled={previewState.loading || !!previewState.error}
           >
-            Resume
+            Wake
           </button>
         </div>
       </div>

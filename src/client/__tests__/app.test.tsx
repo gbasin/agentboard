@@ -365,7 +365,7 @@ describe('App', () => {
         ...baseAgentSession,
         sessionId: 'sleeping-1',
         isActive: false,
-        isSleeping: true,
+        isPinned: true,
         displayName: 'sleeping-one',
       },
     ]
@@ -458,7 +458,7 @@ describe('App', () => {
       sessionId: 'agent-live',
       displayName: 'sleepy',
       isActive: false,
-      isSleeping: true,
+      isPinned: true,
     }
 
     act(() => {
@@ -488,7 +488,7 @@ describe('App', () => {
 
     act(() => {
       subscribeListener?.({
-        type: 'session-resume-result',
+        type: 'session-wake-result',
         sessionId: sleepingSession.sessionId,
         ok: true,
         session: resumedSession,
@@ -515,7 +515,7 @@ describe('App', () => {
       displayName: 'sleep now',
       logFilePath: '/tmp/sleeping-immediate.jsonl',
       isActive: false,
-      isSleeping: true,
+      isPinned: true,
     }
 
     useSessionStore.setState({
@@ -604,7 +604,7 @@ describe('App', () => {
           displayName: 'sleep me',
           logFilePath: '/tmp/sleeping-pending.jsonl',
           isActive: false,
-          isSleeping: true,
+          isPinned: true,
         },
       })
     })
@@ -634,7 +634,7 @@ describe('App', () => {
             displayName: 'sleep me',
             logFilePath: '/tmp/sleeping-pending.jsonl',
             isActive: false,
-            isSleeping: true,
+            isPinned: true,
           },
         ],
         inactive: [],
@@ -668,7 +668,7 @@ describe('App', () => {
       displayName: 'sleepy',
       logFilePath: '/tmp/sleeping-remote.jsonl',
       isActive: false,
-      isSleeping: true,
+      isPinned: true,
     }
 
     useSessionStore.setState({
@@ -794,7 +794,7 @@ describe('App', () => {
             ...baseAgentSession,
             sessionId: sleepingSessionId,
             isActive: false,
-            isSleeping: true,
+            isPinned: true,
           },
         ],
         inactive: [],
@@ -811,7 +811,7 @@ describe('App', () => {
       ...baseAgentSession,
       sessionId: 'sleeping-reconnect',
       isActive: false,
-      isSleeping: true,
+      isPinned: true,
     }
 
     useSessionStore.setState({
@@ -880,7 +880,7 @@ describe('App', () => {
       sessionId: 'sleeping-hidden',
       projectPath: '/tmp/alpha',
       isActive: false,
-      isSleeping: true,
+      isPinned: true,
     }
 
     useSettingsStore.setState({
@@ -917,7 +917,7 @@ describe('App', () => {
       sessionId: 'sleeping-to-wake',
       displayName: 'wake-me',
       isActive: false,
-      isSleeping: true,
+      isPinned: true,
     }
     const wokenSession: Session = {
       ...baseSession,
@@ -957,7 +957,6 @@ describe('App', () => {
           {
             ...sleepingSession,
             isActive: true,
-            isSleeping: false,
           },
         ],
         sleeping: [],

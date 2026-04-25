@@ -409,12 +409,12 @@ export default function App() {
           })
         }
       }
-      if (message.type === 'session-resume-result') {
+      if (message.type === 'session-wake-result') {
         if (message.ok && message.session) {
           setPendingSleepingSession((current) =>
             current?.sessionId === message.sessionId ? null : current
           )
-          // Add resumed session to list immediately
+          // Add woken session to list immediately
           const currentSessions = useSessionStore.getState().sessions
           if (!currentSessions.some((s) => s.id === message.session!.id)) {
             setSessions([message.session, ...currentSessions])
@@ -432,7 +432,7 @@ export default function App() {
           }
           setSelectedSleepingSessionId(message.sessionId)
         } else {
-          setServerError(message.error ?? 'Failed to sleep session')
+          setServerError(message.error ?? 'Failed to snooze session')
           window.setTimeout(() => setServerError(null), 6000)
         }
       }
@@ -479,7 +479,7 @@ export default function App() {
       if (message.type === 'session-resurrection-failed') {
         toastManager.add({
           title: 'Session resurrection failed',
-          description: `"${message.displayName}" could not be resumed: ${message.error}`,
+          description: `"${message.displayName}" could not be woken: ${message.error}`,
           type: 'error',
           timeout: 8000,
         })
@@ -863,7 +863,7 @@ export default function App() {
   }
 
   const handleResumeSession = (sessionId: string) => {
-    sendMessage({ type: 'session-resume', sessionId })
+    sendMessage({ type: 'session-wake', sessionId })
   }
 
   const handleSleepSession = useCallback((sessionId: string) => {

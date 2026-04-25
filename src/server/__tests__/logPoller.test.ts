@@ -292,7 +292,7 @@ describe('LogPoller', () => {
     db.close()
   })
 
-  test('does not orphan-rematch sleeping sessions', async () => {
+  test('does not orphan-rematch snoozed sessions', async () => {
     const db = initDatabase({ path: ':memory:' })
     const registry = new SessionRegistry()
     registry.replaceSessions([baseSession])
@@ -330,8 +330,7 @@ describe('LogPoller', () => {
       lastActivityAt: new Date().toISOString(),
       lastUserMessage: null,
       currentWindow: null,
-      isSleeping: true,
-      isPinned: false,
+      isPinned: true,
       lastResumeError: null,
       lastKnownLogSize: 0,
       isCodexExec: false,
@@ -349,7 +348,7 @@ describe('LogPoller', () => {
 
     const record = db.getSessionById('sleeping-session')
     expect(record?.currentWindow).toBeNull()
-    expect(record?.isSleeping).toBeTrue()
+    expect(record?.isPinned).toBeTrue()
     expect(activated).toEqual([])
 
     db.close()

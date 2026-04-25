@@ -29,7 +29,6 @@ function makeAgentSession(overrides: Partial<AgentSession> = {}): AgentSession {
     createdAt: '2024-01-01T00:00:00.000Z',
     lastActivityAt: '2024-01-01T00:00:00.000Z',
     isActive: false,
-    isSleeping: false,
     isPinned: false,
     ...overrides,
   }
@@ -212,7 +211,7 @@ describe('useSessionStore', () => {
 
     useSessionStore.getState().setAgentSessions(
       [makeAgentSession({ sessionId: 'active-1', isActive: true })],
-      [makeAgentSession({ sessionId: 'sleeping-1', isSleeping: true })],
+      [makeAgentSession({ sessionId: 'sleeping-1', isPinned: true })],
       [makeAgentSession({ sessionId: 'inactive-1' })]
     )
 

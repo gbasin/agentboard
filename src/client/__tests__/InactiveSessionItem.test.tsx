@@ -88,7 +88,7 @@ describe('InactiveSessionItem', () => {
 
     const resumeButton = renderer.root
       .findAllByType('button')
-      .find((button) => button.props.title === 'Resume directly')
+      .find((button) => button.props.title === 'Wake directly')
 
     if (!resumeButton) {
       throw new Error('Expected resume button')

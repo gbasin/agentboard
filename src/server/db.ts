@@ -16,16 +16,16 @@ export interface AgentSessionRecord {
   lastActivityAt: string
   lastUserMessage: string | null
   currentWindow: string | null
-  isSleeping: boolean
   isPinned: boolean
   lastResumeError: string | null
+  lastResumeAttemptAt: string | null
   lastKnownLogSize: number | null
   isCodexExec: boolean
   launchCommand: string | null
 }
 
-export type NewAgentSessionRecord = Omit<AgentSessionRecord, 'id' | 'isSleeping'> & {
-  isSleeping?: boolean
+export type NewAgentSessionRecord = Omit<AgentSessionRecord, 'id' | 'lastResumeAttemptAt'> & {
+  lastResumeAttemptAt?: string | null
 }
 
 export interface SessionDatabase {
@@ -73,9 +73,9 @@ const AGENT_SESSIONS_COLUMNS_SQL = `
   last_activity_at TEXT NOT NULL,
   last_user_message TEXT,
   current_window TEXT,
-  is_sleeping INTEGER NOT NULL DEFAULT 0,
   is_pinned INTEGER NOT NULL DEFAULT 0,
   last_resume_error TEXT,
+  last_resume_attempt_at TEXT,
   -- NULL means "unknown" (e.g., after upgrade). First poll will initialize to actual size.
   -- This triggers a one-time match check for upgraded sessions.
   last_known_log_size INTEGER,
@@ -121,8 +121,9 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
   migrateLastUserMessageColumn(db)
   migrateDeduplicateDisplayNames(db)
   migrateIsPinnedColumn(db)
-  migrateIsSleepingColumn(db)
+  migrateIsSleepingToPinnedColumn(db)
   migrateLastResumeErrorColumn(db)
+  migrateLastResumeAttemptAtColumn(db)
   migrateLastKnownLogSizeColumn(db)
   migrateIsCodexExecColumn(db)
   migrateSlugColumn(db)
@@ -131,8 +132,8 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
 
   const insertStmt = db.prepare(
     `INSERT INTO agent_sessions
-      (session_id, log_file_path, project_path, slug, agent_type, display_name, created_at, last_activity_at, last_user_message, current_window, is_sleeping, is_pinned, last_resume_error, last_known_log_size, is_codex_exec, launch_command)
-     VALUES ($sessionId, $logFilePath, $projectPath, $slug, $agentType, $displayName, $createdAt, $lastActivityAt, $lastUserMessage, $currentWindow, $isSleeping, $isPinned, $lastResumeError, $lastKnownLogSize, $isCodexExec, $launchCommand)`
+      (session_id, log_file_path, project_path, slug, agent_type, display_name, created_at, last_activity_at, last_user_message, current_window, is_pinned, last_resume_error, last_resume_attempt_at, last_known_log_size, is_codex_exec, launch_command)
+     VALUES ($sessionId, $logFilePath, $projectPath, $slug, $agentType, $displayName, $createdAt, $lastActivityAt, $lastUserMessage, $currentWindow, $isPinned, $lastResumeError, $lastResumeAttemptAt, $lastKnownLogSize, $isCodexExec, $launchCommand)`
   )
 
   const selectBySessionId = db.prepare(
@@ -148,13 +149,13 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
     'SELECT * FROM agent_sessions WHERE current_window IS NOT NULL ORDER BY session_id'
   )
   const selectSleeping = db.prepare(
-    'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_sleeping = 1 ORDER BY last_activity_at DESC, session_id'
+    'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_pinned = 1 ORDER BY last_activity_at DESC, session_id'
   )
   const selectInactive = db.prepare(
-    'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_sleeping = 0 ORDER BY last_activity_at DESC, session_id'
+    'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_pinned = 0 ORDER BY last_activity_at DESC, session_id'
   )
   const selectInactiveRecent = db.prepare(
-    'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_sleeping = 0 AND last_activity_at > $cutoff ORDER BY last_activity_at DESC, session_id'
+    'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_pinned = 0 AND last_activity_at > $cutoff ORDER BY last_activity_at DESC, session_id'
   )
   const selectByDisplayName = db.prepare(
     'SELECT 1 FROM agent_sessions WHERE display_name = $displayName LIMIT 1'
@@ -195,9 +196,9 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
         $lastActivityAt: session.lastActivityAt,
         $lastUserMessage: session.lastUserMessage,
         $currentWindow: session.currentWindow,
-        $isSleeping: session.isSleeping ? 1 : 0,
         $isPinned: session.isPinned ? 1 : 0,
         $lastResumeError: session.lastResumeError,
+        $lastResumeAttemptAt: session.lastResumeAttemptAt ?? null,
         $lastKnownLogSize: session.lastKnownLogSize,
         $isCodexExec: session.isCodexExec ? 1 : 0,
         $launchCommand: session.launchCommand ?? null,
@@ -230,9 +231,9 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
         lastActivityAt: 'last_activity_at',
         lastUserMessage: 'last_user_message',
         currentWindow: 'current_window',
-        isSleeping: 'is_sleeping',
         isPinned: 'is_pinned',
         lastResumeError: 'last_resume_error',
+        lastResumeAttemptAt: 'last_resume_attempt_at',
         lastKnownLogSize: 'last_known_log_size',
         isCodexExec: 'is_codex_exec',
         launchCommand: 'launch_command',
@@ -247,7 +248,7 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
         if (!field) continue
         fields.push(field)
         // Normalize boolean fields to 0/1 for SQLite
-        if (key === 'isPinned' || key === 'isSleeping' || key === 'isCodexExec') {
+        if (key === 'isPinned' || key === 'isCodexExec') {
           params[`$${field}`] = value ? 1 : 0
         } else {
           params[`$${field}`] = value as string | number | null
@@ -300,10 +301,9 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
       return rows.map(mapRow)
     },
     orphanSession: (sessionId) => {
-      updateStmt(['current_window', 'is_sleeping']).run({
+      updateStmt(['current_window']).run({
         $sessionId: sessionId,
         $current_window: null,
-        $is_sleeping: 0,
       })
       const row = selectBySessionId.get({ $sessionId: sessionId }) as
         | Record<string, unknown>
@@ -332,7 +332,7 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
     getPinnedOrphaned: () => {
       const rows = db
         .prepare(
-          'SELECT * FROM agent_sessions WHERE is_pinned = 1 AND current_window IS NULL AND is_sleeping = 0 ORDER BY last_activity_at DESC'
+          'SELECT * FROM agent_sessions WHERE is_pinned = 1 AND current_window IS NULL ORDER BY last_activity_at DESC'
         )
         .all() as Record<string, unknown>[]
       return rows.map(mapRow)
@@ -405,12 +405,15 @@ function mapRow(row: Record<string, unknown>): AgentSessionRecord {
       row.current_window === null || row.current_window === undefined
         ? null
         : String(row.current_window),
-    isSleeping: Number(row.is_sleeping) === 1,
     isPinned: Number(row.is_pinned) === 1,
     lastResumeError:
       row.last_resume_error === null || row.last_resume_error === undefined
         ? null
         : String(row.last_resume_error),
+    lastResumeAttemptAt:
+      row.last_resume_attempt_at === null || row.last_resume_attempt_at === undefined
+        ? null
+        : String(row.last_resume_attempt_at),
     // Note: null lastKnownLogSize is treated as "unknown", triggering a match check
     // on first poll after upgrade. This is intentional (one-time cost).
     lastKnownLogSize:
@@ -494,12 +497,22 @@ function migrateIsPinnedColumn(db: SQLiteDatabase) {
   db.exec('ALTER TABLE agent_sessions ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0')
 }
 
-function migrateIsSleepingColumn(db: SQLiteDatabase) {
+function migrateIsSleepingToPinnedColumn(db: SQLiteDatabase) {
   const columns = getColumnNames(db, 'agent_sessions')
-  if (columns.length === 0 || columns.includes('is_sleeping')) {
+  if (columns.length === 0 || !columns.includes('is_sleeping')) {
     return
   }
-  db.exec('ALTER TABLE agent_sessions ADD COLUMN is_sleeping INTEGER NOT NULL DEFAULT 0')
+
+  db.exec('BEGIN')
+  try {
+    // Preserve every legacy sleeping row in the derived Snoozed bucket.
+    db.exec('UPDATE agent_sessions SET is_pinned = 1 WHERE is_sleeping = 1')
+    db.exec('ALTER TABLE agent_sessions DROP COLUMN is_sleeping')
+    db.exec('COMMIT')
+  } catch (error) {
+    db.exec('ROLLBACK')
+    throw error
+  }
 }
 
 function migrateLastResumeErrorColumn(db: SQLiteDatabase) {
@@ -508,6 +521,14 @@ function migrateLastResumeErrorColumn(db: SQLiteDatabase) {
     return
   }
   db.exec('ALTER TABLE agent_sessions ADD COLUMN last_resume_error TEXT')
+}
+
+function migrateLastResumeAttemptAtColumn(db: SQLiteDatabase) {
+  const columns = getColumnNames(db, 'agent_sessions')
+  if (columns.length === 0 || columns.includes('last_resume_attempt_at')) {
+    return
+  }
+  db.exec('ALTER TABLE agent_sessions ADD COLUMN last_resume_attempt_at TEXT')
 }
 
 function migrateLastKnownLogSizeColumn(db: SQLiteDatabase) {
@@ -637,9 +658,9 @@ function migratePiAgentType(db: SQLiteDatabase) {
         last_activity_at,
         last_user_message,
         current_window,
-        is_sleeping,
         is_pinned,
         last_resume_error,
+        last_resume_attempt_at,
         last_known_log_size,
         is_codex_exec,
         launch_command
@@ -656,9 +677,9 @@ function migratePiAgentType(db: SQLiteDatabase) {
         last_activity_at,
         last_user_message,
         current_window,
-        is_sleeping,
         is_pinned,
         last_resume_error,
+        last_resume_attempt_at,
         last_known_log_size,
         is_codex_exec,
         ${launchCommandSelect}

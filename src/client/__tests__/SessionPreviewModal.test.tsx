@@ -213,7 +213,7 @@ describe('SessionPreviewModal', () => {
 
     const resumeButton = renderer.root
       .findAllByType('button')
-      .find((button) => button.props.children === 'Resume')
+      .find((button) => button.props.children === 'Wake')
 
     if (!resumeButton) {
       throw new Error('Expected resume button')
@@ -267,7 +267,7 @@ describe('SessionPreviewModal', () => {
 
     const resumeButton = renderer.root
       .findAllByType('button')
-      .find((button) => button.props.children === 'Resume')
+      .find((button) => button.props.children === 'Wake')
 
     if (!resumeButton) {
       throw new Error('Expected resume button')
