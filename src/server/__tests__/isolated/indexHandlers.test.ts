@@ -2800,43 +2800,6 @@ describe('server message handlers', () => {
     expect(registryInstance.sessions[0]?.id).toBe(createdSession.id)
   })
 
-  test('accepts legacy session-resume messages as wake requests', async () => {
-    const { serveOptions } = await loadIndex()
-    const { ws, sent } = createWs()
-    const websocket = serveOptions.websocket
-    if (!websocket) {
-      throw new Error('WebSocket handlers not configured')
-    }
-
-    const record = makeRecord({
-      sessionId: 'legacy-resume',
-      displayName: 'legacy-resume',
-      currentWindow: null,
-      isPinned: true,
-    })
-    seedRecord(record)
-
-    const createdSession: Session = {
-      ...baseSession,
-      id: 'legacy-created',
-      name: 'legacy-resume',
-      tmuxWindow: 'agentboard:70',
-    }
-    sessionManagerState.createWindow = () => createdSession
-
-    websocket.message?.(
-      ws as never,
-      JSON.stringify({ type: 'session-resume', sessionId: 'legacy-resume' })
-    )
-
-    expect(sent[sent.length - 1]).toEqual({
-      type: 'session-wake-result',
-      sessionId: 'legacy-resume',
-      ok: true,
-      session: createdSession,
-    })
-  })
-
   test('wake rematches a dormant session to an already-running window', async () => {
     const { serveOptions, registryInstance } = await loadIndex()
     const { ws, sent } = createWs()
@@ -2964,7 +2927,11 @@ describe('server message handlers', () => {
     expect(wakeResults[0]).toEqual({
       type: 'session-wake-result',
       sessionId,
-      ok: true,
+      ok: false,
+      error: {
+        code: 'WAKE_IN_PROGRESS',
+        message: 'Wake already in progress for this session',
+      },
     })
     expect(wakeResults[1]).toEqual({
       type: 'session-wake-result',

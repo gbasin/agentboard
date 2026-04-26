@@ -66,7 +66,7 @@ rm -rf ~/.agentboard/bin
 
 ## Optional: tmux-crash watchdog
 
-Agentboard resurrects pinned sessions at startup from `~/.agentboard/agentboard.db`. But when the tmux server crashes mid-flight, agentboard's process keeps running with stale handles — attached PTYs are dead and pinned windows don't come back (the backend poller deliberately won't recreate the session to avoid orphan shells). Until agentboard is restarted, the UI stays broken.
+Agentboard resurrects starred sessions at startup from `~/.agentboard/agentboard.db`. But when the tmux server crashes mid-flight, agentboard's process keeps running with stale handles — attached PTYs are dead and starred windows don't come back (the backend poller deliberately won't recreate the session to avoid orphan shells). Until agentboard is restarted, the UI stays broken.
 
 A small 30-second polling agent that kickstarts agentboard whenever the base session disappears solves this. Opt-in because it's only needed if you've actually seen tmux crash on your machine.
 
@@ -104,7 +104,7 @@ EOF
 launchctl load -w ~/Library/LaunchAgents/com.agentboard.tmux-watchdog.plist
 ```
 
-The watchdog checks `tmux has-session -t agentboard` every 30s. If the session is gone (server crashed, or session killed), it runs `launchctl kickstart -k gui/$(id -u)/com.agentboard` which triggers agentboard's startup path — `ensureSession()` recreates the base session and `resurrectPinnedSessions()` rebuilds pinned windows from SQLite.
+The watchdog checks `tmux has-session -t agentboard` every 30s. If the session is gone (server crashed, or session killed), it runs `launchctl kickstart -k gui/$(id -u)/com.agentboard` which triggers agentboard's startup path — `ensureSession()` recreates the base session and `resurrectStarredSessions()` rebuilds starred windows from SQLite.
 
 Note: if you `tmux kill-session -t agentboard` while agentboard is loaded, the watchdog will restore it within 30s. To stop cleanly, `launchctl unload ~/Library/LaunchAgents/com.agentboard.plist` first.
 

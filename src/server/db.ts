@@ -116,7 +116,6 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
   const db = new SQLiteDatabase(dbPath)
   migrateDatabase(db)
   db.exec(CREATE_TABLE_SQL)
-  db.exec(CREATE_INDEXES_SQL)
   db.exec(CREATE_APP_SETTINGS_TABLE_SQL)
   migrateLastUserMessageColumn(db)
   migrateDeduplicateDisplayNames(db)
@@ -129,6 +128,7 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
   migrateSlugColumn(db)
   migratePiAgentType(db)
   migrateLaunchCommandColumn(db)
+  db.exec(CREATE_INDEXES_SQL)
 
   const insertStmt = db.prepare(
     `INSERT INTO agent_sessions

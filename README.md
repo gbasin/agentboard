@@ -17,7 +17,8 @@ Run your desktop/server, then connect from your phone or laptop over Tailscale/L
   - Quick keys toolbar (ctrl, esc, etc.)
 - Out-of-the-box log tracking and matching for Claude, Codex, and Pi — auto-matches sessions to active tmux windows, with one-click restore for inactive sessions.
 - Shows the last user prompt for each session, so you can remember what each agent is working on
-- Pin agent TUI sessions to auto-resume them when the server restarts (useful if your machine reboots or tmux dies)
+- Star agent TUI sessions to auto-wake them when the server restarts (useful if your machine reboots or tmux dies)
+- Snooze sessions to close their tmux window while keeping them visible — wake on demand or auto-wake at next startup
 
 ## How It Works
 
@@ -41,9 +42,9 @@ Run your desktop/server, then connect from your phone or laptop over Tailscale/L
 - **Live terminal** — streams I/O through the server so you can interact with any session from any device
 
 ### Desktop
-| Terminal | Sessions | Pinning |
+| Terminal | Sessions | Starring |
 | :---: | :---: | :---: |
-| <img src="assets/desktop.png" alt="Terminal" height="400"/> | <img src="assets/sessions.png" alt="Sessions" height="400"/> | <img src="assets/pins.png" alt="Pinning" height="400"/> |
+| <img src="assets/desktop.png" alt="Terminal" height="400"/> | <img src="assets/sessions.png" alt="Sessions" height="400"/> | <img src="assets/pins.png" alt="Starring" height="400"/> |
 
 ### Mobile
 | Terminal | Controls |

@@ -1638,7 +1638,6 @@ function handleMessage(
       fireAndForget(handleCheckCopyMode(message.sessionId, ws), 'handleCheckCopyMode')
       return
     case 'session-wake':
-    case 'session-resume':
       handleSessionWake(message, ws)
       return
     case 'session-sleep':
@@ -2516,7 +2515,7 @@ function resurrectStarredSessions() {
 }
 
 function handleSessionWake(
-  message: Extract<ClientMessage, { type: 'session-wake' | 'session-resume' }>,
+  message: Extract<ClientMessage, { type: 'session-wake' }>,
   ws: ServerWebSocket<WSData>
 ) {
   const sessionId = message.sessionId
@@ -2571,7 +2570,11 @@ function handleSessionWake(
       agentType: record.agentType,
       displayName: record.displayName,
     })
-    send(ws, { type: 'session-wake-result', sessionId, ok: true })
+    const error: WakeError = {
+      code: 'WAKE_IN_PROGRESS',
+      message: 'Wake already in progress for this session',
+    }
+    send(ws, { type: 'session-wake-result', sessionId, ok: false, error })
     return
   }
 
