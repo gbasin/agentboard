@@ -368,11 +368,15 @@ export class LogPoller {
             })
             continue
           }
-          this.db.updateSession(existing.sessionId, {
-            currentWindow: match.tmuxWindow,
-            displayName: window.name,
-            ...(window.command && !existing.launchCommand ? { launchCommand: window.command } : {}),
-          })
+          const claimed = this.db.claimCurrentWindow(
+            existing.sessionId,
+            match.tmuxWindow,
+            {
+              displayName: window.name,
+              ...(window.command && !existing.launchCommand ? { launchCommand: window.command } : {}),
+            }
+          )
+          if (!claimed) continue
           claimedWindows.add(match.tmuxWindow)
           matchedOrphanSessionIds.add(existing.sessionId)
           this.onSessionActivated?.(existing.sessionId, match.tmuxWindow)
@@ -415,11 +419,15 @@ export class LogPoller {
 
           const window = unclaimedByName.get(existing.displayName)
           if (window) {
-            this.db.updateSession(existing.sessionId, {
-              currentWindow: window.tmuxWindow,
-              displayName: window.name,
-              ...(window.command && !existing.launchCommand ? { launchCommand: window.command } : {}),
-            })
+            const claimed = this.db.claimCurrentWindow(
+              existing.sessionId,
+              window.tmuxWindow,
+              {
+                displayName: window.name,
+                ...(window.command && !existing.launchCommand ? { launchCommand: window.command } : {}),
+              }
+            )
+            if (!claimed) continue
             claimedWindows.add(window.tmuxWindow)
             unclaimedByName.delete(existing.displayName)
             this.onSessionActivated?.(existing.sessionId, window.tmuxWindow)
@@ -618,13 +626,15 @@ export class LogPoller {
               this.rematchAttemptCache.set(existing.sessionId, Date.now())
               const exactMatch = exactWindowMatches.get(entry.logPath) ?? null
               if (exactMatch) {
-                const claimed = this.db.getSessionByWindow(exactMatch.tmuxWindow)
-                if (!claimed) {
-                  this.db.updateSession(existing.sessionId, {
-                    currentWindow: exactMatch.tmuxWindow,
+                const claimed = this.db.claimCurrentWindow(
+                  existing.sessionId,
+                  exactMatch.tmuxWindow,
+                  {
                     displayName: exactMatch.name,
                     ...(exactMatch.command && !existing.launchCommand ? { launchCommand: exactMatch.command } : {}),
-                  })
+                  }
+                )
+                if (claimed) {
                   logger.info('session_rematched', {
                     sessionId: existing.sessionId,
                     window: exactMatch.tmuxWindow,
@@ -696,13 +706,15 @@ export class LogPoller {
               this.rematchAttemptCache.set(sessionId, Date.now())
               const exactMatch = exactWindowMatches.get(entry.logPath) ?? null
               if (exactMatch) {
-                const claimed = this.db.getSessionByWindow(exactMatch.tmuxWindow)
-                if (!claimed) {
-                  this.db.updateSession(sessionId, {
-                    currentWindow: exactMatch.tmuxWindow,
+                const claimed = this.db.claimCurrentWindow(
+                  sessionId,
+                  exactMatch.tmuxWindow,
+                  {
                     displayName: exactMatch.name,
                     ...(exactMatch.command && !existingById.launchCommand ? { launchCommand: exactMatch.command } : {}),
-                  })
+                  }
+                )
+                if (claimed) {
                   logger.info('session_rematched', {
                     sessionId,
                     window: exactMatch.tmuxWindow,

@@ -36,9 +36,11 @@ export interface SessionDatabase {
     patch: Partial<Omit<AgentSessionRecord, 'id' | 'sessionId'>>
   ) => AgentSessionRecord | null
   /**
-   * Conditional claim: set current_window (and optional extra fields) only if
-   * current_window is currently NULL. Returns the updated record on success,
-   * or null if some other writer already claimed the row (no-op).
+   * Atomic window claim with two guards: only updates if (a) this row is still
+   * dormant (current_window IS NULL) AND (b) no other row already owns the
+   * target tmuxWindow. Returns the updated record on success, or null when
+   * either guard fails (no-op). Use this from any rematch/wake path that
+   * persists current_window after observing a candidate window externally.
    */
   claimCurrentWindow: (
     sessionId: string,
@@ -188,7 +190,13 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
     db.prepare(
       `UPDATE agent_sessions SET ${fields
         .map((field) => `${field} = $${field}`)
-        .join(', ')} WHERE session_id = $sessionId AND current_window IS NULL`
+        .join(', ')} WHERE session_id = $sessionId
+         AND current_window IS NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM agent_sessions
+           WHERE current_window = $current_window
+             AND session_id != $sessionId
+         )`
     )
 
   // App settings prepared statements
@@ -287,6 +295,7 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
         displayName: 'display_name',
         lastResumeError: 'last_resume_error',
         lastResumeAttemptAt: 'last_resume_attempt_at',
+        launchCommand: 'launch_command',
       }
       const fields = ['current_window']
       const params: Record<string, string | number | null> = {

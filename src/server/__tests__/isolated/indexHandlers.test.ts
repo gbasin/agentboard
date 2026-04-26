@@ -366,6 +366,12 @@ mock.module('../../db', () => ({
       const record = dbState.records.get(sessionId)
       if (!record) return null
       if (record.currentWindow !== null) return null
+      // Reject if another row already owns this window.
+      for (const other of dbState.records.values()) {
+        if (other.sessionId !== sessionId && other.currentWindow === tmuxWindow) {
+          return null
+        }
+      }
       const updated = { ...record, ...extraPatch, currentWindow: tmuxWindow }
       dbState.records.set(sessionId, updated)
       dbState.updateCalls.push({
@@ -2995,7 +3001,9 @@ describe('server message handlers', () => {
       // session's current_window between the wake handler's initial read and
       // the post-createWindow claim attempt. The race appears AFTER
       // tryRematchDormantSession runs (registry was empty there), so the
-      // simulation only adds the racing session now.
+      // simulation only surfaces the racing session now. listWindows must
+      // include the raced window so the conflict-path refresh sees a
+      // consistent live tmux state.
       const record = dbState.records.get(sessionId)
       if (record) {
         dbState.records.set(sessionId, {
@@ -3004,6 +3012,7 @@ describe('server message handlers', () => {
         })
       }
       registryInstance.sessions = [racedSession]
+      sessionManagerState.listWindows = () => [racedSession]
       return newSession
     }
     const killCalls: string[] = []

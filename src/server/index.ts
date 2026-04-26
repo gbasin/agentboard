@@ -2298,25 +2298,25 @@ function tryRematchDormantSession(
         session.logFilePath === record.logFilePath)
   )
   if (alreadyHydrated) {
-    const updated = db.updateSession(record.sessionId, {
-      currentWindow: alreadyHydrated.tmuxWindow,
-      displayName: alreadyHydrated.name,
-      lastResumeError: null,
-    })
-    const updatedRecord = updated ?? {
-      ...record,
-      currentWindow: alreadyHydrated.tmuxWindow,
-      displayName: alreadyHydrated.name,
-      lastResumeError: null,
+    const updated = db.claimCurrentWindow(
+      record.sessionId,
+      alreadyHydrated.tmuxWindow,
+      {
+        displayName: alreadyHydrated.name,
+        lastResumeError: null,
+      }
+    )
+    if (!updated) {
+      return null
     }
-    const hydrated = hydrateWakeSession(alreadyHydrated, updatedRecord)
+    const hydrated = hydrateWakeSession(alreadyHydrated, updated)
     registry.replaceSessions(
       registry.getAll().map((session) =>
         session.id === hydrated.id ? hydrated : session
       )
     )
     updateDormantAgentSessions()
-    return { session: hydrated, record: updatedRecord }
+    return { session: hydrated, record: updated }
   }
 
   if (!record.logFilePath) {
@@ -2352,24 +2352,18 @@ function tryRematchDormantSession(
     if (!match) {
       return null
     }
-    if (db.getSessionByWindow(match.tmuxWindow)) {
-      return null
-    }
-
-    const patch: Partial<Omit<AgentSessionRecord, 'id' | 'sessionId'>> = {
-      currentWindow: match.tmuxWindow,
+    const claimExtra: Partial<Omit<AgentSessionRecord, 'id' | 'sessionId' | 'currentWindow'>> = {
       displayName: match.name,
       lastResumeError: null,
     }
     if (match.command && !record.launchCommand) {
-      patch.launchCommand = match.command
+      claimExtra.launchCommand = match.command
     }
-    const updated = db.updateSession(record.sessionId, patch)
-    const updatedRecord = updated ?? {
-      ...record,
-      ...patch,
+    const updated = db.claimCurrentWindow(record.sessionId, match.tmuxWindow, claimExtra)
+    if (!updated) {
+      return null
     }
-    const hydrated = hydrateWakeSession(match, updatedRecord)
+    const hydrated = hydrateWakeSession(match, updated)
     registry.replaceSessions(
       registry.getAll().map((session) =>
         session.id === hydrated.id ? hydrated : session
@@ -2381,7 +2375,7 @@ function tryRematchDormantSession(
       window: match.tmuxWindow,
       displayName: match.name,
     })
-    return { session: hydrated, record: updatedRecord }
+    return { session: hydrated, record: updated }
   } catch (error) {
     logger.warn('session_wake_rematch_failed', {
       sessionId: record.sessionId,
@@ -2648,6 +2642,10 @@ function handleSessionWake(
     })
     if (!updatedRecord) {
       try { sessionManager.killWindow(created.tmuxWindow) } catch { /* may already be gone */ }
+      // Sync refresh so the registry reflects the racing claim before we look
+      // up the live session — the rematcher updates DB before its own
+      // session-activated emission, so without this we may miss it.
+      refreshSessionsSync()
       const reread = db.getSessionById(sessionId)
       const liveSession = reread?.currentWindow
         ? registry.get(reread.currentWindow) ??
@@ -2659,7 +2657,18 @@ function handleSessionWake(
         agentType: latest.agentType,
         displayName: latest.displayName,
       })
-      send(ws, { type: 'session-wake-result', sessionId, ok: true, session: liveSession })
+      if (liveSession) {
+        send(ws, { type: 'session-wake-result', sessionId, ok: true, session: liveSession })
+      } else {
+        // Claim was lost but we can't surface the racing session yet — return
+        // an error so the client toasts and the user can retry instead of
+        // silently doing nothing.
+        const err: WakeError = {
+          code: 'WAKE_IN_PROGRESS',
+          message: 'Wake raced with another claim; retry shortly',
+        }
+        send(ws, { type: 'session-wake-result', sessionId, ok: false, error: err })
+      }
       return
     }
     // Add session to registry immediately so terminal can attach
