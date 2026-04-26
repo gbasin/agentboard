@@ -358,6 +358,22 @@ mock.module('../../db', () => ({
       })
       return updated
     },
+    claimCurrentWindow: (
+      sessionId: string,
+      tmuxWindow: string,
+      extraPatch?: Partial<Omit<AgentSessionRecord, 'id' | 'sessionId' | 'currentWindow'>>
+    ) => {
+      const record = dbState.records.get(sessionId)
+      if (!record) return null
+      if (record.currentWindow !== null) return null
+      const updated = { ...record, ...extraPatch, currentWindow: tmuxWindow }
+      dbState.records.set(sessionId, updated)
+      dbState.updateCalls.push({
+        sessionId,
+        patch: { currentWindow: tmuxWindow, ...(extraPatch as Partial<AgentSessionRecord>) },
+      })
+      return updated
+    },
     displayNameExists: (displayName: string, excludeSessionId?: string) =>
       Array.from(dbState.records.values()).some(
         (record) =>
@@ -2938,6 +2954,84 @@ describe('server message handlers', () => {
       sessionId,
       ok: true,
       session: createdSession,
+    })
+  })
+
+  test('wake kills new window and returns rematched session if logPoller claims current_window mid-flight', async () => {
+    const { serveOptions, registryInstance } = await loadIndex()
+    const { ws, sent } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) {
+      throw new Error('WebSocket handlers not configured')
+    }
+
+    const sessionId = 'wake-race'
+    seedRecord(
+      makeRecord({
+        sessionId,
+        displayName: 'wake-race',
+        currentWindow: null,
+        isPinned: false,
+      })
+    )
+
+    const newWindow = 'agentboard:99'
+    const racedWindow = 'agentboard:55'
+    const newSession: Session = {
+      ...baseSession,
+      id: 'wake-race-created',
+      name: 'wake-race',
+      tmuxWindow: newWindow,
+    }
+    const racedSession: Session = {
+      ...baseSession,
+      id: 'wake-race-rematched',
+      name: 'wake-race',
+      tmuxWindow: racedWindow,
+      agentSessionId: sessionId,
+    }
+    sessionManagerState.createWindow = () => {
+      // Simulate the logPoller (or a concurrent rematch path) claiming the
+      // session's current_window between the wake handler's initial read and
+      // the post-createWindow claim attempt. The race appears AFTER
+      // tryRematchDormantSession runs (registry was empty there), so the
+      // simulation only adds the racing session now.
+      const record = dbState.records.get(sessionId)
+      if (record) {
+        dbState.records.set(sessionId, {
+          ...record,
+          currentWindow: racedWindow,
+        })
+      }
+      registryInstance.sessions = [racedSession]
+      return newSession
+    }
+    const killCalls: string[] = []
+    sessionManagerState.killWindow = (tmuxWindow: string) => {
+      killCalls.push(tmuxWindow)
+    }
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({ type: 'session-wake', sessionId })
+    )
+
+    // Newly-created window must be killed to avoid duplicate live windows.
+    expect(killCalls).toEqual([newWindow])
+    // DB must reflect the racing claim, not the wake's would-be window.
+    expect(dbState.records.get(sessionId)?.currentWindow).toBe(racedWindow)
+    // Caller still gets ok:true with the racing session payload.
+    const wakeResults = sent.filter(
+      (message) =>
+        message.type === 'session-wake-result' &&
+        message.sessionId === sessionId
+    )
+    expect(wakeResults).toHaveLength(1)
+    expect(wakeResults[0]).toMatchObject({
+      type: 'session-wake-result',
+      sessionId,
+      ok: true,
+      session: { tmuxWindow: racedWindow },
     })
   })
 

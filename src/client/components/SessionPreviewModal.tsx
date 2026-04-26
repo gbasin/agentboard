@@ -24,9 +24,9 @@ export default function SessionPreviewModal({
 
   // useCallback keeps the keydown effect from re-binding on every render.
   const handleResume = useCallback(() => {
-    if (previewState.loading || previewState.error) return
+    if (previewState.loading) return
     onResume(session.sessionId)
-  }, [previewState.loading, previewState.error, onResume, session.sessionId])
+  }, [previewState.loading, onResume, session.sessionId])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -96,7 +96,7 @@ export default function SessionPreviewModal({
             type="button"
             onClick={handleResume}
             className="btn btn-primary"
-            disabled={previewState.loading || !!previewState.error}
+            disabled={previewState.loading}
           >
             Wake
           </button>

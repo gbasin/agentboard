@@ -1071,15 +1071,14 @@ app.get('/api/session-preview/:sessionId', async (c) => {
     const fileSize = stats.size
     const offset = Math.max(0, fileSize - TAIL_BYTES)
     const fd = await fs.open(logPath, 'r')
-    let buffer: Buffer
+    let content: string
     try {
-      buffer = Buffer.alloc(Math.min(TAIL_BYTES, fileSize))
-      await fd.read(buffer, 0, buffer.length, offset)
+      const buffer = Buffer.alloc(Math.min(TAIL_BYTES, fileSize))
+      const { bytesRead } = await fd.read(buffer, 0, buffer.length, offset)
+      content = buffer.subarray(0, bytesRead).toString('utf8')
     } finally {
       await fd.close()
     }
-
-    const content = buffer.toString('utf8')
     // Take last 100 lines
     const lines = content.split('\n').slice(-100)
 
@@ -2638,12 +2637,31 @@ function handleSessionWake(
       command,
       { excludeSessionId: sessionId }
     ))
-    const updatedRecord = db.updateSession(sessionId, {
-      currentWindow: created.tmuxWindow,
+    // Atomic claim: only persist the new window if no other writer (LogPoller
+    // rematch, concurrent wake) claimed current_window between our initial
+    // read and createWindow. If the claim fails, kill the new window so we
+    // don't leak a tmux window with a duplicate agent process.
+    const updatedRecord = db.claimCurrentWindow(sessionId, created.tmuxWindow, {
       displayName: created.name,
       lastResumeAttemptAt: attemptAt,
-      lastResumeError: null, // Clear any previous error on success
+      lastResumeError: null,
     })
+    if (!updatedRecord) {
+      try { sessionManager.killWindow(created.tmuxWindow) } catch { /* may already be gone */ }
+      const reread = db.getSessionById(sessionId)
+      const liveSession = reread?.currentWindow
+        ? registry.get(reread.currentWindow) ??
+          registry.getAll().find((s) => s.agentSessionId?.trim() === sessionId)
+        : undefined
+      logger.info('session_wake_noop', {
+        sessionId,
+        reason: 'window_claimed_concurrently',
+        agentType: latest.agentType,
+        displayName: latest.displayName,
+      })
+      send(ws, { type: 'session-wake-result', sessionId, ok: true, session: liveSession })
+      return
+    }
     // Add session to registry immediately so terminal can attach
     // (async refresh will update with any additional data later)
     refreshGeneration++
@@ -2654,15 +2672,7 @@ function handleSessionWake(
     send(ws, { type: 'session-wake-result', sessionId, ok: true, session: created })
     broadcast({
       type: 'session-activated',
-      session: toAgentSession(
-        updatedRecord ?? {
-          ...latest,
-          currentWindow: created.tmuxWindow,
-          displayName: created.name,
-          lastResumeAttemptAt: attemptAt,
-          lastResumeError: null,
-        }
-      ),
+      session: toAgentSession(updatedRecord),
       window: created.tmuxWindow,
     })
     logger.info('session_wake_success', {

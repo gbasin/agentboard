@@ -35,6 +35,16 @@ export interface SessionDatabase {
     sessionId: string,
     patch: Partial<Omit<AgentSessionRecord, 'id' | 'sessionId'>>
   ) => AgentSessionRecord | null
+  /**
+   * Conditional claim: set current_window (and optional extra fields) only if
+   * current_window is currently NULL. Returns the updated record on success,
+   * or null if some other writer already claimed the row (no-op).
+   */
+  claimCurrentWindow: (
+    sessionId: string,
+    tmuxWindow: string,
+    extraPatch?: Partial<Omit<AgentSessionRecord, 'id' | 'sessionId' | 'currentWindow'>>
+  ) => AgentSessionRecord | null
   getSessionById: (sessionId: string) => AgentSessionRecord | null
   getSessionByLogPath: (logPath: string) => AgentSessionRecord | null
   getSessionByWindow: (tmuxWindow: string) => AgentSessionRecord | null
@@ -174,6 +184,13 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
         .join(', ')} WHERE session_id = $sessionId`
     )
 
+  const claimWindowStmt = (fields: string[]) =>
+    db.prepare(
+      `UPDATE agent_sessions SET ${fields
+        .map((field) => `${field} = $${field}`)
+        .join(', ')} WHERE session_id = $sessionId AND current_window IS NULL`
+    )
+
   // App settings prepared statements
   const selectAppSetting = db.prepare(
     'SELECT value FROM app_settings WHERE key = $key'
@@ -260,6 +277,33 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
       }
 
       updateStmt(fields).run(params)
+      const row = selectBySessionId.get({ $sessionId: sessionId }) as
+        | Record<string, unknown>
+        | undefined
+      return row ? mapRow(row) : null
+    },
+    claimCurrentWindow: (sessionId, tmuxWindow, extraPatch) => {
+      const fieldMap: Record<string, string> = {
+        displayName: 'display_name',
+        lastResumeError: 'last_resume_error',
+        lastResumeAttemptAt: 'last_resume_attempt_at',
+      }
+      const fields = ['current_window']
+      const params: Record<string, string | number | null> = {
+        $sessionId: sessionId,
+        $current_window: tmuxWindow,
+      }
+      if (extraPatch) {
+        for (const [key, value] of Object.entries(extraPatch)) {
+          if (value === undefined) continue
+          const field = fieldMap[key]
+          if (!field) continue
+          fields.push(field)
+          params[`$${field}`] = value as string | number | null
+        }
+      }
+      const result = claimWindowStmt(fields).run(params)
+      if (result.changes === 0) return null
       const row = selectBySessionId.get({ $sessionId: sessionId }) as
         | Record<string, unknown>
         | undefined

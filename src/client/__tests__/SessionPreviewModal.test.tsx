@@ -240,7 +240,7 @@ describe('SessionPreviewModal', () => {
     await cleanup(renderer)
   })
 
-  test('handles errors, closes on escape and backdrop, and disables resume', async () => {
+  test('handles errors, closes on escape and backdrop, and keeps wake enabled', async () => {
     const controller = createFetchController([
       createJsonResponse({ error: 'No preview available' }, { status: 500 }),
     ])
@@ -273,12 +273,21 @@ describe('SessionPreviewModal', () => {
       throw new Error('Expected resume button')
     }
 
-    expect(resumeButton.props.disabled).toBe(true)
+    // Preview failure must NOT block wake — the log file may be missing or
+    // rotated, but the session itself can still be resumed.
+    expect(resumeButton.props.disabled).toBe(false)
 
     const handler = keyHandlers.get('keydown')
     if (!handler) {
       throw new Error('Expected keydown handler')
     }
+
+    const enterEvent = { key: 'Enter', preventDefault: () => {} } as KeyboardEvent
+    act(() => {
+      handler(enterEvent)
+    })
+
+    expect(resumed).toBe(1)
 
     let stopped = 0
     const escapeEvent = {
@@ -294,13 +303,6 @@ describe('SessionPreviewModal', () => {
 
     expect(closed).toBe(1)
     expect(stopped).toBe(1)
-
-    const enterEvent = { key: 'Enter', preventDefault: () => {} } as KeyboardEvent
-    act(() => {
-      handler(enterEvent)
-    })
-
-    expect(resumed).toBe(0)
 
     const overlay = renderer.root.findByProps({ role: 'dialog' })
     act(() => {
