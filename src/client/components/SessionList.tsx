@@ -104,6 +104,8 @@ export default function SessionList({
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
   const showInactive = useSettingsStore((state) => state.inactiveSessionsExpanded)
   const setShowInactive = useSettingsStore((state) => state.setInactiveSessionsExpanded)
+  const showSnoozed = useSettingsStore((state) => state.snoozedSessionsExpanded)
+  const setShowSnoozed = useSettingsStore((state) => state.setSnoozedSessionsExpanded)
   const [previewSession, setPreviewSession] = useState<AgentSession | null>(null)
   const [inactiveLimit, setInactiveLimit] = useState(20)
   const prefersReducedMotion = useReducedMotion()
@@ -603,28 +605,41 @@ export default function SessionList({
 
             {filteredSleepingSessions.length > 0 && (
               <div className={filteredSessions.length > 0 ? 'border-t border-border' : ''}>
-                <div className="flex items-center justify-between px-3 py-2 text-xs font-medium uppercase tracking-wider text-muted">
-                  <span>Snoozed</span>
+                <button
+                  type="button"
+                  onClick={() => setShowSnoozed(!showSnoozed)}
+                  className="flex w-full items-center justify-between px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-muted hover:text-primary"
+                >
+                  <span className="flex items-center gap-2">
+                    {showSnoozed ? (
+                      <ChevronDownIcon className="h-4 w-4" />
+                    ) : (
+                      <ChevronRightIcon className="h-4 w-4" />
+                    )}
+                    Snoozed
+                  </span>
                   <span className="w-8 text-right text-xs text-muted">
                     {filteredSleepingSessions.length}
                   </span>
-                </div>
-                <div className="py-1">
-                  {filteredSleepingSessions.map((session) => (
-                    <SleepingSessionItem
-                      key={session.sessionId}
-                      session={session}
-                      isSelected={selectedSleepingSessionId === session.sessionId}
-                      showSessionIdPrefix={showSessionIdPrefix}
-                      showProjectName={showProjectName}
-                      showLastUserMessage={showLastUserMessage}
-                      onSelect={(sessionId) => onSelectSleeping?.(sessionId)}
-                      onWake={(sessionId) => onResume?.(sessionId)}
-                      onRename={(sessionId, newName) => handleRename(sessionId, newName)}
-                      onRemove={onSetPinned ? (sessionId) => onSetPinned(sessionId, false) : undefined}
-                    />
-                  ))}
-                </div>
+                </button>
+                {showSnoozed && (
+                  <div className="py-1">
+                    {filteredSleepingSessions.map((session) => (
+                      <SleepingSessionItem
+                        key={session.sessionId}
+                        session={session}
+                        isSelected={selectedSleepingSessionId === session.sessionId}
+                        showSessionIdPrefix={showSessionIdPrefix}
+                        showProjectName={showProjectName}
+                        showLastUserMessage={showLastUserMessage}
+                        onSelect={(sessionId) => onSelectSleeping?.(sessionId)}
+                        onWake={(sessionId) => onResume?.(sessionId)}
+                        onRename={(sessionId, newName) => handleRename(sessionId, newName)}
+                        onRemove={onSetPinned ? (sessionId) => onSetPinned(sessionId, false) : undefined}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </>
@@ -643,7 +658,7 @@ export default function SessionList({
                 ) : (
                   <ChevronRightIcon className="h-4 w-4" />
                 )}
-                Inactive Sessions
+                Inactive
               </span>
               <motion.span
                 className="w-8 text-right text-xs"

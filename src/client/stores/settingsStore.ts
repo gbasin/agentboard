@@ -144,6 +144,8 @@ interface SettingsState {
   setShowSessionIdPrefix: (enabled: boolean) => void
   inactiveSessionsExpanded: boolean
   setInactiveSessionsExpanded: (expanded: boolean) => void
+  snoozedSessionsExpanded: boolean
+  setSnoozedSessionsExpanded: (expanded: boolean) => void
   sidebarWidth: number
   setSidebarWidth: (width: number) => void
   projectFilters: string[]
@@ -208,6 +210,8 @@ export const useSettingsStore = create<SettingsState>()(
       setShowSessionIdPrefix: (enabled) => set({ showSessionIdPrefix: enabled }),
       inactiveSessionsExpanded: false,
       setInactiveSessionsExpanded: (expanded) => set({ inactiveSessionsExpanded: expanded }),
+      snoozedSessionsExpanded: true,
+      setSnoozedSessionsExpanded: (expanded) => set({ snoozedSessionsExpanded: expanded }),
       sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
       setSidebarWidth: (width) =>
         set({
