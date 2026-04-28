@@ -2214,29 +2214,52 @@ function handleSessionHibernate(
   try {
     sessionManager.killWindow(liveTmuxWindow)
   } catch (error) {
+    let targetStillExists = true
     try {
-      db.updateSession(sessionId, {
-        isPinned: originalMarker,
-        lastResumeError: originalResumeError,
-        launchCommand: record.launchCommand,
+      targetStillExists = sessionManager
+        .listWindows()
+        .some((session) => session.tmuxWindow === liveTmuxWindow)
+    } catch (listError) {
+      logger.warn('session_hibernate_recheck_failed', {
+        sessionId,
+        tmuxWindow: liveTmuxWindow,
+        killError: error instanceof Error ? error.message : String(error),
+        listError: listError instanceof Error ? listError.message : String(listError),
       })
-    } catch {
-      // Best effort rollback; preserve the original kill failure for the user.
     }
-    const message = error instanceof Error ? error.message : 'Unable to hibernate session'
-    logger.error('session_hibernate_failed', {
-      sessionId,
-      reason: 'kill_failed',
-      error: message,
-      agentType: record.agentType,
-    })
-    send(ws, {
-      type: 'session-hibernate-result',
-      sessionId,
-      ok: false,
-      error: message,
-    })
-    return
+
+    if (!targetStillExists) {
+      logger.info('session_hibernate_target_already_gone', {
+        sessionId,
+        agentType: record.agentType,
+        displayName: record.displayName,
+        tmuxWindow: liveTmuxWindow,
+      })
+    } else {
+      try {
+        db.updateSession(sessionId, {
+          isPinned: originalMarker,
+          lastResumeError: originalResumeError,
+          launchCommand: record.launchCommand,
+        })
+      } catch {
+        // Best effort rollback; preserve the original kill failure for the user.
+      }
+      const message = error instanceof Error ? error.message : 'Unable to hibernate session'
+      logger.error('session_hibernate_failed', {
+        sessionId,
+        reason: 'kill_failed',
+        error: message,
+        agentType: record.agentType,
+      })
+      send(ws, {
+        type: 'session-hibernate-result',
+        sessionId,
+        ok: false,
+        error: message,
+      })
+      return
+    }
   }
 
   refreshGeneration++

@@ -2877,6 +2877,7 @@ describe('server message handlers', () => {
     sessionManagerState.killWindow = () => {
       throw new Error('tmux kill failed')
     }
+    sessionManagerState.listWindows = () => [baseSession]
 
     const { ws, sent } = createWs()
     const websocket = serveOptions.websocket
@@ -2900,6 +2901,60 @@ describe('server message handlers', () => {
       isPinned: false,
       lastResumeError: 'previous wake error',
     })
+  })
+
+  test('hibernate succeeds when the target window is already gone after kill fails', async () => {
+    const { serveOptions, registryInstance } = await loadIndex()
+    const liveAgentSessionId = 'hibernate-kill-raced'
+    registryInstance.sessions = [
+      { ...baseSession, agentSessionId: liveAgentSessionId },
+    ]
+    seedRecord(
+      makeRecord({
+        sessionId: liveAgentSessionId,
+        currentWindow: baseSession.tmuxWindow,
+        isPinned: false,
+        lastResumeError: 'previous wake error',
+      })
+    )
+    sessionManagerState.killWindow = () => {
+      throw new Error("can't find window: @3")
+    }
+    sessionManagerState.listWindows = () => []
+
+    const { ws, sent } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) {
+      throw new Error('WebSocket handlers not configured')
+    }
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({ type: 'session-hibernate', sessionId: liveAgentSessionId })
+    )
+
+    expect(sent[sent.length - 1]).toMatchObject({
+      type: 'session-hibernate-result',
+      sessionId: liveAgentSessionId,
+      ok: true,
+      session: expect.objectContaining({
+        sessionId: liveAgentSessionId,
+        isPinned: true,
+        isActive: false,
+      }),
+    })
+    expect(dbState.records.get(liveAgentSessionId)).toMatchObject({
+      currentWindow: null,
+      isPinned: true,
+      lastResumeError: null,
+    })
+    expect(registryInstance.sessions).toEqual([])
+    expect(registryInstance.agentSessions.hibernating).toMatchObject([
+      expect.objectContaining({
+        sessionId: liveAgentSessionId,
+        isPinned: true,
+      }),
+    ])
   })
 
   test('hibernate keeps marker when final DB window update fails after kill', async () => {
