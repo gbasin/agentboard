@@ -2393,6 +2393,7 @@ function recordWakeFailure(sessionId: string, message: string) {
   try {
     db.updateSession(sessionId, {
       lastResumeError: message,
+      wakeStartedAt: null,
     })
     updateDormantAgentSessions()
   } catch (error) {
@@ -2435,6 +2436,7 @@ function tryRematchDormantSession(
     const claimExtra: ClaimCurrentWindowPatch = {
       displayName: alreadyHydrated.name,
       lastResumeError: null,
+      wakeStartedAt: null,
     }
     if (alreadyHydrated.command && !record.launchCommand) {
       claimExtra.launchCommand = alreadyHydrated.command
@@ -2493,6 +2495,7 @@ function tryRematchDormantSession(
     const claimExtra: ClaimCurrentWindowPatch = {
       displayName: match.name,
       lastResumeError: null,
+      wakeStartedAt: null,
     }
     if (match.command && !record.launchCommand) {
       claimExtra.launchCommand = match.command
@@ -2631,6 +2634,14 @@ function handleSessionWake(
       process.env.HOME ||
       process.env.USERPROFILE ||
       '.'
+    const wakeStartedAt = new Date().toISOString()
+    const marked = db.updateSession(sessionId, {
+      wakeStartedAt,
+      lastResumeError: null,
+    })
+    if (!marked) {
+      throw new Error('Session not found')
+    }
 
     const startedAt = Date.now()
     // Name is driven by the stored displayName — createWindow will auto-suffix
@@ -2650,13 +2661,21 @@ function handleSessionWake(
     const updatedRecord = db.claimCurrentWindow(sessionId, created.tmuxWindow, {
       displayName: created.name,
       lastResumeError: null,
+      wakeStartedAt: null,
     })
     if (!updatedRecord) {
       const reread = db.getSessionById(sessionId)
       if (reread?.currentWindow === created.tmuxWindow) {
+        const resolvedRecord =
+          reread.wakeStartedAt || reread.lastResumeError
+            ? db.updateSession(sessionId, {
+                wakeStartedAt: null,
+                lastResumeError: null,
+              }) ?? reread
+            : reread
         createdWindowToCleanup = null
         refreshGeneration++
-        const hydrated = hydrateWakeSession(created, reread)
+        const hydrated = hydrateWakeSession(created, resolvedRecord)
         const currentSessions = registry
           .getAll()
           .filter((session) =>
@@ -2669,7 +2688,7 @@ function handleSessionWake(
         send(ws, { type: 'session-wake-result', sessionId, ok: true, session: hydrated })
         broadcast({
           type: 'session-activated',
-          session: toAgentSession(reread),
+          session: toAgentSession(resolvedRecord),
           window: hydrated.tmuxWindow,
         })
         logger.info('session_wake_success', {
@@ -2683,8 +2702,45 @@ function handleSessionWake(
         return
       }
 
+      const ownerOfCreatedWindow = db.getSessionByWindow(created.tmuxWindow)
+      if (ownerOfCreatedWindow && ownerOfCreatedWindow.sessionId !== sessionId) {
+        createdWindowToCleanup = null
+        try {
+          db.updateSession(sessionId, { wakeStartedAt: null })
+        } catch (error) {
+          logger.warn('session_wake_marker_clear_failed', {
+            sessionId,
+            error: error instanceof Error ? error.message : String(error),
+          })
+        }
+        refreshSessionsSync()
+        updateDormantAgentSessions()
+        logger.info('session_wake_noop', {
+          sessionId,
+          reason: 'created_window_claimed_by_other_session',
+          claimedBySessionId: ownerOfCreatedWindow.sessionId,
+          agentType: latest.agentType,
+          displayName: latest.displayName,
+          tmuxWindow: created.tmuxWindow,
+        })
+        const err: WakeError = {
+          code: 'WAKE_IN_PROGRESS',
+          message: 'Wake window was claimed by another session; retry shortly',
+        }
+        send(ws, { type: 'session-wake-result', sessionId, ok: false, error: err })
+        return
+      }
+
       try { sessionManager.killWindow(created.tmuxWindow) } catch { /* may already be gone */ }
       createdWindowToCleanup = null
+      try {
+        db.updateSession(sessionId, { wakeStartedAt: null })
+      } catch (error) {
+        logger.warn('session_wake_marker_clear_failed', {
+          sessionId,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
       // Sync refresh so the registry reflects the racing claim before we look
       // up the live session — the rematcher updates DB before its own
       // session-activated emission, so without this we may miss it.

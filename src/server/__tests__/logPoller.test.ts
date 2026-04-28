@@ -354,6 +354,76 @@ describe('LogPoller', () => {
     db.close()
   })
 
+  test('orphan-rematches hibernating sessions with pending wake marker', async () => {
+    const db = initDatabase({ path: ':memory:' })
+    const registry = new SessionRegistry()
+    registry.replaceSessions([baseSession])
+
+    const projectPath = baseSession.projectPath
+    const encoded = encodeProjectPath(projectPath)
+    const logDir = path.join(
+      process.env.CLAUDE_CONFIG_DIR ?? '',
+      'projects',
+      encoded
+    )
+    await fs.mkdir(logDir, { recursive: true })
+
+    const tokens = Array.from({ length: 60 }, (_, i) => `token${i}`).join(' ')
+    const logPath = path.join(logDir, 'wake-pending-session.jsonl')
+    const userLine = buildUserLogEntry(tokens, {
+      sessionId: 'wake-pending-session',
+      cwd: projectPath,
+    })
+    const assistantLine = JSON.stringify({
+      type: 'assistant',
+      message: { content: [{ type: 'text', text: tokens }] },
+    })
+    await fs.writeFile(logPath, `${userLine}\n${assistantLine}\n`)
+    setTmuxOutput(baseSession.tmuxWindow, buildLastExchangeOutput(tokens))
+
+    const stats = await fs.stat(logPath)
+    db.insertSession({
+      sessionId: 'wake-pending-session',
+      logFilePath: logPath,
+      projectPath,
+      slug: null,
+      agentType: 'claude',
+      displayName: 'alpha',
+      createdAt: stats.birthtime.toISOString(),
+      lastActivityAt: stats.mtime.toISOString(),
+      lastUserMessage: null,
+      currentWindow: null,
+      isPinned: true,
+      lastResumeError: 'server restarted during wake',
+      wakeStartedAt: new Date().toISOString(),
+      lastKnownLogSize: stats.size,
+      isCodexExec: false,
+      launchCommand: null,
+    })
+
+    const activated: Array<{ sessionId: string; window: string }> = []
+    const poller = new LogPoller(db, registry, {
+      matchWorkerClient: new InlineMatchWorkerClient(),
+      onSessionActivated: (sessionId, window) => activated.push({ sessionId, window }),
+    })
+
+    poller.start(5000)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    await poller.waitForOrphanRematch()
+
+    const record = db.getSessionById('wake-pending-session')
+    expect(record?.currentWindow).toBe(baseSession.tmuxWindow)
+    expect(record?.isPinned).toBeTrue()
+    expect(record?.lastResumeError).toBeNull()
+    expect(record?.wakeStartedAt).toBeNull()
+    expect(activated).toEqual([
+      { sessionId: 'wake-pending-session', window: baseSession.tmuxWindow },
+    ])
+
+    poller.stop()
+    db.close()
+  })
+
   test('supersedes existing session via slug match (plan→execute transition)', async () => {
     const db = initDatabase({ path: ':memory:' })
     const registry = new SessionRegistry()

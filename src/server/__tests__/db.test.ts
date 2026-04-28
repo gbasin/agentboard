@@ -21,6 +21,7 @@ function makeSession(overrides: Partial<{
   currentWindow: string | null
   isPinned: boolean
   lastResumeError: string | null
+  wakeStartedAt: string | null
   lastKnownLogSize: number | null
   isCodexExec: boolean
   launchCommand: string | null
@@ -38,6 +39,7 @@ function makeSession(overrides: Partial<{
     currentWindow: 'agentboard:1',
     isPinned: false,
     lastResumeError: null,
+    wakeStartedAt: null,
     lastKnownLogSize: null,
     isCodexExec: false,
     launchCommand: null,
@@ -680,5 +682,31 @@ describe('db', () => {
     // Cleanup
     db.db.exec("DELETE FROM app_settings WHERE key = 'test_key'")
     db.db.exec("DELETE FROM app_settings WHERE key = 'another_key'")
+  })
+
+  test('wakeStartedAt is stored and cleared by window claim', () => {
+    const wakeStartedAt = '2026-01-01T00:01:00.000Z'
+    const inserted = db.insertSession(makeSession({
+      sessionId: 'session-wake-marker',
+      logFilePath: '/tmp/session-wake-marker.jsonl',
+      currentWindow: null,
+      isPinned: true,
+      wakeStartedAt,
+    }))
+
+    expect(inserted.wakeStartedAt).toBe(wakeStartedAt)
+
+    const claimed = db.claimCurrentWindow(
+      inserted.sessionId,
+      'agentboard:77',
+      {
+        wakeStartedAt: null,
+        lastResumeError: null,
+      }
+    )
+
+    expect(claimed?.currentWindow).toBe('agentboard:77')
+    expect(claimed?.wakeStartedAt).toBeNull()
+    expect(db.getSessionById(inserted.sessionId)?.wakeStartedAt).toBeNull()
   })
 })

@@ -114,6 +114,7 @@ function makeRecord(overrides: Partial<AgentSessionRecord> = {}): AgentSessionRe
     currentWindow: null,
     isPinned: false,
     lastResumeError: null,
+    wakeStartedAt: null,
     lastKnownLogSize: null,
     isCodexExec: false,
     launchCommand: null,
@@ -3435,6 +3436,90 @@ describe('server message handlers', () => {
     })
   })
 
+  test('wake keeps new window if another session claims it mid-flight', async () => {
+    const { serveOptions, registryInstance } = await loadIndex()
+    const { ws, sent } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) {
+      throw new Error('WebSocket handlers not configured')
+    }
+
+    const sessionId = 'wake-claimed-by-other'
+    const ownerSessionId = 'other-owner'
+    seedRecord(
+      makeRecord({
+        sessionId,
+        displayName: 'wake-claimed-by-other',
+        currentWindow: null,
+        isPinned: true,
+      })
+    )
+    seedRecord(
+      makeRecord({
+        sessionId: ownerSessionId,
+        displayName: 'other-owner',
+        currentWindow: null,
+        isPinned: false,
+      })
+    )
+
+    const newWindow = 'agentboard:99'
+    const newSession: Session = {
+      ...baseSession,
+      id: 'wake-claimed-created',
+      name: 'wake-claimed-by-other',
+      tmuxWindow: newWindow,
+    }
+    const ownerSession: Session = {
+      ...baseSession,
+      id: 'wake-claimed-owner',
+      name: 'other-owner',
+      tmuxWindow: newWindow,
+      agentSessionId: ownerSessionId,
+    }
+    sessionManagerState.createWindow = () => {
+      const owner = dbState.records.get(ownerSessionId)
+      if (owner) {
+        dbState.records.set(ownerSessionId, {
+          ...owner,
+          currentWindow: newWindow,
+        })
+      }
+      registryInstance.sessions = [ownerSession]
+      sessionManagerState.listWindows = () => [ownerSession]
+      return newSession
+    }
+    const killCalls: string[] = []
+    sessionManagerState.killWindow = (tmuxWindow: string) => {
+      killCalls.push(tmuxWindow)
+    }
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({ type: 'session-wake', sessionId })
+    )
+
+    expect(killCalls).toEqual([])
+    expect(dbState.records.get(sessionId)).toMatchObject({
+      currentWindow: null,
+      wakeStartedAt: null,
+    })
+    expect(dbState.records.get(ownerSessionId)?.currentWindow).toBe(newWindow)
+
+    const wakeResults = sent.filter(
+      (message) =>
+        message.type === 'session-wake-result' &&
+        message.sessionId === sessionId
+    )
+    expect(wakeResults).toHaveLength(1)
+    expect(wakeResults[0]).toMatchObject({
+      type: 'session-wake-result',
+      sessionId,
+      ok: false,
+      error: { code: 'WAKE_IN_PROGRESS' },
+    })
+  })
+
   test('wake keeps new window if a racing rematch claims that same window', async () => {
     const { serveOptions, registryInstance } = await loadIndex()
     const { ws, sent } = createWs()
@@ -3819,9 +3904,12 @@ describe('server message handlers', () => {
     })
 
     const errorPatch = dbState.updateCalls.find(
-      (call) => call.sessionId === hibernatingId && 'lastResumeError' in call.patch
+      (call) =>
+        call.sessionId === hibernatingId &&
+        call.patch.lastResumeError === 'resume artifact missing'
     )
     expect(errorPatch?.patch.lastResumeError).toBe('resume artifact missing')
+    expect(errorPatch?.patch.wakeStartedAt).toBeNull()
 
     // Hibernation marker must stay true so the card remains in the Hibernating rail.
     const removedMarker = dbState.updateCalls.find(

@@ -18,14 +18,21 @@ export interface AgentSessionRecord {
   currentWindow: string | null
   isPinned: boolean
   lastResumeError: string | null
+  wakeStartedAt: string | null
   lastKnownLogSize: number | null
   isCodexExec: boolean
   launchCommand: string | null
 }
 
-export type NewAgentSessionRecord = Omit<AgentSessionRecord, 'id'>
+export type NewAgentSessionRecord = Omit<
+  AgentSessionRecord,
+  'id' | 'wakeStartedAt'
+> & { wakeStartedAt?: string | null }
 export type ClaimCurrentWindowPatch = Partial<
-  Pick<AgentSessionRecord, 'displayName' | 'lastResumeError' | 'launchCommand'>
+  Pick<
+    AgentSessionRecord,
+    'displayName' | 'lastResumeError' | 'wakeStartedAt' | 'launchCommand'
+  >
 >
 
 export interface SessionDatabase {
@@ -86,6 +93,7 @@ const AGENT_SESSIONS_COLUMNS_SQL = `
   current_window TEXT,
   is_pinned INTEGER NOT NULL DEFAULT 0,
   last_resume_error TEXT,
+  wake_started_at TEXT,
   -- NULL means "unknown" (e.g., after upgrade). First poll will initialize to actual size.
   -- This triggers a one-time match check for upgraded sessions.
   last_known_log_size INTEGER,
@@ -140,13 +148,14 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
   migrateSlugColumn(db)
   migrateAgentTypeConstraint(db)
   migrateLaunchCommandColumn(db)
+  migrateWakeStartedAtColumn(db)
   migrateDeduplicateCurrentWindows(db)
   db.exec(CREATE_INDEXES_SQL)
 
   const insertStmt = db.prepare(
     `INSERT INTO agent_sessions
-      (session_id, log_file_path, project_path, slug, agent_type, display_name, created_at, last_activity_at, last_user_message, current_window, is_pinned, last_resume_error, last_known_log_size, is_codex_exec, launch_command)
-     VALUES ($sessionId, $logFilePath, $projectPath, $slug, $agentType, $displayName, $createdAt, $lastActivityAt, $lastUserMessage, $currentWindow, $isPinned, $lastResumeError, $lastKnownLogSize, $isCodexExec, $launchCommand)`
+      (session_id, log_file_path, project_path, slug, agent_type, display_name, created_at, last_activity_at, last_user_message, current_window, is_pinned, last_resume_error, wake_started_at, last_known_log_size, is_codex_exec, launch_command)
+     VALUES ($sessionId, $logFilePath, $projectPath, $slug, $agentType, $displayName, $createdAt, $lastActivityAt, $lastUserMessage, $currentWindow, $isPinned, $lastResumeError, $wakeStartedAt, $lastKnownLogSize, $isCodexExec, $launchCommand)`
   )
 
   const selectBySessionId = db.prepare(
@@ -224,6 +233,7 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
         $currentWindow: session.currentWindow,
         $isPinned: session.isPinned ? 1 : 0,
         $lastResumeError: session.lastResumeError,
+        $wakeStartedAt: session.wakeStartedAt ?? null,
         $lastKnownLogSize: session.lastKnownLogSize,
         $isCodexExec: session.isCodexExec ? 1 : 0,
         $launchCommand: session.launchCommand ?? null,
@@ -258,6 +268,7 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
         currentWindow: 'current_window',
         isPinned: 'is_pinned',
         lastResumeError: 'last_resume_error',
+        wakeStartedAt: 'wake_started_at',
         lastKnownLogSize: 'last_known_log_size',
         isCodexExec: 'is_codex_exec',
         launchCommand: 'launch_command',
@@ -293,6 +304,7 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
       const fieldMap: Record<string, string> = {
         displayName: 'display_name',
         lastResumeError: 'last_resume_error',
+        wakeStartedAt: 'wake_started_at',
         launchCommand: 'launch_command',
       }
       const fields = ['current_window']
@@ -453,6 +465,10 @@ function mapRow(row: Record<string, unknown>): AgentSessionRecord {
       row.last_resume_error === null || row.last_resume_error === undefined
         ? null
         : String(row.last_resume_error),
+    wakeStartedAt:
+      row.wake_started_at === null || row.wake_started_at === undefined
+        ? null
+        : String(row.wake_started_at),
     // Note: null lastKnownLogSize is treated as "unknown", triggering a match check
     // on first poll after upgrade. This is intentional (one-time cost).
     lastKnownLogSize:
@@ -594,6 +610,14 @@ function migrateLaunchCommandColumn(db: SQLiteDatabase) {
   db.exec('ALTER TABLE agent_sessions ADD COLUMN launch_command TEXT')
 }
 
+function migrateWakeStartedAtColumn(db: SQLiteDatabase) {
+  const columns = getColumnNames(db, 'agent_sessions')
+  if (columns.length === 0 || columns.includes('wake_started_at')) {
+    return
+  }
+  db.exec('ALTER TABLE agent_sessions ADD COLUMN wake_started_at TEXT')
+}
+
 function migrateDeduplicateDisplayNames(db: SQLiteDatabase) {
   // Find all display names that have duplicates
   const duplicates = db
@@ -726,6 +750,9 @@ function migrateAgentTypeConstraint(db: SQLiteDatabase) {
   const launchCommandSelect = existingColumns.includes('launch_command')
     ? 'launch_command'
     : 'NULL AS launch_command'
+  const wakeStartedAtSelect = existingColumns.includes('wake_started_at')
+    ? 'wake_started_at'
+    : 'NULL AS wake_started_at'
 
   db.exec('BEGIN')
   try {
@@ -746,6 +773,7 @@ function migrateAgentTypeConstraint(db: SQLiteDatabase) {
         current_window,
         is_pinned,
         last_resume_error,
+        wake_started_at,
         last_known_log_size,
         is_codex_exec,
         launch_command
@@ -764,6 +792,7 @@ function migrateAgentTypeConstraint(db: SQLiteDatabase) {
         current_window,
         is_pinned,
         last_resume_error,
+        ${wakeStartedAtSelect},
         last_known_log_size,
         is_codex_exec,
         ${launchCommandSelect}

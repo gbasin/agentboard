@@ -27,6 +27,7 @@ const DEFAULT_MAX_LOGS = 25
 const STARTUP_LAST_MESSAGE_BACKFILL_MAX = 100
 const MIN_LOG_TOKENS_FOR_INSERT = 1
 const REMATCH_COOLDOWN_MS = 60 * 1000 // 1 minute between re-match attempts
+const WAKE_PENDING_REMATCH_TTL_MS = 10 * 60 * 1000
 
 // Type for session records from the database
 interface SessionRecord {
@@ -42,6 +43,7 @@ interface SessionRecord {
   currentWindow: string | null
   isPinned: boolean
   lastResumeError: string | null
+  wakeStartedAt: string | null
   lastKnownLogSize: number | null
   isCodexExec: boolean
 }
@@ -114,6 +116,22 @@ function applyLogEntryToExistingRecord(
   }
 
   return Object.keys(update).length > 0 ? update : null
+}
+
+function hasRecoverableWakePending(record: {
+  wakeStartedAt: string | null
+}): boolean {
+  if (!record.wakeStartedAt) return false
+  const startedAt = Date.parse(record.wakeStartedAt)
+  if (!Number.isFinite(startedAt)) return false
+  return Date.now() - startedAt <= WAKE_PENDING_REMATCH_TTL_MS
+}
+
+function canAttemptDormantRematch(record: {
+  isPinned: boolean
+  wakeStartedAt: string | null
+}): boolean {
+  return !record.isPinned || hasRecoverableWakePending(record)
 }
 
 interface PollStats {
@@ -279,7 +297,7 @@ export class LogPoller {
       const orphanCandidates: OrphanCandidate[] = []
       for (const record of sessionRecords) {
         if (record.currentWindow) continue
-        if (record.isPinned) continue
+        if (!canAttemptDormantRematch(record)) continue
         const logFilePath = record.logFilePath
         if (!logFilePath) continue
         // Skip sessions from excluded project directories
@@ -374,6 +392,7 @@ export class LogPoller {
             {
               displayName: window.name,
               lastResumeError: null,
+              wakeStartedAt: null,
               ...(window.command && !existing.launchCommand ? { launchCommand: window.command } : {}),
             }
           )
@@ -426,6 +445,7 @@ export class LogPoller {
               {
                 displayName: window.name,
                 lastResumeError: null,
+                wakeStartedAt: null,
                 ...(window.command && !existing.launchCommand ? { launchCommand: window.command } : {}),
               }
             )
@@ -618,7 +638,7 @@ export class LogPoller {
             this.db.updateSession(existing.sessionId, update)
           }
           const shouldAttemptRematch =
-            !existing.isPinned &&
+            canAttemptDormantRematch(existing) &&
             !existing.currentWindow &&
             (hasGrown || matchEligibleLogPaths.has(entry.logPath))
           if (shouldAttemptRematch) {
@@ -634,6 +654,7 @@ export class LogPoller {
                   {
                     displayName: exactMatch.name,
                     lastResumeError: null,
+                    wakeStartedAt: null,
                     ...(exactMatch.command && !existing.launchCommand ? { launchCommand: exactMatch.command } : {}),
                   }
                 )
@@ -700,7 +721,7 @@ export class LogPoller {
 
           // Re-attempt matching for orphaned sessions (no currentWindow)
           const shouldAttemptRematch =
-            !existingById.isPinned &&
+            canAttemptDormantRematch(existingById) &&
             !existingById.currentWindow &&
             (hasGrown || matchEligibleLogPaths.has(entry.logPath))
           if (shouldAttemptRematch) {
@@ -715,6 +736,7 @@ export class LogPoller {
                   {
                     displayName: exactMatch.name,
                     lastResumeError: null,
+                    wakeStartedAt: null,
                     ...(exactMatch.command && !existingById.launchCommand ? { launchCommand: exactMatch.command } : {}),
                   }
                 )
