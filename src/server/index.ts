@@ -2165,13 +2165,18 @@ function handleSessionHibernate(
 
   const originalMarker = record.isPinned
   const originalResumeError = record.lastResumeError
+  const liveTmuxWindow = liveSession.tmuxWindow
+  const markerPatch: Partial<Omit<AgentSessionRecord, 'id' | 'sessionId'>> = {
+    isPinned: true,
+    lastResumeError: null,
+  }
+  if (liveSession.command && !record.launchCommand) {
+    markerPatch.launchCommand = liveSession.command
+  }
   const startedAt = Date.now()
   let marked: ReturnType<typeof db.updateSession>
   try {
-    marked = db.updateSession(sessionId, {
-      isPinned: true,
-      lastResumeError: null,
-    })
+    marked = db.updateSession(sessionId, markerPatch)
   } catch (error) {
     logger.error('session_hibernate_failed', {
       sessionId,
@@ -2203,12 +2208,13 @@ function handleSessionHibernate(
   }
 
   try {
-    sessionManager.killWindow(record.currentWindow)
+    sessionManager.killWindow(liveTmuxWindow)
   } catch (error) {
     try {
       db.updateSession(sessionId, {
         isPinned: originalMarker,
         lastResumeError: originalResumeError,
+        launchCommand: record.launchCommand,
       })
     } catch {
       // Best effort rollback; preserve the original kill failure for the user.
@@ -2261,7 +2267,7 @@ function handleSessionHibernate(
     sessionId,
     agentType: record.agentType,
     displayName: record.displayName,
-    tmuxWindow: record.currentWindow,
+    tmuxWindow: liveTmuxWindow,
     durationMs: Date.now() - startedAt,
   })
 
@@ -2283,35 +2289,47 @@ function handleSessionHibernate(
  *   → "claude --dangerously-skip-permissions --resume <id>"
  * e.g. stored "codex --yolo --search" + template "codex resume {sessionId}"
  *   → "codex --yolo --search resume <id>"
+ * e.g. stored "pi --fast" + template "pi --session {logFilePath}"
+ *   → "pi --fast --session <log-file-path>"
  */
 function getResumeCommandTemplate(agentType: AgentType): string {
-  return (
-    agentType === 'claude' || agentType === 'claude-rp'
-      ? config.claudeResumeCmd
-      : config.codexResumeCmd
-  )
+  if (agentType === 'claude' || agentType === 'claude-rp') {
+    return config.claudeResumeCmd
+  }
+  if (agentType === 'pi') {
+    return config.piResumeCmd
+  }
+  return config.codexResumeCmd
+}
+
+function renderResumeCommandTemplate(
+  resumeTemplate: string,
+  record: AgentSessionRecord
+): string {
+  return resumeTemplate
+    .replace(/\{sessionId\}/g, shellQuote(record.sessionId))
+    .replace(/\{logFilePath\}/g, shellQuote(record.logFilePath))
 }
 
 function buildResumeCommand(
-  launchCommand: string | null,
-  sessionId: string,
-  agentType: AgentType
+  record: AgentSessionRecord
 ): string {
-  const resumeTemplate = getResumeCommandTemplate(agentType)
+  const resumeTemplate = getResumeCommandTemplate(record.agentType)
+  const baseResumeCmd = renderResumeCommandTemplate(resumeTemplate, record)
 
-  const baseResumeCmd = resumeTemplate.replace('{sessionId}', sessionId)
-
-  if (!launchCommand) {
+  if (!record.launchCommand) {
     return baseResumeCmd
   }
 
   // Extract flags from the stored command: strip the executable (first token)
   // and any existing resume subcommand/flag + its session ID argument.
   // Normalize first to handle tmux quoting and bash -lc wrappers.
-  const flags = normalizePaneStartCommand(launchCommand)
+  const resumableArg = /(?:"[^"]*"|'[^']*'|\S+)/
+  const flags = normalizePaneStartCommand(record.launchCommand)
     .replace(/^\S+\s*/, '')             // strip executable
-    .replace(/--resume\s+\S+/g, '')     // strip --resume <id> (Claude)
-    .replace(/\bresume\s+\S+/g, '')     // strip resume <id> (Codex subcommand)
+    .replace(new RegExp(`--resume(?:\\s+|=)${resumableArg.source}`, 'g'), '') // strip --resume <id> / --resume=<id> (Claude)
+    .replace(new RegExp(`\\bresume\\s+${resumableArg.source}`, 'g'), '') // strip resume <id> (Codex subcommand)
+    .replace(new RegExp(`--session(?:\\s+|=)${resumableArg.source}`, 'g'), '') // strip --session <path> / --session=<path> (Pi)
     .replace(/\s+/g, ' ')
     .trim()
 
@@ -2321,6 +2339,9 @@ function buildResumeCommand(
 
   // Inject flags after the executable in the resume command
   const firstSpace = baseResumeCmd.indexOf(' ')
+  if (firstSpace === -1) {
+    return `${baseResumeCmd} ${flags}`
+  }
   const exe = baseResumeCmd.slice(0, firstSpace)
   const rest = baseResumeCmd.slice(firstSpace + 1)
   return `${exe} ${flags} ${rest}`
@@ -2328,13 +2349,16 @@ function buildResumeCommand(
 
 function validateWakeTemplate(record: AgentSessionRecord): WakeError | null {
   const resumeTemplate = getResumeCommandTemplate(record.agentType)
-  if (resumeTemplate.includes('{sessionId}')) {
+  if (
+    resumeTemplate.includes('{sessionId}') ||
+    resumeTemplate.includes('{logFilePath}')
+  ) {
     return null
   }
 
   return {
     code: 'WAKE_FAILED',
-    message: 'Wake command template missing {sessionId} placeholder',
+    message: 'Wake command template missing {sessionId} or {logFilePath} placeholder',
   }
 }
 
@@ -2570,7 +2594,7 @@ function handleSessionWake(
       return
     }
 
-    const command = buildResumeCommand(latest.launchCommand, sessionId, latest.agentType)
+    const command = buildResumeCommand(latest)
     const projectPath =
       latest.projectPath ||
       process.env.HOME ||

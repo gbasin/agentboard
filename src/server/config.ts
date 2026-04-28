@@ -169,6 +169,7 @@ export const config = {
   codexHomeDir,
   claudeResumeCmd: process.env.CLAUDE_RESUME_CMD || 'claude --resume {sessionId}',
   codexResumeCmd: process.env.CODEX_RESUME_CMD || 'codex resume {sessionId}',
+  piResumeCmd: process.env.PI_RESUME_CMD || 'pi --session {logFilePath}',
   enterRefreshDelayMs,
   workingGracePeriodMs,
   historySessionMaxAgeHours,

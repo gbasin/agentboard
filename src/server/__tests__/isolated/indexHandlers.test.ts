@@ -66,6 +66,7 @@ const defaultConfig = {
   logMatchProfile: false,
   claudeResumeCmd: 'claude --resume {sessionId}',
   codexResumeCmd: 'codex resume {sessionId}',
+  piResumeCmd: 'pi --session {logFilePath}',
   remoteHosts: [] as string[],
   remotePollMs: 15000,
   remoteTimeoutMs: 4000,
@@ -2778,6 +2779,63 @@ describe('server message handlers', () => {
     expect(registryInstance.agentSessions.history).toEqual([])
   })
 
+  test('hibernate kills resolved live window when DB window is stale', async () => {
+    const { serveOptions, registryInstance } = await loadIndex()
+    const liveAgentSessionId = 'hibernate-stale-window'
+    const liveSession: Session = {
+      ...baseSession,
+      id: 'live-stale-window',
+      agentSessionId: liveAgentSessionId,
+      tmuxWindow: 'agentboard:77',
+      command: 'claude --dangerously-skip-permissions',
+    }
+    registryInstance.sessions = [liveSession]
+    seedRecord(
+      makeRecord({
+        sessionId: liveAgentSessionId,
+        currentWindow: 'agentboard:stale',
+        launchCommand: null,
+      })
+    )
+
+    const killCalls: string[] = []
+    sessionManagerState.killWindow = (tmuxWindow: string) => {
+      killCalls.push(tmuxWindow)
+    }
+
+    const { ws, sent } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) {
+      throw new Error('WebSocket handlers not configured')
+    }
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({ type: 'session-hibernate', sessionId: liveAgentSessionId })
+    )
+
+    expect(killCalls).toEqual([liveSession.tmuxWindow])
+    expect(dbState.updateCalls[0]).toMatchObject({
+      sessionId: liveAgentSessionId,
+      patch: {
+        isPinned: true,
+        lastResumeError: null,
+        launchCommand: liveSession.command,
+      },
+    })
+    expect(dbState.records.get(liveAgentSessionId)).toMatchObject({
+      currentWindow: null,
+      isPinned: true,
+      launchCommand: liveSession.command,
+    })
+    expect(sent[sent.length - 1]).toMatchObject({
+      type: 'session-hibernate-result',
+      sessionId: liveAgentSessionId,
+      ok: true,
+    })
+    expect(registryInstance.sessions).toEqual([])
+  })
+
   test('hibernate restores marker state when tmux kill fails', async () => {
     const { serveOptions, registryInstance } = await loadIndex()
     const liveAgentSessionId = 'hibernate-kill-fails'
@@ -2931,7 +2989,7 @@ describe('server message handlers', () => {
       ok: false,
       error: {
         code: 'WAKE_FAILED',
-        message: 'Wake command template missing {sessionId} placeholder',
+        message: 'Wake command template missing {sessionId} or {logFilePath} placeholder',
       },
     })
     seedRecord(
@@ -2955,13 +3013,14 @@ describe('server message handlers', () => {
       ok: false,
       error: {
         code: 'WAKE_FAILED',
-        message: 'Wake command template missing {sessionId} placeholder',
+        message: 'Wake command template missing {sessionId} or {logFilePath} placeholder',
       },
     })
     const templateErrorPatch = dbState.updateCalls.find(
       (call) =>
         call.sessionId === 'bad-template' &&
-        call.patch.lastResumeError === 'Wake command template missing {sessionId} placeholder'
+        call.patch.lastResumeError ===
+          'Wake command template missing {sessionId} or {logFilePath} placeholder'
     )
     expect(templateErrorPatch).toBeDefined()
   })
@@ -3396,6 +3455,49 @@ describe('server message handlers', () => {
     expect(createArgs).not.toBeNull()
     // Old 'resume old-session-id' stripped, only --search flag preserved
     expect(createArgs!.command).toBe('codex --search resume resume-codex-old')
+  })
+
+  test('wakes pi session from its log file path and preserves launch flags', async () => {
+    const { serveOptions } = await loadIndex()
+    const { ws } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) {
+      throw new Error('WebSocket handlers not configured')
+    }
+    websocket.open?.(ws as never)
+
+    const record = makeRecord({
+      sessionId: 'resume-pi',
+      displayName: 'pi-session',
+      projectPath: '/tmp/pi',
+      agentType: 'pi',
+      logFilePath: '/tmp/pi sessions/resume pi.jsonl',
+      currentWindow: null,
+      launchCommand: '"pi --fast --session /tmp/old-pi.jsonl"',
+    })
+    seedRecord(record)
+
+    let createArgs: { projectPath: string; name?: string; command?: string } | null = null
+    const createdSession: Session = {
+      ...baseSession,
+      id: 'created-pi',
+      name: 'pi-session',
+      tmuxWindow: 'agentboard:53',
+    }
+    sessionManagerState.createWindow = (projectPath, name, command) => {
+      createArgs = { projectPath, name, command }
+      return createdSession
+    }
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({ type: 'session-wake', sessionId: 'resume-pi' })
+    )
+
+    expect(createArgs).not.toBeNull()
+    expect(createArgs!.command).toBe(
+      "pi --fast --session '/tmp/pi sessions/resume pi.jsonl'"
+    )
   })
 
   test('wake is idempotent when the registry already has the session live', async () => {
