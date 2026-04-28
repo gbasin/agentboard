@@ -41,9 +41,9 @@ Run your desktop/server, then connect from your phone or laptop over Tailscale/L
 - **Live terminal** — streams I/O through the server so you can interact with any session from any device
 
 ### Desktop
-| Terminal | Sessions | Starring |
+| Terminal | Sessions | Hibernating |
 | :---: | :---: | :---: |
-| <img src="assets/desktop.png" alt="Terminal" height="400"/> | <img src="assets/sessions.png" alt="Sessions" height="400"/> | <img src="assets/pins.png" alt="Starring" height="400"/> |
+| <img src="assets/desktop.png" alt="Terminal" height="400"/> | <img src="assets/sessions.png" alt="Sessions" height="400"/> | <img src="assets/pins.png" alt="Hibernating" height="400"/> |
 
 ### Mobile
 | Terminal | Controls |

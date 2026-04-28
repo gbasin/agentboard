@@ -755,7 +755,7 @@ export class LogPoller {
         // in the same project, it's a plan→execute transition. Supersede the old session.
         const slug = entry.slug ?? null
         let supersededWindow: string | null = null
-        let inheritPinned = false
+        let inheritHibernationMarker = false
         let inheritDisplayName: string | null = null
         if (slug) {
           const slugMatch = this.db.getActiveSessionBySlugAndProject(
@@ -764,7 +764,7 @@ export class LogPoller {
           )
           if (slugMatch && slugMatch.sessionId !== sessionId) {
             supersededWindow = slugMatch.currentWindow
-            inheritPinned = slugMatch.isPinned
+            inheritHibernationMarker = slugMatch.isPinned
             inheritDisplayName = slugMatch.displayName
             this.db.updateSession(slugMatch.sessionId, {
               currentWindow: null,
@@ -776,7 +776,7 @@ export class LogPoller {
               newSessionId: sessionId,
               slug,
               window: supersededWindow,
-              pinTransferred: inheritPinned,
+              hibernationMarkerTransferred: inheritHibernationMarker,
             })
           }
         }
@@ -848,7 +848,7 @@ export class LogPoller {
           lastActivityAt,
           lastUserMessage: currentWindow ? null : (entry.lastUserMessage ?? null),
           currentWindow,
-          isPinned: inheritPinned,
+          isPinned: inheritHibernationMarker,
           lastResumeError: null,
           lastKnownLogSize: entry.size,
           isCodexExec: entry.isCodexExec,

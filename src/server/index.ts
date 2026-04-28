@@ -1882,14 +1882,60 @@ async function handleKill(sessionId: string, ws: ServerWebSocket<WSData>) {
     return
   }
 
+  const recordByWindow = db.getSessionByWindow(session.tmuxWindow)
+  const agentSessionIds = new Set<string>()
+  if (session.agentSessionId?.trim()) {
+    agentSessionIds.add(session.agentSessionId.trim())
+  }
+  if (recordByWindow) {
+    agentSessionIds.add(recordByWindow.sessionId)
+  }
+  const previousPinnedState = new Map<string, boolean>()
+
+  try {
+    for (const agentSessionId of agentSessionIds) {
+      const current = db.getSessionById(agentSessionId)
+      if (!current) continue
+      previousPinnedState.set(agentSessionId, current.isPinned)
+      const updated = db.updateSession(agentSessionId, { isPinned: false })
+      if (!updated) {
+        throw new Error('Failed to clear hibernation marker')
+      }
+    }
+  } catch (error) {
+    send(ws, {
+      type: 'kill-failed',
+      sessionId,
+      message:
+        error instanceof Error ? error.message : 'Unable to prepare session kill',
+    })
+    return
+  }
+
   try {
     sessionManager.killWindow(session.tmuxWindow)
-    // Bump generation so any in-flight refresh discards its stale result
-    refreshGeneration++
-    const orphaned = new Map<string, AgentSession>()
-    const recordByWindow = db.getSessionByWindow(session.tmuxWindow)
-    const orphanById = (agentSessionId?: string | null) => {
-      if (!agentSessionId || orphaned.has(agentSessionId)) return
+  } catch (error) {
+    for (const [agentSessionId, isPinned] of previousPinnedState) {
+      try {
+        db.updateSession(agentSessionId, { isPinned })
+      } catch {
+        // Best effort rollback; the kill failed, so keep the user-facing error primary.
+      }
+    }
+    send(ws, {
+      type: 'kill-failed',
+      sessionId,
+      message:
+        error instanceof Error ? error.message : 'Unable to kill session',
+    })
+    return
+  }
+
+  // Bump generation so any in-flight refresh discards its stale result
+  refreshGeneration++
+  const orphaned = new Map<string, AgentSession>()
+  for (const agentSessionId of agentSessionIds) {
+    try {
       const orphanedSession = db.updateSession(agentSessionId, {
         currentWindow: null,
         isPinned: false,
@@ -1897,33 +1943,26 @@ async function handleKill(sessionId: string, ws: ServerWebSocket<WSData>) {
       if (orphanedSession) {
         orphaned.set(agentSessionId, toAgentSession(orphanedSession))
       }
+    } catch (error) {
+      logger.error('session_kill_orphan_update_failed', {
+        sessionId: agentSessionId,
+        error: error instanceof Error ? error.message : String(error),
+      })
     }
-
-    orphanById(session.agentSessionId)
-    if (recordByWindow) {
-      orphanById(recordByWindow.sessionId)
-    }
-    if (orphaned.size > 0) {
-      updateDormantAgentSessions()
-      for (const orphanedSession of orphaned.values()) {
-        broadcast({ type: 'session-orphaned', session: orphanedSession })
-      }
-    }
-    const remaining = registry.getAll().filter((item) => item.id !== sessionId)
-    registry.replaceSessions(remaining)
-    // Don't call refreshSessions() here — the registry is already updated
-    // synchronously.  An async refresh would race with the tmux process
-    // dying and could re-add the killed window to the registry before the
-    // process exits, causing stale broadcasts that resurrect the session
-    // on the client.  The periodic refresh handles reconciliation.
-  } catch (error) {
-    send(ws, {
-      type: 'kill-failed',
-      sessionId,
-      message:
-        error instanceof Error ? error.message : 'Unable to kill session',
-    })
   }
+  if (orphaned.size > 0) {
+    updateDormantAgentSessions()
+    for (const orphanedSession of orphaned.values()) {
+      broadcast({ type: 'session-orphaned', session: orphanedSession })
+    }
+  }
+  const remaining = registry.getAll().filter((item) => item.id !== sessionId)
+  registry.replaceSessions(remaining)
+  // Don't call refreshSessions() here — the registry is already updated
+  // synchronously.  An async refresh would race with the tmux process
+  // dying and could re-add the killed window to the registry before the
+  // process exits, causing stale broadcasts that resurrect the session
+  // on the client.  The periodic refresh handles reconciliation.
 }
 
 async function handleRename(
@@ -2115,20 +2154,56 @@ function handleSessionHibernate(
     return
   }
 
-  // Scope the try/catch narrowly to the kill + DB write so that a later
-  // registry/broadcast error can't produce a failure result after we've
-  // already sent a success.
+  const originalMarker = record.isPinned
+  const originalResumeError = record.lastResumeError
   const startedAt = Date.now()
-  let updated: ReturnType<typeof db.updateSession>
+  let marked: ReturnType<typeof db.updateSession>
   try {
-    sessionManager.killWindow(record.currentWindow)
-    refreshGeneration++
-    updated = db.updateSession(sessionId, {
-      currentWindow: null,
+    marked = db.updateSession(sessionId, {
       isPinned: true,
       lastResumeError: null,
     })
   } catch (error) {
+    logger.error('session_hibernate_failed', {
+      sessionId,
+      reason: 'db_marker_update_failed',
+      agentType: record.agentType,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    send(ws, {
+      type: 'session-hibernate-result',
+      sessionId,
+      ok: false,
+      error: 'Failed to update session state',
+    })
+    return
+  }
+  if (!marked) {
+    logger.error('session_hibernate_failed', {
+      sessionId,
+      reason: 'db_marker_update_failed',
+      agentType: record.agentType,
+    })
+    send(ws, {
+      type: 'session-hibernate-result',
+      sessionId,
+      ok: false,
+      error: 'Failed to update session state',
+    })
+    return
+  }
+
+  try {
+    sessionManager.killWindow(record.currentWindow)
+  } catch (error) {
+    try {
+      db.updateSession(sessionId, {
+        isPinned: originalMarker,
+        lastResumeError: originalResumeError,
+      })
+    } catch {
+      // Best effort rollback; preserve the original kill failure for the user.
+    }
     const message = error instanceof Error ? error.message : 'Unable to hibernate session'
     logger.error('session_hibernate_failed', {
       sessionId,
@@ -2145,6 +2220,24 @@ function handleSessionHibernate(
     return
   }
 
+  refreshGeneration++
+  let updated: ReturnType<typeof db.updateSession>
+  try {
+    updated = db.updateSession(sessionId, {
+      currentWindow: null,
+      isPinned: true,
+      lastResumeError: null,
+    })
+  } catch (error) {
+    logger.error('session_hibernate_failed', {
+      sessionId,
+      reason: 'db_update_failed',
+      error: error instanceof Error ? error.message : String(error),
+      agentType: record.agentType,
+    })
+    send(ws, { type: 'session-hibernate-result', sessionId, ok: false, error: 'Failed to update session state' })
+    return
+  }
   if (!updated) {
     logger.error('session_hibernate_failed', {
       sessionId,

@@ -119,13 +119,13 @@ describe('SessionRegistry', () => {
     registry.on('agent-sessions', (payload) => fullEvents.push(payload))
     registry.on('agent-sessions-active', (active) => activeEvents.push(active))
 
-    const inactive = [makeAgentSession({ sessionId: 'old', isActive: false })]
+    const history = [makeAgentSession({ sessionId: 'old', isActive: false })]
 
     // Initial set: both change from empty defaults
     registry.setAgentSessions(
       [makeAgentSession({ sessionId: 'a1' })],
       [],
-      inactive
+      history
     )
     fullEvents.length = 0
     activeEvents.length = 0
@@ -134,7 +134,7 @@ describe('SessionRegistry', () => {
     registry.setAgentSessions(
       [makeAgentSession({ sessionId: 'a2' })],
       [],
-      inactive
+      history
     )
 
     expect(activeEvents).toHaveLength(1)
@@ -178,7 +178,7 @@ describe('SessionRegistry', () => {
     expect(activeEvents).toHaveLength(0)
   })
 
-  test('setAgentSessions emits both events when both active and inactive change', () => {
+  test('setAgentSessions emits both events when both active and history change', () => {
     const registry = new SessionRegistry()
     const fullEvents: Array<{
       active: AgentSession[]
@@ -226,10 +226,10 @@ describe('SessionRegistry', () => {
     registry.on('agent-sessions-active', (active) => activeEvents.push(active))
 
     const active = [makeAgentSession({ sessionId: 'a1' })]
-    const inactive = [makeAgentSession({ sessionId: 'i1', isActive: false })]
+    const history = [makeAgentSession({ sessionId: 'i1', isActive: false })]
 
     // Initial set
-    registry.setAgentSessions(active, [], inactive)
+    registry.setAgentSessions(active, [], history)
     fullEvents.length = 0
     activeEvents.length = 0
 
@@ -257,8 +257,8 @@ describe('SessionRegistry', () => {
     registry.on('agent-sessions-active', (active) => activeEvents.push(active))
 
     const active = [makeAgentSession({ sessionId: 'a1' })]
-    const sleeping = [makeAgentSession({ sessionId: 's1', isActive: false, isPinned: true })]
-    registry.setAgentSessions(active, sleeping, [])
+    const hibernating = [makeAgentSession({ sessionId: 's1', isActive: false, isPinned: true })]
+    registry.setAgentSessions(active, hibernating, [])
     fullEvents.length = 0
     activeEvents.length = 0
 

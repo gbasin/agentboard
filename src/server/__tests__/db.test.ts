@@ -77,29 +77,29 @@ describe('db', () => {
     expect(updated?.currentWindow).toBeNull()
 
     const active = db.getActiveSessions()
-    const inactive = db.getHistorySessions()
+    const history = db.getHistorySessions()
     expect(active).toHaveLength(0)
-    expect(inactive).toHaveLength(1)
+    expect(history).toHaveLength(1)
 
     const orphaned = db.orphanSession(session.sessionId)
     expect(orphaned?.currentWindow).toBeNull()
   })
 
-  test('setPinned updates is_pinned flag', () => {
+  test('setPinned updates hibernation marker flag', () => {
     const session = makeSession()
     db.insertSession(session)
 
-    // Initially not pinned
+    // Initially not marked for hibernation
     expect(db.getSessionById(session.sessionId)?.isPinned).toBe(false)
 
-    // Pin it
-    const pinned = db.setPinned(session.sessionId, true)
-    expect(pinned?.isPinned).toBe(true)
+    // Mark it for hibernation
+    const marked = db.setPinned(session.sessionId, true)
+    expect(marked?.isPinned).toBe(true)
     expect(db.getSessionById(session.sessionId)?.isPinned).toBe(true)
 
-    // Unpin it
-    const unpinned = db.setPinned(session.sessionId, false)
-    expect(unpinned?.isPinned).toBe(false)
+    // Clear the hibernation marker
+    const cleared = db.setPinned(session.sessionId, false)
+    expect(cleared?.isPinned).toBe(false)
     expect(db.getSessionById(session.sessionId)?.isPinned).toBe(false)
   })
 
@@ -164,6 +164,28 @@ describe('db', () => {
 
     expect(orphaned?.currentWindow).toBeNull()
     expect(orphaned?.isPinned).toBe(true)
+    expect(db.getHibernatingSessions().map((session) => session.sessionId)).toEqual([
+      'marked-to-orphan',
+    ])
+    expect(db.getHistorySessions()).toEqual([])
+  })
+
+  test('orphanSession moves unmarked active sessions to history', () => {
+    db.insertSession(makeSession({
+      sessionId: 'unmarked-to-orphan',
+      logFilePath: '/tmp/unmarked-to-orphan.jsonl',
+      currentWindow: 'agentboard:10',
+      isPinned: false,
+    }))
+
+    const orphaned = db.orphanSession('unmarked-to-orphan')
+
+    expect(orphaned?.currentWindow).toBeNull()
+    expect(orphaned?.isPinned).toBe(false)
+    expect(db.getHibernatingSessions()).toEqual([])
+    expect(db.getHistorySessions().map((session) => session.sessionId)).toEqual([
+      'unmarked-to-orphan',
+    ])
   })
 
   test('displayNameExists returns true for existing names', () => {

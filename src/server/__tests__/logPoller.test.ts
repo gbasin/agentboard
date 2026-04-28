@@ -734,7 +734,7 @@ describe('LogPoller', () => {
     db.close()
   })
 
-  test('transfers pin state when superseding via slug', async () => {
+  test('transfers hibernation marker when superseding via slug', async () => {
     const db = initDatabase({ path: ':memory:' })
     const registry = new SessionRegistry()
     registry.replaceSessions([baseSession])
@@ -755,7 +755,7 @@ describe('LogPoller', () => {
     const lineA = buildUserLogEntry(tokensA, {
       sessionId: 'claude-session-a',
       cwd: projectPath,
-      slug: 'pinned-slug',
+      slug: 'hibernate-slug',
     })
     const assistantLineA = JSON.stringify({
       type: 'assistant',
@@ -768,12 +768,12 @@ describe('LogPoller', () => {
     })
     await poller.pollOnce()
 
-    // Pin session A
+    // Mark session A for hibernation
     db.setPinned('claude-session-a', true)
-    const pinnedA = db.getSessionById('claude-session-a')
-    expect(pinnedA?.isPinned).toBe(true)
+    const markedA = db.getSessionById('claude-session-a')
+    expect(markedA?.isPinned).toBe(true)
 
-    // Session B with same slug supersedes pinned session A
+    // Session B with same slug supersedes hibernation-marked session A
     const tokensB = Array.from({ length: 60 }, (_, i) => `next${i}`).join(' ')
     setTmuxOutput(baseSession.tmuxWindow, buildLastExchangeOutput(tokensB))
 
@@ -781,7 +781,7 @@ describe('LogPoller', () => {
     const lineB = buildUserLogEntry(tokensB, {
       sessionId: 'claude-session-b',
       cwd: projectPath,
-      slug: 'pinned-slug',
+      slug: 'hibernate-slug',
     })
     const assistantLineB = JSON.stringify({
       type: 'assistant',
@@ -791,7 +791,7 @@ describe('LogPoller', () => {
 
     await poller.pollOnce()
 
-    // Session B should inherit the pin
+    // Session B should inherit the hibernation marker
     const newRecord = db.getSessionById('claude-session-b')
     expect(newRecord?.currentWindow).toBe(baseSession.tmuxWindow)
     expect(newRecord?.isPinned).toBe(true)
