@@ -41,10 +41,10 @@ const workingGracePeriodMs = Number.isFinite(workingGracePeriodMsRaw)
   ? workingGracePeriodMsRaw
   : 4000
 
-// Max age for inactive sessions shown in UI (hours)
-// Sessions older than this are not sent to frontend or processed for orphan rematch
+// Max age for History sessions shown in UI (hours).
+// The env var name is kept stable across the Inactive -> History rename.
 const inactiveSessionMaxAgeHoursRaw = Number(process.env.AGENTBOARD_INACTIVE_MAX_AGE_HOURS)
-const inactiveSessionMaxAgeHours = Number.isFinite(inactiveSessionMaxAgeHoursRaw)
+const historySessionMaxAgeHours = Number.isFinite(inactiveSessionMaxAgeHoursRaw)
   ? inactiveSessionMaxAgeHoursRaw
   : 24
 
@@ -171,7 +171,7 @@ export const config = {
   codexResumeCmd: process.env.CODEX_RESUME_CMD || 'codex resume {sessionId}',
   enterRefreshDelayMs,
   workingGracePeriodMs,
-  inactiveSessionMaxAgeHours,
+  historySessionMaxAgeHours,
   excludeProjects,
   skipMatchingPatterns,
   logLevel,

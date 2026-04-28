@@ -270,8 +270,8 @@ export class LogPoller {
       const logDirs = getLogSearchDirs()
       const sessionRecords = [
         ...this.db.getActiveSessions(),
-        ...this.db.getSleepingSessions(),
-        ...this.db.getInactiveSessions(),
+        ...this.db.getHibernatingSessions(),
+        ...this.db.getHistorySessions(),
       ]
       const excludedProjects = config.excludeProjects ?? []
 
@@ -482,8 +482,8 @@ export class LogPoller {
       const logDirs = getLogSearchDirs()
       const sessionRecords = [
         ...this.db.getActiveSessions(),
-        ...this.db.getSleepingSessions(),
-        ...this.db.getInactiveSessions(),
+        ...this.db.getHibernatingSessions(),
+        ...this.db.getHistorySessions(),
       ]
       const sessions: SessionSnapshot[] = sessionRecords.map((session) => ({
         sessionId: session.sessionId,
@@ -899,8 +899,8 @@ export class LogPoller {
       const logDirs = getLogSearchDirs()
       const sessionRecords = [
         ...this.db.getActiveSessions(),
-        ...this.db.getSleepingSessions(),
-        ...this.db.getInactiveSessions(),
+        ...this.db.getHibernatingSessions(),
+        ...this.db.getHistorySessions(),
       ]
       let shouldBackfillLastMessage = false
       if (this.startupLastMessageBackfillPending) {

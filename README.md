@@ -15,10 +15,9 @@ Run your desktop/server, then connect from your phone or laptop over Tailscale/L
   - Touch scrolling
   - Virtual arrow keys / d-pad
   - Quick keys toolbar (ctrl, esc, etc.)
-- Out-of-the-box log tracking and matching for Claude, Codex, and Pi — auto-matches sessions to active tmux windows, with one-click restore for inactive sessions.
+- Out-of-the-box log tracking and matching for Claude, Codex, and Pi — auto-matches sessions to active tmux windows, with one-click wake for History sessions.
 - Shows the last user prompt for each session, so you can remember what each agent is working on
-- Star agent TUI sessions to auto-wake them when the server restarts (useful if your machine reboots or tmux dies)
-- Snooze sessions to close their tmux window while keeping them visible — wake on demand or auto-wake at next startup
+- Hibernate sessions to close their tmux window while keeping them visible for manual wake
 
 ## How It Works
 
@@ -181,7 +180,7 @@ AGENTBOARD_LOG_WATCH_MODE=watch
 
 All persistent data is stored in `~/.agentboard/`: session database (`agentboard.db`) and logs (`agentboard.log`). Override paths with `AGENTBOARD_DB_PATH` and `LOG_FILE`.
 
-`AGENTBOARD_INACTIVE_MAX_AGE_HOURS` limits inactive sessions shown in the UI to those with recent activity (default: 24 hours). Older sessions remain in the database but are not displayed or processed for orphan rematch.
+`AGENTBOARD_INACTIVE_MAX_AGE_HOURS` limits History sessions shown in the UI to those with recent activity (default: 24 hours). Older sessions remain in the database but are not displayed or processed for orphan rematch. The env var name is kept for compatibility.
 
 `AGENTBOARD_EXCLUDE_PROJECTS` filters out sessions from specific project directories (comma-separated). Use `<empty>` to exclude sessions with no project path. Useful for hiding automated/spam sessions.
 

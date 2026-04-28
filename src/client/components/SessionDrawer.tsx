@@ -13,16 +13,16 @@ interface SessionDrawerProps {
   isOpen: boolean
   onClose: () => void
   sessions: Session[]
-  sleepingSessions?: AgentSession[]
-  inactiveSessions?: AgentSession[]
+  hibernatingSessions?: AgentSession[]
+  historySessions?: AgentSession[]
   selectedSessionId: string | null
-  selectedSleepingSessionId?: string | null
+  selectedHibernatingSessionId?: string | null
   onSelect: (sessionId: string) => void
-  onSelectSleeping?: (sessionId: string) => void
+  onSelectHibernating?: (sessionId: string) => void
   onRename: (sessionId: string, newName: string) => void
   onResume?: (sessionId: string) => void
-  onSleep?: (sessionId: string) => void
-  onSetPinned?: (sessionId: string, isPinned: boolean) => void
+  onHibernate?: (sessionId: string) => void
+  onMoveToHistory?: (sessionId: string) => void
   onNewSession: () => boolean | void
   loading: boolean
   error: string | null
@@ -32,16 +32,16 @@ export default function SessionDrawer({
   isOpen,
   onClose,
   sessions,
-  sleepingSessions = [],
-  inactiveSessions = [],
+  hibernatingSessions = [],
+  historySessions = [],
   selectedSessionId,
-  selectedSleepingSessionId = null,
+  selectedHibernatingSessionId = null,
   onSelect,
-  onSelectSleeping,
+  onSelectHibernating,
   onRename,
   onResume,
-  onSleep,
-  onSetPinned,
+  onHibernate,
+  onMoveToHistory,
   onNewSession,
   loading,
   error,
@@ -125,8 +125,8 @@ export default function SessionDrawer({
     onClose()
   }
 
-  const handleSelectSleeping = (sessionId: string) => {
-    onSelectSleeping?.(sessionId)
+  const handleSelectHibernating = (sessionId: string) => {
+    onSelectHibernating?.(sessionId)
     onClose()
   }
 
@@ -157,16 +157,16 @@ export default function SessionDrawer({
       >
         <SessionList
           sessions={sessions}
-          sleepingSessions={sleepingSessions}
-          inactiveSessions={inactiveSessions}
+          hibernatingSessions={hibernatingSessions}
+          historySessions={historySessions}
           selectedSessionId={selectedSessionId}
-          selectedSleepingSessionId={selectedSleepingSessionId}
+          selectedHibernatingSessionId={selectedHibernatingSessionId}
           onSelect={handleSelect}
-          onSelectSleeping={handleSelectSleeping}
+          onSelectHibernating={handleSelectHibernating}
           onRename={onRename}
           onResume={onResume}
-          onSleep={onSleep}
-          onSetPinned={onSetPinned}
+          onHibernate={onHibernate}
+          onMoveToHistory={onMoveToHistory}
           loading={loading}
           error={error}
         />

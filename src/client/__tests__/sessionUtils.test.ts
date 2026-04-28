@@ -13,8 +13,8 @@ const baseSession: Session = {
   source: 'managed',
 }
 
-const baseInactive: AgentSession = {
-  sessionId: 'inactive-1',
+const baseHistory: AgentSession = {
+  sessionId: 'history-1',
   logFilePath: '/tmp/log.jsonl',
   projectPath: '/tmp/alpha',
   agentType: 'claude',
@@ -28,8 +28,8 @@ function makeSession(overrides: Partial<Session>): Session {
   return { ...baseSession, ...overrides }
 }
 
-function makeInactive(overrides: Partial<AgentSession>): AgentSession {
-  return { ...baseInactive, ...overrides }
+function makeHistory(overrides: Partial<AgentSession>): AgentSession {
+  return { ...baseHistory, ...overrides }
 }
 
 describe('getUniqueProjects', () => {
@@ -39,13 +39,13 @@ describe('getUniqueProjects', () => {
       makeSession({ id: 'b', projectPath: '/tmp/alpha', lastActivity: '2024-01-01T03:00:00.000Z' }),
       makeSession({ id: 'c', projectPath: '/tmp/alpha', lastActivity: '2024-01-01T02:00:00.000Z' }),
     ]
-    const inactive = [
-      makeInactive({ sessionId: 'inactive-2', projectPath: '/tmp/charlie', lastActivityAt: '2024-01-01T04:00:00.000Z' }),
-      makeInactive({ sessionId: 'inactive-3', projectPath: '/tmp/beta', lastActivityAt: '2024-01-01T00:30:00.000Z' }),
+    const history = [
+      makeHistory({ sessionId: 'history-2', projectPath: '/tmp/charlie', lastActivityAt: '2024-01-01T04:00:00.000Z' }),
+      makeHistory({ sessionId: 'history-3', projectPath: '/tmp/beta', lastActivityAt: '2024-01-01T00:30:00.000Z' }),
     ]
 
     // Sorted by most recent activity: charlie (04:00), alpha (03:00), beta (01:00)
-    expect(getUniqueProjects(sessions, inactive)).toEqual([
+    expect(getUniqueProjects(sessions, history)).toEqual([
       '/tmp/charlie',
       '/tmp/alpha',
       '/tmp/beta',
@@ -56,10 +56,10 @@ describe('getUniqueProjects', () => {
     const sessions = [
       makeSession({ id: 'empty', projectPath: '   ' }),
     ]
-    const inactive = [
-      makeInactive({ sessionId: 'empty-inactive', projectPath: '' }),
+    const history = [
+      makeHistory({ sessionId: 'empty-history', projectPath: '' }),
     ]
 
-    expect(getUniqueProjects(sessions, inactive)).toEqual([])
+    expect(getUniqueProjects(sessions, history)).toEqual([])
   })
 })

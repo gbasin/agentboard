@@ -2,7 +2,7 @@ import type { Server, ServerWebSocket } from 'bun'
 import os from 'node:os'
 import path from 'node:path'
 import fs from 'node:fs/promises'
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import { serveStatic } from 'hono/bun'
 import { config, isValidHostname } from './config'
 import { ensureTmux } from './prerequisites'
@@ -27,8 +27,8 @@ import {
 import type { ITerminalProxy } from './terminal'
 import { resolveProjectPath } from './paths'
 import {
-  INACTIVE_MAX_AGE_MIN_HOURS,
-  INACTIVE_MAX_AGE_MAX_HOURS,
+  HISTORY_MAX_AGE_MIN_HOURS,
+  HISTORY_MAX_AGE_MAX_HOURS,
   type ClientMessage,
   type ServerMessage,
   type TerminalErrorCode,
@@ -224,14 +224,15 @@ const TMUX_MOUSE_MODE_KEY = 'tmux_mouse_mode'
 const storedMouseMode = db.getAppSetting(TMUX_MOUSE_MODE_KEY)
 const initialMouseMode = storedMouseMode === null ? true : storedMouseMode === 'true'
 
-// Read inactive max age hours setting from DB (default: 24)
-const INACTIVE_MAX_AGE_HOURS_KEY = 'inactive_max_age_hours'
-const storedInactiveMaxAgeHours = db.getAppSetting(INACTIVE_MAX_AGE_HOURS_KEY)
-let runtimeInactiveMaxAgeHours = storedInactiveMaxAgeHours !== null
-  ? Number(storedInactiveMaxAgeHours)
-  : config.inactiveSessionMaxAgeHours
-if (!Number.isFinite(runtimeInactiveMaxAgeHours) || runtimeInactiveMaxAgeHours < 1) {
-  runtimeInactiveMaxAgeHours = 24
+// Read history max age hours setting from DB (default: 24). Keep the DB key
+// stable so existing settings survive the rename from Inactive to History.
+const HISTORY_MAX_AGE_HOURS_KEY = 'inactive_max_age_hours'
+const storedHistoryMaxAgeHours = db.getAppSetting(HISTORY_MAX_AGE_HOURS_KEY)
+let runtimeHistoryMaxAgeHours = storedHistoryMaxAgeHours !== null
+  ? Number(storedHistoryMaxAgeHours)
+  : config.historySessionMaxAgeHours
+if (!Number.isFinite(runtimeHistoryMaxAgeHours) || runtimeHistoryMaxAgeHours < 1) {
+  runtimeHistoryMaxAgeHours = 24
 }
 
 const sessionManager = new SessionManager(undefined, {
@@ -279,13 +280,6 @@ const REMOTE_SESSION_MUTATION_TTL_MS = 30_000
 const remoteSessionTombstones = new Map<string, number>()
 const remoteSessionNameOverrides = new Map<string, { name: string; setAt: number }>()
 
-// Grace period for resurrected pinned sessions. After resurrection, the session
-// is protected from orphaning for this duration — even if the resume command
-// crashes and the window dies, the session won't be immediately orphaned.
-const RESURRECTION_GRACE_MS = Number(process.env.RESURRECTION_GRACE_MS) || 15_000
-const resurrectedSessionGrace = new Map<string, number>() // sessionId -> resurrection timestamp
-const WAKE_RETRY_COOLDOWN_MS =
-  Number(process.env.AGENTBOARD_WAKE_RETRY_COOLDOWN_MS) || 24 * 60 * 60 * 1000
 const wakeInFlight = new Set<string>()
 
 function mergeRemoteSessions(sessions: Session[]): Session[] {
@@ -442,7 +436,7 @@ const sessionRefreshWorker = new SessionRefreshWorkerClient()
 const lastUserMessageWorker = new SessionRefreshWorkerClient()
 
 // Active sessions update on every refresh — cheap (few rows).
-// Inactive sessions query is expensive — only run on actual mutations.
+// History sessions query is expensive — only run on actual mutations.
 function filterExcludedAgentSessions(sessions: AgentSession[]): AgentSession[] {
   const excludedProjects = config.excludeProjects ?? []
   if (excludedProjects.length === 0) {
@@ -465,24 +459,24 @@ function updateActiveAgentSessions() {
   const current = registry.getAgentSessions()
   registry.setAgentSessions(
     active,
-    current.sleeping,
-    current.inactive
+    current.hibernating,
+    current.history
   )
 }
 
 function updateDormantAgentSessions() {
-  const sleeping = filterExcludedAgentSessions(
-    db.getSleepingSessions().map(toAgentSession)
+  const hibernating = filterExcludedAgentSessions(
+    db.getHibernatingSessions().map(toAgentSession)
   )
-  const inactive = filterExcludedAgentSessions(
-    db.getInactiveSessions({ maxAgeHours: runtimeInactiveMaxAgeHours }).map(
+  const history = filterExcludedAgentSessions(
+    db.getHistorySessions({ maxAgeHours: runtimeHistoryMaxAgeHours }).map(
       toAgentSession
     )
   )
   const active = hasConfirmedLocalSessionSnapshot
     ? db.getActiveSessions().map(toAgentSession)
     : []
-  registry.setAgentSessions(active, sleeping, inactive)
+  registry.setAgentSessions(active, hibernating, history)
 }
 
 interface VerificationDecision {
@@ -586,12 +580,6 @@ function hydrateSessionsWithAgentSessions(
       : Boolean(currentWindow && windowSet.has(currentWindow))
 
     if (!windowExists || !currentWindow) {
-      // Don't orphan recently-resurrected sessions — give resume command time to start
-      const graceStart = resurrectedSessionGrace.get(agentSession.sessionId)
-      if (graceStart && Date.now() - graceStart < RESURRECTION_GRACE_MS) {
-        continue
-      }
-      resurrectedSessionGrace.delete(agentSession.sessionId)
       logger.info('session_orphaned', {
         sessionId: agentSession.sessionId,
         displayName: agentSession.displayName,
@@ -608,13 +596,6 @@ function hydrateSessionsWithAgentSessions(
         orphaned.push(toAgentSession(orphanedSession))
       }
       continue
-    }
-
-    // Session survived — only clean up the grace entry after TTL expires.
-    // While TTL is active, keep it so a crash within the grace window is still protected.
-    const graceStart = resurrectedSessionGrace.get(agentSession.sessionId)
-    if (graceStart && Date.now() - graceStart >= RESURRECTION_GRACE_MS) {
-      resurrectedSessionGrace.delete(agentSession.sessionId)
     }
 
     let verification: WindowLogVerificationResult | null = null
@@ -999,13 +980,8 @@ async function completeStartupVerification(): Promise<void> {
     })
   }
 
-  if (db.getPinnedOrphaned().length > 0) {
-    resurrectStarredSessions()
-    refreshSessionsSync()
-  }
-
-  // Load dormant sessions after startup verification and resurrection so the
-  // list reflects the final active/sleeping/inactive split.
+  // Load dormant sessions after startup verification so the list reflects the
+  // final active/hibernating/history split without auto-waking anything.
   updateDormantAgentSessions()
 }
 
@@ -1021,8 +997,8 @@ registry.on('session-removed', (sessionId) => {
   broadcast({ type: 'session-removed', sessionId })
 })
 
-registry.on('agent-sessions', ({ active, sleeping, inactive }) => {
-  broadcast({ type: 'agent-sessions', active, sleeping, inactive })
+registry.on('agent-sessions', ({ active, hibernating, history }) => {
+  broadcast({ type: 'agent-sessions', active, hibernating, history })
 })
 
 registry.on('agent-sessions-active', (active) => {
@@ -1298,27 +1274,33 @@ app.put('/api/settings/tmux-mouse-mode', async (c) => {
   return c.json({ enabled: body.enabled })
 })
 
-// Inactive sessions max age setting
-app.get('/api/settings/inactive-max-age-hours', (c) => {
-  return c.json({ hours: runtimeInactiveMaxAgeHours })
-})
+// History sessions max age setting. The inactive route is kept as a
+// compatibility alias for older clients.
+const getHistoryMaxAgeHours = (c: Context) => {
+  return c.json({ hours: runtimeHistoryMaxAgeHours })
+}
 
-app.put('/api/settings/inactive-max-age-hours', async (c) => {
+const putHistoryMaxAgeHours = async (c: Context) => {
   try {
     const body = await c.req.json()
     const hours = Number(body.hours)
-    if (!Number.isFinite(hours) || hours < INACTIVE_MAX_AGE_MIN_HOURS || hours > INACTIVE_MAX_AGE_MAX_HOURS) {
-      return c.json({ error: `hours must be a number between ${INACTIVE_MAX_AGE_MIN_HOURS} and ${INACTIVE_MAX_AGE_MAX_HOURS}` }, 400)
+    if (!Number.isFinite(hours) || hours < HISTORY_MAX_AGE_MIN_HOURS || hours > HISTORY_MAX_AGE_MAX_HOURS) {
+      return c.json({ error: `hours must be a number between ${HISTORY_MAX_AGE_MIN_HOURS} and ${HISTORY_MAX_AGE_MAX_HOURS}` }, 400)
     }
-    runtimeInactiveMaxAgeHours = hours
-    db.setAppSetting(INACTIVE_MAX_AGE_HOURS_KEY, String(hours))
+    runtimeHistoryMaxAgeHours = hours
+    db.setAppSetting(HISTORY_MAX_AGE_HOURS_KEY, String(hours))
     // Re-broadcast agent sessions with new max age
     updateDormantAgentSessions()
     return c.json({ hours })
   } catch {
     return c.json({ error: 'Invalid request body' }, 400)
   }
-})
+}
+
+app.get('/api/settings/history-max-age-hours', getHistoryMaxAgeHours)
+app.put('/api/settings/history-max-age-hours', putHistoryMaxAgeHours)
+app.get('/api/settings/inactive-max-age-hours', getHistoryMaxAgeHours)
+app.put('/api/settings/inactive-max-age-hours', putHistoryMaxAgeHours)
 
 // Image upload endpoint for iOS clipboard paste
 app.post('/api/paste-image', async (c) => {
@@ -1429,8 +1411,8 @@ const websocketHandlers = {
     send(ws, {
       type: 'agent-sessions',
       active: agentSessions.active,
-      sleeping: agentSessions.sleeping,
-      inactive: agentSessions.inactive,
+      hibernating: agentSessions.hibernating,
+      history: agentSessions.history,
     })
     initializePersistentTerminal(ws)
   },
@@ -1639,11 +1621,11 @@ function handleMessage(
     case 'session-wake':
       handleSessionWake(message, ws)
       return
-    case 'session-sleep':
-      handleSessionSleep(message.sessionId, ws)
+    case 'session-hibernate':
+      handleSessionHibernate(message.sessionId, ws)
       return
-    case 'session-pin':
-      handleSessionPin(message.sessionId, message.isPinned, ws)
+    case 'session-move-to-history':
+      handleMoveToHistory(message.sessionId, ws)
       return
     default:
       send(ws, { type: 'error', message: 'Unknown message type' })
@@ -1905,16 +1887,19 @@ async function handleKill(sessionId: string, ws: ServerWebSocket<WSData>) {
     // Bump generation so any in-flight refresh discards its stale result
     refreshGeneration++
     const orphaned = new Map<string, AgentSession>()
+    const recordByWindow = db.getSessionByWindow(session.tmuxWindow)
     const orphanById = (agentSessionId?: string | null) => {
       if (!agentSessionId || orphaned.has(agentSessionId)) return
-      const orphanedSession = db.orphanSession(agentSessionId)
+      const orphanedSession = db.updateSession(agentSessionId, {
+        currentWindow: null,
+        isPinned: false,
+      })
       if (orphanedSession) {
         orphaned.set(agentSessionId, toAgentSession(orphanedSession))
       }
     }
 
     orphanById(session.agentSessionId)
-    const recordByWindow = db.getSessionByWindow(session.tmuxWindow)
     if (recordByWindow) {
       orphanById(recordByWindow.sessionId)
     }
@@ -2033,76 +2018,71 @@ async function handleRename(
   }
 }
 
-function handleSessionPin(
+function handleMoveToHistory(
   sessionId: string,
-  isPinned: unknown,
   ws: ServerWebSocket<WSData>
 ) {
-  // Validate isPinned is actually a boolean
-  if (typeof isPinned !== 'boolean') {
-    send(ws, { type: 'session-pin-result', sessionId, ok: false, error: 'isPinned must be a boolean' })
-    return
-  }
-
   if (!isValidSessionId(sessionId)) {
-    send(ws, { type: 'session-pin-result', sessionId, ok: false, error: 'Invalid session id' })
+    send(ws, { type: 'session-move-to-history-result', sessionId, ok: false, error: 'Invalid session id' })
     return
   }
 
   const record = db.getSessionById(sessionId)
   if (!record) {
-    send(ws, { type: 'session-pin-result', sessionId, ok: false, error: 'Session not found' })
+    send(ws, { type: 'session-move-to-history-result', sessionId, ok: false, error: 'Session not found' })
     return
   }
 
-  // When pinning, also clear any previous resume error
-  const updated = isPinned
-    ? db.updateSession(sessionId, { isPinned: true, lastResumeError: null })
-    : db.setPinned(sessionId, false)
+  const updated = db.setPinned(sessionId, false)
   if (!updated) {
-    send(ws, { type: 'session-pin-result', sessionId, ok: false, error: 'Failed to update pin state' })
+    send(ws, { type: 'session-move-to-history-result', sessionId, ok: false, error: 'Failed to move session to History' })
     return
   }
 
-  send(ws, { type: 'session-pin-result', sessionId, ok: true })
+  send(ws, {
+    type: 'session-move-to-history-result',
+    sessionId,
+    ok: true,
+    session: toAgentSession(updated),
+  })
 
-  // Update all active sessions that match (in case of edge cases with multiple windows)
+  // Update all active sessions that match (in case of edge cases with multiple windows).
   for (const session of registry.getAll()) {
     if (session.agentSessionId === sessionId) {
-      registry.updateSession(session.id, { isPinned })
+      registry.updateSession(session.id, { isPinned: false })
     }
   }
 
   updateDormantAgentSessions()
 }
 
-function handleSessionSleep(
+function handleSessionHibernate(
   sessionId: string,
   ws: ServerWebSocket<WSData>
 ) {
   if (!isValidSessionId(sessionId)) {
-    logger.warn('session_sleep_failed', { sessionId, reason: 'invalid_id' })
-    send(ws, { type: 'session-sleep-result', sessionId, ok: false, error: 'Invalid session id' })
+    logger.warn('session_hibernate_failed', { sessionId, reason: 'invalid_id' })
+    send(ws, { type: 'session-hibernate-result', sessionId, ok: false, error: 'Invalid session id' })
     return
   }
 
   const record = db.getSessionById(sessionId)
   if (!record) {
-    logger.warn('session_sleep_failed', { sessionId, reason: 'not_found' })
-    send(ws, { type: 'session-sleep-result', sessionId, ok: false, error: 'Session not found' })
+    logger.warn('session_hibernate_failed', { sessionId, reason: 'not_found' })
+    send(ws, { type: 'session-hibernate-result', sessionId, ok: false, error: 'Session not found' })
     return
   }
 
-  // Idempotent ack: already snoozed. A reconnect-storm replay or a double
+  // Idempotent ack: already hibernating. A reconnect-storm replay or a double
   // click shouldn't surface a spurious error to the user.
   if (record.isPinned && !record.currentWindow) {
-    logger.info('session_sleep_noop', {
+    logger.info('session_hibernate_noop', {
       sessionId,
       agentType: record.agentType,
       displayName: record.displayName,
     })
     send(ws, {
-      type: 'session-sleep-result',
+      type: 'session-hibernate-result',
       sessionId,
       ok: true,
       session: toAgentSession(record),
@@ -2111,8 +2091,8 @@ function handleSessionSleep(
   }
 
   if (!record.currentWindow) {
-    logger.warn('session_sleep_failed', { sessionId, reason: 'not_active' })
-    send(ws, { type: 'session-sleep-result', sessionId, ok: false, error: 'Session is not active' })
+    logger.warn('session_hibernate_failed', { sessionId, reason: 'not_active' })
+    send(ws, { type: 'session-hibernate-result', sessionId, ok: false, error: 'Session is not active' })
     return
   }
 
@@ -2121,16 +2101,16 @@ function handleSessionSleep(
     registry.getAll().find((session) => session.agentSessionId?.trim() === sessionId)
 
   if (!liveSession || liveSession.remote || liveSession.source !== 'managed') {
-    logger.warn('session_sleep_failed', {
+    logger.warn('session_hibernate_failed', {
       sessionId,
       reason: 'not_local_managed',
       agentType: record.agentType,
     })
     send(ws, {
-      type: 'session-sleep-result',
+      type: 'session-hibernate-result',
       sessionId,
       ok: false,
-      error: 'Only local managed sessions can be slept',
+      error: 'Only local managed sessions can be hibernated',
     })
     return
   }
@@ -2149,15 +2129,15 @@ function handleSessionSleep(
       lastResumeError: null,
     })
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unable to sleep session'
-    logger.error('session_sleep_failed', {
+    const message = error instanceof Error ? error.message : 'Unable to hibernate session'
+    logger.error('session_hibernate_failed', {
       sessionId,
       reason: 'kill_failed',
       error: message,
       agentType: record.agentType,
     })
     send(ws, {
-      type: 'session-sleep-result',
+      type: 'session-hibernate-result',
       sessionId,
       ok: false,
       error: message,
@@ -2166,16 +2146,16 @@ function handleSessionSleep(
   }
 
   if (!updated) {
-    logger.error('session_sleep_failed', {
+    logger.error('session_hibernate_failed', {
       sessionId,
       reason: 'db_update_failed',
       agentType: record.agentType,
     })
-    send(ws, { type: 'session-sleep-result', sessionId, ok: false, error: 'Failed to update session state' })
+    send(ws, { type: 'session-hibernate-result', sessionId, ok: false, error: 'Failed to update session state' })
     return
   }
 
-  logger.info('session_sleep_success', {
+  logger.info('session_hibernate_success', {
     sessionId,
     agentType: record.agentType,
     displayName: record.displayName,
@@ -2184,7 +2164,7 @@ function handleSessionSleep(
   })
 
   send(ws, {
-    type: 'session-sleep-result',
+    type: 'session-hibernate-result',
     sessionId,
     ok: true,
     session: toAgentSession(updated),
@@ -2256,17 +2236,6 @@ function validateWakeTemplate(record: AgentSessionRecord): WakeError | null {
     code: 'WAKE_FAILED',
     message: 'Wake command template missing {sessionId} placeholder',
   }
-}
-
-function shouldSkipAutoWake(record: AgentSessionRecord, now = Date.now()): boolean {
-  if (!record.lastResumeError || !record.lastResumeAttemptAt) {
-    return false
-  }
-  const lastAttempt = Date.parse(record.lastResumeAttemptAt)
-  if (Number.isNaN(lastAttempt)) {
-    return false
-  }
-  return now - lastAttempt < WAKE_RETRY_COOLDOWN_MS
 }
 
 function hydrateWakeSession(
@@ -2385,128 +2354,6 @@ function tryRematchDormantSession(
   }
 }
 
-function resurrectStarredSessions() {
-  const snoozed = db.getPinnedOrphaned()
-  const orphanedPinned = snoozed.filter((record) => !shouldSkipAutoWake(record))
-  if (orphanedPinned.length === 0) {
-    if (snoozed.length > 0) {
-      logger.info('resurrect_starred_sessions_skip', {
-        reason: 'cooldown',
-        count: snoozed.length,
-      })
-    }
-    return
-  }
-
-  logger.info('resurrect_starred_sessions_start', { count: orphanedPinned.length })
-
-  for (const record of orphanedPinned) {
-    if (wakeInFlight.has(record.sessionId)) {
-      logger.info('resurrect_starred_session_skip', {
-        sessionId: record.sessionId,
-        reason: 'wake_in_flight',
-      })
-      continue
-    }
-    wakeInFlight.add(record.sessionId)
-    const attemptAt = new Date().toISOString()
-
-    // Validate sessionId before using in command
-    if (!isValidSessionId(record.sessionId)) {
-      const errorMsg = 'Invalid session id format'
-      db.updateSession(record.sessionId, {
-        lastResumeError: errorMsg,
-        lastResumeAttemptAt: attemptAt,
-      })
-      broadcast({
-        type: 'session-resurrection-failed',
-        sessionId: record.sessionId,
-        displayName: record.displayName,
-        error: errorMsg,
-      })
-      logger.error('resurrect_starred_session_invalid_id', {
-        sessionId: record.sessionId,
-        displayName: record.displayName,
-      })
-      wakeInFlight.delete(record.sessionId)
-      continue
-    }
-
-    const templateError = validateWakeTemplate(record)
-    if (templateError) {
-      db.updateSession(record.sessionId, {
-        lastResumeError: templateError.message,
-        lastResumeAttemptAt: attemptAt,
-      })
-      broadcast({
-        type: 'session-resurrection-failed',
-        sessionId: record.sessionId,
-        displayName: record.displayName,
-        error: templateError.message,
-      })
-      logger.error('resurrect_starred_session_failed', {
-        sessionId: record.sessionId,
-        displayName: record.displayName,
-        error: templateError.message,
-      })
-      wakeInFlight.delete(record.sessionId)
-      continue
-    }
-
-    const command = buildResumeCommand(record.launchCommand, record.sessionId, record.agentType)
-    const projectPath =
-      record.projectPath ||
-      process.env.HOME ||
-      process.env.USERPROFILE ||
-      '.'
-
-    try {
-      const created = sessionManager.createWindow(
-        projectPath,
-        record.displayName,
-        command,
-        { excludeSessionId: record.sessionId }
-      )
-      resurrectedSessionGrace.set(record.sessionId, Date.now())
-      try {
-        sessionManager.setWindowOption(created.tmuxWindow, 'remain-on-exit', 'failed')
-      } catch { /* non-fatal — older tmux may not support 'failed' value */ }
-      db.updateSession(record.sessionId, {
-        currentWindow: created.tmuxWindow,
-        displayName: created.name,
-        lastResumeAttemptAt: attemptAt,
-        lastResumeError: null, // Clear any previous error on success
-      })
-      logger.info('resurrect_starred_session_success', {
-        sessionId: record.sessionId,
-        displayName: record.displayName,
-        tmuxWindow: created.tmuxWindow,
-      })
-    } catch (error) {
-      // Resurrection failed. Preserve the star so the Snoozed row remains
-      // actionable, but record the failure and throttle future auto-wake tries.
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      db.updateSession(record.sessionId, {
-        lastResumeError: errorMsg,
-        lastResumeAttemptAt: attemptAt,
-      })
-      broadcast({
-        type: 'session-resurrection-failed',
-        sessionId: record.sessionId,
-        displayName: record.displayName,
-        error: errorMsg,
-      })
-      logger.error('resurrect_starred_session_failed', {
-        sessionId: record.sessionId,
-        displayName: record.displayName,
-        error: errorMsg,
-      })
-    } finally {
-      wakeInFlight.delete(record.sessionId)
-    }
-  }
-}
-
 function handleSessionWake(
   message: Extract<ClientMessage, { type: 'session-wake' }>,
   ws: ServerWebSocket<WSData>
@@ -2572,7 +2419,6 @@ function handleSessionWake(
   }
 
   wakeInFlight.add(sessionId)
-  const attemptAt = new Date().toISOString()
 
   try {
     const latest = db.getSessionById(sessionId) ?? record
@@ -2606,7 +2452,6 @@ function handleSessionWake(
       })
       db.updateSession(sessionId, {
         lastResumeError: templateError.message,
-        lastResumeAttemptAt: attemptAt,
       })
       updateDormantAgentSessions()
       send(ws, { type: 'session-wake-result', sessionId, ok: false, error: templateError })
@@ -2621,7 +2466,6 @@ function handleSessionWake(
       '.'
 
     const startedAt = Date.now()
-    db.updateSession(sessionId, { lastResumeAttemptAt: attemptAt })
     // Name is driven by the stored displayName — createWindow will auto-suffix
     // on genuine collisions with other live sessions (excludeSessionId keeps
     // the session's own prior name from matching itself).
@@ -2637,7 +2481,6 @@ function handleSessionWake(
     // don't leak a tmux window with a duplicate agent process.
     const updatedRecord = db.claimCurrentWindow(sessionId, created.tmuxWindow, {
       displayName: created.name,
-      lastResumeAttemptAt: attemptAt,
       lastResumeError: null,
     })
     if (!updatedRecord) {
@@ -2696,10 +2539,9 @@ function handleSessionWake(
       error instanceof Error ? error.message : 'Unable to wake session'
     // Persist the failure reason so every tab sees an error badge via the
     // normal agent-sessions broadcast, not just the tab that triggered the
-    // wake. Starred idle sessions remain in the Snoozed rail.
+    // wake. Hibernating sessions stay in the Hibernating rail.
     db.updateSession(sessionId, {
       lastResumeError: message,
-      lastResumeAttemptAt: attemptAt,
     })
     updateDormantAgentSessions()
     logger.error('session_wake_failed', {

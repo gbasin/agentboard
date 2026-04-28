@@ -1,7 +1,6 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import AlertTriangleIcon from '@untitledui-icons/react/line/esm/AlertTriangleIcon'
 import File06Icon from '@untitledui-icons/react/line/esm/File06Icon'
-import Star01Icon from '@untitledui-icons/react/line/esm/Star01Icon'
 import type { AgentSession } from '@shared/types'
 import { copyText } from '../utils/copyText'
 import { getPathLeaf } from '../utils/sessionLabel'
@@ -10,25 +9,23 @@ import { formatRelativeTime } from '../utils/time'
 import AgentIcon from './AgentIcon'
 import ProjectBadge from './ProjectBadge'
 
-interface InactiveSessionItemProps {
+interface HistorySessionItemProps {
   session: AgentSession
   showSessionIdPrefix: boolean
   showProjectName: boolean
   showLastUserMessage: boolean
   onResume: (sessionId: string) => void
   onPreview: (session: AgentSession) => void
-  onSetPinned?: (sessionId: string, isPinned: boolean) => void
 }
 
-export default memo(function InactiveSessionItem({
+export default memo(function HistorySessionItem({
   session,
   showSessionIdPrefix,
   showProjectName,
   showLastUserMessage,
   onResume,
   onPreview,
-  onSetPinned,
-}: InactiveSessionItemProps) {
+}: HistorySessionItemProps) {
   const lastActivity = formatRelativeTime(session.lastActivityAt)
   const directoryLeaf = getPathLeaf(session.projectPath)
   const displayName =
@@ -119,13 +116,6 @@ export default memo(function InactiveSessionItem({
               title={`Last wake failed: ${session.lastResumeError}`}
             />
           )}
-          {session.isPinned && (
-            <Star01Icon
-              className="h-3 w-3 shrink-0 text-muted"
-              aria-label="Starred"
-              title="Starred - will auto-wake on server restart"
-            />
-          )}
           {sessionIdPrefix && (
             <span
               className="shrink-0 text-[11px] font-mono text-muted"
@@ -163,21 +153,6 @@ export default memo(function InactiveSessionItem({
           style={{ left: contextMenu.x, top: contextMenu.y }}
           role="menu"
         >
-          {onSetPinned && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                setContextMenu(null)
-                onSetPinned(session.sessionId, !session.isPinned)
-              }}
-              className="w-full px-3 py-2 text-left text-sm text-secondary hover:bg-hover hover:text-primary flex items-center gap-2"
-              role="menuitem"
-              title={session.isPinned ? 'Remove star' : 'Auto-wake on server restart'}
-            >
-              <Star01Icon width={14} height={14} />
-              {session.isPinned ? 'Unstar' : 'Star'}
-            </button>
-          )}
           {session.logFilePath && (
             <button
               onClick={(e) => {

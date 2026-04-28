@@ -13,7 +13,7 @@ import { formatRelativeTime } from '../utils/time'
 import AgentIcon from './AgentIcon'
 import ProjectBadge from './ProjectBadge'
 
-interface SleepingSessionItemProps {
+interface HibernatingSessionItemProps {
   session: AgentSession
   isSelected: boolean
   showSessionIdPrefix: boolean
@@ -22,10 +22,10 @@ interface SleepingSessionItemProps {
   onSelect: (sessionId: string) => void
   onWake?: (sessionId: string) => void
   onRename?: (sessionId: string, newName: string) => void
-  onRemove?: (sessionId: string) => void
+  onMoveToHistory?: (sessionId: string) => void
 }
 
-export default function SleepingSessionItem({
+export default function HibernatingSessionItem({
   session,
   isSelected,
   showSessionIdPrefix,
@@ -34,8 +34,8 @@ export default function SleepingSessionItem({
   onSelect,
   onWake,
   onRename,
-  onRemove,
-}: SleepingSessionItemProps) {
+  onMoveToHistory,
+}: HibernatingSessionItemProps) {
   const lastActivity = formatRelativeTime(session.lastActivityAt)
   const directoryLeaf = getPathLeaf(session.projectPath)
   const displayName =
@@ -117,7 +117,7 @@ export default function SleepingSessionItem({
       className={`group relative cursor-pointer px-3 py-2 hover:bg-hover ${isSelected ? 'bg-hover' : ''}`}
       role="button"
       tabIndex={0}
-      data-testid="sleeping-session-card"
+      data-testid="hibernating-session-card"
       onClick={() => onSelect(session.sessionId)}
       onContextMenu={handleContextMenu}
       onKeyDown={(e) => {
@@ -151,8 +151,8 @@ export default function SleepingSessionItem({
           )}
           <Moon01Icon
             className="h-3 w-3 shrink-0 text-muted"
-            aria-label="Snoozed"
-            title="Snoozed"
+            aria-label="Hibernating"
+            title="Hibernating"
           />
           {session.lastResumeError && (
             <AlertTriangleIcon
@@ -238,20 +238,20 @@ export default function SleepingSessionItem({
               Copy Log Path
             </button>
           )}
-          {onRemove && (
+          {onMoveToHistory && (
             <>
               <div className="my-1 border-t border-border" />
               <button
                 onClick={(e) => {
                   e.stopPropagation()
                   setContextMenu(null)
-                  onRemove(session.sessionId)
+                  onMoveToHistory(session.sessionId)
                 }}
                 className="w-full px-3 py-2 text-left text-sm text-danger hover:bg-danger/10 flex items-center gap-2"
                 role="menuitem"
               >
                 <XCloseIcon width={14} height={14} />
-                Remove
+                Move to History
               </button>
             </>
           )}

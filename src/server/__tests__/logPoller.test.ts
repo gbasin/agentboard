@@ -292,7 +292,7 @@ describe('LogPoller', () => {
     db.close()
   })
 
-  test('does not orphan-rematch snoozed sessions', async () => {
+  test('does not orphan-rematch hibernating sessions', async () => {
     const db = initDatabase({ path: ':memory:' })
     const registry = new SessionRegistry()
     registry.replaceSessions([baseSession])
@@ -307,9 +307,9 @@ describe('LogPoller', () => {
     await fs.mkdir(logDir, { recursive: true })
 
     const tokens = Array.from({ length: 60 }, (_, i) => `token${i}`).join(' ')
-    const logPath = path.join(logDir, 'sleeping-session.jsonl')
+    const logPath = path.join(logDir, 'hibernating-session.jsonl')
     const userLine = buildUserLogEntry(tokens, {
-      sessionId: 'sleeping-session',
+      sessionId: 'hibernating-session',
       cwd: projectPath,
     })
     const assistantLine = JSON.stringify({
@@ -320,7 +320,7 @@ describe('LogPoller', () => {
     setTmuxOutput(baseSession.tmuxWindow, buildLastExchangeOutput(tokens))
 
     db.insertSession({
-      sessionId: 'sleeping-session',
+      sessionId: 'hibernating-session',
       logFilePath: logPath,
       projectPath,
       slug: null,
@@ -346,7 +346,7 @@ describe('LogPoller', () => {
     await poller.pollOnce()
     await poller.waitForOrphanRematch()
 
-    const record = db.getSessionById('sleeping-session')
+    const record = db.getSessionById('hibernating-session')
     expect(record?.currentWindow).toBeNull()
     expect(record?.isPinned).toBeTrue()
     expect(activated).toEqual([])

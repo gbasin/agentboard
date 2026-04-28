@@ -1,5 +1,7 @@
 # Star/Snooze Refactor — Working Plan
 
+> Superseded by the Hibernation/History plan implemented in April 2026. The current model uses a sticky hibernation marker, manual Wake, and History as the unmarked dormant bucket. Startup auto-wake/resurrection and Star/Snooze UI are intentionally removed.
+
 **Status:** planning, reviewed and updated 2026-04-25.
 **Branch:** `feat/session-sleep` (the snooze feature lives here, but with a tristate that we're collapsing).
 **Owner:** Gary, with Claude.

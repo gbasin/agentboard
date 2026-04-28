@@ -27,7 +27,7 @@ beforeEach(() => {
     sessionSortMode: 'created',
     sessionSortDirection: 'desc',
     manualSessionOrder: [],
-    inactiveSessionsExpanded: false,
+    historySessionsExpanded: false,
     showProjectName: true,
     showLastUserMessage: true,
     showSessionIdPrefix: false,
@@ -46,7 +46,7 @@ afterEach(() => {
     sessionSortMode: 'created',
     sessionSortDirection: 'desc',
     manualSessionOrder: [],
-    inactiveSessionsExpanded: false,
+    historySessionsExpanded: false,
     showProjectName: true,
     showLastUserMessage: true,
     showSessionIdPrefix: false,
@@ -83,7 +83,7 @@ describe('SessionList project filters', () => {
       renderer = TestRenderer.create(
         <SessionList
           sessions={sessions}
-          inactiveSessions={[]}
+          historySessions={[]}
           selectedSessionId={null}
           loading={false}
           error={null}

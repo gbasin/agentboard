@@ -158,10 +158,10 @@ beforeEach(() => {
 
   useSessionStore.setState({
     sessions: [],
-    agentSessions: { active: [], sleeping: [], inactive: [] },
+    agentSessions: { active: [], hibernating: [], history: [] },
     agentSessionsEpoch: -1,
     selectedSessionId: null,
-    selectedSleepingSessionId: null,
+    selectedHibernatingSessionId: null,
     hasLoaded: false,
     connectionStatus: 'connected',
     connectionEpoch: 0,
@@ -359,38 +359,38 @@ describe('App', () => {
     expect(useSessionStore.getState().sessions).toHaveLength(0)
   })
 
-  test('agent-sessions-active message updates active sessions while preserving sleeping and inactive', () => {
-    const existingSleeping: AgentSession[] = [
+  test('agent-sessions-active message updates active sessions while preserving hibernating and history', () => {
+    const existingHibernating: AgentSession[] = [
       {
         ...baseAgentSession,
-        sessionId: 'sleeping-1',
+        sessionId: 'hibernating-1',
         isActive: false,
         isPinned: true,
-        displayName: 'sleeping-one',
+        displayName: 'hibernating-one',
       },
     ]
-    const existingInactive: AgentSession[] = [
+    const existingHistory: AgentSession[] = [
       {
         ...baseAgentSession,
-        sessionId: 'inactive-1',
+        sessionId: 'history-1',
         isActive: false,
-        displayName: 'old-inactive',
+        displayName: 'old-history',
       },
       {
         ...baseAgentSession,
-        sessionId: 'inactive-2',
+        sessionId: 'history-2',
         isActive: false,
-        displayName: 'another-inactive',
+        displayName: 'another-history',
       },
     ]
 
-    // Pre-populate the store with both active and inactive agent sessions
+    // Pre-populate the store with both active and history agent sessions
     useSessionStore.setState({
       agentSessionsEpoch: 0,
       agentSessions: {
         active: [{ ...baseAgentSession, sessionId: 'old-active' }],
-        sleeping: existingSleeping,
-        inactive: existingInactive,
+        hibernating: existingHibernating,
+        history: existingHistory,
       },
     })
 
@@ -421,24 +421,24 @@ describe('App', () => {
     expect(state.active[0].sessionId).toBe('new-active-1')
     expect(state.active[1].sessionId).toBe('new-active-2')
 
-    // Sleeping and inactive sessions should be preserved from the store
-    expect(state.sleeping).toHaveLength(1)
-    expect(state.sleeping[0].sessionId).toBe('sleeping-1')
-    expect(state.inactive).toHaveLength(2)
-    expect(state.inactive[0].sessionId).toBe('inactive-1')
-    expect(state.inactive[1].sessionId).toBe('inactive-2')
+    // Hibernating and history sessions should be preserved from the store
+    expect(state.hibernating).toHaveLength(1)
+    expect(state.hibernating[0].sessionId).toBe('hibernating-1')
+    expect(state.history).toHaveLength(2)
+    expect(state.history[0].sessionId).toBe('history-1')
+    expect(state.history[1].sessionId).toBe('history-2')
   })
 
-  test('sleep result selects the sleeping session and wake result restores the live session', () => {
+  test('hibernate result selects the hibernating session and wake result restores the live session', () => {
     useSessionStore.setState({
       sessions: [baseSession],
       selectedSessionId: baseSession.id,
-      selectedSleepingSessionId: null,
+      selectedHibernatingSessionId: null,
       agentSessionsEpoch: 0,
       agentSessions: {
         active: [{ ...baseAgentSession, sessionId: 'agent-live', isActive: true }],
-        sleeping: [],
-        inactive: [],
+        hibernating: [],
+        history: [],
       },
       hasLoaded: true,
     })
@@ -453,7 +453,7 @@ describe('App', () => {
       throw new Error('Expected websocket subscription')
     }
 
-    const sleepingSession: AgentSession = {
+    const hibernatingSession: AgentSession = {
       ...baseAgentSession,
       sessionId: 'agent-live',
       displayName: 'sleepy',
@@ -465,55 +465,55 @@ describe('App', () => {
       subscribeListener?.({
         type: 'agent-sessions',
         active: [],
-        sleeping: [sleepingSession],
-        inactive: [],
+        hibernating: [hibernatingSession],
+        history: [],
       })
       subscribeListener?.({
-        type: 'session-sleep-result',
-        sessionId: sleepingSession.sessionId,
+        type: 'session-hibernate-result',
+        sessionId: hibernatingSession.sessionId,
         ok: true,
       })
     })
 
     let state = useSessionStore.getState()
     expect(state.selectedSessionId).toBeNull()
-    expect(state.selectedSleepingSessionId).toBe(sleepingSession.sessionId)
+    expect(state.selectedHibernatingSessionId).toBe(hibernatingSession.sessionId)
 
     const resumedSession: Session = {
       ...baseSession,
       id: 'session-woken',
-      agentSessionId: sleepingSession.sessionId,
-      agentSessionName: sleepingSession.displayName,
+      agentSessionId: hibernatingSession.sessionId,
+      agentSessionName: hibernatingSession.displayName,
     }
 
     act(() => {
       subscribeListener?.({
         type: 'session-wake-result',
-        sessionId: sleepingSession.sessionId,
+        sessionId: hibernatingSession.sessionId,
         ok: true,
         session: resumedSession,
       })
     })
 
     state = useSessionStore.getState()
-    expect(state.selectedSleepingSessionId).toBeNull()
+    expect(state.selectedHibernatingSessionId).toBeNull()
     expect(state.selectedSessionId).toBe(resumedSession.id)
   })
 
-  test('sleep result payload renders the sleeping view before the full snapshot arrives', () => {
-    const sleepingSessionId = 'sleeping-immediate'
+  test('hibernate result payload renders the hibernating view before the full snapshot arrives', () => {
+    const hibernatingSessionId = 'hibernating-immediate'
     const liveSession: Session = {
       ...baseSession,
       id: 'live-immediate',
-      agentSessionId: sleepingSessionId,
+      agentSessionId: hibernatingSessionId,
       agentSessionName: 'sleep now',
-      logFilePath: '/tmp/sleeping-immediate.jsonl',
+      logFilePath: '/tmp/hibernating-immediate.jsonl',
     }
-    const sleepingSession: AgentSession = {
+    const hibernatingSession: AgentSession = {
       ...baseAgentSession,
-      sessionId: sleepingSessionId,
+      sessionId: hibernatingSessionId,
       displayName: 'sleep now',
-      logFilePath: '/tmp/sleeping-immediate.jsonl',
+      logFilePath: '/tmp/hibernating-immediate.jsonl',
       isActive: false,
       isPinned: true,
     }
@@ -521,12 +521,12 @@ describe('App', () => {
     useSessionStore.setState({
       sessions: [liveSession],
       selectedSessionId: liveSession.id,
-      selectedSleepingSessionId: null,
+      selectedHibernatingSessionId: null,
       agentSessionsEpoch: 0,
       agentSessions: {
-        active: [{ ...baseAgentSession, sessionId: sleepingSessionId, isActive: true }],
-        sleeping: [],
-        inactive: [],
+        active: [{ ...baseAgentSession, sessionId: hibernatingSessionId, isActive: true }],
+        hibernating: [],
+        history: [],
       },
       hasLoaded: true,
     })
@@ -543,15 +543,15 @@ describe('App', () => {
 
     act(() => {
       subscribeListener?.({
-        type: 'session-sleep-result',
-        sessionId: sleepingSessionId,
+        type: 'session-hibernate-result',
+        sessionId: hibernatingSessionId,
         ok: true,
-        session: sleepingSession,
+        session: hibernatingSession,
       })
     })
 
-    expect(useSessionStore.getState().selectedSleepingSessionId).toBe(
-      sleepingSessionId
+    expect(useSessionStore.getState().selectedHibernatingSessionId).toBe(
+      hibernatingSessionId
     )
     expect(
       renderer.root
@@ -560,25 +560,25 @@ describe('App', () => {
     ).toBe(true)
   })
 
-  test('keeps sleeping selection through active-only refreshes until the full sleeping snapshot arrives', () => {
-    const sleepingSessionId = 'sleeping-pending'
+  test('keeps hibernating selection through active-only refreshes until the full hibernating snapshot arrives', () => {
+    const hibernatingSessionId = 'hibernating-pending'
     const liveSession: Session = {
       ...baseSession,
       id: 'live-before-sleep',
-      agentSessionId: sleepingSessionId,
+      agentSessionId: hibernatingSessionId,
       agentSessionName: 'sleep me',
-      logFilePath: '/tmp/sleeping-pending.jsonl',
+      logFilePath: '/tmp/hibernating-pending.jsonl',
     }
 
     useSessionStore.setState({
       sessions: [liveSession],
       selectedSessionId: liveSession.id,
-      selectedSleepingSessionId: null,
+      selectedHibernatingSessionId: null,
       agentSessionsEpoch: 0,
       agentSessions: {
-        active: [{ ...baseAgentSession, sessionId: sleepingSessionId, isActive: true }],
-        sleeping: [],
-        inactive: [],
+        active: [{ ...baseAgentSession, sessionId: hibernatingSessionId, isActive: true }],
+        hibernating: [],
+        history: [],
       },
       hasLoaded: true,
     })
@@ -595,14 +595,14 @@ describe('App', () => {
 
     act(() => {
       subscribeListener?.({
-        type: 'session-sleep-result',
-        sessionId: sleepingSessionId,
+        type: 'session-hibernate-result',
+        sessionId: hibernatingSessionId,
         ok: true,
         session: {
           ...baseAgentSession,
-          sessionId: sleepingSessionId,
+          sessionId: hibernatingSessionId,
           displayName: 'sleep me',
-          logFilePath: '/tmp/sleeping-pending.jsonl',
+          logFilePath: '/tmp/hibernating-pending.jsonl',
           isActive: false,
           isPinned: true,
         },
@@ -611,7 +611,7 @@ describe('App', () => {
 
     let state = useSessionStore.getState()
     expect(state.selectedSessionId).toBeNull()
-    expect(state.selectedSleepingSessionId).toBe(sleepingSessionId)
+    expect(state.selectedHibernatingSessionId).toBe(hibernatingSessionId)
 
     act(() => {
       subscribeListener?.({
@@ -621,39 +621,39 @@ describe('App', () => {
     })
 
     state = useSessionStore.getState()
-    expect(state.selectedSleepingSessionId).toBe(sleepingSessionId)
+    expect(state.selectedHibernatingSessionId).toBe(hibernatingSessionId)
 
     act(() => {
       subscribeListener?.({
         type: 'agent-sessions',
         active: [],
-        sleeping: [
+        hibernating: [
           {
             ...baseAgentSession,
-            sessionId: sleepingSessionId,
+            sessionId: hibernatingSessionId,
             displayName: 'sleep me',
-            logFilePath: '/tmp/sleeping-pending.jsonl',
+            logFilePath: '/tmp/hibernating-pending.jsonl',
             isActive: false,
             isPinned: true,
           },
         ],
-        inactive: [],
+        history: [],
       })
     })
 
     state = useSessionStore.getState()
     expect(state.selectedSessionId).toBeNull()
-    expect(state.selectedSleepingSessionId).toBe(sleepingSessionId)
+    expect(state.selectedHibernatingSessionId).toBe(hibernatingSessionId)
   })
 
-  test('tracks the selected live session into sleeping when another client sleeps it', () => {
-    const sleepingSessionId = 'sleeping-remote'
+  test('tracks the selected live session into hibernating when another client hibernates it', () => {
+    const hibernatingSessionId = 'hibernating-remote'
     const selectedLiveSession: Session = {
       ...baseSession,
       id: 'selected-live',
-      agentSessionId: sleepingSessionId,
+      agentSessionId: hibernatingSessionId,
       agentSessionName: 'sleepy',
-      logFilePath: '/tmp/sleeping-remote.jsonl',
+      logFilePath: '/tmp/hibernating-remote.jsonl',
     }
     const fallbackLiveSession: Session = {
       ...baseSession,
@@ -662,11 +662,11 @@ describe('App', () => {
       tmuxWindow: 'agentboard:2',
       projectPath: '/tmp/beta',
     }
-    const sleepingSession: AgentSession = {
+    const hibernatingSession: AgentSession = {
       ...baseAgentSession,
-      sessionId: sleepingSessionId,
+      sessionId: hibernatingSessionId,
       displayName: 'sleepy',
-      logFilePath: '/tmp/sleeping-remote.jsonl',
+      logFilePath: '/tmp/hibernating-remote.jsonl',
       isActive: false,
       isPinned: true,
     }
@@ -674,12 +674,12 @@ describe('App', () => {
     useSessionStore.setState({
       sessions: [selectedLiveSession, fallbackLiveSession],
       selectedSessionId: selectedLiveSession.id,
-      selectedSleepingSessionId: null,
+      selectedHibernatingSessionId: null,
       agentSessionsEpoch: 0,
       agentSessions: {
-        active: [{ ...baseAgentSession, sessionId: sleepingSessionId, isActive: true }],
-        sleeping: [],
-        inactive: [],
+        active: [{ ...baseAgentSession, sessionId: hibernatingSessionId, isActive: true }],
+        hibernating: [],
+        history: [],
       },
       hasLoaded: true,
     })
@@ -703,23 +703,23 @@ describe('App', () => {
 
     let state = useSessionStore.getState()
     expect(state.selectedSessionId).toBe(fallbackLiveSession.id)
-    expect(state.selectedSleepingSessionId).toBeNull()
+    expect(state.selectedHibernatingSessionId).toBeNull()
 
     act(() => {
       subscribeListener?.({
         type: 'agent-sessions',
         active: [],
-        sleeping: [sleepingSession],
-        inactive: [],
+        hibernating: [hibernatingSession],
+        history: [],
       })
     })
 
     state = useSessionStore.getState()
     expect(state.selectedSessionId).toBeNull()
-    expect(state.selectedSleepingSessionId).toBe(sleepingSessionId)
+    expect(state.selectedHibernatingSessionId).toBe(hibernatingSessionId)
   })
 
-  test('treats missing sleeping bucket from older agent-sessions payloads as empty', () => {
+  test('treats missing hibernating bucket from older agent-sessions payloads as empty', () => {
     let renderer!: TestRenderer.ReactTestRenderer
     act(() => {
       renderer = TestRenderer.create(<App />)
@@ -734,29 +734,29 @@ describe('App', () => {
       subscribeListener?.({
         type: 'agent-sessions',
         active: [],
-        inactive: [],
+        history: [],
       } as unknown as ServerMessage)
     })
 
     expect(useSessionStore.getState().agentSessions).toEqual({
       active: [],
-      sleeping: [],
-      inactive: [],
+      hibernating: [],
+      history: [],
     })
   })
 
-  test('does not clear a persisted sleeping selection before the first full agent-sessions snapshot', () => {
-    const sleepingSessionId = 'persisted-sleeping'
+  test('does not clear a persisted hibernating selection before the first full agent-sessions snapshot', () => {
+    const hibernatingSessionId = 'persisted-hibernating'
 
     useSessionStore.setState({
       sessions: [],
       selectedSessionId: null,
-      selectedSleepingSessionId: sleepingSessionId,
+      selectedHibernatingSessionId: hibernatingSessionId,
       agentSessionsEpoch: -1,
       agentSessions: {
         active: [],
-        sleeping: [],
-        inactive: [],
+        hibernating: [],
+        history: [],
       },
       hasLoaded: true,
     })
@@ -772,7 +772,7 @@ describe('App', () => {
     }
 
     let state = useSessionStore.getState()
-    expect(state.selectedSleepingSessionId).toBe(sleepingSessionId)
+    expect(state.selectedHibernatingSessionId).toBe(hibernatingSessionId)
     expect(state.selectedSessionId).toBeNull()
 
     act(() => {
@@ -783,33 +783,33 @@ describe('App', () => {
     })
 
     state = useSessionStore.getState()
-    expect(state.selectedSleepingSessionId).toBe(sleepingSessionId)
+    expect(state.selectedHibernatingSessionId).toBe(hibernatingSessionId)
 
     act(() => {
       subscribeListener?.({
         type: 'agent-sessions',
         active: [],
-        sleeping: [
+        hibernating: [
           {
             ...baseAgentSession,
-            sessionId: sleepingSessionId,
+            sessionId: hibernatingSessionId,
             isActive: false,
             isPinned: true,
           },
         ],
-        inactive: [],
+        history: [],
       })
     })
 
     state = useSessionStore.getState()
-    expect(state.selectedSleepingSessionId).toBe(sleepingSessionId)
+    expect(state.selectedHibernatingSessionId).toBe(hibernatingSessionId)
     expect(state.selectedSessionId).toBeNull()
   })
 
-  test('reconnect waits for a fresh full agent-sessions snapshot before clearing sleeping selection', () => {
-    const sleepingSession: AgentSession = {
+  test('reconnect waits for a fresh full agent-sessions snapshot before clearing hibernating selection', () => {
+    const hibernatingSession: AgentSession = {
       ...baseAgentSession,
-      sessionId: 'sleeping-reconnect',
+      sessionId: 'hibernating-reconnect',
       isActive: false,
       isPinned: true,
     }
@@ -817,13 +817,13 @@ describe('App', () => {
     useSessionStore.setState({
       sessions: [],
       selectedSessionId: null,
-      selectedSleepingSessionId: sleepingSession.sessionId,
+      selectedHibernatingSessionId: hibernatingSession.sessionId,
       connectionEpoch: 0,
       agentSessionsEpoch: 0,
       agentSessions: {
         active: [],
-        sleeping: [sleepingSession],
-        inactive: [],
+        hibernating: [hibernatingSession],
+        history: [],
       },
       hasLoaded: true,
     })
@@ -839,15 +839,15 @@ describe('App', () => {
       useSessionStore.setState({
         agentSessions: {
           active: [],
-          sleeping: [],
-          inactive: [],
+          hibernating: [],
+          history: [],
         },
         agentSessionsEpoch: 0,
       })
     })
 
     let state = useSessionStore.getState()
-    expect(state.selectedSleepingSessionId).toBe(sleepingSession.sessionId)
+    expect(state.selectedHibernatingSessionId).toBe(hibernatingSession.sessionId)
     expect(state.selectedSessionId).toBeNull()
 
     if (!subscribeListener) {
@@ -858,26 +858,26 @@ describe('App', () => {
       subscribeListener?.({
         type: 'agent-sessions',
         active: [],
-        sleeping: [sleepingSession],
-        inactive: [],
+        hibernating: [hibernatingSession],
+        history: [],
       })
     })
 
     state = useSessionStore.getState()
-    expect(state.selectedSleepingSessionId).toBe(sleepingSession.sessionId)
+    expect(state.selectedHibernatingSessionId).toBe(hibernatingSession.sessionId)
     expect(state.selectedSessionId).toBeNull()
   })
 
-  test('falls back to a visible live session when filters hide the selected sleeping session', () => {
+  test('falls back to a visible live session when filters hide the selected hibernating session', () => {
     const visibleLiveSession: Session = {
       ...baseSession,
       id: 'visible-live',
       name: 'beta',
       projectPath: '/tmp/beta',
     }
-    const hiddenSleepingSession: AgentSession = {
+    const hiddenHibernatingSession: AgentSession = {
       ...baseAgentSession,
-      sessionId: 'sleeping-hidden',
+      sessionId: 'hibernating-hidden',
       projectPath: '/tmp/alpha',
       isActive: false,
       isPinned: true,
@@ -890,12 +890,12 @@ describe('App', () => {
     useSessionStore.setState({
       sessions: [visibleLiveSession],
       selectedSessionId: null,
-      selectedSleepingSessionId: hiddenSleepingSession.sessionId,
+      selectedHibernatingSessionId: hiddenHibernatingSession.sessionId,
       agentSessionsEpoch: 0,
       agentSessions: {
         active: [],
-        sleeping: [hiddenSleepingSession],
-        inactive: [],
+        hibernating: [hiddenHibernatingSession],
+        history: [],
       },
       hasLoaded: true,
     })
@@ -907,14 +907,14 @@ describe('App', () => {
     activeRenderer = renderer
 
     const state = useSessionStore.getState()
-    expect(state.selectedSleepingSessionId).toBeNull()
+    expect(state.selectedHibernatingSessionId).toBeNull()
     expect(state.selectedSessionId).toBe(visibleLiveSession.id)
   })
 
-  test('reselects a woken live session after the sleeping selection disappears', () => {
-    const sleepingSession: AgentSession = {
+  test('reselects a woken live session after the hibernating selection disappears', () => {
+    const hibernatingSession: AgentSession = {
       ...baseAgentSession,
-      sessionId: 'sleeping-to-wake',
+      sessionId: 'hibernating-to-wake',
       displayName: 'wake-me',
       isActive: false,
       isPinned: true,
@@ -922,20 +922,20 @@ describe('App', () => {
     const wokenSession: Session = {
       ...baseSession,
       id: 'woken-session',
-      agentSessionId: sleepingSession.sessionId,
-      agentSessionName: sleepingSession.displayName,
-      logFilePath: sleepingSession.logFilePath,
+      agentSessionId: hibernatingSession.sessionId,
+      agentSessionName: hibernatingSession.displayName,
+      logFilePath: hibernatingSession.logFilePath,
     }
 
     useSessionStore.setState({
       sessions: [],
       selectedSessionId: null,
-      selectedSleepingSessionId: sleepingSession.sessionId,
+      selectedHibernatingSessionId: hibernatingSession.sessionId,
       agentSessionsEpoch: 0,
       agentSessions: {
         active: [],
-        sleeping: [sleepingSession],
-        inactive: [],
+        hibernating: [hibernatingSession],
+        history: [],
       },
       hasLoaded: true,
     })
@@ -955,17 +955,17 @@ describe('App', () => {
         type: 'agent-sessions',
         active: [
           {
-            ...sleepingSession,
+            ...hibernatingSession,
             isActive: true,
           },
         ],
-        sleeping: [],
-        inactive: [],
+        hibernating: [],
+        history: [],
       })
     })
 
     let state = useSessionStore.getState()
-    expect(state.selectedSleepingSessionId).toBeNull()
+    expect(state.selectedHibernatingSessionId).toBeNull()
     expect(state.selectedSessionId).toBeNull()
 
     act(() => {
@@ -976,7 +976,7 @@ describe('App', () => {
     })
 
     state = useSessionStore.getState()
-    expect(state.selectedSleepingSessionId).toBeNull()
+    expect(state.selectedHibernatingSessionId).toBeNull()
     expect(state.selectedSessionId).toBe(wokenSession.id)
   })
 

@@ -77,7 +77,7 @@ describe('db', () => {
     expect(updated?.currentWindow).toBeNull()
 
     const active = db.getActiveSessions()
-    const inactive = db.getInactiveSessions()
+    const inactive = db.getHistorySessions()
     expect(active).toHaveLength(0)
     expect(inactive).toHaveLength(1)
 
@@ -103,22 +103,22 @@ describe('db', () => {
     expect(db.getSessionById(session.sessionId)?.isPinned).toBe(false)
   })
 
-  test('getPinnedOrphaned returns pinned sessions without window', () => {
-    // Pinned + orphaned (should be returned)
+  test('getHibernatingSessions returns marked sessions without window', () => {
+    // Marked + orphaned (should be returned)
     db.insertSession(makeSession({
       sessionId: 'a',
       logFilePath: '/tmp/a.jsonl',
       isPinned: true,
       currentWindow: null,
     }))
-    // Pinned + active (should NOT be returned)
+    // Marked + active (should NOT be returned)
     db.insertSession(makeSession({
       sessionId: 'b',
       logFilePath: '/tmp/b.jsonl',
       isPinned: true,
       currentWindow: 'agentboard:1',
     }))
-    // Not pinned + orphaned (should NOT be returned)
+    // Unmarked + orphaned (should NOT be returned)
     db.insertSession(makeSession({
       sessionId: 'c',
       logFilePath: '/tmp/c.jsonl',
@@ -126,41 +126,41 @@ describe('db', () => {
       currentWindow: null,
     }))
 
-    const orphaned = db.getPinnedOrphaned()
-    expect(orphaned).toHaveLength(1)
-    expect(orphaned[0].sessionId).toBe('a')
+    const hibernating = db.getHibernatingSessions()
+    expect(hibernating).toHaveLength(1)
+    expect(hibernating[0].sessionId).toBe('a')
   })
 
-  test('snoozed sessions are derived from starred sessions without windows', () => {
+  test('hibernating sessions are derived from marked sessions without windows', () => {
     db.insertSession(makeSession({
-      sessionId: 'snoozed-one',
-      logFilePath: '/tmp/snoozed-one.jsonl',
+      sessionId: 'hibernating-one',
+      logFilePath: '/tmp/hibernating-one.jsonl',
       currentWindow: null,
       isPinned: true,
     }))
     db.insertSession(makeSession({
-      sessionId: 'inactive-one',
-      logFilePath: '/tmp/inactive-one.jsonl',
+      sessionId: 'history-one',
+      logFilePath: '/tmp/history-one.jsonl',
       currentWindow: null,
       isPinned: false,
     }))
 
-    const sleeping = db.getSleepingSessions()
-    const inactive = db.getInactiveSessions()
+    const hibernating = db.getHibernatingSessions()
+    const history = db.getHistorySessions()
 
-    expect(sleeping.map((session) => session.sessionId)).toEqual(['snoozed-one'])
-    expect(inactive.map((session) => session.sessionId)).toEqual(['inactive-one'])
+    expect(hibernating.map((session) => session.sessionId)).toEqual(['hibernating-one'])
+    expect(history.map((session) => session.sessionId)).toEqual(['history-one'])
   })
 
-  test('orphanSession preserves star state', () => {
+  test('orphanSession preserves hibernation marker state', () => {
     db.insertSession(makeSession({
-      sessionId: 'starred-to-orphan',
-      logFilePath: '/tmp/starred-to-orphan.jsonl',
+      sessionId: 'marked-to-orphan',
+      logFilePath: '/tmp/marked-to-orphan.jsonl',
       currentWindow: 'agentboard:9',
       isPinned: true,
     }))
 
-    const orphaned = db.orphanSession('starred-to-orphan')
+    const orphaned = db.orphanSession('marked-to-orphan')
 
     expect(orphaned?.currentWindow).toBeNull()
     expect(orphaned?.isPinned).toBe(true)
@@ -308,7 +308,7 @@ describe('db', () => {
     fs.rmSync(tempDir, { recursive: true, force: true })
   })
 
-  test('migrates legacy sleeping flag into starred derived snooze state', () => {
+  test('migrates legacy sleeping flag into hibernating marker state', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentboard-'))
     const dbPath = path.join(tempDir, 'agentboard.db')
     const legacyDb = new SQLiteDatabase(dbPath)
@@ -354,8 +354,8 @@ describe('db', () => {
         is_codex_exec,
         launch_command
       ) VALUES
-        ('legacy-sleeping', '/tmp/legacy-sleeping.jsonl', '/tmp/project', null, 'claude', 'sleeping', '${now}', '${now}', null, null, 1, 0, null, null, 0, null),
-        ('legacy-inactive', '/tmp/legacy-inactive.jsonl', '/tmp/project', null, 'claude', 'inactive', '${now}', '${now}', null, null, 0, 0, null, null, 0, null);
+        ('legacy-hibernating', '/tmp/legacy-hibernating.jsonl', '/tmp/project', null, 'claude', 'hibernating', '${now}', '${now}', null, null, 1, 0, null, null, 0, null),
+        ('legacy-history', '/tmp/legacy-history.jsonl', '/tmp/project', null, 'claude', 'history', '${now}', '${now}', null, null, 0, 0, null, null, 0, null);
     `)
     legacyDb.close()
 
@@ -367,12 +367,12 @@ describe('db', () => {
 
     expect(columnNames).not.toContain('is_sleeping')
     expect(columnNames).toContain('last_resume_attempt_at')
-    expect(migrated.getSessionById('legacy-sleeping')?.isPinned).toBe(true)
-    expect(migrated.getSleepingSessions().map((session) => session.sessionId)).toEqual([
-      'legacy-sleeping',
+    expect(migrated.getSessionById('legacy-hibernating')?.isPinned).toBe(true)
+    expect(migrated.getHibernatingSessions().map((session) => session.sessionId)).toEqual([
+      'legacy-hibernating',
     ])
-    expect(migrated.getInactiveSessions().map((session) => session.sessionId)).toEqual([
-      'legacy-inactive',
+    expect(migrated.getHistorySessions().map((session) => session.sessionId)).toEqual([
+      'legacy-history',
     ])
 
     migrated.close()
@@ -435,7 +435,7 @@ describe('db', () => {
     expect(active[2].sessionId).toBe('zebra')
   })
 
-  test('getInactiveSessions returns results ordered by last_activity_at DESC with session_id tiebreaker', () => {
+  test('getHistorySessions returns results ordered by last_activity_at DESC with session_id tiebreaker', () => {
     const recent = '2026-01-02T00:00:00.000Z'
     const older = '2026-01-01T00:00:00.000Z'
 
@@ -463,16 +463,16 @@ describe('db', () => {
       lastActivityAt: recent,
     }))
 
-    const inactive = db.getInactiveSessions()
-    expect(inactive).toHaveLength(3)
+    const history = db.getHistorySessions()
+    expect(history).toHaveLength(3)
     // Most recent activity first
-    expect(inactive[0].sessionId).toBe('recent-one')
+    expect(history[0].sessionId).toBe('recent-one')
     // Same activity timestamp: alphabetical session_id tiebreaker
-    expect(inactive[1].sessionId).toBe('tie-alpha')
-    expect(inactive[2].sessionId).toBe('tie-zebra')
+    expect(history[1].sessionId).toBe('tie-alpha')
+    expect(history[2].sessionId).toBe('tie-zebra')
   })
 
-  test('getInactiveSessions with maxAgeHours also uses session_id tiebreaker', () => {
+  test('getHistorySessions with maxAgeHours also uses session_id tiebreaker', () => {
     const now = new Date()
     const recentTime = new Date(now.getTime() - 30 * 60 * 1000).toISOString() // 30 min ago
 
@@ -491,11 +491,11 @@ describe('db', () => {
       lastActivityAt: recentTime,
     }))
 
-    const inactive = db.getInactiveSessions({ maxAgeHours: 1 })
-    expect(inactive).toHaveLength(2)
+    const history = db.getHistorySessions({ maxAgeHours: 1 })
+    expect(history).toHaveLength(2)
     // Same timestamp: alphabetical session_id tiebreaker
-    expect(inactive[0].sessionId).toBe('age-alpha')
-    expect(inactive[1].sessionId).toBe('age-zebra')
+    expect(history[0].sessionId).toBe('age-alpha')
+    expect(history[1].sessionId).toBe('age-zebra')
   })
 
   test('app settings get/set', () => {

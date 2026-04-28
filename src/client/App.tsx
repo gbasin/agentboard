@@ -5,7 +5,7 @@ import SessionList from './components/SessionList'
 import Terminal from './components/Terminal'
 import NewSessionModal from './components/NewSessionModal'
 import SettingsModal from './components/SettingsModal'
-import { ToastViewport, toastManager } from './components/Toast'
+import { ToastViewport } from './components/Toast'
 import { useSessionStore } from './stores/sessionStore'
 import {
   useSettingsStore,
@@ -52,7 +52,7 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
   const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null)
-  const [pendingSleepingSession, setPendingSleepingSession] =
+  const [pendingHibernatingSession, setPendingHibernatingSession] =
     useState<AgentSession | null>(null)
 
   const sessions = useSessionStore((state) => state.sessions)
@@ -61,8 +61,8 @@ export default function App() {
   const selectedSessionId = useSessionStore(
     (state) => state.selectedSessionId
   )
-  const selectedSleepingSessionId = useSessionStore(
-    (state) => state.selectedSleepingSessionId
+  const selectedHibernatingSessionId = useSessionStore(
+    (state) => state.selectedHibernatingSessionId
   )
   const setSessions = useSessionStore((state) => state.setSessions)
   const setAgentSessions = useSessionStore((state) => state.setAgentSessions)
@@ -74,8 +74,8 @@ export default function App() {
   const setSelectedSessionId = useSessionStore(
     (state) => state.setSelectedSessionId
   )
-  const setSelectedSleepingSessionId = useSessionStore(
-    (state) => state.setSelectedSleepingSessionId
+  const setSelectedHibernatingSessionId = useSessionStore(
+    (state) => state.setSelectedHibernatingSessionId
   )
   const hasLoaded = useSessionStore((state) => state.hasLoaded)
   const connectionStatus = useSessionStore(
@@ -229,18 +229,18 @@ export default function App() {
 
         const {
           selectedSessionId: previousSelectedSessionId,
-          selectedSleepingSessionId: previousSelectedSleepingSessionId,
+          selectedHibernatingSessionId: previousSelectedHibernatingSessionId,
         } = useSessionStore.getState()
         const removedSelectedAgentSessionId =
           previousSelectedSessionId !== null &&
-          previousSelectedSleepingSessionId === null &&
+          previousSelectedHibernatingSessionId === null &&
           !nextSessions.some((session) => session.id === previousSelectedSessionId)
             ? currentSessions.find((session) => session.id === previousSelectedSessionId)?.agentSessionId?.trim() ?? null
             : null
 
         if (removedSelectedAgentSessionId) {
-          // Another client sleeps the live session before the sleeping bucket updates.
-          pendingSleepSelectionRef.current = removedSelectedAgentSessionId
+          // Another client hibernates the live session before the hibernating bucket updates.
+          pendingHibernateSelectionRef.current = removedSelectedAgentSessionId
         }
 
         setSessions(nextSessions)
@@ -248,13 +248,13 @@ export default function App() {
         const pendingWakeSelectionId = pendingWakeSelectionRef.current
         const {
           selectedSessionId: currentSelectedSessionId,
-          selectedSleepingSessionId: currentSelectedSleepingSessionId,
+          selectedHibernatingSessionId: currentSelectedHibernatingSessionId,
         } = useSessionStore.getState()
         const { projectFilters, hostFilters } = useSettingsStore.getState()
         if (
           pendingWakeSelectionId &&
           currentSelectedSessionId === null &&
-          currentSelectedSleepingSessionId === null
+          currentSelectedHibernatingSessionId === null
         ) {
           const matchingSession = nextSessions.find((session) => {
             if (session.agentSessionId?.trim() !== pendingWakeSelectionId) {
@@ -346,34 +346,34 @@ export default function App() {
       }
       if (message.type === 'agent-sessions') {
         const active = Array.isArray(message.active) ? message.active : []
-        const sleeping = Array.isArray(message.sleeping) ? message.sleeping : []
-        const inactive = Array.isArray(message.inactive) ? message.inactive : []
-        const { selectedSleepingSessionId: currentSelectedSleepingSessionId } =
+        const hibernating = Array.isArray(message.hibernating) ? message.hibernating : []
+        const history = Array.isArray(message.history) ? message.history : []
+        const { selectedHibernatingSessionId: currentSelectedHibernatingSessionId } =
           useSessionStore.getState()
-        const pendingSleepSelectionId = pendingSleepSelectionRef.current
+        const pendingHibernateSelectionId = pendingHibernateSelectionRef.current
         if (
-          currentSelectedSleepingSessionId &&
-          !sleeping.some(
-            (session) => session.sessionId === currentSelectedSleepingSessionId
+          currentSelectedHibernatingSessionId &&
+          !hibernating.some(
+            (session) => session.sessionId === currentSelectedHibernatingSessionId
           )
         ) {
-          pendingWakeSelectionRef.current = currentSelectedSleepingSessionId
+          pendingWakeSelectionRef.current = currentSelectedHibernatingSessionId
         }
-        setAgentSessions(active, sleeping, inactive)
-        setPendingSleepingSession((current) =>
+        setAgentSessions(active, hibernating, history)
+        setPendingHibernatingSession((current) =>
           current &&
-          sleeping.some((session) => session.sessionId === current.sessionId)
+          hibernating.some((session) => session.sessionId === current.sessionId)
             ? null
             : current
         )
         if (
-          pendingSleepSelectionId &&
-          sleeping.some((session) => session.sessionId === pendingSleepSelectionId)
+          pendingHibernateSelectionId &&
+          hibernating.some((session) => session.sessionId === pendingHibernateSelectionId)
         ) {
-          pendingSleepSelectionRef.current = null
-          setSelectedSleepingSessionId(pendingSleepSelectionId)
-        } else if (pendingSleepSelectionId) {
-          pendingSleepSelectionRef.current = null
+          pendingHibernateSelectionRef.current = null
+          setSelectedHibernatingSessionId(pendingHibernateSelectionId)
+        } else if (pendingHibernateSelectionId) {
+          pendingHibernateSelectionRef.current = null
         }
       }
       if (message.type === 'agent-sessions-active') {
@@ -411,7 +411,7 @@ export default function App() {
       }
       if (message.type === 'session-wake-result') {
         if (message.ok && message.session) {
-          setPendingSleepingSession((current) =>
+          setPendingHibernatingSession((current) =>
             current?.sessionId === message.sessionId ? null : current
           )
           // Add woken session to list immediately
@@ -425,14 +425,14 @@ export default function App() {
           window.setTimeout(() => setServerError(null), 6000)
         }
       }
-      if (message.type === 'session-sleep-result') {
+      if (message.type === 'session-hibernate-result') {
         if (message.ok) {
           if (message.session) {
-            setPendingSleepingSession(message.session)
+            setPendingHibernatingSession(message.session)
           }
-          setSelectedSleepingSessionId(message.sessionId)
+          setSelectedHibernatingSessionId(message.sessionId)
         } else {
-          setServerError(message.error ?? 'Failed to snooze session')
+          setServerError(message.error ?? 'Failed to hibernate session')
           window.setTimeout(() => setServerError(null), 6000)
         }
       }
@@ -470,32 +470,24 @@ export default function App() {
         setServerError(message.message)
         window.setTimeout(() => setServerError(null), 6000)
       }
-      if (message.type === 'session-pin-result') {
+      if (message.type === 'session-move-to-history-result') {
         if (!message.ok && message.error) {
           setServerError(message.error)
           window.setTimeout(() => setServerError(null), 6000)
         }
-      }
-      if (message.type === 'session-resurrection-failed') {
-        toastManager.add({
-          title: 'Session resurrection failed',
-          description: `"${message.displayName}" could not be woken: ${message.error}`,
-          type: 'error',
-          timeout: 8000,
-        })
       }
     })
 
     return () => { unsubscribe() }
   }, [
     selectedSessionId,
-    selectedSleepingSessionId,
+    selectedHibernatingSessionId,
     addRecentPath,
     clearExitingSession,
     sendMessage,
     setSelectedSessionId,
-    setSelectedSleepingSessionId,
-    setPendingSleepingSession,
+    setSelectedHibernatingSessionId,
+    setPendingHibernatingSession,
     setSessions,
     setAgentSessions,
     setActiveAgentSessions,
@@ -512,25 +504,25 @@ export default function App() {
       sessions.find((session) => session.id === selectedSessionId) || null
     )
   }, [selectedSessionId, sessions])
-  const sleepingAgentSessions = agentSessions.sleeping ?? []
-  const inactiveAgentSessions = agentSessions.inactive ?? []
-  const filteredSleepingSessions = useMemo(
-    () => filterAgentSessions(sleepingAgentSessions, projectFilters, hostFilters),
-    [sleepingAgentSessions, projectFilters, hostFilters]
+  const hibernatingAgentSessions = agentSessions.hibernating ?? []
+  const historyAgentSessions = agentSessions.history ?? []
+  const filteredHibernatingSessions = useMemo(
+    () => filterAgentSessions(hibernatingAgentSessions, projectFilters, hostFilters),
+    [hibernatingAgentSessions, projectFilters, hostFilters]
   )
-  const selectedSleepingSession = useMemo(() => {
+  const selectedHibernatingSession = useMemo(() => {
     return (
-      filteredSleepingSessions.find(
-        (session) => session.sessionId === selectedSleepingSessionId
+      filteredHibernatingSessions.find(
+        (session) => session.sessionId === selectedHibernatingSessionId
       ) ||
-      (pendingSleepingSession?.sessionId === selectedSleepingSessionId
-        ? pendingSleepingSession
+      (pendingHibernatingSession?.sessionId === selectedHibernatingSessionId
+        ? pendingHibernatingSession
         : null)
     )
   }, [
-    filteredSleepingSessions,
-    pendingSleepingSession,
-    selectedSleepingSessionId,
+    filteredHibernatingSessions,
+    pendingHibernatingSession,
+    selectedHibernatingSessionId,
   ])
 
   // Track last viewed project path
@@ -570,10 +562,10 @@ export default function App() {
     return next
   }, [sortedSessions, projectFilters, hostFilters])
 
-  const lastSelectedSleepingSessionIdRef = useRef<string | null>(
-    selectedSleepingSessionId
+  const lastSelectedHibernatingSessionIdRef = useRef<string | null>(
+    selectedHibernatingSessionId
   )
-  const pendingSleepSelectionRef = useRef<string | null>(null)
+  const pendingHibernateSelectionRef = useRef<string | null>(null)
   const pendingWakeSelectionRef = useRef<string | null>(null)
   const lastConnectionEpochRef = useRef(connectionEpoch)
 
@@ -582,41 +574,41 @@ export default function App() {
       setSelectedSessionId(filteredSortedSessions[0].id)
       return true
     }
-    if (filteredSleepingSessions.length > 0) {
-      setSelectedSleepingSessionId(filteredSleepingSessions[0].sessionId)
+    if (filteredHibernatingSessions.length > 0) {
+      setSelectedHibernatingSessionId(filteredHibernatingSessions[0].sessionId)
       return true
     }
     return false
   }, [
     filteredSortedSessions,
-    filteredSleepingSessions,
+    filteredHibernatingSessions,
     setSelectedSessionId,
-    setSelectedSleepingSessionId,
+    setSelectedHibernatingSessionId,
   ])
 
   useEffect(() => {
-    const previousSleepingSelectionId = lastSelectedSleepingSessionIdRef.current
+    const previousHibernatingSelectionId = lastSelectedHibernatingSessionIdRef.current
 
     if (
-      previousSleepingSelectionId &&
-      selectedSleepingSessionId === null &&
-      !sleepingAgentSessions.some(
-        (session) => session.sessionId === previousSleepingSelectionId
+      previousHibernatingSelectionId &&
+      selectedHibernatingSessionId === null &&
+      !hibernatingAgentSessions.some(
+        (session) => session.sessionId === previousHibernatingSelectionId
       )
     ) {
-      pendingWakeSelectionRef.current = previousSleepingSelectionId
-    } else if (selectedSleepingSessionId !== null) {
+      pendingWakeSelectionRef.current = previousHibernatingSelectionId
+    } else if (selectedHibernatingSessionId !== null) {
       pendingWakeSelectionRef.current = null
     }
 
-    lastSelectedSleepingSessionIdRef.current = selectedSleepingSessionId
-  }, [sleepingAgentSessions, selectedSleepingSessionId])
+    lastSelectedHibernatingSessionIdRef.current = selectedHibernatingSessionId
+  }, [hibernatingAgentSessions, selectedHibernatingSessionId])
 
   useEffect(() => {
-    if (!pendingSleepingSession) return
-    if (selectedSleepingSessionId === pendingSleepingSession.sessionId) return
-    setPendingSleepingSession(null)
-  }, [pendingSleepingSession, selectedSleepingSessionId])
+    if (!pendingHibernatingSession) return
+    if (selectedHibernatingSessionId === pendingHibernatingSession.sessionId) return
+    setPendingHibernatingSession(null)
+  }, [pendingHibernatingSession, selectedHibernatingSessionId])
 
   useEffect(() => {
     if (lastConnectionEpochRef.current === connectionEpoch) {
@@ -624,14 +616,14 @@ export default function App() {
     }
 
     lastConnectionEpochRef.current = connectionEpoch
-    pendingSleepSelectionRef.current = null
+    pendingHibernateSelectionRef.current = null
     pendingWakeSelectionRef.current = null
-    setPendingSleepingSession(null)
+    setPendingHibernatingSession(null)
   }, [connectionEpoch])
 
   // Auto-select first visible session when current selection is filtered out
   useEffect(() => {
-    if (selectedSleepingSessionId) return
+    if (selectedHibernatingSessionId) return
     if (!selectedSessionId) return
     if (filteredSortedSessions.some((session) => session.id === selectedSessionId)) {
       return
@@ -640,29 +632,29 @@ export default function App() {
     setSelectedSessionId(null)
   }, [
     selectedSessionId,
-    selectedSleepingSessionId,
+    selectedHibernatingSessionId,
     selectFirstVisibleTarget,
     setSelectedSessionId,
   ])
 
   useEffect(() => {
-    if (!selectedSleepingSessionId) return
-    if (pendingSleepingSession?.sessionId === selectedSleepingSessionId) {
+    if (!selectedHibernatingSessionId) return
+    if (pendingHibernatingSession?.sessionId === selectedHibernatingSessionId) {
       return
     }
     if (agentSessionsEpoch !== connectionEpoch) {
       return
     }
     if (
-      filteredSleepingSessions.some(
-        (session) => session.sessionId === selectedSleepingSessionId
+      filteredHibernatingSessions.some(
+        (session) => session.sessionId === selectedHibernatingSessionId
       )
     ) {
       return
     }
 
     const matchingLiveSession = filteredSortedSessions.find(
-      (session) => session.agentSessionId?.trim() === selectedSleepingSessionId
+      (session) => session.agentSessionId?.trim() === selectedHibernatingSessionId
     )
     if (matchingLiveSession) {
       setSelectedSessionId(matchingLiveSession.id)
@@ -670,23 +662,23 @@ export default function App() {
     }
 
     if (selectFirstVisibleTarget()) return
-    setSelectedSleepingSessionId(null)
+    setSelectedHibernatingSessionId(null)
   }, [
-    filteredSleepingSessions,
+    filteredHibernatingSessions,
     filteredSortedSessions,
     agentSessionsEpoch,
-    pendingSleepingSession,
-    selectedSleepingSessionId,
+    pendingHibernatingSession,
+    selectedHibernatingSessionId,
     selectFirstVisibleTarget,
     setSelectedSessionId,
-    setSelectedSleepingSessionId,
+    setSelectedHibernatingSessionId,
     connectionEpoch,
   ])
 
   useEffect(() => {
     const pendingWakeSelectionId = pendingWakeSelectionRef.current
     if (!pendingWakeSelectionId) return
-    if (selectedSleepingSessionId !== null) {
+    if (selectedHibernatingSessionId !== null) {
       pendingWakeSelectionRef.current = null
       return
     }
@@ -711,7 +703,7 @@ export default function App() {
   }, [
     filteredSortedSessions,
     selectedSessionId,
-    selectedSleepingSessionId,
+    selectedHibernatingSessionId,
     selectFirstVisibleTarget,
     setSelectedSessionId,
   ])
@@ -723,18 +715,18 @@ export default function App() {
       isMobile &&
       hasLoaded &&
       selectedSessionId === null &&
-      selectedSleepingSessionId === null &&
-      (filteredSortedSessions.length > 0 || filteredSleepingSessions.length > 0)
+      selectedHibernatingSessionId === null &&
+      (filteredSortedSessions.length > 0 || filteredHibernatingSessions.length > 0)
     ) {
       selectFirstVisibleTarget()
     }
   }, [
-    filteredSleepingSessions.length,
+    filteredHibernatingSessions.length,
     filteredSortedSessions.length,
     hasLoaded,
     selectFirstVisibleTarget,
     selectedSessionId,
-    selectedSleepingSessionId,
+    selectedHibernatingSessionId,
   ])
 
   // Pending kills: snapshot + selection state for rollback on kill-failed.
@@ -777,25 +769,25 @@ export default function App() {
       const isShortcut = matchesModifier(event, effectiveModifier)
 
       // Bracket navigation: [mod]+[ / ]
-      // When only sleeping sessions are visible, fall back to navigating
-      // within the sleeping bucket so the keyboard shortcut keeps working.
+      // When only hibernating sessions are visible, fall back to navigating
+      // within the hibernating bucket so the keyboard shortcut keeps working.
       if (isShortcut && (code === 'BracketLeft' || code === 'BracketRight')) {
         event.preventDefault()
         const delta = code === 'BracketLeft' ? -1 : 1
         const activeNav = filteredSortedSessions
         if (activeNav.length === 0) {
-          const sleepingNav = filteredSleepingSessions
-          if (sleepingNav.length === 0) return
-          const currentIndex = sleepingNav.findIndex(
-            s => s.sessionId === selectedSleepingSessionId
+          const hibernatingNav = filteredHibernatingSessions
+          if (hibernatingNav.length === 0) return
+          const currentIndex = hibernatingNav.findIndex(
+            s => s.sessionId === selectedHibernatingSessionId
           )
           if (currentIndex === -1) {
-            setSelectedSleepingSessionId(sleepingNav[0].sessionId)
+            setSelectedHibernatingSessionId(hibernatingNav[0].sessionId)
             return
           }
           const newIndex =
-            (currentIndex + delta + sleepingNav.length) % sleepingNav.length
-          setSelectedSleepingSessionId(sleepingNav[newIndex].sessionId)
+            (currentIndex + delta + hibernatingNav.length) % hibernatingNav.length
+          setSelectedHibernatingSessionId(hibernatingNav[newIndex].sessionId)
           return
         }
         const currentIndex = activeNav.findIndex(s => s.id === selectedSessionId)
@@ -832,11 +824,11 @@ export default function App() {
   }, [
     isModalOpen,
     selectedSessionId,
-    selectedSleepingSessionId,
+    selectedHibernatingSessionId,
     setSelectedSessionId,
-    setSelectedSleepingSessionId,
+    setSelectedHibernatingSessionId,
     filteredSortedSessions,
-    filteredSleepingSessions,
+    filteredHibernatingSessions,
     handleKillSession,
     shortcutModifier,
     settingsHydrated,
@@ -866,8 +858,8 @@ export default function App() {
     sendMessage({ type: 'session-wake', sessionId })
   }
 
-  const handleSleepSession = useCallback((sessionId: string) => {
-    sendMessage({ type: 'session-sleep', sessionId })
+  const handleHibernateSession = useCallback((sessionId: string) => {
+    sendMessage({ type: 'session-hibernate', sessionId })
   }, [sendMessage])
 
   const handleRenameSession = (sessionId: string, newName: string) => {
@@ -885,8 +877,8 @@ export default function App() {
     })
   }, [sessions, sendMessage])
 
-  const handleSetPinned = useCallback((sessionId: string, isPinned: boolean) => {
-    sendMessage({ type: 'session-pin', sessionId, isPinned })
+  const handleMoveToHistory = useCallback((sessionId: string) => {
+    sendMessage({ type: 'session-move-to-history', sessionId })
   }, [sendMessage])
 
   // Apply theme to document
@@ -922,18 +914,18 @@ export default function App() {
         />
         <SessionList
           sessions={sessions}
-          sleepingSessions={sleepingAgentSessions}
-          inactiveSessions={inactiveAgentSessions}
+          hibernatingSessions={hibernatingAgentSessions}
+          historySessions={historyAgentSessions}
           selectedSessionId={selectedSessionId}
-          selectedSleepingSessionId={selectedSleepingSessionId}
+          selectedHibernatingSessionId={selectedHibernatingSessionId}
           onSelect={setSelectedSessionId}
-          onSelectSleeping={setSelectedSleepingSessionId}
+          onSelectHibernating={setSelectedHibernatingSessionId}
           onRename={handleRenameSession}
           onResume={handleResumeSession}
-          onSleep={handleSleepSession}
+          onHibernate={handleHibernateSession}
           onKill={handleKillSession}
           onDuplicate={handleDuplicateSession}
-          onSetPinned={handleSetPinned}
+          onMoveToHistory={handleMoveToHistory}
           loading={!hasLoaded}
           error={connectionError || serverError}
         />
@@ -949,23 +941,23 @@ export default function App() {
       <Terminal
         session={selectedSession}
         sessions={filteredSortedSessions}
-        sleepingSession={selectedSleepingSession}
-        sleepingSessions={sleepingAgentSessions}
+        hibernatingSession={selectedHibernatingSession}
+        hibernatingSessions={hibernatingAgentSessions}
         connectionStatus={connectionStatus}
         connectionEpoch={connectionEpoch}
         sendMessage={sendMessage}
         subscribe={subscribe}
         onClose={() => setSelectedSessionId(null)}
         onSelectSession={setSelectedSessionId}
-        onSelectSleepingSession={setSelectedSleepingSessionId}
+        onSelectHibernatingSession={setSelectedHibernatingSessionId}
         onNewSession={handleNewSession}
         onKillSession={handleKillSession}
         onRenameSession={handleRenameSession}
         onOpenSettings={handleOpenSettings}
         onResumeSession={handleResumeSession}
-        onSleepSession={handleSleepSession}
-        onSetPinned={handleSetPinned}
-        inactiveSessions={inactiveAgentSessions}
+        onHibernateSession={handleHibernateSession}
+        onMoveToHistory={handleMoveToHistory}
+        historySessions={historyAgentSessions}
         loading={!hasLoaded}
         error={connectionError || serverError}
       />

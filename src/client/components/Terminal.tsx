@@ -24,22 +24,22 @@ import Settings01Icon from '@untitledui-icons/react/line/esm/Settings01Icon'
 interface TerminalProps {
   session: Session | null
   sessions: Session[]
-  sleepingSession?: AgentSession | null
-  sleepingSessions?: AgentSession[]
-  inactiveSessions?: AgentSession[]
+  hibernatingSession?: AgentSession | null
+  hibernatingSessions?: AgentSession[]
+  historySessions?: AgentSession[]
   connectionStatus: ConnectionStatus
   connectionEpoch?: number
   sendMessage: SendClientMessage
   subscribe: SubscribeServerMessage
   onClose: () => void
   onSelectSession: (sessionId: string) => void
-  onSelectSleepingSession?: (sessionId: string) => void
+  onSelectHibernatingSession?: (sessionId: string) => void
   onNewSession: () => void
   onKillSession: (sessionId: string) => void
   onRenameSession: (sessionId: string, newName: string) => void
   onResumeSession: (sessionId: string) => void
-  onSleepSession?: (sessionId: string) => void
-  onSetPinned?: (sessionId: string, isPinned: boolean) => void
+  onHibernateSession?: (sessionId: string) => void
+  onMoveToHistory?: (sessionId: string) => void
   onOpenSettings: () => void
   loading?: boolean
   error?: string | null
@@ -82,22 +82,22 @@ function triggerHaptic() {
 export default function Terminal({
   session,
   sessions,
-  sleepingSession = null,
-  sleepingSessions = [],
-  inactiveSessions = [],
+  hibernatingSession = null,
+  hibernatingSessions = [],
+  historySessions = [],
   connectionStatus,
   connectionEpoch = 0,
   sendMessage,
   subscribe,
   onClose: _onClose,
   onSelectSession,
-  onSelectSleepingSession,
+  onSelectHibernatingSession,
   onNewSession,
   onKillSession,
   onRenameSession,
   onResumeSession,
-  onSleepSession,
-  onSetPinned,
+  onHibernateSession,
+  onMoveToHistory,
   onOpenSettings,
   loading = false,
   error = null,
@@ -133,18 +133,18 @@ export default function Terminal({
   const remoteAllowAttach = useSessionStore((s) => s.remoteAllowAttach)
   const isReadOnly = isRemoteSession && !remoteAllowAttach
   const canControl = !isRemoteSession || (remoteAllowControl && session?.source === 'managed')
-  const sleepingDisplayName = sleepingSession
-    ? sleepingSession.displayName ||
-      getPathLeaf(sleepingSession.projectPath) ||
-      sleepingSession.sessionId.slice(0, 8)
+  const hibernatingDisplayName = hibernatingSession
+    ? hibernatingSession.displayName ||
+      getPathLeaf(hibernatingSession.projectPath) ||
+      hibernatingSession.sessionId.slice(0, 8)
     : ''
-  const sleepingProjectName = sleepingSession ? getPathLeaf(sleepingSession.projectPath) : ''
-  const sleepingLastActivity = sleepingSession
-    ? formatRelativeTime(sleepingSession.lastActivityAt)
+  const hibernatingProjectName = hibernatingSession ? getPathLeaf(hibernatingSession.projectPath) : ''
+  const hibernatingLastActivity = hibernatingSession
+    ? formatRelativeTime(hibernatingSession.lastActivityAt)
     : ''
-  const canSleep =
+  const canHibernate =
     !!session &&
-    !!onSleepSession &&
+    !!onHibernateSession &&
     session.source === 'managed' &&
     !session.remote &&
     !!session.agentSessionId?.trim()
@@ -223,9 +223,9 @@ export default function Terminal({
     setShowEndConfirm(false)
   }
 
-  const handleSleepSession = () => {
-    if (!session || !canSleep) return
-    onSleepSession?.(session.agentSessionId!.trim())
+  const handleHibernateSession = () => {
+    if (!session || !canHibernate) return
+    onHibernateSession?.(session.agentSessionId!.trim())
     setShowMoreMenu(false)
   }
 
@@ -925,7 +925,7 @@ export default function Terminal({
       data-testid="terminal-panel"
     >
       {/* Mobile header - always show on mobile for drawer access */}
-      <div className={`flex h-10 shrink-0 items-center justify-between border-b border-border bg-elevated px-3 ${session || sleepingSession ? '' : 'md:hidden'}`}>
+      <div className={`flex h-10 shrink-0 items-center justify-between border-b border-border bg-elevated px-3 ${session || hibernatingSession ? '' : 'md:hidden'}`}>
         <div className="flex items-center gap-3 min-w-0">
           <button
             onClick={() => setIsDrawerOpen(true)}
@@ -945,12 +945,12 @@ export default function Terminal({
               <XCloseIcon width={16} height={16} />
             </button>
           )}
-          {canSleep && (
+          {canHibernate && (
             <button
-              onClick={handleSleepSession}
+              onClick={handleHibernateSession}
               className="hidden md:flex h-7 w-7 items-center justify-center rounded border border-border text-secondary hover:bg-hover hover:text-primary active:scale-95 transition-all shrink-0"
-              title="Snooze session"
-              aria-label="Snooze session"
+              title="Hibernate session"
+              aria-label="Hibernate session"
             >
               <Moon01Icon width={16} height={16} />
             </button>
@@ -976,13 +976,13 @@ export default function Terminal({
                 {statusText[session.status]}
               </span>
             </div>
-          ) : sleepingSession ? (
+          ) : hibernatingSession ? (
             <div className="flex items-baseline gap-2 min-w-0">
               <span className="text-sm font-medium text-primary truncate">
-                {sleepingDisplayName}
+                {hibernatingDisplayName}
               </span>
               <span className="rounded-full bg-blue-500/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-blue-400">
-                Snoozed
+                Hibernating
               </span>
             </div>
           ) : (
@@ -1020,19 +1020,19 @@ export default function Terminal({
               <XCloseIcon width={16} height={16} />
             </button>
           )}
-          {canSleep && (
+          {canHibernate && (
             <button
-              onClick={handleSleepSession}
+              onClick={handleHibernateSession}
               className="flex md:hidden h-7 w-7 items-center justify-center rounded border border-border text-secondary hover:bg-hover hover:text-primary active:scale-95 transition-all"
-              title="Snooze session"
-              aria-label="Snooze session"
+              title="Hibernate session"
+              aria-label="Hibernate session"
             >
               <Moon01Icon width={16} height={16} />
             </button>
           )}
-          {sleepingSession && (
+          {hibernatingSession && (
             <button
-              onClick={() => onResumeSession(sleepingSession.sessionId)}
+              onClick={() => onResumeSession(hibernatingSession.sessionId)}
               className="btn btn-primary h-7 px-2 text-xs"
             >
               Wake
@@ -1062,13 +1062,13 @@ export default function Terminal({
                       Rename
                     </button>
                   )}
-                  {canSleep && (
+                  {canHibernate && (
                     <button
-                      onClick={handleSleepSession}
+                      onClick={handleHibernateSession}
                       className="w-full px-3 py-2 text-left text-sm text-secondary hover:bg-hover hover:text-primary flex items-center gap-2"
                     >
                       <Moon01Icon width={14} height={14} />
-                      Snooze
+                      Hibernate
                     </button>
                   )}
                   <button
@@ -1138,7 +1138,7 @@ export default function Terminal({
         )}
         {!session && (
           <div className="absolute inset-0 flex items-center justify-center text-sm text-muted">
-            {sleepingSession ? null : 'Select a session to view terminal'}
+            {hibernatingSession ? null : 'Select a session to view terminal'}
           </div>
         )}
         {session && isReadOnly && (
@@ -1146,7 +1146,7 @@ export default function Terminal({
             Remote session (read-only). Use SSH to attach on the host.
           </div>
         )}
-        {sleepingSession && (
+        {hibernatingSession && (
           <div className="absolute inset-0 overflow-y-auto bg-base">
             <div className="mx-auto flex h-full w-full max-w-4xl flex-col gap-6 p-6">
               <div className="rounded-2xl border border-border bg-elevated p-6">
@@ -1154,12 +1154,12 @@ export default function Terminal({
                   <div className="space-y-3">
                     <div className="flex items-center gap-2">
                       <span className="rounded-full bg-blue-500/15 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-blue-400">
-                        Snoozed
+                        Hibernating
                       </span>
-                      {sleepingSession.lastResumeError && (
+                      {hibernatingSession.lastResumeError && (
                         <span
                           className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-1 text-[11px] text-amber-400"
-                          title={`Last wake failed: ${sleepingSession.lastResumeError}`}
+                          title={`Last wake failed: ${hibernatingSession.lastResumeError}`}
                         >
                           <AlertTriangleIcon width={12} height={12} />
                           Wake failed
@@ -1168,50 +1168,50 @@ export default function Terminal({
                     </div>
                     <div>
                       <h2 className="text-xl font-semibold text-primary">
-                        {sleepingDisplayName}
+                        {hibernatingDisplayName}
                       </h2>
                       <p className="mt-1 text-sm text-secondary">
                         Wake this session to reopen its underlying app and terminal.
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2 text-xs text-muted">
-                      {sleepingProjectName && (
+                      {hibernatingProjectName && (
                         <span className="rounded-full bg-surface px-2.5 py-1">
-                          {sleepingProjectName}
+                          {hibernatingProjectName}
                         </span>
                       )}
                       <span className="rounded-full bg-surface px-2.5 py-1">
-                        Last active {sleepingLastActivity}
+                        Last active {hibernatingLastActivity}
                       </span>
                     </div>
-                    {sleepingSession.lastUserMessage && (
+                    {hibernatingSession.lastUserMessage && (
                       <p className="max-w-2xl text-sm italic text-muted">
-                        "{sleepingSession.lastUserMessage}"
+                        "{hibernatingSession.lastUserMessage}"
                       </p>
                     )}
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => onResumeSession(sleepingSession.sessionId)}
+                      onClick={() => onResumeSession(hibernatingSession.sessionId)}
                       className="btn btn-primary"
                     >
                       Wake Session
                     </button>
-                    {onSetPinned && (
+                    {onMoveToHistory && (
                       <button
                         type="button"
-                        onClick={() => onSetPinned(sleepingSession.sessionId, false)}
+                        onClick={() => onMoveToHistory(hibernatingSession.sessionId)}
                         className="btn btn-secondary"
                       >
-                        Remove
+                        Move to History
                       </button>
                     )}
                   </div>
                 </div>
               </div>
 
-              <SessionPreviewContent session={sleepingSession} />
+              <SessionPreviewContent session={hibernatingSession} />
             </div>
           </div>
         )}
@@ -1265,16 +1265,16 @@ export default function Terminal({
           isOpen={isDrawerOpen}
           onClose={() => setIsDrawerOpen(false)}
           sessions={sessions}
-          sleepingSessions={sleepingSessions}
-          inactiveSessions={inactiveSessions}
+          hibernatingSessions={hibernatingSessions}
+          historySessions={historySessions}
           selectedSessionId={session?.id ?? null}
-          selectedSleepingSessionId={sleepingSession?.sessionId ?? null}
+          selectedHibernatingSessionId={hibernatingSession?.sessionId ?? null}
           onSelect={onSelectSession}
-          onSelectSleeping={onSelectSleepingSession}
+          onSelectHibernating={onSelectHibernatingSession}
           onRename={onRenameSession}
           onResume={onResumeSession}
-          onSleep={onSleepSession}
-          onSetPinned={onSetPinned}
+          onHibernate={onHibernateSession}
+          onMoveToHistory={onMoveToHistory}
           onNewSession={onNewSession}
           loading={loading}
           error={error}

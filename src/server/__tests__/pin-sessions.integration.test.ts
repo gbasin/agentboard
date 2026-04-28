@@ -4,7 +4,6 @@ import net from 'node:net'
 import path from 'node:path'
 import os from 'node:os'
 import { initDatabase } from '../db'
-import type { AgentSessionRecord } from '../db'
 import {
   canBindLocalhost,
   createTmuxTmpDir,
@@ -19,27 +18,26 @@ if (!tmuxAvailable || !localhostBindable) {
   const reasons: string[] = []
   if (!tmuxAvailable) reasons.push('tmux not available')
   if (!localhostBindable) reasons.push('localhost sockets unavailable')
-  test.skip(`${reasons.join(' and ')} - skipping pin sessions integration test`, () => {})
+  test.skip(`${reasons.join(' and ')} - skipping hibernation integration test`, () => {})
 } else {
-  describe('pin sessions integration', () => {
-    const sessionName = `agentboard-pin-test-${Date.now()}-${Math.random()
+  describe('hibernation integration', () => {
+    const sessionName = `agentboard-hibernate-test-${Date.now()}-${Math.random()
       .toString(36)
       .slice(2, 8)}`
     const dbPath = path.join(
       os.tmpdir(),
-      `agentboard-pin-${process.pid}-${Date.now()}.db`
+      `agentboard-hibernate-${process.pid}-${Date.now()}.db`
     )
     const projectPath = process.cwd()
     let serverProcess: ReturnType<typeof Bun.spawn> | null = null
     let port = 0
     let tmuxTmpDir: string | null = null
-    let baselineWindows: string[] = []
     let harnessInitialized = false
     const tmuxEnv = (): NodeJS.ProcessEnv =>
       tmuxTmpDir ? { ...process.env, TMUX_TMPDIR: tmuxTmpDir } : { ...process.env }
 
-    // Session ID for pin/unpin test - seeded before server starts
-    const wsTestSessionId = `ws-pin-test-${Date.now()}`
+    // Session ID for move-to-history test - seeded before server starts.
+    const wsTestSessionId = `ws-history-test-${Date.now()}`
 
     async function startServer(extraEnv: Record<string, string> = {}, retries = 2) {
       for (let attempt = 1; attempt <= retries; attempt++) {
@@ -90,7 +88,7 @@ if (!tmuxAvailable || !localhostBindable) {
       if (!harnessInitialized) {
         tmuxTmpDir = createTmuxTmpDir()
 
-        // Create the tmux session first (required for resurrection to work)
+        // Create the tmux session first so startup has a stable base session.
         Bun.spawnSync(['tmux', 'new-session', '-d', '-s', sessionName], {
           stdout: 'ignore',
           stderr: 'ignore',
@@ -105,12 +103,12 @@ if (!tmuxAvailable || !localhostBindable) {
           projectPath,
           slug: null,
           agentType: 'claude',
-          displayName: 'ws-pin-test',
+          displayName: 'ws-history-test',
           createdAt: new Date().toISOString(),
           lastActivityAt: new Date().toISOString(),
           lastUserMessage: null,
-          currentWindow: `${sessionName}:1`, // active
-          isPinned: false,
+          currentWindow: null,
+          isPinned: true,
           lastResumeError: null,
           lastKnownLogSize: null,
           isCodexExec: false,
@@ -122,9 +120,6 @@ if (!tmuxAvailable || !localhostBindable) {
 
       if (!serverProcess) {
         await startServer()
-      }
-      if (baselineWindows.length === 0) {
-        baselineWindows = listTmuxWindows(sessionName, tmuxEnv())
       }
     }
 
@@ -154,22 +149,21 @@ if (!tmuxAvailable || !localhostBindable) {
     })
 
     test(
-      'pinned session resurrects after server restart',
+      'hibernating session stays dormant after server restart',
       async () => {
-        // Timeout increased to 25s for CI stability - this test calls multiple
-        // async waits (waitForWindowCount, waitForResurrectedSessionInDb, assertTmuxWindowExists)
         await ensureHarnessReady()
+        const baselineWindows = listTmuxWindows(sessionName, tmuxEnv())
         await stopServer()
 
-        const resurrectSessionId = `pin-resurrect-${Date.now()}`
+        const dormantSessionId = `hibernate-restart-${Date.now()}`
         const db = initDatabase({ path: dbPath })
         db.insertSession({
-          sessionId: resurrectSessionId,
-          logFilePath: `/tmp/${resurrectSessionId}.jsonl`,
+          sessionId: dormantSessionId,
+          logFilePath: `/tmp/${dormantSessionId}.jsonl`,
           projectPath,
           slug: null,
           agentType: 'claude',
-          displayName: 'pin-resurrect',
+          displayName: 'hibernate-restart',
           createdAt: new Date().toISOString(),
           lastActivityAt: new Date().toISOString(),
           lastUserMessage: null,
@@ -183,169 +177,57 @@ if (!tmuxAvailable || !localhostBindable) {
         db.close()
 
         await startServer()
-        await waitForWindowCount(
-          sessionName,
-          baselineWindows.length + 1,
-          tmuxEnv(),
-          8000
-        )
 
-        const resurrected = await waitForResurrectedSessionInDb(
-          resurrectSessionId,
-          dbPath
+        const ws = new WebSocket(`ws://${testHost}:${port}/ws`)
+        const payloadPromise = waitForAgentSessionsContaining(
+          ws,
+          'hibernating',
+          dormantSessionId
         )
-        expect(resurrected.isPinned).toBe(true)
-        expect(resurrected.lastResumeError).toBe(null)
-        expect(resurrected.currentWindow).not.toBe(null)
-        if (!resurrected.currentWindow) {
-          throw new Error('Resurrected session missing current window')
-        }
-        expect(resurrected.currentWindow.startsWith(`${sessionName}:`)).toBe(true)
-        await assertTmuxWindowExists(
-          sessionName,
-          resurrected.currentWindow,
-          tmuxEnv()
-        )
+        await waitForOpen(ws)
+        const payload = await payloadPromise
+        expect(payload.hibernating.some((session) => session.sessionId === dormantSessionId)).toBe(true)
+        ws.close()
+
+        await delay(500)
+        const windowsAfterStart = listTmuxWindows(sessionName, tmuxEnv())
+        expect(windowsAfterStart).toEqual(baselineWindows)
+
+        const verifyDb = initDatabase({ path: dbPath })
+        const dormant = verifyDb.getSessionById(dormantSessionId)
+        verifyDb.close()
+        expect(dormant?.isPinned).toBe(true)
+        expect(dormant?.currentWindow).toBe(null)
+        expect(dormant?.lastResumeError).toBe(null)
       },
       25000
     )
 
-    // Note: "failed resurrection unpins session" test is not included because
-    // createWindow doesn't fail on invalid paths - tmux still creates the window.
-    // The unpin-on-failure path is only hit if tmux itself fails (rare).
-
-    test('pin/unpin via websocket', async () => {
+    test('move-to-history via websocket clears the hibernation marker', async () => {
       await ensureHarnessReady()
       const ws = new WebSocket(`ws://${testHost}:${port}/ws`)
       await waitForOpen(ws)
 
-      // Session was seeded during lazy harness setup to avoid SQLite locking issues.
-
-      // Pin via websocket
       ws.send(
         JSON.stringify({
-          type: 'session-pin',
+          type: 'session-move-to-history',
           sessionId: wsTestSessionId,
-          isPinned: true,
         })
       )
 
-      const pinResult = await waitForMessage(ws, 'session-pin-result')
-      expect(pinResult.ok).toBe(true)
-      expect(pinResult.sessionId).toBe(wsTestSessionId)
+      const result = await waitForMessage(ws, 'session-move-to-history-result')
+      expect(result.ok).toBe(true)
+      expect(result.sessionId).toBe(wsTestSessionId)
+      expect((result.session as { isPinned?: boolean }).isPinned).toBe(false)
 
-      // Unpin via websocket
-      ws.send(
-        JSON.stringify({
-          type: 'session-pin',
-          sessionId: wsTestSessionId,
-          isPinned: false,
-        })
-      )
-
-      const unpinResult = await waitForMessage(ws, 'session-pin-result')
-      expect(unpinResult.ok).toBe(true)
-      expect(unpinResult.sessionId).toBe(wsTestSessionId)
+      const db = initDatabase({ path: dbPath })
+      const record = db.getSessionById(wsTestSessionId)
+      db.close()
+      expect(record?.isPinned).toBe(false)
+      expect(record?.currentWindow).toBe(null)
 
       ws.close()
     })
-
-    test(
-      'resurrected session not orphaned during grace period',
-      async () => {
-        await ensureHarnessReady()
-        // Stop the shared server — we need custom env vars
-        await stopServer()
-
-        const graceSessionId = `grace-test-${Date.now()}`
-        const db = initDatabase({ path: dbPath })
-        db.insertSession({
-          sessionId: graceSessionId,
-          logFilePath: `/tmp/${graceSessionId}.jsonl`,
-          projectPath,
-          slug: null,
-          agentType: 'claude',
-          displayName: 'grace-test',
-          createdAt: new Date().toISOString(),
-          lastActivityAt: new Date().toISOString(),
-          lastUserMessage: null,
-          currentWindow: null, // no window — needs resurrection
-          isPinned: true,
-          lastResumeError: null,
-          lastKnownLogSize: null,
-          isCodexExec: false,
-          launchCommand: null,
-        })
-        db.close()
-
-        await startServer({
-          RESURRECTION_GRACE_MS: '4000',
-          REFRESH_INTERVAL_MS: '500',
-        })
-
-        // Wait for resurrection: poll DB until currentWindow becomes non-null.
-        // Under parallel test load (CI), startup verification + tmux operations
-        // can take 30-60s, so we use a generous timeout.
-        let resurrectedWindow: string | null = null
-        const start = Date.now()
-        while (Date.now() - start < 75_000) {
-          try {
-            const pollDb = initDatabase({ path: dbPath })
-            const record = pollDb.getSessionById(graceSessionId)
-            pollDb.close()
-            if (record?.currentWindow) {
-              resurrectedWindow = record.currentWindow
-              break
-            }
-          } catch {
-            // retry — DB may be locked
-          }
-          await delay(250)
-        }
-        if (!resurrectedWindow) {
-          throw new Error('Session was not resurrected within 75s')
-        }
-
-        // Kill the tmux window — simulates the resume command crashing.
-        // Grace is 4s from resurrection, not from kill. We've consumed some
-        // during the resurrection poll above, but locally that's < 1s.
-        Bun.spawnSync(['tmux', 'kill-window', '-t', resurrectedWindow], {
-          env: tmuxEnv(),
-          stdout: 'ignore',
-          stderr: 'ignore',
-        })
-        const killTime = Date.now()
-
-        // Wait 500ms (well under the remaining grace) then verify still protected
-        await delay(500)
-        const dbDuringGrace = initDatabase({ path: dbPath })
-        const duringGrace = dbDuringGrace.getSessionById(graceSessionId)
-        dbDuringGrace.close()
-        expect(duringGrace?.currentWindow).not.toBe(null)
-
-        // Poll until orphaned — grace expires 4s after resurrection, then the
-        // next refresh cycle (500ms interval) orphans it
-        const orphanDeadline = killTime + 15_000
-        let orphaned = false
-        while (Date.now() < orphanDeadline) {
-          try {
-            const pollDb = initDatabase({ path: dbPath })
-            const record = pollDb.getSessionById(graceSessionId)
-            pollDb.close()
-            if (record && record.currentWindow === null) {
-              orphaned = true
-              break
-            }
-          } catch {
-            // retry
-          }
-          await delay(500)
-        }
-        expect(orphaned).toBe(true)
-      },
-      90_000
-    )
-
   })
 }
 
@@ -390,40 +272,6 @@ async function waitForHealth(
   throw new Error('Server did not become healthy in time')
 }
 
-async function waitForResurrectedSessionInDb(
-  sessionId: string,
-  dbPath: string,
-  timeoutMs = 15000
-): Promise<AgentSessionRecord> {
-  const start = Date.now()
-  let lastRecord: AgentSessionRecord | null = null
-  while (Date.now() - start < timeoutMs) {
-    try {
-      const db = initDatabase({ path: dbPath })
-      const record = db.getSessionById(sessionId)
-      db.close()
-      if (record) {
-        lastRecord = record
-      }
-      if (
-        record &&
-        record.isPinned &&
-        record.currentWindow &&
-        !record.lastResumeError
-      ) {
-        return record
-      }
-    } catch {
-      // retry
-    }
-    await delay(150)
-  }
-  const detail = lastRecord?.lastResumeError
-    ? ` Last resume error: ${lastRecord.lastResumeError}`
-    : ''
-  throw new Error(`Pinned session did not resurrect in time.${detail}`)
-}
-
 function listTmuxWindows(
   sessionName: string,
   env?: NodeJS.ProcessEnv
@@ -449,69 +297,6 @@ function listTmuxWindows(
     .filter(Boolean)
 }
 
-async function waitForWindowCount(
-  sessionName: string,
-  minCount: number,
-  env?: NodeJS.ProcessEnv,
-  timeoutMs = 8000
-): Promise<void> {
-  const start = Date.now()
-  while (Date.now() - start < timeoutMs) {
-    const windows = listTmuxWindows(sessionName, env)
-    if (windows.length >= minCount) {
-      return
-    }
-    await delay(150)
-  }
-  throw new Error(
-    `Timed out waiting for tmux windows (expected >= ${minCount}) for ${sessionName}`
-  )
-}
-
-async function assertTmuxWindowExists(
-  sessionName: string,
-  tmuxWindow: string,
-  env?: NodeJS.ProcessEnv,
-  maxAttempts = 20
-) {
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const result = Bun.spawnSync(
-      [
-        'tmux',
-        'list-windows',
-        '-t',
-        sessionName,
-        '-F',
-        '#{session_name}:#{window_id}',
-      ],
-      { stdout: 'pipe', stderr: 'pipe', env }
-    )
-    if (result.exitCode !== 0) {
-      if (attempt === maxAttempts) {
-        throw new Error(
-          `tmux list-windows failed after ${maxAttempts} attempts: ${result.stderr.toString()}`
-        )
-      }
-      await delay(200)
-      continue
-    }
-    const windows = result.stdout
-      .toString()
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean)
-    if (windows.includes(tmuxWindow)) {
-      return // Success
-    }
-    if (attempt === maxAttempts) {
-      throw new Error(
-        `tmux window not found after ${maxAttempts} attempts. Expected: ${tmuxWindow}, Found: [${windows.join(', ')}]`
-      )
-    }
-    await delay(200)
-  }
-}
-
 async function waitForOpen(ws: WebSocket, timeoutMs = 5000): Promise<void> {
   if (ws.readyState === WebSocket.OPEN) return
   return new Promise((resolve, reject) => {
@@ -526,6 +311,47 @@ async function waitForOpen(ws: WebSocket, timeoutMs = 5000): Promise<void> {
       clearTimeout(timeout)
       reject(new Error('WebSocket error'))
     }
+  })
+}
+
+async function waitForAgentSessionsContaining(
+  ws: WebSocket,
+  bucket: 'hibernating' | 'history',
+  sessionId: string,
+  timeoutMs = 5000
+): Promise<{
+  hibernating: Array<{ sessionId: string }>
+  history: Array<{ sessionId: string }>
+}> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      ws.removeEventListener('message', handler)
+      reject(new Error(`Timed out waiting for ${sessionId} in ${bucket}`))
+    }, timeoutMs)
+
+    const handler = (event: MessageEvent) => {
+      try {
+        const payload = JSON.parse(String(event.data)) as Record<string, unknown>
+        if (payload.type !== 'agent-sessions') {
+          return
+        }
+        const hibernating = Array.isArray(payload.hibernating)
+          ? payload.hibernating as Array<{ sessionId: string }>
+          : []
+        const history = Array.isArray(payload.history)
+          ? payload.history as Array<{ sessionId: string }>
+          : []
+        if ((bucket === 'hibernating' ? hibernating : history).some((session) => session.sessionId === sessionId)) {
+          clearTimeout(timeout)
+          ws.removeEventListener('message', handler)
+          resolve({ hibernating, history })
+        }
+      } catch {
+        // ignore parse errors
+      }
+    }
+
+    ws.addEventListener('message', handler)
   })
 }
 

@@ -160,10 +160,10 @@ class SessionManagerMock {
 class SessionRegistryMock {
   static instance: SessionRegistryMock | null = null
   sessions: Session[] = []
-  agentSessions: { active: unknown[]; sleeping: unknown[]; inactive: unknown[] } = {
+  agentSessions: { active: unknown[]; hibernating: unknown[]; history: unknown[] } = {
     active: [],
-    sleeping: [],
-    inactive: [],
+    hibernating: [],
+    history: [],
   }
   listeners = new Map<string, Array<(payload: unknown) => void>>()
 
@@ -210,9 +210,9 @@ class SessionRegistryMock {
     }
   }
 
-  setAgentSessions(active: unknown[], sleeping: unknown[], inactive: unknown[]) {
-    this.agentSessions = { active, sleeping, inactive }
-    this.emit('agent-sessions', { active, sleeping, inactive })
+  setAgentSessions(active: unknown[], hibernating: unknown[], history: unknown[]) {
+    this.agentSessions = { active, hibernating, history }
+    this.emit('agent-sessions', { active, hibernating, history })
   }
 }
 
@@ -321,7 +321,7 @@ mock.module('../../db', () => ({
       Array.from(dbState.records.values()).filter(
         (record) => record.currentWindow !== null
       ),
-    getInactiveSessions: (options?: { maxAgeHours?: number }) => {
+    getHistorySessions: (options?: { maxAgeHours?: number }) => {
       const inactive = Array.from(dbState.records.values()).filter(
         (record) => record.currentWindow === null && !record.isPinned
       )
@@ -333,7 +333,7 @@ mock.module('../../db', () => ({
         (record) => new Date(record.lastActivityAt).getTime() > cutoff
       )
     },
-    getSleepingSessions: () =>
+    getHibernatingSessions: () =>
       Array.from(dbState.records.values()).filter(
         (record) => record.currentWindow === null && record.isPinned
       ),
@@ -911,7 +911,7 @@ describe('server message handlers', () => {
 
     expect(renamed).toEqual([])
     expect(dbState.records.get(sessionId)?.displayName).toBe('renamed-dormant')
-    expect(registryInstance.agentSessions.sleeping).toMatchObject([
+    expect(registryInstance.agentSessions.hibernating).toMatchObject([
       expect.objectContaining({
         sessionId,
         displayName: 'renamed-dormant',
@@ -2408,13 +2408,16 @@ describe('server message handlers', () => {
     })
   })
 
-  test('pins and unpins sessions with validation', async () => {
+  test('moves hibernating sessions to history with validation', async () => {
     const { serveOptions, registryInstance } = await loadIndex()
-    registryInstance.sessions = [{ ...baseSession, agentSessionId: baseSession.id }]
+    registryInstance.sessions = [
+      { ...baseSession, agentSessionId: baseSession.id, isPinned: true },
+    ]
     seedRecord(
       makeRecord({
         sessionId: baseSession.id,
         currentWindow: baseSession.tmuxWindow,
+        isPinned: true,
       })
     )
 
@@ -2427,28 +2430,12 @@ describe('server message handlers', () => {
     websocket.message?.(
       ws as never,
       JSON.stringify({
-        type: 'session-pin',
-        sessionId: baseSession.id,
-        isPinned: 'yes',
-      })
-    )
-    expect(sent[sent.length - 1]).toEqual({
-      type: 'session-pin-result',
-      sessionId: baseSession.id,
-      ok: false,
-      error: 'isPinned must be a boolean',
-    })
-
-    websocket.message?.(
-      ws as never,
-      JSON.stringify({
-        type: 'session-pin',
+        type: 'session-move-to-history',
         sessionId: 'bad id',
-        isPinned: true,
       })
     )
     expect(sent[sent.length - 1]).toEqual({
-      type: 'session-pin-result',
+      type: 'session-move-to-history-result',
       sessionId: 'bad id',
       ok: false,
       error: 'Invalid session id',
@@ -2457,13 +2444,12 @@ describe('server message handlers', () => {
     websocket.message?.(
       ws as never,
       JSON.stringify({
-        type: 'session-pin',
+        type: 'session-move-to-history',
         sessionId: 'missing',
-        isPinned: true,
       })
     )
     expect(sent[sent.length - 1]).toEqual({
-      type: 'session-pin-result',
+      type: 'session-move-to-history-result',
       sessionId: 'missing',
       ok: false,
       error: 'Session not found',
@@ -2472,43 +2458,23 @@ describe('server message handlers', () => {
     websocket.message?.(
       ws as never,
       JSON.stringify({
-        type: 'session-pin',
+        type: 'session-move-to-history',
         sessionId: baseSession.id,
-        isPinned: true,
       })
     )
-    expect(sent[sent.length - 1]).toEqual({
-      type: 'session-pin-result',
-      sessionId: baseSession.id,
-      ok: true,
-    })
-    expect(dbState.updateCalls).toHaveLength(1)
-    expect(dbState.updateCalls[0]?.patch).toMatchObject({
-      isPinned: true,
-      lastResumeError: null,
-    })
-    expect(registryInstance.sessions[0]?.isPinned).toBe(true)
-
-    websocket.message?.(
-      ws as never,
-      JSON.stringify({
-        type: 'session-pin',
-        sessionId: baseSession.id,
-        isPinned: false,
-      })
-    )
-    expect(sent[sent.length - 1]).toEqual({
-      type: 'session-pin-result',
+    expect(sent[sent.length - 1]).toMatchObject({
+      type: 'session-move-to-history-result',
       sessionId: baseSession.id,
       ok: true,
     })
     expect(dbState.setPinnedCalls).toEqual([
       { sessionId: baseSession.id, isPinned: false },
     ])
+    expect(dbState.records.get(baseSession.id)?.isPinned).toBe(false)
     expect(registryInstance.sessions[0]?.isPinned).toBe(false)
   })
 
-  test('validates session sleep errors', async () => {
+  test('validates session hibernate errors', async () => {
     const { serveOptions } = await loadIndex()
     const { ws, sent } = createWs()
     const websocket = serveOptions.websocket
@@ -2518,10 +2484,10 @@ describe('server message handlers', () => {
 
     websocket.message?.(
       ws as never,
-      JSON.stringify({ type: 'session-sleep', sessionId: 'bad id' })
+      JSON.stringify({ type: 'session-hibernate', sessionId: 'bad id' })
     )
     expect(sent[sent.length - 1]).toEqual({
-      type: 'session-sleep-result',
+      type: 'session-hibernate-result',
       sessionId: 'bad id',
       ok: false,
       error: 'Invalid session id',
@@ -2529,36 +2495,36 @@ describe('server message handlers', () => {
 
     websocket.message?.(
       ws as never,
-      JSON.stringify({ type: 'session-sleep', sessionId: 'missing' })
+      JSON.stringify({ type: 'session-hibernate', sessionId: 'missing' })
     )
     expect(sent[sent.length - 1]).toEqual({
-      type: 'session-sleep-result',
+      type: 'session-hibernate-result',
       sessionId: 'missing',
       ok: false,
       error: 'Session not found',
     })
 
-    // Truly inactive (never snoozed) should still error — only already-snoozed
+    // Truly inactive (never hibernating) should still error — only already-hibernating
     // gets the idempotent ack below.
     seedRecord(
       makeRecord({
-        sessionId: 'truly-inactive',
+        sessionId: 'truly-history',
         currentWindow: null,
       })
     )
     websocket.message?.(
       ws as never,
-      JSON.stringify({ type: 'session-sleep', sessionId: 'truly-inactive' })
+      JSON.stringify({ type: 'session-hibernate', sessionId: 'truly-history' })
     )
     expect(sent[sent.length - 1]).toEqual({
-      type: 'session-sleep-result',
-      sessionId: 'truly-inactive',
+      type: 'session-hibernate-result',
+      sessionId: 'truly-history',
       ok: false,
       error: 'Session is not active',
     })
   })
 
-  test('snooze is idempotent for already-snoozed sessions', async () => {
+  test('hibernate is idempotent for already-hibernating sessions', async () => {
     const { serveOptions } = await loadIndex()
     const { ws, sent } = createWs()
     const websocket = serveOptions.websocket
@@ -2568,7 +2534,7 @@ describe('server message handlers', () => {
 
     seedRecord(
       makeRecord({
-        sessionId: 'already-sleeping',
+        sessionId: 'already-hibernating',
         currentWindow: null,
         isPinned: true,
       })
@@ -2582,15 +2548,15 @@ describe('server message handlers', () => {
 
     websocket.message?.(
       ws as never,
-      JSON.stringify({ type: 'session-sleep', sessionId: 'already-sleeping' })
+      JSON.stringify({ type: 'session-hibernate', sessionId: 'already-hibernating' })
     )
 
     expect(sent[sent.length - 1]).toMatchObject({
-      type: 'session-sleep-result',
-      sessionId: 'already-sleeping',
+      type: 'session-hibernate-result',
+      sessionId: 'already-hibernating',
       ok: true,
       session: expect.objectContaining({
-        sessionId: 'already-sleeping',
+        sessionId: 'already-hibernating',
         isPinned: true,
         isActive: false,
       }),
@@ -2600,7 +2566,7 @@ describe('server message handlers', () => {
     expect(dbState.updateCalls.length).toBe(updateCallsBefore)
   })
 
-  test('snoozes active sessions and moves them into the snoozed bucket', async () => {
+  test('hibernates active sessions and moves them into the hibernating bucket', async () => {
     const { serveOptions, registryInstance } = await loadIndex()
     const liveAgentSessionId = 'sleep-ok'
     registryInstance.sessions = [
@@ -2626,7 +2592,7 @@ describe('server message handlers', () => {
 
     websocket.message?.(
       ws as never,
-      JSON.stringify({ type: 'session-sleep', sessionId: liveAgentSessionId })
+      JSON.stringify({ type: 'session-hibernate', sessionId: liveAgentSessionId })
     )
 
     if (!killedTarget) {
@@ -2635,7 +2601,7 @@ describe('server message handlers', () => {
     const killTarget = killedTarget
     expect(killTarget === baseSession.tmuxWindow).toBe(true)
     expect(sent[sent.length - 1]).toMatchObject({
-      type: 'session-sleep-result',
+      type: 'session-hibernate-result',
       sessionId: liveAgentSessionId,
       ok: true,
       session: expect.objectContaining({
@@ -2649,13 +2615,13 @@ describe('server message handlers', () => {
       isPinned: true,
     })
     expect(registryInstance.sessions).toEqual([])
-    expect(registryInstance.agentSessions.sleeping).toMatchObject([
+    expect(registryInstance.agentSessions.hibernating).toMatchObject([
       expect.objectContaining({
         sessionId: liveAgentSessionId,
         isPinned: true,
       }),
     ])
-    expect(registryInstance.agentSessions.inactive).toEqual([])
+    expect(registryInstance.agentSessions.history).toEqual([])
   })
 
   test('validates session wake errors', async () => {
@@ -2731,7 +2697,7 @@ describe('server message handlers', () => {
         call.sessionId === 'bad-template' &&
         call.patch.lastResumeError === 'Wake command template missing {sessionId} placeholder'
     )
-    expect(typeof templateErrorPatch?.patch.lastResumeAttemptAt).toBe('string')
+    expect(templateErrorPatch?.patch.lastResumeAttemptAt).toBeUndefined()
   })
 
   test('wakes sessions and broadcasts activation', async () => {
@@ -2787,10 +2753,7 @@ describe('server message handlers', () => {
       displayName: createdSession.name,
       lastResumeError: null,
     })
-    expect(typeof activationPatch?.patch.lastResumeAttemptAt).toBe('string')
-    expect(
-      Number.isNaN(Date.parse(String(activationPatch?.patch.lastResumeAttemptAt)))
-    ).toBe(false)
+    expect(activationPatch?.patch.lastResumeAttemptAt).toBeUndefined()
 
     const resumeMessage = sent.find(
       (message) => message.type === 'session-wake-result' && message.ok
@@ -2893,7 +2856,7 @@ describe('server message handlers', () => {
         logFilePath,
       }),
     })
-    expect(registryInstance.agentSessions.sleeping).toEqual([])
+    expect(registryInstance.agentSessions.hibernating).toEqual([])
     expect(registryInstance.agentSessions.active).toMatchObject([
       expect.objectContaining({ sessionId: rematchId }),
     ])
@@ -3214,12 +3177,12 @@ describe('server message handlers', () => {
     })
   })
 
-  test('wake failure persists lastResumeError without removing star', async () => {
+  test('wake failure persists lastResumeError without clearing hibernation marker', async () => {
     const { serveOptions } = await loadIndex()
-    const sleepingId = 'wake-fails'
+    const hibernatingId = 'wake-fails'
     seedRecord(
       makeRecord({
-        sessionId: sleepingId,
+        sessionId: hibernatingId,
         displayName: 'wakes-bad',
         projectPath: '/tmp/wakes-bad',
         agentType: 'claude',
@@ -3241,30 +3204,30 @@ describe('server message handlers', () => {
 
     websocket.message?.(
       ws as never,
-      JSON.stringify({ type: 'session-wake', sessionId: sleepingId })
+      JSON.stringify({ type: 'session-wake', sessionId: hibernatingId })
     )
 
     expect(sent[sent.length - 1]).toEqual({
       type: 'session-wake-result',
-      sessionId: sleepingId,
+      sessionId: hibernatingId,
       ok: false,
       error: { code: 'WAKE_FAILED', message: 'resume artifact missing' },
     })
 
     const errorPatch = dbState.updateCalls.find(
-      (call) => call.sessionId === sleepingId && 'lastResumeError' in call.patch
+      (call) => call.sessionId === hibernatingId && 'lastResumeError' in call.patch
     )
     expect(errorPatch?.patch.lastResumeError).toBe('resume artifact missing')
-    expect(typeof errorPatch?.patch.lastResumeAttemptAt).toBe('string')
+    expect(errorPatch?.patch.lastResumeAttemptAt).toBeUndefined()
 
-    // Star must stay true so the card remains in the Snoozed rail.
-    const removedStar = dbState.updateCalls.find(
+    // Hibernation marker must stay true so the card remains in the Hibernating rail.
+    const removedMarker = dbState.updateCalls.find(
       (call) =>
-        call.sessionId === sleepingId &&
+        call.sessionId === hibernatingId &&
         'isPinned' in call.patch &&
         call.patch.isPinned === false
     )
-    expect(removedStar).toBeUndefined()
+    expect(removedMarker).toBeUndefined()
   })
 
   test('websocket close disposes all terminals', async () => {
@@ -3884,7 +3847,7 @@ describe('server startup side effects', () => {
     expect(payload.ok).toBe(true)
   })
 
-  test('startup auto-wake skips recently failed starred sessions', async () => {
+  test('startup keeps recently failed hibernating sessions dormant', async () => {
     const sessionId = 'startup-cooldown'
     seedRecord(
       makeRecord({
@@ -3912,7 +3875,7 @@ describe('server startup side effects', () => {
 
     expect(createCalls).toBe(0)
     expect(dbState.updateCalls).toEqual([])
-    expect(registryInstance.agentSessions.sleeping).toMatchObject([
+    expect(registryInstance.agentSessions.hibernating).toMatchObject([
       expect.objectContaining({
         sessionId,
         isPinned: true,

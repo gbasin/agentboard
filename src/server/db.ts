@@ -51,12 +51,11 @@ export interface SessionDatabase {
   getSessionByLogPath: (logPath: string) => AgentSessionRecord | null
   getSessionByWindow: (tmuxWindow: string) => AgentSessionRecord | null
   getActiveSessions: () => AgentSessionRecord[]
-  getSleepingSessions: () => AgentSessionRecord[]
-  getInactiveSessions: (options?: { maxAgeHours?: number }) => AgentSessionRecord[]
+  getHibernatingSessions: () => AgentSessionRecord[]
+  getHistorySessions: (options?: { maxAgeHours?: number }) => AgentSessionRecord[]
   orphanSession: (sessionId: string) => AgentSessionRecord | null
   displayNameExists: (displayName: string, excludeSessionId?: string) => boolean
   setPinned: (sessionId: string, isPinned: boolean) => AgentSessionRecord | null
-  getPinnedOrphaned: () => AgentSessionRecord[]
   getActiveSessionBySlugAndProject: (
     slug: string,
     projectPath: string
@@ -160,13 +159,13 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
   const selectActive = db.prepare(
     'SELECT * FROM agent_sessions WHERE current_window IS NOT NULL ORDER BY session_id'
   )
-  const selectSleeping = db.prepare(
+  const selectHibernating = db.prepare(
     'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_pinned = 1 ORDER BY last_activity_at DESC, session_id'
   )
-  const selectInactive = db.prepare(
+  const selectHistory = db.prepare(
     'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_pinned = 0 ORDER BY last_activity_at DESC, session_id'
   )
-  const selectInactiveRecent = db.prepare(
+  const selectHistoryRecent = db.prepare(
     'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_pinned = 0 AND last_activity_at > $cutoff ORDER BY last_activity_at DESC, session_id'
   )
   const selectByDisplayName = db.prepare(
@@ -340,17 +339,17 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
       const rows = selectActive.all() as Record<string, unknown>[]
       return rows.map(mapRow)
     },
-    getSleepingSessions: () => {
-      const rows = selectSleeping.all() as Record<string, unknown>[]
+    getHibernatingSessions: () => {
+      const rows = selectHibernating.all() as Record<string, unknown>[]
       return rows.map(mapRow)
     },
-    getInactiveSessions: (options?: { maxAgeHours?: number }) => {
+    getHistorySessions: (options?: { maxAgeHours?: number }) => {
       if (options?.maxAgeHours) {
         const cutoff = new Date(Date.now() - options.maxAgeHours * 60 * 60 * 1000).toISOString()
-        const rows = selectInactiveRecent.all({ $cutoff: cutoff }) as Record<string, unknown>[]
+        const rows = selectHistoryRecent.all({ $cutoff: cutoff }) as Record<string, unknown>[]
         return rows.map(mapRow)
       }
-      const rows = selectInactive.all() as Record<string, unknown>[]
+      const rows = selectHistory.all() as Record<string, unknown>[]
       return rows.map(mapRow)
     },
     orphanSession: (sessionId) => {
@@ -381,14 +380,6 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
         | Record<string, unknown>
         | undefined
       return row ? mapRow(row) : null
-    },
-    getPinnedOrphaned: () => {
-      const rows = db
-        .prepare(
-          'SELECT * FROM agent_sessions WHERE is_pinned = 1 AND current_window IS NULL ORDER BY last_activity_at DESC'
-        )
-        .all() as Record<string, unknown>[]
-      return rows.map(mapRow)
     },
     getActiveSessionBySlugAndProject: (slug, projectPath) => {
       const row = selectActiveBySlugAndProject.get({
@@ -558,7 +549,7 @@ function migrateIsSleepingToPinnedColumn(db: SQLiteDatabase) {
 
   db.exec('BEGIN')
   try {
-    // Preserve every legacy sleeping row in the derived Snoozed bucket.
+    // Preserve every legacy sleeping row in the derived Hibernating bucket.
     db.exec('UPDATE agent_sessions SET is_pinned = 1 WHERE is_sleeping = 1')
     db.exec('ALTER TABLE agent_sessions DROP COLUMN is_sleeping')
     db.exec('COMMIT')

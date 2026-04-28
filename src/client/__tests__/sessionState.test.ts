@@ -37,10 +37,10 @@ function makeAgentSession(overrides: Partial<AgentSession> = {}): AgentSession {
 beforeEach(() => {
   useSessionStore.setState({
     sessions: [],
-    agentSessions: { active: [], sleeping: [], inactive: [] },
+    agentSessions: { active: [], hibernating: [], history: [] },
     agentSessionsEpoch: -1,
     selectedSessionId: null,
-    selectedSleepingSessionId: null,
+    selectedHibernatingSessionId: null,
     hasLoaded: false,
     connectionStatus: 'connecting',
     connectionError: null,
@@ -206,40 +206,40 @@ describe('useSessionStore', () => {
     expect(useSessionStore.getState().selectedSessionId).toBe('session-1')
   })
 
-  test('setAgentSessions stores sleeping sessions and clears stale sleeping selection', () => {
-    useSessionStore.setState({ selectedSleepingSessionId: 'sleeping-1' })
+  test('setAgentSessions stores hibernating sessions and clears stale hibernating selection', () => {
+    useSessionStore.setState({ selectedHibernatingSessionId: 'hibernating-1' })
 
     useSessionStore.getState().setAgentSessions(
       [makeAgentSession({ sessionId: 'active-1', isActive: true })],
-      [makeAgentSession({ sessionId: 'sleeping-1', isPinned: true })],
-      [makeAgentSession({ sessionId: 'inactive-1' })]
+      [makeAgentSession({ sessionId: 'hibernating-1', isPinned: true })],
+      [makeAgentSession({ sessionId: 'history-1' })]
     )
 
     let state = useSessionStore.getState()
-    expect(state.agentSessions.sleeping.map((session) => session.sessionId)).toEqual([
-      'sleeping-1',
+    expect(state.agentSessions.hibernating.map((session) => session.sessionId)).toEqual([
+      'hibernating-1',
     ])
-    expect(state.selectedSleepingSessionId).toBe('sleeping-1')
+    expect(state.selectedHibernatingSessionId).toBe('hibernating-1')
 
     useSessionStore.getState().setAgentSessions(
       [makeAgentSession({ sessionId: 'active-1', isActive: true })],
       [],
-      [makeAgentSession({ sessionId: 'inactive-1' })]
+      [makeAgentSession({ sessionId: 'history-1' })]
     )
 
     state = useSessionStore.getState()
-    expect(state.agentSessions.sleeping).toEqual([])
-    expect(state.selectedSleepingSessionId).toBeNull()
+    expect(state.agentSessions.hibernating).toEqual([])
+    expect(state.selectedHibernatingSessionId).toBeNull()
   })
 
-  test('setActiveAgentSessions updates active sessions without clearing sleeping selection', () => {
+  test('setActiveAgentSessions updates active sessions without clearing hibernating selection', () => {
     useSessionStore.setState({
-      selectedSleepingSessionId: 'sleeping-1',
+      selectedHibernatingSessionId: 'hibernating-1',
       agentSessionsEpoch: 0,
       agentSessions: {
         active: [makeAgentSession({ sessionId: 'active-old', isActive: true })],
-        sleeping: [],
-        inactive: [makeAgentSession({ sessionId: 'inactive-1' })],
+        hibernating: [],
+        history: [makeAgentSession({ sessionId: 'history-1' })],
       },
     })
 
@@ -248,12 +248,12 @@ describe('useSessionStore', () => {
     ])
 
     const state = useSessionStore.getState()
-    expect(state.selectedSleepingSessionId).toBe('sleeping-1')
+    expect(state.selectedHibernatingSessionId).toBe('hibernating-1')
     expect(state.agentSessions.active.map((session) => session.sessionId)).toEqual([
       'active-new',
     ])
-    expect(state.agentSessions.inactive.map((session) => session.sessionId)).toEqual([
-      'inactive-1',
+    expect(state.agentSessions.history.map((session) => session.sessionId)).toEqual([
+      'history-1',
     ])
   })
 
@@ -266,17 +266,17 @@ describe('useSessionStore', () => {
     const merged = merge(
       {
         sessions: [makeSession({ id: 'legacy-session' })],
-        agentSessions: { active: [], inactive: [] },
+        agentSessions: { active: [], history: [] },
         selectedSessionId: 'legacy-live',
-        selectedSleepingSessionId: 'legacy-sleeping',
+        selectedHibernatingSessionId: 'legacy-hibernating',
       },
       useSessionStore.getState()
     )
 
     expect(merged.sessions).toEqual([])
-    expect(merged.agentSessions).toEqual({ active: [], sleeping: [], inactive: [] })
+    expect(merged.agentSessions).toEqual({ active: [], hibernating: [], history: [] })
     expect(merged.selectedSessionId).toBe('legacy-live')
-    expect(merged.selectedSleepingSessionId).toBe('legacy-sleeping')
+    expect(merged.selectedHibernatingSessionId).toBe('legacy-hibernating')
   })
 
   test('setSessions applies lastActivity-only updates', () => {

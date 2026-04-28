@@ -142,10 +142,10 @@ interface SettingsState {
   setShowLastUserMessage: (enabled: boolean) => void
   showSessionIdPrefix: boolean
   setShowSessionIdPrefix: (enabled: boolean) => void
-  inactiveSessionsExpanded: boolean
-  setInactiveSessionsExpanded: (expanded: boolean) => void
-  snoozedSessionsExpanded: boolean
-  setSnoozedSessionsExpanded: (expanded: boolean) => void
+  historySessionsExpanded: boolean
+  setHistorySessionsExpanded: (expanded: boolean) => void
+  hibernatingSessionsExpanded: boolean
+  setHibernatingSessionsExpanded: (expanded: boolean) => void
   sidebarWidth: number
   setSidebarWidth: (width: number) => void
   projectFilters: string[]
@@ -208,10 +208,10 @@ export const useSettingsStore = create<SettingsState>()(
       setShowLastUserMessage: (enabled) => set({ showLastUserMessage: enabled }),
       showSessionIdPrefix: false,
       setShowSessionIdPrefix: (enabled) => set({ showSessionIdPrefix: enabled }),
-      inactiveSessionsExpanded: false,
-      setInactiveSessionsExpanded: (expanded) => set({ inactiveSessionsExpanded: expanded }),
-      snoozedSessionsExpanded: true,
-      setSnoozedSessionsExpanded: (expanded) => set({ snoozedSessionsExpanded: expanded }),
+      historySessionsExpanded: false,
+      setHistorySessionsExpanded: (expanded) => set({ historySessionsExpanded: expanded }),
+      hibernatingSessionsExpanded: true,
+      setHibernatingSessionsExpanded: (expanded) => set({ hibernatingSessionsExpanded: expanded }),
       sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
       setSidebarWidth: (width) =>
         set({
@@ -267,7 +267,7 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: 'agentboard-settings',
       storage: createJSONStorage(() => safeStorage),
-      version: 4,
+      version: 5,
       partialize: (state) => {
         // Exclude manualSessionOrder from persistence (session-only state)
         const { manualSessionOrder: _, ...rest } = state
@@ -275,6 +275,18 @@ export const useSettingsStore = create<SettingsState>()(
       },
       migrate: (persistedState: unknown, version: number) => {
         const state = persistedState as Record<string, unknown>
+        if (
+          typeof state.historySessionsExpanded !== 'boolean' &&
+          typeof state.inactiveSessionsExpanded === 'boolean'
+        ) {
+          state.historySessionsExpanded = state.inactiveSessionsExpanded
+        }
+        if (
+          typeof state.hibernatingSessionsExpanded !== 'boolean' &&
+          typeof state.snoozedSessionsExpanded === 'boolean'
+        ) {
+          state.hibernatingSessionsExpanded = state.snoozedSessionsExpanded
+        }
 
         // Helper to migrate old preset format (baseCommand+modifiers) to new (command)
         const migrateOldPreset = (p: Record<string, unknown>): CommandPreset => {
@@ -356,8 +368,8 @@ export const useSettingsStore = create<SettingsState>()(
         const missingBuiltIns = DEFAULT_PRESETS.filter(p => p.isBuiltIn && !existingIds.has(p.id))
         const finalPresets = [...trimmedPresets, ...missingBuiltIns]
 
-        if (version < 4) {
-          console.info(`[agentboard:settings] Migrated from v${version} to v4 (ensured all built-in presets)`)
+        if (version < 5) {
+          console.info(`[agentboard:settings] Migrated from v${version} to v5`)
         }
 
         return {

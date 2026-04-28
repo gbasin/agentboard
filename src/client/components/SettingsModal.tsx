@@ -11,7 +11,7 @@ import {
   type ShortcutModifier,
 } from '../stores/settingsStore'
 import { useThemeStore, type Theme } from '../stores/themeStore'
-import { INACTIVE_MAX_AGE_MIN_HOURS, INACTIVE_MAX_AGE_MAX_HOURS } from '@shared/types'
+import { HISTORY_MAX_AGE_MIN_HOURS, HISTORY_MAX_AGE_MAX_HOURS } from '@shared/types'
 import { getEffectiveModifier, getModifierDisplay } from '../utils/device'
 import { Switch } from './Switch'
 import { playPermissionSound, playIdleSound, primeAudio } from '../utils/sound'
@@ -117,8 +117,8 @@ export default function SettingsModal({
   // Server-side settings (fetched from API)
   const [tmuxMouseMode, setTmuxMouseMode] = useState(true)
   const [tmuxMouseModeLoading, setTmuxMouseModeLoading] = useState(false)
-  const [inactiveMaxAgeHours, setInactiveMaxAgeHours] = useState(24)
-  const [inactiveMaxAgeHoursLoading, setInactiveMaxAgeHoursLoading] = useState(false)
+  const [historyMaxAgeHours, setHistoryMaxAgeHours] = useState(24)
+  const [historyMaxAgeHoursLoading, setHistoryMaxAgeHoursLoading] = useState(false)
 
   // New preset form state
   const [showAddForm, setShowAddForm] = useState(false)
@@ -161,9 +161,9 @@ export default function SettingsModal({
         .then((res) => res.json())
         .then((data: { enabled: boolean }) => setTmuxMouseMode(data.enabled))
         .catch(() => {})
-      fetch('/api/settings/inactive-max-age-hours')
+      fetch('/api/settings/history-max-age-hours')
         .then((res) => res.json())
-        .then((data: { hours: number }) => setInactiveMaxAgeHours(data.hours))
+        .then((data: { hours: number }) => setHistoryMaxAgeHours(data.hours))
         .catch(() => {})
       // Disable terminal textarea when modal opens to prevent keyboard capture
       if (typeof document !== 'undefined') {
@@ -312,17 +312,17 @@ export default function SettingsModal({
       .finally(() => setTmuxMouseModeLoading(false))
   }
 
-  const handleInactiveMaxAgeHoursChange = (hours: number) => {
-    const prevHours = inactiveMaxAgeHours
-    setInactiveMaxAgeHoursLoading(true)
-    setInactiveMaxAgeHours(hours)
-    fetch('/api/settings/inactive-max-age-hours', {
+  const handleHistoryMaxAgeHoursChange = (hours: number) => {
+    const prevHours = historyMaxAgeHours
+    setHistoryMaxAgeHoursLoading(true)
+    setHistoryMaxAgeHours(hours)
+    fetch('/api/settings/history-max-age-hours', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ hours }),
     })
-      .catch(() => setInactiveMaxAgeHours(prevHours)) // Revert on error
-      .finally(() => setInactiveMaxAgeHoursLoading(false))
+      .catch(() => setHistoryMaxAgeHours(prevHours)) // Revert on error
+      .finally(() => setHistoryMaxAgeHoursLoading(false))
   }
 
   return (
@@ -595,24 +595,24 @@ export default function SettingsModal({
             </div>
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-sm text-primary">Inactive Sessions Lookback</div>
+                <div className="text-sm text-primary">History Sessions Lookback</div>
                 <div className="text-[10px] text-muted">
-                  Show inactive sessions from the last N hours ({INACTIVE_MAX_AGE_MIN_HOURS}-{INACTIVE_MAX_AGE_MAX_HOURS}).
+                  Show history sessions from the last N hours ({HISTORY_MAX_AGE_MIN_HOURS}-{HISTORY_MAX_AGE_MAX_HOURS}).
                 </div>
               </div>
               <div className="flex items-center gap-2">
                 <input
                   type="number"
-                  min={INACTIVE_MAX_AGE_MIN_HOURS}
-                  max={INACTIVE_MAX_AGE_MAX_HOURS}
-                  value={inactiveMaxAgeHours}
+                  min={HISTORY_MAX_AGE_MIN_HOURS}
+                  max={HISTORY_MAX_AGE_MAX_HOURS}
+                  value={historyMaxAgeHours}
                   onChange={(e) => {
                     const val = parseInt(e.target.value, 10)
-                    if (val >= INACTIVE_MAX_AGE_MIN_HOURS && val <= INACTIVE_MAX_AGE_MAX_HOURS) {
-                      handleInactiveMaxAgeHoursChange(val)
+                    if (val >= HISTORY_MAX_AGE_MIN_HOURS && val <= HISTORY_MAX_AGE_MAX_HOURS) {
+                      handleHistoryMaxAgeHoursChange(val)
                     }
                   }}
-                  disabled={inactiveMaxAgeHoursLoading}
+                  disabled={historyMaxAgeHoursLoading}
                   className="input text-xs py-1 px-2 w-16 text-center"
                 />
                 <span className="text-xs text-muted">hrs</span>

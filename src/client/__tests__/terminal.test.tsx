@@ -123,12 +123,12 @@ const secondSession: Session = {
   source: 'managed',
 }
 
-const sleepingSession: AgentSession = {
-  sessionId: 'sleeping-1',
-  logFilePath: '/tmp/sleeping-1.jsonl',
+const hibernatingSession: AgentSession = {
+  sessionId: 'hibernating-1',
+  logFilePath: '/tmp/hibernating-1.jsonl',
   projectPath: '/tmp/alpha',
   agentType: 'claude',
-  displayName: 'alpha-sleeping',
+  displayName: 'alpha-hibernating',
   createdAt: '2024-01-01T00:00:00.000Z',
   lastActivityAt: '2024-01-01T00:00:00.000Z',
   isActive: false,
@@ -700,17 +700,17 @@ describe('Terminal', () => {
     })
   })
 
-  test('renders sleeping placeholder and wakes without attaching terminal', async () => {
+  test('renders hibernating placeholder and wakes without attaching terminal', async () => {
     const resumeCalls: string[] = []
     const sentMessages: unknown[] = []
     globalThis.fetch = ((async () =>
       new Response(
         JSON.stringify({
-          sessionId: sleepingSession.sessionId,
-          displayName: sleepingSession.displayName,
-          projectPath: sleepingSession.projectPath,
-          agentType: sleepingSession.agentType,
-          lastActivityAt: sleepingSession.lastActivityAt,
+          sessionId: hibernatingSession.sessionId,
+          displayName: hibernatingSession.displayName,
+          projectPath: hibernatingSession.projectPath,
+          agentType: hibernatingSession.agentType,
+          lastActivityAt: hibernatingSession.lastActivityAt,
           lines: [
             JSON.stringify({
               type: 'user',
@@ -731,7 +731,7 @@ describe('Terminal', () => {
       renderer = TestRenderer.create(
         <Terminal
           session={null}
-          sleepingSession={sleepingSession}
+          hibernatingSession={hibernatingSession}
           sessions={[]}
           connectionStatus="connected"
           sendMessage={(msg) => { sentMessages.push(msg) }}
@@ -753,7 +753,7 @@ describe('Terminal', () => {
     })
 
     const html = JSON.stringify(renderer.toJSON())
-    expect(html).toContain('Snoozed')
+    expect(html).toContain('Hibernating')
     expect(html).toContain('Wake Session')
     expect(
       sentMessages.some(
@@ -775,7 +775,7 @@ describe('Terminal', () => {
       wakeButton.props.onClick()
     })
 
-    expect(resumeCalls).toEqual([sleepingSession.sessionId])
+    expect(resumeCalls).toEqual([hibernatingSession.sessionId])
 
     act(() => {
       renderer.unmount()

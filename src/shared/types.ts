@@ -1,6 +1,6 @@
-// Inactive sessions lookback limits (in hours)
-export const INACTIVE_MAX_AGE_MIN_HOURS = 1
-export const INACTIVE_MAX_AGE_MAX_HOURS = 168 // 7 days
+// History sessions lookback limits (in hours)
+export const HISTORY_MAX_AGE_MIN_HOURS = 1
+export const HISTORY_MAX_AGE_MAX_HOURS = 168 // 7 days
 
 export type SessionStatus = 'working' | 'waiting' | 'permission' | 'unknown'
 
@@ -81,20 +81,19 @@ export type ServerMessage =
   | { type: 'session-created'; session: Session }
   | { type: 'session-removed'; sessionId: string }
   | { type: 'host-status'; hosts: HostStatus[] }
-  | { type: 'agent-sessions'; active: AgentSession[]; sleeping: AgentSession[]; inactive: AgentSession[] }
+  | { type: 'agent-sessions'; active: AgentSession[]; hibernating: AgentSession[]; history: AgentSession[] }
   | { type: 'agent-sessions-active'; active: AgentSession[] }
   | { type: 'session-orphaned'; session: AgentSession; supersededBy?: string }
   | { type: 'session-activated'; session: AgentSession; window: string }
   | { type: 'session-wake-result'; sessionId: string; ok: boolean; session?: Session; error?: WakeError }
   | {
-      type: 'session-sleep-result'
+      type: 'session-hibernate-result'
       sessionId: string
       ok: boolean
       session?: AgentSession
       error?: string
     }
-  | { type: 'session-pin-result'; sessionId: string; ok: boolean; error?: string }
-  | { type: 'session-resurrection-failed'; sessionId: string; displayName: string; error: string }
+  | { type: 'session-move-to-history-result'; sessionId: string; ok: boolean; session?: AgentSession; error?: string }
   | { type: 'terminal-output'; sessionId: string; data: string }
   | {
       type: 'terminal-error'
@@ -133,9 +132,9 @@ export type ClientMessage =
   | { type: 'tmux-cancel-copy-mode'; sessionId: string }
   | { type: 'tmux-check-copy-mode'; sessionId: string }
   | { type: 'session-wake'; sessionId: string }
-  | { type: 'session-sleep'; sessionId: string }
+  | { type: 'session-hibernate'; sessionId: string }
+  | { type: 'session-move-to-history'; sessionId: string }
   | { type: 'ping'; seq?: number }
-  | { type: 'session-pin'; sessionId: string; isPinned: boolean }
 
 /** Diagnostic metadata attached to parsed ServerMessages by useWebSocket. */
 export interface DiagnosticMeta {

@@ -38,11 +38,11 @@ function makeSession(overrides: Partial<Session>): Session {
 
 function makeAgentSession(overrides: Partial<AgentSession> = {}): AgentSession {
   return {
-    sessionId: 'sleeping-1',
-    logFilePath: '/tmp/sleeping-1.jsonl',
+    sessionId: 'hibernating-1',
+    logFilePath: '/tmp/hibernating-1.jsonl',
     projectPath: '/tmp/alpha',
     agentType: 'claude',
-    displayName: 'alpha-sleeping',
+    displayName: 'alpha-hibernating',
     createdAt: '2024-01-01T00:00:00.000Z',
     lastActivityAt: '2024-01-01T00:00:00.000Z',
     isActive: false,
@@ -233,22 +233,22 @@ describe('SessionList component', () => {
     })
   })
 
-  test('renders sleeping subsection and selects sleeping sessions', () => {
-    const selectedSleeping: string[] = []
+  test('renders hibernating subsection and selects hibernating sessions', () => {
+    const selectedHibernating: string[] = []
     const renameCalls: Array<{ id: string; name: string }> = []
-    const sleepingSession = makeAgentSession({ sessionId: 'sleeping-42' })
+    const hibernatingSession = makeAgentSession({ sessionId: 'hibernating-42' })
 
     const renderer = TestRenderer.create(
       <SessionList
         sessions={[baseSession]}
-        sleepingSessions={[sleepingSession]}
-        inactiveSessions={[]}
+        hibernatingSessions={[hibernatingSession]}
+        historySessions={[]}
         selectedSessionId={null}
-        selectedSleepingSessionId={sleepingSession.sessionId}
+        selectedHibernatingSessionId={hibernatingSession.sessionId}
         loading={false}
         error={null}
         onSelect={() => {}}
-        onSelectSleeping={(sessionId) => selectedSleeping.push(sessionId)}
+        onSelectHibernating={(sessionId) => selectedHibernating.push(sessionId)}
         onRename={(sessionId, newName) => {
           renameCalls.push({ id: sessionId, name: newName })
         }}
@@ -256,21 +256,21 @@ describe('SessionList component', () => {
     )
 
     const html = JSON.stringify(renderer.toJSON())
-    expect(html).toContain('Snoozed')
-    expect(html).toContain('alpha-sleeping')
+    expect(html).toContain('Hibernating')
+    expect(html).toContain('alpha-hibernating')
 
-    const sleepingButton = renderer.root.findByProps({
-      'data-testid': 'sleeping-session-card',
+    const hibernatingButton = renderer.root.findByProps({
+      'data-testid': 'hibernating-session-card',
     })
 
     act(() => {
-      sleepingButton.props.onClick()
+      hibernatingButton.props.onClick()
     })
 
-    expect(selectedSleeping).toEqual([sleepingSession.sessionId])
+    expect(selectedHibernating).toEqual([hibernatingSession.sessionId])
 
     act(() => {
-      sleepingButton.props.onContextMenu({
+      hibernatingButton.props.onContextMenu({
         preventDefault: () => {},
         stopPropagation: () => {},
         clientX: 10,
@@ -288,7 +288,7 @@ describe('SessionList component', () => {
         return children.some((child) => child === 'Rename')
       })
     if (!renameButton) {
-      throw new Error('Expected Snoozed rename button')
+      throw new Error('Expected Hibernating rename button')
     }
 
     act(() => {
@@ -297,14 +297,14 @@ describe('SessionList component', () => {
 
     const input = renderer.root.findByType('input')
     act(() => {
-      input.props.onChange({ target: { value: '  renamed-snooze  ' } })
+      input.props.onChange({ target: { value: '  renamed-hibernate  ' } })
     })
     act(() => {
       input.props.onKeyDown({ key: 'Enter', preventDefault: () => {} })
     })
 
     expect(renameCalls).toEqual([
-      { id: sleepingSession.sessionId, name: 'renamed-snooze' },
+      { id: hibernatingSession.sessionId, name: 'renamed-hibernate' },
     ])
 
     act(() => {
