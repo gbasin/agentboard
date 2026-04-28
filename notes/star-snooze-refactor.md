@@ -56,7 +56,7 @@ The auto-resume query (`db.ts:335`) explicitly excludes `is_sleeping=1`, so toda
 - `getInactiveSessions` queries (lines 154, 157) → `WHERE is_pinned = 0 AND current_window IS NULL`.
 - `getPinnedOrphaned` (line 335) → final form drops `AND is_sleeping = 0`, but only after wake mutex + cooldown are in place.
 - `orphanSession` (line 303) → drop the `is_sleeping = 0` write; keep `current_window = null`.
-- Add `last_resume_attempt_at TEXT` for auto-wake cooldown bookkeeping.
+- Do not add wake cooldown bookkeeping; startup auto-wake/resurrection is removed in the hibernation model.
 - One-shot data migration: `UPDATE agent_sessions SET is_pinned = 1 WHERE is_sleeping = 1` to preserve existing snoozed-unstarred rows.
 - Then `ALTER TABLE agent_sessions DROP COLUMN is_sleeping` (SQLite ≥3.35 supports this; bun's bundled SQLite is fine).
 
@@ -123,7 +123,7 @@ Race exists today for resurrect; new model exposes more sessions to it.
 ### §3. Wake cooldown (HIGH priority)
 **Problem:** with "preserve star on failure" chosen, a permanently-failing session retries every server restart, wasting CPU/tmux churn proportional to N poison sessions × restart frequency.
 
-**Fix:** add `last_resume_attempt_at TEXT` column. `resurrectStarredSessions` skips if last attempt was within ~24h. Manual Wake bypasses the cooldown (records a new attempt and may clear the timer on success). UI: error badge stays visible; if we expose cooldown timing, expose a derived `autoWakeRetryAt` rather than raw DB internals.
+**Resolution:** startup auto-wake/resurrection was removed, so there is no retry loop to cool down and no `last_resume_attempt_at` column to persist. Manual Wake still preserves the hibernation marker and stores `lastResumeError` on failure.
 
 ~20 LOC + 1 migration + tests.
 
@@ -178,7 +178,7 @@ Race exists today for resurrect; new model exposes more sessions to it.
 All 10 critical claims verified:
 - **POC-confirmed:** DROP COLUMN works on bun's bundled SQLite (tested against copy of real db); migration `UPDATE is_pinned=1 WHERE is_sleeping=1` is idempotent (tested with synthetic row injection).
 - **docs-confirmed:** bun 1.3.8 ships SQLite 3.51.0, well past the 3.35 threshold.
-- **code-confirmed:** all 5 bucket queries (db.ts:151,154,157,303,335) derive cleanly to `is_pinned && !cw` rules; wake mutex feasible (`resurrectedSessionGrace` Map at index.ts:284 is the precedent — Set goes next to it); `updateSession` is column-scoped so a new `last_resume_attempt_at` column won't be clobbered by other writers; no feedback loop on auto-star (broadcast is pull-only); rebuild + SW cache works (the earlier stale-UI symptom was the `AGENTBOARD_STATIC_DIR` env leak, not SW).
+- **code-confirmed:** all 5 bucket queries (db.ts:151,154,157,303,335) derive cleanly to `is_pinned && !cw` rules; wake mutex feasible (`resurrectedSessionGrace` Map at index.ts:284 is the precedent — Set goes next to it); `updateSession` is column-scoped for wake error persistence; no feedback loop on auto-star (broadcast is pull-only); rebuild + SW cache works (the earlier stale-UI symptom was the `AGENTBOARD_STATIC_DIR` env leak, not SW).
 
 ### One positive surprise
 **`isSleeping` is never read by non-test client code.** The field is declared on `AgentSession` (shared/types.ts:49) and used in 15 client test mocks but ZERO production UI files. So "drop from wire" is purely test-update churn — no UI logic to refactor. Knocks ~30 min off the estimate.

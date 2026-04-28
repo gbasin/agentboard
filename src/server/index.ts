@@ -2275,15 +2275,20 @@ function handleSessionHibernate(
  * e.g. stored "codex --yolo --search" + template "codex resume {sessionId}"
  *   → "codex --yolo --search resume <id>"
  */
+function getResumeCommandTemplate(agentType: AgentType): string {
+  return (
+    agentType === 'claude' || agentType === 'claude-rp'
+      ? config.claudeResumeCmd
+      : config.codexResumeCmd
+  )
+}
+
 function buildResumeCommand(
   launchCommand: string | null,
   sessionId: string,
   agentType: AgentType
 ): string {
-  const resumeTemplate =
-    agentType === 'claude' || agentType === 'claude-rp'
-      ? config.claudeResumeCmd
-      : config.codexResumeCmd
+  const resumeTemplate = getResumeCommandTemplate(agentType)
 
   const baseResumeCmd = resumeTemplate.replace('{sessionId}', sessionId)
 
@@ -2313,14 +2318,7 @@ function buildResumeCommand(
 }
 
 function validateWakeTemplate(record: AgentSessionRecord): WakeError | null {
-  if (record.launchCommand) {
-    return null
-  }
-
-  const resumeTemplate =
-    record.agentType === 'claude' || record.agentType === 'claude-rp'
-      ? config.claudeResumeCmd
-      : config.codexResumeCmd
+  const resumeTemplate = getResumeCommandTemplate(record.agentType)
   if (resumeTemplate.includes('{sessionId}')) {
     return null
   }
@@ -2328,6 +2326,20 @@ function validateWakeTemplate(record: AgentSessionRecord): WakeError | null {
   return {
     code: 'WAKE_FAILED',
     message: 'Wake command template missing {sessionId} placeholder',
+  }
+}
+
+function recordWakeFailure(sessionId: string, message: string) {
+  try {
+    db.updateSession(sessionId, {
+      lastResumeError: message,
+    })
+    updateDormantAgentSessions()
+  } catch (error) {
+    logger.error('session_wake_error_persist_failed', {
+      sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    })
   }
 }
 
@@ -2543,10 +2555,7 @@ function handleSessionWake(
         reason: 'bad_template',
         agentType: latest.agentType,
       })
-      db.updateSession(sessionId, {
-        lastResumeError: templateError.message,
-      })
-      updateDormantAgentSessions()
+      recordWakeFailure(sessionId, templateError.message)
       send(ws, { type: 'session-wake-result', sessionId, ok: false, error: templateError })
       return
     }
@@ -2633,10 +2642,7 @@ function handleSessionWake(
     // Persist the failure reason so every tab sees an error badge via the
     // normal agent-sessions broadcast, not just the tab that triggered the
     // wake. Hibernating sessions stay in the Hibernating rail.
-    db.updateSession(sessionId, {
-      lastResumeError: message,
-    })
-    updateDormantAgentSessions()
+    recordWakeFailure(sessionId, message)
     logger.error('session_wake_failed', {
       sessionId,
       reason: 'create_window_failed',

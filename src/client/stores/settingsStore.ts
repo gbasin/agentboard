@@ -267,7 +267,7 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: 'agentboard-settings',
       storage: createJSONStorage(() => safeStorage),
-      version: 5,
+      version: 6,
       partialize: (state) => {
         // Exclude manualSessionOrder from persistence (session-only state)
         const { manualSessionOrder: _, ...rest } = state
@@ -368,8 +368,8 @@ export const useSettingsStore = create<SettingsState>()(
         const missingBuiltIns = DEFAULT_PRESETS.filter(p => p.isBuiltIn && !existingIds.has(p.id))
         const finalPresets = [...trimmedPresets, ...missingBuiltIns]
 
-        if (version < 5) {
-          console.info(`[agentboard:settings] Migrated from v${version} to v5`)
+        if (version < 6) {
+          console.info(`[agentboard:settings] Migrated from v${version} to v6`)
         }
 
         return {

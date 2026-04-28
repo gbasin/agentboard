@@ -113,7 +113,6 @@ function makeRecord(overrides: Partial<AgentSessionRecord> = {}): AgentSessionRe
     currentWindow: null,
     isPinned: false,
     lastResumeError: null,
-    lastResumeAttemptAt: null,
     lastKnownLogSize: null,
     isCodexExec: false,
     launchCommand: null,
@@ -2877,12 +2876,36 @@ describe('server message handlers', () => {
         message: 'Wake command template missing {sessionId} placeholder',
       },
     })
+    seedRecord(
+      makeRecord({
+        sessionId: 'bad-template-with-launch-command',
+        currentWindow: null,
+        agentType: 'claude',
+        launchCommand: 'claude --dangerously-skip-permissions',
+      })
+    )
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({
+        type: 'session-wake',
+        sessionId: 'bad-template-with-launch-command',
+      })
+    )
+    expect(sent[sent.length - 1]).toEqual({
+      type: 'session-wake-result',
+      sessionId: 'bad-template-with-launch-command',
+      ok: false,
+      error: {
+        code: 'WAKE_FAILED',
+        message: 'Wake command template missing {sessionId} placeholder',
+      },
+    })
     const templateErrorPatch = dbState.updateCalls.find(
       (call) =>
         call.sessionId === 'bad-template' &&
         call.patch.lastResumeError === 'Wake command template missing {sessionId} placeholder'
     )
-    expect(templateErrorPatch?.patch.lastResumeAttemptAt).toBeUndefined()
+    expect(templateErrorPatch).toBeDefined()
   })
 
   test('wakes sessions and broadcasts activation', async () => {
@@ -2938,7 +2961,6 @@ describe('server message handlers', () => {
       displayName: createdSession.name,
       lastResumeError: null,
     })
-    expect(activationPatch?.patch.lastResumeAttemptAt).toBeUndefined()
 
     const resumeMessage = sent.find(
       (message) => message.type === 'session-wake-result' && message.ok
@@ -3403,7 +3425,6 @@ describe('server message handlers', () => {
       (call) => call.sessionId === hibernatingId && 'lastResumeError' in call.patch
     )
     expect(errorPatch?.patch.lastResumeError).toBe('resume artifact missing')
-    expect(errorPatch?.patch.lastResumeAttemptAt).toBeUndefined()
 
     // Hibernation marker must stay true so the card remains in the Hibernating rail.
     const removedMarker = dbState.updateCalls.find(
@@ -3413,6 +3434,49 @@ describe('server message handlers', () => {
         call.patch.isPinned === false
     )
     expect(removedMarker).toBeUndefined()
+  })
+
+  test('wake failure still reports when persisting the error fails', async () => {
+    const { serveOptions } = await loadIndex()
+    const hibernatingId = 'wake-persist-fails'
+    seedRecord(
+      makeRecord({
+        sessionId: hibernatingId,
+        displayName: 'wake-persist-fails',
+        projectPath: '/tmp/wake-persist-fails',
+        agentType: 'claude',
+        currentWindow: null,
+        isPinned: true,
+      })
+    )
+
+    sessionManagerState.createWindow = () => {
+      throw new Error('resume artifact missing')
+    }
+    dbState.updateSessionError = (sessionId, patch) =>
+      sessionId === hibernatingId && patch.lastResumeError
+        ? new Error('db locked')
+        : null
+
+    const { ws, sent } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) {
+      throw new Error('WebSocket handlers not configured')
+    }
+    websocket.open?.(ws as never)
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({ type: 'session-wake', sessionId: hibernatingId })
+    )
+
+    expect(sent[sent.length - 1]).toEqual({
+      type: 'session-wake-result',
+      sessionId: hibernatingId,
+      ok: false,
+      error: { code: 'WAKE_FAILED', message: 'resume artifact missing' },
+    })
+    expect(dbState.records.get(hibernatingId)?.isPinned).toBe(true)
   })
 
   test('websocket close disposes all terminals', async () => {
@@ -4032,16 +4096,15 @@ describe('server startup side effects', () => {
     expect(payload.ok).toBe(true)
   })
 
-  test('startup keeps recently failed hibernating sessions dormant', async () => {
-    const sessionId = 'startup-cooldown'
+  test('startup keeps hibernating sessions dormant', async () => {
+    const sessionId = 'startup-hibernating'
     seedRecord(
       makeRecord({
         sessionId,
-        displayName: 'startup-cooldown',
+        displayName: 'startup-hibernating',
         currentWindow: null,
         isPinned: true,
         lastResumeError: 'resume artifact missing',
-        lastResumeAttemptAt: new Date().toISOString(),
       })
     )
 
@@ -4050,8 +4113,8 @@ describe('server startup side effects', () => {
       createCalls += 1
       return {
         ...baseSession,
-        id: 'startup-cooldown-created',
-        name: 'startup-cooldown',
+        id: 'startup-hibernating-created',
+        name: 'startup-hibernating',
         tmuxWindow: 'agentboard:90',
       }
     }

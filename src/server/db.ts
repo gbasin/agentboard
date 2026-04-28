@@ -18,15 +18,12 @@ export interface AgentSessionRecord {
   currentWindow: string | null
   isPinned: boolean
   lastResumeError: string | null
-  lastResumeAttemptAt: string | null
   lastKnownLogSize: number | null
   isCodexExec: boolean
   launchCommand: string | null
 }
 
-export type NewAgentSessionRecord = Omit<AgentSessionRecord, 'id' | 'lastResumeAttemptAt'> & {
-  lastResumeAttemptAt?: string | null
-}
+export type NewAgentSessionRecord = Omit<AgentSessionRecord, 'id'>
 
 export interface SessionDatabase {
   db: SQLiteDatabase
@@ -86,7 +83,6 @@ const AGENT_SESSIONS_COLUMNS_SQL = `
   current_window TEXT,
   is_pinned INTEGER NOT NULL DEFAULT 0,
   last_resume_error TEXT,
-  last_resume_attempt_at TEXT,
   -- NULL means "unknown" (e.g., after upgrade). First poll will initialize to actual size.
   -- This triggers a one-time match check for upgraded sessions.
   last_known_log_size INTEGER,
@@ -133,7 +129,6 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
   migrateIsPinnedColumn(db)
   migrateIsSleepingToPinnedColumn(db)
   migrateLastResumeErrorColumn(db)
-  migrateLastResumeAttemptAtColumn(db)
   migrateLastKnownLogSizeColumn(db)
   migrateIsCodexExecColumn(db)
   migrateSlugColumn(db)
@@ -143,8 +138,8 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
 
   const insertStmt = db.prepare(
     `INSERT INTO agent_sessions
-      (session_id, log_file_path, project_path, slug, agent_type, display_name, created_at, last_activity_at, last_user_message, current_window, is_pinned, last_resume_error, last_resume_attempt_at, last_known_log_size, is_codex_exec, launch_command)
-     VALUES ($sessionId, $logFilePath, $projectPath, $slug, $agentType, $displayName, $createdAt, $lastActivityAt, $lastUserMessage, $currentWindow, $isPinned, $lastResumeError, $lastResumeAttemptAt, $lastKnownLogSize, $isCodexExec, $launchCommand)`
+      (session_id, log_file_path, project_path, slug, agent_type, display_name, created_at, last_activity_at, last_user_message, current_window, is_pinned, last_resume_error, last_known_log_size, is_codex_exec, launch_command)
+     VALUES ($sessionId, $logFilePath, $projectPath, $slug, $agentType, $displayName, $createdAt, $lastActivityAt, $lastUserMessage, $currentWindow, $isPinned, $lastResumeError, $lastKnownLogSize, $isCodexExec, $launchCommand)`
   )
 
   const selectBySessionId = db.prepare(
@@ -222,7 +217,6 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
         $currentWindow: session.currentWindow,
         $isPinned: session.isPinned ? 1 : 0,
         $lastResumeError: session.lastResumeError,
-        $lastResumeAttemptAt: session.lastResumeAttemptAt ?? null,
         $lastKnownLogSize: session.lastKnownLogSize,
         $isCodexExec: session.isCodexExec ? 1 : 0,
         $launchCommand: session.launchCommand ?? null,
@@ -257,7 +251,6 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
         currentWindow: 'current_window',
         isPinned: 'is_pinned',
         lastResumeError: 'last_resume_error',
-        lastResumeAttemptAt: 'last_resume_attempt_at',
         lastKnownLogSize: 'last_known_log_size',
         isCodexExec: 'is_codex_exec',
         launchCommand: 'launch_command',
@@ -293,7 +286,6 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
       const fieldMap: Record<string, string> = {
         displayName: 'display_name',
         lastResumeError: 'last_resume_error',
-        lastResumeAttemptAt: 'last_resume_attempt_at',
         launchCommand: 'launch_command',
       }
       const fields = ['current_window']
@@ -454,10 +446,6 @@ function mapRow(row: Record<string, unknown>): AgentSessionRecord {
       row.last_resume_error === null || row.last_resume_error === undefined
         ? null
         : String(row.last_resume_error),
-    lastResumeAttemptAt:
-      row.last_resume_attempt_at === null || row.last_resume_attempt_at === undefined
-        ? null
-        : String(row.last_resume_attempt_at),
     // Note: null lastKnownLogSize is treated as "unknown", triggering a match check
     // on first poll after upgrade. This is intentional (one-time cost).
     lastKnownLogSize:
@@ -565,14 +553,6 @@ function migrateLastResumeErrorColumn(db: SQLiteDatabase) {
     return
   }
   db.exec('ALTER TABLE agent_sessions ADD COLUMN last_resume_error TEXT')
-}
-
-function migrateLastResumeAttemptAtColumn(db: SQLiteDatabase) {
-  const columns = getColumnNames(db, 'agent_sessions')
-  if (columns.length === 0 || columns.includes('last_resume_attempt_at')) {
-    return
-  }
-  db.exec('ALTER TABLE agent_sessions ADD COLUMN last_resume_attempt_at TEXT')
 }
 
 function migrateLastKnownLogSizeColumn(db: SQLiteDatabase) {
@@ -704,7 +684,6 @@ function migratePiAgentType(db: SQLiteDatabase) {
         current_window,
         is_pinned,
         last_resume_error,
-        last_resume_attempt_at,
         last_known_log_size,
         is_codex_exec,
         launch_command
@@ -723,7 +702,6 @@ function migratePiAgentType(db: SQLiteDatabase) {
         current_window,
         is_pinned,
         last_resume_error,
-        last_resume_attempt_at,
         last_known_log_size,
         is_codex_exec,
         ${launchCommandSelect}

@@ -382,6 +382,26 @@ describe('preset migration', () => {
   })
 })
 
+describe('settings persistence migration', () => {
+  test('runs the hibernating/history expansion rename for v5 persisted state', async () => {
+    const options = useSettingsStore.persist.getOptions()
+    expect(options.version).toBe(6)
+    if (!options.migrate) {
+      throw new Error('Expected settings migration to be configured')
+    }
+
+    const migrated = await Promise.resolve(options.migrate({
+      inactiveSessionsExpanded: true,
+      snoozedSessionsExpanded: false,
+      commandPresets: DEFAULT_PRESETS.map((preset) => ({ ...preset })),
+      defaultPresetId: 'claude',
+    }, 5)) as Record<string, unknown>
+
+    expect(migrated.historySessionsExpanded).toBe(true)
+    expect(migrated.hibernatingSessionsExpanded).toBe(false)
+  })
+})
+
 afterAll(() => {
   globalAny.window = originalWindow
   globalAny.localStorage = originalLocalStorage

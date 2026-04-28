@@ -16,7 +16,6 @@ const baseRecord: AgentSessionRecord = {
   currentWindow: 'agentboard:1',
   isPinned: false,
   lastResumeError: null,
-  lastResumeAttemptAt: null,
   lastKnownLogSize: null,
   isCodexExec: false,
   launchCommand: null,

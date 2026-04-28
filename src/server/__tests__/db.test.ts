@@ -21,7 +21,6 @@ function makeSession(overrides: Partial<{
   currentWindow: string | null
   isPinned: boolean
   lastResumeError: string | null
-  lastResumeAttemptAt: string | null
   lastKnownLogSize: number | null
   isCodexExec: boolean
   launchCommand: string | null
@@ -39,7 +38,6 @@ function makeSession(overrides: Partial<{
     currentWindow: 'agentboard:1',
     isPinned: false,
     lastResumeError: null,
-    lastResumeAttemptAt: null,
     lastKnownLogSize: null,
     isCodexExec: false,
     launchCommand: null,
@@ -388,7 +386,7 @@ describe('db', () => {
     const columnNames = columns.map((column) => String(column.name ?? ''))
 
     expect(columnNames).not.toContain('is_sleeping')
-    expect(columnNames).toContain('last_resume_attempt_at')
+    expect(columnNames).not.toContain('last_resume_attempt_at')
     expect(migrated.getSessionById('legacy-hibernating')?.isPinned).toBe(true)
     expect(migrated.getHibernatingSessions().map((session) => session.sessionId)).toEqual([
       'legacy-hibernating',
