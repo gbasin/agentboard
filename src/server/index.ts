@@ -2652,15 +2652,46 @@ function handleSessionWake(
       lastResumeError: null,
     })
     if (!updatedRecord) {
+      const reread = db.getSessionById(sessionId)
+      if (reread?.currentWindow === created.tmuxWindow) {
+        createdWindowToCleanup = null
+        refreshGeneration++
+        const hydrated = hydrateWakeSession(created, reread)
+        const currentSessions = registry
+          .getAll()
+          .filter((session) =>
+            session.id !== hydrated.id &&
+            session.tmuxWindow !== hydrated.tmuxWindow
+          )
+        registry.replaceSessions([hydrated, ...currentSessions])
+        updateDormantAgentSessions()
+        refreshSessions()
+        send(ws, { type: 'session-wake-result', sessionId, ok: true, session: hydrated })
+        broadcast({
+          type: 'session-activated',
+          session: toAgentSession(reread),
+          window: hydrated.tmuxWindow,
+        })
+        logger.info('session_wake_success', {
+          sessionId,
+          reason: 'window_claimed_concurrently',
+          agentType: latest.agentType,
+          displayName: latest.displayName,
+          tmuxWindow: created.tmuxWindow,
+          durationMs: Date.now() - startedAt,
+        })
+        return
+      }
+
       try { sessionManager.killWindow(created.tmuxWindow) } catch { /* may already be gone */ }
       createdWindowToCleanup = null
       // Sync refresh so the registry reflects the racing claim before we look
       // up the live session — the rematcher updates DB before its own
       // session-activated emission, so without this we may miss it.
       refreshSessionsSync()
-      const reread = db.getSessionById(sessionId)
-      const liveSession = reread?.currentWindow
-        ? registry.get(reread.currentWindow) ??
+      const latestRecord = db.getSessionById(sessionId)
+      const liveSession = latestRecord?.currentWindow
+        ? registry.get(latestRecord.currentWindow) ??
           registry.getAll().find((s) => s.agentSessionId?.trim() === sessionId)
         : undefined
       logger.info('session_wake_noop', {

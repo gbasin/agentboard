@@ -3435,6 +3435,83 @@ describe('server message handlers', () => {
     })
   })
 
+  test('wake keeps new window if a racing rematch claims that same window', async () => {
+    const { serveOptions, registryInstance } = await loadIndex()
+    const { ws, sent } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) {
+      throw new Error('WebSocket handlers not configured')
+    }
+
+    const sessionId = 'wake-same-window-race'
+    seedRecord(
+      makeRecord({
+        sessionId,
+        displayName: 'wake-same-window-race',
+        currentWindow: null,
+        isPinned: true,
+        lastResumeError: 'previous wake failed',
+      })
+    )
+
+    const newWindow = 'agentboard:99'
+    const newSession: Session = {
+      ...baseSession,
+      id: 'wake-same-window-created',
+      name: 'wake-same-window-race',
+      tmuxWindow: newWindow,
+    }
+    sessionManagerState.createWindow = () => {
+      const record = dbState.records.get(sessionId)
+      if (record) {
+        dbState.records.set(sessionId, {
+          ...record,
+          currentWindow: newWindow,
+          lastResumeError: null,
+        })
+      }
+      return newSession
+    }
+    const killCalls: string[] = []
+    sessionManagerState.killWindow = (tmuxWindow: string) => {
+      killCalls.push(tmuxWindow)
+    }
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({ type: 'session-wake', sessionId })
+    )
+
+    expect(killCalls).toEqual([])
+    expect(dbState.records.get(sessionId)).toMatchObject({
+      currentWindow: newWindow,
+      lastResumeError: null,
+    })
+    const wakeResults = sent.filter(
+      (message) =>
+        message.type === 'session-wake-result' &&
+        message.sessionId === sessionId
+    )
+    expect(wakeResults).toHaveLength(1)
+    expect(wakeResults[0]).toMatchObject({
+      type: 'session-wake-result',
+      sessionId,
+      ok: true,
+      session: {
+        tmuxWindow: newWindow,
+        agentSessionId: sessionId,
+        agentSessionName: 'wake-same-window-race',
+        logFilePath: `/tmp/${sessionId}.jsonl`,
+      },
+    })
+    expect(registryInstance.sessions).toMatchObject([
+      expect.objectContaining({
+        tmuxWindow: newWindow,
+        agentSessionId: sessionId,
+      }),
+    ])
+  })
+
   test('wakes session with quoted launch_command by stripping tmux quotes', async () => {
     const { serveOptions } = await loadIndex()
     const { ws } = createWs()
