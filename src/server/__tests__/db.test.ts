@@ -83,6 +83,20 @@ describe('db', () => {
     expect(orphaned?.currentWindow).toBeNull()
   })
 
+  test('stores claude-rp agent sessions', () => {
+    const inserted = db.insertSession(makeSession({
+      sessionId: 'claude-rp-session',
+      logFilePath: '/tmp/claude-rp-session.jsonl',
+      agentType: 'claude-rp',
+      currentWindow: null,
+    }))
+
+    expect(inserted.agentType).toBe('claude-rp')
+    expect(db.getSessionById('claude-rp-session')?.agentType).toBe(
+      'claude-rp'
+    )
+  })
+
   test('setPinned updates hibernation marker flag', () => {
     const session = makeSession()
     db.insertSession(session)
@@ -251,7 +265,7 @@ describe('db', () => {
     fs.rmSync(tempDir, { recursive: true, force: true })
   })
 
-  test('migratePiAgentType preserves launchCommand during table rebuild', () => {
+  test('migrates agent type constraint and preserves launchCommand during table rebuild', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentboard-'))
     const dbPath = path.join(tempDir, 'agentboard.db')
     const legacyDb = new SQLiteDatabase(dbPath)
@@ -319,10 +333,25 @@ describe('db', () => {
 
     const migrated = initDatabase({ path: dbPath })
     const session = migrated.getSessionById('legacy-launch-command')
+    const tableInfo = migrated.db
+      .prepare(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='agent_sessions'"
+      )
+      .get() as { sql: string } | undefined
 
     expect(session?.launchCommand).toBe(
       'codex --dangerously-bypass-approvals-and-sandbox'
     )
+    expect(tableInfo?.sql).toContain("'pi'")
+    expect(tableInfo?.sql).toContain("'claude-rp'")
+    expect(
+      migrated.insertSession(makeSession({
+        sessionId: 'legacy-rp-session',
+        logFilePath: '/tmp/legacy-rp-session.jsonl',
+        agentType: 'claude-rp',
+        currentWindow: null,
+      })).agentType
+    ).toBe('claude-rp')
 
     migrated.close()
     fs.rmSync(tempDir, { recursive: true, force: true })
@@ -384,9 +413,15 @@ describe('db', () => {
       .prepare('PRAGMA table_info(agent_sessions)')
       .all() as Array<{ name?: string }>
     const columnNames = columns.map((column) => String(column.name ?? ''))
+    const tableInfo = migrated.db
+      .prepare(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='agent_sessions'"
+      )
+      .get() as { sql: string } | undefined
 
     expect(columnNames).not.toContain('is_sleeping')
     expect(columnNames).not.toContain('last_resume_attempt_at')
+    expect(tableInfo?.sql).toContain("'claude-rp'")
     expect(migrated.getSessionById('legacy-hibernating')?.isPinned).toBe(true)
     expect(migrated.getHibernatingSessions().map((session) => session.sessionId)).toEqual([
       'legacy-hibernating',

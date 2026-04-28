@@ -373,6 +373,7 @@ export class LogPoller {
             match.tmuxWindow,
             {
               displayName: window.name,
+              lastResumeError: null,
               ...(window.command && !existing.launchCommand ? { launchCommand: window.command } : {}),
             }
           )
@@ -424,6 +425,7 @@ export class LogPoller {
               window.tmuxWindow,
               {
                 displayName: window.name,
+                lastResumeError: null,
                 ...(window.command && !existing.launchCommand ? { launchCommand: window.command } : {}),
               }
             )
@@ -631,6 +633,7 @@ export class LogPoller {
                   exactMatch.tmuxWindow,
                   {
                     displayName: exactMatch.name,
+                    lastResumeError: null,
                     ...(exactMatch.command && !existing.launchCommand ? { launchCommand: exactMatch.command } : {}),
                   }
                 )
@@ -711,6 +714,7 @@ export class LogPoller {
                   exactMatch.tmuxWindow,
                   {
                     displayName: exactMatch.name,
+                    lastResumeError: null,
                     ...(exactMatch.command && !existingById.launchCommand ? { launchCommand: exactMatch.command } : {}),
                   }
                 )

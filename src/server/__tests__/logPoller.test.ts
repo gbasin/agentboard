@@ -1023,8 +1023,8 @@ describe('LogPoller', () => {
       lastUserMessage: null,
       currentWindow: null,
       isPinned: false,
-      lastResumeError: null,
-      lastKnownLogSize: null,
+      lastResumeError: 'wake failed',
+      lastKnownLogSize: stats.size,
       isCodexExec: false,
       launchCommand: null,
     })
@@ -1042,8 +1042,67 @@ describe('LogPoller', () => {
     const updated = db.getSessionById('claude-session-orphan')
     expect(updated?.currentWindow).toBe(baseSession.tmuxWindow)
     expect(updated?.displayName).toBe(baseSession.name)
+    expect(updated?.lastResumeError).toBeNull()
 
     poller.stop()
+    db.close()
+  })
+
+  test('clears resume error when orphaned session rematches during poll', async () => {
+    const db = initDatabase({ path: ':memory:' })
+    const registry = new SessionRegistry()
+    registry.replaceSessions([baseSession])
+
+    const tokens = Array.from({ length: 60 }, (_, i) => `token${i}`).join(' ')
+    setTmuxOutput(baseSession.tmuxWindow, buildLastExchangeOutput(tokens))
+
+    const projectPath = baseSession.projectPath
+    const encoded = encodeProjectPath(projectPath)
+    const logDir = path.join(
+      process.env.CLAUDE_CONFIG_DIR ?? '',
+      'projects',
+      encoded
+    )
+    await fs.mkdir(logDir, { recursive: true })
+    const logPath = path.join(logDir, 'session-rematch.jsonl')
+    const line = buildUserLogEntry(tokens, {
+      sessionId: 'claude-session-rematch',
+      cwd: projectPath,
+    })
+    const assistantLine = JSON.stringify({
+      type: 'assistant',
+      message: { content: [{ type: 'text', text: tokens }] },
+    })
+    await fs.writeFile(logPath, `${line}\n${assistantLine}\n`)
+
+    const stats = await fs.stat(logPath)
+    db.insertSession({
+      sessionId: 'claude-session-rematch',
+      logFilePath: logPath,
+      projectPath,
+      slug: null,
+      agentType: 'claude',
+      displayName: 'rematch',
+      createdAt: stats.birthtime.toISOString(),
+      lastActivityAt: stats.mtime.toISOString(),
+      lastUserMessage: null,
+      currentWindow: null,
+      isPinned: false,
+      lastResumeError: 'wake failed',
+      lastKnownLogSize: 0,
+      isCodexExec: false,
+      launchCommand: null,
+    })
+
+    const poller = new LogPoller(db, registry, {
+      matchWorkerClient: new InlineMatchWorkerClient(),
+    })
+    await poller.pollOnce()
+
+    const updated = db.getSessionById('claude-session-rematch')
+    expect(updated?.currentWindow).toBe(baseSession.tmuxWindow)
+    expect(updated?.lastResumeError).toBeNull()
+
     db.close()
   })
 

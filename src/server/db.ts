@@ -75,7 +75,7 @@ const AGENT_SESSIONS_COLUMNS_SQL = `
   session_id TEXT UNIQUE,
   log_file_path TEXT NOT NULL UNIQUE,
   project_path TEXT,
-  agent_type TEXT NOT NULL CHECK (agent_type IN ('claude', 'codex', 'pi')),
+  agent_type TEXT NOT NULL CHECK (agent_type IN ('claude', 'claude-rp', 'codex', 'pi')),
   display_name TEXT,
   created_at TEXT NOT NULL,
   last_activity_at TEXT NOT NULL,
@@ -132,7 +132,7 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
   migrateLastKnownLogSizeColumn(db)
   migrateIsCodexExecColumn(db)
   migrateSlugColumn(db)
-  migratePiAgentType(db)
+  migrateAgentTypeConstraint(db)
   migrateLaunchCommandColumn(db)
   db.exec(CREATE_INDEXES_SQL)
 
@@ -642,11 +642,10 @@ function migrateDeduplicateDisplayNames(db: SQLiteDatabase) {
 }
 
 /**
- * Migrate agent_type CHECK constraint to include 'pi'.
+ * Migrate agent_type CHECK constraint to include every current AgentType.
  * SQLite doesn't support modifying constraints, so we recreate the table.
  */
-function migratePiAgentType(db: SQLiteDatabase) {
-  // Check if table exists and if constraint already includes 'pi'
+function migrateAgentTypeConstraint(db: SQLiteDatabase) {
   const tableInfo = db
     .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='agent_sessions'")
     .get() as { sql: string } | undefined
@@ -655,8 +654,7 @@ function migratePiAgentType(db: SQLiteDatabase) {
     return // Table doesn't exist yet, will be created with correct constraint
   }
 
-  // If 'pi' is already in the constraint, no migration needed
-  if (tableInfo.sql.includes("'pi'")) {
+  if (tableInfo.sql.includes("'claude-rp'") && tableInfo.sql.includes("'pi'")) {
     return
   }
 
@@ -667,7 +665,7 @@ function migratePiAgentType(db: SQLiteDatabase) {
 
   db.exec('BEGIN')
   try {
-    db.exec('ALTER TABLE agent_sessions RENAME TO agent_sessions_old_pi_migrate')
+    db.exec('ALTER TABLE agent_sessions RENAME TO agent_sessions_old_agent_type_migrate')
     createAgentSessionsTable(db, 'agent_sessions')
     db.exec(`
       INSERT INTO agent_sessions (
@@ -705,9 +703,9 @@ function migratePiAgentType(db: SQLiteDatabase) {
         last_known_log_size,
         is_codex_exec,
         ${launchCommandSelect}
-      FROM agent_sessions_old_pi_migrate
+      FROM agent_sessions_old_agent_type_migrate
     `)
-    db.exec('DROP TABLE agent_sessions_old_pi_migrate')
+    db.exec('DROP TABLE agent_sessions_old_agent_type_migrate')
     db.exec('COMMIT')
   } catch (error) {
     db.exec('ROLLBACK')
