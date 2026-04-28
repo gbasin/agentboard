@@ -24,6 +24,9 @@ export interface AgentSessionRecord {
 }
 
 export type NewAgentSessionRecord = Omit<AgentSessionRecord, 'id'>
+export type ClaimCurrentWindowPatch = Partial<
+  Pick<AgentSessionRecord, 'displayName' | 'lastResumeError' | 'launchCommand'>
+>
 
 export interface SessionDatabase {
   db: SQLiteDatabase
@@ -42,7 +45,7 @@ export interface SessionDatabase {
   claimCurrentWindow: (
     sessionId: string,
     tmuxWindow: string,
-    extraPatch?: Partial<Omit<AgentSessionRecord, 'id' | 'sessionId' | 'currentWindow'>>
+    extraPatch?: ClaimCurrentWindowPatch
   ) => AgentSessionRecord | null
   getSessionById: (sessionId: string) => AgentSessionRecord | null
   getSessionByLogPath: (logPath: string) => AgentSessionRecord | null
@@ -111,6 +114,9 @@ CREATE INDEX IF NOT EXISTS idx_log_file_path
   ON agent_sessions (log_file_path);
 CREATE INDEX IF NOT EXISTS idx_current_window
   ON agent_sessions (current_window);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_current_window_unique
+  ON agent_sessions (current_window)
+  WHERE current_window IS NOT NULL;
 `
 
 export function initDatabase(options: { path?: string } = {}): SessionDatabase {

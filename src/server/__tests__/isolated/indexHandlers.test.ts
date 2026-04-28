@@ -3,7 +3,7 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import type { Session, ServerMessage } from '@shared/types'
-import type { AgentSessionRecord } from '../../db'
+import type { AgentSessionRecord, ClaimCurrentWindowPatch } from '../../db'
 import { TmuxTimeoutError } from '../../tmuxTimeout'
 import { TMUX_FIELD_SEPARATOR } from '../../tmuxFormat'
 
@@ -371,7 +371,7 @@ mock.module('../../db', () => ({
     claimCurrentWindow: (
       sessionId: string,
       tmuxWindow: string,
-      extraPatch?: Partial<Omit<AgentSessionRecord, 'id' | 'sessionId' | 'currentWindow'>>
+      extraPatch?: ClaimCurrentWindowPatch
     ) => {
       const record = dbState.records.get(sessionId)
       if (!record) return null
@@ -968,6 +968,59 @@ describe('server message handlers', () => {
       currentWindow: baseSession.tmuxWindow,
       isPinned: true,
     })
+  })
+
+  test('intentional kill restores prepared markers when database prep fails', async () => {
+    const { serveOptions, registryInstance } = await loadIndex()
+    const staleAgentSessionId = 'kill-prep-stale'
+    const windowAgentSessionId = 'kill-prep-window'
+    registryInstance.sessions = [
+      { ...baseSession, agentSessionId: staleAgentSessionId, isPinned: true },
+    ]
+    seedRecord(
+      makeRecord({
+        sessionId: staleAgentSessionId,
+        logFilePath: '/tmp/kill-prep-stale.jsonl',
+        currentWindow: null,
+        isPinned: true,
+      })
+    )
+    seedRecord(
+      makeRecord({
+        sessionId: windowAgentSessionId,
+        logFilePath: '/tmp/kill-prep-window.jsonl',
+        currentWindow: baseSession.tmuxWindow,
+        isPinned: true,
+      })
+    )
+    dbState.updateSessionError = (sessionId, patch) =>
+      sessionId === windowAgentSessionId && patch.isPinned === false
+        ? new Error('prep failed')
+        : null
+    let killCalled = false
+    sessionManagerState.killWindow = () => {
+      killCalled = true
+    }
+
+    const { ws, sent } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) {
+      throw new Error('WebSocket handlers not configured')
+    }
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({ type: 'session-kill', sessionId: baseSession.id })
+    )
+
+    expect(killCalled).toBe(false)
+    expect(sent[sent.length - 1]).toEqual({
+      type: 'kill-failed',
+      sessionId: baseSession.id,
+      message: 'prep failed',
+    })
+    expect(dbState.records.get(staleAgentSessionId)?.isPinned).toBe(true)
+    expect(dbState.records.get(windowAgentSessionId)?.isPinned).toBe(true)
   })
 
   test('renames dormant agent sessions without requiring a tmux window', async () => {

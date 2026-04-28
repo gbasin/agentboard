@@ -8,7 +8,11 @@ import { config, isValidHostname } from './config'
 import { ensureTmux } from './prerequisites'
 import { SessionManager } from './SessionManager'
 import { SessionRegistry } from './SessionRegistry'
-import { initDatabase, type AgentSessionRecord } from './db'
+import {
+  initDatabase,
+  type AgentSessionRecord,
+  type ClaimCurrentWindowPatch,
+} from './db'
 import { LogPoller } from './logPoller'
 import { toAgentSession } from './agentSessions'
 import { getLogSearchDirs } from './logDiscovery'
@@ -1842,6 +1846,16 @@ async function handleCheckCopyMode(sessionId: string, ws: ServerWebSocket<WSData
   }
 }
 
+function restorePinnedState(previousPinnedState: Map<string, boolean>) {
+  for (const [agentSessionId, isPinned] of previousPinnedState) {
+    try {
+      db.updateSession(agentSessionId, { isPinned })
+    } catch {
+      // Best effort rollback; the original failure remains the primary error.
+    }
+  }
+}
+
 async function handleKill(sessionId: string, ws: ServerWebSocket<WSData>) {
   const session = registry.get(sessionId)
   if (!session) {
@@ -1903,6 +1917,7 @@ async function handleKill(sessionId: string, ws: ServerWebSocket<WSData>) {
       }
     }
   } catch (error) {
+    restorePinnedState(previousPinnedState)
     send(ws, {
       type: 'kill-failed',
       sessionId,
@@ -1915,13 +1930,7 @@ async function handleKill(sessionId: string, ws: ServerWebSocket<WSData>) {
   try {
     sessionManager.killWindow(session.tmuxWindow)
   } catch (error) {
-    for (const [agentSessionId, isPinned] of previousPinnedState) {
-      try {
-        db.updateSession(agentSessionId, { isPinned })
-      } catch {
-        // Best effort rollback; the kill failed, so keep the user-facing error primary.
-      }
-    }
+    restorePinnedState(previousPinnedState)
     send(ws, {
       type: 'kill-failed',
       sessionId,
@@ -2426,7 +2435,7 @@ function tryRematchDormantSession(
     if (!match) {
       return null
     }
-    const claimExtra: Partial<Omit<AgentSessionRecord, 'id' | 'sessionId' | 'currentWindow'>> = {
+    const claimExtra: ClaimCurrentWindowPatch = {
       displayName: match.name,
       lastResumeError: null,
     }

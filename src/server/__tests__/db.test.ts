@@ -97,6 +97,38 @@ describe('db', () => {
     )
   })
 
+  test('enforces one active session per tmux window', () => {
+    db.insertSession(makeSession({
+      sessionId: 'active-a',
+      logFilePath: '/tmp/active-a.jsonl',
+      currentWindow: 'agentboard:unique',
+    }))
+
+    expect(() =>
+      db.insertSession(makeSession({
+        sessionId: 'active-b',
+        logFilePath: '/tmp/active-b.jsonl',
+        currentWindow: 'agentboard:unique',
+      }))
+    ).toThrow()
+
+    db.insertSession(makeSession({
+      sessionId: 'history-a',
+      logFilePath: '/tmp/history-a.jsonl',
+      currentWindow: null,
+    }))
+    db.insertSession(makeSession({
+      sessionId: 'history-b',
+      logFilePath: '/tmp/history-b.jsonl',
+      currentWindow: null,
+    }))
+
+    expect(db.getHistorySessions().map((session) => session.sessionId)).toEqual([
+      'history-a',
+      'history-b',
+    ])
+  })
+
   test('setPinned updates hibernation marker flag', () => {
     const session = makeSession()
     db.insertSession(session)
@@ -456,6 +488,7 @@ describe('db', () => {
     const session2 = makeSession({
       sessionId: 'no-launch-cmd',
       logFilePath: '/tmp/no-launch-cmd.jsonl',
+      currentWindow: null,
       launchCommand: null,
     })
     const inserted2 = db.insertSession(session2)
