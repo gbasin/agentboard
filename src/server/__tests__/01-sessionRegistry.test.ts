@@ -94,9 +94,9 @@ describe('SessionRegistry', () => {
     expect(updates).toHaveLength(0)
   })
 
-  test('replaceSessions skips session emit when data is unchanged', () => {
-    const registry = new SessionRegistry()
-    const sessionsEvents: Session[][] = []
+	  test('replaceSessions skips session emit when data is unchanged', () => {
+	    const registry = new SessionRegistry()
+	    const sessionsEvents: Session[][] = []
 
     registry.on('sessions', (sessions) => sessionsEvents.push(sessions))
 
@@ -104,10 +104,36 @@ describe('SessionRegistry', () => {
     registry.replaceSessions([session])
     registry.replaceSessions([session])
 
-    expect(sessionsEvents).toHaveLength(1)
-  })
+	    expect(sessionsEvents).toHaveLength(1)
+	  })
 
-  test('setAgentSessions emits only agent-sessions-active when only active sessions change', () => {
+	  test('replaceSessions emits when window ownership fields change', () => {
+	    const registry = new SessionRegistry()
+	    const sessionsEvents: Session[][] = []
+
+	    registry.on('sessions', (sessions) => sessionsEvents.push(sessions))
+
+	    const session = makeSession({ id: 'alpha' })
+	    registry.replaceSessions([session])
+	    sessionsEvents.length = 0
+
+	    registry.replaceSessions([
+	      makeSession({
+	        id: 'alpha',
+	        tmuxWindow: 'agentboard:2',
+	        source: 'external',
+	      }),
+	    ])
+
+	    expect(sessionsEvents).toHaveLength(1)
+	    expect(sessionsEvents[0][0]).toMatchObject({
+	      id: 'alpha',
+	      tmuxWindow: 'agentboard:2',
+	      source: 'external',
+	    })
+	  })
+
+	  test('setAgentSessions emits only agent-sessions-active when only active sessions change', () => {
     const registry = new SessionRegistry()
     const fullEvents: Array<{
       active: AgentSession[]

@@ -163,9 +163,11 @@ function sessionsEqual(a: Session, b: Session): boolean {
   return (
     a.id === b.id &&
     a.name === b.name &&
+    a.tmuxWindow === b.tmuxWindow &&
     a.status === b.status &&
     a.lastActivity === b.lastActivity &&
     a.projectPath === b.projectPath &&
+    a.source === b.source &&
     a.agentType === b.agentType &&
     a.command === b.command &&
     a.agentSessionId === b.agentSessionId &&

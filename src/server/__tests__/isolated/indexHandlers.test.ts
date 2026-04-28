@@ -3775,13 +3775,15 @@ describe('server message handlers', () => {
       tmuxWindow: 'agentboard:42',
     }
     registryInstance.sessions = [liveSession]
-    seedRecord(
-      makeRecord({
-        sessionId: liveAgentSessionId,
-        currentWindow: liveSession.tmuxWindow,
-        // Session is genuinely live. Still, a stale client message shouldn't
-        // surface ALREADY_ACTIVE; we ack idempotently.
-      })
+	    seedRecord(
+	      makeRecord({
+	        sessionId: liveAgentSessionId,
+	        currentWindow: liveSession.tmuxWindow,
+	        lastResumeError: 'previous wake failed',
+	        wakeStartedAt: '2026-01-01T00:01:00.000Z',
+	        // Session is genuinely live. Still, a stale client message shouldn't
+	        // surface ALREADY_ACTIVE; we ack idempotently.
+	      })
     )
 
     let createCalled = false
@@ -3802,13 +3804,24 @@ describe('server message handlers', () => {
     )
 
     expect(createCalled).toBe(false)
-    expect(sent[sent.length - 1]).toMatchObject({
-      type: 'session-wake-result',
-      sessionId: liveAgentSessionId,
-      ok: true,
-      session: expect.objectContaining({ id: liveSession.id }),
-    })
-  })
+	    expect(sent[sent.length - 1]).toMatchObject({
+	      type: 'session-wake-result',
+	      sessionId: liveAgentSessionId,
+	      ok: true,
+	      session: expect.objectContaining({ id: liveSession.id }),
+	    })
+	    expect(dbState.records.get(liveAgentSessionId)).toMatchObject({
+	      lastResumeError: null,
+	      wakeStartedAt: null,
+	    })
+	    expect(dbState.updateCalls).toContainEqual({
+	      sessionId: liveAgentSessionId,
+	      patch: {
+	        lastResumeError: null,
+	        wakeStartedAt: null,
+	      },
+	    })
+	  })
 
   test('wake kills created window when DB claim throws', async () => {
     const { serveOptions } = await loadIndex()

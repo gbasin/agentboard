@@ -2558,6 +2558,20 @@ function handleSessionWake(
       registry.get(record.currentWindow) ??
       registry.getAll().find((session) => session.agentSessionId?.trim() === sessionId)
     if (liveSession) {
+      if (record.wakeStartedAt || record.lastResumeError) {
+        try {
+          db.updateSession(sessionId, {
+            wakeStartedAt: null,
+            lastResumeError: null,
+          })
+          updateDormantAgentSessions()
+        } catch (error) {
+          logger.warn('session_wake_marker_clear_failed', {
+            sessionId,
+            error: error instanceof Error ? error.message : String(error),
+          })
+        }
+      }
       logger.info('session_wake_noop', {
         sessionId,
         agentType: record.agentType,
