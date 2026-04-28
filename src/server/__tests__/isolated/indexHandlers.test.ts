@@ -382,11 +382,16 @@ mock.module('../../db', () => ({
           return null
         }
       }
+      const patch = { currentWindow: tmuxWindow, ...(extraPatch as Partial<AgentSessionRecord>) }
+      const error = dbState.updateSessionError?.(sessionId, patch)
+      if (error) {
+        throw error
+      }
       const updated = { ...record, ...extraPatch, currentWindow: tmuxWindow }
       dbState.records.set(sessionId, updated)
       dbState.updateCalls.push({
         sessionId,
-        patch: { currentWindow: tmuxWindow, ...(extraPatch as Partial<AgentSessionRecord>) },
+        patch,
       })
       return updated
     },
@@ -3434,6 +3439,62 @@ describe('server message handlers', () => {
       sessionId: liveAgentSessionId,
       ok: true,
       session: expect.objectContaining({ id: liveSession.id }),
+    })
+  })
+
+  test('wake kills created window when DB claim throws', async () => {
+    const { serveOptions } = await loadIndex()
+    const hibernatingId = 'wake-claim-throws'
+    seedRecord(
+      makeRecord({
+        sessionId: hibernatingId,
+        displayName: 'wake-claim-throws',
+        projectPath: '/tmp/wake-claim-throws',
+        agentType: 'claude',
+        currentWindow: null,
+        isPinned: true,
+      })
+    )
+
+    const createdSession: Session = {
+      ...baseSession,
+      id: 'wake-claim-created',
+      name: 'wake-claim-throws',
+      tmuxWindow: 'agentboard:81',
+    }
+    sessionManagerState.createWindow = () => createdSession
+    const killCalls: string[] = []
+    sessionManagerState.killWindow = (tmuxWindow: string) => {
+      killCalls.push(tmuxWindow)
+    }
+    dbState.updateSessionError = (sessionId, patch) =>
+      sessionId === hibernatingId &&
+      patch.currentWindow === createdSession.tmuxWindow
+        ? new Error('db locked')
+        : null
+
+    const { ws, sent } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) {
+      throw new Error('WebSocket handlers not configured')
+    }
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({ type: 'session-wake', sessionId: hibernatingId })
+    )
+
+    expect(killCalls).toEqual([createdSession.tmuxWindow])
+    expect(dbState.records.get(hibernatingId)).toMatchObject({
+      currentWindow: null,
+      isPinned: true,
+      lastResumeError: 'db locked',
+    })
+    expect(sent[sent.length - 1]).toEqual({
+      type: 'session-wake-result',
+      sessionId: hibernatingId,
+      ok: false,
+      error: { code: 'WAKE_FAILED', message: 'db locked' },
     })
   })
 

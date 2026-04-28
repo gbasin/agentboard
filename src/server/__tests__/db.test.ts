@@ -389,6 +389,80 @@ describe('db', () => {
     fs.rmSync(tempDir, { recursive: true, force: true })
   })
 
+  test('deduplicates current windows before creating unique index', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentboard-'))
+    const dbPath = path.join(tempDir, 'agentboard.db')
+    const legacyDb = new SQLiteDatabase(dbPath)
+    const older = new Date('2026-01-01T00:00:00.000Z').toISOString()
+    const newer = new Date('2026-01-02T00:00:00.000Z').toISOString()
+
+    legacyDb.exec(`
+      CREATE TABLE agent_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT UNIQUE,
+        log_file_path TEXT NOT NULL UNIQUE,
+        project_path TEXT,
+        slug TEXT,
+        agent_type TEXT NOT NULL CHECK (agent_type IN ('claude', 'claude-rp', 'codex', 'pi')),
+        display_name TEXT,
+        created_at TEXT NOT NULL,
+        last_activity_at TEXT NOT NULL,
+        last_user_message TEXT,
+        current_window TEXT,
+        is_pinned INTEGER NOT NULL DEFAULT 0,
+        last_resume_error TEXT,
+        last_known_log_size INTEGER,
+        is_codex_exec INTEGER NOT NULL DEFAULT 0,
+        launch_command TEXT
+      );
+    `)
+
+    legacyDb.exec(`
+      INSERT INTO agent_sessions (
+        session_id,
+        log_file_path,
+        project_path,
+        slug,
+        agent_type,
+        display_name,
+        created_at,
+        last_activity_at,
+        last_user_message,
+        current_window,
+        is_pinned,
+        last_resume_error,
+        last_known_log_size,
+        is_codex_exec,
+        launch_command
+      ) VALUES
+        ('older-dupe', '/tmp/older-dupe.jsonl', '/tmp/project', null, 'claude', 'older-dupe', '${older}', '${older}', null, 'agentboard:dupe', 1, null, null, 0, null),
+        ('newer-dupe', '/tmp/newer-dupe.jsonl', '/tmp/project', null, 'claude', 'newer-dupe', '${older}', '${newer}', null, 'agentboard:dupe', 0, null, null, 0, null);
+    `)
+    legacyDb.close()
+
+    const migrated = initDatabase({ path: dbPath })
+
+    expect(migrated.getSessionById('newer-dupe')).toMatchObject({
+      currentWindow: 'agentboard:dupe',
+      isPinned: false,
+    })
+    expect(migrated.getSessionById('older-dupe')).toMatchObject({
+      currentWindow: null,
+      isPinned: false,
+    })
+    expect(migrated.getHibernatingSessions()).toEqual([])
+    expect(() =>
+      migrated.insertSession(makeSession({
+        sessionId: 'post-migration-dupe',
+        logFilePath: '/tmp/post-migration-dupe.jsonl',
+        currentWindow: 'agentboard:dupe',
+      }))
+    ).toThrow()
+
+    migrated.close()
+    fs.rmSync(tempDir, { recursive: true, force: true })
+  })
+
   test('migrates legacy sleeping flag into hibernating marker state', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentboard-'))
     const dbPath = path.join(tempDir, 'agentboard.db')

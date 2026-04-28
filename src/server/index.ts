@@ -2533,6 +2533,7 @@ function handleSessionWake(
   }
 
   wakeInFlight.add(sessionId)
+  let createdWindowToCleanup: string | null = null
 
   try {
     const latest = db.getSessionById(sessionId) ?? record
@@ -2586,6 +2587,7 @@ function handleSessionWake(
       command,
       { excludeSessionId: sessionId }
     ))
+    createdWindowToCleanup = created.tmuxWindow
     // Atomic claim: only persist the new window if no other writer (LogPoller
     // rematch, concurrent wake) claimed current_window between our initial
     // read and createWindow. If the claim fails, kill the new window so we
@@ -2596,6 +2598,7 @@ function handleSessionWake(
     })
     if (!updatedRecord) {
       try { sessionManager.killWindow(created.tmuxWindow) } catch { /* may already be gone */ }
+      createdWindowToCleanup = null
       // Sync refresh so the registry reflects the racing claim before we look
       // up the live session — the rematcher updates DB before its own
       // session-activated emission, so without this we may miss it.
@@ -2625,6 +2628,7 @@ function handleSessionWake(
       }
       return
     }
+    createdWindowToCleanup = null
     // Add session to registry immediately so terminal can attach
     // (async refresh will update with any additional data later)
     refreshGeneration++
@@ -2646,6 +2650,20 @@ function handleSessionWake(
       durationMs: Date.now() - startedAt,
     })
   } catch (error) {
+    if (createdWindowToCleanup) {
+      try {
+        sessionManager.killWindow(createdWindowToCleanup)
+      } catch (cleanupError) {
+        logger.warn('session_wake_cleanup_failed', {
+          sessionId,
+          tmuxWindow: createdWindowToCleanup,
+          error:
+            cleanupError instanceof Error
+              ? cleanupError.message
+              : String(cleanupError),
+        })
+      }
+    }
     const message =
       error instanceof Error ? error.message : 'Unable to wake session'
     // Persist the failure reason so every tab sees an error badge via the

@@ -140,6 +140,7 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
   migrateSlugColumn(db)
   migrateAgentTypeConstraint(db)
   migrateLaunchCommandColumn(db)
+  migrateDeduplicateCurrentWindows(db)
   db.exec(CREATE_INDEXES_SQL)
 
   const insertStmt = db.prepare(
@@ -644,6 +645,63 @@ function migrateDeduplicateDisplayNames(db: SQLiteDatabase) {
 
       updateStmt.run({ $newName: newName, $sessionId: sessions[i].session_id })
     }
+  }
+}
+
+function migrateDeduplicateCurrentWindows(db: SQLiteDatabase) {
+  const columns = getColumnNames(db, 'agent_sessions')
+  if (
+    columns.length === 0 ||
+    !columns.includes('current_window') ||
+    !columns.includes('session_id') ||
+    !columns.includes('last_activity_at') ||
+    !columns.includes('id') ||
+    !columns.includes('is_pinned')
+  ) {
+    return
+  }
+
+  const duplicates = db
+    .prepare(
+      `SELECT current_window
+       FROM agent_sessions
+       WHERE current_window IS NOT NULL
+       GROUP BY current_window
+       HAVING COUNT(*) > 1`
+    )
+    .all() as Array<{ current_window: string }>
+
+  if (duplicates.length === 0) {
+    return
+  }
+
+  const selectSessions = db.prepare(
+    `SELECT session_id
+     FROM agent_sessions
+     WHERE current_window = $currentWindow
+     ORDER BY last_activity_at DESC, id DESC`
+  )
+  const orphanDuplicate = db.prepare(
+    `UPDATE agent_sessions
+     SET current_window = NULL, is_pinned = 0
+     WHERE session_id = $sessionId`
+  )
+
+  db.exec('BEGIN')
+  try {
+    for (const { current_window } of duplicates) {
+      const sessions = selectSessions.all({
+        $currentWindow: current_window,
+      }) as Array<{ session_id: string }>
+
+      for (const duplicate of sessions.slice(1)) {
+        orphanDuplicate.run({ $sessionId: duplicate.session_id })
+      }
+    }
+    db.exec('COMMIT')
+  } catch (error) {
+    db.exec('ROLLBACK')
+    throw error
   }
 }
 
