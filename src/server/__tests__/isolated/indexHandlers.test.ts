@@ -2560,15 +2560,23 @@ describe('server message handlers', () => {
     })
   })
 
-  test('moves hibernating sessions to history with validation', async () => {
+  test('moves hibernating sessions to history and rejects active sessions', async () => {
     const { serveOptions, registryInstance } = await loadIndex()
     registryInstance.sessions = [
       { ...baseSession, agentSessionId: baseSession.id, isPinned: true },
     ]
+    const hibernatingId = 'hibernating-history'
     seedRecord(
       makeRecord({
         sessionId: baseSession.id,
         currentWindow: baseSession.tmuxWindow,
+        isPinned: true,
+      })
+    )
+    seedRecord(
+      makeRecord({
+        sessionId: hibernatingId,
+        currentWindow: null,
         isPinned: true,
       })
     )
@@ -2614,16 +2622,32 @@ describe('server message handlers', () => {
         sessionId: baseSession.id,
       })
     )
-    expect(sent[sent.length - 1]).toMatchObject({
+    expect(sent[sent.length - 1]).toEqual({
       type: 'session-move-to-history-result',
       sessionId: baseSession.id,
+      ok: false,
+      error: 'Session is active',
+    })
+    expect(dbState.setPinnedCalls).toEqual([])
+    expect(dbState.records.get(baseSession.id)?.isPinned).toBe(true)
+    expect(registryInstance.sessions[0]?.isPinned).toBe(true)
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({
+        type: 'session-move-to-history',
+        sessionId: hibernatingId,
+      })
+    )
+    expect(sent[sent.length - 1]).toMatchObject({
+      type: 'session-move-to-history-result',
+      sessionId: hibernatingId,
       ok: true,
     })
     expect(dbState.setPinnedCalls).toEqual([
-      { sessionId: baseSession.id, isPinned: false },
+      { sessionId: hibernatingId, isPinned: false },
     ])
-    expect(dbState.records.get(baseSession.id)?.isPinned).toBe(false)
-    expect(registryInstance.sessions[0]?.isPinned).toBe(false)
+    expect(dbState.records.get(hibernatingId)?.isPinned).toBe(false)
   })
 
   test('validates session hibernate errors', async () => {
@@ -3086,7 +3110,18 @@ describe('server message handlers', () => {
       type: 'session-wake-result',
       sessionId: 'resume-ok',
       ok: true,
-      session: createdSession,
+      session: expect.objectContaining({
+        id: createdSession.id,
+        name: createdSession.name,
+        tmuxWindow: createdSession.tmuxWindow,
+        status: createdSession.status,
+        agentSessionId: 'resume-ok',
+        agentSessionName: 'resume',
+        logFilePath: record.logFilePath,
+        lastActivity: record.lastActivityAt,
+        createdAt: record.createdAt,
+        isPinned: true,
+      }),
     })
 
     const activatedMessage = sent.find(
@@ -3106,7 +3141,11 @@ describe('server message handlers', () => {
         : undefined
     ).toBeUndefined()
 
-    expect(registryInstance.sessions[0]?.id).toBe(createdSession.id)
+    expect(registryInstance.sessions[0]).toMatchObject({
+      id: createdSession.id,
+      agentSessionId: 'resume-ok',
+      logFilePath: record.logFilePath,
+    })
   })
 
   test('wake rematches a dormant session to an already-running window', async () => {
@@ -3126,6 +3165,7 @@ describe('server message handlers', () => {
       name: 'manual-rematch',
       tmuxWindow: 'agentboard:77',
       logFilePath,
+      command: 'claude --dangerously-skip-permissions',
     }
     seedRecord(
       makeRecord({
@@ -3155,6 +3195,7 @@ describe('server message handlers', () => {
       currentWindow: liveSession.tmuxWindow,
       displayName: liveSession.name,
       lastResumeError: null,
+      launchCommand: liveSession.command,
     })
     expect(sent[sent.length - 1]).toMatchObject({
       type: 'session-activated',
@@ -3246,7 +3287,15 @@ describe('server message handlers', () => {
       type: 'session-wake-result',
       sessionId,
       ok: true,
-      session: createdSession,
+      session: expect.objectContaining({
+        id: createdSession.id,
+        name: createdSession.name,
+        tmuxWindow: createdSession.tmuxWindow,
+        agentSessionId: sessionId,
+        agentSessionName: 'wake-lock',
+        logFilePath: '/tmp/wake-lock.jsonl',
+        isPinned: true,
+      }),
     })
   })
 

@@ -2080,6 +2080,10 @@ function handleMoveToHistory(
     send(ws, { type: 'session-move-to-history-result', sessionId, ok: false, error: 'Session not found' })
     return
   }
+  if (record.currentWindow) {
+    send(ws, { type: 'session-move-to-history-result', sessionId, ok: false, error: 'Session is active' })
+    return
+  }
 
   const updated = db.setPinned(sessionId, false)
   if (!updated) {
@@ -2405,13 +2409,17 @@ function tryRematchDormantSession(
         session.logFilePath === record.logFilePath)
   )
   if (alreadyHydrated) {
+    const claimExtra: ClaimCurrentWindowPatch = {
+      displayName: alreadyHydrated.name,
+      lastResumeError: null,
+    }
+    if (alreadyHydrated.command && !record.launchCommand) {
+      claimExtra.launchCommand = alreadyHydrated.command
+    }
     const updated = db.claimCurrentWindow(
       record.sessionId,
       alreadyHydrated.tmuxWindow,
-      {
-        displayName: alreadyHydrated.name,
-        lastResumeError: null,
-      }
+      claimExtra
     )
     if (!updated) {
       return null
@@ -2657,14 +2665,15 @@ function handleSessionWake(
     // (async refresh will update with any additional data later)
     refreshGeneration++
     const currentSessions = registry.getAll()
-    registry.replaceSessions([created, ...currentSessions])
+    const hydrated = hydrateWakeSession(created, updatedRecord)
+    registry.replaceSessions([hydrated, ...currentSessions])
     updateDormantAgentSessions()
     refreshSessions()
-    send(ws, { type: 'session-wake-result', sessionId, ok: true, session: created })
+    send(ws, { type: 'session-wake-result', sessionId, ok: true, session: hydrated })
     broadcast({
       type: 'session-activated',
       session: toAgentSession(updatedRecord),
-      window: created.tmuxWindow,
+      window: hydrated.tmuxWindow,
     })
     logger.info('session_wake_success', {
       sessionId,
