@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ServerMessage, Session } from '@shared/types'
+import type { AgentSession, ServerMessage, Session } from '@shared/types'
 import Header from './components/Header'
 import SessionList from './components/SessionList'
 import Terminal from './components/Terminal'
 import NewSessionModal from './components/NewSessionModal'
 import SettingsModal from './components/SettingsModal'
-import { ToastViewport, toastManager } from './components/Toast'
+import { ToastViewport } from './components/Toast'
 import { useSessionStore } from './stores/sessionStore'
 import {
   useSettingsStore,
@@ -29,6 +29,21 @@ interface ServerInfo {
   protocol: string
 }
 
+function filterAgentSessions(
+  sessions: AgentSession[],
+  projectFilters: string[],
+  hostFilters: string[]
+) {
+  let next = sessions
+  if (projectFilters.length > 0) {
+    next = next.filter((session) => projectFilters.includes(session.projectPath))
+  }
+  if (hostFilters.length > 0) {
+    next = next.filter((session) => hostFilters.includes(session.host ?? ''))
+  }
+  return next
+}
+
 export default function App() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [newSessionInitialHost, setNewSessionInitialHost] = useState<string | undefined>(undefined)
@@ -37,18 +52,30 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
   const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null)
+  const [pendingHibernatingSession, setPendingHibernatingSession] =
+    useState<AgentSession | null>(null)
 
   const sessions = useSessionStore((state) => state.sessions)
   const agentSessions = useSessionStore((state) => state.agentSessions)
+  const agentSessionsEpoch = useSessionStore((state) => state.agentSessionsEpoch)
   const selectedSessionId = useSessionStore(
     (state) => state.selectedSessionId
   )
+  const selectedHibernatingSessionId = useSessionStore(
+    (state) => state.selectedHibernatingSessionId
+  )
   const setSessions = useSessionStore((state) => state.setSessions)
   const setAgentSessions = useSessionStore((state) => state.setAgentSessions)
+  const setActiveAgentSessions = useSessionStore(
+    (state) => state.setActiveAgentSessions
+  )
   const setHostStatuses = useSessionStore((state) => state.setHostStatuses)
   const updateSession = useSessionStore((state) => state.updateSession)
   const setSelectedSessionId = useSessionStore(
     (state) => state.setSelectedSessionId
+  )
+  const setSelectedHibernatingSessionId = useSessionStore(
+    (state) => state.setSelectedHibernatingSessionId
   )
   const hasLoaded = useSessionStore((state) => state.hasLoaded)
   const connectionStatus = useSessionStore(
@@ -196,12 +223,61 @@ export default function App() {
         // kill-failed clears entries (for rollback).  Entries persist until
         // reconnect (epoch mismatch) so stale async refreshes can't
         // resurrect the killed session even after session-removed arrives.
-        if (pendingKills.current.size > 0) {
-          setSessions(message.sessions.filter(
-            (s) => !pendingKills.current.has(s.id)
-          ))
-        } else {
-          setSessions(message.sessions)
+        const nextSessions = pendingKills.current.size > 0
+          ? message.sessions.filter((session) => !pendingKills.current.has(session.id))
+          : message.sessions
+
+        const {
+          selectedSessionId: previousSelectedSessionId,
+          selectedHibernatingSessionId: previousSelectedHibernatingSessionId,
+        } = useSessionStore.getState()
+        const removedSelectedAgentSessionId =
+          previousSelectedSessionId !== null &&
+          previousSelectedHibernatingSessionId === null &&
+          !nextSessions.some((session) => session.id === previousSelectedSessionId)
+            ? currentSessions.find((session) => session.id === previousSelectedSessionId)?.agentSessionId?.trim() ?? null
+            : null
+
+        if (removedSelectedAgentSessionId) {
+          // Another client hibernates the live session before the hibernating bucket updates.
+          pendingHibernateSelectionRef.current = removedSelectedAgentSessionId
+        }
+
+        setSessions(nextSessions)
+
+        const pendingWakeSelectionId = pendingWakeSelectionRef.current
+        const {
+          selectedSessionId: currentSelectedSessionId,
+          selectedHibernatingSessionId: currentSelectedHibernatingSessionId,
+        } = useSessionStore.getState()
+        const { projectFilters, hostFilters } = useSettingsStore.getState()
+        if (
+          pendingWakeSelectionId &&
+          currentSelectedSessionId === null &&
+          currentSelectedHibernatingSessionId === null
+        ) {
+          const matchingSession = nextSessions.find((session) => {
+            if (session.agentSessionId?.trim() !== pendingWakeSelectionId) {
+              return false
+            }
+            if (
+              projectFilters.length > 0 &&
+              !projectFilters.includes(session.projectPath)
+            ) {
+              return false
+            }
+            if (
+              hostFilters.length > 0 &&
+              !hostFilters.includes(session.host ?? '')
+            ) {
+              return false
+            }
+            return true
+          })
+          if (matchingSession) {
+            pendingWakeSelectionRef.current = null
+            setSelectedSessionId(matchingSession.id)
+          }
         }
       }
       if (message.type === 'host-status') {
@@ -269,11 +345,39 @@ export default function App() {
         }
       }
       if (message.type === 'agent-sessions') {
-        setAgentSessions(message.active, message.inactive)
+        const active = Array.isArray(message.active) ? message.active : []
+        const hibernating = Array.isArray(message.hibernating) ? message.hibernating : []
+        const history = Array.isArray(message.history) ? message.history : []
+        const { selectedHibernatingSessionId: currentSelectedHibernatingSessionId } =
+          useSessionStore.getState()
+        const pendingHibernateSelectionId = pendingHibernateSelectionRef.current
+        if (
+          currentSelectedHibernatingSessionId &&
+          !hibernating.some(
+            (session) => session.sessionId === currentSelectedHibernatingSessionId
+          )
+        ) {
+          pendingWakeSelectionRef.current = currentSelectedHibernatingSessionId
+        }
+        setAgentSessions(active, hibernating, history)
+        setPendingHibernatingSession((current) =>
+          current &&
+          hibernating.some((session) => session.sessionId === current.sessionId)
+            ? null
+            : current
+        )
+        if (
+          pendingHibernateSelectionId &&
+          hibernating.some((session) => session.sessionId === pendingHibernateSelectionId)
+        ) {
+          pendingHibernateSelectionRef.current = null
+          setSelectedHibernatingSessionId(pendingHibernateSelectionId)
+        } else if (pendingHibernateSelectionId) {
+          pendingHibernateSelectionRef.current = null
+        }
       }
       if (message.type === 'agent-sessions-active') {
-        const current = useSessionStore.getState().agentSessions
-        setAgentSessions(message.active, current.inactive)
+        setActiveAgentSessions(Array.isArray(message.active) ? message.active : [])
       }
       if (message.type === 'session-orphaned') {
         // When a session is superseded by slug (plan→execute transition),
@@ -305,9 +409,12 @@ export default function App() {
           })
         }
       }
-      if (message.type === 'session-resume-result') {
+      if (message.type === 'session-wake-result') {
         if (message.ok && message.session) {
-          // Add resumed session to list immediately
+          setPendingHibernatingSession((current) =>
+            current?.sessionId === message.sessionId ? null : current
+          )
+          // Add woken session to list immediately
           const currentSessions = useSessionStore.getState().sessions
           if (!currentSessions.some((s) => s.id === message.session!.id)) {
             setSessions([message.session, ...currentSessions])
@@ -315,6 +422,17 @@ export default function App() {
           setSelectedSessionId(message.session.id)
         } else if (!message.ok) {
           setServerError(`${message.error?.code}: ${message.error?.message}`)
+          window.setTimeout(() => setServerError(null), 6000)
+        }
+      }
+      if (message.type === 'session-hibernate-result') {
+        if (message.ok) {
+          if (message.session) {
+            setPendingHibernatingSession(message.session)
+          }
+          setSelectedHibernatingSessionId(message.sessionId)
+        } else {
+          setServerError(message.error ?? 'Failed to hibernate session')
           window.setTimeout(() => setServerError(null), 6000)
         }
       }
@@ -352,31 +470,27 @@ export default function App() {
         setServerError(message.message)
         window.setTimeout(() => setServerError(null), 6000)
       }
-      if (message.type === 'session-pin-result') {
+      if (message.type === 'session-move-to-history-result') {
         if (!message.ok && message.error) {
           setServerError(message.error)
           window.setTimeout(() => setServerError(null), 6000)
         }
-      }
-      if (message.type === 'session-resurrection-failed') {
-        toastManager.add({
-          title: 'Session resurrection failed',
-          description: `"${message.displayName}" could not be resumed: ${message.error}`,
-          type: 'error',
-          timeout: 8000,
-        })
       }
     })
 
     return () => { unsubscribe() }
   }, [
     selectedSessionId,
+    selectedHibernatingSessionId,
     addRecentPath,
     clearExitingSession,
     sendMessage,
     setSelectedSessionId,
+    setSelectedHibernatingSessionId,
+    setPendingHibernatingSession,
     setSessions,
     setAgentSessions,
+    setActiveAgentSessions,
     setHostStatuses,
     setRemoteAllowControl,
     setRemoteAllowAttach,
@@ -390,6 +504,26 @@ export default function App() {
       sessions.find((session) => session.id === selectedSessionId) || null
     )
   }, [selectedSessionId, sessions])
+  const hibernatingAgentSessions = agentSessions.hibernating ?? []
+  const historyAgentSessions = agentSessions.history ?? []
+  const filteredHibernatingSessions = useMemo(
+    () => filterAgentSessions(hibernatingAgentSessions, projectFilters, hostFilters),
+    [hibernatingAgentSessions, projectFilters, hostFilters]
+  )
+  const selectedHibernatingSession = useMemo(() => {
+    return (
+      filteredHibernatingSessions.find(
+        (session) => session.sessionId === selectedHibernatingSessionId
+      ) ||
+      (pendingHibernatingSession?.sessionId === selectedHibernatingSessionId
+        ? pendingHibernatingSession
+        : null)
+    )
+  }, [
+    filteredHibernatingSessions,
+    pendingHibernatingSession,
+    selectedHibernatingSessionId,
+  ])
 
   // Track last viewed project path
   useEffect(() => {
@@ -428,24 +562,174 @@ export default function App() {
     return next
   }, [sortedSessions, projectFilters, hostFilters])
 
+  const lastSelectedHibernatingSessionIdRef = useRef<string | null>(
+    selectedHibernatingSessionId
+  )
+  const pendingHibernateSelectionRef = useRef<string | null>(null)
+  const pendingWakeSelectionRef = useRef<string | null>(null)
+  const lastConnectionEpochRef = useRef(connectionEpoch)
+
+  const selectFirstVisibleTarget = useCallback(() => {
+    if (filteredSortedSessions.length > 0) {
+      setSelectedSessionId(filteredSortedSessions[0].id)
+      return true
+    }
+    if (filteredHibernatingSessions.length > 0) {
+      setSelectedHibernatingSessionId(filteredHibernatingSessions[0].sessionId)
+      return true
+    }
+    return false
+  }, [
+    filteredSortedSessions,
+    filteredHibernatingSessions,
+    setSelectedSessionId,
+    setSelectedHibernatingSessionId,
+  ])
+
+  useEffect(() => {
+    const previousHibernatingSelectionId = lastSelectedHibernatingSessionIdRef.current
+
+    if (
+      previousHibernatingSelectionId &&
+      selectedHibernatingSessionId === null &&
+      !hibernatingAgentSessions.some(
+        (session) => session.sessionId === previousHibernatingSelectionId
+      )
+    ) {
+      pendingWakeSelectionRef.current = previousHibernatingSelectionId
+    } else if (selectedHibernatingSessionId !== null) {
+      pendingWakeSelectionRef.current = null
+    }
+
+    lastSelectedHibernatingSessionIdRef.current = selectedHibernatingSessionId
+  }, [hibernatingAgentSessions, selectedHibernatingSessionId])
+
+  useEffect(() => {
+    if (!pendingHibernatingSession) return
+    if (selectedHibernatingSessionId === pendingHibernatingSession.sessionId) return
+    setPendingHibernatingSession(null)
+  }, [pendingHibernatingSession, selectedHibernatingSessionId])
+
+  useEffect(() => {
+    if (lastConnectionEpochRef.current === connectionEpoch) {
+      return
+    }
+
+    lastConnectionEpochRef.current = connectionEpoch
+    pendingHibernateSelectionRef.current = null
+    pendingWakeSelectionRef.current = null
+    setPendingHibernatingSession(null)
+  }, [connectionEpoch])
+
   // Auto-select first visible session when current selection is filtered out
   useEffect(() => {
-    if (
-      selectedSessionId &&
-      filteredSortedSessions.length > 0 &&
-      !filteredSortedSessions.some((s) => s.id === selectedSessionId)
-    ) {
-      setSelectedSessionId(filteredSortedSessions[0].id)
+    if (!hasLoaded) return
+    if (selectedHibernatingSessionId) return
+    if (!selectedSessionId) return
+    if (filteredSortedSessions.some((session) => session.id === selectedSessionId)) {
+      return
     }
-  }, [selectedSessionId, filteredSortedSessions, setSelectedSessionId])
+    if (selectFirstVisibleTarget()) return
+    setSelectedSessionId(null)
+  }, [
+    hasLoaded,
+    selectedSessionId,
+    selectedHibernatingSessionId,
+    selectFirstVisibleTarget,
+    setSelectedSessionId,
+  ])
+
+  useEffect(() => {
+    if (!selectedHibernatingSessionId) return
+    if (pendingHibernatingSession?.sessionId === selectedHibernatingSessionId) {
+      return
+    }
+    if (agentSessionsEpoch !== connectionEpoch) {
+      return
+    }
+    if (
+      filteredHibernatingSessions.some(
+        (session) => session.sessionId === selectedHibernatingSessionId
+      )
+    ) {
+      return
+    }
+
+    const matchingLiveSession = filteredSortedSessions.find(
+      (session) => session.agentSessionId?.trim() === selectedHibernatingSessionId
+    )
+    if (matchingLiveSession) {
+      setSelectedSessionId(matchingLiveSession.id)
+      return
+    }
+
+    if (selectFirstVisibleTarget()) return
+    setSelectedHibernatingSessionId(null)
+  }, [
+    filteredHibernatingSessions,
+    filteredSortedSessions,
+    agentSessionsEpoch,
+    pendingHibernatingSession,
+    selectedHibernatingSessionId,
+    selectFirstVisibleTarget,
+    setSelectedSessionId,
+    setSelectedHibernatingSessionId,
+    connectionEpoch,
+  ])
+
+  useEffect(() => {
+    const pendingWakeSelectionId = pendingWakeSelectionRef.current
+    if (!pendingWakeSelectionId) return
+    if (selectedHibernatingSessionId !== null) {
+      pendingWakeSelectionRef.current = null
+      return
+    }
+
+    const matchingLiveSession = filteredSortedSessions.find(
+      (session) => session.agentSessionId?.trim() === pendingWakeSelectionId
+    )
+    if (matchingLiveSession) {
+      pendingWakeSelectionRef.current = null
+      setSelectedSessionId(matchingLiveSession.id)
+      return
+    }
+
+    if (selectedSessionId !== null) {
+      pendingWakeSelectionRef.current = null
+      return
+    }
+
+    if (selectFirstVisibleTarget()) {
+      pendingWakeSelectionRef.current = null
+    }
+  }, [
+    filteredSortedSessions,
+    selectedSessionId,
+    selectedHibernatingSessionId,
+    selectFirstVisibleTarget,
+    setSelectedSessionId,
+  ])
 
   // Auto-select first session on mobile when sessions load
   useEffect(() => {
     const isMobile = window.matchMedia('(max-width: 767px)').matches
-    if (isMobile && hasLoaded && selectedSessionId === null && sortedSessions.length > 0) {
-      setSelectedSessionId(sortedSessions[0].id)
+    if (
+      isMobile &&
+      hasLoaded &&
+      selectedSessionId === null &&
+      selectedHibernatingSessionId === null &&
+      (filteredSortedSessions.length > 0 || filteredHibernatingSessions.length > 0)
+    ) {
+      selectFirstVisibleTarget()
     }
-  }, [hasLoaded, selectedSessionId, sortedSessions, setSelectedSessionId])
+  }, [
+    filteredHibernatingSessions.length,
+    filteredSortedSessions.length,
+    hasLoaded,
+    selectFirstVisibleTarget,
+    selectedSessionId,
+    selectedHibernatingSessionId,
+  ])
 
   // Pending kills: snapshot + selection state for rollback on kill-failed.
   // Separate from exitingSessions (which gets cleaned up by animation timers).
@@ -487,19 +771,34 @@ export default function App() {
       const isShortcut = matchesModifier(event, effectiveModifier)
 
       // Bracket navigation: [mod]+[ / ]
+      // When only hibernating sessions are visible, fall back to navigating
+      // within the hibernating bucket so the keyboard shortcut keeps working.
       if (isShortcut && (code === 'BracketLeft' || code === 'BracketRight')) {
         event.preventDefault()
-        // Use filtered sessions so navigation respects project filter
-        const navSessions = filteredSortedSessions
-        if (navSessions.length === 0) return
-        const currentIndex = navSessions.findIndex(s => s.id === selectedSessionId)
-        if (currentIndex === -1) {
-          setSelectedSessionId(navSessions[0].id)
+        const delta = code === 'BracketLeft' ? -1 : 1
+        const activeNav = filteredSortedSessions
+        if (activeNav.length === 0) {
+          const hibernatingNav = filteredHibernatingSessions
+          if (hibernatingNav.length === 0) return
+          const currentIndex = hibernatingNav.findIndex(
+            s => s.sessionId === selectedHibernatingSessionId
+          )
+          if (currentIndex === -1) {
+            setSelectedHibernatingSessionId(hibernatingNav[0].sessionId)
+            return
+          }
+          const newIndex =
+            (currentIndex + delta + hibernatingNav.length) % hibernatingNav.length
+          setSelectedHibernatingSessionId(hibernatingNav[newIndex].sessionId)
           return
         }
-        const delta = code === 'BracketLeft' ? -1 : 1
-        const newIndex = (currentIndex + delta + navSessions.length) % navSessions.length
-        setSelectedSessionId(navSessions[newIndex].id)
+        const currentIndex = activeNav.findIndex(s => s.id === selectedSessionId)
+        if (currentIndex === -1) {
+          setSelectedSessionId(activeNav[0].id)
+          return
+        }
+        const newIndex = (currentIndex + delta + activeNav.length) % activeNav.length
+        setSelectedSessionId(activeNav[newIndex].id)
         return
       }
 
@@ -524,7 +823,18 @@ export default function App() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isModalOpen, selectedSessionId, setSelectedSessionId, filteredSortedSessions, handleKillSession, shortcutModifier, settingsHydrated])
+  }, [
+    isModalOpen,
+    selectedSessionId,
+    selectedHibernatingSessionId,
+    setSelectedSessionId,
+    setSelectedHibernatingSessionId,
+    filteredSortedSessions,
+    filteredHibernatingSessions,
+    handleKillSession,
+    shortcutModifier,
+    settingsHydrated,
+  ])
 
   const handleNewSession = (): boolean => {
     if (!settingsHydrated) return false
@@ -547,8 +857,12 @@ export default function App() {
   }
 
   const handleResumeSession = (sessionId: string) => {
-    sendMessage({ type: 'session-resume', sessionId })
+    sendMessage({ type: 'session-wake', sessionId })
   }
+
+  const handleHibernateSession = useCallback((sessionId: string) => {
+    sendMessage({ type: 'session-hibernate', sessionId })
+  }, [sendMessage])
 
   const handleRenameSession = (sessionId: string, newName: string) => {
     sendMessage({ type: 'session-rename', sessionId, newName })
@@ -565,8 +879,8 @@ export default function App() {
     })
   }, [sessions, sendMessage])
 
-  const handleSetPinned = useCallback((sessionId: string, isPinned: boolean) => {
-    sendMessage({ type: 'session-pin', sessionId, isPinned })
+  const handleMoveToHistory = useCallback((sessionId: string) => {
+    sendMessage({ type: 'session-move-to-history', sessionId })
   }, [sendMessage])
 
   // Apply theme to document
@@ -602,14 +916,19 @@ export default function App() {
         />
         <SessionList
           sessions={sessions}
-          inactiveSessions={agentSessions.inactive}
+          hibernatingSessions={hibernatingAgentSessions}
+          historySessions={historyAgentSessions}
           selectedSessionId={selectedSessionId}
+          selectedHibernatingSessionId={selectedHibernatingSessionId}
           onSelect={setSelectedSessionId}
+          onSelectHibernating={setSelectedHibernatingSessionId}
           onRename={handleRenameSession}
           onResume={handleResumeSession}
+          onHibernate={handleHibernateSession}
           onKill={handleKillSession}
           onDuplicate={handleDuplicateSession}
-          onSetPinned={handleSetPinned}
+          onMoveToHistory={handleMoveToHistory}
+          onNewSession={handleNewSession}
           loading={!hasLoaded}
           error={connectionError || serverError}
         />
@@ -625,19 +944,23 @@ export default function App() {
       <Terminal
         session={selectedSession}
         sessions={filteredSortedSessions}
+        hibernatingSession={selectedHibernatingSession}
+        hibernatingSessions={hibernatingAgentSessions}
         connectionStatus={connectionStatus}
         connectionEpoch={connectionEpoch}
         sendMessage={sendMessage}
         subscribe={subscribe}
         onClose={() => setSelectedSessionId(null)}
         onSelectSession={setSelectedSessionId}
+        onSelectHibernatingSession={setSelectedHibernatingSessionId}
         onNewSession={handleNewSession}
         onKillSession={handleKillSession}
         onRenameSession={handleRenameSession}
         onOpenSettings={handleOpenSettings}
         onResumeSession={handleResumeSession}
-        onSetPinned={handleSetPinned}
-        inactiveSessions={agentSessions.inactive}
+        onHibernateSession={handleHibernateSession}
+        onMoveToHistory={handleMoveToHistory}
+        historySessions={historyAgentSessions}
         loading={!hasLoaded}
         error={connectionError || serverError}
       />

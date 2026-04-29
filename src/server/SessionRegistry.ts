@@ -5,18 +5,18 @@ export interface RegistryEvents {
   sessions: (sessions: Session[]) => void
   'session-update': (session: Session) => void
   'session-removed': (sessionId: string) => void
-  'agent-sessions': (payload: { active: AgentSession[]; inactive: AgentSession[] }) => void
+  'agent-sessions': (payload: { active: AgentSession[]; hibernating: AgentSession[]; history: AgentSession[] }) => void
   'agent-sessions-active': (active: AgentSession[]) => void
 }
 
 export class SessionRegistry extends EventEmitter {
   private sessions: Map<string, Session>
-  private agentSessions: { active: AgentSession[]; inactive: AgentSession[] }
+  private agentSessions: { active: AgentSession[]; hibernating: AgentSession[]; history: AgentSession[] }
 
   constructor() {
     super()
     this.sessions = new Map<string, Session>()
-    this.agentSessions = { active: [], inactive: [] }
+    this.agentSessions = { active: [], hibernating: [], history: [] }
   }
 
   getAll(): Session[] {
@@ -87,29 +87,32 @@ export class SessionRegistry extends EventEmitter {
     return updated
   }
 
-  getAgentSessions(): { active: AgentSession[]; inactive: AgentSession[] } {
+  getAgentSessions(): { active: AgentSession[]; hibernating: AgentSession[]; history: AgentSession[] } {
     return this.agentSessions
   }
 
-  setAgentSessions(active: AgentSession[], inactive: AgentSession[]): void {
+  setAgentSessions(active: AgentSession[], hibernating: AgentSession[], history: AgentSession[]): void {
     const prev = this.agentSessions
     const activeChanged =
       active.length !== prev.active.length ||
       !active.every((a, i) => agentSessionsEqual(a, prev.active[i]))
-    const inactiveChanged =
-      inactive.length !== prev.inactive.length ||
-      !inactive.every((a, i) => agentSessionsEqual(a, prev.inactive[i]))
+    const hibernatingChanged =
+      hibernating.length !== prev.hibernating.length ||
+      !hibernating.every((a, i) => agentSessionsEqual(a, prev.hibernating[i]))
+    const historyChanged =
+      history.length !== prev.history.length ||
+      !history.every((a, i) => agentSessionsEqual(a, prev.history[i]))
 
-    if (!activeChanged && !inactiveChanged) return
+    if (!activeChanged && !hibernatingChanged && !historyChanged) return
 
-    this.agentSessions = { active, inactive }
+    this.agentSessions = { active, hibernating, history }
 
     // Always send the lightweight active-only update
     if (activeChanged) {
       this.emit('agent-sessions-active', active)
     }
-    // Only send the full payload (with inactive) when inactive actually changed
-    if (inactiveChanged) {
+    // Only send the full payload when hibernating or history sessions changed.
+    if (hibernatingChanged || historyChanged) {
       this.emit('agent-sessions', this.agentSessions)
     }
   }
@@ -160,9 +163,11 @@ function sessionsEqual(a: Session, b: Session): boolean {
   return (
     a.id === b.id &&
     a.name === b.name &&
+    a.tmuxWindow === b.tmuxWindow &&
     a.status === b.status &&
     a.lastActivity === b.lastActivity &&
     a.projectPath === b.projectPath &&
+    a.source === b.source &&
     a.agentType === b.agentType &&
     a.command === b.command &&
     a.agentSessionId === b.agentSessionId &&

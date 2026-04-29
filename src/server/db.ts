@@ -18,27 +18,51 @@ export interface AgentSessionRecord {
   currentWindow: string | null
   isPinned: boolean
   lastResumeError: string | null
+  wakeStartedAt: string | null
   lastKnownLogSize: number | null
   isCodexExec: boolean
   launchCommand: string | null
 }
 
+export type NewAgentSessionRecord = Omit<
+  AgentSessionRecord,
+  'id' | 'wakeStartedAt'
+> & { wakeStartedAt?: string | null }
+export type ClaimCurrentWindowPatch = Partial<
+  Pick<
+    AgentSessionRecord,
+    'displayName' | 'lastResumeError' | 'wakeStartedAt' | 'launchCommand'
+  >
+>
+
 export interface SessionDatabase {
   db: SQLiteDatabase
-  insertSession: (session: Omit<AgentSessionRecord, 'id'>) => AgentSessionRecord
+  insertSession: (session: NewAgentSessionRecord) => AgentSessionRecord
   updateSession: (
     sessionId: string,
     patch: Partial<Omit<AgentSessionRecord, 'id' | 'sessionId'>>
+  ) => AgentSessionRecord | null
+  /**
+   * Atomic window claim with two guards: only updates if (a) this row is still
+   * dormant (current_window IS NULL) AND (b) no other row already owns the
+   * target tmuxWindow. Returns the updated record on success, or null when
+   * either guard fails (no-op). Use this from any rematch/wake path that
+   * persists current_window after observing a candidate window externally.
+   */
+  claimCurrentWindow: (
+    sessionId: string,
+    tmuxWindow: string,
+    extraPatch?: ClaimCurrentWindowPatch
   ) => AgentSessionRecord | null
   getSessionById: (sessionId: string) => AgentSessionRecord | null
   getSessionByLogPath: (logPath: string) => AgentSessionRecord | null
   getSessionByWindow: (tmuxWindow: string) => AgentSessionRecord | null
   getActiveSessions: () => AgentSessionRecord[]
-  getInactiveSessions: (options?: { maxAgeHours?: number }) => AgentSessionRecord[]
+  getHibernatingSessions: () => AgentSessionRecord[]
+  getHistorySessions: (options?: { maxAgeHours?: number }) => AgentSessionRecord[]
   orphanSession: (sessionId: string) => AgentSessionRecord | null
   displayNameExists: (displayName: string, excludeSessionId?: string) => boolean
   setPinned: (sessionId: string, isPinned: boolean) => AgentSessionRecord | null
-  getPinnedOrphaned: () => AgentSessionRecord[]
   getActiveSessionBySlugAndProject: (
     slug: string,
     projectPath: string
@@ -61,7 +85,7 @@ const AGENT_SESSIONS_COLUMNS_SQL = `
   session_id TEXT UNIQUE,
   log_file_path TEXT NOT NULL UNIQUE,
   project_path TEXT,
-  agent_type TEXT NOT NULL CHECK (agent_type IN ('claude', 'codex', 'pi')),
+  agent_type TEXT NOT NULL CHECK (agent_type IN ('claude', 'claude-rp', 'codex', 'pi')),
   display_name TEXT,
   created_at TEXT NOT NULL,
   last_activity_at TEXT NOT NULL,
@@ -69,6 +93,7 @@ const AGENT_SESSIONS_COLUMNS_SQL = `
   current_window TEXT,
   is_pinned INTEGER NOT NULL DEFAULT 0,
   last_resume_error TEXT,
+  wake_started_at TEXT,
   -- NULL means "unknown" (e.g., after upgrade). First poll will initialize to actual size.
   -- This triggers a one-time match check for upgraded sessions.
   last_known_log_size INTEGER,
@@ -97,6 +122,9 @@ CREATE INDEX IF NOT EXISTS idx_log_file_path
   ON agent_sessions (log_file_path);
 CREATE INDEX IF NOT EXISTS idx_current_window
   ON agent_sessions (current_window);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_current_window_unique
+  ON agent_sessions (current_window)
+  WHERE current_window IS NOT NULL;
 `
 
 export function initDatabase(options: { path?: string } = {}): SessionDatabase {
@@ -109,22 +137,25 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
   const db = new SQLiteDatabase(dbPath)
   migrateDatabase(db)
   db.exec(CREATE_TABLE_SQL)
-  db.exec(CREATE_INDEXES_SQL)
   db.exec(CREATE_APP_SETTINGS_TABLE_SQL)
   migrateLastUserMessageColumn(db)
   migrateDeduplicateDisplayNames(db)
   migrateIsPinnedColumn(db)
+  migrateIsSleepingToPinnedColumn(db)
   migrateLastResumeErrorColumn(db)
   migrateLastKnownLogSizeColumn(db)
   migrateIsCodexExecColumn(db)
   migrateSlugColumn(db)
-  migratePiAgentType(db)
+  migrateAgentTypeConstraint(db)
   migrateLaunchCommandColumn(db)
+  migrateWakeStartedAtColumn(db)
+  migrateDeduplicateCurrentWindows(db)
+  db.exec(CREATE_INDEXES_SQL)
 
   const insertStmt = db.prepare(
     `INSERT INTO agent_sessions
-      (session_id, log_file_path, project_path, slug, agent_type, display_name, created_at, last_activity_at, last_user_message, current_window, is_pinned, last_resume_error, last_known_log_size, is_codex_exec, launch_command)
-     VALUES ($sessionId, $logFilePath, $projectPath, $slug, $agentType, $displayName, $createdAt, $lastActivityAt, $lastUserMessage, $currentWindow, $isPinned, $lastResumeError, $lastKnownLogSize, $isCodexExec, $launchCommand)`
+      (session_id, log_file_path, project_path, slug, agent_type, display_name, created_at, last_activity_at, last_user_message, current_window, is_pinned, last_resume_error, wake_started_at, last_known_log_size, is_codex_exec, launch_command)
+     VALUES ($sessionId, $logFilePath, $projectPath, $slug, $agentType, $displayName, $createdAt, $lastActivityAt, $lastUserMessage, $currentWindow, $isPinned, $lastResumeError, $wakeStartedAt, $lastKnownLogSize, $isCodexExec, $launchCommand)`
   )
 
   const selectBySessionId = db.prepare(
@@ -139,11 +170,14 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
   const selectActive = db.prepare(
     'SELECT * FROM agent_sessions WHERE current_window IS NOT NULL ORDER BY session_id'
   )
-  const selectInactive = db.prepare(
-    'SELECT * FROM agent_sessions WHERE current_window IS NULL ORDER BY last_activity_at DESC, session_id'
+  const selectHibernating = db.prepare(
+    'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_pinned = 1 ORDER BY last_activity_at DESC, session_id'
   )
-  const selectInactiveRecent = db.prepare(
-    'SELECT * FROM agent_sessions WHERE current_window IS NULL AND last_activity_at > $cutoff ORDER BY last_activity_at DESC, session_id'
+  const selectHistory = db.prepare(
+    'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_pinned = 0 ORDER BY last_activity_at DESC, session_id'
+  )
+  const selectHistoryRecent = db.prepare(
+    'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_pinned = 0 AND last_activity_at > $cutoff ORDER BY last_activity_at DESC, session_id'
   )
   const selectByDisplayName = db.prepare(
     'SELECT 1 FROM agent_sessions WHERE display_name = $displayName LIMIT 1'
@@ -160,6 +194,19 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
       `UPDATE agent_sessions SET ${fields
         .map((field) => `${field} = $${field}`)
         .join(', ')} WHERE session_id = $sessionId`
+    )
+
+  const claimWindowStmt = (fields: string[]) =>
+    db.prepare(
+      `UPDATE agent_sessions SET ${fields
+        .map((field) => `${field} = $${field}`)
+        .join(', ')} WHERE session_id = $sessionId
+         AND current_window IS NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM agent_sessions
+           WHERE current_window = $current_window
+             AND session_id != $sessionId
+         )`
     )
 
   // App settings prepared statements
@@ -186,6 +233,7 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
         $currentWindow: session.currentWindow,
         $isPinned: session.isPinned ? 1 : 0,
         $lastResumeError: session.lastResumeError,
+        $wakeStartedAt: session.wakeStartedAt ?? null,
         $lastKnownLogSize: session.lastKnownLogSize,
         $isCodexExec: session.isCodexExec ? 1 : 0,
         $launchCommand: session.launchCommand ?? null,
@@ -220,6 +268,7 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
         currentWindow: 'current_window',
         isPinned: 'is_pinned',
         lastResumeError: 'last_resume_error',
+        wakeStartedAt: 'wake_started_at',
         lastKnownLogSize: 'last_known_log_size',
         isCodexExec: 'is_codex_exec',
         launchCommand: 'launch_command',
@@ -251,6 +300,34 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
         | undefined
       return row ? mapRow(row) : null
     },
+    claimCurrentWindow: (sessionId, tmuxWindow, extraPatch) => {
+      const fieldMap: Record<string, string> = {
+        displayName: 'display_name',
+        lastResumeError: 'last_resume_error',
+        wakeStartedAt: 'wake_started_at',
+        launchCommand: 'launch_command',
+      }
+      const fields = ['current_window']
+      const params: Record<string, string | number | null> = {
+        $sessionId: sessionId,
+        $current_window: tmuxWindow,
+      }
+      if (extraPatch) {
+        for (const [key, value] of Object.entries(extraPatch)) {
+          if (value === undefined) continue
+          const field = fieldMap[key]
+          if (!field) continue
+          fields.push(field)
+          params[`$${field}`] = value as string | number | null
+        }
+      }
+      const result = claimWindowStmt(fields).run(params)
+      if (result.changes === 0) return null
+      const row = selectBySessionId.get({ $sessionId: sessionId }) as
+        | Record<string, unknown>
+        | undefined
+      return row ? mapRow(row) : null
+    },
     getSessionById: (sessionId) => {
       const row = selectBySessionId.get({ $sessionId: sessionId }) as
         | Record<string, unknown>
@@ -273,13 +350,17 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
       const rows = selectActive.all() as Record<string, unknown>[]
       return rows.map(mapRow)
     },
-    getInactiveSessions: (options?: { maxAgeHours?: number }) => {
+    getHibernatingSessions: () => {
+      const rows = selectHibernating.all() as Record<string, unknown>[]
+      return rows.map(mapRow)
+    },
+    getHistorySessions: (options?: { maxAgeHours?: number }) => {
       if (options?.maxAgeHours) {
         const cutoff = new Date(Date.now() - options.maxAgeHours * 60 * 60 * 1000).toISOString()
-        const rows = selectInactiveRecent.all({ $cutoff: cutoff }) as Record<string, unknown>[]
+        const rows = selectHistoryRecent.all({ $cutoff: cutoff }) as Record<string, unknown>[]
         return rows.map(mapRow)
       }
-      const rows = selectInactive.all() as Record<string, unknown>[]
+      const rows = selectHistory.all() as Record<string, unknown>[]
       return rows.map(mapRow)
     },
     orphanSession: (sessionId) => {
@@ -310,14 +391,6 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
         | Record<string, unknown>
         | undefined
       return row ? mapRow(row) : null
-    },
-    getPinnedOrphaned: () => {
-      const rows = db
-        .prepare(
-          'SELECT * FROM agent_sessions WHERE is_pinned = 1 AND current_window IS NULL ORDER BY last_activity_at DESC'
-        )
-        .all() as Record<string, unknown>[]
-      return rows.map(mapRow)
     },
     getActiveSessionBySlugAndProject: (slug, projectPath) => {
       const row = selectActiveBySlugAndProject.get({
@@ -392,6 +465,10 @@ function mapRow(row: Record<string, unknown>): AgentSessionRecord {
       row.last_resume_error === null || row.last_resume_error === undefined
         ? null
         : String(row.last_resume_error),
+    wakeStartedAt:
+      row.wake_started_at === null || row.wake_started_at === undefined
+        ? null
+        : String(row.wake_started_at),
     // Note: null lastKnownLogSize is treated as "unknown", triggering a match check
     // on first poll after upgrade. This is intentional (one-time cost).
     lastKnownLogSize:
@@ -475,6 +552,24 @@ function migrateIsPinnedColumn(db: SQLiteDatabase) {
   db.exec('ALTER TABLE agent_sessions ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0')
 }
 
+function migrateIsSleepingToPinnedColumn(db: SQLiteDatabase) {
+  const columns = getColumnNames(db, 'agent_sessions')
+  if (columns.length === 0 || !columns.includes('is_sleeping')) {
+    return
+  }
+
+  db.exec('BEGIN')
+  try {
+    // Preserve every legacy sleeping row in the derived Hibernating bucket.
+    db.exec('UPDATE agent_sessions SET is_pinned = 1 WHERE is_sleeping = 1')
+    db.exec('ALTER TABLE agent_sessions DROP COLUMN is_sleeping')
+    db.exec('COMMIT')
+  } catch (error) {
+    db.exec('ROLLBACK')
+    throw error
+  }
+}
+
 function migrateLastResumeErrorColumn(db: SQLiteDatabase) {
   const columns = getColumnNames(db, 'agent_sessions')
   if (columns.length === 0 || columns.includes('last_resume_error')) {
@@ -513,6 +608,14 @@ function migrateLaunchCommandColumn(db: SQLiteDatabase) {
     return
   }
   db.exec('ALTER TABLE agent_sessions ADD COLUMN launch_command TEXT')
+}
+
+function migrateWakeStartedAtColumn(db: SQLiteDatabase) {
+  const columns = getColumnNames(db, 'agent_sessions')
+  if (columns.length === 0 || columns.includes('wake_started_at')) {
+    return
+  }
+  db.exec('ALTER TABLE agent_sessions ADD COLUMN wake_started_at TEXT')
 }
 
 function migrateDeduplicateDisplayNames(db: SQLiteDatabase) {
@@ -569,12 +672,68 @@ function migrateDeduplicateDisplayNames(db: SQLiteDatabase) {
   }
 }
 
+function migrateDeduplicateCurrentWindows(db: SQLiteDatabase) {
+  const columns = getColumnNames(db, 'agent_sessions')
+  if (
+    columns.length === 0 ||
+    !columns.includes('current_window') ||
+    !columns.includes('session_id') ||
+    !columns.includes('last_activity_at') ||
+    !columns.includes('id') ||
+    !columns.includes('is_pinned')
+  ) {
+    return
+  }
+
+  const duplicates = db
+    .prepare(
+      `SELECT current_window
+       FROM agent_sessions
+       WHERE current_window IS NOT NULL
+       GROUP BY current_window
+       HAVING COUNT(*) > 1`
+    )
+    .all() as Array<{ current_window: string }>
+
+  if (duplicates.length === 0) {
+    return
+  }
+
+  const selectSessions = db.prepare(
+    `SELECT session_id
+     FROM agent_sessions
+     WHERE current_window = $currentWindow
+     ORDER BY last_activity_at DESC, id DESC`
+  )
+  const orphanDuplicate = db.prepare(
+    `UPDATE agent_sessions
+     SET current_window = NULL, is_pinned = 0
+     WHERE session_id = $sessionId`
+  )
+
+  db.exec('BEGIN')
+  try {
+    for (const { current_window } of duplicates) {
+      const sessions = selectSessions.all({
+        $currentWindow: current_window,
+      }) as Array<{ session_id: string }>
+
+      for (const duplicate of sessions.slice(1)) {
+        orphanDuplicate.run({ $sessionId: duplicate.session_id })
+      }
+    }
+    db.exec('COMMIT')
+  } catch (error) {
+    db.exec('ROLLBACK')
+    throw error
+  }
+}
+
 /**
- * Migrate agent_type CHECK constraint to include 'pi'.
+ * Migrate agent_type CHECK constraint to include every current AgentType.
  * SQLite doesn't support modifying constraints, so we recreate the table.
  */
-function migratePiAgentType(db: SQLiteDatabase) {
-  // Check if table exists and if constraint already includes 'pi'
+function migrateAgentTypeConstraint(db: SQLiteDatabase) {
   const tableInfo = db
     .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='agent_sessions'")
     .get() as { sql: string } | undefined
@@ -583,14 +742,21 @@ function migratePiAgentType(db: SQLiteDatabase) {
     return // Table doesn't exist yet, will be created with correct constraint
   }
 
-  // If 'pi' is already in the constraint, no migration needed
-  if (tableInfo.sql.includes("'pi'")) {
+  if (tableInfo.sql.includes("'claude-rp'") && tableInfo.sql.includes("'pi'")) {
     return
   }
 
+  const existingColumns = getColumnNames(db, 'agent_sessions')
+  const launchCommandSelect = existingColumns.includes('launch_command')
+    ? 'launch_command'
+    : 'NULL AS launch_command'
+  const wakeStartedAtSelect = existingColumns.includes('wake_started_at')
+    ? 'wake_started_at'
+    : 'NULL AS wake_started_at'
+
   db.exec('BEGIN')
   try {
-    db.exec('ALTER TABLE agent_sessions RENAME TO agent_sessions_old_pi_migrate')
+    db.exec('ALTER TABLE agent_sessions RENAME TO agent_sessions_old_agent_type_migrate')
     createAgentSessionsTable(db, 'agent_sessions')
     db.exec(`
       INSERT INTO agent_sessions (
@@ -607,8 +773,10 @@ function migratePiAgentType(db: SQLiteDatabase) {
         current_window,
         is_pinned,
         last_resume_error,
+        wake_started_at,
         last_known_log_size,
-        is_codex_exec
+        is_codex_exec,
+        launch_command
       )
       SELECT
         id,
@@ -624,11 +792,13 @@ function migratePiAgentType(db: SQLiteDatabase) {
         current_window,
         is_pinned,
         last_resume_error,
+        ${wakeStartedAtSelect},
         last_known_log_size,
-        is_codex_exec
-      FROM agent_sessions_old_pi_migrate
+        is_codex_exec,
+        ${launchCommandSelect}
+      FROM agent_sessions_old_agent_type_migrate
     `)
-    db.exec('DROP TABLE agent_sessions_old_pi_migrate')
+    db.exec('DROP TABLE agent_sessions_old_agent_type_migrate')
     db.exec('COMMIT')
   } catch (error) {
     db.exec('ROLLBACK')

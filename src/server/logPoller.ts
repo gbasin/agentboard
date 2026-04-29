@@ -27,6 +27,7 @@ const DEFAULT_MAX_LOGS = 25
 const STARTUP_LAST_MESSAGE_BACKFILL_MAX = 100
 const MIN_LOG_TOKENS_FOR_INSERT = 1
 const REMATCH_COOLDOWN_MS = 60 * 1000 // 1 minute between re-match attempts
+const WAKE_PENDING_REMATCH_TTL_MS = 10 * 60 * 1000
 
 // Type for session records from the database
 interface SessionRecord {
@@ -42,6 +43,7 @@ interface SessionRecord {
   currentWindow: string | null
   isPinned: boolean
   lastResumeError: string | null
+  wakeStartedAt: string | null
   lastKnownLogSize: number | null
   isCodexExec: boolean
 }
@@ -114,6 +116,22 @@ function applyLogEntryToExistingRecord(
   }
 
   return Object.keys(update).length > 0 ? update : null
+}
+
+function hasRecoverableWakePending(record: {
+  wakeStartedAt: string | null
+}): boolean {
+  if (!record.wakeStartedAt) return false
+  const startedAt = Date.parse(record.wakeStartedAt)
+  if (!Number.isFinite(startedAt)) return false
+  return Date.now() - startedAt <= WAKE_PENDING_REMATCH_TTL_MS
+}
+
+function canAttemptDormantRematch(record: {
+  isPinned: boolean
+  wakeStartedAt: string | null
+}): boolean {
+  return !record.isPinned || hasRecoverableWakePending(record)
 }
 
 interface PollStats {
@@ -270,20 +288,23 @@ export class LogPoller {
       const logDirs = getLogSearchDirs()
       const sessionRecords = [
         ...this.db.getActiveSessions(),
-        ...this.db.getInactiveSessions(),
+        ...this.db.getHibernatingSessions(),
+        ...this.db.getHistorySessions(),
       ]
+      const excludedProjects = config.excludeProjects ?? []
 
       // Build orphan candidates - sessions without active windows
       const orphanCandidates: OrphanCandidate[] = []
       for (const record of sessionRecords) {
         if (record.currentWindow) continue
+        if (!canAttemptDormantRematch(record)) continue
         const logFilePath = record.logFilePath
         if (!logFilePath) continue
         // Skip sessions from excluded project directories
         // Use "<empty>" as a special marker to exclude sessions with no project path
-        if (config.excludeProjects?.length > 0) {
+        if (excludedProjects.length > 0) {
           const projectPath = record.projectPath ?? ''
-          const shouldExclude = config.excludeProjects.some((excluded) => {
+          const shouldExclude = excludedProjects.some((excluded) => {
             if (excluded === '<empty>') return projectPath === ''
             return projectPath.startsWith(excluded)
           })
@@ -365,11 +386,17 @@ export class LogPoller {
             })
             continue
           }
-          this.db.updateSession(existing.sessionId, {
-            currentWindow: match.tmuxWindow,
-            displayName: window.name,
-            ...(window.command && !existing.launchCommand ? { launchCommand: window.command } : {}),
-          })
+          const claimed = this.db.claimCurrentWindow(
+            existing.sessionId,
+            match.tmuxWindow,
+            {
+              displayName: window.name,
+              lastResumeError: null,
+              wakeStartedAt: null,
+              ...(window.command && !existing.launchCommand ? { launchCommand: window.command } : {}),
+            }
+          )
+          if (!claimed) continue
           claimedWindows.add(match.tmuxWindow)
           matchedOrphanSessionIds.add(existing.sessionId)
           this.onSessionActivated?.(existing.sessionId, match.tmuxWindow)
@@ -412,11 +439,17 @@ export class LogPoller {
 
           const window = unclaimedByName.get(existing.displayName)
           if (window) {
-            this.db.updateSession(existing.sessionId, {
-              currentWindow: window.tmuxWindow,
-              displayName: window.name,
-              ...(window.command && !existing.launchCommand ? { launchCommand: window.command } : {}),
-            })
+            const claimed = this.db.claimCurrentWindow(
+              existing.sessionId,
+              window.tmuxWindow,
+              {
+                displayName: window.name,
+                lastResumeError: null,
+                wakeStartedAt: null,
+                ...(window.command && !existing.launchCommand ? { launchCommand: window.command } : {}),
+              }
+            )
+            if (!claimed) continue
             claimedWindows.add(window.tmuxWindow)
             unclaimedByName.delete(existing.displayName)
             this.onSessionActivated?.(existing.sessionId, window.tmuxWindow)
@@ -471,7 +504,8 @@ export class LogPoller {
       const logDirs = getLogSearchDirs()
       const sessionRecords = [
         ...this.db.getActiveSessions(),
-        ...this.db.getInactiveSessions(),
+        ...this.db.getHibernatingSessions(),
+        ...this.db.getHistorySessions(),
       ]
       const sessions: SessionSnapshot[] = sessionRecords.map((session) => ({
         sessionId: session.sessionId,
@@ -604,6 +638,7 @@ export class LogPoller {
             this.db.updateSession(existing.sessionId, update)
           }
           const shouldAttemptRematch =
+            canAttemptDormantRematch(existing) &&
             !existing.currentWindow &&
             (hasGrown || matchEligibleLogPaths.has(entry.logPath))
           if (shouldAttemptRematch) {
@@ -613,13 +648,17 @@ export class LogPoller {
               this.rematchAttemptCache.set(existing.sessionId, Date.now())
               const exactMatch = exactWindowMatches.get(entry.logPath) ?? null
               if (exactMatch) {
-                const claimed = this.db.getSessionByWindow(exactMatch.tmuxWindow)
-                if (!claimed) {
-                  this.db.updateSession(existing.sessionId, {
-                    currentWindow: exactMatch.tmuxWindow,
+                const claimed = this.db.claimCurrentWindow(
+                  existing.sessionId,
+                  exactMatch.tmuxWindow,
+                  {
                     displayName: exactMatch.name,
+                    lastResumeError: null,
+                    wakeStartedAt: null,
                     ...(exactMatch.command && !existing.launchCommand ? { launchCommand: exactMatch.command } : {}),
-                  })
+                  }
+                )
+                if (claimed) {
                   logger.info('session_rematched', {
                     sessionId: existing.sessionId,
                     window: exactMatch.tmuxWindow,
@@ -682,6 +721,7 @@ export class LogPoller {
 
           // Re-attempt matching for orphaned sessions (no currentWindow)
           const shouldAttemptRematch =
+            canAttemptDormantRematch(existingById) &&
             !existingById.currentWindow &&
             (hasGrown || matchEligibleLogPaths.has(entry.logPath))
           if (shouldAttemptRematch) {
@@ -690,13 +730,17 @@ export class LogPoller {
               this.rematchAttemptCache.set(sessionId, Date.now())
               const exactMatch = exactWindowMatches.get(entry.logPath) ?? null
               if (exactMatch) {
-                const claimed = this.db.getSessionByWindow(exactMatch.tmuxWindow)
-                if (!claimed) {
-                  this.db.updateSession(sessionId, {
-                    currentWindow: exactMatch.tmuxWindow,
+                const claimed = this.db.claimCurrentWindow(
+                  sessionId,
+                  exactMatch.tmuxWindow,
+                  {
                     displayName: exactMatch.name,
+                    lastResumeError: null,
+                    wakeStartedAt: null,
                     ...(exactMatch.command && !existingById.launchCommand ? { launchCommand: exactMatch.command } : {}),
-                  })
+                  }
+                )
+                if (claimed) {
                   logger.info('session_rematched', {
                     sessionId,
                     window: exactMatch.tmuxWindow,
@@ -737,7 +781,7 @@ export class LogPoller {
         // in the same project, it's a plan→execute transition. Supersede the old session.
         const slug = entry.slug ?? null
         let supersededWindow: string | null = null
-        let inheritPinned = false
+        let inheritHibernationMarker = false
         let inheritDisplayName: string | null = null
         if (slug) {
           const slugMatch = this.db.getActiveSessionBySlugAndProject(
@@ -746,7 +790,7 @@ export class LogPoller {
           )
           if (slugMatch && slugMatch.sessionId !== sessionId) {
             supersededWindow = slugMatch.currentWindow
-            inheritPinned = slugMatch.isPinned
+            inheritHibernationMarker = slugMatch.isPinned
             inheritDisplayName = slugMatch.displayName
             this.db.updateSession(slugMatch.sessionId, {
               currentWindow: null,
@@ -758,7 +802,7 @@ export class LogPoller {
               newSessionId: sessionId,
               slug,
               window: supersededWindow,
-              pinTransferred: inheritPinned,
+              hibernationMarkerTransferred: inheritHibernationMarker,
             })
           }
         }
@@ -830,7 +874,7 @@ export class LogPoller {
           lastActivityAt,
           lastUserMessage: currentWindow ? null : (entry.lastUserMessage ?? null),
           currentWindow,
-          isPinned: inheritPinned,
+          isPinned: inheritHibernationMarker,
           lastResumeError: null,
           lastKnownLogSize: entry.size,
           isCodexExec: entry.isCodexExec,
@@ -881,7 +925,8 @@ export class LogPoller {
       const logDirs = getLogSearchDirs()
       const sessionRecords = [
         ...this.db.getActiveSessions(),
-        ...this.db.getInactiveSessions(),
+        ...this.db.getHibernatingSessions(),
+        ...this.db.getHistorySessions(),
       ]
       let shouldBackfillLastMessage = false
       if (this.startupLastMessageBackfillPending) {

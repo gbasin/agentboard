@@ -8,7 +8,7 @@ interface PendingRequest {
   timeoutId: ReturnType<typeof setTimeout> | null
 }
 
-const DEFAULT_TIMEOUT_MS = 15000
+const DEFAULT_TIMEOUT_MS = 45000
 const READY_TIMEOUT_MS = 10000
 
 class WorkerInitError extends Error {

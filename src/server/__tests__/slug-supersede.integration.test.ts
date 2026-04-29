@@ -263,9 +263,9 @@ if (!tmuxAvailable || !localhostBindable) {
     )
 
     test(
-      'pin state transfers during slug supersede',
+      'hibernation marker transfers during slug supersede',
       async () => {
-        // Stop server, set up a pinned session, restart with new log
+        // Stop server, set up a hibernation-marked session, restart with new log
         if (serverProcess) {
           try {
             serverProcess.kill()
@@ -276,9 +276,9 @@ if (!tmuxAvailable || !localhostBindable) {
           serverProcess = null
         }
 
-        const pinnedPlanId = `pinned-plan-${Date.now()}`
-        const pinnedExecId = `pinned-exec-${Date.now()}`
-        const pinnedSlug = `pinned-slug-${Date.now()}`
+        const markedPlanId = `hibernate-plan-${Date.now()}`
+        const markedExecId = `hibernate-exec-${Date.now()}`
+        const markedSlug = `hibernate-slug-${Date.now()}`
 
         // Get current tmux window
         const listResult = Bun.spawnSync(
@@ -292,23 +292,23 @@ if (!tmuxAvailable || !localhostBindable) {
           .filter(Boolean)[0]!
 
         // Remove test 1 sessions entirely so startup orphan-rematch cannot
-        // reclaim the shared tmux window before the pinned supersede scenario.
+        // reclaim the shared tmux window before the marked supersede scenario.
         const db = initDatabase({ path: dbPath })
         db.db
           .query('DELETE FROM agent_sessions WHERE session_id = ?1 OR session_id = ?2')
           .run(planSessionId, execSessionId)
         db.insertSession({
-          sessionId: pinnedPlanId,
+          sessionId: markedPlanId,
           logFilePath: path.join(
             claudeConfigDir!,
             'projects',
             encodeProjectPath(projectPath),
-            'pinned-plan.jsonl'
+            'hibernate-plan.jsonl'
           ),
           projectPath,
-          slug: pinnedSlug,
+          slug: markedSlug,
           agentType: 'claude',
-          displayName: 'pinned-plan',
+          displayName: 'hibernate-plan',
           createdAt: new Date().toISOString(),
           lastActivityAt: new Date().toISOString(),
           lastUserMessage: null,
@@ -352,44 +352,44 @@ if (!tmuxAvailable || !localhostBindable) {
           'projects',
           encodeProjectPath(projectPath)
         )
-        const pinnedPlanLogPath = path.join(logDir, 'pinned-plan.jsonl')
+        const markedPlanLogPath = path.join(logDir, 'hibernate-plan.jsonl')
         fs.writeFileSync(
-          pinnedPlanLogPath,
+          markedPlanLogPath,
           JSON.stringify({
             type: 'user',
-            sessionId: pinnedPlanId,
+            sessionId: markedPlanId,
             cwd: projectPath,
-            slug: pinnedSlug,
+            slug: markedSlug,
             message: {
               role: 'user',
-              content: [{ type: 'text', text: 'plan the pinned feature' }],
+              content: [{ type: 'text', text: 'plan the hibernating feature' }],
             },
           }) +
             '\n' +
             JSON.stringify({
               type: 'assistant',
-              message: { content: [{ type: 'text', text: 'here is the pinned plan' }] },
+              message: { content: [{ type: 'text', text: 'here is the hibernating plan' }] },
             }) +
             '\n'
         )
 
-        const execLogPath = path.join(logDir, 'pinned-exec.jsonl')
+        const execLogPath = path.join(logDir, 'hibernate-exec.jsonl')
         fs.writeFileSync(
           execLogPath,
           JSON.stringify({
             type: 'user',
-            sessionId: pinnedExecId,
+            sessionId: markedExecId,
             cwd: projectPath,
-            slug: pinnedSlug,
+            slug: markedSlug,
             message: {
               role: 'user',
-              content: [{ type: 'text', text: 'implement the pinned plan now' }],
+              content: [{ type: 'text', text: 'implement the hibernating plan now' }],
             },
           }) +
             '\n' +
             JSON.stringify({
               type: 'assistant',
-              message: { content: [{ type: 'text', text: 'implementing pinned plan now' }] },
+              message: { content: [{ type: 'text', text: 'implementing hibernating plan now' }] },
             }) +
             '\n'
         )
@@ -428,7 +428,7 @@ if (!tmuxAvailable || !localhostBindable) {
         while (Date.now() - start < 30_000) {
           try {
             const pollDb = initDatabase({ path: dbPath })
-            execRecord = pollDb.getSessionById(pinnedExecId)
+            execRecord = pollDb.getSessionById(markedExecId)
             pollDb.close()
 
             if (execRecord && execRecord.currentWindow) {
@@ -440,14 +440,14 @@ if (!tmuxAvailable || !localhostBindable) {
           await delay(500)
         }
 
-        // Execution session should have inherited the pin
+        // Execution session should have inherited the hibernation marker
         expect(execRecord).not.toBeNull()
         expect(execRecord!.currentWindow).not.toBeNull()
         expect(execRecord!.isPinned).toBe(true)
 
-        // Planning session should be orphaned and unpinned (pin transferred)
+        // Planning session should be orphaned with the marker cleared.
         const finalDb = initDatabase({ path: dbPath })
-        const planRecord = finalDb.getSessionById(pinnedPlanId)
+        const planRecord = finalDb.getSessionById(markedPlanId)
         finalDb.close()
         expect(planRecord).not.toBeNull()
         expect(planRecord!.currentWindow).toBeNull()

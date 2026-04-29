@@ -13,12 +13,16 @@ interface SessionDrawerProps {
   isOpen: boolean
   onClose: () => void
   sessions: Session[]
-  inactiveSessions?: AgentSession[]
+  hibernatingSessions?: AgentSession[]
+  historySessions?: AgentSession[]
   selectedSessionId: string | null
+  selectedHibernatingSessionId?: string | null
   onSelect: (sessionId: string) => void
+  onSelectHibernating?: (sessionId: string) => void
   onRename: (sessionId: string, newName: string) => void
   onResume?: (sessionId: string) => void
-  onSetPinned?: (sessionId: string, isPinned: boolean) => void
+  onHibernate?: (sessionId: string) => void
+  onMoveToHistory?: (sessionId: string) => void
   onNewSession: () => boolean | void
   loading: boolean
   error: string | null
@@ -28,12 +32,16 @@ export default function SessionDrawer({
   isOpen,
   onClose,
   sessions,
-  inactiveSessions = [],
+  hibernatingSessions = [],
+  historySessions = [],
   selectedSessionId,
+  selectedHibernatingSessionId = null,
   onSelect,
+  onSelectHibernating,
   onRename,
   onResume,
-  onSetPinned,
+  onHibernate,
+  onMoveToHistory,
   onNewSession,
   loading,
   error,
@@ -117,6 +125,11 @@ export default function SessionDrawer({
     onClose()
   }
 
+  const handleSelectHibernating = (sessionId: string) => {
+    onSelectHibernating?.(sessionId)
+    onClose()
+  }
+
   // Inline styles for reduced motion
   const transitionStyle = prefersReducedMotion
     ? { transition: 'none' }
@@ -144,12 +157,19 @@ export default function SessionDrawer({
       >
         <SessionList
           sessions={sessions}
-          inactiveSessions={inactiveSessions}
+          hibernatingSessions={hibernatingSessions}
+          historySessions={historySessions}
           selectedSessionId={selectedSessionId}
+          selectedHibernatingSessionId={selectedHibernatingSessionId}
           onSelect={handleSelect}
+          onSelectHibernating={handleSelectHibernating}
           onRename={onRename}
           onResume={onResume}
-          onSetPinned={onSetPinned}
+          onHibernate={onHibernate}
+          onMoveToHistory={onMoveToHistory}
+          onNewSession={() => {
+            if (onNewSession() !== false) onClose()
+          }}
           loading={loading}
           error={error}
         />

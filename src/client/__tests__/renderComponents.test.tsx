@@ -273,7 +273,7 @@ describe('component rendering', () => {
         onRename={() => {}}
       />
     )
-    expect(html).toContain('Sessions')
+    expect(html).toContain('Active')
     expect(html).toContain('alpha')
   })
 
@@ -298,9 +298,11 @@ describe('component rendering', () => {
         error={null}
         onSelect={() => {}}
         onRename={() => {}}
+        onNewSession={() => {}}
       />
     )
-    expect(emptyHtml).toContain('No sessions')
+    expect(emptyHtml).toContain('Active')
+    expect(emptyHtml).toContain('New session')
   })
 
   test('renders session list error state', () => {

@@ -22,7 +22,8 @@ import File06Icon from '@untitledui-icons/react/line/esm/File06Icon'
 import ChevronDownIcon from '@untitledui-icons/react/line/esm/ChevronDownIcon'
 import ChevronRightIcon from '@untitledui-icons/react/line/esm/ChevronRightIcon'
 import Edit05Icon from '@untitledui-icons/react/line/esm/Edit05Icon'
-import Pin02Icon from '@untitledui-icons/react/line/esm/Pin02Icon'
+import Moon01Icon from '@untitledui-icons/react/line/esm/Moon01Icon'
+import PlusIcon from '@untitledui-icons/react/line/esm/PlusIcon'
 import type { AgentSession, Session } from '@shared/types'
 import { getSessionOrderKey, getUniqueHosts, getUniqueProjects, sortSessions } from '../utils/sessions'
 import { formatRelativeTime } from '../utils/time'
@@ -36,25 +37,31 @@ import { getEffectiveModifier, getModifierDisplay } from '../utils/device'
 import { useCounterBump } from '../hooks/useCounterBump'
 import { useExitCleanup } from '../hooks/useExitCleanup'
 import AgentIcon from './AgentIcon'
-import InactiveSessionItem from './InactiveSessionItem'
+import HistorySessionItem from './HistorySessionItem'
 import ProjectBadge from './ProjectBadge'
 import HostBadge from './HostBadge'
 import HostFilterDropdown from './HostFilterDropdown'
 import ProjectFilterDropdown from './ProjectFilterDropdown'
 import SessionPreviewModal from './SessionPreviewModal'
+import HibernatingSessionItem from './HibernatingSessionItem'
 
 interface SessionListProps {
   sessions: Session[]
-  inactiveSessions?: AgentSession[]
+  hibernatingSessions?: AgentSession[]
+  historySessions?: AgentSession[]
   selectedSessionId: string | null
+  selectedHibernatingSessionId?: string | null
   loading: boolean
   error: string | null
   onSelect: (sessionId: string) => void
+  onSelectHibernating?: (sessionId: string) => void
   onRename: (sessionId: string, newName: string) => void
   onResume?: (sessionId: string) => void
+  onHibernate?: (sessionId: string) => void
   onKill?: (sessionId: string) => void
   onDuplicate?: (sessionId: string) => void
-  onSetPinned?: (sessionId: string, isPinned: boolean) => void
+  onMoveToHistory?: (sessionId: string) => void
+  onNewSession?: () => void
 }
 
 /** Status pill classes for the time/activity badge */
@@ -75,16 +82,21 @@ function useTimestampRefresh() {
 
 export default function SessionList({
   sessions,
-  inactiveSessions = [],
+  hibernatingSessions = [],
+  historySessions = [],
   selectedSessionId,
+  selectedHibernatingSessionId = null,
   loading,
   error,
   onSelect,
+  onSelectHibernating,
   onRename,
   onResume,
+  onHibernate,
   onKill,
   onDuplicate,
-  onSetPinned,
+  onMoveToHistory,
+  onNewSession,
 }: SessionListProps) {
   useTimestampRefresh()
   const isSafari = useMemo(() => {
@@ -92,39 +104,50 @@ export default function SessionList({
     return /^((?!chrome|android).)*safari/i.test(navigator.userAgent)
   }, [])
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
-  const showInactive = useSettingsStore((state) => state.inactiveSessionsExpanded)
-  const setShowInactive = useSettingsStore((state) => state.setInactiveSessionsExpanded)
+  const showHistory = useSettingsStore((state) => state.historySessionsExpanded)
+  const setShowHistory = useSettingsStore((state) => state.setHistorySessionsExpanded)
+  const showHibernating = useSettingsStore((state) => state.hibernatingSessionsExpanded)
+  const setShowHibernating = useSettingsStore((state) => state.setHibernatingSessionsExpanded)
   const [previewSession, setPreviewSession] = useState<AgentSession | null>(null)
-  const [inactiveLimit, setInactiveLimit] = useState(20)
+  const [historyLimit, setHistoryLimit] = useState(20)
   const prefersReducedMotion = useReducedMotion()
   const useSafariLayoutFallback = isSafari && !prefersReducedMotion
+  const dormantSessions = useMemo(
+    () => [...hibernatingSessions, ...historySessions],
+    [hibernatingSessions, historySessions]
+  )
 
-  // Reset pagination when inactive panel is collapsed
+  // Reset pagination when history panel is collapsed
   useEffect(() => {
-    if (!showInactive) {
-      setInactiveLimit(20)
+    if (!showHistory) {
+      setHistoryLimit(20)
     }
-  }, [showInactive])
+  }, [showHistory])
 
   // Animation sequencing constants (in ms)
   const EXIT_DURATION = 200
 
   // Counter bump animations
-  const [activeCounterBump, clearActiveCounterBump] = useCounterBump(sessions.length, EXIT_DURATION)
-  const [inactiveCounterBump, clearInactiveCounterBump] = useCounterBump(inactiveSessions.length, EXIT_DURATION, true)
+  const [activeCounterBump, clearActiveCounterBump] = useCounterBump(
+    sessions.length,
+    EXIT_DURATION
+  )
+  const [historyCounterBump, clearHistoryCounterBump] = useCounterBump(historySessions.length, EXIT_DURATION, true)
 
   // Track newly added sessions for entry animations
   const prevActiveIdsRef = useRef<Set<string>>(new Set(sessions.map((s) => s.id)))
-  const prevInactiveIdsForActiveRef = useRef<Set<string>>(
-    new Set(inactiveSessions.map((s) => s.sessionId))
+  const prevDormantIdsForActiveRef = useRef<Set<string>>(
+    new Set(
+      [...hibernatingSessions, ...historySessions].map((session) => session.sessionId)
+    )
   )
   const [newlyActiveIds, setNewlyActiveIds] = useState<Set<string>>(new Set())
 
   // Detect newly active sessions
   useEffect(() => {
     const currentIds = new Set(sessions.map((s) => s.id))
-    const currentInactiveIds = new Set(
-      inactiveSessions.map((s) => s.sessionId)
+    const currentDormantIds = new Set(
+      [...hibernatingSessions, ...historySessions].map((session) => session.sessionId)
     )
     const newIds = new Set<string>()
     for (const id of currentIds) {
@@ -136,19 +159,19 @@ export default function SessionList({
       const agentId = session.agentSessionId?.trim()
       if (
         agentId &&
-        prevInactiveIdsForActiveRef.current.has(agentId) &&
-        !currentInactiveIds.has(agentId)
+        prevDormantIdsForActiveRef.current.has(agentId) &&
+        !currentDormantIds.has(agentId)
       ) {
         newIds.add(session.id)
       }
     }
     prevActiveIdsRef.current = currentIds
-    prevInactiveIdsForActiveRef.current = currentInactiveIds
+    prevDormantIdsForActiveRef.current = currentDormantIds
 
     if (newIds.size > 0) {
       setNewlyActiveIds(newIds)
     }
-  }, [sessions, inactiveSessions])
+  }, [sessions, hibernatingSessions, historySessions])
 
   // Auto-clear newlyActiveIds after delay (separate effect to avoid timer bugs)
   useEffect(() => {
@@ -196,14 +219,14 @@ export default function SessionList({
       currentIds.add(getSessionOrderKey(session))
       currentIds.add(session.id)
     }
-    for (const session of inactiveSessions) {
+    for (const session of dormantSessions) {
       currentIds.add(session.sessionId)
     }
     const validOrder = manualSessionOrder.filter((id) => currentIds.has(id))
     if (validOrder.length !== manualSessionOrder.length) {
       setManualSessionOrder(validOrder)
     }
-  }, [sessions, inactiveSessions, manualSessionOrder, setManualSessionOrder])
+  }, [sessions, dormantSessions, manualSessionOrder, setManualSessionOrder])
 
   const sortedActive = useMemo(
     () =>
@@ -220,12 +243,12 @@ export default function SessionList({
   const sortedSessions = sortedActive
 
   const uniqueProjects = useMemo(
-    () => getUniqueProjects(sessions, inactiveSessions),
-    [sessions, inactiveSessions]
+    () => getUniqueProjects(sessions, dormantSessions),
+    [sessions, dormantSessions]
   )
 
   const uniqueHosts = useMemo(() => {
-    const sessionHosts = getUniqueHosts(sessions, inactiveSessions)
+    const sessionHosts = getUniqueHosts(sessions, dormantSessions)
     const statusHosts = hostStatuses.map((status) => status.host)
     const seen = new Set<string>()
     const merged: string[] = []
@@ -243,7 +266,7 @@ export default function SessionList({
     }
 
     return merged
-  }, [sessions, inactiveSessions, hostStatuses])
+  }, [sessions, dormantSessions, hostStatuses])
 
   // Auto-show host info when multiple hosts are present
   const showHostInfo = useMemo(() => uniqueHosts.length > 1, [uniqueHosts])
@@ -302,8 +325,8 @@ export default function SessionList({
     return () => clearTimeout(timer)
   }, [newlyFilteredInIds])
 
-  const filteredInactiveSessions = useMemo(() => {
-    let next = inactiveSessions
+  const filteredHibernatingSessions = useMemo(() => {
+    let next = hibernatingSessions
     if (projectFilters.length > 0) {
       next = next.filter((session) => projectFilters.includes(session.projectPath))
     }
@@ -311,7 +334,18 @@ export default function SessionList({
       next = next.filter((session) => hostFilters.includes(session.host ?? ''))
     }
     return next
-  }, [inactiveSessions, projectFilters, hostFilters])
+  }, [hibernatingSessions, projectFilters, hostFilters])
+
+  const filteredHistorySessions = useMemo(() => {
+    let next = historySessions
+    if (projectFilters.length > 0) {
+      next = next.filter((session) => projectFilters.includes(session.projectPath))
+    }
+    if (hostFilters.length > 0) {
+      next = next.filter((session) => hostFilters.includes(session.host ?? ''))
+    }
+    return next
+  }, [historySessions, projectFilters, hostFilters])
 
   const hiddenPermissionCount = useMemo(() => {
     if (projectFilters.length === 0) return 0
@@ -452,34 +486,21 @@ export default function SessionList({
       )}
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="sticky top-0 z-10 flex h-10 items-center justify-between border-b border-border bg-elevated px-3">
-          <span className="text-xs font-medium uppercase tracking-wider text-muted">
-            Sessions
-          </span>
-          <div className="flex items-center gap-4">
-            {showHostInfo && (
-              <HostFilterDropdown
-                hosts={uniqueHosts}
-                selectedHosts={hostFilters}
-                onSelect={setHostFilters}
-                statuses={hostStatuses}
-              />
-            )}
-            <ProjectFilterDropdown
-              projects={uniqueProjects}
-              selectedProjects={projectFilters}
-              onSelect={setProjectFilters}
-              hasHiddenPermissions={hiddenPermissionCount > 0}
+        <div className="sticky top-0 z-10 flex h-10 items-center justify-start gap-2 border-b border-border bg-elevated px-3">
+          {showHostInfo && (
+            <HostFilterDropdown
+              hosts={uniqueHosts}
+              selectedHosts={hostFilters}
+              onSelect={setHostFilters}
+              statuses={hostStatuses}
             />
-            <motion.span
-              className="w-8 text-right text-xs text-muted"
-              animate={activeCounterBump && !prefersReducedMotion ? { scale: [1, 1.3, 1] } : {}}
-              transition={{ duration: 0.3 }}
-              onAnimationComplete={clearActiveCounterBump}
-            >
-              {filteredSessions.length}
-            </motion.span>
-          </div>
+          )}
+          <ProjectFilterDropdown
+            projects={uniqueProjects}
+            selectedProjects={projectFilters}
+            onSelect={setProjectFilters}
+            hasHiddenPermissions={hiddenPermissionCount > 0}
+          />
         </div>
         {loading ? (
           <div className="space-y-1 p-2">
@@ -490,102 +511,176 @@ export default function SessionList({
               />
             ))}
           </div>
-        ) : filteredSessions.length === 0 ? (
-          <div className="px-3 py-6 text-center text-xs text-muted">
-            No sessions
-          </div>
         ) : (
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragStart={handleDragStart}
-            onDragOver={handleDragOver}
-            onDragEnd={handleDragEnd}
-            onDragCancel={handleDragCancel}
-          >
-            <SortableContext
-              items={filteredSessions.map((s) => s.id)}
-              strategy={verticalListSortingStrategy}
-            >
-              <div key={filterKey}>
-                <AnimatePresence
-                  initial={false}
-                  mode={useSafariLayoutFallback ? 'sync' : 'popLayout'}
+          <>
+            <div className="flex items-center justify-between px-3 py-2 text-xs font-medium uppercase tracking-wider text-muted">
+              <span>Active</span>
+              <div className="flex items-center gap-2">
+                {filteredSessions.length === 0 && onNewSession && (
+                  <button
+                    type="button"
+                    onClick={onNewSession}
+                    className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium normal-case tracking-normal text-accent hover:bg-hover"
+                    title="Start a new session"
+                  >
+                    <PlusIcon className="h-3.5 w-3.5" />
+                    New session
+                  </button>
+                )}
+                <motion.span
+                  className="w-8 text-right text-xs"
+                  animate={activeCounterBump && !prefersReducedMotion ? { scale: [1, 1.3, 1] } : {}}
+                  transition={{ duration: 0.3 }}
+                  onAnimationComplete={clearActiveCounterBump}
                 >
-                  {filteredSessions.map((session, index) => {
-                    const isTrulyNew = newlyActiveIds.has(session.id)
-                    const isFilteredIn = newlyFilteredInIds.has(session.id)
-                    const isRemote = session.remote === true
-                    const isManaged = session.source === 'managed'
-                    const canControl = !isRemote || (remoteAllowControl && isManaged)
-                    // Calculate drop indicator position
-                    const activeIndex = activeId
-                      ? filteredSessions.findIndex((s) => s.id === activeId)
-                      : -1
-                    const isOver = overId === session.id && activeId !== session.id
-                    const showDropIndicator = isOver ? (activeIndex > index ? 'above' : 'below') : null
-                    // Show bounce for both new and filter-in, but delay only for truly new
-                    const isNew = isTrulyNew || isFilteredIn
-                    return (
-                      <SortableSessionItem
-                        key={session.id}
+                  {filteredSessions.length}
+                </motion.span>
+              </div>
+            </div>
+            {filteredSessions.length > 0 && (
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragStart={handleDragStart}
+                onDragOver={handleDragOver}
+                onDragEnd={handleDragEnd}
+                onDragCancel={handleDragCancel}
+              >
+                <SortableContext
+                  items={filteredSessions.map((s) => s.id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  <div key={filterKey}>
+                    <AnimatePresence
+                      initial={false}
+                      mode={useSafariLayoutFallback ? 'sync' : 'popLayout'}
+                    >
+                      {filteredSessions.map((session, index) => {
+                        const isTrulyNew = newlyActiveIds.has(session.id)
+                        const isFilteredIn = newlyFilteredInIds.has(session.id)
+                        const isRemote = session.remote === true
+                        const isManaged = session.source === 'managed'
+                        const canControl = !isRemote || (remoteAllowControl && isManaged)
+                        const canHibernate = Boolean(
+                          onHibernate &&
+                          !isRemote &&
+                          isManaged &&
+                          session.agentSessionId?.trim()
+                        )
+                        // Calculate drop indicator position
+                        const activeIndex = activeId
+                          ? filteredSessions.findIndex((s) => s.id === activeId)
+                          : -1
+                        const isOver = overId === session.id && activeId !== session.id
+                        const showDropIndicator = isOver ? (activeIndex > index ? 'above' : 'below') : null
+                        // Show bounce for both new and filter-in, but delay only for truly new
+                        const isNew = isTrulyNew || isFilteredIn
+                        return (
+                          <SortableSessionItem
+                            key={session.id}
+                            session={session}
+                            isNew={isNew}
+                            exitDuration={EXIT_DURATION}
+                            prefersReducedMotion={prefersReducedMotion}
+                            useSafariLayoutFallback={useSafariLayoutFallback}
+                            layoutAnimationsDisabled={layoutAnimationsDisabled}
+                            isSelected={session.id === selectedSessionId}
+                            isEditing={session.id === editingSessionId}
+                            showSessionIdPrefix={showSessionIdPrefix}
+                            showProjectName={showProjectName}
+                            showLastUserMessage={showLastUserMessage}
+                            showHostInfo={showHostInfo}
+                            dropIndicator={showDropIndicator}
+                            onSelect={() => onSelect(session.id)}
+                            onStartEdit={canControl ? () => setEditingSessionId(session.id) : undefined}
+                            onCancelEdit={() => setEditingSessionId(null)}
+                            onRename={(newName) => handleRename(session.id, newName)}
+                            onHibernate={
+                              canHibernate
+                                ? () => onHibernate?.(session.agentSessionId!.trim())
+                                : undefined
+                            }
+                            onKill={onKill && canControl ? () => onKill(session.id) : undefined}
+                            onDuplicate={onDuplicate && canControl ? () => onDuplicate(session.id) : undefined}
+                          />
+                        )
+                      })}
+                    </AnimatePresence>
+                  </div>
+                </SortableContext>
+              </DndContext>
+            )}
+
+            {filteredHibernatingSessions.length > 0 && (
+              <div className="border-t border-border">
+                <button
+                  type="button"
+                  onClick={() => setShowHibernating(!showHibernating)}
+                  className="flex w-full items-center justify-between px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-muted hover:text-primary"
+                >
+                  <span className="flex items-center gap-2">
+                    {showHibernating ? (
+                      <ChevronDownIcon className="h-4 w-4" />
+                    ) : (
+                      <ChevronRightIcon className="h-4 w-4" />
+                    )}
+                    Hibernating
+                  </span>
+                  <span className="w-8 text-right text-xs text-muted">
+                    {filteredHibernatingSessions.length}
+                  </span>
+                </button>
+                {showHibernating && (
+                  <div className="py-1">
+                    {filteredHibernatingSessions.map((session) => (
+                      <HibernatingSessionItem
+                        key={session.sessionId}
                         session={session}
-                        isNew={isNew}
-                        exitDuration={EXIT_DURATION}
-                        prefersReducedMotion={prefersReducedMotion}
-                        useSafariLayoutFallback={useSafariLayoutFallback}
-                        layoutAnimationsDisabled={layoutAnimationsDisabled}
-                        isSelected={session.id === selectedSessionId}
-                        isEditing={session.id === editingSessionId}
+                        isSelected={selectedHibernatingSessionId === session.sessionId}
                         showSessionIdPrefix={showSessionIdPrefix}
                         showProjectName={showProjectName}
                         showLastUserMessage={showLastUserMessage}
-                        showHostInfo={showHostInfo}
-                        dropIndicator={showDropIndicator}
-                        onSelect={() => onSelect(session.id)}
-                        onStartEdit={canControl ? () => setEditingSessionId(session.id) : undefined}
-                        onCancelEdit={() => setEditingSessionId(null)}
-                        onRename={(newName) => handleRename(session.id, newName)}
-                        onKill={onKill && canControl ? () => onKill(session.id) : undefined}
-                        onDuplicate={onDuplicate && canControl ? () => onDuplicate(session.id) : undefined}
-                        onSetPinned={onSetPinned && session.agentSessionId ? (isPinned) => onSetPinned(session.agentSessionId!.trim(), isPinned) : undefined}
+                        onSelect={(sessionId) => onSelectHibernating?.(sessionId)}
+                        onWake={(sessionId) => onResume?.(sessionId)}
+                        onRename={(sessionId, newName) => handleRename(sessionId, newName)}
+                        onMoveToHistory={onMoveToHistory}
                       />
-                    )
-                  })}
-                </AnimatePresence>
+                    ))}
+                  </div>
+                )}
               </div>
-            </SortableContext>
-          </DndContext>
+            )}
+          </>
         )}
 
-        {filteredInactiveSessions.length > 0 && (
+        {filteredHistorySessions.length > 0 && (
           <div className="border-t border-border">
             <button
               type="button"
-              onClick={() => setShowInactive(!showInactive)}
+              onClick={() => setShowHistory(!showHistory)}
               className="flex w-full items-center justify-between px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-muted hover:text-primary"
             >
               <span className="flex items-center gap-2">
-                {showInactive ? (
+                {showHistory ? (
                   <ChevronDownIcon className="h-4 w-4" />
                 ) : (
                   <ChevronRightIcon className="h-4 w-4" />
                 )}
-                Inactive Sessions
+                History
               </span>
               <motion.span
                 className="w-8 text-right text-xs"
-                animate={inactiveCounterBump && !prefersReducedMotion ? { scale: [1, 1.3, 1] } : {}}
+                animate={historyCounterBump && !prefersReducedMotion ? { scale: [1, 1.3, 1] } : {}}
                 transition={{ duration: 0.3 }}
-                onAnimationComplete={clearInactiveCounterBump}
+                onAnimationComplete={clearHistoryCounterBump}
               >
-                {filteredInactiveSessions.length}
+                {filteredHistorySessions.length}
               </motion.span>
             </button>
-            {showInactive && (
+            {showHistory && (
               <div className="py-1">
-                {filteredInactiveSessions.slice(0, inactiveLimit).map((session) => (
-                  <InactiveSessionItem
+                {filteredHistorySessions.slice(0, historyLimit).map((session) => (
+                  <HistorySessionItem
                     key={session.sessionId}
                     session={session}
                     showSessionIdPrefix={showSessionIdPrefix}
@@ -593,16 +688,15 @@ export default function SessionList({
                     showLastUserMessage={showLastUserMessage}
                     onResume={(sessionId) => onResume?.(sessionId)}
                     onPreview={setPreviewSession}
-                    onSetPinned={onSetPinned}
                   />
                 ))}
-                {filteredInactiveSessions.length > inactiveLimit && (
+                {filteredHistorySessions.length > historyLimit && (
                   <button
                     type="button"
-                    onClick={() => setInactiveLimit((prev) => prev + 20)}
+                    onClick={() => setHistoryLimit((prev) => prev + 20)}
                     className="w-full px-3 py-2 text-center text-xs text-muted hover:text-primary hover:bg-hover"
                   >
-                    Show more ({filteredInactiveSessions.length - inactiveLimit} remaining)
+                    Show more ({filteredHistorySessions.length - historyLimit} remaining)
                   </button>
                 )}
               </div>
@@ -652,9 +746,9 @@ interface SortableSessionItemProps {
   onStartEdit?: () => void
   onCancelEdit: () => void
   onRename: (newName: string) => void
+  onHibernate?: () => void
   onKill?: () => void
   onDuplicate?: () => void
-  onSetPinned?: (isPinned: boolean) => void
 }
 
 const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>(function SortableSessionItem({
@@ -675,9 +769,9 @@ const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>
   onStartEdit,
   onCancelEdit,
   onRename,
+  onHibernate,
   onKill,
   onDuplicate,
-  onSetPinned,
 }, ref) {
   const {
     attributes,
@@ -783,9 +877,9 @@ const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>
         onStartEdit={onStartEdit}
         onCancelEdit={onCancelEdit}
         onRename={onRename}
+        onHibernate={onHibernate}
         onKill={onKill}
         onDuplicate={onDuplicate}
-        onSetPinned={onSetPinned}
       />
       {dropIndicator === 'below' && (
         <div className="absolute -bottom-px left-3 right-3 h-0.5 border-t-2 border-dashed border-accent" />
@@ -809,9 +903,9 @@ interface SessionRowProps {
   onStartEdit?: () => void
   onCancelEdit: () => void
   onRename: (newName: string) => void
+  onHibernate?: () => void
   onKill?: () => void
   onDuplicate?: () => void
-  onSetPinned?: (isPinned: boolean) => void
 }
 
 function SessionRow({
@@ -827,9 +921,9 @@ function SessionRow({
   onStartEdit,
   onCancelEdit,
   onRename,
+  onHibernate,
   onKill,
   onDuplicate,
-  onSetPinned,
 }: SessionRowProps) {
   const lastActivity = formatRelativeTime(session.lastActivity)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -998,13 +1092,6 @@ function SessionRow({
               {displayName}
             </span>
           )}
-          {session.isPinned && (
-            <Pin02Icon
-              className="h-3 w-3 shrink-0 text-primary"
-              aria-label="Pinned"
-              title="Pinned - will auto-resume on server restart"
-            />
-          )}
           {sessionIdPrefix && (
             <span
               className="shrink-0 text-[11px] font-mono text-muted"
@@ -1085,19 +1172,19 @@ function SessionRow({
               Duplicate
             </button>
           )}
-          {onSetPinned && (
+          {onHibernate && (
             <button
               onClick={(e) => {
                 e.stopPropagation()
                 setContextMenu(null)
-                onSetPinned(!session.isPinned)
+                onHibernate()
               }}
               className="w-full px-3 py-2 text-left text-sm text-secondary hover:bg-hover hover:text-primary flex items-center gap-2"
               role="menuitem"
-              title={session.isPinned ? 'Remove from auto-resume list' : 'Auto-resume on server restart'}
+              title="Close the live window and keep this session ready to wake"
             >
-              <Pin02Icon width={14} height={14} />
-              {session.isPinned ? 'Unpin' : 'Pin'}
+              <Moon01Icon width={14} height={14} />
+              Hibernate
             </button>
           )}
           {session.logFilePath && (

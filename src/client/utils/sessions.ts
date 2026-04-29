@@ -69,7 +69,7 @@ export function sortSessions(
 
 export function getUniqueProjects(
   sessions: Session[],
-  inactiveSessions: AgentSession[]
+  historySessions: AgentSession[]
 ): string[] {
   // Track the most recent activity timestamp for each project
   const projectActivity = new Map<string, number>()
@@ -85,7 +85,7 @@ export function getUniqueProjects(
     }
   }
 
-  for (const session of inactiveSessions) {
+  for (const session of historySessions) {
     const path = session.projectPath?.trim()
     if (path) {
       const timestamp = Date.parse(session.lastActivityAt) || 0
@@ -106,7 +106,7 @@ export function getUniqueProjects(
 
 export function getUniqueHosts(
   sessions: Session[],
-  inactiveSessions: AgentSession[]
+  historySessions: AgentSession[]
 ): string[] {
   const hostActivity = new Map<string, number>()
 
@@ -121,7 +121,7 @@ export function getUniqueHosts(
     }
   }
 
-  for (const session of inactiveSessions) {
+  for (const session of historySessions) {
     const host = session.host?.trim()
     if (host) {
       const timestamp = Date.parse(session.lastActivityAt) || 0

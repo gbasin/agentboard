@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import TestRenderer, { act } from 'react-test-renderer'
-import type { Session } from '@shared/types'
+import type { AgentSession, Session } from '@shared/types'
 import SessionList from '../components/SessionList'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useSessionStore } from '../stores/sessionStore'
@@ -34,6 +34,21 @@ const baseSession: Session = {
 
 function makeSession(overrides: Partial<Session>): Session {
   return { ...baseSession, ...overrides }
+}
+
+function makeAgentSession(overrides: Partial<AgentSession> = {}): AgentSession {
+  return {
+    sessionId: 'hibernating-1',
+    logFilePath: '/tmp/hibernating-1.jsonl',
+    projectPath: '/tmp/alpha',
+    agentType: 'claude',
+    displayName: 'alpha-hibernating',
+    createdAt: '2024-01-01T00:00:00.000Z',
+    lastActivityAt: '2024-01-01T00:00:00.000Z',
+    isActive: false,
+    isPinned: true,
+    ...overrides,
+  }
 }
 
 beforeEach(() => {
@@ -212,6 +227,85 @@ describe('SessionList component', () => {
     })
 
     expect(renameCalls).toEqual([{ id: 'session-1', name: 'Beta' }])
+
+    act(() => {
+      renderer.unmount()
+    })
+  })
+
+  test('renders hibernating subsection and selects hibernating sessions', () => {
+    const selectedHibernating: string[] = []
+    const renameCalls: Array<{ id: string; name: string }> = []
+    const hibernatingSession = makeAgentSession({ sessionId: 'hibernating-42' })
+
+    const renderer = TestRenderer.create(
+      <SessionList
+        sessions={[baseSession]}
+        hibernatingSessions={[hibernatingSession]}
+        historySessions={[]}
+        selectedSessionId={null}
+        selectedHibernatingSessionId={hibernatingSession.sessionId}
+        loading={false}
+        error={null}
+        onSelect={() => {}}
+        onSelectHibernating={(sessionId) => selectedHibernating.push(sessionId)}
+        onRename={(sessionId, newName) => {
+          renameCalls.push({ id: sessionId, name: newName })
+        }}
+      />
+    )
+
+    const html = JSON.stringify(renderer.toJSON())
+    expect(html).toContain('Hibernating')
+    expect(html).toContain('alpha-hibernating')
+
+    const hibernatingButton = renderer.root.findByProps({
+      'data-testid': 'hibernating-session-card',
+    })
+
+    act(() => {
+      hibernatingButton.props.onClick()
+    })
+
+    expect(selectedHibernating).toEqual([hibernatingSession.sessionId])
+
+    act(() => {
+      hibernatingButton.props.onContextMenu({
+        preventDefault: () => {},
+        stopPropagation: () => {},
+        clientX: 10,
+        clientY: 20,
+      })
+    })
+
+    const contextMenu = renderer.root.findByProps({ role: 'menu' })
+    const renameButton = contextMenu
+      .findAllByProps({ role: 'menuitem' })
+      .find((button) => {
+        const children = Array.isArray(button.props.children)
+          ? button.props.children
+          : [button.props.children]
+        return children.some((child) => child === 'Rename')
+      })
+    if (!renameButton) {
+      throw new Error('Expected Hibernating rename button')
+    }
+
+    act(() => {
+      renameButton.props.onClick({ stopPropagation: () => {} })
+    })
+
+    const input = renderer.root.findByType('input')
+    act(() => {
+      input.props.onChange({ target: { value: '  renamed-hibernate  ' } })
+    })
+    act(() => {
+      input.props.onKeyDown({ key: 'Enter', preventDefault: () => {} })
+    })
+
+    expect(renameCalls).toEqual([
+      { id: hibernatingSession.sessionId, name: 'renamed-hibernate' },
+    ])
 
     act(() => {
       renderer.unmount()

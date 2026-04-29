@@ -51,20 +51,28 @@ export type ConnectionStatus =
 
 interface SessionState {
   sessions: Session[]
-  agentSessions: { active: AgentSession[]; inactive: AgentSession[] }
+  agentSessions: { active: AgentSession[]; hibernating: AgentSession[]; history: AgentSession[] }
+  agentSessionsEpoch: number
   hostStatuses: HostStatus[]
   // Sessions being animated out - keyed by session ID, value is the session data
   exitingSessions: Map<string, Session>
   selectedSessionId: string | null
+  selectedHibernatingSessionId: string | null
   hasLoaded: boolean
   connectionStatus: ConnectionStatus
   connectionError: string | null
   connectionEpoch: number
   setSessions: (sessions: Session[]) => void
-  setAgentSessions: (active: AgentSession[], inactive: AgentSession[]) => void
+  setAgentSessions: (
+    active: AgentSession[],
+    hibernating: AgentSession[],
+    history: AgentSession[]
+  ) => void
+  setActiveAgentSessions: (active: AgentSession[]) => void
   setHostStatuses: (hosts: HostStatus[]) => void
   updateSession: (session: Session) => void
   setSelectedSessionId: (sessionId: string | null) => void
+  setSelectedHibernatingSessionId: (sessionId: string | null) => void
   setConnectionStatus: (status: ConnectionStatus) => void
   setConnectionError: (error: string | null) => void
   setConnectionState: (status: ConnectionStatus, error: string | null, epoch: number) => void
@@ -80,14 +88,24 @@ interface SessionState {
   clearExitingSession: (sessionId: string) => void
 }
 
+function normalizePersistedSelectedId(value: unknown): string | null {
+  return typeof value === 'string' && value.length > 0 ? value : null
+}
+
+function normalizeAgentSessionList(value: unknown): AgentSession[] {
+  return Array.isArray(value) ? value : []
+}
+
 export const useSessionStore = create<SessionState>()(
   persist(
     (set, get) => ({
       sessions: [],
-      agentSessions: { active: [], inactive: [] },
+      agentSessions: { active: [], hibernating: [], history: [] },
+      agentSessionsEpoch: -1,
       hostStatuses: [],
       exitingSessions: new Map(),
       selectedSessionId: null,
+      selectedHibernatingSessionId: null,
       hasLoaded: false,
       connectionStatus: 'connecting',
       connectionError: null,
@@ -98,6 +116,7 @@ export const useSessionStore = create<SessionState>()(
       setSessions: (sessions) => {
         const state = get()
         const selected = state.selectedSessionId
+        const selectedHibernating = state.selectedHibernatingSessionId
         const currentSessions = state.sessions
         const exitingSessions = state.exitingSessions
 
@@ -120,14 +139,18 @@ export const useSessionStore = create<SessionState>()(
           selected !== null &&
           !sessions.some((session) => session.id === selected)
         ) {
-          // Auto-select first session (by sort order) when current one is deleted
-          const { sessionSortMode, sessionSortDirection } =
-            useSettingsStore.getState()
-          const sorted = sortSessions(sessions, {
-            mode: sessionSortMode,
-            direction: sessionSortDirection,
-          })
-          newSelectedId = sorted[0]?.id ?? null
+          if (selectedHibernating === null) {
+            // Auto-select first session (by sort order) when current one is deleted
+            const { sessionSortMode, sessionSortDirection } =
+              useSettingsStore.getState()
+            const sorted = sortSessions(sessions, {
+              mode: sessionSortMode,
+              direction: sessionSortDirection,
+            })
+            newSelectedId = sorted[0]?.id ?? null
+          } else {
+            newSelectedId = null
+          }
         }
 
         // Only update exitingSessions if there are newly removed sessions
@@ -150,10 +173,34 @@ export const useSessionStore = create<SessionState>()(
           })
         }
       },
-      setAgentSessions: (active, inactive) =>
-        set({
-          agentSessions: { active, inactive },
+      setAgentSessions: (active, hibernating, history) =>
+        set((state) => {
+          const nextAgentSessions = {
+            active: normalizeAgentSessionList(active),
+            hibernating: normalizeAgentSessionList(hibernating),
+            history: normalizeAgentSessionList(history),
+          }
+
+          return {
+            agentSessions: nextAgentSessions,
+            agentSessionsEpoch: state.connectionEpoch,
+            selectedHibernatingSessionId:
+              state.selectedHibernatingSessionId &&
+              !nextAgentSessions.hibernating.some(
+                (session) => session.sessionId === state.selectedHibernatingSessionId
+              )
+                ? null
+                : state.selectedHibernatingSessionId,
+          }
         }),
+      setActiveAgentSessions: (active) =>
+        set((state) => ({
+          agentSessions: {
+            active: normalizeAgentSessionList(active),
+            hibernating: state.agentSessions.hibernating,
+            history: state.agentSessions.history,
+          },
+        })),
       setHostStatuses: (hosts) => set({ hostStatuses: hosts }),
       updateSession: (session) =>
         set((state) => ({
@@ -161,7 +208,16 @@ export const useSessionStore = create<SessionState>()(
             existing.id === session.id ? session : existing
           ),
         })),
-      setSelectedSessionId: (sessionId) => set({ selectedSessionId: sessionId }),
+      setSelectedSessionId: (sessionId) =>
+        set({
+          selectedSessionId: sessionId,
+          ...(sessionId !== null ? { selectedHibernatingSessionId: null } : {}),
+        }),
+      setSelectedHibernatingSessionId: (sessionId) =>
+        set({
+          selectedHibernatingSessionId: sessionId,
+          ...(sessionId !== null ? { selectedSessionId: null } : {}),
+        }),
       setConnectionStatus: (status) => set({ connectionStatus: status }),
       setConnectionError: (error) => set({ connectionError: error }),
       setConnectionState: (status, error, epoch) => set({ connectionStatus: status, connectionError: error, connectionEpoch: epoch }),
@@ -185,7 +241,24 @@ export const useSessionStore = create<SessionState>()(
     {
       name: SESSION_PERSIST_KEY,
       storage: createJSONStorage(() => tabStorage),
-      partialize: (state) => ({ selectedSessionId: state.selectedSessionId }),
+      partialize: (state) => ({
+        selectedSessionId: state.selectedSessionId,
+        selectedHibernatingSessionId: state.selectedHibernatingSessionId,
+      }),
+      merge: (persistedState, currentState) => {
+        const state = persistedState as
+          | (Partial<SessionState> & { selectedSleepingSessionId?: unknown })
+          | undefined
+        const persistedHibernatingSelection =
+          state?.selectedHibernatingSessionId ?? state?.selectedSleepingSessionId
+        return {
+          ...currentState,
+          selectedSessionId: normalizePersistedSelectedId(state?.selectedSessionId),
+          selectedHibernatingSessionId: normalizePersistedSelectedId(
+            persistedHibernatingSelection
+          ),
+        }
+      },
     }
   )
 )

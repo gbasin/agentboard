@@ -22,7 +22,7 @@ describe('ProjectFilterDropdown', () => {
     })
     expect(filterButton.props.title).toBe('All Projects')
 
-    const labelSpan = renderer.root.findByProps({ className: 'truncate' })
+    const labelSpan = renderer.root.findByProps({ className: 'truncate leading-none' })
     expect(labelSpan.children).toEqual(['All Projects'])
 
     act(() => {

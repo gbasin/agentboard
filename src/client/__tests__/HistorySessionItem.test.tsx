@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import TestRenderer, { act } from 'react-test-renderer'
 import type { AgentSession } from '@shared/types'
-import InactiveSessionItem from '../components/InactiveSessionItem'
+import HistorySessionItem from '../components/HistorySessionItem'
 
 const baseSession: AgentSession = {
   sessionId: 'abcdef123456',
@@ -14,12 +14,12 @@ const baseSession: AgentSession = {
   isActive: false,
 }
 
-describe('InactiveSessionItem', () => {
+describe('HistorySessionItem', () => {
   test('renders display name and session id prefix', () => {
     let renderer!: TestRenderer.ReactTestRenderer
     act(() => {
       renderer = TestRenderer.create(
-        <InactiveSessionItem
+        <HistorySessionItem
           session={baseSession}
           showSessionIdPrefix
           showProjectName
@@ -46,7 +46,7 @@ describe('InactiveSessionItem', () => {
 
     act(() => {
       renderer = TestRenderer.create(
-        <InactiveSessionItem
+        <HistorySessionItem
           session={{ ...baseSession, projectPath: '', displayName: '' }}
           showSessionIdPrefix={false}
           showProjectName={false}
@@ -88,7 +88,7 @@ describe('InactiveSessionItem', () => {
 
     const resumeButton = renderer.root
       .findAllByType('button')
-      .find((button) => button.props.title === 'Resume directly')
+      .find((button) => button.props.title === 'Wake directly')
 
     if (!resumeButton) {
       throw new Error('Expected resume button')

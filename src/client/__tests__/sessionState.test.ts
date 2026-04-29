@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
-import type { Session } from '@shared/types'
+import type { AgentSession, Session } from '@shared/types'
 import { useSessionStore } from '../stores/sessionStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { sortSessions } from '../utils/sessions'
@@ -19,11 +19,28 @@ function makeSession(overrides: Partial<Session> = {}): Session {
   return { ...baseSession, ...overrides }
 }
 
+function makeAgentSession(overrides: Partial<AgentSession> = {}): AgentSession {
+  return {
+    sessionId: 'agent-1',
+    logFilePath: '/tmp/agent-1.jsonl',
+    projectPath: '/tmp/project',
+    agentType: 'claude',
+    displayName: 'agent-1',
+    createdAt: '2024-01-01T00:00:00.000Z',
+    lastActivityAt: '2024-01-01T00:00:00.000Z',
+    isActive: false,
+    isPinned: false,
+    ...overrides,
+  }
+}
+
 beforeEach(() => {
   useSessionStore.setState({
     sessions: [],
-    agentSessions: { active: [], inactive: [] },
+    agentSessions: { active: [], hibernating: [], history: [] },
+    agentSessionsEpoch: -1,
     selectedSessionId: null,
+    selectedHibernatingSessionId: null,
     hasLoaded: false,
     connectionStatus: 'connecting',
     connectionError: null,
@@ -187,6 +204,79 @@ describe('useSessionStore', () => {
   test('setSelectedSessionId updates selection', () => {
     useSessionStore.getState().setSelectedSessionId('session-1')
     expect(useSessionStore.getState().selectedSessionId).toBe('session-1')
+  })
+
+  test('setAgentSessions stores hibernating sessions and clears stale hibernating selection', () => {
+    useSessionStore.setState({ selectedHibernatingSessionId: 'hibernating-1' })
+
+    useSessionStore.getState().setAgentSessions(
+      [makeAgentSession({ sessionId: 'active-1', isActive: true })],
+      [makeAgentSession({ sessionId: 'hibernating-1', isPinned: true })],
+      [makeAgentSession({ sessionId: 'history-1' })]
+    )
+
+    let state = useSessionStore.getState()
+    expect(state.agentSessions.hibernating.map((session) => session.sessionId)).toEqual([
+      'hibernating-1',
+    ])
+    expect(state.selectedHibernatingSessionId).toBe('hibernating-1')
+
+    useSessionStore.getState().setAgentSessions(
+      [makeAgentSession({ sessionId: 'active-1', isActive: true })],
+      [],
+      [makeAgentSession({ sessionId: 'history-1' })]
+    )
+
+    state = useSessionStore.getState()
+    expect(state.agentSessions.hibernating).toEqual([])
+    expect(state.selectedHibernatingSessionId).toBeNull()
+  })
+
+  test('setActiveAgentSessions updates active sessions without clearing hibernating selection', () => {
+    useSessionStore.setState({
+      selectedHibernatingSessionId: 'hibernating-1',
+      agentSessionsEpoch: 0,
+      agentSessions: {
+        active: [makeAgentSession({ sessionId: 'active-old', isActive: true })],
+        hibernating: [],
+        history: [makeAgentSession({ sessionId: 'history-1' })],
+      },
+    })
+
+    useSessionStore.getState().setActiveAgentSessions([
+      makeAgentSession({ sessionId: 'active-new', isActive: true }),
+    ])
+
+    const state = useSessionStore.getState()
+    expect(state.selectedHibernatingSessionId).toBe('hibernating-1')
+    expect(state.agentSessions.active.map((session) => session.sessionId)).toEqual([
+      'active-new',
+    ])
+    expect(state.agentSessions.history.map((session) => session.sessionId)).toEqual([
+      'history-1',
+    ])
+  })
+
+  test('persist merge ignores legacy stored agent session shape', () => {
+    const merge = useSessionStore.persist.getOptions().merge
+    if (!merge) {
+      throw new Error('Expected persist merge to be configured')
+    }
+
+    const merged = merge(
+      {
+        sessions: [makeSession({ id: 'legacy-session' })],
+        agentSessions: { active: [], history: [] },
+        selectedSessionId: 'legacy-live',
+        selectedHibernatingSessionId: 'legacy-hibernating',
+      },
+      useSessionStore.getState()
+    )
+
+    expect(merged.sessions).toEqual([])
+    expect(merged.agentSessions).toEqual({ active: [], hibernating: [], history: [] })
+    expect(merged.selectedSessionId).toBe('legacy-live')
+    expect(merged.selectedHibernatingSessionId).toBe('legacy-hibernating')
   })
 
   test('setSessions applies lastActivity-only updates', () => {

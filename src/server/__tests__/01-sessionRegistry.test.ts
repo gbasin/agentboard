@@ -94,9 +94,9 @@ describe('SessionRegistry', () => {
     expect(updates).toHaveLength(0)
   })
 
-  test('replaceSessions skips session emit when data is unchanged', () => {
-    const registry = new SessionRegistry()
-    const sessionsEvents: Session[][] = []
+	  test('replaceSessions skips session emit when data is unchanged', () => {
+	    const registry = new SessionRegistry()
+	    const sessionsEvents: Session[][] = []
 
     registry.on('sessions', (sessions) => sessionsEvents.push(sessions))
 
@@ -104,31 +104,63 @@ describe('SessionRegistry', () => {
     registry.replaceSessions([session])
     registry.replaceSessions([session])
 
-    expect(sessionsEvents).toHaveLength(1)
-  })
+	    expect(sessionsEvents).toHaveLength(1)
+	  })
 
-  test('setAgentSessions emits only agent-sessions-active when only active sessions change', () => {
+	  test('replaceSessions emits when window ownership fields change', () => {
+	    const registry = new SessionRegistry()
+	    const sessionsEvents: Session[][] = []
+
+	    registry.on('sessions', (sessions) => sessionsEvents.push(sessions))
+
+	    const session = makeSession({ id: 'alpha' })
+	    registry.replaceSessions([session])
+	    sessionsEvents.length = 0
+
+	    registry.replaceSessions([
+	      makeSession({
+	        id: 'alpha',
+	        tmuxWindow: 'agentboard:2',
+	        source: 'external',
+	      }),
+	    ])
+
+	    expect(sessionsEvents).toHaveLength(1)
+	    expect(sessionsEvents[0][0]).toMatchObject({
+	      id: 'alpha',
+	      tmuxWindow: 'agentboard:2',
+	      source: 'external',
+	    })
+	  })
+
+	  test('setAgentSessions emits only agent-sessions-active when only active sessions change', () => {
     const registry = new SessionRegistry()
-    const fullEvents: Array<{ active: AgentSession[]; inactive: AgentSession[] }> = []
+    const fullEvents: Array<{
+      active: AgentSession[]
+      hibernating: AgentSession[]
+      history: AgentSession[]
+    }> = []
     const activeEvents: AgentSession[][] = []
 
     registry.on('agent-sessions', (payload) => fullEvents.push(payload))
     registry.on('agent-sessions-active', (active) => activeEvents.push(active))
 
-    const inactive = [makeAgentSession({ sessionId: 'old', isActive: false })]
+    const history = [makeAgentSession({ sessionId: 'old', isActive: false })]
 
     // Initial set: both change from empty defaults
     registry.setAgentSessions(
       [makeAgentSession({ sessionId: 'a1' })],
-      inactive
+      [],
+      history
     )
     fullEvents.length = 0
     activeEvents.length = 0
 
-    // Change only active sessions, keep inactive identical
+    // Change only active sessions, keep history identical
     registry.setAgentSessions(
       [makeAgentSession({ sessionId: 'a2' })],
-      inactive
+      [],
+      history
     )
 
     expect(activeEvents).toHaveLength(1)
@@ -136,9 +168,13 @@ describe('SessionRegistry', () => {
     expect(fullEvents).toHaveLength(0)
   })
 
-  test('setAgentSessions emits only agent-sessions when only inactive sessions change', () => {
+  test('setAgentSessions emits only agent-sessions when only history sessions change', () => {
     const registry = new SessionRegistry()
-    const fullEvents: Array<{ active: AgentSession[]; inactive: AgentSession[] }> = []
+    const fullEvents: Array<{
+      active: AgentSession[]
+      hibernating: AgentSession[]
+      history: AgentSession[]
+    }> = []
     const activeEvents: AgentSession[][] = []
 
     registry.on('agent-sessions', (payload) => fullEvents.push(payload))
@@ -149,26 +185,32 @@ describe('SessionRegistry', () => {
     // Initial set
     registry.setAgentSessions(
       active,
+      [],
       [makeAgentSession({ sessionId: 'old', isActive: false })]
     )
     fullEvents.length = 0
     activeEvents.length = 0
 
-    // Change only inactive sessions, keep active identical
+    // Change only history sessions, keep active identical
     registry.setAgentSessions(
       active,
-      [makeAgentSession({ sessionId: 'new-inactive', isActive: false })]
+      [],
+      [makeAgentSession({ sessionId: 'new-history', isActive: false })]
     )
 
     expect(fullEvents).toHaveLength(1)
-    expect(fullEvents[0].inactive[0].sessionId).toBe('new-inactive')
+    expect(fullEvents[0].history[0].sessionId).toBe('new-history')
     // active did not change, so no active-only event
     expect(activeEvents).toHaveLength(0)
   })
 
-  test('setAgentSessions emits both events when both active and inactive change', () => {
+  test('setAgentSessions emits both events when both active and history change', () => {
     const registry = new SessionRegistry()
-    const fullEvents: Array<{ active: AgentSession[]; inactive: AgentSession[] }> = []
+    const fullEvents: Array<{
+      active: AgentSession[]
+      hibernating: AgentSession[]
+      history: AgentSession[]
+    }> = []
     const activeEvents: AgentSession[][] = []
 
     registry.on('agent-sessions', (payload) => fullEvents.push(payload))
@@ -177,14 +219,16 @@ describe('SessionRegistry', () => {
     // Initial set
     registry.setAgentSessions(
       [makeAgentSession({ sessionId: 'a1' })],
+      [],
       [makeAgentSession({ sessionId: 'i1', isActive: false })]
     )
     fullEvents.length = 0
     activeEvents.length = 0
 
-    // Change both active and inactive
+    // Change both active and history
     registry.setAgentSessions(
       [makeAgentSession({ sessionId: 'a2' })],
+      [],
       [makeAgentSession({ sessionId: 'i2', isActive: false })]
     )
 
@@ -192,33 +236,67 @@ describe('SessionRegistry', () => {
     expect(activeEvents[0][0].sessionId).toBe('a2')
     expect(fullEvents).toHaveLength(1)
     expect(fullEvents[0].active[0].sessionId).toBe('a2')
-    expect(fullEvents[0].inactive[0].sessionId).toBe('i2')
+    expect(fullEvents[0].history[0].sessionId).toBe('i2')
   })
 
   test('setAgentSessions emits nothing when nothing changes', () => {
     const registry = new SessionRegistry()
-    const fullEvents: Array<{ active: AgentSession[]; inactive: AgentSession[] }> = []
+    const fullEvents: Array<{
+      active: AgentSession[]
+      hibernating: AgentSession[]
+      history: AgentSession[]
+    }> = []
     const activeEvents: AgentSession[][] = []
 
     registry.on('agent-sessions', (payload) => fullEvents.push(payload))
     registry.on('agent-sessions-active', (active) => activeEvents.push(active))
 
     const active = [makeAgentSession({ sessionId: 'a1' })]
-    const inactive = [makeAgentSession({ sessionId: 'i1', isActive: false })]
+    const history = [makeAgentSession({ sessionId: 'i1', isActive: false })]
 
     // Initial set
-    registry.setAgentSessions(active, inactive)
+    registry.setAgentSessions(active, [], history)
     fullEvents.length = 0
     activeEvents.length = 0
 
     // Same data again
     registry.setAgentSessions(
       [makeAgentSession({ sessionId: 'a1' })],
+      [],
       [makeAgentSession({ sessionId: 'i1', isActive: false })]
     )
 
     expect(activeEvents).toHaveLength(0)
     expect(fullEvents).toHaveLength(0)
+  })
+
+  test('setAgentSessions emits full payload when hibernating sessions change', () => {
+    const registry = new SessionRegistry()
+    const fullEvents: Array<{
+      active: AgentSession[]
+      hibernating: AgentSession[]
+      history: AgentSession[]
+    }> = []
+    const activeEvents: AgentSession[][] = []
+
+    registry.on('agent-sessions', (payload) => fullEvents.push(payload))
+    registry.on('agent-sessions-active', (active) => activeEvents.push(active))
+
+    const active = [makeAgentSession({ sessionId: 'a1' })]
+    const hibernating = [makeAgentSession({ sessionId: 's1', isActive: false, isPinned: true })]
+    registry.setAgentSessions(active, hibernating, [])
+    fullEvents.length = 0
+    activeEvents.length = 0
+
+    registry.setAgentSessions(
+      active,
+      [makeAgentSession({ sessionId: 's2', isActive: false, isPinned: true })],
+      []
+    )
+
+    expect(activeEvents).toHaveLength(0)
+    expect(fullEvents).toHaveLength(1)
+    expect(fullEvents[0].hibernating[0]?.sessionId).toBe('s2')
   })
 
   test('agentSessionsEqual correctly compares all 12 fields of AgentSession', () => {
@@ -243,11 +321,11 @@ describe('SessionRegistry', () => {
     })
 
     // Establish baseline
-    registry.setAgentSessions([base], [])
+    registry.setAgentSessions([base], [], [])
     activeEvents.length = 0
 
     // Identical copy should NOT emit
-    registry.setAgentSessions([{ ...base }], [])
+    registry.setAgentSessions([{ ...base }], [], [])
     expect(activeEvents).toHaveLength(0)
 
     // Each field change should emit. Test all 12 fields one at a time.
@@ -268,11 +346,11 @@ describe('SessionRegistry', () => {
 
     for (const change of fieldChanges) {
       // Reset to baseline
-      registry.setAgentSessions([base], [])
+      registry.setAgentSessions([base], [], [])
       activeEvents.length = 0
 
       // Apply single field change
-      registry.setAgentSessions([{ ...base, ...change }], [])
+      registry.setAgentSessions([{ ...base, ...change }], [], [])
       expect(activeEvents).toHaveLength(1)
     }
   })

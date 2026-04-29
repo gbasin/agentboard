@@ -22,6 +22,7 @@ const ORIGINAL_ENV = {
   CODEX_HOME: process.env.CODEX_HOME,
   CLAUDE_RESUME_CMD: process.env.CLAUDE_RESUME_CMD,
   CODEX_RESUME_CMD: process.env.CODEX_RESUME_CMD,
+  PI_RESUME_CMD: process.env.PI_RESUME_CMD,
   AGENTBOARD_HOST: process.env.AGENTBOARD_HOST,
   AGENTBOARD_REMOTE_HOSTS: process.env.AGENTBOARD_REMOTE_HOSTS,
   AGENTBOARD_REMOTE_POLL_MS: process.env.AGENTBOARD_REMOTE_POLL_MS,
@@ -70,6 +71,7 @@ async function loadConfig(tag: string) {
     codexHomeDir: string
     claudeResumeCmd: string
     codexResumeCmd: string
+    piResumeCmd: string
     hostLabel: string
     remoteHosts: string[]
     remotePollMs: number
@@ -111,6 +113,7 @@ describe('config', () => {
     expect(config.logWatchMode).toBe('watch')
     expect(config.claudeResumeCmd).toBe('claude --resume {sessionId}')
     expect(config.codexResumeCmd).toBe('codex resume {sessionId}')
+    expect(config.piResumeCmd).toBe('pi --session {logFilePath}')
     expect(config.hostLabel).toBe(os.hostname())
     expect(config.remoteHosts).toEqual([])
     expect(config.remotePollMs).toBe(2000)
@@ -143,6 +146,7 @@ describe('config', () => {
     process.env.CODEX_HOME = '/tmp/codex'
     process.env.CLAUDE_RESUME_CMD = 'claude --resume={sessionId}'
     process.env.CODEX_RESUME_CMD = 'codex --resume={sessionId}'
+    process.env.PI_RESUME_CMD = 'pi --session={logFilePath}'
     process.env.AGENTBOARD_HOST = 'blade'
     process.env.AGENTBOARD_REMOTE_HOSTS = 'mba,carbon,worm'
     process.env.AGENTBOARD_REMOTE_POLL_MS = '12000'
@@ -174,6 +178,7 @@ describe('config', () => {
     expect(config.codexHomeDir).toBe('/tmp/codex')
     expect(config.claudeResumeCmd).toBe('claude --resume={sessionId}')
     expect(config.codexResumeCmd).toBe('codex --resume={sessionId}')
+    expect(config.piResumeCmd).toBe('pi --session={logFilePath}')
     expect(config.hostLabel).toBe('blade')
     expect(config.remoteHosts).toEqual(['mba', 'carbon', 'worm'])
     expect(config.remotePollMs).toBe(12000)

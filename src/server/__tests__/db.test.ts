@@ -21,6 +21,7 @@ function makeSession(overrides: Partial<{
   currentWindow: string | null
   isPinned: boolean
   lastResumeError: string | null
+  wakeStartedAt: string | null
   lastKnownLogSize: number | null
   isCodexExec: boolean
   launchCommand: string | null
@@ -38,6 +39,7 @@ function makeSession(overrides: Partial<{
     currentWindow: 'agentboard:1',
     isPinned: false,
     lastResumeError: null,
+    wakeStartedAt: null,
     lastKnownLogSize: null,
     isCodexExec: false,
     launchCommand: null,
@@ -75,48 +77,94 @@ describe('db', () => {
     expect(updated?.currentWindow).toBeNull()
 
     const active = db.getActiveSessions()
-    const inactive = db.getInactiveSessions()
+    const history = db.getHistorySessions()
     expect(active).toHaveLength(0)
-    expect(inactive).toHaveLength(1)
+    expect(history).toHaveLength(1)
 
     const orphaned = db.orphanSession(session.sessionId)
     expect(orphaned?.currentWindow).toBeNull()
   })
 
-  test('setPinned updates is_pinned flag', () => {
+  test('stores claude-rp agent sessions', () => {
+    const inserted = db.insertSession(makeSession({
+      sessionId: 'claude-rp-session',
+      logFilePath: '/tmp/claude-rp-session.jsonl',
+      agentType: 'claude-rp',
+      currentWindow: null,
+    }))
+
+    expect(inserted.agentType).toBe('claude-rp')
+    expect(db.getSessionById('claude-rp-session')?.agentType).toBe(
+      'claude-rp'
+    )
+  })
+
+  test('enforces one active session per tmux window', () => {
+    db.insertSession(makeSession({
+      sessionId: 'active-a',
+      logFilePath: '/tmp/active-a.jsonl',
+      currentWindow: 'agentboard:unique',
+    }))
+
+    expect(() =>
+      db.insertSession(makeSession({
+        sessionId: 'active-b',
+        logFilePath: '/tmp/active-b.jsonl',
+        currentWindow: 'agentboard:unique',
+      }))
+    ).toThrow()
+
+    db.insertSession(makeSession({
+      sessionId: 'history-a',
+      logFilePath: '/tmp/history-a.jsonl',
+      currentWindow: null,
+    }))
+    db.insertSession(makeSession({
+      sessionId: 'history-b',
+      logFilePath: '/tmp/history-b.jsonl',
+      currentWindow: null,
+    }))
+
+    expect(db.getHistorySessions().map((session) => session.sessionId)).toEqual([
+      'history-a',
+      'history-b',
+    ])
+  })
+
+  test('setPinned updates hibernation marker flag', () => {
     const session = makeSession()
     db.insertSession(session)
 
-    // Initially not pinned
+    // Initially not marked for hibernation
     expect(db.getSessionById(session.sessionId)?.isPinned).toBe(false)
 
-    // Pin it
-    const pinned = db.setPinned(session.sessionId, true)
-    expect(pinned?.isPinned).toBe(true)
+    // Mark it for hibernation
+    const marked = db.setPinned(session.sessionId, true)
+    expect(marked?.isPinned).toBe(true)
     expect(db.getSessionById(session.sessionId)?.isPinned).toBe(true)
 
-    // Unpin it
-    const unpinned = db.setPinned(session.sessionId, false)
-    expect(unpinned?.isPinned).toBe(false)
+    // Clear the hibernation marker
+    const cleared = db.setPinned(session.sessionId, false)
+    expect(cleared?.isPinned).toBe(false)
     expect(db.getSessionById(session.sessionId)?.isPinned).toBe(false)
   })
 
-  test('getPinnedOrphaned returns pinned sessions without window', () => {
-    // Pinned + orphaned (should be returned)
+  test('getHibernatingSessions returns marked sessions without window', () => {
+    // Marked + orphaned (should be returned)
     db.insertSession(makeSession({
       sessionId: 'a',
       logFilePath: '/tmp/a.jsonl',
       isPinned: true,
       currentWindow: null,
     }))
-    // Pinned + active (should NOT be returned)
+    // Marked + active (should NOT be returned)
     db.insertSession(makeSession({
       sessionId: 'b',
       logFilePath: '/tmp/b.jsonl',
       isPinned: true,
       currentWindow: 'agentboard:1',
     }))
-    // Not pinned + orphaned (should NOT be returned)
+    // Unmarked + orphaned (should NOT be returned)
     db.insertSession(makeSession({
       sessionId: 'c',
       logFilePath: '/tmp/c.jsonl',
@@ -124,9 +172,66 @@ describe('db', () => {
       currentWindow: null,
     }))
 
-    const orphaned = db.getPinnedOrphaned()
-    expect(orphaned).toHaveLength(1)
-    expect(orphaned[0].sessionId).toBe('a')
+    const hibernating = db.getHibernatingSessions()
+    expect(hibernating).toHaveLength(1)
+    expect(hibernating[0].sessionId).toBe('a')
+  })
+
+  test('hibernating sessions are derived from marked sessions without windows', () => {
+    db.insertSession(makeSession({
+      sessionId: 'hibernating-one',
+      logFilePath: '/tmp/hibernating-one.jsonl',
+      currentWindow: null,
+      isPinned: true,
+    }))
+    db.insertSession(makeSession({
+      sessionId: 'history-one',
+      logFilePath: '/tmp/history-one.jsonl',
+      currentWindow: null,
+      isPinned: false,
+    }))
+
+    const hibernating = db.getHibernatingSessions()
+    const history = db.getHistorySessions()
+
+    expect(hibernating.map((session) => session.sessionId)).toEqual(['hibernating-one'])
+    expect(history.map((session) => session.sessionId)).toEqual(['history-one'])
+  })
+
+  test('orphanSession preserves hibernation marker state', () => {
+    db.insertSession(makeSession({
+      sessionId: 'marked-to-orphan',
+      logFilePath: '/tmp/marked-to-orphan.jsonl',
+      currentWindow: 'agentboard:9',
+      isPinned: true,
+    }))
+
+    const orphaned = db.orphanSession('marked-to-orphan')
+
+    expect(orphaned?.currentWindow).toBeNull()
+    expect(orphaned?.isPinned).toBe(true)
+    expect(db.getHibernatingSessions().map((session) => session.sessionId)).toEqual([
+      'marked-to-orphan',
+    ])
+    expect(db.getHistorySessions()).toEqual([])
+  })
+
+  test('orphanSession moves unmarked active sessions to history', () => {
+    db.insertSession(makeSession({
+      sessionId: 'unmarked-to-orphan',
+      logFilePath: '/tmp/unmarked-to-orphan.jsonl',
+      currentWindow: 'agentboard:10',
+      isPinned: false,
+    }))
+
+    const orphaned = db.orphanSession('unmarked-to-orphan')
+
+    expect(orphaned?.currentWindow).toBeNull()
+    expect(orphaned?.isPinned).toBe(false)
+    expect(db.getHibernatingSessions()).toEqual([])
+    expect(db.getHistorySessions().map((session) => session.sessionId)).toEqual([
+      'unmarked-to-orphan',
+    ])
   })
 
   test('displayNameExists returns true for existing names', () => {
@@ -194,6 +299,249 @@ describe('db', () => {
     fs.rmSync(tempDir, { recursive: true, force: true })
   })
 
+  test('migrates agent type constraint and preserves launchCommand during table rebuild', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentboard-'))
+    const dbPath = path.join(tempDir, 'agentboard.db')
+    const legacyDb = new SQLiteDatabase(dbPath)
+
+    legacyDb.exec(`
+      CREATE TABLE agent_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT UNIQUE,
+        log_file_path TEXT NOT NULL UNIQUE,
+        project_path TEXT,
+        slug TEXT,
+        agent_type TEXT NOT NULL CHECK (agent_type IN ('claude', 'codex')),
+        display_name TEXT,
+        created_at TEXT NOT NULL,
+        last_activity_at TEXT NOT NULL,
+        last_user_message TEXT,
+        current_window TEXT,
+        is_sleeping INTEGER NOT NULL DEFAULT 0,
+        is_pinned INTEGER NOT NULL DEFAULT 0,
+        last_resume_error TEXT,
+        last_known_log_size INTEGER,
+        is_codex_exec INTEGER NOT NULL DEFAULT 0,
+        launch_command TEXT
+      );
+    `)
+
+    legacyDb.exec(`
+      INSERT INTO agent_sessions (
+        session_id,
+        log_file_path,
+        project_path,
+        slug,
+        agent_type,
+        display_name,
+        created_at,
+        last_activity_at,
+        last_user_message,
+        current_window,
+        is_sleeping,
+        is_pinned,
+        last_resume_error,
+        last_known_log_size,
+        is_codex_exec,
+        launch_command
+      ) VALUES (
+        'legacy-launch-command',
+        '/tmp/legacy-launch-command.jsonl',
+        '/tmp/project',
+        null,
+        'claude',
+        'legacy',
+        '${now}',
+        '${now}',
+        'continue',
+        null,
+        0,
+        0,
+        null,
+        null,
+        0,
+        'codex --dangerously-bypass-approvals-and-sandbox'
+      );
+    `)
+    legacyDb.close()
+
+    const migrated = initDatabase({ path: dbPath })
+    const session = migrated.getSessionById('legacy-launch-command')
+    const tableInfo = migrated.db
+      .prepare(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='agent_sessions'"
+      )
+      .get() as { sql: string } | undefined
+
+    expect(session?.launchCommand).toBe(
+      'codex --dangerously-bypass-approvals-and-sandbox'
+    )
+    expect(tableInfo?.sql).toContain("'pi'")
+    expect(tableInfo?.sql).toContain("'claude-rp'")
+    expect(
+      migrated.insertSession(makeSession({
+        sessionId: 'legacy-rp-session',
+        logFilePath: '/tmp/legacy-rp-session.jsonl',
+        agentType: 'claude-rp',
+        currentWindow: null,
+      })).agentType
+    ).toBe('claude-rp')
+
+    migrated.close()
+    fs.rmSync(tempDir, { recursive: true, force: true })
+  })
+
+  test('deduplicates current windows before creating unique index', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentboard-'))
+    const dbPath = path.join(tempDir, 'agentboard.db')
+    const legacyDb = new SQLiteDatabase(dbPath)
+    const older = new Date('2026-01-01T00:00:00.000Z').toISOString()
+    const newer = new Date('2026-01-02T00:00:00.000Z').toISOString()
+
+    legacyDb.exec(`
+      CREATE TABLE agent_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT UNIQUE,
+        log_file_path TEXT NOT NULL UNIQUE,
+        project_path TEXT,
+        slug TEXT,
+        agent_type TEXT NOT NULL CHECK (agent_type IN ('claude', 'claude-rp', 'codex', 'pi')),
+        display_name TEXT,
+        created_at TEXT NOT NULL,
+        last_activity_at TEXT NOT NULL,
+        last_user_message TEXT,
+        current_window TEXT,
+        is_pinned INTEGER NOT NULL DEFAULT 0,
+        last_resume_error TEXT,
+        last_known_log_size INTEGER,
+        is_codex_exec INTEGER NOT NULL DEFAULT 0,
+        launch_command TEXT
+      );
+    `)
+
+    legacyDb.exec(`
+      INSERT INTO agent_sessions (
+        session_id,
+        log_file_path,
+        project_path,
+        slug,
+        agent_type,
+        display_name,
+        created_at,
+        last_activity_at,
+        last_user_message,
+        current_window,
+        is_pinned,
+        last_resume_error,
+        last_known_log_size,
+        is_codex_exec,
+        launch_command
+      ) VALUES
+        ('older-dupe', '/tmp/older-dupe.jsonl', '/tmp/project', null, 'claude', 'older-dupe', '${older}', '${older}', null, 'agentboard:dupe', 1, null, null, 0, null),
+        ('newer-dupe', '/tmp/newer-dupe.jsonl', '/tmp/project', null, 'claude', 'newer-dupe', '${older}', '${newer}', null, 'agentboard:dupe', 0, null, null, 0, null);
+    `)
+    legacyDb.close()
+
+    const migrated = initDatabase({ path: dbPath })
+
+    expect(migrated.getSessionById('newer-dupe')).toMatchObject({
+      currentWindow: 'agentboard:dupe',
+      isPinned: false,
+    })
+    expect(migrated.getSessionById('older-dupe')).toMatchObject({
+      currentWindow: null,
+      isPinned: false,
+    })
+    expect(migrated.getHibernatingSessions()).toEqual([])
+    expect(() =>
+      migrated.insertSession(makeSession({
+        sessionId: 'post-migration-dupe',
+        logFilePath: '/tmp/post-migration-dupe.jsonl',
+        currentWindow: 'agentboard:dupe',
+      }))
+    ).toThrow()
+
+    migrated.close()
+    fs.rmSync(tempDir, { recursive: true, force: true })
+  })
+
+  test('migrates legacy sleeping flag into hibernating marker state', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentboard-'))
+    const dbPath = path.join(tempDir, 'agentboard.db')
+    const legacyDb = new SQLiteDatabase(dbPath)
+
+    legacyDb.exec(`
+      CREATE TABLE agent_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT UNIQUE,
+        log_file_path TEXT NOT NULL UNIQUE,
+        project_path TEXT,
+        slug TEXT,
+        agent_type TEXT NOT NULL CHECK (agent_type IN ('claude', 'codex', 'pi')),
+        display_name TEXT,
+        created_at TEXT NOT NULL,
+        last_activity_at TEXT NOT NULL,
+        last_user_message TEXT,
+        current_window TEXT,
+        is_sleeping INTEGER NOT NULL DEFAULT 0,
+        is_pinned INTEGER NOT NULL DEFAULT 0,
+        last_resume_error TEXT,
+        last_known_log_size INTEGER,
+        is_codex_exec INTEGER NOT NULL DEFAULT 0,
+        launch_command TEXT
+      );
+    `)
+
+    legacyDb.exec(`
+      INSERT INTO agent_sessions (
+        session_id,
+        log_file_path,
+        project_path,
+        slug,
+        agent_type,
+        display_name,
+        created_at,
+        last_activity_at,
+        last_user_message,
+        current_window,
+        is_sleeping,
+        is_pinned,
+        last_resume_error,
+        last_known_log_size,
+        is_codex_exec,
+        launch_command
+      ) VALUES
+        ('legacy-hibernating', '/tmp/legacy-hibernating.jsonl', '/tmp/project', null, 'claude', 'hibernating', '${now}', '${now}', null, null, 1, 0, null, null, 0, null),
+        ('legacy-history', '/tmp/legacy-history.jsonl', '/tmp/project', null, 'claude', 'history', '${now}', '${now}', null, null, 0, 0, null, null, 0, null);
+    `)
+    legacyDb.close()
+
+    const migrated = initDatabase({ path: dbPath })
+    const columns = migrated.db
+      .prepare('PRAGMA table_info(agent_sessions)')
+      .all() as Array<{ name?: string }>
+    const columnNames = columns.map((column) => String(column.name ?? ''))
+    const tableInfo = migrated.db
+      .prepare(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='agent_sessions'"
+      )
+      .get() as { sql: string } | undefined
+
+    expect(columnNames).not.toContain('is_sleeping')
+    expect(columnNames).not.toContain('last_resume_attempt_at')
+    expect(tableInfo?.sql).toContain("'claude-rp'")
+    expect(migrated.getSessionById('legacy-hibernating')?.isPinned).toBe(true)
+    expect(migrated.getHibernatingSessions().map((session) => session.sessionId)).toEqual([
+      'legacy-hibernating',
+    ])
+    expect(migrated.getHistorySessions().map((session) => session.sessionId)).toEqual([
+      'legacy-history',
+    ])
+
+    migrated.close()
+    fs.rmSync(tempDir, { recursive: true, force: true })
+  })
+
   test('launchCommand is stored and retrieved', () => {
     const session = makeSession({
       sessionId: 'launch-cmd-test',
@@ -216,6 +564,7 @@ describe('db', () => {
     const session2 = makeSession({
       sessionId: 'no-launch-cmd',
       logFilePath: '/tmp/no-launch-cmd.jsonl',
+      currentWindow: null,
       launchCommand: null,
     })
     const inserted2 = db.insertSession(session2)
@@ -250,7 +599,7 @@ describe('db', () => {
     expect(active[2].sessionId).toBe('zebra')
   })
 
-  test('getInactiveSessions returns results ordered by last_activity_at DESC with session_id tiebreaker', () => {
+  test('getHistorySessions returns results ordered by last_activity_at DESC with session_id tiebreaker', () => {
     const recent = '2026-01-02T00:00:00.000Z'
     const older = '2026-01-01T00:00:00.000Z'
 
@@ -278,16 +627,16 @@ describe('db', () => {
       lastActivityAt: recent,
     }))
 
-    const inactive = db.getInactiveSessions()
-    expect(inactive).toHaveLength(3)
+    const history = db.getHistorySessions()
+    expect(history).toHaveLength(3)
     // Most recent activity first
-    expect(inactive[0].sessionId).toBe('recent-one')
+    expect(history[0].sessionId).toBe('recent-one')
     // Same activity timestamp: alphabetical session_id tiebreaker
-    expect(inactive[1].sessionId).toBe('tie-alpha')
-    expect(inactive[2].sessionId).toBe('tie-zebra')
+    expect(history[1].sessionId).toBe('tie-alpha')
+    expect(history[2].sessionId).toBe('tie-zebra')
   })
 
-  test('getInactiveSessions with maxAgeHours also uses session_id tiebreaker', () => {
+  test('getHistorySessions with maxAgeHours also uses session_id tiebreaker', () => {
     const now = new Date()
     const recentTime = new Date(now.getTime() - 30 * 60 * 1000).toISOString() // 30 min ago
 
@@ -306,11 +655,11 @@ describe('db', () => {
       lastActivityAt: recentTime,
     }))
 
-    const inactive = db.getInactiveSessions({ maxAgeHours: 1 })
-    expect(inactive).toHaveLength(2)
+    const history = db.getHistorySessions({ maxAgeHours: 1 })
+    expect(history).toHaveLength(2)
     // Same timestamp: alphabetical session_id tiebreaker
-    expect(inactive[0].sessionId).toBe('age-alpha')
-    expect(inactive[1].sessionId).toBe('age-zebra')
+    expect(history[0].sessionId).toBe('age-alpha')
+    expect(history[1].sessionId).toBe('age-zebra')
   })
 
   test('app settings get/set', () => {
@@ -333,5 +682,31 @@ describe('db', () => {
     // Cleanup
     db.db.exec("DELETE FROM app_settings WHERE key = 'test_key'")
     db.db.exec("DELETE FROM app_settings WHERE key = 'another_key'")
+  })
+
+  test('wakeStartedAt is stored and cleared by window claim', () => {
+    const wakeStartedAt = '2026-01-01T00:01:00.000Z'
+    const inserted = db.insertSession(makeSession({
+      sessionId: 'session-wake-marker',
+      logFilePath: '/tmp/session-wake-marker.jsonl',
+      currentWindow: null,
+      isPinned: true,
+      wakeStartedAt,
+    }))
+
+    expect(inserted.wakeStartedAt).toBe(wakeStartedAt)
+
+    const claimed = db.claimCurrentWindow(
+      inserted.sessionId,
+      'agentboard:77',
+      {
+        wakeStartedAt: null,
+        lastResumeError: null,
+      }
+    )
+
+    expect(claimed?.currentWindow).toBe('agentboard:77')
+    expect(claimed?.wakeStartedAt).toBeNull()
+    expect(db.getSessionById(inserted.sessionId)?.wakeStartedAt).toBeNull()
   })
 })

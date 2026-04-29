@@ -15,9 +15,9 @@ Run your desktop/server, then connect from your phone or laptop over Tailscale/L
   - Touch scrolling
   - Virtual arrow keys / d-pad
   - Quick keys toolbar (ctrl, esc, etc.)
-- Out-of-the-box log tracking and matching for Claude, Codex, and Pi — auto-matches sessions to active tmux windows, with one-click restore for inactive sessions.
+- Out-of-the-box log tracking and matching for Claude, Codex, and Pi — auto-matches sessions to active tmux windows, with one-click Wake for Hibernating and History sessions.
 - Shows the last user prompt for each session, so you can remember what each agent is working on
-- Pin agent TUI sessions to auto-resume them when the server restarts (useful if your machine reboots or tmux dies)
+- Hibernate sessions to close their tmux window while keeping them visible across restarts for manual Wake
 
 ## How It Works
 
@@ -39,11 +39,12 @@ Run your desktop/server, then connect from your phone or laptop over Tailscale/L
 - **Session discovery** — polls local tmux windows and (optionally) remote hosts over SSH
 - **Status inference** — reads pane content and Claude/Codex JSONL logs to determine if each agent is *working*, *waiting for input*, or *asking for permission*
 - **Live terminal** — streams I/O through the server so you can interact with any session from any device
+- **Hibernating and History sessions** — keeps dormant agent sessions in the sidebar and wakes them on demand; startup does not auto-wake dormant sessions
 
 ### Desktop
-| Terminal | Sessions | Pinning |
+| Terminal | Sessions | Hibernating |
 | :---: | :---: | :---: |
-| <img src="assets/desktop.png" alt="Terminal" height="400"/> | <img src="assets/sessions.png" alt="Sessions" height="400"/> | <img src="assets/pins.png" alt="Pinning" height="400"/> |
+| <img src="assets/desktop.png" alt="Terminal" height="400"/> | <img src="assets/sessions.png" alt="Sessions" height="400"/> | <img src="assets/pins.png" alt="Hibernating" height="400"/> |
 
 ### Mobile
 | Terminal | Controls |
@@ -80,7 +81,7 @@ npx @gbasin/agentboard
 
 Then open `http://localhost:4040` (or `http://<your-machine>:4040` from another device).
 
-For persistent deployment on Linux, see [systemd/README.md](systemd/README.md).
+For persistent deployment, see [systemd/README.md](systemd/README.md) (Linux) or [launchd/README.md](launchd/README.md) (macOS).
 
 ### From source
 
@@ -100,7 +101,7 @@ bun run build
 bun run start
 ```
 
-For persistent deployment on Linux, see [systemd/README.md](systemd/README.md).
+For persistent deployment, see [systemd/README.md](systemd/README.md) (Linux) or [launchd/README.md](launchd/README.md) (macOS).
 
 ## Dependency Risk Scanner
 
@@ -180,7 +181,7 @@ AGENTBOARD_LOG_WATCH_MODE=watch
 
 All persistent data is stored in `~/.agentboard/`: session database (`agentboard.db`) and logs (`agentboard.log`). Override paths with `AGENTBOARD_DB_PATH` and `LOG_FILE`.
 
-`AGENTBOARD_INACTIVE_MAX_AGE_HOURS` limits inactive sessions shown in the UI to those with recent activity (default: 24 hours). Older sessions remain in the database but are not displayed or processed for orphan rematch.
+`AGENTBOARD_INACTIVE_MAX_AGE_HOURS` limits History sessions shown in the UI to those with recent activity (default: 24 hours). Older sessions remain in the database but are not displayed or processed for orphan rematch. The env var name is kept for compatibility.
 
 `AGENTBOARD_EXCLUDE_PROJECTS` filters out sessions from specific project directories (comma-separated). Use `<empty>` to exclude sessions with no project path. Useful for hiding automated/spam sessions.
 

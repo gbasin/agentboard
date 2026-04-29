@@ -1,20 +1,13 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import fs from 'node:fs/promises'
 import fsSync from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import type { Session } from '../../shared/types'
+import { handleMatchWorkerRequest } from '../logMatchWorker'
+import type { MatchWorkerRequest } from '../logMatchWorkerTypes'
 
 const messages: unknown[] = []
-const ctx = {
-  postMessage: (message: unknown) => {
-    messages.push(message)
-  },
-} as DedicatedWorkerGlobalScope
-
-const globalAny = globalThis as unknown as {
-  self?: DedicatedWorkerGlobalScope | undefined
-}
 
 const bunAny = Bun as typeof Bun & { spawnSync: typeof Bun.spawnSync }
 const originalSpawnSync = bunAny.spawnSync
@@ -138,15 +131,11 @@ function setTmuxOutput(target: string, content: string) {
   tmuxOutputs.set(target, content)
 }
 
-beforeAll(async () => {
-  globalAny.self = ctx
-  await import('../logMatchWorker')
-})
+function postRequest(request: MatchWorkerRequest) {
+  messages.push(handleMatchWorkerRequest(request))
+}
 
 afterAll(() => {
-  if (globalAny.self === ctx) {
-    globalAny.self = undefined
-  }
   bunAny.spawnSync = originalSpawnSync
   if (originalClaude) process.env.CLAUDE_CONFIG_DIR = originalClaude
   else delete process.env.CLAUDE_CONFIG_DIR
@@ -232,22 +221,20 @@ describe('logMatchWorker', () => {
       buildUserLogEntry('hello', { sessionId: 'session-1', cwd: '/tmp/alpha' })
     )
 
-    ctx.onmessage?.({
-      data: {
-        id: 'request-1',
-        windows: [baseSession],
-        maxLogsPerPoll: 5,
-        sessions: [
-          {
-            sessionId: 'session-1',
-            logFilePath: logPath,
-            currentWindow: 'agentboard:1',
-            lastActivityAt: new Date().toISOString(),
-          },
-        ],
-        scrollbackLines: 25,
-      },
-    } as MessageEvent)
+    postRequest({
+      id: 'request-1',
+      windows: [baseSession],
+      maxLogsPerPoll: 5,
+      sessions: [
+        {
+          sessionId: 'session-1',
+          logFilePath: logPath,
+          currentWindow: 'agentboard:1',
+          lastActivityAt: new Date().toISOString(),
+        },
+      ],
+      scrollbackLines: 25,
+    })
 
     expect(messages).toHaveLength(1)
     const response = messages[0] as Record<string, unknown>
@@ -270,15 +257,13 @@ describe('logMatchWorker', () => {
 
     setTmuxOutput('agentboard:1', buildPromptScrollback([message]))
 
-    ctx.onmessage?.({
-      data: {
-        id: 'request-2',
-        windows: [baseSession],
-        maxLogsPerPoll: 5,
-        sessions: [],
-        scrollbackLines: 25,
-      },
-    } as MessageEvent)
+    postRequest({
+      id: 'request-2',
+      windows: [baseSession],
+      maxLogsPerPoll: 5,
+      sessions: [],
+      scrollbackLines: 25,
+    })
 
     expect(messages).toHaveLength(1)
     const response = messages[0] as Record<string, unknown>
@@ -302,15 +287,13 @@ describe('logMatchWorker', () => {
       throw new Error('boom')
     }) as typeof Bun.spawnSync
 
-    ctx.onmessage?.({
-      data: {
-        id: 'request-3',
-        windows: [baseSession],
-        maxLogsPerPoll: 5,
-        sessions: [],
-        scrollbackLines: 25,
-      },
-    } as MessageEvent)
+    postRequest({
+      id: 'request-3',
+      windows: [baseSession],
+      maxLogsPerPoll: 5,
+      sessions: [],
+      scrollbackLines: 25,
+    })
 
     expect(messages).toHaveLength(1)
     const response = messages[0] as Record<string, unknown>
@@ -339,16 +322,14 @@ describe('logMatchWorker', () => {
       })
     )
 
-    ctx.onmessage?.({
-      data: {
-        id: 'request-prefiltered',
-        windows: [],
-        maxLogsPerPoll: 25,
-        sessions: [],
-        scrollbackLines: 25,
-        preFilteredPaths: [includedLogPath],
-      },
-    } as MessageEvent)
+    postRequest({
+      id: 'request-prefiltered',
+      windows: [],
+      maxLogsPerPoll: 25,
+      sessions: [],
+      scrollbackLines: 25,
+      preFilteredPaths: [includedLogPath],
+    })
 
     expect(messages).toHaveLength(1)
     const response = messages[0] as Record<string, unknown>
@@ -379,16 +360,14 @@ describe('logMatchWorker', () => {
       })
     )
 
-    ctx.onmessage?.({
-      data: {
-        id: 'request-empty-prefiltered',
-        windows: [],
-        maxLogsPerPoll: 25,
-        sessions: [],
-        scrollbackLines: 25,
-        preFilteredPaths: [],
-      },
-    } as MessageEvent)
+    postRequest({
+      id: 'request-empty-prefiltered',
+      windows: [],
+      maxLogsPerPoll: 25,
+      sessions: [],
+      scrollbackLines: 25,
+      preFilteredPaths: [],
+    })
 
     expect(messages).toHaveLength(1)
     const response = messages[0] as Record<string, unknown>

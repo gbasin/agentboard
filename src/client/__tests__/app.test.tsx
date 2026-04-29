@@ -158,8 +158,10 @@ beforeEach(() => {
 
   useSessionStore.setState({
     sessions: [],
-    agentSessions: { active: [], inactive: [] },
+    agentSessions: { active: [], hibernating: [], history: [] },
+    agentSessionsEpoch: -1,
     selectedSessionId: null,
+    selectedHibernatingSessionId: null,
     hasLoaded: false,
     connectionStatus: 'connected',
     connectionEpoch: 0,
@@ -167,6 +169,7 @@ beforeEach(() => {
   })
 
   useSettingsStore.setState({
+    projectFilters: [],
     sessionSortMode: 'created',
     sessionSortDirection: 'asc',
     showProjectName: true,
@@ -190,6 +193,7 @@ afterEach(() => {
   globalAny.ResizeObserver = originalResizeObserver
   globalAny.localStorage = originalLocalStorage
   useSettingsStore.setState({
+    projectFilters: [],
     sessionSortMode: 'created',
     sessionSortDirection: 'desc',
     showProjectName: true,
@@ -355,27 +359,38 @@ describe('App', () => {
     expect(useSessionStore.getState().sessions).toHaveLength(0)
   })
 
-  test('agent-sessions-active message updates active sessions while preserving inactive', () => {
-    const existingInactive: AgentSession[] = [
+  test('agent-sessions-active message updates active sessions while preserving hibernating and history', () => {
+    const existingHibernating: AgentSession[] = [
       {
         ...baseAgentSession,
-        sessionId: 'inactive-1',
+        sessionId: 'hibernating-1',
         isActive: false,
-        displayName: 'old-inactive',
+        isPinned: true,
+        displayName: 'hibernating-one',
+      },
+    ]
+    const existingHistory: AgentSession[] = [
+      {
+        ...baseAgentSession,
+        sessionId: 'history-1',
+        isActive: false,
+        displayName: 'old-history',
       },
       {
         ...baseAgentSession,
-        sessionId: 'inactive-2',
+        sessionId: 'history-2',
         isActive: false,
-        displayName: 'another-inactive',
+        displayName: 'another-history',
       },
     ]
 
-    // Pre-populate the store with both active and inactive agent sessions
+    // Pre-populate the store with both active and history agent sessions
     useSessionStore.setState({
+      agentSessionsEpoch: 0,
       agentSessions: {
         active: [{ ...baseAgentSession, sessionId: 'old-active' }],
-        inactive: existingInactive,
+        hibernating: existingHibernating,
+        history: existingHistory,
       },
     })
 
@@ -406,10 +421,563 @@ describe('App', () => {
     expect(state.active[0].sessionId).toBe('new-active-1')
     expect(state.active[1].sessionId).toBe('new-active-2')
 
-    // Inactive sessions should be preserved from the store
-    expect(state.inactive).toHaveLength(2)
-    expect(state.inactive[0].sessionId).toBe('inactive-1')
-    expect(state.inactive[1].sessionId).toBe('inactive-2')
+    // Hibernating and history sessions should be preserved from the store
+    expect(state.hibernating).toHaveLength(1)
+    expect(state.hibernating[0].sessionId).toBe('hibernating-1')
+    expect(state.history).toHaveLength(2)
+    expect(state.history[0].sessionId).toBe('history-1')
+    expect(state.history[1].sessionId).toBe('history-2')
+  })
+
+  test('hibernate result selects the hibernating session and wake result restores the live session', () => {
+    useSessionStore.setState({
+      sessions: [baseSession],
+      selectedSessionId: baseSession.id,
+      selectedHibernatingSessionId: null,
+      agentSessionsEpoch: 0,
+      agentSessions: {
+        active: [{ ...baseAgentSession, sessionId: 'agent-live', isActive: true }],
+        hibernating: [],
+        history: [],
+      },
+      hasLoaded: true,
+    })
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<App />)
+    })
+    activeRenderer = renderer
+
+    if (!subscribeListener) {
+      throw new Error('Expected websocket subscription')
+    }
+
+    const hibernatingSession: AgentSession = {
+      ...baseAgentSession,
+      sessionId: 'agent-live',
+      displayName: 'sleepy',
+      isActive: false,
+      isPinned: true,
+    }
+
+    act(() => {
+      subscribeListener?.({
+        type: 'agent-sessions',
+        active: [],
+        hibernating: [hibernatingSession],
+        history: [],
+      })
+      subscribeListener?.({
+        type: 'session-hibernate-result',
+        sessionId: hibernatingSession.sessionId,
+        ok: true,
+      })
+    })
+
+    let state = useSessionStore.getState()
+    expect(state.selectedSessionId).toBeNull()
+    expect(state.selectedHibernatingSessionId).toBe(hibernatingSession.sessionId)
+
+    const resumedSession: Session = {
+      ...baseSession,
+      id: 'session-woken',
+      agentSessionId: hibernatingSession.sessionId,
+      agentSessionName: hibernatingSession.displayName,
+    }
+
+    act(() => {
+      subscribeListener?.({
+        type: 'session-wake-result',
+        sessionId: hibernatingSession.sessionId,
+        ok: true,
+        session: resumedSession,
+      })
+    })
+
+    state = useSessionStore.getState()
+    expect(state.selectedHibernatingSessionId).toBeNull()
+    expect(state.selectedSessionId).toBe(resumedSession.id)
+  })
+
+  test('hibernate result payload renders the hibernating view before the full snapshot arrives', () => {
+    const hibernatingSessionId = 'hibernating-immediate'
+    const liveSession: Session = {
+      ...baseSession,
+      id: 'live-immediate',
+      agentSessionId: hibernatingSessionId,
+      agentSessionName: 'sleep now',
+      logFilePath: '/tmp/hibernating-immediate.jsonl',
+    }
+    const hibernatingSession: AgentSession = {
+      ...baseAgentSession,
+      sessionId: hibernatingSessionId,
+      displayName: 'sleep now',
+      logFilePath: '/tmp/hibernating-immediate.jsonl',
+      isActive: false,
+      isPinned: true,
+    }
+
+    useSessionStore.setState({
+      sessions: [liveSession],
+      selectedSessionId: liveSession.id,
+      selectedHibernatingSessionId: null,
+      agentSessionsEpoch: 0,
+      agentSessions: {
+        active: [{ ...baseAgentSession, sessionId: hibernatingSessionId, isActive: true }],
+        hibernating: [],
+        history: [],
+      },
+      hasLoaded: true,
+    })
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<App />)
+    })
+    activeRenderer = renderer
+
+    if (!subscribeListener) {
+      throw new Error('Expected websocket subscription')
+    }
+
+    act(() => {
+      subscribeListener?.({
+        type: 'session-hibernate-result',
+        sessionId: hibernatingSessionId,
+        ok: true,
+        session: hibernatingSession,
+      })
+    })
+
+    expect(useSessionStore.getState().selectedHibernatingSessionId).toBe(
+      hibernatingSessionId
+    )
+    expect(
+      renderer.root
+        .findAllByType('button')
+        .some((button) => button.props.children === 'Wake Session')
+    ).toBe(true)
+  })
+
+  test('keeps hibernating selection through active-only refreshes until the full hibernating snapshot arrives', () => {
+    const hibernatingSessionId = 'hibernating-pending'
+    const liveSession: Session = {
+      ...baseSession,
+      id: 'live-before-sleep',
+      agentSessionId: hibernatingSessionId,
+      agentSessionName: 'sleep me',
+      logFilePath: '/tmp/hibernating-pending.jsonl',
+    }
+
+    useSessionStore.setState({
+      sessions: [liveSession],
+      selectedSessionId: liveSession.id,
+      selectedHibernatingSessionId: null,
+      agentSessionsEpoch: 0,
+      agentSessions: {
+        active: [{ ...baseAgentSession, sessionId: hibernatingSessionId, isActive: true }],
+        hibernating: [],
+        history: [],
+      },
+      hasLoaded: true,
+    })
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<App />)
+    })
+    activeRenderer = renderer
+
+    if (!subscribeListener) {
+      throw new Error('Expected websocket subscription')
+    }
+
+    act(() => {
+      subscribeListener?.({
+        type: 'session-hibernate-result',
+        sessionId: hibernatingSessionId,
+        ok: true,
+        session: {
+          ...baseAgentSession,
+          sessionId: hibernatingSessionId,
+          displayName: 'sleep me',
+          logFilePath: '/tmp/hibernating-pending.jsonl',
+          isActive: false,
+          isPinned: true,
+        },
+      })
+    })
+
+    let state = useSessionStore.getState()
+    expect(state.selectedSessionId).toBeNull()
+    expect(state.selectedHibernatingSessionId).toBe(hibernatingSessionId)
+
+    act(() => {
+      subscribeListener?.({
+        type: 'agent-sessions-active',
+        active: [],
+      })
+    })
+
+    state = useSessionStore.getState()
+    expect(state.selectedHibernatingSessionId).toBe(hibernatingSessionId)
+
+    act(() => {
+      subscribeListener?.({
+        type: 'agent-sessions',
+        active: [],
+        hibernating: [
+          {
+            ...baseAgentSession,
+            sessionId: hibernatingSessionId,
+            displayName: 'sleep me',
+            logFilePath: '/tmp/hibernating-pending.jsonl',
+            isActive: false,
+            isPinned: true,
+          },
+        ],
+        history: [],
+      })
+    })
+
+    state = useSessionStore.getState()
+    expect(state.selectedSessionId).toBeNull()
+    expect(state.selectedHibernatingSessionId).toBe(hibernatingSessionId)
+  })
+
+  test('tracks the selected live session into hibernating when another client hibernates it', () => {
+    const hibernatingSessionId = 'hibernating-remote'
+    const selectedLiveSession: Session = {
+      ...baseSession,
+      id: 'selected-live',
+      agentSessionId: hibernatingSessionId,
+      agentSessionName: 'sleepy',
+      logFilePath: '/tmp/hibernating-remote.jsonl',
+    }
+    const fallbackLiveSession: Session = {
+      ...baseSession,
+      id: 'fallback-live',
+      name: 'beta',
+      tmuxWindow: 'agentboard:2',
+      projectPath: '/tmp/beta',
+    }
+    const hibernatingSession: AgentSession = {
+      ...baseAgentSession,
+      sessionId: hibernatingSessionId,
+      displayName: 'sleepy',
+      logFilePath: '/tmp/hibernating-remote.jsonl',
+      isActive: false,
+      isPinned: true,
+    }
+
+    useSessionStore.setState({
+      sessions: [selectedLiveSession, fallbackLiveSession],
+      selectedSessionId: selectedLiveSession.id,
+      selectedHibernatingSessionId: null,
+      agentSessionsEpoch: 0,
+      agentSessions: {
+        active: [{ ...baseAgentSession, sessionId: hibernatingSessionId, isActive: true }],
+        hibernating: [],
+        history: [],
+      },
+      hasLoaded: true,
+    })
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<App />)
+    })
+    activeRenderer = renderer
+
+    if (!subscribeListener) {
+      throw new Error('Expected websocket subscription')
+    }
+
+    act(() => {
+      subscribeListener?.({
+        type: 'sessions',
+        sessions: [fallbackLiveSession],
+      })
+    })
+
+    let state = useSessionStore.getState()
+    expect(state.selectedSessionId).toBe(fallbackLiveSession.id)
+    expect(state.selectedHibernatingSessionId).toBeNull()
+
+    act(() => {
+      subscribeListener?.({
+        type: 'agent-sessions',
+        active: [],
+        hibernating: [hibernatingSession],
+        history: [],
+      })
+    })
+
+    state = useSessionStore.getState()
+    expect(state.selectedSessionId).toBeNull()
+    expect(state.selectedHibernatingSessionId).toBe(hibernatingSessionId)
+  })
+
+  test('treats missing hibernating bucket from older agent-sessions payloads as empty', () => {
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<App />)
+    })
+    activeRenderer = renderer
+
+    if (!subscribeListener) {
+      throw new Error('Expected websocket subscription')
+    }
+
+    act(() => {
+      subscribeListener?.({
+        type: 'agent-sessions',
+        active: [],
+        history: [],
+      } as unknown as ServerMessage)
+    })
+
+    expect(useSessionStore.getState().agentSessions).toEqual({
+      active: [],
+      hibernating: [],
+      history: [],
+    })
+  })
+
+  test('does not clear a persisted hibernating selection before the first full agent-sessions snapshot', () => {
+    const hibernatingSessionId = 'persisted-hibernating'
+
+    useSessionStore.setState({
+      sessions: [],
+      selectedSessionId: null,
+      selectedHibernatingSessionId: hibernatingSessionId,
+      agentSessionsEpoch: -1,
+      agentSessions: {
+        active: [],
+        hibernating: [],
+        history: [],
+      },
+      hasLoaded: true,
+    })
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<App />)
+    })
+    activeRenderer = renderer
+
+    if (!subscribeListener) {
+      throw new Error('Expected websocket subscription')
+    }
+
+    let state = useSessionStore.getState()
+    expect(state.selectedHibernatingSessionId).toBe(hibernatingSessionId)
+    expect(state.selectedSessionId).toBeNull()
+
+    act(() => {
+      subscribeListener?.({
+        type: 'agent-sessions-active',
+        active: [],
+      })
+    })
+
+    state = useSessionStore.getState()
+    expect(state.selectedHibernatingSessionId).toBe(hibernatingSessionId)
+
+    act(() => {
+      subscribeListener?.({
+        type: 'agent-sessions',
+        active: [],
+        hibernating: [
+          {
+            ...baseAgentSession,
+            sessionId: hibernatingSessionId,
+            isActive: false,
+            isPinned: true,
+          },
+        ],
+        history: [],
+      })
+    })
+
+    state = useSessionStore.getState()
+    expect(state.selectedHibernatingSessionId).toBe(hibernatingSessionId)
+    expect(state.selectedSessionId).toBeNull()
+  })
+
+  test('reconnect waits for a fresh full agent-sessions snapshot before clearing hibernating selection', () => {
+    const hibernatingSession: AgentSession = {
+      ...baseAgentSession,
+      sessionId: 'hibernating-reconnect',
+      isActive: false,
+      isPinned: true,
+    }
+
+    useSessionStore.setState({
+      sessions: [],
+      selectedSessionId: null,
+      selectedHibernatingSessionId: hibernatingSession.sessionId,
+      connectionEpoch: 0,
+      agentSessionsEpoch: 0,
+      agentSessions: {
+        active: [],
+        hibernating: [hibernatingSession],
+        history: [],
+      },
+      hasLoaded: true,
+    })
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<App />)
+    })
+    activeRenderer = renderer
+
+    act(() => {
+      useSessionStore.getState().setConnectionState('reconnecting', null, 1)
+      useSessionStore.setState({
+        agentSessions: {
+          active: [],
+          hibernating: [],
+          history: [],
+        },
+        agentSessionsEpoch: 0,
+      })
+    })
+
+    let state = useSessionStore.getState()
+    expect(state.selectedHibernatingSessionId).toBe(hibernatingSession.sessionId)
+    expect(state.selectedSessionId).toBeNull()
+
+    if (!subscribeListener) {
+      throw new Error('Expected websocket subscription')
+    }
+
+    act(() => {
+      subscribeListener?.({
+        type: 'agent-sessions',
+        active: [],
+        hibernating: [hibernatingSession],
+        history: [],
+      })
+    })
+
+    state = useSessionStore.getState()
+    expect(state.selectedHibernatingSessionId).toBe(hibernatingSession.sessionId)
+    expect(state.selectedSessionId).toBeNull()
+  })
+
+  test('falls back to a visible live session when filters hide the selected hibernating session', () => {
+    const visibleLiveSession: Session = {
+      ...baseSession,
+      id: 'visible-live',
+      name: 'beta',
+      projectPath: '/tmp/beta',
+    }
+    const hiddenHibernatingSession: AgentSession = {
+      ...baseAgentSession,
+      sessionId: 'hibernating-hidden',
+      projectPath: '/tmp/alpha',
+      isActive: false,
+      isPinned: true,
+    }
+
+    useSettingsStore.setState({
+      projectFilters: ['/tmp/beta'],
+      hostFilters: [],
+    })
+    useSessionStore.setState({
+      sessions: [visibleLiveSession],
+      selectedSessionId: null,
+      selectedHibernatingSessionId: hiddenHibernatingSession.sessionId,
+      agentSessionsEpoch: 0,
+      agentSessions: {
+        active: [],
+        hibernating: [hiddenHibernatingSession],
+        history: [],
+      },
+      hasLoaded: true,
+    })
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<App />)
+    })
+    activeRenderer = renderer
+
+    const state = useSessionStore.getState()
+    expect(state.selectedHibernatingSessionId).toBeNull()
+    expect(state.selectedSessionId).toBe(visibleLiveSession.id)
+  })
+
+  test('reselects a woken live session after the hibernating selection disappears', () => {
+    const hibernatingSession: AgentSession = {
+      ...baseAgentSession,
+      sessionId: 'hibernating-to-wake',
+      displayName: 'wake-me',
+      isActive: false,
+      isPinned: true,
+    }
+    const wokenSession: Session = {
+      ...baseSession,
+      id: 'woken-session',
+      agentSessionId: hibernatingSession.sessionId,
+      agentSessionName: hibernatingSession.displayName,
+      logFilePath: hibernatingSession.logFilePath,
+    }
+
+    useSessionStore.setState({
+      sessions: [],
+      selectedSessionId: null,
+      selectedHibernatingSessionId: hibernatingSession.sessionId,
+      agentSessionsEpoch: 0,
+      agentSessions: {
+        active: [],
+        hibernating: [hibernatingSession],
+        history: [],
+      },
+      hasLoaded: true,
+    })
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<App />)
+    })
+    activeRenderer = renderer
+
+    if (!subscribeListener) {
+      throw new Error('Expected websocket subscription')
+    }
+
+    act(() => {
+      subscribeListener?.({
+        type: 'agent-sessions',
+        active: [
+          {
+            ...hibernatingSession,
+            isActive: true,
+          },
+        ],
+        hibernating: [],
+        history: [],
+      })
+    })
+
+    let state = useSessionStore.getState()
+    expect(state.selectedHibernatingSessionId).toBeNull()
+    expect(state.selectedSessionId).toBeNull()
+
+    act(() => {
+      subscribeListener?.({
+        type: 'sessions',
+        sessions: [wokenSession],
+      })
+    })
+
+    state = useSessionStore.getState()
+    expect(state.selectedHibernatingSessionId).toBeNull()
+    expect(state.selectedSessionId).toBe(wokenSession.id)
   })
 
   test('handles keyboard shortcuts for navigation and actions', () => {
