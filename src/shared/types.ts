@@ -6,6 +6,11 @@ export type SessionStatus = 'working' | 'waiting' | 'permission' | 'unknown'
 
 export type SessionSource = 'managed' | 'external'
 export type AgentType = 'claude' | 'claude-rp' | 'codex' | 'pi'
+export type SessionKillSource =
+  | 'keyboard_shortcut'
+  | 'session_list_context_menu'
+  | 'terminal_confirm_modal'
+  | 'unknown'
 export type TerminalErrorCode =
   | 'ERR_INVALID_WINDOW'
   | 'ERR_SESSION_CREATE_FAILED'
@@ -126,7 +131,7 @@ export type ClientMessage =
   | { type: 'terminal-input'; sessionId: string; data: string }
   | { type: 'terminal-resize'; sessionId: string; cols: number; rows: number }
   | { type: 'session-create'; projectPath: string; name?: string; command?: string; host?: string }
-  | { type: 'session-kill'; sessionId: string }
+  | { type: 'session-kill'; sessionId: string; source?: SessionKillSource }
   | { type: 'session-rename'; sessionId: string; newName: string }
   | { type: 'session-refresh' }
   | { type: 'tmux-cancel-copy-mode'; sessionId: string }

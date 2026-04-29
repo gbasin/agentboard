@@ -41,6 +41,7 @@ import {
   type AgentSession,
   type AgentType,
   type HostStatus,
+  type SessionKillSource,
   type WakeError,
   type Session,
 } from '../shared/types'
@@ -250,6 +251,8 @@ interface WSData {
   currentSessionId: string | null
   currentTmuxTarget: string | null
   connectionId: string
+  remoteAddress: string | null
+  userAgent: string | null
   terminalHost: string | null
   terminalAttachSeq: number
   lastAttachKey: string | null
@@ -1374,6 +1377,8 @@ const tlsOptions = tlsEnabled
 function serverFetch(req: Request, server: Server<WSData>) {
   const url = new URL(req.url)
   if (url.pathname === '/ws') {
+    const requestIp =
+      typeof server.requestIP === 'function' ? server.requestIP(req) : null
     if (
       server.upgrade(req, {
         data: {
@@ -1381,6 +1386,8 @@ function serverFetch(req: Request, server: Server<WSData>) {
           currentSessionId: null,
           currentTmuxTarget: null,
           connectionId: createConnectionId(),
+          remoteAddress: requestIp?.address ?? null,
+          userAgent: req.headers.get('user-agent')?.slice(0, 200) ?? null,
           terminalHost: null,
           terminalAttachSeq: 0,
           lastAttachKey: null,
@@ -1592,7 +1599,7 @@ function handleMessage(
       }
       return
     case 'session-kill':
-      fireAndForget(handleKill(message.sessionId, ws), 'handleKill')
+      fireAndForget(handleKill(message.sessionId, ws, message.source), 'handleKill')
       return
     case 'session-rename':
       fireAndForget(handleRename(message.sessionId, message.newName, ws), 'handleRename')
@@ -1856,43 +1863,141 @@ function restorePinnedState(previousPinnedState: Map<string, boolean>) {
   }
 }
 
-async function handleKill(sessionId: string, ws: ServerWebSocket<WSData>) {
+const SESSION_KILL_SOURCES: readonly SessionKillSource[] = [
+  'keyboard_shortcut',
+  'session_list_context_menu',
+  'terminal_confirm_modal',
+  'unknown',
+]
+
+function normalizeSessionKillSource(source: unknown): SessionKillSource {
+  if (
+    typeof source === 'string' &&
+    (SESSION_KILL_SOURCES as readonly string[]).includes(source)
+  ) {
+    return source as SessionKillSource
+  }
+  return 'unknown'
+}
+
+function getKillAuditFields(
+  ws: ServerWebSocket<WSData>,
+  requestedSessionId: string,
+  killSource: SessionKillSource,
+  session?: Session,
+) {
+  return {
+    requestedSessionId,
+    killSource,
+    connectionId: ws.data.connectionId,
+    remoteAddress: ws.data.remoteAddress ?? ws.remoteAddress ?? null,
+    userAgent: ws.data.userAgent,
+    sessionFound: Boolean(session),
+    sessionId: session?.id ?? null,
+    tmuxWindow: session?.tmuxWindow ?? null,
+    name: session?.name ?? null,
+    projectPath: session?.projectPath ?? null,
+    agentSessionId: session?.agentSessionId ?? null,
+    agentSessionIds: null as string[] | null,
+    agentSessionName: session?.agentSessionName ?? null,
+    agentType: session?.agentType ?? null,
+    sessionSource: session?.source ?? null,
+    host: session?.host ?? null,
+    remote: session?.remote ?? null,
+  }
+}
+
+function sendKillFailed(
+  ws: ServerWebSocket<WSData>,
+  sessionId: string,
+  message: string,
+  auditFields: ReturnType<typeof getKillAuditFields>,
+  startedAt: number,
+  reason: string,
+) {
+  logger.warn('session_kill_failed', {
+    ...auditFields,
+    reason,
+    error: message,
+    durationMs: Date.now() - startedAt,
+  })
+  send(ws, { type: 'kill-failed', sessionId, message })
+}
+
+async function handleKill(
+  sessionId: string,
+  ws: ServerWebSocket<WSData>,
+  source?: SessionKillSource,
+) {
+  const startedAt = Date.now()
+  const killSource = normalizeSessionKillSource(source)
   const session = registry.get(sessionId)
+  let auditFields = getKillAuditFields(ws, sessionId, killSource, session)
+  logger.info('session_kill_requested', auditFields)
+
   if (!session) {
-    send(ws, { type: 'kill-failed', sessionId, message: 'Session not found' })
+    sendKillFailed(ws, sessionId, 'Session not found', auditFields, startedAt, 'not_found')
     return
   }
   if (session.remote && !config.remoteAllowControl) {
-    send(ws, { type: 'kill-failed', sessionId, message: 'Remote sessions are read-only' })
+    sendKillFailed(
+      ws,
+      sessionId,
+      'Remote sessions are read-only',
+      auditFields,
+      startedAt,
+      'remote_read_only',
+    )
     return
   }
   if (session.remote && config.remoteAllowControl && session.host) {
     if (session.source !== 'managed') {
-      send(ws, { type: 'kill-failed', sessionId, message: 'Cannot kill external remote sessions' })
+      sendKillFailed(
+        ws,
+        sessionId,
+        'Cannot kill external remote sessions',
+        auditFields,
+        startedAt,
+        'external_remote_session',
+      )
       return
     }
     try {
       const result = await runRemoteTmux(session.host, ['kill-window', '-t', session.tmuxWindow])
       if (result.exitCode !== 0) {
         const stderr = result.stderr?.trim() ?? 'Unknown error'
-        send(ws, { type: 'kill-failed', sessionId, message: stderr })
+        sendKillFailed(ws, sessionId, stderr, auditFields, startedAt, 'remote_kill_failed')
         return
       }
       remoteSessionNameOverrides.delete(sessionId)
       remoteSessionTombstones.set(sessionId, Date.now())
       const remaining = registry.getAll().filter((item) => item.id !== sessionId)
       registry.replaceSessions(remaining)
-    } catch (error) {
-      send(ws, {
-        type: 'kill-failed',
-        sessionId,
-        message: error instanceof Error ? error.message : 'Unable to kill remote session',
+      logger.info('session_kill_completed', {
+        ...auditFields,
+        durationMs: Date.now() - startedAt,
       })
+    } catch (error) {
+      sendKillFailed(
+        ws,
+        sessionId,
+        error instanceof Error ? error.message : 'Unable to kill remote session',
+        auditFields,
+        startedAt,
+        'remote_kill_exception',
+      )
     }
     return
   }
   if (session.source !== 'managed' && !config.allowKillExternal) {
-    send(ws, { type: 'kill-failed', sessionId, message: 'Cannot kill external sessions' })
+    sendKillFailed(
+      ws,
+      sessionId,
+      'Cannot kill external sessions',
+      auditFields,
+      startedAt,
+      'external_session',
+    )
     return
   }
 
@@ -1903,6 +2008,10 @@ async function handleKill(sessionId: string, ws: ServerWebSocket<WSData>) {
   }
   if (recordByWindow) {
     agentSessionIds.add(recordByWindow.sessionId)
+  }
+  auditFields = {
+    ...auditFields,
+    agentSessionIds: Array.from(agentSessionIds),
   }
   const previousPinnedState = new Map<string, boolean>()
 
@@ -1918,12 +2027,14 @@ async function handleKill(sessionId: string, ws: ServerWebSocket<WSData>) {
     }
   } catch (error) {
     restorePinnedState(previousPinnedState)
-    send(ws, {
-      type: 'kill-failed',
+    sendKillFailed(
+      ws,
       sessionId,
-      message:
-        error instanceof Error ? error.message : 'Unable to prepare session kill',
-    })
+      error instanceof Error ? error.message : 'Unable to prepare session kill',
+      auditFields,
+      startedAt,
+      'prepare_failed',
+    )
     return
   }
 
@@ -1931,12 +2042,14 @@ async function handleKill(sessionId: string, ws: ServerWebSocket<WSData>) {
     sessionManager.killWindow(session.tmuxWindow)
   } catch (error) {
     restorePinnedState(previousPinnedState)
-    send(ws, {
-      type: 'kill-failed',
+    sendKillFailed(
+      ws,
       sessionId,
-      message:
-        error instanceof Error ? error.message : 'Unable to kill session',
-    })
+      error instanceof Error ? error.message : 'Unable to kill session',
+      auditFields,
+      startedAt,
+      'kill_failed',
+    )
     return
   }
 
@@ -1967,6 +2080,10 @@ async function handleKill(sessionId: string, ws: ServerWebSocket<WSData>) {
   }
   const remaining = registry.getAll().filter((item) => item.id !== sessionId)
   registry.replaceSessions(remaining)
+  logger.info('session_kill_completed', {
+    ...auditFields,
+    durationMs: Date.now() - startedAt,
+  })
   // Don't call refreshSessions() here — the registry is already updated
   // synchronously.  An async refresh would race with the tmux process
   // dying and could re-add the killed window to the registry before the

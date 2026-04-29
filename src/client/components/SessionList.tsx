@@ -24,7 +24,7 @@ import ChevronRightIcon from '@untitledui-icons/react/line/esm/ChevronRightIcon'
 import Edit05Icon from '@untitledui-icons/react/line/esm/Edit05Icon'
 import Moon01Icon from '@untitledui-icons/react/line/esm/Moon01Icon'
 import PlusIcon from '@untitledui-icons/react/line/esm/PlusIcon'
-import type { AgentSession, Session } from '@shared/types'
+import type { AgentSession, Session, SessionKillSource } from '@shared/types'
 import { getSessionOrderKey, getUniqueHosts, getUniqueProjects, sortSessions } from '../utils/sessions'
 import { formatRelativeTime } from '../utils/time'
 import { getPathLeaf } from '../utils/sessionLabel'
@@ -58,7 +58,7 @@ interface SessionListProps {
   onRename: (sessionId: string, newName: string) => void
   onResume?: (sessionId: string) => void
   onHibernate?: (sessionId: string) => void
-  onKill?: (sessionId: string) => void
+  onKill?: (sessionId: string, source?: SessionKillSource) => void
   onDuplicate?: (sessionId: string) => void
   onMoveToHistory?: (sessionId: string) => void
   onNewSession?: () => void
@@ -600,7 +600,11 @@ export default function SessionList({
                                 ? () => onHibernate?.(session.agentSessionId!.trim())
                                 : undefined
                             }
-                            onKill={onKill && canControl ? () => onKill(session.id) : undefined}
+                            onKill={
+                              onKill && canControl
+                                ? () => onKill(session.id, 'session_list_context_menu')
+                                : undefined
+                            }
                             onDuplicate={onDuplicate && canControl ? () => onDuplicate(session.id) : undefined}
                           />
                         )

@@ -1,6 +1,12 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { clientLog } from '../utils/clientLog'
-import type { AgentSession, Session, SendClientMessage, SubscribeServerMessage } from '@shared/types'
+import type {
+  AgentSession,
+  Session,
+  SendClientMessage,
+  SessionKillSource,
+  SubscribeServerMessage,
+} from '@shared/types'
 import { useSessionStore, type ConnectionStatus } from '../stores/sessionStore'
 import { useTerminal } from '../hooks/useTerminal'
 import { useIsMobileLayout } from '../hooks/useMobileLayout'
@@ -35,7 +41,7 @@ interface TerminalProps {
   onSelectSession: (sessionId: string) => void
   onSelectHibernatingSession?: (sessionId: string) => void
   onNewSession: () => void
-  onKillSession: (sessionId: string) => void
+  onKillSession: (sessionId: string, source?: SessionKillSource) => void
   onRenameSession: (sessionId: string, newName: string) => void
   onResumeSession: (sessionId: string) => void
   onHibernateSession?: (sessionId: string) => void
@@ -219,7 +225,7 @@ export default function Terminal({
 
   const handleEndSession = () => {
     if (!session) return
-    onKillSession(session.id)
+    onKillSession(session.id, 'terminal_confirm_modal')
     setShowEndConfirm(false)
   }
 
