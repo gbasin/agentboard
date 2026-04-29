@@ -623,6 +623,7 @@ export default function App() {
 
   // Auto-select first visible session when current selection is filtered out
   useEffect(() => {
+    if (!hasLoaded) return
     if (selectedHibernatingSessionId) return
     if (!selectedSessionId) return
     if (filteredSortedSessions.some((session) => session.id === selectedSessionId)) {
@@ -631,6 +632,7 @@ export default function App() {
     if (selectFirstVisibleTarget()) return
     setSelectedSessionId(null)
   }, [
+    hasLoaded,
     selectedSessionId,
     selectedHibernatingSessionId,
     selectFirstVisibleTarget,
@@ -926,6 +928,7 @@ export default function App() {
           onKill={handleKillSession}
           onDuplicate={handleDuplicateSession}
           onMoveToHistory={handleMoveToHistory}
+          onNewSession={handleNewSession}
           loading={!hasLoaded}
           error={connectionError || serverError}
         />
