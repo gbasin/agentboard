@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import ChevronDownIcon from '@untitledui-icons/react/line/esm/ChevronDownIcon'
+import Server01Icon from '@untitledui-icons/react/line/esm/Server01Icon'
 import type { HostStatus } from '@shared/types'
 
 interface HostFilterDropdownProps {
@@ -76,17 +77,18 @@ export default function HostFilterDropdown({
         aria-controls={menuId}
         aria-label="Filter by host"
         onClick={() => setOpen((value) => !value)}
-        className="flex h-6 max-w-[9rem] items-center gap-1 rounded border border-border bg-base px-2 text-[11px] text-primary hover:bg-hover focus:border-accent focus:outline-none"
+        className="flex h-6 max-w-[9rem] items-center gap-1.5 rounded border border-border bg-base px-2 text-[11px] text-primary hover:bg-hover focus:border-accent focus:outline-none"
         title={selectedTitle}
       >
-        <span className="truncate">{selectedLabel}</span>
+        <Server01Icon className="h-3.5 w-3.5 shrink-0" />
+        <span className="truncate leading-none">{selectedLabel}</span>
         <ChevronDownIcon className="h-3 w-3 shrink-0 text-muted" />
       </button>
       {open && (
         <div
           id={menuId}
           role="menu"
-          className="absolute right-0 z-20 mt-1 w-48 rounded border border-border bg-surface p-2 text-xs shadow-lg"
+          className="absolute left-0 z-20 mt-1 w-48 max-w-[calc(100vw-1.5rem)] rounded border border-border bg-surface p-2 text-xs shadow-lg"
         >
           <label
             role="menuitemcheckbox"

@@ -167,6 +167,9 @@ export default function SessionDrawer({
           onResume={onResume}
           onHibernate={onHibernate}
           onMoveToHistory={onMoveToHistory}
+          onNewSession={() => {
+            if (onNewSession() !== false) onClose()
+          }}
           loading={loading}
           error={error}
         />
