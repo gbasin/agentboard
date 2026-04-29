@@ -343,7 +343,7 @@ describe('Terminal', () => {
 
   test('renames and kills session', () => {
     const renamed: Array<{ id: string; name: string }> = []
-    const killed: string[] = []
+    const killed: Array<{ id: string; source: string | undefined }> = []
 
     const { createNodeMock } = createContainerMock()
     let renderer!: TestRenderer.ReactTestRenderer
@@ -359,7 +359,7 @@ describe('Terminal', () => {
           onClose={() => {}}
           onSelectSession={() => {}}
           onNewSession={() => {}}
-          onKillSession={(id) => killed.push(id)}
+          onKillSession={(id, source) => killed.push({ id, source })}
           onRenameSession={(id, name) => renamed.push({ id, name })}
           onResumeSession={() => {}}
           onOpenSettings={() => {}}
@@ -436,7 +436,9 @@ describe('Terminal', () => {
       confirmButton.props.onClick()
     })
 
-    expect(killed).toEqual([baseSession.id])
+    expect(killed).toEqual([
+      { id: baseSession.id, source: 'terminal_confirm_modal' },
+    ])
 
     act(() => {
       renderer.unmount()

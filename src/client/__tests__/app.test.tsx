@@ -1073,6 +1073,7 @@ describe('App', () => {
     expect(sendCalls).toContainEqual({
       type: 'session-kill',
       sessionId: 'session-1',
+      source: 'keyboard_shortcut',
     })
 
     // Optimistic removal: session should be gone from the list immediately

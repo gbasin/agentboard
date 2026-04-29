@@ -33,6 +33,11 @@ let serveOptions: Parameters<typeof Bun.serve>[0] | null = null
 let spawnSyncImpl: typeof Bun.spawnSync
 let writeImpl: typeof Bun.write
 let replaceSessionsCalls: Session[][] = []
+let logEntries: Array<{
+  level: 'debug' | 'info' | 'warn' | 'error'
+  event: string
+  data?: Record<string, unknown>
+}> = []
 let dbState: {
   appSettings: Map<string, string>
   records: Map<string, AgentSessionRecord>
@@ -314,6 +319,19 @@ mock.module('../../config', () => ({
     return hostname.length > 0 && hostname.length <= 253 && re.test(hostname)
   },
 }))
+mock.module('../../logger', () => ({
+  logLevel: 'info',
+  logger: {
+    debug: (event: string, data?: Record<string, unknown>) =>
+      logEntries.push({ level: 'debug', event, data }),
+    info: (event: string, data?: Record<string, unknown>) =>
+      logEntries.push({ level: 'info', event, data }),
+    warn: (event: string, data?: Record<string, unknown>) =>
+      logEntries.push({ level: 'warn', event, data }),
+    error: (event: string, data?: Record<string, unknown>) =>
+      logEntries.push({ level: 'error', event, data }),
+  },
+}))
 mock.module('../../db', () => ({
   initDatabase: () => ({
     getSessionById: (sessionId: string) => dbState.records.get(sessionId) ?? null,
@@ -538,6 +556,8 @@ function createWs() {
       currentSessionId: null as string | null,
       currentTmuxTarget: null as string | null,
       connectionId: 'ws-test',
+      remoteAddress: '127.0.0.1',
+      userAgent: 'test-agent',
       terminalHost: null as string | null,
       terminalAttachSeq: 0,
     },
@@ -572,6 +592,7 @@ async function loadIndex() {
 beforeEach(() => {
   serveOptions = null
   replaceSessionsCalls = []
+  logEntries = []
   TerminalProxyMock.instances = []
   SessionManagerMock.instance = null
   refreshWorkerDeferred = false
@@ -888,6 +909,55 @@ describe('server message handlers', () => {
 
     expect(sent[sent.length - 2]).toEqual({ type: 'kill-failed', sessionId: baseSession.id, message: 'boom' })
     expect(sent[sent.length - 1]).toEqual({ type: 'error', message: 'nope' })
+  })
+
+  test('logs kill request source and connection context', async () => {
+    const { serveOptions, registryInstance } = await loadIndex()
+    registryInstance.sessions = [
+      { ...baseSession, agentSessionId: 'agent-session-1', agentSessionName: 'alpha-agent' },
+    ]
+    sessionManagerState.killWindow = () => {}
+
+    const { ws } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) {
+      throw new Error('WebSocket handlers not configured')
+    }
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({
+        type: 'session-kill',
+        sessionId: baseSession.id,
+        source: 'session_list_context_menu',
+      })
+    )
+
+    const requested = logEntries.find((entry) => entry.event === 'session_kill_requested')
+    const completed = logEntries.find((entry) => entry.event === 'session_kill_completed')
+
+    expect(requested).toMatchObject({
+      level: 'info',
+      data: {
+        requestedSessionId: baseSession.id,
+        killSource: 'session_list_context_menu',
+        connectionId: 'ws-test',
+        remoteAddress: '127.0.0.1',
+        userAgent: 'test-agent',
+        sessionFound: true,
+        tmuxWindow: baseSession.tmuxWindow,
+        agentSessionId: 'agent-session-1',
+        agentSessionName: 'alpha-agent',
+      },
+    })
+    expect(completed).toMatchObject({
+      level: 'info',
+      data: {
+        requestedSessionId: baseSession.id,
+        killSource: 'session_list_context_menu',
+        agentSessionIds: ['agent-session-1'],
+      },
+    })
   })
 
   test('intentional kill clears hibernation marker before killing and moves row to history', async () => {

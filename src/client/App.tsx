@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { AgentSession, ServerMessage, Session } from '@shared/types'
+import type { AgentSession, ServerMessage, Session, SessionKillSource } from '@shared/types'
 import Header from './components/Header'
 import SessionList from './components/SessionList'
 import Terminal from './components/Terminal'
@@ -737,7 +737,10 @@ export default function App() {
   // entries from a previous connection can be discarded on reconnect.
   const pendingKills = useRef<Map<string, { session: Session; wasSelected: boolean; epoch: number }>>(new Map())
 
-  const handleKillSession = useCallback((sessionId: string) => {
+  const handleKillSession = useCallback((
+    sessionId: string,
+    source: SessionKillSource = 'unknown',
+  ) => {
     invalidateSnapshotCache(sessionId)
     // Snapshot session and selection state before removal for kill-failed rollback
     const { sessions: currentSessions, selectedSessionId: currentSelected } = useSessionStore.getState()
@@ -756,7 +759,7 @@ export default function App() {
       markSessionExiting(sessionId)
       setSessions(currentSessions.filter(s => s.id !== sessionId))
     })
-    sendMessage({ type: 'session-kill', sessionId })
+    sendMessage({ type: 'session-kill', sessionId, source })
   }, [markSessionExiting, setSessions, sendMessage])
 
   useEffect(() => {
@@ -815,7 +818,7 @@ export default function App() {
       if (isShortcut && code === 'KeyX') {
         event.preventDefault()
         if (selectedSessionId && !isModalOpen) {
-          handleKillSession(selectedSessionId)
+          handleKillSession(selectedSessionId, 'keyboard_shortcut')
         }
         return
       }
