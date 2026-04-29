@@ -15,9 +15,9 @@ Run your desktop/server, then connect from your phone or laptop over Tailscale/L
   - Touch scrolling
   - Virtual arrow keys / d-pad
   - Quick keys toolbar (ctrl, esc, etc.)
-- Out-of-the-box log tracking and matching for Claude, Codex, and Pi — auto-matches sessions to active tmux windows, with one-click wake for History sessions.
+- Out-of-the-box log tracking and matching for Claude, Codex, and Pi — auto-matches sessions to active tmux windows, with one-click Wake for Hibernating and History sessions.
 - Shows the last user prompt for each session, so you can remember what each agent is working on
-- Hibernate sessions to close their tmux window while keeping them visible for manual wake
+- Hibernate sessions to close their tmux window while keeping them visible across restarts for manual Wake
 
 ## How It Works
 
@@ -39,6 +39,7 @@ Run your desktop/server, then connect from your phone or laptop over Tailscale/L
 - **Session discovery** — polls local tmux windows and (optionally) remote hosts over SSH
 - **Status inference** — reads pane content and Claude/Codex JSONL logs to determine if each agent is *working*, *waiting for input*, or *asking for permission*
 - **Live terminal** — streams I/O through the server so you can interact with any session from any device
+- **Hibernating and History sessions** — keeps dormant agent sessions in the sidebar and wakes them on demand; startup does not auto-wake dormant sessions
 
 ### Desktop
 | Terminal | Sessions | Hibernating |
