@@ -622,8 +622,7 @@ export class SessionManager {
   private isBootstrapWindow(sessionName: string, window: WindowInfo): boolean {
     return (
       sessionName === this.sessionName &&
-      window.name === BOOTSTRAP_WINDOW_NAME &&
-      window.command === BOOTSTRAP_WINDOW_COMMAND
+      window.name === BOOTSTRAP_WINDOW_NAME
     )
   }
 

@@ -368,10 +368,14 @@ mock.module('../../db', () => ({
       Array.from(dbState.records.values()).filter(
         (record) => record.currentWindow === null && record.isPinned
       ),
-    orphanSession: (sessionId: string) => {
+    orphanSession: (sessionId: string, options?: { hibernate?: boolean }) => {
       const record = dbState.records.get(sessionId)
       if (!record) return null
-      const updated = { ...record, currentWindow: null, isPinned: true }
+      const updated = {
+        ...record,
+        currentWindow: null,
+        isPinned: options?.hibernate ?? true,
+      }
       dbState.records.set(sessionId, updated)
       return updated
     },
@@ -1249,6 +1253,28 @@ describe('server message handlers', () => {
     expect(refreshWorkerExpectedWindowCounts[1]).toBeGreaterThan(
       refreshWorkerExpectedWindowCounts[0] ?? 0
     )
+  })
+
+  test('session refresh ensures base session before worker snapshot', async () => {
+    let ensureCalls = 0
+    sessionManagerState.ensureSession = () => {
+      ensureCalls += 1
+    }
+
+    const { serveOptions } = await loadIndex()
+    const startupEnsureCalls = ensureCalls
+    const { ws } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) throw new Error('WebSocket handlers not configured')
+
+    refreshWorkerSessions = [baseSession]
+    websocket.message?.(ws as never, JSON.stringify({ type: 'session-refresh' }))
+    for (let i = 0; i < 50 && ensureCalls === startupEnsureCalls; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+
+    expect(ensureCalls).toBeGreaterThan(startupEnsureCalls)
+    expect(refreshWorkerExpectedWindowCounts).toHaveLength(1)
   })
 
   test('last-user-message timeout does not poison the queued refresh', async () => {

@@ -234,6 +234,24 @@ describe('db', () => {
     ])
   })
 
+  test('orphanSession can move mismatch cleanup to history', () => {
+    db.insertSession(makeSession({
+      sessionId: 'mismatch-to-history',
+      logFilePath: '/tmp/mismatch-to-history.jsonl',
+      currentWindow: 'agentboard:11',
+      isPinned: true,
+    }))
+
+    const orphaned = db.orphanSession('mismatch-to-history', { hibernate: false })
+
+    expect(orphaned?.currentWindow).toBeNull()
+    expect(orphaned?.isPinned).toBe(false)
+    expect(db.getHibernatingSessions()).toEqual([])
+    expect(db.getHistorySessions().map((session) => session.sessionId)).toEqual([
+      'mismatch-to-history',
+    ])
+  })
+
   test('displayNameExists returns true for existing names', () => {
     const uniqueName = `test-name-${Date.now()}`
     const session = makeSession({

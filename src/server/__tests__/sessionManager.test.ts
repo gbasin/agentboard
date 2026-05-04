@@ -749,7 +749,7 @@ describe('SessionManager', () => {
     }
   })
 
-  test('listWindows only hides bootstrap window in the managed base session', () => {
+  test('listWindows hides reserved bootstrap window only in the managed base session', () => {
     const managedSession = 'agentboard-bootstrap-filter'
     const externalSession = 'work-bootstrap-filter'
     const runner = createTmuxRunner(
@@ -811,7 +811,7 @@ describe('SessionManager', () => {
       ).toBeTruthy()
       expect(
         sessions.find((session) => session.tmuxWindow === `${managedSession}:1`)
-      ).toBeTruthy()
+      ).toBeUndefined()
     } finally {
       config.discoverPrefixes = originalPrefixes
     }
@@ -841,14 +841,24 @@ describe('SessionManager', () => {
         ) {
           throw new Error('unknown format: window_creation_time')
         }
-        return buildTmuxRow([
-          '1',
-          'alpha',
-          '/tmp/alpha',
-          '1700000000',
-          '1700000000',
-          'claude',
-        ])
+        return [
+          buildTmuxRow([
+            '0',
+            BOOTSTRAP_WINDOW_NAME,
+            '/tmp/bootstrap',
+            '1700000000',
+            '1700000000',
+            'tail',
+          ]),
+          buildTmuxRow([
+            '1',
+            'alpha',
+            '/tmp/alpha',
+            '1700000000',
+            '1700000000',
+            'claude',
+          ]),
+        ].join('\n')
       }
 
       if (command === 'set-option') {
@@ -867,6 +877,7 @@ describe('SessionManager', () => {
     const sessions = manager.listWindows()
 
     expect(sessions).toHaveLength(1)
+    expect(sessions[0]?.tmuxWindow).toBe(`${sessionName}:1`)
     expect(sessions[0]?.command).toBe('claude')
     expect(
       calls.some(

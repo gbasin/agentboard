@@ -132,7 +132,7 @@ describe('sessionRefreshWorker', () => {
       throw new Error('Unexpected response type')
     }
 
-    expect(response.sessions).toHaveLength(3)
+    expect(response.sessions).toHaveLength(2)
 
     const managed = response.sessions.find(
       (session) => session.tmuxWindow === 'agentboard:1'
@@ -162,13 +162,7 @@ describe('sessionRefreshWorker', () => {
         agentType: 'claude',
       })
     )
-    expect(manualReservedName).toEqual(
-      expect.objectContaining({
-        name: BOOTSTRAP_WINDOW_NAME,
-        source: 'managed',
-        agentType: 'claude',
-      })
-    )
+    expect(manualReservedName).toBeUndefined()
   })
 
   test('refresh normalizes tmux-quoted pane_start_command', async () => {
@@ -221,6 +215,7 @@ describe('sessionRefreshWorker', () => {
     await loadWorker('format-fallback')
 
     const listOutput = [
+      joinTmuxFields(['agentboard', '0', BOOTSTRAP_WINDOW_NAME, '/Users/test/bootstrap', '100', '1700000000', 'tail', '80', '24']),
       joinTmuxFields(['agentboard', '1', 'alpha', '/Users/test/project', '100', '1700000000', 'codex', '80', '24']),
     ].join('\n')
 
@@ -269,6 +264,7 @@ describe('sessionRefreshWorker', () => {
     }
 
     expect(response.sessions).toHaveLength(1)
+    expect(response.sessions[0]?.tmuxWindow).toBe('agentboard:1')
     expect(listCalls).toBe(2)
   })
 
