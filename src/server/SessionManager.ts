@@ -122,18 +122,41 @@ export class SessionManager {
       if (error instanceof TmuxTimeoutError) {
         throw error
       }
-      // Create the base session with a placeholder window. Tmux requires every
-      // session to have at least one window, so we use a known-named window
-      // running `tail -f /dev/null`. Listings filter this window out so it's
-      // invisible to users.
-      this.runTmux([
-        'new-session', '-d',
-        '-s', this.sessionName,
-        '-n', BOOTSTRAP_WINDOW_NAME,
-        BOOTSTRAP_WINDOW_COMMAND,
-      ])
+      if (this.sessionGroupExists()) {
+        this.runTmux([
+          'new-session', '-d',
+          '-s', this.sessionName,
+          '-t', this.sessionName,
+        ])
+      } else {
+        // Create the base session with a placeholder window. Tmux requires every
+        // session to have at least one window, so we use a known-named window
+        // running `tail -f /dev/null`. Listings filter this window out so it's
+        // invisible to users.
+        this.runTmux([
+          'new-session', '-d',
+          '-s', this.sessionName,
+          '-n', BOOTSTRAP_WINDOW_NAME,
+          BOOTSTRAP_WINDOW_COMMAND,
+        ])
+      }
     }
     this.configureSession()
+  }
+
+  private sessionGroupExists(): boolean {
+    try {
+      this.runTmux(['has-session', '-t', this.sessionName])
+      return true
+    } catch (error) {
+      if (error instanceof TmuxTimeoutError) {
+        throw error
+      }
+      if (isTmuxSessionAbsentError(error)) {
+        return false
+      }
+      throw error
+    }
   }
 
   private sessionExists(): boolean {
@@ -335,6 +358,7 @@ export class SessionManager {
         baseName = generateSessionName()
       } while (nameExists(baseName))
     }
+    this.assertNotReservedWindowName(baseName)
 
     const finalCommand = command?.trim() || 'claude'
     const finalName = this.findAvailableName(baseName, existingWindowNames, nameExists)
@@ -445,6 +469,7 @@ export class SessionManager {
         'Name can only contain letters, numbers, hyphens, and underscores'
       )
     }
+    this.assertNotReservedWindowName(trimmed)
 
     const sessionName = this.resolveSessionName(tmuxWindow)
     const targetWindowId = this.extractWindowId(tmuxWindow)
@@ -507,7 +532,9 @@ export class SessionManager {
         return window ? [window] : []
       })
       // Hide the placeholder window that keeps the base session alive.
-      .filter((window) => window.name !== BOOTSTRAP_WINDOW_NAME)
+      .filter((window) =>
+        sessionName !== this.sessionName || window.name !== BOOTSTRAP_WINDOW_NAME
+      )
       .map((window) => {
         const tmuxWindow = `${sessionName}:${window.id}`
         const creationTimestamp = window.creation
@@ -571,6 +598,12 @@ export class SessionManager {
     }
 
     return `${baseName}-${suffix}`
+  }
+
+  private assertNotReservedWindowName(name: string): void {
+    if (name === BOOTSTRAP_WINDOW_NAME) {
+      throw new Error(`"${BOOTSTRAP_WINDOW_NAME}" is reserved`)
+    }
   }
 
   private findNextAvailableWindowIndex(): number {

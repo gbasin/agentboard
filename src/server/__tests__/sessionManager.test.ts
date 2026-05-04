@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { config } from '../config'
 import { SessionManager } from '../SessionManager'
-import { TMUX_FIELD_SEPARATOR } from '../tmuxFormat'
+import { BOOTSTRAP_WINDOW_NAME, TMUX_FIELD_SEPARATOR } from '../tmuxFormat'
 import { TmuxTimeoutError } from '../tmuxTimeout'
 
 const bunAny = Bun as typeof Bun & {
@@ -25,6 +25,7 @@ interface WindowState {
 
 interface SessionState {
   name: string
+  group?: string
   windows: WindowState[]
 }
 
@@ -50,7 +51,30 @@ function createTmuxRunner(sessions: SessionState[], baseIndex = 0) {
   const sessionMap = new Map<string, WindowState[]>(
     sessions.map((session) => [session.name, [...session.windows]])
   )
+  const sessionGroups = new Map<string, string>(
+    sessions.map((session) => [session.name, session.group ?? session.name])
+  )
   const calls: string[][] = []
+
+  const resolveGroup = (targetName: string): string | undefined =>
+    sessionGroups.get(targetName) ??
+    (Array.from(sessionGroups.values()).includes(targetName)
+      ? targetName
+      : undefined)
+
+  const groupWindows = (sessionName: string): WindowState[] => {
+    const group = resolveGroup(sessionName)
+    if (!group) {
+      return []
+    }
+
+    for (const [name, windows] of sessionMap.entries()) {
+      if (sessionGroups.get(name) === group) {
+        return windows
+      }
+    }
+    return []
+  }
 
   const runTmux = (args: string[]) => {
     calls.push(args)
@@ -61,8 +85,12 @@ function createTmuxRunner(sessions: SessionState[], baseIndex = 0) {
       // tmux `-t =name` forces exact session-name match. Strip the prefix so
       // the mock matches the real tmux behavior of resolving the name.
       const rawTarget = normalizedArgs[2] ?? ''
-      const sessionName = rawTarget.startsWith('=') ? rawTarget.slice(1) : rawTarget
-      if (sessionMap.has(sessionName)) {
+      const exact = rawTarget.startsWith('=')
+      const sessionName = exact ? rawTarget.slice(1) : rawTarget
+      const exists = exact
+        ? sessionMap.has(sessionName)
+        : sessionMap.has(sessionName) || resolveGroup(sessionName) === sessionName
+      if (exists) {
         return ''
       }
       throw new Error(`session not found: ${sessionName}`)
@@ -72,13 +100,24 @@ function createTmuxRunner(sessions: SessionState[], baseIndex = 0) {
       // Parse: new-session -d -s <session> [-n <name>] [-c <path>] [command]
       const sIdx = normalizedArgs.indexOf('-s')
       const sessionName = sIdx >= 0 ? normalizedArgs[sIdx + 1] ?? '' : ''
+      const tIdx = normalizedArgs.indexOf('-t')
+      const targetName = tIdx >= 0 ? normalizedArgs[tIdx + 1] ?? '' : ''
       const nIdx = normalizedArgs.indexOf('-n')
       const windowName = nIdx >= 0 ? normalizedArgs[nIdx + 1] ?? '' : ''
       const cIdx = normalizedArgs.indexOf('-c')
       const windowPath = cIdx >= 0 ? normalizedArgs[cIdx + 1] ?? '' : ''
 
       // Everything after the last known flag/value is the shell command
-      const flagPositions = [sIdx, sIdx + 1, nIdx, nIdx + 1, cIdx, cIdx + 1]
+      const flagPositions = [
+        sIdx,
+        sIdx + 1,
+        tIdx,
+        tIdx + 1,
+        nIdx,
+        nIdx + 1,
+        cIdx,
+        cIdx + 1,
+      ]
         .filter((i) => i >= 0 && i < normalizedArgs.length)
       const maxFlagPos = Math.max(0, ...flagPositions)
       // Also skip -d which doesn't take a value
@@ -87,7 +126,8 @@ function createTmuxRunner(sessions: SessionState[], baseIndex = 0) {
         .filter((a) => a !== '-d')
         .join(' ')
 
-      const windows: WindowState[] = []
+      const targetGroup = resolveGroup(targetName)
+      const windows: WindowState[] = targetGroup ? groupWindows(targetName) : []
       if (windowName) {
         windows.push({
           id: '0',
@@ -99,6 +139,7 @@ function createTmuxRunner(sessions: SessionState[], baseIndex = 0) {
         })
       }
       sessionMap.set(sessionName, windows)
+      sessionGroups.set(sessionName, targetGroup ?? sessionName)
       return ''
     }
 
@@ -113,7 +154,7 @@ function createTmuxRunner(sessions: SessionState[], baseIndex = 0) {
     if (command === 'list-windows') {
       const sessionName = normalizedArgs[2]
       const format = normalizedArgs[4]
-      const windows = sessionMap.get(sessionName) ?? []
+      const windows = groupWindows(sessionName)
       if (format === '#{window_index}') {
         return windows.map((window) => String(window.index)).join('\n')
       }
@@ -138,7 +179,7 @@ function createTmuxRunner(sessions: SessionState[], baseIndex = 0) {
       const startCommand = normalizedArgs[7]
       const [sessionName, indexText] = target.split(':')
       const index = Number.parseInt(indexText ?? '', 10)
-      const windows = sessionMap.get(sessionName) ?? []
+      const windows = groupWindows(sessionName)
       windows.push({
         id: String(index),
         index,
@@ -155,7 +196,7 @@ function createTmuxRunner(sessions: SessionState[], baseIndex = 0) {
       const target = normalizedArgs[2]
       const newName = normalizedArgs[3]
       const [sessionName, windowId] = target.split(':')
-      const windows = sessionMap.get(sessionName) ?? []
+      const windows = groupWindows(sessionName)
       const window = windows.find((item) => item.id === windowId)
       if (window) {
         window.name = newName
@@ -166,7 +207,7 @@ function createTmuxRunner(sessions: SessionState[], baseIndex = 0) {
     if (command === 'kill-window') {
       const target = normalizedArgs[2]
       const [sessionName, windowId] = target.split(':')
-      const windows = sessionMap.get(sessionName) ?? []
+      const windows = groupWindows(sessionName)
       sessionMap.set(
         sessionName,
         windows.filter((item) => item.id !== windowId)
@@ -187,7 +228,7 @@ function createTmuxRunner(sessions: SessionState[], baseIndex = 0) {
         return sessionName
       }
       if (format.includes('#{window_name}') && format.includes('#{pane_current_path}')) {
-        const window = (sessionMap.get(sessionName) ?? []).find(
+        const window = groupWindows(sessionName).find(
           (item) => item.id === windowId || String(item.index) === windowId
         )
         if (!window) {
@@ -691,6 +732,63 @@ describe('SessionManager', () => {
     }
   })
 
+  test('listWindows only hides bootstrap window in the managed base session', () => {
+    const managedSession = 'agentboard-bootstrap-filter'
+    const externalSession = 'work-bootstrap-filter'
+    const runner = createTmuxRunner(
+      [
+        {
+          name: managedSession,
+          windows: [
+            {
+              id: '0',
+              index: 0,
+              name: BOOTSTRAP_WINDOW_NAME,
+              path: '/tmp/managed',
+              activity: 0,
+              command: 'tail',
+            },
+          ],
+        },
+        {
+          name: externalSession,
+          windows: [
+            {
+              id: '1',
+              index: 1,
+              name: BOOTSTRAP_WINDOW_NAME,
+              path: '/tmp/external',
+              activity: 0,
+              command: 'claude',
+            },
+          ],
+        },
+      ],
+      1
+    )
+
+    const manager = new SessionManager(managedSession, {
+      runTmux: runner.runTmux,
+      capturePaneContent: () => makePaneCapture(''),
+      now: () => 1700000000000,
+    })
+
+    const originalPrefixes = config.discoverPrefixes
+    config.discoverPrefixes = []
+    try {
+      const sessions = manager.listWindows()
+
+      expect(
+        sessions.find((session) => session.tmuxWindow === `${managedSession}:0`)
+      ).toBeUndefined()
+      expect(
+        sessions.find((session) => session.tmuxWindow === `${externalSession}:1`)
+      ).toBeTruthy()
+    } finally {
+      config.discoverPrefixes = originalPrefixes
+    }
+  })
+
   test('listWindows falls back when tmux format keys are missing', () => {
     const sessionName = 'agentboard-format-fallback'
     const calls: string[][] = []
@@ -825,6 +923,34 @@ describe('SessionManager', () => {
     )
   })
 
+  test('createWindow rejects the reserved bootstrap window name', () => {
+    const sessionName = 'agentboard-reserved-create'
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentboard-'))
+    const runner = createTmuxRunner(
+      [
+        {
+          name: sessionName,
+          windows: [],
+        },
+      ],
+      1
+    )
+
+    const manager = new SessionManager(sessionName, {
+      runTmux: runner.runTmux,
+      capturePaneContent: () => makePaneCapture(''),
+      now: () => 1700000000000,
+    })
+
+    try {
+      expect(() =>
+        manager.createWindow(tempDir, BOOTSTRAP_WINDOW_NAME, 'claude')
+      ).toThrow(/reserved/)
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true })
+    }
+  })
+
   test('renameWindow rejects duplicates and applies rename', () => {
     const sessionName = 'agentboard'
     const runner = createTmuxRunner(
@@ -906,6 +1032,38 @@ describe('SessionManager', () => {
 
     const renameCalls = runner.calls.filter((call) => call[0] === 'rename-window')
     expect(renameCalls).toHaveLength(0)
+  })
+
+  test('renameWindow rejects the reserved bootstrap window name', () => {
+    const sessionName = 'agentboard-reserved-rename'
+    const runner = createTmuxRunner(
+      [
+        {
+          name: sessionName,
+          windows: [
+            {
+              id: '1',
+              index: 1,
+              name: 'alpha',
+              path: '/tmp/alpha',
+              activity: 0,
+              command: '',
+            },
+          ],
+        },
+      ],
+      1
+    )
+
+    const manager = new SessionManager(sessionName, {
+      runTmux: runner.runTmux,
+      capturePaneContent: () => makePaneCapture(''),
+      now: () => 1700000000000,
+    })
+
+    expect(() =>
+      manager.renameWindow(`${sessionName}:1`, BOOTSTRAP_WINDOW_NAME)
+    ).toThrow(/reserved/)
   })
 
   test('killWindow sends tmux command', () => {
@@ -1693,6 +1851,57 @@ describe('SessionManager', () => {
     failDiscovery = false
     manager.ensureSession()
     expect(setOptionCount).toBe(1)
+  })
+
+  test('ensureSession rejoins an existing tmux session group', () => {
+    const sessionName = 'agentboard-rejoin-group'
+    const wsSession = `${sessionName}-ws-existing`
+    const runner = createTmuxRunner(
+      [
+        {
+          name: wsSession,
+          group: sessionName,
+          windows: [
+            {
+              id: '1',
+              index: 1,
+              name: 'alpha',
+              path: '/tmp/alpha',
+              activity: 0,
+              command: 'claude',
+            },
+          ],
+        },
+      ],
+      1
+    )
+
+    const manager = new SessionManager(sessionName, {
+      runTmux: runner.runTmux,
+      capturePaneContent: () => makePaneCapture(''),
+      now: () => 1700000000000,
+    })
+
+    manager.ensureSession()
+
+    expect(runner.calls).toContainEqual([
+      'new-session',
+      '-d',
+      '-s',
+      sessionName,
+      '-t',
+      sessionName,
+    ])
+    expect(
+      runner.calls.some(
+        (call) =>
+          getTmuxCommand(call) === 'new-session' &&
+          call.includes(BOOTSTRAP_WINDOW_NAME)
+      )
+    ).toBe(false)
+
+    const sessions = manager.listWindows()
+    expect(sessions.find((session) => session.name === 'alpha')).toBeTruthy()
   })
 
   test('listWindows preserves lastActivity when pane capture times out', () => {
