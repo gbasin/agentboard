@@ -33,6 +33,13 @@ interface WindowInfo {
 
 type TmuxRunner = (args: string[]) => string
 type NowFn = () => number
+type GroupLookupResult =
+  | { reliable: true; sessionName: string | null }
+  | { reliable: false; sessionName: null }
+
+interface EnsureSessionResult {
+  canPruneWsSessions: boolean
+}
 
 interface PaneCapture {
   content: string
@@ -112,7 +119,8 @@ export class SessionManager {
     this.mouseMode = mouseMode
   }
 
-  ensureSession(): void {
+  ensureSession(): EnsureSessionResult {
+    let canPruneWsSessions = true
     try {
       // Use exact-match (`=` prefix) so a session group with the same name
       // (e.g. created by per-connection `agentboard-ws-*` sessions joined via
@@ -126,14 +134,15 @@ export class SessionManager {
       if (error instanceof TmuxTimeoutError) {
         throw error
       }
-      const groupSession = this.findSessionInGroup()
-      if (groupSession) {
+      const groupLookup = this.findSessionInGroup()
+      if (groupLookup.sessionName) {
         this.runTmux([
           'new-session', '-d',
           '-s', this.sessionName,
-          '-t', `=${groupSession}`,
+          '-t', `=${groupLookup.sessionName}`,
         ])
       } else {
+        canPruneWsSessions = groupLookup.reliable
         // Create the base session with a placeholder window. Tmux requires every
         // session to have at least one window, so we use a known-named window
         // running `tail -f /dev/null`. Listings filter this window out so it's
@@ -147,9 +156,10 @@ export class SessionManager {
       }
     }
     this.configureSession()
+    return { canPruneWsSessions }
   }
 
-  private findSessionInGroup(): string | null {
+  private findSessionInGroup(): GroupLookupResult {
     try {
       const output = this.runParsedTmux(['list-sessions', '-F', SESSION_GROUP_FORMAT])
       for (const line of splitTmuxLines(output)) {
@@ -159,16 +169,19 @@ export class SessionManager {
         }
         const [sessionName, sessionGroup] = fields
         if (sessionGroup === this.sessionName && sessionName) {
-          return sessionName
+          return { reliable: true, sessionName }
         }
       }
-      return null
+      return { reliable: true, sessionName: null }
     } catch (error) {
       if (error instanceof TmuxTimeoutError) {
         throw error
       }
-      if (isTmuxSessionAbsentError(error) || isTmuxFormatError(error)) {
-        return null
+      if (isTmuxSessionAbsentError(error)) {
+        return { reliable: true, sessionName: null }
+      }
+      if (isTmuxFormatError(error)) {
+        return { reliable: false, sessionName: null }
       }
       throw error
     }

@@ -247,8 +247,14 @@ const sessionManager = new SessionManager(undefined, {
 // session to read from. SessionManager creates it with a placeholder window
 // (filtered out of listings) when missing.
 try {
-  sessionManager.ensureSession()
-  pruneOrphanedWsSessions()
+  const ensureResult = sessionManager.ensureSession()
+  if (ensureResult.canPruneWsSessions) {
+    pruneOrphanedWsSessions()
+  } else {
+    logger.warn('ws_session_prune_skipped', {
+      reason: 'session_group_lookup_unavailable',
+    })
+  }
 } catch (error) {
   logger.warn('startup_ensure_session_failed', {
     message: error instanceof Error ? error.message : String(error),

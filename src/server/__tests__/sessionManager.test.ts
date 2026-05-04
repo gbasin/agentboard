@@ -1921,7 +1921,7 @@ describe('SessionManager', () => {
       now: () => 1700000000000,
     })
 
-    manager.ensureSession()
+    const result = manager.ensureSession()
 
     expect(runner.calls).toContainEqual([
       'new-session',
@@ -1938,6 +1938,7 @@ describe('SessionManager', () => {
           call.includes(BOOTSTRAP_WINDOW_NAME)
       )
     ).toBe(false)
+    expect(result.canPruneWsSessions).toBe(true)
 
     const sessions = manager.listWindows()
     expect(sessions.find((session) => session.name === 'alpha')).toBeTruthy()
@@ -1971,7 +1972,7 @@ describe('SessionManager', () => {
       now: () => 1700000000000,
     })
 
-    manager.ensureSession()
+    const result = manager.ensureSession()
 
     expect(runner.calls).toContainEqual([
       'new-session',
@@ -1989,6 +1990,7 @@ describe('SessionManager', () => {
           call.includes('-t')
       )
     ).toBe(false)
+    expect(result.canPruneWsSessions).toBe(true)
   })
 
   test('ensureSession creates bootstrap session when session_group format is unavailable', () => {
@@ -2016,7 +2018,7 @@ describe('SessionManager', () => {
       now: () => 1700000000000,
     })
 
-    manager.ensureSession()
+    const result = manager.ensureSession()
 
     expect(calls).toContainEqual([
       'new-session',
@@ -2027,6 +2029,7 @@ describe('SessionManager', () => {
       BOOTSTRAP_WINDOW_NAME,
       BOOTSTRAP_WINDOW_COMMAND,
     ])
+    expect(result.canPruneWsSessions).toBe(false)
   })
 
   test('listWindows preserves lastActivity when pane capture times out', () => {

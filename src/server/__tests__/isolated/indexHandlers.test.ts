@@ -141,7 +141,7 @@ let sessionManagerState: {
   killWindow: (tmuxWindow: string) => void
   renameWindow: (tmuxWindow: string, newName: string) => void
   setMouseMode: (enabled: boolean) => void
-  ensureSession: () => void
+  ensureSession: () => { canPruneWsSessions: boolean }
 }
 
 class SessionManagerMock {
@@ -171,7 +171,7 @@ class SessionManagerMock {
   }
 
   ensureSession() {
-    sessionManagerState.ensureSession()
+    return sessionManagerState.ensureSession()
   }
 }
 
@@ -621,7 +621,7 @@ beforeEach(() => {
     killWindow: () => {},
     renameWindow: () => {},
     setMouseMode: () => {},
-    ensureSession: () => {},
+    ensureSession: () => ({ canPruneWsSessions: true }),
   }
 
   spawnSyncImpl = () =>
@@ -1259,6 +1259,7 @@ describe('server message handlers', () => {
     let ensureCalls = 0
     sessionManagerState.ensureSession = () => {
       ensureCalls += 1
+      return { canPruneWsSessions: true }
     }
 
     const { serveOptions } = await loadIndex()
@@ -4589,6 +4590,7 @@ describe('server startup side effects', () => {
     const calls: string[][] = []
     sessionManagerState.ensureSession = () => {
       calls.push(['ensure-session'])
+      return { canPruneWsSessions: true }
     }
     spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
       const command = Array.isArray(args[0]) ? args[0] : [String(args[0])]
@@ -4630,6 +4632,49 @@ describe('server startup side effects', () => {
     expect(killCalls[0]).toEqual(['tmux', 'kill-session', '-t', 'agentboard-ws-1'])
     expect(calls.findIndex((command) => command[0] === 'ensure-session')).toBeLessThan(
       calls.findIndex((command) => getTmuxArgs(command)[0] === 'kill-session')
+    )
+  })
+
+  test('skips websocket session pruning when startup group recovery is unreliable', async () => {
+    const calls: string[][] = []
+    sessionManagerState.ensureSession = () => {
+      calls.push(['ensure-session'])
+      return { canPruneWsSessions: false }
+    }
+    spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
+      const command = Array.isArray(args[0]) ? args[0] : [String(args[0])]
+      calls.push(command as string[])
+      const tmuxArgs = getTmuxArgs(command as string[])
+      if (tmuxArgs[0] === 'list-sessions') {
+        return {
+          exitCode: 0,
+          stdout: Buffer.from(
+            tmuxOutput(
+              ['agentboard-ws-1', '0'],
+              ['agentboard-ws-2', '0']
+            )
+          ),
+          stderr: Buffer.from(''),
+        } as ReturnType<typeof Bun.spawnSync>
+      }
+      return {
+        exitCode: 0,
+        stdout: Buffer.from(''),
+        stderr: Buffer.from(''),
+      } as ReturnType<typeof Bun.spawnSync>
+    }) as typeof Bun.spawnSync
+
+    await loadIndex()
+
+    expect(
+      calls.some((command) => getTmuxArgs(command)[0] === 'kill-session')
+    ).toBe(false)
+    expect(logEntries).toContainEqual(
+      expect.objectContaining({
+        level: 'warn',
+        event: 'ws_session_prune_skipped',
+        data: { reason: 'session_group_lookup_unavailable' },
+      })
     )
   })
 
