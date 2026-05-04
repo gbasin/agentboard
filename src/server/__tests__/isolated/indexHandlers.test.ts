@@ -371,7 +371,7 @@ mock.module('../../db', () => ({
     orphanSession: (sessionId: string) => {
       const record = dbState.records.get(sessionId)
       if (!record) return null
-      const updated = { ...record, currentWindow: null }
+      const updated = { ...record, currentWindow: null, isPinned: true }
       dbState.records.set(sessionId, updated)
       return updated
     },

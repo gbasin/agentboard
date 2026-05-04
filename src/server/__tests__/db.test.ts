@@ -216,7 +216,7 @@ describe('db', () => {
     expect(db.getHistorySessions()).toEqual([])
   })
 
-  test('orphanSession moves unmarked active sessions to history', () => {
+  test('orphanSession auto-promotes unmarked active sessions to hibernating', () => {
     db.insertSession(makeSession({
       sessionId: 'unmarked-to-orphan',
       logFilePath: '/tmp/unmarked-to-orphan.jsonl',
@@ -227,9 +227,9 @@ describe('db', () => {
     const orphaned = db.orphanSession('unmarked-to-orphan')
 
     expect(orphaned?.currentWindow).toBeNull()
-    expect(orphaned?.isPinned).toBe(false)
-    expect(db.getHibernatingSessions()).toEqual([])
-    expect(db.getHistorySessions().map((session) => session.sessionId)).toEqual([
+    expect(orphaned?.isPinned).toBe(true)
+    expect(db.getHistorySessions()).toEqual([])
+    expect(db.getHibernatingSessions().map((session) => session.sessionId)).toEqual([
       'unmarked-to-orphan',
     ])
   })

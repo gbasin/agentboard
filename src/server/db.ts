@@ -364,9 +364,16 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
       return rows.map(mapRow)
     },
     orphanSession: (sessionId) => {
-      updateStmt(['current_window']).run({
+      // Auto-promote to Hibernating on unexpected window loss. Deliberate kills
+      // go through handleKill, which sets is_pinned = 0 in the same write that
+      // nulls current_window — so killed sessions still land in History. Every
+      // other "window vanished" detector (startup verification,
+      // sessionRefreshWorker, wake rollback) flows through here and now
+      // preserves the row in Hibernating instead of dropping it to History.
+      updateStmt(['current_window', 'is_pinned']).run({
         $sessionId: sessionId,
         $current_window: null,
+        $is_pinned: 1,
       })
       const row = selectBySessionId.get({ $sessionId: sessionId }) as
         | Record<string, unknown>
