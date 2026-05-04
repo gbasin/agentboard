@@ -141,6 +141,7 @@ let sessionManagerState: {
   killWindow: (tmuxWindow: string) => void
   renameWindow: (tmuxWindow: string, newName: string) => void
   setMouseMode: (enabled: boolean) => void
+  ensureSession: () => void
 }
 
 class SessionManagerMock {
@@ -167,6 +168,10 @@ class SessionManagerMock {
 
   setMouseMode(enabled: boolean) {
     sessionManagerState.setMouseMode(enabled)
+  }
+
+  ensureSession() {
+    sessionManagerState.ensureSession()
   }
 }
 
@@ -612,6 +617,7 @@ beforeEach(() => {
     killWindow: () => {},
     renameWindow: () => {},
     setMouseMode: () => {},
+    ensureSession: () => {},
   }
 
   spawnSyncImpl = () =>
@@ -4553,8 +4559,11 @@ describe('server fetch handlers', () => {
 })
 
 describe('server startup side effects', () => {
-  test('prunes unattached websocket sessions on startup', async () => {
+  test('prunes unattached websocket sessions after startup session recovery', async () => {
     const calls: string[][] = []
+    sessionManagerState.ensureSession = () => {
+      calls.push(['ensure-session'])
+    }
     spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
       const command = Array.isArray(args[0]) ? args[0] : [String(args[0])]
       calls.push(command as string[])
@@ -4593,6 +4602,9 @@ describe('server startup side effects', () => {
     )
     expect(killCalls).toHaveLength(1)
     expect(killCalls[0]).toEqual(['tmux', 'kill-session', '-t', 'agentboard-ws-1'])
+    expect(calls.findIndex((command) => command[0] === 'ensure-session')).toBeLessThan(
+      calls.findIndex((command) => getTmuxArgs(command)[0] === 'kill-session')
+    )
   })
 
   test('ping message returns pong and echoes seq when provided', async () => {

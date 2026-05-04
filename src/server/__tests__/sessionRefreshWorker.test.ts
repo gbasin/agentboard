@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import type { RefreshWorkerRequest, RefreshWorkerResponse } from '../sessionRefreshWorker'
 import { TMUX_TIMEOUT_ERROR_CODE } from '../tmuxTimeout'
-import { TMUX_FIELD_SEPARATOR } from '../tmuxFormat'
+import {
+  BOOTSTRAP_WINDOW_COMMAND,
+  BOOTSTRAP_WINDOW_NAME,
+  TMUX_FIELD_SEPARATOR,
+} from '../tmuxFormat'
 import type { Session } from '../../shared/types'
 
 const bunAny = Bun as typeof Bun & { spawnSync: typeof Bun.spawnSync }
@@ -71,6 +75,8 @@ describe('sessionRefreshWorker', () => {
 
     const listOutput = [
       joinTmuxFields(['agentboard', '1', 'alpha|||view', '/Users/test/project|||main', '100', '1700000000', 'codex --search', '80', '24']),
+      joinTmuxFields(['agentboard', '5', BOOTSTRAP_WINDOW_NAME, '/Users/test/bootstrap', '100', '1700000004', BOOTSTRAP_WINDOW_COMMAND, '80', '24']),
+      joinTmuxFields(['agentboard', '6', BOOTSTRAP_WINDOW_NAME, '/Users/test/manual', '100', '1700000005', 'claude', '80', '24']),
       joinTmuxFields(['agentboard-ws-foo', '2', 'ws', '/Users/test/ws', '100', '1700000001', 'bash', '80', '24']),
       joinTmuxFields(['external-|||session', '3', 'ext', '/Users/test/ext|||path', '100', '1700000002', 'claude', '100', '40']),
       joinTmuxFields(['other', '4', 'other', '/Users/test/other', '100', '1700000003', 'bash', '80', '24']),
@@ -78,6 +84,7 @@ describe('sessionRefreshWorker', () => {
 
     const captureOutputs = new Map<string, string>([
       ['agentboard:1', 'ready'],
+      ['agentboard:6', 'manual'],
       ['external-|||session:3', 'waiting'],
     ])
 
@@ -125,13 +132,16 @@ describe('sessionRefreshWorker', () => {
       throw new Error('Unexpected response type')
     }
 
-    expect(response.sessions).toHaveLength(2)
+    expect(response.sessions).toHaveLength(3)
 
     const managed = response.sessions.find(
       (session) => session.tmuxWindow === 'agentboard:1'
     )
     const external = response.sessions.find(
       (session) => session.tmuxWindow === 'external-|||session:3'
+    )
+    const manualReservedName = response.sessions.find(
+      (session) => session.tmuxWindow === 'agentboard:6'
     )
 
     expect(managed).toEqual(
@@ -149,6 +159,13 @@ describe('sessionRefreshWorker', () => {
         projectPath: '/Users/test/ext|||path',
         source: 'external',
         status: 'waiting',
+        agentType: 'claude',
+      })
+    )
+    expect(manualReservedName).toEqual(
+      expect.objectContaining({
+        name: BOOTSTRAP_WINDOW_NAME,
+        source: 'managed',
         agentType: 'claude',
       })
     )

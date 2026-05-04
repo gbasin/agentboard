@@ -167,7 +167,7 @@ export class SessionManager {
       if (error instanceof TmuxTimeoutError) {
         throw error
       }
-      if (isTmuxSessionAbsentError(error)) {
+      if (isTmuxSessionAbsentError(error) || isTmuxFormatError(error)) {
         return null
       }
       throw error
@@ -547,9 +547,7 @@ export class SessionManager {
         return window ? [window] : []
       })
       // Hide the placeholder window that keeps the base session alive.
-      .filter((window) =>
-        sessionName !== this.sessionName || window.name !== BOOTSTRAP_WINDOW_NAME
-      )
+      .filter((window) => !this.isBootstrapWindow(sessionName, window))
       .map((window) => {
         const tmuxWindow = `${sessionName}:${window.id}`
         const creationTimestamp = window.creation
@@ -619,6 +617,14 @@ export class SessionManager {
     if (name === BOOTSTRAP_WINDOW_NAME) {
       throw new Error(`"${BOOTSTRAP_WINDOW_NAME}" is reserved`)
     }
+  }
+
+  private isBootstrapWindow(sessionName: string, window: WindowInfo): boolean {
+    return (
+      sessionName === this.sessionName &&
+      window.name === BOOTSTRAP_WINDOW_NAME &&
+      window.command === BOOTSTRAP_WINDOW_COMMAND
+    )
   }
 
   private findNextAvailableWindowIndex(): number {

@@ -4,7 +4,11 @@ import os from 'node:os'
 import path from 'node:path'
 import { config } from '../config'
 import { SessionManager } from '../SessionManager'
-import { BOOTSTRAP_WINDOW_NAME, TMUX_FIELD_SEPARATOR } from '../tmuxFormat'
+import {
+  BOOTSTRAP_WINDOW_COMMAND,
+  BOOTSTRAP_WINDOW_NAME,
+  TMUX_FIELD_SEPARATOR,
+} from '../tmuxFormat'
 import { TmuxTimeoutError } from '../tmuxTimeout'
 
 const bunAny = Bun as typeof Bun & {
@@ -759,7 +763,15 @@ describe('SessionManager', () => {
               name: BOOTSTRAP_WINDOW_NAME,
               path: '/tmp/managed',
               activity: 0,
-              command: 'tail',
+              command: BOOTSTRAP_WINDOW_COMMAND,
+            },
+            {
+              id: '1',
+              index: 1,
+              name: BOOTSTRAP_WINDOW_NAME,
+              path: '/tmp/manual',
+              activity: 0,
+              command: 'claude',
             },
           ],
         },
@@ -796,6 +808,9 @@ describe('SessionManager', () => {
       ).toBeUndefined()
       expect(
         sessions.find((session) => session.tmuxWindow === `${externalSession}:1`)
+      ).toBeTruthy()
+      expect(
+        sessions.find((session) => session.tmuxWindow === `${managedSession}:1`)
       ).toBeTruthy()
     } finally {
       config.discoverPrefixes = originalPrefixes
@@ -1963,6 +1978,44 @@ describe('SessionManager', () => {
           call.includes('-t')
       )
     ).toBe(false)
+  })
+
+  test('ensureSession creates bootstrap session when session_group format is unavailable', () => {
+    const sessionName = 'agentboard-no-session-group-format'
+    const runTmux = (args: string[]) => {
+      const normalized = normalizeParsedTmuxArgs(args)
+      if (normalized[0] === 'has-session') {
+        throw new Error(`can't find session: ${sessionName}`)
+      }
+      if (
+        normalized[0] === 'list-sessions' &&
+        getTmuxFormatArg(normalized).includes('#{session_group}')
+      ) {
+        throw new Error('unknown format: session_group')
+      }
+      return ''
+    }
+    const calls: string[][] = []
+    const manager = new SessionManager(sessionName, {
+      runTmux: (args) => {
+        calls.push(args)
+        return runTmux(args)
+      },
+      capturePaneContent: () => makePaneCapture(''),
+      now: () => 1700000000000,
+    })
+
+    manager.ensureSession()
+
+    expect(calls).toContainEqual([
+      'new-session',
+      '-d',
+      '-s',
+      sessionName,
+      '-n',
+      BOOTSTRAP_WINDOW_NAME,
+      BOOTSTRAP_WINDOW_COMMAND,
+    ])
   })
 
   test('listWindows preserves lastActivity when pane capture times out', () => {

@@ -214,7 +214,6 @@ function createConnectionId(): string {
 
 checkPortAvailable(config.port)
 ensureTmux()
-pruneOrphanedWsSessions()
 const resolvedTerminalMode = resolveTerminalMode()
 logger.info('terminal_mode_resolved', {
   configured: config.terminalMode,
@@ -249,6 +248,7 @@ const sessionManager = new SessionManager(undefined, {
 // (filtered out of listings) when missing.
 try {
   sessionManager.ensureSession()
+  pruneOrphanedWsSessions()
 } catch (error) {
   logger.warn('startup_ensure_session_failed', {
     message: error instanceof Error ? error.message : String(error),

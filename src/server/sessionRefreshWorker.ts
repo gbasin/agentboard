@@ -8,6 +8,7 @@ import { config } from './config'
 import { normalizeProjectPath } from './logDiscovery'
 import { extractRecentUserMessagesFromTmux } from './logMatcher'
 import {
+  BOOTSTRAP_WINDOW_COMMAND,
   BOOTSTRAP_WINDOW_NAME,
   buildTmuxFormat,
   splitTmuxFields,
@@ -296,7 +297,11 @@ function listAllWindows(managedSession: string, discoverPrefixes: string[]): Ses
     }
 
     // Skip the bootstrap placeholder window in the managed base session.
-    if (sessionName === managedSession && window.windowName === BOOTSTRAP_WINDOW_NAME) {
+    if (
+      sessionName === managedSession &&
+      window.windowName === BOOTSTRAP_WINDOW_NAME &&
+      window.command === BOOTSTRAP_WINDOW_COMMAND
+    ) {
       continue
     }
 
