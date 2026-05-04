@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { clientLog } from '../utils/clientLog'
 import type {
   AgentSession,
@@ -925,6 +925,15 @@ export default function Terminal({
     }
   }, [containerRef, isiOS, isSelectingText])
 
+  // Use session names as mobile tab labels only when every session has a
+  // distinct, non-empty name. Otherwise tabs would repeat the same label and
+  // numeric indices remain the better signal.
+  const mobileTabsUseNames = useMemo(() => {
+    if (sessions.length === 0) return false
+    const names = sessions.map((s) => s.name?.trim()).filter(Boolean) as string[]
+    return names.length === sessions.length && new Set(names).size === sessions.length
+  }, [sessions])
+
   return (
     <section
       className={`flex flex-1 flex-col bg-base terminal-mobile-overlay md:relative md:inset-auto ${isiOS ? 'ios-native-term-selection' : ''}`}
@@ -1106,13 +1115,19 @@ export default function Terminal({
           >
             {sessions.map((s, index) => {
               const isActive = s.id === session.id
+              // Use session name as the label when all sessions have a distinct,
+              // non-empty name (e.g. with AGENTBOARD_PREFER_WINDOW_NAME=true and
+              // user-named windows). Otherwise fall back to numeric index — names
+              // would just repeat (e.g. all `dev`) and add no signal.
+              const label = mobileTabsUseNames ? s.name : String(index + 1)
               return (
                 <button
                   key={s.id}
                   type="button"
                   className={`
                     flex items-center justify-center shrink-0 snap-start
-                    h-8 w-8 text-sm font-extrabold rounded-lg
+                    h-8 ${mobileTabsUseNames ? 'min-w-[2rem] px-2.5 max-w-[8rem] truncate' : 'w-8'}
+                    text-sm font-extrabold rounded-lg
                     active:scale-95 transition-all duration-75
                     select-none touch-manipulation
                     ${isActive ? statusButtonActive[s.status] : statusButtonBase[s.status]}
@@ -1121,8 +1136,9 @@ export default function Terminal({
                     triggerHaptic()
                     onSelectSession(s.id)
                   }}
+                  title={mobileTabsUseNames ? s.name : undefined}
                 >
-                  {index + 1}
+                  {label}
                 </button>
               )
             })}

@@ -152,6 +152,11 @@ export const config = {
     .map((value) => value.trim())
     .filter(Boolean),
   pruneWsSessions: process.env.PRUNE_WS_SESSIONS !== 'false',
+  // Prefer tmux window names over session names when displaying externally-discovered
+  // sessions. Off by default, since window names often auto-rename to the running
+  // process under tmux `automatic-rename on`. Enable when each window has a stable,
+  // user-chosen name (e.g. one window per project in a shared session).
+  preferWindowName: process.env.AGENTBOARD_PREFER_WINDOW_NAME === 'true',
   terminalMode,
   terminalMonitorTargets: process.env.TERMINAL_MONITOR_TARGETS !== 'false',
   // Allow killing external (discovered) sessions from UI
