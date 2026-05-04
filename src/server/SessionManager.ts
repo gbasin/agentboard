@@ -7,6 +7,8 @@ import { logger } from './logger'
 import { resolveProjectPath } from './paths'
 import { TmuxTimeoutError } from './tmuxTimeout'
 import {
+  BOOTSTRAP_WINDOW_COMMAND,
+  BOOTSTRAP_WINDOW_NAME,
   buildTmuxFormat,
   splitTmuxFields,
   splitTmuxLines,
@@ -108,19 +110,35 @@ export class SessionManager {
 
   ensureSession(): void {
     try {
-      this.runTmux(['has-session', '-t', this.sessionName])
+      // Use exact-match (`=` prefix) so a session group with the same name
+      // (e.g. created by per-connection `agentboard-ws-*` sessions joined via
+      // `new-session -t agentboard`) does NOT satisfy this check. Without
+      // exact match, `has-session -t agentboard` returns success whenever any
+      // session is in the `agentboard` group, the base session never gets
+      // created, and listings filter out every `-ws-` session they see →
+      // empty windowSet → live windows get orphaned.
+      this.runTmux(['has-session', '-t', `=${this.sessionName}`])
     } catch (error) {
       if (error instanceof TmuxTimeoutError) {
         throw error
       }
-      this.runTmux(['new-session', '-d', '-s', this.sessionName])
+      // Create the base session with a placeholder window. Tmux requires every
+      // session to have at least one window, so we use a known-named window
+      // running `tail -f /dev/null`. Listings filter this window out so it's
+      // invisible to users.
+      this.runTmux([
+        'new-session', '-d',
+        '-s', this.sessionName,
+        '-n', BOOTSTRAP_WINDOW_NAME,
+        BOOTSTRAP_WINDOW_COMMAND,
+      ])
     }
     this.configureSession()
   }
 
   private sessionExists(): boolean {
     try {
-      this.runTmux(['has-session', '-t', this.sessionName])
+      this.runTmux(['has-session', '-t', `=${this.sessionName}`])
       return true
     } catch (error) {
       if (error instanceof TmuxTimeoutError) {
@@ -488,6 +506,8 @@ export class SessionManager {
         const window = parseWindow(line)
         return window ? [window] : []
       })
+      // Hide the placeholder window that keeps the base session alive.
+      .filter((window) => window.name !== BOOTSTRAP_WINDOW_NAME)
       .map((window) => {
         const tmuxWindow = `${sessionName}:${window.id}`
         const creationTimestamp = window.creation

@@ -58,7 +58,10 @@ function createTmuxRunner(sessions: SessionState[], baseIndex = 0) {
     const command = normalizedArgs[0]
 
     if (command === 'has-session') {
-      const sessionName = normalizedArgs[2]
+      // tmux `-t =name` forces exact session-name match. Strip the prefix so
+      // the mock matches the real tmux behavior of resolving the name.
+      const rawTarget = normalizedArgs[2] ?? ''
+      const sessionName = rawTarget.startsWith('=') ? rawTarget.slice(1) : rawTarget
       if (sessionMap.has(sessionName)) {
         return ''
       }

@@ -244,6 +244,16 @@ const sessionManager = new SessionManager(undefined, {
   displayNameExists: (name, excludeSessionId) => db.displayNameExists(name, excludeSessionId),
   mouseMode: initialMouseMode,
 })
+// Ensure the base tmux session exists so listing/orphan logic has a real
+// session to read from. SessionManager creates it with a placeholder window
+// (filtered out of listings) when missing.
+try {
+  sessionManager.ensureSession()
+} catch (error) {
+  logger.warn('startup_ensure_session_failed', {
+    message: error instanceof Error ? error.message : String(error),
+  })
+}
 const registry = new SessionRegistry()
 
 interface WSData {
