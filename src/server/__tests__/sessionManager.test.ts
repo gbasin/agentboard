@@ -1991,7 +1991,7 @@ describe('SessionManager', () => {
         normalized[0] === 'list-sessions' &&
         getTmuxFormatArg(normalized).includes('#{session_group}')
       ) {
-        throw new Error('unknown format: session_group')
+        throw new Error('unknown variable: session_group')
       }
       return ''
     }

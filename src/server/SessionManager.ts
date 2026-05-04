@@ -778,7 +778,11 @@ function isTmuxFormatError(error: unknown): boolean {
   }
 
   const message = error.message.toLowerCase()
-  return message.includes('unknown format') || message.includes('invalid format')
+  return (
+    message.includes('unknown format') ||
+    message.includes('invalid format') ||
+    message.includes('unknown variable')
+  )
 }
 
 interface StatusResult {
