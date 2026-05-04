@@ -56,10 +56,13 @@ function createTmuxRunner(sessions: SessionState[], baseIndex = 0) {
   )
   const calls: string[][] = []
 
+  const normalizeTarget = (targetName: string): string =>
+    targetName.startsWith('=') ? targetName.slice(1) : targetName
+
   const resolveGroup = (targetName: string): string | undefined =>
-    sessionGroups.get(targetName) ??
-    (Array.from(sessionGroups.values()).includes(targetName)
-      ? targetName
+    sessionGroups.get(normalizeTarget(targetName)) ??
+    (Array.from(sessionGroups.values()).includes(normalizeTarget(targetName))
+      ? normalizeTarget(targetName)
       : undefined)
 
   const groupWindows = (sessionName: string): WindowState[] => {
@@ -89,7 +92,9 @@ function createTmuxRunner(sessions: SessionState[], baseIndex = 0) {
       const sessionName = exact ? rawTarget.slice(1) : rawTarget
       const exists = exact
         ? sessionMap.has(sessionName)
-        : sessionMap.has(sessionName) || resolveGroup(sessionName) === sessionName
+        : sessionMap.has(sessionName) ||
+          Array.from(sessionMap.keys()).some((name) => name.startsWith(sessionName)) ||
+          resolveGroup(sessionName) === sessionName
       if (exists) {
         return ''
       }
@@ -144,6 +149,14 @@ function createTmuxRunner(sessions: SessionState[], baseIndex = 0) {
     }
 
     if (command === 'list-sessions') {
+      const format = getTmuxFormatArg(normalizedArgs)
+      if (format.includes('#{session_group}')) {
+        return Array.from(sessionMap.keys())
+          .map((sessionName) =>
+            buildTmuxRow([sessionName, sessionGroups.get(sessionName) ?? sessionName])
+          )
+          .join('\n')
+      }
       return Array.from(sessionMap.keys()).join('\n')
     }
 
@@ -1890,7 +1903,7 @@ describe('SessionManager', () => {
       '-s',
       sessionName,
       '-t',
-      sessionName,
+      `=${wsSession}`,
     ])
     expect(
       runner.calls.some(
@@ -1902,6 +1915,54 @@ describe('SessionManager', () => {
 
     const sessions = manager.listWindows()
     expect(sessions.find((session) => session.name === 'alpha')).toBeTruthy()
+  })
+
+  test('ensureSession does not rejoin unrelated sessions with matching prefixes', () => {
+    const sessionName = 'agentboard-prefix'
+    const unrelatedSession = `${sessionName}-work`
+    const runner = createTmuxRunner(
+      [
+        {
+          name: unrelatedSession,
+          windows: [
+            {
+              id: '1',
+              index: 1,
+              name: 'external',
+              path: '/tmp/external',
+              activity: 0,
+              command: 'claude',
+            },
+          ],
+        },
+      ],
+      1
+    )
+
+    const manager = new SessionManager(sessionName, {
+      runTmux: runner.runTmux,
+      capturePaneContent: () => makePaneCapture(''),
+      now: () => 1700000000000,
+    })
+
+    manager.ensureSession()
+
+    expect(runner.calls).toContainEqual([
+      'new-session',
+      '-d',
+      '-s',
+      sessionName,
+      '-n',
+      BOOTSTRAP_WINDOW_NAME,
+      'tail -f /dev/null',
+    ])
+    expect(
+      runner.calls.some(
+        (call) =>
+          getTmuxCommand(call) === 'new-session' &&
+          call.includes('-t')
+      )
+    ).toBe(false)
   })
 
   test('listWindows preserves lastActivity when pane capture times out', () => {

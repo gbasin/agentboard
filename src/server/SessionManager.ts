@@ -64,6 +64,10 @@ const WINDOW_INFO_FORMAT = buildTmuxFormat([
   '#{window_name}',
   '#{pane_current_path}',
 ])
+const SESSION_GROUP_FORMAT = buildTmuxFormat([
+  '#{session_name}',
+  '#{session_group}',
+])
 const PANE_DIMENSIONS_FORMAT = buildTmuxFormat([
   '#{pane_width}',
   '#{pane_height}',
@@ -122,11 +126,12 @@ export class SessionManager {
       if (error instanceof TmuxTimeoutError) {
         throw error
       }
-      if (this.sessionGroupExists()) {
+      const groupSession = this.findSessionInGroup()
+      if (groupSession) {
         this.runTmux([
           'new-session', '-d',
           '-s', this.sessionName,
-          '-t', this.sessionName,
+          '-t', `=${groupSession}`,
         ])
       } else {
         // Create the base session with a placeholder window. Tmux requires every
@@ -144,16 +149,26 @@ export class SessionManager {
     this.configureSession()
   }
 
-  private sessionGroupExists(): boolean {
+  private findSessionInGroup(): string | null {
     try {
-      this.runTmux(['has-session', '-t', this.sessionName])
-      return true
+      const output = this.runParsedTmux(['list-sessions', '-F', SESSION_GROUP_FORMAT])
+      for (const line of splitTmuxLines(output)) {
+        const fields = splitTmuxFields(line, 2)
+        if (!fields) {
+          continue
+        }
+        const [sessionName, sessionGroup] = fields
+        if (sessionGroup === this.sessionName && sessionName) {
+          return sessionName
+        }
+      }
+      return null
     } catch (error) {
       if (error instanceof TmuxTimeoutError) {
         throw error
       }
       if (isTmuxSessionAbsentError(error)) {
-        return false
+        return null
       }
       throw error
     }
