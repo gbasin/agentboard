@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import { inferAgentType, normalizePaneStartCommand } from './agentDetection'
 import { config } from './config'
+import { resolveExternalDisplayName } from './displayName'
 import { normalizeProjectPath } from './logDiscovery'
 import { generateSessionName } from './nameGenerator'
 import { logger } from './logger'
@@ -498,8 +499,11 @@ export class SessionManager {
           this.capturePaneContent,
           this.now
         )
-        // For external sessions, use session name as display name (more meaningful than window name)
-        const displayName = source === 'external' ? sessionName : window.name
+        // For external sessions, use session name as display name (more meaningful than window name).
+        // With AGENTBOARD_PREFER_WINDOW_NAME=true, use window name when distinct from session name.
+        const displayName = source === 'external'
+          ? resolveExternalDisplayName(sessionName, window.name, config.preferWindowName)
+          : window.name
         const normalizedPath = normalizeProjectPath(window.path)
         return {
           id: `${sessionName}:${window.id}`,

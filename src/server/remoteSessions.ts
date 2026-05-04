@@ -1,5 +1,6 @@
 import { inferAgentType, normalizePaneStartCommand } from './agentDetection'
 import { config } from './config'
+import { resolveExternalDisplayName } from './displayName'
 import { logger } from './logger'
 import { shellQuote } from './shellQuote'
 import {
@@ -438,7 +439,7 @@ function parseTmuxWindows(
     const isManagedSession = sessionName === tmuxSessionPrefix
     const displayName = isManagedSession
       ? (windowName || tmuxWindow)
-      : (sessionName || tmuxWindow)
+      : (resolveExternalDisplayName(sessionName, windowName, config.preferWindowName) || tmuxWindow)
 
     sessions.push({
       id,
