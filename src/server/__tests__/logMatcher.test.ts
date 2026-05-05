@@ -15,6 +15,7 @@ import {
   extractRecentUserMessagesFromTmux,
   extractPiUserMessagesFromAnsi,
   extractActionFromUserAction,
+  extractCommandInvocation,
   extractLastUserMessageFromLog,
   hasMessageInValidUserContext,
   isToolNotificationText,
@@ -233,6 +234,153 @@ describe('logMatcher', () => {
     )
 
     expect(extractLastUserMessageFromLog(logPath)).toBe('review')
+    await fs.rm(tempDir, { recursive: true, force: true })
+  })
+
+  test('extractLastUserMessageFromLog skips Claude <local-command-stdout> auto-compact entries and falls back to prior real user message', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-last-user-'))
+    const logPath = path.join(tempDir, 'session.jsonl')
+
+    // Real on-disk format from ~/.claude/projects/*.jsonl after ctrl+o auto-compact:
+    // user-role JSONL entry whose content is `<local-command-stdout>[2mCompacted...[22m</local-command-stdout>`.
+    await fs.writeFile(
+      logPath,
+      [
+        JSON.stringify({
+          type: 'user',
+          message: { role: 'user', content: 'fix the login bug' },
+          timestamp: '2026-05-04T10:00:00.000Z',
+        }),
+        JSON.stringify({
+          type: 'user',
+          message: {
+            role: 'user',
+            content:
+              '<local-command-stdout>[2mCompacted (ctrl+o to see full summary)[22m</local-command-stdout>',
+          },
+          timestamp: '2026-05-04T10:05:00.000Z',
+        }),
+      ].join('\n')
+    )
+
+    expect(extractLastUserMessageFromLog(logPath)).toBe('fix the login bug')
+    await fs.rm(tempDir, { recursive: true, force: true })
+  })
+
+  test('extractLastUserMessageFromLog returns null when only <local-command-stdout> exists', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-last-user-'))
+    const logPath = path.join(tempDir, 'session.jsonl')
+
+    await fs.writeFile(
+      logPath,
+      JSON.stringify({
+        type: 'user',
+        message: {
+          role: 'user',
+          content:
+            '<local-command-stdout>[2mCompacted (ctrl+o to see full summary)[22m</local-command-stdout>',
+        },
+      })
+    )
+
+    expect(extractLastUserMessageFromLog(logPath)).toBeNull()
+    await fs.rm(tempDir, { recursive: true, force: true })
+  })
+
+  test('extractLastUserMessageFromLog strips ANSI escapes from real user messages', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-last-user-'))
+    const logPath = path.join(tempDir, 'session.jsonl')
+
+    await fs.writeFile(
+      logPath,
+      JSON.stringify({
+        type: 'user',
+        message: {
+          role: 'user',
+          content: '[31mfix the login bug[0m',
+        },
+      })
+    )
+
+    expect(extractLastUserMessageFromLog(logPath)).toBe('fix the login bug')
+    await fs.rm(tempDir, { recursive: true, force: true })
+  })
+
+  test('extractCommandInvocation returns "/cmd args" form for slash-command messages', () => {
+    const text =
+      '<command-message>mcp__RepoPrompt__rp-review</command-message>\n<command-name>/mcp__RepoPrompt__rp-review</command-name>\n<command-args>the pr</command-args>'
+    expect(extractCommandInvocation(text)).toBe('/mcp__RepoPrompt__rp-review the pr')
+  })
+
+  test('extractCommandInvocation handles empty args', () => {
+    const text =
+      '<command-message>mcp</command-message>\n<command-name>/mcp</command-name>\n<command-args></command-args>'
+    expect(extractCommandInvocation(text)).toBe('/mcp')
+  })
+
+  test('extractCommandInvocation returns null for non-command text', () => {
+    expect(extractCommandInvocation('please fix the login bug')).toBeNull()
+  })
+
+  test('extractCommandInvocation requires <command-message> wrapper (rejects pasted command-name fragments)', () => {
+    // User pasting a fragment of a Claude log without the full block shape — should not be misinterpreted.
+    const text = 'see this log line: <command-name>/cmd</command-name><command-args>args</command-args>'
+    expect(extractCommandInvocation(text)).toBeNull()
+  })
+
+  test('extractCommandInvocation requires slash-prefixed name (rejects bare names)', () => {
+    const text =
+      '<command-message>foo</command-message><command-name>just-a-name</command-name><command-args>args</command-args>'
+    expect(extractCommandInvocation(text)).toBeNull()
+  })
+
+  test('extractLastUserMessageFromLog renders slash-command invocations as readable preview', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-last-user-'))
+    const logPath = path.join(tempDir, 'session.jsonl')
+
+    // Real on-disk format from ~/.claude/projects/*.jsonl when a user runs a slash command:
+    // type:"user" entry whose content wraps <command-message>/<command-name>/<command-args>.
+    await fs.writeFile(
+      logPath,
+      JSON.stringify({
+        type: 'user',
+        message: {
+          role: 'user',
+          content:
+            '<command-message>mcp__RepoPrompt__rp-review</command-message>\n<command-name>/mcp__RepoPrompt__rp-review</command-name>\n<command-args>the pr</command-args>',
+        },
+      })
+    )
+
+    expect(extractLastUserMessageFromLog(logPath)).toBe('/mcp__RepoPrompt__rp-review the pr')
+    await fs.rm(tempDir, { recursive: true, force: true })
+  })
+
+  test('extractLastUserMessageFromLog filters tool-notification markers wrapped in ANSI escapes', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-last-user-'))
+    const logPath = path.join(tempDir, 'session.jsonl')
+    const ESC = String.fromCharCode(27)
+
+    // Hypothetical future format where Claude wraps a marker tag in ANSI dim.
+    // The fix must strip ANSI before the marker check so this still gets filtered.
+    await fs.writeFile(
+      logPath,
+      [
+        JSON.stringify({
+          type: 'user',
+          message: { role: 'user', content: 'real prior message' },
+        }),
+        JSON.stringify({
+          type: 'user',
+          message: {
+            role: 'user',
+            content: `${ESC}[2m<local-command-stdout>compacted${ESC}[22m</local-command-stdout>`,
+          },
+        }),
+      ].join('\n')
+    )
+
+    expect(extractLastUserMessageFromLog(logPath)).toBe('real prior message')
     await fs.rm(tempDir, { recursive: true, force: true })
   })
 
@@ -1493,6 +1641,15 @@ describe('isToolNotificationText', () => {
 
     test('allows whitespace only', () => {
       expect(isToolNotificationText('   ')).toBe(false)
+    })
+
+    test('filters Claude Code <local-command-stdout> auto-compact output', () => {
+      const text = '<local-command-stdout>[2mCompacted (ctrl+o to see full summary)[22m</local-command-stdout>'
+      expect(isToolNotificationText(text)).toBe(true)
+    })
+
+    test('filters <local-command-stderr> output', () => {
+      expect(isToolNotificationText('<local-command-stderr>error</local-command-stderr>')).toBe(true)
     })
   })
 })
