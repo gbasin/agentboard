@@ -1494,6 +1494,15 @@ describe('isToolNotificationText', () => {
     test('allows whitespace only', () => {
       expect(isToolNotificationText('   ')).toBe(false)
     })
+
+    test('filters Claude Code <local-command-stdout> auto-compact output', () => {
+      const text = '<local-command-stdout>[2mCompacted (ctrl+o to see full summary)[22m</local-command-stdout>'
+      expect(isToolNotificationText(text)).toBe(true)
+    })
+
+    test('filters <local-command-stderr> output', () => {
+      expect(isToolNotificationText('<local-command-stderr>error</local-command-stderr>')).toBe(true)
+    })
   })
 })
 

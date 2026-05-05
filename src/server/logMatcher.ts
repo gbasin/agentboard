@@ -336,7 +336,16 @@ const TOOL_NOTIFICATION_MARKERS = [
   '<instructions>',
   '# agents.md instructions',
   '<environment_context>',
+  // Claude Code slash-command / auto-compact stdout/stderr (e.g. `<local-command-stdout>\x1b[2mCompacted...\x1b[22m</local-command-stdout>`)
+  '<local-command-stdout>',
+  '<local-command-stderr>',
 ] as const
+
+const ANSI_ESCAPE_PATTERN = /\[[0-9;?]*[a-zA-Z]/g
+
+export function stripAnsiEscapes(text: string): string {
+  return text.replace(ANSI_ESCAPE_PATTERN, '')
+}
 
 /**
  * Pattern for Codex CLI tool-use warnings injected as user messages.
@@ -1414,7 +1423,8 @@ function processUserMessageText(text: string): string | null {
   if (isToolNotificationText(text)) return null
   const action = extractActionFromUserAction(text)
   if (action) return action
-  return text
+  const stripped = stripAnsiEscapes(text)
+  return stripped.trim() ? stripped : null
 }
 
 function extractRoleTextFromEntry(
