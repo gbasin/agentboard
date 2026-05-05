@@ -322,6 +322,18 @@ describe('logMatcher', () => {
     expect(extractCommandInvocation('please fix the login bug')).toBeNull()
   })
 
+  test('extractCommandInvocation requires <command-message> wrapper (rejects pasted command-name fragments)', () => {
+    // User pasting a fragment of a Claude log without the full block shape — should not be misinterpreted.
+    const text = 'see this log line: <command-name>/cmd</command-name><command-args>args</command-args>'
+    expect(extractCommandInvocation(text)).toBeNull()
+  })
+
+  test('extractCommandInvocation requires slash-prefixed name (rejects bare names)', () => {
+    const text =
+      '<command-message>foo</command-message><command-name>just-a-name</command-name><command-args>args</command-args>'
+    expect(extractCommandInvocation(text)).toBeNull()
+  })
+
   test('extractLastUserMessageFromLog renders slash-command invocations as readable preview', async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-last-user-'))
     const logPath = path.join(tempDir, 'session.jsonl')

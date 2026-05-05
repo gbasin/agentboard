@@ -388,12 +388,16 @@ export function extractActionFromUserAction(text: string): string | null {
  * Extract a human-readable slash command invocation from a Claude Code
  * `<command-message>...</command-message><command-name>/cmd</command-name><command-args>args</command-args>`
  * user message. Returns "/cmd args" (or "/cmd" with no args) or null if not a command invocation.
+ *
+ * To avoid false positives on user-authored prose containing `<command-name>` tags,
+ * we require the full Claude block shape (both `<command-message>` and `<command-name>`)
+ * and require the extracted name to be a slash command.
  */
 export function extractCommandInvocation(text: string): string | null {
-  if (!text.includes('<command-name>')) return null
+  if (!text.includes('<command-message>') || !text.includes('<command-name>')) return null
   const nameMatch = text.match(/<command-name>\s*([^<]+?)\s*<\/command-name>/i)
-  if (!nameMatch?.[1]) return null
-  const name = nameMatch[1].trim()
+  const name = nameMatch?.[1]?.trim()
+  if (!name || !name.startsWith('/')) return null
   const argsMatch = text.match(/<command-args>\s*([\s\S]*?)\s*<\/command-args>/i)
   const args = argsMatch?.[1]?.trim() ?? ''
   return args ? `${name} ${args}` : name
