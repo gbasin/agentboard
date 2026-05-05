@@ -148,6 +148,7 @@ TMUX_SESSION=agentboard
 REFRESH_INTERVAL_MS=5000
 DISCOVER_PREFIXES=work,external
 PRUNE_WS_SESSIONS=true
+AGENTBOARD_PREFER_WINDOW_NAME=false
 TERMINAL_MODE=pty
 TERMINAL_MONITOR_TARGETS=true
 VITE_ALLOWED_HOSTS=nuc,myserver
@@ -172,6 +173,8 @@ AGENTBOARD_LOG_WATCH_MODE=watch
 `DISCOVER_PREFIXES` lets you discover and control windows from other tmux sessions. If unset, all sessions except the managed one are discovered.
 
 `PRUNE_WS_SESSIONS` removes orphaned `agentboard-ws-*` tmux sessions on startup (set to `false` to disable).
+
+`AGENTBOARD_PREFER_WINDOW_NAME` (default `false`) controls how externally-discovered sessions are labeled. When `false`, the tmux session name is used (more meaningful than auto-renamed window names that follow the running process under tmux `automatic-rename on`). Set to `true` to use the tmux window name when it is non-empty and distinct from the session name — useful when you keep one shared session (e.g. `dev`) with one explicitly-named window per project (`myapp`, `infra`, ...).
 
 `TERMINAL_MODE` selects terminal I/O strategy: `pty` (default, grouped session) or `pipe-pane` (PTY-less, works in daemon/systemd/docker without `-t`).
 

@@ -5,6 +5,7 @@
  */
 import { inferAgentType, normalizePaneStartCommand } from './agentDetection'
 import { config } from './config'
+import { resolveExternalDisplayName } from './displayName'
 import { normalizeProjectPath } from './logDiscovery'
 import { extractRecentUserMessagesFromTmux } from './logMatcher'
 import {
@@ -326,7 +327,9 @@ function listAllWindows(managedSession: string, discoverPrefixes: string[]): Ses
     )
 
     const creationTimestamp = window.creation ? window.creation * 1000 : now
-    const displayName = source === 'external' ? sessionName : window.windowName
+    const displayName = source === 'external'
+      ? resolveExternalDisplayName(sessionName, window.windowName, config.preferWindowName)
+      : window.windowName
     const normalizedPath = normalizeProjectPath(window.path)
 
     sessions.push({

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, mock } from 'bun:test'
 import TestRenderer, { act } from 'react-test-renderer'
 import type { AgentSession, Session } from '@shared/types'
 import { useThemeStore } from '../stores/themeStore'
+import { useSessionStore } from '../stores/sessionStore'
 
 const globalAny = globalThis as typeof globalThis & {
   document?: Document
@@ -237,6 +238,7 @@ beforeEach(() => {
   }
 
   useThemeStore.setState({ theme: 'dark' })
+  useSessionStore.setState({ preferWindowName: false })
 })
 
 afterEach(() => {
@@ -696,6 +698,110 @@ describe('Terminal', () => {
     })
 
     expect(renamed).toEqual([])
+
+    act(() => {
+      renderer.unmount()
+    })
+  })
+
+  test('mobile session switcher shows numeric labels when preferWindowName is false even with distinct names', () => {
+    if (globalAny.window) {
+      globalAny.window.matchMedia = (() => ({
+        matches: true,
+        media: '',
+        onchange: null,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        addListener: () => {},
+        removeListener: () => {},
+        dispatchEvent: () => false,
+      })) as unknown as typeof window.matchMedia
+    }
+    useSessionStore.setState({ preferWindowName: false })
+
+    const { createNodeMock } = createContainerMock()
+    let renderer!: TestRenderer.ReactTestRenderer
+
+    act(() => {
+      renderer = TestRenderer.create(
+        <Terminal
+          session={baseSession}
+          sessions={[baseSession, secondSession]}
+          connectionStatus="connected"
+          sendMessage={() => {}}
+          subscribe={() => () => {}}
+          onClose={() => {}}
+          onSelectSession={() => {}}
+          onNewSession={() => {}}
+          onKillSession={() => {}}
+          onRenameSession={() => {}}
+          onResumeSession={() => {}}
+          onOpenSettings={() => {}}
+        />,
+        { createNodeMock }
+      )
+    })
+
+    const labels = renderer.root
+      .findAllByType('button')
+      .map((button) => button.props.children)
+      .filter((child) => child === 1 || child === 2 || child === 'alpha' || child === 'beta')
+
+    expect(labels).toContain(1)
+    expect(labels).toContain(2)
+    expect(labels).not.toContain('alpha')
+    expect(labels).not.toContain('beta')
+
+    act(() => {
+      renderer.unmount()
+    })
+  })
+
+  test('mobile session switcher shows name labels when preferWindowName is true and names are distinct', () => {
+    if (globalAny.window) {
+      globalAny.window.matchMedia = (() => ({
+        matches: true,
+        media: '',
+        onchange: null,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        addListener: () => {},
+        removeListener: () => {},
+        dispatchEvent: () => false,
+      })) as unknown as typeof window.matchMedia
+    }
+    useSessionStore.setState({ preferWindowName: true })
+
+    const { createNodeMock } = createContainerMock()
+    let renderer!: TestRenderer.ReactTestRenderer
+
+    act(() => {
+      renderer = TestRenderer.create(
+        <Terminal
+          session={baseSession}
+          sessions={[baseSession, secondSession]}
+          connectionStatus="connected"
+          sendMessage={() => {}}
+          subscribe={() => () => {}}
+          onClose={() => {}}
+          onSelectSession={() => {}}
+          onNewSession={() => {}}
+          onKillSession={() => {}}
+          onRenameSession={() => {}}
+          onResumeSession={() => {}}
+          onOpenSettings={() => {}}
+        />,
+        { createNodeMock }
+      )
+    })
+
+    const labels = renderer.root
+      .findAllByType('button')
+      .map((button) => button.props.children)
+      .filter((child) => child === 1 || child === 2 || child === 'alpha' || child === 'beta')
+
+    expect(labels).toContain('alpha')
+    expect(labels).toContain('beta')
 
     act(() => {
       renderer.unmount()
