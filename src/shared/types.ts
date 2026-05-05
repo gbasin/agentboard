@@ -109,7 +109,7 @@ export type ServerMessage =
     }
   | { type: 'terminal-ready'; sessionId: string }
   | { type: 'tmux-copy-mode-status'; sessionId: string; inCopyMode: boolean }
-  | { type: 'server-config'; remoteAllowControl: boolean; remoteAllowAttach: boolean; hostLabel: string; clientLogLevel?: string }
+  | { type: 'server-config'; remoteAllowControl: boolean; remoteAllowAttach: boolean; hostLabel: string; preferWindowName: boolean; clientLogLevel?: string }
   | { type: 'pong'; seq?: number }
   | { type: 'error'; message: string }
   | { type: 'kill-failed'; sessionId: string; message: string }
