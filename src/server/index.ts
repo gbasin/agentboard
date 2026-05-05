@@ -1416,6 +1416,7 @@ const websocketHandlers = {
       remoteAllowControl: config.remoteAllowControl,
       remoteAllowAttach: config.remoteAllowAttach,
       hostLabel: config.hostLabel,
+      preferWindowName: config.preferWindowName,
       clientLogLevel: logLevel,
     })
     const agentSessions = registry.getAgentSessions()

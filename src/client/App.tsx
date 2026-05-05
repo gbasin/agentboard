@@ -87,6 +87,7 @@ export default function App() {
   const setRemoteAllowControl = useSessionStore((state) => state.setRemoteAllowControl)
   const setRemoteAllowAttach = useSessionStore((state) => state.setRemoteAllowAttach)
   const setHostLabel = useSessionStore((state) => state.setHostLabel)
+  const setPreferWindowName = useSessionStore((state) => state.setPreferWindowName)
   const hostStatuses = useSessionStore((state) => state.hostStatuses)
   const remoteAllowControl = useSessionStore((state) => state.remoteAllowControl)
   const hostLabel = useSessionStore((state) => state.hostLabel)
@@ -287,6 +288,7 @@ export default function App() {
         setRemoteAllowControl(message.remoteAllowControl)
         setRemoteAllowAttach(message.remoteAllowAttach)
         setHostLabel(message.hostLabel)
+        setPreferWindowName(message.preferWindowName)
         if (message.clientLogLevel) {
           setClientLogLevel(message.clientLogLevel)
         }
@@ -495,6 +497,7 @@ export default function App() {
     setRemoteAllowControl,
     setRemoteAllowAttach,
     setHostLabel,
+    setPreferWindowName,
     subscribe,
     updateSession,
   ])

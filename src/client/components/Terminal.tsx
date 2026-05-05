@@ -137,6 +137,7 @@ export default function Terminal({
   const isRemoteSession = session?.remote === true
   const remoteAllowControl = useSessionStore((s) => s.remoteAllowControl)
   const remoteAllowAttach = useSessionStore((s) => s.remoteAllowAttach)
+  const preferWindowName = useSessionStore((s) => s.preferWindowName)
   const isReadOnly = isRemoteSession && !remoteAllowAttach
   const canControl = !isRemoteSession || (remoteAllowControl && session?.source === 'managed')
   const hibernatingDisplayName = hibernatingSession
@@ -925,14 +926,15 @@ export default function Terminal({
     }
   }, [containerRef, isiOS, isSelectingText])
 
-  // Use session names as mobile tab labels only when every session has a
-  // distinct, non-empty name. Otherwise tabs would repeat the same label and
-  // numeric indices remain the better signal.
+  // Use session names as mobile tab labels only when AGENTBOARD_PREFER_WINDOW_NAME is
+  // enabled AND every session has a distinct, non-empty name. Otherwise tabs would
+  // repeat the same label and numeric indices remain the better signal.
   const mobileTabsUseNames = useMemo(() => {
+    if (!preferWindowName) return false
     if (sessions.length === 0) return false
-    const names = sessions.map((s) => s.name?.trim()).filter(Boolean) as string[]
+    const names = sessions.map((s) => s.name.trim()).filter(Boolean)
     return names.length === sessions.length && new Set(names).size === sessions.length
-  }, [sessions])
+  }, [preferWindowName, sessions])
 
   return (
     <section
@@ -1119,7 +1121,7 @@ export default function Terminal({
               // non-empty name (e.g. with AGENTBOARD_PREFER_WINDOW_NAME=true and
               // user-named windows). Otherwise fall back to numeric index — names
               // would just repeat (e.g. all `dev`) and add no signal.
-              const label = mobileTabsUseNames ? s.name : String(index + 1)
+              const label = mobileTabsUseNames ? s.name.trim() : index + 1
               return (
                 <button
                   key={s.id}
