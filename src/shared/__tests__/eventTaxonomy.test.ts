@@ -177,6 +177,18 @@ describe('eventTaxonomy', () => {
     expect(parsed?.events[0]?.text).toBe('this is not valid json')
   })
 
+  test('skips Claude isMeta entries (system-reminders, recap notices)', () => {
+    const reminder = normalizeAgentLogEntry({
+      type: 'user',
+      message: {
+        role: 'user',
+        content: '<system-reminder>Respond with just the action…</system-reminder>',
+      },
+      isMeta: true,
+    })
+    expect(reminder).toEqual([])
+  })
+
   test('falls back to unknown event content for unmapped JSON entries', () => {
     const events = normalizeAgentLogEntry({
       type: 'something_new',
