@@ -339,6 +339,11 @@ const TOOL_NOTIFICATION_MARKERS = [
   // Claude Code slash-command / auto-compact stdout/stderr (e.g. `<local-command-stdout>\x1b[2mCompacted...\x1b[22m</local-command-stdout>`)
   '<local-command-stdout>',
   '<local-command-stderr>',
+  // Raw slash-command invocations. Live extraction prefers the "/cmd args"
+  // form via extractCommandInvocation; this marker exists so the cache-refresh
+  // path in logPoller treats any pre-fix cached `<command-message>...` payload
+  // as stale and re-runs extraction.
+  '<command-message>',
 ] as const
 
 
@@ -377,6 +382,21 @@ export function extractActionFromUserAction(text: string): string | null {
     return actionMatch[1].trim()
   }
   return null
+}
+
+/**
+ * Extract a human-readable slash command invocation from a Claude Code
+ * `<command-message>...</command-message><command-name>/cmd</command-name><command-args>args</command-args>`
+ * user message. Returns "/cmd args" (or "/cmd" with no args) or null if not a command invocation.
+ */
+export function extractCommandInvocation(text: string): string | null {
+  if (!text.includes('<command-name>')) return null
+  const nameMatch = text.match(/<command-name>\s*([^<]+?)\s*<\/command-name>/i)
+  if (!nameMatch?.[1]) return null
+  const name = nameMatch[1].trim()
+  const argsMatch = text.match(/<command-args>\s*([\s\S]*?)\s*<\/command-args>/i)
+  const args = argsMatch?.[1]?.trim() ?? ''
+  return args ? `${name} ${args}` : name
 }
 
 function readLogTail(logPath: string, byteLimit = DEFAULT_LOG_TAIL_BYTES): string {
@@ -1419,6 +1439,11 @@ function processUserMessageText(text: string): string | null {
   // log entries that wrap markers in ANSI (e.g., `\x1b[2m<task-notification>...`).
   const cleaned = stripAnsi(text)
   if (!cleaned.trim()) return null
+  // Slash-command invocations come through as user messages wrapped in
+  // <command-message>/<command-name>/<command-args>. Extract a readable
+  // "/cmd args" form before the generic marker filter would discard them.
+  const invocation = extractCommandInvocation(cleaned)
+  if (invocation) return invocation
   if (isToolNotificationText(cleaned)) return null
   const action = extractActionFromUserAction(cleaned)
   if (action) return action

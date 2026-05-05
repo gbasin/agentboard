@@ -15,6 +15,7 @@ import {
   extractRecentUserMessagesFromTmux,
   extractPiUserMessagesFromAnsi,
   extractActionFromUserAction,
+  extractCommandInvocation,
   extractLastUserMessageFromLog,
   hasMessageInValidUserContext,
   isToolNotificationText,
@@ -302,6 +303,44 @@ describe('logMatcher', () => {
     )
 
     expect(extractLastUserMessageFromLog(logPath)).toBe('fix the login bug')
+    await fs.rm(tempDir, { recursive: true, force: true })
+  })
+
+  test('extractCommandInvocation returns "/cmd args" form for slash-command messages', () => {
+    const text =
+      '<command-message>mcp__RepoPrompt__rp-review</command-message>\n<command-name>/mcp__RepoPrompt__rp-review</command-name>\n<command-args>the pr</command-args>'
+    expect(extractCommandInvocation(text)).toBe('/mcp__RepoPrompt__rp-review the pr')
+  })
+
+  test('extractCommandInvocation handles empty args', () => {
+    const text =
+      '<command-message>mcp</command-message>\n<command-name>/mcp</command-name>\n<command-args></command-args>'
+    expect(extractCommandInvocation(text)).toBe('/mcp')
+  })
+
+  test('extractCommandInvocation returns null for non-command text', () => {
+    expect(extractCommandInvocation('please fix the login bug')).toBeNull()
+  })
+
+  test('extractLastUserMessageFromLog renders slash-command invocations as readable preview', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-last-user-'))
+    const logPath = path.join(tempDir, 'session.jsonl')
+
+    // Real on-disk format from ~/.claude/projects/*.jsonl when a user runs a slash command:
+    // type:"user" entry whose content wraps <command-message>/<command-name>/<command-args>.
+    await fs.writeFile(
+      logPath,
+      JSON.stringify({
+        type: 'user',
+        message: {
+          role: 'user',
+          content:
+            '<command-message>mcp__RepoPrompt__rp-review</command-message>\n<command-name>/mcp__RepoPrompt__rp-review</command-name>\n<command-args>the pr</command-args>',
+        },
+      })
+    )
+
+    expect(extractLastUserMessageFromLog(logPath)).toBe('/mcp__RepoPrompt__rp-review the pr')
     await fs.rm(tempDir, { recursive: true, force: true })
   })
 
