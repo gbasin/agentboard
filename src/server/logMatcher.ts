@@ -341,11 +341,7 @@ const TOOL_NOTIFICATION_MARKERS = [
   '<local-command-stderr>',
 ] as const
 
-const ANSI_ESCAPE_PATTERN = /\[[0-9;?]*[a-zA-Z]/g
 
-export function stripAnsiEscapes(text: string): string {
-  return text.replace(ANSI_ESCAPE_PATTERN, '')
-}
 
 /**
  * Pattern for Codex CLI tool-use warnings injected as user messages.
@@ -1419,12 +1415,14 @@ function shouldIncludeRole(role: string, mode: LogTextMode): boolean {
  * Returns the processed text or null if it should be skipped.
  */
 function processUserMessageText(text: string): string | null {
-  if (!text.trim()) return null
-  if (isToolNotificationText(text)) return null
-  const action = extractActionFromUserAction(text)
+  // Strip ANSI first so marker checks see clean text — guards against future
+  // log entries that wrap markers in ANSI (e.g., `\x1b[2m<task-notification>...`).
+  const cleaned = stripAnsi(text)
+  if (!cleaned.trim()) return null
+  if (isToolNotificationText(cleaned)) return null
+  const action = extractActionFromUserAction(cleaned)
   if (action) return action
-  const stripped = stripAnsiEscapes(text)
-  return stripped.trim() ? stripped : null
+  return cleaned
 }
 
 function extractRoleTextFromEntry(

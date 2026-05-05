@@ -305,6 +305,34 @@ describe('logMatcher', () => {
     await fs.rm(tempDir, { recursive: true, force: true })
   })
 
+  test('extractLastUserMessageFromLog filters tool-notification markers wrapped in ANSI escapes', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-last-user-'))
+    const logPath = path.join(tempDir, 'session.jsonl')
+    const ESC = String.fromCharCode(27)
+
+    // Hypothetical future format where Claude wraps a marker tag in ANSI dim.
+    // The fix must strip ANSI before the marker check so this still gets filtered.
+    await fs.writeFile(
+      logPath,
+      [
+        JSON.stringify({
+          type: 'user',
+          message: { role: 'user', content: 'real prior message' },
+        }),
+        JSON.stringify({
+          type: 'user',
+          message: {
+            role: 'user',
+            content: `${ESC}[2m<local-command-stdout>compacted${ESC}[22m</local-command-stdout>`,
+          },
+        }),
+      ].join('\n')
+    )
+
+    expect(extractLastUserMessageFromLog(logPath)).toBe('real prior message')
+    await fs.rm(tempDir, { recursive: true, force: true })
+  })
+
   test('extractLastUserMessageFromLog skips Claude isMeta system-reminder entries', async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-last-user-'))
     const logPath = path.join(tempDir, 'session.jsonl')
