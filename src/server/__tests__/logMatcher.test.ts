@@ -236,6 +236,75 @@ describe('logMatcher', () => {
     await fs.rm(tempDir, { recursive: true, force: true })
   })
 
+  test('extractLastUserMessageFromLog skips Claude <local-command-stdout> auto-compact entries and falls back to prior real user message', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-last-user-'))
+    const logPath = path.join(tempDir, 'session.jsonl')
+
+    // Real on-disk format from ~/.claude/projects/*.jsonl after ctrl+o auto-compact:
+    // user-role JSONL entry whose content is `<local-command-stdout>[2mCompacted...[22m</local-command-stdout>`.
+    await fs.writeFile(
+      logPath,
+      [
+        JSON.stringify({
+          type: 'user',
+          message: { role: 'user', content: 'fix the login bug' },
+          timestamp: '2026-05-04T10:00:00.000Z',
+        }),
+        JSON.stringify({
+          type: 'user',
+          message: {
+            role: 'user',
+            content:
+              '<local-command-stdout>[2mCompacted (ctrl+o to see full summary)[22m</local-command-stdout>',
+          },
+          timestamp: '2026-05-04T10:05:00.000Z',
+        }),
+      ].join('\n')
+    )
+
+    expect(extractLastUserMessageFromLog(logPath)).toBe('fix the login bug')
+    await fs.rm(tempDir, { recursive: true, force: true })
+  })
+
+  test('extractLastUserMessageFromLog returns null when only <local-command-stdout> exists', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-last-user-'))
+    const logPath = path.join(tempDir, 'session.jsonl')
+
+    await fs.writeFile(
+      logPath,
+      JSON.stringify({
+        type: 'user',
+        message: {
+          role: 'user',
+          content:
+            '<local-command-stdout>[2mCompacted (ctrl+o to see full summary)[22m</local-command-stdout>',
+        },
+      })
+    )
+
+    expect(extractLastUserMessageFromLog(logPath)).toBeNull()
+    await fs.rm(tempDir, { recursive: true, force: true })
+  })
+
+  test('extractLastUserMessageFromLog strips ANSI escapes from real user messages', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-last-user-'))
+    const logPath = path.join(tempDir, 'session.jsonl')
+
+    await fs.writeFile(
+      logPath,
+      JSON.stringify({
+        type: 'user',
+        message: {
+          role: 'user',
+          content: '[31mfix the login bug[0m',
+        },
+      })
+    )
+
+    expect(extractLastUserMessageFromLog(logPath)).toBe('fix the login bug')
+    await fs.rm(tempDir, { recursive: true, force: true })
+  })
+
   test('extractLastUserMessageFromLog skips Claude isMeta system-reminder entries', async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-last-user-'))
     const logPath = path.join(tempDir, 'session.jsonl')
