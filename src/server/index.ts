@@ -214,7 +214,6 @@ function createConnectionId(): string {
 
 checkPortAvailable(config.port)
 ensureTmux()
-pruneOrphanedWsSessions()
 const resolvedTerminalMode = resolveTerminalMode()
 logger.info('terminal_mode_resolved', {
   configured: config.terminalMode,
@@ -244,6 +243,36 @@ const sessionManager = new SessionManager(undefined, {
   displayNameExists: (name, excludeSessionId) => db.displayNameExists(name, excludeSessionId),
   mouseMode: initialMouseMode,
 })
+// Ensure the base tmux session exists so listing/orphan logic has a real
+// session to read from. SessionManager creates it with a placeholder window
+// (filtered out of listings) when missing.
+try {
+  const ensureResult = sessionManager.ensureSession()
+  if (ensureResult.canPruneWsSessions) {
+    pruneOrphanedWsSessions()
+  } else {
+    logger.warn('ws_session_prune_skipped', {
+      reason: 'session_group_lookup_unavailable',
+    })
+  }
+} catch (error) {
+  logger.warn('startup_ensure_session_failed', {
+    message: error instanceof Error ? error.message : String(error),
+  })
+}
+
+function ensureBaseSessionForRefresh(context: string): boolean {
+  try {
+    sessionManager.ensureSession()
+    return true
+  } catch (error) {
+    logger.warn('base_session_ensure_failed', {
+      context,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return false
+  }
+}
 const registry = new SessionRegistry()
 
 interface WSData {
@@ -657,7 +686,9 @@ function hydrateSessionsWithAgentSessions(
           nameMatches,
           bestMatchLog: verification.bestMatch?.logPath ?? null,
         })
-        const orphanedSession = db.orphanSession(agentSession.sessionId)
+        const orphanedSession = db.orphanSession(agentSession.sessionId, {
+          hibernate: false,
+        })
         if (orphanedSession) {
           orphaned.push(toAgentSession(orphanedSession))
         }
@@ -770,6 +801,9 @@ async function refreshSessionsAsync(): Promise<void> {
   if (refreshInFlight) return
   refreshInFlight = true
   try {
+    if (!ensureBaseSessionForRefresh('async_refresh')) {
+      return
+    }
     // Loop: retry once if an optimistic mutation invalidated our snapshot.
     // At most one retry — if another mutation lands during the retry,
     // the next scheduled refresh will pick it up.
@@ -832,6 +866,9 @@ function refreshSessions() {
 
 function listWindowsSyncOrNull(context: string): Session[] | null {
   try {
+    if (!ensureBaseSessionForRefresh(context)) {
+      return null
+    }
     return sessionManager.listWindows()
   } catch (error) {
     if (error instanceof TmuxTimeoutError) {

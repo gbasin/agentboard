@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import type { RefreshWorkerRequest, RefreshWorkerResponse } from '../sessionRefreshWorker'
 import { TMUX_TIMEOUT_ERROR_CODE } from '../tmuxTimeout'
-import { TMUX_FIELD_SEPARATOR } from '../tmuxFormat'
+import {
+  BOOTSTRAP_WINDOW_COMMAND,
+  BOOTSTRAP_WINDOW_NAME,
+  TMUX_FIELD_SEPARATOR,
+} from '../tmuxFormat'
 import type { Session } from '../../shared/types'
 
 const bunAny = Bun as typeof Bun & { spawnSync: typeof Bun.spawnSync }
@@ -71,6 +75,8 @@ describe('sessionRefreshWorker', () => {
 
     const listOutput = [
       joinTmuxFields(['agentboard', '1', 'alpha|||view', '/Users/test/project|||main', '100', '1700000000', 'codex --search', '80', '24']),
+      joinTmuxFields(['agentboard', '5', BOOTSTRAP_WINDOW_NAME, '/Users/test/bootstrap', '100', '1700000004', BOOTSTRAP_WINDOW_COMMAND, '80', '24']),
+      joinTmuxFields(['agentboard', '6', BOOTSTRAP_WINDOW_NAME, '/Users/test/manual', '100', '1700000005', 'claude', '80', '24']),
       joinTmuxFields(['agentboard-ws-foo', '2', 'ws', '/Users/test/ws', '100', '1700000001', 'bash', '80', '24']),
       joinTmuxFields(['external-|||session', '3', 'ext', '/Users/test/ext|||path', '100', '1700000002', 'claude', '100', '40']),
       joinTmuxFields(['other', '4', 'other', '/Users/test/other', '100', '1700000003', 'bash', '80', '24']),
@@ -78,6 +84,7 @@ describe('sessionRefreshWorker', () => {
 
     const captureOutputs = new Map<string, string>([
       ['agentboard:1', 'ready'],
+      ['agentboard:6', 'manual'],
       ['external-|||session:3', 'waiting'],
     ])
 
@@ -133,6 +140,9 @@ describe('sessionRefreshWorker', () => {
     const external = response.sessions.find(
       (session) => session.tmuxWindow === 'external-|||session:3'
     )
+    const manualReservedName = response.sessions.find(
+      (session) => session.tmuxWindow === 'agentboard:6'
+    )
 
     expect(managed).toEqual(
       expect.objectContaining({
@@ -152,6 +162,7 @@ describe('sessionRefreshWorker', () => {
         agentType: 'claude',
       })
     )
+    expect(manualReservedName).toBeUndefined()
   })
 
   test('refresh normalizes tmux-quoted pane_start_command', async () => {
@@ -204,6 +215,7 @@ describe('sessionRefreshWorker', () => {
     await loadWorker('format-fallback')
 
     const listOutput = [
+      joinTmuxFields(['agentboard', '0', BOOTSTRAP_WINDOW_NAME, '/Users/test/bootstrap', '100', '1700000000', 'tail', '80', '24']),
       joinTmuxFields(['agentboard', '1', 'alpha', '/Users/test/project', '100', '1700000000', 'codex', '80', '24']),
     ].join('\n')
 
@@ -252,6 +264,7 @@ describe('sessionRefreshWorker', () => {
     }
 
     expect(response.sessions).toHaveLength(1)
+    expect(response.sessions[0]?.tmuxWindow).toBe('agentboard:1')
     expect(listCalls).toBe(2)
   })
 

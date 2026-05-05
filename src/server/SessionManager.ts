@@ -7,6 +7,8 @@ import { logger } from './logger'
 import { resolveProjectPath } from './paths'
 import { TmuxTimeoutError } from './tmuxTimeout'
 import {
+  BOOTSTRAP_WINDOW_COMMAND,
+  BOOTSTRAP_WINDOW_NAME,
   buildTmuxFormat,
   splitTmuxFields,
   splitTmuxLines,
@@ -31,6 +33,13 @@ interface WindowInfo {
 
 type TmuxRunner = (args: string[]) => string
 type NowFn = () => number
+type GroupLookupResult =
+  | { reliable: true; sessionName: string | null }
+  | { reliable: false; sessionName: null }
+
+interface EnsureSessionResult {
+  canPruneWsSessions: boolean
+}
 
 interface PaneCapture {
   content: string
@@ -61,6 +70,10 @@ const WINDOW_LIST_FORMAT_FALLBACK = buildTmuxFormat([
 const WINDOW_INFO_FORMAT = buildTmuxFormat([
   '#{window_name}',
   '#{pane_current_path}',
+])
+const SESSION_GROUP_FORMAT = buildTmuxFormat([
+  '#{session_name}',
+  '#{session_group}',
 ])
 const PANE_DIMENSIONS_FORMAT = buildTmuxFormat([
   '#{pane_width}',
@@ -106,21 +119,77 @@ export class SessionManager {
     this.mouseMode = mouseMode
   }
 
-  ensureSession(): void {
+  ensureSession(): EnsureSessionResult {
+    let canPruneWsSessions = true
     try {
-      this.runTmux(['has-session', '-t', this.sessionName])
+      // Use exact-match (`=` prefix) so a session group with the same name
+      // (e.g. created by per-connection `agentboard-ws-*` sessions joined via
+      // `new-session -t agentboard`) does NOT satisfy this check. Without
+      // exact match, `has-session -t agentboard` returns success whenever any
+      // session is in the `agentboard` group, the base session never gets
+      // created, and listings filter out every `-ws-` session they see →
+      // empty windowSet → live windows get orphaned.
+      this.runTmux(['has-session', '-t', `=${this.sessionName}`])
     } catch (error) {
       if (error instanceof TmuxTimeoutError) {
         throw error
       }
-      this.runTmux(['new-session', '-d', '-s', this.sessionName])
+      const groupLookup = this.findSessionInGroup()
+      if (groupLookup.sessionName) {
+        this.runTmux([
+          'new-session', '-d',
+          '-s', this.sessionName,
+          '-t', `=${groupLookup.sessionName}`,
+        ])
+      } else {
+        canPruneWsSessions = groupLookup.reliable
+        // Create the base session with a placeholder window. Tmux requires every
+        // session to have at least one window, so we use a known-named window
+        // running `tail -f /dev/null`. Listings filter this window out so it's
+        // invisible to users.
+        this.runTmux([
+          'new-session', '-d',
+          '-s', this.sessionName,
+          '-n', BOOTSTRAP_WINDOW_NAME,
+          BOOTSTRAP_WINDOW_COMMAND,
+        ])
+      }
     }
     this.configureSession()
+    return { canPruneWsSessions }
+  }
+
+  private findSessionInGroup(): GroupLookupResult {
+    try {
+      const output = this.runParsedTmux(['list-sessions', '-F', SESSION_GROUP_FORMAT])
+      for (const line of splitTmuxLines(output)) {
+        const fields = splitTmuxFields(line, 2)
+        if (!fields) {
+          continue
+        }
+        const [sessionName, sessionGroup] = fields
+        if (sessionGroup === this.sessionName && sessionName) {
+          return { reliable: true, sessionName }
+        }
+      }
+      return { reliable: true, sessionName: null }
+    } catch (error) {
+      if (error instanceof TmuxTimeoutError) {
+        throw error
+      }
+      if (isTmuxSessionAbsentError(error)) {
+        return { reliable: true, sessionName: null }
+      }
+      if (isTmuxFormatError(error)) {
+        return { reliable: false, sessionName: null }
+      }
+      throw error
+    }
   }
 
   private sessionExists(): boolean {
     try {
-      this.runTmux(['has-session', '-t', this.sessionName])
+      this.runTmux(['has-session', '-t', `=${this.sessionName}`])
       return true
     } catch (error) {
       if (error instanceof TmuxTimeoutError) {
@@ -317,6 +386,7 @@ export class SessionManager {
         baseName = generateSessionName()
       } while (nameExists(baseName))
     }
+    this.assertNotReservedWindowName(baseName)
 
     const finalCommand = command?.trim() || 'claude'
     const finalName = this.findAvailableName(baseName, existingWindowNames, nameExists)
@@ -427,6 +497,7 @@ export class SessionManager {
         'Name can only contain letters, numbers, hyphens, and underscores'
       )
     }
+    this.assertNotReservedWindowName(trimmed)
 
     const sessionName = this.resolveSessionName(tmuxWindow)
     const targetWindowId = this.extractWindowId(tmuxWindow)
@@ -488,6 +559,8 @@ export class SessionManager {
         const window = parseWindow(line)
         return window ? [window] : []
       })
+      // Hide the placeholder window that keeps the base session alive.
+      .filter((window) => !this.isBootstrapWindow(sessionName, window))
       .map((window) => {
         const tmuxWindow = `${sessionName}:${window.id}`
         const creationTimestamp = window.creation
@@ -551,6 +624,19 @@ export class SessionManager {
     }
 
     return `${baseName}-${suffix}`
+  }
+
+  private assertNotReservedWindowName(name: string): void {
+    if (name === BOOTSTRAP_WINDOW_NAME) {
+      throw new Error(`"${BOOTSTRAP_WINDOW_NAME}" is reserved`)
+    }
+  }
+
+  private isBootstrapWindow(sessionName: string, window: WindowInfo): boolean {
+    return (
+      sessionName === this.sessionName &&
+      window.name === BOOTSTRAP_WINDOW_NAME
+    )
   }
 
   private findNextAvailableWindowIndex(): number {
@@ -704,7 +790,11 @@ function isTmuxFormatError(error: unknown): boolean {
   }
 
   const message = error.message.toLowerCase()
-  return message.includes('unknown format') || message.includes('invalid format')
+  return (
+    message.includes('unknown format') ||
+    message.includes('invalid format') ||
+    message.includes('unknown variable')
+  )
 }
 
 interface StatusResult {

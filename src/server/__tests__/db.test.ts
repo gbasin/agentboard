@@ -216,7 +216,7 @@ describe('db', () => {
     expect(db.getHistorySessions()).toEqual([])
   })
 
-  test('orphanSession moves unmarked active sessions to history', () => {
+  test('orphanSession auto-promotes unmarked active sessions to hibernating', () => {
     db.insertSession(makeSession({
       sessionId: 'unmarked-to-orphan',
       logFilePath: '/tmp/unmarked-to-orphan.jsonl',
@@ -227,10 +227,28 @@ describe('db', () => {
     const orphaned = db.orphanSession('unmarked-to-orphan')
 
     expect(orphaned?.currentWindow).toBeNull()
+    expect(orphaned?.isPinned).toBe(true)
+    expect(db.getHistorySessions()).toEqual([])
+    expect(db.getHibernatingSessions().map((session) => session.sessionId)).toEqual([
+      'unmarked-to-orphan',
+    ])
+  })
+
+  test('orphanSession can move mismatch cleanup to history', () => {
+    db.insertSession(makeSession({
+      sessionId: 'mismatch-to-history',
+      logFilePath: '/tmp/mismatch-to-history.jsonl',
+      currentWindow: 'agentboard:11',
+      isPinned: true,
+    }))
+
+    const orphaned = db.orphanSession('mismatch-to-history', { hibernate: false })
+
+    expect(orphaned?.currentWindow).toBeNull()
     expect(orphaned?.isPinned).toBe(false)
     expect(db.getHibernatingSessions()).toEqual([])
     expect(db.getHistorySessions().map((session) => session.sessionId)).toEqual([
-      'unmarked-to-orphan',
+      'mismatch-to-history',
     ])
   })
 

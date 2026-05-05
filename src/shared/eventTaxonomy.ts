@@ -346,6 +346,11 @@ export function normalizeAgentLogEntry(entry: unknown): NormalizedEvent[] {
   const record = asRecord(entry)
   if (!record) return []
 
+  // Claude Code marks harness-injected entries (system-reminders, recap notices,
+  // compaction summaries) with isMeta:true. They aren't user-authored, so they
+  // shouldn't surface as the last user message or count as conversation turns.
+  if (record.isMeta === true) return []
+
   const source = createSource(record)
   const primary = [
     ...normalizeResponseItemMessage(record, source),

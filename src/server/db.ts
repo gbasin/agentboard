@@ -60,7 +60,10 @@ export interface SessionDatabase {
   getActiveSessions: () => AgentSessionRecord[]
   getHibernatingSessions: () => AgentSessionRecord[]
   getHistorySessions: (options?: { maxAgeHours?: number }) => AgentSessionRecord[]
-  orphanSession: (sessionId: string) => AgentSessionRecord | null
+  orphanSession: (
+    sessionId: string,
+    options?: { hibernate?: boolean }
+  ) => AgentSessionRecord | null
   displayNameExists: (displayName: string, excludeSessionId?: string) => boolean
   setPinned: (sessionId: string, isPinned: boolean) => AgentSessionRecord | null
   getActiveSessionBySlugAndProject: (
@@ -363,10 +366,15 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
       const rows = selectHistory.all() as Record<string, unknown>[]
       return rows.map(mapRow)
     },
-    orphanSession: (sessionId) => {
-      updateStmt(['current_window']).run({
+    orphanSession: (sessionId, options) => {
+      const hibernate = options?.hibernate ?? true
+      // Auto-promote to Hibernating on unexpected window loss. Deliberate kills
+      // and explicit mismatch cleanup opt out so those rows still land in
+      // History.
+      updateStmt(['current_window', 'is_pinned']).run({
         $sessionId: sessionId,
         $current_window: null,
+        $is_pinned: hibernate ? 1 : 0,
       })
       const row = selectBySessionId.get({ $sessionId: sessionId }) as
         | Record<string, unknown>

@@ -58,6 +58,9 @@ mock.module('@xterm/addon-search', () => ({ SearchAddon: class {} }))
 mock.module('@xterm/addon-serialize', () => ({ SerializeAddon: class {} }))
 mock.module('@xterm/addon-progress', () => ({ ProgressAddon: class {} }))
 mock.module('@xterm/addon-web-links', () => ({ WebLinksAddon: class {} }))
+mock.module('../components/SessionPreviewContent', () => ({
+  default: () => <div data-testid="session-preview-content" />,
+}))
 
 const actualWebSocket = await import('../hooks/useWebSocket')
 

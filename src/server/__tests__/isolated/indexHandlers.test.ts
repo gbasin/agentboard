@@ -141,6 +141,7 @@ let sessionManagerState: {
   killWindow: (tmuxWindow: string) => void
   renameWindow: (tmuxWindow: string, newName: string) => void
   setMouseMode: (enabled: boolean) => void
+  ensureSession: () => { canPruneWsSessions: boolean }
 }
 
 class SessionManagerMock {
@@ -167,6 +168,10 @@ class SessionManagerMock {
 
   setMouseMode(enabled: boolean) {
     sessionManagerState.setMouseMode(enabled)
+  }
+
+  ensureSession() {
+    return sessionManagerState.ensureSession()
   }
 }
 
@@ -363,10 +368,14 @@ mock.module('../../db', () => ({
       Array.from(dbState.records.values()).filter(
         (record) => record.currentWindow === null && record.isPinned
       ),
-    orphanSession: (sessionId: string) => {
+    orphanSession: (sessionId: string, options?: { hibernate?: boolean }) => {
       const record = dbState.records.get(sessionId)
       if (!record) return null
-      const updated = { ...record, currentWindow: null }
+      const updated = {
+        ...record,
+        currentWindow: null,
+        isPinned: options?.hibernate ?? true,
+      }
       dbState.records.set(sessionId, updated)
       return updated
     },
@@ -612,6 +621,7 @@ beforeEach(() => {
     killWindow: () => {},
     renameWindow: () => {},
     setMouseMode: () => {},
+    ensureSession: () => ({ canPruneWsSessions: true }),
   }
 
   spawnSyncImpl = () =>
@@ -1243,6 +1253,29 @@ describe('server message handlers', () => {
     expect(refreshWorkerExpectedWindowCounts[1]).toBeGreaterThan(
       refreshWorkerExpectedWindowCounts[0] ?? 0
     )
+  })
+
+  test('session refresh ensures base session before worker snapshot', async () => {
+    let ensureCalls = 0
+    sessionManagerState.ensureSession = () => {
+      ensureCalls += 1
+      return { canPruneWsSessions: true }
+    }
+
+    const { serveOptions } = await loadIndex()
+    const startupEnsureCalls = ensureCalls
+    const { ws } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) throw new Error('WebSocket handlers not configured')
+
+    refreshWorkerSessions = [baseSession]
+    websocket.message?.(ws as never, JSON.stringify({ type: 'session-refresh' }))
+    for (let i = 0; i < 50 && ensureCalls === startupEnsureCalls; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+
+    expect(ensureCalls).toBeGreaterThan(startupEnsureCalls)
+    expect(refreshWorkerExpectedWindowCounts).toHaveLength(1)
   })
 
   test('last-user-message timeout does not poison the queued refresh', async () => {
@@ -4553,8 +4586,12 @@ describe('server fetch handlers', () => {
 })
 
 describe('server startup side effects', () => {
-  test('prunes unattached websocket sessions on startup', async () => {
+  test('prunes unattached websocket sessions after startup session recovery', async () => {
     const calls: string[][] = []
+    sessionManagerState.ensureSession = () => {
+      calls.push(['ensure-session'])
+      return { canPruneWsSessions: true }
+    }
     spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
       const command = Array.isArray(args[0]) ? args[0] : [String(args[0])]
       calls.push(command as string[])
@@ -4593,6 +4630,52 @@ describe('server startup side effects', () => {
     )
     expect(killCalls).toHaveLength(1)
     expect(killCalls[0]).toEqual(['tmux', 'kill-session', '-t', 'agentboard-ws-1'])
+    expect(calls.findIndex((command) => command[0] === 'ensure-session')).toBeLessThan(
+      calls.findIndex((command) => getTmuxArgs(command)[0] === 'kill-session')
+    )
+  })
+
+  test('skips websocket session pruning when startup group recovery is unreliable', async () => {
+    const calls: string[][] = []
+    sessionManagerState.ensureSession = () => {
+      calls.push(['ensure-session'])
+      return { canPruneWsSessions: false }
+    }
+    spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
+      const command = Array.isArray(args[0]) ? args[0] : [String(args[0])]
+      calls.push(command as string[])
+      const tmuxArgs = getTmuxArgs(command as string[])
+      if (tmuxArgs[0] === 'list-sessions') {
+        return {
+          exitCode: 0,
+          stdout: Buffer.from(
+            tmuxOutput(
+              ['agentboard-ws-1', '0'],
+              ['agentboard-ws-2', '0']
+            )
+          ),
+          stderr: Buffer.from(''),
+        } as ReturnType<typeof Bun.spawnSync>
+      }
+      return {
+        exitCode: 0,
+        stdout: Buffer.from(''),
+        stderr: Buffer.from(''),
+      } as ReturnType<typeof Bun.spawnSync>
+    }) as typeof Bun.spawnSync
+
+    await loadIndex()
+
+    expect(
+      calls.some((command) => getTmuxArgs(command)[0] === 'kill-session')
+    ).toBe(false)
+    expect(logEntries).toContainEqual(
+      expect.objectContaining({
+        level: 'warn',
+        event: 'ws_session_prune_skipped',
+        data: { reason: 'session_group_lookup_unavailable' },
+      })
+    )
   })
 
   test('ping message returns pong and echoes seq when provided', async () => {

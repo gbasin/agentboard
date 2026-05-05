@@ -4,6 +4,13 @@
 const TMUX_FIELD_SEPARATOR = '\t'
 const TMUX_UTF8_FLAG = '-u'
 
+// Placeholder window kept alive in the base session so the session itself
+// persists even when the user has no real windows. Tmux requires every
+// session to contain at least one window, so we run a long-lived no-op here.
+// Listings filter out windows whose name matches BOOTSTRAP_WINDOW_NAME.
+const BOOTSTRAP_WINDOW_NAME = '__agentboard_root__'
+const BOOTSTRAP_WINDOW_COMMAND = 'tail -f /dev/null'
+
 function withTmuxUtf8Flag(args: string[]): string[] {
   if (args[0] === TMUX_UTF8_FLAG) {
     return args
@@ -31,6 +38,8 @@ function splitTmuxLines(output: string): string[] {
 }
 
 export {
+  BOOTSTRAP_WINDOW_COMMAND,
+  BOOTSTRAP_WINDOW_NAME,
   TMUX_FIELD_SEPARATOR,
   buildTmuxFormat,
   splitTmuxFields,

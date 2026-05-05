@@ -236,6 +236,33 @@ describe('logMatcher', () => {
     await fs.rm(tempDir, { recursive: true, force: true })
   })
 
+  test('extractLastUserMessageFromLog skips Claude isMeta system-reminder entries', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-last-user-'))
+    const logPath = path.join(tempDir, 'session.jsonl')
+
+    await fs.writeFile(
+      logPath,
+      [
+        JSON.stringify({
+          type: 'user',
+          message: { role: 'user', content: 'doesnt have to be repos' },
+        }),
+        JSON.stringify({
+          type: 'user',
+          message: {
+            role: 'user',
+            content:
+              '<system-reminder>Respond with just the action or changes…</system-reminder>',
+          },
+          isMeta: true,
+        }),
+      ].join('\n')
+    )
+
+    expect(extractLastUserMessageFromLog(logPath)).toBe('doesnt have to be repos')
+    await fs.rm(tempDir, { recursive: true, force: true })
+  })
+
   test('extractLastUserMessageFromLog handles mixed Codex response_item and event_msg schemas', async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-last-user-'))
     const logPath = path.join(tempDir, 'session.jsonl')
