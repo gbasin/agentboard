@@ -461,6 +461,9 @@ const logPoller = new LogPoller(db, registry, {
       })
     }
   },
+  onSessionsDiscovered: () => {
+    updateDormantAgentSessions()
+  },
   isLastUserMessageLocked: (tmuxWindow) =>
     (lastUserMessageLocks.get(tmuxWindow) ?? 0) > Date.now(),
   maxLogsPerPoll: config.logPollMax,

@@ -874,6 +874,98 @@ describe('LogPoller', () => {
     db.close()
   })
 
+  test('fires onSessionsDiscovered when a new session is discovered as orphan', async () => {
+    const db = initDatabase({ path: ':memory:' })
+    const registry = new SessionRegistry()
+    // Empty registry: no tmux windows to match against, so any new log
+    // becomes an orphan on first discovery.
+    registry.replaceSessions([])
+
+    const orphanProjectPath = path.join(tempRoot, 'orphan-project')
+    const encoded = encodeProjectPath(orphanProjectPath)
+    const logDir = path.join(
+      process.env.CLAUDE_CONFIG_DIR ?? '',
+      'projects',
+      encoded
+    )
+    await fs.mkdir(logDir, { recursive: true })
+
+    const tokens = Array.from({ length: 60 }, (_, i) => `token${i}`).join(' ')
+    const logPath = path.join(logDir, 'orphan-session.jsonl')
+    const userLine = buildUserLogEntry(tokens, {
+      sessionId: 'claude-orphan-session',
+      cwd: orphanProjectPath,
+    })
+    const assistantLine = JSON.stringify({
+      type: 'assistant',
+      message: { content: [{ type: 'text', text: tokens }] },
+    })
+    await fs.writeFile(logPath, `${userLine}\n${assistantLine}\n`)
+
+    const discovered: Array<{ newOrphans: number; newActive: number }> = []
+    const poller = new LogPoller(db, registry, {
+      matchWorkerClient: new InlineMatchWorkerClient(),
+      onSessionsDiscovered: (stats) => discovered.push(stats),
+    })
+
+    const stats = await poller.pollOnce()
+    expect(stats.newSessions).toBe(1)
+    expect(stats.orphans).toBe(1)
+    expect(stats.matches).toBe(0)
+
+    // The DB row should exist as an orphan.
+    const record = db.getSessionById('claude-orphan-session')
+    expect(record).toBeDefined()
+    expect(record?.currentWindow).toBeNull()
+
+    // Callback must fire exactly once with the orphan count, so the server
+    // can broadcast the new history entries over the WebSocket.
+    expect(discovered).toEqual([{ newOrphans: 1, newActive: 0 }])
+
+    db.close()
+  })
+
+  test('does not fire onSessionsDiscovered when no new orphans are created', async () => {
+    const db = initDatabase({ path: ':memory:' })
+    const registry = new SessionRegistry()
+    registry.replaceSessions([baseSession])
+
+    const tokens = Array.from({ length: 60 }, (_, i) => `token${i}`).join(' ')
+    setTmuxOutput(baseSession.tmuxWindow, buildLastExchangeOutput(tokens))
+
+    const projectPath = baseSession.projectPath
+    const encoded = encodeProjectPath(projectPath)
+    const logDir = path.join(
+      process.env.CLAUDE_CONFIG_DIR ?? '',
+      'projects',
+      encoded
+    )
+    await fs.mkdir(logDir, { recursive: true })
+    const logPath = path.join(logDir, 'matched-session.jsonl')
+    const userLine = buildUserLogEntry(tokens, {
+      sessionId: 'claude-matched-session',
+      cwd: projectPath,
+    })
+    const assistantLine = JSON.stringify({
+      type: 'assistant',
+      message: { content: [{ type: 'text', text: tokens }] },
+    })
+    await fs.writeFile(logPath, `${userLine}\n${assistantLine}\n`)
+
+    const discovered: Array<{ newOrphans: number; newActive: number }> = []
+    const poller = new LogPoller(db, registry, {
+      matchWorkerClient: new InlineMatchWorkerClient(),
+      onSessionsDiscovered: (stats) => discovered.push(stats),
+    })
+
+    const stats = await poller.pollOnce()
+    expect(stats.newSessions).toBe(1)
+    expect(stats.orphans).toBe(0)
+    expect(discovered).toEqual([])
+
+    db.close()
+  })
+
   test('fires onSessionOrphaned callback when superseding via slug', async () => {
     const db = initDatabase({ path: ':memory:' })
     const registry = new SessionRegistry()
