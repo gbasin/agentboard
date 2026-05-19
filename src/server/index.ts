@@ -596,11 +596,26 @@ async function verifyAllSessions(
   return new Map(entries)
 }
 
-function hydrateSessionsWithAgentSessions(
+export function hydrateSessionsWithAgentSessions(
   sessions: Session[],
   { verifyAssociations = false, precomputedVerifications }: HydrateSessionsOptions = {}
 ): Session[] {
   const activeSessions = db.getActiveSessions()
+  // Sanity guard: callers ultimately source `sessions` from a tmux query (e.g.
+  // sessionRefreshWorker.refresh or listWindowsSyncOrNull). When that query
+  // transiently returns an empty array — but the DB still tracks live
+  // sessions — every active session would fail the windowSet membership check
+  // below and be treated as orphaned, which then triggers
+  // sessionManager.killWindow() for each. That mass-kills the user's working
+  // tmux windows in one pass. Skip this cycle and let the next refresh
+  // observe a real state. completeStartupVerification() already applies an
+  // equivalent guard before hydrating.
+  if (activeSessions.length > 0 && sessions.length === 0) {
+    logger.warn('hydrate_sessions_skipped_empty_input', {
+      activeSessionCount: activeSessions.length,
+    })
+    return sessions
+  }
   const windowSet = new Set(sessions.map((session) => session.tmuxWindow))
   const activeMap = new Map<string, typeof activeSessions[number]>()
   const orphaned: AgentSession[] = []

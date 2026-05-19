@@ -48,9 +48,13 @@ async function main() {
     // must run in a separate process so they don't race with other test files.
     // PipePaneTerminalProxy reads Bun.spawnSync at construction time — if another
     // test file has patched it, the proxy gets a mock and start() becomes undefined.
+    // hydrateSessionsEmptyGuard imports `../index` with an active Bun.spawnSync /
+    // Bun.serve / setInterval mock; isolation keeps that mock window from
+    // overlapping with any other test that captures globals at module load.
     const ISOLATED_FILES = new Set([
       'sessionRefreshWorker.test.ts',
       'pipePaneTerminalProxy.test.ts',
+      'hydrateSessionsEmptyGuard.test.ts',
     ])
 
     // Client tests that install top-level mock.module(...) hooks must run in a
