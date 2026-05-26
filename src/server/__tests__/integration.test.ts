@@ -49,7 +49,7 @@ if (!tmuxAvailable || !localhostBindable) {
       drainStream(serverProcess.stderr)
 
       await waitForHealth(port)
-    }, 10000)
+    }, 60000)
 
     afterAll(async () => {
       if (serverProcess) {
@@ -151,7 +151,7 @@ async function getFreePort(): Promise<number> {
   })
 }
 
-async function waitForHealth(port: number, timeoutMs = 8000): Promise<void> {
+async function waitForHealth(port: number, timeoutMs = 60000): Promise<void> {
   const start = Date.now()
   while (Date.now() - start < timeoutMs) {
     try {

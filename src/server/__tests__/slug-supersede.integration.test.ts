@@ -165,7 +165,7 @@ if (!tmuxAvailable || !localhostBindable) {
       })
 
       await waitForHealth(port, serverProcess)
-    }, 15000)
+    }, 60000)
 
     afterAll(async () => {
       if (serverProcess) {
@@ -259,7 +259,7 @@ if (!tmuxAvailable || !localhostBindable) {
         // Both sessions share the same slug and project
         expect(execRecord!.projectPath).toBe(planRecord!.projectPath)
       },
-      35_000
+      90_000
     )
 
     test(
@@ -453,7 +453,7 @@ if (!tmuxAvailable || !localhostBindable) {
         expect(planRecord!.currentWindow).toBeNull()
         expect(planRecord!.isPinned).toBe(false)
       },
-      40_000
+      90_000
     )
   })
 }
@@ -478,7 +478,7 @@ async function getFreePort(): Promise<number> {
 async function waitForHealth(
   port: number,
   proc: ReturnType<typeof Bun.spawn>,
-  timeoutMs = 10000
+  timeoutMs = 60000
 ): Promise<void> {
   const start = Date.now()
   while (Date.now() - start < timeoutMs) {

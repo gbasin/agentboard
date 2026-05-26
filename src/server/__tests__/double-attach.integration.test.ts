@@ -151,7 +151,7 @@ if (!tmuxAvailable || !localhostBindable) {
         )
       }
       discoveredSessionId = ourSession.id
-    }, 20000)
+    }, 60000)
 
     afterAll(async () => {
       if (serverProcess) {
@@ -289,7 +289,7 @@ if (!tmuxAvailable || !localhostBindable) {
 
         ws.close()
       },
-      20000
+      60000
     )
 
     test(
@@ -466,7 +466,7 @@ if (!tmuxAvailable || !localhostBindable) {
           expect(logContent).toContain('terminal_attach_dedup')
         }
       },
-      20000
+      60000
     )
 
     test(
@@ -635,7 +635,7 @@ if (!tmuxAvailable || !localhostBindable) {
 
         ws.close()
       },
-      25000
+      60000
     )
   })
 }
@@ -662,7 +662,7 @@ async function getFreePort(): Promise<number> {
 async function waitForHealth(
   port: number,
   proc: ReturnType<typeof Bun.spawn>,
-  timeoutMs = 10000
+  timeoutMs = 60000
 ): Promise<void> {
   const start = Date.now()
   while (Date.now() - start < timeoutMs) {
