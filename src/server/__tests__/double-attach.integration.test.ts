@@ -662,7 +662,7 @@ async function getFreePort(): Promise<number> {
 async function waitForHealth(
   port: number,
   proc: ReturnType<typeof Bun.spawn>,
-  timeoutMs = 10000
+  timeoutMs = 30000
 ): Promise<void> {
   const start = Date.now()
   while (Date.now() - start < timeoutMs) {

@@ -53,6 +53,16 @@ async function main() {
       'pipePaneTerminalProxy.test.ts',
     ])
 
+    // Client tests that install top-level mock.module(...) hooks must run in a
+    // separate process — Bun's module mocks persist for the lifetime of the
+    // test process, so they leak into any subsequent file that imports the
+    // same module. app.test.tsx stubs ../components/SessionPreviewContent;
+    // when bun's readdir order puts it before SessionPreviewModal.test.tsx
+    // (e.g. on Linux ext4) the modal test sees the stub and breaks.
+    const ISOLATED_CLIENT_FILES = new Set([
+      'app.test.tsx',
+    ])
+
     const serverTests: string[] = []
     const serverGlob = new Bun.Glob('src/server/__tests__/*.test.ts')
     for await (const file of serverGlob.scan({ onlyFiles: true })) {
@@ -60,11 +70,18 @@ async function main() {
         serverTests.push(file)
       }
     }
+
+    const clientTests: string[] = []
+    const clientGlob = new Bun.Glob('src/client/__tests__/*.test.{ts,tsx}')
+    for await (const file of clientGlob.scan({ onlyFiles: true })) {
+      if (!ISOLATED_CLIENT_FILES.has(path.basename(file))) {
+        clientTests.push(file)
+      }
+    }
     const sharedTestsDir = 'src/shared/__tests__'
-    const clientTestsDir = 'src/client/__tests__'
 
     await runCommand(
-      ['bun', 'test', ...passthroughArgs, ...serverTests, sharedTestsDir, clientTestsDir],
+      ['bun', 'test', ...passthroughArgs, ...serverTests, sharedTestsDir, ...clientTests],
       env
     )
 
@@ -74,6 +91,14 @@ async function main() {
     )
     await runCommand(
       ['bun', 'test', ...passthroughArgs, ...isolatedFiles],
+      env
+    )
+
+    const isolatedClientFiles = Array.from(ISOLATED_CLIENT_FILES).map(
+      (f) => `src/client/__tests__/${f}`
+    )
+    await runCommand(
+      ['bun', 'test', ...passthroughArgs, ...isolatedClientFiles],
       env
     )
 

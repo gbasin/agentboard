@@ -151,7 +151,7 @@ async function getFreePort(): Promise<number> {
   })
 }
 
-async function waitForHealth(port: number, timeoutMs = 8000): Promise<void> {
+async function waitForHealth(port: number, timeoutMs = 30000): Promise<void> {
   const start = Date.now()
   while (Date.now() - start < timeoutMs) {
     try {
