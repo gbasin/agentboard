@@ -41,6 +41,12 @@ async function main() {
     CODEX_HOME: codexDir,
     LOG_FILE: tempLogFile,
     AGENTBOARD_DB_PATH: tempDbPath,
+    // Default skipMatchingPatterns excludes /tmp/* and /var/folders/* — both
+    // common locations for test working directories (worktrees, CI runners on
+    // some platforms). Tests that exercise matching logic from those paths
+    // would otherwise be silently skipped. Tests that need specific skip
+    // behavior pass patterns explicitly via the matcher API.
+    AGENTBOARD_SKIP_MATCHING_PATTERNS: '',
   }
 
   try {
@@ -55,6 +61,13 @@ async function main() {
       'sessionRefreshWorker.test.ts',
       'pipePaneTerminalProxy.test.ts',
       'hydrateSessionsEmptyGuard.test.ts',
+      // terminalProxyFactory.test.ts installs a top-level
+      // mock.module('../config', ...) whose replacement omits many real
+      // config fields. Bun's mock.restore() in afterAll does not fully
+      // unwind module-level mocks, so the stripped config can leak into
+      // any later test file that imports `../config` (notably
+      // logPoller.test.ts, which depends on skipMatchingPatterns).
+      'terminalProxyFactory.test.ts',
     ])
 
     // Client tests that install top-level mock.module(...) hooks must run in a
