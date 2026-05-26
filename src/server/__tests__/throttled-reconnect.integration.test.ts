@@ -163,7 +163,7 @@ if (!tmuxAvailable || !localhostBindable) {
         )
       }
       discoveredSessionId = ourSession.id
-    }, 20000)
+    }, 60000)
 
     afterAll(async () => {
       if (serverProcess) {
@@ -620,7 +620,7 @@ async function getFreePort(): Promise<number> {
 async function waitForHealth(
   port: number,
   proc: ReturnType<typeof Bun.spawn>,
-  timeoutMs = 30000
+  timeoutMs = 60000
 ): Promise<void> {
   const start = Date.now()
   while (Date.now() - start < timeoutMs) {

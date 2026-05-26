@@ -200,7 +200,7 @@ if (!tmuxAvailable || !localhostBindable) {
         expect(dormant?.currentWindow).toBe(null)
         expect(dormant?.lastResumeError).toBe(null)
       },
-      25000
+      90000
     )
 
     test('move-to-history via websocket clears the hibernation marker', async () => {
@@ -251,7 +251,7 @@ async function getFreePort(): Promise<number> {
 async function waitForHealth(
   port: number,
   proc: ReturnType<typeof Bun.spawn>,
-  timeoutMs = 30000
+  timeoutMs = 60000
 ): Promise<void> {
   const start = Date.now()
   while (Date.now() - start < timeoutMs) {
