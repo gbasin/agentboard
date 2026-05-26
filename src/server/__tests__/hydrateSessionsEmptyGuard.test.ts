@@ -208,5 +208,32 @@ describe('hydrateSessionsWithAgentSessions — empty windowSet guard', () => {
     const killCalls = callsDuringHydrate.filter((c) => c.args.includes('kill-window'))
 
     expect(killCalls).toHaveLength(0)
+
+    // DB rows must be preserved: a future regression could skip the kill but
+    // still call db.orphanSession() and clear current_window. Pin both.
+    const probeAfter = initDatabase({ path: tempDbPath })
+    const activeAfter = probeAfter.getActiveSessions()
+    ;(probeAfter as unknown as { db: { close: () => void } }).db.close()
+    expect(activeAfter).toHaveLength(5)
+    const windowsAfter = activeAfter.map((s) => s.currentWindow).sort()
+    expect(windowsAfter).toEqual(
+      Array.from({ length: 5 }, (_, i) => `target:@${100 + i + 1}`).sort()
+    )
+  })
+
+  test('does NOT skip or kill when both sessions=[] and DB is empty (negative case)', () => {
+    // DB starts empty (beforeEach deletes everything). hydrate([]) should
+    // proceed normally: no kill calls, no warn, no orphaning. This pins the
+    // contract that the guard only fires when activeSessions > 0 — otherwise
+    // an empty-DB / empty-input call could regress into accidentally skipping
+    // legitimate empty refreshes.
+    const callCountBefore = tmuxCalls.length
+
+    const result = hydrate([])
+
+    const callsDuringHydrate = tmuxCalls.slice(callCountBefore)
+    const killCalls = callsDuringHydrate.filter((c) => c.args.includes('kill-window'))
+    expect(killCalls).toHaveLength(0)
+    expect(result).toEqual([])
   })
 })
