@@ -103,21 +103,24 @@ async function main() {
     )
 
     // Always run global-mutating tests in a separate process to prevent races.
-    const isolatedFiles = Array.from(ISOLATED_FILES).map(
-      (f) => `src/server/__tests__/${f}`
-    )
-    await runCommand(
-      ['bun', 'test', ...passthroughArgs, ...isolatedFiles],
-      env
-    )
+    // Each file runs in its own bun process — isolation is from every other
+    // file, not just from the main suite. terminalProxyFactory.test.ts
+    // installs mock.module('../terminal/PipePaneTerminalProxy', ...) that
+    // would otherwise leak into pipePaneTerminalProxy.test.ts on readdir
+    // orderings where it loads first (Linux ext4).
+    for (const file of ISOLATED_FILES) {
+      await runCommand(
+        ['bun', 'test', ...passthroughArgs, `src/server/__tests__/${file}`],
+        env
+      )
+    }
 
-    const isolatedClientFiles = Array.from(ISOLATED_CLIENT_FILES).map(
-      (f) => `src/client/__tests__/${f}`
-    )
-    await runCommand(
-      ['bun', 'test', ...passthroughArgs, ...isolatedClientFiles],
-      env
-    )
+    for (const file of ISOLATED_CLIENT_FILES) {
+      await runCommand(
+        ['bun', 'test', ...passthroughArgs, `src/client/__tests__/${file}`],
+        env
+      )
+    }
 
     if (!skipIsolated) {
       await runCommand(
