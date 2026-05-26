@@ -8,7 +8,13 @@ on:
 
 jobs:
   ci:
-    runs-on: ubuntu-latest
+    # Pinned to 22.04 — the May 18 ubuntu-24.04 runner image regresses child
+    # Bun spawns under `bun test --coverage`: the server boot via Bun.spawn in
+    # integration tests never becomes healthy regardless of timeout (verified
+    # at 60s+ wrappers). Investigating root cause separately; the e2e job
+    # below stays on ubuntu-latest because Playwright's own webServer launch
+    # is unaffected.
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 
