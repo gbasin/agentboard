@@ -158,7 +158,7 @@ export class LogPoller {
   private registry: SessionRegistry
   private onSessionOrphaned?: (sessionId: string, supersededBy?: string) => void
   private onSessionActivated?: (sessionId: string, window: string) => void
-  private onSessionsDiscovered?: (stats: { newOrphans: number; newActive: number }) => void
+  private onOrphanSessionsDiscovered?: (stats: { newOrphans: number }) => void
   private isLastUserMessageLocked?: (tmuxWindow: string) => boolean
   private maxLogsPerPoll: number
   private matchProfile: boolean
@@ -181,7 +181,7 @@ export class LogPoller {
     {
       onSessionOrphaned,
       onSessionActivated,
-      onSessionsDiscovered,
+      onOrphanSessionsDiscovered,
       isLastUserMessageLocked,
       maxLogsPerPoll,
       matchProfile,
@@ -191,7 +191,7 @@ export class LogPoller {
     }: {
       onSessionOrphaned?: (sessionId: string, supersededBy?: string) => void
       onSessionActivated?: (sessionId: string, window: string) => void
-      onSessionsDiscovered?: (stats: { newOrphans: number; newActive: number }) => void
+      onOrphanSessionsDiscovered?: (stats: { newOrphans: number }) => void
       isLastUserMessageLocked?: (tmuxWindow: string) => boolean
       maxLogsPerPoll?: number
       matchProfile?: boolean
@@ -204,7 +204,7 @@ export class LogPoller {
     this.registry = registry
     this.onSessionOrphaned = onSessionOrphaned
     this.onSessionActivated = onSessionActivated
-    this.onSessionsDiscovered = onSessionsDiscovered
+    this.onOrphanSessionsDiscovered = onOrphanSessionsDiscovered
     this.isLastUserMessageLocked = isLastUserMessageLocked
     const limit = maxLogsPerPoll ?? DEFAULT_MAX_LOGS
     this.maxLogsPerPoll = Math.max(1, limit)
@@ -497,6 +497,17 @@ export class LogPoller {
     this.matchWorker = null
   }
 
+  private notifyOrphanSessionsDiscovered(newOrphans: number): void {
+    if (newOrphans <= 0) return
+    try {
+      this.onOrphanSessionsDiscovered?.({ newOrphans })
+    } catch (error) {
+      logger.warn('log_poll_discovered_callback_error', {
+        message: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
   async pollChanged(changedPaths: string[]): Promise<void> {
     if (this.pollInFlight) return
     this.pollInFlight = true
@@ -548,7 +559,8 @@ export class LogPoller {
         },
       })
 
-      this.processMatchResponse(response, windows, sessionRecords)
+      const stats = this.processMatchResponse(response, windows, sessionRecords)
+      this.notifyOrphanSessionsDiscovered(stats.orphans)
     } catch (error) {
       logger.warn('log_poll_changed_error', {
         message: error instanceof Error ? error.message : String(error),
@@ -1061,16 +1073,7 @@ export class LogPoller {
       }
 
       logger.info('log_poll', { ...stats })
-      if (stats.orphans > 0) {
-        const newActive = Math.max(0, stats.newSessions - stats.orphans)
-        try {
-          this.onSessionsDiscovered?.({ newOrphans: stats.orphans, newActive })
-        } catch (error) {
-          logger.warn('log_poll_discovered_callback_error', {
-            message: error instanceof Error ? error.message : String(error),
-          })
-        }
-      }
+      this.notifyOrphanSessionsDiscovered(stats.orphans)
       return stats
     } finally {
       this.pollInFlight = false

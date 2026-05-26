@@ -874,7 +874,7 @@ describe('LogPoller', () => {
     db.close()
   })
 
-  test('fires onSessionsDiscovered when a new session is discovered as orphan', async () => {
+  test('fires onOrphanSessionsDiscovered when a new session is discovered as orphan', async () => {
     const db = initDatabase({ path: ':memory:' })
     const registry = new SessionRegistry()
     // Empty registry: no tmux windows to match against, so any new log
@@ -902,10 +902,10 @@ describe('LogPoller', () => {
     })
     await fs.writeFile(logPath, `${userLine}\n${assistantLine}\n`)
 
-    const discovered: Array<{ newOrphans: number; newActive: number }> = []
+    const discovered: Array<{ newOrphans: number }> = []
     const poller = new LogPoller(db, registry, {
       matchWorkerClient: new InlineMatchWorkerClient(),
-      onSessionsDiscovered: (stats) => discovered.push(stats),
+      onOrphanSessionsDiscovered: (stats) => discovered.push(stats),
     })
 
     const stats = await poller.pollOnce()
@@ -920,12 +920,57 @@ describe('LogPoller', () => {
 
     // Callback must fire exactly once with the orphan count, so the server
     // can broadcast the new history entries over the WebSocket.
-    expect(discovered).toEqual([{ newOrphans: 1, newActive: 0 }])
+    expect(discovered).toEqual([{ newOrphans: 1 }])
 
     db.close()
   })
 
-  test('does not fire onSessionsDiscovered when no new orphans are created', async () => {
+  test('fires onOrphanSessionsDiscovered from pollChanged (watch-mode path)', async () => {
+    // Watch mode is the default deployment, and new log files reach the
+    // poller through pollChanged() rather than pollOnce(). The broadcast
+    // must fire on both code paths.
+    const db = initDatabase({ path: ':memory:' })
+    const registry = new SessionRegistry()
+    registry.replaceSessions([])
+
+    const orphanProjectPath = path.join(tempRoot, 'orphan-project-watch')
+    const encoded = encodeProjectPath(orphanProjectPath)
+    const logDir = path.join(
+      process.env.CLAUDE_CONFIG_DIR ?? '',
+      'projects',
+      encoded
+    )
+    await fs.mkdir(logDir, { recursive: true })
+
+    const tokens = Array.from({ length: 60 }, (_, i) => `token${i}`).join(' ')
+    const logPath = path.join(logDir, 'orphan-watch.jsonl')
+    const userLine = buildUserLogEntry(tokens, {
+      sessionId: 'claude-orphan-watch',
+      cwd: orphanProjectPath,
+    })
+    const assistantLine = JSON.stringify({
+      type: 'assistant',
+      message: { content: [{ type: 'text', text: tokens }] },
+    })
+    await fs.writeFile(logPath, `${userLine}\n${assistantLine}\n`)
+
+    const discovered: Array<{ newOrphans: number }> = []
+    const poller = new LogPoller(db, registry, {
+      matchWorkerClient: new InlineMatchWorkerClient(),
+      onOrphanSessionsDiscovered: (stats) => discovered.push(stats),
+    })
+
+    await poller.pollChanged([logPath])
+
+    const record = db.getSessionById('claude-orphan-watch')
+    expect(record).toBeDefined()
+    expect(record?.currentWindow).toBeNull()
+    expect(discovered).toEqual([{ newOrphans: 1 }])
+
+    db.close()
+  })
+
+  test('does not fire onOrphanSessionsDiscovered when no new orphans are created', async () => {
     const db = initDatabase({ path: ':memory:' })
     const registry = new SessionRegistry()
     registry.replaceSessions([baseSession])
@@ -952,10 +997,10 @@ describe('LogPoller', () => {
     })
     await fs.writeFile(logPath, `${userLine}\n${assistantLine}\n`)
 
-    const discovered: Array<{ newOrphans: number; newActive: number }> = []
+    const discovered: Array<{ newOrphans: number }> = []
     const poller = new LogPoller(db, registry, {
       matchWorkerClient: new InlineMatchWorkerClient(),
-      onSessionsDiscovered: (stats) => discovered.push(stats),
+      onOrphanSessionsDiscovered: (stats) => discovered.push(stats),
     })
 
     const stats = await poller.pollOnce()

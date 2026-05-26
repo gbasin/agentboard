@@ -461,7 +461,7 @@ const logPoller = new LogPoller(db, registry, {
       })
     }
   },
-  onSessionsDiscovered: () => {
+  onOrphanSessionsDiscovered: () => {
     updateDormantAgentSessions()
   },
   isLastUserMessageLocked: (tmuxWindow) =>
