@@ -41,6 +41,12 @@ async function main() {
     CODEX_HOME: codexDir,
     LOG_FILE: tempLogFile,
     AGENTBOARD_DB_PATH: tempDbPath,
+    // Default skipMatchingPatterns excludes /tmp/* and /var/folders/* — both
+    // common locations for test working directories (worktrees, CI runners on
+    // some platforms). Tests that exercise matching logic from those paths
+    // would otherwise be silently skipped. Tests that need specific skip
+    // behavior pass patterns explicitly via the matcher API.
+    AGENTBOARD_SKIP_MATCHING_PATTERNS: '',
   }
 
   try {
@@ -55,6 +61,13 @@ async function main() {
       'sessionRefreshWorker.test.ts',
       'pipePaneTerminalProxy.test.ts',
       'hydrateSessionsEmptyGuard.test.ts',
+      // terminalProxyFactory.test.ts installs a top-level
+      // mock.module('../config', ...) whose replacement omits many real
+      // config fields. Bun's mock.restore() in afterAll does not fully
+      // unwind module-level mocks, so the stripped config can leak into
+      // any later test file that imports `../config` (notably
+      // logPoller.test.ts, which depends on skipMatchingPatterns).
+      'terminalProxyFactory.test.ts',
     ])
 
     // Client tests that install top-level mock.module(...) hooks must run in a
@@ -90,21 +103,24 @@ async function main() {
     )
 
     // Always run global-mutating tests in a separate process to prevent races.
-    const isolatedFiles = Array.from(ISOLATED_FILES).map(
-      (f) => `src/server/__tests__/${f}`
-    )
-    await runCommand(
-      ['bun', 'test', ...passthroughArgs, ...isolatedFiles],
-      env
-    )
+    // Each file runs in its own bun process — isolation is from every other
+    // file, not just from the main suite. terminalProxyFactory.test.ts
+    // installs mock.module('../terminal/PipePaneTerminalProxy', ...) that
+    // would otherwise leak into pipePaneTerminalProxy.test.ts on readdir
+    // orderings where it loads first (Linux ext4).
+    for (const file of ISOLATED_FILES) {
+      await runCommand(
+        ['bun', 'test', ...passthroughArgs, `src/server/__tests__/${file}`],
+        env
+      )
+    }
 
-    const isolatedClientFiles = Array.from(ISOLATED_CLIENT_FILES).map(
-      (f) => `src/client/__tests__/${f}`
-    )
-    await runCommand(
-      ['bun', 'test', ...passthroughArgs, ...isolatedClientFiles],
-      env
-    )
+    for (const file of ISOLATED_CLIENT_FILES) {
+      await runCommand(
+        ['bun', 'test', ...passthroughArgs, `src/client/__tests__/${file}`],
+        env
+      )
+    }
 
     if (!skipIsolated) {
       await runCommand(
