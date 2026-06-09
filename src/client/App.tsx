@@ -185,6 +185,10 @@ export default function App() {
 
   useEffect(() => {
     const unsubscribe = subscribe((message: ServerMessage) => {
+      if (message.type === 'terminal-output') {
+        return
+      }
+
       if (message.type === 'sessions') {
         // Detect status transitions for sound notifications before updating
         const currentSessions = useSessionStore.getState().sessions
