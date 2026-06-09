@@ -141,6 +141,11 @@ const tmuxMutationTimeoutMs = Number.isFinite(tmuxMutationTimeoutMsRaw) && tmuxM
   ? Math.max(Math.floor(tmuxMutationTimeoutMsRaw), tmuxTimeoutMs)
   : Math.max(tmuxTimeoutMs * 5, 15000)
 
+function positiveIntegerFromEnv(value: string | undefined, fallback: number): number {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback
+}
+
 export const config = {
   port: Number(process.env.PORT) || 4040,
   hostname: process.env.HOSTNAME || '127.0.0.1',
@@ -191,4 +196,24 @@ export const config = {
   remoteAllowAttach,
   tmuxTimeoutMs,
   tmuxMutationTimeoutMs,
+  wsMaxPayloadBytes: positiveIntegerFromEnv(
+    process.env.AGENTBOARD_WS_MAX_PAYLOAD_BYTES,
+    1024 * 1024
+  ),
+  terminalInputMaxBytes: positiveIntegerFromEnv(
+    process.env.AGENTBOARD_TERMINAL_INPUT_MAX_BYTES,
+    64 * 1024
+  ),
+  clientLogMaxBytes: positiveIntegerFromEnv(
+    process.env.AGENTBOARD_CLIENT_LOG_MAX_BYTES,
+    64 * 1024
+  ),
+  clientLogEventMaxBytes: positiveIntegerFromEnv(
+    process.env.AGENTBOARD_CLIENT_LOG_EVENT_MAX_BYTES,
+    256
+  ),
+  pasteImageMaxBytes: positiveIntegerFromEnv(
+    process.env.AGENTBOARD_PASTE_IMAGE_MAX_BYTES,
+    10 * 1024 * 1024
+  ),
 }

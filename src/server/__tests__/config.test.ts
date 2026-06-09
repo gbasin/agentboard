@@ -32,6 +32,11 @@ const ORIGINAL_ENV = {
   AGENTBOARD_REMOTE_ALLOW_CONTROL: process.env.AGENTBOARD_REMOTE_ALLOW_CONTROL,
   AGENTBOARD_TMUX_TIMEOUT_MS: process.env.AGENTBOARD_TMUX_TIMEOUT_MS,
   AGENTBOARD_TMUX_MUTATION_TIMEOUT_MS: process.env.AGENTBOARD_TMUX_MUTATION_TIMEOUT_MS,
+  AGENTBOARD_WS_MAX_PAYLOAD_BYTES: process.env.AGENTBOARD_WS_MAX_PAYLOAD_BYTES,
+  AGENTBOARD_TERMINAL_INPUT_MAX_BYTES: process.env.AGENTBOARD_TERMINAL_INPUT_MAX_BYTES,
+  AGENTBOARD_CLIENT_LOG_MAX_BYTES: process.env.AGENTBOARD_CLIENT_LOG_MAX_BYTES,
+  AGENTBOARD_CLIENT_LOG_EVENT_MAX_BYTES: process.env.AGENTBOARD_CLIENT_LOG_EVENT_MAX_BYTES,
+  AGENTBOARD_PASTE_IMAGE_MAX_BYTES: process.env.AGENTBOARD_PASTE_IMAGE_MAX_BYTES,
 }
 
 const ENV_KEYS = Object.keys(ORIGINAL_ENV) as Array<keyof typeof ORIGINAL_ENV>
@@ -81,6 +86,11 @@ async function loadConfig(tag: string) {
     remoteAllowControl: boolean
     tmuxTimeoutMs: number
     tmuxMutationTimeoutMs: number
+    wsMaxPayloadBytes: number
+    terminalInputMaxBytes: number
+    clientLogMaxBytes: number
+    clientLogEventMaxBytes: number
+    pasteImageMaxBytes: number
   }
 }
 
@@ -123,6 +133,11 @@ describe('config', () => {
     expect(config.remoteAllowControl).toBe(false)
     expect(config.tmuxTimeoutMs).toBe(3000)
     expect(config.tmuxMutationTimeoutMs).toBe(15000)
+    expect(config.wsMaxPayloadBytes).toBe(1024 * 1024)
+    expect(config.terminalInputMaxBytes).toBe(64 * 1024)
+    expect(config.clientLogMaxBytes).toBe(64 * 1024)
+    expect(config.clientLogEventMaxBytes).toBe(256)
+    expect(config.pasteImageMaxBytes).toBe(10 * 1024 * 1024)
   })
 
   test('parses env overrides and trims discover prefixes', async () => {
@@ -156,6 +171,11 @@ describe('config', () => {
     process.env.AGENTBOARD_REMOTE_ALLOW_CONTROL = 'true'
     process.env.AGENTBOARD_TMUX_TIMEOUT_MS = '4500'
     process.env.AGENTBOARD_TMUX_MUTATION_TIMEOUT_MS = '12000'
+    process.env.AGENTBOARD_WS_MAX_PAYLOAD_BYTES = '2048'
+    process.env.AGENTBOARD_TERMINAL_INPUT_MAX_BYTES = '512'
+    process.env.AGENTBOARD_CLIENT_LOG_MAX_BYTES = '1024'
+    process.env.AGENTBOARD_CLIENT_LOG_EVENT_MAX_BYTES = '64'
+    process.env.AGENTBOARD_PASTE_IMAGE_MAX_BYTES = '4096'
 
     const config = await loadConfig('overrides')
     expect(config.port).toBe(9090)
@@ -188,6 +208,11 @@ describe('config', () => {
     expect(config.remoteAllowControl).toBe(true)
     expect(config.tmuxTimeoutMs).toBe(4500)
     expect(config.tmuxMutationTimeoutMs).toBe(12000)
+    expect(config.wsMaxPayloadBytes).toBe(2048)
+    expect(config.terminalInputMaxBytes).toBe(512)
+    expect(config.clientLogMaxBytes).toBe(1024)
+    expect(config.clientLogEventMaxBytes).toBe(64)
+    expect(config.pasteImageMaxBytes).toBe(4096)
   })
 
   test('defaults to watch mode for invalid AGENTBOARD_LOG_WATCH_MODE', async () => {

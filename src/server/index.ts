@@ -203,6 +203,13 @@ function pruneOrphanedWsSessions(): void {
 }
 
 const MAX_DIRECTORY_ENTRIES = 200
+const pasteImageMimeToExtension = new Map([
+  ['image/gif', 'gif'],
+  ['image/jpeg', 'jpg'],
+  ['image/png', 'png'],
+  ['image/webp', 'webp'],
+])
+const textEncoder = new TextEncoder()
 
 function createConnectionId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -210,6 +217,21 @@ function createConnectionId(): string {
   }
 
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function getUtf8ByteLength(value: string): number {
+  return textEncoder.encode(value).byteLength
+}
+
+function isContentLengthTooLarge(c: Context, maxBytes: number): boolean {
+  const header = c.req.header('content-length')
+  if (!header) return false
+  const contentLength = Number(header)
+  return Number.isFinite(contentLength) && contentLength > maxBytes
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 checkPortAvailable(config.port)
@@ -1068,10 +1090,32 @@ registry.on('agent-sessions-active', (active) => {
 })
 
 app.post('/api/client-log', async (c) => {
+  if (isContentLengthTooLarge(c, config.clientLogMaxBytes)) {
+    return c.json({ error: 'Payload too large' }, 413)
+  }
+
   try {
-    const body = await c.req.json() as { level?: string; event: string; data?: Record<string, unknown> }
-    const level = body.level === 'warn' || body.level === 'error' || body.level === 'info' ? body.level : 'debug'
-    logger[level]('client_' + body.event, body.data)
+    const text = await c.req.text()
+    if (getUtf8ByteLength(text) > config.clientLogMaxBytes) {
+      return c.json({ error: 'Payload too large' }, 413)
+    }
+
+    const body: unknown = JSON.parse(text)
+    if (!isRecord(body) || typeof body.event !== 'string') {
+      return c.json({ ok: true })
+    }
+    if (getUtf8ByteLength(body.event) > config.clientLogEventMaxBytes) {
+      return c.json({ error: 'Event name too large' }, 413)
+    }
+
+    const level =
+      body.level === 'warn' || body.level === 'error' || body.level === 'info'
+        ? body.level
+        : 'debug'
+    logger[level](
+      'client_' + body.event,
+      isRecord(body.data) ? body.data : undefined
+    )
   } catch {
     // ignore malformed
   }
@@ -1366,20 +1410,34 @@ app.put('/api/settings/inactive-max-age-hours', putHistoryMaxAgeHours)
 
 // Image upload endpoint for iOS clipboard paste
 app.post('/api/paste-image', async (c) => {
+  if (isContentLengthTooLarge(c, config.pasteImageMaxBytes)) {
+    return c.json({ error: 'Payload too large' }, 413)
+  }
+
   try {
     const formData = await c.req.formData()
-    const file = formData.get('image') as File | null
-    if (!file) {
+    const image = formData.get('image')
+    if (!(image instanceof File)) {
       return c.json({ error: 'No image provided' }, 400)
+    }
+    if (image.size > config.pasteImageMaxBytes) {
+      return c.json({ error: 'Image too large' }, 413)
+    }
+
+    const ext = pasteImageMimeToExtension.get(image.type)
+    if (!ext) {
+      return c.json({ error: 'Unsupported image type' }, 415)
     }
 
     // Generate unique filename in temp directory
-    const ext = file.type.split('/')[1] || 'png'
     const filename = `paste-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
     const filepath = `/tmp/${filename}`
 
     // Write file
-    const buffer = await file.arrayBuffer()
+    const buffer = await image.arrayBuffer()
+    if (buffer.byteLength > config.pasteImageMaxBytes) {
+      return c.json({ error: 'Image too large' }, 413)
+    }
     await Bun.write(filepath, buffer)
 
     return c.json({ path: filepath })
@@ -1460,6 +1518,7 @@ function serverFetch(req: Request, server: Server<WSData>) {
 
 const websocketHandlers = {
   idleTimeout: 40,
+  maxPayloadLength: config.wsMaxPayloadBytes,
   sendPings: true,
   perMessageDeflate: true,
   open(ws: ServerWebSocket<WSData>) {
@@ -1613,6 +1672,10 @@ function handleMessage(
     typeof rawMessage === 'string'
       ? rawMessage
       : new TextDecoder().decode(rawMessage)
+  if (getUtf8ByteLength(text) > config.wsMaxPayloadBytes) {
+    send(ws, { type: 'error', message: 'Message payload too large' })
+    return
+  }
 
   let message: ClientMessage
   try {
@@ -1668,6 +1731,14 @@ function handleMessage(
 	      detachTerminalPersistent(ws, message.sessionId)
 	      return
     case 'terminal-input':
+      if (typeof message.data !== 'string') {
+        send(ws, { type: 'error', message: 'Invalid message payload' })
+        return
+      }
+      if (getUtf8ByteLength(message.data) > config.terminalInputMaxBytes) {
+        send(ws, { type: 'error', message: 'Terminal input payload too large' })
+        return
+      }
       handleTerminalInputPersistent(ws, message.sessionId, message.data)
       return
     case 'terminal-resize':

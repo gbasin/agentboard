@@ -81,6 +81,11 @@ const defaultConfig = {
   remoteAllowAttach: false,
   tmuxTimeoutMs: 3000,
   tmuxMutationTimeoutMs: 15000,
+  wsMaxPayloadBytes: 1024 * 1024,
+  terminalInputMaxBytes: 64 * 1024,
+  clientLogMaxBytes: 64 * 1024,
+  clientLogEventMaxBytes: 256,
+  pasteImageMaxBytes: 10 * 1024 * 1024,
 }
 
 const configState = { ...defaultConfig }
@@ -4468,6 +4473,61 @@ describe('server fetch handlers', () => {
     expect(payload.path.endsWith('.png')).toBe(true)
   })
 
+  test('rejects unsupported or oversized paste-image uploads', async () => {
+    const { serveOptions } = await loadIndex()
+    const fetchHandler = serveOptions.fetch
+    if (!fetchHandler) {
+      throw new Error('Fetch handler not configured')
+    }
+
+    const unsupported = new FormData()
+    unsupported.append(
+      'image',
+      new File([new Uint8Array([1, 2, 3])], 'paste.txt', {
+        type: 'text/plain',
+      })
+    )
+
+    const unsupportedResponse = await fetchHandler.call(
+      {} as Bun.Server<unknown>,
+      new Request('http://localhost/api/paste-image', {
+        method: 'POST',
+        body: unsupported,
+      }),
+      {} as Bun.Server<unknown>
+    )
+
+    if (!unsupportedResponse) {
+      throw new Error('Expected response for unsupported paste-image')
+    }
+
+    expect(unsupportedResponse.status).toBe(415)
+
+    configState.pasteImageMaxBytes = 2
+    const oversized = new FormData()
+    oversized.append(
+      'image',
+      new File([new Uint8Array([1, 2, 3])], 'paste.png', {
+        type: 'image/png',
+      })
+    )
+
+    const oversizedResponse = await fetchHandler.call(
+      {} as Bun.Server<unknown>,
+      new Request('http://localhost/api/paste-image', {
+        method: 'POST',
+        body: oversized,
+      }),
+      {} as Bun.Server<unknown>
+    )
+
+    if (!oversizedResponse) {
+      throw new Error('Expected response for oversized paste-image')
+    }
+
+    expect(oversizedResponse.status).toBe(413)
+  })
+
   test('returns 500 when paste-image upload fails', async () => {
     const { serveOptions } = await loadIndex()
     const fetchHandler = serveOptions.fetch
@@ -4693,6 +4753,52 @@ describe('server startup side effects', () => {
     expect(sent).toContainEqual({ type: 'pong', seq: 123 })
   })
 
+  test('websocket and terminal input payload caps reject oversized messages', async () => {
+    configState.wsMaxPayloadBytes = 40
+    configState.terminalInputMaxBytes = 2
+    const { serveOptions, registryInstance } = await loadIndex()
+    const websocket = serveOptions.websocket
+    if (!websocket) {
+      throw new Error('WebSocket handlers not configured')
+    }
+    expect(websocket.maxPayloadLength).toBe(40)
+
+    const { ws, sent } = createWs()
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({ type: 'ping', data: 'this-message-is-too-large' })
+    )
+    expect(sent).toContainEqual({
+      type: 'error',
+      message: 'Message payload too large',
+    })
+
+    sent.length = 0
+    registryInstance.sessions = [baseSession]
+    ws.data.currentSessionId = baseSession.id
+    ws.data.terminal = new TerminalProxyMock({
+      connectionId: 'ws-test',
+      sessionName: 'agentboard-ws-test',
+      baseSession: 'agentboard',
+      onData: () => {},
+    })
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({
+        type: 'terminal-input',
+        sessionId: baseSession.id,
+        data: 'abc',
+      })
+    )
+
+    expect(sent).toContainEqual({
+      type: 'error',
+      message: 'Terminal input payload too large',
+    })
+    expect(ws.data.terminal.writes).toEqual([])
+  })
+
   test('/api/client-log returns ok for valid JSON', async () => {
     const { serveOptions } = await loadIndex()
     const fetchHandler = serveOptions.fetch
@@ -4718,6 +4824,50 @@ describe('server startup side effects', () => {
     expect(response.status).toBe(200)
     const payload = (await response.json()) as { ok: boolean }
     expect(payload.ok).toBe(true)
+  })
+
+  test('/api/client-log rejects oversized requests and event names', async () => {
+    configState.clientLogMaxBytes = 32
+    configState.clientLogEventMaxBytes = 8
+    const { serveOptions } = await loadIndex()
+    const fetchHandler = serveOptions.fetch
+    if (!fetchHandler) {
+      throw new Error('Fetch handler not configured')
+    }
+
+    const server = {} as Bun.Server<unknown>
+    const oversizedResponse = await fetchHandler.call(
+      server,
+      new Request('http://localhost/api/client-log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event: 'test_event', data: { value: 'too-long' } }),
+      }),
+      server
+    )
+
+    if (!oversizedResponse) {
+      throw new Error('Expected response for oversized client-log')
+    }
+
+    expect(oversizedResponse.status).toBe(413)
+
+    configState.clientLogMaxBytes = 1024
+    const eventResponse = await fetchHandler.call(
+      server,
+      new Request('http://localhost/api/client-log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event: 'very_long_event_name' }),
+      }),
+      server
+    )
+
+    if (!eventResponse) {
+      throw new Error('Expected response for oversized client-log event')
+    }
+
+    expect(eventResponse.status).toBe(413)
   })
 
   test('/api/client-log handles malformed body gracefully', async () => {
