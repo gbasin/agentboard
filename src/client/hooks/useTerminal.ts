@@ -194,7 +194,7 @@ export function useTerminal({
   const useWebGLRef = useRef(useWebGL)
 
   // Output buffering with idle-based flushing
-  const outputBufferRef = useRef<string>('')
+  const outputBufferRef = useRef<string[]>([])
   const idleTimerRef = useRef<number | null>(null)
   const maxTimerRef = useRef<number | null>(null)
 
@@ -994,7 +994,7 @@ export function useTerminal({
       // Defer reset until history arrives (no blank flash).
       // Drain stale output buffer first — prevents old session's data
       // from consuming the one-shot reset meant for new session's history.
-      outputBufferRef.current = ''
+      outputBufferRef.current = []
       if (idleTimerRef.current !== null) {
         window.clearTimeout(idleTimerRef.current)
         idleTimerRef.current = null
@@ -1133,10 +1133,11 @@ export function useTerminal({
       }
 
       const terminal = terminalRef.current
-      const data = outputBufferRef.current
-      if (!terminal || !data) return
+      const chunks = outputBufferRef.current
+      if (!terminal || chunks.length === 0) return
 
-      outputBufferRef.current = ''
+      outputBufferRef.current = []
+      const data = chunks.join('')
 
       // Atomically swap: reset + write in same JS task = one rAF frame, no blank
       if (needsResetRef.current) {
@@ -1216,9 +1217,9 @@ export function useTerminal({
           switchStartRef.current = null
         }
 
-        outputBufferRef.current += isiOS
-          ? forceTextPresentation(message.data)
-          : message.data
+        outputBufferRef.current.push(
+          isiOS ? forceTextPresentation(message.data) : message.data
+        )
         scheduleFlush()
       }
 
@@ -1231,7 +1232,7 @@ export function useTerminal({
         // stay atomic (avoids blank flash from resetting before flush fires).
         // If no output arrived at all (empty pane or server dedup), reset
         // to clear stale content from the previous session.
-        if (needsResetRef.current && outputBufferRef.current) {
+        if (needsResetRef.current && outputBufferRef.current.length > 0) {
           flush()
         } else if (needsResetRef.current) {
           terminalRef.current?.reset()
