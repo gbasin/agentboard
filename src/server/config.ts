@@ -144,7 +144,7 @@ const tmuxMutationTimeoutMs = Number.isFinite(tmuxMutationTimeoutMsRaw) && tmuxM
 const pasteImageMaxBytesRaw = Number(process.env.AGENTBOARD_PASTE_IMAGE_MAX_BYTES)
 const pasteImageMaxBytes = Number.isFinite(pasteImageMaxBytesRaw) && pasteImageMaxBytesRaw > 0
   ? Math.floor(pasteImageMaxBytesRaw)
-  : 10 * 1024 * 1024
+  : 40 * 1024 * 1024
 
 export const config = {
   port: Number(process.env.PORT) || 4040,

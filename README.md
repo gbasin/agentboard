@@ -164,7 +164,7 @@ AGENTBOARD_REMOTE_SSH_OPTS=-o BatchMode=yes -o ConnectTimeout=3
 AGENTBOARD_REMOTE_ALLOW_ATTACH=false
 AGENTBOARD_REMOTE_ALLOW_CONTROL=false
 AGENTBOARD_LOG_WATCH_MODE=watch
-AGENTBOARD_PASTE_IMAGE_MAX_BYTES=10485760
+AGENTBOARD_PASTE_IMAGE_MAX_BYTES=41943040
 ```
 
 `HOSTNAME` controls which interfaces the server binds to (default `127.0.0.1` for localhost-only). With the default localhost binding, if Tailscale is detected the server also binds to your Tailscale IP automatically. Set to `0.0.0.0` to listen on all interfaces.
@@ -205,7 +205,7 @@ All persistent data is stored in `~/.agentboard/`: session database (`agentboard
 
 `AGENTBOARD_LOG_WATCH_MODE` selects the log detection strategy: `watch` (default) uses `fs.watch` for instant file-change detection, `poll` falls back to periodic directory scanning. Use `poll` if you experience issues with filesystem notifications (e.g., on network-mounted home directories). On Linux, watch mode automatically includes a 15-second fallback poll since `fs.watch({ recursive: true })` has known platform bugs.
 
-`AGENTBOARD_PASTE_IMAGE_MAX_BYTES` caps clipboard image uploads (default 10 MB). Paste uploads are limited to PNG, JPEG, GIF, and WebP images.
+`AGENTBOARD_PASTE_IMAGE_MAX_BYTES` caps clipboard image uploads (default 40 MB, enough for full-resolution photos pasted as PNG). Paste uploads are limited to PNG, JPEG, GIF, and WebP images.
 
 **SSH multiplexing (recommended):** Each poll cycle opens SSH connections to every remote host. Enable SSH connection multiplexing to reuse connections and reduce overhead from ~200-500ms to ~5ms per poll. Add to your `~/.ssh/config`:
 

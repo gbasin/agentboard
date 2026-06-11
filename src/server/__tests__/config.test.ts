@@ -125,7 +125,7 @@ describe('config', () => {
     expect(config.remoteAllowControl).toBe(false)
     expect(config.tmuxTimeoutMs).toBe(3000)
     expect(config.tmuxMutationTimeoutMs).toBe(15000)
-    expect(config.pasteImageMaxBytes).toBe(10 * 1024 * 1024)
+    expect(config.pasteImageMaxBytes).toBe(40 * 1024 * 1024)
   })
 
   test('parses env overrides and trims discover prefixes', async () => {
@@ -204,13 +204,13 @@ describe('config', () => {
 
   test('falls back to default paste image cap for invalid values', async () => {
     process.env.AGENTBOARD_PASTE_IMAGE_MAX_BYTES = '0'
-    expect((await loadConfig('paste-zero')).pasteImageMaxBytes).toBe(10 * 1024 * 1024)
+    expect((await loadConfig('paste-zero')).pasteImageMaxBytes).toBe(40 * 1024 * 1024)
 
     process.env.AGENTBOARD_PASTE_IMAGE_MAX_BYTES = '-1'
-    expect((await loadConfig('paste-negative')).pasteImageMaxBytes).toBe(10 * 1024 * 1024)
+    expect((await loadConfig('paste-negative')).pasteImageMaxBytes).toBe(40 * 1024 * 1024)
 
     process.env.AGENTBOARD_PASTE_IMAGE_MAX_BYTES = 'lots'
-    expect((await loadConfig('paste-nan')).pasteImageMaxBytes).toBe(10 * 1024 * 1024)
+    expect((await loadConfig('paste-nan')).pasteImageMaxBytes).toBe(40 * 1024 * 1024)
 
     process.env.AGENTBOARD_PASTE_IMAGE_MAX_BYTES = '1024.9'
     expect((await loadConfig('paste-fractional')).pasteImageMaxBytes).toBe(1024)

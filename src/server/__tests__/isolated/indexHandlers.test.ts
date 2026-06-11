@@ -81,7 +81,7 @@ const defaultConfig = {
   remoteAllowAttach: false,
   tmuxTimeoutMs: 3000,
   tmuxMutationTimeoutMs: 15000,
-  pasteImageMaxBytes: 10 * 1024 * 1024,
+  pasteImageMaxBytes: 40 * 1024 * 1024,
 }
 
 const configState = { ...defaultConfig }
@@ -4656,7 +4656,7 @@ describe('server fetch handlers', () => {
       server,
       new Request('http://localhost/api/paste-image', {
         method: 'POST',
-        headers: { 'content-length': String(20 * 1024 * 1024) },
+        headers: { 'content-length': String(64 * 1024 * 1024) },
         body: 'x',
       }),
       server
