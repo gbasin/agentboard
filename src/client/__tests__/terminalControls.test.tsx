@@ -8,12 +8,30 @@ const globalAny = globalThis as typeof globalThis & {
 }
 
 const originalNavigator = globalAny.navigator
+const originalFetch = globalAny.fetch
 
 const { default: TerminalControls } = await import('../components/TerminalControls')
 
 afterEach(() => {
   globalAny.navigator = originalNavigator
+  globalAny.fetch = originalFetch
 })
+
+function clipboardWithImage() {
+  return {
+    read: () =>
+      Promise.resolve([
+        {
+          types: ['image/png'],
+          getType: () =>
+            Promise.resolve(
+              new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' })
+            ),
+        },
+      ]),
+    readText: () => Promise.reject(new Error('no text')),
+  }
+}
 
 function findPasteButton(renderer: TestRenderer.ReactTestRenderer) {
   const buttons = renderer.root.findAllByType('button')
@@ -181,5 +199,134 @@ describe('TerminalControls', () => {
     })
 
     expect(sent).toEqual(['manual'])
+  })
+
+  test('paste button uploads clipboard image and sends the stored path', async () => {
+    const sent: string[] = []
+    const requests: Array<{ url: string; init?: RequestInit }> = []
+
+    globalAny.navigator = {
+      vibrate: () => true,
+      clipboard: clipboardWithImage(),
+    } as unknown as Navigator
+
+    globalAny.fetch = (async (url: string, init?: RequestInit) => {
+      requests.push({ url, init })
+      return new Response(JSON.stringify({ path: '/tmp/paste-test.png' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }) as unknown as typeof fetch
+
+    const renderer = TestRenderer.create(
+      <TerminalControls
+        onSendKey={(key) => sent.push(key)}
+        sessions={[{ id: 'session-1', name: 'alpha', status: 'working' }]}
+        currentSessionId="session-1"
+        onSelectSession={() => {}}
+      />
+    )
+
+    const pasteButton = findPasteButton(renderer)
+    if (!pasteButton) {
+      throw new Error('Expected paste button')
+    }
+
+    await act(async () => {
+      await pasteButton.props.onClick()
+    })
+
+    expect(requests).toHaveLength(1)
+    expect(requests[0]?.url).toBe('/api/paste-image')
+    expect(sent).toEqual(['/tmp/paste-test.png'])
+  })
+
+  test('shows the server error when an image upload is rejected', async () => {
+    const sent: string[] = []
+
+    globalAny.navigator = {
+      vibrate: () => true,
+      clipboard: clipboardWithImage(),
+    } as unknown as Navigator
+
+    globalAny.fetch = (async () =>
+      new Response(JSON.stringify({ error: 'Image too large' }), {
+        status: 413,
+        headers: { 'content-type': 'application/json' },
+      })) as unknown as typeof fetch
+
+    const renderer = TestRenderer.create(
+      <TerminalControls
+        onSendKey={(key) => sent.push(key)}
+        sessions={[{ id: 'session-1', name: 'alpha', status: 'working' }]}
+        currentSessionId="session-1"
+        onSelectSession={() => {}}
+      />
+    )
+
+    const pasteButton = findPasteButton(renderer)
+    if (!pasteButton) {
+      throw new Error('Expected paste button')
+    }
+
+    await act(async () => {
+      await pasteButton.props.onClick()
+    })
+
+    // Nothing was pasted, and the paste modal opens showing the failure
+    expect(sent).toEqual([])
+    const alert = renderer.root
+      .findAllByType('p')
+      .find((p) => p.props.role === 'alert')
+    if (!alert) {
+      throw new Error('Expected upload error message')
+    }
+    expect(alert.props.children).toBe('Image too large')
+  })
+
+  test('clears the upload error when the paste modal is cancelled', async () => {
+    globalAny.navigator = {
+      vibrate: () => true,
+      clipboard: clipboardWithImage(),
+    } as unknown as Navigator
+
+    globalAny.fetch = (async () =>
+      new Response(JSON.stringify({ error: 'Unsupported image type' }), {
+        status: 415,
+        headers: { 'content-type': 'application/json' },
+      })) as unknown as typeof fetch
+
+    const renderer = TestRenderer.create(
+      <TerminalControls
+        onSendKey={() => {}}
+        sessions={[{ id: 'session-1', name: 'alpha', status: 'working' }]}
+        currentSessionId="session-1"
+        onSelectSession={() => {}}
+      />
+    )
+
+    const pasteButton = findPasteButton(renderer)
+    if (!pasteButton) {
+      throw new Error('Expected paste button')
+    }
+
+    await act(async () => {
+      await pasteButton.props.onClick()
+    })
+
+    const cancelButton = renderer.root
+      .findAllByType('button')
+      .find((button) => button.props.children === 'Cancel')
+    if (!cancelButton) {
+      throw new Error('Expected cancel button')
+    }
+
+    act(() => {
+      cancelButton.props.onClick()
+    })
+
+    expect(
+      renderer.root.findAllByType('p').some((p) => p.props.role === 'alert')
+    ).toBe(false)
   })
 })
