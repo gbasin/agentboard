@@ -40,6 +40,7 @@ if (!tmuxAvailable || !localhostBindable) {
           DISCOVER_PREFIXES: '',
           AGENTBOARD_LOG_POLL_MS: '0',
           AGENTBOARD_DB_PATH: dbPath,
+          AGENTBOARD_PASTE_IMAGE_MAX_BYTES: '1024',
         },
         stdout: 'pipe',
         stderr: 'pipe',
@@ -130,6 +131,39 @@ if (!tmuxAvailable || !localhostBindable) {
       })
 
       expect(response.status).toBe(400)
+    })
+
+    test('paste-image endpoint rejects unsupported types', async () => {
+      const formData = new FormData()
+      const blob = new Blob([new Uint8Array([0, 1, 2, 3])], {
+        type: 'text/plain',
+      })
+      formData.append('image', blob, 'paste.txt')
+
+      const response = await fetch(`http://${testHost}:${port}/api/paste-image`, {
+        method: 'POST',
+        body: formData,
+      })
+
+      expect(response.status).toBe(415)
+      const payload = (await response.json()) as { error: string }
+      expect(payload.error).toBe('Unsupported image type')
+    })
+
+    test('paste-image endpoint rejects oversized uploads', async () => {
+      // Server is started with AGENTBOARD_PASTE_IMAGE_MAX_BYTES=1024
+      const formData = new FormData()
+      const blob = new Blob([new Uint8Array(2048)], { type: 'image/png' })
+      formData.append('image', blob, 'paste.png')
+
+      const response = await fetch(`http://${testHost}:${port}/api/paste-image`, {
+        method: 'POST',
+        body: formData,
+      })
+
+      expect(response.status).toBe(413)
+      const payload = (await response.json()) as { error: string }
+      expect(payload.error).toBe('Image too large')
     })
   })
 }

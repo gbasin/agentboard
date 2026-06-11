@@ -1364,23 +1364,43 @@ app.put('/api/settings/history-max-age-hours', putHistoryMaxAgeHours)
 app.get('/api/settings/inactive-max-age-hours', getHistoryMaxAgeHours)
 app.put('/api/settings/inactive-max-age-hours', putHistoryMaxAgeHours)
 
+// Allowed paste-image types; the extension written to /tmp comes from this map,
+// never from client-supplied values. Note Bun's multipart parser derives
+// File.type from the part filename's extension, not the declared blob type.
+const pasteImageExtensionByMime = new Map([
+  ['image/gif', 'gif'],
+  ['image/jpeg', 'jpg'],
+  ['image/png', 'png'],
+  ['image/webp', 'webp'],
+])
+
 // Image upload endpoint for iOS clipboard paste
 app.post('/api/paste-image', async (c) => {
+  // Early reject before buffering the multipart body. The header is
+  // client-controlled, so image.size below remains the authoritative check.
+  const contentLength = Number(c.req.header('content-length'))
+  if (Number.isFinite(contentLength) && contentLength > config.pasteImageMaxBytes) {
+    return c.json({ error: 'Image too large' }, 413)
+  }
+
   try {
     const formData = await c.req.formData()
-    const file = formData.get('image') as File | null
-    if (!file) {
+    const image = formData.get('image')
+    if (!(image instanceof File)) {
       return c.json({ error: 'No image provided' }, 400)
+    }
+    if (image.size > config.pasteImageMaxBytes) {
+      return c.json({ error: 'Image too large' }, 413)
+    }
+    const ext = pasteImageExtensionByMime.get(image.type)
+    if (!ext) {
+      return c.json({ error: 'Unsupported image type' }, 415)
     }
 
     // Generate unique filename in temp directory
-    const ext = file.type.split('/')[1] || 'png'
     const filename = `paste-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
     const filepath = `/tmp/${filename}`
-
-    // Write file
-    const buffer = await file.arrayBuffer()
-    await Bun.write(filepath, buffer)
+    await Bun.write(filepath, image)
 
     return c.json({ path: filepath })
   } catch (error) {

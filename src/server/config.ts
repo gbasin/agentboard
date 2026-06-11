@@ -141,6 +141,11 @@ const tmuxMutationTimeoutMs = Number.isFinite(tmuxMutationTimeoutMsRaw) && tmuxM
   ? Math.max(Math.floor(tmuxMutationTimeoutMsRaw), tmuxTimeoutMs)
   : Math.max(tmuxTimeoutMs * 5, 15000)
 
+const pasteImageMaxBytesRaw = Number(process.env.AGENTBOARD_PASTE_IMAGE_MAX_BYTES)
+const pasteImageMaxBytes = Number.isFinite(pasteImageMaxBytesRaw) && pasteImageMaxBytesRaw > 0
+  ? Math.floor(pasteImageMaxBytesRaw)
+  : 10 * 1024 * 1024
+
 export const config = {
   port: Number(process.env.PORT) || 4040,
   hostname: process.env.HOSTNAME || '127.0.0.1',
@@ -191,4 +196,5 @@ export const config = {
   remoteAllowAttach,
   tmuxTimeoutMs,
   tmuxMutationTimeoutMs,
+  pasteImageMaxBytes,
 }

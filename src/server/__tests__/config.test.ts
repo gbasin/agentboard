@@ -32,6 +32,7 @@ const ORIGINAL_ENV = {
   AGENTBOARD_REMOTE_ALLOW_CONTROL: process.env.AGENTBOARD_REMOTE_ALLOW_CONTROL,
   AGENTBOARD_TMUX_TIMEOUT_MS: process.env.AGENTBOARD_TMUX_TIMEOUT_MS,
   AGENTBOARD_TMUX_MUTATION_TIMEOUT_MS: process.env.AGENTBOARD_TMUX_MUTATION_TIMEOUT_MS,
+  AGENTBOARD_PASTE_IMAGE_MAX_BYTES: process.env.AGENTBOARD_PASTE_IMAGE_MAX_BYTES,
 }
 
 const ENV_KEYS = Object.keys(ORIGINAL_ENV) as Array<keyof typeof ORIGINAL_ENV>
@@ -81,6 +82,7 @@ async function loadConfig(tag: string) {
     remoteAllowControl: boolean
     tmuxTimeoutMs: number
     tmuxMutationTimeoutMs: number
+    pasteImageMaxBytes: number
   }
 }
 
@@ -123,6 +125,7 @@ describe('config', () => {
     expect(config.remoteAllowControl).toBe(false)
     expect(config.tmuxTimeoutMs).toBe(3000)
     expect(config.tmuxMutationTimeoutMs).toBe(15000)
+    expect(config.pasteImageMaxBytes).toBe(10 * 1024 * 1024)
   })
 
   test('parses env overrides and trims discover prefixes', async () => {
@@ -156,6 +159,7 @@ describe('config', () => {
     process.env.AGENTBOARD_REMOTE_ALLOW_CONTROL = 'true'
     process.env.AGENTBOARD_TMUX_TIMEOUT_MS = '4500'
     process.env.AGENTBOARD_TMUX_MUTATION_TIMEOUT_MS = '12000'
+    process.env.AGENTBOARD_PASTE_IMAGE_MAX_BYTES = '4096'
 
     const config = await loadConfig('overrides')
     expect(config.port).toBe(9090)
@@ -188,6 +192,7 @@ describe('config', () => {
     expect(config.remoteAllowControl).toBe(true)
     expect(config.tmuxTimeoutMs).toBe(4500)
     expect(config.tmuxMutationTimeoutMs).toBe(12000)
+    expect(config.pasteImageMaxBytes).toBe(4096)
   })
 
   test('defaults to watch mode for invalid AGENTBOARD_LOG_WATCH_MODE', async () => {
@@ -195,5 +200,19 @@ describe('config', () => {
 
     const config = await loadConfig('invalid-watch-mode')
     expect(config.logWatchMode).toBe('watch')
+  })
+
+  test('falls back to default paste image cap for invalid values', async () => {
+    process.env.AGENTBOARD_PASTE_IMAGE_MAX_BYTES = '0'
+    expect((await loadConfig('paste-zero')).pasteImageMaxBytes).toBe(10 * 1024 * 1024)
+
+    process.env.AGENTBOARD_PASTE_IMAGE_MAX_BYTES = '-1'
+    expect((await loadConfig('paste-negative')).pasteImageMaxBytes).toBe(10 * 1024 * 1024)
+
+    process.env.AGENTBOARD_PASTE_IMAGE_MAX_BYTES = 'lots'
+    expect((await loadConfig('paste-nan')).pasteImageMaxBytes).toBe(10 * 1024 * 1024)
+
+    process.env.AGENTBOARD_PASTE_IMAGE_MAX_BYTES = '1024.9'
+    expect((await loadConfig('paste-fractional')).pasteImageMaxBytes).toBe(1024)
   })
 })

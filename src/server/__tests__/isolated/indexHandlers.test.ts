@@ -81,6 +81,7 @@ const defaultConfig = {
   remoteAllowAttach: false,
   tmuxTimeoutMs: 3000,
   tmuxMutationTimeoutMs: 15000,
+  pasteImageMaxBytes: 10 * 1024 * 1024,
 }
 
 const configState = { ...defaultConfig }
@@ -4501,6 +4502,171 @@ describe('server fetch handlers', () => {
     expect(response.status).toBe(500)
     const payload = (await response.json()) as { error: string }
     expect(payload.error).toBe('write-failed')
+  })
+
+  test('maps each allowed paste-image type to its extension', async () => {
+    const { serveOptions } = await loadIndex()
+    const fetchHandler = serveOptions.fetch
+    if (!fetchHandler) {
+      throw new Error('Fetch handler not configured')
+    }
+    const server = {} as Bun.Server<unknown>
+
+    // Bun's multipart parser derives File.type from the part filename's
+    // extension, ignoring the declared blob type — so each upload's filename
+    // must carry the extension for the type under test.
+    const cases = [
+      ['paste.png', 'image/png', '.png'],
+      ['paste.jpeg', 'image/jpeg', '.jpg'],
+      ['paste.gif', 'image/gif', '.gif'],
+      ['paste.webp', 'image/webp', '.webp'],
+    ] as const
+
+    for (const [uploadName, mime, extension] of cases) {
+      const formData = new FormData()
+      formData.append(
+        'image',
+        new File([new Uint8Array([1, 2, 3])], uploadName, { type: mime })
+      )
+
+      const response = await fetchHandler.call(
+        server,
+        new Request('http://localhost/api/paste-image', {
+          method: 'POST',
+          body: formData,
+        }),
+        server
+      )
+
+      if (!response) {
+        throw new Error(`Expected response for ${mime} upload`)
+      }
+
+      expect(response.status).toBe(200)
+      const payload = (await response.json()) as { path: string }
+      expect(payload.path.startsWith('/tmp/paste-')).toBe(true)
+      expect(payload.path.endsWith(extension)).toBe(true)
+    }
+  })
+
+  test('rejects paste-image uploads with unsupported types', async () => {
+    const { serveOptions } = await loadIndex()
+    const fetchHandler = serveOptions.fetch
+    if (!fetchHandler) {
+      throw new Error('Fetch handler not configured')
+    }
+    const server = {} as Bun.Server<unknown>
+
+    const unsupported = [
+      ['paste.txt', 'text/plain'],
+      ['paste.svg', 'image/svg+xml'],
+      ['paste.pdf', 'application/pdf'],
+      ['paste.heic', 'image/heic'],
+    ] as const
+
+    for (const [uploadName, mime] of unsupported) {
+      const formData = new FormData()
+      formData.append(
+        'image',
+        new File([new Uint8Array([1, 2, 3])], uploadName, { type: mime })
+      )
+
+      const response = await fetchHandler.call(
+        server,
+        new Request('http://localhost/api/paste-image', {
+          method: 'POST',
+          body: formData,
+        }),
+        server
+      )
+
+      if (!response) {
+        throw new Error(`Expected response for ${mime} upload`)
+      }
+
+      expect(response.status).toBe(415)
+      const payload = (await response.json()) as { error: string }
+      expect(payload.error).toBe('Unsupported image type')
+    }
+
+    // A plain string field named 'image' is not a file upload
+    const stringForm = new FormData()
+    stringForm.append('image', 'not-a-file')
+
+    const stringResponse = await fetchHandler.call(
+      server,
+      new Request('http://localhost/api/paste-image', {
+        method: 'POST',
+        body: stringForm,
+      }),
+      server
+    )
+
+    if (!stringResponse) {
+      throw new Error('Expected response for string image field')
+    }
+
+    expect(stringResponse.status).toBe(400)
+  })
+
+  test('rejects oversized paste-image uploads', async () => {
+    configState.pasteImageMaxBytes = 2
+    const { serveOptions } = await loadIndex()
+    const fetchHandler = serveOptions.fetch
+    if (!fetchHandler) {
+      throw new Error('Fetch handler not configured')
+    }
+    const server = {} as Bun.Server<unknown>
+
+    const formData = new FormData()
+    formData.append(
+      'image',
+      new File([new Uint8Array([1, 2, 3])], 'paste.png', { type: 'image/png' })
+    )
+
+    const oversizedResponse = await fetchHandler.call(
+      server,
+      new Request('http://localhost/api/paste-image', {
+        method: 'POST',
+        body: formData,
+      }),
+      server
+    )
+
+    if (!oversizedResponse) {
+      throw new Error('Expected response for oversized upload')
+    }
+
+    expect(oversizedResponse.status).toBe(413)
+    const payload = (await oversizedResponse.json()) as { error: string }
+    expect(payload.error).toBe('Image too large')
+  })
+
+  test('rejects paste-image requests by content-length before parsing the body', async () => {
+    const { serveOptions } = await loadIndex()
+    const fetchHandler = serveOptions.fetch
+    if (!fetchHandler) {
+      throw new Error('Fetch handler not configured')
+    }
+    const server = {} as Bun.Server<unknown>
+
+    // The body is not valid multipart, so a 413 (rather than the 500 a
+    // formData() parse failure produces) proves the header check ran first.
+    const response = await fetchHandler.call(
+      server,
+      new Request('http://localhost/api/paste-image', {
+        method: 'POST',
+        headers: { 'content-length': String(20 * 1024 * 1024) },
+        body: 'x',
+      }),
+      server
+    )
+
+    if (!response) {
+      throw new Error('Expected response for oversized content-length')
+    }
+
+    expect(response.status).toBe(413)
   })
 
   test('returns session preview for existing logs', async () => {
