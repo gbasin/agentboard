@@ -1,6 +1,6 @@
 {
   "name": "@gbasin/agentboard",
-  "version": "0.2.50",
+  "version": "0.2.51",
   "type": "module",
   "description": "Web GUI for tmux optimized for AI agent TUIs",
   "author": "gbasin",
@@ -89,5 +89,8 @@
     "typescript": "^5.7.2",
     "vite": "^8.0.6",
     "vite-plugin-pwa": "^1.2.0"
+  },
+  "overrides": {
+    "shell-quote": "^1.8.4"
   }
 }
