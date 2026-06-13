@@ -159,6 +159,7 @@ export default function Terminal({
   const { containerRef, terminalRef, inTmuxCopyModeRef, setTmuxCopyMode, isSwitching } = useTerminal({
     sessionId: session?.id ?? null,
     tmuxTarget: session?.tmuxWindow ?? null,
+    agentType: session?.agentType,
     allowAttach: !isReadOnly,
     connectionStatus,
     connectionEpoch,

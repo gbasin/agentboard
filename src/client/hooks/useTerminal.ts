@@ -7,7 +7,7 @@ import { ClipboardAddon, type ClipboardSelectionType, type IClipboardProvider } 
 import { SearchAddon } from '@xterm/addon-search'
 import { SerializeAddon } from '@xterm/addon-serialize'
 import { ProgressAddon } from '@xterm/addon-progress'
-import type { SendClientMessage, ServerMessageWithDiagnostics, SubscribeServerMessage } from '@shared/types'
+import type { AgentType, SendClientMessage, ServerMessageWithDiagnostics, SubscribeServerMessage } from '@shared/types'
 import { clientLog } from '../utils/clientLog'
 import type { ConnectionStatus } from '../stores/sessionStore'
 
@@ -69,6 +69,36 @@ const getIsMac = () => typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod
 
 /** Empty bracket paste sequence — signals a paste event without text content. */
 const BRACKET_PASTE_EMPTY = '\x1b[200~\x1b[201~'
+const CTRL_V = '\x16'
+
+function getImagePasteSignal(agentType: AgentType | undefined): string {
+  return agentType === 'codex' ? CTRL_V : BRACKET_PASTE_EMPTY
+}
+
+const MAC_SHARED_PASTEBOARD_PATH_PATTERN =
+  /\/Users\/[^/\n]+\/Library\/Group Containers\/group\.com\.apple\.coreservices\.useractivityd\/shared-pasteboard\/items\//
+
+function isMacSharedPasteboardPathText(text: string): boolean {
+  return MAC_SHARED_PASTEBOARD_PATH_PATTERN.test(text)
+}
+
+interface PastePayload {
+  text: string
+  hasImage: boolean
+}
+
+function clipboardHasImage(clipboardData: DataTransfer | null | undefined): boolean {
+  if (!clipboardData) return false
+
+  for (const file of Array.from(clipboardData.files ?? [])) {
+    if (file?.type?.startsWith('image/')) return true
+  }
+
+  for (const item of Array.from(clipboardData.items ?? [])) {
+    if (item?.type?.startsWith('image/')) return true
+  }
+  return false
+}
 
 /**
  * Custom clipboard provider that prevents empty writes (matching Ghostty's behavior).
@@ -133,6 +163,7 @@ export function forceTextPresentation(data: string): string {
 interface UseTerminalOptions {
   sessionId: string | null
   tmuxTarget: string | null
+  agentType?: AgentType
   allowAttach?: boolean
   connectionStatus?: ConnectionStatus
   connectionEpoch?: number
@@ -150,6 +181,7 @@ interface UseTerminalOptions {
 export function useTerminal({
   sessionId,
   tmuxTarget,
+  agentType,
   allowAttach = true,
   connectionStatus = 'connected',
   connectionEpoch = 0,
@@ -190,6 +222,7 @@ export function useTerminal({
   const focusAfterAttachSessionRef = useRef<string | null>(null)
   const switchStartRef = useRef<number | null>(null)
   const sendMessageRef = useRef(sendMessage)
+  const agentTypeRef = useRef(agentType)
   const onScrollChangeRef = useRef(onScrollChange)
   const useWebGLRef = useRef(useWebGL)
 
@@ -271,6 +304,10 @@ export function useTerminal({
   useEffect(() => {
     sendMessageRef.current = sendMessage
   }, [sendMessage])
+
+  useEffect(() => {
+    agentTypeRef.current = agentType
+  }, [agentType])
 
   useEffect(() => {
     onScrollChangeRef.current = onScrollChange
@@ -555,10 +592,10 @@ export function useTerminal({
     webLinksAddonRef.current = webLinksAddon
 
     // Paste interception state: each keydown creates a resolver that the
-    // capture-phase paste listener fulfills with clipboardData text.
+    // capture-phase paste listener fulfills with clipboardData text/metadata.
     // This per-request model prevents race conditions with rapid pastes
     // and avoids double-paste without depending on the async Clipboard API.
-    let pasteResolver: ((text: string) => void) | null = null
+    let pasteResolver: ((payload: PastePayload) => void) | null = null
     let pasteTimeoutId: ReturnType<typeof setTimeout> | null = null
 
     const pasteModifier = getIsMac() ? 'metaKey' : 'ctrlKey' as const
@@ -575,22 +612,23 @@ export function useTerminal({
         }
       }
 
-      // Ctrl+V on macOS desktop: send bracket paste signal for Claude Code image paste.
-      // Claude Code detects bracket paste and reads the macOS system clipboard
-      // for image data. Ctrl+V doesn't trigger a browser paste event, so there's
-      // no double-paste risk — we just need to convert it to a bracket paste signal.
+      // Ctrl+V on macOS desktop: route image paste through the agent-specific
+      // signal. Claude Code reads the macOS clipboard after an empty bracket
+      // paste; Codex handles a literal Ctrl+V byte.
+      // Ctrl+V doesn't trigger a browser paste event, so there's no double-paste risk.
       // Excluded on iOS: no Finder/osascript, and Ctrl+V with hardware keyboard
-      // should not trigger bracket paste.
-      // Send bracket paste markers directly as raw terminal input because xterm.js's
-      // bracketedPasteMode is off (tmux intercepts DECSET 2004), so terminal.paste('')
-      // would send an empty string instead of the bracket paste sequence.
+      // should not trigger desktop image paste behavior.
       if (getIsMac() && !isiOS && event.ctrlKey && !event.metaKey && event.key.toLowerCase() === 'v' && event.type === 'keydown') {
         if (attachedSessionRef.current) {
           if (inTmuxCopyModeRef.current) {
             sendMessageRef.current({ type: 'tmux-cancel-copy-mode', sessionId: attachedSessionRef.current })
             setTmuxCopyMode(false)
           }
-          sendMessageRef.current({ type: 'terminal-input', sessionId: attachedSessionRef.current, data: BRACKET_PASTE_EMPTY })
+          sendMessageRef.current({
+            type: 'terminal-input',
+            sessionId: attachedSessionRef.current,
+            data: getImagePasteSignal(agentTypeRef.current),
+          })
         }
         return !attachedSessionRef.current // Only swallow when attached
       }
@@ -610,18 +648,18 @@ export function useTerminal({
           pasteTimeoutId = null
         }
         pasteResolver = null
-        const pastePromise = new Promise<string | null>((resolve) => {
+        const pastePromise = new Promise<PastePayload | null>((resolve) => {
           pasteTimeoutId = setTimeout(() => {
             pasteTimeoutId = null
             pasteResolver = null
             resolve(null)
           }, 100)
-          pasteResolver = (text: string) => {
+          pasteResolver = (payload: PastePayload) => {
             if (pasteTimeoutId !== null) {
               clearTimeout(pasteTimeoutId)
               pasteTimeoutId = null
             }
-            resolve(text)
+            resolve(payload)
           }
         })
         void (async () => {
@@ -631,9 +669,15 @@ export function useTerminal({
 
             // Wait for the paste event to deliver text (up to 100ms timeout).
             // Falls back to clipboard API if paste event didn't fire.
-            let text = await pastePromise
-            if (text == null) {
+            const payload = await pastePromise
+            let text = payload?.text ?? null
+            if (text === null) {
               try { text = await navigator.clipboard.readText() } catch { text = '' }
+            }
+
+            if (payload?.hasImage && getIsMac() && !isiOS) {
+              sendMessageRef.current({ type: 'terminal-input', sessionId: attached, data: getImagePasteSignal(agentTypeRef.current) })
+              return
             }
 
             // If paste text is empty and on macOS desktop, check for Finder file copy.
@@ -642,8 +686,12 @@ export function useTerminal({
               try {
                 const res = await fetch('/api/clipboard-file-path')
                 if (res.ok) {
-                  const { path } = (await res.json()) as { path: string | null }
+                  const { path, isImage } = (await res.json()) as { path: string | null; isImage?: boolean }
                   if (path) {
+                    if (isImage) {
+                      sendMessageRef.current({ type: 'terminal-input', sessionId: attached, data: getImagePasteSignal(agentTypeRef.current) })
+                      return
+                    }
                     // Send as raw input (no bracket paste) so Claude Code
                     // doesn't detect a paste and read the system clipboard
                     sendMessageRef.current({ type: 'terminal-input', sessionId: attached, data: path })
@@ -653,7 +701,17 @@ export function useTerminal({
               } catch { /* not on macOS or endpoint unavailable */ }
             }
 
-            if (text) terminal.paste(text)
+            if (text && !isMacSharedPasteboardPathText(text)) {
+              terminal.paste(text)
+              return
+            }
+
+            // Shared Mac clipboard image pastes can expose only a protected
+            // useractivityd path to the browser. Sending that path to an agent
+            // is useless; ask the attached CLI to run its native image-paste path.
+            if (getIsMac() && !isiOS) {
+              sendMessageRef.current({ type: 'terminal-input', sessionId: attached, data: getImagePasteSignal(agentTypeRef.current) })
+            }
           } finally {
             pasteResolver = null
           }
@@ -682,9 +740,10 @@ export function useTerminal({
       e.preventDefault()
       e.stopPropagation()
       const text = e.clipboardData?.getData('text/plain') ?? ''
+      const hasImage = clipboardHasImage(e.clipboardData)
       const resolver = pasteResolver
       pasteResolver = null
-      resolver(text)
+      resolver({ text, hasImage })
     }
     container.addEventListener('paste', handlePaste, { capture: true })
 

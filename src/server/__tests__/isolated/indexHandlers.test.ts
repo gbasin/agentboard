@@ -4397,6 +4397,164 @@ describe('server fetch handlers', () => {
     expect(await response.text()).toBe('WebSocket upgrade failed')
   })
 
+  test('returns macOS clipboard image file paths from AppKit pasteboard reader', async () => {
+    if (process.platform !== 'darwin') {
+      return
+    }
+
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-clipboard-'))
+    try {
+      const imagePath = path.join(tempDir, 'screenshot.png')
+      await fs.writeFile(imagePath, new Uint8Array([1, 2, 3]))
+
+      let capturedCommandPrefix: string[] = []
+      let capturedTimeout: number | undefined
+      let capturedEnv: Record<string, string | undefined> | undefined
+      spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
+        const command = Array.isArray(args[0]) ? args[0].map(String) : [String(args[0])]
+        if (command[0] !== 'swift') {
+          return {
+            exitCode: 0,
+            stdout: Buffer.from(''),
+            stderr: Buffer.from(''),
+          } as ReturnType<typeof Bun.spawnSync>
+        }
+        capturedCommandPrefix = command.slice(0, 2)
+        capturedTimeout = args[1]?.timeout
+        capturedEnv = args[1]?.env as Record<string, string | undefined> | undefined
+        return {
+          exitCode: 0,
+          stdout: Buffer.from(JSON.stringify({ path: imagePath, isImage: true })),
+          stderr: Buffer.from(''),
+        } as ReturnType<typeof Bun.spawnSync>
+      }) as typeof Bun.spawnSync
+
+      const { serveOptions } = await loadIndex()
+      const fetchHandler = serveOptions.fetch
+      if (!fetchHandler) {
+        throw new Error('Fetch handler not configured')
+      }
+
+      const response = await fetchHandler.call(
+        {} as Bun.Server<unknown>,
+        new Request('http://localhost/api/clipboard-file-path'),
+        {} as Bun.Server<unknown>
+      )
+
+      if (!response) {
+        throw new Error('Expected response for clipboard file path')
+      }
+
+      expect(capturedCommandPrefix).toEqual(['swift', '-e'])
+      expect(capturedTimeout).toBe(10000)
+      expect(capturedEnv?.AGENTBOARD_PASTE_IMAGE_MAX_BYTES).toBe(String(defaultConfig.pasteImageMaxBytes))
+      expect(response.status).toBe(200)
+      expect(response.headers.get('cache-control')).toBe('no-store')
+      expect(await response.json()).toEqual({ path: imagePath, isImage: true })
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true })
+    }
+  })
+
+  test('returns null when macOS clipboard path does not exist', async () => {
+    if (process.platform !== 'darwin') {
+      return
+    }
+
+    spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
+      const command = Array.isArray(args[0]) ? args[0].map(String) : [String(args[0])]
+      if (command[0] !== 'swift') {
+        return {
+          exitCode: 0,
+          stdout: Buffer.from(''),
+          stderr: Buffer.from(''),
+        } as ReturnType<typeof Bun.spawnSync>
+      }
+      return {
+        exitCode: 0,
+        stdout: Buffer.from(JSON.stringify({ path: '/tmp/agentboard-missing.png', isImage: true })),
+        stderr: Buffer.from(''),
+      } as ReturnType<typeof Bun.spawnSync>
+    }) as typeof Bun.spawnSync
+
+    const { serveOptions } = await loadIndex()
+    const fetchHandler = serveOptions.fetch
+    if (!fetchHandler) {
+      throw new Error('Fetch handler not configured')
+    }
+
+    const response = await fetchHandler.call(
+      {} as Bun.Server<unknown>,
+      new Request('http://localhost/api/clipboard-file-path'),
+      {} as Bun.Server<unknown>
+    )
+
+    if (!response) {
+      throw new Error('Expected response for clipboard file path')
+    }
+
+    expect(await response.json()).toEqual({ path: null, isImage: false })
+  })
+
+  test('falls back to osascript when AppKit pasteboard reader fails', async () => {
+    if (process.platform !== 'darwin') {
+      return
+    }
+
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-clipboard-'))
+    try {
+      const filePath = path.join(tempDir, 'report.pdf')
+      await fs.writeFile(filePath, new Uint8Array([1, 2, 3]))
+
+      const commands: string[][] = []
+      spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
+        const command = Array.isArray(args[0]) ? args[0].map(String) : [String(args[0])]
+        commands.push(command.slice(0, 2))
+        if (command[0] === 'swift') {
+          return {
+            exitCode: 1,
+            stdout: Buffer.from(''),
+            stderr: Buffer.from('swift-missing'),
+          } as ReturnType<typeof Bun.spawnSync>
+        }
+        if (command[0] === 'osascript') {
+          return {
+            exitCode: 0,
+            stdout: Buffer.from(`${filePath}\n`),
+            stderr: Buffer.from(''),
+          } as ReturnType<typeof Bun.spawnSync>
+        }
+        return {
+          exitCode: 0,
+          stdout: Buffer.from(''),
+          stderr: Buffer.from(''),
+        } as ReturnType<typeof Bun.spawnSync>
+      }) as typeof Bun.spawnSync
+
+      const { serveOptions } = await loadIndex()
+      const fetchHandler = serveOptions.fetch
+      if (!fetchHandler) {
+        throw new Error('Fetch handler not configured')
+      }
+
+      const response = await fetchHandler.call(
+        {} as Bun.Server<unknown>,
+        new Request('http://localhost/api/clipboard-file-path'),
+        {} as Bun.Server<unknown>
+      )
+
+      if (!response) {
+        throw new Error('Expected response for clipboard file path')
+      }
+
+      expect(commands).toContainEqual(['swift', '-e'])
+      expect(commands).toContainEqual(['osascript', '-e'])
+      expect(await response.json()).toEqual({ path: filePath, isImage: false })
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true })
+    }
+  })
+
   test('handles paste-image requests with and without files', async () => {
     const { serveOptions, registryInstance } = await loadIndex()
     const fetchHandler = serveOptions.fetch
