@@ -1374,6 +1374,52 @@ const pasteImageExtensionByMime = new Map([
   ['image/webp', 'webp'],
 ])
 
+const macPasteboardSwiftScript = `
+import AppKit
+import Foundation
+
+let maxBytes = Int(ProcessInfo.processInfo.environment["AGENTBOARD_PASTE_IMAGE_MAX_BYTES"] ?? "") ?? 0
+let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp", "heic", "tif", "tiff"]
+
+func emit(path: String?, isImage: Bool) {
+  let payload: [String: Any?] = ["path": path, "isImage": isImage]
+  let data = try! JSONSerialization.data(withJSONObject: payload.compactMapValues { $0 })
+  print(String(data: data, encoding: .utf8)!)
+}
+
+let pasteboard = NSPasteboard.general
+let items = pasteboard.pasteboardItems ?? []
+
+for item in items {
+  if let fileURLString = item.string(forType: .fileURL),
+     let url = URL(string: fileURLString),
+     url.isFileURL {
+    let path = url.path
+    let lowerExt = url.pathExtension.lowercased()
+    let hasImageType = item.types.contains(.png) || item.types.contains(.tiff)
+    emit(path: path, isImage: hasImageType || imageExtensions.contains(lowerExt))
+    exit(0)
+  }
+}
+
+for item in items {
+  if let data = item.data(forType: .png), data.count > 0, (maxBytes <= 0 || data.count <= maxBytes) {
+    let path = NSTemporaryDirectory() + "agentboard-paste-" + UUID().uuidString + ".png"
+    try data.write(to: URL(fileURLWithPath: path), options: .atomic)
+    emit(path: path, isImage: true)
+    exit(0)
+  }
+}
+
+emit(path: nil, isImage: false)
+`
+
+const MAC_PASTEBOARD_TIMEOUT_MS = 10000
+
+function isImageFilePath(filePath: string): boolean {
+  return /\.(png|jpe?g|gif|webp|heic|tiff?)$/i.test(filePath)
+}
+
 // Image upload endpoint for iOS clipboard paste
 app.post('/api/paste-image', async (c) => {
   // Early reject before buffering the multipart body. The header is
@@ -1411,33 +1457,59 @@ app.post('/api/paste-image', async (c) => {
   }
 })
 
-// Get file path from macOS clipboard (for Finder file copies).
-// When a user copies a file in Finder, the browser clipboard only exposes the
-// file icon, not the actual contents. This endpoint extracts the real file path
-// via AppleScript so the client can send it to the terminal.
+// Get file path from macOS clipboard (for Finder file copies and screenshot apps).
+// Browser paste events can hide AppKit pasteboard types such as public.file-url
+// and public.png, so this endpoint reads NSPasteboard directly.
 app.get('/api/clipboard-file-path', async (c) => {
   if (process.platform !== 'darwin') {
-    return c.json({ path: null })
+    return c.json({ path: null, isImage: false })
   }
   try {
     const proc = Bun.spawn(
-      ['osascript', '-e', 'POSIX path of (the clipboard as «class furl»)'],
-      { stdout: 'pipe', stderr: 'pipe' }
+      ['swift', '-e', macPasteboardSwiftScript],
+      {
+        stdout: 'pipe',
+        stderr: 'pipe',
+        timeout: MAC_PASTEBOARD_TIMEOUT_MS,
+        env: {
+          ...process.env,
+          AGENTBOARD_PASTE_IMAGE_MAX_BYTES: String(config.pasteImageMaxBytes),
+        },
+      }
     )
     const text = await new Response(proc.stdout).text()
     const exitCode = await proc.exited
-    const filePath = text.trim()
-    if (exitCode === 0 && filePath.startsWith('/')) {
+    if (exitCode === 0) {
+      const payload = JSON.parse(text) as { path?: unknown; isImage?: unknown }
+      const filePath = typeof payload.path === 'string' ? payload.path : null
       // Verify the file actually exists
-      const file = Bun.file(filePath)
-      if (await file.exists()) {
-        c.header('Cache-Control', 'no-store')
-        return c.json({ path: filePath })
+      if (filePath?.startsWith('/')) {
+        const file = Bun.file(filePath)
+        if (await file.exists()) {
+          c.header('Cache-Control', 'no-store')
+          return c.json({ path: filePath, isImage: payload.isImage === true })
+        }
       }
     }
-    return c.json({ path: null })
+
+    const fallbackProc = Bun.spawn(
+      ['osascript', '-e', 'POSIX path of (the clipboard as «class furl»)'],
+      { stdout: 'pipe', stderr: 'pipe', timeout: MAC_PASTEBOARD_TIMEOUT_MS }
+    )
+    const fallbackText = await new Response(fallbackProc.stdout).text()
+    const fallbackExitCode = await fallbackProc.exited
+    const fallbackPath = fallbackText.trim()
+    if (fallbackExitCode === 0 && fallbackPath.startsWith('/')) {
+      const file = Bun.file(fallbackPath)
+      if (await file.exists()) {
+        c.header('Cache-Control', 'no-store')
+        return c.json({ path: fallbackPath, isImage: isImageFilePath(fallbackPath) })
+      }
+    }
+
+    return c.json({ path: null, isImage: false })
   } catch {
-    return c.json({ path: null })
+    return c.json({ path: null, isImage: false })
   }
 })
 
