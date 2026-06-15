@@ -1207,7 +1207,7 @@ export default function Terminal({
                       </div>
                     )}
                     {hibernatingSession.lastUserMessage && (
-                      <p className="max-w-3xl whitespace-pre-wrap break-words text-sm leading-6 text-secondary">
+                      <p className="max-h-28 max-w-3xl overflow-y-auto whitespace-pre-wrap break-words pr-2 text-sm leading-6 text-secondary">
                         {hibernatingSession.lastUserMessage}
                       </p>
                     )}

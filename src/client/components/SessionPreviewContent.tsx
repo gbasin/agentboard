@@ -24,6 +24,7 @@ interface ParsedEntry {
   content: string
   raw: string
   lineNumber: number
+  timestamp?: string
 }
 
 interface StructuredLogLine {
@@ -47,6 +48,48 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 function asString(value: unknown): string | null {
   return typeof value === 'string' ? value : null
+}
+
+function extractLogTimestampFromRecord(record: Record<string, unknown>): string | null {
+  const payload = asRecord(record.payload)
+  const message = asRecord(record.message)
+  const timestamp =
+    asString(record.timestamp) ??
+    asString(payload?.timestamp) ??
+    asString(message?.timestamp) ??
+    asString(record.created_at) ??
+    asString(payload?.created_at) ??
+    asString(record.createdAt) ??
+    asString(payload?.createdAt)
+
+  return timestamp && !Number.isNaN(Date.parse(timestamp)) ? timestamp : null
+}
+
+function extractLogTimestamp(line: string): string | null {
+  try {
+    const record = asRecord(JSON.parse(line) as unknown)
+    return record ? extractLogTimestampFromRecord(record) : null
+  } catch {
+    return null
+  }
+}
+
+function formatLogTimestamp(timestamp?: string): string | null {
+  if (!timestamp) return null
+  const date = new Date(timestamp)
+  if (Number.isNaN(date.getTime())) return null
+
+  const now = new Date()
+  const sameDay = date.toDateString() === now.toDateString()
+  const sameYear = date.getFullYear() === now.getFullYear()
+
+  const options: Intl.DateTimeFormatOptions = sameDay
+    ? { hour: 'numeric', minute: '2-digit' }
+    : sameYear
+      ? { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }
+      : { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }
+
+  return new Intl.DateTimeFormat(undefined, options).format(date)
 }
 
 function compactJson(value: unknown) {
@@ -101,7 +144,16 @@ function inferLogSource(record: Record<string, unknown>) {
   const agent = asString(record.agent) ?? ''
   if (source.toLowerCase() === 'pi' || agent.toLowerCase() === 'pi') return 'pi'
   if (type === 'event_msg' || type === 'response_item' || payloadType) return 'codex'
-  if (type === 'user' || type === 'assistant' || type === 'system' || type === 'tool_use' || type === 'result') return 'claude'
+  if (
+    type === 'user' ||
+    type === 'assistant' ||
+    type === 'system' ||
+    type === 'tool_use' ||
+    type === 'tool_result' ||
+    type === 'result'
+  ) {
+    return 'claude'
+  }
   return 'log'
 }
 
@@ -128,7 +180,7 @@ function parseStructuredLogLine(line: string, lineNumber: number): StructuredLog
     const type = asString(record.type) ?? 'unknown'
     const payloadType = asString(payload?.type)
     const role = asString(record.role) ?? asString(message?.role) ?? asString(payload?.role)
-    const timestamp = asString(record.timestamp) ?? asString(payload?.timestamp)
+    const timestamp = extractLogTimestampFromRecord(record)
     const source = inferLogSource(record)
     const prominence = getStructuredProminence(
       type,
@@ -136,7 +188,6 @@ function parseStructuredLogLine(line: string, lineNumber: number): StructuredLog
       role ?? undefined
     )
     const titleParts = [
-      source.toUpperCase(),
       payloadType ? `${type} / ${payloadType}` : type,
       role,
     ].filter(Boolean)
@@ -210,10 +261,13 @@ function getStructuredProminence(
   }
   if (
     type === 'tool_use' ||
+    type === 'tool_result' ||
     type === 'result' ||
+    type.includes('tool') ||
     payloadType?.includes('tool') ||
     payloadType === 'function_call' ||
-    payloadType === 'function_call_output'
+    payloadType === 'function_call_output' ||
+    payloadType === 'custom_tool_call_output'
   ) {
     return 'tool'
   }
@@ -232,6 +286,7 @@ function mapNormalizedRoleToEntryType(role: string): ParsedEntry['type'] {
 function parseLogEntry(line: string, lineNumber: number): ParsedEntry[] {
   const parsed = parseAndNormalizeAgentLogLine(line)
   if (!parsed) return []
+  const timestamp = extractLogTimestamp(line)
 
   const entries = parsed.events
     .map((event) => ({
@@ -240,6 +295,7 @@ function parseLogEntry(line: string, lineNumber: number): ParsedEntry[] {
       content: event.text.trim(),
       raw: line,
       lineNumber,
+      ...(timestamp ? { timestamp } : {}),
     }))
     .filter((entry) => entry.content.length > 0)
 
@@ -275,6 +331,8 @@ function entryToneClass(entry: ParsedEntry) {
 
 function ToolEntry({ entry }: { entry: ParsedEntry }) {
   const [expanded, setExpanded] = useState(false)
+  const timestamp = formatLogTimestamp(entry.timestamp)
+  const marker = timestamp ?? `Line ${entry.lineNumber + 1}`
   const label = entry.kind === 'tool_call'
     ? entry.content
     : entry.kind === 'result'
@@ -292,7 +350,12 @@ function ToolEntry({ entry }: { entry: ParsedEntry }) {
         aria-expanded={expanded}
       >
         <span className="min-w-0 truncate">
-          <span className="mr-2 text-[10px] uppercase tracking-wide text-muted">L{entry.lineNumber + 1}</span>
+          <span
+            className="mr-2 text-[10px] uppercase tracking-wide text-muted"
+            title={timestamp ? `Line ${entry.lineNumber + 1} · ${entry.timestamp}` : undefined}
+          >
+            {marker}
+          </span>
           {label}
         </span>
         <span className="shrink-0 text-[11px]">{expanded ? 'Hide' : 'Show'}</span>
@@ -310,15 +373,20 @@ function TranscriptEntry({ entry }: { entry: ParsedEntry }) {
   if (entry.kind === 'tool_call' || entry.kind === 'tool_result' || entry.kind === 'result' || entry.type === 'tool') {
     return <ToolEntry entry={entry} />
   }
+  const timestamp = formatLogTimestamp(entry.timestamp)
+  const marker = timestamp ?? `Line ${entry.lineNumber + 1}`
 
   return (
-    <article className="grid grid-cols-[4.25rem_minmax(0,1fr)] gap-3 border-b border-border/60 py-4 last:border-b-0">
+    <article className="grid grid-cols-[5.75rem_minmax(0,1fr)] gap-3 border-b border-border/60 py-4 last:border-b-0 sm:grid-cols-[6.75rem_minmax(0,1fr)]">
       <div className="select-none pt-0.5 text-right">
         <div className={`text-[11px] font-semibold uppercase tracking-wide ${entryToneClass(entry)}`}>
           {entryLabel(entry)}
         </div>
-        <div className="mt-1 text-[10px] tabular-nums text-muted">
-          L{entry.lineNumber + 1}
+        <div
+          className="mt-1 text-[10px] tabular-nums text-muted"
+          title={timestamp ? `Line ${entry.lineNumber + 1} · ${entry.timestamp}` : undefined}
+        >
+          {marker}
         </div>
       </div>
       <div className="min-w-0 whitespace-pre-wrap break-words text-sm leading-6 text-primary">
@@ -329,8 +397,10 @@ function TranscriptEntry({ entry }: { entry: ParsedEntry }) {
 }
 
 function StructuredLogEntry({ entry }: { entry: StructuredLogLine }) {
+  const [bodyExpanded, setBodyExpanded] = useState(false)
   const isLowProminence = entry.prominence === 'system' || entry.prominence === 'plain'
   const collapseBody = entry.prominence === 'tool' && Boolean(entry.body && entry.body.length > 160)
+  const timestamp = formatLogTimestamp(entry.timestamp)
   const rowClass = isLowProminence
     ? 'border-border/70 bg-surface/20 opacity-80'
     : entry.prominence === 'tool'
@@ -342,9 +412,12 @@ function StructuredLogEntry({ entry }: { entry: StructuredLogLine }) {
 
   return (
     <article className={`rounded-md border ${rowClass}`}>
-      <div className="grid grid-cols-[3.5rem_minmax(0,1fr)] gap-3 px-3 py-2">
-        <div className="select-none text-right text-[11px] tabular-nums text-muted">
-          L{entry.lineNumber + 1}
+      <div className="grid grid-cols-[5.75rem_minmax(0,1fr)] gap-3 px-3 py-2 sm:grid-cols-[6.75rem_minmax(0,1fr)]">
+        <div
+          className="select-none text-right text-[11px] tabular-nums text-muted"
+          title={entry.timestamp ? `Line ${entry.lineNumber + 1} · ${entry.timestamp}` : undefined}
+        >
+          {timestamp ?? `Line ${entry.lineNumber + 1}`}
         </div>
         <div className="min-w-0 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
@@ -354,11 +427,6 @@ function StructuredLogEntry({ entry }: { entry: StructuredLogLine }) {
             <span className="min-w-0 break-words text-xs font-semibold text-primary">
               {entry.title}
             </span>
-            {entry.timestamp && (
-              <span className="text-[11px] text-muted">
-                {entry.timestamp}
-              </span>
-            )}
           </div>
           {entry.body && !collapseBody && (
             <pre className="whitespace-pre-wrap break-words rounded bg-base px-3 py-2 text-xs leading-relaxed text-secondary">
@@ -366,14 +434,21 @@ function StructuredLogEntry({ entry }: { entry: StructuredLogLine }) {
             </pre>
           )}
           {entry.body && collapseBody && (
-            <details className="group rounded bg-base px-3 py-2">
-              <summary className="cursor-pointer select-none text-[11px] text-muted hover:text-primary">
+            <div className="rounded bg-base px-3 py-2">
+              <button
+                type="button"
+                className="select-none text-[11px] text-muted hover:text-primary"
+                aria-expanded={bodyExpanded}
+                onClick={() => setBodyExpanded((value) => !value)}
+              >
                 Output
-              </summary>
-              <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-secondary">
-                {entry.body}
-              </pre>
-            </details>
+              </button>
+              {bodyExpanded && (
+                <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-secondary">
+                  {entry.body}
+                </pre>
+              )}
+            </div>
           )}
           {entry.details.length > 0 && (
             <details className="group">
@@ -555,8 +630,8 @@ export default function SessionPreviewContent({
   ) ?? []
   const lineRangeLabel = previewData
     ? previewData.totalLines === 0
-      ? 'No transcript lines'
-      : `Lines ${previewData.startLine + 1}-${previewData.endLine} of ${previewData.totalLines}`
+      ? 'No transcript entries'
+      : `Showing ${previewData.lines.length} of ${previewData.totalLines} log entries`
     : 'Derived from the saved session log.'
 
   return (

@@ -41,8 +41,9 @@ function renderedText(value: unknown): string {
   if (typeof value === 'string' || typeof value === 'number') return String(value)
   if (Array.isArray(value)) return value.map(renderedText).join('')
   if (typeof value === 'object' && 'props' in value) {
-    const props = (value as { props?: { children?: unknown } }).props
-    return renderedText(props?.children)
+    const props = (value as { props?: { children?: unknown }, children?: unknown }).props
+    const children = (value as { children?: unknown }).children
+    return renderedText(props?.children) || renderedText(children)
   }
   return ''
 }
@@ -65,6 +66,20 @@ async function resolveAndFlush(controller: { resolveNext: () => void }) {
   await act(async () => {
     controller.resolveNext()
     await flushUpdates()
+  })
+}
+
+function clickButton(renderer: TestRenderer.ReactTestRenderer, label: string) {
+  const button = renderer.root
+    .findAllByType('button')
+    .find((candidate) => renderedText(candidate.props.children).includes(label))
+
+  if (!button) {
+    throw new Error(`Expected ${label} button`)
+  }
+
+  act(() => {
+    button.props.onClick()
   })
 }
 
@@ -136,22 +151,32 @@ afterEach(() => {
 })
 
 describe('SessionPreviewModal', () => {
-  test('loads preview, shows parsed entries, toggles raw, and resumes', async () => {
+  test('loads preview, shows parsed entries, pages earlier history, toggles events, and resumes', async () => {
+    const longToolResult = `Done ${'tool-output '.repeat(30)}`
     const previewData = {
       sessionId: baseSession.sessionId,
       displayName: 'Alpha',
       projectPath: baseSession.projectPath,
       agentType: 'claude',
       lastActivityAt: baseSession.lastActivityAt,
-      totalLines: 11,
-      startLine: 1,
-      endLine: 11,
+      totalLines: 13,
+      startLine: 2,
+      endLine: 13,
       hasMoreBefore: true,
       lines: [
-        JSON.stringify({ type: 'user', message: { content: 'Hello' } }),
-        JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'World' }] } }),
+        JSON.stringify({
+          type: 'user',
+          timestamp: '2026-06-15T14:01:00.000Z',
+          message: { content: 'Hello' },
+        }),
+        JSON.stringify({
+          type: 'assistant',
+          timestamp: '2026-06-15T14:02:00.000Z',
+          message: { content: [{ type: 'text', text: 'World' }] },
+        }),
         JSON.stringify({
           type: 'response_item',
+          timestamp: '2026-06-15T14:03:00.000Z',
           payload: {
             type: 'message',
             role: 'assistant',
@@ -160,12 +185,17 @@ describe('SessionPreviewModal', () => {
         }),
         JSON.stringify({
           type: 'event_msg',
-          payload: { type: 'user_message', message: 'From event msg' },
+          payload: {
+            type: 'user_message',
+            timestamp: '2026-06-15T14:04:00.000Z',
+            message: 'From event msg',
+          },
         }),
         JSON.stringify({
           type: 'event_msg',
           payload: {
             type: 'user_message',
+            timestamp: '2026-06-15T14:05:00.000Z',
             message: {
               role: 'user',
               content: [{ type: 'input_text', text: 'From structured event msg' }],
@@ -186,25 +216,44 @@ describe('SessionPreviewModal', () => {
           payload: { type: 'assistant_message', message: 'Assistant from event msg' },
         }),
         JSON.stringify({ type: 'tool_use', name: 'search' }),
-        JSON.stringify({ type: 'result', result: 'Done' }),
+        JSON.stringify({ type: 'result', result: longToolResult }),
         JSON.stringify({ type: 'assistant', message: { content: 'x'.repeat(650) } }),
         'plain text line',
       ],
     }
-    const earlierData = {
+    const middleData = {
       ...previewData,
-      totalLines: 11,
+      totalLines: 13,
+      startLine: 1,
+      endLine: 2,
+      hasMoreBefore: true,
+      lines: [
+        JSON.stringify({
+          type: 'assistant',
+          timestamp: '2026-06-15T14:00:30.000Z',
+          message: { content: 'Middle message' },
+        }),
+      ],
+    }
+    const earliestData = {
+      ...previewData,
+      totalLines: 13,
       startLine: 0,
       endLine: 1,
       hasMoreBefore: false,
       lines: [
-        JSON.stringify({ type: 'user', message: { content: 'Earlier message' } }),
+        JSON.stringify({
+          type: 'user',
+          timestamp: '2026-06-15T14:00:00.000Z',
+          message: { content: 'Earlier message' },
+        }),
       ],
     }
 
     const controller = createFetchController([
       createJsonResponse(previewData),
-      createJsonResponse(earlierData),
+      createJsonResponse(middleData),
+      createJsonResponse(earliestData),
     ])
     let resumed: string[] = []
 
@@ -235,76 +284,57 @@ describe('SessionPreviewModal', () => {
     expect(html).not.toContain('Done')
     expect(html).toContain('x'.repeat(650))
     expect(html).toContain('plain text line')
-    expect(html).toContain('Lines 2-11 of 11')
+    expect(html).toContain('Showing 11 of 13 log entries')
+    expect(html).toContain('2026-06-15T14:01:00.000Z')
+    expect(renderedText(renderer.toJSON())).not.toContain('Line 3Hello')
 
-    const resultButton = renderer.root
-      .findAllByType('button')
-      .find((button) => renderedText(button.props.children).includes('Result'))
-
-    if (!resultButton) {
-      throw new Error('Expected result disclosure button')
-    }
-
-    act(() => {
-      resultButton.props.onClick()
-    })
+    clickButton(renderer, 'Result')
 
     html = JSON.stringify(renderer.toJSON())
     expect(html).toContain('Done')
+    expect(html).toContain('tool-output')
 
-    const loadEarlierButton = renderer.root
-      .findAllByType('button')
-      .find((button) => button.props.children === 'Load earlier')
+    clickButton(renderer, 'Load earlier')
+    await resolveAndFlush(controller)
 
-    if (!loadEarlierButton) {
-      throw new Error('Expected load earlier button')
-    }
+    html = JSON.stringify(renderer.toJSON())
+    expect(html).toContain('Middle message')
+    expect(html).toContain('Showing 12 of 13 log entries')
+    expect(controller.calls[1]).toBe('/api/session-preview/session-12345678?limit=200&beforeLine=2')
 
-    act(() => {
-      loadEarlierButton.props.onClick()
-    })
-
+    clickButton(renderer, 'Load earlier')
     await resolveAndFlush(controller)
 
     html = JSON.stringify(renderer.toJSON())
     expect(html).toContain('Earlier message')
-    expect(html).toContain('Lines 1-11 of 11')
-    expect(controller.calls[1]).toBe('/api/session-preview/session-12345678?limit=200&beforeLine=1')
+    expect(html).toContain('Showing 13 of 13 log entries')
+    expect(controller.calls[2]).toBe('/api/session-preview/session-12345678?limit=200&beforeLine=1')
 
-    const toggleButton = renderer.root
-      .findAllByType('button')
-      .find((button) => button.props.children === 'Events')
+    const text = renderedText(renderer.toJSON())
+    expect(text.indexOf('Earlier message')).toBeLessThan(text.indexOf('Middle message'))
+    expect(text.indexOf('Middle message')).toBeLessThan(text.indexOf('Hello'))
 
-    if (!toggleButton) {
-      throw new Error('Expected toggle button')
-    }
-
-    act(() => {
-      toggleButton.props.onClick()
-    })
+    clickButton(renderer, 'Events')
 
     html = JSON.stringify(renderer.toJSON())
-    expect(html).toContain('CLAUDE')
-    expect(html).toContain('CODEX')
+    expect(html).toContain('claude')
+    expect(html).toContain('codex')
     expect(html).toContain('event_msg')
     expect(html).toContain('From structured event msg')
     expect(html).toContain('Visible assistant text')
     expect(html).not.toContain('Hidden thinking block')
     expect(html).toContain('Plain text')
     expect(html).toContain('payload')
+    expect(html).toContain('Output')
+    expect(html).not.toContain('tool-output')
     expect(html).toContain('Messages')
 
-    const resumeButton = renderer.root
-      .findAllByType('button')
-      .find((button) => button.props.children === 'Wake')
+    clickButton(renderer, 'Output')
 
-    if (!resumeButton) {
-      throw new Error('Expected resume button')
-    }
+    html = JSON.stringify(renderer.toJSON())
+    expect(html).toContain('tool-output')
 
-    act(() => {
-      resumeButton.props.onClick()
-    })
+    clickButton(renderer, 'Wake')
 
     expect(resumed).toEqual([baseSession.sessionId])
 
@@ -350,8 +380,8 @@ describe('SessionPreviewModal', () => {
     await resolveAndFlush(controller)
 
     const html = JSON.stringify(renderer.toJSON())
-    expect(html).toContain('No transcript lines')
-    expect(html).not.toContain('Lines 1-0 of 0')
+    expect(html).toContain('No transcript entries')
+    expect(html).not.toContain('Showing 0 of 0 log entries')
 
     await cleanup(renderer)
   })
