@@ -24,6 +24,10 @@ interface ParsedEntry {
   content: string
   raw: string
   lineNumber: number
+  // Index of this entry within its source line. Combined with lineNumber it forms
+  // a stable React key that survives prepending earlier history (positional keys
+  // would shift and force a full remount, collapsing expanded tool entries).
+  seq: number
   timestamp?: string
 }
 
@@ -289,12 +293,13 @@ function parseLogEntry(line: string, lineNumber: number): ParsedEntry[] {
   const timestamp = extractLogTimestamp(line)
 
   const entries = parsed.events
-    .map((event) => ({
+    .map((event, seq) => ({
       type: mapNormalizedRoleToEntryType(event.role),
       kind: event.kind,
       content: event.text.trim(),
       raw: line,
       lineNumber,
+      seq,
       ...(timestamp ? { timestamp } : {}),
     }))
     .filter((entry) => entry.content.length > 0)
@@ -304,14 +309,14 @@ function parseLogEntry(line: string, lineNumber: number): ParsedEntry[] {
   }
 
   if (!parsed.parsed && line.trim()) {
-    return [{ type: 'other', kind: 'unknown', content: line.trim(), raw: line, lineNumber }]
+    return [{ type: 'other', kind: 'unknown', content: line.trim(), raw: line, lineNumber, seq: 0 }]
   }
 
   return []
 }
 
-function lineKey(entry: ParsedEntry, index: number) {
-  return `${entry.lineNumber}:${entry.kind}:${entry.type}:${index}`
+function lineKey(entry: ParsedEntry) {
+  return `${entry.lineNumber}:${entry.seq}`
 }
 
 function entryLabel(entry: ParsedEntry) {
@@ -702,8 +707,8 @@ export default function SessionPreviewContent({
                 No readable messages found. Try Events.
               </div>
             ) : (
-              parsedEntries.map((entry, i) => (
-                <TranscriptEntry key={lineKey(entry, i)} entry={entry} />
+              parsedEntries.map((entry) => (
+                <TranscriptEntry key={lineKey(entry)} entry={entry} />
               ))
             )}
           </div>
