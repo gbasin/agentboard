@@ -819,6 +819,10 @@ describe('Terminal', () => {
           projectPath: hibernatingSession.projectPath,
           agentType: hibernatingSession.agentType,
           lastActivityAt: hibernatingSession.lastActivityAt,
+          totalLines: 1,
+          startLine: 0,
+          endLine: 1,
+          hasMoreBefore: false,
           lines: [
             JSON.stringify({
               type: 'user',
@@ -862,7 +866,7 @@ describe('Terminal', () => {
 
     const html = JSON.stringify(renderer.toJSON())
     expect(html).toContain('Hibernating')
-    expect(html).toContain('Wake Session')
+    expect(html).toContain('Wake')
     expect(
       sentMessages.some(
         (message) =>
@@ -873,7 +877,7 @@ describe('Terminal', () => {
     ).toBe(false)
 
     const wakeButton = renderer.root.findAllByType('button').find(
-      (button) => button.props.children === 'Wake Session'
+      (button) => button.props.children === 'Wake'
     )
     if (!wakeButton) {
       throw new Error('Expected wake button')

@@ -32,6 +32,7 @@ interface StructuredLogLine {
   raw: string
   source: string
   type: string
+  prominence: 'message' | 'tool' | 'system' | 'plain'
   role?: string
   timestamp?: string
   title: string
@@ -115,6 +116,7 @@ function parseStructuredLogLine(line: string, lineNumber: number): StructuredLog
         raw: line,
         source: 'json',
         type: Array.isArray(parsed) ? 'array' : typeof parsed,
+        prominence: 'plain',
         title: Array.isArray(parsed) ? 'JSON array' : 'JSON value',
         body: compactJson(parsed),
         details: [],
@@ -128,6 +130,11 @@ function parseStructuredLogLine(line: string, lineNumber: number): StructuredLog
     const role = asString(record.role) ?? asString(message?.role) ?? asString(payload?.role)
     const timestamp = asString(record.timestamp) ?? asString(payload?.timestamp)
     const source = inferLogSource(record)
+    const prominence = getStructuredProminence(
+      type,
+      payloadType ?? undefined,
+      role ?? undefined
+    )
     const titleParts = [
       source.toUpperCase(),
       payloadType ? `${type} / ${payloadType}` : type,
@@ -164,6 +171,7 @@ function parseStructuredLogLine(line: string, lineNumber: number): StructuredLog
       raw: line,
       source,
       type: payloadType ? `${type}:${payloadType}` : type,
+      prominence,
       ...(role ? { role } : {}),
       ...(timestamp ? { timestamp } : {}),
       title: titleParts.join(' · '),
@@ -177,11 +185,40 @@ function parseStructuredLogLine(line: string, lineNumber: number): StructuredLog
       raw: line,
       source: 'text',
       type: 'plain',
+      prominence: 'plain',
       title: 'Plain text',
       body: line,
       details: [],
     }
   }
+}
+
+function getStructuredProminence(
+  type: string,
+  payloadType?: string,
+  role?: string
+): StructuredLogLine['prominence'] {
+  if (role === 'user' || role === 'assistant') return 'message'
+  if (
+    type === 'user' ||
+    type === 'assistant' ||
+    payloadType === 'user_message' ||
+    payloadType === 'assistant_message' ||
+    payloadType === 'message'
+  ) {
+    return 'message'
+  }
+  if (
+    type === 'tool_use' ||
+    type === 'result' ||
+    payloadType?.includes('tool') ||
+    payloadType === 'function_call' ||
+    payloadType === 'function_call_output'
+  ) {
+    return 'tool'
+  }
+  if (type === 'plain') return 'plain'
+  return 'system'
 }
 
 function mapNormalizedRoleToEntryType(role: string): ParsedEntry['type'] {
@@ -229,6 +266,13 @@ function entryLabel(entry: ParsedEntry) {
   return 'Log'
 }
 
+function entryToneClass(entry: ParsedEntry) {
+  if (entry.type === 'user') return 'text-blue-400'
+  if (entry.type === 'assistant') return 'text-emerald-400'
+  if (entry.type === 'system') return 'text-yellow-400'
+  return 'text-muted'
+}
+
 function ToolEntry({ entry }: { entry: ParsedEntry }) {
   const [expanded, setExpanded] = useState(false)
   const label = entry.kind === 'tool_call'
@@ -240,14 +284,17 @@ function ToolEntry({ entry }: { entry: ParsedEntry }) {
         : entryLabel(entry)
 
   return (
-    <div className="rounded border border-border bg-surface/60">
+    <div className="rounded-md border border-border bg-surface/40">
       <button
         type="button"
         className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-xs text-muted hover:text-primary"
         onClick={() => setExpanded((value) => !value)}
         aria-expanded={expanded}
       >
-        <span className="min-w-0 truncate">{label}</span>
+        <span className="min-w-0 truncate">
+          <span className="mr-2 text-[10px] uppercase tracking-wide text-muted">L{entry.lineNumber + 1}</span>
+          {label}
+        </span>
         <span className="shrink-0 text-[11px]">{expanded ? 'Hide' : 'Show'}</span>
       </button>
       {expanded && (
@@ -264,22 +311,17 @@ function TranscriptEntry({ entry }: { entry: ParsedEntry }) {
     return <ToolEntry entry={entry} />
   }
 
-  const classes =
-    entry.type === 'user'
-      ? 'border-blue-500/20 bg-blue-500/10'
-      : entry.type === 'assistant'
-        ? 'border-emerald-500/20 bg-emerald-500/10'
-        : entry.type === 'system'
-          ? 'border-yellow-500/20 bg-yellow-500/10'
-          : 'border-border bg-surface/60'
-
   return (
-    <article className={`rounded-lg border px-3 py-3 ${classes}`}>
-      <div className="mb-2 flex items-center justify-between gap-3 text-[11px] font-semibold uppercase tracking-wide text-muted">
-        <span>{entryLabel(entry)}</span>
-        <span className="font-normal normal-case tabular-nums">Line {entry.lineNumber + 1}</span>
+    <article className="grid grid-cols-[4.25rem_minmax(0,1fr)] gap-3 border-b border-border/60 py-4 last:border-b-0">
+      <div className="select-none pt-0.5 text-right">
+        <div className={`text-[11px] font-semibold uppercase tracking-wide ${entryToneClass(entry)}`}>
+          {entryLabel(entry)}
+        </div>
+        <div className="mt-1 text-[10px] tabular-nums text-muted">
+          L{entry.lineNumber + 1}
+        </div>
       </div>
-      <div className="whitespace-pre-wrap break-words text-sm leading-6 text-primary">
+      <div className="min-w-0 whitespace-pre-wrap break-words text-sm leading-6 text-primary">
         {entry.content}
       </div>
     </article>
@@ -287,15 +329,26 @@ function TranscriptEntry({ entry }: { entry: ParsedEntry }) {
 }
 
 function StructuredLogEntry({ entry }: { entry: StructuredLogLine }) {
+  const isLowProminence = entry.prominence === 'system' || entry.prominence === 'plain'
+  const collapseBody = entry.prominence === 'tool' && Boolean(entry.body && entry.body.length > 160)
+  const rowClass = isLowProminence
+    ? 'border-border/70 bg-surface/20 opacity-80'
+    : entry.prominence === 'tool'
+      ? 'border-border bg-surface/35'
+      : 'border-border bg-surface/50'
+  const sourceClass = entry.prominence === 'message'
+    ? 'bg-accent/15 text-accent'
+    : 'bg-surface text-muted'
+
   return (
-    <article className="rounded border border-border bg-surface/40">
+    <article className={`rounded-md border ${rowClass}`}>
       <div className="grid grid-cols-[3.5rem_minmax(0,1fr)] gap-3 px-3 py-2">
         <div className="select-none text-right text-[11px] tabular-nums text-muted">
-          {entry.lineNumber + 1}
+          L{entry.lineNumber + 1}
         </div>
         <div className="min-w-0 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded bg-accent/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">
+            <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${sourceClass}`}>
               {entry.source}
             </span>
             <span className="min-w-0 break-words text-xs font-semibold text-primary">
@@ -307,10 +360,20 @@ function StructuredLogEntry({ entry }: { entry: StructuredLogLine }) {
               </span>
             )}
           </div>
-          {entry.body && (
-            <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded bg-base px-3 py-2 text-xs leading-relaxed text-secondary">
+          {entry.body && !collapseBody && (
+            <pre className="whitespace-pre-wrap break-words rounded bg-base px-3 py-2 text-xs leading-relaxed text-secondary">
               {entry.body}
             </pre>
+          )}
+          {entry.body && collapseBody && (
+            <details className="group rounded bg-base px-3 py-2">
+              <summary className="cursor-pointer select-none text-[11px] text-muted hover:text-primary">
+                Output
+              </summary>
+              <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-secondary">
+                {entry.body}
+              </pre>
+            </details>
           )}
           {entry.details.length > 0 && (
             <details className="group">
@@ -352,7 +415,7 @@ export default function SessionPreviewContent({
   const [loadingEarlier, setLoadingEarlier] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [previewData, setPreviewData] = useState<PreviewData | null>(null)
-  const [showRaw, setShowRaw] = useState(false)
+  const [viewMode, setViewMode] = useState<'messages' | 'events'>('messages')
   const contentRef = useRef<HTMLDivElement>(null)
   const preserveScrollRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null)
 
@@ -482,7 +545,7 @@ export default function SessionPreviewContent({
     if (contentRef.current && previewData) {
       contentRef.current.scrollTop = contentRef.current.scrollHeight
     }
-  }, [previewData, showRaw])
+  }, [previewData, viewMode])
 
   const parsedEntries = previewData?.lines.flatMap((line, index) =>
     parseLogEntry(line, previewData.startLine + index)
@@ -498,20 +561,39 @@ export default function SessionPreviewContent({
 
   return (
     <div className={`flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-elevated ${className}`.trim()}>
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
+      <div className="flex flex-col gap-3 border-b border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h3 className="text-sm font-semibold text-primary">Transcript</h3>
           <p className="text-xs text-muted">
             {lineRangeLabel}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setShowRaw((value) => !value)}
-          className={`btn text-xs ${showRaw ? 'btn-primary' : ''}`}
-        >
-          {showRaw ? 'Messages' : 'Log lines'}
-        </button>
+        <div className="inline-flex w-fit rounded-md border border-border bg-base p-0.5">
+          <button
+            type="button"
+            onClick={() => setViewMode('messages')}
+            className={`rounded px-2.5 py-1 text-xs transition-colors ${
+              viewMode === 'messages'
+                ? 'bg-accent text-white'
+                : 'text-muted hover:text-primary'
+            }`}
+            aria-pressed={viewMode === 'messages'}
+          >
+            Messages
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('events')}
+            className={`rounded px-2.5 py-1 text-xs transition-colors ${
+              viewMode === 'events'
+                ? 'bg-accent text-white'
+                : 'text-muted hover:text-primary'
+            }`}
+            aria-pressed={viewMode === 'events'}
+          >
+            Events
+          </button>
+        </div>
       </div>
 
       <div
@@ -528,12 +610,12 @@ export default function SessionPreviewContent({
             {error}
           </div>
         )}
-        {previewData && !showRaw && (
-          <div className="mx-auto flex w-full max-w-3xl flex-col gap-3">
+        {previewData && viewMode === 'messages' && (
+          <div className="mx-auto flex w-full max-w-4xl flex-col">
             {previewData.hasMoreBefore && (
               <button
                 type="button"
-                className="btn mx-auto"
+                className="btn mx-auto mb-3"
                 onClick={loadEarlier}
                 disabled={loadingEarlier}
               >
@@ -542,7 +624,7 @@ export default function SessionPreviewContent({
             )}
             {parsedEntries.length === 0 ? (
               <div className="py-8 text-center text-muted">
-                No readable content found. Try raw view.
+                No readable messages found. Try Events.
               </div>
             ) : (
               parsedEntries.map((entry, i) => (
@@ -551,7 +633,7 @@ export default function SessionPreviewContent({
             )}
           </div>
         )}
-        {previewData && showRaw && (
+        {previewData && viewMode === 'events' && (
           <div className="mx-auto flex w-full max-w-5xl flex-col gap-2">
             {previewData.hasMoreBefore && (
               <button

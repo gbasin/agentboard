@@ -559,7 +559,7 @@ describe('App', () => {
     expect(
       renderer.root
         .findAllByType('button')
-        .some((button) => button.props.children === 'Wake Session')
+        .some((button) => button.props.children === 'Wake')
     ).toBe(true)
   })
 

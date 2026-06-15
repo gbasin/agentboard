@@ -36,6 +36,17 @@ function flushPromises() {
   return new Promise((resolve) => setTimeout(resolve, 0))
 }
 
+function renderedText(value: unknown): string {
+  if (value === null || value === undefined || typeof value === 'boolean') return ''
+  if (typeof value === 'string' || typeof value === 'number') return String(value)
+  if (Array.isArray(value)) return value.map(renderedText).join('')
+  if (typeof value === 'object' && 'props' in value) {
+    const props = (value as { props?: { children?: unknown } }).props
+    return renderedText(props?.children)
+  }
+  return ''
+}
+
 async function flushUpdates() {
   await flushPromises()
   await flushPromises()
@@ -228,10 +239,7 @@ describe('SessionPreviewModal', () => {
 
     const resultButton = renderer.root
       .findAllByType('button')
-      .find((button) => {
-        const children = button.props.children
-        return Array.isArray(children) && children[0]?.props?.children === 'Result'
-      })
+      .find((button) => renderedText(button.props.children).includes('Result'))
 
     if (!resultButton) {
       throw new Error('Expected result disclosure button')
@@ -265,7 +273,7 @@ describe('SessionPreviewModal', () => {
 
     const toggleButton = renderer.root
       .findAllByType('button')
-      .find((button) => button.props.children === 'Log lines')
+      .find((button) => button.props.children === 'Events')
 
     if (!toggleButton) {
       throw new Error('Expected toggle button')
