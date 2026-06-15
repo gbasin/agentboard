@@ -310,9 +310,9 @@ describe('SessionPreviewModal', () => {
     expect(html).toContain('Showing 13 of 13 log entries')
     expect(controller.calls[2]).toBe('/api/session-preview/session-12345678?limit=200&beforeLine=1')
 
-    const text = renderedText(renderer.toJSON())
-    expect(text.indexOf('Earlier message')).toBeLessThan(text.indexOf('Middle message'))
-    expect(text.indexOf('Middle message')).toBeLessThan(text.indexOf('Hello'))
+    // Reverse-chronological: newest at top, oldest at the bottom.
+    expect(html.indexOf('Hello')).toBeLessThan(html.indexOf('Middle message'))
+    expect(html.indexOf('Middle message')).toBeLessThan(html.indexOf('Earlier message'))
 
     clickButton(renderer, 'Events')
 
@@ -349,6 +349,51 @@ describe('SessionPreviewModal', () => {
     })
 
     expect(resumed).toEqual([baseSession.sessionId, baseSession.sessionId])
+
+    await cleanup(renderer)
+  })
+
+  test('renders message content as markdown', async () => {
+    const controller = createFetchController([
+      createJsonResponse({
+        sessionId: baseSession.sessionId,
+        displayName: 'Alpha',
+        projectPath: baseSession.projectPath,
+        agentType: 'claude',
+        lastActivityAt: baseSession.lastActivityAt,
+        totalLines: 1,
+        startLine: 0,
+        endLine: 1,
+        hasMoreBefore: false,
+        lines: [
+          JSON.stringify({
+            type: 'assistant',
+            message: {
+              content: '## Heading\n\nSome **bold** text and `inline code`.\n\n- one\n- two',
+            },
+          }),
+        ],
+      }),
+    ])
+
+    const renderer = await createModal(
+      <SessionPreviewModal
+        session={baseSession}
+        onClose={() => {}}
+        onResume={() => {}}
+      />
+    )
+
+    await resolveAndFlush(controller)
+
+    const html = JSON.stringify(renderer.toJSON())
+    // Markdown syntax is parsed into elements rather than shown literally.
+    expect(html).not.toContain('**bold**')
+    expect(html).toContain('bold')
+    expect(html).toContain('Heading')
+    expect(html).toContain('"type":"strong"')
+    expect(html).toContain('"type":"ul"')
+    expect(html).toContain('"type":"code"')
 
     await cleanup(renderer)
   })

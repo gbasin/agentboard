@@ -6,6 +6,9 @@ import {
 } from '@shared/eventTaxonomy'
 import { asRecord, asString } from '@shared/json'
 import type { AgentSession } from '@shared/types'
+import ReactMarkdown, { type Components } from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import remarkBreaks from 'remark-breaks'
 
 const PREVIEW_FETCH_TIMEOUT_MS = 10_000
 const PREVIEW_LINE_LIMIT = 200
@@ -350,6 +353,67 @@ function ToolEntry({ entry }: { entry: ParsedEntry }) {
   )
 }
 
+// Tailwind-styled element overrides for rendered markdown (no typography plugin).
+const markdownComponents: Components = {
+  p: ({ children }) => <p className="my-2 first:mt-0 last:mb-0">{children}</p>,
+  a: ({ children, href }) => (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer noopener"
+      className="text-accent underline underline-offset-2 hover:text-primary"
+    >
+      {children}
+    </a>
+  ),
+  ul: ({ children }) => <ul className="my-2 list-disc space-y-1 pl-5">{children}</ul>,
+  ol: ({ children }) => <ol className="my-2 list-decimal space-y-1 pl-5">{children}</ol>,
+  li: ({ children }) => <li className="leading-6">{children}</li>,
+  h1: ({ children }) => <h1 className="mb-1 mt-3 text-base font-semibold first:mt-0">{children}</h1>,
+  h2: ({ children }) => <h2 className="mb-1 mt-3 text-sm font-semibold first:mt-0">{children}</h2>,
+  h3: ({ children }) => <h3 className="mb-1 mt-3 text-sm font-semibold first:mt-0">{children}</h3>,
+  strong: ({ children }) => <strong className="font-semibold text-primary">{children}</strong>,
+  em: ({ children }) => <em className="italic">{children}</em>,
+  blockquote: ({ children }) => (
+    <blockquote className="my-2 border-l-2 border-border pl-3 text-secondary">{children}</blockquote>
+  ),
+  hr: () => <hr className="my-3 border-border" />,
+  pre: ({ children }) => (
+    <pre className="my-2 overflow-x-auto rounded bg-base p-3 text-xs leading-relaxed text-secondary">
+      {children}
+    </pre>
+  ),
+  code: ({ className, children }) => {
+    const text = String(children ?? '')
+    // Block code carries a language-* class (fenced) or spans multiple lines;
+    // everything else is inline and gets the chip treatment.
+    const isBlock = (className?.includes('language-') ?? false) || text.includes('\n')
+    if (isBlock) {
+      return <code className={className}>{children}</code>
+    }
+    return <code className="rounded bg-surface px-1 py-0.5 text-[0.9em] text-primary">{children}</code>
+  },
+  table: ({ children }) => (
+    <div className="my-2 overflow-x-auto">
+      <table className="w-full border-collapse text-xs">{children}</table>
+    </div>
+  ),
+  th: ({ children }) => (
+    <th className="border border-border px-2 py-1 text-left font-semibold">{children}</th>
+  ),
+  td: ({ children }) => <td className="border border-border px-2 py-1 align-top">{children}</td>,
+}
+
+function MarkdownMessage({ content }: { content: string }) {
+  return (
+    <div className="min-w-0 break-words text-sm leading-6 text-primary [overflow-wrap:anywhere]">
+      <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={markdownComponents}>
+        {content}
+      </ReactMarkdown>
+    </div>
+  )
+}
+
 function TranscriptEntry({ entry }: { entry: ParsedEntry }) {
   // tool_result events normalize to empty text and are dropped by parseLogEntry,
   // so only tool_call and result entries reach the collapsible ToolEntry.
@@ -372,9 +436,7 @@ function TranscriptEntry({ entry }: { entry: ParsedEntry }) {
           {marker}
         </div>
       </div>
-      <div className="min-w-0 whitespace-pre-wrap break-words text-sm leading-6 text-primary">
-        {entry.content}
-      </div>
+      <MarkdownMessage content={entry.content} />
     </article>
   )
 }
@@ -492,7 +554,9 @@ export default function SessionPreviewContent({
   const [previewData, setPreviewData] = useState<PreviewData | null>(null)
   const [viewMode, setViewMode] = useState<'messages' | 'events'>('messages')
   const contentRef = useRef<HTMLDivElement>(null)
-  const preserveScrollRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null)
+  // Set during loadEarlier so the layout effect keeps scroll position instead of
+  // snapping back to the top when older history is appended below.
+  const skipScrollResetRef = useRef(false)
   // Atomic in-flight guard: a state flag is read from a stale render closure, so a
   // fast double-click could fire two identical "Load earlier" fetches and prepend
   // the same lines twice. A ref is updated synchronously and can't be stale.
@@ -542,13 +606,8 @@ export default function SessionPreviewContent({
   const loadEarlier = async () => {
     if (!previewData || loadingEarlierRef.current || !previewData.hasMoreBefore) return
     loadingEarlierRef.current = true
-    const scroller = contentRef.current
-    if (scroller) {
-      preserveScrollRef.current = {
-        scrollHeight: scroller.scrollHeight,
-        scrollTop: scroller.scrollTop,
-      }
-    }
+    // Older history is appended below; suppress the scroll-to-top on this update.
+    skipScrollResetRef.current = true
 
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), PREVIEW_FETCH_TIMEOUT_MS)
@@ -574,7 +633,7 @@ export default function SessionPreviewContent({
         }
       })
     } catch (err) {
-      preserveScrollRef.current = null
+      skipScrollResetRef.current = false
       if (controller.signal.aborted) {
         setError('Preview timed out')
       } else {
@@ -592,16 +651,14 @@ export default function SessionPreviewContent({
   }, [error, loading, onStateChange])
 
   useLayoutEffect(() => {
-    const preserve = preserveScrollRef.current
-    if (contentRef.current && preserve) {
-      contentRef.current.scrollTop =
-        contentRef.current.scrollHeight - preserve.scrollHeight + preserve.scrollTop
-      preserveScrollRef.current = null
+    if (!contentRef.current || !previewData) return
+    // Load-earlier appends older history below the fold — keep the user's place.
+    if (skipScrollResetRef.current) {
+      skipScrollResetRef.current = false
       return
     }
-    if (contentRef.current && previewData) {
-      contentRef.current.scrollTop = contentRef.current.scrollHeight
-    }
+    // Newest-first ordering: open scrolled to the top so the latest is visible.
+    contentRef.current.scrollTop = 0
   }, [previewData, viewMode])
 
   // Parse once per data change instead of on every render (view-mode toggle,
@@ -620,6 +677,10 @@ export default function SessionPreviewContent({
       ) ?? [],
     [previewData]
   )
+  // Reverse-chronological display (newest first). The data model stays oldest-first
+  // — pagination and keys are unchanged; only the render order is flipped.
+  const messageEntries = useMemo(() => parsedEntries.slice().reverse(), [parsedEntries])
+  const eventEntries = useMemo(() => structuredLines.slice().reverse(), [structuredLines])
   const lineRangeLabel = previewData
     ? previewData.totalLines === 0
       ? 'No transcript entries'
@@ -679,29 +740,37 @@ export default function SessionPreviewContent({
         )}
         {previewData && viewMode === 'messages' && (
           <div className="mx-auto flex w-full max-w-4xl flex-col">
+            {messageEntries.length === 0 ? (
+              <div className="py-8 text-center text-muted">
+                No readable messages found. Try Events.
+              </div>
+            ) : (
+              messageEntries.map((entry) => (
+                <TranscriptEntry key={lineKey(entry)} entry={entry} />
+              ))
+            )}
             {previewData.hasMoreBefore && (
               <button
                 type="button"
-                className="btn mx-auto mb-3"
+                className="btn mx-auto mt-3"
                 onClick={loadEarlier}
                 disabled={loadingEarlier}
               >
                 {loadingEarlier ? 'Loading...' : 'Load earlier'}
               </button>
             )}
-            {parsedEntries.length === 0 ? (
-              <div className="py-8 text-center text-muted">
-                No readable messages found. Try Events.
-              </div>
-            ) : (
-              parsedEntries.map((entry) => (
-                <TranscriptEntry key={lineKey(entry)} entry={entry} />
-              ))
-            )}
           </div>
         )}
         {previewData && viewMode === 'events' && (
           <div className="mx-auto flex w-full max-w-5xl flex-col gap-2">
+            <div className="space-y-2">
+              {eventEntries.map((entry) => (
+                <StructuredLogEntry
+                  key={`${entry.lineNumber}:${entry.type}:${entry.raw.slice(0, 24)}`}
+                  entry={entry}
+                />
+              ))}
+            </div>
             {previewData.hasMoreBefore && (
               <button
                 type="button"
@@ -712,14 +781,6 @@ export default function SessionPreviewContent({
                 {loadingEarlier ? 'Loading...' : 'Load earlier'}
               </button>
             )}
-            <div className="space-y-2">
-              {structuredLines.map((entry) => (
-                <StructuredLogEntry
-                  key={`${entry.lineNumber}:${entry.type}:${entry.raw.slice(0, 24)}`}
-                  entry={entry}
-                />
-              ))}
-            </div>
           </div>
         )}
       </div>
