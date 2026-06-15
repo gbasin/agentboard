@@ -131,7 +131,7 @@ const MAX_CACHEABLE_LOG_BYTES = 4 * 1024 * 1024
 const MAX_LOG_CACHE_BYTES = 16 * 1024 * 1024
 let logLineCacheBytes = 0
 
-function evictStaleLogLineCacheEntries(): void {
+function enforceLogCacheBudget(): void {
   // Map preserves insertion order, so the first key is the least-recently-used.
   while (logLineCacheBytes > MAX_LOG_CACHE_BYTES) {
     const oldestKey = LOG_LINE_CACHE.keys().next().value
@@ -240,12 +240,18 @@ async function readLogLineWindow(
     return selectLineWindow(cached.lines, limit, beforeLine)
   }
 
-  if (cached) logLineCacheBytes -= cached.size
   const lines = await readAllLogLines(logPath)
-  LOG_LINE_CACHE.delete(logPath)
+  // Reconcile byte accounting against the CURRENT entry (re-read after the await,
+  // not the pre-await `cached`) so two concurrent misses for the same path can't
+  // double-count and skew the cache budget.
+  const prior = LOG_LINE_CACHE.get(logPath)
+  if (prior) {
+    LOG_LINE_CACHE.delete(logPath)
+    logLineCacheBytes -= prior.size
+  }
   LOG_LINE_CACHE.set(logPath, { size: stats.size, mtimeMs: stats.mtimeMs, lines })
   logLineCacheBytes += stats.size
-  evictStaleLogLineCacheEntries()
+  enforceLogCacheBudget()
   return selectLineWindow(lines, limit, beforeLine)
 }
 

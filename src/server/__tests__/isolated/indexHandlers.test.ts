@@ -4913,6 +4913,55 @@ describe('server fetch handlers', () => {
     }
   })
 
+  test('serves fresh content after the preview log is rewritten', async () => {
+    const { serveOptions } = await loadIndex()
+    const fetchHandler = serveOptions.fetch
+    if (!fetchHandler) {
+      throw new Error('Fetch handler not configured')
+    }
+
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-preview-refresh-'))
+    const logPath = path.join(tempDir, 'session.jsonl')
+    await fs.writeFile(logPath, ['line-a', 'line-b'].join('\n'))
+
+    seedRecord(
+      makeRecord({
+        sessionId: 'session-preview-refresh',
+        logFilePath: logPath,
+        displayName: 'Preview',
+        projectPath: '/tmp/preview',
+        agentType: 'codex',
+      })
+    )
+
+    const request = () =>
+      fetchHandler.call(
+        {} as Bun.Server<unknown>,
+        new Request('http://localhost/api/session-preview/session-preview-refresh'),
+        {} as Bun.Server<unknown>
+      )
+
+    try {
+      const first = await request()
+      if (!first) throw new Error('Expected first preview response')
+      const firstPayload = (await first.json()) as { totalLines: number; lines: string[] }
+      expect(firstPayload.totalLines).toBe(2)
+      expect(firstPayload.lines).toEqual(['line-a', 'line-b'])
+
+      // Rewrite with different content (and different size) so size+mtime keying
+      // invalidates the cached line array instead of serving stale data.
+      await fs.writeFile(logPath, ['line-c', 'line-d', 'line-e'].join('\n'))
+
+      const second = await request()
+      if (!second) throw new Error('Expected second preview response')
+      const secondPayload = (await second.json()) as { totalLines: number; lines: string[] }
+      expect(secondPayload.totalLines).toBe(3)
+      expect(secondPayload.lines).toEqual(['line-c', 'line-d', 'line-e'])
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true })
+    }
+  })
+
   test('returns 404 when session preview log is missing', async () => {
     const { serveOptions } = await loadIndex()
     const fetchHandler = serveOptions.fetch
