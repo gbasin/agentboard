@@ -1,5 +1,10 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { parseAndNormalizeAgentLogLine, type NormalizedEventKind } from '@shared/eventTaxonomy'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import {
+  parseAndNormalizeAgentLogLine,
+  inferSourceFamily,
+  type NormalizedEventKind,
+} from '@shared/eventTaxonomy'
+import { asRecord, asString } from '@shared/json'
 import type { AgentSession } from '@shared/types'
 
 const PREVIEW_FETCH_TIMEOUT_MS = 10_000
@@ -45,15 +50,6 @@ interface StructuredLogLine {
   details: Array<{ label: string; value: string }>
 }
 
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
-  return value as Record<string, unknown>
-}
-
-function asString(value: unknown): string | null {
-  return typeof value === 'string' ? value : null
-}
-
 function extractLogTimestampFromRecord(record: Record<string, unknown>): string | null {
   const payload = asRecord(record.payload)
   const message = asRecord(record.message)
@@ -67,15 +63,6 @@ function extractLogTimestampFromRecord(record: Record<string, unknown>): string 
     asString(payload?.createdAt)
 
   return timestamp && !Number.isNaN(Date.parse(timestamp)) ? timestamp : null
-}
-
-function extractLogTimestamp(line: string): string | null {
-  try {
-    const record = asRecord(JSON.parse(line) as unknown)
-    return record ? extractLogTimestampFromRecord(record) : null
-  } catch {
-    return null
-  }
 }
 
 function formatLogTimestamp(timestamp?: string): string | null {
@@ -140,24 +127,16 @@ function extractReadableText(value: unknown): string {
   )
 }
 
-function inferLogSource(record: Record<string, unknown>) {
+function inferLogSource(record: Record<string, unknown>): string {
+  // Reuse the shared family detection for pi/claude, then layer the transcript
+  // badge's display heuristics on top (any payload.type reads as a Codex signal,
+  // ahead of Claude type detection — matching the original ordering).
+  const family = inferSourceFamily(record)
+  if (family === 'pi') return 'pi'
   const type = asString(record.type) ?? ''
-  const payload = asRecord(record.payload)
-  const payloadType = asString(payload?.type) ?? ''
-  const source = asString(record.source) ?? asString(payload?.source) ?? ''
-  const agent = asString(record.agent) ?? ''
-  if (source.toLowerCase() === 'pi' || agent.toLowerCase() === 'pi') return 'pi'
+  const payloadType = asString(asRecord(record.payload)?.type) ?? ''
   if (type === 'event_msg' || type === 'response_item' || payloadType) return 'codex'
-  if (
-    type === 'user' ||
-    type === 'assistant' ||
-    type === 'system' ||
-    type === 'tool_use' ||
-    type === 'tool_result' ||
-    type === 'result'
-  ) {
-    return 'claude'
-  }
+  if (family === 'claude' || type === 'tool_result') return 'claude'
   return 'log'
 }
 
@@ -290,7 +269,10 @@ function mapNormalizedRoleToEntryType(role: string): ParsedEntry['type'] {
 function parseLogEntry(line: string, lineNumber: number): ParsedEntry[] {
   const parsed = parseAndNormalizeAgentLogLine(line)
   if (!parsed) return []
-  const timestamp = extractLogTimestamp(line)
+  // Reuse the object parseAndNormalizeAgentLogLine already parsed instead of
+  // re-running JSON.parse on the same line.
+  const record = parsed.parsed ? asRecord(parsed.raw) : null
+  const timestamp = record ? extractLogTimestampFromRecord(record) : null
 
   const entries = parsed.events
     .map((event, seq) => ({
@@ -338,13 +320,7 @@ function ToolEntry({ entry }: { entry: ParsedEntry }) {
   const [expanded, setExpanded] = useState(false)
   const timestamp = formatLogTimestamp(entry.timestamp)
   const marker = timestamp ?? `Line ${entry.lineNumber + 1}`
-  const label = entry.kind === 'tool_call'
-    ? entry.content
-    : entry.kind === 'result'
-      ? 'Result'
-      : entry.kind === 'tool_result'
-        ? 'Tool result'
-        : entryLabel(entry)
+  const label = entry.kind === 'tool_call' ? entry.content : 'Result'
 
   return (
     <div className="rounded-md border border-border bg-surface/40">
@@ -375,7 +351,9 @@ function ToolEntry({ entry }: { entry: ParsedEntry }) {
 }
 
 function TranscriptEntry({ entry }: { entry: ParsedEntry }) {
-  if (entry.kind === 'tool_call' || entry.kind === 'tool_result' || entry.kind === 'result' || entry.type === 'tool') {
+  // tool_result events normalize to empty text and are dropped by parseLogEntry,
+  // so only tool_call and result entries reach the collapsible ToolEntry.
+  if (entry.kind === 'tool_call' || entry.kind === 'result') {
     return <ToolEntry entry={entry} />
   }
   const timestamp = formatLogTimestamp(entry.timestamp)
@@ -480,6 +458,23 @@ function StructuredLogEntry({ entry }: { entry: StructuredLogLine }) {
   )
 }
 
+async function fetchPreviewWindow(url: string, signal: AbortSignal): Promise<PreviewData> {
+  const response = await fetch(url, { signal })
+  if (!response.ok) {
+    // Defensive: tolerate non-JSON error bodies (e.g., proxy-injected HTML) so we
+    // surface the HTTP status instead of swallowing it in a parse throw.
+    let message = `Failed to load preview (HTTP ${response.status})`
+    try {
+      const data = (await response.json()) as { error?: string }
+      if (data?.error) message = data.error
+    } catch {
+      // Non-JSON — keep default message.
+    }
+    throw new Error(message)
+  }
+  return (await response.json()) as PreviewData
+}
+
 interface SessionPreviewContentProps {
   session: AgentSession
   className?: string
@@ -498,6 +493,10 @@ export default function SessionPreviewContent({
   const [viewMode, setViewMode] = useState<'messages' | 'events'>('messages')
   const contentRef = useRef<HTMLDivElement>(null)
   const preserveScrollRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null)
+  // Atomic in-flight guard: a state flag is read from a stale render closure, so a
+  // fast double-click could fire two identical "Load earlier" fetches and prepend
+  // the same lines twice. A ref is updated synchronously and can't be stale.
+  const loadingEarlierRef = useRef(false)
 
   useEffect(() => {
     let cancelled = false
@@ -511,23 +510,10 @@ export default function SessionPreviewContent({
       setPreviewData(null)
 
       try {
-        const response = await fetch(
+        const data = await fetchPreviewWindow(
           `/api/session-preview/${session.sessionId}?limit=${PREVIEW_LINE_LIMIT}`,
-          { signal: controller.signal }
+          controller.signal
         )
-        if (!response.ok) {
-          // Defensive: tolerate non-JSON error bodies (e.g., proxy-injected HTML)
-          // so we surface the HTTP status instead of swallowing it in a parse throw.
-          let message = `Failed to load preview (HTTP ${response.status})`
-          try {
-            const data = (await response.json()) as { error?: string }
-            if (data?.error) message = data.error
-          } catch {
-            // Non-JSON — keep default message.
-          }
-          throw new Error(message)
-        }
-        const data = (await response.json()) as PreviewData
         if (!cancelled) {
           setPreviewData(data)
         }
@@ -554,7 +540,8 @@ export default function SessionPreviewContent({
   }, [session.sessionId])
 
   const loadEarlier = async () => {
-    if (!previewData || loadingEarlier || !previewData.hasMoreBefore) return
+    if (!previewData || loadingEarlierRef.current || !previewData.hasMoreBefore) return
+    loadingEarlierRef.current = true
     const scroller = contentRef.current
     if (scroller) {
       preserveScrollRef.current = {
@@ -573,21 +560,10 @@ export default function SessionPreviewContent({
         limit: String(PREVIEW_LINE_LIMIT),
         beforeLine: String(previewData.startLine),
       })
-      const response = await fetch(
+      const data = await fetchPreviewWindow(
         `/api/session-preview/${session.sessionId}?${params.toString()}`,
-        { signal: controller.signal }
+        controller.signal
       )
-      if (!response.ok) {
-        let message = `Failed to load preview (HTTP ${response.status})`
-        try {
-          const data = (await response.json()) as { error?: string }
-          if (data?.error) message = data.error
-        } catch {
-          // Non-JSON — keep default message.
-        }
-        throw new Error(message)
-      }
-      const data = (await response.json()) as PreviewData
       setPreviewData((current) => {
         if (!current) return data
         return {
@@ -606,6 +582,7 @@ export default function SessionPreviewContent({
       }
     } finally {
       clearTimeout(timeoutId)
+      loadingEarlierRef.current = false
       setLoadingEarlier(false)
     }
   }
@@ -627,12 +604,22 @@ export default function SessionPreviewContent({
     }
   }, [previewData, viewMode])
 
-  const parsedEntries = previewData?.lines.flatMap((line, index) =>
-    parseLogEntry(line, previewData.startLine + index)
-  ) ?? []
-  const structuredLines = previewData?.lines.map((line, index) =>
-    parseStructuredLogLine(line, previewData.startLine + index)
-  ) ?? []
+  // Parse once per data change instead of on every render (view-mode toggle,
+  // load-earlier spinner, etc.). previewData is replaced wholesale when it changes.
+  const parsedEntries = useMemo(
+    () =>
+      previewData?.lines.flatMap((line, index) =>
+        parseLogEntry(line, previewData.startLine + index)
+      ) ?? [],
+    [previewData]
+  )
+  const structuredLines = useMemo(
+    () =>
+      previewData?.lines.map((line, index) =>
+        parseStructuredLogLine(line, previewData.startLine + index)
+      ) ?? [],
+    [previewData]
+  )
   const lineRangeLabel = previewData
     ? previewData.totalLines === 0
       ? 'No transcript entries'

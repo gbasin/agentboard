@@ -1,3 +1,5 @@
+import { asRecord, asString } from './json'
+
 export type NormalizedEventKind =
   | 'message'
   | 'tool_call'
@@ -36,15 +38,6 @@ export interface NormalizedLineParseResult {
 const TOOL_RESULT_TYPES = new Set(['tool_result', 'custom_tool_call_output'])
 const TEXT_CONTENT_TYPES = new Set(['text', 'input_text', 'output_text'])
 
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== 'object') return null
-  return value as Record<string, unknown>
-}
-
-function asString(value: unknown): string | null {
-  return typeof value === 'string' ? value : null
-}
-
 function normalizeRole(value: unknown): NormalizedEventRole {
   if (value === 'user') return 'user'
   if (value === 'assistant') return 'assistant'
@@ -53,7 +46,7 @@ function normalizeRole(value: unknown): NormalizedEventRole {
   return 'other'
 }
 
-function inferSourceFamily(record: Record<string, unknown>): NormalizedSourceFamily {
+export function inferSourceFamily(record: Record<string, unknown>): NormalizedSourceFamily {
   const typeValue = asString(record.type) ?? ''
   const payload = asRecord(record.payload)
   const payloadType = asString(payload?.type) ?? ''
