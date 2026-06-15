@@ -927,6 +927,16 @@ export default function Terminal({
     }
   }, [containerRef, isiOS, isSelectingText])
 
+  // While the hibernation overlay is up, mark the terminal underneath as `inert`
+  // rather than just `aria-hidden`: inert also drops its xterm helper textarea out
+  // of the tab order, so focus can't land on a hidden, unreachable element.
+  useEffect(() => {
+    const container = containerRef.current
+    if (container) {
+      container.inert = !!hibernatingSession
+    }
+  }, [containerRef, hibernatingSession])
+
   // Use session names as mobile tab labels only when AGENTBOARD_PREFER_WINDOW_NAME is
   // enabled AND every session has a distinct, non-empty name. Otherwise tabs would
   // repeat the same label and numeric indices remain the better signal.
@@ -1151,11 +1161,7 @@ export default function Terminal({
 
       {/* Terminal content - always rendered so ref is attached */}
       <div className="relative flex-1">
-        <div
-          ref={containerRef}
-          className={`absolute inset-0 ${hibernatingSession ? 'pointer-events-none' : ''}`}
-          aria-hidden={hibernatingSession ? 'true' : undefined}
-        />
+        <div ref={containerRef} className="absolute inset-0" />
         {isSwitching && session && (
           <div className="absolute top-2 left-2 z-50 flex items-center gap-1.5 rounded-lg bg-black/60 px-2.5 py-1.5 text-xs text-white/90 shadow-lg backdrop-blur-md">
             <svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
