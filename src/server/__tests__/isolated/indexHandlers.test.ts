@@ -4962,6 +4962,59 @@ describe('server fetch handlers', () => {
     }
   })
 
+  test('treats empty limit/beforeLine query params as absent', async () => {
+    const { serveOptions } = await loadIndex()
+    const fetchHandler = serveOptions.fetch
+    if (!fetchHandler) {
+      throw new Error('Fetch handler not configured')
+    }
+
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-preview-empty-'))
+    const logPath = path.join(tempDir, 'session.jsonl')
+    await fs.writeFile(logPath, ['line-0', 'line-1', 'line-2', 'line-3', 'line-4'].join('\n'))
+
+    seedRecord(
+      makeRecord({
+        sessionId: 'session-preview-empty',
+        logFilePath: logPath,
+        displayName: 'Preview',
+        projectPath: '/tmp/preview',
+        agentType: 'codex',
+      })
+    )
+
+    try {
+      const response = await fetchHandler.call(
+        {} as Bun.Server<unknown>,
+        new Request('http://localhost/api/session-preview/session-preview-empty?limit=&beforeLine='),
+        {} as Bun.Server<unknown>
+      )
+
+      if (!response) {
+        throw new Error('Expected response for session preview')
+      }
+
+      expect(response.ok).toBe(true)
+      const payload = (await response.json()) as {
+        totalLines: number
+        startLine: number
+        endLine: number
+        hasMoreBefore: boolean
+        lines: string[]
+      }
+      // Empty limit must fall back to the default window, not collapse to 1 line
+      // (Number('') === 0 -> Math.max(1, 0) === 1), and empty beforeLine must mean
+      // "latest" rather than "before line 0".
+      expect(payload.totalLines).toBe(5)
+      expect(payload.startLine).toBe(0)
+      expect(payload.endLine).toBe(5)
+      expect(payload.hasMoreBefore).toBe(false)
+      expect(payload.lines).toHaveLength(5)
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true })
+    }
+  })
+
   test('returns 404 when session preview log is missing', async () => {
     const { serveOptions } = await loadIndex()
     const fetchHandler = serveOptions.fetch

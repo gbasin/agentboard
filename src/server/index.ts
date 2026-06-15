@@ -1241,7 +1241,12 @@ app.get('/api/session-preview/:sessionId', async (c) => {
 
   const DEFAULT_LIMIT = 200
   const MAX_LIMIT = 500
-  const rawLimit = Number(c.req.query('limit') ?? DEFAULT_LIMIT)
+  // Treat a missing OR empty `?limit=` as absent — `'' ?? DEFAULT` keeps '', and
+  // Number('') is 0, which would otherwise collapse the window to a single line.
+  const limitQuery = c.req.query('limit')
+  const rawLimit = limitQuery === undefined || limitQuery === ''
+    ? DEFAULT_LIMIT
+    : Number(limitQuery)
   const limit = Number.isFinite(rawLimit)
     ? Math.min(MAX_LIMIT, Math.max(1, Math.trunc(rawLimit)))
     : DEFAULT_LIMIT
@@ -1263,7 +1268,9 @@ app.get('/api/session-preview/:sessionId', async (c) => {
     }
 
     const beforeLineQuery = c.req.query('beforeLine')
-    const rawBeforeLine = beforeLineQuery === undefined
+    // Missing or empty means "latest window"; a non-numeric value falls back to
+    // the same (selectLineWindow treats a non-finite cursor as the end).
+    const rawBeforeLine = beforeLineQuery === undefined || beforeLineQuery === ''
       ? Number.POSITIVE_INFINITY
       : Number(beforeLineQuery)
     const lineWindow = await readLogLineWindow(logPath, stats, limit, rawBeforeLine)
