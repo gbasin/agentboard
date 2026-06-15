@@ -132,6 +132,10 @@ describe('SessionPreviewModal', () => {
       projectPath: baseSession.projectPath,
       agentType: 'claude',
       lastActivityAt: baseSession.lastActivityAt,
+      totalLines: 11,
+      startLine: 1,
+      endLine: 11,
+      hasMoreBefore: true,
       lines: [
         JSON.stringify({ type: 'user', message: { content: 'Hello' } }),
         JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'World' }] } }),
@@ -158,16 +162,39 @@ describe('SessionPreviewModal', () => {
           },
         }),
         JSON.stringify({
+          type: 'assistant',
+          message: {
+            content: [
+              { type: 'thinking', thinking: 'Hidden thinking block' },
+              { type: 'text', text: 'Visible assistant text' },
+            ],
+          },
+        }),
+        JSON.stringify({
           type: 'event_msg',
           payload: { type: 'assistant_message', message: 'Assistant from event msg' },
         }),
         JSON.stringify({ type: 'tool_use', name: 'search' }),
         JSON.stringify({ type: 'result', result: 'Done' }),
+        JSON.stringify({ type: 'assistant', message: { content: 'x'.repeat(650) } }),
         'plain text line',
       ],
     }
+    const earlierData = {
+      ...previewData,
+      totalLines: 11,
+      startLine: 0,
+      endLine: 1,
+      hasMoreBefore: false,
+      lines: [
+        JSON.stringify({ type: 'user', message: { content: 'Earlier message' } }),
+      ],
+    }
 
-    const controller = createFetchController([createJsonResponse(previewData)])
+    const controller = createFetchController([
+      createJsonResponse(previewData),
+      createJsonResponse(earlierData),
+    ])
     let resumed: string[] = []
 
     const renderer = await createModal(
@@ -193,12 +220,52 @@ describe('SessionPreviewModal', () => {
     expect(html).toContain('From structured event msg')
     expect(html).toContain('Assistant from event msg')
     expect(html).toContain('[Tool: search]')
-    expect(html).toContain('Done')
+    expect(html).toContain('Result')
+    expect(html).not.toContain('Done')
+    expect(html).toContain('x'.repeat(650))
     expect(html).toContain('plain text line')
+    expect(html).toContain('Lines 2-11 of 11')
+
+    const resultButton = renderer.root
+      .findAllByType('button')
+      .find((button) => {
+        const children = button.props.children
+        return Array.isArray(children) && children[0]?.props?.children === 'Result'
+      })
+
+    if (!resultButton) {
+      throw new Error('Expected result disclosure button')
+    }
+
+    act(() => {
+      resultButton.props.onClick()
+    })
+
+    html = JSON.stringify(renderer.toJSON())
+    expect(html).toContain('Done')
+
+    const loadEarlierButton = renderer.root
+      .findAllByType('button')
+      .find((button) => button.props.children === 'Load earlier')
+
+    if (!loadEarlierButton) {
+      throw new Error('Expected load earlier button')
+    }
+
+    act(() => {
+      loadEarlierButton.props.onClick()
+    })
+
+    await resolveAndFlush(controller)
+
+    html = JSON.stringify(renderer.toJSON())
+    expect(html).toContain('Earlier message')
+    expect(html).toContain('Lines 1-11 of 11')
+    expect(controller.calls[1]).toBe('/api/session-preview/session-12345678?limit=200&beforeLine=1')
 
     const toggleButton = renderer.root
       .findAllByType('button')
-      .find((button) => button.props.children === 'Raw')
+      .find((button) => button.props.children === 'Log lines')
 
     if (!toggleButton) {
       throw new Error('Expected toggle button')
@@ -209,7 +276,15 @@ describe('SessionPreviewModal', () => {
     })
 
     html = JSON.stringify(renderer.toJSON())
-    expect(html).toContain('\\\"type\\\":\\\"user\\\"')
+    expect(html).toContain('CLAUDE')
+    expect(html).toContain('CODEX')
+    expect(html).toContain('event_msg')
+    expect(html).toContain('From structured event msg')
+    expect(html).toContain('Visible assistant text')
+    expect(html).not.toContain('Hidden thinking block')
+    expect(html).toContain('Plain text')
+    expect(html).toContain('payload')
+    expect(html).toContain('Messages')
 
     const resumeButton = renderer.root
       .findAllByType('button')
@@ -236,6 +311,39 @@ describe('SessionPreviewModal', () => {
     })
 
     expect(resumed).toEqual([baseSession.sessionId, baseSession.sessionId])
+
+    await cleanup(renderer)
+  })
+
+  test('shows a stable label for empty transcripts', async () => {
+    const controller = createFetchController([
+      createJsonResponse({
+        sessionId: baseSession.sessionId,
+        displayName: 'Alpha',
+        projectPath: baseSession.projectPath,
+        agentType: 'claude',
+        lastActivityAt: baseSession.lastActivityAt,
+        totalLines: 0,
+        startLine: 0,
+        endLine: 0,
+        hasMoreBefore: false,
+        lines: [],
+      }),
+    ])
+
+    const renderer = await createModal(
+      <SessionPreviewModal
+        session={baseSession}
+        onClose={() => {}}
+        onResume={() => {}}
+      />
+    )
+
+    await resolveAndFlush(controller)
+
+    const html = JSON.stringify(renderer.toJSON())
+    expect(html).toContain('No transcript lines')
+    expect(html).not.toContain('Lines 1-0 of 0')
 
     await cleanup(renderer)
   })

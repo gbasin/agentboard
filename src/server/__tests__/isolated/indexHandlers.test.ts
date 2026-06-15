@@ -4836,7 +4836,7 @@ describe('server fetch handlers', () => {
 
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-preview-'))
     const logPath = path.join(tempDir, 'session.jsonl')
-    const lines = Array.from({ length: 120 }, (_, index) => `line-${index}`)
+    const lines = Array.from({ length: 250 }, (_, index) => `line-${index}`)
     await fs.writeFile(logPath, lines.join('\n'))
 
     seedRecord(
@@ -4866,14 +4866,48 @@ describe('server fetch handlers', () => {
         displayName: string
         projectPath: string
         agentType: string
+        totalLines: number
+        startLine: number
+        endLine: number
+        hasMoreBefore: boolean
         lines: string[]
       }
       expect(payload.sessionId).toBe('session-preview')
       expect(payload.displayName).toBe('Preview')
       expect(payload.projectPath).toBe('/tmp/preview')
       expect(payload.agentType).toBe('codex')
-      expect(payload.lines).toHaveLength(100)
-      expect(payload.lines[0]).toBe('line-20')
+      expect(payload.totalLines).toBe(250)
+      expect(payload.startLine).toBe(50)
+      expect(payload.endLine).toBe(250)
+      expect(payload.hasMoreBefore).toBe(true)
+      expect(payload.lines).toHaveLength(200)
+      expect(payload.lines[0]).toBe('line-50')
+
+      const earlierResponse = await fetchHandler.call(
+        {} as Bun.Server<unknown>,
+        new Request('http://localhost/api/session-preview/session-preview?beforeLine=50&limit=30'),
+        {} as Bun.Server<unknown>
+      )
+
+      if (!earlierResponse) {
+        throw new Error('Expected earlier response for session preview')
+      }
+
+      expect(earlierResponse.ok).toBe(true)
+      const earlierPayload = (await earlierResponse.json()) as {
+        totalLines: number
+        startLine: number
+        endLine: number
+        hasMoreBefore: boolean
+        lines: string[]
+      }
+      expect(earlierPayload.totalLines).toBe(250)
+      expect(earlierPayload.startLine).toBe(20)
+      expect(earlierPayload.endLine).toBe(50)
+      expect(earlierPayload.hasMoreBefore).toBe(true)
+      expect(earlierPayload.lines).toHaveLength(30)
+      expect(earlierPayload.lines[0]).toBe('line-20')
+      expect(earlierPayload.lines[29]).toBe('line-49')
     } finally {
       await fs.rm(tempDir, { recursive: true, force: true })
     }

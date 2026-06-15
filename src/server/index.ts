@@ -1,7 +1,9 @@
 import type { Server, ServerWebSocket } from 'bun'
+import { createReadStream } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import fs from 'node:fs/promises'
+import { createInterface } from 'node:readline'
 import { Hono, type Context } from 'hono'
 import { serveStatic } from 'hono/bun'
 import { config, isValidHostname } from './config'
@@ -100,6 +102,56 @@ function checkPortAvailable(port: number): void {
     }
     logger.error('port_in_use', { port, pid, processName })
     process.exit(1)
+  }
+}
+
+interface LogLineWindow {
+  totalLines: number
+  startLine: number
+  endLine: number
+  hasMoreBefore: boolean
+  lines: string[]
+}
+
+async function readLogLineWindow(
+  logPath: string,
+  limit: number,
+  beforeLine: number
+): Promise<LogLineWindow> {
+  const requestedEndLine = Number.isFinite(beforeLine)
+    ? Math.max(0, Math.trunc(beforeLine))
+    : Number.POSITIVE_INFINITY
+  const selectedLines: string[] = []
+  let totalLines = 0
+
+  const fileStream = createReadStream(logPath, { encoding: 'utf8' })
+  const reader = createInterface({
+    input: fileStream,
+    crlfDelay: Infinity,
+  })
+
+  try {
+    for await (const line of reader) {
+      if (totalLines < requestedEndLine) {
+        selectedLines.push(line)
+        if (selectedLines.length > limit) {
+          selectedLines.shift()
+        }
+      }
+      totalLines += 1
+    }
+  } finally {
+    reader.close()
+  }
+
+  const endLine = Math.min(totalLines, requestedEndLine)
+  const startLine = Math.max(0, endLine - selectedLines.length)
+  return {
+    totalLines,
+    startLine,
+    endLine,
+    hasMoreBefore: startLine > 0,
+    lines: selectedLines,
   }
 }
 
@@ -1087,6 +1139,13 @@ app.get('/api/session-preview/:sessionId', async (c) => {
     return c.json({ error: 'Invalid session id' }, 400)
   }
 
+  const DEFAULT_LIMIT = 200
+  const MAX_LIMIT = 500
+  const rawLimit = Number(c.req.query('limit') ?? DEFAULT_LIMIT)
+  const limit = Number.isFinite(rawLimit)
+    ? Math.min(MAX_LIMIT, Math.max(1, Math.trunc(rawLimit)))
+    : DEFAULT_LIMIT
+
   const record = db.getSessionById(sessionId)
   if (!record) {
     return c.json({ error: 'Session not found' }, 404)
@@ -1103,22 +1162,11 @@ app.get('/api/session-preview/:sessionId', async (c) => {
       return c.json({ error: 'Log file not found' }, 404)
     }
 
-    // Read last 64KB of the file. try/finally guarantees the fd is released
-    // if fd.read() throws (e.g., EIO, file unlinked mid-read, permission drop).
-    const TAIL_BYTES = 64 * 1024
-    const fileSize = stats.size
-    const offset = Math.max(0, fileSize - TAIL_BYTES)
-    const fd = await fs.open(logPath, 'r')
-    let content: string
-    try {
-      const buffer = Buffer.alloc(Math.min(TAIL_BYTES, fileSize))
-      const { bytesRead } = await fd.read(buffer, 0, buffer.length, offset)
-      content = buffer.subarray(0, bytesRead).toString('utf8')
-    } finally {
-      await fd.close()
-    }
-    // Take last 100 lines
-    const lines = content.split('\n').slice(-100)
+    const beforeLineQuery = c.req.query('beforeLine')
+    const rawBeforeLine = beforeLineQuery === undefined
+      ? Number.POSITIVE_INFINITY
+      : Number(beforeLineQuery)
+    const lineWindow = await readLogLineWindow(logPath, limit, rawBeforeLine)
 
     return c.json({
       sessionId,
@@ -1126,7 +1174,7 @@ app.get('/api/session-preview/:sessionId', async (c) => {
       projectPath: record.projectPath,
       agentType: record.agentType,
       lastActivityAt: record.lastActivityAt,
-      lines,
+      ...lineWindow,
     })
   } catch (error) {
     const err = error as NodeJS.ErrnoException

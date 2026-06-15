@@ -1151,7 +1151,11 @@ export default function Terminal({
 
       {/* Terminal content - always rendered so ref is attached */}
       <div className="relative flex-1">
-        <div ref={containerRef} className="absolute inset-0" />
+        <div
+          ref={containerRef}
+          className={`absolute inset-0 ${hibernatingSession ? 'pointer-events-none' : ''}`}
+          aria-hidden={hibernatingSession ? 'true' : undefined}
+        />
         {isSwitching && session && (
           <div className="absolute top-2 left-2 z-50 flex items-center gap-1.5 rounded-lg bg-black/60 px-2.5 py-1.5 text-xs text-white/90 shadow-lg backdrop-blur-md">
             <svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -1172,7 +1176,7 @@ export default function Terminal({
           </div>
         )}
         {hibernatingSession && (
-          <div className="absolute inset-0 overflow-y-auto bg-base">
+          <div className="absolute inset-0 z-10 overflow-y-auto bg-base">
             <div className="mx-auto flex h-full w-full max-w-4xl flex-col gap-6 p-6">
               <div className="rounded-2xl border border-border bg-elevated p-6">
                 <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
