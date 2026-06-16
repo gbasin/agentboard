@@ -363,6 +363,27 @@ export function dedupeAdjacentMessageEntries(entries: ParsedEntry[]): ParsedEntr
   return deduped
 }
 
+// A single Codex turn produces many short assistant step-messages interleaved
+// with tool calls, so the Messages view otherwise reads as a wall of repeated
+// "Assistant" headers. Show the role label only at the start of each same-role
+// run so a turn renders as one grouped block. Tool entries carry no role label,
+// so they don't break a run (an assistant message after a tool call stays in the
+// same group). Operates in display order, so the label lands on the run's first
+// rendered entry.
+export function annotateGroupedEntries(
+  entries: ParsedEntry[]
+): Array<{ entry: ParsedEntry; showRole: boolean }> {
+  let prevRole: ParsedEntry['type'] | null = null
+  return entries.map((entry) => {
+    if (entry.kind === 'tool_call' || entry.kind === 'result') {
+      return { entry, showRole: false }
+    }
+    const showRole = entry.type !== prevRole
+    prevRole = entry.type
+    return { entry, showRole }
+  })
+}
+
 function lineKey(entry: ParsedEntry) {
   return `${entry.sourceKey}:${entry.seq}`
 }
@@ -487,7 +508,7 @@ function MarkdownMessage({ content }: { content: string }) {
   )
 }
 
-function TranscriptEntry({ entry }: { entry: ParsedEntry }) {
+function TranscriptEntry({ entry, showRole = true }: { entry: ParsedEntry; showRole?: boolean }) {
   // tool_result events normalize to empty text and are dropped by parseLogEntry,
   // so only tool_call and result entries reach the collapsible ToolEntry.
   if (entry.kind === 'tool_call' || entry.kind === 'result') {
@@ -495,14 +516,23 @@ function TranscriptEntry({ entry }: { entry: ParsedEntry }) {
   }
   const marker = lineMarker(entry.lineNumber, entry.timestamp, entry.exactLineNumber)
 
+  // showRole marks the start of a same-role run: it gets the role label and a
+  // top divider; continued entries in the run are flush below with no label, so
+  // a multi-step turn reads as one grouped block.
   return (
-    <article className="grid grid-cols-[5.75rem_minmax(0,1fr)] gap-3 border-b border-border/60 py-4 last:border-b-0 sm:grid-cols-[6.75rem_minmax(0,1fr)]">
+    <article
+      className={`grid grid-cols-[5.75rem_minmax(0,1fr)] gap-3 pb-2 sm:grid-cols-[6.75rem_minmax(0,1fr)] ${
+        showRole ? 'mt-4 border-t border-border/60 pt-4 first:mt-0 first:border-t-0 first:pt-0' : 'pt-1'
+      }`}
+    >
       <div className="select-none pt-0.5 text-right">
-        <div className={`text-[11px] font-semibold uppercase tracking-wide ${entryToneClass(entry)}`}>
-          {entryLabel(entry)}
-        </div>
+        {showRole && (
+          <div className={`text-[11px] font-semibold uppercase tracking-wide ${entryToneClass(entry)}`}>
+            {entryLabel(entry)}
+          </div>
+        )}
         <div
-          className="mt-1 text-[10px] tabular-nums text-muted"
+          className={`text-[10px] tabular-nums text-muted ${showRole ? 'mt-1' : ''}`}
           title={lineTitle(entry.lineNumber, entry.timestamp, entry.exactLineNumber)}
         >
           {marker}
@@ -847,8 +877,8 @@ export default function SessionPreviewContent({
                 No readable messages found. Try Events.
               </div>
             ) : (
-              messageEntries.map((entry) => (
-                <TranscriptEntry key={lineKey(entry)} entry={entry} />
+              annotateGroupedEntries(messageEntries).map(({ entry, showRole }) => (
+                <TranscriptEntry key={lineKey(entry)} entry={entry} showRole={showRole} />
               ))
             )}
             {previewData.hasMoreBefore && (

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   dedupeAdjacentMessageEntries,
+  annotateGroupedEntries,
   type ParsedEntry,
 } from '../components/SessionPreviewContent'
 
@@ -70,5 +71,47 @@ describe('dedupeAdjacentMessageEntries', () => {
       entry({ type: 'user', kind: 'message', content: 'bye', lineNumber: 3 }),
     ]
     expect(dedupeAdjacentMessageEntries(input)).toEqual(input)
+  })
+})
+
+describe('annotateGroupedEntries', () => {
+  test('shows the role label only at the start of a same-role run', () => {
+    const input: ParsedEntry[] = [
+      entry({ type: 'assistant', kind: 'message', content: 'step 1', lineNumber: 1 }),
+      entry({ type: 'assistant', kind: 'message', content: 'step 2', lineNumber: 2 }),
+      entry({ type: 'assistant', kind: 'message', content: 'step 3', lineNumber: 3 }),
+    ]
+    expect(annotateGroupedEntries(input).map((e) => e.showRole)).toEqual([true, false, false])
+  })
+
+  test('starts a new group when the role changes', () => {
+    const input: ParsedEntry[] = [
+      entry({ type: 'user', kind: 'message', content: 'do it', lineNumber: 1 }),
+      entry({ type: 'assistant', kind: 'message', content: 'on it', lineNumber: 2 }),
+      entry({ type: 'assistant', kind: 'message', content: 'more', lineNumber: 3 }),
+      entry({ type: 'user', kind: 'message', content: 'thanks', lineNumber: 4 }),
+    ]
+    expect(annotateGroupedEntries(input).map((e) => e.showRole)).toEqual([true, true, false, true])
+  })
+
+  test('a tool call between assistant messages does not break the run', () => {
+    // The assistant message after the tool call stays grouped (showRole false).
+    const input: ParsedEntry[] = [
+      entry({ type: 'assistant', kind: 'message', content: 'running a tool', lineNumber: 1 }),
+      entry({ type: 'tool', kind: 'tool_call', content: '[Tool: bash]', lineNumber: 2 }),
+      entry({ type: 'assistant', kind: 'message', content: 'tool done', lineNumber: 3 }),
+    ]
+    const result = annotateGroupedEntries(input)
+    expect(result.map((e) => e.showRole)).toEqual([true, false, false])
+  })
+
+  test('does not mutate or drop entries', () => {
+    const input: ParsedEntry[] = [
+      entry({ type: 'user', kind: 'message', content: 'hi', lineNumber: 1 }),
+      entry({ type: 'assistant', kind: 'message', content: 'hello', lineNumber: 2 }),
+    ]
+    const result = annotateGroupedEntries(input)
+    expect(result).toHaveLength(2)
+    expect(result.map((e) => e.entry)).toEqual(input)
   })
 })
