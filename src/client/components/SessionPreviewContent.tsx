@@ -29,7 +29,7 @@ interface PreviewData {
   endByte?: number
 }
 
-interface ParsedEntry {
+export interface ParsedEntry {
   type: 'user' | 'assistant' | 'system' | 'tool' | 'other'
   kind: NormalizedEventKind
   content: string
@@ -332,6 +332,32 @@ function parseLogEntry(
   }
 
   return []
+}
+
+// Codex writes every conversational turn to the log twice: once as an `event_msg`
+// (user_message / agent_message) and once as a `response_item` message, with
+// identical text. The two records land adjacently, so a single turn would render
+// twice in the Messages view — previously once as a message and once as a
+// mislabeled "Log" entry. Collapse a message entry when it repeats the
+// immediately-preceding kept entry's role and text. Tool/result entries are
+// untouched (consecutive identical tool calls can be legitimate), and the raw
+// Events view bypasses this entirely.
+export function dedupeAdjacentMessageEntries(entries: ParsedEntry[]): ParsedEntry[] {
+  const deduped: ParsedEntry[] = []
+  for (const entry of entries) {
+    const prev = deduped[deduped.length - 1]
+    if (
+      prev &&
+      entry.kind === 'message' &&
+      prev.kind === 'message' &&
+      entry.type === prev.type &&
+      entry.content === prev.content
+    ) {
+      continue
+    }
+    deduped.push(entry)
+  }
+  return deduped
 }
 
 function lineKey(entry: ParsedEntry) {
@@ -741,9 +767,16 @@ export default function SessionPreviewContent({
       }) ?? [],
     [previewData]
   )
+  // Codex double-logs each turn (event_msg + response_item); collapse the
+  // adjacent duplicates before display so a turn renders once. Events view keeps
+  // the raw, un-deduped lines.
+  const dedupedEntries = useMemo(
+    () => dedupeAdjacentMessageEntries(parsedEntries),
+    [parsedEntries]
+  )
   // Reverse-chronological display (newest first). The data model stays oldest-first
   // — pagination and keys are unchanged; only the render order is flipped.
-  const messageEntries = useMemo(() => parsedEntries.slice().reverse(), [parsedEntries])
+  const messageEntries = useMemo(() => dedupedEntries.slice().reverse(), [dedupedEntries])
   const eventEntries = useMemo(() => structuredLines.slice().reverse(), [structuredLines])
   const lineRangeLabel = previewData
     ? previewData.totalLines === 0
