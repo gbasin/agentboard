@@ -164,7 +164,10 @@ function normalizeEventMsgMessage(
 
   if (payloadType === 'user_message') {
     role = 'user'
-  } else if (payloadType === 'assistant_message') {
+  } else if (payloadType === 'assistant_message' || payloadType === 'agent_message') {
+    // Codex emits the assistant turn as `agent_message` (not `assistant_message`).
+    // Without this it falls through to the generic fallback and renders as a
+    // role:'other' "Log" entry, duplicating the paired response_item message.
     role = 'assistant'
   } else if (payloadType === 'system_message') {
     role = 'system'

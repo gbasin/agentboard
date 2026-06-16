@@ -84,6 +84,30 @@ describe('eventTaxonomy', () => {
     expect(assistantMessage[0]?.source.payloadType).toBe('assistant_message')
   })
 
+  test('normalizes Codex event_msg agent_message as an assistant turn', () => {
+    // Real Codex emits the assistant turn as `agent_message`, not
+    // `assistant_message`. It must resolve to role 'assistant' rather than
+    // falling through to the role:'other' fallback (which rendered as "Log" and
+    // duplicated the paired response_item message).
+    const events = normalizeAgentLogEntry({
+      type: 'event_msg',
+      payload: { type: 'agent_message', message: 'here is what I found' },
+    })
+
+    expect(events).toEqual([
+      {
+        kind: 'message',
+        role: 'assistant',
+        text: 'here is what I found',
+        source: {
+          family: 'codex',
+          rawType: 'event_msg',
+          payloadType: 'agent_message',
+        },
+      },
+    ])
+  })
+
   test('normalizes user and assistant message variants', () => {
     const userEvents = normalizeAgentLogEntry({
       type: 'user',

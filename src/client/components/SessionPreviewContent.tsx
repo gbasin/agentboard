@@ -29,7 +29,7 @@ interface PreviewData {
   endByte?: number
 }
 
-interface ParsedEntry {
+export interface ParsedEntry {
   type: 'user' | 'assistant' | 'system' | 'tool' | 'other'
   kind: NormalizedEventKind
   content: string
@@ -259,6 +259,9 @@ function getStructuredProminence(
     type === 'assistant' ||
     payloadType === 'user_message' ||
     payloadType === 'assistant_message' ||
+    // Codex emits the assistant turn as `agent_message`; treat it as
+    // conversational prominence in the Events view, matching the Messages view.
+    payloadType === 'agent_message' ||
     payloadType === 'message'
   ) {
     return 'message'
@@ -332,6 +335,69 @@ function parseLogEntry(
   }
 
   return []
+}
+
+// Codex writes every conversational turn to the log twice: once as an `event_msg`
+// (user_message / agent_message) and once as a `response_item` message, with
+// identical text. The two records land adjacently, so a single turn would render
+// twice in the Messages view — previously once as a message and once as a
+// mislabeled "Log" entry. Collapse a message entry when it repeats the
+// immediately-preceding kept entry's role and text. Tool/result entries are
+// untouched (consecutive identical tool calls can be legitimate), and the raw
+// Events view bypasses this entirely.
+export function dedupeAdjacentMessageEntries(entries: ParsedEntry[]): ParsedEntry[] {
+  const deduped: ParsedEntry[] = []
+  for (const entry of entries) {
+    const prev = deduped[deduped.length - 1]
+    if (
+      prev &&
+      entry.kind === 'message' &&
+      prev.kind === 'message' &&
+      entry.type === prev.type &&
+      entry.content === prev.content
+    ) {
+      continue
+    }
+    deduped.push(entry)
+  }
+  return deduped
+}
+
+function isToolEntry(entry: ParsedEntry): boolean {
+  return entry.kind === 'tool_call' || entry.kind === 'result'
+}
+
+// A single Codex turn emits many short assistant step-messages interleaved with
+// tool calls, so the Messages view otherwise reads as a wall of repeated
+// "Assistant" headers. Group consecutive same-role entries into runs (tool calls
+// don't break a run, so an assistant message after a tool stays in the group),
+// then emit the runs newest-first — matching the reverse-chronological transcript
+// — while keeping each run's entries in chronological order, so a turn reads
+// top-to-bottom as it happened. The role label shows once per run, on its first
+// (oldest) message entry. Input is oldest-first.
+export function groupEntriesForDisplay(
+  entries: ParsedEntry[]
+): Array<{ entry: ParsedEntry; showRole: boolean }> {
+  const runs: ParsedEntry[][] = []
+  let runRole: ParsedEntry['type'] | null = null
+  for (const entry of entries) {
+    if (runs.length === 0 || (!isToolEntry(entry) && entry.type !== runRole)) {
+      runs.push([])
+      if (!isToolEntry(entry)) runRole = entry.type
+    }
+    runs[runs.length - 1].push(entry)
+  }
+
+  const out: Array<{ entry: ParsedEntry; showRole: boolean }> = []
+  for (let i = runs.length - 1; i >= 0; i--) {
+    let labeled = false
+    for (const entry of runs[i]) {
+      const showRole = !isToolEntry(entry) && !labeled
+      if (showRole) labeled = true
+      out.push({ entry, showRole })
+    }
+  }
+  return out
 }
 
 function lineKey(entry: ParsedEntry) {
@@ -458,22 +524,31 @@ function MarkdownMessage({ content }: { content: string }) {
   )
 }
 
-function TranscriptEntry({ entry }: { entry: ParsedEntry }) {
+function TranscriptEntry({ entry, showRole = true }: { entry: ParsedEntry; showRole?: boolean }) {
   // tool_result events normalize to empty text and are dropped by parseLogEntry,
   // so only tool_call and result entries reach the collapsible ToolEntry.
-  if (entry.kind === 'tool_call' || entry.kind === 'result') {
+  if (isToolEntry(entry)) {
     return <ToolEntry entry={entry} />
   }
   const marker = lineMarker(entry.lineNumber, entry.timestamp, entry.exactLineNumber)
 
+  // showRole marks the start of a same-role run: it gets the role label and a
+  // top divider; continued entries in the run are flush below with no label, so
+  // a multi-step turn reads as one grouped block.
   return (
-    <article className="grid grid-cols-[5.75rem_minmax(0,1fr)] gap-3 border-b border-border/60 py-4 last:border-b-0 sm:grid-cols-[6.75rem_minmax(0,1fr)]">
+    <article
+      className={`grid grid-cols-[5.75rem_minmax(0,1fr)] gap-3 pb-2 sm:grid-cols-[6.75rem_minmax(0,1fr)] ${
+        showRole ? 'mt-4 border-t border-border/60 pt-4 first:mt-0 first:border-t-0 first:pt-0' : 'pt-1'
+      }`}
+    >
       <div className="select-none pt-0.5 text-right">
-        <div className={`text-[11px] font-semibold uppercase tracking-wide ${entryToneClass(entry)}`}>
-          {entryLabel(entry)}
-        </div>
+        {showRole && (
+          <div className={`text-[11px] font-semibold uppercase tracking-wide ${entryToneClass(entry)}`}>
+            {entryLabel(entry)}
+          </div>
+        )}
         <div
-          className="mt-1 text-[10px] tabular-nums text-muted"
+          className={`text-[10px] tabular-nums text-muted ${showRole ? 'mt-1' : ''}`}
           title={lineTitle(entry.lineNumber, entry.timestamp, entry.exactLineNumber)}
         >
           {marker}
@@ -741,9 +816,16 @@ export default function SessionPreviewContent({
       }) ?? [],
     [previewData]
   )
-  // Reverse-chronological display (newest first). The data model stays oldest-first
-  // — pagination and keys are unchanged; only the render order is flipped.
-  const messageEntries = useMemo(() => parsedEntries.slice().reverse(), [parsedEntries])
+  // Codex double-logs each turn (event_msg + response_item); collapse the
+  // adjacent duplicates before display so a turn renders once. Events view keeps
+  // the raw, un-deduped lines.
+  const dedupedEntries = useMemo(
+    () => dedupeAdjacentMessageEntries(parsedEntries),
+    [parsedEntries]
+  )
+  // Group into sender runs, newest turn first but chronological within each turn.
+  // The data model stays oldest-first; pagination and keys are unchanged.
+  const displayEntries = useMemo(() => groupEntriesForDisplay(dedupedEntries), [dedupedEntries])
   const eventEntries = useMemo(() => structuredLines.slice().reverse(), [structuredLines])
   const lineRangeLabel = previewData
     ? previewData.totalLines === 0
@@ -806,13 +888,13 @@ export default function SessionPreviewContent({
         )}
         {previewData && viewMode === 'messages' && (
           <div className="mx-auto flex w-full max-w-4xl flex-col">
-            {messageEntries.length === 0 ? (
+            {displayEntries.length === 0 ? (
               <div className="py-8 text-center text-muted">
                 No readable messages found. Try Events.
               </div>
             ) : (
-              messageEntries.map((entry) => (
-                <TranscriptEntry key={lineKey(entry)} entry={entry} />
+              displayEntries.map(({ entry, showRole }) => (
+                <TranscriptEntry key={lineKey(entry)} entry={entry} showRole={showRole} />
               ))
             )}
             {previewData.hasMoreBefore && (
