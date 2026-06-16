@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   dedupeAdjacentMessageEntries,
-  annotateGroupedEntries,
+  groupEntriesForDisplay,
   type ParsedEntry,
 } from '../components/SessionPreviewContent'
 
@@ -74,34 +74,50 @@ describe('dedupeAdjacentMessageEntries', () => {
   })
 })
 
-describe('annotateGroupedEntries', () => {
+describe('groupEntriesForDisplay', () => {
   test('shows the role label only at the start of a same-role run', () => {
     const input: ParsedEntry[] = [
       entry({ type: 'assistant', kind: 'message', content: 'step 1', lineNumber: 1 }),
       entry({ type: 'assistant', kind: 'message', content: 'step 2', lineNumber: 2 }),
       entry({ type: 'assistant', kind: 'message', content: 'step 3', lineNumber: 3 }),
     ]
-    expect(annotateGroupedEntries(input).map((e) => e.showRole)).toEqual([true, false, false])
+    // One run -> label on the first (oldest) entry, kept in chronological order.
+    const result = groupEntriesForDisplay(input)
+    expect(result.map((e) => e.entry.content)).toEqual(['step 1', 'step 2', 'step 3'])
+    expect(result.map((e) => e.showRole)).toEqual([true, false, false])
   })
 
-  test('starts a new group when the role changes', () => {
+  test('emits runs newest-first but keeps each run chronological', () => {
+    // Two turns oldest-first: turn A (user + 2 assistant steps), then turn B.
     const input: ParsedEntry[] = [
-      entry({ type: 'user', kind: 'message', content: 'do it', lineNumber: 1 }),
-      entry({ type: 'assistant', kind: 'message', content: 'on it', lineNumber: 2 }),
-      entry({ type: 'assistant', kind: 'message', content: 'more', lineNumber: 3 }),
-      entry({ type: 'user', kind: 'message', content: 'thanks', lineNumber: 4 }),
+      entry({ type: 'user', kind: 'message', content: 'A: do it', lineNumber: 1 }),
+      entry({ type: 'assistant', kind: 'message', content: 'A: step 1', lineNumber: 2 }),
+      entry({ type: 'assistant', kind: 'message', content: 'A: step 2', lineNumber: 3 }),
+      entry({ type: 'user', kind: 'message', content: 'B: do it', lineNumber: 4 }),
+      entry({ type: 'assistant', kind: 'message', content: 'B: step 1', lineNumber: 5 }),
     ]
-    expect(annotateGroupedEntries(input).map((e) => e.showRole)).toEqual([true, true, false, true])
+    const result = groupEntriesForDisplay(input)
+    // Newest run (B assistant) first; within each run chronological order.
+    expect(result.map((e) => e.entry.content)).toEqual([
+      'B: step 1',
+      'B: do it',
+      'A: step 1',
+      'A: step 2',
+      'A: do it',
+    ])
+    expect(result.map((e) => e.showRole)).toEqual([true, true, true, false, true])
   })
 
   test('a tool call between assistant messages does not break the run', () => {
-    // The assistant message after the tool call stays grouped (showRole false).
     const input: ParsedEntry[] = [
       entry({ type: 'assistant', kind: 'message', content: 'running a tool', lineNumber: 1 }),
       entry({ type: 'tool', kind: 'tool_call', content: '[Tool: bash]', lineNumber: 2 }),
       entry({ type: 'assistant', kind: 'message', content: 'tool done', lineNumber: 3 }),
     ]
-    const result = annotateGroupedEntries(input)
+    const result = groupEntriesForDisplay(input)
+    // Single run, chronological: label on first message, tool unlabeled, second
+    // assistant stays grouped.
+    expect(result.map((e) => e.entry.content)).toEqual(['running a tool', '[Tool: bash]', 'tool done'])
     expect(result.map((e) => e.showRole)).toEqual([true, false, false])
   })
 
@@ -110,8 +126,9 @@ describe('annotateGroupedEntries', () => {
       entry({ type: 'user', kind: 'message', content: 'hi', lineNumber: 1 }),
       entry({ type: 'assistant', kind: 'message', content: 'hello', lineNumber: 2 }),
     ]
-    const result = annotateGroupedEntries(input)
+    const result = groupEntriesForDisplay(input)
     expect(result).toHaveLength(2)
-    expect(result.map((e) => e.entry)).toEqual(input)
+    // Two single-entry runs, reversed: assistant turn first.
+    expect(result.map((e) => e.entry.content)).toEqual(['hello', 'hi'])
   })
 })

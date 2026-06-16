@@ -363,25 +363,41 @@ export function dedupeAdjacentMessageEntries(entries: ParsedEntry[]): ParsedEntr
   return deduped
 }
 
-// A single Codex turn produces many short assistant step-messages interleaved
-// with tool calls, so the Messages view otherwise reads as a wall of repeated
-// "Assistant" headers. Show the role label only at the start of each same-role
-// run so a turn renders as one grouped block. Tool entries carry no role label,
-// so they don't break a run (an assistant message after a tool call stays in the
-// same group). Operates in display order, so the label lands on the run's first
-// rendered entry.
-export function annotateGroupedEntries(
+function isToolEntry(entry: ParsedEntry): boolean {
+  return entry.kind === 'tool_call' || entry.kind === 'result'
+}
+
+// A single Codex turn emits many short assistant step-messages interleaved with
+// tool calls, so the Messages view otherwise reads as a wall of repeated
+// "Assistant" headers. Group consecutive same-role entries into runs (tool calls
+// don't break a run, so an assistant message after a tool stays in the group),
+// then emit the runs newest-first — matching the reverse-chronological transcript
+// — while keeping each run's entries in chronological order, so a turn reads
+// top-to-bottom as it happened. The role label shows once per run, on its first
+// (oldest) message entry. Input is oldest-first.
+export function groupEntriesForDisplay(
   entries: ParsedEntry[]
 ): Array<{ entry: ParsedEntry; showRole: boolean }> {
-  let prevRole: ParsedEntry['type'] | null = null
-  return entries.map((entry) => {
-    if (entry.kind === 'tool_call' || entry.kind === 'result') {
-      return { entry, showRole: false }
+  const runs: ParsedEntry[][] = []
+  let runRole: ParsedEntry['type'] | null = null
+  for (const entry of entries) {
+    if (runs.length === 0 || (!isToolEntry(entry) && entry.type !== runRole)) {
+      runs.push([])
+      if (!isToolEntry(entry)) runRole = entry.type
     }
-    const showRole = entry.type !== prevRole
-    prevRole = entry.type
-    return { entry, showRole }
-  })
+    runs[runs.length - 1].push(entry)
+  }
+
+  const out: Array<{ entry: ParsedEntry; showRole: boolean }> = []
+  for (let i = runs.length - 1; i >= 0; i--) {
+    let labeled = false
+    for (const entry of runs[i]) {
+      const showRole = !isToolEntry(entry) && !labeled
+      if (showRole) labeled = true
+      out.push({ entry, showRole })
+    }
+  }
+  return out
 }
 
 function lineKey(entry: ParsedEntry) {
@@ -511,7 +527,7 @@ function MarkdownMessage({ content }: { content: string }) {
 function TranscriptEntry({ entry, showRole = true }: { entry: ParsedEntry; showRole?: boolean }) {
   // tool_result events normalize to empty text and are dropped by parseLogEntry,
   // so only tool_call and result entries reach the collapsible ToolEntry.
-  if (entry.kind === 'tool_call' || entry.kind === 'result') {
+  if (isToolEntry(entry)) {
     return <ToolEntry entry={entry} />
   }
   const marker = lineMarker(entry.lineNumber, entry.timestamp, entry.exactLineNumber)
@@ -807,9 +823,9 @@ export default function SessionPreviewContent({
     () => dedupeAdjacentMessageEntries(parsedEntries),
     [parsedEntries]
   )
-  // Reverse-chronological display (newest first). The data model stays oldest-first
-  // — pagination and keys are unchanged; only the render order is flipped.
-  const messageEntries = useMemo(() => dedupedEntries.slice().reverse(), [dedupedEntries])
+  // Group into sender runs, newest turn first but chronological within each turn.
+  // The data model stays oldest-first; pagination and keys are unchanged.
+  const displayEntries = useMemo(() => groupEntriesForDisplay(dedupedEntries), [dedupedEntries])
   const eventEntries = useMemo(() => structuredLines.slice().reverse(), [structuredLines])
   const lineRangeLabel = previewData
     ? previewData.totalLines === 0
@@ -872,12 +888,12 @@ export default function SessionPreviewContent({
         )}
         {previewData && viewMode === 'messages' && (
           <div className="mx-auto flex w-full max-w-4xl flex-col">
-            {messageEntries.length === 0 ? (
+            {displayEntries.length === 0 ? (
               <div className="py-8 text-center text-muted">
                 No readable messages found. Try Events.
               </div>
             ) : (
-              annotateGroupedEntries(messageEntries).map(({ entry, showRole }) => (
+              displayEntries.map(({ entry, showRole }) => (
                 <TranscriptEntry key={lineKey(entry)} entry={entry} showRole={showRole} />
               ))
             )}
