@@ -259,6 +259,9 @@ function getStructuredProminence(
     type === 'assistant' ||
     payloadType === 'user_message' ||
     payloadType === 'assistant_message' ||
+    // Codex emits the assistant turn as `agent_message`; treat it as
+    // conversational prominence in the Events view, matching the Messages view.
+    payloadType === 'agent_message' ||
     payloadType === 'message'
   ) {
     return 'message'
