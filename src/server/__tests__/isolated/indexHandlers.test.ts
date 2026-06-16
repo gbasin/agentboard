@@ -4913,6 +4913,88 @@ describe('server fetch handlers', () => {
     }
   })
 
+  test('returns large session previews from the tail with byte cursors', async () => {
+    const { serveOptions } = await loadIndex()
+    const fetchHandler = serveOptions.fetch
+    if (!fetchHandler) {
+      throw new Error('Fetch handler not configured')
+    }
+
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-preview-large-'))
+    const logPath = path.join(tempDir, 'session.jsonl')
+    const lines = Array.from(
+      { length: 5200 },
+      (_, index) => `line-${String(index).padStart(4, '0')}-${'x'.repeat(1000)}`
+    )
+    await fs.writeFile(logPath, lines.join('\n'))
+
+    seedRecord(
+      makeRecord({
+        sessionId: 'session-preview-large',
+        logFilePath: logPath,
+        displayName: 'Large Preview',
+        projectPath: '/tmp/preview',
+        agentType: 'codex',
+      })
+    )
+
+    try {
+      const response = await fetchHandler.call(
+        {} as Bun.Server<unknown>,
+        new Request('http://localhost/api/session-preview/session-preview-large?limit=25'),
+        {} as Bun.Server<unknown>
+      )
+
+      if (!response) {
+        throw new Error('Expected response for large session preview')
+      }
+
+      expect(response.ok).toBe(true)
+      const payload = (await response.json()) as {
+        totalLines: number | null
+        startByte: number
+        endByte: number
+        hasMoreBefore: boolean
+        lines: string[]
+        lineKeys: string[]
+      }
+      expect(payload.totalLines).toBeNull()
+      expect(payload.hasMoreBefore).toBe(true)
+      expect(payload.lines).toHaveLength(25)
+      expect(payload.lines[0]?.startsWith('line-5175-')).toBe(true)
+      expect(payload.lines[24]?.startsWith('line-5199-')).toBe(true)
+      expect(payload.startByte).toBeLessThan(payload.endByte)
+      expect(payload.lineKeys).toHaveLength(25)
+      expect(payload.lineKeys[0]).toMatch(/^b:\d+$/)
+
+      const earlierResponse = await fetchHandler.call(
+        {} as Bun.Server<unknown>,
+        new Request(
+          `http://localhost/api/session-preview/session-preview-large?limit=25&beforeByte=${payload.startByte}`
+        ),
+        {} as Bun.Server<unknown>
+      )
+
+      if (!earlierResponse) {
+        throw new Error('Expected earlier response for large session preview')
+      }
+
+      expect(earlierResponse.ok).toBe(true)
+      const earlierPayload = (await earlierResponse.json()) as {
+        totalLines: number | null
+        endByte: number
+        lines: string[]
+      }
+      expect(earlierPayload.totalLines).toBeNull()
+      expect(earlierPayload.endByte).toBe(payload.startByte)
+      expect(earlierPayload.lines).toHaveLength(25)
+      expect(earlierPayload.lines[0]?.startsWith('line-5150-')).toBe(true)
+      expect(earlierPayload.lines[24]?.startsWith('line-5174-')).toBe(true)
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true })
+    }
+  })
+
   test('serves fresh content after the preview log is rewritten', async () => {
     const { serveOptions } = await loadIndex()
     const fetchHandler = serveOptions.fetch

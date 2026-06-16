@@ -353,6 +353,70 @@ describe('SessionPreviewModal', () => {
     await cleanup(renderer)
   })
 
+  test('pages large transcript previews with byte cursors', async () => {
+    const previewData = {
+      sessionId: baseSession.sessionId,
+      displayName: 'Alpha',
+      projectPath: baseSession.projectPath,
+      agentType: 'codex',
+      lastActivityAt: baseSession.lastActivityAt,
+      totalLines: null,
+      startLine: 0,
+      endLine: 2,
+      startByte: 1200,
+      endByte: 1400,
+      hasMoreBefore: true,
+      lineKeys: ['b:1200', 'b:1300'],
+      lines: [
+        JSON.stringify({ type: 'user', message: { content: 'Recent one' } }),
+        JSON.stringify({ type: 'assistant', message: { content: 'Recent two' } }),
+      ],
+    }
+    const earlierData = {
+      ...previewData,
+      startByte: 1000,
+      endByte: 1200,
+      hasMoreBefore: false,
+      lineKeys: ['b:1000', 'b:1100'],
+      lines: [
+        JSON.stringify({ type: 'user', message: { content: 'Earlier one' } }),
+        JSON.stringify({ type: 'assistant', message: { content: 'Earlier two' } }),
+      ],
+    }
+
+    const controller = createFetchController([
+      createJsonResponse(previewData),
+      createJsonResponse(earlierData),
+    ])
+
+    const renderer = await createModal(
+      <SessionPreviewModal
+        session={baseSession}
+        onClose={() => {}}
+        onResume={() => {}}
+      />
+    )
+
+    await resolveAndFlush(controller)
+
+    let html = JSON.stringify(renderer.toJSON())
+    expect(html).toContain('Recent one')
+    expect(html).toContain('Recent two')
+    expect(html).toContain('Showing 2 recent log entries')
+    expect(html).not.toContain('Line 1')
+
+    clickButton(renderer, 'Load earlier')
+    await resolveAndFlush(controller)
+
+    html = JSON.stringify(renderer.toJSON())
+    expect(html).toContain('Earlier one')
+    expect(html).toContain('Recent two')
+    expect(html).toContain('Showing 4 recent log entries')
+    expect(controller.calls[1]).toBe('/api/session-preview/session-12345678?limit=200&beforeByte=1200')
+
+    await cleanup(renderer)
+  })
+
   test('renders message content as markdown', async () => {
     const controller = createFetchController([
       createJsonResponse({

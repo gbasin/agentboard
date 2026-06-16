@@ -19,11 +19,14 @@ interface PreviewData {
   projectPath: string
   agentType: string
   lastActivityAt: string
-  totalLines: number
+  totalLines: number | null
   startLine: number
   endLine: number
   hasMoreBefore: boolean
   lines: string[]
+  lineKeys?: string[]
+  startByte?: number
+  endByte?: number
 }
 
 interface ParsedEntry {
@@ -31,16 +34,20 @@ interface ParsedEntry {
   kind: NormalizedEventKind
   content: string
   raw: string
+  sourceKey: string
   lineNumber: number
   // Index of this entry within its source line. Combined with lineNumber it forms
   // a stable React key that survives prepending earlier history (positional keys
   // would shift and force a full remount, collapsing expanded tool entries).
   seq: number
+  exactLineNumber: boolean
   timestamp?: string
 }
 
 interface StructuredLogLine {
+  sourceKey: string
   lineNumber: number
+  exactLineNumber: boolean
   parsed: boolean
   raw: string
   source: string
@@ -143,13 +150,20 @@ function inferLogSource(record: Record<string, unknown>): string {
   return 'log'
 }
 
-function parseStructuredLogLine(line: string, lineNumber: number): StructuredLogLine {
+function parseStructuredLogLine(
+  line: string,
+  sourceKey: string,
+  lineNumber: number,
+  exactLineNumber: boolean
+): StructuredLogLine {
   try {
     const parsed = JSON.parse(line) as unknown
     const record = asRecord(parsed)
     if (!record) {
       return {
         lineNumber,
+        sourceKey,
+        exactLineNumber,
         parsed: true,
         raw: line,
         source: 'json',
@@ -204,6 +218,8 @@ function parseStructuredLogLine(line: string, lineNumber: number): StructuredLog
 
     return {
       lineNumber,
+      sourceKey,
+      exactLineNumber,
       parsed: true,
       raw: line,
       source,
@@ -218,6 +234,8 @@ function parseStructuredLogLine(line: string, lineNumber: number): StructuredLog
   } catch {
     return {
       lineNumber,
+      sourceKey,
+      exactLineNumber,
       parsed: false,
       raw: line,
       source: 'text',
@@ -269,7 +287,12 @@ function mapNormalizedRoleToEntryType(role: string): ParsedEntry['type'] {
   return 'other'
 }
 
-function parseLogEntry(line: string, lineNumber: number): ParsedEntry[] {
+function parseLogEntry(
+  line: string,
+  sourceKey: string,
+  lineNumber: number,
+  exactLineNumber: boolean
+): ParsedEntry[] {
   const parsed = parseAndNormalizeAgentLogLine(line)
   if (!parsed) return []
   // Reuse the object parseAndNormalizeAgentLogLine already parsed instead of
@@ -283,8 +306,10 @@ function parseLogEntry(line: string, lineNumber: number): ParsedEntry[] {
       kind: event.kind,
       content: event.text.trim(),
       raw: line,
+      sourceKey,
       lineNumber,
       seq,
+      exactLineNumber,
       ...(timestamp ? { timestamp } : {}),
     }))
     .filter((entry) => entry.content.length > 0)
@@ -294,14 +319,34 @@ function parseLogEntry(line: string, lineNumber: number): ParsedEntry[] {
   }
 
   if (!parsed.parsed && line.trim()) {
-    return [{ type: 'other', kind: 'unknown', content: line.trim(), raw: line, lineNumber, seq: 0 }]
+    return [{
+      type: 'other',
+      kind: 'unknown',
+      content: line.trim(),
+      raw: line,
+      sourceKey,
+      lineNumber,
+      seq: 0,
+      exactLineNumber,
+    }]
   }
 
   return []
 }
 
 function lineKey(entry: ParsedEntry) {
-  return `${entry.lineNumber}:${entry.seq}`
+  return `${entry.sourceKey}:${entry.seq}`
+}
+
+function lineTitle(lineNumber: number, timestamp: string | undefined, exactLineNumber: boolean) {
+  if (!exactLineNumber) return timestamp
+  return timestamp ? `Line ${lineNumber + 1} · ${timestamp}` : undefined
+}
+
+function lineMarker(lineNumber: number, timestamp: string | undefined, exactLineNumber: boolean) {
+  const formatted = formatLogTimestamp(timestamp)
+  if (formatted) return formatted
+  return exactLineNumber ? `Line ${lineNumber + 1}` : 'Entry'
 }
 
 function entryLabel(entry: ParsedEntry) {
@@ -321,8 +366,7 @@ function entryToneClass(entry: ParsedEntry) {
 
 function ToolEntry({ entry }: { entry: ParsedEntry }) {
   const [expanded, setExpanded] = useState(false)
-  const timestamp = formatLogTimestamp(entry.timestamp)
-  const marker = timestamp ?? `Line ${entry.lineNumber + 1}`
+  const marker = lineMarker(entry.lineNumber, entry.timestamp, entry.exactLineNumber)
   const label = entry.kind === 'tool_call' ? entry.content : 'Result'
 
   return (
@@ -336,7 +380,7 @@ function ToolEntry({ entry }: { entry: ParsedEntry }) {
         <span className="min-w-0 truncate">
           <span
             className="mr-2 text-[10px] uppercase tracking-wide text-muted"
-            title={timestamp ? `Line ${entry.lineNumber + 1} · ${entry.timestamp}` : undefined}
+            title={lineTitle(entry.lineNumber, entry.timestamp, entry.exactLineNumber)}
           >
             {marker}
           </span>
@@ -420,8 +464,7 @@ function TranscriptEntry({ entry }: { entry: ParsedEntry }) {
   if (entry.kind === 'tool_call' || entry.kind === 'result') {
     return <ToolEntry entry={entry} />
   }
-  const timestamp = formatLogTimestamp(entry.timestamp)
-  const marker = timestamp ?? `Line ${entry.lineNumber + 1}`
+  const marker = lineMarker(entry.lineNumber, entry.timestamp, entry.exactLineNumber)
 
   return (
     <article className="grid grid-cols-[5.75rem_minmax(0,1fr)] gap-3 border-b border-border/60 py-4 last:border-b-0 sm:grid-cols-[6.75rem_minmax(0,1fr)]">
@@ -431,7 +474,7 @@ function TranscriptEntry({ entry }: { entry: ParsedEntry }) {
         </div>
         <div
           className="mt-1 text-[10px] tabular-nums text-muted"
-          title={timestamp ? `Line ${entry.lineNumber + 1} · ${entry.timestamp}` : undefined}
+          title={lineTitle(entry.lineNumber, entry.timestamp, entry.exactLineNumber)}
         >
           {marker}
         </div>
@@ -460,9 +503,9 @@ function StructuredLogEntry({ entry }: { entry: StructuredLogLine }) {
       <div className="grid grid-cols-[5.75rem_minmax(0,1fr)] gap-3 px-3 py-2 sm:grid-cols-[6.75rem_minmax(0,1fr)]">
         <div
           className="select-none text-right text-[11px] tabular-nums text-muted"
-          title={entry.timestamp ? `Line ${entry.lineNumber + 1} · ${entry.timestamp}` : undefined}
+          title={lineTitle(entry.lineNumber, entry.timestamp, entry.exactLineNumber)}
         >
-          {timestamp ?? `Line ${entry.lineNumber + 1}`}
+          {timestamp ?? (entry.exactLineNumber ? `Line ${entry.lineNumber + 1}` : 'Entry')}
         </div>
         <div className="min-w-0 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
@@ -615,10 +658,12 @@ export default function SessionPreviewContent({
     setError(null)
 
     try {
-      const params = new URLSearchParams({
-        limit: String(PREVIEW_LINE_LIMIT),
-        beforeLine: String(previewData.startLine),
-      })
+      const params = new URLSearchParams({ limit: String(PREVIEW_LINE_LIMIT) })
+      if (typeof previewData.startByte === 'number') {
+        params.set('beforeByte', String(previewData.startByte))
+      } else {
+        params.set('beforeLine', String(previewData.startLine))
+      }
       const data = await fetchPreviewWindow(
         `/api/session-preview/${session.sessionId}?${params.toString()}`,
         controller.signal
@@ -627,9 +672,18 @@ export default function SessionPreviewContent({
         if (!current) return data
         return {
           ...current,
+          totalLines: data.totalLines ?? current.totalLines,
           startLine: data.startLine,
+          endLine: current.endLine,
           hasMoreBefore: data.hasMoreBefore,
+          startByte: data.startByte,
+          endByte: current.endByte,
           lines: [...data.lines, ...current.lines],
+          lineKeys: [
+            ...(data.lineKeys ?? data.lines.map((_, index) => String(data.startLine + index))),
+            ...(current.lineKeys ??
+              current.lines.map((_, index) => String(current.startLine + index))),
+          ],
         }
       })
     } catch (err) {
@@ -665,16 +719,26 @@ export default function SessionPreviewContent({
   // load-earlier spinner, etc.). previewData is replaced wholesale when it changes.
   const parsedEntries = useMemo(
     () =>
-      previewData?.lines.flatMap((line, index) =>
-        parseLogEntry(line, previewData.startLine + index)
-      ) ?? [],
+      previewData?.lines.flatMap((line, index) => {
+        const exactLineNumber = previewData.totalLines !== null
+        const lineNumber = exactLineNumber
+          ? previewData.startLine + index
+          : (previewData.startByte ?? 0) + index
+        const sourceKey = previewData.lineKeys?.[index] ?? String(lineNumber)
+        return parseLogEntry(line, sourceKey, lineNumber, exactLineNumber)
+      }) ?? [],
     [previewData]
   )
   const structuredLines = useMemo(
     () =>
-      previewData?.lines.map((line, index) =>
-        parseStructuredLogLine(line, previewData.startLine + index)
-      ) ?? [],
+      previewData?.lines.map((line, index) => {
+        const exactLineNumber = previewData.totalLines !== null
+        const lineNumber = exactLineNumber
+          ? previewData.startLine + index
+          : (previewData.startByte ?? 0) + index
+        const sourceKey = previewData.lineKeys?.[index] ?? String(lineNumber)
+        return parseStructuredLogLine(line, sourceKey, lineNumber, exactLineNumber)
+      }) ?? [],
     [previewData]
   )
   // Reverse-chronological display (newest first). The data model stays oldest-first
@@ -684,7 +748,9 @@ export default function SessionPreviewContent({
   const lineRangeLabel = previewData
     ? previewData.totalLines === 0
       ? 'No transcript entries'
-      : `Showing ${previewData.lines.length} of ${previewData.totalLines} log entries`
+      : previewData.totalLines === null
+        ? `Showing ${previewData.lines.length} recent log entries`
+        : `Showing ${previewData.lines.length} of ${previewData.totalLines} log entries`
     : 'Derived from the saved session log.'
 
   return (
