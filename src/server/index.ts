@@ -182,14 +182,6 @@ async function readAllLogLines(logPath: string): Promise<string[]> {
   return lines
 }
 
-function splitTailChunk(text: string): string[] {
-  const lines = text.split(/\r?\n/)
-  if (lines.length > 0 && lines[lines.length - 1] === '') {
-    lines.pop()
-  }
-  return lines
-}
-
 // Streaming fallback for compatibility with older beforeLine requests. This still
 // scans the whole file, so byte cursors are used for large-log pagination below.
 async function streamLogLineWindow(
@@ -256,7 +248,7 @@ async function readLogLineWindowFromEnd(
 
   const handle = await fs.open(logPath, 'r')
   const chunkSize = 64 * 1024
-  const chunks: string[] = []
+  const chunks: Buffer[] = []
   let cursor = endByte
   let newlineCount = 0
   let sawNonEmptyContent = false
@@ -268,20 +260,42 @@ async function readLogLineWindowFromEnd(
       const buffer = Buffer.allocUnsafe(readSize)
       const { bytesRead } = await handle.read(buffer, 0, readSize, start)
       if (bytesRead <= 0) break
-      const chunk = buffer.subarray(0, bytesRead).toString('utf8')
+      const chunk = buffer.subarray(0, bytesRead)
       chunks.unshift(chunk)
-      if (chunk.trimEnd().length > 0) sawNonEmptyContent = true
-      newlineCount += (chunk.match(/\n/g) ?? []).length
+      for (const byte of chunk) {
+        if (byte === 0x0a) newlineCount += 1
+        if (byte > 0x20) sawNonEmptyContent = true
+      }
       cursor = start
     }
   } finally {
     await handle.close()
   }
 
-  const text = chunks.join('')
-  const lines = splitTailChunk(text)
-  const selectedLines = lines.slice(-limit)
-  if (selectedLines.length === 0 && !sawNonEmptyContent) {
+  const buffer = Buffer.concat(chunks)
+  let contentEnd = buffer.length
+  if (contentEnd > 0 && buffer[contentEnd - 1] === 0x0a) {
+    contentEnd -= 1
+  }
+
+  const lineStarts = [0]
+  for (let index = 0; index < contentEnd; index += 1) {
+    if (buffer[index] === 0x0a) {
+      lineStarts.push(index + 1)
+    }
+  }
+
+  const selectedStarts = lineStarts.slice(-limit)
+  const selectedLines = selectedStarts.map((startOffset, index) => {
+    const nextStart = selectedStarts[index + 1]
+    let endOffset = nextStart === undefined ? contentEnd : nextStart - 1
+    if (endOffset > startOffset && buffer[endOffset - 1] === 0x0d) {
+      endOffset -= 1
+    }
+    return buffer.subarray(startOffset, endOffset).toString('utf8')
+  })
+
+  if (contentEnd === 0 && !sawNonEmptyContent) {
     return {
       totalLines: null,
       startLine: 0,
@@ -293,17 +307,9 @@ async function readLogLineWindowFromEnd(
     }
   }
 
-  const selectedText = selectedLines.join('\n')
-  const encodedLength = Buffer.byteLength(selectedText, 'utf8')
-  const hasTrailingNewline = text.endsWith('\n')
-  const trailingBytes = hasTrailingNewline ? 1 : 0
-  const startByte = Math.max(0, endByte - trailingBytes - encodedLength)
-  let lineStartByte = startByte
-  const lineKeys = selectedLines.map((line) => {
-    const key = `b:${lineStartByte}`
-    lineStartByte += Buffer.byteLength(line, 'utf8') + 1
-    return key
-  })
+  const selectedStartByte = selectedStarts[0] ?? contentEnd
+  const startByte = Math.max(0, cursor + selectedStartByte)
+  const lineKeys = selectedStarts.map((startOffset) => `b:${cursor + startOffset}`)
 
   return {
     totalLines: null,

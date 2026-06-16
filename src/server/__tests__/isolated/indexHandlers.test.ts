@@ -4924,9 +4924,9 @@ describe('server fetch handlers', () => {
     const logPath = path.join(tempDir, 'session.jsonl')
     const lines = Array.from(
       { length: 5200 },
-      (_, index) => `line-${String(index).padStart(4, '0')}-${'x'.repeat(1000)}`
+      (_, index) => `line-${String(index).padStart(4, '0')}-🙂-${'x'.repeat(1000)}`
     )
-    await fs.writeFile(logPath, lines.join('\n'))
+    await fs.writeFile(logPath, `${lines.join('\r\n')}\r\n`)
 
     seedRecord(
       makeRecord({
@@ -4963,9 +4963,12 @@ describe('server fetch handlers', () => {
       expect(payload.lines).toHaveLength(25)
       expect(payload.lines[0]?.startsWith('line-5175-')).toBe(true)
       expect(payload.lines[24]?.startsWith('line-5199-')).toBe(true)
+      expect(payload.lines[0]).toContain('🙂')
+      expect(payload.lines.join('\n')).not.toContain('�')
       expect(payload.startByte).toBeLessThan(payload.endByte)
       expect(payload.lineKeys).toHaveLength(25)
       expect(payload.lineKeys[0]).toMatch(/^b:\d+$/)
+      expect(payload.lineKeys[0]).toBe(`b:${payload.startByte}`)
 
       const earlierResponse = await fetchHandler.call(
         {} as Bun.Server<unknown>,
@@ -4990,6 +4993,8 @@ describe('server fetch handlers', () => {
       expect(earlierPayload.lines).toHaveLength(25)
       expect(earlierPayload.lines[0]?.startsWith('line-5150-')).toBe(true)
       expect(earlierPayload.lines[24]?.startsWith('line-5174-')).toBe(true)
+      expect(earlierPayload.lines[0]).toContain('🙂')
+      expect(earlierPayload.lines.join('\n')).not.toContain('�')
     } finally {
       await fs.rm(tempDir, { recursive: true, force: true })
     }
