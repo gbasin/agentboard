@@ -169,9 +169,14 @@ interface ListenerEntry {
   capture: boolean
 }
 
+type MockTextarea = HTMLTextAreaElement & { focusCalls: number }
+
 function createContainerMock() {
   const textareaListeners = new Map<string, EventListener>()
+  const textareaState = { focusCalls: 0 }
   const textarea = {
+    get focusCalls() { return textareaState.focusCalls },
+    set focusCalls(value: number) { textareaState.focusCalls = value },
     addEventListener: (event: string, handler: EventListener) => {
       textareaListeners.set(event, handler)
     },
@@ -182,8 +187,10 @@ function createContainerMock() {
     },
     setAttribute: () => {},
     removeAttribute: () => {},
-    focus: () => {},
-  } as unknown as HTMLTextAreaElement
+    focus: () => {
+      textareaState.focusCalls += 1
+    },
+  } as unknown as MockTextarea
 
   // Store multiple listeners per event to support both bubble and capture phase
   const listenerEntries = new Map<string, ListenerEntry[]>()
@@ -1782,7 +1789,7 @@ describe('useTerminal', () => {
 
     const sendCalls: Array<Record<string, unknown>> = []
     const listeners: Array<(message: ServerMessage) => void> = []
-    const { container, dispatchEvent } = createContainerMock()
+    const { container, dispatchEvent, textarea } = createContainerMock()
     let preventDefaultCalls = 0
     let stopPropagationCalls = 0
 
@@ -1838,6 +1845,7 @@ describe('useTerminal', () => {
       sessionId: 'session-1',
       data: '\x1b[<0;3;3M\x1b[<0;3;3m',
     }])
+    expect((textarea as HTMLTextAreaElement & { focusCalls: number }).focusCalls).toBe(1)
     expect(preventDefaultCalls).toBe(1)
     expect(stopPropagationCalls).toBe(1)
 
@@ -1977,7 +1985,7 @@ describe('useTerminal', () => {
 
     const sendCalls: Array<Record<string, unknown>> = []
     const listeners: Array<(message: ServerMessage) => void> = []
-    const { container, dispatchEvent } = createContainerMock()
+    const { container, dispatchEvent, textarea } = createContainerMock()
 
     let renderer!: TestRenderer.ReactTestRenderer
     await act(async () => {
@@ -2027,6 +2035,7 @@ describe('useTerminal', () => {
     })
 
     expect(sendCalls.some((call) => call.type === 'terminal-input')).toBe(false)
+    expect((textarea as HTMLTextAreaElement & { focusCalls: number }).focusCalls).toBe(1)
 
     act(() => {
       renderer.unmount()

@@ -909,6 +909,7 @@ export default function Terminal({
         if (appMouseRef.current) {
           const touch = e.changedTouches[0]
           if (touch && sendTapClickToApp(touch)) {
+            focusTerminalInput()
             e.preventDefault()
             e.stopPropagation()
             return
