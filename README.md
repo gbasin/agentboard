@@ -12,9 +12,11 @@ Run your desktop/server, then connect from your phone or laptop over Tailscale/L
 
 - iOS Safari mobile experience with:
   - Paste support (including images)
-  - Touch scrolling
+  - Touch scrolling, tap-to-click, and long-press selection in fullscreen Claude Code sessions
+  - Mobile-friendly copy prompts when browser clipboard writes need a user gesture
   - Virtual arrow keys / d-pad
   - Quick keys toolbar (ctrl, esc, etc.)
+- Claude Code fullscreen renderer support by default, with mouse scrolling, click handling, in-app selection, and clipboard forwarding through the browser terminal
 - Out-of-the-box log tracking and matching for Claude, Codex, and Pi — auto-matches sessions to active tmux windows, with one-click Wake for Hibernating and History sessions.
 - Shows the last user prompt for each session, so you can remember what each agent is working on
 - Hibernate sessions to close their tmux window while keeping them visible across restarts for manual Wake
