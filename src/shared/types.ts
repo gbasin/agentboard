@@ -108,7 +108,18 @@ export type ServerMessage =
       retryable: boolean
     }
   | { type: 'terminal-ready'; sessionId: string }
-  | { type: 'tmux-copy-mode-status'; sessionId: string; inCopyMode: boolean }
+  | {
+      type: 'tmux-copy-mode-status'
+      sessionId: string
+      inCopyMode: boolean
+      // Fullscreen-app (Claude /tui no-flicker) detection, per-pane.
+      // altScreen: pane is showing the alternate screen buffer (#{alternate_on}).
+      // appMouse: the in-pane app has requested mouse tracking (#{mouse_any_flag}).
+      // When appMouse is true the app owns the mouse, so the client must NOT
+      // hijack wheel/clicks into tmux copy-mode. Optional for back-compat.
+      altScreen?: boolean
+      appMouse?: boolean
+    }
   | { type: 'server-config'; remoteAllowControl: boolean; remoteAllowAttach: boolean; hostLabel: string; preferWindowName: boolean; clientLogLevel?: string }
   | { type: 'pong'; seq?: number }
   | { type: 'error'; message: string }
