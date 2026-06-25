@@ -577,6 +577,7 @@ function createWs() {
       lastClipboardBufferKey: null as string | null,
       clipboardBufferArmedUntil: 0,
       clipboardArmedAtSec: 0,
+      clipboardWatchGen: 0,
     },
     send: (payload: string) => {
       sent.push(JSON.parse(payload) as ServerMessage)
@@ -2727,6 +2728,107 @@ describe('server message handlers', () => {
       await new Promise((r) => setTimeout(r, 0))
 
       expect(sent.some((message) => message.type === 'clipboard-offer')).toBe(false)
+    } finally {
+      globalThis.setInterval = originalSetIntervalForTest
+      globalThis.clearInterval = originalClearInterval
+    }
+  })
+
+  test('a poll from a superseded watch generation is inert after re-attach', async () => {
+    const { serveOptions, registryInstance } = await loadIndex()
+    registryInstance.sessions = [baseSession]
+
+    const intervalCallbacks: Array<() => void> = []
+    const originalSetIntervalForTest = globalThis.setInterval
+    const originalClearInterval = globalThis.clearInterval
+    globalThis.setInterval = ((callback: TimerHandler) => {
+      intervalCallbacks.push(callback as () => void)
+      return intervalCallbacks.length as unknown as ReturnType<typeof setInterval>
+    }) as unknown as typeof globalThis.setInterval
+    globalThis.clearInterval = (() => {}) as typeof globalThis.clearInterval
+
+    const nowSec = Math.floor(Date.now() / 1000)
+    let bufferCreated = nowSec - 10
+    spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
+      const command = Array.isArray(args[0]) ? args[0] : [String(args[0])]
+      const tmuxArgs = getTmuxArgs(command as string[])
+      if (tmuxArgs[0] === 'list-buffers') {
+        return {
+          exitCode: 0,
+          stdout: Buffer.from(tmuxLine('buffer0', String(bufferCreated), '18') + '\n'),
+          stderr: Buffer.from(''),
+        } as ReturnType<typeof Bun.spawnSync>
+      }
+      if (tmuxArgs[0] === 'show-buffer') {
+        return {
+          exitCode: 0,
+          stdout: Buffer.from('fresh-copy'),
+          stderr: Buffer.from(''),
+        } as ReturnType<typeof Bun.spawnSync>
+      }
+      return {
+        exitCode: 0,
+        stdout: Buffer.from(''),
+        stderr: Buffer.from(''),
+      } as ReturnType<typeof Bun.spawnSync>
+    }) as typeof Bun.spawnSync
+
+    try {
+      const { ws, sent } = createWs()
+      const websocket = serveOptions.websocket
+      if (!websocket) {
+        throw new Error('WebSocket handlers not configured')
+      }
+
+      websocket.open?.(ws as never)
+      // First attach establishes watch generation N.
+      websocket.message?.(
+        ws as never,
+        JSON.stringify({
+          type: 'terminal-attach',
+          sessionId: baseSession.id,
+          tmuxTarget: baseSession.tmuxWindow,
+        })
+      )
+      await new Promise((r) => setTimeout(r, 0))
+      await new Promise((r) => setTimeout(r, 0))
+
+      // Re-attach supersedes it with generation N+1 (and a fresh poll closure).
+      websocket.message?.(
+        ws as never,
+        JSON.stringify({
+          type: 'terminal-attach',
+          sessionId: baseSession.id,
+          tmuxTarget: baseSession.tmuxWindow,
+        })
+      )
+      await new Promise((r) => setTimeout(r, 0))
+      await new Promise((r) => setTimeout(r, 0))
+
+      expect(intervalCallbacks.length).toBeGreaterThanOrEqual(2)
+      const stalePoll = intervalCallbacks[0]
+      const freshPoll = intervalCallbacks[intervalCallbacks.length - 1]
+
+      // Arm and produce a post-gesture buffer.
+      websocket.message?.(
+        ws as never,
+        JSON.stringify({
+          type: 'terminal-input',
+          sessionId: baseSession.id,
+          data: '\x1b[<0;10;4M\x1b[<32;11;4M\x1b[<0;11;4m',
+        })
+      )
+      bufferCreated = nowSec + 1
+
+      // The poll closure from the superseded generation must do nothing.
+      stalePoll()
+      await new Promise((r) => setTimeout(r, 0))
+      expect(sent.some((message) => message.type === 'clipboard-offer')).toBe(false)
+
+      // The current-generation poll delivers the offer.
+      freshPoll()
+      await new Promise((r) => setTimeout(r, 0))
+      expect(sent.some((message) => message.type === 'clipboard-offer')).toBe(true)
     } finally {
       globalThis.setInterval = originalSetIntervalForTest
       globalThis.clearInterval = originalClearInterval

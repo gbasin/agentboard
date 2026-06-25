@@ -555,6 +555,10 @@ interface WSData {
   // or after this are offered, so an unrelated/pre-existing buffer change
   // during the armed window can't clobber the clipboard.
   clipboardArmedAtSec: number
+  // Incremented on every stop/restart of the clipboard watch. Async work
+  // (baseline read, in-flight poll) captures the generation at launch and bails
+  // if it no longer matches, so a stale completion can't mutate a newer watch.
+  clipboardWatchGen: number
 }
 
 const sockets = new Set<ServerWebSocket<WSData>>()
@@ -1851,6 +1855,7 @@ function serverFetch(req: Request, server: Server<WSData>) {
           lastClipboardBufferKey: null,
           clipboardBufferArmedUntil: 0,
           clipboardArmedAtSec: 0,
+          clipboardWatchGen: 0,
         },
       })
     ) {
@@ -2074,6 +2079,9 @@ function stopClipboardBufferWatch(ws: ServerWebSocket<WSData>) {
   if (ws.data.clipboardPollTimer !== null) {
     clearInterval(ws.data.clipboardPollTimer)
   }
+  // Bump the generation so any in-flight baseline read or poll from the watch
+  // we're tearing down can't write back into a later watch on this socket.
+  ws.data.clipboardWatchGen += 1
   ws.data.clipboardPollTimer = null
   ws.data.clipboardPollInFlight = false
   ws.data.lastClipboardBufferKey = null
@@ -2092,18 +2100,21 @@ function startClipboardBufferWatch(
     return
   }
 
+  const gen = ws.data.clipboardWatchGen
   ws.data.clipboardPollTimer = setInterval(() => {
-    fireAndForget(pollClipboardBuffer(ws, sessionId), 'pollClipboardBuffer')
+    fireAndForget(pollClipboardBuffer(ws, sessionId, gen), 'pollClipboardBuffer')
   }, CLIPBOARD_BUFFER_POLL_MS)
   // Establish the baseline asynchronously so a pre-existing buffer isn't offered
-  // on the first poll. Guarded so it can't clobber a key that an early poll
-  // already advanced past during the sub-tick race before this resolves.
+  // on the first poll. Skip if this watch was already armed (a copy may have
+  // landed before the read resolved — don't watermark the user's own buffer;
+  // the created-time gate handles a genuinely pre-existing one) or superseded.
   fireAndForget(
     (async () => {
       const initial = await readLatestTmuxBufferSummary()
       if (
-        ws.data.clipboardPollTimer !== null &&
-        ws.data.lastClipboardBufferKey === null
+        ws.data.clipboardWatchGen === gen &&
+        ws.data.lastClipboardBufferKey === null &&
+        ws.data.clipboardBufferArmedUntil === 0
       ) {
         ws.data.lastClipboardBufferKey = initial?.key ?? null
       }
@@ -2114,8 +2125,10 @@ function startClipboardBufferWatch(
 
 async function pollClipboardBuffer(
   ws: ServerWebSocket<WSData>,
-  sessionId: string
+  sessionId: string,
+  gen: number
 ) {
+  if (ws.data.clipboardWatchGen !== gen) return
   if (ws.data.clipboardPollInFlight) return
   if (!sockets.has(ws)) return
   if (ws.data.currentSessionId !== sessionId) return
@@ -2126,8 +2139,10 @@ async function pollClipboardBuffer(
   ws.data.clipboardPollInFlight = true
   try {
     const latest = await readLatestTmuxBufferSummary()
-    // The read yields the event loop, so the socket may have closed or switched
-    // sessions while tmux ran. Re-validate before touching state or offering.
+    // The read yields the event loop, so the watch may have been torn down or
+    // the socket may have switched sessions while tmux ran. Re-validate before
+    // touching state or offering.
+    if (ws.data.clipboardWatchGen !== gen) return
     if (!sockets.has(ws) || ws.data.currentSessionId !== sessionId) return
     if (!latest) {
       ws.data.lastClipboardBufferKey = null
@@ -2175,6 +2190,7 @@ async function pollClipboardBuffer(
 
     // Re-validate again after the second tmux read before delivering, so we
     // never push a session A offer to a socket that has closed or moved to B.
+    if (ws.data.clipboardWatchGen !== gen) return
     if (!sockets.has(ws) || ws.data.currentSessionId !== sessionId) return
 
     logger.debug('clipboard_buffer_offer', {
@@ -2187,7 +2203,12 @@ async function pollClipboardBuffer(
     ws.data.clipboardBufferArmedUntil = 0
     ws.data.clipboardArmedAtSec = 0
   } finally {
-    ws.data.clipboardPollInFlight = false
+    // Only release the in-flight guard if the watch is still ours. If it was
+    // stopped/restarted mid-poll, stopClipboardBufferWatch already reset the
+    // guard for the new generation and we must not clear it out from under it.
+    if (ws.data.clipboardWatchGen === gen) {
+      ws.data.clipboardPollInFlight = false
+    }
   }
 }
 
