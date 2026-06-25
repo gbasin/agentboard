@@ -567,6 +567,10 @@ interface TmuxBufferSummary {
   name: string
   created: number
   size: number
+  // Monotonic index parsed from tmux's automatic buffer name (buffer0001,
+  // buffer0002, …); -1 for explicitly named buffers. Used as the recency
+  // tiebreaker when buffer_created collides at whole-second resolution.
+  order: number
   key: string
 }
 
@@ -1974,53 +1978,65 @@ function parseTmuxBufferSummaries(output: string): TmuxBufferSummary[] {
     const created = Number.parseInt(parts[1] ?? '', 10)
     const size = Number.parseInt(parts[2] ?? '', 10)
     if (!name || !Number.isFinite(created) || !Number.isFinite(size)) continue
+    const orderMatch = name.match(/(\d+)$/)
+    const order = orderMatch ? Number.parseInt(orderMatch[1], 10) : -1
     summaries.push({
       name,
       created,
       size,
+      order,
       key: `${name}:${created}:${size}`,
     })
   }
-  summaries.sort((a, b) => b.created - a.created || b.size - a.size)
+  // Newest first. tmux's #{buffer_created} is whole-second resolution, so when
+  // two buffers share a second, tiebreak by the monotonic automatic-buffer
+  // index (buffer0002 newer than buffer0001) rather than size, which carries
+  // no recency information.
+  summaries.sort((a, b) => b.created - a.created || b.order - a.order || b.size - a.size)
   return summaries
 }
 
-function readLatestTmuxBufferSummary(): TmuxBufferSummary | null {
+/**
+ * Run a read-only tmux command without blocking the event loop. The clipboard
+ * watch polls on a 750ms timer, so using the synchronous Bun.spawnSync here
+ * would stall terminal streaming for every session on each tick (up to
+ * tmuxTimeoutMs if tmux is slow). Bun.spawn keeps it off the JS thread.
+ */
+async function readTmuxCapture(tmuxArgs: string[]): Promise<string | null> {
   try {
-    const result = Bun.spawnSync(
-      [
-        'tmux',
-        ...withTmuxUtf8Flag([
-          'list-buffers',
-          '-F',
-          buildTmuxFormat(['#{buffer_name}', '#{buffer_created}', '#{buffer_size}']),
-        ]),
-      ],
-      { stdout: 'pipe', stderr: 'pipe', timeout: config.tmuxTimeoutMs }
-    )
-    if (result.exitCode !== 0) return null
-    return parseTmuxBufferSummaries(result.stdout?.toString() ?? '')[0] ?? null
+    const proc = Bun.spawn(['tmux', ...withTmuxUtf8Flag(tmuxArgs)], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: config.tmuxTimeoutMs,
+    })
+    const [stdout, exitCode] = await Promise.all([
+      new Response(proc.stdout).text(),
+      proc.exited,
+    ])
+    if (exitCode !== 0) return null
+    return stdout
   } catch {
     return null
   }
 }
 
-function readTmuxBufferText(summary: TmuxBufferSummary): string | null {
+async function readLatestTmuxBufferSummary(): Promise<TmuxBufferSummary | null> {
+  const stdout = await readTmuxCapture([
+    'list-buffers',
+    '-F',
+    buildTmuxFormat(['#{buffer_name}', '#{buffer_created}', '#{buffer_size}']),
+  ])
+  if (stdout === null) return null
+  return parseTmuxBufferSummaries(stdout)[0] ?? null
+}
+
+async function readTmuxBufferText(summary: TmuxBufferSummary): Promise<string | null> {
   if (summary.size <= 0 || summary.size > CLIPBOARD_BUFFER_MAX_BYTES) {
     return null
   }
-
-  try {
-    const result = Bun.spawnSync(
-      ['tmux', ...withTmuxUtf8Flag(['show-buffer', '-b', summary.name])],
-      { stdout: 'pipe', stderr: 'pipe', timeout: config.tmuxTimeoutMs }
-    )
-    if (result.exitCode !== 0) return null
-    const text = result.stdout?.toString() ?? ''
-    return text.trim() ? text : null
-  } catch {
-    return null
-  }
+  const text = await readTmuxCapture(['show-buffer', '-b', summary.name])
+  if (text === null) return null
+  return text.trim() ? text : null
 }
 
 function stopClipboardBufferWatch(ws: ServerWebSocket<WSData>) {
@@ -2044,11 +2060,24 @@ function startClipboardBufferWatch(
     return
   }
 
-  const initial = readLatestTmuxBufferSummary()
-  ws.data.lastClipboardBufferKey = initial?.key ?? null
   ws.data.clipboardPollTimer = setInterval(() => {
     fireAndForget(pollClipboardBuffer(ws, sessionId), 'pollClipboardBuffer')
   }, CLIPBOARD_BUFFER_POLL_MS)
+  // Establish the baseline asynchronously so a pre-existing buffer isn't offered
+  // on the first poll. Guarded so it can't clobber a key that an early poll
+  // already advanced past during the sub-tick race before this resolves.
+  fireAndForget(
+    (async () => {
+      const initial = await readLatestTmuxBufferSummary()
+      if (
+        ws.data.clipboardPollTimer !== null &&
+        ws.data.lastClipboardBufferKey === null
+      ) {
+        ws.data.lastClipboardBufferKey = initial?.key ?? null
+      }
+    })(),
+    'clipboardBaseline'
+  )
 }
 
 async function pollClipboardBuffer(
@@ -2064,7 +2093,7 @@ async function pollClipboardBuffer(
 
   ws.data.clipboardPollInFlight = true
   try {
-    const latest = readLatestTmuxBufferSummary()
+    const latest = await readLatestTmuxBufferSummary()
     if (!latest) {
       ws.data.lastClipboardBufferKey = null
       return
@@ -2084,7 +2113,7 @@ async function pollClipboardBuffer(
       return
     }
 
-    const text = readTmuxBufferText(latest)
+    const text = await readTmuxBufferText(latest)
     if (!text) {
       logger.debug('clipboard_buffer_skipped', {
         sessionId,
@@ -2108,12 +2137,21 @@ async function pollClipboardBuffer(
   }
 }
 
+// Arm the clipboard buffer watch only on an actual left-button DRAG (a real
+// text selection), not on a bare tap. SGR mouse encoding: low 2 bits = button
+// (0 = left), bit 5 (32) = motion/drag, bits 6-7 (0xC0) = wheel/extended. A
+// plain tap is button 0 with no motion bit and must NOT arm, otherwise an
+// unrelated tmux buffer change during the armed window could clobber the
+// clipboard with content the user never selected.
 function containsClipboardArmingMouseInput(data: string): boolean {
   SGR_MOUSE_INPUT_RE.lastIndex = 0
   let match: RegExpExecArray | null
   while ((match = SGR_MOUSE_INPUT_RE.exec(data)) !== null) {
     const button = Number(match[1])
-    if (button < 64 && (button & 3) === 0) {
+    const isLeftButton = (button & 3) === 0
+    const isMotion = (button & 32) !== 0
+    const isWheelOrExtended = (button & 0xc0) !== 0
+    if (isLeftButton && isMotion && !isWheelOrExtended) {
       return true
     }
   }

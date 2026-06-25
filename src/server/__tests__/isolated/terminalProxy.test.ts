@@ -317,6 +317,49 @@ describe('TerminalProxy', () => {
     ])
   })
 
+  test('enables set-clipboard so copies land in a tmux paste buffer', async () => {
+    const spawnSyncCalls: string[][] = []
+    const spawnSync = (args: string[], _options?: Parameters<typeof Bun.spawnSync>[1]) => {
+      spawnSyncCalls.push(args)
+      const command = getTmuxCommand(args)
+      if (command === 'list-clients') {
+        return {
+          exitCode: 0,
+          stdout: Buffer.from(CLIENT_TTY_OUTPUT),
+          stderr: Buffer.from(''),
+        } as ReturnType<typeof Bun.spawnSync>
+      }
+      return {
+        exitCode: 0,
+        stdout: Buffer.from(''),
+        stderr: Buffer.from(''),
+      } as ReturnType<typeof Bun.spawnSync>
+    }
+
+    const harness = createSpawnHarness()
+    const proxy = new TerminalProxy({
+      connectionId: 'clipboard-test',
+      sessionName: 'agentboard-ws-clipboard-test',
+      baseSession: 'agentboard',
+      onData: () => {},
+      spawn: harness.spawn,
+      spawnSync,
+      wait: async () => {},
+    })
+
+    await proxy.start()
+
+    // set-clipboard is a server option; `on` makes tmux store a paste buffer
+    // for the clipboard poll instead of only forwarding OSC 52 outward.
+    expect(spawnSyncCalls).toContainEqual([
+      'tmux',
+      'set-option',
+      '-s',
+      'set-clipboard',
+      'on',
+    ])
+  })
+
   test('copies mouse=off setting from base session to grouped session', async () => {
     const spawnSyncCalls: string[][] = []
     const spawnSync = (args: string[], _options?: Parameters<typeof Bun.spawnSync>[1]) => {

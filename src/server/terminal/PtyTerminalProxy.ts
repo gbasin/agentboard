@@ -173,6 +173,21 @@ class PtyTerminalProxy extends TerminalProxyBase {
       })
     }
 
+    // Ensure copies inside the session land in a tmux paste buffer so the
+    // server-side clipboard poll can deliver them to the browser. This matters
+    // most on iOS Safari, where the async OSC 52 path can't satisfy the
+    // user-gesture rule. `set-clipboard` is a SERVER option: with the modern
+    // `external` default tmux forwards an app's OSC 52 to the outer terminal
+    // but stores no buffer for the poll to read; `on` makes it store one.
+    try {
+      this.runTmuxMutation(['set-option', '-s', 'set-clipboard', 'on'])
+    } catch (error) {
+      this.logEvent('terminal_set_clipboard_failed', {
+        sessionName: this.options.sessionName,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+
     if (attemptId !== this.startAttemptId) {
       await this.dispose()
       return
