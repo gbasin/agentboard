@@ -2536,7 +2536,7 @@ describe('server message handlers', () => {
         })
       )
       // Buffer created after the arming gesture: offered.
-      bufferCreated = nowSec + 1
+      bufferCreated = nowSec + 30
       pollClipboard()
       await new Promise((r) => setTimeout(r, 0))
       expect(sent).toContainEqual({
@@ -2547,7 +2547,7 @@ describe('server message handlers', () => {
       })
 
       const offerCount = sent.filter((message) => message.type === 'clipboard-offer').length
-      bufferCreated = nowSec + 2
+      bufferCreated = nowSec + 31
       pollClipboard()
       await new Promise((r) => setTimeout(r, 0))
       expect(sent.filter((message) => message.type === 'clipboard-offer')).toHaveLength(offerCount)
@@ -2631,7 +2631,7 @@ describe('server message handlers', () => {
           data: '\x1b[<0;10;4M\x1b[<0;10;4m',
         })
       )
-      bufferCreated = nowSec + 1
+      bufferCreated = nowSec + 30
       pollClipboard()
       await new Promise((r) => setTimeout(r, 0))
 
@@ -2818,7 +2818,7 @@ describe('server message handlers', () => {
           data: '\x1b[<0;10;4M\x1b[<32;11;4M\x1b[<0;11;4m',
         })
       )
-      bufferCreated = nowSec + 1
+      bufferCreated = nowSec + 30
 
       // The poll closure from the superseded generation must do nothing.
       stalePoll()

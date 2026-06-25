@@ -551,9 +551,9 @@ interface WSData {
   clipboardPollInFlight: boolean
   lastClipboardBufferKey: string | null
   clipboardBufferArmedUntil: number
-  // Unix seconds of the arming gesture (minus slack). Only buffers created at
-  // or after this are offered, so an unrelated/pre-existing buffer change
-  // during the armed window can't clobber the clipboard.
+  // Unix seconds of the arming gesture. Only buffers created at or after this
+  // are offered, so an unrelated/pre-existing buffer change during the armed
+  // window can't clobber the clipboard.
   clipboardArmedAtSec: number
   // Incremented on every stop/restart of the clipboard watch. Async work
   // (baseline read, in-flight poll) captures the generation at launch and bails
@@ -566,10 +566,6 @@ const localHostLabel = config.hostLabel
 const CLIPBOARD_BUFFER_POLL_MS = 750
 const CLIPBOARD_BUFFER_MAX_BYTES = 512 * 1024
 const CLIPBOARD_BUFFER_ARM_MS = 5000
-// Allow a buffer created up to this many seconds before the gesture to still be
-// offered, covering whole-second clock boundaries between the mouse input and
-// tmux writing the paste buffer.
-const CLIPBOARD_ARM_SLACK_SEC = 1
 const SGR_MOUSE_INPUT_RE = new RegExp(
   `${String.fromCharCode(0x1b)}\\[<(\\d+);\\d+;\\d+[Mm]`,
   'g'
@@ -4211,7 +4207,11 @@ function handleTerminalInputPersistent(
   if (!session?.remote && containsClipboardArmingMouseInput(data)) {
     const now = Date.now()
     ws.data.clipboardBufferArmedUntil = now + CLIPBOARD_BUFFER_ARM_MS
-    ws.data.clipboardArmedAtSec = Math.floor(now / 1000) - CLIPBOARD_ARM_SLACK_SEC
+    // No slack: we arm here BEFORE forwarding the input to tmux below, so any
+    // buffer this gesture creates is stamped at/after this whole second. A
+    // slack would instead let a pre-existing buffer created just before the
+    // gesture be mis-offered as the user's copy.
+    ws.data.clipboardArmedAtSec = Math.floor(now / 1000)
   }
 
   ws.data.terminal?.write(data)
