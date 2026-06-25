@@ -31,6 +31,11 @@ export function canBindLocalhost(): boolean {
 }
 
 export function createTmuxTmpDir(prefix = 'agentboard-tmux-'): string {
+  // These integration tests create a dedicated tmux server via TMUX_TMPDIR.
+  // If the test process itself is running inside tmux, an inherited TMUX value
+  // points tmux commands back at the parent server and silently defeats that
+  // isolation.
+  delete process.env.TMUX
   const baseDir = fs.existsSync('/tmp') ? '/tmp' : os.tmpdir()
   return fs.mkdtempSync(path.join(baseDir, prefix))
 }

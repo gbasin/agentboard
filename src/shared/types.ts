@@ -6,6 +6,7 @@ export type SessionStatus = 'working' | 'waiting' | 'permission' | 'unknown'
 
 export type SessionSource = 'managed' | 'external'
 export type AgentType = 'claude' | 'claude-rp' | 'codex' | 'pi'
+export type ClipboardOfferSource = 'tmux-buffer' | 'osc52'
 export type SessionKillSource =
   | 'keyboard_shortcut'
   | 'session_list_context_menu'
@@ -108,6 +109,12 @@ export type ServerMessage =
       retryable: boolean
     }
   | { type: 'terminal-ready'; sessionId: string }
+  | {
+      type: 'clipboard-offer'
+      sessionId: string
+      text: string
+      source: ClipboardOfferSource
+    }
   | {
       type: 'tmux-copy-mode-status'
       sessionId: string

@@ -547,10 +547,28 @@ interface WSData {
   terminalAttachSeq: number
   lastAttachKey: string | null
   lastAttachTs: number
+  clipboardPollTimer: ReturnType<typeof setInterval> | null
+  clipboardPollInFlight: boolean
+  lastClipboardBufferKey: string | null
+  clipboardBufferArmedUntil: number
 }
 
 const sockets = new Set<ServerWebSocket<WSData>>()
 const localHostLabel = config.hostLabel
+const CLIPBOARD_BUFFER_POLL_MS = 750
+const CLIPBOARD_BUFFER_MAX_BYTES = 512 * 1024
+const CLIPBOARD_BUFFER_ARM_MS = 5000
+const SGR_MOUSE_INPUT_RE = new RegExp(
+  `${String.fromCharCode(0x1b)}\\[<(\\d+);\\d+;\\d+[Mm]`,
+  'g'
+)
+
+interface TmuxBufferSummary {
+  name: string
+  created: number
+  size: number
+  key: string
+}
 
 function stampLocalSession(session: Session): Session {
   return {
@@ -1816,6 +1834,10 @@ function serverFetch(req: Request, server: Server<WSData>) {
           terminalAttachSeq: 0,
           lastAttachKey: null,
           lastAttachTs: 0,
+          clipboardPollTimer: null,
+          clipboardPollInFlight: false,
+          lastClipboardBufferKey: null,
+          clipboardBufferArmedUntil: 0,
         },
       })
     ) {
@@ -1943,7 +1965,163 @@ function clearAttachDedup(ws: ServerWebSocket<WSData>) {
   ws.data.lastAttachTs = 0
 }
 
+function parseTmuxBufferSummaries(output: string): TmuxBufferSummary[] {
+  const summaries: TmuxBufferSummary[] = []
+  for (const line of splitTmuxLines(output)) {
+    const parts = splitTmuxFields(line, 3)
+    if (!parts) continue
+    const name = parts[0]?.trim()
+    const created = Number.parseInt(parts[1] ?? '', 10)
+    const size = Number.parseInt(parts[2] ?? '', 10)
+    if (!name || !Number.isFinite(created) || !Number.isFinite(size)) continue
+    summaries.push({
+      name,
+      created,
+      size,
+      key: `${name}:${created}:${size}`,
+    })
+  }
+  summaries.sort((a, b) => b.created - a.created || b.size - a.size)
+  return summaries
+}
+
+function readLatestTmuxBufferSummary(): TmuxBufferSummary | null {
+  try {
+    const result = Bun.spawnSync(
+      [
+        'tmux',
+        ...withTmuxUtf8Flag([
+          'list-buffers',
+          '-F',
+          buildTmuxFormat(['#{buffer_name}', '#{buffer_created}', '#{buffer_size}']),
+        ]),
+      ],
+      { stdout: 'pipe', stderr: 'pipe', timeout: config.tmuxTimeoutMs }
+    )
+    if (result.exitCode !== 0) return null
+    return parseTmuxBufferSummaries(result.stdout?.toString() ?? '')[0] ?? null
+  } catch {
+    return null
+  }
+}
+
+function readTmuxBufferText(summary: TmuxBufferSummary): string | null {
+  if (summary.size <= 0 || summary.size > CLIPBOARD_BUFFER_MAX_BYTES) {
+    return null
+  }
+
+  try {
+    const result = Bun.spawnSync(
+      ['tmux', ...withTmuxUtf8Flag(['show-buffer', '-b', summary.name])],
+      { stdout: 'pipe', stderr: 'pipe', timeout: config.tmuxTimeoutMs }
+    )
+    if (result.exitCode !== 0) return null
+    const text = result.stdout?.toString() ?? ''
+    return text.trim() ? text : null
+  } catch {
+    return null
+  }
+}
+
+function stopClipboardBufferWatch(ws: ServerWebSocket<WSData>) {
+  if (ws.data.clipboardPollTimer !== null) {
+    clearInterval(ws.data.clipboardPollTimer)
+  }
+  ws.data.clipboardPollTimer = null
+  ws.data.clipboardPollInFlight = false
+  ws.data.lastClipboardBufferKey = null
+  ws.data.clipboardBufferArmedUntil = 0
+}
+
+function startClipboardBufferWatch(
+  ws: ServerWebSocket<WSData>,
+  sessionId: string,
+  session: Session
+) {
+  stopClipboardBufferWatch(ws)
+
+  if (session.remote) {
+    return
+  }
+
+  const initial = readLatestTmuxBufferSummary()
+  ws.data.lastClipboardBufferKey = initial?.key ?? null
+  ws.data.clipboardPollTimer = setInterval(() => {
+    fireAndForget(pollClipboardBuffer(ws, sessionId), 'pollClipboardBuffer')
+  }, CLIPBOARD_BUFFER_POLL_MS)
+}
+
+async function pollClipboardBuffer(
+  ws: ServerWebSocket<WSData>,
+  sessionId: string
+) {
+  if (ws.data.clipboardPollInFlight) return
+  if (!sockets.has(ws)) return
+  if (ws.data.currentSessionId !== sessionId) return
+
+  const session = registry.get(sessionId)
+  if (!session || session.remote) return
+
+  ws.data.clipboardPollInFlight = true
+  try {
+    const latest = readLatestTmuxBufferSummary()
+    if (!latest) {
+      ws.data.lastClipboardBufferKey = null
+      return
+    }
+    if (latest.key === ws.data.lastClipboardBufferKey) {
+      return
+    }
+
+    ws.data.lastClipboardBufferKey = latest.key
+    if (Date.now() > ws.data.clipboardBufferArmedUntil) {
+      logger.debug('clipboard_buffer_watermarked', {
+        sessionId,
+        bufferName: latest.name,
+        bytes: latest.size,
+        connectionId: ws.data.connectionId,
+      })
+      return
+    }
+
+    const text = readTmuxBufferText(latest)
+    if (!text) {
+      logger.debug('clipboard_buffer_skipped', {
+        sessionId,
+        bufferName: latest.name,
+        bytes: latest.size,
+        connectionId: ws.data.connectionId,
+      })
+      return
+    }
+
+    logger.debug('clipboard_buffer_offer', {
+      sessionId,
+      bufferName: latest.name,
+      bytes: latest.size,
+      connectionId: ws.data.connectionId,
+    })
+    send(ws, { type: 'clipboard-offer', sessionId, text, source: 'tmux-buffer' })
+    ws.data.clipboardBufferArmedUntil = 0
+  } finally {
+    ws.data.clipboardPollInFlight = false
+  }
+}
+
+function containsClipboardArmingMouseInput(data: string): boolean {
+  SGR_MOUSE_INPUT_RE.lastIndex = 0
+  let match: RegExpExecArray | null
+  while ((match = SGR_MOUSE_INPUT_RE.exec(data)) !== null) {
+    const button = Number(match[1])
+    if (button < 64 && (button & 3) === 0) {
+      return true
+    }
+  }
+  return false
+}
+
 function cleanupTerminals(ws: ServerWebSocket<WSData>) {
+  stopClipboardBufferWatch(ws)
   if (ws.data.terminal) {
     void ws.data.terminal.dispose()
     ws.data.terminal = null
@@ -3657,6 +3835,7 @@ async function attachTerminalPersistent(
     }
     return
   }
+  stopClipboardBufferWatch(ws)
 
   const target = tmuxTarget ?? session.tmuxWindow
   if (!isValidTmuxTarget(target)) {
@@ -3705,10 +3884,20 @@ async function attachTerminalPersistent(
       elapsedMs: Math.round(now - ws.data.lastAttachTs),
       connectionId: ws.data.connectionId,
     })
-    // Still need to set currentSessionId so input works
-    ws.data.currentSessionId = sessionId
-    ws.data.currentTmuxTarget = effectiveTarget
-    send(ws, { type: 'terminal-ready', sessionId })
+    try {
+      await terminal.switchTo(target)
+      if (!isTerminalAttachCurrent(ws, attachSeq)) {
+        return
+      }
+      ws.data.currentSessionId = sessionId
+      ws.data.currentTmuxTarget = effectiveTarget
+      startClipboardBufferWatch(ws, sessionId, session)
+      send(ws, { type: 'terminal-ready', sessionId })
+    } catch (error) {
+      if (sockets.has(ws) && isTerminalAttachCurrent(ws, attachSeq)) {
+        handleTerminalError(ws, sessionId, error, 'ERR_TMUX_SWITCH_FAILED')
+      }
+    }
     return
   }
 
@@ -3769,6 +3958,7 @@ async function attachTerminalPersistent(
     // attach from hitting the dedup fast-path while the first is still in flight.
     ws.data.lastAttachKey = attachKey
     ws.data.lastAttachTs = performance.now()
+    startClipboardBufferWatch(ws, sessionId, session)
     logger.info('terminal_attach_profile', {
       sessionId,
       target,
@@ -3885,6 +4075,7 @@ function detachTerminalPersistent(ws: ServerWebSocket<WSData>, sessionId: string
   // Cancel any in-flight attach/switch operations so stale completions don't
   // clobber the newly-selected session.
   ws.data.terminalAttachSeq += 1
+  stopClipboardBufferWatch(ws)
   if (ws.data.currentSessionId === sessionId) {
     ws.data.currentSessionId = null
     ws.data.currentTmuxTarget = null
@@ -3904,6 +4095,10 @@ function handleTerminalInputPersistent(
 
   const session = registry.get(sessionId)
   if (session?.remote && !config.remoteAllowAttach) return
+
+  if (!session?.remote && containsClipboardArmingMouseInput(data)) {
+    ws.data.clipboardBufferArmedUntil = Date.now() + CLIPBOARD_BUFFER_ARM_MS
+  }
 
   ws.data.terminal?.write(data)
 

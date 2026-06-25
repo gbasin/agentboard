@@ -1846,6 +1846,116 @@ describe('useTerminal', () => {
     })
   })
 
+  test('iOS appMouse=true long press drag emits SGR mouse selection events', async () => {
+    jest.useFakeTimers()
+    globalAny.window = {
+      ...globalAny.window,
+      matchMedia: () => ({
+        matches: true,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        addListener: () => {},
+        removeListener: () => {},
+      }),
+    } as unknown as Window & typeof globalThis
+    globalAny.navigator = {
+      userAgent: 'iPhone',
+      platform: 'iPhone',
+      maxTouchPoints: 5,
+      clipboard: { writeText: () => Promise.resolve(), readText: () => Promise.resolve('') },
+      vibrate: () => true,
+    } as unknown as Navigator
+
+    const sendCalls: Array<Record<string, unknown>> = []
+    const listeners: Array<(message: ServerMessage) => void> = []
+    const { container, dispatchEvent } = createContainerMock()
+    let preventDefaultCalls = 0
+    let stopPropagationCalls = 0
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalComponent
+          session={terminalSession}
+          sessions={[terminalSession]}
+          connectionStatus="connected"
+          sendMessage={(message) => sendCalls.push(message)}
+          subscribe={(listener) => {
+            listeners.push(listener)
+            return () => {}
+          }}
+          onClose={() => {}}
+          onSelectSession={() => {}}
+          onNewSession={() => {}}
+          onKillSession={() => {}}
+          onRenameSession={() => {}}
+          onResumeSession={() => {}}
+          onOpenSettings={() => {}}
+        />,
+        { createNodeMock: () => container },
+      )
+      await Promise.resolve()
+    })
+
+    act(() => {
+      listeners[0]?.({
+        type: 'tmux-copy-mode-status',
+        sessionId: 'session-1',
+        inCopyMode: false,
+        appMouse: true,
+      })
+    })
+    sendCalls.length = 0
+
+    const startTouch = { clientX: 25, clientY: 25 } as Touch
+    const dragTouch = { clientX: 45, clientY: 35 } as Touch
+
+    act(() => {
+      dispatchEvent('touchstart', {
+        touches: [startTouch],
+      })
+    })
+    act(() => {
+      jest.advanceTimersByTime(350)
+    })
+    act(() => {
+      dispatchEvent('touchmove', {
+        touches: [dragTouch],
+        preventDefault: () => { preventDefaultCalls += 1 },
+        stopPropagation: () => { stopPropagationCalls += 1 },
+      })
+      dispatchEvent('touchend', {
+        changedTouches: [dragTouch],
+        preventDefault: () => { preventDefaultCalls += 1 },
+        stopPropagation: () => { stopPropagationCalls += 1 },
+      })
+    })
+
+    expect(sendCalls).toEqual([
+      {
+        type: 'terminal-input',
+        sessionId: 'session-1',
+        data: '\x1b[<0;3;3M',
+      },
+      {
+        type: 'terminal-input',
+        sessionId: 'session-1',
+        data: '\x1b[<32;5;4M',
+      },
+      {
+        type: 'terminal-input',
+        sessionId: 'session-1',
+        data: '\x1b[<0;5;4m',
+      },
+    ])
+    expect(preventDefaultCalls).toBe(2)
+    expect(stopPropagationCalls).toBe(2)
+
+    act(() => {
+      renderer.unmount()
+    })
+  })
+
   test('iOS appMouse=false tap keeps existing focus-only behavior', async () => {
     globalAny.window = {
       ...globalAny.window,

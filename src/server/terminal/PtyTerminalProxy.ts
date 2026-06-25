@@ -7,6 +7,15 @@ const CLIENT_TTY_FORMAT = buildTmuxFormat([
   '#{client_tty}',
   '#{client_pid}',
 ])
+const TARGET_IDENTITY_FORMAT = buildTmuxFormat([
+  '#{session_name}',
+  '#{window_id}',
+])
+
+interface TmuxTargetIdentity {
+  sessionName: string
+  windowId: string | null
+}
 
 class PtyTerminalProxy extends TerminalProxyBase {
   private process: ReturnType<typeof Bun.spawn> | null = null
@@ -149,6 +158,21 @@ class PtyTerminalProxy extends TerminalProxyBase {
       }
     }
 
+    try {
+      this.runTmuxMutation([
+        'set-option',
+        '-t',
+        this.options.sessionName,
+        'allow-passthrough',
+        'on',
+      ])
+    } catch (error) {
+      this.logEvent('terminal_passthrough_enable_failed', {
+        sessionName: this.options.sessionName,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+
     if (attemptId !== this.startAttemptId) {
       await this.dispose()
       return
@@ -258,7 +282,22 @@ class PtyTerminalProxy extends TerminalProxyBase {
     })
 
     try {
+      const expectedIdentity = this.readTargetIdentity(effectiveTarget)
       this.runTmux(['switch-client', '-c', this.clientTty, '-t', effectiveTarget])
+      const actualIdentity = await this.verifyClientTarget(
+        effectiveTarget,
+        expectedIdentity
+      )
+      try {
+        this.process?.terminal?.resize(this.cols, this.rows)
+      } catch {
+        // Ignore resize errors; the PTY may already be closing.
+      }
+      try {
+        this.runTmux(['refresh-client', '-t', this.clientTty])
+      } catch {
+        // Ignore refresh failures
+      }
       if (onReady) {
         try {
           onReady()
@@ -267,11 +306,10 @@ class PtyTerminalProxy extends TerminalProxyBase {
         }
       }
       this.outputSuppressed = false
-      this.setCurrentWindow(effectiveTarget)
-      try {
-        this.runTmux(['refresh-client', '-t', this.clientTty])
-      } catch {
-        // Ignore refresh failures
+      if (effectiveTarget.includes(':') && actualIdentity.windowId) {
+        this.setCurrentWindow(`${actualIdentity.sessionName}:${actualIdentity.windowId}`)
+      } else {
+        this.setCurrentWindow(effectiveTarget)
       }
       const durationMs = this.now() - startedAt
       this.logEvent('terminal_switch_success', {
@@ -301,6 +339,91 @@ class PtyTerminalProxy extends TerminalProxyBase {
         true
       )
     }
+  }
+
+  private readTargetIdentity(target: string): TmuxTargetIdentity {
+    const output = this.runParsedTmux([
+      'display-message',
+      '-p',
+      '-t',
+      target,
+      TARGET_IDENTITY_FORMAT,
+    ]).trim()
+    const identity = this.parseTargetIdentity(output)
+    if (!identity) {
+      throw new Error(`Unable to resolve tmux target identity for ${target}`)
+    }
+    return identity
+  }
+
+  private readClientIdentity(): TmuxTargetIdentity {
+    if (!this.clientTty) {
+      throw new Error('Terminal client not ready')
+    }
+    const output = this.runParsedTmux([
+      'display-message',
+      '-p',
+      '-c',
+      this.clientTty,
+      TARGET_IDENTITY_FORMAT,
+    ]).trim()
+    const identity = this.parseTargetIdentity(output)
+    if (!identity) {
+      throw new Error(`Unable to resolve tmux client identity for ${this.clientTty}`)
+    }
+    return identity
+  }
+
+  private parseTargetIdentity(output: string): TmuxTargetIdentity | null {
+    const parts = splitTmuxFields(output, 2)
+    if (!parts) return null
+    const sessionName = parts[0]?.trim()
+    const windowId = parts[1]?.trim() ?? ''
+    if (!sessionName) return null
+    return {
+      sessionName,
+      windowId: windowId || null,
+    }
+  }
+
+  private identitiesMatch(
+    actual: TmuxTargetIdentity,
+    expected: TmuxTargetIdentity
+  ): boolean {
+    if (actual.sessionName !== expected.sessionName) return false
+    if (!expected.windowId) return true
+    return actual.windowId === expected.windowId
+  }
+
+  private async verifyClientTarget(
+    effectiveTarget: string,
+    expected: TmuxTargetIdentity
+  ): Promise<TmuxTargetIdentity> {
+    const retryDelays = [0, 25, 50, 100, 150]
+    let lastActual: TmuxTargetIdentity | null = null
+
+    for (const delay of retryDelays) {
+      if (delay > 0) {
+        await this.wait(delay)
+        try {
+          this.runTmux(['switch-client', '-c', this.clientTty!, '-t', effectiveTarget])
+        } catch {
+          // The final identity check below will surface a precise switch failure.
+        }
+      }
+
+      const actual = this.readClientIdentity()
+      lastActual = actual
+      if (this.identitiesMatch(actual, expected)) {
+        return actual
+      }
+    }
+
+    throw new Error(
+      `tmux client attached to ${lastActual?.sessionName ?? '<unknown>'}:` +
+      `${lastActual?.windowId ?? '<unknown>'}, expected ` +
+      `${expected.sessionName}:${expected.windowId ?? '<current>'}`
+    )
   }
 
   private async discoverClientTty(pid: number): Promise<string> {

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, mock } from 'bun:test'
 import TestRenderer, { act } from 'react-test-renderer'
-import type { AgentSession, Session } from '@shared/types'
+import type { AgentSession, ServerMessage, Session } from '@shared/types'
 import { useThemeStore } from '../stores/themeStore'
 import { useSessionStore } from '../stores/sessionStore'
 
@@ -591,6 +591,110 @@ describe('Terminal', () => {
           (msg as { type?: string }).type === 'tmux-cancel-copy-mode'
       )
     ).toBe(true)
+
+    act(() => {
+      renderer.unmount()
+    })
+  })
+
+  test('shows pending clipboard offer and copies it on tap', () => {
+    globalAny.navigator = {
+      userAgent: 'iPhone',
+      platform: 'iPhone',
+      maxTouchPoints: 5,
+      clipboard: { writeText: () => Promise.reject(new Error('gesture required')) },
+      vibrate: () => true,
+    } as unknown as Navigator
+    globalAny.window = {
+      ...globalAny.window,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      requestAnimationFrame: ((callback: FrameRequestCallback) => {
+        callback(0)
+        return 1
+      }) as typeof requestAnimationFrame,
+      cancelAnimationFrame: (() => {}) as typeof cancelAnimationFrame,
+    } as unknown as Window & typeof globalThis
+
+    const listeners: Array<(message: ServerMessage) => void> = []
+    const { createNodeMock } = createContainerMock()
+    let renderer!: TestRenderer.ReactTestRenderer
+
+    act(() => {
+      renderer = TestRenderer.create(
+        <Terminal
+          session={baseSession}
+          sessions={[baseSession]}
+          connectionStatus="connected"
+          sendMessage={() => {}}
+          subscribe={(listener) => {
+            listeners.push(listener)
+            return () => {}
+          }}
+          onClose={() => {}}
+          onSelectSession={() => {}}
+          onNewSession={() => {}}
+          onKillSession={() => {}}
+          onRenameSession={() => {}}
+          onResumeSession={() => {}}
+          onOpenSettings={() => {}}
+        />,
+        { createNodeMock }
+      )
+    })
+
+    act(() => {
+      listeners[0]?.({
+        type: 'clipboard-offer',
+        sessionId: baseSession.id,
+        text: 'copied-from-claude',
+        source: 'tmux-buffer',
+      })
+    })
+
+    let copiedText = ''
+    let appendedTextarea: { value: string } | null = null
+    globalAny.document = {
+      ...globalAny.document,
+      createElement: ((tagName: string) => {
+        if (tagName === 'textarea') {
+          return {
+            value: '',
+            style: {},
+            focus: () => {},
+            select: () => {},
+          }
+        }
+        return {
+          className: '',
+          style: {},
+          appendChild: () => {},
+          remove: () => {},
+          textContent: '',
+        }
+      }) as unknown as Document['createElement'],
+      body: {
+        appendChild: (node: Node) => {
+          appendedTextarea = node as unknown as { value: string }
+          return node
+        },
+        removeChild: (node: Node) => node,
+      } as unknown as HTMLElement,
+      execCommand: ((command: string) => {
+        if (command === 'copy' && appendedTextarea) {
+          copiedText = appendedTextarea.value
+          return true
+        }
+        return false
+      }) as unknown as Document['execCommand'],
+    } as unknown as Document
+
+    const copyButton = renderer.root.findByProps({ 'aria-label': 'Copy selection' })
+    act(() => {
+      copyButton.props.onClick()
+    })
+
+    expect(copiedText).toBe('copied-from-claude')
 
     act(() => {
       renderer.unmount()

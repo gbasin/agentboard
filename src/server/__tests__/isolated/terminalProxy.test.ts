@@ -28,6 +28,7 @@ function createSpawnHarness() {
     null
   let exitHandler: ((terminal: Bun.Terminal, code: number, signal: string | null) => void) | null =
     null
+  let activeTarget = 'agentboard-ws-abc:@1'
 
   const exited = new Promise<void>((resolve) => {
     exitResolver = resolve
@@ -71,6 +72,34 @@ function createSpawnHarness() {
       return {
         exitCode: 0,
         stdout: Buffer.from(CLIENT_TTY_OUTPUT),
+        stderr: Buffer.from(''),
+      } as ReturnType<typeof Bun.spawnSync>
+    }
+    if (command === 'switch-client') {
+      const tmuxArgs = args[0] === 'tmux' ? args.slice(1) : args
+      const targetIndex = tmuxArgs.indexOf('-t')
+      if (targetIndex >= 0 && tmuxArgs[targetIndex + 1]) {
+        activeTarget = tmuxArgs[targetIndex + 1]
+      }
+      return {
+        exitCode: 0,
+        stdout: Buffer.from(''),
+        stderr: Buffer.from(''),
+      } as ReturnType<typeof Bun.spawnSync>
+    }
+    if (command === 'display-message') {
+      const tmuxArgs = args[0] === 'tmux' ? args.slice(1) : args
+      const clientIndex = tmuxArgs.indexOf('-c')
+      const targetIndex = tmuxArgs.indexOf('-t')
+      const target =
+        clientIndex >= 0 ? activeTarget : targetIndex >= 0 ? tmuxArgs[targetIndex + 1] : ''
+      const [sessionName, windowTarget = '@1'] = target.split(':')
+      const windowId = windowTarget.includes('.')
+        ? windowTarget.slice(0, windowTarget.indexOf('.'))
+        : windowTarget
+      return {
+        exitCode: 0,
+        stdout: Buffer.from(buildTmuxFormat([sessionName, windowId || '@1']) + '\n'),
         stderr: Buffer.from(''),
       } as ReturnType<typeof Bun.spawnSync>
     }
