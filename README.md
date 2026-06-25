@@ -87,7 +87,7 @@ For persistent deployment, see [systemd/README.md](systemd/README.md) (Linux) or
 
 ### From source
 
-Requires **Bun 1.3.6+** (see [Troubleshooting](#troubleshooting)).
+Requires **Bun 1.3.14+** (see [Troubleshooting](#troubleshooting)).
 
 ```bash
 bun install
