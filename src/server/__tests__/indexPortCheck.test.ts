@@ -5,6 +5,7 @@ import os from 'node:os'
 
 // Mock logger to suppress expected error output during port conflict tests
 mock.module('../logger', () => ({
+  logLevel: 'info',
   logger: {
     debug: () => {},
     info: () => {},

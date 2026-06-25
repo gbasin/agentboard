@@ -58,6 +58,19 @@ async function main() {
     // Bun.serve / setInterval mock; isolation keeps that mock window from
     // overlapping with any other test that captures globals at module load.
     const ISOLATED_FILES = new Set([
+      // Entry-point tests patch Bun.serve/Bun.spawnSync/process.exit while
+      // importing the server. Keep them away from real server/tmux tests.
+      'directories.test.ts',
+      'index.test.ts',
+      'indexPortCheck.test.ts',
+      // These integration tests spawn real servers and tmux commands. They are
+      // sensitive to global Bun.* mocks installed by unit tests in the shared
+      // test process.
+      'double-attach.integration.test.ts',
+      'hibernation.integration.test.ts',
+      'integration.test.ts',
+      'slug-supersede.integration.test.ts',
+      'throttled-reconnect.integration.test.ts',
       'sessionRefreshWorker.test.ts',
       'pipePaneTerminalProxy.test.ts',
       'hydrateSessionsEmptyGuard.test.ts',
