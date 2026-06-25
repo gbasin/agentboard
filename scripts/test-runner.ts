@@ -4,7 +4,10 @@ import path from 'node:path'
 
 const args = process.argv.slice(2)
 const skipIsolated = args.includes('--skip-isolated')
-const passthroughArgs = args.filter((arg) => arg !== '--skip-isolated')
+const skipRealTmux = args.includes('--skip-real-tmux')
+const passthroughArgs = args.filter(
+  (arg) => arg !== '--skip-isolated' && arg !== '--skip-real-tmux'
+)
 
 function createTempLogDirs() {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'agentboard-tests-'))
@@ -132,12 +135,14 @@ async function main() {
       )
     }
 
-    const argsWithoutCoverage = stripCoverageArgs(passthroughArgs)
-    for (const file of ISOLATED_REAL_TMUX_FILES) {
-      await runCommand(
-        ['bun', 'test', ...argsWithoutCoverage, `src/server/__tests__/${file}`],
-        env
-      )
+    if (!skipRealTmux) {
+      const argsWithoutCoverage = stripCoverageArgs(passthroughArgs)
+      for (const file of ISOLATED_REAL_TMUX_FILES) {
+        await runCommand(
+          ['bun', 'test', ...argsWithoutCoverage, `src/server/__tests__/${file}`],
+          env
+        )
+      }
     }
 
     for (const file of ISOLATED_CLIENT_FILES) {
