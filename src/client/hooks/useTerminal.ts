@@ -70,6 +70,8 @@ const getIsMac = () => typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod
 /** Empty bracket paste sequence — signals a paste event without text content. */
 const BRACKET_PASTE_EMPTY = '\x1b[200~\x1b[201~'
 const CTRL_V = '\x16'
+const ENABLE_MOUSE_TRACKING = '\x1b[?1000h\x1b[?1002h\x1b[?1006h'
+const DISABLE_MOUSE_TRACKING = '\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l'
 
 function getImagePasteSignal(agentType: AgentType | undefined): string {
   return agentType === 'codex' ? CTRL_V : BRACKET_PASTE_EMPTY
@@ -213,7 +215,10 @@ export function useTerminal({
   // Wheel event handling for tmux scrollback
   const wheelAccumRef = useRef<number>(0)
   const inTmuxCopyModeRef = useRef<boolean>(false)
+  const appMouseRef = useRef<boolean>(false)
+  const altScreenRef = useRef<boolean>(false)
   const copyModeCheckTimer = useRef<number | null>(null)
+  const copyModePollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Track the currently attached session to prevent race conditions
   const attachedSessionRef = useRef<string | null>(null)
@@ -324,6 +329,7 @@ export function useTerminal({
   }, [])
 
   const setTmuxCopyMode = useCallback((nextValue: boolean) => {
+    if (nextValue && appMouseRef.current) return
     if (inTmuxCopyModeRef.current === nextValue) return
     inTmuxCopyModeRef.current = nextValue
 
@@ -333,7 +339,7 @@ export function useTerminal({
     const terminal = terminalRef.current
     if (terminal && nextValue) {
       // Disable all mouse tracking modes (1000=X10, 1002=button-event, 1003=any-event, 1006=SGR)
-      terminal.write('\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l')
+      terminal.write(DISABLE_MOUSE_TRACKING)
     }
 
     checkScrollPosition()
@@ -818,11 +824,11 @@ export function useTerminal({
       }
 
       // Optimistically show button when scrolling up
-      if (scrolledUp) {
+      if (scrolledUp && !appMouseRef.current) {
         setTmuxCopyMode(true)
       }
       // Request actual copy-mode status from tmux (debounced) - only if we sent scroll
-      if (didScroll) {
+      if (didScroll && !appMouseRef.current) {
         requestCopyModeCheck()
       }
       return false // We handled it, prevent xterm local scroll
@@ -1178,6 +1184,27 @@ export function useTerminal({
     }
   }, [sessionId, tmuxTarget, allowAttach, connectionStatus, connectionEpoch, checkScrollPosition])
 
+  useEffect(() => {
+    if (copyModePollIntervalRef.current !== null) {
+      globalThis.clearInterval(copyModePollIntervalRef.current)
+      copyModePollIntervalRef.current = null
+    }
+
+    if (!sessionId || !allowAttach || connectionStatus !== 'connected') return
+
+    copyModePollIntervalRef.current = globalThis.setInterval(() => {
+      if (attachedSessionRef.current !== sessionId) return
+      sendMessageRef.current({ type: 'tmux-check-copy-mode', sessionId })
+    }, 750)
+
+    return () => {
+      if (copyModePollIntervalRef.current !== null) {
+        globalThis.clearInterval(copyModePollIntervalRef.current)
+        copyModePollIntervalRef.current = null
+      }
+    }
+  }, [sessionId, allowAttach, connectionStatus])
+
   // Subscribe to terminal output with idle-based buffering
   // Batches chunks until the stream goes idle to avoid splitting escape sequences
   useEffect(() => {
@@ -1342,7 +1369,16 @@ export function useTerminal({
         attachedSession &&
         message.sessionId === attachedSession
       ) {
-        setTmuxCopyMode(message.inCopyMode)
+        const nextAppMouse = message.appMouse === true
+        const wasAppMouse = appMouseRef.current
+        appMouseRef.current = nextAppMouse
+        altScreenRef.current = message.altScreen === true
+
+        if (!wasAppMouse && nextAppMouse) {
+          terminalRef.current?.write(ENABLE_MOUSE_TRACKING)
+        }
+
+        setTmuxCopyMode(nextAppMouse ? false : message.inCopyMode)
       }
     })
 
@@ -1489,6 +1525,7 @@ export function useTerminal({
     serializeAddonRef,
     progressAddonRef,
     inTmuxCopyModeRef,
+    appMouseRef,
     setTmuxCopyMode,
     isSwitching,
   }

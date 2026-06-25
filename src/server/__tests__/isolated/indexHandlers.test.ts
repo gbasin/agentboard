@@ -2459,9 +2459,11 @@ describe('server message handlers', () => {
       }
       if (tmuxArgs[0] === 'display-message') {
         copyModeTarget = tmuxArgs[3] ?? ''
+        // Format: pane_in_mode,alternate_on,mouse_any_flag — here: a fullscreen app
+        // (not in copy-mode, alt screen on, app owns the mouse).
         return {
           exitCode: 0,
-          stdout: Buffer.from('0\n'),
+          stdout: Buffer.from('0,1,1\n'),
           stderr: Buffer.from(''),
         } as ReturnType<typeof Bun.spawnSync>
       }
@@ -2511,6 +2513,17 @@ describe('server message handlers', () => {
       JSON.stringify({ type: 'tmux-check-copy-mode', sessionId: baseSession.id })
     )
     expect(copyModeTarget).toBe(groupedTarget)
+
+    // The fullscreen flags from tmux propagate to the client (appMouse drives the
+    // client's decision to stop hijacking mouse events into copy-mode).
+    const fullscreenStatus = sent.find(
+      (message) => message.type === 'tmux-copy-mode-status'
+    )
+    expect(fullscreenStatus).toMatchObject({
+      inCopyMode: false,
+      altScreen: true,
+      appMouse: true,
+    })
   })
 
   test('terminal attach continues when local history capture times out', async () => {
@@ -2625,9 +2638,10 @@ describe('server message handlers', () => {
       }
       if (tmuxArgs[0] === 'display-message') {
         displayTarget = tmuxArgs[3] ?? ''
+        // Format: pane_in_mode,alternate_on,mouse_any_flag — classic copy-mode here.
         return {
           exitCode: 0,
-          stdout: Buffer.from('1\n'),
+          stdout: Buffer.from('1,0,0\n'),
           stderr: Buffer.from(''),
         } as ReturnType<typeof Bun.spawnSync>
       }
@@ -2662,6 +2676,8 @@ describe('server message handlers', () => {
       type: 'tmux-copy-mode-status',
       sessionId: baseSession.id,
       inCopyMode: true,
+      altScreen: false,
+      appMouse: false,
     })
   })
 

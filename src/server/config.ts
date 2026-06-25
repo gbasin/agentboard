@@ -162,6 +162,13 @@ export const config = {
   // process under tmux `automatic-rename on`. Enable when each window has a stable,
   // user-chosen name (e.g. one window per project in a shared session).
   preferWindowName: process.env.AGENTBOARD_PREFER_WINDOW_NAME === 'true',
+  // Launch agentboard-created windows with Claude Code fullscreen ("no-flicker")
+  // rendering enabled, so its mouse features (click-to-expand, click-to-position
+  // cursor, wheel scroll) work in the browser terminal. Set
+  // AGENTBOARD_CLAUDE_NO_FLICKER=0 (or =false) to disable.
+  claudeNoFlicker:
+    process.env.AGENTBOARD_CLAUDE_NO_FLICKER !== '0' &&
+    process.env.AGENTBOARD_CLAUDE_NO_FLICKER !== 'false',
   terminalMode,
   terminalMonitorTargets: process.env.TERMINAL_MONITOR_TARGETS !== 'false',
   // Allow killing external (discovered) sessions from UI

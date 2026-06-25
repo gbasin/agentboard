@@ -85,7 +85,10 @@ function createTmuxRunner(sessions: SessionState[], baseIndex = 0) {
 
   const runTmux = (args: string[]) => {
     calls.push(args)
-    const normalizedArgs = normalizeParsedTmuxArgs(args)
+    // Strip `-e VAR=VAL` pairs (tmux pane-env injection) so the positional parsers
+    // below stay stable; `calls` still records the original args for assertions.
+    const rawArgs = normalizeParsedTmuxArgs(args)
+    const normalizedArgs = rawArgs.filter((arg, i) => arg !== '-e' && rawArgs[i - 1] !== '-e')
     const command = normalizedArgs[0]
 
     if (command === 'has-session') {
@@ -1510,6 +1513,35 @@ describe('SessionManager', () => {
 
     // Created session should have exactly one window — no orphan shell
     expect(created.name).toBe('my-project')
+    expect(created.command).toBe('claude')
+
+    fs.rmSync(tempDir, { recursive: true, force: true })
+  })
+
+  test('createWindow injects CLAUDE_CODE_NO_FLICKER=1 via tmux -e (fullscreen default)', () => {
+    const sessionName = 'agentboard-noflicker'
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentboard-'))
+    const runner = createTmuxRunner([], 0)
+
+    const manager = new SessionManager(sessionName, {
+      runTmux: runner.runTmux,
+      capturePaneContent: () => makePaneCapture(''),
+      now: () => 1700000000000,
+    })
+
+    // Default config (no AGENTBOARD_CLAUDE_NO_FLICKER override) -> injection on.
+    const created = manager.createWindow(tempDir, 'fs-window', 'claude')
+
+    const newSessionCall = runner.calls.find(
+      (call) => getTmuxCommand(call) === 'new-session'
+    )
+    if (!newSessionCall) throw new Error('expected a new-session call')
+    // The `-e VAR=VAL` pair enables Claude fullscreen rendering in the new pane.
+    const eIdx = newSessionCall.indexOf('-e')
+    expect(eIdx).toBeGreaterThanOrEqual(0)
+    expect(newSessionCall[eIdx + 1]).toBe('CLAUDE_CODE_NO_FLICKER=1')
+    // The window command is still parsed correctly despite the injected env flag.
+    expect(newSessionCall).toContain('claude')
     expect(created.command).toBe('claude')
 
     fs.rmSync(tempDir, { recursive: true, force: true })

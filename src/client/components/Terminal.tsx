@@ -156,7 +156,14 @@ export default function Terminal({
     !session.remote &&
     !!session.agentSessionId?.trim()
 
-  const { containerRef, terminalRef, inTmuxCopyModeRef, setTmuxCopyMode, isSwitching } = useTerminal({
+  const {
+    containerRef,
+    terminalRef,
+    inTmuxCopyModeRef,
+    appMouseRef,
+    setTmuxCopyMode,
+    isSwitching,
+  } = useTerminal({
     sessionId: session?.id ?? null,
     tmuxTarget: session?.tmuxWindow ?? null,
     agentType: session?.agentType,
@@ -560,6 +567,31 @@ export default function Terminal({
     const getTextarea = () =>
       container.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement | null
 
+    const getTouchCell = (touch: Touch): { col: number; row: number } | null => {
+      const terminal = terminalRef.current
+      if (!terminal) return null
+
+      const root = container.querySelector('.xterm') as HTMLElement | null
+      const screen = root?.querySelector('.xterm-screen') as HTMLElement | null
+      const screenRect = screen?.getBoundingClientRect()
+      if (!screenRect || screenRect.width <= 0 || screenRect.height <= 0) return null
+
+      const cellW = screenRect.width / terminal.cols
+      const cellH = screenRect.height / terminal.rows
+      if (cellW <= 0 || cellH <= 0) return null
+
+      const col = Math.min(
+        terminal.cols,
+        Math.max(1, Math.floor((touch.clientX - screenRect.left) / cellW) + 1)
+      )
+      const row = Math.min(
+        terminal.rows,
+        Math.max(1, Math.floor((touch.clientY - screenRect.top) / cellH) + 1)
+      )
+
+      return { col, row }
+    }
+
     const disableTextareaIfIdle = () => {
       const current = getTextarea()
       if (!current) return
@@ -625,11 +657,24 @@ export default function Terminal({
       }
 
       // Only enter copy-mode when scrolling UP (into history), not when scrolling down
-      if (scrolledUp) {
+      if (scrolledUp && !appMouseRef.current) {
         setTmuxCopyMode(true)
       }
 
       return scrolledUp
+    }
+
+    const sendTapClickToApp = (touch: Touch): boolean => {
+      const currentSessionId = sessionIdRef.current
+      const cell = getTouchCell(touch)
+      if (!currentSessionId || !cell) return false
+
+      sendMessageRef.current({
+        type: 'terminal-input',
+        sessionId: currentSessionId,
+        data: `\x1b[<0;${cell.col};${cell.row}M\x1b[<0;${cell.col};${cell.row}m`,
+      })
+      return true
     }
 
     const resetTouchState = () => {
@@ -763,6 +808,14 @@ export default function Terminal({
 
       if (!hasMoved) {
         if (isiOS && touchDuration >= LONG_PRESS_MS) return
+        if (appMouseRef.current) {
+          const touch = e.changedTouches[0]
+          if (touch && sendTapClickToApp(touch)) {
+            e.preventDefault()
+            e.stopPropagation()
+            return
+          }
+        }
         // If in copy-mode, prevent tap from reaching xterm.js (which would send click to tmux and exit copy-mode)
         if (inTmuxCopyModeRef.current) {
           e.preventDefault()

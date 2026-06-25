@@ -392,10 +392,16 @@ export class SessionManager {
     const finalCommand = command?.trim() || 'claude'
     const finalName = this.findAvailableName(baseName, existingWindowNames, nameExists)
 
+    // Start the agent with Claude Code fullscreen ("no-flicker") rendering so its
+    // mouse features work in the browser terminal. tmux `-e` sets the pane env
+    // (tmux >= 3.0); the launched command inherits it. Harmless for non-Claude commands.
+    const noFlickerEnv = config.claudeNoFlicker ? ['-e', 'CLAUDE_CODE_NO_FLICKER=1'] : []
+
     if (!sessionExisted) {
       // Create session + window in one step to avoid orphan shell window
       this.runTmux([
         'new-session', '-d',
+        ...noFlickerEnv,
         '-s', this.sessionName,
         '-n', finalName,
         '-c', resolvedPath,
@@ -406,6 +412,7 @@ export class SessionManager {
       const nextIndex = this.findNextAvailableWindowIndex()
       this.runTmux([
         'new-window',
+        ...noFlickerEnv,
         '-t', `${this.sessionName}:${nextIndex}`,
         '-n', finalName,
         '-c', resolvedPath,

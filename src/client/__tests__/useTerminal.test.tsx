@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, jest, test, mock } from 'bun:test'
 import TestRenderer, { act } from 'react-test-renderer'
-import type { AgentType, ServerMessage } from '@shared/types'
+import type { AgentType, ServerMessage, Session } from '@shared/types'
 import type { ITheme } from '@xterm/xterm'
 import type { ConnectionStatus } from '../stores/sessionStore'
 
@@ -161,6 +161,7 @@ mock.module('@xterm/addon-progress', () => ({ ProgressAddon: ProgressAddonMock }
 mock.module('@xterm/addon-web-links', () => ({ WebLinksAddon: class {} }))
 
 const { forceTextPresentation, sanitizeLink, useTerminal, invalidateSnapshotCache, clearSnapshotCache } = await import('../hooks/useTerminal')
+const { default: TerminalComponent } = await import('../components/Terminal')
 
 // Tracks a registered event listener with its capture flag
 interface ListenerEntry {
@@ -192,7 +193,12 @@ function createContainerMock() {
 
   // Track display style changes for iOS compositor repaint tests
   const displayLog: string[] = []
-  const containerStyle = { cssText: '' } as Record<string, string>
+  const containerStyle = {
+    cssText: '',
+    setProperty(name: string, value: string) {
+      ;(this as Record<string, unknown>)[name] = value
+    },
+  } as CSSStyleDeclaration & Record<string, unknown>
   Object.defineProperty(containerStyle, 'display', {
     get() { return displayLog.length ? displayLog[displayLog.length - 1] : '' },
     set(v: string) { displayLog.push(v) },
@@ -200,10 +206,54 @@ function createContainerMock() {
     configurable: true,
   })
 
+  const screen = {
+    getBoundingClientRect: () => ({
+      left: 0,
+      top: 0,
+      right: 800,
+      bottom: 240,
+      width: 800,
+      height: 240,
+      x: 0,
+      y: 0,
+      toJSON: () => {},
+    }),
+  }
+  const xtermRoot = {
+    getBoundingClientRect: () => ({
+      left: 0,
+      top: 0,
+      right: 800,
+      bottom: 240,
+      width: 800,
+      height: 240,
+      x: 0,
+      y: 0,
+      toJSON: () => {},
+    }),
+    querySelector: (selector: string) => {
+      if (selector === '.xterm-screen') return screen
+      return null
+    },
+  }
+
   const container = {
     innerHTML: 'existing',
     style: containerStyle,
     get offsetHeight() { return 100 },
+    closest: () => null,
+    contains: () => false,
+    getBoundingClientRect: () => ({
+      left: 0,
+      top: 0,
+      right: 800,
+      bottom: 240,
+      width: 800,
+      height: 240,
+      x: 0,
+      y: 0,
+      toJSON: () => {},
+    }),
     addEventListener: (
       event: string,
       handler: EventListener,
@@ -235,8 +285,12 @@ function createContainerMock() {
         listeners.delete(event)
       }
     },
-    querySelector: (selector: string) =>
-      selector === '.xterm-helper-textarea' ? textarea : null,
+    querySelector: (selector: string) => {
+      if (selector === '.xterm-helper-textarea') return textarea
+      if (selector === '.xterm') return xtermRoot
+      if (selector === '.xterm-screen') return screen
+      return null
+    },
   } as unknown as HTMLDivElement
 
   /**
@@ -288,6 +342,17 @@ function TerminalHarness(props: {
   return <div ref={containerRef} />
 }
 
+const terminalSession: Session = {
+  id: 'session-1',
+  name: 'alpha',
+  tmuxWindow: 'agentboard:@1',
+  projectPath: '/tmp/alpha',
+  status: 'working',
+  lastActivity: new Date().toISOString(),
+  createdAt: new Date().toISOString(),
+  source: 'managed',
+}
+
 beforeEach(() => {
   TerminalMock.instances = []
   FitAddonMock.instances = []
@@ -299,6 +364,24 @@ beforeEach(() => {
       return 1 as unknown as ReturnType<typeof setTimeout>
     }) as typeof setTimeout,
     clearTimeout: (() => {}) as typeof clearTimeout,
+    setInterval: (() => 1 as unknown as ReturnType<typeof setInterval>) as unknown as typeof setInterval,
+    clearInterval: (() => {}) as typeof clearInterval,
+    matchMedia: () => ({
+      matches: false,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+    }),
+    getSelection: () => ({ isCollapsed: true }),
+    getComputedStyle: () => ({
+      getPropertyValue: (name: string) => name === '--xterm-cell-height' ? '10px' : '',
+    }),
+    requestAnimationFrame: ((callback: FrameRequestCallback) => {
+      callback(0)
+      return 1
+    }) as typeof requestAnimationFrame,
+    cancelAnimationFrame: (() => {}) as typeof cancelAnimationFrame,
     devicePixelRatio: 1,
     addEventListener: () => {},
     removeEventListener: () => {},
@@ -1352,6 +1435,488 @@ describe('useTerminal', () => {
       data: '\x1b[200~\x1b[201~',
     })
     expect(terminal.pasteCalls).toEqual([])
+
+    act(() => {
+      renderer.unmount()
+    })
+  })
+
+  test('appMouse=true scroll-up forwards wheel without disabling mouse tracking or entering copy-mode', async () => {
+    globalAny.navigator = {
+      userAgent: 'Chrome',
+      platform: 'MacIntel',
+      maxTouchPoints: 0,
+      clipboard: { writeText: () => Promise.resolve(), readText: () => Promise.resolve('') },
+    } as unknown as Navigator
+
+    const sendCalls: Array<Record<string, unknown>> = []
+    const listeners: Array<(message: ServerMessage) => void> = []
+    const { container } = createContainerMock()
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          sendMessage={(message) => sendCalls.push(message)}
+          subscribe={(listener) => {
+            listeners.push(listener)
+            return () => {}
+          }}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+        { createNodeMock: () => container },
+      )
+      await Promise.resolve()
+    })
+
+    const terminal = TerminalMock.instances[0]
+    if (!terminal) throw new Error('Expected terminal instance')
+
+    act(() => {
+      listeners[0]?.({
+        type: 'tmux-copy-mode-status',
+        sessionId: 'session-1',
+        inCopyMode: false,
+        appMouse: true,
+      })
+    })
+
+    expect(terminal.writes).toContain('\x1b[?1000h\x1b[?1002h\x1b[?1006h')
+    terminal.writes.length = 0
+    sendCalls.length = 0
+
+    act(() => {
+      terminal.emitWheel({ deltaY: -30, target: container } as unknown as WheelEvent)
+    })
+
+    expect(sendCalls).toContainEqual({
+      type: 'terminal-input',
+      sessionId: 'session-1',
+      data: '\x1b[<64;40;12M',
+    })
+    expect(sendCalls.some((call) => call.type === 'tmux-check-copy-mode')).toBe(false)
+    expect(sendCalls.some((call) => call.type === 'tmux-cancel-copy-mode')).toBe(false)
+    expect(terminal.writes.some((write) => write.includes('\x1b[?1000l'))).toBe(false)
+
+    act(() => {
+      terminal.emitData('x')
+    })
+    expect(sendCalls).toContainEqual({
+      type: 'terminal-input',
+      sessionId: 'session-1',
+      data: 'x',
+    })
+    expect(sendCalls.some((call) => call.type === 'tmux-cancel-copy-mode')).toBe(false)
+
+    act(() => {
+      renderer.unmount()
+    })
+  })
+
+  test('appMouse=true after a scroll re-enables tracking and forwards mouse SGR onData', async () => {
+    globalAny.navigator = {
+      userAgent: 'Chrome',
+      platform: 'MacIntel',
+      maxTouchPoints: 0,
+      clipboard: { writeText: () => Promise.resolve(), readText: () => Promise.resolve('') },
+    } as unknown as Navigator
+
+    const sendCalls: Array<Record<string, unknown>> = []
+    const listeners: Array<(message: ServerMessage) => void> = []
+    const { container } = createContainerMock()
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          sendMessage={(message) => sendCalls.push(message)}
+          subscribe={(listener) => {
+            listeners.push(listener)
+            return () => {}
+          }}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+        { createNodeMock: () => container },
+      )
+      await Promise.resolve()
+    })
+
+    const terminal = TerminalMock.instances[0]
+    if (!terminal) throw new Error('Expected terminal instance')
+
+    act(() => {
+      terminal.emitWheel({ deltaY: -30, target: container } as unknown as WheelEvent)
+    })
+    expect(terminal.writes).toContain('\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l')
+
+    act(() => {
+      listeners[0]?.({
+        type: 'tmux-copy-mode-status',
+        sessionId: 'session-1',
+        inCopyMode: false,
+        appMouse: true,
+      })
+    })
+    expect(terminal.writes).toContain('\x1b[?1000h\x1b[?1002h\x1b[?1006h')
+
+    sendCalls.length = 0
+    act(() => {
+      terminal.emitData('\x1b[<0;10;5M')
+    })
+
+    expect(sendCalls).toEqual([{
+      type: 'terminal-input',
+      sessionId: 'session-1',
+      data: '\x1b[<0;10;5M',
+    }])
+
+    act(() => {
+      renderer.unmount()
+    })
+  })
+
+  test('appMouse false-to-true status reasserts xterm mouse tracking', async () => {
+    globalAny.navigator = {
+      userAgent: 'Chrome',
+      platform: 'MacIntel',
+      maxTouchPoints: 0,
+      clipboard: { writeText: () => Promise.resolve(), readText: () => Promise.resolve('') },
+    } as unknown as Navigator
+
+    const listeners: Array<(message: ServerMessage) => void> = []
+    const { container } = createContainerMock()
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          sendMessage={() => {}}
+          subscribe={(listener) => {
+            listeners.push(listener)
+            return () => {}
+          }}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+        { createNodeMock: () => container },
+      )
+      await Promise.resolve()
+    })
+
+    const terminal = TerminalMock.instances[0]
+    if (!terminal) throw new Error('Expected terminal instance')
+
+    act(() => {
+      listeners[0]?.({
+        type: 'tmux-copy-mode-status',
+        sessionId: 'session-1',
+        inCopyMode: false,
+        appMouse: false,
+      })
+    })
+    expect(terminal.writes).not.toContain('\x1b[?1000h\x1b[?1002h\x1b[?1006h')
+
+    act(() => {
+      listeners[0]?.({
+        type: 'tmux-copy-mode-status',
+        sessionId: 'session-1',
+        inCopyMode: false,
+        appMouse: true,
+      })
+    })
+    expect(terminal.writes).toContain('\x1b[?1000h\x1b[?1002h\x1b[?1006h')
+
+    act(() => {
+      renderer.unmount()
+    })
+  })
+
+  test('appMouse=false keeps classic scroll-up copy-mode behavior', async () => {
+    globalAny.navigator = {
+      userAgent: 'Chrome',
+      platform: 'MacIntel',
+      maxTouchPoints: 0,
+      clipboard: { writeText: () => Promise.resolve(), readText: () => Promise.resolve('') },
+    } as unknown as Navigator
+
+    const sendCalls: Array<Record<string, unknown>> = []
+    const listeners: Array<(message: ServerMessage) => void> = []
+    const { container } = createContainerMock()
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          sendMessage={(message) => sendCalls.push(message)}
+          subscribe={(listener) => {
+            listeners.push(listener)
+            return () => {}
+          }}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+        { createNodeMock: () => container },
+      )
+      await Promise.resolve()
+    })
+
+    const terminal = TerminalMock.instances[0]
+    if (!terminal) throw new Error('Expected terminal instance')
+
+    act(() => {
+      listeners[0]?.({
+        type: 'tmux-copy-mode-status',
+        sessionId: 'session-1',
+        inCopyMode: false,
+        appMouse: false,
+      })
+    })
+    terminal.writes.length = 0
+    sendCalls.length = 0
+
+    act(() => {
+      terminal.emitWheel({ deltaY: -30, target: container } as unknown as WheelEvent)
+    })
+
+    expect(sendCalls).toContainEqual({
+      type: 'terminal-input',
+      sessionId: 'session-1',
+      data: '\x1b[<64;40;12M',
+    })
+    expect(sendCalls).toContainEqual({
+      type: 'tmux-check-copy-mode',
+      sessionId: 'session-1',
+    })
+    expect(terminal.writes).toContain('\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l')
+
+    act(() => {
+      renderer.unmount()
+    })
+  })
+
+  test('polls copy-mode status for the currently attached session', async () => {
+    const intervals = new Map<number, () => void>()
+    let nextIntervalId = 1
+    const originalSetInterval = globalThis.setInterval
+    const originalClearInterval = globalThis.clearInterval
+    globalThis.setInterval = ((callback: () => void) => {
+      const id = nextIntervalId++
+      intervals.set(id, callback)
+      return id as unknown as ReturnType<typeof setInterval>
+    }) as typeof setInterval
+    globalThis.clearInterval = ((id: ReturnType<typeof setInterval>) => {
+      intervals.delete(id as unknown as number)
+    }) as typeof clearInterval
+    globalAny.navigator = {
+      userAgent: 'Chrome',
+      platform: 'MacIntel',
+      maxTouchPoints: 0,
+      clipboard: { writeText: () => Promise.resolve(), readText: () => Promise.resolve('') },
+    } as unknown as Navigator
+
+    const sendCalls: Array<Record<string, unknown>> = []
+    const { container } = createContainerMock()
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          sendMessage={(message) => sendCalls.push(message)}
+          subscribe={() => () => {}}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+        { createNodeMock: () => container },
+      )
+      await Promise.resolve()
+    })
+
+    sendCalls.length = 0
+    act(() => {
+      intervals.get(1)?.()
+    })
+
+    expect(sendCalls).toEqual([{
+      type: 'tmux-check-copy-mode',
+      sessionId: 'session-1',
+    }])
+
+    act(() => {
+      renderer.unmount()
+    })
+    expect(intervals.size).toBe(0)
+    globalThis.setInterval = originalSetInterval
+    globalThis.clearInterval = originalClearInterval
+  })
+
+  test('iOS appMouse=true tap emits SGR mouse press and release at tapped cell', async () => {
+    globalAny.window = {
+      ...globalAny.window,
+      matchMedia: () => ({
+        matches: true,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        addListener: () => {},
+        removeListener: () => {},
+      }),
+    } as unknown as Window & typeof globalThis
+    globalAny.navigator = {
+      userAgent: 'iPhone',
+      platform: 'iPhone',
+      maxTouchPoints: 5,
+      clipboard: { writeText: () => Promise.resolve(), readText: () => Promise.resolve('') },
+      vibrate: () => true,
+    } as unknown as Navigator
+
+    const sendCalls: Array<Record<string, unknown>> = []
+    const listeners: Array<(message: ServerMessage) => void> = []
+    const { container, dispatchEvent } = createContainerMock()
+    let preventDefaultCalls = 0
+    let stopPropagationCalls = 0
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalComponent
+          session={terminalSession}
+          sessions={[terminalSession]}
+          connectionStatus="connected"
+          sendMessage={(message) => sendCalls.push(message)}
+          subscribe={(listener) => {
+            listeners.push(listener)
+            return () => {}
+          }}
+          onClose={() => {}}
+          onSelectSession={() => {}}
+          onNewSession={() => {}}
+          onKillSession={() => {}}
+          onRenameSession={() => {}}
+          onResumeSession={() => {}}
+          onOpenSettings={() => {}}
+        />,
+        { createNodeMock: () => container },
+      )
+      await Promise.resolve()
+    })
+
+    act(() => {
+      listeners[0]?.({
+        type: 'tmux-copy-mode-status',
+        sessionId: 'session-1',
+        inCopyMode: false,
+        appMouse: true,
+      })
+    })
+    sendCalls.length = 0
+
+    const touch = { clientX: 25, clientY: 25 } as Touch
+    act(() => {
+      dispatchEvent('touchstart', {
+        touches: [touch],
+      })
+      dispatchEvent('touchend', {
+        changedTouches: [touch],
+        preventDefault: () => { preventDefaultCalls += 1 },
+        stopPropagation: () => { stopPropagationCalls += 1 },
+      })
+    })
+
+    expect(sendCalls).toEqual([{
+      type: 'terminal-input',
+      sessionId: 'session-1',
+      data: '\x1b[<0;3;3M\x1b[<0;3;3m',
+    }])
+    expect(preventDefaultCalls).toBe(1)
+    expect(stopPropagationCalls).toBe(1)
+
+    act(() => {
+      renderer.unmount()
+    })
+  })
+
+  test('iOS appMouse=false tap keeps existing focus-only behavior', async () => {
+    globalAny.window = {
+      ...globalAny.window,
+      matchMedia: () => ({
+        matches: true,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        addListener: () => {},
+        removeListener: () => {},
+      }),
+    } as unknown as Window & typeof globalThis
+    globalAny.navigator = {
+      userAgent: 'iPhone',
+      platform: 'iPhone',
+      maxTouchPoints: 5,
+      clipboard: { writeText: () => Promise.resolve(), readText: () => Promise.resolve('') },
+      vibrate: () => true,
+    } as unknown as Navigator
+
+    const sendCalls: Array<Record<string, unknown>> = []
+    const listeners: Array<(message: ServerMessage) => void> = []
+    const { container, dispatchEvent } = createContainerMock()
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalComponent
+          session={terminalSession}
+          sessions={[terminalSession]}
+          connectionStatus="connected"
+          sendMessage={(message) => sendCalls.push(message)}
+          subscribe={(listener) => {
+            listeners.push(listener)
+            return () => {}
+          }}
+          onClose={() => {}}
+          onSelectSession={() => {}}
+          onNewSession={() => {}}
+          onKillSession={() => {}}
+          onRenameSession={() => {}}
+          onResumeSession={() => {}}
+          onOpenSettings={() => {}}
+        />,
+        { createNodeMock: () => container },
+      )
+      await Promise.resolve()
+    })
+
+    act(() => {
+      listeners[0]?.({
+        type: 'tmux-copy-mode-status',
+        sessionId: 'session-1',
+        inCopyMode: false,
+        appMouse: false,
+      })
+    })
+    sendCalls.length = 0
+
+    const touch = { clientX: 25, clientY: 25 } as Touch
+    act(() => {
+      dispatchEvent('touchstart', {
+        touches: [touch],
+      })
+      dispatchEvent('touchend', {
+        changedTouches: [touch],
+        preventDefault: () => {},
+        stopPropagation: () => {},
+      })
+    })
+
+    expect(sendCalls.some((call) => call.type === 'terminal-input')).toBe(false)
 
     act(() => {
       renderer.unmount()

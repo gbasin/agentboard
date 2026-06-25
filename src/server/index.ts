@@ -2143,10 +2143,15 @@ async function handleRemoteCreate(
       : windowCommand
     let createResult: { exitCode: number; stdout: string; stderr: string }
 
+    // Launch with Claude Code fullscreen ("no-flicker") rendering enabled so its
+    // mouse features work in the browser terminal. The login shell inherits the env.
+    const noFlickerEnv = config.claudeNoFlicker ? ['-e', 'CLAUDE_CODE_NO_FLICKER=1'] : []
+
     if (sessionExists) {
       // Session exists — add a new window to it
       createResult = await runRemoteTmux(host, [
         'new-window', '-P',
+        ...noFlickerEnv,
         '-F', buildTmuxFormat(['#{window_index}', '#{window_id}']),
         '-t', tmuxSession, '-n', windowName, '-c', trimmedPath, wrappedCommand,
       ])
@@ -2155,6 +2160,7 @@ async function handleRemoteCreate(
       // (avoids an orphan window 0 from a separate new-session call)
       createResult = await runRemoteTmux(host, [
         'new-session', '-d', '-P',
+        ...noFlickerEnv,
         '-F', buildTmuxFormat(['#{window_index}', '#{window_id}']),
         '-s', tmuxSession, '-n', windowName, '-c', trimmedPath, wrappedCommand,
       ])
@@ -2258,23 +2264,30 @@ async function handleCheckCopyMode(sessionId: string, ws: ServerWebSocket<WSData
 
   try {
     const target = resolveCopyModeTarget(sessionId, ws, session)
-    // Query tmux for pane copy-mode status
+    // Query tmux for pane copy-mode status plus fullscreen-app detection:
+    //   pane_in_mode  -> tmux copy-mode active
+    //   alternate_on  -> pane on the alternate screen buffer
+    //   mouse_any_flag-> the in-pane app requested mouse tracking (owns the mouse)
+    const fmt = '#{pane_in_mode},#{alternate_on},#{mouse_any_flag}'
     let output: string
     if (session.remote && session.host) {
-      const result = await runRemoteTmux(session.host, ['display-message', '-p', '-t', target, '#{pane_in_mode}'])
+      const result = await runRemoteTmux(session.host, ['display-message', '-p', '-t', target, fmt])
       output = result.stdout?.trim() ?? ''
     } else {
       const result = Bun.spawnSync(
-        ['tmux', ...withTmuxUtf8Flag(['display-message', '-p', '-t', target, '#{pane_in_mode}'])],
+        ['tmux', ...withTmuxUtf8Flag(['display-message', '-p', '-t', target, fmt])],
         { stdout: 'pipe', stderr: 'pipe', timeout: 5000 }
       )
       output = result.stdout?.toString().trim() ?? ''
     }
-    const inCopyMode = output === '1'
-    send(ws, { type: 'tmux-copy-mode-status', sessionId, inCopyMode })
+    const [inCopyModeField, altScreenField, appMouseField] = output.split(',')
+    const inCopyMode = inCopyModeField === '1'
+    const altScreen = altScreenField === '1'
+    const appMouse = appMouseField === '1'
+    send(ws, { type: 'tmux-copy-mode-status', sessionId, inCopyMode, altScreen, appMouse })
   } catch {
-    // On error, assume not in copy mode
-    send(ws, { type: 'tmux-copy-mode-status', sessionId, inCopyMode: false })
+    // On error, assume not in copy mode and no fullscreen app
+    send(ws, { type: 'tmux-copy-mode-status', sessionId, inCopyMode: false, altScreen: false, appMouse: false })
   }
 }
 
