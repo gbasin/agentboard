@@ -63,14 +63,7 @@ async function main() {
       'directories.test.ts',
       'index.test.ts',
       'indexPortCheck.test.ts',
-      // These integration tests spawn real servers and tmux commands. They are
-      // sensitive to global Bun.* mocks installed by unit tests in the shared
-      // test process.
-      'double-attach.integration.test.ts',
-      'hibernation.integration.test.ts',
-      'integration.test.ts',
       'slug-supersede.integration.test.ts',
-      'throttled-reconnect.integration.test.ts',
       'sessionRefreshWorker.test.ts',
       'pipePaneTerminalProxy.test.ts',
       'hydrateSessionsEmptyGuard.test.ts',
@@ -81,6 +74,16 @@ async function main() {
       // any later test file that imports `../config` (notably
       // logPoller.test.ts, which depends on skipMatchingPatterns).
       'terminalProxyFactory.test.ts',
+    ])
+
+    // These spawn real servers, PTYs, and tmux clients. They still need process
+    // isolation from global Bun.* mocks, but running them under coverage on
+    // Linux CI can stall PTY attach readiness.
+    const ISOLATED_REAL_TMUX_FILES = new Set([
+      'double-attach.integration.test.ts',
+      'hibernation.integration.test.ts',
+      'integration.test.ts',
+      'throttled-reconnect.integration.test.ts',
     ])
 
     // Client tests that install top-level mock.module(...) hooks must run in a
@@ -96,7 +99,8 @@ async function main() {
     const serverTests: string[] = []
     const serverGlob = new Bun.Glob('src/server/__tests__/*.test.ts')
     for await (const file of serverGlob.scan({ onlyFiles: true })) {
-      if (!ISOLATED_FILES.has(path.basename(file))) {
+      const basename = path.basename(file)
+      if (!ISOLATED_FILES.has(basename) && !ISOLATED_REAL_TMUX_FILES.has(basename)) {
         serverTests.push(file)
       }
     }
@@ -128,6 +132,14 @@ async function main() {
       )
     }
 
+    const argsWithoutCoverage = stripCoverageArgs(passthroughArgs)
+    for (const file of ISOLATED_REAL_TMUX_FILES) {
+      await runCommand(
+        ['bun', 'test', ...argsWithoutCoverage, `src/server/__tests__/${file}`],
+        env
+      )
+    }
+
     for (const file of ISOLATED_CLIENT_FILES) {
       await runCommand(
         ['bun', 'test', ...passthroughArgs, `src/client/__tests__/${file}`],
@@ -150,3 +162,19 @@ main().catch((error) => {
   console.error(error)
   process.exit(1)
 })
+
+function stripCoverageArgs(args: string[]) {
+  const stripped: string[] = []
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index]
+    if (arg === '--coverage') continue
+    if (arg.startsWith('--coverage=')) continue
+    if (arg.startsWith('--coverage-reporter=')) continue
+    if (arg === '--coverage-reporter') {
+      index += 1
+      continue
+    }
+    stripped.push(arg)
+  }
+  return stripped
+}
