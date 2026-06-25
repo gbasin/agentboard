@@ -150,6 +150,7 @@ DISCOVER_PREFIXES=work,external
 PRUNE_WS_SESSIONS=true
 AGENTBOARD_PREFER_WINDOW_NAME=false
 TERMINAL_MODE=pty
+AGENTBOARD_CLAUDE_NO_FLICKER=true
 TERMINAL_MONITOR_TARGETS=true
 VITE_ALLOWED_HOSTS=nuc,myserver
 AGENTBOARD_DB_PATH=~/.agentboard/agentboard.db
@@ -178,6 +179,10 @@ AGENTBOARD_PASTE_IMAGE_MAX_BYTES=41943040
 `AGENTBOARD_PREFER_WINDOW_NAME` (default `false`) controls how externally-discovered sessions are labeled. When `false`, the tmux session name is used (more meaningful than auto-renamed window names that follow the running process under tmux `automatic-rename on`). Set to `true` to use the tmux window name when it is non-empty and distinct from the session name — useful when you keep one shared session (e.g. `dev`) with one explicitly-named window per project (`myapp`, `infra`, ...).
 
 `TERMINAL_MODE` selects terminal I/O strategy: `pty` (default, grouped session) or `pipe-pane` (PTY-less, works in daemon/systemd/docker without `-t`).
+
+`AGENTBOARD_CLAUDE_NO_FLICKER` controls how Agentboard launches new Claude Code windows. By default, Agentboard sets `CLAUDE_CODE_NO_FLICKER=1` on newly-created panes so Claude uses its fullscreen renderer with mouse scrolling, click handling, in-app selection, and flat memory usage for long conversations. Set `AGENTBOARD_CLAUDE_NO_FLICKER=0` (or `false`) before starting Agentboard to launch Claude without that env var. Fullscreen rendering requires Claude Code v2.1.89 or later; older Claude Code versions should ignore the env var and use the classic renderer.
+
+Reasons to opt out: fullscreen rendering keeps the conversation in the alternate screen buffer instead of native terminal scrollback, so terminal-level search/copy workflows behave differently; Claude also captures mouse events unless you disable its mouse capture. Inside Claude Code, run `/tui default` to switch a session back to the classic renderer, or launch Claude with `CLAUDE_CODE_DISABLE_MOUSE=1` if you want fullscreen rendering but native mouse selection.
 
 `TERMINAL_MONITOR_TARGETS` (pipe-pane only) polls tmux to detect closed targets (set to `false` to disable).
 
