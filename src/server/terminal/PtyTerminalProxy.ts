@@ -12,6 +12,14 @@ const TARGET_IDENTITY_FORMAT = buildTmuxFormat([
   '#{window_id}',
 ])
 
+// `set-clipboard` is a server-global tmux option, so enabling it touches the
+// user's whole tmux server (and isn't reverted on disconnect). It's on by
+// default because the clipboard poll needs a paste buffer to read; set
+// AGENTBOARD_TMUX_SET_CLIPBOARD=0 (or =false) to leave the user's setting alone.
+const SET_CLIPBOARD_ENABLED =
+  process.env.AGENTBOARD_TMUX_SET_CLIPBOARD !== '0' &&
+  process.env.AGENTBOARD_TMUX_SET_CLIPBOARD !== 'false'
+
 interface TmuxTargetIdentity {
   sessionName: string
   windowId: string | null
@@ -179,13 +187,16 @@ class PtyTerminalProxy extends TerminalProxyBase {
     // user-gesture rule. `set-clipboard` is a SERVER option: with the modern
     // `external` default tmux forwards an app's OSC 52 to the outer terminal
     // but stores no buffer for the poll to read; `on` makes it store one.
-    try {
-      this.runTmuxMutation(['set-option', '-s', 'set-clipboard', 'on'])
-    } catch (error) {
-      this.logEvent('terminal_set_clipboard_failed', {
-        sessionName: this.options.sessionName,
-        error: error instanceof Error ? error.message : String(error),
-      })
+    // Opt-out via AGENTBOARD_TMUX_SET_CLIPBOARD=0 to avoid the global change.
+    if (SET_CLIPBOARD_ENABLED) {
+      try {
+        this.runTmuxMutation(['set-option', '-s', 'set-clipboard', 'on'])
+      } catch (error) {
+        this.logEvent('terminal_set_clipboard_failed', {
+          sessionName: this.options.sessionName,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
     }
 
     if (attemptId !== this.startAttemptId) {

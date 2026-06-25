@@ -576,6 +576,7 @@ function createWs() {
       clipboardPollInFlight: false,
       lastClipboardBufferKey: null as string | null,
       clipboardBufferArmedUntil: 0,
+      clipboardArmedAtSec: 0,
     },
     send: (payload: string) => {
       sent.push(JSON.parse(payload) as ServerMessage)
@@ -2454,7 +2455,10 @@ describe('server message handlers', () => {
     }) as unknown as typeof globalThis.setInterval
     globalThis.clearInterval = (() => {}) as typeof globalThis.clearInterval
 
-    let bufferCreated = 1
+    // Buffer creation times are real unix seconds: an offer requires the buffer
+    // to have been created at/after the arming gesture.
+    const nowSec = Math.floor(Date.now() / 1000)
+    let bufferCreated = nowSec - 10
     spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
       const command = Array.isArray(args[0]) ? args[0] : [String(args[0])]
       const tmuxArgs = getTmuxArgs(command as string[])
@@ -2514,7 +2518,8 @@ describe('server message handlers', () => {
         sent.some((message) => message.type === 'clipboard-offer')
       ).toBe(false)
 
-      bufferCreated = 2
+      // Unarmed buffer change: watermarked, not offered.
+      bufferCreated = nowSec - 5
       pollClipboard()
       await new Promise((r) => setTimeout(r, 0))
       expect(
@@ -2529,7 +2534,8 @@ describe('server message handlers', () => {
           data: '\x1b[<0;10;4M\x1b[<32;11;4M\x1b[<0;11;4m',
         })
       )
-      bufferCreated = 3
+      // Buffer created after the arming gesture: offered.
+      bufferCreated = nowSec + 1
       pollClipboard()
       await new Promise((r) => setTimeout(r, 0))
       expect(sent).toContainEqual({
@@ -2540,7 +2546,7 @@ describe('server message handlers', () => {
       })
 
       const offerCount = sent.filter((message) => message.type === 'clipboard-offer').length
-      bufferCreated = 4
+      bufferCreated = nowSec + 2
       pollClipboard()
       await new Promise((r) => setTimeout(r, 0))
       expect(sent.filter((message) => message.type === 'clipboard-offer')).toHaveLength(offerCount)
@@ -2550,7 +2556,7 @@ describe('server message handlers', () => {
     }
   })
 
-  test('does not arm the clipboard watch on a bare tap (no drag selection)', async () => {
+  test('arms on a click-only selection (double/triple-click, no drag) and offers the copy', async () => {
     const { serveOptions, registryInstance } = await loadIndex()
     registryInstance.sessions = [baseSession]
 
@@ -2563,7 +2569,8 @@ describe('server message handlers', () => {
     }) as unknown as typeof globalThis.setInterval
     globalThis.clearInterval = (() => {}) as typeof globalThis.clearInterval
 
-    let bufferCreated = 1
+    const nowSec = Math.floor(Date.now() / 1000)
+    let bufferCreated = nowSec - 10
     spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
       const command = Array.isArray(args[0]) ? args[0] : [String(args[0])]
       const tmuxArgs = getTmuxArgs(command as string[])
@@ -2577,7 +2584,7 @@ describe('server message handlers', () => {
       if (tmuxArgs[0] === 'show-buffer') {
         return {
           exitCode: 0,
-          stdout: Buffer.from('copied-from-tmux'),
+          stdout: Buffer.from('word-from-double-click'),
           stderr: Buffer.from(''),
         } as ReturnType<typeof Bun.spawnSync>
       }
@@ -2613,8 +2620,8 @@ describe('server message handlers', () => {
         throw new Error('Expected clipboard poll interval')
       }
 
-      // Bare tap: left-button press + release at the same cell, no drag
-      // (button 32). This must NOT arm the watch.
+      // Double-click word selection: left-button press + release with NO motion
+      // bit (button 32). This must still arm — it's a real selection that copies.
       websocket.message?.(
         ws as never,
         JSON.stringify({
@@ -2623,7 +2630,99 @@ describe('server message handlers', () => {
           data: '\x1b[<0;10;4M\x1b[<0;10;4m',
         })
       )
-      bufferCreated = 2
+      bufferCreated = nowSec + 1
+      pollClipboard()
+      await new Promise((r) => setTimeout(r, 0))
+
+      expect(sent).toContainEqual({
+        type: 'clipboard-offer',
+        sessionId: baseSession.id,
+        text: 'word-from-double-click',
+        source: 'tmux-buffer',
+      })
+    } finally {
+      globalThis.setInterval = originalSetIntervalForTest
+      globalThis.clearInterval = originalClearInterval
+    }
+  })
+
+  test('does not offer a buffer created before the arming gesture', async () => {
+    const { serveOptions, registryInstance } = await loadIndex()
+    registryInstance.sessions = [baseSession]
+
+    let intervalCallback: (() => void) | null = null
+    const originalSetIntervalForTest = globalThis.setInterval
+    const originalClearInterval = globalThis.clearInterval
+    globalThis.setInterval = ((callback: TimerHandler) => {
+      intervalCallback = callback as () => void
+      return 123 as unknown as ReturnType<typeof setInterval>
+    }) as unknown as typeof globalThis.setInterval
+    globalThis.clearInterval = (() => {}) as typeof globalThis.clearInterval
+
+    const nowSec = Math.floor(Date.now() / 1000)
+    let bufferCreated = nowSec
+    spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
+      const command = Array.isArray(args[0]) ? args[0] : [String(args[0])]
+      const tmuxArgs = getTmuxArgs(command as string[])
+      if (tmuxArgs[0] === 'list-buffers') {
+        return {
+          exitCode: 0,
+          stdout: Buffer.from(tmuxLine('buffer0', String(bufferCreated), '18') + '\n'),
+          stderr: Buffer.from(''),
+        } as ReturnType<typeof Bun.spawnSync>
+      }
+      if (tmuxArgs[0] === 'show-buffer') {
+        return {
+          exitCode: 0,
+          stdout: Buffer.from('stale-unrelated-buffer'),
+          stderr: Buffer.from(''),
+        } as ReturnType<typeof Bun.spawnSync>
+      }
+      return {
+        exitCode: 0,
+        stdout: Buffer.from(''),
+        stderr: Buffer.from(''),
+      } as ReturnType<typeof Bun.spawnSync>
+    }) as typeof Bun.spawnSync
+
+    try {
+      const { ws, sent } = createWs()
+      const websocket = serveOptions.websocket
+      if (!websocket) {
+        throw new Error('WebSocket handlers not configured')
+      }
+
+      websocket.open?.(ws as never)
+      websocket.message?.(
+        ws as never,
+        JSON.stringify({
+          type: 'terminal-attach',
+          sessionId: baseSession.id,
+          tmuxTarget: baseSession.tmuxWindow,
+        })
+      )
+
+      await new Promise((r) => setTimeout(r, 0))
+      await new Promise((r) => setTimeout(r, 0))
+
+      const pollClipboard = intervalCallback as (() => void) | null
+      if (!pollClipboard) {
+        throw new Error('Expected clipboard poll interval')
+      }
+
+      // Arm via a drag selection.
+      websocket.message?.(
+        ws as never,
+        JSON.stringify({
+          type: 'terminal-input',
+          sessionId: baseSession.id,
+          data: '\x1b[<0;10;4M\x1b[<32;11;4M\x1b[<0;11;4m',
+        })
+      )
+      // A different buffer becomes "latest" but was created well before the
+      // gesture (e.g. an unrelated copy in another window). It must NOT be
+      // offered, even though the watch is armed.
+      bufferCreated = nowSec - 100
       pollClipboard()
       await new Promise((r) => setTimeout(r, 0))
 

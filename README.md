@@ -153,6 +153,7 @@ PRUNE_WS_SESSIONS=true
 AGENTBOARD_PREFER_WINDOW_NAME=false
 TERMINAL_MODE=pty
 AGENTBOARD_CLAUDE_NO_FLICKER=true
+AGENTBOARD_TMUX_SET_CLIPBOARD=true
 TERMINAL_MONITOR_TARGETS=true
 VITE_ALLOWED_HOSTS=nuc,myserver
 AGENTBOARD_DB_PATH=~/.agentboard/agentboard.db
@@ -185,6 +186,8 @@ AGENTBOARD_PASTE_IMAGE_MAX_BYTES=41943040
 `AGENTBOARD_CLAUDE_NO_FLICKER` controls how Agentboard launches new Claude Code windows. By default, Agentboard sets `CLAUDE_CODE_NO_FLICKER=1` on newly-created panes so Claude uses its fullscreen renderer with mouse scrolling, click handling, in-app selection, and flat memory usage for long conversations. Set `AGENTBOARD_CLAUDE_NO_FLICKER=0` (or `false`) before starting Agentboard to launch Claude without that env var. Fullscreen rendering requires Claude Code v2.1.89 or later; older Claude Code versions should ignore the env var and use the classic renderer.
 
 Reasons to opt out: fullscreen rendering keeps the conversation in the alternate screen buffer instead of native terminal scrollback, so terminal-level search/copy workflows behave differently; Claude also captures mouse events unless you disable its mouse capture. Inside Claude Code, run `/tui default` to switch a session back to the classic renderer, or launch Claude with `CLAUDE_CODE_DISABLE_MOUSE=1` if you want fullscreen rendering but native mouse selection.
+
+`AGENTBOARD_TMUX_SET_CLIPBOARD` controls whether Agentboard enables tmux's `set-clipboard on` when it attaches. By default it does, so copies made inside a session land in a tmux paste buffer that Agentboard can relay to the browser clipboard (important on iOS Safari, where the async OSC 52 path can't satisfy the user-gesture rule). Because `set-clipboard` is a server-global tmux option, this affects your whole tmux server and is not reverted on disconnect — set `AGENTBOARD_TMUX_SET_CLIPBOARD=0` (or `false`) to leave your tmux configuration untouched.
 
 `TERMINAL_MONITOR_TARGETS` (pipe-pane only) polls tmux to detect closed targets (set to `false` to disable).
 
