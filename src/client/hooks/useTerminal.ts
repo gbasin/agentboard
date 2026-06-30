@@ -11,6 +11,7 @@ import type { AgentType, ClipboardOfferSource, SendClientMessage, ServerMessageW
 import { clientLog } from '../utils/clientLog'
 import type { ConnectionStatus } from '../stores/sessionStore'
 import { copyText } from '../utils/copyText'
+import { bracketedPaste } from '../utils/paste'
 
 // Module-level snapshot cache: sessionId → serialized terminal content.
 // Survives component remounts and avoids stale-closure issues in effects.
@@ -73,11 +74,6 @@ const BRACKET_PASTE_EMPTY = '\x1b[200~\x1b[201~'
 const CTRL_V = '\x16'
 const ENABLE_MOUSE_TRACKING = '\x1b[?1000h\x1b[?1002h\x1b[?1006h'
 const DISABLE_MOUSE_TRACKING = '\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l'
-
-/** Wrap text in bracketed-paste markers so the agent treats it as a paste. */
-function bracketedPaste(text: string): string {
-  return `\x1b[200~${text}\x1b[201~`
-}
 
 /**
  * Upload an image blob to the server and return the stored file path.

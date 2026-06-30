@@ -6,11 +6,12 @@
 
 import { useState, useRef, useEffect } from 'react'
 import type { TouchEvent as ReactTouchEvent } from 'react'
-import type { Session } from '@shared/types'
+import type { AgentType, Session } from '@shared/types'
 import { CornerDownLeftIcon } from '@untitledui-icons/react/line'
 import DPad from './DPad'
 import NumPad from './NumPad'
 import { isIOSDevice } from '../utils/device'
+import { imagePathInput } from '../utils/paste'
 
 interface SessionInfo {
   id: string
@@ -23,6 +24,8 @@ interface TerminalControlsProps {
   disabled?: boolean
   sessions: SessionInfo[]
   currentSessionId: string | null
+  /** Agent type of the attached session — controls image-paste delivery. */
+  agentType?: AgentType
   onSelectSession: (sessionId: string) => void
   hideSessionSwitcher?: boolean
   onRefocus?: () => void
@@ -149,6 +152,7 @@ export default function TerminalControls({
   disabled = false,
   sessions,
   currentSessionId,
+  agentType,
   onSelectSession,
   hideSessionSwitcher = false,
   onRefocus,
@@ -241,7 +245,7 @@ export default function TerminalControls({
               `paste.${item.type.split('/')[1] || 'png'}`
             )
             if ('path' in result) {
-              onSendKey(result.path)
+              onSendKey(imagePathInput(result.path, agentType))
               setShowPasteInput(false)
               setPasteValue('')
               onRefocus?.()
@@ -313,8 +317,9 @@ export default function TerminalControls({
             `paste.${imageType.split('/')[1] || 'png'}`
           )
           if ('path' in result) {
-            // Send file path - Claude Code can reference images by path
-            onSendKey(result.path)
+            // Deliver the uploaded path so the agent attaches the image:
+            // bracketed paste for Claude ([Image #N]), raw path for Codex.
+            onSendKey(imagePathInput(result.path, agentType))
             if (wasKeyboardVisible) {
               onRefocus?.()
             }

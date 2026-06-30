@@ -1458,6 +1458,7 @@ export default function Terminal({
           disabled={connectionStatus !== 'connected' || isReadOnly}
           sessions={sessions.map(s => ({ id: s.id, name: s.name, status: s.status }))}
           currentSessionId={session.id}
+          agentType={session.agentType}
           onSelectSession={onSelectSession}
           hideSessionSwitcher
           onRefocus={handleRefocus}

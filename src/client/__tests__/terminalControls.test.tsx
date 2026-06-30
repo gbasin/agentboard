@@ -201,7 +201,7 @@ describe('TerminalControls', () => {
     expect(sent).toEqual(['manual'])
   })
 
-  test('paste button uploads clipboard image and sends the stored path', async () => {
+  test('paste button uploads clipboard image and sends a bracketed path for Claude', async () => {
     const sent: string[] = []
     const requests: Array<{ url: string; init?: RequestInit }> = []
 
@@ -223,6 +223,7 @@ describe('TerminalControls', () => {
         onSendKey={(key) => sent.push(key)}
         sessions={[{ id: 'session-1', name: 'alpha', status: 'working' }]}
         currentSessionId="session-1"
+        agentType="claude"
         onSelectSession={() => {}}
       />
     )
@@ -238,6 +239,44 @@ describe('TerminalControls', () => {
 
     expect(requests).toHaveLength(1)
     expect(requests[0]?.url).toBe('/api/paste-image')
+    // Path wrapped in bracketed-paste markers so Claude attaches it ([Image #N]).
+    expect(sent).toEqual(['\x1b[200~/tmp/paste-test.png\x1b[201~'])
+  })
+
+  test('paste button sends the raw path for Codex (unchanged native behavior)', async () => {
+    const sent: string[] = []
+
+    globalAny.navigator = {
+      vibrate: () => true,
+      clipboard: clipboardWithImage(),
+    } as unknown as Navigator
+
+    globalAny.fetch = (async () =>
+      new Response(JSON.stringify({ path: '/tmp/paste-test.png' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })) as unknown as typeof fetch
+
+    const renderer = TestRenderer.create(
+      <TerminalControls
+        onSendKey={(key) => sent.push(key)}
+        sessions={[{ id: 'session-1', name: 'alpha', status: 'working' }]}
+        currentSessionId="session-1"
+        agentType="codex"
+        onSelectSession={() => {}}
+      />
+    )
+
+    const pasteButton = findPasteButton(renderer)
+    if (!pasteButton) {
+      throw new Error('Expected paste button')
+    }
+
+    await act(async () => {
+      await pasteButton.props.onClick()
+    })
+
+    // Codex attaches via its own clipboard path, so the raw path is sent as-is.
     expect(sent).toEqual(['/tmp/paste-test.png'])
   })
 
