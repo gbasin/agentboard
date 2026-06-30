@@ -1254,7 +1254,7 @@ describe('useTerminal', () => {
     globalThis.fetch = originalFetch
   })
 
-  test('Ctrl+V on macOS sends empty bracket paste', async () => {
+  test('Ctrl+V on macOS with a clipboard image sends a bracketed image path', async () => {
     globalAny.navigator = {
       userAgent: 'Chrome',
       platform: 'MacIntel',
@@ -1264,6 +1264,14 @@ describe('useTerminal', () => {
         readText: () => Promise.resolve(''),
       },
     } as unknown as Navigator
+
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      if (String(input) === '/api/clipboard-file-path') {
+        return { ok: true, json: async () => ({ path: '/tmp/shot.png', isImage: true }) } as Response
+      }
+      return originalFetch(input)
+    }) as typeof fetch
 
     const sendCalls: Array<Record<string, unknown>> = []
     const { container } = createContainerMock()
@@ -1290,7 +1298,8 @@ describe('useTerminal', () => {
     const terminal = TerminalMock.instances[0]
     if (!terminal) throw new Error('Expected terminal instance')
 
-    // Ctrl+V on macOS (ctrlKey=true, metaKey=false) should trigger bracket paste
+    // Ctrl+V on macOS (ctrlKey=true, metaKey=false) is the dedicated image-paste
+    // shortcut. There's no browser paste event, so the server resolves the path.
     const result = terminal.emitKey({
       key: 'v',
       type: 'keydown',
@@ -1300,12 +1309,14 @@ describe('useTerminal', () => {
 
     // Should return false (swallowed because session is attached)
     expect(result).toBe(false)
-    // Should have sent bracket paste markers directly as terminal-input
-    // (not via terminal.paste('') which depends on bracketedPasteMode being on)
+    // Flush the async pasteboard lookup
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)) })
+    // Should deliver the resolved image path inside bracketed-paste markers so
+    // Claude attaches it natively ([Image #N]) in both renderers.
     expect(sendCalls).toContainEqual({
       type: 'terminal-input',
       sessionId: 'session-1',
-      data: '\x1b[200~\x1b[201~',
+      data: '\x1b[200~/tmp/shot.png\x1b[201~',
     })
     // Should NOT have called terminal.paste() — that path depends on bracketedPasteMode
     expect(terminal.pasteCalls).toEqual([])
@@ -1313,6 +1324,73 @@ describe('useTerminal', () => {
     act(() => {
       renderer.unmount()
     })
+    globalThis.fetch = originalFetch
+  })
+
+  test('Ctrl+V on macOS with no clipboard image falls back to empty bracket paste', async () => {
+    globalAny.navigator = {
+      userAgent: 'Chrome',
+      platform: 'MacIntel',
+      maxTouchPoints: 0,
+      clipboard: {
+        writeText: () => Promise.resolve(),
+        readText: () => Promise.resolve(''),
+      },
+    } as unknown as Navigator
+
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      if (String(input) === '/api/clipboard-file-path') {
+        return { ok: true, json: async () => ({ path: null }) } as Response
+      }
+      return originalFetch(input)
+    }) as typeof fetch
+
+    const sendCalls: Array<Record<string, unknown>> = []
+    const { container } = createContainerMock()
+
+    let renderer!: TestRenderer.ReactTestRenderer
+
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          sendMessage={(message) => sendCalls.push(message)}
+          subscribe={() => () => {}}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+        {
+          createNodeMock: () => container,
+        },
+      )
+      await Promise.resolve()
+    })
+
+    const terminal = TerminalMock.instances[0]
+    if (!terminal) throw new Error('Expected terminal instance')
+
+    const result = terminal.emitKey({
+      key: 'v',
+      type: 'keydown',
+      ctrlKey: true,
+      metaKey: false,
+    })
+
+    expect(result).toBe(false)
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)) })
+    expect(sendCalls).toContainEqual({
+      type: 'terminal-input',
+      sessionId: 'session-1',
+      data: '\x1b[200~\x1b[201~',
+    })
+    expect(terminal.pasteCalls).toEqual([])
+
+    act(() => {
+      renderer.unmount()
+    })
+    globalThis.fetch = originalFetch
   })
 
   test('Ctrl+V on macOS sends literal Ctrl+V for Codex image paste', async () => {
@@ -1360,6 +1438,9 @@ describe('useTerminal', () => {
     })
 
     expect(result).toBe(false)
+    // Codex short-circuits to a literal Ctrl+V byte (its own native paste path),
+    // resolved on a microtask — flush before asserting.
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)) })
     expect(sendCalls).toContainEqual({
       type: 'terminal-input',
       sessionId: 'session-1',
@@ -1382,6 +1463,14 @@ describe('useTerminal', () => {
         readText: () => Promise.resolve(''),
       },
     } as unknown as Navigator
+
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      if (String(input) === '/api/clipboard-file-path') {
+        return { ok: true, json: async () => ({ path: null }) } as Response
+      }
+      return originalFetch(input)
+    }) as typeof fetch
 
     const sendCalls: Array<Record<string, unknown>> = []
     const listeners: Array<(message: ServerMessage) => void> = []
@@ -1431,11 +1520,13 @@ describe('useTerminal', () => {
       metaKey: false,
     })
 
-    // Should have sent tmux-cancel-copy-mode BEFORE the bracket paste
+    // cancel-copy-mode is sent synchronously, before the async paste resolves.
     expect(sendCalls[0]).toEqual({
       type: 'tmux-cancel-copy-mode',
       sessionId: 'session-1',
     })
+    // Flush the async pasteboard lookup; with no image it falls back to empty bracket.
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)) })
     expect(sendCalls[1]).toEqual({
       type: 'terminal-input',
       sessionId: 'session-1',
@@ -1446,6 +1537,7 @@ describe('useTerminal', () => {
     act(() => {
       renderer.unmount()
     })
+    globalThis.fetch = originalFetch
   })
 
   test('appMouse=true scroll-up forwards wheel without disabling mouse tracking or entering copy-mode', async () => {
@@ -2247,7 +2339,7 @@ describe('useTerminal', () => {
     globalThis.fetch = originalFetch
   })
 
-  test('Cmd+V with macOS clipboard image path sends empty bracket paste', async () => {
+  test('Cmd+V with macOS clipboard image path sends a bracketed image path', async () => {
     jest.useFakeTimers()
     globalAny.navigator = {
       userAgent: 'Chrome',
@@ -2259,15 +2351,13 @@ describe('useTerminal', () => {
       },
     } as unknown as Navigator
 
+    const imagePath = '/Users/test/Documents/Screenshots/CleanShot 2026-06-13 at 10.41.52@2x.png'
     const originalFetch = globalThis.fetch
     globalThis.fetch = (async (input: RequestInfo | URL) => {
       if (String(input) === '/api/clipboard-file-path') {
         return {
           ok: true,
-          json: async () => ({
-            path: '/Users/test/Documents/Screenshots/CleanShot 2026-06-13 at 10.41.52@2x.png',
-            isImage: true,
-          }),
+          json: async () => ({ path: imagePath, isImage: true }),
         } as Response
       }
       return originalFetch(input)
@@ -2309,10 +2399,12 @@ describe('useTerminal', () => {
       jest.advanceTimersByTime(100)
     })
 
+    // The resolved image path is delivered as a bracketed paste so Claude
+    // attaches it natively, instead of the old empty-bracket clipboard signal.
     expect(sendCalls).toContainEqual({
       type: 'terminal-input',
       sessionId: 'session-1',
-      data: '\x1b[200~\x1b[201~',
+      data: `\x1b[200~${imagePath}\x1b[201~`,
     })
     expect(terminal.pasteCalls).toEqual([])
 
@@ -2554,7 +2646,7 @@ describe('useTerminal', () => {
     globalThis.fetch = originalFetch
   })
 
-  test('Cmd+V with image clipboard metadata sends empty bracket paste', async () => {
+  test('Cmd+V with image clipboard metadata (no readable blob) resolves a pasteboard path', async () => {
     jest.useFakeTimers()
     globalAny.navigator = {
       userAgent: 'Chrome',
@@ -2566,12 +2658,13 @@ describe('useTerminal', () => {
       },
     } as unknown as Navigator
 
+    const imagePath = '/tmp/agentboard-paste-abc.png'
     const originalFetch = globalThis.fetch
     const fetchCalls: string[] = []
     globalThis.fetch = (async (input: RequestInfo | URL) => {
       fetchCalls.push(String(input))
       if (String(input) === '/api/clipboard-file-path') {
-        return { ok: true, json: async () => ({ path: '/Users/test/file.txt' }) } as Response
+        return { ok: true, json: async () => ({ path: imagePath, isImage: true }) } as Response
       }
       return originalFetch(input)
     }) as typeof fetch
@@ -2601,6 +2694,8 @@ describe('useTerminal', () => {
 
     terminal.emitKey({ key: 'v', type: 'keydown', metaKey: true, ctrlKey: false })
 
+    // Image present only as metadata (no getAsFile) — the blob can't be read in
+    // the browser, so we fall back to a server-side pasteboard lookup.
     dispatchEvent('paste', {
       type: 'paste',
       preventDefault: () => {},
@@ -2619,9 +2714,88 @@ describe('useTerminal', () => {
     expect(sendCalls).toContainEqual({
       type: 'terminal-input',
       sessionId: 'session-1',
-      data: '\x1b[200~\x1b[201~',
+      data: `\x1b[200~${imagePath}\x1b[201~`,
     })
+    expect(fetchCalls).toContain('/api/clipboard-file-path')
+    expect(terminal.pasteCalls).toEqual([])
+
+    act(() => { renderer.unmount() })
+    globalThis.fetch = originalFetch
+  })
+
+  test('Cmd+V with a readable image blob uploads it and sends a bracketed path', async () => {
+    jest.useFakeTimers()
+    globalAny.navigator = {
+      userAgent: 'Chrome',
+      platform: 'MacIntel',
+      maxTouchPoints: 0,
+      clipboard: {
+        writeText: () => Promise.resolve(),
+        readText: () => Promise.resolve(''),
+      },
+    } as unknown as Navigator
+
+    const uploadedPath = '/tmp/paste-123-abcdef.png'
+    const originalFetch = globalThis.fetch
+    const fetchCalls: string[] = []
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      fetchCalls.push(String(input))
+      if (String(input) === '/api/paste-image') {
+        return { ok: true, json: async () => ({ path: uploadedPath }) } as Response
+      }
+      return originalFetch(input)
+    }) as typeof fetch
+
+    const sendCalls: Array<Record<string, unknown>> = []
+    const { container, dispatchEvent } = createContainerMock()
+
+    let renderer!: TestRenderer.ReactTestRenderer
+
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          sendMessage={(message) => sendCalls.push(message)}
+          subscribe={() => () => {}}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+        { createNodeMock: () => container },
+      )
+      await Promise.resolve()
+    })
+
+    const terminal = TerminalMock.instances[0]
+    if (!terminal) throw new Error('Expected terminal instance')
+
+    terminal.emitKey({ key: 'v', type: 'keydown', metaKey: true, ctrlKey: false })
+
+    // Real screenshot paste: the clipboard exposes a readable image File.
+    const blob = new Blob([new Uint8Array([1, 2, 3, 4])], { type: 'image/png' })
+    dispatchEvent('paste', {
+      type: 'paste',
+      preventDefault: () => {},
+      stopPropagation: () => {},
+      clipboardData: {
+        files: [blob],
+        items: [{ kind: 'file', type: 'image/png', getAsFile: () => blob }],
+        getData: () => '',
+      },
+    })
+
+    await act(async () => {
+      jest.advanceTimersByTime(100)
+    })
+
+    // The blob is uploaded and its stored path delivered as a bracketed paste.
+    expect(fetchCalls).toContain('/api/paste-image')
     expect(fetchCalls).not.toContain('/api/clipboard-file-path')
+    expect(sendCalls).toContainEqual({
+      type: 'terminal-input',
+      sessionId: 'session-1',
+      data: `\x1b[200~${uploadedPath}\x1b[201~`,
+    })
     expect(terminal.pasteCalls).toEqual([])
 
     act(() => { renderer.unmount() })

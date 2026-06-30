@@ -74,8 +74,71 @@ const CTRL_V = '\x16'
 const ENABLE_MOUSE_TRACKING = '\x1b[?1000h\x1b[?1002h\x1b[?1006h'
 const DISABLE_MOUSE_TRACKING = '\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l'
 
-function getImagePasteSignal(agentType: AgentType | undefined): string {
-  return agentType === 'codex' ? CTRL_V : BRACKET_PASTE_EMPTY
+/** Wrap text in bracketed-paste markers so the agent treats it as a paste. */
+function bracketedPaste(text: string): string {
+  return `\x1b[200~${text}\x1b[201~`
+}
+
+/**
+ * Upload an image blob to the server and return the stored file path.
+ * Returns null on any failure. Bun derives the multipart File.type from the
+ * filename extension (not the declared blob type), so the filename carries the
+ * real extension.
+ */
+async function uploadImageBlob(blob: Blob): Promise<string | null> {
+  try {
+    const ext = (blob.type.split('/')[1] || 'png').toLowerCase()
+    const form = new FormData()
+    form.append('image', blob, `paste.${ext}`)
+    const res = await fetch('/api/paste-image', { method: 'POST', body: form })
+    if (!res.ok) return null
+    const data = (await res.json()) as { path?: unknown }
+    return typeof data.path === 'string' ? data.path : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Ask the server to read the macOS pasteboard and return a file path for an
+ * image (a Finder file URL, or a temp file the server wrote from raw clipboard
+ * image data). Returns null when the clipboard holds no image.
+ */
+async function fetchClipboardImagePath(): Promise<string | null> {
+  try {
+    const res = await fetch('/api/clipboard-file-path')
+    if (!res.ok) return null
+    const data = (await res.json()) as { path?: unknown; isImage?: unknown }
+    if (data.isImage === true && typeof data.path === 'string') return data.path
+    return null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Resolve the terminal-input payload that makes the attached agent attach a
+ * pasted image.
+ *
+ * Claude Code attaches an image when it receives the image's file PATH inside a
+ * bracketed paste — not as raw-typed text, and not via an empty bracket paste.
+ * The old empty-bracket signal relied on Claude reading the macOS system
+ * clipboard itself, which its fullscreen/no-flicker renderer no longer does, so
+ * we now deliver an explicit path: upload the clipboard blob when we have it,
+ * otherwise ask the server to resolve a pasteboard path. Codex keeps its
+ * literal Ctrl+V signal (its own native image-paste path).
+ */
+async function resolveImagePasteData(
+  agentType: AgentType | undefined,
+  source: { blob?: Blob | null; path?: string | null }
+): Promise<string | null> {
+  if (agentType === 'codex') return CTRL_V
+  let path = source.path ?? null
+  if (!path && source.blob) path = await uploadImageBlob(source.blob)
+  if (!path) path = await fetchClipboardImagePath()
+  // Fall back to the empty-bracket signal so the classic renderer's native
+  // clipboard read still works when no path could be resolved.
+  return path ? bracketedPaste(path) : BRACKET_PASTE_EMPTY
 }
 
 const MAC_SHARED_PASTEBOARD_PATH_PATTERN =
@@ -88,6 +151,7 @@ function isMacSharedPasteboardPathText(text: string): boolean {
 interface PastePayload {
   text: string
   hasImage: boolean
+  imageBlob: Blob | null
 }
 
 interface PendingClipboardOffer {
@@ -111,6 +175,30 @@ function clipboardHasImage(clipboardData: DataTransfer | null | undefined): bool
     if (item?.type?.startsWith('image/')) return true
   }
   return false
+}
+
+/**
+ * Extract the first image blob from clipboard data, if one is present and
+ * directly readable. Returns null when the image can't be pulled as a File
+ * (e.g. metadata-only items), in which case callers fall back to a
+ * server-side pasteboard read.
+ */
+function getClipboardImageBlob(
+  clipboardData: DataTransfer | null | undefined
+): Blob | null {
+  if (!clipboardData) return null
+
+  for (const file of Array.from(clipboardData.files ?? [])) {
+    if (file?.type?.startsWith('image/')) return file
+  }
+
+  for (const item of Array.from(clipboardData.items ?? [])) {
+    if (item?.kind === 'file' && item.type?.startsWith('image/')) {
+      const file = item.getAsFile?.()
+      if (file) return file
+    }
+  }
+  return null
 }
 
 /**
@@ -673,25 +761,28 @@ export function useTerminal({
         }
       }
 
-      // Ctrl+V on macOS desktop: route image paste through the agent-specific
-      // signal. Claude Code reads the macOS clipboard after an empty bracket
-      // paste; Codex handles a literal Ctrl+V byte.
+      // Ctrl+V on macOS desktop: dedicated image-paste shortcut. There's no
+      // browser paste event (so no clipboard blob), so we ask the server to
+      // resolve a pasteboard image path and deliver it as a bracketed paste for
+      // Claude to attach natively; Codex gets a literal Ctrl+V byte.
       // Ctrl+V doesn't trigger a browser paste event, so there's no double-paste risk.
       // Excluded on iOS: no Finder/osascript, and Ctrl+V with hardware keyboard
       // should not trigger desktop image paste behavior.
       if (getIsMac() && !isiOS && event.ctrlKey && !event.metaKey && event.key.toLowerCase() === 'v' && event.type === 'keydown') {
-        if (attachedSessionRef.current) {
+        const attached = attachedSessionRef.current
+        if (attached) {
           if (inTmuxCopyModeRef.current) {
-            sendMessageRef.current({ type: 'tmux-cancel-copy-mode', sessionId: attachedSessionRef.current })
+            sendMessageRef.current({ type: 'tmux-cancel-copy-mode', sessionId: attached })
             setTmuxCopyMode(false)
           }
-          sendMessageRef.current({
-            type: 'terminal-input',
-            sessionId: attachedSessionRef.current,
-            data: getImagePasteSignal(agentTypeRef.current),
-          })
+          void (async () => {
+            const data = await resolveImagePasteData(agentTypeRef.current, {})
+            if (data) {
+              sendMessageRef.current({ type: 'terminal-input', sessionId: attached, data })
+            }
+          })()
         }
-        return !attachedSessionRef.current // Only swallow when attached
+        return !attached // Only swallow when attached
       }
 
       // Cmd+V on macOS / Ctrl+V on other platforms: intercept paste to handle
@@ -737,7 +828,12 @@ export function useTerminal({
             }
 
             if (payload?.hasImage && getIsMac() && !isiOS) {
-              sendMessageRef.current({ type: 'terminal-input', sessionId: attached, data: getImagePasteSignal(agentTypeRef.current) })
+              // Upload the clipboard image and deliver its path as a bracketed
+              // paste so Claude attaches it natively (works in both renderers).
+              const data = await resolveImagePasteData(agentTypeRef.current, { blob: payload.imageBlob })
+              if (data) {
+                sendMessageRef.current({ type: 'terminal-input', sessionId: attached, data })
+              }
               return
             }
 
@@ -750,7 +846,11 @@ export function useTerminal({
                   const { path, isImage } = (await res.json()) as { path: string | null; isImage?: boolean }
                   if (path) {
                     if (isImage) {
-                      sendMessageRef.current({ type: 'terminal-input', sessionId: attached, data: getImagePasteSignal(agentTypeRef.current) })
+                      // Deliver the resolved image path as a bracketed paste.
+                      const data = await resolveImagePasteData(agentTypeRef.current, { path })
+                      if (data) {
+                        sendMessageRef.current({ type: 'terminal-input', sessionId: attached, data })
+                      }
                       return
                     }
                     // Send as raw input (no bracket paste) so Claude Code
@@ -769,9 +869,13 @@ export function useTerminal({
 
             // Shared Mac clipboard image pastes can expose only a protected
             // useractivityd path to the browser. Sending that path to an agent
-            // is useless; ask the attached CLI to run its native image-paste path.
+            // is useless; ask the server to resolve a real pasteboard image path
+            // (falling back to the empty-bracket signal) so the CLI can attach it.
             if (getIsMac() && !isiOS) {
-              sendMessageRef.current({ type: 'terminal-input', sessionId: attached, data: getImagePasteSignal(agentTypeRef.current) })
+              const data = await resolveImagePasteData(agentTypeRef.current, {})
+              if (data) {
+                sendMessageRef.current({ type: 'terminal-input', sessionId: attached, data })
+              }
             }
           } finally {
             pasteResolver = null
@@ -801,10 +905,11 @@ export function useTerminal({
       e.preventDefault()
       e.stopPropagation()
       const text = e.clipboardData?.getData('text/plain') ?? ''
-      const hasImage = clipboardHasImage(e.clipboardData)
+      const imageBlob = getClipboardImageBlob(e.clipboardData)
+      const hasImage = imageBlob !== null || clipboardHasImage(e.clipboardData)
       const resolver = pasteResolver
       pasteResolver = null
-      resolver({ text, hasImage })
+      resolver({ text, hasImage, imageBlob })
     }
     container.addEventListener('paste', handlePaste, { capture: true })
 
