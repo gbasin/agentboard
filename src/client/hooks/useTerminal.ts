@@ -11,7 +11,7 @@ import type { AgentType, ClipboardOfferSource, SendClientMessage, ServerMessageW
 import { clientLog } from '../utils/clientLog'
 import type { ConnectionStatus } from '../stores/sessionStore'
 import { copyText } from '../utils/copyText'
-import { bracketedPaste } from '../utils/paste'
+import { bracketedPaste, sanitizeImagePath } from '../utils/paste'
 
 // Module-level snapshot cache: sessionId → serialized terminal content.
 // Survives component remounts and avoids stale-closure issues in effects.
@@ -134,7 +134,7 @@ async function resolveImagePasteData(
   if (!path) path = await fetchClipboardImagePath()
   // Fall back to the empty-bracket signal so the classic renderer's native
   // clipboard read still works when no path could be resolved.
-  return path ? bracketedPaste(path) : BRACKET_PASTE_EMPTY
+  return path ? bracketedPaste(sanitizeImagePath(path)) : BRACKET_PASTE_EMPTY
 }
 
 const MAC_SHARED_PASTEBOARD_PATH_PATTERN =
@@ -745,6 +745,16 @@ export function useTerminal({
 
     const pasteModifier = getIsMac() ? 'metaKey' : 'ctrlKey' as const
 
+    // Paste delivery often resolves after async work (clipboard read, image
+    // upload). Only forward input if the session captured when the paste began
+    // is still the attached one, so a mid-paste session switch can't deliver to
+    // the wrong (or a no-longer-viewed) session.
+    const sendInputIfStillAttached = (expected: string, data: string | null) => {
+      if (data && attachedSessionRef.current === expected) {
+        sendMessageRef.current({ type: 'terminal-input', sessionId: expected, data })
+      }
+    }
+
     terminal.attachCustomKeyEventHandler((event) => {
       // Cmd/Ctrl+C: copy selection (only non-whitespace to avoid clearing images from clipboard)
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
@@ -773,9 +783,7 @@ export function useTerminal({
           }
           void (async () => {
             const data = await resolveImagePasteData(agentTypeRef.current, {})
-            if (data) {
-              sendMessageRef.current({ type: 'terminal-input', sessionId: attached, data })
-            }
+            sendInputIfStillAttached(attached, data)
           })()
         }
         return !attached // Only swallow when attached
@@ -827,9 +835,7 @@ export function useTerminal({
               // Upload the clipboard image and deliver its path as a bracketed
               // paste so Claude attaches it natively (works in both renderers).
               const data = await resolveImagePasteData(agentTypeRef.current, { blob: payload.imageBlob })
-              if (data) {
-                sendMessageRef.current({ type: 'terminal-input', sessionId: attached, data })
-              }
+              sendInputIfStillAttached(attached, data)
               return
             }
 
@@ -844,14 +850,12 @@ export function useTerminal({
                     if (isImage) {
                       // Deliver the resolved image path as a bracketed paste.
                       const data = await resolveImagePasteData(agentTypeRef.current, { path })
-                      if (data) {
-                        sendMessageRef.current({ type: 'terminal-input', sessionId: attached, data })
-                      }
+                      sendInputIfStillAttached(attached, data)
                       return
                     }
                     // Send as raw input (no bracket paste) so Claude Code
                     // doesn't detect a paste and read the system clipboard
-                    sendMessageRef.current({ type: 'terminal-input', sessionId: attached, data: path })
+                    sendInputIfStillAttached(attached, path)
                     return
                   }
                 }
@@ -869,9 +873,7 @@ export function useTerminal({
             // (falling back to the empty-bracket signal) so the CLI can attach it.
             if (getIsMac() && !isiOS) {
               const data = await resolveImagePasteData(agentTypeRef.current, {})
-              if (data) {
-                sendMessageRef.current({ type: 'terminal-input', sessionId: attached, data })
-              }
+              sendInputIfStillAttached(attached, data)
             }
           } finally {
             pasteResolver = null

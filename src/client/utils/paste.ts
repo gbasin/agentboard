@@ -11,6 +11,17 @@ export function bracketedPaste(text: string): string {
 }
 
 /**
+ * Strip C0 control characters and DEL from a file path before it's delivered to
+ * the terminal. A legitimate image path never contains these, but a crafted
+ * filename could embed ESC / the bracketed-paste end marker and break out of
+ * the paste sequence to inject terminal control codes.
+ */
+export function sanitizeImagePath(path: string): string {
+  // eslint-disable-next-line no-control-regex
+  return path.replace(/[\x00-\x1f\x7f]/g, '')
+}
+
+/**
  * Build the terminal-input payload that delivers an uploaded image's file path
  * to the attached agent so it attaches the image.
  *
@@ -23,5 +34,6 @@ export function imagePathInput(
   path: string,
   agentType: AgentType | undefined
 ): string {
-  return agentType === 'codex' ? path : bracketedPaste(path)
+  const clean = sanitizeImagePath(path)
+  return agentType === 'codex' ? clean : bracketedPaste(clean)
 }

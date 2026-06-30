@@ -262,7 +262,7 @@ export default function TerminalControls({
 
     zone.addEventListener('paste', handlePaste)
     return () => zone.removeEventListener('paste', handlePaste)
-  }, [showPasteInput, onSendKey, onRefocus])
+  }, [showPasteInput, onSendKey, onRefocus, agentType])
 
   const handlePress = (key: string) => {
     if (disabled) return
