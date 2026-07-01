@@ -153,6 +153,78 @@ describe('PipePaneTerminalProxy', () => {
     await proxy.dispose()
   })
 
+  test('paste delivers a bracketed paste-buffer and never splits into Enter keys', async () => {
+    const harness = createPipeHarness()
+
+    const proxy = new PipePaneTerminalProxy({
+      connectionId: 'conn-paste',
+      sessionName: 'agentboard-ws-conn-paste',
+      baseSession: 'agentboard',
+      onData: () => {},
+      spawn: harness.spawn,
+      spawnSync: harness.spawnSync,
+      monitorTargets: false,
+    })
+
+    await proxy.start()
+    await proxy.switchTo('agentboard:@1')
+
+    proxy.paste('multi\nline\npaste')
+
+    // Staged via load-buffer stdin (no argv size limit) into a unique buffer,
+    // then replayed with paste-buffer -p (bracketed iff the real pane asked).
+    expect(harness.tmuxCalls).toContainEqual([
+      'tmux',
+      'load-buffer',
+      '-b',
+      'agentboard-paste-conn-paste-1',
+      '-',
+    ])
+    expect(harness.tmuxCalls).toContainEqual([
+      'tmux',
+      'paste-buffer',
+      '-d',
+      '-p',
+      '-b',
+      'agentboard-paste-conn-paste-1',
+      '-t',
+      'agentboard:@1',
+    ])
+    // The bug being fixed: pasted newlines must NOT become literal Enter keys.
+    expect(harness.tmuxCalls).not.toContainEqual([
+      'tmux',
+      'send-keys',
+      '-t',
+      'agentboard:@1',
+      'Enter',
+    ])
+
+    await proxy.dispose()
+  })
+
+  test('paste is a no-op before a target is selected', async () => {
+    const harness = createPipeHarness()
+
+    const proxy = new PipePaneTerminalProxy({
+      connectionId: 'conn-paste-2',
+      sessionName: 'agentboard-ws-conn-paste-2',
+      baseSession: 'agentboard',
+      onData: () => {},
+      spawn: harness.spawn,
+      spawnSync: harness.spawnSync,
+      monitorTargets: false,
+    })
+
+    await proxy.start()
+    proxy.paste('hello')
+
+    expect(
+      harness.tmuxCalls.some((call) => getTmuxCommand(call) === 'load-buffer')
+    ).toBe(false)
+
+    await proxy.dispose()
+  })
+
   test('marks dead and calls onExit when tail exits', async () => {
     const harness = createPipeHarness()
     let exitCalls = 0

@@ -55,6 +55,7 @@ interface ITerminalProxy {
   switchTo(target: string, onReady?: () => void): Promise<boolean>
   resolveEffectiveTarget(target: string): string
   write(data: string): void
+  paste(data: string): void
   resize(cols: number, rows: number): void
   dispose(): Promise<void>
   isReady(): boolean

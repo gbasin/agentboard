@@ -135,6 +135,13 @@ class PipePaneTerminalProxy extends TerminalProxyBase {
     }
   }
 
+  paste(data: string): void {
+    if (!data || !this.currentTarget || this.state === TerminalState.DEAD) {
+      return
+    }
+    this.deliverPasteViaTmux(this.currentTarget, data)
+  }
+
   resize(cols: number, rows: number): void {
     this.cols = cols
     this.rows = rows

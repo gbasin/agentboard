@@ -147,6 +147,9 @@ export type ClientMessage =
     }
   | { type: 'terminal-detach'; sessionId: string }
   | { type: 'terminal-input'; sessionId: string; data: string }
+  // Pasted text delivered as a single bracketed paste (via tmux paste-buffer),
+  // so multi-line content isn't auto-submitted line-by-line by the pane's app.
+  | { type: 'terminal-paste'; sessionId: string; data: string }
   | { type: 'terminal-resize'; sessionId: string; cols: number; rows: number }
   | { type: 'session-create'; projectPath: string; name?: string; command?: string; host?: string }
   | { type: 'session-kill'; sessionId: string; source?: SessionKillSource }

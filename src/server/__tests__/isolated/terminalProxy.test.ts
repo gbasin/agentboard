@@ -213,6 +213,56 @@ describe('TerminalProxy', () => {
     expect(proxy.getCurrentWindow()).toBe('@2')
   })
 
+  test('paste stages via load-buffer stdin and replays into the grouped session', async () => {
+    const harness = createSpawnHarness()
+    const proxy = new TerminalProxy({
+      connectionId: 'abc',
+      sessionName: 'agentboard-ws-abc',
+      baseSession: 'agentboard',
+      onData: () => {},
+      spawn: harness.spawn,
+      spawnSync: harness.spawnSync,
+      wait: async () => {},
+    })
+
+    await proxy.start()
+    proxy.paste('line1\r\nline2\nline3')
+
+    // Payload travels via stdin (no argv size limit), CRLF normalized to LF.
+    const loadCall = harness.spawnSyncCalls.find(
+      (call) => getTmuxCommand(call.args) === 'load-buffer'
+    )
+    expect(loadCall?.args).toEqual([
+      'tmux',
+      'load-buffer',
+      '-b',
+      'agentboard-paste-abc-1',
+      '-',
+    ])
+    expect(
+      (loadCall?.options as { stdin?: Buffer } | undefined)?.stdin?.toString()
+    ).toBe('line1\nline2\nline3')
+
+    // Replayed into the grouped session's active pane; -p defers bracketing to
+    // the real pane's mode, -d deletes the staged buffer.
+    expect(harness.spawnSyncCalls).toContainEqual({
+      args: [
+        'tmux',
+        'paste-buffer',
+        '-d',
+        '-p',
+        '-b',
+        'agentboard-paste-abc-1',
+        '-t',
+        'agentboard-ws-abc',
+      ],
+      options: expect.objectContaining({ timeout: 3000 }),
+    })
+
+    // Paste must never reach the raw pty write path (auto-submit risk).
+    expect(harness.writes).toEqual([])
+  })
+
   test('switchTo rewrites base-session targets to grouped session targets', async () => {
     const harness = createSpawnHarness()
     const proxy = new TerminalProxy({

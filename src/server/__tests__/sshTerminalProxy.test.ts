@@ -13,7 +13,9 @@ function createSshHarness(options?: {
   const spawnCalls: Array<{
     args: string[]
     mode: 'terminal' | 'pipe'
+    stdin?: string
   }> = []
+  const terminalWrites: string[] = []
   let killed = false
   let terminalClosed = false
   let exitResolver: ((code: number) => void) | null = null
@@ -38,13 +40,20 @@ function createSshHarness(options?: {
     const isTerminalMode =
       spawnOpts && typeof spawnOpts === 'object' && 'terminal' in spawnOpts
 
-    spawnCalls.push({ args, mode: isTerminalMode ? 'terminal' : 'pipe' })
+    const stdinOpt = (spawnOpts as { stdin?: Buffer } | undefined)?.stdin
+    spawnCalls.push({
+      args,
+      mode: isTerminalMode ? 'terminal' : 'pipe',
+      ...(stdinOpt !== undefined ? { stdin: stdinOpt.toString() } : {}),
+    })
 
     if (isTerminalMode) {
       // Terminal mode — used by doStartCore for SSH attach
       return {
         terminal: {
-          write: () => {},
+          write: (data: string) => {
+            terminalWrites.push(data)
+          },
           resize: () => {},
           close: () => {
             terminalClosed = true
@@ -95,9 +104,17 @@ function createSshHarness(options?: {
     spawn,
     spawnSync,
     spawnCalls,
+    terminalWrites,
     wasKilled: () => killed,
     wasTerminalClosed: () => terminalClosed,
     resolveExit: (code = 0) => exitResolver?.(code),
+  }
+}
+
+/** Flush the fire-and-forget async paste chain (each await = one microtask hop). */
+async function flushAsync(rounds = 6) {
+  for (let i = 0; i < rounds; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0))
   }
 }
 
@@ -339,5 +356,124 @@ describe('SshTerminalProxy', () => {
     await expect(proxy.start()).rejects.toMatchObject({
       code: 'ERR_SESSION_CREATE_FAILED',
     })
+  })
+
+  test('paste stages via load-buffer stdin and replays with paste-buffer', async () => {
+    const harness = createSshHarness({ ttyAvailable: true })
+    const proxy = new SshTerminalProxy({
+      connectionId: 'conn-paste',
+      sessionName: 'test-paste-session',
+      baseSession: 'agentboard',
+      host: 'remote-host',
+      onData: () => {},
+      spawn: harness.spawn,
+      spawnSync: harness.spawnSync,
+    })
+
+    await proxy.start()
+    proxy.paste('line1\r\nline2\nline3')
+    await flushAsync()
+
+    // Payload rides ssh stdin into remote `tmux load-buffer -` (no argv limit),
+    // CRLF normalized to LF, staged in a unique per-paste buffer.
+    const loadCall = harness.spawnCalls.find(
+      (c) => c.mode === 'pipe' && c.args.some((a) => a.includes('load-buffer'))
+    )
+    expect(loadCall).toBeDefined()
+    const loadCmd = loadCall!.args[loadCall!.args.length - 1]
+    expect(loadCmd).toContain('agentboard-paste-conn-paste-1')
+    expect(loadCall!.stdin).toBe('line1\nline2\nline3')
+
+    // Replayed with -d -p against the remote session's active pane.
+    const pasteCall = harness.spawnCalls.find(
+      (c) => c.mode === 'pipe' && c.args.some((a) => a.includes('paste-buffer'))
+    )
+    expect(pasteCall).toBeDefined()
+    const pasteCmd = pasteCall!.args[pasteCall!.args.length - 1]
+    expect(pasteCmd).toContain('-d')
+    expect(pasteCmd).toContain('-p')
+    expect(pasteCmd).toContain('agentboard-paste-conn-paste-1')
+    expect(pasteCmd).toContain('test-paste-session')
+
+    // Paste must never reach the raw interactive pty (auto-submit risk).
+    expect(harness.terminalWrites).toEqual([])
+
+    await proxy.dispose()
+  })
+
+  test('paste load-buffer failure drops the paste without a raw pty write', async () => {
+    const harness = createSshHarness({
+      spawnPipeOverride: (args) => {
+        const cmd = args.join(' ')
+        if (cmd.includes('list-clients')) {
+          return { exitCode: 0, stdout: '/dev/pts/42\n', stderr: '' }
+        }
+        if (cmd.includes('load-buffer')) {
+          return { exitCode: 1, stdout: '', stderr: 'tmux gone' }
+        }
+        return { exitCode: 0, stdout: '', stderr: '' }
+      },
+    })
+    const proxy = new SshTerminalProxy({
+      connectionId: 'conn-paste-fail',
+      sessionName: 'test-paste-fail',
+      baseSession: 'agentboard',
+      host: 'remote-host',
+      onData: () => {},
+      spawn: harness.spawn,
+      spawnSync: harness.spawnSync,
+    })
+
+    await proxy.start()
+    proxy.paste('a\nb')
+    await flushAsync()
+
+    // No replay after the failed staging, and no fallback into the pty —
+    // a raw multi-line write is the auto-submit bug.
+    expect(
+      harness.spawnCalls.some(
+        (c) => c.mode === 'pipe' && c.args.some((a) => a.includes('paste-buffer'))
+      )
+    ).toBe(false)
+    expect(harness.terminalWrites).toEqual([])
+
+    await proxy.dispose()
+  })
+
+  test('paste-buffer failure cleans up the staged buffer', async () => {
+    const harness = createSshHarness({
+      spawnPipeOverride: (args) => {
+        const cmd = args.join(' ')
+        if (cmd.includes('list-clients')) {
+          return { exitCode: 0, stdout: '/dev/pts/42\n', stderr: '' }
+        }
+        if (cmd.includes('paste-buffer')) {
+          return { exitCode: 1, stdout: '', stderr: 'no such target' }
+        }
+        return { exitCode: 0, stdout: '', stderr: '' }
+      },
+    })
+    const proxy = new SshTerminalProxy({
+      connectionId: 'conn-paste-clean',
+      sessionName: 'test-paste-clean',
+      baseSession: 'agentboard',
+      host: 'remote-host',
+      onData: () => {},
+      spawn: harness.spawn,
+      spawnSync: harness.spawnSync,
+    })
+
+    await proxy.start()
+    proxy.paste('a\nb')
+    await flushAsync()
+
+    expect(
+      harness.spawnCalls.some(
+        (c) => c.mode === 'pipe' && c.args.some((a) => a.includes('delete-buffer'))
+      )
+    ).toBe(true)
+    expect(harness.terminalWrites).toEqual([])
+
+    await proxy.dispose()
   })
 })

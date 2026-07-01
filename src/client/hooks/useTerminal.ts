@@ -863,7 +863,24 @@ export function useTerminal({
             }
 
             if (text && !isMacSharedPasteboardPathText(text)) {
-              terminal.paste(text)
+              // Deliver as an explicit paste so the server can bracket it via
+              // tmux (paste-buffer -p). Relying on xterm's terminal.paste()
+              // would only bracket when the browser's own bracketedPasteMode is
+              // on — which it isn't when we attach to an already-running app
+              // (e.g. Claude Code in no-flicker/fullscreen), causing multi-line
+              // pastes to auto-submit on the first newline. Guard on the live
+              // ref (like sendInputIfStillAttached) so a session switch during
+              // the async clipboard read doesn't paste into the wrong session.
+              if (attachedSessionRef.current === attached) {
+                // Exit tmux copy-mode first (as onData does for typed input):
+                // paste-buffer into a pane still in copy-mode is swallowed by
+                // the copy-mode key table instead of reaching the program.
+                if (inTmuxCopyModeRef.current) {
+                  sendMessageRef.current({ type: 'tmux-cancel-copy-mode', sessionId: attached })
+                  setTmuxCopyMode(false)
+                }
+                sendMessageRef.current({ type: 'terminal-paste', sessionId: attached, data: text })
+              }
               return
             }
 

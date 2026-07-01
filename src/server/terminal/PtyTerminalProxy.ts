@@ -53,6 +53,15 @@ class PtyTerminalProxy extends TerminalProxyBase {
     this.process?.terminal?.write(data)
   }
 
+  paste(data: string): void {
+    if (!data || this.state === TerminalState.DEAD) {
+      return
+    }
+    // Target the grouped session's active pane (the window this client switched
+    // to). tmux decides bracketing from that real pane's mode.
+    this.deliverPasteViaTmux(this.options.sessionName, data)
+  }
+
   resize(cols: number, rows: number): void {
     this.cols = cols
     this.rows = rows

@@ -25,6 +25,7 @@ abstract class TerminalProxyBase implements ITerminalProxy {
   protected startPromise: Promise<void> | null = null
   protected outputSuppressed = false
 
+  private pasteSeq = 0
   private switchQueue: Promise<void> = Promise.resolve()
   private pendingTarget: string | null = null
   private pendingOnReady: (() => void) | undefined
@@ -97,13 +98,14 @@ abstract class TerminalProxyBase implements ITerminalProxy {
 
   protected runTmux(
     args: string[],
-    options: { timeoutMs?: number } = {}
+    options: { timeoutMs?: number; stdin?: string } = {}
   ): string {
     const timeoutMs = options.timeoutMs ?? this.commandTimeoutMs
     const result = this.spawnSync(['tmux', ...args], {
       stdout: 'pipe',
       stderr: 'pipe',
       timeout: timeoutMs,
+      ...(options.stdin !== undefined ? { stdin: Buffer.from(options.stdin) } : {}),
     })
 
     if (result.signalCode === 'SIGTERM' || result.exitCode === null) {
@@ -120,6 +122,88 @@ abstract class TerminalProxyBase implements ITerminalProxy {
 
   protected runTmuxMutation(args: string[]): string {
     return this.runTmux(args, { timeoutMs: this.mutationTimeoutMs })
+  }
+
+  /**
+   * A unique-per-paste tmux buffer name. The monotonic suffix matters for the
+   * SSH proxy, whose paste is fire-and-forget async: two rapid pastes would
+   * otherwise stage into (and delete) the same shared buffer and race. Sync
+   * proxies (pty/pipe-pane) can't interleave, but a unique name is harmless.
+   */
+  protected nextPasteBufferName(): string {
+    const sanitized =
+      this.options.connectionId.replace(/[^A-Za-z0-9_-]/g, '') || 'connection'
+    this.pasteSeq += 1
+    return `agentboard-paste-${sanitized}-${this.pasteSeq}`
+  }
+
+  /**
+   * Normalize CRLF/CR to LF so tmux's paste-buffer LF->CR conversion yields
+   * exactly one carriage return per line (no doubled blank lines).
+   */
+  protected normalizePasteData(data: string): string {
+    return data.replace(/\r\n?/g, '\n')
+  }
+
+  /**
+   * Deliver `data` to `target` as a single bracketed paste (synchronous; used
+   * by the pty and pipe-pane proxies).
+   *
+   * The text is staged with `load-buffer -` (read from stdin) rather than
+   * `set-buffer -- <data>`: passing the payload as one argv element hits the
+   * OS single-argument limit (~128 KB on Linux) for large pastes, and a failed
+   * spawn would fall back to the raw write path — which splits newlines into
+   * Enter keys and reintroduces the line-by-line auto-submit this fix exists to
+   * prevent. `paste-buffer -p` then replays it, wrapping the payload in
+   * bracketed-paste markers *only if the target pane's program requested
+   * bracketed paste mode* (ESC[?2004h). That gate is keyed on the real pane —
+   * not the browser xterm's view — so it works even when the browser attached
+   * after the program (e.g. Claude Code) enabled the mode and never re-emitted
+   * it (the no-flicker/fullscreen case). `-d` deletes the buffer after pasting.
+   *
+   * On failure we deliberately do NOT fall back to write(): a partial/raw
+   * delivery of multi-line text is exactly the auto-submit bug.
+   */
+  protected deliverPasteViaTmux(target: string, data: string): void {
+    const bufferName = this.nextPasteBufferName()
+    const normalized = this.normalizePasteData(data)
+    try {
+      this.runTmux(['load-buffer', '-b', bufferName, '-'], { stdin: normalized })
+    } catch (error) {
+      // The paste is dropped (never fall back to a raw write — that's the
+      // auto-submit bug); log so the drop isn't silent.
+      this.logPasteFailure(target, 'load-buffer', normalized.length, error)
+      return
+    }
+    try {
+      this.runTmux(['paste-buffer', '-d', '-p', '-b', bufferName, '-t', target])
+    } catch (error) {
+      this.logPasteFailure(target, 'paste-buffer', normalized.length, error)
+      // paste failed after the buffer was staged; clean it up (best-effort).
+      try {
+        this.runTmux(['delete-buffer', '-b', bufferName])
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  protected logPasteFailure(
+    target: string,
+    stage: 'load-buffer' | 'paste-buffer',
+    bytes: number,
+    error: unknown
+  ): void {
+    // warn (not the debug-level logEvent): a dropped paste is user-visible.
+    logger.warn('terminal_paste_failed', {
+      connectionId: this.options.connectionId,
+      sessionName: this.options.sessionName,
+      target,
+      stage,
+      bytes,
+      mode: this.getMode(),
+      error: error instanceof Error ? error.message : String(error),
+    })
   }
 
   protected runParsedTmux(
@@ -155,6 +239,7 @@ abstract class TerminalProxyBase implements ITerminalProxy {
   }
 
   abstract write(data: string): void
+  abstract paste(data: string): void
   abstract resize(cols: number, rows: number): void
   abstract dispose(): Promise<void>
   abstract getClientTty(): string | null

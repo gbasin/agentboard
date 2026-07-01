@@ -1242,7 +1242,15 @@ describe('useTerminal', () => {
       jest.advanceTimersByTime(100)
     })
 
-    expect(terminal.pasteCalls).toContain('pasted-text')
+    // Pasted text is delivered as an explicit terminal-paste message (bracketed
+    // server-side via tmux), NOT via terminal.paste() — which would only bracket
+    // when the browser's own bracketedPasteMode is on, and otherwise auto-submit.
+    expect(sendCalls).toContainEqual({
+      type: 'terminal-paste',
+      sessionId: 'session-1',
+      data: 'pasted-text',
+    })
+    expect(terminal.pasteCalls).toEqual([])
     // The capture-phase listener should have prevented the default to block ClipboardAddon
     expect(pasteEvent.preventDefault).toHaveBeenCalled()
     expect(pasteEvent.stopPropagation).toHaveBeenCalled()
@@ -1538,6 +1546,83 @@ describe('useTerminal', () => {
       renderer.unmount()
     })
     globalThis.fetch = originalFetch
+  })
+
+  test('Cmd+V text paste while in tmux copy-mode exits copy-mode before pasting', async () => {
+    jest.useFakeTimers()
+    globalAny.navigator = {
+      userAgent: 'Chrome',
+      platform: 'MacIntel',
+      maxTouchPoints: 0,
+      clipboard: {
+        writeText: () => Promise.resolve(),
+        readText: () => Promise.resolve(''),
+      },
+    } as unknown as Navigator
+
+    const sendCalls: Array<Record<string, unknown>> = []
+    const listeners: Array<(message: ServerMessage) => void> = []
+    const { container, dispatchEvent } = createContainerMock()
+
+    let renderer!: TestRenderer.ReactTestRenderer
+
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          sendMessage={(message) => sendCalls.push(message)}
+          subscribe={(listener) => {
+            listeners.push(listener)
+            return () => {}
+          }}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+        { createNodeMock: () => container },
+      )
+      await Promise.resolve()
+    })
+
+    const terminal = TerminalMock.instances[0]
+    if (!terminal) throw new Error('Expected terminal instance')
+
+    // Enter copy-mode via server status, then paste multi-line text.
+    act(() => {
+      listeners[0]?.({
+        type: 'tmux-copy-mode-status',
+        sessionId: 'session-1',
+        inCopyMode: true,
+      })
+    })
+    sendCalls.length = 0
+
+    terminal.emitKey({ key: 'v', type: 'keydown', metaKey: true, ctrlKey: false })
+    dispatchEvent('paste', {
+      type: 'paste',
+      preventDefault: mock(() => {}),
+      stopPropagation: mock(() => {}),
+      clipboardData: { getData: () => 'line-a\nline-b' },
+    })
+    await act(async () => { jest.advanceTimersByTime(100) })
+
+    // copy-mode must be cancelled BEFORE the paste is delivered, otherwise the
+    // paste-buffer lands in copy-mode and never reaches the program.
+    const cancelIdx = sendCalls.findIndex((c) => c.type === 'tmux-cancel-copy-mode')
+    const pasteIdx = sendCalls.findIndex((c) => c.type === 'terminal-paste')
+    expect(cancelIdx).toBeGreaterThanOrEqual(0)
+    expect(pasteIdx).toBeGreaterThan(cancelIdx)
+    expect(sendCalls[pasteIdx]).toEqual({
+      type: 'terminal-paste',
+      sessionId: 'session-1',
+      data: 'line-a\nline-b',
+    })
+    expect(terminal.pasteCalls).toEqual([])
+
+    act(() => {
+      renderer.unmount()
+    })
+    jest.useRealTimers()
   })
 
   test('appMouse=true scroll-up forwards wheel without disabling mouse tracking or entering copy-mode', async () => {
@@ -2155,6 +2240,7 @@ describe('useTerminal', () => {
     } as unknown as Navigator
 
     const { container } = createContainerMock()
+    const sendCalls: Array<Record<string, unknown>> = []
 
     let renderer!: TestRenderer.ReactTestRenderer
 
@@ -2163,7 +2249,7 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={() => {}}
+          sendMessage={(message) => sendCalls.push(message)}
           subscribe={() => () => {}}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -2184,8 +2270,14 @@ describe('useTerminal', () => {
       jest.advanceTimersByTime(100)
     })
 
-    // Should have fallen back to navigator.clipboard.readText()
-    expect(terminal.pasteCalls).toContain('clipboard-api-text')
+    // Should have fallen back to navigator.clipboard.readText() and delivered it
+    // as an explicit terminal-paste (bracketed server-side), not terminal.paste().
+    expect(sendCalls).toContainEqual({
+      type: 'terminal-paste',
+      sessionId: 'session-1',
+      data: 'clipboard-api-text',
+    })
+    expect(terminal.pasteCalls).toEqual([])
 
     act(() => { renderer.unmount() })
     globalThis.fetch = originalFetch

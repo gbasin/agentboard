@@ -118,9 +118,10 @@ describe('TerminalControls', () => {
     expect(selections).toEqual(['session-2'])
   })
 
-  test('paste button uses clipboard text fallback and refocuses', async () => {
+  test('paste button routes clipboard text through onPasteText and refocuses', async () => {
     let refocused = false
     const sent: string[] = []
+    const pasted: string[] = []
 
     globalAny.navigator = {
       vibrate: () => true,
@@ -133,6 +134,7 @@ describe('TerminalControls', () => {
     const renderer = TestRenderer.create(
       <TerminalControls
         onSendKey={(key) => sent.push(key)}
+        onPasteText={(text) => pasted.push(text)}
         sessions={[{ id: 'session-1', name: 'alpha', status: 'working' }]}
         currentSessionId="session-1"
         onSelectSession={() => {}}
@@ -152,8 +154,43 @@ describe('TerminalControls', () => {
       await pasteButton.props.onClick()
     })
 
-    expect(sent).toEqual(['pasted text'])
+    // Pasted text goes through the explicit paste path (bracketed server-side),
+    // never the raw keystroke path — so multi-line pastes aren't auto-submitted.
+    expect(pasted).toEqual(['pasted text'])
+    expect(sent).toEqual([])
     expect(refocused).toBe(true)
+  })
+
+  test('paste button falls back to onSendKey when onPasteText is not provided', async () => {
+    const sent: string[] = []
+
+    globalAny.navigator = {
+      vibrate: () => true,
+      clipboard: {
+        read: () => Promise.reject(new Error('no clipboard')),
+        readText: () => Promise.resolve('pasted text'),
+      },
+    } as unknown as Navigator
+
+    const renderer = TestRenderer.create(
+      <TerminalControls
+        onSendKey={(key) => sent.push(key)}
+        sessions={[{ id: 'session-1', name: 'alpha', status: 'working' }]}
+        currentSessionId="session-1"
+        onSelectSession={() => {}}
+      />
+    )
+
+    const pasteButton = findPasteButton(renderer)
+    if (!pasteButton) {
+      throw new Error('Expected paste button')
+    }
+
+    await act(async () => {
+      await pasteButton.props.onClick()
+    })
+
+    expect(sent).toEqual(['pasted text'])
   })
 
   test('manual paste input sends text on enter', async () => {

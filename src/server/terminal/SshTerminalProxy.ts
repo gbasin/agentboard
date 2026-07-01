@@ -43,6 +43,43 @@ class SshTerminalProxy extends TerminalProxyBase {
     this.process?.terminal?.write(data)
   }
 
+  paste(data: string): void {
+    if (!data || this.state === TerminalState.DEAD) {
+      return
+    }
+    // Stage via load-buffer stdin (no argv size limit) into a unique buffer
+    // (fire-and-forget async delivery means two rapid pastes must not share a
+    // buffer), then paste-buffer -p. tmux gates bracketing on the real pane.
+    // Remote tmux runs over SSH (async) so this is fire-and-forget; the caller
+    // is a synchronous WebSocket handler that must not block on the round-trip.
+    // NOTE: because typed input (write) goes straight to the interactive pty
+    // while paste takes this side-channel, a paste immediately followed by
+    // Enter can, on a slow SSH link, submit before the paste lands — a
+    // remote-only ordering caveat inherent to the side-channel.
+    const bufferName = this.nextPasteBufferName()
+    const normalized = this.normalizePasteData(data)
+    const target = this.options.sessionName
+    void (async () => {
+      try {
+        await this.runTmuxAsync(['load-buffer', '-b', bufferName, '-'], normalized)
+      } catch (error) {
+        // Never fall back to write(): raw multi-line delivery auto-submits.
+        this.logPasteFailure(target, 'load-buffer', normalized.length, error)
+        return
+      }
+      try {
+        await this.runTmuxAsync(['paste-buffer', '-d', '-p', '-b', bufferName, '-t', target])
+      } catch (error) {
+        this.logPasteFailure(target, 'paste-buffer', normalized.length, error)
+        try {
+          await this.runTmuxAsync(['delete-buffer', '-b', bufferName])
+        } catch {
+          // ignore best-effort cleanup failure
+        }
+      }
+    })()
+  }
+
   resize(cols: number, rows: number): void {
     this.cols = cols
     this.rows = rows
@@ -91,11 +128,12 @@ class SshTerminalProxy extends TerminalProxyBase {
    * Uses Bun.spawn instead of spawnSync so the event loop is not blocked
    * while waiting for SSH round-trips.
    */
-  protected async runTmuxAsync(args: string[]): Promise<string> {
+  protected async runTmuxAsync(args: string[], input?: string): Promise<string> {
     const remoteCmd = `tmux ${args.map(a => shellQuote(a)).join(' ')}`
     const proc = this.spawn([...this.sshArgs, remoteCmd], {
       stdout: 'pipe',
       stderr: 'pipe',
+      ...(input !== undefined ? { stdin: Buffer.from(input) } : {}),
     })
 
     const timeout = setTimeout(() => {

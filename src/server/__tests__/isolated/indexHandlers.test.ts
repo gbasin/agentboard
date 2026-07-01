@@ -246,6 +246,7 @@ class TerminalProxyMock {
   }
   starts = 0
   writes: string[] = []
+  pastes: string[] = []
   resizes: Array<{ cols: number; rows: number }> = []
   disposed = false
   switchTargets: string[] = []
@@ -291,6 +292,10 @@ class TerminalProxyMock {
 
   write(data: string) {
     this.writes.push(data)
+  }
+
+  paste(data: string) {
+    this.pastes.push(data)
   }
 
   resize(cols: number, rows: number) {
@@ -2413,6 +2418,14 @@ describe('server message handlers', () => {
     websocket.message?.(
       ws as never,
       JSON.stringify({
+        type: 'terminal-paste',
+        sessionId: baseSession.id,
+        data: 'pasted\nmultiline',
+      })
+    )
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({
         type: 'terminal-resize',
         sessionId: baseSession.id,
         cols: 120,
@@ -2420,7 +2433,10 @@ describe('server message handlers', () => {
       })
     )
 
+    // Typed input goes to write(); pasted text goes to paste() (bracketed via
+    // tmux) and must not leak into the raw keystroke path.
     expect(attached?.writes).toEqual(['ls'])
+    expect(attached?.pastes).toEqual(['pasted\nmultiline'])
     expect(attached?.resizes).toEqual([{ cols: 120, rows: 40 }])
 
     attached?.emitData('output')

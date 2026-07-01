@@ -21,6 +21,12 @@ interface SessionInfo {
 
 interface TerminalControlsProps {
   onSendKey: (key: string) => void
+  /**
+   * Deliver pasted text as an explicit paste (bracketed via tmux) instead of raw
+   * keystrokes, so multi-line content isn't auto-submitted line-by-line. Falls
+   * back to onSendKey when not provided.
+   */
+  onPasteText?: (text: string) => void
   disabled?: boolean
   sessions: SessionInfo[]
   currentSessionId: string | null
@@ -149,6 +155,7 @@ async function uploadPasteImage(
 
 export default function TerminalControls({
   onSendKey,
+  onPasteText,
   disabled = false,
   sessions,
   currentSessionId,
@@ -297,6 +304,16 @@ export default function TerminalControls({
     onSendKey(output)
   }
 
+  // Route pasted text through the explicit paste path (bracketed via tmux) so
+  // multi-line content isn't auto-submitted line-by-line; fall back to raw keys.
+  const sendPasteText = (text: string) => {
+    if (onPasteText) {
+      onPasteText(text)
+    } else {
+      onSendKey(text)
+    }
+  }
+
   const handlePasteButtonClick = async () => {
     if (disabled) return
     // Check if keyboard was visible before we do anything
@@ -337,7 +354,7 @@ export default function TerminalControls({
           const blob = await item.getType('text/plain')
           const text = await blob.text()
           if (text) {
-            onSendKey(text)
+            sendPasteText(text)
             if (wasKeyboardVisible) {
               onRefocus?.()
             }
@@ -350,7 +367,7 @@ export default function TerminalControls({
       try {
         const text = await navigator.clipboard.readText()
         if (text) {
-          onSendKey(text)
+          sendPasteText(text)
           if (wasKeyboardVisible) {
             onRefocus?.()
           }
@@ -369,7 +386,7 @@ export default function TerminalControls({
   const handlePasteSubmit = () => {
     if (pasteValue) {
       triggerHaptic()
-      onSendKey(pasteValue)
+      sendPasteText(pasteValue)
     }
     setShowPasteInput(false)
     setPasteValue('')

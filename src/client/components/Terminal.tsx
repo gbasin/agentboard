@@ -999,6 +999,22 @@ export default function Terminal({
     [session, isReadOnly, sendMessage]
   )
 
+  // Deliver pasted text as a single bracketed paste (server routes it through
+  // tmux paste-buffer -p) so multi-line content isn't auto-submitted line-by-line.
+  const handlePasteText = useCallback(
+    (text: string) => {
+      if (!session || isReadOnly) return
+      // Exit tmux copy-mode first: a paste-buffer into a pane still in copy-mode
+      // is swallowed by the copy-mode key table instead of reaching the program.
+      if (inTmuxCopyModeRef.current) {
+        sendMessage({ type: 'tmux-cancel-copy-mode', sessionId: session.id })
+        setTmuxCopyMode(false)
+      }
+      sendMessage({ type: 'terminal-paste', sessionId: session.id, data: text })
+    },
+    [session, isReadOnly, sendMessage, inTmuxCopyModeRef, setTmuxCopyMode]
+  )
+
   const handleRefocus = useCallback(() => {
     const container = containerRef.current
     if (!container) return
@@ -1455,6 +1471,7 @@ export default function Terminal({
       {session && (
         <TerminalControls
           onSendKey={handleSendKey}
+          onPasteText={handlePasteText}
           disabled={connectionStatus !== 'connected' || isReadOnly}
           sessions={sessions.map(s => ({ id: s.id, name: s.name, status: s.status }))}
           currentSessionId={session.id}
