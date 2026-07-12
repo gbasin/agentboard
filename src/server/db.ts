@@ -28,6 +28,28 @@ export type NewAgentSessionRecord = Omit<
   AgentSessionRecord,
   'id' | 'wakeStartedAt'
 > & { wakeStartedAt?: string | null }
+
+/** Identity fields for every tracked log, cheap enough to load in full. */
+export interface KnownSessionKey {
+  sessionId: string
+  logFilePath: string
+  projectPath: string | null
+  slug: string | null
+  agentType: AgentType | null
+  isCodexExec: boolean
+}
+
+// last_user_message is a UI preview; unbounded values (giant pastes, tool
+// dumps) bloated real-world databases into the hundreds of MB and made every
+// full-table read a multi-second event-loop stall.
+export const MAX_LAST_USER_MESSAGE_LENGTH = 8192
+
+function clampLastUserMessage(value: string | null): string | null {
+  if (value && value.length > MAX_LAST_USER_MESSAGE_LENGTH) {
+    return value.slice(0, MAX_LAST_USER_MESSAGE_LENGTH)
+  }
+  return value
+}
 export type ClaimCurrentWindowPatch = Partial<
   Pick<
     AgentSessionRecord,
@@ -60,6 +82,8 @@ export interface SessionDatabase {
   getActiveSessions: () => AgentSessionRecord[]
   getHibernatingSessions: () => AgentSessionRecord[]
   getHistorySessions: (options?: { maxAgeHours?: number }) => AgentSessionRecord[]
+  /** All session identity keys without large TEXT columns — safe to load per poll. */
+  getKnownSessionKeys: () => KnownSessionKey[]
   orphanSession: (
     sessionId: string,
     options?: { hibernate?: boolean }
@@ -182,6 +206,9 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
   const selectHistoryRecent = db.prepare(
     'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_pinned = 0 AND last_activity_at > $cutoff ORDER BY last_activity_at DESC, session_id'
   )
+  const selectKnownSessionKeys = db.prepare(
+    'SELECT session_id, log_file_path, project_path, slug, agent_type, is_codex_exec FROM agent_sessions'
+  )
   const selectByDisplayName = db.prepare(
     'SELECT 1 FROM agent_sessions WHERE display_name = $displayName LIMIT 1'
   )
@@ -232,7 +259,7 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
         $displayName: session.displayName,
         $createdAt: session.createdAt,
         $lastActivityAt: session.lastActivityAt,
-        $lastUserMessage: session.lastUserMessage,
+        $lastUserMessage: clampLastUserMessage(session.lastUserMessage),
         $currentWindow: session.currentWindow,
         $isPinned: session.isPinned ? 1 : 0,
         $lastResumeError: session.lastResumeError,
@@ -288,6 +315,8 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
         // Normalize boolean fields to 0/1 for SQLite
         if (key === 'isPinned' || key === 'isCodexExec') {
           params[`$${field}`] = value ? 1 : 0
+        } else if (key === 'lastUserMessage') {
+          params[`$${field}`] = clampLastUserMessage(value as string | null)
         } else {
           params[`$${field}`] = value as string | number | null
         }
@@ -365,6 +394,17 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
       }
       const rows = selectHistory.all() as Record<string, unknown>[]
       return rows.map(mapRow)
+    },
+    getKnownSessionKeys: () => {
+      const rows = selectKnownSessionKeys.all() as Record<string, unknown>[]
+      return rows.map((row) => ({
+        sessionId: row.session_id as string,
+        logFilePath: row.log_file_path as string,
+        projectPath: (row.project_path as string | null) ?? null,
+        slug: (row.slug as string | null) ?? null,
+        agentType: (row.agent_type as AgentType | null) ?? null,
+        isCodexExec: Boolean(row.is_codex_exec),
+      }))
     },
     orphanSession: (sessionId, options) => {
       const hibernate = options?.hibernate ?? true
