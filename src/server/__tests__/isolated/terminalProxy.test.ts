@@ -4,6 +4,11 @@ import { buildTmuxFormat } from '../../tmuxFormat'
 
 const CLIENT_TTY_OUTPUT = `${buildTmuxFormat(['/dev/pts/9', '4242'])}\n`
 const CLIENT_TTY_FORMAT = buildTmuxFormat(['#{client_tty}', '#{client_pid}'])
+const CLIENT_IDENTITY_FORMAT = buildTmuxFormat([
+  '#{client_tty}',
+  '#{session_name}',
+  '#{window_id}',
+])
 
 function getTmuxCommand(args: string[]): string {
   const tmuxArgs = args[0] === 'tmux' ? args.slice(1) : args
@@ -69,6 +74,30 @@ function createSpawnHarness() {
     spawnSyncCalls.push({ args, options: _options })
     const command = getTmuxCommand(args)
     if (command === 'list-clients') {
+      // Real tmux expands list-clients formats per client, so answer by the
+      // requested format: the tty+pid discovery format keeps its canned
+      // output, while the identity format reports each client's session from
+      // the tracked switch-client state. A second, more recently active
+      // client is listed first — display-message -p -c would have reported
+      // that one's session (the bug the identity read was moved off of).
+      const tmuxArgs = args[0] === 'tmux' ? args.slice(1) : args
+      const formatIndex = tmuxArgs.indexOf('-F')
+      const format = formatIndex >= 0 ? tmuxArgs[formatIndex + 1] ?? '' : ''
+      if (format === CLIENT_IDENTITY_FORMAT) {
+        const [sessionName, windowTarget = '@1'] = activeTarget.split(':')
+        const windowId = windowTarget.includes('.')
+          ? windowTarget.slice(0, windowTarget.indexOf('.'))
+          : windowTarget
+        const rows = [
+          buildTmuxFormat(['/dev/pts/1', 'other-session', '@9']),
+          buildTmuxFormat(['/dev/pts/9', sessionName, windowId || '@1']),
+        ]
+        return {
+          exitCode: 0,
+          stdout: Buffer.from(rows.join('\n') + '\n'),
+          stderr: Buffer.from(''),
+        } as ReturnType<typeof Bun.spawnSync>
+      }
       return {
         exitCode: 0,
         stdout: Buffer.from(CLIENT_TTY_OUTPUT),
@@ -211,6 +240,35 @@ describe('TerminalProxy', () => {
       options: expect.objectContaining({ timeout: 3000 }),
     })
     expect(proxy.getCurrentWindow()).toBe('@2')
+  })
+
+  test('switchTo verifies against our own client when another client is more recently active', async () => {
+    // The harness lists a foreign client (/dev/pts/1, other-session) FIRST in
+    // list-clients output — the position display-message -p -c would have
+    // reported. Verification must read our own client's row instead; a
+    // regression back to most-recently-active semantics fails this switch.
+    const harness = createSpawnHarness()
+    const proxy = new TerminalProxy({
+      connectionId: 'abc',
+      sessionName: 'agentboard-ws-abc',
+      baseSession: 'agentboard',
+      onData: () => {},
+      spawn: harness.spawn,
+      spawnSync: harness.spawnSync,
+      wait: async () => {},
+    })
+
+    await proxy.start()
+    await proxy.switchTo('external:@2')
+
+    expect(proxy.getCurrentWindow()).toBe('@2')
+    expect(
+      harness.spawnSyncCalls.some(
+        (call) =>
+          getTmuxCommand(call.args) === 'display-message' &&
+          call.args.includes('-c')
+      )
+    ).toBe(false)
   })
 
   test('paste stages via load-buffer stdin and replays into the grouped session', async () => {
