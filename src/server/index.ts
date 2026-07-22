@@ -500,6 +500,15 @@ if (!Number.isFinite(runtimeHistoryMaxAgeHours) || runtimeHistoryMaxAgeHours < 1
   runtimeHistoryMaxAgeHours = 24
 }
 
+// Read prefer-window-name setting from DB. The env var
+// (AGENTBOARD_PREFER_WINDOW_NAME, already folded into config) is only the
+// initial default; once set from the UI the stored value wins.
+const PREFER_WINDOW_NAME_KEY = 'prefer_window_name'
+const storedPreferWindowName = db.getAppSetting(PREFER_WINDOW_NAME_KEY)
+if (storedPreferWindowName !== null) {
+  config.preferWindowName = storedPreferWindowName === 'true'
+}
+
 const sessionManager = new SessionManager(undefined, {
   displayNameExists: (name, excludeSessionId) => db.displayNameExists(name, excludeSessionId),
   mouseMode: initialMouseMode,
@@ -1122,7 +1131,10 @@ async function refreshSessionsAsync(): Promise<void> {
         const sessions = await sessionRefreshWorker.refresh(
           config.tmuxSession,
           config.discoverPrefixes,
-          { expectedWindowCount: estimateRefreshWindowCount() }
+          {
+            expectedWindowCount: estimateRefreshWindowCount(),
+            preferWindowName: config.preferWindowName,
+          }
         )
         // Mutation happened while we were listing windows — discard and retry
         if (gen !== refreshGeneration) continue
@@ -1640,6 +1652,51 @@ app.put('/api/settings/tmux-mouse-mode', async (c) => {
     return c.json({ error: 'Unable to persist tmux mouse mode' }, 500)
   }
 
+  return c.json({ enabled: body.enabled })
+})
+
+app.get('/api/settings/prefer-window-name', (c) => {
+  return c.json({ enabled: config.preferWindowName })
+})
+
+app.put('/api/settings/prefer-window-name', async (c) => {
+  let body: { enabled?: unknown }
+  try {
+    body = await c.req.json()
+  } catch {
+    return c.json({ error: 'Invalid request body' }, 400)
+  }
+
+  if (typeof body.enabled !== 'boolean') {
+    return c.json({ error: 'enabled must be a boolean' }, 400)
+  }
+
+  const previousValue = config.preferWindowName
+  config.preferWindowName = body.enabled
+  try {
+    db.setAppSetting(PREFER_WINDOW_NAME_KEY, String(body.enabled))
+  } catch (error) {
+    // Same contract as tmux-mouse-mode: never leave the runtime value
+    // diverging from what will be restored after a restart.
+    config.preferWindowName = previousValue
+    logger.warn('prefer_window_name_persist_failed', {
+      message: error instanceof Error ? error.message : String(error),
+    })
+    return c.json({ error: 'Unable to persist prefer window name' }, 500)
+  }
+  // Connected clients keep their own copy from the open-time server-config
+  // message (mobile tab labels read it); rebroadcast so they all converge.
+  broadcast({
+    type: 'server-config',
+    remoteAllowControl: config.remoteAllowControl,
+    remoteAllowAttach: config.remoteAllowAttach,
+    hostLabel: config.hostLabel,
+    preferWindowName: config.preferWindowName,
+    clientLogLevel: logLevel,
+  })
+  // Names are recomputed on refresh; schedule one so the sidebar updates
+  // promptly instead of waiting for the next poll tick.
+  scheduleEnterRefresh()
   return c.json({ enabled: body.enabled })
 })
 

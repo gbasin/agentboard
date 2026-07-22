@@ -76,6 +76,10 @@ export type RefreshWorkerRequest =
       kind: 'refresh'
       managedSession: string
       discoverPrefixes: string[]
+      // Runtime value from the main process; the worker's own config only
+      // reflects the env at spawn time and would go stale when the setting
+      // is changed from the UI.
+      preferWindowName?: boolean
     }
   | {
       id: string
@@ -139,7 +143,11 @@ ctx.onmessage = (event: MessageEvent<RefreshWorkerRequest>) => {
       return
     }
 
-    const sessions = listAllWindows(payload.managedSession, payload.discoverPrefixes)
+    const sessions = listAllWindows(
+      payload.managedSession,
+      payload.discoverPrefixes,
+      payload.preferWindowName ?? config.preferWindowName
+    )
 
     // Clean up cache entries for windows that no longer exist
     const currentWindows = new Set(sessions.map((s) => s.tmuxWindow))
@@ -281,7 +289,11 @@ function captureScrollback(tmuxWindow: string, lines: number): string {
   }
 }
 
-function listAllWindows(managedSession: string, discoverPrefixes: string[]): Session[] {
+function listAllWindows(
+  managedSession: string,
+  discoverPrefixes: string[],
+  preferWindowName: boolean
+): Session[] {
   const allWindows = listAllWindowData()
   const now = Date.now()
   const wsPrefix = `${managedSession}-ws-`
@@ -328,7 +340,7 @@ function listAllWindows(managedSession: string, discoverPrefixes: string[]): Ses
 
     const creationTimestamp = window.creation ? window.creation * 1000 : now
     const displayName = source === 'external'
-      ? resolveExternalDisplayName(sessionName, window.windowName, config.preferWindowName)
+      ? resolveExternalDisplayName(sessionName, window.windowName, preferWindowName)
       : window.windowName
     const normalizedPath = normalizeProjectPath(window.path)
 

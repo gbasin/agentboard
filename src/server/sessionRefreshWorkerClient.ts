@@ -72,7 +72,7 @@ export class SessionRefreshWorkerClient {
   async refresh(
     managedSession: string,
     discoverPrefixes: string[],
-    options: { expectedWindowCount?: number } = {}
+    options: { expectedWindowCount?: number; preferWindowName?: boolean } = {}
   ): Promise<Session[]> {
     if (this.disposed) {
       throw new Error('Session refresh worker is disposed')
@@ -88,6 +88,7 @@ export class SessionRefreshWorkerClient {
       kind: 'refresh',
       managedSession,
       discoverPrefixes,
+      preferWindowName: options.preferWindowName,
     }
 
     return new Promise<Session[]>((resolve, reject) => {
