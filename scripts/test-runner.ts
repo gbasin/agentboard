@@ -153,10 +153,21 @@ async function main() {
     }
 
     if (!skipIsolated) {
-      await runCommand(
-        ['bun', 'test', ...passthroughArgs, 'src/server/__tests__/isolated/'],
-        env
-      )
+      // Each file in isolated/ runs in its own process, same as ISOLATED_FILES
+      // above: these files install top-level mock.module(...) hooks (e.g.
+      // indexHandlers.test.ts stubs ../../terminal with a partial factory),
+      // and Bun module mocks persist for the life of the process — on readdir
+      // orderings where the mocking file loads first (Linux ext4), a shared
+      // process poisons every later import of the same module.
+      const isolatedTests: string[] = []
+      const isolatedGlob = new Bun.Glob('src/server/__tests__/isolated/*.test.ts')
+      for await (const file of isolatedGlob.scan({ onlyFiles: true })) {
+        isolatedTests.push(file)
+      }
+      isolatedTests.sort()
+      for (const file of isolatedTests) {
+        await runCommand(['bun', 'test', ...passthroughArgs, file], env)
+      }
     }
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true })
