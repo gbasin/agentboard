@@ -11,6 +11,11 @@ const TARGET_IDENTITY_FORMAT = buildTmuxFormat([
   '#{session_name}',
   '#{window_id}',
 ])
+const CLIENT_IDENTITY_FORMAT = buildTmuxFormat([
+  '#{client_tty}',
+  '#{session_name}',
+  '#{window_id}',
+])
 
 // `set-clipboard` is a server-global tmux option, so enabling it touches the
 // user's whole tmux server (and isn't reverted on disconnect). It's on by
@@ -398,18 +403,29 @@ class PtyTerminalProxy extends TerminalProxyBase {
     if (!this.clientTty) {
       throw new Error('Terminal client not ready')
     }
+    // display-message -p -c expands formats against the most recently active
+    // client's session, not the -c client, so it misreports whenever another
+    // tmux client is more recently active. list-clients expands formats per
+    // client, so filter by tty instead (same approach as discoverClientTty).
     const output = this.runParsedTmux([
-      'display-message',
-      '-p',
-      '-c',
-      this.clientTty,
-      TARGET_IDENTITY_FORMAT,
-    ]).trim()
-    const identity = this.parseTargetIdentity(output)
-    if (!identity) {
-      throw new Error(`Unable to resolve tmux client identity for ${this.clientTty}`)
+      'list-clients',
+      '-F',
+      CLIENT_IDENTITY_FORMAT,
+    ])
+    for (const line of output.split('\n')) {
+      const cleaned = line.replace(/\r$/, '')
+      if (!cleaned) continue
+      const parts = splitTmuxFields(cleaned, 3)
+      if (!parts) continue
+      const [tty, sessionName, windowId] = parts
+      if (tty !== this.clientTty) continue
+      if (!sessionName) break
+      return {
+        sessionName,
+        windowId: windowId?.trim() || null,
+      }
     }
-    return identity
+    throw new Error(`Unable to resolve tmux client identity for ${this.clientTty}`)
   }
 
   private parseTargetIdentity(output: string): TmuxTargetIdentity | null {
