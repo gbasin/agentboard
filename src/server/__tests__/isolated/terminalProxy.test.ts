@@ -647,4 +647,49 @@ describe('TerminalProxy', () => {
       options: expect.objectContaining({ timeout: 15000 }),
     })
   })
+
+  test('disposes the grouped session when tmux attach spawn fails', async () => {
+    const harness = createSpawnHarness()
+    const failingSpawn = (
+      args: string[],
+      options: Parameters<typeof Bun.spawn>[1]
+    ) => {
+      harness.spawnCalls.push({ args, options })
+      throw new Error('pty exhausted')
+    }
+
+    const proxy = new TerminalProxy({
+      connectionId: 'attach-fail',
+      sessionName: 'agentboard-ws-attach-fail',
+      baseSession: 'agentboard',
+      onData: () => {},
+      spawn: failingSpawn,
+      spawnSync: harness.spawnSync,
+      wait: async () => {},
+    })
+
+    await expect(proxy.start()).rejects.toMatchObject({
+      code: 'ERR_TMUX_ATTACH_FAILED',
+    })
+
+    // new-session created the grouped session before attach; dispose must
+    // kill it so a failed spawn cannot orphan a pty-holding session.
+    expect(harness.spawnSyncCalls).toContainEqual({
+      args: [
+        'tmux',
+        'new-session',
+        '-d',
+        '-t',
+        'agentboard',
+        '-s',
+        'agentboard-ws-attach-fail',
+      ],
+      options: expect.objectContaining({ timeout: 15000 }),
+    })
+    expect(harness.spawnSyncCalls).toContainEqual({
+      args: ['tmux', 'kill-session', '-t', 'agentboard-ws-attach-fail'],
+      options: expect.objectContaining({ timeout: 15000 }),
+    })
+    expect(proxy.isReady()).toBe(false)
+  })
 })

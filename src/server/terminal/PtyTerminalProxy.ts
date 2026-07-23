@@ -240,7 +240,10 @@ class PtyTerminalProxy extends TerminalProxyBase {
         },
       })
     } catch (error) {
-      this.state = TerminalState.DEAD
+      // Tear down the grouped session created just above; otherwise a failed
+      // attach orphans a `…-ws-<uuid>` session that holds a pty until the next
+      // restart's reaper.
+      await this.dispose()
       throw new TerminalProxyError(
         'ERR_TMUX_ATTACH_FAILED',
         error instanceof Error ? error.message : 'Failed to attach tmux client',
