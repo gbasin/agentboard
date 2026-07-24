@@ -387,12 +387,9 @@ export default function SessionList({
   // Track active drag state for drop indicator
   const [activeId, setActiveId] = useState<string | null>(null)
   const [overId, setOverId] = useState<string | null>(null)
-  // Disable layout animations briefly after drag to prevent conflicts
-  const [layoutAnimationsDisabled, setLayoutAnimationsDisabled] = useState(false)
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
     setActiveId(event.active.id as string)
-    setLayoutAnimationsDisabled(true)
   }, [])
 
   const handleDragOver = useCallback((event: DragOverEvent) => {
@@ -406,15 +403,12 @@ export default function SessionList({
       setOverId(null)
 
       if (!over || active.id === over.id) {
-        // Re-enable layout animations after a brief delay
-        setTimeout(() => setLayoutAnimationsDisabled(false), 100)
         return
       }
 
       const oldIndex = filteredSessions.findIndex((s) => s.id === active.id)
       const newIndex = filteredSessions.findIndex((s) => s.id === over.id)
       if (oldIndex === -1 || newIndex === -1) {
-        setTimeout(() => setLayoutAnimationsDisabled(false), 100)
         return
       }
 
@@ -437,8 +431,6 @@ export default function SessionList({
         setSessionSortMode('manual')
       }
       setManualSessionOrder(newOrder)
-      // Re-enable layout animations after state settles
-      setTimeout(() => setLayoutAnimationsDisabled(false), 100)
     },
     [
       filteredSessions,
@@ -452,23 +444,16 @@ export default function SessionList({
   const handleDragCancel = useCallback(() => {
     setActiveId(null)
     setOverId(null)
-    setTimeout(() => setLayoutAnimationsDisabled(false), 100)
   }, [])
 
   useEffect(() => {
     if (!activeId && !overId) return
     const currentIds = new Set(filteredSessions.map((s) => s.id))
-    let shouldReset = false
     if (activeId && !currentIds.has(activeId)) {
       setActiveId(null)
-      shouldReset = true
     }
     if (overId && !currentIds.has(overId)) {
       setOverId(null)
-      shouldReset = true
-    }
-    if (shouldReset) {
-      setLayoutAnimationsDisabled(false)
     }
   }, [filteredSessions, activeId, overId])
 
@@ -551,10 +536,10 @@ export default function SessionList({
                   strategy={verticalListSortingStrategy}
                 >
                   <div key={filterKey}>
-                    <AnimatePresence
-                      initial={false}
-                      mode={useSafariLayoutFallback ? 'sync' : 'popLayout'}
-                    >
+                    {/* sync (not popLayout): without per-row layout animation,
+                        popLayout would overlap an exiting row with the sibling
+                        snapping into its place */}
+                    <AnimatePresence initial={false} mode="sync">
                       {filteredSessions.map((session, index) => {
                         const isTrulyNew = newlyActiveIds.has(session.id)
                         const isFilteredIn = newlyFilteredInIds.has(session.id)
@@ -583,7 +568,6 @@ export default function SessionList({
                             exitDuration={EXIT_DURATION}
                             prefersReducedMotion={prefersReducedMotion}
                             useSafariLayoutFallback={useSafariLayoutFallback}
-                            layoutAnimationsDisabled={layoutAnimationsDisabled}
                             isSelected={session.id === selectedSessionId}
                             isEditing={session.id === editingSessionId}
                             showSessionIdPrefix={showSessionIdPrefix}
@@ -738,7 +722,6 @@ interface SortableSessionItemProps {
   exitDuration: number
   prefersReducedMotion: boolean | null
   useSafariLayoutFallback: boolean
-  layoutAnimationsDisabled: boolean
   isSelected: boolean
   isEditing: boolean
   showSessionIdPrefix: boolean
@@ -761,7 +744,6 @@ const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>
   exitDuration,
   prefersReducedMotion,
   useSafariLayoutFallback,
-  layoutAnimationsDisabled,
   isSelected,
   isEditing,
   showSessionIdPrefix,
@@ -810,13 +792,13 @@ const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>
   )
 
   return (
+    // Deliberately no framer `layout` prop: animated resorts slide rows through
+    // each other, overlapping two sessions' text mid-flight (#159). Rows snap to
+    // their new position; drag previews still animate via the dnd-kit transform.
     <motion.div
       ref={setRefs}
       style={{ ...style, overflow: 'hidden' }}
       className="relative"
-      layout={!prefersReducedMotion && !isDragging && !layoutAnimationsDisabled && !isNew
-        ? (useSafariLayoutFallback ? false : true)
-        : false}
       transformTemplate={(_, generatedTransform) =>
         composeSortableTransform({
           useSafariLayoutFallback,
@@ -855,7 +837,6 @@ const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>
               height: { duration: exitDuration / 1000, ease: 'easeOut' },
             }
             : {
-              layout: { type: 'spring', stiffness: 500, damping: 35 },
               opacity: { duration: exitDuration / 1000 },
               scale: { duration: exitDuration / 1000, ease: [0.34, 1.56, 0.64, 1] },
               height: { duration: exitDuration / 1000, ease: 'easeOut' },
