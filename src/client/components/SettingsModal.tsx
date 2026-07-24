@@ -117,6 +117,8 @@ export default function SettingsModal({
   // Server-side settings (fetched from API)
   const [tmuxMouseMode, setTmuxMouseMode] = useState(true)
   const [tmuxMouseModeLoading, setTmuxMouseModeLoading] = useState(false)
+  const [preferWindowName, setPreferWindowName] = useState(false)
+  const [preferWindowNameLoading, setPreferWindowNameLoading] = useState(false)
   const [historyMaxAgeHours, setHistoryMaxAgeHours] = useState(24)
   const [historyMaxAgeHoursLoading, setHistoryMaxAgeHoursLoading] = useState(false)
 
@@ -164,6 +166,10 @@ export default function SettingsModal({
       fetch('/api/settings/history-max-age-hours')
         .then((res) => res.json())
         .then((data: { hours: number }) => setHistoryMaxAgeHours(data.hours))
+        .catch(() => {})
+      fetch('/api/settings/prefer-window-name')
+        .then((res) => res.json())
+        .then((data: { enabled: boolean }) => setPreferWindowName(data.enabled))
         .catch(() => {})
       // Disable terminal textarea when modal opens to prevent keyboard capture
       if (typeof document !== 'undefined') {
@@ -310,6 +316,18 @@ export default function SettingsModal({
     })
       .catch(() => setTmuxMouseMode(!enabled)) // Revert on error
       .finally(() => setTmuxMouseModeLoading(false))
+  }
+
+  const handlePreferWindowNameChange = (enabled: boolean) => {
+    setPreferWindowNameLoading(true)
+    setPreferWindowName(enabled)
+    fetch('/api/settings/prefer-window-name', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    })
+      .catch(() => setPreferWindowName(!enabled)) // Revert on error
+      .finally(() => setPreferWindowNameLoading(false))
   }
 
   const handleHistoryMaxAgeHoursChange = (hours: number) => {
@@ -707,6 +725,21 @@ export default function SettingsModal({
                 checked={tmuxMouseMode}
                 onCheckedChange={handleTmuxMouseModeChange}
                 disabled={tmuxMouseModeLoading}
+              />
+            </div>
+
+            <div className="mt-4 flex items-center justify-between">
+              <div>
+                <div className="text-sm text-primary">Prefer Window Names</div>
+                <div className="text-[10px] text-muted">
+                  Label discovered sessions with their tmux window name instead
+                  of the session name. Applies immediately.
+                </div>
+              </div>
+              <Switch
+                checked={preferWindowName}
+                onCheckedChange={handlePreferWindowNameChange}
+                disabled={preferWindowNameLoading}
               />
             </div>
 
