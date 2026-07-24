@@ -37,6 +37,11 @@ class PtyTerminalProxy extends TerminalProxyBase {
   private rows = 24
   private clientTty: string | null = null
   private startAttemptId = 0
+  // Session the client was last switched into. Paste targets its active
+  // window: for externally-discovered sessions the client leaves the grouped
+  // ws session entirely, so pasting into the ws session would hit its own
+  // (bootstrap) window instead of the window on screen.
+  private lastEffectiveSession: string | null = null
 
   getMode(): 'pty' {
     return 'pty'
@@ -62,9 +67,13 @@ class PtyTerminalProxy extends TerminalProxyBase {
     if (!data || this.state === TerminalState.DEAD) {
       return
     }
-    // Target the grouped session's active pane (the window this client switched
-    // to). tmux decides bracketing from that real pane's mode.
-    this.deliverPasteViaTmux(this.options.sessionName, data)
+    // Target the active window of the session this client is attached to.
+    // tmux decides bracketing from that real pane's mode. Falling back to
+    // the grouped session name covers the pre-switch state.
+    this.deliverPasteViaTmux(
+      this.lastEffectiveSession ?? this.options.sessionName,
+      data
+    )
   }
 
   resize(cols: number, rows: number): void {
@@ -106,6 +115,7 @@ class PtyTerminalProxy extends TerminalProxyBase {
 
     this.clientTty = null
     this.currentWindow = null
+    this.lastEffectiveSession = null
     this.readyAt = null
     this.startPromise = null
   }
@@ -354,6 +364,7 @@ class PtyTerminalProxy extends TerminalProxyBase {
       } else {
         this.setCurrentWindow(effectiveTarget)
       }
+      this.lastEffectiveSession = actualIdentity.sessionName
       const durationMs = this.now() - startedAt
       this.logEvent('terminal_switch_success', {
         sessionName: this.options.sessionName,
