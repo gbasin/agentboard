@@ -402,6 +402,27 @@ describe('settings persistence migration', () => {
   })
 })
 
+describe('manual session order persistence', () => {
+  test('setManualSessionOrder writes the order to persisted settings', () => {
+    useSettingsStore.getState().setManualSessionOrder(['abc123', 'session:@2'])
+
+    const persisted = JSON.parse(storage.getItem('agentboard-settings') || '{}')
+    expect(persisted.state.manualSessionOrder).toEqual(['abc123', 'session:@2'])
+  })
+
+  test('persisted manual order rehydrates into the store', async () => {
+    storage.setItem('agentboard-settings', JSON.stringify({
+      state: { manualSessionOrder: ['session:@7'], sessionSortMode: 'manual' },
+      version: 6,
+    }))
+
+    await useSettingsStore.persist.rehydrate()
+
+    expect(useSettingsStore.getState().manualSessionOrder).toEqual(['session:@7'])
+    expect(useSettingsStore.getState().sessionSortMode).toBe('manual')
+  })
+})
+
 afterAll(() => {
   globalAny.window = originalWindow
   globalAny.localStorage = originalLocalStorage
