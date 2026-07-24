@@ -69,7 +69,13 @@ class PtyTerminalProxy extends TerminalProxyBase {
     }
     // Target the active window of the session this client is attached to.
     // tmux decides bracketing from that real pane's mode. Falling back to
-    // the grouped session name covers the pre-switch state.
+    // the grouped session name covers the pre-switch state. NOTE: the name
+    // must stay bare — paste-buffer takes a target-PANE, whose parser
+    // rejects the `=name` exact-match form that target-session commands
+    // accept (verified on tmux 3.7b: "can't find pane: =name"). Exact-name
+    // collisions are a non-issue here because tmux prefers an exact session
+    // match over a prefix match whenever the session exists, and this name
+    // comes from a verified identity read.
     this.deliverPasteViaTmux(
       this.lastEffectiveSession ?? this.options.sessionName,
       data

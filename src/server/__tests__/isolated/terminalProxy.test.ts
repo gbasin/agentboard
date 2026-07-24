@@ -321,6 +321,41 @@ describe('TerminalProxy', () => {
     expect(harness.writes).toEqual([])
   })
 
+  test('paste targets the external session after a verified switch', async () => {
+    const harness = createSpawnHarness()
+    const proxy = new TerminalProxy({
+      connectionId: 'abc',
+      sessionName: 'agentboard-ws-abc',
+      baseSession: 'agentboard',
+      onData: () => {},
+      spawn: harness.spawn,
+      spawnSync: harness.spawnSync,
+      wait: async () => {},
+    })
+
+    await proxy.start()
+    await proxy.switchTo('external:@2')
+    proxy.paste('hello')
+
+    // The client left the grouped ws session, so the paste must follow it
+    // into the external session (bare name — paste-buffer's target-pane
+    // parser rejects the =name exact-match form), not the ws session whose
+    // active window is its own bootstrap window.
+    expect(harness.spawnSyncCalls).toContainEqual({
+      args: [
+        'tmux',
+        'paste-buffer',
+        '-d',
+        '-p',
+        '-b',
+        'agentboard-paste-abc-1',
+        '-t',
+        'external',
+      ],
+      options: expect.objectContaining({ timeout: 3000 }),
+    })
+  })
+
   test('switchTo rewrites base-session targets to grouped session targets', async () => {
     const harness = createSpawnHarness()
     const proxy = new TerminalProxy({

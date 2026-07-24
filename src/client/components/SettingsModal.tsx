@@ -314,6 +314,11 @@ export default function SettingsModal({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ enabled }),
     })
+      // The server rolls the setting back when persistence fails (500), so a
+      // non-ok response must revert the optimistic UI value too.
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      })
       .catch(() => setTmuxMouseMode(!enabled)) // Revert on error
       .finally(() => setTmuxMouseModeLoading(false))
   }
@@ -326,6 +331,9 @@ export default function SettingsModal({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ enabled }),
     })
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      })
       .catch(() => setPreferWindowName(!enabled)) // Revert on error
       .finally(() => setPreferWindowNameLoading(false))
   }
@@ -339,6 +347,9 @@ export default function SettingsModal({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ hours }),
     })
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      })
       .catch(() => setHistoryMaxAgeHours(prevHours)) // Revert on error
       .finally(() => setHistoryMaxAgeHoursLoading(false))
   }
