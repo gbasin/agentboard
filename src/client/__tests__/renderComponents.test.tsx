@@ -466,7 +466,12 @@ describe('component rendering', () => {
   })
 })
 
-afterAll(() => {
+afterAll(async () => {
+  // Rendering motion/react components schedules async frame callbacks on the
+  // stubbed rAF. Drain them while the window stub is still in place —
+  // restoring the (possibly undefined) originals first would crash a late
+  // callback on window.innerWidth after this file's group already closed.
+  await new Promise((resolve) => setTimeout(resolve, 64))
   globalAny.window = originalWindow
   globalAny.document = originalDocument
   globalAny.navigator = originalNavigator

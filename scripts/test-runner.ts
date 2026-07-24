@@ -97,6 +97,19 @@ async function main() {
     // (e.g. on Linux ext4) the modal test sees the stub and breaks.
     const ISOLATED_CLIENT_FILES = new Set([
       'app.test.tsx',
+      // Files that render motion/react (framer-motion) components. The
+      // library keeps module-level projection state (a root node per
+      // document) and schedules async frame callbacks on the global rAF;
+      // both leak across files sharing a process. A leaked frame callback
+      // firing after a file restored its window stub crashes with
+      // "undefined is not an object (evaluating 'window.innerWidth')"
+      // between tests, and the corrupted frameloop then fails unrelated
+      // tests in later files (seen on Linux CI as useTerminal/SessionDrawer
+      // failures; order- and timing-dependent, so macOS rarely hits it).
+      'renderComponents.test.tsx',
+      'sessionListComponent.test.tsx',
+      'sessionDrawer.test.tsx',
+      'sessionListFilters.test.tsx',
     ])
 
     const serverTests: string[] = []
