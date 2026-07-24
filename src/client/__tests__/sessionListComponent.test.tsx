@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import TestRenderer, { act } from 'react-test-renderer'
 import type { AgentSession, Session } from '@shared/types'
 import SessionList from '../components/SessionList'
@@ -51,8 +51,18 @@ function makeAgentSession(overrides: Partial<AgentSession> = {}): AgentSession {
   }
 }
 
-beforeEach(() => {
+// The window/document stubs live in beforeAll/afterAll, NOT beforeEach:
+// rendering SessionList schedules async framer-motion frame callbacks that
+// can fire between tests, and a per-test restore would put back
+// originalWindow — which is undefined whenever no earlier test file in this
+// process registered a DOM (order varies with readdir; Linux CI hits it) —
+// crashing the frame callback on window.innerWidth between tests.
+beforeAll(() => {
   globalAny.window = {
+    innerWidth: 1024,
+    innerHeight: 768,
+    addEventListener: () => {},
+    removeEventListener: () => {},
     matchMedia: () => ({
       matches: false,
       addEventListener: () => {},
@@ -66,7 +76,17 @@ beforeEach(() => {
     addEventListener: () => {},
     removeEventListener: () => {},
   } as unknown as Document
+})
 
+afterAll(async () => {
+  // Drain pending framer-motion frame callbacks while the stub window is
+  // still in place; only then hand the globals back.
+  await new Promise((resolve) => originalSetTimeout?.(resolve, 64))
+  globalAny.window = originalWindow
+  globalAny.document = originalDocument
+})
+
+beforeEach(() => {
   useSettingsStore.setState({
     sessionSortMode: 'created',
     sessionSortDirection: 'desc',
@@ -87,8 +107,6 @@ afterEach(() => {
   globalAny.clearTimeout = originalClearTimeout
   globalAny.setInterval = originalSetInterval
   globalAny.clearInterval = originalClearInterval
-  globalAny.window = originalWindow
-  globalAny.document = originalDocument
   useSettingsStore.setState({
     sessionSortMode: 'created',
     sessionSortDirection: 'desc',
