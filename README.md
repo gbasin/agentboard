@@ -140,6 +140,15 @@ bun run deps:risk -- --threshold moderate
 | Next session | `Ctrl+Option+]` | `Ctrl+Shift+]` |
 | New session | `Ctrl+Option+N` | `Ctrl+Shift+N` |
 | Kill session | `Ctrl+Option+X` | `Ctrl+Shift+X` |
+| Jump to session 1-9 | `Ctrl+Option+1..9` | `Ctrl+Shift+1..9` |
+
+The modifier is configurable in Settings. **Jump To Session** has its own chord
+setting so you can use a bare `Cmd`/`Ctrl` for digits while the letter shortcuts
+keep a safer combo (`Cmd+X` is Cut, `Ctrl+N` is meaningful in a terminal).
+
+Note that browsers reserve `Cmd`/`Ctrl`+`1..9` for tab switching, so those
+chords only reach the page in an [installed (standalone) window](docs/pwa-install.md).
+In a normal tab the browser keeps them and the shortcut never fires.
 
 ## Environment
 
