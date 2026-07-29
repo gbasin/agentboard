@@ -46,6 +46,13 @@ export type SessionSortMode = 'status' | 'created' | 'manual'
 export type SessionSortDirection = 'asc' | 'desc'
 export type ShortcutModifier = 'ctrl-option' | 'ctrl-shift' | 'cmd-option' | 'cmd-shift'
 
+// Chord used by the jump-to-session digit shortcuts ([chord]+1..9).
+// Kept separate from ShortcutModifier because bare ⌘/⌃ are unsuitable for the
+// letter shortcuts (⌘X is Cut, ⌃N is next-line in a terminal) but are the
+// natural choice for digits. Browsers reserve bare ⌘/⌃+digit for tab switching
+// in a normal tab, so those only reach the page in a standalone/PWA window.
+export type SessionJumpChord = 'modifier' | 'meta' | 'ctrl' | 'off'
+
 // Command preset system
 export interface CommandPreset {
   id: string
@@ -136,6 +143,8 @@ interface SettingsState {
   setCustomFontFamily: (family: string) => void
   shortcutModifier: ShortcutModifier | 'auto'
   setShortcutModifier: (modifier: ShortcutModifier | 'auto') => void
+  sessionJumpChord: SessionJumpChord
+  setSessionJumpChord: (chord: SessionJumpChord) => void
   showProjectName: boolean
   setShowProjectName: (enabled: boolean) => void
   showLastUserMessage: boolean
@@ -202,6 +211,8 @@ export const useSettingsStore = create<SettingsState>()(
       setCustomFontFamily: (family) => set({ customFontFamily: family.slice(0, 256) }),
       shortcutModifier: 'auto',
       setShortcutModifier: (modifier) => set({ shortcutModifier: modifier }),
+      sessionJumpChord: 'modifier',
+      setSessionJumpChord: (chord) => set({ sessionJumpChord: chord }),
       showProjectName: true,
       setShowProjectName: (enabled) => set({ showProjectName: enabled }),
       showLastUserMessage: true,

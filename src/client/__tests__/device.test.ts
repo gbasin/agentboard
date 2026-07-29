@@ -1,10 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  getJumpChordDisplay,
   getNavShortcutMod,
   isIOSDevice,
   isIOSPWA,
   isMacOS,
   isSafari,
+  matchesJumpChord,
 } from '../utils/device'
 
 const globalAny = globalThis as typeof globalThis & {
@@ -126,5 +128,45 @@ describe('device helpers', () => {
     } finally {
       globalAny.navigator = originalNavigator
     }
+  })
+})
+
+describe('matchesJumpChord', () => {
+  const ev = (init: Partial<KeyboardEvent>) => init as KeyboardEvent
+
+  test('off never matches', () => {
+    expect(matchesJumpChord(ev({ metaKey: true }), 'off', 'ctrl-option')).toBe(false)
+    expect(matchesJumpChord(ev({ ctrlKey: true }), 'off', 'ctrl-option')).toBe(false)
+  })
+
+  test('modifier delegates to the configured letter-shortcut combo', () => {
+    const ctrlAlt = ev({ ctrlKey: true, altKey: true, metaKey: false, shiftKey: false })
+    expect(matchesJumpChord(ctrlAlt, 'modifier', 'ctrl-option')).toBe(true)
+    expect(matchesJumpChord(ctrlAlt, 'modifier', 'cmd-shift')).toBe(false)
+  })
+
+  test('meta matches a bare Cmd only', () => {
+    const bare = ev({ metaKey: true, ctrlKey: false, altKey: false, shiftKey: false })
+    expect(matchesJumpChord(bare, 'meta', 'ctrl-option')).toBe(true)
+    // extra modifiers must not match, so ⌘⇧1 stays available to the browser
+    expect(matchesJumpChord(ev({ metaKey: true, shiftKey: true }), 'meta', 'ctrl-option')).toBe(
+      false
+    )
+    expect(matchesJumpChord(ev({ metaKey: false }), 'meta', 'ctrl-option')).toBe(false)
+  })
+
+  test('ctrl matches a bare Ctrl only', () => {
+    const bare = ev({ ctrlKey: true, metaKey: false, altKey: false, shiftKey: false })
+    expect(matchesJumpChord(bare, 'ctrl', 'ctrl-option')).toBe(true)
+    expect(matchesJumpChord(ev({ ctrlKey: true, altKey: true }), 'ctrl', 'ctrl-option')).toBe(false)
+  })
+})
+
+describe('getJumpChordDisplay', () => {
+  test('renders the chord symbols', () => {
+    expect(getJumpChordDisplay('meta', 'ctrl-option')).toBe('⌘')
+    expect(getJumpChordDisplay('ctrl', 'ctrl-option')).toBe('⌃')
+    expect(getJumpChordDisplay('modifier', 'cmd-shift')).toBe('⌘⇧')
+    expect(getJumpChordDisplay('off', 'ctrl-option')).toBe('')
   })
 })
