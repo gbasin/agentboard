@@ -5,7 +5,11 @@
 import { logger } from '../logger'
 import { shellQuote } from '../shellQuote'
 import { withTmuxUtf8Flag } from '../tmuxFormat'
-import { TerminalProxyBase } from './TerminalProxyBase'
+import {
+  SYNC_FEATURE_ENABLED,
+  TerminalProxyBase,
+  tmuxSupportsClientFeatures,
+} from './TerminalProxyBase'
 import { TerminalProxyError, TerminalState } from './types'
 
 class SshTerminalProxy extends TerminalProxyBase {
@@ -220,6 +224,25 @@ class SshTerminalProxy extends TerminalProxyBase {
     }
   }
 
+  /**
+   * `-T sync` args for the remote attach when the remote tmux supports the
+   * flag (>= 3.2; it aborts the attach on older versions). Probed via one
+   * `tmux -V` round-trip rather than remote shell logic so it works under
+   * any login shell.
+   */
+  private async clientFeatureArgs(): Promise<string[]> {
+    if (!SYNC_FEATURE_ENABLED) {
+      return []
+    }
+    try {
+      return tmuxSupportsClientFeatures(await this.runTmuxAsync(['-V']))
+        ? ['-T', 'sync']
+        : []
+    } catch {
+      return []
+    }
+  }
+
   private isStartAttemptCurrent(attemptId: number): boolean {
     return attemptId === this.startAttemptId
   }
@@ -275,8 +298,10 @@ class SshTerminalProxy extends TerminalProxyBase {
       )
     }
 
-    // Pass the remote tmux attach command as a single string to SSH
-    const attachCmd = `tmux new-session -A -s ${shellQuote(this.options.sessionName)}`
+    // Pass the remote tmux attach command as a single string to SSH.
+    const featureArgs = await this.clientFeatureArgs()
+    const attachCmd = ['tmux', ...featureArgs, 'new-session', '-A', '-s']
+      .join(' ') + ` ${shellQuote(this.options.sessionName)}`
     const spawnArgs = [
       'ssh',
       '-tt',
