@@ -154,6 +154,7 @@ AGENTBOARD_PREFER_WINDOW_NAME=false
 TERMINAL_MODE=pty
 AGENTBOARD_CLAUDE_NO_FLICKER=true
 AGENTBOARD_TMUX_SET_CLIPBOARD=true
+AGENTBOARD_TMUX_SYNC=true
 TERMINAL_MONITOR_TARGETS=true
 VITE_ALLOWED_HOSTS=nuc,myserver
 AGENTBOARD_DB_PATH=~/.agentboard/agentboard.db
@@ -188,6 +189,8 @@ AGENTBOARD_PASTE_IMAGE_MAX_BYTES=41943040
 Reasons to opt out: fullscreen rendering keeps the conversation in the alternate screen buffer instead of native terminal scrollback, so terminal-level search/copy workflows behave differently; Claude also captures mouse events unless you disable its mouse capture. Inside Claude Code, run `/tui default` to switch a session back to the classic renderer, or launch Claude with `CLAUDE_CODE_DISABLE_MOUSE=1` if you want fullscreen rendering but native mouse selection.
 
 `AGENTBOARD_TMUX_SET_CLIPBOARD` controls whether Agentboard enables tmux's `set-clipboard on` when it attaches. By default it does, so copies made inside a session land in a tmux paste buffer that Agentboard can relay to the browser clipboard (important on iOS Safari, where the async OSC 52 path can't satisfy the user-gesture rule). Because `set-clipboard` is a server-global tmux option, this affects your whole tmux server and is not reverted on disconnect — set `AGENTBOARD_TMUX_SET_CLIPBOARD=0` (or `false`) to leave your tmux configuration untouched.
+
+`AGENTBOARD_TMUX_SYNC` controls whether Agentboard's tmux client advertises synchronized-update support (`tmux -T sync`, tmux 3.2+). By default it does, so tmux wraps redraws in DEC 2026 frame markers and the browser terminal paints each frame atomically instead of tearing during fast fullscreen repaints (e.g. Claude Code's no-flicker renderer). The flag applies only to Agentboard's own client and does not change tmux server options. Set `AGENTBOARD_TMUX_SYNC=0` (or `false`) to disable.
 
 `TERMINAL_MONITOR_TARGETS` (pipe-pane only) polls tmux to detect closed targets (set to `false` to disable).
 
