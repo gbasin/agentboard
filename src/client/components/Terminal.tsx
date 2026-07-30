@@ -1330,7 +1330,14 @@ export default function Terminal({
 
       {/* Terminal content - always rendered so ref is attached */}
       <div className="relative flex-1">
-        <div ref={containerRef} className="absolute inset-0" />
+        {/* Theme background on the container so the .xterm padding ring
+            matches the terminal — xterm.js 6.0 no longer paints the viewport
+            with the theme background (black-border regression on mobile). */}
+        <div
+          ref={containerRef}
+          className="absolute inset-0"
+          style={{ backgroundColor: terminalTheme.background }}
+        />
         {isSwitching && session && (
           <div className="absolute top-2 left-2 z-50 flex items-center gap-1.5 rounded-lg bg-black/60 px-2.5 py-1.5 text-xs text-white/90 shadow-lg backdrop-blur-md">
             <svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
