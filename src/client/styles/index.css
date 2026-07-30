@@ -367,6 +367,11 @@ body {
   /* Enable touch scrolling on mobile */
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
+  /* xterm.css paints the viewport #000 and, since xterm.js 6.0, no longer
+     overrides it inline with the theme background — which turned the .xterm
+     padding ring into a black border. The terminal container carries the
+     theme background instead (Terminal.tsx), so let it show through. */
+  background-color: transparent !important;
 }
 
 .xterm .xterm-viewport::-webkit-scrollbar {
