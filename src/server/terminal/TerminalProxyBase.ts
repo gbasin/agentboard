@@ -17,18 +17,28 @@ import { TerminalState } from './types'
 // no-flicker) emit; without them, multi-read repaints reach xterm.js as
 // unmarked fragments and tear mid-frame (issue #158). xterm.js >= 6 holds
 // rendering between the markers. AGENTBOARD_TMUX_SYNC=0 to disable.
-export const SYNC_FEATURE_ENABLED =
-  process.env.AGENTBOARD_TMUX_SYNC !== '0' &&
-  process.env.AGENTBOARD_TMUX_SYNC !== 'false'
+// Read per call (not a module constant) so tests can exercise the opt-out.
+export function syncFeatureEnabled(): boolean {
+  return (
+    process.env.AGENTBOARD_TMUX_SYNC !== '0' &&
+    process.env.AGENTBOARD_TMUX_SYNC !== 'false'
+  )
+}
 
 /**
- * Whether this `tmux -V` output supports the `-T features` client flag
- * (tmux >= 3.2). The flag aborts the attach on older versions, so callers
- * must omit it there. Versionless builds ("next-3.9", "master") are newer
- * than 3.2 and count as supported.
+ * Whether this tmux version output (`tmux -V` or a `#{version}` format
+ * expansion) supports the `-T features` client flag (tmux >= 3.2). The flag
+ * aborts the attach on older versions, so callers must omit it there.
+ * Empty output means the version is unknown — fail closed, since pre-2.4
+ * tmux expands `#{version}` to an empty string. Non-empty versionless dev
+ * builds ("master") are newer than 3.2 and count as supported.
  */
 export function tmuxSupportsClientFeatures(versionOutput: string): boolean {
-  const match = versionOutput.match(/(\d+)\.(\d+)/)
+  const trimmed = versionOutput.trim()
+  if (!trimmed) {
+    return false
+  }
+  const match = trimmed.match(/(\d+)\.(\d+)/)
   if (!match) {
     return true
   }

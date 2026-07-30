@@ -236,6 +236,15 @@ describe('tmuxSupportsClientFeatures', () => {
     // "next-3.9" still parses as 3.9; truly versionless output has no number.
     expect(tmuxSupportsClientFeatures('tmux next-3.9')).toBe(true)
     expect(tmuxSupportsClientFeatures('tmux master')).toBe(true)
-    expect(tmuxSupportsClientFeatures('')).toBe(true)
+  })
+
+  test('fails closed on empty output (pre-2.4 #{version} expands to nothing)', () => {
+    expect(tmuxSupportsClientFeatures('')).toBe(false)
+    expect(tmuxSupportsClientFeatures('  \n')).toBe(false)
+  })
+
+  test('accepts bare #{version} expansions without the tmux prefix', () => {
+    expect(tmuxSupportsClientFeatures('3.4\n')).toBe(true)
+    expect(tmuxSupportsClientFeatures('3.1c\n')).toBe(false)
   })
 })

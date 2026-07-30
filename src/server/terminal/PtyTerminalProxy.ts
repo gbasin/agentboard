@@ -1,5 +1,5 @@
 import {
-  SYNC_FEATURE_ENABLED,
+  syncFeatureEnabled,
   TerminalProxyBase,
   tmuxSupportsClientFeatures,
 } from './TerminalProxyBase'
@@ -410,14 +410,20 @@ class PtyTerminalProxy extends TerminalProxyBase {
   }
 
   private clientFeatureArgs(): string[] {
-    if (!SYNC_FEATURE_ENABLED) {
+    if (!syncFeatureEnabled()) {
       return []
     }
     try {
       return tmuxSupportsClientFeatures(this.runTmux(['-V']))
         ? ['-T', 'sync']
         : []
-    } catch {
+    } catch (error) {
+      // Attach still proceeds without -T sync; log so a tearing report can be
+      // traced to a failed version probe instead of guessing (issue #158).
+      this.logEvent('terminal_sync_probe_failed', {
+        sessionName: this.options.sessionName,
+        error: error instanceof Error ? error.message : String(error),
+      })
       return []
     }
   }

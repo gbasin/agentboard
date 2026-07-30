@@ -477,3 +477,106 @@ describe('SshTerminalProxy', () => {
     await proxy.dispose()
   })
 })
+
+describe('SshTerminalProxy sync terminal feature', () => {
+  function versionAnswers(opts: {
+    createVersion?: string
+    createDuplicate?: boolean
+    probeVersion?: string
+    probeFails?: boolean
+  }) {
+    return (args: string[]) => {
+      const cmd = args[args.length - 1] ?? ''
+      if (cmd.includes('new-session') && cmd.includes('#{version}')) {
+        return opts.createDuplicate
+          ? { exitCode: 1, stdout: '', stderr: 'duplicate session: s' }
+          : { exitCode: 0, stdout: `${opts.createVersion ?? '3.4'}\n`, stderr: '' }
+      }
+      if (cmd.includes('-V')) {
+        return opts.probeFails
+          ? { exitCode: 1, stdout: '', stderr: 'probe failed' }
+          : { exitCode: 0, stdout: `tmux ${opts.probeVersion ?? '3.4'}\n`, stderr: '' }
+      }
+      if (cmd.includes('list-clients')) {
+        return { exitCode: 0, stdout: '/dev/pts/42\n', stderr: '' }
+      }
+      return { exitCode: 0, stdout: '', stderr: '' }
+    }
+  }
+
+  async function startAndGetAttachCmd(harness: ReturnType<typeof createSshHarness>) {
+    const proxy = new SshTerminalProxy({
+      connectionId: 'conn-sync',
+      sessionName: 'test-sync-session',
+      baseSession: 'agentboard',
+      host: 'remote-host',
+      onData: () => {},
+      spawn: harness.spawn,
+      spawnSync: harness.spawnSync,
+    })
+    await proxy.start()
+    const attachCalls = harness.spawnCalls.filter((c) => c.mode === 'terminal')
+    expect(attachCalls.length).toBe(1)
+    const attachCmd = attachCalls[0].args[attachCalls[0].args.length - 1]
+    await proxy.dispose()
+    return attachCmd
+  }
+
+  test('adds -T sync using the version returned by session create (no extra probe)', async () => {
+    const harness = createSshHarness({
+      spawnPipeOverride: versionAnswers({ createVersion: '3.4' }),
+    })
+    const attachCmd = await startAndGetAttachCmd(harness)
+    expect(attachCmd).toContain('tmux -T sync new-session -A')
+    // The create round-trip supplied the version; no separate -V probe.
+    const probeCalls = harness.spawnCalls.filter(
+      (c) => c.mode === 'pipe' && (c.args[c.args.length - 1] ?? '') === 'tmux -V'
+    )
+    expect(probeCalls.length).toBe(0)
+  })
+
+  test('omits -T sync when the remote tmux predates client feature flags', async () => {
+    const harness = createSshHarness({
+      spawnPipeOverride: versionAnswers({ createVersion: '3.1c' }),
+    })
+    const attachCmd = await startAndGetAttachCmd(harness)
+    expect(attachCmd).toContain('tmux new-session -A')
+    expect(attachCmd).not.toContain('-T sync')
+  })
+
+  test('falls back to a tmux -V probe when create hits a duplicate session', async () => {
+    const harness = createSshHarness({
+      spawnPipeOverride: versionAnswers({ createDuplicate: true, probeVersion: '3.4' }),
+    })
+    const attachCmd = await startAndGetAttachCmd(harness)
+    expect(attachCmd).toContain('tmux -T sync new-session -A')
+  })
+
+  test('degrades to a plain attach when the fallback probe fails', async () => {
+    const harness = createSshHarness({
+      spawnPipeOverride: versionAnswers({ createDuplicate: true, probeFails: true }),
+    })
+    const attachCmd = await startAndGetAttachCmd(harness)
+    expect(attachCmd).toContain('tmux new-session -A')
+    expect(attachCmd).not.toContain('-T sync')
+  })
+
+  test('AGENTBOARD_TMUX_SYNC=0 disables the sync feature', async () => {
+    const saved = process.env.AGENTBOARD_TMUX_SYNC
+    process.env.AGENTBOARD_TMUX_SYNC = '0'
+    try {
+      const harness = createSshHarness({
+        spawnPipeOverride: versionAnswers({ createVersion: '3.4' }),
+      })
+      const attachCmd = await startAndGetAttachCmd(harness)
+      expect(attachCmd).toContain('tmux new-session -A')
+      expect(attachCmd).not.toContain('-T sync')
+    } finally {
+      if (saved === undefined) {
+        delete process.env.AGENTBOARD_TMUX_SYNC
+      } else {
+        process.env.AGENTBOARD_TMUX_SYNC = saved
+      }
+    }
+  })
+})
