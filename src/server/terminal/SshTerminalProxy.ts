@@ -5,7 +5,11 @@
 import { logger } from '../logger'
 import { shellQuote } from '../shellQuote'
 import { withTmuxUtf8Flag } from '../tmuxFormat'
-import { TerminalProxyBase } from './TerminalProxyBase'
+import {
+  syncFeatureEnabled,
+  TerminalProxyBase,
+  tmuxSupportsClientFeatures,
+} from './TerminalProxyBase'
 import { TerminalProxyError, TerminalState } from './types'
 
 class SshTerminalProxy extends TerminalProxyBase {
@@ -220,6 +224,29 @@ class SshTerminalProxy extends TerminalProxyBase {
     }
   }
 
+  /**
+   * `-T sync` args for the remote attach when the remote tmux supports the
+   * flag (>= 3.2; it aborts the attach on older versions). The version
+   * normally arrives free with the session-create round-trip (`knownVersion`);
+   * only the duplicate-session recovery path — where create fails before
+   * printing it — pays for a `tmux -V` probe. Both are plain remote commands
+   * rather than shell logic so this works under any login shell.
+   */
+  private async clientFeatureArgs(
+    knownVersion: string | null
+  ): Promise<string[]> {
+    if (!syncFeatureEnabled()) {
+      return []
+    }
+    try {
+      const version = knownVersion ?? (await this.runTmuxAsync(['-V']))
+      return tmuxSupportsClientFeatures(version) ? ['-T', 'sync'] : []
+    } catch {
+      // runTmuxAsync already logs ssh_tmux_command_failed; degrade to no sync.
+      return []
+    }
+  }
+
   private isStartAttemptCurrent(attemptId: number): boolean {
     return attemptId === this.startAttemptId
   }
@@ -235,13 +262,19 @@ class SshTerminalProxy extends TerminalProxyBase {
       host: this.options.host,
     })
 
+    // -P -F prints the remote server version with the create output, so the
+    // sync-feature gate below needs no extra SSH round-trip.
+    let remoteVersion: string | null = null
     try {
       try {
-        await this.runTmuxAsync([
+        remoteVersion = await this.runTmuxAsync([
           'new-session',
           '-d',
           '-s',
           this.options.sessionName,
+          '-P',
+          '-F',
+          '#{version}',
         ])
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
@@ -275,8 +308,10 @@ class SshTerminalProxy extends TerminalProxyBase {
       )
     }
 
-    // Pass the remote tmux attach command as a single string to SSH
-    const attachCmd = `tmux new-session -A -s ${shellQuote(this.options.sessionName)}`
+    // Pass the remote tmux attach command as a single string to SSH.
+    const featureArgs = await this.clientFeatureArgs(remoteVersion)
+    const attachCmd = ['tmux', ...featureArgs, 'new-session', '-A', '-s']
+      .join(' ') + ` ${shellQuote(this.options.sessionName)}`
     const spawnArgs = [
       'ssh',
       '-tt',

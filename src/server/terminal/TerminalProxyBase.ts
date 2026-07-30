@@ -11,6 +11,42 @@ import type {
 } from './types'
 import { TerminalState } from './types'
 
+// Advertise DEC 2026 synchronized-update support for agentboard's own tmux
+// client via `tmux -T sync`. tmux then wraps redraws in \x1b[?2026h/l frame
+// markers instead of stripping the ones fullscreen apps (Claude Code
+// no-flicker) emit; without them, multi-read repaints reach xterm.js as
+// unmarked fragments and tear mid-frame (issue #158). xterm.js >= 6 holds
+// rendering between the markers. AGENTBOARD_TMUX_SYNC=0 to disable.
+// Read per call (not a module constant) so tests can exercise the opt-out.
+export function syncFeatureEnabled(): boolean {
+  return (
+    process.env.AGENTBOARD_TMUX_SYNC !== '0' &&
+    process.env.AGENTBOARD_TMUX_SYNC !== 'false'
+  )
+}
+
+/**
+ * Whether this tmux version output (`tmux -V` or a `#{version}` format
+ * expansion) supports the `-T features` client flag (tmux >= 3.2). The flag
+ * aborts the attach on older versions, so callers must omit it there.
+ * Empty output means the version is unknown — fail closed, since pre-2.4
+ * tmux expands `#{version}` to an empty string. Non-empty versionless dev
+ * builds ("master") are newer than 3.2 and count as supported.
+ */
+export function tmuxSupportsClientFeatures(versionOutput: string): boolean {
+  const trimmed = versionOutput.trim()
+  if (!trimmed) {
+    return false
+  }
+  const match = trimmed.match(/(\d+)\.(\d+)/)
+  if (!match) {
+    return true
+  }
+  const major = Number(match[1])
+  const minor = Number(match[2])
+  return major > 3 || (major === 3 && minor >= 2)
+}
+
 abstract class TerminalProxyBase implements ITerminalProxy {
   protected readonly options: TerminalProxyOptions
   protected readonly spawn: SpawnFn

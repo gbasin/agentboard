@@ -15,7 +15,7 @@ function getTmuxCommand(args: string[]): string {
   return tmuxArgs[0] === '-u' ? tmuxArgs[1] ?? '' : tmuxArgs[0] ?? ''
 }
 
-function createSpawnHarness() {
+function createSpawnHarness({ tmuxVersion = 'tmux 3.4' } = {}) {
   const spawnCalls: Array<{
     args: string[]
     options: Parameters<typeof Bun.spawn>[1]
@@ -73,6 +73,13 @@ function createSpawnHarness() {
   const spawnSync = (args: string[], _options?: Parameters<typeof Bun.spawnSync>[1]) => {
     spawnSyncCalls.push({ args, options: _options })
     const command = getTmuxCommand(args)
+    if (command === '-V') {
+      return {
+        exitCode: 0,
+        stdout: Buffer.from(`${tmuxVersion}\n`),
+        stderr: Buffer.from(''),
+      } as ReturnType<typeof Bun.spawnSync>
+    }
     if (command === 'list-clients') {
       // Real tmux expands list-clients formats per client, so answer by the
       // requested format: the tty+pid discovery format keeps its canned
@@ -201,6 +208,8 @@ describe('TerminalProxy', () => {
     )
     expect(harness.spawnCalls[0]?.args).toEqual([
       'tmux',
+      '-T',
+      'sync',
       'attach',
       '-t',
       'agentboard-ws-abc',
@@ -210,6 +219,60 @@ describe('TerminalProxy', () => {
     expect(received).toEqual(['hello'])
     expect(proxy.getClientTty()).toBe('/dev/pts/9')
     expect(proxy.isReady()).toBe(true)
+  })
+
+  test('AGENTBOARD_TMUX_SYNC=0 disables the sync feature', async () => {
+    const saved = process.env.AGENTBOARD_TMUX_SYNC
+    process.env.AGENTBOARD_TMUX_SYNC = '0'
+    try {
+      const harness = createSpawnHarness()
+      const proxy = new TerminalProxy({
+        connectionId: 'abc',
+        sessionName: 'agentboard-ws-abc',
+        baseSession: 'agentboard',
+        onData: () => {},
+        spawn: harness.spawn,
+        spawnSync: harness.spawnSync,
+        wait: async () => {},
+      })
+
+      await proxy.start()
+
+      expect(harness.spawnCalls[0]?.args).toEqual([
+        'tmux',
+        'attach',
+        '-t',
+        'agentboard-ws-abc',
+      ])
+    } finally {
+      if (saved === undefined) {
+        delete process.env.AGENTBOARD_TMUX_SYNC
+      } else {
+        process.env.AGENTBOARD_TMUX_SYNC = saved
+      }
+    }
+  })
+
+  test('omits -T sync when tmux predates client feature flags', async () => {
+    const harness = createSpawnHarness({ tmuxVersion: 'tmux 3.1c' })
+    const proxy = new TerminalProxy({
+      connectionId: 'abc',
+      sessionName: 'agentboard-ws-abc',
+      baseSession: 'agentboard',
+      onData: () => {},
+      spawn: harness.spawn,
+      spawnSync: harness.spawnSync,
+      wait: async () => {},
+    })
+
+    await proxy.start()
+
+    expect(harness.spawnCalls[0]?.args).toEqual([
+      'tmux',
+      'attach',
+      '-t',
+      'agentboard-ws-abc',
+    ])
   })
 
   test('switchTo issues switch and refresh commands', async () => {

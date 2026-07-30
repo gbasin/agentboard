@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import { TerminalProxyBase } from '../terminal/TerminalProxyBase'
+import {
+  TerminalProxyBase,
+  tmuxSupportsClientFeatures,
+} from '../terminal/TerminalProxyBase'
 import { TmuxTimeoutError } from '../tmuxTimeout'
 import type { SpawnSyncFn, TerminalProxyOptions } from '../terminal/types'
 
@@ -211,5 +214,37 @@ describe('TerminalProxyBase', () => {
     // reintroduce the line-by-line auto-submit, so it must NOT happen.
     expect(() => proxy.deliverPaste('t', 'a\nb')).not.toThrow()
     expect(wrote).toBe(false)
+  })
+})
+
+describe('tmuxSupportsClientFeatures', () => {
+  test('accepts 3.2 and newer, including letter suffixes and two-digit minors', () => {
+    expect(tmuxSupportsClientFeatures('tmux 3.2')).toBe(true)
+    expect(tmuxSupportsClientFeatures('tmux 3.2a')).toBe(true)
+    expect(tmuxSupportsClientFeatures('tmux 3.4')).toBe(true)
+    expect(tmuxSupportsClientFeatures('tmux 3.10')).toBe(true)
+    expect(tmuxSupportsClientFeatures('tmux 4.0')).toBe(true)
+  })
+
+  test('rejects versions before 3.2', () => {
+    expect(tmuxSupportsClientFeatures('tmux 3.1c')).toBe(false)
+    expect(tmuxSupportsClientFeatures('tmux 3.0a')).toBe(false)
+    expect(tmuxSupportsClientFeatures('tmux 2.9')).toBe(false)
+  })
+
+  test('treats versionless dev builds as supported', () => {
+    // "next-3.9" still parses as 3.9; truly versionless output has no number.
+    expect(tmuxSupportsClientFeatures('tmux next-3.9')).toBe(true)
+    expect(tmuxSupportsClientFeatures('tmux master')).toBe(true)
+  })
+
+  test('fails closed on empty output (pre-2.4 #{version} expands to nothing)', () => {
+    expect(tmuxSupportsClientFeatures('')).toBe(false)
+    expect(tmuxSupportsClientFeatures('  \n')).toBe(false)
+  })
+
+  test('accepts bare #{version} expansions without the tmux prefix', () => {
+    expect(tmuxSupportsClientFeatures('3.4\n')).toBe(true)
+    expect(tmuxSupportsClientFeatures('3.1c\n')).toBe(false)
   })
 })

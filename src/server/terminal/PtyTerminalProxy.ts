@@ -1,4 +1,8 @@
-import { TerminalProxyBase } from './TerminalProxyBase'
+import {
+  syncFeatureEnabled,
+  TerminalProxyBase,
+  tmuxSupportsClientFeatures,
+} from './TerminalProxyBase'
 import { TerminalProxyError, TerminalState } from './types'
 import { resolveGroupedSessionSwitchTarget } from './groupedSessionTarget'
 import { buildTmuxFormat, splitTmuxFields } from '../tmuxFormat'
@@ -24,6 +28,7 @@ const CLIENT_IDENTITY_FORMAT = buildTmuxFormat([
 const SET_CLIPBOARD_ENABLED =
   process.env.AGENTBOARD_TMUX_SET_CLIPBOARD !== '0' &&
   process.env.AGENTBOARD_TMUX_SET_CLIPBOARD !== 'false'
+
 
 interface TmuxTargetIdentity {
   sessionName: string
@@ -236,30 +241,33 @@ class PtyTerminalProxy extends TerminalProxyBase {
 
     let proc: ReturnType<typeof Bun.spawn>
     try {
-      proc = this.spawn(['tmux', 'attach', '-t', this.options.sessionName], {
-        env: {
-          ...process.env,
-          TERM: 'xterm-256color',
-        },
-        terminal: {
-          cols: this.cols,
-          rows: this.rows,
-          name: 'xterm-256color',
-          data: (_terminal, data) => {
-            const text = this.decoder.decode(data, { stream: true })
-            if (!text || this.outputSuppressed) {
-              return
-            }
-            this.options.onData(text)
+      proc = this.spawn(
+        ['tmux', ...this.clientFeatureArgs(), 'attach', '-t', this.options.sessionName],
+        {
+          env: {
+            ...process.env,
+            TERM: 'xterm-256color',
           },
-          exit: () => {
-            const tail = this.decoder.decode()
-            if (tail && !this.outputSuppressed) {
-              this.options.onData(tail)
-            }
+          terminal: {
+            cols: this.cols,
+            rows: this.rows,
+            name: 'xterm-256color',
+            data: (_terminal, data) => {
+              const text = this.decoder.decode(data, { stream: true })
+              if (!text || this.outputSuppressed) {
+                return
+              }
+              this.options.onData(text)
+            },
+            exit: () => {
+              const tail = this.decoder.decode()
+              if (tail && !this.outputSuppressed) {
+                this.options.onData(tail)
+              }
+            },
           },
-        },
-      })
+        }
+      )
     } catch (error) {
       // Tear down the grouped session created just above; otherwise a failed
       // attach orphans a `…-ws-<uuid>` session that holds a pty until the next
@@ -398,6 +406,25 @@ class PtyTerminalProxy extends TerminalProxyBase {
         error instanceof Error ? error.message : 'Unable to switch tmux client',
         true
       )
+    }
+  }
+
+  private clientFeatureArgs(): string[] {
+    if (!syncFeatureEnabled()) {
+      return []
+    }
+    try {
+      return tmuxSupportsClientFeatures(this.runTmux(['-V']))
+        ? ['-T', 'sync']
+        : []
+    } catch (error) {
+      // Attach still proceeds without -T sync; log so a tearing report can be
+      // traced to a failed version probe instead of guessing (issue #158).
+      this.logEvent('terminal_sync_probe_failed', {
+        sessionName: this.options.sessionName,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      return []
     }
   }
 
