@@ -4036,7 +4036,7 @@ async function attachTerminalPersistent(
     terminal.resize(cols, rows)
   }
 
-  const effectiveTarget = terminal.resolveEffectiveTarget(target)
+  const effectiveTarget = terminal.ensureEffectiveTarget(target)
 
   // Deduplicate rapid re-attaches to the same session+target (e.g. two
   // terminal-attach messages arriving within ~34ms).  Skip the expensive

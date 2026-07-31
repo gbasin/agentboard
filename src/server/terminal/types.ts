@@ -53,7 +53,10 @@ interface TerminalProxyOptions {
 interface ITerminalProxy {
   start(): Promise<void>
   switchTo(target: string, onReady?: () => void): Promise<boolean>
-  resolveEffectiveTarget(target: string): string
+  // For external (non-managed) sessions this may create a backing tmux
+  // session as a side effect (see PtyTerminalProxy) — the name reflects
+  // that this "resolve" step is not free to call speculatively.
+  ensureEffectiveTarget(target: string): string
   write(data: string): void
   paste(data: string): void
   resize(cols: number, rows: number): void

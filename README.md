@@ -192,6 +192,8 @@ Reasons to opt out: fullscreen rendering keeps the conversation in the alternate
 
 `AGENTBOARD_TMUX_SYNC` controls whether Agentboard's tmux client advertises synchronized-update support (`tmux -T sync`, tmux 3.2+). By default it does, so tmux wraps redraws in DEC 2026 frame markers and the browser terminal paints each frame atomically instead of tearing during fast fullscreen repaints (e.g. Claude Code's no-flicker renderer). The flag applies only to Agentboard's own client and does not change tmux server options. Set `AGENTBOARD_TMUX_SYNC=0` (or `false`) to disable.
 
+When you open an externally-discovered tmux session, Agentboard attaches through a per-connection session grouped with it (`agentboard-ws-<connection>-x-<session>-<hash>`), so focus in the browser stays independent of your own tmux clients. Two side effects: these derived sessions appear in `tmux ls` while a viewer is attached (they are removed on switch-away and disconnect, and pruned at startup), and killing the raw session keeps its windows alive until the last grouped viewer switches away (tmux keeps a group's windows while any member session exists).
+
 `TERMINAL_MONITOR_TARGETS` (pipe-pane only) polls tmux to detect closed targets (set to `false` to disable).
 
 `VITE_ALLOWED_HOSTS` allows access to the Vite dev server from other hostnames. Useful with Tailscale MagicDNS - add your machine name (e.g., `nuc`) to access the dev server at `http://nuc:5173` from other devices on your tailnet.
