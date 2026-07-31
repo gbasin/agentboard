@@ -542,7 +542,9 @@ export function useTerminal({
       scrollback: 0, // Disabled - we use tmux scrollback instead
       cursorBlink: false,
       cursorStyle: 'underline',
-      convertEol: true,
+      // PTY/tmux output already carries the required cursor movement. Rewriting
+      // LF as CRLF corrupts column state for fullscreen applications.
+      convertEol: false,
       theme,
       screenReaderMode: isiOS,
       // Ensure text is readable even when apps use true color (24-bit RGB) sequences
