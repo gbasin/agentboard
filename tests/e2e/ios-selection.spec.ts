@@ -48,8 +48,13 @@ test('accessibility rows survive identical repaints without breaking updates', a
     selection?.addRange(range)
     const selectedBefore = selection?.toString() ?? ''
 
-    // Exactly what xterm's AccessibilityManager does on every refresh pass.
+    // Both writes AccessibilityManager makes, with the value unchanged.
+    // innerText is the load-bearing case: browsers already collapse an
+    // identical textContent write onto the existing node, but an identical
+    // innerText write replaces it unconditionally, so without the guard this
+    // is what destroys the selection anchor on xterm's blank rows.
     row.textContent = text
+    row.innerText = text
 
     // posinset derives from buffer.ydisp, so it changes on scroll even when a
     // row's text does not. The guard must not swallow those attribute writes.
