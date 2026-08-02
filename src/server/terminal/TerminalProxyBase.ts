@@ -109,7 +109,7 @@ abstract class TerminalProxyBase implements ITerminalProxy {
     return this.state === TerminalState.READY
   }
 
-  resolveEffectiveTarget(target: string): string {
+  ensureEffectiveTarget(target: string): string {
     return target
   }
 

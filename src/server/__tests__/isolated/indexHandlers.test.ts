@@ -279,7 +279,7 @@ class TerminalProxyMock {
     return Promise.resolve(true)
   }
 
-  resolveEffectiveTarget(target: string) {
+  ensureEffectiveTarget(target: string) {
     if (target === this.options.baseSession) {
       return this.options.sessionName
     }
