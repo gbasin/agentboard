@@ -16,6 +16,7 @@ import { useEdgeSwipeToOpenDrawer } from '../hooks/useEdgeSwipeToOpenDrawer'
 import { useThemeStore, terminalThemes } from '../stores/themeStore'
 import { useSettingsStore, getFontFamily } from '../stores/settingsStore'
 import { isIOSDevice, getEffectiveModifier, getModifierDisplay } from '../utils/device'
+import { keepA11yRowsStable } from '../utils/a11yRowStability'
 import { formatRelativeTime } from '../utils/time'
 import { getPathLeaf } from '../utils/sessionLabel'
 import TerminalControls from './TerminalControls'
@@ -447,6 +448,8 @@ export default function Terminal({
     const container = containerRef.current
     if (!container) return
 
+    let disposeRowStability: (() => void) | null = null
+
     const syncA11yOverlay = () => {
       const terminal = terminalRef.current
       const root = container.querySelector('.xterm') as HTMLElement | null
@@ -456,6 +459,10 @@ export default function Terminal({
       const a11yRoot = root.querySelector('.xterm-accessibility') as HTMLElement | null
       const a11yTree = root.querySelector('.xterm-accessibility-tree') as HTMLElement | null
       if (!screen || !a11yRoot || !a11yTree) return
+
+      // Armed here rather than on mount because xterm builds the tree lazily;
+      // this runs again on rAF, a timeout and viewport resizes until it exists.
+      if (!disposeRowStability) disposeRowStability = keepA11yRowsStable(a11yTree)
 
       // 1) Position a11y overlay to match the screen rect (handles padding without transforms)
       const rootRect = root.getBoundingClientRect()
@@ -512,6 +519,7 @@ export default function Terminal({
       window.clearTimeout(retryId)
       window.visualViewport?.removeEventListener('resize', scheduleSync)
       window.removeEventListener('orientationchange', scheduleSync)
+      disposeRowStability?.()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- use session?.id to avoid re-running on session data changes
   }, [containerRef, fontSize, isiOS, session?.id, terminalRef])
