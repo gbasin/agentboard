@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, spyOn, test } from 'bun:test'
 import os from 'node:os'
 
 const ORIGINAL_ENV = {
@@ -193,6 +193,48 @@ describe('config', () => {
     expect(config.tmuxTimeoutMs).toBe(4500)
     expect(config.tmuxMutationTimeoutMs).toBe(12000)
     expect(config.pasteImageMaxBytes).toBe(4096)
+  })
+
+  test('ignores ambient HOSTNAME that echoes the machine hostname', async () => {
+    process.env.HOSTNAME = os.hostname()
+    delete process.env.AGENTBOARD_REMOTE_HOSTS
+    const warnSpy = spyOn(console, 'warn').mockImplementation(() => {})
+
+    try {
+      const config = await loadConfig('ambient-hostname')
+      expect(config.hostname).toBe('127.0.0.1')
+      expect(warnSpy).toHaveBeenCalledTimes(1)
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
+  test('treats empty HOSTNAME as unset', async () => {
+    process.env.HOSTNAME = ''
+
+    const config = await loadConfig('empty-hostname')
+    expect(config.hostname).toBe('127.0.0.1')
+  })
+
+  test('honors deliberately set HOSTNAME values', async () => {
+    process.env.HOSTNAME = '0.0.0.0'
+    delete process.env.AGENTBOARD_REMOTE_HOSTS
+    const warnSpy = spyOn(console, 'warn').mockImplementation(() => {})
+
+    try {
+      const config = await loadConfig('deliberate-hostname')
+      expect(config.hostname).toBe('0.0.0.0')
+      expect(warnSpy).not.toHaveBeenCalled()
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
+  test('keeps honoring HOSTNAME=localhost', async () => {
+    process.env.HOSTNAME = 'localhost'
+
+    const config = await loadConfig('localhost-hostname')
+    expect(config.hostname).toBe('localhost')
   })
 
   test('defaults to watch mode for invalid AGENTBOARD_LOG_WATCH_MODE', async () => {

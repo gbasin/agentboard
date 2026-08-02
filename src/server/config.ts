@@ -141,6 +141,24 @@ const tmuxMutationTimeoutMs = Number.isFinite(tmuxMutationTimeoutMsRaw) && tmuxM
   ? Math.max(Math.floor(tmuxMutationTimeoutMsRaw), tmuxTimeoutMs)
   : Math.max(tmuxTimeoutMs * 5, 15000)
 
+// Bind address for the server. HOSTNAME doubles as the machine name in many
+// environments — containers and some CI images auto-export it — so a value
+// that merely echoes os.hostname() is treated as ambient and the localhost
+// default is kept instead of silently binding away from 127.0.0.1.
+function resolveBindHostname(): string {
+  const raw = process.env.HOSTNAME
+  if (!raw) return '127.0.0.1'
+  if (raw === os.hostname()) {
+    console.warn(
+      `[agentboard] Ignoring HOSTNAME="${raw}" — it matches the machine hostname, ` +
+        'so it was likely auto-exported by the environment. ' +
+        'Binding 127.0.0.1; set HOSTNAME=0.0.0.0 to listen on all interfaces.',
+    )
+    return '127.0.0.1'
+  }
+  return raw
+}
+
 const pasteImageMaxBytesRaw = Number(process.env.AGENTBOARD_PASTE_IMAGE_MAX_BYTES)
 const pasteImageMaxBytes = Number.isFinite(pasteImageMaxBytesRaw) && pasteImageMaxBytesRaw > 0
   ? Math.floor(pasteImageMaxBytesRaw)
@@ -148,7 +166,7 @@ const pasteImageMaxBytes = Number.isFinite(pasteImageMaxBytesRaw) && pasteImageM
 
 export const config = {
   port: Number(process.env.PORT) || 4040,
-  hostname: process.env.HOSTNAME || '127.0.0.1',
+  hostname: resolveBindHostname(),
   hostLabel,
   tmuxSession: process.env.TMUX_SESSION || 'agentboard',
   refreshIntervalMs: Number(process.env.REFRESH_INTERVAL_MS) || 2000,

@@ -172,7 +172,7 @@ AGENTBOARD_LOG_WATCH_MODE=watch
 AGENTBOARD_PASTE_IMAGE_MAX_BYTES=41943040
 ```
 
-`HOSTNAME` controls which interfaces the server binds to (default `127.0.0.1` for localhost-only). With the default localhost binding, if Tailscale is detected the server also binds to your Tailscale IP automatically. Set to `0.0.0.0` to listen on all interfaces.
+`HOSTNAME` controls which interfaces the server binds to (default `127.0.0.1` for localhost-only). With the default localhost binding, if Tailscale is detected the server also binds to your Tailscale IP automatically. Set to `0.0.0.0` to listen on all interfaces. A `HOSTNAME` that merely equals the machine hostname is treated as auto-exported by the environment (containers and some CI images do this) and ignored with a warning, keeping the localhost default.
 
 > **Security note:** Agentboard has no built-in authentication. Anyone who can reach the server has full access to your terminal sessions, including the ability to run commands as your user. The default localhost binding is safe. Tailscale provides network-level auth for remote access. Avoid setting `HOSTNAME=0.0.0.0` on untrusted networks (public WiFi, shared LANs) without an additional access control layer.
 
