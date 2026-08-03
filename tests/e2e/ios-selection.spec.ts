@@ -46,7 +46,17 @@ test('accessibility rows survive identical repaints without breaking updates', a
     const selection = window.getSelection()
     selection?.removeAllRanges()
     selection?.addRange(range)
-    const selectedBefore = selection?.toString() ?? ''
+
+    // Read the selection through its Range, not Selection.toString():
+    // Selection.toString() returns *rendered* text, which is '' while the
+    // a11y rows have no layout yet (seen on slow CI runners). Range.toString()
+    // is layout-independent and still collapses to '' if a repaint destroys
+    // the anchored Text node, which is the regression under test.
+    const readSelection = () => {
+      const sel = window.getSelection()
+      return sel && sel.rangeCount > 0 ? sel.getRangeAt(0).toString() : ''
+    }
+    const selectedBefore = readSelection()
 
     // Both writes AccessibilityManager makes, with the value unchanged.
     // innerText is the load-bearing case: browsers already collapse an
@@ -64,7 +74,7 @@ test('accessibility rows survive identical repaints without breaking updates', a
       sameNode: row.firstChild === node,
       stillAttached: node.isConnected,
       selectedBefore,
-      selectedAfter: window.getSelection()?.toString() ?? '',
+      selectedAfter: readSelection(),
       posinset: row.getAttribute('aria-posinset'),
     }
 
