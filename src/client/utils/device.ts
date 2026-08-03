@@ -1,4 +1,4 @@
-import type { ShortcutModifier } from '../stores/settingsStore'
+import type { SessionJumpChord, ShortcutModifier } from '../stores/settingsStore'
 
 export function isIOSDevice(): boolean {
   if (typeof navigator === 'undefined') return false
@@ -66,6 +66,43 @@ export function matchesModifier(
       return event.metaKey && event.altKey && !event.ctrlKey && !event.shiftKey
     case 'cmd-shift':
       return event.metaKey && event.shiftKey && !event.ctrlKey && !event.altKey
+  }
+}
+
+// Check if a keyboard event matches the jump-to-session chord.
+// 'modifier' reuses the configured letter-shortcut combo; 'meta'/'ctrl' match a
+// bare ⌘/⌃ with no other modifiers held.
+export function matchesJumpChord(
+  event: KeyboardEvent,
+  chord: SessionJumpChord,
+  modifier: EffectiveModifier
+): boolean {
+  switch (chord) {
+    case 'off':
+      return false
+    case 'modifier':
+      return matchesModifier(event, modifier)
+    case 'meta':
+      return event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey
+    case 'ctrl':
+      return event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey
+  }
+}
+
+// Display string for the jump-to-session chord, e.g. '⌘' or '⌃⌥'
+export function getJumpChordDisplay(
+  chord: SessionJumpChord,
+  modifier: EffectiveModifier
+): string {
+  switch (chord) {
+    case 'off':
+      return ''
+    case 'modifier':
+      return getModifierDisplay(modifier)
+    case 'meta':
+      return '⌘'
+    case 'ctrl':
+      return '⌃'
   }
 }
 

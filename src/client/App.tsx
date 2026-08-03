@@ -20,7 +20,7 @@ import { useVisualViewport } from './hooks/useVisualViewport'
 import { sortSessions } from './utils/sessions'
 import { flushSync } from 'react-dom'
 import { setClientLogLevel } from './utils/clientLog'
-import { getEffectiveModifier, matchesModifier } from './utils/device'
+import { getEffectiveModifier, matchesJumpChord, matchesModifier } from './utils/device'
 import { playPermissionSound, playIdleSound, primeAudio, needsUserGesture } from './utils/sound'
 
 interface ServerInfo {
@@ -105,6 +105,7 @@ export default function App() {
   )
   const addRecentPath = useSettingsStore((state) => state.addRecentPath)
   const shortcutModifier = useSettingsStore((state) => state.shortcutModifier)
+  const sessionJumpChord = useSettingsStore((state) => state.sessionJumpChord)
   const sidebarWidth = useSettingsStore((state) => state.sidebarWidth)
   const setSidebarWidth = useSettingsStore((state) => state.setSidebarWidth)
   const projectFilters = useSettingsStore((state) => state.projectFilters)
@@ -812,6 +813,28 @@ export default function App() {
         return
       }
 
+      // Jump to session by index: [chord]+1..9
+      // Note: with chord 'meta'/'ctrl' the browser reserves these for tab
+      // switching in a normal tab, so they only arrive in a standalone window.
+      if (/^Digit[1-9]$/.test(code) && matchesJumpChord(event, sessionJumpChord, effectiveModifier)) {
+        const index = Number(code.slice(5)) - 1
+        const activeNav = filteredSortedSessions
+        const target = activeNav.length > 0 ? activeNav[index] : undefined
+        if (target) {
+          event.preventDefault()
+          setSelectedSessionId(target.id)
+          return
+        }
+        if (activeNav.length === 0) {
+          const hibernating = filteredHibernatingSessions[index]
+          if (hibernating) {
+            event.preventDefault()
+            setSelectedHibernatingSessionId(hibernating.sessionId)
+          }
+        }
+        return
+      }
+
       // New session: [mod]+N
       if (isShortcut && code === 'KeyN') {
         event.preventDefault()
@@ -843,6 +866,7 @@ export default function App() {
     filteredHibernatingSessions,
     handleKillSession,
     shortcutModifier,
+    sessionJumpChord,
     settingsHydrated,
   ])
 

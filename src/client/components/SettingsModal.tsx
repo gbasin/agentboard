@@ -8,11 +8,16 @@ import {
   type FontOption,
   type SessionSortDirection,
   type SessionSortMode,
+  type SessionJumpChord,
   type ShortcutModifier,
 } from '../stores/settingsStore'
 import { useThemeStore, type Theme } from '../stores/themeStore'
 import { HISTORY_MAX_AGE_MIN_HOURS, HISTORY_MAX_AGE_MAX_HOURS } from '@shared/types'
-import { getEffectiveModifier, getModifierDisplay } from '../utils/device'
+import {
+  getEffectiveModifier,
+  getJumpChordDisplay,
+  getModifierDisplay,
+} from '../utils/device'
 import { Switch } from './Switch'
 import { playPermissionSound, playIdleSound, primeAudio } from '../utils/sound'
 
@@ -63,6 +68,10 @@ export default function SettingsModal({
   const setShortcutModifier = useSettingsStore(
     (state) => state.setShortcutModifier
   )
+  const sessionJumpChord = useSettingsStore((state) => state.sessionJumpChord)
+  const setSessionJumpChord = useSettingsStore(
+    (state) => state.setSessionJumpChord
+  )
   const showProjectName = useSettingsStore((state) => state.showProjectName)
   const setShowProjectName = useSettingsStore(
     (state) => state.setShowProjectName
@@ -102,6 +111,8 @@ export default function SettingsModal({
   const [draftShortcutModifier, setDraftShortcutModifier] = useState<
     ShortcutModifier | 'auto'
   >(shortcutModifier)
+  const [draftSessionJumpChord, setDraftSessionJumpChord] =
+    useState<SessionJumpChord>(sessionJumpChord)
   const [draftShowProjectName, setDraftShowProjectName] =
     useState(showProjectName)
   const [draftShowLastUserMessage, setDraftShowLastUserMessage] = useState(
@@ -148,6 +159,7 @@ export default function SettingsModal({
       setDraftFontOption(fontOption)
       setDraftCustomFontFamily(customFontFamily)
       setDraftShortcutModifier(shortcutModifier)
+      setDraftSessionJumpChord(sessionJumpChord)
       setDraftShowProjectName(showProjectName)
       setDraftShowLastUserMessage(showLastUserMessage)
       setDraftShowSessionIdSuffix(showSessionIdPrefix)
@@ -213,6 +225,7 @@ export default function SettingsModal({
     fontOption,
     customFontFamily,
     shortcutModifier,
+    sessionJumpChord,
     showProjectName,
     showLastUserMessage,
     showSessionIdPrefix,
@@ -257,6 +270,7 @@ export default function SettingsModal({
     setFontOption(draftFontOption)
     setCustomFontFamily(draftCustomFontFamily)
     setShortcutModifier(draftShortcutModifier)
+    setSessionJumpChord(draftSessionJumpChord)
     setShowProjectName(draftShowProjectName)
     setShowLastUserMessage(draftShowLastUserMessage)
     setShowSessionIdPrefix(draftShowSessionIdPrefix)
@@ -891,6 +905,38 @@ export default function SettingsModal({
                 ? `Platform default: ${getModifierDisplay(getEffectiveModifier('auto'))}`
                 : `Shortcuts: ${getModifierDisplay(draftShortcutModifier)}+[N/X/[/]]`}
             </p>
+          </div>
+
+          <div className="border-t border-border pt-4">
+            <label className="mb-2 block text-xs text-secondary">
+              Jump To Session (1-9)
+            </label>
+            <div className="grid grid-cols-4 gap-1">
+              {(['modifier', 'meta', 'ctrl', 'off'] as const).map((chord) => (
+                <button
+                  key={chord}
+                  type="button"
+                  className={`btn text-xs px-2 ${draftSessionJumpChord === chord ? 'btn-primary' : ''}`}
+                  onClick={() => setDraftSessionJumpChord(chord)}
+                >
+                  {chord === 'modifier' ? 'Modifier' : chord === 'off' ? 'Off' : chord === 'meta' ? '⌘' : '⌃'}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1.5 text-[10px] text-muted">
+              {draftSessionJumpChord === 'off'
+                ? 'Jump-to-session shortcuts disabled'
+                : `Jump: ${getJumpChordDisplay(
+                    draftSessionJumpChord,
+                    getEffectiveModifier(draftShortcutModifier)
+                  )}+1..9`}
+            </p>
+            {(draftSessionJumpChord === 'meta' || draftSessionJumpChord === 'ctrl') && (
+              <p className="mt-1 text-[10px] text-muted">
+                Browsers reserve this for tab switching. Works in an installed
+                (standalone) window; in a normal tab the browser keeps it.
+              </p>
+            )}
           </div>
         </div>
 

@@ -1088,6 +1088,83 @@ describe('App', () => {
     // but kill-failed test below proves it works)
   })
 
+  test('jumps to a session by index with the digit shortcut', () => {
+    const sessionB = {
+      ...baseSession,
+      id: 'session-2',
+      name: 'beta',
+      createdAt: '2024-01-02T00:00:00.000Z',
+    }
+
+    useSessionStore.setState({
+      sessions: [baseSession, sessionB],
+      selectedSessionId: baseSession.id,
+      hasLoaded: true,
+    })
+
+    let renderer!: TestRenderer.ReactTestRenderer
+
+    act(() => {
+      renderer = TestRenderer.create(<App />)
+    })
+    activeRenderer = renderer
+
+    const digit = (index: number, mods: Partial<KeyboardEvent>) =>
+      ({
+        key: String(index),
+        code: `Digit${index}`,
+        ctrlKey: false,
+        shiftKey: false,
+        altKey: false,
+        metaKey: false,
+        defaultPrevented: false,
+        preventDefault: () => {},
+        ...mods,
+      }) as KeyboardEvent
+
+    // Default chord is 'modifier', which resolves to ctrl-shift off-Mac
+    act(() => {
+      getKeyHandler()(digit(2, { ctrlKey: true, shiftKey: true }))
+    })
+    expect(useSessionStore.getState().selectedSessionId).toBe('session-2')
+
+    act(() => {
+      getKeyHandler()(digit(1, { ctrlKey: true, shiftKey: true }))
+    })
+    expect(useSessionStore.getState().selectedSessionId).toBe('session-1')
+
+    // Out-of-range digits are left alone for the browser
+    act(() => {
+      getKeyHandler()(digit(9, { ctrlKey: true, shiftKey: true }))
+    })
+    expect(useSessionStore.getState().selectedSessionId).toBe('session-1')
+
+    // A bare digit must not steal plain typing
+    act(() => {
+      getKeyHandler()(digit(2, {}))
+    })
+    expect(useSessionStore.getState().selectedSessionId).toBe('session-1')
+
+    // Switching the chord to 'meta' makes bare Cmd+N jump instead
+    act(() => {
+      useSettingsStore.setState({ sessionJumpChord: 'meta' })
+    })
+    act(() => {
+      getKeyHandler()(digit(2, { metaKey: true }))
+    })
+    expect(useSessionStore.getState().selectedSessionId).toBe('session-2')
+
+    // ...and the old modifier chord no longer jumps
+    act(() => {
+      getKeyHandler()(digit(1, { ctrlKey: true, shiftKey: true }))
+    })
+    expect(useSessionStore.getState().selectedSessionId).toBe('session-2')
+
+    act(() => {
+      useSettingsStore.setState({ sessionJumpChord: 'modifier' })
+    })
+  })
+
   test('kill-failed restores optimistically removed session', () => {
     useSessionStore.setState({
       sessions: [baseSession],
