@@ -34,7 +34,8 @@ class TerminalMock {
   private keyHandler?: (event: KeyboardEvent) => boolean
   private wheelHandler?: (event: WheelEvent) => boolean
 
-  constructor() {
+  constructor(options: Record<string, unknown> = {}) {
+    this.options = { ...options }
     TerminalMock.instances.push(this)
   }
 
@@ -502,6 +503,7 @@ describe('useTerminal', () => {
     if (!terminal) {
       throw new Error('Expected terminal instance')
     }
+    expect(terminal.options.convertEol).toBe(false)
 
     act(() => {
       terminal.emitData('ls')
