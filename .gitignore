@@ -13,6 +13,5 @@ test-results
 systemd/agentboard.service
 # Nightshift plan artifacts (keep out of version control)
 .nightshift-plan
-/.cachebro
 /.agentcache
 .claude/
