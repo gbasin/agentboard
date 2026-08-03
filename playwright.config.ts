@@ -1,10 +1,31 @@
 import { defineConfig } from '@playwright/test'
+import { mkdirSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 const port = Number(process.env.E2E_PORT) || 4173
 const tmuxSession =
   process.env.E2E_TMUX_SESSION || `agentboard-e2e-${Date.now()}`
 
 process.env.E2E_TMUX_SESSION = tmuxSession
+
+// Run the whole suite against a private tmux server. The agentboard server
+// creates per-connection grouped sessions (`<base>-ws-<uuid>`) that only its
+// own dispose() or its next startup's pruner can reap; when Playwright
+// SIGKILLs the webServer they used to leak onto the user's live tmux server
+// (which also received the server-global set-clipboard write). With a private
+// socket, teardown just kill-servers it — nothing to enumerate, nothing shared.
+//
+// TMUX_TMPDIR is silently ignored unless the directory exists, and an
+// inherited $TMUX (suite run from inside a tmux session) overrides the socket
+// choice entirely — hence the mkdir and the delete. Both propagate to the
+// webServer, the test workers (paste.spec shells out to tmux), and teardown.
+const tmuxTmpDir =
+  process.env.E2E_TMUX_TMPDIR || join(tmpdir(), `abe2e-${Date.now()}`)
+process.env.E2E_TMUX_TMPDIR = tmuxTmpDir
+mkdirSync(tmuxTmpDir, { recursive: true })
+process.env.TMUX_TMPDIR = tmuxTmpDir
+delete process.env.TMUX
 
 export default defineConfig({
   testDir: 'tests/e2e',
