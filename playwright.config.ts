@@ -29,21 +29,24 @@ delete process.env.TMUX
 
 // The tmux server isn't the only shared state: without these, the e2e
 // webServer opens the user's live ~/.agentboard/agentboard.db and watches
-// their real Claude/Codex logs. It then rewrites each agent session's
+// their real Claude/Codex/Pi logs. It then rewrites each agent session's
 // current_window mapping against ITS tmux view — which contains none of the
 // user's windows — desyncing the live dashboard's status and last-message
 // display until every session's log happens to grow again. Point all of it
-// into the same throwaway directory teardown already removes.
+// into the same throwaway directory teardown already removes. Set via
+// process.env (like TMUX_TMPDIR above) so the webServer, the test workers,
+// and any future setup/teardown code all see the same isolated paths.
 const claudeDir = join(tmuxTmpDir, 'claude')
 const codexDir = join(tmuxTmpDir, 'codex')
+const piDir = join(tmuxTmpDir, 'pi')
 mkdirSync(claudeDir, { recursive: true })
 mkdirSync(codexDir, { recursive: true })
-const e2eDataEnv = [
-  `AGENTBOARD_DB_PATH=${tmuxTmpDir}/agentboard.db`,
-  `LOG_FILE=${tmuxTmpDir}/agentboard.log`,
-  `CLAUDE_CONFIG_DIR=${claudeDir}`,
-  `CODEX_HOME=${codexDir}`,
-].join(' ')
+mkdirSync(piDir, { recursive: true })
+process.env.AGENTBOARD_DB_PATH = `${tmuxTmpDir}/agentboard.db`
+process.env.LOG_FILE = `${tmuxTmpDir}/agentboard.log`
+process.env.CLAUDE_CONFIG_DIR = claudeDir
+process.env.CODEX_HOME = codexDir
+process.env.PI_HOME = piDir
 
 export default defineConfig({
   testDir: 'tests/e2e',
@@ -59,7 +62,7 @@ export default defineConfig({
     // AGENTBOARD_STATIC_DIR is pinned to the repo build: when e2e runs from a
     // shell inside a live agentboard session, the inherited env points at the
     // installed npm package's bundle and the tests would exercise stale code.
-    command: `[ -d dist/client ] || bun run build && PORT=${port} TMUX_SESSION=${tmuxSession} AGENTBOARD_STATIC_DIR=dist/client ${e2eDataEnv} bun src/server/index.ts`,
+    command: `[ -d dist/client ] || bun run build && PORT=${port} TMUX_SESSION=${tmuxSession} AGENTBOARD_STATIC_DIR=dist/client bun src/server/index.ts`,
     url: `http://localhost:${port}`,
     reuseExistingServer: !process.env.CI,
     timeout: 120000,
