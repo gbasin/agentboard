@@ -68,13 +68,6 @@ jobs:
       - name: Install Playwright browsers
         run: bunx playwright install --with-deps chromium
 
-      - name: Setup tmux session
-        run: |
-          tmux new-session -d -s agentboard -n test
-          tmux send-keys -t agentboard:test 'echo "hello from CI"' Enter
-          sleep 1
-          tmux capture-pane -t agentboard:test -p
-
       - name: Build
         run: bun run build
 
