@@ -764,8 +764,8 @@ export default function SettingsModal({
               <div>
                 <div className="text-sm text-primary">Terminal Colors</div>
                 <div className="text-[10px] text-muted">
-                  Preserve ANSI colors and remove NO_COLOR for newly started sessions.
-                  Restart running agents after changing this setting.
+                  Preserve ANSI colors for terminal output. Applies to agents started after
+                  changing this setting.
                 </div>
               </div>
               <Switch
