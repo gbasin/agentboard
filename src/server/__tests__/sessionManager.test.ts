@@ -264,6 +264,10 @@ function createTmuxRunner(sessions: SessionState[], baseIndex = 0) {
       return ''
     }
 
+    if (command === 'set-environment') {
+      return ''
+    }
+
     throw new Error(`Unhandled tmux command: ${args.join(' ')}`)
   }
 
@@ -864,7 +868,7 @@ describe('SessionManager', () => {
         ].join('\n')
       }
 
-      if (command === 'set-option') {
+      if (command === 'set-option' || command === 'set-environment') {
         return ''
       }
 
@@ -1699,6 +1703,41 @@ describe('SessionManager', () => {
     expect(mouseSetCalls.some((call) => call.includes('other-session'))).toBe(
       false
     )
+  })
+
+  test('terminal color setting controls NO_COLOR for future pane processes', () => {
+    const sessionName = 'agentboard-terminal-colors'
+    const runner = createTmuxRunner(
+      [{ name: sessionName, windows: [] }],
+      1
+    )
+
+    const manager = new SessionManager(sessionName, {
+      runTmux: runner.runTmux,
+      capturePaneContent: () => null,
+      terminalColorsEnabled: true,
+    })
+
+    manager.listWindows()
+
+    expect(runner.calls).toContainEqual([
+      'set-environment',
+      '-r',
+      '-t',
+      sessionName,
+      'NO_COLOR',
+    ])
+
+    runner.calls.length = 0
+    manager.setTerminalColors(false)
+
+    expect(runner.calls).toEqual([[
+      'set-environment',
+      '-t',
+      sessionName,
+      'NO_COLOR',
+      '1',
+    ]])
   })
 
   test('setMouseMode rethrows non-timeout base session failures', () => {

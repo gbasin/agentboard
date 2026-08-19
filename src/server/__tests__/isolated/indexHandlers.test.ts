@@ -64,6 +64,7 @@ const defaultConfig = {
   pruneWsSessions: true,
   terminalMode: 'pty',
   terminalMonitorTargets: true,
+  terminalColorsEnabled: true,
   tlsCert: '',
   tlsKey: '',
   rgThreads: 1,
@@ -142,6 +143,7 @@ let sessionManagerState: {
   killWindow: (tmuxWindow: string) => void
   renameWindow: (tmuxWindow: string, newName: string) => void
   setMouseMode: (enabled: boolean) => void
+  setTerminalColors: (enabled: boolean) => void
   ensureSession: () => { canPruneWsSessions: boolean }
 }
 
@@ -169,6 +171,10 @@ class SessionManagerMock {
 
   setMouseMode(enabled: boolean) {
     sessionManagerState.setMouseMode(enabled)
+  }
+
+  setTerminalColors(enabled: boolean) {
+    sessionManagerState.setTerminalColors(enabled)
   }
 
   ensureSession() {
@@ -635,6 +641,7 @@ beforeEach(() => {
     killWindow: () => {},
     renameWindow: () => {},
     setMouseMode: () => {},
+    setTerminalColors: () => {},
     ensureSession: () => ({ canPruneWsSessions: true }),
   }
 
@@ -2914,6 +2921,7 @@ describe('server message handlers', () => {
     expect(attached.switchTargets).toEqual(['agentboard'])
     expect(captureTarget).toBe(groupedTarget)
     expect(captureArgs[0]).toBe('capture-pane')
+    expect(captureArgs).toContain('-e')
     expect(captureOptions?.timeout).toBe(configState.tmuxTimeoutMs)
     const historyIndex = sent.findIndex(
       (message) =>
@@ -4772,6 +4780,113 @@ describe('server fetch handlers', () => {
     expect(await response.json()).toEqual({
       error: 'Unable to persist tmux mouse mode',
     })
+    expect(dbState.setAppSettingCalls).toEqual([])
+  })
+
+  test('terminal colors setting applies globally and persists', async () => {
+    const appliedValues: boolean[] = []
+    sessionManagerState.setTerminalColors = (enabled: boolean) => {
+      appliedValues.push(enabled)
+    }
+
+    const { serveOptions } = await loadIndex()
+    const fetchHandler = serveOptions.fetch
+    if (!fetchHandler) {
+      throw new Error('Fetch handler not configured')
+    }
+
+    const putResponse = await fetchHandler.call(
+      {} as Bun.Server<unknown>,
+      new Request('http://localhost/api/settings/terminal-colors', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ enabled: false }),
+      }),
+      {} as Bun.Server<unknown>
+    )
+
+    if (!putResponse) {
+      throw new Error('Expected response for terminal colors request')
+    }
+
+    expect(putResponse.status).toBe(200)
+    expect(await putResponse.json()).toEqual({ enabled: false })
+    expect(appliedValues).toEqual([false])
+    expect(configState.terminalColorsEnabled).toBe(false)
+    expect(dbState.setAppSettingCalls).toEqual([
+      { key: 'terminal_colors_enabled', value: 'false' },
+    ])
+
+    const getResponse = await fetchHandler.call(
+      {} as Bun.Server<unknown>,
+      new Request('http://localhost/api/settings/terminal-colors'),
+      {} as Bun.Server<unknown>
+    )
+    if (!getResponse) {
+      throw new Error('Expected response for terminal colors request')
+    }
+    expect(await getResponse.json()).toEqual({ enabled: false })
+  })
+
+  test('terminal colors persistence failure rolls back runtime state', async () => {
+    dbState.setAppSettingError = new Error('db unavailable')
+    const appliedValues: boolean[] = []
+    sessionManagerState.setTerminalColors = (enabled: boolean) => {
+      appliedValues.push(enabled)
+    }
+
+    const { serveOptions } = await loadIndex()
+    const fetchHandler = serveOptions.fetch
+    if (!fetchHandler) {
+      throw new Error('Fetch handler not configured')
+    }
+
+    const response = await fetchHandler.call(
+      {} as Bun.Server<unknown>,
+      new Request('http://localhost/api/settings/terminal-colors', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ enabled: false }),
+      }),
+      {} as Bun.Server<unknown>
+    )
+
+    if (!response) {
+      throw new Error('Expected response for terminal colors request')
+    }
+
+    expect(response.status).toBe(500)
+    expect(await response.json()).toEqual({
+      error: 'Unable to persist terminal colors',
+    })
+    expect(appliedValues).toEqual([false, true])
+    expect(configState.terminalColorsEnabled).toBe(true)
+    expect(dbState.setAppSettingCalls).toEqual([])
+  })
+
+  test('terminal colors rejects non-boolean values', async () => {
+    const { serveOptions } = await loadIndex()
+    const fetchHandler = serveOptions.fetch
+    if (!fetchHandler) {
+      throw new Error('Fetch handler not configured')
+    }
+
+    const response = await fetchHandler.call(
+      {} as Bun.Server<unknown>,
+      new Request('http://localhost/api/settings/terminal-colors', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ enabled: 'yes' }),
+      }),
+      {} as Bun.Server<unknown>
+    )
+
+    if (!response) {
+      throw new Error('Expected response for terminal colors request')
+    }
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({ error: 'enabled must be a boolean' })
     expect(dbState.setAppSettingCalls).toEqual([])
   })
 

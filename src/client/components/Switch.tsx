@@ -6,6 +6,7 @@ interface SwitchProps {
   onCheckedChange: (checked: boolean) => void
   disabled?: boolean
   className?: string
+  ariaLabel?: string
 }
 
 /**
@@ -17,12 +18,14 @@ export function Switch({
   onCheckedChange,
   disabled,
   className,
+  ariaLabel,
 }: SwitchProps) {
   return (
     <BaseSwitch.Root
       checked={checked}
       onCheckedChange={onCheckedChange}
       disabled={disabled}
+      aria-label={ariaLabel}
       className={cn(
         'group relative inline-flex h-6 w-10 shrink-0 cursor-pointer items-center rounded-full transition-colors',
         'bg-border data-[checked]:bg-accent',

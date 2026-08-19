@@ -85,6 +85,7 @@ const TMUX_MUTATION_COMMANDS = new Set([
   'new-window',
   'kill-window',
   'rename-window',
+  'set-environment',
   'set-option',
 ])
 
@@ -95,6 +96,7 @@ export class SessionManager {
   private now: NowFn
   private displayNameExists: (name: string, excludeSessionId?: string) => boolean
   private mouseMode: boolean
+  private terminalColorsEnabled: boolean
 
   constructor(
     sessionName = config.tmuxSession,
@@ -104,12 +106,14 @@ export class SessionManager {
       now,
       displayNameExists,
       mouseMode = true,
+      terminalColorsEnabled = config.terminalColorsEnabled ?? true,
     }: {
       runTmux?: TmuxRunner
       capturePaneContent?: CapturePane
       now?: NowFn
       displayNameExists?: (name: string, excludeSessionId?: string) => boolean
       mouseMode?: boolean
+      terminalColorsEnabled?: boolean
     } = {}
   ) {
     this.sessionName = sessionName
@@ -118,6 +122,7 @@ export class SessionManager {
     this.now = now ?? Date.now
     this.displayNameExists = displayNameExists ?? (() => false)
     this.mouseMode = mouseMode
+    this.terminalColorsEnabled = terminalColorsEnabled
   }
 
   ensureSession(): EnsureSessionResult {
@@ -209,6 +214,7 @@ export class SessionManager {
     // Note: PtyTerminalProxy copies this setting onto grouped client sessions.
     const mouseValue = this.mouseMode ? 'on' : 'off'
     this.applyMouseMode(this.sessionName, mouseValue)
+    this.applyTerminalColors(this.sessionName, this.terminalColorsEnabled)
   }
 
   setMouseMode(enabled: boolean): void {
@@ -280,6 +286,32 @@ export class SessionManager {
 
   private applyMouseMode(target: string, mouseValue: string): void {
     this.runTmux(['set-option', '-t', target, 'mouse', mouseValue])
+  }
+
+  setTerminalColors(enabled: boolean): void {
+    try {
+      this.applyTerminalColors(this.sessionName, enabled)
+    } catch (error) {
+      if (error instanceof TmuxTimeoutError) {
+        throw error
+      }
+      if (!isTmuxSessionAbsentError(error)) {
+        throw error
+      }
+      // Session doesn't exist yet; configureSession applies the value when it
+      // is created.
+    }
+    this.terminalColorsEnabled = enabled
+  }
+
+  private applyTerminalColors(target: string, enabled: boolean): void {
+    if (enabled) {
+      // -r marks NO_COLOR for removal from future pane processes even when it
+      // exists in tmux's global environment.
+      this.runTmux(['set-environment', '-r', '-t', target, 'NO_COLOR'])
+      return
+    }
+    this.runTmux(['set-environment', '-t', target, 'NO_COLOR', '1'])
   }
 
   private rollbackMouseMode(

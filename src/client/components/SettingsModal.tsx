@@ -117,6 +117,8 @@ export default function SettingsModal({
   // Server-side settings (fetched from API)
   const [tmuxMouseMode, setTmuxMouseMode] = useState(true)
   const [tmuxMouseModeLoading, setTmuxMouseModeLoading] = useState(false)
+  const [terminalColors, setTerminalColors] = useState(true)
+  const [terminalColorsLoading, setTerminalColorsLoading] = useState(false)
   const [preferWindowName, setPreferWindowName] = useState(false)
   const [preferWindowNameLoading, setPreferWindowNameLoading] = useState(false)
   const [historyMaxAgeHours, setHistoryMaxAgeHours] = useState(24)
@@ -162,6 +164,10 @@ export default function SettingsModal({
       fetch('/api/settings/tmux-mouse-mode')
         .then((res) => res.json())
         .then((data: { enabled: boolean }) => setTmuxMouseMode(data.enabled))
+        .catch(() => {})
+      fetch('/api/settings/terminal-colors')
+        .then((res) => res.json())
+        .then((data: { enabled: boolean }) => setTerminalColors(data.enabled))
         .catch(() => {})
       fetch('/api/settings/history-max-age-hours')
         .then((res) => res.json())
@@ -336,6 +342,21 @@ export default function SettingsModal({
       })
       .catch(() => setPreferWindowName(!enabled)) // Revert on error
       .finally(() => setPreferWindowNameLoading(false))
+  }
+
+  const handleTerminalColorsChange = (enabled: boolean) => {
+    setTerminalColorsLoading(true)
+    setTerminalColors(enabled)
+    fetch('/api/settings/terminal-colors', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      })
+      .catch(() => setTerminalColors(!enabled))
+      .finally(() => setTerminalColorsLoading(false))
   }
 
   const handleHistoryMaxAgeHoursChange = (hours: number) => {
@@ -736,6 +757,22 @@ export default function SettingsModal({
                 checked={tmuxMouseMode}
                 onCheckedChange={handleTmuxMouseModeChange}
                 disabled={tmuxMouseModeLoading}
+              />
+            </div>
+
+            <div className="mt-4 flex items-center justify-between gap-4">
+              <div>
+                <div className="text-sm text-primary">Terminal Colors</div>
+                <div className="text-[10px] text-muted">
+                  Preserve ANSI colors and remove NO_COLOR for newly started sessions.
+                  Restart running agents after changing this setting.
+                </div>
+              </div>
+              <Switch
+                checked={terminalColors}
+                onCheckedChange={handleTerminalColorsChange}
+                disabled={terminalColorsLoading}
+                ariaLabel="Enable terminal colors"
               />
             </div>
 

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import TestRenderer, { act } from 'react-test-renderer'
 import SettingsModal from '../components/SettingsModal'
+import { Switch } from '../components/Switch'
 import {
   DEFAULT_PRESETS,
   DEFAULT_PROJECT_DIR,
@@ -71,6 +72,59 @@ afterEach(() => {
 })
 
 describe('SettingsModal', () => {
+  test('loads and updates the global terminal colors setting', async () => {
+    const originalFetch = globalThis.fetch
+    const requests: Array<{ url: string; method: string; body: string | null }> = []
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const method = init?.method ?? 'GET'
+      requests.push({
+        url,
+        method,
+        body: typeof init?.body === 'string' ? init.body : null,
+      })
+      const payload = url.includes('history-max-age-hours')
+        ? { hours: 24 }
+        : { enabled: true }
+      return new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }) as typeof fetch
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    try {
+      await act(async () => {
+        renderer = TestRenderer.create(
+          <SettingsModal isOpen onClose={() => {}} />
+        )
+        await Promise.resolve()
+      })
+
+      const colorSwitch = renderer.root
+        .findAllByType(Switch)
+        .find((component) => component.props.ariaLabel === 'Enable terminal colors')
+      if (!colorSwitch) {
+        throw new Error('Expected terminal colors switch')
+      }
+      expect(colorSwitch.props.checked).toBe(true)
+
+      await act(async () => {
+        colorSwitch.props.onCheckedChange(false)
+        await Promise.resolve()
+      })
+
+      expect(requests).toContainEqual({
+        url: '/api/settings/terminal-colors',
+        method: 'PUT',
+        body: JSON.stringify({ enabled: false }),
+      })
+    } finally {
+      renderer?.unmount()
+      globalThis.fetch = originalFetch
+    }
+  })
+
   test('submits trimmed values and falls back to defaults', () => {
     let closed = 0
     let renderer!: TestRenderer.ReactTestRenderer
