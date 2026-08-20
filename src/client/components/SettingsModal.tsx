@@ -940,8 +940,8 @@ export default function SettingsModal({
             </div>
             <p className="mt-1.5 text-[10px] text-muted">
               {draftShortcutModifier === 'auto'
-                ? `Platform default: ${getModifierDisplay(getEffectiveModifier('auto'))}`
-                : `Shortcuts: ${getModifierDisplay(draftShortcutModifier)}+[N/X/[/]]`}
+                ? `Shortcuts: ${getModifierDisplay(getEffectiveModifier('auto'))}+[1-9/N/X/[/]]`
+                : `Shortcuts: ${getModifierDisplay(draftShortcutModifier)}+[1-9/N/X/[/]]`}
             </p>
           </div>
         </div>

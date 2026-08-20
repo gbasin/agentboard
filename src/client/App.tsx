@@ -812,6 +812,27 @@ export default function App() {
         return
       }
 
+      // Direct navigation: [mod]+1..9 selects the corresponding visible
+      // session. As with bracket navigation, use hibernating sessions only
+      // when there are no visible live sessions. Invalid indices remain
+      // unhandled so the browser/terminal keeps the key event.
+      if (isShortcut && /^Digit[1-9]$/.test(code)) {
+        const index = Number(code.slice('Digit'.length)) - 1
+        if (filteredSortedSessions.length > 0) {
+          const target = filteredSortedSessions[index]
+          if (!target) return
+          event.preventDefault()
+          setSelectedSessionId(target.id)
+          return
+        }
+
+        const target = filteredHibernatingSessions[index]
+        if (!target) return
+        event.preventDefault()
+        setSelectedHibernatingSessionId(target.sessionId)
+        return
+      }
+
       // New session: [mod]+N
       if (isShortcut && code === 'KeyN') {
         event.preventDefault()
