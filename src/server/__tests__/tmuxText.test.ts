@@ -3,6 +3,7 @@ import {
   cleanTmuxLine,
   isDecorativeLine,
   isMetadataLine,
+  normalizeCapturedHistory,
   stripAnsi,
   TMUX_METADATA_MATCH_PATTERNS,
   TMUX_METADATA_STATUS_PATTERNS,
@@ -12,6 +13,12 @@ describe('tmuxText helpers', () => {
   test('stripAnsi removes escape codes', () => {
     const input = '\u001b[31mRed\u001b[0m Text'
     expect(stripAnsi(input)).toBe('Red Text')
+  })
+
+  test('normalizeCapturedHistory converts capture-pane line feeds to CRLF', () => {
+    const normalized = normalizeCapturedHistory('line1\nline2\r\nline3\rline4\n')
+    expect(normalized).toBe('line1\r\nline2\r\nline3\rline4\r\n')
+    expect(/(^|[^\r])\n/.test(normalized)).toBe(false)
   })
 
   test('detects decorative lines', () => {

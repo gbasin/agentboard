@@ -67,6 +67,7 @@ import { normalizePaneStartCommand } from './agentDetection'
 import { generateSessionName } from './nameGenerator'
 import { shellQuote } from './shellQuote'
 import { SshTerminalProxy } from './terminal/SshTerminalProxy'
+import { normalizeCapturedHistory } from './terminal/tmuxText'
 import {
   buildTmuxFormat,
   splitTmuxFields,
@@ -4250,7 +4251,7 @@ function captureTmuxHistory(target: string): string | null {
     if (output.trim().length === 0) {
       return null
     }
-    return output
+    return normalizeCapturedHistory(output)
   } catch {
     return null
   }
@@ -4312,7 +4313,7 @@ async function captureTmuxHistoryRemote(target: string, host: string): Promise<s
     if (result.exitCode !== 0) return null
     const output = result.stdout ?? ''
     if (output.trim().length === 0) return null
-    return output
+    return normalizeCapturedHistory(output)
   } catch {
     return null
   }
