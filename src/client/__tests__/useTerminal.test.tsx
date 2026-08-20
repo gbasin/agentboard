@@ -336,7 +336,7 @@ function TerminalHarness(props: {
   useWebGL?: boolean
   onScrollChange?: (isAtBottom: boolean) => void
 }) {
-  const { containerRef } = useTerminal({
+  const { containerRef, isTmuxCopyMode } = useTerminal({
     ...props,
     tmuxTarget: props.tmuxTarget ?? null,
     connectionStatus: props.connectionStatus ?? 'connected',
@@ -346,7 +346,7 @@ function TerminalHarness(props: {
     fontFamily: props.fontFamily ?? '"JetBrains Mono Variable", monospace',
     useWebGL: props.useWebGL ?? true,
   })
-  return <div ref={containerRef} />
+  return <div ref={containerRef} data-copy-mode={isTmuxCopyMode ? 'true' : 'false'} />
 }
 
 const terminalSession: Session = {
@@ -1867,6 +1867,68 @@ describe('useTerminal', () => {
       })
     })
     expect(terminal.writes).toContain('\x1b[?1000h\x1b[?1002h\x1b[?1006h')
+
+    act(() => {
+      renderer.unmount()
+    })
+  })
+
+  test('actual copy-mode stays authoritative when the pane also reports app mouse', async () => {
+    globalAny.navigator = {
+      userAgent: 'Chrome',
+      platform: 'MacIntel',
+      maxTouchPoints: 0,
+      clipboard: { writeText: () => Promise.resolve(), readText: () => Promise.resolve('') },
+    } as unknown as Navigator
+
+    const sendCalls: Array<Record<string, unknown>> = []
+    const listeners: Array<(message: ServerMessage) => void> = []
+    const { container } = createContainerMock()
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          sendMessage={(message) => sendCalls.push(message)}
+          subscribe={(listener) => {
+            listeners.push(listener)
+            return () => {}
+          }}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+        { createNodeMock: () => container },
+      )
+      await Promise.resolve()
+    })
+
+    const terminal = TerminalMock.instances[0]
+    if (!terminal) throw new Error('Expected terminal instance')
+
+    act(() => {
+      listeners[0]?.({
+        type: 'tmux-copy-mode-status',
+        sessionId: 'session-1',
+        inCopyMode: true,
+        appMouse: true,
+      })
+    })
+
+    expect(renderer.root.findByType('div').props['data-copy-mode']).toBe('true')
+    expect(terminal.writes).toContain('\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l')
+
+    sendCalls.length = 0
+    act(() => {
+      terminal.emitData('x')
+    })
+
+    expect(sendCalls).toEqual([
+      { type: 'tmux-cancel-copy-mode', sessionId: 'session-1' },
+      { type: 'terminal-input', sessionId: 'session-1', data: 'x' },
+    ])
+    expect(renderer.root.findByType('div').props['data-copy-mode']).toBe('false')
 
     act(() => {
       renderer.unmount()
