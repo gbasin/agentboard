@@ -545,6 +545,90 @@ export default function Terminal({
 
   // Flag to swallow next mouse event (after iOS selection dismissal)
   const swallowNextMouseRef = useRef(false)
+  const terminalInputFocusedRef = useRef(false)
+  const inputWasFocusedBeforeBackgroundRef = useRef(false)
+  const restoreInputOnNextTouchRef = useRef(false)
+
+  // iOS PWA resume can dismiss the software keyboard and then ignore a focus()
+  // delayed until touchend. Remember interrupted terminal focus and perform one
+  // refocus on the next trusted touchstart instead of opening the keyboard on resume.
+  useEffect(() => {
+    if (!isiOS) return
+    const container = containerRef.current
+    if (!container) return
+
+    let focusOutTimer: number | null = null
+    const getTextarea = () =>
+      container.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement | null
+
+    const handleFocusIn = (event: FocusEvent) => {
+      if (event.target !== getTextarea()) return
+      terminalInputFocusedRef.current = true
+      restoreInputOnNextTouchRef.current = false
+    }
+
+    const handleFocusOut = (event: FocusEvent) => {
+      if (event.target !== getTextarea()) return
+      if (focusOutTimer !== null) window.clearTimeout(focusOutTimer)
+      focusOutTimer = window.setTimeout(() => {
+        focusOutTimer = null
+        const textarea = getTextarea()
+        const documentStillFocused =
+          typeof document.hasFocus !== 'function' || document.hasFocus()
+        if (
+          document.activeElement !== textarea &&
+          document.visibilityState !== 'hidden' &&
+          documentStillFocused
+        ) {
+          terminalInputFocusedRef.current = false
+        }
+      }, 0)
+    }
+
+    const rememberInterruptedFocus = () => {
+      const textarea = getTextarea()
+      if (document.activeElement === textarea || terminalInputFocusedRef.current) {
+        inputWasFocusedBeforeBackgroundRef.current = true
+      }
+    }
+
+    const armResumeRefocus = () => {
+      if (!inputWasFocusedBeforeBackgroundRef.current) return
+      inputWasFocusedBeforeBackgroundRef.current = false
+      restoreInputOnNextTouchRef.current = true
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        rememberInterruptedFocus()
+      } else {
+        armResumeRefocus()
+      }
+    }
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) armResumeRefocus()
+    }
+
+    document.addEventListener('focusin', handleFocusIn)
+    document.addEventListener('focusout', handleFocusOut)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('blur', rememberInterruptedFocus)
+    window.addEventListener('focus', armResumeRefocus)
+    window.addEventListener('pageshow', handlePageShow)
+
+    return () => {
+      document.removeEventListener('focusin', handleFocusIn)
+      document.removeEventListener('focusout', handleFocusOut)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('blur', rememberInterruptedFocus)
+      window.removeEventListener('focus', armResumeRefocus)
+      window.removeEventListener('pageshow', handlePageShow)
+      if (focusOutTimer !== null) window.clearTimeout(focusOutTimer)
+      terminalInputFocusedRef.current = false
+      inputWasFocusedBeforeBackgroundRef.current = false
+      restoreInputOnNextTouchRef.current = false
+    }
+  }, [containerRef, isiOS, session?.id])
 
   // Touch scroll with native long-press selection
   // Single tap focuses terminal for keyboard input
@@ -791,6 +875,14 @@ export default function Terminal({
       if (isSelectingTextRef.current) {
         resetTouchState()
         return
+      }
+
+      if (
+        restoreInputOnNextTouchRef.current &&
+        !inTmuxCopyModeRef.current
+      ) {
+        restoreInputOnNextTouchRef.current = false
+        focusTerminalInput()
       }
 
       if (e.touches.length === 1) {
