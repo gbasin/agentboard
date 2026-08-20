@@ -510,7 +510,7 @@ export function useTerminal({
 
     fitAddon.fit()
 
-    const attached = readySessionRef.current
+    const attached = attachedSessionRef.current
     if (attached) {
       sendMessageRef.current({
         type: 'terminal-resize',
@@ -1103,7 +1103,7 @@ export function useTerminal({
       terminal.options.letterSpacing = letterSpacing
       fitAddon.fit()
       // Notify server of new dimensions
-      const attached = readySessionRef.current
+      const attached = attachedSessionRef.current
       if (attached) {
         sendMessageRef.current({
           type: 'terminal-resize',
