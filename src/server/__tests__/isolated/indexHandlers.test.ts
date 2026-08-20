@@ -143,6 +143,7 @@ let sessionManagerState: {
   renameWindow: (tmuxWindow: string, newName: string) => void
   setMouseMode: (enabled: boolean) => void
   ensureSession: () => { canPruneWsSessions: boolean }
+  scrubLeakedGlobalEnvironment: () => string[]
 }
 
 class SessionManagerMock {
@@ -173,6 +174,10 @@ class SessionManagerMock {
 
   ensureSession() {
     return sessionManagerState.ensureSession()
+  }
+
+  scrubLeakedGlobalEnvironment() {
+    return sessionManagerState.scrubLeakedGlobalEnvironment()
   }
 }
 
@@ -636,6 +641,7 @@ beforeEach(() => {
     renameWindow: () => {},
     setMouseMode: () => {},
     ensureSession: () => ({ canPruneWsSessions: true }),
+    scrubLeakedGlobalEnvironment: () => [],
   }
 
   spawnSyncImpl = () =>
