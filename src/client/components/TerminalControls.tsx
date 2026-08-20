@@ -171,7 +171,7 @@ export default function TerminalControls({
   const [pasteError, setPasteError] = useState<string | null>(null)
   const [isUploading, setIsUploading] = useState(false)
   const [ctrlActive, setCtrlActive] = useState(false)
-  const pasteInputRef = useRef<HTMLInputElement>(null)
+  const pasteInputRef = useRef<HTMLTextAreaElement>(null)
   const pasteZoneRef = useRef<HTMLDivElement>(null)
   const lastTouchTimeRef = useRef(0)
   const controlsRef = useRef<HTMLDivElement>(null)
@@ -638,22 +638,20 @@ export default function TerminalControls({
                 Uploading image...
               </div>
             ) : (
-              <input
+              <textarea
                 ref={pasteInputRef}
-                type="text"
                 value={pasteValue}
                 onChange={(e) => setPasteValue(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault()
-                    handlePasteSubmit()
-                  } else if (e.key === 'Escape') {
+                  if (e.key === 'Escape') {
                     e.preventDefault()
                     handlePasteCancel()
                   }
                 }}
                 placeholder="Paste here..."
-                className="w-full h-11 px-3 text-[16px] bg-surface border border-border rounded-md text-primary placeholder:text-muted outline-none focus:border-accent"
+                aria-label="Paste text"
+                rows={4}
+                className="block w-full min-h-24 resize-y px-3 py-2 text-[16px] bg-surface border border-border rounded-md text-primary placeholder:text-muted outline-none focus:border-accent"
                 style={{ fontSize: '16px' }}
               />
             )}
