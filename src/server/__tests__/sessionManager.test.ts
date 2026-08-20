@@ -1266,7 +1266,11 @@ describe('SessionManager', () => {
 
     const originalPrefixes = config.discoverPrefixes
     config.discoverPrefixes = []
+    const capturedCommands: string[][] = []
     bunAny.spawnSync = (args) => {
+      if (Array.isArray(args)) {
+        capturedCommands.push(args as string[])
+      }
       const command = Array.isArray(args) ? getTmuxCommand(args.slice(1)) : ''
       if (command === 'display-message') {
         return {
@@ -1290,6 +1294,11 @@ describe('SessionManager', () => {
 
       const sessions = manager.listWindows()
       expect(sessions[0]?.status).toBe('waiting')
+      expect(
+        capturedCommands.some(
+          (args) => args[0] === 'tmux' && args[1] === '-u' && args[2] === 'capture-pane'
+        )
+      ).toBe(true)
     } finally {
       bunAny.spawnSync = originalSpawnSync
       config.discoverPrefixes = originalPrefixes

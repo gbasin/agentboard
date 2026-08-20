@@ -17,6 +17,7 @@ import {
   TMUX_UI_GLYPH_PATTERN,
 } from './terminal/tmuxText'
 import { logger } from './logger'
+import { withTmuxUtf8Flag } from './tmuxFormat'
 
 export type LogTextMode = 'all' | 'assistant' | 'user' | 'assistant-user'
 
@@ -1278,7 +1279,15 @@ export function captureTerminalScrollback(
 ): { ok: boolean; content: string } {
   const safeLines = Math.max(1, lines)
   const result = runCommandSync(
-    ['tmux', 'capture-pane', '-t', tmuxWindow, '-p', '-J', '-S', `-${safeLines}`],
+    ['tmux', ...withTmuxUtf8Flag([
+      'capture-pane',
+      '-t',
+      tmuxWindow,
+      '-p',
+      '-J',
+      '-S',
+      `-${safeLines}`,
+    ])],
     { timeoutMs: TMUX_CAPTURE_TIMEOUT_MS }
   )
   if (result.exitCode !== 0) {
@@ -1301,7 +1310,15 @@ export async function captureTerminalScrollbackAsync(
 ): Promise<{ ok: boolean; content: string }> {
   const safeLines = Math.max(1, lines)
   const result = await runCommandAsync(
-    ['tmux', 'capture-pane', '-t', tmuxWindow, '-p', '-J', '-S', `-${safeLines}`],
+    ['tmux', ...withTmuxUtf8Flag([
+      'capture-pane',
+      '-t',
+      tmuxWindow,
+      '-p',
+      '-J',
+      '-S',
+      `-${safeLines}`,
+    ])],
     { timeoutMs: TMUX_CAPTURE_TIMEOUT_MS }
   )
   if (result.exitCode !== 0) {
@@ -1320,7 +1337,16 @@ export function getTerminalScrollbackWithAnsi(
 ): string {
   const safeLines = Math.max(1, lines)
   const result = runCommandSync(
-    ['tmux', 'capture-pane', '-t', tmuxWindow, '-p', '-J', '-e', '-S', `-${safeLines}`],
+    ['tmux', ...withTmuxUtf8Flag([
+      'capture-pane',
+      '-t',
+      tmuxWindow,
+      '-p',
+      '-J',
+      '-e',
+      '-S',
+      `-${safeLines}`,
+    ])],
     { timeoutMs: TMUX_CAPTURE_TIMEOUT_MS }
   )
   if (result.exitCode !== 0) {
@@ -1335,7 +1361,16 @@ export async function getTerminalScrollbackWithAnsiAsync(
 ): Promise<string> {
   const safeLines = Math.max(1, lines)
   const result = await runCommandAsync(
-    ['tmux', 'capture-pane', '-t', tmuxWindow, '-p', '-J', '-e', '-S', `-${safeLines}`],
+    ['tmux', ...withTmuxUtf8Flag([
+      'capture-pane',
+      '-t',
+      tmuxWindow,
+      '-p',
+      '-J',
+      '-e',
+      '-S',
+      `-${safeLines}`,
+    ])],
     { timeoutMs: TMUX_CAPTURE_TIMEOUT_MS }
   )
   if (result.exitCode !== 0) {
