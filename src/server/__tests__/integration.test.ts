@@ -3,7 +3,11 @@ import fs from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'
 import os from 'node:os'
-import { canBindLocalhost, isTmuxAvailable } from './testEnvironment'
+import {
+  canBindLocalhost,
+  createTmuxTmpDir,
+  isTmuxAvailable,
+} from './testEnvironment'
 
 const tmuxAvailable = isTmuxAvailable()
 const localhostBindable = canBindLocalhost()
@@ -27,8 +31,15 @@ if (!tmuxAvailable || !localhostBindable) {
     )
     let serverProcess: ReturnType<typeof Bun.spawn> | null = null
     let port = 0
+    // Private tmux server for this test. Without this, the spawned server
+    // inherits $TMUX (when the test process runs inside tmux) and every tmux
+    // call — session creation, kills, and the startup env scrub — lands on
+    // the user's LIVE tmux server. createTmuxTmpDir also deletes
+    // process.env.TMUX for the same reason.
+    let tmuxTmpDir: string | null = null
 
     beforeAll(async () => {
+      tmuxTmpDir = createTmuxTmpDir()
       port = await getFreePort()
 
       serverProcess = Bun.spawn(['bun', 'src/server/index.ts'], {
@@ -41,6 +52,7 @@ if (!tmuxAvailable || !localhostBindable) {
           AGENTBOARD_LOG_POLL_MS: '0',
           AGENTBOARD_DB_PATH: dbPath,
           AGENTBOARD_PASTE_IMAGE_MAX_BYTES: '1024',
+          TMUX_TMPDIR: tmuxTmpDir,
         },
         stdout: 'pipe',
         stderr: 'pipe',
@@ -66,9 +78,29 @@ if (!tmuxAvailable || !localhostBindable) {
         Bun.spawnSync(['tmux', 'kill-session', '-t', sessionName], {
           stdout: 'ignore',
           stderr: 'ignore',
+          env: {
+            ...process.env,
+            ...(tmuxTmpDir ? { TMUX_TMPDIR: tmuxTmpDir } : {}),
+          },
         })
       } catch {
         // ignore cleanup errors
+      }
+      if (tmuxTmpDir) {
+        try {
+          Bun.spawnSync(['tmux', 'kill-server'], {
+            stdout: 'ignore',
+            stderr: 'ignore',
+            env: { ...process.env, TMUX_TMPDIR: tmuxTmpDir },
+          })
+        } catch {
+          // ignore cleanup errors
+        }
+        try {
+          fs.rmSync(tmuxTmpDir, { recursive: true, force: true })
+        } catch {
+          // ignore cleanup errors
+        }
       }
       try {
         fs.unlinkSync(dbPath)

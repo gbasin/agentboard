@@ -2,6 +2,7 @@ import { config } from '../config'
 import { logger } from '../logger'
 import { withTmuxUtf8Flag } from '../tmuxFormat'
 import { TmuxTimeoutError } from '../tmuxTimeout'
+import { sanitizedTmuxEnv } from '../tmuxEnv'
 import type {
   ITerminalProxy,
   SpawnFn,
@@ -141,6 +142,9 @@ abstract class TerminalProxyBase implements ITerminalProxy {
       stdout: 'pipe',
       stderr: 'pipe',
       timeout: timeoutMs,
+      // Keep leaked launch env (NODE_ENV, npm_*, …) out of any tmux server
+      // daemon this client might boot — see tmuxEnv.ts.
+      env: sanitizedTmuxEnv(),
       ...(options.stdin !== undefined ? { stdin: Buffer.from(options.stdin) } : {}),
     })
 
