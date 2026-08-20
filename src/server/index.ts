@@ -518,6 +518,13 @@ const sessionManager = new SessionManager(undefined, {
 // (filtered out of listings) when missing.
 try {
   const ensureResult = sessionManager.ensureSession()
+  // One-time: if an older agentboard booted the tmux daemon with leaked
+  // launch env (NODE_ENV=production etc.), scrub it so new windows are clean.
+  // Startup only — never per refresh tick (each unset is a tmux spawn).
+  const scrubbedEnvVars = sessionManager.scrubLeakedGlobalEnvironment()
+  if (scrubbedEnvVars.length > 0) {
+    logger.info('tmux_global_env_scrubbed', { vars: scrubbedEnvVars })
+  }
   if (ensureResult.canPruneWsSessions) {
     pruneOrphanedWsSessions()
   } else {

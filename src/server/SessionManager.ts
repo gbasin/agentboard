@@ -7,6 +7,7 @@ import { generateSessionName } from './nameGenerator'
 import { logger } from './logger'
 import { resolveProjectPath } from './paths'
 import { TmuxTimeoutError } from './tmuxTimeout'
+import { isLeakedLaunchEnvVar, sanitizedTmuxEnv } from './tmuxEnv'
 import {
   BOOTSTRAP_WINDOW_COMMAND,
   BOOTSTRAP_WINDOW_NAME,
@@ -158,6 +159,46 @@ export class SessionManager {
     }
     this.configureSession()
     return { canPruneWsSessions }
+  }
+
+  // One-time repair for a tmux server daemon that an older agentboard booted
+  // with its launch environment (see tmuxEnv.ts): unset the leaked vars from
+  // the daemon's global environment so future panes are clean. Guarded on the
+  // AGENTBOARD_STATIC_DIR fingerprint — the daemon may be the user's own
+  // shared server, and a NODE_ENV they set deliberately must survive; only a
+  // daemon whose global env carries our launcher's fingerprint gets scrubbed.
+  // Call once at startup, not per refresh tick (each unset is a synchronous
+  // tmux spawn). Existing panes keep their env; only new windows benefit.
+  scrubLeakedGlobalEnvironment(): string[] {
+    let output: string
+    try {
+      output = this.runTmux(['show-environment', '-g'])
+    } catch {
+      return []
+    }
+    const leaked: string[] = []
+    let fingerprint = false
+    for (const line of splitTmuxLines(output)) {
+      // Removed-var markers start with '-'; values containing '=' are split
+      // on the first one.
+      if (!line || line.startsWith('-')) continue
+      const eq = line.indexOf('=')
+      if (eq <= 0) continue
+      const name = line.slice(0, eq)
+      if (name === 'AGENTBOARD_STATIC_DIR') fingerprint = true
+      if (isLeakedLaunchEnvVar(name)) leaked.push(name)
+    }
+    if (!fingerprint) return []
+    const scrubbed: string[] = []
+    for (const name of leaked) {
+      try {
+        this.runTmux(['set-environment', '-g', '-u', name])
+        scrubbed.push(name)
+      } catch {
+        // Best-effort: a failed unset just leaves that var for next startup.
+      }
+    }
+    return scrubbed
   }
 
   private findSessionInGroup(): GroupLookupResult {
@@ -757,6 +798,10 @@ function runTmux(args: string[]): string {
     stdout: 'pipe',
     stderr: 'pipe',
     timeout,
+    // If this call boots the tmux server daemon (new-session with no server
+    // running), the daemon keeps this environment as its global environment
+    // forever and every future pane inherits it — so hand it a sanitized one.
+    env: sanitizedTmuxEnv(),
   })
   if (result.signalCode === 'SIGTERM' || result.exitCode === null) {
     throw new TmuxTimeoutError(command, timeout)
