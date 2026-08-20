@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState } from 'react'
+import { useEffect, useRef, useCallback, useLayoutEffect, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
@@ -359,6 +359,12 @@ export function useTerminal({
 
   // Track the currently attached session to prevent race conditions
   const attachedSessionRef = useRef<string | null>(null)
+  // During a session transition, input is allowed only after the server
+  // acknowledges the same attachment. Initial mount retains the existing
+  // startup behavior; every later selection/reconnect revokes readiness first.
+  const readySessionRef = useRef<string | null>(
+    sessionId && allowAttach && connectionStatus === 'connected' ? sessionId : null
+  )
   const attachedTargetRef = useRef<string | null>(null)
   const attachedConnectionEpochRef = useRef<number>(-1)
   const focusAfterAttachSessionRef = useRef<string | null>(null)
@@ -484,7 +490,7 @@ export function useTerminal({
 
   // Request tmux copy-mode status from server (debounced)
   const requestCopyModeCheck = useCallback(() => {
-    const attached = attachedSessionRef.current
+    const attached = readySessionRef.current
     if (!attached) return
 
     // Debounce: clear existing timer and set a new one
@@ -504,7 +510,7 @@ export function useTerminal({
 
     fitAddon.fit()
 
-    const attached = attachedSessionRef.current
+    const attached = readySessionRef.current
     if (attached) {
       sendMessageRef.current({
         type: 'terminal-resize',
@@ -750,7 +756,11 @@ export function useTerminal({
     // is still the attached one, so a mid-paste session switch can't deliver to
     // the wrong (or a no-longer-viewed) session.
     const sendInputIfStillAttached = (expected: string, data: string | null) => {
-      if (data && attachedSessionRef.current === expected) {
+      if (
+        data &&
+        attachedSessionRef.current === expected &&
+        readySessionRef.current === expected
+      ) {
         sendMessageRef.current({ type: 'terminal-input', sessionId: expected, data })
       }
     }
@@ -775,7 +785,7 @@ export function useTerminal({
       // Excluded on iOS: no Finder/osascript, and Ctrl+V with hardware keyboard
       // should not trigger desktop image paste behavior.
       if (getIsMac() && !isiOS && event.ctrlKey && !event.metaKey && event.key.toLowerCase() === 'v' && event.type === 'keydown') {
-        const attached = attachedSessionRef.current
+        const attached = readySessionRef.current
         if (attached) {
           if (inTmuxCopyModeRef.current) {
             sendMessageRef.current({ type: 'tmux-cancel-copy-mode', sessionId: attached })
@@ -820,7 +830,7 @@ export function useTerminal({
         })
         void (async () => {
           try {
-            const attached = attachedSessionRef.current
+            const attached = readySessionRef.current
             if (!attached) return
 
             // Wait for the paste event to deliver text (up to 100ms timeout).
@@ -871,7 +881,10 @@ export function useTerminal({
               // pastes to auto-submit on the first newline. Guard on the live
               // ref (like sendInputIfStillAttached) so a session switch during
               // the async clipboard read doesn't paste into the wrong session.
-              if (attachedSessionRef.current === attached) {
+              if (
+                attachedSessionRef.current === attached &&
+                readySessionRef.current === attached
+              ) {
                 // Exit tmux copy-mode first (as onData does for typed input):
                 // paste-buffer into a pane still in copy-mode is swallowed by
                 // the copy-mode key table instead of reaching the program.
@@ -901,7 +914,7 @@ export function useTerminal({
 
       // Ctrl+Backspace: delete word backward (browser eats this otherwise)
       if (event.ctrlKey && event.key === 'Backspace' && event.type === 'keydown') {
-        const attached = attachedSessionRef.current
+        const attached = readySessionRef.current
         if (attached) {
           sendMessageRef.current({ type: 'terminal-input', sessionId: attached, data: '\x17' })
         }
@@ -930,7 +943,7 @@ export function useTerminal({
 
     // Handle input - only send to attached session
     terminal.onData((data) => {
-      const attached = attachedSessionRef.current
+      const attached = readySessionRef.current
       if (attached) {
         // When in copy-mode, filter out mouse sequences so clicks don't exit copy-mode
         // This prevents accidental copy-mode exit when clicking in scrollback (Safari desktop)
@@ -956,7 +969,7 @@ export function useTerminal({
     // Forward wheel events to tmux for scrollback (like Blink terminal)
     // This enters tmux copy-mode instead of using xterm.js local scrollback
     terminal.attachCustomWheelEventHandler((ev) => {
-      const attached = attachedSessionRef.current
+      const attached = readySessionRef.current
       if (!attached) return true // Let xterm handle it
 
       // Don't intercept wheel over HTML inputs (like Claude Code's text box)
@@ -1090,7 +1103,7 @@ export function useTerminal({
       terminal.options.letterSpacing = letterSpacing
       fitAddon.fit()
       // Notify server of new dimensions
-      const attached = attachedSessionRef.current
+      const attached = readySessionRef.current
       if (attached) {
         sendMessageRef.current({
           type: 'terminal-resize',
@@ -1141,7 +1154,26 @@ export function useTerminal({
     }
   }, [useWebGL])
 
-  // Handle session changes and websocket reconnects - attach/detach
+  // Revoke input synchronously when selection or connection intent changes.
+  // The full attach routine remains passive because xterm is initialized in a
+  // passive effect, but this layout effect closes the old-pane input window
+  // before the browser can deliver another user event.
+  useLayoutEffect(() => {
+    if (
+      readySessionRef.current !== sessionId ||
+      !allowAttach ||
+      connectionStatus !== 'connected' ||
+      (attachedConnectionEpochRef.current >= 0 &&
+        attachedConnectionEpochRef.current !== connectionEpoch)
+    ) {
+      readySessionRef.current = null
+      if (sessionId && allowAttach && connectionStatus === 'connected') {
+        setIsSwitching(true)
+      }
+    }
+  }, [sessionId, allowAttach, connectionStatus, connectionEpoch])
+
+  // Handle session changes and websocket reconnects - attach/detach.
   useEffect(() => {
     const terminal = terminalRef.current
     if (!terminal) return
@@ -1150,6 +1182,7 @@ export function useTerminal({
     const prevTarget = attachedTargetRef.current
 
     if (!allowAttach) {
+      readySessionRef.current = null
       if (attachDebounceRef.current !== null) {
         window.clearTimeout(attachDebounceRef.current)
         attachDebounceRef.current = null
@@ -1171,6 +1204,7 @@ export function useTerminal({
     // Reattach when websocket comes back: server-side ws.currentSessionId is
     // cleared on disconnect, so input is ignored until a fresh terminal-attach.
     if (connectionStatus !== 'connected') {
+      readySessionRef.current = null
       if (attachDebounceRef.current !== null) {
         window.clearTimeout(attachDebounceRef.current)
         attachDebounceRef.current = null
@@ -1192,6 +1226,7 @@ export function useTerminal({
 
     // Detach from previous session first
     if (prevAttached && prevAttached !== sessionId) {
+      readySessionRef.current = null
       // Capture terminal snapshot before detach for instant restore on switch-back
       try {
         const serialized = serializeAddonRef.current?.serialize()
@@ -1245,6 +1280,9 @@ export function useTerminal({
       }
       needsResetRef.current = true
       setIsSwitching(true)
+      if (prevAttached !== null) {
+        readySessionRef.current = null
+      }
 
       // Instantly show cached snapshot for the target session (if available)
       const cached = snapshotCache.get(sessionId)
@@ -1344,6 +1382,7 @@ export function useTerminal({
       attachedTargetRef.current = null
       attachedConnectionEpochRef.current = -1
       focusAfterAttachSessionRef.current = null
+      readySessionRef.current = null
     }
 
     // Cancel pending debounced attach on effect re-run or unmount
@@ -1489,6 +1528,7 @@ export function useTerminal({
         attachedSession &&
         message.sessionId === attachedSession
       ) {
+        readySessionRef.current = message.sessionId
         // If output is buffered but unflushed, flush now so reset+write
         // stay atomic (avoids blank flash from resetting before flush fires).
         // If no output arrived at all (empty pane or server dedup), reset
@@ -1534,6 +1574,7 @@ export function useTerminal({
         attachedSession &&
         (!message.sessionId || message.sessionId === attachedSession)
       ) {
+        readySessionRef.current = null
         needsResetRef.current = false
         setIsSwitching(false)
       }
@@ -1724,6 +1765,12 @@ export function useTerminal({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const isInputReady =
+    !!sessionId &&
+    allowAttach &&
+    connectionStatus === 'connected' &&
+    readySessionRef.current === sessionId
+
   return {
     containerRef,
     terminalRef,
@@ -1734,6 +1781,7 @@ export function useTerminal({
     appMouseRef,
     setTmuxCopyMode,
     isSwitching,
+    isInputReady,
     pendingClipboardOffer,
     copyPendingClipboardOffer,
     dismissPendingClipboardOffer,
