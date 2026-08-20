@@ -2269,6 +2269,126 @@ describe('useTerminal', () => {
     })
   })
 
+  test('iOS PWA resume refocuses an interrupted terminal on the next touchstart', async () => {
+    const docListeners = new Map<string, Set<EventListener>>()
+    const winListeners = new Map<string, Set<EventListener>>()
+    let visibilityState: DocumentVisibilityState = 'visible'
+    let documentFocused = true
+    let activeElement: Element | null = null
+
+    globalAny.window = {
+      ...globalAny.window,
+      matchMedia: () => ({
+        matches: true,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        addListener: () => {},
+        removeListener: () => {},
+      }),
+      addEventListener(event: string, handler: EventListener) {
+        const set = winListeners.get(event) ?? new Set()
+        set.add(handler)
+        winListeners.set(event, set)
+      },
+      removeEventListener(event: string, handler: EventListener) {
+        winListeners.get(event)?.delete(handler)
+      },
+    } as unknown as Window & typeof globalThis
+    globalAny.document = {
+      fonts: { ready: Promise.resolve() },
+      get visibilityState() { return visibilityState },
+      get activeElement() { return activeElement },
+      hasFocus: () => documentFocused,
+      addEventListener(event: string, handler: EventListener) {
+        const set = docListeners.get(event) ?? new Set()
+        set.add(handler)
+        docListeners.set(event, set)
+      },
+      removeEventListener(event: string, handler: EventListener) {
+        docListeners.get(event)?.delete(handler)
+      },
+    } as unknown as Document
+    globalAny.navigator = {
+      userAgent: 'iPhone',
+      platform: 'iPhone',
+      maxTouchPoints: 5,
+      clipboard: { writeText: () => Promise.resolve(), readText: () => Promise.resolve('') },
+      vibrate: () => true,
+    } as unknown as Navigator
+
+    const { container, dispatchEvent, textarea } = createContainerMock()
+    const dispatchDocument = (event: string, value: Event) => {
+      for (const handler of docListeners.get(event) ?? []) handler(value)
+    }
+    const dispatchWindow = (event: string, value: Event) => {
+      for (const handler of winListeners.get(event) ?? []) handler(value)
+    }
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalComponent
+          session={terminalSession}
+          sessions={[terminalSession]}
+          connectionStatus="connected"
+          sendMessage={() => {}}
+          subscribe={() => () => {}}
+          onClose={() => {}}
+          onSelectSession={() => {}}
+          onNewSession={() => {}}
+          onKillSession={() => {}}
+          onRenameSession={() => {}}
+          onResumeSession={() => {}}
+          onOpenSettings={() => {}}
+        />,
+        { createNodeMock: () => container },
+      )
+      await Promise.resolve()
+    })
+
+    const touch = { clientX: 25, clientY: 25 } as Touch
+
+    // A foreground transition must not arm focus when the keyboard was already hidden.
+    act(() => {
+      visibilityState = 'hidden'
+      documentFocused = false
+      dispatchDocument('visibilitychange', new Event('visibilitychange'))
+      visibilityState = 'visible'
+      documentFocused = true
+      dispatchDocument('visibilitychange', new Event('visibilitychange'))
+      dispatchEvent('touchstart', { touches: [touch] })
+    })
+    expect(textarea.focusCalls).toBe(0)
+
+    // Focused terminal is interrupted by app backgrounding. The first trusted
+    // touchstart after resume restores it; a second touchstart does not refocus.
+    act(() => {
+      activeElement = textarea
+      dispatchDocument('focusin', { target: textarea } as unknown as FocusEvent)
+      dispatchWindow('blur', new Event('blur'))
+      visibilityState = 'hidden'
+      documentFocused = false
+      dispatchDocument('visibilitychange', new Event('visibilitychange'))
+      activeElement = null
+      dispatchDocument('focusout', { target: textarea } as unknown as FocusEvent)
+      visibilityState = 'visible'
+      documentFocused = true
+      dispatchDocument('visibilitychange', new Event('visibilitychange'))
+      dispatchWindow('focus', new Event('focus'))
+      dispatchEvent('touchstart', { touches: [touch] })
+    })
+    expect(textarea.focusCalls).toBe(1)
+
+    act(() => {
+      dispatchEvent('touchstart', { touches: [touch] })
+    })
+    expect(textarea.focusCalls).toBe(1)
+
+    act(() => {
+      renderer.unmount()
+    })
+  })
+
   test('falls back to clipboard API when paste event never fires', async () => {
     jest.useFakeTimers()
     const originalFetch = globalThis.fetch
