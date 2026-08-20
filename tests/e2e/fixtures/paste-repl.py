@@ -62,6 +62,7 @@ def main() -> None:
                     byte = bytes([byte_value])
                     if byte in (b"\r", b"\n"):
                         os.write(1, b"SUBMITTED:" + render(buf) + b"\r\n")
+                        os.write(1, b"INPUT_HEX:" + buf.hex().encode() + b"\r\n")
                         buf = b""
                     elif byte == b"\x03":  # Ctrl-C exits
                         raise KeyboardInterrupt

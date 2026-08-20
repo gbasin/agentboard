@@ -18,6 +18,7 @@ class SshTerminalProxy extends TerminalProxyBase {
 
   private process: ReturnType<typeof Bun.spawn> | null = null
   private decoder = new TextDecoder()
+  private encoder = new TextEncoder()
   private cols = 80
   private rows = 24
   private clientTty: string | null = null
@@ -44,7 +45,7 @@ class SshTerminalProxy extends TerminalProxyBase {
   }
 
   write(data: string): void {
-    this.process?.terminal?.write(data)
+    this.process?.terminal?.write(this.encoder.encode(data))
   }
 
   paste(data: string): void {
@@ -308,10 +309,18 @@ class SshTerminalProxy extends TerminalProxyBase {
       )
     }
 
-    // Pass the remote tmux attach command as a single string to SSH.
+    // Pass the remote tmux attach command as a single string to SSH. Force
+    // UTF-8 because the remote login may inherit a non-UTF-8 service locale.
     const featureArgs = await this.clientFeatureArgs(remoteVersion)
-    const attachCmd = ['tmux', ...featureArgs, 'new-session', '-A', '-s']
-      .join(' ') + ` ${shellQuote(this.options.sessionName)}`
+    const attachCmd = [
+      'tmux',
+      ...withTmuxUtf8Flag([
+        ...featureArgs,
+        'new-session',
+        '-A',
+        '-s',
+      ]),
+    ].join(' ') + ` ${shellQuote(this.options.sessionName)}`
     const spawnArgs = [
       'ssh',
       '-tt',
