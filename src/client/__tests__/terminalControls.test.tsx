@@ -46,6 +46,32 @@ function findPasteButton(renderer: TestRenderer.ReactTestRenderer) {
 }
 
 describe('TerminalControls', () => {
+  test('renders the mobile key deck as one scrollable row of 44px targets', () => {
+    const renderer = TestRenderer.create(
+      <TerminalControls
+        onSendKey={() => {}}
+        sessions={[{ id: 'session-1', name: 'alpha', status: 'working' }]}
+        currentSessionId="session-1"
+        onSelectSession={() => {}}
+      />
+    )
+
+    const keyDeck = renderer.root.findAllByType('div').find((element) =>
+      String(element.props.className ?? '').includes('grid-flow-col')
+    )
+    expect(keyDeck).toBeDefined()
+    expect(String(keyDeck?.props.className)).toContain('auto-cols-[44px]')
+    expect(String(keyDeck?.props.className)).toContain('overflow-x-auto')
+
+    const keyButtons = renderer.root.findAllByType('button').filter((button) =>
+      String(button.props.className ?? '').includes('terminal-key')
+    )
+    expect(keyButtons).toHaveLength(9)
+    expect(keyButtons.every((button) =>
+      String(button.props.className).includes('size-[44px]')
+    )).toBe(true)
+  })
+
   test('ctrl toggle modifies keys and resets', () => {
     globalAny.navigator = { vibrate: () => true } as unknown as Navigator
 
@@ -110,6 +136,9 @@ describe('TerminalControls', () => {
       )
 
     expect(sessionButtons).toHaveLength(2)
+    expect(sessionButtons.every((button) =>
+      String(button.props.className).includes('h-[44px]')
+    )).toBe(true)
 
     act(() => {
       sessionButtons[1]?.props.onClick()

@@ -442,17 +442,17 @@ export default function TerminalControls({
   return (
     <div
       ref={controlsRef}
-      className={`terminal-controls flex flex-col gap-1.5 px-2 py-2.5 bg-elevated border-t border-border ${isIOSDevice() ? '' : 'md:hidden'}`}
+      className={`terminal-controls flex flex-col gap-[6px] border-t border-border bg-elevated p-[6px] ${isIOSDevice() ? '' : 'md:hidden'}`}
     >
       {/* Session switcher row */}
       {showSessionRow && (
-        <div className="relative -mx-2">
+        <div className="relative -mx-[6px]">
           {/* Left fade indicator */}
           <div className="absolute left-0 top-0 bottom-0 w-3 bg-gradient-to-r from-elevated to-transparent z-10 pointer-events-none" />
           {/* Right fade indicator */}
           <div className="absolute right-0 top-0 bottom-0 w-3 bg-gradient-to-l from-elevated to-transparent z-10 pointer-events-none" />
           <div
-            className="flex items-center gap-1.5 px-3 overflow-x-auto scrollbar-none scroll-smooth snap-x snap-mandatory"
+            className="flex items-center gap-[6px] overflow-x-auto px-[6px] scrollbar-none scroll-smooth snap-x snap-mandatory"
             style={{ WebkitOverflowScrolling: 'touch' }}
           >
             {sessions.map((session, index) => {
@@ -463,7 +463,7 @@ export default function TerminalControls({
                   type="button"
                   className={`
                     terminal-key flex items-center justify-center gap-1.5 shrink-0 snap-start
-                    h-8 min-w-[3rem] px-2.5 text-xs font-medium rounded-md
+                    h-[44px] min-w-[44px] px-2.5 text-xs font-medium rounded-md
                     active:scale-95 transition-transform duration-75
                     select-none touch-manipulation
                     ${isActive
@@ -481,14 +481,14 @@ export default function TerminalControls({
         </div>
       )}
       {/* Key row */}
-      <div className="flex flex-wrap items-center gap-1.5">
+      <div className="grid grid-flow-col auto-cols-[44px] items-center gap-[4px] overflow-x-auto scrollbar-none">
         {/* Ctrl toggle */}
         <button
           type="button"
           className={`
             terminal-key
             flex items-center justify-center
-            h-11 min-w-[2.75rem] px-2.5
+            size-[44px] p-0
             text-sm font-medium
             rounded-md
             active:scale-95
@@ -514,7 +514,7 @@ export default function TerminalControls({
             className={`
               terminal-key
               flex items-center justify-center
-              h-11 min-w-[2.75rem] px-2.5
+              size-[44px] p-0
               text-sm font-medium
               bg-surface border border-border rounded-md
               active:bg-hover active:scale-95
@@ -558,7 +558,7 @@ export default function TerminalControls({
             className={`
               terminal-key
               flex items-center justify-center
-              h-11 min-w-[2.75rem] px-2.5
+              size-[44px] p-0
               text-sm font-medium
               bg-surface border border-border rounded-md
               active:bg-hover active:scale-95
@@ -583,7 +583,7 @@ export default function TerminalControls({
           className={`
             terminal-key
             flex items-center justify-center
-            h-11 min-w-[2.75rem] px-2.5
+            size-[44px] p-0
             text-sm font-medium
             bg-surface border border-border rounded-md
             active:bg-hover active:scale-95
@@ -606,7 +606,7 @@ export default function TerminalControls({
           className={`
             terminal-key
             flex items-center justify-center
-            h-11 min-w-[2.75rem] px-2.5
+            size-[44px] p-0
             text-sm font-medium
             bg-surface border border-border rounded-md
             active:bg-hover active:scale-95
