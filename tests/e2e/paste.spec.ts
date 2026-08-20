@@ -7,6 +7,8 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { test, expect } from '@playwright/test'
 
+test.use({ viewport: { width: 1440, height: 900 } })
+
 const WINDOW_NAME = 'paste-repl'
 const REPL_PATH = fileURLToPath(new URL('./fixtures/paste-repl.py', import.meta.url))
 const UNICODE_INPUT = 'áéíñü-你好-🚀'
