@@ -15,7 +15,7 @@ function createSshHarness(options?: {
     mode: 'terminal' | 'pipe'
     stdin?: string
   }> = []
-  const terminalWrites: string[] = []
+  const terminalWrites: Array<string | Uint8Array> = []
   let killed = false
   let terminalClosed = false
   let exitResolver: ((code: number) => void) | null = null
@@ -51,8 +51,16 @@ function createSshHarness(options?: {
       // Terminal mode — used by doStartCore for SSH attach
       return {
         terminal: {
-          write: (data: string) => {
-            terminalWrites.push(data)
+          write: (data: string | BufferSource) => {
+            if (typeof data === 'string') {
+              terminalWrites.push(data)
+              return
+            }
+            const view =
+              data instanceof ArrayBuffer
+                ? new Uint8Array(data)
+                : new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
+            terminalWrites.push(view.slice())
           },
           resize: () => {},
           close: () => {
@@ -160,6 +168,12 @@ describe('SshTerminalProxy', () => {
     expect(attachArgs).toContain('ssh')
     expect(attachArgs).toContain('-tt')
     expect(attachArgs).toContain('remote-host')
+    expect(attachArgs.at(-1)).toContain('tmux -u')
+
+    proxy.write('áéíñü-你好-🚀')
+    expect(harness.terminalWrites).toEqual([
+      new TextEncoder().encode('áéíñü-你好-🚀'),
+    ])
 
     await proxy.dispose()
   })
@@ -527,7 +541,7 @@ describe('SshTerminalProxy sync terminal feature', () => {
       spawnPipeOverride: versionAnswers({ createVersion: '3.4' }),
     })
     const attachCmd = await startAndGetAttachCmd(harness)
-    expect(attachCmd).toContain('tmux -T sync new-session -A')
+    expect(attachCmd).toContain('tmux -u -T sync new-session -A')
     // The create round-trip supplied the version; no separate -V probe.
     const probeCalls = harness.spawnCalls.filter(
       (c) => c.mode === 'pipe' && (c.args[c.args.length - 1] ?? '') === 'tmux -V'
@@ -540,7 +554,7 @@ describe('SshTerminalProxy sync terminal feature', () => {
       spawnPipeOverride: versionAnswers({ createVersion: '3.1c' }),
     })
     const attachCmd = await startAndGetAttachCmd(harness)
-    expect(attachCmd).toContain('tmux new-session -A')
+    expect(attachCmd).toContain('tmux -u new-session -A')
     expect(attachCmd).not.toContain('-T sync')
   })
 
@@ -549,7 +563,7 @@ describe('SshTerminalProxy sync terminal feature', () => {
       spawnPipeOverride: versionAnswers({ createDuplicate: true, probeVersion: '3.4' }),
     })
     const attachCmd = await startAndGetAttachCmd(harness)
-    expect(attachCmd).toContain('tmux -T sync new-session -A')
+    expect(attachCmd).toContain('tmux -u -T sync new-session -A')
   })
 
   test('degrades to a plain attach when the fallback probe fails', async () => {
@@ -557,7 +571,7 @@ describe('SshTerminalProxy sync terminal feature', () => {
       spawnPipeOverride: versionAnswers({ createDuplicate: true, probeFails: true }),
     })
     const attachCmd = await startAndGetAttachCmd(harness)
-    expect(attachCmd).toContain('tmux new-session -A')
+    expect(attachCmd).toContain('tmux -u new-session -A')
     expect(attachCmd).not.toContain('-T sync')
   })
 
@@ -569,7 +583,7 @@ describe('SshTerminalProxy sync terminal feature', () => {
         spawnPipeOverride: versionAnswers({ createVersion: '3.4' }),
       })
       const attachCmd = await startAndGetAttachCmd(harness)
-      expect(attachCmd).toContain('tmux new-session -A')
+      expect(attachCmd).toContain('tmux -u new-session -A')
       expect(attachCmd).not.toContain('-T sync')
     } finally {
       if (saved === undefined) {
