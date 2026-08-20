@@ -205,7 +205,7 @@ export default function NumPad({
         className={`
           terminal-key
           flex items-center justify-center
-          h-11 min-w-[2.75rem] px-2.5
+          size-[44px] p-0
           text-sm font-medium
           bg-surface border border-border rounded-md
           active:bg-hover active:scale-95
