@@ -165,6 +165,7 @@ export default function Terminal({
     appMouseRef,
     setTmuxCopyMode,
     isSwitching,
+    isInputReady,
     pendingClipboardOffer,
     copyPendingClipboardOffer,
     dismissPendingClipboardOffer,
@@ -1001,17 +1002,17 @@ export default function Terminal({
 
   const handleSendKey = useCallback(
     (key: string) => {
-      if (!session || isReadOnly) return
+      if (!session || isReadOnly || !isInputReady) return
       sendMessage({ type: 'terminal-input', sessionId: session.id, data: key })
     },
-    [session, isReadOnly, sendMessage]
+    [session, isReadOnly, isInputReady, sendMessage]
   )
 
   // Deliver pasted text as a single bracketed paste (server routes it through
   // tmux paste-buffer -p) so multi-line content isn't auto-submitted line-by-line.
   const handlePasteText = useCallback(
     (text: string) => {
-      if (!session || isReadOnly) return
+      if (!session || isReadOnly || !isInputReady) return
       // Exit tmux copy-mode first: a paste-buffer into a pane still in copy-mode
       // is swallowed by the copy-mode key table instead of reaching the program.
       if (inTmuxCopyModeRef.current) {
@@ -1020,7 +1021,7 @@ export default function Terminal({
       }
       sendMessage({ type: 'terminal-paste', sessionId: session.id, data: text })
     },
-    [session, isReadOnly, sendMessage, inTmuxCopyModeRef, setTmuxCopyMode]
+    [session, isReadOnly, isInputReady, sendMessage, inTmuxCopyModeRef, setTmuxCopyMode]
   )
 
   const handleRefocus = useCallback(() => {
@@ -1035,7 +1036,7 @@ export default function Terminal({
 
   // Enter text mode: exit copy-mode and focus input (for keyboard button)
   const handleEnterTextMode = useCallback(() => {
-    if (!session || isReadOnly) return
+    if (!session || isReadOnly || !isInputReady) return
     if (inTmuxCopyModeRef.current) {
       sendMessage({ type: 'tmux-cancel-copy-mode', sessionId: session.id })
       setTmuxCopyMode(false)
@@ -1047,7 +1048,7 @@ export default function Terminal({
       textarea.removeAttribute('disabled')
       textarea.focus()
     }
-  }, [session, isReadOnly, sendMessage, containerRef, inTmuxCopyModeRef, setTmuxCopyMode])
+  }, [session, isReadOnly, isInputReady, sendMessage, containerRef, inTmuxCopyModeRef, setTmuxCopyMode])
 
   const isKeyboardVisible = useCallback(() => {
     if (typeof document === 'undefined') return false
@@ -1142,8 +1143,9 @@ export default function Terminal({
           {/* Kill session button - desktop only, left of session name */}
           {session && canControl && (
             <button
+              disabled={isSwitching}
               onClick={() => setShowEndConfirm(true)}
-              className="hidden md:flex h-7 w-7 items-center justify-center rounded bg-danger/10 border border-danger/30 text-danger hover:bg-danger/20 active:scale-95 transition-all shrink-0"
+              className="hidden md:flex h-7 w-7 items-center justify-center rounded bg-danger/10 border border-danger/30 text-danger hover:bg-danger/20 active:scale-95 transition-all shrink-0 disabled:cursor-not-allowed disabled:opacity-40"
               title={`Kill session (${modDisplay}X)`}
               aria-label="Kill session"
             >
@@ -1220,8 +1222,9 @@ export default function Terminal({
           {/* Kill session button - mobile only (desktop has it on left) */}
           {session && canControl && (
             <button
+              disabled={isSwitching}
               onClick={() => setShowEndConfirm(true)}
-              className="flex size-[44px] items-center justify-center rounded border border-danger/30 bg-danger/10 text-danger transition-all hover:bg-danger/20 active:scale-95 md:hidden"
+              className="flex size-[44px] items-center justify-center rounded border border-danger/30 bg-danger/10 text-danger transition-all hover:bg-danger/20 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 md:hidden"
               title={`Kill session (${modDisplay}X)`}
               aria-label="Kill session"
             >
@@ -1350,7 +1353,11 @@ export default function Terminal({
           style={{ backgroundColor: terminalTheme.background }}
         />
         {isSwitching && session && (
-          <div className="absolute top-2 left-2 z-50 flex items-center gap-1.5 rounded-lg bg-black/60 px-2.5 py-1.5 text-xs text-white/90 shadow-lg backdrop-blur-md">
+          <div
+            role="status"
+            aria-live="polite"
+            className="absolute top-2 left-2 z-50 flex items-center gap-1.5 rounded-lg bg-black/60 px-2.5 py-1.5 text-xs text-white/90 shadow-lg backdrop-blur-md"
+          >
             <svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
@@ -1490,7 +1497,7 @@ export default function Terminal({
         <TerminalControls
           onSendKey={handleSendKey}
           onPasteText={handlePasteText}
-          disabled={connectionStatus !== 'connected' || isReadOnly}
+          disabled={connectionStatus !== 'connected' || isReadOnly || !isInputReady}
           sessions={sessions.map(s => ({ id: s.id, name: s.name, status: s.status }))}
           currentSessionId={session.id}
           agentType={session.agentType}
