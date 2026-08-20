@@ -1531,6 +1531,39 @@ describe('SessionManager', () => {
     fs.rmSync(tempDir, { recursive: true, force: true })
   })
 
+  test('createWindow applies terminal colors before the first agent starts', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentboard-'))
+
+    try {
+      for (const { enabled, expected } of [
+        { enabled: true, expected: 'NO_COLOR=' },
+        { enabled: false, expected: 'NO_COLOR=1' },
+      ]) {
+        const sessionName = `agentboard-first-colors-${enabled}`
+        const runner = createTmuxRunner([], 0)
+        const manager = new SessionManager(sessionName, {
+          runTmux: runner.runTmux,
+          capturePaneContent: () => makePaneCapture(''),
+          now: () => 1700000000000,
+          terminalColorsEnabled: enabled,
+        })
+
+        manager.createWindow(tempDir, `colors-${enabled}`, 'claude')
+
+        const newSessionCall = runner.calls.find(
+          (call) => getTmuxCommand(call) === 'new-session'
+        )
+        if (!newSessionCall) throw new Error('expected a new-session call')
+        expect(newSessionCall).toContain(expected)
+        expect(newSessionCall.indexOf(expected)).toBeLessThan(
+          newSessionCall.indexOf('claude')
+        )
+      }
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true })
+    }
+  })
+
   test('createWindow injects CLAUDE_CODE_NO_FLICKER=1 via tmux -e (fullscreen default)', () => {
     const sessionName = 'agentboard-noflicker'
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentboard-'))

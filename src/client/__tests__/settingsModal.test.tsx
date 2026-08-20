@@ -72,6 +72,63 @@ afterEach(() => {
 })
 
 describe('SettingsModal', () => {
+  test('keeps terminal colors disabled until the initial setting loads', async () => {
+    const originalFetch = globalThis.fetch
+    let resolveTerminalColors!: (response: Response) => void
+    const terminalColorsResponse = new Promise<Response>((resolve) => {
+      resolveTerminalColors = resolve
+    })
+
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/api/settings/terminal-colors') {
+        return terminalColorsResponse
+      }
+      const payload = url.includes('history-max-age-hours')
+        ? { hours: 24 }
+        : { enabled: true }
+      return new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }) as typeof fetch
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    try {
+      await act(async () => {
+        renderer = TestRenderer.create(
+          <SettingsModal isOpen onClose={() => {}} />
+        )
+        await Promise.resolve()
+      })
+
+      const findColorSwitch = () => {
+        const colorSwitch = renderer.root
+          .findAllByType(Switch)
+          .find((component) => component.props.ariaLabel === 'Enable terminal colors')
+        if (!colorSwitch) throw new Error('Expected terminal colors switch')
+        return colorSwitch
+      }
+
+      expect(findColorSwitch().props.disabled).toBe(true)
+
+      await act(async () => {
+        resolveTerminalColors(new Response(JSON.stringify({ enabled: false }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }))
+        await terminalColorsResponse
+        await Promise.resolve()
+      })
+
+      expect(findColorSwitch().props.checked).toBe(false)
+      expect(findColorSwitch().props.disabled).toBe(false)
+    } finally {
+      renderer?.unmount()
+      globalThis.fetch = originalFetch
+    }
+  })
+
   test('loads and updates the global terminal colors setting', async () => {
     const originalFetch = globalThis.fetch
     const requests: Array<{ url: string; method: string; body: string | null }> = []

@@ -118,7 +118,7 @@ export default function SettingsModal({
   const [tmuxMouseMode, setTmuxMouseMode] = useState(true)
   const [tmuxMouseModeLoading, setTmuxMouseModeLoading] = useState(false)
   const [terminalColors, setTerminalColors] = useState(true)
-  const [terminalColorsLoading, setTerminalColorsLoading] = useState(false)
+  const [terminalColorsLoading, setTerminalColorsLoading] = useState(true)
   const [preferWindowName, setPreferWindowName] = useState(false)
   const [preferWindowNameLoading, setPreferWindowNameLoading] = useState(false)
   const [historyMaxAgeHours, setHistoryMaxAgeHours] = useState(24)
@@ -130,8 +130,10 @@ export default function SettingsModal({
   const [newCommand, setNewCommand] = useState('')
   const [newAgentType, setNewAgentType] = useState<'claude' | 'codex' | ''>('')
   const reenableTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const terminalColorsLoadIdRef = useRef(0)
 
   useEffect(() => {
+    const terminalColorsLoadId = ++terminalColorsLoadIdRef.current
     if (reenableTimeoutRef.current) {
       clearTimeout(reenableTimeoutRef.current)
       reenableTimeoutRef.current = null
@@ -165,10 +167,23 @@ export default function SettingsModal({
         .then((res) => res.json())
         .then((data: { enabled: boolean }) => setTmuxMouseMode(data.enabled))
         .catch(() => {})
+      setTerminalColorsLoading(true)
       fetch('/api/settings/terminal-colors')
-        .then((res) => res.json())
-        .then((data: { enabled: boolean }) => setTerminalColors(data.enabled))
+        .then((res) => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          return res.json()
+        })
+        .then((data: { enabled: boolean }) => {
+          if (terminalColorsLoadIdRef.current === terminalColorsLoadId) {
+            setTerminalColors(data.enabled)
+          }
+        })
         .catch(() => {})
+        .finally(() => {
+          if (terminalColorsLoadIdRef.current === terminalColorsLoadId) {
+            setTerminalColorsLoading(false)
+          }
+        })
       fetch('/api/settings/history-max-age-hours')
         .then((res) => res.json())
         .then((data: { hours: number }) => setHistoryMaxAgeHours(data.hours))

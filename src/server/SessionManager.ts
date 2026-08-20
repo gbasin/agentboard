@@ -548,12 +548,19 @@ export class SessionManager {
     // mouse features work in the browser terminal. tmux `-e` sets the pane env
     // (tmux >= 3.0); the launched command inherits it. Harmless for non-Claude commands.
     const noFlickerEnv = config.claudeNoFlicker ? ['-e', 'CLAUDE_CODE_NO_FLICKER=1'] : []
+    // Apply the color preference to the pane creation itself. In the missing-session
+    // path the agent starts before configureSession() can update the session environment.
+    const terminalColorEnv = [
+      '-e',
+      `NO_COLOR=${this.terminalColorsEnabled ? '' : '1'}`,
+    ]
 
     if (!sessionExisted) {
       // Create session + window in one step to avoid orphan shell window
       this.runTmux([
         'new-session', '-d',
         ...noFlickerEnv,
+        ...terminalColorEnv,
         '-s', this.sessionName,
         '-n', finalName,
         '-c', resolvedPath,
@@ -565,6 +572,7 @@ export class SessionManager {
       this.runTmux([
         'new-window',
         ...noFlickerEnv,
+        ...terminalColorEnv,
         '-t', `${this.sessionName}:${nextIndex}`,
         '-n', finalName,
         '-c', resolvedPath,
