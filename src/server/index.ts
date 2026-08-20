@@ -509,9 +509,19 @@ if (storedPreferWindowName !== null) {
   config.preferWindowName = storedPreferWindowName === 'true'
 }
 
+// Read the global terminal color setting from DB. Enabled by default so an
+// ambient NO_COLOR on the Agentboard process does not flatten every managed
+// terminal. Once saved from the UI, the persisted value wins.
+const TERMINAL_COLORS_ENABLED_KEY = 'terminal_colors_enabled'
+const storedTerminalColorsEnabled = db.getAppSetting(TERMINAL_COLORS_ENABLED_KEY)
+if (storedTerminalColorsEnabled !== null) {
+  config.terminalColorsEnabled = storedTerminalColorsEnabled === 'true'
+}
+
 const sessionManager = new SessionManager(undefined, {
   displayNameExists: (name, excludeSessionId) => db.displayNameExists(name, excludeSessionId),
   mouseMode: initialMouseMode,
+  terminalColorsEnabled: config.terminalColorsEnabled,
 })
 // Ensure the base tmux session exists so listing/orphan logic has a real
 // session to read from. SessionManager creates it with a placeholder window
@@ -1657,6 +1667,57 @@ app.put('/api/settings/tmux-mouse-mode', async (c) => {
       })
     }
     return c.json({ error: 'Unable to persist tmux mouse mode' }, 500)
+  }
+
+  return c.json({ enabled: body.enabled })
+})
+
+// Terminal ANSI color setting
+app.get('/api/settings/terminal-colors', (c) => {
+  return c.json({ enabled: config.terminalColorsEnabled })
+})
+
+app.put('/api/settings/terminal-colors', async (c) => {
+  let body: { enabled?: unknown }
+  try {
+    body = await c.req.json()
+  } catch {
+    return c.json({ error: 'Invalid request body' }, 400)
+  }
+
+  if (typeof body.enabled !== 'boolean') {
+    return c.json({ error: 'enabled must be a boolean' }, 400)
+  }
+
+  const previousValue = config.terminalColorsEnabled
+  try {
+    sessionManager.setTerminalColors(body.enabled)
+  } catch (error) {
+    if (error instanceof TmuxTimeoutError) {
+      return c.json({ error: 'Timed out applying terminal colors' }, 504)
+    }
+    logger.warn('terminal_colors_update_failed', {
+      message: error instanceof Error ? error.message : String(error),
+    })
+    return c.json({ error: 'Unable to apply terminal colors' }, 500)
+  }
+
+  config.terminalColorsEnabled = body.enabled
+  try {
+    db.setAppSetting(TERMINAL_COLORS_ENABLED_KEY, String(body.enabled))
+  } catch (error) {
+    config.terminalColorsEnabled = previousValue
+    logger.warn('terminal_colors_persist_failed', {
+      message: error instanceof Error ? error.message : String(error),
+    })
+    try {
+      sessionManager.setTerminalColors(previousValue)
+    } catch (rollbackError) {
+      logger.warn('terminal_colors_rollback_failed', {
+        message: rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
+      })
+    }
+    return c.json({ error: 'Unable to persist terminal colors' }, 500)
   }
 
   return c.json({ enabled: body.enabled })
@@ -4168,12 +4229,14 @@ function captureTmuxHistory(target: string): string | null {
   try {
     // Capture only the visible pane so initial attach paints the current view
     // immediately instead of replaying the entire scrollback buffer.
+    const colorArgs = config.terminalColorsEnabled ? ['-e'] : []
     const result = Bun.spawnSync(['tmux', ...withTmuxUtf8Flag([
       'capture-pane',
       '-t',
       target,
       '-p',
       '-J',
+      ...colorArgs,
     ])], {
       stdout: 'pipe',
       stderr: 'pipe',
@@ -4242,7 +4305,10 @@ async function runRemoteSsh(host: string, remoteCmd: string): Promise<{ exitCode
 
 async function captureTmuxHistoryRemote(target: string, host: string): Promise<string | null> {
   try {
-    const result = await runRemoteTmux(host, ['capture-pane', '-t', target, '-p', '-J'])
+    const colorArgs = config.terminalColorsEnabled ? ['-e'] : []
+    const result = await runRemoteTmux(host, [
+      'capture-pane', '-t', target, '-p', '-J', ...colorArgs,
+    ])
     if (result.exitCode !== 0) return null
     const output = result.stdout ?? ''
     if (output.trim().length === 0) return null

@@ -264,6 +264,10 @@ function createTmuxRunner(sessions: SessionState[], baseIndex = 0) {
       return ''
     }
 
+    if (command === 'set-environment') {
+      return ''
+    }
+
     throw new Error(`Unhandled tmux command: ${args.join(' ')}`)
   }
 
@@ -864,7 +868,7 @@ describe('SessionManager', () => {
         ].join('\n')
       }
 
-      if (command === 'set-option') {
+      if (command === 'set-option' || command === 'set-environment') {
         return ''
       }
 
@@ -1527,6 +1531,39 @@ describe('SessionManager', () => {
     fs.rmSync(tempDir, { recursive: true, force: true })
   })
 
+  test('createWindow applies terminal colors before the first agent starts', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentboard-'))
+
+    try {
+      for (const { enabled, expected } of [
+        { enabled: true, expected: 'NO_COLOR=' },
+        { enabled: false, expected: 'NO_COLOR=1' },
+      ]) {
+        const sessionName = `agentboard-first-colors-${enabled}`
+        const runner = createTmuxRunner([], 0)
+        const manager = new SessionManager(sessionName, {
+          runTmux: runner.runTmux,
+          capturePaneContent: () => makePaneCapture(''),
+          now: () => 1700000000000,
+          terminalColorsEnabled: enabled,
+        })
+
+        manager.createWindow(tempDir, `colors-${enabled}`, 'claude')
+
+        const newSessionCall = runner.calls.find(
+          (call) => getTmuxCommand(call) === 'new-session'
+        )
+        if (!newSessionCall) throw new Error('expected a new-session call')
+        expect(newSessionCall).toContain(expected)
+        expect(newSessionCall.indexOf(expected)).toBeLessThan(
+          newSessionCall.indexOf('claude')
+        )
+      }
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true })
+    }
+  })
+
   test('createWindow injects CLAUDE_CODE_NO_FLICKER=1 via tmux -e (fullscreen default)', () => {
     const sessionName = 'agentboard-noflicker'
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentboard-'))
@@ -1708,6 +1745,41 @@ describe('SessionManager', () => {
     expect(mouseSetCalls.some((call) => call.includes('other-session'))).toBe(
       false
     )
+  })
+
+  test('terminal color setting controls NO_COLOR for future pane processes', () => {
+    const sessionName = 'agentboard-terminal-colors'
+    const runner = createTmuxRunner(
+      [{ name: sessionName, windows: [] }],
+      1
+    )
+
+    const manager = new SessionManager(sessionName, {
+      runTmux: runner.runTmux,
+      capturePaneContent: () => null,
+      terminalColorsEnabled: true,
+    })
+
+    manager.listWindows()
+
+    expect(runner.calls).toContainEqual([
+      'set-environment',
+      '-r',
+      '-t',
+      sessionName,
+      'NO_COLOR',
+    ])
+
+    runner.calls.length = 0
+    manager.setTerminalColors(false)
+
+    expect(runner.calls).toEqual([[
+      'set-environment',
+      '-t',
+      sessionName,
+      'NO_COLOR',
+      '1',
+    ]])
   })
 
   test('setMouseMode rethrows non-timeout base session failures', () => {

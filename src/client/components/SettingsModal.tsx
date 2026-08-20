@@ -117,6 +117,8 @@ export default function SettingsModal({
   // Server-side settings (fetched from API)
   const [tmuxMouseMode, setTmuxMouseMode] = useState(true)
   const [tmuxMouseModeLoading, setTmuxMouseModeLoading] = useState(false)
+  const [terminalColors, setTerminalColors] = useState(true)
+  const [terminalColorsLoading, setTerminalColorsLoading] = useState(true)
   const [preferWindowName, setPreferWindowName] = useState(false)
   const [preferWindowNameLoading, setPreferWindowNameLoading] = useState(false)
   const [historyMaxAgeHours, setHistoryMaxAgeHours] = useState(24)
@@ -128,8 +130,10 @@ export default function SettingsModal({
   const [newCommand, setNewCommand] = useState('')
   const [newAgentType, setNewAgentType] = useState<'claude' | 'codex' | ''>('')
   const reenableTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const terminalColorsLoadIdRef = useRef(0)
 
   useEffect(() => {
+    const terminalColorsLoadId = ++terminalColorsLoadIdRef.current
     if (reenableTimeoutRef.current) {
       clearTimeout(reenableTimeoutRef.current)
       reenableTimeoutRef.current = null
@@ -163,6 +167,23 @@ export default function SettingsModal({
         .then((res) => res.json())
         .then((data: { enabled: boolean }) => setTmuxMouseMode(data.enabled))
         .catch(() => {})
+      setTerminalColorsLoading(true)
+      fetch('/api/settings/terminal-colors')
+        .then((res) => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          return res.json()
+        })
+        .then((data: { enabled: boolean }) => {
+          if (terminalColorsLoadIdRef.current === terminalColorsLoadId) {
+            setTerminalColors(data.enabled)
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (terminalColorsLoadIdRef.current === terminalColorsLoadId) {
+            setTerminalColorsLoading(false)
+          }
+        })
       fetch('/api/settings/history-max-age-hours')
         .then((res) => res.json())
         .then((data: { hours: number }) => setHistoryMaxAgeHours(data.hours))
@@ -336,6 +357,21 @@ export default function SettingsModal({
       })
       .catch(() => setPreferWindowName(!enabled)) // Revert on error
       .finally(() => setPreferWindowNameLoading(false))
+  }
+
+  const handleTerminalColorsChange = (enabled: boolean) => {
+    setTerminalColorsLoading(true)
+    setTerminalColors(enabled)
+    fetch('/api/settings/terminal-colors', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      })
+      .catch(() => setTerminalColors(!enabled))
+      .finally(() => setTerminalColorsLoading(false))
   }
 
   const handleHistoryMaxAgeHoursChange = (hours: number) => {
@@ -736,6 +772,22 @@ export default function SettingsModal({
                 checked={tmuxMouseMode}
                 onCheckedChange={handleTmuxMouseModeChange}
                 disabled={tmuxMouseModeLoading}
+              />
+            </div>
+
+            <div className="mt-4 flex items-center justify-between gap-4">
+              <div>
+                <div className="text-sm text-primary">Terminal Colors</div>
+                <div className="text-[10px] text-muted">
+                  Preserve ANSI colors for terminal output. Hibernate then Wake running agents
+                  after changing this setting.
+                </div>
+              </div>
+              <Switch
+                checked={terminalColors}
+                onCheckedChange={handleTerminalColorsChange}
+                disabled={terminalColorsLoading}
+                ariaLabel="Enable terminal colors"
               />
             </div>
 

@@ -60,6 +60,7 @@ async function loadConfig(tag: string) {
     pruneWsSessions: boolean
     terminalMode: string
     terminalMonitorTargets: boolean
+    terminalColorsEnabled: boolean
     tlsCert: string
     tlsKey: string
     logPollIntervalMs: number
@@ -105,6 +106,7 @@ describe('config', () => {
     expect(config.pruneWsSessions).toBe(true)
     expect(config.terminalMode).toBe('pty')
     expect(config.terminalMonitorTargets).toBe(true)
+    expect(config.terminalColorsEnabled).toBe(true)
     expect(config.tlsCert).toBe('')
     expect(config.tlsKey).toBe('')
     expect(config.logPollIntervalMs).toBe(5000)

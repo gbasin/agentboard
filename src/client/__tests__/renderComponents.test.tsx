@@ -456,6 +456,7 @@ describe('component rendering', () => {
       <SettingsModal isOpen onClose={() => {}} />
     )
     expect(html).toContain('Settings')
+    expect(html).toContain('Terminal Colors')
   })
 
   test('renders controls widgets', () => {
