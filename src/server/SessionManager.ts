@@ -1091,7 +1091,13 @@ function capturePaneWithDimensions(tmuxWindow: string): PaneCapture | null {
     // Use -J to unwrap lines and only capture visible content (no scrollback)
     // This prevents false positives from scrollback buffer changes on window focus
     const result = Bun.spawnSync(
-      ['tmux', 'capture-pane', '-t', tmuxWindow, '-p', '-J'],
+      ['tmux', ...withTmuxUtf8Flag([
+        'capture-pane',
+        '-t',
+        tmuxWindow,
+        '-p',
+        '-J',
+      ])],
       {
         stdout: 'pipe',
         stderr: 'pipe',

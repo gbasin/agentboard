@@ -240,7 +240,13 @@ function listAllWindowData(): WindowData[] {
 function capturePane(tmuxWindow: string): string | null {
   try {
     const result = Bun.spawnSync(
-      ['tmux', 'capture-pane', '-t', tmuxWindow, '-p', '-J'],
+      ['tmux', ...withTmuxUtf8Flag([
+        'capture-pane',
+        '-t',
+        tmuxWindow,
+        '-p',
+        '-J',
+      ])],
       {
         stdout: 'pipe',
         stderr: 'pipe',
@@ -267,7 +273,15 @@ function captureScrollback(tmuxWindow: string, lines: number): string {
   const safeLines = Math.max(1, lines)
   try {
     const result = Bun.spawnSync(
-      ['tmux', 'capture-pane', '-t', tmuxWindow, '-p', '-J', '-S', `-${safeLines}`],
+      ['tmux', ...withTmuxUtf8Flag([
+        'capture-pane',
+        '-t',
+        tmuxWindow,
+        '-p',
+        '-J',
+        '-S',
+        `-${safeLines}`,
+      ])],
       {
         stdout: 'pipe',
         stderr: 'pipe',

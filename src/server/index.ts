@@ -4168,7 +4168,13 @@ function captureTmuxHistory(target: string): string | null {
   try {
     // Capture only the visible pane so initial attach paints the current view
     // immediately instead of replaying the entire scrollback buffer.
-    const result = Bun.spawnSync(['tmux', 'capture-pane', '-t', target, '-p', '-J'], {
+    const result = Bun.spawnSync(['tmux', ...withTmuxUtf8Flag([
+      'capture-pane',
+      '-t',
+      target,
+      '-p',
+      '-J',
+    ])], {
       stdout: 'pipe',
       stderr: 'pipe',
       timeout: config.tmuxTimeoutMs,
