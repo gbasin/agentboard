@@ -2936,7 +2936,7 @@ describe('server message handlers', () => {
       (message) =>
         message.type === 'terminal-output' &&
         message.sessionId === baseSession.id &&
-        message.data === 'visible pane 你好 🚀\n'
+        message.data === 'visible pane 你好 🚀\r\n'
     )
     expect(historyIndex).toBeGreaterThanOrEqual(0)
     expect(ws.data.currentTmuxTarget).toBe(groupedTarget)

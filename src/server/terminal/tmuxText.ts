@@ -34,6 +34,10 @@ export function stripAnsi(text: string): string {
   return text.replace(ANSI_ESCAPE_PATTERN, '')
 }
 
+export function normalizeCapturedHistory(text: string): string {
+  return text.replace(/\r?\n/g, '\r\n')
+}
+
 export function isDecorativeLine(line: string): boolean {
   return TMUX_DECORATIVE_LINE_PATTERN.test(line)
 }

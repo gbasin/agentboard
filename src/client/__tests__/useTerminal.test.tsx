@@ -34,7 +34,8 @@ class TerminalMock {
   private keyHandler?: (event: KeyboardEvent) => boolean
   private wheelHandler?: (event: WheelEvent) => boolean
 
-  constructor() {
+  constructor(options: Record<string, unknown> = {}) {
+    this.options = { ...options }
     TerminalMock.instances.push(this)
   }
 
@@ -456,6 +457,32 @@ describe('sanitizeLink', () => {
 })
 
 describe('useTerminal', () => {
+  test('leaves PTY line-feed semantics unchanged in xterm', async () => {
+    const { container } = createContainerMock()
+    let renderer!: TestRenderer.ReactTestRenderer
+
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          sendMessage={() => {}}
+          subscribe={() => () => {}}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+        { createNodeMock: () => container },
+      )
+      await Promise.resolve()
+    })
+
+    expect(TerminalMock.instances[0]?.options.convertEol).toBe(false)
+
+    act(() => {
+      renderer.unmount()
+    })
+  })
+
   test('attaches, forwards input/output, and handles key events', () => {
     const clipboardWrites: string[] = []
     globalAny.navigator = {
