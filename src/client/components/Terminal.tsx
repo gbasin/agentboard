@@ -164,6 +164,7 @@ export default function Terminal({
     containerRef,
     terminalRef,
     inTmuxCopyModeRef,
+    isTmuxCopyMode,
     appMouseRef,
     setTmuxCopyMode,
     isSwitching,
@@ -1556,9 +1557,25 @@ export default function Terminal({
           </div>
         )}
 
-        {/* Scroll to bottom button */}
-        {showScrollButton && session && !isSelectingText && (
+        {/* Copy-mode indicator / scroll to bottom button */}
+        {isTmuxCopyMode && session && !isSelectingText ? (
           <button
+            type="button"
+            onClick={scrollToBottom}
+            className="absolute bottom-14 left-1/2 z-20 flex h-10 items-center justify-center overflow-hidden rounded-full border border-amber-400/35 bg-amber-500/20 text-amber-100 shadow-lg backdrop-blur-sm transition-all hover:bg-amber-500/30 active:scale-95 md:bottom-8"
+            style={{ transform: 'translateX(-50%)' }}
+            title="Exit tmux copy mode and return to live output"
+            aria-label="Exit copy mode"
+          >
+            <span className="px-3 text-[11px] font-semibold uppercase tracking-wide">
+              Copy mode
+            </span>
+            <span className="self-stretch border-l border-amber-400/25" aria-hidden="true" />
+            <span className="px-3 text-sm font-medium">Exit</span>
+          </button>
+        ) : showScrollButton && session && !isSelectingText ? (
+          <button
+            type="button"
             onClick={scrollToBottom}
             className="absolute bottom-8 left-1/2 z-20 flex h-10 px-4 items-center justify-center gap-1.5 rounded-full bg-blue-600/90 text-white shadow-lg hover:bg-blue-600 active:scale-95 transition-all"
             style={{ transform: 'translateX(-50%)' }}
@@ -1580,7 +1597,7 @@ export default function Terminal({
             </svg>
             <span className="text-sm font-medium">Jump to bottom</span>
           </button>
-        )}
+        ) : null}
 
       </div>
 

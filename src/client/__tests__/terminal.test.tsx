@@ -251,6 +251,63 @@ afterEach(() => {
 })
 
 describe('Terminal', () => {
+  test('shows an explicit exit control for externally entered tmux copy mode', () => {
+    const listeners: Array<(message: ServerMessage) => void> = []
+    const sentMessages: unknown[] = []
+    const { createNodeMock } = createContainerMock()
+    let renderer!: TestRenderer.ReactTestRenderer
+
+    act(() => {
+      renderer = TestRenderer.create(
+        <Terminal
+          session={baseSession}
+          sessions={[baseSession]}
+          connectionStatus="connected"
+          sendMessage={(message) => sentMessages.push(message)}
+          subscribe={(listener) => {
+            listeners.push(listener)
+            return () => {}
+          }}
+          onClose={() => {}}
+          onSelectSession={() => {}}
+          onNewSession={() => {}}
+          onKillSession={() => {}}
+          onRenameSession={() => {}}
+          onResumeSession={() => {}}
+          onOpenSettings={() => {}}
+        />,
+        { createNodeMock },
+      )
+    })
+
+    act(() => {
+      listeners[0]?.({
+        type: 'tmux-copy-mode-status',
+        sessionId: baseSession.id,
+        inCopyMode: true,
+        appMouse: true,
+      })
+    })
+
+    const exitButton = renderer.root.findByProps({ title: 'Exit tmux copy mode and return to live output' })
+    expect(exitButton.props['aria-label']).toBe('Exit copy mode')
+    expect(renderer.root.findAllByProps({ title: 'Scroll to bottom' })).toHaveLength(0)
+
+    act(() => {
+      exitButton.props.onClick()
+    })
+
+    expect(sentMessages[sentMessages.length - 1]).toEqual({
+      type: 'tmux-cancel-copy-mode',
+      sessionId: baseSession.id,
+    })
+    expect(renderer.root.findAllByProps({ title: 'Exit tmux copy mode and return to live output' })).toHaveLength(0)
+
+    act(() => {
+      renderer.unmount()
+    })
+  })
+
   test('shows scroll button and handles more menu actions', () => {
     let openSettingsCalls = 0
 
@@ -292,10 +349,10 @@ describe('Terminal', () => {
     })
 
     const scrollButton = renderer.root.findAllByType('button').find(
-      (button) => button.props.title === 'Scroll to bottom'
+      (button) => button.props.title === 'Exit tmux copy mode and return to live output'
     )
     if (!scrollButton) {
-      throw new Error('Expected scroll button')
+      throw new Error('Expected copy-mode exit button')
     }
 
     const initialMessageCount = sentMessages.length
