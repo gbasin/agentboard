@@ -2008,6 +2008,31 @@ describe('SessionManager', () => {
     expect(rememberedPids).toEqual([4242])
   })
 
+  test('ensureSession does not signal socket recovery when only the session is missing', () => {
+    const sessionName = 'agentboard-session-missing'
+    const calls: string[][] = []
+    let recoveryAttempts = 0
+    const manager = new SessionManager(sessionName, {
+      runTmux: (args) => {
+        const normalized = normalizeParsedTmuxArgs(args)
+        calls.push(normalized)
+        if (normalized[0] === 'has-session') {
+          throw new Error(`can't find session: ${sessionName}`)
+        }
+        return ''
+      },
+      capturePaneContent: () => makePaneCapture(''),
+      recoverTmuxSocket: () => {
+        recoveryAttempts += 1
+        return true
+      },
+    })
+
+    expect(manager.ensureSession()).toEqual({ canPruneWsSessions: true })
+    expect(recoveryAttempts).toBe(0)
+    expect(calls.some((call) => call[0] === 'new-session')).toBe(true)
+  })
+
   test('ensureSession refuses a replacement when live-server socket recovery fails', () => {
     const calls: string[][] = []
     const manager = new SessionManager('agentboard-recovery-failed', {

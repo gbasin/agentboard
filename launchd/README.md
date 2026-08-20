@@ -95,6 +95,14 @@ if tmux has-session -t "=$SESSION" 2>/dev/null; then
   exit 0
 fi
 
+# The server is reachable but only the managed base session is missing.
+# Restart Agentboard so ensureSession() recreates it; no socket repair signal
+# is needed.
+if tmux list-sessions >/dev/null 2>&1; then
+  launchctl kickstart -k "gui/$(id -u)/com.agentboard"
+  exit $?
+fi
+
 if read -r pid < "$PID_FILE" 2>/dev/null &&
    [[ "$pid" =~ ^[0-9]+$ ]] &&
    kill -0 "$pid" 2>/dev/null &&
@@ -104,6 +112,10 @@ if read -r pid < "$PID_FILE" 2>/dev/null &&
   if tmux has-session -t "=$SESSION" 2>/dev/null; then
     remember_server
     exit 0
+  fi
+  if tmux list-sessions >/dev/null 2>&1; then
+    launchctl kickstart -k "gui/$(id -u)/com.agentboard"
+    exit $?
   fi
   echo "Live tmux server $pid did not recreate its socket; refusing to replace it" >&2
   exit 1
@@ -150,3 +162,4 @@ Note: if you `tmux kill-session -t agentboard` while agentboard is loaded, the w
 - The wrapper script `cd`s into the repo directory before `bun run start`, matching the Linux systemd setup.
 - Override the log path via the `LOG_FILE` env var (respected by agentboard and the rotate script).
 - Override the tmux session name via `TMUX_SESSION` (respected by agentboard and the watchdog).
+- Set a distinct `AGENTBOARD_TMUX_PID_FILE` for each Agentboard instance that uses a separate tmux socket.

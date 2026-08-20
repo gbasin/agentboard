@@ -38,6 +38,9 @@ type TmuxRunner = (args: string[]) => string
 type NowFn = () => number
 type RecoverTmuxSocket = () => boolean
 type RememberTmuxServerPid = (pid: number) => void
+const TMUX_RECOVERY_SETTLE_MS = 200
+const TMUX_RECOVERY_SIGNAL_INTERVAL_MS = 30_000
+let lastTmuxRecoverySignal: { pid: number; sentAt: number } | null = null
 type GroupLookupResult =
   | { reliable: true; sessionName: string | null }
   | { reliable: false; sessionName: null }
@@ -157,7 +160,7 @@ export class SessionManager {
         throw error
       }
 
-      if (this.recoverTmuxSocket()) {
+      if (isTmuxConnectionError(error) && this.recoverTmuxSocket()) {
         try {
           this.runTmux(['has-session', '-t', `=${this.sessionName}`])
           this.configureSession()
@@ -911,8 +914,21 @@ function recoverPersistedTmuxSocket(): boolean {
     return false
   }
 
+  const now = Date.now()
+  if (
+    lastTmuxRecoverySignal?.pid === pid &&
+    now - lastTmuxRecoverySignal.sentAt < TMUX_RECOVERY_SIGNAL_INTERVAL_MS
+  ) {
+    return true
+  }
+
   try {
     process.kill(pid, 'SIGUSR1')
+    lastTmuxRecoverySignal = { pid, sentAt: now }
+    // tmux recreates a removed socket asynchronously after SIGUSR1. Give it
+    // the same short settle window used by the launchd watchdog before the
+    // caller probes the socket again.
+    Bun.sleepSync(TMUX_RECOVERY_SETTLE_MS)
     return true
   } catch {
     return false
@@ -952,15 +968,13 @@ function getTmuxCommand(args: string[]): string {
   return args[0] === '-u' ? args[1] ?? 'command' : args[0] ?? 'command'
 }
 
-function isTmuxSessionAbsentError(error: unknown): boolean {
+function isTmuxConnectionError(error: unknown): boolean {
   if (!(error instanceof Error)) {
     return false
   }
 
   const message = error.message.toLowerCase()
   return (
-    message.includes("can't find session") ||
-    message.includes('session not found') ||
     message.includes('failed to connect to server') ||
     message.includes('no server running') ||
     (
@@ -970,6 +984,19 @@ function isTmuxSessionAbsentError(error: unknown): boolean {
         message.includes('connection refused')
       )
     )
+  )
+}
+
+function isTmuxSessionAbsentError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false
+  }
+
+  const message = error.message.toLowerCase()
+  return (
+    message.includes("can't find session") ||
+    message.includes('session not found') ||
+    isTmuxConnectionError(error)
   )
 }
 
