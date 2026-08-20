@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, jest, test, mock } from 'bun:test'
 import TestRenderer, { act } from 'react-test-renderer'
 import type { AgentType, ServerMessage, Session } from '@shared/types'
+import { useSettingsStore } from '../stores/settingsStore'
 import type { ITheme } from '@xterm/xterm'
 import type { ConnectionStatus } from '../stores/sessionStore'
 
@@ -102,7 +103,15 @@ class TerminalMock {
     return this.wheelHandler?.(event)
   }
 
-  emitKey(event: { key: string; type: string; ctrlKey?: boolean; metaKey?: boolean }) {
+  emitKey(event: {
+    key: string
+    code?: string
+    type: string
+    ctrlKey?: boolean
+    shiftKey?: boolean
+    altKey?: boolean
+    metaKey?: boolean
+  }) {
     return this.keyHandler?.(event as KeyboardEvent)
   }
 }
@@ -365,6 +374,7 @@ beforeEach(() => {
   TerminalMock.instances = []
   FitAddonMock.instances = []
   WebglAddonMock.instances = []
+  useSettingsStore.setState({ shortcutModifier: 'auto' })
 
   globalAny.window = {
     setTimeout: ((callback: () => void) => {
@@ -477,6 +487,67 @@ describe('useTerminal', () => {
     })
 
     expect(TerminalMock.instances[0]?.options.convertEol).toBe(false)
+
+    act(() => {
+      renderer.unmount()
+    })
+  })
+
+  test('lets configured modifier digit shortcuts bypass xterm', async () => {
+    globalAny.navigator = {
+      userAgent: 'Chrome',
+      platform: 'MacIntel',
+      maxTouchPoints: 0,
+    } as unknown as Navigator
+    const { container } = createContainerMock()
+    let renderer!: TestRenderer.ReactTestRenderer
+
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          sendMessage={() => {}}
+          subscribe={() => () => {}}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+        { createNodeMock: () => container },
+      )
+      await Promise.resolve()
+    })
+
+    const terminal = TerminalMock.instances[0]
+    expect(terminal?.emitKey({
+      key: '2',
+      code: 'Digit2',
+      type: 'keydown',
+      ctrlKey: true,
+      altKey: true,
+    })).toBe(false)
+    expect(terminal?.emitKey({ key: '2', code: 'Digit2', type: 'keydown' })).toBe(true)
+    expect(terminal?.emitKey({
+      key: '2',
+      code: 'Digit2',
+      type: 'keydown',
+      ctrlKey: true,
+    })).toBe(true)
+
+    useSettingsStore.setState({ shortcutModifier: 'cmd-shift' })
+    expect(terminal?.emitKey({
+      key: '3',
+      code: 'Digit3',
+      type: 'keydown',
+      metaKey: true,
+      shiftKey: true,
+    })).toBe(false)
+    expect(terminal?.emitKey({
+      key: '3',
+      code: 'Digit3',
+      type: 'keyup',
+      metaKey: true,
+      shiftKey: true,
+    })).toBe(true)
 
     act(() => {
       renderer.unmount()

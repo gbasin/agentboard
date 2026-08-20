@@ -10,7 +10,9 @@ import { ProgressAddon } from '@xterm/addon-progress'
 import type { AgentType, ClipboardOfferSource, SendClientMessage, ServerMessageWithDiagnostics, SubscribeServerMessage } from '@shared/types'
 import { clientLog } from '../utils/clientLog'
 import type { ConnectionStatus } from '../stores/sessionStore'
+import { useSettingsStore } from '../stores/settingsStore'
 import { copyText } from '../utils/copyText'
+import { getEffectiveModifier, matchesModifier } from '../utils/device'
 import { bracketedPaste, sanitizeImagePath } from '../utils/paste'
 
 // Module-level snapshot cache: sessionId → serialized terminal content.
@@ -769,6 +771,21 @@ export function useTerminal({
     }
 
     terminal.attachCustomKeyEventHandler((event) => {
+      // Let Agentboard's window-level direct-navigation handler receive the
+      // configured modifier + 1..9 before xterm translates or cancels it.
+      // Read the store synchronously so modifier changes take effect without
+      // recreating the terminal instance.
+      if (
+        event.type === 'keydown' &&
+        /^Digit[1-9]$/.test(event.code) &&
+        matchesModifier(
+          event,
+          getEffectiveModifier(useSettingsStore.getState().shortcutModifier)
+        )
+      ) {
+        return false
+      }
+
       // Cmd/Ctrl+C: copy selection (only non-whitespace to avoid clearing images from clipboard)
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
         if (terminal.hasSelection()) {

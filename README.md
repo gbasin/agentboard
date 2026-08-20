@@ -138,6 +138,7 @@ bun run deps:risk -- --threshold moderate
 |--------|-----|---------------|
 | Previous session | `Ctrl+Option+[` | `Ctrl+Shift+[` |
 | Next session | `Ctrl+Option+]` | `Ctrl+Shift+]` |
+| Jump to session 1-9 | `Ctrl+Option+1..9` | `Ctrl+Shift+1..9` |
 | New session | `Ctrl+Option+N` | `Ctrl+Shift+N` |
 | Kill session | `Ctrl+Option+X` | `Ctrl+Shift+X` |
 

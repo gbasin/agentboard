@@ -1088,6 +1088,124 @@ describe('App', () => {
     // but kill-failed test below proves it works)
   })
 
+  test('jumps to a visible session by index with the configured modifier', () => {
+    const sessionB: Session = {
+      ...baseSession,
+      id: 'session-2',
+      name: 'beta',
+      createdAt: '2024-01-02T00:00:00.000Z',
+    }
+    const sessionC: Session = {
+      ...baseSession,
+      id: 'session-3',
+      name: 'gamma',
+      createdAt: '2024-01-03T00:00:00.000Z',
+    }
+
+    useSessionStore.setState({
+      sessions: [baseSession, sessionB, sessionC],
+      selectedSessionId: baseSession.id,
+      hasLoaded: true,
+    })
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<App />)
+    })
+    activeRenderer = renderer
+
+    let prevented = 0
+    const digitEvent = (
+      digit: number,
+      modifiers: Partial<Pick<KeyboardEvent, 'ctrlKey' | 'shiftKey' | 'altKey' | 'metaKey'>>
+    ) => ({
+      key: String(digit),
+      code: `Digit${digit}`,
+      ctrlKey: false,
+      shiftKey: false,
+      altKey: false,
+      metaKey: false,
+      defaultPrevented: false,
+      preventDefault: () => { prevented += 1 },
+      ...modifiers,
+    }) as KeyboardEvent
+
+    act(() => {
+      getKeyHandler()(digitEvent(3, { ctrlKey: true, shiftKey: true }))
+    })
+    expect(useSessionStore.getState().selectedSessionId).toBe('session-3')
+    expect(prevented).toBe(1)
+
+    // Plain digits and incomplete modifiers stay available to the terminal.
+    act(() => {
+      getKeyHandler()(digitEvent(1, {}))
+      getKeyHandler()(digitEvent(1, { ctrlKey: true }))
+    })
+    expect(useSessionStore.getState().selectedSessionId).toBe('session-3')
+    expect(prevented).toBe(1)
+
+    // An out-of-range shortcut also remains available to the browser/terminal.
+    act(() => {
+      getKeyHandler()(digitEvent(9, { ctrlKey: true, shiftKey: true }))
+    })
+    expect(useSessionStore.getState().selectedSessionId).toBe('session-3')
+    expect(prevented).toBe(1)
+  })
+
+  test('digit shortcuts fall back to hibernating sessions when no live sessions are visible', () => {
+    const hibernatingA: AgentSession = {
+      ...baseAgentSession,
+      sessionId: 'hibernating-1',
+      displayName: 'sleeping alpha',
+      isActive: false,
+      isPinned: true,
+    }
+    const hibernatingB: AgentSession = {
+      ...hibernatingA,
+      sessionId: 'hibernating-2',
+      displayName: 'sleeping beta',
+      createdAt: '2024-01-02T00:00:00.000Z',
+    }
+
+    useSessionStore.setState({
+      sessions: [],
+      selectedSessionId: null,
+      selectedHibernatingSessionId: hibernatingA.sessionId,
+      agentSessions: {
+        active: [],
+        hibernating: [hibernatingA, hibernatingB],
+        history: [],
+      },
+      agentSessionsEpoch: 0,
+      hasLoaded: true,
+    })
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<App />)
+    })
+    activeRenderer = renderer
+
+    let prevented = false
+    act(() => {
+      getKeyHandler()({
+        key: '2',
+        code: 'Digit2',
+        ctrlKey: true,
+        shiftKey: true,
+        altKey: false,
+        metaKey: false,
+        defaultPrevented: false,
+        preventDefault: () => { prevented = true },
+      } as KeyboardEvent)
+    })
+
+    const state = useSessionStore.getState()
+    expect(state.selectedSessionId).toBeNull()
+    expect(state.selectedHibernatingSessionId).toBe(hibernatingB.sessionId)
+    expect(prevented).toBe(true)
+  })
+
   test('kill-failed restores optimistically removed session', () => {
     useSessionStore.setState({
       sessions: [baseSession],
