@@ -24,7 +24,7 @@ function createSpawnHarness({ tmuxVersion = 'tmux 3.4' } = {}) {
     args: string[]
     options?: Parameters<typeof Bun.spawnSync>[1]
   }> = []
-  const writes: string[] = []
+  const writes: Array<string | Uint8Array> = []
   const resizes: Array<{ cols: number; rows: number }> = []
   let closed = false
   let killed = false
@@ -40,8 +40,16 @@ function createSpawnHarness({ tmuxVersion = 'tmux 3.4' } = {}) {
   })
 
   const terminal = {
-    write: (data: string) => {
-      writes.push(data)
+    write: (data: string | BufferSource) => {
+      if (typeof data === 'string') {
+        writes.push(data)
+        return
+      }
+      const view =
+        data instanceof ArrayBuffer
+          ? new Uint8Array(data)
+          : new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
+      writes.push(view.slice())
     },
     resize: (cols: number, rows: number) => {
       resizes.push({ cols, rows })
@@ -320,6 +328,7 @@ describe('TerminalProxy', () => {
     )
     expect(harness.spawnCalls[0]?.args).toEqual([
       'tmux',
+      '-u',
       '-T',
       'sync',
       'attach',
@@ -352,6 +361,7 @@ describe('TerminalProxy', () => {
 
       expect(harness.spawnCalls[0]?.args).toEqual([
         'tmux',
+        '-u',
         'attach',
         '-t',
         'agentboard-ws-abc',
@@ -381,6 +391,7 @@ describe('TerminalProxy', () => {
 
     expect(harness.spawnCalls[0]?.args).toEqual([
       'tmux',
+      '-u',
       'attach',
       '-t',
       'agentboard-ws-abc',
@@ -906,7 +917,16 @@ describe('TerminalProxy', () => {
     proxy.resize(120, 40)
     await proxy.dispose()
 
-    expect(harness.writes).toEqual(['ls'])
+    expect(harness.spawnCalls[0]?.args).toEqual([
+      'tmux',
+      '-u',
+      '-T',
+      'sync',
+      'attach',
+      '-t',
+      'agentboard-ws-abc',
+    ])
+    expect(harness.writes).toEqual([new TextEncoder().encode('ls')])
     expect(harness.resizes).toEqual([{ cols: 120, rows: 40 }])
     expect(harness.wasClosed()).toBe(true)
     expect(harness.wasKilled()).toBe(true)
@@ -914,6 +934,26 @@ describe('TerminalProxy', () => {
       args: ['tmux', 'kill-session', '-t', 'agentboard-ws-abc'],
       options: expect.objectContaining({ timeout: 15000 }),
     })
+  })
+
+  test('writes terminal input as explicit UTF-8 bytes', async () => {
+    const harness = createSpawnHarness()
+    const proxy = new TerminalProxy({
+      connectionId: 'unicode',
+      sessionName: 'agentboard-ws-unicode',
+      baseSession: 'agentboard',
+      onData: () => {},
+      spawn: harness.spawn,
+      spawnSync: harness.spawnSync,
+      wait: async () => {},
+    })
+
+    await proxy.start()
+    proxy.write('áéíñü-你好-🚀')
+
+    expect(harness.writes).toEqual([
+      new TextEncoder().encode('áéíñü-你好-🚀'),
+    ])
   })
 
   test('disposes the grouped session when tmux attach spawn fails', async () => {

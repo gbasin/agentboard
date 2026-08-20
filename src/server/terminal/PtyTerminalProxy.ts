@@ -5,7 +5,12 @@ import {
 } from './TerminalProxyBase'
 import { TerminalProxyError, TerminalState } from './types'
 import { resolveGroupedSessionSwitchTarget } from './groupedSessionTarget'
-import { buildTmuxFormat, splitTmuxFields } from '../tmuxFormat'
+import {
+  buildTmuxFormat,
+  splitTmuxFields,
+  withTmuxUtf8Flag,
+} from '../tmuxFormat'
+import { sanitizedTmuxEnv } from '../tmuxEnv'
 
 const CLIENT_TTY_FORMAT = buildTmuxFormat([
   '#{client_tty}',
@@ -38,6 +43,7 @@ interface TmuxTargetIdentity {
 class PtyTerminalProxy extends TerminalProxyBase {
   private process: ReturnType<typeof Bun.spawn> | null = null
   private decoder = new TextDecoder()
+  private encoder = new TextEncoder()
   private cols = 80
   private rows = 24
   private clientTty: string | null = null
@@ -317,7 +323,7 @@ class PtyTerminalProxy extends TerminalProxyBase {
   }
 
   write(data: string): void {
-    this.process?.terminal?.write(data)
+    this.process?.terminal?.write(this.encoder.encode(data))
   }
 
   paste(data: string): void {
@@ -514,11 +520,21 @@ class PtyTerminalProxy extends TerminalProxyBase {
 
     let proc: ReturnType<typeof Bun.spawn>
     try {
+      // Agentboard's browser PTY is UTF-8 even when a service manager gives
+      // the server a C locale. Force tmux's client to render UTF-8 output.
       proc = this.spawn(
-        ['tmux', ...this.clientFeatureArgs(), 'attach', '-t', this.options.sessionName],
+        [
+          'tmux',
+          ...withTmuxUtf8Flag([
+            ...this.clientFeatureArgs(),
+            'attach',
+            '-t',
+            this.options.sessionName,
+          ]),
+        ],
         {
           env: {
-            ...process.env,
+            ...sanitizedTmuxEnv(),
             TERM: 'xterm-256color',
           },
           terminal: {

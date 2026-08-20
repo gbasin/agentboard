@@ -165,6 +165,7 @@ export default function Terminal({
     appMouseRef,
     setTmuxCopyMode,
     isSwitching,
+    isInputReady,
     pendingClipboardOffer,
     copyPendingClipboardOffer,
     dismissPendingClipboardOffer,
@@ -1001,17 +1002,17 @@ export default function Terminal({
 
   const handleSendKey = useCallback(
     (key: string) => {
-      if (!session || isReadOnly) return
+      if (!session || isReadOnly || !isInputReady) return
       sendMessage({ type: 'terminal-input', sessionId: session.id, data: key })
     },
-    [session, isReadOnly, sendMessage]
+    [session, isReadOnly, isInputReady, sendMessage]
   )
 
   // Deliver pasted text as a single bracketed paste (server routes it through
   // tmux paste-buffer -p) so multi-line content isn't auto-submitted line-by-line.
   const handlePasteText = useCallback(
     (text: string) => {
-      if (!session || isReadOnly) return
+      if (!session || isReadOnly || !isInputReady) return
       // Exit tmux copy-mode first: a paste-buffer into a pane still in copy-mode
       // is swallowed by the copy-mode key table instead of reaching the program.
       if (inTmuxCopyModeRef.current) {
@@ -1020,7 +1021,7 @@ export default function Terminal({
       }
       sendMessage({ type: 'terminal-paste', sessionId: session.id, data: text })
     },
-    [session, isReadOnly, sendMessage, inTmuxCopyModeRef, setTmuxCopyMode]
+    [session, isReadOnly, isInputReady, sendMessage, inTmuxCopyModeRef, setTmuxCopyMode]
   )
 
   const handleRefocus = useCallback(() => {
@@ -1035,7 +1036,7 @@ export default function Terminal({
 
   // Enter text mode: exit copy-mode and focus input (for keyboard button)
   const handleEnterTextMode = useCallback(() => {
-    if (!session || isReadOnly) return
+    if (!session || isReadOnly || !isInputReady) return
     if (inTmuxCopyModeRef.current) {
       sendMessage({ type: 'tmux-cancel-copy-mode', sessionId: session.id })
       setTmuxCopyMode(false)
@@ -1047,7 +1048,7 @@ export default function Terminal({
       textarea.removeAttribute('disabled')
       textarea.focus()
     }
-  }, [session, isReadOnly, sendMessage, containerRef, inTmuxCopyModeRef, setTmuxCopyMode])
+  }, [session, isReadOnly, isInputReady, sendMessage, containerRef, inTmuxCopyModeRef, setTmuxCopyMode])
 
   const isKeyboardVisible = useCallback(() => {
     if (typeof document === 'undefined') return false
@@ -1130,11 +1131,11 @@ export default function Terminal({
       data-testid="terminal-panel"
     >
       {/* Mobile header - always show on mobile for drawer access */}
-      <div className={`flex h-10 shrink-0 items-center justify-between border-b border-border bg-elevated px-3 ${session || hibernatingSession ? '' : 'md:hidden'}`}>
-        <div className="flex items-center gap-3 min-w-0">
+      <div className={`flex min-h-[52px] shrink-0 items-center justify-between border-b border-border bg-elevated px-[6px] md:h-10 md:min-h-0 md:px-3 ${session || hibernatingSession ? '' : 'md:hidden'}`}>
+        <div className="flex min-w-0 items-center gap-[7px] md:gap-3">
           <button
             onClick={() => setIsDrawerOpen(true)}
-            className="flex h-7 w-7 items-center justify-center rounded bg-surface border border-border text-secondary hover:bg-hover hover:text-primary active:scale-95 transition-all md:hidden shrink-0"
+            className="flex size-[44px] shrink-0 items-center justify-center rounded border border-border bg-surface text-secondary transition-all hover:bg-hover hover:text-primary active:scale-95 md:hidden"
             aria-label="Open session menu"
           >
             <Menu01Icon width={16} height={16} />
@@ -1142,8 +1143,9 @@ export default function Terminal({
           {/* Kill session button - desktop only, left of session name */}
           {session && canControl && (
             <button
+              disabled={isSwitching}
               onClick={() => setShowEndConfirm(true)}
-              className="hidden md:flex h-7 w-7 items-center justify-center rounded bg-danger/10 border border-danger/30 text-danger hover:bg-danger/20 active:scale-95 transition-all shrink-0"
+              className="hidden md:flex h-7 w-7 items-center justify-center rounded bg-danger/10 border border-danger/30 text-danger hover:bg-danger/20 active:scale-95 transition-all shrink-0 disabled:cursor-not-allowed disabled:opacity-40"
               title={`Kill session (${modDisplay}X)`}
               aria-label="Kill session"
             >
@@ -1161,7 +1163,7 @@ export default function Terminal({
             </button>
           )}
           {session ? (
-            <div className="flex items-baseline gap-3 min-w-0">
+            <div className="flex min-w-[72px] flex-col items-start gap-px leading-none md:min-w-0 md:flex-row md:items-baseline md:gap-3 md:leading-normal">
               {isRenaming ? (
                 <input
                   ref={renameInputRef}
@@ -1170,23 +1172,26 @@ export default function Terminal({
                   onChange={(e) => setRenameValue(e.target.value)}
                   onBlur={handleRenameSubmit}
                   onKeyDown={handleRenameKeyDown}
-                  className="w-full max-w-[200px] rounded border border-border bg-surface px-2 py-0.5 text-sm font-medium text-primary outline-none focus:border-accent"
+                  className="w-full max-w-[112px] rounded border border-border bg-surface px-2 py-0.5 text-sm font-medium text-primary outline-none focus:border-accent md:max-w-[200px]"
                 />
               ) : (
-                <span className="text-sm font-medium text-primary truncate">
+                <span className="max-w-[112px] truncate text-sm font-medium text-primary md:max-w-none">
                   {session.agentSessionName || session.name}
                 </span>
               )}
-              <span className={`text-xs shrink-0 ${statusClass[session.status]}`}>
+              <span className={`shrink-0 text-[10px] md:hidden ${connectionStatus !== 'connected' ? 'text-approval' : statusClass[session.status]}`}>
+                {connectionStatus !== 'connected' ? connectionStatus : statusText[session.status]}
+              </span>
+              <span className={`hidden shrink-0 text-xs md:inline ${statusClass[session.status]}`}>
                 {statusText[session.status]}
               </span>
             </div>
           ) : hibernatingSession ? (
-            <div className="flex items-baseline gap-2 min-w-0">
-              <span className="text-sm font-medium text-primary truncate">
+            <div className="flex min-w-0 flex-col items-start gap-px leading-none md:flex-row md:items-baseline md:gap-2 md:leading-normal">
+              <span className="max-w-[112px] truncate text-sm font-medium text-primary md:max-w-none">
                 {hibernatingDisplayName}
               </span>
-              <span className="rounded-full bg-blue-500/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-blue-400">
+              <span className="text-[10px] font-medium text-blue-400 md:rounded-full md:bg-blue-500/15 md:px-1.5 md:py-0.5 md:uppercase md:tracking-wide">
                 Hibernating
               </span>
             </div>
@@ -1197,9 +1202,9 @@ export default function Terminal({
           )}
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex shrink-0 items-center gap-[4px] md:gap-1.5">
           {connectionStatus !== 'connected' && (
-            <span className="text-xs text-approval">
+            <span className="hidden text-xs text-approval md:inline">
               {connectionStatus}
             </span>
           )}
@@ -1207,7 +1212,7 @@ export default function Terminal({
           {/* New session button - mobile only (desktop has it in header) */}
           <button
             onClick={onNewSession}
-            className="flex h-7 w-7 items-center justify-center rounded bg-accent text-white hover:bg-accent/90 active:scale-95 transition-all md:hidden"
+            className="flex size-[44px] items-center justify-center rounded bg-accent text-white transition-all hover:bg-accent/90 active:scale-95 md:hidden"
             title={`New session (${modDisplay}N)`}
             aria-label="New session"
           >
@@ -1217,8 +1222,9 @@ export default function Terminal({
           {/* Kill session button - mobile only (desktop has it on left) */}
           {session && canControl && (
             <button
+              disabled={isSwitching}
               onClick={() => setShowEndConfirm(true)}
-              className="flex md:hidden h-7 w-7 items-center justify-center rounded bg-danger/10 border border-danger/30 text-danger hover:bg-danger/20 active:scale-95 transition-all"
+              className="flex size-[44px] items-center justify-center rounded border border-danger/30 bg-danger/10 text-danger transition-all hover:bg-danger/20 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 md:hidden"
               title={`Kill session (${modDisplay}X)`}
               aria-label="Kill session"
             >
@@ -1228,7 +1234,7 @@ export default function Terminal({
           {canHibernate && (
             <button
               onClick={handleHibernateSession}
-              className="flex md:hidden h-7 w-7 items-center justify-center rounded border border-border text-secondary hover:bg-hover hover:text-primary active:scale-95 transition-all"
+              className="hidden size-[44px] items-center justify-center rounded border border-border text-secondary transition-all hover:bg-hover hover:text-primary active:scale-95 min-[360px]:flex md:hidden"
               title="Hibernate session"
               aria-label="Hibernate session"
             >
@@ -1238,7 +1244,7 @@ export default function Terminal({
           {hibernatingSession && (
             <button
               onClick={() => onResumeSession(hibernatingSession.sessionId)}
-              className="btn btn-primary h-7 px-2 text-xs md:hidden"
+              className="btn btn-primary h-[44px] px-3 text-xs md:hidden"
             >
               Wake
             </button>
@@ -1249,7 +1255,7 @@ export default function Terminal({
             <div className="relative md:hidden" ref={moreMenuRef}>
               <button
                 onClick={() => setShowMoreMenu(!showMoreMenu)}
-                className="flex h-7 w-7 items-center justify-center rounded bg-surface border border-border text-secondary hover:bg-hover hover:text-primary active:scale-95 transition-all"
+                className="flex size-[44px] items-center justify-center rounded border border-border bg-surface text-secondary transition-all hover:bg-hover hover:text-primary active:scale-95"
                 title="More options"
                 aria-label="More options"
               >
@@ -1261,7 +1267,7 @@ export default function Terminal({
                   {canControl && (
                     <button
                       onClick={handleStartRename}
-                      className="w-full px-3 py-2 text-left text-sm text-secondary hover:bg-hover hover:text-primary flex items-center gap-2"
+                      className="flex min-h-[44px] w-full items-center gap-2 px-3 py-2 text-left text-sm text-secondary hover:bg-hover hover:text-primary"
                     >
                       <Edit05Icon width={14} height={14} />
                       Rename
@@ -1270,7 +1276,7 @@ export default function Terminal({
                   {canHibernate && (
                     <button
                       onClick={handleHibernateSession}
-                      className="w-full px-3 py-2 text-left text-sm text-secondary hover:bg-hover hover:text-primary flex items-center gap-2"
+                      className="flex min-h-[44px] w-full items-center gap-2 px-3 py-2 text-left text-sm text-secondary hover:bg-hover hover:text-primary"
                     >
                       <Moon01Icon width={14} height={14} />
                       Hibernate
@@ -1281,7 +1287,7 @@ export default function Terminal({
                       onOpenSettings()
                       setShowMoreMenu(false)
                     }}
-                    className="w-full px-3 py-2 text-left text-sm text-secondary hover:bg-hover hover:text-primary flex items-center gap-2"
+                    className="flex min-h-[44px] w-full items-center gap-2 px-3 py-2 text-left text-sm text-secondary hover:bg-hover hover:text-primary"
                   >
                     <Settings01Icon width={14} height={14} />
                     Settings
@@ -1300,7 +1306,7 @@ export default function Terminal({
           {/* Right fade indicator */}
           <div className="absolute right-0 top-0 bottom-0 w-4 bg-gradient-to-l from-elevated to-transparent z-10 pointer-events-none" />
           <div
-            className="flex items-center gap-1.5 pl-5 pr-3 py-1.5 overflow-x-auto scrollbar-none scroll-smooth snap-x snap-mandatory"
+            className="flex items-center gap-[6px] overflow-x-auto px-[8px] py-[5px] scrollbar-none scroll-smooth snap-x snap-mandatory"
             style={{ WebkitOverflowScrolling: 'touch' }}
           >
             {sessions.map((s, index) => {
@@ -1316,7 +1322,7 @@ export default function Terminal({
                   type="button"
                   className={`
                     flex items-center justify-center shrink-0 snap-start
-                    h-8 ${mobileTabsUseNames ? 'min-w-[2rem] px-2.5 max-w-[8rem] truncate' : 'w-8'}
+                    h-[44px] ${mobileTabsUseNames ? 'min-w-[44px] px-2.5 max-w-[8rem] truncate' : 'w-[44px]'}
                     text-sm font-extrabold rounded-lg
                     active:scale-95 transition-all duration-75
                     select-none touch-manipulation
@@ -1347,7 +1353,11 @@ export default function Terminal({
           style={{ backgroundColor: terminalTheme.background }}
         />
         {isSwitching && session && (
-          <div className="absolute top-2 left-2 z-50 flex items-center gap-1.5 rounded-lg bg-black/60 px-2.5 py-1.5 text-xs text-white/90 shadow-lg backdrop-blur-md">
+          <div
+            role="status"
+            aria-live="polite"
+            className="absolute top-2 left-2 z-50 flex items-center gap-1.5 rounded-lg bg-black/60 px-2.5 py-1.5 text-xs text-white/90 shadow-lg backdrop-blur-md"
+          >
             <svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
@@ -1487,7 +1497,7 @@ export default function Terminal({
         <TerminalControls
           onSendKey={handleSendKey}
           onPasteText={handlePasteText}
-          disabled={connectionStatus !== 'connected' || isReadOnly}
+          disabled={connectionStatus !== 'connected' || isReadOnly || !isInputReady}
           sessions={sessions.map(s => ({ id: s.id, name: s.name, status: s.status }))}
           currentSessionId={session.id}
           agentType={session.agentType}

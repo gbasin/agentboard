@@ -145,6 +145,7 @@ let sessionManagerState: {
   setMouseMode: (enabled: boolean) => void
   setTerminalColors: (enabled: boolean) => void
   ensureSession: () => { canPruneWsSessions: boolean }
+  scrubLeakedGlobalEnvironment: () => string[]
 }
 
 class SessionManagerMock {
@@ -179,6 +180,10 @@ class SessionManagerMock {
 
   ensureSession() {
     return sessionManagerState.ensureSession()
+  }
+
+  scrubLeakedGlobalEnvironment() {
+    return sessionManagerState.scrubLeakedGlobalEnvironment()
   }
 }
 
@@ -643,6 +648,7 @@ beforeEach(() => {
     setMouseMode: () => {},
     setTerminalColors: () => {},
     ensureSession: () => ({ canPruneWsSessions: true }),
+    scrubLeakedGlobalEnvironment: () => [],
   }
 
   spawnSyncImpl = () =>
@@ -2871,12 +2877,14 @@ describe('server message handlers', () => {
     let captureTarget = ''
     let captureArgs: string[] = []
     let captureOptions: Parameters<typeof Bun.spawnSync>[1] | undefined
+    let captureUsesUtf8 = false
     let copyModeTarget = ''
     spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
       const command = Array.isArray(args[0]) ? args[0] : [String(args[0])]
       const tmuxArgs = getTmuxArgs(command as string[])
       if (tmuxArgs[0] === 'capture-pane') {
         captureArgs = tmuxArgs
+        captureUsesUtf8 = command[1] === '-u'
         captureTarget = tmuxArgs[2] ?? ''
         captureOptions = args[1]
       }
@@ -2894,7 +2902,7 @@ describe('server message handlers', () => {
         exitCode: 0,
         stdout:
           tmuxArgs[0] === 'capture-pane'
-            ? Buffer.from('visible pane line\n')
+            ? Buffer.from('visible pane 你好 🚀\n')
             : Buffer.from(''),
         stderr: Buffer.from(''),
       } as ReturnType<typeof Bun.spawnSync>
@@ -2921,13 +2929,14 @@ describe('server message handlers', () => {
     expect(attached.switchTargets).toEqual(['agentboard'])
     expect(captureTarget).toBe(groupedTarget)
     expect(captureArgs[0]).toBe('capture-pane')
+    expect(captureUsesUtf8).toBe(true)
     expect(captureArgs).toContain('-e')
     expect(captureOptions?.timeout).toBe(configState.tmuxTimeoutMs)
     const historyIndex = sent.findIndex(
       (message) =>
         message.type === 'terminal-output' &&
         message.sessionId === baseSession.id &&
-        message.data === 'visible pane line\n'
+        message.data === 'visible pane 你好 🚀\n'
     )
     expect(historyIndex).toBeGreaterThanOrEqual(0)
     expect(ws.data.currentTmuxTarget).toBe(groupedTarget)
@@ -2963,7 +2972,7 @@ describe('server message handlers', () => {
     let captureTimeout: number | undefined
     spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
       const command = Array.isArray(args[0]) ? args[0] : [String(args[0])]
-      if (command[0] === 'tmux' && command[1] === 'capture-pane') {
+      if (getTmuxArgs(command as string[])[0] === 'capture-pane') {
         captureTimeout = args[1]?.timeout
         return {
           exitCode: null,
@@ -5891,7 +5900,7 @@ describe('server startup side effects', () => {
 
     spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
       const command = Array.isArray(args[0]) ? args[0] : [String(args[0])]
-      if (command[0] === 'tmux' && command[1] === 'capture-pane') {
+      if (getTmuxArgs(command as string[])[0] === 'capture-pane') {
         syncCapturePaneCalls.push(command as string[])
       }
       return {
@@ -5906,7 +5915,7 @@ describe('server startup side effects', () => {
         exited: Promise.resolve(0),
         stdout: new ReadableStream({
           start(controller) {
-            if (cmd[0] === 'tmux' && cmd[1] === 'capture-pane') {
+            if (getTmuxArgs(cmd as string[])[0] === 'capture-pane') {
               controller.enqueue(new TextEncoder().encode(''))
             }
             controller.close()

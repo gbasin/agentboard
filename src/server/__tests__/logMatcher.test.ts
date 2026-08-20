@@ -20,6 +20,7 @@ import {
   hasMessageInValidUserContext,
   isToolNotificationText,
   extractLastEntryTimestamp,
+  captureTerminalScrollback,
 } from '../logMatcher'
 
 const bunAny = Bun as typeof Bun & {
@@ -30,6 +31,7 @@ const originalSpawn = bunAny.spawn
 const originalSpawnSync = bunAny.spawnSync
 
 const tmuxOutputs = new Map<string, string>()
+const commandCalls: string[][] = []
 
 function setTmuxOutput(target: string, content: string) {
   tmuxOutputs.set(target, content)
@@ -128,7 +130,9 @@ function runRg(args: string[]) {
 }
 
 function runCommand(args: string[]) {
-  if (args[0] === 'tmux' && args[1] === 'capture-pane') {
+  commandCalls.push(args)
+  const tmuxSubcommand = args[1] === '-u' ? args[2] : args[1]
+  if (args[0] === 'tmux' && tmuxSubcommand === 'capture-pane') {
     const targetIndex = args.indexOf('-t')
     const target = targetIndex >= 0 ? args[targetIndex + 1] : ''
     const output = tmuxOutputs.get(target ?? '') ?? ''
@@ -181,6 +185,7 @@ function buildUserLogEntry(message: string): string {
 }
 
 beforeEach(() => {
+  commandCalls.length = 0
   bunAny.spawn = ((args: string[]) => {
     const result = runCommand(args)
     return {
@@ -204,6 +209,20 @@ afterEach(() => {
 })
 
 describe('logMatcher', () => {
+  test('captures tmux scrollback through a UTF-8 client', () => {
+    setTmuxOutput('agentboard:1', '你好 🚀')
+
+    expect(captureTerminalScrollback('agentboard:1', 20)).toEqual({
+      ok: true,
+      content: '你好 🚀',
+    })
+    expect(commandCalls[0]?.slice(0, 3)).toEqual([
+      'tmux',
+      '-u',
+      'capture-pane',
+    ])
+  })
+
   test('normalizeText strips ANSI and control characters', () => {
     const input = '\u001b[31mHello\u001b[0m\u0007\nWorld'
     expect(normalizeText(input)).toBe('hello world')

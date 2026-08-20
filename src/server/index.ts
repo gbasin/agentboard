@@ -528,6 +528,13 @@ const sessionManager = new SessionManager(undefined, {
 // (filtered out of listings) when missing.
 try {
   const ensureResult = sessionManager.ensureSession()
+  // One-time: if an older agentboard booted the tmux daemon with leaked
+  // launch env (NODE_ENV=production etc.), scrub it so new windows are clean.
+  // Startup only — never per refresh tick (each unset is a tmux spawn).
+  const scrubbedEnvVars = sessionManager.scrubLeakedGlobalEnvironment()
+  if (scrubbedEnvVars.length > 0) {
+    logger.info('tmux_global_env_scrubbed', { vars: scrubbedEnvVars })
+  }
   if (ensureResult.canPruneWsSessions) {
     pruneOrphanedWsSessions()
   } else {
@@ -4223,7 +4230,14 @@ function captureTmuxHistory(target: string): string | null {
     // Capture only the visible pane so initial attach paints the current view
     // immediately instead of replaying the entire scrollback buffer.
     const colorArgs = config.terminalColorsEnabled ? ['-e'] : []
-    const result = Bun.spawnSync(['tmux', 'capture-pane', '-t', target, '-p', '-J', ...colorArgs], {
+    const result = Bun.spawnSync(['tmux', ...withTmuxUtf8Flag([
+      'capture-pane',
+      '-t',
+      target,
+      '-p',
+      '-J',
+      ...colorArgs,
+    ])], {
       stdout: 'pipe',
       stderr: 'pipe',
       timeout: config.tmuxTimeoutMs,

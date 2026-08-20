@@ -7,8 +7,13 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { test, expect } from '@playwright/test'
 
+test.use({ viewport: { width: 1440, height: 900 } })
+
 const WINDOW_NAME = 'paste-repl'
 const REPL_PATH = fileURLToPath(new URL('./fixtures/paste-repl.py', import.meta.url))
+const UNICODE_INPUT = 'áéíñü-你好-🚀'
+const UNICODE_HEX =
+  'c3a1c3a9c3adc3b1c3bc2de4bda0e5a5bd2df09f9a80'
 
 function tmux(args: string[]): { status: number | null; stdout: string } {
   const result = spawnSync('tmux', args, { encoding: 'utf-8' })
@@ -98,6 +103,13 @@ test('multi-line text paste is held for editing, not auto-submitted', async ({ p
     await page.locator('.xterm-helper-textarea').focus()
     await page.keyboard.press('Enter')
     await waitForPaneText(target, 'SUBMITTED:e2e_alpha|e2e_beta')
+
+    // IME and predictive keyboards commit characters through the browser's
+    // text-input path. Verify they reach the pane as exact UTF-8 bytes.
+    await page.locator('.xterm-helper-textarea').focus()
+    await page.keyboard.insertText(UNICODE_INPUT)
+    await page.keyboard.press('Enter')
+    await waitForPaneText(target, `INPUT_HEX:${UNICODE_HEX}`)
   } finally {
     tmux(['kill-window', '-t', target])
   }

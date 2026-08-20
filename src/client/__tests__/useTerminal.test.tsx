@@ -504,6 +504,10 @@ describe('useTerminal', () => {
     }
 
     act(() => {
+      listeners[0]?.({ type: 'terminal-ready', sessionId: 'session-1' })
+    })
+
+    act(() => {
       terminal.emitData('ls')
     })
 
@@ -703,6 +707,7 @@ describe('useTerminal', () => {
     } as unknown as Navigator
 
     const sendCalls: Array<Record<string, unknown>> = []
+    const listeners: Array<(message: ServerMessage) => void> = []
     const { container } = createContainerMock()
 
     let renderer!: TestRenderer.ReactTestRenderer
@@ -713,7 +718,10 @@ describe('useTerminal', () => {
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
           sendMessage={(message) => sendCalls.push(message)}
-          subscribe={() => () => {}}
+          subscribe={(listener) => {
+            listeners.push(listener)
+            return () => {}
+          }}
           theme={{ background: '#000' }}
           fontSize={12}
         />,
@@ -725,18 +733,61 @@ describe('useTerminal', () => {
       await Promise.resolve()
     })
 
+    const terminal = TerminalMock.instances[0]
+    if (!terminal) throw new Error('Expected terminal instance')
+
+    act(() => {
+      listeners.forEach((listener) => listener({
+        type: 'terminal-ready',
+        sessionId: 'session-1',
+      }))
+      terminal.emitData('before-switch')
+    })
+
     await act(async () => {
       renderer.update(
         <TerminalHarness
           sessionId="session-2"
           tmuxTarget="agentboard:@2"
           sendMessage={(message) => sendCalls.push(message)}
-          subscribe={() => () => {}}
+          subscribe={(listener) => {
+            listeners.push(listener)
+            return () => {}
+          }}
           theme={{ background: '#000' }}
           fontSize={12}
         />
       )
       await Promise.resolve()
+    })
+
+    act(() => {
+      terminal.emitData('during-switch')
+    })
+
+    expect(sendCalls).not.toContainEqual({
+      type: 'terminal-input',
+      sessionId: 'session-1',
+      data: 'during-switch',
+    })
+    expect(sendCalls).not.toContainEqual({
+      type: 'terminal-input',
+      sessionId: 'session-2',
+      data: 'during-switch',
+    })
+
+    act(() => {
+      listeners.forEach((listener) => listener({
+        type: 'terminal-ready',
+        sessionId: 'session-2',
+      }))
+      terminal.emitData('after-ready')
+    })
+
+    expect(sendCalls).toContainEqual({
+      type: 'terminal-input',
+      sessionId: 'session-2',
+      data: 'after-ready',
     })
 
     expect(sendCalls).toContainEqual({
@@ -755,7 +806,6 @@ describe('useTerminal', () => {
       renderer.unmount()
     })
 
-    const terminal = TerminalMock.instances[0]
     const webglAddon = WebglAddonMock.instances[0]
 
     expect(terminal?.disposed).toBe(true)
@@ -2605,6 +2655,7 @@ describe('useTerminal', () => {
     }) as typeof fetch
 
     const sendCalls: Array<Record<string, unknown>> = []
+    const listeners: Array<(message: ServerMessage) => void> = []
     const { container, dispatchEvent } = createContainerMock()
 
     let renderer!: TestRenderer.ReactTestRenderer
@@ -2616,7 +2667,10 @@ describe('useTerminal', () => {
           tmuxTarget="agentboard:@1"
           agentType="claude"
           sendMessage={(message) => sendCalls.push(message)}
-          subscribe={() => () => {}}
+          subscribe={(listener) => {
+            listeners.push(listener)
+            return () => {}
+          }}
           theme={{ background: '#000' }}
           fontSize={12}
         />,
@@ -2632,7 +2686,10 @@ describe('useTerminal', () => {
           tmuxTarget="agentboard:@2"
           agentType="codex"
           sendMessage={(message) => sendCalls.push(message)}
-          subscribe={() => () => {}}
+          subscribe={(listener) => {
+            listeners.push(listener)
+            return () => {}
+          }}
           theme={{ background: '#000' }}
           fontSize={12}
         />,
@@ -2642,6 +2699,13 @@ describe('useTerminal', () => {
 
     const terminal = TerminalMock.instances[0]
     if (!terminal) throw new Error('Expected terminal instance')
+
+    act(() => {
+      listeners.forEach((listener) => listener({
+        type: 'terminal-ready',
+        sessionId: 'session-2',
+      }))
+    })
 
     terminal.emitKey({ key: 'v', type: 'keydown', metaKey: true, ctrlKey: false })
 

@@ -172,6 +172,7 @@ describe('sessionRefreshWorker', () => {
       joinTmuxFields(['agentboard', '1', 'alpha', '/Users/test/project', '100', '1700000000', '"claude --dangerously-skip-permissions"', '80', '24']),
     ].join('\n')
 
+    let captureCommand: string[] | undefined
     bunAny.spawnSync = ((args: string[]) => {
       if (getTmuxSubcommand(args) === 'list-windows') {
         return {
@@ -181,6 +182,7 @@ describe('sessionRefreshWorker', () => {
         } as ReturnType<typeof Bun.spawnSync>
       }
       if (getTmuxSubcommand(args) === 'capture-pane') {
+        captureCommand = args
         return {
           exitCode: 0,
           stdout: Buffer.from('ready'),
@@ -208,6 +210,7 @@ describe('sessionRefreshWorker', () => {
 
     expect(response.sessions).toHaveLength(1)
     expect(response.sessions[0]?.command).toBe('claude --dangerously-skip-permissions')
+    expect(captureCommand?.slice(0, 3)).toEqual(['tmux', '-u', 'capture-pane'])
     expect(response.sessions[0]?.agentType).toBe('claude')
   })
 

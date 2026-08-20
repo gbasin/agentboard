@@ -46,6 +46,32 @@ function findPasteButton(renderer: TestRenderer.ReactTestRenderer) {
 }
 
 describe('TerminalControls', () => {
+  test('renders the mobile key deck as one scrollable row of 44px targets', () => {
+    const renderer = TestRenderer.create(
+      <TerminalControls
+        onSendKey={() => {}}
+        sessions={[{ id: 'session-1', name: 'alpha', status: 'working' }]}
+        currentSessionId="session-1"
+        onSelectSession={() => {}}
+      />
+    )
+
+    const keyDeck = renderer.root.findAllByType('div').find((element) =>
+      String(element.props.className ?? '').includes('grid-flow-col')
+    )
+    expect(keyDeck).toBeDefined()
+    expect(String(keyDeck?.props.className)).toContain('auto-cols-[44px]')
+    expect(String(keyDeck?.props.className)).toContain('overflow-x-auto')
+
+    const keyButtons = renderer.root.findAllByType('button').filter((button) =>
+      String(button.props.className ?? '').includes('terminal-key')
+    )
+    expect(keyButtons).toHaveLength(9)
+    expect(keyButtons.every((button) =>
+      String(button.props.className).includes('size-[44px]')
+    )).toBe(true)
+  })
+
   test('ctrl toggle modifies keys and resets', () => {
     globalAny.navigator = { vibrate: () => true } as unknown as Navigator
 
@@ -110,6 +136,9 @@ describe('TerminalControls', () => {
       )
 
     expect(sessionButtons).toHaveLength(2)
+    expect(sessionButtons.every((button) =>
+      String(button.props.className).includes('h-[44px]')
+    )).toBe(true)
 
     act(() => {
       sessionButtons[1]?.props.onClick()
@@ -193,8 +222,9 @@ describe('TerminalControls', () => {
     expect(sent).toEqual(['pasted text'])
   })
 
-  test('manual paste input sends text on enter', async () => {
+  test('manual paste textarea preserves multiline text', async () => {
     const sent: string[] = []
+    const pasted: string[] = []
 
     globalAny.navigator = {
       vibrate: () => true,
@@ -207,6 +237,7 @@ describe('TerminalControls', () => {
     const renderer = TestRenderer.create(
       <TerminalControls
         onSendKey={(key) => sent.push(key)}
+        onPasteText={(text) => pasted.push(text)}
         sessions={[{ id: 'session-1', name: 'alpha', status: 'working' }]}
         currentSessionId="session-1"
         onSelectSession={() => {}}
@@ -222,20 +253,38 @@ describe('TerminalControls', () => {
       await pasteButton.props.onClick()
     })
 
-    const input = renderer.root.findByType('input')
+    const textarea = renderer.root.findByType('textarea')
 
     act(() => {
-      input.props.onChange({ target: { value: 'manual' } })
+      textarea.props.onChange({ target: { value: 'line 1\nline 2\n' } })
     })
 
+    let prevented = false
     act(() => {
-      input.props.onKeyDown({
+      textarea.props.onKeyDown({
         key: 'Enter',
-        preventDefault: () => {},
+        preventDefault: () => {
+          prevented = true
+        },
       })
     })
 
-    expect(sent).toEqual(['manual'])
+    expect(prevented).toBe(false)
+    expect(pasted).toEqual([])
+
+    const sendButton = renderer.root
+      .findAllByType('button')
+      .find((button) => button.props.children === 'Send')
+    if (!sendButton) {
+      throw new Error('Expected send button')
+    }
+
+    act(() => {
+      sendButton.props.onClick()
+    })
+
+    expect(pasted).toEqual(['line 1\nline 2\n'])
+    expect(sent).toEqual([])
   })
 
   test('paste button uploads clipboard image and sends a bracketed path for Claude', async () => {

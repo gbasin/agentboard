@@ -170,7 +170,8 @@ beforeEach(async () => {
   process.env.PI_HOME = path.join(tempRoot, 'pi')
 
   bunAny.spawnSync = ((args: string[]) => {
-    if (args[0] === 'tmux' && args[1] === 'capture-pane') {
+    const tmuxSubcommand = args[1] === '-u' ? args[2] : args[1]
+    if (args[0] === 'tmux' && tmuxSubcommand === 'capture-pane') {
       const targetIndex = args.indexOf('-t')
       const target = targetIndex >= 0 ? args[targetIndex + 1] : ''
       const output = tmuxOutputs.get(target ?? '') ?? ''

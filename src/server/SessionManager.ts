@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import path from 'node:path'
 import { inferAgentType, normalizePaneStartCommand } from './agentDetection'
 import { config } from './config'
 import { resolveExternalDisplayName } from './displayName'
@@ -7,6 +8,7 @@ import { generateSessionName } from './nameGenerator'
 import { logger } from './logger'
 import { resolveProjectPath } from './paths'
 import { TmuxTimeoutError } from './tmuxTimeout'
+import { isLeakedLaunchEnvVar, sanitizedTmuxEnv } from './tmuxEnv'
 import {
   BOOTSTRAP_WINDOW_COMMAND,
   BOOTSTRAP_WINDOW_NAME,
@@ -34,6 +36,11 @@ interface WindowInfo {
 
 type TmuxRunner = (args: string[]) => string
 type NowFn = () => number
+type RecoverTmuxSocket = () => boolean
+type RememberTmuxServerPid = (pid: number) => void
+const TMUX_RECOVERY_SETTLE_MS = 200
+const TMUX_RECOVERY_SIGNAL_INTERVAL_MS = 30_000
+let lastTmuxRecoverySignal: { pid: number; sentAt: number } | null = null
 type GroupLookupResult =
   | { reliable: true; sessionName: string | null }
   | { reliable: false; sessionName: null }
@@ -97,6 +104,8 @@ export class SessionManager {
   private displayNameExists: (name: string, excludeSessionId?: string) => boolean
   private mouseMode: boolean
   private terminalColorsEnabled: boolean
+  private recoverTmuxSocket: RecoverTmuxSocket
+  private rememberTmuxServerPid: RememberTmuxServerPid
 
   constructor(
     sessionName = config.tmuxSession,
@@ -107,6 +116,8 @@ export class SessionManager {
       displayNameExists,
       mouseMode = true,
       terminalColorsEnabled = config.terminalColorsEnabled ?? true,
+      recoverTmuxSocket: recoverTmuxSocketOverride,
+      rememberTmuxServerPid: rememberTmuxServerPidOverride,
     }: {
       runTmux?: TmuxRunner
       capturePaneContent?: CapturePane
@@ -114,6 +125,8 @@ export class SessionManager {
       displayNameExists?: (name: string, excludeSessionId?: string) => boolean
       mouseMode?: boolean
       terminalColorsEnabled?: boolean
+      recoverTmuxSocket?: RecoverTmuxSocket
+      rememberTmuxServerPid?: RememberTmuxServerPid
     } = {}
   ) {
     this.sessionName = sessionName
@@ -123,6 +136,14 @@ export class SessionManager {
     this.displayNameExists = displayNameExists ?? (() => false)
     this.mouseMode = mouseMode
     this.terminalColorsEnabled = terminalColorsEnabled
+    // A custom runner normally represents an isolated unit-test tmux model.
+    // Do not let those tests inspect or signal the machine's real tmux server.
+    this.recoverTmuxSocket =
+      recoverTmuxSocketOverride ??
+      (runTmuxOverride ? () => false : recoverPersistedTmuxSocket)
+    this.rememberTmuxServerPid =
+      rememberTmuxServerPidOverride ??
+      (runTmuxOverride ? () => {} : persistTmuxServerPid)
   }
 
   ensureSession(): EnsureSessionResult {
@@ -140,6 +161,44 @@ export class SessionManager {
       if (error instanceof TmuxTimeoutError) {
         throw error
       }
+      if (!isTmuxSessionAbsentError(error)) {
+        throw error
+      }
+
+      if (isTmuxConnectionError(error) && this.recoverTmuxSocket()) {
+        try {
+          this.runTmux(['has-session', '-t', `=${this.sessionName}`])
+          this.configureSession()
+          this.recordTmuxServerPid()
+          return { canPruneWsSessions }
+        } catch (retryError) {
+          if (retryError instanceof TmuxTimeoutError) {
+            throw retryError
+          }
+          if (!isTmuxSessionAbsentError(retryError)) {
+            throw retryError
+          }
+
+          // The session itself may have been removed while other sessions on
+          // the same server survived. Prove that the recovered server is
+          // reachable before allowing new-session to run. Otherwise a missing
+          // socket would make tmux start a second server and orphan live panes.
+          try {
+            this.runParsedTmux(['list-sessions', '-F', '#{session_name}'])
+          } catch (probeError) {
+            if (probeError instanceof TmuxTimeoutError) {
+              throw probeError
+            }
+            if (isTmuxSessionAbsentError(probeError)) {
+              throw new Error(
+                'A live tmux server did not recreate its socket; refusing to start a replacement server'
+              )
+            }
+            throw probeError
+          }
+        }
+      }
+
       const groupLookup = this.findSessionInGroup()
       if (groupLookup.sessionName) {
         this.runTmux([
@@ -162,7 +221,68 @@ export class SessionManager {
       }
     }
     this.configureSession()
+    this.recordTmuxServerPid()
     return { canPruneWsSessions }
+  }
+
+  private recordTmuxServerPid(): void {
+    try {
+      const rawPid = this.runParsedTmux([
+        'display-message',
+        '-p',
+        '-t',
+        `=${this.sessionName}`,
+        '#{pid}',
+      ]).trim()
+      const pid = Number.parseInt(rawPid, 10)
+      if (Number.isSafeInteger(pid) && pid > 1) {
+        this.rememberTmuxServerPid(pid)
+      }
+    } catch (error) {
+      logger.warn('tmux_server_pid_record_failed', {
+        message: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
+  // One-time repair for a tmux server daemon that an older agentboard booted
+  // with its launch environment (see tmuxEnv.ts): unset the leaked vars from
+  // the daemon's global environment so future panes are clean. Guarded on the
+  // AGENTBOARD_STATIC_DIR fingerprint — the daemon may be the user's own
+  // shared server, and a NODE_ENV they set deliberately must survive; only a
+  // daemon whose global env carries our launcher's fingerprint gets scrubbed.
+  // Call once at startup, not per refresh tick (each unset is a synchronous
+  // tmux spawn). Existing panes keep their env; only new windows benefit.
+  scrubLeakedGlobalEnvironment(): string[] {
+    let output: string
+    try {
+      output = this.runTmux(['show-environment', '-g'])
+    } catch {
+      return []
+    }
+    const leaked: string[] = []
+    let fingerprint = false
+    for (const line of splitTmuxLines(output)) {
+      // Removed-var markers start with '-'; values containing '=' are split
+      // on the first one.
+      if (!line || line.startsWith('-')) continue
+      const eq = line.indexOf('=')
+      if (eq <= 0) continue
+      const name = line.slice(0, eq)
+      if (name === 'AGENTBOARD_STATIC_DIR') fingerprint = true
+      if (isLeakedLaunchEnvVar(name)) leaked.push(name)
+    }
+    if (!fingerprint) return []
+    const scrubbed: string[] = []
+    for (const name of leaked) {
+      try {
+        this.runTmux(['set-environment', '-g', '-u', name])
+        scrubbed.push(name)
+      } catch {
+        // Best-effort: a failed unset just leaves that var for next startup.
+      }
+    }
+    return scrubbed
   }
 
   private findSessionInGroup(): GroupLookupResult {
@@ -789,6 +909,10 @@ function runTmux(args: string[]): string {
     stdout: 'pipe',
     stderr: 'pipe',
     timeout,
+    // If this call boots the tmux server daemon (new-session with no server
+    // running), the daemon keeps this environment as its global environment
+    // forever and every future pane inherits it — so hand it a sanitized one.
+    env: sanitizedTmuxEnv(),
   })
   if (result.signalCode === 'SIGTERM' || result.exitCode === null) {
     throw new TmuxTimeoutError(command, timeout)
@@ -802,8 +926,97 @@ function runTmux(args: string[]): string {
   return result.stdout.toString()
 }
 
+function persistTmuxServerPid(pid: number): void {
+  const pidFile = config.tmuxServerPidFile
+  const directory = path.dirname(pidFile)
+  const temporaryFile = `${pidFile}.${process.pid}.tmp`
+  fs.mkdirSync(directory, { recursive: true, mode: 0o700 })
+
+  if (readPersistedTmuxServerPid(pidFile) === pid) {
+    return
+  }
+
+  fs.writeFileSync(temporaryFile, `${pid}\n`, { mode: 0o600 })
+  fs.renameSync(temporaryFile, pidFile)
+}
+
+function recoverPersistedTmuxSocket(): boolean {
+  const pid = readPersistedTmuxServerPid(config.tmuxServerPidFile)
+  if (pid === null || !isTmuxServerProcess(pid)) {
+    return false
+  }
+
+  const now = Date.now()
+  if (
+    lastTmuxRecoverySignal?.pid === pid &&
+    now - lastTmuxRecoverySignal.sentAt < TMUX_RECOVERY_SIGNAL_INTERVAL_MS
+  ) {
+    return true
+  }
+
+  try {
+    process.kill(pid, 'SIGUSR1')
+    lastTmuxRecoverySignal = { pid, sentAt: now }
+    // tmux recreates a removed socket asynchronously after SIGUSR1. Give it
+    // the same short settle window used by the launchd watchdog before the
+    // caller probes the socket again.
+    Bun.sleepSync(TMUX_RECOVERY_SETTLE_MS)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function readPersistedTmuxServerPid(pidFile: string): number | null {
+  try {
+    const pid = Number.parseInt(fs.readFileSync(pidFile, 'utf8').trim(), 10)
+    return Number.isSafeInteger(pid) && pid > 1 ? pid : null
+  } catch {
+    return null
+  }
+}
+
+function isTmuxServerProcess(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+  } catch {
+    return false
+  }
+
+  const result = Bun.spawnSync(['ps', '-p', String(pid), '-o', 'comm='], {
+    stdout: 'pipe',
+    stderr: 'ignore',
+    timeout: config.tmuxTimeoutMs,
+  })
+  if (result.exitCode !== 0) {
+    return false
+  }
+
+  const command = path.basename(result.stdout.toString().trim())
+  return command === 'tmux' || command.startsWith('tmux:')
+}
+
 function getTmuxCommand(args: string[]): string {
   return args[0] === '-u' ? args[1] ?? 'command' : args[0] ?? 'command'
+}
+
+function isTmuxConnectionError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false
+  }
+
+  const message = error.message.toLowerCase()
+  return (
+    message.includes('failed to connect to server') ||
+    message.includes('no server running') ||
+    (
+      message.includes('error connecting to ') &&
+      (
+        message.includes('no such file or directory') ||
+        message.includes('connection refused')
+      )
+    )
+  )
 }
 
 function isTmuxSessionAbsentError(error: unknown): boolean {
@@ -815,15 +1028,7 @@ function isTmuxSessionAbsentError(error: unknown): boolean {
   return (
     message.includes("can't find session") ||
     message.includes('session not found') ||
-    message.includes('failed to connect to server') ||
-    message.includes('no server running') ||
-    (
-      message.includes('error connecting to ') &&
-      (
-        message.includes('no such file or directory') ||
-        message.includes('connection refused')
-      )
-    )
+    isTmuxConnectionError(error)
   )
 }
 
@@ -918,7 +1123,13 @@ function capturePaneWithDimensions(tmuxWindow: string): PaneCapture | null {
     // Use -J to unwrap lines and only capture visible content (no scrollback)
     // This prevents false positives from scrollback buffer changes on window focus
     const result = Bun.spawnSync(
-      ['tmux', 'capture-pane', '-t', tmuxWindow, '-p', '-J'],
+      ['tmux', ...withTmuxUtf8Flag([
+        'capture-pane',
+        '-t',
+        tmuxWindow,
+        '-p',
+        '-J',
+      ])],
       {
         stdout: 'pipe',
         stderr: 'pipe',

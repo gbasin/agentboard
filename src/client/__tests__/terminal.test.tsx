@@ -501,6 +501,21 @@ describe('Terminal', () => {
     })
 
     const openButton = renderer.root.findByProps({ 'aria-label': 'Open session menu' })
+    expect(String(openButton.props.className)).toContain('size-[44px]')
+
+    const mobileStatus = renderer.root.findAllByType('span').find((span) =>
+      span.props.children === 'Working' &&
+      String(span.props.className ?? '').includes('md:hidden')
+    )
+    expect(mobileStatus).toBeDefined()
+    expect(String(mobileStatus?.props.className)).toContain('text-[10px]')
+
+    const mobileKillButton = renderer.root
+      .findAllByProps({ 'aria-label': 'Kill session' })
+      .find((button) => String(button.props.className ?? '').includes('md:hidden'))
+    expect(mobileKillButton).toBeDefined()
+    expect(String(mobileKillButton?.props.className)).toContain('size-[44px]')
+
     act(() => {
       openButton.props.onClick()
     })
@@ -528,6 +543,7 @@ describe('Terminal', () => {
     if (!switchButton) {
       throw new Error('Expected session switcher button')
     }
+    expect(String(switchButton.props.className)).toContain('h-[44px]')
 
     act(() => {
       switchButton.props.onClick()

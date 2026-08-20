@@ -44,6 +44,7 @@ mkdirSync(codexDir, { recursive: true })
 mkdirSync(piDir, { recursive: true })
 process.env.AGENTBOARD_DB_PATH = `${tmuxTmpDir}/agentboard.db`
 process.env.LOG_FILE = `${tmuxTmpDir}/agentboard.log`
+process.env.AGENTBOARD_TMUX_PID_FILE = `${tmuxTmpDir}/tmux-server.pid`
 process.env.CLAUDE_CONFIG_DIR = claudeDir
 process.env.CODEX_HOME = codexDir
 process.env.PI_HOME = piDir
@@ -62,7 +63,7 @@ export default defineConfig({
     // AGENTBOARD_STATIC_DIR is pinned to the repo build: when e2e runs from a
     // shell inside a live agentboard session, the inherited env points at the
     // installed npm package's bundle and the tests would exercise stale code.
-    command: `[ -d dist/client ] || bun run build && PORT=${port} TMUX_SESSION=${tmuxSession} AGENTBOARD_STATIC_DIR=dist/client bun src/server/index.ts`,
+    command: `[ -d dist/client ] || bun run build && LC_ALL=C LANG=C PORT=${port} TMUX_SESSION=${tmuxSession} AGENTBOARD_STATIC_DIR=dist/client bun src/server/index.ts`,
     url: `http://localhost:${port}`,
     reuseExistingServer: !process.env.CI,
     timeout: 120000,
