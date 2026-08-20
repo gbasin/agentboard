@@ -1976,6 +1976,81 @@ describe('SessionManager', () => {
     expect(sessions.find((session) => session.name === 'alpha')).toBeTruthy()
   })
 
+  test('ensureSession recovers a missing socket before creating a replacement server', () => {
+    const sessionName = 'agentboard-recover-socket'
+    let socketReachable = false
+    const calls: string[][] = []
+    const rememberedPids: number[] = []
+    const runTmux = (args: string[]) => {
+      const normalized = normalizeParsedTmuxArgs(args)
+      calls.push(normalized)
+      if (normalized[0] === 'has-session') {
+        if (!socketReachable) throw new Error('no server running')
+        return ''
+      }
+      if (normalized[0] === 'display-message') return '4242\n'
+      return ''
+    }
+
+    const manager = new SessionManager(sessionName, {
+      runTmux,
+      capturePaneContent: () => makePaneCapture(''),
+      recoverTmuxSocket: () => {
+        socketReachable = true
+        return true
+      },
+      rememberTmuxServerPid: (pid) => rememberedPids.push(pid),
+    })
+
+    expect(manager.ensureSession()).toEqual({ canPruneWsSessions: true })
+    expect(calls.filter((call) => call[0] === 'has-session')).toHaveLength(2)
+    expect(calls.some((call) => call[0] === 'new-session')).toBe(false)
+    expect(rememberedPids).toEqual([4242])
+  })
+
+  test('ensureSession does not signal socket recovery when only the session is missing', () => {
+    const sessionName = 'agentboard-session-missing'
+    const calls: string[][] = []
+    let recoveryAttempts = 0
+    const manager = new SessionManager(sessionName, {
+      runTmux: (args) => {
+        const normalized = normalizeParsedTmuxArgs(args)
+        calls.push(normalized)
+        if (normalized[0] === 'has-session') {
+          throw new Error(`can't find session: ${sessionName}`)
+        }
+        return ''
+      },
+      capturePaneContent: () => makePaneCapture(''),
+      recoverTmuxSocket: () => {
+        recoveryAttempts += 1
+        return true
+      },
+    })
+
+    expect(manager.ensureSession()).toEqual({ canPruneWsSessions: true })
+    expect(recoveryAttempts).toBe(0)
+    expect(calls.some((call) => call[0] === 'new-session')).toBe(true)
+  })
+
+  test('ensureSession refuses a replacement when live-server socket recovery fails', () => {
+    const calls: string[][] = []
+    const manager = new SessionManager('agentboard-recovery-failed', {
+      runTmux: (args) => {
+        const normalized = normalizeParsedTmuxArgs(args)
+        calls.push(normalized)
+        throw new Error('no server running')
+      },
+      capturePaneContent: () => makePaneCapture(''),
+      recoverTmuxSocket: () => true,
+    })
+
+    expect(() => manager.ensureSession()).toThrow(
+      'A live tmux server did not recreate its socket; refusing to start a replacement server'
+    )
+    expect(calls.some((call) => call[0] === 'new-session')).toBe(false)
+  })
+
   test('ensureSession does not rejoin unrelated sessions with matching prefixes', () => {
     const sessionName = 'agentboard-prefix'
     const unrelatedSession = `${sessionName}-work`
