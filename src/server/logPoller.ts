@@ -35,6 +35,7 @@ const HISTORY_SNAPSHOT_MAX_AGE_HOURS = 72
 // short prefix is enough — full texts made each postMessage clone ~100+ MB.
 const SNAPSHOT_MESSAGE_MAX_LENGTH = 2048
 const STARTUP_LAST_MESSAGE_BACKFILL_MAX = 100
+const STARTUP_RECONCILIATION_DELAY_MS = 5000
 const MIN_LOG_TOKENS_FOR_INSERT = 1
 const REMATCH_COOLDOWN_MS = 60 * 1000 // 1 minute between re-match attempts
 const WAKE_PENDING_REMATCH_TTL_MS = 10 * 60 * 1000
@@ -158,6 +159,7 @@ interface PollStats {
   orphans: number
   errors: number
   durationMs: number
+  completed: boolean
 }
 
 interface MatchWorkerClient {
@@ -170,6 +172,7 @@ interface MatchWorkerClient {
 
 export class LogPoller {
   private interval: ReturnType<typeof setInterval> | null = null
+  private startupReconciliationTimer: ReturnType<typeof setTimeout> | null = null
   private logWatcher: LogWatcher | null = null
   private db: SessionDatabase
   private registry: SessionRegistry
@@ -180,8 +183,10 @@ export class LogPoller {
   private maxLogsPerPoll: number
   private matchProfile: boolean
   private rgThreads?: number
+  private startupReconciliationDelayMs: number
   private matchWorker: MatchWorkerClient | null
   private pollInFlight = false
+  private pendingChangedPaths = new Set<string>()
   private orphanRematchPending = true
   private orphanRematchInProgress = false
   private orphanRematchPromise: Promise<void> | null = null
@@ -205,6 +210,7 @@ export class LogPoller {
       rgThreads,
       matchWorker,
       matchWorkerClient,
+      startupReconciliationDelayMs,
     }: {
       onSessionOrphaned?: (sessionId: string, supersededBy?: string) => void
       onSessionActivated?: (sessionId: string, window: string) => void
@@ -215,6 +221,7 @@ export class LogPoller {
       rgThreads?: number
       matchWorker?: boolean
       matchWorkerClient?: MatchWorkerClient
+      startupReconciliationDelayMs?: number
     } = {}
   ) {
     this.db = db
@@ -227,6 +234,10 @@ export class LogPoller {
     this.maxLogsPerPoll = Math.max(1, limit)
     this.matchProfile = matchProfile ?? false
     this.rgThreads = rgThreads
+    this.startupReconciliationDelayMs = Math.max(
+      0,
+      startupReconciliationDelayMs ?? STARTUP_RECONCILIATION_DELAY_MS
+    )
     this.matchWorker =
       matchWorkerClient ??
       (matchWorker ? (new LogMatchWorkerClient() as MatchWorkerClient) : null)
@@ -247,14 +258,10 @@ export class LogPoller {
   private startPollMode(intervalMs: number): void {
     const safeInterval = Math.max(MIN_INTERVAL_MS, intervalMs)
     this.interval = setInterval(() => {
-      void this.pollOnce()
+      void this.runComprehensiveReconciliation()
     }, safeInterval)
-    // Start orphan rematch after first poll completes to avoid worker contention
-    void this.pollOnce().then(() => {
-      if (this.orphanRematchPending && !this.orphanRematchInProgress) {
-        this.orphanRematchPromise = this.runOrphanRematchInBackground()
-      }
-    })
+    // Start orphan rematch after the first successful comprehensive poll.
+    void this.runComprehensiveReconciliation()
   }
 
   private startWatchMode(fallbackIntervalMs: number): void {
@@ -272,14 +279,37 @@ export class LogPoller {
     // fallback interval to avoid regressing from the default 5s poll mode.
     const minFallback = process.platform === 'linux' ? 15_000 : 60_000
     this.interval = setInterval(() => {
-      void this.pollOnce()
+      void this.runComprehensiveReconciliation()
     }, Math.max(fallbackIntervalMs, minFallback))
 
-    void this.pollOnce().then(() => {
-      if (this.orphanRematchPending && !this.orphanRematchInProgress) {
-        this.orphanRematchPromise = this.runOrphanRematchInBackground()
-      }
+    // Refresh only persisted live-session logs on startup. The watcher handles
+    // new activity from this point forward, while a delayed and then periodic
+    // comprehensive reconciliation finds logs created while we were offline.
+    // This keeps a large historical log tree off the startup critical path.
+    const startupPaths = this.db
+      .getActiveSessions()
+      .map((session) => session.logFilePath)
+      .filter((logPath): logPath is string => Boolean(logPath))
+
+    const startupRefresh = startupPaths.length > 0
+      ? this.pollChanged(startupPaths)
+      : Promise.resolve()
+
+    void startupRefresh.then(() => {
+      if (!this.logWatcher) return
+      this.startupReconciliationTimer = setTimeout(() => {
+        this.startupReconciliationTimer = null
+        void this.runComprehensiveReconciliation()
+      }, this.startupReconciliationDelayMs)
     })
+  }
+
+  private async runComprehensiveReconciliation(): Promise<void> {
+    const stats = await this.pollOnce()
+    if (!stats.completed || stats.errors > 0) return
+    if (this.orphanRematchPending && !this.orphanRematchInProgress) {
+      this.orphanRematchPromise = this.runOrphanRematchInBackground()
+    }
   }
 
   /** Wait for the background orphan rematch to complete (for testing) */
@@ -544,6 +574,10 @@ export class LogPoller {
       clearInterval(this.interval)
     }
     this.interval = null
+    if (this.startupReconciliationTimer) {
+      clearTimeout(this.startupReconciliationTimer)
+    }
+    this.startupReconciliationTimer = null
     this.logWatcher?.stop()
     this.logWatcher = null
     this.matchWorker?.dispose()
@@ -562,7 +596,18 @@ export class LogPoller {
   }
 
   async pollChanged(changedPaths: string[]): Promise<void> {
-    if (this.pollInFlight) return
+    for (const changedPath of changedPaths) {
+      this.pendingChangedPaths.add(changedPath)
+    }
+    if (this.pollInFlight || this.pendingChangedPaths.size === 0) return
+
+    const pathsToPoll = [...this.pendingChangedPaths].slice(
+      0,
+      this.maxLogsPerPoll
+    )
+    for (const pathToPoll of pathsToPoll) {
+      this.pendingChangedPaths.delete(pathToPoll)
+    }
     this.pollInFlight = true
 
     try {
@@ -585,7 +630,20 @@ export class LogPoller {
         lastUserMessage: toSnapshotMessage(session.lastUserMessage),
         lastKnownLogSize: session.lastKnownLogSize,
       }))
-      const knownSessions: KnownSession[] = this.db.getKnownSessionKeys()
+      // Watch batches are already path-scoped. Resolve metadata only for those
+      // paths instead of loading and cloning every historical session key.
+      const knownSessions: KnownSession[] = pathsToPoll.flatMap((logPath) => {
+        const session = this.db.getSessionByLogPath(logPath)
+        if (!session) return []
+        return [{
+          logFilePath: session.logFilePath,
+          sessionId: session.sessionId,
+          projectPath: session.projectPath,
+          slug: session.slug,
+          agentType: session.agentType,
+          isCodexExec: session.isCodexExec,
+        }]
+      })
 
       const response = await this.matchWorker.poll({
         windows,
@@ -599,7 +657,7 @@ export class LogPoller {
         orphanCandidates: [],
         lastMessageCandidates: [],
         skipMatchingPatterns: config.skipMatchingPatterns,
-        preFilteredPaths: changedPaths,
+        preFilteredPaths: pathsToPoll,
         search: {
           rgThreads: this.rgThreads,
         },
@@ -610,11 +668,17 @@ export class LogPoller {
     } catch (error) {
       logger.warn('log_poll_changed_error', {
         message: error instanceof Error ? error.message : String(error),
-        pathCount: changedPaths.length,
+        pathCount: pathsToPoll.length,
       })
     } finally {
       this.pollInFlight = false
+      this.drainPendingChangedPaths()
     }
+  }
+
+  private drainPendingChangedPaths(): void {
+    if (this.pendingChangedPaths.size === 0) return
+    queueMicrotask(() => void this.pollChanged([]))
   }
 
   private processMatchResponse(
@@ -964,6 +1028,7 @@ export class LogPoller {
       orphans,
       errors,
       durationMs: 0,
+      completed: true,
     }
   }
 
@@ -976,6 +1041,7 @@ export class LogPoller {
         orphans: 0,
         errors: 0,
         durationMs: 0,
+        completed: false,
       }
     }
     this.pollInFlight = true
@@ -1106,6 +1172,7 @@ export class LogPoller {
             orphans: 0,
             errors: 0,
             durationMs: 0,
+            completed: false,
           }
       processMs = Date.now() - processStartedAt
 
@@ -1117,6 +1184,7 @@ export class LogPoller {
         orphans: processed.orphans,
         errors: processed.errors + workerErrors,
         durationMs,
+        completed: response !== null,
       }
 
       logger.info('log_poll', {
@@ -1132,6 +1200,7 @@ export class LogPoller {
       return stats
     } finally {
       this.pollInFlight = false
+      this.drainPendingChangedPaths()
     }
   }
 }
