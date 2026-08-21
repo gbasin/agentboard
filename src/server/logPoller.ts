@@ -182,6 +182,7 @@ export class LogPoller {
   private rgThreads?: number
   private matchWorker: MatchWorkerClient | null
   private pollInFlight = false
+  private pendingChangedPaths = new Set<string>()
   private orphanRematchPending = true
   private orphanRematchInProgress = false
   private orphanRematchPromise: Promise<void> | null = null
@@ -275,7 +276,20 @@ export class LogPoller {
       void this.pollOnce()
     }, Math.max(fallbackIntervalMs, minFallback))
 
-    void this.pollOnce().then(() => {
+    // Refresh only persisted live-session logs on startup. The watcher handles
+    // new activity from this point forward, while the fallback poll performs
+    // the comprehensive reconciliation for logs created while we were offline.
+    // This keeps a large historical log tree off the startup critical path.
+    const startupPaths = this.db
+      .getActiveSessions()
+      .map((session) => session.logFilePath)
+      .filter((logPath): logPath is string => Boolean(logPath))
+
+    const startupRefresh = startupPaths.length > 0
+      ? this.pollChanged(startupPaths)
+      : Promise.resolve()
+
+    void startupRefresh.then(() => {
       if (this.orphanRematchPending && !this.orphanRematchInProgress) {
         this.orphanRematchPromise = this.runOrphanRematchInBackground()
       }
@@ -562,7 +576,13 @@ export class LogPoller {
   }
 
   async pollChanged(changedPaths: string[]): Promise<void> {
-    if (this.pollInFlight) return
+    for (const changedPath of changedPaths) {
+      this.pendingChangedPaths.add(changedPath)
+    }
+    if (this.pollInFlight || this.pendingChangedPaths.size === 0) return
+
+    const pathsToPoll = [...this.pendingChangedPaths]
+    this.pendingChangedPaths.clear()
     this.pollInFlight = true
 
     try {
@@ -585,7 +605,20 @@ export class LogPoller {
         lastUserMessage: toSnapshotMessage(session.lastUserMessage),
         lastKnownLogSize: session.lastKnownLogSize,
       }))
-      const knownSessions: KnownSession[] = this.db.getKnownSessionKeys()
+      // Watch batches are already path-scoped. Resolve metadata only for those
+      // paths instead of loading and cloning every historical session key.
+      const knownSessions: KnownSession[] = pathsToPoll.flatMap((logPath) => {
+        const session = this.db.getSessionByLogPath(logPath)
+        if (!session) return []
+        return [{
+          logFilePath: session.logFilePath,
+          sessionId: session.sessionId,
+          projectPath: session.projectPath,
+          slug: session.slug,
+          agentType: session.agentType,
+          isCodexExec: session.isCodexExec,
+        }]
+      })
 
       const response = await this.matchWorker.poll({
         windows,
@@ -599,7 +632,7 @@ export class LogPoller {
         orphanCandidates: [],
         lastMessageCandidates: [],
         skipMatchingPatterns: config.skipMatchingPatterns,
-        preFilteredPaths: changedPaths,
+        preFilteredPaths: pathsToPoll,
         search: {
           rgThreads: this.rgThreads,
         },
@@ -610,11 +643,17 @@ export class LogPoller {
     } catch (error) {
       logger.warn('log_poll_changed_error', {
         message: error instanceof Error ? error.message : String(error),
-        pathCount: changedPaths.length,
+        pathCount: pathsToPoll.length,
       })
     } finally {
       this.pollInFlight = false
+      this.drainPendingChangedPaths()
     }
+  }
+
+  private drainPendingChangedPaths(): void {
+    if (this.pendingChangedPaths.size === 0) return
+    queueMicrotask(() => void this.pollChanged([]))
   }
 
   private processMatchResponse(
@@ -1132,6 +1171,7 @@ export class LogPoller {
       return stats
     } finally {
       this.pollInFlight = false
+      this.drainPendingChangedPaths()
     }
   }
 }
