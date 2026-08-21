@@ -163,6 +163,25 @@ class InlineMatchWorkerClient {
   dispose(): void {}
 }
 
+class RecordingMatchWorkerClient {
+  requests: Array<Omit<MatchWorkerRequest, 'id'>> = []
+
+  async poll(
+    request: Omit<MatchWorkerRequest, 'id'>,
+    _options?: { timeoutMs?: number }
+  ): Promise<MatchWorkerResponse> {
+    this.requests.push(request)
+    return {
+      id: 'test',
+      type: 'result',
+      entries: [],
+      orphanMatches: [],
+    }
+  }
+
+  dispose(): void {}
+}
+
 beforeEach(async () => {
   tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-poller-'))
   process.env.CLAUDE_CONFIG_DIR = path.join(tempRoot, 'claude')
@@ -205,6 +224,137 @@ afterEach(async () => {
 })
 
 describe('LogPoller', () => {
+  test('skips startup orphan rematch when every live window is already claimed', async () => {
+    const db = initDatabase({ path: ':memory:' })
+    const registry = new SessionRegistry()
+    registry.replaceSessions([baseSession])
+    const now = new Date().toISOString()
+
+    db.insertSession({
+      sessionId: 'active-session',
+      logFilePath: path.join(tempRoot, 'active.jsonl'),
+      projectPath: baseSession.projectPath,
+      slug: null,
+      agentType: 'claude',
+      displayName: baseSession.name,
+      createdAt: now,
+      lastActivityAt: now,
+      lastUserMessage: 'ready',
+      currentWindow: baseSession.tmuxWindow,
+      isPinned: false,
+      lastResumeError: null,
+      lastKnownLogSize: 0,
+      isCodexExec: false,
+      launchCommand: null,
+    })
+
+    const oldTimestamp = '2020-01-01T00:00:00.000Z'
+    for (let index = 0; index < 10_000; index += 1) {
+      db.insertSession({
+        sessionId: `history-${index}`,
+        logFilePath: path.join(tempRoot, `history-${index}.jsonl`),
+        projectPath: `/archived/project-${index}`,
+        slug: null,
+        agentType: index % 2 === 0 ? 'claude' : 'codex',
+        displayName: `history-${index}`,
+        createdAt: oldTimestamp,
+        lastActivityAt: oldTimestamp,
+        lastUserMessage: 'archived',
+        currentWindow: null,
+        isPinned: false,
+        lastResumeError: null,
+        lastKnownLogSize: 0,
+        isCodexExec: false,
+        launchCommand: null,
+      })
+    }
+
+    const historyQueries: Array<{ maxAgeHours?: number } | undefined> = []
+    const getHistorySessions = db.getHistorySessions
+    db.getHistorySessions = (options) => {
+      historyQueries.push(options)
+      return getHistorySessions(options)
+    }
+
+    const worker = new RecordingMatchWorkerClient()
+    const poller = new LogPoller(db, registry, {
+      matchWorkerClient: worker,
+    })
+
+    poller.start(5000)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    await poller.waitForOrphanRematch()
+
+    // One request is the normal startup poll. A second request would be the
+    // expensive orphan rematch that previously loaded all 10,000 rows.
+    expect(worker.requests).toHaveLength(1)
+    expect(historyQueries).toEqual([{ maxAgeHours: 72 }])
+
+    poller.stop()
+    db.close()
+  })
+
+  test('scopes startup orphan candidates to unclaimed window metadata without an age cutoff', async () => {
+    const db = initDatabase({ path: ':memory:' })
+    const registry = new SessionRegistry()
+    registry.replaceSessions([baseSession])
+    const oldTimestamp = '2020-01-01T00:00:00.000Z'
+
+    db.insertSession({
+      sessionId: 'old-compatible-orphan',
+      logFilePath: path.join(tempRoot, 'compatible.jsonl'),
+      projectPath: baseSession.projectPath,
+      slug: null,
+      agentType: 'claude',
+      displayName: 'compatible-orphan',
+      createdAt: oldTimestamp,
+      lastActivityAt: oldTimestamp,
+      lastUserMessage: 'old but live',
+      currentWindow: null,
+      isPinned: false,
+      lastResumeError: null,
+      lastKnownLogSize: 0,
+      isCodexExec: false,
+      launchCommand: null,
+    })
+    db.insertSession({
+      sessionId: 'unrelated-orphan',
+      logFilePath: path.join(tempRoot, 'unrelated.jsonl'),
+      projectPath: '/unrelated/project',
+      slug: null,
+      agentType: 'claude',
+      displayName: 'unrelated-orphan',
+      createdAt: oldTimestamp,
+      lastActivityAt: oldTimestamp,
+      lastUserMessage: 'unrelated',
+      currentWindow: null,
+      isPinned: false,
+      lastResumeError: null,
+      lastKnownLogSize: 0,
+      isCodexExec: false,
+      launchCommand: null,
+    })
+
+    const worker = new RecordingMatchWorkerClient()
+    const poller = new LogPoller(db, registry, {
+      matchWorkerClient: worker,
+    })
+
+    poller.start(5000)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    await poller.waitForOrphanRematch()
+
+    expect(worker.requests).toHaveLength(2)
+    const orphanRequest = worker.requests[1]
+    expect(orphanRequest?.forceOrphanRematch).toBeTrue()
+    expect(orphanRequest?.orphanCandidates?.map((record) => record.sessionId)).toEqual([
+      'old-compatible-orphan',
+    ])
+
+    poller.stop()
+    db.close()
+  })
+
   test('skips file content reads for already-known sessions', async () => {
     const db = initDatabase({ path: ':memory:' })
     const registry = new SessionRegistry()
@@ -344,7 +494,8 @@ describe('LogPoller', () => {
       onSessionActivated: (sessionId, window) => activated.push({ sessionId, window }),
     })
 
-    await poller.pollOnce()
+    poller.start(5000)
+    await new Promise((resolve) => setTimeout(resolve, 100))
     await poller.waitForOrphanRematch()
 
     const record = db.getSessionById('hibernating-session')
@@ -352,6 +503,7 @@ describe('LogPoller', () => {
     expect(record?.isPinned).toBeTrue()
     expect(activated).toEqual([])
 
+    poller.stop()
     db.close()
   })
 
@@ -391,7 +543,7 @@ describe('LogPoller', () => {
       agentType: 'claude',
       displayName: 'alpha',
       createdAt: stats.birthtime.toISOString(),
-      lastActivityAt: stats.mtime.toISOString(),
+      lastActivityAt: '2020-01-01T00:00:00.000Z',
       lastUserMessage: null,
       currentWindow: null,
       isPinned: true,
@@ -1227,7 +1379,7 @@ describe('LogPoller', () => {
       agentType: 'claude',
       displayName: 'orphan',
       createdAt: stats.birthtime.toISOString(),
-      lastActivityAt: stats.mtime.toISOString(),
+      lastActivityAt: '2020-01-01T00:00:00.000Z',
       lastUserMessage: null,
       currentWindow: null,
       isPinned: false,
