@@ -329,6 +329,82 @@ describe('LogPoller', () => {
     db.close()
   })
 
+  test('runs orphan rematch only after delayed comprehensive reconciliation', async () => {
+    const db = initDatabase({ path: ':memory:' })
+    const registry = new SessionRegistry()
+    registry.replaceSessions([baseSession])
+    const now = new Date().toISOString()
+    db.insertSession({
+      sessionId: 'dormant-session',
+      logFilePath: path.join(tempRoot, 'dormant.jsonl'),
+      projectPath: baseProjectPath,
+      slug: null,
+      agentType: 'claude',
+      displayName: 'dormant',
+      createdAt: now,
+      lastActivityAt: now,
+      lastUserMessage: 'old session',
+      currentWindow: null,
+      isPinned: false,
+      lastResumeError: null,
+      lastKnownLogSize: 0,
+      isCodexExec: false,
+      launchCommand: null,
+    })
+
+    const worker = new RecordingMatchWorkerClient()
+    const poller = new LogPoller(db, registry, {
+      matchWorkerClient: worker,
+      startupReconciliationDelayMs: 5,
+    })
+    poller.start(5000, 'watch')
+
+    await waitForRequestCount(worker, 2)
+
+    expect(worker.requests[0]?.preFilteredPaths).toBeUndefined()
+    expect(worker.requests[0]?.forceOrphanRematch).toBe(false)
+    expect(worker.requests[1]?.forceOrphanRematch).toBe(true)
+
+    poller.stop()
+    db.close()
+  })
+
+  test('delayed reconciliation discovers logs created while offline', async () => {
+    const db = initDatabase({ path: ':memory:' })
+    const registry = new SessionRegistry()
+    const projectPath = path.join(tempRoot, 'offline-project')
+    const logDir = path.join(
+      process.env.CLAUDE_CONFIG_DIR ?? '',
+      'projects',
+      encodeProjectPath(projectPath)
+    )
+    await fs.mkdir(logDir, { recursive: true })
+    const logPath = path.join(logDir, 'offline-session.jsonl')
+    await fs.writeFile(
+      logPath,
+      `${buildUserLogEntry('created before startup', {
+        sessionId: 'offline-session',
+        cwd: projectPath,
+      })}\n`
+    )
+
+    const poller = new LogPoller(db, registry, {
+      matchWorkerClient: new InlineMatchWorkerClient(),
+      startupReconciliationDelayMs: 5,
+    })
+    poller.start(5000, 'watch')
+
+    const deadline = Date.now() + 1000
+    while (!db.getSessionById('offline-session') && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 5))
+    }
+
+    expect(db.getSessionById('offline-session')?.logFilePath).toBe(logPath)
+
+    poller.stop()
+    db.close()
+  })
+
   test('coalesces watcher paths received while another poll is in flight', async () => {
     const db = initDatabase({ path: ':memory:' })
     const registry = new SessionRegistry()
@@ -349,6 +425,30 @@ describe('LogPoller', () => {
 
     expect(worker.requests[0]?.preFilteredPaths).toEqual([firstPath])
     expect(worker.requests[1]?.preFilteredPaths).toEqual([secondPath])
+
+    poller.stop()
+    db.close()
+  })
+
+  test('drains large watcher batches in bounded worker requests', async () => {
+    const db = initDatabase({ path: ':memory:' })
+    const registry = new SessionRegistry()
+    const worker = new RecordingMatchWorkerClient()
+    const poller = new LogPoller(db, registry, {
+      matchWorkerClient: worker,
+      maxLogsPerPoll: 2,
+    })
+    const changedPaths = [
+      path.join(tempRoot, 'one.jsonl'),
+      path.join(tempRoot, 'two.jsonl'),
+      path.join(tempRoot, 'three.jsonl'),
+    ]
+
+    await poller.pollChanged(changedPaths)
+    await waitForRequestCount(worker, 2)
+
+    expect(worker.requests[0]?.preFilteredPaths).toEqual(changedPaths.slice(0, 2))
+    expect(worker.requests[1]?.preFilteredPaths).toEqual(changedPaths.slice(2))
 
     poller.stop()
     db.close()
