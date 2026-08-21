@@ -151,36 +151,6 @@ function canAttemptDormantRematch(record: {
   return !record.isPinned || hasRecoverableWakePending(record)
 }
 
-function canMatchDormantRecordToWindow(
-  record: Pick<SessionRecord, 'agentType' | 'displayName' | 'projectPath'>,
-  window: Session
-): boolean {
-  // Preserve the managed-window name fallback even when project metadata is
-  // stale or missing. The claim path still requires the window name to be
-  // unique before it uses this fallback.
-  if (window.source === 'managed' && record.displayName === window.name) {
-    return true
-  }
-
-  if (
-    record.agentType &&
-    window.agentType &&
-    record.agentType !== window.agentType
-  ) {
-    return false
-  }
-
-  const recordProject = normalizeProjectPath(record.projectPath ?? '')
-  const windowProject = normalizeProjectPath(window.projectPath ?? '')
-  if (recordProject && windowProject) {
-    return isSameOrChildPath(recordProject, windowProject)
-  }
-
-  // Missing metadata cannot safely rule a candidate out. Content matching is
-  // still responsible for proving the association.
-  return true
-}
-
 interface PollStats {
   logsScanned: number
   newSessions: number
@@ -366,9 +336,10 @@ export class LogPoller {
       const logDirs = getLogSearchDirs()
       const excludedProjects = config.excludeProjects ?? []
 
-      // Build candidates for the actual recovery targets. A candidate with
-      // complete metadata must overlap at least one unclaimed window; missing
-      // metadata remains eligible for content-based proof.
+      // Build eligible dormant candidates. Project and agent metadata are not
+      // hard filters here: the content matcher treats them as soft preferences,
+      // which preserves recovery after a repo move, symlink change, or relaunch
+      // from a different worktree path.
       const orphanCandidates: OrphanCandidate[] = []
       const orphanRecords: typeof dormantSessions = []
       for (const record of dormantSessions) {
@@ -384,13 +355,6 @@ export class LogPoller {
             return projectPath.startsWith(excluded)
           })
           if (shouldExclude) continue
-        }
-        if (
-          !unclaimedWindows.some((window) =>
-            canMatchDormantRecordToWindow(record, window)
-          )
-        ) {
-          continue
         }
         orphanRecords.push(record)
         orphanCandidates.push({

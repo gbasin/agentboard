@@ -294,67 +294,6 @@ describe('LogPoller', () => {
     db.close()
   })
 
-  test('scopes startup orphan candidates to unclaimed window metadata without an age cutoff', async () => {
-    const db = initDatabase({ path: ':memory:' })
-    const registry = new SessionRegistry()
-    registry.replaceSessions([baseSession])
-    const oldTimestamp = '2020-01-01T00:00:00.000Z'
-
-    db.insertSession({
-      sessionId: 'old-compatible-orphan',
-      logFilePath: path.join(tempRoot, 'compatible.jsonl'),
-      projectPath: baseSession.projectPath,
-      slug: null,
-      agentType: 'claude',
-      displayName: 'compatible-orphan',
-      createdAt: oldTimestamp,
-      lastActivityAt: oldTimestamp,
-      lastUserMessage: 'old but live',
-      currentWindow: null,
-      isPinned: false,
-      lastResumeError: null,
-      lastKnownLogSize: 0,
-      isCodexExec: false,
-      launchCommand: null,
-    })
-    db.insertSession({
-      sessionId: 'unrelated-orphan',
-      logFilePath: path.join(tempRoot, 'unrelated.jsonl'),
-      projectPath: '/unrelated/project',
-      slug: null,
-      agentType: 'claude',
-      displayName: 'unrelated-orphan',
-      createdAt: oldTimestamp,
-      lastActivityAt: oldTimestamp,
-      lastUserMessage: 'unrelated',
-      currentWindow: null,
-      isPinned: false,
-      lastResumeError: null,
-      lastKnownLogSize: 0,
-      isCodexExec: false,
-      launchCommand: null,
-    })
-
-    const worker = new RecordingMatchWorkerClient()
-    const poller = new LogPoller(db, registry, {
-      matchWorkerClient: worker,
-    })
-
-    poller.start(5000)
-    await new Promise((resolve) => setTimeout(resolve, 100))
-    await poller.waitForOrphanRematch()
-
-    expect(worker.requests).toHaveLength(2)
-    const orphanRequest = worker.requests[1]
-    expect(orphanRequest?.forceOrphanRematch).toBeTrue()
-    expect(orphanRequest?.orphanCandidates?.map((record) => record.sessionId)).toEqual([
-      'old-compatible-orphan',
-    ])
-
-    poller.stop()
-    db.close()
-  })
-
   test('skips file content reads for already-known sessions', async () => {
     const db = initDatabase({ path: ':memory:' })
     const registry = new SessionRegistry()
@@ -1346,7 +1285,7 @@ describe('LogPoller', () => {
     db.close()
   })
 
-  test('rematches orphaned sessions on startup without new activity', async () => {
+  test('rematches an old orphan with stale project metadata on startup', async () => {
     const db = initDatabase({ path: ':memory:' })
     const registry = new SessionRegistry()
     registry.replaceSessions([baseSession])
@@ -1374,7 +1313,7 @@ describe('LogPoller', () => {
     db.insertSession({
       sessionId: 'claude-session-orphan',
       logFilePath: logPath,
-      projectPath,
+      projectPath: '/stale/moved/project',
       slug: null,
       agentType: 'claude',
       displayName: 'orphan',
