@@ -1440,7 +1440,34 @@ export function getLogTokenCount(
   { mode = DEFAULT_LOG_TEXT_MODE, logRead }: LogTextOptionsInput = {}
 ): number {
   const content = extractLogText(logPath, { mode, logRead })
-  return countTokens(content)
+  const count = countTokens(content)
+  if (count > 0 || mode === 'all') return count
+  // The byte-limited tail read can start mid-way through a single huge line
+  // (e.g. a 150KB pasted message), leaving only unparseable fragments and
+  // tool/echo events in the window. Callers only gate on "any message text
+  // at all", so confirm with a head-first scan before reporting empty.
+  return findFirstMessageTokenCount(logPath, mode)
+}
+
+function findFirstMessageTokenCount(logPath: string, mode: LogTextMode): number {
+  const raw = readLogContent(logPath, { lineLimit: 0, byteLimit: 0 })
+  if (!raw) return 0
+  let start = 0
+  while (start < raw.length) {
+    const end = raw.indexOf('\n', start)
+    const line = (end === -1 ? raw.slice(start) : raw.slice(start, end)).trim()
+    start = end === -1 ? raw.length : end + 1
+    if (!line) continue
+    let entry: unknown
+    try {
+      entry = JSON.parse(line)
+    } catch {
+      continue
+    }
+    const tokens = countTokens(extractTextFromEntry(entry, mode).join('\n'))
+    if (tokens > 0) return tokens
+  }
+  return 0
 }
 function countTokens(text: string): number {
   const normalized = normalizeText(text)
@@ -1624,6 +1651,27 @@ export interface ExactMatchContext {
   projectPath?: string
 }
 
+/**
+ * Hard agent-type gate. When the window's agent type is known, a log of a
+ * different type can never be the right match — even if it is the only log
+ * containing the pane's text (e.g. the same prompt pasted into a claude and a
+ * codex window seconds apart, where one log flushes first). Returning an empty
+ * list defers the match until the right-typed log appears. Fails open when the
+ * window type or a log's type is unknown.
+ */
+export function filterCandidatesByAgentType(
+  candidates: string[],
+  agentType: AgentType | undefined
+): string[] {
+  if (!agentType) return candidates
+  // claude-rp logs live under the same root as claude logs
+  const windowFamily = agentType === 'claude-rp' ? 'claude' : agentType
+  return candidates.filter((candidate) => {
+    const logType = inferAgentTypeFromPath(candidate)
+    return logType === null || logType === windowFamily
+  })
+}
+
 export interface ExactMatchResult {
   logPath: string
   userMessage: string
@@ -1727,13 +1775,9 @@ export function tryExactMatchWindowToLog(
     candidates = filtered
   }
 
-  if (context.agentType) {
-    const filtered = candidates.filter(
-      (candidate) => inferAgentTypeFromPath(candidate) === context.agentType
-    )
-    if (filtered.length > 0) {
-      candidates = filtered
-    }
+  candidates = filterCandidatesByAgentType(candidates, context.agentType)
+  if (candidates.length === 0) {
+    return null
   }
 
   if (context.projectPath) {
@@ -1932,13 +1976,9 @@ export async function tryExactMatchWindowToLogAsync(
     candidates = filtered
   }
 
-  if (context.agentType) {
-    const filtered = candidates.filter(
-      (candidate) => inferAgentTypeFromPath(candidate) === context.agentType
-    )
-    if (filtered.length > 0) {
-      candidates = filtered
-    }
+  candidates = filterCandidatesByAgentType(candidates, context.agentType)
+  if (candidates.length === 0) {
+    return null
   }
 
   if (context.projectPath) {
