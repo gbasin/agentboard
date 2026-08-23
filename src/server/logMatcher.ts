@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import { performance } from 'node:perf_hooks'
 import { normalizeAgentLogEntry } from '../shared/eventTaxonomy'
 import type { AgentType, Session } from '../shared/types'
+import { agentFamily } from './agentDetection'
 import {
   extractProjectPath,
   inferAgentTypeFromPath,
@@ -1385,20 +1386,7 @@ export function readLogContent(
 ): string {
   try {
     const buffer = fs.readFileSync(logPath)
-    let content = buffer.toString('utf8')
-
-    if (byteLimit > 0 && content.length > byteLimit) {
-      content = content.slice(-byteLimit)
-    }
-
-    if (lineLimit > 0) {
-      const lines = content.split('\n')
-      if (lines.length > lineLimit) {
-        content = lines.slice(-lineLimit).join('\n')
-      }
-    }
-
-    return content
+    return applyReadLimits(buffer.toString('utf8'), { lineLimit, byteLimit })
   } catch {
     return ''
   }
@@ -1410,6 +1398,10 @@ export function extractLogText(
 ): string {
   const resolvedRead = resolveLogReadOptions(logRead)
   const raw = readLogContent(logPath, resolvedRead)
+  return extractTextFromRaw(raw, mode)
+}
+
+function extractTextFromRaw(raw: string, mode: LogTextMode): string {
   if (!raw || mode === 'all') {
     return raw
   }
@@ -1435,22 +1427,61 @@ export function extractLogText(
   return chunks.join('\n')
 }
 
+// Logs that yielded zero tokens, keyed by path -> byte length at that time.
+// Enrichment recounts every unknown log each poll, so without this a
+// message-free log would be fully re-parsed on every cycle.
+const zeroTokenLogCache = new Map<string, number>()
+
 export function getLogTokenCount(
   logPath: string,
   { mode = DEFAULT_LOG_TEXT_MODE, logRead }: LogTextOptionsInput = {}
 ): number {
-  const content = extractLogText(logPath, { mode, logRead })
-  const count = countTokens(content)
+  const resolvedRead = resolveLogReadOptions(logRead)
+  let fileSize: number | null = null
+  try {
+    fileSize = fs.statSync(logPath).size
+  } catch {
+    return 0
+  }
+  if (zeroTokenLogCache.get(logPath) === fileSize) {
+    return 0
+  }
+
+  // readLogContent reads the whole file regardless of limits, so read once
+  // and apply the tail limits to the in-memory copy.
+  const raw = readLogContent(logPath, { lineLimit: 0, byteLimit: 0 })
+  const tail = applyReadLimits(raw, resolvedRead)
+  const count = countTokens(extractTextFromRaw(tail, mode))
   if (count > 0 || mode === 'all') return count
-  // The byte-limited tail read can start mid-way through a single huge line
+  // The byte-limited tail can start mid-way through a single huge line
   // (e.g. a 150KB pasted message), leaving only unparseable fragments and
   // tool/echo events in the window. Callers only gate on "any message text
   // at all", so confirm with a head-first scan before reporting empty.
-  return findFirstMessageTokenCount(logPath, mode)
+  const fromHead = findFirstMessageTokenCount(raw, mode)
+  if (fromHead === 0) {
+    zeroTokenLogCache.set(logPath, fileSize)
+  }
+  return fromHead
 }
 
-function findFirstMessageTokenCount(logPath: string, mode: LogTextMode): number {
-  const raw = readLogContent(logPath, { lineLimit: 0, byteLimit: 0 })
+function applyReadLimits(
+  content: string,
+  { lineLimit, byteLimit }: LogReadOptions
+): string {
+  let result = content
+  if (byteLimit > 0 && result.length > byteLimit) {
+    result = result.slice(-byteLimit)
+  }
+  if (lineLimit > 0) {
+    const lines = result.split('\n')
+    if (lines.length > lineLimit) {
+      result = lines.slice(-lineLimit).join('\n')
+    }
+  }
+  return result
+}
+
+function findFirstMessageTokenCount(raw: string, mode: LogTextMode): number {
   if (!raw) return 0
   let start = 0
   while (start < raw.length) {
@@ -1663,9 +1694,8 @@ export function filterCandidatesByAgentType(
   candidates: string[],
   agentType: AgentType | undefined
 ): string[] {
-  if (!agentType) return candidates
-  // claude-rp logs live under the same root as claude logs
-  const windowFamily = agentType === 'claude-rp' ? 'claude' : agentType
+  const windowFamily = agentFamily(agentType)
+  if (!windowFamily) return candidates
   return candidates.filter((candidate) => {
     const logType = inferAgentTypeFromPath(candidate)
     return logType === null || logType === windowFamily

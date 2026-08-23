@@ -678,6 +678,51 @@ describe('logMatcher', () => {
     await fs.rm(tempDir, { recursive: true, force: true })
   })
 
+  test('matchWindowsToLogsByExactRg never swaps a claude and a codex window sharing a prompt', async () => {
+    // Incident replay: same prompt in a claude window (pane shows the collapsed
+    // paste placeholder, which is in no log) and a codex window (pane shows the
+    // raw paste). Phase 1: only the claude log has flushed. Phase 2: both have.
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-logmatch-'))
+    const claudeDir = path.join(tempDir, '.claude', 'projects', 'proj')
+    const codexDir = path.join(tempDir, '.codex', 'sessions')
+    await fs.mkdir(claudeDir, { recursive: true })
+    await fs.mkdir(codexDir, { recursive: true })
+    const claudeLog = path.join(claudeDir, 'claude-session.jsonl')
+    const codexLog = path.join(codexDir, 'rollout-codex.jsonl')
+    const paste = 'Look at this slack convo and tell me what our product should focus on'
+
+    const base = {
+      projectPath: '/tmp/proj',
+      status: 'waiting' as const,
+      lastActivity: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      source: 'managed' as const,
+    }
+    const windows: Session[] = [
+      { ...base, id: 'w-claude', name: 'claude-win', tmuxWindow: 'agentboard:1', agentType: 'claude' },
+      { ...base, id: 'w-codex', name: 'codex-win', tmuxWindow: 'agentboard:2', agentType: 'codex' },
+    ]
+    setTmuxOutput('agentboard:1', buildPromptScrollback(['[Pasted text #1 +400 lines]']))
+    setTmuxOutput('agentboard:2', buildPromptScrollback([paste]))
+
+    // Phase 1: claude log flushed first
+    await fs.writeFile(claudeLog, buildUserLogEntry(paste))
+    let { matches } = matchWindowsToLogsByExactRg(windows, tempDir)
+    expect(matches.size).toBe(0)
+
+    // Phase 2: codex log catches up
+    await fs.writeFile(codexLog, buildUserLogEntry(paste))
+    ;({ matches } = matchWindowsToLogsByExactRg(windows, tempDir))
+    expect(matches.get(codexLog)?.tmuxWindow).toBe('agentboard:2')
+    expect(matches.has(claudeLog)).toBe(false)
+
+    const asyncResult = await matchWindowsToLogsByExactRgAsync(windows, tempDir)
+    expect(asyncResult.matches.get(codexLog)?.tmuxWindow).toBe('agentboard:2')
+    expect(asyncResult.matches.has(claudeLog)).toBe(false)
+
+    await fs.rm(tempDir, { recursive: true, force: true })
+  })
+
   test('matchWindowsToLogsByExactRg returns noMessageWindows for empty terminals', async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-nomsg-'))
     const logPath = path.join(tempDir, 'session.jsonl')

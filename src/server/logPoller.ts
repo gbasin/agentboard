@@ -2,13 +2,14 @@ import { logger } from './logger'
 import { config } from './config'
 import type { SessionDatabase } from './db'
 import { getLogSearchDirs, normalizeProjectPath } from './logDiscovery'
+import { agentFamily } from './agentDetection'
 import { DEFAULT_SCROLLBACK_LINES, extractLastEntryTimestamp, isSameOrChildPath, isToolNotificationText } from './logMatcher'
 import { deriveDisplayName } from './agentSessions'
 import { generateUniqueSessionName } from './nameGenerator'
 import type { SessionRegistry } from './SessionRegistry'
 import { LogMatchWorkerClient } from './logMatchWorkerClient'
 import { LogWatcher } from './logWatcher'
-import type { Session } from '../shared/types'
+import type { AgentType, Session } from '../shared/types'
 import type { KnownSession, LogEntrySnapshot } from './logPollData'
 import {
   getEntriesNeedingMatch,
@@ -721,7 +722,7 @@ export class LogPoller {
     // Only unclaimed managed windows can trigger deferral — external windows and
     // windows already matched to a session are excluded to prevent unrelated blank
     // windows from suppressing legitimate session insertions.
-    const deferralCandidates: Array<{ projectPath: string; agentType: string | null }> = []
+    const deferralCandidates: Array<{ projectPath: string; agentType: AgentType | null }> = []
     for (const nmw of response.noMessageWindows ?? []) {
       if (!nmw.projectPath) continue
       if (nmw.source !== 'managed') continue
@@ -962,7 +963,7 @@ export class LogPoller {
             const hasBoot = deferralCandidates.some(
               (c) =>
                 isSameOrChildPath(normalizedProject, c.projectPath) &&
-                (!c.agentType || !agentType || c.agentType === agentType)
+                (!c.agentType || !agentType || agentFamily(c.agentType) === agentFamily(agentType))
             )
             if (hasBoot) {
               logger.info('log_match_deferred', {
