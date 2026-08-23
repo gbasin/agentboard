@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import { performance } from 'node:perf_hooks'
 import { normalizeAgentLogEntry } from '../shared/eventTaxonomy'
 import type { AgentType, Session } from '../shared/types'
+import { agentFamily } from './agentDetection'
 import {
   extractProjectPath,
   inferAgentTypeFromPath,
@@ -1385,20 +1386,7 @@ export function readLogContent(
 ): string {
   try {
     const buffer = fs.readFileSync(logPath)
-    let content = buffer.toString('utf8')
-
-    if (byteLimit > 0 && content.length > byteLimit) {
-      content = content.slice(-byteLimit)
-    }
-
-    if (lineLimit > 0) {
-      const lines = content.split('\n')
-      if (lines.length > lineLimit) {
-        content = lines.slice(-lineLimit).join('\n')
-      }
-    }
-
-    return content
+    return applyReadLimits(buffer.toString('utf8'), { lineLimit, byteLimit })
   } catch {
     return ''
   }
@@ -1410,6 +1398,10 @@ export function extractLogText(
 ): string {
   const resolvedRead = resolveLogReadOptions(logRead)
   const raw = readLogContent(logPath, resolvedRead)
+  return extractTextFromRaw(raw, mode)
+}
+
+function extractTextFromRaw(raw: string, mode: LogTextMode): string {
   if (!raw || mode === 'all') {
     return raw
   }
@@ -1435,12 +1427,78 @@ export function extractLogText(
   return chunks.join('\n')
 }
 
+// Logs that yielded zero tokens, keyed by path -> byte length at that time.
+// Enrichment recounts every unknown log each poll, so without this a
+// message-free log would be fully re-parsed on every cycle.
+const zeroTokenLogCache = new Map<string, number>()
+
 export function getLogTokenCount(
   logPath: string,
   { mode = DEFAULT_LOG_TEXT_MODE, logRead }: LogTextOptionsInput = {}
 ): number {
-  const content = extractLogText(logPath, { mode, logRead })
-  return countTokens(content)
+  const resolvedRead = resolveLogReadOptions(logRead)
+  let fileSize: number | null = null
+  try {
+    fileSize = fs.statSync(logPath).size
+  } catch {
+    return 0
+  }
+  if (zeroTokenLogCache.get(logPath) === fileSize) {
+    return 0
+  }
+
+  // readLogContent reads the whole file regardless of limits, so read once
+  // and apply the tail limits to the in-memory copy.
+  const raw = readLogContent(logPath, { lineLimit: 0, byteLimit: 0 })
+  const tail = applyReadLimits(raw, resolvedRead)
+  const count = countTokens(extractTextFromRaw(tail, mode))
+  if (count > 0 || mode === 'all') return count
+  // The byte-limited tail can start mid-way through a single huge line
+  // (e.g. a 150KB pasted message), leaving only unparseable fragments and
+  // tool/echo events in the window. Callers only gate on "any message text
+  // at all", so confirm with a head-first scan before reporting empty.
+  const fromHead = findFirstMessageTokenCount(raw, mode)
+  if (fromHead === 0) {
+    zeroTokenLogCache.set(logPath, fileSize)
+  }
+  return fromHead
+}
+
+function applyReadLimits(
+  content: string,
+  { lineLimit, byteLimit }: LogReadOptions
+): string {
+  let result = content
+  if (byteLimit > 0 && result.length > byteLimit) {
+    result = result.slice(-byteLimit)
+  }
+  if (lineLimit > 0) {
+    const lines = result.split('\n')
+    if (lines.length > lineLimit) {
+      result = lines.slice(-lineLimit).join('\n')
+    }
+  }
+  return result
+}
+
+function findFirstMessageTokenCount(raw: string, mode: LogTextMode): number {
+  if (!raw) return 0
+  let start = 0
+  while (start < raw.length) {
+    const end = raw.indexOf('\n', start)
+    const line = (end === -1 ? raw.slice(start) : raw.slice(start, end)).trim()
+    start = end === -1 ? raw.length : end + 1
+    if (!line) continue
+    let entry: unknown
+    try {
+      entry = JSON.parse(line)
+    } catch {
+      continue
+    }
+    const tokens = countTokens(extractTextFromEntry(entry, mode).join('\n'))
+    if (tokens > 0) return tokens
+  }
+  return 0
 }
 function countTokens(text: string): number {
   const normalized = normalizeText(text)
@@ -1624,6 +1682,26 @@ export interface ExactMatchContext {
   projectPath?: string
 }
 
+/**
+ * Hard agent-type gate. When the window's agent type is known, a log of a
+ * different type can never be the right match — even if it is the only log
+ * containing the pane's text (e.g. the same prompt pasted into a claude and a
+ * codex window seconds apart, where one log flushes first). Returning an empty
+ * list defers the match until the right-typed log appears. Fails open when the
+ * window type or a log's type is unknown.
+ */
+export function filterCandidatesByAgentType(
+  candidates: string[],
+  agentType: AgentType | undefined
+): string[] {
+  const windowFamily = agentFamily(agentType)
+  if (!windowFamily) return candidates
+  return candidates.filter((candidate) => {
+    const logType = inferAgentTypeFromPath(candidate)
+    return logType === null || logType === windowFamily
+  })
+}
+
 export interface ExactMatchResult {
   logPath: string
   userMessage: string
@@ -1727,13 +1805,9 @@ export function tryExactMatchWindowToLog(
     candidates = filtered
   }
 
-  if (context.agentType) {
-    const filtered = candidates.filter(
-      (candidate) => inferAgentTypeFromPath(candidate) === context.agentType
-    )
-    if (filtered.length > 0) {
-      candidates = filtered
-    }
+  candidates = filterCandidatesByAgentType(candidates, context.agentType)
+  if (candidates.length === 0) {
+    return null
   }
 
   if (context.projectPath) {
@@ -1932,13 +2006,9 @@ export async function tryExactMatchWindowToLogAsync(
     candidates = filtered
   }
 
-  if (context.agentType) {
-    const filtered = candidates.filter(
-      (candidate) => inferAgentTypeFromPath(candidate) === context.agentType
-    )
-    if (filtered.length > 0) {
-      candidates = filtered
-    }
+  candidates = filterCandidatesByAgentType(candidates, context.agentType)
+  if (candidates.length === 0) {
+    return null
   }
 
   if (context.projectPath) {

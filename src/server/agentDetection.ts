@@ -72,6 +72,14 @@ function unwrapBashLoginWrapper(command: string): string | null {
   return unquoteShellString(rest)
 }
 
+export type AgentFamily = 'claude' | 'codex' | 'pi'
+
+/** Collapse agent variants onto the log family they write to (claude-rp -> claude). */
+export function agentFamily(agentType: AgentType | null | undefined): AgentFamily | null {
+  if (!agentType) return null
+  return agentType === 'claude-rp' ? 'claude' : agentType
+}
+
 export function normalizePaneStartCommand(command: string): string {
   const trimmed = command.trim()
   if (!trimmed) return ''
