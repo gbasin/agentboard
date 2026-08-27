@@ -1080,6 +1080,46 @@ describe('SessionManager', () => {
     expect(renameCalls).toHaveLength(0)
   })
 
+  test('renameWindow accepts unicode characters', () => {
+    const sessionName = 'agentboard-unicode-name'
+    const runner = createTmuxRunner(
+      [
+        {
+          name: sessionName,
+          windows: [
+            {
+              id: '1',
+              index: 1,
+              name: 'alpha',
+              path: '/tmp/alpha',
+              activity: 0,
+              command: '',
+            },
+          ],
+        },
+      ],
+      1
+    )
+
+    const manager = new SessionManager(sessionName, {
+      runTmux: runner.runTmux,
+      capturePaneContent: () => makePaneCapture(''),
+      now: () => 1700000000000,
+    })
+
+    const validNames = [
+      '测试会话',
+      'my-测试_01',
+      '🚀deploy',
+    ]
+    for (const name of validNames) {
+      runner.calls.length = 0
+      manager.renameWindow(`${sessionName}:1`, name)
+      const renameCall = runner.calls.find((call) => call[0] === 'rename-window')
+      expect(renameCall?.[3]).toBe(name)
+    }
+  })
+
   test('renameWindow rejects the reserved bootstrap window name', () => {
     const sessionName = 'agentboard-reserved-rename'
     const runner = createTmuxRunner(
