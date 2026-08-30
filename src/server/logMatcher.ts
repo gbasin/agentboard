@@ -374,12 +374,17 @@ export function isToolNotificationText(text: string): boolean {
  * Agent TUIs collapse a large paste into a bracketed placeholder — Claude
  * Code renders "[Pasted text #1 +263 lines]" — so a terminal capture of such
  * a prompt is lossy: only the JSONL log has the real content. Strips every
- * placeholder and collapses the surrounding whitespace. Returns the input
- * string unchanged (same reference) when no placeholder is present, so
- * callers can detect placeholders via `stripPastePlaceholders(t) !== t`.
+ * placeholder and collapses the surrounding whitespace. The pattern demands
+ * a counter token (#N, +N lines, or N chars/lines) so legitimate bracketed
+ * prose like "[pasted from docs]" is left alone. Returns the input string
+ * unchanged (same reference) when no placeholder is present, so callers can
+ * detect placeholders via `stripPastePlaceholders(t) !== t`.
  */
+const PASTE_PLACEHOLDER_PATTERN =
+  /\[\s*pasted(?:\s+text)?[^\]]*?(?:#\d+|\+\d+\s*lines?|\d+\s*(?:characters|chars?|lines?))[^\]]*\]/gi
+
 export function stripPastePlaceholders(text: string): string {
-  const stripped = text.replace(/\[\s*pasted[^\]]*\]/gi, ' ')
+  const stripped = text.replace(PASTE_PLACEHOLDER_PATTERN, ' ')
   if (stripped === text) return text
   return stripped.replace(/\s+/g, ' ').trim()
 }
@@ -465,9 +470,13 @@ const MAX_BACKWARD_LINE_BYTES = 16 * 1024 * 1024
  *
  * `maxScanBytes` bounds how far back the scan goes, checked at line
  * boundaries: a line that straddles the budget is still completed and
- * yielded, so the budget caps scan depth without capping line size.
- * Splitting on \n is UTF-8 safe (0x0A never appears inside a multi-byte
- * sequence), so buffers are only decoded once a line is complete.
+ * yielded, so the budget caps scan depth without capping line size — the
+ * true worst-case read is maxScanBytes + maxLineBytes. Splitting on \n is
+ * UTF-8 safe (0x0A never appears inside a multi-byte sequence), so buffers
+ * are only decoded once a line is complete. An in-progress line is kept as
+ * a list of chunk slices and concatenated once at its newline, so assembling
+ * a jumbo line is linear, not quadratic. The scan aborts (stops yielding) on
+ * any line over maxLineBytes and on a short read (file changed underneath).
  */
 export function* iterateLogLinesBackward(
   logPath: string,
@@ -494,11 +503,20 @@ export function* iterateLogLinesBackward(
     if (size <= 0) return
 
     let position = size
-    // Partial line at the front of the region read so far; its earlier bytes
-    // live in chunks we have not read yet.
-    let carry = Buffer.alloc(0)
+    // Pieces of the in-progress line (file order); its earlier bytes live in
+    // chunks not yet read. Concatenated only once, at the line's newline.
+    let carry: Buffer[] = []
+    let carrySize = 0
     let scanned = 0
     let budgetExhausted = false
+
+    const finishLine = (piece: Buffer): string | null => {
+      const buf = carry.length > 0 ? Buffer.concat([piece, ...carry]) : piece
+      carry = []
+      carrySize = 0
+      if (buf.length > maxLineBytes) return null
+      return buf.toString('utf8').trim()
+    }
 
     while (position > 0) {
       // While budget remains, never read past it in one chunk — lines inside
@@ -511,36 +529,50 @@ export function* iterateLogLinesBackward(
       const readLength = Math.min(remaining, position)
       const start = position - readLength
       const chunk = Buffer.alloc(readLength)
-      fs.readSync(fd, chunk, 0, readLength, start)
+      const bytesRead = fs.readSync(fd, chunk, 0, readLength, start)
+      if (bytesRead !== readLength) return
       position = start
       scanned += readLength
-      const combined = carry.length > 0 ? Buffer.concat([chunk, carry]) : chunk
 
-      // Walk newlines from the end; each segment after a newline is complete.
-      let end = combined.length
-      for (let i = combined.length - 1; i >= 0; i--) {
-        if (combined[i] !== 0x0a) continue
-        const line = combined.toString('utf8', i + 1, end).trim()
+      // Walk newlines from the end of the chunk; the segment after each
+      // newline is a complete line. The first (newest) one also absorbs the
+      // carry accumulated from later chunks.
+      let end = chunk.length
+      let carryConsumed = false
+      for (let i = chunk.length - 1; i >= 0; i--) {
+        if (chunk[i] !== 0x0a) continue
+        const piece = chunk.subarray(i + 1, end)
         end = i
+        let line: string | null
+        if (carryConsumed) {
+          line = piece.length > maxLineBytes ? null : piece.toString('utf8').trim()
+        } else {
+          line = finishLine(piece)
+          carryConsumed = true
+        }
+        if (line === null) return
         if (line) {
           yield line
           // Once past the budget we only finish the straddling line.
           if (budgetExhausted) return
         }
       }
-      carry = combined.subarray(0, end)
+      if (end > 0) {
+        carry.unshift(chunk.subarray(0, end))
+        carrySize += end
+      }
 
-      if (carry.length > maxLineBytes) return
+      if (carrySize > maxLineBytes) return
       if (scanned >= maxScanBytes) {
         // At a line boundary the budget is a clean stop; mid-line, keep
         // reading just far enough to complete the line in progress.
-        if (carry.length === 0) return
+        if (carrySize === 0) return
         budgetExhausted = true
       }
     }
 
-    if (carry.length > 0) {
-      const line = carry.toString('utf8').trim()
+    if (carrySize > 0) {
+      const line = finishLine(Buffer.alloc(0))
       if (line) yield line
     }
   } finally {

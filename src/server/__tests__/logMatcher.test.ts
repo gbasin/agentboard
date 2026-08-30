@@ -1928,6 +1928,27 @@ describe('iterateLogLinesBackward', () => {
     expect(seen).toEqual(['tail'])
   })
 
+  test('enforces maxLineBytes on a line contained entirely within one chunk', async () => {
+    const logPath = path.join(tmpDir, 'in-chunk-oversized.jsonl')
+    await fs.writeFile(logPath, ['early', 'h'.repeat(4 * 1024), 'tail'].join('\n'))
+
+    const seen = [
+      ...iterateLogLinesBackward(logPath, { chunkBytes: 16 * 1024, maxLineBytes: 1024 }),
+    ]
+    expect(seen).toEqual(['tail'])
+  })
+
+  test('handles CRLF line endings', async () => {
+    const logPath = path.join(tmpDir, 'crlf.jsonl')
+    await fs.writeFile(logPath, 'first\r\nsecond\r\nthird\r\n')
+
+    expect([...iterateLogLinesBackward(logPath, { chunkBytes: 4 })]).toEqual([
+      'third',
+      'second',
+      'first',
+    ])
+  })
+
   test('handles a file with no trailing newline and a single line', async () => {
     const logPath = path.join(tmpDir, 'single.jsonl')
     await fs.writeFile(logPath, 'only-line')
@@ -2068,5 +2089,16 @@ describe('stripPastePlaceholders', () => {
   test('leaves unrelated bracketed text alone', () => {
     const input = 'see [Image #1] and [link](https://example.com)'
     expect(stripPastePlaceholders(input)).toBe(input)
+  })
+
+  test('leaves bracketed prose starting with "pasted" alone when no counter token follows', () => {
+    const inputs = [
+      'Compare [pasted from docs] with the generated output.',
+      'The UI displays [pasted content unavailable] here.',
+      'Preserve the literal token [PastedExample].',
+    ]
+    for (const input of inputs) {
+      expect(stripPastePlaceholders(input)).toBe(input)
+    }
   })
 })
