@@ -31,8 +31,11 @@ import type {
   OrphanCandidate,
 } from './logMatchWorkerTypes'
 
+// lineLimit 0: the backward scan is bounded by maxByteLimit alone — a long
+// autonomous run can put thousands of tool-result lines after the last user
+// message, and a line cap would stop the scan before reaching it.
 const LAST_USER_MESSAGE_READ_OPTIONS = {
-  lineLimit: 200,
+  lineLimit: 0,
   byteLimit: 32 * 1024,
   maxByteLimit: 2 * 1024 * 1024,
 }
