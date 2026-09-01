@@ -371,6 +371,25 @@ export function isToolNotificationText(text: string): boolean {
 }
 
 /**
+ * Agent TUIs collapse a large paste into a bracketed placeholder — Claude
+ * Code renders "[Pasted text #1 +263 lines]" — so a terminal capture of such
+ * a prompt is lossy: only the JSONL log has the real content. Strips every
+ * placeholder and collapses the surrounding whitespace. The pattern demands
+ * a counter token (#N, +N lines, or N chars/lines) so legitimate bracketed
+ * prose like "[pasted from docs]" is left alone. Returns the input string
+ * unchanged (same reference) when no placeholder is present, so callers can
+ * detect placeholders via `stripPastePlaceholders(t) !== t`.
+ */
+const PASTE_PLACEHOLDER_PATTERN =
+  /\[\s*pasted(?:\s+text)?[^\]]*?(?:#\d+|\+\d+\s*lines?|\d+\s*(?:characters|chars?|lines?))[^\]]*\]/gi
+
+export function stripPastePlaceholders(text: string): string {
+  const stripped = text.replace(PASTE_PLACEHOLDER_PATTERN, ' ')
+  if (stripped === text) return text
+  return stripped.replace(/\s+/g, ' ').trim()
+}
+
+/**
  * Extract the action name from a <user_action> XML block.
  * Returns the action (e.g., "review") or null if not a user_action block.
  */
@@ -436,6 +455,130 @@ function readLogTail(logPath: string, byteLimit = DEFAULT_LOG_TAIL_BYTES): strin
 }
 
 const MAX_PROGRESSIVE_TAIL_BYTES = 2 * 1024 * 1024
+
+const BACKWARD_READ_CHUNK_BYTES = 64 * 1024
+// Safety valve for pathological files (e.g. a multi-GB line with no newlines).
+// A single log entry larger than this aborts the backward scan.
+const MAX_BACKWARD_LINE_BYTES = 16 * 1024 * 1024
+
+/**
+ * Iterate the complete lines of a file from the end toward the start (newest
+ * first). Reads fixed-size chunks backward from EOF and only assembles whole
+ * lines, so a jumbo line (a user message with a large paste can exceed 1MB as
+ * a single JSONL line) costs one pass over that line instead of repeated
+ * expanding tail reads that keep decapitating it at the tail boundary.
+ *
+ * `maxScanBytes` bounds how far back the scan goes, checked at line
+ * boundaries: a line that straddles the budget is still completed and
+ * yielded, so the budget caps scan depth without capping line size — the
+ * true worst-case read is maxScanBytes + maxLineBytes. Splitting on \n is
+ * UTF-8 safe (0x0A never appears inside a multi-byte sequence), so buffers
+ * are only decoded once a line is complete. An in-progress line is kept as
+ * a list of chunk slices and concatenated once at its newline, so assembling
+ * a jumbo line is linear, not quadratic. The scan aborts (stops yielding) on
+ * any line over maxLineBytes and on a short read (file changed underneath).
+ */
+export function* iterateLogLinesBackward(
+  logPath: string,
+  {
+    maxScanBytes = Number.POSITIVE_INFINITY,
+    chunkBytes = BACKWARD_READ_CHUNK_BYTES,
+    maxLineBytes = MAX_BACKWARD_LINE_BYTES,
+  }: { maxScanBytes?: number; chunkBytes?: number; maxLineBytes?: number } = {}
+): Generator<string> {
+  if (maxScanBytes <= 0) return
+  let fd: number
+  let size: number
+  try {
+    fd = fs.openSync(logPath, 'r')
+  } catch {
+    return
+  }
+  try {
+    try {
+      size = fs.fstatSync(fd).size
+    } catch {
+      return
+    }
+    if (size <= 0) return
+
+    let position = size
+    // Pieces of the in-progress line (file order); its earlier bytes live in
+    // chunks not yet read. Concatenated only once, at the line's newline.
+    let carry: Buffer[] = []
+    let carrySize = 0
+    let scanned = 0
+    let budgetExhausted = false
+
+    const finishLine = (piece: Buffer): string | null => {
+      const buf = carry.length > 0 ? Buffer.concat([piece, ...carry]) : piece
+      carry = []
+      carrySize = 0
+      if (buf.length > maxLineBytes) return null
+      return buf.toString('utf8').trim()
+    }
+
+    while (position > 0) {
+      // While budget remains, never read past it in one chunk — lines inside
+      // a chunk are emitted unconditionally, so an oversized read would leak
+      // lines from beyond the budget. Once exhausted (mid-line), full chunks
+      // are fine: emission stops at the first completed line.
+      const remaining = budgetExhausted
+        ? chunkBytes
+        : Math.max(1, Math.min(chunkBytes, maxScanBytes - scanned))
+      const readLength = Math.min(remaining, position)
+      const start = position - readLength
+      const chunk = Buffer.alloc(readLength)
+      const bytesRead = fs.readSync(fd, chunk, 0, readLength, start)
+      if (bytesRead !== readLength) return
+      position = start
+      scanned += readLength
+
+      // Walk newlines from the end of the chunk; the segment after each
+      // newline is a complete line. The first (newest) one also absorbs the
+      // carry accumulated from later chunks.
+      let end = chunk.length
+      let carryConsumed = false
+      for (let i = chunk.length - 1; i >= 0; i--) {
+        if (chunk[i] !== 0x0a) continue
+        const piece = chunk.subarray(i + 1, end)
+        end = i
+        let line: string | null
+        if (carryConsumed) {
+          line = piece.length > maxLineBytes ? null : piece.toString('utf8').trim()
+        } else {
+          line = finishLine(piece)
+          carryConsumed = true
+        }
+        if (line === null) return
+        if (line) {
+          yield line
+          // Once past the budget we only finish the straddling line.
+          if (budgetExhausted) return
+        }
+      }
+      if (end > 0) {
+        carry.unshift(chunk.subarray(0, end))
+        carrySize += end
+      }
+
+      if (carrySize > maxLineBytes) return
+      if (scanned >= maxScanBytes) {
+        // At a line boundary the budget is a clean stop; mid-line, keep
+        // reading just far enough to complete the line in progress.
+        if (carrySize === 0) return
+        budgetExhausted = true
+      }
+    }
+
+    if (carrySize > 0) {
+      const line = finishLine(Buffer.alloc(0))
+      if (line) yield line
+    }
+  } finally {
+    fs.closeSync(fd)
+  }
+}
 
 /**
  * Check if a log file contains a message in a valid user context, using progressive
@@ -1571,15 +1714,50 @@ function extractRoleTextFromEntry(
   return chunks
 }
 
-function extractLastConversationFromLines(lines: string[]): ConversationPair {
+/**
+ * Claude Code mirrors each submitted prompt into a tiny `last-prompt` entry
+ * (~200 chars, pre-truncated) written right after the full user entry. It is
+ * the cheap fallback when the real user entry cannot be recovered — larger
+ * than the line-size cap, or beyond the scan budget. Codex has no equivalent.
+ */
+function extractLastPromptText(entry: unknown): string | null {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null
+  const record = entry as Record<string, unknown>
+  if (record.type !== 'last-prompt') return null
+  if (typeof record.lastPrompt !== 'string') return null
+  return processUserMessageText(record.lastPrompt)
+}
+
+function extractLastConversationFromLog(
+  logPath: string,
+  logRead: Partial<LogReadOptions> = {}
+): ConversationPair {
+  const resolvedRead = resolveLogReadOptions(logRead)
+  const initialByteLimit = Math.max(0, resolvedRead.byteLimit)
+  if (initialByteLimit <= 0) {
+    return { user: '', assistant: '' }
+  }
+  const maxScanBytes = Math.max(
+    initialByteLimit,
+    typeof logRead.maxByteLimit === 'number' ? logRead.maxByteLimit : initialByteLimit
+  )
+  const lineLimit = resolvedRead.lineLimit
+
   let lastUser = ''
   let lastAssistant = ''
-  for (let i = lines.length - 1; i >= 0; i -= 1) {
+  let lastPromptFallback = ''
+  let linesScanned = 0
+
+  for (const line of iterateLogLinesBackward(logPath, { maxScanBytes })) {
+    if (lineLimit > 0 && ++linesScanned > lineLimit) break
     let entry: unknown
     try {
-      entry = JSON.parse(lines[i])
+      entry = JSON.parse(line)
     } catch {
       continue
+    }
+    if (!lastPromptFallback) {
+      lastPromptFallback = extractLastPromptText(entry) ?? ''
     }
     const roleText = extractRoleTextFromEntry(entry)
     for (const { role, text } of roleText) {
@@ -1590,54 +1768,13 @@ function extractLastConversationFromLines(lines: string[]): ConversationPair {
         lastUser = text.trim()
       }
     }
-    if (lastUser && lastAssistant) {
-      break
-    }
+    if (lastUser && lastAssistant) break
+  }
+
+  if (!lastUser && lastPromptFallback) {
+    lastUser = lastPromptFallback
   }
   return { user: lastUser, assistant: lastAssistant }
-}
-
-function extractLastConversationFromLog(
-  logPath: string,
-  logRead: Partial<LogReadOptions> = {}
-): ConversationPair {
-  const resolvedRead = resolveLogReadOptions(logRead)
-  const initialByteLimit = Math.max(0, resolvedRead.byteLimit)
-  const maxByteLimit = Math.max(
-    initialByteLimit,
-    typeof logRead.maxByteLimit === 'number' ? logRead.maxByteLimit : initialByteLimit
-  )
-  const useProgressive = maxByteLimit > initialByteLimit
-  const lineLimit = useProgressive ? 0 : resolvedRead.lineLimit
-
-  if (initialByteLimit <= 0) {
-    return { user: '', assistant: '' }
-  }
-
-  let byteLimit = initialByteLimit
-  let lastPair: ConversationPair = { user: '', assistant: '' }
-
-  while (byteLimit <= maxByteLimit) {
-    const raw = readLogTail(logPath, byteLimit)
-    if (!raw) {
-      return { user: '', assistant: '' }
-    }
-    let lines = raw.split('\n').map((line) => line.trim()).filter(Boolean)
-    if (lineLimit > 0 && lines.length > lineLimit) {
-      lines = lines.slice(-lineLimit)
-    }
-    const pair = extractLastConversationFromLines(lines)
-    lastPair = pair
-    if (pair.user) {
-      return pair
-    }
-    if (byteLimit >= maxByteLimit) {
-      break
-    }
-    byteLimit = Math.min(byteLimit * 4, maxByteLimit)
-  }
-
-  return lastPair
 }
 
 export function extractLastUserMessageFromLog(

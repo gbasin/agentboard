@@ -21,6 +21,7 @@ import { getLogSearchDirs } from './logDiscovery'
 import {
   DEFAULT_SCROLLBACK_LINES,
   matchWindowsToLogsByExactRg,
+  stripPastePlaceholders,
   verifyWindowLogAssociationDetailed,
   verifyWindowLogAssociationDetailedAsync,
   type WindowLogVerificationResult,
@@ -1276,8 +1277,16 @@ function scheduleLastUserMessageCapture(sessionId: string) {
 
 async function captureLastUserMessage(tmuxWindow: string) {
   try {
-    const message = await lastUserMessageWorker.getLastUserMessage(tmuxWindow)
-    if (!message || !message.trim()) return
+    const captured = await lastUserMessageWorker.getLastUserMessage(tmuxWindow)
+    const message = captured?.trim() ? stripPastePlaceholders(captured) : ''
+    if (!message || message !== captured) {
+      // Empty capture, or a paste the TUI collapsed to a "[Pasted text …]"
+      // placeholder: the JSONL log has the real prompt, so release the
+      // Enter-key lock and let the log poller supply/upgrade the summary
+      // instead of blocking it for the full lock window.
+      lastUserMessageLocks.delete(tmuxWindow)
+    }
+    if (!message) return
     const record = db.getSessionByWindow(tmuxWindow)
     if (!record) return
     if (record.lastUserMessage === message) return
@@ -1286,6 +1295,7 @@ async function captureLastUserMessage(tmuxWindow: string) {
     registry.updateSession(tmuxWindow, { lastUserMessage: message })
     updateActiveAgentSessions()
   } catch (error) {
+    lastUserMessageLocks.delete(tmuxWindow)
     logger.warn('last_user_message_capture_error', {
       tmuxWindow,
       message: error instanceof Error ? error.message : String(error),

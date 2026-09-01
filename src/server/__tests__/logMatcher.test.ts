@@ -22,6 +22,8 @@ import {
   isToolNotificationText,
   extractLastEntryTimestamp,
   captureTerminalScrollback,
+  iterateLogLinesBackward,
+  stripPastePlaceholders,
 } from '../logMatcher'
 
 const bunAny = Bun as typeof Bun & {
@@ -1867,5 +1869,236 @@ describe('extractLastEntryTimestamp', () => {
       JSON.stringify({ timestamp: '2025-01-01T00:00:00Z', type: 'message' }) + '\n'
     )
     expect(extractLastEntryTimestamp(logPath)).toBe('2025-01-01T00:00:00Z')
+  })
+})
+
+describe('iterateLogLinesBackward', () => {
+  let tmpDir: string
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-backward-'))
+  })
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true })
+  })
+
+  test('yields complete lines newest-first across chunk boundaries', async () => {
+    const logPath = path.join(tmpDir, 'lines.jsonl')
+    const lines = ['first', 'second 你好🚀 multibyte', 'x'.repeat(300), 'last']
+    await fs.writeFile(logPath, lines.join('\n') + '\n')
+
+    const seen = [...iterateLogLinesBackward(logPath, { chunkBytes: 7 })]
+    expect(seen).toEqual([...lines].reverse())
+  })
+
+  test('completes a jumbo line that straddles the scan budget', async () => {
+    const logPath = path.join(tmpDir, 'jumbo.jsonl')
+    const jumbo = 'j'.repeat(50 * 1024)
+    await fs.writeFile(logPath, ['early', jumbo, 'tail'].join('\n'))
+
+    const seen = [
+      ...iterateLogLinesBackward(logPath, { chunkBytes: 1024, maxScanBytes: 4 * 1024 }),
+    ]
+    // 'tail' fits the budget; the jumbo line straddles it and is still
+    // completed; 'early' lies past the budget and is not scanned.
+    expect(seen).toEqual(['tail', jumbo])
+  })
+
+  test('stops at a clean line boundary once the budget is spent', async () => {
+    const logPath = path.join(tmpDir, 'budget.jsonl')
+    const lines = Array.from({ length: 64 }, (_, i) => `line-${i}-${'p'.repeat(100)}`)
+    await fs.writeFile(logPath, lines.join('\n') + '\n')
+
+    const seen = [
+      ...iterateLogLinesBackward(logPath, { chunkBytes: 512, maxScanBytes: 1024 }),
+    ]
+    expect(seen.length).toBeGreaterThan(0)
+    expect(seen.length).toBeLessThan(lines.length)
+    expect(seen[0]).toBe(lines[lines.length - 1] ?? '')
+  })
+
+  test('aborts on a line larger than maxLineBytes', async () => {
+    const logPath = path.join(tmpDir, 'oversized.jsonl')
+    await fs.writeFile(logPath, ['early', 'g'.repeat(8 * 1024), 'tail'].join('\n'))
+
+    const seen = [
+      ...iterateLogLinesBackward(logPath, { chunkBytes: 1024, maxLineBytes: 2 * 1024 }),
+    ]
+    expect(seen).toEqual(['tail'])
+  })
+
+  test('enforces maxLineBytes on a line contained entirely within one chunk', async () => {
+    const logPath = path.join(tmpDir, 'in-chunk-oversized.jsonl')
+    await fs.writeFile(logPath, ['early', 'h'.repeat(4 * 1024), 'tail'].join('\n'))
+
+    const seen = [
+      ...iterateLogLinesBackward(logPath, { chunkBytes: 16 * 1024, maxLineBytes: 1024 }),
+    ]
+    expect(seen).toEqual(['tail'])
+  })
+
+  test('handles CRLF line endings', async () => {
+    const logPath = path.join(tmpDir, 'crlf.jsonl')
+    await fs.writeFile(logPath, 'first\r\nsecond\r\nthird\r\n')
+
+    expect([...iterateLogLinesBackward(logPath, { chunkBytes: 4 })]).toEqual([
+      'third',
+      'second',
+      'first',
+    ])
+  })
+
+  test('handles a file with no trailing newline and a single line', async () => {
+    const logPath = path.join(tmpDir, 'single.jsonl')
+    await fs.writeFile(logPath, 'only-line')
+    expect([...iterateLogLinesBackward(logPath)]).toEqual(['only-line'])
+  })
+})
+
+describe('jumbo last-message extraction', () => {
+  let tmpDir: string
+  const workerReadOptions = {
+    lineLimit: 0,
+    byteLimit: 32 * 1024,
+    maxByteLimit: 2 * 1024 * 1024,
+  }
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-jumbo-'))
+  })
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true })
+  })
+
+  test('recovers a Claude user message far larger than the initial tail read', async () => {
+    // Shape of the fresh-silo incident: meta lines, one 121KB+ user line,
+    // then attachments and a last-prompt entry.
+    const logPath = path.join(tmpDir, 'claude.jsonl')
+    const jumboText = 'grill me on this concept: ' + 'detail '.repeat(20_000)
+    await fs.writeFile(
+      logPath,
+      [
+        JSON.stringify({ type: 'mode', mode: 'default' }),
+        JSON.stringify({
+          type: 'user',
+          message: { role: 'user', content: jumboText },
+        }),
+        JSON.stringify({ type: 'attachment', attachment: { pad: 'a'.repeat(30_000) } }),
+        JSON.stringify({
+          type: 'last-prompt',
+          lastPrompt: jumboText.slice(0, 200) + '…',
+        }),
+      ].join('\n') + '\n'
+    )
+
+    // Full untruncated text wins over the last-prompt mirror.
+    expect(extractLastUserMessageFromLog(logPath, workerReadOptions)).toBe(
+      jumboText.trim()
+    )
+  })
+
+  test('recovers a jumbo Codex response_item user message', async () => {
+    const logPath = path.join(tmpDir, 'codex.jsonl')
+    const jumboText = 'review this dump: ' + 'lorem '.repeat(60_000)
+    await fs.writeFile(
+      logPath,
+      [
+        JSON.stringify({ type: 'session_meta', payload: { id: 'x' } }),
+        JSON.stringify({
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [{ type: 'input_text', text: jumboText }],
+          },
+        }),
+        JSON.stringify({ type: 'event_msg', payload: { type: 'task_started' } }),
+      ].join('\n') + '\n'
+    )
+
+    expect(extractLastUserMessageFromLog(logPath, workerReadOptions)).toBe(
+      jumboText.trim()
+    )
+  })
+
+  test('falls back to the last-prompt mirror when the user entry is past the scan budget', async () => {
+    const logPath = path.join(tmpDir, 'fallback.jsonl')
+    const truncated = 'huge prompt preview…'
+    await fs.writeFile(
+      logPath,
+      [
+        JSON.stringify({
+          type: 'user',
+          message: { role: 'user', content: 'huge prompt ' + 'x'.repeat(1000) },
+        }),
+        // Enough post-user filler to exhaust a small scan budget at a line boundary.
+        ...Array.from({ length: 40 }, (_, i) =>
+          JSON.stringify({ type: 'attachment', attachment: { i, pad: 'f'.repeat(400) } })
+        ),
+        JSON.stringify({ type: 'last-prompt', lastPrompt: truncated }),
+      ].join('\n') + '\n'
+    )
+
+    expect(
+      extractLastUserMessageFromLog(logPath, {
+        lineLimit: 0,
+        byteLimit: 1024,
+        maxByteLimit: 8 * 1024,
+      })
+    ).toBe(truncated)
+  })
+
+  test('prefers the real user entry over a last-prompt mirror', async () => {
+    const logPath = path.join(tmpDir, 'prefer-real.jsonl')
+    await fs.writeFile(
+      logPath,
+      [
+        JSON.stringify({ type: 'last-prompt', lastPrompt: 'older mirror' }),
+        JSON.stringify({
+          type: 'user',
+          message: { role: 'user', content: 'the real latest message' },
+        }),
+      ].join('\n') + '\n'
+    )
+
+    expect(extractLastUserMessageFromLog(logPath, workerReadOptions)).toBe(
+      'the real latest message'
+    )
+  })
+})
+
+describe('stripPastePlaceholders', () => {
+  test('returns the same string when no placeholder is present', () => {
+    const input = 'fix the login bug'
+    expect(stripPastePlaceholders(input)).toBe(input)
+  })
+
+  test('strips a Claude paste placeholder and collapses whitespace', () => {
+    expect(
+      stripPastePlaceholders('check this out [Pasted text #1 +263 lines] please')
+    ).toBe('check this out please')
+  })
+
+  test('strips bracketed pasted variants case-insensitively', () => {
+    expect(stripPastePlaceholders('[ pasted 4123 characters ]')).toBe('')
+    expect(stripPastePlaceholders('[Pasted text #2 +9 lines]')).toBe('')
+  })
+
+  test('leaves unrelated bracketed text alone', () => {
+    const input = 'see [Image #1] and [link](https://example.com)'
+    expect(stripPastePlaceholders(input)).toBe(input)
+  })
+
+  test('leaves bracketed prose starting with "pasted" alone when no counter token follows', () => {
+    const inputs = [
+      'Compare [pasted from docs] with the generated output.',
+      'The UI displays [pasted content unavailable] here.',
+      'Preserve the literal token [PastedExample].',
+    ]
+    for (const input of inputs) {
+      expect(stripPastePlaceholders(input)).toBe(input)
+    }
   })
 })
