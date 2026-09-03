@@ -82,6 +82,8 @@ const KeyboardIcon = (
 const CONTROL_KEYS_LEFT: ControlKey[] = [
   { label: 'esc', key: '\x1b' },
   { label: 'tab', key: '\t' },
+  // Shift+Tab (CSI Z): toggles Claude Code's plan / auto-accept mode
+  { label: '⇧tab', key: '\x1b[Z', ariaLabel: 'Shift+Tab' },
 ]
 
 // Keys after the d-pad
@@ -511,6 +513,7 @@ export default function TerminalControls({
           <button
             key={`left-${i}`}
             type="button"
+            aria-label={control.ariaLabel}
             className={`
               terminal-key
               flex items-center justify-center

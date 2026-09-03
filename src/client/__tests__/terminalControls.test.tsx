@@ -66,7 +66,7 @@ describe('TerminalControls', () => {
     const keyButtons = renderer.root.findAllByType('button').filter((button) =>
       String(button.props.className ?? '').includes('terminal-key')
     )
-    expect(keyButtons).toHaveLength(9)
+    expect(keyButtons).toHaveLength(10)
     expect(keyButtons.every((button) =>
       String(button.props.className).includes('size-[44px]')
     )).toBe(true)
@@ -110,6 +110,51 @@ describe('TerminalControls', () => {
     })
 
     expect(sent[1]).toBe('a')
+  })
+
+  test('shift+tab quick key sends CSI Z and leaves ctrl armed', () => {
+    globalAny.navigator = { vibrate: () => true } as unknown as Navigator
+
+    const sent: string[] = []
+
+    const renderer = TestRenderer.create(
+      <TerminalControls
+        onSendKey={(key) => sent.push(key)}
+        sessions={[{ id: 'session-1', name: 'alpha', status: 'working' }]}
+        currentSessionId="session-1"
+        onSelectSession={() => {}}
+      />
+    )
+
+    const buttons = renderer.root.findAllByType('button')
+    const shiftTab = buttons.find((button) => button.props['aria-label'] === 'Shift+Tab')
+    const ctrlButton = buttons.find((button) => button.props.children === 'ctrl')
+    if (!shiftTab || !ctrlButton) {
+      throw new Error('Expected shift+tab and ctrl buttons')
+    }
+
+    // Plain press sends the reverse-tab escape sequence.
+    act(() => {
+      shiftTab.props.onClick()
+    })
+    expect(sent).toEqual(['\x1b[Z'])
+
+    // With ctrl armed the multi-byte sequence passes through unchanged and,
+    // like the arrow keys, does not consume the modifier: the next single
+    // character still gets ctrl applied.
+    act(() => {
+      ctrlButton.props.onClick()
+    })
+    act(() => {
+      shiftTab.props.onClick()
+    })
+    expect(sent[1]).toBe('\x1b[Z')
+
+    const numpad = renderer.root.findByType(NumPad)
+    act(() => {
+      numpad.props.onSendKey('a')
+    })
+    expect(sent[2]).toBe(String.fromCharCode(1))
   })
 
   test('session switcher selects sessions when multiple are present', () => {
