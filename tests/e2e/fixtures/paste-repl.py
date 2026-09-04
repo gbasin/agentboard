@@ -26,7 +26,11 @@ old = termios.tcgetattr(fd)
 
 
 def render(content: bytes) -> bytes:
-    return content.replace(b"\r", b"|").replace(b"\n", b"|")
+    # Escape ESC so echoed key sequences (e.g. arrows) cannot move the cursor
+    # and overwrite earlier marker lines that the tests read back.
+    return (
+        content.replace(b"\r", b"|").replace(b"\n", b"|").replace(b"\x1b", b"^[")
+    )
 
 
 def main() -> None:
