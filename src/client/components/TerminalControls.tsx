@@ -547,6 +547,7 @@ export default function TerminalControls({
           disabled={disabled}
           onRefocus={onRefocus}
           isKeyboardVisible={isKeyboardVisible}
+          sessionKey={currentSessionId}
         />
 
         {/* Right controls */}

@@ -174,6 +174,8 @@ test('arrow cluster: tap sends, hold repeats, deck never reflows', async ({ page
     await touch(page, trigger.x, trigger.y, 40)
     await expect(cluster).toHaveCount(0)
 
+    // Let the trigger's 75ms press-scale transition finish before measuring.
+    await sleep(300)
     expect(await deckLayout(page)).toEqual(layoutBefore)
   } finally {
     tmux(['kill-window', '-t', target])
