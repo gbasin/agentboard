@@ -204,7 +204,7 @@ mock.module('../hooks/useWebSocket', () => ({
   }),
 }))
 
-const [{ default: App }, { default: Header }, { default: SessionList }, { default: Terminal }, { default: TerminalControls }, { default: NewSessionModal }, { default: SettingsModal }, { default: DPad }, { default: NumPad }, { useSessionStore }] =
+const [{ default: App }, { default: Header }, { default: SessionList }, { default: Terminal }, { default: TerminalControls }, { default: NewSessionModal }, { default: SettingsModal }, { default: ArrowKeys }, { default: NumPad }, { useSessionStore }] =
   await Promise.all([
     import('../App'),
     import('../components/Header'),
@@ -213,7 +213,7 @@ const [{ default: App }, { default: Header }, { default: SessionList }, { defaul
     import('../components/TerminalControls'),
     import('../components/NewSessionModal'),
     import('../components/SettingsModal'),
-    import('../components/DPad'),
+    import('../components/ArrowKeys'),
     import('../components/NumPad'),
     import('../stores/sessionStore'),
   ])
@@ -460,9 +460,9 @@ describe('component rendering', () => {
   })
 
   test('renders controls widgets', () => {
-    const dpad = renderMarkup(<DPad onSendKey={() => {}} />)
+    const arrows = renderMarkup(<ArrowKeys onSendKey={() => {}} />)
     const numpad = renderMarkup(<NumPad onSendKey={() => {}} />)
-    expect(dpad).toContain('terminal-key')
+    expect(arrows).toContain('terminal-key')
     expect(numpad).toContain('terminal-key')
   })
 })
