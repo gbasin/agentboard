@@ -1,7 +1,10 @@
 /**
  * DPad - Virtual joystick for mobile terminal navigation
  * Long press to activate, drag in any direction to send arrow keys
- * Uses joystick pattern so finger position doesn't obscure controls
+ * Uses joystick pattern so finger position doesn't obscure controls:
+ * the ring is drawn above the finger, but direction and distance are
+ * measured from where the finger first touched down, so the finger
+ * starts in the dead zone and any direction is one short drag away.
  */
 
 import { useState, useRef, useCallback, useEffect, type TouchEvent } from 'react'
@@ -82,6 +85,8 @@ export default function DPad({
   const wasKeyboardVisibleRef = useRef(false)
   const currentDirectionRef = useRef<Direction>(null)
   const currentDistanceRef = useRef(0)
+  // Where the finger touched down: the logical joystick center.
+  const touchOriginRef = useRef({ x: 0, y: 0 })
 
   // Clean up all timers
   const clearAllTimers = useCallback(() => {
@@ -143,8 +148,8 @@ export default function DPad({
 
   // Update direction based on finger position
   const updateDirection = useCallback((clientX: number, clientY: number) => {
-    const dx = clientX - joystickCenter.x
-    const dy = clientY - joystickCenter.y
+    const dx = clientX - touchOriginRef.current.x
+    const dy = clientY - touchOriginRef.current.y
 
     // Clamp knob position to joystick radius
     const rawDistance = Math.sqrt(dx * dx + dy * dy)
@@ -166,7 +171,7 @@ export default function DPad({
         startDirection(newDirection, distance)
       }
     }
-  }, [joystickCenter, stopKeyRepeat, startDirection])
+  }, [stopKeyRepeat, startDirection])
 
   // Close the joystick
   const closeJoystick = useCallback(() => {
@@ -189,10 +194,12 @@ export default function DPad({
 
     const touch = e.touches[0]
     wasKeyboardVisibleRef.current = isKeyboardVisible?.() ?? false
+    touchOriginRef.current = { x: touch.clientX, y: touch.clientY }
 
     longPressTimerRef.current = setTimeout(() => {
       triggerHaptic(15)
-      // Position joystick centered above the touch point
+      // Draw the ring above the touch point so the finger doesn't cover it.
+      // Direction is still measured from the touch point (touchOriginRef).
       setJoystickCenter({ x: touch.clientX, y: touch.clientY - 80 })
       setKnobOffset({ x: 0, y: 0 })
       setIsOpen(true)

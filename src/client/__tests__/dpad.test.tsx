@@ -72,11 +72,28 @@ describe('DPad component', () => {
       button.props.onTouchStart(createTouchEvent(100, 200))
     })
 
+    // Direction is measured from the touch-down point (100, 200), not from
+    // the ring drawn 80px above it. A short drag right is RIGHT ...
     act(() => {
-      button.props.onTouchMove(createTouchEvent(130, 120))
+      button.props.onTouchMove(createTouchEvent(140, 200))
     })
 
     expect(sent).toEqual(['\x1b[C'])
+
+    // ... and a short drag up is UP, even though the finger is still below
+    // the ring's center.
+    act(() => {
+      button.props.onTouchMove(createTouchEvent(100, 160))
+    })
+
+    expect(sent).toEqual(['\x1b[C', '\x1b[A'])
+
+    // Within the dead zone around the touch-down point nothing is sent.
+    act(() => {
+      button.props.onTouchMove(createTouchEvent(105, 205))
+    })
+
+    expect(sent).toEqual(['\x1b[C', '\x1b[A'])
 
     act(() => {
       button.props.onTouchEnd(createTouchEvent(130, 200))
