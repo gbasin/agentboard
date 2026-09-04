@@ -18,6 +18,7 @@
 #   scripts/ios-sim.sh press X Y [S] # long-press (default 1.5s) at device points
 #   scripts/ios-sim.sh swipe X1 Y1 X2 Y2 [S]
 #   scripts/ios-sim.sh down          # tear down server and tmux, leave sim booted
+#   scripts/ios-sim.sh sim-down      # shut the simulator down
 #
 # Coordinates are device POINTS, not pixels. A screenshot of an iPhone 17 Pro is
 # 1206x2622 px for a 402x874 pt screen, so divide screenshot pixels by 3.
@@ -87,6 +88,9 @@ cmd_up() {
       LOG_FILE="$TMPDIR_TMUX/ab.log" \
       AGENTBOARD_STATIC_DIR="$REPO/dist/client" \
       bun "$REPO/src/server/index.ts" >"$TMPDIR_TMUX/server.out" 2>&1 &
+    # Remembered for `down`: env assignments are not in the process's argv,
+    # so a pkill -f pattern on them never matches.
+    echo $! >"$TMPDIR_TMUX/server.pid"
     for _ in $(seq 1 30); do
       curl -sf -o /dev/null "http://localhost:$PORT/" && break
       sleep 1
@@ -105,13 +109,36 @@ cmd_up() {
 }
 
 cmd_down() {
-  pkill -f "AGENTBOARD_DB_PATH=$TMPDIR_TMUX/ab.db" 2>/dev/null || true
-  # Fall back to port match: the env-based pattern misses when bun rewrites argv.
-  local pids
-  pids="$(lsof -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null || true)"
-  [ -n "$pids" ] && kill $pids 2>/dev/null || true
+  # Kill the server we started (pid file), then anything else still holding
+  # the port, and wait until the port is actually free so a following `up`
+  # never reuses a server that is still shutting down.
+  local pids=""
+  if [ -f "$TMPDIR_TMUX/server.pid" ]; then
+    pids="$(cat "$TMPDIR_TMUX/server.pid")"
+    rm -f "$TMPDIR_TMUX/server.pid"
+  fi
+  pids="$pids $(lsof -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null || true)"
+  # shellcheck disable=SC2086
+  [ -n "${pids// /}" ] && kill $pids 2>/dev/null || true
+  local i
+  for i in $(seq 1 50); do
+    lsof -tiTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1 || break
+    [ "$i" -eq 30 ] && kill -9 $pids 2>/dev/null || true
+    sleep 0.1
+  done
+  if lsof -tiTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+    echo "warning: something is still listening on :$PORT" >&2
+  fi
   run_isolated tmux kill-server 2>/dev/null || true
-  echo "==> torn down (simulator left booted)"
+  echo "==> torn down (simulator left booted; \`$0 sim-down\` shuts it down)"
+}
+
+cmd_sim_down() {
+  local id
+  id="$(udid)"
+  [ -n "$id" ] || { echo "no simulator matching '$DEVICE'" >&2; exit 1; }
+  xcrun simctl shutdown "$id" 2>/dev/null || true
+  echo "==> simulator $DEVICE shut down"
 }
 
 main() {
@@ -119,6 +146,7 @@ main() {
   case "$sub" in
     up)    cmd_up ;;
     down)  cmd_down ;;
+    sim-down) cmd_sim_down ;;
     shot)  xcrun simctl io "$(udid)" screenshot "${1:-/tmp/absel/shot.png}" ;;
     tap)   IDB_UDID="$(udid)" idb ui tap "$1" "$2" ;;
     press) IDB_UDID="$(udid)" idb ui tap "$1" "$2" --duration "${3:-1.5}" ;;
