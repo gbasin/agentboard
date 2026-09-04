@@ -8,7 +8,7 @@ import { useState, useRef, useEffect } from 'react'
 import type { TouchEvent as ReactTouchEvent } from 'react'
 import type { AgentType, Session } from '@shared/types'
 import { CornerDownLeftIcon } from '@untitledui-icons/react/line'
-import DPad from './DPad'
+import ArrowKeys from './ArrowKeys'
 import NumPad from './NumPad'
 import { isIOSDevice } from '../utils/device'
 import { imagePathInput } from '../utils/paste'
@@ -84,7 +84,7 @@ const CONTROL_KEYS_LEFT: ControlKey[] = [
   { label: 'tab', key: '\t' },
 ]
 
-// Keys after the d-pad
+// Keys after the arrow-key trigger
 const CONTROL_KEYS_RIGHT: ControlKey[] = [
   { label: BackspaceIcon, key: '\x17', ariaLabel: 'Delete word' }, // Ctrl+W: delete word backward
   { label: <CornerDownLeftIcon width={18} height={18} />, key: '\r', grow: true, className: 'bg-accent/20 text-accent border-accent/40', ariaLabel: 'Enter' },
@@ -295,7 +295,7 @@ export default function TerminalControls({
     setCtrlActive(!ctrlActive)
   }
 
-  // Wrapper for child components (NumPad, DPad) to apply Ctrl modifier
+  // Wrapper for child components (NumPad, ArrowKeys) to apply Ctrl modifier
   const handleSendKeyWithCtrl = (key: string) => {
     const { output, consumeCtrl } = applyCtrlModifier(key, ctrlActive)
     if (consumeCtrl) {
@@ -541,8 +541,8 @@ export default function TerminalControls({
           isKeyboardVisible={isKeyboardVisible}
         />
 
-        {/* D-pad for arrow keys */}
-        <DPad
+        {/* Arrow keys: tap to open a cluster above the deck */}
+        <ArrowKeys
           onSendKey={handleSendKeyWithCtrl}
           disabled={disabled}
           onRefocus={onRefocus}
