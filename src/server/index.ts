@@ -2540,7 +2540,7 @@ async function handleRemoteCreate(
 
   // Validate name format if provided (same rules as rename)
   const windowName = name?.trim() || generateSessionName()
-  if (name?.trim() && !/^[\w-]+$/.test(windowName)) {
+  if (name?.trim() && !/^[\w\u{00A0}-\u{10FFFF}-]+$/u.test(windowName)) {
     send(ws, { type: 'error', message: 'Name can only contain letters, numbers, hyphens, and underscores' })
     return
   }
@@ -2971,7 +2971,7 @@ async function handleRename(
           send(ws, { type: 'error', message: 'Name cannot be empty' })
           return
         }
-        if (!/^[\w-]+$/.test(trimmed)) {
+        if (!/^[\w\u{00A0}-\u{10FFFF}-]+$/u.test(trimmed)) {
           send(ws, {
             type: 'error',
             message: 'Name can only contain letters, numbers, hyphens, and underscores',
@@ -3008,7 +3008,7 @@ async function handleRename(
       send(ws, { type: 'error', message: 'Name cannot be empty' })
       return
     }
-    if (!/^[\w-]+$/.test(trimmed)) {
+    if (!/^[\w\u{00A0}-\u{10FFFF}-]+$/u.test(trimmed)) {
       send(ws, { type: 'error', message: 'Name can only contain letters, numbers, hyphens, and underscores' })
       return
     }
