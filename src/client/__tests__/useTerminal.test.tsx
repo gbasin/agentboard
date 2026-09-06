@@ -1322,9 +1322,11 @@ describe('useTerminal', () => {
   test('Cmd+V triggers paste via capture-phase listener', async () => {
     jest.useFakeTimers()
     const originalFetch = globalThis.fetch
+    const clipboardLookup = mock(() => {})
     // Mock fetch so /api/clipboard-file-path returns no file path (normal paste flow)
     globalThis.fetch = (async (input: RequestInfo | URL) => {
       if (String(input) === '/api/clipboard-file-path') {
+        clipboardLookup()
         return { ok: true, json: async () => ({ path: null }) } as Response
       }
       return originalFetch(input)
@@ -1399,6 +1401,7 @@ describe('useTerminal', () => {
       data: 'pasted-text',
     })
     expect(terminal.pasteCalls).toEqual([])
+    expect(clipboardLookup).not.toHaveBeenCalled()
     // The capture-phase listener should have prevented the default to block ClipboardAddon
     expect(pasteEvent.preventDefault).toHaveBeenCalled()
     expect(pasteEvent.stopPropagation).toHaveBeenCalled()
@@ -2755,6 +2758,104 @@ describe('useTerminal', () => {
       sessionId: 'session-1',
       data: '\x1b[200~\x1b[201~',
     })
+    expect(terminal.pasteCalls).toEqual([])
+
+    act(() => { renderer.unmount() })
+    globalThis.fetch = originalFetch
+  })
+
+  test.each([ ...(['claude', 'codex'] as const).flatMap((agentType) =>
+    ['report.docx', 'report.pdf', 'sheet.xlsx', 'slides.pptx', 'archive.zip', 'data.csv', 'script.py', 'custom.unknown', 'LICENSE']
+      .map((filename) => ({
+        agentType, filename, path: `/Users/test/${filename}`, expectedPath: `/Users/test/${filename}`,
+        metadata: { files: [{ type: '' }] }, copyMode: false,
+      }))
+  ),
+    { agentType: 'codex' as const, filename: 'types-only.docx', path: '/tmp/types-only.docx', expectedPath: '/tmp/types-only.docx', metadata: { types: ['Files'] }, copyMode: false },
+    { agentType: 'claude' as const, filename: 'items-only.docx', path: '/tmp/items-only.docx', expectedPath: '/tmp/items-only.docx', metadata: { items: [{ kind: 'file', type: '' }] }, copyMode: false },
+    { agentType: 'codex' as const, filename: 'unresolved.docx', path: null, expectedPath: null, metadata: { types: ['Files'] }, copyMode: false },
+    { agentType: 'claude' as const, filename: 'control-characters.docx', path: '/tmp/report\n\r\x1b\x7f.docx', expectedPath: '/tmp/report.docx', metadata: { types: ['Files'] }, copyMode: true },
+  ])('Cmd+V handles copied file $filename for $agentType', async ({ agentType, filename, path, expectedPath, metadata, copyMode }) => {
+    jest.useFakeTimers()
+    globalAny.navigator = {
+      userAgent: 'Chrome',
+      platform: 'MacIntel',
+      maxTouchPoints: 0,
+      clipboard: {
+        writeText: () => Promise.resolve(),
+        readText: () => Promise.resolve(''),
+      },
+    } as unknown as Navigator
+
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      if (String(input) === '/api/clipboard-file-path') {
+        return { ok: true, json: async () => ({ path, isImage: false }) } as Response
+      }
+      return originalFetch(input)
+    }) as typeof fetch
+
+    const sendCalls: Array<Record<string, unknown>> = []
+    const listeners: Array<(message: ServerMessage) => void> = []
+    const { container, dispatchEvent } = createContainerMock()
+
+    let renderer!: TestRenderer.ReactTestRenderer
+
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalHarness
+          agentType={agentType}
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          sendMessage={(message) => sendCalls.push(message)}
+          subscribe={(listener) => { listeners.push(listener); return () => {} }}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+        { createNodeMock: () => container },
+      )
+      await Promise.resolve()
+    })
+
+    const terminal = TerminalMock.instances[0]
+    if (!terminal) throw new Error('Expected terminal instance')
+
+    if (copyMode) {
+      act(() => { listeners[0]?.({ type: 'tmux-copy-mode-status', sessionId: 'session-1', inCopyMode: true }) })
+    }
+
+    terminal.emitKey({ key: 'v', type: 'keydown', metaKey: true, ctrlKey: false })
+
+    dispatchEvent('paste', {
+      type: 'paste',
+      preventDefault: () => {},
+      stopPropagation: () => {},
+      clipboardData: {
+        ...metadata,
+        getData: () => filename,
+      },
+    })
+
+    await act(async () => {
+      jest.advanceTimersByTime(100)
+    })
+
+    expect(sendCalls).toContainEqual({
+      type: expectedPath === null ? 'terminal-paste' : 'terminal-input',
+      sessionId: 'session-1',
+      data: expectedPath ?? filename,
+    })
+    expect(sendCalls).not.toContainEqual({
+      type: 'terminal-input',
+      sessionId: 'session-1',
+      data: '\x1b[200~\x1b[201~',
+    })
+    expect(sendCalls.filter((message) => ['terminal-paste', 'terminal-input'].includes(String(message.type)))).toHaveLength(1)
+    if (copyMode) {
+      const cancelIndex = sendCalls.findIndex((message) => message.type === 'tmux-cancel-copy-mode')
+      expect(cancelIndex).toBeGreaterThanOrEqual(0)
+      expect(sendCalls.findIndex((message) => message.type === 'terminal-input')).toBeGreaterThan(cancelIndex)
+    }
     expect(terminal.pasteCalls).toEqual([])
 
     act(() => { renderer.unmount() })

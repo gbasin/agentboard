@@ -149,6 +149,7 @@ function isMacSharedPasteboardPathText(text: string): boolean {
 interface PastePayload {
   text: string
   hasImage: boolean
+  hasFiles: boolean
   imageBlob: Blob | null
 }
 
@@ -766,6 +767,10 @@ export function useTerminal({
         attachedSessionRef.current === expected &&
         readySessionRef.current === expected
       ) {
+        if (inTmuxCopyModeRef.current) {
+          sendMessageRef.current({ type: 'tmux-cancel-copy-mode', sessionId: expected })
+          setTmuxCopyMode(false)
+        }
         sendMessageRef.current({ type: 'terminal-input', sessionId: expected, data })
       }
     }
@@ -869,9 +874,9 @@ export function useTerminal({
               return
             }
 
-            // If paste text is empty and on macOS desktop, check for Finder file copy.
-            // Only hits the server when needed (no latency cost for normal text pastes).
-            if (!text && getIsMac() && !isiOS) {
+            // Finder copies may expose the filename as text alongside file metadata.
+            // Resolve the full path before treating that filename as ordinary text.
+            if ((!text || payload?.hasFiles) && getIsMac() && !isiOS) {
               try {
                 const res = await fetch('/api/clipboard-file-path')
                 if (res.ok) {
@@ -885,7 +890,7 @@ export function useTerminal({
                     }
                     // Send as raw input (no bracket paste) so Claude Code
                     // doesn't detect a paste and read the system clipboard
-                    sendInputIfStillAttached(attached, path)
+                    sendInputIfStillAttached(attached, sanitizeImagePath(path))
                     return
                   }
                 }
@@ -957,7 +962,10 @@ export function useTerminal({
       const hasImage = imageBlob !== null || clipboardHasImage(e.clipboardData)
       const resolver = pasteResolver
       pasteResolver = null
-      resolver({ text, hasImage, imageBlob })
+      const hasFiles = (e.clipboardData?.files?.length ?? 0) > 0
+        || Array.from(e.clipboardData?.items ?? []).some((item) => item.kind === 'file')
+        || Array.from(e.clipboardData?.types ?? []).includes('Files')
+      resolver({ text, hasImage, hasFiles, imageBlob })
     }
     container.addEventListener('paste', handlePaste, { capture: true })
 
