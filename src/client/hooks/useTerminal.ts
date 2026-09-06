@@ -14,6 +14,7 @@ import { useSettingsStore } from '../stores/settingsStore'
 import { copyText } from '../utils/copyText'
 import { getEffectiveModifier, matchesModifier } from '../utils/device'
 import { bracketedPaste, sanitizeImagePath } from '../utils/paste'
+import { clipboardFiles } from '../utils/browserFiles'
 
 // Module-level snapshot cache: sessionId → serialized terminal content.
 // Survives component remounts and avoids stale-closure issues in effects.
@@ -147,6 +148,7 @@ function isMacSharedPasteboardPathText(text: string): boolean {
 }
 
 interface PastePayload {
+  files: File[]
   text: string
   hasImage: boolean
   hasFiles: boolean
@@ -291,6 +293,7 @@ interface UseTerminalOptions {
   letterSpacing: number
   fontFamily: string
   useWebGL: boolean
+  onPasteFiles?: (draft: { text: string; files: File[] }) => void
   onScrollChange?: (isAtBottom: boolean) => void
 }
 
@@ -310,7 +313,10 @@ export function useTerminal({
   fontFamily,
   useWebGL,
   onScrollChange,
+  onPasteFiles,
 }: UseTerminalOptions) {
+  const onPasteFilesRef = useRef(onPasteFiles)
+  onPasteFilesRef.current = onPasteFiles
   const isiOS = isIOSDevice()
   const containerRef = useRef<HTMLDivElement | null>(null)
   const terminalRef = useRef<Terminal | null>(null)
@@ -866,6 +872,16 @@ export function useTerminal({
               try { text = await navigator.clipboard.readText() } catch { text = '' }
             }
 
+            if (payload?.files.length && onPasteFilesRef.current) {
+              if (attachedSessionRef.current === attached && readySessionRef.current === attached) {
+                // File copies can also expose just their names as text. Do not
+                // turn those names into a duplicate message in the draft.
+                const names = payload.files.map((file) => file.name).join('\n')
+                onPasteFilesRef.current({ files: payload.files, text: text.trim() === names ? '' : text })
+              }
+              return
+            }
+
             if (payload?.hasImage && getIsMac() && !isiOS) {
               // Upload the clipboard image and deliver its path as a bracketed
               // paste so Claude attaches it natively (works in both renderers).
@@ -965,7 +981,7 @@ export function useTerminal({
       const hasFiles = (e.clipboardData?.files?.length ?? 0) > 0
         || Array.from(e.clipboardData?.items ?? []).some((item) => item.kind === 'file')
         || Array.from(e.clipboardData?.types ?? []).includes('Files')
-      resolver({ text, hasImage, hasFiles, imageBlob })
+      resolver({ text, hasImage, hasFiles, imageBlob, files: clipboardFiles(e.clipboardData) })
     }
     container.addEventListener('paste', handlePaste, { capture: true })
 

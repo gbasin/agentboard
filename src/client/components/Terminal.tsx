@@ -20,6 +20,7 @@ import { keepA11yRowsStable } from '../utils/a11yRowStability'
 import { formatRelativeTime } from '../utils/time'
 import { getPathLeaf } from '../utils/sessionLabel'
 import TerminalControls from './TerminalControls'
+import PasteDialog, { type PasteDraft } from './PasteDialog'
 import SessionDrawer from './SessionDrawer'
 import SessionPreviewContent from './SessionPreviewContent'
 import { PlusIcon, XCloseIcon, DotsVerticalIcon, Menu01Icon } from '@untitledui-icons/react/line'
@@ -138,6 +139,8 @@ export default function Terminal({
   const moreMenuRef = useRef<HTMLDivElement>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
   const endSessionButtonRef = useRef<HTMLButtonElement>(null)
+  const [filePaste, setFilePaste] = useState<PasteDraft | null>(null)
+  useEffect(() => { setFilePaste(null) }, [session?.id])
   const isRemoteSession = session?.remote === true
   const remoteAllowControl = useSessionStore((s) => s.remoteAllowControl)
   const remoteAllowAttach = useSessionStore((s) => s.remoteAllowAttach)
@@ -176,6 +179,7 @@ export default function Terminal({
     sessionId: session?.id ?? null,
     tmuxTarget: session?.tmuxWindow ?? null,
     agentType: session?.agentType,
+    onPasteFiles: setFilePaste,
     allowAttach: !isReadOnly,
     connectionStatus,
     connectionEpoch,
@@ -1601,6 +1605,19 @@ export default function Terminal({
 
       </div>
 
+      {filePaste && session && (
+        <PasteDialog
+          key={session.id}
+          initial={filePaste}
+          agentType={session.agentType}
+          fileUploadsAllowed={!isRemoteSession}
+          disabled={connectionStatus !== 'connected' || isReadOnly || !isInputReady}
+          onPasteText={handlePasteText}
+          onSendKey={handleSendKey}
+          onClose={() => { setFilePaste(null); handleRefocus() }}
+        />
+      )}
+
       {/* Mobile control strip */}
       {session && (
         <TerminalControls
@@ -1610,6 +1627,7 @@ export default function Terminal({
           sessions={sessions.map(s => ({ id: s.id, name: s.name, status: s.status }))}
           currentSessionId={session.id}
           agentType={session.agentType}
+          fileUploadsAllowed={!isRemoteSession}
           onSelectSession={onSelectSession}
           hideSessionSwitcher
           onRefocus={handleRefocus}

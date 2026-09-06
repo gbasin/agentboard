@@ -45,6 +45,12 @@ function findPasteButton(renderer: TestRenderer.ReactTestRenderer) {
   })
 }
 
+async function sendDraft(renderer: TestRenderer.ReactTestRenderer) {
+  const button = renderer.root.findAllByType('button').find((button) => button.props.children === 'Send')
+  if (!button) throw new Error('Expected Send button')
+  await act(async () => { await button.props.onClick() })
+}
+
 describe('TerminalControls', () => {
   test('renders the mobile key deck as one scrollable row of 44px targets', () => {
     const renderer = TestRenderer.create(
@@ -192,7 +198,7 @@ describe('TerminalControls', () => {
     expect(selections).toEqual(['session-2'])
   })
 
-  test('paste button routes clipboard text through onPasteText and refocuses', async () => {
+  test('Paste prepares clipboard text; Send inserts it and refocuses', async () => {
     let refocused = false
     const sent: string[] = []
     const pasted: string[] = []
@@ -227,6 +233,7 @@ describe('TerminalControls', () => {
     await act(async () => {
       await pasteButton.props.onClick()
     })
+    await sendDraft(renderer)
 
     // Pasted text goes through the explicit paste path (bracketed server-side),
     // never the raw keystroke path — so multi-line pastes aren't auto-submitted.
@@ -263,6 +270,7 @@ describe('TerminalControls', () => {
     await act(async () => {
       await pasteButton.props.onClick()
     })
+    await sendDraft(renderer)
 
     expect(sent).toEqual(['pasted text'])
   })
@@ -306,7 +314,7 @@ describe('TerminalControls', () => {
 
     let prevented = false
     act(() => {
-      textarea.props.onKeyDown({
+      textarea.props.onKeyDown?.({
         key: 'Enter',
         preventDefault: () => {
           prevented = true
@@ -367,11 +375,12 @@ describe('TerminalControls', () => {
     await act(async () => {
       await pasteButton.props.onClick()
     })
+    await sendDraft(renderer)
 
     expect(requests).toHaveLength(1)
     expect(requests[0]?.url).toBe('/api/paste-image')
     // Path wrapped in bracketed-paste markers so Claude attaches it ([Image #N]).
-    expect(sent).toEqual(['\x1b[200~/tmp/paste-test.png\x1b[201~'])
+    expect(sent).toEqual(['\x1b[200~/tmp/paste-test.png\x1b[201~ '])
   })
 
   test('paste button sends the raw path for Codex (unchanged native behavior)', async () => {
@@ -406,9 +415,10 @@ describe('TerminalControls', () => {
     await act(async () => {
       await pasteButton.props.onClick()
     })
+    await sendDraft(renderer)
 
     // Codex attaches via its own clipboard path, so the raw path is sent as-is.
-    expect(sent).toEqual(['/tmp/paste-test.png'])
+    expect(sent).toEqual(['/tmp/paste-test.png '])
   })
 
   test('shows the server error when an image upload is rejected', async () => {
@@ -442,6 +452,7 @@ describe('TerminalControls', () => {
     await act(async () => {
       await pasteButton.props.onClick()
     })
+    await sendDraft(renderer)
 
     // Nothing was pasted, and the paste modal opens showing the failure
     expect(sent).toEqual([])
@@ -483,6 +494,7 @@ describe('TerminalControls', () => {
     await act(async () => {
       await pasteButton.props.onClick()
     })
+    await sendDraft(renderer)
 
     const cancelButton = renderer.root
       .findAllByType('button')
