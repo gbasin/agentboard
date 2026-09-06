@@ -5052,14 +5052,14 @@ describe('server fetch handlers', () => {
     expect(await response.json()).toEqual({ path: null, isImage: false })
   })
 
-  test('falls back to osascript when AppKit pasteboard reader fails', async () => {
+  test.each(['report.docx', 'report.pdf', 'custom.unknown', 'LICENSE'])('resolves Finder file %s without starting the Swift interpreter', async (filename) => {
     if (process.platform !== 'darwin') {
       return
     }
 
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-clipboard-'))
     try {
-      const filePath = path.join(tempDir, 'report.pdf')
+      const filePath = path.join(tempDir, filename)
       await fs.writeFile(filePath, new Uint8Array([1, 2, 3]))
 
       const commands: string[][] = []
@@ -5103,7 +5103,7 @@ describe('server fetch handlers', () => {
         throw new Error('Expected response for clipboard file path')
       }
 
-      expect(commands).toContainEqual(['swift', '-e'])
+      expect(commands).not.toContainEqual(['swift', '-e'])
       expect(commands).toContainEqual(['osascript', '-e'])
       expect(await response.json()).toEqual({ path: filePath, isImage: false })
     } finally {

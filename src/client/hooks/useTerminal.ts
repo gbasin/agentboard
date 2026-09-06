@@ -767,6 +767,10 @@ export function useTerminal({
         attachedSessionRef.current === expected &&
         readySessionRef.current === expected
       ) {
+        if (inTmuxCopyModeRef.current) {
+          sendMessageRef.current({ type: 'tmux-cancel-copy-mode', sessionId: expected })
+          setTmuxCopyMode(false)
+        }
         sendMessageRef.current({ type: 'terminal-input', sessionId: expected, data })
       }
     }
@@ -886,7 +890,7 @@ export function useTerminal({
                     }
                     // Send as raw input (no bracket paste) so Claude Code
                     // doesn't detect a paste and read the system clipboard
-                    sendInputIfStillAttached(attached, path)
+                    sendInputIfStillAttached(attached, sanitizeImagePath(path))
                     return
                   }
                 }

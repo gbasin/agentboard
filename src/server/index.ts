@@ -1908,6 +1908,23 @@ app.get('/api/clipboard-file-path', async (c) => {
     return c.json({ path: null, isImage: false })
   }
   try {
+    // Finder file URLs do not need the Swift interpreter. Resolve them first
+    // so cold Swift startup cannot delay ordinary document pastes.
+    const fileProc = Bun.spawn(
+      ['osascript', '-e', 'POSIX path of (the clipboard as «class furl»)'],
+      { stdout: 'pipe', stderr: 'pipe', timeout: MAC_PASTEBOARD_TIMEOUT_MS }
+    )
+    const fileText = await new Response(fileProc.stdout).text()
+    const fileExitCode = await fileProc.exited
+    const filePath = fileText.trim()
+    if (fileExitCode === 0 && filePath.startsWith('/')) {
+      const file = Bun.file(filePath)
+      if (await file.exists()) {
+        c.header('Cache-Control', 'no-store')
+        return c.json({ path: filePath, isImage: isImageFilePath(filePath) })
+      }
+    }
+
     const proc = Bun.spawn(
       ['swift', '-e', macPasteboardSwiftScript],
       {
@@ -1932,21 +1949,6 @@ app.get('/api/clipboard-file-path', async (c) => {
           c.header('Cache-Control', 'no-store')
           return c.json({ path: filePath, isImage: payload.isImage === true })
         }
-      }
-    }
-
-    const fallbackProc = Bun.spawn(
-      ['osascript', '-e', 'POSIX path of (the clipboard as «class furl»)'],
-      { stdout: 'pipe', stderr: 'pipe', timeout: MAC_PASTEBOARD_TIMEOUT_MS }
-    )
-    const fallbackText = await new Response(fallbackProc.stdout).text()
-    const fallbackExitCode = await fallbackProc.exited
-    const fallbackPath = fallbackText.trim()
-    if (fallbackExitCode === 0 && fallbackPath.startsWith('/')) {
-      const file = Bun.file(fallbackPath)
-      if (await file.exists()) {
-        c.header('Cache-Control', 'no-store')
-        return c.json({ path: fallbackPath, isImage: isImageFilePath(fallbackPath) })
       }
     }
 
