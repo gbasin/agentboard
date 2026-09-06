@@ -2761,6 +2761,87 @@ describe('useTerminal', () => {
     globalThis.fetch = originalFetch
   })
 
+  test.each((['claude', 'codex'] as const).flatMap((agentType) =>
+    ['report.docx', 'report.pdf', 'sheet.xlsx', 'slides.pptx', 'archive.zip', 'data.csv', 'script.py', 'custom.unknown', 'LICENSE']
+      .map((filename) => ({ agentType, filename }))
+  ))('Cmd+V resolves copied file $filename for $agentType', async ({ agentType, filename }) => {
+    jest.useFakeTimers()
+    globalAny.navigator = {
+      userAgent: 'Chrome',
+      platform: 'MacIntel',
+      maxTouchPoints: 0,
+      clipboard: {
+        writeText: () => Promise.resolve(),
+        readText: () => Promise.resolve(''),
+      },
+    } as unknown as Navigator
+
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      if (String(input) === '/api/clipboard-file-path') {
+        return { ok: true, json: async () => ({ path: `/Users/test/${filename}`, isImage: false }) } as Response
+      }
+      return originalFetch(input)
+    }) as typeof fetch
+
+    const sendCalls: Array<Record<string, unknown>> = []
+    const { container, dispatchEvent } = createContainerMock()
+
+    let renderer!: TestRenderer.ReactTestRenderer
+
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalHarness
+          agentType={agentType}
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          sendMessage={(message) => sendCalls.push(message)}
+          subscribe={() => () => {}}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+        { createNodeMock: () => container },
+      )
+      await Promise.resolve()
+    })
+
+    const terminal = TerminalMock.instances[0]
+    if (!terminal) throw new Error('Expected terminal instance')
+
+    terminal.emitKey({ key: 'v', type: 'keydown', metaKey: true, ctrlKey: false })
+
+    dispatchEvent('paste', {
+      type: 'paste',
+      preventDefault: () => {},
+      stopPropagation: () => {},
+      clipboardData: {
+        files: [{ type: '' }],
+        items: [{ kind: 'file', type: '' }],
+        getData: () => filename,
+      },
+    })
+
+    await act(async () => {
+      jest.advanceTimersByTime(100)
+    })
+
+    expect(sendCalls).toContainEqual({
+      type: 'terminal-input',
+      sessionId: 'session-1',
+      data: `/Users/test/${filename}`,
+    })
+    expect(sendCalls).not.toContainEqual({
+      type: 'terminal-input',
+      sessionId: 'session-1',
+      data: '\x1b[200~\x1b[201~',
+    })
+    expect(sendCalls.filter((message) => message.type === 'terminal-paste')).toEqual([])
+    expect(terminal.pasteCalls).toEqual([])
+
+    act(() => { renderer.unmount() })
+    globalThis.fetch = originalFetch
+  })
+
   test('Cmd+V with macOS clipboard image path sends a bracketed image path', async () => {
     jest.useFakeTimers()
     globalAny.navigator = {
