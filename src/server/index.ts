@@ -7,6 +7,7 @@ import { createInterface } from 'node:readline'
 import { Hono, type Context } from 'hono'
 import { serveStatic } from 'hono/bun'
 import { config, isValidHostname } from './config'
+import { createPasteFileRoutes } from './routes/pasteFile'
 import { ensureTmux } from './prerequisites'
 import { SessionManager } from './SessionManager'
 import { SessionRegistry } from './SessionRegistry'
@@ -1862,6 +1863,8 @@ const MAC_PASTEBOARD_TIMEOUT_MS = 10000
 function isImageFilePath(filePath: string): boolean {
   return /\.(png|jpe?g|gif|webp|heic|tiff?)$/i.test(filePath)
 }
+
+app.route('/api/paste-file', createPasteFileRoutes())
 
 // Image upload endpoint for iOS clipboard paste
 app.post('/api/paste-image', async (c) => {
