@@ -28,6 +28,7 @@ interface TerminalControlsProps {
    * back to onSendKey when not provided.
    */
   onPasteText?: (text: string) => void
+  onPasteImage?: (text: string) => void
   disabled?: boolean
   sessions: SessionInfo[]
   currentSessionId: string | null
@@ -130,6 +131,7 @@ const statusDot: Record<Session['status'], string> = {
 export default function TerminalControls({
   onSendKey,
   onPasteText,
+  onPasteImage,
   disabled = false,
   sessions,
   currentSessionId,
@@ -479,7 +481,7 @@ export default function TerminalControls({
           fileUploadsAllowed={fileUploadsAllowed}
           disabled={disabled}
           onPasteText={sendPasteText}
-          onSendKey={onSendKey}
+          onSendKey={onPasteImage ?? onSendKey}
           onClose={() => { setPasteClipboard(null); onRefocus?.() }}
         />
       )}

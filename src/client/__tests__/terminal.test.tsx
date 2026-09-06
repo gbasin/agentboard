@@ -251,6 +251,59 @@ afterEach(() => {
 })
 
 describe('Terminal', () => {
+  test('image paste exits copy mode before sending image input', () => {
+    const listeners: Array<(message: ServerMessage) => void> = []
+    const sentMessages: unknown[] = []
+    const { createNodeMock } = createContainerMock()
+    let renderer!: TestRenderer.ReactTestRenderer
+
+    act(() => {
+      renderer = TestRenderer.create(
+        <Terminal
+          session={baseSession}
+          sessions={[baseSession]}
+          connectionStatus="connected"
+          sendMessage={(message) => sentMessages.push(message)}
+          subscribe={(listener) => {
+            listeners.push(listener)
+            return () => {}
+          }}
+          onClose={() => {}}
+          onSelectSession={() => {}}
+          onNewSession={() => {}}
+          onKillSession={() => {}}
+          onRenameSession={() => {}}
+          onResumeSession={() => {}}
+          onOpenSettings={() => {}}
+        />,
+        { createNodeMock },
+      )
+    })
+
+    act(() => {
+      listeners[0]?.({
+        type: 'tmux-copy-mode-status',
+        sessionId: baseSession.id,
+        inCopyMode: true,
+        appMouse: true,
+      })
+    })
+
+    act(() => {
+      listeners[0]?.({ type: 'terminal-ready', sessionId: baseSession.id })
+    })
+    const controls = renderer.root.find((node) => typeof node.props.onPasteImage === 'function')
+    act(() => { controls.props.onPasteImage('image path') })
+    expect(sentMessages.slice(-2)).toEqual([
+      { type: 'tmux-cancel-copy-mode', sessionId: baseSession.id },
+      { type: 'terminal-input', sessionId: baseSession.id, data: 'image path' },
+    ])
+
+    act(() => {
+      renderer.unmount()
+    })
+  })
+
   test('shows an explicit exit control for externally entered tmux copy mode', () => {
     const listeners: Array<(message: ServerMessage) => void> = []
     const sentMessages: unknown[] = []

@@ -28,6 +28,23 @@ function uploadResponse(name: string) {
 }
 
 describe('Paste draft', () => {
+  test('waits for native clipboard confirmation before opening the dialog', async () => {
+    let resolve!: (draft: { text: string; files: File[] }) => void
+    const clipboard = new Promise<{ text: string; files: File[] }>((r) => { resolve = r })
+    let shown = 0
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<PasteDialog clipboard={clipboard} onPasteText={() => {}} onSendKey={() => {}} onClose={() => {}} />, {
+        createNodeMock: (node) => node.type === 'dialog' ? { showModal: () => { shown++ } } : null,
+      })
+    })
+    renderers.push(renderer)
+    expect(shown).toBe(0)
+    await act(async () => { resolve({ text: 'Clipboard text', files: [] }) })
+    expect(shown).toBe(1)
+    expect(renderer.root.findByType('textarea').props.value).toBe('Clipboard text')
+  })
+
   test('sends multiline text and selected device files together only after Send', async () => {
     const uploaded: File[] = []
     globalThis.fetch = (async (_url, init) => {
@@ -45,6 +62,23 @@ describe('Paste draft', () => {
     expect(await uploaded[1]!.text()).toBe('csv bytes')
     expect(qa.sent).toEqual(["Read these\nand compare:\n'/tmp/upload/report.docx'\n'/tmp/upload/data with spaces.csv'"])
     expect(qa.closed()).toBe(1)
+  })
+
+  test('keeps text, a document, and an image in delivery order', async () => {
+    globalThis.fetch = (async (_url, init) => {
+      const form = init!.body as FormData
+      const file = (form.get('file') ?? form.get('image')) as File
+      return uploadResponse(file.name)
+    }) as typeof fetch
+    const qa = setup({ initial: { text: 'Compare all three:', files: [
+      new File(['document'], 'report.docx'),
+      new File(['image'], 'photo.png', { type: 'image/png' }),
+    ] } })
+    await qa.send()
+    expect(qa.sent).toEqual([
+      "Compare all three:\n'/tmp/upload/report.docx'\n",
+      '\x1b[200~/tmp/upload/photo.png\x1b[201~ ',
+    ])
   })
 
   test('native file paste adds a file without replacing draft text', () => {

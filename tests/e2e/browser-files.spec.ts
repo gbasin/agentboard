@@ -45,7 +45,9 @@ for (const mode of ['desktop', 'mobile'] as const) {
       const dialog = page.getByRole('dialog', { name: 'Paste', exact: true })
       await expect(dialog).toBeVisible()
       await dialog.getByRole('textbox', { name: 'Paste text' }).fill('Compare these\nand keep the prompt editable:')
-      await dialog.getByLabel('Choose files', { exact: true }).setInputFiles({ name: 'data with spaces.unknown', mimeType: 'application/octet-stream', buffer: Buffer.from('exact device file bytes') })
+      const chooser = page.waitForEvent('filechooser')
+      await dialog.getByRole('button', { name: 'Choose files', exact: true }).click()
+      await (await chooser).setFiles({ name: 'data with spaces.unknown', mimeType: 'application/octet-stream', buffer: Buffer.from('exact device file bytes') })
       page.on('response', async (response) => {
         if (response.url().endsWith('/api/paste-file') && response.ok()) uploads.push((await response.json()).path)
       })

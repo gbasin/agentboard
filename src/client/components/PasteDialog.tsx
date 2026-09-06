@@ -38,7 +38,7 @@ export default function PasteDialog({ initial, clipboard, agentType, fileUploads
 
   useLayoutEffect(() => {
     activeRef.current = true
-    dialogRef.current?.showModal()
+    if (!clipboard) dialogRef.current?.showModal()
     return () => { activeRef.current = false; requestRef.current?.abort() }
   }, [])
 
@@ -49,7 +49,11 @@ export default function PasteDialog({ initial, clipboard, agentType, fileUploads
       if (error) { setUpload({ status: 'error', message: error }); return }
       setText(draft.text)
       setFiles(draft.files)
-    }).catch(() => { /* Native paste and file selection remain available. */ })
+    }).catch(() => { /* Native paste and file selection remain available. */ }).finally(() => {
+      // Let Safari finish its native Paste confirmation before opening a modal
+      // or focusing the textarea (which can open the software keyboard).
+      if (activeRef.current) dialogRef.current?.showModal()
+    })
   }, [clipboard])
 
   // Revoking input while an upload is pending must not send into a new attachment.
@@ -106,7 +110,8 @@ export default function PasteDialog({ initial, clipboard, agentType, fileUploads
         const incoming = clipboardFiles(event.clipboardData)
         if (incoming.length) { event.preventDefault(); addFiles(incoming) }
       }}
-      className="m-auto w-[calc(100%_-_2rem)] max-w-sm max-h-[calc(100dvh_-_2rem)] overflow-y-auto rounded-lg border border-border bg-elevated p-4 text-primary backdrop:bg-black/50"
+      style={{ top: 'calc(var(--viewport-offset-top, 0px) + 1rem)', bottom: 'auto', maxHeight: 'calc(var(--visual-viewport-height, 100dvh) - 2rem)' }}
+      className="mx-auto my-0 w-[calc(100%_-_2rem)] max-w-sm overflow-y-auto rounded-lg border border-border bg-elevated p-4 text-primary backdrop:bg-black/50"
     >
       <h3 id="paste-dialog-title" className="mb-1 text-base font-medium text-primary">Paste</h3>
       <p className="mb-3 text-sm text-secondary">Paste text or add files from this device.</p>

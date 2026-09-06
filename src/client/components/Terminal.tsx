@@ -1121,6 +1121,15 @@ export default function Terminal({
     [session, isReadOnly, isInputReady, sendMessage, inTmuxCopyModeRef, setTmuxCopyMode]
   )
 
+  const handlePasteImage = useCallback((data: string) => {
+    if (!session || isReadOnly || !isInputReady) return
+    if (inTmuxCopyModeRef.current) {
+      sendMessage({ type: 'tmux-cancel-copy-mode', sessionId: session.id })
+      setTmuxCopyMode(false)
+    }
+    handleSendKey(data)
+  }, [session, isReadOnly, isInputReady, sendMessage, inTmuxCopyModeRef, setTmuxCopyMode, handleSendKey])
+
   const handleRefocus = useCallback(() => {
     const container = containerRef.current
     if (!container) return
@@ -1613,7 +1622,7 @@ export default function Terminal({
           fileUploadsAllowed={!isRemoteSession}
           disabled={connectionStatus !== 'connected' || isReadOnly || !isInputReady}
           onPasteText={handlePasteText}
-          onSendKey={handleSendKey}
+          onSendKey={handlePasteImage}
           onClose={() => { setFilePaste(null); handleRefocus() }}
         />
       )}
@@ -1623,6 +1632,7 @@ export default function Terminal({
         <TerminalControls
           onSendKey={handleSendKey}
           onPasteText={handlePasteText}
+          onPasteImage={handlePasteImage}
           disabled={connectionStatus !== 'connected' || isReadOnly || !isInputReady}
           sessions={sessions.map(s => ({ id: s.id, name: s.name, status: s.status }))}
           currentSessionId={session.id}
