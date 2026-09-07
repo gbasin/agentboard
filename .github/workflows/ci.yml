@@ -62,14 +62,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Install Bun setup and terminal test dependencies
-        run: apt-get update && apt-get install -y --no-install-recommends unzip tmux python3
+        run: apt-get update && apt-get install -y --no-install-recommends unzip tmux python3 build-essential
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6  # v2.2.0
         with:
           bun-version-file: .bun-version
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        # node-pty compiles on Linux; the standard runner supplied node-gyp.
+        run: |
+          npm install --global node-gyp@11.5.0
+          bun install --frozen-lockfile
 
       - name: Build
         run: bun run build
