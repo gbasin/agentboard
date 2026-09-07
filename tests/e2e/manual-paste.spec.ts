@@ -65,7 +65,7 @@ async function exerciseManualPaste(page: Page, windowName: string) {
     const pasteButton = page.locator('button[aria-label="Paste"]')
     await expect(pasteButton).toBeVisible({ timeout: 20000 })
     await pasteButton.click()
-    const textarea = page.getByRole('textbox', { name: 'Paste text' })
+    const textarea = page.getByRole('textbox', { name: 'Paste here' })
     await expect(textarea).toBeVisible()
 
     const dialogBounds = await textarea.locator('xpath=..').boundingBox()
@@ -79,10 +79,6 @@ async function exerciseManualPaste(page: Page, windowName: string) {
       page.viewportSize()!.height
     )
 
-    await textarea.fill('manual_alpha\nmanual_beta')
-    await textarea.press('Enter')
-    await expect(textarea).toHaveValue('manual_alpha\nmanual_beta\n')
-
     // Approximate the reduced visual viewport while the iOS keyboard is open.
     await page.setViewportSize({ width: 430, height: 500 })
     await page.waitForTimeout(100)
@@ -91,9 +87,12 @@ async function exerciseManualPaste(page: Page, windowName: string) {
     expect(compactBounds!.y).toBeGreaterThanOrEqual(0)
     expect(compactBounds!.y + compactBounds!.height).toBeLessThanOrEqual(500)
 
-    const sendButton = page.getByRole('button', { name: 'Send' })
-    await expect(sendButton).toBeVisible()
-    await sendButton.click()
+    await textarea.evaluate(element => {
+      const data = new DataTransfer()
+      data.setData('text/plain', 'manual_alpha\nmanual_beta\n')
+      element.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
+    })
+    await expect(textarea).toHaveCount(0)
 
     const pane = await waitForPaneText(target, 'HELD:manual_alpha|manual_beta|')
     expect(pane).not.toContain('SUBMITTED:')
