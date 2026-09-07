@@ -20,7 +20,9 @@ import { keepA11yRowsStable } from '../utils/a11yRowStability'
 import { formatRelativeTime } from '../utils/time'
 import { getPathLeaf } from '../utils/sessionLabel'
 import TerminalControls from './TerminalControls'
-import PasteDialog, { type PasteDraft } from './PasteDialog'
+import PasteStatus from './PasteStatus'
+import { useBrowserPaste, type BrowserPaste } from '../hooks/useBrowserPaste'
+import { clipboardFiles } from '../utils/browserFiles'
 import SessionDrawer from './SessionDrawer'
 import SessionPreviewContent from './SessionPreviewContent'
 import { PlusIcon, XCloseIcon, DotsVerticalIcon, Menu01Icon } from '@untitledui-icons/react/line'
@@ -139,8 +141,8 @@ export default function Terminal({
   const moreMenuRef = useRef<HTMLDivElement>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
   const endSessionButtonRef = useRef<HTMLButtonElement>(null)
-  const [filePaste, setFilePaste] = useState<PasteDraft | null>(null)
-  useEffect(() => { setFilePaste(null) }, [session?.id])
+  const pasteFilesRef = useRef<(input: BrowserPaste) => void>(() => {})
+  const pasteErrorRef = useRef<(message: string) => void>(() => {})
   const isRemoteSession = session?.remote === true
   const remoteAllowControl = useSessionStore((s) => s.remoteAllowControl)
   const remoteAllowAttach = useSessionStore((s) => s.remoteAllowAttach)
@@ -179,7 +181,8 @@ export default function Terminal({
     sessionId: session?.id ?? null,
     tmuxTarget: session?.tmuxWindow ?? null,
     agentType: session?.agentType,
-    onPasteFiles: setFilePaste,
+    onPasteFiles: (input) => pasteFilesRef.current(input),
+    onPasteError: (message) => pasteErrorRef.current(message),
     allowAttach: !isReadOnly,
     connectionStatus,
     connectionEpoch,
@@ -1140,6 +1143,13 @@ export default function Terminal({
     }
   }, [containerRef])
 
+  const browserPaste = useBrowserPaste({ sessionId: session?.id ?? null,
+    disabled: connectionStatus !== 'connected' || isReadOnly || !isInputReady,
+    fileUploadsAllowed: !isRemoteSession, agentType: session?.agentType,
+    onPasteText: handlePasteText, onPasteImage: handlePasteImage, onRefocus: handleRefocus })
+  pasteFilesRef.current = browserPaste.paste
+  pasteErrorRef.current = browserPaste.fail
+
   // Enter text mode: exit copy-mode and focus input (for keyboard button)
   const handleEnterTextMode = useCallback(() => {
     if (!session || isReadOnly || !isInputReady) return
@@ -1235,6 +1245,19 @@ export default function Terminal({
     <section
       className={`flex flex-1 flex-col bg-base terminal-mobile-overlay md:relative md:inset-auto ${isiOS ? 'ios-native-term-selection' : ''}`}
       data-testid="terminal-panel"
+      onDragOver={(event) => {
+        if (!Array.from(event.dataTransfer.types).includes('Files')) return
+        event.preventDefault()
+        event.dataTransfer.dropEffect = session && !isReadOnly && isInputReady && !isRemoteSession && connectionStatus === 'connected' ? 'copy' : 'none'
+      }}
+      onDrop={(event) => {
+        if (!Array.from(event.dataTransfer.types).includes('Files')) return
+        event.preventDefault()
+        event.stopPropagation()
+        if (!session || isReadOnly || !isInputReady || isRemoteSession || connectionStatus !== 'connected') return
+        const files = clipboardFiles(event.dataTransfer)
+        if (files.length) void browserPaste.paste({ text: '', files })
+      }}
     >
       {/* Mobile header - always show on mobile for drawer access */}
       <div className={`flex min-h-[52px] shrink-0 items-center justify-between border-b border-border bg-elevated px-[6px] md:h-10 md:min-h-0 md:px-3 ${session || hibernatingSession ? '' : 'md:hidden'}`}>
@@ -1614,18 +1637,7 @@ export default function Terminal({
 
       </div>
 
-      {filePaste && session && (
-        <PasteDialog
-          key={session.id}
-          initial={filePaste}
-          agentType={session.agentType}
-          fileUploadsAllowed={!isRemoteSession}
-          disabled={connectionStatus !== 'connected' || isReadOnly || !isInputReady}
-          onPasteText={handlePasteText}
-          onSendKey={handlePasteImage}
-          onClose={() => { setFilePaste(null); handleRefocus() }}
-        />
-      )}
+      <PasteStatus {...browserPaste} />
 
       {/* Mobile control strip */}
       {session && (

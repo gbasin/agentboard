@@ -293,7 +293,8 @@ interface UseTerminalOptions {
   letterSpacing: number
   fontFamily: string
   useWebGL: boolean
-  onPasteFiles?: (draft: { text: string; files: File[] }) => void
+  onPasteFiles?: (payload: { text: string; files: File[] }) => void
+  onPasteError?: (message: string) => void
   onScrollChange?: (isAtBottom: boolean) => void
 }
 
@@ -314,9 +315,13 @@ export function useTerminal({
   useWebGL,
   onScrollChange,
   onPasteFiles,
+  onPasteError,
 }: UseTerminalOptions) {
   const onPasteFilesRef = useRef(onPasteFiles)
   onPasteFilesRef.current = onPasteFiles
+  const onPasteErrorRef = useRef(onPasteError)
+  onPasteErrorRef.current = onPasteError
+  const canReadHostClipboard = () => !onPasteFilesRef.current || (typeof location !== 'undefined' && ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname))
   const isiOS = isIOSDevice()
   const containerRef = useRef<HTMLDivElement | null>(null)
   const terminalRef = useRef<Terminal | null>(null)
@@ -818,6 +823,10 @@ export function useTerminal({
       if (getIsMac() && !isiOS && event.ctrlKey && !event.metaKey && event.key.toLowerCase() === 'v' && event.type === 'keydown') {
         const attached = readySessionRef.current
         if (attached) {
+          if (!canReadHostClipboard()) {
+            onPasteErrorRef.current?.('Use browser paste or choose a file from this device.')
+            return false
+          }
           if (inTmuxCopyModeRef.current) {
             sendMessageRef.current({ type: 'tmux-cancel-copy-mode', sessionId: attached })
             setTmuxCopyMode(false)
@@ -867,6 +876,9 @@ export function useTerminal({
             // Wait for the paste event to deliver text (up to 100ms timeout).
             // Falls back to clipboard API if paste event didn't fire.
             const payload = await pastePromise
+            // With browser uploads enabled, native paste owns clipboard access.
+            // Do not issue a second asynchronous read if the browser is slow.
+            if (!payload && onPasteFilesRef.current) return
             let text = payload?.text ?? null
             if (text === null) {
               try { text = await navigator.clipboard.readText() } catch { text = '' }
@@ -875,7 +887,7 @@ export function useTerminal({
             if (payload?.files.length && onPasteFilesRef.current) {
               if (attachedSessionRef.current === attached && readySessionRef.current === attached) {
                 // File copies can also expose just their names as text. Do not
-                // turn those names into a duplicate message in the draft.
+                // insert those names alongside their uploaded paths.
                 const names = payload.files.map((file) => file.name).join('\n')
                 onPasteFilesRef.current({ files: payload.files, text: text.trim() === names ? '' : text })
               }
@@ -883,6 +895,13 @@ export function useTerminal({
             }
 
             if (payload?.hasImage && getIsMac() && !isiOS) {
+              if (!canReadHostClipboard()) {
+                if (payload.imageBlob) {
+                  const blob = payload.imageBlob
+                  onPasteFilesRef.current?.({ text: '', files: [new File([blob], `clipboard.${blob.type.split('/')[1] || 'png'}`, { type: blob.type })] })
+                } else onPasteErrorRef.current?.('The browser did not provide image data. Choose the file to upload it.')
+                return
+              }
               // Upload the clipboard image and deliver its path as a bracketed
               // paste so Claude attaches it natively (works in both renderers).
               const data = await resolveImagePasteData(agentTypeRef.current, { blob: payload.imageBlob })
@@ -892,7 +911,11 @@ export function useTerminal({
 
             // Finder copies may expose the filename as text alongside file metadata.
             // Resolve the full path before treating that filename as ordinary text.
-            if ((!text || payload?.hasFiles) && getIsMac() && !isiOS) {
+            if (payload?.hasFiles && !canReadHostClipboard()) {
+              onPasteErrorRef.current?.('The browser did not provide file data. Drop the file onto the terminal or choose it to upload.')
+              return
+            }
+            if ((!text || payload?.hasFiles) && getIsMac() && !isiOS && canReadHostClipboard()) {
               try {
                 const res = await fetch('/api/clipboard-file-path')
                 if (res.ok) {
@@ -942,7 +965,7 @@ export function useTerminal({
             // useractivityd path to the browser. Sending that path to an agent
             // is useless; ask the server to resolve a real pasteboard image path
             // (falling back to the empty-bracket signal) so the CLI can attach it.
-            if (getIsMac() && !isiOS) {
+            if (getIsMac() && !isiOS && canReadHostClipboard()) {
               const data = await resolveImagePasteData(agentTypeRef.current, {})
               sendInputIfStillAttached(attached, data)
             }
@@ -950,7 +973,11 @@ export function useTerminal({
             pasteResolver = null
           }
         })()
-        return false // Prevent xterm.js native paste handling
+        // Browser file uploads are handled by the capture-phase paste listener.
+        // Safari needs the key's default action to dispatch that native event.
+        // On Windows/Linux, continuing through xterm would emit ^V and cancel
+        // the browser default. macOS Cmd+V has no such xterm mapping.
+        return Boolean(onPasteFilesRef.current) && pasteModifier === 'metaKey'
       }
 
       // Ctrl+Backspace: delete word backward (browser eats this otherwise)
@@ -970,7 +997,18 @@ export function useTerminal({
     // (no permissions needed) and suppress the event so ClipboardAddon doesn't
     // also paste (preventing double-paste).
     const handlePaste = (e: ClipboardEvent) => {
-      if (!pasteResolver) return
+      if (!pasteResolver) {
+        const files = clipboardFiles(e.clipboardData)
+        const text = e.clipboardData?.getData('text/plain') ?? ''
+        if ((!files.length && !text) || !onPasteFilesRef.current) return
+        e.preventDefault()
+        e.stopPropagation()
+        if (readySessionRef.current && readySessionRef.current === attachedSessionRef.current) {
+          const names = files.map(file => file.name).join('\n')
+          onPasteFilesRef.current({ text: files.length && text.trim() === names ? '' : text, files })
+        }
+        return
+      }
       e.preventDefault()
       e.stopPropagation()
       const text = e.clipboardData?.getData('text/plain') ?? ''

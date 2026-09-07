@@ -4,15 +4,15 @@
  * Top row shows session switcher buttons to quickly jump between sessions
  */
 
-import { useState, useRef, useEffect, useLayoutEffect } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import type { TouchEvent as ReactTouchEvent } from 'react'
 import type { AgentType, Session } from '@shared/types'
 import { CornerDownLeftIcon } from '@untitledui-icons/react/line'
 import ArrowKeys from './ArrowKeys'
 import NumPad from './NumPad'
 import { isIOSDevice } from '../utils/device'
-import PasteDialog, { type PasteDraft } from './PasteDialog'
-import { readBrowserClipboard } from '../utils/browserFiles'
+import PasteStatus from './PasteStatus'
+import { useBrowserPaste } from '../hooks/useBrowserPaste'
 
 interface SessionInfo {
   id: string
@@ -143,12 +143,13 @@ export default function TerminalControls({
   isKeyboardVisible,
   onEnterTextMode,
 }: TerminalControlsProps) {
-  const [pasteClipboard, setPasteClipboard] = useState<Promise<PasteDraft> | null>(null)
+  const pickerRef = useRef<HTMLInputElement>(null)
+  const browserPaste = useBrowserPaste({ sessionId: currentSessionId, disabled, fileUploadsAllowed, agentType,
+    onPasteText: onPasteText ?? onSendKey, onPasteImage: onPasteImage ?? onSendKey, onRefocus })
   const [ctrlActive, setCtrlActive] = useState(false)
   const lastTouchTimeRef = useRef(0)
   const controlsRef = useRef<HTMLDivElement>(null)
 
-  useLayoutEffect(() => { setPasteClipboard(null) }, [currentSessionId])
 
   useEffect(() => {
     const controls = controlsRef.current
@@ -177,7 +178,7 @@ export default function TerminalControls({
 
   // Intercept keyboard input when ctrl is active to send control characters
   useEffect(() => {
-    if (!ctrlActive || disabled || pasteClipboard || typeof document === 'undefined') return
+    if (!ctrlActive || disabled || browserPaste.state.status === 'clipboard-blocked' || typeof document === 'undefined') return
 
     const handleKeyDown = (e: KeyboardEvent) => {
       const { output, consumeCtrl } = applyCtrlModifier(e.key, true)
@@ -195,7 +196,7 @@ export default function TerminalControls({
     return () => {
       document.removeEventListener('keydown', handleKeyDown, { capture: true })
     }
-  }, [ctrlActive, disabled, pasteClipboard, onSendKey])
+  }, [ctrlActive, disabled, browserPaste.state.status, onSendKey])
 
   const handlePress = (key: string) => {
     if (disabled) return
@@ -230,22 +231,10 @@ export default function TerminalControls({
     onSendKey(output)
   }
 
-  // Route pasted text through the explicit paste path (bracketed via tmux) so
-  // multi-line content isn't auto-submitted line-by-line; fall back to raw keys.
-  const sendPasteText = (text: string) => {
-    if (onPasteText) {
-      onPasteText(text)
-    } else {
-      onSendKey(text)
-    }
-  }
-
   const handlePasteButtonClick = () => {
     if (disabled) return
     triggerHaptic()
-    // Start the browser read synchronously within the click gesture (Safari).
-    // A denied read still opens a draft with native paste and a file picker.
-    setPasteClipboard(readBrowserClipboard().catch(() => ({ text: '', files: [] })))
+    return browserPaste.pasteClipboard()
   }
 
   const handleSessionSelect = (sessionId: string) => {
@@ -329,6 +318,34 @@ export default function TerminalControls({
       )}
       {/* Key row */}
       <div className="grid grid-flow-col auto-cols-[44px] items-center gap-[4px] overflow-x-auto scrollbar-none">
+        {/* Paste button */}
+        <button
+          type="button"
+          aria-label="Paste"
+          className={`
+            terminal-key
+            flex items-center justify-center
+            size-[44px] p-0
+            text-sm font-medium
+            bg-surface border border-border rounded-md
+            active:bg-hover active:scale-95
+            transition-transform duration-75
+            select-none touch-manipulation
+            text-secondary
+            ${disabled ? 'opacity-50' : ''}
+          `}
+          onMouseDown={(e) => e.preventDefault()}
+          data-native-gesture
+          onClick={handlePasteButtonClick}
+          disabled={disabled}
+        >
+          {PasteIcon}
+        </button>
+        <button type="button" aria-label="Choose files" title="Choose files" data-native-gesture
+          className="terminal-key flex size-[44px] shrink-0 items-center justify-center rounded-md border border-border bg-surface text-secondary disabled:opacity-50"
+          disabled={disabled || !fileUploadsAllowed} onClick={() => pickerRef.current?.click()}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="m8 12 6-6a3 3 0 0 1 4 4l-8 8a5 5 0 0 1-7-7l8-8M6 14l8-8" /></svg>
+        </button>
         {/* Ctrl toggle */}
         <button
           type="button"
@@ -425,29 +442,6 @@ export default function TerminalControls({
             {control.label}
           </button>
         ))}
-        {/* Paste button */}
-        <button
-          type="button"
-          aria-label="Paste"
-          className={`
-            terminal-key
-            flex items-center justify-center
-            size-[44px] p-0
-            text-sm font-medium
-            bg-surface border border-border rounded-md
-            active:bg-hover active:scale-95
-            transition-transform duration-75
-            select-none touch-manipulation
-            text-secondary
-            ${disabled ? 'opacity-50' : ''}
-          `}
-          onMouseDown={(e) => e.preventDefault()}
-          data-native-gesture
-          onClick={handlePasteButtonClick}
-          disabled={disabled}
-        >
-          {PasteIcon}
-        </button>
         {/* Keyboard button - enter text mode (exit copy-mode and show keyboard) */}
         <button
           type="button"
@@ -473,18 +467,9 @@ export default function TerminalControls({
         </button>
       </div>
 
-      {pasteClipboard && (
-        <PasteDialog
-          key={currentSessionId}
-          clipboard={pasteClipboard}
-          agentType={agentType}
-          fileUploadsAllowed={fileUploadsAllowed}
-          disabled={disabled}
-          onPasteText={sendPasteText}
-          onSendKey={onPasteImage ?? onSendKey}
-          onClose={() => { setPasteClipboard(null); onRefocus?.() }}
-        />
-      )}
+      <input ref={pickerRef} type="file" multiple aria-label="Choose files" className="hidden"
+        onChange={(event) => { void browserPaste.paste({ text: '', files: Array.from(event.target.files ?? []) }); event.target.value = '' }} />
+      <PasteStatus {...browserPaste} chooseFiles={fileUploadsAllowed ? () => pickerRef.current?.click() : undefined} />
     </div>
   )
 }

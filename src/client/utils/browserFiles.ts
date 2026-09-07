@@ -12,6 +12,8 @@ export function clipboardFiles(data: DataTransfer | null | undefined): File[] {
 }
 
 export function validateFiles(files: File[]): string | null {
+  const emptyImage = files.find(file => file.type.startsWith('image/') && file.size === 0)
+  if (emptyImage) return `${emptyImage.name} contains no image data. Choose the file to upload it.`
   const oversized = files.find((file) => file.size > MAX_PASTE_FILE_BYTES)
   return oversized ? `${oversized.name} exceeds the ${PASTE_FILE_LIMIT_LABEL} limit` : null
 }

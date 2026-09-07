@@ -507,7 +507,7 @@ describe('Terminal', () => {
       renameButton.props.onClick()
     })
 
-    const input = renderer.root.findByType('input')
+    const input = renderer.root.findByProps({ type: 'text' })
 
     act(() => {
       input.props.onChange({ target: { value: ' beta ' } })
@@ -919,7 +919,7 @@ describe('Terminal', () => {
       renameButton.props.onClick()
     })
 
-    const input = renderer.root.findByType('input')
+    const input = renderer.root.findByProps({ type: 'text' })
     act(() => {
       input.props.onKeyDown({
         key: 'Enter',
