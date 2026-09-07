@@ -10,7 +10,7 @@ for (const mode of ['desktop', 'mobile', 'drop', 'context-paste'] as const) {
   test(`${mode}: files go directly into the existing prompt without submitting`, async ({ page }) => {
     const session = process.env.E2E_TMUX_SESSION
     if (!session || !process.env.E2E_TMUX_TMPDIR) throw new Error('Private e2e tmux server required')
-    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.setViewportSize(mode === 'mobile' ? { width: 390, height: 844 } : { width: 1440, height: 900 })
     const name = `file-paste-${mode}`
     const target = `${session}:${name}`
     expect(tmux(['new-window', '-t', session, '-n', name, `python3 ${repl}`]).status).toBe(0)
@@ -21,15 +21,18 @@ for (const mode of ['desktop', 'mobile', 'drop', 'context-paste'] as const) {
     try {
       await expect.poll(() => tmux(['capture-pane', '-t', target, '-p']).stdout).toContain('PASTE-REPL READY')
       await page.goto('/')
-      const card = page.getByTestId('session-card').filter({ hasText: name }).first()
+      if (mode === 'mobile') await page.getByRole('button', { name: 'Open session menu' }).click()
+      const list = mode === 'mobile' ? page.getByRole('dialog', { name: 'Session list' }) : page
+      const card = list.getByTestId('session-card').filter({ hasText: name }).first()
       await expect(card).toBeVisible({ timeout: 20000 })
       await card.click()
       await expect(page.locator('.xterm')).toBeVisible()
       await page.waitForTimeout(1500)
+      if (mode === 'mobile') await page.getByRole('button', { name: 'Show keyboard' }).click()
+      await expect(page.locator('.xterm-helper-textarea')).toBeEnabled()
       await page.locator('.xterm-helper-textarea').pressSequentially('Compare: ')
       const uploaded = page.waitForResponse(response => response.url().endsWith('/api/paste-file') && response.ok())
       if (mode === 'mobile') {
-        await page.setViewportSize({ width: 390, height: 844 })
         const chooser = page.waitForEvent('filechooser')
         await page.getByRole('button', { name: 'Choose files', exact: true }).click()
         await (await chooser).setFiles({ name: 'data with spaces.unknown', mimeType: 'application/octet-stream', buffer: Buffer.from('exact device file bytes') })
