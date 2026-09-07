@@ -112,6 +112,10 @@ test('arrow cluster: tap sends, hold repeats, deck never reflows', async ({ page
     await expect(page.locator('.xterm')).toBeVisible()
     await sleep(2000) // let the terminal attach settle
 
+    // Paste/file controls lead the scrollable deck. Expose the key controls
+    // before taking coordinates for raw touches (which do not auto-scroll).
+    await page.locator('.grid-flow-col').evaluate(element => { element.scrollLeft = element.scrollWidth })
+
     const trigger = await center(page, 'Arrow keys')
     const enter = await center(page, 'Enter')
     const layoutBefore = await deckLayout(page)

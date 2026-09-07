@@ -11,7 +11,8 @@ import { CornerDownLeftIcon } from '@untitledui-icons/react/line'
 import ArrowKeys from './ArrowKeys'
 import NumPad from './NumPad'
 import { isIOSDevice } from '../utils/device'
-import { imagePathInput } from '../utils/paste'
+import PasteStatus from './PasteStatus'
+import { useBrowserPaste } from '../hooks/useBrowserPaste'
 
 interface SessionInfo {
   id: string
@@ -27,11 +28,13 @@ interface TerminalControlsProps {
    * back to onSendKey when not provided.
    */
   onPasteText?: (text: string) => void
+  onPasteImage?: (text: string) => void
   disabled?: boolean
   sessions: SessionInfo[]
   currentSessionId: string | null
   /** Agent type of the attached session — controls image-paste delivery. */
   agentType?: AgentType
+  fileUploadsAllowed?: boolean
   onSelectSession: (sessionId: string) => void
   hideSessionSwitcher?: boolean
   onRefocus?: () => void
@@ -125,64 +128,28 @@ const statusDot: Record<Session['status'], string> = {
   unknown: 'bg-muted',
 }
 
-/**
- * Uploads a clipboard image to the server. Returns the stored file path, or
- * the failure message (e.g. the server's "Image too large" / "Unsupported
- * image type") so callers can show it instead of dropping the paste silently.
- */
-async function uploadPasteImage(
-  blob: Blob,
-  filename: string
-): Promise<{ path: string } | { error: string }> {
-  try {
-    const formData = new FormData()
-    formData.append('image', blob, filename)
-    const res = await fetch('/api/paste-image', { method: 'POST', body: formData })
-    if (res.ok) {
-      const { path } = (await res.json()) as { path: string }
-      return { path }
-    }
-    let error = 'Image upload failed'
-    try {
-      const body = (await res.json()) as { error?: unknown }
-      if (typeof body.error === 'string') error = body.error
-    } catch {
-      // non-JSON error response; keep the generic message
-    }
-    return { error }
-  } catch {
-    return { error: 'Image upload failed' }
-  }
-}
-
 export default function TerminalControls({
   onSendKey,
   onPasteText,
+  onPasteImage,
   disabled = false,
   sessions,
   currentSessionId,
   agentType,
+  fileUploadsAllowed = true,
   onSelectSession,
   hideSessionSwitcher = false,
   onRefocus,
   isKeyboardVisible,
   onEnterTextMode,
 }: TerminalControlsProps) {
-  const [showPasteInput, setShowPasteInput] = useState(false)
-  const [pasteValue, setPasteValue] = useState('')
-  const [pasteError, setPasteError] = useState<string | null>(null)
-  const [isUploading, setIsUploading] = useState(false)
+  const pickerRef = useRef<HTMLInputElement>(null)
+  const browserPaste = useBrowserPaste({ sessionId: currentSessionId, disabled, fileUploadsAllowed, agentType,
+    onPasteText: onPasteText ?? onSendKey, onPasteImage: onPasteImage ?? onSendKey, onRefocus })
   const [ctrlActive, setCtrlActive] = useState(false)
-  const pasteInputRef = useRef<HTMLTextAreaElement>(null)
-  const pasteZoneRef = useRef<HTMLDivElement>(null)
   const lastTouchTimeRef = useRef(0)
   const controlsRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    if (showPasteInput && pasteInputRef.current) {
-      pasteInputRef.current.focus()
-    }
-  }, [showPasteInput])
 
   useEffect(() => {
     const controls = controlsRef.current
@@ -191,6 +158,7 @@ export default function TerminalControls({
     const handleTouchStartCapture = (event: TouchEvent) => {
       if (disabled) return
       if (!controls.contains(event.target as Node)) return
+      if ((event.target as HTMLElement).closest?.('[data-native-gesture]')) return
       if (isKeyboardVisible?.()) {
         event.preventDefault()
       }
@@ -210,7 +178,7 @@ export default function TerminalControls({
 
   // Intercept keyboard input when ctrl is active to send control characters
   useEffect(() => {
-    if (!ctrlActive || disabled || typeof document === 'undefined') return
+    if (!ctrlActive || disabled || browserPaste.state.status === 'awaiting-paste' || typeof document === 'undefined') return
 
     const handleKeyDown = (e: KeyboardEvent) => {
       const { output, consumeCtrl } = applyCtrlModifier(e.key, true)
@@ -228,50 +196,7 @@ export default function TerminalControls({
     return () => {
       document.removeEventListener('keydown', handleKeyDown, { capture: true })
     }
-  }, [ctrlActive, disabled, onSendKey])
-
-  // Handle paste events in the modal (for images via native paste gesture)
-  useEffect(() => {
-    if (!showPasteInput) return
-    const zone = pasteZoneRef.current
-    if (!zone) return
-
-    const handlePaste = async (e: ClipboardEvent) => {
-      const items = e.clipboardData?.items
-      if (!items) return
-
-      for (const item of items) {
-        if (item.type.startsWith('image/')) {
-          e.preventDefault()
-          const blob = item.getAsFile()
-          if (!blob) continue
-
-          setIsUploading(true)
-          setPasteError(null)
-          try {
-            const result = await uploadPasteImage(
-              blob,
-              `paste.${item.type.split('/')[1] || 'png'}`
-            )
-            if ('path' in result) {
-              onSendKey(imagePathInput(result.path, agentType))
-              setShowPasteInput(false)
-              setPasteValue('')
-              onRefocus?.()
-            } else {
-              setPasteError(result.error)
-            }
-          } finally {
-            setIsUploading(false)
-          }
-          return
-        }
-      }
-    }
-
-    zone.addEventListener('paste', handlePaste)
-    return () => zone.removeEventListener('paste', handlePaste)
-  }, [showPasteInput, onSendKey, onRefocus, agentType])
+  }, [ctrlActive, disabled, browserPaste.state.status, onSendKey])
 
   const handlePress = (key: string) => {
     if (disabled) return
@@ -306,101 +231,10 @@ export default function TerminalControls({
     onSendKey(output)
   }
 
-  // Route pasted text through the explicit paste path (bracketed via tmux) so
-  // multi-line content isn't auto-submitted line-by-line; fall back to raw keys.
-  const sendPasteText = (text: string) => {
-    if (onPasteText) {
-      onPasteText(text)
-    } else {
-      onSendKey(text)
-    }
-  }
-
-  const handlePasteButtonClick = async () => {
+  const handlePasteButtonClick = () => {
     if (disabled) return
-    // Check if keyboard was visible before we do anything
-    const wasKeyboardVisible = isKeyboardVisible?.() ?? false
     triggerHaptic()
-    setPasteError(null)
-
-    // Try Clipboard API with image support
-    try {
-      const items = await navigator.clipboard.read()
-      for (const item of items) {
-        // Check for image first
-        const imageType = item.types.find((t) => t.startsWith('image/'))
-        if (imageType) {
-          const blob = await item.getType(imageType)
-          const result = await uploadPasteImage(
-            blob,
-            `paste.${imageType.split('/')[1] || 'png'}`
-          )
-          if ('path' in result) {
-            // Deliver the uploaded path so the agent attaches the image:
-            // bracketed paste for Claude ([Image #N]), raw path for Codex.
-            onSendKey(imagePathInput(result.path, agentType))
-            if (wasKeyboardVisible) {
-              onRefocus?.()
-            }
-            return
-          }
-          // Surface the failure in the paste modal instead of dropping the paste
-          setPasteError(result.error)
-          setShowPasteInput(true)
-          setPasteValue('')
-          return
-        }
-
-        // Check for text
-        if (item.types.includes('text/plain')) {
-          const blob = await item.getType('text/plain')
-          const text = await blob.text()
-          if (text) {
-            sendPasteText(text)
-            if (wasKeyboardVisible) {
-              onRefocus?.()
-            }
-            return
-          }
-        }
-      }
-    } catch {
-      // Clipboard API not available - try text fallback
-      try {
-        const text = await navigator.clipboard.readText()
-        if (text) {
-          sendPasteText(text)
-          if (wasKeyboardVisible) {
-            onRefocus?.()
-          }
-          return
-        }
-      } catch {
-        // Fall through to manual paste input
-      }
-    }
-
-    // Show paste input for manual paste on iOS
-    setShowPasteInput(true)
-    setPasteValue('')
-  }
-
-  const handlePasteSubmit = () => {
-    if (pasteValue) {
-      triggerHaptic()
-      sendPasteText(pasteValue)
-    }
-    setShowPasteInput(false)
-    setPasteValue('')
-    setPasteError(null)
-    onRefocus?.()
-  }
-
-  const handlePasteCancel = () => {
-    setShowPasteInput(false)
-    setPasteValue('')
-    setPasteError(null)
-    onRefocus?.()
+    return browserPaste.openDialog()
   }
 
   const handleSessionSelect = (sessionId: string) => {
@@ -484,6 +318,29 @@ export default function TerminalControls({
       )}
       {/* Key row */}
       <div className="grid grid-flow-col auto-cols-[44px] items-center gap-[4px] overflow-x-auto scrollbar-none">
+        {/* Paste button */}
+        <button
+          type="button"
+          aria-label="Paste"
+          className={`
+            terminal-key
+            flex items-center justify-center
+            size-[44px] p-0
+            text-sm font-medium
+            bg-surface border border-border rounded-md
+            active:bg-hover active:scale-95
+            transition-transform duration-75
+            select-none touch-manipulation
+            text-secondary
+            ${disabled ? 'opacity-50' : ''}
+          `}
+          onMouseDown={(e) => e.preventDefault()}
+          data-native-gesture
+          onClick={handlePasteButtonClick}
+          disabled={disabled}
+        >
+          {PasteIcon}
+        </button>
         {/* Ctrl toggle */}
         <button
           type="button"
@@ -580,29 +437,6 @@ export default function TerminalControls({
             {control.label}
           </button>
         ))}
-        {/* Paste button */}
-        <button
-          type="button"
-          aria-label="Paste"
-          className={`
-            terminal-key
-            flex items-center justify-center
-            size-[44px] p-0
-            text-sm font-medium
-            bg-surface border border-border rounded-md
-            active:bg-hover active:scale-95
-            transition-transform duration-75
-            select-none touch-manipulation
-            text-secondary
-            ${disabled ? 'opacity-50' : ''}
-          `}
-          onMouseDown={(e) => e.preventDefault()}
-          onTouchStart={handleTouchAction(() => { void handlePasteButtonClick() })}
-          onClick={handleClickAction(() => { void handlePasteButtonClick() })}
-          disabled={disabled}
-        >
-          {PasteIcon}
-        </button>
         {/* Keyboard button - enter text mode (exit copy-mode and show keyboard) */}
         <button
           type="button"
@@ -628,62 +462,9 @@ export default function TerminalControls({
         </button>
       </div>
 
-      {/* Paste modal - shown when Clipboard API unavailable (iOS) */}
-      {showPasteInput && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div
-            ref={pasteZoneRef}
-            className="mx-4 w-full max-w-sm rounded-lg border border-border bg-elevated p-4 shadow-xl"
-          >
-            <h3 className="text-base font-medium text-primary mb-1 text-balance">Paste</h3>
-            <p className="text-xs text-muted mb-3 text-pretty">Text or image (long-press → Paste)</p>
-            {isUploading ? (
-              <div className="w-full h-11 flex items-center justify-center bg-surface border border-border rounded-md text-secondary">
-                Uploading image...
-              </div>
-            ) : (
-              <textarea
-                ref={pasteInputRef}
-                value={pasteValue}
-                onChange={(e) => setPasteValue(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape') {
-                    e.preventDefault()
-                    handlePasteCancel()
-                  }
-                }}
-                placeholder="Paste here..."
-                aria-label="Paste text"
-                rows={4}
-                className="block w-full min-h-24 resize-y px-3 py-2 text-[16px] bg-surface border border-border rounded-md text-primary placeholder:text-muted outline-none focus:border-accent"
-                style={{ fontSize: '16px' }}
-              />
-            )}
-            {pasteError && (
-              <p className="mt-2 text-xs text-danger" role="alert">
-                {pasteError}
-              </p>
-            )}
-            <div className="flex justify-end gap-2 mt-4">
-              <button
-                type="button"
-                onClick={handlePasteCancel}
-                className="px-4 py-2 text-sm font-medium text-secondary bg-surface border border-border rounded-md active:scale-95 transition-transform"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handlePasteSubmit}
-                disabled={isUploading}
-                className="px-4 py-2 text-sm font-medium bg-accent text-white rounded-md active:scale-95 transition-transform disabled:opacity-50"
-              >
-                Send
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <input ref={pickerRef} type="file" multiple aria-label="Choose files" className="hidden"
+        onChange={(event) => { void browserPaste.paste({ text: '', files: Array.from(event.target.files ?? []) }); event.target.value = '' }} />
+      <PasteStatus {...browserPaste} chooseFiles={fileUploadsAllowed ? () => pickerRef.current?.click() : undefined} />
     </div>
   )
 }
