@@ -12,7 +12,7 @@ jobs:
     # Bun spawns under `bun test --coverage`: the server boot via Bun.spawn in
     # integration tests never becomes healthy regardless of timeout (verified
     # at 60s+ wrappers). Investigating root cause separately; the e2e job
-    # below stays on ubuntu-latest because Playwright's own webServer launch
+    # below uses the Playwright container because its webServer launch
     # is unaffected.
     runs-on: ubuntu-22.04
     steps:
@@ -52,6 +52,12 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      # Keep this version aligned with playwright in bun.lock. The image
+      # includes browsers and OS dependencies, avoiding per-run font downloads.
+      image: mcr.microsoft.com/playwright:v1.57.0-noble
+      options: --init --ipc=host
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
@@ -62,11 +68,8 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Install tmux
-        run: sudo apt-get update && sudo apt-get install -y tmux
-
-      - name: Install Playwright browsers
-        run: bunx playwright install --with-deps chromium
+      - name: Install terminal test dependencies
+        run: apt-get update && apt-get install -y --no-install-recommends tmux python3
 
       - name: Build
         run: bun run build
