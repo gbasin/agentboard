@@ -71,6 +71,9 @@ jobs:
       - name: Install dependencies
         # node-pty compiles on Linux; the standard runner supplied node-gyp.
         run: |
+          # Bun lifecycle scripts can use a different HOME from checkout.
+          # Trust only this mounted checkout in the disposable container.
+          git config --system --add safe.directory "$GITHUB_WORKSPACE"
           npm install --global node-gyp@11.5.0
           bun install --frozen-lockfile
 
