@@ -19,7 +19,7 @@ for (const mode of ['desktop', 'mobile', 'drop', 'context-paste'] as const) {
     page.on('request', request => { if (request.url().includes('clipboard-file-path')) hostClipboardRequests.push(request.url()) })
     page.on('response', response => { if (response.url().endsWith('/api/paste-file') && response.ok()) uploads.push(response.json().then(body => body.path)) })
     try {
-      await expect.poll(() => tmux(['capture-pane', '-t', target, '-p']).stdout).toContain('PASTE-REPL READY')
+      await expect.poll(() => tmux(['capture-pane', '-t', target, '-p', '-J']).stdout).toContain('PASTE-REPL READY')
       await page.goto('/')
       if (mode === 'mobile') await page.getByRole('button', { name: 'Open session menu' }).click()
       const list = mode === 'mobile' ? page.getByRole('dialog', { name: 'Session list' }) : page
@@ -54,15 +54,15 @@ for (const mode of ['desktop', 'mobile', 'drop', 'context-paste'] as const) {
         }, mode)
       }
       const { path } = await (await uploaded).json()
-      await expect.poll(() => tmux(['capture-pane', '-t', target, '-p']).stdout).toContain('data with spaces.unknown')
-      const pane = tmux(['capture-pane', '-t', target, '-p']).stdout
+      await expect.poll(() => tmux(['capture-pane', '-t', target, '-p', '-J']).stdout).toContain('data with spaces.unknown')
+      const pane = tmux(['capture-pane', '-t', target, '-p', '-J']).stdout
       expect(pane).not.toContain('SUBMITTED:')
       await expect(page.getByRole('dialog', { name: /Paste/ })).toHaveCount(0)
       expect(hostClipboardRequests).toEqual([])
       expect(await readFile(path, 'utf8')).toBe('exact device file bytes')
       // Only an explicit Enter submits the accumulated typed + pasted prompt.
       await page.locator('.xterm-helper-textarea').press('Enter')
-      await expect.poll(() => tmux(['capture-pane', '-t', target, '-p']).stdout).toContain('SUBMITTED:Compare: ')
+      await expect.poll(() => tmux(['capture-pane', '-t', target, '-p', '-J']).stdout).toContain('SUBMITTED:Compare: ')
     } finally {
       tmux(['kill-window', '-t', target])
       for (const path of await Promise.all(uploads)) await rm(dirname(path), { recursive: true, force: true })
