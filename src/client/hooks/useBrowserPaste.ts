@@ -5,7 +5,7 @@ import { quotedFilePath, readBrowserClipboard, uploadBrowserFile, validateFiles 
 import { imagePathInput } from '../utils/paste'
 
 export interface BrowserPaste { text: string; files: File[] }
-export type PasteState = { status: 'idle' | 'reading' | 'uploading' | 'clipboard-blocked' } | { status: 'error'; message: string }
+export type PasteState = { status: 'idle' | 'reading' | 'uploading' | 'awaiting-paste' } | { status: 'error'; message: string }
 interface Options {
   sessionId: string | null
   disabled?: boolean
@@ -48,7 +48,7 @@ export function useBrowserPaste(options: Options) {
       if (!current()) return
       const result = await read
       if (!current()) return
-      if ('error' in result) { setState({ status: 'clipboard-blocked' }); return }
+      if ('error' in result) { setState({ status: 'awaiting-paste' }); return }
       const payload = result.value
       retryPayload.current = payload
       const controller = new AbortController()
@@ -80,8 +80,13 @@ export function useBrowserPaste(options: Options) {
     })
     return queue.current
   }, [])
+  const openDialog = () => {
+    if (latest.current.disabled) return
+    cancel()
+    setState({ status: 'awaiting-paste' })
+  }
   const pasteClipboard = () => paste(readBrowserClipboard(), true)
   const retry = () => retryPayload.current ? paste(retryPayload.current) : Promise.resolve()
   const fail = (message: string) => { cancel(); setState({ status: 'error', message }) }
-  return { state, paste, pasteClipboard, retry, cancel, fail }
+  return { state, paste, pasteClipboard, openDialog, retry, cancel, fail }
 }

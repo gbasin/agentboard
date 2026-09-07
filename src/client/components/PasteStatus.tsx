@@ -1,4 +1,4 @@
-/** Progress/errors and a native-paste fallback; the TUI remains the composer. */
+/** Progress/errors and a device paste/file dialog; the TUI remains the composer. */
 import { useLayoutEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { clipboardFiles } from '../utils/browserFiles'
@@ -12,9 +12,9 @@ export default function PasteStatus({ state, cancel, retry, paste, chooseFiles }
   chooseFiles?: () => void
 }) {
   const dialog = useRef<HTMLDialogElement>(null)
-  useLayoutEffect(() => { if (state.status === 'clipboard-blocked') dialog.current?.showModal() }, [state.status])
+  useLayoutEffect(() => { if (state.status === 'awaiting-paste') dialog.current?.showModal() }, [state.status])
   if (state.status === 'idle') return null
-  if (state.status === 'clipboard-blocked') {
+  if (state.status === 'awaiting-paste') {
     const fallback = <dialog ref={dialog} aria-label="Paste from this device" onCancel={cancel}
       style={{ top: 'calc(var(--viewport-offset-top, 0px) + 1rem)', bottom: 'auto', maxHeight: 'calc(var(--visual-viewport-height, 100dvh) - 2rem)' }}
       className="mx-auto my-0 w-[calc(100%_-_2rem)] max-w-sm overflow-y-auto rounded-lg border border-border bg-elevated p-4 text-primary backdrop:bg-black/50">

@@ -221,9 +221,9 @@ All persistent data is stored in `~/.agentboard/`: session database (`agentboard
 
 `AGENTBOARD_LOG_WATCH_MODE` selects the log detection strategy: `watch` (default) uses `fs.watch` for instant file-change detection, `poll` falls back to periodic directory scanning. Use `poll` if you experience issues with filesystem notifications (e.g., on network-mounted home directories). On Linux, watch mode automatically includes a 15-second fallback poll since `fs.watch({ recursive: true })` has known platform bugs.
 
-Paste text or files directly into the terminal prompt. Desktop clipboard paste and file drops upload device files and insert their paths without pressing Enter. On mobile, **Paste** reads the device clipboard and **Choose files** opens the device file picker. File uploads accept any extension, up to 40 MB per file. Files are stored temporarily on the Agentboard host; uploads are unavailable for SSH sessions.
+Paste text or files directly into the terminal prompt. Desktop clipboard paste and file drops upload device files and insert their paths without pressing Enter. On mobile, **Paste** opens a dialog with a field for native clipboard paste and **Choose files** for selecting one or more files. File uploads accept any extension, up to 40 MB per file. Files are stored temporarily on the Agentboard host; uploads are unavailable for SSH sessions.
 
-Automatic clipboard access depends on browser support and permission, and requires HTTPS or localhost. If access is blocked, Paste provides a field for the browser's native paste gesture; its contents go directly into the terminal. **Choose files** also works over HTTP.
+The mobile dialog works the same over HTTP and HTTPS. Touch and hold in the field to paste, or select **Choose files**. Either action inserts directly into the existing terminal prompt without submitting it. Automatic clipboard reads elsewhere depend on browser support and permission and require HTTPS or localhost.
 
 `AGENTBOARD_PASTE_IMAGE_MAX_BYTES` caps clipboard image uploads (default 40 MB, enough for full-resolution photos pasted as PNG). Image attachments support PNG, JPEG, GIF, and WebP.
 

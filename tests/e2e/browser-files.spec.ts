@@ -33,9 +33,15 @@ for (const mode of ['desktop', 'mobile', 'drop', 'context-paste'] as const) {
       await page.locator('.xterm-helper-textarea').pressSequentially('Compare: ')
       const uploaded = page.waitForResponse(response => response.url().endsWith('/api/paste-file') && response.ok())
       if (mode === 'mobile') {
+        await expect(page.getByRole('button', { name: 'Choose files', exact: true })).toHaveCount(0)
+        await page.getByRole('button', { name: 'Paste', exact: true }).click()
+        await expect(page.getByRole('dialog', { name: 'Paste from this device' })).toBeVisible()
         const chooser = page.waitForEvent('filechooser')
         await page.getByRole('button', { name: 'Choose files', exact: true }).click()
-        await (await chooser).setFiles({ name: 'data with spaces.unknown', mimeType: 'application/octet-stream', buffer: Buffer.from('exact device file bytes') })
+        await (await chooser).setFiles([
+          { name: 'data with spaces.unknown', mimeType: 'application/octet-stream', buffer: Buffer.from('exact device file bytes') },
+          { name: 'LICENSE', mimeType: 'text/plain', buffer: Buffer.from('second device file') },
+        ])
       } else {
         await page.evaluate((mode) => {
           const input = document.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement
@@ -60,6 +66,11 @@ for (const mode of ['desktop', 'mobile', 'drop', 'context-paste'] as const) {
       await expect(page.getByRole('dialog', { name: /Paste/ })).toHaveCount(0)
       expect(hostClipboardRequests).toEqual([])
       expect(await readFile(path, 'utf8')).toBe('exact device file bytes')
+      if (mode === 'mobile') {
+        await expect.poll(() => tmux(['capture-pane', '-t', target, '-p', '-J']).stdout).toContain('LICENSE')
+        expect(uploads).toHaveLength(2)
+        expect(await readFile((await Promise.all(uploads))[1], 'utf8')).toBe('second device file')
+      }
       // Only an explicit Enter submits the accumulated typed + pasted prompt.
       await page.locator('.xterm-helper-textarea').press('Enter')
       await expect.poll(() => tmux(['capture-pane', '-t', target, '-p', '-J']).stdout).toContain('SUBMITTED:Compare: ')

@@ -26,7 +26,7 @@ async function waitForPaneText(
   )
 }
 
-async function exerciseManualPaste(page: Page, windowName: string) {
+async function exerciseManualPaste(page: Page, windowName: string, clipboardAvailable: boolean) {
   const session = process.env.E2E_TMUX_SESSION
   test.skip(!session, 'E2E_TMUX_SESSION not set')
   const target = `${session}:${windowName}`
@@ -44,15 +44,15 @@ async function exerciseManualPaste(page: Page, windowName: string) {
   try {
     await waitForPaneText(target, 'PASTE-REPL READY')
 
-    await page.addInitScript(() => {
+    await page.addInitScript((available) => {
       Object.defineProperty(navigator, 'clipboard', {
         configurable: true,
         value: {
-          read: () => Promise.reject(new Error('clipboard permission denied')),
-          readText: () => Promise.reject(new Error('clipboard permission denied')),
+          read: () => { throw new Error('Paste must open the dialog without reading clipboard') },
+          readText: () => available ? Promise.resolve('must not insert automatically') : Promise.reject(new Error('clipboard permission denied')),
         },
       })
-    })
+    }, clipboardAvailable)
 
     await page.goto('/')
     await page.getByRole('button', { name: 'Open session menu' }).click()
@@ -109,7 +109,11 @@ test.describe('iOS PWA-sized manual paste fallback', () => {
       'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.7 Mobile/15E148 Safari/604.1',
   })
 
+  test('opens the same dialog with clipboard access available', async ({ page }) => {
+    await exerciseManualPaste(page, 'manual-paste-available', true)
+  })
+
   test('preserves multiline text and stays within the viewport', async ({ page }) => {
-    await exerciseManualPaste(page, 'manual-paste-mobile')
+    await exerciseManualPaste(page, 'manual-paste-mobile', false)
   })
 })

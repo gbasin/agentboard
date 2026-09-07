@@ -178,7 +178,7 @@ export default function TerminalControls({
 
   // Intercept keyboard input when ctrl is active to send control characters
   useEffect(() => {
-    if (!ctrlActive || disabled || browserPaste.state.status === 'clipboard-blocked' || typeof document === 'undefined') return
+    if (!ctrlActive || disabled || browserPaste.state.status === 'awaiting-paste' || typeof document === 'undefined') return
 
     const handleKeyDown = (e: KeyboardEvent) => {
       const { output, consumeCtrl } = applyCtrlModifier(e.key, true)
@@ -234,7 +234,7 @@ export default function TerminalControls({
   const handlePasteButtonClick = () => {
     if (disabled) return
     triggerHaptic()
-    return browserPaste.pasteClipboard()
+    return browserPaste.openDialog()
   }
 
   const handleSessionSelect = (sessionId: string) => {
@@ -340,11 +340,6 @@ export default function TerminalControls({
           disabled={disabled}
         >
           {PasteIcon}
-        </button>
-        <button type="button" aria-label="Choose files" title="Choose files" data-native-gesture
-          className="terminal-key flex size-[44px] shrink-0 items-center justify-center rounded-md border border-border bg-surface text-secondary disabled:opacity-50"
-          disabled={disabled || !fileUploadsAllowed} onClick={() => pickerRef.current?.click()}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="m8 12 6-6a3 3 0 0 1 4 4l-8 8a5 5 0 0 1-7-7l8-8M6 14l8-8" /></svg>
         </button>
         {/* Ctrl toggle */}
         <button

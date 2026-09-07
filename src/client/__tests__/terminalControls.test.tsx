@@ -66,7 +66,7 @@ describe('TerminalControls', () => {
     const keyButtons = renderer.root.findAllByType('button').filter((button) =>
       String(button.props.className ?? '').includes('terminal-key')
     )
-    expect(keyButtons).toHaveLength(11)
+    expect(keyButtons).toHaveLength(10)
     expect(keyButtons.every((button) =>
       String(button.props.className).includes('size-[44px]')
     )).toBe(true)
@@ -192,7 +192,7 @@ describe('TerminalControls', () => {
     expect(selections).toEqual(['session-2'])
   })
 
-  test('Paste inserts clipboard text directly and refocuses', async () => {
+  test('Paste opens a dialog even with clipboard access, then native paste inserts and refocuses', async () => {
     let refocused = false
     const sent: string[] = []
     const pasted: string[] = []
@@ -226,6 +226,10 @@ describe('TerminalControls', () => {
 
     await act(async () => {
       await pasteButton.props.onClick()
+    })
+    expect(renderer.root.findByType('dialog')).toBeDefined()
+    await act(async () => {
+      renderer.root.findByType('textarea').props.onPaste({ preventDefault() {}, clipboardData: { getData: () => 'pasted text', files: [] } })
     })
 
     // Pasted text goes through the explicit paste path (bracketed server-side),
@@ -262,6 +266,10 @@ describe('TerminalControls', () => {
 
     await act(async () => {
       await pasteButton.props.onClick()
+    })
+    expect(renderer.root.findByType('dialog')).toBeDefined()
+    await act(async () => {
+      renderer.root.findByType('textarea').props.onPaste({ preventDefault() {}, clipboardData: { getData: () => 'pasted text', files: [] } })
     })
 
     expect(sent).toEqual(['pasted text'])
@@ -343,6 +351,10 @@ describe('TerminalControls', () => {
     await act(async () => {
       await pasteButton.props.onClick()
     })
+    expect(renderer.root.findByType('dialog')).toBeDefined()
+    await act(async () => {
+      renderer.root.findByType('textarea').props.onPaste({ preventDefault() {}, clipboardData: { getData: () => '', files: [new File(['png bytes'], 'image.png', { type: 'image/png' })] } })
+    })
 
     expect(requests).toHaveLength(1)
     expect(requests[0]?.url).toBe('/api/paste-image')
@@ -382,6 +394,10 @@ describe('TerminalControls', () => {
     await act(async () => {
       await pasteButton.props.onClick()
     })
+    expect(renderer.root.findByType('dialog')).toBeDefined()
+    await act(async () => {
+      renderer.root.findByType('textarea').props.onPaste({ preventDefault() {}, clipboardData: { getData: () => '', files: [new File(['png bytes'], 'image.png', { type: 'image/png' })] } })
+    })
 
     // Codex attaches via its own clipboard path, so the raw path is sent as-is.
     expect(sent).toEqual(['/tmp/paste-test.png '])
@@ -417,6 +433,10 @@ describe('TerminalControls', () => {
 
     await act(async () => {
       await pasteButton.props.onClick()
+    })
+    expect(renderer.root.findByType('dialog')).toBeDefined()
+    await act(async () => {
+      renderer.root.findByType('textarea').props.onPaste({ preventDefault() {}, clipboardData: { getData: () => '', files: [new File(['png bytes'], 'image.png', { type: 'image/png' })] } })
     })
 
     // Nothing was pasted, and the inline status shows the failure
@@ -458,6 +478,10 @@ describe('TerminalControls', () => {
 
     await act(async () => {
       await pasteButton.props.onClick()
+    })
+    expect(renderer.root.findByType('dialog')).toBeDefined()
+    await act(async () => {
+      renderer.root.findByType('textarea').props.onPaste({ preventDefault() {}, clipboardData: { getData: () => '', files: [new File(['png bytes'], 'image.png', { type: 'image/png' })] } })
     })
 
     const cancelButton = renderer.root
