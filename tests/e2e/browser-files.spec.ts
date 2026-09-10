@@ -42,6 +42,7 @@ for (const mode of ['desktop', 'mobile', 'drop', 'context-paste'] as const) {
           { name: 'data with spaces.unknown', mimeType: 'application/octet-stream', buffer: Buffer.from('exact device file bytes') },
           { name: 'LICENSE', mimeType: 'text/plain', buffer: Buffer.from('second device file') },
         ])
+        await page.getByRole('button', { name: 'Submit', exact: true }).click()
       } else {
         await page.evaluate((mode) => {
           const input = document.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement

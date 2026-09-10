@@ -87,11 +87,9 @@ async function exerciseManualPaste(page: Page, windowName: string, clipboardAvai
     expect(compactBounds!.y).toBeGreaterThanOrEqual(0)
     expect(compactBounds!.y + compactBounds!.height).toBeLessThanOrEqual(500)
 
-    await textarea.evaluate(element => {
-      const data = new DataTransfer()
-      data.setData('text/plain', 'manual_alpha\nmanual_beta\n')
-      element.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
-    })
+    await textarea.fill('manual_alpha\nmanual_beta\n')
+    expect(tmux(['capture-pane', '-t', target, '-p']).stdout).not.toContain('HELD:manual_alpha')
+    await page.getByRole('button', { name: 'Submit', exact: true }).click()
     await expect(textarea).toHaveCount(0)
 
     const pane = await waitForPaneText(target, 'HELD:manual_alpha|manual_beta|')
