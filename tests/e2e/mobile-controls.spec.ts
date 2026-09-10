@@ -75,6 +75,30 @@ test('⇧tab key sends CSI Z to the pane from a touch device', async ({ page }, 
 
     // ESC [ Z, and nothing else, was submitted.
     await waitForPaneText(target, 'INPUT_HEX:1b5b5a')
+
+    // Exercise an actual browser pan, including intermediate touch moves.
+    await page.getByRole('button', { name: 'Show keyboard' }).tap()
+    const input = page.locator('.xterm-helper-textarea')
+    await expect(input).toBeFocused()
+    const row = page.locator('.terminal-controls > .grid')
+    await row.evaluate(element => { element.scrollLeft = 0 })
+    const tab = page.getByRole('button', { name: 'tab', exact: true })
+    const bounds = (await tab.boundingBox())!
+    const x = bounds.x + bounds.width / 2
+    const y = bounds.y + bounds.height / 2
+    const cdp = await page.context().newCDPSession(page)
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] })
+    for (let distance = 10; distance <= 120; distance += 10) {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x - distance, y }] })
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+    await expect.poll(() => row.evaluate(element => element.scrollLeft)).toBeGreaterThan(50)
+    await expect(input).toBeFocused()
+    await page.getByRole('button', { name: 'Enter' }).tap()
+    // A swipe beginning on Tab must not insert a tab into the terminal.
+    expect(tmux(['capture-pane', '-t', target, '-p']).stdout).not.toContain('INPUT_HEX:09')
+    await cdp.detach()
+
   } finally {
     tmux(['kill-window', '-t', target])
   }

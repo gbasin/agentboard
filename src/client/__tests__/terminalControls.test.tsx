@@ -192,7 +192,7 @@ describe('TerminalControls', () => {
     expect(selections).toEqual(['session-2'])
   })
 
-  test('Paste opens a dialog even with clipboard access, then native paste inserts and refocuses', async () => {
+  test('Paste opens a dialog even with clipboard access, then submitted text inserts and refocuses', async () => {
     let refocused = false
     const sent: string[] = []
     const pasted: string[] = []
@@ -229,7 +229,11 @@ describe('TerminalControls', () => {
     })
     expect(renderer.root.findByType('dialog')).toBeDefined()
     await act(async () => {
-      renderer.root.findByType('textarea').props.onPaste({ preventDefault() {}, clipboardData: { getData: () => 'pasted text', files: [] } })
+      renderer.root.findByType('textarea').props.onChange({ target: { value: 'pasted text' } })
+    })
+    expect(renderer.root.findByType('dialog')).toBeDefined()
+    await act(async () => {
+      renderer.root.findByType('form').props.onSubmit({ preventDefault() {} })
     })
 
     // Pasted text goes through the explicit paste path (bracketed server-side),
@@ -269,7 +273,11 @@ describe('TerminalControls', () => {
     })
     expect(renderer.root.findByType('dialog')).toBeDefined()
     await act(async () => {
-      renderer.root.findByType('textarea').props.onPaste({ preventDefault() {}, clipboardData: { getData: () => 'pasted text', files: [] } })
+      renderer.root.findByType('textarea').props.onChange({ target: { value: 'pasted text' } })
+    })
+    expect(renderer.root.findByType('dialog')).toBeDefined()
+    await act(async () => {
+      renderer.root.findByType('form').props.onSubmit({ preventDefault() {} })
     })
 
     expect(sent).toEqual(['pasted text'])
@@ -309,7 +317,11 @@ describe('TerminalControls', () => {
     const textarea = renderer.root.findByType('textarea')
 
     await act(async () => {
-      textarea.props.onPaste({ preventDefault() {}, clipboardData: { getData: () => 'line 1\nline 2\n', files: [] } })
+      textarea.props.onChange({ target: { value: 'line 1\nline 2\n' } })
+    })
+    expect(renderer.root.findByType('dialog')).toBeDefined()
+    await act(async () => {
+      renderer.root.findByType('form').props.onSubmit({ preventDefault() {} })
     })
 
     expect(pasted).toEqual(['line 1\nline 2\n'])
@@ -355,6 +367,10 @@ describe('TerminalControls', () => {
     await act(async () => {
       renderer.root.findByType('textarea').props.onPaste({ preventDefault() {}, clipboardData: { getData: () => '', files: [new File(['png bytes'], 'image.png', { type: 'image/png' })] } })
     })
+    expect(renderer.root.findByType('dialog')).toBeDefined()
+    await act(async () => {
+      renderer.root.findByType('form').props.onSubmit({ preventDefault() {} })
+    })
 
     expect(requests).toHaveLength(1)
     expect(requests[0]?.url).toBe('/api/paste-image')
@@ -398,6 +414,10 @@ describe('TerminalControls', () => {
     await act(async () => {
       renderer.root.findByType('textarea').props.onPaste({ preventDefault() {}, clipboardData: { getData: () => '', files: [new File(['png bytes'], 'image.png', { type: 'image/png' })] } })
     })
+    expect(renderer.root.findByType('dialog')).toBeDefined()
+    await act(async () => {
+      renderer.root.findByType('form').props.onSubmit({ preventDefault() {} })
+    })
 
     // Codex attaches via its own clipboard path, so the raw path is sent as-is.
     expect(sent).toEqual(['/tmp/paste-test.png '])
@@ -437,6 +457,10 @@ describe('TerminalControls', () => {
     expect(renderer.root.findByType('dialog')).toBeDefined()
     await act(async () => {
       renderer.root.findByType('textarea').props.onPaste({ preventDefault() {}, clipboardData: { getData: () => '', files: [new File(['png bytes'], 'image.png', { type: 'image/png' })] } })
+    })
+    expect(renderer.root.findByType('dialog')).toBeDefined()
+    await act(async () => {
+      renderer.root.findByType('form').props.onSubmit({ preventDefault() {} })
     })
 
     // Nothing was pasted, and the inline status shows the failure
@@ -483,6 +507,10 @@ describe('TerminalControls', () => {
     await act(async () => {
       renderer.root.findByType('textarea').props.onPaste({ preventDefault() {}, clipboardData: { getData: () => '', files: [new File(['png bytes'], 'image.png', { type: 'image/png' })] } })
     })
+    expect(renderer.root.findByType('dialog')).toBeDefined()
+    await act(async () => {
+      renderer.root.findByType('form').props.onSubmit({ preventDefault() {} })
+    })
 
     const cancelButton = renderer.root
       .findAllByType('button')
@@ -499,4 +527,55 @@ describe('TerminalControls', () => {
       renderer.root.findAllByType('span').some((p) => p.props.role === 'alert')
     ).toBe(false)
   })
+})
+
+test('a horizontal swipe does not press a key; a stationary tap presses it once', () => {
+  globalAny.navigator = {} as Navigator
+  const sent: string[] = []
+  const renderer = TestRenderer.create(<TerminalControls onSendKey={(key) => sent.push(key)}
+    sessions={[]} currentSessionId="test" onSelectSession={() => {}} isKeyboardVisible={() => true} />)
+  const row = renderer.root.findAllByType('div').find((div) => div.props.onTouchStartCapture)!
+  const esc = renderer.root.findAllByType('button').find((button) => button.props.children === 'esc')!
+  let prevented = false
+  const event = (x: number) => ({ touches: [{ clientX: x, clientY: 0 }], changedTouches: [{ clientX: x, clientY: 0 }],
+    preventDefault: () => { prevented = true }, stopPropagation() {} })
+  act(() => {
+    row.props.onTouchStartCapture(event(100))
+    row.props.onTouchMoveCapture(event(40))
+    esc.props.onTouchEnd(event(40))
+  })
+  expect(prevented).toBe(false)
+  expect(sent).toEqual([])
+  act(() => {
+    row.props.onTouchStartCapture(event(100))
+    esc.props.onTouchEnd(event(100))
+    esc.props.onClick()
+  })
+  expect(prevented).toBe(true)
+  expect(sent).toEqual(['\x1b'])
+  renderer.unmount()
+})
+
+test('selected files survive resetting the native picker and wait with the draft for Submit', async () => {
+  const sent: string[] = []
+  globalAny.navigator = {} as Navigator
+  globalAny.fetch = (async () => Response.json({ path: '/tmp/notes.txt' })) as unknown as typeof fetch
+  const renderer = TestRenderer.create(<TerminalControls onSendKey={text => sent.push(text)}
+    sessions={[]} currentSessionId="test" onSelectSession={() => {}} />)
+  await act(async () => { findPasteButton(renderer)!.props.onClick() })
+  let selected: File[] = [new File(['notes'], 'notes.txt')]
+  const target = {
+    get files() { return selected },
+    set value(_value: string) { selected = [] },
+  }
+  act(() => {
+    renderer.root.findByType('textarea').props.onChange({ target: { value: 'Read this\nplease' } })
+    renderer.root.findByType('input').props.onChange({ target })
+  })
+  expect(selected).toEqual([])
+  expect(renderer.root.findAllByType('li')).toHaveLength(1)
+  expect(sent).toEqual([])
+  await act(async () => { renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }) })
+  expect(sent).toEqual(["Read this\nplease\n'/tmp/notes.txt' "])
+  renderer.unmount()
 })

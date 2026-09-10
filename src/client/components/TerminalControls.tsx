@@ -143,38 +143,11 @@ export default function TerminalControls({
   isKeyboardVisible,
   onEnterTextMode,
 }: TerminalControlsProps) {
-  const pickerRef = useRef<HTMLInputElement>(null)
   const browserPaste = useBrowserPaste({ sessionId: currentSessionId, disabled, fileUploadsAllowed, agentType,
     onPasteText: onPasteText ?? onSendKey, onPasteImage: onPasteImage ?? onSendKey, onRefocus })
   const [ctrlActive, setCtrlActive] = useState(false)
   const lastTouchTimeRef = useRef(0)
-  const controlsRef = useRef<HTMLDivElement>(null)
-
-
-  useEffect(() => {
-    const controls = controlsRef.current
-    if (!controls) return
-
-    const handleTouchStartCapture = (event: TouchEvent) => {
-      if (disabled) return
-      if (!controls.contains(event.target as Node)) return
-      if ((event.target as HTMLElement).closest?.('[data-native-gesture]')) return
-      if (isKeyboardVisible?.()) {
-        event.preventDefault()
-      }
-    }
-
-    controls.addEventListener('touchstart', handleTouchStartCapture, {
-      passive: false,
-      capture: true,
-    })
-
-    return () => {
-      controls.removeEventListener('touchstart', handleTouchStartCapture, {
-        capture: true,
-      })
-    }
-  }, [disabled, isKeyboardVisible])
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null)
 
   // Intercept keyboard input when ctrl is active to send control characters
   useEffect(() => {
@@ -261,6 +234,9 @@ export default function TerminalControls({
 
   const handleTouchAction = (handler: () => void) => (e: ReactTouchEvent) => {
     if (disabled) return
+    const start = touchStartRef.current
+    const end = e.changedTouches[0]
+    if (!start || !end || Math.hypot(end.clientX - start.x, end.clientY - start.y) > 10) return
     e.preventDefault()
     e.stopPropagation()
     lastTouchTimeRef.current = Date.now()
@@ -277,7 +253,6 @@ export default function TerminalControls({
 
   return (
     <div
-      ref={controlsRef}
       className={`terminal-controls flex flex-col gap-[6px] border-t border-border bg-elevated p-[6px] ${isIOSDevice() ? '' : 'md:hidden'}`}
     >
       {/* Session switcher row */}
@@ -317,7 +292,18 @@ export default function TerminalControls({
         </div>
       )}
       {/* Key row */}
-      <div className="grid grid-flow-col auto-cols-[44px] items-center gap-[4px] overflow-x-auto scrollbar-none">
+      <div className="grid grid-flow-col auto-cols-[44px] items-center gap-[4px] overflow-x-auto scrollbar-none"
+        onTouchStartCapture={(event) => {
+          const touch = event.touches[0]
+          touchStartRef.current = touch ? { x: touch.clientX, y: touch.clientY } : null
+        }}
+        onTouchMoveCapture={(event) => {
+          const start = touchStartRef.current
+          const touch = event.touches[0]
+          if (start && touch && Math.hypot(touch.clientX - start.x, touch.clientY - start.y) > 10) touchStartRef.current = null
+        }}
+        onTouchCancel={() => { touchStartRef.current = null }}
+      >
         {/* Paste button */}
         <button
           type="button"
@@ -359,7 +345,7 @@ export default function TerminalControls({
             ${disabled ? 'opacity-50' : ''}
           `}
           onMouseDown={(e) => e.preventDefault()}
-          onTouchStart={handleTouchAction(handleCtrlToggle)}
+          onTouchEnd={handleTouchAction(handleCtrlToggle)}
           onClick={handleClickAction(handleCtrlToggle)}
           disabled={disabled}
         >
@@ -385,7 +371,7 @@ export default function TerminalControls({
               ${disabled ? 'opacity-50' : ''}
             `}
             onMouseDown={(e) => e.preventDefault()}
-            onTouchStart={handleTouchAction(() => handlePress(control.key))}
+            onTouchEnd={handleTouchAction(() => handlePress(control.key))}
             onClick={handleClickAction(() => handlePress(control.key))}
             disabled={disabled}
           >
@@ -430,7 +416,7 @@ export default function TerminalControls({
               ${disabled ? 'opacity-50' : ''}
             `}
             onMouseDown={(e) => e.preventDefault()}
-            onTouchStart={handleTouchAction(() => handlePress(control.key))}
+            onTouchEnd={handleTouchAction(() => handlePress(control.key))}
             onClick={handleClickAction(() => handlePress(control.key))}
             disabled={disabled}
           >
@@ -454,7 +440,7 @@ export default function TerminalControls({
             ${disabled ? 'opacity-50' : ''}
           `}
           onMouseDown={(e) => e.preventDefault()}
-          onTouchStart={handleTouchAction(handleKeyboardPress)}
+          onTouchEnd={handleTouchAction(handleKeyboardPress)}
           onClick={handleClickAction(handleKeyboardPress)}
           disabled={disabled}
         >
@@ -462,9 +448,7 @@ export default function TerminalControls({
         </button>
       </div>
 
-      <input ref={pickerRef} type="file" multiple aria-label="Choose files" className="hidden"
-        onChange={(event) => { void browserPaste.paste({ text: '', files: Array.from(event.target.files ?? []) }); event.target.value = '' }} />
-      <PasteStatus {...browserPaste} chooseFiles={fileUploadsAllowed ? () => pickerRef.current?.click() : undefined} />
+      <PasteStatus {...browserPaste} allowFiles={fileUploadsAllowed} />
     </div>
   )
 }
