@@ -1,6 +1,8 @@
 /**
  * TerminalControls - On-screen control strip for mobile terminal interaction
- * Provides quick access to ESC, numbers (for Claude prompts), arrows, Enter, and Ctrl+C
+ * Quick keys ordered most-used first (left): enter, esc, arrows, paste, delete
+ * word, numbers, tab, ctrl, shift+tab, keyboard. The row scrolls horizontally
+ * on narrow phones, so the rightmost keys are the ones that can afford a swipe.
  * Top row shows session switcher buttons to quickly jump between sessions
  */
 
@@ -46,7 +48,6 @@ interface ControlKey {
   label: string | JSX.Element
   key: string
   className?: string
-  grow?: boolean
   ariaLabel?: string
 }
 
@@ -81,19 +82,14 @@ const KeyboardIcon = (
   </svg>
 )
 
-// Keys before the numpad (Ctrl toggle handled separately)
-const CONTROL_KEYS_LEFT: ControlKey[] = [
-  { label: 'esc', key: '\x1b' },
-  { label: 'tab', key: '\t' },
-  // Shift+Tab (CSI Z): toggles Claude Code's plan / auto-accept mode
-  { label: '⇧tab', key: '\x1b[Z', ariaLabel: 'Shift+Tab' },
-]
-
-// Keys after the arrow-key trigger
-const CONTROL_KEYS_RIGHT: ControlKey[] = [
-  { label: BackspaceIcon, key: '\x17', ariaLabel: 'Delete word' }, // Ctrl+W: delete word backward
-  { label: <CornerDownLeftIcon width={18} height={18} />, key: '\r', grow: true, className: 'bg-accent/20 text-accent border-accent/40', ariaLabel: 'Enter' },
-]
+// Plain send-a-sequence keys. Their on-screen order lives in the JSX below,
+// interleaved with the stateful ctrl/paste/numpad/arrow/keyboard buttons.
+const KEY_ENTER: ControlKey = { label: <CornerDownLeftIcon width={18} height={18} />, key: '\r', className: 'bg-accent/20 text-accent border-accent/40', ariaLabel: 'Enter' }
+const KEY_ESC: ControlKey = { label: 'esc', key: '\x1b' }
+const KEY_DELETE_WORD: ControlKey = { label: BackspaceIcon, key: '\x17', ariaLabel: 'Delete word' } // Ctrl+W: delete word backward
+const KEY_TAB: ControlKey = { label: 'tab', key: '\t' }
+// Shift+Tab (CSI Z): toggles Claude Code's plan / auto-accept mode
+const KEY_SHIFT_TAB: ControlKey = { label: '⇧tab', key: '\x1b[Z', ariaLabel: 'Shift+Tab' }
 
 function triggerHaptic() {
   if ('vibrate' in navigator) {
@@ -251,6 +247,32 @@ export default function TerminalControls({
     handler()
   }
 
+  const renderControlKey = (control: ControlKey) => (
+    <button
+      key={control.key}
+      type="button"
+      aria-label={control.ariaLabel}
+      className={`
+        terminal-key
+        flex items-center justify-center
+        size-[44px] p-0
+        text-sm font-medium
+        bg-surface border border-border rounded-md
+        active:bg-hover active:scale-95
+        transition-transform duration-75
+        select-none touch-manipulation
+        ${control.className ?? 'text-secondary'}
+        ${disabled ? 'opacity-50' : ''}
+      `}
+      onMouseDown={(e) => e.preventDefault()}
+      onTouchEnd={handleTouchAction(() => handlePress(control.key))}
+      onClick={handleClickAction(() => handlePress(control.key))}
+      disabled={disabled}
+    >
+      {control.label}
+    </button>
+  )
+
   return (
     <div
       className={`terminal-controls flex flex-col gap-[6px] border-t border-border bg-elevated p-[6px] ${isIOSDevice() ? '' : 'md:hidden'}`}
@@ -304,6 +326,16 @@ export default function TerminalControls({
         }}
         onTouchCancel={() => { touchStartRef.current = null }}
       >
+        {renderControlKey(KEY_ENTER)}
+        {renderControlKey(KEY_ESC)}
+        {/* Arrow keys: tap to open a cluster above the deck */}
+        <ArrowKeys
+          onSendKey={handleSendKeyWithCtrl}
+          disabled={disabled}
+          onRefocus={onRefocus}
+          isKeyboardVisible={isKeyboardVisible}
+          sessionKey={currentSessionId}
+        />
         {/* Paste button */}
         <button
           type="button"
@@ -327,6 +359,15 @@ export default function TerminalControls({
         >
           {PasteIcon}
         </button>
+        {renderControlKey(KEY_DELETE_WORD)}
+        {/* NumPad for number input */}
+        <NumPad
+          onSendKey={handleSendKeyWithCtrl}
+          disabled={disabled}
+          onRefocus={onRefocus}
+          isKeyboardVisible={isKeyboardVisible}
+        />
+        {renderControlKey(KEY_TAB)}
         {/* Ctrl toggle */}
         <button
           type="button"
@@ -351,78 +392,7 @@ export default function TerminalControls({
         >
           ctrl
         </button>
-        {/* Left controls */}
-        {CONTROL_KEYS_LEFT.map((control, i) => (
-          <button
-            key={`left-${i}`}
-            type="button"
-            aria-label={control.ariaLabel}
-            className={`
-              terminal-key
-              flex items-center justify-center
-              size-[44px] p-0
-              text-sm font-medium
-              bg-surface border border-border rounded-md
-              active:bg-hover active:scale-95
-              transition-transform duration-75
-              select-none touch-manipulation
-              ${control.grow ? 'flex-1' : ''}
-              ${control.className ?? 'text-secondary'}
-              ${disabled ? 'opacity-50' : ''}
-            `}
-            onMouseDown={(e) => e.preventDefault()}
-            onTouchEnd={handleTouchAction(() => handlePress(control.key))}
-            onClick={handleClickAction(() => handlePress(control.key))}
-            disabled={disabled}
-          >
-            {control.label}
-          </button>
-        ))}
-
-        {/* NumPad for number input */}
-        <NumPad
-          onSendKey={handleSendKeyWithCtrl}
-          disabled={disabled}
-          onRefocus={onRefocus}
-          isKeyboardVisible={isKeyboardVisible}
-        />
-
-        {/* Arrow keys: tap to open a cluster above the deck */}
-        <ArrowKeys
-          onSendKey={handleSendKeyWithCtrl}
-          disabled={disabled}
-          onRefocus={onRefocus}
-          isKeyboardVisible={isKeyboardVisible}
-          sessionKey={currentSessionId}
-        />
-
-        {/* Right controls */}
-        {CONTROL_KEYS_RIGHT.map((control, i) => (
-          <button
-            key={`right-${i}`}
-            type="button"
-            aria-label={control.ariaLabel}
-            className={`
-              terminal-key
-              flex items-center justify-center
-              size-[44px] p-0
-              text-sm font-medium
-              bg-surface border border-border rounded-md
-              active:bg-hover active:scale-95
-              transition-transform duration-75
-              select-none touch-manipulation
-              ${control.grow ? 'flex-1' : ''}
-              ${control.className ?? 'text-secondary'}
-              ${disabled ? 'opacity-50' : ''}
-            `}
-            onMouseDown={(e) => e.preventDefault()}
-            onTouchEnd={handleTouchAction(() => handlePress(control.key))}
-            onClick={handleClickAction(() => handlePress(control.key))}
-            disabled={disabled}
-          >
-            {control.label}
-          </button>
-        ))}
+        {renderControlKey(KEY_SHIFT_TAB)}
         {/* Keyboard button - enter text mode (exit copy-mode and show keyboard) */}
         <button
           type="button"
