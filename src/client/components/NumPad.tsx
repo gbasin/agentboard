@@ -19,12 +19,14 @@ const LONG_PRESS_DELAY = 150 // ms to trigger numpad
 const CELL_WIDTH = 56 // w-14 = 3.5rem = 56px
 const CELL_HEIGHT = 48 // h-12 = 3rem = 48px
 const GAP = 6 // gap-1.5 = 0.375rem = 6px
-const PADDING = 8 // p-2 = 0.5rem = 8px
+const PADDING = 8 // inner padding of the pad background
+const BORDER = 2 // border-2 on the pad background
+const INSET = BORDER + PADDING // distance from pad edge to the number grid
 
 // Total pad dimensions (including indicator text)
-const INDICATOR_HEIGHT = 20 + GAP + 2 // h-5 (20px) + marginTop
-const PAD_WIDTH = 3 * CELL_WIDTH + 2 * GAP + 2 * PADDING // 184px
-const PAD_HEIGHT = 3 * CELL_HEIGHT + 2 * GAP + 2 * PADDING + INDICATOR_HEIGHT // ~200px
+const INDICATOR_HEIGHT = 20 + GAP + 2 // 20px line + marginTop
+const PAD_WIDTH = 3 * CELL_WIDTH + 2 * GAP + 2 * INSET // 200px
+const PAD_HEIGHT = 3 * CELL_HEIGHT + 2 * GAP + 2 * INSET + INDICATOR_HEIGHT // 204px
 
 function triggerHaptic(intensity: number = 10) {
   if ('vibrate' in navigator) {
@@ -48,8 +50,8 @@ export function getNumAtPoint(
   const padLeft = padPosition.x - PAD_WIDTH / 2
   const padTop = padPosition.y - PAD_HEIGHT / 2
 
-  const relX = clientX - padLeft - PADDING
-  const relY = clientY - padTop - PADDING
+  const relX = clientX - padLeft - INSET
+  const relY = clientY - padTop - INSET
 
   // Check if within grid bounds
   const gridWidth = 3 * CELL_WIDTH + 2 * GAP
@@ -242,21 +244,26 @@ export default function NumPad({
           {/* Semi-transparent backdrop */}
           <div className="absolute inset-0 bg-black/20" />
 
-          {/* NumPad container */}
+          {/* NumPad container.
+              Positioned by its top-left corner with an explicit width so the
+              layout matches getNumAtPoint() exactly. Without a fixed width an
+              absolutely positioned box shrinks to the space right of `left`,
+              which near the screen edge squeezes the three columns on top of
+              each other. */}
           <div
             className="absolute select-none"
             style={{
-              left: padPosition.x,
-              top: padPosition.y,
-              transform: 'translate(-50%, -50%)',
+              left: padPosition.x - PAD_WIDTH / 2,
+              top: padPosition.y - PAD_HEIGHT / 2,
+              width: PAD_WIDTH,
               WebkitUserSelect: 'none',
               userSelect: 'none',
             }}
           >
             {/* Pad background */}
             <div
-              className="rounded-2xl bg-black/40 backdrop-blur-md border-2 border-white/20 select-none"
-              style={{ padding: PADDING }}
+              className="rounded-2xl bg-black/40 backdrop-blur-md border-white/20 select-none"
+              style={{ padding: PADDING, borderWidth: BORDER }}
             >
               {/* Number grid */}
               <div
@@ -293,8 +300,8 @@ export default function NumPad({
 
               {/* Selected number indicator - fixed height to prevent layout shift */}
               <div
-                className="text-center text-white text-sm font-medium select-none h-5"
-                style={{ marginTop: GAP + 2 }}
+                className="text-center text-white text-sm font-medium select-none"
+                style={{ marginTop: GAP + 2, height: 20 }}
               >
                 {activeNum ? `Release to send "${activeNum}"` : '\u00A0'}
               </div>

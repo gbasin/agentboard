@@ -28,9 +28,11 @@ const CELL_WIDTH = 56
 const CELL_HEIGHT = 48
 const GAP = 6
 const PADDING = 8
+const BORDER = 2
+const INSET = BORDER + PADDING
 const INDICATOR_HEIGHT = 20 + GAP + 2
-const PAD_WIDTH = 3 * CELL_WIDTH + 2 * GAP + 2 * PADDING
-const PAD_HEIGHT = 3 * CELL_HEIGHT + 2 * GAP + 2 * PADDING + INDICATOR_HEIGHT
+const PAD_WIDTH = 3 * CELL_WIDTH + 2 * GAP + 2 * INSET
+const PAD_HEIGHT = 3 * CELL_HEIGHT + 2 * GAP + 2 * INSET + INDICATOR_HEIGHT
 
 describe('NumPad helpers', () => {
   test('maps points to numbers', () => {
@@ -40,16 +42,16 @@ describe('NumPad helpers', () => {
 
     // Top-left cell is 7 (calculator-style layout)
     const seven = getNumAtPoint(
-      padLeft + PADDING + 1,
-      padTop + PADDING + 1,
+      padLeft + INSET + 1,
+      padTop + INSET + 1,
       padPosition
     )
     expect(seven).toBe('7')
 
     // Bottom-left cell is 1
     const one = getNumAtPoint(
-      padLeft + PADDING + 1,
-      padTop + PADDING + (CELL_HEIGHT + GAP) * 2 + 1,
+      padLeft + INSET + 1,
+      padTop + INSET + (CELL_HEIGHT + GAP) * 2 + 1,
       padPosition
     )
     expect(one).toBe('1')
@@ -61,8 +63,8 @@ describe('NumPad helpers', () => {
     const padTop = padPosition.y - PAD_HEIGHT / 2
 
     const inGap = getNumAtPoint(
-      padLeft + PADDING + CELL_WIDTH + 1,
-      padTop + PADDING + 1,
+      padLeft + INSET + CELL_WIDTH + 1,
+      padTop + INSET + 1,
       padPosition
     )
     expect(inGap).toBeNull()
@@ -111,15 +113,55 @@ describe('NumPad component', () => {
 
     // Coordinates for the top-left cell ("7") after clamping.
     act(() => {
-      button.props.onTouchMove(createTouchEvent(111, 19))
+      button.props.onTouchMove(createTouchEvent(111, 21))
     })
 
     act(() => {
-      button.props.onTouchEnd(createTouchEvent(111, 19))
+      button.props.onTouchEnd(createTouchEvent(111, 21))
     })
 
     expect(sent).toEqual(['7'])
     expect(refocused).toBe(true)
+  })
+
+  test('pad container has a fixed width anchored at its top-left corner', () => {
+    globalAny.navigator = { vibrate: () => true }
+    globalAny.window = { innerWidth: 390 } as unknown as Window
+    globalAny.setTimeout = ((callback: () => void, delay?: number) => {
+      if (delay === 150) {
+        callback()
+      }
+      return 1 as unknown as ReturnType<typeof setTimeout>
+    }) as typeof setTimeout
+    globalAny.clearTimeout = (() => {}) as typeof clearTimeout
+
+    const renderer = TestRenderer.create(<NumPad onSendKey={() => {}} />)
+    const button = renderer.root
+      .findAllByType('button')
+      .find((node: TestRenderer.ReactTestInstance) => node.props.children === '123')
+    if (!button) {
+      throw new Error('NumPad trigger button not found')
+    }
+
+    // Trigger near the right screen edge: the pad center clamps to innerWidth - margin - PAD_WIDTH / 2.
+    const clampedX = 390 - 10 - PAD_WIDTH / 2
+    act(() => {
+      button.props.onTouchStart(createTouchEvent(316, 816))
+    })
+
+    const container = renderer.root
+      .findAllByType('div')
+      .find((node: TestRenderer.ReactTestInstance) => node.props.style?.width === PAD_WIDTH)
+    if (!container) {
+      throw new Error('NumPad container with fixed width not found')
+    }
+    expect(container.props.style.left).toBe(clampedX - PAD_WIDTH / 2)
+    expect(container.props.style.top).toBe(816 - 120 - PAD_HEIGHT / 2)
+    expect(container.props.style.transform).toBeUndefined()
+
+    act(() => {
+      button.props.onTouchCancel(createTouchEvent(316, 816))
+    })
   })
 
   test('touch cancel closes without sending', () => {
