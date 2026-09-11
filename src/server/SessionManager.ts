@@ -659,8 +659,9 @@ export class SessionManager {
       throw new Error('Name cannot be empty')
     }
 
-    // Validate: alphanumeric, hyphens, underscores only
-    if (!/^[\w-]+$/.test(trimmed)) {
+    // Validate: word characters, hyphens, and non-ASCII unicode (U+00A0+).
+    // ASCII special characters and C0/C1 control characters are rejected.
+    if (!/^[\w\u{00A0}-\u{10FFFF}-]+$/u.test(trimmed)) {
       throw new Error(
         'Name can only contain letters, numbers, hyphens, and underscores'
       )
