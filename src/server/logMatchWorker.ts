@@ -108,6 +108,8 @@ export function handleMatchWorkerRequest(
       (w) => !claimedWindows.has(w.tmuxWindow)
     )
 
+    let matchingError: string | undefined
+    try {
     const entriesToMatch = getEntriesNeedingMatch(entries, payload.sessions, {
       minTokens: payload.minTokensForMatch ?? 0,
       skipMatchingPatterns: payload.skipMatchingPatterns ?? [],
@@ -172,6 +174,10 @@ export function handleMatchWorkerRequest(
       }
     }
 
+    } catch(error) {
+      // Discovery is independently useful even when tmux/ripgrep matching fails.
+      matchingError=error instanceof Error ? error.message : String(error)
+    }
     const lastMessageCandidates = payload.lastMessageCandidates ?? []
     if (lastMessageCandidates.length > 0) {
       const lastMessageEntries = buildLastMessageEntries(
@@ -194,6 +200,7 @@ export function handleMatchWorkerRequest(
     return {
       id: payload.id,
       type: 'result',
+      matchingError,
       entries,
       orphanEntries,
       scanMs,

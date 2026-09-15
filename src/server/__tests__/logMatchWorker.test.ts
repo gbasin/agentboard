@@ -275,7 +275,7 @@ describe('logMatchWorker', () => {
     expect(response.matches).toEqual([{ logPath, tmuxWindow: 'agentboard:1' }])
   })
 
-  test('returns error responses when matching throws', async () => {
+  test('retains discovered metadata when matching throws', async () => {
     const logDir = path.join(process.env.CLAUDE_CONFIG_DIR as string, 'projects', 'alpha')
     await fs.mkdir(logDir, { recursive: true })
     const logPath = path.join(logDir, 'session-3.jsonl')
@@ -298,8 +298,9 @@ describe('logMatchWorker', () => {
 
     expect(messages).toHaveLength(1)
     const response = messages[0] as Record<string, unknown>
-    expect(response.type).toBe('error')
-    expect(response.error).toBe('boom')
+    expect(response.type).toBe('result')
+    expect(response.matchingError).toBe('boom')
+    expect(response.entries).toEqual(expect.arrayContaining([expect.objectContaining({sessionId:'session-3'})]))
   })
 
   test('uses preFilteredPaths and skips full directory scan', async () => {

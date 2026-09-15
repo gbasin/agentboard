@@ -1,15 +1,36 @@
 /** Additive catalog schema. Provider conversations remain in agent_sessions. */
 import type { Database } from 'bun:sqlite'
+import { SessionBackups } from './backups'
+
+const CATALOG_VERSION = 1
 
 export function createCatalogSchema(db: Database) {
-  db.exec(`
+  const version = Number(
+    (
+      db
+        .query(
+          "SELECT value FROM app_settings WHERE key='catalog_schema_version'"
+        )
+        .get() as { value: string } | null
+    )?.value || 0
+  )
+  if (version > CATALOG_VERSION)
+    throw new Error('This database requires a newer Agentboard version')
+  if (version < CATALOG_VERSION) {
+    const file = (db.query('PRAGMA database_list').get() as { file: string })
+      .file
+    if (file)
+      new SessionBackups(db, file).create(`before-schema-${CATALOG_VERSION}`)
+  }
+  db.transaction(() => {
+    db.exec(`
     CREATE TABLE IF NOT EXISTS board_sessions (
       id TEXT PRIMARY KEY, name TEXT NOT NULL, project_path TEXT NOT NULL,
       host_id TEXT NOT NULL, agent_type TEXT, provider_id TEXT,
       command TEXT NOT NULL, state TEXT NOT NULL,
       pinned INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,
       last_activity_at TEXT NOT NULL, current_window TEXT, epoch TEXT,
-      error TEXT, preview TEXT, origin TEXT NOT NULL, last_run_id TEXT, requested_state TEXT, terminal_preview TEXT
+      error TEXT, preview TEXT, origin TEXT NOT NULL, last_run_id TEXT, requested_state TEXT, terminal_preview TEXT, terminal_preview_at TEXT
     );
     CREATE INDEX IF NOT EXISTS board_history ON board_sessions(last_activity_at DESC, id DESC);
     CREATE INDEX IF NOT EXISTS board_provider ON board_sessions(provider_id);
@@ -28,6 +49,11 @@ export function createCatalogSchema(db: Database) {
       kind TEXT NOT NULL, detail TEXT, created_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS events_session ON session_events(session_id, id DESC);
+    CREATE TABLE IF NOT EXISTS session_conversations (
+      session_id TEXT NOT NULL, provider_id TEXT NOT NULL, linked_at TEXT NOT NULL,
+      PRIMARY KEY(session_id, provider_id)
+    );
+    CREATE INDEX IF NOT EXISTS conversation_provider ON session_conversations(provider_id);
     CREATE TABLE IF NOT EXISTS saved_workspaces (
       id TEXT PRIMARY KEY, name TEXT NOT NULL, session_ids TEXT NOT NULL, created_at TEXT NOT NULL
     );
@@ -41,7 +67,20 @@ export function createCatalogSchema(db: Database) {
       checksum TEXT NOT NULL, complete INTEGER NOT NULL
     );
   `)
-  const columns=db.query('PRAGMA table_info(board_sessions)').all() as {name:string}[]
-  if(!columns.some(c=>c.name==='requested_state'))db.exec('ALTER TABLE board_sessions ADD COLUMN requested_state TEXT')
-  if(!columns.some(c=>c.name==='terminal_preview'))db.exec('ALTER TABLE board_sessions ADD COLUMN terminal_preview TEXT')
+    const columns = db.query('PRAGMA table_info(board_sessions)').all() as {
+      name: string
+    }[]
+    if (!columns.some((c) => c.name === 'requested_state'))
+      db.exec('ALTER TABLE board_sessions ADD COLUMN requested_state TEXT')
+    if (!columns.some((c) => c.name === 'terminal_preview'))
+      db.exec('ALTER TABLE board_sessions ADD COLUMN terminal_preview TEXT')
+    if (!columns.some((c) => c.name === 'terminal_preview_at'))
+      db.exec('ALTER TABLE board_sessions ADD COLUMN terminal_preview_at TEXT')
+    db.exec(
+      'INSERT OR IGNORE INTO session_conversations SELECT id,provider_id,created_at FROM board_sessions WHERE provider_id IS NOT NULL'
+    )
+    db.query(
+      "INSERT OR REPLACE INTO app_settings(key,value) VALUES('catalog_schema_version',?)"
+    ).run(String(CATALOG_VERSION))
+  })()
 }

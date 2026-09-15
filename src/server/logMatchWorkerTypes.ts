@@ -73,4 +73,5 @@ export interface MatchWorkerResponse {
   noMessageWindows?: NoMessageWindow[]
   profile?: ExactMatchProfiler
   error?: string
+  matchingError?: string
 }

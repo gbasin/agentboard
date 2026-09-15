@@ -3,6 +3,8 @@ import path from 'node:path'
 import { Database as SQLiteDatabase } from 'bun:sqlite'
 import type { AgentType } from '../shared/types'
 import { resolveProjectPath } from './paths'
+import { SessionBackups, applyPendingRestore } from './persistence/backups'
+import { acquireDatabaseOwner } from './persistence/ownership'
 
 export interface AgentSessionRecord {
   id: number
@@ -154,14 +156,27 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_current_window_unique
   WHERE current_window IS NOT NULL;
 `
 
-export function initDatabase(options: { path?: string } = {}): SessionDatabase {
+export function initDatabase(options: { path?: string; exclusive?: boolean } = {}): SessionDatabase {
   const envPath = process.env[DB_PATH_ENV]?.trim()
   const resolvedEnvPath =
     envPath && envPath !== ':memory:' ? resolveProjectPath(envPath) : envPath
   const dbPath = options.path ?? resolvedEnvPath ?? DEFAULT_DB_PATH
   ensureDataDir(dbPath)
 
+  const owner = options.exclusive ? acquireDatabaseOwner(dbPath) : null
+  try { applyPendingRestore(dbPath, owner?.token) } catch (error) { owner?.release(); throw error }
   const db = new SQLiteDatabase(dbPath)
+  if (dbPath !== ':memory:') {
+    fs.chmodSync(dbPath, 0o600)
+    const legacy = db.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='agent_sessions'").get()
+    const catalog = db.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='board_sessions'").get()
+    if (legacy && !catalog) {
+      const backups = new SessionBackups(db, dbPath)
+      if (!backups.list().some(b => b.name.includes('-before-catalog-'))) backups.create('before-catalog')
+    }
+    db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000;')
+    if (process.platform === 'darwin') db.exec('PRAGMA fullfsync=ON;')
+  }
   migrateDatabase(db)
   db.exec(CREATE_TABLE_SQL)
   db.exec(CREATE_APP_SETTINGS_TABLE_SQL)
@@ -201,10 +216,10 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
     'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_pinned = 1 ORDER BY last_activity_at DESC, session_id'
   )
   const selectHistory = db.prepare(
-    'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_pinned = 0 ORDER BY last_activity_at DESC, session_id'
+    'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_pinned = 0 ORDER BY last_activity_at DESC, session_id LIMIT 100'
   )
   const selectHistoryRecent = db.prepare(
-    'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_pinned = 0 AND last_activity_at > $cutoff ORDER BY last_activity_at DESC, session_id'
+    'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_pinned = 0 AND last_activity_at > $cutoff ORDER BY last_activity_at DESC, session_id LIMIT 100'
   )
   const selectKnownSessionKeys = db.prepare(
     'SELECT session_id, log_file_path, project_path, slug, agent_type, is_codex_exec FROM agent_sessions'
@@ -461,6 +476,7 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
     },
     close: () => {
       db.close()
+      owner?.release()
     },
   }
 }
