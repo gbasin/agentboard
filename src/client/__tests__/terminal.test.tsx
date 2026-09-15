@@ -208,6 +208,8 @@ beforeEach(() => {
   } as unknown as Navigator
 
   globalAny.window = {
+    addEventListener: () => {},
+    removeEventListener: () => {},
     setTimeout: (() => 1 as unknown as ReturnType<typeof setTimeout>) as unknown as typeof setTimeout,
     clearTimeout: (() => {}) as typeof clearTimeout,
     matchMedia: () => ({

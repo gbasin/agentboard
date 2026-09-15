@@ -116,6 +116,8 @@ function setupDom() {
   } as unknown as Navigator
 
   globalAny.document = {
+    addEventListener: () => {},
+    removeEventListener: () => {},
     documentElement: {
       setAttribute: () => {},
     },

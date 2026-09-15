@@ -20,6 +20,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react'
 import { MoveIcon } from '@untitledui-icons/react/line'
+import { useKeyboardShift } from '../hooks/useKeyboardShift'
 
 interface ArrowKeysProps {
   onSendKey: (key: string) => void
@@ -101,6 +102,7 @@ export default function ArrowKeys({
   const [padLeft, setPadLeft] = useState(0)
   const [heldDirection, setHeldDirection] = useState<ArrowDirection | null>(null)
   const clusterId = useId()
+  const shiftRef = useKeyboardShift(sessionKey, disabled)
 
   const triggerRef = useRef<HTMLButtonElement | null>(null)
   const wasKeyboardVisibleRef = useRef(false)
@@ -200,8 +202,9 @@ export default function ArrowKeys({
 
   const send = useCallback((direction: ArrowDirection) => {
     if (disabledRef.current) return
-    onSendKeyRef.current(ARROW_KEYS[direction])
-  }, [])
+    const key = ARROW_KEYS[direction]
+    onSendKeyRef.current(shiftRef.current ? key.replace('[', '[1;2') : key)
+  }, [shiftRef])
 
   const press = useCallback(
     (direction: ArrowDirection) => {
@@ -381,6 +384,9 @@ export default function ArrowKeys({
                     WebkitTouchCallout: 'none',
                     WebkitUserSelect: 'none',
                   }}
+                  // Safari still synthesizes mousedown after a canceled pointerdown.
+                  // Prevent it from moving focus away from the software keyboard.
+                  onMouseDown={(event) => event.preventDefault()}
                   onPointerDown={handleArrowPointerDown(direction)}
                   onPointerUp={handleArrowRelease}
                   onPointerCancel={handleArrowRelease}

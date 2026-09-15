@@ -313,3 +313,89 @@ describe('ArrowKeys component', () => {
     expect(findByLabel(renderer, 'Arrow up')).toBeUndefined()
   })
 })
+
+describe('software-keyboard Shift', () => {
+  const originalDocument = globalAny.document
+  const originalWindow = globalAny.window
+  let renderer: TestRenderer.ReactTestRenderer | undefined
+
+  afterEach(() => {
+    act(() => renderer?.unmount())
+    renderer = undefined
+    globalAny.document = originalDocument
+    globalAny.window = originalWindow
+  })
+
+  function setup() {
+    const doc = new EventTarget()
+    const win = new EventTarget()
+    globalAny.document = doc
+    globalAny.window = win
+    const sent: string[] = []
+    act(() => { renderer = render(sent) })
+    const key = (type: string, name: string) => {
+      const event = Object.assign(new Event(type), { key: name, shiftKey: false })
+      act(() => { doc.dispatchEvent(event) })
+    }
+    const tap = (direction = 'up') => {
+      act(() => {
+        findByLabel(renderer!, `Arrow ${direction}`)!.props.onPointerDown(pointerEvent({ shiftKey: false }))
+        findByLabel(renderer!, `Arrow ${direction}`)!.props.onPointerUp(pointerEvent())
+      })
+    }
+    return { doc, win, sent, key, tap }
+  }
+
+  test('Shift before opening modifies all arrows, survives letter events, and releases', () => {
+    const { sent, key, tap } = setup()
+    key('keydown', 'Shift')
+    act(() => findByLabel(renderer!, 'Arrow keys')!.props.onPointerDown(pointerEvent()))
+    for (const direction of ['up', 'down', 'left', 'right']) tap(direction)
+    // Real iOS sequence: uppercase keydown has shiftKey=false, then Shift keyup.
+    key('keydown', 'A')
+    tap()
+    key('keyup', 'Shift')
+    tap()
+    key('keydown', 'CapsLock')
+    tap()
+    expect(sent).toEqual(['\x1b[1;2A', '\x1b[1;2B', '\x1b[1;2D', '\x1b[1;2C', '\x1b[1;2A', '\x1b[A', '\x1b[A'])
+  })
+
+  test('held arrows read current Shift state on every repeat', () => {
+    const timers = fakeTimers()
+    const { sent, key } = setup()
+    key('keydown', 'Shift')
+    const repeat = pressAndHold(renderer!, 'up', timers)
+    act(() => repeat.cb())
+    key('keyup', 'Shift')
+    act(() => repeat.cb())
+    key('keydown', 'Shift')
+    act(() => repeat.cb())
+    expect(sent).toEqual(['\x1b[1;2A', '\x1b[1;2A', '\x1b[A', '\x1b[1;2A'])
+  })
+
+  test('focus loss, backgrounding, session changes and disabling clear stale Shift', () => {
+    const { doc, win, sent, key, tap } = setup()
+    act(() => findByLabel(renderer!, 'Arrow keys')!.props.onPointerDown(pointerEvent()))
+    for (const reset of [
+      () => doc.dispatchEvent(new Event('focusout')),
+      () => win.dispatchEvent(new Event('blur')),
+      () => {
+        Object.assign(doc, { visibilityState: 'hidden' })
+        doc.dispatchEvent(new Event('visibilitychange'))
+      },
+      () => renderer!.update(<ArrowKeys onSendKey={key => sent.push(key)} sessionKey="next" />),
+    ]) {
+      key('keydown', 'Shift')
+      act(reset)
+      tap()
+    }
+    key('keydown', 'Shift')
+    act(() => renderer!.update(<ArrowKeys onSendKey={key => sent.push(key)} sessionKey="next" disabled />))
+    key('keydown', 'Shift')
+    act(() => renderer!.update(<ArrowKeys onSendKey={key => sent.push(key)} sessionKey="next" />))
+    act(() => findByLabel(renderer!, 'Arrow keys')!.props.onPointerDown(pointerEvent()))
+    tap()
+    expect(sent).toEqual(Array(5).fill('\x1b[A'))
+  })
+})
