@@ -660,9 +660,9 @@ export default function SettingsModal({
             </div>
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-sm text-primary">History Sessions Lookback</div>
+                <div className="text-sm text-primary">Sidebar History Lookback</div>
                 <div className="text-[10px] text-muted">
-                  Show history sessions from the last N hours ({HISTORY_MAX_AGE_MIN_HOURS}-{HISTORY_MAX_AGE_MAX_HOURS}).
+                  Show up to 100 recent sessions in the sidebar. Browse all saved sessions in History & recovery.
                 </div>
               </div>
               <div className="flex items-center gap-2">

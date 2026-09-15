@@ -10,6 +10,7 @@ interface HeaderProps {
   connectionStatus: ConnectionStatus
   onNewSession: () => void
   onOpenSettings: () => void
+  onOpenHistory?: () => void
   tailscaleIp: string | null
 }
 
@@ -24,6 +25,7 @@ export default function Header({
   connectionStatus,
   onNewSession,
   onOpenSettings,
+  onOpenHistory,
   tailscaleIp,
 }: HeaderProps) {
   const [copied, setCopied] = useState(false)
@@ -60,6 +62,15 @@ export default function Header({
       </div>
 
       <div className="flex items-center gap-1.5">
+        {onOpenHistory && (
+          <button
+            onClick={onOpenHistory}
+            className="h-7 rounded border border-border px-2 text-xs text-secondary hover:bg-hover"
+            aria-label="History and recovery"
+          >
+            History
+          </button>
+        )}
         <button
           onClick={onNewSession}
           className="flex h-7 w-7 items-center justify-center rounded bg-accent text-white hover:bg-accent/90 active:scale-95 transition-all"
