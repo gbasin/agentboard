@@ -33,8 +33,8 @@ function setup() {
   return { sent, doc, render, shift, button, click }
 }
 
-describe('keyboard Shift with Tab quick key', () => {
-  test('plain Tab, shifted touch taps, Shift release and explicit Shift+Tab', () => {
+describe('keyboard Shift with quick keys', () => {
+  test('plain Tab, shifted touch taps and Shift release', () => {
     const { sent, shift, button, click } = setup()
     click('tab')
     shift(true)
@@ -47,11 +47,10 @@ describe('keyboard Shift with Tab quick key', () => {
     act(() => button('tab').props.onTouchEnd(touch))
     shift(false)
     act(() => button('tab').props.onTouchEnd(touch))
-    act(() => button('Shift+Tab').props.onTouchEnd(touch))
-    expect(sent).toEqual(['\t', '\x1b[Z', '\x1b[Z', '\t', '\x1b[Z'])
+    expect(sent).toEqual(['\t', '\x1b[Z', '\x1b[Z', '\t'])
   })
 
-  test('shifted Tab preserves armed Ctrl and leaves Enter unchanged', () => {
+  test('shifted Tab preserves armed Ctrl and Shift+Enter inserts a newline', () => {
     const { sent, shift, click } = setup()
     shift(true)
     click('ctrl')
@@ -60,7 +59,17 @@ describe('keyboard Shift with Tab quick key', () => {
       key: 'a', stopPropagation() {},
     })) })
     click('Enter')
-    expect(sent).toEqual(['\x1b[Z', '\x01', '\r'])
+    expect(sent).toEqual(['\x1b[Z', '\x01', '\x1b[13;2u'])
+  })
+
+  test('Shift+Enter repeats without submitting and plain Enter resumes after release', () => {
+    const { sent, shift, click } = setup()
+    shift(true)
+    click('Enter')
+    click('Enter')
+    shift(false)
+    click('Enter')
+    expect(sent).toEqual(['\x1b[13;2u', '\x1b[13;2u', '\r'])
   })
 
   test('focus loss and session changes reset Shift; disabled Tab sends nothing', () => {

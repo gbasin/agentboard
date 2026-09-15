@@ -1,7 +1,7 @@
 /**
  * TerminalControls - On-screen control strip for mobile terminal interaction
  * Quick keys ordered most-used first (left): enter, esc, arrows, paste, delete
- * word, numbers, tab, ctrl, shift+tab, keyboard. The row scrolls horizontally
+ * word, numbers, tab, ctrl, keyboard. The row scrolls horizontally
  * on narrow phones, so the rightmost keys are the ones that can afford a swipe.
  * Top row shows session switcher buttons to quickly jump between sessions
  */
@@ -89,8 +89,12 @@ const KEY_ENTER: ControlKey = { label: <CornerDownLeftIcon width={18} height={18
 const KEY_ESC: ControlKey = { label: 'esc', key: '\x1b' }
 const KEY_DELETE_WORD: ControlKey = { label: BackspaceIcon, key: '\x17', ariaLabel: 'Delete word' } // Ctrl+W: delete word backward
 const KEY_TAB: ControlKey = { label: 'tab', key: '\t' }
-// Shift+Tab (CSI Z): toggles Claude Code's plan / auto-accept mode
-const KEY_SHIFT_TAB: ControlKey = { label: '⇧tab', key: '\x1b[Z', ariaLabel: 'Shift+Tab' }
+// CSI Z is Shift+Tab; CSI u encodes Shift+Enter without submitting the draft.
+// Both Codex and Claude recognize this Shift+Enter sequence as a newline.
+const SHIFTED_KEYS: Record<string, string> = {
+  [KEY_TAB.key]: '\x1b[Z',
+  [KEY_ENTER.key]: '\x1b[13;2u',
+}
 
 function triggerHaptic() {
   if ('vibrate' in navigator) {
@@ -175,7 +179,7 @@ export default function TerminalControls({
     const wasKeyboardVisible = isKeyboardVisible?.() ?? false
     triggerHaptic()
 
-    const shiftedKey = key === KEY_TAB.key && shiftRef.current ? KEY_SHIFT_TAB.key : key
+    const shiftedKey = shiftRef.current ? SHIFTED_KEYS[key] ?? key : key
     const { output, consumeCtrl } = applyCtrlModifier(shiftedKey, ctrlActive)
     if (consumeCtrl) {
       setCtrlActive(false)
@@ -395,7 +399,6 @@ export default function TerminalControls({
         >
           ctrl
         </button>
-        {renderControlKey(KEY_SHIFT_TAB)}
         {/* Keyboard button - enter text mode (exit copy-mode and show keyboard) */}
         <button
           type="button"
