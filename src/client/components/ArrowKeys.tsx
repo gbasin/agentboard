@@ -41,6 +41,13 @@ export const ARROW_KEYS = {
 
 export type ArrowDirection = keyof typeof ARROW_KEYS
 
+const SHIFTED_ARROW_KEYS: Record<ArrowDirection, string> = {
+  up: '\x1b[1;2A',
+  down: '\x1b[1;2B',
+  left: '\x1b[1;2D',
+  right: '\x1b[1;2C',
+}
+
 export const REPEAT_INITIAL_DELAY = 400 // ms held before auto-repeat starts
 export const REPEAT_INTERVAL = 100 // ms between repeats while held
 
@@ -202,8 +209,8 @@ export default function ArrowKeys({
 
   const send = useCallback((direction: ArrowDirection) => {
     if (disabledRef.current) return
-    const key = ARROW_KEYS[direction]
-    onSendKeyRef.current(shiftRef.current ? key.replace('[', '[1;2') : key)
+    const keys = shiftRef.current ? SHIFTED_ARROW_KEYS : ARROW_KEYS
+    onSendKeyRef.current(keys[direction])
   }, [shiftRef])
 
   const press = useCallback(
