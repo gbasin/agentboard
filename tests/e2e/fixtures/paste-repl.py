@@ -6,7 +6,8 @@ agentboard attaches to AFTER startup:
   - enables bracketed paste (ESC[?2004h) once at startup and never re-emits
     it, so a browser xterm attaching later never observes the mode;
   - a bracketed paste (ESC[200~ ... ESC[201~) is HELD in an edit buffer;
-  - a bare CR/LF outside a paste SUBMITS the buffer.
+  - a bare CR/LF outside a paste SUBMITS the buffer; with --submit-cr-only,
+    LF stays in the draft (Ctrl+J newline behavior in Codex and Claude).
 
 State is printed to the pane as single-line markers (newlines rendered as
 '|') so the test can assert via `tmux capture-pane`:
@@ -64,7 +65,7 @@ def main() -> None:
                 typed = raw if idx == -1 else raw[:idx]
                 for byte_value in typed:
                     byte = bytes([byte_value])
-                    if byte in (b"\r", b"\n"):
+                    if byte == b"\r" or (byte == b"\n" and "--submit-cr-only" not in sys.argv):
                         os.write(1, b"SUBMITTED:" + render(buf) + b"\r\n")
                         os.write(1, b"INPUT_HEX:" + buf.hex().encode() + b"\r\n")
                         buf = b""

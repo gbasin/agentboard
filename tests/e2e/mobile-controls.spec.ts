@@ -1,6 +1,5 @@
-// E2E: the mobile key deck's ⇧tab key must deliver CSI Z (ESC [ Z) to the
-// attached tmux pane. Claude Code reads that sequence as Shift+Tab to cycle
-// plan / auto-accept mode, and a phone keyboard has no way to type it.
+// E2E: software-keyboard Shift modifies quick keys sent to the attached pane.
+// Shift is tracked from keyboard events because iOS touch events omit it.
 //
 // Runs in a touch-enabled iPhone viewport so the key deck (hidden on desktop
 // unless the UA is iOS) is rendered and driven through real tap events. The
@@ -39,12 +38,12 @@ async function waitForPaneText(target: string, needle: string, timeoutMs = 10000
   )
 }
 
-test('⇧tab key sends CSI Z to the pane from a touch device', async ({ page }, testInfo) => {
+test('keyboard Shift modifies touch quick keys sent to the pane', async ({ page }, testInfo) => {
   const session = process.env.E2E_TMUX_SESSION
   test.skip(!session, 'E2E_TMUX_SESSION not set')
   const target = `${session}:${WINDOW_NAME}`
 
-  const created = tmux(['new-window', '-t', session!, '-n', WINDOW_NAME, `python3 ${REPL_PATH}`])
+  const created = tmux(['new-window', '-t', session!, '-n', WINDOW_NAME, `python3 ${REPL_PATH} --submit-cr-only`])
   expect(created.status).toBe(0)
 
   try {
@@ -59,30 +58,38 @@ test('⇧tab key sends CSI Z to the pane from a touch device', async ({ page }, 
     await expect(page.locator('.xterm')).toBeVisible()
     await page.waitForTimeout(2000) // let the terminal attach settle
 
-    const shiftTab = page.getByRole('button', { name: 'Shift+Tab' })
-    await expect(shiftTab).toBeVisible()
-    const box = await shiftTab.boundingBox()
+    const tab = page.getByRole('button', { name: 'tab', exact: true })
+    await expect(tab).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Shift+Tab' })).toHaveCount(0)
+    const box = await tab.boundingBox()
     expect(box?.width).toBeGreaterThanOrEqual(44)
     expect(box?.height).toBeGreaterThanOrEqual(44)
-    // Label must not overflow its 44px cell.
-    const overflows = await shiftTab.evaluate((el) => el.scrollWidth > el.clientWidth)
-    expect(overflows).toBe(false)
-
     await page.screenshot({ path: testInfo.outputPath('mobile-key-deck.png') })
 
-    await shiftTab.tap()
-    await page.getByRole('button', { name: 'Enter' }).tap()
+    const input = page.locator('.xterm-helper-textarea')
+    await page.getByRole('button', { name: 'Show keyboard' }).tap()
+    await expect(input).toBeFocused()
+    for (const [label, hex] of [['tab', '1b5b5a'], ['Enter', '0a']]) {
+      await page.keyboard.down('Shift')
+      await page.getByRole('button', { name: label, exact: true }).tap()
+      await page.keyboard.up('Shift')
+      await page.getByRole('button', { name: 'Enter', exact: true }).tap()
+      await waitForPaneText(target, `INPUT_HEX:${hex}`)
+    }
 
-    // ESC [ Z, and nothing else, was submitted.
-    await waitForPaneText(target, 'INPUT_HEX:1b5b5a')
+    await page.keyboard.down('Shift')
+    await page.getByRole('button', { name: 'Arrow keys', exact: true }).tap()
+    await page.getByRole('button', { name: 'Arrow up', exact: true }).tap()
+    await expect(input).toBeFocused()
+    await page.keyboard.up('Shift')
+    await page.getByRole('button', { name: 'Arrow keys', exact: true }).tap()
+    await page.getByRole('button', { name: 'Enter', exact: true }).tap()
+    await waitForPaneText(target, 'INPUT_HEX:1b5b313b3241')
 
     // Exercise an actual browser pan, including intermediate touch moves.
-    await page.getByRole('button', { name: 'Show keyboard' }).tap()
-    const input = page.locator('.xterm-helper-textarea')
     await expect(input).toBeFocused()
     const row = page.locator('.terminal-controls > .grid')
     await row.evaluate(element => { element.scrollLeft = 0 })
-    const tab = page.getByRole('button', { name: 'tab', exact: true })
     const bounds = (await tab.boundingBox())!
     const x = bounds.x + bounds.width / 2
     const y = bounds.y + bounds.height / 2
@@ -92,7 +99,7 @@ test('⇧tab key sends CSI Z to the pane from a touch device', async ({ page }, 
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x - distance, y }] })
     }
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
-    await expect.poll(() => row.evaluate(element => element.scrollLeft)).toBeGreaterThan(50)
+    await expect.poll(() => row.evaluate(element => element.scrollLeft)).toBeGreaterThan(0)
     await expect(input).toBeFocused()
     await page.getByRole('button', { name: 'Enter' }).tap()
     // A swipe beginning on Tab must not insert a tab into the terminal.

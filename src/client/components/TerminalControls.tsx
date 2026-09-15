@@ -89,11 +89,11 @@ const KEY_ENTER: ControlKey = { label: <CornerDownLeftIcon width={18} height={18
 const KEY_ESC: ControlKey = { label: 'esc', key: '\x1b' }
 const KEY_DELETE_WORD: ControlKey = { label: BackspaceIcon, key: '\x17', ariaLabel: 'Delete word' } // Ctrl+W: delete word backward
 const KEY_TAB: ControlKey = { label: 'tab', key: '\t' }
-// CSI Z is Shift+Tab; CSI u encodes Shift+Enter without submitting the draft.
-// Both Codex and Claude recognize this Shift+Enter sequence as a newline.
+// CSI Z is Shift+Tab. Ctrl+J inserts a newline in Codex and Claude.
+// Use Ctrl+J because tmux can downgrade CSI-u Shift+Enter to a submitting CR.
 const SHIFTED_KEYS: Record<string, string> = {
   [KEY_TAB.key]: '\x1b[Z',
-  [KEY_ENTER.key]: '\x1b[13;2u',
+  [KEY_ENTER.key]: '\n',
 }
 
 function triggerHaptic() {

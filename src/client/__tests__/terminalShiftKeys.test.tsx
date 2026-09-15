@@ -59,7 +59,7 @@ describe('keyboard Shift with quick keys', () => {
       key: 'a', stopPropagation() {},
     })) })
     click('Enter')
-    expect(sent).toEqual(['\x1b[Z', '\x01', '\x1b[13;2u'])
+    expect(sent).toEqual(['\x1b[Z', '\x01', '\n'])
   })
 
   test('Shift+Enter repeats without submitting and plain Enter resumes after release', () => {
@@ -69,7 +69,7 @@ describe('keyboard Shift with quick keys', () => {
     click('Enter')
     shift(false)
     click('Enter')
-    expect(sent).toEqual(['\x1b[13;2u', '\x1b[13;2u', '\r'])
+    expect(sent).toEqual(['\n', '\n', '\r'])
   })
 
   test('focus loss and session changes reset Shift; disabled Tab sends nothing', () => {
