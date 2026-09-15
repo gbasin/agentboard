@@ -24,7 +24,7 @@ Data lives beside the database. With the default database path:
 ~/.agentboard/agentboard.db.recovery/
   backups/                 verified SQLite snapshots
   conversations/           checksummed JSONL versions
-  owner.json               serving-process ownership, including boot identity
+  ownership.db             OS-released SQLite process lock
   restore-request.json     only when a restore is scheduled
 ```
 
@@ -44,7 +44,7 @@ Discovery reconciles all log directories every minute and processes a durable qu
 
 ## Back up, export, and restore
 
-**Back up now** creates a consistent SQLite snapshot and verifies it before making it downloadable. **Restore…** schedules restoration for the next backend restart; it does not restart the running app. Startup first saves the current database, verifies the selected snapshot again, and replaces the database before opening the serving connection. Another serving process blocks restoration.
+**Back up now** creates a consistent SQLite snapshot and verifies it before making it downloadable. **Restore…** schedules restoration for the next backend restart; it does not restart the running app. Startup first saves the current database, verifies the selected snapshot again, and replaces the database before opening the serving connection. Another serving process blocks restoration. A scheduled recovery point is exempt from automatic rotation. If SQLite reports that the current database is corrupt or unreadable, its raw database and sidecar files are preserved under `unreadable-before-restore-<id>/` before replacement. Other backup failures, such as insufficient disk space, still stop restoration.
 
 From a source checkout:
 
@@ -72,11 +72,11 @@ A downloaded database contains metadata and archive references. Use the export c
 - A tmux server has a random lifetime ID. Reused window numbers after reboot cannot claim an earlier run. Reconciliation does not kill an unexpected pane. Explicit hibernate/archive requests identify and terminate only their tagged run.
 - SQLite uses WAL, FULL synchronization, a five-second busy timeout, and macOS fullfsync. File publication syncs completed files before rename. Backups precede additive schema migration, and newer unsupported catalog versions are rejected.
 - Archive copies contain complete JSONL records. An append reuses a verified prefix; rotation triggers a new copy, and source truncation preserves the earlier, larger archive. Versioned files protect snapshots from partially published replacements.
-- The serving process owns its database before restore or migration. Test instances use separate databases, provider roots, and private tmux sockets.
+- The serving process owns its database before restore or migration through an exclusive SQLite transaction in a separate lock database. The OS releases this lock after a crash; canonical paths and reference counting handle multiple connections in one process. Test instances use separate databases, provider roots, and private tmux sockets.
 
 ## Validation and limits
 
-Automated coverage includes backend SIGKILL/restart, private tmux server replacement, A/B/C naming before logs exist, reused window IDs, a crash between pane creation and tagging, repeated reopen requests, workspace recovery, backup restoration, discovery beyond 25 files, malformed-log retry, pagination, SQLite write failures/lock contention, archive truncation/checksum failure, and migration idempotence. Browser coverage exercises year-old history, pagination, rename, workspace creation, backup download, and desktop/mobile layout. The full four-test browser suite also passes terminal attachment, paste, and accessibility repaint checks. Automatic reopening and timestamped terminal previews are covered by the isolated server tests.
+Automated coverage includes backend SIGKILL/restart, private tmux server replacement, A/B/C naming before logs exist, reused window IDs, a crash between pane creation and tagging, repeated reopen requests, workspace recovery, backup restoration, discovery beyond 25 files, malformed-log retry, pagination, SQLite write failures/lock contention, archive truncation/checksum failure, and migration idempotence. Browser coverage exercises year-old history, pagination, rename, workspace creation, backup download, and desktop/mobile layout. The six-test browser suite additionally checks stale bulk selections and per-conversation archive controls, and also passes terminal attachment, paste, and accessibility repaint checks. Automatic reopening and timestamped terminal previews are covered by the isolated server tests. Additional regressions cover competing process ownership, directory symlinks, restoring unreadable databases, pending-backup retention, older conversation previews, and opening a running terminal whose provider log is missing.
 
 A local macOS file-database check confirmed WAL, `synchronous=2` (FULL), `fullfsync=1`, and a 5000 ms busy timeout. Fifty create-and-rename pairs measured approximately 0.73 ms median and 1.16 ms at the 95th percentile on the development machine; other storage devices will differ.
 
@@ -89,3 +89,7 @@ The durable catalog covers this server's managed sessions. External or remote te
 ## Activate this branch
 
 Implementation is isolated in the `feat/persistent-session-history` worktree. Building or committing there does not change the currently running checkout. To activate it later, integrate the branch, build the frontend, and restart the backend normally. Initial startup snapshots the existing database, imports provider metadata, and adopts currently running managed windows. Do not launch a second production backend against the same database.
+
+## Audit follow-ups
+
+See [the implementation audit](persistence-audit.md) for findings, fixes, and remaining performance limits. Frequent health reads reuse directory inventories; external edits to immutable files can take up to a minute to appear. Conversation checksumming and synchronous SQLite snapshots still need measurements with large histories before claiming predictable latency at that scale.

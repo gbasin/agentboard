@@ -1,6 +1,6 @@
 /** Coordinate durable launch intents with tmux, including crash reconciliation. */
 import type { Session } from '../../shared/types'
-import type { Lifecycle, SavedSession } from '../../shared/persistence'
+import type { SavedSession } from '../../shared/persistence'
 import type { SessionDatabase, AgentSessionRecord } from '../db'
 import type { SessionManager } from '../SessionManager'
 import { inferAgentType } from '../agentDetection'
@@ -40,15 +40,20 @@ export class PersistentSessions {
         return
       }
       this.snapshot = snapshot
+      const runs = new Map(
+        [...snapshot.windows].map(([window, tag]) => [
+          tag.runId,
+          { window, boardId: tag.boardId },
+        ])
+      )
       for (const saved of this.catalog.active()) {
-        const run = [...snapshot.windows].find(
-          ([, v]) => v.boardId === saved.id && v.runId === saved.lastRunId
-        )
+        const match = saved.lastRunId ? runs.get(saved.lastRunId) : undefined
+        const window = match?.boardId === saved.id ? match.window : undefined
         if (saved.requestedState) {
-          if (run) {
-            this.manager.killWindow(run[0])
-            snapshot.windows.delete(run[0])
-            const index = sessions.findIndex((s) => s.tmuxWindow === run[0])
+          if (window) {
+            this.manager.killWindow(window)
+            snapshot.windows.delete(window)
+            const index = sessions.findIndex((s) => s.tmuxWindow === window)
             if (index >= 0) sessions.splice(index, 1)
           }
           this.catalog.transition(saved.id, saved.requestedState)
@@ -58,16 +63,16 @@ export class PersistentSessions {
             })
           continue
         }
-        if (run) {
+        if (window) {
           if (
             saved.state !== 'running' ||
-            saved.window !== run[0] ||
+            saved.window !== window ||
             saved.epoch !== snapshot.epoch
           )
             this.catalog.bind(
               saved.id,
               saved.lastRunId!,
-              run[0],
+              window,
               snapshot.epoch
             )
           continue
@@ -84,7 +89,8 @@ export class PersistentSessions {
           )
           if (saved.providerId) this.db.orphanSession(saved.providerId)
         } else if (
-          snapshot.windows.get(saved.window)?.runId !== saved.lastRunId
+          snapshot.windows.get(saved.window)?.runId !== saved.lastRunId ||
+          snapshot.windows.get(saved.window)?.boardId !== saved.id
         ) {
           this.catalog.transition(
             saved.id,
@@ -131,16 +137,7 @@ export class PersistentSessions {
         })
       if (saved.state !== 'running' && saved.state !== 'starting') {
         const run = this.catalog.beginRun(saved.id)
-        this.manager.setWindowOption(
-          live.tmuxWindow,
-          '@agentboard-session-id',
-          saved.id
-        )
-        this.manager.setWindowOption(
-          live.tmuxWindow,
-          '@agentboard-run-id',
-          run.id
-        )
+        this.tagWindow(live.tmuxWindow, saved.id, run.id)
         this.catalog.bind(
           saved.id,
           run.id,
@@ -156,16 +153,7 @@ export class PersistentSessions {
           record.lastUserMessage
         )
       if (identity.provisional && saved.lastRunId) {
-        this.manager.setWindowOption(
-          live.tmuxWindow,
-          '@agentboard-session-id',
-          saved.id
-        )
-        this.manager.setWindowOption(
-          live.tmuxWindow,
-          '@agentboard-run-id',
-          saved.lastRunId
-        )
+        this.tagWindow(live.tmuxWindow, saved.id, saved.lastRunId)
       }
       if (saved.name !== live.name)
         this.manager.renameWindow(live.tmuxWindow, saved.name)
@@ -211,14 +199,9 @@ export class PersistentSessions {
     const run = this.catalog.beginRun(saved.id, options.operationId)
     if (run.reused) {
       const current = this.catalog.get(saved.id)!
-      const live = this.manager
-        .listWindows()
-        .find(
-          (s) =>
-            s.tmuxWindow === current.window &&
-            identity.windows.get(s.tmuxWindow)?.runId === run.id
-        )
-      if (live) return { ...live, boardSessionId: saved.id }
+      const live =
+        current.lastRunId === run.id ? this.findLive(current, identity) : null
+      if (live) return live
       throw new Error(
         'This launch request already exists; refresh its saved status before retrying'
       )
@@ -264,9 +247,25 @@ export class PersistentSessions {
     if (saved?.providerId)
       this.db.updateSession(saved.providerId, { displayName: name })
   }
-  markWindow(window: string, state: Lifecycle) {
-    const saved = this.catalog.byWindow(window)
-    if (saved) this.catalog.transition(saved.id, state)
+  private tagWindow(window: string, boardId: string, runId: string) {
+    this.manager.setWindowOption(window, '@agentboard-session-id', boardId)
+    this.manager.setWindowOption(window, '@agentboard-run-id', runId)
+  }
+  findLive(saved: SavedSession, identity?: TmuxIdentity): Session | null {
+    if (
+      !saved.lastRunId ||
+      (saved.state !== 'running' && saved.state !== 'starting')
+    )
+      return null
+    const snapshot = identity || this.identity()
+    const match = [...snapshot.windows].find(
+      ([, tag]) => tag.boardId === saved.id && tag.runId === saved.lastRunId
+    )
+    if (!match) return null
+    const live = this.manager
+      .listWindows()
+      .find((s) => s.tmuxWindow === match[0])
+    return live ? { ...live, boardSessionId: saved.id } : null
   }
   resume(
     id: string,
@@ -275,16 +274,9 @@ export class PersistentSessions {
   ): Session {
     const saved = this.catalog.get(id)
     if (!saved) throw new Error('Session not found')
+    const liveRun = this.findLive(saved)
+    if (liveRun) return liveRun
     if (saved.state === 'running') {
-      const identity = this.identity()
-      const live = this.manager
-        .listWindows()
-        .find(
-          (s) =>
-            s.tmuxWindow === saved.window &&
-            identity.windows.get(s.tmuxWindow)?.runId === saved.lastRunId
-        )
-      if (live) return { ...live, boardSessionId: id }
       this.catalog.transition(
         id,
         'interrupted',

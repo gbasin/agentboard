@@ -6,6 +6,7 @@ import type {
   PersistenceSettings,
 } from '@shared/persistence'
 import { libraryRequest, historyButton, sizeLabel } from './api'
+import { useHistoryAction } from './useHistoryAction'
 export function StoragePanel({
   health,
   onRefresh,
@@ -16,7 +17,6 @@ export function StoragePanel({
   onError: (text: string) => void
 }) {
   const [backups, setBackups] = useState<BackupInfo[]>([]),
-    [busy, setBusy] = useState(false),
     [notice, setNotice] = useState(''),
     [restore, setRestore] = useState<string | null>(null)
   const refresh = () =>
@@ -26,22 +26,16 @@ export function StoragePanel({
   useEffect(() => {
     void refresh()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
-  const act = async (fn: () => Promise<unknown>) => {
-    setBusy(true)
-    onError('')
-    try {
+  const { busy, act } = useHistoryAction(onError)
+  const update = (fn: () => Promise<unknown>, backupsChanged = false) =>
+    act(async () => {
       await fn()
-      await refresh()
+      if (backupsChanged) await refresh()
       onRefresh()
-    } catch (e) {
-      onError(String(e))
-    } finally {
-      setBusy(false)
-    }
-  }
+    })
   const settings = health?.settings
   const change = (patch: Partial<PersistenceSettings>) =>
-    act(() => libraryRequest('/settings', 'PUT', patch))
+    update(() => libraryRequest('/settings', 'PUT', patch))
   return (
     <div className="space-y-5 p-4 text-[12px] text-secondary">
       <section>
@@ -89,7 +83,7 @@ export function StoragePanel({
         <button
           className={`${historyButton} mt-3`}
           disabled={busy}
-          onClick={() => act(() => libraryRequest('/reindex', 'POST', {}))}
+          onClick={() => update(() => libraryRequest('/reindex', 'POST', {}))}
         >
           Scan conversation history
         </button>
@@ -121,6 +115,8 @@ export function StoragePanel({
               type="number"
               min="1"
               className="input w-28"
+              key={settings.archiveMaxBytes}
+              disabled={busy}
               defaultValue={Math.floor(settings.archiveMaxBytes / 1024 ** 2)}
               onBlur={(e) => {
                 const n = Number(e.target.value)
@@ -153,6 +149,8 @@ export function StoragePanel({
                     type="number"
                     min="1"
                     max="365"
+                    key={settings[key]}
+                    disabled={busy}
                     defaultValue={settings[key]}
                     onBlur={(e) => {
                       const value = Number(e.target.value)
@@ -174,7 +172,9 @@ export function StoragePanel({
           <button
             className={historyButton}
             disabled={busy}
-            onClick={() => act(() => libraryRequest('/backups', 'POST', {}))}
+            onClick={() =>
+              update(() => libraryRequest('/backups', 'POST', {}), true)
+            }
           >
             Back up now
           </button>

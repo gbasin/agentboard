@@ -6,6 +6,7 @@ import type {
   HistoryQuery,
   Lifecycle,
   PersistenceSettings,
+  HistoryDetail,
 } from '../../shared/persistence'
 import type { AgentSessionRecord } from '../db'
 import type { PersistenceRuntime } from './runtime'
@@ -32,7 +33,8 @@ export function registerPersistenceRoutes(
   ) => {
     const saved = catalog.get(id)
     if (!saved) throw new Error('Session not found')
-    if (saved.providerId) {
+    const existing = sessions.findLive(saved)
+    if (!existing && saved.providerId) {
       const record = db.getSessionById(saved.providerId)
       if (record && !fs.existsSync(record.logFilePath)) {
         if (!restoreSource)
@@ -42,7 +44,8 @@ export function registerPersistenceRoutes(
         await runtime.archives?.restoreSource(saved.providerId)
       }
     }
-    const live = sessions.resume(id, options.commandFor, operationId)
+    const live =
+      existing || sessions.resume(id, options.commandFor, operationId)
     options.activated(live)
     options.changed()
     return live
@@ -54,33 +57,22 @@ export function registerPersistenceRoutes(
       if (origin && new URL(origin).host !== new URL(c.req.url).host)
         return c.json({ error: 'Cross-origin mutation rejected' }, 403)
     }
-    try {
-      await next()
-    } catch (error) {
-      return c.json(
-        { error: error instanceof Error ? error.message : String(error) },
-        400
-      )
-    }
+    await next()
   })
   app.get(api, (c) => {
-    try {
-      const q = c.req.query()
-      return c.json(
-        catalog.history({
-          q: q.q,
-          state: q.state as HistoryQuery['state'],
-          project: q.project,
-          agent: q.agent,
-          pinned: q.pinned === 'true',
-          hours: Number(q.hours),
-          cursor: q.cursor,
-          limit: Number(q.limit),
-        })
-      )
-    } catch (error) {
-      return c.json({ error: String(error) }, 400)
-    }
+    const q = c.req.query()
+    return c.json(
+      catalog.history({
+        q: q.q,
+        state: q.state as HistoryQuery['state'],
+        project: q.project,
+        agent: q.agent,
+        pinned: q.pinned === 'true',
+        hours: Number(q.hours),
+        cursor: q.cursor,
+        limit: Number(q.limit),
+      })
+    )
   })
   app.get(`${api}/health`, (c) => c.json(runtime.health()))
   app.put(`${api}/settings`, async (c) =>
@@ -152,20 +144,14 @@ export function registerPersistenceRoutes(
   app.get(`${api}/:id`, (c) => {
     const session = catalog.get(c.req.param('id'))
     if (!session) return c.json({ error: 'Session not found' }, 404)
-    const terminalPreview = (
-      db.db
-        .query(
-          'SELECT terminal_preview AS preview FROM board_sessions WHERE id=?'
-        )
-        .get(session.id) as { preview: string | null }
-    )?.preview
-    const terminalPreviewAt = (
-      db.db
-        .query(
-          'SELECT terminal_preview_at AS time FROM board_sessions WHERE id=?'
-        )
-        .get(session.id) as { time: string | null }
-    )?.time
+    const preview = db.db
+      .query(
+        'SELECT terminal_preview AS terminalPreview, terminal_preview_at AS terminalPreviewAt FROM board_sessions WHERE id=?'
+      )
+      .get(session.id) as Pick<
+      HistoryDetail,
+      'terminalPreview' | 'terminalPreviewAt'
+    >
     return c.json({
       session,
       conversations: (
@@ -176,15 +162,18 @@ export function registerPersistenceRoutes(
           .all(session.id) as { id: string }[]
       ).flatMap(({ id }) => {
         const record = db.getSessionById(id)
-        return record ? [toAgentSession(record)] : []
+        return record
+          ? [
+              {
+                ...toAgentSession(record),
+                archive: runtime.archives?.info(id) || null,
+              },
+            ]
+          : []
       }),
-      terminalPreview,
-      terminalPreviewAt,
+      ...preview,
       events: catalog.events(session.id),
-      archive: session.providerId
-        ? runtime.archives?.info(session.providerId)
-        : null,
-    })
+    } satisfies HistoryDetail)
   })
   app.post(`${api}/:id/resume`, async (c) => {
     const body: { operationId?: string; restoreSource?: boolean } = await c.req
@@ -212,8 +201,17 @@ export function registerPersistenceRoutes(
       pinned?: boolean
       state?: Lifecycle
     }>()
+    if (body.name !== undefined && typeof body.name !== 'string')
+      throw new Error('Invalid name')
+    if (body.pinned !== undefined && typeof body.pinned !== 'boolean')
+      throw new Error('Invalid pin')
+    if (
+      body.state !== undefined &&
+      body.state !== 'archived' &&
+      body.state !== 'hibernating'
+    )
+      throw new Error('Choose archived or hibernating')
     if (body.name !== undefined) {
-      if (typeof body.name !== 'string') throw new Error('Invalid name')
       if (saved.window) sessions.renameWindow(saved.window, body.name)
       else {
         catalog.rename(saved.id, body.name)
@@ -222,12 +220,9 @@ export function registerPersistenceRoutes(
       }
     }
     if (body.pinned !== undefined) {
-      if (typeof body.pinned !== 'boolean') throw new Error('Invalid pin')
       catalog.pin(saved.id, body.pinned)
     }
     if (body.state !== undefined) {
-      if (body.state !== 'archived' && body.state !== 'hibernating')
-        throw new Error('Choose archived or hibernating')
       sessions.stop(saved, body.state)
     }
     options.changed()

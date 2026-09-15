@@ -2,18 +2,20 @@
 import { useEffect, useRef, useState } from 'react'
 import type {
   HistoryPage,
+  HistoryDetail,
   HistoryQuery,
   PersistenceHealth,
   SavedSession,
   SavedWorkspace,
 } from '@shared/persistence'
 import type { Session, ServerMessage } from '@shared/types'
-import { HistoryDetails, type HistoryDetail } from './HistoryDetails'
+import { HistoryDetails } from './HistoryDetails'
 import { WorkspacePanel } from './WorkspacePanel'
 import { createOperationId } from '../../utils/operationId'
 import { HistoryRow } from './HistoryRow'
 import { StoragePanel } from './StoragePanel'
 import { historyButton, libraryRequest } from './api'
+import { useHistoryAction } from './useHistoryAction'
 
 export default function SessionHistory({
   open,
@@ -27,7 +29,8 @@ export default function SessionHistory({
   onOpenSession: (session: Session) => void
 }) {
   const dialog = useRef<HTMLDialogElement>(null),
-    requestNumber = useRef(0)
+    requestNumber = useRef(0),
+    queryVersion = useRef(0)
   const [tab, setTab] = useState<'sessions' | 'workspaces' | 'storage'>(
     'sessions'
   )
@@ -42,11 +45,11 @@ export default function SessionHistory({
     }),
     [health, setHealth] = useState<PersistenceHealth | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set()),
-    [busy, setBusy] = useState(false),
     [loading, setLoading] = useState(false),
     [error, setError] = useState('')
   const [workspaces, setWorkspaces] = useState<SavedWorkspace[]>([]),
     [notice, setNotice] = useState('')
+  const { busy, act } = useHistoryAction(setError)
   const [detail, setDetail] = useState<HistoryDetail | null>(null)
   const query = () =>
     new URLSearchParams({
@@ -72,9 +75,11 @@ export default function SessionHistory({
         setPage((old) => ({
           ...result,
           sessions: append
-            ? [...old.sessions, ...result.sessions].filter(
-                (s, i, a) => a.findIndex((x) => x.id === s.id) === i
-              )
+            ? [
+                ...new Map(
+                  [...old.sessions, ...result.sessions].map((s) => [s.id, s])
+                ).values(),
+              ]
             : result.sessions,
         }))
     } catch (e) {
@@ -106,12 +111,20 @@ export default function SessionHistory({
     }
   }, [open])
   useEffect(() => {
+    requestNumber.current++
+    queryVersion.current++
     if (!open) return
+    setPage({ sessions: [], nextCursor: null })
+    setLoading(true)
     setSelected(new Set())
     const timer = setTimeout(() => {
       void load()
     }, 150)
-    return () => clearTimeout(timer)
+    return () => {
+      clearTimeout(timer)
+      requestNumber.current++
+      queryVersion.current++
+    }
   }, [open, q, state, hours, pinned, agent])
   useEffect(() => {
     if (!open) return
@@ -123,29 +136,27 @@ export default function SessionHistory({
     })
   }, [open, subscribe, q, state, hours, pinned, agent])
   const selectAllMatching = async () => {
+    const version = queryVersion.current
     const ids = new Set<string>()
     let cursor: string | null = null
     do {
       const params = query()
       if (cursor) params.set('cursor', cursor)
       const result = await libraryRequest<HistoryPage>(`?${params}`)
+      if (version !== queryVersion.current) return
       result.sessions.forEach((s) => ids.add(s.id))
       cursor = result.nextCursor
     } while (cursor)
     setSelected(ids)
   }
-  const act = async (fn: () => Promise<unknown>) => {
-    setBusy(true)
-    setError('')
-    try {
-      await fn()
-      await refresh()
-    } catch (e) {
-      setError(String(e))
-    } finally {
-      setBusy(false)
-    }
-  }
+  const mutate = (fn: () => Promise<unknown>) =>
+    act(async () => {
+      try {
+        await fn()
+      } finally {
+        await refresh()
+      }
+    })
   const reopen = async (id: string, focus = true, restoreSource = false) => {
     const live = await libraryRequest<Session>(
       `/${encodeURIComponent(id)}/resume`,
@@ -159,7 +170,7 @@ export default function SessionHistory({
     return live
   }
   const reopenSelected = () =>
-    act(async () => {
+    mutate(async () => {
       const failures: string[] = []
       for (const id of selected)
         try {
@@ -249,6 +260,7 @@ export default function SessionHistory({
         )}
         {detail ? (
           <HistoryDetails
+            key={detail.session.id}
             detail={detail}
             busy={busy}
             onBack={() => setDetail(null)}
@@ -346,6 +358,7 @@ export default function SessionHistory({
             <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2 text-[12px]">
               <button
                 className={historyButton}
+                disabled={busy || loading}
                 onClick={() =>
                   setSelected(new Set(page.sessions.map((s) => s.id)))
                 }
@@ -354,7 +367,7 @@ export default function SessionHistory({
               </button>
               <button
                 className={historyButton}
-                disabled={busy}
+                disabled={busy || loading}
                 onClick={() => act(selectAllMatching)}
               >
                 Select all matching
@@ -408,7 +421,9 @@ export default function SessionHistory({
                   }
                   onResume={() => act(() => reopen(session.id))}
                   onChange={(patch) =>
-                    act(() => libraryRequest(`/${session.id}`, 'PATCH', patch))
+                    mutate(() =>
+                      libraryRequest(`/${session.id}`, 'PATCH', patch)
+                    )
                   }
                   onDetails={() => showDetails(session)}
                 />
@@ -433,7 +448,7 @@ export default function SessionHistory({
             workspaces={workspaces}
             selected={selected}
             busy={busy}
-            act={act}
+            act={mutate}
             setNotice={setNotice}
           />
         ) : (

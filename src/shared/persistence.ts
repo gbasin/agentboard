@@ -1,5 +1,5 @@
 /** Durable session library contracts, independent of live terminal identifiers. */
-import type { AgentType } from './types'
+import type { AgentType, AgentSession } from './types'
 
 export type Lifecycle =
   | 'starting'
@@ -88,4 +88,12 @@ export interface PersistenceHealth {
   archiveError: string | null
   interrupted: number
   settings: PersistenceSettings
+}
+
+export interface HistoryDetail {
+  session: SavedSession
+  events: SessionEvent[]
+  terminalPreview: string | null
+  terminalPreviewAt: string | null
+  conversations: (AgentSession & { archive: ArchiveInfo | null })[]
 }

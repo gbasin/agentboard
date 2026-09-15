@@ -120,6 +120,8 @@ describe('recovery reconciliation', () => {
     }
     const calls: string[] = []
     const manager = {
+      ensureSession() {},
+      listWindows: () => [live],
       setWindowOption() {},
       renameWindow() {},
       killWindow(w: string) {
@@ -163,6 +165,26 @@ describe('recovery reconciliation', () => {
     persistence.beforeSnapshot([])
     expect(persistence.catalog.get(saved.id)?.state).toBe('interrupted')
     expect(calls).toEqual([])
+  })
+  test('an old launch request cannot return a later run of the same session', () => {
+    const { persistence, saved, setSnapshot } = fixture()
+    persistence.catalog.transition(saved.id, 'interrupted')
+    const old = persistence.catalog.beginRun(saved.id, 'old-request')
+    persistence.catalog.bind(saved.id, old.id, 'ab:@1', 'epoch1')
+    persistence.catalog.transition(saved.id, 'interrupted')
+    const current = persistence.catalog.beginRun(saved.id, 'new-request')
+    persistence.catalog.bind(saved.id, current.id, 'ab:@1', 'epoch1')
+    setSnapshot({
+      epoch: 'epoch1',
+      windows: new Map([['ab:@1', { boardId: saved.id, runId: current.id }]]),
+    })
+    expect(() =>
+      persistence.launch('/project', 'A', 'sh', {
+        boardId: saved.id,
+        operationId: 'old-request',
+      })
+    ).toThrow('already exists')
+    expect(persistence.catalog.get(saved.id)?.lastRunId).toBe(current.id)
   })
   test('a transient empty worker result does not erase a live session', () => {
     const { persistence, saved } = fixture()

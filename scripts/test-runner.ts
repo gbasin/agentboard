@@ -63,6 +63,7 @@ async function main() {
     // overlapping with any other test that captures globals at module load.
     const ISOLATED_FILES = new Set([
       'persistenceOwnership.test.ts',
+      'persistenceRoutes.test.ts',
       // Entry-point tests patch Bun.serve/Bun.spawnSync/process.exit while
       // importing the server. Keep them away from real server/tmux tests.
       'directories.test.ts',
