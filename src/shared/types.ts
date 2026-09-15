@@ -22,6 +22,7 @@ export type TerminalErrorCode =
   | 'ERR_NOT_READY'
 
 export interface Session {
+  boardSessionId?: string
   id: string
   name: string
   tmuxWindow: string
@@ -82,6 +83,7 @@ export interface DirectoryErrorResponse {
 }
 
 export type ServerMessage =
+  | { type: 'library-changed' }
   | { type: 'sessions'; sessions: Session[] }
   | { type: 'session-update'; session: Session }
   | { type: 'session-created'; session: Session }

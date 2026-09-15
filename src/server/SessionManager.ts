@@ -502,7 +502,7 @@ export class SessionManager {
     projectPath: string,
     name?: string,
     command?: string,
-    options?: { excludeSessionId?: string }
+    options?: { excludeSessionId?: string; boardSessionId?: string; runId?: string }
   ): Session {
     const sessionExisted = this.sessionExists()
 
@@ -555,6 +555,11 @@ export class SessionManager {
       `NO_COLOR=${this.terminalColorsEnabled ? '' : '1'}`,
     ]
 
+    const identityCommands = (target: string): string[] => options?.runId && options.boardSessionId ? [
+      ';', 'set-option', '-w', '-t', target, '@agentboard-run-id', options.runId,
+      ';', 'set-option', '-w', '-t', target, '@agentboard-session-id', options.boardSessionId,
+    ] : []
+
     if (!sessionExisted) {
       // Create session + window in one step to avoid orphan shell window
       this.runTmux([
@@ -565,6 +570,7 @@ export class SessionManager {
         '-n', finalName,
         '-c', resolvedPath,
         finalCommand,
+        ...identityCommands(`${this.sessionName}:`),
       ])
       this.configureSession()
     } else {
@@ -577,6 +583,7 @@ export class SessionManager {
         '-n', finalName,
         '-c', resolvedPath,
         finalCommand,
+        ...identityCommands(`${this.sessionName}:${nextIndex}`),
       ])
     }
 
