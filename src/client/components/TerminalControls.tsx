@@ -15,6 +15,7 @@ import NumPad from './NumPad'
 import { isIOSDevice } from '../utils/device'
 import PasteStatus from './PasteStatus'
 import { useBrowserPaste } from '../hooks/useBrowserPaste'
+import { useKeyboardShift } from '../hooks/useKeyboardShift'
 
 interface SessionInfo {
   id: string
@@ -142,6 +143,7 @@ export default function TerminalControls({
   const browserPaste = useBrowserPaste({ sessionId: currentSessionId, disabled, fileUploadsAllowed, agentType,
     onPasteText: onPasteText ?? onSendKey, onPasteImage: onPasteImage ?? onSendKey, onRefocus })
   const [ctrlActive, setCtrlActive] = useState(false)
+  const shiftRef = useKeyboardShift(currentSessionId, disabled)
   const lastTouchTimeRef = useRef(0)
   const touchStartRef = useRef<{ x: number; y: number } | null>(null)
 
@@ -173,7 +175,8 @@ export default function TerminalControls({
     const wasKeyboardVisible = isKeyboardVisible?.() ?? false
     triggerHaptic()
 
-    const { output, consumeCtrl } = applyCtrlModifier(key, ctrlActive)
+    const shiftedKey = key === KEY_TAB.key && shiftRef.current ? KEY_SHIFT_TAB.key : key
+    const { output, consumeCtrl } = applyCtrlModifier(shiftedKey, ctrlActive)
     if (consumeCtrl) {
       setCtrlActive(false)
     }
