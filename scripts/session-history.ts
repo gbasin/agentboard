@@ -8,6 +8,7 @@ import {
   SessionBackups,
   applyPendingRestore,
   verifyBackup,
+  publishFile,
 } from '../src/server/persistence/backups'
 import { acquireDatabaseOwner } from '../src/server/persistence/ownership'
 import { importRecoveryExport } from '../src/server/persistence/importExport'
@@ -84,9 +85,9 @@ if (command === 'apply-restore') {
       const backup = backups.create('export'),
         source = backups.resolve(backup.name)
       const exported = path.join(destination, 'agentboard.db')
-      fs.copyFileSync(source, exported, fs.constants.COPYFILE_EXCL)
-      fs.chmodSync(exported, 0o600)
-      verifyBackup(exported)
+      fs.copyFileSync(source, `${exported}.partial`, fs.constants.COPYFILE_EXCL)
+      verifyBackup(`${exported}.partial`)
+      publishFile(`${exported}.partial`, exported)
       const snapshot = new Database(exported, { readonly: true })
       try {
         const manifest: {
@@ -120,10 +121,13 @@ if (command === 'apply-restore') {
               throw new Error(`Archive failed verification: ${row.provider_id}`)
             fs.copyFileSync(
               row.archive_path,
-              path.join(destination, name),
+              path.join(destination, `${name}.partial`),
               fs.constants.COPYFILE_EXCL
             )
-            fs.chmodSync(path.join(destination, name), 0o600)
+            publishFile(
+              path.join(destination, `${name}.partial`),
+              path.join(destination, name)
+            )
             manifest.push({
               providerId: row.provider_id,
               file: name,
@@ -133,7 +137,7 @@ if (command === 'apply-restore') {
           }
         }
         fs.writeFileSync(
-          path.join(destination, 'manifest.json'),
+          path.join(destination, 'manifest.json.partial'),
           JSON.stringify(
             {
               database: 'agentboard.db',
@@ -144,6 +148,10 @@ if (command === 'apply-restore') {
             2
           ),
           { mode: 0o600, flag: 'wx' }
+        )
+        publishFile(
+          path.join(destination, 'manifest.json.partial'),
+          path.join(destination, 'manifest.json')
         )
       } finally {
         snapshot.close()

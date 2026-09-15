@@ -198,6 +198,13 @@ export class ConversationArchives {
         await handle.close()
       }
       const checksum = await checksumFile(temporary)
+      if (
+        (previous && completeBytes < previous.bytes) ||
+        (await checksumFile(record.logFilePath, completeBytes)) !== checksum
+      )
+        throw new Error(
+          'Source conversation changed during copying; the previous archive has been preserved'
+        )
       publishFile(temporary, destination)
       this.db.db
         .query(
