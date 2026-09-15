@@ -7,7 +7,13 @@ import { pipeline } from 'node:stream/promises'
 import { Database } from 'bun:sqlite'
 import type { SessionDatabase, AgentSessionRecord } from '../db'
 import type { ArchiveInfo } from '../../shared/persistence'
-import { persistenceDirectory, publishFile, SessionBackups } from './backups'
+import { SessionBackups } from './backups'
+import {
+  persistenceDirectory,
+  publishFile,
+  checksumFile,
+  copyVerifiedFile,
+} from './files'
 
 interface ArchiveRow {
   provider_id: string
@@ -25,6 +31,8 @@ export class ConversationArchives {
   private backups: SessionBackups
   private backupSignature = ''
   private backupReferences = new Set<string>()
+  private inventory = { directoryTime: -1, checkedAt: 0, bytes: 0 }
+  private lastPruned = 0
   constructor(
     private db: SessionDatabase,
     dbPath: string
@@ -33,14 +41,28 @@ export class ConversationArchives {
     this.backups = new SessionBackups(db.db, dbPath)
   }
   get bytes() {
-    if (!fs.existsSync(this.directory)) return 0
-    return fs
-      .readdirSync(this.directory)
-      .filter((name) => name.endsWith('.jsonl'))
-      .reduce(
-        (sum, name) => sum + fs.statSync(path.join(this.directory, name)).size,
-        0
-      )
+    const directoryTime =
+      fs.statSync(this.directory, { throwIfNoEntry: false })?.mtimeMs ?? -1
+    // Snapshots are immutable. Directory changes invalidate the inventory;
+    // a periodic rescan also catches files edited by external tools.
+    if (
+      directoryTime === this.inventory.directoryTime &&
+      Date.now() - this.inventory.checkedAt < 60000
+    )
+      return this.inventory.bytes
+    const bytes =
+      directoryTime === -1
+        ? 0
+        : fs
+            .readdirSync(this.directory)
+            .filter((name) => name.endsWith('.jsonl'))
+            .reduce(
+              (sum, name) =>
+                sum + fs.statSync(path.join(this.directory, name)).size,
+              0
+            )
+    this.inventory = { directoryTime, checkedAt: Date.now(), bytes }
+    return bytes
   }
   /** Retained database snapshots continue to reference their exact log versions. */
   private protectedFiles() {
@@ -72,6 +94,7 @@ export class ConversationArchives {
     return references
   }
   prune() {
+    if (Date.now() - this.lastPruned < 60000) return
     if (!fs.existsSync(this.directory)) return
     const keep = new Set(this.protectedFiles())
     for (const row of this.db.db
@@ -87,6 +110,7 @@ export class ConversationArchives {
       )
         fs.unlinkSync(file)
     }
+    this.lastPruned = Date.now()
   }
   row(id: string) {
     return this.db.db
@@ -206,6 +230,7 @@ export class ConversationArchives {
           'Source conversation changed during copying; the previous archive has been preserved'
         )
       publishFile(temporary, destination)
+      this.inventory.checkedAt = 0
       this.db.db
         .query(
           `INSERT INTO session_archives VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(provider_id) DO UPDATE SET
@@ -245,40 +270,6 @@ export class ConversationArchives {
       recursive: true,
       mode: 0o700,
     })
-    const temporary = `${row.source_path}.${randomUUID()}.restore`
-    try {
-      await fsp.copyFile(
-        row.archive_path,
-        temporary,
-        fs.constants.COPYFILE_EXCL
-      )
-      await fsp.chmod(temporary, 0o600)
-      const handle = await fsp.open(temporary, 'r')
-      try {
-        await handle.sync()
-      } finally {
-        await handle.close()
-      }
-      // A hard link publishes the complete file atomically and never replaces
-      // a provider log that reappeared during restoration.
-      await fsp.link(temporary, row.source_path)
-      const directory = await fsp.open(path.dirname(row.source_path), 'r')
-      try {
-        await directory.sync()
-      } finally {
-        await directory.close()
-      }
-    } finally {
-      await fsp.rm(temporary, { force: true })
-    }
+    await copyVerifiedFile(row.archive_path, row.source_path, row.checksum)
   }
-}
-async function checksumFile(file: string, bytes?: number) {
-  const hash = createHash('sha256')
-  for await (const chunk of fs.createReadStream(
-    file,
-    bytes ? { start: 0, end: bytes - 1 } : undefined
-  ))
-    hash.update(chunk)
-  return hash.digest('hex')
 }

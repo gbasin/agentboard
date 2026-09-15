@@ -164,8 +164,26 @@ export function initDatabase(options: { path?: string; exclusive?: boolean } = {
   ensureDataDir(dbPath)
 
   const owner = options.exclusive ? acquireDatabaseOwner(dbPath) : null
-  try { applyPendingRestore(dbPath, owner?.token) } catch (error) { owner?.release(); throw error }
-  const db = new SQLiteDatabase(dbPath)
+  let connection: SQLiteDatabase | undefined
+  try {
+    applyPendingRestore(dbPath, owner?.token)
+    connection = new SQLiteDatabase(dbPath)
+    return initializeConnection(connection, dbPath, owner?.release)
+  } catch (error) {
+    try {
+      connection?.close()
+    } finally {
+      owner?.release()
+    }
+    throw error
+  }
+}
+
+function initializeConnection(
+  db: SQLiteDatabase,
+  dbPath: string,
+  releaseOwner?: () => void
+): SessionDatabase {
   if (dbPath !== ':memory:') {
     fs.chmodSync(dbPath, 0o600)
     const legacy = db.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='agent_sessions'").get()
@@ -475,8 +493,11 @@ export function initDatabase(options: { path?: string; exclusive?: boolean } = {
       upsertAppSetting.run({ $key: key, $value: value })
     },
     close: () => {
-      db.close()
-      owner?.release()
+      try {
+        db.close()
+      } finally {
+        releaseOwner?.()
+      }
     },
   }
 }

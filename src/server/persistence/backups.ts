@@ -3,11 +3,10 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { Database } from 'bun:sqlite'
+import { persistenceDirectory, publishFile } from './files'
+import { acquireDatabaseOwner, assertRestoreOwnership } from './ownership'
 import type { BackupInfo, PersistenceSettings } from '../../shared/persistence'
 
-export function persistenceDirectory(dbPath: string) {
-  return path.join(path.dirname(dbPath), `${path.basename(dbPath)}.recovery`)
-}
 export function verifyBackup(file: string) {
   const db = new Database(file, { readonly: true })
   try {
@@ -26,23 +25,12 @@ export function verifyBackup(file: string) {
     db.close()
   }
 }
-function syncFile(file: string) {
-  const fd = fs.openSync(file, 'r')
-  try {
-    fs.fsyncSync(fd)
-  } finally {
-    fs.closeSync(fd)
-  }
-}
-export function publishFile(temporary: string, destination: string) {
-  fs.chmodSync(temporary, 0o600)
-  syncFile(temporary)
-  fs.renameSync(temporary, destination)
-  syncFile(path.dirname(destination))
-}
 export class SessionBackups {
   readonly directory: string
   error: string | null = null
+  private inventory: BackupInfo[] = []
+  private directoryTime = -1
+  private scannedAt = 0
   constructor(
     readonly db: Database,
     readonly dbPath: string
@@ -50,23 +38,39 @@ export class SessionBackups {
     this.directory = path.join(persistenceDirectory(dbPath), 'backups')
   }
   list(): BackupInfo[] {
-    if (!fs.existsSync(this.directory)) return []
-    return fs
-      .readdirSync(this.directory)
-      .filter((n) => /^[\w.-]+\.db$/.test(n))
-      .map((name) => {
-        const stat = fs.statSync(path.join(this.directory, name))
-        return { name, createdAt: stat.mtime.toISOString(), bytes: stat.size }
-      })
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    const directoryTime =
+      fs.statSync(this.directory, { throwIfNoEntry: false })?.mtimeMs ?? -1
+    // Published backups are immutable; avoid scanning all snapshots on each
+    // health poll and each conversation copy. Refresh external changes too.
+    if (
+      directoryTime === this.directoryTime &&
+      Date.now() - this.scannedAt < 60000
+    )
+      return this.inventory
+    this.inventory =
+      directoryTime === -1
+        ? []
+        : fs
+            .readdirSync(this.directory)
+            .filter((n) => /^[\w.-]+\.db$/.test(n))
+            .map((name) => this.describe(name))
+            .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    this.directoryTime = directoryTime
+    this.scannedAt = Date.now()
+    return this.inventory
+  }
+  private describe(name: string): BackupInfo {
+    const stat = fs.statSync(this.resolve(name))
+    return { name, createdAt: stat.mtime.toISOString(), bytes: stat.size }
   }
   resolve(name: string) {
+    const file = path.join(this.directory, name)
     if (
       !/^[\w.-]+\.db$/.test(name) ||
-      !this.list().some((b) => b.name === name)
+      !fs.statSync(file, { throwIfNoEntry: false })?.isFile()
     )
       throw new Error('Backup not found')
-    return path.join(this.directory, name)
+    return file
   }
   create(label = 'manual') {
     if (!/^[a-z0-9-]{1,60}$/.test(label))
@@ -79,8 +83,9 @@ export class SessionBackups {
       this.db.query('VACUUM INTO ?').run(temporary)
       verifyBackup(temporary)
       publishFile(temporary, destination)
+      this.scannedAt = 0
       this.error = null
-      return this.list().find((b) => b.name === name)!
+      return this.describe(name)
     } catch (error) {
       this.error = String(error)
       throw error
@@ -89,11 +94,13 @@ export class SessionBackups {
     }
   }
   rotate(settings: PersistenceSettings, now = Date.now()) {
+    const pending = this.pendingRestore()
     const keptHours = new Set<string>(),
       keptDays = new Set<string>(),
       keptMonths = new Set<string>()
     for (const backup of this.list()) {
-      if (!backup.name.includes('-automatic-')) continue
+      if (backup.name === pending || !backup.name.includes('-automatic-'))
+        continue
       const time = new Date(backup.createdAt),
         age = now - time.getTime(),
         hour = backup.createdAt.slice(0, 13),
@@ -117,6 +124,16 @@ export class SessionBackups {
       }
       if (!keep) fs.unlinkSync(this.resolve(backup.name))
     }
+    this.scannedAt = 0
+  }
+  pendingRestore(): string | null {
+    const request = path.join(
+      persistenceDirectory(this.dbPath),
+      'restore-request.json'
+    )
+    return fs.existsSync(request)
+      ? JSON.parse(fs.readFileSync(request, 'utf8')).name
+      : null
   }
   scheduleRestore(name: string) {
     const file = this.resolve(name)
@@ -137,29 +154,42 @@ export function applyPendingRestore(dbPath: string, ownerToken?: string) {
     'restore-request.json'
   )
   if (!fs.existsSync(request)) return
-  const ownerFile = path.join(persistenceDirectory(dbPath), 'owner.json')
-  if (fs.existsSync(ownerFile)) {
-    const owner = JSON.parse(fs.readFileSync(ownerFile, 'utf8'))
-    let alive = false
-    try {
-      process.kill(owner.pid, 0)
-      alive = true
-    } catch {
-      /* old process exited */
-    }
-    if (alive && !(owner.pid === process.pid && ownerToken === owner.token))
-      throw new Error(
-        'Stop the running Agentboard before restoring its database'
-      )
-  }
-  const { name } = JSON.parse(fs.readFileSync(request, 'utf8'))
-  const current = new Database(dbPath)
-  const backups = new SessionBackups(current, dbPath)
-  let source: string
+  const acquired =
+    ownerToken === undefined ? acquireDatabaseOwner(dbPath) : null
   try {
-    source = backups.resolve(name)
+    assertRestoreOwnership(dbPath, ownerToken ?? acquired!.token)
+    const { name } = JSON.parse(fs.readFileSync(request, 'utf8'))
+    const directory = path.join(persistenceDirectory(dbPath), 'backups')
+    if (typeof name !== 'string' || !/^[\w.-]+\.db$/.test(name))
+      throw new Error('Invalid backup name')
+    const source = path.join(directory, name)
     verifyBackup(source)
-    backups.create('before-restore')
+    preserveCurrentDatabase(dbPath)
+    const temporary = `${dbPath}.restore-${randomUUID()}`
+    try {
+      fs.copyFileSync(source, temporary)
+      verifyBackup(temporary)
+      // No connection has opened this database in the new server process yet.
+      for (const suffix of ['-wal', '-shm'])
+        if (fs.existsSync(dbPath + suffix)) fs.unlinkSync(dbPath + suffix)
+      publishFile(temporary, dbPath)
+      fs.unlinkSync(request)
+    } finally {
+      if (fs.existsSync(temporary)) fs.unlinkSync(temporary)
+    }
+  } finally {
+    acquired?.release()
+  }
+}
+
+/** Keep a rollback copy even when SQLite cannot read the current database. */
+function preserveCurrentDatabase(dbPath: string) {
+  if (!fs.existsSync(dbPath)) return
+  let current: Database | undefined
+  let corrupt = false
+  try {
+    current = new Database(dbPath)
+    new SessionBackups(current, dbPath).create('before-restore')
     const checkpoint = current
       .query('PRAGMA wal_checkpoint(TRUNCATE)')
       .get() as { busy: number }
@@ -167,19 +197,24 @@ export function applyPendingRestore(dbPath: string, ownerToken?: string) {
       throw new Error(
         'Database is still in use; stop Agentboard before restoring'
       )
+  } catch (error) {
+    const code = (error as { code?: string }).code
+    if (code !== 'SQLITE_CORRUPT' && code !== 'SQLITE_NOTADB') throw error
+    corrupt = true
   } finally {
-    current.close()
+    current?.close()
   }
-  const temporary = `${dbPath}.restore-${randomUUID()}`
-  try {
-    fs.copyFileSync(source, temporary)
-    verifyBackup(temporary)
-    // No connection has opened this database in the new server process yet.
-    for (const suffix of ['-wal', '-shm'])
-      if (fs.existsSync(dbPath + suffix)) fs.unlinkSync(dbPath + suffix)
-    publishFile(temporary, dbPath)
-    fs.unlinkSync(request)
-  } finally {
-    if (fs.existsSync(temporary)) fs.unlinkSync(temporary)
+  if (!corrupt) return
+  const directory = path.join(
+    persistenceDirectory(dbPath),
+    `unreadable-before-restore-${randomUUID()}`
+  )
+  fs.mkdirSync(directory, { recursive: true, mode: 0o700 })
+  for (const suffix of ['', '-wal', '-shm']) {
+    if (!fs.existsSync(dbPath + suffix)) continue
+    const destination = path.join(directory, path.basename(dbPath) + suffix)
+    const temporary = `${destination}.partial`
+    fs.copyFileSync(dbPath + suffix, temporary)
+    publishFile(temporary, destination)
   }
 }

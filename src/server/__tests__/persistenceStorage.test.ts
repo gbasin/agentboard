@@ -78,6 +78,23 @@ describe('complete conversation discovery', () => {
     expect(catalog.history({ limit: 100 }).sessions).toHaveLength(35)
     expect(catalog.history({ q: 'Old task root-34' }).sessions).toHaveLength(1)
   })
+  test('reindexing an older linked conversation preserves the current session preview', async () => {
+    const { root, db, catalog } = setup()
+    const older = log(root, 'older'),
+      current = log(root, 'current')
+    const indexer = new ConversationIndexer(db, catalog, () => [older, current])
+    await indexer.tick(true)
+    const saved = catalog.create({
+      name: 'A',
+      projectPath: root,
+      command: 'sh',
+    })
+    catalog.associate(saved.id, 'older', 'codex', 'Older preview')
+    catalog.associate(saved.id, 'current', 'codex', 'Current preview')
+    fs.appendFileSync(older, '\n')
+    await indexer.tick(true)
+    expect(catalog.get(saved.id)?.preview).toBe('Current preview')
+  })
   test('a malformed file is retried without losing valid entries', async () => {
     const { root, db, catalog } = setup()
     const good = log(root, 'good'),
@@ -94,6 +111,53 @@ describe('complete conversation discovery', () => {
   })
 })
 describe('verified backups and archives', () => {
+  test('rotation preserves a scheduled restore even after it passes the retention cutoff', () => {
+    const { db, file, catalog } = setup()
+    const saved = catalog.create({
+      name: 'Before',
+      projectPath: '/project',
+      command: 'sh',
+    })
+    const backups = new SessionBackups(db.db, file),
+      backup = backups.create('automatic')
+    backups.scheduleRestore(backup.name)
+    catalog.rename(saved.id, 'After')
+    backups.rotate(defaultPersistenceSettings, Date.now() + 400 * 86400000)
+    expect(backups.resolve(backup.name)).toBeTruthy()
+    db.close()
+    applyPendingRestore(file)
+    const restored = initDatabase({ path: file })
+    dbs.push(restored)
+    expect(new SessionCatalog(restored.db, 'host').get(saved.id)?.name).toBe(
+      'Before'
+    )
+  })
+  test('a verified backup restores an unreadable database and preserves its raw files', () => {
+    const { db, file, catalog } = setup()
+    const saved = catalog.create({
+      name: 'Recoverable',
+      projectPath: '/project',
+      command: 'sh',
+    })
+    const backups = new SessionBackups(db.db, file)
+    backups.scheduleRestore(backups.create().name)
+    db.db.exec('PRAGMA wal_checkpoint(TRUNCATE)')
+    db.close()
+    fs.writeFileSync(file, 'damaged database header')
+    applyPendingRestore(file)
+    const restored = initDatabase({ path: file })
+    dbs.push(restored)
+    expect(new SessionCatalog(restored.db, 'host').get(saved.id)?.name).toBe(
+      'Recoverable'
+    )
+    const recovery = file + '.recovery'
+    const preserved = fs
+      .readdirSync(recovery)
+      .find((n) => n.startsWith('unreadable-before-restore-'))!
+    expect(
+      fs.readFileSync(path.join(recovery, preserved, 'agentboard.db'), 'utf8')
+    ).toBe('damaged database header')
+  })
   test('a portable export verifies and restores metadata plus relocated conversation copies', async () => {
     const { root, file, db, catalog } = setup(),
       source = log(root, 'portable')

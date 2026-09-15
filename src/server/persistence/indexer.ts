@@ -119,7 +119,7 @@ export class ConversationIndexer {
         ...(preview ? { lastUserMessage: preview } : {}),
       })
       const saved = this.catalog.byProvider(sessionId)
-      if (saved)
+      if (saved?.providerId === sessionId)
         this.catalog.updateActivity(saved.id, activity, preview || undefined)
       return
     }

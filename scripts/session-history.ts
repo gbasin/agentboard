@@ -2,14 +2,13 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { createHash } from 'node:crypto'
 import { Database } from 'bun:sqlite'
 import {
   SessionBackups,
   applyPendingRestore,
   verifyBackup,
-  publishFile,
 } from '../src/server/persistence/backups'
+import { publishFile, copyVerifiedFile } from '../src/server/persistence/files'
 import { acquireDatabaseOwner } from '../src/server/persistence/ownership'
 import { importRecoveryExport } from '../src/server/persistence/importExport'
 
@@ -113,20 +112,10 @@ if (command === 'apply-restore') {
           }[]
           for (const row of rows) {
             const name = path.basename(row.archive_path)
-            const hasher = createHash('sha256')
-            for await (const chunk of fs.createReadStream(row.archive_path))
-              hasher.update(chunk)
-            const hash = hasher.digest('hex')
-            if (hash !== row.checksum)
-              throw new Error(`Archive failed verification: ${row.provider_id}`)
-            fs.copyFileSync(
+            await copyVerifiedFile(
               row.archive_path,
-              path.join(destination, `${name}.partial`),
-              fs.constants.COPYFILE_EXCL
-            )
-            publishFile(
-              path.join(destination, `${name}.partial`),
-              path.join(destination, name)
+              path.join(destination, name),
+              row.checksum
             )
             manifest.push({
               providerId: row.provider_id,

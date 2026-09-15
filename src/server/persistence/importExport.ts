@@ -1,14 +1,10 @@
 /** Import a portable recovery export as a verified, staged database backup. */
 import fs from 'node:fs'
 import path from 'node:path'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { Database } from 'bun:sqlite'
-import {
-  persistenceDirectory,
-  publishFile,
-  SessionBackups,
-  verifyBackup,
-} from './backups'
+import { SessionBackups, verifyBackup } from './backups'
+import { persistenceDirectory, publishFile, copyVerifiedFile } from './files'
 
 export async function importRecoveryExport(
   backups: SessionBackups,
@@ -67,17 +63,13 @@ export async function importRecoveryExport(
         .get(entry.providerId) as { checksum: string } | null
       if (!record || record.checksum !== entry.checksum)
         throw new Error('Archive manifest does not match the exported database')
-      const archived = path.join(directory, entry.file),
-        hash = createHash('sha256')
-      for await (const chunk of fs.createReadStream(archived))
-        hash.update(chunk)
-      if (hash.digest('hex') !== entry.checksum)
-        throw new Error('Exported conversation failed verification')
-      const target = path.join(archiveDirectory, `${randomUUID()}.jsonl`),
-        partial = `${target}.partial`
-      created.push(partial, target)
-      fs.copyFileSync(archived, partial, fs.constants.COPYFILE_EXCL)
-      publishFile(partial, target)
+      const target = path.join(archiveDirectory, `${randomUUID()}.jsonl`)
+      created.push(target)
+      await copyVerifiedFile(
+        path.join(directory, entry.file),
+        target,
+        entry.checksum
+      )
       staged
         .query('UPDATE session_archives SET archive_path=? WHERE provider_id=?')
         .run(target, entry.providerId)

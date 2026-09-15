@@ -14,6 +14,9 @@ export function createCatalogSchema(db: Database) {
         .get() as { value: string } | null
     )?.value || 0
   )
+  if (!Number.isInteger(version) || version < 0)
+    throw new Error('Invalid catalog schema version')
+  if (version === CATALOG_VERSION) return
   if (version > CATALOG_VERSION)
     throw new Error('This database requires a newer Agentboard version')
   if (version < CATALOG_VERSION) {
@@ -67,15 +70,6 @@ export function createCatalogSchema(db: Database) {
       checksum TEXT NOT NULL, complete INTEGER NOT NULL
     );
   `)
-    const columns = db.query('PRAGMA table_info(board_sessions)').all() as {
-      name: string
-    }[]
-    if (!columns.some((c) => c.name === 'requested_state'))
-      db.exec('ALTER TABLE board_sessions ADD COLUMN requested_state TEXT')
-    if (!columns.some((c) => c.name === 'terminal_preview'))
-      db.exec('ALTER TABLE board_sessions ADD COLUMN terminal_preview TEXT')
-    if (!columns.some((c) => c.name === 'terminal_preview_at'))
-      db.exec('ALTER TABLE board_sessions ADD COLUMN terminal_preview_at TEXT')
     db.exec(
       'INSERT OR IGNORE INTO session_conversations SELECT id,provider_id,created_at FROM board_sessions WHERE provider_id IS NOT NULL'
     )

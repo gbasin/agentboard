@@ -1,77 +1,70 @@
-/** One serving process owns a file database, including during restore/migration. */
+/** SQLite holds the process lock; the OS releases it on crash or reboot. */
 import fs from 'node:fs'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { persistenceDirectory } from './backups'
+import { Database } from 'bun:sqlite'
+import { persistenceDirectory } from './files'
 
-function bootIdentity(): string | null {
-  try {
-    if (process.platform === 'linux')
-      return fs.readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim()
-    if (process.platform === 'darwin') {
-      const result = Bun.spawnSync(['sysctl', '-n', 'kern.bootsessionuuid'], {
-        stdout: 'pipe',
-        stderr: 'pipe',
-        timeout: 1000,
-      })
-      const value = result.stdout.toString().trim()
-      if (result.exitCode === 0 && /^[a-f\d-]{36}$/i.test(value)) return value
-    }
-  } catch {
-    /* PID ownership remains available on other platforms. */
-  }
-  return null
+interface Owner {
+  db: Database
+  token: string
+  references: number
+}
+const owners = new Map<string, Owner>()
+
+function lockPath(dbPath: string) {
+  const file = fs.existsSync(dbPath)
+    ? fs.realpathSync(dbPath)
+    : path.join(
+        fs.realpathSync(path.dirname(path.resolve(dbPath))),
+        path.basename(dbPath)
+      )
+  return path.join(persistenceDirectory(file), 'ownership.db')
 }
 
 export function acquireDatabaseOwner(dbPath: string) {
   if (dbPath === ':memory:') return { token: '', release() {} }
-  const file = path.join(persistenceDirectory(dbPath), 'owner.json')
-  const bootId = bootIdentity()
-  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 })
-  if (fs.existsSync(file)) {
-    const owner = JSON.parse(fs.readFileSync(file, 'utf8'))
-    // Entry-point unit tests import the server repeatedly in one process.
-    if (
-      owner.pid === process.pid &&
-      (!owner.bootId || owner.bootId === bootId) &&
-      process.env.NODE_ENV === 'test'
-    )
-      return { token: undefined, release() {} }
-    let alive = true
+  fs.mkdirSync(path.dirname(path.resolve(dbPath)), {
+    recursive: true,
+    mode: 0o700,
+  })
+  const file = lockPath(dbPath)
+  let owner = owners.get(file)
+  if (!owner) {
+    fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 })
+    const db = new Database(file)
     try {
-      process.kill(owner.pid, 0)
+      fs.chmodSync(file, 0o600)
+      db.exec('PRAGMA busy_timeout=1000')
+      db.exec('BEGIN EXCLUSIVE')
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ESRCH') alive = false
+      db.close()
+      if ((error as { code?: string }).code === 'SQLITE_BUSY')
+        throw new Error('Another Agentboard process owns this session database')
+      throw error
     }
-    if (owner.bootId && bootId && owner.bootId !== bootId) alive = false
-    if (alive)
-      throw new Error('Another Agentboard process owns this session database')
-    fs.unlinkSync(file)
+    owner = { db, token: randomUUID(), references: 0 }
+    owners.set(file, owner)
   }
-  const token = randomUUID()
-  // Exclusive creation makes simultaneous starts fail before either opens SQLite.
-  const temporary = `${file}.${token}.partial`
-  const fd = fs.openSync(temporary, 'wx', 0o600)
-  try {
-    fs.writeFileSync(fd, JSON.stringify({ pid: process.pid, token, bootId }))
-    fs.fsyncSync(fd)
-  } finally {
-    fs.closeSync(fd)
+  // Multiple connections in the same process share ownership. No test-only bypass.
+  owner.references++
+  let released = false
+  return {
+    token: owner.token,
+    release() {
+      if (released) return
+      released = true
+      if (--owner.references === 0) {
+        owner.db.close()
+        owners.delete(file)
+      }
+    },
   }
-  try {
-    fs.linkSync(temporary, file)
-  } finally {
-    fs.unlinkSync(temporary)
+}
+
+export function assertRestoreOwnership(dbPath: string, token: string) {
+  const owner = owners.get(lockPath(dbPath))
+  if (!owner || owner.token !== token || owner.references !== 1) {
+    throw new Error('Stop the running Agentboard before restoring its database')
   }
-  const release = () => {
-    try {
-      if (JSON.parse(fs.readFileSync(file, 'utf8')).token === token)
-        fs.unlinkSync(file)
-    } catch {
-      /* already released */
-    }
-    process.removeListener('exit', release)
-  }
-  process.once('exit', release)
-  return { token, release }
 }
