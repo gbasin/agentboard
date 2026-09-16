@@ -34,6 +34,27 @@ describe('detectsPermissionPrompt', () => {
     expect(detectsPermissionPrompt(content)).toBe(false)
   })
 
+  test('matches Devin CLI approval menu', () => {
+    const content = [
+      'Devin wants to run: rm -rf build/',
+      '',
+      '  Approve once',
+      '  This session',
+      '  Auto-approve edits in workspace dirs',
+      '  Deny',
+    ].join('\n')
+
+    expect(detectsPermissionPrompt(content)).toBe(true)
+  })
+
+  test('matches Devin network permission prompt', () => {
+    const content = ['Allow api.example.com?', '  Yes, allow once', '  No, deny'].join(
+      '\n'
+    )
+
+    expect(detectsPermissionPrompt(content)).toBe(true)
+  })
+
   test('matches AskUserQuestion selection menu', () => {
     const content = [
       'Which issue would you like me to investigate?',

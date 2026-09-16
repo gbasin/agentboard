@@ -252,6 +252,16 @@ describe('db', () => {
     ])
   })
 
+  test('accepts devin agent type', () => {
+    const session = makeSession({
+      sessionId: `devin-${Date.now()}`,
+      logFilePath: `/tmp/devin-${Date.now()}.jsonl`,
+      agentType: 'devin',
+    })
+    const inserted = db.insertSession(session)
+    expect(inserted.agentType).toBe('devin')
+  })
+
   test('displayNameExists returns true for existing names', () => {
     const uniqueName = `test-name-${Date.now()}`
     const session = makeSession({

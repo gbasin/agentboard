@@ -18,7 +18,8 @@ Run `bun run lint && bun run typecheck && bun run test` after changes.
 
 - Single tmux session (default: `agentboard`) with one window per project
 - Backend discovers windows, streams terminal output via WebSocket
-- Parses Claude/Codex JSONL logs from `~/.claude/projects/` and `~/.codex/sessions/` for status
+- Parses Claude/Codex/Pi JSONL logs from `~/.claude/projects/`, `~/.codex/sessions/`, `~/.pi/agent/sessions/`
+- Devin CLI stores history in SQLite (`~/.local/share/devin/cli/sessions.db`); `src/server/devinSync.ts` mirrors it into `~/.agentboard/devin-sessions/*.jsonl` so the same pipeline applies. `src/server/devinLockMatch.ts` matches devin sessions to windows via `session_locks/<id>.lock` PIDs.
 - Status: unknown -> working -> waiting (derived from log events)
 
 ## Structure

@@ -58,6 +58,20 @@ function PiIcon({ className }: { className?: string }) {
   )
 }
 
+function DevinIcon({ className }: { className?: string }) {
+  // Devin logo: stylized "D" diamond mark
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      className={className}
+      aria-label="Devin"
+    >
+      <path d="M12 1.5 22.5 12 12 22.5 1.5 12 12 1.5zm0 4.9L7.4 12l4.6 5.6 4.6-5.6L12 6.4z" />
+    </svg>
+  )
+}
+
 type IconComponent = ({ className }: { className?: string }) => JSX.Element
 
 /** Prefix patterns mapped to icons - order matters, first match wins */
@@ -65,6 +79,7 @@ const iconPrefixes: [string, IconComponent][] = [
   ['claude', AnthropicIcon],
   ['codex', OpenAIIcon],
   ['pi', PiIcon],
+  ['devin', DevinIcon],
 ]
 
 export default function AgentIcon({

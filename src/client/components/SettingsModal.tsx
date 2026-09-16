@@ -128,7 +128,7 @@ export default function SettingsModal({
   const [showAddForm, setShowAddForm] = useState(false)
   const [newLabel, setNewLabel] = useState('')
   const [newCommand, setNewCommand] = useState('')
-  const [newAgentType, setNewAgentType] = useState<'claude' | 'codex' | ''>('')
+  const [newAgentType, setNewAgentType] = useState<'claude' | 'codex' | 'pi' | 'devin' | ''>('')
   const reenableTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const terminalColorsLoadIdRef = useRef(0)
 
@@ -488,13 +488,15 @@ export default function SettingsModal({
                       <select
                         value={preset.agentType || ''}
                         onChange={(e) => handleUpdatePreset(preset.id, {
-                          agentType: e.target.value as 'claude' | 'codex' | undefined || undefined
+                          agentType: e.target.value as 'claude' | 'codex' | 'pi' | 'devin' | undefined || undefined
                         })}
                         className="input text-xs py-1 px-2 w-auto"
                       >
                         <option value="">Terminal</option>
                         <option value="claude">Claude</option>
                         <option value="codex">Codex</option>
+                        <option value="pi">Pi</option>
+                        <option value="devin">Devin</option>
                       </select>
                     </div>
                   )}
@@ -521,12 +523,14 @@ export default function SettingsModal({
                 <div className="flex items-center gap-2">
                   <select
                     value={newAgentType}
-                    onChange={(e) => setNewAgentType(e.target.value as 'claude' | 'codex' | '')}
+                    onChange={(e) => setNewAgentType(e.target.value as 'claude' | 'codex' | 'pi' | 'devin' | '')}
                     className="input text-xs py-1 px-2 w-auto"
                   >
                     <option value="">Terminal Icon</option>
                     <option value="claude">Claude Icon</option>
                     <option value="codex">Codex Icon</option>
+                    <option value="pi">Pi Icon</option>
+                    <option value="devin">Devin Icon</option>
                   </select>
                   <div className="flex-1" />
                   <button

@@ -15,6 +15,7 @@ let piDir: string
 const originalClaude = process.env.CLAUDE_CONFIG_DIR
 const originalCodex = process.env.CODEX_HOME
 const originalPi = process.env.PI_HOME
+const originalAgentboardData = process.env.AGENTBOARD_DATA_DIR
 
 async function writeJsonl(filePath: string, lines: string[]): Promise<void> {
   await fs.mkdir(path.dirname(filePath), { recursive: true })
@@ -29,6 +30,7 @@ beforeEach(async () => {
   process.env.CLAUDE_CONFIG_DIR = claudeDir
   process.env.CODEX_HOME = codexDir
   process.env.PI_HOME = piDir
+  process.env.AGENTBOARD_DATA_DIR = path.join(tempRoot, 'agentboard')
 })
 
 afterEach(async () => {
@@ -38,6 +40,8 @@ afterEach(async () => {
   else delete process.env.CODEX_HOME
   if (originalPi) process.env.PI_HOME = originalPi
   else delete process.env.PI_HOME
+  if (originalAgentboardData) process.env.AGENTBOARD_DATA_DIR = originalAgentboardData
+  else delete process.env.AGENTBOARD_DATA_DIR
   await fs.rm(tempRoot, { recursive: true, force: true })
 })
 

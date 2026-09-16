@@ -41,6 +41,8 @@ class CollectingMatchWorkerClient {
 const originalClaudeConfigDir = process.env.CLAUDE_CONFIG_DIR
 const originalCodexHome = process.env.CODEX_HOME
 const originalPiHome = process.env.PI_HOME
+const originalAgentboardDataDir = process.env.AGENTBOARD_DATA_DIR
+const originalDevinCliDir = process.env.DEVIN_CLI_DIR
 
 let tempRoot = ''
 let claudeConfigDir = ''
@@ -53,6 +55,8 @@ beforeEach(() => {
   process.env.CLAUDE_CONFIG_DIR = claudeConfigDir
   process.env.CODEX_HOME = path.join(tempRoot, 'codex')
   process.env.PI_HOME = path.join(tempRoot, 'pi')
+  process.env.AGENTBOARD_DATA_DIR = path.join(tempRoot, 'agentboard-data')
+  process.env.DEVIN_CLI_DIR = path.join(tempRoot, 'devin')
 })
 
 afterEach(() => {
@@ -70,6 +74,16 @@ afterEach(() => {
     delete process.env.PI_HOME
   } else {
     process.env.PI_HOME = originalPiHome
+  }
+  if (originalAgentboardDataDir === undefined) {
+    delete process.env.AGENTBOARD_DATA_DIR
+  } else {
+    process.env.AGENTBOARD_DATA_DIR = originalAgentboardDataDir
+  }
+  if (originalDevinCliDir === undefined) {
+    delete process.env.DEVIN_CLI_DIR
+  } else {
+    process.env.DEVIN_CLI_DIR = originalDevinCliDir
   }
   fs.rmSync(tempRoot, { recursive: true, force: true })
 })

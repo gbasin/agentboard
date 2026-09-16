@@ -3322,6 +3322,9 @@ function getResumeCommandTemplate(agentType: AgentType): string {
   if (agentType === 'pi') {
     return config.piResumeCmd
   }
+  if (agentType === 'devin') {
+    return config.devinResumeCmd
+  }
   return config.codexResumeCmd
 }
 

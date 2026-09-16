@@ -14,7 +14,7 @@ export type NormalizedEventRole =
   | 'tool'
   | 'other'
 
-export type NormalizedSourceFamily = 'claude' | 'codex' | 'pi' | 'unknown'
+export type NormalizedSourceFamily = 'claude' | 'codex' | 'pi' | 'devin' | 'unknown'
 
 export interface NormalizedEventSource {
   family: NormalizedSourceFamily
@@ -55,6 +55,9 @@ export function inferSourceFamily(record: Record<string, unknown>): NormalizedSo
 
   if (source.toLowerCase() === 'pi' || agent.toLowerCase() === 'pi') {
     return 'pi'
+  }
+  if (source.toLowerCase() === 'devin' || agent.toLowerCase() === 'devin') {
+    return 'devin'
   }
   if (typeValue === 'response_item' || typeValue === 'event_msg') {
     return 'codex'

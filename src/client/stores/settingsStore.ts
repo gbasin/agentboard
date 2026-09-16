@@ -52,7 +52,7 @@ export interface CommandPreset {
   label: string
   command: string
   isBuiltIn: boolean
-  agentType?: 'claude' | 'codex' | 'pi'
+  agentType?: 'claude' | 'codex' | 'pi' | 'devin'
 }
 
 export const DEFAULT_PRESETS: CommandPreset[] = [
@@ -60,6 +60,7 @@ export const DEFAULT_PRESETS: CommandPreset[] = [
   { id: 'codex', label: 'Codex', command: 'codex', isBuiltIn: true, agentType: 'codex' },
   { id: 'pi', label: 'Pi', command: 'pi', isBuiltIn: true, agentType: 'pi' },
   { id: 'grok', label: 'Grok', command: 'grok', isBuiltIn: true },
+  { id: 'devin', label: 'Devin', command: 'devin', isBuiltIn: true, agentType: 'devin' },
 ]
 
 // Validation and helper functions
@@ -71,7 +72,7 @@ export function isValidPreset(p: unknown): p is CommandPreset {
     typeof obj.label === 'string' && obj.label.trim().length >= 1 && obj.label.length <= 64 &&
     typeof obj.command === 'string' && obj.command.trim().length >= 1 && obj.command.length <= 1024 &&
     typeof obj.isBuiltIn === 'boolean' &&
-    (obj.agentType === undefined || obj.agentType === 'claude' || obj.agentType === 'codex' || obj.agentType === 'pi')
+    (obj.agentType === undefined || obj.agentType === 'claude' || obj.agentType === 'codex' || obj.agentType === 'pi' || obj.agentType === 'devin')
   )
 }
 
@@ -268,7 +269,7 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: 'agentboard-settings',
       storage: createJSONStorage(() => safeStorage),
-      version: 7,
+      version: 8,
       migrate: (persistedState: unknown, version: number) => {
         const state = persistedState as Record<string, unknown>
         if (
@@ -299,7 +300,7 @@ export const useSettingsStore = create<SettingsState>()(
             label: p.label as string,
             command: command || 'claude',
             isBuiltIn: p.isBuiltIn as boolean,
-            agentType: p.agentType as 'claude' | 'codex' | 'pi' | undefined,
+            agentType: p.agentType as 'claude' | 'codex' | 'pi' | 'devin' | undefined,
           }
         }
 
@@ -359,8 +360,8 @@ export const useSettingsStore = create<SettingsState>()(
         const missingBuiltIns = DEFAULT_PRESETS.filter(p => p.isBuiltIn && !existingIds.has(p.id))
         const finalPresets = [...validPresets, ...missingBuiltIns]
 
-        if (version < 7) {
-          console.info(`[agentboard:settings] Migrated from v${version} to v7`)
+        if (version < 8) {
+          console.info(`[agentboard:settings] Migrated from v${version} to v8`)
         }
 
         return {
