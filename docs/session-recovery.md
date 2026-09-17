@@ -6,7 +6,7 @@ Agentboard saves a local managed session before starting its terminal. Its stabl
 
 Open **History** in the desktop header or **History & recovery** on mobile.
 
-- **All time** searches the full catalog. Search includes earlier names, projects, and saved message previews. Filter by provider, lifecycle, pin, and activity period.
+- **All time** searches the full catalog. Search matches names, earlier names, projects, and saved message previews; it does not search complete transcripts. Filter by provider, lifecycle, pin, and activity period.
 - **Previously open** includes sessions created or observed in Agentboard and imported conversations that have subsequently been launched. An entry labeled **Recovered from conversation logs** is not proof it was previously open.
 - **Interrupted** means the saved process disappeared from a successfully queried tmux server. Failed queries preserve the last confirmed state and appear in storage health.
 - Select sessions, then **Reopen selected**, or save them as a named **Workspace**. Running sessions are reused. Batch failures are reported individually.
@@ -56,9 +56,9 @@ bun run history restore BACKUP_NAME.db
 bun run history apply-restore
 
 # Save the catalog and its referenced conversation copies to a new directory:
-bun run history export /Volumes/Backups/agentboard-2026-09-15
+bun run history export /path/to/new-backup-directory
 # Verify a portable export and schedule its import on the next restart:
-bun run history import /Volumes/Backups/agentboard-2026-09-15
+bun run history import /path/to/new-backup-directory
 ```
 
 Every command accepts `--db /absolute/path/agentboard.db`. Export writes a manifest last; a missing manifest means the export did not finish. Import verifies checksums, relocates archive references, and disables automatic reopening so projects and provider setup can be checked on the destination machine. Export/import does not relocate projects, install provider tools, or restore auxiliary provider files.
@@ -76,9 +76,9 @@ A downloaded database contains metadata and archive references. Use the export c
 
 ## Validation and limits
 
-Automated coverage includes backend SIGKILL/restart, private tmux server replacement, A/B/C naming before logs exist, reused window IDs, a crash between pane creation and tagging, repeated reopen requests, workspace recovery, backup restoration, discovery beyond 25 files, malformed-log retry, pagination, SQLite write failures/lock contention, archive truncation/checksum failure, and migration idempotence. Browser coverage exercises year-old history, pagination, rename, workspace creation, backup download, and desktop/mobile layout. The six-test browser suite additionally checks stale bulk selections and per-conversation archive controls, and also passes terminal attachment, paste, and accessibility repaint checks. Automatic reopening and timestamped terminal previews are covered by the isolated server tests. Additional regressions cover competing process ownership, directory symlinks, restoring unreadable databases, pending-backup retention, older conversation previews, and opening a running terminal whose provider log is missing.
+Automated coverage includes backend SIGKILL/restart, private tmux server replacement, A/B/C naming before logs exist, reused window IDs, a crash between pane creation and tagging, repeated reopen requests, workspace recovery, backup restoration, discovery beyond 25 files, malformed-log retry, pagination, SQLite write failures/lock contention, archive truncation/checksum failure, and migration idempotence. Browser coverage exercises year-old history, pagination, rename, workspace creation, backup download, and desktop/mobile layout. The browser suite additionally checks stale bulk selections and per-conversation archive controls, and also passes terminal attachment, paste, and accessibility repaint checks. Automatic reopening and timestamped terminal previews are covered by the isolated server tests. Additional regressions cover competing process ownership, directory symlinks, restoring unreadable databases, pending-backup retention, older conversation previews, and opening a running terminal whose provider log is missing.
 
-A local macOS file-database check confirmed WAL, `synchronous=2` (FULL), `fullfsync=1`, and a 5000 ms busy timeout. Fifty create-and-rename pairs measured approximately 0.73 ms median and 1.16 ms at the 95th percentile on the development machine; other storage devices will differ.
+File databases explicitly enable WAL, `synchronous=FULL`, and a 5000 ms busy timeout. macOS also enables `fullfsync`.
 
 SIGKILL tests do not simulate loss of the operating system's disk cache. A controlled VM power-loss test has not been performed; storage hardware and filesystem guarantees still matter.
 
@@ -86,9 +86,9 @@ Conversation archives contain JSONL logs. Attachments, compaction artifacts, cre
 
 The durable catalog covers this server's managed sessions. External or remote terminals continue to use their existing discovery behavior; each upgraded remote Agentboard owns its own local catalog.
 
-## Activate this branch
+## Upgrade
 
-Implementation is isolated in the `feat/persistent-session-history` worktree. Building or committing there does not change the currently running checkout. To activate it later, integrate the branch, build the frontend, and restart the backend normally. Initial startup snapshots the existing database, imports provider metadata, and adopts currently running managed windows. Do not launch a second production backend against the same database.
+Build the frontend and restart Agentboard using your normal installation method. Initial startup snapshots the existing database, imports provider metadata, and adopts running managed windows. Run one backend per database.
 
 ## Audit follow-ups
 

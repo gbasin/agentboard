@@ -44,6 +44,7 @@ async function main() {
     CODEX_HOME: codexDir,
     LOG_FILE: tempLogFile,
     AGENTBOARD_DB_PATH: tempDbPath,
+    AGENTBOARD_TMUX_PID_FILE: path.join(tempRoot, 'tmux-server.pid'),
     AGENTBOARD_PERSISTENCE_MAINTENANCE_MS: '0',
     // Default skipMatchingPatterns excludes /tmp/* and /var/folders/* — both
     // common locations for test working directories (worktrees, CI runners on

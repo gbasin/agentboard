@@ -137,7 +137,7 @@ bun run deps:risk -- --threshold moderate
 **History & recovery** keeps session names, projects, launch details, and earlier runs across restarts. New sessions are saved before their terminal starts, including shells and agents that have not written a conversation log yet.
 
 - Review interrupted sessions and reopen selected sessions or a saved workspace.
-- Search All time by name, earlier name, project, provider, and message preview.
+- Search All time by name, earlier name, project, and saved message preview; filter by provider and session state.
 - Archive sessions without deleting their history.
 - Manage automatic backups, conversation copies, and optional terminal previews in **Storage & backups**.
 - Export a portable recovery copy with `bun run history export /path/to/new-backup-directory`.

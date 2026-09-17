@@ -18,6 +18,7 @@ const env = {
   TMUX_TMPDIR: root,
   TMUX: undefined,
   AGENTBOARD_DB_PATH: path.join(root, 'agentboard.db'),
+  AGENTBOARD_TMUX_PID_FILE: path.join(root, 'tmux-server.pid'),
   LOG_FILE: path.join(root, 'agentboard.log'),
   CLAUDE_CONFIG_DIR: path.join(root, 'claude'),
   CODEX_HOME: path.join(root, 'codex'),

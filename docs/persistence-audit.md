@@ -1,6 +1,6 @@
 # Persistent session history: implementation audit
 
-Reviewed the feature at `299ef00` on `feat/persistent-session-history`, including lifecycle reconciliation, persistence, archives, import/export, API routes, and History UI. Changes and tests stayed in the separate worktree; the running checkout was not switched or restarted.
+This review covers lifecycle reconciliation, database ownership, archives, import/export, API routes, and the History UI. The findings below were addressed during implementation.
 
 ## Findings fixed
 
@@ -29,10 +29,10 @@ These changes intentionally keep the existing catalog/provider separation. A ses
 
 ## Verification
 
-- `bun run lint`, `bun run typecheck`, and `bun run test`: 1,032 passing tests, including real competing processes, SIGKILL, private tmux replacement, and corrupt-database restoration.
-- `bun run build`: passed.
-- `CI=1 bun run test:e2e`: six passing browser tests. Existing scenarios use an isolated server/database/provider directories and private tmux socket. Two additional UI regressions control API responses to exercise timing and conversation selection deterministically; separate API tests use real storage.
-- Inspected desktop/mobile screenshots and the selected older-conversation view. The unavailable `dev-browser` skill was replaced with the repository's headless Playwright setup.
+- Run `bun run lint`, `bun run typecheck`, and `bun run test`. The regression suite covers real competing processes, SIGKILL, private tmux replacement, and corrupt-database restoration.
+- Build with `bun run build`.
+- Run browser checks with `CI=1 bun run test:e2e`. Existing scenarios use an isolated server/database/provider directories and private tmux socket. Two additional UI regressions control API responses to exercise timing and conversation selection deterministically; separate API tests use real storage.
+- Verify desktop/mobile layouts and the selected older-conversation view with headless Playwright screenshots.
 
 ## Remaining limits and follow-up work
 
