@@ -502,7 +502,7 @@ export class SessionManager {
     projectPath: string,
     name?: string,
     command?: string,
-    options?: { excludeSessionId?: string }
+    options?: { excludeSessionId?: string; boardSessionId?: string; runId?: string }
   ): Session {
     const sessionExisted = this.sessionExists()
 
@@ -554,6 +554,15 @@ export class SessionManager {
       '-e',
       `NO_COLOR=${this.terminalColorsEnabled ? '' : '1'}`,
     ]
+    const durableIdentity = options?.runId && options.boardSessionId
+    const launchName = durableIdentity ? `__ab_launch__${options.boardSessionId}__${options.runId}` : finalName
+    const identityEnv = durableIdentity ? ['-e', `AGENTBOARD_SESSION_ID=${options.boardSessionId}`, '-e', `AGENTBOARD_RUN_ID=${options.runId}`] : []
+
+    const identityCommands = (target: string): string[] => options?.runId && options.boardSessionId ? [
+      ';', 'set-option', '-w', '-t', target, '@agentboard-run-id', options.runId,
+      ';', 'set-option', '-w', '-t', target, '@agentboard-session-id', options.boardSessionId,
+      ';', 'rename-window', '-t', target, finalName,
+    ] : []
 
     if (!sessionExisted) {
       // Create session + window in one step to avoid orphan shell window
@@ -561,10 +570,12 @@ export class SessionManager {
         'new-session', '-d',
         ...noFlickerEnv,
         ...terminalColorEnv,
+        ...identityEnv,
         '-s', this.sessionName,
-        '-n', finalName,
+        '-n', launchName,
         '-c', resolvedPath,
         finalCommand,
+        ...identityCommands(`${this.sessionName}:`),
       ])
       this.configureSession()
     } else {
@@ -573,10 +584,12 @@ export class SessionManager {
         'new-window',
         ...noFlickerEnv,
         ...terminalColorEnv,
+        ...identityEnv,
         '-t', `${this.sessionName}:${nextIndex}`,
-        '-n', finalName,
+        '-n', launchName,
         '-c', resolvedPath,
         finalCommand,
+        ...identityCommands(`${this.sessionName}:${nextIndex}`),
       ])
     }
 

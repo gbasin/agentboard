@@ -11,6 +11,9 @@ import { createPasteFileRoutes } from './routes/pasteFile'
 import { ensureTmux } from './prerequisites'
 import { SessionManager } from './SessionManager'
 import { SessionRegistry } from './SessionRegistry'
+import { PersistentSessions } from './persistence/manager'
+import { PersistenceRuntime } from './persistence/runtime'
+import { registerPersistenceRoutes } from './persistence/routes'
 import {
   initDatabase,
   type AgentSessionRecord,
@@ -485,7 +488,7 @@ logger.info('terminal_mode_resolved', {
 })
 
 const app = new Hono()
-const db = initDatabase()
+const db = initDatabase({ exclusive: true })
 
 // Read mouse mode setting from DB (default: true)
 const TMUX_MOUSE_MODE_KEY = 'tmux_mouse_mode'
@@ -564,6 +567,13 @@ function ensureBaseSessionForRefresh(context: string): boolean {
   }
 }
 const registry = new SessionRegistry()
+// Test adapters may implement SessionDatabase without a SQLite connection.
+const persistence = db.db ? new PersistentSessions(db, sessionManager,
+  db.getAppSetting('persistence_host_id') || (() => { const id = createConnectionId(); db.setAppSetting('persistence_host_id', id); return id })()) : null
+const persistenceRuntime = persistence ? new PersistenceRuntime(persistence, db) : null
+function createPersistentWindow(projectPath: string, name?: string, command?: string, options?: { excludeSessionId?: string; operationId?: string }) {
+  return persistence ? persistence.launch(projectPath, name, command, options) : sessionManager.createWindow(projectPath, name, command, options)
+}
 
 interface WSData {
   terminal: ITerminalProxy | null
@@ -923,6 +933,7 @@ export function hydrateSessionsWithAgentSessions(
   sessions: Session[],
   { verifyAssociations = false, precomputedVerifications }: HydrateSessionsOptions = {}
 ): Session[] {
+  persistence?.beforeSnapshot(sessions)
   const activeSessions = db.getActiveSessions()
   // Sanity guard: callers ultimately source `sessions` from a tmux query (e.g.
   // sessionRefreshWorker.refresh or listWindowsSyncOrNull). When that query
@@ -961,10 +972,7 @@ export function hydrateSessionsWithAgentSessions(
         windowSetSize: windowSet.size,
         windowSetSample: Array.from(windowSet).slice(0, 5),
       })
-      // Kill any leftover dead window from remain-on-exit
-      if (currentWindow) {
-        try { sessionManager.killWindow(currentWindow) } catch { /* may already be gone */ }
-      }
+      // A missing or mismatched identity is not authorization to kill a pane.
       const orphanedSession = db.orphanSession(agentSession.sessionId)
       if (orphanedSession) {
         orphaned.push(toAgentSession(orphanedSession))
@@ -1078,6 +1086,7 @@ export function hydrateSessionsWithAgentSessions(
   } else {
     updateActiveAgentSessions()
   }
+  persistence?.observe(hydrated)
   return hydrated
 }
 
@@ -1436,7 +1445,11 @@ app.get('/api/session-preview/:sessionId', async (c) => {
     return c.json({ error: 'Session not found' }, 404)
   }
 
-  const logPath = record.logFilePath
+  let logPath = record.logFilePath
+  if (!(logPath && await fs.access(logPath).then(() => true, () => false)) && persistenceRuntime?.archives?.pathFor(record.sessionId)) {
+    try { logPath = (await persistenceRuntime.archives.verify(record.sessionId)).archive_path }
+    catch (error) { return c.json({ error: String(error) }, 409) }
+  }
   if (!logPath) {
     return c.json({ error: 'No log file for session' }, 404)
   }
@@ -1961,6 +1974,27 @@ app.get('/api/clipboard-file-path', async (c) => {
   }
 })
 
+if (persistenceRuntime) {
+  persistenceRuntime.matchingFailure=()=>logPoller.matchingError
+  const library = registerPersistenceRoutes(app, persistenceRuntime, {
+    commandFor: buildResumeCommand,
+    changed: () => { updateDormantAgentSessions(); refreshSessions(); broadcast({ type: 'library-changed' }) },
+    activated: (session) => { refreshGeneration++; registry.replaceSessions([stampLocalSession(session), ...registry.getAll().filter(s => s.tmuxWindow !== session.tmuxWindow)]) },
+  })
+  persistenceRuntime.start()
+  if (persistenceRuntime.health().settings.autoResume) {
+    // Reconcile the new tmux lifetime before selecting interrupted sessions.
+    try {const live=sessionManager.listWindows();persistence!.beforeSnapshot(live);persistence!.observe(live)} catch(error) {logger.warn('auto_resume_reconcile_failed',{error:String(error)})}
+    const interrupted = []
+    let cursor: string | undefined
+    do {
+      const page=persistence!.catalog.history({state:'interrupted',limit:100,cursor})
+      interrupted.push(...page.sessions);cursor=page.nextCursor || undefined
+    } while(cursor)
+    void (async () => { for (const saved of interrupted) { try { await library.resume(saved.id) } catch (error) { logger.warn('auto_resume_failed', { sessionId: saved.id, error: String(error) }) } } })()
+  }
+}
+
 const staticDir = process.env.AGENTBOARD_STATIC_DIR || './dist/client'
 app.use('/*', serveStatic({ root: staticDir }))
 
@@ -2089,6 +2123,7 @@ void completeStartupVerification()
 
 // Cleanup all terminals on server shutdown
 async function cleanupAllTerminals() {
+  persistenceRuntime?.stop()
   const disposePromises: Promise<void>[] = []
   for (const ws of sockets) {
     if (ws.data.terminal) {
@@ -2430,15 +2465,17 @@ function handleMessage(
         fireAndForget(handleRemoteCreate(message.host, message.projectPath, message.name, message.command, ws), 'handleRemoteCreate')
       } else {
         try {
-          const created = stampLocalSession(sessionManager.createWindow(
+          if(message.operationId!==undefined && (typeof message.operationId!=='string' || !message.operationId.length || message.operationId.length>128))throw new Error('Invalid operation ID')
+          const created = stampLocalSession(createPersistentWindow(
             message.projectPath,
             message.name,
-            message.command
+            message.command,
+            {operationId:message.operationId}
           ))
           // Add session to registry immediately so terminal can attach
           refreshGeneration++
           const currentSessions = registry.getAll()
-          registry.replaceSessions([created, ...currentSessions])
+          registry.replaceSessions([created, ...currentSessions.filter(s=>s.id!==created.id)])
           refreshSessions()
           send(ws, { type: 'session-created', session: created })
         } catch (error) {
@@ -2907,7 +2944,8 @@ async function handleKill(
   }
 
   try {
-    sessionManager.killWindow(session.tmuxWindow)
+    if (persistence?.catalog.byWindow(session.tmuxWindow)) persistence.stop(persistence.catalog.byWindow(session.tmuxWindow)!, 'archived')
+    else sessionManager.killWindow(session.tmuxWindow)
   } catch (error) {
     restorePinnedState(previousPinnedState)
     sendKillFailed(
@@ -3040,7 +3078,8 @@ async function handleRename(
   }
 
   try {
-    sessionManager.renameWindow(session.tmuxWindow, newName)
+    if (persistence) persistence.renameWindow(session.tmuxWindow, newName)
+    else sessionManager.renameWindow(session.tmuxWindow, newName)
     refreshSessions()
   } catch (error) {
     send(ws, {
@@ -3070,6 +3109,8 @@ function handleMoveToHistory(
     return
   }
 
+  const saved = persistence?.catalog.byProvider(sessionId)
+  if (saved) persistence?.catalog.transition(saved.id, 'archived')
   const updated = db.setPinned(sessionId, false)
   if (!updated) {
     send(ws, { type: 'session-move-to-history-result', sessionId, ok: false, error: 'Failed to move session to History' })
@@ -3197,7 +3238,8 @@ function handleSessionHibernate(
   }
 
   try {
-    sessionManager.killWindow(liveTmuxWindow)
+    if (persistence?.catalog.byWindow(liveTmuxWindow)) persistence.stop(persistence.catalog.byWindow(liveTmuxWindow)!, 'hibernating')
+    else sessionManager.killWindow(liveTmuxWindow)
   } catch (error) {
     let targetStillExists = true
     try {
@@ -3646,7 +3688,7 @@ function handleSessionWake(
     // Name is driven by the stored displayName — createWindow will auto-suffix
     // on genuine collisions with other live sessions (excludeSessionId keeps
     // the session's own prior name from matching itself).
-    const created = stampLocalSession(sessionManager.createWindow(
+    const created = stampLocalSession(createPersistentWindow(
       projectPath,
       latest.displayName,
       command,
