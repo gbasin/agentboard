@@ -124,31 +124,6 @@ export default memo(function HistorySessionItem({
               {sessionIdPrefix}
             </span>
           )}
-          {session.prs && session.prs.length > 0 && (
-            <span className="flex shrink-0 items-center gap-1">
-              {session.prs.slice(0, 2).map((pr) => (
-                <a
-                  key={pr.url}
-                  href={pr.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  onClick={(e) => e.stopPropagation()}
-                  className="rounded-full bg-elevated px-1.5 py-0.5 text-[11px] tabular-nums text-muted hover:text-accent"
-                  title={`${pr.repo}#${pr.number}`}
-                >
-                  #{pr.number}
-                </a>
-              ))}
-              {session.prs.length > 2 && (
-                <span
-                  className="text-[11px] text-muted"
-                  title={session.prs.slice(2).map((pr) => `${pr.repo}#${pr.number}`).join('\n')}
-                >
-                  +{session.prs.length - 2}
-                </span>
-              )}
-            </span>
-          )}
           <span className="ml-1 w-8 shrink-0 text-right text-xs tabular-nums text-muted">
             {lastActivity}
           </span>
@@ -166,6 +141,24 @@ export default memo(function HistorySessionItem({
                   : session.lastUserMessage}"
               </span>
             )}
+          </div>
+        )}
+        {/* Line 3: PR chips */}
+        {session.prs && session.prs.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1 pl-[1.375rem]">
+            {session.prs.map((pr) => (
+              <a
+                key={pr.url}
+                href={pr.url}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="rounded-full bg-elevated px-1.5 py-0.5 text-[11px] tabular-nums text-muted hover:text-accent"
+                title={`${pr.repo}#${pr.number}`}
+              >
+                #{pr.number}
+              </a>
+            ))}
           </div>
         )}
       </div>
