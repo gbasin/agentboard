@@ -18,6 +18,7 @@ import {
 } from './db'
 import { LogPoller } from './logPoller'
 import { toAgentSession } from './agentSessions'
+import { getSessionPullRequests } from './prExtractor'
 import { getLogSearchDirs } from './logDiscovery'
 import {
   DEFAULT_SCROLLBACK_LINES,
@@ -1074,6 +1075,7 @@ export function hydrateSessionsWithAgentSessions(
       agentSessionName: agentSession.displayName,
       logFilePath: agentSession.logFilePath,
       lastUserMessage: agentSession.lastUserMessage ?? session.lastUserMessage,
+      prs: getSessionPullRequests(agentSession.logFilePath),
       // Use persisted log times (survives server restarts, works when tmux lacks creation time)
       lastActivity: agentSession.lastActivityAt,
       createdAt: agentSession.createdAt,
