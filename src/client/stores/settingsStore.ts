@@ -59,6 +59,7 @@ export const DEFAULT_PRESETS: CommandPreset[] = [
   { id: 'claude', label: 'Claude', command: 'claude', isBuiltIn: true, agentType: 'claude' },
   { id: 'codex', label: 'Codex', command: 'codex', isBuiltIn: true, agentType: 'codex' },
   { id: 'pi', label: 'Pi', command: 'pi', isBuiltIn: true, agentType: 'pi' },
+  { id: 'grok', label: 'Grok', command: 'grok', isBuiltIn: true },
 ]
 
 // Validation and helper functions
@@ -267,7 +268,7 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: 'agentboard-settings',
       storage: createJSONStorage(() => safeStorage),
-      version: 6,
+      version: 7,
       migrate: (persistedState: unknown, version: number) => {
         const state = persistedState as Record<string, unknown>
         if (
@@ -352,26 +353,21 @@ export const useSettingsStore = create<SettingsState>()(
           }
         }
 
-        // Trim to max if needed
-        const trimmedPresets = validPresets.length > MAX_PRESETS
-          ? [...validPresets.filter(p => p.isBuiltIn),
-             ...validPresets.filter(p => !p.isBuiltIn).slice(0, MAX_PRESETS - 2)]
-          : validPresets
-
-        // Ensure all built-in presets from DEFAULT_PRESETS are present
-        const existingIds = new Set(trimmedPresets.map(p => p.id))
+        // Preserve saved presets when new built-ins push the list over MAX_PRESETS.
+        // The limit still applies when adding a preset.
+        const existingIds = new Set(validPresets.map(p => p.id))
         const missingBuiltIns = DEFAULT_PRESETS.filter(p => p.isBuiltIn && !existingIds.has(p.id))
-        const finalPresets = [...trimmedPresets, ...missingBuiltIns]
+        const finalPresets = [...validPresets, ...missingBuiltIns]
 
-        if (version < 6) {
-          console.info(`[agentboard:settings] Migrated from v${version} to v6`)
+        if (version < 7) {
+          console.info(`[agentboard:settings] Migrated from v${version} to v7`)
         }
 
         return {
           ...state,
           commandPresets: finalPresets.map(normalizePreset),
           defaultPresetId: resolveDefaultPresetId(
-            trimmedPresets,
+            finalPresets,
             state.defaultPresetId as string
           ),
         }
