@@ -841,7 +841,6 @@ function updateDormantAgentSessions() {
 interface VerificationDecision {
   verification: WindowLogVerificationResult
   nameMatches: boolean
-  windowExists: boolean
 }
 
 interface HydrateSessionsOptions {
@@ -871,7 +870,6 @@ async function verifyAllSessions(
             reason: 'no_match',
           },
           nameMatches: false,
-          windowExists: false,
         }
         return [agentSession.sessionId, decision]
       }
@@ -898,7 +896,6 @@ async function verifyAllSessions(
         const decision: VerificationDecision = {
           verification,
           nameMatches,
-          windowExists: true,
         }
         return [agentSession.sessionId, decision]
       } catch (error) {
@@ -909,7 +906,6 @@ async function verifyAllSessions(
         const decision: VerificationDecision = {
           verification: { status: 'verified', bestMatch: null },
           nameMatches: true,
-          windowExists: true,
         }
         return [agentSession.sessionId, decision]
       }
@@ -924,21 +920,13 @@ export function hydrateSessionsWithAgentSessions(
   { verifyAssociations = false, precomputedVerifications }: HydrateSessionsOptions = {}
 ): Session[] {
   const activeSessions = db.getActiveSessions()
-  // Sanity guard: callers ultimately source `sessions` from a tmux query (e.g.
-  // sessionRefreshWorker.refresh or listWindowsSyncOrNull). When that query
-  // transiently returns an empty array — but the DB still tracks live
-  // sessions — every active session would fail the windowSet membership check
-  // below and be treated as orphaned, which then triggers
-  // sessionManager.killWindow() for each. That mass-kills the user's working
-  // tmux windows in one pass. Skip this cycle and let the next refresh
-  // observe a real state. completeStartupVerification() already applies an
-  // equivalent guard before hydrating.
-  if (activeSessions.length > 0 && sessions.length === 0) {
-    logger.warn('hydrate_sessions_skipped_empty_input', {
-      activeSessionCount: activeSessions.length,
-    })
-    return sessions
-  }
+  // Discovery can be stale or incomplete. Reconcile missing windows without
+  // ever turning a background observation into a destructive tmux command.
+  const reconciled = [...sessions]
+  // An empty snapshot already has a skip-cycle contract. Preserve its rows
+  // without synchronous probes; one uncertain probe also ends checks for this
+  // cycle so a tmux outage cannot cost one timeout per tracked session.
+  let probesAvailable = sessions.length > 0
   const windowSet = new Set(sessions.map((session) => session.tmuxWindow))
   const activeMap = new Map<string, typeof activeSessions[number]>()
   const orphaned: AgentSession[] = []
@@ -949,11 +937,38 @@ export function hydrateSessionsWithAgentSessions(
   for (const agentSession of activeSessions) {
     const precomputed = precomputedVerifications?.get(agentSession.sessionId)
     const currentWindow = agentSession.currentWindow
-    const windowExists = precomputed
-      ? precomputed.windowExists
-      : Boolean(currentWindow && windowSet.has(currentWindow))
+    const windowExists = Boolean(currentWindow && windowSet.has(currentWindow))
 
     if (!windowExists || !currentWindow) {
+      if (currentWindow) {
+        const presence = probesAvailable ? sessionManager.probeWindow(currentWindow) : 'unknown'
+        if (presence === 'unknown') probesAvailable = false
+        logger.warn('session_window_missing_from_snapshot', {
+          sessionId: agentSession.sessionId,
+          currentWindow,
+          presence,
+          snapshotWindows: [...windowSet],
+        })
+        if (presence !== 'absent') {
+          const previous = registry.get(currentWindow)
+          reconciled.push({
+            ...(previous && !previous.remote ? previous : {
+              id: currentWindow,
+              tmuxWindow: currentWindow,
+              name: agentSession.displayName,
+              projectPath: agentSession.projectPath,
+              lastActivity: agentSession.lastActivityAt,
+              createdAt: agentSession.createdAt,
+              source: currentWindow.startsWith(`${config.tmuxSession}:`)
+                ? 'managed' as const
+                : 'external' as const,
+            }),
+            status: 'unknown',
+          })
+          activeMap.set(currentWindow, agentSession)
+          continue
+        }
+      }
       logger.info('session_orphaned', {
         sessionId: agentSession.sessionId,
         displayName: agentSession.displayName,
@@ -961,10 +976,6 @@ export function hydrateSessionsWithAgentSessions(
         windowSetSize: windowSet.size,
         windowSetSample: Array.from(windowSet).slice(0, 5),
       })
-      // Kill any leftover dead window from remain-on-exit
-      if (currentWindow) {
-        try { sessionManager.killWindow(currentWindow) } catch { /* may already be gone */ }
-      }
       const orphanedSession = db.orphanSession(agentSession.sessionId)
       if (orphanedSession) {
         orphaned.push(toAgentSession(orphanedSession))
@@ -1046,7 +1057,7 @@ export function hydrateSessionsWithAgentSessions(
     activeMap.set(currentWindow, agentSession)
   }
 
-  const hydrated = sessions.map((session) => {
+  const hydrated = reconciled.map((session) => {
     const agentSession = activeMap.get(session.tmuxWindow)
     if (!agentSession) {
       return session
