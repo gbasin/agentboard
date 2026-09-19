@@ -166,6 +166,10 @@ class SessionManagerMock {
     sessionManagerState.killWindow(tmuxWindow)
   }
 
+  probeWindow() {
+    return 'absent' as const
+  }
+
   renameWindow(tmuxWindow: string, newName: string) {
     sessionManagerState.renameWindow(tmuxWindow, newName)
   }

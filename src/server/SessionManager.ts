@@ -631,8 +631,36 @@ export class SessionManager {
     this.runTmux(['set-option', '-w', '-t', tmuxWindow, option, value])
   }
 
+  probeWindow(tmuxWindow: string): 'present' | 'absent' | 'unknown' {
+    const separator = tmuxWindow.lastIndexOf(':')
+    const sessionName = tmuxWindow.slice(0, separator)
+    const windowId = tmuxWindow.slice(separator + 1)
+    if (separator < 1 || !/^@\d+$/.test(windowId)) return 'unknown'
+
+    try {
+      // Unlike display-message, list-panes fails for a missing target instead
+      // of silently describing the current window. Match the session exactly.
+      const output = this.runParsedTmux([
+        'list-panes', '-t', `=${sessionName}:${windowId}`, '-F', '#{window_id}',
+      ])
+      const ids = splitTmuxLines(output)
+      return ids.length > 0 && ids.every((id) => id === windowId)
+        ? 'present'
+        : 'unknown'
+    } catch (error) {
+      // Connection failures and timeouts do not prove a window is gone.
+      const message = error instanceof Error ? error.message.trim() : ''
+      if (message === `can't find window: ${windowId}` ||
+          message === `can't find session: ${sessionName}` ||
+          message === `can't find session: =${sessionName}`) {
+        return 'absent'
+      }
+      return 'unknown'
+    }
+  }
+
   killWindow(tmuxWindow: string): void {
-    // Log window info before killing
+    let windowInfo: { name?: string; path?: string } = {}
     try {
       const info = this.runParsedTmux([
         'display-message',
@@ -644,13 +672,13 @@ export class SessionManager {
       const parts = splitTmuxFields(info.trim(), 2)
       const name = parts?.[0]
       const path = parts?.[1]
-      logger.info('window_killed', { tmuxWindow, name, path })
+      windowInfo = { name, path }
     } catch {
-      // Window may already be gone, log what we know
-      logger.info('window_killed', { tmuxWindow })
+      // Metadata is best-effort. Only report a kill after tmux succeeds.
     }
     this.runTmux(['kill-window', '-t', tmuxWindow])
     paneContentCache.delete(tmuxWindow)
+    logger.info('window_killed', { tmuxWindow, ...windowInfo })
   }
 
   renameWindow(tmuxWindow: string, newName: string): void {
