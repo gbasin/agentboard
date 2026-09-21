@@ -22,7 +22,7 @@ const KEPT_ROLES = new Set(['user', 'assistant', 'system', 'tool'])
 
 // Bump when the mirrored line format changes; forces a one-time full
 // rewrite so existing mirrors gain the new fields.
-const MIRROR_FORMAT_VERSION = 2
+const MIRROR_FORMAT_VERSION = 3
 
 export function getDevinCliDir(): string {
   const override = process.env.DEVIN_CLI_DIR
@@ -118,6 +118,14 @@ function messageToLine(
   if (!chat) return null
   const role = typeof chat.role === 'string' ? chat.role : ''
   if (!KEPT_ROLES.has(role)) return null
+
+  // Devin writes internal 'user' rows (cache keepalive "continue" prompts,
+  // compaction summarization requests) flagged with is_user_input: null.
+  // Keep only genuine user input so lastUserMessage/matching see real prompts.
+  if (role === 'user') {
+    const metadata = chat.metadata as Record<string, unknown> | undefined
+    if (metadata && metadata.is_user_input !== true) return null
+  }
 
   const content = chat.content
   const toolCalls = Array.isArray(chat.tool_calls)

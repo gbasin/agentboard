@@ -194,11 +194,39 @@ describe('syncDevinSessions', () => {
 
     // Simulate a pre-format-version sync state: next sync must rewrite.
     const statePath = path.join(outDir, '.sync-state.json')
-    fs.writeFileSync(statePath, fs.readFileSync(statePath, 'utf8').replace('"formatVersion":2', '"formatVersion":1'))
+    fs.writeFileSync(statePath, fs.readFileSync(statePath, 'utf8').replace('"formatVersion":3', '"formatVersion":1'))
 
     const result = syncDevinSessions(outDir)
     expect(result?.rewritten).toBe(1)
     expect(result?.appended).toBe(0)
+  })
+
+  test('drops internal user rows without is_user_input flag', () => {
+    const db = createDevinDb()
+    addSession(db, 's-internal', '/p', null)
+    const insert = (chat: Record<string, unknown>) =>
+      db
+        .prepare(
+          `INSERT INTO message_nodes (session_id, node_id, chat_message, created_at)
+           VALUES ('s-internal', 0, $chat, 1700000050)`
+        )
+        .run({ $chat: JSON.stringify(chat) })
+    // cache-keepalive / summarization rows: is_user_input null -> dropped
+    insert({ role: 'user', content: 'continue', metadata: { is_user_input: null, telemetry: { source: 'cache_keepalive' } } })
+    // genuine input -> kept
+    insert({ role: 'user', content: 'real prompt', metadata: { is_user_input: true, telemetry: { source: 'user' } } })
+    // no metadata at all -> kept (older CLI versions)
+    insert({ role: 'user', content: 'legacy prompt' })
+    db.close()
+
+    syncDevinSessions(outDir)
+    const lines = readLines(path.join(outDir, 's-internal.jsonl'))
+    const contents = lines.map(
+      (l) => (l.message as { content: string }).content
+    )
+    expect(contents).not.toContain('continue')
+    expect(contents).toContain('real prompt')
+    expect(contents).toContain('legacy prompt')
   })
 
   test('appends new messages on subsequent syncs', () => {
