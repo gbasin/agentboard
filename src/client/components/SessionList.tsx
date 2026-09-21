@@ -37,6 +37,7 @@ import { getEffectiveModifier, getModifierDisplay } from '../utils/device'
 import { useCounterBump } from '../hooks/useCounterBump'
 import { useExitCleanup } from '../hooks/useExitCleanup'
 import AgentIcon from './AgentIcon'
+import { commandHasYoloFlag } from '@shared/yolo'
 import HistorySessionItem from './HistorySessionItem'
 import ProjectBadge from './ProjectBadge'
 import HostBadge from './HostBadge'
@@ -1062,6 +1063,14 @@ function SessionRow({
             command={session.command}
             className="h-3.5 w-3.5 shrink-0 text-muted"
           />
+          {session.command && commandHasYoloFlag(session.command) && (
+            <span
+              className="shrink-0 rounded bg-amber-500/20 px-1 text-[10px] font-bold uppercase tracking-wide text-amber-600"
+              title="Launched with permission prompts skipped (yolo mode)"
+            >
+              yolo
+            </span>
+          )}
           {isEditing ? (
             <input
               ref={inputRef}

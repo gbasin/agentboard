@@ -160,6 +160,10 @@ interface SettingsState {
   soundOnIdle: boolean
   setSoundOnIdle: (enabled: boolean) => void
 
+  // Yolo mode (skip permission prompts) — remembers last checkbox choice
+  yoloMode: boolean
+  setYoloMode: (enabled: boolean) => void
+
   // Command presets
   commandPresets: CommandPreset[]
   setCommandPresets: (presets: CommandPreset[]) => void
@@ -228,6 +232,9 @@ export const useSettingsStore = create<SettingsState>()(
       setSoundOnPermission: (enabled) => set({ soundOnPermission: enabled }),
       soundOnIdle: false,
       setSoundOnIdle: (enabled) => set({ soundOnIdle: enabled }),
+
+      yoloMode: false,
+      setYoloMode: (enabled) => set({ yoloMode: enabled }),
 
       // Command presets
       commandPresets: DEFAULT_PRESETS,
