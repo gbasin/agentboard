@@ -33,6 +33,8 @@ describe('commandHasYoloFlag', () => {
     expect(commandHasYoloFlag('codex --dangerously-bypass-approvals-and-sandbox', 'codex')).toBe(true)
     expect(commandHasYoloFlag('grok --yolo', 'grok')).toBe(true)
     expect(commandHasYoloFlag('claude --permission-mode bypassPermissions', 'claude')).toBe(true)
+    expect(commandHasYoloFlag('claude --permission-mode=bypassPermissions', 'claude')).toBe(true)
+    expect(commandHasYoloFlag('grok --permission-mode=bypassPermissions', 'grok')).toBe(true)
     expect(commandHasYoloFlag('devin --permission-mode=dangerous', 'devin')).toBe(true)
   })
 
@@ -104,6 +106,8 @@ describe('yoloConflict', () => {
     expect(yoloConflict('claude --model opus', 'claude')).toBeNull()
     expect(yoloConflict('pi --fast', 'pi')).toBeNull()
     expect(yoloConflict('codex --yolo', 'codex')).toBeNull()
+    // --permission-mode=bypassPermissions is already yolo, not a conflict
+    expect(yoloConflict('claude --permission-mode=bypassPermissions', 'claude')).toBeNull()
   })
 })
 

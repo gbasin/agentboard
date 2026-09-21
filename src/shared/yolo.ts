@@ -22,13 +22,18 @@ export const YOLO_FLAGS: Record<AgentFamily, string | null> = {
 
 /** All flag spellings recognized when detecting whether a command is already yolo. */
 const YOLO_FLAG_ALIASES: Record<AgentFamily, string[]> = {
-  claude: ['--dangerously-skip-permissions', '--permission-mode bypassPermissions'],
+  claude: [
+    '--dangerously-skip-permissions',
+    '--permission-mode bypassPermissions',
+    '--permission-mode=bypassPermissions',
+  ],
   codex: ['--yolo', '--dangerously-bypass-approvals-and-sandbox'],
   grok: [
     '--always-approve',
     '--yolo',
     '--dangerously-skip-permissions',
     '--permission-mode bypassPermissions',
+    '--permission-mode=bypassPermissions',
   ],
   devin: ['--permission-mode dangerous', '--permission-mode=dangerous'],
   pi: [],
