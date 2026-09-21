@@ -8,6 +8,7 @@ import { getSessionIdShort } from '../utils/sessionId'
 import { formatRelativeTime } from '../utils/time'
 import AgentIcon from './AgentIcon'
 import ProjectBadge from './ProjectBadge'
+import { PrChips } from './PrChips'
 
 interface HistorySessionItemProps {
   session: AgentSession
@@ -142,6 +143,10 @@ export default memo(function HistorySessionItem({
               </span>
             )}
           </div>
+        )}
+        {/* Line 3: PR chips */}
+        {session.prs && session.prs.length > 0 && (
+          <PrChips prs={session.prs} />
         )}
       </div>
 

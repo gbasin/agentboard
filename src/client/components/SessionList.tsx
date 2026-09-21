@@ -40,6 +40,7 @@ import AgentIcon from './AgentIcon'
 import HistorySessionItem from './HistorySessionItem'
 import ProjectBadge from './ProjectBadge'
 import HostBadge from './HostBadge'
+import { PrChips } from './PrChips'
 import HostFilterDropdown from './HostFilterDropdown'
 import ProjectFilterDropdown from './ProjectFilterDropdown'
 import SessionPreviewModal from './SessionPreviewModal'
@@ -1117,6 +1118,11 @@ function SessionRow({
               </span>
             )}
           </div>
+        )}
+
+        {/* Line 3: PR chips */}
+        {session.prs && session.prs.length > 0 && (
+          <PrChips prs={session.prs} />
         )}
       </div>
 

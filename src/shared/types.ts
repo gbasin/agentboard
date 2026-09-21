@@ -2,6 +2,12 @@
 export const HISTORY_MAX_AGE_MIN_HOURS = 1
 export const HISTORY_MAX_AGE_MAX_HOURS = 168 // 7 days
 
+export interface SessionPullRequest {
+  url: string
+  repo: string // "owner/name"
+  number: number
+}
+
 export type SessionStatus = 'working' | 'waiting' | 'permission' | 'unknown'
 
 export type SessionSource = 'managed' | 'external'
@@ -39,6 +45,7 @@ export interface Session {
   logFilePath?: string
   lastUserMessage?: string
   isPinned?: boolean
+  prs?: SessionPullRequest[]
 }
 
 export interface AgentSession {
@@ -54,6 +61,7 @@ export interface AgentSession {
   lastUserMessage?: string
   isPinned?: boolean
   lastResumeError?: string
+  prs?: SessionPullRequest[]
 }
 
 export interface HostStatus {
