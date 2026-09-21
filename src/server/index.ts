@@ -19,6 +19,7 @@ import {
 import { LogPoller } from './logPoller'
 import { toAgentSession } from './agentSessions'
 import { getSessionPullRequests } from './prExtractor'
+import { fetchPrChecks, fetchPrInfo, parsePrUrl } from './prInfo'
 import { getLogSearchDirs } from './logDiscovery'
 import {
   DEFAULT_SCROLLBACK_LINES,
@@ -1428,6 +1429,24 @@ app.post('/api/client-log', async (c) => {
 
 app.get('/api/health', (c) => c.json({ ok: true }))
 app.get('/api/sessions', (c) => c.json(registry.getAll()))
+
+// Eager tier for PR chips: state/title/author, batched + 60s cached.
+app.post('/api/pr-info', async (c) => {
+  const body = (await c.req.json().catch(() => null)) as {
+    urls?: unknown
+  } | null
+  const urls = Array.isArray(body?.urls)
+    ? body.urls.filter((u): u is string => typeof u === 'string').slice(0, 50)
+    : []
+  return c.json(await fetchPrInfo(urls))
+})
+
+// Lazy tier for hover cards: includes CI check rollup.
+app.get('/api/pr-checks', async (c) => {
+  const url = c.req.query('url') ?? ''
+  if (!parsePrUrl(url)) return c.json({ error: 'Invalid PR url' }, 400)
+  return c.json(await fetchPrChecks(url))
+})
 
 app.get('/api/session-preview/:sessionId', async (c) => {
   const sessionId = c.req.param('sessionId')
