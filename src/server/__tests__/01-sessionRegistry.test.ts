@@ -342,6 +342,7 @@ describe('SessionRegistry', () => {
       { lastUserMessage: 'changed' },
       { isPinned: true },
       { lastResumeError: 'error occurred' },
+      { prs: [{ url: 'https://github.com/o/r/pull/1', repo: 'o/r', number: 1 }] },
     ]
 
     for (const change of fieldChanges) {
@@ -353,5 +354,35 @@ describe('SessionRegistry', () => {
       registry.setAgentSessions([{ ...base, ...change }], [], [])
       expect(activeEvents).toHaveLength(1)
     }
+  })
+
+  test('prs with identical URLs do not emit; reordered or changed PRs do', () => {
+    const registry = new SessionRegistry()
+    const activeEvents: AgentSession[][] = []
+    registry.on('agent-sessions-active', (active) => activeEvents.push(active))
+
+    const pr1 = { url: 'https://github.com/o/r/pull/1', repo: 'o/r', number: 1 }
+    const pr2 = { url: 'https://github.com/o/r/pull/2', repo: 'o/r', number: 2 }
+    const base = makeAgentSession({ sessionId: 'prs', prs: [pr1, pr2] })
+
+    registry.setAgentSessions([base], [], [])
+    activeEvents.length = 0
+
+    // Same PRs, new array/new objects → no emit
+    registry.setAgentSessions([{ ...base, prs: [{ ...pr1 }, { ...pr2 }] }], [], [])
+    expect(activeEvents).toHaveLength(0)
+
+    // Added PR → emit
+    registry.setAgentSessions(
+      [{ ...base, prs: [pr1, pr2, { url: 'https://github.com/o/r/pull/3', repo: 'o/r', number: 3 }] }],
+      [],
+      []
+    )
+    expect(activeEvents).toHaveLength(1)
+    activeEvents.length = 0
+
+    // Cleared PRs → emit
+    registry.setAgentSessions([{ ...base, prs: undefined }], [], [])
+    expect(activeEvents).toHaveLength(1)
   })
 })
