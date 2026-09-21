@@ -55,6 +55,27 @@ function checkIcon(c: {
   return { glyph: '…', cls: 'text-yellow-500' }
 }
 
+// Shared eager fetch: fills infoCache for any urls not yet known/in-flight.
+async function fetchInfoBatch(urls: string[]): Promise<PrInfo[]> {
+  const missing = urls.filter((u) => !infoCache.has(u) && !infoInflight.has(u))
+  if (missing.length === 0) return urls.map((u) => infoCache.get(u)!)
+  missing.forEach((u) => infoInflight.add(u))
+  try {
+    const r = await fetch('/api/pr-info', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ urls: missing }),
+    })
+    const arr = (await r.json()) as PrInfo[]
+    for (const info of arr) infoCache.set(info.url, info)
+  } catch {
+    // leave uncached; next mount/hover retries
+  } finally {
+    missing.forEach((u) => infoInflight.delete(u))
+  }
+  return urls.map((u) => infoCache.get(u)!).filter(Boolean)
+}
+
 function PrChip({ pr }: { pr: SessionPullRequest }) {
   const [info, setInfo] = useState<PrInfo | undefined>(infoCache.get(pr.url))
   const [checks, setChecks] = useState<PrCheckInfo | undefined>(
@@ -73,21 +94,10 @@ function PrChip({ pr }: { pr: SessionPullRequest }) {
 
   // Eager: state/title/author once per url.
   useEffect(() => {
-    if (infoCache.has(pr.url) || infoInflight.has(pr.url)) return
-    infoInflight.add(pr.url)
-    fetch('/api/pr-info', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ urls: [pr.url] }),
+    if (infoCache.has(pr.url)) return
+    fetchInfoBatch([pr.url]).then((arr) => {
+      if (mounted.current && arr[0]) setInfo(arr[0])
     })
-      .then((r) => r.json())
-      .then((arr: PrInfo[]) => {
-        const found = arr[0]
-        if (found) infoCache.set(pr.url, found)
-        if (mounted.current && found) setInfo(found)
-      })
-      .catch(() => {})
-      .finally(() => infoInflight.delete(pr.url))
   }, [pr.url])
 
   // Lazy: CI detail only on hover.
@@ -183,13 +193,91 @@ function PrChip({ pr }: { pr: SessionPullRequest }) {
   )
 }
 
+const MAX_VISIBLE = 4
+
+/** Muted "+N" chip; hover opens a card listing the remaining PRs. */
+function OverflowChip({ prs }: { prs: SessionPullRequest[] }) {
+  const [hover, setHover] = useState(false)
+  const [pos, setPos] = useState<{ left: number; bottom: number } | null>(null)
+  const [infos, setInfos] = useState<Map<string, PrInfo> | null>(null)
+  const anchorRef = useRef<HTMLSpanElement>(null)
+
+  // Lazy: only fetch state for hidden PRs when the card opens.
+  useEffect(() => {
+    if (!hover || infos) return
+    fetchInfoBatch(prs.map((p) => p.url)).then((arr) => {
+      setInfos(new Map(arr.map((i) => [i.url, i])))
+    })
+  }, [hover, infos, prs])
+
+  return (
+    <span
+      ref={anchorRef}
+      className="relative inline-flex"
+      onMouseEnter={() => {
+        const r = anchorRef.current?.getBoundingClientRect()
+        if (r) {
+          setPos({
+            left: Math.min(r.left, window.innerWidth - 270),
+            bottom: window.innerHeight - r.top + 4,
+          })
+        }
+        setHover(true)
+      }}
+      onMouseLeave={() => setHover(false)}
+    >
+      <span
+        className="inline-flex cursor-default items-center rounded-full px-1.5 py-0.5 text-[11px] tabular-nums text-muted"
+        title={`${prs.length} more PR${prs.length === 1 ? '' : 's'}`}
+      >
+        +{prs.length}
+      </span>
+      {hover &&
+        pos &&
+        createPortal(
+          <div
+            className="fixed z-[100] w-56 rounded-md border border-border bg-elevated p-2 text-left shadow-lg"
+            style={{ left: pos.left, bottom: pos.bottom }}
+          >
+            <div className="text-[11px] text-muted">
+              {prs.length} more PR{prs.length === 1 ? '' : 's'}
+            </div>
+            <div className="mt-1 max-h-48 space-y-0.5 overflow-y-auto border-t border-border pt-1.5">
+              {prs.map((pr) => (
+                <a
+                  key={pr.url}
+                  href={pr.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-1.5 text-[11px] text-secondary hover:text-accent"
+                >
+                  <span
+                    className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${stateColor(infos?.get(pr.url))}`}
+                  />
+                  <span className="tabular-nums">#{pr.number}</span>
+                  <span className="truncate text-muted">{pr.repo}</span>
+                </a>
+              ))}
+            </div>
+          </div>,
+          document.body
+        )}
+    </span>
+  )
+}
+
 export function PrChips({ prs }: { prs: SessionPullRequest[] }) {
   if (prs.length === 0) return null
+  // Extraction order is chronological by creation; show newest first.
+  const ordered = [...prs].reverse()
+  const visible = ordered.slice(0, MAX_VISIBLE)
+  const overflow = ordered.slice(MAX_VISIBLE)
   return (
     <div className="flex flex-wrap items-center gap-1 pl-[1.375rem]">
-      {prs.map((pr) => (
+      {visible.map((pr) => (
         <PrChip key={pr.url} pr={pr} />
       ))}
+      {overflow.length > 0 && <OverflowChip prs={overflow} />}
     </div>
   )
 }
