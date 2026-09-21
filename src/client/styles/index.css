@@ -392,6 +392,8 @@ body {
 
 .session-row:hover {
   background: var(--bg-hover);
+  /* Lift the row so popovers (PR hover cards) paint above sibling rows */
+  z-index: 20;
 }
 
 .session-row.selected {
