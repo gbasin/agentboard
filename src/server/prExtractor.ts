@@ -28,12 +28,15 @@ const MAX_CACHE_ENTRIES = 500
 // Optional `-R owner/repo`/`--repo` may sit between gh and pr.
 const GH_PR_CREATE_RE =
   /\bgh[\s"',\\]+(?:(?:-R|--repo)[\s"',\\]+\S+[\s"',\\]+)?pr[\s"',\\]+create\b/
-// A `gh pr create` mention only counts when the line is a tool-call entry.
-const TOOL_CALL_LINE_RE = /"tool_use"|"function_call"|"custom_tool_call"/
+// A `gh pr create` mention only counts when the line is a tool-call entry
+// (or a devin mirrored log, where tool calls aren't recorded at all).
+const TOOL_CALL_LINE_RE =
+  /"tool_use"|"function_call"|"custom_tool_call"|"toolCall"|"agent":"devin"/
 const PR_URL_RE =
   /https:\/\/github\.com\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\/pull\/(\d+)/g
 // Result markers only — "call_id" alone also appears on function_call lines.
-const RESULT_LINE_RE = /"tool_result"|"function_call_output"|"tool_use_id"/
+const RESULT_LINE_RE =
+  /"tool_result"|"function_call_output"|"tool_use_id"|"toolResult"|"toolCallId"/
 
 interface PendingCreate {
   ids: Set<string>
@@ -88,15 +91,16 @@ function extractToolCallIds(line: string): string[] | null {
   let recognized = false
 
   // Claude: message.content[] items of type tool_use with input.command
+  // Pi: same array, items of type toolCall with arguments.command (the args
+  // may also arrive as a partialJson string while streaming).
   const message = entry.message as Record<string, unknown> | undefined
   const content = message?.content
   if (Array.isArray(content)) {
     recognized = true
     for (const item of content) {
+      if (!item || typeof item.id !== 'string') continue
       if (
-        item &&
         item.type === 'tool_use' &&
-        typeof item.id === 'string' &&
         typeof item.input === 'object' &&
         item.input !== null &&
         GH_PR_CREATE_RE.test(
@@ -104,6 +108,19 @@ function extractToolCallIds(line: string): string[] | null {
         )
       ) {
         ids.push(item.id)
+        continue
+      }
+      if (item.type === 'toolCall') {
+        const args = item.arguments
+        const argsText =
+          typeof args === 'string'
+            ? args
+            : typeof item.partialJson === 'string'
+              ? item.partialJson
+              : JSON.stringify(args ?? '')
+        if (GH_PR_CREATE_RE.test(argsText)) {
+          ids.push(item.id)
+        }
       }
     }
   }

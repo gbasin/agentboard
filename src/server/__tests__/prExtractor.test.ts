@@ -159,6 +159,91 @@ describe('extractPullRequests', () => {
     expect(extractPullRequests(content).map((p) => p.number)).toEqual([77])
   })
 
+  test('works on pi-style toolCall/toolResult entries', () => {
+    const content = [
+      JSON.stringify({
+        type: 'message',
+        message: {
+          role: 'assistant',
+          content: [
+            {
+              type: 'toolCall',
+              id: 'call_pi1',
+              name: 'bash',
+              arguments: { command: 'gh pr create --fill' },
+            },
+          ],
+        },
+      }),
+      JSON.stringify({
+        type: 'message',
+        message: {
+          role: 'toolResult',
+          toolCallId: 'call_pi1',
+          toolName: 'bash',
+          content: [
+            { type: 'text', text: 'https://github.com/o/r/pull/55' },
+          ],
+        },
+      }),
+    ].join('\n')
+
+    expect(extractPullRequests(content).map((p) => p.number)).toEqual([55])
+  })
+
+  test('does not attribute pi toolCall ids when a different call ran', () => {
+    const content = [
+      JSON.stringify({
+        type: 'message',
+        message: {
+          role: 'assistant',
+          content: [
+            { type: 'text', text: 'you could run gh pr create here' },
+            {
+              type: 'toolCall',
+              id: 'call_other',
+              name: 'bash',
+              arguments: { command: 'gh pr list' },
+            },
+          ],
+        },
+      }),
+      JSON.stringify({
+        type: 'message',
+        message: {
+          role: 'toolResult',
+          toolCallId: 'call_other',
+          content: [{ type: 'text', text: 'https://github.com/o/r/pull/8' }],
+        },
+      }),
+    ].join('\n')
+
+    expect(extractPullRequests(content)).toEqual([])
+  })
+
+  test('works on devin mirrored logs via window fallback', () => {
+    const content = [
+      JSON.stringify({
+        type: 'assistant',
+        agent: 'devin',
+        message: {
+          role: 'assistant',
+          content: 'Running gh pr create --fill now',
+        },
+      }),
+      JSON.stringify({
+        type: 'assistant',
+        agent: 'devin',
+        message: {
+          role: 'assistant',
+          content: 'PR opened: https://github.com/gbasin/agentboard/pull/228',
+        },
+      }),
+    ].join('\n')
+
+    expect(extractPullRequests(content).map((p) => p.number)).toEqual([228])
+  })
+
   test('falls back to lookahead window for unparseable create lines', () => {
     const content = [
       'NOTJSON "tool_use" gh pr create',
