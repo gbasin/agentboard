@@ -212,6 +212,7 @@ export const config = {
   claudeResumeCmd: process.env.CLAUDE_RESUME_CMD || 'claude --resume {sessionId}',
   codexResumeCmd: process.env.CODEX_RESUME_CMD || 'codex resume {sessionId}',
   piResumeCmd: process.env.PI_RESUME_CMD || 'pi --session {logFilePath}',
+  devinResumeCmd: process.env.DEVIN_RESUME_CMD || 'devin --resume {sessionId}',
   enterRefreshDelayMs,
   workingGracePeriodMs,
   historySessionMaxAgeHours,

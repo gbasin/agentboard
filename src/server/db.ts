@@ -112,7 +112,7 @@ const AGENT_SESSIONS_COLUMNS_SQL = `
   session_id TEXT UNIQUE,
   log_file_path TEXT NOT NULL UNIQUE,
   project_path TEXT,
-  agent_type TEXT NOT NULL CHECK (agent_type IN ('claude', 'claude-rp', 'codex', 'pi')),
+  agent_type TEXT NOT NULL CHECK (agent_type IN ('claude', 'claude-rp', 'codex', 'pi', 'devin')),
   display_name TEXT,
   created_at TEXT NOT NULL,
   last_activity_at TEXT NOT NULL,
@@ -790,7 +790,11 @@ function migrateAgentTypeConstraint(db: SQLiteDatabase) {
     return // Table doesn't exist yet, will be created with correct constraint
   }
 
-  if (tableInfo.sql.includes("'claude-rp'") && tableInfo.sql.includes("'pi'")) {
+  if (
+    tableInfo.sql.includes("'claude-rp'") &&
+    tableInfo.sql.includes("'pi'") &&
+    tableInfo.sql.includes("'devin'")
+  ) {
     return
   }
 
@@ -853,6 +857,7 @@ function migrateAgentTypeConstraint(db: SQLiteDatabase) {
     throw error
   }
 }
+
 
 function getColumnNames(db: SQLiteDatabase, tableName: string): string[] {
   const rows = db

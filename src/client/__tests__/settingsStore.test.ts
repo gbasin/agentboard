@@ -335,10 +335,10 @@ describe('preset migration', () => {
     expect(defaultPresetId).toBe(preset.id)
   })
 
-  test('adds Grok to v6 settings while preserving edited commands and the custom default', async () => {
+  test('adds missing built-ins to v6 settings while preserving edited commands and the custom default', async () => {
     const custom = { id: 'custom-default', label: 'My task', command: 'bun run task', isBuiltIn: false }
     const existing = [
-      ...DEFAULT_PRESETS.filter((p) => p.id !== 'grok').map((p) =>
+      ...DEFAULT_PRESETS.filter((p) => p.id !== 'grok' && p.id !== 'devin').map((p) =>
         p.id === 'claude' ? { ...p, command: 'claude --model opus' } : p
       ),
       custom,
@@ -348,16 +348,17 @@ describe('preset migration', () => {
     expect(commandPresets).toEqual([
       ...existing,
       { id: 'grok', label: 'Grok', command: 'grok', isBuiltIn: true },
+      { id: 'devin', label: 'Devin', command: 'devin', isBuiltIn: true, agentType: 'devin' },
     ])
     expect(defaultPresetId).toBe(custom.id)
     const persisted = JSON.parse(storage.getItem('agentboard-settings')!)
-    expect(persisted.version).toBe(7)
+    expect(persisted.version).toBe(8)
     await useSettingsStore.persist.rehydrate()
     expect(useSettingsStore.getState().commandPresets).toEqual(commandPresets)
   })
 
-  test.each([50, 52])('keeps all %i existing presets and their default when adding Grok', async (count) => {
-    const builtIns = DEFAULT_PRESETS.filter((p) => p.id !== 'grok')
+  test.each([50, 52])('keeps all %i existing presets and their default when adding missing built-ins', async (count) => {
+    const builtIns = DEFAULT_PRESETS.filter((p) => p.id !== 'grok' && p.id !== 'devin')
     const existing = [
       ...builtIns,
       ...Array.from({ length: count - builtIns.length }, (_, i) => ({
@@ -367,10 +368,28 @@ describe('preset migration', () => {
     const selected = existing.at(-1)!.id
     const { commandPresets, defaultPresetId } = await rehydratePresets(existing, selected)
 
-    expect(commandPresets).toHaveLength(count + 1)
+    expect(commandPresets).toHaveLength(count + 2)
     expect(commandPresets.slice(0, existing.length)).toEqual(existing)
-    expect(commandPresets.at(-1)?.id).toBe('grok')
+    expect(commandPresets.at(-2)?.id).toBe('grok')
+    expect(commandPresets.at(-1)?.id).toBe('devin')
     expect(defaultPresetId).toBe(selected)
+  })
+
+  test('adds Devin to v7 settings while preserving edited commands and the custom default', async () => {
+    const custom = { id: 'custom-default', label: 'My task', command: 'bun run task', isBuiltIn: false }
+    const existing = [
+      ...DEFAULT_PRESETS.filter((p) => p.id !== 'devin').map((p) =>
+        p.id === 'claude' ? { ...p, command: 'claude --model opus' } : p
+      ),
+      custom,
+    ]
+    const { commandPresets, defaultPresetId } = await rehydratePresets(existing, custom.id, 7)
+
+    expect(commandPresets).toEqual([
+      ...existing,
+      { id: 'devin', label: 'Devin', command: 'devin', isBuiltIn: true, agentType: 'devin' },
+    ])
+    expect(defaultPresetId).toBe(custom.id)
   })
 
   test('preserves an existing Grok command and default without adding a duplicate', async () => {
@@ -388,7 +407,7 @@ describe('preset migration', () => {
 describe('settings persistence migration', () => {
   test('runs the hibernating/history expansion rename for v5 persisted state', async () => {
     const options = useSettingsStore.persist.getOptions()
-    expect(options.version).toBe(7)
+    expect(options.version).toBe(8)
     if (!options.migrate) {
       throw new Error('Expected settings migration to be configured')
     }

@@ -16,6 +16,7 @@ const tmuxOutputs = new Map<string, string>()
 const originalClaude = process.env.CLAUDE_CONFIG_DIR
 const originalCodex = process.env.CODEX_HOME
 const originalPi = process.env.PI_HOME
+const originalAgentboardData = process.env.AGENTBOARD_DATA_DIR
 
 let tempRoot = ''
 
@@ -143,6 +144,8 @@ afterAll(() => {
   else delete process.env.CODEX_HOME
   if (originalPi) process.env.PI_HOME = originalPi
   else delete process.env.PI_HOME
+  if (originalAgentboardData) process.env.AGENTBOARD_DATA_DIR = originalAgentboardData
+  else delete process.env.AGENTBOARD_DATA_DIR
 })
 
 beforeEach(async () => {
@@ -153,6 +156,7 @@ beforeEach(async () => {
   process.env.CLAUDE_CONFIG_DIR = path.join(tempRoot, 'claude')
   process.env.CODEX_HOME = path.join(tempRoot, 'codex')
   process.env.PI_HOME = path.join(tempRoot, 'pi')
+  process.env.AGENTBOARD_DATA_DIR = path.join(tempRoot, 'agentboard')
   await fs.mkdir(path.join(process.env.CLAUDE_CONFIG_DIR, 'projects'), {
     recursive: true,
   })
@@ -198,6 +202,8 @@ afterEach(async () => {
   else delete process.env.CODEX_HOME
   if (originalPi) process.env.PI_HOME = originalPi
   else delete process.env.PI_HOME
+  if (originalAgentboardData) process.env.AGENTBOARD_DATA_DIR = originalAgentboardData
+  else delete process.env.AGENTBOARD_DATA_DIR
 })
 
 const baseSession: Session = {

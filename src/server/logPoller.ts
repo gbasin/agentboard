@@ -21,6 +21,8 @@ import type {
   OrphanCandidate,
   LastMessageCandidate,
 } from './logMatchWorkerTypes'
+import { syncDevinSessions } from './devinSync'
+import { matchDevinLocksToWindows } from './devinLockMatch'
 
 const MIN_INTERVAL_MS = 2000
 const DEFAULT_INTERVAL_MS = 5000
@@ -174,6 +176,7 @@ interface MatchWorkerClient {
 export class LogPoller {
   private interval: ReturnType<typeof setInterval> | null = null
   private startupReconciliationTimer: ReturnType<typeof setTimeout> | null = null
+  private devinSyncInterval: ReturnType<typeof setInterval> | null = null
   private logWatcher: LogWatcher | null = null
   private db: SessionDatabase
   private registry: SessionRegistry
@@ -249,6 +252,13 @@ export class LogPoller {
     if (intervalMs <= 0) {
       return
     }
+
+    // Mirror devin's sessions.db into JSONL logs on the same cadence so the
+    // regular pipeline picks up changes in both poll and watch modes.
+    const syncInterval = Math.max(MIN_INTERVAL_MS, intervalMs)
+    this.runDevinSync()
+    this.devinSyncInterval = setInterval(() => this.runDevinSync(), syncInterval)
+
     if (mode === 'watch') {
       this.startWatchMode(intervalMs)
       return
@@ -548,6 +558,33 @@ export class LogPoller {
         }
       }
 
+      // Devin-specific fallback: match remaining devin orphans via session
+      // lock PIDs (deterministic even when the prompt has scrolled away).
+      const devinOrphans = unmatchedOrphans.filter(
+        (o) =>
+          o.agentType === 'devin' && !matchedOrphanSessionIds.has(o.sessionId)
+      )
+      if (devinOrphans.length > 0) {
+        const lockMatches = matchDevinLocksToWindows(windows)
+        for (const orphan of devinOrphans) {
+          const window = lockMatches.get(orphan.sessionId)
+          if (!window || claimedWindows.has(window.tmuxWindow)) continue
+          const existing = this.db.getSessionByLogPath(orphan.logFilePath)
+          if (!existing || existing.currentWindow) continue
+          this.db.updateSession(existing.sessionId, {
+            currentWindow: window.tmuxWindow,
+            displayName: window.name,
+          })
+          claimedWindows.add(window.tmuxWindow)
+          this.onSessionActivated?.(existing.sessionId, window.tmuxWindow)
+          logger.info('orphan_rematch_devin_lock', {
+            sessionId: existing.sessionId,
+            window: window.tmuxWindow,
+          })
+          orphanMatches++
+        }
+      }
+
       logger.info('orphan_rematch_complete', {
         orphanCount: orphanCandidates.length,
         matches: orphanMatches,
@@ -579,6 +616,10 @@ export class LogPoller {
       clearTimeout(this.startupReconciliationTimer)
     }
     this.startupReconciliationTimer = null
+    if (this.devinSyncInterval) {
+      clearInterval(this.devinSyncInterval)
+      this.devinSyncInterval = null
+    }
     this.logWatcher?.stop()
     this.logWatcher = null
     this.matchWorker?.dispose()
@@ -591,6 +632,16 @@ export class LogPoller {
       this.onOrphanSessionsDiscovered?.({ newOrphans })
     } catch (error) {
       logger.warn('log_poll_discovered_callback_error', {
+        message: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
+  private runDevinSync(): void {
+    try {
+      syncDevinSessions()
+    } catch (error) {
+      logger.warn('devin_sync_error', {
         message: error instanceof Error ? error.message : String(error),
       })
     }
@@ -731,6 +782,21 @@ export class LogPoller {
       if (normalized) deferralCandidates.push({ projectPath: normalized, agentType: nmw.agentType })
     }
 
+    // Devin sessions also match windows deterministically via session lock
+    // PIDs (session_locks/<id>.lock contains the devin process PID).
+    const hasDevinEntries =
+      entries.some((entry) => entry.agentType === 'devin') ||
+      orphanEntries.some((entry) => entry.agentType === 'devin')
+    const devinLockMatches = hasDevinEntries
+      ? matchDevinLocksToWindows(windows)
+      : new Map<string, Session>()
+    const matchForEntry = (entry: LogEntrySnapshot): Session | null =>
+      (entry.agentType === 'devin' && entry.sessionId
+        ? devinLockMatches.get(entry.sessionId)
+        : undefined) ??
+      exactWindowMatches.get(entry.logPath) ??
+      null
+
     const entriesToMatch = getEntriesNeedingMatch(response.entries ?? [], sessions, {
       minTokens: MIN_LOG_TOKENS_FOR_INSERT,
       skipMatchingPatterns: config.skipMatchingPatterns,
@@ -773,7 +839,7 @@ export class LogPoller {
               this.rematchAttemptCache.get(existing.sessionId) ?? 0
             if (Date.now() - lastAttempt > REMATCH_COOLDOWN_MS) {
               this.rematchAttemptCache.set(existing.sessionId, Date.now())
-              const exactMatch = exactWindowMatches.get(entry.logPath) ?? null
+              const exactMatch = matchForEntry(entry)
               if (exactMatch) {
                 const claimed = this.db.claimCurrentWindow(
                   existing.sessionId,
@@ -855,7 +921,7 @@ export class LogPoller {
             const lastAttempt = this.rematchAttemptCache.get(sessionId) ?? 0
             if (Date.now() - lastAttempt > REMATCH_COOLDOWN_MS) {
               this.rematchAttemptCache.set(sessionId, Date.now())
-              const exactMatch = exactWindowMatches.get(entry.logPath) ?? null
+              const exactMatch = matchForEntry(entry)
               if (exactMatch) {
                 const claimed = this.db.claimCurrentWindow(
                   sessionId,
@@ -881,7 +947,7 @@ export class LogPoller {
           continue
         }
 
-        const exactMatch = exactWindowMatches.get(entry.logPath) ?? null
+        const exactMatch = matchForEntry(entry)
         logger.info('log_match_attempt', {
           logPath: entry.logPath,
           windowCount: windows.length,

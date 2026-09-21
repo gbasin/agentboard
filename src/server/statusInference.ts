@@ -29,6 +29,10 @@ export const PERMISSION_PATTERNS: RegExp[] = [
   /approve\s+this\s+(command|change|action)/i,
   // Generic: "allow" / "deny" choice pattern
   /\[allow\].*\[deny\]/i,
+  // Devin CLI: approval menu options
+  /Approve once/i,
+  /Yes, allow once/i,
+  /Auto-approve (edits in workspace dirs|all tools)/i,
   // Generic: "y/n" or "[Y/n]" prompts at end of question
   /\?\s*\[?[yY](es)?\/[nN](o)?\]?\s*$/m,
 ]

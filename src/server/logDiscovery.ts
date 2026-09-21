@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { resolveProjectPath } from './paths'
+import { getDevinLogOutDir } from './devinSync'
 
 const LOG_HEAD_BYTE_LIMIT = 64 * 1024
 const LOG_HEAD_MAX_LIMIT = 1024 * 1024 // 1MB cap for progressive expansion
@@ -72,6 +73,9 @@ export function getLogSearchDirs(): string[] {
     path.join(getClaudeConfigDir(), 'projects'),
     path.join(getCodexHomeDir(), 'sessions'),
     path.join(getPiHomeDir(), 'agent', 'sessions'),
+    // Devin CLI sessions are mirrored from sessions.db into this directory
+    // by devinSync (Devin stores history in SQLite, not JSONL files).
+    getDevinLogOutDir(),
   ]
 }
 
@@ -80,6 +84,7 @@ export function getLogWatchParentDirs(): string[] {
     getClaudeConfigDir(),
     getCodexHomeDir(),
     path.join(getPiHomeDir(), 'agent'),
+    path.dirname(getDevinLogOutDir()),
   ]
 }
 
@@ -113,10 +118,12 @@ export function scanAllLogDirs(): string[] {
   const claudeRoot = path.join(getClaudeConfigDir(), 'projects')
   const codexRoot = path.join(getCodexHomeDir(), 'sessions')
   const piRoot = path.join(getPiHomeDir(), 'agent', 'sessions')
+  const devinRoot = getDevinLogOutDir()
 
   paths.push(...scanDirForJsonl(claudeRoot, 3))
   paths.push(...scanDirForJsonl(codexRoot, 4))
   paths.push(...scanDirForJsonl(piRoot, 4))
+  paths.push(...scanDirForJsonl(devinRoot, 2))
 
   return paths
 }
@@ -183,20 +190,25 @@ export function getLogTimes(
   }
 }
 
-export function inferAgentTypeFromPath(logPath: string): 'claude' | 'codex' | 'pi' | null {
+export function inferAgentTypeFromPath(
+  logPath: string
+): 'claude' | 'codex' | 'pi' | 'devin' | null {
   const normalized = path.resolve(logPath)
   const claudeRoot = path.resolve(getClaudeConfigDir())
   const codexRoot = path.resolve(getCodexHomeDir())
   const piRoot = path.resolve(getPiHomeDir())
+  const devinRoot = path.resolve(getDevinLogOutDir())
 
   if (normalized.startsWith(claudeRoot + path.sep)) return 'claude'
   if (normalized.startsWith(codexRoot + path.sep)) return 'codex'
   if (normalized.startsWith(piRoot + path.sep)) return 'pi'
+  if (normalized.startsWith(devinRoot + path.sep)) return 'devin'
 
   const fallback = logPath.replace(/\\/g, '/')
   if (fallback.includes('/.claude/')) return 'claude'
   if (fallback.includes('/.codex/')) return 'codex'
   if (fallback.includes('/.pi/')) return 'pi'
+  if (fallback.includes('/devin-sessions/')) return 'devin'
   return null
 }
 

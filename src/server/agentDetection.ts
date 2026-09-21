@@ -72,7 +72,7 @@ function unwrapBashLoginWrapper(command: string): string | null {
   return unquoteShellString(rest)
 }
 
-export type AgentFamily = 'claude' | 'codex' | 'pi'
+export type AgentFamily = 'claude' | 'codex' | 'pi' | 'devin'
 
 /** Collapse agent variants onto the log family they write to (claude-rp -> claude). */
 export function agentFamily(agentType: AgentType | null | undefined): AgentFamily | null {
@@ -131,6 +131,9 @@ export function inferAgentType(command: string): AgentType | undefined {
     }
     if (baseName === 'pi') {
       return 'pi'
+    }
+    if (baseName === 'devin' || baseName === 'devin-cli') {
+      return 'devin'
     }
 
     // Found a non-skippable command that isn't a known agent
