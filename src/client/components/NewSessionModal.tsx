@@ -8,6 +8,7 @@ import {
   addYoloFlag,
   commandHasYoloFlag,
   removeYoloFlag,
+  yoloConflict,
   yoloFlagFor,
 } from '@shared/yolo'
 
@@ -63,7 +64,7 @@ export default function NewSessionModal({
   const applyYoloPref = (cmd: string): string => {
     if (!yoloMode) return cmd
     const type = inferAgentType(cmd)
-    return type ? addYoloFlag(cmd, type) : cmd
+    return type && !yoloConflict(cmd, type) ? addYoloFlag(cmd, type) : cmd
   }
 
   useEffect(() => {
@@ -225,11 +226,14 @@ export default function NewSessionModal({
   const yoloChecked = commandAgentType
     ? commandHasYoloFlag(command, commandAgentType)
     : false
+  const yoloConflictReason =
+    commandAgentType && !yoloChecked ? yoloConflict(command, commandAgentType) : null
+  const yoloDisabled = !yoloSupported || yoloConflictReason !== null
   const yoloTooltip = !commandAgentType
     ? 'Enter a supported agent command (claude, codex, grok, devin)'
     : commandAgentType === 'pi'
       ? 'Pi has no permission prompts — nothing to enable'
-      : `Append ${yoloFlagFor(commandAgentType)}`
+      : yoloConflictReason ?? `Append ${yoloFlagFor(commandAgentType)}`
 
   const handleYoloToggle = (checked: boolean) => {
     setYoloMode(checked)
@@ -414,14 +418,14 @@ export default function NewSessionModal({
 
             <label
               className={`mt-2 flex items-center gap-2 text-xs ${
-                yoloSupported ? 'text-secondary' : 'text-muted opacity-60'
+                yoloDisabled ? 'text-muted opacity-60' : 'text-secondary'
               }`}
               title={yoloTooltip}
             >
               <input
                 type="checkbox"
                 checked={yoloChecked}
-                disabled={!yoloSupported}
+                disabled={yoloDisabled}
                 onChange={(event) => handleYoloToggle(event.target.checked)}
               />
               yolo mode — skip permission prompts

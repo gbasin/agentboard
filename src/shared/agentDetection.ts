@@ -89,6 +89,43 @@ export function normalizePaneStartCommand(command: string): string {
   return unwrapped ?? unquoted
 }
 
+function agentTypeFromBaseName(baseName: string): AgentType | undefined {
+  if (baseName === 'claude') return 'claude'
+  if (baseName === 'codex') return 'codex'
+  if (baseName === 'pi') return 'pi'
+  if (baseName === 'devin' || baseName === 'devin-cli') return 'devin'
+  if (baseName === 'grok' || baseName.startsWith('grok-')) return 'grok'
+  return undefined
+}
+
+/**
+ * Find the agent executable token within a command string.
+ * Returns the agent type and the offset just past the token, so callers can
+ * splice flags in right after the executable (before args, subcommands, or a
+ * `--` prompt separator). Skips package runners, env assignments, and flags.
+ */
+export function findAgentToken(
+  command: string
+): { agentType: AgentType; end: number } | undefined {
+  const re = /\S+/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(command))) {
+    const part = m[0].toLowerCase().replace(/^["']+|["']+$/g, '')
+    // Skip common package runners/prefixes
+    if (['npx', 'bunx', 'pnpm', 'yarn', 'env'].includes(part)) continue
+    // Skip environment variable assignments (KEY=value)
+    if (part.includes('=')) continue
+    // Skip flags
+    if (part.startsWith('-')) continue
+
+    const agentType = agentTypeFromBaseName(part.split('/').pop() || part)
+    // Found a non-skippable token: it's either a known agent or a foreign
+    // command, in which case no agent token exists.
+    return agentType ? { agentType, end: m.index + m[0].length } : undefined
+  }
+  return undefined
+}
+
 /**
  * Infer agent type from the pane start command.
  * Handles various invocation patterns:
@@ -104,44 +141,5 @@ export function inferAgentType(command: string): AgentType | undefined {
   }
 
   const normalized = normalizedInput.toLowerCase().trim().replace(/^["']|["']$/g, '')
-  const parts = normalized.split(/\s+/)
-
-  for (const part of parts) {
-    // Skip common package runners/prefixes
-    if (['npx', 'bunx', 'pnpm', 'yarn', 'env'].includes(part)) {
-      continue
-    }
-    // Skip environment variable assignments (KEY=value)
-    if (part.includes('=')) {
-      continue
-    }
-    // Skip flags
-    if (part.startsWith('-')) {
-      continue
-    }
-
-    // Extract base name from path
-    const baseName = part.split('/').pop() || part
-
-    if (baseName === 'claude') {
-      return 'claude'
-    }
-    if (baseName === 'codex') {
-      return 'codex'
-    }
-    if (baseName === 'pi') {
-      return 'pi'
-    }
-    if (baseName === 'devin' || baseName === 'devin-cli') {
-      return 'devin'
-    }
-    if (baseName === 'grok' || baseName.startsWith('grok-')) {
-      return 'grok'
-    }
-
-    // Found a non-skippable command that isn't a known agent
-    break
-  }
-
-  return undefined
+  return findAgentToken(normalized)?.agentType
 }

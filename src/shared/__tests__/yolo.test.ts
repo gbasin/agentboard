@@ -3,6 +3,7 @@ import {
   addYoloFlag,
   commandHasYoloFlag,
   removeYoloFlag,
+  yoloConflict,
   yoloFlagFor,
   yoloFlagForCommand,
 } from '../yolo'
@@ -47,10 +48,28 @@ describe('commandHasYoloFlag', () => {
 })
 
 describe('addYoloFlag', () => {
-  test('appends the flag', () => {
+  test('inserts the flag after the executable', () => {
     expect(addYoloFlag('claude', 'claude')).toBe('claude --dangerously-skip-permissions')
     expect(addYoloFlag('codex', 'codex')).toBe('codex --yolo')
     expect(addYoloFlag(' devin ', 'devin')).toBe('devin --permission-mode dangerous')
+  })
+
+  test('inserts before existing args', () => {
+    expect(addYoloFlag('claude --model opus', 'claude'))
+      .toBe('claude --dangerously-skip-permissions --model opus')
+    expect(addYoloFlag('codex exec "fix tests"', 'codex'))
+      .toBe('codex --yolo exec "fix tests"')
+    expect(addYoloFlag('devin -- write a test', 'devin'))
+      .toBe('devin --permission-mode dangerous -- write a test')
+  })
+
+  test('inserts into wrapped and chained commands', () => {
+    expect(addYoloFlag('env FOO=1 codex', 'codex')).toBe('env FOO=1 codex --yolo')
+    expect(addYoloFlag('npx codex', 'codex')).toBe('npx codex --yolo')
+    expect(addYoloFlag('claude && make', 'claude'))
+      .toBe('claude --dangerously-skip-permissions && make')
+    expect(addYoloFlag('bash -lc \'claude --model opus\'', 'claude'))
+      .toBe('bash -lc \'claude --dangerously-skip-permissions --model opus\'')
   })
 
   test('is idempotent', () => {
@@ -62,6 +81,29 @@ describe('addYoloFlag', () => {
   test('no-op for pi and empty commands', () => {
     expect(addYoloFlag('pi', 'pi')).toBe('pi')
     expect(addYoloFlag('', 'claude')).toBe('')
+  })
+})
+
+describe('yoloConflict', () => {
+  test('flags codex approval/sandbox conflicts', () => {
+    expect(yoloConflict('codex --full-auto', 'codex')).toBe('conflicts with --full-auto')
+    expect(yoloConflict('codex -a never', 'codex')).toBe('conflicts with -a')
+    expect(yoloConflict('codex --ask-for-approval on-request', 'codex'))
+      .toBe('conflicts with --ask-for-approval')
+  })
+
+  test('flags --permission-mode conflicts for claude/grok/devin', () => {
+    expect(yoloConflict('claude --permission-mode acceptEdits', 'claude'))
+      .toBe('conflicts with --permission-mode acceptEdits')
+    expect(yoloConflict('devin --permission-mode=smart', 'devin'))
+      .toBe('conflicts with --permission-mode smart')
+  })
+
+  test('no conflict for clean commands or pi', () => {
+    expect(yoloConflict('codex --search', 'codex')).toBeNull()
+    expect(yoloConflict('claude --model opus', 'claude')).toBeNull()
+    expect(yoloConflict('pi --fast', 'pi')).toBeNull()
+    expect(yoloConflict('codex --yolo', 'codex')).toBeNull()
   })
 })
 

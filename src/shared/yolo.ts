@@ -2,7 +2,13 @@
 // Maps each agent family to the CLI flag that skips permission prompts.
 
 import type { AgentType } from './types'
-import { agentFamily, inferAgentType, type AgentFamily } from './agentDetection'
+import {
+  agentFamily,
+  findAgentToken,
+  inferAgentType,
+  normalizePaneStartCommand,
+  type AgentFamily,
+} from './agentDetection'
 
 /** Canonical flag appended when yolo mode is enabled. null = nothing to append. */
 export const YOLO_FLAGS: Record<AgentFamily, string | null> = {
@@ -51,13 +57,61 @@ export function commandHasYoloFlag(command: string, agentType?: AgentType | null
   )
 }
 
-/** Append the yolo flag for the given agent if not already present. */
+function insertAfterAgentToken(command: string, flag: string): string | null {
+  const token = findAgentToken(command)
+  if (!token) return null
+  return `${command.slice(0, token.end)} ${flag}${command.slice(token.end)}`
+}
+
+/**
+ * Insert the yolo flag right after the agent executable token so it plays
+ * nicely with other args: `claude --model x` -> `claude <flag> --model x`,
+ * `devin -- prompt` -> `devin <flag> -- prompt`, `claude && make` ->
+ * `claude <flag> && make`.
+ */
 export function addYoloFlag(command: string, agentType: AgentType): string {
   const flag = yoloFlagFor(agentType)
   if (!flag) return command
   const trimmed = command.trim()
   if (!trimmed || commandHasYoloFlag(trimmed, agentType)) return trimmed
+
+  const direct = insertAfterAgentToken(trimmed, flag)
+  if (direct) return direct
+
+  // Wrapped/quoted form (e.g. bash -lc 'claude --model x'): rebuild the inner
+  // command with the flag and re-wrap it in a bash login call.
+  const inner = normalizePaneStartCommand(trimmed)
+  if (inner && inner !== trimmed) {
+    const inserted = insertAfterAgentToken(inner, flag)
+    if (inserted) {
+      return `bash -lc '${inserted.replace(/'/g, `'\\''`)}'`
+    }
+  }
+
   return `${trimmed} ${flag}`
+}
+
+/**
+ * Reason the yolo flag can't be added to this command, or null when safe.
+ * Codex's --yolo conflicts with -a/--ask-for-approval and --full-auto;
+ * a pre-existing --permission-mode with a different value conflicts for
+ * claude/grok/devin.
+ */
+export function yoloConflict(command: string, agentType: AgentType): string | null {
+  const family = agentFamily(agentType)
+  if (!family || commandHasYoloFlag(command, agentType)) return null
+
+  if (family === 'codex') {
+    const m = /(^|\s)(--full-auto|--ask-for-approval|-a)(?=\s|=|$)/.exec(command)
+    if (m) return `conflicts with ${m[2]}`
+  }
+
+  const pm = /(^|\s)--permission-mode(?:\s+|=)(\S+)/.exec(command)
+  if (pm && family !== 'codex') {
+    return `conflicts with --permission-mode ${pm[2]}`
+  }
+
+  return null
 }
 
 /** Remove any yolo flag aliases for the given agent from the command. */
