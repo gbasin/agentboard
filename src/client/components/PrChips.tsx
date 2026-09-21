@@ -125,7 +125,7 @@ function PrChip({ pr }: { pr: SessionPullRequest }) {
           // Anchor above the chip; clamp so the card stays in the viewport.
           setPos({
             left: Math.min(r.left, window.innerWidth - 270),
-            bottom: window.innerHeight - r.top + 4,
+            bottom: window.innerHeight - r.top,
           })
         }
         setHover(true)
@@ -151,6 +151,8 @@ function PrChip({ pr }: { pr: SessionPullRequest }) {
           <div
             className="fixed z-[100] w-64 rounded-md border border-border bg-elevated p-2 text-left shadow-lg"
             style={{ left: pos.left, bottom: pos.bottom }}
+            onMouseEnter={() => setHover(true)}
+            onMouseLeave={() => setHover(false)}
           >
           <div className="flex items-center gap-1.5 text-[11px]">
             <span className={stateColor(info) + ' inline-block h-1.5 w-1.5 rounded-full'} />
@@ -219,7 +221,7 @@ function OverflowChip({ prs }: { prs: SessionPullRequest[] }) {
         if (r) {
           setPos({
             left: Math.min(r.left, window.innerWidth - 270),
-            bottom: window.innerHeight - r.top + 4,
+            bottom: window.innerHeight - r.top,
           })
         }
         setHover(true)
@@ -238,6 +240,10 @@ function OverflowChip({ prs }: { prs: SessionPullRequest[] }) {
           <div
             className="fixed z-[100] w-56 rounded-md border border-border bg-elevated p-2 text-left shadow-lg"
             style={{ left: pos.left, bottom: pos.bottom }}
+            // Keep the card alive while the pointer is on it so its rows
+            // are actually reachable/clickable.
+            onMouseEnter={() => setHover(true)}
+            onMouseLeave={() => setHover(false)}
           >
             <div className="text-[11px] text-muted">
               {prs.length} more PR{prs.length === 1 ? '' : 's'}
