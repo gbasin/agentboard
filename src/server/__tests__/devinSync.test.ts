@@ -112,8 +112,8 @@ describe('syncDevinSessions', () => {
 
     const logPath = path.join(outDir, 'flawless-bobolink.jsonl')
     const lines = readLines(logPath)
-    // meta line + 3 kept messages (tool role filtered out)
-    expect(lines).toHaveLength(4)
+    // meta line + 4 kept messages
+    expect(lines).toHaveLength(5)
     expect(lines[0].sessionId).toBe('flawless-bobolink')
     expect(lines[0].cwd).toBe('/Users/x/proj')
     expect(lines[0].agent).toBe('devin')
@@ -122,6 +122,83 @@ describe('syncDevinSessions', () => {
     expect((lines[2].message as { content: string }).content).toBe(
       'hello devin'
     )
+  })
+
+  test('mirrors assistant tool_calls and tool results with call ids', () => {
+    const db = createDevinDb()
+    addSession(db, 's-tools', '/p', null)
+    db.prepare(
+      `INSERT INTO message_nodes (session_id, node_id, chat_message, created_at)
+       VALUES ('s-tools', 0, $chat, 1700000050)`
+    ).run({
+      $chat: JSON.stringify({
+        role: 'assistant',
+        content: '',
+        tool_calls: [
+          {
+            id: 'exec_0#abc',
+            name: 'exec',
+            arguments: { command: 'gh pr create --title x' },
+            index: 0,
+            kind: 'function',
+          },
+        ],
+      }),
+    })
+    db.prepare(
+      `INSERT INTO message_nodes (session_id, node_id, chat_message, created_at)
+       VALUES ('s-tools', 0, $chat, 1700000051)`
+    ).run({
+      $chat: JSON.stringify({
+        role: 'tool',
+        tool_call_id: 'exec_0#abc',
+        content: 'https://github.com/o/r/pull/1',
+      }),
+    })
+    db.close()
+
+    syncDevinSessions(outDir)
+    const lines = readLines(path.join(outDir, 's-tools.jsonl'))
+    expect(lines).toHaveLength(3)
+
+    const callMsg = lines[1].message as {
+      toolCalls?: Array<{ id: string; name: string; arguments: unknown }>
+    }
+    expect(callMsg.toolCalls).toEqual([
+      {
+        id: 'exec_0#abc',
+        name: 'exec',
+        arguments: { command: 'gh pr create --title x' },
+      },
+    ])
+
+    const toolMsg = lines[2].message as {
+      role: string
+      content: string
+      toolCallId?: string
+    }
+    expect(toolMsg.role).toBe('tool')
+    expect(toolMsg.toolCallId).toBe('exec_0#abc')
+    expect(toolMsg.content).toContain('pull/1')
+  })
+
+  test('rewrites existing mirrors when format version changes', () => {
+    const db = createDevinDb()
+    addSession(db, 's-fmt', '/p', null)
+    addMessage(db, 's-fmt', 'user', 'hello')
+    db.close()
+
+    syncDevinSessions(outDir)
+    const logPath = path.join(outDir, 's-fmt.jsonl')
+    expect(readLines(logPath)).toHaveLength(2)
+
+    // Simulate a pre-format-version sync state: next sync must rewrite.
+    const statePath = path.join(outDir, '.sync-state.json')
+    fs.writeFileSync(statePath, fs.readFileSync(statePath, 'utf8').replace('"formatVersion":2', '"formatVersion":1'))
+
+    const result = syncDevinSessions(outDir)
+    expect(result?.rewritten).toBe(1)
+    expect(result?.appended).toBe(0)
   })
 
   test('appends new messages on subsequent syncs', () => {

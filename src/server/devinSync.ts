@@ -18,7 +18,11 @@ import { Database as SQLiteDatabase } from 'bun:sqlite'
 import { logger } from './logger'
 
 const SYNC_STATE_FILE = '.sync-state.json'
-const KEPT_ROLES = new Set(['user', 'assistant', 'system'])
+const KEPT_ROLES = new Set(['user', 'assistant', 'system', 'tool'])
+
+// Bump when the mirrored line format changes; forces a one-time full
+// rewrite so existing mirrors gain the new fields.
+const MIRROR_FORMAT_VERSION = 2
 
 export function getDevinCliDir(): string {
   const override = process.env.DEVIN_CLI_DIR
@@ -66,6 +70,7 @@ interface DevinSessionSyncState {
 }
 
 interface SyncState {
+  formatVersion?: number
   sessions: Record<string, DevinSessionSyncState>
 }
 
@@ -115,14 +120,37 @@ function messageToLine(
   if (!KEPT_ROLES.has(role)) return null
 
   const content = chat.content
-  const hasToolCalls = Array.isArray(chat.tool_calls) && chat.tool_calls.length > 0
+  const toolCalls = Array.isArray(chat.tool_calls)
+    ? chat.tool_calls
+        .filter(
+          (call): call is Record<string, unknown> =>
+            typeof call === 'object' && call !== null
+        )
+        .map((call) => ({
+          id: typeof call.id === 'string' ? call.id : '',
+          name:
+            typeof call.name === 'string'
+              ? call.name
+              : typeof (call.function as Record<string, unknown> | undefined)?.name === 'string'
+                ? (call.function as Record<string, unknown>).name
+                : '',
+          arguments: call.arguments ?? (call.function as Record<string, unknown> | undefined)?.arguments ?? null,
+        }))
+        .filter((call) => call.id || call.name)
+    : []
   const hasContent =
     typeof content === 'string'
       ? content.trim().length > 0
       : Array.isArray(content)
         ? content.length > 0
         : Boolean(content)
-  if (!hasContent && !hasToolCalls) return null
+  if (!hasContent && toolCalls.length === 0) return null
+
+  const message: Record<string, unknown> = { role, content: content ?? '' }
+  if (toolCalls.length > 0) message.toolCalls = toolCalls
+  if (role === 'tool' && typeof chat.tool_call_id === 'string') {
+    message.toolCallId = chat.tool_call_id
+  }
 
   return JSON.stringify({
     type: role,
@@ -130,7 +158,7 @@ function messageToLine(
     sessionId: session.id,
     cwd: session.working_directory,
     timestamp: unixSecondsToIso(row.created_at),
-    message: { role, content: content ?? '' },
+    message,
   })
 }
 
@@ -193,7 +221,13 @@ export function syncDevinSessions(outDir = getDevinLogOutDir()): DevinSyncResult
 
     fs.mkdirSync(outDir, { recursive: true })
     const state = loadSyncState(outDir)
-    const nextState: SyncState = { sessions: {} }
+    if (state.formatVersion !== MIRROR_FORMAT_VERSION) {
+      state.sessions = {}
+    }
+    const nextState: SyncState = {
+      formatVersion: MIRROR_FORMAT_VERSION,
+      sessions: {},
+    }
 
     const rowsStmt = db.prepare(
       `SELECT row_id, chat_message, created_at FROM message_nodes
