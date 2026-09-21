@@ -52,14 +52,14 @@ export interface CommandPreset {
   label: string
   command: string
   isBuiltIn: boolean
-  agentType?: 'claude' | 'codex' | 'pi' | 'devin'
+  agentType?: 'claude' | 'codex' | 'pi' | 'devin' | 'grok'
 }
 
 export const DEFAULT_PRESETS: CommandPreset[] = [
   { id: 'claude', label: 'Claude', command: 'claude', isBuiltIn: true, agentType: 'claude' },
   { id: 'codex', label: 'Codex', command: 'codex', isBuiltIn: true, agentType: 'codex' },
   { id: 'pi', label: 'Pi', command: 'pi', isBuiltIn: true, agentType: 'pi' },
-  { id: 'grok', label: 'Grok', command: 'grok', isBuiltIn: true },
+  { id: 'grok', label: 'Grok', command: 'grok', isBuiltIn: true, agentType: 'grok' },
   { id: 'devin', label: 'Devin', command: 'devin', isBuiltIn: true, agentType: 'devin' },
 ]
 
@@ -72,7 +72,7 @@ export function isValidPreset(p: unknown): p is CommandPreset {
     typeof obj.label === 'string' && obj.label.trim().length >= 1 && obj.label.length <= 64 &&
     typeof obj.command === 'string' && obj.command.trim().length >= 1 && obj.command.length <= 1024 &&
     typeof obj.isBuiltIn === 'boolean' &&
-    (obj.agentType === undefined || obj.agentType === 'claude' || obj.agentType === 'codex' || obj.agentType === 'pi' || obj.agentType === 'devin')
+    (obj.agentType === undefined || obj.agentType === 'claude' || obj.agentType === 'codex' || obj.agentType === 'pi' || obj.agentType === 'devin' || obj.agentType === 'grok')
   )
 }
 
@@ -300,7 +300,7 @@ export const useSettingsStore = create<SettingsState>()(
             label: p.label as string,
             command: command || 'claude',
             isBuiltIn: p.isBuiltIn as boolean,
-            agentType: p.agentType as 'claude' | 'codex' | 'pi' | 'devin' | undefined,
+            agentType: p.agentType as 'claude' | 'codex' | 'pi' | 'devin' | 'grok' | undefined,
           }
         }
 

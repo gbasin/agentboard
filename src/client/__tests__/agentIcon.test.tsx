@@ -27,7 +27,7 @@ describe('AgentIcon', () => {
       <AgentIcon agentType="claude" className="icon" />
     )
 
-    const icon = renderer.root.findByProps({ 'aria-label': 'Anthropic' })
+    const icon = renderer.root.findByProps({ viewBox: '0 0 92.2 92.2' })
     expect(icon.props.className).toBe('icon')
   })
 
@@ -36,7 +36,7 @@ describe('AgentIcon', () => {
       <AgentIcon agentType="claude-rp" className="icon" />
     )
 
-    const icon = renderer.root.findByProps({ 'aria-label': 'Anthropic' })
+    const icon = renderer.root.findByProps({ viewBox: '0 0 92.2 92.2' })
     expect(icon.props.className).toBe('icon')
   })
 
@@ -45,7 +45,16 @@ describe('AgentIcon', () => {
       <AgentIcon command="Codex --help" />
     )
 
-    expect(renderer.root.findByProps({ 'aria-label': 'OpenAI' })).toBeTruthy()
+    expect(renderer.root.findByProps({ viewBox: '-1 -1 26 26' })).toBeTruthy()
+  })
+
+  test('renders Grok icon for grok sessions', () => {
+    const renderer = TestRenderer.create(
+      <AgentIcon agentType="grok" className="icon" />
+    )
+
+    const icon = renderer.root.findByProps({ viewBox: '0 0 512 512' })
+    expect(icon.props.className).toBe('icon')
   })
 
   test('falls back to terminal icon for unknown agent', () => {

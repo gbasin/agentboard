@@ -347,7 +347,7 @@ describe('preset migration', () => {
 
     expect(commandPresets).toEqual([
       ...existing,
-      { id: 'grok', label: 'Grok', command: 'grok', isBuiltIn: true },
+      { id: 'grok', label: 'Grok', command: 'grok', isBuiltIn: true, agentType: 'grok' },
       { id: 'devin', label: 'Devin', command: 'devin', isBuiltIn: true, agentType: 'devin' },
     ])
     expect(defaultPresetId).toBe(custom.id)

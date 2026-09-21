@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import path from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { normalizeAgentLogEntry } from '../shared/eventTaxonomy'
 import type { AgentType, Session } from '../shared/types'
@@ -346,6 +347,9 @@ const TOOL_NOTIFICATION_MARKERS = [
   // path in logPoller treats any pre-fix cached `<command-message>...` payload
   // as stale and re-runs extraction.
   '<command-message>',
+  // Grok prepends an environment block (<user_info>OS Version: ...</user_info>)
+  // as a user entry; it's harness context, not a real message.
+  '<user_info>',
 ] as const
 
 
@@ -605,6 +609,19 @@ function hasMessageInValidUserContextProgressive(
   return false
 }
 
+/**
+ * Grok session directories hold sibling telemetry files (events.jsonl,
+ * updates.jsonl, rewind_points.jsonl) that echo the prompt text; only
+ * chat_history.jsonl is a transcript.
+ */
+function isGrokTelemetryFile(logPath: string): boolean {
+  if (path.basename(logPath) === 'chat_history.jsonl') return false
+  const normalized = logPath.replace(/\\/g, '/')
+  if (normalized.includes('/.grok/')) return true
+  const grokHome = process.env.GROK_HOME
+  return !!grokHome && normalized.startsWith(grokHome.replace(/\\/g, '/') + '/')
+}
+
 export function findLogsWithExactMessage(
   userMessage: string,
   logDirs: string | string[],
@@ -659,7 +676,9 @@ export function findLogsWithExactMessage(
     }
   }
 
-  const uniqueMatches = Array.from(new Set(allMatches))
+  const uniqueMatches = Array.from(new Set(allMatches)).filter(
+    (logPath) => !isGrokTelemetryFile(logPath)
+  )
 
   // Post-filter to exclude tool_result false positives
   // Use progressive tail reading to handle large logs with lots of assistant output
@@ -726,7 +745,9 @@ export async function findLogsWithExactMessageAsync(
     }
   }
 
-  const uniqueMatches = Array.from(new Set(allMatches))
+  const uniqueMatches = Array.from(new Set(allMatches)).filter(
+    (logPath) => !isGrokTelemetryFile(logPath)
+  )
   const validMatches = uniqueMatches.filter((logPath) =>
     hasMessageInValidUserContextProgressive(
       logPath,
@@ -1218,6 +1239,10 @@ function extractUserFromPrompt(line: string): string {
   let cleaned = stripAnsi(line).trim()
   cleaned = cleaned.replace(TMUX_PROMPT_PREFIX, '').trim()
   cleaned = cleaned.replace(/^›\s*/, '').trim()
+  // Grok's TUI renders a right-aligned clock on the submitted prompt line
+  // (e.g. "fix the bug         3:21 PM"). Require 2+ spaces of padding so a
+  // prompt that itself ends in a time ("remind me at 3:30 PM") survives.
+  cleaned = cleaned.replace(/[ \t]{2,}\d{1,2}:\d{2}\s*(?:AM|PM)\s*$/i, '').trim()
   cleaned = cleaned.replace(/\s*↵\s*send\s*$/i, '').trim()
   cleaned = cleaned.replace(TMUX_UI_GLYPH_PATTERN, ' ')
   cleaned = cleaned.replace(/\s+/g, ' ').trim()
@@ -1684,6 +1709,9 @@ function processUserMessageText(text: string): string | null {
   // "/cmd args" form before the generic marker filter would discard them.
   const invocation = extractCommandInvocation(cleaned)
   if (invocation) return invocation
+  // Grok wraps real user prompts in <user_query>...</user_query>.
+  const userQuery = cleaned.match(/<user_query>\s*([\s\S]*?)\s*<\/user_query>/i)?.[1]?.trim()
+  if (userQuery) return userQuery
   if (isToolNotificationText(cleaned)) return null
   const action = extractActionFromUserAction(cleaned)
   if (action) return action
@@ -1801,11 +1829,14 @@ export function extractLastEntryTimestamp(
   for (let i = lines.length - 1; i >= 0; i--) {
     try {
       const entry = JSON.parse(lines[i])
-      if (entry && typeof entry.timestamp === 'string') {
-        // Validate timestamp is parseable before returning
-        if (!Number.isNaN(Date.parse(entry.timestamp))) {
-          return entry.timestamp
-        }
+      // Grok writes `ts` instead of `timestamp`.
+      const ts = entry && typeof entry.timestamp === 'string'
+        ? entry.timestamp
+        : entry && typeof entry.ts === 'string'
+          ? entry.ts
+          : null
+      if (ts && !Number.isNaN(Date.parse(ts))) {
+        return ts
       }
     } catch {
       // Skip malformed lines

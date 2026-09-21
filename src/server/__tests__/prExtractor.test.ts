@@ -252,6 +252,48 @@ describe('extractPullRequests', () => {
     expect(extractPullRequests(content).map((p) => p.number)).toEqual([66])
   })
 
+  test('works on grok tool_calls/tool_result entries', () => {
+    const content = [
+      JSON.stringify({
+        type: 'assistant',
+        model_fingerprint: 'fp',
+        tool_calls: [
+          {
+            id: 'call-gk1',
+            name: 'shell',
+            arguments: '{"command":"gh pr create --fill"}',
+          },
+        ],
+      }),
+      JSON.stringify({
+        type: 'tool_result',
+        tool_call_id: 'call-gk1',
+        content: 'https://github.com/o/r/pull/77',
+      }),
+    ].join('\n')
+
+    expect(extractPullRequests(content).map((p) => p.number)).toEqual([77])
+  })
+
+  test('does not attribute grok URLs from a different tool call', () => {
+    const content = [
+      JSON.stringify({
+        type: 'assistant',
+        model_fingerprint: 'fp',
+        tool_calls: [
+          { id: 'call-gk2', name: 'shell', arguments: '{"command":"gh pr list"}' },
+        ],
+      }),
+      JSON.stringify({
+        type: 'tool_result',
+        tool_call_id: 'call-gk2',
+        content: 'https://github.com/o/r/pull/8',
+      }),
+    ].join('\n')
+
+    expect(extractPullRequests(content)).toEqual([])
+  })
+
   test('does not attribute devin URLs from a different tool call', () => {
     const content = [
       JSON.stringify({

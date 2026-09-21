@@ -37,6 +37,7 @@ const originalCodex = process.env.CODEX_HOME
 const originalPi = process.env.PI_HOME
 const originalAgentboardData = process.env.AGENTBOARD_DATA_DIR
 const originalDevinCliDir = process.env.DEVIN_CLI_DIR
+const originalGrok = process.env.GROK_HOME
 
 function setTmuxOutput(target: string, content: string) {
   tmuxOutputs.set(target, content)
@@ -229,6 +230,7 @@ beforeEach(async () => {
   process.env.PI_HOME = path.join(tempRoot, 'pi')
   process.env.AGENTBOARD_DATA_DIR = path.join(tempRoot, 'agentboard')
   process.env.DEVIN_CLI_DIR = path.join(tempRoot, 'devin')
+  process.env.GROK_HOME = path.join(tempRoot, 'grok')
 
   bunAny.spawnSync = ((args: string[]) => {
     const tmuxSubcommand = args[1] === '-u' ? args[2] : args[1]
@@ -266,6 +268,8 @@ afterEach(async () => {
   else delete process.env.AGENTBOARD_DATA_DIR
   if (originalDevinCliDir) process.env.DEVIN_CLI_DIR = originalDevinCliDir
   else delete process.env.DEVIN_CLI_DIR
+  if (originalGrok) process.env.GROK_HOME = originalGrok
+  else delete process.env.GROK_HOME
   await fs.rm(tempRoot, { recursive: true, force: true })
 })
 

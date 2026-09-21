@@ -230,4 +230,60 @@ describe('eventTaxonomy', () => {
       },
     ])
   })
+  test('normalizes Grok user/assistant entries and tags family as grok', () => {
+    const userEvents = normalizeAgentLogEntry({
+      type: 'user',
+      prompt_index: 0,
+      content: [{ type: 'text', text: '<user_query>list the files</user_query>' }],
+    })
+    expect(userEvents).toEqual([
+      {
+        kind: 'message',
+        role: 'user',
+        text: '<user_query>list the files</user_query>',
+        source: { family: 'grok', rawType: 'user' },
+      },
+    ])
+
+    const assistantEvents = normalizeAgentLogEntry({
+      type: 'assistant',
+      model_id: 'grok-4.7',
+      model_fingerprint: 'fp',
+      content: 'Here are the files.',
+    })
+    expect(assistantEvents).toEqual([
+      {
+        kind: 'message',
+        role: 'assistant',
+        text: 'Here are the files.',
+        source: { family: 'grok', rawType: 'assistant' },
+      },
+    ])
+  })
+
+  test('normalizes Grok tool_calls arrays as tool_call events', () => {
+    const events = normalizeAgentLogEntry({
+      type: 'assistant',
+      model_fingerprint: 'fp',
+      tool_calls: [
+        { id: 'call-1', name: 'list_dir', arguments: '{"target_directory":"/tmp"}' },
+      ],
+    })
+    expect(events).toContainEqual({
+      kind: 'tool_call',
+      role: 'assistant',
+      text: '[Tool: list_dir]',
+      source: { family: 'grok', rawType: 'assistant' },
+    })
+  })
+
+  test('skips Grok synthetic system-reminder entries', () => {
+    expect(
+      normalizeAgentLogEntry({
+        type: 'user',
+        synthetic_reason: 'skills',
+        content: [{ type: 'text', text: '<system-reminder>skills...</system-reminder>' }],
+      })
+    ).toEqual([])
+  })
 })

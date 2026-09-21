@@ -43,6 +43,7 @@ const originalCodexHome = process.env.CODEX_HOME
 const originalPiHome = process.env.PI_HOME
 const originalAgentboardDataDir = process.env.AGENTBOARD_DATA_DIR
 const originalDevinCliDir = process.env.DEVIN_CLI_DIR
+const originalGrokHome = process.env.GROK_HOME
 
 let tempRoot = ''
 let claudeConfigDir = ''
@@ -57,6 +58,7 @@ beforeEach(() => {
   process.env.PI_HOME = path.join(tempRoot, 'pi')
   process.env.AGENTBOARD_DATA_DIR = path.join(tempRoot, 'agentboard-data')
   process.env.DEVIN_CLI_DIR = path.join(tempRoot, 'devin')
+  process.env.GROK_HOME = path.join(tempRoot, 'grok')
 })
 
 afterEach(() => {
@@ -84,6 +86,11 @@ afterEach(() => {
     delete process.env.DEVIN_CLI_DIR
   } else {
     process.env.DEVIN_CLI_DIR = originalDevinCliDir
+  }
+  if (originalGrokHome === undefined) {
+    delete process.env.GROK_HOME
+  } else {
+    process.env.GROK_HOME = originalGrokHome
   }
   fs.rmSync(tempRoot, { recursive: true, force: true })
 })

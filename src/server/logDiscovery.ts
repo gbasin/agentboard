@@ -68,6 +68,15 @@ function getPiHomeDir(): string {
   return path.join(getHomeDir(), '.pi')
 }
 
+function getGrokHomeDir(): string {
+  const override = process.env.GROK_HOME
+  if (override && override.trim()) {
+    const normalized = normalizeProjectPath(override)
+    return normalized || override.trim()
+  }
+  return path.join(getHomeDir(), '.grok')
+}
+
 export function getLogSearchDirs(): string[] {
   return [
     path.join(getClaudeConfigDir(), 'projects'),
@@ -76,6 +85,7 @@ export function getLogSearchDirs(): string[] {
     // Devin CLI sessions are mirrored from sessions.db into this directory
     // by devinSync (Devin stores history in SQLite, not JSONL files).
     getDevinLogOutDir(),
+    path.join(getGrokHomeDir(), 'sessions'),
   ]
 }
 
@@ -85,6 +95,7 @@ export function getLogWatchParentDirs(): string[] {
     getCodexHomeDir(),
     path.join(getPiHomeDir(), 'agent'),
     path.dirname(getDevinLogOutDir()),
+    getGrokHomeDir(),
   ]
 }
 
@@ -119,16 +130,45 @@ export function scanAllLogDirs(): string[] {
   const codexRoot = path.join(getCodexHomeDir(), 'sessions')
   const piRoot = path.join(getPiHomeDir(), 'agent', 'sessions')
   const devinRoot = getDevinLogOutDir()
+  const grokRoot = path.join(getGrokHomeDir(), 'sessions')
 
   paths.push(...scanDirForJsonl(claudeRoot, 3))
   paths.push(...scanDirForJsonl(codexRoot, 4))
   paths.push(...scanDirForJsonl(piRoot, 4))
   paths.push(...scanDirForJsonl(devinRoot, 2))
+  // Grok Build writes sessions/<encoded-cwd>/<session-id>/chat_history.jsonl
+  // alongside sibling telemetry files (events.jsonl, updates.jsonl, ...) that
+  // are not transcripts, so only the transcript file is collected.
+  paths.push(...scanDirForJsonl(grokRoot, 3, 'chat_history.jsonl'))
 
   return paths
 }
 
+/**
+ * Grok transcripts live at sessions/<encoded-cwd>/<session-id>/chat_history.jsonl
+ * and carry no session-id field, so both are derived from the path.
+ */
+function grokSessionIdFromPath(logPath: string): string | null {
+  const sessionDir = path.basename(path.dirname(logPath))
+  return sessionDir || null
+}
+
+function grokProjectPathFromPath(logPath: string): string | null {
+  const encodedCwd = path.basename(path.dirname(path.dirname(logPath)))
+  if (!encodedCwd) return null
+  try {
+    const decoded = decodeURIComponent(encodedCwd)
+    return normalizeProjectPath(decoded) || null
+  } catch {
+    return null
+  }
+}
+
 export function extractSessionId(logPath: string): string | null {
+  if (inferAgentTypeFromPath(logPath) === 'grok') {
+    return grokSessionIdFromPath(logPath)
+  }
+
   const entries = parseLogHeadEntries(logPath)
 
   for (const entry of entries) {
@@ -152,6 +192,10 @@ export function extractSlug(logPath: string): string | null {
 }
 
 export function extractProjectPath(logPath: string): string | null {
+  if (inferAgentTypeFromPath(logPath) === 'grok') {
+    return grokProjectPathFromPath(logPath)
+  }
+
   const entries = parseLogHeadEntries(logPath)
 
   for (const entry of entries) {
@@ -192,27 +236,30 @@ export function getLogTimes(
 
 export function inferAgentTypeFromPath(
   logPath: string
-): 'claude' | 'codex' | 'pi' | 'devin' | null {
+): 'claude' | 'codex' | 'pi' | 'devin' | 'grok' | null {
   const normalized = path.resolve(logPath)
   const claudeRoot = path.resolve(getClaudeConfigDir())
   const codexRoot = path.resolve(getCodexHomeDir())
   const piRoot = path.resolve(getPiHomeDir())
   const devinRoot = path.resolve(getDevinLogOutDir())
+  const grokRoot = path.resolve(getGrokHomeDir())
 
   if (normalized.startsWith(claudeRoot + path.sep)) return 'claude'
   if (normalized.startsWith(codexRoot + path.sep)) return 'codex'
   if (normalized.startsWith(piRoot + path.sep)) return 'pi'
   if (normalized.startsWith(devinRoot + path.sep)) return 'devin'
+  if (normalized.startsWith(grokRoot + path.sep)) return 'grok'
 
   const fallback = logPath.replace(/\\/g, '/')
   if (fallback.includes('/.claude/')) return 'claude'
   if (fallback.includes('/.codex/')) return 'codex'
   if (fallback.includes('/.pi/')) return 'pi'
   if (fallback.includes('/devin-sessions/')) return 'devin'
+  if (fallback.includes('/.grok/')) return 'grok'
   return null
 }
 
-function scanDirForJsonl(root: string, maxDepth: number): string[] {
+function scanDirForJsonl(root: string, maxDepth: number, fileName?: string): string[] {
   if (!root) return []
   if (!fs.existsSync(root)) return []
 
@@ -247,7 +294,11 @@ function scanDirForJsonl(root: string, maxDepth: number): string[] {
         continue
       }
 
-      if (entry.isFile() && entry.name.endsWith('.jsonl')) {
+      if (
+        entry.isFile() &&
+        entry.name.endsWith('.jsonl') &&
+        (!fileName || entry.name === fileName)
+      ) {
         results.push(fullPath)
       }
     }

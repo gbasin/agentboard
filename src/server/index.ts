@@ -3349,6 +3349,9 @@ function getResumeCommandTemplate(agentType: AgentType): string {
   if (agentType === 'devin') {
     return config.devinResumeCmd
   }
+  if (agentType === 'grok') {
+    return config.grokResumeCmd
+  }
   return config.codexResumeCmd
 }
 

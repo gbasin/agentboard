@@ -34,7 +34,7 @@ const GH_PR_CREATE_RE =
 // A `gh pr create` mention only counts when the line is a tool-call entry
 // (or a devin mirrored log, where tool calls aren't recorded at all).
 const TOOL_CALL_LINE_RE =
-  /"tool_use"|"function_call"|"custom_tool_call"|"toolCall"|"agent":"devin"/
+  /"tool_use"|"function_call"|"custom_tool_call"|"toolCall"|"tool_calls"|"agent":"devin"/
 const PR_URL_RE =
   /https:\/\/github\.com\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\/pull\/(\d+)/g
 // Result markers only — "call_id" alone also appears on function_call lines.
@@ -137,6 +137,23 @@ function extractToolCallIds(line: string): string[] | null {
     for (const call of toolCalls) {
       if (!call || typeof call.id !== 'string' || !call.id) continue
       const args = call.arguments
+      const argsText =
+        typeof args === 'string' ? args : JSON.stringify(args ?? '')
+      if (GH_PR_CREATE_RE.test(argsText)) {
+        ids.push(call.id)
+      }
+    }
+  }
+
+  // Grok: top-level tool_calls[] entries of shape {id, name, arguments}
+  // (arguments is a JSON string; results arrive as type 'tool_result' lines
+  // carrying tool_call_id).
+  const grokToolCalls = entry.tool_calls
+  if (Array.isArray(grokToolCalls)) {
+    recognized = true
+    for (const call of grokToolCalls) {
+      if (!call || typeof call.id !== 'string' || !call.id) continue
+      const args = (call as Record<string, unknown>).arguments
       const argsText =
         typeof args === 'string' ? args : JSON.stringify(args ?? '')
       if (GH_PR_CREATE_RE.test(argsText)) {
