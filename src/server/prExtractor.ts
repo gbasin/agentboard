@@ -21,7 +21,10 @@ const PR_URL_LOOKAHEAD_LINES = 10
 const PENDING_ID_TTL_LINES = 2000
 const MAX_PENDING_IDS = 100
 const READ_CHUNK_BYTES = 4 * 1024 * 1024
-const MAX_CACHE_ENTRIES = 500
+// Must exceed the number of scanned log paths or FIFO eviction thrashes:
+// the dormant-session sweep touches every path each cycle, so once paths >
+// cap, evicted files get fully re-scanned every refresh.
+const MAX_CACHE_ENTRIES = 5000
 
 // Separators cover both `gh pr create` shell text and JSON-escaped argv
 // arrays like ["gh","pr","create"] (which appear as gh\",\"pr\",\"create).
