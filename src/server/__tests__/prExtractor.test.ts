@@ -221,7 +221,65 @@ describe('extractPullRequests', () => {
     expect(extractPullRequests(content)).toEqual([])
   })
 
-  test('works on devin mirrored logs via window fallback', () => {
+  test('works on devin mirrored toolCalls/tool results', () => {
+    const content = [
+      JSON.stringify({
+        type: 'assistant',
+        agent: 'devin',
+        message: {
+          role: 'assistant',
+          content: '',
+          toolCalls: [
+            {
+              id: 'call_dv1',
+              name: 'shell',
+              arguments: '{"command":"gh pr create --fill"}',
+            },
+          ],
+        },
+      }),
+      JSON.stringify({
+        type: 'tool',
+        agent: 'devin',
+        message: {
+          role: 'tool',
+          toolCallId: 'call_dv1',
+          content: 'https://github.com/o/r/pull/66',
+        },
+      }),
+    ].join('\n')
+
+    expect(extractPullRequests(content).map((p) => p.number)).toEqual([66])
+  })
+
+  test('does not attribute devin URLs from a different tool call', () => {
+    const content = [
+      JSON.stringify({
+        type: 'assistant',
+        agent: 'devin',
+        message: {
+          role: 'assistant',
+          content: '',
+          toolCalls: [
+            { id: 'call_dv2', name: 'shell', arguments: 'gh pr list' },
+          ],
+        },
+      }),
+      JSON.stringify({
+        type: 'tool',
+        agent: 'devin',
+        message: {
+          role: 'tool',
+          toolCallId: 'call_dv2',
+          content: 'https://github.com/o/r/pull/7',
+        },
+      }),
+    ].join('\n')
+
+    expect(extractPullRequests(content)).toEqual([])
+  })
+
+  test('works on legacy devin mirrored logs via window fallback', () => {
     const content = [
       JSON.stringify({
         type: 'assistant',

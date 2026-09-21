@@ -125,6 +125,23 @@ function extractToolCallIds(line: string): string[] | null {
     }
   }
 
+  // Devin: message.toolCalls[] entries of shape {id, name, arguments}
+  // (mirrored from chat_message.tool_calls by devinSync; results arrive as
+  // role 'tool' lines carrying message.toolCallId).
+  const toolCalls = message?.toolCalls
+  if (Array.isArray(toolCalls)) {
+    recognized = true
+    for (const call of toolCalls) {
+      if (!call || typeof call.id !== 'string' || !call.id) continue
+      const args = call.arguments
+      const argsText =
+        typeof args === 'string' ? args : JSON.stringify(args ?? '')
+      if (GH_PR_CREATE_RE.test(argsText)) {
+        ids.push(call.id)
+      }
+    }
+  }
+
   // Codex: payload.type === 'function_call' with command in arguments
   const payload = entry.payload as Record<string, unknown> | undefined
   if (
