@@ -19,24 +19,24 @@ afterEach(async () => {
   await fs.rm(tempRoot, { recursive: true, force: true })
 })
 
-function claudeBashToolUse(command: string): string {
+function claudeBashToolUse(command: string, id = 'toolu_1'): string {
   return JSON.stringify({
     type: 'assistant',
     sessionId: 's1',
     message: {
       content: [
-        { type: 'tool_use', name: 'Bash', input: { command } },
+        { type: 'tool_use', id, name: 'Bash', input: { command } },
       ],
     },
   })
 }
 
-function claudeToolResult(text: string): string {
+function claudeToolResult(text: string, toolUseId = 'toolu_1'): string {
   return JSON.stringify({
     type: 'user',
     sessionId: 's1',
     message: {
-      content: [{ type: 'tool_result', content: text }],
+      content: [{ type: 'tool_result', tool_use_id: toolUseId, content: text }],
     },
   })
 }
@@ -57,46 +57,76 @@ describe('extractPullRequests', () => {
     ])
   })
 
-  test('handles extra whitespace in the command', () => {
+  test('attributes the URL via the tool_use id even after many intervening lines', () => {
+    const lines = [claudeBashToolUse('gh pr create', 'toolu_abc')]
+    for (let i = 0; i < 50; i++) lines.push('{"type":"progress"}')
+    lines.push(claudeToolResult('https://github.com/a/b/pull/9', 'toolu_abc'))
+
+    expect(extractPullRequests(lines.join('\n'))).toEqual([
+      { url: 'https://github.com/a/b/pull/9', repo: 'a/b', number: 9 },
+    ])
+  })
+
+  test('does not attribute URLs from a different tool call', () => {
     const content = [
-      claudeBashToolUse('gh  pr   create --title "x"'),
+      claudeBashToolUse('gh pr create', 'toolu_create'),
+      claudeToolResult('https://github.com/a/b/pull/9', 'toolu_other'),
+    ].join('\n')
+
+    expect(extractPullRequests(content)).toEqual([])
+  })
+
+  test('ignores gh pr create mentioned in user prose near a PR link', () => {
+    const content = [
+      JSON.stringify({
+        type: 'user',
+        message: {
+          content: 'Do not run gh pr create. Review https://github.com/a/b/pull/12',
+        },
+      }),
+    ].join('\n')
+
+    expect(extractPullRequests(content)).toEqual([])
+  })
+
+  test('ignores gh pr create in assistant text that accompanies another tool call', () => {
+    const content = [
+      JSON.stringify({
+        type: 'assistant',
+        message: {
+          content: [
+            { type: 'text', text: 'I will not run gh pr create' },
+            {
+              type: 'tool_use',
+              id: 'toolu_x',
+              name: 'Bash',
+              input: { command: 'gh pr list' },
+            },
+          ],
+        },
+      }),
+      claudeToolResult('https://github.com/a/b/pull/5', 'toolu_x'),
+    ].join('\n')
+
+    expect(extractPullRequests(content)).toEqual([])
+  })
+
+  test('handles extra whitespace and -R flag in the command', () => {
+    const content = [
+      claudeBashToolUse('gh  -R a/b  pr   create --title "x"'),
       claudeToolResult('https://github.com/a/b/pull/7'),
     ].join('\n')
 
     expect(extractPullRequests(content).map((p) => p.number)).toEqual([7])
   })
 
-  test('captures URL printed several lines later within lookahead window', () => {
-    const lines = [claudeBashToolUse('gh pr create')]
-    for (let i = 0; i < 8; i++) lines.push('{"type":"progress"}')
-    lines.push(claudeToolResult('done https://github.com/a/b/pull/9'))
-
-    expect(extractPullRequests(lines.join('\n'))).toHaveLength(1)
-  })
-
-  test('ignores PR URLs beyond the lookahead window', () => {
-    const lines = [claudeBashToolUse('gh pr create')]
-    for (let i = 0; i < 15; i++) lines.push('{"type":"progress"}')
-    lines.push(claudeToolResult('https://github.com/a/b/pull/9'))
-
-    expect(extractPullRequests(lines.join('\n'))).toEqual([])
-  })
-
-  test('ignores PR URLs that appear without a create command', () => {
-    const content = [
-      claudeToolResult('see https://github.com/a/b/pull/5 for context'),
-    ].join('\n')
-
-    expect(extractPullRequests(content)).toEqual([])
-  })
-
   test('collects multiple PRs and dedupes repeated URLs', () => {
     const content = [
-      claudeBashToolUse('gh pr create'),
-      claudeToolResult('https://github.com/a/b/pull/1'),
-      claudeToolResult('again https://github.com/a/b/pull/1'),
-      claudeBashToolUse('cd other && gh pr create'),
-      claudeToolResult('https://github.com/c/d/pull/2'),
+      claudeBashToolUse('gh pr create', 'toolu_1'),
+      claudeToolResult('https://github.com/a/b/pull/1', 'toolu_1'),
+      claudeToolResult('again https://github.com/a/b/pull/1', 'toolu_1'),
+      claudeBashToolUse('cd other && gh pr create', 'toolu_2'),
+      claudeToolResult('https://github.com/c/d/pull/2', 'toolu_2'),
     ].join('\n')
 
     expect(extractPullRequests(content)).toEqual([
@@ -111,6 +141,7 @@ describe('extractPullRequests', () => {
         type: 'response_item',
         payload: {
           type: 'function_call',
+          call_id: 'call_1',
           name: 'shell',
           arguments: '{"command":["gh","pr","create","--fill"]}',
         },
@@ -119,12 +150,22 @@ describe('extractPullRequests', () => {
         type: 'response_item',
         payload: {
           type: 'function_call_output',
+          call_id: 'call_1',
           output: 'https://github.com/o/r/pull/77',
         },
       }),
     ].join('\n')
 
     expect(extractPullRequests(content).map((p) => p.number)).toEqual([77])
+  })
+
+  test('falls back to lookahead window for unparseable create lines', () => {
+    const content = [
+      'NOTJSON "tool_use" gh pr create',
+      claudeToolResult('https://github.com/a/b/pull/3'),
+    ].join('\n')
+
+    expect(extractPullRequests(content).map((p) => p.number)).toEqual([3])
   })
 })
 
@@ -144,8 +185,24 @@ describe('getSessionPullRequests', () => {
 
     const first = getSessionPullRequests(logPath)
     expect(first.map((p) => p.number)).toEqual([3])
-    // Same result on repeat call without file changes
-    expect(getSessionPullRequests(logPath)).toBe(first)
+    // Subsequent calls return an equal snapshot, not the same live array
+    const second = getSessionPullRequests(logPath)
+    expect(second).toEqual(first)
+    expect(second).not.toBe(first)
+  })
+
+  test('skips rescanning when knownSize matches the consumed offset', async () => {
+    const logPath = path.join(tempRoot, 's.jsonl')
+    const content =
+      [claudeBashToolUse('gh pr create'), claudeToolResult('https://github.com/a/b/pull/3')].join('\n') + '\n'
+    await fs.writeFile(logPath, content)
+
+    const first = getSessionPullRequests(logPath)
+    expect(first).toHaveLength(1)
+    // knownSize equal to the file size should return cached results
+    // (even if the file were replaced between calls, the size check wins)
+    const cached = getSessionPullRequests(logPath, content.length)
+    expect(cached.map((p) => p.number)).toEqual([3])
   })
 
   test('incrementally picks up PRs appended later', async () => {
@@ -170,6 +227,24 @@ describe('getSessionPullRequests', () => {
 
     await fs.writeFile(logPath, '{}\n')
     expect(getSessionPullRequests(logPath)).toEqual([])
+  })
+
+  test('rescans a same-size rewrite detected via mtime', async () => {
+    const logPath = path.join(tempRoot, 's.jsonl')
+    const v1 =
+      [claudeBashToolUse('gh pr create'), claudeToolResult('https://github.com/a/b/pull/41')].join('\n') + '\n'
+    const v2 =
+      [claudeBashToolUse('gh pr create'), claudeToolResult('https://github.com/a/b/pull/43')].join('\n') + '\n'
+    expect(v2.length).toBe(v1.length)
+
+    await fs.writeFile(logPath, v1)
+    expect(getSessionPullRequests(logPath).map((p) => p.number)).toEqual([41])
+
+    await fs.writeFile(logPath, v2)
+    // Bump mtime so the rewrite is detectable even at coarse timestamp granularity
+    const future = new Date(Date.now() + 10_000)
+    await fs.utimes(logPath, future, future)
+    expect(getSessionPullRequests(logPath).map((p) => p.number)).toEqual([43])
   })
 
   test('handles a command line split across incremental reads', async () => {

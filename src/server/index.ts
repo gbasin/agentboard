@@ -1075,7 +1075,10 @@ export function hydrateSessionsWithAgentSessions(
       agentSessionName: agentSession.displayName,
       logFilePath: agentSession.logFilePath,
       lastUserMessage: agentSession.lastUserMessage ?? session.lastUserMessage,
-      prs: getSessionPullRequests(agentSession.logFilePath),
+      prs: getSessionPullRequests(
+        agentSession.logFilePath,
+        agentSession.lastKnownLogSize
+      ),
       // Use persisted log times (survives server restarts, works when tmux lacks creation time)
       lastActivity: agentSession.lastActivityAt,
       createdAt: agentSession.createdAt,

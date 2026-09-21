@@ -142,6 +142,20 @@ function pickLatestActivity(
   return incomingTime > existingTime ? incoming : existing
 }
 
+function prsEqual(
+  a: AgentSession['prs'],
+  b: AgentSession['prs']
+): boolean {
+  if (a === b) return true
+  const aLen = a?.length ?? 0
+  const bLen = b?.length ?? 0
+  if (aLen !== bLen) return false
+  for (let i = 0; i < aLen; i++) {
+    if (a![i].url !== b![i].url) return false
+  }
+  return true
+}
+
 function agentSessionsEqual(a: AgentSession, b: AgentSession): boolean {
   return (
     a.sessionId === b.sessionId &&
@@ -155,7 +169,8 @@ function agentSessionsEqual(a: AgentSession, b: AgentSession): boolean {
     a.host === b.host &&
     a.lastUserMessage === b.lastUserMessage &&
     a.isPinned === b.isPinned &&
-    a.lastResumeError === b.lastResumeError
+    a.lastResumeError === b.lastResumeError &&
+    prsEqual(a.prs, b.prs)
   )
 }
 
@@ -176,6 +191,7 @@ function sessionsEqual(a: Session, b: Session): boolean {
     a.lastUserMessage === b.lastUserMessage &&
     a.isPinned === b.isPinned &&
     a.host === b.host &&
-    a.remote === b.remote
+    a.remote === b.remote &&
+    prsEqual(a.prs, b.prs)
   )
 }

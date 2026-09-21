@@ -20,7 +20,7 @@ export function toAgentSession(record: AgentSessionRecord): AgentSession {
       : undefined,
     isPinned: record.isPinned,
     lastResumeError: record.lastResumeError ?? undefined,
-    prs: getSessionPullRequests(record.logFilePath),
+    prs: getSessionPullRequests(record.logFilePath, record.lastKnownLogSize),
   }
 }
 
