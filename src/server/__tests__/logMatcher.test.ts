@@ -1123,6 +1123,24 @@ Enter to select · Tab/Arrow keys to navigate · Esc to cancel`
     expect(userMessages).toContain('implement the auth module')
   })
 
+  test('Grok: strips right-aligned clock suffix from submitted prompt', () => {
+    const scrollback = `❯ say hello and list files in this directory, then stop     3:21 PM
+
+● Ran list_dir`
+
+    const userMessages = extractRecentUserMessagesFromTmux(scrollback)
+    expect(userMessages).toContain('say hello and list files in this directory, then stop')
+  })
+
+  test('does NOT strip a prompt that itself ends in a time', () => {
+    const scrollback = `❯ remind me at 3:30 PM
+
+⏺ Sure.`
+
+    const userMessages = extractRecentUserMessagesFromTmux(scrollback)
+    expect(userMessages).toContain('remind me at 3:30 PM')
+  })
+
   test('does NOT false-positive on user messages that start with numbers', () => {
     const scrollback = `❯ 3. fix the validation logic in handleSubmit
 

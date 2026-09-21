@@ -112,7 +112,7 @@ const AGENT_SESSIONS_COLUMNS_SQL = `
   session_id TEXT UNIQUE,
   log_file_path TEXT NOT NULL UNIQUE,
   project_path TEXT,
-  agent_type TEXT NOT NULL CHECK (agent_type IN ('claude', 'claude-rp', 'codex', 'pi', 'devin')),
+  agent_type TEXT NOT NULL CHECK (agent_type IN ('claude', 'claude-rp', 'codex', 'pi', 'devin', 'grok')),
   display_name TEXT,
   created_at TEXT NOT NULL,
   last_activity_at TEXT NOT NULL,
@@ -793,7 +793,8 @@ function migrateAgentTypeConstraint(db: SQLiteDatabase) {
   if (
     tableInfo.sql.includes("'claude-rp'") &&
     tableInfo.sql.includes("'pi'") &&
-    tableInfo.sql.includes("'devin'")
+    tableInfo.sql.includes("'devin'") &&
+    tableInfo.sql.includes("'grok'")
   ) {
     return
   }

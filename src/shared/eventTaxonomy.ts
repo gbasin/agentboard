@@ -14,7 +14,7 @@ export type NormalizedEventRole =
   | 'tool'
   | 'other'
 
-export type NormalizedSourceFamily = 'claude' | 'codex' | 'pi' | 'devin' | 'unknown'
+export type NormalizedSourceFamily = 'claude' | 'codex' | 'pi' | 'devin' | 'grok' | 'unknown'
 
 export interface NormalizedEventSource {
   family: NormalizedSourceFamily
@@ -58,6 +58,18 @@ export function inferSourceFamily(record: Record<string, unknown>): NormalizedSo
   }
   if (source.toLowerCase() === 'devin' || agent.toLowerCase() === 'devin') {
     return 'devin'
+  }
+  if (source.toLowerCase() === 'grok' || agent.toLowerCase() === 'grok') {
+    return 'grok'
+  }
+  // Grok Build transcripts carry fields no other agent emits.
+  if (
+    record.synthetic_reason !== undefined ||
+    record.prompt_index !== undefined ||
+    record.model_fingerprint !== undefined ||
+    record.encrypted_content !== undefined
+  ) {
+    return 'grok'
   }
   if (typeValue === 'response_item' || typeValue === 'event_msg') {
     return 'codex'
@@ -341,6 +353,25 @@ function normalizeToolResultEvent(
   return []
 }
 
+// Grok emits OpenAI-style tool_calls arrays on assistant entries:
+// {type:'assistant', tool_calls:[{id, name, arguments}]}.
+function normalizeGrokToolCalls(
+  record: Record<string, unknown>,
+  source: NormalizedEventSource
+): NormalizedEvent[] {
+  const toolCalls = record.tool_calls
+  if (source.family !== 'grok' || !Array.isArray(toolCalls)) return []
+  return toolCalls
+    .map((call) => asRecord(call))
+    .filter((call): call is Record<string, unknown> => call !== null)
+    .map((call) => ({
+      kind: 'tool_call' as const,
+      role: 'assistant' as const,
+      text: `[Tool: ${asString(call.name) ?? 'tool'}]`,
+      source,
+    }))
+}
+
 export function normalizeAgentLogEntry(entry: unknown): NormalizedEvent[] {
   const record = asRecord(entry)
   if (!record) return []
@@ -350,6 +381,11 @@ export function normalizeAgentLogEntry(entry: unknown): NormalizedEvent[] {
   // shouldn't surface as the last user message or count as conversation turns.
   if (record.isMeta === true) return []
 
+  // Grok injects <system-reminder> user entries marked with synthetic_reason.
+  // They aren't user-authored, so they shouldn't surface as the last user
+  // message or count as conversation turns.
+  if (record.synthetic_reason !== undefined) return []
+
   const source = createSource(record)
   const primary = [
     ...normalizeResponseItemMessage(record, source),
@@ -358,6 +394,7 @@ export function normalizeAgentLogEntry(entry: unknown): NormalizedEvent[] {
     ...normalizeToolEvent(record, source),
     ...normalizeResultEvent(record, source),
     ...normalizeToolResultEvent(record, source),
+    ...normalizeGrokToolCalls(record, source),
   ]
 
   if (primary.length > 0) return primary

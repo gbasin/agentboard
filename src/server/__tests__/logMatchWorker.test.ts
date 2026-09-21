@@ -17,6 +17,7 @@ const originalClaude = process.env.CLAUDE_CONFIG_DIR
 const originalCodex = process.env.CODEX_HOME
 const originalPi = process.env.PI_HOME
 const originalAgentboardData = process.env.AGENTBOARD_DATA_DIR
+const originalGrok = process.env.GROK_HOME
 
 let tempRoot = ''
 
@@ -146,6 +147,8 @@ afterAll(() => {
   else delete process.env.PI_HOME
   if (originalAgentboardData) process.env.AGENTBOARD_DATA_DIR = originalAgentboardData
   else delete process.env.AGENTBOARD_DATA_DIR
+  if (originalGrok) process.env.GROK_HOME = originalGrok
+  else delete process.env.GROK_HOME
 })
 
 beforeEach(async () => {
@@ -157,6 +160,7 @@ beforeEach(async () => {
   process.env.CODEX_HOME = path.join(tempRoot, 'codex')
   process.env.PI_HOME = path.join(tempRoot, 'pi')
   process.env.AGENTBOARD_DATA_DIR = path.join(tempRoot, 'agentboard')
+  process.env.GROK_HOME = path.join(tempRoot, 'grok')
   await fs.mkdir(path.join(process.env.CLAUDE_CONFIG_DIR, 'projects'), {
     recursive: true,
   })
@@ -204,6 +208,8 @@ afterEach(async () => {
   else delete process.env.PI_HOME
   if (originalAgentboardData) process.env.AGENTBOARD_DATA_DIR = originalAgentboardData
   else delete process.env.AGENTBOARD_DATA_DIR
+  if (originalGrok) process.env.GROK_HOME = originalGrok
+  else delete process.env.GROK_HOME
 })
 
 const baseSession: Session = {
