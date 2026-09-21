@@ -298,94 +298,97 @@ describe('command preset actions', () => {
   })
 })
 
+async function rehydratePresets(commandPresets: unknown[], defaultPresetId: string, version = 6) {
+  storage.setItem('agentboard-settings', JSON.stringify({
+    state: { commandPresets, defaultPresetId },
+    version,
+  }))
+  await useSettingsStore.persist.rehydrate()
+  return useSettingsStore.getState()
+}
+
 describe('preset migration', () => {
-  test('migrates v1 presets (baseCommand+modifiers) to v2 (command)', () => {
-    // Simulate v1 preset format in storage
-    const v1Presets = [
+  test('migrates v1 presets from baseCommand and modifiers', async () => {
+    const { commandPresets } = await rehydratePresets([
       { id: 'claude', label: 'Claude', baseCommand: 'claude', modifiers: '--model opus', isBuiltIn: true, agentType: 'claude' },
       { id: 'codex', label: 'Codex', baseCommand: 'codex', modifiers: '', isBuiltIn: true, agentType: 'codex' },
       { id: 'custom-1', label: 'Custom', baseCommand: 'bun', modifiers: '--fast --inspect', isBuiltIn: false },
-    ]
+    ], 'claude', 1)
 
-    storage.setItem('agentboard-settings', JSON.stringify({
-      state: {
-        commandPresets: v1Presets,
-        defaultPresetId: 'claude',
-      },
-      version: 1,
-    }))
-
-    // Re-import the store to trigger migration
-    // The migration happens during rehydration, so we need to manually trigger it
-    // by accessing the persisted state and running the migrate function
-    const persisted = JSON.parse(storage.getItem('agentboard-settings') || '{}')
-
-    // Simulate migration logic (same as in settingsStore.ts)
-    const migrateOldPreset = (p: Record<string, unknown>) => {
-      if (typeof p.command === 'string') {
-        return p
-      }
-      const base = typeof p.baseCommand === 'string' ? p.baseCommand.trim() : ''
-      const mods = typeof p.modifiers === 'string' ? p.modifiers.trim() : ''
-      const command = mods ? `${base} ${mods}` : base
-      return {
-        id: p.id,
-        label: p.label,
-        command: command || 'claude',
-        isBuiltIn: p.isBuiltIn,
-        agentType: p.agentType,
-      }
-    }
-
-    const migratedPresets = persisted.state.commandPresets.map(migrateOldPreset)
-
-    // Verify migration results
-    expect(migratedPresets[0].command).toBe('claude --model opus')
-    expect(migratedPresets[0].baseCommand).toBeUndefined()
-    expect(migratedPresets[0].modifiers).toBeUndefined()
-
-    expect(migratedPresets[1].command).toBe('codex')
-
-    expect(migratedPresets[2].command).toBe('bun --fast --inspect')
+    expect(commandPresets[0].command).toBe('claude --model opus')
+    expect(commandPresets[0]).not.toHaveProperty('baseCommand')
+    expect(commandPresets[0]).not.toHaveProperty('modifiers')
+    expect(commandPresets[1].command).toBe('codex')
+    expect(commandPresets[2].command).toBe('bun --fast --inspect')
   })
 
-  test('preserves already migrated v2 presets', () => {
-    const v2Preset = {
-      id: 'custom-2',
-      label: 'Already Migrated',
-      command: 'node --inspect app.js',
-      isBuiltIn: false,
+  test('preserves already migrated v2 presets', async () => {
+    const preset = {
+      id: 'custom-2', label: 'Already Migrated',
+      command: 'node --inspect app.js', isBuiltIn: false,
     }
+    const { commandPresets, defaultPresetId } = await rehydratePresets(
+      [...DEFAULT_PRESETS, preset], preset.id, 2
+    )
 
-    // Simulate migration logic
-    const migrateOldPreset = (p: Record<string, unknown>) => {
-      if (typeof p.command === 'string') {
-        return p
-      }
-      const base = typeof p.baseCommand === 'string' ? p.baseCommand.trim() : ''
-      const mods = typeof p.modifiers === 'string' ? p.modifiers.trim() : ''
-      const command = mods ? `${base} ${mods}` : base
-      return {
-        id: p.id,
-        label: p.label,
-        command: command || 'claude',
-        isBuiltIn: p.isBuiltIn,
-        agentType: p.agentType,
-      }
-    }
+    expect(commandPresets.find((p) => p.id === preset.id)).toEqual(preset)
+    expect(defaultPresetId).toBe(preset.id)
+  })
 
-    const migrated = migrateOldPreset(v2Preset as Record<string, unknown>)
+  test('adds Grok to v6 settings while preserving edited commands and the custom default', async () => {
+    const custom = { id: 'custom-default', label: 'My task', command: 'bun run task', isBuiltIn: false }
+    const existing = [
+      ...DEFAULT_PRESETS.filter((p) => p.id !== 'grok').map((p) =>
+        p.id === 'claude' ? { ...p, command: 'claude --model opus' } : p
+      ),
+      custom,
+    ]
+    const { commandPresets, defaultPresetId } = await rehydratePresets(existing, custom.id)
 
-    // Should be unchanged
-    expect(migrated.command).toBe('node --inspect app.js')
-    expect(migrated).toEqual(v2Preset)
+    expect(commandPresets).toEqual([
+      ...existing,
+      { id: 'grok', label: 'Grok', command: 'grok', isBuiltIn: true },
+    ])
+    expect(defaultPresetId).toBe(custom.id)
+    const persisted = JSON.parse(storage.getItem('agentboard-settings')!)
+    expect(persisted.version).toBe(7)
+    await useSettingsStore.persist.rehydrate()
+    expect(useSettingsStore.getState().commandPresets).toEqual(commandPresets)
+  })
+
+  test.each([50, 52])('keeps all %i existing presets and their default when adding Grok', async (count) => {
+    const builtIns = DEFAULT_PRESETS.filter((p) => p.id !== 'grok')
+    const existing = [
+      ...builtIns,
+      ...Array.from({ length: count - builtIns.length }, (_, i) => ({
+        id: `custom-${i}`, label: `Task ${i}`, command: `task-${i}`, isBuiltIn: false,
+      })),
+    ]
+    const selected = existing.at(-1)!.id
+    const { commandPresets, defaultPresetId } = await rehydratePresets(existing, selected)
+
+    expect(commandPresets).toHaveLength(count + 1)
+    expect(commandPresets.slice(0, existing.length)).toEqual(existing)
+    expect(commandPresets.at(-1)?.id).toBe('grok')
+    expect(defaultPresetId).toBe(selected)
+  })
+
+  test('preserves an existing Grok command and default without adding a duplicate', async () => {
+    const existing = DEFAULT_PRESETS.map((p) =>
+      p.id === 'grok' ? { ...p, command: 'grok --custom-flag' } : p
+    )
+    const { commandPresets, defaultPresetId } = await rehydratePresets(existing, 'grok')
+
+    expect(commandPresets).toEqual(existing)
+    expect(commandPresets.filter((p) => p.id === 'grok')).toHaveLength(1)
+    expect(defaultPresetId).toBe('grok')
   })
 })
 
 describe('settings persistence migration', () => {
   test('runs the hibernating/history expansion rename for v5 persisted state', async () => {
     const options = useSettingsStore.persist.getOptions()
-    expect(options.version).toBe(6)
+    expect(options.version).toBe(7)
     if (!options.migrate) {
       throw new Error('Expected settings migration to be configured')
     }
