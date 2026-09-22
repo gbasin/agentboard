@@ -66,6 +66,32 @@ describe('AgentIcon', () => {
     expect(icon.props.className).toBe('icon')
   })
 
+  test('renders oh-my-pi icon for omp sessions', () => {
+    const renderer = TestRenderer.create(
+      <AgentIcon agentType="omp" className="icon" />
+    )
+
+    const icon = renderer.root.findByProps({ viewBox: '0 -15 120 120' })
+    expect(icon.props.className).toBe('icon')
+  })
+
+  test('renders oh-my-pi icon based on command', () => {
+    const renderer = TestRenderer.create(
+      <AgentIcon command="omp --model opus" />
+    )
+
+    expect(renderer.root.findByProps({ viewBox: '0 -15 120 120' })).toBeTruthy()
+  })
+
+  test('renders pi icon for pi sessions', () => {
+    const renderer = TestRenderer.create(
+      <AgentIcon agentType="pi" className="icon" />
+    )
+
+    const icon = renderer.root.findByProps({ viewBox: '0 0 588.42 568.88' })
+    expect(icon.props.className).toBe('icon')
+  })
+
   test('falls back to terminal icon for unknown agent', () => {
     const renderer = TestRenderer.create(
       <AgentIcon command="bash" className="fallback" />

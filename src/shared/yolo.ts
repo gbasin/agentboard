@@ -18,6 +18,7 @@ export const YOLO_FLAGS: Record<AgentFamily, string | null> = {
   devin: '--permission-mode dangerous',
   // Pi has no permission prompts by design — it is always effectively yolo.
   pi: null,
+  omp: '--auto-approve',
 }
 
 /** All flag spellings recognized when detecting whether a command is already yolo. */
@@ -37,6 +38,7 @@ const YOLO_FLAG_ALIASES: Record<AgentFamily, string[]> = {
   ],
   devin: ['--permission-mode dangerous', '--permission-mode=dangerous'],
   pi: [],
+  omp: ['--auto-approve', '--approval-mode yolo', '--approval-mode=yolo'],
 }
 
 export function yoloFlagFor(agentType: AgentType | null | undefined): string | null {
@@ -109,6 +111,11 @@ export function yoloConflict(command: string, agentType: AgentType): string | nu
   if (family === 'codex') {
     const m = /(^|\s)(--full-auto|--ask-for-approval|-a)(?=\s|=|$)/.exec(command)
     if (m) return `conflicts with ${m[2]}`
+  }
+
+  if (family === 'omp') {
+    const m = /(^|\s)--approval-mode(?:\s+|=)(always-ask|write)/.exec(command)
+    if (m) return `conflicts with --approval-mode ${m[2]}`
   }
 
   const pm = /(^|\s)--permission-mode(?:\s+|=)(\S+)/.exec(command)

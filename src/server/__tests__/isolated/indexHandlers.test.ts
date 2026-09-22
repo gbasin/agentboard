@@ -73,6 +73,7 @@ const defaultConfig = {
   claudeResumeCmd: 'claude --resume {sessionId}',
   codexResumeCmd: 'codex resume {sessionId}',
   piResumeCmd: 'pi --session {logFilePath}',
+  ompResumeCmd: 'omp --resume {logFilePath}',
   remoteHosts: [] as string[],
   remotePollMs: 15000,
   remoteTimeoutMs: 4000,
@@ -4353,6 +4354,51 @@ describe('server message handlers', () => {
     expect(createArgs!.command).toBe(
       "pi --fast --session '/tmp/pi sessions/resume pi.jsonl'"
     )
+  })
+
+  test('wakes omp session from its log file path and strips resume flags', async () => {
+    const { serveOptions } = await loadIndex()
+    const { ws, sent } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) {
+      throw new Error('WebSocket handlers not configured')
+    }
+    websocket.open?.(ws as never)
+
+    const record = makeRecord({
+      sessionId: 'resume-omp',
+      displayName: 'omp-session',
+      projectPath: '/tmp/omp',
+      agentType: 'omp',
+      logFilePath: '/tmp/omp sessions/resume omp.jsonl',
+      currentWindow: null,
+      launchCommand: '"omp -r abc123 --model gemini"',
+    })
+    seedRecord(record)
+
+    let createArgs: { projectPath: string; name?: string; command?: string } | null = null
+    const createdSession: Session = {
+      ...baseSession,
+      id: 'created-omp',
+      name: 'omp-session',
+      tmuxWindow: 'agentboard:54',
+    }
+    sessionManagerState.createWindow = (projectPath, name, command) => {
+      createArgs = { projectPath, name, command }
+      return createdSession
+    }
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({ type: 'session-wake', sessionId: 'resume-omp' })
+    )
+
+    expect(createArgs).not.toBeNull()
+    expect(createArgs!.command).toBe(
+      "omp --model gemini --resume '/tmp/omp sessions/resume omp.jsonl'"
+    )
+    const wakeResult = sent.find((m) => m.type === 'session-wake-result')
+    expect(wakeResult && 'ok' in wakeResult && wakeResult.ok).toBe(true)
   })
 
   test('wake is idempotent when the registry already has the session live', async () => {

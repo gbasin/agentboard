@@ -3378,6 +3378,9 @@ function getResumeCommandTemplate(agentType: AgentType): string {
   if (agentType === 'grok') {
     return config.grokResumeCmd
   }
+  if (agentType === 'omp') {
+    return config.ompResumeCmd
+  }
   return config.codexResumeCmd
 }
 
@@ -3404,13 +3407,22 @@ function buildResumeCommand(
   // and any existing resume subcommand/flag + its session ID argument.
   // Normalize first to handle tmux quoting and bash -lc wrappers.
   const resumableArg = /(?:"[^"]*"|'[^']*'|\S+)/
-  const flags = normalizePaneStartCommand(record.launchCommand)
+  let flags = normalizePaneStartCommand(record.launchCommand)
     .replace(/^\S+\s*/, '')             // strip executable
-    .replace(new RegExp(`--resume(?:\\s+|=)${resumableArg.source}`, 'g'), '') // strip --resume <id> / --resume=<id> (Claude)
+    .replace(new RegExp(`--resume(?:\\s+|=)${resumableArg.source}`, 'g'), '') // strip --resume <id> / --resume=<id> (Claude, omp)
     .replace(new RegExp(`\\bresume\\s+${resumableArg.source}`, 'g'), '') // strip resume <id> (Codex subcommand)
     .replace(new RegExp(`--session(?:\\s+|=)${resumableArg.source}`, 'g'), '') // strip --session <path> / --session=<path> (Pi)
-    .replace(/\s+/g, ' ')
-    .trim()
+
+  if (record.agentType === 'pi' || record.agentType === 'omp') {
+    flags = flags
+      // strip -r <id|path> (omp resume short flag)
+      .replace(new RegExp(`(?:^|\\s)-r(?:\\s+|=)${resumableArg.source}`, 'g'), ' ')
+      // strip -c / --continue (omp "continue previous session" flags)
+      .replace(/(?:^|\s)--continue\b/g, ' ')
+      .replace(/(?:^|\s)-c(?=\s|$)/g, ' ')
+  }
+
+  flags = flags.replace(/\s+/g, ' ').trim()
 
   if (!flags) {
     return baseResumeCmd

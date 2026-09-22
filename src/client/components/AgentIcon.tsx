@@ -89,12 +89,36 @@ function GrokIcon({ className }: { className?: string }) {
   )
 }
 
+function OmpIcon({ className }: { className?: string }) {
+  // Official oh-my-pi icon (pi glyph + plugin connector), adapted:
+  // glyph renders in currentColor, connector keeps the brand orange.
+  // Original viewBox is 120x90 (wide); padded to a square for consistent sizing.
+  return (
+    <svg
+      viewBox="0 -15 120 120"
+      fill="currentColor"
+      className={className}
+      aria-hidden="true"
+    >
+      <rect x="10" y="8" width="100" height="12" rx="2" />
+      <rect x="25" y="20" width="12" height="62" rx="2" />
+      <rect x="75" y="20" width="12" height="45" rx="2" />
+      <rect x="71" y="55" width="20" height="16" rx="3" fill="#f97316" />
+      <rect x="76" y="59" width="3" height="8" rx="1" fill="#0d0d0d" />
+      <rect x="82" y="59" width="3" height="8" rx="1" fill="#0d0d0d" />
+      <circle cx="18" cy="14" r="2" fill="#f97316" opacity="0.8" />
+      <circle cx="102" cy="14" r="2" fill="#f97316" opacity="0.8" />
+    </svg>
+  )
+}
+
 type IconComponent = ({ className }: { className?: string }) => JSX.Element
 
 /** Prefix patterns mapped to icons - order matters, first match wins */
 const iconPrefixes: [string, IconComponent][] = [
   ['claude', AnthropicIcon],
   ['codex', OpenAIIcon],
+  ['omp', OmpIcon],
   ['pi', PiIcon],
   ['devin', DevinIcon],
   ['grok', GrokIcon],

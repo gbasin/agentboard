@@ -72,7 +72,7 @@ function unwrapBashLoginWrapper(command: string): string | null {
   return unquoteShellString(rest)
 }
 
-export type AgentFamily = 'claude' | 'codex' | 'pi' | 'devin' | 'grok'
+export type AgentFamily = 'claude' | 'codex' | 'pi' | 'devin' | 'grok' | 'omp'
 
 /** Collapse agent variants onto the log family they write to (claude-rp -> claude). */
 export function agentFamily(agentType: AgentType | null | undefined): AgentFamily | null {
@@ -95,6 +95,7 @@ function agentTypeFromBaseName(baseName: string): AgentType | undefined {
   if (baseName === 'pi') return 'pi'
   if (baseName === 'devin' || baseName === 'devin-cli') return 'devin'
   if (baseName === 'grok' || baseName.startsWith('grok-')) return 'grok'
+  if (baseName === 'omp') return 'omp'
   return undefined
 }
 
@@ -118,7 +119,12 @@ export function findAgentToken(
     // Skip flags
     if (part.startsWith('-')) continue
 
-    const agentType = agentTypeFromBaseName(part.split('/').pop() || part)
+    // oh-my-pi run via a package runner arrives as the scoped package token
+    // (e.g. `bunx @oh-my-pi/pi-coding-agent`). The bare "pi-coding-agent"
+    // basename is ambiguous with upstream pi's package, so require the scope.
+    const agentType = part.includes('@oh-my-pi/')
+      ? 'omp'
+      : agentTypeFromBaseName(part.split('/').pop() || part)
     // Found a non-skippable token: it's either a known agent or a foreign
     // command, in which case no agent token exists.
     return agentType ? { agentType, end: m.index + m[0].length } : undefined

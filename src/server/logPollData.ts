@@ -8,6 +8,7 @@ import {
   inferAgentTypeFromPath,
   isCodexExec,
   isCodexSubagent,
+  isPiSubagent,
   scanAllLogDirs,
 } from './logDiscovery'
 import { getLogTokenCount } from './logMatcher'
@@ -23,6 +24,7 @@ export interface LogEntrySnapshot {
   agentType: AgentType | null
   isCodexSubagent: boolean
   isCodexExec: boolean
+  isPiSubagent: boolean
   logTokenCount: number
   lastUserMessage?: string
 }
@@ -79,6 +81,7 @@ export function enrichLogEntry(
       agentType: known.agentType,
       isCodexSubagent: false,
       isCodexExec: codexExec,
+      isPiSubagent: false,
       logTokenCount: -1,
     } satisfies LogEntrySnapshot
   }
@@ -90,7 +93,10 @@ export function enrichLogEntry(
   const slug = agentType === 'claude' ? extractSlug(logPath) : null
   const codexSubagent = agentType === 'codex' ? isCodexSubagent(logPath) : false
   const codexExec = agentType === 'codex' ? isCodexExec(logPath) : false
-  const shouldCountTokens = Boolean(sessionId) && !codexSubagent && Boolean(agentType)
+  const piSubagent =
+    agentType === 'pi' || agentType === 'omp' ? isPiSubagent(logPath) : false
+  const shouldCountTokens =
+    Boolean(sessionId) && !codexSubagent && !piSubagent && Boolean(agentType)
   const logTokenCount = shouldCountTokens ? getLogTokenCount(logPath) : 0
 
   return {
@@ -104,6 +110,7 @@ export function enrichLogEntry(
     agentType: agentType ?? null,
     isCodexSubagent: codexSubagent,
     isCodexExec: codexExec,
+    isPiSubagent: piSubagent,
     logTokenCount,
   } satisfies LogEntrySnapshot
 }

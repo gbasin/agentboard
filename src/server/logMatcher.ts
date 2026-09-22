@@ -8,6 +8,7 @@ import {
   extractProjectPath,
   inferAgentTypeFromPath,
   isCodexSubagent,
+  isPiSubagent,
   normalizeProjectPath,
 } from './logDiscovery'
 import {
@@ -1195,6 +1196,9 @@ function isPromptLine(line: string): boolean {
 // This color is defined in Pi's built-in "tokyo-night" theme (userMessageBg).
 // See: https://github.com/anthropics/pi/blob/main/src/themes/tokyo-night.ts
 // NOTE: If Pi changes this color or the user selects a different theme, detection will fail.
+// NOTE: Oh-my-pi is deliberately not covered here — its default "titanium" theme
+// shares userMessageBg (#0f1216) with tool pending/success rows and the status
+// line, so background-color extraction can't distinguish real user messages.
 // Pattern: \x1b[48;2;52;53;65m...message...\x1b[49m (or end of content)
 // eslint-disable-next-line no-control-regex
 const PI_USER_MESSAGE_BG_START = /\x1b\[48;2;52;53;65m/g
@@ -1966,7 +1970,9 @@ export function tryExactMatchWindowToLog(
   }
 
   if (usingTraceFallback) {
-    const filtered = candidates.filter((candidate) => !isCodexSubagent(candidate))
+    const filtered = candidates.filter(
+      (candidate) => !isCodexSubagent(candidate) && !isPiSubagent(candidate)
+    )
     if (filtered.length === 0) {
       return null
     }
@@ -2167,7 +2173,9 @@ export async function tryExactMatchWindowToLogAsync(
   }
 
   if (usingTraceFallback) {
-    const filtered = candidates.filter((candidate) => !isCodexSubagent(candidate))
+    const filtered = candidates.filter(
+      (candidate) => !isCodexSubagent(candidate) && !isPiSubagent(candidate)
+    )
     if (filtered.length === 0) {
       return null
     }

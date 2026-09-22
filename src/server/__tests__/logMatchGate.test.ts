@@ -17,6 +17,7 @@ function makeEntry(
     agentType: 'claude',
     isCodexSubagent: false,
     isCodexExec: false,
+    isPiSubagent: false,
     logTokenCount: 10,
     ...overrides,
   }
