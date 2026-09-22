@@ -108,7 +108,8 @@ jobs:
             cp -r ../../artifacts/agentboard-$platform/dist/client ./dist/client
             chmod +x ./bin/agentboard
             npm version $VERSION --no-git-tag-version --allow-same-version
-            npm publish --provenance --access public
+            # tolerate re-runs of a partially-failed release
+            npm publish --provenance --access public || npm view "@gbasin/agentboard-$platform@$VERSION" version
             cd ../..
           done
 
@@ -116,7 +117,9 @@ jobs:
         run: node scripts/update-optional-deps.js ${{ steps.version.outputs.version }}
 
       - name: Publish main package
-        run: npm publish --provenance --access public
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          npm publish --provenance --access public || npm view "@gbasin/agentboard@$VERSION" version
 
       - name: Collect binaries and tarballs for GitHub Release
         run: |
@@ -131,6 +134,8 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64  # v3.0.3
         with:
+          # github.ref is refs/heads/master on workflow_dispatch; pass the tag explicitly
+          tag_name: ${{ env.RELEASE_TAG }}
           files: release-binaries/agentboard-*
           # release-please already wrote changelog notes on its release;
           # only auto-generate notes for manual tag pushes
