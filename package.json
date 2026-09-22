@@ -42,10 +42,7 @@
     "coverage:all": "bun scripts/coverage-all.ts",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
-    "prepare": "git config core.hooksPath .githooks",
-    "release:patch": "bun scripts/release.ts patch",
-    "release:minor": "bun scripts/release.ts minor",
-    "release:major": "bun scripts/release.ts major"
+    "prepare": "git config core.hooksPath .githooks"
   },
   "dependencies": {
     "@base-ui/react": "^1.2.0",

@@ -43,6 +43,12 @@ Run `bun run lint && bun run typecheck && bun run test` after changes.
 - Conventional Commits: `feat:`, `fix:`, `docs:`, `refactor:`
 - Commit early and often — make small, incremental commits as you work rather than one large commit at the end.
 
+## Releases
+
+- Managed by [release-please](.github/workflows/release-please.yml); it scans conventional commits on `master` and maintains a release PR that bumps `package.json` and `CHANGELOG.md`.
+- Do NOT bump `package.json` version or add `(vX.Y.Z)` suffixes in change PRs — the release PR owns versioning. `fix:`/`perf:` → patch, `feat:` → minor, `feat!:`/`BREAKING CHANGE:` → major.
+- Merge the release PR to ship: release-please creates the tag + GitHub release, and `release.yml` (invoked from the same workflow) builds binaries and publishes npm packages.
+
 ## Critical Thinking
 
 - Read more code when stuck
