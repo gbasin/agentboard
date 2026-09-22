@@ -1855,15 +1855,27 @@ const pasteImageExtensionByMime = new Map([
 
 const macPasteboardSwiftScript = `
 import AppKit
+import UniformTypeIdentifiers
 import Foundation
 
 let maxBytes = Int(ProcessInfo.processInfo.environment["AGENTBOARD_PASTE_IMAGE_MAX_BYTES"] ?? "") ?? 0
-let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp", "heic", "tif", "tiff"]
+let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp", "heic", "tif", "tiff", "bmp", "avif"]
 
 func emit(path: String?, isImage: Bool) {
   let payload: [String: Any?] = ["path": path, "isImage": isImage]
   let data = try! JSONSerialization.data(withJSONObject: payload.compactMapValues { $0 })
   print(String(data: data, encoding: .utf8)!)
+}
+
+func writePng(_ data: Data) -> Bool {
+  let path = NSTemporaryDirectory() + "agentboard-paste-" + UUID().uuidString + ".png"
+  do {
+    try data.write(to: URL(fileURLWithPath: path), options: .atomic)
+    emit(path: path, isImage: true)
+    return true
+  } catch {
+    return false
+  }
 }
 
 let pasteboard = NSPasteboard.general
@@ -1882,11 +1894,25 @@ for item in items {
 }
 
 for item in items {
-  if let data = item.data(forType: .png), data.count > 0, (maxBytes <= 0 || data.count <= maxBytes) {
-    let path = NSTemporaryDirectory() + "agentboard-paste-" + UUID().uuidString + ".png"
-    try data.write(to: URL(fileURLWithPath: path), options: .atomic)
-    emit(path: path, isImage: true)
+  if let data = item.data(forType: .png), data.count > 0, (maxBytes <= 0 || data.count <= maxBytes), writePng(data) {
     exit(0)
+  }
+}
+
+// Fallback: any declared image type. Universal Clipboard items from other
+// devices may only declare e.g. com.microsoft.bmp (plus is-remote-clipboard)
+// and won't transmute to .png on request — decode and re-encode instead.
+for item in items {
+  for type in item.types {
+    guard type != .png,
+          let ut = UTType(type.rawValue), ut.conforms(to: .image),
+          let data = item.data(forType: type),
+          data.count > 0, (maxBytes <= 0 || data.count <= maxBytes),
+          let rep = NSBitmapImageRep(data: data),
+          let png = rep.representation(using: .png, properties: [:]),
+          maxBytes <= 0 || png.count <= maxBytes
+    else { continue }
+    if writePng(png) { exit(0) }
   }
 }
 
