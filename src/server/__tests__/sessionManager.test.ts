@@ -756,7 +756,7 @@ describe('SessionManager', () => {
     }
   })
 
-  test('listWindows hides reserved bootstrap window only in the managed base session', () => {
+  test('listWindows hides reserved bootstrap window in managed and external sessions', () => {
     const managedSession = 'agentboard-bootstrap-filter'
     const externalSession = 'work-bootstrap-filter'
     const runner = createTmuxRunner(
@@ -815,7 +815,7 @@ describe('SessionManager', () => {
       ).toBeUndefined()
       expect(
         sessions.find((session) => session.tmuxWindow === `${externalSession}:1`)
-      ).toBeTruthy()
+      ).toBeUndefined()
       expect(
         sessions.find((session) => session.tmuxWindow === `${managedSession}:1`)
       ).toBeUndefined()

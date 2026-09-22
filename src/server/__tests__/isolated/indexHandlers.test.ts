@@ -80,6 +80,7 @@ const defaultConfig = {
   remoteSshOpts: '',
   remoteAllowControl: false,
   remoteAllowAttach: false,
+  allowKillExternal: false,
   tmuxTimeoutMs: 3000,
   tmuxMutationTimeoutMs: 15000,
   pasteImageMaxBytes: 40 * 1024 * 1024,
@@ -888,6 +889,37 @@ describe('server message handlers', () => {
     expect(sent[1]).toEqual({ type: 'kill-failed', sessionId: 'external', message: 'Cannot kill external sessions' })
     expect(killed).toEqual([])
     expect(sent[2]).toEqual({ type: 'error', message: 'Session not found' })
+  })
+
+  test('kills external session when allowKillExternal is enabled', async () => {
+    const externalSession = {
+      ...baseSession,
+      id: 'external',
+      source: 'external' as const,
+      tmuxWindow: 'work:1',
+    }
+    configState.allowKillExternal = true
+    const { serveOptions, registryInstance } = await loadIndex()
+    registryInstance.sessions = [externalSession]
+
+    const killed: string[] = []
+    sessionManagerState.killWindow = (tmuxWindow: string) => {
+      killed.push(tmuxWindow)
+    }
+    sessionManagerState.listWindows = () => [externalSession]
+
+    const { ws } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) {
+      throw new Error('WebSocket handlers not configured')
+    }
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({ type: 'session-kill', sessionId: 'external' })
+    )
+
+    expect(killed).toEqual(['work:1'])
   })
 
   test('handles kill and rename success paths', async () => {

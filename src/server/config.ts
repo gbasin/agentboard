@@ -196,7 +196,8 @@ export const config = {
     process.env.AGENTBOARD_CLAUDE_NO_FLICKER !== 'false',
   terminalMode,
   terminalMonitorTargets: process.env.TERMINAL_MONITOR_TARGETS !== 'false',
-  // Allow killing external (discovered) sessions from UI
+  // Allow killing external (discovered) sessions from UI. Off by default:
+  // discovered sessions are read-only unless opted in.
   allowKillExternal: process.env.ALLOW_KILL_EXTERNAL === 'true',
   // TLS config - set both to enable HTTPS
   tlsCert: process.env.TLS_CERT || '',

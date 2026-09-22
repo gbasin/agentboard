@@ -756,7 +756,7 @@ export class SessionManager {
         return window ? [window] : []
       })
       // Hide the placeholder window that keeps the base session alive.
-      .filter((window) => !this.isBootstrapWindow(sessionName, window))
+      .filter((window) => !this.isBootstrapWindow(window))
       .map((window) => {
         const tmuxWindow = `${sessionName}:${window.id}`
         const creationTimestamp = window.creation
@@ -831,11 +831,12 @@ export class SessionManager {
     }
   }
 
-  private isBootstrapWindow(sessionName: string, window: WindowInfo): boolean {
-    return (
-      sessionName === this.sessionName &&
-      window.name === BOOTSTRAP_WINDOW_NAME
-    )
+  private isBootstrapWindow(window: WindowInfo): boolean {
+    // Filter by name in every session, not just the managed one: the
+    // placeholder belongs to agentboard, and a second instance's base session
+    // (e.g. a dev server with a different TMUX_SESSION) would otherwise leak
+    // into the external list as an unkillable-looking ghost entry.
+    return window.name === BOOTSTRAP_WINDOW_NAME
   }
 
   private findNextAvailableWindowIndex(): number {

@@ -79,6 +79,7 @@ describe('sessionRefreshWorker', () => {
       joinTmuxFields(['agentboard', '6', BOOTSTRAP_WINDOW_NAME, '/Users/test/manual', '100', '1700000005', 'claude', '80', '24']),
       joinTmuxFields(['agentboard-ws-foo', '2', 'ws', '/Users/test/ws', '100', '1700000001', 'bash', '80', '24']),
       joinTmuxFields(['external-|||session', '3', 'ext', '/Users/test/ext|||path', '100', '1700000002', 'claude', '100', '40']),
+      joinTmuxFields(['external-ghost', '7', BOOTSTRAP_WINDOW_NAME, '/Users/test/ghost', '100', '1700000006', BOOTSTRAP_WINDOW_COMMAND, '80', '24']),
       joinTmuxFields(['other', '4', 'other', '/Users/test/other', '100', '1700000003', 'bash', '80', '24']),
     ].join('\n')
 
@@ -143,6 +144,9 @@ describe('sessionRefreshWorker', () => {
     const manualReservedName = response.sessions.find(
       (session) => session.tmuxWindow === 'agentboard:6'
     )
+    const externalBootstrap = response.sessions.find(
+      (session) => session.tmuxWindow === 'external-ghost:7'
+    )
 
     expect(managed).toEqual(
       expect.objectContaining({
@@ -163,6 +167,7 @@ describe('sessionRefreshWorker', () => {
       })
     )
     expect(manualReservedName).toBeUndefined()
+    expect(externalBootstrap).toBeUndefined()
   })
 
   test('refresh normalizes tmux-quoted pane_start_command', async () => {
