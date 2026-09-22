@@ -61,10 +61,3 @@ export function acquireDatabaseOwner(dbPath: string) {
     },
   }
 }
-
-export function assertRestoreOwnership(dbPath: string, token: string) {
-  const owner = owners.get(lockPath(dbPath))
-  if (!owner || owner.token !== token || owner.references !== 1) {
-    throw new Error('Stop the running Agentboard before restoring its database')
-  }
-}

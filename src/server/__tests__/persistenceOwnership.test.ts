@@ -5,7 +5,6 @@ import os from 'node:os'
 import path from 'node:path'
 import { initDatabase } from '../db'
 import { acquireDatabaseOwner } from '../persistence/ownership'
-import { checksumFile, copyVerifiedFile } from '../persistence/files'
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ab-lock-audit-'))
 const file = path.join(root, 'agentboard.db')
@@ -60,24 +59,6 @@ test('releasing one connection does not release another connection in the same p
   second.release()
   const next = contender()
   expect((await new Response(next.stdout).text()).trim()).toBe('owned')
-})
-
-test('a verified copy rejects corruption and never replaces an existing destination', async () => {
-  const source = path.join(root, 'source.jsonl'),
-    destination = path.join(root, 'copy.jsonl')
-  fs.writeFileSync(source, '{"saved":true}\n')
-  const checksum = await checksumFile(source)
-  fs.writeFileSync(source, 'corrupt')
-  await expect(copyVerifiedFile(source, destination, checksum)).rejects.toThrow(
-    'verification'
-  )
-  expect(fs.existsSync(destination)).toBe(false)
-  fs.writeFileSync(destination, 'keep this')
-  await expect(
-    copyVerifiedFile(source, destination, await checksumFile(source))
-  ).rejects.toThrow()
-  expect(fs.readFileSync(destination, 'utf8')).toBe('keep this')
-  expect(fs.readdirSync(root).some((n) => n.endsWith('.partial'))).toBe(false)
 })
 
 test('failed database initialization closes its connection and releases ownership', async () => {

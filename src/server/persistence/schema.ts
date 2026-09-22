@@ -1,5 +1,6 @@
 /** Additive catalog schema. Provider conversations remain in agent_sessions. */
 import type { Database } from 'bun:sqlite'
+import { existsSync } from 'node:fs'
 
 const CATALOG_VERSION = 1
 
@@ -21,8 +22,15 @@ export function createCatalogSchema(db: Database) {
   if (version < CATALOG_VERSION) {
     const file = (db.query('PRAGMA database_list').get() as { file: string })
       .file
-    if (file)
-      db.query('VACUUM INTO ?').run(`${file}.before-catalog-schema`)
+    // A crash between this backup and the version write below must not brick
+    // the next boot — VACUUM INTO refuses to overwrite an existing file, so
+    // pick the first free suffix instead of failing.
+    if (file) {
+      let backup = `${file}.before-catalog-schema`,
+        suffix = 0
+      while (existsSync(backup)) backup = `${file}.before-catalog-schema.${++suffix}`
+      db.query('VACUUM INTO ?').run(backup)
+    }
   }
   db.transaction(() => {
     db.exec(`

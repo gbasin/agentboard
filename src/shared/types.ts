@@ -1,6 +1,6 @@
 // History sessions lookback limits (in hours)
 export const HISTORY_MAX_AGE_MIN_HOURS = 1
-export const HISTORY_MAX_AGE_MAX_HOURS = 876000 // 100 years; the paginated library also supports All time
+export const HISTORY_MAX_AGE_MAX_HOURS = 168 // 7 days
 
 export interface SessionPullRequest {
   url: string
