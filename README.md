@@ -150,6 +150,7 @@ HOSTNAME=127.0.0.1
 TMUX_SESSION=agentboard
 REFRESH_INTERVAL_MS=5000
 DISCOVER_PREFIXES=work,external
+ALLOW_KILL_EXTERNAL=false
 PRUNE_WS_SESSIONS=true
 AGENTBOARD_PREFER_WINDOW_NAME=false
 TERMINAL_MODE=pty
@@ -177,7 +178,9 @@ AGENTBOARD_PASTE_IMAGE_MAX_BYTES=41943040
 
 > **Security note:** Agentboard has no built-in authentication. Anyone who can reach the server has full access to your terminal sessions, including the ability to run commands as your user. The default localhost binding is safe. Tailscale provides network-level auth for remote access. Avoid setting `HOSTNAME=0.0.0.0` on untrusted networks (public WiFi, shared LANs) without an additional access control layer.
 
-`DISCOVER_PREFIXES` lets you discover and control windows from other tmux sessions. If unset, all sessions except the managed one are discovered.
+`DISCOVER_PREFIXES` lets you discover and control windows from other tmux sessions. If unset, all sessions except the managed one are discovered. Windows named `__agentboard_root__` are always hidden — that name is reserved for the placeholder that keeps a base session alive.
+
+`ALLOW_KILL_EXTERNAL` (default `false`) controls whether externally-discovered sessions can be killed from the UI. Set to `true` to allow it.
 
 `PRUNE_WS_SESSIONS` removes orphaned `agentboard-ws-*` tmux sessions on startup (set to `false` to disable).
 

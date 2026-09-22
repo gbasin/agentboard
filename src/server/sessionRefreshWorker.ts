@@ -322,11 +322,11 @@ function listAllWindows(
       continue
     }
 
-    // Skip the bootstrap placeholder window in the managed base session.
-    if (
-      sessionName === managedSession &&
-      window.windowName === BOOTSTRAP_WINDOW_NAME
-    ) {
+    // Skip the bootstrap placeholder window in every session: it is
+    // agentboard-internal bookkeeping, so another instance's base session
+    // (e.g. a dev server with a different TMUX_SESSION) must not leak into
+    // the external list either.
+    if (window.windowName === BOOTSTRAP_WINDOW_NAME) {
       continue
     }
 
