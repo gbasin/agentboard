@@ -1242,7 +1242,8 @@ function listWindowsSyncOrNull(context: string): Session[] | null {
   }
 }
 
-// Sync version for startup - ensures sessions are ready before server starts
+// Sync refresh for mutation paths (create/kill/rename) so follow-up reads see
+// post-mutation tmux state immediately.
 function refreshSessionsSync({ verifyAssociations = false } = {}) {
   const sessions = listWindowsSyncOrNull('sync_refresh')
   if (!sessions) {
@@ -1322,26 +1323,13 @@ async function captureLastUserMessage(tmuxWindow: string) {
 }
 
 
-// Log startup state for debugging orphan issues
+// Startup DB state is captured for the startup_state log; the window listing
+// itself runs after the server binds (see below) so the port accepts
+// connections immediately.
 const startupActiveSessions = db.getActiveSessions()
 seedRefreshWindowCountEstimate(startupActiveSessions.length)
-const startupWindows = listWindowsSyncOrNull('startup_state') ?? []
-logger.info('startup_state', {
-  activeSessionCount: startupActiveSessions.length,
-  windowCount: startupWindows.length,
-  activeWindows: startupActiveSessions.map((s) => ({
-    sessionId: s.sessionId.slice(0, 8),
-    name: s.displayName,
-    window: s.currentWindow,
-  })),
-  tmuxWindows: startupWindows.map((w) => ({
-    tmuxWindow: w.tmuxWindow,
-    name: w.name,
-  })),
-})
 
-refreshSessionsSync() // hydrate from persisted associations without verification
-setInterval(refreshSessions, config.refreshIntervalMs) // Async for periodic
+setInterval(refreshSessions, config.refreshIntervalMs) // Async periodic refresh
 
 // Event loop lag monitor — detects when spawnSync or other blocking work
 // starves the event loop, causing typing lag and slow WebSocket delivery.
@@ -2143,10 +2131,45 @@ logger.info('server_started', {
   })(),
 })
 
+// The initial window refresh runs after bind: listing windows issues a
+// synchronous capture-pane per window, which would otherwise keep the port
+// closed until every capture finished. Verification needs the populated
+// registry, so it is chained after the refresh completes. Exported so tests
+// can deterministically wait for startup to settle.
+export const startupReady = (async () => {
+  try {
+    await refreshSessionsAsync()
+  } catch (error) {
+    logger.warn('startup_refresh_error', {
+      message: error instanceof Error ? error.message : String(error),
+    })
+  }
+  const startupWindows = registry.getAll().filter((s) => !s.remote)
+  logger.info('startup_state', {
+    activeSessionCount: startupActiveSessions.length,
+    windowCount: startupWindows.length,
+    activeWindows: startupActiveSessions.map((s) => ({
+      sessionId: s.sessionId.slice(0, 8),
+      name: s.displayName,
+      window: s.currentWindow,
+    })),
+    tmuxWindows: startupWindows.map((w) => ({
+      tmuxWindow: w.tmuxWindow,
+      name: w.name,
+    })),
+  })
+  try {
+    await completeStartupVerification()
+  } catch (error) {
+    logger.warn('startup_verification_error', {
+      message: error instanceof Error ? error.message : String(error),
+    })
+  }
+})()
+
 if (config.logPollIntervalMs > 0) {
   logPoller.start(config.logPollIntervalMs, config.logWatchMode)
 }
-void completeStartupVerification()
 
 // Cleanup all terminals on server shutdown
 async function cleanupAllTerminals() {

@@ -145,23 +145,9 @@ if (!tmuxAvailable || !localhostBindable) {
 
       await waitForHealth(serverPort, serverProcess)
 
-      // Discover the session ID
-      const sessionsResp = await fetch(
-        `http://${testHost}:${serverPort}/api/sessions`
-      )
-      const sessions = (await sessionsResp.json()) as Array<{
-        id: string
-        tmuxWindow: string
-      }>
-      const ourSession = sessions.find(
-        (s) => s.tmuxWindow === tmuxWindowTarget
-      )
-      if (!ourSession) {
-        throw new Error(
-          `Server did not discover tmux window ${tmuxWindowTarget}. ` +
-            `Found sessions: ${JSON.stringify(sessions.map((s) => s.tmuxWindow))}`
-        )
-      }
+      // Discover the session ID — the initial window refresh runs
+      // asynchronously after bind, so poll until it appears.
+      const ourSession = await waitForSession(serverPort, tmuxWindowTarget)
       discoveredSessionId = ourSession.id
     }, 60000)
 
@@ -638,6 +624,29 @@ async function waitForHealth(
     await delay(100)
   }
   throw new Error('Server did not become healthy in time')
+}
+
+async function waitForSession(
+  port: number,
+  tmuxWindow: string,
+  timeoutMs = 15000
+): Promise<{ id: string; tmuxWindow: string }> {
+  const start = Date.now()
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const response = await fetch(`http://${testHost}:${port}/api/sessions`)
+      const sessions = (await response.json()) as Array<{
+        id: string
+        tmuxWindow: string
+      }>
+      const found = sessions.find((s) => s.tmuxWindow === tmuxWindow)
+      if (found) return found
+    } catch {
+      // retry
+    }
+    await delay(100)
+  }
+  throw new Error(`Server did not discover tmux window ${tmuxWindow}`)
 }
 
 async function waitForOpen(
