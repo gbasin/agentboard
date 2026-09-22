@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.12.1](https://github.com/gbasin/agentboard/compare/v0.12.0...v0.12.1) (2026-09-22)
+
+
+### Bug Fixes
+
+* pass repo to gh workflow run in release dispatch ([#267](https://github.com/gbasin/agentboard/issues/267)) ([6b9e769](https://github.com/gbasin/agentboard/commit/6b9e7698802b76bcd5ea306434c6fa10d5f08b68))
+* unstick PR chip dots stuck gray after failed or abandoned info fetches ([#269](https://github.com/gbasin/agentboard/issues/269)) ([9b4fb59](https://github.com/gbasin/agentboard/commit/9b4fb59b93a958bef0feb69ded29e62932a2a5f0))
+
 ## [0.12.0](https://github.com/gbasin/agentboard/compare/v0.11.0...v0.12.0) (2026-09-22)
 
 
