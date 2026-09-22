@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - master
+  # manual re-run (e.g. after an action failure) without pushing commits
+  workflow_dispatch:
 
 permissions:
   contents: write
