@@ -67,6 +67,19 @@ export default function NewSessionModal({
     return type && !yoloConflict(cmd, type) ? addYoloFlag(cmd, type) : cmd
   }
 
+  const handlePresetSelect = (presetId: string) => {
+    const preset = commandPresets.find(p => p.id === presetId)
+    if (preset) {
+      setSelectedPresetId(presetId)
+      setCommand(applyYoloPref(getFullCommand(preset)))
+    }
+  }
+
+  const handleCustomSelect = () => {
+    setSelectedPresetId(null)
+    setCommand('')
+  }
+
   useEffect(() => {
     if (!isOpen) {
       setProjectPath('')
@@ -173,6 +186,42 @@ export default function NewSessionModal({
         return
       }
 
+      // Digit shortcuts: 1-9 select a preset by position, 0 selects Custom.
+      if (/^[0-9]$/.test(e.key) && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        const activeEl = document.activeElement as HTMLElement | null
+        if (
+          activeEl &&
+          (activeEl.tagName === 'INPUT' ||
+            activeEl.tagName === 'TEXTAREA' ||
+            activeEl.tagName === 'SELECT' ||
+            activeEl.isContentEditable)
+        ) {
+          return
+        }
+
+        let optionIndex: number
+        if (e.key === '0') {
+          optionIndex = commandPresets.length
+        } else {
+          optionIndex = Number(e.key) - 1
+          if (optionIndex >= commandPresets.length) return
+        }
+
+        e.preventDefault()
+        if (typeof e.stopPropagation === 'function') e.stopPropagation()
+        if (optionIndex === commandPresets.length) {
+          handleCustomSelect()
+        } else {
+          handlePresetSelect(commandPresets[optionIndex].id)
+        }
+        // Focus the chip so Enter creates the session.
+        const chips = formRef.current?.querySelectorAll?.<HTMLButtonElement>(
+          '[data-testid="command-select"] [role="radio"]'
+        )
+        chips?.[optionIndex]?.focus()
+        return
+      }
+
       if (e.key === 'Tab') {
         e.preventDefault()
         if (typeof e.stopPropagation === 'function') e.stopPropagation()
@@ -197,23 +246,10 @@ export default function NewSessionModal({
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, onClose, showBrowser])
+  }, [isOpen, onClose, showBrowser, commandPresets, yoloMode])
 
   if (!isOpen) {
     return null
-  }
-
-  const handlePresetSelect = (presetId: string) => {
-    const preset = commandPresets.find(p => p.id === presetId)
-    if (preset) {
-      setSelectedPresetId(presetId)
-      setCommand(applyYoloPref(getFullCommand(preset)))
-    }
-  }
-
-  const handleCustomSelect = () => {
-    setSelectedPresetId(null)
-    setCommand('')
   }
 
   const isCustomMode = selectedPresetId === null
@@ -363,6 +399,7 @@ export default function NewSessionModal({
             >
               {allOptions.map((option, index) => {
                 const isActive = option.isCustom ? isCustomMode : selectedPresetId === option.id
+                const digitHint = option.isCustom ? '0' : index < 9 ? String(index + 1) : null
                 return (
                   <button
                     key={option.id}
@@ -370,6 +407,7 @@ export default function NewSessionModal({
                     type="button"
                     role="radio"
                     aria-checked={isActive}
+                    aria-keyshortcuts={digitHint ?? undefined}
                     tabIndex={isActive ? 0 : -1}
                     onClick={() => {
                       if (option.isCustom) {
@@ -401,6 +439,11 @@ export default function NewSessionModal({
                     }}
                     className={`btn text-xs focus:outline-none focus:ring-2 focus:ring-primary ${isActive ? 'btn-primary' : ''}`}
                   >
+                    {digitHint && (
+                      <kbd aria-hidden="true" className="shortcut-badge">
+                        {digitHint}
+                      </kbd>
+                    )}
                     <AgentIcon agentType={option.agentType} command={option.command} className="inline-block h-3.5 w-3.5 shrink-0" />
                     {option.label}
                   </button>
