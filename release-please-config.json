@@ -4,19 +4,7 @@
   "include-component-in-tag": false,
   "packages": {
     ".": {
-      "changelog-path": "CHANGELOG.md",
-      "extra-files": [
-        {
-          "type": "json",
-          "path": "package.json",
-          "jsonpaths": [
-            "$.optionalDependencies['@gbasin/agentboard-darwin-arm64']",
-            "$.optionalDependencies['@gbasin/agentboard-darwin-x64']",
-            "$.optionalDependencies['@gbasin/agentboard-linux-x64']",
-            "$.optionalDependencies['@gbasin/agentboard-linux-arm64']"
-          ]
-        }
-      ]
+      "changelog-path": "CHANGELOG.md"
     }
   }
 }
