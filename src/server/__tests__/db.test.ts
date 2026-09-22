@@ -19,7 +19,7 @@ function makeSession(overrides: Partial<{
   lastActivityAt: string
   lastUserMessage: string | null
   currentWindow: string | null
-  isPinned: boolean
+  isHibernating: boolean
   lastResumeError: string | null
   wakeStartedAt: string | null
   lastKnownLogSize: number | null
@@ -37,7 +37,7 @@ function makeSession(overrides: Partial<{
     lastActivityAt: now,
     lastUserMessage: null,
     currentWindow: 'agentboard:1',
-    isPinned: false,
+    isHibernating: false,
     lastResumeError: null,
     wakeStartedAt: null,
     lastKnownLogSize: null,
@@ -131,22 +131,22 @@ describe('db', () => {
     ])
   })
 
-  test('setPinned updates hibernation marker flag', () => {
+  test('setHibernating updates hibernation marker flag', () => {
     const session = makeSession()
     db.insertSession(session)
 
     // Initially not marked for hibernation
-    expect(db.getSessionById(session.sessionId)?.isPinned).toBe(false)
+    expect(db.getSessionById(session.sessionId)?.isHibernating).toBe(false)
 
     // Mark it for hibernation
-    const marked = db.setPinned(session.sessionId, true)
-    expect(marked?.isPinned).toBe(true)
-    expect(db.getSessionById(session.sessionId)?.isPinned).toBe(true)
+    const marked = db.setHibernating(session.sessionId, true)
+    expect(marked?.isHibernating).toBe(true)
+    expect(db.getSessionById(session.sessionId)?.isHibernating).toBe(true)
 
     // Clear the hibernation marker
-    const cleared = db.setPinned(session.sessionId, false)
-    expect(cleared?.isPinned).toBe(false)
-    expect(db.getSessionById(session.sessionId)?.isPinned).toBe(false)
+    const cleared = db.setHibernating(session.sessionId, false)
+    expect(cleared?.isHibernating).toBe(false)
+    expect(db.getSessionById(session.sessionId)?.isHibernating).toBe(false)
   })
 
   test('getHibernatingSessions returns marked sessions without window', () => {
@@ -154,21 +154,21 @@ describe('db', () => {
     db.insertSession(makeSession({
       sessionId: 'a',
       logFilePath: '/tmp/a.jsonl',
-      isPinned: true,
+      isHibernating: true,
       currentWindow: null,
     }))
     // Marked + active (should NOT be returned)
     db.insertSession(makeSession({
       sessionId: 'b',
       logFilePath: '/tmp/b.jsonl',
-      isPinned: true,
+      isHibernating: true,
       currentWindow: 'agentboard:1',
     }))
     // Unmarked + orphaned (should NOT be returned)
     db.insertSession(makeSession({
       sessionId: 'c',
       logFilePath: '/tmp/c.jsonl',
-      isPinned: false,
+      isHibernating: false,
       currentWindow: null,
     }))
 
@@ -182,13 +182,13 @@ describe('db', () => {
       sessionId: 'hibernating-one',
       logFilePath: '/tmp/hibernating-one.jsonl',
       currentWindow: null,
-      isPinned: true,
+      isHibernating: true,
     }))
     db.insertSession(makeSession({
       sessionId: 'history-one',
       logFilePath: '/tmp/history-one.jsonl',
       currentWindow: null,
-      isPinned: false,
+      isHibernating: false,
     }))
 
     const hibernating = db.getHibernatingSessions()
@@ -203,13 +203,13 @@ describe('db', () => {
       sessionId: 'marked-to-orphan',
       logFilePath: '/tmp/marked-to-orphan.jsonl',
       currentWindow: 'agentboard:9',
-      isPinned: true,
+      isHibernating: true,
     }))
 
     const orphaned = db.orphanSession('marked-to-orphan')
 
     expect(orphaned?.currentWindow).toBeNull()
-    expect(orphaned?.isPinned).toBe(true)
+    expect(orphaned?.isHibernating).toBe(true)
     expect(db.getHibernatingSessions().map((session) => session.sessionId)).toEqual([
       'marked-to-orphan',
     ])
@@ -221,13 +221,13 @@ describe('db', () => {
       sessionId: 'unmarked-to-orphan',
       logFilePath: '/tmp/unmarked-to-orphan.jsonl',
       currentWindow: 'agentboard:10',
-      isPinned: false,
+      isHibernating: false,
     }))
 
     const orphaned = db.orphanSession('unmarked-to-orphan')
 
     expect(orphaned?.currentWindow).toBeNull()
-    expect(orphaned?.isPinned).toBe(true)
+    expect(orphaned?.isHibernating).toBe(true)
     expect(db.getHistorySessions()).toEqual([])
     expect(db.getHibernatingSessions().map((session) => session.sessionId)).toEqual([
       'unmarked-to-orphan',
@@ -239,13 +239,13 @@ describe('db', () => {
       sessionId: 'mismatch-to-history',
       logFilePath: '/tmp/mismatch-to-history.jsonl',
       currentWindow: 'agentboard:11',
-      isPinned: true,
+      isHibernating: true,
     }))
 
     const orphaned = db.orphanSession('mismatch-to-history', { hibernate: false })
 
     expect(orphaned?.currentWindow).toBeNull()
-    expect(orphaned?.isPinned).toBe(false)
+    expect(orphaned?.isHibernating).toBe(false)
     expect(db.getHibernatingSessions()).toEqual([])
     expect(db.getHistorySessions().map((session) => session.sessionId)).toEqual([
       'mismatch-to-history',
@@ -346,7 +346,7 @@ describe('db', () => {
         last_user_message TEXT,
         current_window TEXT,
         is_sleeping INTEGER NOT NULL DEFAULT 0,
-        is_pinned INTEGER NOT NULL DEFAULT 0,
+        is_hibernating INTEGER NOT NULL DEFAULT 0,
         last_resume_error TEXT,
         last_known_log_size INTEGER,
         is_codex_exec INTEGER NOT NULL DEFAULT 0,
@@ -367,7 +367,7 @@ describe('db', () => {
         last_user_message,
         current_window,
         is_sleeping,
-        is_pinned,
+        is_hibernating,
         last_resume_error,
         last_known_log_size,
         is_codex_exec,
@@ -439,7 +439,7 @@ describe('db', () => {
         last_activity_at TEXT NOT NULL,
         last_user_message TEXT,
         current_window TEXT,
-        is_pinned INTEGER NOT NULL DEFAULT 0,
+        is_hibernating INTEGER NOT NULL DEFAULT 0,
         last_resume_error TEXT,
         last_known_log_size INTEGER,
         is_codex_exec INTEGER NOT NULL DEFAULT 0,
@@ -459,7 +459,7 @@ describe('db', () => {
         last_activity_at,
         last_user_message,
         current_window,
-        is_pinned,
+        is_hibernating,
         last_resume_error,
         last_known_log_size,
         is_codex_exec,
@@ -474,11 +474,11 @@ describe('db', () => {
 
     expect(migrated.getSessionById('newer-dupe')).toMatchObject({
       currentWindow: 'agentboard:dupe',
-      isPinned: false,
+      isHibernating: false,
     })
     expect(migrated.getSessionById('older-dupe')).toMatchObject({
       currentWindow: null,
-      isPinned: false,
+      isHibernating: false,
     })
     expect(migrated.getHibernatingSessions()).toEqual([])
     expect(() =>
@@ -512,7 +512,7 @@ describe('db', () => {
         last_user_message TEXT,
         current_window TEXT,
         is_sleeping INTEGER NOT NULL DEFAULT 0,
-        is_pinned INTEGER NOT NULL DEFAULT 0,
+        is_hibernating INTEGER NOT NULL DEFAULT 0,
         last_resume_error TEXT,
         last_known_log_size INTEGER,
         is_codex_exec INTEGER NOT NULL DEFAULT 0,
@@ -533,7 +533,7 @@ describe('db', () => {
         last_user_message,
         current_window,
         is_sleeping,
-        is_pinned,
+        is_hibernating,
         last_resume_error,
         last_known_log_size,
         is_codex_exec,
@@ -558,7 +558,7 @@ describe('db', () => {
     expect(columnNames).not.toContain('is_sleeping')
     expect(columnNames).not.toContain('last_resume_attempt_at')
     expect(tableInfo?.sql).toContain("'claude-rp'")
-    expect(migrated.getSessionById('legacy-hibernating')?.isPinned).toBe(true)
+    expect(migrated.getSessionById('legacy-hibernating')?.isHibernating).toBe(true)
     expect(migrated.getHibernatingSessions().map((session) => session.sessionId)).toEqual([
       'legacy-hibernating',
     ])
@@ -718,7 +718,7 @@ describe('db', () => {
       sessionId: 'session-wake-marker',
       logFilePath: '/tmp/session-wake-marker.jsonl',
       currentWindow: null,
-      isPinned: true,
+      isHibernating: true,
       wakeStartedAt,
     }))
 

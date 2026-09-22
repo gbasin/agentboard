@@ -168,7 +168,7 @@ function agentSessionsEqual(a: AgentSession, b: AgentSession): boolean {
     a.isActive === b.isActive &&
     a.host === b.host &&
     a.lastUserMessage === b.lastUserMessage &&
-    a.isPinned === b.isPinned &&
+    a.isHibernating === b.isHibernating &&
     a.lastResumeError === b.lastResumeError &&
     prsEqual(a.prs, b.prs)
   )
@@ -189,7 +189,7 @@ function sessionsEqual(a: Session, b: Session): boolean {
     a.agentSessionName === b.agentSessionName &&
     a.logFilePath === b.logFilePath &&
     a.lastUserMessage === b.lastUserMessage &&
-    a.isPinned === b.isPinned &&
+    a.isHibernating === b.isHibernating &&
     a.host === b.host &&
     a.remote === b.remote &&
     prsEqual(a.prs, b.prs)

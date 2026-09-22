@@ -44,7 +44,7 @@ export interface Session {
   agentSessionName?: string
   logFilePath?: string
   lastUserMessage?: string
-  isPinned?: boolean
+  isHibernating?: boolean
   prs?: SessionPullRequest[]
 }
 
@@ -59,7 +59,7 @@ export interface AgentSession {
   isActive: boolean
   host?: string
   lastUserMessage?: string
-  isPinned?: boolean
+  isHibernating?: boolean
   lastResumeError?: string
   prs?: SessionPullRequest[]
 }

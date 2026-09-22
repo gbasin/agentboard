@@ -55,7 +55,7 @@ interface SessionRecord {
   lastActivityAt: string
   lastUserMessage: string | null
   currentWindow: string | null
-  isPinned: boolean
+  isHibernating: boolean
   lastResumeError: string | null
   wakeStartedAt: string | null
   lastKnownLogSize: number | null
@@ -149,10 +149,10 @@ function hasRecoverableWakePending(record: {
 }
 
 function canAttemptDormantRematch(record: {
-  isPinned: boolean
+  isHibernating: boolean
   wakeStartedAt: string | null
 }): boolean {
-  return !record.isPinned || hasRecoverableWakePending(record)
+  return !record.isHibernating || hasRecoverableWakePending(record)
 }
 
 interface PollStats {
@@ -988,11 +988,11 @@ export class LogPoller {
           )
           if (slugMatch && slugMatch.sessionId !== sessionId) {
             supersededWindow = slugMatch.currentWindow
-            inheritHibernationMarker = slugMatch.isPinned
+            inheritHibernationMarker = slugMatch.isHibernating
             inheritDisplayName = slugMatch.displayName
             this.db.updateSession(slugMatch.sessionId, {
               currentWindow: null,
-              isPinned: false,
+              isHibernating: false,
             })
             this.onSessionOrphaned?.(slugMatch.sessionId, sessionId)
             logger.info('session_superseded_by_slug', {
@@ -1072,7 +1072,7 @@ export class LogPoller {
           lastActivityAt,
           lastUserMessage: currentWindow ? null : (entry.lastUserMessage ?? null),
           currentWindow,
-          isPinned: inheritHibernationMarker,
+          isHibernating: inheritHibernationMarker,
           lastResumeError: null,
           lastKnownLogSize: entry.size,
           isCodexExec: entry.isCodexExec,

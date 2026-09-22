@@ -22,7 +22,7 @@ const baseAgentSession: AgentSession = {
   createdAt: '2024-01-01T00:00:00.000Z',
   lastActivityAt: '2024-01-01T00:00:00.000Z',
   isActive: true,
-  isPinned: false,
+  isHibernating: false,
 }
 
 function makeSession(overrides: Partial<Session> = {}): Session {
@@ -283,14 +283,14 @@ describe('SessionRegistry', () => {
     registry.on('agent-sessions-active', (active) => activeEvents.push(active))
 
     const active = [makeAgentSession({ sessionId: 'a1' })]
-    const hibernating = [makeAgentSession({ sessionId: 's1', isActive: false, isPinned: true })]
+    const hibernating = [makeAgentSession({ sessionId: 's1', isActive: false, isHibernating: true })]
     registry.setAgentSessions(active, hibernating, [])
     fullEvents.length = 0
     activeEvents.length = 0
 
     registry.setAgentSessions(
       active,
-      [makeAgentSession({ sessionId: 's2', isActive: false, isPinned: true })],
+      [makeAgentSession({ sessionId: 's2', isActive: false, isHibernating: true })],
       []
     )
 
@@ -316,7 +316,7 @@ describe('SessionRegistry', () => {
       isActive: true,
       host: 'host-1',
       lastUserMessage: 'hello',
-      isPinned: false,
+      isHibernating: false,
       lastResumeError: undefined,
     })
 
@@ -340,7 +340,7 @@ describe('SessionRegistry', () => {
       { isActive: false },
       { host: 'host-2' },
       { lastUserMessage: 'changed' },
-      { isPinned: true },
+      { isHibernating: true },
       { lastResumeError: 'error occurred' },
       { prs: [{ url: 'https://github.com/o/r/pull/1', repo: 'o/r', number: 1 }] },
     ]

@@ -410,7 +410,7 @@ export default function App() {
             agentSessionId: message.session.sessionId,
             agentSessionName: message.session.displayName,
             logFilePath: message.session.logFilePath,
-            isPinned: message.session.isPinned,
+            isHibernating: message.session.isHibernating,
             lastUserMessage: message.session.lastUserMessage ?? existing.lastUserMessage,
           })
         }

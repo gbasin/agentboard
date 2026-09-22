@@ -309,7 +309,7 @@ describe('LogPoller', () => {
       lastActivityAt: now,
       lastUserMessage: 'active',
       currentWindow: baseSession.tmuxWindow,
-      isPinned: false,
+      isHibernating: false,
       lastResumeError: null,
       lastKnownLogSize: 0,
       isCodexExec: false,
@@ -361,7 +361,7 @@ describe('LogPoller', () => {
       lastActivityAt: now,
       lastUserMessage: 'old session',
       currentWindow: null,
-      isPinned: false,
+      isHibernating: false,
       lastResumeError: null,
       lastKnownLogSize: 0,
       isCodexExec: false,
@@ -487,7 +487,7 @@ describe('LogPoller', () => {
       lastActivityAt: now,
       lastUserMessage: 'ready',
       currentWindow: baseSession.tmuxWindow,
-      isPinned: false,
+      isHibernating: false,
       lastResumeError: null,
       lastKnownLogSize: 0,
       isCodexExec: false,
@@ -507,7 +507,7 @@ describe('LogPoller', () => {
         lastActivityAt: oldTimestamp,
         lastUserMessage: 'archived',
         currentWindow: null,
-        isPinned: false,
+        isHibernating: false,
         lastResumeError: null,
         lastKnownLogSize: 0,
         isCodexExec: false,
@@ -666,7 +666,7 @@ describe('LogPoller', () => {
       lastActivityAt: new Date().toISOString(),
       lastUserMessage: null,
       currentWindow: null,
-      isPinned: true,
+      isHibernating: true,
       lastResumeError: null,
       lastKnownLogSize: 0,
       isCodexExec: false,
@@ -685,7 +685,7 @@ describe('LogPoller', () => {
 
     const record = db.getSessionById('hibernating-session')
     expect(record?.currentWindow).toBeNull()
-    expect(record?.isPinned).toBeTrue()
+    expect(record?.isHibernating).toBeTrue()
     expect(activated).toEqual([])
 
     poller.stop()
@@ -731,7 +731,7 @@ describe('LogPoller', () => {
       lastActivityAt: '2020-01-01T00:00:00.000Z',
       lastUserMessage: null,
       currentWindow: null,
-      isPinned: true,
+      isHibernating: true,
       lastResumeError: 'server restarted during wake',
       wakeStartedAt: new Date().toISOString(),
       lastKnownLogSize: stats.size,
@@ -751,7 +751,7 @@ describe('LogPoller', () => {
 
     const record = db.getSessionById('wake-pending-session')
     expect(record?.currentWindow).toBe(baseSession.tmuxWindow)
-    expect(record?.isPinned).toBeTrue()
+    expect(record?.isHibernating).toBeTrue()
     expect(record?.lastResumeError).toBeNull()
     expect(record?.wakeStartedAt).toBeNull()
     expect(activated).toEqual([
@@ -868,7 +868,7 @@ describe('LogPoller', () => {
       lastActivityAt: new Date().toISOString(),
       lastUserMessage: null,
       currentWindow: baseSession.tmuxWindow,
-      isPinned: false,
+      isHibernating: false,
       lastResumeError: null,
       lastKnownLogSize: null,
       isCodexExec: false,
@@ -1106,7 +1106,7 @@ describe('LogPoller', () => {
       lastActivityAt: new Date(Date.now() + 60_000).toISOString(),
       lastUserMessage: null,
       currentWindow: 'agentboard:99',
-      isPinned: false,
+      isHibernating: false,
       lastResumeError: null,
       lastKnownLogSize: null,
       isCodexExec: false,
@@ -1177,9 +1177,9 @@ describe('LogPoller', () => {
     await poller.pollOnce()
 
     // Mark session A for hibernation
-    db.setPinned('claude-session-a', true)
+    db.setHibernating('claude-session-a', true)
     const markedA = db.getSessionById('claude-session-a')
-    expect(markedA?.isPinned).toBe(true)
+    expect(markedA?.isHibernating).toBe(true)
 
     // Session B with same slug supersedes hibernation-marked session A
     const tokensB = Array.from({ length: 60 }, (_, i) => `next${i}`).join(' ')
@@ -1202,12 +1202,12 @@ describe('LogPoller', () => {
     // Session B should inherit the hibernation marker
     const newRecord = db.getSessionById('claude-session-b')
     expect(newRecord?.currentWindow).toBe(baseSession.tmuxWindow)
-    expect(newRecord?.isPinned).toBe(true)
+    expect(newRecord?.isHibernating).toBe(true)
 
     // Session A should be orphaned
     const oldRecord = db.getSessionById('claude-session-a')
     expect(oldRecord?.currentWindow).toBeNull()
-    expect(oldRecord?.isPinned).toBe(false)
+    expect(oldRecord?.isHibernating).toBe(false)
 
     db.close()
   })
@@ -1513,7 +1513,7 @@ describe('LogPoller', () => {
       lastActivityAt: new Date(stats.mtime.getTime() - 1000).toISOString(),
       lastUserMessage: oldMessage,
       currentWindow: baseSession.tmuxWindow,
-      isPinned: false,
+      isHibernating: false,
       lastResumeError: null,
       lastKnownLogSize: 0,
       isCodexExec: false,
@@ -1567,7 +1567,7 @@ describe('LogPoller', () => {
       lastActivityAt: '2020-01-01T00:00:00.000Z',
       lastUserMessage: null,
       currentWindow: null,
-      isPinned: false,
+      isHibernating: false,
       lastResumeError: 'wake failed',
       lastKnownLogSize: stats.size,
       isCodexExec: false,
@@ -1632,7 +1632,7 @@ describe('LogPoller', () => {
       lastActivityAt: stats.mtime.toISOString(),
       lastUserMessage: null,
       currentWindow: null,
-      isPinned: false,
+      isHibernating: false,
       lastResumeError: 'wake failed',
       lastKnownLogSize: 0,
       isCodexExec: false,
@@ -1830,7 +1830,7 @@ describe('LogPoller', () => {
       lastActivityAt: stats.mtime.toISOString(),
       lastUserMessage: null,
       currentWindow: null,
-      isPinned: false,
+      isHibernating: false,
       lastResumeError: null,
       lastKnownLogSize: null,
       isCodexExec: false,
@@ -1948,7 +1948,7 @@ describe('LogPoller', () => {
       lastActivityAt: new Date().toISOString(),
       lastUserMessage: null,
       currentWindow: 'agentboard:6',
-      isPinned: false,
+      isHibernating: false,
       lastResumeError: null,
       lastKnownLogSize: null,
       isCodexExec: false,

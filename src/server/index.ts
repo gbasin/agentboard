@@ -1083,7 +1083,7 @@ export function hydrateSessionsWithAgentSessions(
       // Use persisted log times (survives server restarts, works when tmux lacks creation time)
       lastActivity: agentSession.lastActivityAt,
       createdAt: agentSession.createdAt,
-      isPinned: agentSession.isPinned,
+      isHibernating: agentSession.isHibernating,
     }
   })
 
@@ -2782,10 +2782,10 @@ async function handleCheckCopyMode(sessionId: string, ws: ServerWebSocket<WSData
   }
 }
 
-function restorePinnedState(previousPinnedState: Map<string, boolean>) {
-  for (const [agentSessionId, isPinned] of previousPinnedState) {
+function restoreHibernatingState(previousHibernatingState: Map<string, boolean>) {
+  for (const [agentSessionId, isHibernating] of previousHibernatingState) {
     try {
-      db.updateSession(agentSessionId, { isPinned })
+      db.updateSession(agentSessionId, { isHibernating })
     } catch {
       // Best effort rollback; the original failure remains the primary error.
     }
@@ -2942,20 +2942,20 @@ async function handleKill(
     ...auditFields,
     agentSessionIds: Array.from(agentSessionIds),
   }
-  const previousPinnedState = new Map<string, boolean>()
+  const previousHibernatingState = new Map<string, boolean>()
 
   try {
     for (const agentSessionId of agentSessionIds) {
       const current = db.getSessionById(agentSessionId)
       if (!current) continue
-      previousPinnedState.set(agentSessionId, current.isPinned)
-      const updated = db.updateSession(agentSessionId, { isPinned: false })
+      previousHibernatingState.set(agentSessionId, current.isHibernating)
+      const updated = db.updateSession(agentSessionId, { isHibernating: false })
       if (!updated) {
         throw new Error('Failed to clear hibernation marker')
       }
     }
   } catch (error) {
-    restorePinnedState(previousPinnedState)
+    restoreHibernatingState(previousHibernatingState)
     sendKillFailed(
       ws,
       sessionId,
@@ -2970,7 +2970,7 @@ async function handleKill(
   try {
     sessionManager.killWindow(session.tmuxWindow)
   } catch (error) {
-    restorePinnedState(previousPinnedState)
+    restoreHibernatingState(previousHibernatingState)
     sendKillFailed(
       ws,
       sessionId,
@@ -2989,7 +2989,7 @@ async function handleKill(
     try {
       const orphanedSession = db.updateSession(agentSessionId, {
         currentWindow: null,
-        isPinned: false,
+        isHibernating: false,
       })
       if (orphanedSession) {
         orphaned.set(agentSessionId, toAgentSession(orphanedSession))
@@ -3131,7 +3131,7 @@ function handleMoveToHistory(
     return
   }
 
-  const updated = db.setPinned(sessionId, false)
+  const updated = db.setHibernating(sessionId, false)
   if (!updated) {
     send(ws, { type: 'session-move-to-history-result', sessionId, ok: false, error: 'Failed to move session to History' })
     return
@@ -3147,7 +3147,7 @@ function handleMoveToHistory(
   // Update all active sessions that match (in case of edge cases with multiple windows).
   for (const session of registry.getAll()) {
     if (session.agentSessionId === sessionId) {
-      registry.updateSession(session.id, { isPinned: false })
+      registry.updateSession(session.id, { isHibernating: false })
     }
   }
 
@@ -3173,7 +3173,7 @@ function handleSessionHibernate(
 
   // Idempotent ack: already hibernating. A reconnect-storm replay or a double
   // click shouldn't surface a spurious error to the user.
-  if (record.isPinned && !record.currentWindow) {
+  if (record.isHibernating && !record.currentWindow) {
     logger.info('session_hibernate_noop', {
       sessionId,
       agentType: record.agentType,
@@ -3213,11 +3213,11 @@ function handleSessionHibernate(
     return
   }
 
-  const originalMarker = record.isPinned
+  const originalMarker = record.isHibernating
   const originalResumeError = record.lastResumeError
   const liveTmuxWindow = liveSession.tmuxWindow
   const markerPatch: Partial<Omit<AgentSessionRecord, 'id' | 'sessionId'>> = {
-    isPinned: true,
+    isHibernating: true,
     lastResumeError: null,
   }
   if (liveSession.command && !record.launchCommand) {
@@ -3284,7 +3284,7 @@ function handleSessionHibernate(
     } else {
       try {
         db.updateSession(sessionId, {
-          isPinned: originalMarker,
+          isHibernating: originalMarker,
           lastResumeError: originalResumeError,
           launchCommand: record.launchCommand,
         })
@@ -3313,7 +3313,7 @@ function handleSessionHibernate(
   try {
     updated = db.updateSession(sessionId, {
       currentWindow: null,
-      isPinned: true,
+      isHibernating: true,
       lastResumeError: null,
     })
   } catch (error) {
@@ -3481,7 +3481,7 @@ function hydrateWakeSession(
     lastUserMessage: record.lastUserMessage ?? session.lastUserMessage,
     lastActivity: record.lastActivityAt,
     createdAt: record.createdAt,
-    isPinned: record.isPinned,
+    isHibernating: record.isHibernating,
   })
 }
 
