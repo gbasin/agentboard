@@ -29,10 +29,18 @@ interface PrCheckInfo extends PrInfo {
 
 // Module-level caches shared across all session rows: a session's PRs are
 // fetched once per 60s (server also caches) no matter how often rows remount.
-const infoCache = new Map<string, PrInfo>()
+// Error results are never cached — a transient failure would otherwise pin
+// the chip to its gray fallback for the life of the page (days in a PWA).
+const INFO_TTL_MS = 60_000
+const infoCache = new Map<string, { at: number; info: PrInfo }>()
 const checksCache = new Map<string, PrCheckInfo>()
-const infoInflight = new Set<string>()
+const infoInflight = new Map<string, Promise<unknown>>()
 const checksInflight = new Set<string>()
+
+function cachedInfo(url: string): PrInfo | undefined {
+  const c = infoCache.get(url)
+  return c && Date.now() - c.at < INFO_TTL_MS ? c.info : undefined
+}
 
 // Pill geometry shared by PrChip anchors and the offscreen measurer spans
 // below — keep these in sync or the single-row fit math drifts.
@@ -79,24 +87,33 @@ function checkIcon(c: {
 }
 
 // Shared eager fetch: fills infoCache for any urls not yet known/in-flight.
+// Callers await the shared in-flight promise so a chip that mounts while a
+// request is already running still receives its result — returning early
+// here would leave the late chip gray forever.
 async function fetchInfoBatch(urls: string[]): Promise<PrInfo[]> {
-  const missing = urls.filter((u) => !infoCache.has(u) && !infoInflight.has(u))
-  if (missing.length === 0) return urls.map((u) => infoCache.get(u)!)
-  missing.forEach((u) => infoInflight.add(u))
-  try {
-    const r = await fetch('/api/pr-info', {
+  const missing = urls.filter((u) => !cachedInfo(u) && !infoInflight.has(u))
+  if (missing.length > 0) {
+    const p: Promise<unknown> = fetch('/api/pr-info', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ urls: missing }),
     })
-    const arr = (await r.json()) as PrInfo[]
-    for (const info of arr) infoCache.set(info.url, info)
-  } catch {
-    // leave uncached; next mount/hover retries
-  } finally {
-    missing.forEach((u) => infoInflight.delete(u))
+      .then((r) => r.json() as Promise<PrInfo[]>)
+      .then((arr) => {
+        for (const info of arr) {
+          if (!info.error) infoCache.set(info.url, { at: Date.now(), info })
+        }
+      })
+      .catch(() => {
+        // leave uncached; next mount/hover retries
+      })
+      .finally(() => {
+        missing.forEach((u) => infoInflight.delete(u))
+      })
+    missing.forEach((u) => infoInflight.set(u, p))
   }
-  return urls.map((u) => infoCache.get(u)!).filter(Boolean)
+  await Promise.all(urls.map((u) => infoInflight.get(u)))
+  return urls.map((u) => cachedInfo(u)!).filter(Boolean)
 }
 
 const CARD_CLOSE_DELAY_MS = 200
@@ -204,8 +221,14 @@ function useHoverCard(
   return { open, pos, openCard, scheduleClose, cancelClose, cardRef }
 }
 
-function PrChip({ pr }: { pr: SessionPullRequest }) {
-  const [info, setInfo] = useState<PrInfo | undefined>(infoCache.get(pr.url))
+function PrChip({
+  pr,
+  refreshKey,
+}: {
+  pr: SessionPullRequest
+  refreshKey: number
+}) {
+  const [info, setInfo] = useState<PrInfo | undefined>(cachedInfo(pr.url))
   const [checks, setChecks] = useState<PrCheckInfo | undefined>(
     checksCache.get(pr.url)
   )
@@ -220,13 +243,21 @@ function PrChip({ pr }: { pr: SessionPullRequest }) {
     }
   }, [])
 
-  // Eager: state/title/author once per url.
+  // Eager: state/title/author once per url. refreshKey re-runs this on
+  // PWA resume so stale entries refresh and uncached failures retry.
   useEffect(() => {
-    if (infoCache.has(pr.url)) return
+    const c = cachedInfo(pr.url)
+    if (c) {
+      // Cache may have filled between render and effect via a shared
+      // in-flight request — adopt it rather than fetching again.
+      setInfo((prev) => prev ?? c)
+      return
+    }
     fetchInfoBatch([pr.url]).then((arr) => {
-      if (mounted.current && arr[0]) setInfo(arr[0])
+      const found = arr.find((i) => i.url === pr.url)
+      if (mounted.current && found) setInfo(found)
     })
-  }, [pr.url])
+  }, [pr.url, refreshKey])
 
   // Lazy: CI detail only on hover.
   useEffect(() => {
@@ -258,7 +289,7 @@ function PrChip({ pr }: { pr: SessionPullRequest }) {
         className={`${PILL_CLASS} bg-elevated text-muted hover:text-accent`}
         aria-label={`${pr.repo}#${pr.number}`}
       >
-        <span className={`${DOT_CLASS} ${stateColor(info)}`} />
+        <span className={`${DOT_CLASS} ${stateColor(detail)}`} />
         #{pr.number}
       </a>
       {open &&
@@ -280,8 +311,8 @@ function PrChip({ pr }: { pr: SessionPullRequest }) {
             onClick={(e) => e.stopPropagation()}
           >
           <div className="flex shrink-0 items-center gap-1.5 text-[11px]">
-            <span className={stateColor(info) + ' inline-block h-1.5 w-1.5 shrink-0 rounded-full'} />
-            <span className="text-muted">{stateLabel(info) || 'PR'}</span>
+            <span className={stateColor(detail) + ' inline-block h-1.5 w-1.5 shrink-0 rounded-full'} />
+            <span className="text-muted">{stateLabel(detail) || 'PR'}</span>
             <span className="text-muted">·</span>
             <a
               href={pr.url}
@@ -359,11 +390,16 @@ function OverflowChip({ prs }: { prs: SessionPullRequest[] }) {
   const { open, pos, openCard, scheduleClose, cancelClose, cardRef } =
     useHoverCard(anchorRef, 224)
 
-  // Lazy: only fetch state for hidden PRs when the card opens.
+  // Lazy: only fetch state for hidden PRs when the card opens. Reopening
+  // retries urls still missing info (failures are never cached).
   useEffect(() => {
-    if (!open || infos) return
+    if (!open || (infos && prs.every((p) => infos.has(p.url)))) return
     fetchInfoBatch(prs.map((p) => p.url)).then((arr) => {
-      setInfos(new Map(arr.map((i) => [i.url, i])))
+      setInfos((prev) => {
+        const next = new Map(prev ?? [])
+        for (const i of arr) next.set(i.url, i)
+        return next
+      })
     })
   }, [open, infos, prs])
 
@@ -439,6 +475,18 @@ export function PrChips({ prs }: { prs: SessionPullRequest[] }) {
   // Extraction order is chronological by creation; show newest first.
   const ordered = useMemo(() => [...prs].reverse(), [prs])
   const [visibleCount, setVisibleCount] = useState(ordered.length)
+  // Bump on page-visible so mounted chips refetch stale info: PWAs resume
+  // from suspension instead of reloading, so without this PR state could
+  // sit gray for days after one failed launch-time fetch.
+  const [refreshKey, setRefreshKey] = useState(0)
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') setRefreshKey((k) => k + 1)
+    }
+    document.addEventListener?.('visibilitychange', onVisible)
+    return () =>
+      document.removeEventListener?.('visibilitychange', onVisible)
+  }, [])
 
   const recompute = useCallback(() => {
     const n = ordered.length
@@ -507,7 +555,7 @@ export function PrChips({ prs }: { prs: SessionPullRequest[] }) {
       className="relative flex flex-nowrap items-center gap-1 overflow-hidden pl-[1.375rem]"
     >
       {visible.map((pr) => (
-        <PrChip key={pr.url} pr={pr} />
+        <PrChip key={pr.url} pr={pr} refreshKey={refreshKey} />
       ))}
       {overflow.length > 0 && <OverflowChip prs={overflow} />}
       <span
