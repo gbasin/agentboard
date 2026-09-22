@@ -3,7 +3,6 @@ import path from 'node:path'
 import { Database as SQLiteDatabase } from 'bun:sqlite'
 import type { AgentType } from '../shared/types'
 import { resolveProjectPath } from './paths'
-import { SessionBackups, applyPendingRestore } from './persistence/backups'
 import { acquireDatabaseOwner } from './persistence/ownership'
 
 export interface AgentSessionRecord {
@@ -166,7 +165,6 @@ export function initDatabase(options: { path?: string; exclusive?: boolean } = {
   const owner = options.exclusive ? acquireDatabaseOwner(dbPath) : null
   let connection: SQLiteDatabase | undefined
   try {
-    applyPendingRestore(dbPath, owner?.token)
     connection = new SQLiteDatabase(dbPath)
     return initializeConnection(connection, dbPath, owner?.release)
   } catch (error) {
@@ -188,10 +186,8 @@ function initializeConnection(
     fs.chmodSync(dbPath, 0o600)
     const legacy = db.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='agent_sessions'").get()
     const catalog = db.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='board_sessions'").get()
-    if (legacy && !catalog) {
-      const backups = new SessionBackups(db, dbPath)
-      if (!backups.list().some(b => b.name.includes('-before-catalog-'))) backups.create('before-catalog')
-    }
+    if (legacy && !catalog && !fs.existsSync(`${dbPath}.before-catalog`))
+      db.query('VACUUM INTO ?').run(`${dbPath}.before-catalog`)
     db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000;')
     if (process.platform === 'darwin') db.exec('PRAGMA fullfsync=ON;')
   }

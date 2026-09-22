@@ -78,36 +78,20 @@ describe('durable catalog', () => {
     )
     expect(catalog.history({ q: '%' }).sessions).toHaveLength(0)
   })
-  test('keeps workspace membership across catalog reopen', () => {
-    const { catalog, db } = setup()
-    const saved = catalog.create(input)
-    const workspace = catalog.saveWorkspace('Team A', [saved.id, saved.id])
-    expect(new SessionCatalog(db.db, 'host-test').workspaces()[0]).toEqual({
-      ...workspace,
-      sessionIds: [saved.id],
-    })
-    expect(() => catalog.saveWorkspace('Bad', ['absent'])).toThrow(
-      'missing session'
-    )
-  })
-  test('merges a discovery import into its managed session without losing workspace membership', () => {
+  test('merges a discovery import into its managed session', () => {
     const { catalog } = setup()
-    const imported = catalog.create({
+    catalog.create({
       ...input,
       name: 'Imported',
       providerId: 'provider',
       origin: 'imported',
       pinned: true,
     })
-    const workspace = catalog.saveWorkspace('Team', [imported.id])
     const managed = catalog.create(input)
     catalog.associate(managed.id, 'provider', 'codex')
     expect(catalog.history().sessions).toHaveLength(1)
     expect(catalog.get(managed.id)?.name).toBe('A-Runtime')
     expect(catalog.get(managed.id)?.pinned).toBe(true)
-    expect(
-      catalog.workspaces().find((w) => w.id === workspace.id)?.sessionIds
-    ).toEqual([managed.id])
   })
 })
 

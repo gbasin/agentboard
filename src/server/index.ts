@@ -1492,11 +1492,7 @@ app.get('/api/session-preview/:sessionId', async (c) => {
     return c.json({ error: 'Session not found' }, 404)
   }
 
-  let logPath = record.logFilePath
-  if (!(logPath && await fs.access(logPath).then(() => true, () => false)) && persistenceRuntime?.archives?.pathFor(record.sessionId)) {
-    try { logPath = (await persistenceRuntime.archives.verify(record.sessionId)).archive_path }
-    catch (error) { return c.json({ error: String(error) }, 409) }
-  }
+  const logPath = record.logFilePath
   if (!logPath) {
     return c.json({ error: 'No log file for session' }, 404)
   }

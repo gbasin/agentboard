@@ -21,11 +21,7 @@ export function RecoveryNotice({ onOpen }: { onOpen: () => void }) {
       clearInterval(timer)
     }
   }, [])
-  if (
-    !health ||
-    (!health.interrupted && !health.indexError && !health.backupError)
-  )
-    return null
+  if (!health || (!health.interrupted && !health.error)) return null
   return (
     <button
       onClick={onOpen}

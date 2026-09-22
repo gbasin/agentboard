@@ -42,12 +42,6 @@ export interface HistoryPage {
   sessions: SavedSession[]
   nextCursor: string | null
 }
-export interface SavedWorkspace {
-  id: string
-  name: string
-  sessionIds: string[]
-  createdAt: string
-}
 export interface SessionEvent {
   id: number
   sessionId: string
@@ -55,37 +49,15 @@ export interface SessionEvent {
   detail: string | null
   createdAt: string
 }
-export interface BackupInfo {
-  name: string
-  createdAt: string
-  bytes: number
-}
-export interface ArchiveInfo {
-  providerId: string
-  bytes: number
-  updatedAt: string
-  complete: boolean
-  sourceMissing: boolean
-}
 export interface PersistenceSettings {
   autoResume: boolean
-  archiveEnabled: boolean
-  archiveMaxBytes: number
   capturePreviews: boolean
-  backupHourly: number
-  backupDaily: number
-  backupMonthly: number
 }
 export interface PersistenceHealth {
   lastSavedAt: string | null
-  pendingIndex: number
-  indexError: string | null
+  error: string | null
   matchingAvailable: boolean
   matchingError?: string | null
-  lastBackupAt: string | null
-  backupError: string | null
-  archiveBytes: number
-  archiveError: string | null
   interrupted: number
   settings: PersistenceSettings
 }
@@ -95,5 +67,5 @@ export interface HistoryDetail {
   events: SessionEvent[]
   terminalPreview: string | null
   terminalPreviewAt: string | null
-  conversations: (AgentSession & { archive: ArchiveInfo | null })[]
+  conversations: AgentSession[]
 }

@@ -18,8 +18,3 @@ export async function libraryRequest<T>(
 }
 export const historyButton =
   'inline-flex min-h-[30px] items-center justify-center rounded border border-border px-2 py-1 text-[12px] text-secondary hover:bg-hover disabled:opacity-40 disabled:cursor-wait'
-export function sizeLabel(bytes: number) {
-  return bytes >= 1024 ** 3
-    ? `${(bytes / 1024 ** 3).toFixed(1)} GB`
-    : `${(bytes / 1024 ** 2).toFixed(1)} MB`
-}

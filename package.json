@@ -31,7 +31,6 @@
     "dev:client": "vite --host",
     "build": "vite build",
     "start": "bun src/server/index.ts",
-    "history": "bun scripts/session-history.ts",
     "lint": "oxlint .",
     "typecheck": "tsc --noEmit",
     "test": "bun scripts/test-runner.ts",

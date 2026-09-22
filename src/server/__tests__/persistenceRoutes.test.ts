@@ -94,37 +94,17 @@ test('opening a tagged running terminal succeeds when its provider log is missin
   expect(sessions.findLive(sessions.catalog.get(saved.id)!)).toBeNull()
 })
 
-test('details and downloads keep the archive attached to its own conversation', async () => {
-  const { app, runtime, saved, addConversation } = setup()
-  for (const id of ['older', 'current']) {
-    const record = addConversation(id)
-    fs.writeFileSync(
-      record.logFilePath,
-      JSON.stringify({ conversation: id }) + '\n'
-    )
-    await runtime.archives!.archive(record, 100000)
-    if (id === 'older') fs.unlinkSync(record.logFilePath)
-  }
+test('details keep all linked conversations attached to the session', async () => {
+  const { app, saved, addConversation } = setup()
+  for (const id of ['older', 'current']) addConversation(id)
   const detail = (await (
     await app.request(`/api/library/${saved.id}`)
   ).json()) as HistoryDetail
   expect(detail.session.providerId).toBe('current')
-  expect(
-    detail.conversations.find((c) => c.sessionId === 'older')?.archive
-      ?.sourceMissing
-  ).toBe(true)
-  expect(
-    detail.conversations.find((c) => c.sessionId === 'current')?.archive
-      ?.sourceMissing
-  ).toBe(false)
-  const older = await app.request(
-    `/api/library/${saved.id}/archive?provider=older`
-  )
-  expect(await older.text()).toBe('{"conversation":"older"}\n')
-  expect(
-    (await app.request(`/api/library/${saved.id}/archive?provider=unrelated`))
-      .status
-  ).toBe(404)
+  expect(detail.conversations.map((c) => c.sessionId).sort()).toEqual([
+    'current',
+    'older',
+  ])
 })
 
 test('invalid combined updates do not partially rename a saved session', async () => {

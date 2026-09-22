@@ -1,6 +1,5 @@
 /** Additive catalog schema. Provider conversations remain in agent_sessions. */
 import type { Database } from 'bun:sqlite'
-import { SessionBackups } from './backups'
 
 const CATALOG_VERSION = 1
 
@@ -23,7 +22,7 @@ export function createCatalogSchema(db: Database) {
     const file = (db.query('PRAGMA database_list').get() as { file: string })
       .file
     if (file)
-      new SessionBackups(db, file).create(`before-schema-${CATALOG_VERSION}`)
+      db.query('VACUUM INTO ?').run(`${file}.before-catalog-schema`)
   }
   db.transaction(() => {
     db.exec(`
@@ -62,18 +61,6 @@ export function createCatalogSchema(db: Database) {
       PRIMARY KEY(session_id, provider_id)
     );
     CREATE INDEX IF NOT EXISTS conversation_provider ON session_conversations(provider_id);
-    CREATE TABLE IF NOT EXISTS saved_workspaces (
-      id TEXT PRIMARY KEY, name TEXT NOT NULL, session_ids TEXT NOT NULL, created_at TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS conversation_index_queue (
-      path TEXT PRIMARY KEY, size INTEGER NOT NULL, mtime REAL NOT NULL,
-      pending INTEGER NOT NULL DEFAULT 1, error TEXT, retry_at INTEGER NOT NULL DEFAULT 0
-    );
-    CREATE TABLE IF NOT EXISTS session_archives (
-      provider_id TEXT PRIMARY KEY, source_path TEXT NOT NULL, archive_path TEXT NOT NULL,
-      bytes INTEGER NOT NULL, source_size INTEGER NOT NULL, updated_at TEXT NOT NULL,
-      checksum TEXT NOT NULL, complete INTEGER NOT NULL
-    );
   `)
     db.exec(
       'INSERT OR IGNORE INTO session_conversations SELECT id,provider_id,created_at FROM board_sessions WHERE provider_id IS NOT NULL'

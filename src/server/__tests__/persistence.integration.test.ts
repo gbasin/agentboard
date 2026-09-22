@@ -7,7 +7,6 @@ import net from 'node:net'
 import type {
   HistoryPage,
   SavedSession,
-  SavedWorkspace,
 } from '../../shared/persistence'
 import type { Session } from '../../shared/types'
 
@@ -137,7 +136,7 @@ afterAll(async () => {
   fs.rmSync(root, { recursive: true, force: true })
 })
 
-test('A/B/C survive backend crashes, tmux replacement, repeated reopen and backup restoration', async () => {
+test('A/B/C survive backend crashes, tmux replacement, and repeated reopen', async () => {
   await start()
   for (const prefix of ['A', 'B', 'C']) {
     const live = await create(prefix)
@@ -160,10 +159,6 @@ test('A/B/C survive backend crashes, tmux replacement, repeated reopen and backu
     'C-Saved',
   ])
   expect(before.every((s) => s.providerId === null)).toBe(true)
-  const workspace = await api<SavedWorkspace>('/workspaces', 'POST', {
-    name: 'ABC',
-    sessionIds: before.map((s) => s.id),
-  })
   await crash()
   await start()
   const sameServer = await eventually(
@@ -186,12 +181,8 @@ test('A/B/C survive backend crashes, tmux replacement, repeated reopen and backu
     'B-Saved',
     'C-Saved',
   ])
-  const outcomes = await api<{ results: { ok: boolean }[] }>(
-    `/workspaces/${workspace.id}/resume`,
-    'POST',
-    {}
-  )
-  expect(outcomes.results.every((r) => r.ok)).toBe(true)
+  for (const saved of interrupted)
+    await api<Session>(`/${saved.id}/resume`, 'POST', {})
   const id = interrupted[0].id
   const [first, second] = await Promise.all([
     api<Session>(`/${id}/resume`, 'POST', { operationId: 'repeat' }),
@@ -202,15 +193,15 @@ test('A/B/C survive backend crashes, tmux replacement, repeated reopen and backu
     (await savedSessions()).filter((s) => s.state === 'running')
   ).toHaveLength(3)
   await api(`/${id}`, 'PATCH', { state: 'hibernating' })
-  const backup = await api<{ name: string }>('/backups', 'POST', {})
   await api(`/${id}`, 'PATCH', { name: 'Later-name' })
-  await api(`/backups/${backup.name}/restore`, 'POST', {})
   await crash()
   await start()
-  expect((await api<{ session: SavedSession }>(`/${id}`)).session.name).toBe(
-    interrupted[0].name
-  )
-  expect(await savedSessions()).toHaveLength(3)
+  const after = await api<{ session: SavedSession }>(`/${id}`)
+  expect(after.session.state).toBe('hibernating')
+  expect(after.session.name).toBe('Later-name')
+  expect(
+    (await savedSessions()).filter((s) => s.state === 'running')
+  ).toHaveLength(2)
 }, 60000)
 
 test('a pane created before tag commands finish is adopted by its launch identity', async () => {

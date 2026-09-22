@@ -1,11 +1,10 @@
-/** Transactional session identities, launch intents, lifecycle history and workspaces. */
+/** Transactional session identities, launch intents and lifecycle history. */
 import { randomUUID } from 'node:crypto'
 import type { Database } from 'bun:sqlite'
 import type {
   SavedSession,
   Lifecycle,
   SessionEvent,
-  SavedWorkspace,
   HistoryQuery,
 } from '../../shared/persistence'
 import { createCatalogSchema } from './schema'
@@ -268,19 +267,6 @@ export class SessionCatalog {
         this.db
           .query('UPDATE session_events SET session_id=? WHERE session_id=?')
           .run(id, imported.id)
-        for (const workspace of this.workspaces()) {
-          if (!workspace.sessionIds.includes(imported.id)) continue
-          const ids = [
-            ...new Set(
-              workspace.sessionIds.map((value) =>
-                value === imported.id ? id : value
-              )
-            ),
-          ]
-          this.db
-            .query('UPDATE saved_workspaces SET session_ids=? WHERE id=?')
-            .run(JSON.stringify(ids), workspace.id)
-        }
         this.db
           .query(
             'UPDATE board_sessions SET pinned=MAX(pinned,?),created_at=MIN(created_at,?),last_activity_at=MAX(last_activity_at,?) WHERE id=?'
@@ -330,41 +316,5 @@ export class SessionCatalog {
         'UPDATE board_sessions SET last_activity_at=MAX(last_activity_at,?),preview=COALESCE(?,preview) WHERE id=?'
       )
       .run(time, preview?.slice(0, 8192) ?? null, id)
-  }
-  workspaces(): SavedWorkspace[] {
-    return (
-      this.db
-        .query(
-          'SELECT id,name,session_ids AS sessionIds,created_at AS createdAt FROM saved_workspaces ORDER BY created_at DESC'
-        )
-        .all() as Array<
-        Omit<SavedWorkspace, 'sessionIds'> & { sessionIds: string }
-      >
-    ).map((w) => ({ ...w, sessionIds: JSON.parse(w.sessionIds) }))
-  }
-  saveWorkspace(name: string, ids: string[]) {
-    if (!name.trim() || name.length > 120 || !ids.length || ids.length > 100)
-      throw new Error('Choose a name and 1–100 sessions')
-    const sessionIds = [...new Set(ids)]
-    if (sessionIds.some((id) => !this.get(id)))
-      throw new Error('Workspace contains a missing session')
-    const workspace = {
-      id: randomUUID(),
-      name: name.trim(),
-      sessionIds,
-      createdAt: new Date().toISOString(),
-    }
-    this.db
-      .query('INSERT INTO saved_workspaces VALUES(?,?,?,?)')
-      .run(
-        workspace.id,
-        workspace.name,
-        JSON.stringify(sessionIds),
-        workspace.createdAt
-      )
-    return workspace
-  }
-  deleteWorkspace(id: string) {
-    this.db.query('DELETE FROM saved_workspaces WHERE id=?').run(id)
   }
 }

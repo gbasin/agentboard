@@ -66,9 +66,9 @@ export default function Header({
           <button
             onClick={onOpenHistory}
             className="h-7 rounded border border-border px-2 text-xs text-secondary hover:bg-hover"
-            aria-label="History and recovery"
+            aria-label="Session recovery"
           >
-            History
+            Recovery
           </button>
         )}
         <button

@@ -1,6 +1,6 @@
 import { createOperationId } from './utils/operationId'
 import { RecoveryNotice } from './components/history/RecoveryNotice'
-import SessionHistory from './components/history/SessionHistory'
+import SessionRecovery from './components/history/SessionRecovery'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AgentSession, ServerMessage, Session, SessionKillSource } from '@shared/types'
 import Header from './components/Header'
@@ -1028,9 +1028,9 @@ export default function App() {
         className="fixed bottom-16 right-3 z-30 rounded border border-border bg-elevated px-3 py-2 text-xs text-primary md:hidden"
         onClick={() => setIsHistoryOpen(true)}
       >
-        History & recovery
+        Session recovery
       </button>
-      <SessionHistory
+      <SessionRecovery
         open={isHistoryOpen}
         subscribe={subscribe}
         onClose={() => setIsHistoryOpen(false)}
