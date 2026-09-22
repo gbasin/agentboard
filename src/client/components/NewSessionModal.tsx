@@ -1,8 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
-import { type CommandPreset, getFullCommand } from '../stores/settingsStore'
+import { type CommandPreset, getFullCommand, useSettingsStore } from '../stores/settingsStore'
 import { DirectoryBrowser } from './DirectoryBrowser'
 import AgentIcon from './AgentIcon'
 import type { HostStatus } from '@shared/types'
+import { inferAgentType } from '@shared/agentDetection'
+import {
+  addYoloFlag,
+  commandHasYoloFlag,
+  removeYoloFlag,
+  yoloConflict,
+  yoloFlagFor,
+} from '@shared/yolo'
 
 interface NewSessionModalProps {
   isOpen: boolean
@@ -44,11 +52,20 @@ export default function NewSessionModal({
   const [command, setCommand] = useState('')
   const [showBrowser, setShowBrowser] = useState(false)
   const [selectedHost, setSelectedHost] = useState('')
+  const yoloMode = useSettingsStore((s) => s.yoloMode)
+  const setYoloMode = useSettingsStore((s) => s.setYoloMode)
   const formRef = useRef<HTMLFormElement>(null)
   const projectPathRef = useRef<HTMLInputElement>(null)
   const defaultButtonRef = useRef<HTMLButtonElement>(null)
 
   const showHostPicker = remoteAllowControl && remoteHosts.length > 0
+
+  // Apply the remembered yolo preference to a command that doesn't already carry a flag.
+  const applyYoloPref = (cmd: string): string => {
+    if (!yoloMode) return cmd
+    const type = inferAgentType(cmd)
+    return type && !yoloConflict(cmd, type) ? addYoloFlag(cmd, type) : cmd
+  }
 
   useEffect(() => {
     if (!isOpen) {
@@ -102,10 +119,10 @@ export default function NewSessionModal({
       const defaultPreset = commandPresets.find(p => p.id === defaultPresetId)
       if (defaultPreset) {
         setSelectedPresetId(defaultPresetId)
-        setCommand(getFullCommand(defaultPreset))
+        setCommand(applyYoloPref(getFullCommand(defaultPreset)))
       } else if (commandPresets.length > 0) {
         setSelectedPresetId(commandPresets[0].id)
-        setCommand(getFullCommand(commandPresets[0]))
+        setCommand(applyYoloPref(getFullCommand(commandPresets[0])))
       } else {
         setSelectedPresetId(null)
         setCommand('')
@@ -190,7 +207,7 @@ export default function NewSessionModal({
     const preset = commandPresets.find(p => p.id === presetId)
     if (preset) {
       setSelectedPresetId(presetId)
-      setCommand(getFullCommand(preset))
+      setCommand(applyYoloPref(getFullCommand(preset)))
     }
   }
 
@@ -201,6 +218,32 @@ export default function NewSessionModal({
 
   const isCustomMode = selectedPresetId === null
   const isRemoteHost = selectedHost !== ''
+
+  // Yolo checkbox state is derived from the command text: the flag is visible
+  // and editable in the command input, so the checkbox just toggles it.
+  const commandAgentType = inferAgentType(command)
+  const yoloSupported = yoloFlagFor(commandAgentType) !== null
+  const yoloChecked = commandAgentType
+    ? commandHasYoloFlag(command, commandAgentType)
+    : false
+  const yoloConflictReason =
+    commandAgentType && !yoloChecked ? yoloConflict(command, commandAgentType) : null
+  const yoloDisabled = !yoloSupported || yoloConflictReason !== null
+  const yoloTooltip = !commandAgentType
+    ? 'Enter a supported agent command (claude, codex, grok, devin)'
+    : commandAgentType === 'pi'
+      ? 'Pi has no permission prompts — nothing to enable'
+      : yoloConflictReason ?? `Append ${yoloFlagFor(commandAgentType)}`
+
+  const handleYoloToggle = (checked: boolean) => {
+    setYoloMode(checked)
+    if (!commandAgentType) return
+    setCommand(
+      checked
+        ? addYoloFlag(command, commandAgentType)
+        : removeYoloFlag(command, commandAgentType)
+    )
+  }
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault()
@@ -372,6 +415,21 @@ export default function NewSessionModal({
               placeholder="Enter command..."
               className="input mt-2 font-mono text-xs"
             />
+
+            <label
+              className={`mt-2 flex items-center gap-2 text-xs ${
+                yoloDisabled ? 'text-muted opacity-60' : 'text-secondary'
+              }`}
+              title={yoloTooltip}
+            >
+              <input
+                type="checkbox"
+                checked={yoloChecked}
+                disabled={yoloDisabled}
+                onChange={(event) => handleYoloToggle(event.target.checked)}
+              />
+              yolo mode — skip permission prompts
+            </label>
           </div>
           <div>
             <label className="mb-1.5 block text-xs text-secondary">

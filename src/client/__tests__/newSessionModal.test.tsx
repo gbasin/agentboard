@@ -68,10 +68,10 @@ describe('NewSessionModal component', () => {
       )
     })
 
-    // With new field order: modifiers/command (index 0), project path (index 1), name (index 2)
+    // Field order: command (0), yolo checkbox (1), project path (2), name (3)
     const inputs = renderer.root.findAllByType('input')
-    const projectInput = inputs[1]
-    const nameInput = inputs[2]
+    const projectInput = inputs[2]
+    const nameInput = inputs[3]
 
     act(() => {
       projectInput.props.onChange({ target: { value: 'repo' } })
