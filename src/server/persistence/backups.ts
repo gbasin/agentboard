@@ -158,27 +158,48 @@ export function applyPendingRestore(dbPath: string, ownerToken?: string) {
     ownerToken === undefined ? acquireDatabaseOwner(dbPath) : null
   try {
     assertRestoreOwnership(dbPath, ownerToken ?? acquired!.token)
-    const { name } = JSON.parse(fs.readFileSync(request, 'utf8'))
-    const directory = path.join(persistenceDirectory(dbPath), 'backups')
-    if (typeof name !== 'string' || !/^[\w.-]+\.db$/.test(name))
-      throw new Error('Invalid backup name')
-    const source = path.join(directory, name)
-    verifyBackup(source)
-    preserveCurrentDatabase(dbPath)
-    const temporary = `${dbPath}.restore-${randomUUID()}`
     try {
-      fs.copyFileSync(source, temporary)
-      verifyBackup(temporary)
-      // No connection has opened this database in the new server process yet.
-      for (const suffix of ['-wal', '-shm'])
-        if (fs.existsSync(dbPath + suffix)) fs.unlinkSync(dbPath + suffix)
-      publishFile(temporary, dbPath)
-      fs.unlinkSync(request)
-    } finally {
-      if (fs.existsSync(temporary)) fs.unlinkSync(temporary)
+      const { name } = JSON.parse(fs.readFileSync(request, 'utf8'))
+      const directory = path.join(persistenceDirectory(dbPath), 'backups')
+      if (typeof name !== 'string' || !/^[\w.-]+\.db$/.test(name))
+        throw new Error('Invalid backup name')
+      const source = path.join(directory, name)
+      verifyBackup(source)
+      preserveCurrentDatabase(dbPath)
+      restoreBackup(dbPath, source, request)
+    } catch (error) {
+      // A failed or malformed request must not crash-loop the server: the
+      // request is a one-shot intent whose inputs cannot change between
+      // boots, so quarantine it and continue with the current database.
+      const quarantined = `${request}.failed-${Date.now()}`
+      try {
+        fs.renameSync(request, quarantined)
+      } catch {
+        /* keep the original request if quarantine itself fails */
+      }
+      console.error(
+        `Scheduled database restore failed and was skipped (${path.basename(quarantined)}):`,
+        error
+      )
+      return
     }
   } finally {
     acquired?.release()
+  }
+}
+
+function restoreBackup(dbPath: string, source: string, request: string) {
+  const temporary = `${dbPath}.restore-${randomUUID()}`
+  try {
+    fs.copyFileSync(source, temporary)
+    verifyBackup(temporary)
+    // No connection has opened this database in the new server process yet.
+    for (const suffix of ['-wal', '-shm'])
+      if (fs.existsSync(dbPath + suffix)) fs.unlinkSync(dbPath + suffix)
+    publishFile(temporary, dbPath)
+    fs.unlinkSync(request)
+  } finally {
+    if (fs.existsSync(temporary)) fs.unlinkSync(temporary)
   }
 }
 

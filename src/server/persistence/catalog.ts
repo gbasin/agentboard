@@ -11,6 +11,25 @@ import type {
 import { createCatalogSchema } from './schema'
 import { queryHistory, readSession, sessionSelect } from './historyQuery'
 
+const LIFECYCLES = new Set<Lifecycle>([
+  'starting',
+  'running',
+  'interrupted',
+  'hibernating',
+  'archived',
+  'failed',
+])
+
+const SESSION_NAME_PATTERN = /^[\w-]{1,120}$/
+export function assertSessionName(name: string): string {
+  const value = name.trim()
+  if (!SESSION_NAME_PATTERN.test(value))
+    throw new Error(
+      'Name must use 1–120 letters, numbers, hyphens or underscores'
+    )
+  return value
+}
+
 export class SessionCatalog {
   constructor(
     readonly db: Database,
@@ -185,6 +204,7 @@ export class SessionCatalog {
     })()
   }
   transition(id: string, state: Lifecycle, error: string | null = null) {
+    if (!LIFECYCLES.has(state)) throw new Error(`Invalid state: ${state}`)
     this.db.transaction(() => {
       if (!this.get(id)) throw new Error('Session not found')
       this.db
@@ -201,11 +221,7 @@ export class SessionCatalog {
     })()
   }
   rename(id: string, name: string) {
-    const value = name.trim()
-    if (!/^[\w-]{1,120}$/.test(value))
-      throw new Error(
-        'Name must use 1–120 letters, numbers, hyphens or underscores'
-      )
+    const value = assertSessionName(name)
     this.db.transaction(() => {
       const current = this.get(id)
       if (!current) throw new Error('Session not found')
