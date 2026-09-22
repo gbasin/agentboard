@@ -67,3 +67,5 @@ Run `bun run lint && bun run typecheck && bun run test` after changes.
 
 - Use the `dev-browser` skill for testing web UI changes. Headless browser
 automation with Playwright. Start server, take screenshots, verify DOM state.
+- For changes that impact UI, attach visual evidence (screenshot or short clip)
+to the PR: `gh pr comment <n> --attach './shot.png#alt text'`.
