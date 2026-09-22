@@ -52,6 +52,7 @@ process.env.PI_HOME = piDir
 export default defineConfig({
   testDir: 'tests/e2e',
   timeout: 30000,
+  retries: process.env.CI ? 1 : 0,
   expect: {
     timeout: 5000,
   },

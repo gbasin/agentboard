@@ -108,7 +108,8 @@ jobs:
             cp -r ../../artifacts/agentboard-$platform/dist/client ./dist/client
             chmod +x ./bin/agentboard
             npm version $VERSION --no-git-tag-version --allow-same-version
-            npm publish --provenance --access public
+            # tolerate re-runs of a partially-failed release
+            npm publish --provenance --access public || npm view "@gbasin/agentboard-$platform@$VERSION" version
             cd ../..
           done
 
@@ -116,7 +117,9 @@ jobs:
         run: node scripts/update-optional-deps.js ${{ steps.version.outputs.version }}
 
       - name: Publish main package
-        run: npm publish --provenance --access public
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          npm publish --provenance --access public || npm view "@gbasin/agentboard@$VERSION" version
 
       - name: Collect binaries and tarballs for GitHub Release
         run: |
@@ -128,13 +131,19 @@ jobs:
               bin/agentboard dist/client
           done
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64  # v3.0.3
-        with:
-          files: release-binaries/agentboard-*
-          # release-please already wrote changelog notes on its release;
-          # only auto-generate notes for manual tag pushes
-          generate_release_notes: ${{ inputs.tag == '' }}
+      - name: Attach binaries to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # GITHUB_TOKEN cannot PATCH a release created by another run
+          # (action-gh-release always sends tag_name/target_commitish and gets
+          # 403). gh release upload only POSTs assets, which is allowed; if the
+          # release doesn't exist yet (manual tag push), create it with notes.
+          if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" release-binaries/agentboard-* --clobber
+          else
+            gh release create "$RELEASE_TAG" release-binaries/agentboard-* --generate-notes
+          fi
 
       - name: Update Homebrew tap
         env:

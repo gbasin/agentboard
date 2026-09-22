@@ -145,17 +145,22 @@ export function handleMatchWorkerRequest(
     }
 
     const orphanCandidates = payload.orphanCandidates ?? []
+    let orphanScanMs = 0
+    let orphanMatchMs = 0
     if (payload.forceOrphanRematch && orphanCandidates.length > 0) {
       const skipPatterns = payload.skipMatchingPatterns ?? []
+      const orphanScanStart = performance.now()
       orphanEntries = buildOrphanEntries(orphanCandidates, entries, {
         minTokens: payload.minTokensForMatch ?? 0,
         skipPatterns,
       })
+      orphanScanMs = performance.now() - orphanScanStart
       if (orphanEntries.length > 0) {
         const startupRgThreads = Math.max(
           search.rgThreads ?? 1,
           Math.min(os.cpus().length, 4)
         )
+        const orphanMatchStart = performance.now()
         const orphanMatchResult = matchWindowsToLogsByExactRg(
           unclaimedWindows,
           logDirs,
@@ -166,6 +171,7 @@ export function handleMatchWorkerRequest(
             profile,
           }
         )
+        orphanMatchMs = performance.now() - orphanMatchStart
         orphanMatches = Array.from(orphanMatchResult.matches.entries()).map(
           ([logPath, window]) => ({
             logPath,
@@ -212,6 +218,8 @@ export function handleMatchWorkerRequest(
       matchSkipped,
       matches: resolved,
       orphanMatches,
+      orphanScanMs,
+      orphanMatchMs,
       noMessageWindows,
       profile,
     }

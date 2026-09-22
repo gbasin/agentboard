@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { createPortal } from 'react-dom'
 import type { SessionPullRequest } from '../../shared/types'
 
@@ -27,6 +34,12 @@ const checksCache = new Map<string, PrCheckInfo>()
 const infoInflight = new Set<string>()
 const checksInflight = new Set<string>()
 
+// Pill geometry shared by PrChip anchors and the offscreen measurer spans
+// below — keep these in sync or the single-row fit math drifts.
+const PILL_CLASS =
+  'inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] tabular-nums'
+const DOT_CLASS = 'inline-block h-1.5 w-1.5 rounded-full'
+
 function stateColor(info: PrInfo | undefined): string {
   if (!info || info.error || !info.state) return 'bg-muted'
   if (info.isDraft) return 'bg-muted'
@@ -48,14 +61,19 @@ function stateLabel(info: PrInfo | undefined): string {
   return info.state.charAt(0) + info.state.slice(1).toLowerCase()
 }
 
+// Conclusions GitHub renders as neutral rather than failing.
+const NEUTRAL_CONCLUSIONS = new Set(['SKIPPED', 'NEUTRAL', 'STALE'])
+
 function checkIcon(c: {
   status: string
   conclusion: string | null
 }): { glyph: string; cls: string } {
   if (c.status === 'COMPLETED') {
-    return c.conclusion === 'SUCCESS'
-      ? { glyph: '✓', cls: 'text-green-500' }
-      : { glyph: '✗', cls: 'text-red-500' }
+    if (c.conclusion === 'SUCCESS')
+      return { glyph: '✓', cls: 'text-green-500' }
+    if (c.conclusion && NEUTRAL_CONCLUSIONS.has(c.conclusion))
+      return { glyph: '–', cls: 'text-muted' }
+    return { glyph: '✗', cls: 'text-red-500' }
   }
   return { glyph: '…', cls: 'text-yellow-500' }
 }
@@ -228,7 +246,7 @@ function PrChip({ pr }: { pr: SessionPullRequest }) {
   return (
     <span
       ref={anchorRef}
-      className="relative inline-flex"
+      className="relative inline-flex shrink-0"
       onMouseEnter={openCard}
       onMouseLeave={scheduleClose}
     >
@@ -237,12 +255,10 @@ function PrChip({ pr }: { pr: SessionPullRequest }) {
         target="_blank"
         rel="noreferrer"
         onClick={(e) => e.stopPropagation()}
-        className="inline-flex items-center gap-1 rounded-full bg-elevated px-1.5 py-0.5 text-[11px] tabular-nums text-muted hover:text-accent"
+        className={`${PILL_CLASS} bg-elevated text-muted hover:text-accent`}
         aria-label={`${pr.repo}#${pr.number}`}
       >
-        <span
-          className={`inline-block h-1.5 w-1.5 rounded-full ${stateColor(info)}`}
-        />
+        <span className={`${DOT_CLASS} ${stateColor(info)}`} />
         #{pr.number}
       </a>
       {open &&
@@ -336,8 +352,6 @@ function PrChip({ pr }: { pr: SessionPullRequest }) {
   )
 }
 
-const MAX_VISIBLE = 4
-
 /** Muted "+N" chip; hover opens a card listing the remaining PRs. */
 function OverflowChip({ prs }: { prs: SessionPullRequest[] }) {
   const [infos, setInfos] = useState<Map<string, PrInfo> | null>(null)
@@ -356,12 +370,12 @@ function OverflowChip({ prs }: { prs: SessionPullRequest[] }) {
   return (
     <span
       ref={anchorRef}
-      className="relative inline-flex"
+      className="relative inline-flex shrink-0"
       onMouseEnter={openCard}
       onMouseLeave={scheduleClose}
     >
       <span
-        className="inline-flex cursor-default items-center rounded-full px-1.5 py-0.5 text-[11px] tabular-nums text-muted"
+        className={`${PILL_CLASS} cursor-default text-muted`}
         aria-label={`${prs.length} more PR${prs.length === 1 ? '' : 's'}`}
       >
         +{prs.length}
@@ -411,18 +425,114 @@ function OverflowChip({ prs }: { prs: SessionPullRequest[] }) {
   )
 }
 
+// Single-row layout: the row never wraps. An offscreen measurer renders one
+// pill per PR (plus "+" and "+0" probes so the "+N" chip's width is exact for
+// any digit count); a fit pass then shows as many chips as the row's current
+// width allows and collapses the rest into OverflowChip. The measurer is
+// absolute + invisible — measurable but out of flow — and clipped by the
+// container's overflow-hidden.
 export function PrChips({ prs }: { prs: SessionPullRequest[] }) {
-  if (prs.length === 0) return null
+  const containerRef = useRef<HTMLDivElement>(null)
+  const chipEls = useRef<(HTMLSpanElement | null)[]>([])
+  const plusRef = useRef<HTMLSpanElement>(null)
+  const plusDigitRef = useRef<HTMLSpanElement>(null)
   // Extraction order is chronological by creation; show newest first.
-  const ordered = [...prs].reverse()
-  const visible = ordered.slice(0, MAX_VISIBLE)
-  const overflow = ordered.slice(MAX_VISIBLE)
+  const ordered = useMemo(() => [...prs].reverse(), [prs])
+  const [visibleCount, setVisibleCount] = useState(ordered.length)
+
+  const recompute = useCallback(() => {
+    const n = ordered.length
+    const el = containerRef.current
+    // Non-DOM environments (react-test-renderer) can't measure; show all.
+    if (!el || typeof el.clientWidth !== 'number' || el.clientWidth === 0) {
+      setVisibleCount(n)
+      return
+    }
+    const style = getComputedStyle(el)
+    const avail =
+      el.clientWidth -
+      (parseFloat(style.paddingLeft) || 0) -
+      (parseFloat(style.paddingRight) || 0)
+    const gap = parseFloat(style.columnGap) || 0
+    // "+N" width = the "+" run (padding included) + one tabular digit per
+    // digit of N. tabular-nums makes all digits the same width.
+    const plusW = plusRef.current?.offsetWidth ?? 0
+    const digitW = Math.max(
+      0,
+      (plusDigitRef.current?.offsetWidth ?? plusW) - plusW
+    )
+    const overW = (m: number) => plusW + String(m).length * digitW
+    let used = 0
+    let k = 0
+    for (let i = 0; i < n; i++) {
+      const w = chipEls.current[i]?.offsetWidth ?? 0
+      const remaining = n - i - 1
+      const tail = remaining > 0 ? gap + overW(remaining) : 0
+      const need = (k > 0 ? gap : 0) + w + tail
+      if (used + need > avail) break
+      used += need - tail
+      k++
+    }
+    setVisibleCount(k)
+  }, [ordered])
+
+  // Runs pre-paint so chips never flash a wrapped row on mount or when the
+  // PR list changes.
+  useLayoutEffect(() => {
+    recompute()
+  }, [recompute])
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el || typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', recompute)
+      return () => window.removeEventListener('resize', recompute)
+    }
+    const ro = new ResizeObserver(recompute)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [recompute])
+
+  // Pill widths can shift once webfonts finish loading.
+  useEffect(() => {
+    document.fonts?.ready.then(recompute).catch(() => {})
+  }, [recompute])
+
+  if (ordered.length === 0) return null
+  const visible = ordered.slice(0, visibleCount)
+  const overflow = ordered.slice(visibleCount)
   return (
-    <div className="flex flex-wrap items-center gap-1 pl-[1.375rem]">
+    <div
+      ref={containerRef}
+      className="relative flex flex-nowrap items-center gap-1 overflow-hidden pl-[1.375rem]"
+    >
       {visible.map((pr) => (
         <PrChip key={pr.url} pr={pr} />
       ))}
       {overflow.length > 0 && <OverflowChip prs={overflow} />}
+      <span
+        aria-hidden
+        className="invisible absolute left-0 top-0 flex flex-nowrap"
+      >
+        {ordered.map((pr, i) => (
+          <span
+            key={pr.url}
+            ref={(el) => {
+              chipEls.current[i] = el
+            }}
+            className={PILL_CLASS}
+          >
+            <span className={DOT_CLASS} />
+            #{pr.number}
+          </span>
+        ))}
+        <span ref={plusRef} className={PILL_CLASS}>
+          +
+        </span>
+        <span ref={plusDigitRef} className={PILL_CLASS}>
+          +0
+        </span>
+      </span>
     </div>
   )
 }
