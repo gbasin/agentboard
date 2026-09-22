@@ -24,15 +24,16 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
   # Tags created with GITHUB_TOKEN don't trigger push:tags workflows, so the
-  # release pipeline is invoked directly once release-please cuts the tag.
+  # release pipeline is dispatched directly once release-please cuts the tag.
+  # workflow_dispatch (not workflow_call) keeps release.yml as the top-level
+  # workflow so npm OIDC trusted publishing sees the configured workflow file.
   release:
     needs: release-please
     if: needs.release-please.outputs.release_created == 'true'
-    uses: ./.github/workflows/release.yml
-    with:
-      tag: ${{ needs.release-please.outputs.tag_name }}
+    runs-on: ubuntu-latest
     permissions:
-      contents: write
-      packages: write
-      id-token: write
-    secrets: inherit
+      actions: write
+    steps:
+      - run: gh workflow run release.yml -f tag=${{ needs.release-please.outputs.tag_name }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

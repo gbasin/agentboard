@@ -4,7 +4,7 @@ on:
   push:
     tags:
       - 'v*'
-  workflow_call:
+  workflow_dispatch:
     inputs:
       tag:
         description: 'Tag to release (e.g. v0.10.5); empty when triggered by a tag push'
