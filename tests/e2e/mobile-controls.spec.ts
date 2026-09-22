@@ -67,6 +67,9 @@ test('keyboard Shift modifies touch quick keys sent to the pane', async ({ page 
     await page.screenshot({ path: testInfo.outputPath('mobile-key-deck.png') })
 
     const input = page.locator('.xterm-helper-textarea')
+    // The keyboard button is a toggle: ensure the pane input is unfocused
+    // first so the tap deterministically focuses it.
+    await input.evaluate((el) => (el as HTMLElement).blur())
     await page.getByRole('button', { name: 'Show keyboard' }).tap()
     await expect(input).toBeFocused()
     for (const [label, hex] of [['tab', '1b5b5a'], ['Enter', '0a']]) {
