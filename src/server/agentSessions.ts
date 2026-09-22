@@ -18,7 +18,7 @@ export function toAgentSession(record: AgentSessionRecord): AgentSession {
     lastUserMessage: record.lastUserMessage
       ? record.lastUserMessage.slice(0, 250)
       : undefined,
-    isPinned: record.isPinned,
+    isHibernating: record.isHibernating,
     lastResumeError: record.lastResumeError ?? undefined,
     prs: getSessionPullRequests(record.logFilePath, record.lastKnownLogSize),
   }

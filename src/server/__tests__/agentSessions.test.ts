@@ -14,7 +14,7 @@ const baseRecord: AgentSessionRecord = {
   lastActivityAt: '2024-01-02T00:00:00.000Z',
   lastUserMessage: null,
   currentWindow: 'agentboard:1',
-  isPinned: false,
+  isHibernating: false,
   lastResumeError: null,
   wakeStartedAt: null,
   lastKnownLogSize: null,

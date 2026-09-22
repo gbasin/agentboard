@@ -25,7 +25,7 @@ function sessionsEqualById(a: Session, b: Session): boolean {
     a.agentSessionId === b.agentSessionId &&
     a.agentSessionName === b.agentSessionName &&
     a.logFilePath === b.logFilePath &&
-    a.isPinned === b.isPinned &&
+    a.isHibernating === b.isHibernating &&
     a.lastUserMessage === b.lastUserMessage
   )
 }

@@ -129,7 +129,7 @@ describe('slug-based session supersede integration', () => {
       slug,
       displayName: 'plan-session',
       currentWindow,
-      isPinned: false,
+      isHibernating: false,
     })
 
     const poller = new LogPoller(db, new SessionRegistry(), {
@@ -177,7 +177,7 @@ describe('slug-based session supersede integration', () => {
       slug,
       displayName: 'hibernate-plan',
       currentWindow,
-      isPinned: true,
+      isHibernating: true,
     })
 
     const poller = new LogPoller(db, new SessionRegistry(), {
@@ -190,10 +190,10 @@ describe('slug-based session supersede integration', () => {
 
     expect(execRecord).not.toBeNull()
     expect(execRecord!.currentWindow).toBe(currentWindow)
-    expect(execRecord!.isPinned).toBe(true)
+    expect(execRecord!.isHibernating).toBe(true)
     expect(planRecord).not.toBeNull()
     expect(planRecord!.currentWindow).toBeNull()
-    expect(planRecord!.isPinned).toBe(false)
+    expect(planRecord!.isHibernating).toBe(false)
 
     db.close()
   })
@@ -249,7 +249,7 @@ function insertSession(
   db: ReturnType<typeof initDatabase>,
   overrides: Pick<
     AgentSessionRecord,
-    'sessionId' | 'logFilePath' | 'slug' | 'displayName' | 'currentWindow' | 'isPinned'
+    'sessionId' | 'logFilePath' | 'slug' | 'displayName' | 'currentWindow' | 'isHibernating'
   >
 ): void {
   db.insertSession({
@@ -263,7 +263,7 @@ function insertSession(
     lastActivityAt: new Date().toISOString(),
     lastUserMessage: null,
     currentWindow: overrides.currentWindow,
-    isPinned: overrides.isPinned,
+    isHibernating: overrides.isHibernating,
     lastResumeError: null,
     lastKnownLogSize: null,
     isCodexExec: false,

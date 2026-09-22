@@ -103,7 +103,7 @@ describe('hydrateSessionsWithAgentSessions — missing windows', () => {
       lastActivityAt: now,
       lastUserMessage: null,
       currentWindow,
-      isPinned: false,
+      isHibernating: false,
       lastResumeError: null,
       wakeStartedAt: null,
       lastKnownLogSize: null,

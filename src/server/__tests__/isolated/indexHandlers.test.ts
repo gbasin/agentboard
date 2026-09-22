@@ -51,7 +51,7 @@ let dbState: {
       ) => Error | null)
     | null
   updateCalls: Array<{ sessionId: string; patch: Partial<AgentSessionRecord> }>
-  setPinnedCalls: Array<{ sessionId: string; isPinned: boolean }>
+  setHibernatingCalls: Array<{ sessionId: string; isHibernating: boolean }>
 }
 
 const defaultConfig = {
@@ -106,7 +106,7 @@ function resetDbState() {
     setAppSettingError: null,
     updateSessionError: null,
     updateCalls: [],
-    setPinnedCalls: [],
+    setHibernatingCalls: [],
   }
 }
 
@@ -128,7 +128,7 @@ function makeRecord(overrides: Partial<AgentSessionRecord> = {}): AgentSessionRe
     lastActivityAt: baseRecordTimestamp,
     lastUserMessage: null,
     currentWindow: null,
-    isPinned: false,
+    isHibernating: false,
     lastResumeError: null,
     wakeStartedAt: null,
     lastKnownLogSize: null,
@@ -384,7 +384,7 @@ mock.module('../../db', () => ({
       ),
     getHistorySessions: (options?: { maxAgeHours?: number }) => {
       const history = Array.from(dbState.records.values()).filter(
-        (record) => record.currentWindow === null && !record.isPinned
+        (record) => record.currentWindow === null && !record.isHibernating
       )
       if (!options?.maxAgeHours) {
         return history
@@ -396,7 +396,7 @@ mock.module('../../db', () => ({
     },
     getHibernatingSessions: () =>
       Array.from(dbState.records.values()).filter(
-        (record) => record.currentWindow === null && record.isPinned
+        (record) => record.currentWindow === null && record.isHibernating
       ),
     orphanSession: (sessionId: string, options?: { hibernate?: boolean }) => {
       const record = dbState.records.get(sessionId)
@@ -404,7 +404,7 @@ mock.module('../../db', () => ({
       const updated = {
         ...record,
         currentWindow: null,
-        isPinned: options?.hibernate ?? true,
+        isHibernating: options?.hibernate ?? true,
       }
       dbState.records.set(sessionId, updated)
       return updated
@@ -460,11 +460,11 @@ mock.module('../../db', () => ({
           record.displayName === displayName &&
           record.sessionId !== excludeSessionId
       ),
-    setPinned: (sessionId: string, isPinned: boolean) => {
-      dbState.setPinnedCalls.push({ sessionId, isPinned })
+    setHibernating: (sessionId: string, isHibernating: boolean) => {
+      dbState.setHibernatingCalls.push({ sessionId, isHibernating })
       const record = dbState.records.get(sessionId)
       if (!record) return null
-      const updated = { ...record, isPinned }
+      const updated = { ...record, isHibernating }
       dbState.records.set(sessionId, updated)
       return updated
     },
@@ -1059,13 +1059,13 @@ describe('server message handlers', () => {
     const { serveOptions, registryInstance } = await loadIndex()
     const agentSessionId = 'kill-marked'
     registryInstance.sessions = [
-      { ...baseSession, agentSessionId, isPinned: true },
+      { ...baseSession, agentSessionId, isHibernating: true },
     ]
     seedRecord(
       makeRecord({
         sessionId: agentSessionId,
         currentWindow: baseSession.tmuxWindow,
-        isPinned: true,
+        isHibernating: true,
         lastActivityAt: new Date().toISOString(),
       })
     )
@@ -1073,7 +1073,7 @@ describe('server message handlers', () => {
     let killedTarget: string | null = null
     sessionManagerState.killWindow = (tmuxWindow: string) => {
       const recordAtKill = dbState.records.get(agentSessionId)
-      expect(recordAtKill?.isPinned).toBe(false)
+      expect(recordAtKill?.isHibernating).toBe(false)
       expect(recordAtKill?.currentWindow).toBe(baseSession.tmuxWindow)
       killedTarget = tmuxWindow
     }
@@ -1092,13 +1092,13 @@ describe('server message handlers', () => {
     expect(killedTarget === baseSession.tmuxWindow).toBe(true)
     expect(dbState.records.get(agentSessionId)).toMatchObject({
       currentWindow: null,
-      isPinned: false,
+      isHibernating: false,
     })
     expect(registryInstance.agentSessions.hibernating).toEqual([])
     expect(registryInstance.agentSessions.history).toMatchObject([
       expect.objectContaining({
         sessionId: agentSessionId,
-        isPinned: false,
+        isHibernating: false,
       }),
     ])
   })
@@ -1107,13 +1107,13 @@ describe('server message handlers', () => {
     const { serveOptions, registryInstance } = await loadIndex()
     const agentSessionId = 'kill-marker-rollback'
     registryInstance.sessions = [
-      { ...baseSession, agentSessionId, isPinned: true },
+      { ...baseSession, agentSessionId, isHibernating: true },
     ]
     seedRecord(
       makeRecord({
         sessionId: agentSessionId,
         currentWindow: baseSession.tmuxWindow,
-        isPinned: true,
+        isHibernating: true,
       })
     )
     sessionManagerState.killWindow = () => {
@@ -1138,7 +1138,7 @@ describe('server message handlers', () => {
     })
     expect(dbState.records.get(agentSessionId)).toMatchObject({
       currentWindow: baseSession.tmuxWindow,
-      isPinned: true,
+      isHibernating: true,
     })
   })
 
@@ -1147,14 +1147,14 @@ describe('server message handlers', () => {
     const staleAgentSessionId = 'kill-prep-stale'
     const windowAgentSessionId = 'kill-prep-window'
     registryInstance.sessions = [
-      { ...baseSession, agentSessionId: staleAgentSessionId, isPinned: true },
+      { ...baseSession, agentSessionId: staleAgentSessionId, isHibernating: true },
     ]
     seedRecord(
       makeRecord({
         sessionId: staleAgentSessionId,
         logFilePath: '/tmp/kill-prep-stale.jsonl',
         currentWindow: null,
-        isPinned: true,
+        isHibernating: true,
       })
     )
     seedRecord(
@@ -1162,11 +1162,11 @@ describe('server message handlers', () => {
         sessionId: windowAgentSessionId,
         logFilePath: '/tmp/kill-prep-window.jsonl',
         currentWindow: baseSession.tmuxWindow,
-        isPinned: true,
+        isHibernating: true,
       })
     )
     dbState.updateSessionError = (sessionId, patch) =>
-      sessionId === windowAgentSessionId && patch.isPinned === false
+      sessionId === windowAgentSessionId && patch.isHibernating === false
         ? new Error('prep failed')
         : null
     let killCalled = false
@@ -1191,8 +1191,8 @@ describe('server message handlers', () => {
       sessionId: baseSession.id,
       message: 'prep failed',
     })
-    expect(dbState.records.get(staleAgentSessionId)?.isPinned).toBe(true)
-    expect(dbState.records.get(windowAgentSessionId)?.isPinned).toBe(true)
+    expect(dbState.records.get(staleAgentSessionId)?.isHibernating).toBe(true)
+    expect(dbState.records.get(windowAgentSessionId)?.isHibernating).toBe(true)
   })
 
   test('renames dormant agent sessions without requiring a tmux window', async () => {
@@ -1203,7 +1203,7 @@ describe('server message handlers', () => {
         sessionId,
         displayName: 'old-name',
         currentWindow: null,
-        isPinned: true,
+        isHibernating: true,
       })
     )
 
@@ -3167,21 +3167,21 @@ describe('server message handlers', () => {
   test('moves hibernating sessions to history and rejects active sessions', async () => {
     const { serveOptions, registryInstance } = await loadIndex()
     registryInstance.sessions = [
-      { ...baseSession, agentSessionId: baseSession.id, isPinned: true },
+      { ...baseSession, agentSessionId: baseSession.id, isHibernating: true },
     ]
     const hibernatingId = 'hibernating-history'
     seedRecord(
       makeRecord({
         sessionId: baseSession.id,
         currentWindow: baseSession.tmuxWindow,
-        isPinned: true,
+        isHibernating: true,
       })
     )
     seedRecord(
       makeRecord({
         sessionId: hibernatingId,
         currentWindow: null,
-        isPinned: true,
+        isHibernating: true,
       })
     )
 
@@ -3232,9 +3232,9 @@ describe('server message handlers', () => {
       ok: false,
       error: 'Session is active',
     })
-    expect(dbState.setPinnedCalls).toEqual([])
-    expect(dbState.records.get(baseSession.id)?.isPinned).toBe(true)
-    expect(registryInstance.sessions[0]?.isPinned).toBe(true)
+    expect(dbState.setHibernatingCalls).toEqual([])
+    expect(dbState.records.get(baseSession.id)?.isHibernating).toBe(true)
+    expect(registryInstance.sessions[0]?.isHibernating).toBe(true)
 
     websocket.message?.(
       ws as never,
@@ -3248,10 +3248,10 @@ describe('server message handlers', () => {
       sessionId: hibernatingId,
       ok: true,
     })
-    expect(dbState.setPinnedCalls).toEqual([
-      { sessionId: hibernatingId, isPinned: false },
+    expect(dbState.setHibernatingCalls).toEqual([
+      { sessionId: hibernatingId, isHibernating: false },
     ])
-    expect(dbState.records.get(hibernatingId)?.isPinned).toBe(false)
+    expect(dbState.records.get(hibernatingId)?.isHibernating).toBe(false)
   })
 
   test('validates session hibernate errors', async () => {
@@ -3316,7 +3316,7 @@ describe('server message handlers', () => {
       makeRecord({
         sessionId: 'already-hibernating',
         currentWindow: null,
-        isPinned: true,
+        isHibernating: true,
       })
     )
 
@@ -3337,7 +3337,7 @@ describe('server message handlers', () => {
       ok: true,
       session: expect.objectContaining({
         sessionId: 'already-hibernating',
-        isPinned: true,
+        isHibernating: true,
         isActive: false,
       }),
     })
@@ -3362,7 +3362,7 @@ describe('server message handlers', () => {
     let killedTarget: string | null = null
     sessionManagerState.killWindow = (tmuxWindow: string) => {
       const recordAtKill = dbState.records.get(liveAgentSessionId)
-      expect(recordAtKill?.isPinned).toBe(true)
+      expect(recordAtKill?.isHibernating).toBe(true)
       expect(recordAtKill?.currentWindow).toBe(baseSession.tmuxWindow)
       killedTarget = tmuxWindow
     }
@@ -3389,19 +3389,19 @@ describe('server message handlers', () => {
       ok: true,
       session: expect.objectContaining({
         sessionId: liveAgentSessionId,
-        isPinned: true,
+        isHibernating: true,
         isActive: false,
       }),
     })
     expect(dbState.updateCalls.at(-1)?.patch).toMatchObject({
       currentWindow: null,
-      isPinned: true,
+      isHibernating: true,
     })
     expect(registryInstance.sessions).toEqual([])
     expect(registryInstance.agentSessions.hibernating).toMatchObject([
       expect.objectContaining({
         sessionId: liveAgentSessionId,
-        isPinned: true,
+        isHibernating: true,
       }),
     ])
     expect(registryInstance.agentSessions.history).toEqual([])
@@ -3446,14 +3446,14 @@ describe('server message handlers', () => {
     expect(dbState.updateCalls[0]).toMatchObject({
       sessionId: liveAgentSessionId,
       patch: {
-        isPinned: true,
+        isHibernating: true,
         lastResumeError: null,
         launchCommand: liveSession.command,
       },
     })
     expect(dbState.records.get(liveAgentSessionId)).toMatchObject({
       currentWindow: null,
-      isPinned: true,
+      isHibernating: true,
       launchCommand: liveSession.command,
     })
     expect(sent[sent.length - 1]).toMatchObject({
@@ -3474,7 +3474,7 @@ describe('server message handlers', () => {
       makeRecord({
         sessionId: liveAgentSessionId,
         currentWindow: baseSession.tmuxWindow,
-        isPinned: false,
+        isHibernating: false,
         lastResumeError: 'previous wake error',
       })
     )
@@ -3502,7 +3502,7 @@ describe('server message handlers', () => {
     })
     expect(dbState.records.get(liveAgentSessionId)).toMatchObject({
       currentWindow: baseSession.tmuxWindow,
-      isPinned: false,
+      isHibernating: false,
       lastResumeError: 'previous wake error',
     })
   })
@@ -3517,7 +3517,7 @@ describe('server message handlers', () => {
       makeRecord({
         sessionId: liveAgentSessionId,
         currentWindow: baseSession.tmuxWindow,
-        isPinned: false,
+        isHibernating: false,
         lastResumeError: 'previous wake error',
       })
     )
@@ -3543,20 +3543,20 @@ describe('server message handlers', () => {
       ok: true,
       session: expect.objectContaining({
         sessionId: liveAgentSessionId,
-        isPinned: true,
+        isHibernating: true,
         isActive: false,
       }),
     })
     expect(dbState.records.get(liveAgentSessionId)).toMatchObject({
       currentWindow: null,
-      isPinned: true,
+      isHibernating: true,
       lastResumeError: null,
     })
     expect(registryInstance.sessions).toEqual([])
     expect(registryInstance.agentSessions.hibernating).toMatchObject([
       expect.objectContaining({
         sessionId: liveAgentSessionId,
-        isPinned: true,
+        isHibernating: true,
       }),
     ])
   })
@@ -3602,7 +3602,7 @@ describe('server message handlers', () => {
     })
     expect(dbState.records.get(liveAgentSessionId)).toMatchObject({
       currentWindow: baseSession.tmuxWindow,
-      isPinned: true,
+      isHibernating: true,
       lastResumeError: null,
     })
   })
@@ -3723,7 +3723,7 @@ describe('server message handlers', () => {
       projectPath: '/tmp/resume',
       agentType: 'claude',
       currentWindow: null,
-      isPinned: true,
+      isHibernating: true,
       lastResumeError: 'resume failed',
     })
     seedRecord(record)
@@ -3779,7 +3779,7 @@ describe('server message handlers', () => {
         logFilePath: record.logFilePath,
         lastActivity: record.lastActivityAt,
         createdAt: record.createdAt,
-        isPinned: true,
+        isHibernating: true,
       }),
     })
 
@@ -3832,7 +3832,7 @@ describe('server message handlers', () => {
         displayName: 'stored-rematch',
         logFilePath,
         currentWindow: null,
-        isPinned: true,
+        isHibernating: true,
         lastResumeError: 'previous wake failed',
       })
     )
@@ -3900,7 +3900,7 @@ describe('server message handlers', () => {
         sessionId,
         displayName: 'wake-lock',
         currentWindow: null,
-        isPinned: true,
+        isHibernating: true,
       })
     )
     const createdSession: Session = {
@@ -3953,7 +3953,7 @@ describe('server message handlers', () => {
         agentSessionId: sessionId,
         agentSessionName: 'wake-lock',
         logFilePath: '/tmp/wake-lock.jsonl',
-        isPinned: true,
+        isHibernating: true,
       }),
     })
   })
@@ -3972,7 +3972,7 @@ describe('server message handlers', () => {
         sessionId,
         displayName: 'wake-race',
         currentWindow: null,
-        isPinned: false,
+        isHibernating: false,
       })
     )
 
@@ -4054,7 +4054,7 @@ describe('server message handlers', () => {
         sessionId,
         displayName: 'wake-claimed-by-other',
         currentWindow: null,
-        isPinned: true,
+        isHibernating: true,
       })
     )
     seedRecord(
@@ -4062,7 +4062,7 @@ describe('server message handlers', () => {
         sessionId: ownerSessionId,
         displayName: 'other-owner',
         currentWindow: null,
-        isPinned: false,
+        isHibernating: false,
       })
     )
 
@@ -4137,7 +4137,7 @@ describe('server message handlers', () => {
         sessionId,
         displayName: 'wake-same-window-race',
         currentWindow: null,
-        isPinned: true,
+        isHibernating: true,
         lastResumeError: 'previous wake failed',
       })
     )
@@ -4481,7 +4481,7 @@ describe('server message handlers', () => {
         projectPath: '/tmp/wake-claim-throws',
         agentType: 'claude',
         currentWindow: null,
-        isPinned: true,
+        isHibernating: true,
       })
     )
 
@@ -4516,7 +4516,7 @@ describe('server message handlers', () => {
     expect(killCalls).toEqual([createdSession.tmuxWindow])
     expect(dbState.records.get(hibernatingId)).toMatchObject({
       currentWindow: null,
-      isPinned: true,
+      isHibernating: true,
       lastResumeError: 'db locked',
     })
     expect(sent[sent.length - 1]).toEqual({
@@ -4537,7 +4537,7 @@ describe('server message handlers', () => {
         projectPath: '/tmp/wakes-bad',
         agentType: 'claude',
         currentWindow: null,
-        isPinned: true,
+        isHibernating: true,
       })
     )
 
@@ -4576,8 +4576,8 @@ describe('server message handlers', () => {
     const removedMarker = dbState.updateCalls.find(
       (call) =>
         call.sessionId === hibernatingId &&
-        'isPinned' in call.patch &&
-        call.patch.isPinned === false
+        'isHibernating' in call.patch &&
+        call.patch.isHibernating === false
     )
     expect(removedMarker).toBeUndefined()
   })
@@ -4592,7 +4592,7 @@ describe('server message handlers', () => {
         projectPath: '/tmp/wake-persist-fails',
         agentType: 'claude',
         currentWindow: null,
-        isPinned: true,
+        isHibernating: true,
       })
     )
 
@@ -4622,7 +4622,7 @@ describe('server message handlers', () => {
       ok: false,
       error: { code: 'WAKE_FAILED', message: 'resume artifact missing' },
     })
-    expect(dbState.records.get(hibernatingId)?.isPinned).toBe(true)
+    expect(dbState.records.get(hibernatingId)?.isHibernating).toBe(true)
   })
 
   test('websocket close disposes all terminals', async () => {
@@ -5952,7 +5952,7 @@ describe('server startup side effects', () => {
         sessionId,
         displayName: 'startup-hibernating',
         currentWindow: null,
-        isPinned: true,
+        isHibernating: true,
         lastResumeError: 'resume artifact missing',
       })
     )
@@ -5975,7 +5975,7 @@ describe('server startup side effects', () => {
     expect(registryInstance.agentSessions.hibernating).toMatchObject([
       expect.objectContaining({
         sessionId,
-        isPinned: true,
+        isHibernating: true,
         lastResumeError: 'resume artifact missing',
       }),
     ])

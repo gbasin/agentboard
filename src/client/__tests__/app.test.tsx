@@ -228,7 +228,7 @@ const baseAgentSession: AgentSession = {
   createdAt: '2024-01-01T00:00:00.000Z',
   lastActivityAt: '2024-01-01T00:00:00.000Z',
   isActive: true,
-  isPinned: false,
+  isHibernating: false,
   lastUserMessage: 'draft a plan',
 }
 
@@ -293,7 +293,7 @@ describe('App', () => {
           agentSessionId: baseAgentSession.sessionId,
           agentSessionName: baseAgentSession.displayName,
           logFilePath: baseAgentSession.logFilePath,
-          isPinned: false,
+          isHibernating: false,
           lastUserMessage: 'draft a plan',
         },
       ],
@@ -316,7 +316,7 @@ describe('App', () => {
       sessionId: 'agent-session-b',
       logFilePath: '/tmp/agent-b.jsonl',
       displayName: 'alpha-exec',
-      isPinned: true,
+      isHibernating: true,
       lastUserMessage: 'implement the plan',
     }
 
@@ -350,7 +350,7 @@ describe('App', () => {
     expect(updated?.agentSessionId).toBe(activatedSession.sessionId)
     expect(updated?.agentSessionName).toBe(activatedSession.displayName)
     expect(updated?.logFilePath).toBe(activatedSession.logFilePath)
-    expect(updated?.isPinned).toBe(true)
+    expect(updated?.isHibernating).toBe(true)
     expect(updated?.lastUserMessage).toBe(activatedSession.lastUserMessage)
 
     // A true orphan (no supersededBy) should still remove the card.
@@ -370,7 +370,7 @@ describe('App', () => {
         ...baseAgentSession,
         sessionId: 'hibernating-1',
         isActive: false,
-        isPinned: true,
+        isHibernating: true,
         displayName: 'hibernating-one',
       },
     ]
@@ -463,7 +463,7 @@ describe('App', () => {
       sessionId: 'agent-live',
       displayName: 'sleepy',
       isActive: false,
-      isPinned: true,
+      isHibernating: true,
     }
 
     act(() => {
@@ -520,7 +520,7 @@ describe('App', () => {
       displayName: 'sleep now',
       logFilePath: '/tmp/hibernating-immediate.jsonl',
       isActive: false,
-      isPinned: true,
+      isHibernating: true,
     }
 
     useSessionStore.setState({
@@ -609,7 +609,7 @@ describe('App', () => {
           displayName: 'sleep me',
           logFilePath: '/tmp/hibernating-pending.jsonl',
           isActive: false,
-          isPinned: true,
+          isHibernating: true,
         },
       })
     })
@@ -639,7 +639,7 @@ describe('App', () => {
             displayName: 'sleep me',
             logFilePath: '/tmp/hibernating-pending.jsonl',
             isActive: false,
-            isPinned: true,
+            isHibernating: true,
           },
         ],
         history: [],
@@ -673,7 +673,7 @@ describe('App', () => {
       displayName: 'sleepy',
       logFilePath: '/tmp/hibernating-remote.jsonl',
       isActive: false,
-      isPinned: true,
+      isHibernating: true,
     }
 
     useSessionStore.setState({
@@ -799,7 +799,7 @@ describe('App', () => {
             ...baseAgentSession,
             sessionId: hibernatingSessionId,
             isActive: false,
-            isPinned: true,
+            isHibernating: true,
           },
         ],
         history: [],
@@ -816,7 +816,7 @@ describe('App', () => {
       ...baseAgentSession,
       sessionId: 'hibernating-reconnect',
       isActive: false,
-      isPinned: true,
+      isHibernating: true,
     }
 
     useSessionStore.setState({
@@ -885,7 +885,7 @@ describe('App', () => {
       sessionId: 'hibernating-hidden',
       projectPath: '/tmp/alpha',
       isActive: false,
-      isPinned: true,
+      isHibernating: true,
     }
 
     useSettingsStore.setState({
@@ -922,7 +922,7 @@ describe('App', () => {
       sessionId: 'hibernating-to-wake',
       displayName: 'wake-me',
       isActive: false,
-      isPinned: true,
+      isHibernating: true,
     }
     const wokenSession: Session = {
       ...baseSession,
@@ -1160,7 +1160,7 @@ describe('App', () => {
       sessionId: 'hibernating-1',
       displayName: 'sleeping alpha',
       isActive: false,
-      isPinned: true,
+      isHibernating: true,
     }
     const hibernatingB: AgentSession = {
       ...hibernatingA,

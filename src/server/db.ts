@@ -16,7 +16,7 @@ export interface AgentSessionRecord {
   lastActivityAt: string
   lastUserMessage: string | null
   currentWindow: string | null
-  isPinned: boolean
+  isHibernating: boolean
   lastResumeError: string | null
   wakeStartedAt: string | null
   lastKnownLogSize: number | null
@@ -89,7 +89,7 @@ export interface SessionDatabase {
     options?: { hibernate?: boolean }
   ) => AgentSessionRecord | null
   displayNameExists: (displayName: string, excludeSessionId?: string) => boolean
-  setPinned: (sessionId: string, isPinned: boolean) => AgentSessionRecord | null
+  setHibernating: (sessionId: string, isHibernating: boolean) => AgentSessionRecord | null
   getActiveSessionBySlugAndProject: (
     slug: string,
     projectPath: string
@@ -118,7 +118,7 @@ const AGENT_SESSIONS_COLUMNS_SQL = `
   last_activity_at TEXT NOT NULL,
   last_user_message TEXT,
   current_window TEXT,
-  is_pinned INTEGER NOT NULL DEFAULT 0,
+  is_hibernating INTEGER NOT NULL DEFAULT 0,
   last_resume_error TEXT,
   wake_started_at TEXT,
   -- NULL means "unknown" (e.g., after upgrade). First poll will initialize to actual size.
@@ -167,8 +167,9 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
   db.exec(CREATE_APP_SETTINGS_TABLE_SQL)
   migrateLastUserMessageColumn(db)
   migrateDeduplicateDisplayNames(db)
-  migrateIsPinnedColumn(db)
-  migrateIsSleepingToPinnedColumn(db)
+  migrateIsPinnedToHibernatingColumn(db)
+  migrateIsHibernatingColumn(db)
+  migrateIsSleepingToHibernatingColumn(db)
   migrateLastResumeErrorColumn(db)
   migrateLastKnownLogSizeColumn(db)
   migrateIsCodexExecColumn(db)
@@ -181,8 +182,8 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
 
   const insertStmt = db.prepare(
     `INSERT INTO agent_sessions
-      (session_id, log_file_path, project_path, slug, agent_type, display_name, created_at, last_activity_at, last_user_message, current_window, is_pinned, last_resume_error, wake_started_at, last_known_log_size, is_codex_exec, launch_command)
-     VALUES ($sessionId, $logFilePath, $projectPath, $slug, $agentType, $displayName, $createdAt, $lastActivityAt, $lastUserMessage, $currentWindow, $isPinned, $lastResumeError, $wakeStartedAt, $lastKnownLogSize, $isCodexExec, $launchCommand)`
+      (session_id, log_file_path, project_path, slug, agent_type, display_name, created_at, last_activity_at, last_user_message, current_window, is_hibernating, last_resume_error, wake_started_at, last_known_log_size, is_codex_exec, launch_command)
+     VALUES ($sessionId, $logFilePath, $projectPath, $slug, $agentType, $displayName, $createdAt, $lastActivityAt, $lastUserMessage, $currentWindow, $isHibernating, $lastResumeError, $wakeStartedAt, $lastKnownLogSize, $isCodexExec, $launchCommand)`
   )
 
   const selectBySessionId = db.prepare(
@@ -198,13 +199,13 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
     'SELECT * FROM agent_sessions WHERE current_window IS NOT NULL ORDER BY session_id'
   )
   const selectHibernating = db.prepare(
-    'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_pinned = 1 ORDER BY last_activity_at DESC, session_id'
+    'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_hibernating = 1 ORDER BY last_activity_at DESC, session_id'
   )
   const selectHistory = db.prepare(
-    'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_pinned = 0 ORDER BY last_activity_at DESC, session_id'
+    'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_hibernating = 0 ORDER BY last_activity_at DESC, session_id'
   )
   const selectHistoryRecent = db.prepare(
-    'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_pinned = 0 AND last_activity_at > $cutoff ORDER BY last_activity_at DESC, session_id'
+    'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_hibernating = 0 AND last_activity_at > $cutoff ORDER BY last_activity_at DESC, session_id'
   )
   const selectKnownSessionKeys = db.prepare(
     'SELECT session_id, log_file_path, project_path, slug, agent_type, is_codex_exec FROM agent_sessions'
@@ -261,7 +262,7 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
         $lastActivityAt: session.lastActivityAt,
         $lastUserMessage: clampLastUserMessage(session.lastUserMessage),
         $currentWindow: session.currentWindow,
-        $isPinned: session.isPinned ? 1 : 0,
+        $isHibernating: session.isHibernating ? 1 : 0,
         $lastResumeError: session.lastResumeError,
         $wakeStartedAt: session.wakeStartedAt ?? null,
         $lastKnownLogSize: session.lastKnownLogSize,
@@ -296,7 +297,7 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
         lastActivityAt: 'last_activity_at',
         lastUserMessage: 'last_user_message',
         currentWindow: 'current_window',
-        isPinned: 'is_pinned',
+        isHibernating: 'is_hibernating',
         lastResumeError: 'last_resume_error',
         wakeStartedAt: 'wake_started_at',
         lastKnownLogSize: 'last_known_log_size',
@@ -313,7 +314,7 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
         if (!field) continue
         fields.push(field)
         // Normalize boolean fields to 0/1 for SQLite
-        if (key === 'isPinned' || key === 'isCodexExec') {
+        if (key === 'isHibernating' || key === 'isCodexExec') {
           params[`$${field}`] = value ? 1 : 0
         } else if (key === 'lastUserMessage') {
           params[`$${field}`] = clampLastUserMessage(value as string | null)
@@ -411,10 +412,10 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
       // Auto-promote to Hibernating on unexpected window loss. Deliberate kills
       // and explicit mismatch cleanup opt out so those rows still land in
       // History.
-      updateStmt(['current_window', 'is_pinned']).run({
+      updateStmt(['current_window', 'is_hibernating']).run({
         $sessionId: sessionId,
         $current_window: null,
-        $is_pinned: hibernate ? 1 : 0,
+        $is_hibernating: hibernate ? 1 : 0,
       })
       const row = selectBySessionId.get({ $sessionId: sessionId }) as
         | Record<string, unknown>
@@ -430,10 +431,10 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
         : selectByDisplayName.get({ $displayName: displayName })
       return row != null
     },
-    setPinned: (sessionId, isPinned) => {
-      updateStmt(['is_pinned']).run({
+    setHibernating: (sessionId, isHibernating) => {
+      updateStmt(['is_hibernating']).run({
         $sessionId: sessionId,
-        $is_pinned: isPinned ? 1 : 0,
+        $is_hibernating: isHibernating ? 1 : 0,
       })
       const row = selectBySessionId.get({ $sessionId: sessionId }) as
         | Record<string, unknown>
@@ -508,7 +509,7 @@ function mapRow(row: Record<string, unknown>): AgentSessionRecord {
       row.current_window === null || row.current_window === undefined
         ? null
         : String(row.current_window),
-    isPinned: Number(row.is_pinned) === 1,
+    isHibernating: Number(row.is_hibernating) === 1,
     lastResumeError:
       row.last_resume_error === null || row.last_resume_error === undefined
         ? null
@@ -592,15 +593,29 @@ function migrateLastUserMessageColumn(db: SQLiteDatabase) {
   db.exec('ALTER TABLE agent_sessions ADD COLUMN last_user_message TEXT')
 }
 
-function migrateIsPinnedColumn(db: SQLiteDatabase) {
+function migrateIsPinnedToHibernatingColumn(db: SQLiteDatabase) {
   const columns = getColumnNames(db, 'agent_sessions')
-  if (columns.length === 0 || columns.includes('is_pinned')) {
+  if (
+    columns.length === 0 ||
+    !columns.includes('is_pinned') ||
+    columns.includes('is_hibernating')
+  ) {
     return
   }
-  db.exec('ALTER TABLE agent_sessions ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0')
+  db.exec(
+    'ALTER TABLE agent_sessions RENAME COLUMN is_pinned TO is_hibernating'
+  )
 }
 
-function migrateIsSleepingToPinnedColumn(db: SQLiteDatabase) {
+function migrateIsHibernatingColumn(db: SQLiteDatabase) {
+  const columns = getColumnNames(db, 'agent_sessions')
+  if (columns.length === 0 || columns.includes('is_hibernating')) {
+    return
+  }
+  db.exec('ALTER TABLE agent_sessions ADD COLUMN is_hibernating INTEGER NOT NULL DEFAULT 0')
+}
+
+function migrateIsSleepingToHibernatingColumn(db: SQLiteDatabase) {
   const columns = getColumnNames(db, 'agent_sessions')
   if (columns.length === 0 || !columns.includes('is_sleeping')) {
     return
@@ -609,7 +624,7 @@ function migrateIsSleepingToPinnedColumn(db: SQLiteDatabase) {
   db.exec('BEGIN')
   try {
     // Preserve every legacy sleeping row in the derived Hibernating bucket.
-    db.exec('UPDATE agent_sessions SET is_pinned = 1 WHERE is_sleeping = 1')
+    db.exec('UPDATE agent_sessions SET is_hibernating = 1 WHERE is_sleeping = 1')
     db.exec('ALTER TABLE agent_sessions DROP COLUMN is_sleeping')
     db.exec('COMMIT')
   } catch (error) {
@@ -728,7 +743,7 @@ function migrateDeduplicateCurrentWindows(db: SQLiteDatabase) {
     !columns.includes('session_id') ||
     !columns.includes('last_activity_at') ||
     !columns.includes('id') ||
-    !columns.includes('is_pinned')
+    !columns.includes('is_hibernating')
   ) {
     return
   }
@@ -755,7 +770,7 @@ function migrateDeduplicateCurrentWindows(db: SQLiteDatabase) {
   )
   const orphanDuplicate = db.prepare(
     `UPDATE agent_sessions
-     SET current_window = NULL, is_pinned = 0
+     SET current_window = NULL, is_hibernating = 0
      WHERE session_id = $sessionId`
   )
 
@@ -825,7 +840,7 @@ function migrateAgentTypeConstraint(db: SQLiteDatabase) {
         last_activity_at,
         last_user_message,
         current_window,
-        is_pinned,
+        is_hibernating,
         last_resume_error,
         wake_started_at,
         last_known_log_size,
@@ -844,7 +859,7 @@ function migrateAgentTypeConstraint(db: SQLiteDatabase) {
         last_activity_at,
         last_user_message,
         current_window,
-        is_pinned,
+        is_hibernating,
         last_resume_error,
         ${wakeStartedAtSelect},
         last_known_log_size,

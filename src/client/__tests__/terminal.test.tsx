@@ -133,7 +133,7 @@ const hibernatingSession: AgentSession = {
   createdAt: '2024-01-01T00:00:00.000Z',
   lastActivityAt: '2024-01-01T00:00:00.000Z',
   isActive: false,
-  isPinned: true,
+  isHibernating: true,
 }
 
 function createStorage(): Storage {

@@ -108,7 +108,7 @@ if (!tmuxAvailable || !localhostBindable) {
           lastActivityAt: new Date().toISOString(),
           lastUserMessage: null,
           currentWindow: null,
-          isPinned: true,
+          isHibernating: true,
           lastResumeError: null,
           lastKnownLogSize: null,
           isCodexExec: false,
@@ -168,7 +168,7 @@ if (!tmuxAvailable || !localhostBindable) {
           lastActivityAt: new Date().toISOString(),
           lastUserMessage: null,
           currentWindow: null,
-          isPinned: true,
+          isHibernating: true,
           lastResumeError: null,
           lastKnownLogSize: null,
           isCodexExec: false,
@@ -196,7 +196,7 @@ if (!tmuxAvailable || !localhostBindable) {
         const verifyDb = initDatabase({ path: dbPath })
         const dormant = verifyDb.getSessionById(dormantSessionId)
         verifyDb.close()
-        expect(dormant?.isPinned).toBe(true)
+        expect(dormant?.isHibernating).toBe(true)
         expect(dormant?.currentWindow).toBe(null)
         expect(dormant?.lastResumeError).toBe(null)
       },
@@ -218,12 +218,12 @@ if (!tmuxAvailable || !localhostBindable) {
       const result = await waitForMessage(ws, 'session-move-to-history-result')
       expect(result.ok).toBe(true)
       expect(result.sessionId).toBe(wsTestSessionId)
-      expect((result.session as { isPinned?: boolean }).isPinned).toBe(false)
+      expect((result.session as { isHibernating?: boolean }).isHibernating).toBe(false)
 
       const db = initDatabase({ path: dbPath })
       const record = db.getSessionById(wsTestSessionId)
       db.close()
-      expect(record?.isPinned).toBe(false)
+      expect(record?.isHibernating).toBe(false)
       expect(record?.currentWindow).toBe(null)
 
       ws.close()
