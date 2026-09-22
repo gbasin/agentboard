@@ -132,17 +132,14 @@ You can override the security threshold with `--threshold` (or `DEPENDENCY_RISK_
 bun run deps:risk -- --threshold moderate
 ```
 
-## Session history and recovery
+## Session recovery
 
-**History & recovery** keeps session names, projects, launch details, and earlier runs across restarts. New sessions are saved before their terminal starts, including shells and agents that have not written a conversation log yet.
+**Session recovery** keeps session names, projects, launch details, and earlier runs across restarts. New sessions are saved before their terminal starts, including shells and agents that have not written a conversation log yet.
 
-- Review interrupted sessions and reopen selected sessions or a saved workspace.
-- Search All time by name, earlier name, project, and saved message preview; filter by provider and session state.
-- Archive sessions without deleting their history.
-- Manage automatic backups, conversation copies, and optional terminal previews in **Storage & backups**.
-- Export a portable recovery copy with `bun run history export /path/to/new-backup-directory`.
+- Review interrupted sessions and reopen them from the recovery panel.
+- Hibernate or archive sessions without deleting their saved metadata.
 
-Automatic reopening is off by default. A reboot stops the underlying processes; reopening resumes supported conversations or launches a fresh shell. See the [recovery guide](docs/session-recovery.md) for restore commands, defaults, and limits.
+Automatic reopening is off by default. A reboot stops the underlying processes; reopening resumes supported conversations or launches a fresh shell. See the [recovery guide](docs/session-recovery.md) for defaults and limits.
 
 ## Keyboard Shortcuts
 
@@ -216,7 +213,7 @@ When you open an externally-discovered tmux session, Agentboard attaches through
 
 All persistent data is stored in `~/.agentboard/`: session database (`agentboard.db`) and logs (`agentboard.log`). Override paths with `AGENTBOARD_DB_PATH` and `LOG_FILE`.
 
-`AGENTBOARD_INACTIVE_MAX_AGE_HOURS` controls the sidebar lookback (default: 24 hours, up to 100 recent entries). The **History & recovery** screen searches all saved sessions regardless of age, with pagination. The env var name is kept for compatibility.
+`AGENTBOARD_INACTIVE_MAX_AGE_HOURS` controls the sidebar lookback (default: 24 hours, up to 100 recent entries). The env var name is kept for compatibility.
 
 `AGENTBOARD_EXCLUDE_PROJECTS` filters out sessions from specific project directories (comma-separated). Use `<empty>` to exclude sessions with no project path. Useful for hiding automated/spam sessions.
 
