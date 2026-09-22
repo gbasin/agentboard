@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { SessionPullRequest } from '../../shared/types'
 
@@ -76,14 +76,77 @@ async function fetchInfoBatch(urls: string[]): Promise<PrInfo[]> {
   return urls.map((u) => infoCache.get(u)!).filter(Boolean)
 }
 
+const CARD_CLOSE_DELAY_MS = 200
+// The card's bottom edge overlaps the chip's top edge so the pointer crosses
+// a shared hit region instead of a zero-gap boundary.
+const CARD_OVERLAP_PX = 3
+
+// Anchored hover-card state shared by PrChip and OverflowChip. The card
+// portals to body (sortable row wrappers clip overflow and can be
+// transformed), so it isn't a DOM descendant of the chip — open/close can't
+// rely on pointer staying inside one subtree. A short close delay absorbs
+// transient mouseleaves that have nothing to do with intent: the browser
+// re-hit-tests when rows re-sort/animate/scroll out from under a stationary
+// cursor, and diagonal exits pass through row background before reaching
+// the card.
+function useHoverCard(anchorRef: React.RefObject<HTMLElement | null>) {
+  const [open, setOpen] = useState(false)
+  const [pos, setPos] = useState<{ left: number; bottom: number } | null>(null)
+  const closeTimer = useRef<number | undefined>(undefined)
+
+  const cancelClose = useCallback(() => {
+    window.clearTimeout(closeTimer.current)
+    closeTimer.current = undefined
+  }, [])
+
+  const scheduleClose = useCallback(() => {
+    cancelClose()
+    closeTimer.current = window.setTimeout(
+      () => setOpen(false),
+      CARD_CLOSE_DELAY_MS
+    )
+  }, [cancelClose])
+
+  const openCard = useCallback(() => {
+    cancelClose()
+    const r = anchorRef.current?.getBoundingClientRect()
+    if (r) {
+      // Anchor above the chip; clamp so the card stays in the viewport.
+      setPos({
+        left: Math.min(r.left, window.innerWidth - 270),
+        bottom: window.innerHeight - r.top + CARD_OVERLAP_PX,
+      })
+    }
+    setOpen(true)
+  }, [anchorRef, cancelClose])
+
+  // pos is captured on open; a scroll or resize detaches the fixed card
+  // from its chip, so close rather than leave it floating. Scroll doesn't
+  // bubble — capture at window to catch scrollable ancestors too.
+  useEffect(() => {
+    if (!open) return
+    const close = () => setOpen(false)
+    window.addEventListener('scroll', close, true)
+    window.addEventListener('resize', close)
+    return () => {
+      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('resize', close)
+    }
+  }, [open])
+
+  useEffect(() => cancelClose, [cancelClose])
+
+  return { open, pos, openCard, scheduleClose, cancelClose }
+}
+
 function PrChip({ pr }: { pr: SessionPullRequest }) {
   const [info, setInfo] = useState<PrInfo | undefined>(infoCache.get(pr.url))
   const [checks, setChecks] = useState<PrCheckInfo | undefined>(
     checksCache.get(pr.url)
   )
-  const [hover, setHover] = useState(false)
   const anchorRef = useRef<HTMLSpanElement>(null)
-  const [pos, setPos] = useState<{ left: number; bottom: number } | null>(null)
+  const { open, pos, openCard, scheduleClose, cancelClose } =
+    useHoverCard(anchorRef)
   const mounted = useRef(true)
   useEffect(() => {
     mounted.current = true
@@ -102,7 +165,7 @@ function PrChip({ pr }: { pr: SessionPullRequest }) {
 
   // Lazy: CI detail only on hover.
   useEffect(() => {
-    if (!hover || checksCache.has(pr.url) || checksInflight.has(pr.url)) return
+    if (!open || checksCache.has(pr.url) || checksInflight.has(pr.url)) return
     checksInflight.add(pr.url)
     fetch(`/api/pr-checks?url=${encodeURIComponent(pr.url)}`)
       .then((r) => (r.ok ? r.json() : null))
@@ -112,25 +175,15 @@ function PrChip({ pr }: { pr: SessionPullRequest }) {
       })
       .catch(() => {})
       .finally(() => checksInflight.delete(pr.url))
-  }, [hover, pr.url])
+  }, [open, pr.url])
 
   const detail = checks ?? info
   return (
     <span
       ref={anchorRef}
       className="relative inline-flex"
-      onMouseEnter={() => {
-        const r = anchorRef.current?.getBoundingClientRect()
-        if (r) {
-          // Anchor above the chip; clamp so the card stays in the viewport.
-          setPos({
-            left: Math.min(r.left, window.innerWidth - 270),
-            bottom: window.innerHeight - r.top,
-          })
-        }
-        setHover(true)
-      }}
-      onMouseLeave={() => setHover(false)}
+      onMouseEnter={openCard}
+      onMouseLeave={scheduleClose}
     >
       <a
         href={pr.url}
@@ -138,21 +191,21 @@ function PrChip({ pr }: { pr: SessionPullRequest }) {
         rel="noreferrer"
         onClick={(e) => e.stopPropagation()}
         className="inline-flex items-center gap-1 rounded-full bg-elevated px-1.5 py-0.5 text-[11px] tabular-nums text-muted hover:text-accent"
-        title={`${pr.repo}#${pr.number}`}
+        aria-label={`${pr.repo}#${pr.number}`}
       >
         <span
           className={`inline-block h-1.5 w-1.5 rounded-full ${stateColor(info)}`}
         />
         #{pr.number}
       </a>
-      {hover &&
+      {open &&
         pos &&
         createPortal(
           <div
             className="fixed z-[100] w-64 rounded-md border border-border bg-elevated p-2 text-left shadow-lg"
             style={{ left: pos.left, bottom: pos.bottom }}
-            onMouseEnter={() => setHover(true)}
-            onMouseLeave={() => setHover(false)}
+            onMouseEnter={cancelClose}
+            onMouseLeave={scheduleClose}
           >
           <div className="flex items-center gap-1.5 text-[11px]">
             <span className={stateColor(info) + ' inline-block h-1.5 w-1.5 rounded-full'} />
@@ -199,42 +252,33 @@ const MAX_VISIBLE = 4
 
 /** Muted "+N" chip; hover opens a card listing the remaining PRs. */
 function OverflowChip({ prs }: { prs: SessionPullRequest[] }) {
-  const [hover, setHover] = useState(false)
-  const [pos, setPos] = useState<{ left: number; bottom: number } | null>(null)
   const [infos, setInfos] = useState<Map<string, PrInfo> | null>(null)
   const anchorRef = useRef<HTMLSpanElement>(null)
+  const { open, pos, openCard, scheduleClose, cancelClose } =
+    useHoverCard(anchorRef)
 
   // Lazy: only fetch state for hidden PRs when the card opens.
   useEffect(() => {
-    if (!hover || infos) return
+    if (!open || infos) return
     fetchInfoBatch(prs.map((p) => p.url)).then((arr) => {
       setInfos(new Map(arr.map((i) => [i.url, i])))
     })
-  }, [hover, infos, prs])
+  }, [open, infos, prs])
 
   return (
     <span
       ref={anchorRef}
       className="relative inline-flex"
-      onMouseEnter={() => {
-        const r = anchorRef.current?.getBoundingClientRect()
-        if (r) {
-          setPos({
-            left: Math.min(r.left, window.innerWidth - 270),
-            bottom: window.innerHeight - r.top,
-          })
-        }
-        setHover(true)
-      }}
-      onMouseLeave={() => setHover(false)}
+      onMouseEnter={openCard}
+      onMouseLeave={scheduleClose}
     >
       <span
         className="inline-flex cursor-default items-center rounded-full px-1.5 py-0.5 text-[11px] tabular-nums text-muted"
-        title={`${prs.length} more PR${prs.length === 1 ? '' : 's'}`}
+        aria-label={`${prs.length} more PR${prs.length === 1 ? '' : 's'}`}
       >
         +{prs.length}
       </span>
-      {hover &&
+      {open &&
         pos &&
         createPortal(
           <div
@@ -242,8 +286,8 @@ function OverflowChip({ prs }: { prs: SessionPullRequest[] }) {
             style={{ left: pos.left, bottom: pos.bottom }}
             // Keep the card alive while the pointer is on it so its rows
             // are actually reachable/clickable.
-            onMouseEnter={() => setHover(true)}
-            onMouseLeave={() => setHover(false)}
+            onMouseEnter={cancelClose}
+            onMouseLeave={scheduleClose}
           >
             <div className="text-[11px] text-muted">
               {prs.length} more PR{prs.length === 1 ? '' : 's'}
