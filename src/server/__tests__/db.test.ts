@@ -570,6 +570,75 @@ describe('db', () => {
     fs.rmSync(tempDir, { recursive: true, force: true })
   })
 
+  test('renames pin-era is_pinned column into hibernating marker state', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentboard-'))
+    const dbPath = path.join(tempDir, 'agentboard.db')
+    const legacyDb = new SQLiteDatabase(dbPath)
+
+    legacyDb.exec(`
+      CREATE TABLE agent_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT UNIQUE,
+        log_file_path TEXT NOT NULL UNIQUE,
+        project_path TEXT,
+        agent_type TEXT NOT NULL CHECK (agent_type IN ('claude', 'claude-rp', 'codex', 'pi', 'devin', 'grok', 'omp')),
+        display_name TEXT,
+        created_at TEXT NOT NULL,
+        last_activity_at TEXT NOT NULL,
+        last_user_message TEXT,
+        current_window TEXT,
+        is_pinned INTEGER NOT NULL DEFAULT 0,
+        last_resume_error TEXT,
+        wake_started_at TEXT,
+        last_known_log_size INTEGER,
+        is_codex_exec INTEGER NOT NULL DEFAULT 0,
+        slug TEXT,
+        launch_command TEXT
+      );
+    `)
+
+    legacyDb.exec(`
+      INSERT INTO agent_sessions (
+        session_id,
+        log_file_path,
+        project_path,
+        agent_type,
+        display_name,
+        created_at,
+        last_activity_at,
+        current_window,
+        is_pinned
+      ) VALUES
+        ('pin-era-hibernating', '/tmp/pin-era-hibernating.jsonl', '/tmp/project', 'claude', 'hibernating', '${now}', '${now}', null, 1),
+        ('pin-era-history', '/tmp/pin-era-history.jsonl', '/tmp/project', 'claude', 'history', '${now}', '${now}', null, 0),
+        ('pin-era-active', '/tmp/pin-era-active.jsonl', '/tmp/project', 'claude', 'active', '${now}', '${now}', 'agentboard:1', 0);
+    `)
+    legacyDb.close()
+
+    const migrated = initDatabase({ path: dbPath })
+    const columns = migrated.db
+      .prepare('PRAGMA table_info(agent_sessions)')
+      .all() as Array<{ name?: string }>
+    const columnNames = columns.map((column) => String(column.name ?? ''))
+
+    expect(columnNames).toContain('is_hibernating')
+    expect(columnNames).not.toContain('is_pinned')
+    expect(migrated.getSessionById('pin-era-hibernating')?.isHibernating).toBe(true)
+    expect(migrated.getSessionById('pin-era-history')?.isHibernating).toBe(false)
+    expect(migrated.getHibernatingSessions().map((session) => session.sessionId)).toEqual([
+      'pin-era-hibernating',
+    ])
+    expect(migrated.getHistorySessions().map((session) => session.sessionId)).toEqual([
+      'pin-era-history',
+    ])
+    expect(migrated.getActiveSessions().map((session) => session.sessionId)).toEqual([
+      'pin-era-active',
+    ])
+
+    migrated.close()
+    fs.rmSync(tempDir, { recursive: true, force: true })
+  })
+
   test('launchCommand is stored and retrieved', () => {
     const session = makeSession({
       sessionId: 'launch-cmd-test',
