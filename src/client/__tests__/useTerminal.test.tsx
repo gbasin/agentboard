@@ -2721,7 +2721,7 @@ describe('useTerminal', () => {
     expect(sendCalls).toContainEqual({
       type: 'terminal-input',
       sessionId: 'session-1',
-      data: '/Users/test/file.txt',
+      data: '/Users/test/file.txt ',
     })
     // Should NOT have called terminal.paste() since we used raw input
     expect(terminal.pasteCalls).toEqual([])
@@ -2793,7 +2793,7 @@ describe('useTerminal', () => {
     expect(sendCalls).toContainEqual({
       type: 'terminal-input',
       sessionId: 'session-1',
-      data: '/Users/test/report.pdf',
+      data: '/Users/test/report.pdf ',
     })
     expect(sendCalls).not.toContainEqual({
       type: 'terminal-input',
@@ -2885,7 +2885,7 @@ describe('useTerminal', () => {
     expect(sendCalls).toContainEqual({
       type: expectedPath === null ? 'terminal-paste' : 'terminal-input',
       sessionId: 'session-1',
-      data: expectedPath ?? filename,
+      data: expectedPath === null ? filename : expectedPath + ' ',
     })
     expect(sendCalls).not.toContainEqual({
       type: 'terminal-input',

@@ -928,8 +928,10 @@ export function useTerminal({
                       return
                     }
                     // Send as raw input (no bracket paste) so Claude Code
-                    // doesn't detect a paste and read the system clipboard
-                    sendInputIfStillAttached(attached, sanitizeImagePath(path))
+                    // doesn't detect a paste and read the system clipboard.
+                    // Trailing space matches the browser file-upload path
+                    // (useBrowserPaste) so consecutive paths don't merge.
+                    sendInputIfStillAttached(attached, sanitizeImagePath(path) + ' ')
                     return
                   }
                 }
