@@ -88,6 +88,8 @@ export function handleMatchWorkerRequest(
     let noMessageWindows: NoMessageWindow[] = []
     let orphanEntries: LogEntrySnapshot[] = []
     let orphanMatches: Array<{ logPath: string; tmuxWindow: string }> = []
+    let orphanScanMs = 0
+    let orphanMatchMs = 0
     const sessionByLogPath = new Map(
       payload.sessions
         .filter((session) => session.logFilePath)
@@ -145,8 +147,6 @@ export function handleMatchWorkerRequest(
     }
 
     const orphanCandidates = payload.orphanCandidates ?? []
-    let orphanScanMs = 0
-    let orphanMatchMs = 0
     if (payload.forceOrphanRematch && orphanCandidates.length > 0) {
       const skipPatterns = payload.skipMatchingPatterns ?? []
       const orphanScanStart = performance.now()
