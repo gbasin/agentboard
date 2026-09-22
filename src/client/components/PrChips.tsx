@@ -61,14 +61,19 @@ function stateLabel(info: PrInfo | undefined): string {
   return info.state.charAt(0) + info.state.slice(1).toLowerCase()
 }
 
+// Conclusions GitHub renders as neutral rather than failing.
+const NEUTRAL_CONCLUSIONS = new Set(['SKIPPED', 'NEUTRAL', 'STALE'])
+
 function checkIcon(c: {
   status: string
   conclusion: string | null
 }): { glyph: string; cls: string } {
   if (c.status === 'COMPLETED') {
-    return c.conclusion === 'SUCCESS'
-      ? { glyph: '✓', cls: 'text-green-500' }
-      : { glyph: '✗', cls: 'text-red-500' }
+    if (c.conclusion === 'SUCCESS')
+      return { glyph: '✓', cls: 'text-green-500' }
+    if (c.conclusion && NEUTRAL_CONCLUSIONS.has(c.conclusion))
+      return { glyph: '–', cls: 'text-muted' }
+    return { glyph: '✗', cls: 'text-red-500' }
   }
   return { glyph: '…', cls: 'text-yellow-500' }
 }
