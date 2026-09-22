@@ -34,6 +34,6 @@ jobs:
     permissions:
       actions: write
     steps:
-      - run: gh workflow run release.yml -f tag=${{ needs.release-please.outputs.tag_name }}
+      - run: gh workflow run release.yml -R ${{ github.repository }} -f tag=${{ needs.release-please.outputs.tag_name }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
