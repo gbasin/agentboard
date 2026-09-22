@@ -12,7 +12,12 @@ interface PrInfo {
 }
 
 interface PrCheckInfo extends PrInfo {
-  checks?: { name: string; status: string; conclusion: string | null }[]
+  checks?: {
+    name: string
+    status: string
+    conclusion: string | null
+    link?: string
+  }[]
 }
 
 // Module-level caches shared across all session rows: a session's PRs are
@@ -77,9 +82,18 @@ async function fetchInfoBatch(urls: string[]): Promise<PrInfo[]> {
 }
 
 const CARD_CLOSE_DELAY_MS = 200
-// The card's bottom edge overlaps the chip's top edge so the pointer crosses
-// a shared hit region instead of a zero-gap boundary.
+// The card hugs the chip's edge with a few px of slack so the pointer
+// crosses a shared hit region instead of a zero-gap boundary.
 const CARD_OVERLAP_PX = 3
+
+const VIEWPORT_MARGIN_PX = 8
+
+interface CardPos {
+  left: number
+  top?: number
+  bottom?: number
+  maxHeight: number
+}
 
 // Anchored hover-card state shared by PrChip and OverflowChip. The card
 // portals to body (sortable row wrappers clip overflow and can be
@@ -89,10 +103,14 @@ const CARD_OVERLAP_PX = 3
 // re-hit-tests when rows re-sort/animate/scroll out from under a stationary
 // cursor, and diagonal exits pass through row background before reaching
 // the card.
-function useHoverCard(anchorRef: React.RefObject<HTMLElement | null>) {
+function useHoverCard(
+  anchorRef: React.RefObject<HTMLElement | null>,
+  cardWidth: number
+) {
   const [open, setOpen] = useState(false)
-  const [pos, setPos] = useState<{ left: number; bottom: number } | null>(null)
+  const [pos, setPos] = useState<CardPos | null>(null)
   const closeTimer = useRef<number | undefined>(undefined)
+  const cardRef = useRef<HTMLDivElement>(null)
 
   const cancelClose = useCallback(() => {
     window.clearTimeout(closeTimer.current)
@@ -111,32 +129,61 @@ function useHoverCard(anchorRef: React.RefObject<HTMLElement | null>) {
     cancelClose()
     const r = anchorRef.current?.getBoundingClientRect()
     if (r) {
-      // Anchor above the chip; clamp so the card stays in the viewport.
-      setPos({
-        left: Math.min(r.left, window.innerWidth - 270),
-        bottom: window.innerHeight - r.top + CARD_OVERLAP_PX,
-      })
+      // Anchor on whichever side of the chip has more room — near the top
+      // edge the card flips below instead of clipping out of the viewport.
+      // maxHeight bounds late-arriving content (CI checks load after open)
+      // so the card scrolls internally rather than growing past the edge.
+      const spaceAbove = r.top - VIEWPORT_MARGIN_PX
+      const spaceBelow = window.innerHeight - r.bottom - VIEWPORT_MARGIN_PX
+      const left = Math.max(
+        VIEWPORT_MARGIN_PX,
+        Math.min(
+          r.left,
+          window.innerWidth - cardWidth - VIEWPORT_MARGIN_PX
+        )
+      )
+      const maxHeight = (space: number) =>
+        Math.max(60, space - CARD_OVERLAP_PX)
+      setPos(
+        spaceAbove >= spaceBelow
+          ? {
+              left,
+              bottom: window.innerHeight - r.top + CARD_OVERLAP_PX,
+              maxHeight: maxHeight(spaceAbove),
+            }
+          : {
+              left,
+              top: r.bottom + CARD_OVERLAP_PX,
+              maxHeight: maxHeight(spaceBelow),
+            }
+      )
     }
     setOpen(true)
-  }, [anchorRef, cancelClose])
+  }, [anchorRef, cancelClose, cardWidth])
 
   // pos is captured on open; a scroll or resize detaches the fixed card
   // from its chip, so close rather than leave it floating. Scroll doesn't
-  // bubble — capture at window to catch scrollable ancestors too.
+  // bubble — capture at window to catch scrollable ancestors too. Scrolls
+  // inside the card's own overflow lists are exempt or the card could
+  // never be scrolled.
   useEffect(() => {
     if (!open) return
-    const close = () => setOpen(false)
-    window.addEventListener('scroll', close, true)
-    window.addEventListener('resize', close)
+    const closeOnScroll = (e: Event) => {
+      if (cardRef.current?.contains(e.target as Node)) return
+      setOpen(false)
+    }
+    const closeOnResize = () => setOpen(false)
+    window.addEventListener('scroll', closeOnScroll, true)
+    window.addEventListener('resize', closeOnResize)
     return () => {
-      window.removeEventListener('scroll', close, true)
-      window.removeEventListener('resize', close)
+      window.removeEventListener('scroll', closeOnScroll, true)
+      window.removeEventListener('resize', closeOnResize)
     }
   }, [open])
 
   useEffect(() => cancelClose, [cancelClose])
 
-  return { open, pos, openCard, scheduleClose, cancelClose }
+  return { open, pos, openCard, scheduleClose, cancelClose, cardRef }
 }
 
 function PrChip({ pr }: { pr: SessionPullRequest }) {
@@ -145,8 +192,8 @@ function PrChip({ pr }: { pr: SessionPullRequest }) {
     checksCache.get(pr.url)
   )
   const anchorRef = useRef<HTMLSpanElement>(null)
-  const { open, pos, openCard, scheduleClose, cancelClose } =
-    useHoverCard(anchorRef)
+  const { open, pos, openCard, scheduleClose, cancelClose, cardRef } =
+    useHoverCard(anchorRef, 256)
   const mounted = useRef(true)
   useEffect(() => {
     mounted.current = true
@@ -202,33 +249,74 @@ function PrChip({ pr }: { pr: SessionPullRequest }) {
         pos &&
         createPortal(
           <div
-            className="fixed z-[100] w-64 rounded-md border border-border bg-elevated p-2 text-left shadow-lg"
-            style={{ left: pos.left, bottom: pos.bottom }}
+            ref={cardRef}
+            className="fixed z-[100] flex w-64 flex-col rounded-md border border-border bg-elevated p-2 text-left shadow-lg"
+            style={{
+              left: pos.left,
+              top: pos.top,
+              bottom: pos.bottom,
+              maxHeight: pos.maxHeight,
+            }}
             onMouseEnter={cancelClose}
             onMouseLeave={scheduleClose}
+            // Portal events still bubble through the React tree — don't let
+            // card clicks activate the session row underneath.
+            onClick={(e) => e.stopPropagation()}
           >
-          <div className="flex items-center gap-1.5 text-[11px]">
-            <span className={stateColor(info) + ' inline-block h-1.5 w-1.5 rounded-full'} />
+          <div className="flex shrink-0 items-center gap-1.5 text-[11px]">
+            <span className={stateColor(info) + ' inline-block h-1.5 w-1.5 shrink-0 rounded-full'} />
             <span className="text-muted">{stateLabel(info) || 'PR'}</span>
             <span className="text-muted">·</span>
-            <span className="truncate text-muted">{pr.repo}#{pr.number}</span>
+            <a
+              href={pr.url}
+              target="_blank"
+              rel="noreferrer"
+              className="truncate text-muted hover:text-accent"
+            >
+              {pr.repo}#{pr.number}
+            </a>
           </div>
           {detail ? (
             <>
-              <div className="mt-1 text-xs text-primary">
+              <a
+                href={pr.url}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-1 block shrink-0 text-xs text-primary hover:text-accent"
+              >
                 {detail.title ?? '(title unavailable)'}
-              </div>
-              <div className="mt-0.5 text-[11px] text-muted">
+              </a>
+              <div className="mt-0.5 shrink-0 text-[11px] text-muted">
                 {detail.author ? `by ${detail.author}` : ''}
               </div>
               {checks?.checks && checks.checks.length > 0 && (
-                <div className="mt-1.5 max-h-32 space-y-0.5 overflow-y-auto border-t border-border pt-1.5">
+                <div className="mt-1.5 max-h-32 min-h-0 space-y-0.5 overflow-y-auto border-t border-border pt-1.5">
                   {checks.checks.map((c, i) => {
                     const ic = checkIcon(c)
-                    return (
-                      <div key={i} className="flex items-center gap-1.5 text-[11px]">
+                    const row = (
+                      <>
                         <span className={ic.cls}>{ic.glyph}</span>
-                        <span className="truncate text-muted">{c.name}</span>
+                        <span className="truncate text-muted group-hover:text-accent">
+                          {c.name}
+                        </span>
+                      </>
+                    )
+                    return c.link ? (
+                      <a
+                        key={i}
+                        href={c.link}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="group flex items-center gap-1.5 text-[11px]"
+                      >
+                        {row}
+                      </a>
+                    ) : (
+                      <div
+                        key={i}
+                        className="group flex items-center gap-1.5 text-[11px]"
+                      >
+                        {row}
                       </div>
                     )
                   })}
@@ -236,7 +324,7 @@ function PrChip({ pr }: { pr: SessionPullRequest }) {
               )}
             </>
           ) : (
-            <div className="mt-1 space-y-1">
+            <div className="mt-1 shrink-0 space-y-1">
               <div className="h-3 w-3/4 animate-pulse rounded bg-border" />
               <div className="h-3 w-1/2 animate-pulse rounded bg-border" />
             </div>
@@ -254,8 +342,8 @@ const MAX_VISIBLE = 4
 function OverflowChip({ prs }: { prs: SessionPullRequest[] }) {
   const [infos, setInfos] = useState<Map<string, PrInfo> | null>(null)
   const anchorRef = useRef<HTMLSpanElement>(null)
-  const { open, pos, openCard, scheduleClose, cancelClose } =
-    useHoverCard(anchorRef)
+  const { open, pos, openCard, scheduleClose, cancelClose, cardRef } =
+    useHoverCard(anchorRef, 224)
 
   // Lazy: only fetch state for hidden PRs when the card opens.
   useEffect(() => {
@@ -282,17 +370,24 @@ function OverflowChip({ prs }: { prs: SessionPullRequest[] }) {
         pos &&
         createPortal(
           <div
-            className="fixed z-[100] w-56 rounded-md border border-border bg-elevated p-2 text-left shadow-lg"
-            style={{ left: pos.left, bottom: pos.bottom }}
+            ref={cardRef}
+            className="fixed z-[100] flex w-56 flex-col rounded-md border border-border bg-elevated p-2 text-left shadow-lg"
+            style={{
+              left: pos.left,
+              top: pos.top,
+              bottom: pos.bottom,
+              maxHeight: pos.maxHeight,
+            }}
             // Keep the card alive while the pointer is on it so its rows
             // are actually reachable/clickable.
             onMouseEnter={cancelClose}
             onMouseLeave={scheduleClose}
+            onClick={(e) => e.stopPropagation()}
           >
-            <div className="text-[11px] text-muted">
+            <div className="shrink-0 text-[11px] text-muted">
               {prs.length} more PR{prs.length === 1 ? '' : 's'}
             </div>
-            <div className="mt-1 max-h-48 space-y-0.5 overflow-y-auto border-t border-border pt-1.5">
+            <div className="mt-1 max-h-48 min-h-0 space-y-0.5 overflow-y-auto border-t border-border pt-1.5">
               {prs.map((pr) => (
                 <a
                   key={pr.url}
