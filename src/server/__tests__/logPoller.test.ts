@@ -470,6 +470,49 @@ describe('LogPoller', () => {
     db.close()
   })
 
+  test('retries failed watcher batches on the next trigger without losing paths or spinning', async () => {
+    const db = initDatabase({ path: ':memory:' })
+    const worker = new (class extends RecordingMatchWorkerClient {
+      override async poll(request: Omit<MatchWorkerRequest, 'id'>): Promise<MatchWorkerResponse> {
+        const response = await super.poll(request)
+        if (this.requests.length === 1) throw new Error('Temporary worker failure')
+        return response
+      }
+    })()
+    const poller = new LogPoller(db, new SessionRegistry(), {
+      matchWorkerClient: worker,
+      maxLogsPerPoll: 2,
+    })
+    const changedPaths = ['one', 'two', 'three'].map((name) =>
+      path.join(tempRoot, `${name}.jsonl`)
+    )
+
+    try {
+      await poller.pollChanged(changedPaths)
+      // Allow scheduled microtasks and a full event-loop turn to run: failure
+      // must wait for a new trigger instead of immediately retrying itself.
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(worker.requests).toHaveLength(1)
+      expect(worker.requests[0]?.preFilteredPaths).toEqual(changedPaths.slice(0, 2))
+      expect(poller.matchingError).toContain('Temporary worker failure')
+
+      await poller.pollChanged([])
+      await waitForRequestCount(worker, 3)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      const retriedPaths = worker.requests.slice(1).flatMap((request) =>
+        request.preFilteredPaths ?? []
+      )
+      expect(retriedPaths.toSorted()).toEqual(changedPaths.toSorted())
+      expect(worker.requests.every((request) =>
+        request.preFilteredPaths!.length <= 2
+      )).toBe(true)
+      expect(poller.matchingError).toBeNull()
+    } finally {
+      poller.stop()
+      db.close()
+    }
+  })
+
   test('skips startup orphan rematch when every live window is already claimed', async () => {
     const db = initDatabase({ path: ':memory:' })
     const registry = new SessionRegistry()

@@ -1,6 +1,6 @@
 // History sessions lookback limits (in hours)
 export const HISTORY_MAX_AGE_MIN_HOURS = 1
-export const HISTORY_MAX_AGE_MAX_HOURS = 168 // 7 days
+export const HISTORY_MAX_AGE_MAX_HOURS = 876000 // 100 years; the paginated library also supports All time
 
 export interface SessionPullRequest {
   url: string
@@ -28,6 +28,7 @@ export type TerminalErrorCode =
   | 'ERR_NOT_READY'
 
 export interface Session {
+  boardSessionId?: string
   id: string
   name: string
   tmuxWindow: string
@@ -90,6 +91,7 @@ export interface DirectoryErrorResponse {
 }
 
 export type ServerMessage =
+  | { type: 'library-changed' }
   | { type: 'sessions'; sessions: Session[] }
   | { type: 'session-update'; session: Session }
   | { type: 'session-created'; session: Session }
@@ -159,7 +161,7 @@ export type ClientMessage =
   // so multi-line content isn't auto-submitted line-by-line by the pane's app.
   | { type: 'terminal-paste'; sessionId: string; data: string }
   | { type: 'terminal-resize'; sessionId: string; cols: number; rows: number }
-  | { type: 'session-create'; projectPath: string; name?: string; command?: string; host?: string }
+  | { type: 'session-create'; operationId?: string; projectPath: string; name?: string; command?: string; host?: string }
   | { type: 'session-kill'; sessionId: string; source?: SessionKillSource }
   | { type: 'session-rename'; sessionId: string; newName: string }
   | { type: 'session-refresh' }
