@@ -150,6 +150,7 @@ const TRACE_EXCLUDE_PREFIXES = [
   /^search\b/i,
   /^read\b/i,
   /^use\b/i,
+  /^⟦/,
 ] as const
 const TRACE_STATUS_TRAILER = /\s*\(([^)]*)\)\s*$/
 const TRACE_STATUS_HINTS = [
@@ -1413,9 +1414,33 @@ export function extractRecentTraceLinesFromTmux(
   for (let i = rawLines.length - 1; i >= 0 && traces.length < maxLines; i--) {
     const raw = rawLines[i] ?? ''
     const trimmed = raw.trim()
-    if (!trimmed.startsWith('•')) continue
+    const isBullet = trimmed.startsWith('•')
+    const isBoxRow = trimmed.startsWith('│')
+    const isCheckRow = trimmed.startsWith('✔')
+    if (!isBullet && !isBoxRow && !isCheckRow) continue
     let cleaned = cleanTmuxLine(raw)
     if (!cleaned) continue
+    if (isBoxRow) {
+      // Oh-my-pi renders tool calls as box rows: `│ $ <cmd>` / `│ <output>`.
+      // Strip the borders and the shell '$' prompt so the interior text can be
+      // exact-matched against tool call args/results in the session JSONL.
+      cleaned = cleaned
+        .replace(/^│/, '')
+        .replace(/│$/, '')
+        .replace(/^\s*\$\s+/, '')
+        .trim()
+      // Multi-column rows (startup card etc.) still contain a border char —
+      // they never produce searchable text.
+      if (!cleaned || cleaned.includes('│')) continue
+    } else if (isCheckRow) {
+      // Oh-my-pi flat tool rows: `✔ <Tool> <arg>`. The arg is the searchable
+      // needle (tool call args appear verbatim in the JSONL); the tool name
+      // alone is too generic to match on.
+      const body = cleaned.replace(/^✔\s*/, '')
+      const spaceIdx = body.indexOf(' ')
+      cleaned = spaceIdx > 0 ? body.slice(spaceIdx + 1).trim() : ''
+      if (!cleaned) continue
+    }
     cleaned = stripTraceStatusSuffix(cleaned)
     if (!cleaned) continue
     if (TRACE_EXCLUDE_PREFIXES.some((prefix) => prefix.test(cleaned))) continue

@@ -15,6 +15,7 @@ let piDir: string
 const originalClaude = process.env.CLAUDE_CONFIG_DIR
 const originalCodex = process.env.CODEX_HOME
 const originalPi = process.env.PI_HOME
+const originalOmpAgentDir = process.env.PI_CODING_AGENT_DIR
 const originalAgentboardData = process.env.AGENTBOARD_DATA_DIR
 const originalGrok = process.env.GROK_HOME
 
@@ -31,6 +32,7 @@ beforeEach(async () => {
   process.env.CLAUDE_CONFIG_DIR = claudeDir
   process.env.CODEX_HOME = codexDir
   process.env.PI_HOME = piDir
+  process.env.PI_CODING_AGENT_DIR = path.join(tempRoot, 'omp-agent')
   process.env.AGENTBOARD_DATA_DIR = path.join(tempRoot, 'agentboard')
   process.env.GROK_HOME = path.join(tempRoot, 'grok')
 })
@@ -42,6 +44,8 @@ afterEach(async () => {
   else delete process.env.CODEX_HOME
   if (originalPi) process.env.PI_HOME = originalPi
   else delete process.env.PI_HOME
+  if (originalOmpAgentDir) process.env.PI_CODING_AGENT_DIR = originalOmpAgentDir
+  else delete process.env.PI_CODING_AGENT_DIR
   if (originalAgentboardData) process.env.AGENTBOARD_DATA_DIR = originalAgentboardData
   else delete process.env.AGENTBOARD_DATA_DIR
   if (originalGrok) process.env.GROK_HOME = originalGrok
