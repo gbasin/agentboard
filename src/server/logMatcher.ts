@@ -1589,6 +1589,35 @@ export function readLogContent(
   }
 }
 
+// Reads only the last byteLimit bytes of a file. The JSONL tail can start
+// mid-line; the partial first line is skipped by the parser either way.
+function readFileTail(
+  logPath: string,
+  byteLimit: number,
+  fileSize: number
+): string {
+  let fd: number | null = null
+  try {
+    fd = fs.openSync(logPath, 'r')
+    const start = Math.max(0, fileSize - byteLimit)
+    const length = fileSize - start
+    if (length <= 0) return ''
+    const buffer = Buffer.alloc(length)
+    const bytesRead = fs.readSync(fd, buffer, 0, length, start)
+    return buffer.subarray(0, bytesRead).toString('utf8')
+  } catch {
+    return ''
+  } finally {
+    if (fd !== null) {
+      try {
+        fs.closeSync(fd)
+      } catch {
+        // best effort
+      }
+    }
+  }
+}
+
 export function extractLogText(
   logPath: string,
   { mode = DEFAULT_LOG_TEXT_MODE, logRead }: LogTextOptionsInput = {}
@@ -1644,9 +1673,13 @@ export function getLogTokenCount(
     return 0
   }
 
-  // readLogContent reads the whole file regardless of limits, so read once
-  // and apply the tail limits to the in-memory copy.
-  const raw = readLogContent(logPath, { lineLimit: 0, byteLimit: 0 })
+  // Read only the tail when the file exceeds the tail window — the limits
+  // slice to the tail anyway, so a full read is wasted IO on multi-MB logs
+  // (this runs once per dormant session at startup rematch).
+  const tailOnly = resolvedRead.byteLimit > 0 && fileSize > resolvedRead.byteLimit
+  let raw = tailOnly
+    ? readFileTail(logPath, resolvedRead.byteLimit, fileSize)
+    : readLogContent(logPath, { lineLimit: 0, byteLimit: 0 })
   const tail = applyReadLimits(raw, resolvedRead)
   const count = countTokens(extractTextFromRaw(tail, mode))
   if (count > 0 || mode === 'all') return count
@@ -1654,6 +1687,9 @@ export function getLogTokenCount(
   // (e.g. a 150KB pasted message), leaving only unparseable fragments and
   // tool/echo events in the window. Callers only gate on "any message text
   // at all", so confirm with a head-first scan before reporting empty.
+  if (tailOnly) {
+    raw = readLogContent(logPath, { lineLimit: 0, byteLimit: 0 })
+  }
   const fromHead = findFirstMessageTokenCount(raw, mode)
   if (fromHead === 0) {
     zeroTokenLogCache.set(logPath, fileSize)

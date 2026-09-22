@@ -69,6 +69,10 @@ export interface MatchWorkerResponse {
   matchSkipped?: boolean
   matches?: Array<{ logPath: string; tmuxWindow: string }>
   orphanMatches?: Array<{ logPath: string; tmuxWindow: string }>
+  /** Time to enrich orphan candidates (stats, token counts) */
+  orphanScanMs?: number
+  /** Time to content-match orphan entries against unclaimed windows */
+  orphanMatchMs?: number
   /** Windows that had no extractable user messages (terminal empty or still booting) */
   noMessageWindows?: NoMessageWindow[]
   profile?: ExactMatchProfiler

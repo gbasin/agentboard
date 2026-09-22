@@ -619,7 +619,11 @@ let importCounter = 0
 
 async function loadIndex() {
   importCounter += 1
-  await import(`../../index?test=${importCounter}`)
+  const mod = await import(`../../index?test=${importCounter}`)
+  // The initial session refresh runs asynchronously after the server binds —
+  // wait for it (and the chained startup verification) to settle so tests see
+  // the same post-startup state the old synchronous path produced.
+  await mod.startupReady
   if (!serveOptions) {
     throw new Error('Bun.serve was not called')
   }
@@ -829,9 +833,9 @@ describe('server message handlers', () => {
     )
     websocket.message?.(ws as never, refreshPayload)
 
-    // 2 calls: startup logging + initial sync refresh
-    // (message refresh uses async worker, not sessionManager.listWindows)
-    expect(listCalls).toBe(2)
+    // Startup refresh runs through the worker too, so sessionManager.listWindows
+    // is only called by the sync mutation path (session-create below).
+    expect(listCalls).toBe(0)
     expect(replaceSessionsCalls).toHaveLength(1)
 
     websocket.message?.(
@@ -1315,11 +1319,13 @@ describe('server message handlers', () => {
     if (!websocket) throw new Error('WebSocket handlers not configured')
 
     const baselineReplaceCalls = replaceSessionsCalls.length
+    refreshWorkerExpectedWindowCounts = []
     refreshWorkerError = new SessionRefreshWorkerTimeoutErrorMock()
     websocket.message?.(ws as never, JSON.stringify({ type: 'session-refresh' }))
     await new Promise((resolve) => setTimeout(resolve, 25))
 
-    expect(listCalls).toBe(2)
+    // Worker timeout skips the sync fallback, so listWindows is never called.
+    expect(listCalls).toBe(0)
     expect(replaceSessionsCalls).toHaveLength(baselineReplaceCalls)
     expect(refreshWorkerExpectedWindowCounts[0]).toBe(1)
 
@@ -1343,6 +1349,7 @@ describe('server message handlers', () => {
 
     const { serveOptions } = await loadIndex()
     const startupEnsureCalls = ensureCalls
+    refreshWorkerExpectedWindowCounts = []
     const { ws } = createWs()
     const websocket = serveOptions.websocket
     if (!websocket) throw new Error('WebSocket handlers not configured')
@@ -1396,47 +1403,48 @@ describe('server message handlers', () => {
     expect(replaceSessionsCalls.at(-1)).toEqual([refreshedSession])
   })
 
-  test('startup sync timeout skips replacing sessions and leaves DB state intact', async () => {
+  test('startup refresh timeout skips replacing sessions and leaves DB state intact', async () => {
     const activeRecord = makeRecord({
       sessionId: 'active-timeout',
       currentWindow: baseSession.tmuxWindow,
     })
     seedRecord(activeRecord)
-    replaceSessionsCalls = []
+    let listCalls = 0
     sessionManagerState.listWindows = () => {
+      listCalls += 1
       throw new TmuxTimeoutError('list-sessions', 3000)
     }
+    // The startup refresh goes through the worker — a timeout there must skip
+    // the sync fallback (which would throw anyway) and leave the DB untouched.
+    refreshWorkerError = new SessionRefreshWorkerTimeoutErrorMock()
 
     const { registryInstance } = await loadIndex()
-    await Promise.resolve()
 
+    expect(listCalls).toBe(0)
     expect(replaceSessionsCalls).toHaveLength(0)
+    expect(
+      logEntries.some(
+        (entry) => entry.event === 'session_refresh_sync_fallback_skipped'
+      )
+    ).toBe(true)
     expect(dbState.records.get(activeRecord.sessionId)?.currentWindow).toBe(
       baseSession.tmuxWindow
     )
     expect(registryInstance.agentSessions.active).toEqual([])
   })
 
-  test('startup sync timeout seeds the first worker refresh budget from persisted active sessions', async () => {
+  test('startup seeds the first worker refresh budget from persisted active sessions', async () => {
     for (let i = 0; i < 5; i++) {
       seedRecord(makeRecord({
         sessionId: `seeded-${i}`,
         currentWindow: `agentboard:${i + 1}`,
       }))
     }
-    sessionManagerState.listWindows = () => {
-      throw new TmuxTimeoutError('list-sessions', 3000)
-    }
 
-    const { serveOptions } = await loadIndex()
-    const { ws } = createWs()
-    const websocket = serveOptions.websocket
-    if (!websocket) throw new Error('WebSocket handlers not configured')
+    await loadIndex()
 
-    refreshWorkerExpectedWindowCounts = []
-    websocket.message?.(ws as never, JSON.stringify({ type: 'session-refresh' }))
-    await new Promise((resolve) => setTimeout(resolve, 25))
-
+    // The startup refresh is the first worker call — it must carry the seeded
+    // estimate so a large session set doesn't time the worker out.
     expect(refreshWorkerExpectedWindowCounts[0]).toBe(5)
   })
 
@@ -5984,6 +5992,9 @@ describe('server startup side effects', () => {
       })
     )
     sessionManagerState.listWindows = () => [baseSession]
+    // The startup refresh lists windows via the worker mock — populate it so
+    // verification actually runs against a local session.
+    refreshWorkerSessions = [baseSession]
 
     spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
       const command = Array.isArray(args[0]) ? args[0] : [String(args[0])]
