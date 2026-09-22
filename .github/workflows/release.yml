@@ -4,6 +4,15 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_call:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v0.10.5); empty when triggered by a tag push'
+        required: false
+        type: string
+
+env:
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
   build:
@@ -27,6 +36,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ env.RELEASE_TAG }}
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6  # v2.2.0
         with:
@@ -64,6 +75,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ env.RELEASE_TAG }}
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
         with:
@@ -80,7 +93,7 @@ jobs:
 
       - name: Get version from tag
         id: version
-        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+        run: echo "version=${RELEASE_TAG#v}" >> $GITHUB_OUTPUT
 
       - name: Publish platform packages
         run: |
@@ -119,7 +132,9 @@ jobs:
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64  # v3.0.3
         with:
           files: release-binaries/agentboard-*
-          generate_release_notes: true
+          # release-please already wrote changelog notes on its release;
+          # only auto-generate notes for manual tag pushes
+          generate_release_notes: ${{ inputs.tag == '' }}
 
       - name: Update Homebrew tap
         env:
