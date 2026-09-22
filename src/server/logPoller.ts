@@ -591,6 +591,8 @@ export class LogPoller {
         unclaimedWindowCount: unclaimedWindows.length,
         selectionMs,
         durationMs: Date.now() - rematchStartedAt,
+        orphanScanMs: response.orphanScanMs ?? 0,
+        orphanMatchMs: response.orphanMatchMs ?? 0,
       })
     } catch (error) {
       logger.warn('orphan_rematch_error', {
