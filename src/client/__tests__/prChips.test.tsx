@@ -187,6 +187,49 @@ describe('PrChips hover card', () => {
     expect(links).toContain('https://github.com/o/r/actions/runs/1')
     act(() => renderer.unmount())
   })
+
+  test('renders skipped checks as neutral, not failed', async () => {
+    // Distinct url: check results are cached module-wide per PR.
+    const pr2 = { ...PR, url: 'https://github.com/o/r/pull/2', number: 2 }
+    globalThis.fetch = mock(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.startsWith('/api/pr-checks')) {
+        return new Response(
+          JSON.stringify({
+            url: pr2.url,
+            state: 'OPEN',
+            title: 'My PR',
+            author: 'me',
+            checks: [
+              { name: 'CodeQL', status: 'COMPLETED', conclusion: 'SKIPPED' },
+            ],
+          })
+        )
+      }
+      return new Response(JSON.stringify([]))
+    }) as unknown as typeof fetch
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<PrChips prs={[pr2]} />, {
+        createNodeMock,
+      })
+    })
+    act(() => openCard(renderer.root))
+    await act(async () => {})
+
+    const card = findCard(renderer.root)!
+    const neutral = card.findAll(
+      (el) =>
+        el.props.children === '–' &&
+        typeof el.props.className === 'string' &&
+        el.props.className.includes('text-muted')
+    )
+    const failed = card.findAll((el) => el.props.children === '✗')
+    expect(neutral.length).toBe(1)
+    expect(failed.length).toBe(0)
+    act(() => renderer.unmount())
+  })
 })
 
 describe('PrChips single-row fit', () => {
