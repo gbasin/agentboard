@@ -48,6 +48,15 @@ describe('AgentIcon', () => {
     expect(renderer.root.findByProps({ viewBox: '-1 -1 26 26' })).toBeTruthy()
   })
 
+  test('renders Devin icon for devin sessions', () => {
+    const renderer = TestRenderer.create(
+      <AgentIcon agentType="devin" className="icon" />
+    )
+
+    const icon = renderer.root.findByProps({ viewBox: '41 41 343 343' })
+    expect(icon.props.className).toBe('icon')
+  })
+
   test('renders Grok icon for grok sessions', () => {
     const renderer = TestRenderer.create(
       <AgentIcon agentType="grok" className="icon" />
