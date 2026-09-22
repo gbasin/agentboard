@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.12.2](https://github.com/gbasin/agentboard/compare/v0.12.1...v0.12.2) (2026-09-22)
+
+
+### Bug Fixes
+
+* keep long-press context menu above sibling rows on iOS ([#270](https://github.com/gbasin/agentboard/issues/270)) ([b18750f](https://github.com/gbasin/agentboard/commit/b18750f638eb12981e3541ade3bc80bd0dd7a004))
+* sync bun.lock optionalDeps with package.json 0.12.1 ([#272](https://github.com/gbasin/agentboard/issues/272)) ([4b8528f](https://github.com/gbasin/agentboard/commit/4b8528f65e5748a13cae5658347321defc9ee339))
+
 ## [0.12.1](https://github.com/gbasin/agentboard/compare/v0.12.0...v0.12.1) (2026-09-22)
 
 
