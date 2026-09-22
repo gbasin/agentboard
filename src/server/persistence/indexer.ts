@@ -134,7 +134,7 @@ export class ConversationIndexer {
       lastActivityAt: activity,
       lastUserMessage: preview,
       currentWindow: null,
-      isPinned: false,
+      isHibernating: false,
       lastResumeError: null,
       lastKnownLogSize: null,
       isCodexExec: false,

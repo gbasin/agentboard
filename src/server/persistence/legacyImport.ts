@@ -42,10 +42,10 @@ export function importConversation(
       preview: record.lastUserMessage,
       state: record.currentWindow
         ? 'interrupted'
-        : record.isPinned
+        : record.isHibernating
           ? 'hibernating'
           : 'archived',
-      pinned: record.isPinned,
+      pinned: false,
       origin: 'imported',
     })
   )

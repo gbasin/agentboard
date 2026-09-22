@@ -57,7 +57,7 @@ function setup() {
       lastActivityAt: new Date().toISOString(),
       lastUserMessage: null,
       currentWindow: null,
-      isPinned: false,
+      isHibernating: false,
       lastResumeError: null,
       lastKnownLogSize: null,
       isCodexExec: false,
