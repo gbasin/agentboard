@@ -20,7 +20,12 @@ export interface PrInfo {
 }
 
 export interface PrCheckInfo extends PrInfo {
-  checks?: { name: string; status: string; conclusion: string | null }[]
+  checks?: {
+    name: string
+    status: string
+    conclusion: string | null
+    link?: string
+  }[]
 }
 
 const PR_URL_PARSE_RE =
@@ -90,6 +95,39 @@ export async function fetchPrInfo(urls: string[]): Promise<PrInfo[]> {
   )
 }
 
+// Check runs report status+conclusion; status contexts report state
+// (PENDING/EXPECTED/SUCCESS/ERROR/FAILURE). Normalize contexts onto the
+// same fields so the client icon works for both.
+export function mapCheck(
+  c: Record<string, unknown>
+): NonNullable<PrCheckInfo['checks']>[number] {
+  const isContext = typeof c.status !== 'string'
+  const state = typeof c.state === 'string' ? c.state : null
+  const pending = state === 'PENDING' || state === 'EXPECTED'
+  return {
+    name: String(c.name ?? c.context ?? 'check'),
+    status: isContext
+      ? pending
+        ? 'IN_PROGRESS'
+        : 'COMPLETED'
+      : String(c.status),
+    conclusion: isContext
+      ? pending
+        ? null
+        : state
+      : typeof c.conclusion === 'string'
+        ? c.conclusion
+        : null,
+    // Check runs expose detailsUrl; status contexts use targetUrl.
+    link:
+      typeof c.detailsUrl === 'string'
+        ? c.detailsUrl
+        : typeof c.targetUrl === 'string'
+          ? c.targetUrl
+          : undefined,
+  }
+}
+
 /** Lazy fetch for hover cards: includes CI check rollup. */
 export async function fetchPrChecks(url: string): Promise<PrCheckInfo> {
   const now = Date.now()
@@ -111,12 +149,7 @@ export async function fetchPrChecks(url: string): Promise<PrCheckInfo> {
         : []
       info = {
         ...baseInfo(url, raw),
-        checks: rollup.slice(0, 20).map((c) => ({
-          name: String(c.name ?? c.context ?? 'check'),
-          status: String(c.status ?? ''),
-          conclusion:
-            typeof c.conclusion === 'string' ? c.conclusion : null,
-        })),
+        checks: rollup.slice(0, 20).map(mapCheck),
       }
     }
   }
