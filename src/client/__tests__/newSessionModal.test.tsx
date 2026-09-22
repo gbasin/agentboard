@@ -201,4 +201,62 @@ describe('NewSessionModal component', () => {
       renderer.unmount()
     })
   })
+
+  test('digit keys select presets, 0 selects custom, digits are ignored in inputs', () => {
+    const { keyHandlers } = setupDom()
+
+    let renderer!: TestRenderer.ReactTestRenderer
+
+    act(() => {
+      renderer = TestRenderer.create(
+        <NewSessionModal
+          isOpen
+          onClose={() => {}}
+          onCreate={() => {}}
+          defaultProjectDir="/base"
+          commandPresets={DEFAULT_PRESETS}
+          defaultPresetId="claude"
+        />
+      )
+    })
+
+    const press = (key: string) => {
+      act(() => {
+        keyHandlers.get('keydown')?.({
+          key,
+          preventDefault: () => {},
+          stopPropagation: () => {},
+        } as unknown as KeyboardEvent)
+      })
+    }
+    const commandValue = () =>
+      renderer.root.findAllByType('input')[0].props.value
+
+    // Default preset is claude
+    expect(commandValue()).toBe('claude')
+
+    press('2')
+    expect(commandValue()).toBe('codex')
+
+    press('1')
+    expect(commandValue()).toBe('claude')
+
+    press('0')
+    expect(commandValue()).toBe('')
+
+    // Out-of-range digit is a no-op
+    press('9')
+    expect(commandValue()).toBe('')
+
+    // Digits type normally when an input is focused
+    ;(globalAny.document as unknown as { activeElement: unknown }).activeElement = {
+      tagName: 'INPUT',
+    }
+    press('2')
+    expect(commandValue()).toBe('')
+
+    act(() => {
+      renderer.unmount()
+    })
+  })
 })
