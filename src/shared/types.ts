@@ -11,7 +11,7 @@ export interface SessionPullRequest {
 export type SessionStatus = 'working' | 'waiting' | 'permission' | 'unknown'
 
 export type SessionSource = 'managed' | 'external'
-export type AgentType = 'claude' | 'claude-rp' | 'codex' | 'pi' | 'devin' | 'grok'
+export type AgentType = 'claude' | 'claude-rp' | 'codex' | 'pi' | 'devin' | 'grok' | 'omp'
 export type ClipboardOfferSource = 'tmux-buffer' | 'osc52'
 export type SessionKillSource =
   | 'keyboard_shortcut'

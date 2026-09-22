@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import type { AgentType } from '@shared/types'
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { safeStorage } from '../utils/storage'
@@ -52,7 +53,7 @@ export interface CommandPreset {
   label: string
   command: string
   isBuiltIn: boolean
-  agentType?: 'claude' | 'codex' | 'pi' | 'devin' | 'grok'
+  agentType?: AgentType
 }
 
 export const DEFAULT_PRESETS: CommandPreset[] = [
@@ -61,6 +62,7 @@ export const DEFAULT_PRESETS: CommandPreset[] = [
   { id: 'pi', label: 'Pi', command: 'pi', isBuiltIn: true, agentType: 'pi' },
   { id: 'grok', label: 'Grok', command: 'grok', isBuiltIn: true, agentType: 'grok' },
   { id: 'devin', label: 'Devin', command: 'devin', isBuiltIn: true, agentType: 'devin' },
+  { id: 'omp', label: 'OMP', command: 'omp', isBuiltIn: true, agentType: 'omp' },
 ]
 
 // Validation and helper functions
@@ -72,7 +74,7 @@ export function isValidPreset(p: unknown): p is CommandPreset {
     typeof obj.label === 'string' && obj.label.trim().length >= 1 && obj.label.length <= 64 &&
     typeof obj.command === 'string' && obj.command.trim().length >= 1 && obj.command.length <= 1024 &&
     typeof obj.isBuiltIn === 'boolean' &&
-    (obj.agentType === undefined || obj.agentType === 'claude' || obj.agentType === 'codex' || obj.agentType === 'pi' || obj.agentType === 'devin' || obj.agentType === 'grok')
+    (obj.agentType === undefined || obj.agentType === 'claude' || obj.agentType === 'codex' || obj.agentType === 'pi' || obj.agentType === 'devin' || obj.agentType === 'grok' || obj.agentType === 'omp' || obj.agentType === 'claude-rp')
   )
 }
 
@@ -307,7 +309,7 @@ export const useSettingsStore = create<SettingsState>()(
             label: p.label as string,
             command: command || 'claude',
             isBuiltIn: p.isBuiltIn as boolean,
-            agentType: p.agentType as 'claude' | 'codex' | 'pi' | 'devin' | 'grok' | undefined,
+            agentType: p.agentType as AgentType | undefined,
           }
         }
 

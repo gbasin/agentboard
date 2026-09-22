@@ -215,6 +215,7 @@ export const config = {
   piResumeCmd: process.env.PI_RESUME_CMD || 'pi --session {logFilePath}',
   devinResumeCmd: process.env.DEVIN_RESUME_CMD || 'devin --resume {sessionId}',
   grokResumeCmd: process.env.GROK_RESUME_CMD || 'grok --resume {sessionId}',
+  ompResumeCmd: process.env.OMP_RESUME_CMD || 'omp --resume {logFilePath}',
   enterRefreshDelayMs,
   workingGracePeriodMs,
   historySessionMaxAgeHours,

@@ -8,6 +8,7 @@ import {
   inferAgentTypeFromPath,
   isCodexExec,
   isCodexSubagent,
+  isPiSubagent,
 } from './logDiscovery'
 import {
   DEFAULT_SCROLLBACK_LINES,
@@ -240,6 +241,11 @@ function buildOrphanEntries(
     if (agentType === 'codex' && isCodexSubagent(logPath)) {
       continue
     }
+    const piSubagent =
+      agentType === 'pi' || agentType === 'omp' ? isPiSubagent(logPath) : false
+    if (piSubagent) {
+      continue
+    }
 
     const times = getLogTimes(logPath)
     if (!times) continue
@@ -262,6 +268,7 @@ function buildOrphanEntries(
         agentType: agentType ?? null,
         isCodexSubagent: false,
         isCodexExec: codexExec,
+        isPiSubagent: piSubagent,
         logTokenCount: 0,
       }
       if (shouldSkipMatching(preEntry, skipPatterns)) {
@@ -285,6 +292,7 @@ function buildOrphanEntries(
       agentType: agentType ?? null,
       isCodexSubagent: false,
       isCodexExec: codexExec,
+      isPiSubagent: piSubagent,
       logTokenCount,
     })
   }
@@ -313,6 +321,13 @@ function buildLastMessageEntries(
     if (resolvedAgentType === 'codex' && codexSubagent) {
       continue
     }
+    const piSubagent =
+      resolvedAgentType === 'pi' || resolvedAgentType === 'omp'
+        ? isPiSubagent(logPath)
+        : false
+    if (piSubagent) {
+      continue
+    }
 
     const times = getLogTimes(logPath)
     if (!times) continue
@@ -329,6 +344,7 @@ function buildLastMessageEntries(
       agentType: resolvedAgentType,
       isCodexSubagent: codexSubagent,
       isCodexExec: codexExec,
+      isPiSubagent: piSubagent,
       logTokenCount: 0,
     })
   }

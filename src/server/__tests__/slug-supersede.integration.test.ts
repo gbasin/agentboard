@@ -41,6 +41,7 @@ class CollectingMatchWorkerClient {
 const originalClaudeConfigDir = process.env.CLAUDE_CONFIG_DIR
 const originalCodexHome = process.env.CODEX_HOME
 const originalPiHome = process.env.PI_HOME
+const originalOmpAgentDir = process.env.PI_CODING_AGENT_DIR
 const originalAgentboardDataDir = process.env.AGENTBOARD_DATA_DIR
 const originalDevinCliDir = process.env.DEVIN_CLI_DIR
 const originalGrokHome = process.env.GROK_HOME
@@ -56,6 +57,7 @@ beforeEach(() => {
   process.env.CLAUDE_CONFIG_DIR = claudeConfigDir
   process.env.CODEX_HOME = path.join(tempRoot, 'codex')
   process.env.PI_HOME = path.join(tempRoot, 'pi')
+  process.env.PI_CODING_AGENT_DIR = path.join(tempRoot, 'omp-agent')
   process.env.AGENTBOARD_DATA_DIR = path.join(tempRoot, 'agentboard-data')
   process.env.DEVIN_CLI_DIR = path.join(tempRoot, 'devin')
   process.env.GROK_HOME = path.join(tempRoot, 'grok')
@@ -76,6 +78,11 @@ afterEach(() => {
     delete process.env.PI_HOME
   } else {
     process.env.PI_HOME = originalPiHome
+  }
+  if (originalOmpAgentDir === undefined) {
+    delete process.env.PI_CODING_AGENT_DIR
+  } else {
+    process.env.PI_CODING_AGENT_DIR = originalOmpAgentDir
   }
   if (originalAgentboardDataDir === undefined) {
     delete process.env.AGENTBOARD_DATA_DIR

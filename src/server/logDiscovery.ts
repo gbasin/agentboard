@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import type { AgentType } from '../shared/types'
 import { resolveProjectPath } from './paths'
 import { getDevinLogOutDir } from './devinSync'
 
@@ -77,6 +78,36 @@ function getGrokHomeDir(): string {
   return path.join(getHomeDir(), '.grok')
 }
 
+// oh-my-pi (omp) resolves its agent dir as:
+//   PI_CODING_AGENT_DIR (absolute override)
+//   else ~/<PI_CONFIG_DIR || ".omp">/agent
+// Sessions live under <agentDir>/sessions, except on macOS/Linux when
+// $XDG_DATA_HOME/omp exists — then they move to $XDG_DATA_HOME/omp/sessions
+// (mirrors DirResolver in @oh-my-pi/pi-utils).
+function getOmpAgentDir(): string {
+  const agentOverride = process.env.PI_CODING_AGENT_DIR
+  if (agentOverride && agentOverride.trim()) {
+    const normalized = normalizeProjectPath(agentOverride)
+    return normalized || agentOverride.trim()
+  }
+  const configDirName = (process.env.PI_CONFIG_DIR || '').trim() || '.omp'
+  return path.join(getHomeDir(), configDirName, 'agent')
+}
+
+function getOmpSessionsDir(): string {
+  // The XDG redirect only applies to the default agent dir, not overrides.
+  if (!process.env.PI_CODING_AGENT_DIR?.trim()) {
+    const xdgData = process.env.XDG_DATA_HOME?.trim()
+    if (xdgData) {
+      const xdgOmp = path.join(xdgData, 'omp')
+      if (fs.existsSync(xdgOmp)) {
+        return path.join(xdgOmp, 'sessions')
+      }
+    }
+  }
+  return path.join(getOmpAgentDir(), 'sessions')
+}
+
 export function getLogSearchDirs(): string[] {
   return [
     path.join(getClaudeConfigDir(), 'projects'),
@@ -86,6 +117,7 @@ export function getLogSearchDirs(): string[] {
     // by devinSync (Devin stores history in SQLite, not JSONL files).
     getDevinLogOutDir(),
     path.join(getGrokHomeDir(), 'sessions'),
+    getOmpSessionsDir(),
   ]
 }
 
@@ -96,6 +128,7 @@ export function getLogWatchParentDirs(): string[] {
     path.join(getPiHomeDir(), 'agent'),
     path.dirname(getDevinLogOutDir()),
     getGrokHomeDir(),
+    path.dirname(getOmpSessionsDir()),
   ]
 }
 
@@ -131,6 +164,7 @@ export function scanAllLogDirs(): string[] {
   const piRoot = path.join(getPiHomeDir(), 'agent', 'sessions')
   const devinRoot = getDevinLogOutDir()
   const grokRoot = path.join(getGrokHomeDir(), 'sessions')
+  const ompRoot = getOmpSessionsDir()
 
   paths.push(...scanDirForJsonl(claudeRoot, 3))
   paths.push(...scanDirForJsonl(codexRoot, 4))
@@ -140,6 +174,7 @@ export function scanAllLogDirs(): string[] {
   // alongside sibling telemetry files (events.jsonl, updates.jsonl, ...) that
   // are not transcripts, so only the transcript file is collected.
   paths.push(...scanDirForJsonl(grokRoot, 3, 'chat_history.jsonl'))
+  paths.push(...scanDirForJsonl(ompRoot, 4))
 
   return paths
 }
@@ -234,16 +269,24 @@ export function getLogTimes(
   }
 }
 
-export function inferAgentTypeFromPath(
-  logPath: string
-): 'claude' | 'codex' | 'pi' | 'devin' | 'grok' | null {
+export function inferAgentTypeFromPath(logPath: string): AgentType | null {
   const normalized = path.resolve(logPath)
   const claudeRoot = path.resolve(getClaudeConfigDir())
   const codexRoot = path.resolve(getCodexHomeDir())
   const piRoot = path.resolve(getPiHomeDir())
   const devinRoot = path.resolve(getDevinLogOutDir())
   const grokRoot = path.resolve(getGrokHomeDir())
+  const ompRoot = path.resolve(getOmpAgentDir())
+  const ompSessionsRoot = path.resolve(getOmpSessionsDir())
 
+  // omp before pi: PI_CODING_AGENT_DIR may point anywhere, including under .pi
+  // Check the sessions root too — the XDG redirect moves it outside the agent dir.
+  if (
+    normalized.startsWith(ompSessionsRoot + path.sep) ||
+    normalized.startsWith(ompRoot + path.sep)
+  ) {
+    return 'omp'
+  }
   if (normalized.startsWith(claudeRoot + path.sep)) return 'claude'
   if (normalized.startsWith(codexRoot + path.sep)) return 'codex'
   if (normalized.startsWith(piRoot + path.sep)) return 'pi'
@@ -251,6 +294,7 @@ export function inferAgentTypeFromPath(
   if (normalized.startsWith(grokRoot + path.sep)) return 'grok'
 
   const fallback = logPath.replace(/\\/g, '/')
+  if (fallback.includes('/.omp/')) return 'omp'
   if (fallback.includes('/.claude/')) return 'claude'
   if (fallback.includes('/.codex/')) return 'codex'
   if (fallback.includes('/.pi/')) return 'pi'
@@ -481,4 +525,15 @@ export function isCodexExec(logPath: string): boolean {
   if (!payload) return false
 
   return payload.source === 'exec'
+}
+
+/**
+ * Check if a pi/omp log file is from a subagent (task) session.
+ * Subagent sessions get a `session_init` entry (system prompt, task, tools)
+ * appended by the task executor at session start; interactive and print-mode
+ * sessions never write one.
+ */
+export function isPiSubagent(logPath: string): boolean {
+  const entries = parseLogHeadEntries(logPath)
+  return entries.some((entry) => entry.type === 'session_init')
 }

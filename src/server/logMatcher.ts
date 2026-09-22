@@ -8,6 +8,7 @@ import {
   extractProjectPath,
   inferAgentTypeFromPath,
   isCodexSubagent,
+  isPiSubagent,
   normalizeProjectPath,
 } from './logDiscovery'
 import {
@@ -149,6 +150,7 @@ const TRACE_EXCLUDE_PREFIXES = [
   /^search\b/i,
   /^read\b/i,
   /^use\b/i,
+  /^⟦/,
 ] as const
 const TRACE_STATUS_TRAILER = /\s*\(([^)]*)\)\s*$/
 const TRACE_STATUS_HINTS = [
@@ -1195,6 +1197,9 @@ function isPromptLine(line: string): boolean {
 // This color is defined in Pi's built-in "tokyo-night" theme (userMessageBg).
 // See: https://github.com/anthropics/pi/blob/main/src/themes/tokyo-night.ts
 // NOTE: If Pi changes this color or the user selects a different theme, detection will fail.
+// NOTE: Oh-my-pi is deliberately not covered here — its default "titanium" theme
+// shares userMessageBg (#0f1216) with tool pending/success rows and the status
+// line, so background-color extraction can't distinguish real user messages.
 // Pattern: \x1b[48;2;52;53;65m...message...\x1b[49m (or end of content)
 // eslint-disable-next-line no-control-regex
 const PI_USER_MESSAGE_BG_START = /\x1b\[48;2;52;53;65m/g
@@ -1409,9 +1414,33 @@ export function extractRecentTraceLinesFromTmux(
   for (let i = rawLines.length - 1; i >= 0 && traces.length < maxLines; i--) {
     const raw = rawLines[i] ?? ''
     const trimmed = raw.trim()
-    if (!trimmed.startsWith('•')) continue
+    const isBullet = trimmed.startsWith('•')
+    const isBoxRow = trimmed.startsWith('│')
+    const isCheckRow = trimmed.startsWith('✔')
+    if (!isBullet && !isBoxRow && !isCheckRow) continue
     let cleaned = cleanTmuxLine(raw)
     if (!cleaned) continue
+    if (isBoxRow) {
+      // Oh-my-pi renders tool calls as box rows: `│ $ <cmd>` / `│ <output>`.
+      // Strip the borders and the shell '$' prompt so the interior text can be
+      // exact-matched against tool call args/results in the session JSONL.
+      cleaned = cleaned
+        .replace(/^│/, '')
+        .replace(/│$/, '')
+        .replace(/^\s*\$\s+/, '')
+        .trim()
+      // Multi-column rows (startup card etc.) still contain a border char —
+      // they never produce searchable text.
+      if (!cleaned || cleaned.includes('│')) continue
+    } else if (isCheckRow) {
+      // Oh-my-pi flat tool rows: `✔ <Tool> <arg>`. The arg is the searchable
+      // needle (tool call args appear verbatim in the JSONL); the tool name
+      // alone is too generic to match on.
+      const body = cleaned.replace(/^✔\s*/, '')
+      const spaceIdx = body.indexOf(' ')
+      cleaned = spaceIdx > 0 ? body.slice(spaceIdx + 1).trim() : ''
+      if (!cleaned) continue
+    }
     cleaned = stripTraceStatusSuffix(cleaned)
     if (!cleaned) continue
     if (TRACE_EXCLUDE_PREFIXES.some((prefix) => prefix.test(cleaned))) continue
@@ -1966,7 +1995,9 @@ export function tryExactMatchWindowToLog(
   }
 
   if (usingTraceFallback) {
-    const filtered = candidates.filter((candidate) => !isCodexSubagent(candidate))
+    const filtered = candidates.filter(
+      (candidate) => !isCodexSubagent(candidate) && !isPiSubagent(candidate)
+    )
     if (filtered.length === 0) {
       return null
     }
@@ -2167,7 +2198,9 @@ export async function tryExactMatchWindowToLogAsync(
   }
 
   if (usingTraceFallback) {
-    const filtered = candidates.filter((candidate) => !isCodexSubagent(candidate))
+    const filtered = candidates.filter(
+      (candidate) => !isCodexSubagent(candidate) && !isPiSubagent(candidate)
+    )
     if (filtered.length === 0) {
       return null
     }

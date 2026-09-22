@@ -8,8 +8,10 @@ import {
   extractSessionId,
   getLogWatchParentDirs,
   getLogSearchDirs,
+  inferAgentTypeFromPath,
   isCodexExec,
   isCodexSubagent,
+  isPiSubagent,
   scanAllLogDirs,
 } from '../logDiscovery'
 
@@ -17,22 +19,26 @@ let tempRoot: string
 let claudeDir: string
 let codexDir: string
 let piDir: string
+let ompAgentDir: string
 const originalClaude = process.env.CLAUDE_CONFIG_DIR
 const originalCodex = process.env.CODEX_HOME
 const originalPi = process.env.PI_HOME
 const originalAgentboardData = process.env.AGENTBOARD_DATA_DIR
 const originalGrok = process.env.GROK_HOME
+const originalOmpAgent = process.env.PI_CODING_AGENT_DIR
 
 beforeEach(async () => {
   tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-logs-'))
   claudeDir = path.join(tempRoot, 'claude')
   codexDir = path.join(tempRoot, 'codex')
   piDir = path.join(tempRoot, 'pi')
+  ompAgentDir = path.join(tempRoot, 'omp-agent')
   process.env.CLAUDE_CONFIG_DIR = claudeDir
   process.env.CODEX_HOME = codexDir
   process.env.PI_HOME = piDir
   process.env.AGENTBOARD_DATA_DIR = path.join(tempRoot, 'agentboard')
   process.env.GROK_HOME = path.join(tempRoot, 'grok')
+  process.env.PI_CODING_AGENT_DIR = ompAgentDir
 })
 
 afterEach(async () => {
@@ -46,6 +52,8 @@ afterEach(async () => {
   else delete process.env.AGENTBOARD_DATA_DIR
   if (originalGrok) process.env.GROK_HOME = originalGrok
   else delete process.env.GROK_HOME
+  if (originalOmpAgent) process.env.PI_CODING_AGENT_DIR = originalOmpAgent
+  else delete process.env.PI_CODING_AGENT_DIR
   await fs.rm(tempRoot, { recursive: true, force: true })
 })
 
@@ -68,9 +76,16 @@ describe('log discovery', () => {
     const codexLog = path.join(codexLogDir, 'session-2.jsonl')
     await fs.writeFile(codexLog, '{}\n')
 
+    // omp sessions live at <agentDir>/sessions/<encoded-cwd>/*.jsonl
+    const ompSessionDir = path.join(ompAgentDir, 'sessions', '--Users-example-project--')
+    await fs.mkdir(ompSessionDir, { recursive: true })
+    const ompLog = path.join(ompSessionDir, 'session-3.jsonl')
+    await fs.writeFile(ompLog, '{}\n')
+
     const found = scanAllLogDirs()
     expect(found).toContain(claudeLog)
     expect(found).toContain(codexLog)
+    expect(found).toContain(ompLog)
   })
 
   test('skips Claude subagent logs', async () => {
@@ -165,11 +180,112 @@ describe('log discovery', () => {
   })
 
   test('returns parent directories for file watching', () => {
-    const [claudeParent, codexParent, piParent] = getLogWatchParentDirs()
+    const [claudeParent, codexParent, piParent, devinParent, grokParent, ompParent] =
+      getLogWatchParentDirs()
 
     expect(claudeParent).toBe(claudeDir)
     expect(codexParent).toBe(codexDir)
     expect(piParent).toBe(path.join(piDir, 'agent'))
+    expect(devinParent).toBe(path.join(tempRoot, 'agentboard'))
+    expect(grokParent).toBe(path.join(tempRoot, 'grok'))
+    expect(ompParent).toBe(ompAgentDir)
+  })
+
+  test('extracts sessionId and projectPath from pi/omp logs', async () => {
+    const ompSessionDir = path.join(ompAgentDir, 'sessions', '--Users-example-project--')
+    await fs.mkdir(ompSessionDir, { recursive: true })
+    const logPath = path.join(ompSessionDir, 'session-omp.jsonl')
+    const line = JSON.stringify({
+      type: 'session',
+      version: 3,
+      id: 'omp-session-789',
+      timestamp: '2026-09-22T10:00:00.000Z',
+      cwd: '/Users/example/project',
+    })
+    await fs.writeFile(logPath, `${line}\n`)
+
+    expect(extractSessionId(logPath)).toBe('omp-session-789')
+    expect(extractProjectPath(logPath)).toBe('/Users/example/project')
+  })
+
+  test('infers omp agent type from session log path', async () => {
+    const ompSessionDir = path.join(ompAgentDir, 'sessions', '--Users-example-project--')
+    await fs.mkdir(ompSessionDir, { recursive: true })
+    const logPath = path.join(ompSessionDir, 'session-omp.jsonl')
+    await fs.writeFile(logPath, '{}\n')
+
+    expect(inferAgentTypeFromPath(logPath)).toBe('omp')
+    expect(inferAgentTypeFromPath(path.join(piDir, 'agent', 'sessions', 'x.jsonl'))).toBe('pi')
+  })
+
+  describe('omp session dir resolution', () => {
+    const originalHome = process.env.HOME
+    const originalXdg = process.env.XDG_DATA_HOME
+    const originalPiConfigDir = process.env.PI_CONFIG_DIR
+    let fakeHome: string
+    let xdgData: string
+
+    beforeEach(async () => {
+      fakeHome = path.join(tempRoot, 'home')
+      xdgData = path.join(tempRoot, 'xdg-data')
+      await fs.mkdir(fakeHome, { recursive: true })
+      delete process.env.PI_CODING_AGENT_DIR
+      process.env.HOME = fakeHome
+      process.env.XDG_DATA_HOME = xdgData
+    })
+
+    afterEach(() => {
+      if (originalHome) process.env.HOME = originalHome
+      else delete process.env.HOME
+      if (originalXdg) process.env.XDG_DATA_HOME = originalXdg
+      else delete process.env.XDG_DATA_HOME
+      if (originalPiConfigDir) process.env.PI_CONFIG_DIR = originalPiConfigDir
+      else delete process.env.PI_CONFIG_DIR
+    })
+
+    test('redirects sessions to $XDG_DATA_HOME/omp/sessions when it exists', async () => {
+      const xdgSessions = path.join(xdgData, 'omp', 'sessions', 'proj')
+      await fs.mkdir(xdgSessions, { recursive: true })
+      const logPath = path.join(xdgSessions, 'x.jsonl')
+      await fs.writeFile(logPath, '{}\n')
+
+      expect(getLogSearchDirs()).toContain(path.join(xdgData, 'omp', 'sessions'))
+      expect(scanAllLogDirs()).toContain(logPath)
+      expect(inferAgentTypeFromPath(logPath)).toBe('omp')
+    })
+
+    test('falls back to ~/.omp/agent/sessions when no XDG omp dir exists', async () => {
+      const defaultSessions = path.join(fakeHome, '.omp', 'agent', 'sessions', 'proj')
+      await fs.mkdir(defaultSessions, { recursive: true })
+      const logPath = path.join(defaultSessions, 'x.jsonl')
+      await fs.writeFile(logPath, '{}\n')
+
+      expect(scanAllLogDirs()).toContain(logPath)
+      expect(inferAgentTypeFromPath(logPath)).toBe('omp')
+    })
+
+    test('honors PI_CONFIG_DIR for the config root name', async () => {
+      process.env.PI_CONFIG_DIR = '.omp-custom'
+      const customSessions = path.join(fakeHome, '.omp-custom', 'agent', 'sessions', 'proj')
+      await fs.mkdir(customSessions, { recursive: true })
+      const logPath = path.join(customSessions, 'x.jsonl')
+      await fs.writeFile(logPath, '{}\n')
+
+      expect(scanAllLogDirs()).toContain(logPath)
+      expect(inferAgentTypeFromPath(logPath)).toBe('omp')
+    })
+
+    test('ignores the XDG redirect when PI_CODING_AGENT_DIR is set', async () => {
+      process.env.PI_CODING_AGENT_DIR = ompAgentDir
+      await fs.mkdir(path.join(xdgData, 'omp'), { recursive: true })
+      const overridden = path.join(ompAgentDir, 'sessions', 'proj')
+      await fs.mkdir(overridden, { recursive: true })
+      const logPath = path.join(overridden, 'x.jsonl')
+      await fs.writeFile(logPath, '{}\n')
+
+      expect(scanAllLogDirs()).toContain(logPath)
+      expect(inferAgentTypeFromPath(logPath)).toBe('omp')
+    })
   })
 
   test('normalizes Windows project paths from logs', async () => {
@@ -315,5 +431,44 @@ describe('isCodexExec', () => {
     await fs.writeFile(logPath, '')
 
     expect(isCodexExec(logPath)).toBe(false)
+  })
+})
+
+describe('isPiSubagent', () => {
+  test('returns true for sessions with a session_init entry', async () => {
+    const ompSessionDir = path.join(ompAgentDir, 'sessions', '--Users-example-project--')
+    await fs.mkdir(ompSessionDir, { recursive: true })
+    const logPath = path.join(ompSessionDir, 'subagent.jsonl')
+    const lines = [
+      JSON.stringify({ type: 'session', version: 3, id: 'sub-1', timestamp: '2026-09-22T10:00:00.000Z', cwd: '/Users/example/project' }),
+      JSON.stringify({ type: 'session_init', id: 'a1b2c3d4', parentId: null, timestamp: '2026-09-22T10:00:01.000Z', systemPrompt: 'sp', task: 'do thing', tools: ['read'] }),
+    ]
+    await fs.writeFile(logPath, `${lines.join('\n')}\n`)
+
+    expect(isPiSubagent(logPath)).toBe(true)
+  })
+
+  test('returns false for regular interactive sessions', async () => {
+    const ompSessionDir = path.join(ompAgentDir, 'sessions', '--Users-example-project--')
+    await fs.mkdir(ompSessionDir, { recursive: true })
+    const logPath = path.join(ompSessionDir, 'interactive.jsonl')
+    const lines = [
+      JSON.stringify({ type: 'session', version: 3, id: 'main-1', timestamp: '2026-09-22T10:00:00.000Z', cwd: '/Users/example/project' }),
+      JSON.stringify({ type: 'message', id: 'b2c3d4e5', parentId: null, timestamp: '2026-09-22T10:00:01.000Z', message: { role: 'user', content: [{ type: 'text', text: 'hi' }] } }),
+    ]
+    await fs.writeFile(logPath, `${lines.join('\n')}\n`)
+
+    expect(isPiSubagent(logPath)).toBe(false)
+  })
+
+  test('returns false for non-existent and empty files', async () => {
+    expect(isPiSubagent('/nonexistent/path.jsonl')).toBe(false)
+
+    const ompSessionDir = path.join(ompAgentDir, 'sessions', '--Users-example-project--')
+    await fs.mkdir(ompSessionDir, { recursive: true })
+    const logPath = path.join(ompSessionDir, 'empty.jsonl')
+    await fs.writeFile(logPath, '')
+
+    expect(isPiSubagent(logPath)).toBe(false)
   })
 })

@@ -137,7 +137,10 @@ function extractReadableText(value: unknown): string {
   )
 }
 
-function inferLogSource(record: Record<string, unknown>): string {
+function inferLogSource(
+  record: Record<string, unknown>,
+  agentTypeHint?: string
+): string {
   // Reuse the shared family detection for pi/claude, then layer the transcript
   // badge's display heuristics on top (any payload.type reads as a Codex signal,
   // ahead of Claude type detection — matching the original ordering).
@@ -148,6 +151,9 @@ function inferLogSource(record: Record<string, unknown>): string {
   const payloadType = asString(asRecord(record.payload)?.type) ?? ''
   if (type === 'event_msg' || type === 'response_item' || payloadType) return 'codex'
   if (family === 'claude' || type === 'tool_result') return 'claude'
+  // pi/omp log entries carry no source/agent marker, so the record-level
+  // family can't recover them — fall back to the session's known agent type.
+  if (agentTypeHint === 'pi' || agentTypeHint === 'omp') return agentTypeHint
   return 'log'
 }
 
@@ -155,7 +161,8 @@ function parseStructuredLogLine(
   line: string,
   sourceKey: string,
   lineNumber: number,
-  exactLineNumber: boolean
+  exactLineNumber: boolean,
+  agentTypeHint?: string
 ): StructuredLogLine {
   try {
     const parsed = JSON.parse(line) as unknown
@@ -182,7 +189,7 @@ function parseStructuredLogLine(
     const payloadType = asString(payload?.type)
     const role = asString(record.role) ?? asString(message?.role) ?? asString(payload?.role)
     const timestamp = extractLogTimestampFromRecord(record)
-    const source = inferLogSource(record)
+    const source = inferLogSource(record, agentTypeHint)
     const prominence = getStructuredProminence(
       type,
       payloadType ?? undefined,
@@ -813,7 +820,7 @@ export default function SessionPreviewContent({
           ? previewData.startLine + index
           : (previewData.startByte ?? 0) + index
         const sourceKey = previewData.lineKeys?.[index] ?? String(lineNumber)
-        return parseStructuredLogLine(line, sourceKey, lineNumber, exactLineNumber)
+        return parseStructuredLogLine(line, sourceKey, lineNumber, exactLineNumber, previewData.agentType)
       }) ?? [],
     [previewData]
   )

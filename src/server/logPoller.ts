@@ -884,6 +884,11 @@ export class LogPoller {
           continue
         }
 
+        // Skip pi/omp subagent logs (task agents get a session_init entry)
+        if ((agentType === 'pi' || agentType === 'omp') && entry.isPiSubagent) {
+          continue
+        }
+
         const sessionId = entry.sessionId
         if (!sessionId) {
           // No session ID yet - cache and retry on next poll when log has more content

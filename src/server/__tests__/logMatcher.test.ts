@@ -1057,6 +1057,36 @@ ${ESC}[48;2;52;53;65m second message ${ESC}[49m Response 2
     )
   })
 
+  test('Omp TUI: extracts tool box rows and check rows for fallback', () => {
+    const ESC = '\x1b'
+    const ompScrollback = `
+ Run the bash command: echo hello-omp — then tell me what it printed.
+ ${ESC}[38;2;118;118;118m${ESC}[48;2;232;240;232m┌───${ESC}[39m ${ESC}[38;2;88;132;88m✔${ESC}[39m ${ESC}[38;2;90;128;128mBash${ESC}[39m ──────────────────────────
+ ${ESC}[38;2;118;118;118m${ESC}[48;2;232;240;232m│ $ ${ESC}[38;2;121;94;38mecho hello-omp${ESC}[39m
+ ${ESC}[38;2;118;118;118m${ESC}[48;2;232;240;232m├───${ESC}[39m Output ──────────────────
+ ${ESC}[38;2;118;118;118m${ESC}[48;2;232;240;232m│ ${ESC}[38;2;108;108;108mhello-omp${ESC}[39m
+ ${ESC}[38;2;118;118;118m${ESC}[48;2;232;240;232m│ ⟦Wall: 0.03s | Timeout: 300s⟧${ESC}[39m
+ ${ESC}[38;2;118;118;118m${ESC}[48;2;232;240;232m└──────────────────────────────
+ ${ESC}[38;2;88;132;88m✔${ESC}[39m ${ESC}[1mRead${ESC}[0m ${ESC}[38;2;90;128;128m/tmp/omp-proj${ESC}[39m
+╭── π  > ⬢ Codex Auto Review > 🗑 omp-proj > ◫ 14.7% ⟲ ▶──╮
+╰─                                                        ─╯`
+    const traces = extractRecentTraceLinesFromTmux(ompScrollback)
+    expect(traces).toContain('echo hello-omp')
+    expect(traces).toContain('hello-omp')
+    expect(traces).toContain('/tmp/omp-proj')
+    // Timing metadata and box decorations are not searchable needles
+    expect(traces.some((t) => t.includes('⟦'))).toBe(false)
+    expect(traces.some((t) => t.includes('│'))).toBe(false)
+  })
+
+  test('Omp TUI: bare user message lines are not extracted as traces', () => {
+    const traces = extractRecentTraceLinesFromTmux(
+      ' Run the bash command: echo hello-omp\n ✔ Bash\n'
+    )
+    // The bare prose line has no marker and is skipped; `✔ Bash` has no arg.
+    expect(traces).toEqual([])
+  })
+
   test('Claude: returns submitted userMessages, not pending', () => {
     const userMessages = extractRecentUserMessagesFromTmux(CLAUDE_PROMPT_SCROLLBACK)
     // Should find the submitted message

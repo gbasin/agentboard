@@ -11,7 +11,7 @@ import {
   type ShortcutModifier,
 } from '../stores/settingsStore'
 import { useThemeStore, type Theme } from '../stores/themeStore'
-import { HISTORY_MAX_AGE_MIN_HOURS, HISTORY_MAX_AGE_MAX_HOURS } from '@shared/types'
+import { HISTORY_MAX_AGE_MIN_HOURS, HISTORY_MAX_AGE_MAX_HOURS, type AgentType } from '@shared/types'
 import { getEffectiveModifier, getModifierDisplay } from '../utils/device'
 import { Switch } from './Switch'
 import { playPermissionSound, playIdleSound, primeAudio } from '../utils/sound'
@@ -128,7 +128,7 @@ export default function SettingsModal({
   const [showAddForm, setShowAddForm] = useState(false)
   const [newLabel, setNewLabel] = useState('')
   const [newCommand, setNewCommand] = useState('')
-  const [newAgentType, setNewAgentType] = useState<'claude' | 'codex' | 'pi' | 'devin' | 'grok' | ''>('')
+  const [newAgentType, setNewAgentType] = useState<AgentType | ''>('')
   const reenableTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const terminalColorsLoadIdRef = useRef(0)
 
@@ -488,7 +488,7 @@ export default function SettingsModal({
                       <select
                         value={preset.agentType || ''}
                         onChange={(e) => handleUpdatePreset(preset.id, {
-                          agentType: e.target.value as 'claude' | 'codex' | 'pi' | 'devin' | 'grok' | undefined || undefined
+                          agentType: (e.target.value || undefined) as AgentType | undefined
                         })}
                         className="input text-xs py-1 px-2 w-auto"
                       >
@@ -498,6 +498,7 @@ export default function SettingsModal({
                         <option value="pi">Pi</option>
                         <option value="devin">Devin</option>
                         <option value="grok">Grok</option>
+                        <option value="omp">OMP</option>
                       </select>
                     </div>
                   )}
@@ -524,7 +525,7 @@ export default function SettingsModal({
                 <div className="flex items-center gap-2">
                   <select
                     value={newAgentType}
-                    onChange={(e) => setNewAgentType(e.target.value as 'claude' | 'codex' | 'pi' | 'devin' | 'grok' | '')}
+                    onChange={(e) => setNewAgentType(e.target.value as AgentType | '')}
                     className="input text-xs py-1 px-2 w-auto"
                   >
                     <option value="">Terminal Icon</option>
@@ -533,6 +534,7 @@ export default function SettingsModal({
                     <option value="pi">Pi Icon</option>
                     <option value="devin">Devin Icon</option>
                     <option value="grok">Grok Icon</option>
+                    <option value="omp">OMP Icon</option>
                   </select>
                   <div className="flex-1" />
                   <button
