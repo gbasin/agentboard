@@ -360,3 +360,138 @@ describe('PrChips single-row fit', () => {
     act(() => renderer.unmount())
   })
 })
+
+describe('PrChips info fetch resilience', () => {
+  // Unique url space — module caches persist across tests in this file.
+  const prFor = (n: number) => ({
+    url: `https://github.com/o/r/pull/${100 + n}`,
+    repo: 'o/r',
+    number: 100 + n,
+  })
+
+  const infoResponse = (url: string, state: string) =>
+    new Response(
+      JSON.stringify([{ url, state, isDraft: false, title: 't', author: 'a' }])
+    )
+
+  let visListeners: (() => void)[] = []
+  let fetchImpl: () => Promise<Response>
+  let fetchMock: ReturnType<typeof mock>
+
+  // State-color classes appear only on the visible chip's dot; the
+  // offscreen measurer dots have no bg-* class.
+  const dotClasses = (root: TestRenderer.ReactTestInstance) =>
+    root
+      .findAll(
+        (el) =>
+          typeof el.props.className === 'string' &&
+          /bg-(muted|green-500|purple-500|red-500)/.test(el.props.className)
+      )
+      .map((el) => el.props.className as string)
+
+  const hasDot = (root: TestRenderer.ReactTestInstance, cls: string) =>
+    dotClasses(root).some((c) => c.includes(cls))
+
+  beforeEach(() => {
+    visListeners = []
+    globalAny.window = fakeWindow
+    globalAny.document = {
+      body: {},
+      visibilityState: 'visible',
+      addEventListener: (type: string, fn: () => void) => {
+        if (type === 'visibilitychange') visListeners.push(fn)
+      },
+      removeEventListener: (type: string, fn: () => void) => {
+        if (type !== 'visibilitychange') return
+        const i = visListeners.indexOf(fn)
+        if (i >= 0) visListeners.splice(i, 1)
+      },
+    }
+    fetchImpl = async () => new Response(JSON.stringify([]))
+    fetchMock = mock((_input: RequestInfo | URL) => fetchImpl())
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+  })
+
+  afterAll(() => {
+    globalAny.window = originalWindow
+    globalAny.document = originalDocument
+    globalThis.fetch = originalFetch
+  })
+
+  test('error results are not cached — remount retries and colors the dot', async () => {
+    const pr = prFor(1)
+    fetchImpl = async () =>
+      new Response(JSON.stringify([{ url: pr.url, error: 'unavailable' }]))
+    let r1!: TestRenderer.ReactTestRenderer
+    act(() => {
+      r1 = TestRenderer.create(<PrChips prs={[pr]} />, { createNodeMock })
+    })
+    await act(async () => {})
+    expect(hasDot(r1.root, 'bg-muted')).toBe(true)
+    const calls = fetchMock.mock.calls.length
+    act(() => r1.unmount())
+
+    fetchImpl = async () => infoResponse(pr.url, 'OPEN')
+    let r2!: TestRenderer.ReactTestRenderer
+    act(() => {
+      r2 = TestRenderer.create(<PrChips prs={[pr]} />, { createNodeMock })
+    })
+    await act(async () => {})
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(calls)
+    expect(hasDot(r2.root, 'bg-green-500')).toBe(true)
+    act(() => r2.unmount())
+  })
+
+  test('chip mounting while a fetch is in flight still gets the result', async () => {
+    const pr = prFor(2)
+    let resolveFetch!: (r: Response) => void
+    fetchImpl = () =>
+      new Promise<Response>((res) => {
+        resolveFetch = res
+      })
+    let r1!: TestRenderer.ReactTestRenderer
+    act(() => {
+      r1 = TestRenderer.create(<PrChips prs={[pr]} />, { createNodeMock })
+    })
+    // First chip unmounts with the request still in flight; a fresh chip
+    // must subscribe to the shared promise rather than stay gray forever.
+    act(() => r1.unmount())
+    let r2!: TestRenderer.ReactTestRenderer
+    act(() => {
+      r2 = TestRenderer.create(<PrChips prs={[pr]} />, { createNodeMock })
+    })
+    resolveFetch(infoResponse(pr.url, 'OPEN'))
+    await act(async () => {})
+    expect(fetchMock.mock.calls.length).toBe(1)
+    expect(hasDot(r2.root, 'bg-green-500')).toBe(true)
+    act(() => r2.unmount())
+  })
+
+  test('becoming visible refetches stale info', async () => {
+    const pr = prFor(3)
+    fetchImpl = async () => infoResponse(pr.url, 'OPEN')
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<PrChips prs={[pr]} />, {
+        createNodeMock,
+      })
+    })
+    await act(async () => {})
+    expect(hasDot(renderer.root, 'bg-green-500')).toBe(true)
+
+    // Age the cache past the 60s TTL, swap the response, then simulate
+    // the PWA resuming from suspension.
+    const realNow = Date.now
+    Date.now = () => realNow() + 61_000
+    fetchImpl = async () => infoResponse(pr.url, 'MERGED')
+    const calls = fetchMock.mock.calls.length
+    act(() => {
+      for (const fn of visListeners) fn()
+    })
+    await act(async () => {})
+    Date.now = realNow
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(calls)
+    expect(hasDot(renderer.root, 'bg-purple-500')).toBe(true)
+    act(() => renderer.unmount())
+  })
+})
