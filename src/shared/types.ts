@@ -29,6 +29,10 @@ export type TerminalErrorCode =
 
 export interface Session {
   boardSessionId?: string
+  // tmux window identity captured during enumeration: the @agentboard-*
+  // window options plus the server pid (incarnation marker for the catalog's
+  // stored epoch). Absent when the server is too old to expand the fields.
+  agentboardTags?: { boardId: string; runId: string; serverPid: number }
   id: string
   name: string
   tmuxWindow: string

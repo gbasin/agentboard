@@ -81,10 +81,11 @@ describe('SessionRefreshWorkerClient', () => {
       kind: 'refresh',
       type: 'result',
       sessions: [],
+      tmuxServerPid: 0,
     })
 
     const result = await promise
-    expect(result).toEqual([])
+    expect(result).toEqual({ sessions: [], tmuxServerPid: 0 })
   })
 
   test('refresh rejects on error response', async () => {
@@ -274,9 +275,10 @@ describe('SessionRefreshWorkerClient', () => {
       kind: 'refresh',
       type: 'result',
       sessions: [],
+      tmuxServerPid: 0,
     })
 
-    await expect(thirdPromise).resolves.toEqual([])
+    await expect(thirdPromise).resolves.toEqual({ sessions: [], tmuxServerPid: 0 })
   })
 
   test('refresh timeout stays tight for small installs', async () => {

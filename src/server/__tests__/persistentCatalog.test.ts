@@ -114,6 +114,8 @@ describe('durable catalog', () => {
 describe('recovery reconciliation', () => {
   function fixture() {
     const { db } = setup()
+    // The injected identity feeds the mutation paths (launch/resume/stop);
+    // beforeSnapshot reads tags from the enumerated sessions instead.
     let snapshot = {
       epoch: 'epoch1',
       windows: new Map<string, { boardId: string; runId: string }>(),
@@ -132,7 +134,8 @@ describe('recovery reconciliation', () => {
       db,
       manager,
       'host-test',
-      () => snapshot
+      () => snapshot,
+      (pid) => `epoch${pid}`
     )
     const saved = persistence.catalog.create(input)
     const run = persistence.catalog.beginRun(saved.id)
@@ -147,6 +150,7 @@ describe('recovery reconciliation', () => {
       createdAt: '2020-01-01',
       lastActivity: '2020-01-01',
       source: 'managed',
+      agentboardTags: { boardId: saved.id, runId: run.id, serverPid: 1 },
     }
     return {
       persistence,
@@ -157,12 +161,14 @@ describe('recovery reconciliation', () => {
       setSnapshot: (value: typeof snapshot) => {
         snapshot = value
       },
+      setTags: (boardId: string, runId: string, serverPid = 1) => {
+        live.agentboardTags = { boardId, runId, serverPid }
+      },
     }
   }
   test('a reliable empty replacement server interrupts sessions without killing windows', () => {
-    const { persistence, saved, calls, setSnapshot } = fixture()
-    setSnapshot({ epoch: 'epoch2', windows: new Map() })
-    persistence.beforeSnapshot([])
+    const { persistence, saved, calls } = fixture()
+    persistence.beforeSnapshot([], 2)
     expect(persistence.catalog.get(saved.id)?.state).toBe('interrupted')
     expect(calls).toEqual([])
   })
@@ -186,29 +192,23 @@ describe('recovery reconciliation', () => {
     ).toThrow('already exists')
     expect(persistence.catalog.get(saved.id)?.lastRunId).toBe(current.id)
   })
-  test('a transient empty worker result does not erase a live session', () => {
+  test('an enumeration without a server pid does not reconcile a live session', () => {
     const { persistence, saved } = fixture()
     persistence.beforeSnapshot([])
     expect(persistence.catalog.get(saved.id)?.state).toBe('running')
   })
   test('reused window IDs do not claim or kill another run', () => {
-    const { persistence, saved, live, calls, setSnapshot } = fixture()
-    setSnapshot({
-      epoch: 'epoch2',
-      windows: new Map([['ab:@1', { boardId: 'another', runId: 'other' }]]),
-    })
+    const { persistence, saved, live, calls, setTags } = fixture()
+    setTags('another', 'other', 2)
     persistence.beforeSnapshot([live])
     expect(persistence.catalog.get(saved.id)?.state).toBe('interrupted')
     expect(calls).toEqual([])
   })
   test('adopts a tagged pane created before the database binding was saved', () => {
-    const { persistence, saved, live, setSnapshot } = fixture()
+    const { persistence, saved, live, setTags } = fixture()
     persistence.catalog.transition(saved.id, 'interrupted')
     const run = persistence.catalog.beginRun(saved.id)
-    setSnapshot({
-      epoch: 'epoch2',
-      windows: new Map([['ab:@1', { boardId: saved.id, runId: run.id }]]),
-    })
+    setTags(saved.id, run.id, 2)
     persistence.beforeSnapshot([live])
     expect(persistence.catalog.get(saved.id)?.state).toBe('running')
     expect(persistence.catalog.get(saved.id)?.epoch).toBe('epoch2')

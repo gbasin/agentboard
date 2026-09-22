@@ -858,6 +858,9 @@ interface VerificationDecision {
 interface HydrateSessionsOptions {
   verifyAssociations?: boolean
   precomputedVerifications?: Map<string, VerificationDecision>
+  // tmux server pid reported by the window enumeration; 0 means the
+  // enumeration cannot vouch for window identity (skip catalog reconcile).
+  serverPid?: number
 }
 
 async function verifyAllSessions(
@@ -929,9 +932,9 @@ async function verifyAllSessions(
 
 export function hydrateSessionsWithAgentSessions(
   sessions: Session[],
-  { verifyAssociations = false, precomputedVerifications }: HydrateSessionsOptions = {}
+  { verifyAssociations = false, precomputedVerifications, serverPid = 0 }: HydrateSessionsOptions = {}
 ): Session[] {
-  persistence?.beforeSnapshot(sessions)
+  persistence?.beforeSnapshot(sessions, serverPid)
   const activeSessions = db.getActiveSessions()
   // Discovery can be stale or incomplete. Reconcile missing windows without
   // ever turning a background observation into a destructive tmux command.
@@ -1178,7 +1181,7 @@ async function refreshSessionsAsync(): Promise<void> {
     for (let attempt = 0; attempt < 2; attempt++) {
       const gen = refreshGeneration
       try {
-        const sessions = await sessionRefreshWorker.refresh(
+        const { sessions, tmuxServerPid } = await sessionRefreshWorker.refresh(
           config.tmuxSession,
           config.discoverPrefixes,
           {
@@ -1193,7 +1196,7 @@ async function refreshSessionsAsync(): Promise<void> {
         if (gen !== refreshGeneration) continue
         const tHydrate = performance.now()
         recordSuccessfulRefreshWindowCount(countLocalSessions(sessions))
-        const hydrated = hydrateSessionsWithAgentSessions(sessions)
+        const hydrated = hydrateSessionsWithAgentSessions(sessions, { serverPid: tmuxServerPid })
         const withOverrides = applyForceWorkingOverrides(hydrated)
         registry.replaceSessions(mergeRemoteSessions(withOverrides))
         const hydrateMs = Math.round(performance.now() - tHydrate)
@@ -1220,7 +1223,9 @@ async function refreshSessionsAsync(): Promise<void> {
           return
         }
         recordSuccessfulRefreshWindowCount(countLocalSessions(sessions))
-        const hydrated = hydrateSessionsWithAgentSessions(sessions)
+        const hydrated = hydrateSessionsWithAgentSessions(sessions, {
+          serverPid: sessionManager.lastEnumeratedServerPid,
+        })
         const withOverrides = applyForceWorkingOverrides(hydrated)
         registry.replaceSessions(mergeRemoteSessions(withOverrides))
         return
@@ -1262,7 +1267,10 @@ function refreshSessionsSync({ verifyAssociations = false } = {}) {
     return
   }
   recordSuccessfulRefreshWindowCount(countLocalSessions(sessions))
-  const hydrated = hydrateSessionsWithAgentSessions(sessions, { verifyAssociations })
+  const hydrated = hydrateSessionsWithAgentSessions(sessions, {
+    verifyAssociations,
+    serverPid: sessionManager.lastEnumeratedServerPid,
+  })
   registry.replaceSessions(mergeRemoteSessions(hydrated))
 }
 
@@ -2049,7 +2057,7 @@ if (persistenceRuntime) {
   persistenceRuntime.start()
   if (persistenceRuntime.health().settings.autoResume) {
     // Reconcile the new tmux lifetime before selecting interrupted sessions.
-    try {const live=sessionManager.listWindows();persistence!.beforeSnapshot(live);persistence!.observe(live)} catch(error) {logger.warn('auto_resume_reconcile_failed',{error:String(error)})}
+    try {const live=sessionManager.listWindows();persistence!.beforeSnapshot(live,sessionManager.lastEnumeratedServerPid);persistence!.observe(live)} catch(error) {logger.warn('auto_resume_reconcile_failed',{error:String(error)})}
     const interrupted = []
     let cursor: string | undefined
     do {
