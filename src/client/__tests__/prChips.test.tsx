@@ -19,6 +19,7 @@ type Listener = (e: { target?: unknown }) => void
 const globalAny = globalThis as unknown as Record<string, unknown>
 const originalWindow = globalAny.window
 const originalDocument = globalAny.document
+const originalGetComputedStyle = globalAny.getComputedStyle
 const originalFetch = globalThis.fetch
 
 let scrollListeners: Listener[] = []
@@ -60,7 +61,14 @@ function findCard(root: TestRenderer.ReactTestInstance) {
 }
 
 function openCard(root: TestRenderer.ReactTestInstance) {
-  const chip = root.findByProps({ className: 'relative inline-flex' })
+  const chip = root
+    .findAll(
+      (el) =>
+        typeof el.props.className === 'string' &&
+        el.props.className.startsWith('relative inline-flex') &&
+        typeof el.props.onMouseEnter === 'function'
+    )
+    .at(0)!
   act(() => chip.props.onMouseEnter())
 }
 
@@ -98,6 +106,7 @@ describe('PrChips hover card', () => {
   afterAll(() => {
     globalAny.window = originalWindow
     globalAny.document = originalDocument
+    globalAny.getComputedStyle = originalGetComputedStyle
     globalThis.fetch = originalFetch
     mock.restore()
   })
@@ -176,6 +185,135 @@ describe('PrChips hover card', () => {
     // repo#number + title + one linked check row.
     expect(links.filter((h) => h === PR.url).length).toBe(2)
     expect(links).toContain('https://github.com/o/r/actions/runs/1')
+    act(() => renderer.unmount())
+  })
+})
+
+describe('PrChips single-row fit', () => {
+  const PADDING_LEFT = 22
+  const CHIP_W = 50
+  const PLUS_W = 20 // "+"
+  const PLUS_DIGIT_W = 26 // "+0" → digit width = 6
+
+  let containerWidth = 0
+
+  function textOf(el: TestRenderer.ReactTestInstance): string {
+    const c = el.props.children
+    return Array.isArray(c) ? c.join('') : String(c ?? '')
+  }
+
+  // Ref'd nodes: the container div reports clientWidth, the offscreen
+  // measurer pills report offsetWidth by text content.
+  const fitNodeMock = (el: { type: unknown; props: { children?: unknown } }) => {
+    if (el.type === 'div') {
+      return {
+        get clientWidth() {
+          return containerWidth
+        },
+        getBoundingClientRect: () => chipRect,
+        contains: () => false,
+      }
+    }
+    const c = el.props.children
+    const flat = Array.isArray(c) ? c.join('') : String(c ?? '')
+    if (flat === '+') return { offsetWidth: PLUS_W }
+    if (flat === '+0') return { offsetWidth: PLUS_DIGIT_W }
+    if (Array.isArray(c) && c.includes('#')) return { offsetWidth: CHIP_W }
+    return {
+      getBoundingClientRect: () => chipRect,
+      contains: () => false,
+    }
+  }
+
+  const makePrs = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({
+      url: `https://github.com/o/r/pull/${i + 1}`,
+      repo: 'o/r',
+      number: i + 1,
+    }))
+
+  const chipLinks = (root: TestRenderer.ReactTestInstance) =>
+    root.findAll((el) => el.type === 'a' && typeof el.props.href === 'string')
+
+  const overflowText = (root: TestRenderer.ReactTestInstance) =>
+    root
+      .findAll((el) => /^\+[1-9]/.test(textOf(el)))
+      .map(textOf)
+      .at(-1)
+
+  beforeEach(() => {
+    globalAny.window = fakeWindow
+    globalAny.document = { body: {} }
+    globalAny.getComputedStyle = () => ({
+      paddingLeft: `${PADDING_LEFT}px`,
+      paddingRight: '0px',
+      columnGap: '4px',
+    })
+  })
+
+  afterAll(() => {
+    globalAny.window = originalWindow
+    globalAny.document = originalDocument
+    globalAny.getComputedStyle = originalGetComputedStyle
+  })
+
+  test('shows only the chips that fit and collapses the rest into +N', () => {
+    // avail = 222 - 22 = 200; chip=50, gap=4, "+N"=26, gap before "+N"=4.
+    // 3 chips cost 154 + 30 reserved = 184; a 4th would need 84 more.
+    containerWidth = 222
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<PrChips prs={makePrs(5)} />, {
+        createNodeMock: fitNodeMock,
+      })
+    })
+    expect(chipLinks(renderer.root).length).toBe(3)
+    expect(overflowText(renderer.root)).toBe('+2')
+    act(() => renderer.unmount())
+  })
+
+  test('shows all chips and no +N when everything fits', () => {
+    containerWidth = 1000
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<PrChips prs={makePrs(5)} />, {
+        createNodeMock: fitNodeMock,
+      })
+    })
+    expect(chipLinks(renderer.root).length).toBe(5)
+    expect(overflowText(renderer.root)).toBeUndefined()
+    act(() => renderer.unmount())
+  })
+
+  test('reflows on resize: narrowing the row folds chips into +N', () => {
+    containerWidth = 1000
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<PrChips prs={makePrs(5)} />, {
+        createNodeMock: fitNodeMock,
+      })
+    })
+    expect(chipLinks(renderer.root).length).toBe(5)
+
+    // avail = 130 - 22 = 108: one chip (50) + gap (4) + "+4" (26) = 80 fits,
+    // a second chip would push past the edge.
+    containerWidth = 130
+    act(() => {
+      for (const fn of resizeListeners) fn({})
+    })
+    expect(chipLinks(renderer.root).length).toBe(1)
+    expect(overflowText(renderer.root)).toBe('+4')
+    act(() => renderer.unmount())
+  })
+
+  test('falls back to showing all chips when measurements are unavailable', () => {
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<PrChips prs={makePrs(5)} />, {
+        createNodeMock,
+      })
+    })
+    expect(chipLinks(renderer.root).length).toBe(5)
     act(() => renderer.unmount())
   })
 })
