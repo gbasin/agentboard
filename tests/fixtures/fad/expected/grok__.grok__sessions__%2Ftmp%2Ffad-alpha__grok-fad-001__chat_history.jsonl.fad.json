@@ -3,7 +3,7 @@
   "externalId": "grok-fad-001",
   "title": "profile the slow query",
   "workspace": "/tmp/fad-alpha",
-  "sourcePath": "/Users/garybasin/Code/agentboard-fad-parity/tests/fixtures/fad/home/.grok/sessions/%2Ftmp%2Ffad-alpha/grok-fad-001/chat_history.jsonl",
+  "sourcePath": ".grok/sessions/%2Ftmp%2Ffad-alpha/grok-fad-001/chat_history.jsonl",
   "startedAt": null,
   "endedAt": null,
   "metadata": {

@@ -110,7 +110,13 @@ function main(): void {
     for (const conv of convs) {
       const name = expectedNameFor(conv.agent, sourcePath)
       const outPath = path.join(expectedDir, name)
-      fs.writeFileSync(outPath, JSON.stringify(conv, null, 2) + '\n')
+      // Store sourcePath relative to the fixture home (posix separators) —
+      // absolute paths would pin the expected file to the generating machine.
+      const portable = {
+        ...conv,
+        sourcePath: path.relative(fixtureHome, sourcePath).split(path.sep).join('/'),
+      }
+      fs.writeFileSync(outPath, JSON.stringify(portable, null, 2) + '\n')
       written.push(name)
     }
   }

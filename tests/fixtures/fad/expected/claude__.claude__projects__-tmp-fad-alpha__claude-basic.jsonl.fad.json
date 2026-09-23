@@ -3,7 +3,7 @@
   "externalId": "-tmp-fad-alpha/claude-basic.jsonl",
   "title": "fix the flaky login test",
   "workspace": "/tmp/fad-alpha",
-  "sourcePath": "/Users/garybasin/Code/agentboard-fad-parity/tests/fixtures/fad/home/.claude/projects/-tmp-fad-alpha/claude-basic.jsonl",
+  "sourcePath": ".claude/projects/-tmp-fad-alpha/claude-basic.jsonl",
   "startedAt": 1790157600000,
   "endedAt": 1790157630000,
   "metadata": {

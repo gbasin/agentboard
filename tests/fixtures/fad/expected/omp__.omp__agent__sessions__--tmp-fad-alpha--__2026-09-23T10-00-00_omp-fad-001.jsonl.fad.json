@@ -3,7 +3,7 @@
   "externalId": "--tmp-fad-alpha--/2026-09-23T10-00-00_omp-fad-001.jsonl",
   "title": "refactor the parser",
   "workspace": "/tmp/fad-alpha",
-  "sourcePath": "/Users/garybasin/Code/agentboard-fad-parity/tests/fixtures/fad/home/.omp/agent/sessions/--tmp-fad-alpha--/2026-09-23T10-00-00_omp-fad-001.jsonl",
+  "sourcePath": ".omp/agent/sessions/--tmp-fad-alpha--/2026-09-23T10-00-00_omp-fad-001.jsonl",
   "startedAt": 1790157600000,
   "endedAt": 1790157605000,
   "metadata": {

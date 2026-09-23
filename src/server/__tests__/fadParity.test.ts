@@ -130,12 +130,14 @@ function fadUserTexts(conv: FadConversation): string[] {
 }
 
 /**
- * FAD's sourcePath is real for file-backed agents; for multi-conversation
- * stores (devin's sessions.db) it is virtual: <db>/<session-id>. Walk up to
- * the first path that exists on disk.
+ * Expected files store sourcePath relative to the fixture home (posix
+ * separators) so they're portable across machines. FAD's sourcePath is real
+ * for file-backed agents; for multi-conversation stores (devin's
+ * sessions.db) it is virtual: <db>/<session-id>. Walk up to the first path
+ * that exists on disk.
  */
 function realSourcePath(sourcePath: string): string {
-  let p = sourcePath
+  let p = path.join(FAD_HOME, ...sourcePath.split('/'))
   while (!fs.existsSync(p) && p !== path.dirname(p)) {
     p = path.dirname(p)
   }

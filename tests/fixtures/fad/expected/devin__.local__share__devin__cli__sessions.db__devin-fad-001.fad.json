@@ -3,7 +3,7 @@
   "externalId": "devin-fad-001",
   "title": "Fixture session",
   "workspace": "/tmp/fad-alpha",
-  "sourcePath": "/Users/garybasin/Code/agentboard-fad-parity/tests/fixtures/fad/home/.local/share/devin/cli/sessions.db/devin-fad-001",
+  "sourcePath": ".local/share/devin/cli/sessions.db/devin-fad-001",
   "startedAt": 1780000000000,
   "endedAt": 1780000100000,
   "metadata": {
