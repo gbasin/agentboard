@@ -333,7 +333,10 @@ describe('extractPullRequests', () => {
     expect(extractPullRequests(content)).toEqual([])
   })
 
-  test('works on legacy devin mirrored logs via window fallback', () => {
+  test('ignores devin prose that mentions gh pr create and PR URLs', () => {
+    // Devin mirrors real tool calls as message.toolCalls with ids, so prose
+    // announcing a create is not evidence — this used to false-positive via
+    // the blanket "agent":"devin" tool-call match + lookahead window.
     const content = [
       JSON.stringify({
         type: 'assistant',
@@ -353,7 +356,83 @@ describe('extractPullRequests', () => {
       }),
     ].join('\n')
 
-    expect(extractPullRequests(content).map((p) => p.number)).toEqual([228])
+    expect(extractPullRequests(content)).toEqual([])
+  })
+
+  test('ignores gh pr create quoted inside devin tool output', () => {
+    // Regression: a session that reads source mentioning `gh pr create`
+    // (e.g. this file) must not vacuum up PR URLs from nearby results.
+    const content = [
+      JSON.stringify({
+        type: 'tool',
+        agent: 'devin',
+        message: {
+          role: 'tool',
+          toolCallId: 'call_read',
+          content:
+            'const RE = /"tool_use"/ // a `gh pr create` mention only counts',
+        },
+      }),
+      JSON.stringify({
+        type: 'tool',
+        agent: 'devin',
+        message: {
+          role: 'tool',
+          toolCallId: 'call_grep',
+          content:
+            'https://github.com/a/b/pull/78\nhttps://github.com/c/d/pull/1500',
+        },
+      }),
+    ].join('\n')
+
+    expect(extractPullRequests(content)).toEqual([])
+  })
+
+  test('ignores devin edit calls whose file content mentions gh pr create', () => {
+    // A write/edit tool call is not a shell exec — text about `gh pr create`
+    // in new_string must not register the call as a create.
+    const content = [
+      JSON.stringify({
+        type: 'assistant',
+        agent: 'devin',
+        message: {
+          role: 'assistant',
+          content: '',
+          toolCalls: [
+            {
+              id: 'call_edit',
+              name: 'edit',
+              arguments: {
+                file_path: '/x.test.ts',
+                new_string: "claudeBashToolUse('gh pr create')",
+              },
+            },
+          ],
+        },
+      }),
+      JSON.stringify({
+        type: 'tool',
+        agent: 'devin',
+        message: {
+          role: 'tool',
+          toolCallId: 'call_edit',
+          content:
+            'wrote 12|  gh pr create\n13|  https://github.com/a/b/pull/78',
+        },
+      }),
+    ].join('\n')
+
+    expect(extractPullRequests(content)).toEqual([])
+  })
+
+  test('ignores PR URLs on non-result lines inside the fallback window', () => {
+    const content = [
+      'NOTJSON "tool_use" gh pr create',
+      JSON.stringify({ type: 'assistant', note: 'see https://github.com/a/b/pull/4' }),
+      claudeToolResult('https://github.com/a/b/pull/3'),
+    ].join('\n')
+
+    expect(extractPullRequests(content).map((p) => p.number)).toEqual([3])
   })
 
   test('falls back to lookahead window for unparseable create lines', () => {

@@ -1,9 +1,9 @@
 // Detects pull requests a session created by scanning its agent JSONL log.
 // A `gh pr create` is only counted when it appears inside an actual tool
-// call entry (Claude tool_use, Codex function_call) — prose mentioning the
-// command is ignored. Resulting github.com/.../pull/N URLs are captured
-// from the tool result that references the call's id, with a short
-// line-count fallback window for formats without call ids.
+// call entry (Claude tool_use, Codex function_call, devin toolCalls) —
+// prose mentioning the command is ignored. Resulting github.com/.../pull/N
+// URLs are captured from the tool result that references the call's id,
+// with a short line-count fallback window for formats without call ids.
 // Scans incrementally: results are cached per file offset so polling only
 // reads bytes appended since the previous scan.
 
@@ -39,10 +39,13 @@ const GH_PR_CREATE_RE =
 // get parsed.
 const GH_PR_CREATE_LINE_RE =
   /gh[\s"',\\]+(?:(?:-R|--repo)[\s"',\\]+\S+[\s"',\\]+)?pr[\s"',\\]+create\b/
-// A `gh pr create` mention only counts when the line is a tool-call entry
-// (or a devin mirrored log, where tool calls aren't recorded at all).
+// A `gh pr create` mention only counts when the line is a tool-call entry.
+// Devin mirrors exec calls as message.toolCalls and results as role:'tool'
+// lines carrying message.toolCallId, so it uses the same id-based path as
+// the other agents — no blanket per-agent match (which would make every
+// line in a mirrored devin log qualify, prose and tool output included).
 const TOOL_CALL_LINE_RE =
-  /"tool_use"|"function_call"|"custom_tool_call"|"toolCall"|"tool_calls"|"agent":"devin"/
+  /"tool_use"|"function_call"|"custom_tool_call"|"toolCalls?"|"tool_calls"/
 const PR_URL_RE =
   /https:\/\/github\.com\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\/pull\/(\d+)/g
 // Result markers only — "call_id" alone also appears on function_call lines.
@@ -86,6 +89,28 @@ function newScanState(): ScanState {
   }
 }
 
+// Extract the shell-command text from a tool call's arguments. Only
+// command-bearing calls (exec/bash/shell) can run `gh pr create` — calls
+// like edit/write whose *content* mentions the command must not count.
+// Returns null when the args carry no command field.
+function commandTextFromArgs(args: unknown): string | null {
+  if (args == null) return null
+  if (typeof args === 'string') {
+    try {
+      const parsed: unknown = JSON.parse(args)
+      return commandTextFromArgs(parsed)
+    } catch {
+      return args // raw command string
+    }
+  }
+  if (typeof args === 'object' && !Array.isArray(args)) {
+    const cmd = (args as Record<string, unknown>).command
+    if (cmd == null) return null
+    return Array.isArray(cmd) ? cmd.join(' ') : String(cmd)
+  }
+  return String(args)
+}
+
 // Extract tool-call ids from a confirmed `gh pr create` tool-call line so the
 // matching tool result can be attributed precisely. Returns [] when the line
 // parses as a known tool-call format but contains no create call (proof it is
@@ -110,26 +135,18 @@ function extractToolCallIds(line: string): string[] | null {
     recognized = true
     for (const item of content) {
       if (!item || typeof item.id !== 'string') continue
-      if (
-        item.type === 'tool_use' &&
-        typeof item.input === 'object' &&
-        item.input !== null &&
-        GH_PR_CREATE_RE.test(
-          String((item.input as Record<string, unknown>).command ?? '')
-        )
-      ) {
-        ids.push(item.id)
-        continue
+      if (item.type === 'tool_use') {
+        const cmd = commandTextFromArgs(item.input)
+        if (cmd !== null && GH_PR_CREATE_RE.test(cmd)) {
+          ids.push(item.id)
+          continue
+        }
       }
       if (item.type === 'toolCall') {
-        const args = item.arguments
-        const argsText =
-          typeof args === 'string'
-            ? args
-            : typeof item.partialJson === 'string'
-              ? item.partialJson
-              : JSON.stringify(args ?? '')
-        if (GH_PR_CREATE_RE.test(argsText)) {
+        const cmd =
+          commandTextFromArgs(item.arguments) ??
+          commandTextFromArgs(item.partialJson)
+        if (cmd !== null && GH_PR_CREATE_RE.test(cmd)) {
           ids.push(item.id)
         }
       }
@@ -144,10 +161,8 @@ function extractToolCallIds(line: string): string[] | null {
     recognized = true
     for (const call of toolCalls) {
       if (!call || typeof call.id !== 'string' || !call.id) continue
-      const args = call.arguments
-      const argsText =
-        typeof args === 'string' ? args : JSON.stringify(args ?? '')
-      if (GH_PR_CREATE_RE.test(argsText)) {
+      const cmd = commandTextFromArgs(call.arguments)
+      if (cmd !== null && GH_PR_CREATE_RE.test(cmd)) {
         ids.push(call.id)
       }
     }
@@ -161,24 +176,28 @@ function extractToolCallIds(line: string): string[] | null {
     recognized = true
     for (const call of grokToolCalls) {
       if (!call || typeof call.id !== 'string' || !call.id) continue
-      const args = (call as Record<string, unknown>).arguments
-      const argsText =
-        typeof args === 'string' ? args : JSON.stringify(args ?? '')
-      if (GH_PR_CREATE_RE.test(argsText)) {
+      const cmd = commandTextFromArgs(
+        (call as Record<string, unknown>).arguments
+      )
+      if (cmd !== null && GH_PR_CREATE_RE.test(cmd)) {
         ids.push(call.id)
       }
     }
   }
 
   // Codex: payload.type === 'function_call' with command in arguments
+  // (custom_tool_call carries the raw command in input instead).
   const payload = entry.payload as Record<string, unknown> | undefined
   if (
     payload &&
     (payload.type === 'function_call' || payload.type === 'custom_tool_call')
   ) {
     recognized = true
-    const args = String(payload.arguments ?? '')
-    if (GH_PR_CREATE_RE.test(args) || GH_PR_CREATE_LINE_RE.test(line)) {
+    const cmd = commandTextFromArgs(payload.arguments ?? payload.input)
+    if (
+      cmd !== null &&
+      (GH_PR_CREATE_RE.test(cmd) || GH_PR_CREATE_LINE_RE.test(cmd))
+    ) {
       const id =
         typeof payload.call_id === 'string'
           ? payload.call_id
@@ -244,9 +263,14 @@ function processLine(state: ScanState, line: string): void {
     }
   }
 
-  // 3. Fallback: id-less create — capture PR URLs within the window.
+  // 3. Fallback: id-less create — capture PR URLs within the window, but
+  //    only on lines that look like tool results. Without this guard the
+  //    window vacuums up PR URLs from prose, prompts, and command output
+  //    that merely discusses PRs (e.g. grep results over another log).
   if (state.windowRemaining > 0) {
-    collectUrls(state, line)
+    if (RESULT_LINE_RE.test(line)) {
+      collectUrls(state, line)
+    }
     state.windowRemaining -= 1
   }
 
