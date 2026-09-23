@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.13.0](https://github.com/gbasin/agentboard/compare/v0.12.2...v0.13.0) (2026-09-23)
+
+
+### Features
+
+* attribute subagent-created PRs to parent sessions ([#279](https://github.com/gbasin/agentboard/issues/279)) ([4a0574e](https://github.com/gbasin/agentboard/commit/4a0574e6b6b37d6d175062cd0e17e5192a9a6de5))
+* sync theme and shared settings server-side across clients ([#275](https://github.com/gbasin/agentboard/issues/275)) ([dab8070](https://github.com/gbasin/agentboard/commit/dab8070e94850a9ab30aea721bc4758b3f828d13))
+
+
+### Bug Fixes
+
+* detect gh pr create after escaped newlines in commands ([#274](https://github.com/gbasin/agentboard/issues/274)) ([b1ca734](https://github.com/gbasin/agentboard/commit/b1ca734b098f2e6f8383d40ae2d1eb279f1ff81f))
+* stop PR chip false positives from devin logs and non-shell tool calls ([#273](https://github.com/gbasin/agentboard/issues/273)) ([2f04051](https://github.com/gbasin/agentboard/commit/2f040519f6e951366288203101134efcf0b89e39))
+* sync bun.lock on master after each release publish ([#280](https://github.com/gbasin/agentboard/issues/280)) ([869ea02](https://github.com/gbasin/agentboard/commit/869ea02a25e1141402719b356686b86c47e4a159))
+* **tests:** isolate real-tmux integration tests by construction, not ordering ([#277](https://github.com/gbasin/agentboard/issues/277)) ([9980106](https://github.com/gbasin/agentboard/commit/9980106b4101f8a98ad255fac3d10e48cf808ca1))
+
 ## [0.12.2](https://github.com/gbasin/agentboard/compare/v0.12.1...v0.12.2) (2026-09-22)
 
 
