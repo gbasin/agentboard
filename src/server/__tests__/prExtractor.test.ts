@@ -111,6 +111,18 @@ describe('extractPullRequests', () => {
     expect(extractPullRequests(content)).toEqual([])
   })
 
+  test('finds gh pr create after an escaped newline inside a command', () => {
+    // In raw JSONL, embedded newlines in input.command are literal \n, so the
+    // raw text reads "...EOF\ngh pr create" — the `n` before `g` kills \b.
+    const command = 'cat > /tmp/pr-body <<\'EOF\'\nbody\nEOF\ngh pr create -R a/b --fill'
+    const content = [
+      claudeBashToolUse(command, 'toolu_heredoc'),
+      claudeToolResult('https://github.com/a/b/pull/55', 'toolu_heredoc'),
+    ].join('\n')
+
+    expect(extractPullRequests(content).map((p) => p.number)).toEqual([55])
+  })
+
   test('handles extra whitespace and -R flag in the command', () => {
     const content = [
       claudeBashToolUse('gh  -R a/b  pr   create --title "x"'),
