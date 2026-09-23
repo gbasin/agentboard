@@ -140,12 +140,18 @@ function realSourcePath(sourcePath: string): string {
   return p
 }
 
+/**
+ * Subset semantics: every user message agentboard extracts must appear
+ * verbatim (post-whitespace-collapse) among FAD's role:"user" messages.
+ * Exact membership rather than containment — if FAD starts joining
+ * multi-part content differently than us, the red test is the intended
+ * drift signal, not noise to tolerate.
+ */
 function expectUserSubset(conv: FadConversation, ours: string[], context: string) {
   const theirs = fadUserTexts(conv)
   for (const text of ours) {
-    const found = theirs.some((fad) => fad.includes(text))
     expect(
-      found,
+      theirs.includes(text),
       `${context}: agentboard user message not in FAD user messages: ${JSON.stringify(text.slice(0, 120))}`
     ).toBe(true)
   }
@@ -153,14 +159,17 @@ function expectUserSubset(conv: FadConversation, ours: string[], context: string
 
 function expectSessionIdParity(conv: FadConversation, sid: string | null, context: string) {
   expect(sid, `${context}: agentboard extracted no session id`).toBeTruthy()
-  const metadata = JSON.stringify(conv.metadata ?? {})
+  // FAD exposes the content-derived id at known keys per connector
+  // (sessionId for claude, session_id for pi/omp/devin); for codex/grok
+  // the id is embedded in the path-derived externalId instead.
+  const metaIds = [conv.metadata?.sessionId, conv.metadata?.session_id]
   const known =
     conv.externalId === sid ||
     conv.externalId?.includes(sid!) === true ||
-    metadata.includes(sid!)
+    metaIds.includes(sid)
   expect(
     known,
-    `${context}: session id ${sid} not found in FAD externalId/metadata`
+    `${context}: session id ${sid} not found in FAD externalId/session metadata`
   ).toBe(true)
 }
 
