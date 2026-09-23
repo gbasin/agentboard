@@ -7,6 +7,8 @@ import {
   canBindLocalhost,
   createTmuxTmpDir,
   isTmuxAvailable,
+  privateTmuxEnv,
+  privateTmuxSocket,
 } from './testEnvironment'
 
 const tmuxAvailable = isTmuxAvailable()
@@ -45,14 +47,13 @@ if (!tmuxAvailable || !localhostBindable) {
       serverProcess = Bun.spawn(['bun', 'src/server/index.ts'], {
         cwd: process.cwd(),
         env: {
-          ...process.env,
+          ...privateTmuxEnv(tmuxTmpDir),
           PORT: String(port),
           TMUX_SESSION: sessionName,
           DISCOVER_PREFIXES: '',
           AGENTBOARD_LOG_POLL_MS: '0',
           AGENTBOARD_DB_PATH: dbPath,
           AGENTBOARD_PASTE_IMAGE_MAX_BYTES: '1024',
-          TMUX_TMPDIR: tmuxTmpDir,
         },
         stdout: 'pipe',
         stderr: 'pipe',
@@ -74,25 +75,23 @@ if (!tmuxAvailable || !localhostBindable) {
         }
       }
 
-      try {
-        Bun.spawnSync(['tmux', 'kill-session', '-t', sessionName], {
-          stdout: 'ignore',
-          stderr: 'ignore',
-          env: {
-            ...process.env,
-            ...(tmuxTmpDir ? { TMUX_TMPDIR: tmuxTmpDir } : {}),
-          },
-        })
-      } catch {
-        // ignore cleanup errors
-      }
       if (tmuxTmpDir) {
         try {
-          Bun.spawnSync(['tmux', 'kill-server'], {
+          Bun.spawnSync(['tmux', 'kill-session', '-t', sessionName], {
             stdout: 'ignore',
             stderr: 'ignore',
-            env: { ...process.env, TMUX_TMPDIR: tmuxTmpDir },
+            env: privateTmuxEnv(tmuxTmpDir),
           })
+          // -S pins the private socket explicitly: tmux resolves $TMUX before
+          // TMUX_TMPDIR, so a leaked TMUX here would kill the LIVE server.
+          Bun.spawnSync(
+            ['tmux', '-S', privateTmuxSocket(tmuxTmpDir), 'kill-server'],
+            {
+              stdout: 'ignore',
+              stderr: 'ignore',
+              env: privateTmuxEnv(tmuxTmpDir),
+            }
+          )
         } catch {
           // ignore cleanup errors
         }
