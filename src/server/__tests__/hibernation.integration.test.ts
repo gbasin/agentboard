@@ -8,6 +8,7 @@ import {
   canBindLocalhost,
   createTmuxTmpDir,
   isTmuxAvailable,
+  privateTmuxEnv,
 } from './testEnvironment'
 
 const tmuxAvailable = isTmuxAvailable()
@@ -33,8 +34,7 @@ if (!tmuxAvailable || !localhostBindable) {
     let port = 0
     let tmuxTmpDir: string | null = null
     let harnessInitialized = false
-    const tmuxEnv = (): NodeJS.ProcessEnv =>
-      tmuxTmpDir ? { ...process.env, TMUX_TMPDIR: tmuxTmpDir } : { ...process.env }
+    const tmuxEnv = (): NodeJS.ProcessEnv => privateTmuxEnv(tmuxTmpDir)
 
     // Session ID for move-to-history test - seeded before server starts.
     const wsTestSessionId = `ws-history-test-${Date.now()}`
@@ -44,7 +44,7 @@ if (!tmuxAvailable || !localhostBindable) {
         port = await getFreePort()
         const resumeCommand = 'sh -c "sleep 30" -- {sessionId}'
         const env: NodeJS.ProcessEnv = {
-          ...process.env,
+          ...privateTmuxEnv(tmuxTmpDir),
           // Defaults that extraEnv can override
           CLAUDE_RESUME_CMD: resumeCommand,
           CODEX_RESUME_CMD: resumeCommand,
@@ -56,9 +56,7 @@ if (!tmuxAvailable || !localhostBindable) {
           DISCOVER_PREFIXES: '',
           AGENTBOARD_LOG_POLL_MS: '0',
           AGENTBOARD_DB_PATH: dbPath,
-        }
-        if (tmuxTmpDir) {
-          env.TMUX_TMPDIR = tmuxTmpDir
+          ...(tmuxTmpDir ? { TMUX_TMPDIR: tmuxTmpDir } : {}),
         }
         serverProcess = Bun.spawn(['bun', 'src/server/index.ts'], {
           cwd: process.cwd(),
