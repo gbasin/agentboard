@@ -1,0 +1,3 @@
+{"type":"session","version":3,"id":"omp-fad-001","timestamp":"2026-09-23T10:00:00.000Z","cwd":"/tmp/fad-alpha"}
+{"type":"message","id":"o1","parentId":null,"timestamp":"2026-09-23T10:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"refactor the parser"}]}}
+{"type":"message","id":"o2","parentId":"o1","timestamp":"2026-09-23T10:00:05.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Splitting it into stages."}]}}
