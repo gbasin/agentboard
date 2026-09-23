@@ -47,9 +47,9 @@ export interface MatchWorkerRequest {
   /** Patterns for sessions that should skip window matching when orphaned */
   skipMatchingPatterns?: string[]
   /**
-   * When set, the worker rg-scans ~/.codex/sessions for subagent rollouts and
-   * returns their session_meta linkage on the response. Offloads the ~seconds-
-   * scale full-tree scan + head-parse from the main thread.
+   * When set, the worker walks ~/.codex/sessions and returns subagent
+   * session_meta linkage on the response. Offloads the ~seconds-scale
+   * full-tree scan + head-parse from the main thread.
    */
   buildCodexSubagentIndex?: boolean
 }

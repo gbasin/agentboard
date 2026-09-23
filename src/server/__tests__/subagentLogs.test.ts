@@ -178,7 +178,7 @@ describe('getSubagentLogPaths', () => {
     ])
   })
 
-  test('codex: scanCodexSubagentLinks rg-filters and parses heads under a root', async () => {
+  test('codex: scanCodexSubagentLinks walks a root and parses heads', async () => {
     const dir = path.join(tempRoot, 'codex-sessions')
     await fs.mkdir(dir, { recursive: true })
     const mk = async (name: string, payload: object) => {
@@ -194,7 +194,7 @@ describe('getSubagentLogPaths', () => {
       source: { subagent: 'review' },
       parent_thread_id: 'root-1',
     })
-    // A plain CLI session mentions nothing subagent-related — rg skips it.
+    // A plain CLI session (string source) is parsed but produces no link.
     await mk('cli.jsonl', { id: 'cli-1', source: 'cli' })
 
     expect(scanCodexSubagentLinks(dir)).toEqual([

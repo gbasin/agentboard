@@ -7,7 +7,7 @@
 //            minus .jsonl; subagent sessions carry a session_init entry)
 // - codex:   flat rollouts in sessions/YYYY/MM/DD/; linkage only via
 //            session_meta.payload.parent_thread_id, so an index is built in
-//            the match worker (rg pre-filter + first-line parses map
+//            the match worker (directory walk + first-line parses map
 //            ownId -> parentId) and fed back here. The poller also registers
 //            live links observed during enrichment, keeping the index fresh
 //            between rebuilds. Depth>1 chains are resolved transitively.
@@ -16,7 +16,6 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
-import { execFileSync } from 'node:child_process'
 import type { AgentType } from '../shared/types'
 import { extractCodexSubagentLink, isPiSubagent } from './logDiscovery'
 import { logger } from './logger'
@@ -68,35 +67,39 @@ function codexSessionsRoot(): string {
 }
 
 /**
- * rg-scan the codex sessions tree for subagent rollouts and extract their
- * linkage. Synchronous and seconds-scale on large corpora — call from a
- * worker thread, not the main loop.
+ * Walk the codex sessions tree and extract subagent linkage from each
+ * rollout's session_meta first line. No content pre-filter needed — the
+ * linkage lives in line 1, so a head read per file beats an rg scan of
+ * full bodies and avoids the external binary. Synchronous and
+ * seconds-scale on large corpora — call from a worker thread.
  */
 export function scanCodexSubagentLinks(
   root: string = codexSessionsRoot()
 ): CodexSubagentLink[] {
-  let stdout = ''
-  try {
-    stdout = execFileSync(
-      'rg',
-      ['-l', '--no-messages', '"subagent"', root],
-      { maxBuffer: 64 * 1024 * 1024 }
-    ).toString()
-  } catch (error) {
-    // rg exits 1 on zero matches — that is a valid (empty) result.
-    const code = (error as { status?: number }).status
-    if (code !== 1) {
-      logger.warn('codex_subagent_index_error', {
-        message: error instanceof Error ? error.message : String(error),
-      })
-    }
-    if (code !== 1) return []
-  }
   const links: CodexSubagentLink[] = []
-  for (const logPath of stdout.split('\n')) {
-    if (!logPath.endsWith('.jsonl')) continue
-    const link = extractCodexSubagentLink(logPath)
-    if (link) links.push({ ...link, logPath })
+  const walk = (dir: string): void => {
+    let names: fs.Dirent[]
+    try {
+      names = fs.readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of names) {
+      const p = path.join(dir, entry.name)
+      if (entry.isDirectory()) {
+        walk(p)
+      } else if (entry.name.endsWith('.jsonl')) {
+        const link = extractCodexSubagentLink(p)
+        if (link) links.push({ ...link, logPath: p })
+      }
+    }
+  }
+  try {
+    walk(root)
+  } catch (error) {
+    logger.warn('codex_subagent_index_error', {
+      message: error instanceof Error ? error.message : String(error),
+    })
   }
   return links
 }
@@ -116,9 +119,9 @@ export function buildCodexIndex(
 /**
  * Feed a subagent link observed during log enrichment into the index.
  * The poller calls this per batch entry, so live subagents land in the
- * index immediately — no rg round-trip and no TTL wait. Entries outside
- * the current maxLogsPerPoll batch simply aren't fed yet; the async rg
- * backfill covers cold history.
+ * index immediately — no tree rescan and no TTL wait. Entries outside
+ * the current maxLogsPerPoll batch simply aren't fed yet; the periodic
+ * worker backfill covers cold history.
  */
 export function registerCodexSubagent(
   ownId: string,
