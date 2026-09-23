@@ -1,0 +1,29 @@
+{
+  "agent": "omp",
+  "externalId": "--tmp-fad-alpha--/2026-09-23T10-00-00_omp-fad-001.jsonl",
+  "title": "refactor the parser",
+  "workspace": "/tmp/fad-alpha",
+  "sourcePath": ".omp/agent/sessions/--tmp-fad-alpha--/2026-09-23T10-00-00_omp-fad-001.jsonl",
+  "startedAt": 1790157600000,
+  "endedAt": 1790157605000,
+  "metadata": {
+    "source": "omp",
+    "session_id": "omp-fad-001",
+    "provider": null,
+    "model_id": null
+  },
+  "messages": [
+    {
+      "idx": 0,
+      "role": "user",
+      "content": "refactor the parser",
+      "createdAt": 1790157601000
+    },
+    {
+      "idx": 1,
+      "role": "assistant",
+      "content": "Splitting it into stages.",
+      "createdAt": 1790157605000
+    }
+  ]
+}

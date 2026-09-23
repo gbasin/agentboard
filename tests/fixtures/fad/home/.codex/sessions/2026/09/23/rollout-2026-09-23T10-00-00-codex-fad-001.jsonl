@@ -1,0 +1,7 @@
+{"type":"session_meta","timestamp":"2026-09-23T10:00:00.000Z","payload":{"id":"codex-fad-001","timestamp":"2026-09-23T10:00:00.000Z","cwd":"/tmp/fad-alpha","originator":"codex_cli_rs","source":"cli","cli_version":"0.50.0"}}
+{"type":"response_item","timestamp":"2026-09-23T10:00:01.000Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"why is the build red?"}]}}
+{"type":"response_item","timestamp":"2026-09-23T10:00:05.000Z","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"A dependency bumped majors."}]}}
+{"type":"event_msg","timestamp":"2026-09-23T10:00:05.500Z","payload":{"type":"agent_message","message":"A dependency bumped majors."}}
+{"type":"response_item","timestamp":"2026-09-23T10:00:06.000Z","payload":{"type":"function_call","name":"exec_command","arguments":"{\"cmd\":[\"bun\",\"run\",\"build\"]}","call_id":"call_1"}}
+{"type":"response_item","timestamp":"2026-09-23T10:00:08.000Z","payload":{"type":"function_call_output","call_id":"call_1","output":"error: semver conflict"}}
+{"type":"response_item","timestamp":"2026-09-23T10:01:00.000Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"pin it and re-run"}]}}

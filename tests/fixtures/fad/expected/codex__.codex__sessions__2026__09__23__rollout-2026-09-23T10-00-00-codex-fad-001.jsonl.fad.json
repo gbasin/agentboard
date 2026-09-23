@@ -1,0 +1,44 @@
+{
+  "agent": "codex",
+  "externalId": "2026/09/23/rollout-2026-09-23T10-00-00-codex-fad-001",
+  "title": "why is the build red?",
+  "workspace": "/tmp/fad-alpha",
+  "sourcePath": ".codex/sessions/2026/09/23/rollout-2026-09-23T10-00-00-codex-fad-001.jsonl",
+  "startedAt": 1790157600000,
+  "endedAt": 1790157660000,
+  "metadata": {
+    "source": "rollout"
+  },
+  "messages": [
+    {
+      "idx": 0,
+      "role": "user",
+      "content": "why is the build red?",
+      "createdAt": 1790157601000
+    },
+    {
+      "idx": 1,
+      "role": "assistant",
+      "content": "A dependency bumped majors.",
+      "createdAt": 1790157605000
+    },
+    {
+      "idx": 2,
+      "role": "assistant",
+      "content": "[Tool: exec_command]",
+      "createdAt": 1790157606000
+    },
+    {
+      "idx": 3,
+      "role": "tool",
+      "content": "error: semver conflict",
+      "createdAt": 1790157608000
+    },
+    {
+      "idx": 4,
+      "role": "user",
+      "content": "pin it and re-run",
+      "createdAt": 1790157660000
+    }
+  ]
+}

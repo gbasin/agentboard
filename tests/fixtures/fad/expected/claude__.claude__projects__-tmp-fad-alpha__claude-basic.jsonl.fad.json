@@ -1,0 +1,69 @@
+{
+  "agent": "claude",
+  "externalId": "-tmp-fad-alpha/claude-basic.jsonl",
+  "title": "fix the flaky login test",
+  "workspace": "/tmp/fad-alpha",
+  "sourcePath": ".claude/projects/-tmp-fad-alpha/claude-basic.jsonl",
+  "startedAt": 1790157600000,
+  "endedAt": 1790157630000,
+  "metadata": {
+    "source": "claude_code",
+    "sessionId": "claude-fad-001",
+    "cliSessionId": null,
+    "gitBranch": "main",
+    "permissionMode": null,
+    "bodyAvailable": true,
+    "sidechain": false,
+    "parentSessionId": null
+  },
+  "messages": [
+    {
+      "idx": 0,
+      "role": "user",
+      "content": "fix the flaky login test",
+      "createdAt": 1790157600000
+    },
+    {
+      "idx": 1,
+      "role": "assistant",
+      "content": "Reading the test file.\n[Tool: Read - /tmp/fad-alpha/login.test.ts]",
+      "createdAt": 1790157605000
+    },
+    {
+      "idx": 2,
+      "role": "tool",
+      "content": "test('logs in', ...)",
+      "createdAt": 1790157607000
+    },
+    {
+      "idx": 3,
+      "role": "user",
+      "content": "<system-reminder>Context low.</system-reminder>",
+      "createdAt": 1790157608000
+    },
+    {
+      "idx": 4,
+      "role": "user",
+      "content": "<local-command-stdout>Compacted 12000 tokens</local-command-stdout>",
+      "createdAt": 1790157609000
+    },
+    {
+      "idx": 5,
+      "role": "user",
+      "content": "<command-message>review</command-message><command-name>/review</command-name><command-args>the login diff</command-args>",
+      "createdAt": 1790157610000
+    },
+    {
+      "idx": 6,
+      "role": "assistant",
+      "content": "The race is in the fake timer setup.",
+      "createdAt": 1790157620000
+    },
+    {
+      "idx": 7,
+      "role": "user",
+      "content": "thanks, ship it",
+      "createdAt": 1790157630000
+    }
+  ]
+}

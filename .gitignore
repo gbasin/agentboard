@@ -15,4 +15,9 @@ systemd/agentboard.service
 .nightshift-plan
 /.agentcache
 .claude/
+!/tests/fixtures/fad/home/.claude/
 .cachebro/
+
+# FAD parity fixtures: generated artifacts
+/tools/fad-dump/target/
+tests/fixtures/fad/home/.local/share/devin/cli/sessions.db

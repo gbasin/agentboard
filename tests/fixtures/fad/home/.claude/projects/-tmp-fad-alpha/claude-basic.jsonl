@@ -1,0 +1,9 @@
+{"type":"user","sessionId":"claude-fad-001","cwd":"/tmp/fad-alpha","slug":"alpha-work","gitBranch":"main","timestamp":"2026-09-23T10:00:00.000Z","message":{"role":"user","content":"fix the flaky login test"}}
+{"type":"assistant","sessionId":"claude-fad-001","timestamp":"2026-09-23T10:00:05.000Z","message":{"role":"assistant","model":"claude-sonnet-4","content":[{"type":"text","text":"Reading the test file."},{"type":"tool_use","id":"toolu_1","name":"Read","input":{"file_path":"/tmp/fad-alpha/login.test.ts"}}]}}
+{"type":"user","sessionId":"claude-fad-001","timestamp":"2026-09-23T10:00:07.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"test('logs in', ...)"}]}}
+{"type":"user","sessionId":"claude-fad-001","isMeta":true,"timestamp":"2026-09-23T10:00:08.000Z","message":{"role":"user","content":"<system-reminder>Context low.</system-reminder>"}}
+{"type":"user","sessionId":"claude-fad-001","timestamp":"2026-09-23T10:00:09.000Z","message":{"role":"user","content":"<local-command-stdout>Compacted 12000 tokens</local-command-stdout>"}}
+{"type":"user","sessionId":"claude-fad-001","timestamp":"2026-09-23T10:00:10.000Z","message":{"role":"user","content":"<command-message>review</command-message><command-name>/review</command-name><command-args>the login diff</command-args>"}}
+{"type":"assistant","sessionId":"claude-fad-001","timestamp":"2026-09-23T10:00:20.000Z","message":{"role":"assistant","content":[{"type":"text","text":"The race is in the fake timer setup."}]}}
+{"type":"user","sessionId":"claude-fad-001","timestamp":"2026-09-23T10:00:30.000Z","message":{"role":"user","content":"thanks, ship it"}}
+{"type":"result","subtype":"success","sessionId":"claude-fad-001","timestamp":"2026-09-23T10:00:31.000Z","result":"Session complete"}

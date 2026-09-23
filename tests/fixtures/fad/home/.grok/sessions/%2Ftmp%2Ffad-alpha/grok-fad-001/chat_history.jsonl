@@ -1,0 +1,5 @@
+{"type":"user","synthetic_reason":"environment","prompt_index":0,"content":[{"type":"text","text":"<user_info>\nOS Version: Darwin 25.2.0\n</user_info>"}]}
+{"type":"user","prompt_index":0,"content":[{"type":"text","text":"profile the slow query"}]}
+{"type":"assistant","content":[{"type":"text","text":"Running EXPLAIN."}],"tool_calls":[{"id":"tc1","name":"exec","arguments":"{\"cmd\":\"explain analyze\"}"}]}
+{"type":"tool","tool_call_id":"tc1","content":"Seq Scan on users"}
+{"type":"user","prompt_index":1,"content":[{"type":"text","text":"add the missing index"}]}

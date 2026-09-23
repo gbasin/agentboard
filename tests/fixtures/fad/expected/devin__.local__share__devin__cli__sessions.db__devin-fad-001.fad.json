@@ -1,0 +1,44 @@
+{
+  "agent": "devin",
+  "externalId": "devin-fad-001",
+  "title": "Fixture session",
+  "workspace": "/tmp/fad-alpha",
+  "sourcePath": ".local/share/devin/cli/sessions.db/devin-fad-001",
+  "startedAt": 1780000000000,
+  "endedAt": 1780000100000,
+  "metadata": {
+    "session_id": "devin-fad-001",
+    "model": "swe-1-7",
+    "agent_mode": "normal",
+    "main_chain_id": 5,
+    "main_chain_nodes": 5,
+    "off_chain_nodes": 0,
+    "source": "sqlite"
+  },
+  "messages": [
+    {
+      "idx": 0,
+      "role": "user",
+      "content": "fix the login bug",
+      "createdAt": 1780000001000
+    },
+    {
+      "idx": 1,
+      "role": "assistant",
+      "content": "Reading auth.ts.\n[tool_call: read]",
+      "createdAt": 1780000002000
+    },
+    {
+      "idx": 2,
+      "role": "user",
+      "content": "continue",
+      "createdAt": 1780000003000
+    },
+    {
+      "idx": 3,
+      "role": "user",
+      "content": "now add tests",
+      "createdAt": 1780000004000
+    }
+  ]
+}

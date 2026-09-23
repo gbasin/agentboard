@@ -1,0 +1,32 @@
+{
+  "agent": "grok",
+  "externalId": "grok-fad-001",
+  "title": "profile the slow query",
+  "workspace": "/tmp/fad-alpha",
+  "sourcePath": ".grok/sessions/%2Ftmp%2Ffad-alpha/grok-fad-001/chat_history.jsonl",
+  "startedAt": null,
+  "endedAt": null,
+  "metadata": {
+    "source": "grok"
+  },
+  "messages": [
+    {
+      "idx": 0,
+      "role": "user",
+      "content": "profile the slow query",
+      "createdAt": null
+    },
+    {
+      "idx": 1,
+      "role": "assistant",
+      "content": "Running EXPLAIN.",
+      "createdAt": null
+    },
+    {
+      "idx": 2,
+      "role": "user",
+      "content": "add the missing index",
+      "createdAt": null
+    }
+  ]
+}

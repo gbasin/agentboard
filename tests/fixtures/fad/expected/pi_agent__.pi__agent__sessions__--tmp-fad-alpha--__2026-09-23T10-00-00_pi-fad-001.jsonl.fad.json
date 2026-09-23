@@ -1,0 +1,35 @@
+{
+  "agent": "pi_agent",
+  "externalId": "--tmp-fad-alpha--/2026-09-23T10-00-00_pi-fad-001.jsonl",
+  "title": "add a health endpoint",
+  "workspace": "/tmp/fad-alpha",
+  "sourcePath": ".pi/agent/sessions/--tmp-fad-alpha--/2026-09-23T10-00-00_pi-fad-001.jsonl",
+  "startedAt": 1790157600000,
+  "endedAt": 1790157660000,
+  "metadata": {
+    "source": "pi_agent",
+    "session_id": "pi-fad-001",
+    "provider": null,
+    "model_id": null
+  },
+  "messages": [
+    {
+      "idx": 0,
+      "role": "user",
+      "content": "add a health endpoint",
+      "createdAt": 1790157601000
+    },
+    {
+      "idx": 1,
+      "role": "assistant",
+      "content": "Adding GET /healthz.",
+      "createdAt": 1790157605000
+    },
+    {
+      "idx": 2,
+      "role": "user",
+      "content": "return the db status too",
+      "createdAt": 1790157660000
+    }
+  ]
+}

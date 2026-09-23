@@ -77,6 +77,12 @@ async function main() {
       // any later test file that imports `../config` (notably
       // logPoller.test.ts, which depends on skipMatchingPatterns).
       'terminalProxyFactory.test.ts',
+      // fadParity.test.ts repoints agent-discovery env vars
+      // (CLAUDE_CONFIG_DIR, CODEX_HOME, PI_HOME, GROK_HOME,
+      // PI_CODING_AGENT_DIR, AGENTBOARD_DATA_DIR, DEVIN_CLI_DIR) at the
+      // fixture tree; isolation keeps that env from leaking into
+      // concurrently-loaded files.
+      'fadParity.test.ts',
     ])
 
     // These spawn real servers, PTYs, and tmux clients. They still need process
