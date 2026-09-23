@@ -1,5 +1,14 @@
 [install]
 cache = true
+# First-party platform binaries are published by our own release pipeline;
+# the age gate exists for third-party supply-chain vetting and would just
+# block installs for a week after every release.
+minimumReleaseAgeExcludes = [
+  "@gbasin/agentboard-darwin-arm64",
+  "@gbasin/agentboard-darwin-x64",
+  "@gbasin/agentboard-linux-arm64",
+  "@gbasin/agentboard-linux-x64",
+]
 
 [run]
 silent = true
