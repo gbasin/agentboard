@@ -19,12 +19,14 @@ import {
   matchWindowsToLogsByExactRg,
 } from './logMatcher'
 import { getEntriesNeedingMatch, shouldSkipMatching } from './logMatchGate'
+import { scanCodexSubagentLinks } from './subagentLogs'
 import {
   collectLogEntriesForPaths,
   collectLogEntryBatch,
   type LogEntrySnapshot,
 } from './logPollData'
 import type {
+  CodexSubagentLink,
   LastMessageCandidate,
   MatchWorkerRequest,
   MatchWorkerResponse,
@@ -198,6 +200,14 @@ export function handleMatchWorkerRequest(
       attachLastUserMessage(entry, sessionByLogPath)
     }
 
+    let codexSubagents: CodexSubagentLink[] | undefined
+    let codexIndexMs: number | undefined
+    if (payload.buildCodexSubagentIndex) {
+      const indexStart = performance.now()
+      codexSubagents = scanCodexSubagentLinks()
+      codexIndexMs = performance.now() - indexStart
+    }
+
     return {
       id: payload.id,
       type: 'result',
@@ -214,6 +224,8 @@ export function handleMatchWorkerRequest(
       orphanScanMs,
       orphanMatchMs,
       noMessageWindows,
+      codexSubagents,
+      codexIndexMs,
       profile,
     }
   } catch (error) {

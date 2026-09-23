@@ -17,8 +17,7 @@ import {
   type ClaimCurrentWindowPatch,
 } from './db'
 import { LogPoller } from './logPoller'
-import { toAgentSession } from './agentSessions'
-import { getSessionPullRequests } from './prExtractor'
+import { toAgentSession, getMergedPullRequests } from './agentSessions'
 import { fetchPrChecks, fetchPrInfo, parsePrUrl } from './prInfo'
 import { getLogSearchDirs } from './logDiscovery'
 import {
@@ -1082,10 +1081,7 @@ export function hydrateSessionsWithAgentSessions(
       agentSessionName: agentSession.displayName,
       logFilePath: agentSession.logFilePath,
       lastUserMessage: agentSession.lastUserMessage ?? session.lastUserMessage,
-      prs: getSessionPullRequests(
-        agentSession.logFilePath,
-        agentSession.lastKnownLogSize
-      ),
+      prs: getMergedPullRequests(agentSession),
       // Use persisted log times (survives server restarts, works when tmux lacks creation time)
       lastActivity: agentSession.lastActivityAt,
       createdAt: agentSession.createdAt,

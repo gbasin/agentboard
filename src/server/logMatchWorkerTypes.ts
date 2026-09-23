@@ -46,6 +46,19 @@ export interface MatchWorkerRequest {
   search?: MatchWorkerSearchOptions
   /** Patterns for sessions that should skip window matching when orphaned */
   skipMatchingPatterns?: string[]
+  /**
+   * When set, the worker rg-scans ~/.codex/sessions for subagent rollouts and
+   * returns their session_meta linkage on the response. Offloads the ~seconds-
+   * scale full-tree scan + head-parse from the main thread.
+   */
+  buildCodexSubagentIndex?: boolean
+}
+
+/** Codex subagent linkage extracted from a rollout's session_meta. */
+export interface CodexSubagentLink {
+  ownId: string
+  parentId: string | null
+  logPath: string
 }
 
 /** A window where tryExactMatchWindowToLog returned null due to no extractable messages */
@@ -75,6 +88,9 @@ export interface MatchWorkerResponse {
   orphanMatchMs?: number
   /** Windows that had no extractable user messages (terminal empty or still booting) */
   noMessageWindows?: NoMessageWindow[]
+  /** Present when buildCodexSubagentIndex was requested. */
+  codexSubagents?: CodexSubagentLink[]
+  codexIndexMs?: number
   profile?: ExactMatchProfiler
   error?: string
 }
