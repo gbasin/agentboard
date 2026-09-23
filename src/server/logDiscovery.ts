@@ -503,6 +503,50 @@ export function isCodexSubagent(logPath: string): boolean {
 }
 
 /**
+ * Extract the subagent linkage from a Codex rollout's session_meta first line.
+ * Returns null unless payload.source is an object — forked/resumed sessions
+ * carry forked_from_id too and must not be indexed as subagents.
+ * ownId is payload.id (what sessions register under); parentId is the
+ * spawning thread id (parent_thread_id / thread_spawn.parent_thread_id).
+ */
+export function extractCodexSubagentLink(
+  logPath: string
+): { ownId: string; parentId: string | null } | null {
+  const head = readLogHead(logPath)
+  if (!head) return null
+  const firstLine = head.split('\n')[0]?.trim()
+  if (!firstLine) return null
+  const entry = safeParseJson(firstLine)
+  if (!entry || entry.type !== 'session_meta') return null
+  const payload = entry.payload as Record<string, unknown> | undefined
+  if (!payload) return null
+  if (typeof payload.source !== 'object' || payload.source === null) {
+    return null
+  }
+  const ownId = typeof payload.id === 'string' ? payload.id : null
+  if (!ownId) return null
+  const source = payload.source as Record<string, unknown>
+  const spawn =
+    typeof source.subagent === 'object' && source.subagent !== null
+      ? (source.subagent as Record<string, unknown>).thread_spawn
+      : undefined
+  const spawnParent =
+    typeof spawn === 'object' && spawn !== null
+      ? (spawn as Record<string, unknown>).parent_thread_id
+      : undefined
+  const parentId =
+    (typeof payload.parent_thread_id === 'string'
+      ? payload.parent_thread_id
+      : undefined) ??
+    (typeof spawnParent === 'string' ? spawnParent : undefined) ??
+    (typeof payload.forked_from_id === 'string'
+      ? payload.forked_from_id
+      : undefined) ??
+    null
+  return { ownId, parentId }
+}
+
+/**
  * Check if a Codex log file is from a headless exec session.
  * Exec sessions have payload.source === "exec", indicating they were
  * started via `codex exec` rather than the interactive CLI.

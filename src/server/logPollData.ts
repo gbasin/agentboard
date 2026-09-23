@@ -3,11 +3,11 @@ import type { AgentType } from '../shared/types'
 import {
   extractProjectPath,
   extractSessionId,
+  extractCodexSubagentLink,
   extractSlug,
   getLogTimes,
   inferAgentTypeFromPath,
   isCodexExec,
-  isCodexSubagent,
   isPiSubagent,
   scanAllLogDirs,
 } from './logDiscovery'
@@ -25,6 +25,8 @@ export interface LogEntrySnapshot {
   isCodexSubagent: boolean
   isCodexExec: boolean
   isPiSubagent: boolean
+  /** Codex subagent's parent thread id, when detectable. */
+  codexParentId?: string | null
   logTokenCount: number
   lastUserMessage?: string
 }
@@ -91,7 +93,9 @@ export function enrichLogEntry(
   const sessionId = extractSessionId(logPath)
   const projectPath = extractProjectPath(logPath)
   const slug = agentType === 'claude' ? extractSlug(logPath) : null
-  const codexSubagent = agentType === 'codex' ? isCodexSubagent(logPath) : false
+  const codexLink =
+    agentType === 'codex' ? extractCodexSubagentLink(logPath) : null
+  const codexSubagent = codexLink !== null
   const codexExec = agentType === 'codex' ? isCodexExec(logPath) : false
   const piSubagent =
     agentType === 'pi' || agentType === 'omp' ? isPiSubagent(logPath) : false
@@ -111,6 +115,7 @@ export function enrichLogEntry(
     isCodexSubagent: codexSubagent,
     isCodexExec: codexExec,
     isPiSubagent: piSubagent,
+    codexParentId: codexLink?.parentId ?? null,
     logTokenCount,
   } satisfies LogEntrySnapshot
 }

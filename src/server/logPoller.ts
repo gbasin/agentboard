@@ -5,6 +5,7 @@ import { getLogSearchDirs, normalizeProjectPath } from './logDiscovery'
 import { agentFamily } from './agentDetection'
 import { DEFAULT_SCROLLBACK_LINES, extractLastEntryTimestamp, isSameOrChildPath, isToolNotificationText } from './logMatcher'
 import { deriveDisplayName } from './agentSessions'
+import { registerCodexSubagent, setCodexSubagentIndex } from './subagentLogs'
 import { generateUniqueSessionName } from './nameGenerator'
 import type { SessionRegistry } from './SessionRegistry'
 import { LogMatchWorkerClient } from './logMatchWorkerClient'
@@ -42,6 +43,10 @@ const STARTUP_RECONCILIATION_DELAY_MS = 5000
 const MIN_LOG_TOKENS_FOR_INSERT = 1
 const REMATCH_COOLDOWN_MS = 60 * 1000 // 1 minute between re-match attempts
 const WAKE_PENDING_REMATCH_TTL_MS = 10 * 60 * 1000
+// Codex subagent linkage rarely changes for existing files — live entries
+// feed the index via enrichment, so a full rg backfill only needs to run
+// occasionally to catch files created while the server was down.
+const CODEX_INDEX_REFRESH_MS = 5 * 60 * 1000
 
 // Type for session records from the database
 interface SessionRecord {
@@ -196,6 +201,7 @@ export class LogPoller {
   private orphanRematchPromise: Promise<void> | null = null
   private warnedWorkerDisabled = false
   private startupLastMessageBackfillPending = true
+  private lastCodexIndexAt = 0
   // Cache of empty logs: logPath -> size when checked (re-check if size changes)
   private emptyLogCache: Map<string, number> = new Map()
   // Cache of re-match attempts: sessionId -> timestamp of last attempt
@@ -745,6 +751,14 @@ export class LogPoller {
     let matches = 0
     let orphans = 0
     let errors = 0
+    if (response.codexSubagents) {
+      setCodexSubagentIndex(response.codexSubagents)
+      this.lastCodexIndexAt = Date.now()
+      logger.info('codex_subagent_index', {
+        links: response.codexSubagents.length,
+        codexIndexMs: response.codexIndexMs ?? 0,
+      })
+    }
     let entries = response.entries ?? []
     const orphanEntries = response.orphanEntries ?? []
     const sessions: SessionSnapshot[] = sessionRecords
@@ -881,8 +895,16 @@ export class LogPoller {
           continue
         }
 
-        // Skip Codex subagent logs (e.g., review agents spawned by CLI)
+        // Skip Codex subagent logs (e.g., review agents spawned by CLI),
+        // but feed their parent link into the subagent index first.
         if (agentType === 'codex' && entry.isCodexSubagent) {
+          if (entry.sessionId) {
+            registerCodexSubagent(
+              entry.sessionId,
+              entry.codexParentId ?? null,
+              entry.logPath
+            )
+          }
           continue
         }
 
@@ -1204,6 +1226,8 @@ export class LogPoller {
             orphanCandidates: [],
             lastMessageCandidates,
             skipMatchingPatterns: config.skipMatchingPatterns,
+            buildCodexSubagentIndex:
+              Date.now() - this.lastCodexIndexAt > CODEX_INDEX_REFRESH_MS,
             search: {
               rgThreads: this.rgThreads,
               profile: this.matchProfile,
