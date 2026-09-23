@@ -1,6 +1,9 @@
 //! fad-dump — dev-only fixture generator for agentboard's parity tests.
 //!
-//! Runs every compiled-in franken_agent_detection connector against the
+//! Wraps franken_agent_detection (FAD), the connector/parsing crate
+//! underneath CASS: https://github.com/Dicklesworthstone/franken_agent_detection
+//!
+//! Runs every compiled-in connector against the
 //! ambient environment (HOME + per-agent env overrides) and prints one JSON
 //! object per discovered conversation on stdout:
 //!

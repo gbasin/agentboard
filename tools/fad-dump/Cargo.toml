@@ -6,6 +6,8 @@ publish = false
 description = "Dev-only fixture generator: dumps franken_agent_detection NormalizedConversations as JSONL for agentboard parity tests. Not a runtime dependency."
 
 [dependencies]
+# FAD: the connector/parsing crate underneath CASS
+# https://github.com/Dicklesworthstone/franken_agent_detection
 franken-agent-detection = { version = "=0.3.0", features = ["connectors", "devin"] }
 serde_json = "1"
 

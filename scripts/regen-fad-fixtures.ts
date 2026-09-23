@@ -3,7 +3,8 @@
 //
 // Builds the Devin sessions.db fixture from seeds/devin.sql, compiles
 // tools/fad-dump (a dev-only Rust shim over the franken_agent_detection
-// crate), and runs it with a scrubbed environment against
+// crate — https://github.com/Dicklesworthstone/franken_agent_detection),
+// and runs it with a scrubbed environment against
 // tests/fixtures/fad/home so every connector resolves roots the way the real
 // agent CLIs do. Output conversations are grouped by sourcePath and written
 // as one expected file per fixture source:

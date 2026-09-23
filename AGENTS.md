@@ -16,9 +16,13 @@ Run `bun run lint && bun run typecheck && bun run test` after changes.
 
 ## FAD Parity Fixtures
 
+FAD = [`franken_agent_detection`](https://github.com/Dicklesworthstone/franken_agent_detection)
+(published as the `franken-agent-detection` crate) — the connector/parsing
+library underneath [CASS](https://github.com/Dicklesworthstone/coding_agent_session_search).
+It normalizes ~26 coding-agent transcript formats into `NormalizedConversation`s.
+
 `src/server/__tests__/fadParity.test.ts` asserts our log extraction agrees with
-`franken_agent_detection` (the connector crate under CASS) on a shared fixture
-tree at `tests/fixtures/fad/home/`. Expected outputs in
+FAD on a shared fixture tree at `tests/fixtures/fad/home/`. Expected outputs in
 `tests/fixtures/fad/expected/` are generated, not hand-written — regenerate
 with `bun run scripts/regen-fad-fixtures.ts` (requires cargo; builds the
 dev-only `tools/fad-dump` shim). The shim is never a runtime dependency.
