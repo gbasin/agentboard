@@ -35,6 +35,14 @@ Run `bun run lint && bun run typecheck && bun run test` after changes.
 
 - Data directory: `~/.agentboard/` contains `agentboard.db` (session data) and `agentboard.log`
 
+## tmux Safety
+
+- Agent sessions often run *inside* the `agentboard` tmux session. Any `tmux`
+  command in such a shell inherits `TMUX`, which overrides `TMUX_TMPDIR` and
+  targets the real server — `kill-server`/`kill-session` will destroy live
+  windows. Always run probes with `env -u TMUX tmux -L <socket-name>` against a
+  dedicated socket, and never `kill-server` without explicit confirmation.
+
 ## Git
 
 - Check `git status`/`git diff` before commits

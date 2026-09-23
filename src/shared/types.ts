@@ -1,4 +1,6 @@
 // History sessions lookback limits (in hours)
+import type { SyncedSettings } from './syncedSettings'
+
 export const HISTORY_MAX_AGE_MIN_HOURS = 1
 export const HISTORY_MAX_AGE_MAX_HOURS = 168 // 7 days
 
@@ -136,6 +138,7 @@ export type ServerMessage =
       appMouse?: boolean
     }
   | { type: 'server-config'; remoteAllowControl: boolean; remoteAllowAttach: boolean; hostLabel: string; preferWindowName: boolean; clientLogLevel?: string }
+  | { type: 'synced-settings'; settings: SyncedSettings }
   | { type: 'pong'; seq?: number }
   | { type: 'error'; message: string }
   | { type: 'kill-failed'; sessionId: string; message: string }

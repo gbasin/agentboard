@@ -51,6 +51,12 @@ import {
   type WakeError,
   type Session,
 } from '../shared/types'
+import {
+  SYNCED_SETTINGS_KEYS,
+  isSyncedSettingsKey,
+  isValidSyncedSetting,
+  type SyncedSettings,
+} from '../shared/syncedSettings'
 import { logger, logLevel } from './logger'
 import {
   SessionRefreshWorkerClient,
@@ -1803,6 +1809,84 @@ app.put('/api/settings/prefer-window-name', async (c) => {
   return c.json({ enabled: body.enabled })
 })
 
+// Synced client settings (theme, presets, session list prefs). Persisted in
+// app_settings under the `synced_settings.` prefix and pushed to every client
+// via the `synced-settings` WS message, so all attached browsers converge on
+// the same values — including the terminal theme that xterm reports back to
+// pane programs (OSC 10/11 color queries).
+const SYNCED_SETTINGS_PREFIX = 'synced_settings.'
+
+function readSyncedSettings(): SyncedSettings {
+  const settings: Record<string, unknown> = {}
+  for (const key of SYNCED_SETTINGS_KEYS) {
+    let raw: string | null = null
+    try {
+      raw = db.getAppSetting(SYNCED_SETTINGS_PREFIX + key)
+    } catch (error) {
+      logger.warn('synced_settings_read_failed', {
+        key,
+        message: error instanceof Error ? error.message : String(error),
+      })
+      continue
+    }
+    if (raw === null) continue
+    try {
+      const value = JSON.parse(raw) as unknown
+      // Skip corrupt/undecodable values rather than pushing them to clients.
+      if (isValidSyncedSetting(key, value)) {
+        settings[key] = value
+      }
+    } catch {
+      // ignore malformed JSON
+    }
+  }
+  return settings
+}
+
+app.get('/api/settings/synced', (c) => {
+  return c.json({ settings: readSyncedSettings() })
+})
+
+app.put('/api/settings/synced', async (c) => {
+  let body: { settings?: unknown }
+  try {
+    body = await c.req.json()
+  } catch {
+    return c.json({ error: 'Invalid request body' }, 400)
+  }
+
+  if (typeof body.settings !== 'object' || body.settings === null) {
+    return c.json({ error: 'settings must be an object' }, 400)
+  }
+
+  const entries = Object.entries(body.settings as Record<string, unknown>)
+  const invalid = entries.filter(
+    ([key, value]) =>
+      !isSyncedSettingsKey(key) || !isValidSyncedSetting(key, value)
+  )
+  if (invalid.length > 0) {
+    return c.json(
+      { error: `Invalid synced settings: ${invalid.map(([key]) => key).join(', ')}` },
+      400
+    )
+  }
+
+  try {
+    for (const [key, value] of entries) {
+      db.setAppSetting(SYNCED_SETTINGS_PREFIX + key, JSON.stringify(value))
+    }
+  } catch (error) {
+    logger.warn('synced_settings_persist_failed', {
+      message: error instanceof Error ? error.message : String(error),
+    })
+    return c.json({ error: 'Unable to persist synced settings' }, 500)
+  }
+
+  const merged = readSyncedSettings()
+  broadcast({ type: 'synced-settings', settings: merged })
+  return c.json({ settings: merged })
+})
+
 // History sessions max age setting. The inactive route is kept as a
 // compatibility alias for older clients.
 const getHistoryMaxAgeHours = (c: Context) => {
@@ -2069,6 +2153,7 @@ const websocketHandlers = {
       preferWindowName: config.preferWindowName,
       clientLogLevel: logLevel,
     })
+    send(ws, { type: 'synced-settings', settings: readSyncedSettings() })
     const agentSessions = registry.getAgentSessions()
     send(ws, {
       type: 'agent-sessions',

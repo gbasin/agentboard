@@ -4994,6 +4994,124 @@ describe('server fetch handlers', () => {
     expect(dbState.setAppSettingCalls).toEqual([])
   })
 
+  test('synced settings GET returns stored values and skips invalid', async () => {
+    dbState.appSettings.set('synced_settings.theme', '"light"')
+    dbState.appSettings.set('synced_settings.recentPaths', '["/tmp/a"]')
+    dbState.appSettings.set('synced_settings.theme_bad', '"x"')
+    dbState.appSettings.set('synced_settings.defaultPresetId', '{corrupt')
+    dbState.appSettings.set('unrelated_key', '"ignored"')
+
+    const { serveOptions } = await loadIndex()
+    const fetchHandler = serveOptions.fetch
+    if (!fetchHandler) {
+      throw new Error('Fetch handler not configured')
+    }
+
+    const response = await fetchHandler.call(
+      {} as Bun.Server<unknown>,
+      new Request('http://localhost/api/settings/synced'),
+      {} as Bun.Server<unknown>
+    )
+    if (!response) {
+      throw new Error('Expected response for synced settings request')
+    }
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      settings: { theme: 'light', recentPaths: ['/tmp/a'] },
+    })
+  })
+
+  test('synced settings PUT persists, merges, and broadcasts', async () => {
+    dbState.appSettings.set('synced_settings.theme', '"dark"')
+
+    const { serveOptions } = await loadIndex()
+    const fetchHandler = serveOptions.fetch
+    const websocket = serveOptions.websocket
+    if (!fetchHandler || !websocket) {
+      throw new Error('Handlers not configured')
+    }
+
+    const { ws, sent } = createWs()
+    websocket.open?.(ws as never)
+    sent.length = 0
+
+    const response = await fetchHandler.call(
+      {} as Bun.Server<unknown>,
+      new Request('http://localhost/api/settings/synced', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          settings: { theme: 'light', projectFilters: ['/proj'] },
+        }),
+      }),
+      {} as Bun.Server<unknown>
+    )
+    if (!response) {
+      throw new Error('Expected response for synced settings PUT')
+    }
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      settings: { theme: 'light', projectFilters: ['/proj'] },
+    })
+    expect(dbState.setAppSettingCalls).toEqual([
+      { key: 'synced_settings.theme', value: '"light"' },
+      { key: 'synced_settings.projectFilters', value: '["/proj"]' },
+    ])
+    expect(sent).toContainEqual({
+      type: 'synced-settings',
+      settings: { theme: 'light', projectFilters: ['/proj'] },
+    })
+  })
+
+  test('synced settings PUT rejects unknown and invalid keys', async () => {
+    const { serveOptions } = await loadIndex()
+    const fetchHandler = serveOptions.fetch
+    if (!fetchHandler) {
+      throw new Error('Fetch handler not configured')
+    }
+
+    for (const settings of [
+      { bogus: 1 },
+      { theme: 'purple' },
+      { recentPaths: 'not-an-array' },
+      'not-an-object',
+    ]) {
+      const response = await fetchHandler.call(
+        {} as Bun.Server<unknown>,
+        new Request('http://localhost/api/settings/synced', {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ settings }),
+        }),
+        {} as Bun.Server<unknown>
+      )
+      if (!response) {
+        throw new Error('Expected response for synced settings PUT')
+      }
+      expect(response.status).toBe(400)
+    }
+    expect(dbState.setAppSettingCalls).toEqual([])
+  })
+
+  test('websocket open sends synced-settings', async () => {
+    dbState.appSettings.set('synced_settings.theme', '"light"')
+    const { serveOptions } = await loadIndex()
+    const websocket = serveOptions.websocket
+    if (!websocket) {
+      throw new Error('WebSocket handlers not configured')
+    }
+
+    const { ws, sent } = createWs()
+    websocket.open?.(ws as never)
+
+    expect(sent.find((message) => message.type === 'synced-settings')).toEqual({
+      type: 'synced-settings',
+      settings: { theme: 'light' },
+    })
+  })
+
   test('returns no response for successful websocket upgrades', async () => {
     const { serveOptions } = await loadIndex()
     const fetchHandler = serveOptions.fetch

@@ -22,6 +22,7 @@ import { flushSync } from 'react-dom'
 import { setClientLogLevel } from './utils/clientLog'
 import { getEffectiveModifier, matchesModifier } from './utils/device'
 import { playPermissionSound, playIdleSound, primeAudio, needsUserGesture } from './utils/sound'
+import { applySyncedSettings, initSyncedSettings } from './syncedSettings'
 
 interface ServerInfo {
   port: number
@@ -114,6 +115,9 @@ export default function App() {
 
   const connectionEpoch = useSessionStore((state) => state.connectionEpoch)
   const { sendMessage, subscribe, getConnectionEpoch } = useWebSocket()
+
+  // Push local changes to server-synced settings (theme, presets, list prefs)
+  useEffect(() => initSyncedSettings(), [])
 
   // Handle mobile keyboard viewport adjustments
   useVisualViewport()
@@ -296,6 +300,9 @@ export default function App() {
         if (message.clientLogLevel) {
           setClientLogLevel(message.clientLogLevel)
         }
+      }
+      if (message.type === 'synced-settings') {
+        applySyncedSettings(message.settings)
       }
       if (message.type === 'session-update') {
         // Detect status transitions for sound notifications
