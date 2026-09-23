@@ -31,6 +31,14 @@ const MAX_CACHE_ENTRIES = 5000
 // Optional `-R owner/repo`/`--repo` may sit between gh and pr.
 const GH_PR_CREATE_RE =
   /\bgh[\s"',\\]+(?:(?:-R|--repo)[\s"',\\]+\S+[\s"',\\]+)?pr[\s"',\\]+create\b/
+// Raw-line variant without the \b before gh: inside JSONL the command's
+// newlines are escaped, so `...\ngh pr create` arrives as the literal
+// characters "ngh" — \b fails between two word chars and the create is
+// missed entirely. The parsed-command check in extractToolCallIds still
+// applies the strict version, so the loose gate only widens which lines
+// get parsed.
+const GH_PR_CREATE_LINE_RE =
+  /gh[\s"',\\]+(?:(?:-R|--repo)[\s"',\\]+\S+[\s"',\\]+)?pr[\s"',\\]+create\b/
 // A `gh pr create` mention only counts when the line is a tool-call entry
 // (or a devin mirrored log, where tool calls aren't recorded at all).
 const TOOL_CALL_LINE_RE =
@@ -170,7 +178,7 @@ function extractToolCallIds(line: string): string[] | null {
   ) {
     recognized = true
     const args = String(payload.arguments ?? '')
-    if (GH_PR_CREATE_RE.test(args) || GH_PR_CREATE_RE.test(line)) {
+    if (GH_PR_CREATE_RE.test(args) || GH_PR_CREATE_LINE_RE.test(line)) {
       const id =
         typeof payload.call_id === 'string'
           ? payload.call_id
@@ -202,7 +210,7 @@ function collectUrls(state: ScanState, line: string): void {
 function processLine(state: ScanState, line: string): void {
   // 1. A `gh pr create` inside an actual tool call registers pending ids
   //    (or opens the fallback window when the entry has no ids).
-  if (GH_PR_CREATE_RE.test(line) && TOOL_CALL_LINE_RE.test(line)) {
+  if (GH_PR_CREATE_LINE_RE.test(line) && TOOL_CALL_LINE_RE.test(line)) {
     const ids = extractToolCallIds(line)
     if (ids === null) {
       // Unparseable or unknown tool-call format — fall back to the window.
