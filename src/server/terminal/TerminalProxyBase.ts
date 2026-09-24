@@ -2,6 +2,7 @@ import { config } from '../config'
 import { logger } from '../logger'
 import { withTmuxUtf8Flag } from '../tmuxFormat'
 import { TmuxTimeoutError } from '../tmuxTimeout'
+import { logSlowSyncSpawn } from '../syncSpawnTiming'
 import { sanitizedTmuxEnv } from '../tmuxEnv'
 import type {
   ITerminalProxy,
@@ -138,6 +139,7 @@ abstract class TerminalProxyBase implements ITerminalProxy {
     options: { timeoutMs?: number; stdin?: string } = {}
   ): string {
     const timeoutMs = options.timeoutMs ?? this.commandTimeoutMs
+    const startedAt = performance.now()
     const result = this.spawnSync(['tmux', ...args], {
       stdout: 'pipe',
       stderr: 'pipe',
@@ -147,6 +149,11 @@ abstract class TerminalProxyBase implements ITerminalProxy {
       env: sanitizedTmuxEnv(),
       ...(options.stdin !== undefined ? { stdin: Buffer.from(options.stdin) } : {}),
     })
+    logSlowSyncSpawn(
+      `tmux ${args[0] ?? 'command'}`,
+      Math.round(performance.now() - startedAt),
+      timeoutMs
+    )
 
     if (result.signalCode === 'SIGTERM' || result.exitCode === null) {
       throw new TmuxTimeoutError(args.join(' '), timeoutMs)

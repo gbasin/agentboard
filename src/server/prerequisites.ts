@@ -1,9 +1,10 @@
 import { config } from './config'
+import { timedSpawnSync } from './syncSpawnTiming'
 import { TmuxTimeoutError } from './tmuxTimeout'
 
 export function ensureTmux(): void {
   try {
-    const result = Bun.spawnSync(['tmux', '-V'], {
+    const result = timedSpawnSync(['tmux', '-V'], {
       stdout: 'pipe',
       stderr: 'pipe',
       timeout: config.tmuxTimeoutMs,
