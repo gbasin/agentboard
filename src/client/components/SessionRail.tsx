@@ -74,10 +74,20 @@ export default function SessionRail({
     (state) => state.showSessionIdPrefix
   )
 
-  const projectLeaf = session?.projectPath ? getPathLeaf(session.projectPath) : ''
-  const hibernatingProjectLeaf = hibernatingSession?.projectPath
-    ? getPathLeaf(hibernatingSession.projectPath)
+  const sessionDisplayName = session
+    ? session.agentSessionName || session.name
     : ''
+  // Hide the project badge when it just repeats the session name
+  const projectLeaf =
+    session?.projectPath &&
+    getPathLeaf(session.projectPath) !== sessionDisplayName
+      ? getPathLeaf(session.projectPath)
+      : ''
+  const hibernatingProjectLeaf =
+    hibernatingSession?.projectPath &&
+    getPathLeaf(hibernatingSession.projectPath) !== hibernatingDisplayName
+      ? getPathLeaf(hibernatingSession.projectPath)
+      : ''
   const agentSessionId = session?.agentSessionId?.trim()
   const sessionIdPrefix =
     showSessionIdPrefix && agentSessionId ? getSessionIdShort(agentSessionId) : null
@@ -89,7 +99,7 @@ export default function SessionRail({
         {session ? (
           <>
             <span className="max-w-48 truncate text-xs font-medium text-primary">
-              {session.agentSessionName || session.name}
+              {sessionDisplayName}
             </span>
             <span
               className={`shrink-0 text-[11px] ${statusClass[session.status]}`}
