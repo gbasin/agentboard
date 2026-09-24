@@ -47,6 +47,9 @@ function getTmuxFormatArg(args: string[]): string {
   return formatIndex >= 0 ? normalizedArgs[formatIndex + 1] ?? '' : ''
 }
 
+const MOCK_SERVER_PID = 4242
+const MOCK_SESSION_CREATED = '1790000000'
+
 function buildTmuxRow(fields: Array<string | number>): string {
   return fields.map(String).join(TMUX_FIELD_SEPARATOR)
 }
@@ -240,6 +243,14 @@ function createTmuxRunner(sessions: SessionState[], baseIndex = 0) {
       const target =
         targetIndex >= 0 ? normalizedArgs[targetIndex + 1] ?? '' : ''
       const format = normalizedArgs[normalizedArgs.length - 1] ?? ''
+      if (format.includes('#{session_created}')) {
+        // Base-session probe: `=name:` is an exact session match. Like real
+        // tmux (CMD_FIND_CANFAIL), a missing session yields empty fields.
+        const probed = target.replace(/^=/, '').replace(/:$/, '')
+        return sessionMap.has(probed)
+          ? buildTmuxRow([probed, MOCK_SERVER_PID, '$0', MOCK_SESSION_CREATED])
+          : buildTmuxRow(['', MOCK_SERVER_PID, '', ''])
+      }
       const [sessionName, windowId] = target.split(':')
       if (!sessionName) {
         return ''
@@ -832,8 +843,8 @@ describe('SessionManager', () => {
       calls.push(args)
       const command = getTmuxCommand(args)
 
-      if (command === 'has-session') {
-        return ''
+      if (command === 'display-message') {
+        return buildTmuxRow([sessionName, MOCK_SERVER_PID, '$0', MOCK_SESSION_CREATED])
       }
 
       if (command === 'list-sessions') {
@@ -1470,7 +1481,7 @@ describe('SessionManager', () => {
     const sessionName = 'agentboard-no-socket'
     const runTmux = (args: string[]) => {
       const command = normalizeParsedTmuxArgs(args)[0]
-      if (command === 'has-session') {
+      if (command === 'display-message') {
         throw new Error(
           'error connecting to /private/tmp/tmux-501/missing (No such file or directory)'
         )
@@ -2065,11 +2076,10 @@ describe('SessionManager', () => {
     const runTmux = (args: string[]) => {
       const normalized = normalizeParsedTmuxArgs(args)
       calls.push(normalized)
-      if (normalized[0] === 'has-session') {
+      if (normalized[0] === 'display-message') {
         if (!socketReachable) throw new Error('no server running')
-        return ''
+        return buildTmuxRow([sessionName, MOCK_SERVER_PID, '$0', MOCK_SESSION_CREATED])
       }
-      if (normalized[0] === 'display-message') return '4242\n'
       return ''
     }
 
@@ -2084,9 +2094,9 @@ describe('SessionManager', () => {
     })
 
     expect(manager.ensureSession()).toEqual({ canPruneWsSessions: true })
-    expect(calls.filter((call) => call[0] === 'has-session')).toHaveLength(2)
+    expect(calls.filter((call) => call[0] === 'display-message')).toHaveLength(2)
     expect(calls.some((call) => call[0] === 'new-session')).toBe(false)
-    expect(rememberedPids).toEqual([4242])
+    expect(rememberedPids).toEqual([MOCK_SERVER_PID])
   })
 
   test('ensureSession does not signal socket recovery when only the session is missing', () => {
@@ -2097,8 +2107,9 @@ describe('SessionManager', () => {
       runTmux: (args) => {
         const normalized = normalizeParsedTmuxArgs(args)
         calls.push(normalized)
-        if (normalized[0] === 'has-session') {
-          throw new Error(`can't find session: ${sessionName}`)
+        if (normalized[0] === 'display-message') {
+          // Real tmux: a missing session probe exits 0 with empty fields.
+          return buildTmuxRow(['', MOCK_SERVER_PID, '', ''])
         }
         return ''
       },
@@ -2185,8 +2196,8 @@ describe('SessionManager', () => {
     const sessionName = 'agentboard-no-session-group-format'
     const runTmux = (args: string[]) => {
       const normalized = normalizeParsedTmuxArgs(args)
-      if (normalized[0] === 'has-session') {
-        throw new Error(`can't find session: ${sessionName}`)
+      if (normalized[0] === 'display-message') {
+        return buildTmuxRow(['', MOCK_SERVER_PID, '', ''])
       }
       if (
         normalized[0] === 'list-sessions' &&

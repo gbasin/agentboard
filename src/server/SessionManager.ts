@@ -38,10 +38,17 @@ type TmuxRunner = (args: string[]) => string
 type NowFn = () => number
 type RecoverTmuxSocket = () => boolean
 type RememberTmuxServerPid = (pid: number) => void
-type IsProcessAlive = (pid: number) => boolean
 const TMUX_RECOVERY_SETTLE_MS = 200
 const TMUX_RECOVERY_SIGNAL_INTERVAL_MS = 30_000
 let lastTmuxRecoverySignal: { pid: number; sentAt: number } | null = null
+// session_id ($N) is never reused within one server's lifetime; session_created
+// (1s resolution) and the server pid guard against a fresh server that
+// restarted the $N counter.
+interface BaseSessionIdentity {
+  serverPid: number
+  sessionId: string
+  sessionCreated: string
+}
 type GroupLookupResult =
   | { reliable: true; sessionName: string | null }
   | { reliable: false; sessionName: null }
@@ -80,6 +87,12 @@ const WINDOW_INFO_FORMAT = buildTmuxFormat([
   '#{window_name}',
   '#{pane_current_path}',
 ])
+const BASE_SESSION_PROBE_FORMAT = buildTmuxFormat([
+  '#{session_name}',
+  '#{pid}',
+  '#{session_id}',
+  '#{session_created}',
+])
 const SESSION_GROUP_FORMAT = buildTmuxFormat([
   '#{session_name}',
   '#{session_group}',
@@ -107,11 +120,11 @@ export class SessionManager {
   private terminalColorsEnabled: boolean
   private recoverTmuxSocket: RecoverTmuxSocket
   private rememberTmuxServerPid: RememberTmuxServerPid
-  private isProcessAlive: IsProcessAlive
-  // Pid of the tmux server this manager last configured. While it stays alive
-  // the session options are already applied, so refresh ticks skip the
-  // set-option/set-environment/display-message spawns. null = unknown.
-  private configuredTmuxServerPid: number | null = null
+  // Identity (server pid, session id, creation time) of the base session this
+  // manager last configured. While the probe returns the same identity the
+  // session options are already applied, so refresh ticks skip the
+  // set-option/set-environment spawns. null = unknown.
+  private configuredSession: BaseSessionIdentity | null = null
 
   constructor(
     sessionName = config.tmuxSession,
@@ -124,7 +137,6 @@ export class SessionManager {
       terminalColorsEnabled = config.terminalColorsEnabled ?? true,
       recoverTmuxSocket: recoverTmuxSocketOverride,
       rememberTmuxServerPid: rememberTmuxServerPidOverride,
-      isProcessAlive: isProcessAliveOverride,
     }: {
       runTmux?: TmuxRunner
       capturePaneContent?: CapturePane
@@ -134,7 +146,6 @@ export class SessionManager {
       terminalColorsEnabled?: boolean
       recoverTmuxSocket?: RecoverTmuxSocket
       rememberTmuxServerPid?: RememberTmuxServerPid
-      isProcessAlive?: IsProcessAlive
     } = {}
   ) {
     this.sessionName = sessionName
@@ -152,23 +163,13 @@ export class SessionManager {
     this.rememberTmuxServerPid =
       rememberTmuxServerPidOverride ??
       (runTmuxOverride ? () => {} : persistTmuxServerPid)
-    // Mock runners return fake pids; never probe the host's pid table for
-    // them. Without an explicit override, the cache never hits in tests.
-    this.isProcessAlive =
-      isProcessAliveOverride ?? (runTmuxOverride ? () => false : isPidAlive)
   }
 
   ensureSession(): EnsureSessionResult {
     let canPruneWsSessions = true
+    let identity: BaseSessionIdentity
     try {
-      // Use exact-match (`=` prefix) so a session group with the same name
-      // (e.g. created by per-connection `agentboard-ws-*` sessions joined via
-      // `new-session -t agentboard`) does NOT satisfy this check. Without
-      // exact match, `has-session -t agentboard` returns success whenever any
-      // session is in the `agentboard` group, the base session never gets
-      // created, and listings filter out every `-ws-` session they see →
-      // empty windowSet → live windows get orphaned.
-      this.runTmux(['has-session', '-t', `=${this.sessionName}`])
+      identity = this.probeBaseSession()
     } catch (error) {
       if (error instanceof TmuxTimeoutError) {
         throw error
@@ -179,8 +180,7 @@ export class SessionManager {
 
       if (isTmuxConnectionError(error) && this.recoverTmuxSocket()) {
         try {
-          this.runTmux(['has-session', '-t', `=${this.sessionName}`])
-          this.configureSessionAndRecordServer()
+          this.configureSessionAndRecordServer(this.probeBaseSession())
           return { canPruneWsSessions }
         } catch (retryError) {
           if (retryError instanceof TmuxTimeoutError) {
@@ -233,17 +233,52 @@ export class SessionManager {
       this.configureSessionAndRecordServer()
       return { canPruneWsSessions }
     }
-    this.configureSessionIfServerChanged()
+    this.configureSessionIfChanged(identity)
     return { canPruneWsSessions }
   }
 
+  // One spawn that both checks the base session exists and identifies it.
+  // Exact match matters: a grouped `agentboard-ws-*` session must not satisfy
+  // it, or the base session never gets created and listings filter out every
+  // `-ws-` session → empty windowSet → live windows get orphaned.
+  // display-message resolves its target with CMD_FIND_CANFAIL, so a missing
+  // session exits 0 with empty session fields rather than failing; absence is
+  // read from the output and rethrown as the has-session error. The `=name:`
+  // form is required: a bare `=name` is parsed as a pane target and resolves
+  // nothing even when the session exists. A missing server still fails with
+  // the usual connection error.
+  private probeBaseSession(): BaseSessionIdentity {
+    const output = this.runParsedTmux([
+      'display-message',
+      '-p',
+      '-t',
+      `=${this.sessionName}:`,
+      BASE_SESSION_PROBE_FORMAT,
+    ])
+    const fields = splitTmuxFields(splitTmuxLines(output)[0] ?? '', 4)
+    if (!fields || fields[0] !== this.sessionName || !fields[2]) {
+      throw new Error(`can't find session: ${this.sessionName}`)
+    }
+    const serverPid = Number.parseInt(fields[1] ?? '', 10)
+    if (!Number.isSafeInteger(serverPid) || serverPid <= 1) {
+      throw new Error(`tmux returned an invalid server pid: ${fields[1]}`)
+    }
+    return { serverPid, sessionId: fields[2], sessionCreated: fields[3] ?? '' }
+  }
+
   // Steady-state path (session already exists): only reconfigure when the
-  // tmux server this manager configured is gone or was never recorded. UI
-  // toggles apply directly via setMouseMode/setTerminalColors, so options
+  // tmux server or the base session changed since this manager configured it.
+  // UI toggles apply directly via setMouseMode/setTerminalColors, so options
   // only need re-applying to a new server/session.
-  private configureSessionIfServerChanged(): void {
-    const pid = this.configuredTmuxServerPid
-    if (pid !== null && this.isProcessAlive(pid)) {
+  private configureSessionIfChanged(identity: BaseSessionIdentity): void {
+    const cached = this.configuredSession
+    if (
+      cached !== null &&
+      cached.serverPid === identity.serverPid &&
+      cached.sessionId === identity.sessionId &&
+      cached.sessionCreated === identity.sessionCreated
+    ) {
+      const pid = identity.serverPid
       // The pid file is shared by every agentboard instance, whatever tmux
       // socket it uses. Re-assert ours each tick so another instance's write
       // cannot point SIGUSR1 recovery at the wrong server. persistTmuxServerPid
@@ -257,32 +292,21 @@ export class SessionManager {
       }
       return
     }
-    this.configureSessionAndRecordServer()
+    this.configureSessionAndRecordServer(identity)
   }
 
-  private configureSessionAndRecordServer(): void {
+  // Pass the identity when a probe already produced it; otherwise (freshly
+  // created session) probe once after configuring.
+  private configureSessionAndRecordServer(identity?: BaseSessionIdentity): void {
     // Clear first so a failed configure or pid read retries on the next call.
-    this.configuredTmuxServerPid = null
+    this.configuredSession = null
     this.configureSession()
-    this.recordTmuxServerPid()
-  }
-
-  private recordTmuxServerPid(): void {
     try {
-      const rawPid = this.runParsedTmux([
-        'display-message',
-        '-p',
-        '-t',
-        `=${this.sessionName}`,
-        '#{pid}',
-      ]).trim()
-      const pid = Number.parseInt(rawPid, 10)
-      if (Number.isSafeInteger(pid) && pid > 1) {
-        // Persist before caching: SIGUSR1 socket recovery reads the pid file,
-        // so a failed write must be retried on the next call.
-        this.rememberTmuxServerPid(pid)
-        this.configuredTmuxServerPid = pid
-      }
+      const recorded = identity ?? this.probeBaseSession()
+      // Persist before caching: SIGUSR1 socket recovery reads the pid file,
+      // so a failed write must be retried on the next call.
+      this.rememberTmuxServerPid(recorded.serverPid)
+      this.configuredSession = recorded
     } catch (error) {
       logger.warn('tmux_server_pid_record_failed', {
         message: error instanceof Error ? error.message : String(error),
@@ -353,6 +377,20 @@ export class SessionManager {
       }
       if (isTmuxFormatError(error)) {
         return { reliable: false, sessionName: null }
+      }
+      throw error
+    }
+  }
+
+  private probeBaseSessionIfExists(): BaseSessionIdentity | null {
+    try {
+      return this.probeBaseSession()
+    } catch (error) {
+      if (error instanceof TmuxTimeoutError) {
+        throw error
+      }
+      if (isTmuxSessionAbsentError(error)) {
+        return null
       }
       throw error
     }
@@ -522,10 +560,11 @@ export class SessionManager {
     // orphan shell window (e.g. "zsh") visible in the UI. When the session
     // exists, re-apply its options only if the tmux server changed (same
     // pid-cache rule as ensureSession).
-    const exists = this.sessionExists()
-    if (exists) {
-      this.configureSessionIfServerChanged()
+    const identity = this.probeBaseSessionIfExists()
+    if (identity) {
+      this.configureSessionIfChanged(identity)
     }
+    const exists = identity !== null
 
     const managed = exists
       ? this.listWindowsForSession(this.sessionName, 'managed')
@@ -1023,18 +1062,6 @@ function persistTmuxServerPid(pid: number): void {
   fs.renameSync(temporaryFile, pidFile)
 }
 
-// Signal 0 checks existence without a subprocess. EPERM means the pid exists
-// but belongs to another user, which still counts as alive. isTmuxServerProcess
-// deliberately treats EPERM as NOT alive; do not merge the two.
-export function isPidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'EPERM'
-  }
-}
-
 function recoverPersistedTmuxSocket(): boolean {
   const pid = readPersistedTmuxServerPid(config.tmuxServerPidFile)
   if (pid === null || !isTmuxServerProcess(pid)) {
@@ -1071,8 +1098,6 @@ function readPersistedTmuxServerPid(pidFile: string): number | null {
   }
 }
 
-// EPERM counts as not-alive here on purpose (we must own the server to
-// SIGUSR1 it); see isPidAlive for the opposite rule.
 function isTmuxServerProcess(pid: number): boolean {
   try {
     process.kill(pid, 0)
