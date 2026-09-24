@@ -38,6 +38,7 @@ type TmuxRunner = (args: string[]) => string
 type NowFn = () => number
 type RecoverTmuxSocket = () => boolean
 type RememberTmuxServerPid = (pid: number) => void
+type IsProcessAlive = (pid: number) => boolean
 const TMUX_RECOVERY_SETTLE_MS = 200
 const TMUX_RECOVERY_SIGNAL_INTERVAL_MS = 30_000
 let lastTmuxRecoverySignal: { pid: number; sentAt: number } | null = null
@@ -106,6 +107,11 @@ export class SessionManager {
   private terminalColorsEnabled: boolean
   private recoverTmuxSocket: RecoverTmuxSocket
   private rememberTmuxServerPid: RememberTmuxServerPid
+  private isProcessAlive: IsProcessAlive
+  // Pid of the tmux server this manager last configured. While it stays alive
+  // the session options are already applied, so refresh ticks skip the
+  // set-option/set-environment/display-message spawns. null = unknown.
+  private configuredTmuxServerPid: number | null = null
 
   constructor(
     sessionName = config.tmuxSession,
@@ -118,6 +124,7 @@ export class SessionManager {
       terminalColorsEnabled = config.terminalColorsEnabled ?? true,
       recoverTmuxSocket: recoverTmuxSocketOverride,
       rememberTmuxServerPid: rememberTmuxServerPidOverride,
+      isProcessAlive = isPidAlive,
     }: {
       runTmux?: TmuxRunner
       capturePaneContent?: CapturePane
@@ -127,6 +134,7 @@ export class SessionManager {
       terminalColorsEnabled?: boolean
       recoverTmuxSocket?: RecoverTmuxSocket
       rememberTmuxServerPid?: RememberTmuxServerPid
+      isProcessAlive?: IsProcessAlive
     } = {}
   ) {
     this.sessionName = sessionName
@@ -144,6 +152,7 @@ export class SessionManager {
     this.rememberTmuxServerPid =
       rememberTmuxServerPidOverride ??
       (runTmuxOverride ? () => {} : persistTmuxServerPid)
+    this.isProcessAlive = isProcessAlive
   }
 
   ensureSession(): EnsureSessionResult {
@@ -168,8 +177,7 @@ export class SessionManager {
       if (isTmuxConnectionError(error) && this.recoverTmuxSocket()) {
         try {
           this.runTmux(['has-session', '-t', `=${this.sessionName}`])
-          this.configureSession()
-          this.recordTmuxServerPid()
+          this.configureSessionAndRecordServer()
           return { canPruneWsSessions }
         } catch (retryError) {
           if (retryError instanceof TmuxTimeoutError) {
@@ -219,10 +227,30 @@ export class SessionManager {
           BOOTSTRAP_WINDOW_COMMAND,
         ])
       }
+      this.configureSessionAndRecordServer()
+      return { canPruneWsSessions }
     }
+    this.configureSessionIfServerChanged()
+    return { canPruneWsSessions }
+  }
+
+  // Steady-state path (session already exists): only reconfigure when the
+  // tmux server this manager configured is gone or was never recorded. UI
+  // toggles apply directly via setMouseMode/setTerminalColors, so options
+  // only need re-applying to a new server/session.
+  private configureSessionIfServerChanged(): void {
+    const pid = this.configuredTmuxServerPid
+    if (pid !== null && this.isProcessAlive(pid)) {
+      return
+    }
+    this.configureSessionAndRecordServer()
+  }
+
+  private configureSessionAndRecordServer(): void {
+    // Clear first so a failed configure or pid read retries on the next call.
+    this.configuredTmuxServerPid = null
     this.configureSession()
     this.recordTmuxServerPid()
-    return { canPruneWsSessions }
   }
 
   private recordTmuxServerPid(): void {
@@ -236,7 +264,10 @@ export class SessionManager {
       ]).trim()
       const pid = Number.parseInt(rawPid, 10)
       if (Number.isSafeInteger(pid) && pid > 1) {
+        // Persist before caching: SIGUSR1 socket recovery reads the pid file,
+        // so a failed write must be retried on the next call.
         this.rememberTmuxServerPid(pid)
+        this.configuredTmuxServerPid = pid
       }
     } catch (error) {
       logger.warn('tmux_server_pid_record_failed', {
@@ -478,7 +509,7 @@ export class SessionManager {
     // mouse mode when the session already exists.
     const exists = this.sessionExists()
     if (exists) {
-      this.configureSession()
+      this.configureSessionIfServerChanged()
     }
 
     const managed = exists
@@ -975,6 +1006,17 @@ function persistTmuxServerPid(pid: number): void {
 
   fs.writeFileSync(temporaryFile, `${pid}\n`, { mode: 0o600 })
   fs.renameSync(temporaryFile, pidFile)
+}
+
+// Signal 0 checks existence without a subprocess. EPERM means the pid exists
+// but belongs to another user, which still counts as alive.
+function isPidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM'
+  }
 }
 
 function recoverPersistedTmuxSocket(): boolean {
