@@ -140,20 +140,24 @@ abstract class TerminalProxyBase implements ITerminalProxy {
   ): string {
     const timeoutMs = options.timeoutMs ?? this.commandTimeoutMs
     const startedAt = performance.now()
-    const result = this.spawnSync(['tmux', ...args], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-      timeout: timeoutMs,
-      // Keep leaked launch env (NODE_ENV, npm_*, …) out of any tmux server
-      // daemon this client might boot — see tmuxEnv.ts.
-      env: sanitizedTmuxEnv(),
-      ...(options.stdin !== undefined ? { stdin: Buffer.from(options.stdin) } : {}),
-    })
-    logSlowSyncSpawn(
-      describeSpawnCommand(['tmux', ...args]),
-      Math.round(performance.now() - startedAt),
-      timeoutMs
-    )
+    let result: ReturnType<SpawnSyncFn>
+    try {
+      result = this.spawnSync(['tmux', ...args], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+        timeout: timeoutMs,
+        // Keep leaked launch env (NODE_ENV, npm_*, …) out of any tmux server
+        // daemon this client might boot — see tmuxEnv.ts.
+        env: sanitizedTmuxEnv(),
+        ...(options.stdin !== undefined ? { stdin: Buffer.from(options.stdin) } : {}),
+      })
+    } finally {
+      logSlowSyncSpawn(
+        describeSpawnCommand(['tmux', ...args]),
+        Math.round(performance.now() - startedAt),
+        timeoutMs
+      )
+    }
 
     if (result.signalCode === 'SIGTERM' || result.exitCode === null) {
       throw new TmuxTimeoutError(args.join(' '), timeoutMs)
