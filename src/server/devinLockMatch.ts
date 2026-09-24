@@ -48,9 +48,12 @@ export function readDevinSessionLocks(
 /** pid -> ppid for every process on the system */
 function getProcessTable(): Map<number, number> {
   const table = new Map<number, number>()
+  // Bounded like the tmux calls: this runs on the poll path, and ps can hang
+  // under the same memory pressure that stalls tmux.
   const result = timedSpawnSync(['ps', '-eo', 'pid=,ppid='], {
     stdout: 'pipe',
     stderr: 'pipe',
+    timeout: config.tmuxTimeoutMs,
   })
   if (result.exitCode !== 0) return table
   for (const line of result.stdout.toString().split('\n')) {
