@@ -124,7 +124,7 @@ export class SessionManager {
       terminalColorsEnabled = config.terminalColorsEnabled ?? true,
       recoverTmuxSocket: recoverTmuxSocketOverride,
       rememberTmuxServerPid: rememberTmuxServerPidOverride,
-      isProcessAlive = isPidAlive,
+      isProcessAlive: isProcessAliveOverride,
     }: {
       runTmux?: TmuxRunner
       capturePaneContent?: CapturePane
@@ -152,7 +152,10 @@ export class SessionManager {
     this.rememberTmuxServerPid =
       rememberTmuxServerPidOverride ??
       (runTmuxOverride ? () => {} : persistTmuxServerPid)
-    this.isProcessAlive = isProcessAlive
+    // Mock runners return fake pids; never probe the host's pid table for
+    // them. Without an explicit override, the cache never hits in tests.
+    this.isProcessAlive =
+      isProcessAliveOverride ?? (runTmuxOverride ? () => false : isPidAlive)
   }
 
   ensureSession(): EnsureSessionResult {
@@ -1020,8 +1023,9 @@ function persistTmuxServerPid(pid: number): void {
 }
 
 // Signal 0 checks existence without a subprocess. EPERM means the pid exists
-// but belongs to another user, which still counts as alive.
-function isPidAlive(pid: number): boolean {
+// but belongs to another user, which still counts as alive. isTmuxServerProcess
+// deliberately treats EPERM as NOT alive; do not merge the two.
+export function isPidAlive(pid: number): boolean {
   try {
     process.kill(pid, 0)
     return true
@@ -1066,6 +1070,8 @@ function readPersistedTmuxServerPid(pidFile: string): number | null {
   }
 }
 
+// EPERM counts as not-alive here on purpose (we must own the server to
+// SIGUSR1 it); see isPidAlive for the opposite rule.
 function isTmuxServerProcess(pid: number): boolean {
   try {
     process.kill(pid, 0)

@@ -3,7 +3,7 @@
 // skip the set-option/set-environment/display-message spawns.
 import { describe, expect, test } from 'bun:test'
 import os from 'node:os'
-import { SessionManager } from '../SessionManager'
+import { SessionManager, isPidAlive } from '../SessionManager'
 
 const SESSION = 'agentboard-ensure-cache'
 
@@ -289,5 +289,42 @@ describe('SessionManager.ensureSession server-pid cache', () => {
     expect(h.takeCalls().filter((c) => CONFIGURE_AND_RECORD.includes(c))).toEqual(
       CONFIGURE_AND_RECORD
     )
+  })
+})
+
+describe('isPidAlive', () => {
+  test('treats the current process as alive', () => {
+    expect(isPidAlive(process.pid)).toBe(true)
+  })
+
+  test('treats EPERM (another user\'s process) as alive', () => {
+    // pid 1 is owned by root: non-root gets EPERM, root gets success.
+    expect(isPidAlive(1)).toBe(true)
+  })
+
+  test('treats an exited process as dead', () => {
+    const exited = Bun.spawnSync(['true'])
+    expect(isPidAlive(exited.pid)).toBe(false)
+  })
+})
+
+describe('SessionManager with a mock runner and no isProcessAlive', () => {
+  test('never trusts numeric mock pids against the host pid table', () => {
+    const calls: string[] = []
+    const manager = new SessionManager(SESSION, {
+      runTmux: (args) => {
+        calls.push(commandOf(args))
+        // The test runner's own pid is always alive on the host.
+        return commandOf(args) === 'display-message' ? `${process.pid}\n` : ''
+      },
+      capturePaneContent: () => null,
+    })
+
+    manager.ensureSession()
+    manager.ensureSession()
+    expect(calls).toEqual([
+      'has-session', ...CONFIGURE_AND_RECORD,
+      'has-session', ...CONFIGURE_AND_RECORD,
+    ])
   })
 })
