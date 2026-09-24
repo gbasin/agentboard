@@ -1321,6 +1321,67 @@ describe('useTerminal', () => {
     expect(terminal.focusCalls).toBe(1)
   })
 
+  test('emits the pending dropped-output aggregate on unmount', async () => {
+    const originalFetch = globalThis.fetch
+    const dropLogs: Array<{ drops: number; bytes: number }> = []
+    globalThis.fetch = (async (url: unknown, init?: RequestInit) => {
+      if (url === '/api/client-log' && typeof init?.body === 'string') {
+        const body = JSON.parse(init.body) as {
+          event: string
+          data: { drops: number; bytes: number }
+        }
+        if (body.event === 'terminal_output_dropped') dropLogs.push(body.data)
+      }
+      return new Response(null, { status: 204 })
+    }) as unknown as typeof fetch
+    const listeners: Array<(message: ServerMessage) => void> = []
+    const { container } = createContainerMock()
+    let renderer!: TestRenderer.ReactTestRenderer
+    try {
+      await act(async () => {
+        renderer = TestRenderer.create(
+          <TerminalHarness
+            sessionId="session-1"
+            tmuxTarget="agentboard:@1"
+            sendMessage={() => {}}
+            subscribe={(listener) => {
+              listeners.push(listener)
+              return () => {}
+            }}
+            theme={{ background: '#000' }}
+            fontSize={12}
+          />,
+          { createNodeMock: () => container }
+        )
+        await Promise.resolve()
+      })
+
+      // Output for a session we are not attached to is dropped. The first
+      // drop may emit immediately; the rest wait on the 1s aggregation timer.
+      act(() => {
+        for (const data of ['aa', 'bbb', 'cccc']) {
+          listeners.forEach((listener) =>
+            listener({ type: 'terminal-output', sessionId: 'other-session', data })
+          )
+        }
+      })
+      const sum = () =>
+        dropLogs.reduce(
+          (acc, log) => ({ drops: acc.drops + log.drops, bytes: acc.bytes + log.bytes }),
+          { drops: 0, bytes: 0 }
+        )
+      expect(sum().drops).toBeLessThan(3)
+
+      act(() => {
+        renderer.unmount()
+      })
+
+      expect(sum()).toEqual({ drops: 3, bytes: 9 })
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
   test.each(['MacIntel', 'Win32'])('browser file paste on %s uploads without reading the host clipboard', async (platform) => {
     globalAny.navigator = { platform, userAgent: 'Chrome', maxTouchPoints: 0 } as Navigator
     const originalFetch = globalThis.fetch

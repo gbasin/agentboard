@@ -1576,6 +1576,22 @@ export function useTerminal({
       }
     }
 
+    const emitDropLog = () => {
+      const acc = droppedOutputRef.current
+      acc.timer = null
+      if (acc.count === 0) return
+      clientLog('terminal_output_dropped', {
+        messageSessionId: acc.lastMessageSessionId,
+        attachedSession: attachedSessionRef.current,
+        drops: acc.count,
+        bytes: acc.bytes,
+        hasSwitchStart: switchStartRef.current !== null,
+      }, 'info')
+      acc.count = 0
+      acc.bytes = 0
+      acc.lastEmit = performance.now()
+    }
+
     const unsubscribe = subscribe((message) => {
       const attachedSession = attachedSessionRef.current
 
@@ -1589,20 +1605,6 @@ export function useTerminal({
         acc.count += 1
         acc.bytes += message.data.length
         acc.lastMessageSessionId = message.sessionId
-        const emitDropLog = () => {
-          if (acc.count === 0) return
-          clientLog('terminal_output_dropped', {
-            messageSessionId: acc.lastMessageSessionId,
-            attachedSession: attachedSessionRef.current,
-            drops: acc.count,
-            bytes: acc.bytes,
-            hasSwitchStart: switchStartRef.current !== null,
-          }, 'info')
-          acc.count = 0
-          acc.bytes = 0
-          acc.lastEmit = performance.now()
-          acc.timer = null
-        }
         const now = performance.now()
         if (now - acc.lastEmit >= 1000) {
           emitDropLog()
@@ -1747,10 +1749,11 @@ export function useTerminal({
       // Flush any remaining buffer on cleanup
       flush()
       cancelIosRepaint()
+      // Emit the pending aggregate instead of discarding it with the timer.
       if (droppedOutputRef.current.timer !== null) {
         window.clearTimeout(droppedOutputRef.current.timer)
-        droppedOutputRef.current.timer = null
       }
+      emitDropLog()
     }
   }, [subscribe, checkScrollPosition, setTmuxCopyMode, offerClipboardCopy])
 
