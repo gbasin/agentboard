@@ -79,9 +79,9 @@ function createLogger(): pino.Logger {
     }
   }
 
-  // Production (or dev fallback): human-readable stdout, structured JSON file
-  // Uses pino-pretty for stdout when available (npx installs), otherwise raw JSON
-  // with ISO timestamps as fallback (compiled binaries)
+  // Production (or dev fallback): JSON with ISO timestamps to the log file,
+  // plus stdout — pretty when pino-pretty is installed (a dev checkout),
+  // raw JSON otherwise (npx installs, compiled binaries).
   const baseOptions: pino.LoggerOptions = {
     level: logLevel,
     base: {},                              // strip pid, hostname
@@ -89,7 +89,16 @@ function createLogger(): pino.Logger {
   }
 
   if (logFile) {
-    fileDestination = pino.destination({ dest: logFile, sync: true, mkdir: true })
+    // Synchronous writes. A sync write costs ~10us/line here, so buffering
+    // bought no measurable event-loop time, and a buffered destination loses
+    // its tail on SIGKILL/segfault — exactly the lines needed to explain a
+    // crash. (Async sonic-boom destinations also segfault under Bun's worker
+    // teardown.)
+    fileDestination = pino.destination({
+      dest: logFile,
+      sync: true,
+      mkdir: true,
+    })
 
     if (canPretty) {
       try {
@@ -102,6 +111,10 @@ function createLogger(): pino.Logger {
       } catch { /* fall through */ }
     }
 
+    // No pretty printer (npx installs omit devDependencies, compiled
+    // binaries can't load transports): raw JSON to stdout alongside the file.
+    // This is the only terminal output npx users get (server_started URL,
+    // port_in_use before exit), so it must stay.
     const streams: pino.StreamEntry[] = [
       { level: logLevel, stream: pino.destination({ dest: 1, sync: true }) },
       { level: logLevel, stream: fileDestination },
@@ -126,9 +139,18 @@ export const logLevel: LogLevel = getLogLevel()
 // Flush pending logs
 // Call before process.exit() to ensure logs are written
 export function flushLogger(): void {
-  pinoLogger.flush()
+  try {
+    pinoLogger.flush()
+  } catch {
+    // Best effort — a failed flush must not break the exit path.
+  }
   if (fileDestination && 'flushSync' in fileDestination) {
-    ;(fileDestination as pino.DestinationStream & { flushSync: () => void }).flushSync()
+    try {
+      ;(fileDestination as pino.DestinationStream & { flushSync: () => void }).flushSync()
+    } catch {
+      // Best effort — sonic-boom throws if the fd is not open yet (nothing
+      // buffered then) or already closed.
+    }
   }
 }
 

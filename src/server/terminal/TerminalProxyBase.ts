@@ -2,6 +2,7 @@ import { config } from '../config'
 import { logger } from '../logger'
 import { withTmuxUtf8Flag } from '../tmuxFormat'
 import { TmuxTimeoutError } from '../tmuxTimeout'
+import { describeSpawnCommand, logSlowSyncSpawn } from '../syncSpawnTiming'
 import { sanitizedTmuxEnv } from '../tmuxEnv'
 import type {
   ITerminalProxy,
@@ -138,15 +139,25 @@ abstract class TerminalProxyBase implements ITerminalProxy {
     options: { timeoutMs?: number; stdin?: string } = {}
   ): string {
     const timeoutMs = options.timeoutMs ?? this.commandTimeoutMs
-    const result = this.spawnSync(['tmux', ...args], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-      timeout: timeoutMs,
-      // Keep leaked launch env (NODE_ENV, npm_*, …) out of any tmux server
-      // daemon this client might boot — see tmuxEnv.ts.
-      env: sanitizedTmuxEnv(),
-      ...(options.stdin !== undefined ? { stdin: Buffer.from(options.stdin) } : {}),
-    })
+    const startedAt = performance.now()
+    let result: ReturnType<SpawnSyncFn>
+    try {
+      result = this.spawnSync(['tmux', ...args], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+        timeout: timeoutMs,
+        // Keep leaked launch env (NODE_ENV, npm_*, …) out of any tmux server
+        // daemon this client might boot — see tmuxEnv.ts.
+        env: sanitizedTmuxEnv(),
+        ...(options.stdin !== undefined ? { stdin: Buffer.from(options.stdin) } : {}),
+      })
+    } finally {
+      logSlowSyncSpawn(
+        describeSpawnCommand(['tmux', ...args]),
+        Math.round(performance.now() - startedAt),
+        timeoutMs
+      )
+    }
 
     if (result.signalCode === 'SIGTERM' || result.exitCode === null) {
       throw new TmuxTimeoutError(args.join(' '), timeoutMs)

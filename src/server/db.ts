@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { Database as SQLiteDatabase } from 'bun:sqlite'
 import type { AgentType } from '../shared/types'
+import { logger } from './logger'
 import { resolveProjectPath } from './paths'
 
 export interface AgentSessionRecord {
@@ -154,6 +155,15 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_current_window_unique
   WHERE current_window IS NOT NULL;
 `
 
+function readJournalMode(db: SQLiteDatabase): string {
+  try {
+    const row = db.query('PRAGMA journal_mode').get() as { journal_mode?: string } | null
+    return String(row?.journal_mode ?? 'unknown').toLowerCase()
+  } catch {
+    return 'unknown'
+  }
+}
+
 export function initDatabase(options: { path?: string } = {}): SessionDatabase {
   const envPath = process.env[DB_PATH_ENV]?.trim()
   const resolvedEnvPath =
@@ -162,6 +172,35 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
   ensureDataDir(dbPath)
 
   const db = new SQLiteDatabase(dbPath)
+  // WAL so readers never block on (or block) a writer; this fixes the
+  // "database is locked" errors seen when an old and new server overlap during
+  // a restart. Under WAL only writers contend, and bun:sqlite waits for the
+  // lock synchronously on the main thread, so busy_timeout is kept short: a
+  // poll can issue ~25 writes, and a long timeout would stall the event loop
+  // for seconds per write while another server holds the lock. 250ms absorbs
+  // a normal overlapping commit; anything longer surfaces as an error instead
+  // of a frozen server. NORMAL is safe under WAL (frame checksums catch torn
+  // writes) and skips the per-commit fsync.
+  // busy_timeout first so the WAL switch itself gets the short wait.
+  db.exec('PRAGMA busy_timeout = 250')
+  // Switching to WAL needs an exclusive lock. If an old (pre-WAL) server is
+  // still mid-write during an upgrade, fail soft: stay on the current journal
+  // mode this run and convert on the next start, instead of crashing.
+  // NORMAL is only safe under WAL, so it is applied only when the switch
+  // actually took (the pragma can also return a different mode silently,
+  // e.g. 'memory' for in-memory databases); otherwise keep the FULL default.
+  let switchError: string | undefined
+  try {
+    db.exec('PRAGMA journal_mode = WAL')
+  } catch (error) {
+    switchError = error instanceof Error ? error.message : String(error)
+  }
+  const journalMode = readJournalMode(db)
+  if (journalMode === 'wal') {
+    db.exec('PRAGMA synchronous = NORMAL')
+  } else if (journalMode !== 'memory') {
+    logger.warn('db_wal_switch_failed', { dbPath, journalMode, error: switchError })
+  }
   migrateDatabase(db)
   db.exec(CREATE_TABLE_SQL)
   db.exec(CREATE_APP_SETTINGS_TABLE_SQL)

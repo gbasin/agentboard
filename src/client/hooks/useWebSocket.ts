@@ -121,6 +121,8 @@ export class WebSocketManager {
   private connectionEpoch = 0
   /** Consecutive connect attempts that failed (timeout, error, close). */
   private consecutiveFailures = 0
+  /** Number of stall cycles without a successful open — drives escalating cooldown. */
+  private stallCount = 0
   /** Whether the current connect attempt is the first after a resume. */
   private isResumeAttempt = false
   /**
@@ -138,6 +140,7 @@ export class WebSocketManager {
       ws: this.ws ? WS_STATES[this.ws.readyState] : null,
       attempt: this.reconnectAttempts,
       failures: this.consecutiveFailures,
+      stalls: this.stallCount,
       leaked: this.leakedSockets.size,
       online: typeof navigator !== 'undefined' ? navigator.onLine : undefined,
       verifying: this.verifyTimer !== null,
@@ -219,6 +222,7 @@ export class WebSocketManager {
       this.clearConnectTimer()
       this.reconnectAttempts = 0
       this.consecutiveFailures = 0
+      this.stallCount = 0
       this.connectionEpoch += 1
       // Socket opened successfully — remove from leaked tracking
       this.leakedSockets.delete(ws)
@@ -515,6 +519,9 @@ export class WebSocketManager {
     clientLog('ws_force_reconnect', { trigger, force, ...this.wsSnap() }, 'info')
     this.reconnectAttempts = 0
     this.consecutiveFailures = 0
+    // A resume/visibility trigger starts a fresh recovery; without this a
+    // user returning after an outage would inherit the 30s stall cooldown.
+    this.stallCount = 0
     if (this.reconnectTimer) {
       window.clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
@@ -622,7 +629,12 @@ export class WebSocketManager {
     if (this.consecutiveFailures >= STALL_THRESHOLD) {
       clientLog('ws_stall_detected', this.wsSnap(), 'info')
       this.purgeLeakedSockets()
-      // Give the browser extra time to clean up TCP connections
+      // Escalate the cooldown across consecutive stalls (5s → 10s → 20s → 30s
+      // cap) instead of resetting it — during a server freeze each connect
+      // attempt creates attach work exactly when the server can least afford
+      // it. stallCount resets on a successful open.
+      const cooldown = Math.min(STALL_COOLDOWN_MS * 2 ** this.stallCount, 30_000)
+      this.stallCount += 1
       this.consecutiveFailures = 0
       this.reconnectAttempts = 0
       this.isResumeAttempt = true
@@ -630,7 +642,7 @@ export class WebSocketManager {
       this.reconnectTimer = window.setTimeout(() => {
         this.reconnectTimer = null
         this.connect()
-      }, STALL_COOLDOWN_MS)
+      }, cooldown)
       return
     }
 

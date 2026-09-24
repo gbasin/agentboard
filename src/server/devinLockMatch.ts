@@ -9,6 +9,14 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { getDevinSessionLocksDir } from './devinSync'
+import { config } from './config'
+import { timedSpawnSync } from './syncSpawnTiming'
+import {
+  buildTmuxFormat,
+  splitTmuxFields,
+  splitTmuxLines,
+  withTmuxUtf8Flag,
+} from './tmuxFormat'
 import type { Session } from '../shared/types'
 
 /** sessionId -> devin process pid */
@@ -40,9 +48,12 @@ export function readDevinSessionLocks(
 /** pid -> ppid for every process on the system */
 function getProcessTable(): Map<number, number> {
   const table = new Map<number, number>()
-  const result = Bun.spawnSync(['ps', '-eo', 'pid=,ppid='], {
+  // Bounded like the tmux calls: this runs on the poll path, and ps can hang
+  // under the same memory pressure that stalls tmux.
+  const result = timedSpawnSync(['ps', '-eo', 'pid=,ppid='], {
     stdout: 'pipe',
     stderr: 'pipe',
+    timeout: config.tmuxTimeoutMs,
   })
   if (result.exitCode !== 0) return table
   for (const line of result.stdout.toString().split('\n')) {
@@ -57,18 +68,42 @@ function getProcessTable(): Map<number, number> {
   return table
 }
 
-function getPanePid(tmuxWindow: string): number | null {
+// One list-panes call for every pane's root pid, instead of a display-message
+// spawnSync per window — this ran on the poll critical path, so N windows meant
+// N blocking subprocesses per cycle. (It also covers non-active panes, which
+// display-message's single #{pane_pid} missed.)
+function getPaneOwners(windows: Session[]): Map<number, Session> {
+  const owners = new Map<number, Session>()
+  const byTmuxWindow = new Map(windows.map((w) => [w.tmuxWindow, w]))
   try {
-    const result = Bun.spawnSync(
-      ['tmux', 'display-message', '-t', tmuxWindow, '-p', '#{pane_pid}'],
-      { stdout: 'pipe', stderr: 'pipe' }
+    const result = timedSpawnSync(
+      [
+        'tmux',
+        ...withTmuxUtf8Flag([
+          'list-panes',
+          '-a',
+          '-F',
+          buildTmuxFormat(['#{session_name}', '#{window_id}', '#{pane_pid}']),
+        ]),
+      ],
+      { stdout: 'pipe', stderr: 'pipe', timeout: config.tmuxTimeoutMs }
     )
-    if (result.exitCode !== 0) return null
-    const pid = Number.parseInt(result.stdout.toString().trim(), 10)
-    return Number.isFinite(pid) && pid > 0 ? pid : null
+    if (result.exitCode !== 0) return owners
+    for (const line of splitTmuxLines(result.stdout.toString())) {
+      const parts = splitTmuxFields(line, 3)
+      if (!parts) continue
+      const [sessionName, windowId, pidRaw] = parts
+      const pid = Number.parseInt(pidRaw ?? '', 10)
+      if (!Number.isFinite(pid) || pid <= 0) continue
+      const window = byTmuxWindow.get(`${sessionName}:${windowId}`)
+      if (window) {
+        owners.set(pid, window)
+      }
+    }
   } catch {
-    return null
+    // tmux unreachable — no pane owners this cycle
   }
+  return owners
 }
 
 function isDescendantOf(
@@ -101,13 +136,7 @@ export function matchDevinLocksToWindows(
   if (processTable.size === 0) return matches
 
   // panePid -> window (a pane has exactly one root pid)
-  const paneOwners = new Map<number, Session>()
-  for (const window of windows) {
-    const panePid = getPanePid(window.tmuxWindow)
-    if (panePid !== null) {
-      paneOwners.set(panePid, window)
-    }
-  }
+  const paneOwners = getPaneOwners(windows)
   if (paneOwners.size === 0) return matches
 
   for (const [sessionId, pid] of locks) {

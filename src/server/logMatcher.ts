@@ -20,6 +20,7 @@ import {
   TMUX_UI_GLYPH_PATTERN,
 } from './terminal/tmuxText'
 import { logger } from './logger'
+import { timedSpawnSync } from './syncSpawnTiming'
 import { withTmuxUtf8Flag } from './tmuxFormat'
 
 export type LogTextMode = 'all' | 'assistant' | 'user' | 'assistant-user'
@@ -93,7 +94,7 @@ const TMUX_CAPTURE_TIMEOUT_MS = 5000
 const RG_COMMAND_TIMEOUT_MS = 10000
 
 function runCommandSync(args: string[], options: SpawnOptions = {}): SpawnResult {
-  const result = Bun.spawnSync(args, {
+  const result = timedSpawnSync(args, {
     stdout: 'pipe',
     stderr: 'pipe',
     ...(options.timeoutMs && options.timeoutMs > 0

@@ -50,7 +50,7 @@ jobs:
         run: bun run build
 
       - name: Build server binary
-        run: bun build src/server/index.ts src/server/sessionRefreshWorker.ts src/server/logMatchWorker.ts --compile --target ${{ matrix.target }} --outfile ${{ matrix.artifact }}
+        run: bun build src/server/index.ts src/server/sessionRefreshWorker.ts src/server/logMatchWorker.ts src/server/devinSyncWorker.ts --compile --target ${{ matrix.target }} --outfile ${{ matrix.artifact }}
 
       - name: Package binary and frontend
         run: |

@@ -356,6 +356,7 @@ mock.module('../../config', () => ({
 }))
 mock.module('../../logger', () => ({
   logLevel: 'info',
+  flushLogger: () => {},
   logger: {
     debug: (event: string, data?: Record<string, unknown>) =>
       logEntries.push({ level: 'debug', event, data }),

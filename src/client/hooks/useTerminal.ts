@@ -393,6 +393,16 @@ export function useTerminal({
   const outputBufferRef = useRef<string[]>([])
   const idleTimerRef = useRef<number | null>(null)
   const maxTimerRef = useRef<number | null>(null)
+  // Aggregates dropped-output diagnostics — bursts used to emit one clientLog
+  // POST per dropped message (~100 lines/100ms observed), each a sync write
+  // in the server log. One aggregated line per second at most.
+  const droppedOutputRef = useRef({
+    count: 0,
+    bytes: 0,
+    lastEmit: 0,
+    timer: null as number | null,
+    lastMessageSessionId: null as string | null,
+  })
 
   // Deferred reset: defer terminal.reset() until history arrives to avoid blank flash
   const needsResetRef = useRef(false)
@@ -1566,20 +1576,41 @@ export function useTerminal({
       }
     }
 
+    const emitDropLog = () => {
+      const acc = droppedOutputRef.current
+      acc.timer = null
+      if (acc.count === 0) return
+      clientLog('terminal_output_dropped', {
+        messageSessionId: acc.lastMessageSessionId,
+        attachedSession: attachedSessionRef.current,
+        drops: acc.count,
+        bytes: acc.bytes,
+        hasSwitchStart: switchStartRef.current !== null,
+      }, 'info')
+      acc.count = 0
+      acc.bytes = 0
+      acc.lastEmit = performance.now()
+    }
+
     const unsubscribe = subscribe((message) => {
       const attachedSession = attachedSessionRef.current
 
-      // Log dropped terminal-output to diagnose missing history after kill
+      // Log dropped terminal-output to diagnose missing history after kill —
+      // aggregated to at most one log per second (see droppedOutputRef).
       if (
         message.type === 'terminal-output' &&
         (!attachedSession || message.sessionId !== attachedSession)
       ) {
-        clientLog('terminal_output_dropped', {
-          messageSessionId: message.sessionId,
-          attachedSession,
-          bytes: message.data.length,
-          hasSwitchStart: switchStartRef.current !== null,
-        }, 'info')
+        const acc = droppedOutputRef.current
+        acc.count += 1
+        acc.bytes += message.data.length
+        acc.lastMessageSessionId = message.sessionId
+        const now = performance.now()
+        if (now - acc.lastEmit >= 1000) {
+          emitDropLog()
+        } else if (acc.timer === null) {
+          acc.timer = window.setTimeout(emitDropLog, 1000 - (now - acc.lastEmit))
+        }
       }
 
       if (
@@ -1718,6 +1749,11 @@ export function useTerminal({
       // Flush any remaining buffer on cleanup
       flush()
       cancelIosRepaint()
+      // Emit the pending aggregate instead of discarding it with the timer.
+      if (droppedOutputRef.current.timer !== null) {
+        window.clearTimeout(droppedOutputRef.current.timer)
+      }
+      emitDropLog()
     }
   }, [subscribe, checkScrollPosition, setTmuxCopyMode, offerClipboardCopy])
 

@@ -5,6 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { initDatabase } from '../db'
 import { LogPoller } from '../logPoller'
+import { logger } from '../logger'
 import { SessionRegistry } from '../SessionRegistry'
 import type { Session } from '../../shared/types'
 import { encodeProjectPath } from '../logDiscovery'
@@ -1983,5 +1984,43 @@ describe('LogPoller', () => {
     expect(record?.currentWindow).toBeNull()
 
     db.close()
+  })
+})
+
+describe('LogPoller devin sync logging', () => {
+  const noChange = { sessions: 4, rewritten: 0, appended: 0, removed: 0 }
+  const changed = { sessions: 4, rewritten: 0, appended: 2, removed: 0 }
+
+  async function runSyncAndCapture(result: typeof noChange) {
+    const db = initDatabase({ path: ':memory:' })
+    const registry = new SessionRegistry()
+    const calls: Array<{ level: string; event: string }> = []
+    const originalInfo = logger.info
+    const originalDebug = logger.debug
+    logger.info = (event) => calls.push({ level: 'info', event })
+    logger.debug = (event) => calls.push({ level: 'debug', event })
+    try {
+      const poller = new LogPoller(db, registry, {
+        devinSyncClient: {
+          sync: async () => ({ result, durationMs: 3 }),
+          dispose: () => {},
+        },
+      })
+      ;(poller as unknown as { runDevinSync: () => void }).runDevinSync()
+      await Bun.sleep(0)
+      return calls.filter((c) => c.event === 'devin_sync')
+    } finally {
+      logger.info = originalInfo
+      logger.debug = originalDebug
+      db.close()
+    }
+  }
+
+  test('no-op sync cycles log at debug', async () => {
+    expect(await runSyncAndCapture(noChange)).toEqual([{ level: 'debug', event: 'devin_sync' }])
+  })
+
+  test('sync cycles that change mirrors log at info', async () => {
+    expect(await runSyncAndCapture(changed)).toEqual([{ level: 'info', event: 'devin_sync' }])
   })
 })

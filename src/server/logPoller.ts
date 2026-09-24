@@ -22,8 +22,12 @@ import type {
   OrphanCandidate,
   LastMessageCandidate,
 } from './logMatchWorkerTypes'
-import { syncDevinSessions } from './devinSync'
+import { getDevinLogOutDir } from './devinSync'
 import { matchDevinLocksToWindows } from './devinLockMatch'
+import {
+  DevinSyncWorkerClient,
+  type DevinSyncResponse,
+} from './devinSyncWorkerClient'
 
 const MIN_INTERVAL_MS = 2000
 const DEFAULT_INTERVAL_MS = 5000
@@ -178,6 +182,11 @@ interface MatchWorkerClient {
   dispose(): void
 }
 
+interface DevinSyncClient {
+  sync(outDir: string): Promise<DevinSyncResponse>
+  dispose(): void
+}
+
 export class LogPoller {
   private interval: ReturnType<typeof setInterval> | null = null
   private startupReconciliationTimer: ReturnType<typeof setTimeout> | null = null
@@ -194,6 +203,8 @@ export class LogPoller {
   private rgThreads?: number
   private startupReconciliationDelayMs: number
   private matchWorker: MatchWorkerClient | null
+  private devinSyncClient: DevinSyncClient | null
+  private devinSyncInFlight = false
   private pollInFlight = false
   private pendingChangedPaths = new Set<string>()
   private orphanRematchPending = true
@@ -220,6 +231,7 @@ export class LogPoller {
       rgThreads,
       matchWorker,
       matchWorkerClient,
+      devinSyncClient,
       startupReconciliationDelayMs,
     }: {
       onSessionOrphaned?: (sessionId: string, supersededBy?: string) => void
@@ -231,6 +243,7 @@ export class LogPoller {
       rgThreads?: number
       matchWorker?: boolean
       matchWorkerClient?: MatchWorkerClient
+      devinSyncClient?: DevinSyncClient | null
       startupReconciliationDelayMs?: number
     } = {}
   ) {
@@ -251,6 +264,12 @@ export class LogPoller {
     this.matchWorker =
       matchWorkerClient ??
       (matchWorker ? (new LogMatchWorkerClient() as MatchWorkerClient) : null)
+    // undefined → lazily spawn the real worker on first sync; null → disabled
+    // (tests); an injected client is used as-is.
+    this.devinSyncClient =
+      devinSyncClient === undefined
+        ? new DevinSyncWorkerClient()
+        : devinSyncClient
   }
 
   start(intervalMs = DEFAULT_INTERVAL_MS, mode: 'poll' | 'watch' = 'poll'): void {
@@ -260,9 +279,11 @@ export class LogPoller {
     }
 
     // Mirror devin's sessions.db into JSONL logs on the same cadence so the
-    // regular pipeline picks up changes in both poll and watch modes.
+    // regular pipeline picks up changes in both poll and watch modes. The
+    // first sync waits for the first interval tick — an inline sync at start()
+    // puts the worker spawn + cold sessions.db read on the server startup
+    // critical path (and, in tests, leaves spawned workers for teardown).
     const syncInterval = Math.max(MIN_INTERVAL_MS, intervalMs)
-    this.runDevinSync()
     this.devinSyncInterval = setInterval(() => this.runDevinSync(), syncInterval)
 
     if (mode === 'watch') {
@@ -632,6 +653,8 @@ export class LogPoller {
     this.logWatcher = null
     this.matchWorker?.dispose()
     this.matchWorker = null
+    this.devinSyncClient?.dispose()
+    this.devinSyncClient = null
   }
 
   private notifyOrphanSessionsDiscovered(newOrphans: number): void {
@@ -646,13 +669,45 @@ export class LogPoller {
   }
 
   private runDevinSync(): void {
-    try {
-      syncDevinSessions()
-    } catch (error) {
-      logger.warn('devin_sync_error', {
-        message: error instanceof Error ? error.message : String(error),
-      })
+    if (!this.devinSyncClient) {
+      return
     }
+    if (this.devinSyncInFlight) {
+      logger.debug('devin_sync_skipped', { reason: 'in_flight' })
+      return
+    }
+    this.devinSyncInFlight = true
+    const client = this.devinSyncClient
+    void client
+      .sync(getDevinLogOutDir())
+      .then(({ result, durationMs }) => {
+        if (result === null) {
+          // No devin CLI db on this machine — keep the per-cycle line out of
+          // info logs, it's pure noise there.
+          logger.debug('devin_sync', { durationMs, synced: false })
+          return
+        }
+        // Incremental sync makes most cycles no-ops; logging those at info
+        // would add a line every interval to both log sinks.
+        const changed = result.rewritten + result.appended + result.removed > 0
+        const log = changed ? logger.info : logger.debug
+        log('devin_sync', {
+          durationMs,
+          synced: true,
+          sessions: result.sessions,
+          rewritten: result.rewritten,
+          appended: result.appended,
+          removed: result.removed,
+        })
+      })
+      .catch((error) => {
+        logger.warn('devin_sync_error', {
+          message: error instanceof Error ? error.message : String(error),
+        })
+      })
+      .finally(() => {
+        this.devinSyncInFlight = false
+      })
   }
 
   async pollChanged(changedPaths: string[]): Promise<void> {
