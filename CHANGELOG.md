@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.1](https://github.com/gbasin/agentboard/compare/v0.14.0...v0.14.1) (2026-09-24)
+
+
+### Bug Fixes
+
+* let outlier sync spawns bypass the slow-spawn rate limiter ([#288](https://github.com/gbasin/agentboard/issues/288)) ([4671d40](https://github.com/gbasin/agentboard/commit/4671d409c4ddc4a941c098482133c8684806db51))
+
 ## [0.14.0](https://github.com/gbasin/agentboard/compare/v0.13.0...v0.14.0) (2026-09-24)
 
 
