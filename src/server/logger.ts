@@ -79,9 +79,9 @@ function createLogger(): pino.Logger {
     }
   }
 
-  // Production (or dev fallback): human-readable stdout, structured JSON file
-  // Uses pino-pretty for stdout when available (npx installs), otherwise raw JSON
-  // with ISO timestamps as fallback (compiled binaries)
+  // Production (or dev fallback): JSON with ISO timestamps. With a log file,
+  // stdout gets a pretty copy only when pino-pretty is installed (a dev
+  // checkout); without a log file, stdout is the sink (pretty if possible).
   const baseOptions: pino.LoggerOptions = {
     level: logLevel,
     base: {},                              // strip pid, hostname
@@ -89,14 +89,14 @@ function createLogger(): pino.Logger {
   }
 
   if (logFile) {
-    // sync:false on the main thread — buffered writes. During a disk stall a
-    // sync write blocks the event loop for the whole fsync; buffered writes
-    // land when the disk wakes. flushLogger() (wired to exit/SIGINT/SIGTERM)
-    // drains the buffer. Workers stay sync: async sonic-boom destinations
-    // segfault under Bun's worker teardown.
+    // Synchronous writes. A sync write costs ~10us/line here, so buffering
+    // bought no measurable event-loop time, and a buffered destination loses
+    // its tail on SIGKILL/segfault — exactly the lines needed to explain a
+    // crash. (Async sonic-boom destinations also segfault under Bun's worker
+    // teardown.)
     fileDestination = pino.destination({
       dest: logFile,
-      sync: !Bun.isMainThread,
+      sync: true,
       mkdir: true,
     })
 
@@ -111,11 +111,12 @@ function createLogger(): pino.Logger {
       } catch { /* fall through */ }
     }
 
-    const streams: pino.StreamEntry[] = [
-      { level: logLevel, stream: pino.destination({ dest: 1, sync: true }) },
-      { level: logLevel, stream: fileDestination },
-    ]
-    return pino(baseOptions, pino.multistream(streams))
+    // No pretty printer (npx installs omit devDependencies, compiled
+    // binaries can't load transports): the file is the only sink. A raw JSON
+    // stdout copy would duplicate every line into whatever captures stdout —
+    // under launchd that was an ever-growing launchd.out.log mirroring
+    // agentboard.log.
+    return pino(baseOptions, fileDestination)
   }
 
   // Without log file: pretty stdout or plain JSON
@@ -144,8 +145,8 @@ export function flushLogger(): void {
     try {
       ;(fileDestination as pino.DestinationStream & { flushSync: () => void }).flushSync()
     } catch {
-      // Async destinations throw "sonic boom is not ready yet" before the fd
-      // opens — nothing is buffered at that point, nothing to flush.
+      // Best effort — sonic-boom throws if the fd is not open yet (nothing
+      // buffered then) or already closed.
     }
   }
 }

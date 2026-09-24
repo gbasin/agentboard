@@ -112,7 +112,7 @@ function checkPortAvailable(port: number): void {
     } catch {
     }
     logger.error('port_in_use', { port, pid, processName })
-    // Async (buffered) logging — flush before exit or the error never lands.
+    // Drain any stream buffer (the pretty-stdout transport) before exiting.
     flushLogger()
     process.exit(1)
   }
@@ -2281,9 +2281,9 @@ async function cleanupAllTerminals() {
   db.close()
 }
 
-// Log destinations are buffered (sync:false) — flushSync drains them on any
-// exit path that reaches this handler (normal exit, uncaught fatal, and the
-// signal handlers below via process.exit).
+// The log file is written synchronously; this drains the pretty-stdout
+// transport and is a cheap safety net on any exit path that reaches this
+// handler (normal exit, uncaught fatal, and the signal handlers below).
 process.on('exit', () => flushLogger())
 
 process.on('SIGINT', () => {

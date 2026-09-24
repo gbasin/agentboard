@@ -3,18 +3,10 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-// File destinations are buffered (sync:false) — writes land asynchronously.
-// Poll until the expected content is readable (or time out).
-async function readLogFile(logFile: string): Promise<string> {
-  const deadline = Date.now() + 2000
-  while (Date.now() < deadline) {
-    if (fs.existsSync(logFile)) {
-      const content = fs.readFileSync(logFile, 'utf-8')
-      if (content.length > 0) return content
-    }
-    await new Promise((resolve) => setTimeout(resolve, 10))
-  }
-  return fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf-8') : ''
+// File destinations are synchronous, so the file is complete as soon as the
+// log call returns.
+function readLogFile(logFile: string): string {
+  return fs.readFileSync(logFile, 'utf-8')
 }
 
 describe('logger', () => {
@@ -76,7 +68,7 @@ describe('logger', () => {
     mod.logger.info('test_event', { foo: 'bar' })
     mod.flushLogger()
 
-    const content = await readLogFile(logFile)
+    const content = readLogFile(logFile)
     expect(content).toContain('test_event')
     expect(content).toContain('foo')
 
@@ -101,7 +93,7 @@ describe('logger', () => {
     mod.logger.warn('warn_event')
     mod.flushLogger()
 
-    const content = await readLogFile(logFile)
+    const content = readLogFile(logFile)
     expect(content).not.toContain('debug_event')
     expect(content).not.toContain('info_event')
     expect(content).toContain('warn_event')
@@ -126,7 +118,7 @@ describe('logger', () => {
     mod.logger.info('info_event')
     mod.flushLogger()
 
-    const content = await readLogFile(logFile)
+    const content = readLogFile(logFile)
     expect(content).not.toContain('debug_event')
     expect(content).toContain('info_event')
 
@@ -150,7 +142,7 @@ describe('logger', () => {
     mod.logger.info('info_event')
     mod.flushLogger()
 
-    const content = await readLogFile(logFile)
+    const content = readLogFile(logFile)
     // Should default to info level
     expect(content).not.toContain('debug_event')
     expect(content).toContain('info_event')
@@ -174,7 +166,7 @@ describe('logger', () => {
     mod.logger.info('my_custom_event', { key: 'value' })
     mod.flushLogger()
 
-    const content = await readLogFile(logFile)
+    const content = readLogFile(logFile)
     const lines = content.trim().split('\n')
     const entry = JSON.parse(lines[0])
 
@@ -202,11 +194,32 @@ describe('logger', () => {
     mod.logger.info('correct_event', { event: 'wrong_event', other: 'data' })
     mod.flushLogger()
 
-    const content = await readLogFile(logFile)
+    const content = readLogFile(logFile)
     const entry = JSON.parse(content.trim())
 
     expect(entry.event).toBe('correct_event')
     expect(entry.other).toBe('data')
+
+    mod.closeLogger()
+    closeLogger = null
+    fs.rmSync(tmpDir, { recursive: true })
+  })
+
+  test('file writes land synchronously without a flush', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'logger-test-'))
+    const logFile = path.join(tmpDir, 'test.log')
+
+    process.env.LOG_FILE = logFile
+    process.env.LOG_LEVEL = 'info'
+    process.env.NODE_ENV = 'production'
+
+    const mod = await import(`../logger?sync-${Date.now()}`)
+    closeLogger = mod.closeLogger
+
+    // No flushLogger(): a crash (SIGKILL/segfault) never gets to flush, so
+    // the line must already be on disk when the call returns.
+    mod.logger.info('sync_event')
+    expect(readLogFile(logFile)).toContain('sync_event')
 
     mod.closeLogger()
     closeLogger = null
