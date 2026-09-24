@@ -56,7 +56,7 @@ import {
   isValidSyncedSetting,
   type SyncedSettings,
 } from '../shared/syncedSettings'
-import { logger, logLevel } from './logger'
+import { logger, logLevel, flushLogger } from './logger'
 import {
   SessionRefreshWorkerClient,
   SessionRefreshWorkerTimeoutError,
@@ -112,6 +112,8 @@ function checkPortAvailable(port: number): void {
     } catch {
     }
     logger.error('port_in_use', { port, pid, processName })
+    // Async (buffered) logging — flush before exit or the error never lands.
+    flushLogger()
     process.exit(1)
   }
 }
@@ -2278,6 +2280,11 @@ async function cleanupAllTerminals() {
   remotePoller?.stop()
   db.close()
 }
+
+// Log destinations are buffered (sync:false) — flushSync drains them on any
+// exit path that reaches this handler (normal exit, uncaught fatal, and the
+// signal handlers below via process.exit).
+process.on('exit', () => flushLogger())
 
 process.on('SIGINT', () => {
   void cleanupAllTerminals().finally(() => process.exit(0))

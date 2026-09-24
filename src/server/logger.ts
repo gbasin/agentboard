@@ -89,7 +89,16 @@ function createLogger(): pino.Logger {
   }
 
   if (logFile) {
-    fileDestination = pino.destination({ dest: logFile, sync: true, mkdir: true })
+    // sync:false on the main thread — buffered writes. During a disk stall a
+    // sync write blocks the event loop for the whole fsync; buffered writes
+    // land when the disk wakes. flushLogger() (wired to exit/SIGINT/SIGTERM)
+    // drains the buffer. Workers stay sync: async sonic-boom destinations
+    // segfault under Bun's worker teardown.
+    fileDestination = pino.destination({
+      dest: logFile,
+      sync: !Bun.isMainThread,
+      mkdir: true,
+    })
 
     if (canPretty) {
       try {
@@ -126,9 +135,18 @@ export const logLevel: LogLevel = getLogLevel()
 // Flush pending logs
 // Call before process.exit() to ensure logs are written
 export function flushLogger(): void {
-  pinoLogger.flush()
+  try {
+    pinoLogger.flush()
+  } catch {
+    // Best effort — a failed flush must not break the exit path.
+  }
   if (fileDestination && 'flushSync' in fileDestination) {
-    ;(fileDestination as pino.DestinationStream & { flushSync: () => void }).flushSync()
+    try {
+      ;(fileDestination as pino.DestinationStream & { flushSync: () => void }).flushSync()
+    } catch {
+      // Async destinations throw "sonic boom is not ready yet" before the fd
+      // opens — nothing is buffered at that point, nothing to flush.
+    }
   }
 }
 

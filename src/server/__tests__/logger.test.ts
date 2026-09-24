@@ -3,6 +3,20 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
+// File destinations are buffered (sync:false) — writes land asynchronously.
+// Poll until the expected content is readable (or time out).
+async function readLogFile(logFile: string): Promise<string> {
+  const deadline = Date.now() + 2000
+  while (Date.now() < deadline) {
+    if (fs.existsSync(logFile)) {
+      const content = fs.readFileSync(logFile, 'utf-8')
+      if (content.length > 0) return content
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+  return fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf-8') : ''
+}
+
 describe('logger', () => {
   const ORIGINAL_LOG_LEVEL = process.env.LOG_LEVEL
   const ORIGINAL_LOG_FILE = process.env.LOG_FILE
@@ -62,7 +76,7 @@ describe('logger', () => {
     mod.logger.info('test_event', { foo: 'bar' })
     mod.flushLogger()
 
-    const content = fs.readFileSync(logFile, 'utf-8')
+    const content = await readLogFile(logFile)
     expect(content).toContain('test_event')
     expect(content).toContain('foo')
 
@@ -87,7 +101,7 @@ describe('logger', () => {
     mod.logger.warn('warn_event')
     mod.flushLogger()
 
-    const content = fs.readFileSync(logFile, 'utf-8')
+    const content = await readLogFile(logFile)
     expect(content).not.toContain('debug_event')
     expect(content).not.toContain('info_event')
     expect(content).toContain('warn_event')
@@ -112,7 +126,7 @@ describe('logger', () => {
     mod.logger.info('info_event')
     mod.flushLogger()
 
-    const content = fs.readFileSync(logFile, 'utf-8')
+    const content = await readLogFile(logFile)
     expect(content).not.toContain('debug_event')
     expect(content).toContain('info_event')
 
@@ -136,7 +150,7 @@ describe('logger', () => {
     mod.logger.info('info_event')
     mod.flushLogger()
 
-    const content = fs.readFileSync(logFile, 'utf-8')
+    const content = await readLogFile(logFile)
     // Should default to info level
     expect(content).not.toContain('debug_event')
     expect(content).toContain('info_event')
@@ -160,7 +174,7 @@ describe('logger', () => {
     mod.logger.info('my_custom_event', { key: 'value' })
     mod.flushLogger()
 
-    const content = fs.readFileSync(logFile, 'utf-8')
+    const content = await readLogFile(logFile)
     const lines = content.trim().split('\n')
     const entry = JSON.parse(lines[0])
 
@@ -188,7 +202,7 @@ describe('logger', () => {
     mod.logger.info('correct_event', { event: 'wrong_event', other: 'data' })
     mod.flushLogger()
 
-    const content = fs.readFileSync(logFile, 'utf-8')
+    const content = await readLogFile(logFile)
     const entry = JSON.parse(content.trim())
 
     expect(entry.event).toBe('correct_event')
