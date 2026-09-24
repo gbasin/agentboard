@@ -70,6 +70,13 @@ interface DevinSessionSyncState {
   lastRowId: number
   /** number of message_nodes rows synced (all roles, including filtered ones) */
   rowCount: number
+  /**
+   * Mirror file byte size after our last successful write. A mismatch means
+   * a torn append or a crash between append and state write, so the mirror
+   * is rewritten rather than appended to. Absent in state written before
+   * this field existed; the current size is then adopted as-is.
+   */
+  fileSize?: number
 }
 
 interface SyncState {
@@ -212,6 +219,19 @@ function isSessionSyncState(value: unknown): value is DevinSessionSyncState {
   )
 }
 
+/** Mirror byte size, or null when the file is missing/unreadable. */
+function mirrorSize(filePath: string): number | null {
+  try {
+    return fs.statSync(filePath).size
+  } catch {
+    return null
+  }
+}
+
+function mirrorMatches(prior: DevinSessionSyncState, size: number | null): boolean {
+  return size !== null && (prior.fileSize === undefined || prior.fileSize === size)
+}
+
 function canSkipDb(state: SyncState, fingerprint: string | null, outDir: string): boolean {
   if (fingerprint === null) return false
   if (state.formatVersion !== MIRROR_FORMAT_VERSION) return false
@@ -221,10 +241,11 @@ function canSkipDb(state: SyncState, fingerprint: string | null, outDir: string)
   if (lastCheck === undefined || Date.now() - lastCheck >= FULL_CHECK_INTERVAL_MS) {
     return false
   }
-  // A mirror deleted out from under us must be recreated without waiting
-  // for the next db write: one stat per session, still no SQL.
-  return Object.keys(state.sessions).every((id) =>
-    fs.existsSync(path.join(outDir, `${sanitizeFileName(id)}.jsonl`))
+  // A mirror deleted or resized out from under us must be repaired without
+  // waiting for the next db write: one stat per session, still no SQL.
+  return Object.entries(state.sessions).every(([id, entry]) =>
+    isSessionSyncState(entry) &&
+    mirrorMatches(entry, mirrorSize(path.join(outDir, `${sanitizeFileName(id)}.jsonl`)))
   )
 }
 
@@ -340,19 +361,20 @@ export function syncDevinSessions(outDir = getDevinLogOutDir()): DevinSyncResult
       const fileName = `${sanitizeFileName(session.id)}.jsonl`
       const filePath = path.join(outDir, fileName)
       const aggregate = aggregates.get(session.id) ?? { count: 0, maxRowId: 0 }
-      const fileExists = prior ? fs.existsSync(filePath) : false
+      const fileSize = prior ? mirrorSize(filePath) : null
+      const fileIntact = prior ? mirrorMatches(prior, fileSize) : false
 
       if (
         prior &&
-        fileExists &&
+        fileIntact &&
         aggregate.count === prior.rowCount &&
         aggregate.maxRowId === prior.lastRowId
       ) {
-        nextState.sessions[session.id] = prior
+        nextState.sessions[session.id] = { ...prior, fileSize: fileSize ?? undefined }
         return
       }
 
-      if (prior && fileExists && aggregate.count > prior.rowCount) {
+      if (prior && fileIntact && aggregate.count > prior.rowCount) {
         const prefix = prefixCountStmt().get({
           $sessionId: session.id,
           $lastRowId: prior.lastRowId,
@@ -374,6 +396,7 @@ export function syncDevinSessions(outDir = getDevinLogOutDir()): DevinSyncResult
           nextState.sessions[session.id] = {
             lastRowId,
             rowCount: prior.rowCount + newRows.length,
+            fileSize: fs.statSync(filePath).size,
           }
           return
         }
@@ -387,8 +410,13 @@ export function syncDevinSessions(outDir = getDevinLogOutDir()): DevinSyncResult
         if (line !== null) lines.push(line)
         lastRowId = row.row_id
       }
-      writeJsonAtomic(filePath, lines.join('\n') + '\n')
-      nextState.sessions[session.id] = { lastRowId, rowCount: rows.length }
+      const content = lines.join('\n') + '\n'
+      writeJsonAtomic(filePath, content)
+      nextState.sessions[session.id] = {
+        lastRowId,
+        rowCount: rows.length,
+        fileSize: Buffer.byteLength(content),
+      }
       result.rewritten += 1
     }
 
@@ -399,10 +427,12 @@ export function syncDevinSessions(outDir = getDevinLogOutDir()): DevinSyncResult
       try {
         syncSession(session, prior)
       } catch (error) {
-        // Keep this session's prior state so other sessions' progress is
-        // still saved; withhold the fingerprint so the next cycle retries.
+        // Drop this session's state so the next cycle fully rewrites it (a
+        // throw mid-append may have left a torn line). Other sessions'
+        // progress is still saved; the fingerprint is withheld so the next
+        // cycle does not early-exit.
         sessionFailed = true
-        if (prior) nextState.sessions[session.id] = prior
+        delete nextState.sessions[session.id]
         logger.warn('devin_sync_session_failed', {
           sessionId: session.id,
           message: error instanceof Error ? error.message : String(error),

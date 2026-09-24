@@ -319,7 +319,8 @@ describe('syncDevinSessions incremental', () => {
     const legacy = {
       formatVersion: 3,
       sessions: {
-        ok: current.sessions.ok,
+        // master's shape: no fileSize; the current size is adopted.
+        ok: { lastRowId: current.sessions.ok.lastRowId, rowCount: current.sessions.ok.rowCount },
         broken: { lastRowId: current.sessions.broken.lastRowId },
       },
     }
@@ -332,6 +333,7 @@ describe('syncDevinSessions incremental', () => {
     const next = JSON.parse(fs.readFileSync(statePath, 'utf8'))
     expect(typeof next.dbFingerprint).toBe('string')
     expect(next.sessions.broken.rowCount).toBe(1)
+    expect(next.sessions.ok.fileSize).toBe(fs.statSync(path.join(paths.outDir, 'ok.jsonl')).size)
   })
 
   test('a failing session does not roll back progress of the others', () => {
@@ -363,5 +365,96 @@ describe('syncDevinSessions incremental', () => {
     expect(second).toEqual({ sessions: 2, rewritten: 1, appended: 0, removed: 0 })
     expect(readLines(path.join(paths.outDir, 'good.jsonl'))).toHaveLength(3)
     expect(readLines(badPath)).toHaveLength(2)
+  })
+
+  describe('torn or duplicated appends', () => {
+    function seed(): string {
+      const db = createDevinDb()
+      addSession(db, 'torn', '/p', null)
+      addMessage(db, 'torn', 'user', 'a')
+      db.close()
+      syncDevinSessions(paths.outDir)
+      return path.join(paths.outDir, 'torn.jsonl')
+    }
+
+    function contents(logPath: string): string[] {
+      // readLines JSON-parses every line, so a glued/torn line would throw.
+      return readLines(logPath)
+        .slice(1)
+        .map((line) => (line.message as { content: string }).content)
+    }
+
+    test('a partially written line forces a clean rewrite instead of an append', () => {
+      const logPath = seed()
+      fs.appendFileSync(logPath, '{"type":"assistant","mess') // torn tail
+      const db = openDb()
+      addMessage(db, 'torn', 'assistant', 'b')
+      db.close()
+
+      const result = syncDevinSessions(paths.outDir)
+      expect(result).toEqual({ sessions: 1, rewritten: 1, appended: 0, removed: 0 })
+      expect(contents(logPath)).toEqual(['a', 'b'])
+    })
+
+    test('a resized mirror is repaired even when the db is idle', () => {
+      const logPath = seed()
+      fs.appendFileSync(logPath, 'garbage')
+      const result = syncDevinSessions(paths.outDir)
+      expect(result?.rewritten).toBe(1)
+      expect(contents(logPath)).toEqual(['a'])
+    })
+
+    test('crash between append and state write does not duplicate rows', () => {
+      const logPath = seed()
+      const statePath = path.join(paths.outDir, '.sync-state.json')
+      const staleState = fs.readFileSync(statePath, 'utf8')
+
+      const db = openDb()
+      addMessage(db, 'torn', 'assistant', 'b')
+      db.close()
+      expect(syncDevinSessions(paths.outDir)?.appended).toBe(1)
+      // Simulate the process dying before the state write landed.
+      fs.writeFileSync(statePath, staleState)
+
+      const result = syncDevinSessions(paths.outDir)
+      expect(result).toEqual({ sessions: 1, rewritten: 1, appended: 0, removed: 0 })
+      expect(contents(logPath)).toEqual(['a', 'b'])
+    })
+
+    test('an append that throws midway drops state so the next cycle rewrites', () => {
+      const logPath = seed()
+      const db = openDb()
+      addMessage(db, 'torn', 'assistant', 'b')
+      db.close()
+
+      const appendSpy = spyOn(fs, 'appendFileSync').mockImplementationOnce((file, data) => {
+        fs.writeFileSync(file as string, String(data).slice(0, 10), { flag: 'a' })
+        throw new Error('ENOSPC')
+      })
+      try {
+        expect(syncDevinSessions(paths.outDir)?.appended).toBe(0)
+      } finally {
+        appendSpy.mockRestore()
+      }
+      const state = JSON.parse(fs.readFileSync(path.join(paths.outDir, '.sync-state.json'), 'utf8'))
+      expect(state.sessions.torn).toBeUndefined()
+      expect(state.dbFingerprint).toBeUndefined()
+
+      const result = syncDevinSessions(paths.outDir)
+      expect(result?.rewritten).toBe(1)
+      expect(contents(logPath)).toEqual(['a', 'b'])
+    })
+
+    test('records the mirror byte size after rewrite and append', () => {
+      const logPath = seed()
+      const statePath = path.join(paths.outDir, '.sync-state.json')
+      const size = () => JSON.parse(fs.readFileSync(statePath, 'utf8')).sessions.torn.fileSize
+      expect(size()).toBe(fs.statSync(logPath).size)
+      const db = openDb()
+      addMessage(db, 'torn', 'assistant', 'b')
+      db.close()
+      expect(syncDevinSessions(paths.outDir)?.appended).toBe(1)
+      expect(size()).toBe(fs.statSync(logPath).size)
+    })
   })
 })
