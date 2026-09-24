@@ -7,10 +7,12 @@
 // ~/.agentboard/devin-sessions/<session-id>.jsonl in a Claude-compatible
 // shape: {"type","agent":"devin","sessionId","cwd","timestamp","message"}.
 //
-// Sync state (last synced row_id + message count per session) is persisted in
-// .sync-state.json next to the logs so restarts don't rewrite every file.
-// Files are append-only when the session's message list grows; a shrunk or
-// reordered message list (revert/compaction) triggers a full atomic rewrite.
+// Sync state (db file fingerprint, plus last synced row_id + row count per
+// session) is persisted in .sync-state.json next to the logs so idle cycles
+// skip SQLite entirely and restarts don't rewrite every file. Files are
+// append-only when the session's message list grows (only new rows are read);
+// a shrunk or reordered message list (revert/compaction) triggers a full
+// atomic rewrite. See syncDevinSessions() for the per-cycle cost ladder.
 
 import fs from 'node:fs'
 import path from 'node:path'
@@ -71,6 +73,10 @@ interface DevinSessionSyncState {
 
 interface SyncState {
   formatVersion?: number
+  /** devinDbFingerprint() at the last completed sync */
+  dbFingerprint?: string
+  /** visible session count at the last completed sync (early-exit result) */
+  sessionCount?: number
   sessions: Record<string, DevinSessionSyncState>
 }
 
@@ -189,6 +195,45 @@ function writeJsonAtomic(filePath: string, data: string): void {
   fs.renameSync(tmpPath, filePath)
 }
 
+/** Reads the first `length` bytes of a file as hex; '' when unreadable. */
+function readHeaderHex(filePath: string, length: number): string {
+  let fd: number | null = null
+  try {
+    fd = fs.openSync(filePath, 'r')
+    const buf = Buffer.alloc(length)
+    const read = fs.readSync(fd, buf, 0, length, 0)
+    return buf.subarray(0, read).toString('hex')
+  } catch {
+    return ''
+  } finally {
+    if (fd !== null) fs.closeSync(fd)
+  }
+}
+
+function fileFingerprint(filePath: string, headerBytes: number, headerOffset = 0): string {
+  try {
+    const stat = fs.statSync(filePath, { bigint: true })
+    const header = readHeaderHex(filePath, headerOffset + headerBytes).slice(headerOffset * 2)
+    return `${stat.ino}:${stat.size}:${stat.mtimeNs}:${header}`
+  } catch {
+    return 'missing'
+  }
+}
+
+/**
+ * Cheap change detector for sessions.db without opening it through SQLite.
+ * Combines inode/size/mtime of the db and its WAL with the db header's file
+ * change counter (bytes 24-27, bumped per commit in rollback-journal mode)
+ * and the WAL header (checkpoint sequence + salts, which change on WAL
+ * reset). mtime alone is not enough: Linux mtime granularity is a kernel
+ * tick, and same-size page rewrites are common.
+ */
+export function devinDbFingerprint(dbPath: string): string {
+  const db = fileFingerprint(dbPath, 4, 24)
+  const wal = fileFingerprint(`${dbPath}-wal`, 32)
+  return `db=${db}|wal=${wal}`
+}
+
 export interface DevinSyncResult {
   sessions: number
   rewritten: number
@@ -196,14 +241,42 @@ export interface DevinSyncResult {
   removed: number
 }
 
+interface SessionAggregate {
+  count: number
+  maxRowId: number
+}
+
 /**
  * Mirror devin sessions.db into synthesized JSONL logs.
  * No-op when the devin CLI data directory doesn't exist.
+ *
+ * Per cycle, in order of cost:
+ * 1. Fingerprint db + WAL files; unchanged since last sync -> return
+ *    without opening SQLite or touching the output dir.
+ * 2. One covering-index aggregate (COUNT, MAX(row_id) per session); a
+ *    session whose count and max row_id match the recorded state is skipped.
+ *    row_id is AUTOINCREMENT, so equal count + max means an identical row set.
+ * 3. Changed session with an intact prefix (rows <= lastRowId still number
+ *    rowCount) -> read and append only rows after lastRowId.
+ * 4. Otherwise (first sync, truncation, revert, missing file) -> full rewrite.
  */
 export function syncDevinSessions(outDir = getDevinLogOutDir()): DevinSyncResult | null {
   const dbPath = getDevinSessionsDbPath()
   if (!fs.existsSync(dbPath)) {
     return null
+  }
+
+  // Fingerprint before opening: a write racing our read changes it again,
+  // so the next cycle re-syncs instead of trusting a stale snapshot.
+  const fingerprint = devinDbFingerprint(dbPath)
+  const state = loadSyncState(outDir)
+  const stateCurrent = state.formatVersion === MIRROR_FORMAT_VERSION
+  if (
+    stateCurrent &&
+    state.dbFingerprint === fingerprint &&
+    typeof state.sessionCount === 'number'
+  ) {
+    return { sessions: state.sessionCount, rewritten: 0, appended: 0, removed: 0 }
   }
 
   let db: SQLiteDatabase | null = null
@@ -227,43 +300,77 @@ export function syncDevinSessions(outDir = getDevinLogOutDir()): DevinSyncResult
       .all() as DevinSessionRow[]
     result.sessions = sessions.length
 
-    fs.mkdirSync(outDir, { recursive: true })
-    const state = loadSyncState(outDir)
-    if (state.formatVersion !== MIRROR_FORMAT_VERSION) {
-      state.sessions = {}
+    const aggregates = new Map<string, SessionAggregate>()
+    const aggregateRows = db
+      .prepare(
+        `SELECT session_id, COUNT(*) AS count, MAX(row_id) AS maxRowId
+         FROM message_nodes GROUP BY session_id`
+      )
+      .all() as Array<{ session_id: string; count: number; maxRowId: number }>
+    for (const row of aggregateRows) {
+      aggregates.set(row.session_id, { count: row.count, maxRowId: row.maxRowId })
     }
+
+    fs.mkdirSync(outDir, { recursive: true })
+    const priorSessions = stateCurrent ? state.sessions : {}
     const nextState: SyncState = {
       formatVersion: MIRROR_FORMAT_VERSION,
+      dbFingerprint: fingerprint,
+      sessionCount: sessions.length,
       sessions: {},
     }
 
-    const rowsStmt = db.prepare(
+    // Statements are prepared on first use so an append-only cycle never
+    // prepares the full-history read.
+    const lazyStmt = (sql: string) => {
+      let stmt: ReturnType<SQLiteDatabase['prepare']> | null = null
+      return () => (stmt ??= db!.prepare(sql))
+    }
+    // Full read: only for rewrites (first sync or failed prefix check).
+    const allRowsStmt = lazyStmt(
       `SELECT row_id, chat_message, created_at FROM message_nodes
        WHERE session_id = $sessionId ORDER BY row_id ASC`
     )
-    const boundaryStmt = db.prepare(
-      `SELECT row_id FROM message_nodes
-       WHERE session_id = $sessionId ORDER BY row_id ASC LIMIT 1 OFFSET $offset`
+    // Append read: only rows past the synced prefix (index range scan).
+    const newRowsStmt = lazyStmt(
+      `SELECT row_id, chat_message, created_at FROM message_nodes
+       WHERE session_id = $sessionId AND row_id > $afterRowId ORDER BY row_id ASC`
+    )
+    // Prefix integrity: the synced prefix is intact iff exactly rowCount rows
+    // remain at or below lastRowId (equivalent to the old OFFSET boundary
+    // probe, but a covering-index count instead of an offset walk).
+    const prefixCountStmt = lazyStmt(
+      `SELECT COUNT(*) AS count FROM message_nodes
+       WHERE session_id = $sessionId AND row_id <= $lastRowId`
     )
 
     for (const session of sessions) {
       const fileName = `${sanitizeFileName(session.id)}.jsonl`
       const filePath = path.join(outDir, fileName)
-      const prior = state.sessions[session.id]
+      const prior = priorSessions[session.id]
+      const aggregate = aggregates.get(session.id) ?? { count: 0, maxRowId: 0 }
+      const fileExists = prior ? fs.existsSync(filePath) : false
 
-      // Fast path: append when the synced prefix is unchanged.
-      // Verify integrity via the boundary row: the row at offset=rowCount-1
-      // must have row_id === prior.lastRowId.
-      let appended = false
-      if (prior && prior.rowCount > 0 && fs.existsSync(filePath)) {
-        const boundary = boundaryStmt.get({
+      if (
+        prior &&
+        fileExists &&
+        aggregate.count === prior.rowCount &&
+        aggregate.maxRowId === prior.lastRowId
+      ) {
+        nextState.sessions[session.id] = prior
+        continue
+      }
+
+      if (prior && fileExists && aggregate.count > prior.rowCount) {
+        const prefix = prefixCountStmt().get({
           $sessionId: session.id,
-          $offset: prior.rowCount - 1,
-        }) as { row_id: number } | null
-        if (boundary && boundary.row_id === prior.lastRowId) {
-          const newRows = (
-            rowsStmt.all({ $sessionId: session.id }) as DevinMessageRow[]
-          ).filter((row) => row.row_id > prior.lastRowId)
+          $lastRowId: prior.lastRowId,
+        }) as { count: number } | null
+        if (prefix && prefix.count === prior.rowCount) {
+          const newRows = newRowsStmt().all({
+            $sessionId: session.id,
+            $afterRowId: prior.lastRowId,
+          }) as DevinMessageRow[]
           const newLines = newRows
             .map((row) => messageToLine(session, row))
             .filter((line): line is string => line !== null)
@@ -277,33 +384,29 @@ export function syncDevinSessions(outDir = getDevinLogOutDir()): DevinSyncResult
             lastRowId,
             rowCount: prior.rowCount + newRows.length,
           }
-          appended = true
+          continue
         }
       }
 
-      if (!appended) {
-        const rows = rowsStmt.all({ $sessionId: session.id }) as DevinMessageRow[]
-        const lines = [metaLine(session)]
-        let lastRowId = 0
-        for (const row of rows) {
-          const line = messageToLine(session, row)
-          if (line !== null) lines.push(line)
-          lastRowId = row.row_id
-        }
-        writeJsonAtomic(filePath, lines.join('\n') + '\n')
-        nextState.sessions[session.id] = { lastRowId, rowCount: rows.length }
-        result.rewritten += 1
+      const rows = allRowsStmt().all({ $sessionId: session.id }) as DevinMessageRow[]
+      const lines = [metaLine(session)]
+      let lastRowId = 0
+      for (const row of rows) {
+        const line = messageToLine(session, row)
+        if (line !== null) lines.push(line)
+        lastRowId = row.row_id
       }
+      writeJsonAtomic(filePath, lines.join('\n') + '\n')
+      nextState.sessions[session.id] = { lastRowId, rowCount: rows.length }
+      result.rewritten += 1
     }
 
     // Remove JSONL files for sessions that are gone or hidden.
+    const liveFiles = new Set(sessions.map((session) => sanitizeFileName(session.id)))
     for (const entry of fs.readdirSync(outDir)) {
       if (!entry.endsWith('.jsonl')) continue
       const id = entry.slice(0, -'.jsonl'.length)
-      const stillLive = sessions.some(
-        (session) => sanitizeFileName(session.id) === id
-      )
-      if (!stillLive) {
+      if (!liveFiles.has(id)) {
         try {
           fs.unlinkSync(path.join(outDir, entry))
           result.removed += 1
@@ -313,6 +416,8 @@ export function syncDevinSessions(outDir = getDevinLogOutDir()): DevinSyncResult
       }
     }
 
+    // Reaching here means the fingerprint (or format) changed, so the state
+    // always needs persisting; the early exit above covers the idle case.
     writeJsonAtomic(path.join(outDir, SYNC_STATE_FILE), JSON.stringify(nextState))
     return result
   } catch (error) {
