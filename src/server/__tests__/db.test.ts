@@ -806,4 +806,23 @@ describe('db', () => {
     expect(claimed?.wakeStartedAt).toBeNull()
     expect(db.getSessionById(inserted.sessionId)?.wakeStartedAt).toBeNull()
   })
+
+  test('fresh database uses WAL with a short busy_timeout', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentboard-db-pragma-'))
+    const fresh = initDatabase({ path: path.join(tempDir, 'fresh.db') })
+    try {
+      const journal = fresh.db.prepare('PRAGMA journal_mode').get() as {
+        journal_mode: string
+      }
+      const busy = fresh.db.prepare('PRAGMA busy_timeout').get() as Record<
+        string,
+        number
+      >
+      expect(journal.journal_mode).toBe('wal')
+      expect(Object.values(busy)[0]).toBe(250)
+    } finally {
+      fresh.close()
+      fs.rmSync(tempDir, { recursive: true, force: true })
+    }
+  })
 })

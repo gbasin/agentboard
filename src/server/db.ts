@@ -162,14 +162,17 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
   ensureDataDir(dbPath)
 
   const db = new SQLiteDatabase(dbPath)
-  // WAL so concurrent readers/tools don't hit "database is locked" against
-  // rollback-journal write locks; busy_timeout turns transient locks into a
-  // short wait instead of an immediate error. NORMAL is safe under WAL (frame
-  // checksums catch torn writes) and avoids a per-commit fsync — individual
-  // fsyncs stalling under disk pressure showed up as multi-second event-loop
-  // gaps (log_poll processMs spikes).
+  // WAL so readers never block on (or block) a writer; this fixes the
+  // "database is locked" errors seen when an old and new server overlap during
+  // a restart. Under WAL only writers contend, and bun:sqlite waits for the
+  // lock synchronously on the main thread, so busy_timeout is kept short: a
+  // poll can issue ~25 writes, and a long timeout would stall the event loop
+  // for seconds per write while another server holds the lock. 250ms absorbs
+  // a normal overlapping commit; anything longer surfaces as an error instead
+  // of a frozen server. NORMAL is safe under WAL (frame checksums catch torn
+  // writes) and skips the per-commit fsync.
   db.exec('PRAGMA journal_mode = WAL')
-  db.exec('PRAGMA busy_timeout = 5000')
+  db.exec('PRAGMA busy_timeout = 250')
   db.exec('PRAGMA synchronous = NORMAL')
   migrateDatabase(db)
   db.exec(CREATE_TABLE_SQL)
