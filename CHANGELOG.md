@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.14.0](https://github.com/gbasin/agentboard/compare/v0.13.0...v0.14.0) (2026-09-24)
+
+
+### Features
+
+* **matcher:** match windows via AskUserQuestion answer recaps ([#282](https://github.com/gbasin/agentboard/issues/282)) ([9a24e4d](https://github.com/gbasin/agentboard/commit/9a24e4d640985cec5c8a2ec075e43116bb7e26bb))
+
+
+### Performance Improvements
+
+* make devin session sync incremental ([#285](https://github.com/gbasin/agentboard/issues/285)) ([9d28d18](https://github.com/gbasin/agentboard/commit/9d28d18e3dd363446eba4f446591d373fd328c9e))
+* move devin session sync off main thread; add stall instrumentation ([#281](https://github.com/gbasin/agentboard/issues/281)) ([02d9a0e](https://github.com/gbasin/agentboard/commit/02d9a0e187c970ed71aa54abe3aad513c1f6dee3))
+* skip tmux reconfigure on refresh ticks while the server is unchanged ([#284](https://github.com/gbasin/agentboard/issues/284)) ([5e2d130](https://github.com/gbasin/agentboard/commit/5e2d130ecbfb34fdf6f236de0a88320122ca3d19))
+
 ## [0.13.0](https://github.com/gbasin/agentboard/compare/v0.12.2...v0.13.0) (2026-09-23)
 
 
