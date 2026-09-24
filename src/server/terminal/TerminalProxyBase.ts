@@ -2,7 +2,7 @@ import { config } from '../config'
 import { logger } from '../logger'
 import { withTmuxUtf8Flag } from '../tmuxFormat'
 import { TmuxTimeoutError } from '../tmuxTimeout'
-import { logSlowSyncSpawn } from '../syncSpawnTiming'
+import { describeSpawnCommand, logSlowSyncSpawn } from '../syncSpawnTiming'
 import { sanitizedTmuxEnv } from '../tmuxEnv'
 import type {
   ITerminalProxy,
@@ -150,7 +150,7 @@ abstract class TerminalProxyBase implements ITerminalProxy {
       ...(options.stdin !== undefined ? { stdin: Buffer.from(options.stdin) } : {}),
     })
     logSlowSyncSpawn(
-      `tmux ${args[0] ?? 'command'}`,
+      describeSpawnCommand(['tmux', ...args]),
       Math.round(performance.now() - startedAt),
       timeoutMs
     )
