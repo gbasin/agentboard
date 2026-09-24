@@ -18,6 +18,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { Database as SQLiteDatabase } from 'bun:sqlite'
 import { logger } from './logger'
+import { devinDbFingerprint } from './devinDbFingerprint'
 
 const SYNC_STATE_FILE = '.sync-state.json'
 const KEPT_ROLES = new Set(['user', 'assistant', 'system', 'tool'])
@@ -195,45 +196,6 @@ function writeJsonAtomic(filePath: string, data: string): void {
   fs.renameSync(tmpPath, filePath)
 }
 
-/** Reads the first `length` bytes of a file as hex; '' when unreadable. */
-function readHeaderHex(filePath: string, length: number): string {
-  let fd: number | null = null
-  try {
-    fd = fs.openSync(filePath, 'r')
-    const buf = Buffer.alloc(length)
-    const read = fs.readSync(fd, buf, 0, length, 0)
-    return buf.subarray(0, read).toString('hex')
-  } catch {
-    return ''
-  } finally {
-    if (fd !== null) fs.closeSync(fd)
-  }
-}
-
-function fileFingerprint(filePath: string, headerBytes: number, headerOffset = 0): string {
-  try {
-    const stat = fs.statSync(filePath, { bigint: true })
-    const header = readHeaderHex(filePath, headerOffset + headerBytes).slice(headerOffset * 2)
-    return `${stat.ino}:${stat.size}:${stat.mtimeNs}:${header}`
-  } catch {
-    return 'missing'
-  }
-}
-
-/**
- * Cheap change detector for sessions.db without opening it through SQLite.
- * Combines inode/size/mtime of the db and its WAL with the db header's file
- * change counter (bytes 24-27, bumped per commit in rollback-journal mode)
- * and the WAL header (checkpoint sequence + salts, which change on WAL
- * reset). mtime alone is not enough: Linux mtime granularity is a kernel
- * tick, and same-size page rewrites are common.
- */
-export function devinDbFingerprint(dbPath: string): string {
-  const db = fileFingerprint(dbPath, 4, 24)
-  const wal = fileFingerprint(`${dbPath}-wal`, 32)
-  return `db=${db}|wal=${wal}`
-}
-
 export interface DevinSyncResult {
   sessions: number
   rewritten: number
@@ -251,8 +213,8 @@ interface SessionAggregate {
  * No-op when the devin CLI data directory doesn't exist.
  *
  * Per cycle, in order of cost:
- * 1. Fingerprint db + WAL files; unchanged since last sync -> return
- *    without opening SQLite or touching the output dir.
+ * 1. Fingerprint db/WAL/shm (see devinDbFingerprint); unchanged since the
+ *    last sync -> return without opening SQLite or touching the output dir.
  * 2. One covering-index aggregate (COUNT, MAX(row_id) per session); a
  *    session whose count and max row_id match the recorded state is skipped.
  *    row_id is AUTOINCREMENT, so equal count + max means an identical row set.
@@ -344,10 +306,9 @@ export function syncDevinSessions(outDir = getDevinLogOutDir()): DevinSyncResult
        WHERE session_id = $sessionId AND row_id <= $lastRowId`
     )
 
-    for (const session of sessions) {
+    function syncSession(session: DevinSessionRow, prior: DevinSessionSyncState | undefined) {
       const fileName = `${sanitizeFileName(session.id)}.jsonl`
       const filePath = path.join(outDir, fileName)
-      const prior = priorSessions[session.id]
       const aggregate = aggregates.get(session.id) ?? { count: 0, maxRowId: 0 }
       const fileExists = prior ? fs.existsSync(filePath) : false
 
@@ -358,7 +319,7 @@ export function syncDevinSessions(outDir = getDevinLogOutDir()): DevinSyncResult
         aggregate.maxRowId === prior.lastRowId
       ) {
         nextState.sessions[session.id] = prior
-        continue
+        return
       }
 
       if (prior && fileExists && aggregate.count > prior.rowCount) {
@@ -384,7 +345,7 @@ export function syncDevinSessions(outDir = getDevinLogOutDir()): DevinSyncResult
             lastRowId,
             rowCount: prior.rowCount + newRows.length,
           }
-          continue
+          return
         }
       }
 
@@ -399,6 +360,10 @@ export function syncDevinSessions(outDir = getDevinLogOutDir()): DevinSyncResult
       writeJsonAtomic(filePath, lines.join('\n') + '\n')
       nextState.sessions[session.id] = { lastRowId, rowCount: rows.length }
       result.rewritten += 1
+    }
+
+    for (const session of sessions) {
+      syncSession(session, priorSessions[session.id])
     }
 
     // Remove JSONL files for sessions that are gone or hidden.
