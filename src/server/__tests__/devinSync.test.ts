@@ -1,100 +1,23 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { describe, expect, test } from 'bun:test'
 import fs from 'node:fs'
-import fsp from 'node:fs/promises'
 import path from 'node:path'
-import os from 'node:os'
 import { Database as SQLiteDatabase } from 'bun:sqlite'
 import { syncDevinSessions } from '../devinSync'
+import {
+  addMessage,
+  addSession,
+  createDevinDb,
+  paths,
+  readLines,
+  useDevinSyncFixture,
+} from './devinSyncFixture'
 
-let tempRoot: string
-let cliDir: string
-let outDir: string
-let dbPath: string
-const originalDevinCliDir = process.env.DEVIN_CLI_DIR
-
-function createDevinDb() {
-  fs.mkdirSync(cliDir, { recursive: true })
-  const db = new SQLiteDatabase(dbPath)
-  db.exec(`
-    CREATE TABLE sessions (
-      id TEXT PRIMARY KEY,
-      working_directory TEXT NOT NULL,
-      backend_type TEXT NOT NULL,
-      model TEXT NOT NULL,
-      agent_mode TEXT NOT NULL,
-      created_at INTEGER NOT NULL,
-      last_activity_at INTEGER NOT NULL,
-      title TEXT,
-      hidden INTEGER NOT NULL DEFAULT 0
-    );
-    CREATE TABLE message_nodes (
-      row_id INTEGER PRIMARY KEY AUTOINCREMENT,
-      session_id TEXT NOT NULL,
-      node_id INTEGER NOT NULL,
-      parent_node_id INTEGER,
-      chat_message TEXT NOT NULL,
-      created_at INTEGER NOT NULL
-    );
-  `)
-  return db
-}
-
-function addSession(
-  db: SQLiteDatabase,
-  id: string,
-  cwd: string,
-  title: string | null,
-  hidden = 0
-) {
-  db.prepare(
-    `INSERT INTO sessions (id, working_directory, backend_type, model, agent_mode, created_at, last_activity_at, title, hidden)
-     VALUES ($id, $cwd, 'local', 'm', 'normal', 1700000000, 1700000100, $title, $hidden)`
-  ).run({ $id: id, $cwd: cwd, $title: title, $hidden: hidden })
-}
-
-function addMessage(
-  db: SQLiteDatabase,
-  sessionId: string,
-  role: string,
-  content: string,
-  createdAt = 1700000050
-) {
-  db.prepare(
-    `INSERT INTO message_nodes (session_id, node_id, chat_message, created_at)
-     VALUES ($sessionId, 0, $chat, $createdAt)`
-  ).run({
-    $sessionId: sessionId,
-    $chat: JSON.stringify({ role, content }),
-    $createdAt: createdAt,
-  })
-}
-
-function readLines(file: string): Array<Record<string, unknown>> {
-  return fs
-    .readFileSync(file, 'utf8')
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => JSON.parse(line))
-}
-
-beforeEach(async () => {
-  tempRoot = await fsp.mkdtemp(path.join(os.tmpdir(), 'agentboard-devin-'))
-  cliDir = path.join(tempRoot, 'devin-cli')
-  outDir = path.join(tempRoot, 'devin-sessions')
-  dbPath = path.join(cliDir, 'sessions.db')
-  process.env.DEVIN_CLI_DIR = cliDir
-})
-
-afterEach(async () => {
-  if (originalDevinCliDir) process.env.DEVIN_CLI_DIR = originalDevinCliDir
-  else delete process.env.DEVIN_CLI_DIR
-  await fsp.rm(tempRoot, { recursive: true, force: true })
-})
+useDevinSyncFixture()
 
 describe('syncDevinSessions', () => {
   test('returns null when sessions.db does not exist', () => {
-    expect(syncDevinSessions(outDir)).toBeNull()
-    expect(fs.existsSync(outDir)).toBe(false)
+    expect(syncDevinSessions(paths.outDir)).toBeNull()
+    expect(fs.existsSync(paths.outDir)).toBe(false)
   })
 
   test('writes one JSONL per session with meta + kept messages', () => {
@@ -106,11 +29,11 @@ describe('syncDevinSessions', () => {
     addMessage(db, 'flawless-bobolink', 'tool', 'tool output')
     db.close()
 
-    const result = syncDevinSessions(outDir)
+    const result = syncDevinSessions(paths.outDir)
     expect(result?.sessions).toBe(1)
     expect(result?.rewritten).toBe(1)
 
-    const logPath = path.join(outDir, 'flawless-bobolink.jsonl')
+    const logPath = path.join(paths.outDir, 'flawless-bobolink.jsonl')
     const lines = readLines(logPath)
     // meta line + 4 kept messages
     expect(lines).toHaveLength(5)
@@ -157,8 +80,8 @@ describe('syncDevinSessions', () => {
     })
     db.close()
 
-    syncDevinSessions(outDir)
-    const lines = readLines(path.join(outDir, 's-tools.jsonl'))
+    syncDevinSessions(paths.outDir)
+    const lines = readLines(path.join(paths.outDir, 's-tools.jsonl'))
     expect(lines).toHaveLength(3)
 
     const callMsg = lines[1].message as {
@@ -188,15 +111,15 @@ describe('syncDevinSessions', () => {
     addMessage(db, 's-fmt', 'user', 'hello')
     db.close()
 
-    syncDevinSessions(outDir)
-    const logPath = path.join(outDir, 's-fmt.jsonl')
+    syncDevinSessions(paths.outDir)
+    const logPath = path.join(paths.outDir, 's-fmt.jsonl')
     expect(readLines(logPath)).toHaveLength(2)
 
     // Simulate a pre-format-version sync state: next sync must rewrite.
-    const statePath = path.join(outDir, '.sync-state.json')
+    const statePath = path.join(paths.outDir, '.sync-state.json')
     fs.writeFileSync(statePath, fs.readFileSync(statePath, 'utf8').replace('"formatVersion":3', '"formatVersion":1'))
 
-    const result = syncDevinSessions(outDir)
+    const result = syncDevinSessions(paths.outDir)
     expect(result?.rewritten).toBe(1)
     expect(result?.appended).toBe(0)
   })
@@ -219,8 +142,8 @@ describe('syncDevinSessions', () => {
     insert({ role: 'user', content: 'legacy prompt' })
     db.close()
 
-    syncDevinSessions(outDir)
-    const lines = readLines(path.join(outDir, 's-internal.jsonl'))
+    syncDevinSessions(paths.outDir)
+    const lines = readLines(path.join(paths.outDir, 's-internal.jsonl'))
     const contents = lines.map(
       (l) => (l.message as { content: string }).content
     )
@@ -235,15 +158,15 @@ describe('syncDevinSessions', () => {
     addMessage(db, 's1', 'user', 'first')
     db.close()
 
-    syncDevinSessions(outDir)
-    const logPath = path.join(outDir, 's1.jsonl')
+    syncDevinSessions(paths.outDir)
+    const logPath = path.join(paths.outDir, 's1.jsonl')
     expect(readLines(logPath)).toHaveLength(2)
 
-    const db2 = new SQLiteDatabase(dbPath)
+    const db2 = new SQLiteDatabase(paths.dbPath)
     addMessage(db2, 's1', 'assistant', 'second')
     db2.close()
 
-    const result = syncDevinSessions(outDir)
+    const result = syncDevinSessions(paths.outDir)
     expect(result?.appended).toBe(1)
     expect(result?.rewritten).toBe(0)
     expect(readLines(logPath)).toHaveLength(3)
@@ -254,16 +177,16 @@ describe('syncDevinSessions', () => {
     addSession(db, 'gone', '/p', null)
     addMessage(db, 'gone', 'user', 'hi')
     db.close()
-    syncDevinSessions(outDir)
-    expect(fs.existsSync(path.join(outDir, 'gone.jsonl'))).toBe(true)
+    syncDevinSessions(paths.outDir)
+    expect(fs.existsSync(path.join(paths.outDir, 'gone.jsonl'))).toBe(true)
 
-    const db2 = new SQLiteDatabase(dbPath)
+    const db2 = new SQLiteDatabase(paths.dbPath)
     db2.exec(`UPDATE sessions SET hidden = 1 WHERE id = 'gone'`)
     db2.close()
 
-    const result = syncDevinSessions(outDir)
+    const result = syncDevinSessions(paths.outDir)
     expect(result?.removed).toBe(1)
-    expect(fs.existsSync(path.join(outDir, 'gone.jsonl'))).toBe(false)
+    expect(fs.existsSync(path.join(paths.outDir, 'gone.jsonl'))).toBe(false)
   })
 
   test('rewrites when messages are deleted (revert)', () => {
@@ -272,15 +195,15 @@ describe('syncDevinSessions', () => {
     addMessage(db, 's2', 'user', 'one')
     addMessage(db, 's2', 'assistant', 'two')
     db.close()
-    syncDevinSessions(outDir)
+    syncDevinSessions(paths.outDir)
 
-    const db2 = new SQLiteDatabase(dbPath)
+    const db2 = new SQLiteDatabase(paths.dbPath)
     db2.exec(`DELETE FROM message_nodes WHERE session_id = 's2'`)
     db2.close()
 
-    const result = syncDevinSessions(outDir)
+    const result = syncDevinSessions(paths.outDir)
     expect(result?.rewritten).toBe(1)
     // only the meta line remains
-    expect(readLines(path.join(outDir, 's2.jsonl'))).toHaveLength(1)
+    expect(readLines(path.join(paths.outDir, 's2.jsonl'))).toHaveLength(1)
   })
 })
