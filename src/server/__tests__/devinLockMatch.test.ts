@@ -76,7 +76,7 @@ beforeEach(() => {
 
 afterEach(() => {
   bunAny.spawnSync = originalSpawnSync
-  if (originalDevinCliDir) process.env.DEVIN_CLI_DIR = originalDevinCliDir
+  if (originalDevinCliDir !== undefined) process.env.DEVIN_CLI_DIR = originalDevinCliDir
   else delete process.env.DEVIN_CLI_DIR
   fs.rmSync(cliDir, { recursive: true, force: true })
 })
