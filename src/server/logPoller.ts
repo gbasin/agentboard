@@ -279,9 +279,11 @@ export class LogPoller {
     }
 
     // Mirror devin's sessions.db into JSONL logs on the same cadence so the
-    // regular pipeline picks up changes in both poll and watch modes.
+    // regular pipeline picks up changes in both poll and watch modes. The
+    // first sync waits for the first interval tick — an inline sync at start()
+    // puts the worker spawn + cold sessions.db read on the server startup
+    // critical path (and, in tests, leaves spawned workers for teardown).
     const syncInterval = Math.max(MIN_INTERVAL_MS, intervalMs)
-    this.runDevinSync()
     this.devinSyncInterval = setInterval(() => this.runDevinSync(), syncInterval)
 
     if (mode === 'watch') {
@@ -679,13 +681,19 @@ export class LogPoller {
     void client
       .sync(getDevinLogOutDir())
       .then(({ result, durationMs }) => {
+        if (result === null) {
+          // No devin CLI db on this machine — keep the per-cycle line out of
+          // info logs, it's pure noise there.
+          logger.debug('devin_sync', { durationMs, synced: false })
+          return
+        }
         logger.info('devin_sync', {
           durationMs,
-          synced: result !== null,
-          sessions: result?.sessions ?? 0,
-          rewritten: result?.rewritten ?? 0,
-          appended: result?.appended ?? 0,
-          removed: result?.removed ?? 0,
+          synced: true,
+          sessions: result.sessions,
+          rewritten: result.rewritten,
+          appended: result.appended,
+          removed: result.removed,
         })
       })
       .catch((error) => {
