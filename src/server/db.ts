@@ -155,6 +155,15 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_current_window_unique
   WHERE current_window IS NOT NULL;
 `
 
+function readJournalMode(db: SQLiteDatabase): string {
+  try {
+    const row = db.query('PRAGMA journal_mode').get() as { journal_mode?: string } | null
+    return String(row?.journal_mode ?? 'unknown').toLowerCase()
+  } catch {
+    return 'unknown'
+  }
+}
+
 export function initDatabase(options: { path?: string } = {}): SessionDatabase {
   const envPath = process.env[DB_PATH_ENV]?.trim()
   const resolvedEnvPath =
@@ -177,15 +186,21 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
   // Switching to WAL needs an exclusive lock. If an old (pre-WAL) server is
   // still mid-write during an upgrade, fail soft: stay on the current journal
   // mode this run and convert on the next start, instead of crashing.
+  // NORMAL is only safe under WAL, so it is applied only when the switch
+  // actually took (the pragma can also return a different mode silently,
+  // e.g. 'memory' for in-memory databases); otherwise keep the FULL default.
+  let switchError: string | undefined
   try {
     db.exec('PRAGMA journal_mode = WAL')
   } catch (error) {
-    logger.warn('db_wal_switch_failed', {
-      dbPath,
-      error: error instanceof Error ? error.message : String(error),
-    })
+    switchError = error instanceof Error ? error.message : String(error)
   }
-  db.exec('PRAGMA synchronous = NORMAL')
+  const journalMode = readJournalMode(db)
+  if (journalMode === 'wal') {
+    db.exec('PRAGMA synchronous = NORMAL')
+  } else if (journalMode !== 'memory') {
+    logger.warn('db_wal_switch_failed', { dbPath, journalMode, error: switchError })
+  }
   migrateDatabase(db)
   db.exec(CREATE_TABLE_SQL)
   db.exec(CREATE_APP_SETTINGS_TABLE_SQL)

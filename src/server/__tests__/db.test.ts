@@ -822,6 +822,10 @@ describe('db', () => {
         >
         expect(journal.journal_mode).toBe('wal')
         expect(Object.values(busy)[0]).toBe(250)
+        const sync = fresh.db.query('PRAGMA synchronous').get() as {
+          synchronous: number
+        }
+        expect(sync.synchronous).toBe(1) // NORMAL
       } finally {
         fresh.close()
       }
@@ -860,6 +864,11 @@ describe('db', () => {
         }
         expect(journal.journal_mode).toBe('delete')
         expect(warnings).toContain('db_wal_switch_failed')
+        // NORMAL is unsafe outside WAL: synchronous stays at FULL (2).
+        const sync = upgraded.db.query('PRAGMA synchronous').get() as {
+          synchronous: number
+        }
+        expect(sync.synchronous).toBe(2)
       } finally {
         upgraded.close()
       }
