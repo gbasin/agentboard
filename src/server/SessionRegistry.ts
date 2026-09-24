@@ -186,6 +186,7 @@ function sessionsEqual(a: Session, b: Session): boolean {
     a.agentType === b.agentType &&
     a.command === b.command &&
     a.agentSessionId === b.agentSessionId &&
+    a.boardSessionId === b.boardSessionId &&
     a.agentSessionName === b.agentSessionName &&
     a.logFilePath === b.logFilePath &&
     a.lastUserMessage === b.lastUserMessage &&

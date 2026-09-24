@@ -30,6 +30,11 @@ export type TerminalErrorCode =
   | 'ERR_NOT_READY'
 
 export interface Session {
+  boardSessionId?: string
+  // tmux window identity captured during enumeration: the @agentboard-*
+  // window options plus the server pid (incarnation marker for the catalog's
+  // stored epoch). Absent when the server is too old to expand the fields.
+  agentboardTags?: { boardId: string; runId: string; serverPid: number }
   id: string
   name: string
   tmuxWindow: string
@@ -92,6 +97,7 @@ export interface DirectoryErrorResponse {
 }
 
 export type ServerMessage =
+  | { type: 'library-changed' }
   | { type: 'sessions'; sessions: Session[] }
   | { type: 'session-update'; session: Session }
   | { type: 'session-created'; session: Session }
@@ -162,7 +168,7 @@ export type ClientMessage =
   // so multi-line content isn't auto-submitted line-by-line by the pane's app.
   | { type: 'terminal-paste'; sessionId: string; data: string }
   | { type: 'terminal-resize'; sessionId: string; cols: number; rows: number }
-  | { type: 'session-create'; projectPath: string; name?: string; command?: string; host?: string }
+  | { type: 'session-create'; operationId?: string; projectPath: string; name?: string; command?: string; host?: string }
   | { type: 'session-kill'; sessionId: string; source?: SessionKillSource }
   | { type: 'session-rename'; sessionId: string; newName: string }
   | { type: 'session-refresh' }

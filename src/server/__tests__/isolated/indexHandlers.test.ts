@@ -504,20 +504,23 @@ class SessionRefreshWorkerClientMock {
     _managedSession: string,
     _discoverPrefixes: string[],
     options?: { expectedWindowCount?: number }
-  ): Promise<Session[]> {
+  ): Promise<{ sessions: Session[]; tmuxServerPid: number }> {
     refreshWorkerExpectedWindowCounts.push(options?.expectedWindowCount ?? 0)
     if (refreshWorkerDeferred) {
-      return new Promise<Session[]>((resolve, reject) => {
-        refreshWorkerResolve = resolve
-        _refreshWorkerReject = reject
-      })
+      return new Promise<{ sessions: Session[]; tmuxServerPid: number }>(
+        (resolve, reject) => {
+          refreshWorkerResolve = (sessions) =>
+            resolve({ sessions, tmuxServerPid: 0 })
+          _refreshWorkerReject = reject
+        }
+      )
     }
     if (refreshWorkerError) {
       const error = refreshWorkerError
       refreshWorkerError = null
       return Promise.reject(error)
     }
-    return Promise.resolve(refreshWorkerSessions)
+    return Promise.resolve({ sessions: refreshWorkerSessions, tmuxServerPid: 0 })
   }
 
   getLastUserMessage(): Promise<string | null> {

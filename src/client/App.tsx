@@ -1,3 +1,6 @@
+import { createOperationId } from './utils/operationId'
+import { RecoveryNotice } from './components/history/RecoveryNotice'
+import SessionRecovery from './components/history/SessionRecovery'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AgentSession, ServerMessage, Session, SessionKillSource } from '@shared/types'
 import Header from './components/Header'
@@ -51,6 +54,7 @@ export default function App() {
   const [newSessionInitialPath, setNewSessionInitialPath] = useState<string | undefined>(undefined)
   const [newSessionInitialCommand, setNewSessionInitialCommand] = useState<string | undefined>(undefined)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
   const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null)
   const [pendingHibernatingSession, setPendingHibernatingSession] =
@@ -890,7 +894,7 @@ export default function App() {
     command?: string,
     host?: string
   ) => {
-    sendMessage({ type: 'session-create', projectPath, name, command, host })
+    sendMessage({ type: 'session-create', operationId: createOperationId(), projectPath, name, command, host })
     if (!host) setLastProjectPath(projectPath)
   }
 
@@ -911,6 +915,7 @@ export default function App() {
     if (!session) return
     sendMessage({
       type: 'session-create',
+      operationId: createOperationId(),
       projectPath: session.projectPath,
       command: session.command || undefined,
       host: session.remote && session.host ? session.host : undefined,
@@ -950,8 +955,10 @@ export default function App() {
           connectionStatus={connectionStatus}
           onNewSession={handleNewSession}
           onOpenSettings={handleOpenSettings}
+          onOpenHistory={() => setIsHistoryOpen(true)}
           tailscaleIp={serverInfo?.tailscaleIp ?? null}
         />
+        <RecoveryNotice onOpen={() => setIsHistoryOpen(true)} />
         <SessionList
           sessions={sessions}
           hibernatingSessions={hibernatingAgentSessions}
@@ -1024,6 +1031,22 @@ export default function App() {
         onClose={() => setIsSettingsOpen(false)}
       />
 
+      <button
+        className="fixed bottom-16 right-3 z-30 rounded border border-border bg-elevated px-3 py-2 text-xs text-primary md:hidden"
+        onClick={() => setIsHistoryOpen(true)}
+      >
+        Session recovery
+      </button>
+      <SessionRecovery
+        open={isHistoryOpen}
+        subscribe={subscribe}
+        onClose={() => setIsHistoryOpen(false)}
+        onOpenSession={(session) => {
+          setSessions([session, ...sessions.filter(s => s.id !== session.id)])
+          setSelectedHibernatingSessionId(null)
+          setSelectedSessionId(session.id)
+        }}
+      />
       <ToastViewport />
     </div>
   )

@@ -38,6 +38,9 @@ const BATCH_WINDOW_FORMAT = buildTmuxFormat([
   '#{pane_start_command}',
   '#{pane_width}',
   '#{pane_height}',
+  '#{pid}',
+  '#{@agentboard-session-id}',
+  '#{@agentboard-run-id}',
 ])
 const BATCH_WINDOW_FORMAT_FALLBACK = buildTmuxFormat([
   '#{session_name}',
@@ -63,6 +66,9 @@ interface WindowData {
   command: string
   width: number
   height: number
+  serverPid: number
+  boardId: string
+  runId: string
 }
 
 // Cache persists across worker invocations.
@@ -98,6 +104,9 @@ export type RefreshWorkerResponse =
       kind: 'refresh'
       type: 'result'
       sessions: Session[]
+      // tmux server pid from the enumeration (incarnation marker for the
+      // session catalog; 0 when the server is too old to expand #{pid}).
+      tmuxServerPid: number
     }
   | {
       id: string
@@ -143,7 +152,7 @@ ctx.onmessage = (event: MessageEvent<RefreshWorkerRequest>) => {
       return
     }
 
-    const sessions = listAllWindows(
+    const { sessions, tmuxServerPid } = listAllWindows(
       payload.managedSession,
       payload.discoverPrefixes,
       payload.preferWindowName ?? config.preferWindowName
@@ -162,6 +171,7 @@ ctx.onmessage = (event: MessageEvent<RefreshWorkerRequest>) => {
       kind: 'refresh',
       type: 'result',
       sessions,
+      tmuxServerPid,
     }
     ctx.postMessage(response)
   } catch (error) {
@@ -219,7 +229,9 @@ function listAllWindowData(): WindowData[] {
 
   return splitTmuxLines(output)
     .flatMap((line) => {
-      const parts = splitTmuxFields(line, 9)
+      // The fallback format omits the trailing identity fields, so both
+      // widths are valid; missing fields parse as untagged.
+      const parts = splitTmuxFields(line, 12) ?? splitTmuxFields(line, 9)
       if (!parts) {
         return []
       }
@@ -233,6 +245,9 @@ function listAllWindowData(): WindowData[] {
         command: normalizePaneStartCommand(parts[6] ?? ''),
         width: Number.parseInt(parts[7] ?? '80', 10) || 80,
         height: Number.parseInt(parts[8] ?? '24', 10) || 24,
+        serverPid: Number.parseInt(parts[9] ?? '0', 10) || 0,
+        boardId: parts[10] ?? '',
+        runId: parts[11] ?? '',
       }
     })
 }
@@ -307,8 +322,11 @@ function listAllWindows(
   managedSession: string,
   discoverPrefixes: string[],
   preferWindowName: boolean
-): Session[] {
+): { sessions: Session[]; tmuxServerPid: number } {
   const allWindows = listAllWindowData()
+  // The pid is identical on every line and survives even when all managed
+  // windows are filtered out (e.g. only the bootstrap window remains).
+  const tmuxServerPid = allWindows.find((w) => w.serverPid)?.serverPid ?? 0
   const now = Date.now()
   const wsPrefix = `${managedSession}-ws-`
 
@@ -369,10 +387,18 @@ function listAllWindows(
       agentType: inferAgentType(window.command),
       source,
       command: window.command || undefined,
+      agentboardTags:
+        window.serverPid || window.boardId || window.runId
+          ? {
+              boardId: window.boardId,
+              runId: window.runId,
+              serverPid: window.serverPid,
+            }
+          : undefined,
     })
   }
 
-  return sessions
+  return { sessions, tmuxServerPid }
 }
 
 interface StatusResult {

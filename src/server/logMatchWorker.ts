@@ -90,6 +90,8 @@ export function handleMatchWorkerRequest(
     let noMessageWindows: NoMessageWindow[] = []
     let orphanEntries: LogEntrySnapshot[] = []
     let orphanMatches: Array<{ logPath: string; tmuxWindow: string }> = []
+    let orphanScanMs = 0
+    let orphanMatchMs = 0
     const sessionByLogPath = new Map(
       payload.sessions
         .filter((session) => session.logFilePath)
@@ -111,6 +113,8 @@ export function handleMatchWorkerRequest(
       (w) => !claimedWindows.has(w.tmuxWindow)
     )
 
+    let matchingError: string | undefined
+    try {
     const entriesToMatch = getEntriesNeedingMatch(entries, payload.sessions, {
       minTokens: payload.minTokensForMatch ?? 0,
       skipMatchingPatterns: payload.skipMatchingPatterns ?? [],
@@ -145,8 +149,6 @@ export function handleMatchWorkerRequest(
     }
 
     const orphanCandidates = payload.orphanCandidates ?? []
-    let orphanScanMs = 0
-    let orphanMatchMs = 0
     if (payload.forceOrphanRematch && orphanCandidates.length > 0) {
       const skipPatterns = payload.skipMatchingPatterns ?? []
       const orphanScanStart = performance.now()
@@ -181,6 +183,10 @@ export function handleMatchWorkerRequest(
       }
     }
 
+    } catch(error) {
+      // Discovery is independently useful even when tmux/ripgrep matching fails.
+      matchingError=error instanceof Error ? error.message : String(error)
+    }
     const lastMessageCandidates = payload.lastMessageCandidates ?? []
     if (lastMessageCandidates.length > 0) {
       const lastMessageEntries = buildLastMessageEntries(
@@ -211,6 +217,7 @@ export function handleMatchWorkerRequest(
     return {
       id: payload.id,
       type: 'result',
+      matchingError,
       entries,
       orphanEntries,
       scanMs,

@@ -32,6 +32,9 @@ interface WindowInfo {
   activity: number
   creation: number
   command: string
+  serverPid: number
+  boardId: string
+  runId: string
 }
 
 type TmuxRunner = (args: string[]) => string
@@ -66,6 +69,9 @@ const WINDOW_LIST_FORMAT = buildTmuxFormat([
   '#{window_activity}',
   '#{window_creation_time}',
   '#{pane_start_command}',
+  '#{pid}',
+  '#{@agentboard-session-id}',
+  '#{@agentboard-run-id}',
 ])
 const WINDOW_LIST_FORMAT_FALLBACK = buildTmuxFormat([
   '#{window_id}',
@@ -106,6 +112,8 @@ export class SessionManager {
   private terminalColorsEnabled: boolean
   private recoverTmuxSocket: RecoverTmuxSocket
   private rememberTmuxServerPid: RememberTmuxServerPid
+  /** Server pid from the most recent window enumeration (0 if unsupported). */
+  lastEnumeratedServerPid = 0
 
   constructor(
     sessionName = config.tmuxSession,
@@ -502,7 +510,7 @@ export class SessionManager {
     projectPath: string,
     name?: string,
     command?: string,
-    options?: { excludeSessionId?: string }
+    options?: { excludeSessionId?: string; boardSessionId?: string; runId?: string }
   ): Session {
     const sessionExisted = this.sessionExists()
 
@@ -554,6 +562,15 @@ export class SessionManager {
       '-e',
       `NO_COLOR=${this.terminalColorsEnabled ? '' : '1'}`,
     ]
+    const durableIdentity = options?.runId && options.boardSessionId
+    const launchName = durableIdentity ? `__ab_launch__${options.boardSessionId}__${options.runId}` : finalName
+    const identityEnv = durableIdentity ? ['-e', `AGENTBOARD_SESSION_ID=${options.boardSessionId}`, '-e', `AGENTBOARD_RUN_ID=${options.runId}`] : []
+
+    const identityCommands = (target: string): string[] => options?.runId && options.boardSessionId ? [
+      ';', 'set-option', '-w', '-t', target, '@agentboard-run-id', options.runId,
+      ';', 'set-option', '-w', '-t', target, '@agentboard-session-id', options.boardSessionId,
+      ';', 'rename-window', '-t', target, finalName,
+    ] : []
 
     if (!sessionExisted) {
       // Create session + window in one step to avoid orphan shell window
@@ -561,10 +578,12 @@ export class SessionManager {
         'new-session', '-d',
         ...noFlickerEnv,
         ...terminalColorEnv,
+        ...identityEnv,
         '-s', this.sessionName,
-        '-n', finalName,
+        '-n', launchName,
         '-c', resolvedPath,
         finalCommand,
+        ...identityCommands(`${this.sessionName}:`),
       ])
       this.configureSession()
     } else {
@@ -573,10 +592,12 @@ export class SessionManager {
         'new-window',
         ...noFlickerEnv,
         ...terminalColorEnv,
+        ...identityEnv,
         '-t', `${this.sessionName}:${nextIndex}`,
-        '-n', finalName,
+        '-n', launchName,
         '-c', resolvedPath,
         finalCommand,
+        ...identityCommands(`${this.sessionName}:${nextIndex}`),
       ])
     }
 
@@ -753,7 +774,11 @@ export class SessionManager {
     return splitTmuxLines(output)
       .flatMap((line) => {
         const window = parseWindow(line)
-        return window ? [window] : []
+        if (!window) return []
+        // The server pid is identical on every line and survives even when
+        // every window is filtered out below (e.g. only bootstrap remains).
+        if (window.serverPid) this.lastEnumeratedServerPid = window.serverPid
+        return [window]
       })
       // Hide the placeholder window that keeps the base session alive.
       .filter((window) => !this.isBootstrapWindow(window))
@@ -784,6 +809,14 @@ export class SessionManager {
           agentType: inferAgentType(window.command),
           source,
           command: window.command || undefined,
+          agentboardTags:
+            window.serverPid || window.boardId || window.runId
+              ? {
+                  boardId: window.boardId,
+                  runId: window.runId,
+                  serverPid: window.serverPid,
+                }
+              : undefined,
         }
       })
   }
@@ -918,14 +951,17 @@ export class SessionManager {
 }
 
 function parseWindow(line: string): WindowInfo | null {
-  const parts = splitTmuxFields(line, 6)
+  // The fallback format omits the trailing identity fields, so both widths
+  // are valid; missing fields parse as untagged.
+  const parts = splitTmuxFields(line, 9) ?? splitTmuxFields(line, 6)
   if (!parts) {
     return null
   }
 
-  const [id, name, panePath, activityRaw, creationRaw, command] = parts
+  const [id, name, panePath, activityRaw, creationRaw, command, pidRaw, boardId, runId] = parts
   const activity = Number.parseInt(activityRaw || '0', 10)
   const creation = Number.parseInt(creationRaw || '0', 10)
+  const serverPid = Number.parseInt(pidRaw || '0', 10)
 
   return {
     id: id || '',
@@ -934,6 +970,9 @@ function parseWindow(line: string): WindowInfo | null {
     activity: Number.isNaN(activity) ? 0 : activity,
     creation: Number.isNaN(creation) ? 0 : creation,
     command: normalizePaneStartCommand(command || ''),
+    serverPid: Number.isNaN(serverPid) ? 0 : serverPid,
+    boardId: boardId || '',
+    runId: runId || '',
   }
 }
 
