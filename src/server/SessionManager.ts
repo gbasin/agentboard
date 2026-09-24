@@ -519,8 +519,9 @@ export class SessionManager {
 
   listWindows(): Session[] {
     // Don't create the session just to list windows — that would leave an
-    // orphan shell window (e.g. "zsh") visible in the UI.  Only configure
-    // mouse mode when the session already exists.
+    // orphan shell window (e.g. "zsh") visible in the UI. When the session
+    // exists, re-apply its options only if the tmux server changed (same
+    // pid-cache rule as ensureSession).
     const exists = this.sessionExists()
     if (exists) {
       this.configureSessionIfServerChanged()
