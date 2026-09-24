@@ -37,6 +37,13 @@ export function describeSpawnCommand(command: readonly string[]): string {
 // aggregate is emitted by the next slow call after its window closes.
 export const SLOW_SYNC_SPAWN_AGGREGATE_MS = 60_000
 
+// A call this slow is the freeze, not noise. It bypasses suppression so the
+// line lands next to the event_loop_lag it caused, instead of hiding inside an
+// aggregate that only flushes on the next slow call after the window closes.
+// (First live data point: a 21.7s switch-client 20s after a 273ms one was
+// swallowed, leaving a 20.8s lag with no named cause.)
+export const SLOW_SYNC_SPAWN_OUTLIER_MS = 1000
+
 interface SlowSpawnWindow {
   windowStart: number
   count: number
@@ -80,6 +87,9 @@ export function logSlowSyncSpawn(
   window.count += 1
   window.maxMs = Math.max(window.maxMs, durationMs)
   window.sumMs += durationMs
+  if (durationMs >= SLOW_SYNC_SPAWN_OUTLIER_MS) {
+    logger.warn('sync_spawn_slow', { command, durationMs, timeoutMs, outlier: true })
+  }
   const windowMs = now - window.windowStart
   if (windowMs >= SLOW_SYNC_SPAWN_AGGREGATE_MS) {
     logger.warn('sync_spawn_slow_aggregate', {
