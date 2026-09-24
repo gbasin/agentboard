@@ -1,6 +1,7 @@
 import { describe, expect, test, afterEach } from 'bun:test'
 import { Database as SQLiteDatabase } from 'bun:sqlite'
 import { initDatabase } from '../db'
+import { logger } from '../logger'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -809,19 +810,63 @@ describe('db', () => {
 
   test('fresh database uses WAL with a short busy_timeout', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentboard-db-pragma-'))
-    const fresh = initDatabase({ path: path.join(tempDir, 'fresh.db') })
     try {
-      const journal = fresh.db.prepare('PRAGMA journal_mode').get() as {
-        journal_mode: string
+      const fresh = initDatabase({ path: path.join(tempDir, 'fresh.db') })
+      try {
+        const journal = fresh.db.prepare('PRAGMA journal_mode').get() as {
+          journal_mode: string
+        }
+        const busy = fresh.db.prepare('PRAGMA busy_timeout').get() as Record<
+          string,
+          number
+        >
+        expect(journal.journal_mode).toBe('wal')
+        expect(Object.values(busy)[0]).toBe(250)
+      } finally {
+        fresh.close()
       }
-      const busy = fresh.db.prepare('PRAGMA busy_timeout').get() as Record<
-        string,
-        number
-      >
-      expect(journal.journal_mode).toBe('wal')
-      expect(Object.values(busy)[0]).toBe(250)
     } finally {
-      fresh.close()
+      fs.rmSync(tempDir, { recursive: true, force: true })
+    }
+  })
+
+  test('WAL switch blocked by another writer warns instead of throwing', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentboard-db-walswitch-'))
+    const dbPath = path.join(tempDir, 'upgrade.db')
+    const originalWarn = logger.warn
+    const warnings: string[] = []
+    let oldServer: SQLiteDatabase | null = null
+    try {
+      // Build the full schema in a separate process so no connection from
+      // this process lingers, then flip it back to a pre-WAL journal.
+      const dbModule = path.join(import.meta.dir, '..', 'db.ts')
+      const build = Bun.spawnSync([
+        process.execPath,
+        '-e',
+        `import { initDatabase } from ${JSON.stringify(dbModule)}; initDatabase({ path: ${JSON.stringify(dbPath)} }).close()`,
+      ])
+      expect(build.exitCode).toBe(0)
+      oldServer = new SQLiteDatabase(dbPath)
+      oldServer.exec('PRAGMA journal_mode = DELETE')
+      // Old server mid-write: holds the lock the WAL switch needs.
+      oldServer.exec('BEGIN IMMEDIATE')
+      oldServer.exec("INSERT INTO app_settings (key, value) VALUES ('k', 'v')")
+
+      logger.warn = (event) => warnings.push(event)
+      const upgraded = initDatabase({ path: dbPath })
+      try {
+        const journal = upgraded.db.prepare('PRAGMA journal_mode').get() as {
+          journal_mode: string
+        }
+        expect(journal.journal_mode).toBe('delete')
+        expect(warnings).toContain('db_wal_switch_failed')
+      } finally {
+        upgraded.close()
+      }
+    } finally {
+      logger.warn = originalWarn
+      oldServer?.exec('ROLLBACK')
+      oldServer?.close()
       fs.rmSync(tempDir, { recursive: true, force: true })
     }
   })

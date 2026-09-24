@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { Database as SQLiteDatabase } from 'bun:sqlite'
 import type { AgentType } from '../shared/types'
+import { logger } from './logger'
 import { resolveProjectPath } from './paths'
 
 export interface AgentSessionRecord {
@@ -171,8 +172,19 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
   // a normal overlapping commit; anything longer surfaces as an error instead
   // of a frozen server. NORMAL is safe under WAL (frame checksums catch torn
   // writes) and skips the per-commit fsync.
-  db.exec('PRAGMA journal_mode = WAL')
+  // busy_timeout first so the WAL switch itself gets the short wait.
   db.exec('PRAGMA busy_timeout = 250')
+  // Switching to WAL needs an exclusive lock. If an old (pre-WAL) server is
+  // still mid-write during an upgrade, fail soft: stay on the current journal
+  // mode this run and convert on the next start, instead of crashing.
+  try {
+    db.exec('PRAGMA journal_mode = WAL')
+  } catch (error) {
+    logger.warn('db_wal_switch_failed', {
+      dbPath,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
   db.exec('PRAGMA synchronous = NORMAL')
   migrateDatabase(db)
   db.exec(CREATE_TABLE_SQL)
