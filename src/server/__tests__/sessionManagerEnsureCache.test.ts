@@ -2,6 +2,7 @@
 // configured on a live tmux server, refresh ticks run only has-session and
 // skip the set-option/set-environment/display-message spawns.
 import { describe, expect, test } from 'bun:test'
+import os from 'node:os'
 import { SessionManager } from '../SessionManager'
 
 const SESSION = 'agentboard-ensure-cache'
@@ -144,6 +145,43 @@ describe('SessionManager.ensureSession server-pid cache', () => {
 
     h.manager.ensureSession()
     expect(h.takeCalls()).toEqual(['has-session'])
+  })
+
+  test('a failed configure after createWindow recreates the session retries next tick', () => {
+    const calls: string[] = []
+    let sessionExists = true
+    let failSetOption = false
+    const manager = new SessionManager(SESSION, {
+      runTmux: (args) => {
+        const command = commandOf(args)
+        calls.push(command)
+        if (command === 'has-session' && !sessionExists) {
+          throw new Error(`can't find session: ${SESSION}`)
+        }
+        if (command === 'new-session') sessionExists = true
+        if (command === 'set-option' && failSetOption) {
+          throw new Error('set-option timed out')
+        }
+        return command === 'display-message' ? '4242\n' : ''
+      },
+      capturePaneContent: () => null,
+      rememberTmuxServerPid: () => {},
+      isProcessAlive: () => true,
+    })
+
+    manager.ensureSession()
+    sessionExists = false
+    failSetOption = true
+    expect(() => manager.createWindow(os.tmpdir(), 'alpha', 'claude')).toThrow(
+      'set-option timed out'
+    )
+    failSetOption = false
+    calls.length = 0
+    manager.ensureSession()
+    expect(calls).toEqual(['has-session', ...CONFIGURE_AND_RECORD])
+    calls.length = 0
+    manager.ensureSession()
+    expect(calls).toEqual(['has-session'])
   })
 
   test('socket recovery reconfigures even when the cached pid is alive', () => {

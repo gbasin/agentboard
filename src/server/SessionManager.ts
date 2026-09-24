@@ -608,7 +608,7 @@ export class SessionManager {
         '-c', resolvedPath,
         finalCommand,
       ])
-      this.configureSession()
+      this.configureSessionAndRecordServer()
     } else {
       const nextIndex = this.findNextAvailableWindowIndex()
       this.runTmux([
