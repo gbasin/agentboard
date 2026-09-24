@@ -79,9 +79,9 @@ function createLogger(): pino.Logger {
     }
   }
 
-  // Production (or dev fallback): JSON with ISO timestamps. With a log file,
-  // stdout gets a pretty copy only when pino-pretty is installed (a dev
-  // checkout); without a log file, stdout is the sink (pretty if possible).
+  // Production (or dev fallback): JSON with ISO timestamps to the log file,
+  // plus stdout — pretty when pino-pretty is installed (a dev checkout),
+  // raw JSON otherwise (npx installs, compiled binaries).
   const baseOptions: pino.LoggerOptions = {
     level: logLevel,
     base: {},                              // strip pid, hostname
@@ -112,11 +112,14 @@ function createLogger(): pino.Logger {
     }
 
     // No pretty printer (npx installs omit devDependencies, compiled
-    // binaries can't load transports): the file is the only sink. A raw JSON
-    // stdout copy would duplicate every line into whatever captures stdout —
-    // under launchd that was an ever-growing launchd.out.log mirroring
-    // agentboard.log.
-    return pino(baseOptions, fileDestination)
+    // binaries can't load transports): raw JSON to stdout alongside the file.
+    // This is the only terminal output npx users get (server_started URL,
+    // port_in_use before exit), so it must stay.
+    const streams: pino.StreamEntry[] = [
+      { level: logLevel, stream: pino.destination({ dest: 1, sync: true }) },
+      { level: logLevel, stream: fileDestination },
+    ]
+    return pino(baseOptions, pino.multistream(streams))
   }
 
   // Without log file: pretty stdout or plain JSON
