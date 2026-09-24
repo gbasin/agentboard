@@ -1372,6 +1372,25 @@ describe('stall detection', () => {
     expect(stallCycle()).toBe(5000)
   })
 
+  test('forceReconnect resets the stall cooldown', () => {
+    const manager = new WebSocketManager()
+    manager.connect()
+
+    expect(stallCycle()).toBe(5000)
+    expect(stallCycle()).toBe(10000)
+    expect(stallCycle()).toBe(20000)
+
+    const before = new Set(timers.map((t) => t.id))
+    ;(manager as unknown as { forceReconnect(trigger: string, force: boolean): void })
+      .forceReconnect('test_resume', true)
+    // Fire the resume-settle timer that starts the fresh connect.
+    const settle = timers.filter((t) => !before.has(t.id))
+    expect(settle).toHaveLength(1)
+    consumeTimer(settle[0]!)
+
+    expect(stallCycle()).toBe(5000)
+  })
+
   test('consecutive failures reset on successful open', () => {
     const manager = new WebSocketManager()
     const getFailures = () =>

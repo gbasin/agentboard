@@ -519,6 +519,9 @@ export class WebSocketManager {
     clientLog('ws_force_reconnect', { trigger, force, ...this.wsSnap() }, 'info')
     this.reconnectAttempts = 0
     this.consecutiveFailures = 0
+    // A resume/visibility trigger starts a fresh recovery; without this a
+    // user returning after an outage would inherit the 30s stall cooldown.
+    this.stallCount = 0
     if (this.reconnectTimer) {
       window.clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
