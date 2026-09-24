@@ -74,7 +74,7 @@ interface DevinSessionSyncState {
 
 interface SyncState {
   formatVersion?: number
-  /** devinDbFingerprint() at the last completed sync */
+  /** devinDbFingerprint() at the last completed sync; absent if uncertain */
   dbFingerprint?: string
   /** visible session count at the last completed sync (early-exit result) */
   sessionCount?: number
@@ -212,7 +212,8 @@ function isSessionSyncState(value: unknown): value is DevinSessionSyncState {
   )
 }
 
-function canSkipDb(state: SyncState, fingerprint: string, outDir: string): boolean {
+function canSkipDb(state: SyncState, fingerprint: string | null, outDir: string): boolean {
+  if (fingerprint === null) return false
   if (state.formatVersion !== MIRROR_FORMAT_VERSION) return false
   if (state.dbFingerprint !== fingerprint) return false
   if (typeof state.sessionCount !== 'number') return false
@@ -305,7 +306,8 @@ export function syncDevinSessions(outDir = getDevinLogOutDir()): DevinSyncResult
     const priorSessions = stateCurrent ? state.sessions : {}
     const nextState: SyncState = {
       formatVersion: MIRROR_FORMAT_VERSION,
-      dbFingerprint: fingerprint,
+      // An uncertain fingerprint is never stored, so the next cycle rechecks.
+      dbFingerprint: fingerprint ?? undefined,
       sessionCount: sessions.length,
       sessions: {},
     }
