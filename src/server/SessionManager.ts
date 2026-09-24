@@ -241,6 +241,17 @@ export class SessionManager {
   private configureSessionIfServerChanged(): void {
     const pid = this.configuredTmuxServerPid
     if (pid !== null && this.isProcessAlive(pid)) {
+      // The pid file is shared by every agentboard instance, whatever tmux
+      // socket it uses. Re-assert ours each tick so another instance's write
+      // cannot point SIGUSR1 recovery at the wrong server. persistTmuxServerPid
+      // skips the write when the file already matches (no subprocess).
+      try {
+        this.rememberTmuxServerPid(pid)
+      } catch (error) {
+        logger.warn('tmux_server_pid_record_failed', {
+          message: error instanceof Error ? error.message : String(error),
+        })
+      }
       return
     }
     this.configureSessionAndRecordServer()

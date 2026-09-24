@@ -72,7 +72,42 @@ describe('SessionManager.ensureSession server-pid cache', () => {
     h.manager.ensureSession()
     h.manager.ensureSession()
     expect(h.takeCalls()).toEqual(['has-session', 'has-session'])
-    expect(h.rememberedPids).toEqual([4242])
+    // The pid file is re-asserted each tick without a tmux spawn.
+    expect(h.rememberedPids).toEqual([4242, 4242, 4242])
+  })
+
+  test('steady-state calls restore a pid file overwritten by another instance', () => {
+    const store: { pid: number | null } = { pid: null }
+    const manager = new SessionManager(SESSION, {
+      runTmux: (args) => (commandOf(args) === 'display-message' ? '4242\n' : ''),
+      capturePaneContent: () => null,
+      rememberTmuxServerPid: (pid) => {
+        store.pid = pid
+      },
+      isProcessAlive: () => true,
+    })
+
+    manager.ensureSession()
+    expect(store.pid).toBe(4242)
+    store.pid = 9999 // a dev instance on another tmux socket wrote its pid
+    manager.ensureSession()
+    expect(store.pid).toBe(4242)
+  })
+
+  test('a failed steady-state pid-file write does not fail ensureSession', () => {
+    let failWrite = false
+    const manager = new SessionManager(SESSION, {
+      runTmux: (args) => (commandOf(args) === 'display-message' ? '4242\n' : ''),
+      capturePaneContent: () => null,
+      rememberTmuxServerPid: () => {
+        if (failWrite) throw new Error('EACCES')
+      },
+      isProcessAlive: () => true,
+    })
+
+    manager.ensureSession()
+    failWrite = true
+    expect(manager.ensureSession()).toEqual({ canPruneWsSessions: true })
   })
 
   test('a dead cached pid triggers reconfigure and re-record', () => {
@@ -177,7 +212,7 @@ describe('SessionManager.ensureSession server-pid cache', () => {
       'has-session', ...CONFIGURE_AND_RECORD,
       'has-session',
     ])
-    expect(remembered).toEqual([4242])
+    expect(remembered).toEqual([4242, 4242])
   })
 
   test('a failed configure retries on the next call', () => {
