@@ -102,6 +102,24 @@ describe('logSlowSyncSpawn', () => {
     expect(calls).toHaveLength(3)
   })
 
+  test('an outlier bypasses suppression and still counts in the aggregate', () => {
+    const W = SLOW_SYNC_SPAWN_AGGREGATE_MS
+    logSlowSyncSpawn('tmux switch-client', 273, 3000, main(0))
+    // 20s later, inside the window: a 21.7s call must not be swallowed.
+    logSlowSyncSpawn('tmux switch-client', 21_746, 3000, main(20_000))
+    expect(calls.at(-1)).toEqual({
+      level: 'warn',
+      event: 'sync_spawn_slow',
+      data: { command: 'tmux switch-client', durationMs: 21_746, timeoutMs: 3000, outlier: true },
+    })
+    // Sub-outlier repeats stay suppressed.
+    logSlowSyncSpawn('tmux switch-client', 999, 3000, main(21_000))
+    expect(calls).toHaveLength(2)
+    // The aggregate still includes the outlier.
+    logSlowSyncSpawn('tmux switch-client', 300, 3000, main(W))
+    expect(calls.at(-1)?.data).toMatchObject({ count: 3, maxMs: 21_746, sumMs: 23_045 })
+  })
+
   test('a quiet window resets to an immediate warning', () => {
     logSlowSyncSpawn('tmux list-panes', 300, 1000, main(0))
     logSlowSyncSpawn('tmux list-panes', 300, 1000, main(SLOW_SYNC_SPAWN_AGGREGATE_MS + 1))
