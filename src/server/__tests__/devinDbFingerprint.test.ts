@@ -54,8 +54,9 @@ describe('devinDbFingerprint', () => {
       expect(afterB).not.toBe(afterA)
 
       expect(syncDevinSessions(paths.outDir)?.appended).toBe(1)
-      const last = readLines(path.join(paths.outDir, 'r.jsonl')).at(-1)
-      expect((last?.message as { content: string }).content).toBe('commit B')
+      const lines = readLines(path.join(paths.outDir, 'r.jsonl'))
+      const last = lines[lines.length - 1].message as { content: string }
+      expect(last.content).toBe('commit B')
     } finally {
       db.close()
     }
