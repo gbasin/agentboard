@@ -14,6 +14,7 @@ import {
   verifyWindowLogAssociationDetailedAsync,
   extractRecentTraceLinesFromTmux,
   extractRecentUserMessagesFromTmux,
+  extractAskUserQuestionAnswers,
   extractPiUserMessagesFromAnsi,
   extractActionFromUserAction,
   extractCommandInvocation,
@@ -129,6 +130,27 @@ function runRg(args: string[]) {
     }
   }
 
+  // Content mode: rg -n -e <pattern> <files...> → "N:line" per match
+  if (args.includes('-n')) {
+    if (!regex) {
+      return { exitCode: 1, stdout: Buffer.from(''), stderr: Buffer.from('') }
+    }
+    const targets = args.slice(patternIndex + 2).filter((arg) => arg && !arg.startsWith('-'))
+    const output: string[] = []
+    for (const target of targets) {
+      if (!fsSync.existsSync(target) || !fsSync.statSync(target).isFile()) continue
+      const lines = fsSync.readFileSync(target, 'utf8').split('\n')
+      lines.forEach((line, index) => {
+        if (regex.test(line)) output.push(`${index + 1}:${line}`)
+      })
+    }
+    return {
+      exitCode: output.length > 0 ? 0 : 1,
+      stdout: Buffer.from(output.join('\n')),
+      stderr: Buffer.from(''),
+    }
+  }
+
   return { exitCode: 1, stdout: Buffer.from(''), stderr: Buffer.from('') }
 }
 
@@ -185,6 +207,47 @@ function buildUserLogEntry(message: string): string {
     type: 'user',
     message: { role: 'user', content: [{ type: 'text', text: message }] }
   })
+}
+
+/**
+ * AskUserQuestion answers land in the log as tool_result content inside a
+ * type:'user' entry, wrapped in a "…answered:" envelope.
+ */
+function buildAskAnswerLogEntry(question: string, answer: string): string {
+  return JSON.stringify({
+    type: 'user',
+    message: {
+      role: 'user',
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: 'toolu_test_1',
+          content: `Your questions have been answered: "${question}"="${answer}". You can now continue with these answers in mind.`,
+        },
+      ],
+    },
+  })
+}
+
+/**
+ * A screen showing only submitted-answer recap lines plus an active
+ * AskUserQuestion card — no ❯ user prompt anywhere.
+ */
+function buildAskAnswerScrollback(pairs: Array<[string, string]>): string {
+  const recaps = pairs
+    .map(([q, a]) => `⏺ User answered Claude's questions:\n  ⎿ \u00a0· ${q} → ${a}`)
+    .join('\n')
+  return [
+    '⏺ Working…',
+    recaps,
+    '────────────────────────────',
+    ' ☐ Session',
+    'Another question for you?',
+    '❯ 1. 24 hours (Recommended)',
+    '  2. 8 hours',
+    'Enter to select · ↑/↓ to navigate · Esc to cancel',
+    '',
+  ].join('\n')
 }
 
 beforeEach(() => {
@@ -557,6 +620,108 @@ describe('logMatcher', () => {
     expect(
       tryExactMatchWindowToLog('agentboard:1', tempDir, undefined, { agentType: 'codex' })?.logPath
     ).toBe(codexLog)
+    await fs.rm(tempDir, { recursive: true, force: true })
+  })
+
+  test('extractAskUserQuestionAnswers parses recap lines and dedupes', () => {
+    const scrollback = [
+      '⏺ User answered Claude\'s questions:',
+      '  ⎿ \u00a0· First question here? → first answer',
+      '⏺ Working…',
+      '⏺ User answered Claude\'s questions:',
+      '  ⎿ \u00a0· First question here? → first answer',
+      '  ⎿ \u00a0· Second question? → second answer',
+      '  ⎿  == plain tool detail, not an answer',
+      '· a bullet without an arrow',
+      '· stray bullet → with arrow but no ⎿ prefix',
+      '❯ 1. An option (Recommended)',
+      'Enter to select · ↑/↓ to navigate · Esc to cancel',
+      '',
+    ].join('\n')
+    const answers = extractAskUserQuestionAnswers(scrollback)
+    expect(answers).toEqual([
+      { question: 'Second question?', answer: 'second answer' },
+      { question: 'First question here?', answer: 'first answer' },
+    ])
+  })
+
+  test('tryExactMatchWindowToLog matches a window parked on AskUserQuestion cards', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-logmatch-'))
+    const logPath = path.join(tempDir, 'session.jsonl')
+    const pairs: Array<[string, string]> = [
+      ['Which identity provider signs staff in?', 'hmm we need mfa on each login?'],
+      ['Session duration?', '24 hours (Recommended)'],
+    ]
+    await fs.writeFile(
+      logPath,
+      pairs.map(([q, a]) => buildAskAnswerLogEntry(q, a)).join('\n')
+    )
+
+    // Screen shows only recap lines and an active card — no ❯ user prompt.
+    setTmuxOutput('agentboard:1', buildAskAnswerScrollback(pairs))
+
+    const result = tryExactMatchWindowToLog('agentboard:1', tempDir)
+    expect(result?.logPath).toBe(logPath)
+    expect(result?.matchedCount).toBe(2)
+    await fs.rm(tempDir, { recursive: true, force: true })
+  })
+
+  test('tryExactMatchWindowToLog rejects a Q→A needle outside the tool_result envelope', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-logmatch-'))
+    const logPath = path.join(tempDir, 'session.jsonl')
+    const pairs: Array<[string, string]> = [
+      ['Which identity provider signs staff in?', 'hmm we need mfa on each login?'],
+    ]
+    // The "Q"="A" fragment appears verbatim, but as a plain user text message —
+    // not inside an AskUserQuestion tool_result envelope.
+    await fs.writeFile(
+      logPath,
+      buildUserLogEntry(
+        `Your questions have been answered: "${pairs[0][0]}"="${pairs[0][1]}".`
+      )
+    )
+    setTmuxOutput('agentboard:1', buildAskAnswerScrollback(pairs))
+
+    expect(tryExactMatchWindowToLog('agentboard:1', tempDir)).toBeNull()
+    await fs.rm(tempDir, { recursive: true, force: true })
+  })
+
+  test('tryExactMatchWindowToLog returns null when two logs tie on the same answers', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-logmatch-'))
+    const logPathA = path.join(tempDir, 'session-a.jsonl')
+    const logPathB = path.join(tempDir, 'session-b.jsonl')
+    const pairs: Array<[string, string]> = [
+      ['Which identity provider signs staff in?', 'hmm we need mfa on each login?'],
+    ]
+    const body = buildAskAnswerLogEntry(pairs[0][0], pairs[0][1])
+    await fs.writeFile(logPathA, body)
+    await fs.writeFile(logPathB, body)
+    setTmuxOutput('agentboard:1', buildAskAnswerScrollback(pairs))
+
+    expect(tryExactMatchWindowToLog('agentboard:1', tempDir)).toBeNull()
+    await fs.rm(tempDir, { recursive: true, force: true })
+  })
+
+  test('tryExactMatchWindowToLog does not mark an answer-rich window as no-message', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-logmatch-'))
+    const logPath = path.join(tempDir, 'unrelated.jsonl')
+    await fs.writeFile(logPath, buildUserLogEntry('completely different session'))
+    const pairs: Array<[string, string]> = [
+      ['Which identity provider signs staff in?', 'hmm we need mfa on each login?'],
+    ]
+    setTmuxOutput('agentboard:1', buildAskAnswerScrollback(pairs))
+
+    const noMessageWindows = new Set<string>()
+    const result = tryExactMatchWindowToLog(
+      'agentboard:1',
+      tempDir,
+      undefined,
+      {},
+      {},
+      noMessageWindows
+    )
+    expect(result).toBeNull()
+    expect(noMessageWindows.size).toBe(0)
     await fs.rm(tempDir, { recursive: true, force: true })
   })
 

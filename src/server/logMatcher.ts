@@ -1391,6 +1391,43 @@ export function extractRecentUserMessagesFromTmux(
   return messages
 }
 
+export interface AskUserQuestionAnswer {
+  question: string
+  answer: string
+}
+
+// Require the ⎿ detail prefix — a bare `· x → y` line could be stray content,
+// and a false pair would mark a genuinely-booting window as having content.
+const ASK_ANSWER_LINE = /^\s*⎿\s*·\s+(.+?)\s*→\s*(.+?)\s*$/
+
+/**
+ * Submitted AskUserQuestion cards render recap lines like
+ *   ⎿  · <question> → <answer>
+ * These never produce a ❯ prompt line, so a session parked on (or full of)
+ * question cards is invisible to prompt-based matching. Extract the pairs so
+ * they can be matched against the tool_result envelopes the answers land in.
+ */
+export function extractAskUserQuestionAnswers(
+  content: string,
+  maxAnswers = MAX_RECENT_USER_MESSAGES
+): AskUserQuestionAnswer[] {
+  const rawLines = stripAnsi(content).split('\n')
+  const answers: AskUserQuestionAnswer[] = []
+  const seen = new Set<string>()
+  for (let i = rawLines.length - 1; i >= 0 && answers.length < maxAnswers; i--) {
+    const match = rawLines[i]?.match(ASK_ANSWER_LINE)
+    if (!match) continue
+    const question = (match[1] ?? '').replace(/\s+/g, ' ').trim()
+    const answer = (match[2] ?? '').replace(/\s+/g, ' ').trim()
+    if (!question || !answer) continue
+    const key = `${question}→${answer}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    answers.push({ question, answer })
+  }
+  return answers
+}
+
 function stripTraceStatusSuffix(line: string): string {
   const match = line.match(TRACE_STATUS_TRAILER)
   if (!match) return line
@@ -1910,6 +1947,401 @@ export function extractLastEntryTimestamp(
   return null
 }
 
+// AskUserQuestion answers land in the log as tool_result content with one of
+// two envelopes:
+//   The user answered: "Q"="A". Read the answers carefully — …
+//   Your questions have been answered: "Q"="A". You can now continue …
+// Only count a hit when the pair sits inside one of these envelopes — arbitrary
+// tool_result content stays excluded for the same reason userOnly matching
+// excludes it (terminal-capture tools echo screen text).
+const ASK_ANSWER_ENVELOPE =
+  /The user answered:|Your questions have been answered:/
+
+/**
+ * The `"Q"="A` fragment as it appears inside the envelope. Deliberately omits
+ * the closing quote — Claude may pad the answer with a trailing space before
+ * the quote (e.g. custom "Type something" answers).
+ */
+function askAnswerNeedle(question: string, answer: string): string {
+  return `"${question}"="${answer}`
+}
+
+function toolResultTexts(entry: unknown): string[] {
+  if (!entry || typeof entry !== 'object') return []
+  const record = entry as Record<string, unknown>
+  const message = record.message as Record<string, unknown> | undefined
+  const content = message?.content
+  if (!Array.isArray(content)) return []
+  const texts: string[] = []
+  for (const item of content) {
+    if (!item || typeof item !== 'object') continue
+    const itemRecord = item as Record<string, unknown>
+    if (itemRecord.type !== 'tool_result') continue
+    const itemContent = itemRecord.content
+    if (typeof itemContent === 'string') {
+      texts.push(itemContent)
+    } else if (Array.isArray(itemContent)) {
+      for (const chunk of itemContent) {
+        const text = (chunk as Record<string, unknown>)?.text
+        if (typeof text === 'string') texts.push(text)
+      }
+    }
+  }
+  return texts
+}
+
+/**
+ * A matched line only counts when it parses as an entry whose tool_result
+ * content carries the envelope and the exact pair — guards against the
+ * envelope text being quoted elsewhere (assistant narration, pasted content).
+ */
+function isAskAnswerLine(line: string, needle: string): boolean {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(line)
+  } catch {
+    return false
+  }
+  return toolResultTexts(parsed).some(
+    (text) =>
+      ASK_ANSWER_ENVELOPE.test(text) &&
+      text.replace(/\s+/g, ' ').includes(needle)
+  )
+}
+
+function rgArgs(pattern: string, search: ExactMatchSearchOptions): string[] {
+  const args = ['rg', '-e', pattern]
+  if (search.rgThreads && search.rgThreads > 0) {
+    args.push('--threads', String(search.rgThreads))
+  }
+  return args
+}
+
+function rgListFiles(
+  pattern: string,
+  targets: string[],
+  search: ExactMatchSearchOptions
+): string[] {
+  const args = rgArgs(pattern, search)
+  args.splice(1, 0, '-l')
+  args.push(...targets)
+  const result = runCommandSync(args, { timeoutMs: RG_COMMAND_TIMEOUT_MS })
+  if (result.exitCode !== 0) return []
+  return result.stdout.trim().split('\n').filter(Boolean)
+}
+
+async function rgListFilesAsync(
+  pattern: string,
+  targets: string[],
+  search: ExactMatchSearchOptions
+): Promise<string[]> {
+  const args = rgArgs(pattern, search)
+  args.splice(1, 0, '-l')
+  args.push(...targets)
+  const result = await runCommandAsync(args, { timeoutMs: RG_COMMAND_TIMEOUT_MS })
+  if (result.exitCode !== 0) return []
+  return result.stdout.trim().split('\n').filter(Boolean)
+}
+
+/**
+ * A -l hit only proves the pattern text exists on some line. Re-run rg in
+ * content mode on that one file and confirm a matched line is a real
+ * tool_result envelope carrying this pair.
+ */
+function askAnswerHitIsValid(
+  logPath: string,
+  pattern: string,
+  needle: string,
+  search: ExactMatchSearchOptions
+): boolean {
+  const args = rgArgs(pattern, search)
+  args.splice(1, 0, '-n')
+  args.push(logPath)
+  const result = runCommandSync(args, { timeoutMs: RG_COMMAND_TIMEOUT_MS })
+  if (result.exitCode !== 0) return false
+  for (const line of result.stdout.split('\n')) {
+    const content = line.slice(line.indexOf(':') + 1)
+    if (isAskAnswerLine(content, needle)) return true
+  }
+  return false
+}
+
+async function askAnswerHitIsValidAsync(
+  logPath: string,
+  pattern: string,
+  needle: string,
+  search: ExactMatchSearchOptions
+): Promise<boolean> {
+  const args = rgArgs(pattern, search)
+  args.splice(1, 0, '-n')
+  args.push(logPath)
+  const result = await runCommandAsync(args, { timeoutMs: RG_COMMAND_TIMEOUT_MS })
+  if (result.exitCode !== 0) return false
+  for (const line of result.stdout.split('\n')) {
+    const content = line.slice(line.indexOf(':') + 1)
+    if (isAskAnswerLine(content, needle)) return true
+  }
+  return false
+}
+
+/**
+ * rg prefilter for the envelope + `"Q"="A` needle on the same JSONL line, then
+ * confirm each hit's matched lines parse as a real tool_result envelope.
+ */
+function findLogsWithAskAnswerPair(
+  question: string,
+  answer: string,
+  logDirs: string | string[],
+  search: ExactMatchSearchOptions = {}
+): string[] {
+  const needle = askAnswerNeedle(question, answer)
+  if (needle.length < MIN_EXACT_MATCH_LENGTH) return []
+  const pattern =
+    '(?:The user answered|Your questions have been answered):\\s*' +
+    messageToFlexiblePattern(needle)
+  const logPaths = (search.logPaths ?? []).filter(Boolean)
+  const hits =
+    logPaths.length > 0
+      ? rgListFiles(pattern, Array.from(new Set(logPaths)), search)
+      : (Array.isArray(logDirs) ? logDirs : [logDirs]).flatMap((dir) =>
+          rgListFiles(pattern, ['--glob', '**/*.jsonl', dir], search)
+        )
+  return hits.filter(
+    (logPath) =>
+      !isGrokTelemetryFile(logPath) &&
+      askAnswerHitIsValid(logPath, pattern, needle, search)
+  )
+}
+
+async function findLogsWithAskAnswerPairAsync(
+  question: string,
+  answer: string,
+  logDirs: string | string[],
+  search: ExactMatchSearchOptions = {}
+): Promise<string[]> {
+  const needle = askAnswerNeedle(question, answer)
+  if (needle.length < MIN_EXACT_MATCH_LENGTH) return []
+  const pattern =
+    '(?:The user answered|Your questions have been answered):\\s*' +
+    messageToFlexiblePattern(needle)
+  const logPaths = (search.logPaths ?? []).filter(Boolean)
+  const hits =
+    logPaths.length > 0
+      ? await rgListFilesAsync(pattern, Array.from(new Set(logPaths)), search)
+      : (
+          await Promise.all(
+            (Array.isArray(logDirs) ? logDirs : [logDirs]).map((dir) =>
+              rgListFilesAsync(pattern, ['--glob', '**/*.jsonl', dir], search)
+            )
+          )
+        ).flat()
+  const valid = await Promise.all(
+    hits.map(async (logPath) =>
+      !isGrokTelemetryFile(logPath) &&
+      (await askAnswerHitIsValidAsync(logPath, pattern, needle, search))
+        ? logPath
+        : null
+    )
+  )
+  return valid.filter((logPath): logPath is string => logPath !== null)
+}
+
+function filterAskAnswerCandidates(
+  candidates: string[],
+  context: ExactMatchContext,
+  search: ExactMatchSearchOptions
+): string[] {
+  let filtered = filterCandidatesByAgentType(candidates, context.agentType)
+  if (filtered.length === 0) return []
+
+  if (context.projectPath) {
+    const target = normalizePath(context.projectPath)
+    const narrowed = filtered.filter((candidate) => {
+      const projectPath = extractProjectPath(candidate)
+      if (!projectPath) return false
+      return isSameOrChildPath(normalizePath(projectPath), target)
+    })
+    if (narrowed.length > 0) filtered = narrowed
+  }
+
+  if (search.excludeLogPaths && search.excludeLogPaths.length > 0) {
+    const excludeSet = new Set(search.excludeLogPaths)
+    const narrowed = filtered.filter(
+      (candidate) => !excludeSet.has(candidate)
+    )
+    if (narrowed.length > 0) filtered = narrowed
+  }
+  return filtered
+}
+
+/**
+ * Every envelope line in the candidate log, normalized. One rg pass streams
+ * the whole file — the pair on screen may sit far back in a large log, so a
+ * tail read would undercount.
+ */
+function askAnswerEnvelopeTexts(
+  logPath: string,
+  search: ExactMatchSearchOptions
+): string[] {
+  const args = rgArgs(ASK_ANSWER_ENVELOPE.source, search)
+  args.splice(1, 0, '-n')
+  args.push(logPath)
+  const result = runCommandSync(args, { timeoutMs: RG_COMMAND_TIMEOUT_MS })
+  if (result.exitCode !== 0) return []
+  const texts: string[] = []
+  for (const line of result.stdout.split('\n')) {
+    const content = line.slice(line.indexOf(':') + 1)
+    if (!content.startsWith('{')) continue
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(content)
+    } catch {
+      continue
+    }
+    for (const text of toolResultTexts(parsed)) {
+      if (ASK_ANSWER_ENVELOPE.test(text)) {
+        texts.push(text.replace(/\s+/g, ' '))
+      }
+    }
+  }
+  return texts
+}
+
+async function askAnswerEnvelopeTextsAsync(
+  logPath: string,
+  search: ExactMatchSearchOptions
+): Promise<string[]> {
+  const args = rgArgs(ASK_ANSWER_ENVELOPE.source, search)
+  args.splice(1, 0, '-n')
+  args.push(logPath)
+  const result = await runCommandAsync(args, { timeoutMs: RG_COMMAND_TIMEOUT_MS })
+  if (result.exitCode !== 0) return []
+  const texts: string[] = []
+  for (const line of result.stdout.split('\n')) {
+    const content = line.slice(line.indexOf(':') + 1)
+    if (!content.startsWith('{')) continue
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(content)
+    } catch {
+      continue
+    }
+    for (const text of toolResultTexts(parsed)) {
+      if (ASK_ANSWER_ENVELOPE.test(text)) {
+        texts.push(text.replace(/\s+/g, ' '))
+      }
+    }
+  }
+  return texts
+}
+
+function scoreAskAnswerTexts(
+  answers: AskUserQuestionAnswer[],
+  texts: string[]
+): OrderedMatchScore {
+  let matchedCount = 0
+  let matchedLength = 0
+  for (const { question, answer } of answers) {
+    const needle = askAnswerNeedle(question, answer)
+    if (texts.some((text) => text.includes(needle))) {
+      matchedCount += 1
+      matchedLength += needle.length
+    }
+  }
+  return { matchedCount, matchedLength }
+}
+
+function askAnswerResult(
+  answers: AskUserQuestionAnswer[],
+  scored: { logPath: string; score: OrderedMatchScore }[]
+): ExactMatchResult | null {
+  const best = scored[0]
+  const second = scored[1]
+  if (!best || best.score.matchedCount === 0) return null
+  if (second && compareOrderedScores(best.score, second.score) === 0) return null
+  const first = answers[0]
+  return {
+    logPath: best.logPath,
+    userMessage: first ? `· ${first.question} → ${first.answer}` : '',
+    matchedCount: best.score.matchedCount,
+    matchedLength: best.score.matchedLength,
+  }
+}
+
+/**
+ * Match a window whose screen shows AskUserQuestion recaps but no ❯ prompt.
+ * Union rather than intersect: recaps on screen can span a /clear boundary, so
+ * pairs may legitimately live in different files — score each candidate by how
+ * many pairs it contains and reject ties like the main path.
+ */
+function matchWindowByAskAnswers(
+  answers: AskUserQuestionAnswer[],
+  logDirs: string | string[],
+  context: ExactMatchContext,
+  search: ExactMatchSearchOptions
+): ExactMatchResult | null {
+  // The answer envelopes are a Claude log format — skip the rg work entirely
+  // for windows known to be a different agent.
+  const windowFamily = agentFamily(context.agentType)
+  if (windowFamily && windowFamily !== 'claude') return null
+  const hitPaths = new Set<string>()
+  for (const pair of answers) {
+    for (const hit of findLogsWithAskAnswerPair(
+      pair.question,
+      pair.answer,
+      logDirs,
+      search
+    )) {
+      hitPaths.add(hit)
+    }
+  }
+  const candidates = filterAskAnswerCandidates([...hitPaths], context, search)
+  if (candidates.length === 0) return null
+  const scored = candidates
+    .map((logPath) => ({
+      logPath,
+      score: scoreAskAnswerTexts(answers, askAnswerEnvelopeTexts(logPath, search)),
+    }))
+    .sort((left, right) => compareOrderedScores(left.score, right.score))
+  return askAnswerResult(answers, scored)
+}
+
+async function matchWindowByAskAnswersAsync(
+  answers: AskUserQuestionAnswer[],
+  logDirs: string | string[],
+  context: ExactMatchContext,
+  search: ExactMatchSearchOptions
+): Promise<ExactMatchResult | null> {
+  const windowFamily = agentFamily(context.agentType)
+  if (windowFamily && windowFamily !== 'claude') return null
+  const hitPaths = new Set<string>()
+  for (const pair of answers) {
+    for (const hit of await findLogsWithAskAnswerPairAsync(
+      pair.question,
+      pair.answer,
+      logDirs,
+      search
+    )) {
+      hitPaths.add(hit)
+    }
+  }
+  const candidates = filterAskAnswerCandidates([...hitPaths], context, search)
+  if (candidates.length === 0) return null
+  const textsByPath = await Promise.all(
+    candidates.map(async (logPath) => ({
+      logPath,
+      texts: await askAnswerEnvelopeTextsAsync(logPath, search),
+    }))
+  )
+  const scored = textsByPath
+    .map(({ logPath, texts }) => ({
+      logPath,
+      score: scoreAskAnswerTexts(answers, texts),
+    }))
+    .sort((left, right) => compareOrderedScores(left.score, right.score))
+  return askAnswerResult(answers, scored)
+}
+
 export interface ExactMatchContext {
   agentType?: AgentType
   projectPath?: string
@@ -1988,11 +2420,24 @@ export function tryExactMatchWindowToLog(
   let messages = userMessages
   let usingTraceFallback = false
   if (messages.length === 0) {
+    // AskUserQuestion recaps carry real user input without any ❯ prompt line.
+    const askAnswers = extractAskUserQuestionAnswers(scrollback)
+    if (askAnswers.length > 0) {
+      const answerMatch = matchWindowByAskAnswers(
+        askAnswers,
+        logDirs,
+        context,
+        search
+      )
+      if (answerMatch) return answerMatch
+    }
     const traces = extractRecentTraceLinesFromTmux(scrollback)
     if (traces.length === 0) {
       // Only mark as "no messages" if the capture succeeded — a capture failure
-      // (stale/invalid tmux target) should not trigger deferral.
-      if (captureResult.ok) noMessageWindows?.add(tmuxWindow)
+      // (stale/invalid tmux target) should not trigger deferral. A window that
+      // yielded question answers had extractable content, just no match.
+      if (captureResult.ok && askAnswers.length === 0)
+        noMessageWindows?.add(tmuxWindow)
       return null
     }
     messages = traces
@@ -2192,9 +2637,21 @@ export async function tryExactMatchWindowToLogAsync(
   let messages = userMessages
   let usingTraceFallback = false
   if (messages.length === 0) {
+    // AskUserQuestion recaps carry real user input without any ❯ prompt line.
+    const askAnswers = extractAskUserQuestionAnswers(scrollback)
+    if (askAnswers.length > 0) {
+      const answerMatch = await matchWindowByAskAnswersAsync(
+        askAnswers,
+        logDirs,
+        context,
+        search
+      )
+      if (answerMatch) return answerMatch
+    }
     const traces = extractRecentTraceLinesFromTmux(scrollback)
     if (traces.length === 0) {
-      if (captureResult.ok) noMessageWindows?.add(tmuxWindow)
+      if (captureResult.ok && askAnswers.length === 0)
+        noMessageWindows?.add(tmuxWindow)
       return null
     }
     messages = traces
