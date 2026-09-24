@@ -1330,6 +1330,48 @@ describe('stall detection', () => {
     expect(resumeTimeout).toBeDefined()
   })
 
+  /**
+   * Fail the current socket (close before open) and fire the reconnect timer
+   * that scheduleReconnect() queued. Returns that timer's delay.
+   */
+  function failAndReconnect(): number {
+    const before = new Set(timers.map((t) => t.id))
+    FakeWebSocket.instances[FakeWebSocket.instances.length - 1]!.close()
+    const scheduled = timers.filter((t) => !before.has(t.id))
+    expect(scheduled).toHaveLength(1)
+    consumeTimer(scheduled[0]!)
+    return scheduled[0]!.delay
+  }
+
+  /** Run one stall cycle (4 failures) and return the cooldown delay. */
+  function stallCycle(): number {
+    const delays = [failAndReconnect(), failAndReconnect(), failAndReconnect()]
+    expect(delays).toEqual([1000, 2000, 4000])
+    return failAndReconnect()
+  }
+
+  test('stall cooldown escalates 5s -> 10s -> 20s -> 30s cap', () => {
+    const manager = new WebSocketManager()
+    manager.connect()
+
+    expect([stallCycle(), stallCycle(), stallCycle(), stallCycle(), stallCycle()]).toEqual([
+      5000, 10000, 20000, 30000, 30000,
+    ])
+  })
+
+  test('stall cooldown resets after a successful open', () => {
+    const manager = new WebSocketManager()
+    manager.connect()
+
+    expect(stallCycle()).toBe(5000)
+    expect(stallCycle()).toBe(10000)
+
+    FakeWebSocket.instances[FakeWebSocket.instances.length - 1]!.triggerOpen()
+    expect(manager.getStatus()).toBe('connected')
+
+    expect(stallCycle()).toBe(5000)
+  })
+
   test('consecutive failures reset on successful open', () => {
     const manager = new WebSocketManager()
     const getFailures = () =>
