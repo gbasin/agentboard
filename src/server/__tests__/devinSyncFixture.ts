@@ -98,6 +98,16 @@ export function readLines(file: string): Array<Record<string, unknown>> {
     .map((line) => JSON.parse(line))
 }
 
-export function statNs(file: string): bigint {
-  return fs.statSync(file, { bigint: true }).mtimeNs
+/**
+ * Identity of a file's current contents: inode + size + mtime. Atomic
+ * rewrites (tmp + rename) always change the inode, so "unchanged" asserts
+ * cannot pass falsely on filesystems with coarse (per-tick) mtime.
+ */
+export function fileId(file: string): string {
+  const stat = fs.statSync(file, { bigint: true })
+  return `${stat.ino}:${stat.size}:${stat.mtimeNs}`
+}
+
+export function inode(file: string): bigint {
+  return fs.statSync(file, { bigint: true }).ino
 }

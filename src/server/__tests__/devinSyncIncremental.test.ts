@@ -12,7 +12,8 @@ import {
   openDb,
   paths,
   readLines,
-  statNs,
+  fileId,
+  inode,
   useDevinSyncFixture,
 } from './devinSyncFixture'
 
@@ -47,8 +48,8 @@ describe('syncDevinSessions incremental', () => {
 
     const statePath = path.join(paths.outDir, '.sync-state.json')
     const logPath = path.join(paths.outDir, 'idle.jsonl')
-    const stateMtime = statNs(statePath)
-    const logMtime = statNs(logPath)
+    const stateIno = inode(statePath)
+    const logId = fileId(logPath)
 
     // No statement is prepared on the idle path: SQLite is never touched.
     const prepareSpy = spyOn(SQLiteDatabase.prototype, 'prepare')
@@ -64,8 +65,8 @@ describe('syncDevinSessions incremental', () => {
       prepareSpy.mockRestore()
     }
     // The utimes-triggered sync rewrote state but left the unchanged log alone.
-    expect(statNs(statePath)).not.toBe(stateMtime)
-    expect(statNs(logPath)).toBe(logMtime)
+    expect(inode(statePath)).not.toBe(stateIno)
+    expect(fileId(logPath)).toBe(logId)
   })
 
   test('idle early exit leaves sync state untouched', () => {
@@ -74,9 +75,9 @@ describe('syncDevinSessions incremental', () => {
     db.close()
     syncDevinSessions(paths.outDir)
     const statePath = path.join(paths.outDir, '.sync-state.json')
-    const stateMtime = statNs(statePath)
+    const stateId = fileId(statePath)
     expect(syncDevinSessions(paths.outDir)?.sessions).toBe(1)
-    expect(statNs(statePath)).toBe(stateMtime)
+    expect(fileId(statePath)).toBe(stateId)
   })
 
   test('append cycle reads only rows after lastRowId', () => {
@@ -115,7 +116,7 @@ describe('syncDevinSessions incremental', () => {
     const growPath = path.join(paths.outDir, 'grow.jsonl')
     const stillPath = path.join(paths.outDir, 'still.jsonl')
     const before = fs.readFileSync(growPath, 'utf8')
-    const stillMtime = statNs(stillPath)
+    const stillId = fileId(stillPath)
 
     const db2 = openDb()
     addMessage(db2, 'grow', 'assistant', 'g2')
@@ -132,7 +133,7 @@ describe('syncDevinSessions incremental', () => {
       .filter(Boolean)
       .map((line) => (JSON.parse(line).message as { content: string }).content)
     expect(added).toEqual(['g2', 'g3'])
-    expect(statNs(stillPath)).toBe(stillMtime)
+    expect(fileId(stillPath)).toBe(stillId)
 
     const state = JSON.parse(fs.readFileSync(path.join(paths.outDir, '.sync-state.json'), 'utf8'))
     expect(state.sessions.grow.rowCount).toBe(3)
@@ -229,7 +230,7 @@ describe('syncDevinSessions incremental', () => {
     addMessage(db, 'keep-me', 'user', 'stay')
     db.close()
     syncDevinSessions(paths.outDir)
-    const keepMtime = statNs(path.join(paths.outDir, 'keep-me.jsonl'))
+    const keepId = fileId(path.join(paths.outDir, 'keep-me.jsonl'))
 
     const db2 = openDb()
     db2.exec(`UPDATE sessions SET hidden = 1 WHERE id = 'hide-me'`)
@@ -238,7 +239,7 @@ describe('syncDevinSessions incremental', () => {
     const result = syncDevinSessions(paths.outDir)
     expect(result).toEqual({ sessions: 1, rewritten: 0, appended: 0, removed: 1 })
     expect(fs.existsSync(path.join(paths.outDir, 'hide-me.jsonl'))).toBe(false)
-    expect(statNs(path.join(paths.outDir, 'keep-me.jsonl'))).toBe(keepMtime)
+    expect(fileId(path.join(paths.outDir, 'keep-me.jsonl'))).toBe(keepId)
     const state = JSON.parse(fs.readFileSync(path.join(paths.outDir, '.sync-state.json'), 'utf8'))
     expect(Object.keys(state.sessions)).toEqual(['keep-me'])
   })
@@ -260,4 +261,5 @@ describe('syncDevinSessions incremental', () => {
       db.close()
     }
   })
+
 })
