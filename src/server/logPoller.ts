@@ -687,7 +687,11 @@ export class LogPoller {
           logger.debug('devin_sync', { durationMs, synced: false })
           return
         }
-        logger.info('devin_sync', {
+        // Incremental sync makes most cycles no-ops; logging those at info
+        // would add a line every interval to both log sinks.
+        const changed = result.rewritten + result.appended + result.removed > 0
+        const log = changed ? logger.info : logger.debug
+        log('devin_sync', {
           durationMs,
           synced: true,
           sessions: result.sessions,
