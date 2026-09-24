@@ -162,6 +162,15 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
   ensureDataDir(dbPath)
 
   const db = new SQLiteDatabase(dbPath)
+  // WAL so concurrent readers/tools don't hit "database is locked" against
+  // rollback-journal write locks; busy_timeout turns transient locks into a
+  // short wait instead of an immediate error. NORMAL is safe under WAL (frame
+  // checksums catch torn writes) and avoids a per-commit fsync — individual
+  // fsyncs stalling under disk pressure showed up as multi-second event-loop
+  // gaps (log_poll processMs spikes).
+  db.exec('PRAGMA journal_mode = WAL')
+  db.exec('PRAGMA busy_timeout = 5000')
+  db.exec('PRAGMA synchronous = NORMAL')
   migrateDatabase(db)
   db.exec(CREATE_TABLE_SQL)
   db.exec(CREATE_APP_SETTINGS_TABLE_SQL)
