@@ -43,6 +43,8 @@ function fileFingerprint(filePath: string, headerBytes: number, headerOffset = 0
  *   commits after a WAL reset that overwrite frames inside the old WAL size,
  *   where size and header stay equal and mtime only moves per kernel tick on
  *   Linux. Readers do not write this range.
+ * syncDevinSessions() (devinSync.ts) additionally bypasses the fingerprint
+ * every FULL_CHECK_INTERVAL_MS as a safety net.
  */
 export function devinDbFingerprint(dbPath: string): string {
   const db = fileFingerprint(dbPath, 4, 24)

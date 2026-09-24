@@ -4,7 +4,7 @@ import { describe, expect, spyOn, test } from 'bun:test'
 import fs from 'node:fs'
 import path from 'node:path'
 import { Database as SQLiteDatabase } from 'bun:sqlite'
-import { syncDevinSessions } from '../devinSync'
+import { FULL_CHECK_INTERVAL_MS, syncDevinSessions } from '../devinSync'
 import {
   addMessage,
   addSession,
@@ -260,6 +260,49 @@ describe('syncDevinSessions incremental', () => {
     } finally {
       db.close()
     }
+  })
+
+  test('recreates a deleted mirror on an idle db without waiting for a write', () => {
+    const db = createDevinDb()
+    addSession(db, 'lost', '/p', null)
+    addMessage(db, 'lost', 'user', 'hi')
+    db.close()
+    syncDevinSessions(paths.outDir)
+    const logPath = path.join(paths.outDir, 'lost.jsonl')
+    fs.unlinkSync(logPath)
+
+    const result = syncDevinSessions(paths.outDir)
+    expect(result?.rewritten).toBe(1)
+    expect(readLines(logPath)).toHaveLength(2)
+  })
+
+  test('safety net re-runs the aggregate after FULL_CHECK_INTERVAL_MS', () => {
+    const db = createDevinDb()
+    addSession(db, 'net', '/p', null)
+    addMessage(db, 'net', 'user', 'hi')
+    db.close()
+    syncDevinSessions(paths.outDir)
+    const statePath = path.join(paths.outDir, '.sync-state.json')
+    const stateId = fileId(statePath)
+
+    const realNow = Date.now()
+    const prepareSpy = spyOn(SQLiteDatabase.prototype, 'prepare')
+    const nowSpy = spyOn(Date, 'now')
+    try {
+      nowSpy.mockReturnValue(realNow + FULL_CHECK_INTERVAL_MS - 1000)
+      syncDevinSessions(paths.outDir)
+      expect(prepareSpy).toHaveBeenCalledTimes(0)
+
+      nowSpy.mockReturnValue(realNow + FULL_CHECK_INTERVAL_MS + 1000)
+      const result = syncDevinSessions(paths.outDir)
+      expect(result).toEqual({ sessions: 1, rewritten: 0, appended: 0, removed: 0 })
+      expect(prepareSpy.mock.calls.length).toBeGreaterThan(0)
+    } finally {
+      nowSpy.mockRestore()
+      prepareSpy.mockRestore()
+    }
+    // Nothing changed, so the state file is not rewritten.
+    expect(fileId(statePath)).toBe(stateId)
   })
 
 })

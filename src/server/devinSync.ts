@@ -196,6 +196,27 @@ function writeJsonAtomic(filePath: string, data: string): void {
   fs.renameSync(tmpPath, filePath)
 }
 
+/** Max age of a fingerprint-only (no SQL) verdict before re-running the aggregate. */
+export const FULL_CHECK_INTERVAL_MS = 30_000
+// Last aggregate-path run per output dir. Module memory is enough: the sync
+// runs in one thread, and a restart simply re-checks once.
+const lastFullCheckAt = new Map<string, number>()
+
+function canSkipDb(state: SyncState, fingerprint: string, outDir: string): boolean {
+  if (state.formatVersion !== MIRROR_FORMAT_VERSION) return false
+  if (state.dbFingerprint !== fingerprint) return false
+  if (typeof state.sessionCount !== 'number') return false
+  const lastCheck = lastFullCheckAt.get(outDir)
+  if (lastCheck === undefined || Date.now() - lastCheck >= FULL_CHECK_INTERVAL_MS) {
+    return false
+  }
+  // A mirror deleted out from under us must be recreated without waiting
+  // for the next db write: one stat per session, still no SQL.
+  return Object.keys(state.sessions).every((id) =>
+    fs.existsSync(path.join(outDir, `${sanitizeFileName(id)}.jsonl`))
+  )
+}
+
 export interface DevinSyncResult {
   sessions: number
   rewritten: number
@@ -214,7 +235,8 @@ interface SessionAggregate {
  *
  * Per cycle, in order of cost:
  * 1. Fingerprint db/WAL/shm (see devinDbFingerprint); unchanged since the
- *    last sync -> return without opening SQLite or touching the output dir.
+ *    last sync, aggregate run within FULL_CHECK_INTERVAL_MS, and every
+ *    mirror file present -> return without opening SQLite.
  * 2. One covering-index aggregate (COUNT, MAX(row_id) per session); a
  *    session whose count and max row_id match the recorded state is skipped.
  *    row_id is AUTOINCREMENT, so equal count + max means an identical row set.
@@ -233,12 +255,8 @@ export function syncDevinSessions(outDir = getDevinLogOutDir()): DevinSyncResult
   const fingerprint = devinDbFingerprint(dbPath)
   const state = loadSyncState(outDir)
   const stateCurrent = state.formatVersion === MIRROR_FORMAT_VERSION
-  if (
-    stateCurrent &&
-    state.dbFingerprint === fingerprint &&
-    typeof state.sessionCount === 'number'
-  ) {
-    return { sessions: state.sessionCount, rewritten: 0, appended: 0, removed: 0 }
+  if (canSkipDb(state, fingerprint, outDir)) {
+    return { sessions: state.sessionCount ?? 0, rewritten: 0, appended: 0, removed: 0 }
   }
 
   let db: SQLiteDatabase | null = null
@@ -381,9 +399,14 @@ export function syncDevinSessions(outDir = getDevinLogOutDir()): DevinSyncResult
       }
     }
 
-    // Reaching here means the fingerprint (or format) changed, so the state
-    // always needs persisting; the early exit above covers the idle case.
-    writeJsonAtomic(path.join(outDir, SYNC_STATE_FILE), JSON.stringify(nextState))
+    // Reaching here means the fingerprint, format, a mirror file, or the
+    // safety-net timer forced a check.
+    lastFullCheckAt.set(outDir, Date.now())
+    const serialized = JSON.stringify(nextState)
+    // Safety-net cycles usually change nothing; skip the rewrite then.
+    if (serialized !== JSON.stringify(state)) {
+      writeJsonAtomic(path.join(outDir, SYNC_STATE_FILE), serialized)
+    }
     return result
   } catch (error) {
     logger.warn('devin_sync_failed', {
