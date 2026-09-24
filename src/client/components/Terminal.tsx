@@ -19,6 +19,8 @@ import { isIOSDevice, getEffectiveModifier, getModifierDisplay } from '../utils/
 import { keepA11yRowsStable } from '../utils/a11yRowStability'
 import { formatRelativeTime } from '../utils/time'
 import { getPathLeaf } from '../utils/sessionLabel'
+import { statusClass, statusText } from '../utils/sessionStatus'
+import SessionRail from './SessionRail'
 import TerminalControls from './TerminalControls'
 import PasteStatus from './PasteStatus'
 import { useBrowserPaste, type BrowserPaste } from '../hooks/useBrowserPaste'
@@ -57,20 +59,6 @@ interface TerminalProps {
 }
 
 type IOSResumeInputState = 'idle' | 'focused' | 'interrupted' | 'armed'
-
-const statusText: Record<Session['status'], string> = {
-  working: 'Working',
-  waiting: 'Waiting',
-  permission: 'Needs Input',
-  unknown: 'Unknown',
-}
-
-const statusClass: Record<Session['status'], string> = {
-  working: 'text-working',
-  waiting: 'text-waiting',
-  permission: 'text-approval',
-  unknown: 'text-muted',
-}
 
 const statusButtonBase: Record<Session['status'], string> = {
   working: 'bg-green-500/35 text-white',
@@ -164,6 +152,14 @@ export default function Terminal({
     session.source === 'managed' &&
     !session.remote &&
     !!session.agentSessionId?.trim()
+
+  // Matches SessionList's showHostInfo: host badge only when >1 host exists
+  const showHostBadge = useMemo(() => {
+    const hosts = new Set<string>()
+    for (const s of sessions) if (s.host?.trim()) hosts.add(s.host.trim())
+    for (const s of hibernatingSessions) if (s.host?.trim()) hosts.add(s.host.trim())
+    return hosts.size > 1
+  }, [sessions, hibernatingSessions])
 
   const {
     containerRef,
@@ -1260,39 +1256,17 @@ export default function Terminal({
       }}
     >
       {/* Mobile header - always show on mobile for drawer access */}
-      <div className={`flex min-h-[52px] shrink-0 items-center justify-between border-b border-border bg-elevated px-[6px] md:h-10 md:min-h-0 md:px-3 ${session || hibernatingSession ? '' : 'md:hidden'}`}>
-        <div className="flex min-w-0 items-center gap-[7px] md:gap-3">
+      <div className="flex min-h-[52px] shrink-0 items-center justify-between border-b border-border bg-elevated px-[6px] md:hidden">
+        <div className="flex min-w-0 items-center gap-[7px]">
           <button
             onClick={() => setIsDrawerOpen(true)}
-            className="flex size-[44px] shrink-0 items-center justify-center rounded border border-border bg-surface text-secondary transition-all hover:bg-hover hover:text-primary active:scale-95 md:hidden"
+            className="flex size-[44px] shrink-0 items-center justify-center rounded border border-border bg-surface text-secondary transition-all hover:bg-hover hover:text-primary active:scale-95"
             aria-label="Open session menu"
           >
             <Menu01Icon width={16} height={16} />
           </button>
-          {/* Kill session button - desktop only, left of session name */}
-          {session && canControl && (
-            <button
-              disabled={isSwitching}
-              onClick={() => setShowEndConfirm(true)}
-              className="hidden md:flex h-7 w-7 items-center justify-center rounded bg-danger/10 border border-danger/30 text-danger hover:bg-danger/20 active:scale-95 transition-all shrink-0 disabled:cursor-not-allowed disabled:opacity-40"
-              title={`Kill session (${modDisplay}X)`}
-              aria-label="Kill session"
-            >
-              <XCloseIcon width={16} height={16} />
-            </button>
-          )}
-          {canHibernate && (
-            <button
-              onClick={handleHibernateSession}
-              className="hidden md:flex h-7 w-7 items-center justify-center rounded border border-border text-secondary hover:bg-hover hover:text-primary active:scale-95 transition-all shrink-0"
-              title="Hibernate session"
-              aria-label="Hibernate session"
-            >
-              <Moon01Icon width={16} height={16} />
-            </button>
-          )}
           {session ? (
-            <div className="flex min-w-[72px] flex-col items-start gap-px leading-none md:min-w-0 md:flex-row md:items-baseline md:gap-3 md:leading-normal">
+            <div className="flex min-w-[72px] flex-col items-start gap-px leading-none">
               {isRenaming ? (
                 <input
                   ref={renameInputRef}
@@ -1301,47 +1275,39 @@ export default function Terminal({
                   onChange={(e) => setRenameValue(e.target.value)}
                   onBlur={handleRenameSubmit}
                   onKeyDown={handleRenameKeyDown}
-                  className="w-full max-w-[112px] rounded border border-border bg-surface px-2 py-0.5 text-sm font-medium text-primary outline-none focus:border-accent md:max-w-[200px]"
+                  className="w-full max-w-[112px] rounded border border-border bg-surface px-2 py-0.5 text-sm font-medium text-primary outline-none focus:border-accent"
                 />
               ) : (
-                <span className="max-w-[112px] truncate text-sm font-medium text-primary md:max-w-none">
+                <span className="max-w-[112px] truncate text-sm font-medium text-primary">
                   {session.agentSessionName || session.name}
                 </span>
               )}
-              <span className={`shrink-0 text-[10px] md:hidden ${connectionStatus !== 'connected' ? 'text-approval' : statusClass[session.status]}`}>
+              <span className={`shrink-0 text-[10px] ${connectionStatus !== 'connected' ? 'text-approval' : statusClass[session.status]}`}>
                 {connectionStatus !== 'connected' ? connectionStatus : statusText[session.status]}
-              </span>
-              <span className={`hidden shrink-0 text-xs md:inline ${statusClass[session.status]}`}>
-                {statusText[session.status]}
               </span>
             </div>
           ) : hibernatingSession ? (
-            <div className="flex min-w-0 flex-col items-start gap-px leading-none md:flex-row md:items-baseline md:gap-2 md:leading-normal">
-              <span className="max-w-[112px] truncate text-sm font-medium text-primary md:max-w-none">
+            <div className="flex min-w-0 flex-col items-start gap-px leading-none">
+              <span className="max-w-[112px] truncate text-sm font-medium text-primary">
                 {hibernatingDisplayName}
               </span>
-              <span className="text-[10px] font-medium text-blue-400 md:rounded-full md:bg-blue-500/15 md:px-1.5 md:py-0.5 md:uppercase md:tracking-wide">
+              <span className="text-[10px] font-medium text-blue-400">
                 Hibernating
               </span>
             </div>
           ) : (
-            <span className="text-sm font-medium text-primary md:hidden">
+            <span className="text-sm font-medium text-primary">
               Sessions
             </span>
           )}
         </div>
 
-        <div className="flex shrink-0 items-center gap-[4px] md:gap-1.5">
-          {connectionStatus !== 'connected' && (
-            <span className="hidden text-xs text-approval md:inline">
-              {connectionStatus}
-            </span>
-          )}
+        <div className="flex shrink-0 items-center gap-[4px]">
 
           {/* New session button - mobile only (desktop has it in header) */}
           <button
             onClick={onNewSession}
-            className="flex size-[44px] items-center justify-center rounded bg-accent text-white transition-all hover:bg-accent/90 active:scale-95 md:hidden"
+            className="flex size-[44px] items-center justify-center rounded bg-accent text-white transition-all hover:bg-accent/90 active:scale-95"
             title={`New session (${modDisplay}N)`}
             aria-label="New session"
           >
@@ -1353,7 +1319,7 @@ export default function Terminal({
             <button
               disabled={isSwitching}
               onClick={() => setShowEndConfirm(true)}
-              className="flex size-[44px] items-center justify-center rounded border border-danger/30 bg-danger/10 text-danger transition-all hover:bg-danger/20 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 md:hidden"
+              className="flex size-[44px] items-center justify-center rounded border border-danger/30 bg-danger/10 text-danger transition-all hover:bg-danger/20 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
               title={`Kill session (${modDisplay}X)`}
               aria-label="Kill session"
             >
@@ -1363,7 +1329,7 @@ export default function Terminal({
           {canHibernate && (
             <button
               onClick={handleHibernateSession}
-              className="hidden size-[44px] items-center justify-center rounded border border-border text-secondary transition-all hover:bg-hover hover:text-primary active:scale-95 min-[360px]:flex md:hidden"
+              className="hidden size-[44px] items-center justify-center rounded border border-border text-secondary transition-all hover:bg-hover hover:text-primary active:scale-95 min-[360px]:flex"
               title="Hibernate session"
               aria-label="Hibernate session"
             >
@@ -1373,7 +1339,7 @@ export default function Terminal({
           {hibernatingSession && (
             <button
               onClick={() => onResumeSession(hibernatingSession.sessionId)}
-              className="btn btn-primary h-[44px] px-3 text-xs md:hidden"
+              className="btn btn-primary h-[44px] px-3 text-xs"
             >
               Wake
             </button>
@@ -1381,7 +1347,7 @@ export default function Terminal({
 
           {/* More menu - mobile only (desktop has settings in sidebar header) */}
           {session && (
-            <div className="relative md:hidden" ref={moreMenuRef}>
+            <div className="relative" ref={moreMenuRef}>
               <button
                 onClick={() => setShowMoreMenu(!showMoreMenu)}
                 className="flex size-[44px] items-center justify-center rounded border border-border bg-surface text-secondary transition-all hover:bg-hover hover:text-primary active:scale-95"
@@ -1495,7 +1461,7 @@ export default function Terminal({
           </div>
         )}
         {pendingClipboardOffer && session && (
-          <div className={`absolute ${showScrollButton && !isSelectingText ? 'bottom-20' : 'bottom-8'} left-1/2 z-30 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-2 rounded-lg border border-border bg-elevated/95 px-2 py-2 shadow-lg backdrop-blur-sm md:left-auto md:right-4 md:translate-x-0`}>
+          <div className={`absolute ${showScrollButton && !isSelectingText ? 'bottom-20' : 'bottom-8'} left-1/2 z-30 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-2 rounded-lg border border-border bg-elevated/95 px-2 py-2 shadow-lg backdrop-blur-sm md:hidden`}>
             <span className="max-w-[12rem] truncate text-xs text-secondary md:max-w-[18rem]">
               Selection ready
             </span>
@@ -1598,7 +1564,7 @@ export default function Terminal({
           <button
             type="button"
             onClick={scrollToBottom}
-            className="absolute bottom-14 left-1/2 z-20 flex h-10 items-center justify-center overflow-hidden rounded-full border border-amber-400/35 bg-amber-500/20 text-amber-100 shadow-lg backdrop-blur-sm transition-all hover:bg-amber-500/30 active:scale-95 md:bottom-8"
+            className="absolute bottom-14 left-1/2 z-20 flex h-10 items-center justify-center overflow-hidden rounded-full border border-amber-400/35 bg-amber-500/20 text-amber-100 shadow-lg backdrop-blur-sm transition-all hover:bg-amber-500/30 active:scale-95 md:hidden"
             style={{ transform: 'translateX(-50%)' }}
             title="Exit tmux copy mode and return to live output"
             aria-label="Exit copy mode"
@@ -1613,7 +1579,7 @@ export default function Terminal({
           <button
             type="button"
             onClick={scrollToBottom}
-            className="absolute bottom-8 left-1/2 z-20 flex h-10 px-4 items-center justify-center gap-1.5 rounded-full bg-blue-600/90 text-white shadow-lg hover:bg-blue-600 active:scale-95 transition-all"
+            className="absolute bottom-8 left-1/2 z-20 flex h-10 px-4 items-center justify-center gap-1.5 rounded-full bg-blue-600/90 text-white shadow-lg hover:bg-blue-600 active:scale-95 transition-all md:hidden"
             style={{ transform: 'translateX(-50%)' }}
             title="Scroll to bottom"
             aria-label="Scroll to bottom"
@@ -1638,6 +1604,31 @@ export default function Terminal({
       </div>
 
       <PasteStatus {...browserPaste} />
+
+      {/* Desktop status rail (tmux-style status line) */}
+      <SessionRail
+        session={session}
+        hibernatingSession={hibernatingSession}
+        hibernatingDisplayName={hibernatingDisplayName}
+        showHostBadge={showHostBadge}
+        sessionCount={sessions.length}
+        connectionStatus={connectionStatus}
+        isSwitching={isSwitching}
+        canControl={canControl}
+        canHibernate={canHibernate}
+        modDisplay={modDisplay}
+        onKill={() => setShowEndConfirm(true)}
+        onHibernate={handleHibernateSession}
+        onWake={() =>
+          hibernatingSession && onResumeSession(hibernatingSession.sessionId)
+        }
+        isTmuxCopyMode={isTmuxCopyMode}
+        showJumpToBottom={showScrollButton && !isSelectingText}
+        onJumpToBottom={scrollToBottom}
+        selectionReady={!!pendingClipboardOffer}
+        onCopySelection={copyPendingClipboardOffer}
+        onDismissSelection={dismissPendingClipboardOffer}
+      />
 
       {/* Mobile control strip */}
       {session && (

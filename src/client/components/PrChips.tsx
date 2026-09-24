@@ -467,7 +467,13 @@ function OverflowChip({ prs }: { prs: SessionPullRequest[] }) {
 // width allows and collapses the rest into OverflowChip. The measurer is
 // absolute + invisible — measurable but out of flow — and clipped by the
 // container's overflow-hidden.
-export function PrChips({ prs }: { prs: SessionPullRequest[] }) {
+export function PrChips({
+  prs,
+  className = 'pl-[1.375rem]',
+}: {
+  prs: SessionPullRequest[]
+  className?: string
+}) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chipEls = useRef<(HTMLSpanElement | null)[]>([])
   const plusRef = useRef<HTMLSpanElement>(null)
@@ -552,7 +558,7 @@ export function PrChips({ prs }: { prs: SessionPullRequest[] }) {
   return (
     <div
       ref={containerRef}
-      className="relative flex flex-nowrap items-center gap-1 overflow-hidden pl-[1.375rem]"
+      className={`relative flex flex-nowrap items-center gap-1 overflow-hidden ${className}`}
     >
       {visible.map((pr) => (
         <PrChip key={pr.url} pr={pr} refreshKey={refreshKey} />
