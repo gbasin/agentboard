@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import type { DevinSyncWorkerRequest, DevinSyncWorkerResponse } from '../devinSyncWorker'
+import { logger } from '../logger'
 
 class WorkerMock {
   static instances: WorkerMock[] = []
@@ -51,13 +52,11 @@ class WorkerMock {
 const originalWorker = globalThis.Worker
 
 let DevinSyncWorkerClient: typeof import('../devinSyncWorkerClient').DevinSyncWorkerClient
-let DevinSyncWorkerTimeoutError: typeof import('../devinSyncWorkerClient').DevinSyncWorkerTimeoutError
 
 beforeAll(async () => {
   globalThis.Worker = WorkerMock as unknown as typeof Worker
   const mod = await import('../devinSyncWorkerClient')
   DevinSyncWorkerClient = mod.DevinSyncWorkerClient
-  DevinSyncWorkerTimeoutError = mod.DevinSyncWorkerTimeoutError
 })
 
 afterAll(() => {
@@ -175,36 +174,40 @@ describe('DevinSyncWorkerClient', () => {
     client.dispose()
   })
 
-  test('a timed-out sync rejects and restarts the worker', async () => {
-    const client = new DevinSyncWorkerClient(25)
-    const first = client.sync('/tmp/out')
-    const stuck = lastWorker()
+  test('a slow sync warns but keeps waiting on the same worker', async () => {
+    const warnings: string[] = []
+    const originalWarn = logger.warn
+    logger.warn = (event) => warnings.push(event)
+    try {
+      const client = new DevinSyncWorkerClient(10)
+      let settled = false
+      const first = client.sync('/tmp/out').finally(() => {
+        settled = true
+      })
+      const slow = lastWorker()
+      const request = slow.syncRequests().at(-1)!
 
-    await expect(first).rejects.toBeInstanceOf(DevinSyncWorkerTimeoutError)
-    expect(stuck.shutdownRequests()).toHaveLength(1)
-    expect(stuck.onmessage).toBeNull()
+      await Bun.sleep(30)
+      expect(warnings).toEqual(['devin_sync_slow'])
+      // No restart: no shutdown request, handlers still attached, still pending.
+      expect(slow.shutdownRequests()).toHaveLength(0)
+      expect(slow.onmessage).not.toBeNull()
+      expect(settled).toBe(false)
 
-    void client.sync('/tmp/out').catch(() => {})
-    expect(WorkerMock.instances).toHaveLength(2)
-    client.dispose()
-  })
+      // The late reply settles the original request (releasing the caller's
+      // in-flight guard).
+      slow.emitMessage({ id: request.id, type: 'result', result: null, durationMs: 999 })
+      await expect(first).resolves.toEqual({ result: null, durationMs: 999 })
 
-  test('a late response from a detached worker does not resolve the retry', async () => {
-    const client = new DevinSyncWorkerClient(25)
-    const first = client.sync('/tmp/out')
-    const stuck = lastWorker()
-    const staleRequest = stuck.syncRequests().at(-1)!
-
-    await expect(first).rejects.toBeInstanceOf(DevinSyncWorkerTimeoutError)
-
-    // The detached worker's response must not resolve anything — and a new
-    // sync on the fresh worker resolves normally.
-    stuck.emitMessage({ id: staleRequest.id, type: 'result', result: null, durationMs: 999 })
-
-    const second = client.sync('/tmp/out')
-    const request = lastWorker().syncRequests().at(-1)!
-    lastWorker().emitMessage({ id: request.id, type: 'result', result: null, durationMs: 7 })
-    await expect(second).resolves.toEqual({ result: null, durationMs: 7 })
-    client.dispose()
+      // Later syncs reuse the same worker.
+      const second = client.sync('/tmp/out')
+      expect(WorkerMock.instances).toHaveLength(1)
+      const next = slow.syncRequests().at(-1)!
+      slow.emitMessage({ id: next.id, type: 'result', result: null, durationMs: 7 })
+      await expect(second).resolves.toEqual({ result: null, durationMs: 7 })
+      client.dispose()
+    } finally {
+      logger.warn = originalWarn
+    }
   })
 })

@@ -3,6 +3,7 @@
  * Keeps sessions.db mirroring off the main thread; see devinSyncWorker.ts.
  */
 import type { DevinSyncResult } from './devinSync'
+import { logger } from './logger'
 import type {
   DevinSyncWorkerRequest,
   DevinSyncWorkerResponse,
@@ -16,15 +17,12 @@ interface PendingRequest {
 }
 
 // The sync reads every message_nodes row per session — on a large sessions.db
-// under memory pressure that legitimately takes tens of seconds.
-const DEVIN_SYNC_TIMEOUT_MS = 120_000
-
-export class DevinSyncWorkerTimeoutError extends Error {
-  constructor(message = 'Devin sync worker timed out') {
-    super(message)
-    this.name = 'DevinSyncWorkerTimeoutError'
-  }
-}
+// under memory pressure that legitimately takes tens of seconds. Past this we
+// only warn: the request stays pending until the worker replies. Restarting
+// instead (terminate() is off the table, so the old worker keeps running its
+// queued sync) would let a second worker append the same rows to the same
+// JSONL mirrors and race on the shared temp-file path.
+const DEVIN_SYNC_SLOW_MS = 120_000
 
 export interface DevinSyncResponse {
   result: DevinSyncResult | null
@@ -38,7 +36,7 @@ export class DevinSyncWorkerClient {
   private generation = 0
   private pending = new Map<string, PendingRequest>()
 
-  constructor(private timeoutMs: number = DEVIN_SYNC_TIMEOUT_MS) {}
+  constructor(private slowAfterMs: number = DEVIN_SYNC_SLOW_MS) {}
 
   async sync(outDir: string): Promise<DevinSyncResponse> {
     if (this.disposed) {
@@ -53,9 +51,16 @@ export class DevinSyncWorkerClient {
     const payload: DevinSyncWorkerRequest = { id, kind: 'sync', outDir }
 
     return new Promise<DevinSyncResponse>((resolve, reject) => {
+      const startedAt = Date.now()
       const timeoutId = setTimeout(() => {
-        this.handleRequestTimeout(id, generation)
-      }, this.timeoutMs)
+        const pending = this.pending.get(id)
+        if (!pending) return
+        pending.timeoutId = null
+        logger.warn('devin_sync_slow', {
+          elapsedMs: Date.now() - startedAt,
+          slowAfterMs: this.slowAfterMs,
+        })
+      }, this.slowAfterMs)
 
       this.pending.set(id, {
         generation,
@@ -140,15 +145,6 @@ export class DevinSyncWorkerClient {
       pending.reject(error)
       this.pending.delete(id)
     }
-  }
-
-  private handleRequestTimeout(id: string, generation: number): void {
-    const pending = this.pending.get(id)
-    if (!pending) {
-      return
-    }
-    this.failGeneration(generation, new DevinSyncWorkerTimeoutError())
-    this.restartWorker(generation)
   }
 
   private failGeneration(generation: number, error: Error): void {
