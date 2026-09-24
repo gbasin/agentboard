@@ -38,6 +38,8 @@ export class DevinSyncWorkerClient {
   private generation = 0
   private pending = new Map<string, PendingRequest>()
 
+  constructor(private timeoutMs: number = DEVIN_SYNC_TIMEOUT_MS) {}
+
   async sync(outDir: string): Promise<DevinSyncResponse> {
     if (this.disposed) {
       throw new Error('Devin sync worker is disposed')
@@ -53,7 +55,7 @@ export class DevinSyncWorkerClient {
     return new Promise<DevinSyncResponse>((resolve, reject) => {
       const timeoutId = setTimeout(() => {
         this.handleRequestTimeout(id, generation)
-      }, DEVIN_SYNC_TIMEOUT_MS)
+      }, this.timeoutMs)
 
       this.pending.set(id, {
         generation,
