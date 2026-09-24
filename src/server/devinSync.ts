@@ -202,6 +202,16 @@ export const FULL_CHECK_INTERVAL_MS = 30_000
 // runs in one thread, and a restart simply re-checks once.
 const lastFullCheckAt = new Map<string, number>()
 
+function isSessionSyncState(value: unknown): value is DevinSessionSyncState {
+  const entry = value as DevinSessionSyncState | null
+  return (
+    typeof entry === 'object' &&
+    entry !== null &&
+    Number.isFinite(entry.lastRowId) &&
+    Number.isFinite(entry.rowCount)
+  )
+}
+
 function canSkipDb(state: SyncState, fingerprint: string, outDir: string): boolean {
   if (state.formatVersion !== MIRROR_FORMAT_VERSION) return false
   if (state.dbFingerprint !== fingerprint) return false
@@ -380,8 +390,22 @@ export function syncDevinSessions(outDir = getDevinLogOutDir()): DevinSyncResult
       result.rewritten += 1
     }
 
+    let sessionFailed = false
     for (const session of sessions) {
-      syncSession(session, priorSessions[session.id])
+      const rawPrior = priorSessions[session.id]
+      const prior = isSessionSyncState(rawPrior) ? rawPrior : undefined
+      try {
+        syncSession(session, prior)
+      } catch (error) {
+        // Keep this session's prior state so other sessions' progress is
+        // still saved; withhold the fingerprint so the next cycle retries.
+        sessionFailed = true
+        if (prior) nextState.sessions[session.id] = prior
+        logger.warn('devin_sync_session_failed', {
+          sessionId: session.id,
+          message: error instanceof Error ? error.message : String(error),
+        })
+      }
     }
 
     // Remove JSONL files for sessions that are gone or hidden.
@@ -401,7 +425,8 @@ export function syncDevinSessions(outDir = getDevinLogOutDir()): DevinSyncResult
 
     // Reaching here means the fingerprint, format, a mirror file, or the
     // safety-net timer forced a check.
-    lastFullCheckAt.set(outDir, Date.now())
+    if (sessionFailed) delete nextState.dbFingerprint
+    else lastFullCheckAt.set(outDir, Date.now())
     const serialized = JSON.stringify(nextState)
     // Safety-net cycles usually change nothing; skip the rewrite then.
     if (serialized !== JSON.stringify(state)) {

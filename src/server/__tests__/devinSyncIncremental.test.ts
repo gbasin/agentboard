@@ -305,4 +305,63 @@ describe('syncDevinSessions incremental', () => {
     expect(fileId(statePath)).toBe(stateId)
   })
 
+  test('accepts the pre-fingerprint on-disk state shape', () => {
+    const db = createDevinDb()
+    addSession(db, 'ok', '/p', null)
+    addSession(db, 'broken', '/p', null)
+    addMessage(db, 'ok', 'user', 'a')
+    addMessage(db, 'broken', 'user', 'b')
+    db.close()
+    syncDevinSessions(paths.outDir)
+
+    const statePath = path.join(paths.outDir, '.sync-state.json')
+    const current = JSON.parse(fs.readFileSync(statePath, 'utf8'))
+    const legacy = {
+      formatVersion: 3,
+      sessions: {
+        ok: current.sessions.ok,
+        broken: { lastRowId: current.sessions.broken.lastRowId },
+      },
+    }
+    fs.writeFileSync(statePath, JSON.stringify(legacy))
+    const okId = fileId(path.join(paths.outDir, 'ok.jsonl'))
+
+    const result = syncDevinSessions(paths.outDir)
+    expect(result).toEqual({ sessions: 2, rewritten: 1, appended: 0, removed: 0 })
+    expect(fileId(path.join(paths.outDir, 'ok.jsonl'))).toBe(okId)
+    const next = JSON.parse(fs.readFileSync(statePath, 'utf8'))
+    expect(typeof next.dbFingerprint).toBe('string')
+    expect(next.sessions.broken.rowCount).toBe(1)
+  })
+
+  test('a failing session does not roll back progress of the others', () => {
+    const db = createDevinDb()
+    addSession(db, 'good', '/p', null)
+    addMessage(db, 'good', 'user', 'g1')
+    db.close()
+    syncDevinSessions(paths.outDir)
+
+    const db2 = openDb()
+    addSession(db2, 'bad', '/p', null)
+    addMessage(db2, 'bad', 'user', 'b1')
+    addMessage(db2, 'good', 'assistant', 'g2')
+    db2.close()
+    // A directory where the mirror should go makes the atomic rename fail.
+    const badPath = path.join(paths.outDir, 'bad.jsonl')
+    fs.mkdirSync(badPath)
+
+    const first = syncDevinSessions(paths.outDir)
+    expect(first?.appended).toBe(1)
+    expect(first?.rewritten).toBe(0)
+    const state = JSON.parse(fs.readFileSync(path.join(paths.outDir, '.sync-state.json'), 'utf8'))
+    expect(state.sessions.good.rowCount).toBe(2)
+    expect(state.sessions.bad).toBeUndefined()
+    expect(state.dbFingerprint).toBeUndefined() // forces a retry next cycle
+
+    fs.rmdirSync(badPath)
+    const second = syncDevinSessions(paths.outDir)
+    expect(second).toEqual({ sessions: 2, rewritten: 1, appended: 0, removed: 0 })
+    expect(readLines(path.join(paths.outDir, 'good.jsonl'))).toHaveLength(3)
+    expect(readLines(badPath)).toHaveLength(2)
+  })
 })
