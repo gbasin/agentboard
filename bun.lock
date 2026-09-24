@@ -52,10 +52,10 @@
         "vite-plugin-pwa": "^1.2.0",
       },
       "optionalDependencies": {
-        "@gbasin/agentboard-darwin-arm64": "0.14.0",
-        "@gbasin/agentboard-darwin-x64": "0.14.0",
-        "@gbasin/agentboard-linux-arm64": "0.14.0",
-        "@gbasin/agentboard-linux-x64": "0.14.0",
+        "@gbasin/agentboard-darwin-arm64": "0.14.1",
+        "@gbasin/agentboard-darwin-x64": "0.14.1",
+        "@gbasin/agentboard-linux-arm64": "0.14.1",
+        "@gbasin/agentboard-linux-x64": "0.14.1",
       },
     },
   },
@@ -279,13 +279,13 @@
 
     "@fontsource-variable/jetbrains-mono": ["@fontsource-variable/jetbrains-mono@5.2.8", "", {}, "sha512-WBA9elru6Jdp5df2mES55wuOO0WIrn3kpXnI4+W2ek5u3ZgLS9XS4gmIlcQhiZOWEKl95meYdvK7xI+ETLCq/Q=="],
 
-    "@gbasin/agentboard-darwin-arm64": ["@gbasin/agentboard-darwin-arm64@0.14.0", "", { "os": "darwin", "cpu": "arm64" }, "sha512-fkULz2gmtgviuOA1JEk+YqdnQQ0GLfjs2/STquqNXLBF95kWgZqKCgndHDGnefC25ViONNkS8H6J+d2oGdh1Iw=="],
+    "@gbasin/agentboard-darwin-arm64": ["@gbasin/agentboard-darwin-arm64@0.14.1", "", { "os": "darwin", "cpu": "arm64" }, "sha512-I+zQPvQJ/5sYkfA0mgXi8BH10eid46vBJrGGcIQjtFR0Ep6QGBBAFq8zLVorVosYm0vO7Z9oO0cjHnfhQElS/w=="],
 
-    "@gbasin/agentboard-darwin-x64": ["@gbasin/agentboard-darwin-x64@0.14.0", "", { "os": "darwin", "cpu": "x64" }, "sha512-sX4wb4LmPhw5NPHESNeDUp6yT7+0avwfp7pQAFmWqRE7m5pCo2bjKvZFXJLsbM1F+O5Y7mb5RwXY9u4+cLFxSQ=="],
+    "@gbasin/agentboard-darwin-x64": ["@gbasin/agentboard-darwin-x64@0.14.1", "", { "os": "darwin", "cpu": "x64" }, "sha512-+pdPg1WrjzryqkaJRrjCYi1Fi1EGfYgc8ggWd/MPZI47jFyNKREJu7+gLU802NRIM8zjtAfRiQh0OB400TgoiA=="],
 
-    "@gbasin/agentboard-linux-arm64": ["@gbasin/agentboard-linux-arm64@0.14.0", "", { "os": "linux", "cpu": "arm64" }, "sha512-cFAhvq88kdGnLo7rwWAI61MB2KrdHtBVNpLdiJ5OsfXnsgxWIlBKtZqkCNFPa+bkp1JW+WlFf+yToCyS5oqyXQ=="],
+    "@gbasin/agentboard-linux-arm64": ["@gbasin/agentboard-linux-arm64@0.14.1", "", { "os": "linux", "cpu": "arm64" }, "sha512-o/+D07omB0LtboDG0ax4mJGP3OZKEoLAR6dsRaK7E3nsJ5s1f2wBZj8S7cUvEqSONtnIxm6Au2QuAcAllE8/PA=="],
 
-    "@gbasin/agentboard-linux-x64": ["@gbasin/agentboard-linux-x64@0.14.0", "", { "os": "linux", "cpu": "x64" }, "sha512-mqFQ8y0kDQO4SEPobpyQiIkzuyD6FSun99SMzujEtblE7kQMUrlwcDiCymQKdbpyuy7Tgk53oo5oz8oxj6ABkQ=="],
+    "@gbasin/agentboard-linux-x64": ["@gbasin/agentboard-linux-x64@0.14.1", "", { "os": "linux", "cpu": "x64" }, "sha512-C8bgYJAvsB2T3jTBKhr36jZHBilDqmqj1s3EOmqUdZgCoNTyUYS0ME0n+Xgs/e/I7QBMYpIYjEsVnKsmfGwGrQ=="],
 
     "@isaacs/cliui": ["@isaacs/cliui@9.0.0", "", {}, "sha512-AokJm4tuBHillT+FpMtxQ60n8ObyXBatq7jD2/JA9dxbDDokKQm8KMht5ibGzLVU9IJDIKK4TPKgMHEYMn3lMg=="],
 
