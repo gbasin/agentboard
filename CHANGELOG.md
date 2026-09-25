@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.1](https://github.com/gbasin/agentboard/compare/v0.17.0...v0.17.1) (2026-09-25)
+
+
+### Bug Fixes
+
+* defer session-list scroll-to-selection until mobile drawer is open ([#298](https://github.com/gbasin/agentboard/issues/298)) ([185a65c](https://github.com/gbasin/agentboard/commit/185a65cf95749cba4555e97746a3b3b50301f75d))
+
 ## [0.17.0](https://github.com/gbasin/agentboard/compare/v0.16.0...v0.17.0) (2026-09-25)
 
 
