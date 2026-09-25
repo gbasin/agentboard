@@ -1,3 +1,4 @@
+import { cn } from '../utils/cn'
 import { getProjectColorStyle } from '../utils/projectColor'
 
 interface HostBadgeProps {
@@ -10,7 +11,10 @@ export default function HostBadge({ name, className = '' }: HostBadgeProps) {
 
   return (
     <span
-      className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium uppercase leading-none tracking-wide ${className}`}
+      className={cn(
+        'inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium uppercase leading-none tracking-wide',
+        className
+      )}
       style={colorStyle}
       title={name}
     >

@@ -1,8 +1,10 @@
 /**
  * SessionRail - desktop-only bottom status rail (tmux-style status line).
- * Left: focused session identity (name, status, id, project, host, PR chips).
+ * Left: focused session identity (name, status) then a hairline-separated
+ * context group (id, project, host, PR chips).
  * Right: transient segments (copy mode, jump-to-bottom, selection ready),
- * connection status, and session actions (wake / hibernate / kill).
+ * then a hairline before connection status and session actions
+ * (wake / hibernate / kill).
  * Always rendered on md+ — with no selection it degrades to session count
  * plus connection status, like tmux's always-on status line.
  */
@@ -47,6 +49,12 @@ const segmentButton =
   'flex h-5 shrink-0 items-center gap-1 rounded px-1.5 text-[11px] font-medium transition-all hover:brightness-110 active:scale-95'
 const iconButton =
   'flex h-5 w-5 shrink-0 items-center justify-center rounded transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-40'
+// Uniform rail pill size so badges line up with the text-[11px] PR chips
+const railPill = 'text-[11px]'
+
+const Divider = () => (
+  <span aria-hidden className="mx-0.5 h-3.5 w-px shrink-0 bg-border" />
+)
 
 export default function SessionRail({
   session,
@@ -92,9 +100,24 @@ export default function SessionRail({
   const sessionIdPrefix =
     showSessionIdPrefix && agentSessionId ? getSessionIdShort(agentSessionId) : null
 
+  const liveContext =
+    !!sessionIdPrefix ||
+    (showHostBadge && !!session?.host?.trim()) ||
+    (showProjectName && !!projectLeaf) ||
+    !!(session?.prs && session.prs.length > 0)
+  const hibernatingContext =
+    (showHostBadge && !!hibernatingSession?.host?.trim()) ||
+    (showProjectName && !!hibernatingProjectLeaf) ||
+    !!(hibernatingSession?.prs && hibernatingSession.prs.length > 0)
+
+  const hasTransients =
+    (selectionReady && !!session) ||
+    (isTmuxCopyMode && !!session) ||
+    (showJumpToBottom && !!session)
+
   return (
     <footer className="hidden h-7 shrink-0 select-none items-center justify-between gap-2 border-t border-border bg-elevated px-2 md:flex">
-      {/* Left: session identity */}
+      {/* Left: identity group | context group */}
       <div className="flex min-w-0 items-center gap-1.5">
         {session ? (
           <>
@@ -106,6 +129,7 @@ export default function SessionRail({
             >
               {statusText[session.status]}
             </span>
+            {liveContext && <Divider />}
             {sessionIdPrefix && (
               <span
                 className="shrink-0 font-mono text-[10px] text-muted"
@@ -115,10 +139,14 @@ export default function SessionRail({
               </span>
             )}
             {showHostBadge && session.host?.trim() && (
-              <HostBadge name={session.host.trim()} />
+              <HostBadge name={session.host.trim()} className={railPill} />
             )}
             {showProjectName && projectLeaf && (
-              <ProjectBadge name={projectLeaf} fullPath={session.projectPath} />
+              <ProjectBadge
+                name={projectLeaf}
+                fullPath={session.projectPath}
+                className={railPill}
+              />
             )}
             {session.prs && session.prs.length > 0 && (
               <PrChips prs={session.prs} className="min-w-0 flex-1" />
@@ -132,13 +160,18 @@ export default function SessionRail({
             <span className="shrink-0 rounded-full bg-blue-500/15 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-blue-400">
               Hibernating
             </span>
+            {hibernatingContext && <Divider />}
             {showHostBadge && hibernatingSession.host?.trim() && (
-              <HostBadge name={hibernatingSession.host.trim()} />
+              <HostBadge
+                name={hibernatingSession.host.trim()}
+                className={railPill}
+              />
             )}
             {showProjectName && hibernatingProjectLeaf && (
               <ProjectBadge
                 name={hibernatingProjectLeaf}
                 fullPath={hibernatingSession.projectPath}
+                className={railPill}
               />
             )}
             {hibernatingSession.prs && hibernatingSession.prs.length > 0 && (
@@ -152,7 +185,7 @@ export default function SessionRail({
         )}
       </div>
 
-      {/* Right: transient segments, connection, actions */}
+      {/* Right: transient segments | connection, actions */}
       <div className="flex shrink-0 items-center gap-1.5">
         {selectionReady && session && (
           <span className="flex h-5 shrink-0 items-center gap-1 rounded bg-elevated px-1.5 text-[11px] text-secondary">
@@ -215,6 +248,7 @@ export default function SessionRail({
             Jump to bottom
           </button>
         ) : null}
+        {hasTransients && <Divider />}
 
         {connectionStatus !== 'connected' && (
           <span className="text-[11px] text-approval">{connectionStatus}</span>
