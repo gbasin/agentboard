@@ -11,8 +11,10 @@
  *   1. terminalAttachSeq: rapid back-to-back attaches cancel the previous one
  *      before it completes (only the latest seq wins).
  *   2. lastAttachKey/lastAttachTs: if the first attach completes and a second
- *      arrives for the same session+target within 500ms, the second skips the
- *      expensive scrollback capture and just sends terminal-ready.
+ *      arrives for the same session+target within the dedup window (500ms
+ *      production default, widened via AGENTBOARD_ATTACH_DEDUP_MS here), the
+ *      second skips the expensive scrollback capture and just sends
+ *      terminal-ready.
  *
  * This test exercises both layers with real server integration.
  */
@@ -120,6 +122,9 @@ if (!tmuxAvailable || !localhostBindable) {
           LOG_LEVEL: 'debug',
           LOG_FILE: logFilePath,
           AGENTBOARD_LOG_MATCH_WORKER: 'false',
+          // Widened so "attach within the dedup window" doesn't race event-loop
+          // stalls on loaded machines — the window is what we verify, not ms.
+          AGENTBOARD_ATTACH_DEDUP_MS: '2500',
         },
         stdout: 'pipe',
         stderr: 'pipe',
@@ -239,7 +244,7 @@ if (!tmuxAvailable || !localhostBindable) {
         await delay(1000)
 
         // Between the seq mechanism (cancels first attach if still in progress)
-        // and the dedup layer (skips second attach within 500ms), at most one
+        // and the dedup layer (skips second attach within the dedup window), at most one
         // FULL scrollback capture should happen. The second attach may produce
         // a terminal-ready (from dedup) but no scrollback output.
         const terminalReadys = messages.filter(
@@ -276,12 +281,12 @@ if (!tmuxAvailable || !localhostBindable) {
     )
 
     test(
-      'second terminal-attach within 500ms after first completes triggers dedup',
+      'second terminal-attach within the dedup window after first completes triggers dedup',
       async () => {
         // This test exercises the lastAttachKey/lastAttachTs dedup layer.
         // We let the first attach complete fully, then send a second one
-        // within 500ms.  The server should skip scrollback capture for the
-        // second and only send terminal-ready.
+        // inside the (test-widened) dedup window.  The server should skip
+        // scrollback capture for the second and only send terminal-ready.
         const ws = new WebSocket(`ws://${testHost}:${port}/ws`)
         await waitForOpen(ws)
 
@@ -356,16 +361,12 @@ if (!tmuxAvailable || !localhostBindable) {
           'first attach history log'
         )
 
-        // Wait for the first attach's buffered history to finish arriving before
-        // sending the second attach. The dedup guarantee is "no new scrollback
-        // capture on the second attach", not "no delayed delivery from the first
-        // capture that was already in flight on the wire".
-        await waitForMessageQuiescence(
-          messages,
-          100,
-          300,
-          'first attach history delivery to settle'
-        )
+        // No settle wait: every assertion below is server-log based
+        // (terminal_attach_dedup present, terminal_history_send absent) or a
+        // terminal-ready count, so late-draining first-attach chunks can't
+        // produce a false positive — and sending attach 2 promptly keeps it
+        // well inside the dedup window instead of burning it on a quiet
+        // period that unrelated broadcasts can never guarantee.
 
         // Snapshot logs after the first attach settles so we can prove the second
         // attach only emitted the dedup fast-path and no new history capture.
@@ -374,7 +375,13 @@ if (!tmuxAvailable || !localhostBindable) {
         // Record the total message count so we can isolate second-attach messages.
         const messagesBeforeSecondAttach = messages.length
 
-        // Step 2: Send the second terminal-attach immediately (well within 500ms).
+        // 800ms > the 500ms production default: if AGENTBOARD_ATTACH_DEDUP_MS
+        // didn't reach the server, attach 2 would miss the dedup window and
+        // the terminal_attach_dedup assertion below would fail — the gap
+        // doubles as a check that the env knob is wired.
+        await delay(800)
+
+        // Step 2: Send the second terminal-attach (well within the widened window).
         ws.send(
           JSON.stringify({
             type: 'terminal-attach',
@@ -453,7 +460,7 @@ if (!tmuxAvailable || !localhostBindable) {
     )
 
     test(
-      'attaches for different sessions within 500ms are NOT deduped',
+      'attaches for different sessions within the dedup window are NOT deduped',
       async () => {
         // Create a second tmux window in the same session
         Bun.spawnSync(
@@ -792,29 +799,4 @@ function capturePaneText(target: string, env: NodeJS.ProcessEnv): string {
     { stdout: 'pipe', stderr: 'ignore', env }
   )
   return result.exitCode === 0 ? result.stdout.toString() : ''
-}
-
-async function waitForMessageQuiescence(
-  messages: Array<unknown>,
-  quietMs: number,
-  timeoutMs: number,
-  description: string
-): Promise<void> {
-  const startedAt = Date.now()
-  let lastCount = messages.length
-  let stableSince = Date.now()
-
-  while (Date.now() - startedAt < timeoutMs) {
-    await delay(25)
-    if (messages.length !== lastCount) {
-      lastCount = messages.length
-      stableSince = Date.now()
-      continue
-    }
-    if (Date.now() - stableSince >= quietMs) {
-      return
-    }
-  }
-
-  throw new Error(`Timed out waiting for message quiescence: ${description}`)
 }
