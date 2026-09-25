@@ -36,6 +36,7 @@ import { useSessionStore } from '../stores/sessionStore'
 import { getEffectiveModifier, getModifierDisplay } from '../utils/device'
 import { useCounterBump } from '../hooks/useCounterBump'
 import { useExitCleanup } from '../hooks/useExitCleanup'
+import { useScrollToSelection } from '../hooks/useScrollToSelection'
 import AgentIcon from './AgentIcon'
 import HistorySessionItem from './HistorySessionItem'
 import ProjectBadge from './ProjectBadge'
@@ -210,6 +211,16 @@ export default function SessionList({
 
   // Clean up exiting session state after animations
   useExitCleanup(sessions, exitingSessions, clearExitingSession, EXIT_DURATION)
+
+  // Keep the selected row visible when selection changes (keyboard nav,
+  // auto-select after kill, persisted selection on reload). A hibernating
+  // selection renders no row while its section is collapsed — skip scrolling.
+  const listScrollRef = useRef<HTMLDivElement>(null)
+  useScrollToSelection(
+    listScrollRef,
+    selectedSessionId ?? selectedHibernatingSessionId,
+    (id) => id !== selectedHibernatingSessionId || showHibernating
+  )
 
 
   // Clean up manualSessionOrder when sessions are removed
@@ -471,7 +482,11 @@ export default function SessionList({
         </div>
       )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      {/* scroll-pt-10 keeps rows scrolled past the sticky h-10 filter bar */}
+      <div
+        ref={listScrollRef}
+        className="min-h-0 flex-1 overflow-y-auto scroll-pt-10"
+      >
         <div className="sticky top-0 z-10 flex h-10 items-center justify-start gap-2 border-b border-border bg-elevated px-3">
           {showHostInfo && (
             <HostFilterDropdown
@@ -798,6 +813,7 @@ const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>
     // their new position; drag previews still animate via the dnd-kit transform.
     <motion.div
       ref={setRefs}
+      data-session-id={session.id}
       style={{ ...style, overflow: 'hidden' }}
       className="relative"
       transformTemplate={(_, generatedTransform) =>

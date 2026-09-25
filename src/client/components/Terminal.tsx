@@ -12,6 +12,7 @@ import { useTerminal } from '../hooks/useTerminal'
 import { useIsMobileLayout } from '../hooks/useMobileLayout'
 import { useOnClickOutside } from '../hooks/useOnClickOutside'
 import { useEscapeToClose } from '../hooks/useEscapeToClose'
+import { useScrollToSelection } from '../hooks/useScrollToSelection'
 import { useEdgeSwipeToOpenDrawer } from '../hooks/useEdgeSwipeToOpenDrawer'
 import { useThemeStore, terminalThemes } from '../stores/themeStore'
 import { useSettingsStore, getFontFamily } from '../stores/settingsStore'
@@ -129,6 +130,8 @@ export default function Terminal({
   const lastSelectionInsideRef = useRef(false)
   const clearIOSSelectionRef = useRef<(() => void) | null>(null)
   const moreMenuRef = useRef<HTMLDivElement>(null)
+  const mobileTabStripRef = useRef<HTMLDivElement>(null)
+  useScrollToSelection(mobileTabStripRef, session?.id ?? null)
   const renameInputRef = useRef<HTMLInputElement>(null)
   const endSessionButtonRef = useRef<HTMLButtonElement>(null)
   const pasteFilesRef = useRef<(input: BrowserPaste) => void>(() => {})
@@ -1402,8 +1405,10 @@ export default function Terminal({
 
           {/* Right fade indicator */}
           <div className="absolute right-0 top-0 bottom-0 w-4 bg-gradient-to-l from-elevated to-transparent z-10 pointer-events-none" />
+          {/* scroll-pe-4 keeps end tabs clear of the right fade overlay */}
           <div
-            className="flex items-center gap-[6px] overflow-x-auto px-[8px] py-[5px] scrollbar-none scroll-smooth snap-x snap-mandatory"
+            ref={mobileTabStripRef}
+            className="flex items-center gap-[6px] overflow-x-auto scroll-pe-4 px-[8px] py-[5px] scrollbar-none snap-x snap-mandatory"
             style={{ WebkitOverflowScrolling: 'touch' }}
           >
             {sessions.map((s, index) => {
@@ -1417,6 +1422,7 @@ export default function Terminal({
                 <button
                   key={s.id}
                   type="button"
+                  data-session-id={s.id}
                   className={`
                     flex items-center justify-center shrink-0 snap-start
                     h-[44px] ${mobileTabsUseNames ? 'min-w-[44px] px-2.5 max-w-[8rem] truncate' : 'w-[44px]'}

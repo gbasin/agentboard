@@ -118,6 +118,7 @@ export default function HibernatingSessionItem({
       role="button"
       tabIndex={0}
       data-testid="hibernating-session-card"
+      data-session-id={session.sessionId}
       onClick={() => onSelect(session.sessionId)}
       onContextMenu={handleContextMenu}
       onKeyDown={(e) => {

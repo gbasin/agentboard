@@ -383,7 +383,8 @@ describe('component rendering', () => {
         onOpenSettings={() => {}}
       />
     )
-    expect(html).toContain('scroll-smooth')
+    expect(html).toContain('snap-x')
+    expect(html).toContain('"data-session-id":"session-2"')
   })
 
   test('renders terminal controls', () => {
