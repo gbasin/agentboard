@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.0](https://github.com/gbasin/agentboard/compare/v0.15.0...v0.16.0) (2026-09-25)
+
+
+### Features
+
+* enlarge status rail and make the identity group interactive ([#294](https://github.com/gbasin/agentboard/issues/294)) ([d9a7366](https://github.com/gbasin/agentboard/commit/d9a7366ebfcbb921d57a50ab1b9878f3c1f1c959))
+
 ## [0.15.0](https://github.com/gbasin/agentboard/compare/v0.14.1...v0.15.0) (2026-09-25)
 
 
