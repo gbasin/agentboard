@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.0](https://github.com/gbasin/agentboard/compare/v0.16.0...v0.17.0) (2026-09-25)
+
+
+### Features
+
+* scroll selected session into view on selection change ([#296](https://github.com/gbasin/agentboard/issues/296)) ([b40a090](https://github.com/gbasin/agentboard/commit/b40a0909355f405249b83973171c7d6a1041fbde))
+
 ## [0.16.0](https://github.com/gbasin/agentboard/compare/v0.15.0...v0.16.0) (2026-09-25)
 
 
