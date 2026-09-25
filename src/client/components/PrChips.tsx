@@ -224,9 +224,11 @@ function useHoverCard(
 function PrChip({
   pr,
   refreshKey,
+  pillClass = PILL_CLASS,
 }: {
   pr: SessionPullRequest
   refreshKey: number
+  pillClass?: string
 }) {
   const [info, setInfo] = useState<PrInfo | undefined>(cachedInfo(pr.url))
   const [checks, setChecks] = useState<PrCheckInfo | undefined>(
@@ -286,7 +288,7 @@ function PrChip({
         target="_blank"
         rel="noreferrer"
         onClick={(e) => e.stopPropagation()}
-        className={`${PILL_CLASS} bg-elevated text-muted hover:text-accent`}
+        className={`${pillClass} bg-elevated text-muted hover:text-accent`}
         aria-label={`${pr.repo}#${pr.number}`}
       >
         <span className={`${DOT_CLASS} ${stateColor(detail)}`} />
@@ -384,7 +386,13 @@ function PrChip({
 }
 
 /** Muted "+N" chip; hover opens a card listing the remaining PRs. */
-function OverflowChip({ prs }: { prs: SessionPullRequest[] }) {
+function OverflowChip({
+  prs,
+  pillClass = PILL_CLASS,
+}: {
+  prs: SessionPullRequest[]
+  pillClass?: string
+}) {
   const [infos, setInfos] = useState<Map<string, PrInfo> | null>(null)
   const anchorRef = useRef<HTMLSpanElement>(null)
   const { open, pos, openCard, scheduleClose, cancelClose, cardRef } =
@@ -411,7 +419,7 @@ function OverflowChip({ prs }: { prs: SessionPullRequest[] }) {
       onMouseLeave={scheduleClose}
     >
       <span
-        className={`${PILL_CLASS} cursor-default text-muted`}
+        className={`${pillClass} cursor-default text-muted`}
         aria-label={`${prs.length} more PR${prs.length === 1 ? '' : 's'}`}
       >
         +{prs.length}
@@ -470,9 +478,12 @@ function OverflowChip({ prs }: { prs: SessionPullRequest[] }) {
 export function PrChips({
   prs,
   className = 'pl-[1.375rem]',
+  pillClass = PILL_CLASS,
 }: {
   prs: SessionPullRequest[]
   className?: string
+  /** Pill geometry for chips and the offscreen measurer — keep in sync or the fit math drifts. */
+  pillClass?: string
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chipEls = useRef<(HTMLSpanElement | null)[]>([])
@@ -561,9 +572,9 @@ export function PrChips({
       className={`relative flex flex-nowrap items-center gap-1 overflow-hidden ${className}`}
     >
       {visible.map((pr) => (
-        <PrChip key={pr.url} pr={pr} refreshKey={refreshKey} />
+        <PrChip key={pr.url} pr={pr} refreshKey={refreshKey} pillClass={pillClass} />
       ))}
-      {overflow.length > 0 && <OverflowChip prs={overflow} />}
+      {overflow.length > 0 && <OverflowChip prs={overflow} pillClass={pillClass} />}
       <span
         aria-hidden
         className="invisible absolute left-0 top-0 flex flex-nowrap"
@@ -574,16 +585,16 @@ export function PrChips({
             ref={(el) => {
               chipEls.current[i] = el
             }}
-            className={PILL_CLASS}
+            className={pillClass}
           >
             <span className={DOT_CLASS} />
             #{pr.number}
           </span>
         ))}
-        <span ref={plusRef} className={PILL_CLASS}>
+        <span ref={plusRef} className={pillClass}>
           +
         </span>
-        <span ref={plusDigitRef} className={PILL_CLASS}>
+        <span ref={plusDigitRef} className={pillClass}>
           +0
         </span>
       </span>

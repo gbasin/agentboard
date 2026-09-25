@@ -49,8 +49,11 @@ const segmentButton =
   'flex h-5 shrink-0 items-center gap-1 rounded px-1.5 text-[11px] font-medium transition-all hover:brightness-110 active:scale-95'
 const iconButton =
   'flex h-5 w-5 shrink-0 items-center justify-center rounded transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-40'
-// Uniform rail pill size so badges line up with the text-[11px] PR chips
-const railPill = 'text-[11px]'
+// Compact pill geometry for the 28px rail: ~15px pills (~54% fill, closer
+// to status-bar conventions) — badges and PR chips share this size.
+const railPill = 'px-1.5 py-px text-[10px]'
+const railChip =
+  'inline-flex items-center gap-1 rounded-full px-1.5 py-px text-[10px] tabular-nums'
 
 const Divider = () => (
   <span aria-hidden className="mx-1 h-3.5 w-px shrink-0 bg-border" />
@@ -151,7 +154,11 @@ export default function SessionRail({
               />
             )}
             {session.prs && session.prs.length > 0 && (
-              <PrChips prs={session.prs} className="min-w-0 flex-1" />
+              <PrChips
+                prs={session.prs}
+                className="min-w-0 flex-1"
+                pillClass={railChip}
+              />
             )}
           </>
         ) : hibernatingSession ? (
@@ -177,7 +184,11 @@ export default function SessionRail({
               />
             )}
             {hibernatingSession.prs && hibernatingSession.prs.length > 0 && (
-              <PrChips prs={hibernatingSession.prs} className="min-w-0 flex-1" />
+              <PrChips
+                prs={hibernatingSession.prs}
+                className="min-w-0 flex-1"
+                pillClass={railChip}
+              />
             )}
           </>
         ) : (
