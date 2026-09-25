@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.15.0](https://github.com/gbasin/agentboard/compare/v0.14.1...v0.15.0) (2026-09-25)
+
+
+### Features
+
+* bottom status rail with session context and PR chips ([#290](https://github.com/gbasin/agentboard/issues/290)) ([d26eeef](https://github.com/gbasin/agentboard/commit/d26eeef4d97ed5bc00f17c94cc6816b83d1f2ac5))
+
+
+### Bug Fixes
+
+* require brief hover intent before PR chip cards open ([#291](https://github.com/gbasin/agentboard/issues/291)) ([927400b](https://github.com/gbasin/agentboard/commit/927400b5e3ce1e7bdfbed1e66d6483bc3456dc42))
+* **tests:** de-flake double-attach dedup test ([#292](https://github.com/gbasin/agentboard/issues/292)) ([953ef7c](https://github.com/gbasin/agentboard/commit/953ef7cf94faf6bf5f97205f085280f202d8f8dd))
+
 ## [0.14.1](https://github.com/gbasin/agentboard/compare/v0.14.0...v0.14.1) (2026-09-24)
 
 
