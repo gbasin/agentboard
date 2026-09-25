@@ -50,6 +50,7 @@ interface TerminalProps {
   onNewSession: () => void
   onKillSession: (sessionId: string, source?: SessionKillSource) => void
   onRenameSession: (sessionId: string, newName: string) => void
+  onDuplicateSession?: (sessionId: string) => void
   onResumeSession: (sessionId: string) => void
   onHibernateSession?: (sessionId: string) => void
   onMoveToHistory?: (sessionId: string) => void
@@ -96,6 +97,7 @@ export default function Terminal({
   onNewSession,
   onKillSession,
   onRenameSession,
+  onDuplicateSession,
   onResumeSession,
   onHibernateSession,
   onMoveToHistory,
@@ -1621,6 +1623,20 @@ export default function Terminal({
         onHibernate={handleHibernateSession}
         onWake={() =>
           hibernatingSession && onResumeSession(hibernatingSession.sessionId)
+        }
+        onRename={(newName) => {
+          const target = session?.id ?? hibernatingSession?.sessionId
+          if (target) onRenameSession(target, newName)
+        }}
+        onDuplicate={
+          session && onDuplicateSession
+            ? () => onDuplicateSession(session.id)
+            : undefined
+        }
+        onMoveToHistory={
+          hibernatingSession && onMoveToHistory
+            ? () => onMoveToHistory(hibernatingSession.sessionId)
+            : undefined
         }
         isTmuxCopyMode={isTmuxCopyMode}
         showJumpToBottom={showScrollButton && !isSelectingText}

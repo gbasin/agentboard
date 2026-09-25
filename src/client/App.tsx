@@ -994,6 +994,7 @@ export default function App() {
         onNewSession={handleNewSession}
         onKillSession={handleKillSession}
         onRenameSession={handleRenameSession}
+        onDuplicateSession={handleDuplicateSession}
         onOpenSettings={handleOpenSettings}
         onResumeSession={handleResumeSession}
         onHibernateSession={handleHibernateSession}

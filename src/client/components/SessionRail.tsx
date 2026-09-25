@@ -1,7 +1,9 @@
 /**
  * SessionRail - desktop-only bottom status rail (tmux-style status line).
  * Left: focused session identity (name, status) then a hairline-separated
- * context group (id, project, host, PR chips).
+ * context group (id, project, host, PR chips). The identity group is
+ * interactive: the session id and project badge copy on click, and
+ * right-clicking it opens the same context menu the session list offers.
  * Right: transient segments (copy mode, jump-to-bottom, selection ready),
  * then a hairline before connection status and session actions
  * (wake / hibernate / kill).
@@ -9,18 +11,25 @@
  * plus connection status, like tmux's always-on status line.
  */
 
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AgentSession, Session } from '@shared/types'
 import type { ConnectionStatus } from '../stores/sessionStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { getPathLeaf } from '../utils/sessionLabel'
 import { getSessionIdShort } from '../utils/sessionId'
+import { copyText } from '../utils/copyText'
 import { statusClass, statusText } from '../utils/sessionStatus'
 import ProjectBadge from './ProjectBadge'
 import HostBadge from './HostBadge'
 import { PrChips } from './PrChips'
+import ContextMenu, { type ContextMenuEntry } from './ContextMenu'
 import { XCloseIcon } from '@untitledui-icons/react/line'
 import Moon01Icon from '@untitledui-icons/react/line/esm/Moon01Icon'
 import Copy01Icon from '@untitledui-icons/react/line/esm/Copy01Icon'
+import Edit05Icon from '@untitledui-icons/react/line/esm/Edit05Icon'
+import File06Icon from '@untitledui-icons/react/line/esm/File06Icon'
+import Hash01Icon from '@untitledui-icons/react/line/esm/Hash01Icon'
+import PlayIcon from '@untitledui-icons/react/line/esm/PlayIcon'
 
 interface SessionRailProps {
   session: Session | null
@@ -37,6 +46,12 @@ interface SessionRailProps {
   onKill: () => void
   onHibernate: () => void
   onWake: () => void
+  /** Rename whichever session the rail is showing (live id or agentSessionId) */
+  onRename: (newName: string) => void
+  /** Duplicate the live session into a new tmux window */
+  onDuplicate?: () => void
+  /** Move the hibernating session to history */
+  onMoveToHistory?: () => void
   isTmuxCopyMode: boolean
   showJumpToBottom: boolean
   onJumpToBottom: () => void
@@ -46,22 +61,39 @@ interface SessionRailProps {
 }
 
 const segmentButton =
-  'flex h-5 shrink-0 items-center gap-1 rounded px-1.5 text-[11px] font-medium transition-all hover:brightness-110 active:scale-95'
+  'flex h-6 shrink-0 items-center gap-1.5 rounded px-2 text-xs font-medium transition-all hover:brightness-110 active:scale-95'
 const iconButton =
-  'flex h-5 w-5 shrink-0 items-center justify-center rounded transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-40'
-// Compact pill geometry for the 28px rail: ~15px pills (~54% fill, closer
-// to status-bar conventions) — badges and PR chips share this size.
-const railPill = 'px-1.5 py-px text-[10px]'
-const railChip =
-  'inline-flex items-center gap-1 rounded-full px-1.5 py-px text-[10px] tabular-nums'
+  'flex h-6 w-6 shrink-0 items-center justify-center rounded transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-40'
+// Pills (badges, PR chips) match the session list's 11px geometry.
+const railPill = 'text-[11px]'
+const copiedPill =
+  'inline-flex shrink-0 items-center rounded-full bg-hover px-1.5 py-0.5 text-[11px] leading-none text-secondary'
 
 const Divider = () => (
-  <span aria-hidden className="mx-1 h-3.5 w-px shrink-0 bg-border" />
+  <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-border" />
 )
 
 // Fixed slot sized to the widest status label ("Needs Input") so the
 // divider behind it never shifts when status text changes width.
-const STATUS_SLOT = 'inline-block w-[62px] shrink-0 text-left text-[11px]'
+const STATUS_SLOT = 'inline-block w-[5.5rem] shrink-0 text-left text-xs'
+
+/** Brief "Copied!" swap used by click-to-copy targets (Header.tsx pattern). */
+function useCopiedFlag() {
+  const [copied, setCopied] = useState(false)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current)
+    },
+    []
+  )
+  const markCopied = useCallback(() => {
+    setCopied(true)
+    if (timer.current) clearTimeout(timer.current)
+    timer.current = setTimeout(() => setCopied(false), 1500)
+  }, [])
+  return [copied, markCopied] as const
+}
 
 export default function SessionRail({
   session,
@@ -77,6 +109,9 @@ export default function SessionRail({
   onKill,
   onHibernate,
   onWake,
+  onRename,
+  onDuplicate,
+  onMoveToHistory,
   isTmuxCopyMode,
   showJumpToBottom,
   onJumpToBottom,
@@ -89,9 +124,19 @@ export default function SessionRail({
     (state) => state.showSessionIdPrefix
   )
 
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
+  const [isRenaming, setIsRenaming] = useState(false)
+  const [renameValue, setRenameValue] = useState('')
+  const renameInputRef = useRef<HTMLInputElement>(null)
+  const [idCopied, markIdCopied] = useCopiedFlag()
+  const [pathCopied, markPathCopied] = useCopiedFlag()
+
   const sessionDisplayName = session
     ? session.agentSessionName || session.name
     : ''
+  const activeDisplayName = session
+    ? sessionDisplayName
+    : hibernatingDisplayName
   // Hide the project badge when it just repeats the session name
   const projectLeaf =
     session?.projectPath &&
@@ -122,106 +167,253 @@ export default function SessionRail({
     (isTmuxCopyMode && !!session) ||
     (showJumpToBottom && !!session)
 
+  useEffect(() => {
+    if (isRenaming && renameInputRef.current) {
+      renameInputRef.current.focus()
+      renameInputRef.current.select()
+    }
+  }, [isRenaming])
+
+  const startRename = useCallback(() => {
+    setRenameValue(activeDisplayName)
+    setIsRenaming(true)
+  }, [activeDisplayName])
+
+  const submitRename = useCallback(() => {
+    const trimmed = renameValue.trim()
+    if (trimmed && trimmed !== activeDisplayName) onRename(trimmed)
+    setIsRenaming(false)
+  }, [renameValue, activeDisplayName, onRename])
+
+  const openMenu = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setMenu({ x: e.clientX, y: e.clientY })
+  }
+
+  const menuItems: ContextMenuEntry[] = []
+  if (session) {
+    menuItems.push(
+      { key: 'rename', label: 'Rename', icon: <Edit05Icon width={14} height={14} />, onSelect: startRename },
+      ...(onDuplicate
+        ? [{
+            key: 'duplicate',
+            label: 'Duplicate',
+            icon: <Copy01Icon width={14} height={14} />,
+            title: 'Create a copy in a new tmux window',
+            onSelect: onDuplicate,
+          }]
+        : []),
+      ...(canHibernate
+        ? [{
+            key: 'hibernate',
+            label: 'Hibernate',
+            icon: <Moon01Icon width={14} height={14} />,
+            title: 'Close the live window and keep this session ready to wake',
+            onSelect: onHibernate,
+          }]
+        : []),
+      ...(agentSessionId
+        ? [{
+            key: 'copy-id',
+            label: 'Copy Session ID',
+            icon: <Hash01Icon width={14} height={14} />,
+            title: agentSessionId,
+            onSelect: () => copyText(agentSessionId),
+          }]
+        : []),
+      ...(session.logFilePath
+        ? [{
+            key: 'copy-log',
+            label: 'Copy Log Path',
+            icon: <File06Icon width={14} height={14} />,
+            title: session.logFilePath,
+            onSelect: () => copyText(session.logFilePath!),
+          }]
+        : [])
+    )
+    if (canControl) {
+      menuItems.push('divider', {
+        key: 'kill',
+        label: 'Kill Session',
+        icon: <XCloseIcon width={14} height={14} />,
+        danger: true,
+        onSelect: onKill,
+      })
+    }
+  } else if (hibernatingSession) {
+    menuItems.push(
+      { key: 'wake', label: 'Wake', icon: <PlayIcon width={14} height={14} />, onSelect: onWake },
+      { key: 'rename', label: 'Rename', icon: <Edit05Icon width={14} height={14} />, onSelect: startRename },
+      {
+        key: 'copy-id',
+        label: 'Copy Session ID',
+        icon: <Hash01Icon width={14} height={14} />,
+        title: hibernatingSession.sessionId,
+        onSelect: () => copyText(hibernatingSession.sessionId),
+      },
+      ...(hibernatingSession.logFilePath
+        ? [{
+            key: 'copy-log',
+            label: 'Copy Log Path',
+            icon: <File06Icon width={14} height={14} />,
+            title: hibernatingSession.logFilePath,
+            onSelect: () => copyText(hibernatingSession.logFilePath!),
+          }]
+        : [])
+    )
+    if (onMoveToHistory) {
+      menuItems.push('divider', {
+        key: 'move-to-history',
+        label: 'Move to History',
+        icon: <XCloseIcon width={14} height={14} />,
+        onSelect: onMoveToHistory,
+      })
+    }
+  }
+
+  const renameInput = (
+    <input
+      ref={renameInputRef}
+      type="text"
+      value={renameValue}
+      onChange={(e) => setRenameValue(e.target.value)}
+      onBlur={submitRename}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          submitRename()
+        } else if (e.key === 'Escape') {
+          setIsRenaming(false)
+        }
+      }}
+      onClick={(e) => e.stopPropagation()}
+      onContextMenu={(e) => e.stopPropagation()}
+      className="w-40 max-w-48 select-text rounded border border-border bg-surface px-1.5 py-0.5 text-sm font-medium text-primary outline-none focus:border-accent"
+      aria-label="Rename session"
+    />
+  )
+
+  const projectBadge = (leaf: string, fullPath: string) =>
+    pathCopied ? (
+      <span className={copiedPill}>Copied!</span>
+    ) : (
+      <button
+        type="button"
+        onClick={() => {
+          copyText(fullPath)
+          markPathCopied()
+        }}
+        className="shrink-0 cursor-pointer"
+        title={fullPath}
+        aria-label={`Copy project path ${fullPath}`}
+      >
+        <ProjectBadge name={leaf} fullPath={fullPath} className={railPill} />
+      </button>
+    )
+
   return (
-    <footer className="hidden h-7 shrink-0 select-none items-center justify-between gap-2 border-t border-border bg-elevated px-2 md:flex">
-      {/* Left: identity group | context group — flex-1 so PrChips gets a
-          real width to measure against (basis-0 in a shrink-to-fit parent
-          collapses every chip into "+N") */}
-      <div className="flex min-w-0 flex-1 items-center gap-1.5">
+    <footer className="hidden h-9 shrink-0 select-none items-center justify-between gap-2 border-t border-border bg-elevated px-3 md:flex">
+      {/* Left: identity group | context group. The identity wrapper owns the
+          context menu so right-clicking a PR chip keeps the link's native
+          menu. flex-1 sits on the outer div so PrChips gets a real width to
+          measure against (basis-0 in a shrink-to-fit parent collapses every
+          chip into "+N") */}
+      <div className="flex min-w-0 flex-1 items-center gap-2">
         {session ? (
           <>
-            <span className="max-w-48 truncate text-xs font-medium text-primary">
-              {sessionDisplayName}
-            </span>
-            <span className={`${STATUS_SLOT} ${statusClass[session.status]}`}>
-              {statusText[session.status]}
-            </span>
-            {liveContext && <Divider />}
-            {sessionIdPrefix && (
-              <span
-                className="shrink-0 font-mono text-[10px] text-muted"
-                title={agentSessionId}
-              >
-                {sessionIdPrefix}
+            <div className="flex min-w-0 items-center gap-2" onContextMenu={openMenu}>
+              {isRenaming ? (
+                renameInput
+              ) : (
+                <span className="max-w-48 truncate text-sm font-medium text-primary">
+                  {sessionDisplayName}
+                </span>
+              )}
+              <span className={`${STATUS_SLOT} ${statusClass[session.status]}`}>
+                {statusText[session.status]}
               </span>
-            )}
-            {showHostBadge && session.host?.trim() && (
-              <HostBadge name={session.host.trim()} className={railPill} />
-            )}
-            {showProjectName && projectLeaf && (
-              <ProjectBadge
-                name={projectLeaf}
-                fullPath={session.projectPath}
-                className={railPill}
-              />
-            )}
+              {liveContext && <Divider />}
+              {sessionIdPrefix && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    copyText(agentSessionId!)
+                    markIdCopied()
+                  }}
+                  className="shrink-0 cursor-pointer text-xs text-muted transition-colors hover:text-primary"
+                  title={`${agentSessionId} — click to copy`}
+                  aria-label="Copy session ID"
+                >
+                  {idCopied ? 'Copied!' : sessionIdPrefix}
+                </button>
+              )}
+              {showHostBadge && session.host?.trim() && (
+                <HostBadge name={session.host.trim()} className={railPill} />
+              )}
+              {showProjectName && projectLeaf &&
+                projectBadge(projectLeaf, session.projectPath)}
+            </div>
             {session.prs && session.prs.length > 0 && (
-              <PrChips
-                prs={session.prs}
-                className="min-w-0 flex-1"
-                pillClass={railChip}
-              />
+              <PrChips prs={session.prs} className="min-w-0 flex-1" />
             )}
           </>
         ) : hibernatingSession ? (
           <>
-            <span className="max-w-48 truncate text-xs font-medium text-primary">
-              {hibernatingDisplayName}
-            </span>
-            <span className="shrink-0 rounded-full bg-blue-500/15 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-blue-400">
-              Hibernating
-            </span>
-            {hibernatingContext && <Divider />}
-            {showHostBadge && hibernatingSession.host?.trim() && (
-              <HostBadge
-                name={hibernatingSession.host.trim()}
-                className={railPill}
-              />
-            )}
-            {showProjectName && hibernatingProjectLeaf && (
-              <ProjectBadge
-                name={hibernatingProjectLeaf}
-                fullPath={hibernatingSession.projectPath}
-                className={railPill}
-              />
-            )}
+            <div className="flex min-w-0 items-center gap-2" onContextMenu={openMenu}>
+              {isRenaming ? (
+                renameInput
+              ) : (
+                <span className="max-w-48 truncate text-sm font-medium text-primary">
+                  {hibernatingDisplayName}
+                </span>
+              )}
+              <span className="shrink-0 rounded-full bg-blue-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-400">
+                Hibernating
+              </span>
+              {hibernatingContext && <Divider />}
+              {showHostBadge && hibernatingSession.host?.trim() && (
+                <HostBadge
+                  name={hibernatingSession.host.trim()}
+                  className={railPill}
+                />
+              )}
+              {showProjectName && hibernatingProjectLeaf &&
+                projectBadge(hibernatingProjectLeaf, hibernatingSession.projectPath)}
+            </div>
             {hibernatingSession.prs && hibernatingSession.prs.length > 0 && (
-              <PrChips
-                prs={hibernatingSession.prs}
-                className="min-w-0 flex-1"
-                pillClass={railChip}
-              />
+              <PrChips prs={hibernatingSession.prs} className="min-w-0 flex-1" />
             )}
           </>
         ) : (
-          <span className="text-[11px] text-muted">
+          <span className="text-xs text-muted">
             {sessionCount} {sessionCount === 1 ? 'session' : 'sessions'}
           </span>
         )}
       </div>
 
       {/* Right: transient segments | connection, actions */}
-      <div className="flex shrink-0 items-center gap-1.5">
+      <div className="flex shrink-0 items-center gap-2">
         {selectionReady && session && (
-          <span className="flex h-5 shrink-0 items-center gap-1 rounded bg-elevated px-1.5 text-[11px] text-secondary">
+          <span className="flex h-6 shrink-0 items-center gap-1.5 rounded bg-elevated px-2 text-xs text-secondary">
             Selection ready
             <button
               type="button"
               onClick={onCopySelection}
-              className="flex h-4 items-center gap-0.5 rounded bg-accent px-1 text-[10px] font-medium text-white hover:bg-accent/90"
+              className="flex h-5 items-center gap-1 rounded bg-accent px-1.5 text-[11px] font-medium text-white hover:bg-accent/90"
               aria-label="Copy selection"
             >
-              <Copy01Icon width={10} height={10} />
+              <Copy01Icon width={12} height={12} />
               Copy
             </button>
             <button
               type="button"
               onClick={onDismissSelection}
-              className="flex h-4 w-4 items-center justify-center rounded text-muted hover:text-primary"
+              className="flex h-5 w-5 items-center justify-center rounded text-muted hover:text-primary"
               title="Dismiss"
               aria-label="Dismiss"
             >
-              <XCloseIcon width={10} height={10} />
+              <XCloseIcon width={12} height={12} />
             </button>
           </span>
         )}
@@ -233,7 +425,7 @@ export default function SessionRail({
             title="Exit tmux copy mode and return to live output"
             aria-label="Exit copy mode"
           >
-            <span className="text-[9px] font-semibold uppercase tracking-wide">
+            <span className="text-[10px] font-semibold uppercase tracking-wide">
               Copy mode
             </span>
             <span aria-hidden className="text-amber-100/40">·</span>
@@ -249,8 +441,8 @@ export default function SessionRail({
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
-              width="12"
-              height="12"
+              width="14"
+              height="14"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -266,7 +458,7 @@ export default function SessionRail({
         {hasTransients && <Divider />}
 
         {connectionStatus !== 'connected' && (
-          <span className="text-[11px] text-approval">{connectionStatus}</span>
+          <span className="text-xs text-approval">{connectionStatus}</span>
         )}
 
         {hibernatingSession && (
@@ -285,7 +477,7 @@ export default function SessionRail({
             title="Hibernate session"
             aria-label="Hibernate session"
           >
-            <Moon01Icon width={11} height={11} />
+            <Moon01Icon width={14} height={14} />
           </button>
         )}
         {session && canControl && (
@@ -296,10 +488,19 @@ export default function SessionRail({
             title={`Kill session (${modDisplay}X)`}
             aria-label="Kill session"
           >
-            <XCloseIcon width={12} height={12} />
+            <XCloseIcon width={14} height={14} />
           </button>
         )}
       </div>
+
+      {menu && menuItems.length > 0 && (
+        <ContextMenu
+          anchor={menu}
+          items={menuItems}
+          anchorFromBottom
+          onClose={() => setMenu(null)}
+        />
+      )}
     </footer>
   )
 }
