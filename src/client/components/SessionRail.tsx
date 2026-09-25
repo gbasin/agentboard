@@ -124,8 +124,10 @@ export default function SessionRail({
 
   return (
     <footer className="hidden h-7 shrink-0 select-none items-center justify-between gap-2 border-t border-border bg-elevated px-2 md:flex">
-      {/* Left: identity group | context group */}
-      <div className="flex min-w-0 items-center gap-1.5">
+      {/* Left: identity group | context group — flex-1 so PrChips gets a
+          real width to measure against (basis-0 in a shrink-to-fit parent
+          collapses every chip into "+N") */}
+      <div className="flex min-w-0 flex-1 items-center gap-1.5">
         {session ? (
           <>
             <span className="max-w-48 truncate text-xs font-medium text-primary">
