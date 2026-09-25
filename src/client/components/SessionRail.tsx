@@ -75,12 +75,15 @@ const copiedPill =
   'inline-flex shrink-0 items-center rounded-full bg-hover px-1.5 py-0.5 text-[11px] leading-none text-secondary'
 
 const Divider = () => (
-  <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-border" />
+  <span aria-hidden className="mx-1.5 h-4 w-px shrink-0 bg-border" />
 )
 
 // Fixed slot sized to the widest status label ("Needs Input") so the
-// divider behind it never shifts when status text changes width.
-const STATUS_SLOT = 'inline-block w-[5.5rem] shrink-0 text-left text-xs'
+// divider behind it never shifts when status text changes width. ch
+// units: this app sets html font-size to 13px, so rem-based widths come
+// out 81% of their px expectation — 11ch tracks the glyph count exactly.
+const STATUS_SLOT =
+  'inline-block w-[11ch] shrink-0 whitespace-nowrap text-left text-xs'
 
 /** Brief "Copied!" swap used by click-to-copy targets (Header.tsx pattern). */
 function useCopiedFlag() {
@@ -327,7 +330,7 @@ export default function SessionRail({
       <div className="flex min-w-0 flex-1 items-center gap-2">
         {session ? (
           <>
-            <div className="flex min-w-0 items-center gap-2" onContextMenu={openMenu}>
+            <div className="flex min-w-0 items-center gap-2.5" onContextMenu={openMenu}>
               {isRenaming ? (
                 renameInput
               ) : (
@@ -365,7 +368,7 @@ export default function SessionRail({
           </>
         ) : hibernatingSession ? (
           <>
-            <div className="flex min-w-0 items-center gap-2" onContextMenu={openMenu}>
+            <div className="flex min-w-0 items-center gap-2.5" onContextMenu={openMenu}>
               {isRenaming ? (
                 renameInput
               ) : (
@@ -398,7 +401,7 @@ export default function SessionRail({
       </div>
 
       {/* Right: transient segments | connection, actions */}
-      <div className="flex shrink-0 items-center gap-2">
+      <div className="flex shrink-0 items-center gap-2.5">
         {selectionReady && session && (
           <span className={`${transientPill} cursor-default`}>
             <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-accent" />
