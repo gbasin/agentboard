@@ -25,11 +25,27 @@ const originalFetch = globalThis.fetch
 let scrollListeners: Listener[] = []
 let resizeListeners: Listener[] = []
 
+// Deterministic stand-in for window timers: hover-card open/close delays
+// are flushed explicitly instead of waiting on wall-clock time.
+let timers: { id: number; fn: () => void }[] = []
+let nextTimerId = 1
+function flushWindowTimers() {
+  const pending = timers
+  timers = []
+  for (const t of pending) t.fn()
+}
+
 const fakeWindow = {
   innerWidth: 1000,
   innerHeight: 800,
-  setTimeout: globalThis.setTimeout.bind(globalThis),
-  clearTimeout: globalThis.clearTimeout.bind(globalThis),
+  setTimeout: (fn: () => void, _ms?: number) => {
+    const id = nextTimerId++
+    timers.push({ id, fn })
+    return id
+  },
+  clearTimeout: (id: number) => {
+    timers = timers.filter((t) => t.id !== id)
+  },
   addEventListener: (type: string, fn: Listener) => {
     if (type === 'scroll') scrollListeners.push(fn)
     else if (type === 'resize') resizeListeners.push(fn)
@@ -60,8 +76,8 @@ function findCard(root: TestRenderer.ReactTestInstance) {
     .at(-1)
 }
 
-function openCard(root: TestRenderer.ReactTestInstance) {
-  const chip = root
+function chipEl(root: TestRenderer.ReactTestInstance) {
+  return root
     .findAll(
       (el) =>
         typeof el.props.className === 'string' &&
@@ -69,13 +85,20 @@ function openCard(root: TestRenderer.ReactTestInstance) {
         typeof el.props.onMouseEnter === 'function'
     )
     .at(0)!
+}
+
+function openCard(root: TestRenderer.ReactTestInstance) {
+  const chip = chipEl(root)
   act(() => chip.props.onMouseEnter())
+  // Open is delayed for hover intent — elapse the timer.
+  act(flushWindowTimers)
 }
 
 describe('PrChips hover card', () => {
   beforeEach(() => {
     scrollListeners = []
     resizeListeners = []
+    timers = []
     chipRect = { top: 700, bottom: 720, left: 100, right: 140 }
     globalAny.window = fakeWindow
     globalAny.document = { body: {} }
@@ -109,6 +132,29 @@ describe('PrChips hover card', () => {
     globalAny.getComputedStyle = originalGetComputedStyle
     globalThis.fetch = originalFetch
     mock.restore()
+  })
+
+  test('opens only after the hover delay; leaving early cancels the open', () => {
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<PrChips prs={[PR]} />, {
+        createNodeMock,
+      })
+    })
+    const chip = chipEl(renderer.root)
+
+    // A passing hover doesn't open the card.
+    act(() => chip.props.onMouseEnter())
+    act(() => chip.props.onMouseLeave())
+    act(flushWindowTimers)
+    expect(findCard(renderer.root)).toBeUndefined()
+
+    // Resting past the delay opens it.
+    act(() => chip.props.onMouseEnter())
+    expect(findCard(renderer.root)).toBeUndefined()
+    act(flushWindowTimers)
+    expect(findCard(renderer.root)).toBeDefined()
+    act(() => renderer.unmount())
   })
 
   test('anchors above the chip when there is more room above', () => {

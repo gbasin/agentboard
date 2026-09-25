@@ -116,6 +116,9 @@ async function fetchInfoBatch(urls: string[]): Promise<PrInfo[]> {
   return urls.map((u) => cachedInfo(u)!).filter(Boolean)
 }
 
+// Hover intent: the card opens only after the pointer rests on the chip,
+// so skimming a row on the way to something else doesn't flash popups.
+const CARD_OPEN_DELAY_MS = 250
 const CARD_CLOSE_DELAY_MS = 200
 // The card hugs the chip's edge with a few px of slack so the pointer
 // crosses a shared hit region instead of a zero-gap boundary.
@@ -144,8 +147,14 @@ function useHoverCard(
 ) {
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState<CardPos | null>(null)
+  const openTimer = useRef<number | undefined>(undefined)
   const closeTimer = useRef<number | undefined>(undefined)
   const cardRef = useRef<HTMLDivElement>(null)
+
+  const cancelOpen = useCallback(() => {
+    window.clearTimeout(openTimer.current)
+    openTimer.current = undefined
+  }, [])
 
   const cancelClose = useCallback(() => {
     window.clearTimeout(closeTimer.current)
@@ -153,14 +162,17 @@ function useHoverCard(
   }, [])
 
   const scheduleClose = useCallback(() => {
+    // A pending open must not fire after the pointer has left.
+    cancelOpen()
     cancelClose()
     closeTimer.current = window.setTimeout(
       () => setOpen(false),
       CARD_CLOSE_DELAY_MS
     )
-  }, [cancelClose])
+  }, [cancelOpen, cancelClose])
 
   const openCard = useCallback(() => {
+    cancelOpen()
     cancelClose()
     const r = anchorRef.current?.getBoundingClientRect()
     if (r) {
@@ -194,7 +206,16 @@ function useHoverCard(
       )
     }
     setOpen(true)
-  }, [anchorRef, cancelClose, cardWidth])
+  }, [anchorRef, cancelOpen, cancelClose, cardWidth])
+
+  // Re-entering while the card is already up only needs the pending close
+  // cancelled — the open delay applies to closed cards only.
+  const scheduleOpen = useCallback(() => {
+    cancelClose()
+    if (open) return
+    cancelOpen()
+    openTimer.current = window.setTimeout(openCard, CARD_OPEN_DELAY_MS)
+  }, [cancelClose, cancelOpen, open, openCard])
 
   // pos is captured on open; a scroll or resize detaches the fixed card
   // from its chip, so close rather than leave it floating. Scroll doesn't
@@ -216,9 +237,15 @@ function useHoverCard(
     }
   }, [open])
 
-  useEffect(() => cancelClose, [cancelClose])
+  useEffect(
+    () => () => {
+      cancelOpen()
+      cancelClose()
+    },
+    [cancelOpen, cancelClose]
+  )
 
-  return { open, pos, openCard, scheduleClose, cancelClose, cardRef }
+  return { open, pos, scheduleOpen, scheduleClose, cancelClose, cardRef }
 }
 
 function PrChip({
@@ -233,7 +260,7 @@ function PrChip({
     checksCache.get(pr.url)
   )
   const anchorRef = useRef<HTMLSpanElement>(null)
-  const { open, pos, openCard, scheduleClose, cancelClose, cardRef } =
+  const { open, pos, scheduleOpen, scheduleClose, cancelClose, cardRef } =
     useHoverCard(anchorRef, 256)
   const mounted = useRef(true)
   useEffect(() => {
@@ -278,7 +305,7 @@ function PrChip({
     <span
       ref={anchorRef}
       className="relative inline-flex shrink-0"
-      onMouseEnter={openCard}
+      onMouseEnter={scheduleOpen}
       onMouseLeave={scheduleClose}
     >
       <a
@@ -387,7 +414,7 @@ function PrChip({
 function OverflowChip({ prs }: { prs: SessionPullRequest[] }) {
   const [infos, setInfos] = useState<Map<string, PrInfo> | null>(null)
   const anchorRef = useRef<HTMLSpanElement>(null)
-  const { open, pos, openCard, scheduleClose, cancelClose, cardRef } =
+  const { open, pos, scheduleOpen, scheduleClose, cancelClose, cardRef } =
     useHoverCard(anchorRef, 224)
 
   // Lazy: only fetch state for hidden PRs when the card opens. Reopening
@@ -407,7 +434,7 @@ function OverflowChip({ prs }: { prs: SessionPullRequest[] }) {
     <span
       ref={anchorRef}
       className="relative inline-flex shrink-0"
-      onMouseEnter={openCard}
+      onMouseEnter={scheduleOpen}
       onMouseLeave={scheduleClose}
     >
       <span
