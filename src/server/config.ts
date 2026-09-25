@@ -145,6 +145,15 @@ const tmuxMutationTimeoutMs = Number.isFinite(tmuxMutationTimeoutMsRaw) && tmuxM
   ? Math.max(Math.floor(tmuxMutationTimeoutMsRaw), tmuxTimeoutMs)
   : Math.max(tmuxTimeoutMs * 5, 15000)
 
+// Dedup window for rapid re-attaches to the same session+target. Kept
+// env-tunable so integration tests can widen it instead of racing a
+// wall-clock window against event-loop scheduling.
+const attachDedupMsRaw = Number(process.env.AGENTBOARD_ATTACH_DEDUP_MS)
+const attachDedupMs =
+  Number.isFinite(attachDedupMsRaw) && attachDedupMsRaw > 0
+    ? Math.floor(attachDedupMsRaw)
+    : 500
+
 // Bind address for the server. HOSTNAME doubles as the machine name in many
 // environments — containers and some CI images auto-export it — so a value
 // that merely echoes os.hostname() is treated as ambient and the localhost
@@ -233,5 +242,6 @@ export const config = {
   remoteAllowAttach,
   tmuxTimeoutMs,
   tmuxMutationTimeoutMs,
+  attachDedupMs,
   pasteImageMaxBytes,
 }

@@ -4310,10 +4310,9 @@ async function attachTerminalPersistent(
   // scrollback capture and just acknowledge readiness.
   const attachKey = `${sessionId}:${effectiveTarget}`
   const now = performance.now()
-  const ATTACH_DEDUP_MS = 500
 
   if (ws.data.lastAttachKey === attachKey &&
-      now - ws.data.lastAttachTs < ATTACH_DEDUP_MS) {
+      now - ws.data.lastAttachTs < config.attachDedupMs) {
     logger.debug('terminal_attach_dedup', {
       sessionId, target, effectiveTarget, attachSeq,
       elapsedMs: Math.round(now - ws.data.lastAttachTs),
