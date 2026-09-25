@@ -53,12 +53,19 @@ export default function ContextMenu({
     }
   }, [onClose])
 
+  // Clamp horizontally so a right-click near the viewport edge keeps the
+  // menu on-screen (min-w + padding ≈ 190px).
+  const left =
+    typeof window === 'undefined'
+      ? anchor.x
+      : Math.min(anchor.x, Math.max(8, window.innerWidth - 190))
+
   return (
     <div
       ref={ref}
       className="fixed z-50 min-w-[180px] rounded-md border border-border bg-elevated py-1 shadow-lg"
       style={{
-        left: anchor.x,
+        left,
         top: anchor.y,
         transform: anchorFromBottom ? 'translateY(calc(-100% - 6px))' : undefined,
       }}

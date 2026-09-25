@@ -182,6 +182,13 @@ export default function SessionRail({
     }
   }, [isRenaming])
 
+  // Drop an in-flight rename when the rail switches which session it shows —
+  // otherwise the input would carry session A's name onto session B.
+  const shownSessionId = session?.id ?? hibernatingSession?.sessionId ?? null
+  useEffect(() => {
+    setIsRenaming(false)
+  }, [shownSessionId])
+
   const startRename = useCallback(() => {
     setRenameValue(activeDisplayName)
     setIsRenaming(true)
