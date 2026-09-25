@@ -4,7 +4,7 @@
  * Close by: tap backdrop, press Escape, or swipe left
  */
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useReducedMotion } from 'motion/react'
 import type { AgentSession, Session } from '@shared/types'
 import SessionList from './SessionList'
@@ -49,6 +49,24 @@ export default function SessionDrawer({
   const prefersReducedMotion = useReducedMotion()
   const drawerRef = useRef<HTMLDivElement>(null)
   const previousFocusRef = useRef<HTMLElement | null>(null)
+
+  // Scroll-to-selection only once the open transition has fully landed.
+  // Calling scrollIntoView while the drawer is still transformed off-screen
+  // miscomputes on iOS Safari (it can scroll the list to the end), so the
+  // list stays inert until the drawer is visibly in place.
+  const [settled, setSettled] = useState(false)
+  useEffect(() => {
+    if (!isOpen) {
+      setSettled(false)
+      return
+    }
+    if (prefersReducedMotion) {
+      setSettled(true)
+      return
+    }
+    const timer = setTimeout(() => setSettled(true), 250)
+    return () => clearTimeout(timer)
+  }, [isOpen, prefersReducedMotion])
 
   // Handle Escape key to close
   useEffect(() => {
@@ -167,6 +185,7 @@ export default function SessionDrawer({
           onResume={onResume}
           onHibernate={onHibernate}
           onMoveToHistory={onMoveToHistory}
+          scrollSelectionActive={settled}
           onNewSession={() => {
             if (onNewSession() !== false) onClose()
           }}

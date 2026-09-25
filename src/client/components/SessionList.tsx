@@ -64,6 +64,9 @@ interface SessionListProps {
   onDuplicate?: (sessionId: string) => void
   onMoveToHistory?: (sessionId: string) => void
   onNewSession?: () => void
+  /** False while the list is off-screen (closed mobile drawer): defers
+   * scroll-to-selection until it becomes visible again. */
+  scrollSelectionActive?: boolean
 }
 
 /** Status pill classes for the time/activity badge */
@@ -99,6 +102,7 @@ export default function SessionList({
   onDuplicate,
   onMoveToHistory,
   onNewSession,
+  scrollSelectionActive = true,
 }: SessionListProps) {
   useTimestampRefresh()
   const isSafari = useMemo(() => {
@@ -219,7 +223,8 @@ export default function SessionList({
   useScrollToSelection(
     listScrollRef,
     selectedSessionId ?? selectedHibernatingSessionId,
-    (id) => id !== selectedHibernatingSessionId || showHibernating
+    (id) => id !== selectedHibernatingSessionId || showHibernating,
+    scrollSelectionActive
   )
 
 
