@@ -800,5 +800,3 @@ function capturePaneText(target: string, env: NodeJS.ProcessEnv): string {
   )
   return result.exitCode === 0 ? result.stdout.toString() : ''
 }
-
-
