@@ -277,6 +277,59 @@ describe('SessionList scroll-to-selection', () => {
     ])
   })
 
+  test('does not scroll while inactive, scrolls when activated', () => {
+    const rows = new Map<string, FakeNode>()
+    const target = fakeNode()
+    rows.set('session-1', target)
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = renderList(rows, {
+        selectedSessionId: 'session-1',
+        scrollSelectionActive: false,
+      })
+    })
+    // Off-screen (closed drawer): no scroll even though the row is mounted
+    expect(target.scrollCalls).toHaveLength(0)
+
+    // Selection changes while inactive still don't scroll
+    rows.set('session-2', fakeNode())
+    act(() => {
+      renderer.update(
+        <SessionList
+          sessions={[baseSession, { ...baseSession, id: 'session-2' }]}
+          selectedSessionId="session-2"
+          scrollSelectionActive={false}
+          loading={false}
+          error={null}
+          onSelect={() => {}}
+          onRename={() => {}}
+        />
+      )
+    })
+    expect(target.scrollCalls).toHaveLength(0)
+    expect(rows.get('session-2')!.scrollCalls).toHaveLength(0)
+
+    // Activating re-arms the pending scroll to the current selection
+    act(() => {
+      renderer.update(
+        <SessionList
+          sessions={[baseSession, { ...baseSession, id: 'session-2' }]}
+          selectedSessionId="session-2"
+          scrollSelectionActive={true}
+          loading={false}
+          error={null}
+          onSelect={() => {}}
+          onRename={() => {}}
+        />
+      )
+    })
+    expect(rows.get('session-2')!.scrollCalls).toEqual([
+      { block: 'nearest', inline: 'nearest', behavior: 'instant' },
+    ])
+    act(() => renderer.unmount())
+  })
+
   test('does nothing when selection is cleared', () => {
     const rows = new Map<string, FakeNode>()
     rows.set('session-1', fakeNode())

@@ -15,21 +15,28 @@ function escapeAttrValue(value: string): string {
  *
  * `canTarget(id)` may veto a pending scroll — return false to drop it, e.g.
  * when the row lives in a collapsed section that renders no DOM node.
+ *
+ * `active` should be false while the container is off-screen (e.g. a
+ * translateX(-100%) drawer). scrollIntoView against off-screen transformed
+ * subtrees is unreliable on iOS Safari, so the scroll is deferred and
+ * re-armed when `active` flips back to true.
  */
 export function useScrollToSelection<T extends HTMLElement>(
   containerRef: RefObject<T | null>,
   selectedId: string | null,
-  canTarget?: (id: string) => boolean
+  canTarget?: (id: string) => boolean,
+  active = true
 ) {
   const pendingIdRef = useRef<string | null>(selectedId)
 
   useEffect(() => {
     pendingIdRef.current = selectedId
-  }, [selectedId])
+  }, [selectedId, active])
 
   // No dep array: re-check after every render while a scroll is pending so
   // rows that mount after the selection change still get scrolled to.
   useEffect(() => {
+    if (!active) return
     const targetId = pendingIdRef.current
     if (!targetId) return
     if (canTarget && !canTarget(targetId)) {
