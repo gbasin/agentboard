@@ -694,9 +694,9 @@ export default function SessionList({
         )}
       </div>
 
-      {/* Keyboard shortcuts hint */}
-      <div className="hidden shrink-0 border-t border-border px-3 py-2 md:block">
-        <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-muted">
+      {/* Keyboard shortcuts hint — shares the status rail's 40px bottom bar */}
+      <div className="hidden h-10 shrink-0 items-center border-t border-border px-4 md:flex">
+        <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted">
           <span>{modDisplay}[ ] nav</span>
           <span>{modDisplay}N new</span>
           <span>{modDisplay}X kill</span>
