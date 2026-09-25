@@ -75,7 +75,7 @@ const copiedPill =
   'inline-flex shrink-0 items-center rounded-full bg-hover px-1.5 py-0.5 text-[11px] leading-none text-secondary'
 
 const Divider = () => (
-  <span aria-hidden className="mx-1.5 h-4 w-px shrink-0 bg-border" />
+  <span aria-hidden className="mx-2 h-5 w-px shrink-0 bg-border" />
 )
 
 // Fixed slot sized to the widest status label ("Needs Input") so the
@@ -160,15 +160,15 @@ export default function SessionRail({
   const sessionIdPrefix =
     showSessionIdPrefix && agentSessionId ? getSessionIdShort(agentSessionId) : null
 
+  // Context group = id / host / project meta; PR chips are their own group
+  // and get their own divider, so neither count toward context emptiness.
   const liveContext =
     !!sessionIdPrefix ||
     (showHostBadge && !!session?.host?.trim()) ||
-    (showProjectName && !!projectLeaf) ||
-    !!(session?.prs && session.prs.length > 0)
+    (showProjectName && !!projectLeaf)
   const hibernatingContext =
     (showHostBadge && !!hibernatingSession?.host?.trim()) ||
-    (showProjectName && !!hibernatingProjectLeaf) ||
-    !!(hibernatingSession?.prs && hibernatingSession.prs.length > 0)
+    (showProjectName && !!hibernatingProjectLeaf)
 
   const hasTransients =
     (selectionReady && !!session) ||
@@ -322,75 +322,98 @@ export default function SessionRail({
 
   return (
     <footer className="hidden h-10 shrink-0 select-none items-center justify-between gap-3 border-t border-border bg-elevated px-4 md:flex">
-      {/* Left: identity group | context group. The identity wrapper owns the
-          context menu so right-clicking a PR chip keeps the link's native
-          menu. flex-1 sits on the outer div so PrChips gets a real width to
-          measure against (basis-0 in a shrink-to-fit parent collapses every
-          chip into "+N") */}
-      <div className="flex min-w-0 flex-1 items-center gap-2">
+      {/* Left: three hairline-separated groups — identity (name + status,
+          tight coupling), context meta (id / host / project), PR chips.
+          The menu wrapper covers identity + context so right-clicking a PR
+          chip keeps the link's native menu. flex-1 sits on the outer div so
+          PrChips gets a real width to measure against (basis-0 in a
+          shrink-to-fit parent collapses every chip into "+N") */}
+      <div className="flex min-w-0 flex-1 items-center">
         {session ? (
           <>
-            <div className="flex min-w-0 items-center gap-2.5" onContextMenu={openMenu}>
-              {isRenaming ? (
-                renameInput
-              ) : (
-                <span className="max-w-48 truncate text-sm font-medium text-primary">
-                  {sessionDisplayName}
+            <div className="flex min-w-0 items-center" onContextMenu={openMenu}>
+              <div className="flex min-w-0 items-center gap-2">
+                {isRenaming ? (
+                  renameInput
+                ) : (
+                  <span className="max-w-48 truncate text-sm font-medium text-primary">
+                    {sessionDisplayName}
+                  </span>
+                )}
+                <span className={`${STATUS_SLOT} ${statusClass[session.status]}`}>
+                  {statusText[session.status]}
                 </span>
+              </div>
+              {liveContext && (
+                <>
+                  <Divider />
+                  <div className="flex items-center gap-2.5">
+                    {sessionIdPrefix && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          copyText(agentSessionId!)
+                          markIdCopied()
+                        }}
+                        className="shrink-0 cursor-pointer text-xs text-muted transition-colors hover:text-primary"
+                        title={`${agentSessionId} — click to copy`}
+                        aria-label="Copy session ID"
+                      >
+                        {idCopied ? 'Copied!' : sessionIdPrefix}
+                      </button>
+                    )}
+                    {showHostBadge && session.host?.trim() && (
+                      <HostBadge name={session.host.trim()} className={railPill} />
+                    )}
+                    {showProjectName && projectLeaf &&
+                      projectBadge(projectLeaf, session.projectPath)}
+                  </div>
+                </>
               )}
-              <span className={`${STATUS_SLOT} ${statusClass[session.status]}`}>
-                {statusText[session.status]}
-              </span>
-              {liveContext && <Divider />}
-              {sessionIdPrefix && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    copyText(agentSessionId!)
-                    markIdCopied()
-                  }}
-                  className="shrink-0 cursor-pointer text-xs text-muted transition-colors hover:text-primary"
-                  title={`${agentSessionId} — click to copy`}
-                  aria-label="Copy session ID"
-                >
-                  {idCopied ? 'Copied!' : sessionIdPrefix}
-                </button>
-              )}
-              {showHostBadge && session.host?.trim() && (
-                <HostBadge name={session.host.trim()} className={railPill} />
-              )}
-              {showProjectName && projectLeaf &&
-                projectBadge(projectLeaf, session.projectPath)}
             </div>
             {session.prs && session.prs.length > 0 && (
-              <PrChips prs={session.prs} className="min-w-0 flex-1" />
+              <>
+                <Divider />
+                <PrChips prs={session.prs} className="min-w-0 flex-1" />
+              </>
             )}
           </>
         ) : hibernatingSession ? (
           <>
-            <div className="flex min-w-0 items-center gap-2.5" onContextMenu={openMenu}>
-              {isRenaming ? (
-                renameInput
-              ) : (
-                <span className="max-w-48 truncate text-sm font-medium text-primary">
-                  {hibernatingDisplayName}
+            <div className="flex min-w-0 items-center" onContextMenu={openMenu}>
+              <div className="flex min-w-0 items-center gap-2">
+                {isRenaming ? (
+                  renameInput
+                ) : (
+                  <span className="max-w-48 truncate text-sm font-medium text-primary">
+                    {hibernatingDisplayName}
+                  </span>
+                )}
+                <span className="shrink-0 rounded-full bg-blue-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-400">
+                  Hibernating
                 </span>
+              </div>
+              {hibernatingContext && (
+                <>
+                  <Divider />
+                  <div className="flex items-center gap-2.5">
+                    {showHostBadge && hibernatingSession.host?.trim() && (
+                      <HostBadge
+                        name={hibernatingSession.host.trim()}
+                        className={railPill}
+                      />
+                    )}
+                    {showProjectName && hibernatingProjectLeaf &&
+                      projectBadge(hibernatingProjectLeaf, hibernatingSession.projectPath)}
+                  </div>
+                </>
               )}
-              <span className="shrink-0 rounded-full bg-blue-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-400">
-                Hibernating
-              </span>
-              {hibernatingContext && <Divider />}
-              {showHostBadge && hibernatingSession.host?.trim() && (
-                <HostBadge
-                  name={hibernatingSession.host.trim()}
-                  className={railPill}
-                />
-              )}
-              {showProjectName && hibernatingProjectLeaf &&
-                projectBadge(hibernatingProjectLeaf, hibernatingSession.projectPath)}
             </div>
             {hibernatingSession.prs && hibernatingSession.prs.length > 0 && (
-              <PrChips prs={hibernatingSession.prs} className="min-w-0 flex-1" />
+              <>
+                <Divider />
+                <PrChips prs={hibernatingSession.prs} className="min-w-0 flex-1" />
+              </>
             )}
           </>
         ) : (
