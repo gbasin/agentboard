@@ -1,9 +1,9 @@
 /**
  * SessionRail - desktop-only bottom status rail (tmux-style status line).
- * Left: focused session identity (name, status) then a hairline-separated
- * context group (id, project, host, PR chips). The identity group is
- * interactive: the session id and project badge copy on click, and
- * right-clicking it opens the same context menu the session list offers.
+ * Left: hairline-separated segments — name | status | context meta
+ * (id, host, project) | PR chips. The id and project badge copy on click,
+ * and right-clicking the segments opens the same context menu the
+ * session list offers.
  * Right: transient segments (copy mode, jump-to-bottom, selection ready),
  * then a hairline before connection status and session actions
  * (wake / hibernate / kill).
@@ -322,28 +322,27 @@ export default function SessionRail({
 
   return (
     <footer className="hidden h-10 shrink-0 select-none items-center justify-between gap-3 border-t border-border bg-elevated px-4 md:flex">
-      {/* Left: three hairline-separated groups — identity (name + status,
-          tight coupling), context meta (id / host / project), PR chips.
-          The menu wrapper covers identity + context so right-clicking a PR
-          chip keeps the link's native menu. flex-1 sits on the outer div so
-          PrChips gets a real width to measure against (basis-0 in a
-          shrink-to-fit parent collapses every chip into "+N") */}
+      {/* Left: hairline-separated segments — name | status | context meta
+          (id / host / project) | PR chips. The menu wrapper covers the
+          segments so right-clicking a PR chip keeps the link's native menu.
+          flex-1 sits on the outer div so PrChips gets a real width to
+          measure against (basis-0 in a shrink-to-fit parent collapses every
+          chip into "+N") */}
       <div className="flex min-w-0 flex-1 items-center">
         {session ? (
           <>
             <div className="flex min-w-0 items-center" onContextMenu={openMenu}>
-              <div className="flex min-w-0 items-center gap-2">
-                {isRenaming ? (
-                  renameInput
-                ) : (
-                  <span className="max-w-48 truncate text-sm font-medium text-primary">
-                    {sessionDisplayName}
-                  </span>
-                )}
-                <span className={`${STATUS_SLOT} ${statusClass[session.status]}`}>
-                  {statusText[session.status]}
+              {isRenaming ? (
+                renameInput
+              ) : (
+                <span className="max-w-48 truncate text-sm font-medium text-primary">
+                  {sessionDisplayName}
                 </span>
-              </div>
+              )}
+              <Divider />
+              <span className={`${STATUS_SLOT} ${statusClass[session.status]}`}>
+                {statusText[session.status]}
+              </span>
               {liveContext && (
                 <>
                   <Divider />
@@ -381,18 +380,17 @@ export default function SessionRail({
         ) : hibernatingSession ? (
           <>
             <div className="flex min-w-0 items-center" onContextMenu={openMenu}>
-              <div className="flex min-w-0 items-center gap-2">
-                {isRenaming ? (
-                  renameInput
-                ) : (
-                  <span className="max-w-48 truncate text-sm font-medium text-primary">
-                    {hibernatingDisplayName}
-                  </span>
-                )}
-                <span className="shrink-0 rounded-full bg-blue-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-400">
-                  Hibernating
+              {isRenaming ? (
+                renameInput
+              ) : (
+                <span className="max-w-48 truncate text-sm font-medium text-primary">
+                  {hibernatingDisplayName}
                 </span>
-              </div>
+              )}
+              <Divider />
+              <span className="shrink-0 rounded-full bg-blue-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-400">
+                Hibernating
+              </span>
               {hibernatingContext && (
                 <>
                   <Divider />
