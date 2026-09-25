@@ -53,8 +53,12 @@ const iconButton =
 const railPill = 'text-[11px]'
 
 const Divider = () => (
-  <span aria-hidden className="mx-0.5 h-3.5 w-px shrink-0 bg-border" />
+  <span aria-hidden className="mx-1 h-3.5 w-px shrink-0 bg-border" />
 )
+
+// Fixed slot sized to the widest status label ("Needs Input") so the
+// divider behind it never shifts when status text changes width.
+const STATUS_SLOT = 'inline-block w-[62px] shrink-0 text-left text-[11px]'
 
 export default function SessionRail({
   session,
@@ -124,9 +128,7 @@ export default function SessionRail({
             <span className="max-w-48 truncate text-xs font-medium text-primary">
               {sessionDisplayName}
             </span>
-            <span
-              className={`shrink-0 text-[11px] ${statusClass[session.status]}`}
-            >
+            <span className={`${STATUS_SLOT} ${statusClass[session.status]}`}>
               {statusText[session.status]}
             </span>
             {liveContext && <Divider />}
