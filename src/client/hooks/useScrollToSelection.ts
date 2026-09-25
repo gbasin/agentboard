@@ -40,8 +40,8 @@ export function useScrollToSelection<T extends HTMLElement>(
       `[data-session-id="${escapeAttrValue(targetId)}"]`
     )
     if (node) {
-      // 'instant' overrides CSS scroll-behavior (e.g. scroll-smooth on the
-      // mobile strip) so rapid keyboard cycling never trails a scroll anim.
+      // 'instant' overrides any CSS scroll-behavior so rapid keyboard
+      // cycling never trails a scroll animation.
       node.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' })
       pendingIdRef.current = null
     }

@@ -1440,7 +1440,7 @@ export default function Terminal({
           {/* scroll-pe-4 keeps end tabs clear of the right fade overlay */}
           <div
             ref={mobileTabStripRef}
-            className="flex items-center gap-[6px] overflow-x-auto scroll-pe-4 px-[8px] py-[5px] scrollbar-none scroll-smooth snap-x snap-mandatory"
+            className="flex items-center gap-[6px] overflow-x-auto scroll-pe-4 px-[8px] py-[5px] scrollbar-none snap-x snap-mandatory"
             style={{ WebkitOverflowScrolling: 'touch' }}
           >
             {sessions.map((s, index) => {
