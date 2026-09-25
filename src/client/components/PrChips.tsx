@@ -136,8 +136,10 @@ interface CardPos {
 // Anchored hover-card state shared by PrChip and OverflowChip. The card
 // portals to body (sortable row wrappers clip overflow and can be
 // transformed), so it isn't a DOM descendant of the chip — open/close can't
-// rely on pointer staying inside one subtree. A short close delay absorbs
-// transient mouseleaves that have nothing to do with intent: the browser
+// rely on pointer staying inside one subtree. Both directions get a short
+// delay: open requires a brief rest so pass-through hovers don't flash,
+// and close absorbs transient mouseleaves that have nothing to do with
+// intent: the browser
 // re-hit-tests when rows re-sort/animate/scroll out from under a stationary
 // cursor, and diagonal exits pass through row background before reaching
 // the card.
