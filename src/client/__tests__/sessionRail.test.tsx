@@ -147,12 +147,12 @@ afterEach(() => {
 })
 
 describe('SessionRail', () => {
-  test('renders session name, status, and id prefix in a 36px rail', () => {
+  test('renders session name, status, and id prefix in a 40px rail', () => {
     const renderer = render(railProps())
 
     const footer = renderer.root.findByType('footer')
-    expect(footer.props.className).toContain('h-9')
-    expect(footer.props.className).toContain('px-3')
+    expect(footer.props.className).toContain('h-10')
+    expect(footer.props.className).toContain('px-4')
 
     const name = renderer.root
       .findAllByType('span')

@@ -61,9 +61,14 @@ interface SessionRailProps {
 }
 
 const segmentButton =
-  'flex h-6 shrink-0 items-center gap-1.5 rounded px-2 text-xs font-medium transition-all hover:brightness-110 active:scale-95'
+  'flex h-7 shrink-0 items-center gap-2 rounded-md px-2.5 text-xs font-medium transition-colors active:scale-95'
+// Transient segments (copy mode, jump-to-bottom, selection ready) share one
+// quiet bordered pill matching the action buttons; state shows as a colored
+// dot plus label, with the action appended after a middot.
+const transientPill =
+  'flex h-7 shrink-0 items-center gap-2 rounded-md border border-border bg-surface px-2.5 text-xs text-secondary transition-colors hover:bg-hover hover:text-primary'
 const iconButton =
-  'flex h-6 w-6 shrink-0 items-center justify-center rounded transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-40'
+  'flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-40'
 // Pills (badges, PR chips) match the session list's 11px geometry.
 const railPill = 'text-[11px]'
 const copiedPill =
@@ -313,7 +318,7 @@ export default function SessionRail({
     )
 
   return (
-    <footer className="hidden h-9 shrink-0 select-none items-center justify-between gap-2 border-t border-border bg-elevated px-3 md:flex">
+    <footer className="hidden h-10 shrink-0 select-none items-center justify-between gap-3 border-t border-border bg-elevated px-4 md:flex">
       {/* Left: identity group | context group. The identity wrapper owns the
           context menu so right-clicking a PR chip keeps the link's native
           menu. flex-1 sits on the outer div so PrChips gets a real width to
@@ -395,12 +400,13 @@ export default function SessionRail({
       {/* Right: transient segments | connection, actions */}
       <div className="flex shrink-0 items-center gap-2">
         {selectionReady && session && (
-          <span className="flex h-6 shrink-0 items-center gap-1.5 rounded bg-elevated px-2 text-xs text-secondary">
+          <span className={`${transientPill} cursor-default`}>
+            <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-accent" />
             Selection ready
             <button
               type="button"
               onClick={onCopySelection}
-              className="flex h-5 items-center gap-1 rounded bg-accent px-1.5 text-[11px] font-medium text-white hover:bg-accent/90"
+              className="flex h-5 items-center gap-1 rounded px-1 font-medium text-accent hover:text-primary"
               aria-label="Copy selection"
             >
               <Copy01Icon width={12} height={12} />
@@ -421,21 +427,20 @@ export default function SessionRail({
           <button
             type="button"
             onClick={onJumpToBottom}
-            className={`${segmentButton} border border-amber-400/35 bg-amber-500/20 text-amber-100 hover:bg-amber-500/30`}
+            className={transientPill}
             title="Exit tmux copy mode and return to live output"
             aria-label="Exit copy mode"
           >
-            <span className="text-[10px] font-semibold uppercase tracking-wide">
-              Copy mode
-            </span>
-            <span aria-hidden className="text-amber-100/40">·</span>
-            Exit
+            <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+            Copy mode
+            <span aria-hidden className="text-muted">·</span>
+            <span className="font-medium text-amber-400">Exit</span>
           </button>
         ) : showJumpToBottom && session ? (
           <button
             type="button"
             onClick={onJumpToBottom}
-            className={`${segmentButton} bg-blue-600/90 text-white hover:bg-blue-600`}
+            className={transientPill}
             title="Scroll to bottom"
             aria-label="Scroll to bottom"
           >
@@ -465,7 +470,7 @@ export default function SessionRail({
           <button
             type="button"
             onClick={onWake}
-            className={`${segmentButton} bg-accent text-white hover:bg-accent/90`}
+            className={`${segmentButton} border border-border bg-surface text-secondary hover:bg-hover hover:text-primary`}
           >
             Wake
           </button>
@@ -477,7 +482,7 @@ export default function SessionRail({
             title="Hibernate session"
             aria-label="Hibernate session"
           >
-            <Moon01Icon width={14} height={14} />
+            <Moon01Icon width={16} height={16} />
           </button>
         )}
         {session && canControl && (
@@ -488,7 +493,7 @@ export default function SessionRail({
             title={`Kill session (${modDisplay}X)`}
             aria-label="Kill session"
           >
-            <XCloseIcon width={14} height={14} />
+            <XCloseIcon width={16} height={16} />
           </button>
         )}
       </div>
