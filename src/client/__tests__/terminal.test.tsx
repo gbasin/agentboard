@@ -344,7 +344,8 @@ describe('Terminal', () => {
       })
     })
 
-    const exitButton = renderer.root.findByProps({ title: 'Exit tmux copy mode and return to live output' })
+    // Copy mode shows both the mobile floating pill and the desktop rail segment.
+    const exitButton = renderer.root.findAllByProps({ title: 'Exit tmux copy mode and return to live output' })[0]
     expect(exitButton.props['aria-label']).toBe('Exit copy mode')
     expect(renderer.root.findAllByProps({ title: 'Scroll to bottom' })).toHaveLength(0)
 
@@ -617,16 +618,14 @@ describe('Terminal', () => {
 
     const mobileStatus = renderer.root.findAllByType('span').find((span) =>
       span.props.children === 'Working' &&
-      String(span.props.className ?? '').includes('md:hidden')
+      String(span.props.className ?? '').includes('text-[10px]')
     )
     expect(mobileStatus).toBeDefined()
-    expect(String(mobileStatus?.props.className)).toContain('text-[10px]')
 
     const mobileKillButton = renderer.root
       .findAllByProps({ 'aria-label': 'Kill session' })
-      .find((button) => String(button.props.className ?? '').includes('md:hidden'))
+      .find((button) => String(button.props.className ?? '').includes('size-[44px]'))
     expect(mobileKillButton).toBeDefined()
-    expect(String(mobileKillButton?.props.className)).toContain('size-[44px]')
 
     act(() => {
       openButton.props.onClick()
@@ -817,7 +816,8 @@ describe('Terminal', () => {
       }) as unknown as Document['execCommand'],
     } as unknown as Document
 
-    const copyButton = renderer.root.findByProps({ 'aria-label': 'Copy selection' })
+    // Offer shows in both the mobile floating pill and the desktop rail segment.
+    const copyButton = renderer.root.findAllByProps({ 'aria-label': 'Copy selection' })[0]
     act(() => {
       copyButton.props.onClick()
     })
