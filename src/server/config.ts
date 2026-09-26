@@ -82,7 +82,8 @@ const logLevelRaw = process.env.LOG_LEVEL?.toLowerCase()
 const logLevel = ['debug', 'info', 'warn', 'error'].includes(logLevelRaw || '')
   ? (logLevelRaw as 'debug' | 'info' | 'warn' | 'error')
   : 'info'
-const defaultDataDir = path.join(homeDir, '.agentboard')
+const defaultDataDir =
+  process.env.AGENTBOARD_DATA_DIR?.trim() || path.join(homeDir, '.agentboard')
 const defaultLogFile = path.join(defaultDataDir, 'agentboard.log')
 const logFile = process.env.LOG_FILE ?? defaultLogFile
 const tmuxServerPidFile =
@@ -232,6 +233,7 @@ export const config = {
   skipMatchingPatterns,
   logLevel,
   logFile,
+  dataDir: defaultDataDir,
   tmuxServerPidFile,
   remoteHosts,
   remotePollMs,

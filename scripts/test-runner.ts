@@ -44,6 +44,9 @@ async function main() {
     CODEX_HOME: codexDir,
     LOG_FILE: tempLogFile,
     AGENTBOARD_DB_PATH: tempDbPath,
+    // Test servers get their own data dir so the single-instance lock
+    // (<dataDir>/server.lock) never collides with a dev's running instance.
+    AGENTBOARD_DATA_DIR: tempRoot,
     // Default skipMatchingPatterns excludes /tmp/* and /var/folders/* — both
     // common locations for test working directories (worktrees, CI runners on
     // some platforms). Tests that exercise matching logic from those paths

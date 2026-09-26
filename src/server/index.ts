@@ -57,6 +57,7 @@ import {
   type SyncedSettings,
 } from '../shared/syncedSettings'
 import { logger, logLevel, flushLogger } from './logger'
+import { acquireInstanceLock, releaseInstanceLock, InstanceLockError } from './instanceLock'
 import {
   SessionRefreshWorkerClient,
   SessionRefreshWorkerTimeoutError,
@@ -487,6 +488,24 @@ function createConnectionId(): string {
 }
 
 checkPortAvailable(config.port)
+// Refuse to share a data dir with a live agentboard server — the reconcile
+// loop would orphan that server's session claims (they're windows it can't
+// see). Isolated instances set AGENTBOARD_DATA_DIR and lock their own dir.
+try {
+  acquireInstanceLock(config.dataDir, config.port)
+} catch (error) {
+  if (error instanceof InstanceLockError) {
+    logger.error('instance_lock_held', {
+      dataDir: config.dataDir,
+      holderPid: error.holder.pid,
+      holderPort: error.holder.port,
+      holderSince: error.holder.startedAt,
+    })
+    flushLogger()
+    process.exit(1)
+  }
+  throw error
+}
 ensureTmux()
 const resolvedTerminalMode = resolveTerminalMode()
 logger.info('terminal_mode_resolved', {
@@ -2284,7 +2303,10 @@ async function cleanupAllTerminals() {
 // The log file is written synchronously; this drains the pretty-stdout
 // transport and is a cheap safety net on any exit path that reaches this
 // handler (normal exit, uncaught fatal, and the signal handlers below).
-process.on('exit', () => flushLogger())
+process.on('exit', () => {
+  releaseInstanceLock(config.dataDir)
+  flushLogger()
+})
 
 process.on('SIGINT', () => {
   void cleanupAllTerminals().finally(() => process.exit(0))
