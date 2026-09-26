@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.3](https://github.com/gbasin/agentboard/compare/v0.17.2...v0.17.3) (2026-09-26)
+
+
+### Bug Fixes
+
+* position mobile drawer scroll before open, not after it lands ([#302](https://github.com/gbasin/agentboard/issues/302)) ([9421d38](https://github.com/gbasin/agentboard/commit/9421d38ba53d3a26981e356cf641069fcee971b3))
+
 ## [0.17.2](https://github.com/gbasin/agentboard/compare/v0.17.1...v0.17.2) (2026-09-26)
 
 
