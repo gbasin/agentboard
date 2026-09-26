@@ -25,7 +25,7 @@ import Edit05Icon from '@untitledui-icons/react/line/esm/Edit05Icon'
 import Moon01Icon from '@untitledui-icons/react/line/esm/Moon01Icon'
 import PlusIcon from '@untitledui-icons/react/line/esm/PlusIcon'
 import type { AgentSession, Session, SessionKillSource } from '@shared/types'
-import { getSessionOrderKey, getUniqueHosts, getUniqueProjects, sortSessions } from '../utils/sessions'
+import { freezeListOrderDuringDrag, getSessionOrderKey, getUniqueHosts, getUniqueProjects, sortSessions } from '../utils/sessions'
 import { formatRelativeTime } from '../utils/time'
 import { getPathLeaf } from '../utils/sessionLabel'
 import { getSessionIdShort } from '../utils/sessionId'
@@ -216,15 +216,25 @@ export default function SessionList({
   // Clean up exiting session state after animations
   useExitCleanup(sessions, exitingSessions, clearExitingSession, EXIT_DURATION)
 
+  // Drag state: the active/over row ids plus a frozen snapshot of the list
+  // order, captured at drag start. Live session updates must not reorder the
+  // list under a held pointer (dnd-kit measures droppable rects against the
+  // rendered order; mid-drag churn teleports rows and mis-targets drops).
+  const [activeId, setActiveId] = useState<string | null>(null)
+  const [overId, setOverId] = useState<string | null>(null)
+  const [dragOrderSnapshot, setDragOrderSnapshot] = useState<string[] | null>(null)
+
   // Keep the selected row visible when selection changes (keyboard nav,
   // auto-select after kill, persisted selection on reload). A hibernating
   // selection renders no row while its section is collapsed — skip scrolling.
+  // Also skip while a drag is in progress: scrollIntoView would shift every
+  // droppable rect mid-gesture.
   const listScrollRef = useRef<HTMLDivElement>(null)
   useScrollToSelection(
     listScrollRef,
     selectedSessionId ?? selectedHibernatingSessionId,
     (id) => id !== selectedHibernatingSessionId || showHibernating,
-    scrollSelectionActive
+    scrollSelectionActive && !activeId
   )
 
 
@@ -401,13 +411,28 @@ export default function SessionList({
     })
   )
 
-  // Track active drag state for drop indicator
-  const [activeId, setActiveId] = useState<string | null>(null)
-  const [overId, setOverId] = useState<string | null>(null)
+  // While dragging, render in the snapshot order — never the live order.
+  const displaySessions = useMemo(
+    () => freezeListOrderDuringDrag(filteredSessions, dragOrderSnapshot),
+    [filteredSessions, dragOrderSnapshot]
+  )
 
-  const handleDragStart = useCallback((event: DragStartEvent) => {
-    setActiveId(event.active.id as string)
-  }, [])
+  // Stable items array for SortableContext: useSortable treats a new array
+  // identity as "items changed" and disables the displacement transition for
+  // that render — a fresh array on every dragOver re-render would pin
+  // `transition: transform 0s` on rows, undoing the eased glide.
+  const sortableItems = useMemo(
+    () => displaySessions.map((s) => s.id),
+    [displaySessions]
+  )
+
+  const handleDragStart = useCallback(
+    (event: DragStartEvent) => {
+      setActiveId(event.active.id as string)
+      setDragOrderSnapshot(filteredSessions.map((s) => s.id))
+    },
+    [filteredSessions]
+  )
 
   const handleDragOver = useCallback((event: DragOverEvent) => {
     setOverId(event.over?.id as string | null)
@@ -418,18 +443,21 @@ export default function SessionList({
       const { active, over } = event
       setActiveId(null)
       setOverId(null)
+      setDragOrderSnapshot(null)
 
       if (!over || active.id === over.id) {
         return
       }
 
-      const oldIndex = filteredSessions.findIndex((s) => s.id === active.id)
-      const newIndex = filteredSessions.findIndex((s) => s.id === over.id)
+      // Indices come from the frozen order — the order the user actually saw
+      // and aimed at — not the live order, which may have churned mid-drag.
+      const oldIndex = displaySessions.findIndex((s) => s.id === active.id)
+      const newIndex = displaySessions.findIndex((s) => s.id === over.id)
       if (oldIndex === -1 || newIndex === -1) {
         return
       }
 
-      const reorderedVisible = filteredSessions.map((s) => getSessionOrderKey(s))
+      const reorderedVisible = displaySessions.map((s) => getSessionOrderKey(s))
       const [removed] = reorderedVisible.splice(oldIndex, 1)
       reorderedVisible.splice(newIndex, 0, removed)
 
@@ -450,7 +478,7 @@ export default function SessionList({
       setManualSessionOrder(newOrder)
     },
     [
-      filteredSessions,
+      displaySessions,
       sortedSessions,
       sessionSortMode,
       setSessionSortMode,
@@ -461,6 +489,7 @@ export default function SessionList({
   const handleDragCancel = useCallback(() => {
     setActiveId(null)
     setOverId(null)
+    setDragOrderSnapshot(null)
   }, [])
 
   useEffect(() => {
@@ -468,6 +497,7 @@ export default function SessionList({
     const currentIds = new Set(filteredSessions.map((s) => s.id))
     if (activeId && !currentIds.has(activeId)) {
       setActiveId(null)
+      setDragOrderSnapshot(null)
     }
     if (overId && !currentIds.has(overId)) {
       setOverId(null)
@@ -553,7 +583,7 @@ export default function SessionList({
                 onDragCancel={handleDragCancel}
               >
                 <SortableContext
-                  items={filteredSessions.map((s) => s.id)}
+                  items={sortableItems}
                   strategy={verticalListSortingStrategy}
                 >
                   <div key={filterKey}>
@@ -561,7 +591,7 @@ export default function SessionList({
                         popLayout would overlap an exiting row with the sibling
                         snapping into its place */}
                     <AnimatePresence initial={false} mode="sync">
-                      {filteredSessions.map((session, index) => {
+                      {displaySessions.map((session, index) => {
                         const isTrulyNew = newlyActiveIds.has(session.id)
                         const isFilteredIn = newlyFilteredInIds.has(session.id)
                         const isRemote = session.remote === true
@@ -575,12 +605,13 @@ export default function SessionList({
                         )
                         // Calculate drop indicator position
                         const activeIndex = activeId
-                          ? filteredSessions.findIndex((s) => s.id === activeId)
+                          ? displaySessions.findIndex((s) => s.id === activeId)
                           : -1
                         const isOver = overId === session.id && activeId !== session.id
                         const showDropIndicator = isOver ? (activeIndex > index ? 'above' : 'below') : null
-                        // Show bounce for both new and filter-in, but delay only for truly new
-                        const isNew = isTrulyNew || isFilteredIn
+                        // Show bounce for both new and filter-in, but delay only for truly new.
+                        // Suppressed mid-drag: a bounce would fight the dnd-kit displacement transform.
+                        const isNew = (isTrulyNew || isFilteredIn) && !activeId
                         return (
                           <SortableSessionItem
                             key={session.id}
@@ -795,7 +826,11 @@ const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>
   const dndTransform = CSS.Transform.toString(transform)
   const shouldApplyStyleTransform = Boolean(prefersReducedMotion && dndTransform)
   const style = {
-    ...(shouldApplyStyleTransform ? { transform: dndTransform, transition } : {}),
+    ...(shouldApplyStyleTransform ? { transform: dndTransform } : {}),
+    // dnd-kit's transition only applies while sorting (or during the drop
+    // settle) — the dragged node gets undefined so it tracks the pointer 1:1.
+    // Without it, displaced siblings teleport instead of easing out of the way.
+    ...(transition && !prefersReducedMotion ? { transition } : {}),
     zIndex: isDragging ? 10 : undefined,
     opacity: isDragging ? 0.9 : undefined,
   }
@@ -1092,6 +1127,9 @@ function SessionRow({
               onBlur={handleSubmit}
               onKeyDown={handleKeyDown}
               onClick={(e) => e.stopPropagation()}
+              // Without this, dragging to select text inside the input arms
+              // the row's dnd-kit PointerSensor on the wrapper.
+              onPointerDown={(e) => e.stopPropagation()}
               className="min-w-0 flex-1 rounded border border-border bg-surface px-1.5 py-0.5 text-sm font-medium text-primary outline-none focus:border-accent"
             />
           ) : (

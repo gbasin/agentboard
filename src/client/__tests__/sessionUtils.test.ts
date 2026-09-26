@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { AgentSession, Session } from '@shared/types'
-import { getUniqueProjects } from '../utils/sessions'
+import { freezeListOrderDuringDrag, getUniqueProjects } from '../utils/sessions'
 
 const baseSession: Session = {
   id: 'session-1',
@@ -61,5 +61,74 @@ describe('getUniqueProjects', () => {
     ]
 
     expect(getUniqueProjects(sessions, history)).toEqual([])
+  })
+})
+
+describe('freezeListOrderDuringDrag', () => {
+  test('passes the live order through when there is no snapshot', () => {
+    const sessions = [makeSession({ id: 'a' }), makeSession({ id: 'b' })]
+    expect(freezeListOrderDuringDrag(sessions, null)).toBe(sessions)
+  })
+
+  test('keeps the snapshot order when the live order re-sorts mid-drag', () => {
+    const snapshot = ['a', 'b', 'c']
+    const live = [
+      makeSession({ id: 'c' }),
+      makeSession({ id: 'a' }),
+      makeSession({ id: 'b' }),
+    ]
+    expect(freezeListOrderDuringDrag(live, snapshot).map((s) => s.id)).toEqual([
+      'a',
+      'b',
+      'c',
+    ])
+  })
+
+  test('appends sessions that appear mid-drag at the end', () => {
+    const snapshot = ['a', 'b']
+    const live = [
+      makeSession({ id: 'new' }),
+      makeSession({ id: 'a' }),
+      makeSession({ id: 'b' }),
+    ]
+    expect(freezeListOrderDuringDrag(live, snapshot).map((s) => s.id)).toEqual([
+      'a',
+      'b',
+      'new',
+    ])
+  })
+
+  test('drops sessions that disappear mid-drag', () => {
+    const snapshot = ['a', 'b', 'c']
+    const live = [makeSession({ id: 'a' }), makeSession({ id: 'c' })]
+    expect(freezeListOrderDuringDrag(live, snapshot).map((s) => s.id)).toEqual([
+      'a',
+      'c',
+    ])
+  })
+
+  test('handles simultaneous reorder, add, and remove', () => {
+    const snapshot = ['a', 'b', 'c', 'd']
+    const live = [
+      makeSession({ id: 'd' }),
+      makeSession({ id: 'x' }),
+      makeSession({ id: 'a' }),
+      makeSession({ id: 'c' }),
+    ]
+    expect(freezeListOrderDuringDrag(live, snapshot).map((s) => s.id)).toEqual([
+      'a',
+      'c',
+      'd',
+      'x',
+    ])
+  })
+
+  test('returns a fresh array containing the live session objects', () => {
+    const snapshot = ['a', 'b']
+    const liveA = makeSession({ id: 'a', name: 'updated-name' })
+    const live = [liveA, makeSession({ id: 'b' })]
+    const frozen = freezeListOrderDuringDrag(live, snapshot)
+    expect(frozen[0]).toBe(liveA)
+    expect(frozen).not.toBe(live)
   })
 })
