@@ -223,6 +223,7 @@ export default function SessionList({
   const [activeId, setActiveId] = useState<string | null>(null)
   const [overId, setOverId] = useState<string | null>(null)
   const [dragOrderSnapshot, setDragOrderSnapshot] = useState<string[] | null>(null)
+  const lastNonActiveOverIdRef = useRef<string | null>(null)
 
   // Keep the selected row visible when selection changes (keyboard nav,
   // auto-select after kill, persisted selection on reload). A hibernating
@@ -430,12 +431,20 @@ export default function SessionList({
     (event: DragStartEvent) => {
       setActiveId(event.active.id as string)
       setDragOrderSnapshot(filteredSessions.map((s) => s.id))
+      lastNonActiveOverIdRef.current = null
     },
     [filteredSessions]
   )
 
   const handleDragOver = useCallback((event: DragOverEvent) => {
-    setOverId(event.over?.id as string | null)
+    const id = (event.over?.id as string | null) ?? null
+    setOverId(id)
+    // closestCenter reports the dragged row as `over` when the pointer sits
+    // over its rect. Remember the last real target row so a drop on that
+    // frame still commits to the slot the displaced rows were showing.
+    if (id && id !== event.active.id) {
+      lastNonActiveOverIdRef.current = id
+    }
   }, [])
 
   const handleDragEnd = useCallback(
@@ -445,14 +454,21 @@ export default function SessionList({
       setOverId(null)
       setDragOrderSnapshot(null)
 
-      if (!over || active.id === over.id) {
+      const overId =
+        over && over.id !== active.id
+          ? (over.id as string)
+          : over?.id === active.id
+            ? lastNonActiveOverIdRef.current
+            : null
+      lastNonActiveOverIdRef.current = null
+      if (!overId) {
         return
       }
 
       // Indices come from the frozen order — the order the user actually saw
       // and aimed at — not the live order, which may have churned mid-drag.
       const oldIndex = displaySessions.findIndex((s) => s.id === active.id)
-      const newIndex = displaySessions.findIndex((s) => s.id === over.id)
+      const newIndex = displaySessions.findIndex((s) => s.id === overId)
       if (oldIndex === -1 || newIndex === -1) {
         return
       }
@@ -490,6 +506,7 @@ export default function SessionList({
     setActiveId(null)
     setOverId(null)
     setDragOrderSnapshot(null)
+    lastNonActiveOverIdRef.current = null
   }, [])
 
   useEffect(() => {
@@ -607,7 +624,15 @@ export default function SessionList({
                         const activeIndex = activeId
                           ? displaySessions.findIndex((s) => s.id === activeId)
                           : -1
-                        const isOver = overId === session.id && activeId !== session.id
+                        // Over the dragged row's own rect counts as the last
+                        // real target — keeps the indicator from blinking off.
+                        const effectiveOverId =
+                          overId && overId !== activeId
+                            ? overId
+                            : overId === activeId
+                              ? lastNonActiveOverIdRef.current
+                              : null
+                        const isOver = effectiveOverId === session.id
                         const showDropIndicator = isOver ? (activeIndex > index ? 'above' : 'below') : null
                         // Show bounce for both new and filter-in, but delay only for truly new.
                         // Suppressed mid-drag: a bounce would fight the dnd-kit displacement transform.
