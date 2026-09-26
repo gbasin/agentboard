@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.18.0](https://github.com/gbasin/agentboard/compare/v0.17.3...v0.18.0) (2026-09-26)
+
+
+### Features
+
+* data-dir instance lock; stabilize session list drag-and-drop ([3888f43](https://github.com/gbasin/agentboard/commit/3888f43ea6a42b53eaf1ebb46d581d014fff72aa))
+* refuse to share a data dir between agentboard servers ([3888f43](https://github.com/gbasin/agentboard/commit/3888f43ea6a42b53eaf1ebb46d581d014fff72aa))
+
+
+### Bug Fixes
+
+* commit drops released over the dragged row's own rect ([3888f43](https://github.com/gbasin/agentboard/commit/3888f43ea6a42b53eaf1ebb46d581d014fff72aa))
+* stabilize session list drag-and-drop ([3888f43](https://github.com/gbasin/agentboard/commit/3888f43ea6a42b53eaf1ebb46d581d014fff72aa))
+
 ## [0.17.3](https://github.com/gbasin/agentboard/compare/v0.17.2...v0.17.3) (2026-09-26)
 
 
