@@ -226,17 +226,18 @@ jobs:
           git commit -m "agentboard ${VERSION}"
           git push
 
-      # release-please bumps package.json optionalDependencies via extra-files
-      # but never regenerates bun.lock, so every release leaves master failing
-      # `bun install --frozen-lockfile`. The platform packages only exist on
-      # npm after this job publishes them, so the lockfile can only be synced
-      # here, post-publish — never in the release PR itself. Runs last so a
-      # failure can't block release-critical steps.
+      # release-please deliberately does NOT bump package.json
+      # optionalDependencies in the release PR (see release-please-config.json):
+      # the platform packages don't exist on npm until this job publishes them,
+      # so a bumped-but-unresolvable package.json would break
+      # `bun install --frozen-lockfile` on master for the whole release window.
+      # This step moves optionalDependencies and bun.lock forward together,
+      # post-publish. Runs last so a failure can't block release-critical steps.
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6  # v2.2.0
         with:
           bun-version-file: .bun-version
 
-      - name: Sync bun.lock optionalDeps on master
+      - name: Sync optionalDeps and bun.lock on master
         run: |
           VERSION=${{ steps.version.outputs.version }}
 
@@ -256,11 +257,12 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git fetch origin master
           git checkout --detach FETCH_HEAD
+          node scripts/update-optional-deps.js "$VERSION"
           bun install
-          if git diff --quiet bun.lock; then
-            echo "bun.lock already in sync"
+          if git diff --quiet; then
+            echo "optionalDeps and bun.lock already in sync"
             exit 0
           fi
-          git add bun.lock
-          git commit -m "chore: sync bun.lock optionalDeps for ${RELEASE_TAG}"
+          git add package.json bun.lock
+          git commit -m "chore: sync optionalDeps and bun.lock for ${RELEASE_TAG}"
           git push origin HEAD:master

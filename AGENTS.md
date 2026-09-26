@@ -69,7 +69,7 @@ dev-only `tools/fad-dump` shim). The shim is never a runtime dependency.
 - Managed by [release-please](.github/workflows/release-please.yml); it scans conventional commits on `master` and maintains a release PR that bumps `package.json` and `CHANGELOG.md`.
 - Do NOT bump `package.json` version or add `(vX.Y.Z)` suffixes in change PRs — the release PR owns versioning. `fix:`/`perf:` → patch, `feat:` → minor, `feat!:`/`BREAKING CHANGE:` → major.
 - Merge the release PR to ship: release-please creates the tag + GitHub release, and `release.yml` (dispatched from the same workflow run) builds binaries and publishes npm packages.
-- `release.yml`'s last step regenerates `bun.lock` on master post-publish — release-please bumps `optionalDependencies` but never updates the lockfile, and the new platform packages only resolve once published.
+- `release-please` does NOT bump `optionalDependencies` (no `extra-files` in `release-please-config.json`) — the platform packages don't exist on npm until `release.yml` publishes them, so an early bump would leave master failing `bun install --frozen-lockfile`. `release.yml`'s last step syncs `optionalDependencies` + `bun.lock` together on master post-publish.
 - Overrides: `Release-As: x.y.z` in a merge commit body pins the next release to that version; a manual `git tag vX.Y.Z && git push` still runs the full pipeline (but skips the `package.json` bump); the Release Please workflow can be re-run manually via `workflow_dispatch`.
 
 ## Critical Thinking
