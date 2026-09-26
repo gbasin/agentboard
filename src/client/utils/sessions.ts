@@ -67,6 +67,37 @@ export function sortSessions(
   })
 }
 
+/**
+ * Freeze the visible row order while a drag is in progress. Live session
+ * updates (status flips, new sessions, removals) would otherwise reorder or
+ * reflow the list under the pointer — dnd-kit measures droppable rects against
+ * the rendered order, so mid-drag churn produces teleporting rows and drops
+ * landing on the wrong target.
+ *
+ * Rows present in `snapshotIds` keep their snapshot order; sessions that
+ * appeared after the snapshot append in live order at the end (they can't be
+ * drop targets, but they do render). Removed sessions drop out naturally.
+ */
+export function freezeListOrderDuringDrag<T extends { id: string }>(
+  sessions: T[],
+  snapshotIds: string[] | null
+): T[] {
+  if (!snapshotIds) return sessions
+  const byId = new Map(sessions.map((s) => [s.id, s]))
+  const frozen: T[] = []
+  for (const id of snapshotIds) {
+    const session = byId.get(id)
+    if (session) {
+      frozen.push(session)
+      byId.delete(id)
+    }
+  }
+  for (const session of sessions) {
+    if (byId.has(session.id)) frozen.push(session)
+  }
+  return frozen
+}
+
 export function getUniqueProjects(
   sessions: Session[],
   historySessions: AgentSession[]

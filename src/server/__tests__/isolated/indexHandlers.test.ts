@@ -92,6 +92,9 @@ const defaultConfig = {
   tmuxTimeoutMs: 3000,
   tmuxMutationTimeoutMs: 15000,
   pasteImageMaxBytes: 40 * 1024 * 1024,
+  // Real config.dataDir feeds the single-instance lock; point it at a
+  // per-process tmp dir so re-imports in this process share a lock harmlessly.
+  dataDir: path.join(os.tmpdir(), `agentboard-indexhandlers-${process.pid}`),
 }
 
 const configState = { ...defaultConfig }

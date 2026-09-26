@@ -101,10 +101,9 @@ export interface SessionDatabase {
   close: () => void
 }
 
-const DEFAULT_DATA_DIR = path.join(
-  process.env.HOME || process.env.USERPROFILE || '',
-  '.agentboard'
-)
+const DEFAULT_DATA_DIR =
+  process.env.AGENTBOARD_DATA_DIR?.trim() ||
+  path.join(process.env.HOME || process.env.USERPROFILE || '', '.agentboard')
 const DEFAULT_DB_PATH = path.join(DEFAULT_DATA_DIR, 'agentboard.db')
 const DB_PATH_ENV = 'AGENTBOARD_DB_PATH'
 

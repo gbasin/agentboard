@@ -2,7 +2,10 @@ import os from 'node:os'
 import path from 'node:path'
 
 if (!process.env.LOG_FILE) {
-  process.env.LOG_FILE = path.join(os.homedir(), '.agentboard', 'agentboard.log')
+  const dataDir =
+    process.env.AGENTBOARD_DATA_DIR?.trim() ||
+    path.join(os.homedir(), '.agentboard')
+  process.env.LOG_FILE = path.join(dataDir, 'agentboard.log')
 }
 
 const child = Bun.spawn(['bun', '--watch', 'src/server/index.ts'], {
