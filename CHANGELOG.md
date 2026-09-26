@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.2](https://github.com/gbasin/agentboard/compare/v0.17.1...v0.17.2) (2026-09-26)
+
+
+### Bug Fixes
+
+* **ci:** keep bun.lock resolvable during the release window ([#300](https://github.com/gbasin/agentboard/issues/300)) ([771af30](https://github.com/gbasin/agentboard/commit/771af301ad06b91c96b53c7b78f8a47a69c188b0))
+
 ## [0.17.1](https://github.com/gbasin/agentboard/compare/v0.17.0...v0.17.1) (2026-09-25)
 
 
