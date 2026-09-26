@@ -212,6 +212,8 @@ beforeEach(() => {
     removeEventListener: () => {},
     setTimeout: (() => 1 as unknown as ReturnType<typeof setTimeout>) as unknown as typeof setTimeout,
     clearTimeout: (() => {}) as typeof clearTimeout,
+    scrollY: 0,
+    scrollTo: () => {},
     matchMedia: () => ({
       matches: false,
       addEventListener: () => {},
@@ -222,6 +224,7 @@ beforeEach(() => {
 
   globalAny.document = {
     fonts: { ready: Promise.resolve() },
+    body: { style: {} },
     addEventListener: () => {},
     removeEventListener: () => {},
     querySelector: () => null,

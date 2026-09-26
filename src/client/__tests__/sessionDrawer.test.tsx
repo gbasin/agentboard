@@ -40,6 +40,7 @@ function setupDom() {
 
   globalAny.document = {
     activeElement: null,
+    body: { style: {} },
     addEventListener: (event: string, handler: EventListener) => {
       keyHandlers.set(event, handler)
     },
@@ -61,6 +62,8 @@ function setupDom() {
   } as unknown as Navigator
 
   globalAny.window = {
+    scrollY: 0,
+    scrollTo: () => {},
     matchMedia: (query: string) => ({
       matches: prefersReducedMotion && query.includes('prefers-reduced-motion'),
       addEventListener: () => {},
