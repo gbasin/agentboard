@@ -4,7 +4,7 @@
  * Close by: tap backdrop, press Escape, or swipe left
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { useReducedMotion } from 'motion/react'
 import type { AgentSession, Session } from '@shared/types'
 import SessionList from './SessionList'
@@ -50,23 +50,28 @@ export default function SessionDrawer({
   const drawerRef = useRef<HTMLDivElement>(null)
   const previousFocusRef = useRef<HTMLElement | null>(null)
 
-  // Scroll-to-selection only once the open transition has fully landed.
-  // Calling scrollIntoView while the drawer is still transformed off-screen
-  // miscomputes on iOS Safari (it can scroll the list to the end), so the
-  // list stays inert until the drawer is visibly in place.
-  const [settled, setSettled] = useState(false)
+  // Lock body scroll while the drawer is open (vaul-style): fixing body
+  // position prevents iOS Safari from scrolling/rubber-banding the page
+  // behind the drawer; scrollY is restored on close.
   useEffect(() => {
-    if (!isOpen) {
-      setSettled(false)
-      return
+    if (!isOpen || typeof document === 'undefined') return
+    const { body } = document
+    const scrollY = window.scrollY
+    const prev = {
+      position: body.style.position,
+      top: body.style.top,
+      width: body.style.width,
     }
-    if (prefersReducedMotion) {
-      setSettled(true)
-      return
+    body.style.position = 'fixed'
+    body.style.top = `-${scrollY}px`
+    body.style.width = '100%'
+    return () => {
+      body.style.position = prev.position
+      body.style.top = prev.top
+      body.style.width = prev.width
+      window.scrollTo(0, scrollY)
     }
-    const timer = setTimeout(() => setSettled(true), 250)
-    return () => clearTimeout(timer)
-  }, [isOpen, prefersReducedMotion])
+  }, [isOpen])
 
   // Handle Escape key to close
   useEffect(() => {
@@ -89,10 +94,10 @@ export default function SessionDrawer({
       // Store current focus
       previousFocusRef.current = document.activeElement as HTMLElement
       // Focus the drawer
-      drawerRef.current?.focus()
+      drawerRef.current?.focus({ preventScroll: true })
     } else if (previousFocusRef.current) {
       // Return focus to previous element
-      previousFocusRef.current.focus()
+      previousFocusRef.current.focus({ preventScroll: true })
       previousFocusRef.current = null
     }
   }, [isOpen])
@@ -185,7 +190,7 @@ export default function SessionDrawer({
           onResume={onResume}
           onHibernate={onHibernate}
           onMoveToHistory={onMoveToHistory}
-          scrollSelectionActive={settled}
+          scrollSelectionActive={isOpen}
           onNewSession={() => {
             if (onNewSession() !== false) onClose()
           }}
