@@ -171,6 +171,158 @@ describe('extractPullRequests', () => {
     expect(extractPullRequests(content).map((p) => p.number)).toEqual([77])
   })
 
+  test('works on codex unified-exec CommandExecution entries', () => {
+    // cli ~0.150+: the create call is an `exec` custom_tool_call wrapping a
+    // JS snippet, and the URL lands in a later custom_tool_call_output for a
+    // *different* call_id (a write_stdin poll). The item_completed
+    // CommandExecution entry carries argv + stdout on the same line.
+    const content = [
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call',
+          id: 'ctc_1',
+          status: 'completed',
+          call_id: 'call_create',
+          name: 'exec',
+          input:
+            'text(await tools.exec_command({cmd:"gh pr create --fill",yield_time_ms:1000}));',
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call_output',
+          id: 'ctco_1',
+          call_id: 'call_create',
+          output: [
+            { type: 'input_text', text: '{"session_id":94558,"output":""}' },
+          ],
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call',
+          id: 'ctc_2',
+          call_id: 'call_poll',
+          name: 'exec',
+          input:
+            'text(await tools.write_stdin({session_id:94558,chars:""}));',
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call_output',
+          id: 'ctco_2',
+          call_id: 'call_poll',
+          output: [
+            {
+              type: 'input_text',
+              text: '{"output":"https://github.com/o/r/pull/88\\n"}',
+            },
+          ],
+        },
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'item_completed',
+          item: {
+            type: 'CommandExecution',
+            id: 'exec-1',
+            command: ['/bin/zsh', '-lc', 'gh pr create --fill'],
+            status: 'completed',
+            stdout: 'https://github.com/o/r/pull/88\n',
+            exit_code: 0,
+          },
+        },
+      }),
+    ].join('\n')
+
+    expect(extractPullRequests(content).map((p) => p.number)).toEqual([88])
+  })
+
+  test('works on codex custom_tool_call_output sharing the create call_id', () => {
+    // When the exec finishes inside the first yield window, the URL arrives
+    // in a custom_tool_call_output for the create's own call_id — no
+    // CommandExecution entry is needed for attribution.
+    const content = [
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call',
+          id: 'ctc_9',
+          status: 'completed',
+          call_id: 'call_fast',
+          name: 'exec',
+          input:
+            'text(await tools.exec_command({cmd:"gh pr create --fill"}));',
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call_output',
+          id: 'ctco_9',
+          call_id: 'call_fast',
+          output: [
+            {
+              type: 'input_text',
+              text: '{"output":"https://github.com/o/r/pull/91\\n"}',
+            },
+          ],
+        },
+      }),
+    ].join('\n')
+
+    expect(extractPullRequests(content).map((p) => p.number)).toEqual([91])
+  })
+
+  test('ignores CommandExecution entries that did not run gh pr create', () => {
+    const content = [
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'item_completed',
+          item: {
+            type: 'CommandExecution',
+            id: 'exec-2',
+            command: ['/bin/zsh', '-lc', 'gh pr list --json url'],
+            status: 'completed',
+            stdout: 'https://github.com/o/r/pull/8\n',
+            exit_code: 0,
+          },
+        },
+      }),
+    ].join('\n')
+
+    expect(extractPullRequests(content)).toEqual([])
+  })
+
+  test('ignores gh pr create text in CommandExecution stdout only', () => {
+    const content = [
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'item_completed',
+          item: {
+            type: 'CommandExecution',
+            id: 'exec-3',
+            command: ['/bin/zsh', '-lc', 'cat notes.md'],
+            status: 'completed',
+            stdout:
+              'run gh pr create like https://github.com/o/r/pull/12\n',
+            exit_code: 0,
+          },
+        },
+      }),
+    ].join('\n')
+
+    expect(extractPullRequests(content)).toEqual([])
+  })
+
   test('works on pi-style toolCall/toolResult entries', () => {
     const content = [
       JSON.stringify({
