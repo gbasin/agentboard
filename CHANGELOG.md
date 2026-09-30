@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.1](https://github.com/gbasin/agentboard/compare/v0.19.0...v0.19.1) (2026-09-30)
+
+
+### Bug Fixes
+
+* give the +N PR flyout an opaque tray ([#310](https://github.com/gbasin/agentboard/issues/310)) ([6aec2b6](https://github.com/gbasin/agentboard/commit/6aec2b65a42f049ca44079676851ca610f404659))
+
 ## [0.19.0](https://github.com/gbasin/agentboard/compare/v0.18.0...v0.19.0) (2026-09-30)
 
 
