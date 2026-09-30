@@ -122,10 +122,15 @@ test('sweeping across spilled chips swaps detail cards without closing the strip
   await expect(detailCard).toBeVisible()
 
   // Sweep to the neighbor: the first card closes, the second's opens —
-  // exactly one card at a time, strip untouched throughout.
+  // exactly one card at a time, strip untouched throughout. The card's
+  // first link identifies whose card it is (the card can link the same
+  // PR twice once its detail loads, so don't match on href alone).
   await chips.nth(1).hover()
   await expect(detailCard).toHaveCount(1)
-  await expect(detailCard.locator(`a[href="${secondHref}"]`)).toBeVisible()
+  await expect(detailCard.locator('a').first()).toHaveAttribute(
+    'href',
+    secondHref!
+  )
   await page.waitForTimeout(400)
   await expect(strip).toBeVisible()
   await expect(detailCard).toHaveCount(1)
@@ -176,9 +181,13 @@ test('footer rail +N spills chips above the bar', async ({ page }) => {
   await routeSessionsWithPrs(page)
   await page.goto('/')
 
-  // Select the session so the rail renders its chip row.
+  // Select the session so the rail renders its chip row. Clicking also
+  // scrolls the selection into view — a still-in-flight scroll event
+  // would close a freshly opened strip, so settle before hovering.
   const card = page.getByTestId('session-card').first()
   await card.click()
+  await expect(page.getByTestId('terminal-panel')).toBeVisible()
+  await page.waitForTimeout(500)
 
   const rail = page.locator('footer')
   const more = rail.getByRole('button', { name: /\d+ more PRs?$/ })
