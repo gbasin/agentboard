@@ -55,6 +55,21 @@ dev-only `tools/fad-dump` shim). The shim is never a runtime dependency.
   targets the real server — `kill-server`/`kill-session` will destroy live
   windows. Always run probes with `env -u TMUX tmux -L <socket-name>` against a
   dedicated socket, and never `kill-server` without explicit confirmation.
+- The same applies to running a second **server** (dev, verify, manual e2e).
+  Started from an agentboard pane, it inherits `TMUX`, joins the live tmux
+  server, and groups its sessions with the live `agentboard` session — the
+  live board then shows duplicate windows, and killing one kills the real
+  window. The server now refuses to start with `TMUX` set. Give it a private
+  socket and data dir instead:
+
+  ```
+  TMUX_TMPDIR=/tmp/ab-dev-$$ AGENTBOARD_DATA_DIR=/tmp/ab-dev-$$/data \
+    PORT=4141 TMUX_SESSION=ab-dev bun run dev
+  ```
+
+  `bun run test:e2e` already isolates itself. Stop what you started
+  (`env -u TMUX TMUX_TMPDIR=/tmp/ab-dev-$$ tmux kill-server`) and remove the
+  temp dir when done.
 
 ## Git
 
