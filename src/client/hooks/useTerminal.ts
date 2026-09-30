@@ -1732,11 +1732,19 @@ export function useTerminal({
         message.sessionId === attachedSession
       ) {
         const nextAppMouse = message.appMouse === true && !message.inCopyMode
-        const wasAppMouse = appMouseRef.current
         appMouseRef.current = nextAppMouse
         altScreenRef.current = message.altScreen === true
 
-        if (!wasAppMouse && nextAppMouse) {
+        // Re-assert on every status (750ms poll), not only on a false→true
+        // transition. xterm's DECSET mouse modes can be lost without any
+        // transition — terminal.reset()/recreation, tmux mode-sync gaps —
+        // and a stale `wasAppMouse` would then leave the pane permanently
+        // unable to receive mouse input (drags degrade to dead DOM
+        // selections; selection+copy in Claude/Codex TUIs never runs).
+        // The write is an idempotent mode-set, and `nextAppMouse` already
+        // reflects the pane's current flag, so this can't fight an app that
+        // legitimately disabled mouse reporting.
+        if (nextAppMouse) {
           terminalRef.current?.write(ENABLE_MOUSE_TRACKING)
         }
 
