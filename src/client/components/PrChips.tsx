@@ -346,6 +346,7 @@ function PrChip({
         createPortal(
           <div
             ref={cardRef}
+            data-testid="pr-hovercard"
             className="fixed z-[100] flex w-64 flex-col rounded-md border border-border bg-elevated p-2 text-left shadow-lg"
             style={{
               left: pos.left,
@@ -503,6 +504,7 @@ function OverflowChip({
           <FlyoutRetainContext.Provider value={retainNested}>
             <div
               ref={cardRef}
+              data-testid="pr-flyout"
               className="fixed z-[100] flex max-w-72 flex-wrap items-center gap-1 overflow-y-auto"
               style={{
                 left: pos.left,
