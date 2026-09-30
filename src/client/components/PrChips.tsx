@@ -75,12 +75,12 @@ function stateGlyph(info: PrInfo | undefined): {
       // what tells a draft apart from an unfetched or errored chip.
       return {
         Icon: GitPullRequestIcon,
-        cls: info.isDraft ? 'text-muted' : 'text-green-500',
+        cls: info.isDraft ? 'text-muted' : 'text-pr-open',
       }
     case 'MERGED':
-      return { Icon: GitMergeIcon, cls: 'text-purple-500' }
+      return { Icon: GitMergeIcon, cls: 'text-pr-merged' }
     case 'CLOSED':
-      return { Icon: GitPullRequestIcon, cls: 'text-red-500' }
+      return { Icon: GitPullRequestIcon, cls: 'text-pr-closed' }
     default:
       return { Icon: GitPullRequestIcon, cls: 'text-muted' }
   }
@@ -143,12 +143,12 @@ function checkIcon(c: {
 }): { glyph: string; cls: string } {
   if (c.status === 'COMPLETED') {
     if (c.conclusion === 'SUCCESS')
-      return { glyph: '✓', cls: 'text-green-500' }
+      return { glyph: '✓', cls: 'text-pr-open' }
     if (c.conclusion && NEUTRAL_CONCLUSIONS.has(c.conclusion))
       return { glyph: '–', cls: 'text-muted' }
-    return { glyph: '✗', cls: 'text-red-500' }
+    return { glyph: '✗', cls: 'text-pr-closed' }
   }
-  return { glyph: '…', cls: 'text-yellow-500' }
+  return { glyph: '…', cls: 'text-pr-pending' }
 }
 
 // Shared eager fetch: fills infoCache for any urls not yet known/in-flight.

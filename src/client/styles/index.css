@@ -89,6 +89,12 @@
   --waiting: #3b82f6;
   --danger: #ef4444;
 
+  /* PR chip / CI check colors */
+  --pr-open: #22c55e;
+  --pr-merged: #a855f7;
+  --pr-closed: #ef4444;
+  --pr-pending: #eab308;
+
   /* Accent */
   --accent: #3b82f6;
 }
@@ -117,6 +123,13 @@
   --approval: #d97706;
   --waiting: #2563eb;
   --danger: #dc2626;
+
+  /* PR chip / CI check colors - darker still: 11px text and a 12px
+     glyph wash out at 500 on white */
+  --pr-open: #16a34a;
+  --pr-merged: #9333ea;
+  --pr-closed: #dc2626;
+  --pr-pending: #a16207;
 
   /* Accent */
   --accent: #2563eb;

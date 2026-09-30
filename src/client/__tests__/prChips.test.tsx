@@ -460,7 +460,7 @@ describe('PrChips info fetch resilience', () => {
         (el) =>
           el.type === 'svg' &&
           typeof el.props.className === 'string' &&
-          /text-(muted|green-500|purple-500|red-500)/.test(el.props.className)
+          /text-(muted|pr-open|pr-merged|pr-closed|pr-pending)/.test(el.props.className)
       )
       .map((el) => el.props.className as string)
 
@@ -513,7 +513,7 @@ describe('PrChips info fetch resilience', () => {
     })
     await act(async () => {})
     expect(fetchMock.mock.calls.length).toBeGreaterThan(calls)
-    expect(hasIconColor(r2.root, 'text-green-500')).toBe(true)
+    expect(hasIconColor(r2.root, 'text-pr-open')).toBe(true)
     act(() => r2.unmount())
   })
 
@@ -538,7 +538,7 @@ describe('PrChips info fetch resilience', () => {
     resolveFetch(infoResponse(pr.url, 'OPEN'))
     await act(async () => {})
     expect(fetchMock.mock.calls.length).toBe(1)
-    expect(hasIconColor(r2.root, 'text-green-500')).toBe(true)
+    expect(hasIconColor(r2.root, 'text-pr-open')).toBe(true)
     act(() => r2.unmount())
   })
 
@@ -552,7 +552,7 @@ describe('PrChips info fetch resilience', () => {
       })
     })
     await act(async () => {})
-    expect(hasIconColor(renderer.root, 'text-green-500')).toBe(true)
+    expect(hasIconColor(renderer.root, 'text-pr-open')).toBe(true)
 
     // Age the cache past the 60s TTL, swap the response, then simulate
     // the PWA resuming from suspension.
@@ -566,7 +566,7 @@ describe('PrChips info fetch resilience', () => {
     await act(async () => {})
     Date.now = realNow
     expect(fetchMock.mock.calls.length).toBeGreaterThan(calls)
-    expect(hasIconColor(renderer.root, 'text-purple-500')).toBe(true)
+    expect(hasIconColor(renderer.root, 'text-pr-merged')).toBe(true)
     act(() => renderer.unmount())
   })
 
@@ -595,7 +595,7 @@ describe('PrChips info fetch resilience', () => {
     await act(async () => {})
     act(() => openCard(renderer.root)) // caches checks with state=OPEN
     await act(async () => {})
-    expect(hasIconColor(renderer.root, 'text-green-500')).toBe(true)
+    expect(hasIconColor(renderer.root, 'text-pr-open')).toBe(true)
 
     // PR merges; the info cache ages out; a resume triggers a refetch.
     state = 'MERGED'
@@ -606,8 +606,8 @@ describe('PrChips info fetch resilience', () => {
     })
     await act(async () => {})
     Date.now = realNow
-    expect(hasIconColor(renderer.root, 'text-purple-500')).toBe(true)
-    expect(hasIconColor(renderer.root, 'text-green-500')).toBe(false)
+    expect(hasIconColor(renderer.root, 'text-pr-merged')).toBe(true)
+    expect(hasIconColor(renderer.root, 'text-pr-open')).toBe(false)
     act(() => renderer.unmount())
   })
 
@@ -630,7 +630,7 @@ describe('PrChips info fetch resilience', () => {
         })
       })
       await act(async () => {})
-      expect(hasIconColor(renderer.root, 'text-green-500')).toBe(true)
+      expect(hasIconColor(renderer.root, 'text-pr-open')).toBe(true)
 
       // PR merges while the page sits open; cache ages past the TTL.
       fetchImpl = async () => infoResponse(pr.url, 'MERGED')
@@ -643,7 +643,7 @@ describe('PrChips info fetch resilience', () => {
       await act(async () => {})
       Date.now = realNow
       expect(fetchMock.mock.calls.length).toBeGreaterThan(calls)
-      expect(hasIconColor(renderer.root, 'text-purple-500')).toBe(true)
+      expect(hasIconColor(renderer.root, 'text-pr-merged')).toBe(true)
       act(() => renderer.unmount())
     } finally {
       globalThis.setInterval = realSetInterval
@@ -666,7 +666,7 @@ describe('PrChips info fetch resilience', () => {
       (el) =>
         el.type === 'svg' &&
         typeof el.props.className === 'string' &&
-        el.props.className.includes('text-red-500')
+        el.props.className.includes('text-pr-closed')
     )
     expect(svgs.length).toBe(2)
     act(() => renderer.unmount())
