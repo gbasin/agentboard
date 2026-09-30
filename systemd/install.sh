@@ -24,6 +24,7 @@ After=network.target
 
 [Service]
 Type=simple
+KillMode=process
 WorkingDirectory=$REPO_DIR
 ExecStart=$BUN_PATH run start
 Restart=on-failure
