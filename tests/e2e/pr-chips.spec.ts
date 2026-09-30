@@ -58,11 +58,13 @@ test('hovering +N spills hidden PRs as a bare chip strip', async ({
   // The hidden PRs render as real chip links — one per folded PR.
   await expect(strip.locator(PR_LINK)).toHaveCount(PRS.length - visibleCount)
 
-  // Bare strip: a wrapping pill cluster, no bordered-card chrome.
+  // Tray strip: a wrapping pill cluster on an opaque recessed plate so
+  // underlying text can't bleed through the gaps between pills.
   const cls = await strip.getAttribute('class')
   expect(cls).toContain('flex-wrap')
-  expect(cls).not.toContain('border')
-  expect(cls).not.toContain('shadow')
+  expect(cls).toContain('border')
+  expect(cls).toContain('shadow')
+  expect(cls).toContain('bg-surface')
   expect(cls).not.toContain('bg-elevated')
 
   // Clamped inside the viewport.

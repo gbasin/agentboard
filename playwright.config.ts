@@ -42,6 +42,10 @@ const piDir = join(tmuxTmpDir, 'pi')
 mkdirSync(claudeDir, { recursive: true })
 mkdirSync(codexDir, { recursive: true })
 mkdirSync(piDir, { recursive: true })
+// AGENTBOARD_DATA_DIR also moves the instance-lock file: without it the
+// spawned server sees the user's live agentboard holding ~/.agentboard and
+// exits (instance_lock_held) before e2e can start.
+process.env.AGENTBOARD_DATA_DIR = tmuxTmpDir
 process.env.AGENTBOARD_DB_PATH = `${tmuxTmpDir}/agentboard.db`
 process.env.LOG_FILE = `${tmuxTmpDir}/agentboard.log`
 process.env.AGENTBOARD_TMUX_PID_FILE = `${tmuxTmpDir}/tmux-server.pid`
