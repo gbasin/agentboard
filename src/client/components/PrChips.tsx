@@ -408,9 +408,10 @@ function PrChip({
   useEffect(() => {
     const c = cachedInfo(pr.url)
     if (c) {
-      // Cache may have filled between render and effect via a shared
-      // in-flight request — adopt it rather than fetching again.
-      setInfo((prev) => prev ?? c)
+      // Cache may have filled between render and effect — via a shared
+      // in-flight request or the row's interval revalidation — adopt it
+      // rather than fetching again.
+      setInfo(c)
       return
     }
     refreshInfo()
@@ -729,6 +730,21 @@ export function PrChips({
     return () =>
       document.removeEventListener?.('visibilitychange', onVisible)
   }, [])
+
+  // Passive revalidation: mount/resume/hover are the only other refresh
+  // paths, so without a timer a PR merged while the page sits open would
+  // leave its glyph stale indefinitely. One batch POST per row per TTL —
+  // fetchInfoBatch skips still-fresh urls — then the refreshKey bump lets
+  // each chip adopt the refreshed cache.
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (document.visibilityState === 'hidden') return
+      fetchInfoBatch(ordered.map((p) => p.url)).then(() =>
+        setRefreshKey((k) => k + 1)
+      )
+    }, INFO_TTL_MS)
+    return () => clearInterval(t)
+  }, [ordered])
 
   const recompute = useCallback(() => {
     const n = ordered.length

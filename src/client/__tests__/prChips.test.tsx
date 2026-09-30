@@ -611,6 +611,45 @@ describe('PrChips info fetch resilience', () => {
     act(() => renderer.unmount())
   })
 
+  test('interval revalidation flips a merged chip with no interaction', async () => {
+    // A visible chip in a long-lived page: no remount, resume, or hover —
+    // the row's timer is the only thing that can refresh it.
+    const pr = prFor(6)
+    fetchImpl = async () => infoResponse(pr.url, 'OPEN')
+    const intervals: (() => void)[] = []
+    const realSetInterval = globalThis.setInterval
+    globalThis.setInterval = ((fn: () => void) => {
+      intervals.push(fn)
+      return 0 as unknown as ReturnType<typeof setInterval>
+    }) as typeof setInterval
+    try {
+      let renderer!: TestRenderer.ReactTestRenderer
+      act(() => {
+        renderer = TestRenderer.create(<PrChips prs={[pr]} />, {
+          createNodeMock,
+        })
+      })
+      await act(async () => {})
+      expect(hasIconColor(renderer.root, 'text-green-500')).toBe(true)
+
+      // PR merges while the page sits open; cache ages past the TTL.
+      fetchImpl = async () => infoResponse(pr.url, 'MERGED')
+      const realNow = Date.now
+      Date.now = () => realNow() + 61_000
+      const calls = fetchMock.mock.calls.length
+      await act(async () => {
+        for (const fn of intervals) fn()
+      })
+      await act(async () => {})
+      Date.now = realNow
+      expect(fetchMock.mock.calls.length).toBeGreaterThan(calls)
+      expect(hasIconColor(renderer.root, 'text-purple-500')).toBe(true)
+      act(() => renderer.unmount())
+    } finally {
+      globalThis.setInterval = realSetInterval
+    }
+  })
+
   test('closed PRs render the pull-request glyph with a red × overlay', async () => {
     const pr = prFor(5)
     fetchImpl = async () => infoResponse(pr.url, 'CLOSED')
