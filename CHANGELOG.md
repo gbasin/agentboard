@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.0](https://github.com/gbasin/agentboard/compare/v0.20.1...v0.21.0) (2026-09-30)
+
+
+### Features
+
+* badge draft PR chips with a pencil glyph ([#321](https://github.com/gbasin/agentboard/issues/321)) ([b0b94eb](https://github.com/gbasin/agentboard/commit/b0b94eba1a28223c54b8175594588fff17962ec5))
+
 ## [0.20.1](https://github.com/gbasin/agentboard/compare/v0.20.0...v0.20.1) (2026-09-30)
 
 
