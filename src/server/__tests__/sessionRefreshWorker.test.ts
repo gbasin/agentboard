@@ -170,6 +170,42 @@ describe('sessionRefreshWorker', () => {
     expect(externalBootstrap).toBeUndefined()
   })
 
+  test('refresh hides sessions grouped with the managed session', async () => {
+    await loadWorker('refresh-grouped-duplicates')
+
+    // A second agentboard instance sharing the socket grouped its client
+    // session with `agentboard`, so it exposes the same window ids.
+    const grouped = 'agentboard-verify-ws-abc-x-agentboard-1ifnt9'
+    const listOutput = [
+      joinTmuxFields(['agentboard', '@11', 'live', '/Users/test/live', '100', '1700000000', 'claude', '80', '24']),
+      joinTmuxFields([grouped, '@11', 'live', '/Users/test/live', '100', '1700000000', 'claude', '80', '24']),
+      joinTmuxFields(['external-other', '@12', 'ext', '/Users/test/ext', '100', '1700000001', 'codex', '80', '24']),
+    ].join('\n')
+
+    bunAny.spawnSync = ((args: string[]) => ({
+      exitCode: 0,
+      stdout: Buffer.from(getTmuxSubcommand(args) === 'list-windows' ? listOutput : 'ready'),
+      stderr: Buffer.from(''),
+    }) as ReturnType<typeof Bun.spawnSync>) as typeof Bun.spawnSync
+
+    emitMessage({
+      id: '1',
+      kind: 'refresh',
+      managedSession: 'agentboard',
+      discoverPrefixes: [],
+    })
+
+    const response = getLastResponse()
+    if (response.type !== 'result' || response.kind !== 'refresh') {
+      throw new Error('Unexpected response type')
+    }
+
+    expect(response.sessions.map((session) => session.tmuxWindow).sort()).toEqual([
+      'agentboard:@11',
+      'external-other:@12',
+    ])
+  })
+
   test('refresh normalizes tmux-quoted pane_start_command', async () => {
     await loadWorker('refresh-quoted-command')
 

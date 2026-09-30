@@ -314,8 +314,21 @@ function listAllWindows(
 
   const sessions: Session[] = []
 
+  // A session grouped with (or linked into) the managed session shows the same
+  // window ids. Listing them again as "external" duplicates every managed
+  // window, and killing a duplicate kills the real one.
+  const managedWindowIds = new Set(
+    allWindows
+      .filter((window) => window.sessionName === managedSession)
+      .map((window) => window.windowId)
+  )
+
   for (const window of allWindows) {
     const { sessionName } = window
+
+    if (sessionName !== managedSession && managedWindowIds.has(window.windowId)) {
+      continue
+    }
 
     // Skip websocket proxy sessions
     if (sessionName.startsWith(wsPrefix)) {

@@ -130,7 +130,9 @@ test('arrow cluster: tap sends, hold repeats, deck never reflows', async ({ page
     const clusterBox = (await cluster.boundingBox())!
     const deckBox = (await page.locator('.grid-flow-col').boundingBox())!
     expect(clusterBox.y + clusterBox.height).toBeLessThanOrEqual(deckBox.y)
-    expect(await deckLayout(page)).toEqual(layoutBefore)
+    // The trigger's 75ms press-scale transition may still be unwinding — poll
+    // so a mid-transition rect isn't read as a deck reflow.
+    await expect.poll(() => deckLayout(page)).toEqual(layoutBefore)
 
     // Each arrow is a real 44px target.
     for (const name of ['Arrow up', 'Arrow down', 'Arrow left', 'Arrow right']) {
@@ -179,9 +181,9 @@ test('arrow cluster: tap sends, hold repeats, deck never reflows', async ({ page
     await touch(page, trigger.x, trigger.y, 40)
     await expect(cluster).toHaveCount(0)
 
-    // Let the trigger's 75ms press-scale transition finish before measuring.
-    await sleep(300)
-    expect(await deckLayout(page)).toEqual(layoutBefore)
+    // Same press-scale caveat — poll until the deck's geometry is back to
+    // the pre-open layout.
+    await expect.poll(() => deckLayout(page)).toEqual(layoutBefore)
   } finally {
     tmux(['kill-window', '-t', target])
   }
