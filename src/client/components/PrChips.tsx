@@ -468,8 +468,10 @@ function PrChip({
 }
 
 /** Muted "+N" chip; hover (or Enter/ArrowDown for keyboard) spills the
-    remaining PRs as a bare strip of
-    real chips — a continuation of the row, not a second card. The strip
+    remaining PRs as a strip of
+    real chips on a low-key tray — opaque so text can't bleed through the
+    gaps between pills, recessed (bg-surface) so the elevated pills still
+    read as pills. The strip
     anchors below "+N" (flipping above when there's more room, e.g. the
     footer rail), left edge aligned to the chip and clamped to the viewport;
     pills wrap internally so a right-edge anchor shifts the cluster left
@@ -562,7 +564,7 @@ function OverflowChip({
             <div
               ref={cardRef}
               data-testid="pr-flyout"
-              className="fixed z-[100] flex max-w-72 flex-wrap items-center gap-1 overflow-y-auto"
+              className="fixed z-[100] flex max-w-72 flex-wrap items-center gap-1 overflow-y-auto rounded-md border border-border bg-surface p-1 shadow-lg"
               style={{
                 left: pos.left,
                 top: pos.top,

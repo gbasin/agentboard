@@ -622,7 +622,7 @@ describe('PrChips +N flyout strip', () => {
     globalThis.fetch = originalFetch
   })
 
-  test('hovering +N spills the hidden PRs as bare chips, not a card', () => {
+  test('hovering +N spills the hidden PRs as chips on an opaque tray', () => {
     let renderer!: TestRenderer.ReactTestRenderer
     act(() => {
       renderer = TestRenderer.create(<PrChips prs={makePrs(5)} />, {
@@ -634,10 +634,12 @@ describe('PrChips +N flyout strip', () => {
     const strips = fixedEls(renderer.root)
     expect(strips.length).toBe(1)
     const strip = strips[0]
-    // Bare chip cluster: wraps like a continued row, no card chrome.
+    // Chip cluster on a tray: opaque so text can't bleed through the pill
+    // gaps, recessed (bg-surface) so the elevated pills stay visible.
     expect(strip.props.className).toContain('flex-wrap')
-    expect(strip.props.className).not.toContain('border')
-    expect(strip.props.className).not.toContain('shadow')
+    expect(strip.props.className).toContain('border')
+    expect(strip.props.className).toContain('shadow')
+    expect(strip.props.className).toContain('bg-surface')
     expect(strip.props.className).not.toContain('bg-elevated')
 
     // Visible #5,#4,#3 + spilled #2,#1 — all are real chip links.
