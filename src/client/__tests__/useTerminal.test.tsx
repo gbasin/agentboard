@@ -2077,6 +2077,107 @@ describe('useTerminal', () => {
     })
   })
 
+  test('mouse-app to mouse-app session switch re-enables tracking after terminal reset', async () => {
+    globalAny.navigator = {
+      userAgent: 'Chrome',
+      platform: 'MacIntel',
+      maxTouchPoints: 0,
+      clipboard: { writeText: () => Promise.resolve(), readText: () => Promise.resolve('') },
+    } as unknown as Navigator
+
+    const sendCalls: Array<Record<string, unknown>> = []
+    const listeners: Array<(message: ServerMessage) => void> = []
+    const subscribe = (listener: (message: ServerMessage) => void) => {
+      listeners.push(listener)
+      return () => {}
+    }
+    const { container } = createContainerMock()
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          sendMessage={(message) => sendCalls.push(message)}
+          subscribe={subscribe}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+        { createNodeMock: () => container },
+      )
+      await Promise.resolve()
+    })
+
+    const terminal = TerminalMock.instances[0]
+    if (!terminal) throw new Error('Expected terminal instance')
+    const listener = () => listeners[listeners.length - 1]
+
+    act(() => {
+      listener()?.({
+        type: 'tmux-copy-mode-status',
+        sessionId: 'session-1',
+        inCopyMode: false,
+        appMouse: true,
+      })
+    })
+    expect(terminal.writes).toContain('\x1b[?1000h\x1b[?1002h\x1b[?1006h')
+
+    // The 750ms status poll re-asserts tracking on every appMouse=true, not
+    // just false→true transitions — xterm's DECSET modes can be lost without
+    // a transition (reset, recreation, tmux mode-sync gaps).
+    terminal.writes.length = 0
+    act(() => {
+      listener()?.({
+        type: 'tmux-copy-mode-status',
+        sessionId: 'session-1',
+        inCopyMode: false,
+        appMouse: true,
+      })
+    })
+    expect(terminal.writes).toContain('\x1b[?1000h\x1b[?1002h\x1b[?1006h')
+
+    // Switch to session-2, whose pane also reports mouse_any_flag=1.
+    await act(async () => {
+      renderer.update(
+        <TerminalHarness
+          sessionId="session-2"
+          tmuxTarget="agentboard:@2"
+          sendMessage={(message) => sendCalls.push(message)}
+          subscribe={subscribe}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+      )
+      await Promise.resolve()
+    })
+
+    // terminal-ready with empty output buffer executes the deferred reset,
+    // which clears xterm's DECSET mouse modes.
+    act(() => {
+      listener()?.({ type: 'terminal-ready', sessionId: 'session-2' })
+    })
+    expect(terminal.resetCalls).toBeGreaterThan(0)
+
+    // appMouse stays true across the switch (no false transition), but tracking
+    // must still be re-enabled — otherwise drags become DOM selections and the
+    // pane never receives mouse input.
+    terminal.writes.length = 0
+    act(() => {
+      listener()?.({
+        type: 'tmux-copy-mode-status',
+        sessionId: 'session-2',
+        inCopyMode: false,
+        appMouse: true,
+      })
+    })
+    expect(terminal.writes).toContain('\x1b[?1000h\x1b[?1002h\x1b[?1006h')
+
+    act(() => {
+      renderer.unmount()
+    })
+  })
+
   test('actual copy-mode stays authoritative when the pane also reports app mouse', async () => {
     globalAny.navigator = {
       userAgent: 'Chrome',
