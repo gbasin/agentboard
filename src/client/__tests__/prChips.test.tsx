@@ -14,7 +14,7 @@ const PR = {
   number: 1,
 }
 
-type Listener = (e: { target?: unknown }) => void
+type Listener = (e: { target?: unknown; key?: string }) => void
 
 const globalAny = globalThis as unknown as Record<string, unknown>
 const originalWindow = globalAny.window
@@ -24,6 +24,7 @@ const originalFetch = globalThis.fetch
 
 let scrollListeners: Listener[] = []
 let resizeListeners: Listener[] = []
+let keydownListeners: Listener[] = []
 
 // Deterministic stand-in for window timers: hover-card open/close delays
 // are flushed explicitly instead of waiting on wall-clock time.
@@ -49,9 +50,15 @@ const fakeWindow = {
   addEventListener: (type: string, fn: Listener) => {
     if (type === 'scroll') scrollListeners.push(fn)
     else if (type === 'resize') resizeListeners.push(fn)
+    else if (type === 'keydown') keydownListeners.push(fn)
   },
   removeEventListener: (type: string, fn: Listener) => {
-    const arr = type === 'scroll' ? scrollListeners : resizeListeners
+    const arr =
+      type === 'scroll'
+        ? scrollListeners
+        : type === 'resize'
+          ? resizeListeners
+          : keydownListeners
     const i = arr.indexOf(fn)
     if (i >= 0) arr.splice(i, 1)
   },
@@ -98,6 +105,7 @@ describe('PrChips hover card', () => {
   beforeEach(() => {
     scrollListeners = []
     resizeListeners = []
+    keydownListeners = []
     timers = []
     chipRect = { top: 700, bottom: 720, left: 100, right: 140 }
     globalAny.window = fakeWindow
@@ -188,6 +196,22 @@ describe('PrChips hover card', () => {
     // w-64 card: clamped to innerWidth - 256 - 8, never negative.
     expect(card.props.style.left).toBe(1000 - 256 - 8)
     expect(card.props.style.maxHeight).toBe(732 - 3)
+    act(() => renderer.unmount())
+  })
+
+  test('Escape closes the card', () => {
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<PrChips prs={[PR]} />, {
+        createNodeMock,
+      })
+    })
+    act(() => openCard(renderer.root))
+    expect(findCard(renderer.root)).toBeDefined()
+    act(() => {
+      for (const fn of keydownListeners) fn({ key: 'Escape' })
+    })
+    expect(findCard(renderer.root)).toBeUndefined()
     act(() => renderer.unmount())
   })
 
@@ -572,6 +596,9 @@ describe('PrChips +N flyout strip', () => {
 
   beforeEach(() => {
     timers = []
+    scrollListeners = []
+    resizeListeners = []
+    keydownListeners = []
     // avail = 222 - 22 = 200: 3 chips fit, 2 fold into "+2".
     containerWidth = 222
     chipRect = { top: 700, bottom: 720, left: 100, right: 140 }
@@ -620,7 +647,7 @@ describe('PrChips +N flyout strip', () => {
     act(() => renderer.unmount())
   })
 
-  test('focus opens the strip; right-edge +N clamps left to the viewport', () => {
+  test('Enter opens the strip; right-edge +N clamps left to the viewport', () => {
     chipRect = { top: 40, bottom: 60, left: 950, right: 990 }
     let renderer!: TestRenderer.ReactTestRenderer
     act(() => {
@@ -628,11 +655,32 @@ describe('PrChips +N flyout strip', () => {
         createNodeMock: fitNodeMock,
       })
     })
-    act(() => overflowButton(renderer.root).props.onFocus())
+    act(() =>
+      overflowButton(renderer.root).props.onKeyDown({
+        key: 'Enter',
+        preventDefault: () => {},
+      })
+    )
     const strip = fixedEls(renderer.root).at(-1)!
     expect(strip.props.style.top).toBe(60 + 3)
     // Strip width budget 288: clamped to innerWidth - 288 - margin.
     expect(strip.props.style.left).toBe(1000 - 288 - 8)
+    act(() => renderer.unmount())
+  })
+
+  test('Escape closes the strip', () => {
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<PrChips prs={makePrs(5)} />, {
+        createNodeMock: fitNodeMock,
+      })
+    })
+    openStrip(renderer.root)
+    expect(fixedEls(renderer.root).length).toBe(1)
+    act(() => {
+      for (const fn of keydownListeners) fn({ key: 'Escape' })
+    })
+    expect(fixedEls(renderer.root).length).toBe(0)
     act(() => renderer.unmount())
   })
 

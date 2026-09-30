@@ -249,13 +249,29 @@ function useHoverCard(
       setOpen(false)
     }
     const closeOnResize = () => setOpen(false)
+    // Escape dismisses the card; if focus was inside it, return focus to
+    // the anchor's interactive element instead of dropping to <body>.
+    const closeOnEscape = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      const hadFocus = !!cardRef.current?.contains?.(document.activeElement)
+      setOpen(false)
+      if (hadFocus) {
+        const anchor = anchorRef.current
+        const target =
+          (anchor?.querySelector?.('a,button') as HTMLElement | null) ??
+          anchor
+        ;(target as HTMLElement | undefined)?.focus?.()
+      }
+    }
     window.addEventListener('scroll', closeOnScroll, true)
     window.addEventListener('resize', closeOnResize)
+    window.addEventListener('keydown', closeOnEscape)
     return () => {
       window.removeEventListener('scroll', closeOnScroll, true)
       window.removeEventListener('resize', closeOnResize)
+      window.removeEventListener('keydown', closeOnEscape)
     }
-  }, [open])
+  }, [open, anchorRef])
 
   useEffect(
     () => () => {
@@ -467,6 +483,10 @@ function OverflowChip({
   pillClass?: string
 }) {
   const anchorRef = useRef<HTMLSpanElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  // Enter/ArrowDown on "+N" opens the strip and moves focus to its first
+  // chip — deferred until the portal has mounted so the target exists.
+  const focusFirstOnOpen = useRef(false)
   // Chips inside the strip retain it while their detail card is open:
   // moving onto that card crosses the strip boundary, which would
   // otherwise unmount the very card being hovered.
@@ -480,6 +500,13 @@ function OverflowChip({
     cancelClose,
     cardRef,
   } = useHoverCard(anchorRef, 288, () => nestedRef.current > 0)
+
+  useEffect(() => {
+    if (open && focusFirstOnOpen.current) {
+      focusFirstOnOpen.current = false
+      cardRef.current?.querySelector?.('a')?.focus()
+    }
+  }, [open, cardRef])
   const retainNested = useCallback(() => {
     nestedRef.current += 1
     return () => {
@@ -505,13 +532,22 @@ function OverflowChip({
       onMouseLeave={scheduleClose}
     >
       <button
+        ref={buttonRef}
         type="button"
         className={`${pillClass} cursor-pointer text-muted hover:text-accent`}
         aria-label={`${prs.length} more PR${prs.length === 1 ? '' : 's'}`}
         aria-haspopup="true"
         aria-expanded={open}
-        onFocus={openCard}
-        onBlur={scheduleClose}
+        onKeyDown={(e) => {
+          if (e.key !== 'Enter' && e.key !== 'ArrowDown') return
+          e.preventDefault()
+          if (open) {
+            cardRef.current?.querySelector?.('a')?.focus()
+          } else {
+            focusFirstOnOpen.current = true
+            openCard()
+          }
+        }}
         onClick={(e) => e.stopPropagation()}
       >
         +{prs.length}
@@ -532,6 +568,25 @@ function OverflowChip({
               }}
               onMouseEnter={cancelClose}
               onMouseLeave={scheduleClose}
+              // React focus/blur bubble like focusin/focusout, so these
+              // cover every chip inside the strip: focus arriving cancels
+              // the +N blur-close, leaving schedules one.
+              onFocus={cancelClose}
+              onBlur={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                  scheduleClose()
+                }
+              }}
+              onKeyDown={(e) => {
+                // Shift+Tab on the first chip returns focus to "+N" (the
+                // portal's tab order isn't adjacent to its anchor).
+                if (e.key !== 'Tab' || !e.shiftKey) return
+                const first = cardRef.current?.querySelector?.('a')
+                if (e.target === first) {
+                  e.preventDefault()
+                  buttonRef.current?.focus()
+                }
+              }}
               // Portal events still bubble through the React tree — don't
               // let strip clicks activate the session row underneath.
               onClick={(e) => e.stopPropagation()}

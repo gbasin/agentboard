@@ -131,7 +131,7 @@ test('sweeping across spilled chips swaps detail cards without closing the strip
   await expect(detailCard).toHaveCount(1)
 })
 
-test('focusing +N opens the strip; tabbing away closes it', async ({
+test('Enter opens the strip into its first chip; Escape returns focus to +N', async ({
   page,
 }) => {
   await routeSessionsWithPrs(page)
@@ -140,11 +140,35 @@ test('focusing +N opens the strip; tabbing away closes it', async ({
   const card = page.getByTestId('session-card').first()
   const more = card.getByRole('button', { name: /\d+ more PRs?$/ })
   await more.focus()
-  await expect(more).toHaveAttribute('aria-expanded', 'true')
+
+  // Focus alone only highlights; Enter/ArrowDown opens.
+  await expect(page.getByTestId('pr-flyout')).toBeHidden()
+  await page.keyboard.press('Enter')
   const strip = page.getByTestId('pr-flyout')
   await expect(strip).toBeVisible()
+  await expect(strip.locator(PR_LINK).first()).toBeFocused()
 
-  await page.keyboard.press('Tab')
+  // Escape closes the strip and returns focus to the +N button.
+  await page.keyboard.press('Escape')
+  await expect(strip).toBeHidden()
+  await expect(more).toBeFocused()
+})
+
+test('Shift+Tab on the first chip returns focus to +N and closes', async ({
+  page,
+}) => {
+  await routeSessionsWithPrs(page)
+  await page.goto('/')
+
+  const card = page.getByTestId('session-card').first()
+  const more = card.getByRole('button', { name: /\d+ more PRs?$/ })
+  await more.focus()
+  await page.keyboard.press('Enter')
+  const strip = page.getByTestId('pr-flyout')
+  await expect(strip.locator(PR_LINK).first()).toBeFocused()
+
+  await page.keyboard.press('Shift+Tab')
+  await expect(more).toBeFocused()
   await expect(strip).toBeHidden()
 })
 
