@@ -175,52 +175,42 @@ function useHoverCard(
     closeTimer.current = undefined
   }, [])
 
-  const scheduleClose = useCallback(() => {
-    // A pending open must not fire after the pointer has left.
-    cancelOpen()
-    cancelClose()
-    closeTimer.current = window.setTimeout(
-      () => {
-        if (!blockedRef.current?.()) setOpen(false)
-      },
-      CARD_CLOSE_DELAY_MS
-    )
-  }, [cancelOpen, cancelClose])
-
   const openCard = useCallback(() => {
     cancelOpen()
     cancelClose()
     const r = anchorRef.current?.getBoundingClientRect()
-    if (r) {
-      // Anchor on whichever side of the chip has more room — near the top
-      // edge the card flips below instead of clipping out of the viewport.
-      // maxHeight bounds late-arriving content (CI checks load after open)
-      // so the card scrolls internally rather than growing past the edge.
-      const spaceAbove = r.top - VIEWPORT_MARGIN_PX
-      const spaceBelow = window.innerHeight - r.bottom - VIEWPORT_MARGIN_PX
-      const left = Math.max(
-        VIEWPORT_MARGIN_PX,
-        Math.min(
-          r.left,
-          window.innerWidth - cardWidth - VIEWPORT_MARGIN_PX
-        )
+    // No live anchor means no position — opening anyway would latch
+    // open=true with pos=null, a state a later hover can't recover from
+    // (scheduleOpen early-returns on open). Bail instead.
+    if (!r) return
+    // Anchor on whichever side of the chip has more room — near the top
+    // edge the card flips below instead of clipping out of the viewport.
+    // maxHeight bounds late-arriving content (CI checks load after open)
+    // so the card scrolls internally rather than growing past the edge.
+    const spaceAbove = r.top - VIEWPORT_MARGIN_PX
+    const spaceBelow = window.innerHeight - r.bottom - VIEWPORT_MARGIN_PX
+    const left = Math.max(
+      VIEWPORT_MARGIN_PX,
+      Math.min(
+        r.left,
+        window.innerWidth - cardWidth - VIEWPORT_MARGIN_PX
       )
-      const maxHeight = (space: number) =>
-        Math.max(60, space - CARD_OVERLAP_PX)
-      setPos(
-        spaceAbove >= spaceBelow
-          ? {
-              left,
-              bottom: window.innerHeight - r.top + CARD_OVERLAP_PX,
-              maxHeight: maxHeight(spaceAbove),
-            }
-          : {
-              left,
-              top: r.bottom + CARD_OVERLAP_PX,
-              maxHeight: maxHeight(spaceBelow),
-            }
-      )
-    }
+    )
+    const maxHeight = (space: number) =>
+      Math.max(60, space - CARD_OVERLAP_PX)
+    setPos(
+      spaceAbove >= spaceBelow
+        ? {
+            left,
+            bottom: window.innerHeight - r.top + CARD_OVERLAP_PX,
+            maxHeight: maxHeight(spaceAbove),
+          }
+        : {
+            left,
+            top: r.bottom + CARD_OVERLAP_PX,
+            maxHeight: maxHeight(spaceBelow),
+          }
+    )
     setOpen(true)
   }, [anchorRef, cancelOpen, cancelClose, cardWidth])
 
@@ -232,6 +222,25 @@ function useHoverCard(
     cancelOpen()
     openTimer.current = window.setTimeout(openCard, CARD_OPEN_DELAY_MS)
   }, [cancelClose, cancelOpen, open, openCard])
+
+  const scheduleClose = useCallback(() => {
+    // A pending open must not fire after the pointer has left.
+    cancelOpen()
+    cancelClose()
+    closeTimer.current = window.setTimeout(() => {
+      // Layout churn under a stationary cursor re-hit-tests and produces
+      // mouseleaves the user never meant. Re-check live :hover at fire
+      // time: still over the anchor or card means the leave was noise —
+      // restore hover intent (re-arms a pending open it cancelled).
+      const overAnchor = anchorRef.current?.matches?.(':hover') === true
+      const overCard = cardRef.current?.matches?.(':hover') === true
+      if (overAnchor || overCard) {
+        scheduleOpen()
+        return
+      }
+      if (!blockedRef.current?.()) setOpen(false)
+    }, CARD_CLOSE_DELAY_MS)
+  }, [cancelOpen, cancelClose, anchorRef, scheduleOpen])
 
   // pos is captured on open; a scroll or resize detaches the fixed card
   // from its chip, so close rather than leave it floating. Scroll doesn't
@@ -314,7 +323,11 @@ function PrChip({
   const { open, pos, scheduleOpen, scheduleClose, cancelClose, cardRef } =
     useHoverCard(anchorRef, 256)
   const retainFlyout = useContext(FlyoutRetainContext)
-  useEffect(
+  // Layout effect, not a passive one: the retain must be registered in the
+  // same commit that opens the card. A passive effect leaves a window where
+  // the card is open but uncounted — a flyout close timer expiring in that
+  // gap would drop the strip out from under a live card.
+  useLayoutEffect(
     () => (open && retainFlyout ? retainFlyout() : undefined),
     [open, retainFlyout]
   )
