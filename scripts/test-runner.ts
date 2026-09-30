@@ -105,6 +105,10 @@ async function main() {
     // when bun's readdir order puts it before SessionPreviewModal.test.tsx
     // (e.g. on Linux ext4) the modal test sees the stub and breaks.
     const ISOLATED_CLIENT_FILES = new Set([
+      // agentIcon.test.tsx stubs the @untitledui-icons/react/line barrel
+      // module; on Linux CI the stub leaks into the line/esm/* subpath
+      // imports (prChips.test.tsx saw XCloseIcon lose forwarded props).
+      'agentIcon.test.tsx',
       'app.test.tsx',
       // Files that render motion/react (framer-motion) components. The
       // library keeps module-level projection state (a root node per

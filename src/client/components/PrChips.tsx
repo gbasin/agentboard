@@ -11,6 +11,7 @@ import {
 import { createPortal } from 'react-dom'
 import GitMergeIcon from '@untitledui-icons/react/line/esm/GitMergeIcon'
 import GitPullRequestIcon from '@untitledui-icons/react/line/esm/GitPullRequestIcon'
+import Pencil02Icon from '@untitledui-icons/react/line/esm/Pencil02Icon'
 import XCloseIcon from '@untitledui-icons/react/line/esm/XCloseIcon'
 import type { SessionPullRequest } from '../../shared/types'
 
@@ -66,15 +67,20 @@ function stateGlyph(info: PrInfo | undefined): {
   Icon: typeof GitPullRequestIcon
   cls: string
 } {
-  if (!info || info.error || !info.state || info.isDraft)
+  if (!info || info.error || !info.state)
     return { Icon: GitPullRequestIcon, cls: 'text-muted' }
   switch (info.state) {
     case 'OPEN':
-      return { Icon: GitPullRequestIcon, cls: 'text-green-500' }
+      // Drafts keep GitHub's muted gray; the pencil badge in PrGlyph is
+      // what tells a draft apart from an unfetched or errored chip.
+      return {
+        Icon: GitPullRequestIcon,
+        cls: info.isDraft ? 'text-muted' : 'text-pr-open',
+      }
     case 'MERGED':
-      return { Icon: GitMergeIcon, cls: 'text-purple-500' }
+      return { Icon: GitMergeIcon, cls: 'text-pr-merged' }
     case 'CLOSED':
-      return { Icon: GitPullRequestIcon, cls: 'text-red-500' }
+      return { Icon: GitPullRequestIcon, cls: 'text-pr-closed' }
     default:
       return { Icon: GitPullRequestIcon, cls: 'text-muted' }
   }
@@ -82,21 +88,36 @@ function stateGlyph(info: PrInfo | undefined): {
 
 function PrGlyph({ info }: { info?: PrInfo }) {
   const { Icon, cls } = stateGlyph(info)
-  // No closed-PR glyph exists in the icon set — approximate GitHub's octicon
-  // (× over the PR glyph's corner node). Kept inside the 12px box so the
-  // fit measurer's plain icon stays the same width.
-  if (info && !info.error && !info.isDraft && info.state === 'CLOSED')
+  // No closed- or draft-PR glyphs exist in the icon set — corner badges
+  // stand in for GitHub's octicons: × for closed, a pencil for drafts.
+  // Closed wins on a closed draft (terminal state beats the draft flag).
+  // Kept inside the 12px box so the fit measurer's plain icon stays the
+  // same width.
+  const Badge =
+    info && !info.error
+      ? info.state === 'CLOSED'
+        ? XCloseIcon
+        : info.isDraft
+          ? Pencil02Icon
+          : null
+      : null
+  // The 12px glyph and 6px badges run a stroke heavier than the icon
+  // set's 1.5 default — line icons at this size are hard to read,
+  // especially on the light theme.
+  if (Badge)
     return (
       <span className="relative inline-flex shrink-0">
         <Icon
           width={PR_ICON_PX}
           height={PR_ICON_PX}
+          strokeWidth={2}
           className={cls}
           aria-hidden
         />
-        <XCloseIcon
+        <Badge
           width={6}
           height={6}
+          strokeWidth={2.5}
           className={`absolute bottom-0 right-0 ${cls}`}
           aria-hidden
         />
@@ -106,6 +127,7 @@ function PrGlyph({ info }: { info?: PrInfo }) {
     <Icon
       width={PR_ICON_PX}
       height={PR_ICON_PX}
+      strokeWidth={2}
       className={`shrink-0 ${cls}`}
       aria-hidden
     />
@@ -127,12 +149,12 @@ function checkIcon(c: {
 }): { glyph: string; cls: string } {
   if (c.status === 'COMPLETED') {
     if (c.conclusion === 'SUCCESS')
-      return { glyph: '✓', cls: 'text-green-500' }
+      return { glyph: '✓', cls: 'text-pr-open' }
     if (c.conclusion && NEUTRAL_CONCLUSIONS.has(c.conclusion))
       return { glyph: '–', cls: 'text-muted' }
-    return { glyph: '✗', cls: 'text-red-500' }
+    return { glyph: '✗', cls: 'text-pr-closed' }
   }
-  return { glyph: '…', cls: 'text-yellow-500' }
+  return { glyph: '…', cls: 'text-pr-pending' }
 }
 
 // Shared eager fetch: fills infoCache for any urls not yet known/in-flight.
