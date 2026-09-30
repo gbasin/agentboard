@@ -50,7 +50,7 @@ const PR_URL_RE =
   /https:\/\/github\.com\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\/pull\/(\d+)/g
 // Result markers only — "call_id" alone also appears on function_call lines.
 const RESULT_LINE_RE =
-  /"tool_result"|"function_call_output"|"tool_use_id"|"toolResult"|"toolCallId"/
+  /"tool_result"|"function_call_output"|"custom_tool_call_output"|"tool_use_id"|"toolResult"|"toolCallId"/
 
 interface PendingCreate {
   ids: Set<string>
@@ -211,6 +211,34 @@ function extractToolCallIds(line: string): string[] | null {
   return recognized ? ids : null
 }
 
+// Codex unified exec (cli ~0.150+): the agent runs commands through an
+// `exec` custom_tool_call whose input is a JS snippet, and each finished
+// command lands as an event_msg item_completed whose item is a
+// CommandExecution carrying argv and captured output on the same entry.
+// This is the reliable create signal for that format: the create's own
+// tool result is a custom_tool_call_output whose call_id is often a later
+// write_stdin poll, not the create call — so id attribution misses it.
+function collectCommandExecutionUrls(state: ScanState, line: string): void {
+  let entry: Record<string, unknown>
+  try {
+    entry = JSON.parse(line) as Record<string, unknown>
+  } catch {
+    return
+  }
+  const payload = entry.payload as Record<string, unknown> | undefined
+  if (payload?.type !== 'item_completed') return
+  const item = payload.item as Record<string, unknown> | undefined
+  if (item?.type !== 'CommandExecution') return
+  const cmd = item.command
+  const cmdText =
+    typeof cmd === 'string' ? cmd : Array.isArray(cmd) ? cmd.join(' ') : null
+  if (cmdText === null || !GH_PR_CREATE_RE.test(cmdText)) return
+  for (const key of ['stdout', 'aggregated_output', 'formatted_output']) {
+    const out = item[key]
+    if (typeof out === 'string' && out) collectUrls(state, out)
+  }
+}
+
 function collectUrls(state: ScanState, line: string): void {
   PR_URL_RE.lastIndex = 0
   let match: RegExpExecArray | null
@@ -227,6 +255,12 @@ function collectUrls(state: ScanState, line: string): void {
 }
 
 function processLine(state: ScanState, line: string): void {
+  // 0. Codex item_completed CommandExecution entries are self-contained
+  //    (argv + stdout on one line); they bypass the id/window machinery.
+  if (line.includes('"CommandExecution"') && GH_PR_CREATE_LINE_RE.test(line)) {
+    collectCommandExecutionUrls(state, line)
+  }
+
   // 1. A `gh pr create` inside an actual tool call registers pending ids
   //    (or opens the fallback window when the entry has no ids).
   if (GH_PR_CREATE_LINE_RE.test(line) && TOOL_CALL_LINE_RE.test(line)) {
