@@ -671,6 +671,37 @@ describe('PrChips info fetch resilience', () => {
     expect(svgs.length).toBe(2)
     act(() => renderer.unmount())
   })
+
+  test('draft PRs render the pull-request glyph with a pencil badge', async () => {
+    const pr = prFor(7)
+    fetchImpl = async () =>
+      new Response(
+        JSON.stringify([
+          { url: pr.url, state: 'OPEN', isDraft: true, title: 't', author: 'a' },
+        ])
+      )
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<PrChips prs={[pr]} />, {
+        createNodeMock,
+      })
+    })
+    await act(async () => {})
+    const chip = chipEl(renderer.root)
+    // Two muted svgs: the pull-request icon plus the corner pencil — the
+    // badge is what separates a draft from the plain muted fallback.
+    const svgs = chip.findAll(
+      (el) =>
+        el.type === 'svg' &&
+        typeof el.props.className === 'string' &&
+        el.props.className.includes('text-muted')
+    )
+    expect(svgs.length).toBe(2)
+    expect(
+      svgs.some((el) => el.props.className.includes('absolute'))
+    ).toBe(true)
+    act(() => renderer.unmount())
+  })
 })
 
 describe('PrChips +N flyout strip', () => {
