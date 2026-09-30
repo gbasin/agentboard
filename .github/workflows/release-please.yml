@@ -18,10 +18,26 @@ jobs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
+      # Mint the release-please bot identity from a GitHub App. PR commits
+      # pushed as github-actions[bot] can't trigger workflows — every
+      # pull_request synchronize created a check suite that died at
+      # workflow-load (zero jobs, "workflow file issue"). An app token is a
+      # real identity, so the release PR runs normal CI (which also validates
+      # bun.lock during the release window). Skipped when the app isn't
+      # configured — the fallback below keeps GITHUB_TOKEN behavior.
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: app-token
+        if: vars.RELEASE_APP_CLIENT_ID != ''
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
       - uses: googleapis/release-please-action@v4
         id: release
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
 
   # Tags created with GITHUB_TOKEN don't trigger push:tags workflows, so the
   # release pipeline is dispatched directly once release-please cuts the tag.
