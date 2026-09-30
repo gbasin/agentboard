@@ -49,6 +49,23 @@ test('drawer opens pre-positioned on the selected row — no mid-open snap', asy
       .poll(() => cards.count(), { timeout: 20000 })
       .toBeGreaterThanOrEqual(WINDOW_COUNT)
 
+    // Wait for the list to stop growing before measuring the open: tmux
+    // windows stream in over WS discovery, and a late-arriving session inserts
+    // at the top (createdAt-desc) — scroll anchoring then adjusts scrollTop
+    // mid-transition, which reads identically to a post-landing snap here.
+    const listEl = page.locator(drawerList)
+    await expect
+      .poll(
+        async () => {
+          const before = await listEl.evaluate((el) => el.scrollHeight)
+          await page.waitForTimeout(300)
+          const after = await listEl.evaluate((el) => el.scrollHeight)
+          return before === after ? after : -1
+        },
+        { timeout: 15000 }
+      )
+      .not.toBe(-1)
+
     // Open the drawer and select the LAST card in DOM order — deep enough
     // that "land on selection" must scroll.
     await page.getByLabel('Open session menu').tap()
