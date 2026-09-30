@@ -155,6 +155,12 @@ function useHoverCard(
 ) {
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState<CardPos | null>(null)
+  // Read through a ref so callers can pass a fresh closure each render
+  // without churning every useCallback that depends on it.
+  const blockedRef = useRef(isBlocked)
+  useEffect(() => {
+    blockedRef.current = isBlocked
+  })
   const openTimer = useRef<number | undefined>(undefined)
   const closeTimer = useRef<number | undefined>(undefined)
   const cardRef = useRef<HTMLDivElement>(null)
@@ -175,11 +181,11 @@ function useHoverCard(
     cancelClose()
     closeTimer.current = window.setTimeout(
       () => {
-        if (!isBlocked?.()) setOpen(false)
+        if (!blockedRef.current?.()) setOpen(false)
       },
       CARD_CLOSE_DELAY_MS
     )
-  }, [cancelOpen, cancelClose, isBlocked])
+  }, [cancelOpen, cancelClose])
 
   const openCard = useCallback(() => {
     cancelOpen()
@@ -236,6 +242,10 @@ function useHoverCard(
     if (!open) return
     const closeOnScroll = (e: Event) => {
       if (cardRef.current?.contains(e.target as Node)) return
+      // A retained flyout hosts nested cards in their own portals —
+      // scrolling inside one isn't contained by cardRef but must not
+      // collapse the flyout (and that card) mid-scroll.
+      if (blockedRef.current?.()) return
       setOpen(false)
     }
     const closeOnResize = () => setOpen(false)
