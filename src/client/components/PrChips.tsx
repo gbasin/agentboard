@@ -255,7 +255,15 @@ function useHoverCard(
     [cancelOpen, cancelClose]
   )
 
-  return { open, pos, openCard, scheduleOpen, scheduleClose, cancelClose, cardRef }
+  return {
+    open,
+    pos,
+    openCard,
+    scheduleOpen,
+    scheduleClose,
+    cancelClose,
+    cardRef,
+  }
 }
 
 // Set by OverflowChip around its flyout: chips rendered inside it call the
