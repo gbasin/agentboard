@@ -9,6 +9,9 @@ import {
   useState,
 } from 'react'
 import { createPortal } from 'react-dom'
+import GitMergeIcon from '@untitledui-icons/react/line/esm/GitMergeIcon'
+import GitPullRequestIcon from '@untitledui-icons/react/line/esm/GitPullRequestIcon'
+import XCloseIcon from '@untitledui-icons/react/line/esm/XCloseIcon'
 import type { SessionPullRequest } from '../../shared/types'
 
 interface PrInfo {
@@ -35,7 +38,7 @@ interface PrCheckInfo extends PrInfo {
 // the chip to its gray fallback for the life of the page (days in a PWA).
 const INFO_TTL_MS = 60_000
 const infoCache = new Map<string, { at: number; info: PrInfo }>()
-const checksCache = new Map<string, PrCheckInfo>()
+const checksCache = new Map<string, { at: number; checks: PrCheckInfo }>()
 const infoInflight = new Map<string, Promise<unknown>>()
 const checksInflight = new Set<string>()
 
@@ -44,25 +47,69 @@ function cachedInfo(url: string): PrInfo | undefined {
   return c && Date.now() - c.at < INFO_TTL_MS ? c.info : undefined
 }
 
+function cachedChecks(url: string): PrCheckInfo | undefined {
+  const c = checksCache.get(url)
+  return c && Date.now() - c.at < INFO_TTL_MS ? c.checks : undefined
+}
+
 // Pill geometry shared by PrChip anchors and the offscreen measurer spans
 // below — keep these in sync or the single-row fit math drifts.
 const PILL_CLASS =
   'inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] tabular-nums'
-const DOT_CLASS = 'inline-block h-1.5 w-1.5 rounded-full'
 
-function stateColor(info: PrInfo | undefined): string {
-  if (!info || info.error || !info.state) return 'bg-muted'
-  if (info.isDraft) return 'bg-muted'
+// The glyph carries "this is a PR" so the chip number needs no '#' sigil;
+// state sets the color, and merged swaps to the merge icon — the same
+// iconography GitHub and the VS Code PR extension use.
+const PR_ICON_PX = 12
+
+function stateGlyph(info: PrInfo | undefined): {
+  Icon: typeof GitPullRequestIcon
+  cls: string
+} {
+  if (!info || info.error || !info.state || info.isDraft)
+    return { Icon: GitPullRequestIcon, cls: 'text-muted' }
   switch (info.state) {
     case 'OPEN':
-      return 'bg-green-500'
+      return { Icon: GitPullRequestIcon, cls: 'text-green-500' }
     case 'MERGED':
-      return 'bg-purple-500'
+      return { Icon: GitMergeIcon, cls: 'text-purple-500' }
     case 'CLOSED':
-      return 'bg-red-500'
+      return { Icon: GitPullRequestIcon, cls: 'text-red-500' }
     default:
-      return 'bg-muted'
+      return { Icon: GitPullRequestIcon, cls: 'text-muted' }
   }
+}
+
+function PrGlyph({ info }: { info?: PrInfo }) {
+  const { Icon, cls } = stateGlyph(info)
+  // No closed-PR glyph exists in the icon set — approximate GitHub's octicon
+  // (× over the PR glyph's corner node). Kept inside the 12px box so the
+  // fit measurer's plain icon stays the same width.
+  if (info && !info.error && !info.isDraft && info.state === 'CLOSED')
+    return (
+      <span className="relative inline-flex shrink-0">
+        <Icon
+          width={PR_ICON_PX}
+          height={PR_ICON_PX}
+          className={cls}
+          aria-hidden
+        />
+        <XCloseIcon
+          width={6}
+          height={6}
+          className={`absolute bottom-0 right-0 ${cls}`}
+          aria-hidden
+        />
+      </span>
+    )
+  return (
+    <Icon
+      width={PR_ICON_PX}
+      height={PR_ICON_PX}
+      className={`shrink-0 ${cls}`}
+      aria-hidden
+    />
+  )
 }
 
 function stateLabel(info: PrInfo | undefined): string {
@@ -327,7 +374,7 @@ function PrChip({
 }) {
   const [info, setInfo] = useState<PrInfo | undefined>(cachedInfo(pr.url))
   const [checks, setChecks] = useState<PrCheckInfo | undefined>(
-    checksCache.get(pr.url)
+    cachedChecks(pr.url)
   )
   const anchorRef = useRef<HTMLSpanElement>(null)
   const { open, pos, scheduleOpen, scheduleClose, cancelClose, cardRef } =
@@ -349,37 +396,50 @@ function PrChip({
     }
   }, [])
 
+  const refreshInfo = useCallback(() => {
+    fetchInfoBatch([pr.url]).then((arr) => {
+      const found = arr.find((i) => i.url === pr.url)
+      if (mounted.current && found) setInfo(found)
+    })
+  }, [pr.url])
+
   // Eager: state/title/author once per url. refreshKey re-runs this on
   // PWA resume so stale entries refresh and uncached failures retry.
   useEffect(() => {
     const c = cachedInfo(pr.url)
     if (c) {
-      // Cache may have filled between render and effect via a shared
-      // in-flight request — adopt it rather than fetching again.
-      setInfo((prev) => prev ?? c)
+      // Cache may have filled between render and effect — via a shared
+      // in-flight request or the row's interval revalidation — adopt it
+      // rather than fetching again.
+      setInfo(c)
       return
     }
-    fetchInfoBatch([pr.url]).then((arr) => {
-      const found = arr.find((i) => i.url === pr.url)
-      if (mounted.current && found) setInfo(found)
-    })
-  }, [pr.url, refreshKey])
+    refreshInfo()
+  }, [pr.url, refreshKey, refreshInfo])
+
+  // Hover revalidates stale info: a PR that merged since the eager fetch
+  // flips the glyph (and card state) while the card is open.
+  useEffect(() => {
+    if (open && !cachedInfo(pr.url)) refreshInfo()
+  }, [open, pr.url, refreshInfo])
 
   // Lazy: CI detail only on hover.
   useEffect(() => {
-    if (!open || checksCache.has(pr.url) || checksInflight.has(pr.url)) return
+    if (!open || cachedChecks(pr.url) || checksInflight.has(pr.url)) return
     checksInflight.add(pr.url)
     fetch(`/api/pr-checks?url=${encodeURIComponent(pr.url)}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((c: PrCheckInfo | null) => {
-        if (c) checksCache.set(pr.url, c)
+        if (c) checksCache.set(pr.url, { at: Date.now(), checks: c })
         if (mounted.current && c) setChecks(c)
       })
       .catch(() => {})
       .finally(() => checksInflight.delete(pr.url))
   }, [open, pr.url])
 
-  const detail = checks ?? info
+  // info is the TTL'd source of truth for state — checks is permanent until
+  // its own TTL and would otherwise pin the glyph to a stale state forever.
+  const detail = info ?? checks
   return (
     <span
       ref={anchorRef}
@@ -393,10 +453,10 @@ function PrChip({
         rel="noreferrer"
         onClick={(e) => e.stopPropagation()}
         className={`${pillClass} bg-elevated text-muted hover:text-accent`}
-        aria-label={`${pr.repo}#${pr.number}`}
+        aria-label={`${pr.repo}#${pr.number}${stateLabel(detail) ? ` ${stateLabel(detail)}` : ''}`}
       >
-        <span className={`${DOT_CLASS} ${stateColor(detail)}`} />
-        #{pr.number}
+        <PrGlyph info={detail} />
+        {pr.number}
       </a>
       {open &&
         pos &&
@@ -418,7 +478,7 @@ function PrChip({
             onClick={(e) => e.stopPropagation()}
           >
           <div className="flex shrink-0 items-center gap-1.5 text-[11px]">
-            <span className={stateColor(detail) + ' inline-block h-1.5 w-1.5 shrink-0 rounded-full'} />
+            <PrGlyph info={detail} />
             <span className="text-muted">{stateLabel(detail) || 'PR'}</span>
             <span className="text-muted">·</span>
             <a
@@ -671,6 +731,21 @@ export function PrChips({
       document.removeEventListener?.('visibilitychange', onVisible)
   }, [])
 
+  // Passive revalidation: mount/resume/hover are the only other refresh
+  // paths, so without a timer a PR merged while the page sits open would
+  // leave its glyph stale indefinitely. One batch POST per row per TTL —
+  // fetchInfoBatch skips still-fresh urls — then the refreshKey bump lets
+  // each chip adopt the refreshed cache.
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (document.visibilityState === 'hidden') return
+      fetchInfoBatch(ordered.map((p) => p.url)).then(() =>
+        setRefreshKey((k) => k + 1)
+      )
+    }, INFO_TTL_MS)
+    return () => clearInterval(t)
+  }, [ordered])
+
   const recompute = useCallback(() => {
     const n = ordered.length
     const el = containerRef.current
@@ -759,8 +834,8 @@ export function PrChips({
             }}
             className={pillClass}
           >
-            <span className={DOT_CLASS} />
-            #{pr.number}
+            <PrGlyph />
+            {pr.number}
           </span>
         ))}
         <span ref={plusRef} className={pillClass}>
