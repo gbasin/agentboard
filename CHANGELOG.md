@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.19.0](https://github.com/gbasin/agentboard/compare/v0.18.0...v0.19.0) (2026-09-30)
+
+
+### Features
+
+* spill +N PR overflow as a pill strip instead of a hovercard ([#307](https://github.com/gbasin/agentboard/issues/307)) ([47258d8](https://github.com/gbasin/agentboard/commit/47258d8c8d8190baf60e347ff3c1a3bfc8ab1d6f))
+
+
+### Bug Fixes
+
+* re-assert xterm mouse tracking on every app-mouse status poll ([#308](https://github.com/gbasin/agentboard/issues/308)) ([4df8201](https://github.com/gbasin/agentboard/commit/4df82018efdcf43269361d72b8a2e3db6384090f))
+
 ## [0.18.0](https://github.com/gbasin/agentboard/compare/v0.17.3...v0.18.0) (2026-09-26)
 
 
