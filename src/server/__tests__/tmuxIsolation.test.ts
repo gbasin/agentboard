@@ -9,6 +9,8 @@ import {
 } from '../tmuxIsolation'
 
 const LIVE_TMUX = '/private/tmp/tmux-501/default,23781,0'
+const inManaged = () => ({ managed: true, session: 'agentboard' })
+const inOwnTmux = () => ({ managed: false, session: 'main' })
 
 describe('decideNestedTmux', () => {
   test('does nothing outside tmux', () => {
@@ -16,12 +18,38 @@ describe('decideNestedTmux', () => {
     expect(decideNestedTmux({ TMUX: '  ' })).toEqual({ action: 'none' })
   })
 
-  test('refuses inside tmux without an isolation choice', () => {
-    const decision = decideNestedTmux({ TMUX: LIVE_TMUX })
+  test('refuses inside an agentboard-managed pane', () => {
+    const decision = decideNestedTmux({ TMUX: LIVE_TMUX, TMUX_PANE: '%1370' }, inManaged)
     expect(decision.action).toBe('refuse')
     if (decision.action !== 'refuse') throw new Error('unreachable')
+    expect(decision.paneSession).toBe('agentboard')
     expect(decision.message).toContain('TMUX_TMPDIR')
     expect(decision.message).toContain(ALLOW_NESTED_TMUX_ENV)
+  })
+
+  test("allows running inside the user's own tmux session", () => {
+    expect(decideNestedTmux({ TMUX: LIVE_TMUX, TMUX_PANE: '%3' }, inOwnTmux)).toEqual({ action: 'none' })
+  })
+
+  test('passes the inherited pane to the probe', () => {
+    const seen: Array<string | undefined> = []
+    decideNestedTmux({ TMUX: LIVE_TMUX, TMUX_PANE: ' %7 ' }, (pane) => {
+      seen.push(pane)
+      return { managed: false, session: 'x' }
+    })
+    decideNestedTmux({ TMUX: LIVE_TMUX }, (pane) => {
+      seen.push(pane)
+      return { managed: false, session: 'x' }
+    })
+    expect(seen).toEqual(['%7', undefined])
+  })
+
+  test('skips the probe when isolation or opt-in is set', () => {
+    const probe = () => {
+      throw new Error('probe should not run')
+    }
+    expect(decideNestedTmux({ TMUX: LIVE_TMUX, TMUX_TMPDIR: '/tmp/x' }, probe).action).toBe('isolate')
+    expect(decideNestedTmux({ TMUX: LIVE_TMUX, [ALLOW_NESTED_TMUX_ENV]: 'true' }, probe).action).toBe('allow')
   })
 
   test('isolates when TMUX_TMPDIR is set', () => {
@@ -46,7 +74,7 @@ describe('decideNestedTmux', () => {
       action: 'allow',
       inheritedTmux: LIVE_TMUX,
     })
-    expect(decideNestedTmux({ TMUX: LIVE_TMUX, [ALLOW_NESTED_TMUX_ENV]: '1' }).action).toBe('refuse')
+    expect(decideNestedTmux({ TMUX: LIVE_TMUX, [ALLOW_NESTED_TMUX_ENV]: '1' }, inManaged).action).toBe('refuse')
   })
 })
 
@@ -72,7 +100,7 @@ describe('applyNestedTmuxDecision', () => {
 
   test('leaves env untouched otherwise', () => {
     const env: Record<string, string | undefined> = { TMUX: LIVE_TMUX, TMUX_PANE: '%1' }
-    expect(applyNestedTmuxDecision(env).action).toBe('refuse')
+    expect(applyNestedTmuxDecision(env, inManaged).action).toBe('refuse')
     expect(env).toEqual({ TMUX: LIVE_TMUX, TMUX_PANE: '%1' })
   })
 })

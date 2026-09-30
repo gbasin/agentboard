@@ -496,6 +496,7 @@ function createConnectionId(): string {
   if (nested.action === 'refuse') {
     logger.error('tmux_nested_refused', {
       inheritedTmux: nested.inheritedTmux,
+      paneSession: nested.paneSession,
       message: nested.message,
     })
     flushLogger()

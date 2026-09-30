@@ -59,7 +59,7 @@ dev-only `tools/fad-dump` shim). The shim is never a runtime dependency.
   Started from an agentboard pane, it inherits `TMUX`, joins the live tmux
   server, and groups its sessions with the live `agentboard` session — the
   live board then shows duplicate windows, and killing one kills the real
-  window. The server now refuses to start with `TMUX` set. Give it a private
+  window. The server now refuses to start from an agentboard-managed pane. Give it a private
   socket and data dir instead:
 
   ```
