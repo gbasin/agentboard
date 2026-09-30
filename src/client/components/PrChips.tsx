@@ -467,7 +467,8 @@ function PrChip({
   )
 }
 
-/** Muted "+N" chip; hover/focus spills the remaining PRs as a bare strip of
+/** Muted "+N" chip; hover (or Enter/ArrowDown for keyboard) spills the
+    remaining PRs as a bare strip of
     real chips — a continuation of the row, not a second card. The strip
     anchors below "+N" (flipping above when there's more room, e.g. the
     footer rail), left edge aligned to the chip and clamped to the viewport;
@@ -513,11 +514,13 @@ function OverflowChip({
       nestedRef.current -= 1
       // If the pointer ended up outside both chip and strip when the
       // nested card closed, drop the flyout rather than leaving it pinned.
-      // (Runs on flyout unmount too — no anchor means nothing to close.)
+      // (Runs on flyout unmount too — no anchor means nothing to close.
+      // Keyboard focus inside the strip counts the same as hover.)
       if (
         anchorRef.current &&
         !anchorRef.current.matches?.(':hover') &&
-        !cardRef.current?.matches?.(':hover')
+        !cardRef.current?.matches?.(':hover') &&
+        !cardRef.current?.contains?.(document.activeElement)
       ) {
         scheduleClose()
       }

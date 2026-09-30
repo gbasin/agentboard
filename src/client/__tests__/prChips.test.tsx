@@ -323,7 +323,8 @@ const fitNodeMock = (el: { type: unknown; props: { children?: unknown } }) => {
         return containerWidth
       },
       getBoundingClientRect: () => chipRect,
-      contains: () => false,
+      contains: (target: unknown) =>
+        !!(target && (target as { __inCard?: boolean }).__inCard),
     }
   }
   const c = el.props.children
@@ -718,6 +719,42 @@ describe('PrChips +N flyout strip', () => {
     act(flushWindowTimers)
     act(flushWindowTimers)
     expect(fixedEls(renderer.root).length).toBe(0)
+    act(() => renderer.unmount())
+  })
+
+  test('a nested card closing does not drop the strip while focus is inside', () => {
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<PrChips prs={makePrs(5)} />, {
+        createNodeMock: fitNodeMock,
+      })
+    })
+    openStrip(renderer.root)
+    const strip = fixedEls(renderer.root)[0]
+
+    // Open a spilled chip's detail card, then park keyboard focus inside
+    // the strip (simulated: cardRef.contains(document.activeElement)).
+    const nestedAnchor = strip
+      .findAll(
+        (el) =>
+          typeof el.props.className === 'string' &&
+          el.props.className.startsWith('relative inline-flex') &&
+          typeof el.props.onMouseEnter === 'function'
+      )
+      .at(0)!
+    act(() => nestedAnchor.props.onMouseEnter())
+    act(flushWindowTimers)
+    expect(fixedEls(renderer.root).length).toBe(2)
+    ;(globalAny.document as { activeElement?: unknown }).activeElement = {
+      __inCard: true,
+    }
+
+    const nestedCard = fixedEls(renderer.root).at(-1)!
+    act(() => nestedCard.props.onMouseLeave())
+    act(flushWindowTimers)
+    act(flushWindowTimers)
+    // Nested card closed, but the focused strip stays.
+    expect(fixedEls(renderer.root).length).toBe(1)
     act(() => renderer.unmount())
   })
 
