@@ -155,6 +155,10 @@ function useHoverCard(
 ) {
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState<CardPos | null>(null)
+  // Mirror for timers, whose closures see render-time `open`, not the
+  // value at fire time.
+  const openRef = useRef(open)
+  openRef.current = open
   // Read through a ref so callers can pass a fresh closure each render
   // without churning every useCallback that depends on it.
   const blockedRef = useRef(isBlocked)
@@ -230,17 +234,23 @@ function useHoverCard(
     closeTimer.current = window.setTimeout(() => {
       // Layout churn under a stationary cursor re-hit-tests and produces
       // mouseleaves the user never meant. Re-check live :hover at fire
-      // time: still over the anchor or card means the leave was noise —
-      // restore hover intent (re-arms a pending open it cancelled).
+      // time: still over the anchor or card means the leave was noise.
+      // Restore the hover intent it killed — for a closed card that means
+      // re-arming the pending open it cancelled; an open card just keeps
+      // it. Goes through openCard directly rather than scheduleOpen, whose
+      // `open` check may be stale at fire time.
       const overAnchor = anchorRef.current?.matches?.(':hover') === true
       const overCard = cardRef.current?.matches?.(':hover') === true
       if (overAnchor || overCard) {
-        scheduleOpen()
+        if (!openRef.current) {
+          cancelOpen()
+          openTimer.current = window.setTimeout(openCard, CARD_OPEN_DELAY_MS)
+        }
         return
       }
       if (!blockedRef.current?.()) setOpen(false)
     }, CARD_CLOSE_DELAY_MS)
-  }, [cancelOpen, cancelClose, anchorRef, scheduleOpen])
+  }, [cancelOpen, cancelClose, anchorRef, openCard])
 
   // pos is captured on open; a scroll or resize detaches the fixed card
   // from its chip, so close rather than leave it floating. Scroll doesn't
