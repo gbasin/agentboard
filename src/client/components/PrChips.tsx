@@ -11,6 +11,7 @@ import {
 import { createPortal } from 'react-dom'
 import GitMergeIcon from '@untitledui-icons/react/line/esm/GitMergeIcon'
 import GitPullRequestIcon from '@untitledui-icons/react/line/esm/GitPullRequestIcon'
+import XCloseIcon from '@untitledui-icons/react/line/esm/XCloseIcon'
 import type { SessionPullRequest } from '../../shared/types'
 
 interface PrInfo {
@@ -37,13 +38,18 @@ interface PrCheckInfo extends PrInfo {
 // the chip to its gray fallback for the life of the page (days in a PWA).
 const INFO_TTL_MS = 60_000
 const infoCache = new Map<string, { at: number; info: PrInfo }>()
-const checksCache = new Map<string, PrCheckInfo>()
+const checksCache = new Map<string, { at: number; checks: PrCheckInfo }>()
 const infoInflight = new Map<string, Promise<unknown>>()
 const checksInflight = new Set<string>()
 
 function cachedInfo(url: string): PrInfo | undefined {
   const c = infoCache.get(url)
   return c && Date.now() - c.at < INFO_TTL_MS ? c.info : undefined
+}
+
+function cachedChecks(url: string): PrCheckInfo | undefined {
+  const c = checksCache.get(url)
+  return c && Date.now() - c.at < INFO_TTL_MS ? c.checks : undefined
 }
 
 // Pill geometry shared by PrChip anchors and the offscreen measurer spans
@@ -76,6 +82,26 @@ function stateGlyph(info: PrInfo | undefined): {
 
 function PrGlyph({ info }: { info?: PrInfo }) {
   const { Icon, cls } = stateGlyph(info)
+  // No closed-PR glyph exists in the icon set — approximate GitHub's octicon
+  // (× over the PR glyph's corner node). Kept inside the 12px box so the
+  // fit measurer's plain icon stays the same width.
+  if (info && !info.error && !info.isDraft && info.state === 'CLOSED')
+    return (
+      <span className="relative inline-flex shrink-0">
+        <Icon
+          width={PR_ICON_PX}
+          height={PR_ICON_PX}
+          className={cls}
+          aria-hidden
+        />
+        <XCloseIcon
+          width={6}
+          height={6}
+          className={`absolute bottom-0 right-0 ${cls}`}
+          aria-hidden
+        />
+      </span>
+    )
   return (
     <Icon
       width={PR_ICON_PX}
@@ -348,7 +374,7 @@ function PrChip({
 }) {
   const [info, setInfo] = useState<PrInfo | undefined>(cachedInfo(pr.url))
   const [checks, setChecks] = useState<PrCheckInfo | undefined>(
-    checksCache.get(pr.url)
+    cachedChecks(pr.url)
   )
   const anchorRef = useRef<HTMLSpanElement>(null)
   const { open, pos, scheduleOpen, scheduleClose, cancelClose, cardRef } =
@@ -370,6 +396,13 @@ function PrChip({
     }
   }, [])
 
+  const refreshInfo = useCallback(() => {
+    fetchInfoBatch([pr.url]).then((arr) => {
+      const found = arr.find((i) => i.url === pr.url)
+      if (mounted.current && found) setInfo(found)
+    })
+  }, [pr.url])
+
   // Eager: state/title/author once per url. refreshKey re-runs this on
   // PWA resume so stale entries refresh and uncached failures retry.
   useEffect(() => {
@@ -380,27 +413,32 @@ function PrChip({
       setInfo((prev) => prev ?? c)
       return
     }
-    fetchInfoBatch([pr.url]).then((arr) => {
-      const found = arr.find((i) => i.url === pr.url)
-      if (mounted.current && found) setInfo(found)
-    })
-  }, [pr.url, refreshKey])
+    refreshInfo()
+  }, [pr.url, refreshKey, refreshInfo])
+
+  // Hover revalidates stale info: a PR that merged since the eager fetch
+  // flips the glyph (and card state) while the card is open.
+  useEffect(() => {
+    if (open && !cachedInfo(pr.url)) refreshInfo()
+  }, [open, pr.url, refreshInfo])
 
   // Lazy: CI detail only on hover.
   useEffect(() => {
-    if (!open || checksCache.has(pr.url) || checksInflight.has(pr.url)) return
+    if (!open || cachedChecks(pr.url) || checksInflight.has(pr.url)) return
     checksInflight.add(pr.url)
     fetch(`/api/pr-checks?url=${encodeURIComponent(pr.url)}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((c: PrCheckInfo | null) => {
-        if (c) checksCache.set(pr.url, c)
+        if (c) checksCache.set(pr.url, { at: Date.now(), checks: c })
         if (mounted.current && c) setChecks(c)
       })
       .catch(() => {})
       .finally(() => checksInflight.delete(pr.url))
   }, [open, pr.url])
 
-  const detail = checks ?? info
+  // info is the TTL'd source of truth for state — checks is permanent until
+  // its own TTL and would otherwise pin the glyph to a stale state forever.
+  const detail = info ?? checks
   return (
     <span
       ref={anchorRef}
@@ -414,7 +452,7 @@ function PrChip({
         rel="noreferrer"
         onClick={(e) => e.stopPropagation()}
         className={`${pillClass} bg-elevated text-muted hover:text-accent`}
-        aria-label={`${pr.repo}#${pr.number}`}
+        aria-label={`${pr.repo}#${pr.number}${stateLabel(detail) ? ` ${stateLabel(detail)}` : ''}`}
       >
         <PrGlyph info={detail} />
         {pr.number}

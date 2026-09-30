@@ -569,6 +569,69 @@ describe('PrChips info fetch resilience', () => {
     expect(hasIconColor(renderer.root, 'text-purple-500')).toBe(true)
     act(() => renderer.unmount())
   })
+
+  test('merged-after-hover flips the glyph: fresh info beats stale cached checks', async () => {
+    // Regression: detail used to prefer the permanently-cached checks
+    // response, pinning the glyph to whatever state held at first hover.
+    const pr = prFor(4)
+    let state = 'OPEN'
+    globalThis.fetch = mock(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.startsWith('/api/pr-checks'))
+        return new Response(
+          JSON.stringify({ url: pr.url, state, title: 't', author: 'a', checks: [] })
+        )
+      return new Response(
+        JSON.stringify([{ url: pr.url, state, isDraft: false, title: 't', author: 'a' }])
+      )
+    }) as unknown as typeof fetch
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<PrChips prs={[pr]} />, {
+        createNodeMock,
+      })
+    })
+    await act(async () => {})
+    act(() => openCard(renderer.root)) // caches checks with state=OPEN
+    await act(async () => {})
+    expect(hasIconColor(renderer.root, 'text-green-500')).toBe(true)
+
+    // PR merges; the info cache ages out; a resume triggers a refetch.
+    state = 'MERGED'
+    const realNow = Date.now
+    Date.now = () => realNow() + 61_000
+    act(() => {
+      for (const fn of visListeners) fn()
+    })
+    await act(async () => {})
+    Date.now = realNow
+    expect(hasIconColor(renderer.root, 'text-purple-500')).toBe(true)
+    expect(hasIconColor(renderer.root, 'text-green-500')).toBe(false)
+    act(() => renderer.unmount())
+  })
+
+  test('closed PRs render the pull-request glyph with a red × overlay', async () => {
+    const pr = prFor(5)
+    fetchImpl = async () => infoResponse(pr.url, 'CLOSED')
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<PrChips prs={[pr]} />, {
+        createNodeMock,
+      })
+    })
+    await act(async () => {})
+    const chip = chipEl(renderer.root)
+    // Two svgs: the pull-request icon and the corner × — both red.
+    const svgs = chip.findAll(
+      (el) =>
+        el.type === 'svg' &&
+        typeof el.props.className === 'string' &&
+        el.props.className.includes('text-red-500')
+    )
+    expect(svgs.length).toBe(2)
+    act(() => renderer.unmount())
+  })
 })
 
 describe('PrChips +N flyout strip', () => {
