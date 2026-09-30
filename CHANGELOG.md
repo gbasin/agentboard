@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.1](https://github.com/gbasin/agentboard/compare/v0.21.0...v0.21.1) (2026-09-30)
+
+
+### Bug Fixes
+
+* **ci:** skip release.yml dispatch when the app-token tag push fires it ([#323](https://github.com/gbasin/agentboard/issues/323)) ([aa66cb1](https://github.com/gbasin/agentboard/commit/aa66cb19b2b880ae598bb46cff984803e7c9f2e5))
+
 ## [0.21.0](https://github.com/gbasin/agentboard/compare/v0.20.1...v0.21.0) (2026-09-30)
 
 
