@@ -331,7 +331,10 @@ const fitNodeMock = (el: { type: unknown; props: { children?: unknown } }) => {
   const flat = Array.isArray(c) ? c.join('') : String(c ?? '')
   if (flat === '+') return { offsetWidth: PLUS_W }
   if (flat === '+0') return { offsetWidth: PLUS_DIGIT_W }
-  if (Array.isArray(c) && c.includes('#')) return { offsetWidth: CHIP_W }
+  // Chip/measurer pills hold [icon element, number] — a raw number child
+  // distinguishes them from the "+" and "+0" probes.
+  if (Array.isArray(c) && c.some((x) => typeof x === 'number'))
+    return { offsetWidth: CHIP_W }
   return {
     getBoundingClientRect: () => chipRect,
     contains: () => false,
@@ -449,19 +452,20 @@ describe('PrChips info fetch resilience', () => {
   let fetchImpl: () => Promise<Response>
   let fetchMock: ReturnType<typeof mock>
 
-  // State-color classes appear only on the visible chip's dot; the
-  // offscreen measurer dots have no bg-* class.
-  const dotClasses = (root: TestRenderer.ReactTestInstance) =>
+  // State color rides on the chip glyph's svg; the offscreen measurer
+  // icons always render the muted fallback.
+  const iconClasses = (root: TestRenderer.ReactTestInstance) =>
     root
       .findAll(
         (el) =>
+          el.type === 'svg' &&
           typeof el.props.className === 'string' &&
-          /bg-(muted|green-500|purple-500|red-500)/.test(el.props.className)
+          /text-(muted|green-500|purple-500|red-500)/.test(el.props.className)
       )
       .map((el) => el.props.className as string)
 
-  const hasDot = (root: TestRenderer.ReactTestInstance, cls: string) =>
-    dotClasses(root).some((c) => c.includes(cls))
+  const hasIconColor = (root: TestRenderer.ReactTestInstance, cls: string) =>
+    iconClasses(root).some((c) => c.includes(cls))
 
   beforeEach(() => {
     visListeners = []
@@ -489,7 +493,7 @@ describe('PrChips info fetch resilience', () => {
     globalThis.fetch = originalFetch
   })
 
-  test('error results are not cached — remount retries and colors the dot', async () => {
+  test('error results are not cached — remount retries and colors the icon', async () => {
     const pr = prFor(1)
     fetchImpl = async () =>
       new Response(JSON.stringify([{ url: pr.url, error: 'unavailable' }]))
@@ -498,7 +502,7 @@ describe('PrChips info fetch resilience', () => {
       r1 = TestRenderer.create(<PrChips prs={[pr]} />, { createNodeMock })
     })
     await act(async () => {})
-    expect(hasDot(r1.root, 'bg-muted')).toBe(true)
+    expect(hasIconColor(r1.root, 'text-muted')).toBe(true)
     const calls = fetchMock.mock.calls.length
     act(() => r1.unmount())
 
@@ -509,7 +513,7 @@ describe('PrChips info fetch resilience', () => {
     })
     await act(async () => {})
     expect(fetchMock.mock.calls.length).toBeGreaterThan(calls)
-    expect(hasDot(r2.root, 'bg-green-500')).toBe(true)
+    expect(hasIconColor(r2.root, 'text-green-500')).toBe(true)
     act(() => r2.unmount())
   })
 
@@ -534,7 +538,7 @@ describe('PrChips info fetch resilience', () => {
     resolveFetch(infoResponse(pr.url, 'OPEN'))
     await act(async () => {})
     expect(fetchMock.mock.calls.length).toBe(1)
-    expect(hasDot(r2.root, 'bg-green-500')).toBe(true)
+    expect(hasIconColor(r2.root, 'text-green-500')).toBe(true)
     act(() => r2.unmount())
   })
 
@@ -548,7 +552,7 @@ describe('PrChips info fetch resilience', () => {
       })
     })
     await act(async () => {})
-    expect(hasDot(renderer.root, 'bg-green-500')).toBe(true)
+    expect(hasIconColor(renderer.root, 'text-green-500')).toBe(true)
 
     // Age the cache past the 60s TTL, swap the response, then simulate
     // the PWA resuming from suspension.
@@ -562,7 +566,7 @@ describe('PrChips info fetch resilience', () => {
     await act(async () => {})
     Date.now = realNow
     expect(fetchMock.mock.calls.length).toBeGreaterThan(calls)
-    expect(hasDot(renderer.root, 'bg-purple-500')).toBe(true)
+    expect(hasIconColor(renderer.root, 'text-purple-500')).toBe(true)
     act(() => renderer.unmount())
   })
 })

@@ -9,6 +9,8 @@ import {
   useState,
 } from 'react'
 import { createPortal } from 'react-dom'
+import GitMergeIcon from '@untitledui-icons/react/line/esm/GitMergeIcon'
+import GitPullRequestIcon from '@untitledui-icons/react/line/esm/GitPullRequestIcon'
 import type { SessionPullRequest } from '../../shared/types'
 
 interface PrInfo {
@@ -48,21 +50,40 @@ function cachedInfo(url: string): PrInfo | undefined {
 // below — keep these in sync or the single-row fit math drifts.
 const PILL_CLASS =
   'inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] tabular-nums'
-const DOT_CLASS = 'inline-block h-1.5 w-1.5 rounded-full'
 
-function stateColor(info: PrInfo | undefined): string {
-  if (!info || info.error || !info.state) return 'bg-muted'
-  if (info.isDraft) return 'bg-muted'
+// The glyph carries "this is a PR" so the chip number needs no '#' sigil;
+// state sets the color, and merged swaps to the merge icon — the same
+// iconography GitHub and the VS Code PR extension use.
+const PR_ICON_PX = 12
+
+function stateGlyph(info: PrInfo | undefined): {
+  Icon: typeof GitPullRequestIcon
+  cls: string
+} {
+  if (!info || info.error || !info.state || info.isDraft)
+    return { Icon: GitPullRequestIcon, cls: 'text-muted' }
   switch (info.state) {
     case 'OPEN':
-      return 'bg-green-500'
+      return { Icon: GitPullRequestIcon, cls: 'text-green-500' }
     case 'MERGED':
-      return 'bg-purple-500'
+      return { Icon: GitMergeIcon, cls: 'text-purple-500' }
     case 'CLOSED':
-      return 'bg-red-500'
+      return { Icon: GitPullRequestIcon, cls: 'text-red-500' }
     default:
-      return 'bg-muted'
+      return { Icon: GitPullRequestIcon, cls: 'text-muted' }
   }
+}
+
+function PrGlyph({ info }: { info?: PrInfo }) {
+  const { Icon, cls } = stateGlyph(info)
+  return (
+    <Icon
+      width={PR_ICON_PX}
+      height={PR_ICON_PX}
+      className={`shrink-0 ${cls}`}
+      aria-hidden
+    />
+  )
 }
 
 function stateLabel(info: PrInfo | undefined): string {
@@ -395,8 +416,8 @@ function PrChip({
         className={`${pillClass} bg-elevated text-muted hover:text-accent`}
         aria-label={`${pr.repo}#${pr.number}`}
       >
-        <span className={`${DOT_CLASS} ${stateColor(detail)}`} />
-        #{pr.number}
+        <PrGlyph info={detail} />
+        {pr.number}
       </a>
       {open &&
         pos &&
@@ -418,7 +439,7 @@ function PrChip({
             onClick={(e) => e.stopPropagation()}
           >
           <div className="flex shrink-0 items-center gap-1.5 text-[11px]">
-            <span className={stateColor(detail) + ' inline-block h-1.5 w-1.5 shrink-0 rounded-full'} />
+            <PrGlyph info={detail} />
             <span className="text-muted">{stateLabel(detail) || 'PR'}</span>
             <span className="text-muted">·</span>
             <a
@@ -759,8 +780,8 @@ export function PrChips({
             }}
             className={pillClass}
           >
-            <span className={DOT_CLASS} />
-            #{pr.number}
+            <PrGlyph />
+            {pr.number}
           </span>
         ))}
         <span ref={plusRef} className={pillClass}>
