@@ -102,6 +102,35 @@ test('strip stays open while a spilled chip detail card is hovered', async ({
   await expect(strip).toBeHidden()
 })
 
+test('sweeping across spilled chips swaps detail cards without closing the strip', async ({
+  page,
+}) => {
+  await routeSessionsWithPrs(page)
+  await page.goto('/')
+
+  const card = page.getByTestId('session-card').first()
+  await card.getByRole('button', { name: /\d+ more PRs?$/ }).hover()
+  const strip = page.getByTestId('pr-flyout')
+  await expect(strip).toBeVisible()
+
+  const chips = strip.locator(PR_LINK)
+  const secondHref = await chips.nth(1).getAttribute('href')
+
+  // Rest on the first spilled chip — its detail card opens.
+  await chips.first().hover()
+  const detailCard = page.getByTestId('pr-hovercard')
+  await expect(detailCard).toBeVisible()
+
+  // Sweep to the neighbor: the first card closes, the second's opens —
+  // exactly one card at a time, strip untouched throughout.
+  await chips.nth(1).hover()
+  await expect(detailCard).toHaveCount(1)
+  await expect(detailCard.locator(`a[href="${secondHref}"]`)).toBeVisible()
+  await page.waitForTimeout(400)
+  await expect(strip).toBeVisible()
+  await expect(detailCard).toHaveCount(1)
+})
+
 test('focusing +N opens the strip; tabbing away closes it', async ({
   page,
 }) => {
