@@ -9,6 +9,8 @@ import { serveStatic } from 'hono/bun'
 import { config, isValidHostname } from './config'
 import { createPasteFileRoutes } from './routes/pasteFile'
 import { ensureTmux } from './prerequisites'
+import { applyNestedTmuxDecision } from './tmuxIsolation'
+import { KillRateLimiter } from './killRateLimit'
 import { SessionManager } from './SessionManager'
 import { SessionRegistry } from './SessionRegistry'
 import {
@@ -487,6 +489,26 @@ function createConnectionId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
 
+// Must run before any tmux spawn: a server started from inside an agentboard
+// window inherits $TMUX and would otherwise operate on the live socket.
+{
+  const nested = applyNestedTmuxDecision(process.env)
+  if (nested.action === 'refuse') {
+    logger.error('tmux_nested_refused', {
+      inheritedTmux: nested.inheritedTmux,
+      message: nested.message,
+    })
+    flushLogger()
+    process.exit(1)
+  } else if (nested.action === 'isolate') {
+    logger.info('tmux_nested_isolated', {
+      inheritedTmux: nested.inheritedTmux,
+      tmuxTmpDir: nested.tmuxTmpDir,
+    })
+  } else if (nested.action === 'allow') {
+    logger.warn('tmux_nested_allowed', { inheritedTmux: nested.inheritedTmux })
+  }
+}
 checkPortAvailable(config.port)
 // Refuse to share a data dir with a live agentboard server — the reconcile
 // loop would orphan that server's session claims (they're windows it can't
@@ -666,6 +688,7 @@ const remoteSessionTombstones = new Map<string, number>()
 const remoteSessionNameOverrides = new Map<string, { name: string; setAt: number }>()
 
 const wakeInFlight = new Set<string>()
+const killRateLimiter = new KillRateLimiter()
 
 function mergeRemoteSessions(sessions: Session[]): Session[] {
   const remoteSessions = remotePoller?.getSessions() ?? []
@@ -2192,6 +2215,7 @@ const websocketHandlers = {
     handleMessage(ws, message)
   },
   close(ws: ServerWebSocket<WSData>) {
+    killRateLimiter.forget(ws.data.connectionId)
     cleanupTerminals(ws)
     sockets.delete(ws)
   },
@@ -3004,6 +3028,18 @@ async function handleKill(
   const session = registry.get(sessionId)
   let auditFields = getKillAuditFields(ws, sessionId, killSource, session)
   logger.info('session_kill_requested', auditFields)
+
+  if (!killRateLimiter.tryAcquire(ws.data.connectionId)) {
+    sendKillFailed(
+      ws,
+      sessionId,
+      'Too many kills in a row — slow down',
+      auditFields,
+      startedAt,
+      'rate_limited',
+    )
+    return
+  }
 
   if (!session) {
     sendKillFailed(ws, sessionId, 'Session not found', auditFields, startedAt, 'not_found')
