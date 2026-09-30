@@ -1,5 +1,7 @@
 import {
+  createContext,
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -145,10 +147,20 @@ interface CardPos {
 // the card.
 function useHoverCard(
   anchorRef: React.RefObject<HTMLElement | null>,
-  cardWidth: number
+  cardWidth: number,
+  // When set, the close timer fires but skips closing while this returns
+  // true — OverflowChip uses it to keep its flyout alive while a nested
+  // chip's detail card is open.
+  isBlocked?: () => boolean
 ) {
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState<CardPos | null>(null)
+  // Read through a ref so callers can pass a fresh closure each render
+  // without churning every useCallback that depends on it.
+  const blockedRef = useRef(isBlocked)
+  useEffect(() => {
+    blockedRef.current = isBlocked
+  })
   const openTimer = useRef<number | undefined>(undefined)
   const closeTimer = useRef<number | undefined>(undefined)
   const cardRef = useRef<HTMLDivElement>(null)
@@ -168,7 +180,9 @@ function useHoverCard(
     cancelOpen()
     cancelClose()
     closeTimer.current = window.setTimeout(
-      () => setOpen(false),
+      () => {
+        if (!blockedRef.current?.()) setOpen(false)
+      },
       CARD_CLOSE_DELAY_MS
     )
   }, [cancelOpen, cancelClose])
@@ -228,16 +242,36 @@ function useHoverCard(
     if (!open) return
     const closeOnScroll = (e: Event) => {
       if (cardRef.current?.contains(e.target as Node)) return
+      // A retained flyout hosts nested cards in their own portals —
+      // scrolling inside one isn't contained by cardRef but must not
+      // collapse the flyout (and that card) mid-scroll.
+      if (blockedRef.current?.()) return
       setOpen(false)
     }
     const closeOnResize = () => setOpen(false)
+    // Escape dismisses the card; if focus was inside it, return focus to
+    // the anchor's interactive element instead of dropping to <body>.
+    const closeOnEscape = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      const hadFocus = !!cardRef.current?.contains?.(document.activeElement)
+      setOpen(false)
+      if (hadFocus) {
+        const anchor = anchorRef.current
+        const target =
+          (anchor?.querySelector?.('a,button') as HTMLElement | null) ??
+          anchor
+        ;(target as HTMLElement | undefined)?.focus?.()
+      }
+    }
     window.addEventListener('scroll', closeOnScroll, true)
     window.addEventListener('resize', closeOnResize)
+    window.addEventListener('keydown', closeOnEscape)
     return () => {
       window.removeEventListener('scroll', closeOnScroll, true)
       window.removeEventListener('resize', closeOnResize)
+      window.removeEventListener('keydown', closeOnEscape)
     }
-  }, [open])
+  }, [open, anchorRef])
 
   useEffect(
     () => () => {
@@ -247,8 +281,21 @@ function useHoverCard(
     [cancelOpen, cancelClose]
   )
 
-  return { open, pos, scheduleOpen, scheduleClose, cancelClose, cardRef }
+  return {
+    open,
+    pos,
+    openCard,
+    scheduleOpen,
+    scheduleClose,
+    cancelClose,
+    cardRef,
+  }
 }
+
+// Set by OverflowChip around its flyout: chips rendered inside it call the
+// provided retain function while their detail card is open, so moving from
+// a spilled chip onto its card doesn't collapse the flyout out from under it.
+const FlyoutRetainContext = createContext<(() => () => void) | null>(null)
 
 function PrChip({
   pr,
@@ -266,6 +313,11 @@ function PrChip({
   const anchorRef = useRef<HTMLSpanElement>(null)
   const { open, pos, scheduleOpen, scheduleClose, cancelClose, cardRef } =
     useHoverCard(anchorRef, 256)
+  const retainFlyout = useContext(FlyoutRetainContext)
+  useEffect(
+    () => (open && retainFlyout ? retainFlyout() : undefined),
+    [open, retainFlyout]
+  )
   const mounted = useRef(true)
   useEffect(() => {
     mounted.current = true
@@ -328,6 +380,7 @@ function PrChip({
         createPortal(
           <div
             ref={cardRef}
+            data-testid="pr-hovercard"
             className="fixed z-[100] flex w-64 flex-col rounded-md border border-border bg-elevated p-2 text-left shadow-lg"
             style={{
               left: pos.left,
@@ -414,31 +467,65 @@ function PrChip({
   )
 }
 
-/** Muted "+N" chip; hover opens a card listing the remaining PRs. */
+/** Muted "+N" chip; hover (or Enter/ArrowDown for keyboard) spills the
+    remaining PRs as a bare strip of
+    real chips — a continuation of the row, not a second card. The strip
+    anchors below "+N" (flipping above when there's more room, e.g. the
+    footer rail), left edge aligned to the chip and clamped to the viewport;
+    pills wrap internally so a right-edge anchor shifts the cluster left
+    instead of clipping it. */
 function OverflowChip({
   prs,
+  refreshKey,
   pillClass = PILL_CLASS,
 }: {
   prs: SessionPullRequest[]
+  refreshKey: number
   pillClass?: string
 }) {
-  const [infos, setInfos] = useState<Map<string, PrInfo> | null>(null)
   const anchorRef = useRef<HTMLSpanElement>(null)
-  const { open, pos, scheduleOpen, scheduleClose, cancelClose, cardRef } =
-    useHoverCard(anchorRef, 224)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  // Enter/ArrowDown on "+N" opens the strip and moves focus to its first
+  // chip — deferred until the portal has mounted so the target exists.
+  const focusFirstOnOpen = useRef(false)
+  // Chips inside the strip retain it while their detail card is open:
+  // moving onto that card crosses the strip boundary, which would
+  // otherwise unmount the very card being hovered.
+  const nestedRef = useRef(0)
+  const {
+    open,
+    pos,
+    openCard,
+    scheduleOpen,
+    scheduleClose,
+    cancelClose,
+    cardRef,
+  } = useHoverCard(anchorRef, 288, () => nestedRef.current > 0)
 
-  // Lazy: only fetch state for hidden PRs when the card opens. Reopening
-  // retries urls still missing info (failures are never cached).
   useEffect(() => {
-    if (!open || (infos && prs.every((p) => infos.has(p.url)))) return
-    fetchInfoBatch(prs.map((p) => p.url)).then((arr) => {
-      setInfos((prev) => {
-        const next = new Map(prev ?? [])
-        for (const i of arr) next.set(i.url, i)
-        return next
-      })
-    })
-  }, [open, infos, prs])
+    if (open && focusFirstOnOpen.current) {
+      focusFirstOnOpen.current = false
+      cardRef.current?.querySelector?.('a')?.focus()
+    }
+  }, [open, cardRef])
+  const retainNested = useCallback(() => {
+    nestedRef.current += 1
+    return () => {
+      nestedRef.current -= 1
+      // If the pointer ended up outside both chip and strip when the
+      // nested card closed, drop the flyout rather than leaving it pinned.
+      // (Runs on flyout unmount too — no anchor means nothing to close.
+      // Keyboard focus inside the strip counts the same as hover.)
+      if (
+        anchorRef.current &&
+        !anchorRef.current.matches?.(':hover') &&
+        !cardRef.current?.matches?.(':hover') &&
+        !cardRef.current?.contains?.(document.activeElement)
+      ) {
+        scheduleClose()
+      }
+    }
+  }, [scheduleClose, cardRef])
 
   return (
     <span
@@ -447,51 +534,76 @@ function OverflowChip({
       onMouseEnter={scheduleOpen}
       onMouseLeave={scheduleClose}
     >
-      <span
-        className={`${pillClass} cursor-default text-muted`}
+      <button
+        ref={buttonRef}
+        type="button"
+        className={`${pillClass} cursor-pointer text-muted hover:text-accent`}
         aria-label={`${prs.length} more PR${prs.length === 1 ? '' : 's'}`}
+        aria-haspopup="true"
+        aria-expanded={open}
+        onKeyDown={(e) => {
+          if (e.key !== 'Enter' && e.key !== 'ArrowDown') return
+          e.preventDefault()
+          if (open) {
+            cardRef.current?.querySelector?.('a')?.focus()
+          } else {
+            focusFirstOnOpen.current = true
+            openCard()
+          }
+        }}
+        onClick={(e) => e.stopPropagation()}
       >
         +{prs.length}
-      </span>
+      </button>
       {open &&
         pos &&
         createPortal(
-          <div
-            ref={cardRef}
-            className="fixed z-[100] flex w-56 flex-col rounded-md border border-border bg-elevated p-2 text-left shadow-lg"
-            style={{
-              left: pos.left,
-              top: pos.top,
-              bottom: pos.bottom,
-              maxHeight: pos.maxHeight,
-            }}
-            // Keep the card alive while the pointer is on it so its rows
-            // are actually reachable/clickable.
-            onMouseEnter={cancelClose}
-            onMouseLeave={scheduleClose}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="shrink-0 text-[11px] text-muted">
-              {prs.length} more PR{prs.length === 1 ? '' : 's'}
-            </div>
-            <div className="mt-1 max-h-48 min-h-0 space-y-0.5 overflow-y-auto border-t border-border pt-1.5">
+          <FlyoutRetainContext.Provider value={retainNested}>
+            <div
+              ref={cardRef}
+              data-testid="pr-flyout"
+              className="fixed z-[100] flex max-w-72 flex-wrap items-center gap-1 overflow-y-auto"
+              style={{
+                left: pos.left,
+                top: pos.top,
+                bottom: pos.bottom,
+                maxHeight: pos.maxHeight,
+              }}
+              onMouseEnter={cancelClose}
+              onMouseLeave={scheduleClose}
+              // React focus/blur bubble like focusin/focusout, so these
+              // cover every chip inside the strip: focus arriving cancels
+              // the +N blur-close, leaving schedules one.
+              onFocus={cancelClose}
+              onBlur={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                  scheduleClose()
+                }
+              }}
+              onKeyDown={(e) => {
+                // Shift+Tab on the first chip returns focus to "+N" (the
+                // portal's tab order isn't adjacent to its anchor).
+                if (e.key !== 'Tab' || !e.shiftKey) return
+                const first = cardRef.current?.querySelector?.('a')
+                if (e.target === first) {
+                  e.preventDefault()
+                  buttonRef.current?.focus()
+                }
+              }}
+              // Portal events still bubble through the React tree — don't
+              // let strip clicks activate the session row underneath.
+              onClick={(e) => e.stopPropagation()}
+            >
               {prs.map((pr) => (
-                <a
+                <PrChip
                   key={pr.url}
-                  href={pr.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center gap-1.5 text-[11px] text-secondary hover:text-accent"
-                >
-                  <span
-                    className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${stateColor(infos?.get(pr.url))}`}
-                  />
-                  <span className="tabular-nums">#{pr.number}</span>
-                  <span className="truncate text-muted">{pr.repo}</span>
-                </a>
+                  pr={pr}
+                  refreshKey={refreshKey}
+                  pillClass={pillClass}
+                />
               ))}
             </div>
-          </div>,
+          </FlyoutRetainContext.Provider>,
           document.body
         )}
     </span>
@@ -603,7 +715,13 @@ export function PrChips({
       {visible.map((pr) => (
         <PrChip key={pr.url} pr={pr} refreshKey={refreshKey} pillClass={pillClass} />
       ))}
-      {overflow.length > 0 && <OverflowChip prs={overflow} pillClass={pillClass} />}
+      {overflow.length > 0 && (
+        <OverflowChip
+          prs={overflow}
+          refreshKey={refreshKey}
+          pillClass={pillClass}
+        />
+      )}
       <span
         aria-hidden
         className="invisible absolute left-0 top-0 flex flex-nowrap"

@@ -14,7 +14,7 @@ const PR = {
   number: 1,
 }
 
-type Listener = (e: { target?: unknown }) => void
+type Listener = (e: { target?: unknown; key?: string }) => void
 
 const globalAny = globalThis as unknown as Record<string, unknown>
 const originalWindow = globalAny.window
@@ -24,6 +24,7 @@ const originalFetch = globalThis.fetch
 
 let scrollListeners: Listener[] = []
 let resizeListeners: Listener[] = []
+let keydownListeners: Listener[] = []
 
 // Deterministic stand-in for window timers: hover-card open/close delays
 // are flushed explicitly instead of waiting on wall-clock time.
@@ -49,9 +50,15 @@ const fakeWindow = {
   addEventListener: (type: string, fn: Listener) => {
     if (type === 'scroll') scrollListeners.push(fn)
     else if (type === 'resize') resizeListeners.push(fn)
+    else if (type === 'keydown') keydownListeners.push(fn)
   },
   removeEventListener: (type: string, fn: Listener) => {
-    const arr = type === 'scroll' ? scrollListeners : resizeListeners
+    const arr =
+      type === 'scroll'
+        ? scrollListeners
+        : type === 'resize'
+          ? resizeListeners
+          : keydownListeners
     const i = arr.indexOf(fn)
     if (i >= 0) arr.splice(i, 1)
   },
@@ -98,6 +105,7 @@ describe('PrChips hover card', () => {
   beforeEach(() => {
     scrollListeners = []
     resizeListeners = []
+    keydownListeners = []
     timers = []
     chipRect = { top: 700, bottom: 720, left: 100, right: 140 }
     globalAny.window = fakeWindow
@@ -191,6 +199,22 @@ describe('PrChips hover card', () => {
     act(() => renderer.unmount())
   })
 
+  test('Escape closes the card', () => {
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<PrChips prs={[PR]} />, {
+        createNodeMock,
+      })
+    })
+    act(() => openCard(renderer.root))
+    expect(findCard(renderer.root)).toBeDefined()
+    act(() => {
+      for (const fn of keydownListeners) fn({ key: 'Escape' })
+    })
+    expect(findCard(renderer.root)).toBeUndefined()
+    act(() => renderer.unmount())
+  })
+
   test('scroll inside the card keeps it open; outside scroll closes it', async () => {
     let renderer!: TestRenderer.ReactTestRenderer
     act(() => {
@@ -278,58 +302,59 @@ describe('PrChips hover card', () => {
   })
 })
 
-describe('PrChips single-row fit', () => {
-  const PADDING_LEFT = 22
-  const CHIP_W = 50
-  const PLUS_W = 20 // "+"
-  const PLUS_DIGIT_W = 26 // "+0" → digit width = 6
+const PADDING_LEFT = 22
+const CHIP_W = 50
+const PLUS_W = 20 // "+"
+const PLUS_DIGIT_W = 26 // "+0" → digit width = 6
 
-  let containerWidth = 0
+let containerWidth = 0
 
-  function textOf(el: TestRenderer.ReactTestInstance): string {
-    const c = el.props.children
-    return Array.isArray(c) ? c.join('') : String(c ?? '')
-  }
+function textOf(el: TestRenderer.ReactTestInstance): string {
+  const c = el.props.children
+  return Array.isArray(c) ? c.join('') : String(c ?? '')
+}
 
-  // Ref'd nodes: the container div reports clientWidth, the offscreen
-  // measurer pills report offsetWidth by text content.
-  const fitNodeMock = (el: { type: unknown; props: { children?: unknown } }) => {
-    if (el.type === 'div') {
-      return {
-        get clientWidth() {
-          return containerWidth
-        },
-        getBoundingClientRect: () => chipRect,
-        contains: () => false,
-      }
-    }
-    const c = el.props.children
-    const flat = Array.isArray(c) ? c.join('') : String(c ?? '')
-    if (flat === '+') return { offsetWidth: PLUS_W }
-    if (flat === '+0') return { offsetWidth: PLUS_DIGIT_W }
-    if (Array.isArray(c) && c.includes('#')) return { offsetWidth: CHIP_W }
+// Ref'd nodes: the container div reports clientWidth, the offscreen
+// measurer pills report offsetWidth by text content.
+const fitNodeMock = (el: { type: unknown; props: { children?: unknown } }) => {
+  if (el.type === 'div') {
     return {
+      get clientWidth() {
+        return containerWidth
+      },
       getBoundingClientRect: () => chipRect,
-      contains: () => false,
+      contains: (target: unknown) =>
+        !!(target && (target as { __inCard?: boolean }).__inCard),
     }
   }
+  const c = el.props.children
+  const flat = Array.isArray(c) ? c.join('') : String(c ?? '')
+  if (flat === '+') return { offsetWidth: PLUS_W }
+  if (flat === '+0') return { offsetWidth: PLUS_DIGIT_W }
+  if (Array.isArray(c) && c.includes('#')) return { offsetWidth: CHIP_W }
+  return {
+    getBoundingClientRect: () => chipRect,
+    contains: () => false,
+  }
+}
 
-  const makePrs = (n: number) =>
-    Array.from({ length: n }, (_, i) => ({
-      url: `https://github.com/o/r/pull/${i + 1}`,
-      repo: 'o/r',
-      number: i + 1,
-    }))
+const makePrs = (n: number) =>
+  Array.from({ length: n }, (_, i) => ({
+    url: `https://github.com/o/r/pull/${i + 1}`,
+    repo: 'o/r',
+    number: i + 1,
+  }))
 
-  const chipLinks = (root: TestRenderer.ReactTestInstance) =>
-    root.findAll((el) => el.type === 'a' && typeof el.props.href === 'string')
+const chipLinks = (root: TestRenderer.ReactTestInstance) =>
+  root.findAll((el) => el.type === 'a' && typeof el.props.href === 'string')
 
-  const overflowText = (root: TestRenderer.ReactTestInstance) =>
-    root
-      .findAll((el) => /^\+[1-9]/.test(textOf(el)))
-      .map(textOf)
-      .at(-1)
+const overflowText = (root: TestRenderer.ReactTestInstance) =>
+  root
+    .findAll((el) => /^\+[1-9]/.test(textOf(el)))
+    .map(textOf)
+    .at(-1)
 
+describe('PrChips single-row fit', () => {
   beforeEach(() => {
     globalAny.window = fakeWindow
     globalAny.document = { body: {} }
@@ -538,6 +563,213 @@ describe('PrChips info fetch resilience', () => {
     Date.now = realNow
     expect(fetchMock.mock.calls.length).toBeGreaterThan(calls)
     expect(hasDot(renderer.root, 'bg-purple-500')).toBe(true)
+    act(() => renderer.unmount())
+  })
+})
+
+describe('PrChips +N flyout strip', () => {
+  // The "+N" anchor is the last hover-target span in the row; spilled
+  // chips inside the strip match the same predicate, so query before open.
+  const overflowAnchor = (root: TestRenderer.ReactTestInstance) =>
+    root
+      .findAll(
+        (el) =>
+          typeof el.props.className === 'string' &&
+          el.props.className.startsWith('relative inline-flex') &&
+          typeof el.props.onMouseEnter === 'function'
+      )
+      .at(-1)!
+
+  const overflowButton = (root: TestRenderer.ReactTestInstance) =>
+    root.find((el) => el.type === 'button' && /^\+[1-9]/.test(textOf(el)))
+
+  const fixedEls = (root: TestRenderer.ReactTestInstance) =>
+    root.findAll(
+      (el) =>
+        typeof el.props.className === 'string' &&
+        el.props.className.includes('fixed')
+    )
+
+  const openStrip = (root: TestRenderer.ReactTestInstance) => {
+    act(() => overflowAnchor(root).props.onMouseEnter())
+    act(flushWindowTimers)
+  }
+
+  beforeEach(() => {
+    timers = []
+    scrollListeners = []
+    resizeListeners = []
+    keydownListeners = []
+    // avail = 222 - 22 = 200: 3 chips fit, 2 fold into "+2".
+    containerWidth = 222
+    chipRect = { top: 700, bottom: 720, left: 100, right: 140 }
+    globalAny.window = fakeWindow
+    globalAny.document = { body: {} }
+    globalAny.getComputedStyle = () => ({
+      paddingLeft: `${PADDING_LEFT}px`,
+      paddingRight: '0px',
+      columnGap: '4px',
+    })
+    globalThis.fetch = mock(
+      async () => new Response(JSON.stringify([]))
+    ) as unknown as typeof fetch
+  })
+
+  afterAll(() => {
+    globalAny.window = originalWindow
+    globalAny.document = originalDocument
+    globalAny.getComputedStyle = originalGetComputedStyle
+    globalThis.fetch = originalFetch
+  })
+
+  test('hovering +N spills the hidden PRs as bare chips, not a card', () => {
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<PrChips prs={makePrs(5)} />, {
+        createNodeMock: fitNodeMock,
+      })
+    })
+    openStrip(renderer.root)
+
+    const strips = fixedEls(renderer.root)
+    expect(strips.length).toBe(1)
+    const strip = strips[0]
+    // Bare chip cluster: wraps like a continued row, no card chrome.
+    expect(strip.props.className).toContain('flex-wrap')
+    expect(strip.props.className).not.toContain('border')
+    expect(strip.props.className).not.toContain('shadow')
+    expect(strip.props.className).not.toContain('bg-elevated')
+
+    // Visible #5,#4,#3 + spilled #2,#1 — all are real chip links.
+    const hrefs = chipLinks(renderer.root).map((el) => el.props.href)
+    expect(hrefs.length).toBe(5)
+    expect(hrefs).toContain('https://github.com/o/r/pull/1')
+    expect(hrefs).toContain('https://github.com/o/r/pull/2')
+    act(() => renderer.unmount())
+  })
+
+  test('Enter opens the strip; right-edge +N clamps left to the viewport', () => {
+    chipRect = { top: 40, bottom: 60, left: 950, right: 990 }
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<PrChips prs={makePrs(5)} />, {
+        createNodeMock: fitNodeMock,
+      })
+    })
+    act(() =>
+      overflowButton(renderer.root).props.onKeyDown({
+        key: 'Enter',
+        preventDefault: () => {},
+      })
+    )
+    const strip = fixedEls(renderer.root).at(-1)!
+    expect(strip.props.style.top).toBe(60 + 3)
+    // Strip width budget 288: clamped to innerWidth - 288 - margin.
+    expect(strip.props.style.left).toBe(1000 - 288 - 8)
+    act(() => renderer.unmount())
+  })
+
+  test('Escape closes the strip', () => {
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<PrChips prs={makePrs(5)} />, {
+        createNodeMock: fitNodeMock,
+      })
+    })
+    openStrip(renderer.root)
+    expect(fixedEls(renderer.root).length).toBe(1)
+    act(() => {
+      for (const fn of keydownListeners) fn({ key: 'Escape' })
+    })
+    expect(fixedEls(renderer.root).length).toBe(0)
+    act(() => renderer.unmount())
+  })
+
+  test('strip stays open while a nested chip detail card is hovered', () => {
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<PrChips prs={makePrs(5)} />, {
+        createNodeMock: fitNodeMock,
+      })
+    })
+    openStrip(renderer.root)
+    const strip = fixedEls(renderer.root)[0]
+
+    // Rest on a spilled chip — its own detail card opens.
+    const nestedAnchor = strip
+      .findAll(
+        (el) =>
+          typeof el.props.className === 'string' &&
+          el.props.className.startsWith('relative inline-flex') &&
+          typeof el.props.onMouseEnter === 'function'
+      )
+      .at(0)!
+    act(() => nestedAnchor.props.onMouseEnter())
+    act(flushWindowTimers)
+    expect(fixedEls(renderer.root).length).toBe(2)
+
+    // Leaving the strip while the nested card is open must not close it.
+    act(() => strip.props.onMouseLeave())
+    act(flushWindowTimers)
+    expect(fixedEls(renderer.root).length).toBe(2)
+
+    // Leaving the nested card closes it, then the strip follows.
+    const nestedCard = fixedEls(renderer.root).at(-1)!
+    act(() => nestedCard.props.onMouseLeave())
+    act(flushWindowTimers)
+    act(flushWindowTimers)
+    expect(fixedEls(renderer.root).length).toBe(0)
+    act(() => renderer.unmount())
+  })
+
+  test('a nested card closing does not drop the strip while focus is inside', () => {
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<PrChips prs={makePrs(5)} />, {
+        createNodeMock: fitNodeMock,
+      })
+    })
+    openStrip(renderer.root)
+    const strip = fixedEls(renderer.root)[0]
+
+    // Open a spilled chip's detail card, then park keyboard focus inside
+    // the strip (simulated: cardRef.contains(document.activeElement)).
+    const nestedAnchor = strip
+      .findAll(
+        (el) =>
+          typeof el.props.className === 'string' &&
+          el.props.className.startsWith('relative inline-flex') &&
+          typeof el.props.onMouseEnter === 'function'
+      )
+      .at(0)!
+    act(() => nestedAnchor.props.onMouseEnter())
+    act(flushWindowTimers)
+    expect(fixedEls(renderer.root).length).toBe(2)
+    ;(globalAny.document as { activeElement?: unknown }).activeElement = {
+      __inCard: true,
+    }
+
+    const nestedCard = fixedEls(renderer.root).at(-1)!
+    act(() => nestedCard.props.onMouseLeave())
+    act(flushWindowTimers)
+    act(flushWindowTimers)
+    // Nested card closed, but the focused strip stays.
+    expect(fixedEls(renderer.root).length).toBe(1)
+    act(() => renderer.unmount())
+  })
+
+  test('leaving +N before the delay never opens the strip', () => {
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<PrChips prs={makePrs(5)} />, {
+        createNodeMock: fitNodeMock,
+      })
+    })
+    const anchor = overflowAnchor(renderer.root)
+    act(() => anchor.props.onMouseEnter())
+    act(() => anchor.props.onMouseLeave())
+    act(flushWindowTimers)
+    expect(fixedEls(renderer.root).length).toBe(0)
     act(() => renderer.unmount())
   })
 })
