@@ -669,6 +669,8 @@ describe('PrChips info fetch resilience', () => {
         el.props.className.includes('text-pr-closed')
     )
     expect(svgs.length).toBe(2)
+    // Strokes run heavier than the icon default (1.5) for legibility.
+    expect(svgs.map((el) => el.props.strokeWidth)).toEqual([2, 2.5])
     act(() => renderer.unmount())
   })
 
@@ -700,6 +702,7 @@ describe('PrChips info fetch resilience', () => {
     expect(
       svgs.some((el) => el.props.className.includes('absolute'))
     ).toBe(true)
+    expect(svgs.map((el) => el.props.strokeWidth)).toEqual([2, 2.5])
     act(() => renderer.unmount())
   })
 })

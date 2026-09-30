@@ -101,18 +101,23 @@ function PrGlyph({ info }: { info?: PrInfo }) {
           ? Pencil02Icon
           : null
       : null
+  // The 12px glyph and 6px badges run a stroke heavier than the icon
+  // set's 1.5 default — line icons at this size are hard to read,
+  // especially on the light theme.
   if (Badge)
     return (
       <span className="relative inline-flex shrink-0">
         <Icon
           width={PR_ICON_PX}
           height={PR_ICON_PX}
+          strokeWidth={2}
           className={cls}
           aria-hidden
         />
         <Badge
           width={6}
           height={6}
+          strokeWidth={2.5}
           className={`absolute bottom-0 right-0 ${cls}`}
           aria-hidden
         />
@@ -122,6 +127,7 @@ function PrGlyph({ info }: { info?: PrInfo }) {
     <Icon
       width={PR_ICON_PX}
       height={PR_ICON_PX}
+      strokeWidth={2}
       className={`shrink-0 ${cls}`}
       aria-hidden
     />
