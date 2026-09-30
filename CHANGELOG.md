@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.20.1](https://github.com/gbasin/agentboard/compare/v0.20.0...v0.20.1) (2026-09-30)
+
+
+### Bug Fixes
+
+* detect PRs created via codex unified-exec CommandExecution entries ([#318](https://github.com/gbasin/agentboard/issues/318)) ([072c314](https://github.com/gbasin/agentboard/commit/072c3141ca4d4259ccff0236b5d1324d653fc0ac))
+* **server:** stop a nested instance from killing live tmux windows ([#319](https://github.com/gbasin/agentboard/issues/319)) ([33d3f39](https://github.com/gbasin/agentboard/commit/33d3f39c7f271984d5839bdf19a94d6de4ed951e))
+
 ## [0.20.0](https://github.com/gbasin/agentboard/compare/v0.19.1...v0.20.0) (2026-09-30)
 
 
