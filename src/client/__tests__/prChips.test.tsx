@@ -650,6 +650,38 @@ describe('PrChips info fetch resilience', () => {
     }
   })
 
+  test('a fetch in one instance recolors a mounted chip in another', async () => {
+    // Regression: chips copied the cache into local state at mount, so a
+    // merge fetched by the rail's poller never reached the session-row
+    // chip until its own interval ticked — and hovering couldn't fix it,
+    // since hover only refetches when the cache entry itself is expired.
+    const pr = prFor(8)
+    fetchImpl = async () => infoResponse(pr.url, 'OPEN')
+    let r1!: TestRenderer.ReactTestRenderer
+    act(() => {
+      r1 = TestRenderer.create(<PrChips prs={[pr]} />, { createNodeMock })
+    })
+    await act(async () => {})
+    expect(hasIconColor(r1.root, 'text-pr-open')).toBe(true)
+
+    // The PR merges; a second instance (the rail) ticks and refetches
+    // while the first sits untouched — its chip must follow the cache.
+    fetchImpl = async () => infoResponse(pr.url, 'MERGED')
+    const realNow = Date.now
+    Date.now = () => realNow() + 61_000
+    let r2!: TestRenderer.ReactTestRenderer
+    act(() => {
+      r2 = TestRenderer.create(<PrChips prs={[pr]} />, { createNodeMock })
+    })
+    await act(async () => {})
+    Date.now = realNow
+    expect(hasIconColor(r2.root, 'text-pr-merged')).toBe(true)
+    expect(hasIconColor(r1.root, 'text-pr-merged')).toBe(true)
+    expect(hasIconColor(r1.root, 'text-pr-open')).toBe(false)
+    act(() => r1.unmount())
+    act(() => r2.unmount())
+  })
+
   test('closed PRs render the pull-request glyph with a red × overlay', async () => {
     const pr = prFor(5)
     fetchImpl = async () => infoResponse(pr.url, 'CLOSED')
