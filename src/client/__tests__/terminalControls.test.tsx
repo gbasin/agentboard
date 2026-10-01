@@ -34,15 +34,9 @@ function clipboardWithImage() {
 }
 
 function findPasteButton(renderer: TestRenderer.ReactTestRenderer) {
-  const buttons = renderer.root.findAllByType('button')
-  return buttons.find((button) => {
-    const child = button.props.children
-    return (
-      child?.type === 'svg' &&
-      child.props?.stroke === 'currentColor' &&
-      child.props?.fill === 'none'
-    )
-  })
+  return renderer.root
+    .findAllByType('button')
+    .find((button) => button.props['aria-label'] === 'Paste')
 }
 
 describe('TerminalControls', () => {

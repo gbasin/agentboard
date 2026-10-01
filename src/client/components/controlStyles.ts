@@ -21,6 +21,12 @@ export const ICON_SIZE = {
 } as const
 
 /**
+ * Stroke for key strip icons: the library's 1.5 default reads lighter than
+ * the medium-weight text keys (esc, tab, 123) beside them.
+ */
+export const KEY_ICON_STROKE = 2
+
+/**
  * Corner marks composited onto a 12px PR state glyph (draft pencil, closed
  * cross). Part of one 12px glyph, not a standalone icon.
  */
@@ -71,6 +77,14 @@ export function mobileButtonClass(tone: ButtonTone = 'neutral', display = 'flex'
  */
 export const ROW_ICON_BUTTON_CLASS =
   'flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted hover:text-primary'
+
+/**
+ * Full-width tappable rows in the mobile drawer (session rows, section
+ * toggles): at least 44px tall below md, content centered. No effect on
+ * the desktop sidebar.
+ */
+export const MOBILE_ROW_TARGET_CLASS =
+  'max-md:flex max-md:min-h-[44px] max-md:flex-col max-md:justify-center'
 
 /**
  * Widens a control's touch target to 44x44 CSS px on coarse pointers without

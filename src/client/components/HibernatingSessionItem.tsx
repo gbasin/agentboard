@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AgentSession } from '@shared/types'
 import { AlertTriangleIcon, Edit05Icon, File06Icon, Moon01Icon, PlayIcon, XCloseIcon } from './icons'
-import { ICON_SIZE } from './controlStyles'
+import { ICON_SIZE, MOBILE_ROW_TARGET_CLASS } from './controlStyles'
 import { copyText } from '../utils/copyText'
 import { getPathLeaf } from '../utils/sessionLabel'
 import { getSessionIdShort } from '../utils/sessionId'
@@ -112,7 +112,7 @@ export default function HibernatingSessionItem({
 
   return (
     <div
-      className={`group relative cursor-pointer px-3 py-2 hover:bg-hover ${isSelected ? 'bg-hover' : ''}`}
+      className={`group relative cursor-pointer px-3 py-2 hover:bg-hover ${MOBILE_ROW_TARGET_CLASS} ${isSelected ? 'bg-hover' : ''}`}
       role="button"
       tabIndex={0}
       data-testid="hibernating-session-card"

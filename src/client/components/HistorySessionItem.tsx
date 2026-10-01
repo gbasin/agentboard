@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import { AlertTriangleIcon, File06Icon, PlayIcon } from './icons'
-import { ICON_SIZE, ROW_ICON_BUTTON_CLASS } from './controlStyles'
+import { ICON_SIZE, MOBILE_ROW_TARGET_CLASS, ROW_ICON_BUTTON_CLASS } from './controlStyles'
 import type { AgentSession } from '@shared/types'
 import { copyText } from '../utils/copyText'
 import { getPathLeaf } from '../utils/sessionLabel'
@@ -76,7 +76,7 @@ export default memo(function HistorySessionItem({
 
   return (
     <div
-      className="group relative cursor-pointer px-3 py-2 hover:bg-hover"
+      className={`group relative cursor-pointer px-3 py-2 hover:bg-hover ${MOBILE_ROW_TARGET_CLASS}`}
       role="button"
       tabIndex={0}
       title="Click to preview"

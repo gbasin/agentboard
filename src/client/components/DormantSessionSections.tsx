@@ -11,7 +11,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'motion/react'
 import { ChevronDownIcon, ChevronRightIcon } from './icons'
-import { ICON_SIZE } from './controlStyles'
+import { ICON_SIZE, MOBILE_ROW_TARGET_CLASS } from './controlStyles'
 import type { AgentSession } from '@shared/types'
 import type { SidebarAnchor } from '../stores/settingsStore'
 import { useSettingsStore } from '../stores/settingsStore'
@@ -20,8 +20,7 @@ import HistorySessionItem from './HistorySessionItem'
 
 const HISTORY_PAGE_SIZE = 20
 
-const sectionToggleClass =
-  'flex w-full items-center justify-between px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-muted hover:text-primary'
+const sectionToggleClass = `flex w-full items-center justify-between px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-muted hover:text-primary max-md:min-h-[44px]`
 
 function sectionBorderClass(anchor: SidebarAnchor): string {
   return anchor === 'bottom' ? 'border-b border-border' : 'border-t border-border'
@@ -158,7 +157,7 @@ export function HistorySection({
     <button
       type="button"
       onClick={() => setLimit((prev) => prev + HISTORY_PAGE_SIZE)}
-      className="w-full px-3 py-2 text-center text-xs text-muted hover:text-primary hover:bg-hover"
+      className={`w-full px-3 py-2 text-center text-xs text-muted hover:text-primary hover:bg-hover ${MOBILE_ROW_TARGET_CLASS}`}
     >
       Show more ({sessions.length - limit} remaining)
     </button>
