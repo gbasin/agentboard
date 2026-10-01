@@ -5,7 +5,6 @@ import { SortableContext } from '@dnd-kit/sortable'
 import type { AgentSession, Session } from '@shared/types'
 import SessionList from '../components/SessionList'
 import SessionDrawer from '../components/SessionDrawer'
-import Header from '../components/Header'
 import ProjectFilterDropdown from '../components/ProjectFilterDropdown'
 import HostFilterDropdown from '../components/HostFilterDropdown'
 import { useSettingsStore } from '../stores/settingsStore'
@@ -143,7 +142,7 @@ function outline(node: Json | Json[], out: string[] = []): string[] {
   const className = typeof props.className === 'string' ? props.className : ''
   if (props['data-testid'] === 'session-card') out.push(`row:${props['data-session-id']}`)
   if (props['data-testid'] === 'hibernating-session-card') out.push(`hib:${props['data-session-id']}`)
-  if (props['data-testid'] === 'footer') out.push('footer')
+  if (props['data-testid'] === 'controls') out.push('controls')
   if (className.includes('sticky')) out.push('filter')
   if (props['data-testid'] === 'session-card' || props['data-testid'] === 'hibernating-session-card') {
     return out // row internals are not landmarks
@@ -167,7 +166,7 @@ function renderList(props: Partial<Parameters<typeof SessionList>[0]> = {}, node
         error={null}
         onSelect={() => {}}
         onRename={() => {}}
-        footer={<div data-testid="footer" />}
+        filterBarControls={<div data-testid="controls" />}
         {...props}
       />,
       nodeMock ? { createNodeMock: nodeMock } : undefined
@@ -183,6 +182,7 @@ describe('SessionList anchor: rendered order', () => {
     const renderer = renderList()
     expect(outline(renderer.toJSON())).toEqual([
       'filter',
+      'controls',
       'label:Active',
       'row:s3',
       'row:s2',
@@ -193,7 +193,6 @@ describe('SessionList anchor: rendered order', () => {
       'label:History',
       ...topHistory,
       'show-more',
-      'footer',
       'hint',
     ])
     act(() => renderer.unmount())
@@ -213,7 +212,7 @@ describe('SessionList anchor: rendered order', () => {
       'row:s2',
       'row:s3',
       'filter',
-      'footer',
+      'controls',
       'hint',
     ])
     act(() => renderer.unmount())
@@ -589,29 +588,31 @@ describe('SessionList anchor: bottom pinning', () => {
   })
 })
 
-describe('Header placement', () => {
-  test('bottom placement moves the divider to the top edge', () => {
-    const render = (placement?: 'top' | 'bottom') => {
-      let renderer!: TestRenderer.ReactTestRenderer
-      act(() => {
-        renderer = TestRenderer.create(
-          <Header
-            connectionStatus="connected"
-            onNewSession={() => {}}
-            onOpenSettings={() => {}}
-            tailscaleIp={null}
-            placement={placement}
-          />
-        )
-      })
-      const className = renderer.root.findByType('header').props.className as string
-      act(() => renderer.unmount())
-      return className
-    }
-    expect(render()).toMatch(/\bborder-b\b/)
-    expect(render()).not.toMatch(/\bborder-t\b/)
-    expect(render('bottom')).toMatch(/\bborder-t\b/)
-    expect(render('bottom')).not.toMatch(/\bborder-b\b/)
+describe('filter bar controls', () => {
+  const barChildren = (renderer: TestRenderer.ReactTestRenderer) => {
+    const bar = renderer.root.find((n) =>
+      n.type === 'div' && typeof n.props.className === 'string' && n.props.className.includes('sticky')
+    )
+    return bar.children.map((child) =>
+      typeof child === 'string' ? child : child.props['data-testid'] ?? child.props.className
+    )
+  }
+
+  test.each(['top', 'bottom'] as const)('%s anchor: dropdowns on the left, controls at the right end', (anchor) => {
+    const renderer = renderList({ anchor })
+    const children = barChildren(renderer)
+    expect(children).toHaveLength(2)
+    expect(children[0]).toContain('min-w-0 flex-1')
+    expect(children[1]).toBe('controls')
+    act(() => renderer.unmount())
+  })
+
+  test('without controls (mobile drawer) the bar holds only the dropdowns', () => {
+    const renderer = renderList({ filterBarControls: undefined })
+    const children = barChildren(renderer)
+    expect(children).toHaveLength(1)
+    expect(children[0]).toContain('min-w-0 flex-1')
+    act(() => renderer.unmount())
   })
 })
 

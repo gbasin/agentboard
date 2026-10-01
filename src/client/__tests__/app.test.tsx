@@ -3,7 +3,7 @@ import TestRenderer, { act } from 'react-test-renderer'
 import type { AgentSession, ServerMessage, Session } from '@shared/types'
 import SessionList from '../components/SessionList'
 import NewSessionModal from '../components/NewSessionModal'
-import Header from '../components/Header'
+import SidebarControls from '../components/SidebarControls'
 import { useSessionStore } from '../stores/sessionStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useThemeStore } from '../stores/themeStore'
@@ -1193,10 +1193,13 @@ describe('App', () => {
       const [desktopList, drawerList] = renderer.root.findAllByType(SessionList)
       const layout = {
         anchor: desktopList.props.anchor,
-        footerPlacement: desktopList.props.footer?.props.placement,
-        footerIsHeader: desktopList.props.footer?.type === Header,
+        controlsPlacement: desktopList.props.filterBarControls?.props.placement,
+        controlsAreSidebarControls: desktopList.props.filterBarControls?.type === SidebarControls,
         drawerAnchor: drawerList?.props.anchor,
-        headers: renderer.root.findAllByType(Header).map((h) => h.props.placement),
+        drawerControls: drawerList?.props.filterBarControls,
+        controls: renderer.root.findAllByType(SidebarControls).map((c) => c.props.placement),
+        wordmark: JSON.stringify(renderer.toJSON()).includes('AGENTBOARD'),
+        headerElements: renderer.root.findAllByType('header').length,
       }
       act(() => renderer.unmount())
       return { selections, layout }
@@ -1209,17 +1212,23 @@ describe('App', () => {
 
     expect(top.layout).toEqual({
       anchor: 'top',
-      footerPlacement: undefined,
-      footerIsHeader: false,
+      controlsPlacement: 'down',
+      controlsAreSidebarControls: true,
       drawerAnchor: undefined,
-      headers: ['top'],
+      drawerControls: undefined,
+      controls: ['down'],
+      wordmark: false,
+      headerElements: 0,
     })
     expect(bottom.layout).toEqual({
       anchor: 'bottom',
-      footerPlacement: 'bottom',
-      footerIsHeader: true,
+      controlsPlacement: 'up',
+      controlsAreSidebarControls: true,
       drawerAnchor: undefined,
-      headers: ['bottom'],
+      drawerControls: undefined,
+      controls: ['up'],
+      wordmark: false,
+      headerElements: 0,
     })
   })
 
