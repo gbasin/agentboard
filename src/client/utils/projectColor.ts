@@ -4,9 +4,9 @@
  * distinct hues; oklch() in the CSS keeps perceived brightness uniform.
  */
 
-// 14 hand-tuned OKLCH hues covering the full wheel — adjacent entries are
-// far enough apart (~25°) that colliding hashes still produce visibly
-// different pills.
+// 14 hand-tuned OKLCH hues covering the full wheel — adjacent slots are
+// ~25° apart, so names hashing to neighboring entries still render as
+// visibly different pills.
 const PROJECT_HUES = [
   25, // red
   50, // orange
