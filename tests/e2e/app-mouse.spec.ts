@@ -114,3 +114,102 @@ test('mouse input is forwarded to both panes across a session switch', async ({ 
     tmux(['kill-window', '-t', targetB])
   }
 })
+
+test('forced local selection survives the appMouse status poll', async ({ page }) => {
+  const session = process.env.E2E_TMUX_SESSION
+  test.skip(!session, 'E2E_TMUX_SESSION not set')
+  const targetA = `${session}:${WINDOW_A}`
+
+  // Selection children only exist under the DOM renderer — force it off WebGL
+  // before the app reads its persisted settings.
+  await page.addInitScript(() => {
+    const raw = localStorage.getItem('agentboard-settings')
+    let stored: { state?: Record<string, unknown>; version?: number } = {}
+    try {
+      stored = JSON.parse(raw ?? '') || {}
+    } catch {
+      /* fresh state */
+    }
+    stored.state = { ...stored.state, useWebGL: false }
+    stored.version = 8
+    localStorage.setItem('agentboard-settings', JSON.stringify(stored))
+  })
+
+  const created = tmux([
+    'new-window', '-t', session!, '-n', WINDOW_A,
+    `python3 ${REPL_PATH} A`,
+  ])
+  expect(created.status).toBe(0)
+
+  // Forensics: a completed selection is cleared by onUserInput (input sent),
+  // onResize (rowsChanged), trim, or buffer-activate — input/resize leave as
+  // WS frames, so log every sent frame with a timestamp.
+  const sentFrames: string[] = []
+  const modeFrames: string[] = []
+  page.on('websocket', (ws) => {
+    ws.on('framesent', (f) =>
+      sentFrames.push(`${Date.now()}:${String(f.payload ?? '').slice(0, 80)}`)
+    )
+    ws.on('framereceived', (f) => {
+      const p = String(f.payload ?? '')
+      if (p.includes('\\u001b[?') || p.includes('\u001b[?'))
+        modeFrames.push(`${Date.now()}:${p.slice(0, 160)}`)
+    })
+  })
+
+  try {
+    await waitForPaneText(targetA, 'MOUSE-REPL READY')
+    await page.goto('/')
+    await selectSession(page, WINDOW_A)
+    await expect(page.locator('.xterm.enable-mouse-events')).toBeVisible()
+
+    const selKids = () => page.locator('.xterm-selection > *').count()
+
+    // Force a local selection while the pane app owns the mouse: Option+drag
+    // on macOS (macOptionClickForcesSelection), Shift+drag elsewhere. Hold
+    // both so the spec works on either platform.
+    const box = await page.locator('.xterm').boundingBox()
+    if (!box) throw new Error('xterm not visible')
+    const y = box.y + box.height / 2
+    await page.keyboard.down('Alt')
+    await page.keyboard.down('Shift')
+    await page.mouse.move(box.x + 80, y)
+    await page.mouse.down()
+    await page.mouse.move(box.x + 320, y, { steps: 8 })
+    await expect.poll(selKids).toBeGreaterThan(0)
+
+    // Regression: the 750ms appMouse poll used to rewrite ENABLE_MOUSE_TRACKING
+    // unconditionally, and every DECSET fires xterm's onProtocolChange →
+    // selectionService.disable() → clearSelection() — killing a live drag and
+    // detaching its document listeners. Hold across two poll intervals.
+    const trace: string[] = []
+    const t0 = Date.now()
+    for (let i = 0; i < 20; i++) {
+      const kids = await selKids()
+      const mouseCls = await page.locator('.xterm.enable-mouse-events').count()
+      trace.push(`${Date.now() - t0}ms kids=${kids} cls=${mouseCls}`)
+      if (kids === 0) break
+      await page.waitForTimeout(100)
+    }
+    // Still holding the button — keep extending to prove the drag is alive.
+    await page.mouse.move(box.x + 420, y + 20, { steps: 4 })
+    await page.mouse.up()
+    await page.keyboard.up('Shift')
+    await page.keyboard.up('Alt')
+
+    // A completed selection must also survive the poll (it used to be cleared
+    // ≤750ms later, before the user could copy).
+    const post: string[] = []
+    for (let i = 0; i < 16; i++) {
+      const kids = await selKids()
+      post.push(kids === 0 ? '0' : String(kids))
+      await page.waitForTimeout(100)
+    }
+    expect(
+      post.includes('0'),
+      `selection cleared post-release; selKids trace: [${post.join(',')}]; hold trace: ${trace.join(' | ')}; sent: ${sentFrames.slice(-15).join(' || ')}; modeFrames: ${modeFrames.slice(-15).join(' || ')}`
+    ).toBe(false)
+  } finally {
+    tmux(['kill-window', '-t', targetA])
+  }
+})

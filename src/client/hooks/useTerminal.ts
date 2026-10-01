@@ -78,6 +78,35 @@ const CTRL_V = '\x16'
 const ENABLE_MOUSE_TRACKING = '\x1b[?1000h\x1b[?1002h\x1b[?1006h'
 const DISABLE_MOUSE_TRACKING = '\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l'
 
+// Mouse-tracking modes that drive xterm's CoreMouseService protocol/encoding.
+// Pane output can carry DECSET/DECRST for these — a real tmux client (the pty
+// proxy) emits ?1006l ?1000l ?1002l ?1003l on every client redraw, and apps
+// emit their own enables. Every applied sequence fires xterm's
+// onProtocolChange → selectionService.disable() → clearSelection(), which
+// destroys in-progress drags and completed selections. The client owns the
+// mode instead: strip them from pane output and drive it from the appMouse
+// status poll.
+const MOUSE_MODE_PARAMS = new Set([9, 1000, 1002, 1003, 1005, 1006, 1015, 1016])
+// eslint-disable-next-line no-control-regex
+const DECSET_RE = /\x1b\[\?([0-9;]+)([hl])/g
+// Trailing bytes that could be the start of a CSI split across writes.
+// eslint-disable-next-line no-control-regex
+const PARTIAL_CSI_TAIL = /\x1b(?:\[[0-9;<=>?]*)?$/
+
+// Removes mouse-tracking DECSET/DECRST from pane output. A trailing partial
+// CSI is carried in `tail` so sequences split across writes are still caught
+// (xterm's parser would otherwise complete and apply them).
+const stripMouseModeSequences = (data: string, tail: { current: string }) => {
+  const buf = tail.current + data
+  const partial = buf.match(PARTIAL_CSI_TAIL)
+  const end = partial ? buf.length - partial[0].length : buf.length
+  tail.current = partial?.[0] ?? ''
+  return buf.slice(0, end).replace(DECSET_RE, (seq, params: string, term: string) => {
+    const kept = params.split(';').filter((p) => !MOUSE_MODE_PARAMS.has(Number(p)))
+    return kept.length ? `\x1b[?${kept.join(';')}${term}` : ''
+  })
+}
+
 /**
  * Upload an image blob to the server and return the stored file path.
  * Returns null on any failure. Bun derives the multipart File.type from the
@@ -406,6 +435,7 @@ export function useTerminal({
 
   // Deferred reset: defer terminal.reset() until history arrives to avoid blank flash
   const needsResetRef = useRef(false)
+  const mouseModeTailRef = useRef('')
   const [isSwitching, setIsSwitching] = useState(false)
 
   // Tuning: flush when idle for 2ms, or at most every 16ms
@@ -502,8 +532,8 @@ export function useTerminal({
     setIsTmuxCopyMode(nextValue)
 
     // Disable mouse tracking when entering copy-mode so xterm.js does local selection
-    // instead of generating mouse sequences. When exiting copy-mode, tmux will refresh
-    // and re-enable mouse tracking automatically via its output.
+    // instead of generating mouse sequences. On exit, the appMouse status poll
+    // re-enables tracking — pane output can't do it (mode sequences stripped).
     const terminal = terminalRef.current
     if (terminal && nextValue) {
       // Disable all mouse tracking modes (1000=X10, 1002=button-event, 1003=any-event, 1006=SGR)
@@ -581,6 +611,10 @@ export function useTerminal({
       // Ensure text is readable even when apps use true color (24-bit RGB) sequences
       // that bypass our theme colors (e.g., Pi using black text on dark backgrounds)
       minimumContrastRatio: 4.5,
+      // Option+drag forces a local selection even when the pane's app owns the
+      // mouse (Claude/Codex fullscreen TUIs) — the standard macOS convention for
+      // selecting text in a mouse-mode terminal.
+      macOptionClickForcesSelection: true,
     })
 
     const fitAddon = new FitAddon()
@@ -1382,7 +1416,7 @@ export function useTerminal({
       const cached = snapshotCache.get(sessionId)
       if (cached) {
         terminal.reset()
-        terminal.write(cached)
+        terminal.write(stripMouseModeSequences(cached, mouseModeTailRef))
         // needsResetRef stays true — live history will replace the snapshot
       }
 
@@ -1542,7 +1576,7 @@ export function useTerminal({
       const writeStart = performance.now()
       const dataLen = data.length
 
-      terminal.write(data, () => {
+      terminal.write(stripMouseModeSequences(data, mouseModeTailRef), () => {
         const writeMs = Math.round(performance.now() - writeStart)
         // Log slow writes (>50ms) to catch render bottlenecks
         if (writeMs > 50) {
@@ -1735,17 +1769,24 @@ export function useTerminal({
         appMouseRef.current = nextAppMouse
         altScreenRef.current = message.altScreen === true
 
-        // Re-assert on every status (750ms poll), not only on a false→true
-        // transition. xterm's DECSET mouse modes can be lost without any
-        // transition — terminal.reset()/recreation, tmux mode-sync gaps —
-        // and a stale `wasAppMouse` would then leave the pane permanently
-        // unable to receive mouse input (drags degrade to dead DOM
-        // selections; selection+copy in Claude/Codex TUIs never runs).
-        // The write is an idempotent mode-set, and `nextAppMouse` already
-        // reflects the pane's current flag, so this can't fight an app that
-        // legitimately disabled mouse reporting.
-        if (nextAppMouse) {
-          terminalRef.current?.write(ENABLE_MOUSE_TRACKING)
+        // Client owns xterm's mouse mode: pane-output mode sequences are
+        // stripped (see stripMouseModeSequences), so the mode is driven solely
+        // here from the pane's mouse_any_flag. Heal lost modes on every status
+        // (750ms poll), not only on false→true transitions — modes can be lost
+        // without a transition (terminal.reset()/recreation, tmux mode-sync
+        // gaps), leaving the pane permanently unable to receive mouse input.
+        //
+        // But only write on actual desync: every DECSET/DECRST fires xterm's
+        // onProtocolChange even for a same-value set, and that handler runs
+        // selectionService.disable() → clearSelection() — which destroys any
+        // in-progress or completed selection and removes the mid-drag
+        // document listeners. A same-mode rewrite is never safe.
+        const terminal = terminalRef.current
+        if (terminal) {
+          const mode = terminal.modes.mouseTrackingMode
+          if (nextAppMouse ? mode !== 'drag' : mode !== 'none') {
+            terminal.write(nextAppMouse ? ENABLE_MOUSE_TRACKING : DISABLE_MOUSE_TRACKING)
+          }
         }
 
         setTmuxCopyMode(message.inCopyMode)
