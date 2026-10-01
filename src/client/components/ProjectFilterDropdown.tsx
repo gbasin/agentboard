@@ -8,6 +8,8 @@ interface ProjectFilterDropdownProps {
   selectedProjects: string[]
   onSelect: (projects: string[]) => void
   hasHiddenPermissions: boolean
+  /** 'up' opens the menu above the button (bottom-anchored sidebar). */
+  placement?: 'down' | 'up'
 }
 
 export default function ProjectFilterDropdown({
@@ -15,6 +17,7 @@ export default function ProjectFilterDropdown({
   selectedProjects,
   onSelect,
   hasHiddenPermissions,
+  placement = 'down',
 }: ProjectFilterDropdownProps) {
   const [open, setOpen] = useState(false)
   const menuId = useId()
@@ -89,7 +92,7 @@ export default function ProjectFilterDropdown({
         <div
           id={menuId}
           role="menu"
-          className="absolute left-0 z-20 mt-1 w-60 max-w-[calc(100vw-1.5rem)] rounded border border-border bg-surface p-2 text-xs shadow-lg"
+          className={`absolute left-0 z-20 ${placement === 'up' ? 'bottom-full mb-1' : 'mt-1'} w-60 max-w-[calc(100vw-1.5rem)] rounded border border-border bg-surface p-2 text-xs shadow-lg`}
         >
           <label className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-primary hover:bg-hover">
             <input

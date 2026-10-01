@@ -107,6 +107,7 @@ export default function App() {
   const addRecentPath = useSettingsStore((state) => state.addRecentPath)
   const shortcutModifier = useSettingsStore((state) => state.shortcutModifier)
   const sidebarWidth = useSettingsStore((state) => state.sidebarWidth)
+  const sidebarAnchor = useSettingsStore((state) => state.sidebarAnchor)
   const setSidebarWidth = useSettingsStore((state) => state.setSidebarWidth)
   const projectFilters = useSettingsStore((state) => state.projectFilters)
   const hostFilters = useSettingsStore((state) => state.hostFilters)
@@ -939,6 +940,18 @@ export default function App() {
     return hostStatuses.filter((hostStatus) => hostStatus.host !== hostLabel)
   }, [hostStatuses, hostLabel])
 
+  // Bottom anchor mirrors the desktop column: the header moves below the
+  // list (SessionList places it above the hint bar). Top keeps it first.
+  const sidebarHeader = (
+    <Header
+      connectionStatus={connectionStatus}
+      onNewSession={handleNewSession}
+      onOpenSettings={handleOpenSettings}
+      tailscaleIp={serverInfo?.tailscaleIp ?? null}
+      placement={sidebarAnchor}
+    />
+  )
+
   return (
     <div className="flex h-full overflow-hidden">
       {/* Left column: header + sidebar - always hidden on mobile (drawer handles it) */}
@@ -946,12 +959,7 @@ export default function App() {
         className="hidden h-full flex-col md:flex md:shrink-0"
         style={{ width: sidebarWidth }}
       >
-        <Header
-          connectionStatus={connectionStatus}
-          onNewSession={handleNewSession}
-          onOpenSettings={handleOpenSettings}
-          tailscaleIp={serverInfo?.tailscaleIp ?? null}
-        />
+        {sidebarAnchor === 'top' && sidebarHeader}
         <SessionList
           sessions={sessions}
           hibernatingSessions={hibernatingAgentSessions}
@@ -969,6 +977,8 @@ export default function App() {
           onNewSession={handleNewSession}
           loading={!hasLoaded}
           error={connectionError || serverError}
+          anchor={sidebarAnchor}
+          footer={sidebarAnchor === 'bottom' ? sidebarHeader : undefined}
         />
       </div>
 

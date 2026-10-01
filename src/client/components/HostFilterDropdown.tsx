@@ -8,6 +8,8 @@ interface HostFilterDropdownProps {
   selectedHosts: string[]
   onSelect: (hosts: string[]) => void
   statuses?: HostStatus[]
+  /** 'up' opens the menu above the button (bottom-anchored sidebar). */
+  placement?: 'down' | 'up'
 }
 
 export default function HostFilterDropdown({
@@ -15,6 +17,7 @@ export default function HostFilterDropdown({
   selectedHosts,
   onSelect,
   statuses = [],
+  placement = 'down',
 }: HostFilterDropdownProps) {
   const [open, setOpen] = useState(false)
   const menuId = useId()
@@ -88,7 +91,7 @@ export default function HostFilterDropdown({
         <div
           id={menuId}
           role="menu"
-          className="absolute left-0 z-20 mt-1 w-48 max-w-[calc(100vw-1.5rem)] rounded border border-border bg-surface p-2 text-xs shadow-lg"
+          className={`absolute left-0 z-20 ${placement === 'up' ? 'bottom-full mb-1' : 'mt-1'} w-48 max-w-[calc(100vw-1.5rem)] rounded border border-border bg-surface p-2 text-xs shadow-lg`}
         >
           <label
             role="menuitemcheckbox"
