@@ -31,7 +31,7 @@ test.afterEach(() => windows.cleanup())
 
 function filterBar(scope: Locator): Locator {
   return scope
-    .getByRole('button', { name: 'Filter by project' })
+    .getByRole('button', { name: /^Filter\b/ })
     .locator('xpath=ancestor::div[contains(concat(" ", @class, " "), " sticky ")][1]')
 }
 
@@ -113,6 +113,7 @@ for (const anchor of ANCHORS) {
       expect(Math.abs(hint.bottom - vh)).toBeLessThanOrEqual(1)
     }
     for (const control of [
+      sidebar.getByRole('button', { name: 'Filter', exact: true }),
       dotButton(sidebar),
       sidebar.getByRole('button', { name: 'New session', exact: true }),
       sidebar.getByRole('button', { name: 'Settings', exact: true }),
@@ -208,8 +209,8 @@ test('Tailscale popover is operable by keyboard alone', async ({ page, context }
   const { sidebar } = await openBoard(page, { anchor: 'top', tailscaleIp: IP })
   const dot = dotButton(sidebar)
 
-  // Tab from the project filter reaches the dot, with a visible focus ring.
-  await sidebar.getByRole('button', { name: 'Filter by project' }).focus()
+  // Tab from the filter button reaches the dot, with a visible focus ring.
+  await sidebar.getByRole('button', { name: 'Filter', exact: true }).focus()
   await page.keyboard.press('Tab')
   await expect(dot).toBeFocused()
   expect(await dot.evaluate((el) => getComputedStyle(el).boxShadow)).not.toBe('none')
@@ -332,7 +333,7 @@ for (const anchor of ANCHORS) {
     const hint = await box(hintBar(sidebar))
     const gear = await box(sidebar.getByRole('button', { name: 'Settings', exact: true }))
     const side = await box(sidebar)
-    const filter = await box(sidebar.getByRole('button', { name: 'Filter by project' }))
+    const filter = await box(sidebar.getByRole('button', { name: 'Filter', exact: true }))
     const controls = [
       await box(dotButton(sidebar)),
       await box(sidebar.getByRole('button', { name: 'New session', exact: true })),
@@ -347,7 +348,11 @@ for (const anchor of ANCHORS) {
       // One row: every control shares the dot's vertical position.
       expect(Math.abs(control.top - controls[0].top)).toBeLessThanOrEqual(0.5)
     }
-    // Left to right without overlap, after the (truncated) project filter.
+    // Same 28px square as the gear, at the bar's left end.
+    expect(Math.abs(filter.height - gear.height)).toBeLessThanOrEqual(0.5)
+    expect(Math.abs(filter.right - filter.left - (gear.right - gear.left))).toBeLessThanOrEqual(0.5)
+    expect(inside(filter, bar)).toBe(true)
+    // Left to right without overlap: filter, then the right-hand controls.
     expect(filter.right).toBeLessThanOrEqual(controls[0].left)
     expect(controls[0].right).toBeLessThanOrEqual(controls[1].left)
     expect(controls[1].right).toBeLessThanOrEqual(controls[2].left)

@@ -41,8 +41,7 @@ import AgentIcon from './AgentIcon'
 import ProjectBadge from './ProjectBadge'
 import HostBadge from './HostBadge'
 import { PrChips } from './PrChips'
-import HostFilterDropdown from './HostFilterDropdown'
-import ProjectFilterDropdown from './ProjectFilterDropdown'
+import SessionFilterButton from './SessionFilterButton'
 import SessionPreviewModal from './SessionPreviewModal'
 import { HibernatingSection, HistorySection } from './DormantSessionSections'
 
@@ -544,21 +543,16 @@ export default function SessionList({
         isBottom ? 'bottom-0 shrink-0 border-t border-border' : 'top-0 border-b border-border'
       }`}
     >
-      {/* min-w-0: dropdown labels truncate so the controls never wrap or clip */}
-      <div className="flex min-w-0 flex-1 items-center gap-2">
-        {showHostInfo && (
-          <HostFilterDropdown
-            hosts={uniqueHosts}
-            selectedHosts={hostFilters}
-            onSelect={setHostFilters}
-            statuses={hostStatuses}
-            placement={isBottom ? 'up' : 'down'}
-          />
-        )}
-        <ProjectFilterDropdown
+      <div className="flex min-w-0 flex-1 items-center">
+        <SessionFilterButton
           projects={uniqueProjects}
           selectedProjects={projectFilters}
-          onSelect={setProjectFilters}
+          onSelectProjects={setProjectFilters}
+          hosts={uniqueHosts}
+          selectedHosts={hostFilters}
+          onSelectHosts={setHostFilters}
+          hostStatuses={hostStatuses}
+          showHosts={showHostInfo}
           hasHiddenPermissions={hiddenPermissionCount > 0}
           placement={isBottom ? 'up' : 'down'}
         />

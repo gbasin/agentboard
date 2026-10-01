@@ -35,10 +35,10 @@ const windows = new Windows()
 test.afterEach(() => windows.cleanup())
 
 function filterBar(scope: Locator): Locator {
-  // The sticky bar that holds the project filter (and, on desktop, the
+  // The sticky bar that holds the filter button (and, on desktop, the
   // sidebar controls).
   return scope
-    .getByRole('button', { name: 'Filter by project' })
+    .getByRole('button', { name: /^Filter\b/ })
     .locator('xpath=ancestor::div[contains(concat(" ", @class, " "), " sticky ")][1]')
 }
 
@@ -202,7 +202,7 @@ test('Bottom: an overflowing list opens at the bottom and stays pinned when a se
     .toBe(added)
 })
 
-test('Bottom: the project filter dropdown opens upward inside the viewport', async ({
+test('Bottom: the filter menu opens upward inside the viewport', async ({
   page,
 }) => {
   const prefix = uniquePrefix('drop')
@@ -214,7 +214,7 @@ test('Bottom: the project filter dropdown opens upward inside the viewport', asy
   await page.goto('/')
   await expect(sidebar.getByTestId('session-card')).toHaveCount(3, DISCOVERY)
 
-  const trigger = sidebar.getByRole('button', { name: 'Filter by project' })
+  const trigger = sidebar.getByRole('button', { name: 'Filter', exact: true })
   await trigger.click()
   const menu = sidebar.getByRole('menu')
   await expect(menu).toBeVisible()

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import TestRenderer, { act } from 'react-test-renderer'
 import type { Session } from '@shared/types'
-import ProjectFilterDropdown from '../components/ProjectFilterDropdown'
+import SessionFilterButton from '../components/SessionFilterButton'
 import SessionList from '../components/SessionList'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useSessionStore } from '../stores/sessionStore'
@@ -93,12 +93,13 @@ describe('SessionList project filters', () => {
       )
     })
 
-    const dropdown = renderer.root.findByType(ProjectFilterDropdown)
-    expect(dropdown.props.selectedProjects).toEqual(['/tmp/visible'])
-    expect(dropdown.props.projects).toEqual(
+    const filter = renderer.root.findByType(SessionFilterButton)
+    expect(filter.props.selectedProjects).toEqual(['/tmp/visible'])
+    expect(filter.props.showHosts).toBe(false)
+    expect(filter.props.projects).toEqual(
       expect.arrayContaining(['/tmp/visible', '/tmp/hidden'])
     )
-    expect(dropdown.props.hasHiddenPermissions).toBe(true)
+    expect(filter.props.hasHiddenPermissions).toBe(true)
 
     act(() => {
       renderer.unmount()
