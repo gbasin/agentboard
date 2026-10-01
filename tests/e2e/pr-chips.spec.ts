@@ -10,27 +10,51 @@ const PRS = Array.from({ length: 30 }, (_, i) => ({
 
 const PR_LINK = 'a[href*="github.com/o/r/pull/"]'
 
-// Inject prs into every 'sessions' payload so each session card renders a
-// chip row that overflows. Exercises the real client render path (portal
+// The window tests/e2e/setup.ts creates for the whole run. Other specs share
+// this server and create, update and kill their own windows while these
+// tests hover; the stub hides those so the card under the pointer can't be
+// re-sorted, replaced or killed mid-hover.
+const PINNED_SESSION_NAME = 'test'
+
+type WireSession = { name?: string; [k: string]: unknown }
+
+// Show only the pinned session, with an overflowing PR list, in every frame
+// that carries session objects: the 'sessions' snapshot and the incremental
+// 'session-update' / 'session-created' frames. The client replaces a
+// session wholesale on 'session-update', so a frame passed through
+// unpatched would strip the PRs and unmount the chip row (and any open
+// strip) under the pointer. Exercises the real client render path (portal
 // positioning, hover intent, nested cards) without faking log matching.
 async function routeSessionsWithPrs(page: import('@playwright/test').Page) {
   await page.routeWebSocket(/\/ws$/, (ws) => {
     const server = ws.connectToServer()
     ws.onMessage((message) => server.send(message))
     server.onMessage((message) => {
-      let out = message
+      let parsed: { type?: string; sessions?: WireSession[]; session?: WireSession }
       try {
-        const parsed = JSON.parse(String(message))
-        if (parsed.type === 'sessions' && Array.isArray(parsed.sessions)) {
-          parsed.sessions = parsed.sessions.map(
-            (s: Record<string, unknown>) => ({ ...s, prs: PRS })
-          )
-          out = JSON.stringify(parsed)
-        }
+        parsed = JSON.parse(String(message))
       } catch {
-        // non-JSON frame — forward as-is
+        ws.send(message) // non-JSON frame — forward as-is
+        return
       }
-      ws.send(out)
+      if (parsed.type === 'sessions' && Array.isArray(parsed.sessions)) {
+        parsed.sessions = parsed.sessions
+          .filter((s) => s.name === PINNED_SESSION_NAME)
+          .map((s) => ({ ...s, prs: PRS }))
+        ws.send(JSON.stringify(parsed))
+        return
+      }
+      if (
+        (parsed.type === 'session-update' ||
+          parsed.type === 'session-created') &&
+        parsed.session
+      ) {
+        if (parsed.session.name !== PINNED_SESSION_NAME) return
+        parsed.session = { ...parsed.session, prs: PRS }
+        ws.send(JSON.stringify(parsed))
+        return
+      }
+      ws.send(message)
     })
   })
 }
@@ -154,6 +178,9 @@ test('Enter opens the strip into its first chip; Escape returns focus to +N', as
   const strip = page.getByTestId('pr-flyout')
   await expect(strip).toBeVisible()
   await expect(strip.locator(PR_LINK).first()).toBeFocused()
+  // Enter belongs to "+N", not the card around it: selecting the session
+  // would start a terminal attach that pulls focus out of the strip.
+  await expect(card).not.toHaveClass(/\bselected\b/)
 
   // Escape closes the strip and returns focus to the +N button.
   await page.keyboard.press('Escape')
@@ -173,6 +200,7 @@ test('Shift+Tab on the first chip returns focus to +N and closes', async ({
   await page.keyboard.press('Enter')
   const strip = page.getByTestId('pr-flyout')
   await expect(strip.locator(PR_LINK).first()).toBeFocused()
+  await expect(card).not.toHaveClass(/\bselected\b/)
 
   await page.keyboard.press('Shift+Tab')
   await expect(more).toBeFocused()
