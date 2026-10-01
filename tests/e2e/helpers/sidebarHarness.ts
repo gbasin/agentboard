@@ -18,6 +18,7 @@
 // Specs that use it must block service workers (`serviceWorkers: 'block'`),
 // otherwise the PWA worker can answer fetches before page.route sees them.
 import { spawnSync } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
 import type { Locator, Page, WebSocketRoute } from '@playwright/test'
 
 /** Base timestamp for rewritten createdAt values (any fixed past instant). */
@@ -199,7 +200,7 @@ export function tmuxSession(): string {
 
 /** A unique, short window-name prefix for one test. */
 export function uniquePrefix(tag: string): string {
-  return `${tag}${Math.random().toString(36).slice(2, 6)}-`
+  return `${tag}${randomBytes(2).toString('hex')}-`
 }
 
 export function windowName(prefix: string, ordinal: number): string {
@@ -277,13 +278,17 @@ export async function namesTopToBottom(scope: Locator, prefix: string): Promise<
     (els, pfx) =>
       els
         .map((el) => {
-          const match = (el.textContent ?? '').match(new RegExp(`${pfx}\\d\\d`))
-          return { name: match?.[0] ?? '', top: el.getBoundingClientRect().top }
+          // Plain string search: the prefix is never interpreted as a regex.
+          const text = el.textContent ?? ''
+          const at = text.indexOf(pfx)
+          const end = at + pfx.length
+          const name = at >= 0 && /^\d\d/.test(text.slice(end)) ? text.slice(at, end + 2) : ''
+          return { name, top: el.getBoundingClientRect().top }
         })
         .filter((row) => row.name)
         .sort((a, b) => a.top - b.top)
         .map((row) => row.name),
-    prefix.replace(/[-]/g, '\\-')
+    prefix
   )
 }
 
