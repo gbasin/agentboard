@@ -540,7 +540,8 @@ export default function SessionList({
   const filterBar = (
     <div
       className={`sticky z-10 flex h-10 items-center justify-start gap-2 bg-elevated px-3 ${
-        isBottom ? 'bottom-0 border-t border-border' : 'top-0 border-b border-border'
+        // shrink-0: under bottom the bar is a flex item of the scroll column
+        isBottom ? 'bottom-0 shrink-0 border-t border-border' : 'top-0 border-b border-border'
       }`}
     >
       {showHostInfo && (
