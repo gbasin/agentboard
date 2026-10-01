@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.22.1](https://github.com/gbasin/agentboard/compare/v0.22.0...v0.22.1) (2026-10-01)
+
+
+### Bug Fixes
+
+* drag-select dying on poll ticks and tmux redraws in mouse-mode panes ([#327](https://github.com/gbasin/agentboard/issues/327)) ([cfba9f7](https://github.com/gbasin/agentboard/commit/cfba9f7fc88cc854a3ad94002ca187a2895001f5))
+* render PR chips from shared cache so all instances stay in sync ([#328](https://github.com/gbasin/agentboard/issues/328)) ([50bbe6d](https://github.com/gbasin/agentboard/commit/50bbe6d05ddfd0017c651c9a9c21cb9214653538))
+
 ## [0.22.0](https://github.com/gbasin/agentboard/compare/v0.21.1...v0.22.0) (2026-10-01)
 
 
