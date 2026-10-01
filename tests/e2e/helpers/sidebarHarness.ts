@@ -209,11 +209,19 @@ export function windowName(prefix: string, ordinal: number): string {
 export class Windows {
   private ids: string[] = []
 
-  /** Create a window `<prefix>NN` (optionally in `cwd`); returns its name. */
+  /**
+   * Create a window `<prefix>NN` (optionally in `cwd`); returns its name.
+   *
+   * The pane runs `tail -f /dev/null` (like the server's bootstrap window)
+   * instead of the user's login shell: the specs only need a window to list
+   * and attach to, and dozens of login-shell startups per run add real load
+   * when parallel workers already saturate the machine.
+   */
   create(prefix: string, ordinal: number, cwd?: string): string {
     const name = windowName(prefix, ordinal)
     const args = ['new-window', '-d', '-P', '-F', '#{window_id}', '-t', `${tmuxSession()}:`, '-n', name]
     if (cwd) args.push('-c', cwd)
+    args.push('tail -f /dev/null')
     const result = tmux(args)
     if (result.status !== 0) {
       throw new Error(`tmux new-window ${name} failed: ${result.stderr}`)
