@@ -1,22 +1,44 @@
 /**
  * Generates a consistent color for a project based on its name.
- * Uses a simple hash to select from a curated palette of colors.
+ * Hashes the name into a curated palette of evenly-spaced, perceptually
+ * distinct hues; oklch() in the CSS keeps perceived brightness uniform.
  */
 
-// Generate hue directly from hash - full 360° range
-const HUE_COUNT = 360
+// 14 hand-tuned OKLCH hues covering the full wheel — adjacent slots are
+// ~25° apart, so names hashing to neighboring entries still render as
+// visibly different pills.
+const PROJECT_HUES = [
+  25, // red
+  50, // orange
+  85, // amber
+  110, // yellow
+  130, // lime
+  150, // green
+  175, // emerald
+  200, // cyan
+  225, // sky
+  255, // blue
+  280, // violet
+  305, // purple
+  330, // magenta
+  355, // rose
+] as const
 
 /**
- * Simple string hash function for consistent color selection.
+ * String hash with a final avalanche mix, so similar names
+ * (e.g. "api" vs "api2") land on unrelated palette slots.
  */
 function hashString(str: string): number {
   let hash = 0
   for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i)
-    hash = ((hash << 5) - hash) + char
-    hash = hash & hash // Convert to 32-bit integer
+    hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0
   }
-  return Math.abs(hash)
+  hash ^= hash >>> 16
+  hash = Math.imul(hash, 0x7feb352d)
+  hash ^= hash >>> 15
+  hash = Math.imul(hash, 0x846ca68b)
+  hash ^= hash >>> 16
+  return hash >>> 0
 }
 
 /**
@@ -24,16 +46,14 @@ function hashString(str: string): number {
  * Sets a --badge-hue custom property; actual colors are theme-aware via CSS.
  */
 export function getProjectColorStyle(projectName: string): Record<string, string> {
-  const hue = hashString(projectName) % HUE_COUNT
-
   return {
-    '--badge-hue': `${hue}`,
+    '--badge-hue': `${getProjectHue(projectName)}`,
   }
 }
 
 /**
- * Get the hue for a project name (useful for related styling).
+ * Get the palette hue for a project name (useful for related styling).
  */
 export function getProjectHue(projectName: string): number {
-  return hashString(projectName) % HUE_COUNT
+  return PROJECT_HUES[hashString(projectName) % PROJECT_HUES.length]
 }
