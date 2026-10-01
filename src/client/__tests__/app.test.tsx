@@ -3,6 +3,7 @@ import TestRenderer, { act } from 'react-test-renderer'
 import type { AgentSession, ServerMessage, Session } from '@shared/types'
 import SessionList from '../components/SessionList'
 import NewSessionModal from '../components/NewSessionModal'
+import Header from '../components/Header'
 import { useSessionStore } from '../stores/sessionStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useThemeStore } from '../stores/themeStore'
@@ -178,6 +179,7 @@ beforeEach(() => {
     projectFilters: [],
     sessionSortMode: 'created',
     sessionSortDirection: 'asc',
+    sidebarAnchor: 'top',
     showProjectName: true,
     showLastUserMessage: true,
     showSessionIdPrefix: false,
@@ -202,6 +204,7 @@ afterEach(() => {
     projectFilters: [],
     sessionSortMode: 'created',
     sessionSortDirection: 'desc',
+    sidebarAnchor: 'top',
     showProjectName: true,
     showLastUserMessage: true,
     showSessionIdPrefix: false,
@@ -1153,6 +1156,71 @@ describe('App', () => {
     })
     expect(useSessionStore.getState().selectedSessionId).toBe('session-3')
     expect(prevented).toBe(1)
+  })
+
+  test('bottom sidebar anchor keeps shortcut targets and moves the header under the list', () => {
+    const sessionB: Session = { ...baseSession, id: 'session-2', name: 'beta', createdAt: '2024-01-02T00:00:00.000Z' }
+    const sessionC: Session = { ...baseSession, id: 'session-3', name: 'gamma', createdAt: '2024-01-03T00:00:00.000Z' }
+    const key = (k: string, code: string) => ({
+      key: k,
+      code,
+      ctrlKey: true,
+      shiftKey: true,
+      altKey: false,
+      metaKey: false,
+      defaultPrevented: false,
+      preventDefault: () => {},
+    }) as KeyboardEvent
+
+    const run = (anchor: 'top' | 'bottom') => {
+      useSettingsStore.setState({ sidebarAnchor: anchor })
+      useSessionStore.setState({
+        sessions: [baseSession, sessionB, sessionC],
+        selectedSessionId: baseSession.id,
+        hasLoaded: true,
+      })
+      let renderer!: TestRenderer.ReactTestRenderer
+      act(() => {
+        renderer = TestRenderer.create(<App />)
+      })
+      const selections: (string | null)[] = []
+      for (const [k, code] of [['3', 'Digit3'], ['1', 'Digit1'], [']', 'BracketRight'], [']', 'BracketRight'], ['[', 'BracketLeft']]) {
+        act(() => {
+          getKeyHandler()(key(k, code))
+        })
+        selections.push(useSessionStore.getState().selectedSessionId)
+      }
+      const [desktopList, drawerList] = renderer.root.findAllByType(SessionList)
+      const layout = {
+        anchor: desktopList.props.anchor,
+        footerPlacement: desktopList.props.footer?.props.placement,
+        footerIsHeader: desktopList.props.footer?.type === Header,
+        drawerAnchor: drawerList?.props.anchor,
+        headers: renderer.root.findAllByType(Header).map((h) => h.props.placement),
+      }
+      act(() => renderer.unmount())
+      return { selections, layout }
+    }
+
+    const top = run('top')
+    const bottom = run('bottom')
+    expect(top.selections).toEqual(['session-3', 'session-1', 'session-2', 'session-3', 'session-2'])
+    expect(bottom.selections).toEqual(top.selections)
+
+    expect(top.layout).toEqual({
+      anchor: 'top',
+      footerPlacement: undefined,
+      footerIsHeader: false,
+      drawerAnchor: undefined,
+      headers: ['top'],
+    })
+    expect(bottom.layout).toEqual({
+      anchor: 'bottom',
+      footerPlacement: 'bottom',
+      footerIsHeader: true,
+      drawerAnchor: undefined,
+      headers: ['bottom'],
+    })
   })
 
   test('digit shortcuts fall back to hibernating sessions when no live sessions are visible', () => {

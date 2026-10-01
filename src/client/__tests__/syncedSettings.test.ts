@@ -57,6 +57,7 @@ beforeEach(() => {
   useThemeStore.setState({ theme: 'dark' })
   useSettingsStore.setState({
     sessionSortMode: 'created',
+    sidebarAnchor: 'top',
     projectFilters: [],
     recentPaths: [],
     lastProjectPath: null,
@@ -108,6 +109,23 @@ describe('applySyncedSettings', () => {
     expect(state.bogusKey).toBeUndefined()
     expect(state.sessionSortMode).toBe('created')
     expect(state.recentPaths).toEqual(['/ok'])
+  })
+})
+
+describe('sidebarAnchor sync', () => {
+  test('applies a valid remote anchor and ignores invalid ones', () => {
+    applySyncedSettings({ sidebarAnchor: 'bottom' })
+    expect(useSettingsStore.getState().sidebarAnchor).toBe('bottom')
+
+    applySyncedSettings({ sidebarAnchor: 'middle' } as never)
+    expect(useSettingsStore.getState().sidebarAnchor).toBe('bottom')
+  })
+
+  test('pushes a local anchor change to the server', async () => {
+    useSettingsStore.getState().setSidebarAnchor('bottom')
+    await sleep(300)
+    expect(fetchCalls.length).toBe(1)
+    expect(fetchCalls[0].body.settings).toEqual({ sidebarAnchor: 'bottom' })
   })
 })
 

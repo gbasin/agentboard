@@ -54,6 +54,7 @@ beforeEach(() => {
     recentPaths: [],
     sessionSortMode: 'created',
     sessionSortDirection: 'desc',
+    sidebarAnchor: 'top',
     commandPresets: DEFAULT_PRESETS.map((preset) => ({ ...preset })),
     defaultPresetId: 'claude',
     useWebGL: true,
@@ -110,6 +111,17 @@ describe('useSettingsStore', () => {
       '/four',
       '/two',
     ])
+  })
+
+  test('sidebar anchor defaults to top and persists bottom', () => {
+    expect(useSettingsStore.getInitialState().sidebarAnchor).toBe('top')
+    expect(useSettingsStore.getState().sidebarAnchor).toBe('top')
+
+    useSettingsStore.getState().setSidebarAnchor('bottom')
+
+    expect(useSettingsStore.getState().sidebarAnchor).toBe('bottom')
+    const persisted = JSON.parse(storage.getItem('agentboard-settings') ?? '{}')
+    expect(persisted.state.sidebarAnchor).toBe('bottom')
   })
 
   test('updates session sort preferences', () => {

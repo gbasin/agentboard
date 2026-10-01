@@ -45,6 +45,7 @@ beforeEach(() => {
     lastProjectPath: null,
     sessionSortMode: 'created',
     sessionSortDirection: 'desc',
+    sidebarAnchor: 'top',
     showProjectName: true,
     showLastUserMessage: true,
     showSessionIdPrefix: false,
@@ -63,6 +64,7 @@ afterEach(() => {
     lastProjectPath: null,
     sessionSortMode: 'created',
     sessionSortDirection: 'desc',
+    sidebarAnchor: 'top',
     showProjectName: true,
     showLastUserMessage: true,
     showSessionIdPrefix: false,
@@ -223,6 +225,49 @@ describe('SettingsModal', () => {
     expect(state.sessionSortDirection).toBe('desc')
     expect(state.commandPresets).toEqual(DEFAULT_PRESETS)
     expect(closed).toBe(1)
+
+    act(() => {
+      renderer.unmount()
+    })
+  })
+
+  test('sidebar anchor control saves on submit and only then', () => {
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<SettingsModal isOpen onClose={() => {}} />)
+    })
+    const findButton = (label: string) => {
+      const button = renderer.root
+        .findAllByType('button')
+        .find((candidate) => candidate.props.children === label)
+      if (!button) throw new Error(`Expected ${label} button`)
+      return button
+    }
+
+    expect(findButton('Top').props.className).toContain('btn-primary')
+    expect(findButton('Bottom').props.className).not.toContain('btn-primary')
+
+    act(() => {
+      findButton('Bottom').props.onClick()
+    })
+    expect(findButton('Bottom').props.className).toContain('btn-primary')
+    // Draft only: the store changes on submit.
+    expect(useSettingsStore.getState().sidebarAnchor).toBe('top')
+
+    act(() => {
+      renderer.root.findByType('form').props.onSubmit({ preventDefault: () => {} })
+    })
+    expect(useSettingsStore.getState().sidebarAnchor).toBe('bottom')
+
+    // Reopening reflects the stored value.
+    act(() => {
+      renderer.update(<SettingsModal isOpen={false} onClose={() => {}} />)
+    })
+    act(() => {
+      useSettingsStore.setState({ sidebarAnchor: 'top' })
+      renderer.update(<SettingsModal isOpen onClose={() => {}} />)
+    })
+    expect(findButton('Top').props.className).toContain('btn-primary')
 
     act(() => {
       renderer.unmount()
