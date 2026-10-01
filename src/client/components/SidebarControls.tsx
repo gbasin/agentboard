@@ -9,6 +9,7 @@ import type { ConnectionStatus } from '../stores/sessionStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { getEffectiveModifier, getModifierDisplay } from '../utils/device'
 import ConnectionIndicator from './ConnectionIndicator'
+import { SIDEBAR_ICON_BUTTON_CLASS } from './sidebarControlStyles'
 
 interface SidebarControlsProps {
   connectionStatus: ConnectionStatus
@@ -48,7 +49,7 @@ export default function SidebarControls({
       <button
         type="button"
         onClick={onOpenSettings}
-        className="flex h-7 w-7 items-center justify-center rounded border border-border text-secondary hover:bg-hover hover:text-primary active:scale-95 transition-all"
+        className={SIDEBAR_ICON_BUTTON_CLASS}
         title="Settings"
         aria-label="Settings"
       >

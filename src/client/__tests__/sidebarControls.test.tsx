@@ -124,6 +124,26 @@ describe('SidebarControls', () => {
     expect(findDotButton(renderer)).toBeUndefined()
     expect(findCopyButton(renderer)).toBeUndefined()
     expect(textOf(renderer)).not.toContain('100.')
+    // Plain dot: no button chrome around it
+    const indicator = renderer.root.find((n) => n.props.role === 'img')
+    expect(indicator.props.className).not.toMatch(/\bborder\b/)
+    expect(indicator.props.className).not.toContain('hover:')
+    act(() => renderer.unmount())
+  })
+
+  test('with a tailscale IP the dot sits in a button styled like the settings gear', () => {
+    const renderer = render({ tailscaleIp: '100.64.1.2', connectionStatus: 'disconnected' })
+    const dotButton = findDotButton(renderer)
+    const settingsButton = findButton(renderer, 'Settings')
+    if (!dotButton || !settingsButton) throw new Error('Expected dot and settings buttons')
+    // Same 28px bordered square, hover and focus-ring treatment as the gear
+    expect(dotButton.props.className).toBe(settingsButton.props.className)
+    for (const token of ['h-7', 'w-7', 'border', 'border-border', 'hover:bg-hover', 'focus-visible:ring-2']) {
+      expect(dotButton.props.className.split(' ')).toContain(token)
+    }
+    // Status color stays on the dot inside the button, not on the button
+    expect(dotButton.props.className).not.toContain('bg-danger')
+    expect(dotButton.findByType('span').props.className).toContain('bg-danger')
     act(() => renderer.unmount())
   })
 

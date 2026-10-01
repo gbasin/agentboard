@@ -1,8 +1,9 @@
 /**
  * ConnectionIndicator - WebSocket status dot for the desktop sidebar's filter
- * bar. With a Tailscale IP the dot becomes a button that opens a small
- * popover holding the IP and a click-to-copy remote access URL; without one
- * it is a plain status indicator.
+ * bar. With a Tailscale IP the dot sits inside a bordered square button that
+ * matches the settings gear and opens a small popover holding the IP and a
+ * click-to-copy remote access URL; the status color stays on the dot. Without
+ * an IP it is a plain, borderless, non-interactive status dot.
  *
  * The wrapper is deliberately not `position: relative`: the popover is
  * positioned against the nearest positioned ancestor (the sticky filter bar)
@@ -12,6 +13,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import Copy01Icon from '@untitledui-icons/react/line/esm/Copy01Icon'
 import type { ConnectionStatus } from '../stores/sessionStore'
+import { SIDEBAR_ICON_BUTTON_CLASS } from './sidebarControlStyles'
 
 interface ConnectionIndicatorProps {
   connectionStatus: ConnectionStatus
@@ -98,7 +100,7 @@ export default function ConnectionIndicator({
         aria-controls={open ? popoverId : undefined}
         title={`${statusLabel[connectionStatus]} - Tailscale ${tailscaleIp}`}
         onClick={() => setOpen((value) => !value)}
-        className="flex h-7 w-5 items-center justify-center rounded hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        className={SIDEBAR_ICON_BUTTON_CLASS}
       >
         {dot}
       </button>
