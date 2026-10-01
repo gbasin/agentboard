@@ -31,6 +31,7 @@ class TerminalMock {
   scrollCalls = 0
   disposed = false
   selection = ''
+  private mouseTrackingMode: 'none' | 'x10' | 'vt200' | 'drag' | 'any' = 'none'
   private dataHandler?: (data: string) => void
   private keyHandler?: (event: KeyboardEvent) => boolean
   private wheelHandler?: (event: WheelEvent) => boolean
@@ -46,8 +47,13 @@ class TerminalMock {
     this.element = container
   }
 
+  get modes() {
+    return { mouseTrackingMode: this.mouseTrackingMode }
+  }
+
   reset() {
     this.resetCalls += 1
+    this.mouseTrackingMode = 'none'
   }
 
   onData(handler: (data: string) => void) {
@@ -66,6 +72,16 @@ class TerminalMock {
 
   write(data: string) {
     this.writes.push(data)
+    if (data.includes('\x1b[?1002h')) this.mouseTrackingMode = 'drag'
+    else if (data.includes('\x1b[?1003h')) this.mouseTrackingMode = 'any'
+    else if (data.includes('\x1b[?1000h')) this.mouseTrackingMode = 'vt200'
+    else if (
+      data.includes('\x1b[?1000l') ||
+      data.includes('\x1b[?1002l') ||
+      data.includes('\x1b[?1003l')
+    ) {
+      this.mouseTrackingMode = 'none'
+    }
   }
 
   paste(text: string) {
@@ -2123,9 +2139,11 @@ describe('useTerminal', () => {
     })
     expect(terminal.writes).toContain('\x1b[?1000h\x1b[?1002h\x1b[?1006h')
 
-    // The 750ms status poll re-asserts tracking on every appMouse=true, not
-    // just false→true transitions — xterm's DECSET modes can be lost without
-    // a transition (reset, recreation, tmux mode-sync gaps).
+    // When the mode is already synced, the poll must NOT re-emit the
+    // ?1000/?1002 DECSET: every write fires xterm's onProtocolChange even for
+    // a same-value set, and that handler clears any in-progress selection.
+    // Only the ?1006h encoding re-assert (which doesn't fire the event) is
+    // written.
     terminal.writes.length = 0
     act(() => {
       listener()?.({
@@ -2135,7 +2153,8 @@ describe('useTerminal', () => {
         appMouse: true,
       })
     })
-    expect(terminal.writes).toContain('\x1b[?1000h\x1b[?1002h\x1b[?1006h')
+    expect(terminal.writes).not.toContain('\x1b[?1000h\x1b[?1002h\x1b[?1006h')
+    expect(terminal.writes).toContain('\x1b[?1006h')
 
     // Switch to session-2, whose pane also reports mouse_any_flag=1.
     await act(async () => {

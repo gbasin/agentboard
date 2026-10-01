@@ -581,6 +581,10 @@ export function useTerminal({
       // Ensure text is readable even when apps use true color (24-bit RGB) sequences
       // that bypass our theme colors (e.g., Pi using black text on dark backgrounds)
       minimumContrastRatio: 4.5,
+      // Option+drag forces a local selection even when the pane's app owns the
+      // mouse (Claude/Codex fullscreen TUIs) — the standard macOS convention for
+      // selecting text in a mouse-mode terminal.
+      macOptionClickForcesSelection: true,
     })
 
     const fitAddon = new FitAddon()
@@ -1735,17 +1739,26 @@ export function useTerminal({
         appMouseRef.current = nextAppMouse
         altScreenRef.current = message.altScreen === true
 
-        // Re-assert on every status (750ms poll), not only on a false→true
-        // transition. xterm's DECSET mouse modes can be lost without any
-        // transition — terminal.reset()/recreation, tmux mode-sync gaps —
-        // and a stale `wasAppMouse` would then leave the pane permanently
-        // unable to receive mouse input (drags degrade to dead DOM
-        // selections; selection+copy in Claude/Codex TUIs never runs).
-        // The write is an idempotent mode-set, and `nextAppMouse` already
-        // reflects the pane's current flag, so this can't fight an app that
-        // legitimately disabled mouse reporting.
+        // Re-assert lost tracking on every status (750ms poll), not only on
+        // false→true transitions — xterm's DECSET mouse modes can be lost
+        // without a transition (terminal.reset()/recreation, tmux mode-sync
+        // gaps), leaving the pane permanently unable to receive mouse input.
+        //
+        // But only write when the mode is actually desynced: every DECSET
+        // ?1000/?1002 fires xterm's onProtocolChange even for a same-value
+        // set, and that handler runs selectionService.disable() →
+        // clearSelection() — which destroys any in-progress or completed
+        // selection and removes the mid-drag document listeners. ?1006h
+        // (SGR encoding) doesn't fire the event, so it's safe unconditionally.
         if (nextAppMouse) {
-          terminalRef.current?.write(ENABLE_MOUSE_TRACKING)
+          const terminal = terminalRef.current
+          if (terminal) {
+            if (terminal.modes.mouseTrackingMode !== 'drag') {
+              terminal.write(ENABLE_MOUSE_TRACKING)
+            } else {
+              terminal.write('\x1b[?1006h')
+            }
+          }
         }
 
         setTmuxCopyMode(message.inCopyMode)
