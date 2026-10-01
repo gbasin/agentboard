@@ -41,6 +41,10 @@ class TerminalMock {
 
   reset() {}
 
+  get modes() {
+    return { mouseTrackingMode: 'none' }
+  }
+
   onData() {}
 
   attachCustomKeyEventHandler() {

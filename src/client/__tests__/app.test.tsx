@@ -37,6 +37,7 @@ class TerminalMock {
   loadAddon() {}
   open(container: HTMLElement) { this.element = container }
   reset() {}
+  get modes() { return { mouseTrackingMode: 'none' } }
   onData() {}
   onScroll() {}
   attachCustomKeyEventHandler() { return true }

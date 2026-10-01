@@ -2139,11 +2139,9 @@ describe('useTerminal', () => {
     })
     expect(terminal.writes).toContain('\x1b[?1000h\x1b[?1002h\x1b[?1006h')
 
-    // When the mode is already synced, the poll must NOT re-emit the
-    // ?1000/?1002 DECSET: every write fires xterm's onProtocolChange even for
-    // a same-value set, and that handler clears any in-progress selection.
-    // Only the ?1006h encoding re-assert (which doesn't fire the event) is
-    // written.
+    // When the mode is already synced, the poll must NOT re-emit the DECSET:
+    // every write fires xterm's onProtocolChange even for a same-value set,
+    // and that handler clears any in-progress selection.
     terminal.writes.length = 0
     act(() => {
       listener()?.({
@@ -2153,8 +2151,9 @@ describe('useTerminal', () => {
         appMouse: true,
       })
     })
-    expect(terminal.writes).not.toContain('\x1b[?1000h\x1b[?1002h\x1b[?1006h')
-    expect(terminal.writes).toContain('\x1b[?1006h')
+    // eslint-disable-next-line no-control-regex
+    const mouseModeWrite = /\x1b\[\?(9|1000|1002|1003|1006)[hl]/
+    expect(terminal.writes.some((w) => mouseModeWrite.test(w))).toBe(false)
 
     // Switch to session-2, whose pane also reports mouse_any_flag=1.
     await act(async () => {
@@ -2191,6 +2190,160 @@ describe('useTerminal', () => {
       })
     })
     expect(terminal.writes).toContain('\x1b[?1000h\x1b[?1002h\x1b[?1006h')
+
+    act(() => {
+      renderer.unmount()
+    })
+  })
+
+  test('pane-output mouse-mode sequences are stripped, including across chunk boundaries', async () => {
+    const pendingTimers = new Map<number, { callback: () => void; delay: number }>()
+    let nextTimerId = 1
+    globalAny.window = {
+      setTimeout: ((callback: () => void, delay?: number) => {
+        const id = nextTimerId++
+        pendingTimers.set(id, { callback, delay: delay ?? 0 })
+        return id as unknown as ReturnType<typeof setTimeout>
+      }) as typeof setTimeout,
+      clearTimeout: ((id: ReturnType<typeof setTimeout>) => {
+        pendingTimers.delete(id as unknown as number)
+      }) as typeof clearTimeout,
+      devicePixelRatio: 1,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    } as unknown as Window & typeof globalThis
+
+    globalAny.navigator = {
+      userAgent: 'Chrome',
+      platform: 'MacIntel',
+      maxTouchPoints: 0,
+      clipboard: { writeText: () => Promise.resolve() },
+    } as unknown as Navigator
+
+    const listeners: Array<(message: ServerMessage) => void> = []
+    const { container } = createContainerMock()
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          sendMessage={() => {}}
+          subscribe={(listener) => {
+            listeners.push(listener)
+            return () => {}
+          }}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+        { createNodeMock: () => container },
+      )
+      await Promise.resolve()
+    })
+
+    const terminal = TerminalMock.instances[0]
+    if (!terminal) throw new Error('Expected terminal instance')
+    const flushIdle = () => {
+      const timer = [...pendingTimers.values()].find((t) => t.delay === 2)
+      timer?.callback()
+    }
+    const output = (data: string) =>
+      listeners[0]?.({ type: 'terminal-output', sessionId: 'session-1', data })
+
+    // Mount may replay a cached snapshot (module-level cache shared across
+    // tests) — only care about pane output writes from here on.
+    terminal.writes.length = 0
+
+    // tmux client redraws emit a DECRST burst (?1006l ?1000l ?1002l ?1003l);
+    // pane apps emit their own DECSET enables. All must be stripped so they
+    // can't fire xterm's onProtocolChange → clearSelection.
+    act(() => {
+      output('A\x1b[?7727h\x1b[?12l\x1b[?25h\x1b[?1006l\x1b[?1000l\x1b[?1002l\x1b[?1003lB')
+      flushIdle()
+    })
+    expect(terminal.writes[0]).toBe('A\x1b[?7727h\x1b[?12l\x1b[?25hB')
+    expect(terminal.modes.mouseTrackingMode).toBe('none')
+
+    // A sequence split across ws frames is held in the tail and still caught.
+    act(() => {
+      output('C\x1b[?10')
+      flushIdle()
+      output('02hD')
+      flushIdle()
+    })
+    expect(terminal.writes[1]).toBe('C')
+    expect(terminal.writes[2]).toBe('D')
+    expect(terminal.modes.mouseTrackingMode).toBe('none')
+
+    // Combined params keep non-mouse modes, drop only mouse ones.
+    act(() => {
+      output('E\x1b[?2004;1006hF')
+      flushIdle()
+    })
+    expect(terminal.writes[3]).toBe('E\x1b[?2004hF')
+
+    act(() => {
+      renderer.unmount()
+    })
+  })
+
+  test('appMouse true→false status disables xterm mouse tracking once', async () => {
+    globalAny.navigator = {
+      userAgent: 'Chrome',
+      platform: 'MacIntel',
+      maxTouchPoints: 0,
+      clipboard: { writeText: () => Promise.resolve() },
+    } as unknown as Navigator
+
+    const listeners: Array<(message: ServerMessage) => void> = []
+    const { container } = createContainerMock()
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          sendMessage={() => {}}
+          subscribe={(listener) => {
+            listeners.push(listener)
+            return () => {}
+          }}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+        { createNodeMock: () => container },
+      )
+      await Promise.resolve()
+    })
+
+    const terminal = TerminalMock.instances[0]
+    if (!terminal) throw new Error('Expected terminal instance')
+    const status = (appMouse: boolean) =>
+      listeners[0]?.({
+        type: 'tmux-copy-mode-status',
+        sessionId: 'session-1',
+        inCopyMode: false,
+        appMouse,
+      })
+
+    // Pane enables mouse reporting → tracking installed.
+    act(() => status(true))
+    expect(terminal.modes.mouseTrackingMode).toBe('drag')
+
+    // Pane exits mouse reporting → pane output can no longer carry the DECRST
+    // (stripped), so the poll writes the disable itself — once.
+    terminal.writes.length = 0
+    act(() => status(false))
+    expect(terminal.writes).toContain('\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l')
+    expect(terminal.modes.mouseTrackingMode).toBe('none')
+
+    terminal.writes.length = 0
+    act(() => status(false))
+    // eslint-disable-next-line no-control-regex
+    const mouseModeWrite = /\x1b\[\?(9|1000|1002|1003|1006)[hl]/
+    expect(terminal.writes.some((w) => mouseModeWrite.test(w))).toBe(false)
 
     act(() => {
       renderer.unmount()
