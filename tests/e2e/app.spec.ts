@@ -4,7 +4,10 @@ import { spawnSync } from 'node:child_process'
 test('dashboard loads and terminal attaches', async ({ page }) => {
   await page.goto('/')
 
-  await expect(page.getByRole('heading', { name: 'Agentboard' })).toBeVisible()
+  // The sidebar's global controls live in the filter bar; no header wordmark.
+  await expect(page.getByRole('button', { name: 'Settings', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'New session', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Agentboard' })).toHaveCount(0)
 
   const card = page.getByTestId('session-card').first()
   await expect(card).toBeVisible()
