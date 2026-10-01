@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.0](https://github.com/gbasin/agentboard/compare/v0.21.1...v0.22.0) (2026-10-01)
+
+
+### Features
+
+* use curated OKLCH palette for project pill colors ([#325](https://github.com/gbasin/agentboard/issues/325)) ([66cf64f](https://github.com/gbasin/agentboard/commit/66cf64fe66abce38456a708ccaba2797e35925ed))
+
 ## [0.21.1](https://github.com/gbasin/agentboard/compare/v0.21.0...v0.21.1) (2026-09-30)
 
 
