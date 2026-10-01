@@ -1,12 +1,17 @@
 import { test, expect } from '@playwright/test'
 import { spawnSync } from 'node:child_process'
+import { desktopSidebar } from './helpers/sidebarHarness'
 
 test('dashboard loads and terminal attaches', async ({ page }) => {
   await page.goto('/')
 
   // The sidebar's global controls live in the filter bar; no header wordmark.
   await expect(page.getByRole('button', { name: 'Settings', exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'New session', exact: true })).toBeVisible()
+  // Scoped to the sidebar: the mobile terminal header has its own (hidden on
+  // desktop) "New session" button once a session is selected.
+  await expect(
+    desktopSidebar(page).locator('button[aria-label="New session"]')
+  ).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Agentboard' })).toHaveCount(0)
 
   const card = page.getByTestId('session-card').first()
