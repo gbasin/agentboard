@@ -3,13 +3,12 @@
  * new session, settings), rendered at the right end of the filter bar.
  */
 
-import { PlusIcon } from '@untitledui-icons/react/line'
-import Settings02Icon from '@untitledui-icons/react/line/esm/Settings02Icon'
+import { PlusIcon, Settings02Icon } from './icons'
 import type { ConnectionStatus } from '../stores/sessionStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { getEffectiveModifier, getModifierDisplay } from '../utils/device'
 import ConnectionIndicator from './ConnectionIndicator'
-import { SIDEBAR_ICON_BUTTON_CLASS } from './sidebarControlStyles'
+import { ICON_BUTTON_CLASS, ICON_SIZE, iconButtonClass } from './controlStyles'
 
 interface SidebarControlsProps {
   connectionStatus: ConnectionStatus
@@ -40,20 +39,20 @@ export default function SidebarControls({
       <button
         type="button"
         onClick={onNewSession}
-        className="flex h-7 w-7 items-center justify-center rounded bg-accent text-white hover:bg-accent/90 active:scale-95 transition-all"
+        className={iconButtonClass('primary')}
         title={`New session (${modDisplay}N)`}
         aria-label="New session"
       >
-        <PlusIcon width={16} height={16} />
+        <PlusIcon width={ICON_SIZE.primary} height={ICON_SIZE.primary} />
       </button>
       <button
         type="button"
         onClick={onOpenSettings}
-        className={SIDEBAR_ICON_BUTTON_CLASS}
+        className={ICON_BUTTON_CLASS}
         title="Settings"
         aria-label="Settings"
       >
-        <Settings02Icon width={14} height={14} />
+        <Settings02Icon width={ICON_SIZE.default} height={ICON_SIZE.default} />
       </button>
     </div>
   )

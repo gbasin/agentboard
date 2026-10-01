@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState } from 'react'
-import AlertTriangleIcon from '@untitledui-icons/react/line/esm/AlertTriangleIcon'
-import File06Icon from '@untitledui-icons/react/line/esm/File06Icon'
+import { AlertTriangleIcon, File06Icon, PlayIcon } from './icons'
+import { ICON_SIZE, ROW_ICON_BUTTON_CLASS } from './controlStyles'
 import type { AgentSession } from '@shared/types'
 import { copyText } from '../utils/copyText'
 import { getPathLeaf } from '../utils/sessionLabel'
@@ -92,14 +92,15 @@ export default memo(function HistorySessionItem({
       {/* Play icon for quick wake - absolutely positioned, appears on hover */}
       <button
         type="button"
-        className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted opacity-0 hover:text-primary group-hover:opacity-100"
+        className={`${ROW_ICON_BUTTON_CLASS} absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100`}
         title="Wake directly"
+        aria-label="Wake directly"
         onClick={(e) => {
           e.stopPropagation()
           onResume(session.sessionId)
         }}
       >
-        ▶
+        <PlayIcon width={ICON_SIZE.pill} height={ICON_SIZE.pill} />
       </button>
       {/* pl-2.5 matches active session content padding (clears status bar space) */}
       <div className="flex flex-col gap-0.5 pl-2.5 group-hover:pr-4">
@@ -114,7 +115,8 @@ export default memo(function HistorySessionItem({
           </span>
           {session.lastResumeError && (
             <AlertTriangleIcon
-              className="h-3 w-3 shrink-0 text-amber-500"
+              width={ICON_SIZE.pill} height={ICON_SIZE.pill}
+              className="shrink-0 text-amber-500"
               aria-label="Wake failed"
               title={`Last wake failed: ${session.lastResumeError}`}
             />
@@ -173,7 +175,7 @@ export default memo(function HistorySessionItem({
               role="menuitem"
               title={session.logFilePath}
             >
-              <File06Icon width={14} height={14} />
+              <File06Icon width={ICON_SIZE.default} height={ICON_SIZE.default} />
               Copy Log Path
             </button>
           )}

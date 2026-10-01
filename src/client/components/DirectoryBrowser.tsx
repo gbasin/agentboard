@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { DirectoryListing } from '@shared/types'
-import { FolderIcon } from '@untitledui-icons/react/line'
+import { FolderIcon } from './icons'
+import { ICON_SIZE } from './controlStyles'
 import { useSettingsStore } from '../stores/settingsStore'
 
 interface DirectoryBrowserProps {
@@ -213,8 +214,8 @@ export function DirectoryBrowser({
                   data-entry-path={entry.path}
                 >
                   <FolderIcon
-                    width={14}
-                    height={14}
+                    width={ICON_SIZE.default}
+                    height={ICON_SIZE.default}
                     className="shrink-0 text-muted"
                     aria-hidden="true"
                   />

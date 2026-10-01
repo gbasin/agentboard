@@ -10,8 +10,8 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'motion/react'
-import ChevronDownIcon from '@untitledui-icons/react/line/esm/ChevronDownIcon'
-import ChevronRightIcon from '@untitledui-icons/react/line/esm/ChevronRightIcon'
+import { ChevronDownIcon, ChevronRightIcon } from './icons'
+import { ICON_SIZE } from './controlStyles'
 import type { AgentSession } from '@shared/types'
 import type { SidebarAnchor } from '../stores/settingsStore'
 import { useSettingsStore } from '../stores/settingsStore'
@@ -46,9 +46,9 @@ function SectionToggle({
     <button type="button" onClick={onToggle} className={sectionToggleClass}>
       <span className="flex items-center gap-2">
         {expanded ? (
-          <ChevronDownIcon className="h-4 w-4" />
+          <ChevronDownIcon width={ICON_SIZE.default} height={ICON_SIZE.default} />
         ) : (
-          <ChevronRightIcon className="h-4 w-4" />
+          <ChevronRightIcon width={ICON_SIZE.default} height={ICON_SIZE.default} />
         )}
         {label}
       </span>

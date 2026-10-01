@@ -15,6 +15,8 @@ import { useThemeStore, type Theme } from '../stores/themeStore'
 import { HISTORY_MAX_AGE_MIN_HOURS, HISTORY_MAX_AGE_MAX_HOURS, type AgentType } from '@shared/types'
 import { getEffectiveModifier, getModifierDisplay } from '../utils/device'
 import { Switch } from './Switch'
+import { ICON_BUTTON_CLASS, ICON_SIZE } from './controlStyles'
+import { MinusIcon, PlusIcon } from './icons'
 import { playPermissionSound, playIdleSound, primeAudio } from '../utils/sound'
 
 interface SettingsChangeFlags {
@@ -864,17 +866,19 @@ export default function SettingsModal({
                 <button
                   type="button"
                   onClick={() => setDraftFontSize(Math.max(6, draftFontSize - 1))}
-                  className="flex h-7 w-7 items-center justify-center rounded bg-surface border border-border text-secondary hover:bg-hover"
+                  className={ICON_BUTTON_CLASS}
+                  aria-label="Decrease font size"
                 >
-                  <span className="text-sm font-bold">−</span>
+                  <MinusIcon width={ICON_SIZE.default} height={ICON_SIZE.default} />
                 </button>
                 <span className="text-sm text-secondary w-6 text-center">{draftFontSize}</span>
                 <button
                   type="button"
                   onClick={() => setDraftFontSize(Math.min(24, draftFontSize + 1))}
-                  className="flex h-7 w-7 items-center justify-center rounded bg-surface border border-border text-secondary hover:bg-hover"
+                  className={ICON_BUTTON_CLASS}
+                  aria-label="Increase font size"
                 >
-                  <span className="text-sm font-bold">+</span>
+                  <PlusIcon width={ICON_SIZE.default} height={ICON_SIZE.default} />
                 </button>
               </div>
             </div>

@@ -15,10 +15,10 @@
  */
 
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
-import FilterFunnel02Icon from '@untitledui-icons/react/line/esm/FilterFunnel02Icon'
 import type { HostStatus } from '@shared/types'
 import { getDisambiguatedProjectNames, getPathLeaf } from '../utils/sessionLabel'
-import { SIDEBAR_ICON_BUTTON_BASE, SIDEBAR_ICON_BUTTON_TONE, TOUCH_TARGET_CLASS } from './sidebarControlStyles'
+import { ICON_SIZE, TOUCH_TARGET_CLASS, iconButtonClass } from './controlStyles'
+import { FilterFunnel02Icon } from './icons'
 import FilterChecklist from './FilterChecklist'
 
 interface SessionFilterButtonProps {
@@ -110,11 +110,9 @@ export default function SessionFilterButton({
           title={title}
           onClick={() => setOpen((value) => !value)}
           // 44px touch target on coarse pointers (mobile drawer).
-          className={`${SIDEBAR_ICON_BUTTON_BASE} ${
-            isActive ? SIDEBAR_ICON_BUTTON_TONE.active : SIDEBAR_ICON_BUTTON_TONE.neutral
-          } relative ${TOUCH_TARGET_CLASS}`}
+          className={`${iconButtonClass(isActive ? 'active' : 'neutral')} ${TOUCH_TARGET_CLASS}`}
         >
-          <FilterFunnel02Icon width={14} height={14} />
+          <FilterFunnel02Icon width={ICON_SIZE.default} height={ICON_SIZE.default} />
           {isActive && (
             <span
               data-testid="filter-count-badge"

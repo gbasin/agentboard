@@ -16,12 +16,6 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { HandIcon, XCloseIcon } from '@untitledui-icons/react/line'
-import Copy01Icon from '@untitledui-icons/react/line/esm/Copy01Icon'
-import File06Icon from '@untitledui-icons/react/line/esm/File06Icon'
-import Edit05Icon from '@untitledui-icons/react/line/esm/Edit05Icon'
-import Moon01Icon from '@untitledui-icons/react/line/esm/Moon01Icon'
-import PlusIcon from '@untitledui-icons/react/line/esm/PlusIcon'
 import type { AgentSession, Session, SessionKillSource } from '@shared/types'
 import { freezeListOrderDuringDrag, getSessionOrderKey, getUniqueHosts, getUniqueProjects, sortSessions } from '../utils/sessions'
 import { formatRelativeTime } from '../utils/time'
@@ -38,6 +32,8 @@ import { useScrollToSelection } from '../hooks/useScrollToSelection'
 import { useBottomPinnedScroll } from '../hooks/useBottomPinnedScroll'
 import { useMenuViewportFit } from '../hooks/useMenuViewportFit'
 import AgentIcon from './AgentIcon'
+import { Copy01Icon, Edit05Icon, File06Icon, HandIcon, Moon01Icon, PlusIcon, XCloseIcon } from './icons'
+import { ICON_SIZE } from './controlStyles'
 import ProjectBadge from './ProjectBadge'
 import HostBadge from './HostBadge'
 import { PrChips } from './PrChips'
@@ -584,7 +580,7 @@ export default function SessionList({
               className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium normal-case tracking-normal text-accent hover:bg-hover"
               title="Start a new session"
             >
-              <PlusIcon className="h-3.5 w-3.5" />
+              <PlusIcon width={ICON_SIZE.default} height={ICON_SIZE.default} />
               New session
             </button>
           )}
@@ -1152,7 +1148,7 @@ function SessionRow({
               className={`ml-1 flex shrink-0 items-center justify-center rounded-full px-1.5 py-0.5 ${statusPillClass[session.status]} pulse-approval`}
               onAnimationEnd={handlePulseAnimationEnd}
             >
-              <HandIcon className="h-3 w-3" aria-label="Needs input" />
+              <HandIcon width={ICON_SIZE.pill} height={ICON_SIZE.pill} aria-label="Needs input" />
             </span>
           ) : (
             <span
@@ -1205,7 +1201,7 @@ function SessionRow({
               className="w-full px-3 py-2 text-left text-sm text-secondary hover:bg-hover hover:text-primary flex items-center gap-2"
               role="menuitem"
             >
-              <Edit05Icon width={14} height={14} />
+              <Edit05Icon width={ICON_SIZE.default} height={ICON_SIZE.default} />
               Rename
             </button>
           )}
@@ -1220,7 +1216,7 @@ function SessionRow({
               role="menuitem"
               title="Create a copy in a new tmux window"
             >
-              <Copy01Icon width={14} height={14} />
+              <Copy01Icon width={ICON_SIZE.default} height={ICON_SIZE.default} />
               Duplicate
             </button>
           )}
@@ -1235,7 +1231,7 @@ function SessionRow({
               role="menuitem"
               title="Close the live window and keep this session ready to wake"
             >
-              <Moon01Icon width={14} height={14} />
+              <Moon01Icon width={ICON_SIZE.default} height={ICON_SIZE.default} />
               Hibernate
             </button>
           )}
@@ -1252,7 +1248,7 @@ function SessionRow({
               role="menuitem"
               title={session.logFilePath}
             >
-              <File06Icon width={14} height={14} />
+              <File06Icon width={ICON_SIZE.default} height={ICON_SIZE.default} />
               Copy Log Path
             </button>
           )}
@@ -1268,7 +1264,7 @@ function SessionRow({
                 className="w-full px-3 py-2 text-left text-sm text-danger hover:bg-danger/10 flex items-center gap-2"
                 role="menuitem"
               >
-                <XCloseIcon width={14} height={14} />
+                <XCloseIcon width={ICON_SIZE.default} height={ICON_SIZE.default} />
                 Kill Session
               </button>
             </>
