@@ -7,6 +7,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from 'react'
 import { createPortal } from 'react-dom'
 import GitMergeIcon from '@untitledui-icons/react/line/esm/GitMergeIcon'
@@ -42,6 +43,19 @@ const infoCache = new Map<string, { at: number; info: PrInfo }>()
 const checksCache = new Map<string, { at: number; checks: PrCheckInfo }>()
 const infoInflight = new Map<string, Promise<unknown>>()
 const checksInflight = new Set<string>()
+
+// Chips read infoCache straight through useSyncExternalStore — no per-chip
+// copies. A cache write from any fetch (any row's interval, the rail, a
+// hover, a resume) notifies every chip showing that url, so two PrChips
+// instances can't drift into showing different states for the same PR.
+const infoListeners = new Set<() => void>()
+
+function subscribeInfo(onChange: () => void): () => void {
+  infoListeners.add(onChange)
+  return () => {
+    infoListeners.delete(onChange)
+  }
+}
 
 function cachedInfo(url: string): PrInfo | undefined {
   const c = infoCache.get(url)
@@ -174,6 +188,7 @@ async function fetchInfoBatch(urls: string[]): Promise<PrInfo[]> {
         for (const info of arr) {
           if (!info.error) infoCache.set(info.url, { at: Date.now(), info })
         }
+        infoListeners.forEach((l) => l())
       })
       .catch(() => {
         // leave uncached; next mount/hover retries
@@ -394,7 +409,13 @@ function PrChip({
   refreshKey: number
   pillClass?: string
 }) {
-  const [info, setInfo] = useState<PrInfo | undefined>(cachedInfo(pr.url))
+  // The snapshot reads the cache entry itself, not the TTL'd cachedInfo:
+  // expiry only gates refetches — an aged entry keeps its color until the
+  // next fetch lands rather than flashing muted at the TTL boundary.
+  const info = useSyncExternalStore(
+    subscribeInfo,
+    () => infoCache.get(pr.url)?.info
+  )
   const [checks, setChecks] = useState<PrCheckInfo | undefined>(
     cachedChecks(pr.url)
   )
@@ -419,24 +440,15 @@ function PrChip({
   }, [])
 
   const refreshInfo = useCallback(() => {
-    fetchInfoBatch([pr.url]).then((arr) => {
-      const found = arr.find((i) => i.url === pr.url)
-      if (mounted.current && found) setInfo(found)
-    })
+    void fetchInfoBatch([pr.url])
   }, [pr.url])
 
   // Eager: state/title/author once per url. refreshKey re-runs this on
-  // PWA resume so stale entries refresh and uncached failures retry.
+  // PWA resume so stale entries refresh and uncached failures retry. The
+  // cache itself is what the chip renders, so a fresh entry needs no work
+  // here — the store snapshot already shows it.
   useEffect(() => {
-    const c = cachedInfo(pr.url)
-    if (c) {
-      // Cache may have filled between render and effect — via a shared
-      // in-flight request or the row's interval revalidation — adopt it
-      // rather than fetching again.
-      setInfo(c)
-      return
-    }
-    refreshInfo()
+    if (!cachedInfo(pr.url)) refreshInfo()
   }, [pr.url, refreshKey, refreshInfo])
 
   // Hover revalidates stale info: a PR that merged since the eager fetch
