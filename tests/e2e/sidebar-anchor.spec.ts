@@ -445,4 +445,27 @@ test.describe('mobile', () => {
     const first = await box(cardByName(drawer, names[0]))
     expect(bar.bottom).toBeLessThanOrEqual(first.top + 1)
   })
+
+  test('[ ] keep sort order under Bottom, where nothing is mirrored', async ({ page }) => {
+    const prefix = uniquePrefix('mobnav')
+    const names = windows.createMany(prefix, 3)
+    await installHarness(page, { prefix, settings: { sidebarAnchor: 'bottom' } })
+
+    await page.goto('/')
+    const drawer = page.locator('.session-drawer')
+    await expect(drawer.getByTestId('session-card')).toHaveCount(3, DISCOVERY)
+    const selected = drawer.locator('[data-testid="session-card"].selected')
+    const chord = await shortcutChord(page)
+
+    // A hardware keyboard on a narrow layout: ] steps to the next session
+    // (right in the tab strip, down in the drawer), [ back.
+    await page.keyboard.press(`${chord}+Digit1`)
+    await expect(selected).toContainText(names[0])
+    await page.keyboard.press(`${chord}+BracketRight`)
+    await expect(selected).toContainText(names[1])
+    await page.keyboard.press(`${chord}+BracketRight`)
+    await expect(selected).toContainText(names[2])
+    await page.keyboard.press(`${chord}+BracketLeft`)
+    await expect(selected).toContainText(names[1])
+  })
 })

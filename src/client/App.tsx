@@ -790,13 +790,16 @@ export default function App() {
 
       // Bracket navigation: [mod]+[ / ]. [ always moves selection up the
       // screen and ] down: under the bottom-anchored sidebar index 0 sits at
-      // the bottom, so the index delta flips sign.
+      // the bottom, so the index delta flips sign. Only while that mirrored
+      // sidebar is on screen: below the md breakpoint the tab strip and the
+      // drawer keep the unmirrored order.
       // When only hibernating sessions are visible, fall back to navigating
       // within the hibernating bucket so the keyboard shortcut keeps working.
       if (isShortcut && (code === 'BracketLeft' || code === 'BracketRight')) {
         event.preventDefault()
-        const delta =
-          (code === 'BracketLeft' ? -1 : 1) * (sidebarAnchor === 'bottom' ? -1 : 1)
+        const mirrored =
+          sidebarAnchor === 'bottom' && !window.matchMedia('(max-width: 767px)').matches
+        const delta = (code === 'BracketLeft' ? -1 : 1) * (mirrored ? -1 : 1)
         const activeNav = filteredSortedSessions
         if (activeNav.length === 0) {
           const hibernatingNav = filteredHibernatingSessions
