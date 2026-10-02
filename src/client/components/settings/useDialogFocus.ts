@@ -3,7 +3,8 @@
  *
  * useSuspendTerminalInput: while the dialog is mounted the xterm helper
  * textarea is disabled so the terminal can't capture keystrokes. On unmount
- * focus returns to the element that opened the dialog; the textarea is
+ * focus returns to the element that opened the dialog (or, if a setting
+ * re-rendered it away, the button now carrying its label); the textarea is
  * re-enabled after a short delay (and focused only when nothing else got
  * focus back, e.g. the dialog was opened from the terminal by shortcut).
  *
@@ -26,6 +27,14 @@ function focusableElement(el: Element | null): HTMLElement | null {
   return typeof (el as HTMLElement).focus === 'function' ? (el as HTMLElement) : null
 }
 
+/** The opener if still in the document, else a button with the same label. */
+function findOpener(opener: HTMLElement, label: string | null): HTMLElement | null {
+  if (opener.isConnected) return opener
+  if (!label) return null
+  const escaped = label.replace(/["\\]/g, '\\$&')
+  return document.querySelector<HTMLElement>(`button[aria-label="${escaped}"]`)
+}
+
 export function useSuspendTerminalInput(): void {
   useEffect(() => {
     if (typeof document === 'undefined' || typeof document.querySelector !== 'function') return
@@ -40,9 +49,14 @@ export function useSuspendTerminalInput(): void {
       textarea.setAttribute('disabled', 'true')
     }
 
+    // A setting can re-render the opener away (e.g. the sidebar anchor
+    // remounts the gear), so remember how to find its replacement.
+    const openerLabel = opener?.getAttribute?.('aria-label') ?? null
+
     return () => {
-      const restoreOpener = opener !== null && opener !== textarea && opener.isConnected
-      if (restoreOpener) opener.focus()
+      const target = opener && opener !== textarea ? findOpener(opener, openerLabel) : null
+      const restoreOpener = target !== null
+      if (target) target.focus()
       reenableTimer = setTimeout(() => {
         reenableTimer = null
         const current = document.querySelector<HTMLTextAreaElement>(TEXTAREA_SELECTOR)

@@ -292,7 +292,12 @@ const doc = {
   body: { name: 'body' },
   activeElement: null as unknown,
   textarea: null as FakeElement | null,
-  querySelector: () => doc.textarea,
+  replacement: null as FakeElement | null,
+  lastSelector: '',
+  querySelector: (selector: string) => {
+    doc.lastSelector = selector
+    return selector.startsWith('button') ? doc.replacement : doc.textarea
+  },
   addEventListener: (type: string, fn: (event: unknown) => void) => { listeners.set(type, fn) },
   removeEventListener: (type: string) => { listeners.delete(type) },
 }
@@ -321,6 +326,33 @@ describe('useSuspendTerminalInput', () => {
     await new Promise((resolve) => setTimeout(resolve, 320))
     expect(doc.textarea?.disabled).toBe(false)
     expect(doc.textarea?.focused).toBe(0)
+  })
+
+  test('falls back to the button carrying the opener label when it was re-rendered', async () => {
+    const gear = Object.assign(fakeElement('gear'), { getAttribute: () => 'Set "x"' })
+    doc.activeElement = gear
+    doc.replacement = fakeElement('new gear')
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => { renderer = TestRenderer.create(<Probe />) })
+    gear.isConnected = false
+    act(() => renderer.unmount())
+    expect(doc.lastSelector).toBe('button[aria-label="Set \\"x\\""]')
+    expect(doc.replacement.focused).toBe(1)
+    expect(gear.focused).toBe(0)
+    doc.replacement = null
+    await new Promise((resolve) => setTimeout(resolve, 320))
+    expect(doc.textarea?.focused).toBe(0)
+  })
+
+  test('an unlabelled disconnected opener falls back to the terminal', async () => {
+    const gear = fakeElement('gear')
+    doc.activeElement = gear
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => { renderer = TestRenderer.create(<Probe />) })
+    gear.isConnected = false
+    act(() => renderer.unmount())
+    await new Promise((resolve) => setTimeout(resolve, 320))
+    expect(doc.textarea?.focused).toBe(1)
   })
 
   test('refocuses the terminal when it was the opener', async () => {
