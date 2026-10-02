@@ -3,17 +3,25 @@
  * icon button that opens one menu with a Hosts section (only when remote
  * hosts exist) and a Projects section.
  *
- * Nothing ticked means no filter: every session shows. The menu says so in
- * a pinned summary line ("Showing all. Tick to narrow."), which becomes the
- * selection count once anything is ticked, and ends with a pinned "Show all"
- * action that clears both sections in one click. Only the checklists scroll,
- * so a long project list never pushes the summary or "Show all" out of view.
+ * The menu is a plain checklist, as in Linear or GitHub: nothing ticked
+ * means no filter, and the funnel (accent color, count badge) shows when a
+ * filter applies. A pinned header row holds the menu's title and, only
+ * while a filter is active, a "Clear" action that empties both sections;
+ * the row is always there, so the menu does not jump when Clear appears.
  *
- * Idle it is a plain funnel. With any filter value set the funnel turns
- * accent-colored and carries a count badge (project + host values); the
- * tooltip names what is filtered. A separate pulsing dot (bottom-right, the
- * approval color) flags a filtered-out session that needs input; clicking it
- * clears the project filters, as the old project dropdown's dot did.
+ * Past FILTER_SEARCH_THRESHOLD options a pinned search field narrows the
+ * rows (case-insensitive substring of the displayed label; ticked rows stay
+ * visible so a selection is never hidden). Escape clears the search first
+ * and closes the menu on a second press. The field takes focus on open
+ * only for fine pointers, so a phone keyboard does not pop up uninvited.
+ * Only the checklists scroll; the header and search stay put.
+ *
+ * Idle the trigger is a plain funnel. With any filter value set the funnel
+ * turns accent-colored and carries a count badge (project + host values);
+ * the tooltip names what is filtered. A separate pulsing dot (bottom-right,
+ * the approval color) flags a filtered-out session that needs input;
+ * clicking it clears the project filters, as the old project dropdown's dot
+ * did.
  *
  * The menu is positioned against the filter bar (the nearest positioned
  * ancestor; this component adds none), spanning the bar's width, so it
@@ -27,8 +35,22 @@ import { ICON_SIZE, TOUCH_TARGET_CLASS, iconButtonClass } from './controlStyles'
 import { FilterFunnel02Icon } from './icons'
 import FilterChecklist from './FilterChecklist'
 
-/** Shown atop the menu when nothing is ticked (no filter applies). */
-export const FILTER_IDLE_HINT = 'Showing all. Tick to narrow.'
+/** The search field shows when hosts + projects exceed this many options. */
+export const FILTER_SEARCH_THRESHOLD = 8
+
+/**
+ * Case-insensitive substring match of a displayed label against the typed
+ * query. Plain string matching: the query is never interpreted as a pattern.
+ */
+export function matchesFilterQuery(label: string, query: string): boolean {
+  const needle = query.trim().toLowerCase()
+  return needle === '' || label.toLowerCase().includes(needle)
+}
+
+/** True on touch-first devices, where focusing a field opens the keyboard. */
+function isCoarsePointer(): boolean {
+  return typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches
+}
 
 interface SessionFilterButtonProps {
   projects: string[]
@@ -58,10 +80,19 @@ export default function SessionFilterButton({
   hasHiddenPermissions,
   placement = 'down',
 }: SessionFilterButtonProps) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpenState] = useState(false)
+  const [query, setQuery] = useState('')
   const menuId = useId()
-  const summaryId = useId()
   const containerRef = useRef<HTMLDivElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
+  // Read by the document keydown listener without re-subscribing per key.
+  const queryRef = useRef(query)
+  queryRef.current = query
+  // Closing (or reopening) always starts from an empty search.
+  const setOpen = (next: boolean) => {
+    setOpenState(next)
+    setQuery('')
+  }
   const displayNames = useMemo(() => getDisambiguatedProjectNames(projects), [projects])
   const statusMap = useMemo(
     () => new Map(hostStatuses.map((status) => [status.host, status])),
@@ -86,16 +117,42 @@ export default function SessionFilterButton({
     ? `Filter, ${activeCount} active filter${activeCount === 1 ? '' : 's'}`
     : 'Filter'
 
+  const optionCount = projects.length + (showHosts ? hosts.length : 0)
+  const showSearch = optionCount > FILTER_SEARCH_THRESHOLD
+  const activeQuery = showSearch ? query : ''
+  const searching = activeQuery.trim() !== ''
+  // Ticked rows always stay visible, so a selection is never hidden.
+  const narrow = (options: string[], selected: string[], labelFor: (option: string) => string) => {
+    if (!searching) return options
+    const keep = new Set(selected)
+    return options.filter((option) => keep.has(option) || matchesFilterQuery(labelFor(option), activeQuery))
+  }
+  const visibleHosts = showHosts ? narrow(hosts, selectedHosts, (host) => host) : []
+  const visibleProjects = narrow(projects, selectedProjects, projectLabel)
+  // While searching, a section with no matching rows is left out entirely.
+  const renderHosts = showHosts && (!searching || visibleHosts.length > 0)
+  const renderProjects = !searching || visibleProjects.length > 0
+
   useEffect(() => {
     if (!open || typeof document === 'undefined') return
     if (!document.addEventListener || !document.removeEventListener) return
+    const close = () => {
+      setOpenState(false)
+      setQuery('')
+    }
     const handlePointer = (event: MouseEvent | TouchEvent) => {
       const target = event.target as Node | null
       if (target && containerRef.current?.contains(target)) return
-      setOpen(false)
+      close()
     }
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false)
+      if (event.key !== 'Escape') return
+      // First Escape clears the search text; the next one closes the menu.
+      if (queryRef.current !== '') {
+        setQuery('')
+        return
+      }
+      close()
     }
     document.addEventListener('mousedown', handlePointer)
     document.addEventListener('touchstart', handlePointer, { passive: true })
@@ -105,6 +162,11 @@ export default function SessionFilterButton({
       document.removeEventListener('touchstart', handlePointer)
       document.removeEventListener('keydown', handleKeyDown)
     }
+  }, [open])
+
+  // Desktop: typing goes straight to the search. Touch: no uninvited keyboard.
+  useEffect(() => {
+    if (open && !isCoarsePointer()) searchRef.current?.focus()
   }, [open])
 
   return (
@@ -118,7 +180,7 @@ export default function SessionFilterButton({
           aria-controls={open ? menuId : undefined}
           aria-label={ariaLabel}
           title={title}
-          onClick={() => setOpen((value) => !value)}
+          onClick={() => setOpen(!open)}
           // 44px touch target on coarse pointers (mobile drawer).
           className={`${iconButtonClass(isActive ? 'active' : 'neutral')} ${TOUCH_TARGET_CLASS}`}
         >
@@ -154,27 +216,60 @@ export default function SessionFilterButton({
           id={menuId}
           role="menu"
           aria-label="Filter sessions"
-          aria-describedby={summaryId}
           className={`absolute left-2 right-2 z-20 ${
             placement === 'up' ? 'bottom-full mb-1' : 'top-full mt-1'
           } flex max-h-[min(26rem,calc(100dvh-7rem))] flex-col overflow-hidden rounded border border-border bg-surface p-1.5 text-xs shadow-lg`}
         >
-          {/* Pinned: what the filter does right now. */}
+          {/* Pinned header: always present, so Clear appearing never shifts rows. */}
           <div
-            id={summaryId}
-            data-testid="filter-summary"
-            aria-live="polite"
-            className="shrink-0 text-balance px-2 pb-1 pt-1 text-[11px] leading-snug text-muted"
+            data-testid="filter-header"
+            className="flex h-[26px] shrink-0 items-center justify-between gap-2 [@media(pointer:coarse)]:h-[44px]"
           >
-            {isActive ? `${activeCount} selected` : FILTER_IDLE_HINT}
+            <span className="truncate pl-2 text-[11px] font-medium text-secondary">
+              Filter
+            </span>
+            {isActive && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  onSelectProjects([])
+                  onSelectHosts([])
+                }}
+                // Full row height: 26px on desktop, 44x44 on coarse pointers.
+                className="h-full shrink-0 rounded px-2 text-accent hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent [@media(pointer:coarse)]:min-w-[44px]"
+              >
+                Clear
+              </button>
+            )}
           </div>
-          {/* Only the checklists scroll; the summary and Show all stay put. */}
+          {showSearch && (
+            <div className="shrink-0 px-1 pb-1 pt-0.5">
+              <input
+                ref={searchRef}
+                type="search"
+                aria-label="Search filters"
+                placeholder="Search"
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                enterKeyHint="search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                // 16px on touch devices keeps iOS from zooming on focus.
+                className="w-full rounded border border-border bg-base px-2 py-1 text-xs text-primary placeholder:text-muted focus:border-accent focus:outline-none [@media(pointer:coarse)]:text-[16px]"
+              />
+            </div>
+          )}
+          {/* Only the checklists scroll; the header and search stay put. */}
           <div data-testid="filter-options" className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-            {showHosts && (
+            {renderHosts && (
               <FilterChecklist
                 heading="Hosts"
                 emptyLabel="No hosts"
                 options={hosts}
+                visibleOptions={visibleHosts}
                 selected={selectedHosts}
                 onSelect={onSelectHosts}
                 labelFor={(host) => host}
@@ -188,29 +283,24 @@ export default function SessionFilterButton({
                 }}
               />
             )}
-            <FilterChecklist
-              heading="Projects"
-              emptyLabel="No projects"
-              options={projects}
-              selected={selectedProjects}
-              onSelect={onSelectProjects}
-              labelFor={projectLabel}
-              titleFor={(path) => path}
-            />
+            {renderProjects && (
+              <FilterChecklist
+                heading="Projects"
+                emptyLabel="No projects"
+                options={projects}
+                visibleOptions={visibleProjects}
+                selected={selectedProjects}
+                onSelect={onSelectProjects}
+                labelFor={projectLabel}
+                titleFor={(path) => path}
+              />
+            )}
+            {!renderHosts && !renderProjects && (
+              <div data-testid="filter-no-matches" className="px-2 py-1.5 text-muted">
+                No matches
+              </div>
+            )}
           </div>
-          <div className="my-1 h-px shrink-0 bg-border" />
-          <button
-            type="button"
-            role="menuitem"
-            disabled={!isActive}
-            onClick={() => {
-              onSelectProjects([])
-              onSelectHosts([])
-            }}
-            className="shrink-0 rounded px-2 py-1.5 text-left text-secondary hover:bg-hover hover:text-primary disabled:cursor-default disabled:text-muted disabled:hover:bg-transparent"
-          >
-            Show all
-          </button>
         </div>
       )}
     </div>

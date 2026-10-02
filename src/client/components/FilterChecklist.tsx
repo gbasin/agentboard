@@ -1,9 +1,13 @@
 /**
  * FilterChecklist - one section of the session filter menu: a heading and a
  * multi-select checkbox per option. Nothing ticked means no filter on this
- * dimension; the menu's shared "Show all" action clears every section.
+ * dimension; the menu's shared "Clear" action clears every section.
  * Selections are reported in `options` order, as the old per-dimension
  * dropdowns did.
+ *
+ * `visibleOptions` (default: all of `options`) is the subset the menu's
+ * search currently shows; toggling still works against the full list, so a
+ * hidden selection is never dropped.
  */
 
 import { useId } from 'react'
@@ -12,6 +16,8 @@ interface FilterChecklistProps {
   heading: string
   emptyLabel: string
   options: string[]
+  /** Rows to render (a subset of options, in options order). */
+  visibleOptions?: string[]
   selected: string[]
   onSelect: (next: string[]) => void
   labelFor: (option: string) => string
@@ -28,6 +34,7 @@ export default function FilterChecklist({
   heading,
   emptyLabel,
   options,
+  visibleOptions = options,
   selected,
   onSelect,
   labelFor,
@@ -58,7 +65,7 @@ export default function FilterChecklist({
       {options.length === 0 ? (
         <div className="px-2 py-1 text-muted">{emptyLabel}</div>
       ) : (
-        options.map((option) => {
+        visibleOptions.map((option) => {
           const note = noteFor?.(option) ?? null
           return (
             <label
