@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.1](https://github.com/gbasin/agentboard/compare/v0.23.0...v0.23.1) (2026-10-02)
+
+
+### Bug Fixes
+
+* reap throwaway tmux shells asynchronously, off the connection path ([#337](https://github.com/gbasin/agentboard/issues/337)) ([f79eb0e](https://github.com/gbasin/agentboard/commit/f79eb0e30e66201802530c14ff365ebd36010129))
+
 ## [0.23.0](https://github.com/gbasin/agentboard/compare/v0.22.1...v0.23.0) (2026-10-02)
 
 
