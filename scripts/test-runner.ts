@@ -93,6 +93,7 @@ async function main() {
     // Linux CI can stall PTY attach readiness.
     const ISOLATED_REAL_TMUX_FILES = new Set([
       'double-attach.integration.test.ts',
+      'e2eTmuxReap.integration.test.ts',
       'groupedSessionLeak.integration.test.ts',
       'hibernation.integration.test.ts',
       'integration.test.ts',
