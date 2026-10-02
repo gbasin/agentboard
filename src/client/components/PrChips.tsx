@@ -10,10 +10,8 @@ import {
   useSyncExternalStore,
 } from 'react'
 import { createPortal } from 'react-dom'
-import GitMergeIcon from '@untitledui-icons/react/line/esm/GitMergeIcon'
-import GitPullRequestIcon from '@untitledui-icons/react/line/esm/GitPullRequestIcon'
-import Pencil02Icon from '@untitledui-icons/react/line/esm/Pencil02Icon'
-import XCloseIcon from '@untitledui-icons/react/line/esm/XCloseIcon'
+import { GitMergeIcon, GitPullRequestIcon, Pencil02Icon, XCloseIcon } from './icons'
+import { ICON_SIZE, PR_STATE_MARK_SIZE } from './controlStyles'
 import type { SessionPullRequest } from '../../shared/types'
 
 interface PrInfo {
@@ -75,39 +73,38 @@ const PILL_CLASS =
 // The glyph carries "this is a PR" so the chip number needs no '#' sigil;
 // state sets the color, and merged swaps to the merge icon — the same
 // iconography GitHub and the VS Code PR extension use.
-const PR_ICON_PX = 12
 
 function stateGlyph(info: PrInfo | undefined): {
-  Icon: typeof GitPullRequestIcon
+  StateIcon: typeof GitPullRequestIcon
   cls: string
 } {
   if (!info || info.error || !info.state)
-    return { Icon: GitPullRequestIcon, cls: 'text-muted' }
+    return { StateIcon: GitPullRequestIcon, cls: 'text-muted' }
   switch (info.state) {
     case 'OPEN':
       // Drafts keep GitHub's muted gray; the pencil badge in PrGlyph is
       // what tells a draft apart from an unfetched or errored chip.
       return {
-        Icon: GitPullRequestIcon,
+        StateIcon: GitPullRequestIcon,
         cls: info.isDraft ? 'text-muted' : 'text-pr-open',
       }
     case 'MERGED':
-      return { Icon: GitMergeIcon, cls: 'text-pr-merged' }
+      return { StateIcon: GitMergeIcon, cls: 'text-pr-merged' }
     case 'CLOSED':
-      return { Icon: GitPullRequestIcon, cls: 'text-pr-closed' }
+      return { StateIcon: GitPullRequestIcon, cls: 'text-pr-closed' }
     default:
-      return { Icon: GitPullRequestIcon, cls: 'text-muted' }
+      return { StateIcon: GitPullRequestIcon, cls: 'text-muted' }
   }
 }
 
 function PrGlyph({ info }: { info?: PrInfo }) {
-  const { Icon, cls } = stateGlyph(info)
+  const { StateIcon, cls } = stateGlyph(info)
   // No closed- or draft-PR glyphs exist in the icon set — corner badges
   // stand in for GitHub's octicons: × for closed, a pencil for drafts.
   // Closed wins on a closed draft (terminal state beats the draft flag).
   // Kept inside the 12px box so the fit measurer's plain icon stays the
   // same width.
-  const Badge =
+  const MarkIcon =
     info && !info.error
       ? info.state === 'CLOSED'
         ? XCloseIcon
@@ -118,19 +115,19 @@ function PrGlyph({ info }: { info?: PrInfo }) {
   // The 12px glyph and 6px badges run a stroke heavier than the icon
   // set's 1.5 default — line icons at this size are hard to read,
   // especially on the light theme.
-  if (Badge)
+  if (MarkIcon)
     return (
       <span className="relative inline-flex shrink-0">
-        <Icon
-          width={PR_ICON_PX}
-          height={PR_ICON_PX}
+        <StateIcon
+          width={ICON_SIZE.pill}
+          height={ICON_SIZE.pill}
           strokeWidth={2}
           className={cls}
           aria-hidden
         />
-        <Badge
-          width={6}
-          height={6}
+        <MarkIcon
+          width={PR_STATE_MARK_SIZE}
+          height={PR_STATE_MARK_SIZE}
           strokeWidth={2.5}
           className={`absolute bottom-0 right-0 ${cls}`}
           aria-hidden
@@ -138,9 +135,9 @@ function PrGlyph({ info }: { info?: PrInfo }) {
       </span>
     )
   return (
-    <Icon
-      width={PR_ICON_PX}
-      height={PR_ICON_PX}
+    <StateIcon
+      width={ICON_SIZE.pill}
+      height={ICON_SIZE.pill}
       strokeWidth={2}
       className={`shrink-0 ${cls}`}
       aria-hidden

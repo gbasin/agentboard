@@ -28,12 +28,20 @@ import { useBrowserPaste, type BrowserPaste } from '../hooks/useBrowserPaste'
 import { clipboardFiles } from '../utils/browserFiles'
 import SessionDrawer from './SessionDrawer'
 import SessionPreviewContent from './SessionPreviewContent'
-import { PlusIcon, XCloseIcon, DotsVerticalIcon, Menu01Icon } from '@untitledui-icons/react/line'
-import AlertTriangleIcon from '@untitledui-icons/react/line/esm/AlertTriangleIcon'
-import Copy01Icon from '@untitledui-icons/react/line/esm/Copy01Icon'
-import Edit05Icon from '@untitledui-icons/react/line/esm/Edit05Icon'
-import Moon01Icon from '@untitledui-icons/react/line/esm/Moon01Icon'
-import Settings01Icon from '@untitledui-icons/react/line/esm/Settings01Icon'
+import {
+  AlertTriangleIcon,
+  ArrowDownIcon,
+  Copy01Icon,
+  DotsVerticalIcon,
+  Edit05Icon,
+  Menu01Icon,
+  Moon01Icon,
+  PlusIcon,
+  Settings02Icon,
+  SpinnerIcon,
+  XCloseIcon,
+} from './icons'
+import { ICON_SIZE, TOUCH_TARGET_CLASS, mobileButtonClass } from './controlStyles'
 
 interface TerminalProps {
   session: Session | null
@@ -1265,10 +1273,10 @@ export default function Terminal({
         <div className="flex min-w-0 items-center gap-[7px]">
           <button
             onClick={() => setIsDrawerOpen(true)}
-            className="flex size-[44px] shrink-0 items-center justify-center rounded border border-border bg-surface text-secondary transition-all hover:bg-hover hover:text-primary active:scale-95"
+            className={mobileButtonClass('neutral')}
             aria-label="Open session menu"
           >
-            <Menu01Icon width={16} height={16} />
+            <Menu01Icon width={ICON_SIZE.primary} height={ICON_SIZE.primary} />
           </button>
           {session ? (
             <div className="flex min-w-[72px] flex-col items-start gap-px leading-none">
@@ -1312,11 +1320,11 @@ export default function Terminal({
           {/* New session button - mobile only (desktop has it in header) */}
           <button
             onClick={onNewSession}
-            className="flex size-[44px] items-center justify-center rounded bg-accent text-white transition-all hover:bg-accent/90 active:scale-95"
+            className={mobileButtonClass('primary')}
             title={`New session (${modDisplay}N)`}
             aria-label="New session"
           >
-            <PlusIcon width={16} height={16} />
+            <PlusIcon width={ICON_SIZE.primary} height={ICON_SIZE.primary} />
           </button>
 
           {/* Kill session button - mobile only (desktop has it on left) */}
@@ -1324,21 +1332,21 @@ export default function Terminal({
             <button
               disabled={isSwitching}
               onClick={() => setShowEndConfirm(true)}
-              className="flex size-[44px] items-center justify-center rounded border border-danger/30 bg-danger/10 text-danger transition-all hover:bg-danger/20 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+              className={mobileButtonClass('danger')}
               title={`Kill session (${modDisplay}X)`}
               aria-label="Kill session"
             >
-              <XCloseIcon width={16} height={16} />
+              <XCloseIcon width={ICON_SIZE.primary} height={ICON_SIZE.primary} />
             </button>
           )}
           {canHibernate && (
             <button
               onClick={handleHibernateSession}
-              className="hidden size-[44px] items-center justify-center rounded border border-border text-secondary transition-all hover:bg-hover hover:text-primary active:scale-95 min-[360px]:flex"
+              className={`${mobileButtonClass('neutral', 'hidden')} min-[360px]:flex`}
               title="Hibernate session"
               aria-label="Hibernate session"
             >
-              <Moon01Icon width={16} height={16} />
+              <Moon01Icon width={ICON_SIZE.primary} height={ICON_SIZE.primary} />
             </button>
           )}
           {hibernatingSession && (
@@ -1355,11 +1363,11 @@ export default function Terminal({
             <div className="relative" ref={moreMenuRef}>
               <button
                 onClick={() => setShowMoreMenu(!showMoreMenu)}
-                className="flex size-[44px] items-center justify-center rounded border border-border bg-surface text-secondary transition-all hover:bg-hover hover:text-primary active:scale-95"
+                className={mobileButtonClass('neutral')}
                 title="More options"
                 aria-label="More options"
               >
-                <DotsVerticalIcon width={16} height={16} />
+                <DotsVerticalIcon width={ICON_SIZE.primary} height={ICON_SIZE.primary} />
               </button>
 
               {showMoreMenu && (
@@ -1369,7 +1377,7 @@ export default function Terminal({
                       onClick={handleStartRename}
                       className="flex min-h-[44px] w-full items-center gap-2 px-3 py-2 text-left text-sm text-secondary hover:bg-hover hover:text-primary"
                     >
-                      <Edit05Icon width={14} height={14} />
+                      <Edit05Icon width={ICON_SIZE.default} height={ICON_SIZE.default} />
                       Rename
                     </button>
                   )}
@@ -1378,7 +1386,7 @@ export default function Terminal({
                       onClick={handleHibernateSession}
                       className="flex min-h-[44px] w-full items-center gap-2 px-3 py-2 text-left text-sm text-secondary hover:bg-hover hover:text-primary"
                     >
-                      <Moon01Icon width={14} height={14} />
+                      <Moon01Icon width={ICON_SIZE.default} height={ICON_SIZE.default} />
                       Hibernate
                     </button>
                   )}
@@ -1389,7 +1397,7 @@ export default function Terminal({
                     }}
                     className="flex min-h-[44px] w-full items-center gap-2 px-3 py-2 text-left text-sm text-secondary hover:bg-hover hover:text-primary"
                   >
-                    <Settings01Icon width={14} height={14} />
+                    <Settings02Icon width={ICON_SIZE.default} height={ICON_SIZE.default} />
                     Settings
                   </button>
                 </div>
@@ -1461,10 +1469,7 @@ export default function Terminal({
             aria-live="polite"
             className="absolute top-2 left-2 z-50 flex items-center gap-1.5 rounded-lg bg-black/60 px-2.5 py-1.5 text-xs text-white/90 shadow-lg backdrop-blur-md"
           >
-            <svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
+            <SpinnerIcon width={ICON_SIZE.pill} height={ICON_SIZE.pill} className="animate-spin" />
             Loading
           </div>
         )}
@@ -1476,21 +1481,21 @@ export default function Terminal({
             <button
               type="button"
               onClick={copyPendingClipboardOffer}
-              className="flex h-8 shrink-0 items-center justify-center gap-1.5 rounded bg-accent px-2.5 text-xs font-medium text-white hover:bg-accent/90 active:scale-95 transition-all"
+              className={`relative flex h-8 shrink-0 items-center justify-center gap-1.5 rounded bg-accent px-2.5 text-xs font-medium text-white hover:bg-accent/90 active:scale-95 transition-all ${TOUCH_TARGET_CLASS}`}
               title="Copy selection"
               aria-label="Copy selection"
             >
-              <Copy01Icon width={14} height={14} />
+              <Copy01Icon width={ICON_SIZE.default} height={ICON_SIZE.default} />
               Copy
             </button>
             <button
               type="button"
               onClick={dismissPendingClipboardOffer}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-border text-secondary hover:bg-hover hover:text-primary active:scale-95 transition-all"
+              className={`relative flex h-8 w-8 shrink-0 items-center justify-center rounded border border-border text-secondary hover:bg-hover hover:text-primary active:scale-95 transition-all ${TOUCH_TARGET_CLASS}`}
               title="Dismiss"
               aria-label="Dismiss"
             >
-              <XCloseIcon width={14} height={14} />
+              <XCloseIcon width={ICON_SIZE.default} height={ICON_SIZE.default} />
             </button>
           </div>
         )}
@@ -1531,7 +1536,7 @@ export default function Terminal({
                         className="inline-flex items-center gap-1 rounded bg-amber-500/15 px-2 py-1 text-xs text-amber-400"
                         title={`Last wake failed: ${hibernatingSession.lastResumeError}`}
                       >
-                        <AlertTriangleIcon width={12} height={12} />
+                        <AlertTriangleIcon width={ICON_SIZE.pill} height={ICON_SIZE.pill} />
                         Last wake failed
                       </div>
                     )}
@@ -1572,7 +1577,7 @@ export default function Terminal({
           <button
             type="button"
             onClick={scrollToBottom}
-            className="absolute bottom-14 left-1/2 z-20 flex h-10 items-center justify-center overflow-hidden rounded-full border border-amber-400/35 bg-amber-500/20 text-amber-100 shadow-lg backdrop-blur-sm transition-all hover:bg-amber-500/30 active:scale-95 md:hidden"
+            className={`absolute bottom-14 left-1/2 z-20 flex h-10 items-center justify-center rounded-full border border-amber-400/35 bg-amber-500/20 text-amber-100 shadow-lg backdrop-blur-sm transition-all hover:bg-amber-500/30 active:scale-95 md:hidden ${TOUCH_TARGET_CLASS}`}
             style={{ transform: 'translateX(-50%)' }}
             title="Exit tmux copy mode and return to live output"
             aria-label="Exit copy mode"
@@ -1587,24 +1592,12 @@ export default function Terminal({
           <button
             type="button"
             onClick={scrollToBottom}
-            className="absolute bottom-8 left-1/2 z-20 flex h-10 px-4 items-center justify-center gap-1.5 rounded-full bg-blue-600/90 text-white shadow-lg hover:bg-blue-600 active:scale-95 transition-all md:hidden"
+            className={`absolute bottom-8 left-1/2 z-20 flex h-10 px-4 items-center justify-center gap-1.5 rounded-full bg-blue-600/90 text-white shadow-lg hover:bg-blue-600 active:scale-95 transition-all md:hidden ${TOUCH_TARGET_CLASS}`}
             style={{ transform: 'translateX(-50%)' }}
             title="Scroll to bottom"
             aria-label="Scroll to bottom"
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M12 5v14M5 12l7 7 7-7" />
-            </svg>
+            <ArrowDownIcon width={ICON_SIZE.primary} height={ICON_SIZE.primary} />
             <span className="text-sm font-medium">Jump to bottom</span>
           </button>
         ) : null}

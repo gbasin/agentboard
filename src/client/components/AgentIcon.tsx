@@ -2,7 +2,7 @@
  * AgentIcon - displays an icon based on agent type or command
  * Uses brand logos for Claude (Anthropic) and Codex (OpenAI), falls back to terminal
  */
-import { TerminalIcon } from '@untitledui-icons/react/line'
+import { TerminalIcon } from './icons'
 import type { AgentType } from '@shared/types'
 
 interface AgentIconProps {

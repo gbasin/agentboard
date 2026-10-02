@@ -207,7 +207,7 @@ export default function SessionDrawer({
             onClick={() => {
               if (onNewSession() !== false) onClose()
             }}
-            className="btn btn-primary w-full py-2 text-sm"
+            className="btn btn-primary min-h-[44px] w-full py-2 text-sm"
           >
             New Session
           </button>

@@ -19,7 +19,8 @@ import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react'
-import { MoveIcon } from '@untitledui-icons/react/line'
+import { MoveIcon } from './icons'
+import { ICON_SIZE, KEY_ICON_STROKE } from './controlStyles'
 import { useKeyboardShift } from '../hooks/useKeyboardShift'
 
 interface ArrowKeysProps {
@@ -331,7 +332,7 @@ export default function ArrowKeys({
         onClick={handleTriggerClick}
         disabled={disabled}
       >
-        <MoveIcon width={20} height={20} />
+        <MoveIcon width={ICON_SIZE.key} height={ICON_SIZE.key} strokeWidth={KEY_ICON_STROKE} />
       </button>
 
       {isOpen && (

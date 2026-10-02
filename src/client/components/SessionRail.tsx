@@ -23,13 +23,17 @@ import ProjectBadge from './ProjectBadge'
 import HostBadge from './HostBadge'
 import { PrChips } from './PrChips'
 import ContextMenu, { type ContextMenuEntry } from './ContextMenu'
-import { XCloseIcon } from '@untitledui-icons/react/line'
-import Moon01Icon from '@untitledui-icons/react/line/esm/Moon01Icon'
-import Copy01Icon from '@untitledui-icons/react/line/esm/Copy01Icon'
-import Edit05Icon from '@untitledui-icons/react/line/esm/Edit05Icon'
-import File06Icon from '@untitledui-icons/react/line/esm/File06Icon'
-import Hash01Icon from '@untitledui-icons/react/line/esm/Hash01Icon'
-import PlayIcon from '@untitledui-icons/react/line/esm/PlayIcon'
+import {
+  ArrowDownIcon,
+  Copy01Icon,
+  Edit05Icon,
+  File06Icon,
+  Hash01Icon,
+  Moon01Icon,
+  PlayIcon,
+  XCloseIcon,
+} from './icons'
+import { ICON_SIZE, ROW_ICON_BUTTON_CLASS, iconButtonClass } from './controlStyles'
 
 interface SessionRailProps {
   session: Session | null
@@ -67,8 +71,6 @@ const segmentButton =
 // dot plus label, with the action appended after a middot.
 const transientPill =
   'flex h-7 shrink-0 items-center gap-2 rounded-md border border-border bg-surface px-2.5 text-xs text-secondary transition-colors hover:bg-hover hover:text-primary'
-const iconButton =
-  'flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-40'
 // Pills (badges, PR chips) match the session list's 11px geometry.
 const railPill = 'text-[11px]'
 const copiedPill =
@@ -209,12 +211,12 @@ export default function SessionRail({
   const menuItems: ContextMenuEntry[] = []
   if (session) {
     menuItems.push(
-      { key: 'rename', label: 'Rename', icon: <Edit05Icon width={14} height={14} />, onSelect: startRename },
+      { key: 'rename', label: 'Rename', icon: <Edit05Icon width={ICON_SIZE.default} height={ICON_SIZE.default} />, onSelect: startRename },
       ...(onDuplicate
         ? [{
             key: 'duplicate',
             label: 'Duplicate',
-            icon: <Copy01Icon width={14} height={14} />,
+            icon: <Copy01Icon width={ICON_SIZE.default} height={ICON_SIZE.default} />,
             title: 'Create a copy in a new tmux window',
             onSelect: onDuplicate,
           }]
@@ -223,7 +225,7 @@ export default function SessionRail({
         ? [{
             key: 'hibernate',
             label: 'Hibernate',
-            icon: <Moon01Icon width={14} height={14} />,
+            icon: <Moon01Icon width={ICON_SIZE.default} height={ICON_SIZE.default} />,
             title: 'Close the live window and keep this session ready to wake',
             onSelect: onHibernate,
           }]
@@ -232,7 +234,7 @@ export default function SessionRail({
         ? [{
             key: 'copy-id',
             label: 'Copy Session ID',
-            icon: <Hash01Icon width={14} height={14} />,
+            icon: <Hash01Icon width={ICON_SIZE.default} height={ICON_SIZE.default} />,
             title: agentSessionId,
             onSelect: () => copyText(agentSessionId),
           }]
@@ -241,7 +243,7 @@ export default function SessionRail({
         ? [{
             key: 'copy-log',
             label: 'Copy Log Path',
-            icon: <File06Icon width={14} height={14} />,
+            icon: <File06Icon width={ICON_SIZE.default} height={ICON_SIZE.default} />,
             title: session.logFilePath,
             onSelect: () => copyText(session.logFilePath!),
           }]
@@ -251,19 +253,19 @@ export default function SessionRail({
       menuItems.push('divider', {
         key: 'kill',
         label: 'Kill Session',
-        icon: <XCloseIcon width={14} height={14} />,
+        icon: <XCloseIcon width={ICON_SIZE.default} height={ICON_SIZE.default} />,
         danger: true,
         onSelect: onKill,
       })
     }
   } else if (hibernatingSession) {
     menuItems.push(
-      { key: 'wake', label: 'Wake', icon: <PlayIcon width={14} height={14} />, onSelect: onWake },
-      { key: 'rename', label: 'Rename', icon: <Edit05Icon width={14} height={14} />, onSelect: startRename },
+      { key: 'wake', label: 'Wake', icon: <PlayIcon width={ICON_SIZE.default} height={ICON_SIZE.default} />, onSelect: onWake },
+      { key: 'rename', label: 'Rename', icon: <Edit05Icon width={ICON_SIZE.default} height={ICON_SIZE.default} />, onSelect: startRename },
       {
         key: 'copy-id',
         label: 'Copy Session ID',
-        icon: <Hash01Icon width={14} height={14} />,
+        icon: <Hash01Icon width={ICON_SIZE.default} height={ICON_SIZE.default} />,
         title: hibernatingSession.sessionId,
         onSelect: () => copyText(hibernatingSession.sessionId),
       },
@@ -271,7 +273,7 @@ export default function SessionRail({
         ? [{
             key: 'copy-log',
             label: 'Copy Log Path',
-            icon: <File06Icon width={14} height={14} />,
+            icon: <File06Icon width={ICON_SIZE.default} height={ICON_SIZE.default} />,
             title: hibernatingSession.logFilePath,
             onSelect: () => copyText(hibernatingSession.logFilePath!),
           }]
@@ -281,7 +283,7 @@ export default function SessionRail({
       menuItems.push('divider', {
         key: 'move-to-history',
         label: 'Move to History',
-        icon: <XCloseIcon width={14} height={14} />,
+        icon: <XCloseIcon width={ICON_SIZE.default} height={ICON_SIZE.default} />,
         onSelect: onMoveToHistory,
       })
     }
@@ -440,17 +442,17 @@ export default function SessionRail({
               className="flex h-5 items-center gap-1 rounded px-1 font-medium text-accent hover:text-primary"
               aria-label="Copy selection"
             >
-              <Copy01Icon width={12} height={12} />
+              <Copy01Icon width={ICON_SIZE.pill} height={ICON_SIZE.pill} />
               Copy
             </button>
             <button
               type="button"
               onClick={onDismissSelection}
-              className="flex h-5 w-5 items-center justify-center rounded text-muted hover:text-primary"
+              className={ROW_ICON_BUTTON_CLASS}
               title="Dismiss"
               aria-label="Dismiss"
             >
-              <XCloseIcon width={12} height={12} />
+              <XCloseIcon width={ICON_SIZE.pill} height={ICON_SIZE.pill} />
             </button>
           </span>
         )}
@@ -475,19 +477,7 @@ export default function SessionRail({
             title="Scroll to bottom"
             aria-label="Scroll to bottom"
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M12 5v14M5 12l7 7 7-7" />
-            </svg>
+            <ArrowDownIcon width={ICON_SIZE.pill} height={ICON_SIZE.pill} />
             Jump to bottom
           </button>
         ) : null}
@@ -509,22 +499,22 @@ export default function SessionRail({
         {session && canHibernate && (
           <button
             onClick={onHibernate}
-            className={`${iconButton} border border-border text-secondary hover:bg-hover hover:text-primary`}
+            className={iconButtonClass('neutral')}
             title="Hibernate session"
             aria-label="Hibernate session"
           >
-            <Moon01Icon width={16} height={16} />
+            <Moon01Icon width={ICON_SIZE.default} height={ICON_SIZE.default} />
           </button>
         )}
         {session && canControl && (
           <button
             disabled={isSwitching}
             onClick={onKill}
-            className={`${iconButton} border border-danger/30 bg-danger/10 text-danger hover:bg-danger/20`}
+            className={iconButtonClass('danger')}
             title={`Kill session (${modDisplay}X)`}
             aria-label="Kill session"
           >
-            <XCloseIcon width={16} height={16} />
+            <XCloseIcon width={ICON_SIZE.default} height={ICON_SIZE.default} />
           </button>
         )}
       </div>

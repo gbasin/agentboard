@@ -9,7 +9,8 @@
 import { useState, useRef, useEffect } from 'react'
 import type { TouchEvent as ReactTouchEvent } from 'react'
 import type { AgentType, Session } from '@shared/types'
-import { CornerDownLeftIcon } from '@untitledui-icons/react/line'
+import { ClipboardIcon, CornerDownLeftIcon, DeleteIcon, Keyboard01Icon } from './icons'
+import { ICON_SIZE, KEY_ICON_STROKE } from './controlStyles'
 import ArrowKeys from './ArrowKeys'
 import NumPad from './NumPad'
 import { isIOSDevice } from '../utils/device'
@@ -52,40 +53,20 @@ interface ControlKey {
   ariaLabel?: string
 }
 
-// Backspace icon (solid, clear)
-const BackspaceIcon = (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-    <path d="M22 3H7c-.69 0-1.23.35-1.59.88L0 12l5.41 8.11c.36.53.9.89 1.59.89h15c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H7.07L2.4 12l4.66-7H22v14zm-11.59-2L14 13.41 17.59 17 19 15.59 15.41 12 19 8.41 17.59 7 14 10.59 10.41 7 9 8.41 12.59 12 9 15.59z"/>
-  </svg>
-)
+// Key strip glyphs: library icons at the key size (18px on 44px keys).
+const BackspaceIcon = <DeleteIcon width={ICON_SIZE.key} height={ICON_SIZE.key} strokeWidth={KEY_ICON_STROKE} />
+const PasteIcon = <ClipboardIcon width={ICON_SIZE.key} height={ICON_SIZE.key} strokeWidth={KEY_ICON_STROKE} />
+const KeyboardIcon = <Keyboard01Icon width={ICON_SIZE.key} height={ICON_SIZE.key} strokeWidth={KEY_ICON_STROKE} />
 
-// Paste/clipboard icon
-const PasteIcon = (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
-    <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
-  </svg>
-)
-
-// Keyboard icon
-const KeyboardIcon = (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="2" y="4" width="20" height="16" rx="2" ry="2" />
-    <line x1="6" y1="8" x2="6" y2="8" />
-    <line x1="10" y1="8" x2="10" y2="8" />
-    <line x1="14" y1="8" x2="14" y2="8" />
-    <line x1="18" y1="8" x2="18" y2="8" />
-    <line x1="6" y1="12" x2="6" y2="12" />
-    <line x1="10" y1="12" x2="10" y2="12" />
-    <line x1="14" y1="12" x2="14" y2="12" />
-    <line x1="18" y1="12" x2="18" y2="12" />
-    <line x1="7" y1="16" x2="17" y2="16" />
-  </svg>
-)
+// Color classes of a key without its own `className`. A key's className
+// replaces these rather than being appended: both sets are single-class
+// utilities of equal specificity, so whichever Tailwind emits later would
+// win (bg-surface beats bg-accent/20), and Enter would lose its tint.
+const CONTROL_KEY_DEFAULT_CLASS = 'bg-surface border-border text-secondary'
 
 // Plain send-a-sequence keys. Their on-screen order lives in the JSX below,
 // interleaved with the stateful ctrl/paste/numpad/arrow/keyboard buttons.
-const KEY_ENTER: ControlKey = { label: <CornerDownLeftIcon width={18} height={18} />, key: '\r', className: 'bg-accent/20 text-accent border-accent/40', ariaLabel: 'Enter' }
+const KEY_ENTER: ControlKey = { label: <CornerDownLeftIcon width={ICON_SIZE.key} height={ICON_SIZE.key} strokeWidth={KEY_ICON_STROKE} />, key: '\r', className: 'bg-accent/20 text-accent border-accent/40', ariaLabel: 'Enter' }
 const KEY_ESC: ControlKey = { label: 'esc', key: '\x1b' }
 const KEY_DELETE_WORD: ControlKey = { label: BackspaceIcon, key: '\x17', ariaLabel: 'Delete word' } // Ctrl+W: delete word backward
 const KEY_TAB: ControlKey = { label: 'tab', key: '\t' }
@@ -264,11 +245,11 @@ export default function TerminalControls({
         flex items-center justify-center
         size-[44px] p-0
         text-sm font-medium
-        bg-surface border border-border rounded-md
+        border rounded-md
         active:bg-hover active:scale-95
         transition-transform duration-75
         select-none touch-manipulation
-        ${control.className ?? 'text-secondary'}
+        ${control.className ?? CONTROL_KEY_DEFAULT_CLASS}
         ${disabled ? 'opacity-50' : ''}
       `}
       onMouseDown={(e) => e.preventDefault()}
