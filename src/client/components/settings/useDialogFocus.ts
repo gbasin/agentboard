@@ -57,6 +57,9 @@ export function useSuspendTerminalInput(): void {
     return () => {
       reenableTimer = setTimeout(() => {
         reenableTimer = null
+        // Another dialog opened meanwhile (e.g. New Session within the
+        // delay) owns the terminal lock and focus now; leave both alone.
+        if (document.querySelector('[role="dialog"]')) return
         const current = document.querySelector<HTMLTextAreaElement>(TEXTAREA_SELECTOR)
         if (current) {
           current.removeAttribute('disabled')

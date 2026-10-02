@@ -2,9 +2,11 @@
  * useServerSetting - one server-wide setting behind /api/settings/<name>.
  *
  * Loads the value on mount (the control stays disabled until it arrives),
- * and `set` applies optimistically, PUTs, and reverts to the previous value
- * when the server answers non-OK or the request fails. The server rolls its
- * own state back on persistence failure, so the UI must follow.
+ * and `set` applies optimistically and PUTs. Writes are serialized so two
+ * quick edits reach the server in order; a failed write reverts the control
+ * to the last value the server confirmed (the loaded value or the newest
+ * successful write), never to an intermediate optimistic one. The server
+ * rolls its own state back on persistence failure, so the UI must follow.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 
@@ -35,13 +37,17 @@ export function useServerSetting<T extends boolean | number>(
   const [value, setValue] = useState<T>(fallback)
   const [loading, setLoading] = useState(true)
   const [loaded, setLoaded] = useState(false)
-  // Guards against a slow response landing after unmount or a newer write.
-  const generationRef = useRef(0)
-  const valueRef = useRef(value)
-  valueRef.current = value
+  // Last value the server is known to hold; failed writes revert to it.
+  const confirmedRef = useRef<T>(fallback)
+  // Writes chain on this so they are sent one at a time, in order.
+  const queueRef = useRef<Promise<void>>(Promise.resolve())
+  const inFlightRef = useRef(0)
+  const mountedRef = useRef(true)
+  // A write supersedes a load still in flight.
+  const writtenRef = useRef(false)
 
   useEffect(() => {
-    const generation = ++generationRef.current
+    mountedRef.current = true
     let active = true
     fetch(url)
       .then((res) => {
@@ -49,40 +55,51 @@ export function useServerSetting<T extends boolean | number>(
         return res.json() as Promise<Record<string, unknown>>
       })
       .then((data) => {
-        if (active && generationRef.current === generation) {
-          setValue(data[field] as T)
-        }
+        if (!active || writtenRef.current) return
+        const loadedValue = data[field] as T
+        confirmedRef.current = loadedValue
+        setValue(loadedValue)
       })
       .catch(() => {})
       .finally(() => {
-        if (active) setLoaded(true)
-        if (active && generationRef.current === generation) setLoading(false)
+        if (!active) return
+        setLoaded(true)
+        if (inFlightRef.current === 0) setLoading(false)
       })
     return () => {
       active = false
+      mountedRef.current = false
     }
   }, [url, field])
 
   const set = useCallback(
     (next: T) => {
-      const previous = valueRef.current
-      const generation = ++generationRef.current
+      writtenRef.current = true
+      inFlightRef.current += 1
       setValue(next)
       setLoading(true)
-      fetch(url, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ [field]: next }),
-      })
-        .then((res) => {
-          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      queueRef.current = queueRef.current.then(() =>
+        fetch(url, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ [field]: next }),
         })
-        .catch(() => {
-          if (generationRef.current === generation) setValue(previous)
-        })
-        .finally(() => {
-          if (generationRef.current === generation) setLoading(false)
-        })
+          .then((res) => {
+            if (!res.ok) throw new Error(`HTTP ${res.status}`)
+            confirmedRef.current = next
+          })
+          .catch(() => {
+            // Only the newest write may be showing; revert to what the
+            // server actually holds.
+            if (mountedRef.current && inFlightRef.current === 1) {
+              setValue(confirmedRef.current)
+            }
+          })
+          .finally(() => {
+            inFlightRef.current -= 1
+            if (mountedRef.current && inFlightRef.current === 0) setLoading(false)
+          })
+      )
     },
     [url, field]
   )

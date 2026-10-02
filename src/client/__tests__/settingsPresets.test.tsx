@@ -177,6 +177,33 @@ describe('PresetsTable', () => {
     expect(root.findAll((node) => node.props.role === 'listitem')).toHaveLength(before)
   })
 
+  test('focuses the Add button after a row is removed, once it is enabled', () => {
+    // react-test-renderer has no DOM: mock the Add button's node so the ref
+    // can report whether focus() arrived while the button was disabled.
+    const focusCalls: boolean[] = []
+    let addDisabled = () => false
+    act(() => {
+      renderer = TestRenderer.create(<PresetsTable ids={ids} />, {
+        createNodeMock: (element) =>
+          element.type === 'button' && element.props.children?.[1] === 'Add preset'
+            ? { focus: () => focusCalls.push(addDisabled()) }
+            : null,
+      })
+    })
+    const root = renderer!.root
+    const addNode = () => root.find((node) => node.type === 'button' && node.props.children?.[1] === 'Add preset')
+    addDisabled = () => addNode().props.disabled === true
+
+    act(() => addNode().props.onClick())
+    expect(addNode().props.disabled).toBe(true)
+    act(() => button(root, 'Discard new preset').props.onClick())
+    expect(focusCalls).toEqual([false])
+
+    act(() => button(root, 'Delete Mine').props.onClick())
+    act(() => button(root, 'Confirm delete Mine').props.onClick())
+    expect(focusCalls).toEqual([false, false])
+  })
+
   test('stored rows have no pointer-down guard on delete', () => {
     const root = render()
     expect(button(root, 'Delete Mine').props.onPointerDown).toBeUndefined()

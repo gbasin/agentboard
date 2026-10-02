@@ -6,7 +6,7 @@
  * are valid; it then joins the store under the id it was created with, so
  * React keeps the same row (and the focused input) across the hand-off.
  */
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { AgentType } from '@shared/types'
 import {
   MAX_PRESETS,
@@ -32,6 +32,14 @@ export function PresetsTable({ ids }: RowControlProps) {
   // be resurrected by that late commit.
   const pendingRef = useRef<CommandPreset | null>(null)
   const addRef = useRef<HTMLButtonElement>(null)
+  // Set when a row is removed; the Add button may still be disabled in this
+  // render (a pending row existed), so focus it after the update lands.
+  const focusAddRef = useRef(false)
+  useEffect(() => {
+    if (!focusAddRef.current) return
+    focusAddRef.current = false
+    addRef.current?.focus()
+  })
 
   const updatePending = (next: CommandPreset | null) => {
     pendingRef.current = next
@@ -81,9 +89,9 @@ export function PresetsTable({ ids }: RowControlProps) {
   // The removed row's inputs held focus; hand it to the Add button rather
   // than letting it fall to <body>.
   const removeRow = (id: string) => {
+    focusAddRef.current = true
     if (pendingRef.current?.id === id) updatePending(null)
     else useSettingsStore.getState().removePreset(id)
-    addRef.current?.focus()
   }
 
   return (

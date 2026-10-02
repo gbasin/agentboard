@@ -216,6 +216,37 @@ describe('useServerSetting', () => {
     act(() => renderer.unmount())
   })
 
+  test('writes are sent in order and a failure reverts to the confirmed value', async () => {
+    const puts: Array<{ value: unknown; resolve: (res: Response) => void }> = []
+    globalThis.fetch = ((_url: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method !== 'PUT') {
+        return Promise.resolve(new Response(JSON.stringify({ enabled: true }), { status: 200 }))
+      }
+      return new Promise<Response>((resolve) => {
+        puts.push({ value: JSON.parse(String(init.body)).enabled, resolve })
+      })
+    }) as typeof fetch
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => { renderer = TestRenderer.create(<Probe />) })
+    await flush()
+    act(() => setting.set(false))
+    act(() => setting.set(true))
+    await flush()
+    // Second write waits for the first.
+    expect(puts.map((p) => p.value)).toEqual([false])
+    expect(setting.value).toBe(true)
+    expect(setting.loading).toBe(true)
+    puts[0].resolve(new Response('{}', { status: 200 }))
+    await flush()
+    expect(puts.map((p) => p.value)).toEqual([false, true])
+    puts[1].resolve(new Response('{}', { status: 500 }))
+    await flush()
+    // Reverts to the last confirmed value (false), not the loaded one.
+    expect(setting.value).toBe(false)
+    expect(setting.loading).toBe(false)
+    act(() => renderer.unmount())
+  })
+
   test('a load that lands after a write is ignored', async () => {
     let resolveGet!: (response: Response) => void
     globalThis.fetch = ((_url: RequestInfo | URL, init?: RequestInit) => {
@@ -314,8 +345,10 @@ const doc = {
   activeElement: null as unknown,
   textarea: null as FakeElement | null,
   replacement: null as FakeElement | null,
+  dialogOpen: false,
   lastSelector: '',
   querySelector: (selector: string) => {
+    if (selector === '[role="dialog"]') return doc.dialogOpen ? {} : null
     doc.lastSelector = selector
     return selector.startsWith('button') ? doc.replacement : doc.textarea
   },
@@ -347,6 +380,18 @@ describe('useSuspendTerminalInput', () => {
     expect(doc.textarea?.disabled).toBe(false)
     expect(doc.textarea?.focused).toBe(1)
     expect(gear.focused).toBe(0)
+  })
+
+  test('leaves the terminal alone when another dialog opened during the delay', async () => {
+    doc.activeElement = fakeElement('gear')
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => { renderer = TestRenderer.create(<Probe />) })
+    act(() => renderer.unmount())
+    doc.dialogOpen = true
+    await new Promise((resolve) => setTimeout(resolve, 320))
+    doc.dialogOpen = false
+    expect(doc.textarea?.disabled).toBe(true)
+    expect(doc.textarea?.focused).toBe(0)
   })
 
   test('without a terminal, focus returns to the opener', async () => {
