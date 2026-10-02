@@ -8,6 +8,12 @@
  * against the last server-confirmed value per key, so applying a broadcast
  * never triggers a write of the same value.
  *
+ * A push is debounced, and the value is captured when it is scheduled, not
+ * when it flushes: a full-state broadcast from another browser can land in
+ * that window still carrying this key's old value, and applying it must not
+ * replace what the user just chose. Such a key keeps its local value and the
+ * scheduled push then makes the server agree.
+ *
  * Migration: a browser that already has persisted local state ("veteran")
  * seeds server-absent keys from its local values on sync. Fresh browsers
  * have nothing to seed and simply adopt the server values.
@@ -30,7 +36,8 @@ const PUSH_DEBOUNCE_MS = 200
 
 /** Last server-confirmed value per key, JSON-encoded for deep comparison. */
 const serverValues = new Map<string, string>()
-const pendingPush = new Set<SyncedSettingsKey>()
+/** Keys awaiting a push, with the JSON-encoded value captured on schedule. */
+const pendingPush = new Map<SyncedSettingsKey, string>()
 let pushTimer: ReturnType<typeof setTimeout> | null = null
 let syncInitialized = false
 
@@ -48,11 +55,10 @@ function flushPush(): void {
   pushTimer = null
   if (pendingPush.size === 0) return
   const delta: Record<string, unknown> = {}
-  for (const key of pendingPush) {
-    const value = getLocalValue(key)
-    delta[key] = value
+  for (const [key, json] of pendingPush) {
+    delta[key] = JSON.parse(json)
     // Optimistically mark as pushed so the broadcast echo is ignored.
-    serverValues.set(key, JSON.stringify(value))
+    serverValues.set(key, json)
   }
   pendingPush.clear()
   try {
@@ -78,8 +84,8 @@ function flushPush(): void {
   }
 }
 
-function schedulePush(key: SyncedSettingsKey): void {
-  pendingPush.add(key)
+function schedulePush(key: SyncedSettingsKey, value: unknown): void {
+  pendingPush.set(key, JSON.stringify(value))
   if (pushTimer) return
   pushTimer = setTimeout(flushPush, PUSH_DEBOUNCE_MS)
 }
@@ -102,6 +108,9 @@ export function applySyncedSettings(settings: SyncedSettings): void {
   for (const [key, value] of Object.entries(settings)) {
     if (!isSyncedSettingsKey(key) || !isValidSyncedSetting(key, value)) continue
     serverValues.set(key, JSON.stringify(value))
+    // A local change is on its way to the server; keep it rather than
+    // flashing the stale broadcast value and then pushing the stale value.
+    if (pendingPush.has(key)) continue
     if (key === 'theme') {
       theme = value as 'dark' | 'light'
     } else {
@@ -125,7 +134,7 @@ export function applySyncedSettings(settings: SyncedSettings): void {
     const local = getLocalValue(key)
     if (!isValidSyncedSetting(key, local)) continue
     if (serverValues.get(key) === JSON.stringify(local)) continue
-    schedulePush(key)
+    schedulePush(key, local)
   }
 }
 
@@ -146,7 +155,7 @@ export function initSyncedSettings(): () => void {
         current[key] !== previous[key] &&
         serverValues.get(key) !== JSON.stringify(current[key])
       ) {
-        schedulePush(key)
+        schedulePush(key, current[key])
       }
     }
   })
@@ -156,7 +165,7 @@ export function initSyncedSettings(): () => void {
       state.theme !== prev.theme &&
       serverValues.get('theme') !== JSON.stringify(state.theme)
     ) {
-      schedulePush('theme')
+      schedulePush('theme', state.theme)
     }
   })
 

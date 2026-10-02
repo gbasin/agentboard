@@ -148,6 +148,32 @@ describe('push on local change', () => {
     })
   })
 
+  test('a broadcast inside the debounce window does not revert a local change', async () => {
+    useSettingsStore.getState().setSidebarAnchor('bottom')
+    // Another browser changed theme; its full-state broadcast still carries
+    // this browser's old anchor.
+    applySyncedSettings({ theme: 'light', sidebarAnchor: 'top' })
+    expect(useThemeStore.getState().theme).toBe('light')
+    expect(useSettingsStore.getState().sidebarAnchor).toBe('bottom')
+    await sleep(300)
+    expect(fetchCalls.length).toBe(1)
+    // (The local write persisted state, so the push may also seed other
+    // server-absent keys; what matters is the anchor it carries.)
+    expect(fetchCalls[0].body.settings.sidebarAnchor).toBe('bottom')
+    // The server's rebroadcast of the pushed value is an echo, not a push.
+    applySyncedSettings({ theme: 'light', sidebarAnchor: 'bottom' })
+    await sleep(300)
+    expect(fetchCalls.length).toBe(1)
+  })
+
+  test('a later change inside the window replaces the pending value', async () => {
+    useSettingsStore.getState().setSessionSortMode('manual')
+    useSettingsStore.getState().setSessionSortMode('status')
+    await sleep(300)
+    expect(fetchCalls.length).toBe(1)
+    expect(fetchCalls[0].body.settings).toEqual({ sessionSortMode: 'status' })
+  })
+
   test('does not push non-synced keys', async () => {
     useSettingsStore.getState().setFontSize(20)
     useSettingsStore.getState().setSidebarWidth(300)
