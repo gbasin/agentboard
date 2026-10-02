@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.23.3](https://github.com/gbasin/agentboard/compare/v0.23.2...v0.23.3) (2026-10-02)
+
+
+### Bug Fixes
+
+* flip bracket navigation only while the mirrored sidebar is on screen ([#343](https://github.com/gbasin/agentboard/issues/343)) ([21f7304](https://github.com/gbasin/agentboard/commit/21f7304c11d0940507d07434615b8fedf97fcb5e))
+* **server:** carry partial log lines as bytes in the PR extractor ([#348](https://github.com/gbasin/agentboard/issues/348)) ([98469d6](https://github.com/gbasin/agentboard/commit/98469d69ce76677206bbe2929253c6f573deb1d8))
+
+
+### Performance Improvements
+
+* **server:** cache codex subagent index heads by size and mtime ([#350](https://github.com/gbasin/agentboard/issues/350)) ([bed8226](https://github.com/gbasin/agentboard/commit/bed8226026483aaf39862fed2cfa86182e2aac51))
+* **server:** look up active sessions by the windowed-row index ([#352](https://github.com/gbasin/agentboard/issues/352)) ([f017097](https://github.com/gbasin/agentboard/commit/f0170973306388dd22087d73b9f40bf66f5a8fb1))
+* **server:** probe the base session without blocking the event loop ([#351](https://github.com/gbasin/agentboard/issues/351)) ([ba9ea37](https://github.com/gbasin/agentboard/commit/ba9ea37fced4a20591e185c050cb34a0b0bd4067))
+* **server:** scan dormant session logs for PRs in idle slices, not at startup ([#346](https://github.com/gbasin/agentboard/issues/346)) ([eb6ab63](https://github.com/gbasin/agentboard/commit/eb6ab6318aad01c71bb50ffbdd8d7fb5cb663781))
+* **server:** scan dormant subagent logs in idle slices and rescan on index change ([#353](https://github.com/gbasin/agentboard/issues/353)) ([4480a67](https://github.com/gbasin/agentboard/commit/4480a676a695ef151c8b5bc41f9b363d8b788858))
+* **server:** skip decoding log chunks that cannot hold a gh pr create ([#344](https://github.com/gbasin/agentboard/issues/344)) ([8994da4](https://github.com/gbasin/agentboard/commit/8994da49d1b40199941a6d6398f4770464c23aa8))
+* **server:** stream devin mirror rewrites instead of loading whole sessions ([#349](https://github.com/gbasin/agentboard/issues/349)) ([d50bf2e](https://github.com/gbasin/agentboard/commit/d50bf2e28ffc6f5037f1050a4dcf5306a01c55a1))
+
 ## [0.23.2](https://github.com/gbasin/agentboard/compare/v0.23.1...v0.23.2) (2026-10-02)
 
 
