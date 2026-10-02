@@ -25,6 +25,7 @@ import { createDormantPrScanner } from './dormantPrScan'
 import { setCodexSubagentIndexListener } from './subagentLogs'
 import { fetchPrChecks, fetchPrInfo, parsePrUrl } from './prInfo'
 import { getLogSearchDirs } from './logDiscovery'
+import { mapWithConcurrency } from './mapWithConcurrency'
 import {
   DEFAULT_SCROLLBACK_LINES,
   matchWindowsToLogsByExactRg,
@@ -934,6 +935,13 @@ interface HydrateSessionsOptions {
   precomputedVerifications?: Map<string, VerificationDecision>
 }
 
+// Each verification captures a pane and runs rg over every log directory
+// (often 10+ GB) once per recent user message. Verifying every window at once
+// saturated disk and CPU for minutes after a restart: rg calls hit their
+// timeout and dropped matches, and the event loop stalled for seconds at a
+// time. The limit only changes scheduling; each window's work is unchanged.
+const STARTUP_VERIFY_CONCURRENCY = 2
+
 async function verifyAllSessions(
   activeSessions: AgentSessionRecord[],
   sessions: Session[],
@@ -945,8 +953,10 @@ async function verifyAllSessions(
     .filter((session) => session.currentWindow)
     .map((session) => ({ sessionId: session.sessionId, logPath: session.logFilePath }))
 
-  const entries: Array<[string, VerificationDecision]> = await Promise.all(
-    activeSessions.map(async (agentSession): Promise<[string, VerificationDecision]> => {
+  const entries: Array<[string, VerificationDecision]> = await mapWithConcurrency(
+    activeSessions,
+    STARTUP_VERIFY_CONCURRENCY,
+    async (agentSession): Promise<[string, VerificationDecision]> => {
       const currentWindow = agentSession.currentWindow
       if (!currentWindow || !windowSet.has(currentWindow)) {
         const decision: VerificationDecision = {
@@ -995,7 +1005,7 @@ async function verifyAllSessions(
         }
         return [agentSession.sessionId, decision]
       }
-    })
+    }
   )
 
   return new Map(entries)
