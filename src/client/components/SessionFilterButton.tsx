@@ -164,7 +164,7 @@ export default function SessionFilterButton({
             id={summaryId}
             data-testid="filter-summary"
             aria-live="polite"
-            className="shrink-0 px-2 pb-1 pt-1 text-[11px] leading-snug text-muted"
+            className="shrink-0 text-balance px-2 pb-1 pt-1 text-[11px] leading-snug text-muted"
           >
             {isActive ? `${activeCount} selected` : FILTER_IDLE_HINT}
           </div>
