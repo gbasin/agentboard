@@ -6,6 +6,8 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { config } from '../config'
+import { logger } from '../logger'
+import { resetSlowSyncSpawnState } from '../syncSpawnTiming'
 import { runTmuxAsync } from '../tmuxAsync'
 import { TmuxTimeoutError } from '../tmuxTimeout'
 
@@ -15,6 +17,7 @@ case "$1" in
   ok) printf 'out:%s\\n' "$2" ;;
   fail) printf 'boom\\n' >&2; exit 1 ;;
   hang) exec sleep 5 ;;
+  slow) sleep 0.3; printf slow ;;
   env) printf '%s|%s\\n' "\${NODE_ENV-unset}" "\${AB_TMUX_ASYNC_KEEP-unset}" ;;
 esac
 `
@@ -65,5 +68,20 @@ describe('runTmuxAsync', () => {
     process.env.NODE_ENV = 'production'
     process.env.AB_TMUX_ASYNC_KEEP = 'kept'
     expect(await runTmuxAsync(['env'])).toBe('unset|kept\n')
+  })
+
+  test('logs async_spawn_slow for a slow call', async () => {
+    resetSlowSyncSpawnState()
+    const warned: Array<[string, Record<string, unknown> | undefined]> = []
+    const originalWarn = logger.warn
+    logger.warn = (event, data) => warned.push([event, data])
+    try {
+      expect(await runTmuxAsync(['-u', 'slow'])).toBe('slow')
+    } finally {
+      logger.warn = originalWarn
+    }
+    expect(warned).toHaveLength(1)
+    expect(warned[0]?.[0]).toBe('async_spawn_slow')
+    expect(warned[0]?.[1]).toMatchObject({ command: 'tmux -u slow' })
   })
 })
