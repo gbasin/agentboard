@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.23.2](https://github.com/gbasin/agentboard/compare/v0.23.1...v0.23.2) (2026-10-02)
+
+
+### Bug Fixes
+
+* [ ] nav keys track screen direction under the bottom sidebar anchor ([#341](https://github.com/gbasin/agentboard/issues/341)) ([9e0499a](https://github.com/gbasin/agentboard/commit/9e0499a536f1f4b2ca6dd6e0717de118e8c3fa2e))
+* stop cached PR links from pinning whole log chunks in memory ([#340](https://github.com/gbasin/agentboard/issues/340)) ([5529773](https://github.com/gbasin/agentboard/commit/5529773a656769edea7782e7655986880c3ce9d1))
+
 ## [0.23.1](https://github.com/gbasin/agentboard/compare/v0.23.0...v0.23.1) (2026-10-02)
 
 
