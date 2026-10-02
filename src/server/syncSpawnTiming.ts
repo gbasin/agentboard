@@ -174,7 +174,9 @@ export async function timedSpawnAsync(
       stdout: 'pipe',
       stderr: 'pipe',
       timeout: options.timeout,
-      env: options.env,
+      // Explicit: without env, Bun resolves the program on the PATH from
+      // process start rather than the current process.env.
+      env: options.env ?? process.env,
     })
     const [stdout, stderr] = await Promise.all([
       new Response(proc.stdout).text(),

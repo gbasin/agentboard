@@ -10,7 +10,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { getDevinSessionLocksDir } from './devinSync'
 import { config } from './config'
-import { timedSpawnSync } from './syncSpawnTiming'
+import { timedSpawnAsync } from './syncSpawnTiming'
+import { runTmuxAsync } from './tmuxAsync'
 import {
   buildTmuxFormat,
   splitTmuxFields,
@@ -46,17 +47,20 @@ export function readDevinSessionLocks(
 }
 
 /** pid -> ppid for every process on the system */
-function getProcessTable(): Map<number, number> {
+async function getProcessTable(): Promise<Map<number, number>> {
   const table = new Map<number, number>()
-  // Bounded like the tmux calls: this runs on the poll path, and ps can hang
-  // under the same memory pressure that stalls tmux.
-  const result = timedSpawnSync(['ps', '-eo', 'pid=,ppid='], {
-    stdout: 'pipe',
-    stderr: 'pipe',
-    timeout: config.tmuxTimeoutMs,
-  })
+  // Bounded like the tmux calls: ps can hang under the same memory pressure
+  // that stalls tmux. Async so a slow ps never holds the event loop.
+  let result: Awaited<ReturnType<typeof timedSpawnAsync>>
+  try {
+    result = await timedSpawnAsync(['ps', '-eo', 'pid=,ppid='], {
+      timeout: config.tmuxTimeoutMs,
+    })
+  } catch {
+    return table
+  }
   if (result.exitCode !== 0) return table
-  for (const line of result.stdout.toString().split('\n')) {
+  for (const line of result.stdout.split('\n')) {
     const parts = line.trim().split(/\s+/)
     if (parts.length < 2) continue
     const pid = Number.parseInt(parts[0], 10)
@@ -69,39 +73,35 @@ function getProcessTable(): Map<number, number> {
 }
 
 // One list-panes call for every pane's root pid, instead of a display-message
-// spawnSync per window — this ran on the poll critical path, so N windows meant
-// N blocking subprocesses per cycle. (It also covers non-active panes, which
-// display-message's single #{pane_pid} missed.)
-function getPaneOwners(windows: Session[]): Map<number, Session> {
+// per window. (It also covers non-active panes, which display-message's
+// single #{pane_pid} missed.)
+async function getPaneOwners(windows: Session[]): Promise<Map<number, Session>> {
   const owners = new Map<number, Session>()
   const byTmuxWindow = new Map(windows.map((w) => [w.tmuxWindow, w]))
+  let stdout: string
   try {
-    const result = timedSpawnSync(
-      [
-        'tmux',
-        ...withTmuxUtf8Flag([
-          'list-panes',
-          '-a',
-          '-F',
-          buildTmuxFormat(['#{session_name}', '#{window_id}', '#{pane_pid}']),
-        ]),
-      ],
-      { stdout: 'pipe', stderr: 'pipe', timeout: config.tmuxTimeoutMs }
+    stdout = await runTmuxAsync(
+      withTmuxUtf8Flag([
+        'list-panes',
+        '-a',
+        '-F',
+        buildTmuxFormat(['#{session_name}', '#{window_id}', '#{pane_pid}']),
+      ])
     )
-    if (result.exitCode !== 0) return owners
-    for (const line of splitTmuxLines(result.stdout.toString())) {
-      const parts = splitTmuxFields(line, 3)
-      if (!parts) continue
-      const [sessionName, windowId, pidRaw] = parts
-      const pid = Number.parseInt(pidRaw ?? '', 10)
-      if (!Number.isFinite(pid) || pid <= 0) continue
-      const window = byTmuxWindow.get(`${sessionName}:${windowId}`)
-      if (window) {
-        owners.set(pid, window)
-      }
-    }
   } catch {
-    // tmux unreachable — no pane owners this cycle
+    // tmux unreachable or failed — no pane owners this cycle
+    return owners
+  }
+  for (const line of splitTmuxLines(stdout)) {
+    const parts = splitTmuxFields(line, 3)
+    if (!parts) continue
+    const [sessionName, windowId, pidRaw] = parts
+    const pid = Number.parseInt(pidRaw ?? '', 10)
+    if (!Number.isFinite(pid) || pid <= 0) continue
+    const window = byTmuxWindow.get(`${sessionName}:${windowId}`)
+    if (window) {
+      owners.set(pid, window)
+    }
   }
   return owners
 }
@@ -124,20 +124,24 @@ function isDescendantOf(
  * Match devin session ids to tmux windows using session lock PIDs.
  * Returns sessionId -> Session for each devin session whose process is a
  * descendant of a window's pane.
+ *
+ * ps and tmux list-panes run concurrently and off the event loop (this runs
+ * on every log poll that sees a devin entry). Matching starts once both have
+ * answered, so the process snapshot can be a few ms older than the pane list.
  */
-export function matchDevinLocksToWindows(
+export async function matchDevinLocksToWindows(
   windows: Session[]
-): Map<string, Session> {
+): Promise<Map<string, Session>> {
   const matches = new Map<string, Session>()
   const locks = readDevinSessionLocks()
   if (locks.size === 0 || windows.length === 0) return matches
 
-  const processTable = getProcessTable()
-  if (processTable.size === 0) return matches
-
-  // panePid -> window (a pane has exactly one root pid)
-  const paneOwners = getPaneOwners(windows)
-  if (paneOwners.size === 0) return matches
+  const [processTable, paneOwners] = await Promise.all([
+    getProcessTable(),
+    // panePid -> window (a pane has exactly one root pid)
+    getPaneOwners(windows),
+  ])
+  if (processTable.size === 0 || paneOwners.size === 0) return matches
 
   for (const [sessionId, pid] of locks) {
     for (const [panePid, window] of paneOwners) {
