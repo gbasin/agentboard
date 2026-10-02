@@ -90,6 +90,7 @@ import {
   withTmuxUtf8Flag,
 } from './tmuxFormat'
 import { timedSpawnSync } from './syncSpawnTiming'
+import { getTailscaleIp } from './tailscale'
 
 function checkPortAvailable(port: number): void {
   let result: ReturnType<typeof Bun.spawnSync>
@@ -381,30 +382,6 @@ async function readLogLineWindow(
   logLineCacheBytes += stats.size
   enforceLogCacheBudget()
   return selectLineWindow(lines, limit, beforeLine)
-}
-
-function getTailscaleIp(): string | null {
-  // Try common Tailscale CLI paths (standalone CLI, then Mac App Store bundle)
-  const tailscalePaths = [
-    'tailscale',
-    '/Applications/Tailscale.app/Contents/MacOS/Tailscale',
-  ]
-
-  for (const tsPath of tailscalePaths) {
-    try {
-      const result = timedSpawnSync([tsPath, 'ip', '-4'], {
-        stdout: 'pipe',
-        stderr: 'pipe',
-      })
-      if (result.exitCode === 0) {
-        const ip = result.stdout.toString().trim()
-        if (ip) return ip
-      }
-    } catch {
-      // Try next path
-    }
-  }
-  return null
 }
 
 function pruneOrphanedWsSessions(): void {
@@ -1754,10 +1731,10 @@ app.get('/api/directories', async (c) => {
   return c.json(response)
 })
 
-app.get('/api/server-info', (c) => {
+app.get('/api/server-info', async (c) => {
   // For 0.0.0.0, detect Tailscale IP for display (already listening on all interfaces).
   // For localhost, only report if we successfully bound to the Tailscale IP.
-  const tsIp = config.hostname === '0.0.0.0' ? getTailscaleIp() : boundTailscaleIp
+  const tsIp = config.hostname === '0.0.0.0' ? await getTailscaleIp() : boundTailscaleIp
   return c.json({
     port: config.port,
     tailscaleIp: tsIp,
@@ -2286,41 +2263,51 @@ Bun.serve<WSData>({
   websocket: websocketHandlers,
 })
 
-// When bound to localhost, also listen on the Tailscale interface if available.
-// This allows remote access over Tailscale without exposing the LAN interface.
-let boundTailscaleIp: string | null = null
-if (config.hostname === '127.0.0.1') {
-  const detectedIp = getTailscaleIp()
-  if (detectedIp) {
-    try {
-      Bun.serve<WSData>({
-        port: config.port,
-        hostname: detectedIp,
-        ...tlsOptions,
-        fetch: serverFetch,
-        websocket: websocketHandlers,
-      })
-      boundTailscaleIp = detectedIp
-    } catch (error) {
-      logger.warn('tailscale_bind_failed', {
-        ip: detectedIp,
-        error: error instanceof Error ? error.message : String(error),
-      })
-    }
-  }
-}
-
 const protocol = tlsEnabled ? 'https' : 'http'
 const displayHost = config.hostname === '0.0.0.0' ? 'localhost' : config.hostname
 logger.info('server_started', {
   url: `${protocol}://${displayHost}:${config.port}`,
-  tailscaleUrl: (() => {
-    // For 0.0.0.0, detect Tailscale for display only (already listening on all interfaces).
-    // For localhost, only show if we successfully bound to the Tailscale IP.
-    const tsIp = boundTailscaleIp ?? (config.hostname === '0.0.0.0' ? getTailscaleIp() : null)
-    return tsIp ? `${protocol}://${tsIp}:${config.port}` : null
-  })(),
 })
+
+// When bound to localhost, also listen on the Tailscale interface if available.
+// This allows remote access over Tailscale without exposing the LAN interface.
+// The lookup (`tailscale ip`) runs after the main listener is up and
+// server_started is logged, so a slow tailscaled never delays startup; the
+// Tailscale listener and its URL log line arrive when it answers. Exported so
+// tests can wait for it.
+let boundTailscaleIp: string | null = null
+export const tailscaleReady = (async () => {
+  if (config.hostname !== '127.0.0.1' && config.hostname !== '0.0.0.0') return
+  let detectedIp: string | null
+  try {
+    detectedIp = await getTailscaleIp()
+  } catch {
+    detectedIp = null
+  }
+  if (!detectedIp) return
+  const tailscaleUrl = `${protocol}://${detectedIp}:${config.port}`
+  if (config.hostname === '0.0.0.0') {
+    // Already listening on all interfaces: the URL is for display only.
+    logger.info('tailscale_detected', { tailscaleUrl })
+    return
+  }
+  try {
+    Bun.serve<WSData>({
+      port: config.port,
+      hostname: detectedIp,
+      ...tlsOptions,
+      fetch: serverFetch,
+      websocket: websocketHandlers,
+    })
+    boundTailscaleIp = detectedIp
+    logger.info('tailscale_listener_started', { tailscaleUrl })
+  } catch (error) {
+    logger.warn('tailscale_bind_failed', {
+      ip: detectedIp,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
+})()
 
 // The initial window refresh runs after bind: listing windows issues a
 // synchronous capture-pane per window, which would otherwise keep the port
