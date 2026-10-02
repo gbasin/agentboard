@@ -192,6 +192,39 @@ describe('SessionList component', () => {
     })
   })
 
+  test('keys from nested controls do not select the card', () => {
+    const selected: string[] = []
+    const renderer = TestRenderer.create(
+      <SessionList
+        sessions={[makeSession({ id: 'only' })]}
+        selectedSessionId={null}
+        loading={false}
+        error={null}
+        onSelect={(sessionId) => selected.push(sessionId)}
+        onRename={() => {}}
+      />
+    )
+    const card = renderer.root.findByProps({ 'data-testid': 'session-card' })
+    const self = {}
+    const nested = {}
+
+    act(() => {
+      // Bubbled from a PR chip / "+N" button inside the card.
+      card.props.onKeyDown({ key: 'Enter', target: nested, currentTarget: self })
+      card.props.onKeyDown({ key: ' ', target: nested, currentTarget: self })
+    })
+    expect(selected).toEqual([])
+
+    act(() => {
+      card.props.onKeyDown({ key: 'Enter', target: self, currentTarget: self })
+    })
+    expect(selected).toEqual(['only'])
+
+    act(() => {
+      renderer.unmount()
+    })
+  })
+
   test('shows context menu on long press and renames via menu', () => {
     globalAny.setTimeout = ((callback: () => void, delay?: number) => {
       if (delay === 500) {

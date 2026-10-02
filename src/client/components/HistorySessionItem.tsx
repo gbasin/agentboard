@@ -80,6 +80,10 @@ export default memo(function HistorySessionItem({
       title="Click to preview"
       onClick={() => onPreview(session)}
       onKeyDown={(e) => {
+        // Only the row's own keys open the preview. Keys aimed at nested
+        // controls (PR chips, "+N", the wake button) bubble here too, and
+        // preventDefault would also cancel their native activation.
+        if (e.target !== e.currentTarget) return
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()
           onPreview(session)
