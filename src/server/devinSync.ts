@@ -19,6 +19,7 @@ import path from 'node:path'
 import { Database as SQLiteDatabase } from 'bun:sqlite'
 import { logger } from './logger'
 import { devinDbFingerprint } from './devinDbFingerprint'
+import { writeMirrorAtomic } from './devinMirrorWriter'
 
 const SYNC_STATE_FILE = '.sync-state.json'
 const KEPT_ROLES = new Set(['user', 'assistant', 'system', 'tool'])
@@ -333,17 +334,12 @@ export function syncDevinSessions(outDir = getDevinLogOutDir()): DevinSyncResult
       sessions: {},
     }
 
-    // Statements are prepared on first use so an append-only cycle never
-    // prepares the full-history read.
+    // Append-path statements are prepared on first use and shared by the
+    // cycle (the full-history read is prepared per rewrite, below).
     const lazyStmt = (sql: string) => {
       let stmt: ReturnType<SQLiteDatabase['prepare']> | null = null
       return () => (stmt ??= db!.prepare(sql))
     }
-    // Full read: only for rewrites (first sync or failed prefix check).
-    const allRowsStmt = lazyStmt(
-      `SELECT row_id, chat_message, created_at FROM message_nodes
-       WHERE session_id = $sessionId ORDER BY row_id ASC`
-    )
     // Append read: only rows past the synced prefix (index range scan).
     const newRowsStmt = lazyStmt(
       `SELECT row_id, chat_message, created_at FROM message_nodes
@@ -402,20 +398,27 @@ export function syncDevinSessions(outDir = getDevinLogOutDir()): DevinSyncResult
         }
       }
 
-      const rows = allRowsStmt().all({ $sessionId: session.id }) as DevinMessageRow[]
-      const lines = [metaLine(session)]
-      let lastRowId = 0
-      for (const row of rows) {
-        const line = messageToLine(session, row)
-        if (line !== null) lines.push(line)
-        lastRowId = row.row_id
-      }
-      const content = lines.join('\n') + '\n'
-      writeJsonAtomic(filePath, content)
-      nextState.sessions[session.id] = {
-        lastRowId,
-        rowCount: rows.length,
-        fileSize: Buffer.byteLength(content),
+      // Full read: only for rewrites (first sync or failed prefix check).
+      // Prepared per rewrite, not shared across the cycle: when a for...of
+      // over iterate() exits early (a write throws mid-stream), Bun leaves
+      // the statement un-reset and every later iterate() on it throws
+      // "bad parameter or other API misuse". finalize() discards it.
+      const allRowsStmt = db!.prepare(
+        `SELECT row_id, chat_message, created_at FROM message_nodes
+         WHERE session_id = $sessionId ORDER BY row_id ASC`
+      )
+      try {
+        const rows = allRowsStmt.iterate({
+          $sessionId: session.id,
+        }) as IterableIterator<DevinMessageRow>
+        nextState.sessions[session.id] = writeMirrorAtomic(
+          filePath,
+          metaLine(session),
+          rows,
+          (row) => messageToLine(session, row)
+        )
+      } finally {
+        allRowsStmt.finalize()
       }
       result.rewritten += 1
     }
@@ -440,9 +443,19 @@ export function syncDevinSessions(outDir = getDevinLogOutDir()): DevinSyncResult
       }
     }
 
-    // Remove JSONL files for sessions that are gone or hidden.
+    // Remove JSONL files for sessions that are gone or hidden, and temp files
+    // a killed process left mid-rewrite (this process's own rewrites have all
+    // finished or cleaned up by now).
     const liveFiles = new Set(sessions.map((session) => sanitizeFileName(session.id)))
     for (const entry of fs.readdirSync(outDir)) {
+      if (/\.jsonl\.tmp-\d+$/.test(entry)) {
+        try {
+          fs.rmSync(path.join(outDir, entry), { force: true })
+        } catch {
+          // ignore
+        }
+        continue
+      }
       if (!entry.endsWith('.jsonl')) continue
       const id = entry.slice(0, -'.jsonl'.length)
       if (!liveFiles.has(id)) {
