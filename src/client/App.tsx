@@ -847,7 +847,7 @@ export default function App() {
       // New session: [mod]+N
       if (isShortcut && code === 'KeyN') {
         event.preventDefault()
-        if (!isModalOpen && settingsHydrated) {
+        if (!isModalOpen && !isSettingsOpen && settingsHydrated) {
           setIsModalOpen(true)
         }
         return
@@ -864,7 +864,7 @@ export default function App() {
       // Kill session: [mod]+X
       if (isShortcut && code === 'KeyX') {
         event.preventDefault()
-        if (selectedSessionId && !isModalOpen) {
+        if (selectedSessionId && !isModalOpen && !isSettingsOpen) {
           handleKillSession(selectedSessionId, 'keyboard_shortcut')
         }
         return
@@ -875,6 +875,7 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [
     isModalOpen,
+    isSettingsOpen,
     selectedSessionId,
     selectedHibernatingSessionId,
     setSelectedSessionId,

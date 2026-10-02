@@ -8,8 +8,12 @@
  * it returns an error string the draft stays local and nothing is written,
  * so an invalid value never reaches a synced key. Escape reverts a dirty
  * draft and calls preventDefault so the dialog does not also close.
+ *
+ * Unmounting with a dirty draft (the dialog closed by shortcut or backdrop
+ * while the input still had focus) commits it too: React does not fire blur
+ * for a removed node, and a close should not silently drop a valid edit.
  */
-import { useState, type ChangeEvent, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react'
 
 /** Returns an error message to keep the draft local, or null on success. */
 export type CommitFn = (draft: string) => string | null
@@ -26,6 +30,15 @@ export interface CommitField {
 export function useCommitField(stored: string, commit: CommitFn): CommitField {
   const [draft, setDraft] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const latest = useRef({ draft, stored, commit })
+  latest.current = { draft, stored, commit }
+
+  useEffect(() => {
+    return () => {
+      const { draft, stored, commit } = latest.current
+      if (draft !== null && draft !== stored) commit(draft)
+    }
+  }, [])
 
   const tryCommit = () => {
     if (draft === null) return

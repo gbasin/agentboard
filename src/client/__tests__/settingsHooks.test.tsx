@@ -118,6 +118,23 @@ describe('useCommitField', () => {
     act(() => field.onKeyDown(keyEvent('a') as never))
     act(() => renderer.unmount())
   })
+
+  test('commits a dirty draft on unmount, never a clean or unchanged one', () => {
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => { renderer = TestRenderer.create(<Probe stored="a" commit={accept} />) })
+    act(() => renderer.unmount())
+    expect(commits).toEqual([])
+
+    act(() => { renderer = TestRenderer.create(<Probe stored="a" commit={accept} />) })
+    act(() => field.onChange({ target: { value: 'a' } } as never))
+    act(() => renderer.unmount())
+    expect(commits).toEqual([])
+
+    act(() => { renderer = TestRenderer.create(<Probe stored="a" commit={accept} />) })
+    act(() => field.onChange({ target: { value: 'typed' } } as never))
+    act(() => renderer.unmount())
+    expect(commits).toEqual(['typed'])
+  })
 })
 
 describe('parseClampedInt', () => {
