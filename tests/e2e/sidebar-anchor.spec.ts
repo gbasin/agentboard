@@ -238,7 +238,7 @@ test('Bottom: the filter menu opens upward inside the viewport', async ({
   expect(onTop).toBe(true)
 })
 
-test('mod+1 selects the lowest row and mod+] walks up — same sessions as under Top', async ({
+test('mod+1 selects the lowest row; [ ] track screen direction in both anchors', async ({
   page,
 }) => {
   const prefix = uniquePrefix('key')
@@ -247,49 +247,49 @@ test('mod+1 selects the lowest row and mod+] walks up — same sessions as under
   const sidebar = desktopSidebar(page)
   const selected = sidebar.locator('[data-testid="session-card"].selected')
 
-  const runSequence = async () => {
+  // Digits address sessions (same target in both anchors); [ always moves
+  // selection up the screen and ] down, so their targets differ under
+  // Bottom — the same index step goes the other way on the mirrored list.
+  const runSequence = async (expected: string[]) => {
     const chord = await shortcutChord(page)
     const picked: { name: string; top: number }[] = []
-    const press = async (key: string, expected: string) => {
-      await page.keyboard.press(`${chord}+${key}`)
+    const keys = ['Digit2', 'BracketRight', 'BracketLeft', 'BracketLeft']
+    for (let i = 0; i < keys.length; i++) {
+      await page.keyboard.press(`${chord}+${keys[i]}`)
       await expect(selected).toHaveCount(1)
-      await expect(selected).toContainText(expected)
-      picked.push({ name: expected, top: (await box(selected)).top })
+      await expect(selected).toContainText(expected[i])
+      picked.push({ name: expected[i], top: (await box(selected)).top })
     }
-    await press('Digit3', names[2])
-    await press('Digit1', names[0])
-    await press('BracketRight', names[1])
-    await press('BracketRight', names[2])
-    await press('BracketLeft', names[1])
     return picked
   }
 
   await page.goto('/')
   await expect(sidebar.getByTestId('session-card')).toHaveCount(4, DISCOVERY)
-  const underTop = await runSequence()
+  const underTop = await runSequence([names[1], names[2], names[1], names[0]])
 
   harness.settings.sidebarAnchor = 'bottom'
   await page.reload()
   await expect(sidebar.getByTestId('session-card')).toHaveCount(4, DISCOVERY)
   await expect.poll(() => namesTopToBottom(sidebar, prefix)).toEqual([...names].reverse())
-  const underBottom = await runSequence()
+  const underBottom = await runSequence([names[1], names[0], names[1], names[2]])
 
-  // Same targets in both layouts.
-  expect(underBottom.map((p) => p.name)).toEqual(underTop.map((p) => p.name))
+  for (const run of [underTop, underBottom]) {
+    expect(run[0].name).toBe(names[1]) // mod+2: same session in both anchors
+    expect(run[1].top).toBeGreaterThan(run[0].top) // ] moves down
+    expect(run[2].top).toBeLessThan(run[1].top) // [ moves up
+    expect(run[3].top).toBeLessThan(run[2].top) // [ moves up again
+  }
 
-  // Under Bottom, mod+1 is the lowest row and mod+] moves up the screen.
+  // Under Bottom, mod+1 is the lowest row and ] walks toward it.
   const lowest = Math.max(
     ...(await sidebar.getByTestId('session-card').evaluateAll((els) =>
       els.map((el) => el.getBoundingClientRect().top)
     ))
   )
-  const [, one, next1, next2, back] = underBottom
-  expect(Math.abs(one.top - lowest)).toBeLessThanOrEqual(1)
-  expect(next1.top).toBeLessThan(one.top)
-  expect(next2.top).toBeLessThan(next1.top)
-  expect(back.top).toBeGreaterThan(next2.top)
-  // Under Top the same walk moves down the screen.
-  expect(underTop[2].top).toBeGreaterThan(underTop[1].top)
+  const chord = await shortcutChord(page)
+  await page.keyboard.press(`${chord}+Digit1`)
+  await expect(selected).toContainText(names[0])
+  expect(Math.abs((await box(selected)).top - lowest)).toBeLessThanOrEqual(1)
 })
 
 test('Bottom: drag-reorder lands rows where they are dropped and survives reload', async ({
