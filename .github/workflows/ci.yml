@@ -74,6 +74,13 @@ jobs:
       - name: Run e2e tests
         run: bunx playwright test
 
+      # The ci job skips real-tmux tests (no tmux there). These two guard the
+      # PTY leak fix against a real tmux server, so run them where tmux exists.
+      - name: PTY leak regression tests (real tmux)
+        run: |
+          bun test src/server/__tests__/groupedSessionLeak.integration.test.ts
+          bun test src/server/__tests__/e2eTmuxReap.integration.test.ts
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
