@@ -33,6 +33,7 @@ export function writeMirrorAtomic<Row extends { row_id: number }>(
     pending = []
     pendingChars = 0
   }
+  let failure: { error: unknown } | null = null
   try {
     for (const row of rows) {
       const line = toLine(row)
@@ -46,11 +47,23 @@ export function writeMirrorAtomic<Row extends { row_id: number }>(
     }
     if (pending.length > 0) flush()
   } catch (error) {
-    fs.closeSync(fd)
-    fs.rmSync(tmpPath, { force: true })
-    throw error
+    failure = { error }
   }
-  fs.closeSync(fd)
-  fs.renameSync(tmpPath, filePath)
+  try {
+    fs.closeSync(fd)
+    if (!failure) fs.renameSync(tmpPath, filePath)
+  } catch (error) {
+    failure ??= { error }
+  }
+  if (failure) {
+    // Never leave the temp file behind, and surface the first error rather
+    // than a later close or cleanup failure.
+    try {
+      fs.rmSync(tmpPath, { force: true })
+    } catch {
+      // ignore
+    }
+    throw failure.error
+  }
   return { lastRowId, rowCount, fileSize }
 }
