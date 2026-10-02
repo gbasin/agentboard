@@ -625,6 +625,20 @@ function ensureBaseSessionForRefresh(context: string): boolean {
     return false
   }
 }
+// Refresh-tick variant: the steady-state probe runs without blocking the
+// event loop (see SessionManager.ensureSessionAsync).
+async function ensureBaseSessionForRefreshAsync(context: string): Promise<boolean> {
+  try {
+    await sessionManager.ensureSessionAsync()
+    return true
+  } catch (error) {
+    logger.warn('base_session_ensure_failed', {
+      context,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return false
+  }
+}
 const registry = new SessionRegistry()
 
 interface WSData {
@@ -1226,7 +1240,7 @@ async function refreshSessionsAsync(): Promise<void> {
   if (refreshInFlight) return
   refreshInFlight = true
   try {
-    if (!ensureBaseSessionForRefresh('async_refresh')) {
+    if (!(await ensureBaseSessionForRefreshAsync('async_refresh'))) {
       return
     }
     // Loop: retry once if an optimistic mutation invalidated our snapshot.
