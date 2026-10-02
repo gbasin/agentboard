@@ -448,7 +448,7 @@ export function syncDevinSessions(outDir = getDevinLogOutDir()): DevinSyncResult
     // finished or cleaned up by now).
     const liveFiles = new Set(sessions.map((session) => sanitizeFileName(session.id)))
     for (const entry of fs.readdirSync(outDir)) {
-      if (entry.includes('.jsonl.tmp-')) {
+      if (/\.jsonl\.tmp-\d+$/.test(entry)) {
         try {
           fs.rmSync(path.join(outDir, entry), { force: true })
         } catch {
