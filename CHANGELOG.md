@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.0](https://github.com/gbasin/agentboard/compare/v0.23.3...v0.24.0) (2026-10-02)
+
+
+### Features
+
+* redesign settings dialog with paged layout, instant apply and search ([#347](https://github.com/gbasin/agentboard/issues/347)) ([b48a84b](https://github.com/gbasin/agentboard/commit/b48a84b4c8e2ee691e2a2d7119c87a88a3142dce))
+
 ## [0.23.3](https://github.com/gbasin/agentboard/compare/v0.23.2...v0.23.3) (2026-10-02)
 
 
