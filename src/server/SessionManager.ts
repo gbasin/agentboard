@@ -11,6 +11,12 @@ import { TmuxTimeoutError } from './tmuxTimeout'
 import { timedSpawnSync } from './syncSpawnTiming'
 import { isLeakedLaunchEnvVar, sanitizedTmuxEnv } from './tmuxEnv'
 import {
+  createGroupedSession,
+  killProcessHard,
+  listProcessesWithPs,
+  type ProcessRow,
+} from './tmuxGroupedSession'
+import {
   BOOTSTRAP_WINDOW_COMMAND,
   BOOTSTRAP_WINDOW_NAME,
   buildTmuxFormat,
@@ -121,6 +127,8 @@ export class SessionManager {
   private terminalColorsEnabled: boolean
   private recoverTmuxSocket: RecoverTmuxSocket
   private rememberTmuxServerPid: RememberTmuxServerPid
+  private listProcesses: () => ProcessRow[] | null
+  private killProcess: (pid: number) => void
   // Identity (server pid, session id, creation time) of the base session this
   // manager last configured. While the probe returns the same identity the
   // session options are already applied, so refresh ticks skip the
@@ -138,6 +146,8 @@ export class SessionManager {
       terminalColorsEnabled = config.terminalColorsEnabled ?? true,
       recoverTmuxSocket: recoverTmuxSocketOverride,
       rememberTmuxServerPid: rememberTmuxServerPidOverride,
+      listProcesses,
+      killProcess,
     }: {
       runTmux?: TmuxRunner
       capturePaneContent?: CapturePane
@@ -147,6 +157,8 @@ export class SessionManager {
       terminalColorsEnabled?: boolean
       recoverTmuxSocket?: RecoverTmuxSocket
       rememberTmuxServerPid?: RememberTmuxServerPid
+      listProcesses?: () => ProcessRow[] | null
+      killProcess?: (pid: number) => void
     } = {}
   ) {
     this.sessionName = sessionName
@@ -164,6 +176,11 @@ export class SessionManager {
     this.rememberTmuxServerPid =
       rememberTmuxServerPidOverride ??
       (runTmuxOverride ? () => {} : persistTmuxServerPid)
+    // Same reasoning: a test runner's pids are fake, so never list or signal
+    // real processes on its behalf.
+    this.listProcesses =
+      listProcesses ?? (runTmuxOverride ? () => null : () => listProcessesWithPs())
+    this.killProcess = killProcess ?? (runTmuxOverride ? () => {} : killProcessHard)
   }
 
   ensureSession(): EnsureSessionResult {
@@ -213,11 +230,23 @@ export class SessionManager {
 
       const groupLookup = this.findSessionInGroup()
       if (groupLookup.sessionName) {
-        this.runTmux([
-          'new-session', '-d',
-          '-s', this.sessionName,
-          '-t', `=${groupLookup.sessionName}`,
-        ])
+        // Reaps the login shell tmux spawns and discards for the session's
+        // initial window (see tmuxGroupedSession.ts).
+        const grouped = createGroupedSession(
+          {
+            runTmux: this.runTmux,
+            listProcesses: this.listProcesses,
+            killProcess: this.killProcess,
+          },
+          `=${groupLookup.sessionName}`,
+          this.sessionName
+        )
+        if (grouped.reapedPids.length > 0) {
+          logger.info('tmux_group_throwaway_reaped', {
+            sessionName: this.sessionName,
+            reapedPids: grouped.reapedPids,
+          })
+        }
       } else {
         canPruneWsSessions = groupLookup.reliable
         // Create the base session with a placeholder window. Tmux requires every

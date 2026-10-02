@@ -41,6 +41,8 @@ interface TerminalProxyOptions {
   onExit?: () => void
   spawn?: SpawnFn
   spawnSync?: SpawnSyncFn
+  // Kills a throwaway tmux pane process (see tmuxGroupedSession.ts).
+  killProcess?: (pid: number) => void
   now?: () => number
   wait?: WaitFn
   monitorTargets?: boolean
