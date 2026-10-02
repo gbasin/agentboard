@@ -38,7 +38,16 @@ export function PresetsTable({ ids }: RowControlProps) {
   useEffect(() => {
     if (!focusAddRef.current) return
     focusAddRef.current = false
-    addRef.current?.focus()
+    const add = addRef.current
+    if (add && !add.disabled) {
+      add.focus()
+      return
+    }
+    // Add stays disabled while a pending row exists; land on that row.
+    const pendingId = pendingRef.current?.id
+    if (pendingId && typeof document !== 'undefined') {
+      document.getElementById(`settings-preset-${pendingId}-label`)?.focus()
+    }
   })
 
   const updatePending = (next: CommandPreset | null) => {

@@ -327,6 +327,7 @@ export default function NewSessionModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="new-session-title"
+      data-suspends-terminal=""
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose()

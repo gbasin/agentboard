@@ -35,14 +35,16 @@ function WebGLControl({ ids }: RowControlProps) {
 
 function serverSwitch(name: ServerSettingName, fallback: boolean) {
   return function ServerSwitch({ ids }: RowControlProps) {
-    const { value, loading, set } = useServerSetting<boolean>(name, 'enabled', fallback)
+    // Disabled only until the value loads: disabling a focused switch during
+    // a write would drop keyboard focus to <body>. Writes queue in order.
+    const { value, loaded, set } = useServerSetting<boolean>(name, 'enabled', fallback)
     return (
       <Switch
         className={SWITCH_TOUCH_TARGET}
         id={ids.control}
         checked={value}
         onCheckedChange={set}
-        disabled={loading}
+        disabled={!loaded}
         ariaLabelledBy={ids.label}
         ariaDescribedBy={ids.description}
       />

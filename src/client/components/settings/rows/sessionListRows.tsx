@@ -133,14 +133,14 @@ function HistoryLookbackControl({ ids }: RowControlProps) {
 }
 
 function PreferWindowNameControl({ ids }: RowControlProps) {
-  const { value, loading, set } = useServerSetting<boolean>('prefer-window-name', 'enabled', false)
+  const { value, loaded, set } = useServerSetting<boolean>('prefer-window-name', 'enabled', false)
   return (
     <Switch
       className={SWITCH_TOUCH_TARGET}
       id={ids.control}
       checked={value}
       onCheckedChange={set}
-      disabled={loading}
+      disabled={!loaded}
       ariaLabelledBy={ids.label}
       ariaDescribedBy={ids.description}
     />

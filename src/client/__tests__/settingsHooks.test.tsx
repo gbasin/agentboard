@@ -348,7 +348,7 @@ const doc = {
   dialogOpen: false,
   lastSelector: '',
   querySelector: (selector: string) => {
-    if (selector === '[role="dialog"]') return doc.dialogOpen ? {} : null
+    if (selector === '[data-suspends-terminal]') return doc.dialogOpen ? {} : null
     doc.lastSelector = selector
     return selector.startsWith('button') ? doc.replacement : doc.textarea
   },

@@ -55,10 +55,12 @@ export function useServerSetting<T extends boolean | number>(
         return res.json() as Promise<Record<string, unknown>>
       })
       .then((data) => {
-        if (!active || writtenRef.current) return
+        if (!active) return
         const loadedValue = data[field] as T
-        confirmedRef.current = loadedValue
-        setValue(loadedValue)
+        // The server holds this value even if a write already superseded
+        // it on screen; a failed write must revert here, not to `fallback`.
+        if (inFlightRef.current === 0 && !writtenRef.current) confirmedRef.current = loadedValue
+        if (!writtenRef.current) setValue(loadedValue)
       })
       .catch(() => {})
       .finally(() => {

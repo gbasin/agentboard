@@ -18,6 +18,13 @@ import { getFocusable, nextTrapTarget } from './focusTrap'
 
 const TEXTAREA_SELECTOR = '.xterm-helper-textarea'
 const REENABLE_DELAY_MS = 300
+/**
+ * Attribute every modal that disables the terminal textarea puts on its
+ * dialog root, so a closing dialog can tell whether another one has taken
+ * over the lock.
+ */
+export const TERMINAL_LOCK_ATTR = 'data-suspends-terminal'
+const TERMINAL_LOCK_SELECTOR = `[${TERMINAL_LOCK_ATTR}]`
 
 // Module-level so reopening within the delay cancels a pending re-enable
 // that would otherwise unlock the terminal while the dialog is open again.
@@ -57,9 +64,12 @@ export function useSuspendTerminalInput(): void {
     return () => {
       reenableTimer = setTimeout(() => {
         reenableTimer = null
-        // Another dialog opened meanwhile (e.g. New Session within the
-        // delay) owns the terminal lock and focus now; leave both alone.
-        if (document.querySelector('[role="dialog"]')) return
+        // Another terminal-suspending modal opened meanwhile (e.g. New
+        // Session within the delay) owns the lock and focus now; leave
+        // both alone. Matched by marker, not role: the mobile session
+        // drawer and the Tailscale popover are dialogs that never lock
+        // the terminal.
+        if (document.querySelector(TERMINAL_LOCK_SELECTOR)) return
         const current = document.querySelector<HTMLTextAreaElement>(TEXTAREA_SELECTOR)
         if (current) {
           current.removeAttribute('disabled')

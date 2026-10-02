@@ -95,6 +95,7 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="settings-title"
+        data-suspends-terminal=""
         tabIndex={-1}
         className="fixed inset-0 z-50 flex flex-col bg-elevated outline-none"
         style={{
@@ -173,6 +174,7 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="settings-title"
+        data-suspends-terminal=""
         tabIndex={-1}
         className="flex h-[600px] max-h-full w-[760px] max-w-full flex-col border border-border bg-elevated shadow-2xl outline-none"
       >
