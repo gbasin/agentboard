@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import TestRenderer, { act } from 'react-test-renderer'
 import type { HostStatus } from '@shared/types'
-import SessionFilterButton from '../components/SessionFilterButton'
+import SessionFilterButton, { FILTER_IDLE_HINT } from '../components/SessionFilterButton'
 
 type Props = Parameters<typeof SessionFilterButton>[0]
 
@@ -47,11 +47,15 @@ function render(overrides: Partial<Props> = {}) {
       input: label.findByType('input'),
       title: label.props.title as string | undefined,
     }))
-  const clearAll = () =>
-    renderer.root.find((n) => n.type === 'button' && n.children.includes('Clear all'))
+  const showAll = () =>
+    renderer.root.find((n) => n.type === 'button' && n.children.includes('Show all'))
+  const summary = () =>
+    renderer.root.find((n) => n.type === 'div' && n.props['data-testid'] === 'filter-summary')
+  const scroller = () =>
+    renderer.root.find((n) => n.type === 'div' && n.props['data-testid'] === 'filter-options')
   const badge = () => renderer.root.findAll((n) => n.props['data-testid'] === 'filter-count-badge')
   const dot = () => renderer.root.findAll((n) => n.type === 'button' && n.props['data-testid'] === 'hidden-attention-dot')
-  return { renderer, calls, trigger, open, menu, groups, groupHeading, rowsOf, clearAll, badge, dot }
+  return { renderer, calls, trigger, open, menu, groups, groupHeading, rowsOf, showAll, summary, scroller, badge, dot }
 }
 
 describe('SessionFilterButton', () => {
@@ -129,19 +133,15 @@ describe('SessionFilterButton', () => {
     const groups = r.groups()
     expect(groups.map(r.groupHeading)).toEqual(['Hosts', 'Projects'])
     const hostRows = r.rowsOf(groups[0])
-    expect(hostRows.map((row) => row.text)).toEqual(['All hosts', 'local', 'devbox offline'])
+    // No "All hosts"/"All projects" rows: one row per option only.
+    expect(hostRows.map((row) => row.text)).toEqual(['local', 'devbox offline'])
     expect(hostRows[0].input.props.checked).toBe(false)
-    expect(hostRows[2].input.props.checked).toBe(true)
-    expect(hostRows[2].title).toBe('devbox: ssh timeout')
+    expect(hostRows[1].input.props.checked).toBe(true)
+    expect(hostRows[1].title).toBe('devbox: ssh timeout')
     const projectRows = r.rowsOf(groups[1])
-    expect(projectRows.map((row) => row.text)).toEqual([
-      'All projects',
-      'alpha',
-      'work/bravo',
-      'other/bravo',
-    ])
-    expect(projectRows[0].input.props.checked).toBe(true)
-    expect(projectRows[1].title).toBe('/work/alpha')
+    expect(projectRows.map((row) => row.text)).toEqual(['alpha', 'work/bravo', 'other/bravo'])
+    expect(projectRows.every((row) => row.input.props.checked === false)).toBe(true)
+    expect(projectRows[0].title).toBe('/work/alpha')
     act(() => r.renderer.unmount())
   })
 
@@ -152,31 +152,45 @@ describe('SessionFilterButton', () => {
     act(() => r.renderer.unmount())
   })
 
-  test('checklists toggle in list order and "All" clears its section', () => {
+  test('checklists toggle in list order; unticking the last one means no filter', () => {
     const r = render({ showHosts: true, selectedProjects: ['/other/bravo'] })
     r.open()
     const [hostGroup, projectGroup] = r.groups()
-    act(() => r.rowsOf(projectGroup)[1].input.props.onChange())
-    expect(r.calls.projects).toEqual([['/work/alpha', '/other/bravo']])
-    act(() => r.rowsOf(projectGroup)[3].input.props.onChange())
-    expect(r.calls.projects[1]).toEqual([])
     act(() => r.rowsOf(projectGroup)[0].input.props.onChange())
-    expect(r.calls.projects[2]).toEqual([])
-    act(() => r.rowsOf(hostGroup)[2].input.props.onChange())
+    expect(r.calls.projects).toEqual([['/work/alpha', '/other/bravo']])
+    act(() => r.rowsOf(projectGroup)[2].input.props.onChange())
+    expect(r.calls.projects[1]).toEqual([])
+    act(() => r.rowsOf(hostGroup)[1].input.props.onChange())
     expect(r.calls.hosts).toEqual([['devbox']])
     act(() => r.renderer.unmount())
   })
 
-  test('Clear all clears projects and hosts; disabled when nothing is filtered', () => {
+  test('idle: the summary says everything shows and ticking narrows', () => {
+    const r = render({ showHosts: true })
+    r.open()
+    expect(r.summary().children.join('')).toBe(FILTER_IDLE_HINT)
+    expect(FILTER_IDLE_HINT).toBe('Showing all. Tick to narrow.')
+    expect(r.menu()[0].props['aria-describedby']).toBe(r.summary().props.id)
+    act(() => r.renderer.unmount())
+  })
+
+  test('active: the summary counts every selected project and host', () => {
+    const r = render({ showHosts: true, selectedProjects: ['/work/alpha'], selectedHosts: ['local'] })
+    r.open()
+    expect(r.summary().children.join('')).toBe('2 selected')
+    act(() => r.renderer.unmount())
+  })
+
+  test('Show all clears projects and hosts; disabled when nothing is filtered', () => {
     const idle = render()
     idle.open()
-    expect(idle.clearAll().props.disabled).toBe(true)
+    expect(idle.showAll().props.disabled).toBe(true)
     act(() => idle.renderer.unmount())
 
     const r = render({ showHosts: true, selectedProjects: ['/work/alpha'], selectedHosts: ['local'] })
     r.open()
-    expect(r.clearAll().props.disabled).toBe(false)
-    act(() => r.clearAll().props.onClick())
+    expect(r.showAll().props.disabled).toBe(false)
+    act(() => r.showAll().props.onClick())
     expect(r.calls.projects).toEqual([[]])
     expect(r.calls.hosts).toEqual([[]])
     act(() => r.renderer.unmount())
@@ -196,13 +210,24 @@ describe('SessionFilterButton', () => {
     act(() => up.renderer.unmount())
   })
 
-  test('menu spans the filter bar and scrolls instead of leaving the viewport', () => {
+  test('menu spans the filter bar; only the checklists scroll', () => {
     const r = render()
     r.open()
     const cls = r.menu()[0].props.className as string
     expect(cls).toContain('left-2 right-2')
-    expect(cls).toContain('overflow-y-auto')
     expect(cls).toMatch(/max-h-\[min\(/)
+    expect(cls).toContain('overflow-hidden')
+    expect(cls).not.toContain('overflow-y-auto')
+    // The checklists live in the one scroll region; the summary and the
+    // Show all action are its siblings, so they stay pinned.
+    const scrollCls = r.scroller().props.className as string
+    expect(scrollCls).toContain('overflow-y-auto')
+    expect(scrollCls).toContain('min-h-0')
+    expect(r.scroller().findAll((n) => n.type === 'div' && n.props.role === 'group')).toHaveLength(1)
+    expect(r.scroller().findAll((n) => n.props['data-testid'] === 'filter-summary')).toHaveLength(0)
+    expect(r.scroller().findAll((n) => n.type === 'button')).toHaveLength(0)
+    expect(r.summary().props.className).toContain('shrink-0')
+    expect(r.showAll().props.className).toContain('shrink-0')
     // The wrapper must not be the containing block, or the menu would size
     // to the 28px button instead of the bar.
     const wrapper = r.renderer.root.findByProps({ className: 'flex shrink-0' })

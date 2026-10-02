@@ -7,6 +7,10 @@
 // default and minimum sidebar widths. The mobile drawer renders the same
 // list, so the same control is driven there with real touch events.
 //
+// There is no "All projects" row: nothing ticked means no filter, which the
+// menu's pinned summary line says, and "Show all" resets in one click. With
+// 30 projects only the checklist scrolls; the summary and Show all stay put.
+//
 // Projects are real directories under the e2e temp dir (window cwds), so
 // no real project names reach the page. Synced settings (anchor, filters)
 // live in the harness's in-test store.
@@ -35,6 +39,9 @@ test.afterEach(() => windows.cleanup())
 const ANCHORS = ['top', 'bottom'] as const
 type Anchor = (typeof ANCHORS)[number]
 const PROJECTS = ['alpha', 'bravo', 'charlie'] as const
+/** A long project list: the menu must scroll its checklist, not grow. */
+const MANY_PROJECTS = Array.from({ length: 30 }, (_, i) => `p${String(i).padStart(2, '0')}`)
+const IDLE_HINT = 'Showing all. Tick to narrow.'
 
 function projectDir(name: string): string {
   const dir = join(process.env.E2E_TMUX_TMPDIR || tmpdir(), 'projects', name)
@@ -59,14 +66,20 @@ async function useSidebarWidth(page: Page, width: number) {
   }, width)
 }
 
-/** One window per project (alpha, bravo, charlie), cwd in that project. */
+/** One window per project (alpha, bravo, charlie by default), cwd in it. */
 async function openBoard(
   page: Page,
-  options: { anchor?: Anchor; width?: number; settings?: Record<string, unknown> } = {}
+  options: {
+    anchor?: Anchor
+    width?: number
+    settings?: Record<string, unknown>
+    projects?: readonly string[]
+  } = {}
 ) {
   const prefix = uniquePrefix('flt')
-  const dirs = PROJECTS.map((name) => projectDir(`${prefix}${name}`))
-  const names = windows.createMany(prefix, PROJECTS.length, (i) => dirs[i])
+  const projects = options.projects ?? PROJECTS
+  const dirs = projects.map((name) => projectDir(`${prefix}${name}`))
+  const names = windows.createMany(prefix, projects.length, (i) => dirs[i])
   if (options.width) await useSidebarWidth(page, options.width)
   const harness = await installHarness(page, {
     prefix,
@@ -79,6 +92,8 @@ async function openBoard(
 const funnel = (scope: Locator) => scope.getByRole('button', { name: /^Filter\b/ })
 const menuOf = (scope: Locator) => scope.getByRole('menu', { name: 'Filter sessions' })
 const badgeOf = (scope: Locator) => scope.getByTestId('filter-count-badge')
+const summaryOf = (scope: Locator) => scope.getByTestId('filter-summary')
+const showAllOf = (scope: Locator) => scope.getByRole('menuitem', { name: 'Show all' })
 
 function inside(inner: Box, outer: Box, slack = 0.5) {
   return (
@@ -133,9 +148,12 @@ for (const anchor of ANCHORS) {
       for (const name of PROJECTS) {
         await expect(menu.getByText(`${prefix}${name}`)).toBeVisible()
       }
-      // No remote hosts: projects only.
+      // No remote hosts: projects only, and no "All projects" row.
       await expect(menu.getByText('Projects', { exact: true })).toBeVisible()
       await expect(menu.getByText('Hosts', { exact: true })).toHaveCount(0)
+      await expect(menu.getByRole('menuitemcheckbox')).toHaveCount(PROJECTS.length)
+      await expect(summaryOf(menu)).toHaveText(IDLE_HINT)
+      await expect(showAllOf(menu)).toBeDisabled()
 
       const opened = await box(menu)
       const trigger = await box(button)
@@ -159,7 +177,7 @@ for (const anchor of ANCHORS) {
   }
 }
 
-test('filtering by project hides other sessions; badge counts; Clear all restores', async ({
+test('filtering by project hides other sessions; badge and summary count; Show all restores', async ({
   page,
 }) => {
   const { prefix, dirs, names, harness } = await openBoard(page)
@@ -175,6 +193,7 @@ test('filtering by project hides other sessions; badge counts; Clear all restore
   await expect(badgeOf(sidebar)).toHaveText('1')
   await expect(button).toHaveAttribute('aria-label', 'Filter, 1 active filter')
   await expect(button).toHaveAttribute('title', `Filtered by Projects: ${prefix}alpha`)
+  await expect(summaryOf(menu)).toHaveText('1 selected')
   // The active funnel is accent-colored, unlike the idle neutral gear.
   const [funnelColor, gearColor] = await Promise.all([
     button.evaluate((el) => getComputedStyle(el).color),
@@ -186,17 +205,98 @@ test('filtering by project hides other sessions; badge counts; Clear all restore
   await expect(sidebar.getByTestId('session-card')).toHaveCount(2)
   await expect(badgeOf(sidebar)).toHaveText('2')
   await expect(button).toHaveAttribute('aria-label', 'Filter, 2 active filters')
+  await expect(summaryOf(menu)).toHaveText('2 selected')
   // Filter state syncs exactly as before: the full selection, in list order.
   await expect
     .poll(() => harness.puts.filter((put) => 'projectFilters' in put).at(-1)?.projectFilters)
     .toEqual([dirs[0], dirs[2]])
 
-  await menu.getByRole('menuitem', { name: 'Clear all' }).click()
+  await showAllOf(menu).click()
   await expect(sidebar.getByTestId('session-card')).toHaveCount(3)
   await expect(badgeOf(sidebar)).toHaveCount(0)
   await expect(button).toHaveAttribute('aria-label', 'Filter')
-  await expect(menu.getByRole('menuitem', { name: 'Clear all' })).toBeDisabled()
+  await expect(showAllOf(menu)).toBeDisabled()
+  await expect(summaryOf(menu)).toHaveText(IDLE_HINT)
+  // An empty selection is synced as "no filter", exactly as before.
+  await expect
+    .poll(() => harness.puts.filter((put) => 'projectFilters' in put).at(-1)?.projectFilters)
+    .toEqual([])
 })
+
+/**
+ * With 30 projects the checklist scrolls inside the menu; the menu stays in
+ * the viewport and the sidebar, and the summary line and Show all stay
+ * visible (pinned outside the scroll region) at both ends of the list.
+ */
+async function expectLongMenuUsable(
+  page: Page,
+  scope: Locator,
+  menu: Locator,
+  /** The hint is one line; at the 180px minimum width it may wrap once. */
+  maxSummaryLines = 1
+) {
+  const options = menu.getByTestId('filter-options')
+  const summary = summaryOf(menu)
+  const showAll = showAllOf(menu)
+  const vh = await page.evaluate(() => window.innerHeight)
+  const opened = await box(menu)
+  expect(opened.top).toBeGreaterThanOrEqual(0)
+  expect(opened.bottom).toBeLessThanOrEqual(vh)
+  expect(inside(opened, await box(scope))).toBe(true)
+  expect(await unoccluded(menu)).toBe(true)
+  expect(await menu.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
+  // The list overflows its own scroll region, not the menu.
+  expect(await options.evaluate((el) => el.scrollHeight > el.clientHeight + 20)).toBe(true)
+  expect(await menu.evaluate((el) => el.scrollHeight <= el.clientHeight + 1)).toBe(true)
+  // The summary stays short: one line (two at the minimum sidebar width).
+  const summaryLines = await summary.evaluate((el) => {
+    const lineHeight = Number.parseFloat(getComputedStyle(el).lineHeight)
+    const style = getComputedStyle(el)
+    const content =
+      el.clientHeight - Number.parseFloat(style.paddingTop) - Number.parseFloat(style.paddingBottom)
+    return Math.round(content / lineHeight)
+  })
+  expect(summaryLines).toBeGreaterThanOrEqual(1)
+  expect(summaryLines).toBeLessThanOrEqual(maxSummaryLines)
+  for (const position of ['top', 'bottom'] as const) {
+    await options.evaluate((el, pos) => {
+      el.scrollTop = pos === 'top' ? 0 : el.scrollHeight
+    }, position)
+    for (const pinned of [summary, showAll]) {
+      await expect(pinned).toBeVisible()
+      expect(inside(await box(pinned), opened)).toBe(true)
+      expect(await unoccluded(pinned)).toBe(true)
+    }
+  }
+}
+
+for (const anchor of ANCHORS) {
+  for (const width of [240, 180]) {
+    test(`${anchor} @${width}px: 30 projects scroll inside the menu; summary and Show all stay visible`, async ({
+      page,
+    }) => {
+      const { prefix } = await openBoard(page, { anchor, width, projects: MANY_PROJECTS })
+      const sidebar = desktopSidebar(page)
+      await expect(sidebar.getByTestId('session-card')).toHaveCount(MANY_PROJECTS.length, DISCOVERY)
+      await funnel(sidebar).click()
+      const menu = menuOf(sidebar)
+      await expect(menu).toBeVisible()
+      await expect(menu.getByRole('menuitemcheckbox')).toHaveCount(MANY_PROJECTS.length)
+      await expect(summaryOf(menu)).toHaveText(IDLE_HINT)
+      await expectLongMenuUsable(page, sidebar, menu, width === 180 ? 2 : 1)
+
+      // Tick the last project (scrolled into view), then reset in one click.
+      const last = menu.getByRole('menuitemcheckbox', { name: `${prefix}p29` })
+      await last.click()
+      await expect(sidebar.getByTestId('session-card')).toHaveCount(1)
+      await expect(summaryOf(menu)).toHaveText('1 selected')
+      await expectLongMenuUsable(page, sidebar, menu, 1)
+      await showAllOf(menu).click()
+      await expect(sidebar.getByTestId('session-card')).toHaveCount(MANY_PROJECTS.length)
+      await expect(summaryOf(menu)).toHaveText(IDLE_HINT)
+    })
+  }
+}
 
 test.describe('mobile drawer', () => {
   test.use({
@@ -269,8 +369,38 @@ test.describe('mobile drawer', () => {
     await expect(cardByName(drawer, names[1])).toBeVisible()
     await expect(badgeOf(drawer)).toHaveText('1')
 
-    await touchTap(page, menu.getByRole('menuitem', { name: 'Clear all' }))
+    await expect(summaryOf(menu)).toHaveText('1 selected')
+    await touchTap(page, showAllOf(menu))
     await expect(drawer.getByTestId('session-card')).toHaveCount(3)
     await expect(badgeOf(drawer)).toHaveCount(0)
+    await expect(summaryOf(menu)).toHaveText(IDLE_HINT)
+  })
+
+  test('30 projects: the drawer menu scrolls its list and keeps Show all reachable', async ({
+    page,
+  }) => {
+    const { prefix } = await openBoard(page, { projects: MANY_PROJECTS })
+    const drawer = page.locator('.session-drawer')
+    await expect(drawer.getByTestId('session-card')).toHaveCount(MANY_PROJECTS.length, DISCOVERY)
+    await touchTap(page, page.getByLabel('Open session menu'))
+    await expect(page.locator('.session-drawer.open')).toBeVisible()
+    await expect.poll(async () => (await box(drawer)).left).toBeGreaterThanOrEqual(-0.5)
+
+    await touchTap(page, funnel(drawer))
+    const menu = menuOf(drawer)
+    await expect(menu).toBeVisible()
+    await expectLongMenuUsable(page, drawer, menu)
+
+    // Projects are listed most-recently-active first, so live activity can
+    // reorder rows; bring the target into view right before the touch and
+    // assert on the outcome (one project ticked), not on which row it was.
+    const last = menu.getByRole('menuitemcheckbox', { name: `${prefix}p29` })
+    await last.evaluate((el) => el.scrollIntoView({ block: 'nearest' }))
+    await touchTap(page, last)
+    await expect(menu.locator('[role="menuitemcheckbox"][aria-checked="true"]')).toHaveCount(1)
+    await expect(drawer.getByTestId('session-card')).toHaveCount(1)
+    await expect(summaryOf(menu)).toHaveText('1 selected')
+    await touchTap(page, showAllOf(menu))
+    await expect(drawer.getByTestId('session-card')).toHaveCount(MANY_PROJECTS.length)
   })
 })

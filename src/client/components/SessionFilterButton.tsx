@@ -1,7 +1,13 @@
 /**
  * SessionFilterButton - the session list's single filter control: a funnel
  * icon button that opens one menu with a Hosts section (only when remote
- * hosts exist) and a Projects section, plus "Clear all".
+ * hosts exist) and a Projects section.
+ *
+ * Nothing ticked means no filter: every session shows. The menu says so in
+ * a pinned summary line ("Showing all. Tick to narrow."), which becomes the
+ * selection count once anything is ticked, and ends with a pinned "Show all"
+ * action that clears both sections in one click. Only the checklists scroll,
+ * so a long project list never pushes the summary or "Show all" out of view.
  *
  * Idle it is a plain funnel. With any filter value set the funnel turns
  * accent-colored and carries a count badge (project + host values); the
@@ -20,6 +26,9 @@ import { getDisambiguatedProjectNames, getPathLeaf } from '../utils/sessionLabel
 import { ICON_SIZE, TOUCH_TARGET_CLASS, iconButtonClass } from './controlStyles'
 import { FilterFunnel02Icon } from './icons'
 import FilterChecklist from './FilterChecklist'
+
+/** Shown atop the menu when nothing is ticked (no filter applies). */
+export const FILTER_IDLE_HINT = 'Showing all. Tick to narrow.'
 
 interface SessionFilterButtonProps {
   projects: string[]
@@ -51,6 +60,7 @@ export default function SessionFilterButton({
 }: SessionFilterButtonProps) {
   const [open, setOpen] = useState(false)
   const menuId = useId()
+  const summaryId = useId()
   const containerRef = useRef<HTMLDivElement>(null)
   const displayNames = useMemo(() => getDisambiguatedProjectNames(projects), [projects])
   const statusMap = useMemo(
@@ -144,39 +154,50 @@ export default function SessionFilterButton({
           id={menuId}
           role="menu"
           aria-label="Filter sessions"
+          aria-describedby={summaryId}
           className={`absolute left-2 right-2 z-20 ${
             placement === 'up' ? 'bottom-full mb-1' : 'top-full mt-1'
-          } flex max-h-[min(26rem,calc(100dvh-7rem))] flex-col overflow-y-auto rounded border border-border bg-surface p-1.5 text-xs shadow-lg`}
+          } flex max-h-[min(26rem,calc(100dvh-7rem))] flex-col overflow-hidden rounded border border-border bg-surface p-1.5 text-xs shadow-lg`}
         >
-          {showHosts && (
+          {/* Pinned: what the filter does right now. */}
+          <div
+            id={summaryId}
+            data-testid="filter-summary"
+            aria-live="polite"
+            className="shrink-0 px-2 pb-1 pt-1 text-[11px] leading-snug text-muted"
+          >
+            {isActive ? `${activeCount} selected` : FILTER_IDLE_HINT}
+          </div>
+          {/* Only the checklists scroll; the summary and Show all stay put. */}
+          <div data-testid="filter-options" className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            {showHosts && (
+              <FilterChecklist
+                heading="Hosts"
+                emptyLabel="No hosts"
+                options={hosts}
+                selected={selectedHosts}
+                onSelect={onSelectHosts}
+                labelFor={(host) => host}
+                titleFor={(host) => {
+                  const status = statusMap.get(host)
+                  return status?.error ? `${host}: ${status.error}` : host
+                }}
+                noteFor={(host) => {
+                  const status = statusMap.get(host)
+                  return status && !status.ok ? 'offline' : null
+                }}
+              />
+            )}
             <FilterChecklist
-              heading="Hosts"
-              allLabel="All hosts"
-              emptyLabel="No hosts"
-              options={hosts}
-              selected={selectedHosts}
-              onSelect={onSelectHosts}
-              labelFor={(host) => host}
-              titleFor={(host) => {
-                const status = statusMap.get(host)
-                return status?.error ? `${host}: ${status.error}` : host
-              }}
-              noteFor={(host) => {
-                const status = statusMap.get(host)
-                return status && !status.ok ? 'offline' : null
-              }}
+              heading="Projects"
+              emptyLabel="No projects"
+              options={projects}
+              selected={selectedProjects}
+              onSelect={onSelectProjects}
+              labelFor={projectLabel}
+              titleFor={(path) => path}
             />
-          )}
-          <FilterChecklist
-            heading="Projects"
-            allLabel="All projects"
-            emptyLabel="No projects"
-            options={projects}
-            selected={selectedProjects}
-            onSelect={onSelectProjects}
-            labelFor={projectLabel}
-            titleFor={(path) => path}
-          />
+          </div>
           <div className="my-1 h-px shrink-0 bg-border" />
           <button
             type="button"
@@ -188,7 +209,7 @@ export default function SessionFilterButton({
             }}
             className="shrink-0 rounded px-2 py-1.5 text-left text-secondary hover:bg-hover hover:text-primary disabled:cursor-default disabled:text-muted disabled:hover:bg-transparent"
           >
-            Clear all
+            Show all
           </button>
         </div>
       )}

@@ -1,15 +1,15 @@
 /**
- * FilterChecklist - one section of the session filter menu: a heading, an
- * "All ..." row (checked when nothing is selected; choosing it clears the
- * section), and a multi-select checkbox per option. Selections are reported
- * in `options` order, as the old per-dimension dropdowns did.
+ * FilterChecklist - one section of the session filter menu: a heading and a
+ * multi-select checkbox per option. Nothing ticked means no filter on this
+ * dimension; the menu's shared "Show all" action clears every section.
+ * Selections are reported in `options` order, as the old per-dimension
+ * dropdowns did.
  */
 
 import { useId } from 'react'
 
 interface FilterChecklistProps {
   heading: string
-  allLabel: string
   emptyLabel: string
   options: string[]
   selected: string[]
@@ -26,7 +26,6 @@ const checkboxClass = 'h-3.5 w-3.5 shrink-0 accent-approval'
 
 export default function FilterChecklist({
   heading,
-  allLabel,
   emptyLabel,
   options,
   selected,
@@ -56,15 +55,6 @@ export default function FilterChecklist({
       >
         {heading}
       </div>
-      <label role="menuitemcheckbox" aria-checked={selected.length === 0} className={rowClass}>
-        <input
-          type="checkbox"
-          checked={selected.length === 0}
-          onChange={() => onSelect([])}
-          className={checkboxClass}
-        />
-        <span>{allLabel}</span>
-      </label>
       {options.length === 0 ? (
         <div className="px-2 py-1 text-muted">{emptyLabel}</div>
       ) : (
