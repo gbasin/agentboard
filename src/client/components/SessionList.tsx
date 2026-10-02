@@ -1111,6 +1111,11 @@ function SessionRow({
       data-session-id={session.id}
       onClick={isDragging ? undefined : onSelect}
       onKeyDown={(e) => {
+        // Only the card's own keys select it. Keys aimed at nested controls
+        // (PR chips, the "+N" strip and its portaled chips, the rename
+        // input) bubble here too; selecting on them would start a terminal
+        // attach whose focusAfterAttach then yanks focus out of that control.
+        if (e.target !== e.currentTarget) return
         if (e.key === 'Enter' || e.key === ' ') onSelect()
       }}
       onContextMenu={handleContextMenu}
