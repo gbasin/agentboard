@@ -1,11 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import AlertTriangleIcon from '@untitledui-icons/react/line/esm/AlertTriangleIcon'
-import Edit05Icon from '@untitledui-icons/react/line/esm/Edit05Icon'
-import File06Icon from '@untitledui-icons/react/line/esm/File06Icon'
 import type { AgentSession } from '@shared/types'
-import Moon01Icon from '@untitledui-icons/react/line/esm/Moon01Icon'
-import PlayIcon from '@untitledui-icons/react/line/esm/PlayIcon'
-import XCloseIcon from '@untitledui-icons/react/line/esm/XCloseIcon'
+import { AlertTriangleIcon, Edit05Icon, File06Icon, Moon01Icon, PlayIcon, XCloseIcon } from './icons'
+import { ICON_SIZE, MOBILE_ROW_TARGET_CLASS } from './controlStyles'
 import { copyText } from '../utils/copyText'
 import { getPathLeaf } from '../utils/sessionLabel'
 import { getSessionIdShort } from '../utils/sessionId'
@@ -116,7 +112,7 @@ export default function HibernatingSessionItem({
 
   return (
     <div
-      className={`group relative cursor-pointer px-3 py-2 hover:bg-hover ${isSelected ? 'bg-hover' : ''}`}
+      className={`group relative cursor-pointer px-3 py-2 hover:bg-hover ${MOBILE_ROW_TARGET_CLASS} ${isSelected ? 'bg-hover' : ''}`}
       role="button"
       tabIndex={0}
       data-testid="hibernating-session-card"
@@ -153,13 +149,15 @@ export default function HibernatingSessionItem({
             </span>
           )}
           <Moon01Icon
-            className="h-3 w-3 shrink-0 text-muted"
+            width={ICON_SIZE.pill} height={ICON_SIZE.pill}
+            className="shrink-0 text-muted"
             aria-label="Hibernating"
             title="Hibernating"
           />
           {session.lastResumeError && (
             <AlertTriangleIcon
-              className="h-3 w-3 shrink-0 text-amber-500"
+              width={ICON_SIZE.pill} height={ICON_SIZE.pill}
+              className="shrink-0 text-amber-500"
               aria-label="Wake failed"
               title={`Last wake failed: ${session.lastResumeError}`}
             />
@@ -208,7 +206,7 @@ export default function HibernatingSessionItem({
               className="w-full px-3 py-2 text-left text-sm text-secondary hover:bg-hover hover:text-primary flex items-center gap-2"
               role="menuitem"
             >
-              <PlayIcon width={14} height={14} />
+              <PlayIcon width={ICON_SIZE.default} height={ICON_SIZE.default} />
               Wake
             </button>
           )}
@@ -222,7 +220,7 @@ export default function HibernatingSessionItem({
               className="w-full px-3 py-2 text-left text-sm text-secondary hover:bg-hover hover:text-primary flex items-center gap-2"
               role="menuitem"
             >
-              <Edit05Icon width={14} height={14} />
+              <Edit05Icon width={ICON_SIZE.default} height={ICON_SIZE.default} />
               Rename
             </button>
           )}
@@ -237,7 +235,7 @@ export default function HibernatingSessionItem({
               role="menuitem"
               title={session.logFilePath}
             >
-              <File06Icon width={14} height={14} />
+              <File06Icon width={ICON_SIZE.default} height={ICON_SIZE.default} />
               Copy Log Path
             </button>
           )}
@@ -253,7 +251,7 @@ export default function HibernatingSessionItem({
                 className="w-full px-3 py-2 text-left text-sm text-danger hover:bg-danger/10 flex items-center gap-2"
                 role="menuitem"
               >
-                <XCloseIcon width={14} height={14} />
+                <XCloseIcon width={ICON_SIZE.default} height={ICON_SIZE.default} />
                 Move to History
               </button>
             </>

@@ -11,9 +11,9 @@
  */
 
 import { useEffect, useId, useRef, useState } from 'react'
-import Copy01Icon from '@untitledui-icons/react/line/esm/Copy01Icon'
+import { Copy01Icon } from './icons'
 import type { ConnectionStatus } from '../stores/sessionStore'
-import { SIDEBAR_ICON_BUTTON_CLASS } from './sidebarControlStyles'
+import { ICON_BUTTON_CLASS, ICON_SIZE } from './controlStyles'
 
 interface ConnectionIndicatorProps {
   connectionStatus: ConnectionStatus
@@ -100,7 +100,7 @@ export default function ConnectionIndicator({
         aria-controls={open ? popoverId : undefined}
         title={`${statusLabel[connectionStatus]} - Tailscale ${tailscaleIp}`}
         onClick={() => setOpen((value) => !value)}
-        className={SIDEBAR_ICON_BUTTON_CLASS}
+        className={ICON_BUTTON_CLASS}
       >
         {dot}
       </button>
@@ -123,7 +123,7 @@ export default function ConnectionIndicator({
             title="Tailscale IP - click to copy remote access URL"
           >
             <span className="min-w-0 truncate font-mono">{copied ? 'Copied!' : tailscaleIp}</span>
-            {!copied && <Copy01Icon width={12} height={12} className="shrink-0" />}
+            {!copied && <Copy01Icon width={ICON_SIZE.default} height={ICON_SIZE.default} className="shrink-0" />}
           </button>
         </div>
       )}

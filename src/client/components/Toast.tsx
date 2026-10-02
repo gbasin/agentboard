@@ -1,5 +1,7 @@
 import { Toast as BaseToast } from '@base-ui/react/toast'
 import { cn } from '../utils/cn'
+import { ICON_SIZE } from './controlStyles'
+import { XCloseIcon } from './icons'
 
 const DEFAULT_TIMEOUT = 5000
 
@@ -17,7 +19,7 @@ function ToastItem({ toast }: { toast: BaseToast.Root.ToastObject }) {
         'data-[ending-style]:opacity-0',
         'data-[starting-style]:translate-y-2 data-[starting-style]:opacity-0',
         'transition-all duration-200',
-        toast.type === 'error' && 'border-error/50',
+        toast.type === 'error' && 'border-danger/50',
         toast.type === 'success' && 'border-approval/50',
         (!toast.type || toast.type === 'info') && 'border-border'
       )}
@@ -26,7 +28,7 @@ function ToastItem({ toast }: { toast: BaseToast.Root.ToastObject }) {
         <BaseToast.Title
           className={cn(
             'text-sm font-medium',
-            toast.type === 'error' && 'text-error',
+            toast.type === 'error' && 'text-danger',
             toast.type === 'success' && 'text-approval',
             (!toast.type || toast.type === 'info') && 'text-primary'
           )}
@@ -43,20 +45,7 @@ function ToastItem({ toast }: { toast: BaseToast.Root.ToastObject }) {
         className="shrink-0 text-muted hover:text-primary transition-colors"
         aria-label="Close"
       >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <line x1="18" y1="6" x2="6" y2="18" />
-          <line x1="6" y1="6" x2="18" y2="18" />
-        </svg>
+        <XCloseIcon width={ICON_SIZE.default} height={ICON_SIZE.default} />
       </BaseToast.Close>
     </BaseToast.Root>
   )

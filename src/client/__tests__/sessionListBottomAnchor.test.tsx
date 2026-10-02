@@ -5,8 +5,7 @@ import { SortableContext } from '@dnd-kit/sortable'
 import type { AgentSession, Session } from '@shared/types'
 import SessionList from '../components/SessionList'
 import SessionDrawer from '../components/SessionDrawer'
-import ProjectFilterDropdown from '../components/ProjectFilterDropdown'
-import HostFilterDropdown from '../components/HostFilterDropdown'
+import SessionFilterButton from '../components/SessionFilterButton'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useSessionStore } from '../stores/sessionStore'
 import { useMenuViewportFit, type MenuPoint } from '../hooks/useMenuViewportFit'
@@ -218,7 +217,7 @@ describe('SessionList anchor: rendered order', () => {
     act(() => renderer.unmount())
   })
 
-  test('bottom anchor flips section dividers and the dropdown placement', () => {
+  test('bottom anchor flips section dividers and the filter menu placement', () => {
     useSessionStore.setState({
       hostStatuses: [
         { host: 'a', ok: true, lastUpdated: '2024-01-01T00:00:00.000Z' },
@@ -226,8 +225,8 @@ describe('SessionList anchor: rendered order', () => {
       ],
     })
     const renderer = renderList({ anchor: 'bottom' })
-    expect(renderer.root.findByType(ProjectFilterDropdown).props.placement).toBe('up')
-    expect(renderer.root.findByType(HostFilterDropdown).props.placement).toBe('up')
+    expect(renderer.root.findByType(SessionFilterButton).props.placement).toBe('up')
+    expect(renderer.root.findByType(SessionFilterButton).props.showHosts).toBe(true)
     const sticky = renderer.root.find(
       (n) => typeof n.props.className === 'string' && n.props.className.includes('sticky')
     )
@@ -236,7 +235,7 @@ describe('SessionList anchor: rendered order', () => {
     act(() => renderer.unmount())
 
     const top = renderList()
-    expect(top.root.findByType(ProjectFilterDropdown).props.placement).toBe('down')
+    expect(top.root.findByType(SessionFilterButton).props.placement).toBe('down')
     act(() => top.unmount())
   })
 
@@ -598,7 +597,7 @@ describe('filter bar controls', () => {
     )
   }
 
-  test.each(['top', 'bottom'] as const)('%s anchor: dropdowns on the left, controls at the right end', (anchor) => {
+  test.each(['top', 'bottom'] as const)('%s anchor: filter button on the left, controls at the right end', (anchor) => {
     const renderer = renderList({ anchor })
     const children = barChildren(renderer)
     expect(children).toHaveLength(2)
@@ -607,7 +606,7 @@ describe('filter bar controls', () => {
     act(() => renderer.unmount())
   })
 
-  test('without controls (mobile drawer) the bar holds only the dropdowns', () => {
+  test('without controls (mobile drawer) the bar holds only the filter button', () => {
     const renderer = renderList({ filterBarControls: undefined })
     const children = barChildren(renderer)
     expect(children).toHaveLength(1)
@@ -616,41 +615,41 @@ describe('filter bar controls', () => {
   })
 })
 
-describe('filter dropdown placement', () => {
-  test('up opens the menu above the button', () => {
+describe('filter menu placement', () => {
+  test('up opens the menu above the bar, down below it', () => {
     const menuClass = (placement?: 'down' | 'up') => {
       let renderer!: TestRenderer.ReactTestRenderer
       act(() => {
         renderer = TestRenderer.create(
-          <div>
-            <ProjectFilterDropdown
-              projects={['/a']}
-              selectedProjects={[]}
-              onSelect={() => {}}
-              hasHiddenPermissions={false}
-              placement={placement}
-            />
-            <HostFilterDropdown hosts={['h']} selectedHosts={[]} onSelect={() => {}} placement={placement} />
-          </div>
+          <SessionFilterButton
+            projects={['/a']}
+            selectedProjects={[]}
+            onSelectProjects={() => {}}
+            hosts={['h']}
+            selectedHosts={[]}
+            onSelectHosts={() => {}}
+            showHosts
+            hasHiddenPermissions={false}
+            placement={placement}
+          />
         )
       })
-      for (const button of renderer.root.findAll((n) => n.type === 'button' && n.props['aria-haspopup'] === 'menu')) {
-        act(() => button.props.onClick())
-      }
+      const button = renderer.root.find((n) => n.type === 'button' && n.props['aria-haspopup'] === 'menu')
+      act(() => button.props.onClick())
       const classes = renderer.root
         .findAll((n) => n.type === 'div' && n.props.role === 'menu')
         .map((n) => n.props.className as string)
       act(() => renderer.unmount())
       return classes
     }
-    for (const c of menuClass()) {
-      expect(c).toContain('mt-1')
-      expect(c).not.toContain('bottom-full')
-    }
-    for (const c of menuClass('up')) {
-      expect(c).toContain('bottom-full')
-      expect(c).not.toContain('mt-1')
-    }
+    const down = menuClass()
+    expect(down).toHaveLength(1)
+    expect(down[0]).toContain('top-full mt-1')
+    expect(down[0]).not.toContain('bottom-full')
+    const up = menuClass('up')
+    expect(up).toHaveLength(1)
+    expect(up[0]).toContain('bottom-full')
+    expect(up[0]).not.toContain('mt-1')
   })
 })
 

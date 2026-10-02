@@ -252,7 +252,7 @@ function renderMarkup(element: JSX.Element): string {
 describe('component rendering', () => {
   test('renders app shell without the old header wordmark', () => {
     const html = renderMarkup(<App />)
-    expect(html).toContain('Filter by project')
+    expect(html).toContain('"aria-label":"Filter"')
     expect(html).toContain('"aria-label":"Settings"')
     expect(html).not.toContain('AGENTBOARD')
   })

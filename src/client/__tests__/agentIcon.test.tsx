@@ -7,16 +7,9 @@ const iconStub =
     <svg data-testid={testId} className={className} />
   )
 
-mock.module('@untitledui-icons/react/line', () => ({
-  HandIcon: iconStub('hand-icon'),
-  PlusIcon: iconStub('plus-icon'),
-  FolderIcon: iconStub('folder-icon'),
-  MoveIcon: iconStub('move-icon'),
+// AgentIcon takes its fallback glyph from the shared icons module.
+mock.module('../components/icons', () => ({
   TerminalIcon: iconStub('terminal-icon'),
-  CornerDownLeftIcon: iconStub('corner-down-left-icon'),
-  XCloseIcon: iconStub('x-close-icon'),
-  DotsVerticalIcon: iconStub('dots-vertical-icon'),
-  Menu01Icon: iconStub('menu-01-icon'),
 }))
 
 const { default: AgentIcon } = await import('../components/AgentIcon')
