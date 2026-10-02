@@ -853,6 +853,14 @@ export default function App() {
         return
       }
 
+      // Settings: [mod]+, toggles the settings dialog (not over the
+      // new-session modal).
+      if (isShortcut && code === 'Comma') {
+        event.preventDefault()
+        setIsSettingsOpen((open) => (open ? false : !isModalOpen))
+        return
+      }
+
       // Kill session: [mod]+X
       if (isShortcut && code === 'KeyX') {
         event.preventDefault()

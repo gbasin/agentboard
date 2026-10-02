@@ -748,6 +748,7 @@ export default function SessionList({
           <span>{modDisplay}[ ] nav</span>
           <span>{modDisplay}N new</span>
           <span>{modDisplay}X kill</span>
+          <span>{modDisplay}, settings</span>
         </div>
       </div>
 
