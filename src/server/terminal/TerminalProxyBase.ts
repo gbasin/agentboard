@@ -135,6 +135,15 @@ abstract class TerminalProxyBase implements ITerminalProxy {
     onReady?: () => void
   ): Promise<boolean>
 
+  /**
+   * True while a newer switchTo is queued behind the running one. A doSwitch
+   * that yields can check this and stop early: the queued switch redoes the
+   * whole sequence, so finishing the old one would only show its target.
+   */
+  protected hasQueuedSwitch(): boolean {
+    return this.pendingTarget !== null
+  }
+
   protected setCurrentWindow(target: string): void {
     this.currentWindow = extractWindowId(target)
   }

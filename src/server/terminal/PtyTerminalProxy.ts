@@ -37,13 +37,22 @@ const SET_CLIPBOARD_ENABLED =
 
 // `tmux -V` output, probed once per process instead of once per WebSocket
 // connect. A tmux upgrade while the server runs goes unnoticed until restart
-// (the running tmux server keeps its old version anyway). Only a successful
-// probe is cached; a failure is retried on the next connect.
+// (the running tmux server keeps its old version anyway). Only a successful,
+// recognizable probe is cached; anything else is retried on the next connect.
 let cachedTmuxVersion: string | null = null
+const TMUX_VERSION_OUTPUT = /^tmux \S+$/
 
 /** Test hook: forget the cached `tmux -V` output. */
 export function resetTmuxVersionCache(): void {
   cachedTmuxVersion = null
+}
+
+// Thrown inside doSwitch when the switch must stop after an await: the proxy
+// was disposed meanwhile, or a newer switchTo is queued behind this one.
+class SwitchAbortedError extends Error {
+  constructor(readonly reason: 'disposed' | 'superseded') {
+    super(`terminal switch aborted: ${reason}`)
+  }
 }
 
 interface TmuxTargetIdentity {
@@ -637,8 +646,11 @@ class PtyTerminalProxy extends TerminalProxyBase {
     }
 
     const effectiveTarget = this.ensureEffectiveTarget(target)
-    // dispose() nulls clientTty; the tmux calls below now yield, so hold the
-    // tty this switch started with.
+    // dispose() nulls clientTty; the tmux calls below yield, so hold the tty
+    // this switch started with. Every await is followed by checkSwitchCurrent:
+    // after dispose() the tty may already belong to another connection's
+    // client (macOS reuses /dev/ttysNNN names), so no further tmux call may
+    // name it, and the proxy must stay DEAD.
     const clientTty = this.clientTty
     this.state = TerminalState.SWITCHING
     this.outputSuppressed = true
@@ -658,9 +670,16 @@ class PtyTerminalProxy extends TerminalProxyBase {
     // history onReady sends. refresh-client runs only after onReady and the
     // unsuppress below, so the redraw it triggers reaches the browser after
     // the history, as the old fully synchronous sequence guaranteed.
+    //
+    // A superseded switch (a newer switchTo queued meanwhile) stops before
+    // onReady and leaves output suppressed: the queued switch re-suppresses,
+    // sends its own history and refreshes. Finishing the old one would stream
+    // the old window's output and redraw ahead of the new history.
     try {
       const expectedIdentity = await this.readTargetIdentity(effectiveTarget)
+      this.checkSwitchCurrent()
       await this.runTmuxNonBlocking(['switch-client', '-c', clientTty, '-t', effectiveTarget])
+      this.checkSwitchCurrent()
       const actualIdentity = await this.verifyClientTarget(
         clientTty,
         effectiveTarget,
@@ -691,6 +710,11 @@ class PtyTerminalProxy extends TerminalProxyBase {
       } catch {
         // Ignore refresh failures
       }
+      // Only disposal matters here: onReady already ran, and a queued switch
+      // re-suppresses output when it starts.
+      if (this.disposed) {
+        throw new SwitchAbortedError('disposed')
+      }
       const durationMs = this.now() - startedAt
       this.logEvent('terminal_switch_success', {
         sessionName: this.options.sessionName,
@@ -703,6 +727,37 @@ class PtyTerminalProxy extends TerminalProxyBase {
       this.state = TerminalState.READY
       return true
     } catch (error) {
+      if (this.disposed) {
+        // dispose() already set DEAD, unsuppressed output and killed the
+        // grouped sessions. Covers tmux failures that land after dispose too.
+        this.logEvent('terminal_switch_aborted', {
+          sessionName: this.options.sessionName,
+          tmuxWindow: target,
+          effectiveTarget,
+          clientTty,
+          reason: 'disposed',
+          mode: this.getMode(),
+        })
+        throw new TerminalProxyError(
+          'ERR_NOT_READY',
+          'Terminal proxy disposed during switch',
+          true
+        )
+      }
+      if (error instanceof SwitchAbortedError) {
+        // Superseded: the queued switch runs next and sets SWITCHING itself.
+        // Output stays suppressed until that switch's onReady.
+        this.state = TerminalState.READY
+        this.logEvent('terminal_switch_aborted', {
+          sessionName: this.options.sessionName,
+          tmuxWindow: target,
+          effectiveTarget,
+          clientTty,
+          reason: error.reason,
+          mode: this.getMode(),
+        })
+        return false
+      }
       this.outputSuppressed = false
       this.state = TerminalState.READY
       // A failed switch through a derived grouped session may mean the
@@ -739,13 +794,29 @@ class PtyTerminalProxy extends TerminalProxyBase {
     }
   }
 
+  // Throws SwitchAbortedError when the running switch must not continue.
+  private checkSwitchCurrent(): void {
+    if (this.disposed) {
+      throw new SwitchAbortedError('disposed')
+    }
+    if (this.hasQueuedSwitch()) {
+      throw new SwitchAbortedError('superseded')
+    }
+  }
+
   private clientFeatureArgs(): string[] {
     if (!syncFeatureEnabled()) {
       return []
     }
     try {
-      cachedTmuxVersion ??= this.runTmux(['-V'])
-      return tmuxSupportsClientFeatures(cachedTmuxVersion) ? ['-T', 'sync'] : []
+      const version = cachedTmuxVersion ?? this.runTmux(['-V'])
+      // Cache only a recognizable answer ("tmux 3.4", "tmux next-3.6",
+      // "tmux master"). Empty or garbled output on exit 0 is retried on the
+      // next connect instead of pinning -T sync off for the process lifetime.
+      if (cachedTmuxVersion === null && TMUX_VERSION_OUTPUT.test(version.trim())) {
+        cachedTmuxVersion = version
+      }
+      return tmuxSupportsClientFeatures(version) ? ['-T', 'sync'] : []
     } catch (error) {
       // Attach still proceeds without -T sync; log so a tearing report can be
       // traced to a failed version probe instead of guessing (issue #158).
@@ -861,14 +932,17 @@ class PtyTerminalProxy extends TerminalProxyBase {
     for (const delay of retryDelays) {
       if (delay > 0) {
         await this.wait(delay)
+        this.checkSwitchCurrent()
         try {
           await this.runTmuxNonBlocking(['switch-client', '-c', clientTty, '-t', effectiveTarget])
         } catch {
           // The final identity check below will surface a precise switch failure.
         }
+        this.checkSwitchCurrent()
       }
 
       const actual = await this.readClientIdentityNonBlocking(clientTty)
+      this.checkSwitchCurrent()
       lastActual = actual
       if (this.identitiesMatch(actual, expected)) {
         return actual
