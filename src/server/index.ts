@@ -89,7 +89,8 @@ import {
   splitTmuxLines,
   withTmuxUtf8Flag,
 } from './tmuxFormat'
-import { timedSpawnSync } from './syncSpawnTiming'
+import { timedSpawnAsync, timedSpawnSync } from './syncSpawnTiming'
+import { getTailscaleIp } from './tailscale'
 
 function checkPortAvailable(port: number): void {
   let result: ReturnType<typeof Bun.spawnSync>
@@ -381,30 +382,6 @@ async function readLogLineWindow(
   logLineCacheBytes += stats.size
   enforceLogCacheBudget()
   return selectLineWindow(lines, limit, beforeLine)
-}
-
-function getTailscaleIp(): string | null {
-  // Try common Tailscale CLI paths (standalone CLI, then Mac App Store bundle)
-  const tailscalePaths = [
-    'tailscale',
-    '/Applications/Tailscale.app/Contents/MacOS/Tailscale',
-  ]
-
-  for (const tsPath of tailscalePaths) {
-    try {
-      const result = timedSpawnSync([tsPath, 'ip', '-4'], {
-        stdout: 'pipe',
-        stderr: 'pipe',
-      })
-      if (result.exitCode === 0) {
-        const ip = result.stdout.toString().trim()
-        if (ip) return ip
-      }
-    } catch {
-      // Try next path
-    }
-  }
-  return null
 }
 
 function pruneOrphanedWsSessions(): void {
@@ -1754,10 +1731,18 @@ app.get('/api/directories', async (c) => {
   return c.json(response)
 })
 
-app.get('/api/server-info', (c) => {
+app.get('/api/server-info', async (c) => {
   // For 0.0.0.0, detect Tailscale IP for display (already listening on all interfaces).
   // For localhost, only report if we successfully bound to the Tailscale IP.
-  const tsIp = config.hostname === '0.0.0.0' ? getTailscaleIp() : boundTailscaleIp
+  // Wait for the startup lookup first: the client fetches this once per page
+  // load, so answering null while it is pending sticks until a reload.
+  let tsIp: string | null
+  if (config.hostname === '0.0.0.0') {
+    tsIp = await getTailscaleIp()
+  } else {
+    await tailscaleReady
+    tsIp = boundTailscaleIp
+  }
   return c.json({
     port: config.port,
     tailscaleIp: tsIp,
@@ -2286,41 +2271,51 @@ Bun.serve<WSData>({
   websocket: websocketHandlers,
 })
 
-// When bound to localhost, also listen on the Tailscale interface if available.
-// This allows remote access over Tailscale without exposing the LAN interface.
-let boundTailscaleIp: string | null = null
-if (config.hostname === '127.0.0.1') {
-  const detectedIp = getTailscaleIp()
-  if (detectedIp) {
-    try {
-      Bun.serve<WSData>({
-        port: config.port,
-        hostname: detectedIp,
-        ...tlsOptions,
-        fetch: serverFetch,
-        websocket: websocketHandlers,
-      })
-      boundTailscaleIp = detectedIp
-    } catch (error) {
-      logger.warn('tailscale_bind_failed', {
-        ip: detectedIp,
-        error: error instanceof Error ? error.message : String(error),
-      })
-    }
-  }
-}
-
 const protocol = tlsEnabled ? 'https' : 'http'
 const displayHost = config.hostname === '0.0.0.0' ? 'localhost' : config.hostname
 logger.info('server_started', {
   url: `${protocol}://${displayHost}:${config.port}`,
-  tailscaleUrl: (() => {
-    // For 0.0.0.0, detect Tailscale for display only (already listening on all interfaces).
-    // For localhost, only show if we successfully bound to the Tailscale IP.
-    const tsIp = boundTailscaleIp ?? (config.hostname === '0.0.0.0' ? getTailscaleIp() : null)
-    return tsIp ? `${protocol}://${tsIp}:${config.port}` : null
-  })(),
 })
+
+// When bound to localhost, also listen on the Tailscale interface if available.
+// This allows remote access over Tailscale without exposing the LAN interface.
+// The lookup (`tailscale ip`) runs after the main listener is up and
+// server_started is logged, so a slow tailscaled never delays startup; the
+// Tailscale listener and its URL log line arrive when it answers. Exported so
+// tests can wait for it.
+let boundTailscaleIp: string | null = null
+export const tailscaleReady = (async () => {
+  if (config.hostname !== '127.0.0.1' && config.hostname !== '0.0.0.0') return
+  let detectedIp: string | null
+  try {
+    detectedIp = await getTailscaleIp()
+  } catch {
+    detectedIp = null
+  }
+  if (!detectedIp) return
+  const tailscaleUrl = `${protocol}://${detectedIp}:${config.port}`
+  if (config.hostname === '0.0.0.0') {
+    // Already listening on all interfaces: the URL is for display only.
+    logger.info('tailscale_detected', { tailscaleUrl })
+    return
+  }
+  try {
+    Bun.serve<WSData>({
+      port: config.port,
+      hostname: detectedIp,
+      ...tlsOptions,
+      fetch: serverFetch,
+      websocket: websocketHandlers,
+    })
+    boundTailscaleIp = detectedIp
+    logger.info('tailscale_listener_started', { tailscaleUrl })
+  } catch (error) {
+    logger.warn('tailscale_bind_failed', {
+      ip: detectedIp,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
+})()
 
 // The initial window refresh runs after bind: listing windows issues a
 // synchronous capture-pane per window, which would otherwise keep the port
@@ -4472,7 +4467,7 @@ async function attachTerminalPersistent(
   // Capture scrollback history BEFORE switching to avoid race with live output
   const history = session.remote && session.host
     ? await captureTmuxHistoryRemote(effectiveTarget, session.host)
-    : captureTmuxHistory(effectiveTarget)
+    : await captureTmuxHistory(effectiveTarget)
 
   const tCapture = performance.now()
 
@@ -4557,12 +4552,14 @@ async function attachTerminalPersistent(
   }
 }
 
-function captureTmuxHistory(target: string): string | null {
+async function captureTmuxHistory(target: string): Promise<string | null> {
   try {
     // Capture only the visible pane so initial attach paints the current view
-    // immediately instead of replaying the entire scrollback buffer.
+    // immediately instead of replaying the entire scrollback buffer. Runs off
+    // the event loop; the caller still awaits it before switching, so the
+    // history predates any live output of this attach.
     const colorArgs = config.terminalColorsEnabled ? ['-e'] : []
-    const result = timedSpawnSync(['tmux', ...withTmuxUtf8Flag([
+    const result = await timedSpawnAsync(['tmux', ...withTmuxUtf8Flag([
       'capture-pane',
       '-t',
       target,
@@ -4570,14 +4567,12 @@ function captureTmuxHistory(target: string): string | null {
       '-J',
       ...colorArgs,
     ])], {
-      stdout: 'pipe',
-      stderr: 'pipe',
       timeout: config.tmuxTimeoutMs,
     })
     if (result.exitCode !== 0) {
       return null
     }
-    const output = result.stdout.toString()
+    const output = result.stdout
     // Only return if there's actual content
     if (output.trim().length === 0) {
       return null

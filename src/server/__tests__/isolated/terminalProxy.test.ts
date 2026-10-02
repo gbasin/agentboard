@@ -1,5 +1,6 @@
-import { describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect, test } from 'bun:test'
 import { PtyTerminalProxy as TerminalProxy } from '../../terminal'
+import { resetTmuxVersionCache } from '../../terminal/PtyTerminalProxy'
 import { buildTmuxFormat } from '../../tmuxFormat'
 
 const CLIENT_TTY_OUTPUT = `${buildTmuxFormat(['/dev/pts/9', '4242'])}\n`
@@ -289,6 +290,12 @@ function deriveExternalSessionName(managedSession: string, rawSession: string): 
   return `${managedSession}-x-${sanitized}-${suffix}`
 }
 
+// The tmux -V probe is cached per process; each test starts cold so a
+// harness's tmuxVersion is what the proxy sees.
+beforeEach(() => {
+  resetTmuxVersionCache()
+})
+
 describe('TerminalProxy', () => {
   test('starts tmux client and discovers tty', async () => {
     const harness = createSpawnHarness()
@@ -426,6 +433,96 @@ describe('TerminalProxy', () => {
     ])
   })
 
+  test('probes tmux -V once per process, not once per connection', async () => {
+    const versionProbes = () =>
+      harnesses.flatMap((h) => h.spawnSyncCalls).filter((c) => getTmuxCommand(c.args) === '-V')
+    const harnesses = [createSpawnHarness(), createSpawnHarness()]
+    for (const [index, harness] of harnesses.entries()) {
+      const proxy = new TerminalProxy({
+        connectionId: `conn-${index}`,
+        sessionName: `agentboard-ws-${index}`,
+        baseSession: 'agentboard',
+        onData: () => {},
+        spawn: harness.spawn,
+        spawnSync: harness.spawnSync,
+        wait: async () => {},
+      })
+      await proxy.start()
+      // The cached answer still decides the attach flags.
+      expect(harness.spawnCalls[0]?.args).toContain('-T')
+    }
+    expect(versionProbes()).toHaveLength(1)
+  })
+
+  test('a failed tmux -V probe is not cached', async () => {
+    const failing = createSpawnHarness()
+    const failingSpawnSync = (args: string[], options?: Parameters<typeof Bun.spawnSync>[1]) =>
+      getTmuxCommand(args) === '-V'
+        ? ({
+            exitCode: 1,
+            stdout: Buffer.from(''),
+            stderr: Buffer.from('no server'),
+          } as ReturnType<typeof Bun.spawnSync>)
+        : failing.spawnSync(args, options)
+    const first = new TerminalProxy({
+      connectionId: 'conn-fail',
+      sessionName: 'agentboard-ws-fail',
+      baseSession: 'agentboard',
+      onData: () => {},
+      spawn: failing.spawn,
+      spawnSync: failingSpawnSync,
+      wait: async () => {},
+    })
+    await first.start()
+    expect(failing.spawnCalls[0]?.args).not.toContain('-T')
+
+    const healthy = createSpawnHarness()
+    const second = new TerminalProxy({
+      connectionId: 'conn-ok',
+      sessionName: 'agentboard-ws-ok',
+      baseSession: 'agentboard',
+      onData: () => {},
+      spawn: healthy.spawn,
+      spawnSync: healthy.spawnSync,
+      wait: async () => {},
+    })
+    await second.start()
+    expect(healthy.spawnSyncCalls.some((c) => getTmuxCommand(c.args) === '-V')).toBe(true)
+    expect(healthy.spawnCalls[0]?.args).toContain('-T')
+  })
+
+  test('an unrecognizable tmux -V answer on exit 0 is not cached', async () => {
+    const probes = (h: ReturnType<typeof createSpawnHarness>) =>
+      h.spawnSyncCalls.filter((c) => getTmuxCommand(c.args) === '-V').length
+    const garbled = createSpawnHarness({ tmuxVersion: '' })
+    const first = new TerminalProxy({
+      connectionId: 'conn-empty',
+      sessionName: 'agentboard-ws-empty',
+      baseSession: 'agentboard',
+      onData: () => {},
+      spawn: garbled.spawn,
+      spawnSync: garbled.spawnSync,
+      wait: async () => {},
+    })
+    await first.start()
+    expect(probes(garbled)).toBe(1)
+    expect(garbled.spawnCalls[0]?.args).not.toContain('-T')
+
+    const healthy = createSpawnHarness()
+    const second = new TerminalProxy({
+      connectionId: 'conn-ok',
+      sessionName: 'agentboard-ws-ok',
+      baseSession: 'agentboard',
+      onData: () => {},
+      spawn: healthy.spawn,
+      spawnSync: healthy.spawnSync,
+      wait: async () => {},
+    })
+    await second.start()
+    expect(probes(healthy)).toBe(1)
+    expect(healthy.spawnCalls[0]?.args).toContain('-T')
+  })
+
   test('switchTo issues switch and refresh commands', async () => {
     const harness = createSpawnHarness()
     const proxy = new TerminalProxy({
@@ -454,6 +551,268 @@ describe('TerminalProxy', () => {
       options: expect.objectContaining({ timeout: 3000 }),
     })
     expect(proxy.getCurrentWindow()).toBe('@2')
+  })
+
+  test('switch tmux calls run off the event loop; history precedes live output', async () => {
+    const harness = createSpawnHarness()
+    const received: string[] = []
+    const events: string[] = []
+    // Async runner that answers like the sync harness, but only after the
+    // test has had a chance to emit pty output while the call is in flight.
+    const spawnAsync = async (
+      args: string[],
+      options: { timeout?: number; env?: Record<string, string | undefined> }
+    ) => {
+      const command = getTmuxCommand(args)
+      events.push(`async:${command}`)
+      harness.emitData(`<during ${command}>`)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      const result = harness.spawnSync(args, { timeout: options.timeout })
+      return {
+        exitCode: result.exitCode,
+        signalCode: null,
+        stdout: result.stdout?.toString() ?? '',
+        stderr: result.stderr?.toString() ?? '',
+      }
+    }
+    const spawnSync = (args: string[], options?: Parameters<typeof Bun.spawnSync>[1]) => {
+      events.push(`sync:${getTmuxCommand(args)}`)
+      return harness.spawnSync(args, options)
+    }
+    const proxy = new TerminalProxy({
+      connectionId: 'abc',
+      sessionName: 'agentboard-ws-abc',
+      baseSession: 'agentboard',
+      onData: (data) => received.push(data),
+      spawn: harness.spawn,
+      spawnSync,
+      spawnAsync,
+      wait: async () => {},
+    })
+    await proxy.start()
+    events.length = 0
+
+    let ticks = 0
+    const timer = setInterval(() => {
+      ticks += 1
+    }, 0)
+    try {
+      await proxy.switchTo('agentboard:@2', () => {
+        events.push('onReady')
+        received.push('<history>')
+      })
+    } finally {
+      clearInterval(timer)
+    }
+
+    // display-message, switch-client, list-clients and refresh-client all
+    // went through the non-blocking runner; nothing on the switch path
+    // blocked on spawnSync (no sync:* entries).
+    expect(events).toEqual([
+      'async:display-message',
+      'async:switch-client',
+      'async:list-clients',
+      'onReady',
+      'async:refresh-client',
+    ])
+    expect(ticks).toBeGreaterThan(0)
+    // Output emitted before onReady was suppressed; the refresh-client redraw
+    // window comes after the history.
+    expect(received).toEqual(['<history>', '<during refresh-client>'])
+    expect(proxy.getCurrentWindow()).toBe('@2')
+    expect(proxy.isReady()).toBe(true)
+  })
+
+  // Async runner over the sync harness that parks the first call of
+  // `holdCommand` until release() runs, so a test can act mid-switch.
+  function createGatedSpawnAsync(
+    harness: ReturnType<typeof createSpawnHarness>,
+    holdCommand: string
+  ) {
+    const calls: string[] = []
+    let release: () => void = () => {}
+    let held = false
+    let markHeld: () => void = () => {}
+    const reachedHold = new Promise<void>((resolve) => {
+      markHeld = resolve
+    })
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const spawnAsync = async (
+      args: string[],
+      options: { timeout?: number; env?: Record<string, string | undefined> }
+    ) => {
+      const command = getTmuxCommand(args)
+      calls.push(args.slice(1).filter((a) => a !== '-u').join(' '))
+      if (command === holdCommand && !held) {
+        held = true
+        markHeld()
+        await gate
+      }
+      const result = harness.spawnSync(args, { timeout: options.timeout })
+      return {
+        exitCode: result.exitCode,
+        signalCode: null,
+        stdout: result.stdout?.toString() ?? '',
+        stderr: result.stderr?.toString() ?? '',
+      }
+    }
+    return { spawnAsync, calls, reachedHold, release: () => release() }
+  }
+
+  test('dispose() during a switch stops it: no further tmux calls, no onReady, stays DEAD', async () => {
+    const harness = createSpawnHarness()
+    const gated = createGatedSpawnAsync(harness, 'display-message')
+    const received: string[] = []
+    const proxy = new TerminalProxy({
+      connectionId: 'abc',
+      sessionName: 'agentboard-ws-abc',
+      baseSession: 'agentboard',
+      onData: (data) => received.push(data),
+      spawn: harness.spawn,
+      spawnSync: harness.spawnSync,
+      spawnAsync: gated.spawnAsync,
+      wait: async () => {},
+    })
+    await proxy.start()
+
+    let readyCalls = 0
+    const switching = proxy
+      .switchTo('agentboard:@2', () => {
+        readyCalls += 1
+      })
+      .then(
+        (result) => ({ result }),
+        (error: unknown) => ({ error })
+      )
+    await gated.reachedHold
+    await proxy.dispose()
+    gated.release()
+    const outcome = await switching
+
+    // Only the display-message that was in flight when dispose() ran. The
+    // client tty may now belong to another connection's client, so nothing
+    // after it may name it (switch-client -c, list-clients, refresh-client).
+    expect(gated.calls).toHaveLength(1)
+    expect(gated.calls[0]).toStartWith('display-message')
+    expect(readyCalls).toBe(0)
+    expect(outcome).toMatchObject({ error: { code: 'ERR_NOT_READY' } })
+    expect((proxy as unknown as { state: string }).state).toBe('DEAD')
+    expect(proxy.isReady()).toBe(false)
+    // dispose() unsuppressed output; a pty tail must not be swallowed.
+    harness.emitData('tail')
+    expect(received).toEqual(['tail'])
+  })
+
+  test('dispose() during refresh-client leaves the proxy DEAD', async () => {
+    const harness = createSpawnHarness()
+    const gated = createGatedSpawnAsync(harness, 'refresh-client')
+    const proxy = new TerminalProxy({
+      connectionId: 'abc',
+      sessionName: 'agentboard-ws-abc',
+      baseSession: 'agentboard',
+      onData: () => {},
+      spawn: harness.spawn,
+      spawnSync: harness.spawnSync,
+      spawnAsync: gated.spawnAsync,
+      wait: async () => {},
+    })
+    await proxy.start()
+    const switching = proxy.switchTo('agentboard:@2', () => {}).catch((e: unknown) => e)
+    await gated.reachedHold
+    await proxy.dispose()
+    gated.release()
+    expect(await switching).toMatchObject({ code: 'ERR_NOT_READY' })
+    expect((proxy as unknown as { state: string }).state).toBe('DEAD')
+  })
+
+  test('a switch superseded mid-flight stops before onReady; only the newer target is shown', async () => {
+    const harness = createSpawnHarness()
+    const gated = createGatedSpawnAsync(harness, 'switch-client')
+    const received: string[] = []
+    const proxy = new TerminalProxy({
+      connectionId: 'abc',
+      sessionName: 'agentboard-ws-abc',
+      baseSession: 'agentboard',
+      onData: (data) => received.push(data),
+      spawn: harness.spawn,
+      spawnSync: harness.spawnSync,
+      spawnAsync: gated.spawnAsync,
+      wait: async () => {},
+    })
+    await proxy.start()
+
+    const readyFor: string[] = []
+    const first = proxy.switchTo('agentboard:@2', () => {
+      readyFor.push('@2')
+      received.push('<history @2>')
+    })
+    await gated.reachedHold
+    const second = proxy.switchTo('agentboard:@3', () => {
+      readyFor.push('@3')
+      received.push('<history @3>')
+    })
+    // Let switchTo's await start() settle so the newer target is queued.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    // Old window output arriving while the first switch is in flight.
+    harness.emitData('<old @2 output>')
+    gated.release()
+
+    expect(await first).toBe(false)
+    expect(await second).toBe(true)
+    harness.emitData('<live @3>')
+
+    // The first switch made no calls after its switch-client: no list-clients
+    // verify, no refresh-client, no onReady. Only @3 was refreshed.
+    expect(gated.calls.map((c) => c.split(' ')[0])).toEqual([
+      'display-message',
+      'switch-client',
+      'display-message',
+      'switch-client',
+      'list-clients',
+      'refresh-client',
+    ])
+    expect(readyFor).toEqual(['@3'])
+    // Output stayed suppressed across the handoff: nothing reached the
+    // browser before @3's history.
+    expect(received).toEqual(['<history @3>', '<live @3>'])
+    expect(proxy.getCurrentWindow()).toBe('@3')
+    expect(proxy.isReady()).toBe(true)
+  })
+
+  test('a failing switch-client on the non-blocking path still rejects with ERR_TMUX_SWITCH_FAILED', async () => {
+    const harness = createSpawnHarness()
+    const spawnSync = (args: string[], options?: Parameters<typeof Bun.spawnSync>[1]) =>
+      getTmuxCommand(args) === 'switch-client'
+        ? ({
+            exitCode: 1,
+            stdout: Buffer.from(''),
+            stderr: Buffer.from("can't find window: @9"),
+          } as ReturnType<typeof Bun.spawnSync>)
+        : harness.spawnSync(args, options)
+    const proxy = new TerminalProxy({
+      connectionId: 'abc',
+      sessionName: 'agentboard-ws-abc',
+      baseSession: 'agentboard',
+      onData: () => {},
+      spawn: harness.spawn,
+      spawnSync,
+      wait: async () => {},
+    })
+    await proxy.start()
+    let readyCalls = 0
+    const error = await proxy
+      .switchTo('external:@9', () => {
+        readyCalls += 1
+      })
+      .catch((e: unknown) => e)
+    expect(error).toMatchObject({
+      code: 'ERR_TMUX_SWITCH_FAILED',
+      message: "can't find window: @9",
+    })
+    expect(readyCalls).toBe(0)
+    expect(proxy.isReady()).toBe(true)
   })
 
   test('switchTo verifies against our own client when another client is more recently active', async () => {
@@ -1496,9 +1855,10 @@ describe('TerminalProxy', () => {
     await proxy.switchTo('work:@1').catch(() => {})
 
     expect(disposeStarted).toBe(true)
-    // The race really happened: switchTo()'s completion clobbered state back
-    // away from DEAD after dispose() had already set it.
-    expect((proxy as unknown as { state: string }).state).not.toBe('DEAD')
+    // The race really happened. switchTo()'s completion used to clobber state
+    // back to READY here; doSwitch now bails after dispose() and leaves DEAD.
+    // The disposed flag below still guards the resurrection path on its own.
+    expect((proxy as unknown as { state: string }).state).toBe('DEAD')
 
     const callsBeforeRace = fake.calls.length
     const effective = proxy.ensureEffectiveTarget('work:@1')

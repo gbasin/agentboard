@@ -592,7 +592,7 @@ export class LogPoller {
           o.agentType === 'devin' && !matchedOrphanSessionIds.has(o.sessionId)
       )
       if (devinOrphans.length > 0) {
-        const lockMatches = matchDevinLocksToWindows(windows)
+        const lockMatches = await matchDevinLocksToWindows(windows)
         for (const orphan of devinOrphans) {
           const window = lockMatches.get(orphan.sessionId)
           if (!window || claimedWindows.has(window.tmuxWindow)) continue
@@ -778,7 +778,13 @@ export class LogPoller {
         },
       })
 
-      const stats = this.processMatchResponse(response, windows, sessionRecords)
+      const devinLockMatches = await this.resolveDevinLockMatches(response, windows)
+      const stats = this.processMatchResponse(
+        response,
+        windows,
+        sessionRecords,
+        devinLockMatches
+      )
       this.notifyOrphanSessionsDiscovered(stats.orphans)
     } catch (error) {
       logger.warn('log_poll_changed_error', {
@@ -796,10 +802,25 @@ export class LogPoller {
     queueMicrotask(() => void this.pollChanged([]))
   }
 
+  // Devin sessions also match windows deterministically via session lock
+  // PIDs (session_locks/<id>.lock contains the devin process PID). Resolved
+  // before processMatchResponse so its ps/tmux calls run off the event loop
+  // and processing itself stays synchronous.
+  private async resolveDevinLockMatches(
+    response: MatchWorkerResponse,
+    windows: Session[]
+  ): Promise<Map<string, Session>> {
+    const hasDevinEntries =
+      (response.entries ?? []).some((entry) => entry.agentType === 'devin') ||
+      (response.orphanEntries ?? []).some((entry) => entry.agentType === 'devin')
+    return hasDevinEntries ? matchDevinLocksToWindows(windows) : new Map()
+  }
+
   private processMatchResponse(
     response: MatchWorkerResponse,
     windows: Session[],
-    sessionRecords: SessionRecord[]
+    sessionRecords: SessionRecord[],
+    devinLockMatches: Map<string, Session>
   ): PollStats {
     let logsScanned = 0
     let newSessions = 0
@@ -853,14 +874,6 @@ export class LogPoller {
       if (normalized) deferralCandidates.push({ projectPath: normalized, agentType: nmw.agentType })
     }
 
-    // Devin sessions also match windows deterministically via session lock
-    // PIDs (session_locks/<id>.lock contains the devin process PID).
-    const hasDevinEntries =
-      entries.some((entry) => entry.agentType === 'devin') ||
-      orphanEntries.some((entry) => entry.agentType === 'devin')
-    const devinLockMatches = hasDevinEntries
-      ? matchDevinLocksToWindows(windows)
-      : new Map<string, Session>()
     const matchForEntry = (entry: LogEntrySnapshot): Session | null =>
       (entry.agentType === 'devin' && entry.sessionId
         ? devinLockMatches.get(entry.sessionId)
@@ -1316,8 +1329,11 @@ export class LogPoller {
       }
 
       const processStartedAt = Date.now()
+      const devinLockMatches = response
+        ? await this.resolveDevinLockMatches(response, windows)
+        : new Map<string, Session>()
       const processed = response
-        ? this.processMatchResponse(response, windows, sessionRecords)
+        ? this.processMatchResponse(response, windows, sessionRecords, devinLockMatches)
         : {
             logsScanned: 0,
             newSessions: 0,
