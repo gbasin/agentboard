@@ -827,10 +827,12 @@ const LAST_USER_MESSAGE_LOCK_MS = 60_000 // 60 seconds
 
 const logPoller = new LogPoller(db, registry, {
   onSessionOrphaned: (sessionId, supersededBy) => {
-    updateDormantAgentSessions()
+    // Scan first: the dormant lists read PRs from the cache this scan fills.
     const session = db.getSessionById(sessionId)
-    if (session) {
-      broadcast({ type: 'session-orphaned', session: toAgentSession(session), supersededBy })
+    const orphaned = session ? toAgentSession(session) : null
+    updateDormantAgentSessions()
+    if (orphaned) {
+      broadcast({ type: 'session-orphaned', session: orphaned, supersededBy })
     }
   },
   onSessionActivated: (sessionId, window) => {
