@@ -1,368 +1,167 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import TestRenderer, { act } from 'react-test-renderer'
+import { describe, expect, test } from 'bun:test'
+import { act } from 'react-test-renderer'
 import SettingsModal from '../components/SettingsModal'
-import { Switch } from '../components/Switch'
+import { useSettingsStore } from '../stores/settingsStore'
+import { LAST_PAGE_STORAGE_KEY } from '../components/settings/lastPage'
 import {
-  DEFAULT_PRESETS,
-  DEFAULT_PROJECT_DIR,
-  useSettingsStore,
-} from '../stores/settingsStore'
-import { useThemeStore } from '../stores/themeStore'
+  byRole, globalAny, openPage, render, row, rowSwitch, searchInput, setPhone, tab, textOf,
+  setupSettingsDialogTests,
+} from './settingsDialogHarness'
 
-const globalAny = globalThis as typeof globalThis & {
-  localStorage?: Storage
-}
+setupSettingsDialogTests()
 
-const originalLocalStorage = globalAny.localStorage
-
-function createStorage(): Storage {
-  const store = new Map<string, string>()
-  return {
-    getItem: (key: string) => store.get(key) ?? null,
-    setItem: (key: string, value: string) => {
-      store.set(key, value)
-    },
-    removeItem: (key: string) => {
-      store.delete(key)
-    },
-    clear: () => {
-      store.clear()
-    },
-    key: (index: number) => Array.from(store.keys())[index] ?? null,
-    get length() {
-      return store.size
-    },
-  } as Storage
-}
-
-beforeEach(() => {
-  globalAny.localStorage = createStorage()
-  useSettingsStore.setState({
-    defaultProjectDir: '/projects',
-    defaultCommand: 'codex',
-    commandPresets: DEFAULT_PRESETS,
-    defaultPresetId: 'codex',
-    lastProjectPath: null,
-    sessionSortMode: 'created',
-    sessionSortDirection: 'desc',
-    sidebarAnchor: 'top',
-    showProjectName: true,
-    showLastUserMessage: true,
-    showSessionIdPrefix: false,
-    hostFilters: [],
-  })
-  useThemeStore.setState({ theme: 'dark' })
-})
-
-afterEach(() => {
-  globalAny.localStorage = originalLocalStorage
-  useSettingsStore.setState({
-    defaultProjectDir: DEFAULT_PROJECT_DIR,
-    defaultCommand: 'claude',
-    commandPresets: DEFAULT_PRESETS,
-    defaultPresetId: 'claude',
-    lastProjectPath: null,
-    sessionSortMode: 'created',
-    sessionSortDirection: 'desc',
-    sidebarAnchor: 'top',
-    showProjectName: true,
-    showLastUserMessage: true,
-    showSessionIdPrefix: false,
-    hostFilters: [],
-  })
-  useThemeStore.setState({ theme: 'dark' })
-})
-
-describe('SettingsModal', () => {
-  test('keeps terminal colors disabled until the initial setting loads', async () => {
-    const originalFetch = globalThis.fetch
-    let resolveTerminalColors!: (response: Response) => void
-    const terminalColorsResponse = new Promise<Response>((resolve) => {
-      resolveTerminalColors = resolve
-    })
-
-    globalThis.fetch = (async (input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url === '/api/settings/terminal-colors') {
-        return terminalColorsResponse
-      }
-      const payload = url.includes('history-max-age-hours')
-        ? { hours: 24 }
-        : { enabled: true }
-      return new Response(JSON.stringify(payload), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      })
-    }) as typeof fetch
-
-    let renderer!: TestRenderer.ReactTestRenderer
-    try {
-      await act(async () => {
-        renderer = TestRenderer.create(
-          <SettingsModal isOpen onClose={() => {}} />
-        )
-        await Promise.resolve()
-      })
-
-      const findColorSwitch = () => {
-        const colorSwitch = renderer.root
-          .findAllByType(Switch)
-          .find((component) => component.props.ariaLabel === 'Enable terminal colors')
-        if (!colorSwitch) throw new Error('Expected terminal colors switch')
-        return colorSwitch
-      }
-
-      expect(findColorSwitch().props.disabled).toBe(true)
-
-      await act(async () => {
-        resolveTerminalColors(new Response(JSON.stringify({ enabled: false }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        }))
-        await terminalColorsResponse
-        await Promise.resolve()
-      })
-
-      expect(findColorSwitch().props.checked).toBe(false)
-      expect(findColorSwitch().props.disabled).toBe(false)
-    } finally {
-      renderer?.unmount()
-      globalThis.fetch = originalFetch
-    }
+describe('SettingsModal shell', () => {
+  test('renders nothing when closed', async () => {
+    const renderer = await render({ isOpen: false })
+    expect(renderer.toJSON()).toBeNull()
   })
 
-  test('loads and updates the global terminal colors setting', async () => {
-    const originalFetch = globalThis.fetch
-    const requests: Array<{ url: string; method: string; body: string | null }> = []
-    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      const method = init?.method ?? 'GET'
-      requests.push({
-        url,
-        method,
-        body: typeof init?.body === 'string' ? init.body : null,
-      })
-      const payload = url.includes('history-max-age-hours')
-        ? { hours: 24 }
-        : { enabled: true }
-      return new Response(JSON.stringify(payload), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      })
-    }) as typeof fetch
-
-    let renderer!: TestRenderer.ReactTestRenderer
-    try {
-      await act(async () => {
-        renderer = TestRenderer.create(
-          <SettingsModal isOpen onClose={() => {}} />
-        )
-        await Promise.resolve()
-      })
-
-      const colorSwitch = renderer.root
-        .findAllByType(Switch)
-        .find((component) => component.props.ariaLabel === 'Enable terminal colors')
-      if (!colorSwitch) {
-        throw new Error('Expected terminal colors switch')
-      }
-      expect(colorSwitch.props.checked).toBe(true)
-
-      await act(async () => {
-        colorSwitch.props.onCheckedChange(false)
-        await Promise.resolve()
-      })
-
-      expect(requests).toContainEqual({
-        url: '/api/settings/terminal-colors',
-        method: 'PUT',
-        body: JSON.stringify({ enabled: false }),
-      })
-    } finally {
-      renderer?.unmount()
-      globalThis.fetch = originalFetch
-    }
+  test('is a labelled modal dialog with page tabs', async () => {
+    const renderer = await render()
+    const dialog = byRole(renderer.root, 'dialog')[0]
+    expect(dialog.props['aria-modal']).toBe('true')
+    expect(dialog.props['aria-labelledby']).toBe('settings-title')
+    const tabs = byRole(renderer.root, 'tab')
+    expect(tabs.map((node) => node.props.children)).toEqual([
+      'New sessions', 'Session list', 'Appearance', 'Terminal', 'Notifications',
+    ])
+    expect(tab(renderer.root, 'New sessions').props['aria-selected']).toBe(true)
+    expect(byRole(renderer.root, 'tabpanel')[0].props['aria-labelledby']).toBe('settings-tab-new-sessions')
   })
 
-  test('submits trimmed values and falls back to defaults', () => {
+  test('has no Save or Cancel buttons', async () => {
+    const renderer = await render()
+    const labels = renderer.root.findAllByType('button').map((node) => node.props.children)
+    expect(labels).not.toContain('Save')
+    expect(labels).not.toContain('Cancel')
+  })
+
+  test('close button calls onClose', async () => {
     let closed = 0
-    let renderer!: TestRenderer.ReactTestRenderer
-
-    act(() => {
-      renderer = TestRenderer.create(
-        <SettingsModal isOpen onClose={() => { closed += 1 }} />
-      )
-    })
-
-    const inputs = renderer.root.findAllByType('input')
-    const dirInput = inputs[0]
-
-    act(() => {
-      dirInput.props.onChange({ target: { value: '   ' } })
-    })
-
-    const statusButton = renderer.root
-      .findAllByType('button')
-      .find((button) => button.props.children === 'Status')
-
-    if (!statusButton) {
-      throw new Error('Expected status button')
-    }
-
-    act(() => {
-      statusButton.props.onClick()
-    })
-
-    const form = renderer.root.findByType('form')
-
-    act(() => {
-      form.props.onSubmit({ preventDefault: () => {} })
-    })
-
-    const state = useSettingsStore.getState()
-    expect(state.defaultProjectDir).toBe(DEFAULT_PROJECT_DIR)
-    expect(state.sessionSortMode).toBe('status')
-    expect(state.sessionSortDirection).toBe('desc')
-    expect(state.commandPresets).toEqual(DEFAULT_PRESETS)
+    const renderer = await render({ onClose: () => { closed += 1 } })
+    const close = renderer.root.find((node) => node.props['aria-label'] === 'Close settings')
+    act(() => close.props.onClick())
     expect(closed).toBe(1)
-
-    act(() => {
-      renderer.unmount()
-    })
   })
 
-  test('sidebar anchor control saves on submit and only then', () => {
-    let renderer!: TestRenderer.ReactTestRenderer
+  test('backdrop click closes only when the press started on the backdrop', async () => {
+    let closed = 0
+    const renderer = await render({ onClose: () => { closed += 1 } })
+    const backdrop = renderer.root.findAll((node) => node.type === 'div')[0]
+    const self = { id: 'backdrop' }
     act(() => {
-      renderer = TestRenderer.create(<SettingsModal isOpen onClose={() => {}} />)
+      backdrop.props.onMouseDown({ target: { id: 'inner' }, currentTarget: self })
+      backdrop.props.onClick({ target: self, currentTarget: self })
     })
-    const findButton = (label: string) => {
-      const button = renderer.root
-        .findAllByType('button')
-        .find((candidate) => candidate.props.children === label)
-      if (!button) throw new Error(`Expected ${label} button`)
-      return button
-    }
-
-    expect(findButton('Top').props.className).toContain('btn-primary')
-    expect(findButton('Bottom').props.className).not.toContain('btn-primary')
-
+    expect(closed).toBe(0)
     act(() => {
-      findButton('Bottom').props.onClick()
+      backdrop.props.onMouseDown({ target: self, currentTarget: self })
+      backdrop.props.onClick({ target: self, currentTarget: self })
     })
-    expect(findButton('Bottom').props.className).toContain('btn-primary')
-    // Draft only: the store changes on submit.
-    expect(useSettingsStore.getState().sidebarAnchor).toBe('top')
+    expect(closed).toBe(1)
+  })
 
-    act(() => {
-      renderer.root.findByType('form').props.onSubmit({ preventDefault: () => {} })
-    })
-    expect(useSettingsStore.getState().sidebarAnchor).toBe('bottom')
-
-    // Reopening reflects the stored value.
-    act(() => {
-      renderer.update(<SettingsModal isOpen={false} onClose={() => {}} />)
-    })
-    act(() => {
-      useSettingsStore.setState({ sidebarAnchor: 'top' })
+  test('remembers the last page across openings', async () => {
+    const renderer = await render()
+    await openPage(renderer, 'Appearance')
+    expect(globalAny.localStorage?.getItem(LAST_PAGE_STORAGE_KEY)).toBe('appearance')
+    act(() => renderer.update(<SettingsModal isOpen={false} onClose={() => {}} />))
+    await act(async () => {
       renderer.update(<SettingsModal isOpen onClose={() => {}} />)
+      await Promise.resolve()
     })
-    expect(findButton('Top').props.className).toContain('btn-primary')
-
-    act(() => {
-      renderer.unmount()
-    })
+    expect(tab(renderer.root, 'Appearance').props['aria-selected']).toBe(true)
+    expect(row(renderer.root, 'theme')).toBeTruthy()
   })
 
-  test('resets draft values when reopened', () => {
-    let renderer!: TestRenderer.ReactTestRenderer
-    const onClose = () => {}
-
-    act(() => {
-      renderer = TestRenderer.create(
-        <SettingsModal isOpen onClose={onClose} />
-      )
+  test('arrow keys move between pages', async () => {
+    const renderer = await render()
+    await act(async () => {
+      tab(renderer.root, 'New sessions').props.onKeyDown({ key: 'ArrowDown', preventDefault: () => {} })
     })
-
-    let inputs = renderer.root.findAllByType('input')
-    const dirInput = inputs[0]
-
-    act(() => {
-      dirInput.props.onChange({ target: { value: '/dirty' } })
+    expect(tab(renderer.root, 'Session list').props['aria-selected']).toBe(true)
+    await act(async () => {
+      tab(renderer.root, 'Session list').props.onKeyDown({ key: 'End', preventDefault: () => {} })
     })
-
-    act(() => {
-      useSettingsStore.setState({
-        defaultProjectDir: '/next',
-        defaultPresetId: 'claude',
-        sessionSortMode: 'status',
-        sessionSortDirection: 'asc',
-      })
+    expect(tab(renderer.root, 'Notifications').props['aria-selected']).toBe(true)
+    await act(async () => {
+      tab(renderer.root, 'Notifications').props.onKeyDown({ key: 'x', preventDefault: () => {} })
     })
+    expect(tab(renderer.root, 'Notifications').props['aria-selected']).toBe(true)
+  })
+})
 
-    act(() => {
-      renderer.update(<SettingsModal isOpen={false} onClose={onClose} />)
-    })
-
-    act(() => {
-      renderer.update(<SettingsModal isOpen onClose={onClose} />)
-    })
-
-    inputs = renderer.root.findAllByType('input')
-    expect(inputs[0].props.value).toBe('/next')
-
-    const statusButton = renderer.root
-      .findAllByType('button')
-      .find((button) => button.props.children === 'Status')
-
-    if (!statusButton) {
-      throw new Error('Expected status button')
-    }
-
-    expect(statusButton.props.className).toContain('btn-primary')
-
-    act(() => {
-      renderer.unmount()
-    })
+describe('SettingsModal search', () => {
+  test('shows matching rows from all pages grouped by page', async () => {
+    const renderer = await render()
+    await act(async () => searchInput(renderer.root).props.onChange({ target: { value: 'font' } }))
+    const headings = renderer.root.findAllByType('h3').map((node) => node.props.children)
+    expect(headings).toEqual(['Appearance'])
+    expect(row(renderer.root, 'font-size')).toBeTruthy()
+    // Hidden rows stay hidden in results (custom family only when Custom).
+    expect(renderer.root.findAll((node) => node.props['data-setting-row'] === 'custom-font-family')).toHaveLength(0)
+    expect(byRole(renderer.root, 'region')[0].props['aria-label']).toBe('Search results')
+    // No tab is selected while results show.
+    expect(byRole(renderer.root, 'tab').some((node) => node.props['aria-selected'])).toBe(false)
   })
 
-  test('updates preset command', () => {
-    let renderer!: TestRenderer.ReactTestRenderer
+  test('results stay interactive', async () => {
+    const renderer = await render()
+    await act(async () => searchInput(renderer.root).props.onChange({ target: { value: 'session id' } }))
+    act(() => rowSwitch(renderer.root, 'show-session-id-prefix').props.onCheckedChange(true))
+    expect(useSettingsStore.getState().showSessionIdPrefix).toBe(true)
+  })
 
-    act(() => {
-      renderer = TestRenderer.create(
-        <SettingsModal isOpen onClose={() => {}} />
-      )
+  test('shows an empty state when nothing matches', async () => {
+    const renderer = await render()
+    await act(async () => searchInput(renderer.root).props.onChange({ target: { value: 'zzzz' } }))
+    const status = byRole(renderer.root, 'status')[0]
+    expect(textOf(status)).toContain('No settings match “zzzz”')
+  })
+
+  test('Escape clears a query instead of closing', async () => {
+    const renderer = await render()
+    await act(async () => searchInput(renderer.root).props.onChange({ target: { value: 'sound' } }))
+    let prevented = false
+    await act(async () => {
+      searchInput(renderer.root).props.onKeyDown({ key: 'Escape', preventDefault: () => { prevented = true } })
     })
+    expect(prevented).toBe(true)
+    expect(searchInput(renderer.root).props.value).toBe('')
+    prevented = false
+    searchInput(renderer.root).props.onKeyDown({ key: 'Escape', preventDefault: () => { prevented = true } })
+    expect(prevented).toBe(false)
+  })
 
-    // Find the command input for Claude preset (first preset)
-    const inputs = renderer.root.findAllByType('input')
-    // Input layout: [dir, Claude label, Claude command, Codex label, Codex command]
-    // The command input for Claude has placeholder 'command --flags'
-    const claudeCommandInput = inputs.find((input) =>
-      input.props.placeholder === 'command --flags'
-    )
+  test('choosing a page clears the query', async () => {
+    const renderer = await render()
+    await act(async () => searchInput(renderer.root).props.onChange({ target: { value: 'sound' } }))
+    await openPage(renderer, 'Terminal')
+    expect(searchInput(renderer.root).props.value).toBe('')
+    expect(row(renderer.root, 'webgl')).toBeTruthy()
+  })
+})
 
-    if (!claudeCommandInput) {
-      throw new Error('Expected command input')
-    }
+describe('SettingsModal phone layout', () => {
+  test('opens on the page list, drills in, and goes back', async () => {
+    setPhone(true)
+    globalAny.localStorage?.setItem(LAST_PAGE_STORAGE_KEY, 'terminal')
+    const renderer = await render()
+    expect(byRole(renderer.root, 'tab')).toHaveLength(0)
+    const appearance = renderer.root.find((node) => node.props['data-page-id'] === 'appearance')
+    await act(async () => appearance.props.onClick())
+    expect(renderer.root.find((node) => node.props.id === 'settings-title').props.children).toBe('Appearance')
+    expect(row(renderer.root, 'theme')).toBeTruthy()
+    const back = renderer.root.find((node) => node.props['aria-label'] === 'Back to settings')
+    await act(async () => back.props.onClick())
+    expect(renderer.root.find((node) => node.props.id === 'settings-title').props.children).toBe('Settings')
+  })
 
-    act(() => {
-      claudeCommandInput.props.onChange({ target: { value: 'claude --model opus' } })
-    })
-
-    const form = renderer.root.findByType('form')
-
-    act(() => {
-      form.props.onSubmit({ preventDefault: () => {} })
-    })
-
-    const state = useSettingsStore.getState()
-    const claudePreset = state.commandPresets.find(p => p.id === 'claude')
-    expect(claudePreset?.command).toBe('claude --model opus')
-
-    act(() => {
-      renderer.unmount()
-    })
+  test('search results replace the page list', async () => {
+    setPhone(true)
+    const renderer = await render()
+    await act(async () => searchInput(renderer.root).props.onChange({ target: { value: 'idle' } }))
+    expect(renderer.root.findAll((node) => node.props['data-page-id'] === 'appearance')).toHaveLength(0)
+    expect(row(renderer.root, 'sound-idle')).toBeTruthy()
   })
 })

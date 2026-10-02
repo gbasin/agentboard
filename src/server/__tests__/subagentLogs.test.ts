@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
+import fsSync from 'node:fs'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
@@ -6,11 +7,13 @@ import {
   buildCodexIndex,
   clearSubagentLogCaches,
   collectCodexDescendants,
+  getCodexParentMapBuildsForTests,
   getSubagentLogPaths,
   registerCodexSubagent,
   scanCodexSubagentLinks,
+  setCodexSubagentIndex,
 } from '../subagentLogs'
-import { getMergedPullRequests } from '../agentSessions'
+import { getMergedPullRequests, pullRequestScanKey } from '../agentSessions'
 import { clearPrScanCache } from '../prExtractor'
 import type { AgentSessionRecord } from '../db'
 
@@ -114,6 +117,60 @@ describe('getSubagentLogPaths', () => {
     expect(getSubagentLogPaths(logPath, 'omp', 'main-1')).toEqual([subLog])
   })
 
+  test('pi: scan key reads each candidate head once until it changes', async () => {
+    const logPath = path.join(tempRoot, 'main.jsonl')
+    await fs.writeFile(logPath, '{}\n')
+    const artDir = path.join(tempRoot, 'main')
+    await fs.mkdir(artDir, { recursive: true })
+    const subs: string[] = []
+    for (let i = 0; i < 4; i++) {
+      const p = path.join(artDir, `task-${i}.jsonl`)
+      await fs.writeFile(p, JSON.stringify({ type: 'session_init' }) + '\n')
+      subs.push(p)
+    }
+    const other = path.join(artDir, 'notes.jsonl')
+    await fs.writeFile(other, JSON.stringify({ type: 'session' }) + '\n')
+    const record = makeRecord({
+      logFilePath: logPath,
+      agentType: 'pi',
+      lastKnownLogSize: 3,
+    })
+
+    const opens = spyOn(fsSync, 'openSync')
+    const openedPaths = () =>
+      opens.mock.calls.map((call) => String(call[0])).sort()
+    try {
+      const key = pullRequestScanKey(record)
+      pullRequestScanKey(record)
+      pullRequestScanKey(record)
+      expect(key).toContain('|4:')
+      // Every candidate (subagent or not) is opened once across all calls.
+      expect(openedPaths()).toEqual([...subs, other].sort())
+
+      // Growth re-reads only the file that grew.
+      opens.mockClear()
+      await fs.appendFile(subs[0], '{"type":"message"}\n')
+      expect(pullRequestScanKey(record)).not.toBe(key)
+      expect(openedPaths()).toEqual([subs[0]])
+
+      // An mtime change at the same size re-reads too.
+      opens.mockClear()
+      const later = new Date(Date.now() + 60_000)
+      fsSync.utimesSync(other, later, later)
+      pullRequestScanKey(record)
+      expect(openedPaths()).toEqual([other])
+
+      // A file whose head gains session_init is picked up.
+      opens.mockClear()
+      await fs.writeFile(other, JSON.stringify({ type: 'session_init' }) + '\n')
+      fsSync.utimesSync(other, new Date(), new Date(Date.now() + 120_000))
+      expect(pullRequestScanKey(record)).toContain('|5:')
+      expect(openedPaths()).toEqual([other])
+    } finally {
+      opens.mockRestore()
+    }
+  })
+
   test('codex: resolves descendants transitively via parent_thread_id', async () => {
     const mk = async (name: string, payload: object) => {
       const p = path.join(tempRoot, name)
@@ -176,6 +233,43 @@ describe('getSubagentLogPaths', () => {
       subPath,
       gcPath,
     ])
+  })
+
+  test('codex: parent map is built once and rebuilt only after the index changes', () => {
+    const logPath = path.join(tempRoot, 'codex-main.jsonl')
+    registerCodexSubagent('sub-1', 'root', '/x/sub-1.jsonl')
+    registerCodexSubagent('sub-2', 'root', '/x/sub-2.jsonl')
+    const builds = getCodexParentMapBuildsForTests()
+
+    for (let i = 0; i < 5; i++) {
+      expect(getSubagentLogPaths(logPath, 'codex', 'root')).toEqual([
+        '/x/sub-1.jsonl',
+        '/x/sub-2.jsonl',
+      ])
+    }
+    expect(getCodexParentMapBuildsForTests()).toBe(builds + 1)
+
+    // Re-registering an identical link keeps the map.
+    registerCodexSubagent('sub-1', 'root', '/x/sub-1.jsonl')
+    getSubagentLogPaths(logPath, 'codex', 'root')
+    expect(getCodexParentMapBuildsForTests()).toBe(builds + 1)
+
+    // A new link (live or via a worker merge) invalidates it.
+    registerCodexSubagent('gc-1', 'sub-2', '/x/gc-1.jsonl')
+    expect(getSubagentLogPaths(logPath, 'codex', 'root')).toEqual([
+      '/x/sub-1.jsonl',
+      '/x/sub-2.jsonl',
+      '/x/gc-1.jsonl',
+    ])
+    expect(getCodexParentMapBuildsForTests()).toBe(builds + 2)
+
+    setCodexSubagentIndex([
+      { ownId: 'sub-3', parentId: 'root', logPath: '/x/sub-3.jsonl' },
+    ])
+    expect(getSubagentLogPaths(logPath, 'codex', 'root')).toContain(
+      '/x/sub-3.jsonl'
+    )
+    expect(getCodexParentMapBuildsForTests()).toBe(builds + 3)
   })
 
   test('codex: scanCodexSubagentLinks walks a root and parses heads', async () => {

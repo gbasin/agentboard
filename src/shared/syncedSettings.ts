@@ -19,7 +19,7 @@ export interface SyncedCommandPreset {
 }
 
 export interface SyncedSettings {
-  theme?: 'dark' | 'light'
+  theme?: 'dark' | 'light' | 'system'
   commandPresets?: SyncedCommandPreset[]
   defaultPresetId?: string
   defaultProjectDir?: string
@@ -31,6 +31,11 @@ export interface SyncedSettings {
   sidebarAnchor?: 'top' | 'bottom'
   projectFilters?: string[]
   hostFilters?: string[]
+  showProjectName?: boolean
+  showLastUserMessage?: boolean
+  showSessionIdPrefix?: boolean
+  soundOnPermission?: boolean
+  soundOnIdle?: boolean
 }
 
 export const SYNCED_SETTINGS_KEYS = [
@@ -46,6 +51,11 @@ export const SYNCED_SETTINGS_KEYS = [
   'sidebarAnchor',
   'projectFilters',
   'hostFilters',
+  'showProjectName',
+  'showLastUserMessage',
+  'showSessionIdPrefix',
+  'soundOnPermission',
+  'soundOnIdle',
 ] as const
 
 export type SyncedSettingsKey = (typeof SYNCED_SETTINGS_KEYS)[number]
@@ -59,6 +69,10 @@ const AGENT_TYPES: readonly string[] = [
   'grok',
   'omp',
 ]
+
+function isBoolean(value: unknown): boolean {
+  return typeof value === 'boolean'
+}
 
 function isStringArray(value: unknown, maxLen: number): boolean {
   return (
@@ -81,7 +95,7 @@ function isValidSyncedPreset(value: unknown): boolean {
 }
 
 const VALIDATORS: Record<SyncedSettingsKey, (value: unknown) => boolean> = {
-  theme: (v) => v === 'dark' || v === 'light',
+  theme: (v) => v === 'dark' || v === 'light' || v === 'system',
   commandPresets: (v) =>
     Array.isArray(v) && v.length <= 50 && v.every(isValidSyncedPreset),
   defaultPresetId: (v) => typeof v === 'string' && v.length <= 128,
@@ -95,6 +109,11 @@ const VALIDATORS: Record<SyncedSettingsKey, (value: unknown) => boolean> = {
   sidebarAnchor: (v) => v === 'top' || v === 'bottom',
   projectFilters: (v) => isStringArray(v, 500),
   hostFilters: (v) => isStringArray(v, 500),
+  showProjectName: isBoolean,
+  showLastUserMessage: isBoolean,
+  showSessionIdPrefix: isBoolean,
+  soundOnPermission: isBoolean,
+  soundOnIdle: isBoolean,
 }
 
 export function isSyncedSettingsKey(key: string): key is SyncedSettingsKey {

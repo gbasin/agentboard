@@ -75,9 +75,15 @@ test('Settings switches the anchor to Bottom and it persists across reload and d
   await expect.poll(() => namesTopToBottom(sidebar, prefix)).toEqual(names)
 
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
-  const anchorGroup = page.getByText('Sidebar Anchor', { exact: true }).locator('..')
-  await anchorGroup.getByRole('button', { name: 'Bottom', exact: true }).click()
-  await page.getByRole('button', { name: 'Save', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Settings' })
+  await dialog.getByRole('tab', { name: 'Session list', exact: true }).click()
+  // Instant apply: picking Bottom writes the setting; closing just dismisses.
+  await dialog
+    .getByRole('radiogroup', { name: 'Sidebar anchor' })
+    .getByRole('radio', { name: 'Bottom', exact: true })
+    .click()
+  await dialog.getByRole('button', { name: 'Close settings', exact: true }).click()
+  await expect(dialog).toBeHidden()
 
   // Mirrored: first session is now the lowest row.
   await expect.poll(() => namesTopToBottom(sidebar, prefix)).toEqual([...names].reverse())

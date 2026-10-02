@@ -93,7 +93,7 @@ describe('SidebarControls', () => {
     const renderer = render({ onOpenSettings: () => { opened += 1 } })
     const settingsButton = findButton(renderer, 'Settings')
     if (!settingsButton) throw new Error('Expected settings button')
-    expect(settingsButton.props.title).toBe('Settings')
+    expect(settingsButton.props.title).toBe(`Settings (${getNavShortcutMod()},)`)
     act(() => settingsButton.props.onClick())
     expect(opened).toBe(1)
     act(() => renderer.unmount())

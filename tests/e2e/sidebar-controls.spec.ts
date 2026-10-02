@@ -132,9 +132,23 @@ test('"+" opens the new-session modal and the gear opens Settings', async ({ pag
   await page.keyboard.press('Escape')
   await expect(newSession).toHaveCount(0)
 
-  await sidebar.getByRole('button', { name: 'Settings', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible()
-  await expect(page.getByText('Sidebar Anchor', { exact: true })).toBeVisible()
+  const gear = sidebar.getByRole('button', { name: 'Settings', exact: true })
+  await gear.click()
+  const settings = page.getByRole('dialog', { name: 'Settings' })
+  await expect(settings.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible()
+  await settings.getByRole('tab', { name: 'Session list', exact: true }).click()
+  await expect(settings.getByText('Sidebar anchor', { exact: true })).toBeVisible()
+  // Escape closes and focus goes to the terminal so the user can type; the
+  // gear only gets it back when no terminal is mounted.
+  await page.keyboard.press('Escape')
+  await expect(settings).toHaveCount(0)
+  const terminalInput = page.locator('.xterm-helper-textarea')
+  if (await terminalInput.count()) {
+    await expect(terminalInput).toBeFocused()
+    await expect(terminalInput).toBeEnabled()
+  } else {
+    await expect(gear).toBeFocused()
+  }
 })
 
 test('Tailscale popover: open, status and IP, copy URL, Escape, outside click', async ({
