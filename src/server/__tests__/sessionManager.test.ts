@@ -2016,7 +2016,7 @@ describe('SessionManager', () => {
     expect(setOptionCount).toBe(1)
   })
 
-  test('ensureSession rejoin kills the shell tmux discards for the grouped session', () => {
+  test('ensureSession rejoin is one new-session and only arms the reaper', () => {
     const sessionName = 'agentboard-rejoin-reap'
     const wsSession = `${sessionName}-ws-existing`
     const runner = createTmuxRunner(
@@ -2031,30 +2031,24 @@ describe('SessionManager', () => {
       ],
       1
     )
-    const runTmux = (args: string[]) => {
-      if (args[0] === 'list-panes' && args.includes('#{pane_pid}')) return '700\n'
-      const out = runner.runTmux(args)
-      return args[0] === 'new-session' ? '600\n' : out
-    }
-    const snapshots = [
-      [{ pid: 700, ppid: 600, tty: 'ttys001', comm: 'claude' }],
-      [
-        { pid: 700, ppid: 600, tty: 'ttys001', comm: 'claude' },
-        { pid: 701, ppid: 600, tty: 'ttys002', comm: '-zsh' },
-      ],
-    ]
-    const killed: number[] = []
+    const order: string[] = []
     const manager = new SessionManager(sessionName, {
-      runTmux,
+      runTmux: (args) => {
+        order.push(getTmuxCommand(args))
+        return runner.runTmux(args)
+      },
       capturePaneContent: () => makePaneCapture(''),
       now: () => 1700000000000,
-      listProcesses: () => snapshots.shift() ?? null,
-      killProcess: (pid) => killed.push(pid),
+      onGroupedSessionCreated: () => order.push('reaper-armed'),
     })
 
     manager.ensureSession()
 
-    expect(killed).toEqual([701])
+    expect(order.filter((step) => step === 'new-session')).toHaveLength(1)
+    expect(order.indexOf('reaper-armed')).toBe(order.indexOf('new-session') + 1)
+    expect(order.filter((step) => step === 'reaper-armed')).toHaveLength(1)
+    // No pane listing on the creation path (the 0.23.0 reap did one).
+    expect(order.includes('list-panes')).toBe(false)
   })
 
   test('ensureSession rejoins an existing tmux session group', () => {
@@ -2091,9 +2085,6 @@ describe('SessionManager', () => {
     expect(runner.calls).toContainEqual([
       'new-session',
       '-d',
-      '-P',
-      '-F',
-      '#{pid}',
       '-t',
       `=${wsSession}`,
       '-s',

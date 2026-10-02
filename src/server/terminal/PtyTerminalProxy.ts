@@ -11,11 +11,7 @@ import {
   withTmuxUtf8Flag,
 } from '../tmuxFormat'
 import { sanitizedTmuxEnv } from '../tmuxEnv'
-import {
-  createGroupedSession,
-  killProcessHard,
-  listProcessesWithPs,
-} from '../tmuxGroupedSession'
+import { createGroupedSession } from '../tmuxGroupedSession'
 
 const CLIENT_TTY_FORMAT = buildTmuxFormat([
   '#{client_tty}',
@@ -322,24 +318,17 @@ class PtyTerminalProxy extends TerminalProxyBase {
 
   // Grouped sessions go through createGroupedSession: tmux spawns (and at
   // once discards) a login shell for every new-session -t, and that shell can
-  // outlive its pane holding a pty. See tmuxGroupedSession.ts.
+  // outlive its pane holding a pty. The hook only arms the async reaper
+  // (throwawayShellReaper.ts); nothing here may list or signal processes.
   private newGroupedSession(groupTarget: string, sessionName: string): void {
-    const result = createGroupedSession(
+    createGroupedSession(
       {
         runTmux: (args) => this.runTmuxMutation(args),
-        listProcesses: () => listProcessesWithPs(this.spawnSync),
-        killProcess: this.options.killProcess ?? killProcessHard,
+        onCreated: this.options.onGroupedSessionCreated,
       },
       groupTarget,
       sessionName
     )
-    if (result.reapedPids.length > 0 || result.skipped) {
-      this.logEvent('terminal_group_throwaway_reaped', {
-        sessionName,
-        reapedPids: result.reapedPids,
-        skipped: result.skipped,
-      })
-    }
   }
 
   write(data: string): void {
