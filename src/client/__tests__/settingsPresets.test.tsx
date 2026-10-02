@@ -153,6 +153,35 @@ describe('PresetsTable', () => {
     expect(root.findAll((node) => node.props['aria-label'] === 'Discard new preset')).toHaveLength(0)
   })
 
+  test('discarding a complete pending preset never saves it', () => {
+    const root = render()
+    const before = presets().length
+    act(() => root.find((node) => node.type === 'button' && node.props.children?.[1] === 'Add preset').props.onClick())
+    const pendingRow = root.findAll((node) => node.props.role === 'listitem').at(-1)!
+    const pendingId = pendingRow.props['data-preset-id'] as string
+    act(() => input(root, `settings-preset-${pendingId}-label`).props.onChange({ target: { value: 'Oops' } }))
+    act(() => input(root, `settings-preset-${pendingId}-label`).props.onBlur())
+    // Command typed but not yet committed: the cursor is still in the field.
+    act(() => input(root, `settings-preset-${pendingId}-command`).props.onChange({ target: { value: 'oops' } }))
+
+    // Pointer-down on Discard keeps focus in the input (no blur commit)...
+    const discard = button(root, 'Discard new preset')
+    const pointer = { prevented: false, preventDefault() { pointer.prevented = true } }
+    discard.props.onPointerDown(pointer)
+    expect(pointer.prevented).toBe(true)
+    // ...and the click removes the row. The unmounting input then commits
+    // its dirty draft, which must not resurrect the discarded preset.
+    act(() => discard.props.onClick())
+    expect(presets()).toHaveLength(before)
+    expect(presets().some((p) => p.id === pendingId)).toBe(false)
+    expect(root.findAll((node) => node.props.role === 'listitem')).toHaveLength(before)
+  })
+
+  test('stored rows have no pointer-down guard on delete', () => {
+    const root = render()
+    expect(button(root, 'Delete Mine').props.onPointerDown).toBeUndefined()
+  })
+
   test('deleting needs a second click and moves the default', () => {
     useSettingsStore.setState({ defaultPresetId: 'custom-1' })
     const root = render()

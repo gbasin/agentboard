@@ -19,7 +19,10 @@ type ValueField = 'enabled' | 'hours'
 
 export interface ServerSetting<T> {
   value: T
+  /** True until the initial load settles and while a write is in flight. */
   loading: boolean
+  /** True once the initial load has settled (even if it failed). */
+  loaded: boolean
   set: (next: T) => void
 }
 
@@ -31,6 +34,7 @@ export function useServerSetting<T extends boolean | number>(
   const url = `/api/settings/${name}`
   const [value, setValue] = useState<T>(fallback)
   const [loading, setLoading] = useState(true)
+  const [loaded, setLoaded] = useState(false)
   // Guards against a slow response landing after unmount or a newer write.
   const generationRef = useRef(0)
   const valueRef = useRef(value)
@@ -51,6 +55,7 @@ export function useServerSetting<T extends boolean | number>(
       })
       .catch(() => {})
       .finally(() => {
+        if (active) setLoaded(true)
         if (active && generationRef.current === generation) setLoading(false)
       })
     return () => {
@@ -82,5 +87,5 @@ export function useServerSetting<T extends boolean | number>(
     [url, field]
   )
 
-  return { value, loading, set }
+  return { value, loading, loaded, set }
 }

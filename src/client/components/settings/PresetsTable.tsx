@@ -6,7 +6,7 @@
  * are valid; it then joins the store under the id it was created with, so
  * React keeps the same row (and the focused input) across the hand-off.
  */
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { AgentType } from '@shared/types'
 import {
   MAX_PRESETS,
@@ -27,6 +27,16 @@ export function PresetsTable({ ids }: RowControlProps) {
   const presets = useSettingsStore((state) => state.commandPresets)
   const defaultPresetId = useSettingsStore((state) => state.defaultPresetId)
   const [pending, setPending] = useState<CommandPreset | null>(null)
+  // Mirror of `pending` for commits that fire while a row is unmounting
+  // (a discarded row's inputs commit on unmount); a discarded row must not
+  // be resurrected by that late commit.
+  const pendingRef = useRef<CommandPreset | null>(null)
+  const addRef = useRef<HTMLButtonElement>(null)
+
+  const updatePending = (next: CommandPreset | null) => {
+    pendingRef.current = next
+    setPending(next)
+  }
 
   const canAdd = !pending && presets.length < MAX_PRESETS
   const rows = pending ? [...presets, pending] : presets
@@ -40,21 +50,22 @@ export function PresetsTable({ ids }: RowControlProps) {
   }
 
   const commitPendingField = (field: PresetField, value: string) => {
-    if (!pending) return null
-    const next = { ...pending, [field]: value }
+    const current = pendingRef.current
+    if (!current) return null
+    const next = { ...current, [field]: value }
     const { commandPresets, setCommandPresets } = useSettingsStore.getState()
     if (isCompletePreset(next) && commandPresets.length < MAX_PRESETS) {
       setCommandPresets([...commandPresets, normalizePreset(next)])
-      setPending(null)
+      updatePending(null)
     } else {
-      setPending(next)
+      updatePending(next)
     }
     return null
   }
 
   const changeIcon = (id: string, agentType: AgentType | undefined) => {
     if (pending?.id === id) {
-      setPending({ ...pending, agentType })
+      updatePending({ ...pending, agentType })
       return
     }
     const { commandPresets, setCommandPresets } = useSettingsStore.getState()
@@ -64,7 +75,15 @@ export function PresetsTable({ ids }: RowControlProps) {
   const handleAdd = () => {
     if (!canAdd) return
     const existing = new Set(presets.map((preset) => preset.id))
-    setPending({ id: generatePresetId(existing), label: '', command: '', isBuiltIn: false })
+    updatePending({ id: generatePresetId(existing), label: '', command: '', isBuiltIn: false })
+  }
+
+  // The removed row's inputs held focus; hand it to the Add button rather
+  // than letting it fall to <body>.
+  const removeRow = (id: string) => {
+    if (pendingRef.current?.id === id) updatePending(null)
+    else useSettingsStore.getState().removePreset(id)
+    addRef.current?.focus()
   }
 
   return (
@@ -92,9 +111,7 @@ export function PresetsTable({ ids }: RowControlProps) {
                 isPending ? commitPendingField(field, value) : commitStoredField(preset.id, field, value)
               }
               onIconChange={(agentType) => changeIcon(preset.id, agentType)}
-              onDelete={() =>
-                isPending ? setPending(null) : useSettingsStore.getState().removePreset(preset.id)
-              }
+              onDelete={() => removeRow(preset.id)}
             />
           )
         })}
@@ -105,7 +122,7 @@ export function PresetsTable({ ids }: RowControlProps) {
         </p>
       )}
       <div className="mt-2 flex items-center gap-3">
-        <button type="button" className={CONTROL_BUTTON} onClick={handleAdd} disabled={!canAdd}>
+        <button ref={addRef} type="button" className={CONTROL_BUTTON} onClick={handleAdd} disabled={!canAdd}>
           <PlusIcon width={ICON_SIZE.default} height={ICON_SIZE.default} className="mr-1.5" />
           Add preset
         </button>

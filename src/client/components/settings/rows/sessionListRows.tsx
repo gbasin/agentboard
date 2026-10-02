@@ -104,15 +104,17 @@ function SidebarAnchorDescription() {
 }
 
 function HistoryLookbackControl({ ids }: RowControlProps) {
-  const { value, loading, set } = useServerSetting<number>('history-max-age-hours', 'hours', 24)
+  const { value, loaded, set } = useServerSetting<number>('history-max-age-hours', 'hours', 24)
   return (
     <div className="flex items-start gap-2">
+      {/* Disabled only until the value loads: disabling a focused input
+          mid-write would drop keyboard focus to <body>. */}
       <CommitInput
         id={ids.control}
         type="text"
         inputMode="numeric"
         value={String(value)}
-        disabled={loading}
+        disabled={!loaded}
         describedBy={ids.description}
         wrapperClassName="w-20"
         className="text-center tabular-nums"

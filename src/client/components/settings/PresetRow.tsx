@@ -138,6 +138,10 @@ export function PresetRow({
         <button
           type="button"
           onClick={handleDelete}
+          // Pressing Discard must not blur the row's inputs first: that
+          // blur would commit a complete pending preset instead of
+          // discarding it.
+          onPointerDown={pending ? (event) => event.preventDefault() : undefined}
           onBlur={() => setConfirming(false)}
           aria-label={confirming ? `Confirm delete ${name}` : pending ? `Discard new preset` : `Delete ${name}`}
           title={confirming ? 'Click again to delete' : undefined}

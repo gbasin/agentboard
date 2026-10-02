@@ -166,12 +166,15 @@ describe('useServerSetting', () => {
     let renderer!: TestRenderer.ReactTestRenderer
     act(() => { renderer = TestRenderer.create(<Probe />) })
     expect(setting.loading).toBe(true)
+    expect(setting.loaded).toBe(false)
     await flush()
     expect(setting.loading).toBe(false)
+    expect(setting.loaded).toBe(true)
     expect(setting.value).toBe(false)
     act(() => setting.set(true))
     expect(setting.value).toBe(true)
     expect(setting.loading).toBe(true)
+    expect(setting.loaded).toBe(true)
     await flush()
     expect(setting.value).toBe(true)
     expect(setting.loading).toBe(false)
@@ -209,6 +212,7 @@ describe('useServerSetting', () => {
     await flush()
     expect(setting.value).toBe(true)
     expect(setting.loading).toBe(false)
+    expect(setting.loaded).toBe(true)
     act(() => renderer.unmount())
   })
 
