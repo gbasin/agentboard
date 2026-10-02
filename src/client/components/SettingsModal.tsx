@@ -479,7 +479,7 @@ export default function SettingsModal({
                       <button
                         type="button"
                         onClick={() => handleDeletePreset(preset.id)}
-                        className="btn text-xs px-2 py-1 text-error hover:bg-error/10"
+                        className="btn text-xs px-2 py-1 text-danger hover:bg-danger/10"
                       >
                         Delete
                       </button>

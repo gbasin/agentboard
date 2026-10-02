@@ -67,6 +67,34 @@ describe('TerminalControls', () => {
     )).toBe(true)
   })
 
+  test('the Enter key carries only its accent colors, not the default key colors', () => {
+    const renderer = TestRenderer.create(
+      <TerminalControls
+        onSendKey={() => {}}
+        sessions={[{ id: 'session-1', name: 'alpha', status: 'working' }]}
+        currentSessionId="session-1"
+        onSelectSession={() => {}}
+      />
+    )
+    const classesOf = (label: string) => {
+      const button = renderer.root
+        .findAllByType('button')
+        .find((b) => b.props['aria-label'] === label)
+      return String(button?.props.className).split(/\s+/).filter(Boolean)
+    }
+    // Same-specificity utilities: if both were present, bg-surface (emitted
+    // later) would hide the accent tint.
+    const enter = classesOf('Enter')
+    expect(enter).toEqual(expect.arrayContaining(['bg-accent/20', 'border-accent/40', 'text-accent']))
+    expect(enter).not.toContain('bg-surface')
+    expect(enter).not.toContain('border-border')
+    expect(enter).not.toContain('text-secondary')
+    expect(classesOf('Delete word')).toEqual(
+      expect.arrayContaining(['bg-surface', 'border-border', 'text-secondary', 'border'])
+    )
+    act(() => renderer.unmount())
+  })
+
   test('ctrl toggle modifies keys and resets', () => {
     globalAny.navigator = { vibrate: () => true } as unknown as Navigator
 

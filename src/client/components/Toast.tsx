@@ -19,7 +19,7 @@ function ToastItem({ toast }: { toast: BaseToast.Root.ToastObject }) {
         'data-[ending-style]:opacity-0',
         'data-[starting-style]:translate-y-2 data-[starting-style]:opacity-0',
         'transition-all duration-200',
-        toast.type === 'error' && 'border-error/50',
+        toast.type === 'error' && 'border-danger/50',
         toast.type === 'success' && 'border-approval/50',
         (!toast.type || toast.type === 'info') && 'border-border'
       )}
@@ -28,7 +28,7 @@ function ToastItem({ toast }: { toast: BaseToast.Root.ToastObject }) {
         <BaseToast.Title
           className={cn(
             'text-sm font-medium',
-            toast.type === 'error' && 'text-error',
+            toast.type === 'error' && 'text-danger',
             toast.type === 'success' && 'text-approval',
             (!toast.type || toast.type === 'info') && 'text-primary'
           )}

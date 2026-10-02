@@ -41,8 +41,11 @@ const ICON_BUTTON_BASE =
 /** Color treatments for square icon buttons (desktop and mobile). */
 export const BUTTON_TONE = {
   neutral: 'border-border text-secondary hover:bg-hover hover:text-primary',
-  /** A control whose state is engaged (e.g. a filter is applied). */
-  active: 'border-accent text-accent hover:bg-hover',
+  /**
+   * A control whose state is engaged (e.g. a filter is applied): the same
+   * accent tint as engaged keys on the mobile key strip (ctrl, Enter).
+   */
+  active: 'border-accent/40 bg-accent/20 text-accent hover:bg-accent/30',
   danger: 'border-danger/30 bg-danger/10 text-danger hover:bg-danger/20',
   primary: 'border-transparent bg-accent text-white hover:bg-accent/90',
 } as const

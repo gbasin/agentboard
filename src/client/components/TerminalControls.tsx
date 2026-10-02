@@ -58,6 +58,12 @@ const BackspaceIcon = <DeleteIcon width={ICON_SIZE.key} height={ICON_SIZE.key} s
 const PasteIcon = <ClipboardIcon width={ICON_SIZE.key} height={ICON_SIZE.key} strokeWidth={KEY_ICON_STROKE} />
 const KeyboardIcon = <Keyboard01Icon width={ICON_SIZE.key} height={ICON_SIZE.key} strokeWidth={KEY_ICON_STROKE} />
 
+// Color classes of a key without its own `className`. A key's className
+// replaces these rather than being appended: both sets are single-class
+// utilities of equal specificity, so whichever Tailwind emits later would
+// win (bg-surface beats bg-accent/20), and Enter would lose its tint.
+const CONTROL_KEY_DEFAULT_CLASS = 'bg-surface border-border text-secondary'
+
 // Plain send-a-sequence keys. Their on-screen order lives in the JSX below,
 // interleaved with the stateful ctrl/paste/numpad/arrow/keyboard buttons.
 const KEY_ENTER: ControlKey = { label: <CornerDownLeftIcon width={ICON_SIZE.key} height={ICON_SIZE.key} strokeWidth={KEY_ICON_STROKE} />, key: '\r', className: 'bg-accent/20 text-accent border-accent/40', ariaLabel: 'Enter' }
@@ -239,11 +245,11 @@ export default function TerminalControls({
         flex items-center justify-center
         size-[44px] p-0
         text-sm font-medium
-        bg-surface border border-border rounded-md
+        border rounded-md
         active:bg-hover active:scale-95
         transition-transform duration-75
         select-none touch-manipulation
-        ${control.className ?? 'text-secondary'}
+        ${control.className ?? CONTROL_KEY_DEFAULT_CLASS}
         ${disabled ? 'opacity-50' : ''}
       `}
       onMouseDown={(e) => e.preventDefault()}
