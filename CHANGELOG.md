@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.24.1](https://github.com/gbasin/agentboard/compare/v0.24.0...v0.24.1) (2026-10-02)
+
+
+### Bug Fixes
+
+* capture synced-setting values when a push is scheduled ([#354](https://github.com/gbasin/agentboard/issues/354)) ([917d95b](https://github.com/gbasin/agentboard/commit/917d95b45e496937a2f2981b0486dc52398358af))
+
+
+### Performance Improvements
+
+* **server:** take attach, devin-match and tailscale spawns off the event loop ([#355](https://github.com/gbasin/agentboard/issues/355)) ([4fc5ac6](https://github.com/gbasin/agentboard/commit/4fc5ac675aaf2f2ecd05b09e3829411a59c032fa))
+
 ## [0.24.0](https://github.com/gbasin/agentboard/compare/v0.23.3...v0.24.0) (2026-10-02)
 
 
