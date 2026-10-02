@@ -10,7 +10,7 @@ import {
 } from '../stores/settingsStore'
 import { useThemeStore } from '../stores/themeStore'
 
-const globalAny = globalThis as typeof globalThis & {
+const globalAny = globalThis as unknown as {
   localStorage?: Storage
   window?: unknown
 }
@@ -454,13 +454,13 @@ describe('SettingsModal text fields', () => {
   test('a broadcast does not clobber the field being edited', async () => {
     const renderer = await render()
     act(() => dirInput(renderer.root).props.onChange({ target: { value: '/typing' } }))
-    act(() => useSettingsStore.setState({ defaultProjectDir: '/remote' }))
+    act(() => { useSettingsStore.setState({ defaultProjectDir: '/remote' }) })
     expect(dirInput(renderer.root).props.value).toBe('/typing')
     // Escape reverts the draft to the latest stored value.
     act(() => dirInput(renderer.root).props.onKeyDown({ key: 'Escape', preventDefault: () => {} }))
     expect(dirInput(renderer.root).props.value).toBe('/remote')
     // An untouched field follows the store.
-    act(() => useSettingsStore.setState({ defaultProjectDir: '/again' }))
+    act(() => { useSettingsStore.setState({ defaultProjectDir: '/again' }) })
     expect(dirInput(renderer.root).props.value).toBe('/again')
   })
 })

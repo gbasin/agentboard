@@ -13,7 +13,7 @@ import { useFocusTrap, useSuspendTerminalInput } from '../components/settings/us
 import { useServerSetting, type ServerSetting } from '../components/settings/useServerSetting'
 import { parseClampedInt } from '../components/settings/controls/CommitInput'
 
-const globalAny = globalThis as typeof globalThis & {
+const globalAny = globalThis as unknown as {
   localStorage?: Storage
   document?: unknown
 }
