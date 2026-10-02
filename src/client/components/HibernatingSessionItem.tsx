@@ -10,6 +10,7 @@ import { copyText } from '../utils/copyText'
 import { getPathLeaf } from '../utils/sessionLabel'
 import { getSessionIdShort } from '../utils/sessionId'
 import { formatRelativeTime } from '../utils/time'
+import { useMenuViewportFit } from '../hooks/useMenuViewportFit'
 import AgentIcon from './AgentIcon'
 import ProjectBadge from './ProjectBadge'
 
@@ -48,6 +49,7 @@ export default function HibernatingSessionItem({
   const contextMenuRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
+  const contextMenuPosition = useMenuViewportFit(contextMenuRef, contextMenu)
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState(displayName)
 
@@ -193,7 +195,7 @@ export default function HibernatingSessionItem({
         <div
           ref={contextMenuRef}
           className="fixed z-50 min-w-[160px] rounded-md border border-border bg-elevated shadow-lg py-1"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
+          style={contextMenuPosition ?? undefined}
           role="menu"
         >
           {onWake && (

@@ -28,6 +28,7 @@ export interface SyncedSettings {
   sessionSortMode?: 'status' | 'created' | 'manual'
   sessionSortDirection?: 'asc' | 'desc'
   manualSessionOrder?: string[]
+  sidebarAnchor?: 'top' | 'bottom'
   projectFilters?: string[]
   hostFilters?: string[]
 }
@@ -42,6 +43,7 @@ export const SYNCED_SETTINGS_KEYS = [
   'sessionSortMode',
   'sessionSortDirection',
   'manualSessionOrder',
+  'sidebarAnchor',
   'projectFilters',
   'hostFilters',
 ] as const
@@ -90,6 +92,7 @@ const VALIDATORS: Record<SyncedSettingsKey, (value: unknown) => boolean> = {
   sessionSortMode: (v) => v === 'status' || v === 'created' || v === 'manual',
   sessionSortDirection: (v) => v === 'asc' || v === 'desc',
   manualSessionOrder: (v) => isStringArray(v, 1000),
+  sidebarAnchor: (v) => v === 'top' || v === 'bottom',
   projectFilters: (v) => isStringArray(v, 500),
   hostFilters: (v) => isStringArray(v, 500),
 }

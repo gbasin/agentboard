@@ -123,6 +123,7 @@ async function main() {
       'sessionListComponent.test.tsx',
       'sessionDrawer.test.tsx',
       'sessionListFilters.test.tsx',
+      'sessionListBottomAnchor.test.tsx',
     ])
 
     const serverTests: string[] = []
