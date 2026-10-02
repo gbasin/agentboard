@@ -74,10 +74,12 @@ jobs:
       - name: Run e2e tests
         run: bunx playwright test
 
-      # The ci job skips real-tmux tests (no tmux there); this job has tmux, so
-      # the e2e teardown reaper is checked against a real server here.
-      - name: e2e teardown reaper test (real tmux)
-        run: bun test src/server/__tests__/e2eTmuxReap.integration.test.ts
+      # The ci job skips real-tmux tests (no tmux there); this job has tmux.
+      # Run the whole suite the way the release workflow's commit hook does
+      # (Linux, tmux present), so a real-tmux test that only fails on Linux is
+      # caught here instead of failing the release's master sync step.
+      - name: Unit and real-tmux tests (Linux with tmux)
+        run: bun run test
 
       - name: Upload test results
         if: always()

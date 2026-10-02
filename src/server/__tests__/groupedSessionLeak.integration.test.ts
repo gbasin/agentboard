@@ -177,7 +177,10 @@ if (!isTmuxAvailable()) {
       expect(next - first).toBe(2)
     })
 
-    test('without the reaper, a pane process that missed its hangup survives', () => {
+    // macOS only: the stand-in is identified by its argv0 (`exec -a -standin`),
+    // which Linux's `ps comm` does not report, so it is never seen to start
+    // there. This failed the release workflow's commit hook on a Linux runner.
+    test.skipIf(process.platform !== 'darwin')('without the reaper, a pane process that missed its hangup survives', () => {
       createGroupedSession({ runTmux: tmux }, '=base', 'control-ws')
       const survivor = makeSurvivor()
       tmux(['kill-session', '-t', '=control-ws'])
