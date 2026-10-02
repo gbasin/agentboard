@@ -6,6 +6,7 @@ import type { Session, ServerMessage } from '@shared/types'
 import type { AgentSessionRecord, ClaimCurrentWindowPatch } from '../../db'
 import { TmuxTimeoutError } from '../../tmuxTimeout'
 import { TMUX_FIELD_SEPARATOR } from '../../tmuxFormat'
+import { setCodexSubagentIndex } from '../../subagentLogs'
 
 const bunAny = Bun as typeof Bun & {
   serve: typeof Bun.serve
@@ -6212,6 +6213,60 @@ describe('server startup side effects', () => {
           prs?: Array<{ url: string }>
         }>).find((session) => session.sessionId === sessionId)?.prs ?? []
 
+      await waitFor(() => hibernatingPrs().length > 0, 2000)
+      expect(hibernatingPrs().map((pr) => pr.url)).toEqual([prUrl])
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true })
+    }
+  })
+
+  test('a codex subagent index that arrives after startup brings its PRs to a hibernating row', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-dormant-sub-pr-'))
+    try {
+      const logFilePath = path.join(tempDir, 'parent.jsonl')
+      await fs.writeFile(logFilePath, '{"type":"user"}\n')
+      const childLogPath = path.join(tempDir, 'child.jsonl')
+      const prUrl = 'https://github.com/acme/widgets/pull/78'
+      const lines = [
+        {
+          type: 'assistant',
+          message: {
+            content: [
+              { type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'gh pr create --fill' } },
+            ],
+          },
+        },
+        {
+          type: 'user',
+          message: { content: [{ type: 'tool_result', tool_use_id: 't1', content: prUrl }] },
+        },
+      ]
+      await fs.writeFile(childLogPath, lines.map((line) => JSON.stringify(line)).join('\n') + '\n')
+      const sessionId = `dormant-sub-pr-wiring-${importCounter}`
+      seedRecord(
+        makeRecord({
+          sessionId,
+          logFilePath,
+          agentType: 'codex',
+          currentWindow: null,
+          isHibernating: true,
+          lastKnownLogSize: (await fs.stat(logFilePath)).size,
+        })
+      )
+
+      const { registryInstance } = await loadIndex()
+      const hibernatingPrs = () =>
+        (registryInstance.agentSessions.hibernating as Array<{
+          sessionId: string
+          prs?: Array<{ url: string }>
+        }>).find((session) => session.sessionId === sessionId)?.prs ?? []
+      // Let the startup scan of the parent's main log finish first.
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      expect(hibernatingPrs()).toEqual([])
+
+      setCodexSubagentIndex([
+        { ownId: `child-${importCounter}`, parentId: sessionId, logPath: childLogPath },
+      ])
       await waitFor(() => hibernatingPrs().length > 0, 2000)
       expect(hibernatingPrs().map((pr) => pr.url)).toEqual([prUrl])
     } finally {

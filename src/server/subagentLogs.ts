@@ -48,6 +48,42 @@ function listDirCached(dir: string): string[] {
   return paths
 }
 
+// pi/omp: whether a candidate file is a subagent transcript, keyed by its
+// size + mtime. PR-scan freshness keys run this filter for every dormant pi
+// row on every re-queue; without the cache each run re-reads every head.
+// Bounded; the oldest entry is evicted first.
+const PI_SUBAGENT_CACHE_MAX = 5000
+const piSubagentCache = new Map<
+  string,
+  { size: number; mtimeMs: number; isSubagent: boolean }
+>()
+
+function isPiSubagentCached(logPath: string): boolean {
+  let stat: fs.Stats
+  try {
+    stat = fs.statSync(logPath)
+  } catch {
+    piSubagentCache.delete(logPath)
+    return false
+  }
+  const cached = piSubagentCache.get(logPath)
+  if (cached && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) {
+    return cached.isSubagent
+  }
+  const isSubagent = isPiSubagent(logPath)
+  piSubagentCache.delete(logPath)
+  if (piSubagentCache.size >= PI_SUBAGENT_CACHE_MAX) {
+    const oldest = piSubagentCache.keys().next().value
+    if (oldest !== undefined) piSubagentCache.delete(oldest)
+  }
+  piSubagentCache.set(logPath, {
+    size: stat.size,
+    mtimeMs: stat.mtimeMs,
+    isSubagent,
+  })
+  return isSubagent
+}
+
 // --- Codex index -----------------------------------------------------------
 
 type CodexSubagentNode = CodexSubagentLink
@@ -56,6 +92,65 @@ type CodexSubagentNode = CodexSubagentLink
 // fresh between rebuilds by poller-fed registerCodexSubagent calls.
 let codexIndex = new Map<string, CodexSubagentNode>()
 const CODEX_INDEX_MAX_DEPTH = 8
+// parentId -> child ownIds for `codexIndex`, built lazily and dropped by
+// putCodexNode whenever a link changes. Every dormant codex row walks it per
+// PR-scan key, so rebuilding it per call costs rows x index size.
+let codexParentMap: Map<string, string[]> | null = null
+let codexParentMapBuilds = 0
+// Called after the index gains or changes a link, so callers holding PR
+// scans keyed on subagent logs can queue a rescan.
+let codexIndexListener: (() => void) | null = null
+
+/** Register the single index-change listener (null to clear). */
+export function setCodexSubagentIndexListener(listener: (() => void) | null): void {
+  codexIndexListener = listener
+}
+
+/** Sets a node; returns true when the index did not already hold it. */
+function putCodexNode(node: CodexSubagentNode): boolean {
+  const current = codexIndex.get(node.ownId)
+  codexIndex.set(node.ownId, node)
+  const changed =
+    !current ||
+    current.parentId !== node.parentId ||
+    current.logPath !== node.logPath
+  if (changed) codexParentMap = null
+  return changed
+}
+
+function buildCodexParentMap(
+  index: Map<string, CodexSubagentNode>
+): Map<string, string[]> {
+  const byParent = new Map<string, string[]>()
+  for (const [ownId, node] of index) {
+    if (!node.parentId) continue
+    const list = byParent.get(node.parentId)
+    if (list) list.push(ownId)
+    else byParent.set(node.parentId, [ownId])
+  }
+  return byParent
+}
+
+function codexChildren(): Map<string, string[]> {
+  if (!codexParentMap) {
+    codexParentMap = buildCodexParentMap(codexIndex)
+    codexParentMapBuilds++
+  }
+  return codexParentMap
+}
+
+/** Test hook: how many times the live index's parent map was built. */
+export function getCodexParentMapBuildsForTests(): number {
+  return codexParentMapBuilds
+}
+
+function notifyCodexIndexChanged(): void {
+  try {
+    codexIndexListener?.()
+  } catch {
+    // A listener failure must not break index maintenance.
+  }
+}
 
 function codexSessionsRoot(): string {
   const override = process.env.CODEX_HOME
@@ -104,21 +199,15 @@ export function registerCodexSubagent(
   parentId: string | null,
   logPath: string
 ): void {
-  codexIndex.set(ownId, { ownId, parentId, logPath })
+  if (putCodexNode({ ownId, parentId, logPath })) notifyCodexIndexChanged()
 }
 
 /** All descendant transcript paths of `sessionId` in `index`, BFS order. */
 export function collectCodexDescendants(
   index: Map<string, CodexSubagentNode>,
-  sessionId: string
+  sessionId: string,
+  byParent: Map<string, string[]> = buildCodexParentMap(index)
 ): string[] {
-  const byParent = new Map<string, string[]>()
-  for (const [ownId, node] of index) {
-    if (!node.parentId) continue
-    const list = byParent.get(node.parentId)
-    if (list) list.push(ownId)
-    else byParent.set(node.parentId, [ownId])
-  }
   const results: string[] = []
   let frontier = [sessionId]
   for (let depth = 0; depth < CODEX_INDEX_MAX_DEPTH; depth++) {
@@ -145,7 +234,13 @@ export function collectCodexDescendants(
  * paths) and get overwritten by the next rebuild.
  */
 export function setCodexSubagentIndex(links: CodexSubagentLink[]): void {
-  for (const link of links) codexIndex.set(link.ownId, link)
+  let changed = false
+  for (const link of links) {
+    if (putCodexNode({ ownId: link.ownId, parentId: link.parentId, logPath: link.logPath })) {
+      changed = true
+    }
+  }
+  if (changed) notifyCodexIndexChanged()
 }
 
 // ---------------------------------------------------------------------------
@@ -168,13 +263,14 @@ export function getSubagentLogPaths(
 
   if (agentType === 'pi' || agentType === 'omp') {
     // Artifact dir holds <task-id>.jsonl subagent sessions among other files;
-    // the session_init marker is the discriminator.
-    return listDirCached(stem).filter((p) => isPiSubagent(p))
+    // the session_init marker is the discriminator. Heads are read only for
+    // new or changed files.
+    return listDirCached(stem).filter(isPiSubagentCached)
   }
 
   if (agentType === 'codex') {
     // BFS rolls nested subagents (depth > 1) up to the registered session.
-    return collectCodexDescendants(codexIndex, sessionId)
+    return collectCodexDescendants(codexIndex, sessionId, codexChildren())
   }
 
   return []
@@ -183,6 +279,8 @@ export function getSubagentLogPaths(
 /** Test helper: drop cached state. */
 export function clearSubagentLogCaches(): void {
   dirListCache.clear()
+  piSubagentCache.clear()
   codexIndex = new Map()
+  codexParentMap = null
   clearCodexLinkCache()
 }
