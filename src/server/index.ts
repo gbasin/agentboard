@@ -21,6 +21,7 @@ import {
 } from './db'
 import { LogPoller } from './logPoller'
 import { toAgentSession, getMergedPullRequests } from './agentSessions'
+import { createDormantPrScanner } from './dormantPrScan'
 import { fetchPrChecks, fetchPrInfo, parsePrUrl } from './prInfo'
 import { getLogSearchDirs } from './logDiscovery'
 import {
@@ -875,7 +876,7 @@ function filterExcludedAgentSessions(sessions: AgentSession[]): AgentSession[] {
 
 function updateActiveAgentSessions() {
   const active = hasConfirmedLocalSessionSnapshot
-    ? db.getActiveSessions().map(toAgentSession)
+    ? db.getActiveSessions().map((record) => toAgentSession(record))
     : []
   const current = registry.getAgentSessions()
   registry.setAgentSessions(
@@ -885,19 +886,29 @@ function updateActiveAgentSessions() {
   )
 }
 
+const dormantPrScanner = createDormantPrScanner(() =>
+  updateDormantAgentSessions()
+)
+
+// Dormant rows show the PRs found by the last scan; the scanner fills in the
+// rest in small slices and calls back here when it finds new ones.
 function updateDormantAgentSessions() {
+  const hibernatingRecords = db.getHibernatingSessions()
+  const historyRecords = db.getHistorySessions({
+    maxAgeHours: runtimeHistoryMaxAgeHours,
+  })
+  const cachedOnly = { cachedPrsOnly: true }
   const hibernating = filterExcludedAgentSessions(
-    db.getHibernatingSessions().map(toAgentSession)
+    hibernatingRecords.map((record) => toAgentSession(record, cachedOnly))
   )
   const history = filterExcludedAgentSessions(
-    db.getHistorySessions({ maxAgeHours: runtimeHistoryMaxAgeHours }).map(
-      toAgentSession
-    )
+    historyRecords.map((record) => toAgentSession(record, cachedOnly))
   )
   const active = hasConfirmedLocalSessionSnapshot
-    ? db.getActiveSessions().map(toAgentSession)
+    ? db.getActiveSessions().map((record) => toAgentSession(record))
     : []
   registry.setAgentSessions(active, hibernating, history)
+  dormantPrScanner.queue([...hibernatingRecords, ...historyRecords])
 }
 
 interface VerificationDecision {
