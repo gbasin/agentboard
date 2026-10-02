@@ -3,10 +3,11 @@
  *
  * useSuspendTerminalInput: while the dialog is mounted the xterm helper
  * textarea is disabled so the terminal can't capture keystrokes. On unmount
- * focus returns to the element that opened the dialog (or, if a setting
- * re-rendered it away, the button now carrying its label); the textarea is
- * re-enabled after a short delay (and focused only when nothing else got
- * focus back, e.g. the dialog was opened from the terminal by shortcut).
+ * the textarea is re-enabled after a short delay and focused: in a terminal
+ * app the next thing the user does after closing settings is type, whatever
+ * opened the dialog. Only when there is no terminal (no session selected)
+ * does focus go back to the element that opened the dialog, or to the
+ * button now carrying its label if a setting re-rendered it away.
  *
  * useFocusTrap: Escape closes (unless a control consumed it with
  * preventDefault), Tab wraps inside the panel, and focus that escapes the
@@ -54,15 +55,16 @@ export function useSuspendTerminalInput(): void {
     const openerLabel = opener?.getAttribute?.('aria-label') ?? null
 
     return () => {
-      const target = opener && opener !== textarea ? findOpener(opener, openerLabel) : null
-      const restoreOpener = target !== null
-      if (target) target.focus()
       reenableTimer = setTimeout(() => {
         reenableTimer = null
         const current = document.querySelector<HTMLTextAreaElement>(TEXTAREA_SELECTOR)
-        if (!current) return
-        current.removeAttribute('disabled')
-        if (!restoreOpener) current.focus()
+        if (current) {
+          current.removeAttribute('disabled')
+          current.focus()
+          return
+        }
+        const fallback = opener && opener !== textarea ? findOpener(opener, openerLabel) : null
+        fallback?.focus()
       }, REENABLE_DELAY_MS)
     }
   }, [])

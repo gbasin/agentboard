@@ -335,7 +335,7 @@ describe('useSuspendTerminalInput', () => {
     doc.activeElement = null
   })
 
-  test('disables the textarea and returns focus to the opener on close', async () => {
+  test('disables the textarea and refocuses the terminal on close, not the gear', async () => {
     const gear = fakeElement('gear')
     doc.activeElement = gear
     let renderer!: TestRenderer.ReactTestRenderer
@@ -343,37 +343,49 @@ describe('useSuspendTerminalInput', () => {
     expect(doc.textarea?.disabled).toBe(true)
     expect(doc.textarea?.blurred).toBe(1)
     act(() => renderer.unmount())
-    expect(gear.focused).toBe(1)
     await new Promise((resolve) => setTimeout(resolve, 320))
     expect(doc.textarea?.disabled).toBe(false)
-    expect(doc.textarea?.focused).toBe(0)
+    expect(doc.textarea?.focused).toBe(1)
+    expect(gear.focused).toBe(0)
   })
 
-  test('falls back to the button carrying the opener label when it was re-rendered', async () => {
+  test('without a terminal, focus returns to the opener', async () => {
+    const gear = fakeElement('gear')
+    doc.activeElement = gear
+    doc.textarea = null
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => { renderer = TestRenderer.create(<Probe />) })
+    act(() => renderer.unmount())
+    await new Promise((resolve) => setTimeout(resolve, 320))
+    expect(gear.focused).toBe(1)
+  })
+
+  test('without a terminal, a re-rendered opener is found by its label', async () => {
     const gear = Object.assign(fakeElement('gear'), { getAttribute: () => 'Set "x"' })
     doc.activeElement = gear
+    doc.textarea = null
     doc.replacement = fakeElement('new gear')
     let renderer!: TestRenderer.ReactTestRenderer
     act(() => { renderer = TestRenderer.create(<Probe />) })
     gear.isConnected = false
     act(() => renderer.unmount())
+    await new Promise((resolve) => setTimeout(resolve, 320))
     expect(doc.lastSelector).toBe('button[aria-label="Set \\"x\\""]')
     expect(doc.replacement.focused).toBe(1)
     expect(gear.focused).toBe(0)
     doc.replacement = null
-    await new Promise((resolve) => setTimeout(resolve, 320))
-    expect(doc.textarea?.focused).toBe(0)
   })
 
-  test('an unlabelled disconnected opener falls back to the terminal', async () => {
+  test('without a terminal, an unlabelled disconnected opener leaves focus alone', async () => {
     const gear = fakeElement('gear')
     doc.activeElement = gear
+    doc.textarea = null
     let renderer!: TestRenderer.ReactTestRenderer
     act(() => { renderer = TestRenderer.create(<Probe />) })
     gear.isConnected = false
     act(() => renderer.unmount())
     await new Promise((resolve) => setTimeout(resolve, 320))
-    expect(doc.textarea?.focused).toBe(1)
+    expect(gear.focused).toBe(0)
   })
 
   test('refocuses the terminal when it was the opener', async () => {
