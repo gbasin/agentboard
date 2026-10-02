@@ -13,8 +13,9 @@
 //   prompt the GC to collect the parsed first lines promptly.
 // - A per-file cache keyed by size + mtime. Rollouts are append-only, so an
 //   unchanged size + mtime means an unchanged first line and the file is not
-//   opened at all. Each scan rebuilds the cache from the files it saw, so
-//   deleted files drop out; the entry count is capped.
+//   opened at all. Each scan, complete or not, replaces the cache with the
+//   files it saw, so deleted files drop out and a directory that failed to
+//   list is re-read cold next time; the entry count is capped.
 //
 // Module-level state is safe: the scan is synchronous and runs in the match
 // worker. With AGENTBOARD_LOG_MATCH_WORKER=false the poller skips worker
