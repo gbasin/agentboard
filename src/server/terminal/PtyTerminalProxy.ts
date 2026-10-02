@@ -11,6 +11,11 @@ import {
   withTmuxUtf8Flag,
 } from '../tmuxFormat'
 import { sanitizedTmuxEnv } from '../tmuxEnv'
+import {
+  createGroupedSession,
+  killProcessHard,
+  listProcessesWithPs,
+} from '../tmuxGroupedSession'
 
 const CLIENT_TTY_FORMAT = buildTmuxFormat([
   '#{client_tty}',
@@ -269,14 +274,7 @@ class PtyTerminalProxy extends TerminalProxyBase {
     // confirm the raw session still exists first. (=name also disables the
     // prefix matching that could otherwise group with the wrong session.)
     this.runTmux(['has-session', '-t', `=${rawSession}`])
-    this.runTmuxMutation([
-      'new-session',
-      '-d',
-      '-t',
-      `=${rawSession}`,
-      '-s',
-      effSession,
-    ])
+    this.newGroupedSession(`=${rawSession}`, effSession)
     const rejoinedStaleGroup = windowId
       ? !this.derivedContainsWindow(effSession, windowId)
       : !this.sessionGroupsMatch(effSession, rawSession)
@@ -319,6 +317,28 @@ class PtyTerminalProxy extends TerminalProxyBase {
       }
     } catch {
       // Raw session may not have an explicit mouse override; ignore
+    }
+  }
+
+  // Grouped sessions go through createGroupedSession: tmux spawns (and at
+  // once discards) a login shell for every new-session -t, and that shell can
+  // outlive its pane holding a pty. See tmuxGroupedSession.ts.
+  private newGroupedSession(groupTarget: string, sessionName: string): void {
+    const result = createGroupedSession(
+      {
+        runTmux: (args) => this.runTmuxMutation(args),
+        listProcesses: () => listProcessesWithPs(this.spawnSync),
+        killProcess: this.options.killProcess ?? killProcessHard,
+      },
+      groupTarget,
+      sessionName
+    )
+    if (result.reapedPids.length > 0 || result.skipped) {
+      this.logEvent('terminal_group_throwaway_reaped', {
+        sessionName,
+        reapedPids: result.reapedPids,
+        skipped: result.skipped,
+      })
     }
   }
 
@@ -426,14 +446,7 @@ class PtyTerminalProxy extends TerminalProxyBase {
     })
 
     try {
-      this.runTmuxMutation([
-        'new-session',
-        '-d',
-        '-t',
-        this.options.baseSession,
-        '-s',
-        this.options.sessionName,
-      ])
+      this.newGroupedSession(this.options.baseSession, this.options.sessionName)
     } catch (error) {
       this.state = TerminalState.DEAD
       throw new TerminalProxyError(

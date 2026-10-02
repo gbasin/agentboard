@@ -1,17 +1,18 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync, rmSync } from 'node:fs'
-import { join } from 'node:path'
+import { rmSync } from 'node:fs'
+import { reapPrivateTmuxServer, socketPath } from './tmuxReap'
 
 export default async function teardown() {
   const dir = process.env.E2E_TMUX_TMPDIR
   if (dir) {
     // The suite ran on a private tmux server (see playwright.config.ts), so
-    // cleanup is one kill-server. Address it with an explicit -S socket path:
-    // unlike TMUX_TMPDIR (ignored if the dir vanished) or $TMUX (overrides the
+    // cleanup is kill-server plus killing any pane process that outlived it
+    // (see tmuxReap.ts). Address it with an explicit -S socket path: unlike
+    // TMUX_TMPDIR (ignored if the dir vanished) or $TMUX (overrides the
     // socket choice), -S can never resolve to the user's live tmux server.
-    const socket = join(dir, `tmux-${process.getuid?.() ?? 0}`, 'default')
-    if (existsSync(socket)) {
-      spawnSync('tmux', ['-S', socket, 'kill-server'], { stdio: 'ignore' })
+    const survivors = reapPrivateTmuxServer(socketPath(dir))
+    if (survivors > 0) {
+      console.log(`[e2e teardown] killed ${survivors} process(es) that outlived the tmux server`)
     }
     rmSync(dir, { recursive: true, force: true })
     return
