@@ -1,5 +1,6 @@
-import { describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect, test } from 'bun:test'
 import { PtyTerminalProxy as TerminalProxy } from '../../terminal'
+import { resetTmuxVersionCache } from '../../terminal/PtyTerminalProxy'
 import { buildTmuxFormat } from '../../tmuxFormat'
 
 const CLIENT_TTY_OUTPUT = `${buildTmuxFormat(['/dev/pts/9', '4242'])}\n`
@@ -289,6 +290,12 @@ function deriveExternalSessionName(managedSession: string, rawSession: string): 
   return `${managedSession}-x-${sanitized}-${suffix}`
 }
 
+// The tmux -V probe is cached per process; each test starts cold so a
+// harness's tmuxVersion is what the proxy sees.
+beforeEach(() => {
+  resetTmuxVersionCache()
+})
+
 describe('TerminalProxy', () => {
   test('starts tmux client and discovers tty', async () => {
     const harness = createSpawnHarness()
@@ -424,6 +431,64 @@ describe('TerminalProxy', () => {
       '-t',
       'agentboard-ws-abc',
     ])
+  })
+
+  test('probes tmux -V once per process, not once per connection', async () => {
+    const versionProbes = () =>
+      harnesses.flatMap((h) => h.spawnSyncCalls).filter((c) => getTmuxCommand(c.args) === '-V')
+    const harnesses = [createSpawnHarness(), createSpawnHarness()]
+    for (const [index, harness] of harnesses.entries()) {
+      const proxy = new TerminalProxy({
+        connectionId: `conn-${index}`,
+        sessionName: `agentboard-ws-${index}`,
+        baseSession: 'agentboard',
+        onData: () => {},
+        spawn: harness.spawn,
+        spawnSync: harness.spawnSync,
+        wait: async () => {},
+      })
+      await proxy.start()
+      // The cached answer still decides the attach flags.
+      expect(harness.spawnCalls[0]?.args).toContain('-T')
+    }
+    expect(versionProbes()).toHaveLength(1)
+  })
+
+  test('a failed tmux -V probe is not cached', async () => {
+    const failing = createSpawnHarness()
+    const failingSpawnSync = (args: string[], options?: Parameters<typeof Bun.spawnSync>[1]) =>
+      getTmuxCommand(args) === '-V'
+        ? ({
+            exitCode: 1,
+            stdout: Buffer.from(''),
+            stderr: Buffer.from('no server'),
+          } as ReturnType<typeof Bun.spawnSync>)
+        : failing.spawnSync(args, options)
+    const first = new TerminalProxy({
+      connectionId: 'conn-fail',
+      sessionName: 'agentboard-ws-fail',
+      baseSession: 'agentboard',
+      onData: () => {},
+      spawn: failing.spawn,
+      spawnSync: failingSpawnSync,
+      wait: async () => {},
+    })
+    await first.start()
+    expect(failing.spawnCalls[0]?.args).not.toContain('-T')
+
+    const healthy = createSpawnHarness()
+    const second = new TerminalProxy({
+      connectionId: 'conn-ok',
+      sessionName: 'agentboard-ws-ok',
+      baseSession: 'agentboard',
+      onData: () => {},
+      spawn: healthy.spawn,
+      spawnSync: healthy.spawnSync,
+      wait: async () => {},
+    })
+    await second.start()
+    expect(healthy.spawnSyncCalls.some((c) => getTmuxCommand(c.args) === '-V')).toBe(true)
+    expect(healthy.spawnCalls[0]?.args).toContain('-T')
   })
 
   test('switchTo issues switch and refresh commands', async () => {

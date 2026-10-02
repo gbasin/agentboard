@@ -35,6 +35,16 @@ const SET_CLIPBOARD_ENABLED =
   process.env.AGENTBOARD_TMUX_SET_CLIPBOARD !== '0' &&
   process.env.AGENTBOARD_TMUX_SET_CLIPBOARD !== 'false'
 
+// `tmux -V` output, probed once per process instead of once per WebSocket
+// connect. A tmux upgrade while the server runs goes unnoticed until restart
+// (the running tmux server keeps its old version anyway). Only a successful
+// probe is cached; a failure is retried on the next connect.
+let cachedTmuxVersion: string | null = null
+
+/** Test hook: forget the cached `tmux -V` output. */
+export function resetTmuxVersionCache(): void {
+  cachedTmuxVersion = null
+}
 
 interface TmuxTargetIdentity {
   sessionName: string
@@ -724,9 +734,8 @@ class PtyTerminalProxy extends TerminalProxyBase {
       return []
     }
     try {
-      return tmuxSupportsClientFeatures(this.runTmux(['-V']))
-        ? ['-T', 'sync']
-        : []
+      cachedTmuxVersion ??= this.runTmux(['-V'])
+      return tmuxSupportsClientFeatures(cachedTmuxVersion) ? ['-T', 'sync'] : []
     } catch (error) {
       // Attach still proceeds without -T sync; log so a tearing report can be
       // traced to a failed version probe instead of guessing (issue #158).
