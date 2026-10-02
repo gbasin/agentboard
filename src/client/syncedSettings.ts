@@ -1,6 +1,6 @@
 /**
  * Two-way sync for client settings that describe the shared world (theme,
- * command presets, session list prefs) rather than the local device.
+ * command presets, session list prefs, sounds) rather than the local device.
  *
  * The server is canonical: `synced-settings` messages carry the full stored
  * state and are applied wholesale. Local changes to synced keys are pushed
@@ -13,7 +13,7 @@
  * have nothing to seed and simply adopt the server values.
  */
 import { useSettingsStore } from './stores/settingsStore'
-import { useThemeStore } from './stores/themeStore'
+import { useThemeStore, type Theme } from './stores/themeStore'
 import { safeStorage } from './utils/storage'
 import { clientLog } from './utils/clientLog'
 import {
@@ -97,13 +97,13 @@ export function applySyncedSettings(settings: SyncedSettings): void {
   }
 
   const settingsPatch: Record<string, unknown> = {}
-  let theme: 'dark' | 'light' | undefined
+  let theme: Theme | undefined
 
   for (const [key, value] of Object.entries(settings)) {
     if (!isSyncedSettingsKey(key) || !isValidSyncedSetting(key, value)) continue
     serverValues.set(key, JSON.stringify(value))
     if (key === 'theme') {
-      theme = value as 'dark' | 'light'
+      theme = value as Theme
     } else {
       settingsPatch[key] = value
     }

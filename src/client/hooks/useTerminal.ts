@@ -643,7 +643,9 @@ export function useTerminal({
     const openTerminal = () => {
       if (cancelled) return
 
-      if (useWebGLRef.current) {
+      // The runtime toggle effect may already have loaded the addon if
+      // WebGL was switched on while fonts were still loading.
+      if (useWebGLRef.current && !webglAddonRef.current) {
         try {
           const webglAddon = new WebglAddon()
           // Dispose on context loss so xterm falls back to canvas renderer
@@ -831,13 +833,13 @@ export function useTerminal({
     }
 
     terminal.attachCustomKeyEventHandler((event) => {
-      // Let Agentboard's window-level direct-navigation handler receive the
-      // configured modifier + 1..9 before xterm translates or cancels it.
-      // Read the store synchronously so modifier changes take effect without
-      // recreating the terminal instance.
+      // Let Agentboard's window-level handlers receive the configured
+      // modifier + 1..9 (direct navigation) and + comma (settings) before
+      // xterm translates or cancels them. Read the store synchronously so
+      // modifier changes take effect without recreating the terminal.
       if (
         event.type === 'keydown' &&
-        /^Digit[1-9]$/.test(event.code) &&
+        /^(Digit[1-9]|Comma)$/.test(event.code) &&
         matchesModifier(
           event,
           getEffectiveModifier(useSettingsStore.getState().shortcutModifier)

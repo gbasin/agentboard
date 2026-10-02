@@ -148,6 +148,28 @@ describe('push on local change', () => {
     })
   })
 
+  test('applies and pushes list details and sounds', async () => {
+    applySyncedSettings({ showSessionIdPrefix: true, soundOnIdle: true })
+    expect(useSettingsStore.getState().showSessionIdPrefix).toBe(true)
+    expect(useSettingsStore.getState().soundOnIdle).toBe(true)
+    await sleep(300)
+    expect(fetchCalls.length).toBe(0)
+
+    useSettingsStore.getState().setSoundOnPermission(true)
+    useSettingsStore.getState().setShowProjectName(false)
+    await sleep(300)
+    expect(fetchCalls.length).toBe(1)
+    expect(fetchCalls[0].body.settings).toEqual({
+      soundOnPermission: true,
+      showProjectName: false,
+    })
+  })
+
+  test('applies a system theme', () => {
+    applySyncedSettings({ theme: 'system' })
+    expect(useThemeStore.getState().theme).toBe('system')
+  })
+
   test('does not push non-synced keys', async () => {
     useSettingsStore.getState().setFontSize(20)
     useSettingsStore.getState().setSidebarWidth(300)
@@ -181,6 +203,28 @@ describe('veteran seeding', () => {
     expect(pushed.sessionSortMode).toBe('created')
     expect(pushed.defaultPresetId).toBe('claude')
     expect(pushed.recentPaths).toEqual([])
+  })
+
+  test('seeds list details and sounds from a veteran client', async () => {
+    storage.setItem('agentboard-settings', '{"state":{},"version":8}')
+    useSettingsStore.setState({
+      showProjectName: false,
+      showLastUserMessage: true,
+      showSessionIdPrefix: true,
+      soundOnPermission: true,
+      soundOnIdle: false,
+    })
+
+    applySyncedSettings({})
+    await sleep(300)
+
+    expect(fetchCalls.length).toBe(1)
+    const pushed = fetchCalls[0].body.settings
+    expect(pushed.showProjectName).toBe(false)
+    expect(pushed.showLastUserMessage).toBe(true)
+    expect(pushed.showSessionIdPrefix).toBe(true)
+    expect(pushed.soundOnPermission).toBe(true)
+    expect(pushed.soundOnIdle).toBe(false)
   })
 
   test('fresh client without persisted state does not seed', async () => {

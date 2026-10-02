@@ -7,6 +7,10 @@ interface SwitchProps {
   disabled?: boolean
   className?: string
   ariaLabel?: string
+  /** Id for the hidden input, so a `<label htmlFor>` can target it. */
+  id?: string
+  ariaLabelledBy?: string
+  ariaDescribedBy?: string
 }
 
 /**
@@ -19,6 +23,9 @@ export function Switch({
   disabled,
   className,
   ariaLabel,
+  id,
+  ariaLabelledBy,
+  ariaDescribedBy,
 }: SwitchProps) {
   return (
     <BaseSwitch.Root
@@ -26,6 +33,9 @@ export function Switch({
       onCheckedChange={onCheckedChange}
       disabled={disabled}
       aria-label={ariaLabel}
+      id={id}
+      aria-labelledby={ariaLabelledBy}
+      aria-describedby={ariaDescribedBy}
       className={cn(
         'group relative inline-flex h-6 w-10 shrink-0 cursor-pointer items-center rounded-full transition-colors',
         'bg-border data-[checked]:bg-accent',

@@ -461,7 +461,9 @@ describe('component rendering', () => {
       <SettingsModal isOpen onClose={() => {}} />
     )
     expect(html).toContain('Settings')
-    expect(html).toContain('Terminal Colors')
+    // Opens on the remembered page, defaulting to New sessions.
+    expect(html).toContain('Default project directory')
+    expect(html).toContain('Command presets')
   })
 
   test('renders controls widgets', () => {

@@ -49,7 +49,7 @@ export default function SidebarControls({
         type="button"
         onClick={onOpenSettings}
         className={ICON_BUTTON_CLASS}
-        title="Settings"
+        title={`Settings (${modDisplay},)`}
         aria-label="Settings"
       >
         <Settings02Icon width={ICON_SIZE.default} height={ICON_SIZE.default} />
