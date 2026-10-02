@@ -204,10 +204,10 @@ mock.module('../hooks/useWebSocket', () => ({
   }),
 }))
 
-const [{ default: App }, { default: Header }, { default: SessionList }, { default: Terminal }, { default: TerminalControls }, { default: NewSessionModal }, { default: SettingsModal }, { default: ArrowKeys }, { default: NumPad }, { useSessionStore }] =
+const [{ default: App }, { default: SidebarControls }, { default: SessionList }, { default: Terminal }, { default: TerminalControls }, { default: NewSessionModal }, { default: SettingsModal }, { default: ArrowKeys }, { default: NumPad }, { useSessionStore }] =
   await Promise.all([
     import('../App'),
-    import('../components/Header'),
+    import('../components/SidebarControls'),
     import('../components/SessionList'),
     import('../components/Terminal'),
     import('../components/TerminalControls'),
@@ -250,16 +250,20 @@ function renderMarkup(element: JSX.Element): string {
 }
 
 describe('component rendering', () => {
-  test('renders app shell', () => {
+  test('renders app shell without the old header wordmark', () => {
     const html = renderMarkup(<App />)
-    expect(html).toContain('AGENTBOARD')
+    expect(html).toContain('Filter by project')
+    expect(html).toContain('"aria-label":"Settings"')
+    expect(html).not.toContain('AGENTBOARD')
   })
 
-  test('renders header', () => {
+  test('renders sidebar controls', () => {
     const html = renderMarkup(
-      <Header connectionStatus="connected" onNewSession={() => {}} onOpenSettings={() => {}} tailscaleIp={null} />
+      <SidebarControls connectionStatus="connected" onNewSession={() => {}} onOpenSettings={() => {}} tailscaleIp={null} />
     )
-    expect(html).toContain('AGENTBOARD')
+    expect(html).toContain('New session')
+    expect(html).toContain('Settings')
+    expect(html).not.toContain('AGENTBOARD')
   })
 
   test('renders session list', () => {

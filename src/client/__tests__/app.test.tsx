@@ -3,6 +3,7 @@ import TestRenderer, { act } from 'react-test-renderer'
 import type { AgentSession, ServerMessage, Session } from '@shared/types'
 import SessionList from '../components/SessionList'
 import NewSessionModal from '../components/NewSessionModal'
+import SidebarControls from '../components/SidebarControls'
 import { useSessionStore } from '../stores/sessionStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useThemeStore } from '../stores/themeStore'
@@ -178,6 +179,7 @@ beforeEach(() => {
     projectFilters: [],
     sessionSortMode: 'created',
     sessionSortDirection: 'asc',
+    sidebarAnchor: 'top',
     showProjectName: true,
     showLastUserMessage: true,
     showSessionIdPrefix: false,
@@ -202,6 +204,7 @@ afterEach(() => {
     projectFilters: [],
     sessionSortMode: 'created',
     sessionSortDirection: 'desc',
+    sidebarAnchor: 'top',
     showProjectName: true,
     showLastUserMessage: true,
     showSessionIdPrefix: false,
@@ -1153,6 +1156,80 @@ describe('App', () => {
     })
     expect(useSessionStore.getState().selectedSessionId).toBe('session-3')
     expect(prevented).toBe(1)
+  })
+
+  test('bottom sidebar anchor keeps shortcut targets and moves the header under the list', () => {
+    const sessionB: Session = { ...baseSession, id: 'session-2', name: 'beta', createdAt: '2024-01-02T00:00:00.000Z' }
+    const sessionC: Session = { ...baseSession, id: 'session-3', name: 'gamma', createdAt: '2024-01-03T00:00:00.000Z' }
+    const key = (k: string, code: string) => ({
+      key: k,
+      code,
+      ctrlKey: true,
+      shiftKey: true,
+      altKey: false,
+      metaKey: false,
+      defaultPrevented: false,
+      preventDefault: () => {},
+    }) as KeyboardEvent
+
+    const run = (anchor: 'top' | 'bottom') => {
+      useSettingsStore.setState({ sidebarAnchor: anchor })
+      useSessionStore.setState({
+        sessions: [baseSession, sessionB, sessionC],
+        selectedSessionId: baseSession.id,
+        hasLoaded: true,
+      })
+      let renderer!: TestRenderer.ReactTestRenderer
+      act(() => {
+        renderer = TestRenderer.create(<App />)
+      })
+      const selections: (string | null)[] = []
+      for (const [k, code] of [['3', 'Digit3'], ['1', 'Digit1'], [']', 'BracketRight'], [']', 'BracketRight'], ['[', 'BracketLeft']]) {
+        act(() => {
+          getKeyHandler()(key(k, code))
+        })
+        selections.push(useSessionStore.getState().selectedSessionId)
+      }
+      const [desktopList, drawerList] = renderer.root.findAllByType(SessionList)
+      const layout = {
+        anchor: desktopList.props.anchor,
+        controlsPlacement: desktopList.props.filterBarControls?.props.placement,
+        controlsAreSidebarControls: desktopList.props.filterBarControls?.type === SidebarControls,
+        drawerAnchor: drawerList?.props.anchor,
+        drawerControls: drawerList?.props.filterBarControls,
+        controls: renderer.root.findAllByType(SidebarControls).map((c) => c.props.placement),
+        wordmark: JSON.stringify(renderer.toJSON()).includes('AGENTBOARD'),
+        headerElements: renderer.root.findAllByType('header').length,
+      }
+      act(() => renderer.unmount())
+      return { selections, layout }
+    }
+
+    const top = run('top')
+    const bottom = run('bottom')
+    expect(top.selections).toEqual(['session-3', 'session-1', 'session-2', 'session-3', 'session-2'])
+    expect(bottom.selections).toEqual(top.selections)
+
+    expect(top.layout).toEqual({
+      anchor: 'top',
+      controlsPlacement: 'down',
+      controlsAreSidebarControls: true,
+      drawerAnchor: undefined,
+      drawerControls: undefined,
+      controls: ['down'],
+      wordmark: false,
+      headerElements: 0,
+    })
+    expect(bottom.layout).toEqual({
+      anchor: 'bottom',
+      controlsPlacement: 'up',
+      controlsAreSidebarControls: true,
+      drawerAnchor: undefined,
+      drawerControls: undefined,
+      controls: ['up'],
+      wordmark: false,
+      headerElements: 0,
+    })
   })
 
   test('digit shortcuts fall back to hibernating sessions when no live sessions are visible', () => {

@@ -6,6 +6,7 @@ import { copyText } from '../utils/copyText'
 import { getPathLeaf } from '../utils/sessionLabel'
 import { getSessionIdShort } from '../utils/sessionId'
 import { formatRelativeTime } from '../utils/time'
+import { useMenuViewportFit } from '../hooks/useMenuViewportFit'
 import AgentIcon from './AgentIcon'
 import ProjectBadge from './ProjectBadge'
 import { PrChips } from './PrChips'
@@ -39,6 +40,7 @@ export default memo(function HistorySessionItem({
 
   const contextMenuRef = useRef<HTMLDivElement>(null)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
+  const contextMenuPosition = useMenuViewportFit(contextMenuRef, contextMenu)
 
   // Close context menu on click outside or escape
   useEffect(() => {
@@ -80,6 +82,10 @@ export default memo(function HistorySessionItem({
       title="Click to preview"
       onClick={() => onPreview(session)}
       onKeyDown={(e) => {
+        // Only the row's own keys open the preview. Keys aimed at nested
+        // controls (PR chips, "+N", the wake button) bubble here too, and
+        // preventDefault would also cancel their native activation.
+        if (e.target !== e.currentTarget) return
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()
           onPreview(session)
@@ -155,7 +161,7 @@ export default memo(function HistorySessionItem({
         <div
           ref={contextMenuRef}
           className="fixed z-50 min-w-[160px] rounded-md border border-border bg-elevated shadow-lg py-1"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
+          style={contextMenuPosition ?? undefined}
           role="menu"
         >
           {session.logFilePath && (

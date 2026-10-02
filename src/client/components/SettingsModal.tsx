@@ -9,6 +9,7 @@ import {
   type SessionSortDirection,
   type SessionSortMode,
   type ShortcutModifier,
+  type SidebarAnchor,
 } from '../stores/settingsStore'
 import { useThemeStore, type Theme } from '../stores/themeStore'
 import { HISTORY_MAX_AGE_MIN_HOURS, HISTORY_MAX_AGE_MAX_HOURS, type AgentType } from '@shared/types'
@@ -47,6 +48,8 @@ export default function SettingsModal({
   const setSessionSortDirection = useSettingsStore(
     (state) => state.setSessionSortDirection
   )
+  const sidebarAnchor = useSettingsStore((state) => state.sidebarAnchor)
+  const setSidebarAnchor = useSettingsStore((state) => state.setSidebarAnchor)
   const useWebGL = useSettingsStore((state) => state.useWebGL)
   const setUseWebGL = useSettingsStore((state) => state.setUseWebGL)
   const fontSize = useSettingsStore((state) => state.fontSize)
@@ -93,6 +96,8 @@ export default function SettingsModal({
     useState<SessionSortMode>(sessionSortMode)
   const [draftSortDirection, setDraftSortDirection] =
     useState<SessionSortDirection>(sessionSortDirection)
+  const [draftSidebarAnchor, setDraftSidebarAnchor] =
+    useState<SidebarAnchor>(sidebarAnchor)
   const [draftUseWebGL, setDraftUseWebGL] = useState(useWebGL)
   const [draftFontSize, setDraftFontSize] = useState(fontSize)
   const [draftLineHeight, setDraftLineHeight] = useState(lineHeight)
@@ -148,6 +153,7 @@ export default function SettingsModal({
       setDraftDefaultPresetId(defaultPresetId)
       setDraftSortMode(sessionSortMode)
       setDraftSortDirection(sessionSortDirection)
+      setDraftSidebarAnchor(sidebarAnchor)
       setDraftUseWebGL(useWebGL)
       setDraftFontSize(fontSize)
       setDraftLineHeight(lineHeight)
@@ -231,6 +237,7 @@ export default function SettingsModal({
     defaultProjectDir,
     sessionSortMode,
     sessionSortDirection,
+    sidebarAnchor,
     useWebGL,
     fontSize,
     lineHeight,
@@ -275,6 +282,7 @@ export default function SettingsModal({
     setDefaultPresetId(draftDefaultPresetId)
     setSessionSortMode(draftSortMode)
     setSessionSortDirection(draftSortDirection)
+    setSidebarAnchor(draftSidebarAnchor)
     setUseWebGL(draftUseWebGL)
     setFontSize(draftFontSize)
     setLineHeight(draftLineHeight)
@@ -629,6 +637,33 @@ export default function SettingsModal({
               </div>
             </div>
           )}
+
+          <div>
+            <label className="mb-2 block text-xs text-secondary">
+              Sidebar Anchor
+            </label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className={`btn flex-1 ${draftSidebarAnchor === 'top' ? 'btn-primary' : ''}`}
+                onClick={() => setDraftSidebarAnchor('top')}
+              >
+                Top
+              </button>
+              <button
+                type="button"
+                className={`btn flex-1 ${draftSidebarAnchor === 'bottom' ? 'btn-primary' : ''}`}
+                onClick={() => setDraftSidebarAnchor('bottom')}
+              >
+                Bottom
+              </button>
+            </div>
+            <p className="mt-1.5 text-[10px] text-muted">
+              {draftSidebarAnchor === 'bottom'
+                ? 'Desktop sidebar is mirrored: the first session sits at the bottom, next to the prompt'
+                : 'First session at the top of the sidebar'}
+            </p>
+          </div>
 
           <div className="border-t border-border pt-4 space-y-3">
             <label className="mb-1 block text-xs text-secondary">

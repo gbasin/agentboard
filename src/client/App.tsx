@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AgentSession, ServerMessage, Session, SessionKillSource } from '@shared/types'
-import Header from './components/Header'
+import SidebarControls from './components/SidebarControls'
 import SessionList from './components/SessionList'
 import Terminal from './components/Terminal'
 import NewSessionModal from './components/NewSessionModal'
@@ -107,6 +107,7 @@ export default function App() {
   const addRecentPath = useSettingsStore((state) => state.addRecentPath)
   const shortcutModifier = useSettingsStore((state) => state.shortcutModifier)
   const sidebarWidth = useSettingsStore((state) => state.sidebarWidth)
+  const sidebarAnchor = useSettingsStore((state) => state.sidebarAnchor)
   const setSidebarWidth = useSettingsStore((state) => state.setSidebarWidth)
   const projectFilters = useSettingsStore((state) => state.projectFilters)
   const hostFilters = useSettingsStore((state) => state.hostFilters)
@@ -941,17 +942,11 @@ export default function App() {
 
   return (
     <div className="flex h-full overflow-hidden">
-      {/* Left column: header + sidebar - always hidden on mobile (drawer handles it) */}
+      {/* Left column: sidebar - always hidden on mobile (drawer handles it) */}
       <div
         className="hidden h-full flex-col md:flex md:shrink-0"
         style={{ width: sidebarWidth }}
       >
-        <Header
-          connectionStatus={connectionStatus}
-          onNewSession={handleNewSession}
-          onOpenSettings={handleOpenSettings}
-          tailscaleIp={serverInfo?.tailscaleIp ?? null}
-        />
         <SessionList
           sessions={sessions}
           hibernatingSessions={hibernatingAgentSessions}
@@ -969,6 +964,16 @@ export default function App() {
           onNewSession={handleNewSession}
           loading={!hasLoaded}
           error={connectionError || serverError}
+          anchor={sidebarAnchor}
+          filterBarControls={
+            <SidebarControls
+              connectionStatus={connectionStatus}
+              onNewSession={handleNewSession}
+              onOpenSettings={handleOpenSettings}
+              tailscaleIp={serverInfo?.tailscaleIp ?? null}
+              placement={sidebarAnchor === 'bottom' ? 'up' : 'down'}
+            />
+          }
         />
       </div>
 

@@ -8,6 +8,8 @@ interface ProjectFilterDropdownProps {
   selectedProjects: string[]
   onSelect: (projects: string[]) => void
   hasHiddenPermissions: boolean
+  /** 'up' opens the menu above the button (bottom-anchored sidebar). */
+  placement?: 'down' | 'up'
 }
 
 export default function ProjectFilterDropdown({
@@ -15,6 +17,7 @@ export default function ProjectFilterDropdown({
   selectedProjects,
   onSelect,
   hasHiddenPermissions,
+  placement = 'down',
 }: ProjectFilterDropdownProps) {
   const [open, setOpen] = useState(false)
   const menuId = useId()
@@ -70,7 +73,7 @@ export default function ProjectFilterDropdown({
   }
 
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={containerRef} className="relative min-w-0 max-w-[11rem]">
       <button
         type="button"
         aria-haspopup="menu"
@@ -78,7 +81,7 @@ export default function ProjectFilterDropdown({
         aria-controls={menuId}
         aria-label="Filter by project"
         onClick={() => setOpen((value) => !value)}
-        className="flex h-6 max-w-[11rem] items-center gap-1.5 rounded border border-border bg-base px-2 text-[11px] text-primary hover:bg-hover focus:border-accent focus:outline-none"
+        className="flex h-6 w-full items-center overflow-hidden gap-1.5 rounded border border-border bg-base px-2 text-[11px] text-primary hover:bg-hover focus:border-accent focus:outline-none"
         title={selectedTitle}
       >
         <FolderIcon className="h-3.5 w-3.5 shrink-0" />
@@ -89,7 +92,7 @@ export default function ProjectFilterDropdown({
         <div
           id={menuId}
           role="menu"
-          className="absolute left-0 z-20 mt-1 w-60 max-w-[calc(100vw-1.5rem)] rounded border border-border bg-surface p-2 text-xs shadow-lg"
+          className={`absolute left-0 z-20 ${placement === 'up' ? 'bottom-full mb-1' : 'mt-1'} w-60 max-w-[calc(100vw-1.5rem)] rounded border border-border bg-surface p-2 text-xs shadow-lg`}
         >
           <label className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-primary hover:bg-hover">
             <input

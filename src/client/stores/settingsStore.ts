@@ -45,6 +45,9 @@ export function getFontFamily(fontOption: FontOption, customFontFamily: string):
 
 export type SessionSortMode = 'status' | 'created' | 'manual'
 export type SessionSortDirection = 'asc' | 'desc'
+/** Desktop sidebar layout: 'bottom' mirrors the column so the first session
+ * row sits next to the terminal prompt. Rendering only; sort order is shared. */
+export type SidebarAnchor = 'top' | 'bottom'
 export type ShortcutModifier = 'ctrl-option' | 'ctrl-shift' | 'cmd-option' | 'cmd-shift'
 
 // Command preset system
@@ -126,6 +129,8 @@ interface SettingsState {
   setSessionSortDirection: (direction: SessionSortDirection) => void
   manualSessionOrder: string[]
   setManualSessionOrder: (order: string[]) => void
+  sidebarAnchor: SidebarAnchor
+  setSidebarAnchor: (anchor: SidebarAnchor) => void
   useWebGL: boolean
   setUseWebGL: (enabled: boolean) => void
   fontSize: number
@@ -196,6 +201,8 @@ export const useSettingsStore = create<SettingsState>()(
         set({ sessionSortDirection: direction }),
       manualSessionOrder: [],
       setManualSessionOrder: (order) => set({ manualSessionOrder: order }),
+      sidebarAnchor: 'top',
+      setSidebarAnchor: (anchor) => set({ sidebarAnchor: anchor }),
       useWebGL: DEFAULT_WEBGL,
       setUseWebGL: (enabled) => set({ useWebGL: enabled }),
       fontSize: 13,

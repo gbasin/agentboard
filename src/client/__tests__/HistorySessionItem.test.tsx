@@ -103,6 +103,20 @@ describe('HistorySessionItem', () => {
       })
     })
 
+    // Keys bubbled from nested controls (PR chips, "+N", wake) neither open
+    // the preview nor cancel the control's own activation.
+    const self = {}
+    act(() => {
+      root.props.onKeyDown({
+        key: 'Enter',
+        target: {},
+        currentTarget: self,
+        preventDefault: () => {
+          prevented += 1
+        },
+      })
+    })
+
     expect(previewCalls).toBe(3)
     expect(resumeCalls).toBe(1)
     expect(prevented).toBe(2)
