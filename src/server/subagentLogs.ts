@@ -17,8 +17,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import type { AgentType } from '../shared/types'
+import { clearCodexLinkCache, scanCodexSubagentLinksCached } from './codexSubagentScan'
 import { extractCodexSubagentLink, isPiSubagent } from './logDiscovery'
-import { logger } from './logger'
 import type { CodexSubagentLink } from './logMatchWorkerTypes'
 
 // Directory listings are revalidated by dir mtime — subagent files only ever
@@ -70,38 +70,14 @@ function codexSessionsRoot(): string {
  * Walk the codex sessions tree and extract subagent linkage from each
  * rollout's session_meta first line. No content pre-filter needed — the
  * linkage lives in line 1, so a head read per file beats an rg scan of
- * full bodies and avoids the external binary. Synchronous and
- * seconds-scale on large corpora — call from a worker thread.
+ * full bodies and avoids the external binary. Per-file results are cached
+ * by size + mtime (codexSubagentScan.ts), so only new or growing rollouts
+ * are read on rebuilds. Synchronous — call from a worker thread.
  */
 export function scanCodexSubagentLinks(
   root: string = codexSessionsRoot()
 ): CodexSubagentLink[] {
-  const links: CodexSubagentLink[] = []
-  const walk = (dir: string): void => {
-    let names: fs.Dirent[]
-    try {
-      names = fs.readdirSync(dir, { withFileTypes: true })
-    } catch {
-      return
-    }
-    for (const entry of names) {
-      const p = path.join(dir, entry.name)
-      if (entry.isDirectory()) {
-        walk(p)
-      } else if (entry.name.endsWith('.jsonl')) {
-        const link = extractCodexSubagentLink(p)
-        if (link) links.push({ ...link, logPath: p })
-      }
-    }
-  }
-  try {
-    walk(root)
-  } catch (error) {
-    logger.warn('codex_subagent_index_error', {
-      message: error instanceof Error ? error.message : String(error),
-    })
-  }
-  return links
+  return scanCodexSubagentLinksCached(root)
 }
 
 /** Build an ownId -> node map from candidate rollout files. */
@@ -208,4 +184,5 @@ export function getSubagentLogPaths(
 export function clearSubagentLogCaches(): void {
   dirListCache.clear()
   codexIndex = new Map()
+  clearCodexLinkCache()
 }

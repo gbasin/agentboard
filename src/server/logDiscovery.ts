@@ -4,7 +4,7 @@ import type { AgentType } from '../shared/types'
 import { resolveProjectPath } from './paths'
 import { getDevinLogOutDir } from './devinSync'
 
-const LOG_HEAD_BYTE_LIMIT = 64 * 1024
+export const LOG_HEAD_BYTE_LIMIT = 64 * 1024
 const LOG_HEAD_MAX_LIMIT = 1024 * 1024 // 1MB cap for progressive expansion
 const WINDOWS_ABSOLUTE_PATH = /^[a-zA-Z]:[\\/]/
 
@@ -514,7 +514,18 @@ export function extractCodexSubagentLink(
 ): { ownId: string; parentId: string | null } | null {
   const head = readLogHead(logPath)
   if (!head) return null
-  const firstLine = head.split('\n')[0]?.trim()
+  return parseCodexSubagentLinkLine(head.split('\n')[0] ?? '')
+}
+
+/**
+ * Parse subagent linkage from a rollout's raw first line (text before the
+ * first newline of the 64 KB head). Shared by extractCodexSubagentLink and
+ * the cached index scan so both produce identical links.
+ */
+export function parseCodexSubagentLinkLine(
+  rawFirstLine: string
+): { ownId: string; parentId: string | null } | null {
+  const firstLine = rawFirstLine.trim()
   if (!firstLine) return null
   const entry = safeParseJson(firstLine)
   if (!entry || entry.type !== 'session_meta') return null
