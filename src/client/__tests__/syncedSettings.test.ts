@@ -166,6 +166,37 @@ describe('push on local change', () => {
     expect(fetchCalls.length).toBe(1)
   })
 
+  test('changing back to the server value inside the window cancels the push', async () => {
+    applySyncedSettings({ sidebarAnchor: 'top' })
+    useSettingsStore.getState().setSidebarAnchor('bottom')
+    useSettingsStore.getState().setSidebarAnchor('top')
+    await sleep(300)
+    expect(fetchCalls.length).toBe(0)
+    expect(useSettingsStore.getState().sidebarAnchor).toBe('top')
+  })
+
+  test('a broadcast while the PUT is in flight does not revert the local value', async () => {
+    let resolvePut!: () => void
+    globalAny.fetch = ((_input: unknown, init?: { body?: string }) => {
+      fetchCalls.push({ body: JSON.parse(init?.body ?? '{}') })
+      return new Promise<Response>((resolve) => {
+        resolvePut = () => resolve(new Response('{"settings":{}}', { status: 200 }))
+      })
+    }) as unknown as typeof fetch
+    useSettingsStore.getState().setSessionSortMode('manual')
+    await sleep(300)
+    expect(fetchCalls.length).toBe(1)
+    // Stale full-state broadcast lands before the PUT is answered.
+    applySyncedSettings({ sessionSortMode: 'created' })
+    expect(useSettingsStore.getState().sessionSortMode).toBe('manual')
+    resolvePut()
+    await sleep(0)
+    // Once settled, broadcasts apply again.
+    applySyncedSettings({ sessionSortMode: 'status' })
+    expect(useSettingsStore.getState().sessionSortMode).toBe('status')
+    globalAny.fetch = fetchMock as unknown as typeof fetch
+  })
+
   test('a later change inside the window replaces the pending value', async () => {
     useSettingsStore.getState().setSessionSortMode('manual')
     useSettingsStore.getState().setSessionSortMode('status')
