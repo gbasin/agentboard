@@ -154,7 +154,11 @@ if (!isTmuxAvailable()) {
       expect(waitFor(() => !isAlive(survivor))).toBe(true)
     }, 30_000)
 
-    test(`createGroupedSession leaves no stray pty holder (${ITERATIONS} runs)`, () => {
+    // macOS only: the reaper recognizes the discarded shell by the tty it
+    // still holds after its pane is gone. Linux drops a process's controlling
+    // tty when the pty master closes, so there the stand-in has none and the
+    // reaper (correctly) leaves a tty-less process alone.
+    test.skipIf(process.platform !== 'darwin')(`createGroupedSession leaves no stray pty holder (${ITERATIONS} runs)`, () => {
       const survivors: number[] = []
       for (let i = 0; i < ITERATIONS; i += 1) {
         const name = `leak-ws-${i}`

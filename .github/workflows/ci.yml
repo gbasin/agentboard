@@ -74,12 +74,10 @@ jobs:
       - name: Run e2e tests
         run: bunx playwright test
 
-      # The ci job skips real-tmux tests (no tmux there). These two guard the
-      # PTY leak fix against a real tmux server, so run them where tmux exists.
-      - name: PTY leak regression tests (real tmux)
-        run: |
-          bun test src/server/__tests__/groupedSessionLeak.integration.test.ts
-          bun test src/server/__tests__/e2eTmuxReap.integration.test.ts
+      # The ci job skips real-tmux tests (no tmux there); this job has tmux, so
+      # the e2e teardown reaper is checked against a real server here.
+      - name: e2e teardown reaper test (real tmux)
+        run: bun test src/server/__tests__/e2eTmuxReap.integration.test.ts
 
       - name: Upload test results
         if: always()
@@ -88,3 +86,26 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 7
+
+  # The grouped-session PTY leak only exists on macOS: there a process keeps
+  # its tty after the pty master closes, and the fix finds the discarded shell
+  # by that tty. On Linux the tty is dropped, so the reap assertion is skipped.
+  pty-leak-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6  # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Install tmux
+        run: brew install tmux
+
+      - name: PTY leak regression tests (real tmux)
+        run: |
+          bun test src/server/__tests__/groupedSessionLeak.integration.test.ts
+          bun test src/server/__tests__/e2eTmuxReap.integration.test.ts
