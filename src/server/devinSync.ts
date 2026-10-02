@@ -19,6 +19,7 @@ import path from 'node:path'
 import { Database as SQLiteDatabase } from 'bun:sqlite'
 import { logger } from './logger'
 import { devinDbFingerprint } from './devinDbFingerprint'
+import { writeMirrorAtomic } from './devinMirrorWriter'
 
 const SYNC_STATE_FILE = '.sync-state.json'
 const KEPT_ROLES = new Set(['user', 'assistant', 'system', 'tool'])
@@ -402,20 +403,19 @@ export function syncDevinSessions(outDir = getDevinLogOutDir()): DevinSyncResult
         }
       }
 
-      const rows = allRowsStmt().all({ $sessionId: session.id }) as DevinMessageRow[]
-      const lines = [metaLine(session)]
-      let lastRowId = 0
-      for (const row of rows) {
-        const line = messageToLine(session, row)
-        if (line !== null) lines.push(line)
-        lastRowId = row.row_id
-      }
-      const content = lines.join('\n') + '\n'
-      writeJsonAtomic(filePath, content)
+      const rows = allRowsStmt().iterate({
+        $sessionId: session.id,
+      }) as IterableIterator<DevinMessageRow>
+      const { lastRowId, rowCount, fileSize: writtenSize } = writeMirrorAtomic(
+        filePath,
+        metaLine(session),
+        rows,
+        (row) => messageToLine(session, row)
+      )
       nextState.sessions[session.id] = {
         lastRowId,
-        rowCount: rows.length,
-        fileSize: Buffer.byteLength(content),
+        rowCount,
+        fileSize: writtenSize,
       }
       result.rewritten += 1
     }
