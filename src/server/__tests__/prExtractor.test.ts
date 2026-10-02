@@ -789,6 +789,112 @@ describe('getSessionPullRequests', () => {
       expect(decodedChars).toBeLessThan(1024 * 1024)
     })
 
+    // Counts the characters Buffer#toString produces while `run` executes.
+    function countDecodedChars(run: () => void): number {
+      const original = Buffer.prototype.toString
+      let decodedChars = 0
+      Buffer.prototype.toString = function (this: Buffer, ...args: Parameters<typeof original>) {
+        const out = original.apply(this, args)
+        decodedChars += out.length
+        return out
+      }
+      try {
+        run()
+      } finally {
+        Buffer.prototype.toString = original
+      }
+      return decodedChars
+    }
+
+    // One tool-result line of `size` bytes, as Claude logs an image result.
+    function longResultLine(size: number, toolUseId: string, tail = ''): string {
+      const shell = claudeToolResult(`IMG${tail}`, toolUseId)
+      return shell.replace('IMG', 'A'.repeat(size - shell.length + 3))
+    }
+
+    test('does not decode a long line that cannot hold a create', async () => {
+      // An 8 MB line spans 64 chunks with no newline in most of them. The
+      // carried partial line must not be re-joined and copied per chunk.
+      const size = 8 * 1024 * 1024
+      const logPath = path.join(tempRoot, 'long.jsonl')
+      await fs.writeFile(
+        logPath,
+        claudeBashToolUse('echo hi') + '\n' + longResultLine(size, 'toolu_1') + '\n' + claudeBashToolUse('ls') + '\n'
+      )
+
+      let prs: unknown[] = []
+      const decoded = countDecodedChars(() => {
+        prs = getSessionPullRequests(logPath)
+      })
+      expect(prs).toEqual([])
+      expect(decoded).toBeLessThan(1024 * 1024)
+    })
+
+    test('decodes a long line that must be read only once', async () => {
+      // The create is pending, so the 8 MB result line has to be parsed,
+      // but decoding it whole once is enough.
+      const size = 8 * 1024 * 1024
+      const logPath = path.join(tempRoot, 'long-result.jsonl')
+      await fs.writeFile(
+        logPath,
+        claudeBashToolUse('gh pr create --fill') +
+          '\n' +
+          longResultLine(size, 'toolu_1', ' https://github.com/a/b/pull/77') +
+          '\n'
+      )
+
+      let prs: { number: number }[] = []
+      const decoded = countDecodedChars(() => {
+        prs = getSessionPullRequests(logPath)
+      })
+      expect(prs.map((p) => p.number)).toEqual([77])
+      expect(decoded).toBeLessThan(2 * size)
+    })
+
+    test('finds a create whose separator is split across the chunk boundary', async () => {
+      // `gh pr<NBSP>create` with the two-byte NBSP split by the chunk
+      // boundary. Decoding each chunk alone turns both halves into U+FFFD,
+      // which is no separator, so the create was lost.
+      const createWithNbsp = claudeBashToolUse('gh pr create --fill')
+      const nbspAt = Buffer.from(createWithNbsp).indexOf(Buffer.from([0xc2, 0xa0]))
+      const filler = JSON.stringify({ type: 'user', text: 'x'.repeat(997) }) + '\n'
+      // Place the NBSP's first byte at the last byte of the first chunk.
+      const lead = CHUNK - 1 - nbspAt
+      let head = filler.repeat(Math.floor((lead - 1) / filler.length))
+      head += 'y'.repeat(lead - head.length - 1) + '\n'
+      const content = head + createWithNbsp + '\n' + claudeToolResult('https://github.com/a/b/pull/7') + '\n'
+      const bytes = Buffer.from(content)
+      expect(bytes[CHUNK - 1]).toBe(0xc2)
+      expect(bytes[CHUNK]).toBe(0xa0)
+
+      const logPath = path.join(tempRoot, 'nbsp.jsonl')
+      await fs.writeFile(logPath, bytes)
+      expect(getSessionPullRequests(logPath).map((p) => p.number)).toEqual([7])
+      // The whole-content parser finds it too, so the chunked read must agree.
+      expect(extractPullRequests(content).map((p) => p.number)).toEqual([7])
+    })
+
+    test('finds a create in a line that grows across incremental reads', async () => {
+      // The partial line is carried across polls in small appends, with
+      // `create` split over three of them.
+      const logPath = path.join(tempRoot, 'grow.jsonl')
+      const createLine = claudeBashToolUse('gh pr create --fill')
+      const word = createLine.indexOf('create')
+      const cuts = [word + 2, word + 3, word + 4]
+      let from = 0
+      await fs.writeFile(logPath, '')
+      for (const cut of cuts) {
+        await fs.appendFile(logPath, createLine.slice(from, cut))
+        from = cut
+        expect(getSessionPullRequests(logPath)).toEqual([])
+      }
+      await fs.appendFile(
+        logPath,
+        createLine.slice(from) + '\n' + claudeToolResult('https://github.com/a/b/pull/5') + '\n'
+      )
+      expect(getSessionPullRequests(logPath).map((p) => p.number)).toEqual([5])
+    })
+
     test('ignores PR urls in chunks that have no create', async () => {
       const filler = 'see https://github.com/a/b/pull/1 for context '.repeat(5000)
       const logPath = path.join(tempRoot, 'nocreate.jsonl')
