@@ -72,7 +72,7 @@ export default function HostFilterDropdown({
   }
 
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={containerRef} className="relative min-w-0 max-w-[9rem]">
       <button
         type="button"
         aria-haspopup="menu"
@@ -80,7 +80,7 @@ export default function HostFilterDropdown({
         aria-controls={menuId}
         aria-label="Filter by host"
         onClick={() => setOpen((value) => !value)}
-        className="flex h-6 max-w-[9rem] items-center gap-1.5 rounded border border-border bg-base px-2 text-[11px] text-primary hover:bg-hover focus:border-accent focus:outline-none"
+        className="flex h-6 w-full items-center overflow-hidden gap-1.5 rounded border border-border bg-base px-2 text-[11px] text-primary hover:bg-hover focus:border-accent focus:outline-none"
         title={selectedTitle}
       >
         <Server01Icon className="h-3.5 w-3.5 shrink-0" />

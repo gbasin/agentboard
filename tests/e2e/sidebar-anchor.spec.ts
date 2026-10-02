@@ -35,16 +35,15 @@ const windows = new Windows()
 test.afterEach(() => windows.cleanup())
 
 function filterBar(scope: Locator): Locator {
-  // button -> dropdown wrapper -> the sticky filter bar
-  return scope.getByRole('button', { name: 'Filter by project' }).locator('xpath=../..')
+  // The sticky bar that holds the project filter (and, on desktop, the
+  // sidebar controls).
+  return scope
+    .getByRole('button', { name: 'Filter by project' })
+    .locator('xpath=ancestor::div[contains(concat(" ", @class, " "), " sticky ")][1]')
 }
 
 function hintBar(scope: Locator): Locator {
   return scope.getByText(/\[ \] nav/).locator('xpath=../..')
-}
-
-function header(page: Page): Locator {
-  return page.locator('header').filter({ hasText: 'AGENTBOARD' })
 }
 
 function scroller(sidebar: Locator): Locator {
@@ -126,14 +125,12 @@ test('Bottom: first row lowest, rows above the filter bar, bars stacked at the b
 
   const vh = await viewportHeight(page)
   const bar = await box(filterBar(sidebar))
-  const head = await box(header(page))
   const hint = await box(hintBar(sidebar))
 
-  // Bottom stack: filter bar, then header, then hint bar flush with the
-  // window's bottom edge.
+  // Bottom stack: filter bar directly on the hint bar, which is flush with
+  // the window's bottom edge (no header row between them).
   expect(Math.abs(hint.bottom - vh)).toBeLessThanOrEqual(1)
-  expect(Math.abs(head.bottom - hint.top)).toBeLessThanOrEqual(1)
-  expect(Math.abs(bar.bottom - head.top)).toBeLessThanOrEqual(1)
+  expect(Math.abs(bar.bottom - hint.top)).toBeLessThanOrEqual(1)
 
   // Every row sits above the filter bar; the first session is lowest and
   // touches the bar.
@@ -404,7 +401,6 @@ test('Top (default) keeps the original order and stacking', async ({ page }) => 
   await expect.poll(() => namesTopToBottom(sidebar, prefix)).toEqual(names)
 
   const vh = await viewportHeight(page)
-  const head = await box(header(page))
   const bar = await box(filterBar(sidebar))
   const hint = await box(hintBar(sidebar))
   const first = await box(cardByName(sidebar, names[0]))
@@ -412,8 +408,8 @@ test('Top (default) keeps the original order and stacking', async ({ page }) => 
   const hibernatingToggle = await box(sidebar.getByRole('button', { name: /^Hibernating/ }))
   const historyToggle = await box(sidebar.getByRole('button', { name: /^History/ }))
 
-  expect(head.top).toBeLessThanOrEqual(1)
-  expect(Math.abs(bar.top - head.bottom)).toBeLessThanOrEqual(1)
+  // No header row: the filter bar is the first thing in the column.
+  expect(bar.top).toBeLessThanOrEqual(1)
   expect(activeLabel.top).toBeGreaterThanOrEqual(bar.bottom - 1)
   expect(first.top).toBeGreaterThan(activeLabel.top)
   expect(hibernatingToggle.top).toBeGreaterThan(first.top)

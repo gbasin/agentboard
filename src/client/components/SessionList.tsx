@@ -70,9 +70,9 @@ interface SessionListProps {
    * render in reverse, the filter bar sticks to the bottom, and the list
    * stays pinned to its bottom edge. Sort order and indices are unchanged. */
   anchor?: SidebarAnchor
-  /** Rendered between the scroll area and the hint bar (the desktop Header
-   * under the bottom anchor). */
-  footer?: ReactNode
+  /** Global controls at the right end of the filter bar (desktop only;
+   * the mobile drawer has its own header). */
+  filterBarControls?: ReactNode
 }
 
 /** Status pill classes for the time/activity badge */
@@ -110,7 +110,7 @@ export default function SessionList({
   onNewSession,
   scrollSelectionActive = true,
   anchor = 'top',
-  footer,
+  filterBarControls,
 }: SessionListProps) {
   const isBottom = anchor === 'bottom'
   useTimestampRefresh()
@@ -539,27 +539,31 @@ export default function SessionList({
 
   const filterBar = (
     <div
-      className={`sticky z-10 flex h-10 items-center justify-start gap-2 bg-elevated px-3 ${
+      className={`sticky z-10 flex h-10 items-center gap-2 bg-elevated px-3 ${
         // shrink-0: under bottom the bar is a flex item of the scroll column
         isBottom ? 'bottom-0 shrink-0 border-t border-border' : 'top-0 border-b border-border'
       }`}
     >
-      {showHostInfo && (
-        <HostFilterDropdown
-          hosts={uniqueHosts}
-          selectedHosts={hostFilters}
-          onSelect={setHostFilters}
-          statuses={hostStatuses}
+      {/* min-w-0: dropdown labels truncate so the controls never wrap or clip */}
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        {showHostInfo && (
+          <HostFilterDropdown
+            hosts={uniqueHosts}
+            selectedHosts={hostFilters}
+            onSelect={setHostFilters}
+            statuses={hostStatuses}
+            placement={isBottom ? 'up' : 'down'}
+          />
+        )}
+        <ProjectFilterDropdown
+          projects={uniqueProjects}
+          selectedProjects={projectFilters}
+          onSelect={setProjectFilters}
+          hasHiddenPermissions={hiddenPermissionCount > 0}
           placement={isBottom ? 'up' : 'down'}
         />
-      )}
-      <ProjectFilterDropdown
-        projects={uniqueProjects}
-        selectedProjects={projectFilters}
-        onSelect={setProjectFilters}
-        hasHiddenPermissions={hiddenPermissionCount > 0}
-        placement={isBottom ? 'up' : 'down'}
-      />
+      </div>
+      {filterBarControls}
     </div>
   )
 
@@ -747,8 +751,6 @@ export default function SessionList({
           {historySection}
         </div>
       )}
-
-      {footer}
 
       {/* Keyboard shortcuts hint — shares the status rail's 40px bottom bar */}
       <div className="hidden h-10 shrink-0 items-center border-t border-border px-4 md:flex">
