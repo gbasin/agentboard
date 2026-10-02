@@ -13,7 +13,7 @@ import {
   SIDEBAR_MAX_WIDTH,
   SIDEBAR_MIN_WIDTH,
 } from './stores/settingsStore'
-import { useThemeStore } from './stores/themeStore'
+import { initSystemThemeListener, useResolvedTheme } from './stores/themeStore'
 import { useWebSocket } from './hooks/useWebSocket'
 import { invalidateSnapshotCache } from './hooks/useTerminal'
 import { useVisualViewport } from './hooks/useVisualViewport'
@@ -93,7 +93,7 @@ export default function App() {
   const remoteAllowControl = useSessionStore((state) => state.remoteAllowControl)
   const hostLabel = useSessionStore((state) => state.hostLabel)
 
-  const theme = useThemeStore((state) => state.theme)
+  const theme = useResolvedTheme()
   const settingsHydrated = useSettingsHasHydrated()
   const defaultProjectDir = useSettingsStore(
     (state) => state.defaultProjectDir
@@ -926,7 +926,8 @@ export default function App() {
     sendMessage({ type: 'session-move-to-history', sessionId })
   }, [sendMessage])
 
-  // Apply theme to document
+  // Apply the resolved theme to the document; 'system' follows the OS live
+  useEffect(() => initSystemThemeListener(), [])
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
   }, [theme])

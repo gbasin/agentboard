@@ -14,7 +14,7 @@ import { useOnClickOutside } from '../hooks/useOnClickOutside'
 import { useEscapeToClose } from '../hooks/useEscapeToClose'
 import { useScrollToSelection } from '../hooks/useScrollToSelection'
 import { useEdgeSwipeToOpenDrawer } from '../hooks/useEdgeSwipeToOpenDrawer'
-import { useThemeStore, terminalThemes } from '../stores/themeStore'
+import { useResolvedTheme, terminalThemes } from '../stores/themeStore'
 import { useSettingsStore, getFontFamily } from '../stores/settingsStore'
 import { isIOSDevice, getEffectiveModifier, getModifierDisplay } from '../utils/device'
 import { keepA11yRowsStable } from '../utils/a11yRowStability'
@@ -120,7 +120,7 @@ export default function Terminal({
   error = null,
 }: TerminalProps) {
   void _onClose // Keep for interface compatibility
-  const theme = useThemeStore((state) => state.theme)
+  const theme = useResolvedTheme()
   const terminalTheme = terminalThemes[theme]
   const useWebGL = useSettingsStore((state) => state.useWebGL)
   const fontSize = useSettingsStore((state) => state.fontSize)
