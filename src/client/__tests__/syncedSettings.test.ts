@@ -197,6 +197,52 @@ describe('push on local change', () => {
     globalAny.fetch = fetchMock as unknown as typeof fetch
   })
 
+  test('a failed PUT forgets the optimistic mark so a later change back still pushes', async () => {
+    applySyncedSettings({ sidebarAnchor: 'top' })
+    globalAny.fetch = ((_input: unknown, init?: { body?: string }) => {
+      fetchCalls.push({ body: JSON.parse(init?.body ?? '{}') })
+      return Promise.resolve(new Response('{}', { status: 500 }))
+    }) as unknown as typeof fetch
+    // The rejected push also logs to the server; count only settings PUTs.
+    const pushes = () => fetchCalls.filter((c) => c.body.settings)
+    useSettingsStore.getState().setSidebarAnchor('bottom')
+    await sleep(300)
+    expect(pushes().length).toBe(1)
+    // Local keeps the user's choice; the server still holds 'top'.
+    expect(useSettingsStore.getState().sidebarAnchor).toBe('bottom')
+    // Flip away and back to 'bottom' quickly: this must push again.
+    useSettingsStore.getState().setSidebarAnchor('top')
+    useSettingsStore.getState().setSidebarAnchor('bottom')
+    await sleep(300)
+    expect(pushes().length).toBe(2)
+    expect(pushes()[1].body.settings.sidebarAnchor).toBe('bottom')
+    globalAny.fetch = fetchMock as unknown as typeof fetch
+  })
+
+  test('a concurrent remote write held back during the PUT is adopted when it settles', async () => {
+    let resolvePut!: () => void
+    globalAny.fetch = ((_input: unknown, init?: { body?: string }) => {
+      fetchCalls.push({ body: JSON.parse(init?.body ?? '{}') })
+      return new Promise<Response>((resolve) => {
+        resolvePut = () => resolve(new Response('{"settings":{}}', { status: 200 }))
+      })
+    }) as unknown as typeof fetch
+    useSettingsStore.getState().setSessionSortMode('manual')
+    await sleep(300)
+    // Another browser wrote 'status' after our PUT was accepted; its
+    // broadcast arrives before our HTTP response does.
+    applySyncedSettings({ sessionSortMode: 'status' })
+    expect(useSettingsStore.getState().sessionSortMode).toBe('manual')
+    resolvePut()
+    await sleep(0)
+    expect(useSettingsStore.getState().sessionSortMode).toBe('status')
+    await sleep(300)
+    // Adopting the server's value is not a local change: nothing pushes
+    // sessionSortMode again (veteran seeding of other keys may run).
+    expect(fetchCalls.slice(1).some((c) => 'sessionSortMode' in (c.body.settings ?? {}))).toBe(false)
+    globalAny.fetch = fetchMock as unknown as typeof fetch
+  })
+
   test('a later change inside the window replaces the pending value', async () => {
     useSettingsStore.getState().setSessionSortMode('manual')
     useSettingsStore.getState().setSessionSortMode('status')

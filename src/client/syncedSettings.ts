@@ -62,17 +62,42 @@ function flushPush(): void {
   pushTimer = null
   if (pendingPush.size === 0) return
   const delta: Record<string, unknown> = {}
-  const keys = Array.from(pendingPush.keys())
+  const sent = new Map<SyncedSettingsKey, string>()
+  const previous = new Map<SyncedSettingsKey, string | undefined>()
   for (const [key, json] of pendingPush) {
     delta[key] = JSON.parse(json)
+    sent.set(key, json)
+    previous.set(key, serverValues.get(key))
     // Optimistically mark as pushed so the broadcast echo is ignored.
     serverValues.set(key, json)
     inFlight.add(key)
   }
   pendingPush.clear()
-  const settle = () => {
-    for (const key of keys) inFlight.delete(key)
+
+  // The server never took these values: forget the optimistic mark so the
+  // next local change (even back to this value) pushes again.
+  const rollback = () => {
+    for (const [key, json] of sent) {
+      if (serverValues.get(key) !== json) continue
+      const before = previous.get(key)
+      if (before === undefined) serverValues.delete(key)
+      else serverValues.set(key, before)
+    }
   }
+  // Broadcasts for these keys were held back while the PUT was out; if the
+  // server moved on meanwhile (another browser wrote), adopt its value. A
+  // failed push keeps the local choice instead.
+  const settle = (ok: boolean) => {
+    for (const key of sent.keys()) {
+      inFlight.delete(key)
+      if (!ok || pendingPush.has(key)) continue
+      const server = serverValues.get(key)
+      if (server !== undefined && server !== JSON.stringify(getLocalValue(key))) {
+        writeLocal(key, JSON.parse(server))
+      }
+    }
+  }
+  let ok = false
   try {
     fetch('/api/settings/synced', {
       method: 'PUT',
@@ -80,22 +105,31 @@ function flushPush(): void {
       body: JSON.stringify({ settings: delta }),
     })
       .then((res) => {
+        ok = res.ok
         if (!res.ok) {
           clientLog('synced_settings_push_rejected', { status: res.status }, 'warn')
+          rollback()
         }
       })
       .catch((error) => {
         clientLog('synced_settings_push_failed', {
           message: error instanceof Error ? error.message : String(error),
         }, 'warn')
+        rollback()
       })
-      .finally(settle)
+      .finally(() => settle(ok))
   } catch (error) {
-    settle()
+    rollback()
+    settle(false)
     clientLog('synced_settings_push_failed', {
       message: error instanceof Error ? error.message : String(error),
     }, 'warn')
   }
+}
+
+function writeLocal(key: SyncedSettingsKey, value: unknown): void {
+  if (key === 'theme') useThemeStore.setState({ theme: value as 'dark' | 'light' })
+  else useSettingsStore.setState({ [key]: value })
 }
 
 /**
