@@ -1234,6 +1234,55 @@ describe('App', () => {
     })
   })
 
+
+  test('below the md breakpoint brackets keep sort order under the bottom anchor', () => {
+    // The mirrored sidebar is hidden there; the tab strip and drawer are not
+    // mirrored, so ] must step to the next session exactly as under Top.
+    const sessionB: Session = { ...baseSession, id: 'session-2', name: 'beta', createdAt: '2024-01-02T00:00:00.000Z' }
+    const sessionC: Session = { ...baseSession, id: 'session-3', name: 'gamma', createdAt: '2024-01-03T00:00:00.000Z' }
+    const queries: string[] = []
+    ;(globalAny.window as unknown as { matchMedia: (query: string) => unknown }).matchMedia = (query: string) => {
+      queries.push(query)
+      return { matches: true, addEventListener: () => {}, removeEventListener: () => {} }
+    }
+    const key = (k: string, code: string) => ({
+      key: k,
+      code,
+      ctrlKey: true,
+      shiftKey: true,
+      altKey: false,
+      metaKey: false,
+      defaultPrevented: false,
+      preventDefault: () => {},
+    }) as KeyboardEvent
+
+    const run = (anchor: 'top' | 'bottom') => {
+      useSettingsStore.setState({ sidebarAnchor: anchor })
+      useSessionStore.setState({
+        sessions: [baseSession, sessionB, sessionC],
+        selectedSessionId: baseSession.id,
+        hasLoaded: true,
+      })
+      let renderer!: TestRenderer.ReactTestRenderer
+      act(() => {
+        renderer = TestRenderer.create(<App />)
+      })
+      const selections: (string | null)[] = []
+      for (const [k, code] of [[']', 'BracketRight'], [']', 'BracketRight'], ['[', 'BracketLeft']]) {
+        act(() => {
+          getKeyHandler()(key(k, code))
+        })
+        selections.push(useSessionStore.getState().selectedSessionId)
+      }
+      act(() => renderer.unmount())
+      return selections
+    }
+
+    const top = run('top')
+    const bottom = run('bottom')
+    expect(bottom).toEqual(top)
+    expect(queries).toContain('(max-width: 767px)')
+  })
   test('digit shortcuts fall back to hibernating sessions when no live sessions are visible', () => {
     const hibernatingA: AgentSession = {
       ...baseAgentSession,
