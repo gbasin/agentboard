@@ -58,6 +58,13 @@ export type ClaimCurrentWindowPatch = Partial<
   >
 >
 
+// Runs on every refresh tick and log poll. `+session_id` keeps SQLite from
+// walking idx_session_id across the whole table (every history row) just to
+// skip a sort; the partial idx_current_window_unique index finds the few
+// windowed rows and the sort is free. Same rows, same order.
+export const ACTIVE_SESSIONS_SQL =
+  'SELECT * FROM agent_sessions WHERE current_window IS NOT NULL ORDER BY +session_id'
+
 export interface SessionDatabase {
   db: SQLiteDatabase
   insertSession: (session: NewAgentSessionRecord) => AgentSessionRecord
@@ -233,9 +240,7 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
   const selectByWindow = db.prepare(
     'SELECT * FROM agent_sessions WHERE current_window = $currentWindow'
   )
-  const selectActive = db.prepare(
-    'SELECT * FROM agent_sessions WHERE current_window IS NOT NULL ORDER BY session_id'
-  )
+  const selectActive = db.prepare(ACTIVE_SESSIONS_SQL)
   const selectHibernating = db.prepare(
     'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_hibernating = 1 ORDER BY last_activity_at DESC, session_id'
   )

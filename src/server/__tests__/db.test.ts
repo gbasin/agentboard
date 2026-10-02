@@ -1,6 +1,6 @@
 import { describe, expect, test, afterEach } from 'bun:test'
 import { Database as SQLiteDatabase } from 'bun:sqlite'
-import { initDatabase } from '../db'
+import { ACTIVE_SESSIONS_SQL, initDatabase } from '../db'
 import { logger } from '../logger'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -53,6 +53,26 @@ describe('db', () => {
 
   afterEach(() => {
     db.db.exec('DELETE FROM agent_sessions')
+  })
+
+  test('active-session lookup uses the windowed-row index, not a full scan', () => {
+    const plan = (
+      db.db.query(`EXPLAIN QUERY PLAN ${ACTIVE_SESSIONS_SQL}`).all() as { detail: string }[]
+    ).map((row) => row.detail)
+    expect(plan.some((detail) => detail.includes('idx_current_window_unique'))).toBe(true)
+    expect(plan.some((detail) => detail.startsWith('SCAN'))).toBe(false)
+  })
+
+  test('active sessions come back ordered by session id', () => {
+    for (const id of ['c', 'a', 'b']) {
+      db.insertSession(
+        makeSession({ sessionId: id, logFilePath: `/tmp/${id}.jsonl`, currentWindow: `agentboard:${id}` })
+      )
+    }
+    db.insertSession(
+      makeSession({ sessionId: 'aa', logFilePath: '/tmp/aa.jsonl', currentWindow: null })
+    )
+    expect(db.getActiveSessions().map((s) => s.sessionId)).toEqual(['a', 'b', 'c'])
   })
 
   test('insert/get/update/orphan session records', () => {
