@@ -2341,6 +2341,7 @@ async function cleanupAllTerminals() {
   }
   await Promise.allSettled(disposePromises)
   throwawayShellReaper.dispose()
+  dormantPrScanner.stop()
   logPoller.stop()
   remotePoller?.stop()
   db.close()

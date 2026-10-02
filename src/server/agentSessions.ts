@@ -7,19 +7,35 @@ import { getSubagentLogPaths } from './subagentLogs'
 
 // PRs found by the last full scan per session, keyed with the log size the
 // scan saw. Lets dormant lists be built without touching any log file.
-const MAX_SCANNED_ENTRIES = 5000
+const DEFAULT_MAX_SCANNED_ENTRIES = 5000
+let maxScannedEntries = DEFAULT_MAX_SCANNED_ENTRIES
 const scannedPrs = new Map<
   string,
   { size: number | null; prs: SessionPullRequest[] }
 >()
 
-function rememberScan(record: AgentSessionRecord, prs: SessionPullRequest[]) {
+/** Test hook: shrink the remembered-scan cap. Omit to restore the default. */
+export function setScannedPrCacheLimitForTests(limit?: number) {
+  maxScannedEntries = limit ?? DEFAULT_MAX_SCANNED_ENTRIES
+}
+
+function samePullRequests(a: SessionPullRequest[], b: SessionPullRequest[]) {
+  return a.length === b.length && a.every((pr, i) => pr.url === b[i].url)
+}
+
+/** Stores the scan; returns true when the PR list differs from the last one. */
+function rememberScan(
+  record: AgentSessionRecord,
+  prs: SessionPullRequest[]
+): boolean {
+  const previous = scannedPrs.get(record.sessionId)?.prs ?? []
   scannedPrs.delete(record.sessionId)
-  if (scannedPrs.size >= MAX_SCANNED_ENTRIES) {
+  if (scannedPrs.size >= maxScannedEntries) {
     const oldest = scannedPrs.keys().next().value
     if (oldest !== undefined) scannedPrs.delete(oldest)
   }
   scannedPrs.set(record.sessionId, { size: record.lastKnownLogSize ?? null, prs })
+  return !samePullRequests(previous, prs)
 }
 
 /** True when `getMergedPullRequests` has not yet covered this log size. */
@@ -41,6 +57,14 @@ export function getMergedPullRequests(
   const prs = scanMergedPullRequests(record)
   rememberScan(record, prs)
   return prs
+}
+
+/**
+ * Scans the session's logs and remembers the result. Returns true when the
+ * PR list changed from the last remembered scan (including becoming empty).
+ */
+export function rescanPullRequests(record: AgentSessionRecord): boolean {
+  return rememberScan(record, scanMergedPullRequests(record))
 }
 
 function scanMergedPullRequests(

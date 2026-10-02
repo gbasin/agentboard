@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { toAgentSession } from '../agentSessions'
+import { setScannedPrCacheLimitForTests, toAgentSession } from '../agentSessions'
 import { createDormantPrScanner } from '../dormantPrScan'
 import type { AgentSessionRecord } from '../db'
 import { clearPrScanCache } from '../prExtractor'
@@ -16,12 +16,11 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  setScannedPrCacheLimitForTests()
   await fs.rm(tempRoot, { recursive: true, force: true })
 })
 
-async function makeRecord(withPr: boolean): Promise<AgentSessionRecord> {
-  const n = ++counter
-  const logFilePath = path.join(tempRoot, `log-${n}.jsonl`)
+function prLines(n: number): string {
   const lines = [
     JSON.stringify({
       type: 'assistant',
@@ -42,7 +41,13 @@ async function makeRecord(withPr: boolean): Promise<AgentSessionRecord> {
       },
     }),
   ]
-  await fs.writeFile(logFilePath, withPr ? `${lines.join('\n')}\n` : '{}\n')
+  return `${lines.join('\n')}\n`
+}
+
+async function makeRecord(withPr: boolean): Promise<AgentSessionRecord> {
+  const n = ++counter
+  const logFilePath = path.join(tempRoot, `log-${n}.jsonl`)
+  await fs.writeFile(logFilePath, withPr ? prLines(n) : '{}\n')
   const size = (await fs.stat(logFilePath)).size
   return {
     id: n,
@@ -64,6 +69,20 @@ async function makeRecord(withPr: boolean): Promise<AgentSessionRecord> {
     launchCommand: null,
   }
 }
+
+/** Rewrites or appends to the record's log and returns it with the new size. */
+async function changeLog(
+  record: AgentSessionRecord,
+  content: string,
+  mode: 'append' | 'replace'
+): Promise<AgentSessionRecord> {
+  if (mode === 'append') await fs.appendFile(record.logFilePath, content)
+  else await fs.writeFile(record.logFilePath, content)
+  return { ...record, lastKnownLogSize: (await fs.stat(record.logFilePath)).size }
+}
+
+const cachedPrCount = (record: AgentSessionRecord) =>
+  toAgentSession(record, { cachedPrsOnly: true }).prs?.length
 
 describe('dormant PR scan', () => {
   test('cachedPrsOnly does not read the log; eager mode does', async () => {
@@ -100,19 +119,88 @@ describe('dormant PR scan', () => {
     scanner.stop()
   })
 
-  test('rescans when the known log size changes', async () => {
-    const record = await makeRecord(false)
+  test('rescans when the same log grows and notifies only on a PR change', async () => {
+    let record = await makeRecord(false)
     let notified = 0
-    const scanner = createDormantPrScanner(() => notified++, { gapMs: 1 })
+    const scanner = createDormantPrScanner(() => notified++, { gapMs: 1, notifyMs: 0 })
     scanner.queue([record])
     await Bun.sleep(30)
     expect(notified).toBe(0)
-    const grown = await makeRecord(true)
-    const next = { ...grown, sessionId: record.sessionId }
-    scanner.queue([next])
+
+    // Growth without a PR: rescanned, same (empty) list, no notify.
+    record = await changeLog(record, '{"type":"user"}\n', 'append')
+    scanner.queue([record])
+    await Bun.sleep(30)
+    expect(notified).toBe(0)
+
+    // Growth that adds a PR to the same file: notify once.
+    record = await changeLog(record, prLines(record.id), 'append')
+    scanner.queue([record])
     await Bun.sleep(30)
     expect(notified).toBe(1)
-    expect(toAgentSession(next, { cachedPrsOnly: true }).prs).toHaveLength(1)
+    expect(cachedPrCount(record)).toBe(1)
+
+    // More growth, same PR list: no redundant notify.
+    record = await changeLog(record, '{"type":"user"}\n', 'append')
+    scanner.queue([record])
+    await Bun.sleep(30)
+    expect(notified).toBe(1)
+    scanner.stop()
+  })
+
+  test('notifies when a rewritten log no longer holds the PR', async () => {
+    let record = await makeRecord(true)
+    let notified = 0
+    const scanner = createDormantPrScanner(() => notified++, { gapMs: 1, notifyMs: 0 })
+    scanner.queue([record])
+    await Bun.sleep(30)
+    expect(notified).toBe(1)
+    expect(cachedPrCount(record)).toBe(1)
+
+    record = await changeLog(record, '{"type":"user","note":"rewritten"}\n', 'replace')
+    scanner.queue([record])
+    await Bun.sleep(30)
+    expect(notified).toBe(2)
+    expect(cachedPrCount(record)).toBe(0)
+    scanner.stop()
+  })
+
+  test('does not loop when the dormant set exceeds the PR cache cap', async () => {
+    setScannedPrCacheLimitForTests(2)
+    const records = [
+      await makeRecord(true),
+      await makeRecord(true),
+      await makeRecord(true),
+      await makeRecord(true),
+    ]
+    let notified = 0
+    const scanner = createDormantPrScanner(
+      () => {
+        notified++
+        scanner.queue(records)
+      },
+      { budgetMs: 0, gapMs: 1, notifyMs: 60_000 }
+    )
+    scanner.queue(records)
+    await Bun.sleep(150)
+    expect(notified).toBe(1)
+    scanner.stop()
+  })
+
+  test('a throwing callback does not stall the remaining slices', async () => {
+    const records = [await makeRecord(true), await makeRecord(true)]
+    let calls = 0
+    const scanner = createDormantPrScanner(
+      () => {
+        calls++
+        if (calls === 1) throw new Error('boom')
+      },
+      { budgetMs: 0, gapMs: 1, notifyMs: 0 }
+    )
+    scanner.queue(records)
+    await Bun.sleep(60)
+    expect(calls).toBe(2)
+    expect(records.map(cachedPrCount)).toEqual([1, 1])
     scanner.stop()
   })
 })

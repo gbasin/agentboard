@@ -1,5 +1,6 @@
 import type { AgentSessionRecord } from './db'
-import { getMergedPullRequests, needsPullRequestScan } from './agentSessions'
+import { needsPullRequestScan, rescanPullRequests } from './agentSessions'
+import { logger } from './logger'
 
 const SLICE_BUDGET_MS = 25
 const SLICE_GAP_MS = 10
@@ -13,8 +14,9 @@ export interface DormantPrScanner {
 
 /**
  * Scans dormant (hibernating/history) session logs for PRs in short slices so
- * startup never reads every log synchronously. `onChanged` fires when new PRs
- * were found, at most about once per second plus once when the queue drains.
+ * startup never reads every log synchronously. `onChanged` fires when a scan
+ * changed a session's PR list, at most about once per `notifyMs` plus once
+ * when the queue drains.
  */
 export function createDormantPrScanner(
   onChanged: () => void,
@@ -27,11 +29,31 @@ export function createDormantPrScanner(
   let timer: ReturnType<typeof setTimeout> | null = null
   let changed = false
   let lastNotify = 0
+  // Log size this scanner last scanned per queued session. The shared PR
+  // cache is capped and can evict entries; without this, an evicted session
+  // would be rescanned (and reported as changed) on every re-queue.
+  let scannedSizes = new Map<string, number | null>()
+
+  const needsScan = (record: AgentSessionRecord) =>
+    needsPullRequestScan(record) &&
+    scannedSizes.get(record.sessionId) !== (record.lastKnownLogSize ?? null)
+
+  const schedule = () => {
+    if (pending.length > 0 && timer === null) {
+      timer = setTimeout(tick, gapMs)
+    }
+  }
 
   const notify = () => {
     changed = false
     lastNotify = performance.now()
-    onChanged()
+    try {
+      onChanged()
+    } catch (error) {
+      logger.warn('dormant_pr_scan_notify_error', {
+        message: error instanceof Error ? error.message : String(error),
+      })
+    }
   }
 
   const tick = () => {
@@ -44,34 +66,44 @@ export function createDormantPrScanner(
       (index === 0 || performance.now() - start < budgetMs)
     ) {
       const record = pending[index++]
-      if (!needsPullRequestScan(record)) continue
+      if (!needsScan(record)) continue
+      scannedSizes.set(record.sessionId, record.lastKnownLogSize ?? null)
       try {
-        if (getMergedPullRequests(record).length > 0) changed = true
+        if (rescanPullRequests(record)) changed = true
       } catch {
         // A bad log must not stop the rest of the queue.
       }
     }
     pending = pending.slice(index)
-    const drained = pending.length === 0
-    if (changed && (drained || performance.now() - lastNotify >= notifyMs)) {
+    // Schedule before notifying so a throwing or re-queueing callback cannot
+    // stall the remaining work.
+    schedule()
+    if (
+      changed &&
+      (pending.length === 0 || performance.now() - lastNotify >= notifyMs)
+    ) {
       notify()
-    }
-    if (!drained && timer === null) {
-      timer = setTimeout(tick, gapMs)
     }
   }
 
   return {
     queue(records) {
-      pending = records.filter(needsPullRequestScan)
-      if (pending.length > 0 && timer === null) {
-        timer = setTimeout(tick, gapMs)
-      }
+      const idle = pending.length === 0 && timer === null
+      const queuedIds = new Set(records.map((record) => record.sessionId))
+      scannedSizes = new Map(
+        [...scannedSizes].filter(([sessionId]) => queuedIds.has(sessionId))
+      )
+      pending = records.filter(needsScan)
+      // The throttle window starts with each scan run, not at process start.
+      if (idle) lastNotify = performance.now()
+      schedule()
     },
     stop() {
       if (timer) clearTimeout(timer)
       timer = null
       pending = []
+      changed = false
+      scannedSizes.clear()
     },
   }
 }
