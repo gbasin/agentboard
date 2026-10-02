@@ -2016,6 +2016,47 @@ describe('SessionManager', () => {
     expect(setOptionCount).toBe(1)
   })
 
+  test('ensureSession rejoin kills the shell tmux discards for the grouped session', () => {
+    const sessionName = 'agentboard-rejoin-reap'
+    const wsSession = `${sessionName}-ws-existing`
+    const runner = createTmuxRunner(
+      [
+        {
+          name: wsSession,
+          group: sessionName,
+          windows: [
+            { id: '1', index: 1, name: 'alpha', path: '/tmp/alpha', activity: 0, command: 'claude' },
+          ],
+        },
+      ],
+      1
+    )
+    const runTmux = (args: string[]) => {
+      if (args[0] === 'list-panes' && args.includes('#{pane_pid}')) return '700\n'
+      const out = runner.runTmux(args)
+      return args[0] === 'new-session' ? '600\n' : out
+    }
+    const snapshots = [
+      [{ pid: 700, ppid: 600, tty: 'ttys001', comm: 'claude' }],
+      [
+        { pid: 700, ppid: 600, tty: 'ttys001', comm: 'claude' },
+        { pid: 701, ppid: 600, tty: 'ttys002', comm: '-zsh' },
+      ],
+    ]
+    const killed: number[] = []
+    const manager = new SessionManager(sessionName, {
+      runTmux,
+      capturePaneContent: () => makePaneCapture(''),
+      now: () => 1700000000000,
+      listProcesses: () => snapshots.shift() ?? null,
+      killProcess: (pid) => killed.push(pid),
+    })
+
+    manager.ensureSession()
+
+    expect(killed).toEqual([701])
+  })
+
   test('ensureSession rejoins an existing tmux session group', () => {
     const sessionName = 'agentboard-rejoin-group'
     const wsSession = `${sessionName}-ws-existing`
@@ -2050,10 +2091,13 @@ describe('SessionManager', () => {
     expect(runner.calls).toContainEqual([
       'new-session',
       '-d',
-      '-s',
-      sessionName,
+      '-P',
+      '-F',
+      '#{pid}',
       '-t',
       `=${wsSession}`,
+      '-s',
+      sessionName,
     ])
     expect(
       runner.calls.some(
