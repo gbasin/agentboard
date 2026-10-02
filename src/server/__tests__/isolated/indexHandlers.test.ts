@@ -157,6 +157,7 @@ let sessionManagerState: {
   setMouseMode: (enabled: boolean) => void
   setTerminalColors: (enabled: boolean) => void
   ensureSession: () => { canPruneWsSessions: boolean }
+  ensureSessionAsync: () => Promise<{ canPruneWsSessions: boolean }>
   scrubLeakedGlobalEnvironment: () => string[]
 }
 
@@ -196,6 +197,10 @@ class SessionManagerMock {
 
   ensureSession() {
     return sessionManagerState.ensureSession()
+  }
+
+  ensureSessionAsync() {
+    return sessionManagerState.ensureSessionAsync()
   }
 
   scrubLeakedGlobalEnvironment() {
@@ -679,6 +684,8 @@ beforeEach(() => {
     setMouseMode: () => {},
     setTerminalColors: () => {},
     ensureSession: () => ({ canPruneWsSessions: true }),
+    // Delegates so tests that override ensureSession keep covering refresh.
+    ensureSessionAsync: async () => sessionManagerState.ensureSession(),
     scrubLeakedGlobalEnvironment: () => [],
   }
 
@@ -1274,6 +1281,8 @@ describe('server message handlers', () => {
       ws as never,
       JSON.stringify({ type: 'session-refresh' })
     )
+    // The base-session probe is async, so the worker request starts a tick later.
+    await waitFor(() => refreshWorkerResolve !== null)
     const staleResolve = refreshWorkerResolve
     expect(staleResolve).not.toBeNull()
 
@@ -1346,13 +1355,19 @@ describe('server message handlers', () => {
 
   test('session refresh ensures base session before worker snapshot', async () => {
     let ensureCalls = 0
+    let syncEnsureCalls = 0
     sessionManagerState.ensureSession = () => {
+      syncEnsureCalls += 1
+      return { canPruneWsSessions: true }
+    }
+    sessionManagerState.ensureSessionAsync = async () => {
       ensureCalls += 1
       return { canPruneWsSessions: true }
     }
 
     const { serveOptions } = await loadIndex()
     const startupEnsureCalls = ensureCalls
+    const startupSyncEnsureCalls = syncEnsureCalls
     refreshWorkerExpectedWindowCounts = []
     const { ws } = createWs()
     const websocket = serveOptions.websocket
@@ -1360,9 +1375,11 @@ describe('server message handlers', () => {
 
     refreshWorkerSessions = [baseSession]
     websocket.message?.(ws as never, JSON.stringify({ type: 'session-refresh' }))
-    await waitFor(() => ensureCalls !== startupEnsureCalls)
+    await waitFor(() => refreshWorkerExpectedWindowCounts.length > 0)
 
     expect(ensureCalls).toBeGreaterThan(startupEnsureCalls)
+    // The periodic refresh must not fall back to the blocking probe.
+    expect(syncEnsureCalls).toBe(startupSyncEnsureCalls)
     expect(refreshWorkerExpectedWindowCounts).toHaveLength(1)
   })
 

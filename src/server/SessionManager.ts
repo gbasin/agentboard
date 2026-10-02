@@ -11,6 +11,7 @@ import { TmuxTimeoutError } from './tmuxTimeout'
 import { timedSpawnSync } from './syncSpawnTiming'
 import { isLeakedLaunchEnvVar, sanitizedTmuxEnv } from './tmuxEnv'
 import { createGroupedSession } from './tmuxGroupedSession'
+import { runTmuxAsync, type TmuxRunnerAsync } from './tmuxAsync'
 import {
   BOOTSTRAP_WINDOW_COMMAND,
   BOOTSTRAP_WINDOW_NAME,
@@ -115,6 +116,7 @@ const TMUX_MUTATION_COMMANDS = new Set([
 export class SessionManager {
   private sessionName: string
   private runTmux: TmuxRunner
+  private runTmuxAsync: TmuxRunnerAsync
   private capturePaneContent: CapturePane
   private now: NowFn
   private displayNameExists: (name: string, excludeSessionId?: string) => boolean
@@ -133,6 +135,7 @@ export class SessionManager {
     sessionName = config.tmuxSession,
     {
       runTmux: runTmuxOverride,
+      runTmuxAsync: runTmuxAsyncOverride,
       capturePaneContent: captureOverride,
       now,
       displayNameExists,
@@ -143,6 +146,8 @@ export class SessionManager {
       onGroupedSessionCreated,
     }: {
       runTmux?: TmuxRunner
+      /** Defaults to the sync runner override when only that is given. */
+      runTmuxAsync?: TmuxRunnerAsync
       capturePaneContent?: CapturePane
       now?: NowFn
       displayNameExists?: (name: string, excludeSessionId?: string) => boolean
@@ -156,6 +161,9 @@ export class SessionManager {
   ) {
     this.sessionName = sessionName
     this.runTmux = runTmuxOverride ?? runTmux
+    this.runTmuxAsync =
+      runTmuxAsyncOverride ??
+      (runTmuxOverride ? async (args) => runTmuxOverride(args) : runTmuxAsync)
     this.capturePaneContent = captureOverride ?? capturePaneWithDimensions
     this.now = now ?? Date.now
     this.displayNameExists = displayNameExists ?? (() => false)
@@ -246,6 +254,29 @@ export class SessionManager {
     return { canPruneWsSessions }
   }
 
+  // Periodic-refresh variant of ensureSession. The steady state (base session
+  // present, identity unchanged) is one display-message probe every refresh
+  // tick; running it with Bun.spawn keeps a slow tmux server from blocking
+  // the event loop. Any probe failure other than a timeout (absent session,
+  // dead socket, unexpected output) hands over to the sync ensureSession,
+  // which re-probes and owns recovery and creation exactly as before.
+  async ensureSessionAsync(): Promise<EnsureSessionResult> {
+    let identity: BaseSessionIdentity
+    try {
+      identity = parseBaseSessionProbe(
+        await this.runTmuxAsync(withTmuxUtf8Flag(baseSessionProbeArgs(this.sessionName))),
+        this.sessionName
+      )
+    } catch (error) {
+      if (error instanceof TmuxTimeoutError) {
+        throw error
+      }
+      return this.ensureSession()
+    }
+    this.configureSessionIfChanged(identity)
+    return { canPruneWsSessions: true }
+  }
+
   /** The tmux server pid from the last successful probe (no I/O). */
   getTmuxServerPid(): number | null {
     return this.configuredSession?.serverPid ?? null
@@ -262,22 +293,10 @@ export class SessionManager {
   // nothing even when the session exists. A missing server still fails with
   // the usual connection error.
   private probeBaseSession(): BaseSessionIdentity {
-    const output = this.runParsedTmux([
-      'display-message',
-      '-p',
-      '-t',
-      `=${this.sessionName}:`,
-      BASE_SESSION_PROBE_FORMAT,
-    ])
-    const fields = splitTmuxFields(splitTmuxLines(output)[0] ?? '', 4)
-    if (!fields || fields[0] !== this.sessionName || !fields[2]) {
-      throw new Error(`can't find session: ${this.sessionName}`)
-    }
-    const serverPid = Number.parseInt(fields[1] ?? '', 10)
-    if (!Number.isSafeInteger(serverPid) || serverPid <= 1) {
-      throw new Error(`tmux returned an invalid server pid: ${fields[1]}`)
-    }
-    return { serverPid, sessionId: fields[2], sessionCreated: fields[3] ?? '' }
+    return parseBaseSessionProbe(
+      this.runParsedTmux(baseSessionProbeArgs(this.sessionName)),
+      this.sessionName
+    )
   }
 
   // Steady-state path (session already exists): only reconfigure when the
@@ -1034,6 +1053,22 @@ function parseWindow(line: string): WindowInfo | null {
     creation: Number.isNaN(creation) ? 0 : creation,
     command: normalizePaneStartCommand(command || ''),
   }
+}
+
+function baseSessionProbeArgs(sessionName: string): string[] {
+  return ['display-message', '-p', '-t', `=${sessionName}:`, BASE_SESSION_PROBE_FORMAT]
+}
+
+function parseBaseSessionProbe(output: string, sessionName: string): BaseSessionIdentity {
+  const fields = splitTmuxFields(splitTmuxLines(output)[0] ?? '', 4)
+  if (!fields || fields[0] !== sessionName || !fields[2]) {
+    throw new Error(`can't find session: ${sessionName}`)
+  }
+  const serverPid = Number.parseInt(fields[1] ?? '', 10)
+  if (!Number.isSafeInteger(serverPid) || serverPid <= 1) {
+    throw new Error(`tmux returned an invalid server pid: ${fields[1]}`)
+  }
+  return { serverPid, sessionId: fields[2], sessionCreated: fields[3] ?? '' }
 }
 
 function runTmux(args: string[]): string {
