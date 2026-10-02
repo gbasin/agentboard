@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.23.0](https://github.com/gbasin/agentboard/compare/v0.22.1...v0.23.0) (2026-10-02)
+
+
+### Features
+
+* filter icon button and one icon and button scale across the client ([#333](https://github.com/gbasin/agentboard/issues/333)) ([afc85f7](https://github.com/gbasin/agentboard/commit/afc85f7aa8e3496304ad3ea61f927bd12a6e506f))
+* fold sidebar header controls into the filter bar ([#331](https://github.com/gbasin/agentboard/issues/331)) ([f321a6d](https://github.com/gbasin/agentboard/commit/f321a6d67a1c1775005957c29eb34ba5356de80a))
+* opt-in bottom-anchored desktop sidebar ([#330](https://github.com/gbasin/agentboard/issues/330)) ([f21aff8](https://github.com/gbasin/agentboard/commit/f21aff8454c5945649500900c158defd112a569b))
+
+
+### Bug Fixes
+
+* keep keys aimed at nested controls from activating session rows ([#332](https://github.com/gbasin/agentboard/issues/332)) ([a8849b5](https://github.com/gbasin/agentboard/commit/a8849b51c1d981284241f949f9d20000aa7169ec))
+* kill the login shell tmux discards for each grouped session ([#335](https://github.com/gbasin/agentboard/issues/335)) ([8f84c99](https://github.com/gbasin/agentboard/commit/8f84c99c93e7e48065e8157ca2c026edeb864b8a))
+* plain filter checklist with Clear and search, no hint text ([#336](https://github.com/gbasin/agentboard/issues/336)) ([d16c423](https://github.com/gbasin/agentboard/commit/d16c42373f381fcff4c46e573c0a4a53dd0d5cf0))
+
 ## [0.22.1](https://github.com/gbasin/agentboard/compare/v0.22.0...v0.22.1) (2026-10-01)
 
 
