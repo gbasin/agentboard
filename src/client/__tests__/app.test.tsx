@@ -1158,7 +1158,7 @@ describe('App', () => {
     expect(prevented).toBe(1)
   })
 
-  test('bottom sidebar anchor keeps shortcut targets and moves the header under the list', () => {
+  test('bottom sidebar anchor keeps digit targets, flips bracket direction, and moves the header under the list', () => {
     const sessionB: Session = { ...baseSession, id: 'session-2', name: 'beta', createdAt: '2024-01-02T00:00:00.000Z' }
     const sessionC: Session = { ...baseSession, id: 'session-3', name: 'gamma', createdAt: '2024-01-03T00:00:00.000Z' }
     const key = (k: string, code: string) => ({
@@ -1207,8 +1207,10 @@ describe('App', () => {
 
     const top = run('top')
     const bottom = run('bottom')
+    // Digits address the same sessions in both anchors; [ ] follow screen
+    // direction, so under bottom ] walks toward index 0 (down) and [ up.
     expect(top.selections).toEqual(['session-3', 'session-1', 'session-2', 'session-3', 'session-2'])
-    expect(bottom.selections).toEqual(top.selections)
+    expect(bottom.selections).toEqual(['session-3', 'session-1', 'session-3', 'session-2', 'session-3'])
 
     expect(top.layout).toEqual({
       anchor: 'top',

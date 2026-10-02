@@ -788,12 +788,15 @@ export default function App() {
       const code = event.code
       const isShortcut = matchesModifier(event, effectiveModifier)
 
-      // Bracket navigation: [mod]+[ / ]
+      // Bracket navigation: [mod]+[ / ]. [ always moves selection up the
+      // screen and ] down: under the bottom-anchored sidebar index 0 sits at
+      // the bottom, so the index delta flips sign.
       // When only hibernating sessions are visible, fall back to navigating
       // within the hibernating bucket so the keyboard shortcut keeps working.
       if (isShortcut && (code === 'BracketLeft' || code === 'BracketRight')) {
         event.preventDefault()
-        const delta = code === 'BracketLeft' ? -1 : 1
+        const delta =
+          (code === 'BracketLeft' ? -1 : 1) * (sidebarAnchor === 'bottom' ? -1 : 1)
         const activeNav = filteredSortedSessions
         if (activeNav.length === 0) {
           const hibernatingNav = filteredHibernatingSessions
@@ -871,6 +874,7 @@ export default function App() {
     filteredSortedSessions,
     filteredHibernatingSessions,
     handleKillSession,
+    sidebarAnchor,
     shortcutModifier,
     settingsHydrated,
   ])
