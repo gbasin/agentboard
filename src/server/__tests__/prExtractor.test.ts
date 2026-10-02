@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { heapStats } from 'bun:jsc'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
@@ -688,5 +689,37 @@ describe('getSessionPullRequests', () => {
       createLine.slice(cut) + '\n' + claudeToolResult('https://github.com/a/b/pull/8') + '\n'
     )
     expect(getSessionPullRequests(logPath).map((p) => p.number)).toEqual([8])
+  })
+
+  test('cached results do not pin the log text they were found in', async () => {
+    // Each log is ~1 MB of filler around one PR URL. The cache keeps a URL
+    // and a repo name per log; a substring of the decoded chunk would keep
+    // the whole megabyte alive with it.
+    const logCount = 24
+    const filler = 'x'.repeat(1024 * 1024)
+    for (let i = 0; i < logCount; i++) {
+      await fs.writeFile(
+        path.join(tempRoot, `s${i}.jsonl`),
+        [
+          claudeBashToolUse('gh pr create'),
+          claudeToolResult(`${filler} https://github.com/a/b/pull/${i} done`),
+          // No trailing newline: the partial last line is carried too.
+          claudeToolResult('still streaming'),
+        ].join('\n')
+      )
+    }
+
+    Bun.gc(true)
+    const before = heapStats()
+    for (let i = 0; i < logCount; i++) {
+      const prs = getSessionPullRequests(path.join(tempRoot, `s${i}.jsonl`))
+      expect(prs.map((p) => p.number)).toEqual([i])
+    }
+    Bun.gc(true)
+    const after = heapStats()
+
+    const retained =
+      after.heapSize + after.extraMemorySize - (before.heapSize + before.extraMemorySize)
+    expect(retained).toBeLessThan(4 * 1024 * 1024)
   })
 })

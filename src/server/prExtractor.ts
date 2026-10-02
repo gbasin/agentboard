@@ -239,16 +239,24 @@ function collectCommandExecutionUrls(state: ScanState, line: string): void {
   }
 }
 
+// JSC substrings (regex captures, split() pieces) share their parent's
+// buffer. Storing one in the scan cache pins the whole decoded chunk (up to
+// READ_CHUNK_BYTES) for as long as the entry lives — hundreds of MB across a
+// few hundred sessions. Copy anything that outlives the scan.
+function detach(text: string): string {
+  return text.length === 0 ? '' : Buffer.from(text, 'utf8').toString('utf8')
+}
+
 function collectUrls(state: ScanState, line: string): void {
   PR_URL_RE.lastIndex = 0
   let match: RegExpExecArray | null
   while ((match = PR_URL_RE.exec(line)) !== null) {
-    const url = match[0]
-    if (state.seenUrls.has(url)) continue
+    if (state.seenUrls.has(match[0])) continue
+    const url = detach(match[0])
     state.seenUrls.add(url)
     state.prs.push({
       url,
-      repo: match[1],
+      repo: detach(match[1]),
       number: Number(match[2]),
     })
   }
@@ -317,7 +325,7 @@ function processLine(state: ScanState, line: string): void {
 
 function processChunk(state: ScanState, chunk: string): void {
   const lines = (state.remainder + chunk).split('\n')
-  state.remainder = lines.pop() ?? ''
+  state.remainder = detach(lines.pop() ?? '')
   for (const line of lines) {
     processLine(state, line)
   }
