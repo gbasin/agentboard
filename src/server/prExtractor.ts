@@ -20,7 +20,7 @@ const PR_URL_LOOKAHEAD_LINES = 10
 // Pending tool-call ids expire after this many log lines to bound memory.
 const PENDING_ID_TTL_LINES = 2000
 const MAX_PENDING_IDS = 100
-const READ_CHUNK_BYTES = 4 * 1024 * 1024
+const READ_CHUNK_BYTES = 128 * 1024
 // Must exceed the number of scanned log paths or FIFO eviction thrashes:
 // the dormant-session sweep touches every path each cycle, so once paths >
 // cap, evicted files get fully re-scanned every refresh.
@@ -72,6 +72,10 @@ interface ScanState {
   seenUrls: Set<string>
   prs: SessionPullRequest[]
 }
+
+// One read buffer shared by every scan. The scan is synchronous, so a single
+// buffer is never used by two scans at once.
+let readBuffer: Buffer | null = null
 
 const scanCache = new Map<string, ScanState>()
 
@@ -331,6 +335,52 @@ function processChunk(state: ScanState, chunk: string): void {
   }
 }
 
+const CREATE_BYTES = Buffer.from('create')
+// Bytes the regexes accept between `pr` and `create`: whitespace, quotes,
+// comma, backslash. Bytes >= 0x80 are treated as separators too (Unicode
+// whitespace) so the prefilter can only over-match.
+function isSeparatorByte(b: number): boolean {
+  return (
+    b <= 0x20 || b === 0x22 || b === 0x27 || b === 0x2c || b === 0x5c || b >= 0x80
+  )
+}
+
+// True when the bytes hold a `pr<seps>create` candidate, or a `create` whose
+// context may start before the buffer. Over-matches, never under-matches.
+function hasCreateCandidate(bytes: Buffer): boolean {
+  let at = bytes.indexOf(CREATE_BYTES)
+  while (at !== -1) {
+    if (at === 0) return true
+    let j = at - 1
+    while (j >= 0 && isSeparatorByte(bytes[j])) j--
+    if (j < at - 1) {
+      // At least one separator precedes `create`, as `gh pr create` needs.
+      if (j < 1) return true
+      if (bytes[j] === 0x72 && bytes[j - 1] === 0x70) return true
+    }
+    at = bytes.indexOf(CREATE_BYTES, at + 1)
+  }
+  return false
+}
+
+// Decoding chunks into strings dominates scan garbage and CPU, yet most
+// chunks hold no `gh pr create`. When nothing in the chunk can match and no
+// create is waiting for its result, only the trailing partial line must be
+// carried, so the rest is never decoded. Returns false when the chunk has to
+// go through the full path.
+function skipChunkWithoutCreate(state: ScanState, bytes: Buffer): boolean {
+  if (state.pending.length > 0 || state.windowRemaining > 0) return false
+  const lastNewline = bytes.lastIndexOf(0x0a)
+  if (lastNewline === -1) return false
+  if (state.remainder.includes('create')) return false
+  // `create` split across the chunk boundary.
+  const seam = state.remainder.slice(-5) + bytes.toString('latin1', 0, 5)
+  if (seam.includes('create')) return false
+  if (hasCreateCandidate(bytes)) return false
+  state.remainder = bytes.toString('utf8', lastNewline + 1)
+  return true
+}
+
 /** Parse a complete log file (used by tests and full rescans). */
 export function extractPullRequests(content: string): SessionPullRequest[] {
   const state = newScanState()
@@ -401,10 +451,13 @@ export function getSessionPullRequests(
     fd = fs.openSync(logPath, 'r')
     while (state.offset < stat.size) {
       const length = Math.min(READ_CHUNK_BYTES, stat.size - state.offset)
-      const buffer = Buffer.alloc(length)
-      const read = fs.readSync(fd, buffer, 0, length, state.offset)
+      readBuffer ??= Buffer.allocUnsafe(READ_CHUNK_BYTES)
+      const read = fs.readSync(fd, readBuffer, 0, length, state.offset)
       if (read <= 0) break
-      processChunk(state, buffer.subarray(0, read).toString('utf8'))
+      const bytes = readBuffer.subarray(0, read)
+      if (!skipChunkWithoutCreate(state, bytes)) {
+        processChunk(state, bytes.toString('utf8'))
+      }
       state.offset += read
     }
     state.mtimeMs = stat.mtimeMs

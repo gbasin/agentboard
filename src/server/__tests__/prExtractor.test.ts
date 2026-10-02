@@ -722,4 +722,81 @@ describe('getSessionPullRequests', () => {
       after.heapSize + after.extraMemorySize - (before.heapSize + before.extraMemorySize)
     expect(retained).toBeLessThan(4 * 1024 * 1024)
   })
+  describe('chunk prefilter', () => {
+    const CHUNK = 128 * 1024
+    const createLine = claudeBashToolUse('gh pr create --fill')
+    const resultLine = claudeToolResult('https://github.com/a/b/pull/42')
+
+    // Pads with `create`-free filler lines so the create line starts `offset`
+    // bytes before the chunk boundary, then reads the log the way a restart
+    // would: from scratch, in fixed chunks.
+    async function prsWithCreateAt(offset: number): Promise<number[]> {
+      const filler = JSON.stringify({ type: 'user', text: 'x'.repeat(997) }) + '\n'
+      const before = Math.floor((CHUNK - offset) / filler.length)
+      const pad = 'y'.repeat(Math.max(0, CHUNK - offset - before * filler.length - 1))
+      const logPath = path.join(tempRoot, `at-${offset}.jsonl`)
+      await fs.writeFile(
+        logPath,
+        filler.repeat(before) + pad + '\n' + createLine + '\n' + filler + resultLine + '\n'
+      )
+      return getSessionPullRequests(logPath).map((pr) => pr.number)
+    }
+
+    test('finds a create that straddles the chunk boundary at any offset', async () => {
+      for (let offset = 0; offset <= createLine.length + 4; offset++) {
+        expect(await prsWithCreateAt(offset)).toEqual([42])
+      }
+    })
+
+    test('finds a create split inside the word `create`', async () => {
+      const word = createLine.indexOf('create')
+      for (let into = 1; into < 6; into++) {
+        expect(await prsWithCreateAt(createLine.length - word - into)).toEqual([42])
+      }
+    })
+
+    test('finds a JSON-array argv create in a later chunk', async () => {
+      const argv = claudeBashToolUse('["gh","pr","create","--fill"]', 'toolu_9')
+      const filler = ('z'.repeat(2000) + '\n').repeat(100)
+      const logPath = path.join(tempRoot, 'argv.jsonl')
+      await fs.writeFile(
+        logPath,
+        filler + argv + '\n' + filler + claudeToolResult('https://github.com/a/b/pull/9', 'toolu_9') + '\n'
+      )
+      expect(getSessionPullRequests(logPath).map((p) => p.number)).toEqual([9])
+    })
+
+    test('does not decode chunks that cannot hold a create', async () => {
+      // 8 MB of prose-like lines with no `create` anywhere. Decoding them is
+      // what turned a restart scan of every session log into hundreds of MB
+      // of string garbage.
+      const line = JSON.stringify({ type: 'user', text: 'w'.repeat(900) }) + '\n'
+      const logPath = path.join(tempRoot, 'big.jsonl')
+      await fs.writeFile(logPath, line.repeat(Math.ceil((8 * 1024 * 1024) / line.length)))
+
+      const original = Buffer.prototype.toString
+      let decodedChars = 0
+      Buffer.prototype.toString = function (this: Buffer, ...args: Parameters<typeof original>) {
+        const out = original.apply(this, args)
+        decodedChars += out.length
+        return out
+      }
+      try {
+        expect(getSessionPullRequests(logPath)).toEqual([])
+      } finally {
+        Buffer.prototype.toString = original
+      }
+      expect(decodedChars).toBeLessThan(1024 * 1024)
+    })
+
+    test('ignores PR urls in chunks that have no create', async () => {
+      const filler = 'see https://github.com/a/b/pull/1 for context '.repeat(5000)
+      const logPath = path.join(tempRoot, 'nocreate.jsonl')
+      await fs.writeFile(
+        logPath,
+        (claudeToolResult(filler) + '\n').repeat(3) + claudeToolResult('done')
+      )
+      expect(getSessionPullRequests(logPath)).toEqual([])
+    })
+  })
 })
