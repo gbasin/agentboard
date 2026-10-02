@@ -894,10 +894,10 @@ const dormantPrScanner = createDormantPrScanner(() =>
 )
 
 function getDormantRecords() {
-  return [
-    ...db.getHibernatingSessions(),
-    ...db.getHistorySessions({ maxAgeHours: runtimeHistoryMaxAgeHours }),
-  ]
+  return {
+    hibernating: db.getHibernatingSessions(),
+    history: db.getHistorySessions({ maxAgeHours: runtimeHistoryMaxAgeHours }),
+  }
 }
 
 // Codex subagent links arrive with the first full poll, after the startup PR
@@ -909,17 +909,16 @@ setCodexSubagentIndexListener(() => {
   dormantRescanQueued = true
   setTimeout(() => {
     dormantRescanQueued = false
-    dormantPrScanner.queue(getDormantRecords())
+    const { hibernating, history } = getDormantRecords()
+    dormantPrScanner.queue([...hibernating, ...history])
   }, 0)
 })
 
 // Dormant rows show the PRs found by the last scan; the scanner fills in the
 // rest in small slices and calls back here when it finds new ones.
 function updateDormantAgentSessions() {
-  const hibernatingRecords = db.getHibernatingSessions()
-  const historyRecords = db.getHistorySessions({
-    maxAgeHours: runtimeHistoryMaxAgeHours,
-  })
+  const { hibernating: hibernatingRecords, history: historyRecords } =
+    getDormantRecords()
   const cachedOnly = { cachedPrsOnly: true }
   const hibernating = filterExcludedAgentSessions(
     hibernatingRecords.map((record) => toAgentSession(record, cachedOnly))

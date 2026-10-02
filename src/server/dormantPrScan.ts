@@ -1,8 +1,8 @@
 import type { AgentSessionRecord } from './db'
 import {
   needsPullRequestScan,
-  pullRequestScanKey,
-  pullRequestScanPaths,
+  pullRequestScanPlan,
+  type PullRequestScanPlan,
   rescanPullRequests,
   warmPullRequestScan,
 } from './agentSessions'
@@ -71,10 +71,10 @@ export function createDormantPrScanner(
   /** Scans one session; returns false when the slice ran out mid-session. */
   const scanRecord = (
     record: AgentSessionRecord,
-    key: string,
+    plan: PullRequestScanPlan,
     start: number
   ): boolean => {
-    const paths = pullRequestScanPaths(record)
+    const { paths } = plan
     let next = cursor?.sessionId === record.sessionId ? cursor.next : 0
     cursor = null
     while (next < paths.length) {
@@ -85,7 +85,7 @@ export function createDormantPrScanner(
       }
     }
     // Every log is now in the extractor's cache; merging only stats them.
-    if (rescanPullRequests(record, key)) changed = true
+    if (rescanPullRequests(record, plan)) changed = true
     return true
   }
 
@@ -98,13 +98,15 @@ export function createDormantPrScanner(
       const record = pending[index]
       let done = true
       try {
-        const key = pullRequestScanKey(record)
+        // One subagent lookup per record per slice: the key and the paths
+        // the scan reads come from the same listing.
+        const plan = pullRequestScanPlan(record)
         if (
-          needsPullRequestScan(record, key) &&
-          scannedKeys.get(record.sessionId) !== key
+          needsPullRequestScan(record, plan.key) &&
+          scannedKeys.get(record.sessionId) !== plan.key
         ) {
-          done = scanRecord(record, key, start)
-          if (done) scannedKeys.set(record.sessionId, key)
+          done = scanRecord(record, plan, start)
+          if (done) scannedKeys.set(record.sessionId, plan.key)
         }
       } catch {
         // A bad log must not stop the rest of the queue.
