@@ -987,6 +987,7 @@ export default function App() {
       <Terminal
         session={selectedSession}
         sessions={filteredSortedSessions}
+        drawerSessions={sessions}
         hibernatingSession={selectedHibernatingSession}
         hibernatingSessions={hibernatingAgentSessions}
         connectionStatus={connectionStatus}

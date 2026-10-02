@@ -46,6 +46,10 @@ import { ICON_SIZE, TOUCH_TARGET_CLASS, mobileButtonClass } from './controlStyle
 interface TerminalProps {
   session: Session | null
   sessions: Session[]
+  /** Unfiltered sessions for the mobile drawer, whose list filters and sorts
+   * itself; its filter menu must offer every project, not only visible ones.
+   * Defaults to `sessions`. */
+  drawerSessions?: Session[]
   hibernatingSession?: AgentSession | null
   hibernatingSessions?: AgentSession[]
   historySessions?: AgentSession[]
@@ -93,6 +97,7 @@ function triggerHaptic() {
 export default function Terminal({
   session,
   sessions,
+  drawerSessions,
   hibernatingSession = null,
   hibernatingSessions = [],
   historySessions = [],
@@ -1669,7 +1674,7 @@ export default function Terminal({
         <SessionDrawer
           isOpen={isDrawerOpen}
           onClose={() => setIsDrawerOpen(false)}
-          sessions={sessions}
+          sessions={drawerSessions ?? sessions}
           hibernatingSessions={hibernatingSessions}
           historySessions={historySessions}
           selectedSessionId={session?.id ?? null}

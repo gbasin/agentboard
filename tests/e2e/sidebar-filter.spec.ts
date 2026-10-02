@@ -473,6 +473,13 @@ test.describe('mobile drawer', () => {
     await expect(cardByName(drawer, names[1])).toBeVisible()
     await expect(badgeOf(drawer)).toHaveText('1')
 
+    // The menu still offers every project while one is ticked, so a second
+    // can be added (the drawer gets the unfiltered session list).
+    await expect(menu.getByRole('menuitemcheckbox')).toHaveCount(3)
+    await touchTap(page, menu.getByRole('menuitemcheckbox', { name: `${prefix}alpha` }))
+    await expect(drawer.getByTestId('session-card')).toHaveCount(2)
+    await expect(badgeOf(drawer)).toHaveText('2')
+
     await expectNoHint(menu)
     const clear = clearOf(menu)
     await expect(clear).toBeVisible()
