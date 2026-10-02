@@ -58,30 +58,44 @@ function signal(pid: number, sig: NodeJS.Signals): void {
   }
 }
 
+function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+}
+
+// Time the kernel's hangup gets to end pane processes normally before the
+// leftovers are counted as survivors and killed.
+const HANGUP_GRACE_MS = 1000
+
 /**
  * kill-server on the private socket, then SIGKILL every process the server
- * had started (and each one's process group: pane processes lead their own).
- * Returns how many of them were still alive after kill-server.
+ * had started (and each one's process group: pane processes lead their own)
+ * that is still alive after a short grace period. Returns how many that was.
  */
 export function reapPrivateTmuxServer(socket: string): number {
   if (!existsSync(socket)) return 0
   const serverPid = Number.parseInt(tmux(socket, ['display-message', '-p', '#{pid}']) ?? '', 10)
   const children = Number.isInteger(serverPid) && serverPid > 0 ? childPids(serverPid) : []
   tmux(socket, ['kill-server'])
-  let survivors = 0
-  for (const pid of children) {
-    let alive = true
-    try {
-      process.kill(pid, 0)
-    } catch {
-      alive = false
-    }
-    if (!alive) continue
-    survivors += 1
+  const deadline = Date.now() + HANGUP_GRACE_MS
+  let alive = children.filter(isAlive)
+  while (alive.length > 0 && Date.now() < deadline) {
+    sleepSync(50)
+    alive = alive.filter(isAlive)
+  }
+  for (const pid of alive) {
     signal(-pid, 'SIGKILL')
     signal(pid, 'SIGKILL')
   }
-  return survivors
+  return alive.length
 }
 
 function real(p: string): string {
