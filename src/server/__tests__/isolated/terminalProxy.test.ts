@@ -521,6 +521,110 @@ describe('TerminalProxy', () => {
     expect(proxy.getCurrentWindow()).toBe('@2')
   })
 
+  test('switch tmux calls run off the event loop; history precedes live output', async () => {
+    const harness = createSpawnHarness()
+    const received: string[] = []
+    const events: string[] = []
+    // Async runner that answers like the sync harness, but only after the
+    // test has had a chance to emit pty output while the call is in flight.
+    const spawnAsync = async (
+      args: string[],
+      options: { timeout?: number; env?: Record<string, string | undefined> }
+    ) => {
+      const command = getTmuxCommand(args)
+      events.push(`async:${command}`)
+      harness.emitData(`<during ${command}>`)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      const result = harness.spawnSync(args, { timeout: options.timeout })
+      return {
+        exitCode: result.exitCode,
+        signalCode: null,
+        stdout: result.stdout?.toString() ?? '',
+        stderr: result.stderr?.toString() ?? '',
+      }
+    }
+    const spawnSync = (args: string[], options?: Parameters<typeof Bun.spawnSync>[1]) => {
+      events.push(`sync:${getTmuxCommand(args)}`)
+      return harness.spawnSync(args, options)
+    }
+    const proxy = new TerminalProxy({
+      connectionId: 'abc',
+      sessionName: 'agentboard-ws-abc',
+      baseSession: 'agentboard',
+      onData: (data) => received.push(data),
+      spawn: harness.spawn,
+      spawnSync,
+      spawnAsync,
+      wait: async () => {},
+    })
+    await proxy.start()
+    events.length = 0
+
+    let ticks = 0
+    const timer = setInterval(() => {
+      ticks += 1
+    }, 0)
+    try {
+      await proxy.switchTo('agentboard:@2', () => {
+        events.push('onReady')
+        received.push('<history>')
+      })
+    } finally {
+      clearInterval(timer)
+    }
+
+    // display-message, switch-client, list-clients and refresh-client all
+    // went through the non-blocking runner; nothing on the switch path
+    // blocked on spawnSync (no sync:* entries).
+    expect(events).toEqual([
+      'async:display-message',
+      'async:switch-client',
+      'async:list-clients',
+      'onReady',
+      'async:refresh-client',
+    ])
+    expect(ticks).toBeGreaterThan(0)
+    // Output emitted before onReady was suppressed; the refresh-client redraw
+    // window comes after the history.
+    expect(received).toEqual(['<history>', '<during refresh-client>'])
+    expect(proxy.getCurrentWindow()).toBe('@2')
+    expect(proxy.isReady()).toBe(true)
+  })
+
+  test('a failing switch-client on the non-blocking path still rejects with ERR_TMUX_SWITCH_FAILED', async () => {
+    const harness = createSpawnHarness()
+    const spawnSync = (args: string[], options?: Parameters<typeof Bun.spawnSync>[1]) =>
+      getTmuxCommand(args) === 'switch-client'
+        ? ({
+            exitCode: 1,
+            stdout: Buffer.from(''),
+            stderr: Buffer.from("can't find window: @9"),
+          } as ReturnType<typeof Bun.spawnSync>)
+        : harness.spawnSync(args, options)
+    const proxy = new TerminalProxy({
+      connectionId: 'abc',
+      sessionName: 'agentboard-ws-abc',
+      baseSession: 'agentboard',
+      onData: () => {},
+      spawn: harness.spawn,
+      spawnSync,
+      wait: async () => {},
+    })
+    await proxy.start()
+    let readyCalls = 0
+    const error = await proxy
+      .switchTo('external:@9', () => {
+        readyCalls += 1
+      })
+      .catch((e: unknown) => e)
+    expect(error).toMatchObject({
+      code: 'ERR_TMUX_SWITCH_FAILED',
+      message: "can't find window: @9",
+    })
+    expect(readyCalls).toBe(0)
+    expect(proxy.isReady()).toBe(true)
+  })
+
   test('switchTo verifies against our own client when another client is more recently active', async () => {
     // The harness lists a foreign client (/dev/pts/1, other-session) FIRST in
     // list-clients output — the position display-message -p -c would have

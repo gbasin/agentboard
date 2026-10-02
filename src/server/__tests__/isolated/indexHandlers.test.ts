@@ -713,9 +713,9 @@ beforeEach(() => {
     const stdoutBuf = syncResult.stdout ?? Buffer.from('')
     const stderrBuf = syncResult.stderr ?? Buffer.from('')
     return {
-      exited: Promise.resolve(syncResult.exitCode ?? 0),
-      exitCode: syncResult.exitCode ?? 0,
-      signalCode: null,
+      exited: Promise.resolve(syncResult.exitCode ?? 143),
+      exitCode: syncResult.exitCode,
+      signalCode: syncResult.signalCode ?? null,
       stdout: new ReadableStream({
         start(controller) {
           controller.enqueue(typeof stdoutBuf === 'string' ? new TextEncoder().encode(stdoutBuf) : stdoutBuf)
@@ -3034,6 +3034,69 @@ describe('server message handlers', () => {
       altScreen: true,
       appMouse: true,
     })
+  })
+
+  test('attach captures history off the event loop, before the switch', async () => {
+    const { serveOptions, registryInstance } = await loadIndex()
+    registryInstance.sessions = [baseSession]
+    const { ws, sent } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) {
+      throw new Error('WebSocket handlers not configured')
+    }
+
+    spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
+      const command = Array.isArray(args[0]) ? args[0] : [String(args[0])]
+      if (getTmuxArgs(command as string[])[0] === 'capture-pane') {
+        throw new Error('capture-pane ran through spawnSync')
+      }
+      return { exitCode: 0, stdout: Buffer.from(''), stderr: Buffer.from('') } as ReturnType<
+        typeof Bun.spawnSync
+      >
+    }) as typeof Bun.spawnSync
+    let switchesAtCapture = -1 as number
+    const mockedSpawn = bunAny.spawn
+    bunAny.spawn = ((...args: Parameters<typeof Bun.spawn>) => {
+      const cmd = (Array.isArray(args[0]) ? args[0] : [String(args[0])]) as string[]
+      if (getTmuxArgs(cmd)[0] !== 'capture-pane') return mockedSpawn(...args)
+      switchesAtCapture = TerminalProxyMock.instances[0]?.switchTargets.length ?? 0
+      const body = new TextEncoder().encode('pane history\n')
+      return {
+        exited: Promise.resolve(0),
+        exitCode: 0,
+        signalCode: null,
+        stdout: new ReadableStream({
+          start(controller) {
+            controller.enqueue(body)
+            controller.close()
+          },
+        }),
+        stderr: new ReadableStream({ start: (controller) => controller.close() }),
+        kill: () => {},
+        pid: 12347,
+      } as unknown as ReturnType<typeof Bun.spawn>
+    }) as typeof Bun.spawn
+
+    websocket.open?.(ws as never)
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({
+        type: 'terminal-attach',
+        sessionId: baseSession.id,
+        tmuxTarget: baseSession.tmuxWindow,
+      })
+    )
+    await waitFor(() => sent.some((message) => message.type === 'terminal-ready'))
+
+    // Captured with the switch not yet issued, and the history went out
+    // before terminal-ready.
+    expect(switchesAtCapture).toBe(0)
+    const historyIndex = sent.findIndex(
+      (message) => message.type === 'terminal-output' && message.data === 'pane history\r\n'
+    )
+    const readyIndex = sent.findIndex((message) => message.type === 'terminal-ready')
+    expect(historyIndex).toBeGreaterThanOrEqual(0)
+    expect(historyIndex).toBeLessThan(readyIndex)
   })
 
   test('terminal attach continues when local history capture times out', async () => {

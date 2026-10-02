@@ -89,7 +89,7 @@ import {
   splitTmuxLines,
   withTmuxUtf8Flag,
 } from './tmuxFormat'
-import { timedSpawnSync } from './syncSpawnTiming'
+import { timedSpawnAsync, timedSpawnSync } from './syncSpawnTiming'
 import { getTailscaleIp } from './tailscale'
 
 function checkPortAvailable(port: number): void {
@@ -4459,7 +4459,7 @@ async function attachTerminalPersistent(
   // Capture scrollback history BEFORE switching to avoid race with live output
   const history = session.remote && session.host
     ? await captureTmuxHistoryRemote(effectiveTarget, session.host)
-    : captureTmuxHistory(effectiveTarget)
+    : await captureTmuxHistory(effectiveTarget)
 
   const tCapture = performance.now()
 
@@ -4544,12 +4544,14 @@ async function attachTerminalPersistent(
   }
 }
 
-function captureTmuxHistory(target: string): string | null {
+async function captureTmuxHistory(target: string): Promise<string | null> {
   try {
     // Capture only the visible pane so initial attach paints the current view
-    // immediately instead of replaying the entire scrollback buffer.
+    // immediately instead of replaying the entire scrollback buffer. Runs off
+    // the event loop; the caller still awaits it before switching, so the
+    // history predates any live output of this attach.
     const colorArgs = config.terminalColorsEnabled ? ['-e'] : []
-    const result = timedSpawnSync(['tmux', ...withTmuxUtf8Flag([
+    const result = await timedSpawnAsync(['tmux', ...withTmuxUtf8Flag([
       'capture-pane',
       '-t',
       target,
@@ -4557,14 +4559,12 @@ function captureTmuxHistory(target: string): string | null {
       '-J',
       ...colorArgs,
     ])], {
-      stdout: 'pipe',
-      stderr: 'pipe',
       timeout: config.tmuxTimeoutMs,
     })
     if (result.exitCode !== 0) {
       return null
     }
-    const output = result.stdout.toString()
+    const output = result.stdout
     // Only return if there's actual content
     if (output.trim().length === 0) {
       return null

@@ -637,6 +637,9 @@ class PtyTerminalProxy extends TerminalProxyBase {
     }
 
     const effectiveTarget = this.ensureEffectiveTarget(target)
+    // dispose() nulls clientTty; the tmux calls below now yield, so hold the
+    // tty this switch started with.
+    const clientTty = this.clientTty
     this.state = TerminalState.SWITCHING
     this.outputSuppressed = true
     const startedAt = this.now()
@@ -645,14 +648,21 @@ class PtyTerminalProxy extends TerminalProxyBase {
       sessionName: this.options.sessionName,
       tmuxWindow: target,
       effectiveTarget,
-      clientTty: this.clientTty,
+      clientTty,
       mode: this.getMode(),
     })
 
+    // The tmux calls run off the event loop. pty output that arrives while
+    // they are in flight is dropped (outputSuppressed): it is either the old
+    // target's or the switch-client redraw, and both would land before the
+    // history onReady sends. refresh-client runs only after onReady and the
+    // unsuppress below, so the redraw it triggers reaches the browser after
+    // the history, as the old fully synchronous sequence guaranteed.
     try {
-      const expectedIdentity = this.readTargetIdentity(effectiveTarget)
-      this.runTmux(['switch-client', '-c', this.clientTty, '-t', effectiveTarget])
+      const expectedIdentity = await this.readTargetIdentity(effectiveTarget)
+      await this.runTmuxNonBlocking(['switch-client', '-c', clientTty, '-t', effectiveTarget])
       const actualIdentity = await this.verifyClientTarget(
+        clientTty,
         effectiveTarget,
         expectedIdentity
       )
@@ -660,11 +670,6 @@ class PtyTerminalProxy extends TerminalProxyBase {
         this.process?.terminal?.resize(this.cols, this.rows)
       } catch {
         // Ignore resize errors; the PTY may already be closing.
-      }
-      try {
-        this.runTmux(['refresh-client', '-t', this.clientTty])
-      } catch {
-        // Ignore refresh failures
       }
       if (onReady) {
         try {
@@ -681,12 +686,17 @@ class PtyTerminalProxy extends TerminalProxyBase {
       }
       this.lastEffectiveSession = actualIdentity.sessionName
       this.releaseUnusedExternalGroupedSessions(actualIdentity.sessionName)
+      try {
+        await this.runTmuxNonBlocking(['refresh-client', '-t', clientTty])
+      } catch {
+        // Ignore refresh failures
+      }
       const durationMs = this.now() - startedAt
       this.logEvent('terminal_switch_success', {
         sessionName: this.options.sessionName,
         tmuxWindow: target,
         effectiveTarget,
-        clientTty: this.clientTty,
+        clientTty,
         durationMs,
         mode: this.getMode(),
       })
@@ -717,7 +727,7 @@ class PtyTerminalProxy extends TerminalProxyBase {
         sessionName: this.options.sessionName,
         tmuxWindow: target,
         effectiveTarget,
-        clientTty: this.clientTty,
+        clientTty,
         error: error instanceof Error ? error.message : 'tmux switch failed',
         mode: this.getMode(),
       })
@@ -764,14 +774,14 @@ class PtyTerminalProxy extends TerminalProxyBase {
     }
   }
 
-  private readTargetIdentity(target: string): TmuxTargetIdentity {
-    const output = this.runParsedTmux([
+  private async readTargetIdentity(target: string): Promise<TmuxTargetIdentity> {
+    const output = (await this.runParsedTmuxNonBlocking([
       'display-message',
       '-p',
       '-t',
       target,
       TARGET_IDENTITY_FORMAT,
-    ]).trim()
+    ])).trim()
     const identity = this.parseTargetIdentity(output)
     if (!identity) {
       throw new Error(`Unable to resolve tmux target identity for ${target}`)
@@ -779,33 +789,44 @@ class PtyTerminalProxy extends TerminalProxyBase {
     return identity
   }
 
+  // display-message -p -c expands formats against the most recently active
+  // session, not the -c client, so it misreports whenever another tmux
+  // client is active. list-clients expands formats per client, so filter
+  // by tty instead (same approach as discoverClientTty).
+  private static readonly CLIENT_IDENTITY_ARGS = ['list-clients', '-F', CLIENT_IDENTITY_FORMAT]
+
   private readClientIdentity(): TmuxTargetIdentity {
     if (!this.clientTty) {
       throw new Error('Terminal client not ready')
     }
-    // display-message -p -c expands formats against the most recently active
-    // session, not the -c client, so it misreports whenever another tmux
-    // client is active. list-clients expands formats per client, so filter
-    // by tty instead (same approach as discoverClientTty).
-    const output = this.runParsedTmux([
-      'list-clients',
-      '-F',
-      CLIENT_IDENTITY_FORMAT,
-    ])
+    return this.parseClientIdentity(
+      this.runParsedTmux(PtyTerminalProxy.CLIENT_IDENTITY_ARGS),
+      this.clientTty
+    )
+  }
+
+  private async readClientIdentityNonBlocking(clientTty: string): Promise<TmuxTargetIdentity> {
+    return this.parseClientIdentity(
+      await this.runParsedTmuxNonBlocking(PtyTerminalProxy.CLIENT_IDENTITY_ARGS),
+      clientTty
+    )
+  }
+
+  private parseClientIdentity(output: string, clientTty: string): TmuxTargetIdentity {
     for (const line of output.split('\n')) {
       const cleaned = line.replace(/\r$/, '')
       if (!cleaned) continue
       const parts = splitTmuxFields(cleaned, 3)
       if (!parts) continue
       const [tty, sessionName, windowId] = parts
-      if (tty !== this.clientTty) continue
+      if (tty !== clientTty) continue
       if (!sessionName) break
       return {
         sessionName,
         windowId: windowId?.trim() || null,
       }
     }
-    throw new Error(`Unable to resolve tmux client identity for ${this.clientTty}`)
+    throw new Error(`Unable to resolve tmux client identity for ${clientTty}`)
   }
 
   private parseTargetIdentity(output: string): TmuxTargetIdentity | null {
@@ -830,6 +851,7 @@ class PtyTerminalProxy extends TerminalProxyBase {
   }
 
   private async verifyClientTarget(
+    clientTty: string,
     effectiveTarget: string,
     expected: TmuxTargetIdentity
   ): Promise<TmuxTargetIdentity> {
@@ -840,13 +862,13 @@ class PtyTerminalProxy extends TerminalProxyBase {
       if (delay > 0) {
         await this.wait(delay)
         try {
-          this.runTmux(['switch-client', '-c', this.clientTty!, '-t', effectiveTarget])
+          await this.runTmuxNonBlocking(['switch-client', '-c', clientTty, '-t', effectiveTarget])
         } catch {
           // The final identity check below will surface a precise switch failure.
         }
       }
 
-      const actual = this.readClientIdentity()
+      const actual = await this.readClientIdentityNonBlocking(clientTty)
       lastActual = actual
       if (this.identitiesMatch(actual, expected)) {
         return actual

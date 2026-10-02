@@ -2,10 +2,11 @@ import { config } from '../config'
 import { logger } from '../logger'
 import { withTmuxUtf8Flag } from '../tmuxFormat'
 import { TmuxTimeoutError } from '../tmuxTimeout'
-import { describeSpawnCommand, logSlowSyncSpawn } from '../syncSpawnTiming'
+import { describeSpawnCommand, logSlowSyncSpawn, timedSpawnAsync } from '../syncSpawnTiming'
 import { sanitizedTmuxEnv } from '../tmuxEnv'
 import type {
   ITerminalProxy,
+  SpawnAsyncFn,
   SpawnFn,
   SpawnSyncFn,
   TerminalProxyOptions,
@@ -53,6 +54,7 @@ abstract class TerminalProxyBase implements ITerminalProxy {
   protected readonly options: TerminalProxyOptions
   protected readonly spawn: SpawnFn
   protected readonly spawnSync: SpawnSyncFn
+  protected readonly spawnAsync: SpawnAsyncFn
   protected readonly now: () => number
   protected readonly wait: WaitFn
   protected readonly commandTimeoutMs: number
@@ -76,6 +78,9 @@ abstract class TerminalProxyBase implements ITerminalProxy {
     this.options = options
     this.spawn = options.spawn ?? Bun.spawn
     this.spawnSync = options.spawnSync ?? Bun.spawnSync
+    this.spawnAsync =
+      options.spawnAsync ??
+      (options.spawnSync ? spawnSyncAsAsync(options.spawnSync) : timedSpawnAsync)
     this.now = options.now ?? Date.now
     this.wait =
       options.wait ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)))
@@ -169,6 +174,36 @@ abstract class TerminalProxyBase implements ITerminalProxy {
     }
 
     return result.stdout?.toString() ?? ''
+  }
+
+  /**
+   * Same contract as runTmux (timeout, TmuxTimeoutError, Error(stderr),
+   * sanitized env), but waits off the event loop: a slow tmux delays only
+   * this caller instead of every WebSocket and terminal stream.
+   */
+  protected async runTmuxNonBlocking(
+    args: string[],
+    options: { timeoutMs?: number } = {}
+  ): Promise<string> {
+    const timeoutMs = options.timeoutMs ?? this.commandTimeoutMs
+    const result = await this.spawnAsync(['tmux', ...args], {
+      timeout: timeoutMs,
+      env: sanitizedTmuxEnv(),
+    })
+    if (result.signalCode === 'SIGTERM' || result.exitCode === null) {
+      throw new TmuxTimeoutError(args.join(' '), timeoutMs)
+    }
+    if (result.exitCode !== 0) {
+      throw new Error(result.stderr || 'tmux command failed')
+    }
+    return result.stdout
+  }
+
+  protected runParsedTmuxNonBlocking(
+    args: string[],
+    options: { timeoutMs?: number } = {}
+  ): Promise<string> {
+    return this.runTmuxNonBlocking(withTmuxUtf8Flag(args), options)
   }
 
   protected runTmuxMutation(args: string[]): string {
@@ -295,6 +330,25 @@ abstract class TerminalProxyBase implements ITerminalProxy {
   abstract dispose(): Promise<void>
   abstract getClientTty(): string | null
   abstract getMode(): 'pty' | 'pipe-pane' | 'ssh'
+}
+
+// Injected sync spawners (test fakes) also serve the async path, so a fake
+// tmux sees every command in order regardless of which runner issued it.
+function spawnSyncAsAsync(spawnSync: SpawnSyncFn): SpawnAsyncFn {
+  return async (args, options) => {
+    const result = spawnSync(args, {
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: options.timeout,
+      env: options.env,
+    })
+    return {
+      exitCode: result.exitCode,
+      signalCode: result.signalCode ?? null,
+      stdout: result.stdout?.toString() ?? '',
+      stderr: result.stderr?.toString() ?? '',
+    }
+  }
 }
 
 function extractWindowId(target: string): string {
