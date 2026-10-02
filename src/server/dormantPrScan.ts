@@ -1,5 +1,11 @@
 import type { AgentSessionRecord } from './db'
-import { needsPullRequestScan, rescanPullRequests } from './agentSessions'
+import {
+  needsPullRequestScan,
+  pullRequestScanKey,
+  pullRequestScanPaths,
+  rescanPullRequests,
+  warmPullRequestScan,
+} from './agentSessions'
 import { logger } from './logger'
 
 const SLICE_BUDGET_MS = 25
@@ -17,6 +23,12 @@ export interface DormantPrScanner {
  * startup never reads every log synchronously. `onChanged` fires when a scan
  * changed a session's PR list, at most about once per `notifyMs` plus once
  * when the queue drains.
+ *
+ * A session's main log and each of its subagent logs are separate steps, so a
+ * session with many large subagent logs spans several slices. Freshness is
+ * checked in the slices too (it stats subagent logs), so `queue` stays cheap
+ * and a re-queue after a new codex subagent index or a grown subagent log
+ * rescans only the sessions whose logs changed.
  */
 export function createDormantPrScanner(
   onChanged: () => void,
@@ -29,14 +41,12 @@ export function createDormantPrScanner(
   let timer: ReturnType<typeof setTimeout> | null = null
   let changed = false
   let lastNotify = 0
-  // Log size this scanner last scanned per queued session. The shared PR
+  // Scan key this scanner last scanned per queued session. The shared PR
   // cache is capped and can evict entries; without this, an evicted session
   // would be rescanned (and reported as changed) on every re-queue.
-  let scannedSizes = new Map<string, number | null>()
-
-  const needsScan = (record: AgentSessionRecord) =>
-    needsPullRequestScan(record) &&
-    scannedSizes.get(record.sessionId) !== (record.lastKnownLogSize ?? null)
+  let scannedKeys = new Map<string, string>()
+  // Next log to read for a session whose scan spans slices.
+  let cursor: { sessionId: string; next: number } | null = null
 
   const schedule = () => {
     if (pending.length > 0 && timer === null) {
@@ -56,23 +66,52 @@ export function createDormantPrScanner(
     }
   }
 
+  const overBudget = (start: number) => performance.now() - start >= budgetMs
+
+  /** Scans one session; returns false when the slice ran out mid-session. */
+  const scanRecord = (
+    record: AgentSessionRecord,
+    key: string,
+    start: number
+  ): boolean => {
+    const paths = pullRequestScanPaths(record)
+    let next = cursor?.sessionId === record.sessionId ? cursor.next : 0
+    cursor = null
+    while (next < paths.length) {
+      warmPullRequestScan(record, paths[next++])
+      if (next < paths.length && overBudget(start)) {
+        cursor = { sessionId: record.sessionId, next }
+        return false
+      }
+    }
+    // Every log is now in the extractor's cache; merging only stats them.
+    if (rescanPullRequests(record, key)) changed = true
+    return true
+  }
+
   const tick = () => {
     timer = null
     const start = performance.now()
     let index = 0
-    // Always make progress: at least one record per slice.
-    while (
-      index < pending.length &&
-      (index === 0 || performance.now() - start < budgetMs)
-    ) {
-      const record = pending[index++]
-      if (!needsScan(record)) continue
-      scannedSizes.set(record.sessionId, record.lastKnownLogSize ?? null)
+    // Always make progress: at least one record (or one log) per slice.
+    while (index < pending.length && (index === 0 || !overBudget(start))) {
+      const record = pending[index]
+      let done = true
       try {
-        if (rescanPullRequests(record)) changed = true
+        const key = pullRequestScanKey(record)
+        if (
+          needsPullRequestScan(record, key) &&
+          scannedKeys.get(record.sessionId) !== key
+        ) {
+          done = scanRecord(record, key, start)
+          if (done) scannedKeys.set(record.sessionId, key)
+        }
       } catch {
         // A bad log must not stop the rest of the queue.
+        cursor = null
       }
+      if (!done) break
+      index++
     }
     pending = pending.slice(index)
     // Schedule before notifying so a throwing or re-queueing callback cannot
@@ -90,10 +129,11 @@ export function createDormantPrScanner(
     queue(records) {
       const idle = pending.length === 0 && timer === null
       const queuedIds = new Set(records.map((record) => record.sessionId))
-      scannedSizes = new Map(
-        [...scannedSizes].filter(([sessionId]) => queuedIds.has(sessionId))
+      scannedKeys = new Map(
+        [...scannedKeys].filter(([sessionId]) => queuedIds.has(sessionId))
       )
-      pending = records.filter(needsScan)
+      // Freshness is checked per slice, not here: it stats subagent logs.
+      pending = records.slice()
       // The throttle window starts with each scan run, not at process start.
       if (idle) lastNotify = performance.now()
       schedule()
@@ -103,7 +143,8 @@ export function createDormantPrScanner(
       timer = null
       pending = []
       changed = false
-      scannedSizes.clear()
+      scannedKeys.clear()
+      cursor = null
     },
   }
 }

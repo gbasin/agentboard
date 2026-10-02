@@ -56,6 +56,33 @@ type CodexSubagentNode = CodexSubagentLink
 // fresh between rebuilds by poller-fed registerCodexSubagent calls.
 let codexIndex = new Map<string, CodexSubagentNode>()
 const CODEX_INDEX_MAX_DEPTH = 8
+// Called after the index gains or changes a link, so callers holding PR
+// scans keyed on subagent logs can queue a rescan.
+let codexIndexListener: (() => void) | null = null
+
+/** Register the single index-change listener (null to clear). */
+export function setCodexSubagentIndexListener(listener: (() => void) | null): void {
+  codexIndexListener = listener
+}
+
+/** Sets a node; returns true when the index did not already hold it. */
+function putCodexNode(node: CodexSubagentNode): boolean {
+  const current = codexIndex.get(node.ownId)
+  codexIndex.set(node.ownId, node)
+  return (
+    !current ||
+    current.parentId !== node.parentId ||
+    current.logPath !== node.logPath
+  )
+}
+
+function notifyCodexIndexChanged(): void {
+  try {
+    codexIndexListener?.()
+  } catch {
+    // A listener failure must not break index maintenance.
+  }
+}
 
 function codexSessionsRoot(): string {
   const override = process.env.CODEX_HOME
@@ -104,7 +131,7 @@ export function registerCodexSubagent(
   parentId: string | null,
   logPath: string
 ): void {
-  codexIndex.set(ownId, { ownId, parentId, logPath })
+  if (putCodexNode({ ownId, parentId, logPath })) notifyCodexIndexChanged()
 }
 
 /** All descendant transcript paths of `sessionId` in `index`, BFS order. */
@@ -145,7 +172,13 @@ export function collectCodexDescendants(
  * paths) and get overwritten by the next rebuild.
  */
 export function setCodexSubagentIndex(links: CodexSubagentLink[]): void {
-  for (const link of links) codexIndex.set(link.ownId, link)
+  let changed = false
+  for (const link of links) {
+    if (putCodexNode({ ownId: link.ownId, parentId: link.parentId, logPath: link.logPath })) {
+      changed = true
+    }
+  }
+  if (changed) notifyCodexIndexChanged()
 }
 
 // ---------------------------------------------------------------------------

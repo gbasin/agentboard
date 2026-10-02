@@ -22,6 +22,7 @@ import {
 import { LogPoller } from './logPoller'
 import { toAgentSession, getMergedPullRequests } from './agentSessions'
 import { createDormantPrScanner } from './dormantPrScan'
+import { setCodexSubagentIndexListener } from './subagentLogs'
 import { fetchPrChecks, fetchPrInfo, parsePrUrl } from './prInfo'
 import { getLogSearchDirs } from './logDiscovery'
 import {
@@ -891,6 +892,26 @@ function updateActiveAgentSessions() {
 const dormantPrScanner = createDormantPrScanner(() =>
   updateDormantAgentSessions()
 )
+
+function getDormantRecords() {
+  return [
+    ...db.getHibernatingSessions(),
+    ...db.getHistorySessions({ maxAgeHours: runtimeHistoryMaxAgeHours }),
+  ]
+}
+
+// Codex subagent links arrive with the first full poll, after the startup PR
+// scan, and in bursts as live links register. Re-queue the dormant rows once
+// per burst; the scanner rescans only rows whose subagent logs changed.
+let dormantRescanQueued = false
+setCodexSubagentIndexListener(() => {
+  if (dormantRescanQueued) return
+  dormantRescanQueued = true
+  setTimeout(() => {
+    dormantRescanQueued = false
+    dormantPrScanner.queue(getDormantRecords())
+  }, 0)
+})
 
 // Dormant rows show the PRs found by the last scan; the scanner fills in the
 // rest in small slices and calls back here when it finds new ones.
@@ -2343,6 +2364,7 @@ async function cleanupAllTerminals() {
   }
   await Promise.allSettled(disposePromises)
   throwawayShellReaper.dispose()
+  setCodexSubagentIndexListener(null)
   dormantPrScanner.stop()
   logPoller.stop()
   remotePoller?.stop()

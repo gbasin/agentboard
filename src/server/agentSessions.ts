@@ -1,3 +1,4 @@
+import fs from 'node:fs'
 import path from 'node:path'
 import type { AgentSession, SessionPullRequest } from '../shared/types'
 import { config } from './config'
@@ -5,13 +6,14 @@ import type { AgentSessionRecord } from './db'
 import { getSessionPullRequests } from './prExtractor'
 import { getSubagentLogPaths } from './subagentLogs'
 
-// PRs found by the last full scan per session, keyed with the log size the
-// scan saw. Lets dormant lists be built without touching any log file.
+// PRs found by the last full scan per session, keyed with the log sizes the
+// scan saw (see `pullRequestScanKey`). Lets dormant lists be built without
+// touching any log file.
 const DEFAULT_MAX_SCANNED_ENTRIES = 5000
 let maxScannedEntries = DEFAULT_MAX_SCANNED_ENTRIES
 const scannedPrs = new Map<
   string,
-  { size: number | null; prs: SessionPullRequest[] }
+  { key: string; prs: SessionPullRequest[] }
 >()
 
 /** Test hook: shrink the remembered-scan cap. Omit to restore the default. */
@@ -26,6 +28,7 @@ function samePullRequests(a: SessionPullRequest[], b: SessionPullRequest[]) {
 /** Stores the scan; returns true when the PR list differs from the last one. */
 function rememberScan(
   record: AgentSessionRecord,
+  key: string,
   prs: SessionPullRequest[]
 ): boolean {
   const previous = scannedPrs.get(record.sessionId)?.prs ?? []
@@ -34,14 +37,51 @@ function rememberScan(
     const oldest = scannedPrs.keys().next().value
     if (oldest !== undefined) scannedPrs.delete(oldest)
   }
-  scannedPrs.set(record.sessionId, { size: record.lastKnownLogSize ?? null, prs })
+  scannedPrs.set(record.sessionId, { key, prs })
   return !samePullRequests(previous, prs)
 }
 
-/** True when `getMergedPullRequests` has not yet covered this log size. */
-export function needsPullRequestScan(record: AgentSessionRecord): boolean {
-  const hit = scannedPrs.get(record.sessionId)
-  return !hit || hit.size !== (record.lastKnownLogSize ?? null)
+function subagentPaths(record: AgentSessionRecord): string[] {
+  return getSubagentLogPaths(
+    record.logFilePath,
+    record.agentType,
+    record.sessionId
+  )
+}
+
+function keyFor(record: AgentSessionRecord, subagents: string[]): string {
+  let total = 0
+  for (const logPath of subagents) {
+    try {
+      total += fs.statSync(logPath).size
+    } catch {
+      // A missing subagent log contributes nothing.
+    }
+  }
+  return `${record.lastKnownLogSize ?? null}|${subagents.length}:${total}`
+}
+
+/**
+ * Freshness key for a session's PR scan: the main log size plus the count and
+ * total size of its subagent logs. A codex subagent index that arrives after
+ * the first scan, or a subagent log that grows, changes the key. Stats the
+ * subagent logs; never reads them.
+ */
+export function pullRequestScanKey(record: AgentSessionRecord): string {
+  return keyFor(record, subagentPaths(record))
+}
+
+/** Main log first, then subagent logs. These are what a PR scan reads. */
+export function pullRequestScanPaths(record: AgentSessionRecord): string[] {
+  return [record.logFilePath, ...subagentPaths(record)]
+}
+
+/** True when the last remembered scan did not see these log sizes. */
+export function needsPullRequestScan(
+  record: AgentSessionRecord,
+  key: string = pullRequestScanKey(record)
+): boolean {
+  return scannedPrs.get(record.sessionId)?.key !== key
 }
 
 /** Last scanned PRs for the session. Never reads a log file. */
@@ -54,30 +94,46 @@ export function getCachedPullRequests(
 export function getMergedPullRequests(
   record: AgentSessionRecord
 ): SessionPullRequest[] {
-  const prs = scanMergedPullRequests(record)
-  rememberScan(record, prs)
+  const subagents = subagentPaths(record)
+  // Key before reading: growth during the scan then shows up as a new key.
+  const key = keyFor(record, subagents)
+  const prs = scanMergedPullRequests(record, subagents)
+  rememberScan(record, key, prs)
   return prs
 }
 
 /**
- * Scans the session's logs and remembers the result. Returns true when the
- * PR list changed from the last remembered scan (including becoming empty).
+ * Scans the session's logs and remembers the result under `key` (computed
+ * before the scan). Returns true when the PR list changed from the last
+ * remembered scan (including becoming empty).
  */
-export function rescanPullRequests(record: AgentSessionRecord): boolean {
-  return rememberScan(record, scanMergedPullRequests(record))
+export function rescanPullRequests(
+  record: AgentSessionRecord,
+  key: string = pullRequestScanKey(record)
+): boolean {
+  return rememberScan(
+    record,
+    key,
+    scanMergedPullRequests(record, subagentPaths(record))
+  )
+}
+
+/** Reads one log's new bytes into the PR extractor's per-file cache. */
+export function warmPullRequestScan(
+  record: AgentSessionRecord,
+  logPath: string
+): void {
+  getSessionPullRequests(
+    logPath,
+    logPath === record.logFilePath ? record.lastKnownLogSize : undefined
+  )
 }
 
 function scanMergedPullRequests(
-  record: AgentSessionRecord
+  record: AgentSessionRecord,
+  subagents: string[]
 ): SessionPullRequest[] {
-  const paths = [
-    record.logFilePath,
-    ...getSubagentLogPaths(
-      record.logFilePath,
-      record.agentType,
-      record.sessionId
-    ),
-  ]
+  const paths = [record.logFilePath, ...subagents]
   const seen = new Set<string>()
   const prs: SessionPullRequest[] = []
   for (let i = 0; i < paths.length; i++) {
