@@ -1734,7 +1734,15 @@ app.get('/api/directories', async (c) => {
 app.get('/api/server-info', async (c) => {
   // For 0.0.0.0, detect Tailscale IP for display (already listening on all interfaces).
   // For localhost, only report if we successfully bound to the Tailscale IP.
-  const tsIp = config.hostname === '0.0.0.0' ? await getTailscaleIp() : boundTailscaleIp
+  // Wait for the startup lookup first: the client fetches this once per page
+  // load, so answering null while it is pending sticks until a reload.
+  let tsIp: string | null
+  if (config.hostname === '0.0.0.0') {
+    tsIp = await getTailscaleIp()
+  } else {
+    await tailscaleReady
+    tsIp = boundTailscaleIp
+  }
   return c.json({
     port: config.port,
     tailscaleIp: tsIp,

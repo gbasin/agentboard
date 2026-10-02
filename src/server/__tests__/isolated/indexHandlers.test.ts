@@ -4877,8 +4877,30 @@ describe('server fetch handlers', () => {
     expect(started?.data).toEqual({ url: 'http://127.0.0.1:4040' })
     expect(logEntries.some((entry) => entry.event === 'tailscale_listener_started')).toBe(false)
 
+    // A page loaded now asks for server-info once and caches the answer, so
+    // the request waits for the lookup instead of reporting null.
+    const fetchHandler = serveOptions?.fetch
+    if (!fetchHandler) throw new Error('Fetch handler not configured')
+    let infoSettled = false
+    const info = Promise.resolve(
+      fetchHandler.call(
+        {} as Bun.Server<unknown>,
+        new Request('http://localhost/api/server-info'),
+        {} as Bun.Server<unknown>
+      )
+    ).then((response) => {
+      infoSettled = true
+      return response
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(infoSettled).toBe(false)
+
     answerTailscale('100.64.0.7')
     await mod.tailscaleReady
+    const infoResponse = await info
+    if (!infoResponse) throw new Error('Expected response for server-info request')
+    const infoPayload = (await infoResponse.json()) as { tailscaleIp: string | null }
+    expect(infoPayload.tailscaleIp).toBe('100.64.0.7')
 
     expect(serveHostnames).toEqual(['127.0.0.1', '100.64.0.7'])
     const listener = logEntries.find((entry) => entry.event === 'tailscale_listener_started')
