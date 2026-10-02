@@ -3,7 +3,7 @@
  * useCommitField. Errors render inline under the input and are wired into
  * aria-describedby/aria-invalid; the invalid draft stays local.
  */
-import type { InputHTMLAttributes } from 'react'
+import { forwardRef, type InputHTMLAttributes } from 'react'
 import { cn } from '../../../utils/cn'
 import { CONTROL_INPUT, ERROR_TEXT } from '../styles'
 import { useCommitField, type CommitFn } from '../useCommitField'
@@ -21,15 +21,10 @@ interface CommitInputProps extends NativeInputProps {
   wrapperClassName?: string
 }
 
-export function CommitInput({
-  value,
-  onCommit,
-  describedBy,
-  id,
-  className,
-  wrapperClassName,
-  ...rest
-}: CommitInputProps) {
+export const CommitInput = forwardRef<HTMLInputElement, CommitInputProps>(function CommitInput(
+  { value, onCommit, describedBy, id, className, wrapperClassName, ...rest },
+  ref
+) {
   const field = useCommitField(value, onCommit)
   const errorId = id ? `${id}-error` : undefined
   const describedByIds = [describedBy, field.error ? errorId : undefined]
@@ -40,6 +35,7 @@ export function CommitInput({
     <div className={cn('min-w-0', wrapperClassName)}>
       <input
         {...rest}
+        ref={ref}
         id={id}
         value={field.value}
         onChange={field.onChange}
@@ -56,7 +52,7 @@ export function CommitInput({
       )}
     </div>
   )
-}
+})
 
 /** Parse an integer draft and clamp it into [min, max]; null if not a number. */
 export function parseClampedInt(draft: string, min: number, max: number): number | null {
