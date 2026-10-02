@@ -92,8 +92,8 @@ export function SettingsNav({ variant, current, onSelect, panelId }: SettingsNav
               'flex h-[32px] w-full items-center border-l-2 px-3 text-left text-[13px] transition-colors',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent',
               selected
-                ? 'border-primary bg-hover text-primary'
-                : 'border-transparent text-secondary hover:bg-hover/60 hover:text-primary'
+                ? 'border-primary bg-hover font-medium text-primary'
+                : 'border-transparent text-secondary hover:text-primary'
             )}
           >
             {page.label}

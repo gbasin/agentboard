@@ -19,7 +19,6 @@ function DefaultProjectDirControl({ ids }: RowControlProps) {
       autoCorrect="off"
       maxLength={4096}
       wrapperClassName="w-72 max-md:w-full"
-      className="font-mono"
       onCommit={(draft) => {
         // An empty field means "use the default", never an empty path.
         useSettingsStore.getState().setDefaultProjectDir(draft.trim() || DEFAULT_PROJECT_DIR)

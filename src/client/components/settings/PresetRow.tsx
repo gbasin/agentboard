@@ -18,7 +18,7 @@ import {
   PRESET_LABEL_MAX,
   type PresetField,
 } from './presetEdits'
-import { CONTROL_BUTTON, CONTROL_HEIGHT, CONTROL_INPUT } from './styles'
+import { CONTROL_BUTTON_SHAPE, CONTROL_HEIGHT, CONTROL_INPUT } from './styles'
 
 /** Desktop: one line of five columns. Phone: radio/icon/delete, then name, then command. */
 export const PRESET_GRID =
@@ -129,7 +129,6 @@ export function PresetRow({
         autoCapitalize="off"
         autoCorrect="off"
         onCommit={(draft) => onCommitField('command', draft)}
-        className="font-mono"
         wrapperClassName="max-md:order-5 max-md:col-span-3"
       />
 
@@ -143,11 +142,11 @@ export function PresetRow({
           aria-label={confirming ? `Confirm delete ${name}` : pending ? `Discard new preset` : `Delete ${name}`}
           title={confirming ? 'Click again to delete' : undefined}
           className={cn(
-            CONTROL_BUTTON,
-            'max-md:order-3 px-0',
+            CONTROL_BUTTON_SHAPE,
+            'max-md:order-3',
             confirming
-              ? 'border-danger bg-danger/10 px-2 text-danger hover:bg-danger/20 hover:text-danger'
-              : 'w-[32px] max-md:w-[44px] hover:text-danger'
+              ? 'border-danger bg-danger/10 px-2 text-danger hover:bg-danger/20'
+              : 'w-[32px] border-border bg-surface text-secondary hover:bg-hover hover:text-danger max-md:w-[44px]'
           )}
         >
           {confirming ? 'Delete?' : <DeleteIcon width={ICON_SIZE.default} height={ICON_SIZE.default} />}

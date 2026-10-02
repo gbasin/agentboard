@@ -11,6 +11,7 @@ import {
 import { getEffectiveModifier, getModifierDisplay } from '../../../utils/device'
 import { Switch } from '../../Switch'
 import { SegmentedControl } from '../controls/SegmentedControl'
+import { SWITCH_TOUCH_TARGET } from '../styles'
 import type { RowControlProps, SettingsRowDef } from '../types'
 import { useServerSetting, type ServerSettingName } from '../useServerSetting'
 
@@ -22,6 +23,7 @@ function WebGLControl({ ids }: RowControlProps) {
   const set = useSettingsStore((state) => state.setUseWebGL)
   return (
     <Switch
+      className={SWITCH_TOUCH_TARGET}
       id={ids.control}
       checked={checked}
       onCheckedChange={set}
@@ -36,6 +38,7 @@ function serverSwitch(name: ServerSettingName, fallback: boolean) {
     const { value, loading, set } = useServerSetting<boolean>(name, 'enabled', fallback)
     return (
       <Switch
+        className={SWITCH_TOUCH_TARGET}
         id={ids.control}
         checked={value}
         onCheckedChange={set}

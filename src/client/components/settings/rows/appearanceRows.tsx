@@ -69,7 +69,6 @@ function CustomFontFamilyControl({ ids }: RowControlProps) {
       autoCorrect="off"
       maxLength={256}
       wrapperClassName="w-60 max-md:w-full"
-      className="font-mono"
       onCommit={(draft) => {
         useSettingsStore.getState().setCustomFontFamily(draft.trim())
         return null

@@ -12,6 +12,7 @@ import {
 import { Switch } from '../../Switch'
 import { CommitInput, parseClampedInt } from '../controls/CommitInput'
 import { SegmentedControl } from '../controls/SegmentedControl'
+import { SWITCH_TOUCH_TARGET } from '../styles'
 import type { RowControlProps, SettingsRowDef, SettingsState } from '../types'
 import { useServerSetting } from '../useServerSetting'
 
@@ -25,6 +26,7 @@ export function storeSwitch(key: BooleanKey, setter: BooleanSetter) {
     const set = useSettingsStore((state) => state[setter])
     return (
       <Switch
+        className={SWITCH_TOUCH_TARGET}
         id={ids.control}
         checked={checked}
         onCheckedChange={set}
@@ -132,6 +134,7 @@ function PreferWindowNameControl({ ids }: RowControlProps) {
   const { value, loading, set } = useServerSetting<boolean>('prefer-window-name', 'enabled', false)
   return (
     <Switch
+      className={SWITCH_TOUCH_TARGET}
       id={ids.control}
       checked={value}
       onCheckedChange={set}

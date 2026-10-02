@@ -5,7 +5,7 @@
 import { useSettingsStore } from '../../../stores/settingsStore'
 import { playIdleSound, playPermissionSound, primeAudio } from '../../../utils/sound'
 import { Switch } from '../../Switch'
-import { CONTROL_BUTTON } from '../styles'
+import { CONTROL_BUTTON, SWITCH_TOUCH_TARGET } from '../styles'
 import type { RowControlProps, SettingsRowDef } from '../types'
 
 type SoundKey = 'soundOnPermission' | 'soundOnIdle'
@@ -26,6 +26,7 @@ function soundControl(key: SoundKey, setter: SoundSetter, play: () => Promise<vo
           Test
         </button>
         <Switch
+          className={SWITCH_TOUCH_TARGET}
           id={ids.control}
           checked={checked}
           onCheckedChange={(next) => {
