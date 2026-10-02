@@ -63,8 +63,14 @@ interface ScanState {
   // triggers a rescan.
   offset: number
   mtimeMs: number
-  // Trailing partial line carried between incremental reads.
-  remainder: string
+  // Trailing partial line carried between reads, as copied raw byte pieces.
+  // It is decoded once, whole, when its newline arrives: decoding per chunk
+  // breaks multi-byte characters at chunk edges, and re-joining a growing
+  // string per chunk is quadratic in line length (image results run to MBs).
+  partial: Buffer[]
+  // True when the partial line contains `create`, seams between pieces
+  // included.
+  partialHasCreate: boolean
   // Tool-call ids awaiting their result (id -> expiry in lines).
   pending: PendingCreate[]
   // Fallback lookahead (lines) for create commands that had no ids.
@@ -85,7 +91,8 @@ function newScanState(): ScanState {
   return {
     offset: 0,
     mtimeMs: 0,
-    remainder: '',
+    partial: [],
+    partialHasCreate: false,
     pending: [],
     windowRemaining: 0,
     seenUrls: new Set(),
@@ -244,8 +251,8 @@ function collectCommandExecutionUrls(state: ScanState, line: string): void {
 }
 
 // JSC substrings (regex captures, split() pieces) share their parent's
-// buffer. Storing one in the scan cache pins the whole decoded chunk (up to
-// READ_CHUNK_BYTES) for as long as the entry lives — hundreds of MB across a
+// buffer. Storing one in the scan cache pins the whole decoded text (a chunk
+// plus any long line it completes) for as long as the entry lives — hundreds of MB across a
 // few hundred sessions. Copy anything that outlives the scan.
 function detach(text: string): string {
   return text.length === 0 ? '' : Buffer.from(text, 'utf8').toString('utf8')
@@ -327,10 +334,8 @@ function processLine(state: ScanState, line: string): void {
   state.pending = state.pending.filter((p) => p.ttl > 0 && p.ids.size > 0)
 }
 
-function processChunk(state: ScanState, chunk: string): void {
-  const lines = (state.remainder + chunk).split('\n')
-  state.remainder = detach(lines.pop() ?? '')
-  for (const line of lines) {
+function processLines(state: ScanState, text: string): void {
+  for (const line of text.split('\n')) {
     processLine(state, line)
   }
 }
@@ -363,29 +368,59 @@ function hasCreateCandidate(bytes: Buffer): boolean {
   return false
 }
 
-// Decoding chunks into strings dominates scan garbage and CPU, yet most
-// chunks hold no `gh pr create`. When nothing in the chunk can match and no
-// create is waiting for its result, only the trailing partial line must be
-// carried, so the rest is never decoded. Returns false when the chunk has to
-// go through the full path.
-function skipChunkWithoutCreate(state: ScanState, bytes: Buffer): boolean {
-  if (state.pending.length > 0 || state.windowRemaining > 0) return false
+// True when `create` spans the seam between the partial line and `bytes`.
+// The word is 6 bytes, so 5 bytes per side cover every split. The partial
+// side may span several short pieces (small appends across polls).
+function seamHasCreate(partial: Buffer[], bytes: Buffer): boolean {
+  if (partial.length === 0) return false
+  const sides: Buffer[] = [bytes.subarray(0, 5)]
+  let need = 5
+  for (let i = partial.length - 1; i >= 0 && need > 0; i--) {
+    const piece = partial[i]
+    const take = Math.min(need, piece.length)
+    sides.unshift(piece.subarray(piece.length - take))
+    need -= take
+  }
+  return Buffer.concat(sides).includes(CREATE_BYTES)
+}
+
+// Feeds one read chunk. Decoding dominates scan garbage and CPU, yet most
+// lines hold no `gh pr create`, so the lines a chunk completes are decoded
+// only when something in them can match: a create is waiting for its result,
+// or the carried partial line, the seam, or the chunk holds a create
+// candidate. A chunk without a newline completes no line; it is only added
+// to the partial line. Lines are decoded whole, from line start to newline,
+// so no multi-byte character is ever split.
+function consumeChunk(state: ScanState, bytes: Buffer): void {
   const lastNewline = bytes.lastIndexOf(0x0a)
-  if (lastNewline === -1) return false
-  if (state.remainder.includes('create')) return false
-  // `create` split across the chunk boundary.
-  const seam = state.remainder.slice(-5) + bytes.toString('latin1', 0, 5)
-  if (seam.includes('create')) return false
-  if (hasCreateCandidate(bytes)) return false
-  state.remainder = bytes.toString('utf8', lastNewline + 1)
-  return true
+  const seamCreate = seamHasCreate(state.partial, bytes)
+  if (lastNewline === -1) {
+    state.partialHasCreate ||= seamCreate || bytes.includes(CREATE_BYTES)
+    // Copy: `bytes` views the shared read buffer.
+    state.partial.push(Buffer.from(bytes))
+    return
+  }
+  if (
+    state.pending.length > 0 ||
+    state.windowRemaining > 0 ||
+    state.partialHasCreate ||
+    seamCreate ||
+    hasCreateCandidate(bytes)
+  ) {
+    const head = bytes.subarray(0, lastNewline)
+    const lines =
+      state.partial.length > 0 ? Buffer.concat([...state.partial, head]) : head
+    processLines(state, lines.toString('utf8'))
+  }
+  const tail = bytes.subarray(lastNewline + 1)
+  state.partial = tail.length > 0 ? [Buffer.from(tail)] : []
+  state.partialHasCreate = tail.includes(CREATE_BYTES)
 }
 
 /** Parse a complete log file (used by tests and full rescans). */
 export function extractPullRequests(content: string): SessionPullRequest[] {
   const state = newScanState()
-  processChunk(state, content)
-  processLine(state, state.remainder)
+  processLines(state, content)
   return state.prs
 }
 
@@ -439,7 +474,8 @@ export function getSessionPullRequests(
   if (stat.size === state.offset && stat.mtimeMs !== state.mtimeMs) {
     // Same-size rewrite — rescan from scratch.
     state.offset = 0
-    state.remainder = ''
+    state.partial = []
+    state.partialHasCreate = false
     state.pending = []
     state.windowRemaining = 0
     state.seenUrls.clear()
@@ -454,10 +490,7 @@ export function getSessionPullRequests(
       readBuffer ??= Buffer.allocUnsafe(READ_CHUNK_BYTES)
       const read = fs.readSync(fd, readBuffer, 0, length, state.offset)
       if (read <= 0) break
-      const bytes = readBuffer.subarray(0, read)
-      if (!skipChunkWithoutCreate(state, bytes)) {
-        processChunk(state, bytes.toString('utf8'))
-      }
+      consumeChunk(state, readBuffer.subarray(0, read))
       state.offset += read
     }
     state.mtimeMs = stat.mtimeMs
