@@ -12,6 +12,7 @@ import { ensureTmux } from './prerequisites'
 import { applyNestedTmuxDecision } from './tmuxIsolation'
 import { KillRateLimiter } from './killRateLimit'
 import { SessionManager } from './SessionManager'
+import { ThrowawayShellReaper } from './throwawayShellReaper'
 import { SessionRegistry } from './SessionRegistry'
 import {
   initDatabase,
@@ -573,7 +574,15 @@ if (storedTerminalColorsEnabled !== null) {
   config.terminalColorsEnabled = storedTerminalColorsEnabled === 'true'
 }
 
+// Reaps the login shells tmux leaks for grouped sessions (see
+// tmuxGroupedSession.ts). Grouped-session creation only arms its timer.
+const throwawayShellReaper = new ThrowawayShellReaper({
+  getServerPid: () => sessionManager.getTmuxServerPid(),
+})
+const noteGroupedSessionCreated = () => throwawayShellReaper.noteGroupedSessionCreated()
+
 const sessionManager = new SessionManager(undefined, {
+  onGroupedSessionCreated: noteGroupedSessionCreated,
   displayNameExists: (name, excludeSessionId) => db.displayNameExists(name, excludeSessionId),
   mouseMode: initialMouseMode,
   terminalColorsEnabled: config.terminalColorsEnabled,
@@ -2320,6 +2329,7 @@ async function cleanupAllTerminals() {
     clearAttachDedup(ws)
   }
   await Promise.allSettled(disposePromises)
+  throwawayShellReaper.dispose()
   logPoller.stop()
   remotePoller?.stop()
   db.close()
@@ -4105,6 +4115,7 @@ function createPersistentTerminal(ws: ServerWebSocket<WSData>) {
     sessionName,
     baseSession: config.tmuxSession,
     monitorTargets: config.terminalMonitorTargets,
+    onGroupedSessionCreated: noteGroupedSessionCreated,
     onData: (data) => {
       // Guard: ignore output from proxies that have been replaced.
       if (ws.data.terminal !== terminal) return

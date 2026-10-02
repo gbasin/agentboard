@@ -313,9 +313,6 @@ describe('TerminalProxy', () => {
             'tmux',
             'new-session',
             '-d',
-            '-P',
-            '-F',
-            '#{pid}',
             '-t',
             'agentboard',
             '-s',
@@ -345,31 +342,13 @@ describe('TerminalProxy', () => {
     expect(proxy.isReady()).toBe(true)
   })
 
-  test('kills the login shell tmux discards when creating the grouped session', async () => {
+  test('grouped-session creation is one new-session and only arms the reaper', async () => {
     const harness = createSpawnHarness()
-    // ps before new-session: server 900 has one pane; after: plus the
-    // discarded initial-window shell (pid 901) on its own tty.
-    const psOutputs = ['900 1 ?? tmux\n800 900 ttys001 tail\n', '900 1 ?? tmux\n800 900 ttys001 tail\n901 900 ttys044 -zsh\n']
+    const order: string[] = []
     const spawnSync = (args: string[], options?: Parameters<typeof Bun.spawnSync>[1]) => {
-      if (args[0] === 'ps') {
-        return {
-          exitCode: 0,
-          stdout: Buffer.from(psOutputs.shift() ?? ''),
-          stderr: Buffer.from(''),
-        } as ReturnType<typeof Bun.spawnSync>
-      }
-      const command = getTmuxCommand(args)
-      if (command === 'new-session') {
-        harness.spawnSync(args, options)
-        return { exitCode: 0, stdout: Buffer.from('900\n'), stderr: Buffer.from('') } as ReturnType<typeof Bun.spawnSync>
-      }
-      if (command === 'list-panes') {
-        return { exitCode: 0, stdout: Buffer.from('800\n'), stderr: Buffer.from('') } as ReturnType<typeof Bun.spawnSync>
-      }
+      order.push(args[0] === 'tmux' ? getTmuxCommand(args) : args[0]!)
       return harness.spawnSync(args, options)
     }
-    const killed: number[] = []
-    const events: Array<{ event: string; reapedPids?: unknown }> = []
     const proxy = new TerminalProxy({
       connectionId: 'conn-reap',
       sessionName: 'agentboard-ws-reap',
@@ -377,19 +356,17 @@ describe('TerminalProxy', () => {
       onData: () => {},
       spawn: harness.spawn,
       spawnSync,
-      killProcess: (pid) => killed.push(pid),
+      onGroupedSessionCreated: () => order.push('reaper-armed'),
       wait: async () => {},
     })
-    const logEvent = (proxy as unknown as { logEvent: (e: string, p: Record<string, unknown>) => void }).logEvent.bind(proxy)
-    ;(proxy as unknown as { logEvent: typeof logEvent }).logEvent = (event, payload) => {
-      events.push({ event, reapedPids: payload.reapedPids })
-      logEvent(event, payload)
-    }
 
     await proxy.start()
 
-    expect(killed).toEqual([901])
-    expect(events).toContainEqual({ event: 'terminal_group_throwaway_reaped', reapedPids: [901] })
+    // The 0.23.0 stall: process listing on the connection path.
+    expect(order.filter((step) => ['ps', 'pgrep', 'lsof'].includes(step))).toEqual([])
+    expect(order.filter((step) => step === 'new-session')).toHaveLength(1)
+    expect(order.indexOf('reaper-armed')).toBe(order.indexOf('new-session') + 1)
+    expect(order.filter((step) => step === 'reaper-armed')).toHaveLength(1)
     expect(proxy.isReady()).toBe(true)
   })
 
@@ -1038,9 +1015,6 @@ describe('TerminalProxy', () => {
         'tmux',
         'new-session',
         '-d',
-        '-P',
-        '-F',
-        '#{pid}',
         '-t',
         'agentboard',
         '-s',
@@ -1062,6 +1036,7 @@ describe('TerminalProxy', () => {
     ])
     const fake = createStatefulTmuxSpawnSync(sessions, 'agentboard-ws-abc')
     const harness = createSpawnHarness()
+    let armed = 0
 
     const proxy = new TerminalProxy({
       connectionId: 'abc',
@@ -1070,11 +1045,19 @@ describe('TerminalProxy', () => {
       onData: () => {},
       spawn: harness.spawn,
       spawnSync: fake.spawnSync,
+      onGroupedSessionCreated: () => {
+        armed += 1
+      },
       wait: async () => {},
     })
 
     await proxy.start()
+    expect(armed).toBe(1)
     const effective = proxy.ensureEffectiveTarget('work:@1')
+    // The derived grouped session arms the reaper too, and lists nothing.
+    expect(armed).toBe(2)
+    expect(fake.calls.filter((c) => getTmuxCommand(c) === 'new-session')).toHaveLength(2)
+    expect(fake.calls.some((c) => getTmuxCommand(c) === 'list-panes')).toBe(false)
 
     expect(effective).toMatch(/^agentboard-ws-abc-x-work-[0-9a-z]+:@1$/)
     expect(
