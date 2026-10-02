@@ -6156,4 +6156,49 @@ describe('server startup side effects', () => {
     expect(serveOptions).not.toBeNull()
     expect(syncCapturePaneCalls).toHaveLength(0)
   })
+
+  test('dormant PRs found by the background scan reach the hibernating list', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-dormant-pr-'))
+    try {
+      const logFilePath = path.join(tempDir, 'dormant.jsonl')
+      const prUrl = 'https://github.com/acme/widgets/pull/77'
+      const lines = [
+        {
+          type: 'assistant',
+          message: {
+            content: [
+              { type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'gh pr create --fill' } },
+            ],
+          },
+        },
+        {
+          type: 'user',
+          message: { content: [{ type: 'tool_result', tool_use_id: 't1', content: prUrl }] },
+        },
+      ]
+      await fs.writeFile(logFilePath, lines.map((line) => JSON.stringify(line)).join('\n') + '\n')
+      const sessionId = `dormant-pr-wiring-${importCounter}`
+      seedRecord(
+        makeRecord({
+          sessionId,
+          logFilePath,
+          currentWindow: null,
+          isHibernating: true,
+          lastKnownLogSize: (await fs.stat(logFilePath)).size,
+        })
+      )
+
+      const { registryInstance } = await loadIndex()
+      const hibernatingPrs = () =>
+        (registryInstance.agentSessions.hibernating as Array<{
+          sessionId: string
+          prs?: Array<{ url: string }>
+        }>).find((session) => session.sessionId === sessionId)?.prs ?? []
+
+      await waitFor(() => hibernatingPrs().length > 0, 2000)
+      expect(hibernatingPrs().map((pr) => pr.url)).toEqual([prUrl])
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true })
+    }
+  })
 })
