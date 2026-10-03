@@ -471,6 +471,49 @@ describe('LogPoller', () => {
     db.close()
   })
 
+  test('retries failed watcher batches on the next trigger without losing paths or spinning', async () => {
+    const db = initDatabase({ path: ':memory:' })
+    const worker = new (class extends RecordingMatchWorkerClient {
+      override async poll(request: Omit<MatchWorkerRequest, 'id'>): Promise<MatchWorkerResponse> {
+        const response = await super.poll(request)
+        if (this.requests.length === 1) throw new Error('Temporary worker failure')
+        return response
+      }
+    })()
+    const poller = new LogPoller(db, new SessionRegistry(), {
+      matchWorkerClient: worker,
+      maxLogsPerPoll: 2,
+    })
+    const changedPaths = ['one', 'two', 'three'].map((name) =>
+      path.join(tempRoot, `${name}.jsonl`)
+    )
+
+    try {
+      await poller.pollChanged(changedPaths)
+      // Allow scheduled microtasks and a full event-loop turn to run: failure
+      // must wait for a new trigger instead of immediately retrying itself.
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(worker.requests).toHaveLength(1)
+      expect(worker.requests[0]?.preFilteredPaths).toEqual(changedPaths.slice(0, 2))
+      expect(poller.matchingError).toContain('Temporary worker failure')
+
+      await poller.pollChanged([])
+      await waitForRequestCount(worker, 3)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      const retriedPaths = worker.requests.slice(1).flatMap((request) =>
+        request.preFilteredPaths ?? []
+      )
+      expect(retriedPaths.toSorted()).toEqual(changedPaths.toSorted())
+      expect(worker.requests.every((request) =>
+        request.preFilteredPaths!.length <= 2
+      )).toBe(true)
+      expect(poller.matchingError).toBeNull()
+    } finally {
+      poller.stop()
+      db.close()
+    }
+  })
+
   test('skips startup orphan rematch when every live window is already claimed', async () => {
     const db = initDatabase({ path: ':memory:' })
     const registry = new SessionRegistry()
@@ -1591,6 +1634,59 @@ describe('LogPoller', () => {
     expect(updated?.lastResumeError).toBeNull()
 
     poller.stop()
+    db.close()
+  })
+
+  test('orphan rematch sees history rows beyond the sidebar cap', async () => {
+    const db = initDatabase({ path: ':memory:' })
+    const registry = new SessionRegistry()
+    registry.replaceSessions([baseSession])
+    const base = {
+      projectPath: baseSession.projectPath,
+      slug: null,
+      agentType: 'claude' as const,
+      createdAt: '2020-01-01T00:00:00.000Z',
+      lastUserMessage: null,
+      currentWindow: null,
+      isHibernating: false,
+      lastResumeError: null,
+      lastKnownLogSize: 0,
+      isCodexExec: false,
+      launchCommand: null,
+    }
+    // 120 newer History rows push the oldest one past the 100-row sidebar cap.
+    for (let i = 0; i < 120; i++) {
+      db.insertSession({
+        ...base,
+        sessionId: `newer-${i}`,
+        logFilePath: path.join(tempRoot, `newer-${i}.jsonl`),
+        displayName: `newer-${i}`,
+        lastActivityAt: new Date(Date.UTC(2025, 0, 1, 0, i)).toISOString(),
+      })
+    }
+    db.insertSession({
+      ...base,
+      sessionId: 'oldest',
+      logFilePath: path.join(tempRoot, 'oldest.jsonl'),
+      displayName: 'oldest',
+      lastActivityAt: '2020-01-01T00:00:00.000Z',
+    })
+    expect(
+      db.getHistorySessions({ limit: 100 }).some((r) => r.sessionId === 'oldest')
+    ).toBe(false)
+
+    const worker = new RecordingMatchWorkerClient()
+    const poller = new LogPoller(db, registry, { matchWorkerClient: worker })
+    poller.start(5000)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    await poller.waitForOrphanRematch()
+    poller.stop()
+
+    const rematch = worker.requests.find((r) => (r.orphanCandidates?.length ?? 0) > 0)
+    const ids = rematch?.orphanCandidates?.map((c) => c.sessionId) ?? []
+    expect(ids).toHaveLength(121)
+    expect(ids).toContain('oldest')
+
     db.close()
   })
 

@@ -7,6 +7,8 @@ import type { AgentSessionRecord, ClaimCurrentWindowPatch } from '../../db'
 import { TmuxTimeoutError } from '../../tmuxTimeout'
 import { TMUX_FIELD_SEPARATOR } from '../../tmuxFormat'
 import { setCodexSubagentIndex } from '../../subagentLogs'
+import { Database } from 'bun:sqlite'
+import { SessionCatalog } from '../../persistence/catalog'
 
 const bunAny = Bun as typeof Bun & {
   serve: typeof Bun.serve
@@ -54,6 +56,8 @@ let dbState: {
     | null
   updateCalls: Array<{ sessionId: string; patch: Partial<AgentSessionRecord> }>
   setHibernatingCalls: Array<{ sessionId: string; isHibernating: boolean }>
+  /** Set before loadIndex() to give index.ts a durable session catalog. */
+  sqlite?: Database
 }
 
 const defaultConfig = {
@@ -380,6 +384,7 @@ mock.module('../../logger', () => ({
 }))
 mock.module('../../db', () => ({
   initDatabase: () => ({
+    db: dbState.sqlite,
     getSessionById: (sessionId: string) => dbState.records.get(sessionId) ?? null,
     getSessionByLogPath: (logFilePath: string) =>
       Array.from(dbState.records.values()).find(
@@ -515,20 +520,23 @@ class SessionRefreshWorkerClientMock {
     _managedSession: string,
     _discoverPrefixes: string[],
     options?: { expectedWindowCount?: number }
-  ): Promise<Session[]> {
+  ): Promise<{ sessions: Session[]; tmuxServerPid: number }> {
     refreshWorkerExpectedWindowCounts.push(options?.expectedWindowCount ?? 0)
     if (refreshWorkerDeferred) {
-      return new Promise<Session[]>((resolve, reject) => {
-        refreshWorkerResolve = resolve
-        _refreshWorkerReject = reject
-      })
+      return new Promise<{ sessions: Session[]; tmuxServerPid: number }>(
+        (resolve, reject) => {
+          refreshWorkerResolve = (sessions) =>
+            resolve({ sessions, tmuxServerPid: 0 })
+          _refreshWorkerReject = reject
+        }
+      )
     }
     if (refreshWorkerError) {
       const error = refreshWorkerError
       refreshWorkerError = null
       return Promise.reject(error)
     }
-    return Promise.resolve(refreshWorkerSessions)
+    return Promise.resolve({ sessions: refreshWorkerSessions, tmuxServerPid: 0 })
   }
 
   getLastUserMessage(): Promise<string | null> {
@@ -6417,5 +6425,126 @@ describe('server startup side effects', () => {
     } finally {
       await fs.rm(tempDir, { recursive: true, force: true })
     }
+  })
+})
+
+describe('catalog-backed kill and hibernate', () => {
+  const liveWindow = 'agentboard:@1'
+  const liveSession: Session = { ...baseSession, tmuxWindow: liveWindow }
+
+  /**
+   * Give index.ts a catalog whose row for @1 was bound in `rowEpoch`; tmux
+   * reports epoch `epoch-live` and window @1 tagged `tags` (null = untagged).
+   */
+  function setupCatalog(options: {
+    rowEpoch: string
+    tags: 'owner' | 'other' | null
+  }) {
+    const sqlite = new Database(':memory:')
+    sqlite.exec(
+      'CREATE TABLE app_settings(key TEXT PRIMARY KEY, value TEXT);' +
+        'CREATE TABLE agent_sessions(session_id TEXT, is_codex_exec INTEGER DEFAULT 0);'
+    )
+    dbState.sqlite = sqlite
+    dbState.appSettings.set('persistence_host_id', 'host-test')
+    const catalog = new SessionCatalog(sqlite, 'host-test')
+    const saved = catalog.create({ name: 'alpha', projectPath: '/tmp/alpha', command: 'claude' })
+    const run = catalog.beginRun(saved.id)
+    catalog.bind(saved.id, run.id, liveWindow, options.rowEpoch)
+    const tag =
+      options.tags === 'owner'
+        ? `${saved.id}|${run.id}`
+        : options.tags === 'other'
+          ? 'other-board|other-run'
+          : '|'
+    spawnSyncImpl = ((command: string[]) => {
+      const stdout = command.includes('@agentboard-server-id')
+        ? 'epoch-live'
+        : command.includes('list-windows') && command.includes('=agentboard')
+          ? `@1|${tag}|alpha`
+          : ''
+      return {
+        exitCode: 0,
+        stdout: Buffer.from(stdout),
+        stderr: Buffer.from(''),
+      } as ReturnType<typeof Bun.spawnSync>
+    }) as typeof Bun.spawnSync
+    return { catalog, saved }
+  }
+
+  async function sendKill() {
+    const { serveOptions, registryInstance } = await loadIndex()
+    registryInstance.sessions = [liveSession]
+    const killed: string[] = []
+    sessionManagerState.killWindow = (w: string) => {
+      killed.push(w)
+    }
+    const { ws, sent } = createWs()
+    serveOptions.websocket!.message?.(
+      ws as never,
+      JSON.stringify({ type: 'session-kill', sessionId: liveSession.id })
+    )
+    await waitFor(() => killed.length > 0 || sent.length > 0)
+    return { killed, sent }
+  }
+
+  test('kill ignores a catalog row from an earlier tmux server with a reused window id', async () => {
+    const { catalog, saved } = setupCatalog({ rowEpoch: 'epoch-old', tags: null })
+    const { killed, sent } = await sendKill()
+    expect(killed).toEqual([liveWindow])
+    expect(sent.filter((m) => m.type === 'kill-failed')).toEqual([])
+    expect(catalog.get(saved.id)?.state).toBe('running')
+  })
+
+  test('kill does not archive a row whose tags do not match the live window', async () => {
+    const { catalog, saved } = setupCatalog({ rowEpoch: 'epoch-live', tags: 'other' })
+    const { killed } = await sendKill()
+    expect(killed).toEqual([liveWindow])
+    expect(catalog.get(saved.id)?.state).toBe('running')
+  })
+
+  test('kill archives the catalog row that owns the live window', async () => {
+    const { catalog, saved } = setupCatalog({ rowEpoch: 'epoch-live', tags: 'owner' })
+    const { killed, sent } = await sendKill()
+    expect(killed).toEqual([liveWindow])
+    expect(sent.filter((m) => m.type === 'kill-failed')).toEqual([])
+    expect(catalog.get(saved.id)?.state).toBe('archived')
+  })
+
+  async function sendHibernate(killWindow: (w: string) => void) {
+    const { serveOptions, registryInstance } = await loadIndex()
+    const agentSessionId = 'catalog-hibernate'
+    registryInstance.sessions = [{ ...liveSession, agentSessionId }]
+    seedRecord(makeRecord({ sessionId: agentSessionId, currentWindow: liveWindow }))
+    sessionManagerState.killWindow = killWindow
+    const { ws, sent } = createWs()
+    serveOptions.websocket!.message?.(
+      ws as never,
+      JSON.stringify({ type: 'session-hibernate', sessionId: agentSessionId })
+    )
+    await waitFor(() => sent.some((m) => m.type === 'session-hibernate-result'))
+    return sent.find((m) => m.type === 'session-hibernate-result')
+  }
+
+  test('hibernate ignores a catalog row from an earlier tmux server', async () => {
+    const { catalog, saved } = setupCatalog({ rowEpoch: 'epoch-old', tags: null })
+    const killed: string[] = []
+    const result = await sendHibernate((w) => {
+      killed.push(w)
+    })
+    expect(result).toMatchObject({ ok: true })
+    expect(killed).toEqual([liveWindow])
+    expect(catalog.get(saved.id)?.state).toBe('running')
+  })
+
+  test('hibernate moves the catalog row to hibernating when the window is already gone', async () => {
+    const { catalog, saved } = setupCatalog({ rowEpoch: 'epoch-live', tags: 'owner' })
+    sessionManagerState.listWindows = () => []
+    const result = await sendHibernate(() => {
+      throw new Error("can't find window: @1")
+    })
+    expect(result).toMatchObject({ ok: true })
+    expect(catalog.get(saved.id)?.state).toBe('hibernating')
+    expect(catalog.get(saved.id)?.requestedState).toBeNull()
   })
 })
