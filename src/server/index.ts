@@ -894,10 +894,19 @@ const dormantPrScanner = createDormantPrScanner(() =>
   updateDormantAgentSessions()
 )
 
+/**
+ * Most recent History rows the sidebar shows. Older rows stay in the database
+ * and remain visible to the orphan rematcher, which queries uncapped.
+ */
+const SIDEBAR_HISTORY_LIMIT = 100
+
 function getDormantRecords() {
   return {
     hibernating: db.getHibernatingSessions(),
-    history: db.getHistorySessions({ maxAgeHours: runtimeHistoryMaxAgeHours }),
+    history: db.getHistorySessions({
+      maxAgeHours: runtimeHistoryMaxAgeHours,
+      limit: SIDEBAR_HISTORY_LIMIT,
+    }),
   }
 }
 

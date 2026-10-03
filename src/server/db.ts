@@ -90,7 +90,12 @@ export interface SessionDatabase {
   getSessionByWindow: (tmuxWindow: string) => AgentSessionRecord | null
   getActiveSessions: () => AgentSessionRecord[]
   getHibernatingSessions: () => AgentSessionRecord[]
-  getHistorySessions: (options?: { maxAgeHours?: number }) => AgentSessionRecord[]
+  /**
+   * Dormant, non-hibernating rows, newest first. Uncapped unless `limit` is
+   * given: the orphan rematcher and poll snapshots must see every row, while
+   * the sidebar passes its display cap.
+   */
+  getHistorySessions: (options?: { maxAgeHours?: number; limit?: number }) => AgentSessionRecord[]
   /** All session identity keys without large TEXT columns — safe to load per poll. */
   getKnownSessionKeys: () => KnownSessionKey[]
   /**
@@ -278,10 +283,10 @@ function initializeConnection(
     'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_hibernating = 1 ORDER BY last_activity_at DESC, session_id'
   )
   const selectHistory = db.prepare(
-    'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_hibernating = 0 ORDER BY last_activity_at DESC, session_id LIMIT 100'
+    'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_hibernating = 0 ORDER BY last_activity_at DESC, session_id LIMIT $limit'
   )
   const selectHistoryRecent = db.prepare(
-    'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_hibernating = 0 AND last_activity_at > $cutoff ORDER BY last_activity_at DESC, session_id LIMIT 100'
+    'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_hibernating = 0 AND last_activity_at > $cutoff ORDER BY last_activity_at DESC, session_id LIMIT $limit'
   )
   const selectKnownSessionKeys = db.prepare(
     'SELECT session_id, log_file_path, project_path, slug, agent_type, is_codex_exec FROM agent_sessions'
@@ -469,13 +474,15 @@ function initializeConnection(
       const rows = selectHibernating.all() as Record<string, unknown>[]
       return rows.map(mapRow)
     },
-    getHistorySessions: (options?: { maxAgeHours?: number }) => {
+    getHistorySessions: (options?: { maxAgeHours?: number; limit?: number }) => {
+      // SQLite treats a negative LIMIT as no limit.
+      const limit = options?.limit ?? -1
       if (options?.maxAgeHours) {
         const cutoff = new Date(Date.now() - options.maxAgeHours * 60 * 60 * 1000).toISOString()
-        const rows = selectHistoryRecent.all({ $cutoff: cutoff }) as Record<string, unknown>[]
+        const rows = selectHistoryRecent.all({ $cutoff: cutoff, $limit: limit }) as Record<string, unknown>[]
         return rows.map(mapRow)
       }
-      const rows = selectHistory.all() as Record<string, unknown>[]
+      const rows = selectHistory.all({ $limit: limit }) as Record<string, unknown>[]
       return rows.map(mapRow)
     },
     getKnownSessionKeys: () => {

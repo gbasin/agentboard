@@ -1637,6 +1637,59 @@ describe('LogPoller', () => {
     db.close()
   })
 
+  test('orphan rematch sees history rows beyond the sidebar cap', async () => {
+    const db = initDatabase({ path: ':memory:' })
+    const registry = new SessionRegistry()
+    registry.replaceSessions([baseSession])
+    const base = {
+      projectPath: baseSession.projectPath,
+      slug: null,
+      agentType: 'claude' as const,
+      createdAt: '2020-01-01T00:00:00.000Z',
+      lastUserMessage: null,
+      currentWindow: null,
+      isHibernating: false,
+      lastResumeError: null,
+      lastKnownLogSize: 0,
+      isCodexExec: false,
+      launchCommand: null,
+    }
+    // 120 newer History rows push the oldest one past the 100-row sidebar cap.
+    for (let i = 0; i < 120; i++) {
+      db.insertSession({
+        ...base,
+        sessionId: `newer-${i}`,
+        logFilePath: path.join(tempRoot, `newer-${i}.jsonl`),
+        displayName: `newer-${i}`,
+        lastActivityAt: new Date(Date.UTC(2025, 0, 1, 0, i)).toISOString(),
+      })
+    }
+    db.insertSession({
+      ...base,
+      sessionId: 'oldest',
+      logFilePath: path.join(tempRoot, 'oldest.jsonl'),
+      displayName: 'oldest',
+      lastActivityAt: '2020-01-01T00:00:00.000Z',
+    })
+    expect(
+      db.getHistorySessions({ limit: 100 }).some((r) => r.sessionId === 'oldest')
+    ).toBe(false)
+
+    const worker = new RecordingMatchWorkerClient()
+    const poller = new LogPoller(db, registry, { matchWorkerClient: worker })
+    poller.start(5000)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    await poller.waitForOrphanRematch()
+    poller.stop()
+
+    const rematch = worker.requests.find((r) => (r.orphanCandidates?.length ?? 0) > 0)
+    const ids = rematch?.orphanCandidates?.map((c) => c.sessionId) ?? []
+    expect(ids).toHaveLength(121)
+    expect(ids).toContain('oldest')
+
+    db.close()
+  })
+
   test('clears resume error when orphaned session rematches during poll', async () => {
     const db = initDatabase({ path: ':memory:' })
     const registry = new SessionRegistry()

@@ -731,6 +731,22 @@ describe('db', () => {
     expect(active[2].sessionId).toBe('zebra')
   })
 
+  test('getHistorySessions is uncapped unless a limit is passed', () => {
+    for (let i = 0; i < 105; i++) {
+      db.insertSession(makeSession({
+        sessionId: `history-${i}`,
+        logFilePath: `/tmp/history-${i}.jsonl`,
+        currentWindow: null,
+        lastActivityAt: new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString(),
+      }))
+    }
+    expect(db.getHistorySessions()).toHaveLength(105)
+    expect(db.getHistorySessions({ maxAgeHours: 24 * 365 * 100 })).toHaveLength(105)
+    const capped = db.getHistorySessions({ limit: 100 })
+    expect(capped).toHaveLength(100)
+    expect(capped[0]?.sessionId).toBe('history-104')
+  })
+
   test('getHistorySessions returns results ordered by last_activity_at DESC with session_id tiebreaker', () => {
     const recent = '2026-01-02T00:00:00.000Z'
     const older = '2026-01-01T00:00:00.000Z'
