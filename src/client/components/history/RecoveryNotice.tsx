@@ -2,6 +2,11 @@
 import { useEffect, useState } from 'react'
 import type { PersistenceHealth } from '@shared/persistence'
 import { libraryRequest } from './api'
+
+// Interruptions are rare (backend crashes, tmux restarts), so a slow
+// background poll keeps the notice current without per-client load.
+const HEALTH_POLL_MS = 60_000
+
 export function RecoveryNotice({ onOpen }: { onOpen: () => void }) {
   const [health, setHealth] = useState<PersistenceHealth | null>(null)
   useEffect(() => {
@@ -15,7 +20,7 @@ export function RecoveryNotice({ onOpen }: { onOpen: () => void }) {
     void refresh()
     const timer = setInterval(() => {
       void refresh()
-    }, 10000)
+    }, HEALTH_POLL_MS)
     return () => {
       alive = false
       clearInterval(timer)

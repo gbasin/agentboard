@@ -10,6 +10,9 @@ export class PersistenceRuntime {
   private timer: ReturnType<typeof setInterval> | null = null
   private busy = false
   private previewCursor = 0
+  // rg is resolved once: health() runs on every client poll, and a PATH
+  // walk per request buys nothing (installing rg needs a restart anyway).
+  private rgAvailable: boolean | undefined
   matchingFailure: () => string | null = () => null
   constructor(
     readonly sessions: PersistentSessions,
@@ -38,7 +41,7 @@ export class PersistenceRuntime {
     return {
       lastSavedAt: this.db.getAppSetting('persistence_last_saved'),
       error: this.sessions.error,
-      matchingAvailable: Boolean(Bun.which('rg')),
+      matchingAvailable: (this.rgAvailable ??= Boolean(Bun.which('rg'))),
       matchingError: this.matchingFailure(),
       interrupted: (
         this.db.db

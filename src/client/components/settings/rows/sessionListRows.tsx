@@ -208,7 +208,7 @@ export const sessionListRows: SettingsRowDef[] = [
     id: 'history-lookback',
     page: 'session-list',
     label: 'History lookback',
-    description: `Show history sessions from the last N hours (${HISTORY_MAX_AGE_MIN_HOURS}–${HISTORY_MAX_AGE_MAX_HOURS}). Default 24.`,
+    description: `Show history sessions from the last N hours (${HISTORY_MAX_AGE_MIN_HOURS}–${HISTORY_MAX_AGE_MAX_HOURS}), up to the 100 most recent. Default 24.`,
     keywords: ['history', 'hours', 'age', 'inactive', 'past'],
     Control: HistoryLookbackControl,
   },

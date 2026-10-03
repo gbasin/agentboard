@@ -623,11 +623,28 @@ async function ensureBaseSessionForRefreshAsync(context: string): Promise<boolea
 }
 const registry = new SessionRegistry()
 // Test adapters may implement SessionDatabase without a SQLite connection.
-const persistence = db.db ? new PersistentSessions(db, sessionManager,
-  db.getAppSetting('persistence_host_id') || (() => { const id = createConnectionId(); db.setAppSetting('persistence_host_id', id); return id })()) : null
-const persistenceRuntime = persistence ? new PersistenceRuntime(persistence, db) : null
-function createPersistentWindow(projectPath: string, name?: string, command?: string, options?: { excludeSessionId?: string; operationId?: string }) {
-  return persistence ? persistence.launch(projectPath, name, command, options) : sessionManager.createWindow(projectPath, name, command, options)
+function persistenceHostId(): string {
+  const existing = db.getAppSetting('persistence_host_id')
+  if (existing) return existing
+  const id = createConnectionId()
+  db.setAppSetting('persistence_host_id', id)
+  return id
+}
+const persistence = db.db
+  ? new PersistentSessions(db, sessionManager, persistenceHostId())
+  : null
+const persistenceRuntime = persistence
+  ? new PersistenceRuntime(persistence, db)
+  : null
+function createPersistentWindow(
+  projectPath: string,
+  name?: string,
+  command?: string,
+  options?: { excludeSessionId?: string; operationId?: string }
+) {
+  return persistence
+    ? persistence.launch(projectPath, name, command, options)
+    : sessionManager.createWindow(projectPath, name, command, options)
 }
 
 interface WSData {
@@ -2216,23 +2233,55 @@ app.get('/api/clipboard-file-path', async (c) => {
 })
 
 if (persistenceRuntime) {
-  persistenceRuntime.matchingFailure=()=>logPoller.matchingError
+  persistenceRuntime.matchingFailure = () => logPoller.matchingError
   const library = registerPersistenceRoutes(app, persistenceRuntime, {
     commandFor: buildResumeCommand,
-    changed: () => { updateDormantAgentSessions(); refreshSessions(); broadcast({ type: 'library-changed' }) },
-    activated: (session) => { refreshGeneration++; registry.replaceSessions([stampLocalSession(session), ...registry.getAll().filter(s => s.tmuxWindow !== session.tmuxWindow)]) },
+    changed: () => {
+      updateDormantAgentSessions()
+      refreshSessions()
+      broadcast({ type: 'library-changed' })
+    },
+    activated: (session) => {
+      refreshGeneration++
+      const others = registry
+        .getAll()
+        .filter((s) => s.tmuxWindow !== session.tmuxWindow)
+      registry.replaceSessions([stampLocalSession(session), ...others])
+    },
   })
   persistenceRuntime.start()
   if (persistenceRuntime.health().settings.autoResume) {
     // Reconcile the new tmux lifetime before selecting interrupted sessions.
-    try {const live=sessionManager.listWindows();persistence!.beforeSnapshot(live,sessionManager.lastEnumeratedServerPid);persistence!.observe(live)} catch(error) {logger.warn('auto_resume_reconcile_failed',{error:String(error)})}
-    const interrupted = []
+    try {
+      const live = sessionManager.listWindows()
+      persistence!.beforeSnapshot(live, sessionManager.lastEnumeratedServerPid)
+      persistence!.observe(live)
+    } catch (error) {
+      logger.warn('auto_resume_reconcile_failed', { error: String(error) })
+    }
+    const interrupted: SavedSession[] = []
     let cursor: string | undefined
     do {
-      const page=persistence!.catalog.history({state:'interrupted',limit:100,cursor})
-      interrupted.push(...page.sessions);cursor=page.nextCursor || undefined
-    } while(cursor)
-    void (async () => { for (const saved of interrupted) { try { await library.resume(saved.id) } catch (error) { logger.warn('auto_resume_failed', { sessionId: saved.id, error: String(error) }) } } })()
+      const page = persistence!.catalog.history({
+        state: 'interrupted',
+        limit: 100,
+        cursor,
+      })
+      interrupted.push(...page.sessions)
+      cursor = page.nextCursor || undefined
+    } while (cursor)
+    void (async () => {
+      for (const saved of interrupted) {
+        try {
+          await library.resume(saved.id)
+        } catch (error) {
+          logger.warn('auto_resume_failed', {
+            sessionId: saved.id,
+            error: String(error),
+          })
+        }
+      }
+    })()
   }
 }
 
@@ -2764,17 +2813,28 @@ function handleMessage(
         fireAndForget(handleRemoteCreate(message.host, message.projectPath, message.name, message.command, ws), 'handleRemoteCreate')
       } else {
         try {
-          if(message.operationId!==undefined && (typeof message.operationId!=='string' || !message.operationId.length || message.operationId.length>128))throw new Error('Invalid operation ID')
+          const { operationId } = message
+          if (
+            operationId !== undefined &&
+            (typeof operationId !== 'string' ||
+              operationId.length === 0 ||
+              operationId.length > 128)
+          ) {
+            throw new Error('Invalid operation ID')
+          }
           const created = stampLocalSession(createPersistentWindow(
             message.projectPath,
             message.name,
             message.command,
-            {operationId:message.operationId}
+            { operationId }
           ))
           // Add session to registry immediately so terminal can attach
           refreshGeneration++
           const currentSessions = registry.getAll()
-          registry.replaceSessions([created, ...currentSessions.filter(s=>s.id!==created.id)])
+          registry.replaceSessions([
+            created,
+            ...currentSessions.filter((s) => s.id !== created.id),
+          ])
           refreshSessions()
           send(ws, { type: 'session-created', session: created })
         } catch (error) {
