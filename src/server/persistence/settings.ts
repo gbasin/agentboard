@@ -1,6 +1,7 @@
 /** Local persistence policy. */
 import type { SessionDatabase } from '../db'
 import type { PersistenceSettings } from '../../shared/persistence'
+import { RequestError } from './errors'
 export const defaultPersistenceSettings: PersistenceSettings = {
   autoResume: false,
   capturePreviews: false,
@@ -23,9 +24,9 @@ export function savePersistenceSettings(
 ) {
   const settings = getPersistenceSettings(db)
   for (const key of Object.keys(patch)) {
-    if (!(key in settings)) throw new Error(`Unknown setting: ${key}`)
+    if (!(key in settings)) throw new RequestError(`Unknown setting: ${key}`)
     if (typeof patch[key as keyof PersistenceSettings] !== 'boolean')
-      throw new Error(`Invalid ${key}`)
+      throw new RequestError(`Invalid ${key}`)
   }
   const next = { ...settings, ...patch }
   db.setAppSetting('persistence_settings', JSON.stringify(next))

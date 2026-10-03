@@ -6,6 +6,7 @@ import type { SessionManager } from '../SessionManager'
 import { inferAgentType } from '../agentDetection'
 import { generateSessionName } from '../nameGenerator'
 import { SessionCatalog, assertSessionName } from './catalog'
+import { RequestError, notFound } from './errors'
 import { importConversations, importConversation } from './legacyImport'
 import {
   provisionalTagFromName,
@@ -250,8 +251,9 @@ export class PersistentSessions {
       const live =
         current.lastRunId === run.id ? this.findLive(current, identity) : null
       if (live) return live
-      throw new Error(
-        'This launch request already exists; refresh its saved status before retrying'
+      throw new RequestError(
+        'This launch request already exists; refresh its saved status before retrying',
+        409
       )
     }
     try {
@@ -329,11 +331,11 @@ export class PersistentSessions {
     operationId?: string
   ): Session {
     const saved = this.catalog.get(id)
-    if (!saved) throw new Error('Session not found')
+    if (!saved) throw notFound()
     const liveRun = this.findLive(saved)
     if (liveRun) return liveRun
     if (saved.state === 'starting')
-      throw new Error('Session launch is still in progress; retry shortly')
+      throw new RequestError('Session launch is still in progress; retry shortly', 409)
     if (saved.state === 'running') {
       this.catalog.transition(
         id,
@@ -350,12 +352,16 @@ export class PersistentSessions {
       if (this.isManagedWindow(current)) {
         const tag = this.identity().windows.get(current)
         if (tag && tag.boardId !== saved.id)
-          throw new Error('Conversation already belongs to another live session')
+          throw new RequestError(
+            'Conversation already belongs to another live session',
+            409
+          )
       } else if (this.manager.probeWindow(current) !== 'absent') {
         // The managed identity snapshot cannot see other tmux sessions, so ask
         // tmux directly; anything short of a definite "gone" keeps the claim.
-        throw new Error(
-          `Conversation is still running in another tmux window (${current})`
+        throw new RequestError(
+          `Conversation is still running in another tmux window (${current})`,
+          409
         )
       }
       this.db.orphanSession(record.sessionId, { expectedWindow: current })
@@ -382,8 +388,9 @@ export class PersistentSessions {
           live.tmuxWindow
       ) {
         this.stop(this.catalog.get(id)!, 'hibernating', false)
-        throw new Error(
-          'Conversation already belongs to another window; the new launch was stopped'
+        throw new RequestError(
+          'Conversation already belongs to another window; the new launch was stopped',
+          409
         )
       }
       return {

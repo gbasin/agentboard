@@ -8,6 +8,7 @@ import type {
   HistoryQuery,
 } from '../../shared/persistence'
 import { createCatalogSchema } from './schema'
+import { RequestError, notFound } from './errors'
 import { queryHistory, readSession, sessionSelect } from './historyQuery'
 
 const LIFECYCLES = new Set<Lifecycle>([
@@ -23,7 +24,7 @@ const SESSION_NAME_PATTERN = /^[\w-]{1,120}$/
 export function assertSessionName(name: string): string {
   const value = name.trim()
   if (!SESSION_NAME_PATTERN.test(value))
-    throw new Error(
+    throw new RequestError(
       'Name must use 1–120 letters, numbers, hyphens or underscores'
     )
   return value
@@ -146,13 +147,13 @@ export class SessionCatalog {
         } | null
         if (previous) {
           if (previous.sessionId !== id)
-            throw new Error('Operation belongs to another session')
+            throw new RequestError('Operation belongs to another session', 409)
           return { id: previous.id, reused: true }
         }
         const session = this.get(id)
-        if (!session) throw new Error('Session not found')
+        if (!session) throw notFound()
         if (session.state === 'running' || session.state === 'starting')
-          throw new Error('Session is already running or starting')
+          throw new RequestError('Session is already running or starting', 409)
         const runId = randomUUID(),
           now = new Date().toISOString()
         this.db
@@ -188,7 +189,7 @@ export class SessionCatalog {
         .query('SELECT session_id,ended_at FROM session_runs WHERE id=?')
         .get(runId) as { session_id: string; ended_at: string | null } | null
       if (!run || run.session_id !== id || run.ended_at)
-        throw new Error('Launch attempt is no longer current')
+        throw new RequestError('Launch attempt is no longer current', 409)
       this.db
         .query(
           "UPDATE board_sessions SET state='running',current_window=?,epoch=?,error=NULL,name=COALESCE(?,name),last_run_id=? WHERE id=?"
@@ -203,9 +204,9 @@ export class SessionCatalog {
     })()
   }
   transition(id: string, state: Lifecycle, error: string | null = null) {
-    if (!LIFECYCLES.has(state)) throw new Error(`Invalid state: ${state}`)
+    if (!LIFECYCLES.has(state)) throw new RequestError(`Invalid state: ${state}`)
     this.db.transaction(() => {
-      if (!this.get(id)) throw new Error('Session not found')
+      if (!this.get(id)) throw notFound()
       this.db
         .query(
           'UPDATE board_sessions SET state=?,current_window=NULL,requested_state=NULL,error=? WHERE id=?'
@@ -223,7 +224,7 @@ export class SessionCatalog {
     const value = assertSessionName(name)
     this.db.transaction(() => {
       const current = this.get(id)
-      if (!current) throw new Error('Session not found')
+      if (!current) throw notFound()
       this.db
         .query('UPDATE board_sessions SET name=? WHERE id=?')
         .run(value, id)
@@ -231,7 +232,7 @@ export class SessionCatalog {
     })()
   }
   pin(id: string, pinned: boolean) {
-    if (!this.get(id)) throw new Error('Session not found')
+    if (!this.get(id)) throw notFound()
     this.db.transaction(() => {
       this.db
         .query('UPDATE board_sessions SET pinned=? WHERE id=?')
@@ -246,7 +247,7 @@ export class SessionCatalog {
     preview?: string | null
   ) {
     const current = this.get(id)
-    if (!current) throw new Error('Session not found')
+    if (!current) throw notFound()
     if (
       current.providerId === providerId &&
       current.agentType === agentType &&

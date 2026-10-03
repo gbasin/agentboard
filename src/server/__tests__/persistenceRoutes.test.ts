@@ -117,3 +117,28 @@ test('invalid combined updates do not partially rename a saved session', async (
   expect(result.status).toBe(400)
   expect(sessions.catalog.get(saved.id)?.name).toBe('A')
 })
+
+test('errors map to client and server statuses', async () => {
+  const { app, saved, addConversation } = setup()
+  const missing = await app.request('/api/library/no-such-session/resume', {
+    method: 'POST',
+  })
+  expect(missing.status).toBe(404)
+
+  const malformed = await app.request(`/api/library/${saved.id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{not json',
+  })
+  expect(malformed.status).toBe(400)
+
+  const badCursor = await app.request('/api/library?cursor=nope')
+  expect(badCursor.status).toBe(400)
+
+  // commandFor throws a plain Error: an unexpected failure, not the client's.
+  addConversation('needs-launch')
+  const unexpected = await app.request(`/api/library/${saved.id}/resume`, {
+    method: 'POST',
+  })
+  expect(unexpected.status).toBe(500)
+})

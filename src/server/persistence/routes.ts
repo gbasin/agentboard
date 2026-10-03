@@ -11,6 +11,8 @@ import type { AgentSessionRecord } from '../db'
 import type { PersistenceRuntime } from './runtime'
 import { savePersistenceSettings } from './settings'
 import { toAgentSession } from '../agentSessions'
+import { RequestError, notFound } from './errors'
+import { logger } from '../logger'
 
 export function registerPersistenceRoutes(
   parent: Hono,
@@ -22,12 +24,24 @@ export function registerPersistenceRoutes(
   }
 ) {
   const app = new Hono()
-  app.onError((error, c) => c.json({ error: error.message }, 400))
+  app.onError((error, c) => {
+    if (error instanceof RequestError)
+      return c.json({ error: error.message }, error.status)
+    // Malformed JSON bodies are the client's fault too.
+    if (error instanceof SyntaxError)
+      return c.json({ error: 'Invalid request body' }, 400)
+    logger.error('library_request_failed', {
+      method: c.req.method,
+      path: c.req.path,
+      error: error.message,
+    })
+    return c.json({ error: error.message }, 500)
+  })
   const { sessions, db } = runtime,
     { catalog } = sessions
   const resume = async (id: string, operationId?: string) => {
     const saved = catalog.get(id)
-    if (!saved) throw new Error('Session not found')
+    if (!saved) throw notFound()
     const live =
       sessions.findLive(saved) ||
       sessions.resume(id, options.commandFor, operationId)
@@ -103,7 +117,7 @@ export function registerPersistenceRoutes(
       body.operationId !== undefined &&
       (typeof body.operationId !== 'string' || body.operationId.length > 128)
     )
-      throw new Error('Invalid operation ID')
+      throw new RequestError('Invalid operation ID')
     return c.json(await resume(c.req.param('id'), body.operationId))
   })
   app.patch(`${api}/:id`, async (c) => {
@@ -115,15 +129,15 @@ export function registerPersistenceRoutes(
       state?: Lifecycle
     }>()
     if (body.name !== undefined && typeof body.name !== 'string')
-      throw new Error('Invalid name')
+      throw new RequestError('Invalid name')
     if (body.pinned !== undefined && typeof body.pinned !== 'boolean')
-      throw new Error('Invalid pin')
+      throw new RequestError('Invalid pin')
     if (
       body.state !== undefined &&
       body.state !== 'archived' &&
       body.state !== 'hibernating'
     )
-      throw new Error('Choose archived or hibernating')
+      throw new RequestError('Choose archived or hibernating')
     if (body.name !== undefined) {
       if (saved.window) sessions.renameWindow(saved.window, body.name)
       else {

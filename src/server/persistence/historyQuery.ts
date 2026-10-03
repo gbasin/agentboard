@@ -5,6 +5,7 @@ import type {
   HistoryQuery,
   SavedSession,
 } from '../../shared/persistence'
+import { RequestError } from './errors'
 
 export const sessionSelect = `SELECT id, name, project_path AS projectPath, host_id AS hostId,
  agent_type AS agentType, provider_id AS providerId, command, state, pinned,
@@ -58,7 +59,7 @@ export function queryHistory(
       add('(last_activity_at < ? OR (last_activity_at = ? AND id < ?))')
       values.push(cursor[0], cursor[0], cursor[1])
     } catch {
-      throw new Error('Invalid history cursor')
+      throw new RequestError('Invalid history cursor')
     }
   }
   const limit = Math.min(100, Math.max(1, Math.floor(query.limit || 50)))
