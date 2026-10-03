@@ -25,11 +25,15 @@ export class PersistentSessions {
     readonly manager: SessionManager,
     hostId: string,
     private readonly identity = () => readTmuxIdentity(config.tmuxSession),
-    private readonly epochForPid = tmuxEpochForPid
+    private readonly epochForPid = tmuxEpochForPid,
+    private readonly managedSession = config.tmuxSession
   ) {
     this.catalog = new SessionCatalog(db.db, hostId)
-    importConversations(this.catalog, db)
+    importConversations(this.catalog, db, this.isManagedWindow)
   }
+  /** Windows outside the managed session are never reconciled by the catalog. */
+  readonly isManagedWindow = (window: string) =>
+    window.startsWith(`${this.managedSession}:`)
   /**
    * Reconcile catalog state against the window list the refresh pipeline
    * already enumerated — the identity tags ride that enumeration, so this
@@ -152,7 +156,7 @@ export class PersistentSessions {
         this.error = String(error)
       }
     }
-    importConversations(this.catalog, this.db)
+    importConversations(this.catalog, this.db, this.isManagedWindow)
   }
   private observeOne(live: Session) {
     const snapshot = this.snapshot!
@@ -233,7 +237,8 @@ export class PersistentSessions {
       saved = this.catalog.byOperation(options.operationId)
     if (!saved && options.excludeSessionId) {
       const record = this.db.getSessionById(options.excludeSessionId)
-      if (record) saved = importConversation(this.catalog, record)
+      if (record)
+        saved = importConversation(this.catalog, record, this.isManagedWindow)
     }
     if (!saved)
       saved = this.catalog.create({
@@ -344,9 +349,18 @@ export class PersistentSessions {
       ? this.db.getSessionById(saved.providerId)
       : null
     if (record?.currentWindow) {
-      const tag = this.identity().windows.get(record.currentWindow)
-      if (tag && tag.boardId !== saved.id)
-        throw new Error('Conversation already belongs to another live session')
+      const current = record.currentWindow
+      if (this.isManagedWindow(current)) {
+        const tag = this.identity().windows.get(current)
+        if (tag && tag.boardId !== saved.id)
+          throw new Error('Conversation already belongs to another live session')
+      } else if (this.manager.probeWindow(current) !== 'absent') {
+        // The managed identity snapshot cannot see other tmux sessions, so ask
+        // tmux directly; anything short of a definite "gone" keeps the claim.
+        throw new Error(
+          `Conversation is still running in another tmux window (${current})`
+        )
+      }
       this.db.orphanSession(record.sessionId)
     }
     const live = this.launch(

@@ -2,9 +2,13 @@
 import type { SessionDatabase, AgentSessionRecord } from '../db'
 import type { SessionCatalog } from './catalog'
 
+/** True when `window` (`session:@id`) lives in the board's own tmux session. */
+export type ManagedWindowTest = (window: string) => boolean
+
 export function importConversations(
   catalog: SessionCatalog,
-  db: SessionDatabase
+  db: SessionDatabase,
+  isManagedWindow: ManagedWindowTest
 ) {
   const ids = db.db
     .query(
@@ -22,12 +26,19 @@ export function importConversations(
       catalog.associate(live.id, id, record.agentType, record.lastUserMessage)
       continue
     }
-    importConversation(catalog, record)
+    importConversation(catalog, record, isManagedWindow)
   }
 }
+/**
+ * Only a window in the managed session can be reconciled by the catalog, so
+ * only that case imports as `interrupted` (recoverable). A conversation hosted
+ * in another tmux session is still running there: importing it as
+ * interrupted would offer — and auto-resume — a second copy of it.
+ */
 export function importConversation(
   catalog: SessionCatalog,
-  record: AgentSessionRecord
+  record: AgentSessionRecord,
+  isManagedWindow: ManagedWindowTest
 ) {
   return (
     catalog.byProvider(record.sessionId) ||
@@ -41,7 +52,9 @@ export function importConversation(
       lastActivityAt: record.lastActivityAt,
       preview: record.lastUserMessage,
       state: record.currentWindow
-        ? 'interrupted'
+        ? isManagedWindow(record.currentWindow)
+          ? 'interrupted'
+          : 'archived'
         : record.isHibernating
           ? 'hibernating'
           : 'archived',

@@ -105,6 +105,8 @@ describe('recovery reconciliation', () => {
       windows: new Map<string, { boardId: string; runId: string }>(),
     }
     const calls: string[] = []
+    const created: string[] = []
+    const probes = new Map<string, 'present' | 'absent' | 'unknown'>()
     const manager = {
       ensureSession() {},
       listWindows: () => [live],
@@ -113,13 +115,19 @@ describe('recovery reconciliation', () => {
       killWindow(w: string) {
         calls.push(w)
       },
+      probeWindow: (w: string) => probes.get(w) ?? 'unknown',
+      createWindow(projectPath: string) {
+        created.push(projectPath)
+        return { ...live, tmuxWindow: 'ab:@50', id: 'ab:@50' }
+      },
     } as unknown as SessionManager
     const persistence = new PersistentSessions(
       db,
       manager,
       'host-test',
       () => snapshot,
-      (pid) => `epoch${pid}`
+      (pid) => `epoch${pid}`,
+      'ab'
     )
     const saved = persistence.catalog.create(input)
     const run = persistence.catalog.beginRun(saved.id)
@@ -137,11 +145,14 @@ describe('recovery reconciliation', () => {
       agentboardTags: { boardId: saved.id, runId: run.id, serverPid: 1 },
     }
     return {
+      db,
       persistence,
       saved,
       run,
       live,
       calls,
+      created,
+      probes,
       setSnapshot: (value: typeof snapshot) => {
         snapshot = value
       },
@@ -207,5 +218,46 @@ describe('recovery reconciliation', () => {
     expect(calls).toEqual(['ab:@1'])
     expect(sessions).toHaveLength(0)
     expect(persistence.catalog.get(saved.id)?.state).toBe('hibernating')
+  })
+  test('a conversation hosted in another tmux session imports as not recoverable and is never resumed twice', () => {
+    const { db, persistence, created, probes } = fixture()
+    db.insertSession({
+      sessionId: 'external-conv',
+      logFilePath: '/logs/external.jsonl',
+      projectPath: '/project',
+      slug: null,
+      agentType: 'claude',
+      displayName: 'external',
+      createdAt: '2020-01-01T00:00:00.000Z',
+      lastActivityAt: '2020-01-01T00:00:00.000Z',
+      lastUserMessage: null,
+      currentWindow: 'work:@3',
+      isHibernating: false,
+      lastResumeError: null,
+      wakeStartedAt: null,
+      lastKnownLogSize: null,
+      isCodexExec: false,
+      launchCommand: 'claude',
+    })
+    probes.set('work:@3', 'present')
+    // A fresh boot imports the legacy row.
+    const booted = new PersistentSessions(
+      db,
+      persistence.manager,
+      'host-test',
+      () => ({ epoch: 'epoch1', windows: new Map() }),
+      (pid) => `epoch${pid}`,
+      'ab'
+    )
+    const imported = booted.catalog.byProvider('external-conv')!
+    expect(imported.state).not.toBe('interrupted')
+    expect(booted.catalog.history({ state: 'interrupted' }).sessions).toHaveLength(0)
+
+    expect(() => booted.resume(imported.id, () => 'claude --resume x')).toThrow(
+      'another tmux window'
+    )
+    expect(created).toEqual([])
+    expect(db.getSessionById('external-conv')?.currentWindow).toBe('work:@3')
+    expect(booted.catalog.get(imported.id)?.state).toBe(imported.state)
   })
 })
