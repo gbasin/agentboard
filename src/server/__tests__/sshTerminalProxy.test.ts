@@ -227,6 +227,41 @@ describe('SshTerminalProxy', () => {
     expect(harness.wasTerminalClosed()).toBe(true)
   })
 
+  test('startup timeout stops TTY polling and cleans up promptly', async () => {
+    // Before the fix, the superseded attempt kept polling list-clients for
+    // the full 4s discovery window and only then ran dispose() — its
+    // terminal_session_cleanup log landed in whatever test file was running
+    // ~4s later (it broke syncSpawnTiming's log capture in CI).
+    savedTimeout = SshTerminalProxy.STARTUP_TIMEOUT_MS
+    SshTerminalProxy.STARTUP_TIMEOUT_MS = 120
+
+    const harness = createSshHarness({ ttyAvailable: false })
+    const proxy = new SshTerminalProxy({
+      connectionId: 'conn-stop-poll',
+      sessionName: 'test-stop-poll-session',
+      baseSession: 'agentboard',
+      host: 'slow-host',
+      onData: () => {},
+      spawn: harness.spawn,
+      spawnSync: harness.spawnSync,
+    })
+    const pipeCalls = (needle: string) =>
+      harness.spawnCalls.filter(
+        (c) => c.mode === 'pipe' && c.args.join(' ').includes(needle)
+      ).length
+
+    await expect(proxy.start()).rejects.toMatchObject({ code: 'ERR_START_TIMEOUT' })
+    // At most the backoff wait already in flight elapses (<= 200ms at this
+    // point in the 50/100/200 schedule); then the attempt notices it is stale.
+    await new Promise((r) => setTimeout(r, 300))
+    const pollsAfterSettle = pipeCalls('list-clients')
+    expect(pipeCalls('kill-session')).toBe(1)
+
+    await new Promise((r) => setTimeout(r, 500))
+    expect(pipeCalls('list-clients')).toBe(pollsAfterSettle)
+    expect(pipeCalls('kill-session')).toBe(1)
+  })
+
   test('startup timeout does not allow a late READY transition if TTY appears after timeout', async () => {
     savedTimeout = SshTerminalProxy.STARTUP_TIMEOUT_MS
     SshTerminalProxy.STARTUP_TIMEOUT_MS = 20
