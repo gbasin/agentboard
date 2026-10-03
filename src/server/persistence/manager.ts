@@ -87,10 +87,7 @@ export class PersistentSessions {
             if (index >= 0) sessions.splice(index, 1)
           }
           this.catalog.transition(saved.id, saved.requestedState)
-          if (saved.providerId)
-            this.db.orphanSession(saved.providerId, {
-              hibernate: saved.requestedState === 'hibernating',
-            })
+          this.releaseProvider(saved, saved.requestedState === 'hibernating')
           continue
         }
         if (window) {
@@ -117,7 +114,7 @@ export class PersistentSessions {
             'interrupted',
             'Process stopped unexpectedly'
           )
-          if (saved.providerId) this.db.orphanSession(saved.providerId)
+          this.releaseProvider(saved)
         } else if (
           snapshot.windows.get(saved.window)?.runId !== saved.lastRunId ||
           snapshot.windows.get(saved.window)?.boardId !== saved.id
@@ -127,7 +124,7 @@ export class PersistentSessions {
             'interrupted',
             'Window identity changed'
           )
-          if (saved.providerId) this.db.orphanSession(saved.providerId)
+          this.releaseProvider(saved)
         }
       }
       // Legacy associations from another tmux lifetime must not claim reused IDs.
@@ -343,7 +340,7 @@ export class PersistentSessions {
         'interrupted',
         'Previous process is no longer available'
       )
-      if (saved.providerId) this.db.orphanSession(saved.providerId)
+      this.releaseProvider(saved)
     }
     const record = saved.providerId
       ? this.db.getSessionById(saved.providerId)
@@ -361,7 +358,7 @@ export class PersistentSessions {
           `Conversation is still running in another tmux window (${current})`
         )
       }
-      this.db.orphanSession(record.sessionId)
+      this.db.orphanSession(record.sessionId, { expectedWindow: current })
     }
     const live = this.launch(
       saved.projectPath,
@@ -397,6 +394,33 @@ export class PersistentSessions {
     }
     return live
   }
+  /**
+   * The catalog row that owns `window` in the current tmux server, or null.
+   * A row from an earlier server incarnation (window ids are reused) or one
+   * whose run tags do not match the live window does not own it: callers
+   * then treat the window as untracked instead of retiring that row. A row
+   * whose window is already gone still owns it, so stopping it retires the
+   * row without a kill.
+   */
+  ownerOfWindow(window: string): SavedSession | null {
+    const identity = this.identity()
+    const saved = this.catalog.byWindow(window, identity.epoch)
+    if (!saved) return null
+    const tag = identity.windows.get(window)
+    if (tag && (tag.boardId !== saved.id || tag.runId !== saved.lastRunId))
+      return null
+    return saved
+  }
+  /**
+   * Kill a window through the catalog when a row owns it, so the row is
+   * retired instead of left running on a dead window; otherwise kill it
+   * directly. The conversation claim is left to the caller.
+   */
+  killWindow(window: string, state: 'hibernating' | 'archived') {
+    const owner = this.ownerOfWindow(window)
+    if (owner) this.stop(owner, state, false)
+    else this.manager.killWindow(window)
+  }
   stop(
     saved: SavedSession,
     state: 'hibernating' | 'archived',
@@ -424,9 +448,19 @@ export class PersistentSessions {
       throw error
     }
     this.catalog.transition(saved.id, state)
-    if (releaseProvider && saved.providerId)
-      this.db.orphanSession(saved.providerId, {
-        hibernate: state === 'hibernating',
-      })
+    if (releaseProvider) this.releaseProvider(saved, state === 'hibernating')
+  }
+  /**
+   * Release the conversation's window claim only while it still points at
+   * this row's window. The log rematcher (or a racing wake) may have moved
+   * the conversation to another live window; clearing that claim would
+   * orphan a running conversation.
+   */
+  private releaseProvider(saved: SavedSession, hibernate = true) {
+    if (!saved.providerId) return
+    this.db.orphanSession(saved.providerId, {
+      hibernate,
+      expectedWindow: saved.window,
+    })
   }
 }

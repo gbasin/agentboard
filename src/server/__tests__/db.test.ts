@@ -255,6 +255,20 @@ describe('db', () => {
     ])
   })
 
+  test('orphanSession with expectedWindow only clears that window', () => {
+    db.insertSession(makeSession({
+      sessionId: 'moved-elsewhere',
+      logFilePath: '/tmp/moved-elsewhere.jsonl',
+      currentWindow: 'agentboard:@9',
+    }))
+
+    expect(db.orphanSession('moved-elsewhere', { expectedWindow: 'agentboard:@10' })).toBeNull()
+    expect(db.getSessionById('moved-elsewhere')?.currentWindow).toBe('agentboard:@9')
+
+    const orphaned = db.orphanSession('moved-elsewhere', { expectedWindow: 'agentboard:@9' })
+    expect(orphaned?.currentWindow).toBeNull()
+  })
+
   test('orphanSession can move mismatch cleanup to history', () => {
     db.insertSession(makeSession({
       sessionId: 'mismatch-to-history',

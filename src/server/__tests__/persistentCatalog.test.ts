@@ -95,6 +95,31 @@ describe('durable catalog', () => {
   })
 })
 
+function insertRecord(
+  db: SessionDatabase,
+  sessionId: string,
+  currentWindow: string | null
+) {
+  return db.insertSession({
+    sessionId,
+    logFilePath: `/logs/${sessionId}.jsonl`,
+    projectPath: '/project',
+    slug: null,
+    agentType: 'claude',
+    displayName: sessionId,
+    createdAt: '2020-01-01T00:00:00.000Z',
+    lastActivityAt: '2020-01-01T00:00:00.000Z',
+    lastUserMessage: null,
+    currentWindow,
+    isHibernating: false,
+    lastResumeError: null,
+    wakeStartedAt: null,
+    lastKnownLogSize: null,
+    isCodexExec: false,
+    launchCommand: 'claude',
+  })
+}
+
 describe('recovery reconciliation', () => {
   function fixture() {
     const { db } = setup()
@@ -221,24 +246,7 @@ describe('recovery reconciliation', () => {
   })
   test('a conversation hosted in another tmux session imports as not recoverable and is never resumed twice', () => {
     const { db, persistence, created, probes } = fixture()
-    db.insertSession({
-      sessionId: 'external-conv',
-      logFilePath: '/logs/external.jsonl',
-      projectPath: '/project',
-      slug: null,
-      agentType: 'claude',
-      displayName: 'external',
-      createdAt: '2020-01-01T00:00:00.000Z',
-      lastActivityAt: '2020-01-01T00:00:00.000Z',
-      lastUserMessage: null,
-      currentWindow: 'work:@3',
-      isHibernating: false,
-      lastResumeError: null,
-      wakeStartedAt: null,
-      lastKnownLogSize: null,
-      isCodexExec: false,
-      launchCommand: 'claude',
-    })
+    insertRecord(db, 'external-conv', 'work:@3')
     probes.set('work:@3', 'present')
     // A fresh boot imports the legacy row.
     const booted = new PersistentSessions(
@@ -259,5 +267,35 @@ describe('recovery reconciliation', () => {
     expect(created).toEqual([])
     expect(db.getSessionById('external-conv')?.currentWindow).toBe('work:@3')
     expect(booted.catalog.get(imported.id)?.state).toBe(imported.state)
+  })
+  test('reconcile does not release a conversation the rematcher moved to another window', () => {
+    // Wake race: the wake's row is bound to @1, the rematcher claimed the
+    // conversation for @9, and the wake killed @1.
+    const { db, persistence, saved } = fixture()
+    insertRecord(db, 'moved-conv', 'ab:@9')
+    persistence.catalog.associate(saved.id, 'moved-conv', 'claude')
+    persistence.beforeSnapshot([], 1)
+    expect(persistence.catalog.get(saved.id)?.state).toBe('interrupted')
+    expect(db.getSessionById('moved-conv')?.currentWindow).toBe('ab:@9')
+  })
+  test('reconcile still releases a conversation that stayed on the dead window', () => {
+    const { db, persistence, saved } = fixture()
+    insertRecord(db, 'stayed-conv', 'ab:@1')
+    persistence.catalog.associate(saved.id, 'stayed-conv', 'claude')
+    persistence.beforeSnapshot([], 1)
+    expect(db.getSessionById('stayed-conv')?.currentWindow).toBeNull()
+  })
+  test('killing a wake window through the catalog retires its row and keeps the moved claim', () => {
+    const { db, persistence, saved, calls } = fixture()
+    insertRecord(db, 'moved-conv', 'ab:@9')
+    persistence.catalog.associate(saved.id, 'moved-conv', 'claude')
+    persistence.killWindow('ab:@1', 'hibernating')
+    expect(calls).toEqual(['ab:@1'])
+    expect(persistence.catalog.get(saved.id)?.state).toBe('hibernating')
+    expect(db.getSessionById('moved-conv')?.currentWindow).toBe('ab:@9')
+    // Nothing left for the next reconcile to interrupt or release.
+    persistence.beforeSnapshot([], 1)
+    expect(persistence.catalog.get(saved.id)?.state).toBe('hibernating')
+    expect(db.getSessionById('moved-conv')?.currentWindow).toBe('ab:@9')
   })
 })

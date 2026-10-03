@@ -3875,6 +3875,12 @@ function tryRematchDormantSession(
   }
 }
 
+/** Kill a window a wake created but will not keep, retiring its catalog row. */
+function killWakeWindow(tmuxWindow: string) {
+  if (persistence) persistence.killWindow(tmuxWindow, 'hibernating')
+  else sessionManager.killWindow(tmuxWindow)
+}
+
 function handleSessionWake(
   message: Extract<ClientMessage, { type: 'session-wake' }>,
   ws: ServerWebSocket<WSData>
@@ -4094,7 +4100,14 @@ function handleSessionWake(
         return
       }
 
-      try { sessionManager.killWindow(created.tmuxWindow) } catch { /* may already be gone */ }
+      // Retire the wake's catalog row with its window. A bare kill would leave
+      // the row "running" on a dead window, and the next reconcile would then
+      // release the conversation claim the rematcher just gave another window.
+      try {
+        killWakeWindow(created.tmuxWindow)
+      } catch {
+        // may already be gone
+      }
       createdWindowToCleanup = null
       try {
         db.updateSession(sessionId, { wakeStartedAt: null })
@@ -4158,7 +4171,7 @@ function handleSessionWake(
   } catch (error) {
     if (createdWindowToCleanup) {
       try {
-        sessionManager.killWindow(createdWindowToCleanup)
+        killWakeWindow(createdWindowToCleanup)
       } catch (cleanupError) {
         logger.warn('session_wake_cleanup_failed', {
           sessionId,

@@ -93,9 +93,15 @@ export interface SessionDatabase {
   getHistorySessions: (options?: { maxAgeHours?: number }) => AgentSessionRecord[]
   /** All session identity keys without large TEXT columns — safe to load per poll. */
   getKnownSessionKeys: () => KnownSessionKey[]
+  /**
+   * Clear current_window. With `expectedWindow` it is a compare-and-clear: the
+   * row is only touched while it is dormant or still on that window, so a
+   * stale caller cannot drop a claim another window has since taken. Returns
+   * null when that guard refuses.
+   */
   orphanSession: (
     sessionId: string,
-    options?: { hibernate?: boolean }
+    options?: { hibernate?: boolean; expectedWindow?: string | null }
   ) => AgentSessionRecord | null
   displayNameExists: (displayName: string, excludeSessionId?: string) => boolean
   setHibernating: (sessionId: string, isHibernating: boolean) => AgentSessionRecord | null
@@ -297,6 +303,12 @@ function initializeConnection(
         .join(', ')} WHERE session_id = $sessionId`
     )
 
+  const orphanIfOnWindowStmt = db.prepare(
+    `UPDATE agent_sessions SET current_window = NULL, is_hibernating = $is_hibernating
+     WHERE session_id = $sessionId
+       AND (current_window IS NULL OR current_window = $expectedWindow)`
+  )
+
   const claimWindowStmt = (fields: string[]) =>
     db.prepare(
       `UPDATE agent_sessions SET ${fields
@@ -482,11 +494,20 @@ function initializeConnection(
       // Auto-promote to Hibernating on unexpected window loss. Deliberate kills
       // and explicit mismatch cleanup opt out so those rows still land in
       // History.
-      updateStmt(['current_window', 'is_hibernating']).run({
-        $sessionId: sessionId,
-        $current_window: null,
-        $is_hibernating: hibernate ? 1 : 0,
-      })
+      if (options?.expectedWindow !== undefined) {
+        const result = orphanIfOnWindowStmt.run({
+          $sessionId: sessionId,
+          $expectedWindow: options.expectedWindow,
+          $is_hibernating: hibernate ? 1 : 0,
+        })
+        if (result.changes === 0) return null
+      } else {
+        updateStmt(['current_window', 'is_hibernating']).run({
+          $sessionId: sessionId,
+          $current_window: null,
+          $is_hibernating: hibernate ? 1 : 0,
+        })
+      }
       const row = selectBySessionId.get({ $sessionId: sessionId }) as
         | Record<string, unknown>
         | undefined
