@@ -62,7 +62,11 @@ describe('syncDevinSessions full rewrite', () => {
     addSession(db, 's-big', '/p', null)
     const body = 'x'.repeat(8 * 1024)
     const messageCount = 300 // ~2.4MB, several write chunks
-    for (let i = 0; i < messageCount; i++) addMessage(db, 's-big', 'assistant', `${i}:${body}`)
+    // One transaction: 300 autocommit inserts are 300 fsyncs, which on a
+    // contended CI disk pushed this test past bun's 5s timeout.
+    db.transaction(() => {
+      for (let i = 0; i < messageCount; i++) addMessage(db, 's-big', 'assistant', `${i}:${body}`)
+    })()
     db.close()
 
     const { allSqls, rowsPulled } = instrumentStatements()
@@ -95,11 +99,13 @@ describe('syncDevinSessions full rewrite', () => {
     addSession(db, 's-large', '/p', 'Large')
     const body = 'x'.repeat(8 * 1024)
     const messageCount = 300 // ~2.4MB of content, several write chunks
-    for (let i = 0; i < messageCount; i++) {
-      addMessage(db, 's-large', i % 2 === 0 ? 'assistant' : 'tool', `${i}:${body}`)
-    }
-    // Dropped rows still advance lastRowId/rowCount.
-    addMessage(db, 's-large', 'unknown-role', 'dropped')
+    db.transaction(() => {
+      for (let i = 0; i < messageCount; i++) {
+        addMessage(db, 's-large', i % 2 === 0 ? 'assistant' : 'tool', `${i}:${body}`)
+      }
+      // Dropped rows still advance lastRowId/rowCount.
+      addMessage(db, 's-large', 'unknown-role', 'dropped')
+    })()
     db.close()
 
     const result = syncDevinSessions(paths.outDir)
