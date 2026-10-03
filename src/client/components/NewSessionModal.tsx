@@ -105,6 +105,12 @@ export default function NewSessionModal({
       }
       return
     }
+    // Initialize only on the closed→open transition. The defaults below are
+    // props that change on their own while the modal is open — the selected
+    // session (activeProjectPath) is replaced when its window dies, and
+    // synced settings swap in a new commandPresets array — and re-running
+    // this would wipe the preset, command and path the user already chose.
+    if (wasOpen) return
     // Disable terminal textarea when modal opens to prevent keyboard capture
     if (typeof document !== 'undefined' && typeof document.querySelector === 'function') {
       const textarea = document.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement | null

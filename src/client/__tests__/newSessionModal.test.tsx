@@ -202,6 +202,68 @@ describe('NewSessionModal component', () => {
     })
   })
 
+  test('prop changes while open keep the user choices (only opening initializes)', () => {
+    const { keyHandlers } = setupDom()
+    const created: Array<{ path: string; name?: string; command?: string }> = []
+    let renderer!: TestRenderer.ReactTestRenderer
+    const modal = (props: { activeProjectPath: string; presets: typeof DEFAULT_PRESETS; isOpen?: boolean }) => (
+      <NewSessionModal
+        isOpen={props.isOpen ?? true}
+        onClose={() => {}}
+        onCreate={(path, name, command) => {
+          created.push({ path, name, command })
+        }}
+        defaultProjectDir="/base"
+        commandPresets={props.presets}
+        defaultPresetId="claude"
+        activeProjectPath={props.activeProjectPath}
+      />
+    )
+
+    act(() => {
+      renderer = TestRenderer.create(modal({ activeProjectPath: '/a', presets: DEFAULT_PRESETS }))
+    })
+    const inputs = () => renderer.root.findAllByType('input')
+    act(() => {
+      keyHandlers.get('keydown')?.({
+        key: '2',
+        preventDefault: () => {},
+        stopPropagation: () => {},
+      } as unknown as KeyboardEvent)
+    })
+    act(() => {
+      inputs()[2].props.onChange({ target: { value: '/typed' } })
+    })
+    expect(inputs()[0].props.value).toBe('codex')
+
+    // The selected session's window dies (new activeProjectPath) and synced
+    // settings deliver a fresh presets array — neither may reset the form.
+    act(() => {
+      renderer.update(modal({ activeProjectPath: '/b', presets: [...DEFAULT_PRESETS] }))
+    })
+    expect(inputs()[0].props.value).toBe('codex')
+    expect(inputs()[2].props.value).toBe('/typed')
+
+    act(() => {
+      renderer.root.findByType('form').props.onSubmit({ preventDefault: () => {} })
+    })
+    expect(created).toEqual([{ path: '/typed', name: undefined, command: 'codex' }])
+
+    // Reopening still initializes from the current defaults.
+    act(() => {
+      renderer.update(modal({ activeProjectPath: '/b', presets: DEFAULT_PRESETS, isOpen: false }))
+    })
+    act(() => {
+      renderer.update(modal({ activeProjectPath: '/b', presets: DEFAULT_PRESETS }))
+    })
+    expect(inputs()[0].props.value).toBe('claude')
+    expect(inputs()[2].props.value).toBe('/b')
+
+    act(() => {
+      renderer.unmount()
+    })
+  })
+
   test('digit keys select presets, 0 selects custom, digits are ignored in inputs', () => {
     const { keyHandlers } = setupDom()
 
