@@ -182,6 +182,22 @@ function readJournalMode(db: SQLiteDatabase): string {
   }
 }
 
+/**
+ * Session data (prompts, paths) is private to the user. The WAL and shared
+ * memory files hold the same data, so they get the same mode; they exist only
+ * after the WAL switch, and are best-effort since SQLite may recreate them.
+ */
+function restrictDatabaseFiles(dbPath: string) {
+  fs.chmodSync(dbPath, 0o600)
+  for (const suffix of ['-wal', '-shm']) {
+    try {
+      fs.chmodSync(`${dbPath}${suffix}`, 0o600)
+    } catch {
+      // Not created yet, or already gone after a checkpoint.
+    }
+  }
+}
+
 export function initDatabase(options: { path?: string; exclusive?: boolean } = {}): SessionDatabase {
   const envPath = process.env[DB_PATH_ENV]?.trim()
   const resolvedEnvPath =
@@ -209,13 +225,6 @@ function initializeConnection(
   dbPath: string,
   releaseOwner?: () => void
 ): SessionDatabase {
-  if (dbPath !== ':memory:') {
-    fs.chmodSync(dbPath, 0o600)
-    const legacy = db.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='agent_sessions'").get()
-    const catalog = db.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='board_sessions'").get()
-    if (legacy && !catalog && !fs.existsSync(`${dbPath}.before-catalog`))
-      db.query('VACUUM INTO ?').run(`${dbPath}.before-catalog`)
-  }
   // WAL so readers never block on (or block) a writer; this fixes the
   // "database is locked" errors seen when an old and new server overlap during
   // a restart. Under WAL only writers contend, and bun:sqlite waits for the
@@ -245,6 +254,7 @@ function initializeConnection(
   } else if (journalMode !== 'memory') {
     logger.warn('db_wal_switch_failed', { dbPath, journalMode, error: switchError })
   }
+  if (dbPath !== ':memory:') restrictDatabaseFiles(dbPath)
   migrateDatabase(db)
   db.exec(CREATE_TABLE_SQL)
   db.exec(CREATE_APP_SETTINGS_TABLE_SQL)

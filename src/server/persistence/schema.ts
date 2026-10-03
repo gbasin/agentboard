@@ -4,6 +4,13 @@ import { existsSync } from 'node:fs'
 
 const CATALOG_VERSION = 1
 
+function hasExistingSessions(db: Database): boolean {
+  const legacy = db
+    .query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='agent_sessions'")
+    .get()
+  return Boolean(legacy && db.query('SELECT 1 FROM agent_sessions LIMIT 1').get())
+}
+
 export function createCatalogSchema(db: Database) {
   const version = Number(
     (
@@ -22,10 +29,12 @@ export function createCatalogSchema(db: Database) {
   if (version < CATALOG_VERSION) {
     const file = (db.query('PRAGMA database_list').get() as { file: string })
       .file
-    // A crash between this backup and the version write below must not brick
-    // the next boot — VACUUM INTO refuses to overwrite an existing file, so
-    // pick the first free suffix instead of failing.
-    if (file) {
+    // Back up once, before the catalog first touches a database that already
+    // holds sessions; a fresh install has nothing to back up. A crash between
+    // this backup and the version write below must not brick the next boot —
+    // VACUUM INTO refuses to overwrite an existing file, so pick the first
+    // free suffix instead of failing.
+    if (file && hasExistingSessions(db)) {
       let backup = `${file}.before-catalog-schema`,
         suffix = 0
       while (existsSync(backup)) backup = `${file}.before-catalog-schema.${++suffix}`

@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { initDatabase, type SessionDatabase } from '../db'
 import { SessionCatalog } from '../persistence/catalog'
 import { PersistentSessions } from '../persistence/manager'
@@ -297,5 +300,45 @@ describe('recovery reconciliation', () => {
     persistence.beforeSnapshot([], 1)
     expect(persistence.catalog.get(saved.id)?.state).toBe('hibernating')
     expect(db.getSessionById('moved-conv')?.currentWindow).toBe('ab:@9')
+  })
+})
+
+describe('catalog database files', () => {
+  function tempDbPath() {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ab-catalog-files-'))
+    return { dir, dbPath: path.join(dir, 'agentboard.db') }
+  }
+  const backups = (dir: string) =>
+    fs.readdirSync(dir).filter((f) => f.includes('before-catalog'))
+
+  test('a fresh install writes no backup', () => {
+    const { dir, dbPath } = tempDbPath()
+    const db = initDatabase({ path: dbPath })
+    new SessionCatalog(db.db, 'host-test')
+    db.close()
+    expect(backups(dir)).toEqual([])
+    fs.rmSync(dir, { recursive: true, force: true })
+  })
+
+  test('an upgrade with existing sessions is backed up exactly once', () => {
+    const { dir, dbPath } = tempDbPath()
+    const db = initDatabase({ path: dbPath })
+    insertRecord(db, 'existing', null)
+    new SessionCatalog(db.db, 'host-test')
+    new SessionCatalog(db.db, 'host-test')
+    db.close()
+    expect(backups(dir)).toEqual(['agentboard.db.before-catalog-schema'])
+    fs.rmSync(dir, { recursive: true, force: true })
+  })
+
+  test('the database and its WAL files are private to the user', () => {
+    const { dir, dbPath } = tempDbPath()
+    const db = initDatabase({ path: dbPath })
+    for (const file of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) {
+      if (fs.existsSync(file)) expect(fs.statSync(file).mode & 0o777).toBe(0o600)
+    }
+    expect(fs.existsSync(`${dbPath}-wal`)).toBe(true)
+    db.close()
+    fs.rmSync(dir, { recursive: true, force: true })
   })
 })
