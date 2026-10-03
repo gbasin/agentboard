@@ -13,11 +13,25 @@ test.use({ viewport: { width: 1440, height: 900 } })
 
 const WINDOW_A = 'mouse-a'
 const WINDOW_B = 'mouse-b'
+// Distinct from WINDOW_A: test 1 kills its mouse-a moments before test 2
+// loads the page, and the server lists a killed window until its next 2s
+// refresh — a name lookup then resolves to the dying row (see selectSession).
+const WINDOW_SEL = 'mouse-sel'
 const REPL_PATH = fileURLToPath(new URL('./fixtures/mouse-repl.py', import.meta.url))
 
 function tmux(args: string[]): { status: number | null; stdout: string } {
   const result = spawnSync('tmux', args, { encoding: 'utf-8' })
   return { status: result.status, stdout: result.stdout ?? '' }
+}
+
+/** Create a window running the mouse REPL; returns its agentboard session id. */
+function newReplWindow(session: string, name: string, arg: string): string {
+  const created = tmux([
+    'new-window', '-P', '-F', '#{window_id}', '-t', session, '-n', name,
+    `python3 ${REPL_PATH} ${arg}`,
+  ])
+  expect(created.status).toBe(0)
+  return `${session}:${created.stdout.trim()}`
 }
 
 function capturePane(target: string): string {
@@ -41,8 +55,14 @@ async function waitForPaneText(
   )
 }
 
-async function selectSession(page: Page, name: string) {
-  const card = page.getByTestId('session-card').filter({ hasText: name }).first()
+// Select by exact session id, never by name: a fresh page load still lists a
+// window killed <2s earlier (server refresh interval), so a same-named row of
+// a previous test can be first in the list, then collapse under its exit
+// animation while the click retries against it.
+async function selectSession(page: Page, sessionId: string) {
+  const card = page.locator(
+    `[data-testid="session-card"][data-session-id="${sessionId}"]`
+  )
   await expect(card).toBeVisible({ timeout: 20000 })
   await card.click()
   await expect(page.locator('.xterm')).toBeVisible()
@@ -64,9 +84,6 @@ async function dragInTerminal(page: Page) {
 test('mouse input is forwarded to both panes across a session switch', async ({ page }) => {
   const session = process.env.E2E_TMUX_SESSION
   test.skip(!session, 'E2E_TMUX_SESSION not set')
-  const targetA = `${session}:${WINDOW_A}`
-  const targetB = `${session}:${WINDOW_B}`
-
   // terminal-input frames the browser actually sent — if xterm's mouse
   // tracking is off, a drag degrades to a DOM selection and no SGR ever
   // leaves the client, regardless of what tmux/the pane would do with it.
@@ -80,13 +97,10 @@ test('mouse input is forwarded to both panes across a session switch', async ({ 
   const sgrSent = () =>
     inputFrames.some((f) => f.includes('\\u001b[<') || f.includes('\u001b[<'))
 
-  for (const [name, arg] of [[WINDOW_A, 'A'], [WINDOW_B, 'B']] as const) {
-    const created = tmux([
-      'new-window', '-t', session!, '-n', name,
-      `python3 ${REPL_PATH} ${arg}`,
-    ])
-    expect(created.status).toBe(0)
-  }
+  // Window-id targets (session:@N) for tmux too: unambiguous even if a
+  // same-named window exists.
+  const targetA = newReplWindow(session!, WINDOW_A, 'A')
+  const targetB = newReplWindow(session!, WINDOW_B, 'B')
 
   try {
     await waitForPaneText(targetA, 'MOUSE-REPL READY')
@@ -95,7 +109,7 @@ test('mouse input is forwarded to both panes across a session switch', async ({ 
     await page.goto('/')
 
     // Attach to A and drag — SGR mouse reports must reach the pane.
-    await selectSession(page, WINDOW_A)
+    await selectSession(page, targetA)
     await dragInTerminal(page)
     await waitForPaneText(targetA, 'MOUSESEQ')
     expect(sgrSent()).toBe(true)
@@ -105,7 +119,7 @@ test('mouse input is forwarded to both panes across a session switch', async ({ 
     // re-asserting ENABLE_MOUSE_TRACKING. The drag must still produce SGR
     // input frames and reach the pane — this is the regression assertion.
     inputFrames.length = 0
-    await selectSession(page, WINDOW_B)
+    await selectSession(page, targetB)
     await dragInTerminal(page)
     await waitForPaneText(targetB, 'MOUSESEQ')
     expect(sgrSent()).toBe(true)
@@ -118,8 +132,6 @@ test('mouse input is forwarded to both panes across a session switch', async ({ 
 test('forced local selection survives the appMouse status poll', async ({ page }) => {
   const session = process.env.E2E_TMUX_SESSION
   test.skip(!session, 'E2E_TMUX_SESSION not set')
-  const targetA = `${session}:${WINDOW_A}`
-
   // Selection children only exist under the DOM renderer — force it off WebGL
   // before the app reads its persisted settings.
   await page.addInitScript(() => {
@@ -135,11 +147,7 @@ test('forced local selection survives the appMouse status poll', async ({ page }
     localStorage.setItem('agentboard-settings', JSON.stringify(stored))
   })
 
-  const created = tmux([
-    'new-window', '-t', session!, '-n', WINDOW_A,
-    `python3 ${REPL_PATH} A`,
-  ])
-  expect(created.status).toBe(0)
+  const targetA = newReplWindow(session!, WINDOW_SEL, 'A')
 
   // Forensics: a completed selection is cleared by onUserInput (input sent),
   // onResize (rowsChanged), trim, or buffer-activate — input/resize leave as
@@ -160,7 +168,7 @@ test('forced local selection survives the appMouse status poll', async ({ page }
   try {
     await waitForPaneText(targetA, 'MOUSE-REPL READY')
     await page.goto('/')
-    await selectSession(page, WINDOW_A)
+    await selectSession(page, targetA)
     await expect(page.locator('.xterm.enable-mouse-events')).toBeVisible()
 
     const selKids = () => page.locator('.xterm-selection > *').count()

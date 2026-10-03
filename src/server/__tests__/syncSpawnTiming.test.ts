@@ -20,11 +20,21 @@ const originalWarn = logger.warn
 const originalDebug = logger.debug
 let calls: LogCall[] = []
 
+// The logger is process-global and server test files share one bun process:
+// background work from earlier files (e.g. a terminal proxy finishing its
+// cleanup) can log while an async test here awaits a real spawn. Capture only
+// the events this module emits.
+const isSpawnEvent = (event: string) => /^(a)?sync_spawn_slow/.test(event)
+
 beforeEach(() => {
   calls = []
   resetSlowSyncSpawnState()
-  logger.warn = (event, data) => calls.push({ level: 'warn', event, data })
-  logger.debug = (event, data) => calls.push({ level: 'debug', event, data })
+  logger.warn = (event, data) => {
+    if (isSpawnEvent(event)) calls.push({ level: 'warn', event, data })
+  }
+  logger.debug = (event, data) => {
+    if (isSpawnEvent(event)) calls.push({ level: 'debug', event, data })
+  }
 })
 
 afterEach(() => {

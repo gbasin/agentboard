@@ -615,8 +615,8 @@ class PtyTerminalProxy extends TerminalProxyBase {
     })
 
     try {
-      const tty = await this.discoverClientTty(proc.pid)
-      if (attemptId !== this.startAttemptId) {
+      const tty = await this.discoverClientTty(proc.pid, attemptId)
+      if (tty === null || attemptId !== this.startAttemptId) {
         await this.dispose()
         return
       }
@@ -956,12 +956,23 @@ class PtyTerminalProxy extends TerminalProxyBase {
     )
   }
 
-  private async discoverClientTty(pid: number): Promise<string> {
+  /**
+   * Poll for the attached client's TTY. Returns null as soon as the start
+   * attempt is superseded (dispose) so a cancelled attempt stops issuing
+   * sync tmux spawns instead of polling out the full window.
+   */
+  private async discoverClientTty(
+    pid: number,
+    attemptId: number
+  ): Promise<string | null> {
     const start = this.now()
     let delay = 50
     const maxWaitMs = 2000
 
     while (this.now() - start <= maxWaitMs) {
+      if (attemptId !== this.startAttemptId) {
+        return null
+      }
       let output = ''
       try {
         output = this.runParsedTmux([
