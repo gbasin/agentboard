@@ -15,6 +15,7 @@ import { SessionManager } from './SessionManager'
 import { ThrowawayShellReaper } from './throwawayShellReaper'
 import { SessionRegistry } from './SessionRegistry'
 import { PersistentSessions } from './persistence/manager'
+import type { SavedSession } from '../shared/persistence'
 import { PersistenceRuntime } from './persistence/runtime'
 import { registerPersistenceRoutes } from './persistence/routes'
 import {
@@ -3254,8 +3255,14 @@ async function handleKill(
   }
 
   try {
-    if (persistence?.catalog.byWindow(session.tmuxWindow)) persistence.stop(persistence.catalog.byWindow(session.tmuxWindow)!, 'archived')
-    else sessionManager.killWindow(session.tmuxWindow)
+    // Archive the catalog row only when it owns this window in the current
+    // tmux server; a stale row with a reused window id is left alone.
+    const owner = persistence?.ownerOfWindow(session.tmuxWindow) ?? null
+    if (owner) {
+      persistence!.stop(owner, 'archived')
+    } else {
+      sessionManager.killWindow(session.tmuxWindow)
+    }
   } catch (error) {
     restoreHibernatingState(previousHibernatingState)
     sendKillFailed(
@@ -3550,9 +3557,16 @@ function handleSessionHibernate(
     return
   }
 
+  let catalogOwner: SavedSession | null = null
   try {
-    if (persistence?.catalog.byWindow(liveTmuxWindow)) persistence.stop(persistence.catalog.byWindow(liveTmuxWindow)!, 'hibernating')
-    else sessionManager.killWindow(liveTmuxWindow)
+    // Only a catalog row that owns this window in the current tmux server is
+    // moved to hibernating; a stale row with a reused window id is left alone.
+    catalogOwner = persistence?.ownerOfWindow(liveTmuxWindow) ?? null
+    if (catalogOwner) {
+      persistence!.stop(catalogOwner, 'hibernating')
+    } else {
+      sessionManager.killWindow(liveTmuxWindow)
+    }
   } catch (error) {
     let targetStillExists = true
     try {
@@ -3569,6 +3583,18 @@ function handleSessionHibernate(
     }
 
     if (!targetStillExists) {
+      // The kill lost a race with the window exiting. Finish the catalog side
+      // too, or the next reconcile would mark the row interrupted.
+      if (catalogOwner) {
+        try {
+          persistence!.retire(catalogOwner, 'hibernating')
+        } catch (retireError) {
+          logger.warn('session_hibernate_catalog_retire_failed', {
+            sessionId,
+            error: retireError instanceof Error ? retireError.message : String(retireError),
+          })
+        }
+      }
       logger.info('session_hibernate_target_already_gone', {
         sessionId,
         agentType: record.agentType,

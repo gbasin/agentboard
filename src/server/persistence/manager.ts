@@ -421,6 +421,20 @@ export class PersistentSessions {
     if (owner) this.stop(owner, state, false)
     else this.manager.killWindow(window)
   }
+  /**
+   * Move a row whose window is already gone to `state`, unless something
+   * else (a reconcile, a relaunch) has moved it on since `saved` was read.
+   */
+  retire(saved: SavedSession, state: 'hibernating' | 'archived') {
+    const current = this.catalog.get(saved.id)
+    if (
+      !current ||
+      current.lastRunId !== saved.lastRunId ||
+      (current.state !== 'running' && current.state !== 'starting')
+    )
+      return
+    this.catalog.transition(saved.id, state)
+  }
   stop(
     saved: SavedSession,
     state: 'hibernating' | 'archived',
