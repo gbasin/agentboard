@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.2](https://github.com/gbasin/agentboard/compare/v0.24.1...v0.24.2) (2026-10-03)
+
+
+### Bug Fixes
+
+* stop superseded TTY discovery, keep new-session choices on re-render; deflake four tests ([#360](https://github.com/gbasin/agentboard/issues/360)) ([6710816](https://github.com/gbasin/agentboard/commit/67108161722c60d0520371c86ee7476d70908e7b))
+
 ## [0.24.1](https://github.com/gbasin/agentboard/compare/v0.24.0...v0.24.1) (2026-10-02)
 
 
