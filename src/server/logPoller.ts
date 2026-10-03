@@ -207,6 +207,7 @@ export class LogPoller {
   private devinSyncInFlight = false
   private pollInFlight = false
   private pendingChangedPaths = new Set<string>()
+  matchingError: string | null = null
   private orphanRematchPending = true
   private orphanRematchInProgress = false
   private orphanRematchPromise: Promise<void> | null = null
@@ -724,6 +725,7 @@ export class LogPoller {
       this.pendingChangedPaths.delete(pathToPoll)
     }
     this.pollInFlight = true
+    let succeeded = false
 
     try {
       if (!this.matchWorker) return
@@ -786,14 +788,17 @@ export class LogPoller {
         devinLockMatches
       )
       this.notifyOrphanSessionsDiscovered(stats.orphans)
+      succeeded = true
     } catch (error) {
+      this.matchingError = String(error)
+      for (const file of pathsToPoll) this.pendingChangedPaths.add(file)
       logger.warn('log_poll_changed_error', {
         message: error instanceof Error ? error.message : String(error),
         pathCount: pathsToPoll.length,
       })
     } finally {
       this.pollInFlight = false
-      this.drainPendingChangedPaths()
+      if (succeeded) this.drainPendingChangedPaths()
     }
   }
 
@@ -822,6 +827,7 @@ export class LogPoller {
     sessionRecords: SessionRecord[],
     devinLockMatches: Map<string, Session>
   ): PollStats {
+    this.matchingError=response.matchingError || null
     let logsScanned = 0
     let newSessions = 0
     let matches = 0
@@ -1307,6 +1313,7 @@ export class LogPoller {
           }
         } catch (error) {
           workerErrors += 1
+          this.matchingError = String(error)
           logger.warn('log_match_worker_error', {
             message: error instanceof Error ? error.message : String(error),
           })

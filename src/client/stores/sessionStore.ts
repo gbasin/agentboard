@@ -23,6 +23,7 @@ function sessionsEqualById(a: Session, b: Session): boolean {
     a.command === b.command &&
     a.agentType === b.agentType &&
     a.agentSessionId === b.agentSessionId &&
+    a.boardSessionId === b.boardSessionId &&
     a.agentSessionName === b.agentSessionName &&
     a.logFilePath === b.logFilePath &&
     a.isHibernating === b.isHibernating &&

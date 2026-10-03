@@ -20,6 +20,7 @@ export { default as ChevronDownIcon } from '@untitledui-icons/react/line/esm/Che
 export { default as ChevronRightIcon } from '@untitledui-icons/react/line/esm/ChevronRightIcon'
 export { default as ClipboardIcon } from '@untitledui-icons/react/line/esm/ClipboardIcon'
 export { default as Copy01Icon } from '@untitledui-icons/react/line/esm/Copy01Icon'
+export { default as ClockRewindIcon } from '@untitledui-icons/react/line/esm/ClockRewindIcon'
 export { default as CornerDownLeftIcon } from '@untitledui-icons/react/line/esm/CornerDownLeftIcon'
 export { default as DeleteIcon } from '@untitledui-icons/react/line/esm/DeleteIcon'
 export { default as DotsVerticalIcon } from '@untitledui-icons/react/line/esm/DotsVerticalIcon'

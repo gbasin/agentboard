@@ -4,6 +4,7 @@ import { Database as SQLiteDatabase } from 'bun:sqlite'
 import type { AgentType } from '../shared/types'
 import { logger } from './logger'
 import { resolveProjectPath } from './paths'
+import { acquireDatabaseOwner } from './persistence/ownership'
 
 export interface AgentSessionRecord {
   id: number
@@ -170,14 +171,40 @@ function readJournalMode(db: SQLiteDatabase): string {
   }
 }
 
-export function initDatabase(options: { path?: string } = {}): SessionDatabase {
+export function initDatabase(options: { path?: string; exclusive?: boolean } = {}): SessionDatabase {
   const envPath = process.env[DB_PATH_ENV]?.trim()
   const resolvedEnvPath =
     envPath && envPath !== ':memory:' ? resolveProjectPath(envPath) : envPath
   const dbPath = options.path ?? resolvedEnvPath ?? DEFAULT_DB_PATH
   ensureDataDir(dbPath)
 
-  const db = new SQLiteDatabase(dbPath)
+  const owner = options.exclusive ? acquireDatabaseOwner(dbPath) : null
+  let connection: SQLiteDatabase | undefined
+  try {
+    connection = new SQLiteDatabase(dbPath)
+    return initializeConnection(connection, dbPath, owner?.release)
+  } catch (error) {
+    try {
+      connection?.close()
+    } finally {
+      owner?.release()
+    }
+    throw error
+  }
+}
+
+function initializeConnection(
+  db: SQLiteDatabase,
+  dbPath: string,
+  releaseOwner?: () => void
+): SessionDatabase {
+  if (dbPath !== ':memory:') {
+    fs.chmodSync(dbPath, 0o600)
+    const legacy = db.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='agent_sessions'").get()
+    const catalog = db.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='board_sessions'").get()
+    if (legacy && !catalog && !fs.existsSync(`${dbPath}.before-catalog`))
+      db.query('VACUUM INTO ?').run(`${dbPath}.before-catalog`)
+  }
   // WAL so readers never block on (or block) a writer; this fixes the
   // "database is locked" errors seen when an old and new server overlap during
   // a restart. Under WAL only writers contend, and bun:sqlite waits for the
@@ -245,10 +272,10 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
     'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_hibernating = 1 ORDER BY last_activity_at DESC, session_id'
   )
   const selectHistory = db.prepare(
-    'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_hibernating = 0 ORDER BY last_activity_at DESC, session_id'
+    'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_hibernating = 0 ORDER BY last_activity_at DESC, session_id LIMIT 100'
   )
   const selectHistoryRecent = db.prepare(
-    'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_hibernating = 0 AND last_activity_at > $cutoff ORDER BY last_activity_at DESC, session_id'
+    'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_hibernating = 0 AND last_activity_at > $cutoff ORDER BY last_activity_at DESC, session_id LIMIT 100'
   )
   const selectKnownSessionKeys = db.prepare(
     'SELECT session_id, log_file_path, project_path, slug, agent_type, is_codex_exec FROM agent_sessions'
@@ -504,7 +531,11 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
       upsertAppSetting.run({ $key: key, $value: value })
     },
     close: () => {
-      db.close()
+      try {
+        db.close()
+      } finally {
+        releaseOwner?.()
+      }
     },
   }
 }
