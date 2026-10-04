@@ -12,6 +12,7 @@
 
 import { useEffect, useId, useRef, useState } from 'react'
 import { Copy01Icon } from './icons'
+import { copyText } from '../utils/copyText'
 import type { ConnectionStatus } from '../stores/sessionStore'
 import { ICON_BUTTON_CLASS, ICON_SIZE } from './controlStyles'
 
@@ -84,7 +85,7 @@ export default function ConnectionIndicator({
 
   const handleCopy = () => {
     const url = `http://${tailscaleIp}:${window.location.port || '4040'}`
-    navigator.clipboard.writeText(url)
+    copyText(url)
     setCopied(true)
     if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current)
     copiedTimerRef.current = setTimeout(() => setCopied(false), 1500)
