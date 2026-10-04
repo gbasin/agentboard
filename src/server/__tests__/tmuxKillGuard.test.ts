@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { evacuateSessionGroup, proxySessionForMirror } from '../tmuxKillGuard'
+import {
+  GroupKillRefusedError,
+  prepareGroupedLastWindowKill,
+  proxySessionForMirror,
+} from '../tmuxKillGuard'
+import { TmuxTimeoutError } from '../tmuxTimeout'
 import { buildTmuxFormat } from '../tmuxFormat'
 
 const WS = 'agentboard-ws-'
@@ -63,13 +68,15 @@ describe('proxySessionForMirror', () => {
   })
 })
 
-describe('evacuateSessionGroup', () => {
-  test('switches proxy clients home, detaches others and target clients, then kills members', () => {
-    const mirror = `${WS}${CONN}-x-cgl-3od92g`
-    const { runTmux, calls } = fakeTmux(
+describe('prepareGroupedLastWindowKill', () => {
+  const mirror = `${WS}${CONN}-x-cgl-3od92g`
+  const home = `${WS}${CONN}`
+
+  test('switches proxy clients home, detaches others, kills members, leaves target clients', () => {
+    const { runTmux, calls, state } = fakeTmux(
       [
         ['agentboard', 'agentboard'],
-        [`${WS}${CONN}`, 'agentboard'],
+        [home, 'agentboard'],
         ['cgl', 'cgl'],
         [mirror, 'cgl'],
         ['cgl-pair', 'cgl'],
@@ -81,21 +88,21 @@ describe('evacuateSessionGroup', () => {
       ]
     )
 
-    const result = evacuateSessionGroup(runTmux, 'cgl', 'cgl', WS)
+    const result = prepareGroupedLastWindowKill(runTmux, 'cgl', 'cgl', WS)
 
     expect(mutations(calls)).toEqual([
-      ['switch-client', '-c', '/dev/ttys001', '-t', `=${WS}${CONN}`],
+      ['switch-client', '-c', '/dev/ttys001', '-t', `=${home}`],
       ['detach-client', '-t', '/dev/ttys002'],
-      ['detach-client', '-t', '/dev/ttys003'],
       ['kill-session', '-t', `=${mirror}`],
       ['kill-session', '-t', '=cgl-pair'],
     ])
     expect(result.killedSessions).toEqual([mirror, 'cgl-pair'])
-    expect(result.detachedClients).toEqual(['/dev/ttys002', '/dev/ttys003'])
+    expect(result.detachedClients).toEqual(['/dev/ttys002'])
+    // The target's own client is left to tmux's detach-on-destroy.
+    expect(state.clients.get('/dev/ttys003')).toBe('cgl')
   })
 
   test('detaches a mirror client whose proxy session is gone', () => {
-    const mirror = `${WS}${CONN}-x-cgl-3od92g`
     const { runTmux, calls } = fakeTmux(
       [
         ['cgl', 'cgl'],
@@ -104,71 +111,114 @@ describe('evacuateSessionGroup', () => {
       [['/dev/ttys001', mirror]]
     )
 
-    evacuateSessionGroup(runTmux, 'cgl', 'cgl', WS)
+    prepareGroupedLastWindowKill(runTmux, 'cgl', 'cgl', WS)
 
     expect(calls).toContainEqual(['detach-client', '-t', '/dev/ttys001'])
     expect(calls.some((call) => call[0] === 'switch-client')).toBe(false)
   })
 
-  test('detaches clients on the target even when it is alone in its group', () => {
+  test('issues no mutations when the target is alone in its group', () => {
     const { runTmux, calls } = fakeTmux([['cgl', 'cgl']], [['/dev/ttys003', 'cgl']])
 
-    const result = evacuateSessionGroup(runTmux, 'cgl', 'cgl', WS)
+    const result = prepareGroupedLastWindowKill(runTmux, 'cgl', 'cgl', WS)
 
-    expect(mutations(calls)).toEqual([['detach-client', '-t', '/dev/ttys003']])
-    expect(result.detachedClients).toEqual(['/dev/ttys003'])
+    expect(calls.map((call) => call[0])).toEqual(['list-sessions'])
     expect(result.killedSessions).toEqual([])
     expect(result.failed).toEqual([])
   })
 
-  test('reports failed mutations but treats already-gone targets as done', () => {
-    const mirror = `${WS}${CONN}-x-cgl-3od92g`
-    const { runTmux: base, calls } = fakeTmux(
+  test('refuses when a member cannot be killed', () => {
+    const { runTmux: base } = fakeTmux(
       [
         ['cgl', 'cgl'],
         [mirror, 'cgl'],
         ['cgl-pair', 'cgl'],
       ],
-      [['/dev/ttys009', 'cgl']]
+      []
     )
     const runTmux = (args: string[]): string => {
-      if (args[0] === 'detach-client') {
-        base(args)
-        throw new Error("can't find client: /dev/ttys009")
-      }
       if (args[0] === 'kill-session' && args[2] === `=${mirror}`) {
-        calls.push(args)
-        throw new Error('tmux kill-session timed out after 15000ms')
+        throw new Error('server refused')
       }
       return base(args)
     }
 
-    const result = evacuateSessionGroup(runTmux, 'cgl', 'cgl', WS)
-
-    const timeout = {
-      command: 'kill-session',
-      target: mirror,
-      error: 'tmux kill-session timed out after 15000ms',
+    let caught: unknown
+    try {
+      prepareGroupedLastWindowKill(runTmux, 'cgl', 'cgl', WS)
+    } catch (error) {
+      caught = error
     }
-    // The second pass retries the stuck member and reports it again.
-    expect(result.failed).toEqual([timeout, timeout])
-    expect(result.killedSessions).toEqual(['cgl-pair'])
-    expect(result.detachedClients).toEqual([])
+    expect(caught).toBeInstanceOf(GroupKillRefusedError)
+    expect((caught as Error).message).toBe(
+      `refusing to kill last window of grouped session cgl: could not kill ${mirror}`
+    )
+    expect((caught as GroupKillRefusedError).evacuation.killedSessions).toEqual(['cgl-pair'])
+  })
+
+  test('stops mutating at the first timeout and refuses', () => {
+    const { runTmux: base, calls } = fakeTmux(
+      [
+        [home, 'agentboard'],
+        ['cgl', 'cgl'],
+        [mirror, 'cgl'],
+        ['cgl-pair', 'cgl'],
+      ],
+      [['/dev/ttys001', mirror]]
+    )
+    const runTmux = (args: string[]): string => {
+      if (args[0] === 'switch-client') {
+        calls.push(args)
+        throw new TmuxTimeoutError('switch-client', 15000)
+      }
+      return base(args)
+    }
+
+    expect(() => prepareGroupedLastWindowKill(runTmux, 'cgl', 'cgl', WS)).toThrow(
+      'refusing to kill last window of grouped session cgl: a tmux command timed out'
+    )
+    // Nothing after the timed-out switch: no detach fallback, no kills.
+    expect(mutations(calls)).toEqual([
+      ['switch-client', '-c', '/dev/ttys001', '-t', `=${home}`],
+    ])
+  })
+
+  test('refuses when a member appears after the last pass', () => {
+    let listings = 0
+    const { runTmux } = fakeTmux(
+      [
+        ['cgl', 'cgl'],
+        [mirror, 'cgl'],
+      ],
+      [],
+      (argv, live) => {
+        // A proxy keeps re-creating its mirror (new-session -t) right after
+        // every snapshot.
+        if (argv[0] === 'list-sessions') {
+          listings++
+          if (listings > 1) live.sessions.set(`${mirror}-${listings}`, 'cgl')
+        }
+      }
+    )
+
+    expect(() => prepareGroupedLastWindowKill(runTmux, 'cgl', 'cgl', WS)).toThrow(
+      /refusing to kill last window of grouped session cgl: other members still alive: /
+    )
   })
 
   test('second pass catches a mirror and switch that landed mid-evacuation', () => {
-    const home = `${WS}${CONN}`
-    const lateMirror = `${WS}${CONN}-x-cgl-3od92g`
+    const lateMirror = `${WS}${CONN}-x-cgl-late01`
     let injected = false
     const { runTmux, calls, state } = fakeTmux(
       [
         [home, 'agentboard'],
         ['cgl', 'cgl'],
+        [mirror, 'cgl'],
       ],
       [['/dev/ttys001', home]],
       (argv, live) => {
         // The proxy's new-session -t and async switch-client complete right
-        // after the first snapshot.
+        // after the first client snapshot.
         if (argv[0] === 'list-clients' && !injected) {
           injected = true
           live.sessions.set(lateMirror, 'cgl')
@@ -177,14 +227,14 @@ describe('evacuateSessionGroup', () => {
       }
     )
 
-    const result = evacuateSessionGroup(runTmux, 'cgl', 'cgl', WS)
+    const result = prepareGroupedLastWindowKill(runTmux, 'cgl', 'cgl', WS)
 
     expect(mutations(calls)).toEqual([
+      ['kill-session', '-t', `=${mirror}`],
       ['switch-client', '-c', '/dev/ttys001', '-t', `=${home}`],
       ['kill-session', '-t', `=${lateMirror}`],
     ])
-    expect(result.killedSessions).toEqual([lateMirror])
+    expect(result.killedSessions).toEqual([mirror, lateMirror])
     expect(state.clients.get('/dev/ttys001')).toBe(home)
-    expect(state.sessions.has(lateMirror)).toBe(false)
   })
 })

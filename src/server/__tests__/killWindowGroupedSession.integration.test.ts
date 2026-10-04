@@ -206,7 +206,7 @@ if (!isTmuxAvailable()) {
       expect(clientSession(tty)).toBe(home)
     })
 
-    test('detaches a client attached to the target session itself', async () => {
+    test('kills the mirror but leaves a client on the target to tmux', async () => {
       const [windowId] = newExternalSession('own', 1)
       const connId = '33333333-3333-4333-8333-333333333333'
       const home = `${BASE}-ws-${connId}`
@@ -220,17 +220,15 @@ if (!isTmuxAvailable()) {
       const { manager, calls } = recordingManager()
       manager.killWindow(`own:${windowId}`)
 
-      const detachAt = calls.findIndex(
-        (call) => call[0] === 'detach-client' && call.includes(user.tty)
-      )
+      // The user's own client is not touched by the guard.
+      expect(calls.some((call) => call[0] === 'detach-client')).toBe(false)
       const mirrorKillAt = calls.findIndex(
         (call) => call[0] === 'kill-session' && call.includes(`=${mirror}`)
       )
-      const killAt = calls.findIndex((call) => call[0] === 'kill-window')
-      expect(detachAt).toBeGreaterThanOrEqual(0)
       expect(mirrorKillAt).toBeGreaterThanOrEqual(0)
-      expect(killAt).toBeGreaterThan(Math.max(detachAt, mirrorKillAt))
+      expect(calls.findIndex((call) => call[0] === 'kill-window')).toBeGreaterThan(mirrorKillAt)
 
+      // tmux's default detach-on-destroy then detaches it with the session.
       expect(await waitForClientGone(user.tty)).toBe(true)
       expect(clientSession(proxyTty)).toBe(home)
       expect(sessions()).not.toContain('own')
@@ -238,7 +236,7 @@ if (!isTmuxAvailable()) {
       expect(proxy.isReady()).toBe(true)
     })
 
-    test('guards a grouped session even after its other members are gone', async () => {
+    test('grouped session whose other members are gone needs no mutations', async () => {
       const [windowId] = newExternalSession('shrunk', 1)
       tmux(['new-session', '-d', '-t', '=shrunk', '-s', 'shrunk-pair'])
       tmux(['kill-session', '-t', '=shrunk-pair'])
@@ -247,11 +245,9 @@ if (!isTmuxAvailable()) {
       const { manager, calls } = recordingManager()
       manager.killWindow(`shrunk:${windowId}`)
 
-      const detachAt = calls.findIndex(
-        (call) => call[0] === 'detach-client' && call.includes(user.tty)
-      )
-      expect(detachAt).toBeGreaterThanOrEqual(0)
-      expect(calls.findIndex((call) => call[0] === 'kill-window')).toBeGreaterThan(detachAt)
+      // The group survives shrinking, so the guard runs, finds no other
+      // member, and lets the kill proceed.
+      expect(calls.map((call) => call[0])).toEqual(['display-message', 'list-sessions', 'kill-window'])
       expect(await waitForClientGone(user.tty)).toBe(true)
       expect(sessions()).not.toContain('shrunk')
       expect(sessions()).toContain(BASE)

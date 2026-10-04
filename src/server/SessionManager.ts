@@ -11,7 +11,7 @@ import { TmuxTimeoutError } from './tmuxTimeout'
 import { timedSpawnSync } from './syncSpawnTiming'
 import { isLeakedLaunchEnvVar, sanitizedTmuxEnv } from './tmuxEnv'
 import { createGroupedSession } from './tmuxGroupedSession'
-import { evacuateSessionGroup } from './tmuxKillGuard'
+import { GroupKillRefusedError, prepareGroupedLastWindowKill } from './tmuxKillGuard'
 import { runTmuxAsync, type TmuxRunnerAsync } from './tmuxAsync'
 import {
   BOOTSTRAP_WINDOW_COMMAND,
@@ -840,34 +840,27 @@ export class SessionManager {
       // Metadata is best-effort. Only report a kill after tmux succeeds.
     }
     // Last window of a grouped session: tmux destroys it through the group
-    // path, which crashed tmux 3.7b with a client attached somewhere in the
-    // group (see tmuxKillGuard.ts). Groups persist after shrinking to one
-    // member, so a non-empty group name is enough to need the guard.
+    // path, which crashed tmux 3.7b while another group member was alive
+    // (see tmuxKillGuard.ts). Groups persist after shrinking to one member,
+    // so a non-empty group name is enough to need the guard. If the guard
+    // cannot empty the group it throws, and the kill is reported as failed.
     if (target && target.group && target.windows === 1) {
+      const fields = { tmuxWindow, session: target.session, group: target.group }
       try {
-        const evacuation = evacuateSessionGroup(
+        const evacuation = prepareGroupedLastWindowKill(
           this.runTmux,
           target.session,
           target.group,
           `${this.sessionName}-ws-`
         )
-        const fields = {
-          tmuxWindow,
-          session: target.session,
-          group: target.group,
-          ...evacuation,
-        }
-        if (evacuation.failed.length > 0) {
-          logger.warn('window_kill_group_evacuation_incomplete', fields)
-        } else {
-          logger.info('window_kill_group_evacuated', fields)
-        }
+        logger.info('window_kill_group_evacuated', { ...fields, ...evacuation })
       } catch (error) {
-        logger.warn('window_kill_group_evacuation_failed', {
-          tmuxWindow,
-          session: target.session,
+        logger.warn('window_kill_group_refused', {
+          ...fields,
+          ...(error instanceof GroupKillRefusedError ? error.evacuation : {}),
           error: error instanceof Error ? error.message : String(error),
         })
+        throw error
       }
     }
     this.runTmux(['kill-window', '-t', tmuxWindow])

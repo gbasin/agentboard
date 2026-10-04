@@ -8,13 +8,16 @@ import { buildTmuxFormat } from '../tmuxFormat'
 // session_group. tmux prints a trailing newline.
 const probe = (fields: string[]) => `${buildTmuxFormat(fields)}\n`
 
-function recordingRunner(displayOutput: string) {
+function recordingRunner(
+  displayOutput: string,
+  extra: (argv: string[]) => string | undefined = () => undefined
+) {
   const calls: string[][] = []
   const runTmux = (args: string[]): string => {
     const argv = args[0] === '-u' ? args.slice(1) : args
     calls.push(argv)
     if (argv[0] === 'display-message') return displayOutput
-    return ''
+    return extra(argv) ?? ''
   }
   return { runTmux, calls }
 }
@@ -51,6 +54,30 @@ describe('SessionManager.killWindow', () => {
     const commands = calls.map((call) => call[0])
     expect(commands.indexOf('list-sessions')).toBeGreaterThan(0)
     expect(commands.at(-1)).toBe('kill-window')
+  })
+
+  test('refuses the kill when another group member survives', () => {
+    const warn = spyOn(logger, 'warn')
+    const { runTmux, calls } = recordingRunner(
+      probe(['@7', '0', 'alpha', '/tmp/alpha', 'cgl', '1', 'cgl']),
+      (argv) => {
+        if (argv[0] === 'list-sessions') {
+          return [buildTmuxFormat(['cgl', 'cgl']), buildTmuxFormat(['cgl-pair', 'cgl'])].join('\n')
+        }
+        if (argv[0] === 'kill-session') throw new Error('server refused')
+        return undefined
+      }
+    )
+
+    try {
+      expect(() => new SessionManager('agentboard', { runTmux }).killWindow('cgl:@7')).toThrow(
+        'refusing to kill last window of grouped session cgl: could not kill cgl-pair'
+      )
+      expect(calls.some((call) => call[0] === 'kill-window')).toBe(false)
+      expect(warn.mock.calls.some((call: unknown[]) => call[0] === 'window_kill_group_refused')).toBe(true)
+    } finally {
+      warn.mockRestore()
+    }
   })
 
   test('stale kill of a missing window does not evacuate the group', () => {
