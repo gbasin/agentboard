@@ -14,6 +14,10 @@ import { KillRateLimiter } from './killRateLimit'
 import { SessionManager } from './SessionManager'
 import { ThrowawayShellReaper } from './throwawayShellReaper'
 import { SessionRegistry } from './SessionRegistry'
+import { PersistentSessions } from './persistence/manager'
+import type { SavedSession } from '../shared/persistence'
+import { PersistenceRuntime } from './persistence/runtime'
+import { registerPersistenceRoutes } from './persistence/routes'
 import {
   initDatabase,
   type AgentSessionRecord,
@@ -517,7 +521,7 @@ logger.info('terminal_mode_resolved', {
 })
 
 const app = new Hono()
-const db = initDatabase()
+const db = initDatabase({ exclusive: true })
 
 // Read mouse mode setting from DB (default: true)
 const TMUX_MOUSE_MODE_KEY = 'tmux_mouse_mode'
@@ -618,6 +622,30 @@ async function ensureBaseSessionForRefreshAsync(context: string): Promise<boolea
   }
 }
 const registry = new SessionRegistry()
+// Test adapters may implement SessionDatabase without a SQLite connection.
+function persistenceHostId(): string {
+  const existing = db.getAppSetting('persistence_host_id')
+  if (existing) return existing
+  const id = createConnectionId()
+  db.setAppSetting('persistence_host_id', id)
+  return id
+}
+const persistence = db.db
+  ? new PersistentSessions(db, sessionManager, persistenceHostId())
+  : null
+const persistenceRuntime = persistence
+  ? new PersistenceRuntime(persistence, db)
+  : null
+function createPersistentWindow(
+  projectPath: string,
+  name?: string,
+  command?: string,
+  options?: { excludeSessionId?: string; operationId?: string }
+) {
+  return persistence
+    ? persistence.launch(projectPath, name, command, options)
+    : sessionManager.createWindow(projectPath, name, command, options)
+}
 
 interface WSData {
   terminal: ITerminalProxy | null
@@ -884,10 +912,19 @@ const dormantPrScanner = createDormantPrScanner(() =>
   updateDormantAgentSessions()
 )
 
+/**
+ * Most recent History rows the sidebar shows. Older rows stay in the database
+ * and remain visible to the orphan rematcher, which queries uncapped.
+ */
+const SIDEBAR_HISTORY_LIMIT = 100
+
 function getDormantRecords() {
   return {
     hibernating: db.getHibernatingSessions(),
-    history: db.getHistorySessions({ maxAgeHours: runtimeHistoryMaxAgeHours }),
+    history: db.getHistorySessions({
+      maxAgeHours: runtimeHistoryMaxAgeHours,
+      limit: SIDEBAR_HISTORY_LIMIT,
+    }),
   }
 }
 
@@ -932,6 +969,9 @@ interface VerificationDecision {
 interface HydrateSessionsOptions {
   verifyAssociations?: boolean
   precomputedVerifications?: Map<string, VerificationDecision>
+  // tmux server pid reported by the window enumeration; 0 means the
+  // enumeration cannot vouch for window identity (skip catalog reconcile).
+  serverPid?: number
 }
 
 async function verifyAllSessions(
@@ -1003,8 +1043,9 @@ async function verifyAllSessions(
 
 export function hydrateSessionsWithAgentSessions(
   sessions: Session[],
-  { verifyAssociations = false, precomputedVerifications }: HydrateSessionsOptions = {}
+  { verifyAssociations = false, precomputedVerifications, serverPid = 0 }: HydrateSessionsOptions = {}
 ): Session[] {
+  persistence?.beforeSnapshot(sessions, serverPid)
   const activeSessions = db.getActiveSessions()
   // Discovery can be stale or incomplete. Reconcile missing windows without
   // ever turning a background observation into a destructive tmux command.
@@ -1062,6 +1103,7 @@ export function hydrateSessionsWithAgentSessions(
         windowSetSize: windowSet.size,
         windowSetSample: Array.from(windowSet).slice(0, 5),
       })
+      // A missing or mismatched identity is not authorization to kill a pane.
       const orphanedSession = db.orphanSession(agentSession.sessionId)
       if (orphanedSession) {
         orphaned.push(toAgentSession(orphanedSession))
@@ -1176,6 +1218,7 @@ export function hydrateSessionsWithAgentSessions(
   } else {
     updateActiveAgentSessions()
   }
+  persistence?.observe(hydrated)
   return hydrated
 }
 
@@ -1246,7 +1289,7 @@ async function refreshSessionsAsync(): Promise<void> {
     for (let attempt = 0; attempt < 2; attempt++) {
       const gen = refreshGeneration
       try {
-        const sessions = await sessionRefreshWorker.refresh(
+        const { sessions, tmuxServerPid } = await sessionRefreshWorker.refresh(
           config.tmuxSession,
           config.discoverPrefixes,
           {
@@ -1261,7 +1304,7 @@ async function refreshSessionsAsync(): Promise<void> {
         if (gen !== refreshGeneration) continue
         const tHydrate = performance.now()
         recordSuccessfulRefreshWindowCount(countLocalSessions(sessions))
-        const hydrated = hydrateSessionsWithAgentSessions(sessions)
+        const hydrated = hydrateSessionsWithAgentSessions(sessions, { serverPid: tmuxServerPid })
         const withOverrides = applyForceWorkingOverrides(hydrated)
         registry.replaceSessions(mergeRemoteSessions(withOverrides))
         const hydrateMs = Math.round(performance.now() - tHydrate)
@@ -1288,7 +1331,9 @@ async function refreshSessionsAsync(): Promise<void> {
           return
         }
         recordSuccessfulRefreshWindowCount(countLocalSessions(sessions))
-        const hydrated = hydrateSessionsWithAgentSessions(sessions)
+        const hydrated = hydrateSessionsWithAgentSessions(sessions, {
+          serverPid: sessionManager.lastEnumeratedServerPid,
+        })
         const withOverrides = applyForceWorkingOverrides(hydrated)
         registry.replaceSessions(mergeRemoteSessions(withOverrides))
         return
@@ -1331,7 +1376,10 @@ function refreshSessionsSync({ verifyAssociations = false } = {}) {
     return
   }
   recordSuccessfulRefreshWindowCount(countLocalSessions(sessions))
-  const hydrated = hydrateSessionsWithAgentSessions(sessions, { verifyAssociations })
+  const hydrated = hydrateSessionsWithAgentSessions(sessions, {
+    verifyAssociations,
+    serverPid: sessionManager.lastEnumeratedServerPid,
+  })
   registry.replaceSessions(mergeRemoteSessions(hydrated))
 }
 
@@ -2184,6 +2232,59 @@ app.get('/api/clipboard-file-path', async (c) => {
   }
 })
 
+if (persistenceRuntime) {
+  persistenceRuntime.matchingFailure = () => logPoller.matchingError
+  const library = registerPersistenceRoutes(app, persistenceRuntime, {
+    commandFor: buildResumeCommand,
+    changed: () => {
+      updateDormantAgentSessions()
+      refreshSessions()
+      broadcast({ type: 'library-changed' })
+    },
+    activated: (session) => {
+      refreshGeneration++
+      const others = registry
+        .getAll()
+        .filter((s) => s.tmuxWindow !== session.tmuxWindow)
+      registry.replaceSessions([stampLocalSession(session), ...others])
+    },
+  })
+  persistenceRuntime.start()
+  if (persistenceRuntime.health().settings.autoResume) {
+    // Reconcile the new tmux lifetime before selecting interrupted sessions.
+    try {
+      const live = sessionManager.listWindows()
+      persistence!.beforeSnapshot(live, sessionManager.lastEnumeratedServerPid)
+      persistence!.observe(live)
+    } catch (error) {
+      logger.warn('auto_resume_reconcile_failed', { error: String(error) })
+    }
+    const interrupted: SavedSession[] = []
+    let cursor: string | undefined
+    do {
+      const page = persistence!.catalog.history({
+        state: 'interrupted',
+        limit: 100,
+        cursor,
+      })
+      interrupted.push(...page.sessions)
+      cursor = page.nextCursor || undefined
+    } while (cursor)
+    void (async () => {
+      for (const saved of interrupted) {
+        try {
+          await library.resume(saved.id)
+        } catch (error) {
+          logger.warn('auto_resume_failed', {
+            sessionId: saved.id,
+            error: String(error),
+          })
+        }
+      }
+    })()
+  }
+}
+
 const staticDir = process.env.AGENTBOARD_STATIC_DIR || './dist/client'
 app.use('/*', serveStatic({ root: staticDir }))
 
@@ -2359,6 +2460,7 @@ if (config.logPollIntervalMs > 0) {
 
 // Cleanup all terminals on server shutdown
 async function cleanupAllTerminals() {
+  persistenceRuntime?.stop()
   const disposePromises: Promise<void>[] = []
   for (const ws of sockets) {
     if (ws.data.terminal) {
@@ -2711,15 +2813,28 @@ function handleMessage(
         fireAndForget(handleRemoteCreate(message.host, message.projectPath, message.name, message.command, ws), 'handleRemoteCreate')
       } else {
         try {
-          const created = stampLocalSession(sessionManager.createWindow(
+          const { operationId } = message
+          if (
+            operationId !== undefined &&
+            (typeof operationId !== 'string' ||
+              operationId.length === 0 ||
+              operationId.length > 128)
+          ) {
+            throw new Error('Invalid operation ID')
+          }
+          const created = stampLocalSession(createPersistentWindow(
             message.projectPath,
             message.name,
-            message.command
+            message.command,
+            { operationId }
           ))
           // Add session to registry immediately so terminal can attach
           refreshGeneration++
           const currentSessions = registry.getAll()
-          registry.replaceSessions([created, ...currentSessions])
+          registry.replaceSessions([
+            created,
+            ...currentSessions.filter((s) => s.id !== created.id),
+          ])
           refreshSessions()
           send(ws, { type: 'session-created', session: created })
         } catch (error) {
@@ -3200,7 +3315,14 @@ async function handleKill(
   }
 
   try {
-    sessionManager.killWindow(session.tmuxWindow)
+    // Archive the catalog row only when it owns this window in the current
+    // tmux server; a stale row with a reused window id is left alone.
+    const owner = persistence?.ownerOfWindow(session.tmuxWindow) ?? null
+    if (owner) {
+      persistence!.stop(owner, 'archived')
+    } else {
+      sessionManager.killWindow(session.tmuxWindow)
+    }
   } catch (error) {
     restoreHibernatingState(previousHibernatingState)
     sendKillFailed(
@@ -3333,7 +3455,8 @@ async function handleRename(
   }
 
   try {
-    sessionManager.renameWindow(session.tmuxWindow, newName)
+    if (persistence) persistence.renameWindow(session.tmuxWindow, newName)
+    else sessionManager.renameWindow(session.tmuxWindow, newName)
     refreshSessions()
   } catch (error) {
     send(ws, {
@@ -3363,6 +3486,11 @@ function handleMoveToHistory(
     return
   }
 
+  const saved = persistence?.catalog.byProvider(sessionId)
+  if (saved) {
+    persistence?.catalog.pin(saved.id, false)
+    persistence?.catalog.transition(saved.id, 'archived')
+  }
   const updated = db.setHibernating(sessionId, false)
   if (!updated) {
     send(ws, { type: 'session-move-to-history-result', sessionId, ok: false, error: 'Failed to move session to History' })
@@ -3489,8 +3617,16 @@ function handleSessionHibernate(
     return
   }
 
+  let catalogOwner: SavedSession | null = null
   try {
-    sessionManager.killWindow(liveTmuxWindow)
+    // Only a catalog row that owns this window in the current tmux server is
+    // moved to hibernating; a stale row with a reused window id is left alone.
+    catalogOwner = persistence?.ownerOfWindow(liveTmuxWindow) ?? null
+    if (catalogOwner) {
+      persistence!.stop(catalogOwner, 'hibernating')
+    } else {
+      sessionManager.killWindow(liveTmuxWindow)
+    }
   } catch (error) {
     let targetStillExists = true
     try {
@@ -3507,6 +3643,18 @@ function handleSessionHibernate(
     }
 
     if (!targetStillExists) {
+      // The kill lost a race with the window exiting. Finish the catalog side
+      // too, or the next reconcile would mark the row interrupted.
+      if (catalogOwner) {
+        try {
+          persistence!.retire(catalogOwner, 'hibernating')
+        } catch (retireError) {
+          logger.warn('session_hibernate_catalog_retire_failed', {
+            sessionId,
+            error: retireError instanceof Error ? retireError.message : String(retireError),
+          })
+        }
+      }
       logger.info('session_hibernate_target_already_gone', {
         sessionId,
         agentType: record.agentType,
@@ -3822,6 +3970,12 @@ function tryRematchDormantSession(
   }
 }
 
+/** Kill a window a wake created but will not keep, retiring its catalog row. */
+function killWakeWindow(tmuxWindow: string) {
+  if (persistence) persistence.killWindow(tmuxWindow, 'hibernating')
+  else sessionManager.killWindow(tmuxWindow)
+}
+
 function handleSessionWake(
   message: Extract<ClientMessage, { type: 'session-wake' }>,
   ws: ServerWebSocket<WSData>
@@ -3957,7 +4111,7 @@ function handleSessionWake(
     // Name is driven by the stored displayName — createWindow will auto-suffix
     // on genuine collisions with other live sessions (excludeSessionId keeps
     // the session's own prior name from matching itself).
-    const created = stampLocalSession(sessionManager.createWindow(
+    const created = stampLocalSession(createPersistentWindow(
       projectPath,
       latest.displayName,
       command,
@@ -4041,7 +4195,14 @@ function handleSessionWake(
         return
       }
 
-      try { sessionManager.killWindow(created.tmuxWindow) } catch { /* may already be gone */ }
+      // Retire the wake's catalog row with its window. A bare kill would leave
+      // the row "running" on a dead window, and the next reconcile would then
+      // release the conversation claim the rematcher just gave another window.
+      try {
+        killWakeWindow(created.tmuxWindow)
+      } catch {
+        // may already be gone
+      }
       createdWindowToCleanup = null
       try {
         db.updateSession(sessionId, { wakeStartedAt: null })
@@ -4105,7 +4266,7 @@ function handleSessionWake(
   } catch (error) {
     if (createdWindowToCleanup) {
       try {
-        sessionManager.killWindow(createdWindowToCleanup)
+        killWakeWindow(createdWindowToCleanup)
       } catch (cleanupError) {
         logger.warn('session_wake_cleanup_failed', {
           sessionId,

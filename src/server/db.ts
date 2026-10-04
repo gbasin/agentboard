@@ -4,6 +4,7 @@ import { Database as SQLiteDatabase } from 'bun:sqlite'
 import type { AgentType } from '../shared/types'
 import { logger } from './logger'
 import { resolveProjectPath } from './paths'
+import { acquireDatabaseOwner } from './persistence/ownership'
 
 export interface AgentSessionRecord {
   id: number
@@ -89,12 +90,23 @@ export interface SessionDatabase {
   getSessionByWindow: (tmuxWindow: string) => AgentSessionRecord | null
   getActiveSessions: () => AgentSessionRecord[]
   getHibernatingSessions: () => AgentSessionRecord[]
-  getHistorySessions: (options?: { maxAgeHours?: number }) => AgentSessionRecord[]
+  /**
+   * Dormant, non-hibernating rows, newest first. Uncapped unless `limit` is
+   * given: the orphan rematcher and poll snapshots must see every row, while
+   * the sidebar passes its display cap.
+   */
+  getHistorySessions: (options?: { maxAgeHours?: number; limit?: number }) => AgentSessionRecord[]
   /** All session identity keys without large TEXT columns — safe to load per poll. */
   getKnownSessionKeys: () => KnownSessionKey[]
+  /**
+   * Clear current_window. With `expectedWindow` it is a compare-and-clear: the
+   * row is only touched while it is dormant or still on that window, so a
+   * stale caller cannot drop a claim another window has since taken. Returns
+   * null when that guard refuses.
+   */
   orphanSession: (
     sessionId: string,
-    options?: { hibernate?: boolean }
+    options?: { hibernate?: boolean; expectedWindow?: string | null }
   ) => AgentSessionRecord | null
   displayNameExists: (displayName: string, excludeSessionId?: string) => boolean
   setHibernating: (sessionId: string, isHibernating: boolean) => AgentSessionRecord | null
@@ -170,14 +182,49 @@ function readJournalMode(db: SQLiteDatabase): string {
   }
 }
 
-export function initDatabase(options: { path?: string } = {}): SessionDatabase {
+/**
+ * Session data (prompts, paths) is private to the user. The WAL and shared
+ * memory files hold the same data, so they get the same mode; they exist only
+ * after the WAL switch, and are best-effort since SQLite may recreate them.
+ */
+function restrictDatabaseFiles(dbPath: string) {
+  fs.chmodSync(dbPath, 0o600)
+  for (const suffix of ['-wal', '-shm']) {
+    try {
+      fs.chmodSync(`${dbPath}${suffix}`, 0o600)
+    } catch {
+      // Not created yet, or already gone after a checkpoint.
+    }
+  }
+}
+
+export function initDatabase(options: { path?: string; exclusive?: boolean } = {}): SessionDatabase {
   const envPath = process.env[DB_PATH_ENV]?.trim()
   const resolvedEnvPath =
     envPath && envPath !== ':memory:' ? resolveProjectPath(envPath) : envPath
   const dbPath = options.path ?? resolvedEnvPath ?? DEFAULT_DB_PATH
   ensureDataDir(dbPath)
 
-  const db = new SQLiteDatabase(dbPath)
+  const owner = options.exclusive ? acquireDatabaseOwner(dbPath) : null
+  let connection: SQLiteDatabase | undefined
+  try {
+    connection = new SQLiteDatabase(dbPath)
+    return initializeConnection(connection, dbPath, owner?.release)
+  } catch (error) {
+    try {
+      connection?.close()
+    } finally {
+      owner?.release()
+    }
+    throw error
+  }
+}
+
+function initializeConnection(
+  db: SQLiteDatabase,
+  dbPath: string,
+  releaseOwner?: () => void
+): SessionDatabase {
   // WAL so readers never block on (or block) a writer; this fixes the
   // "database is locked" errors seen when an old and new server overlap during
   // a restart. Under WAL only writers contend, and bun:sqlite waits for the
@@ -207,6 +254,7 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
   } else if (journalMode !== 'memory') {
     logger.warn('db_wal_switch_failed', { dbPath, journalMode, error: switchError })
   }
+  if (dbPath !== ':memory:') restrictDatabaseFiles(dbPath)
   migrateDatabase(db)
   db.exec(CREATE_TABLE_SQL)
   db.exec(CREATE_APP_SETTINGS_TABLE_SQL)
@@ -245,10 +293,10 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
     'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_hibernating = 1 ORDER BY last_activity_at DESC, session_id'
   )
   const selectHistory = db.prepare(
-    'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_hibernating = 0 ORDER BY last_activity_at DESC, session_id'
+    'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_hibernating = 0 ORDER BY last_activity_at DESC, session_id LIMIT $limit'
   )
   const selectHistoryRecent = db.prepare(
-    'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_hibernating = 0 AND last_activity_at > $cutoff ORDER BY last_activity_at DESC, session_id'
+    'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_hibernating = 0 AND last_activity_at > $cutoff ORDER BY last_activity_at DESC, session_id LIMIT $limit'
   )
   const selectKnownSessionKeys = db.prepare(
     'SELECT session_id, log_file_path, project_path, slug, agent_type, is_codex_exec FROM agent_sessions'
@@ -269,6 +317,12 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
         .map((field) => `${field} = $${field}`)
         .join(', ')} WHERE session_id = $sessionId`
     )
+
+  const orphanIfOnWindowStmt = db.prepare(
+    `UPDATE agent_sessions SET current_window = NULL, is_hibernating = $is_hibernating
+     WHERE session_id = $sessionId
+       AND (current_window IS NULL OR current_window = $expectedWindow)`
+  )
 
   const claimWindowStmt = (fields: string[]) =>
     db.prepare(
@@ -430,13 +484,15 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
       const rows = selectHibernating.all() as Record<string, unknown>[]
       return rows.map(mapRow)
     },
-    getHistorySessions: (options?: { maxAgeHours?: number }) => {
+    getHistorySessions: (options?: { maxAgeHours?: number; limit?: number }) => {
+      // SQLite treats a negative LIMIT as no limit.
+      const limit = options?.limit ?? -1
       if (options?.maxAgeHours) {
         const cutoff = new Date(Date.now() - options.maxAgeHours * 60 * 60 * 1000).toISOString()
-        const rows = selectHistoryRecent.all({ $cutoff: cutoff }) as Record<string, unknown>[]
+        const rows = selectHistoryRecent.all({ $cutoff: cutoff, $limit: limit }) as Record<string, unknown>[]
         return rows.map(mapRow)
       }
-      const rows = selectHistory.all() as Record<string, unknown>[]
+      const rows = selectHistory.all({ $limit: limit }) as Record<string, unknown>[]
       return rows.map(mapRow)
     },
     getKnownSessionKeys: () => {
@@ -455,11 +511,20 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
       // Auto-promote to Hibernating on unexpected window loss. Deliberate kills
       // and explicit mismatch cleanup opt out so those rows still land in
       // History.
-      updateStmt(['current_window', 'is_hibernating']).run({
-        $sessionId: sessionId,
-        $current_window: null,
-        $is_hibernating: hibernate ? 1 : 0,
-      })
+      if (options?.expectedWindow !== undefined) {
+        const result = orphanIfOnWindowStmt.run({
+          $sessionId: sessionId,
+          $expectedWindow: options.expectedWindow,
+          $is_hibernating: hibernate ? 1 : 0,
+        })
+        if (result.changes === 0) return null
+      } else {
+        updateStmt(['current_window', 'is_hibernating']).run({
+          $sessionId: sessionId,
+          $current_window: null,
+          $is_hibernating: hibernate ? 1 : 0,
+        })
+      }
       const row = selectBySessionId.get({ $sessionId: sessionId }) as
         | Record<string, unknown>
         | undefined
@@ -504,7 +569,11 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
       upsertAppSetting.run({ $key: key, $value: value })
     },
     close: () => {
-      db.close()
+      try {
+        db.close()
+      } finally {
+        releaseOwner?.()
+      }
     },
   }
 }

@@ -142,6 +142,7 @@ function outline(node: Json | Json[], out: string[] = []): string[] {
   if (props['data-testid'] === 'session-card') out.push(`row:${props['data-session-id']}`)
   if (props['data-testid'] === 'hibernating-session-card') out.push(`hib:${props['data-session-id']}`)
   if (props['data-testid'] === 'controls') out.push('controls')
+  if (props['data-testid'] === 'notice') out.push('notice')
   if (className.includes('sticky')) out.push('filter')
   if (props['data-testid'] === 'session-card' || props['data-testid'] === 'hibernating-session-card') {
     return out // row internals are not landmarks
@@ -214,6 +215,26 @@ describe('SessionList anchor: rendered order', () => {
       'controls',
       'hint',
     ])
+    act(() => renderer.unmount())
+  })
+
+  test('notice sits under the filter bar for top, never above it', () => {
+    const renderer = renderList({ notice: <div data-testid="notice" /> })
+    expect(outline(renderer.toJSON()).slice(0, 4)).toEqual([
+      'filter',
+      'controls',
+      'notice',
+      'label:Active',
+    ])
+    act(() => renderer.unmount())
+  })
+
+  test('notice is pinned at the column top for bottom, clear of the rows and bars', () => {
+    const renderer = renderList({ anchor: 'bottom', notice: <div data-testid="notice" /> })
+    const tokens = outline(renderer.toJSON())
+    expect(tokens[0]).toBe('notice')
+    // The first row still sits directly on the filter bar, which sits on the hint.
+    expect(tokens.slice(-5)).toEqual(['row:s2', 'row:s3', 'filter', 'controls', 'hint'])
     act(() => renderer.unmount())
   })
 
@@ -492,6 +513,28 @@ describe('SessionList anchor: bottom pinning', () => {
       )
     })
     expect(el.scrollTop).toBe(950)
+    act(() => renderer.unmount())
+  })
+
+  test('stays pinned when the viewport shrinks (a banner appears above the list)', () => {
+    const el = fakeScroller(1000, 100)
+    const renderer = renderList({ anchor: 'bottom' }, scrollerMock(el))
+    expect(el.scrollTop).toBe(900)
+    el.clientHeight = 60 // same content, shorter viewport
+    act(() => {
+      renderer.update(
+        <SessionList
+          sessions={sessions}
+          selectedSessionId={null}
+          loading={false}
+          error={null}
+          onSelect={() => {}}
+          onRename={() => {}}
+          anchor="bottom"
+        />
+      )
+    })
+    expect(el.scrollTop).toBe(940)
     act(() => renderer.unmount())
   })
 

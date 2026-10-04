@@ -93,4 +93,5 @@ export interface MatchWorkerResponse {
   codexIndexMs?: number
   profile?: ExactMatchProfiler
   error?: string
+  matchingError?: string
 }

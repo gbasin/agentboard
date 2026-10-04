@@ -73,7 +73,7 @@ export class SessionRefreshWorkerClient {
     managedSession: string,
     discoverPrefixes: string[],
     options: { expectedWindowCount?: number; preferWindowName?: boolean } = {}
-  ): Promise<Session[]> {
+  ): Promise<{ sessions: Session[]; tmuxServerPid: number }> {
     if (this.disposed) {
       throw new Error('Session refresh worker is disposed')
     }
@@ -91,7 +91,7 @@ export class SessionRefreshWorkerClient {
       preferWindowName: options.preferWindowName,
     }
 
-    return new Promise<Session[]>((resolve, reject) => {
+    return new Promise<{ sessions: Session[]; tmuxServerPid: number }>((resolve, reject) => {
       const timeoutMs = getRefreshTimeoutMs(options.expectedWindowCount)
       const timeoutId = setTimeout(() => {
         this.handleRequestTimeout(id, generation)
@@ -101,7 +101,10 @@ export class SessionRefreshWorkerClient {
         generation,
         resolve: (response) => {
           if (response.type === 'result' && response.kind === 'refresh') {
-            resolve(response.sessions)
+            resolve({
+              sessions: response.sessions,
+              tmuxServerPid: response.tmuxServerPid,
+            })
           } else {
             reject(
               response.type === 'error'
