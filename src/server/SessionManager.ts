@@ -11,6 +11,7 @@ import { TmuxTimeoutError } from './tmuxTimeout'
 import { timedSpawnSync } from './syncSpawnTiming'
 import { isLeakedLaunchEnvVar, sanitizedTmuxEnv } from './tmuxEnv'
 import { createGroupedSession } from './tmuxGroupedSession'
+import { evacuateSessionGroup } from './tmuxKillGuard'
 import { runTmuxAsync, type TmuxRunnerAsync } from './tmuxAsync'
 import {
   BOOTSTRAP_WINDOW_COMMAND,
@@ -92,9 +93,12 @@ const WINDOW_LIST_FORMAT_FALLBACK = buildTmuxFormat([
   '#{window_activity}',
   '#{pane_current_command}',
 ])
-const WINDOW_INFO_FORMAT = buildTmuxFormat([
+const KILL_TARGET_FORMAT = buildTmuxFormat([
   '#{window_name}',
   '#{pane_current_path}',
+  '#{session_name}',
+  '#{session_windows}',
+  '#{session_group}',
 ])
 const BASE_SESSION_PROBE_FORMAT = buildTmuxFormat([
   '#{session_name}',
@@ -800,20 +804,50 @@ export class SessionManager {
 
   killWindow(tmuxWindow: string): void {
     let windowInfo: { name?: string; path?: string } = {}
+    let target: { session: string; windows: number; group: string } | null = null
     try {
       const info = this.runParsedTmux([
         'display-message',
         '-t',
         tmuxWindow,
         '-p',
-        WINDOW_INFO_FORMAT,
+        KILL_TARGET_FORMAT,
       ])
-      const parts = splitTmuxFields(info.trim(), 2)
-      const name = parts?.[0]
-      const path = parts?.[1]
-      windowInfo = { name, path }
+      const parts = splitTmuxFields(info.trim(), 5)
+      windowInfo = { name: parts?.[0], path: parts?.[1] }
+      if (parts?.[2]) {
+        target = {
+          session: parts[2],
+          windows: Number.parseInt(parts[3] ?? '', 10),
+          group: parts[4] ?? '',
+        }
+      }
     } catch {
       // Metadata is best-effort. Only report a kill after tmux succeeds.
+    }
+    // Last window of a grouped session: tmux would destroy the whole group,
+    // which crashed tmux 3.7b with a client attached (see tmuxKillGuard.ts).
+    if (target && target.group && target.windows === 1) {
+      try {
+        const evacuation = evacuateSessionGroup(
+          this.runTmux,
+          target.session,
+          target.group,
+          `${this.sessionName}-ws-`
+        )
+        logger.info('window_kill_group_evacuated', {
+          tmuxWindow,
+          session: target.session,
+          group: target.group,
+          ...evacuation,
+        })
+      } catch (error) {
+        logger.warn('window_kill_group_evacuation_failed', {
+          tmuxWindow,
+          session: target.session,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
     }
     this.runTmux(['kill-window', '-t', tmuxWindow])
     paneContentCache.delete(tmuxWindow)
