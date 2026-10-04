@@ -11,7 +11,7 @@ import { TmuxTimeoutError } from './tmuxTimeout'
 import { timedSpawnSync } from './syncSpawnTiming'
 import { isLeakedLaunchEnvVar, sanitizedTmuxEnv } from './tmuxEnv'
 import { createGroupedSession } from './tmuxGroupedSession'
-import { GroupKillRefusedError, prepareGroupedLastWindowKill } from './tmuxKillGuard'
+import { GroupKillRefusedError, killGroupedSessionLastWindow } from './tmuxKillGuard'
 import { runTmuxAsync, type TmuxRunnerAsync } from './tmuxAsync'
 import {
   BOOTSTRAP_WINDOW_COMMAND,
@@ -810,44 +810,15 @@ export class SessionManager {
   }
 
   killWindow(tmuxWindow: string): void {
-    let windowInfo: { name?: string; path?: string } = {}
-    let target: { session: string; windows: number; group: string } | null = null
-    try {
-      const info = this.runParsedTmux([
-        'display-message',
-        '-t',
-        tmuxWindow,
-        '-p',
-        KILL_TARGET_FORMAT,
-      ])
-      const parts = splitTmuxFields(splitTmuxLines(info)[0] ?? '', 7)
-      // display-message exits 0 for a missing window and describes the
-      // session's current window instead (see probeWindow). Trust the probe
-      // only when it describes the window we were asked to kill, so a stale
-      // or repeated kill never evacuates a live group.
-      const wanted = this.extractWindowId(tmuxWindow)
-      if (parts && (parts[0] === wanted || parts[1] === wanted)) {
-        windowInfo = { name: parts[2], path: parts[3] }
-        if (parts[4]) {
-          target = {
-            session: parts[4],
-            windows: Number.parseInt(parts[5] ?? '', 10),
-            group: parts[6] ?? '',
-          }
-        }
-      }
-    } catch {
-      // Metadata is best-effort. Only report a kill after tmux succeeds.
-    }
-    // Last window of a grouped session: tmux destroys it through the group
-    // path, which crashed tmux 3.7b while another group member was alive
-    // (see tmuxKillGuard.ts). Groups persist after shrinking to one member,
-    // so a non-empty group name is enough to need the guard. If the guard
-    // cannot empty the group it throws, and the kill is reported as failed.
-    if (target && target.group && target.windows === 1) {
+    const target = this.probeKillTarget(tmuxWindow)
+    // Last window of a grouped session: kill-window would destroy the group
+    // through a path that crashed tmux 3.7b, so the group is destroyed with
+    // kill-session -g instead (see tmuxKillGuard.ts). Groups persist after
+    // shrinking to one member, so a non-empty group name is enough.
+    if (target.group && target.windows === 1) {
       const fields = { tmuxWindow, session: target.session, group: target.group }
       try {
-        const evacuation = prepareGroupedLastWindowKill(
+        const evacuation = killGroupedSessionLastWindow(
           this.runTmux,
           target.session,
           target.group,
@@ -862,10 +833,53 @@ export class SessionManager {
         })
         throw error
       }
+    } else {
+      this.runTmux(['kill-window', '-t', tmuxWindow])
     }
-    this.runTmux(['kill-window', '-t', tmuxWindow])
     paneContentCache.delete(tmuxWindow)
-    logger.info('window_killed', { tmuxWindow, ...windowInfo })
+    logger.info('window_killed', { tmuxWindow, name: target.name, path: target.path })
+  }
+
+  // Reads what killWindow needs to choose a safe kill. Fails closed: a probe
+  // that errors, cannot be parsed, or describes a different window refuses
+  // the kill, because an unguarded kill-window is the crash path.
+  private probeKillTarget(tmuxWindow: string): {
+    name: string
+    path: string
+    session: string
+    windows: number
+    group: string
+  } {
+    const refuse = (reason: string, extra: Record<string, unknown> = {}): never => {
+      logger.warn('window_kill_probe_failed', { tmuxWindow, reason, ...extra })
+      throw new Error(`Unable to verify tmux window ${tmuxWindow} before kill: ${reason}`)
+    }
+    let info = ''
+    try {
+      info = this.runParsedTmux(['display-message', '-t', tmuxWindow, '-p', KILL_TARGET_FORMAT])
+    } catch (error) {
+      refuse(error instanceof Error ? error.message.trim() : String(error))
+    }
+    const parts = splitTmuxFields(splitTmuxLines(info)[0] ?? '', 7)
+    if (!parts) return refuse('unparseable tmux probe output', { output: info })
+    // display-message exits 0 for a missing window and describes the
+    // session's current window instead (see probeWindow), so the probe must
+    // describe the window we were asked to kill.
+    const wanted = this.extractWindowId(tmuxWindow)
+    if (parts[0] !== wanted && parts[1] !== wanted) {
+      return refuse(`window not found (tmux described ${parts[0]})`)
+    }
+    const windows = Number.parseInt(parts[5] ?? '', 10)
+    if (!parts[4] || !Number.isFinite(windows)) {
+      return refuse('incomplete tmux probe output', { output: info })
+    }
+    return {
+      name: parts[2] ?? '',
+      path: parts[3] ?? '',
+      session: parts[4],
+      windows,
+      group: parts[6] ?? '',
+    }
   }
 
   renameWindow(tmuxWindow: string, newName: string): void {

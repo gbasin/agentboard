@@ -258,6 +258,27 @@ function createTmuxRunner(sessions: SessionState[], baseIndex = 0) {
       if (format === '#{session_name}') {
         return sessionName
       }
+      if (format.includes('#{session_windows}')) {
+        // Kill-target probe: window id/index, name, path, session, window
+        // count and group (empty when the session was never grouped).
+        const windows = groupWindows(sessionName)
+        const window = windows.find(
+          (item) => item.id === windowId || String(item.index) === windowId
+        )
+        if (!window) {
+          return ''
+        }
+        const group = sessions.find((item) => item.name === sessionName)?.group ?? ''
+        return buildTmuxRow([
+          window.id,
+          window.index,
+          window.name,
+          window.path,
+          sessionName,
+          windows.length,
+          group,
+        ])
+      }
       if (format.includes('#{window_name}') && format.includes('#{pane_current_path}')) {
         const window = groupWindows(sessionName).find(
           (item) => item.id === windowId || String(item.index) === windowId

@@ -1,4 +1,4 @@
-// Makes killing the last window of a grouped tmux session safe on tmux 3.7b.
+// Kills the last window of a grouped tmux session without crashing tmux 3.7b.
 //
 // Incident (2026-10-04): `kill-window` on the last window of the external
 // session `cgl` segfaulted tmux 3.7b and took down the whole server:
@@ -6,40 +6,37 @@
 //   <- server_destroy_session_group <- server_kill_window
 //
 // Mechanism (server-fn.c, session.c, cmd-find.c): server_kill_window walks
-// every session containing the window. session_detach on a group member
-// whose last winlink is removed leaves that member's s->curw pointing at the
-// freed winlink. server_destroy_session_group then destroys the members one
-// by one, and each session_destroy runs notify_session ->
-// cmd_find_from_nothing -> cmd_find_best_session. That picks the session with
-// the most recent activity_time and dereferences its s->curw. If the pick is
-// a still-alive member with a dangling curw (here agentboard's grouped mirror
-// `<base>-ws-<conn>-x-cgl-<hash>`, active 0.5s earlier), it is a
-// use-after-free. The trigger is a second live member of the group with
-// recent activity at kill time; attached clients are incidental.
+// the sessions containing the window. The first one in name order has its
+// last winlink removed by session_detach, which leaves that session's
+// s->curw pointing at the freed winlink. server_destroy_session_group then
+// destroys the group members one by one, and each session_destroy runs
+// notify_session -> cmd_find_from_nothing -> cmd_find_best_session, which
+// picks the session with the most recent activity_time and dereferences its
+// curw. The crash needs the damaged member to still be alive and be picked
+// while another member is being destroyed. In the incident that was
+// agentboard's grouped mirror `agentboard-ws-<conn>-x-cgl-<hash>`: it sorts
+// before `cgl`, so it was the damaged member, and it had been active 0.5s
+// earlier, so cmd_find_best_session picked it.
 //
-// Invariant enforced here: when kill-window runs, no other live session is in
-// the target's group. (tmux never dissolves a group, so the target keeps its
-// group name and still takes the group-destroy path; with no other member
-// there is no dangling curw for cmd_find_best_session to pick.)
+// Fix: for the last window of a grouped session, agentboard never runs
+// kill-window. It runs `kill-session -g -t =<session>`, which destroys every
+// session in the group in one command. Each session_destroy only unlinks
+// that session's own winlinks, so no member is left with a dangling curw;
+// the pane process dies and the server survives (verified on 3.7b).
 //
-// Steps:
-//   1. Move clients off the other members before they die, so browser
-//      proxies land on their own `<base>-ws-<conn>` session (where a normal
-//      kill leaves them) instead of being detached. Other clients on those
-//      members are detached. Clients on the target session itself are left
-//      alone; tmux applies their detach-on-destroy setting as usual.
-//   2. Kill the other members. They share the doomed window set.
-//   3. Repeat once: a proxy switch in flight can create a new mirror with a
-//      synchronous `new-session -t` after the first snapshot.
-//   4. Re-list the group immediately before the kill and refuse (throw) if
-//      any other member is still alive, if a member kill failed, or if any
-//      tmux call timed out. The caller then reports kill_failed instead of
-//      running the crash path.
-// Residual race: a mirror created between the final check and the
-// kill-window spawn is not seen. That window is one synchronous spawn wide.
+// Semantic difference: kill-window removes the window from every session;
+// kill-session -g keeps it alive in sessions outside the group that link it
+// (link-window). For the last window of an external session that is what we
+// want: we end the session, not someone else's link.
 //
-// Mutations stop at the first tmux timeout: each one can block the event
-// loop for the mutation timeout, and the kill is refused anyway.
+// Before the kill, clients on the other members are moved off them:
+// browser proxies on a mirror go back to their own `<base>-ws-<conn>`
+// session (where a normal kill leaves them), so detach-on-destroy does not
+// kill the proxy's attach process; other clients on members are detached.
+// Clients on the target session itself are left alone and follow their own
+// detach-on-destroy setting. A tmux timeout during this step stops all
+// further tmux calls and refuses the kill: proceeding would detach a proxy
+// that could not be moved and leave it dead.
 
 import { buildTmuxFormat, splitTmuxFields, splitTmuxLines, withTmuxUtf8Flag } from './tmuxFormat'
 import { isTmuxTimeoutError } from './tmuxTimeout'
@@ -49,21 +46,16 @@ export type KillGuardRunner = (args: string[]) => string
 const SESSION_GROUP_FORMAT = buildTmuxFormat(['#{session_name}', '#{session_group}'])
 const CLIENT_SESSION_FORMAT = buildTmuxFormat(['#{client_name}', '#{client_session}'])
 const EXTERNAL_MIRROR_MARKER = '-x-'
-const EVACUATION_PASSES = 2
-// The thing we were removing is already gone: not a failure.
-const ALREADY_GONE = /can't find (session|client)|no such (session|client)/i
+// The client we were moving is already gone: not a failure.
+const ALREADY_GONE = /can't find client|no such client/i
 
 export interface GroupEvacuation {
-  /** Other sessions in the doomed group that were killed. */
-  killedSessions: string[]
   /** Clients moved to another session. */
   switchedClients: Array<{ client: string; session: string }>
   /** Clients detached because they had no safe session to move to. */
   detachedClients: string[]
-  /** Steps that failed for a reason other than the target being gone. */
+  /** Steps that failed for a reason other than the client being gone. */
   failed: Array<{ command: string; target: string; error: string }>
-  /** A tmux call timed out; no further mutations were issued. */
-  timedOut: boolean
 }
 
 /** Thrown when the last window of a grouped session cannot be killed safely. */
@@ -90,108 +82,79 @@ export function proxySessionForMirror(session: string, wsPrefix: string): string
 }
 
 /**
- * Establishes the invariant above for killing the last window of
- * `targetSession`, or throws GroupKillRefusedError. Never kills the target.
+ * Moves clients off the other members of `targetSession`'s group, then
+ * destroys the whole group with `kill-session -g`. Throws
+ * GroupKillRefusedError (before any kill) when tmux cannot be read reliably
+ * or a client move times out.
  */
-export function prepareGroupedLastWindowKill(
+export function killGroupedSessionLastWindow(
   runTmux: KillGuardRunner,
   targetSession: string,
   group: string,
   wsPrefix: string
 ): GroupEvacuation {
-  const result: GroupEvacuation = {
-    killedSessions: [],
-    switchedClients: [],
-    detachedClients: [],
-    failed: [],
-    timedOut: false,
-  }
+  const result: GroupEvacuation = { switchedClients: [], detachedClients: [], failed: [] }
   const refuse = (reason: string): never => {
     throw new GroupKillRefusedError(
       `refusing to kill last window of grouped session ${targetSession}: ${reason}`,
       result
     )
   }
-  const attempt = (args: string[], target: string): boolean => {
-    if (result.timedOut) return false
+  const message = (error: unknown) => (error instanceof Error ? error.message.trim() : String(error))
+  const list = (args: string[], fieldCount: number): string[][] => {
+    let output = ''
+    try {
+      output = runTmux(withTmuxUtf8Flag(args))
+    } catch (error) {
+      refuse(`tmux ${args[0]} failed: ${message(error)}`)
+    }
+    return splitTmuxLines(output).map((line) => {
+      const fields = splitTmuxFields(line, fieldCount)
+      if (!fields?.[0]) refuse(`unparseable tmux ${args[0]} row: ${JSON.stringify(line)}`)
+      return fields as string[]
+    })
+  }
+  // Returns false when the move failed; a timeout refuses the whole kill.
+  const move = (args: string[], client: string): boolean => {
     try {
       runTmux(args)
       return true
     } catch (error) {
-      const message = error instanceof Error ? error.message.trim() : String(error)
-      if (isTmuxTimeoutError(error)) result.timedOut = true
-      if (result.timedOut || !ALREADY_GONE.test(message)) {
-        result.failed.push({ command: args[0] ?? '', target, error: message })
+      const text = message(error)
+      if (isTmuxTimeoutError(error)) {
+        result.failed.push({ command: args[0] ?? '', target: client, error: text })
+        refuse('a tmux command timed out')
+      }
+      if (!ALREADY_GONE.test(text)) {
+        result.failed.push({ command: args[0] ?? '', target: client, error: text })
       }
       return false
     }
   }
-  const list = (args: string[]): string => {
-    try {
-      return runTmux(withTmuxUtf8Flag(args))
-    } catch (error) {
-      if (isTmuxTimeoutError(error)) result.timedOut = true
-      return refuse(`tmux ${args[0]} failed: ${error instanceof Error ? error.message.trim() : String(error)}`)
-    }
+
+  const all = new Set<string>()
+  const members = new Set<string>()
+  for (const [name, sessionGroup] of list(['list-sessions', '-F', SESSION_GROUP_FORMAT], 2)) {
+    all.add(name!)
+    if (sessionGroup === group && name !== targetSession) members.add(name!)
   }
 
-  // An empty read with no mutation after it doubles as the final check.
-  let verifiedEmpty = false
-  for (let pass = 0; pass < EVACUATION_PASSES && !result.timedOut; pass++) {
-    const { all, members } = readGroup(list, targetSession, group)
-    if (members.size === 0) {
-      verifiedEmpty = true
-      break
-    }
-    for (const line of splitTmuxLines(list(['list-clients', '-F', CLIENT_SESSION_FORMAT]))) {
-      const fields = splitTmuxFields(line, 2)
-      const client = fields?.[0]
-      const session = fields?.[1]
-      // Only clients on sessions about to be killed; the target's own
-      // clients follow their detach-on-destroy setting.
-      if (!client || !session || !members.has(session)) continue
+  if (members.size > 0) {
+    for (const [client, session] of list(['list-clients', '-F', CLIENT_SESSION_FORMAT], 2)) {
+      if (!session || !members.has(session)) continue
       const home = proxySessionForMirror(session, wsPrefix)
       if (home && all.has(home) && !members.has(home) && home !== targetSession) {
-        if (attempt(['switch-client', '-c', client, '-t', `=${home}`], client)) {
-          result.switchedClients.push({ client, session: home })
+        if (move(['switch-client', '-c', client!, '-t', `=${home}`], client!)) {
+          result.switchedClients.push({ client: client!, session: home })
           continue
         }
       }
-      if (attempt(['detach-client', '-t', client], client)) {
-        result.detachedClients.push(client)
-      }
-    }
-    for (const session of members) {
-      if (attempt(['kill-session', '-t', `=${session}`], session)) {
-        result.killedSessions.push(session)
+      if (move(['detach-client', '-t', client!], client!)) {
+        result.detachedClients.push(client!)
       }
     }
   }
 
-  if (result.timedOut) refuse('a tmux command timed out')
-  const failedKills = result.failed.filter((entry) => entry.command === 'kill-session')
-  if (failedKills.length > 0) {
-    refuse(`could not kill ${[...new Set(failedKills.map((entry) => entry.target))].join(', ')}`)
-  }
-  const survivors = verifiedEmpty ? new Set<string>() : readGroup(list, targetSession, group).members
-  if (survivors.size > 0) {
-    refuse(`other members still alive: ${[...survivors].join(', ')}`)
-  }
+  runTmux(['kill-session', '-g', '-t', `=${targetSession}`])
   return result
-}
-
-function readGroup(
-  list: (args: string[]) => string,
-  targetSession: string,
-  group: string
-): { all: Set<string>; members: Set<string> } {
-  const all = new Set<string>()
-  const members = new Set<string>()
-  for (const line of splitTmuxLines(list(['list-sessions', '-F', SESSION_GROUP_FORMAT]))) {
-    const fields = splitTmuxFields(line, 2)
-    if (!fields?.[0]) continue
-    all.add(fields[0])
-    if (fields[1] === group && fields[0] !== targetSession) members.add(fields[0])
-  }
-  return { all, members }
 }

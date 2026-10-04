@@ -371,10 +371,29 @@ class PtyTerminalProxy extends TerminalProxyBase {
     // Exact-name collisions are a non-issue here because tmux prefers an
     // exact session match over a prefix match whenever the session exists,
     // and this name comes from a verified identity read.
-    this.deliverPasteViaTmux(
-      this.lastEffectiveSession ?? this.options.sessionName,
-      data
-    )
+    this.deliverPasteViaTmux(this.pasteTargetSession(), data)
+  }
+
+  // lastEffectiveSession can name a mirror that was destroyed underneath us:
+  // killing the last window of an external session switches this client
+  // home and destroys the mirror outside this proxy (tmuxKillGuard.ts). Only
+  // a definite "session is gone" answer drops it; on any other error (e.g. a
+  // timeout) keep the target rather than paste into the wrong pane.
+  private pasteTargetSession(): string {
+    const last = this.lastEffectiveSession
+    if (!last || last === this.options.sessionName) return this.options.sessionName
+    try {
+      this.runTmux(['has-session', '-t', `=${last}`])
+      return last
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (!/can't find session|no server running|no such session/i.test(message)) {
+        return last
+      }
+      this.externalGroupedSessions.delete(last)
+      this.lastEffectiveSession = null
+      return this.options.sessionName
+    }
   }
 
   resize(cols: number, rows: number): void {
