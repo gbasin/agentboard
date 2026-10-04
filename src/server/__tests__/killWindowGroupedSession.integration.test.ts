@@ -257,6 +257,25 @@ if (!isTmuxAvailable()) {
       expect(sessions()).toContain(BASE)
     })
 
+    test('stale kill of a gone window leaves the group alone', async () => {
+      const [windowId] = newExternalSession('stale', 1)
+      const proxy = await startProxy('44444444-4444-4444-8444-444444444444')
+      const tty = proxy.getClientTty()!
+      expect(await proxy.switchTo(`stale:${windowId}`)).toBe(true)
+      const mirror = clientSession(tty)!
+      const user = await attachPlainClient('stale')
+
+      const { manager, calls } = recordingManager()
+      // tmux display-message exits 0 for this missing window and describes
+      // the session's live last window instead.
+      expect(() => manager.killWindow('stale:@99999')).toThrow()
+
+      expect(calls.map((call) => call[0])).toEqual(['display-message', 'kill-window'])
+      expect(clientSession(tty)).toBe(mirror)
+      expect(clientSession(user.tty)).toBe('stale')
+      expect(sessions()).toContain('stale')
+    })
+
     test('non-last window keeps the fast path', async () => {
       const [first, second] = newExternalSession('multi', 2)
       const proxy = await startProxy('22222222-2222-4222-8222-222222222222')

@@ -93,7 +93,11 @@ const WINDOW_LIST_FORMAT_FALLBACK = buildTmuxFormat([
   '#{window_activity}',
   '#{pane_current_command}',
 ])
+// session_group stays last: it is empty for ungrouped sessions, so parse the
+// line without trimming (a trim would drop the trailing empty field).
 const KILL_TARGET_FORMAT = buildTmuxFormat([
+  '#{window_id}',
+  '#{window_index}',
   '#{window_name}',
   '#{pane_current_path}',
   '#{session_name}',
@@ -816,13 +820,20 @@ export class SessionManager {
         '-p',
         KILL_TARGET_FORMAT,
       ])
-      const parts = splitTmuxFields(info.trim(), 5)
-      windowInfo = { name: parts?.[0], path: parts?.[1] }
-      if (parts?.[2]) {
-        target = {
-          session: parts[2],
-          windows: Number.parseInt(parts[3] ?? '', 10),
-          group: parts[4] ?? '',
+      const parts = splitTmuxFields(splitTmuxLines(info)[0] ?? '', 7)
+      // display-message exits 0 for a missing window and describes the
+      // session's current window instead (see probeWindow). Trust the probe
+      // only when it describes the window we were asked to kill, so a stale
+      // or repeated kill never evacuates a live group.
+      const wanted = this.extractWindowId(tmuxWindow)
+      if (parts && (parts[0] === wanted || parts[1] === wanted)) {
+        windowInfo = { name: parts[2], path: parts[3] }
+        if (parts[4]) {
+          target = {
+            session: parts[4],
+            windows: Number.parseInt(parts[5] ?? '', 10),
+            group: parts[6] ?? '',
+          }
         }
       }
     } catch {

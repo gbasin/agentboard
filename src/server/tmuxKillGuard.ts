@@ -20,6 +20,13 @@
 //   - clients on the target session itself are detached, which is what
 //     destroying it would do anyway under the default detach-on-destroy;
 //   - the other members are killed, since they share the doomed window set.
+//
+// A proxy switch can be in flight while this runs: PtyTerminalProxy creates
+// a mirror with a synchronous `new-session -t` but issues the following
+// switch-client asynchronously. Such a client (or mirror) can appear after
+// the first snapshot, so the whole evacuation runs a second time to catch
+// it. That narrows the window but cannot close it: a switch landing between
+// the last snapshot and kill-window still meets the group-destroy path.
 
 import { buildTmuxFormat, splitTmuxFields, splitTmuxLines, withTmuxUtf8Flag } from './tmuxFormat'
 
@@ -85,6 +92,22 @@ export function evacuateSessionGroup(
     }
   }
 
+  // Two passes: the second catches clients and mirrors created by a proxy
+  // switch that was in flight during the first (see the header comment).
+  for (let pass = 0; pass < 2; pass++) {
+    evacuatePass(runTmux, targetSession, group, wsPrefix, result, attempt)
+  }
+  return result
+}
+
+function evacuatePass(
+  runTmux: KillGuardRunner,
+  targetSession: string,
+  group: string,
+  wsPrefix: string,
+  result: GroupEvacuation,
+  attempt: (args: string[], target: string) => boolean
+): void {
   const allSessions = new Set<string>()
   const members = new Set<string>()
   for (const line of splitTmuxLines(runTmux(withTmuxUtf8Flag(['list-sessions', '-F', SESSION_GROUP_FORMAT])))) {
@@ -117,5 +140,4 @@ export function evacuateSessionGroup(
       result.killedSessions.push(session)
     }
   }
-  return result
 }

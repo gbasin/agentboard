@@ -5,17 +5,50 @@ import { buildTmuxFormat } from '../tmuxFormat'
 const WS = 'agentboard-ws-'
 const CONN = '0b7c2d1e-aaaa-4bbb-8ccc-123456789abc'
 
-function fakeTmux(sessions: Array<[string, string]>, clients: Array<[string, string]>) {
+// Minimal stateful tmux model: sessions (name -> group) and clients
+// (tty -> session). `beforeCall` can mutate the state to simulate a proxy
+// acting concurrently.
+function fakeTmux(
+  sessionRows: Array<[string, string]>,
+  clientRows: Array<[string, string]>,
+  beforeCall?: (
+    argv: string[],
+    state: { sessions: Map<string, string>; clients: Map<string, string> }
+  ) => void
+) {
+  const state = { sessions: new Map(sessionRows), clients: new Map(clientRows) }
   const calls: string[][] = []
   const runTmux = (args: string[]): string => {
     const argv = args[0] === '-u' ? args.slice(1) : args
     calls.push(argv)
-    if (argv[0] === 'list-sessions') return sessions.map((row) => buildTmuxFormat(row)).join('\n')
-    if (argv[0] === 'list-clients') return clients.map((row) => buildTmuxFormat(row)).join('\n')
-    return ''
+    beforeCall?.(argv, state)
+    const target = (argv[argv.indexOf('-t') + 1] ?? '').replace(/^=/, '')
+    switch (argv[0]) {
+      case 'list-sessions':
+        return [...state.sessions].map((row) => buildTmuxFormat(row)).join('\n')
+      case 'list-clients':
+        return [...state.clients].map((row) => buildTmuxFormat(row)).join('\n')
+      case 'switch-client':
+        state.clients.set(argv[argv.indexOf('-c') + 1] ?? '', target)
+        return ''
+      case 'detach-client':
+        state.clients.delete(target)
+        return ''
+      case 'kill-session':
+        state.sessions.delete(target)
+        for (const [tty, session] of state.clients) {
+          if (session === target) state.clients.delete(tty)
+        }
+        return ''
+      default:
+        return ''
+    }
   }
-  return { runTmux, calls }
+  return { runTmux, calls, state }
 }
+
+const mutations = (calls: string[][]) =>
+  calls.filter((call) => !call[0]?.startsWith('list-'))
 
 describe('proxySessionForMirror', () => {
   test('maps an external mirror to its proxy session', () => {
@@ -50,7 +83,7 @@ describe('evacuateSessionGroup', () => {
 
     const result = evacuateSessionGroup(runTmux, 'cgl', 'cgl', WS)
 
-    expect(calls.slice(2)).toEqual([
+    expect(mutations(calls)).toEqual([
       ['switch-client', '-c', '/dev/ttys001', '-t', `=${WS}${CONN}`],
       ['detach-client', '-t', '/dev/ttys002'],
       ['detach-client', '-t', '/dev/ttys003'],
@@ -82,7 +115,7 @@ describe('evacuateSessionGroup', () => {
 
     const result = evacuateSessionGroup(runTmux, 'cgl', 'cgl', WS)
 
-    expect(calls.slice(2)).toEqual([['detach-client', '-t', '/dev/ttys003']])
+    expect(mutations(calls)).toEqual([['detach-client', '-t', '/dev/ttys003']])
     expect(result.detachedClients).toEqual(['/dev/ttys003'])
     expect(result.killedSessions).toEqual([])
     expect(result.failed).toEqual([])
@@ -99,21 +132,59 @@ describe('evacuateSessionGroup', () => {
       [['/dev/ttys009', 'cgl']]
     )
     const runTmux = (args: string[]): string => {
-      const out = base(args)
-      if (args[0] === 'detach-client') throw new Error("can't find client: /dev/ttys009")
+      if (args[0] === 'detach-client') {
+        base(args)
+        throw new Error("can't find client: /dev/ttys009")
+      }
       if (args[0] === 'kill-session' && args[2] === `=${mirror}`) {
+        calls.push(args)
         throw new Error('tmux kill-session timed out after 15000ms')
       }
-      return out
+      return base(args)
     }
 
     const result = evacuateSessionGroup(runTmux, 'cgl', 'cgl', WS)
 
-    expect(calls.filter((call) => call[0] === 'kill-session')).toHaveLength(2)
-    expect(result.failed).toEqual([
-      { command: 'kill-session', target: mirror, error: 'tmux kill-session timed out after 15000ms' },
-    ])
+    const timeout = {
+      command: 'kill-session',
+      target: mirror,
+      error: 'tmux kill-session timed out after 15000ms',
+    }
+    // The second pass retries the stuck member and reports it again.
+    expect(result.failed).toEqual([timeout, timeout])
     expect(result.killedSessions).toEqual(['cgl-pair'])
     expect(result.detachedClients).toEqual([])
+  })
+
+  test('second pass catches a mirror and switch that landed mid-evacuation', () => {
+    const home = `${WS}${CONN}`
+    const lateMirror = `${WS}${CONN}-x-cgl-3od92g`
+    let injected = false
+    const { runTmux, calls, state } = fakeTmux(
+      [
+        [home, 'agentboard'],
+        ['cgl', 'cgl'],
+      ],
+      [['/dev/ttys001', home]],
+      (argv, live) => {
+        // The proxy's new-session -t and async switch-client complete right
+        // after the first snapshot.
+        if (argv[0] === 'list-clients' && !injected) {
+          injected = true
+          live.sessions.set(lateMirror, 'cgl')
+          live.clients.set('/dev/ttys001', lateMirror)
+        }
+      }
+    )
+
+    const result = evacuateSessionGroup(runTmux, 'cgl', 'cgl', WS)
+
+    expect(mutations(calls)).toEqual([
+      ['switch-client', '-c', '/dev/ttys001', '-t', `=${home}`],
+      ['kill-session', '-t', `=${lateMirror}`],
+    ])
+    expect(result.killedSessions).toEqual([lateMirror])
+    expect(state.clients.get('/dev/ttys001')).toBe(home)
+    expect(state.sessions.has(lateMirror)).toBe(false)
   })
 })
