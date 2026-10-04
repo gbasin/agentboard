@@ -9,7 +9,7 @@
  * environment, so it can never touch a live server.
  */
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from 'bun:test'
 import fs from 'node:fs'
 import path from 'node:path'
 import { SessionManager } from '../SessionManager'
@@ -18,6 +18,10 @@ import { TerminalState } from '../terminal/types'
 import { createTmuxTmpDir, isTmuxAvailable, privateTmuxEnv } from './testEnvironment'
 
 const BASE = 'kgbase'
+const TMP_PREFIX = 'agentboard-killguard-'
+
+// A hang must fail the file, not stall the whole suite.
+setDefaultTimeout(15_000)
 
 if (!isTmuxAvailable()) {
   test.skip('tmux not available - skipping grouped kill test', () => {})
@@ -26,6 +30,7 @@ if (!isTmuxAvailable()) {
     let dir = ''
     let socket = ''
     const proxies: PtyTerminalProxy[] = []
+    const plainClients: Array<ReturnType<typeof Bun.spawn>> = []
 
     const withSocket = (args: string[]): string[] =>
       args[0] === 'tmux' ? ['tmux', '-S', socket, ...args.slice(1)] : args
@@ -84,6 +89,37 @@ if (!isTmuxAvailable()) {
       return proxy
     }
 
+    // A plain tmux client attached straight to `session`, like the user's own
+    // terminal on an external session.
+    const attachPlainClient = async (session: string) => {
+      const before = new Set(
+        tmux(['list-clients', '-F', '#{client_tty}']).split('\n').filter(Boolean)
+      )
+      const proc = Bun.spawn(['tmux', '-S', socket, 'attach', '-t', `=${session}`], {
+        env: { ...privateTmuxEnv(null), TERM: 'xterm-256color' },
+        terminal: { cols: 80, rows: 24, data: () => {} },
+      })
+      plainClients.push(proc)
+      for (let i = 0; i < 100; i++) {
+        const tty = tmux(['list-clients', '-F', '#{client_tty}'])
+          .split('\n')
+          .find((line) => line && !before.has(line))
+        if (tty) return { proc, tty }
+        await Bun.sleep(20)
+      }
+      proc.kill()
+      throw new Error(`plain client never attached to ${session}`)
+    }
+
+    // Bun's pty-backed `exited` is not a reliable detach signal; poll tmux.
+    const waitForClientGone = async (tty: string): Promise<boolean> => {
+      for (let i = 0; i < 100; i++) {
+        if (clientSession(tty) === undefined) return true
+        await Bun.sleep(20)
+      }
+      return false
+    }
+
     const recordingManager = () => {
       const calls: string[][] = []
       const manager = new SessionManager(BASE, {
@@ -96,7 +132,7 @@ if (!isTmuxAvailable()) {
     }
 
     beforeAll(() => {
-      dir = createTmuxTmpDir('agentboard-killguard-')
+      dir = createTmuxTmpDir(TMP_PREFIX)
       socket = path.join(dir, 'tmux.sock')
       tmux(['-f', '/dev/null', 'new-session', '-d', '-s', BASE, '-x', '80', '-y', '24', 'tail -f /dev/null'])
       // new-session -t forks a throwaway login shell; keep it trivial.
@@ -107,13 +143,24 @@ if (!isTmuxAvailable()) {
     })
 
     afterAll(async () => {
+      for (const proc of plainClients) {
+        try {
+          proc.kill()
+          proc.terminal?.close()
+        } catch {
+          // Already gone
+        }
+      }
       for (const proxy of proxies) await proxy.dispose()
       try {
         tmux(['kill-server'])
       } catch {
         // Already gone
       }
-      fs.rmSync(dir, { recursive: true, force: true })
+      // Only ever remove the mkdtemp dir this file created.
+      if (dir && path.basename(dir).startsWith(TMP_PREFIX) && fs.existsSync(socket)) {
+        fs.rmSync(dir, { recursive: true, force: true })
+      }
     })
 
     test('moves the mirror client home and kills the mirror before kill-window', async () => {
@@ -157,6 +204,57 @@ if (!isTmuxAvailable()) {
         .at(-1)!
       expect(await proxy.switchTo(`${BASE}:${managedWindow}`)).toBe(true)
       expect(clientSession(tty)).toBe(home)
+    })
+
+    test('detaches a client attached to the target session itself', async () => {
+      const [windowId] = newExternalSession('own', 1)
+      const connId = '33333333-3333-4333-8333-333333333333'
+      const home = `${BASE}-ws-${connId}`
+      const proxy = await startProxy(connId)
+      const proxyTty = proxy.getClientTty()!
+      expect(await proxy.switchTo(`own:${windowId}`)).toBe(true)
+      const mirror = clientSession(proxyTty)!
+      const user = await attachPlainClient('own')
+      expect(clientSession(user.tty)).toBe('own')
+
+      const { manager, calls } = recordingManager()
+      manager.killWindow(`own:${windowId}`)
+
+      const detachAt = calls.findIndex(
+        (call) => call[0] === 'detach-client' && call.includes(user.tty)
+      )
+      const mirrorKillAt = calls.findIndex(
+        (call) => call[0] === 'kill-session' && call.includes(`=${mirror}`)
+      )
+      const killAt = calls.findIndex((call) => call[0] === 'kill-window')
+      expect(detachAt).toBeGreaterThanOrEqual(0)
+      expect(mirrorKillAt).toBeGreaterThanOrEqual(0)
+      expect(killAt).toBeGreaterThan(Math.max(detachAt, mirrorKillAt))
+
+      expect(await waitForClientGone(user.tty)).toBe(true)
+      expect(clientSession(proxyTty)).toBe(home)
+      expect(sessions()).not.toContain('own')
+      expect(sessions()).toContain(BASE)
+      expect(proxy.isReady()).toBe(true)
+    })
+
+    test('guards a grouped session even after its other members are gone', async () => {
+      const [windowId] = newExternalSession('shrunk', 1)
+      tmux(['new-session', '-d', '-t', '=shrunk', '-s', 'shrunk-pair'])
+      tmux(['kill-session', '-t', '=shrunk-pair'])
+      const user = await attachPlainClient('shrunk')
+
+      const { manager, calls } = recordingManager()
+      manager.killWindow(`shrunk:${windowId}`)
+
+      const detachAt = calls.findIndex(
+        (call) => call[0] === 'detach-client' && call.includes(user.tty)
+      )
+      expect(detachAt).toBeGreaterThanOrEqual(0)
+      expect(calls.findIndex((call) => call[0] === 'kill-window')).toBeGreaterThan(detachAt)
+      expect(await waitForClientGone(user.tty)).toBe(true)
+      expect(sessions()).not.toContain('shrunk')
+      expect(sessions()).toContain(BASE)
     })
 
     test('non-last window keeps the fast path', async () => {
