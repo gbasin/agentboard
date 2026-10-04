@@ -218,6 +218,36 @@ test('Tailscale popover: open, status and IP, copy URL, Escape, outside click', 
   await expect(popover(page)).toHaveCount(0)
 })
 
+test('copy works when navigator.clipboard is absent (insecure Tailscale origin)', async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  // http://<tailscale-ip> is not a secure context, so navigator.clipboard is
+  // absent — shadow the Navigator.prototype getter to reproduce that page.
+  // A handle on the real Clipboard object is kept to verify the write.
+  await page.addInitScript(() => {
+    const descriptor = Object.getOwnPropertyDescriptor(Navigator.prototype, 'clipboard')
+    Object.defineProperty(window.navigator, 'clipboard', {
+      configurable: true,
+      value: undefined,
+    })
+    ;(window as unknown as { __realClipboard: () => Clipboard }).__realClipboard = () =>
+      descriptor?.get?.call(window.navigator) as Clipboard
+  })
+  const { sidebar } = await openBoard(page, { anchor: 'top', tailscaleIp: IP })
+  expect(await page.evaluate(() => navigator.clipboard)).toBeUndefined()
+
+  await dotButton(sidebar).click()
+  await copyButton(page).click()
+  await expect(copyButton(page)).toHaveText('Copied!')
+  const port = new URL(page.url()).port
+  const clip = await page.evaluate(() =>
+    (window as unknown as { __realClipboard: () => Clipboard }).__realClipboard().readText()
+  )
+  expect(clip).toBe(`http://${IP}:${port}`)
+})
+
 test('Tailscale popover is operable by keyboard alone', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write'])
   const { sidebar } = await openBoard(page, { anchor: 'top', tailscaleIp: IP })
