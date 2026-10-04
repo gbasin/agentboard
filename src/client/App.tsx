@@ -969,7 +969,6 @@ export default function App() {
         className="hidden h-full flex-col md:flex md:shrink-0"
         style={{ width: sidebarWidth }}
       >
-        <RecoveryNotice onOpen={() => setIsHistoryOpen(true)} />
         <SessionList
           sessions={sessions}
           hibernatingSessions={hibernatingAgentSessions}
@@ -988,6 +987,7 @@ export default function App() {
           loading={!hasLoaded}
           error={connectionError || serverError}
           anchor={sidebarAnchor}
+          notice={<RecoveryNotice onOpen={() => setIsHistoryOpen(true)} />}
           filterBarControls={
             <SidebarControls
               connectionStatus={connectionStatus}

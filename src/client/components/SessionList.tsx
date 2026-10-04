@@ -68,6 +68,11 @@ interface SessionListProps {
   /** Global controls at the right end of the filter bar (desktop only;
    * the mobile drawer has its own header). */
   filterBarControls?: ReactNode
+  /** Optional banner (e.g. session recovery) that belongs to the list region.
+   * Top: directly under the filter bar, scrolling with the rows. Bottom: a
+   * pinned row at the top of the column, since the first row must sit flush
+   * on the filter bar. Never above the controls bar under Top. */
+  notice?: ReactNode
 }
 
 /** Status pill classes for the time/activity badge */
@@ -106,6 +111,7 @@ export default function SessionList({
   scrollSelectionActive = true,
   anchor = 'top',
   filterBarControls,
+  notice,
 }: SessionListProps) {
   const isBottom = anchor === 'bottom'
   useTimestampRefresh()
@@ -714,6 +720,8 @@ export default function SessionList({
         </div>
       )}
 
+      {isBottom && notice && <div className="shrink-0">{notice}</div>}
+
       {isBottom ? (
         // Mirrored: rows stack from the bottom edge (mt-auto spacer, not
         // justify-end, which would make overflow unreachable); scroll-pb-10
@@ -736,6 +744,7 @@ export default function SessionList({
           className="min-h-0 flex-1 overflow-y-auto scroll-pt-10"
         >
           {filterBar}
+          {notice}
           {activeSection}
           {hibernatingSection}
           {historySection}
