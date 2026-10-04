@@ -67,14 +67,19 @@ describe('SessionManager.killWindow', () => {
     expect(calls.map((call) => call[0])).toEqual(['display-message', 'kill-window'])
   })
 
-  test('grouped last window kills the group with kill-session -g, never kill-window', () => {
+  test('grouped last window kills the session, never kill-window', () => {
     const { runTmux, calls } = recordingRunner(
       probe(['@7', '0', 'alpha', '/tmp/alpha', 'cgl', '1', 'cgl'])
     )
     new SessionManager('agentboard', { runTmux }).killWindow('cgl:@7')
 
-    expect(calls.map((call) => call[0])).toEqual(['display-message', 'list-sessions', 'kill-session'])
-    expect(calls.at(-1)).toEqual(['kill-session', '-g', '-t', '=cgl'])
+    expect(calls.map((call) => call[0])).toEqual([
+      'display-message',
+      'list-sessions',
+      'kill-session',
+      'list-sessions',
+    ])
+    expect(calls[2]).toEqual(['kill-session', '-t', '=cgl'])
   })
 
   test('refuses the kill when the guard cannot read tmux', () => {

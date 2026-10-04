@@ -812,8 +812,8 @@ export class SessionManager {
   killWindow(tmuxWindow: string): void {
     const target = this.probeKillTarget(tmuxWindow)
     // Last window of a grouped session: kill-window would destroy the group
-    // through a path that crashed tmux 3.7b, so the group is destroyed with
-    // kill-session -g instead (see tmuxKillGuard.ts). Groups persist after
+    // through a path that crashed tmux 3.7b, so the group's sessions are
+    // killed one by one instead (see tmuxKillGuard.ts). Groups persist after
     // shrinking to one member, so a non-empty group name is enough.
     if (target.group && target.windows === 1) {
       const fields = { tmuxWindow, session: target.session, group: target.group }

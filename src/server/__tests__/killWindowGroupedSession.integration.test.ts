@@ -3,7 +3,8 @@
  * last window of an external session whose group also held agentboard's
  * recently active grouped mirror left the mirror with a dangling curw and
  * crashed the whole tmux server (see tmuxKillGuard.ts). Agentboard now kills
- * such a window with `kill-session -g` instead.
+ * the group's sessions one by one instead. Must pass on tmux 3.2+ (CI has
+ * 3.4), so no newer flags or format variables.
  *
  * Drives a real PtyTerminalProxy and SessionManager against a private tmux
  * server addressed by an explicit -S socket path, with TMUX removed from the
@@ -185,7 +186,7 @@ if (!isTmuxAvailable()) {
       }
     })
 
-    test('moves the mirror client home, then kills the group with kill-session -g', async () => {
+    test('moves the mirror client home, then kills the mirror and the session', async () => {
       const [windowId] = newExternalSession('cgl', 1)
       const pid = panePid('cgl')
       const connId = '11111111-1111-4111-8111-111111111111'
@@ -204,10 +205,13 @@ if (!isTmuxAvailable()) {
         ['list-sessions', '-F', expect.any(String)],
         ['list-clients', '-F', expect.any(String)],
         ['switch-client', '-c', tty, '-t', `=${home}`],
-        ['kill-session', '-g', '-t', '=cgl'],
+        ['kill-session', '-t', `=${mirror}`],
+        ['kill-session', '-t', '=cgl'],
+        ['list-sessions', '-F', expect.any(String)],
       ])
 
       // Server alive, pane process gone, group gone, client back home.
+      expect(tmux(['list-sessions', '-F', '#{session_name}']).length).toBeGreaterThan(0)
       expect(await waitForProcessGone(pid)).toBe(true)
       const remaining = sessions()
       expect(remaining).toContain(BASE)
@@ -233,6 +237,7 @@ if (!isTmuxAvailable()) {
       const proxy = await startProxy(connId)
       const proxyTty = proxy.getClientTty()!
       expect(await proxy.switchTo(`own:${windowId}`)).toBe(true)
+      const mirror = clientSession(proxyTty)!
       const user = await attachPlainClient('own')
       expect(clientSession(user.tty)).toBe('own')
 
@@ -243,7 +248,8 @@ if (!isTmuxAvailable()) {
       // is left to tmux's detach-on-destroy.
       expect(calls.filter((call) => !call[0]?.startsWith('list-') && call[0] !== 'display-message')).toEqual([
         ['switch-client', '-c', proxyTty, '-t', `=${home}`],
-        ['kill-session', '-g', '-t', '=own'],
+        ['kill-session', '-t', `=${mirror}`],
+        ['kill-session', '-t', '=own'],
       ])
       expect(await waitForClientGone(user.tty)).toBe(true)
       expect(await waitForProcessGone(pid)).toBe(true)
@@ -253,7 +259,7 @@ if (!isTmuxAvailable()) {
       expect(proxy.isReady()).toBe(true)
     })
 
-    test('grouped session whose other members are gone still uses kill-session -g', async () => {
+    test('grouped session whose other members are gone is killed as a session', async () => {
       const [windowId] = newExternalSession('shrunk', 1)
       tmux(['new-session', '-d', '-t', '=shrunk', '-s', 'shrunk-pair'])
       tmux(['kill-session', '-t', '=shrunk-pair'])
@@ -263,8 +269,13 @@ if (!isTmuxAvailable()) {
       manager.killWindow(`shrunk:${windowId}`)
 
       // The group survives shrinking, so the grouped path still applies.
-      expect(calls.map((call) => call[0])).toEqual(['display-message', 'list-sessions', 'kill-session'])
-      expect(calls.at(-1)).toEqual(['kill-session', '-g', '-t', '=shrunk'])
+      expect(calls.map((call) => call[0])).toEqual([
+        'display-message',
+        'list-sessions',
+        'kill-session',
+        'list-sessions',
+      ])
+      expect(calls[2]).toEqual(['kill-session', '-t', '=shrunk'])
       expect(await waitForClientGone(user.tty)).toBe(true)
       expect(sessions()).not.toContain('shrunk')
       expect(sessions()).toContain(BASE)
