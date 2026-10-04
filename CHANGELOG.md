@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.25.0](https://github.com/gbasin/agentboard/compare/v0.24.2...v0.25.0) (2026-10-04)
+
+
+### Features
+
+* durable session catalog with identity-safe recovery ([#266](https://github.com/gbasin/agentboard/issues/266)) ([43795c5](https://github.com/gbasin/agentboard/commit/43795c515824b241510a8c454390f7234639ed27))
+
+
+### Bug Fixes
+
+* copy Tailscale URL on insecure origins ([#362](https://github.com/gbasin/agentboard/issues/362)) ([8056a3e](https://github.com/gbasin/agentboard/commit/8056a3ec8cd17a14b3fc112d2138c868550dc7f2))
+
 ## [0.24.2](https://github.com/gbasin/agentboard/compare/v0.24.1...v0.24.2) (2026-10-03)
 
 
