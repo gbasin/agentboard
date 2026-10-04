@@ -3,6 +3,10 @@
  * Falls back to navigator.clipboard if execCommand is unavailable.
  */
 export function copyText(text: string): void {
+  if (typeof document === 'undefined' || typeof document.execCommand !== 'function') {
+    navigator.clipboard?.writeText(text).catch(() => {})
+    return
+  }
   const textarea = document.createElement('textarea')
   textarea.value = text
   textarea.style.position = 'fixed'
