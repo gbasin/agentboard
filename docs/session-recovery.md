@@ -4,7 +4,7 @@ Agentboard saves a local managed session before starting its terminal. Its stabl
 
 ## Use Session recovery
 
-Open **Session recovery** with the clock button in the sidebar controls, or the **Session recovery** button on mobile. When interrupted sessions exist, a notice above the session list opens the same panel.
+Open **Session recovery** with the clock button in the sidebar controls, or the clock button next to **New Session** in the mobile session drawer. When interrupted sessions exist, a notice above the session list opens the same panel.
 
 - **Interrupted** means the saved process disappeared from a successfully queried tmux server. Failed queries preserve the last confirmed state and surface in recovery health.
 - Select **Reopen** to relaunch a session. Running sessions are reused; reopen requests are idempotent.

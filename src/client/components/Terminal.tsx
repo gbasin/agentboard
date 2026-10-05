@@ -68,6 +68,7 @@ interface TerminalProps {
   onHibernateSession?: (sessionId: string) => void
   onMoveToHistory?: (sessionId: string) => void
   onOpenSettings: () => void
+  onOpenHistory?: () => void
   loading?: boolean
   error?: string | null
 }
@@ -116,6 +117,7 @@ export default function Terminal({
   onHibernateSession,
   onMoveToHistory,
   onOpenSettings,
+  onOpenHistory,
   loading = false,
   error = null,
 }: TerminalProps) {
@@ -1686,6 +1688,7 @@ export default function Terminal({
           onHibernate={onHibernateSession}
           onMoveToHistory={onMoveToHistory}
           onNewSession={onNewSession}
+          onOpenHistory={onOpenHistory}
           loading={loading}
           error={error}
         />
