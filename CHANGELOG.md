@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.1](https://github.com/gbasin/agentboard/compare/v0.25.0...v0.25.1) (2026-10-05)
+
+
+### Bug Fixes
+
+* empty a session group before killing its last window ([#364](https://github.com/gbasin/agentboard/issues/364)) ([454ca7b](https://github.com/gbasin/agentboard/commit/454ca7b9ad483b7844f7e7e9b1790a3de3f066bc))
+
 ## [0.25.0](https://github.com/gbasin/agentboard/compare/v0.24.2...v0.25.0) (2026-10-04)
 
 
