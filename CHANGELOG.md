@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.2](https://github.com/gbasin/agentboard/compare/v0.25.1...v0.25.2) (2026-10-05)
+
+
+### Bug Fixes
+
+* never interrupt sessions on unread window identity; re-claim conversations ([#366](https://github.com/gbasin/agentboard/issues/366)) ([ef2c60f](https://github.com/gbasin/agentboard/commit/ef2c60fa2883c00fc6740e56859bb1726e19f337))
+
 ## [0.25.1](https://github.com/gbasin/agentboard/compare/v0.25.0...v0.25.1) (2026-10-05)
 
 
