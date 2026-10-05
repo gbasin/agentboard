@@ -410,7 +410,8 @@ export class PersistentSessions {
   /**
    * The catalog row that owns `window` in the current tmux server, or null.
    * A row from an earlier server incarnation (window ids are reused) or one
-   * whose run tags do not match the live window does not own it: callers
+   * whose run tags definitely differ from the live window's does not own it
+   * (empty tags are unknown, as in reconcile; see identityChanged): callers
    * then treat the window as untracked instead of retiring that row. A row
    * whose window is already gone still owns it, so stopping it retires the
    * row without a kill.
@@ -419,9 +420,11 @@ export class PersistentSessions {
     const identity = this.identity()
     const saved = this.catalog.byWindow(window, identity.epoch)
     if (!saved) return null
-    const tag = identity.windows.get(window)
-    if (tag && (tag.boardId !== saved.id || tag.runId !== saved.lastRunId))
-      return null
+    // Same rule as reconcile: only a definite, different tag disowns the
+    // row. An untagged window (a tag write that never landed) is still owned
+    // by the row bound to it in this tmux server; window ids are not reused
+    // within one server.
+    if (identityChanged(identity.windows.get(window), saved)) return null
     return saved
   }
   /**
@@ -462,9 +465,14 @@ export class PersistentSessions {
     })()
     try {
       if (saved.window) {
-        const tag = this.identity().windows.get(saved.window)
-        if (tag?.boardId === saved.id && tag.runId === saved.lastRunId)
-          this.manager.killWindow(saved.window)
+        const identity = this.identity()
+        const tag = identity.windows.get(saved.window)
+        const tagged = tag?.boardId === saved.id && tag.runId === saved.lastRunId
+        // An untagged window (tag write never landed) bound to this row in
+        // the current tmux server is still this row's window.
+        const untaggedOwn =
+          !!tag && identity.epoch === saved.epoch && !identityChanged(tag, saved)
+        if (tagged || untaggedOwn) this.manager.killWindow(saved.window)
       }
     } catch (error) {
       // Disarm the request: a failed stop must not silently kill the session

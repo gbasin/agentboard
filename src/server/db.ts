@@ -88,9 +88,10 @@ export interface SessionDatabase {
   /**
    * Point a conversation back at the live window its catalog row is running
    * in. Compare-and-set like orphanSession/claimCurrentWindow: only a row
-   * released by an interruption (is_hibernating = 1, unclaimed or already on
-   * this window) is touched, and never while another conversation claims the
-   * window. Deliberate unclaims (log verification mismatch, slug supersede,
+   * released by an interruption (current_window IS NULL, is_hibernating = 1)
+   * is touched, and never while another conversation claims the window. A
+   * claimed row is left alone even if it still carries the marker (e.g. the
+   * hibernate handler sets it before killing the window). Deliberate unclaims (log verification mismatch, slug supersede,
    * duplicate cleanup) leave is_hibernating = 0 and are never undone here.
    * Clears is_hibernating. Returns null when the guard refuses.
    */
@@ -354,7 +355,7 @@ function initializeConnection(
     `UPDATE agent_sessions SET current_window = $tmuxWindow, is_hibernating = 0
      WHERE session_id = $sessionId
        AND is_hibernating = 1
-       AND (current_window IS NULL OR current_window = $tmuxWindow)
+       AND current_window IS NULL
        AND NOT EXISTS (
          SELECT 1 FROM agent_sessions
          WHERE current_window = $tmuxWindow

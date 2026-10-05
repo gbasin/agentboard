@@ -1,8 +1,9 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, spyOn, test } from 'bun:test'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { initDatabase, type SessionDatabase } from '../db'
+import { logger } from '../logger'
 import { SessionCatalog } from '../persistence/catalog'
 import { PersistentSessions, identityChanged } from '../persistence/manager'
 import type { SessionManager } from '../SessionManager'
@@ -306,6 +307,47 @@ describe('recovery reconciliation', () => {
     persistence.beforeSnapshot([live])
     expect(db.getSessionById('conv')?.currentWindow).toBeNull()
     expect(db.getSessionById('newer-conv')?.currentWindow).toBe('ab:@1')
+  })
+  test('a claimed conversation that still carries the hibernate marker is not reclaimed', () => {
+    const info = spyOn(logger, 'info')
+    try {
+      const { db, persistence, saved, live } = fixture()
+      insertRecord(db, 'woken-conv', 'ab:@1')
+      // e.g. the hibernate handler sets the marker before killing the window,
+      // or a wake claimed the window without clearing it.
+      db.setHibernating('woken-conv', true)
+      persistence.catalog.associate(saved.id, 'woken-conv', 'claude')
+      persistence.beforeSnapshot([live])
+      expect(db.getSessionById('woken-conv')?.isHibernating).toBe(true)
+      expect(db.getSessionById('woken-conv')?.currentWindow).toBe('ab:@1')
+      expect(info.mock.calls.some((call: unknown[]) => call[0] === 'catalog_provider_reclaimed')).toBe(false)
+    } finally {
+      info.mockRestore()
+    }
+  })
+  test('hibernating an untagged window bound to its row kills it and retires the row', () => {
+    // A catalog launch whose tag write never landed: readTmuxIdentity reports
+    // empty tags for the window.
+    const { persistence, saved, calls, setSnapshot } = fixture()
+    setSnapshot({ epoch: 'epoch1', windows: new Map([['ab:@1', { boardId: '', runId: '' }]]) })
+    expect(persistence.ownerOfWindow('ab:@1')?.id).toBe(saved.id)
+    persistence.killWindow('ab:@1', 'hibernating')
+    expect(calls).toEqual(['ab:@1'])
+    expect(persistence.catalog.get(saved.id)?.state).toBe('hibernating')
+  })
+  test('a window definitely tagged for another run is not owned or killed by the row', () => {
+    const { persistence, saved, calls, setSnapshot } = fixture()
+    setSnapshot({ epoch: 'epoch1', windows: new Map([['ab:@1', { boardId: 'other', runId: 'other' }]]) })
+    expect(persistence.ownerOfWindow('ab:@1')).toBeNull()
+    persistence.stop(persistence.catalog.get(saved.id)!, 'hibernating')
+    expect(calls).toEqual([])
+  })
+  test('an untagged window in another tmux server is not killed by a stale row', () => {
+    const { persistence, saved, calls, setSnapshot } = fixture()
+    setSnapshot({ epoch: 'epoch2', windows: new Map([['ab:@1', { boardId: '', runId: '' }]]) })
+    expect(persistence.ownerOfWindow('ab:@1')).toBeNull()
+    persistence.stop(persistence.catalog.get(saved.id)!, 'hibernating')
+    expect(calls).toEqual([])
   })
   test('adopts a tagged pane created before the database binding was saved', () => {
     const { persistence, saved, live, setTags } = fixture()
