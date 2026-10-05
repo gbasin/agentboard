@@ -1,10 +1,11 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, spyOn, test } from 'bun:test'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { initDatabase, type SessionDatabase } from '../db'
+import { logger } from '../logger'
 import { SessionCatalog } from '../persistence/catalog'
-import { PersistentSessions } from '../persistence/manager'
+import { PersistentSessions, identityChanged } from '../persistence/manager'
 import type { SessionManager } from '../SessionManager'
 import type { Session } from '../../shared/types'
 
@@ -225,6 +226,127 @@ describe('recovery reconciliation', () => {
     setTags('another', 'other', 2)
     persistence.beforeSnapshot([live])
     expect(persistence.catalog.get(saved.id)?.state).toBe('interrupted')
+    expect(calls).toEqual([])
+  })
+  test('an enumeration with empty identity tags keeps the claim', () => {
+    // The refresh worker's enumeration can predate the tag write (it took
+    // minutes under a slow tmux in the 0.25.1 upgrade incident).
+    const { db, persistence, saved, run, live, setTags } = fixture()
+    insertRecord(db, 'live-conv', 'ab:@1')
+    persistence.catalog.associate(saved.id, 'live-conv', 'claude')
+    setTags('', '', 1)
+    persistence.beforeSnapshot([live])
+    expect(persistence.catalog.get(saved.id)?.state).toBe('running')
+    expect(persistence.catalog.get(saved.id)?.lastRunId).toBe(run.id)
+    expect(db.getSessionById('live-conv')?.currentWindow).toBe('ab:@1')
+    expect(db.getSessionById('live-conv')?.isHibernating).toBe(false)
+  })
+  test('an enumeration that cannot read tags at all keeps the claim', () => {
+    const { persistence, saved, live } = fixture()
+    live.agentboardTags = undefined
+    persistence.beforeSnapshot([live], 1)
+    expect(persistence.catalog.get(saved.id)?.state).toBe('running')
+  })
+  test('identityChanged only reports a definite, different tag', () => {
+    const saved = { id: 'board', lastRunId: 'run' }
+    expect(identityChanged(undefined, saved)).toBe(false)
+    expect(identityChanged({ boardId: '', runId: '' }, saved)).toBe(false)
+    expect(identityChanged({ boardId: 'board', runId: '' }, saved)).toBe(false)
+    expect(identityChanged({ boardId: '', runId: 'other' }, saved)).toBe(false)
+    expect(identityChanged({ boardId: 'board', runId: 'run' }, saved)).toBe(false)
+    expect(identityChanged({ boardId: 'board', runId: 'other' }, saved)).toBe(true)
+    expect(identityChanged({ boardId: 'other', runId: 'run' }, saved)).toBe(true)
+  })
+  test('re-adopting an interrupted window re-claims its conversation', () => {
+    const { db, persistence, saved, run, live, setTags } = fixture()
+    insertRecord(db, 'conv', 'ab:@1')
+    persistence.catalog.associate(saved.id, 'conv', 'claude')
+    // A legitimate interruption released the claim (hibernate marker set).
+    persistence.catalog.transition(saved.id, 'interrupted', 'Window identity changed')
+    db.orphanSession('conv', { hibernate: true, expectedWindow: 'ab:@1' })
+    setTags(saved.id, run.id, 1)
+    persistence.beforeSnapshot([live])
+    persistence.observe([live])
+    const adopted = persistence.catalog.get(saved.id)!
+    expect(adopted.state).toBe('running')
+    expect(adopted.lastRunId).not.toBe(run.id)
+    expect(db.getSessionById('conv')?.currentWindow).toBe('ab:@1')
+    expect(db.getSessionById('conv')?.isHibernating).toBe(false)
+  })
+  test('startup self-heals a running row whose conversation lost its claim', () => {
+    const { db, persistence, saved, live } = fixture()
+    insertRecord(db, 'conv', 'ab:@1')
+    persistence.catalog.associate(saved.id, 'conv', 'claude')
+    // State left behind by 0.25.1: catalog running, claim released.
+    db.orphanSession('conv', { hibernate: true })
+    const booted = new PersistentSessions(
+      db,
+      persistence.manager,
+      'host-test',
+      () => ({ epoch: 'epoch1', windows: new Map() }),
+      (pid) => `epoch${pid}`,
+      'ab'
+    )
+    booted.beforeSnapshot([live])
+    expect(booted.catalog.get(saved.id)?.state).toBe('running')
+    expect(db.getSessionById('conv')?.currentWindow).toBe('ab:@1')
+    expect(db.getSessionById('conv')?.isHibernating).toBe(false)
+  })
+  test('self-heal never undoes a deliberate unclaim or steals a claimed window', () => {
+    const { db, persistence, saved, live } = fixture()
+    insertRecord(db, 'conv', 'ab:@1')
+    persistence.catalog.associate(saved.id, 'conv', 'claude')
+    // Log verification decided the window runs another conversation.
+    db.orphanSession('conv', { hibernate: false })
+    persistence.beforeSnapshot([live])
+    expect(db.getSessionById('conv')?.currentWindow).toBeNull()
+
+    // An interruption release while another conversation holds the window.
+    db.orphanSession('conv', { hibernate: true })
+    insertRecord(db, 'newer-conv', 'ab:@1')
+    persistence.beforeSnapshot([live])
+    expect(db.getSessionById('conv')?.currentWindow).toBeNull()
+    expect(db.getSessionById('newer-conv')?.currentWindow).toBe('ab:@1')
+  })
+  test('a claimed conversation that still carries the hibernate marker is not reclaimed', () => {
+    const info = spyOn(logger, 'info')
+    try {
+      const { db, persistence, saved, live } = fixture()
+      insertRecord(db, 'woken-conv', 'ab:@1')
+      // e.g. the hibernate handler sets the marker before killing the window,
+      // or a wake claimed the window without clearing it.
+      db.setHibernating('woken-conv', true)
+      persistence.catalog.associate(saved.id, 'woken-conv', 'claude')
+      persistence.beforeSnapshot([live])
+      expect(db.getSessionById('woken-conv')?.isHibernating).toBe(true)
+      expect(db.getSessionById('woken-conv')?.currentWindow).toBe('ab:@1')
+      expect(info.mock.calls.some((call: unknown[]) => call[0] === 'catalog_provider_reclaimed')).toBe(false)
+    } finally {
+      info.mockRestore()
+    }
+  })
+  test('hibernating an untagged window bound to its row kills it and retires the row', () => {
+    // A catalog launch whose tag write never landed: readTmuxIdentity reports
+    // empty tags for the window.
+    const { persistence, saved, calls, setSnapshot } = fixture()
+    setSnapshot({ epoch: 'epoch1', windows: new Map([['ab:@1', { boardId: '', runId: '' }]]) })
+    expect(persistence.ownerOfWindow('ab:@1')?.id).toBe(saved.id)
+    persistence.killWindow('ab:@1', 'hibernating')
+    expect(calls).toEqual(['ab:@1'])
+    expect(persistence.catalog.get(saved.id)?.state).toBe('hibernating')
+  })
+  test('a window definitely tagged for another run is not owned or killed by the row', () => {
+    const { persistence, saved, calls, setSnapshot } = fixture()
+    setSnapshot({ epoch: 'epoch1', windows: new Map([['ab:@1', { boardId: 'other', runId: 'other' }]]) })
+    expect(persistence.ownerOfWindow('ab:@1')).toBeNull()
+    persistence.stop(persistence.catalog.get(saved.id)!, 'hibernating')
+    expect(calls).toEqual([])
+  })
+  test('an untagged window in another tmux server is not killed by a stale row', () => {
+    const { persistence, saved, calls, setSnapshot } = fixture()
+    setSnapshot({ epoch: 'epoch2', windows: new Map([['ab:@1', { boardId: '', runId: '' }]]) })
+    expect(persistence.ownerOfWindow('ab:@1')).toBeNull()
+    persistence.stop(persistence.catalog.get(saved.id)!, 'hibernating')
     expect(calls).toEqual([])
   })
   test('adopts a tagged pane created before the database binding was saved', () => {

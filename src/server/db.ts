@@ -85,6 +85,20 @@ export interface SessionDatabase {
     tmuxWindow: string,
     extraPatch?: ClaimCurrentWindowPatch
   ) => AgentSessionRecord | null
+  /**
+   * Point a conversation back at the live window its catalog row is running
+   * in. Compare-and-set like orphanSession/claimCurrentWindow: only a row
+   * released by an interruption (current_window IS NULL, is_hibernating = 1)
+   * is touched, and never while another conversation claims the window. A
+   * claimed row is left alone even if it still carries the marker (e.g. the
+   * hibernate handler sets it before killing the window). Deliberate unclaims (log verification mismatch, slug supersede,
+   * duplicate cleanup) leave is_hibernating = 0 and are never undone here.
+   * Clears is_hibernating. Returns null when the guard refuses.
+   */
+  reclaimCurrentWindow: (
+    sessionId: string,
+    tmuxWindow: string
+  ) => AgentSessionRecord | null
   getSessionById: (sessionId: string) => AgentSessionRecord | null
   getSessionByLogPath: (logPath: string) => AgentSessionRecord | null
   getSessionByWindow: (tmuxWindow: string) => AgentSessionRecord | null
@@ -337,6 +351,18 @@ function initializeConnection(
          )`
     )
 
+  const reclaimWindowStmt = db.prepare(
+    `UPDATE agent_sessions SET current_window = $tmuxWindow, is_hibernating = 0
+     WHERE session_id = $sessionId
+       AND is_hibernating = 1
+       AND current_window IS NULL
+       AND NOT EXISTS (
+         SELECT 1 FROM agent_sessions
+         WHERE current_window = $tmuxWindow
+           AND session_id != $sessionId
+       )`
+  )
+
   // App settings prepared statements
   const selectAppSetting = db.prepare(
     'SELECT value FROM app_settings WHERE key = $key'
@@ -452,6 +478,17 @@ function initializeConnection(
         }
       }
       const result = claimWindowStmt(fields).run(params)
+      if (result.changes === 0) return null
+      const row = selectBySessionId.get({ $sessionId: sessionId }) as
+        | Record<string, unknown>
+        | undefined
+      return row ? mapRow(row) : null
+    },
+    reclaimCurrentWindow: (sessionId, tmuxWindow) => {
+      const result = reclaimWindowStmt.run({
+        $sessionId: sessionId,
+        $tmuxWindow: tmuxWindow,
+      })
       if (result.changes === 0) return null
       const row = selectBySessionId.get({ $sessionId: sessionId }) as
         | Record<string, unknown>
