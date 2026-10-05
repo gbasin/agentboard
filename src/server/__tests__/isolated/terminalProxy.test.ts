@@ -929,6 +929,51 @@ describe('TerminalProxy', () => {
     })
   })
 
+  test('paste falls back to the grouped session when the external one is gone', async () => {
+    const harness = createSpawnHarness()
+    let externalGone = false
+    const spawnSync = (args: string[], options?: Parameters<typeof Bun.spawnSync>[1]) => {
+      if (externalGone && getTmuxCommand(args) === 'has-session' && args.includes('=external')) {
+        harness.spawnSyncCalls.push({ args, options })
+        return {
+          exitCode: 1,
+          stdout: Buffer.from(''),
+          stderr: Buffer.from("can't find session: external\n"),
+        } as ReturnType<typeof Bun.spawnSync>
+      }
+      return harness.spawnSync(args, options)
+    }
+    const proxy = new TerminalProxy({
+      connectionId: 'abc',
+      sessionName: 'agentboard-ws-abc',
+      baseSession: 'agentboard',
+      onData: () => {},
+      spawn: harness.spawn,
+      spawnSync,
+      wait: async () => {},
+    })
+
+    await proxy.start()
+    await proxy.switchTo('external:@2')
+    // The external session (or its mirror) is killed outside the proxy, which
+    // had its client switched home.
+    externalGone = true
+    const afterKill = harness.spawnSyncCalls.length
+    proxy.paste('hello')
+    proxy.paste('again')
+
+    const pasteTargets = harness.spawnSyncCalls
+      .filter((call) => getTmuxCommand(call.args) === 'paste-buffer')
+      .map((call) => call.args.at(-1))
+    expect(pasteTargets).toEqual(['agentboard-ws-abc', 'agentboard-ws-abc'])
+    // The stale target is dropped after the first miss: one probe, not two.
+    expect(
+      harness.spawnSyncCalls
+        .slice(afterKill)
+        .filter((call) => getTmuxCommand(call.args) === 'has-session' && call.args.includes('=external'))
+    ).toHaveLength(1)
+  })
+
   test('switchTo rewrites base-session targets to grouped session targets', async () => {
     const harness = createSpawnHarness()
     const proxy = new TerminalProxy({

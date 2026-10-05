@@ -100,6 +100,7 @@ async function main() {
       'e2eTmuxReap.integration.test.ts',
       'groupedSessionLeak.integration.test.ts',
       'hibernation.integration.test.ts',
+      'killWindowGroupedSession.integration.test.ts',
       'persistence.integration.test.ts',
       'integration.test.ts',
       'throttled-reconnect.integration.test.ts',
