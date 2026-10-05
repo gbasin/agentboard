@@ -52,10 +52,10 @@
         "vite-plugin-pwa": "^1.2.0",
       },
       "optionalDependencies": {
-        "@gbasin/agentboard-darwin-arm64": "0.25.1",
-        "@gbasin/agentboard-darwin-x64": "0.25.1",
-        "@gbasin/agentboard-linux-arm64": "0.25.1",
-        "@gbasin/agentboard-linux-x64": "0.25.1",
+        "@gbasin/agentboard-darwin-arm64": "0.25.2",
+        "@gbasin/agentboard-darwin-x64": "0.25.2",
+        "@gbasin/agentboard-linux-arm64": "0.25.2",
+        "@gbasin/agentboard-linux-x64": "0.25.2",
       },
     },
   },
@@ -279,11 +279,11 @@
 
     "@fontsource-variable/jetbrains-mono": ["@fontsource-variable/jetbrains-mono@5.2.8", "", {}, "sha512-WBA9elru6Jdp5df2mES55wuOO0WIrn3kpXnI4+W2ek5u3ZgLS9XS4gmIlcQhiZOWEKl95meYdvK7xI+ETLCq/Q=="],
 
-    "@gbasin/agentboard-darwin-arm64": ["@gbasin/agentboard-darwin-arm64@0.25.1", "", { "os": "darwin", "cpu": "arm64" }, "sha512-BLvqoLPFaGDfEJJ0Q91jRwAharaF2a+d2BL5TlVIvb90ucYElpJD9zWDL/Ew24vTAPIJJJQeP4v+XGZR+zf7Lg=="],
+    "@gbasin/agentboard-darwin-arm64": ["@gbasin/agentboard-darwin-arm64@0.25.2", "", { "os": "darwin", "cpu": "arm64" }, "sha512-7dMifGe3lfFnax93BNS/s3PDzDpC80+1nmM0CxV7W7++6eAmaMc661LyTUqtDJj7rTZXa8lzcWWp+KmYUIFuKw=="],
 
-    "@gbasin/agentboard-darwin-x64": ["@gbasin/agentboard-darwin-x64@0.25.1", "", { "os": "darwin", "cpu": "x64" }, "sha512-1I1z3urmgwX1rTJW/g29SxRlYKt5lj6qvGZkjOJLuQwS/tJgrlCAcXzivPXw2fYd3L7A1dPt2ZVh8xg5CYM+RA=="],
+    "@gbasin/agentboard-darwin-x64": ["@gbasin/agentboard-darwin-x64@0.25.2", "", { "os": "darwin", "cpu": "x64" }, "sha512-W7HfYhbtayNgxW21/FWUmygKhTDjCgt9xtcAhcLiN3yH55cEUWjBpO3TrJbP9EbJej4xEhpF6axKMWWFQEFXjQ=="],
 
-    "@gbasin/agentboard-linux-arm64": ["@gbasin/agentboard-linux-arm64@0.25.1", "", { "os": "linux", "cpu": "arm64" }, "sha512-Q9yLiqWmItK3wf8CXHG8jddRFvsQh55VklEPF/3ccf9360aAkgIHrFfILgTwUD/Qj8pD7YU3C1nZBFEGmK/Z5A=="],
+    "@gbasin/agentboard-linux-arm64": ["@gbasin/agentboard-linux-arm64@0.25.2", "", { "os": "linux", "cpu": "arm64" }, "sha512-D3qRZYjIUj4HA2NwrNyHKnLWefltMUUC5FSE0MXoPz6tmKlRxABqzNt2D4GuFLTBM70OJvYbZLByqYufh4hVwA=="],
 
     "@isaacs/cliui": ["@isaacs/cliui@9.0.0", "", {}, "sha512-AokJm4tuBHillT+FpMtxQ60n8ObyXBatq7jD2/JA9dxbDDokKQm8KMht5ibGzLVU9IJDIKK4TPKgMHEYMn3lMg=="],
 
