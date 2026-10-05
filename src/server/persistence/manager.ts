@@ -16,6 +16,7 @@ import {
   type WindowIdentity,
 } from './tmuxIdentity'
 import { config } from '../config'
+import { logger } from '../logger'
 
 export class PersistentSessions {
   readonly catalog: SessionCatalog
@@ -103,6 +104,9 @@ export class PersistentSessions {
               window,
               snapshot.epoch
             )
+          // Self-heal: a running row's conversation must be claimed by its
+          // window, or /api/sessions hydration loses its id and transcript.
+          this.reclaimProvider(saved.id, window)
           continue
         }
         if (
@@ -117,8 +121,7 @@ export class PersistentSessions {
           )
           this.releaseProvider(saved)
         } else if (
-          snapshot.windows.get(saved.window)?.runId !== saved.lastRunId ||
-          snapshot.windows.get(saved.window)?.boardId !== saved.id
+          identityChanged(snapshot.windows.get(saved.window), saved)
         ) {
           this.catalog.transition(
             saved.id,
@@ -187,6 +190,9 @@ export class PersistentSessions {
         live.tmuxWindow,
         snapshot.epoch
       )
+      // Re-adoption: an interruption released the conversation's claim on
+      // this window; take it back now that the row runs here again.
+      if (!record) this.reclaimProvider(saved.id, live.tmuxWindow)
     }
     if (record)
       this.catalog.associate(
@@ -472,6 +478,22 @@ export class PersistentSessions {
     if (releaseProvider) this.releaseProvider(saved, state === 'hibernating')
   }
   /**
+   * Re-point the conversation of a row running in `window` at that window
+   * when nothing else claims it (see db.reclaimCurrentWindow).
+   */
+  private reclaimProvider(id: string, window: string) {
+    const saved = this.catalog.get(id)
+    if (!saved?.providerId || saved.state !== 'running' || saved.window !== window)
+      return
+    const record = this.db.reclaimCurrentWindow(saved.providerId, window)
+    if (record)
+      logger.info('catalog_provider_reclaimed', {
+        boardSessionId: saved.id,
+        sessionId: saved.providerId,
+        tmuxWindow: window,
+      })
+  }
+  /**
    * Release the conversation's window claim only while it still points at
    * this row's window. The log rematcher (or a racing wake) may have moved
    * the conversation to another live window; clearing that claim would
@@ -484,4 +506,19 @@ export class PersistentSessions {
       expectedWindow: saved.window,
     })
   }
+}
+
+/**
+ * True only when tmux definitely reports a different run on the window. An
+ * empty tag is unknown, not changed: the enumeration can predate the tag
+ * write (the refresh worker's snapshot can be minutes old when tmux is slow)
+ * or come from a format that cannot read tags. Window ids are not reused
+ * within one tmux server, and the epoch check above covers restarts.
+ */
+export function identityChanged(
+  tag: WindowIdentity | undefined,
+  saved: Pick<SavedSession, 'id' | 'lastRunId'>
+): boolean {
+  if (!tag?.boardId || !tag.runId) return false
+  return tag.boardId !== saved.id || tag.runId !== saved.lastRunId
 }
