@@ -1,9 +1,11 @@
-// Detects pull requests a session created by scanning its agent JSONL log.
-// A `gh pr create` is only counted when it appears inside an actual tool
-// call entry (Claude tool_use, Codex function_call, devin toolCalls) —
-// prose mentioning the command is ignored. Resulting github.com/.../pull/N
-// URLs are captured from the tool result that references the call's id,
-// with a short line-count fallback window for formats without call ids.
+// Detects pull requests associated with a session by scanning its agent
+// JSONL log. Two signals: a `gh pr create` inside an actual tool call entry
+// (Claude tool_use, Codex function_call, devin toolCalls) — prose
+// mentioning the command is ignored — and Claude Code's self-contained
+// `{"type":"pr-link",...}` records, which link a session to a PR it did
+// not necessarily create. Resulting github.com/.../pull/N URLs are
+// captured from the tool result that references the call's id, with a
+// short line-count fallback window for formats without call ids.
 // Scans incrementally: results are cached per file offset so polling only
 // reads bytes appended since the previous scan.
 
