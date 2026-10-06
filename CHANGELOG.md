@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.26.0](https://github.com/gbasin/agentboard/compare/v0.25.3...v0.26.0) (2026-10-06)
+
+
+### Features
+
+* surface PR chips from Claude pr-link records ([#370](https://github.com/gbasin/agentboard/issues/370)) ([8d7f0aa](https://github.com/gbasin/agentboard/commit/8d7f0aa1a63b49e3a9f68050d2c5c53794b18c2d))
+
 ## [0.25.3](https://github.com/gbasin/agentboard/compare/v0.25.2...v0.25.3) (2026-10-06)
 
 
