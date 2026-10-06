@@ -42,6 +42,19 @@ function claudeToolResult(text: string, toolUseId = 'toolu_1'): string {
   })
 }
 
+// Claude Code's own session↔PR record, written when the session is linked
+// to a PR (e.g. after pushing to one it did not create).
+function claudePrLink(url: string, repo = 'acme/widgets', number = 42): string {
+  return JSON.stringify({
+    type: 'pr-link',
+    sessionId: 's1',
+    prNumber: number,
+    prUrl: url,
+    prRepository: repo,
+    timestamp: '2026-01-01T00:00:00.000Z',
+  })
+}
+
 describe('extractPullRequests', () => {
   test('captures PR URL from tool result after gh pr create', () => {
     const content = [
@@ -596,6 +609,58 @@ describe('extractPullRequests', () => {
 
     expect(extractPullRequests(content).map((p) => p.number)).toEqual([3])
   })
+
+  describe('pr-link entries', () => {
+    test('captures the PR a session was linked to without any create', () => {
+      const content = [
+        claudeBashToolUse('git push origin desk/demo-companion'),
+        claudeToolResult('Everything up-to-date'),
+        claudePrLink('https://github.com/acme/widgets/pull/2066', 'acme/widgets', 2066),
+      ].join('\n')
+
+      expect(extractPullRequests(content)).toEqual([
+        {
+          url: 'https://github.com/acme/widgets/pull/2066',
+          repo: 'acme/widgets',
+          number: 2066,
+        },
+      ])
+    })
+
+    test('dedupes repeated pr-link entries and a matching create', () => {
+      const url = 'https://github.com/acme/widgets/pull/7'
+      const content = [
+        claudePrLink(url, 'acme/widgets', 7),
+        claudePrLink(url, 'acme/widgets', 7),
+        claudeBashToolUse('gh pr create', 'toolu_c'),
+        claudeToolResult(url, 'toolu_c'),
+      ].join('\n')
+
+      expect(extractPullRequests(content).map((p) => p.number)).toEqual([7])
+    })
+
+    test('ignores malformed and non-PR pr-link entries', () => {
+      const content = [
+        'NOTJSON "pr-link" whatever',
+        JSON.stringify({ type: 'pr-link', prUrl: 42 }),
+        JSON.stringify({ type: 'pr-link', prUrl: 'https://example.com/not-a-pr' }),
+        JSON.stringify({ type: 'pr-links', prUrl: 'https://github.com/a/b/pull/9' }),
+      ].join('\n')
+
+      expect(extractPullRequests(content)).toEqual([])
+    })
+
+    test('does not let a pr-link open the result window', () => {
+      // A pr-link is self-contained; nearby result lines with other PR
+      // URLs must not get attributed to it.
+      const content = [
+        claudePrLink('https://github.com/acme/widgets/pull/1', 'acme/widgets', 1),
+        claudeToolResult('https://github.com/a/b/pull/2'),
+      ].join('\n')
+
+      expect(extractPullRequests(content).map((p) => p.number)).toEqual([1])
+    })
+  })
 })
 
 describe('getSessionPullRequests', () => {
@@ -903,6 +968,49 @@ describe('getSessionPullRequests', () => {
         (claudeToolResult(filler) + '\n').repeat(3) + claudeToolResult('done')
       )
       expect(getSessionPullRequests(logPath)).toEqual([])
+    })
+
+    test('decodes a chunk that holds only a pr-link, no create', async () => {
+      // The prefilter must treat `pr-link` as a decode candidate: a log with
+      // no `gh pr create` anywhere still surfaces its linked PR.
+      const filler = JSON.stringify({ type: 'user', text: 'x'.repeat(997) }) + '\n'
+      const logPath = path.join(tempRoot, 'linkonly.jsonl')
+      await fs.writeFile(
+        logPath,
+        filler.repeat(300) + claudePrLink('https://github.com/a/b/pull/6', 'a/b', 6) + '\n' + filler
+      )
+      expect(getSessionPullRequests(logPath).map((p) => p.number)).toEqual([6])
+    })
+
+    test('finds a pr-link split across the chunk boundary', async () => {
+      const linkLine = claudePrLink('https://github.com/a/b/pull/7', 'a/b', 7)
+      const filler = JSON.stringify({ type: 'user', text: 'x'.repeat(997) }) + '\n'
+      const logPath = path.join(tempRoot, 'linkseam.jsonl')
+      // Split mid `pr-link`: every split point inside the word is covered.
+      for (const into of [1, 3, 6]) {
+        const word = linkLine.indexOf('pr-link')
+        const offset = linkLine.length - word - into
+        const before = Math.floor((CHUNK - offset) / filler.length)
+        const pad = 'y'.repeat(Math.max(0, CHUNK - offset - before * filler.length - 1))
+        await fs.writeFile(
+          logPath,
+          filler.repeat(before) + pad + '\n' + linkLine + '\n' + filler
+        )
+        clearPrScanCache()
+        expect(getSessionPullRequests(logPath).map((p) => p.number)).toEqual([7])
+      }
+    })
+
+    test('picks up a pr-link appended incrementally', async () => {
+      const logPath = path.join(tempRoot, 'linkgrow.jsonl')
+      await fs.writeFile(logPath, claudeBashToolUse('echo hi') + '\n')
+      expect(getSessionPullRequests(logPath)).toEqual([])
+
+      await fs.appendFile(
+        logPath,
+        claudePrLink('https://github.com/a/b/pull/11', 'a/b', 11) + '\n'
+      )
+      expect(getSessionPullRequests(logPath).map((p) => p.number)).toEqual([11])
     })
   })
 })
