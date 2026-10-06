@@ -5,6 +5,8 @@ import SessionList from '../components/SessionList'
 import NewSessionModal from '../components/NewSessionModal'
 import SettingsModal from '../components/SettingsModal'
 import SidebarControls from '../components/SidebarControls'
+import SessionDrawer from '../components/SessionDrawer'
+import SessionRecovery from '../components/history/SessionRecovery'
 import { useSessionStore } from '../stores/sessionStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useThemeStore } from '../stores/themeStore'
@@ -1327,6 +1329,33 @@ describe('App', () => {
     const bottom = run('bottom')
     expect(bottom).toEqual(top)
     expect(queries).toContain('(max-width: 767px)')
+  })
+  test('below the md breakpoint session recovery opens from the drawer, not a floating button', () => {
+    ;(globalAny.window as unknown as { matchMedia: (query: string) => unknown }).matchMedia = () => ({
+      matches: true,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    })
+    useSessionStore.setState({ sessions: [baseSession], selectedSessionId: baseSession.id, hasLoaded: true })
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<App />)
+    })
+
+    const floating = renderer.root.findAll(
+      (node) => node.type === 'button' && String(node.props.className ?? '').includes('fixed bottom-16')
+    )
+    expect(floating).toHaveLength(0)
+    expect(renderer.root.findByType(SessionRecovery).props.open).toBe(false)
+
+    const drawer = renderer.root.findByType(SessionDrawer)
+    const button = drawer.findByProps({ 'aria-label': 'Session recovery' })
+    act(() => {
+      button.props.onClick()
+    })
+    expect(renderer.root.findByType(SessionRecovery).props.open).toBe(true)
+
+    act(() => renderer.unmount())
   })
   test('digit shortcuts fall back to hibernating sessions when no live sessions are visible', () => {
     const hibernatingA: AgentSession = {

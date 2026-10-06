@@ -2,12 +2,17 @@
  * SessionDrawer - Mobile slide-out drawer for session list
  * Slides in from left side, covers ~75% of screen width
  * Close by: tap backdrop, press Escape, or swipe left
+ * Footer holds New Session and, when wired, the Session recovery entry point
+ * (the mobile counterpart of the desktop sidebar's clock button).
  */
 
 import { useEffect, useRef } from 'react'
 import { useReducedMotion } from 'motion/react'
 import type { AgentSession, Session } from '@shared/types'
 import SessionList from './SessionList'
+import { RecoveryNotice } from './history/RecoveryNotice'
+import { ClockRewindIcon } from './icons'
+import { ICON_SIZE, mobileButtonClass } from './controlStyles'
 
 interface SessionDrawerProps {
   isOpen: boolean
@@ -24,6 +29,8 @@ interface SessionDrawerProps {
   onHibernate?: (sessionId: string) => void
   onMoveToHistory?: (sessionId: string) => void
   onNewSession: () => boolean | void
+  /** Opens the Session recovery panel; adds the footer button and notice. */
+  onOpenHistory?: () => void
   loading: boolean
   error: string | null
 }
@@ -43,6 +50,7 @@ export default function SessionDrawer({
   onHibernate,
   onMoveToHistory,
   onNewSession,
+  onOpenHistory,
   loading,
   error,
 }: SessionDrawerProps) {
@@ -153,6 +161,14 @@ export default function SessionDrawer({
     onClose()
   }
 
+  // The recovery panel (z-40) sits below the drawer (z-50), so close first.
+  const handleOpenHistory = onOpenHistory
+    ? () => {
+        onClose()
+        onOpenHistory()
+      }
+    : undefined
+
   // Inline styles for reduced motion
   const transitionStyle = prefersReducedMotion
     ? { transition: 'none' }
@@ -196,21 +212,33 @@ export default function SessionDrawer({
           }}
           loading={loading}
           error={error}
+          notice={handleOpenHistory && <RecoveryNotice onOpen={handleOpenHistory} />}
         />
 
-        {/* New session button at bottom */}
+        {/* New session (and session recovery) buttons at bottom */}
         <div
-          className="shrink-0 border-t border-border px-2 pt-2"
+          className="flex shrink-0 gap-2 border-t border-border px-2 pt-2"
           style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom, 0.5rem))' }}
         >
           <button
             onClick={() => {
               if (onNewSession() !== false) onClose()
             }}
-            className="btn btn-primary min-h-[44px] w-full py-2 text-sm"
+            className="btn btn-primary min-h-[44px] flex-1 py-2 text-sm"
           >
             New Session
           </button>
+          {handleOpenHistory && (
+            <button
+              type="button"
+              onClick={handleOpenHistory}
+              className={mobileButtonClass('neutral')}
+              title="Session recovery"
+              aria-label="Session recovery"
+            >
+              <ClockRewindIcon width={ICON_SIZE.primary} height={ICON_SIZE.primary} />
+            </button>
+          )}
         </div>
       </div>
     </>

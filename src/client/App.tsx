@@ -1026,6 +1026,7 @@ export default function App() {
         onRenameSession={handleRenameSession}
         onDuplicateSession={handleDuplicateSession}
         onOpenSettings={handleOpenSettings}
+        onOpenHistory={() => setIsHistoryOpen(true)}
         onResumeSession={handleResumeSession}
         onHibernateSession={handleHibernateSession}
         onMoveToHistory={handleMoveToHistory}
@@ -1055,12 +1056,6 @@ export default function App() {
         onClose={() => setIsSettingsOpen(false)}
       />
 
-      <button
-        className="fixed bottom-16 right-3 z-30 rounded border border-border bg-elevated px-3 py-2 text-xs text-primary md:hidden"
-        onClick={() => setIsHistoryOpen(true)}
-      >
-        Session recovery
-      </button>
       <SessionRecovery
         open={isHistoryOpen}
         subscribe={subscribe}

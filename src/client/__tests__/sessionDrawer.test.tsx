@@ -18,6 +18,7 @@ const originalSetInterval = globalAny.setInterval
 const originalClearInterval = globalAny.clearInterval
 
 const { default: SessionDrawer } = await import('../components/SessionDrawer')
+const { RecoveryNotice } = await import('../components/history/RecoveryNotice')
 
 const baseSession: Session = {
   id: 'session-1',
@@ -379,5 +380,58 @@ describe('SessionDrawer', () => {
     act(() => {
       renderer!.unmount()
     })
+  })
+})
+
+describe('SessionDrawer session recovery entry point', () => {
+  const render = (onOpenHistory?: () => void, onClose: () => void = () => {}) => {
+    const { createNodeMock } = createDrawerMock()
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(
+        <SessionDrawer
+          isOpen
+          onClose={onClose}
+          sessions={[baseSession]}
+          selectedSessionId={null}
+          onSelect={() => {}}
+          onRename={() => {}}
+          onNewSession={() => {}}
+          onOpenHistory={onOpenHistory}
+          loading={false}
+          error={null}
+        />,
+        { createNodeMock }
+      )
+    })
+    return renderer
+  }
+
+  test('footer button closes the drawer before opening recovery', () => {
+    const calls: string[] = []
+    const renderer = render(() => calls.push('history'), () => calls.push('close'))
+
+    const button = renderer.root.findByProps({ 'aria-label': 'Session recovery' })
+    act(() => {
+      button.props.onClick()
+    })
+    // The drawer (z-50) would cover the recovery panel (z-40) if left open.
+    expect(calls).toEqual(['close', 'history'])
+
+    const notice = renderer.root.findByType(RecoveryNotice)
+    calls.length = 0
+    act(() => {
+      notice.props.onOpen()
+    })
+    expect(calls).toEqual(['close', 'history'])
+
+    act(() => renderer.unmount())
+  })
+
+  test('omits the recovery button and notice when not wired', () => {
+    const renderer = render()
+    expect(renderer.root.findAllByProps({ 'aria-label': 'Session recovery' })).toHaveLength(0)
+    expect(renderer.root.findAllByType(RecoveryNotice)).toHaveLength(0)
+    act(() => renderer.unmount())
   })
 })
