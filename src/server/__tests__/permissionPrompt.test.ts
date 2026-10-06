@@ -72,4 +72,27 @@ describe('detectsPermissionPrompt', () => {
 
     expect(detectsPermissionPrompt(content)).toBe(true)
   })
+
+  test('matches tall AskUserQuestion card via footer when ❯ scrolls out', () => {
+    const content = [
+      'Which hosted substrate should run the iOS simulator lane?',
+      '',
+      '❯ 1. EAS Workflows maestro job (Recommended)',
+      '     Expo builds the simulator app and runs Maestro flows with shards',
+      '     + retries, $0.075/min + $0.05/job, YAML-driven. No runner upkeep.',
+      '  2. Expand GitHub Actions macOS',
+      '     Grow ios-smoke from nightly evidence into a PR or merge-queue',
+      '     lane. $0.062/min, full shell control (notifyutil, simctl push).',
+      '  3. Appetize.io streamed simulators',
+      '     $59/mo, Playwright SDK, biometry() built in.',
+      '  4. Maestro Cloud hosted devices',
+      '     $250/device/mo, unlimited runs, AI assertions included.',
+      '  5. Type something.',
+      '  6. Chat about this',
+      '',
+      'Enter to select · ↑/↓ to navigate · Esc to cancel',
+    ].join('\n')
+
+    expect(detectsPermissionPrompt(content)).toBe(true)
+  })
 })
