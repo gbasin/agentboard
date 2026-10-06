@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.26.1](https://github.com/gbasin/agentboard/compare/v0.26.0...v0.26.1) (2026-10-06)
+
+
+### Bug Fixes
+
+* detect tall AskUserQuestion cards as Needs Input ([#372](https://github.com/gbasin/agentboard/issues/372)) ([1ee1a67](https://github.com/gbasin/agentboard/commit/1ee1a6799dc124d0534e669f1a2f6f1628d529f0))
+
 ## [0.26.0](https://github.com/gbasin/agentboard/compare/v0.25.3...v0.26.0) (2026-10-06)
 
 
