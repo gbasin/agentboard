@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.3](https://github.com/gbasin/agentboard/compare/v0.25.2...v0.25.3) (2026-10-06)
+
+
+### Bug Fixes
+
+* move mobile Session recovery into the session drawer ([#368](https://github.com/gbasin/agentboard/issues/368)) ([48581f7](https://github.com/gbasin/agentboard/commit/48581f7ac43c205d16bf7872e696d0ec88128736))
+
 ## [0.25.2](https://github.com/gbasin/agentboard/compare/v0.25.1...v0.25.2) (2026-10-05)
 
 
