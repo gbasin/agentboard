@@ -14,6 +14,10 @@ import {
 export const PERMISSION_PATTERNS: RegExp[] = [
   // Claude Code: numbered selection menu with navigation hint (AskUserQuestion)
   /❯\s*\d+\.\s+\S+[\s\S]*?Esc to cancel/,
+  // Claude Code: interactive card footer. On tall AskUserQuestion cards the
+  // ❯ marker scrolls above the detection window, but the footer only renders
+  // while the card is open (it collapses into a recap once answered).
+  /Enter to select.*Esc to cancel/,
   // Claude Code: numbered options like "❯ 1. Yes" or "1. Yes"
   // Requires start of line to avoid matching "1. Allow" in mid-sentence text
   /(?:^|\n)\s*[❯>]?\s*1\.\s*(Yes|Allow)(?!\s+\w+\s+\w+\s+\w+\s+\w+)/im,
