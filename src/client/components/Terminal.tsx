@@ -1689,6 +1689,7 @@ export default function Terminal({
           onMoveToHistory={onMoveToHistory}
           onNewSession={onNewSession}
           onOpenHistory={onOpenHistory}
+          subscribe={subscribe}
           loading={loading}
           error={error}
         />

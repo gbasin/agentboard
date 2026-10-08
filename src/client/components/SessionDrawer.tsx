@@ -8,7 +8,11 @@
 
 import { useEffect, useRef } from 'react'
 import { useReducedMotion } from 'motion/react'
-import type { AgentSession, Session } from '@shared/types'
+import type {
+  AgentSession,
+  Session,
+  SubscribeServerMessage,
+} from '@shared/types'
 import SessionList from './SessionList'
 import { RecoveryNotice } from './history/RecoveryNotice'
 import { ClockRewindIcon } from './icons'
@@ -31,6 +35,8 @@ interface SessionDrawerProps {
   onNewSession: () => boolean | void
   /** Opens the Session recovery panel; adds the footer button and notice. */
   onOpenHistory?: () => void
+  /** Lets the recovery notice refresh on library-changed events. */
+  subscribe?: SubscribeServerMessage
   loading: boolean
   error: string | null
 }
@@ -51,6 +57,7 @@ export default function SessionDrawer({
   onMoveToHistory,
   onNewSession,
   onOpenHistory,
+  subscribe,
   loading,
   error,
 }: SessionDrawerProps) {
@@ -212,7 +219,11 @@ export default function SessionDrawer({
           }}
           loading={loading}
           error={error}
-          notice={handleOpenHistory && <RecoveryNotice onOpen={handleOpenHistory} />}
+          notice={
+            handleOpenHistory && (
+              <RecoveryNotice onOpen={handleOpenHistory} subscribe={subscribe} />
+            )
+          }
         />
 
         {/* New session (and session recovery) buttons at bottom */}

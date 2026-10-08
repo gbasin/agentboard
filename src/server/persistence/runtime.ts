@@ -38,18 +38,18 @@ export class PersistenceRuntime {
     this.timer = null
   }
   health(): PersistenceHealth {
+    const interruptedRows = this.db.db
+      .query(
+        "SELECT id FROM board_sessions WHERE state IN ('interrupted','failed')"
+      )
+      .all() as { id: string }[]
     return {
       lastSavedAt: this.db.getAppSetting('persistence_last_saved'),
       error: this.sessions.error,
       matchingAvailable: (this.rgAvailable ??= Boolean(Bun.which('rg'))),
       matchingError: this.matchingFailure(),
-      interrupted: (
-        this.db.db
-          .query(
-            "SELECT count(*) AS n FROM board_sessions WHERE state IN ('interrupted','failed')"
-          )
-          .get() as { n: number }
-      ).n,
+      interrupted: interruptedRows.length,
+      interruptedIds: interruptedRows.map((row) => row.id),
       settings: getPersistenceSettings(this.db),
     }
   }
