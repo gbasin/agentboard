@@ -59,6 +59,9 @@ export interface PersistenceHealth {
   matchingAvailable: boolean
   matchingError?: string | null
   interrupted: number
+  /** Ids of the interrupted/failed sessions, so clients can tell a new
+   * interruption apart from one already seen. */
+  interruptedIds: string[]
   settings: PersistenceSettings
 }
 

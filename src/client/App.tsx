@@ -987,7 +987,12 @@ export default function App() {
           loading={!hasLoaded}
           error={connectionError || serverError}
           anchor={sidebarAnchor}
-          notice={<RecoveryNotice onOpen={() => setIsHistoryOpen(true)} />}
+          notice={
+            <RecoveryNotice
+              onOpen={() => setIsHistoryOpen(true)}
+              subscribe={subscribe}
+            />
+          }
           filterBarControls={
             <SidebarControls
               connectionStatus={connectionStatus}
