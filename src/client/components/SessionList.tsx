@@ -29,6 +29,7 @@ import { getEffectiveModifier, getModifierDisplay } from '../utils/device'
 import { useCounterBump } from '../hooks/useCounterBump'
 import { useExitCleanup } from '../hooks/useExitCleanup'
 import { useScrollToSelection } from '../hooks/useScrollToSelection'
+import { useIsMobileLayout } from '../hooks/useMobileLayout'
 import { useBottomPinnedScroll } from '../hooks/useBottomPinnedScroll'
 import { useMenuViewportFit } from '../hooks/useMenuViewportFit'
 import AgentIcon from './AgentIcon'
@@ -414,6 +415,12 @@ export default function SessionList({
     })
   )
 
+  // On coarse pointers the card body must keep native panning — with the
+  // dnd-kit listeners on the whole row, Safari claims the gesture for
+  // scrolling and pointercancel kills every touch drag. Rows instead get a
+  // dedicated touch-action:none handle that owns the activator listeners.
+  const coarsePointer = useIsMobileLayout('(pointer: coarse)')
+
   // While dragging, render in the snapshot order — never the live order.
   const displaySessions = useMemo(
     () => freezeListOrderDuringDrag(filteredSessions, dragOrderSnapshot),
@@ -660,6 +667,7 @@ export default function SessionList({
                       {...displayPrefs}
                       showHostInfo={showHostInfo}
                       dropIndicator={showDropIndicator}
+                      dragViaHandle={coarsePointer}
                       onSelect={() => onSelect(session.id)}
                       onStartEdit={canControl ? () => setEditingSessionId(session.id) : undefined}
                       onCancelEdit={() => setEditingSessionId(null)}
@@ -787,6 +795,9 @@ interface SortableSessionItemProps {
   showLastUserMessage: boolean
   showHostInfo: boolean
   dropIndicator: 'above' | 'below' | null
+  /** Coarse pointers only: drag activates from the card's handle so the row
+   * body keeps native panning (dnd-kit listeners move onto the handle). */
+  dragViaHandle: boolean
   onSelect: () => void
   onStartEdit?: () => void
   onCancelEdit: () => void
@@ -809,6 +820,7 @@ const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>
   showLastUserMessage,
   showHostInfo,
   dropIndicator,
+  dragViaHandle,
   onSelect,
   onStartEdit,
   onCancelEdit,
@@ -828,6 +840,7 @@ const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>
     id: session.id,
     animateLayoutChanges: ({ isSorting, wasDragging }) => isSorting || wasDragging,
   })
+
 
   // Pin the drag transform to the vertical axis: a horizontally-tracking card
   // extends the scroller's scrollable overflow, which lets wheel flicks and
@@ -911,7 +924,7 @@ const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>
             }
       }
       {...attributes}
-      {...listeners}
+      {...(dragViaHandle ? {} : listeners)}
     >
       {/* Drop indicator line */}
       {dropIndicator === 'above' && (
@@ -926,6 +939,7 @@ const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>
         showLastUserMessage={showLastUserMessage}
         showHostInfo={showHostInfo}
         isDragging={isDragging}
+        dragHandleListeners={dragViaHandle ? listeners : undefined}
         onSelect={onSelect}
         onStartEdit={onStartEdit}
         onCancelEdit={onCancelEdit}
@@ -952,6 +966,9 @@ interface SessionRowProps {
   showLastUserMessage: boolean
   showHostInfo: boolean
   isDragging?: boolean
+  /** Present only on coarse pointers: the dnd-kit activator listeners move off
+   * the card body onto the drag handle so the row can still pan natively. */
+  dragHandleListeners?: NonNullable<ReturnType<typeof useSortable>['listeners']>
   onSelect: () => void
   onStartEdit?: () => void
   onCancelEdit: () => void
@@ -970,6 +987,7 @@ function SessionRow({
   showLastUserMessage,
   showHostInfo,
   isDragging = false,
+  dragHandleListeners,
   onSelect,
   onStartEdit,
   onCancelEdit,
@@ -1058,6 +1076,14 @@ function SessionRow({
 
   const handleTouchStart = (e: React.TouchEvent) => {
     if (isDragging) return
+    // A touch on the drag handle starts a dnd-kit drag — don't also arm the
+    // long-press context menu under the same gesture.
+    const touchTarget = e.target as HTMLElement | null
+    if (
+      typeof touchTarget?.closest === 'function' &&
+      touchTarget.closest('[data-testid="drag-handle"]')
+    )
+      return
     const touch = e.touches[0]
     touchStartPos.current = { x: touch.clientX, y: touch.clientY }
     longPressTimer.current = setTimeout(() => {
@@ -1130,11 +1156,31 @@ function SessionRow({
       <div className="flex flex-col gap-0.5 pl-0.5">
         {/* Line 1: Icon + Name + Time/Hand */}
         <div className="flex items-center gap-2">
-          <AgentIcon
-            agentType={session.agentType}
-            command={session.command}
-            className="h-3.5 w-3.5 shrink-0 text-muted"
-          />
+          {dragHandleListeners ? (
+            // On coarse pointers the icon doubles as the drag handle.
+            // touch-action:none keeps the browser from claiming the pan for
+            // scrolling, which would pointercancel the drag at activation;
+            // the padding widens the hit target without growing the icon.
+            <span
+              {...dragHandleListeners}
+              data-testid="drag-handle"
+              aria-label="Drag to reorder"
+              style={{ touchAction: 'none' }}
+              className="-my-1 -ml-1 flex items-center py-1 pl-1 cursor-grab"
+            >
+              <AgentIcon
+                agentType={session.agentType}
+                command={session.command}
+                className="h-3.5 w-3.5 shrink-0 text-muted"
+              />
+            </span>
+          ) : (
+            <AgentIcon
+              agentType={session.agentType}
+              command={session.command}
+              className="h-3.5 w-3.5 shrink-0 text-muted"
+            />
+          )}
           {isEditing ? (
             <input
               ref={inputRef}
