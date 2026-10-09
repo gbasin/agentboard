@@ -728,7 +728,7 @@ export default function SessionList({
         // keeps selected rows clear of the sticky bottom filter bar.
         <div
           ref={listScrollRef}
-          className="flex min-h-0 flex-1 flex-col overflow-y-auto scroll-pb-10"
+          className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden overscroll-contain scroll-pb-10"
         >
           <div ref={listContentRef} className="mt-auto shrink-0">
             {historySection}
@@ -741,7 +741,7 @@ export default function SessionList({
         // scroll-pt-10 keeps rows scrolled past the sticky h-10 filter bar
         <div
           ref={listScrollRef}
-          className="min-h-0 flex-1 overflow-y-auto scroll-pt-10"
+          className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain scroll-pt-10"
         >
           {filterBar}
           {notice}
@@ -829,7 +829,12 @@ const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>
     animateLayoutChanges: ({ isSorting, wasDragging }) => isSorting || wasDragging,
   })
 
-  const dndTransform = CSS.Transform.toString(transform)
+  // Pin the drag transform to the vertical axis: a horizontally-tracking card
+  // extends the scroller's scrollable overflow, which lets wheel flicks and
+  // dnd-kit's edge auto-scroll drag the whole list sideways off the panel.
+  const dndTransform = CSS.Transform.toString(
+    transform ? { ...transform, x: 0 } : transform
+  )
   const shouldApplyStyleTransform = Boolean(prefersReducedMotion && dndTransform)
   const style = {
     ...(shouldApplyStyleTransform ? { transform: dndTransform } : {}),
