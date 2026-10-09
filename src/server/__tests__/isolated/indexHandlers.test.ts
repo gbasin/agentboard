@@ -6328,6 +6328,63 @@ describe('server startup side effects', () => {
     expect(syncCapturePaneCalls).toHaveLength(0)
   })
 
+  test('startup verification checks at most two windows at a time', async () => {
+    // Each window verification runs rg over every log dir once per recent
+    // message; running all windows at once saturated the machine on restart.
+    const windows = Array.from({ length: 6 }, (_, i) => ({
+      ...baseSession,
+      id: `session-${i}`,
+      name: `win-${i}`,
+      tmuxWindow: `agentboard:@${i + 1}`,
+    }))
+    for (const [i, window] of windows.entries()) {
+      seedRecord(
+        makeRecord({
+          sessionId: `verify-${i}`,
+          displayName: window.name,
+          currentWindow: window.tmuxWindow,
+        })
+      )
+    }
+    sessionManagerState.listWindows = () => windows
+    refreshWorkerSessions = windows
+
+    const capturing = new Set<string>()
+    const capturedTargets = new Set<string>()
+    let maxConcurrentWindows = 0
+    bunAny.spawn = ((...args: Parameters<typeof Bun.spawn>) => {
+      const cmd = (Array.isArray(args[0]) ? args[0] : [String(args[0])]) as string[]
+      const tmuxArgs = getTmuxArgs(cmd)
+      const isCapture = tmuxArgs[0] === 'capture-pane'
+      const target = isCapture ? tmuxArgs[tmuxArgs.indexOf('-t') + 1] ?? '' : ''
+      if (isCapture) {
+        capturing.add(target)
+        capturedTargets.add(target)
+        maxConcurrentWindows = Math.max(maxConcurrentWindows, capturing.size)
+      }
+      const exited = isCapture
+        ? new Promise<number>((resolve) =>
+            setTimeout(() => {
+              capturing.delete(target)
+              resolve(0)
+            }, 5)
+          )
+        : Promise.resolve(0)
+      return {
+        exited,
+        stdout: new ReadableStream({ start: (c) => c.close() }),
+        stderr: new ReadableStream({ start: (c) => c.close() }),
+        kill: () => {},
+        pid: 12345,
+      } as unknown as ReturnType<typeof Bun.spawn>
+    }) as typeof Bun.spawn
+
+    await loadIndex()
+
+    expect(capturedTargets.size).toBe(windows.length)
+    expect(maxConcurrentWindows).toBe(2)
+  })
+
   test('dormant PRs found by the background scan reach the hibernating list', async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-dormant-pr-'))
     try {

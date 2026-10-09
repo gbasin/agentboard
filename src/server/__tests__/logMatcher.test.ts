@@ -11,7 +11,9 @@ import {
   tryExactMatchWindowToLog,
   getLogTokenCount,
   verifyWindowLogAssociation,
+  verifyWindowLogAssociationDetailed,
   verifyWindowLogAssociationDetailedAsync,
+  verifyWindowsBatch,
   extractRecentTraceLinesFromTmux,
   extractRecentUserMessagesFromTmux,
   extractAskUserQuestionAnswers,
@@ -57,19 +59,27 @@ function findJsonlFiles(dir: string): string[] {
 }
 
 function runRg(args: string[]) {
-  const patternIndex = args.indexOf('-e')
-  const pattern = patternIndex >= 0 ? args[patternIndex + 1] ?? '' : ''
-  const regex = pattern ? new RegExp(pattern, 'm') : null
+  // Union semantics: a file/line matches when ANY -e pattern matches.
+  const patterns: string[] = []
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '-e' && args[i + 1] !== undefined) {
+      patterns.push(args[i + 1] as string)
+      i++
+    }
+  }
+  const regexes = patterns.map((p) => new RegExp(p, 'm'))
+  const matchesAny = (text: string) => regexes.some((r) => r.test(text))
+  const firstPatternIndex = args.indexOf('-e')
 
   if (args.includes('--json')) {
     const filePath = args[args.length - 1] ?? ''
-    if (!filePath || !regex || !fsSync.existsSync(filePath)) {
+    if (!filePath || regexes.length === 0 || !fsSync.existsSync(filePath)) {
       return { exitCode: 1, stdout: Buffer.from(''), stderr: Buffer.from('') }
     }
     const lines = fsSync.readFileSync(filePath, 'utf8').split('\n')
     const output: string[] = []
     lines.forEach((line, index) => {
-      if (regex.test(line)) {
+      if (matchesAny(line)) {
         output.push(
           JSON.stringify({ type: 'match', data: { line_number: index + 1 } })
         )
@@ -84,12 +94,12 @@ function runRg(args: string[]) {
   }
 
   if (args.includes('-l')) {
-    if (!regex) {
+    if (regexes.length === 0) {
       return { exitCode: 1, stdout: Buffer.from(''), stderr: Buffer.from('') }
     }
     const targets: string[] = []
     let skipNext = false
-    for (let i = patternIndex + 2; i < args.length; i += 1) {
+    for (let i = firstPatternIndex + 2; i < args.length; i += 1) {
       const arg = args[i] ?? ''
       if (skipNext) {
         skipNext = false
@@ -101,6 +111,10 @@ function runRg(args: string[]) {
         continue
       }
       if (arg === '--threads') {
+        skipNext = true
+        continue
+      }
+      if (arg === '-e') {
         skipNext = true
         continue
       }
@@ -121,7 +135,7 @@ function runRg(args: string[]) {
     }
     const matches = files.filter((file) => {
       const content = fsSync.readFileSync(file, 'utf8')
-      return regex.test(content)
+      return matchesAny(content)
     })
     return {
       exitCode: matches.length > 0 ? 0 : 1,
@@ -132,17 +146,42 @@ function runRg(args: string[]) {
 
   // Content mode: rg -n -e <pattern> <files...> → "N:line" per match
   if (args.includes('-n')) {
-    if (!regex) {
+    if (regexes.length === 0) {
       return { exitCode: 1, stdout: Buffer.from(''), stderr: Buffer.from('') }
     }
-    const targets = args.slice(patternIndex + 2).filter((arg) => arg && !arg.startsWith('-'))
+    const targets = args.slice(firstPatternIndex + 2).filter((arg) => arg && !arg.startsWith('-'))
     const output: string[] = []
     for (const target of targets) {
       if (!fsSync.existsSync(target) || !fsSync.statSync(target).isFile()) continue
       const lines = fsSync.readFileSync(target, 'utf8').split('\n')
       lines.forEach((line, index) => {
-        if (regex.test(line)) output.push(`${index + 1}:${line}`)
+        if (matchesAny(line)) output.push(`${index + 1}:${line}`)
       })
+    }
+    return {
+      exitCode: output.length > 0 ? 0 : 1,
+      stdout: Buffer.from(output.join('\n')),
+      stderr: Buffer.from(''),
+    }
+  }
+
+  // Plain content mode: rg -e <patterns...> <file> → the matched line, once per
+  // matching line (used by the batch scan's per-file attribution pass).
+  if (regexes.length > 0) {
+    const targets: string[] = []
+    let skip = false
+    for (const arg of args) {
+      if (skip) { skip = false; continue }
+      if (arg === '-e' || arg === '--threads' || arg === '--glob') { skip = true; continue }
+      if (arg.startsWith('-') || arg === 'rg') continue
+      targets.push(arg)
+    }
+    const output: string[] = []
+    for (const target of targets) {
+      if (!fsSync.existsSync(target) || !fsSync.statSync(target).isFile()) continue
+      for (const line of fsSync.readFileSync(target, 'utf8').split('\n')) {
+        if (matchesAny(line)) output.push(line)
+      }
     }
     return {
       exitCode: output.length > 0 ? 0 : 1,
@@ -1087,6 +1126,80 @@ describe('logMatcher', () => {
     )
     expect(result.status).toBe('mismatch')
     expect(result.bestMatch?.logPath).toBe(otherLog)
+
+    await fs.rm(tempDir, { recursive: true, force: true })
+  })
+
+  test('verifyWindowsBatch matches per-window verification verdicts', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-verify-batch-'))
+    const logA = path.join(tempDir, 'session-a.jsonl')
+    const logB = path.join(tempDir, 'session-b.jsonl')
+    const logC = path.join(tempDir, 'session-c.jsonl')
+    const msgA1 = 'alpha deploy the staging build please'
+    const msgA2 = 'alpha second instruction here'
+    const msgB1 = 'beta rotate the api keys now'
+
+    await fs.writeFile(
+      logA,
+      [buildUserLogEntry(msgA1), buildUserLogEntry(msgA2)].join('\n')
+    )
+    await fs.writeFile(logB, buildUserLogEntry(msgB1))
+    // msgA1 echoed inside a tool_result — rg -l hits it but it is not a valid
+    // user context, so the batch scan must reject it the same way.
+    await fs.writeFile(logC, buildAskAnswerLogEntry('which env?', msgA1))
+
+    setTmuxOutput('agentboard:1', buildPromptScrollback([msgA1, msgA2]))
+    setTmuxOutput(
+      'agentboard:2',
+      buildPromptScrollback([msgB1], { glyph: '›' })
+    )
+    setTmuxOutput('agentboard:3', 'no prompts here\n')
+
+    const jobs = [
+      // exact expected match
+      { sessionId: 's1', tmuxWindow: 'agentboard:1', expectedLogPath: logA, context: {}, excludeLogPaths: [] },
+      // codex glyph window
+      { sessionId: 's2', tmuxWindow: 'agentboard:2', expectedLogPath: logB, context: {}, excludeLogPaths: [] },
+      // window matches a different log than expected
+      { sessionId: 's3', tmuxWindow: 'agentboard:1', expectedLogPath: logB, context: {}, excludeLogPaths: [] },
+      // no extractable messages
+      { sessionId: 's4', tmuxWindow: 'agentboard:3', expectedLogPath: logA, context: {}, excludeLogPaths: [] },
+      // exclusion is fail-open: filtering out logA leaves nothing, so logA
+      // still wins and the expected logC reads as a mismatch
+      { sessionId: 's5', tmuxWindow: 'agentboard:1', expectedLogPath: logC, context: {}, excludeLogPaths: [logA] },
+    ]
+
+    commandCalls.length = 0
+    const batched = verifyWindowsBatch(jobs, [tempDir])
+    const batchRgListCalls = commandCalls.filter(
+      (call) => call[0] === 'rg' && call.includes('-l')
+    ).length
+
+    for (const job of jobs) {
+      const single = verifyWindowLogAssociationDetailed(
+        job.tmuxWindow,
+        job.expectedLogPath,
+        [tempDir],
+        { context: job.context, excludeLogPaths: job.excludeLogPaths }
+      )
+      const batchResult = batched.get(job.sessionId)
+      expect(batchResult?.status).toBe(single.status)
+      expect(batchResult?.bestMatch?.logPath ?? null).toBe(
+        single.bestMatch?.logPath ?? null
+      )
+    }
+
+    expect(batched.get('s1')?.status).toBe('verified')
+    expect(batched.get('s2')?.status).toBe('verified')
+    expect(batched.get('s3')?.status).toBe('mismatch')
+    expect(batched.get('s3')?.bestMatch?.logPath).toBe(logA)
+    expect(batched.get('s4')?.status).toBe('inconclusive')
+    expect(batched.get('s5')?.status).toBe('mismatch')
+    expect(batched.get('s5')?.bestMatch?.logPath).toBe(logA)
+
+    // One rg -l pass per directory for the whole batch, not one per message.
+    // (The per-window parity calls above each run their own scans.)
+    expect(batchRgListCalls).toBe(1)
 
     await fs.rm(tempDir, { recursive: true, force: true })
   })

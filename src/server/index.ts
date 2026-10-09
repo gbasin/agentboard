@@ -30,6 +30,8 @@ import { createDormantPrScanner } from './dormantPrScan'
 import { setCodexSubagentIndexListener } from './subagentLogs'
 import { fetchPrChecks, fetchPrInfo, parsePrUrl } from './prInfo'
 import { getLogSearchDirs } from './logDiscovery'
+import { LogMatchWorkerClient } from './logMatchWorkerClient'
+import { mapWithConcurrency } from './mapWithConcurrency'
 import {
   DEFAULT_SCROLLBACK_LINES,
   matchWindowsToLogsByExactRg,
@@ -975,6 +977,29 @@ interface HydrateSessionsOptions {
   serverPid?: number
 }
 
+// Inline fallback path only: when the log-match worker is unavailable, each
+// verification still captures a pane and runs rg over every log directory
+// (often 10+ GB) once per recent user message. Verifying every window at once
+// saturated disk and CPU for minutes after a restart: rg calls hit their
+// timeout and dropped matches, and the event loop stalled for seconds at a
+// time. The limit only changes scheduling; each window's work is unchanged.
+const STARTUP_VERIFY_CONCURRENCY = 2
+
+// Verification runs for minutes on a large corpus — far past the worker
+// client's 45s default timeout.
+const STARTUP_VERIFY_WORKER_TIMEOUT_MS = 10 * 60 * 1000
+
+let startupVerifyWorker: LogMatchWorkerClient | null = null
+
+interface PendingVerifyJob {
+  sessionId: string
+  tmuxWindow: string
+  logFilePath: string
+  displayName: string
+  context: { agentType: AgentType; projectPath: string }
+  excludeLogPaths: string[]
+}
+
 async function verifyAllSessions(
   activeSessions: AgentSessionRecord[],
   sessions: Session[],
@@ -986,60 +1011,154 @@ async function verifyAllSessions(
     .filter((session) => session.currentWindow)
     .map((session) => ({ sessionId: session.sessionId, logPath: session.logFilePath }))
 
-  const entries: Array<[string, VerificationDecision]> = await Promise.all(
-    activeSessions.map(async (agentSession): Promise<[string, VerificationDecision]> => {
-      const currentWindow = agentSession.currentWindow
-      if (!currentWindow || !windowSet.has(currentWindow)) {
-        const decision: VerificationDecision = {
-          verification: {
+  const decisions = new Map<string, VerificationDecision>()
+  let pending: PendingVerifyJob[] = []
+  for (const agentSession of activeSessions) {
+    const currentWindow = agentSession.currentWindow
+    if (!currentWindow || !windowSet.has(currentWindow)) {
+      decisions.set(agentSession.sessionId, {
+        verification: {
+          status: 'inconclusive',
+          bestMatch: null,
+          reason: 'no_match',
+        },
+        nameMatches: false,
+      })
+      continue
+    }
+    pending.push({
+      sessionId: agentSession.sessionId,
+      tmuxWindow: currentWindow,
+      logFilePath: agentSession.logFilePath,
+      displayName: agentSession.displayName,
+      context: {
+        agentType: agentSession.agentType,
+        projectPath: agentSession.projectPath,
+      },
+      excludeLogPaths: allLogPaths
+        .filter((entry) => entry.sessionId !== agentSession.sessionId)
+        .map((entry) => entry.logPath),
+    })
+  }
+
+  const recordDecision = (
+    job: PendingVerifyJob,
+    verification: WindowLogVerificationResult
+  ) => {
+    const window = windowByTarget.get(job.tmuxWindow)
+    decisions.set(job.sessionId, {
+      verification,
+      nameMatches: Boolean(window && window.name === job.displayName),
+    })
+  }
+
+  // Preferred path: the log-match worker does the pane captures, rg scans,
+  // and tail validation off the main thread, sharing one rg pass per log
+  // directory across all windows.
+  if (config.logMatchWorker && pending.length > 0) {
+    try {
+      startupVerifyWorker ??= new LogMatchWorkerClient()
+      const response = await startupVerifyWorker.poll(
+        {
+          windows: sessions,
+          sessions: [],
+          maxLogsPerPoll: 0,
+          scrollbackLines: DEFAULT_SCROLLBACK_LINES,
+          search: {
+            rgThreads: config.rgThreads,
+            profile: config.logMatchProfile,
+          },
+          verifyJobs: pending.map((job) => ({
+            sessionId: job.sessionId,
+            tmuxWindow: job.tmuxWindow,
+            logFilePath: job.logFilePath,
+            context: job.context,
+            excludeLogPaths: job.excludeLogPaths,
+          })),
+        },
+        { timeoutMs: STARTUP_VERIFY_WORKER_TIMEOUT_MS }
+      )
+      // A result without verifyResults means the worker didn't understand the
+      // request — treat as failure so the inline path still verifies.
+      if (!response.verifyResults) {
+        throw new Error('log match worker returned no verify results')
+      }
+      const results = new Map(
+        response.verifyResults.map((result) => [
+          result.sessionId,
+          result.verification,
+        ])
+      )
+      logger.info('startup_verify_worker_done', {
+        verifyMs: Math.round(response.verifyMs ?? 0),
+        jobs: pending.length,
+      })
+      for (const job of pending) {
+        recordDecision(
+          job,
+          results.get(job.sessionId) ?? {
             status: 'inconclusive',
             bestMatch: null,
             reason: 'no_match',
-          },
-          nameMatches: false,
-        }
-        return [agentSession.sessionId, decision]
-      }
-
-      const excludeLogPaths = allLogPaths
-        .filter((entry) => entry.sessionId !== agentSession.sessionId)
-        .map((entry) => entry.logPath)
-
-      try {
-        const verification = await verifyWindowLogAssociationDetailedAsync(
-          currentWindow,
-          agentSession.logFilePath,
-          logDirs,
-          {
-            context: {
-              agentType: agentSession.agentType,
-              projectPath: agentSession.projectPath,
-            },
-            excludeLogPaths,
           }
         )
-        const window = windowByTarget.get(currentWindow)
-        const nameMatches = Boolean(window && window.name === agentSession.displayName)
-        const decision: VerificationDecision = {
-          verification,
-          nameMatches,
-        }
-        return [agentSession.sessionId, decision]
-      } catch (error) {
-        logger.warn('session_verification_error', {
-          sessionId: agentSession.sessionId,
-          error: String(error),
-        })
-        const decision: VerificationDecision = {
-          verification: { status: 'verified', bestMatch: null },
-          nameMatches: true,
-        }
-        return [agentSession.sessionId, decision]
       }
-    })
-  )
+      pending = []
+    } catch (error) {
+      logger.warn('startup_verify_worker_error', {
+        error: String(error),
+        fallback: 'inline',
+      })
+    }
+  }
 
-  return new Map(entries)
+  if (pending.length > 0) {
+    const entries: Array<[string, VerificationDecision]> =
+      await mapWithConcurrency(
+        pending,
+        STARTUP_VERIFY_CONCURRENCY,
+        async (job): Promise<[string, VerificationDecision]> => {
+          try {
+            const verification = await verifyWindowLogAssociationDetailedAsync(
+              job.tmuxWindow,
+              job.logFilePath,
+              logDirs,
+              {
+                context: job.context,
+                excludeLogPaths: job.excludeLogPaths,
+              }
+            )
+            const window = windowByTarget.get(job.tmuxWindow)
+            return [
+              job.sessionId,
+              {
+                verification,
+                nameMatches: Boolean(
+                  window && window.name === job.displayName
+                ),
+              },
+            ]
+          } catch (error) {
+            logger.warn('session_verification_error', {
+              sessionId: job.sessionId,
+              error: String(error),
+            })
+            return [
+              job.sessionId,
+              {
+                verification: { status: 'verified', bestMatch: null },
+                nameMatches: true,
+              },
+            ]
+          }
+        }
+      )
+    for (const [sessionId, decision] of entries) {
+      decisions.set(sessionId, decision)
+    }
+  }
+
+  return decisions
 }
 
 export function hydrateSessionsWithAgentSessions(
