@@ -80,3 +80,36 @@ test('dragging a card sideways never scrolls the panel horizontally', async ({
   expect(after.scrollLeft).toBe(0)
   expect(after.scrollWidth).toBe(after.clientWidth)
 })
+
+test('drag transform stays on integer pixels — card text is not resampled', async ({
+  page,
+}) => {
+  const prefix = uniquePrefix('pxsnap')
+  const names = windows.createMany(prefix, 4)
+  await installHarness(page, { prefix })
+  const sidebar = desktopSidebar(page)
+
+  await page.goto('/')
+  await expect(sidebar.getByTestId('session-card')).toHaveCount(4, DISCOVERY)
+
+  const card = cardByName(sidebar, names[0])
+  const cardBox = await card.boundingBox()
+  expect(cardBox).not.toBeNull()
+
+  // The transform lives on the sortable wrapper (the card's parent).
+  await page.mouse.move(cardBox!.x + cardBox!.width / 2, cardBox!.y + cardBox!.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(
+    cardBox!.x + cardBox!.width / 2,
+    cardBox!.y + cardBox!.height / 2 + 37.5,
+    { steps: 6 }
+  )
+
+  const transform = await card.evaluate(
+    (el) => el.parentElement?.style.transform ?? ''
+  )
+  // Integer x=0 (column-pinned) and integer y — no fractional resampling.
+  expect(transform).toMatch(/translate3d\(0px, -?\d+px, 0px\)/)
+
+  await page.mouse.up()
+})

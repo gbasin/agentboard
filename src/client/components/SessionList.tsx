@@ -832,8 +832,11 @@ const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>
   // Pin the drag transform to the vertical axis: a horizontally-tracking card
   // extends the scroller's scrollable overflow, which lets wheel flicks and
   // dnd-kit's edge auto-scroll drag the whole list sideways off the panel.
+  // Rounding keeps translated rows pixel-aligned — the transform promotes the
+  // card to a composited layer, and fractional offsets make the compositor
+  // resample its text, rendering it blurry mid-drag.
   const dndTransform = CSS.Transform.toString(
-    transform ? { ...transform, x: 0 } : transform
+    transform ? { ...transform, x: 0, y: Math.round(transform.y) } : transform
   )
   const shouldApplyStyleTransform = Boolean(prefersReducedMotion && dndTransform)
   const style = {
