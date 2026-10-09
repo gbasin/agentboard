@@ -4,6 +4,7 @@ import type { PersistenceHealth } from '../../shared/persistence'
 import type { PersistentSessions } from './manager'
 import { getPersistenceSettings } from './settings'
 import { readTmuxIdentity } from './tmuxIdentity'
+import { sanitizedTmuxEnv } from '../tmuxEnv'
 import { config } from '../config'
 
 export class PersistenceRuntime {
@@ -77,7 +78,12 @@ export class PersistenceRuntime {
               continue
             const captured = Bun.spawnSync(
               ['tmux', 'capture-pane', '-p', '-t', saved.window, '-S', '-80'],
-              { stdout: 'pipe', stderr: 'pipe', timeout: 1000 }
+              {
+                stdout: 'pipe',
+                stderr: 'pipe',
+                timeout: 1000,
+                env: sanitizedTmuxEnv(),
+              }
             )
             if (captured.exitCode === 0)
               this.db.db

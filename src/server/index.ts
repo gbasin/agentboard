@@ -10,6 +10,7 @@ import { config, isValidHostname } from './config'
 import { createPasteFileRoutes } from './routes/pasteFile'
 import { ensureTmux } from './prerequisites'
 import { applyNestedTmuxDecision } from './tmuxIsolation'
+import { sanitizedTmuxEnv } from './tmuxEnv'
 import { KillRateLimiter } from './killRateLimit'
 import { SessionManager } from './SessionManager'
 import { ThrowawayShellReaper } from './throwawayShellReaper'
@@ -2553,6 +2554,9 @@ async function readTmuxCapture(tmuxArgs: string[]): Promise<string | null> {
       stderr: 'ignore',
       timeout: config.tmuxTimeoutMs,
       killSignal: 'SIGKILL',
+      // Without env Bun reuses the process-start environ — the stale $TMUX
+      // would send this client to the live server on isolated instances.
+      env: sanitizedTmuxEnv(),
     })
     kill = () => {
       try {

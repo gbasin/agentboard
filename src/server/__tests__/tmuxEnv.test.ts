@@ -45,6 +45,47 @@ describe('sanitizedTmuxEnv', () => {
     expect(sanitizedTmuxEnv({ FOO: undefined, BAR: 'x' })).toEqual({ BAR: 'x' })
   })
 
+  test('strips TMUX/TMUX_PANE when TMUX_TMPDIR marks the instance as isolated', () => {
+    // tmux ignores TMUX_TMPDIR while $TMUX is set, so the pair is
+    // contradictory — and the pair is exactly what Bun Workers and env-less
+    // spawns see: they keep the process-start environ where the main
+    // thread's `delete process.env.TMUX` never took effect.
+    const env = sanitizedTmuxEnv({
+      TMUX: '/private/tmp/tmux-501/default,1234,0',
+      TMUX_PANE: '%42',
+      TMUX_TMPDIR: '/tmp/ab-dev',
+      PATH: '/usr/bin',
+    })
+    expect(env.TMUX).toBeUndefined()
+    expect(env.TMUX_PANE).toBeUndefined()
+    expect(env.TMUX_TMPDIR).toBe('/tmp/ab-dev')
+    expect(env.PATH).toBe('/usr/bin')
+  })
+
+  test('keeps TMUX/TMUX_PANE when TMUX_TMPDIR is absent', () => {
+    // The nested opt-in (AGENTBOARD_ALLOW_NESTED_TMUX) and "user's own tmux"
+    // paths deliberately share the inherited server — nothing marks them for
+    // isolation, so the inherited socket pointer must survive.
+    const env = sanitizedTmuxEnv({
+      TMUX: '/private/tmp/tmux-501/default,1234,0',
+      TMUX_PANE: '%7',
+      PATH: '/usr/bin',
+    })
+    expect(env.TMUX).toBe('/private/tmp/tmux-501/default,1234,0')
+    expect(env.TMUX_PANE).toBe('%7')
+  })
+
+  test('strips a stray TMUX even when TMUX_TMPDIR alone is set', () => {
+    expect(sanitizedTmuxEnv({ TMUX: 'x,1,0', TMUX_TMPDIR: '/tmp/y' }).TMUX).toBeUndefined()
+  })
+
+  test('an empty or whitespace TMUX_TMPDIR does not strip TMUX', () => {
+    // decideNestedTmux treats blank TMUX_TMPDIR as absent — the sanitize rule
+    // must match or the 'allow'/'none' paths lose the inherited socket.
+    expect(sanitizedTmuxEnv({ TMUX: 'x,1,0', TMUX_TMPDIR: '' }).TMUX).toBe('x,1,0')
+    expect(sanitizedTmuxEnv({ TMUX: 'x,1,0', TMUX_TMPDIR: '  ' }).TMUX).toBe('x,1,0')
+  })
+
   test('defaults to process.env', () => {
     const env = sanitizedTmuxEnv()
     expect(env.NODE_ENV).toBeUndefined()

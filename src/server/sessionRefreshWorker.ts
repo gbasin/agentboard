@@ -25,6 +25,7 @@ import {
   TmuxTimeoutError,
   isTmuxTimeoutError,
 } from './tmuxTimeout'
+import { sanitizedTmuxEnv } from './tmuxEnv'
 import type { Session, SessionStatus, SessionSource } from '../shared/types'
 
 // Format string for batched window listing
@@ -192,6 +193,7 @@ function runTmux(args: string[]): string {
     stdout: 'pipe',
     stderr: 'pipe',
     timeout: config.tmuxTimeoutMs,
+    env: sanitizedTmuxEnv(),
   })
   if (result.signalCode === 'SIGTERM' || result.exitCode === null) {
     throw new TmuxTimeoutError(command, config.tmuxTimeoutMs)
@@ -266,6 +268,7 @@ function capturePane(tmuxWindow: string): string | null {
         stdout: 'pipe',
         stderr: 'pipe',
         timeout: config.tmuxTimeoutMs,
+        env: sanitizedTmuxEnv(),
       }
     )
     if (result.signalCode === 'SIGTERM' || result.exitCode === null) {
@@ -301,6 +304,7 @@ function captureScrollback(tmuxWindow: string, lines: number): string {
         stdout: 'pipe',
         stderr: 'pipe',
         timeout: config.tmuxTimeoutMs,
+        env: sanitizedTmuxEnv(),
       }
     )
     if (result.signalCode === 'SIGTERM' || result.exitCode === null) {

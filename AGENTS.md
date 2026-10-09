@@ -70,6 +70,13 @@ dev-only `tools/fad-dump` shim). The shim is never a runtime dependency.
   `bun run test:e2e` already isolates itself. Stop what you started
   (`env -u TMUX TMUX_TMPDIR=/tmp/ab-dev-$$ tmux kill-server`) and remove the
   temp dir when done.
+- Every subprocess the server spawns must pass an explicit `env` —
+  `Bun.spawn*`/`spawnSync` without `env` reuse the *process-start* environ,
+  so they ignore `delete process.env.TMUX` from isolation setup (and Bun
+  Workers never see post-start env mutations at all). Use
+  `sanitizedTmuxEnv()` (from `tmuxEnv.ts`, already the default inside
+  `timedSpawnSync`/`timedSpawnAsync`) so spawned clients honor the
+  `TMUX_TMPDIR` isolation instead of landing on the live tmux server.
 
 ## Git
 
