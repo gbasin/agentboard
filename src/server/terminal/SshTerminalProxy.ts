@@ -407,8 +407,8 @@ class SshTerminalProxy extends TerminalProxyBase {
     })
 
     try {
-      const tty = await this.discoverClientTty()
-      if (!this.isStartAttemptCurrent(attemptId)) {
+      const tty = await this.discoverClientTty(attemptId)
+      if (tty === null || !this.isStartAttemptCurrent(attemptId)) {
         await this.dispose()
         return
       }
@@ -496,12 +496,21 @@ class SshTerminalProxy extends TerminalProxyBase {
     }
   }
 
-  private async discoverClientTty(): Promise<string> {
+  /**
+   * Poll for the attached client's TTY. Returns null as soon as the start
+   * attempt is superseded (startup timeout, dispose) so a cancelled attempt
+   * stops issuing SSH round-trips instead of polling out the full window and
+   * running its cleanup seconds later.
+   */
+  private async discoverClientTty(attemptId: number): Promise<string | null> {
     const start = this.now()
     let delay = 50
     const maxWaitMs = 4000
 
     while (this.now() - start <= maxWaitMs) {
+      if (!this.isStartAttemptCurrent(attemptId)) {
+        return null
+      }
       let output = ''
       try {
         output = await this.runParsedTmuxAsync([

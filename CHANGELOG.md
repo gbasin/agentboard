@@ -1,5 +1,88 @@
 # Changelog
 
+## [0.26.2](https://github.com/gbasin/agentboard/compare/v0.26.1...v0.26.2) (2026-10-09)
+
+
+### Bug Fixes
+
+* keep session-card drags from scrolling the panel sideways ([#376](https://github.com/gbasin/agentboard/issues/376)) ([79b0ecb](https://github.com/gbasin/agentboard/commit/79b0ecb9e3635e7f86a8028655e89a724b084460))
+* keep spawned tmux clients on the isolated socket when nested ([#378](https://github.com/gbasin/agentboard/issues/378)) ([76ceb46](https://github.com/gbasin/agentboard/commit/76ceb46150420ae32928f2480025b060b98aab1e))
+* make recovery notice dismissable and clear it after recovery ([#374](https://github.com/gbasin/agentboard/issues/374)) ([d52c91b](https://github.com/gbasin/agentboard/commit/d52c91b5cfd4e49c0bd897d5c3b1661be5d0f4c0))
+* make touch drags work via a drag handle on coarse pointers ([#379](https://github.com/gbasin/agentboard/issues/379)) ([d0242a9](https://github.com/gbasin/agentboard/commit/d0242a97ed236a6b493af7b07061d850b21b80a2))
+
+## [0.26.1](https://github.com/gbasin/agentboard/compare/v0.26.0...v0.26.1) (2026-10-06)
+
+
+### Bug Fixes
+
+* detect tall AskUserQuestion cards as Needs Input ([#372](https://github.com/gbasin/agentboard/issues/372)) ([1ee1a67](https://github.com/gbasin/agentboard/commit/1ee1a6799dc124d0534e669f1a2f6f1628d529f0))
+
+## [0.26.0](https://github.com/gbasin/agentboard/compare/v0.25.3...v0.26.0) (2026-10-06)
+
+
+### Features
+
+* surface PR chips from Claude pr-link records ([#370](https://github.com/gbasin/agentboard/issues/370)) ([8d7f0aa](https://github.com/gbasin/agentboard/commit/8d7f0aa1a63b49e3a9f68050d2c5c53794b18c2d))
+
+## [0.25.3](https://github.com/gbasin/agentboard/compare/v0.25.2...v0.25.3) (2026-10-06)
+
+
+### Bug Fixes
+
+* move mobile Session recovery into the session drawer ([#368](https://github.com/gbasin/agentboard/issues/368)) ([48581f7](https://github.com/gbasin/agentboard/commit/48581f7ac43c205d16bf7872e696d0ec88128736))
+
+## [0.25.2](https://github.com/gbasin/agentboard/compare/v0.25.1...v0.25.2) (2026-10-05)
+
+
+### Bug Fixes
+
+* never interrupt sessions on unread window identity; re-claim conversations ([#366](https://github.com/gbasin/agentboard/issues/366)) ([ef2c60f](https://github.com/gbasin/agentboard/commit/ef2c60fa2883c00fc6740e56859bb1726e19f337))
+
+## [0.25.1](https://github.com/gbasin/agentboard/compare/v0.25.0...v0.25.1) (2026-10-05)
+
+
+### Bug Fixes
+
+* empty a session group before killing its last window ([#364](https://github.com/gbasin/agentboard/issues/364)) ([454ca7b](https://github.com/gbasin/agentboard/commit/454ca7b9ad483b7844f7e7e9b1790a3de3f066bc))
+
+## [0.25.0](https://github.com/gbasin/agentboard/compare/v0.24.2...v0.25.0) (2026-10-04)
+
+
+### Features
+
+* durable session catalog with identity-safe recovery ([#266](https://github.com/gbasin/agentboard/issues/266)) ([43795c5](https://github.com/gbasin/agentboard/commit/43795c515824b241510a8c454390f7234639ed27))
+
+
+### Bug Fixes
+
+* copy Tailscale URL on insecure origins ([#362](https://github.com/gbasin/agentboard/issues/362)) ([8056a3e](https://github.com/gbasin/agentboard/commit/8056a3ec8cd17a14b3fc112d2138c868550dc7f2))
+
+## [0.24.2](https://github.com/gbasin/agentboard/compare/v0.24.1...v0.24.2) (2026-10-03)
+
+
+### Bug Fixes
+
+* stop superseded TTY discovery, keep new-session choices on re-render; deflake four tests ([#360](https://github.com/gbasin/agentboard/issues/360)) ([6710816](https://github.com/gbasin/agentboard/commit/67108161722c60d0520371c86ee7476d70908e7b))
+
+## [0.24.1](https://github.com/gbasin/agentboard/compare/v0.24.0...v0.24.1) (2026-10-02)
+
+
+### Bug Fixes
+
+* capture synced-setting values when a push is scheduled ([#354](https://github.com/gbasin/agentboard/issues/354)) ([917d95b](https://github.com/gbasin/agentboard/commit/917d95b45e496937a2f2981b0486dc52398358af))
+
+
+### Performance Improvements
+
+* **server:** take attach, devin-match and tailscale spawns off the event loop ([#355](https://github.com/gbasin/agentboard/issues/355)) ([4fc5ac6](https://github.com/gbasin/agentboard/commit/4fc5ac675aaf2f2ecd05b09e3829411a59c032fa))
+
+## [0.24.0](https://github.com/gbasin/agentboard/compare/v0.23.3...v0.24.0) (2026-10-02)
+
+
+### Features
+
+* redesign settings dialog with paged layout, instant apply and search ([#347](https://github.com/gbasin/agentboard/issues/347)) ([b48a84b](https://github.com/gbasin/agentboard/commit/b48a84b4c8e2ee691e2a2d7119c87a88a3142dce))
+
 ## [0.23.3](https://github.com/gbasin/agentboard/compare/v0.23.2...v0.23.3) (2026-10-02)
 
 

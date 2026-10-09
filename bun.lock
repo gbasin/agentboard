@@ -52,15 +52,15 @@
         "vite-plugin-pwa": "^1.2.0",
       },
       "optionalDependencies": {
-        "@gbasin/agentboard-darwin-arm64": "0.23.3",
-        "@gbasin/agentboard-darwin-x64": "0.23.3",
-        "@gbasin/agentboard-linux-arm64": "0.23.3",
-        "@gbasin/agentboard-linux-x64": "0.23.3",
+        "@gbasin/agentboard-darwin-arm64": "0.26.2",
+        "@gbasin/agentboard-darwin-x64": "0.26.2",
+        "@gbasin/agentboard-linux-arm64": "0.26.2",
+        "@gbasin/agentboard-linux-x64": "0.26.2",
       },
     },
   },
   "overrides": {
-    "shell-quote": "^1.8.4",
+    "shell-quote": "^1.10.0",
   },
   "packages": {
     "@alloc/quick-lru": ["@alloc/quick-lru@5.2.0", "", {}, "sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw=="],
@@ -279,11 +279,11 @@
 
     "@fontsource-variable/jetbrains-mono": ["@fontsource-variable/jetbrains-mono@5.2.8", "", {}, "sha512-WBA9elru6Jdp5df2mES55wuOO0WIrn3kpXnI4+W2ek5u3ZgLS9XS4gmIlcQhiZOWEKl95meYdvK7xI+ETLCq/Q=="],
 
-    "@gbasin/agentboard-darwin-arm64": ["@gbasin/agentboard-darwin-arm64@0.23.3", "", { "os": "darwin", "cpu": "arm64" }, "sha512-TuxJTnCKJBYts93GgKv2lV/31ZVKhs6t4GET/hIqQ3rHQ9isNWB/BT1Cig4Xco2e+rK3AUf22IpClCU9nz61kw=="],
+    "@gbasin/agentboard-darwin-arm64": ["@gbasin/agentboard-darwin-arm64@0.26.2", "", { "os": "darwin", "cpu": "arm64" }, "sha512-1oavDRjglO9bUYi/+i7CYR1y8jdCV67x8Bh46G3zu06osDW0xBzFRhEpO8+p8Z+8as6CHD2fNDsheUSU2U9yGQ=="],
 
-    "@gbasin/agentboard-darwin-x64": ["@gbasin/agentboard-darwin-x64@0.23.3", "", { "os": "darwin", "cpu": "x64" }, "sha512-DhkCKZHn6LW0C6JwJFS4zG2Cj3duCDPIT6Ui1km2U3aQY9YrpoveaB2t/P10Der7OMCmcE9B2wxWNhK2CG+nNg=="],
+    "@gbasin/agentboard-darwin-x64": ["@gbasin/agentboard-darwin-x64@0.26.2", "", { "os": "darwin", "cpu": "x64" }, "sha512-AqM3ew/vRxeO2PgMl4uedHsQcgltRjeOcytqZ2GnxWVhiNgF3XiAfzP5deCo5MVpvN811mWmWPkzVLf36wMa9Q=="],
 
-    "@gbasin/agentboard-linux-x64": ["@gbasin/agentboard-linux-x64@0.23.3", "", { "os": "linux", "cpu": "x64" }, "sha512-1wVHF9wFrDWen/yza4uX7B1rSPSGEJz7RBSWSGijpAGvshPXUxjcq1gINJxpf2eAc2MySv2yNXzeLfiCpLBmgQ=="],
+    "@gbasin/agentboard-linux-arm64": ["@gbasin/agentboard-linux-arm64@0.26.2", "", { "os": "linux", "cpu": "arm64" }, "sha512-ftlzdNPZ9JaI1G2X6M5X3vnB2o9urvsEBV0s7V+K4FG40jpiTtUspKcF5aPRoSKcEqNpKS6CGTZXuAQstoix8A=="],
 
     "@isaacs/cliui": ["@isaacs/cliui@9.0.0", "", {}, "sha512-AokJm4tuBHillT+FpMtxQ60n8ObyXBatq7jD2/JA9dxbDDokKQm8KMht5ibGzLVU9IJDIKK4TPKgMHEYMn3lMg=="],
 
@@ -1133,7 +1133,7 @@
 
     "shebang-regex": ["shebang-regex@3.0.0", "", {}, "sha512-7++dFhtcx3353uBaq8DDR4NuxBetBzC7ZQOhmTQInHEd6bSrXdiEyzCvG07Z44UYdLShWUyXt5M/yhz8ekcb1A=="],
 
-    "shell-quote": ["shell-quote@1.8.4", "", {}, "sha512-VsC6n6vz1ihYYyZZwX7YZSF5l5x36ca17OC+a69h94YqB7X6XLwf+5MOgynYir2SLFUbl8gIYvBo8K8RoNQ6bQ=="],
+    "shell-quote": ["shell-quote@1.11.0", "", {}, "sha512-JdxDPD0DBTyu08pq0kPC0xSNet/qsU07qT6IsX1AS8oO2ICNRY4ldNa8OAI6PuwAH8tG3lxEhbqmyp4Dw4036g=="],
 
     "side-channel": ["side-channel@1.1.0", "", { "dependencies": { "es-errors": "^1.3.0", "object-inspect": "^1.13.3", "side-channel-list": "^1.0.0", "side-channel-map": "^1.0.1", "side-channel-weakmap": "^1.0.2" } }, "sha512-ZX99e6tRweoUXqR+VBrslhda51Nh5MTQwou5tnUDgbtyM0dBgmhEDtWGP/xbKn6hqfPRHujUNwz5fy/wbbhnpw=="],
 

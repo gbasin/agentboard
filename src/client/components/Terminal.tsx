@@ -14,7 +14,7 @@ import { useOnClickOutside } from '../hooks/useOnClickOutside'
 import { useEscapeToClose } from '../hooks/useEscapeToClose'
 import { useScrollToSelection } from '../hooks/useScrollToSelection'
 import { useEdgeSwipeToOpenDrawer } from '../hooks/useEdgeSwipeToOpenDrawer'
-import { useThemeStore, terminalThemes } from '../stores/themeStore'
+import { useResolvedTheme, terminalThemes } from '../stores/themeStore'
 import { useSettingsStore, getFontFamily } from '../stores/settingsStore'
 import { isIOSDevice, getEffectiveModifier, getModifierDisplay } from '../utils/device'
 import { keepA11yRowsStable } from '../utils/a11yRowStability'
@@ -68,6 +68,7 @@ interface TerminalProps {
   onHibernateSession?: (sessionId: string) => void
   onMoveToHistory?: (sessionId: string) => void
   onOpenSettings: () => void
+  onOpenHistory?: () => void
   loading?: boolean
   error?: string | null
 }
@@ -116,11 +117,12 @@ export default function Terminal({
   onHibernateSession,
   onMoveToHistory,
   onOpenSettings,
+  onOpenHistory,
   loading = false,
   error = null,
 }: TerminalProps) {
   void _onClose // Keep for interface compatibility
-  const theme = useThemeStore((state) => state.theme)
+  const theme = useResolvedTheme()
   const terminalTheme = terminalThemes[theme]
   const useWebGL = useSettingsStore((state) => state.useWebGL)
   const fontSize = useSettingsStore((state) => state.fontSize)
@@ -1686,6 +1688,8 @@ export default function Terminal({
           onHibernate={onHibernateSession}
           onMoveToHistory={onMoveToHistory}
           onNewSession={onNewSession}
+          onOpenHistory={onOpenHistory}
+          subscribe={subscribe}
           loading={loading}
           error={error}
         />

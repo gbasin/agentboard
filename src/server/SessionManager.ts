@@ -11,6 +11,7 @@ import { TmuxTimeoutError } from './tmuxTimeout'
 import { timedSpawnSync } from './syncSpawnTiming'
 import { isLeakedLaunchEnvVar, sanitizedTmuxEnv } from './tmuxEnv'
 import { createGroupedSession } from './tmuxGroupedSession'
+import { GroupKillRefusedError, killGroupedSessionLastWindow } from './tmuxKillGuard'
 import { runTmuxAsync, type TmuxRunnerAsync } from './tmuxAsync'
 import {
   BOOTSTRAP_WINDOW_COMMAND,
@@ -35,6 +36,9 @@ interface WindowInfo {
   activity: number
   creation: number
   command: string
+  serverPid: number
+  boardId: string
+  runId: string
 }
 
 type TmuxRunner = (args: string[]) => string
@@ -77,6 +81,9 @@ const WINDOW_LIST_FORMAT = buildTmuxFormat([
   '#{window_activity}',
   '#{window_creation_time}',
   '#{pane_start_command}',
+  '#{pid}',
+  '#{@agentboard-session-id}',
+  '#{@agentboard-run-id}',
 ])
 const WINDOW_LIST_FORMAT_FALLBACK = buildTmuxFormat([
   '#{window_id}',
@@ -86,9 +93,16 @@ const WINDOW_LIST_FORMAT_FALLBACK = buildTmuxFormat([
   '#{window_activity}',
   '#{pane_current_command}',
 ])
-const WINDOW_INFO_FORMAT = buildTmuxFormat([
+// session_group stays last: it is empty for ungrouped sessions, so parse the
+// line without trimming (a trim would drop the trailing empty field).
+const KILL_TARGET_FORMAT = buildTmuxFormat([
+  '#{window_id}',
+  '#{window_index}',
   '#{window_name}',
   '#{pane_current_path}',
+  '#{session_name}',
+  '#{session_windows}',
+  '#{session_group}',
 ])
 const BASE_SESSION_PROBE_FORMAT = buildTmuxFormat([
   '#{session_name}',
@@ -108,6 +122,9 @@ const TMUX_MUTATION_COMMANDS = new Set([
   'new-session',
   'new-window',
   'kill-window',
+  'kill-session',
+  'switch-client',
+  'detach-client',
   'rename-window',
   'set-environment',
   'set-option',
@@ -130,6 +147,8 @@ export class SessionManager {
   // session options are already applied, so refresh ticks skip the
   // set-option/set-environment spawns. null = unknown.
   private configuredSession: BaseSessionIdentity | null = null
+  /** Server pid from the most recent window enumeration (0 if unsupported). */
+  lastEnumeratedServerPid = 0
 
   constructor(
     sessionName = config.tmuxSession,
@@ -620,7 +639,7 @@ export class SessionManager {
     projectPath: string,
     name?: string,
     command?: string,
-    options?: { excludeSessionId?: string }
+    options?: { excludeSessionId?: string; boardSessionId?: string; runId?: string }
   ): Session {
     const sessionExisted = this.sessionExists()
 
@@ -672,6 +691,15 @@ export class SessionManager {
       '-e',
       `NO_COLOR=${this.terminalColorsEnabled ? '' : '1'}`,
     ]
+    const durableIdentity = options?.runId && options.boardSessionId
+    const launchName = durableIdentity ? `__ab_launch__${options.boardSessionId}__${options.runId}` : finalName
+    const identityEnv = durableIdentity ? ['-e', `AGENTBOARD_SESSION_ID=${options.boardSessionId}`, '-e', `AGENTBOARD_RUN_ID=${options.runId}`] : []
+
+    const identityCommands = (target: string): string[] => options?.runId && options.boardSessionId ? [
+      ';', 'set-option', '-w', '-t', target, '@agentboard-run-id', options.runId,
+      ';', 'set-option', '-w', '-t', target, '@agentboard-session-id', options.boardSessionId,
+      ';', 'rename-window', '-t', target, finalName,
+    ] : []
 
     if (!sessionExisted) {
       // Create session + window in one step to avoid orphan shell window
@@ -679,10 +707,12 @@ export class SessionManager {
         'new-session', '-d',
         ...noFlickerEnv,
         ...terminalColorEnv,
+        ...identityEnv,
         '-s', this.sessionName,
-        '-n', finalName,
+        '-n', launchName,
         '-c', resolvedPath,
         finalCommand,
+        ...identityCommands(`${this.sessionName}:`),
       ])
       this.configureSessionAndRecordServer()
     } else {
@@ -691,10 +721,12 @@ export class SessionManager {
         'new-window',
         ...noFlickerEnv,
         ...terminalColorEnv,
+        ...identityEnv,
         '-t', `${this.sessionName}:${nextIndex}`,
-        '-n', finalName,
+        '-n', launchName,
         '-c', resolvedPath,
         finalCommand,
+        ...identityCommands(`${this.sessionName}:${nextIndex}`),
       ])
     }
 
@@ -778,25 +810,76 @@ export class SessionManager {
   }
 
   killWindow(tmuxWindow: string): void {
-    let windowInfo: { name?: string; path?: string } = {}
-    try {
-      const info = this.runParsedTmux([
-        'display-message',
-        '-t',
-        tmuxWindow,
-        '-p',
-        WINDOW_INFO_FORMAT,
-      ])
-      const parts = splitTmuxFields(info.trim(), 2)
-      const name = parts?.[0]
-      const path = parts?.[1]
-      windowInfo = { name, path }
-    } catch {
-      // Metadata is best-effort. Only report a kill after tmux succeeds.
+    const target = this.probeKillTarget(tmuxWindow)
+    // Last window of a grouped session: kill-window would destroy the group
+    // through a path that crashed tmux 3.7b, so the group's sessions are
+    // killed one by one instead (see tmuxKillGuard.ts). Groups persist after
+    // shrinking to one member, so a non-empty group name is enough.
+    if (target.group && target.windows === 1) {
+      const fields = { tmuxWindow, session: target.session, group: target.group }
+      try {
+        const evacuation = killGroupedSessionLastWindow(
+          this.runTmux,
+          target.session,
+          target.group,
+          `${this.sessionName}-ws-`
+        )
+        logger.info('window_kill_group_evacuated', { ...fields, ...evacuation })
+      } catch (error) {
+        logger.warn('window_kill_group_refused', {
+          ...fields,
+          ...(error instanceof GroupKillRefusedError ? error.evacuation : {}),
+          error: error instanceof Error ? error.message : String(error),
+        })
+        throw error
+      }
+    } else {
+      this.runTmux(['kill-window', '-t', tmuxWindow])
     }
-    this.runTmux(['kill-window', '-t', tmuxWindow])
     paneContentCache.delete(tmuxWindow)
-    logger.info('window_killed', { tmuxWindow, ...windowInfo })
+    logger.info('window_killed', { tmuxWindow, name: target.name, path: target.path })
+  }
+
+  // Reads what killWindow needs to choose a safe kill. Fails closed: a probe
+  // that errors, cannot be parsed, or describes a different window refuses
+  // the kill, because an unguarded kill-window is the crash path.
+  private probeKillTarget(tmuxWindow: string): {
+    name: string
+    path: string
+    session: string
+    windows: number
+    group: string
+  } {
+    const refuse = (reason: string, extra: Record<string, unknown> = {}): never => {
+      logger.warn('window_kill_probe_failed', { tmuxWindow, reason, ...extra })
+      throw new Error(`Unable to verify tmux window ${tmuxWindow} before kill: ${reason}`)
+    }
+    let info = ''
+    try {
+      info = this.runParsedTmux(['display-message', '-t', tmuxWindow, '-p', KILL_TARGET_FORMAT])
+    } catch (error) {
+      refuse(error instanceof Error ? error.message.trim() : String(error))
+    }
+    const parts = splitTmuxFields(splitTmuxLines(info)[0] ?? '', 7)
+    if (!parts) return refuse('unparseable tmux probe output', { output: info })
+    // display-message exits 0 for a missing window and describes the
+    // session's current window instead (see probeWindow), so the probe must
+    // describe the window we were asked to kill.
+    const wanted = this.extractWindowId(tmuxWindow)
+    if (parts[0] !== wanted && parts[1] !== wanted) {
+      return refuse(`window not found (tmux described ${parts[0]})`)
+    }
+    const windows = Number.parseInt(parts[5] ?? '', 10)
+    if (!parts[4] || !Number.isFinite(windows)) {
+      return refuse('incomplete tmux probe output', { output: info })
+    }
+    return {
+      name: parts[2] ?? '',
+      path: parts[3] ?? '',
+      session: parts[4],
+      windows,
+      group: parts[6] ?? '',
+    }
   }
 
   renameWindow(tmuxWindow: string, newName: string): void {
@@ -871,7 +954,11 @@ export class SessionManager {
     return splitTmuxLines(output)
       .flatMap((line) => {
         const window = parseWindow(line)
-        return window ? [window] : []
+        if (!window) return []
+        // The server pid is identical on every line and survives even when
+        // every window is filtered out below (e.g. only bootstrap remains).
+        if (window.serverPid) this.lastEnumeratedServerPid = window.serverPid
+        return [window]
       })
       // Hide the placeholder window that keeps the base session alive.
       .filter((window) => !this.isBootstrapWindow(window))
@@ -902,6 +989,14 @@ export class SessionManager {
           agentType: inferAgentType(window.command),
           source,
           command: window.command || undefined,
+          agentboardTags:
+            window.serverPid || window.boardId || window.runId
+              ? {
+                  boardId: window.boardId,
+                  runId: window.runId,
+                  serverPid: window.serverPid,
+                }
+              : undefined,
         }
       })
   }
@@ -1036,14 +1131,17 @@ export class SessionManager {
 }
 
 function parseWindow(line: string): WindowInfo | null {
-  const parts = splitTmuxFields(line, 6)
+  // The fallback format omits the trailing identity fields, so both widths
+  // are valid; missing fields parse as untagged.
+  const parts = splitTmuxFields(line, 9) ?? splitTmuxFields(line, 6)
   if (!parts) {
     return null
   }
 
-  const [id, name, panePath, activityRaw, creationRaw, command] = parts
+  const [id, name, panePath, activityRaw, creationRaw, command, pidRaw, boardId, runId] = parts
   const activity = Number.parseInt(activityRaw || '0', 10)
   const creation = Number.parseInt(creationRaw || '0', 10)
+  const serverPid = Number.parseInt(pidRaw || '0', 10)
 
   return {
     id: id || '',
@@ -1052,6 +1150,9 @@ function parseWindow(line: string): WindowInfo | null {
     activity: Number.isNaN(activity) ? 0 : activity,
     creation: Number.isNaN(creation) ? 0 : creation,
     command: normalizePaneStartCommand(command || ''),
+    serverPid: Number.isNaN(serverPid) ? 0 : serverPid,
+    boardId: boardId || '',
+    runId: runId || '',
   }
 }
 

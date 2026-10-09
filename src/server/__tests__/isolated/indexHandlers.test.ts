@@ -7,6 +7,8 @@ import type { AgentSessionRecord, ClaimCurrentWindowPatch } from '../../db'
 import { TmuxTimeoutError } from '../../tmuxTimeout'
 import { TMUX_FIELD_SEPARATOR } from '../../tmuxFormat'
 import { setCodexSubagentIndex } from '../../subagentLogs'
+import { Database } from 'bun:sqlite'
+import { SessionCatalog } from '../../persistence/catalog'
 
 const bunAny = Bun as typeof Bun & {
   serve: typeof Bun.serve
@@ -31,6 +33,7 @@ const originalProcessOn = processAny.on
 const originalProcessExit = processAny.exit
 
 let serveOptions: Parameters<typeof Bun.serve>[0] | null = null
+let serveHostnames: Array<string | undefined> = []
 let spawnSyncImpl: typeof Bun.spawnSync
 let writeImpl: typeof Bun.write
 let replaceSessionsCalls: Session[][] = []
@@ -53,6 +56,8 @@ let dbState: {
     | null
   updateCalls: Array<{ sessionId: string; patch: Partial<AgentSessionRecord> }>
   setHibernatingCalls: Array<{ sessionId: string; isHibernating: boolean }>
+  /** Set before loadIndex() to give index.ts a durable session catalog. */
+  sqlite?: Database
 }
 
 const defaultConfig = {
@@ -379,6 +384,7 @@ mock.module('../../logger', () => ({
 }))
 mock.module('../../db', () => ({
   initDatabase: () => ({
+    db: dbState.sqlite,
     getSessionById: (sessionId: string) => dbState.records.get(sessionId) ?? null,
     getSessionByLogPath: (logFilePath: string) =>
       Array.from(dbState.records.values()).find(
@@ -514,20 +520,23 @@ class SessionRefreshWorkerClientMock {
     _managedSession: string,
     _discoverPrefixes: string[],
     options?: { expectedWindowCount?: number }
-  ): Promise<Session[]> {
+  ): Promise<{ sessions: Session[]; tmuxServerPid: number }> {
     refreshWorkerExpectedWindowCounts.push(options?.expectedWindowCount ?? 0)
     if (refreshWorkerDeferred) {
-      return new Promise<Session[]>((resolve, reject) => {
-        refreshWorkerResolve = resolve
-        _refreshWorkerReject = reject
-      })
+      return new Promise<{ sessions: Session[]; tmuxServerPid: number }>(
+        (resolve, reject) => {
+          refreshWorkerResolve = (sessions) =>
+            resolve({ sessions, tmuxServerPid: 0 })
+          _refreshWorkerReject = reject
+        }
+      )
     }
     if (refreshWorkerError) {
       const error = refreshWorkerError
       refreshWorkerError = null
       return Promise.reject(error)
     }
-    return Promise.resolve(refreshWorkerSessions)
+    return Promise.resolve({ sessions: refreshWorkerSessions, tmuxServerPid: 0 })
   }
 
   getLastUserMessage(): Promise<string | null> {
@@ -662,6 +671,7 @@ async function waitFor(condition: () => boolean, timeoutMs = 5000) {
 
 beforeEach(() => {
   serveOptions = null
+  serveHostnames = []
   replaceSessionsCalls = []
   logEntries = []
   TerminalProxyMock.instances = []
@@ -711,7 +721,9 @@ beforeEach(() => {
     const stdoutBuf = syncResult.stdout ?? Buffer.from('')
     const stderrBuf = syncResult.stderr ?? Buffer.from('')
     return {
-      exited: Promise.resolve(syncResult.exitCode ?? 0),
+      exited: Promise.resolve(syncResult.exitCode ?? 143),
+      exitCode: syncResult.exitCode,
+      signalCode: syncResult.signalCode ?? null,
       stdout: new ReadableStream({
         start(controller) {
           controller.enqueue(typeof stdoutBuf === 'string' ? new TextEncoder().encode(stdoutBuf) : stdoutBuf)
@@ -730,6 +742,7 @@ beforeEach(() => {
   }) as typeof Bun.spawn
   bunAny.serve = ((options: Parameters<typeof Bun.serve>[0]) => {
     serveOptions = options
+    serveHostnames.push((options as { hostname?: string }).hostname)
     return {} as ReturnType<typeof Bun.serve>
   }) as typeof Bun.serve
   bunAny.write = ((...args: Parameters<typeof Bun.write>) =>
@@ -3031,6 +3044,69 @@ describe('server message handlers', () => {
     })
   })
 
+  test('attach captures history off the event loop, before the switch', async () => {
+    const { serveOptions, registryInstance } = await loadIndex()
+    registryInstance.sessions = [baseSession]
+    const { ws, sent } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) {
+      throw new Error('WebSocket handlers not configured')
+    }
+
+    spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
+      const command = Array.isArray(args[0]) ? args[0] : [String(args[0])]
+      if (getTmuxArgs(command as string[])[0] === 'capture-pane') {
+        throw new Error('capture-pane ran through spawnSync')
+      }
+      return { exitCode: 0, stdout: Buffer.from(''), stderr: Buffer.from('') } as ReturnType<
+        typeof Bun.spawnSync
+      >
+    }) as typeof Bun.spawnSync
+    let switchesAtCapture = -1 as number
+    const mockedSpawn = bunAny.spawn
+    bunAny.spawn = ((...args: Parameters<typeof Bun.spawn>) => {
+      const cmd = (Array.isArray(args[0]) ? args[0] : [String(args[0])]) as string[]
+      if (getTmuxArgs(cmd)[0] !== 'capture-pane') return mockedSpawn(...args)
+      switchesAtCapture = TerminalProxyMock.instances[0]?.switchTargets.length ?? 0
+      const body = new TextEncoder().encode('pane history\n')
+      return {
+        exited: Promise.resolve(0),
+        exitCode: 0,
+        signalCode: null,
+        stdout: new ReadableStream({
+          start(controller) {
+            controller.enqueue(body)
+            controller.close()
+          },
+        }),
+        stderr: new ReadableStream({ start: (controller) => controller.close() }),
+        kill: () => {},
+        pid: 12347,
+      } as unknown as ReturnType<typeof Bun.spawn>
+    }) as typeof Bun.spawn
+
+    websocket.open?.(ws as never)
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({
+        type: 'terminal-attach',
+        sessionId: baseSession.id,
+        tmuxTarget: baseSession.tmuxWindow,
+      })
+    )
+    await waitFor(() => sent.some((message) => message.type === 'terminal-ready'))
+
+    // Captured with the switch not yet issued, and the history went out
+    // before terminal-ready.
+    expect(switchesAtCapture).toBe(0)
+    const historyIndex = sent.findIndex(
+      (message) => message.type === 'terminal-output' && message.data === 'pane history\r\n'
+    )
+    const readyIndex = sent.findIndex((message) => message.type === 'terminal-ready')
+    expect(historyIndex).toBeGreaterThanOrEqual(0)
+    expect(historyIndex).toBeLessThan(readyIndex)
+  })
+
   test('terminal attach continues when local history capture times out', async () => {
     const { serveOptions, registryInstance } = await loadIndex()
     registryInstance.sessions = [baseSession]
@@ -4762,6 +4838,83 @@ describe('server fetch handlers', () => {
     expect(payload.tailscaleIp).toBe('100.64.0.42')
   })
 
+  test('tailscale lookup does not hold startup; its listener binds when the lookup answers', async () => {
+    configState.hostname = '127.0.0.1'
+    let answerTailscale: (ip: string) => void = () => {}
+    const tailscaleAnswer = new Promise<string>((resolve) => {
+      answerTailscale = resolve
+    })
+    let tailscaleCalls = 0
+    const mockedSpawn = bunAny.spawn
+    bunAny.spawn = ((...args: Parameters<typeof Bun.spawn>) => {
+      const cmd = (Array.isArray(args[0]) ? args[0] : [String(args[0])]) as string[]
+      if (cmd[0] !== 'tailscale') return mockedSpawn(...args)
+      tailscaleCalls += 1
+      const stdout = tailscaleAnswer.then((ip) => new TextEncoder().encode(`${ip}\n`))
+      return {
+        exited: tailscaleAnswer.then(() => 0),
+        exitCode: 0,
+        signalCode: null,
+        stdout: new ReadableStream({
+          async start(controller) {
+            controller.enqueue(await stdout)
+            controller.close()
+          },
+        }),
+        stderr: new ReadableStream({ start: (controller) => controller.close() }),
+        kill: () => {},
+        pid: 12346,
+      } as unknown as ReturnType<typeof Bun.spawn>
+    }) as typeof Bun.spawn
+    // The sync path must not be used for tailscale any more.
+    const syncImpl = spawnSyncImpl
+    spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
+      const command = Array.isArray(args[0]) ? args[0] : [String(args[0])]
+      if (command[0] === 'tailscale') throw new Error('tailscale ran through spawnSync')
+      return syncImpl(...args)
+    }) as typeof Bun.spawnSync
+
+    const mod = await import(`../../index?test=${++importCounter}`)
+    await mod.startupReady
+
+    // Startup finished with the lookup still pending: the localhost listener
+    // is up and server_started has been logged.
+    expect(tailscaleCalls).toBe(1)
+    expect(serveHostnames).toEqual(['127.0.0.1'])
+    const started = logEntries.find((entry) => entry.event === 'server_started')
+    expect(started?.data).toEqual({ url: 'http://127.0.0.1:4040' })
+    expect(logEntries.some((entry) => entry.event === 'tailscale_listener_started')).toBe(false)
+
+    // A page loaded now asks for server-info once and caches the answer, so
+    // the request waits for the lookup instead of reporting null.
+    const fetchHandler = serveOptions?.fetch
+    if (!fetchHandler) throw new Error('Fetch handler not configured')
+    let infoSettled = false
+    const info = Promise.resolve(
+      fetchHandler.call(
+        {} as Bun.Server<unknown>,
+        new Request('http://localhost/api/server-info'),
+        {} as Bun.Server<unknown>
+      )
+    ).then((response) => {
+      infoSettled = true
+      return response
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(infoSettled).toBe(false)
+
+    answerTailscale('100.64.0.7')
+    await mod.tailscaleReady
+    const infoResponse = await info
+    if (!infoResponse) throw new Error('Expected response for server-info request')
+    const infoPayload = (await infoResponse.json()) as { tailscaleIp: string | null }
+    expect(infoPayload.tailscaleIp).toBe('100.64.0.7')
+
+    expect(serveHostnames).toEqual(['127.0.0.1', '100.64.0.7'])
+    const listener = logEntries.find((entry) => entry.event === 'tailscale_listener_started')
+    expect(listener?.data).toEqual({ tailscaleUrl: 'http://100.64.0.7:4040' })
+  })
+
   test('tmux mouse mode timeout returns 504 and does not persist the setting', async () => {
     let mouseModeCalls = 0
     sessionManagerState.setMouseMode = () => {
@@ -6329,5 +6482,126 @@ describe('server startup side effects', () => {
     } finally {
       await fs.rm(tempDir, { recursive: true, force: true })
     }
+  })
+})
+
+describe('catalog-backed kill and hibernate', () => {
+  const liveWindow = 'agentboard:@1'
+  const liveSession: Session = { ...baseSession, tmuxWindow: liveWindow }
+
+  /**
+   * Give index.ts a catalog whose row for @1 was bound in `rowEpoch`; tmux
+   * reports epoch `epoch-live` and window @1 tagged `tags` (null = untagged).
+   */
+  function setupCatalog(options: {
+    rowEpoch: string
+    tags: 'owner' | 'other' | null
+  }) {
+    const sqlite = new Database(':memory:')
+    sqlite.exec(
+      'CREATE TABLE app_settings(key TEXT PRIMARY KEY, value TEXT);' +
+        'CREATE TABLE agent_sessions(session_id TEXT, is_codex_exec INTEGER DEFAULT 0);'
+    )
+    dbState.sqlite = sqlite
+    dbState.appSettings.set('persistence_host_id', 'host-test')
+    const catalog = new SessionCatalog(sqlite, 'host-test')
+    const saved = catalog.create({ name: 'alpha', projectPath: '/tmp/alpha', command: 'claude' })
+    const run = catalog.beginRun(saved.id)
+    catalog.bind(saved.id, run.id, liveWindow, options.rowEpoch)
+    const tag =
+      options.tags === 'owner'
+        ? `${saved.id}|${run.id}`
+        : options.tags === 'other'
+          ? 'other-board|other-run'
+          : '|'
+    spawnSyncImpl = ((command: string[]) => {
+      const stdout = command.includes('@agentboard-server-id')
+        ? 'epoch-live'
+        : command.includes('list-windows') && command.includes('=agentboard')
+          ? `@1|${tag}|alpha`
+          : ''
+      return {
+        exitCode: 0,
+        stdout: Buffer.from(stdout),
+        stderr: Buffer.from(''),
+      } as ReturnType<typeof Bun.spawnSync>
+    }) as typeof Bun.spawnSync
+    return { catalog, saved }
+  }
+
+  async function sendKill() {
+    const { serveOptions, registryInstance } = await loadIndex()
+    registryInstance.sessions = [liveSession]
+    const killed: string[] = []
+    sessionManagerState.killWindow = (w: string) => {
+      killed.push(w)
+    }
+    const { ws, sent } = createWs()
+    serveOptions.websocket!.message?.(
+      ws as never,
+      JSON.stringify({ type: 'session-kill', sessionId: liveSession.id })
+    )
+    await waitFor(() => killed.length > 0 || sent.length > 0)
+    return { killed, sent }
+  }
+
+  test('kill ignores a catalog row from an earlier tmux server with a reused window id', async () => {
+    const { catalog, saved } = setupCatalog({ rowEpoch: 'epoch-old', tags: null })
+    const { killed, sent } = await sendKill()
+    expect(killed).toEqual([liveWindow])
+    expect(sent.filter((m) => m.type === 'kill-failed')).toEqual([])
+    expect(catalog.get(saved.id)?.state).toBe('running')
+  })
+
+  test('kill does not archive a row whose tags do not match the live window', async () => {
+    const { catalog, saved } = setupCatalog({ rowEpoch: 'epoch-live', tags: 'other' })
+    const { killed } = await sendKill()
+    expect(killed).toEqual([liveWindow])
+    expect(catalog.get(saved.id)?.state).toBe('running')
+  })
+
+  test('kill archives the catalog row that owns the live window', async () => {
+    const { catalog, saved } = setupCatalog({ rowEpoch: 'epoch-live', tags: 'owner' })
+    const { killed, sent } = await sendKill()
+    expect(killed).toEqual([liveWindow])
+    expect(sent.filter((m) => m.type === 'kill-failed')).toEqual([])
+    expect(catalog.get(saved.id)?.state).toBe('archived')
+  })
+
+  async function sendHibernate(killWindow: (w: string) => void) {
+    const { serveOptions, registryInstance } = await loadIndex()
+    const agentSessionId = 'catalog-hibernate'
+    registryInstance.sessions = [{ ...liveSession, agentSessionId }]
+    seedRecord(makeRecord({ sessionId: agentSessionId, currentWindow: liveWindow }))
+    sessionManagerState.killWindow = killWindow
+    const { ws, sent } = createWs()
+    serveOptions.websocket!.message?.(
+      ws as never,
+      JSON.stringify({ type: 'session-hibernate', sessionId: agentSessionId })
+    )
+    await waitFor(() => sent.some((m) => m.type === 'session-hibernate-result'))
+    return sent.find((m) => m.type === 'session-hibernate-result')
+  }
+
+  test('hibernate ignores a catalog row from an earlier tmux server', async () => {
+    const { catalog, saved } = setupCatalog({ rowEpoch: 'epoch-old', tags: null })
+    const killed: string[] = []
+    const result = await sendHibernate((w) => {
+      killed.push(w)
+    })
+    expect(result).toMatchObject({ ok: true })
+    expect(killed).toEqual([liveWindow])
+    expect(catalog.get(saved.id)?.state).toBe('running')
+  })
+
+  test('hibernate moves the catalog row to hibernating when the window is already gone', async () => {
+    const { catalog, saved } = setupCatalog({ rowEpoch: 'epoch-live', tags: 'owner' })
+    sessionManagerState.listWindows = () => []
+    const result = await sendHibernate(() => {
+      throw new Error("can't find window: @1")
+    })
+    expect(result).toMatchObject({ ok: true })
+    expect(catalog.get(saved.id)?.state).toBe('hibernating')
+    expect(catalog.get(saved.id)?.requestedState).toBeNull()
   })
 })

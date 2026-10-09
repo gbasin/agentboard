@@ -23,6 +23,21 @@ function tmux(args: string[]): { status: number | null } {
   return { status: result.status }
 }
 
+type DrawerProbe = {
+  __probe: {
+    samples: {
+      open: boolean
+      top: number
+      rel: number | null
+      h: number
+      inView: boolean
+      selected: boolean
+    }[]
+    writes: { kind: string; frame: number; detail: string }[]
+    done: boolean
+  }
+}
+
 const drawerList = '.session-drawer .overflow-y-auto'
 const drawerCard = '.session-drawer [data-testid="session-card"]'
 
@@ -104,12 +119,24 @@ test('drawer opens pre-positioned on the selected row — no mid-open snap', asy
     await settleList()
 
     // Simulate a drifted scroll position while the drawer is closed (the list
-    // stays mounted off-screen), then instrument per-frame sampling. `top`
-    // (raw scrollTop) is recorded for diagnostics only — it can legitimately
-    // shift mid-transition: rows other specs add/remove land above the
-    // scrollport, and the browser's scroll anchoring adjusts scrollTop to
-    // keep the visible rows stationary. The "no snap" invariant is `rel`:
-    // the selected row's offset inside the list's viewport.
+    // stays mounted off-screen), then instrument the open.
+    //
+    // Other specs run in parallel against the SAME tmux session and add/kill
+    // windows at any moment. Those rows land above the selected one and move
+    // it, and scroll anchoring does not reliably compensate while exiting rows
+    // collapse and unmount (observed: 22 rows inserted, scrollTop unchanged,
+    // rel +970px). Geometry sampled after the first open frame therefore says
+    // nothing about the app — asserting it is what made this spec flaky. The
+    // invariant is asserted on what churn cannot fake:
+    //  1. landing: the selected row is in view on the FIRST visible frame;
+    //  2. no snap: the app makes no programmatic scroll on the list (or
+    //     scrollIntoView anywhere) after that frame. Each write records its
+    //     args, the selected row and a stack: one unexplained late scrollTo
+    //     (selection unchanged, row scrolled out of view) was seen once under
+    //     a loaded 4-worker run — if this fires, that detail is the lead;
+    //  3. no animated drift: while the list's content height is unchanged
+    //     (no churn), the row's offset in the viewport stays put — this
+    //     catches a smooth scroll started before open that keeps moving.
     await page.evaluate((selId) => {
       const list = document.querySelector<HTMLElement>(
         '.session-drawer .overflow-y-auto'
@@ -120,88 +147,112 @@ test('drawer opens pre-positioned on the selected row — no mid-open snap', asy
       // .session-row for the same session and sits earlier in the DOM —
       // a document-wide query would sample its (hidden) rect instead.
       const rowSelector = `.session-drawer .session-row[data-session-id="${CSS.escape(selId)}"]`
-      const w = window as unknown as {
-        __samples: {
-          open: boolean
-          top: number
-          rel: number | null
-          h: number
-        }[]
+      const w = window as unknown as DrawerProbe
+      w.__probe = { samples: [], writes: [], done: false }
+      const probe = w.__probe
+      const logWrite = (kind: string, args?: unknown) =>
+        // samples.length is the index the next rAF sample will get, so a
+        // write made in the open commit (before that frame) carries the
+        // index of the first open sample.
+        probe.writes.push({
+          kind,
+          frame: probe.samples.length,
+          detail: JSON.stringify({
+            args,
+            selected: [...drawer.querySelectorAll<HTMLElement>('.session-row.selected')].map(
+              (el) => el.dataset.sessionId
+            ),
+            stack: (new Error().stack ?? '').split('\n').slice(2, 7).join(' | '),
+          }),
+        })
+
+      const proto = Object.getPrototypeOf(list) as HTMLElement
+      const topDesc = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop')!
+      Object.defineProperty(list, 'scrollTop', {
+        configurable: true,
+        get: () => topDesc.get!.call(list),
+        set: (v: number) => {
+          logWrite('scrollTop', v)
+          topDesc.set!.call(list, v)
+        },
+      })
+      for (const m of ['scrollTo', 'scroll', 'scrollBy'] as const) {
+        const orig = proto[m]
+        list[m] = function (this: HTMLElement, ...args: unknown[]) {
+          logWrite(m, args)
+          return (orig as (...a: unknown[]) => void).apply(this, args)
+        } as typeof orig
       }
-      w.__samples = []
+      const origIntoView = Element.prototype.scrollIntoView
+      Element.prototype.scrollIntoView = function (this: Element, arg?: boolean | ScrollIntoViewOptions) {
+        if (list.contains(this)) logWrite('scrollIntoView')
+        return origIntoView.call(this, arg)
+      }
+
+      const padTop = parseFloat(getComputedStyle(list).scrollPaddingTop) || 0
+      let openFrames = 0
       const record = () => {
         const row = document.querySelector<HTMLElement>(rowSelector)
-        w.__samples.push({
-          open: drawer.classList.contains('open'),
+        const lr = list.getBoundingClientRect()
+        const rr = row?.getBoundingClientRect()
+        const open = drawer.classList.contains('open')
+        probe.samples.push({
+          open,
           top: list.scrollTop,
-          rel: row
-            ? row.getBoundingClientRect().top -
-              list.getBoundingClientRect().top
-            : null,
+          rel: rr ? rr.top - lr.top : null,
           h: list.scrollHeight,
+          inView: rr
+            ? rr.top >= lr.top + padTop - 1 && rr.bottom <= lr.bottom + 1
+            : false,
+          selected: row?.classList.contains('selected') ?? false,
         })
-        if (w.__samples.length < 60) {
+        if (open) openFrames++
+        // Sample a fixed number of OPEN frames (the 200ms transition and
+        // beyond), however long the tap takes to land under CPU load.
+        if (openFrames < 30 && probe.samples.length < 600) {
           requestAnimationFrame(record)
+        } else {
+          probe.done = true
         }
       }
       requestAnimationFrame(record)
     }, selectedId)
 
     await page.getByLabel('Open session menu').tap()
-    await page.waitForTimeout(700)
+    await page.waitForFunction(
+      () => (window as unknown as DrawerProbe).__probe.done,
+      undefined,
+      { timeout: 15000 }
+    )
+    const probe = await page.evaluate(
+      () => (window as unknown as DrawerProbe).__probe
+    )
+    const diag = () => JSON.stringify(probe)
 
-    const result = await page.evaluate((selId) => {
-      const list = document.querySelector<HTMLElement>(
-        '.session-drawer .overflow-y-auto'
-      )!
-      const sel = document.querySelector<HTMLElement>(
-        `.session-drawer .session-row.selected[data-session-id="${selId}"]`
-      )
-      const padTop =
-        parseFloat(getComputedStyle(list).scrollPaddingTop) || 0
-      const lr = list.getBoundingClientRect()
-      const sr = sel?.getBoundingClientRect()
-      return {
-        samples: (window as unknown as {
-          __samples: {
-            open: boolean
-            top: number
-            rel: number | null
-            h: number
-          }[]
-        }).__samples,
-        finalTop: list.scrollTop,
-        finalRel: sr ? sr.top - lr.top : null,
-        selectedFound: !!sel,
-        selectedInView: sr
-          ? sr.top >= lr.top + padTop - 1 && sr.bottom <= lr.bottom + 1
-          : false,
-      }
-    }, selectedId)
+    const firstOpen = probe.samples.findIndex((s) => s.open)
+    expect(firstOpen, `drawer never opened: ${diag()}`).toBeGreaterThanOrEqual(0)
+    const first = probe.samples[firstOpen]
 
-    const openSamples = result.samples.filter((s) => s.open)
-    expect(openSamples.length).toBeGreaterThan(0)
-    const firstRel = openSamples[0].rel
-    expect(firstRel).not.toBeNull()
-    // Once the drawer is visible, the selected row must already sit at its
-    // landing position inside the viewport on EVERY sampled frame — a
-    // post-landing snap shows up as a distinct rel mid-transition. scrollTop
-    // itself may drift via scroll anchoring (see above) and is not asserted
-    // per-frame. Compare against the first open frame rather than the final
-    // eval: churn after the sampling window must not fail the assertion.
-    for (const s of openSamples) {
+    // 1. Landing: positioned before the first visible frame.
+    expect(first.selected, `selected row missing: ${diag()}`).toBe(true)
+    expect(first.inView, `not in view on first open frame: ${diag()}`).toBe(true)
+    // The scroll actually happened (not a degenerate no-op).
+    expect(first.top, `no scroll happened: ${diag()}`).toBeGreaterThan(0)
+
+    // 2. No snap: every programmatic scroll lands before the first open frame.
+    // The landing scroll itself must have been seen, or the hooks are dead.
+    expect(probe.writes.length, `no scroll write observed: ${diag()}`).toBeGreaterThan(0)
+    const late = probe.writes.filter((w) => w.frame > firstOpen)
+    expect(late, `scroll after first open frame: ${diag()}`).toEqual([])
+
+    // 3. No drift while the content is unchanged.
+    for (const s of probe.samples.slice(firstOpen)) {
+      if (s.h !== first.h) continue
       expect(
-        s.rel !== null && Math.abs(s.rel - firstRel!) <= 1,
-        `open-frame sample out of position: ${JSON.stringify(s)}; ` +
-          `firstRel=${firstRel} finalTop=${result.finalTop} ` +
-          `finalRel=${result.finalRel}; ` +
-          `samples=${JSON.stringify(result.samples)}`
+        s.rel !== null && Math.abs(s.rel - first.rel!) <= 1,
+        `row moved without a content change: ${JSON.stringify(s)}; ${diag()}`
       ).toBe(true)
     }
-    // The scroll actually happened (not a degenerate no-op).
-    expect(result.finalTop).toBeGreaterThan(0)
-    expect(result.selectedFound).toBe(true)
-    expect(result.selectedInView).toBe(true)
   } finally {
     for (const name of created) {
       tmux(['kill-window', '-t', `${session}:${name}`])

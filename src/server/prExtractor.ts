@@ -1,9 +1,11 @@
-// Detects pull requests a session created by scanning its agent JSONL log.
-// A `gh pr create` is only counted when it appears inside an actual tool
-// call entry (Claude tool_use, Codex function_call, devin toolCalls) —
-// prose mentioning the command is ignored. Resulting github.com/.../pull/N
-// URLs are captured from the tool result that references the call's id,
-// with a short line-count fallback window for formats without call ids.
+// Detects pull requests associated with a session by scanning its agent
+// JSONL log. Two signals: a `gh pr create` inside an actual tool call entry
+// (Claude tool_use, Codex function_call, devin toolCalls) — prose
+// mentioning the command is ignored — and Claude Code's self-contained
+// `{"type":"pr-link",...}` records, which link a session to a PR it did
+// not necessarily create. Resulting github.com/.../pull/N URLs are
+// captured from the tool result that references the call's id, with a
+// short line-count fallback window for formats without call ids.
 // Scans incrementally: results are cached per file offset so polling only
 // reads bytes appended since the previous scan.
 
@@ -12,8 +14,11 @@ import type { SessionPullRequest } from '../shared/types'
 import { logger } from './logger'
 import {
   CREATE_BYTES,
+  PR_LINK_BYTES,
   hasCreateCandidate,
+  hasPrLinkCandidate,
   seamHasCreate,
+  seamHasPrLink,
 } from './prCreatePrefilter'
 
 export type { SessionPullRequest }
@@ -73,9 +78,10 @@ interface ScanState {
   // breaks multi-byte characters at chunk edges, and re-joining a growing
   // string per chunk is quadratic in line length (image results run to MBs).
   partial: Buffer[]
-  // True when the partial line contains `create`, seams between pieces
-  // included.
+  // True when the partial line contains `create` or `pr-link`, seams
+  // between pieces included.
   partialHasCreate: boolean
+  partialHasLink: boolean
   // Tool-call ids awaiting their result (id -> expiry in lines).
   pending: PendingCreate[]
   // Fallback lookahead (lines) for create commands that had no ids.
@@ -98,6 +104,7 @@ function newScanState(): ScanState {
     mtimeMs: 0,
     partial: [],
     partialHasCreate: false,
+    partialHasLink: false,
     pending: [],
     windowRemaining: 0,
     seenUrls: new Set(),
@@ -263,6 +270,23 @@ function detach(text: string): string {
   return text.length === 0 ? '' : Buffer.from(text, 'utf8').toString('utf8')
 }
 
+// Claude Code writes self-contained `{"type":"pr-link",...}` entries when
+// it associates the session with a PR (e.g. after pushing to a PR it did
+// not create). They carry prUrl/prRepository/prNumber directly, so they
+// bypass the create/id machinery entirely.
+function collectPrLink(state: ScanState, line: string): void {
+  let entry: Record<string, unknown>
+  try {
+    entry = JSON.parse(line) as Record<string, unknown>
+  } catch {
+    return
+  }
+  if (entry.type !== 'pr-link') return
+  const url = entry.prUrl
+  if (typeof url !== 'string') return
+  collectUrls(state, url)
+}
+
 function collectUrls(state: ScanState, line: string): void {
   PR_URL_RE.lastIndex = 0
   let match: RegExpExecArray | null
@@ -283,6 +307,11 @@ function processLine(state: ScanState, line: string): void {
   //    (argv + stdout on one line); they bypass the id/window machinery.
   if (line.includes('"CommandExecution"') && GH_PR_CREATE_LINE_RE.test(line)) {
     collectCommandExecutionUrls(state, line)
+  }
+
+  // 0b. pr-link entries declare the session↔PR association outright.
+  if (line.includes('"pr-link"')) {
+    collectPrLink(state, line)
   }
 
   // 1. A `gh pr create` inside an actual tool call registers pending ids
@@ -355,8 +384,10 @@ function processLines(state: ScanState, text: string): void {
 function consumeChunk(state: ScanState, bytes: Buffer): void {
   const lastNewline = bytes.lastIndexOf(0x0a)
   const seamCreate = seamHasCreate(state.partial, bytes)
+  const seamLink = seamHasPrLink(state.partial, bytes)
   if (lastNewline === -1) {
     state.partialHasCreate ||= seamCreate || bytes.includes(CREATE_BYTES)
+    state.partialHasLink ||= seamLink || bytes.includes(PR_LINK_BYTES)
     // Copy: `bytes` views the shared read buffer.
     state.partial.push(Buffer.from(bytes))
     return
@@ -365,8 +396,11 @@ function consumeChunk(state: ScanState, bytes: Buffer): void {
     state.pending.length > 0 ||
     state.windowRemaining > 0 ||
     state.partialHasCreate ||
+    state.partialHasLink ||
     seamCreate ||
-    hasCreateCandidate(bytes)
+    seamLink ||
+    hasCreateCandidate(bytes) ||
+    hasPrLinkCandidate(bytes)
   ) {
     const head = bytes.subarray(0, lastNewline)
     const lines =
@@ -376,6 +410,7 @@ function consumeChunk(state: ScanState, bytes: Buffer): void {
   const tail = bytes.subarray(lastNewline + 1)
   state.partial = tail.length > 0 ? [Buffer.from(tail)] : []
   state.partialHasCreate = tail.includes(CREATE_BYTES)
+  state.partialHasLink = tail.includes(PR_LINK_BYTES)
 }
 
 /** Parse a complete log file (used by tests and full rescans). */
@@ -437,6 +472,7 @@ export function getSessionPullRequests(
     state.offset = 0
     state.partial = []
     state.partialHasCreate = false
+    state.partialHasLink = false
     state.pending = []
     state.windowRemaining = 0
     state.seenUrls.clear()

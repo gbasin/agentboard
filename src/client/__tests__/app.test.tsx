@@ -3,7 +3,10 @@ import TestRenderer, { act } from 'react-test-renderer'
 import type { AgentSession, ServerMessage, Session } from '@shared/types'
 import SessionList from '../components/SessionList'
 import NewSessionModal from '../components/NewSessionModal'
+import SettingsModal from '../components/SettingsModal'
 import SidebarControls from '../components/SidebarControls'
+import SessionDrawer from '../components/SessionDrawer'
+import SessionRecovery from '../components/history/SessionRecovery'
 import { useSessionStore } from '../stores/sessionStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useThemeStore } from '../stores/themeStore'
@@ -1094,6 +1097,50 @@ describe('App', () => {
     // but kill-failed test below proves it works)
   })
 
+  test('settings open blocks the new-session and kill shortcuts and toggles with comma', () => {
+    useSessionStore.setState({
+      sessions: [baseSession],
+      selectedSessionId: baseSession.id,
+      hasLoaded: true,
+    })
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<App />)
+    })
+    activeRenderer = renderer
+    const press = (key: string, code: string) =>
+      act(() => {
+        getKeyHandler()({
+          key,
+          code,
+          ctrlKey: true,
+          shiftKey: true,
+          altKey: false,
+          metaKey: false,
+          defaultPrevented: false,
+          preventDefault: () => {},
+        } as KeyboardEvent)
+      })
+    const settings = () => renderer.root.findByType(SettingsModal)
+
+    press(',', 'Comma')
+    expect(settings().props.isOpen).toBe(true)
+
+    press('n', 'KeyN')
+    expect(renderer.root.findByType(NewSessionModal).props.isOpen).toBe(false)
+    press('x', 'KeyX')
+    expect(sendCalls.some((c) => c.type === 'session-kill')).toBe(false)
+
+    press(',', 'Comma')
+    expect(settings().props.isOpen).toBe(false)
+
+    // The new-session modal, once open, blocks the settings shortcut.
+    press('n', 'KeyN')
+    expect(renderer.root.findByType(NewSessionModal).props.isOpen).toBe(true)
+    press(',', 'Comma')
+    expect(settings().props.isOpen).toBe(false)
+  })
+
   test('jumps to a visible session by index with the configured modifier', () => {
     const sessionB: Session = {
       ...baseSession,
@@ -1282,6 +1329,33 @@ describe('App', () => {
     const bottom = run('bottom')
     expect(bottom).toEqual(top)
     expect(queries).toContain('(max-width: 767px)')
+  })
+  test('below the md breakpoint session recovery opens from the drawer, not a floating button', () => {
+    ;(globalAny.window as unknown as { matchMedia: (query: string) => unknown }).matchMedia = () => ({
+      matches: true,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    })
+    useSessionStore.setState({ sessions: [baseSession], selectedSessionId: baseSession.id, hasLoaded: true })
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => {
+      renderer = TestRenderer.create(<App />)
+    })
+
+    const floating = renderer.root.findAll(
+      (node) => node.type === 'button' && String(node.props.className ?? '').includes('fixed bottom-16')
+    )
+    expect(floating).toHaveLength(0)
+    expect(renderer.root.findByType(SessionRecovery).props.open).toBe(false)
+
+    const drawer = renderer.root.findByType(SessionDrawer)
+    const button = drawer.findByProps({ 'aria-label': 'Session recovery' })
+    act(() => {
+      button.props.onClick()
+    })
+    expect(renderer.root.findByType(SessionRecovery).props.open).toBe(true)
+
+    act(() => renderer.unmount())
   })
   test('digit shortcuts fall back to hibernating sessions when no live sessions are visible', () => {
     const hibernatingA: AgentSession = {

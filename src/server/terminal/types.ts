@@ -10,6 +10,19 @@ type SpawnSyncFn = (
   options: Parameters<typeof Bun.spawnSync>[1]
 ) => ReturnType<typeof Bun.spawnSync>
 
+interface SpawnAsyncResult {
+  exitCode: number | null
+  signalCode: string | null
+  stdout: string
+  stderr: string
+}
+
+// Non-blocking command runner (default: timedSpawnAsync over Bun.spawn).
+type SpawnAsyncFn = (
+  args: string[],
+  options: { timeout?: number; env?: Record<string, string | undefined> }
+) => Promise<SpawnAsyncResult>
+
 type WaitFn = (ms: number) => Promise<void>
 
 type TerminalMode = 'pty' | 'pipe-pane' | 'auto'
@@ -41,6 +54,9 @@ interface TerminalProxyOptions {
   onExit?: () => void
   spawn?: SpawnFn
   spawnSync?: SpawnSyncFn
+  // Defaults to Bun.spawn, or to spawnSync when only that is injected (tests
+  // that fake tmux synchronously keep seeing every command).
+  spawnAsync?: SpawnAsyncFn
   // Called after each grouped new-session; arms the throwaway-shell reaper
   // (see tmuxGroupedSession.ts). Must not block.
   onGroupedSessionCreated?: () => void
@@ -74,6 +90,8 @@ interface ITerminalProxy {
 export type {
   SpawnFn,
   SpawnSyncFn,
+  SpawnAsyncFn,
+  SpawnAsyncResult,
   WaitFn,
   TerminalMode,
   TerminalProxyOptions,

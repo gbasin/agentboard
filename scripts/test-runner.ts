@@ -47,6 +47,8 @@ async function main() {
     // Test servers get their own data dir so the single-instance lock
     // (<dataDir>/server.lock) never collides with a dev's running instance.
     AGENTBOARD_DATA_DIR: tempRoot,
+    AGENTBOARD_TMUX_PID_FILE: path.join(tempRoot, 'tmux-server.pid'),
+    AGENTBOARD_PERSISTENCE_MAINTENANCE_MS: '0',
     // Default skipMatchingPatterns excludes /tmp/* and /var/folders/* — both
     // common locations for test working directories (worktrees, CI runners on
     // some platforms). Tests that exercise matching logic from those paths
@@ -64,6 +66,8 @@ async function main() {
     // Bun.serve / setInterval mock; isolation keeps that mock window from
     // overlapping with any other test that captures globals at module load.
     const ISOLATED_FILES = new Set([
+      'persistenceOwnership.test.ts',
+      'persistenceRoutes.test.ts',
       // Entry-point tests patch Bun.serve/Bun.spawnSync/process.exit while
       // importing the server. Keep them away from real server/tmux tests.
       'directories.test.ts',
@@ -96,6 +100,8 @@ async function main() {
       'e2eTmuxReap.integration.test.ts',
       'groupedSessionLeak.integration.test.ts',
       'hibernation.integration.test.ts',
+      'killWindowGroupedSession.integration.test.ts',
+      'persistence.integration.test.ts',
       'integration.test.ts',
       'throttled-reconnect.integration.test.ts',
     ])

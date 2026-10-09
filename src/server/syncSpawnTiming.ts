@@ -7,6 +7,7 @@
 // a freeze instead of guessing from side effects (missed pongs, reconnects).
 
 import { logger } from './logger'
+import { sanitizedTmuxEnv } from './tmuxEnv'
 
 // Slower than this produces user-visible input lag while it runs.
 export const SLOW_SYNC_SPAWN_MS = 250
@@ -67,20 +68,44 @@ export function logSlowSyncSpawn(
   command: string,
   durationMs: number,
   timeoutMs?: number,
-  { isMainThread = Bun.isMainThread, now = performance.now() }: SlowSyncSpawnContext = {}
+  context: SlowSyncSpawnContext = {}
+): void {
+  logSlowSpawn('sync_spawn_slow', command, durationMs, timeoutMs, context)
+}
+
+// Async spawns (Bun.spawn) do not hold the event loop, but a slow one still
+// means tmux or ps is stalled, and the caller is waiting on it. Same threshold,
+// rate limit and outlier rule as the sync log, under its own event name so a
+// freeze investigation can tell blocking calls from non-blocking ones.
+export function logSlowAsyncSpawn(
+  command: string,
+  durationMs: number,
+  timeoutMs?: number,
+  context: SlowSyncSpawnContext = {}
+): void {
+  logSlowSpawn('async_spawn_slow', command, durationMs, timeoutMs, context)
+}
+
+function logSlowSpawn(
+  event: 'sync_spawn_slow' | 'async_spawn_slow',
+  command: string,
+  durationMs: number,
+  timeoutMs: number | undefined,
+  { isMainThread = Bun.isMainThread, now = performance.now() }: SlowSyncSpawnContext
 ): void {
   if (durationMs < SLOW_SYNC_SPAWN_MS) return
   // Blocking only matters on the main thread; worker scans (logMatchWorker's
   // rg) routinely exceed the threshold and would warn every cycle.
   if (!isMainThread) {
-    logger.debug('sync_spawn_slow', { command, durationMs, timeoutMs, worker: true })
+    logger.debug(event, { command, durationMs, timeoutMs, worker: true })
     return
   }
 
-  const window = slowWindows.get(command)
+  const key = `${event}\0${command}`
+  const window = slowWindows.get(key)
   if (!window || (window.count === 0 && now - window.windowStart >= SLOW_SYNC_SPAWN_AGGREGATE_MS)) {
-    logger.warn('sync_spawn_slow', { command, durationMs, timeoutMs })
-    slowWindows.set(command, { windowStart: now, count: 0, maxMs: 0, sumMs: 0 })
+    logger.warn(event, { command, durationMs, timeoutMs })
+    slowWindows.set(key, { windowStart: now, count: 0, maxMs: 0, sumMs: 0 })
     return
   }
 
@@ -88,11 +113,11 @@ export function logSlowSyncSpawn(
   window.maxMs = Math.max(window.maxMs, durationMs)
   window.sumMs += durationMs
   if (durationMs >= SLOW_SYNC_SPAWN_OUTLIER_MS) {
-    logger.warn('sync_spawn_slow', { command, durationMs, timeoutMs, outlier: true })
+    logger.warn(event, { command, durationMs, timeoutMs, outlier: true })
   }
   const windowMs = now - window.windowStart
   if (windowMs >= SLOW_SYNC_SPAWN_AGGREGATE_MS) {
-    logger.warn('sync_spawn_slow_aggregate', {
+    logger.warn(`${event}_aggregate`, {
       command,
       count: window.count,
       maxMs: window.maxMs,
@@ -100,7 +125,7 @@ export function logSlowSyncSpawn(
       windowMs: Math.round(windowMs),
       timeoutMs,
     })
-    slowWindows.set(command, { windowStart: now, count: 0, maxMs: 0, sumMs: 0 })
+    slowWindows.set(key, { windowStart: now, count: 0, maxMs: 0, sumMs: 0 })
   }
 }
 
@@ -114,13 +139,66 @@ export function timedSpawnSync<
 ): Bun.SyncSubprocess<Out, Err> {
   const startedAt = performance.now()
   try {
-    return Bun.spawnSync(command, options)
+    // Explicit env: omitted entirely, Bun reuses the environment captured at
+    // process start — mutations like tmuxIsolation's `delete process.env.TMUX`
+    // never reach the child (and never reach Workers at all). An explicit
+    // `env` is read fresh at call time. Callers may still override.
+    return Bun.spawnSync(command, {
+      ...options,
+      env: options?.env ?? sanitizedTmuxEnv(),
+    })
   } finally {
     // Record timing even when spawnSync throws (e.g. ENOENT after a stall).
     logSlowSyncSpawn(
       describeSpawnCommand(command),
       Math.round(performance.now() - startedAt),
       options?.timeout
+    )
+  }
+}
+
+export interface TimedSpawnResult {
+  /** null when the process died from a signal (including the timeout kill). */
+  exitCode: number | null
+  signalCode: NodeJS.Signals | null
+  stdout: string
+  stderr: string
+}
+
+/**
+ * Non-blocking counterpart of timedSpawnSync: Bun.spawn waits off the JS
+ * thread, so WebSocket and terminal traffic keep flowing while ps or tmux is
+ * slow. Collects stdout/stderr as text and logs async_spawn_slow past the
+ * threshold. Throws only when the spawn itself fails (e.g. ENOENT).
+ */
+export async function timedSpawnAsync(
+  command: string[],
+  options: { timeout?: number; env?: Record<string, string | undefined> } = {}
+): Promise<TimedSpawnResult> {
+  const startedAt = performance.now()
+  try {
+    const proc = Bun.spawn(command, {
+      stdin: 'ignore',
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: options.timeout,
+      // Explicit: without env, Bun resolves the program on the PATH from
+      // process start rather than the current process.env. Sanitized for the
+      // same reason as the sync path — and so Workers (whose process.env is
+      // the stale start-up copy) still get the post-isolation tmux env.
+      env: options.env ?? sanitizedTmuxEnv(),
+    })
+    const [stdout, stderr] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ])
+    return { exitCode: proc.exitCode, signalCode: proc.signalCode, stdout, stderr }
+  } finally {
+    logSlowAsyncSpawn(
+      describeSpawnCommand(command),
+      Math.round(performance.now() - startedAt),
+      options.timeout
     )
   }
 }

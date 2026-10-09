@@ -207,6 +207,7 @@ export class LogPoller {
   private devinSyncInFlight = false
   private pollInFlight = false
   private pendingChangedPaths = new Set<string>()
+  matchingError: string | null = null
   private orphanRematchPending = true
   private orphanRematchInProgress = false
   private orphanRematchPromise: Promise<void> | null = null
@@ -592,7 +593,7 @@ export class LogPoller {
           o.agentType === 'devin' && !matchedOrphanSessionIds.has(o.sessionId)
       )
       if (devinOrphans.length > 0) {
-        const lockMatches = matchDevinLocksToWindows(windows)
+        const lockMatches = await matchDevinLocksToWindows(windows)
         for (const orphan of devinOrphans) {
           const window = lockMatches.get(orphan.sessionId)
           if (!window || claimedWindows.has(window.tmuxWindow)) continue
@@ -724,6 +725,7 @@ export class LogPoller {
       this.pendingChangedPaths.delete(pathToPoll)
     }
     this.pollInFlight = true
+    let succeeded = false
 
     try {
       if (!this.matchWorker) return
@@ -778,16 +780,25 @@ export class LogPoller {
         },
       })
 
-      const stats = this.processMatchResponse(response, windows, sessionRecords)
+      const devinLockMatches = await this.resolveDevinLockMatches(response, windows)
+      const stats = this.processMatchResponse(
+        response,
+        windows,
+        sessionRecords,
+        devinLockMatches
+      )
       this.notifyOrphanSessionsDiscovered(stats.orphans)
+      succeeded = true
     } catch (error) {
+      this.matchingError = String(error)
+      for (const file of pathsToPoll) this.pendingChangedPaths.add(file)
       logger.warn('log_poll_changed_error', {
         message: error instanceof Error ? error.message : String(error),
         pathCount: pathsToPoll.length,
       })
     } finally {
       this.pollInFlight = false
-      this.drainPendingChangedPaths()
+      if (succeeded) this.drainPendingChangedPaths()
     }
   }
 
@@ -796,11 +807,27 @@ export class LogPoller {
     queueMicrotask(() => void this.pollChanged([]))
   }
 
+  // Devin sessions also match windows deterministically via session lock
+  // PIDs (session_locks/<id>.lock contains the devin process PID). Resolved
+  // before processMatchResponse so its ps/tmux calls run off the event loop
+  // and processing itself stays synchronous.
+  private async resolveDevinLockMatches(
+    response: MatchWorkerResponse,
+    windows: Session[]
+  ): Promise<Map<string, Session>> {
+    const hasDevinEntries =
+      (response.entries ?? []).some((entry) => entry.agentType === 'devin') ||
+      (response.orphanEntries ?? []).some((entry) => entry.agentType === 'devin')
+    return hasDevinEntries ? matchDevinLocksToWindows(windows) : new Map()
+  }
+
   private processMatchResponse(
     response: MatchWorkerResponse,
     windows: Session[],
-    sessionRecords: SessionRecord[]
+    sessionRecords: SessionRecord[],
+    devinLockMatches: Map<string, Session>
   ): PollStats {
+    this.matchingError=response.matchingError || null
     let logsScanned = 0
     let newSessions = 0
     let matches = 0
@@ -853,14 +880,6 @@ export class LogPoller {
       if (normalized) deferralCandidates.push({ projectPath: normalized, agentType: nmw.agentType })
     }
 
-    // Devin sessions also match windows deterministically via session lock
-    // PIDs (session_locks/<id>.lock contains the devin process PID).
-    const hasDevinEntries =
-      entries.some((entry) => entry.agentType === 'devin') ||
-      orphanEntries.some((entry) => entry.agentType === 'devin')
-    const devinLockMatches = hasDevinEntries
-      ? matchDevinLocksToWindows(windows)
-      : new Map<string, Session>()
     const matchForEntry = (entry: LogEntrySnapshot): Session | null =>
       (entry.agentType === 'devin' && entry.sessionId
         ? devinLockMatches.get(entry.sessionId)
@@ -1294,6 +1313,7 @@ export class LogPoller {
           }
         } catch (error) {
           workerErrors += 1
+          this.matchingError = String(error)
           logger.warn('log_match_worker_error', {
             message: error instanceof Error ? error.message : String(error),
           })
@@ -1316,8 +1336,11 @@ export class LogPoller {
       }
 
       const processStartedAt = Date.now()
+      const devinLockMatches = response
+        ? await this.resolveDevinLockMatches(response, windows)
+        : new Map<string, Session>()
       const processed = response
-        ? this.processMatchResponse(response, windows, sessionRecords)
+        ? this.processMatchResponse(response, windows, sessionRecords, devinLockMatches)
         : {
             logsScanned: 0,
             newSessions: 0,

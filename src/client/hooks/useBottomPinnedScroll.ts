@@ -19,8 +19,8 @@ function isAtBottom(el: HTMLElement): boolean {
  *
  * Re-pinning runs in a layout effect (before paint, so a new row never
  * flashes the list off the bottom) and from a ResizeObserver on `contentRef`
- * for size changes that happen outside a React commit. Call this BEFORE
- * useScrollToSelection in the same component: layout effects run in
+ * and the container for size changes that happen outside a React commit.
+ * Call this BEFORE useScrollToSelection in the same component: layout effects run in
  * declaration order, so a selection scroll in the same commit wins.
  *
  * Disabled, it does nothing — the top-anchored list is untouched.
@@ -31,16 +31,18 @@ export function useBottomPinnedScroll<C extends HTMLElement, I extends HTMLEleme
   enabled: boolean
 ) {
   const pinnedRef = useRef(true)
-  const lastScrollHeightRef = useRef<number | null>(null)
+  // Keyed on both heights: the viewport shrinking (a banner appearing above
+  // the list, a window resize) moves the bottom edge just like new content.
+  const lastSizeRef = useRef<string | null>(null)
 
   const repin = () => {
     const el = containerRef.current
     if (!el) return
-    const height = el.scrollHeight
-    if (height === lastScrollHeightRef.current) return
-    lastScrollHeightRef.current = height
+    const size = `${el.scrollHeight}:${el.clientHeight}`
+    if (size === lastSizeRef.current) return
+    lastSizeRef.current = size
     if (pinnedRef.current) {
-      el.scrollTop = height
+      el.scrollTop = el.scrollHeight
     }
   }
   const repinRef = useRef(repin)
@@ -48,7 +50,7 @@ export function useBottomPinnedScroll<C extends HTMLElement, I extends HTMLEleme
 
   // Enabling (mount or a settings flip) opens the list at the bottom.
   useLayoutEffect(() => {
-    lastScrollHeightRef.current = null
+    lastSizeRef.current = null
     if (!enabled) return
     pinnedRef.current = true
     repinRef.current()
@@ -76,6 +78,9 @@ export function useBottomPinnedScroll<C extends HTMLElement, I extends HTMLEleme
     if (!content) return
     const observer = new ResizeObserver(() => repinRef.current())
     observer.observe(content)
+    // The container too: it resizes without a SessionList commit when a
+    // sibling (e.g. the recovery notice) or the window changes size.
+    if (containerRef.current) observer.observe(containerRef.current)
     return () => observer.disconnect()
-  }, [enabled, contentRef])
+  }, [enabled, contentRef, containerRef])
 }

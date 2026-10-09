@@ -5,8 +5,10 @@ import {
   SLOW_SYNC_SPAWN_AGGREGATE_MS,
   SLOW_SYNC_SPAWN_MS,
   describeSpawnCommand,
+  logSlowAsyncSpawn,
   logSlowSyncSpawn,
   resetSlowSyncSpawnState,
+  timedSpawnAsync,
   timedSpawnSync,
 } from '../syncSpawnTiming'
 
@@ -18,11 +20,21 @@ const originalWarn = logger.warn
 const originalDebug = logger.debug
 let calls: LogCall[] = []
 
+// The logger is process-global and server test files share one bun process:
+// background work from earlier files (e.g. a terminal proxy finishing its
+// cleanup) can log while an async test here awaits a real spawn. Capture only
+// the events this module emits.
+const isSpawnEvent = (event: string) => /^(a)?sync_spawn_slow/.test(event)
+
 beforeEach(() => {
   calls = []
   resetSlowSyncSpawnState()
-  logger.warn = (event, data) => calls.push({ level: 'warn', event, data })
-  logger.debug = (event, data) => calls.push({ level: 'debug', event, data })
+  logger.warn = (event, data) => {
+    if (isSpawnEvent(event)) calls.push({ level: 'warn', event, data })
+  }
+  logger.debug = (event, data) => {
+    if (isSpawnEvent(event)) calls.push({ level: 'debug', event, data })
+  }
 })
 
 afterEach(() => {
@@ -163,5 +175,39 @@ describe('timedSpawnSync', () => {
     expect(calls.map((c) => [c.event, c.data?.command])).toEqual([
       ['sync_spawn_slow', 'tmux list-panes'],
     ])
+  })
+})
+
+describe('logSlowAsyncSpawn', () => {
+  test('uses its own event name and its own rate-limit window', () => {
+    logSlowSyncSpawn('tmux list-panes', 300, 1000, main(0))
+    // Same command, different kind: not suppressed by the sync window.
+    logSlowAsyncSpawn('tmux list-panes', 300, 1000, main(10))
+    logSlowAsyncSpawn('tmux list-panes', 400, 1000, main(20))
+    expect(calls.map((c) => c.event)).toEqual(['sync_spawn_slow', 'async_spawn_slow'])
+    logSlowAsyncSpawn('tmux list-panes', 300, 1000, main(SLOW_SYNC_SPAWN_AGGREGATE_MS + 10))
+    expect(calls.at(-1)).toMatchObject({
+      event: 'async_spawn_slow_aggregate',
+      data: { command: 'tmux list-panes', count: 2, maxMs: 400, sumMs: 700 },
+    })
+  })
+})
+
+describe('timedSpawnAsync', () => {
+  test('returns output and logs a slow call with the redacted command', async () => {
+    const delay = (SLOW_SYNC_SPAWN_MS + 50) / 1000
+    const result = await timedSpawnAsync(['sh', '-c', `sleep ${delay}; printf ok`], {
+      timeout: 5000,
+    })
+    expect(result).toMatchObject({ exitCode: 0, stdout: 'ok', stderr: '' })
+    expect(calls.map((c) => [c.event, c.data?.command, c.data?.timeoutMs])).toEqual([
+      ['async_spawn_slow', 'sh -c', 5000],
+    ])
+  })
+
+  test('a fast call logs nothing', async () => {
+    const result = await timedSpawnAsync(['sh', '-c', 'printf err >&2; exit 3'])
+    expect(result).toMatchObject({ exitCode: 3, stdout: '', stderr: 'err' })
+    expect(calls).toHaveLength(0)
   })
 })

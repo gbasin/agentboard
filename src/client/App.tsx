@@ -1,3 +1,6 @@
+import { createOperationId } from './utils/operationId'
+import { RecoveryNotice } from './components/history/RecoveryNotice'
+import SessionRecovery from './components/history/SessionRecovery'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AgentSession, ServerMessage, Session, SessionKillSource } from '@shared/types'
 import SidebarControls from './components/SidebarControls'
@@ -13,7 +16,7 @@ import {
   SIDEBAR_MAX_WIDTH,
   SIDEBAR_MIN_WIDTH,
 } from './stores/settingsStore'
-import { useThemeStore } from './stores/themeStore'
+import { initSystemThemeListener, useResolvedTheme } from './stores/themeStore'
 import { useWebSocket } from './hooks/useWebSocket'
 import { invalidateSnapshotCache } from './hooks/useTerminal'
 import { useVisualViewport } from './hooks/useVisualViewport'
@@ -51,6 +54,7 @@ export default function App() {
   const [newSessionInitialPath, setNewSessionInitialPath] = useState<string | undefined>(undefined)
   const [newSessionInitialCommand, setNewSessionInitialCommand] = useState<string | undefined>(undefined)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
   const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null)
   const [pendingHibernatingSession, setPendingHibernatingSession] =
@@ -93,7 +97,7 @@ export default function App() {
   const remoteAllowControl = useSessionStore((state) => state.remoteAllowControl)
   const hostLabel = useSessionStore((state) => state.hostLabel)
 
-  const theme = useThemeStore((state) => state.theme)
+  const theme = useResolvedTheme()
   const settingsHydrated = useSettingsHasHydrated()
   const defaultProjectDir = useSettingsStore(
     (state) => state.defaultProjectDir
@@ -850,16 +854,24 @@ export default function App() {
       // New session: [mod]+N
       if (isShortcut && code === 'KeyN') {
         event.preventDefault()
-        if (!isModalOpen && settingsHydrated) {
+        if (!isModalOpen && !isSettingsOpen && settingsHydrated) {
           setIsModalOpen(true)
         }
+        return
+      }
+
+      // Settings: [mod]+, toggles the settings dialog (not over the
+      // new-session modal).
+      if (isShortcut && code === 'Comma') {
+        event.preventDefault()
+        setIsSettingsOpen((open) => (open ? false : !isModalOpen))
         return
       }
 
       // Kill session: [mod]+X
       if (isShortcut && code === 'KeyX') {
         event.preventDefault()
-        if (selectedSessionId && !isModalOpen) {
+        if (selectedSessionId && !isModalOpen && !isSettingsOpen) {
           handleKillSession(selectedSessionId, 'keyboard_shortcut')
         }
         return
@@ -870,6 +882,7 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [
     isModalOpen,
+    isSettingsOpen,
     selectedSessionId,
     selectedHibernatingSessionId,
     setSelectedSessionId,
@@ -898,7 +911,7 @@ export default function App() {
     command?: string,
     host?: string
   ) => {
-    sendMessage({ type: 'session-create', projectPath, name, command, host })
+    sendMessage({ type: 'session-create', operationId: createOperationId(), projectPath, name, command, host })
     if (!host) setLastProjectPath(projectPath)
   }
 
@@ -919,6 +932,7 @@ export default function App() {
     if (!session) return
     sendMessage({
       type: 'session-create',
+      operationId: createOperationId(),
       projectPath: session.projectPath,
       command: session.command || undefined,
       host: session.remote && session.host ? session.host : undefined,
@@ -929,7 +943,8 @@ export default function App() {
     sendMessage({ type: 'session-move-to-history', sessionId })
   }, [sendMessage])
 
-  // Apply theme to document
+  // Apply the resolved theme to the document; 'system' follows the OS live
+  useEffect(() => initSystemThemeListener(), [])
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
   }, [theme])
@@ -972,11 +987,18 @@ export default function App() {
           loading={!hasLoaded}
           error={connectionError || serverError}
           anchor={sidebarAnchor}
+          notice={
+            <RecoveryNotice
+              onOpen={() => setIsHistoryOpen(true)}
+              subscribe={subscribe}
+            />
+          }
           filterBarControls={
             <SidebarControls
               connectionStatus={connectionStatus}
               onNewSession={handleNewSession}
               onOpenSettings={handleOpenSettings}
+              onOpenHistory={() => setIsHistoryOpen(true)}
               tailscaleIp={serverInfo?.tailscaleIp ?? null}
               placement={sidebarAnchor === 'bottom' ? 'up' : 'down'}
             />
@@ -1009,6 +1031,7 @@ export default function App() {
         onRenameSession={handleRenameSession}
         onDuplicateSession={handleDuplicateSession}
         onOpenSettings={handleOpenSettings}
+        onOpenHistory={() => setIsHistoryOpen(true)}
         onResumeSession={handleResumeSession}
         onHibernateSession={handleHibernateSession}
         onMoveToHistory={handleMoveToHistory}
@@ -1038,6 +1061,16 @@ export default function App() {
         onClose={() => setIsSettingsOpen(false)}
       />
 
+      <SessionRecovery
+        open={isHistoryOpen}
+        subscribe={subscribe}
+        onClose={() => setIsHistoryOpen(false)}
+        onOpenSession={(session) => {
+          setSessions([session, ...sessions.filter(s => s.id !== session.id)])
+          setSelectedHibernatingSessionId(null)
+          setSelectedSessionId(session.id)
+        }}
+      />
       <ToastViewport />
     </div>
   )

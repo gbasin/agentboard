@@ -255,6 +255,20 @@ describe('db', () => {
     ])
   })
 
+  test('orphanSession with expectedWindow only clears that window', () => {
+    db.insertSession(makeSession({
+      sessionId: 'moved-elsewhere',
+      logFilePath: '/tmp/moved-elsewhere.jsonl',
+      currentWindow: 'agentboard:@9',
+    }))
+
+    expect(db.orphanSession('moved-elsewhere', { expectedWindow: 'agentboard:@10' })).toBeNull()
+    expect(db.getSessionById('moved-elsewhere')?.currentWindow).toBe('agentboard:@9')
+
+    const orphaned = db.orphanSession('moved-elsewhere', { expectedWindow: 'agentboard:@9' })
+    expect(orphaned?.currentWindow).toBeNull()
+  })
+
   test('orphanSession can move mismatch cleanup to history', () => {
     db.insertSession(makeSession({
       sessionId: 'mismatch-to-history',
@@ -715,6 +729,22 @@ describe('db', () => {
     expect(active[0].sessionId).toBe('alpha')
     expect(active[1].sessionId).toBe('middle')
     expect(active[2].sessionId).toBe('zebra')
+  })
+
+  test('getHistorySessions is uncapped unless a limit is passed', () => {
+    for (let i = 0; i < 105; i++) {
+      db.insertSession(makeSession({
+        sessionId: `history-${i}`,
+        logFilePath: `/tmp/history-${i}.jsonl`,
+        currentWindow: null,
+        lastActivityAt: new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString(),
+      }))
+    }
+    expect(db.getHistorySessions()).toHaveLength(105)
+    expect(db.getHistorySessions({ maxAgeHours: 24 * 365 * 100 })).toHaveLength(105)
+    const capped = db.getHistorySessions({ limit: 100 })
+    expect(capped).toHaveLength(100)
+    expect(capped[0]?.sessionId).toBe('history-104')
   })
 
   test('getHistorySessions returns results ordered by last_activity_at DESC with session_id tiebreaker', () => {

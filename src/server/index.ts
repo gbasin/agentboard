@@ -10,10 +10,15 @@ import { config, isValidHostname } from './config'
 import { createPasteFileRoutes } from './routes/pasteFile'
 import { ensureTmux } from './prerequisites'
 import { applyNestedTmuxDecision } from './tmuxIsolation'
+import { sanitizedTmuxEnv } from './tmuxEnv'
 import { KillRateLimiter } from './killRateLimit'
 import { SessionManager } from './SessionManager'
 import { ThrowawayShellReaper } from './throwawayShellReaper'
 import { SessionRegistry } from './SessionRegistry'
+import { PersistentSessions } from './persistence/manager'
+import type { SavedSession } from '../shared/persistence'
+import { PersistenceRuntime } from './persistence/runtime'
+import { registerPersistenceRoutes } from './persistence/routes'
 import {
   initDatabase,
   type AgentSessionRecord,
@@ -90,7 +95,8 @@ import {
   splitTmuxLines,
   withTmuxUtf8Flag,
 } from './tmuxFormat'
-import { timedSpawnSync } from './syncSpawnTiming'
+import { timedSpawnAsync, timedSpawnSync } from './syncSpawnTiming'
+import { getTailscaleIp } from './tailscale'
 
 function checkPortAvailable(port: number): void {
   let result: ReturnType<typeof Bun.spawnSync>
@@ -384,30 +390,6 @@ async function readLogLineWindow(
   return selectLineWindow(lines, limit, beforeLine)
 }
 
-function getTailscaleIp(): string | null {
-  // Try common Tailscale CLI paths (standalone CLI, then Mac App Store bundle)
-  const tailscalePaths = [
-    'tailscale',
-    '/Applications/Tailscale.app/Contents/MacOS/Tailscale',
-  ]
-
-  for (const tsPath of tailscalePaths) {
-    try {
-      const result = timedSpawnSync([tsPath, 'ip', '-4'], {
-        stdout: 'pipe',
-        stderr: 'pipe',
-      })
-      if (result.exitCode === 0) {
-        const ip = result.stdout.toString().trim()
-        if (ip) return ip
-      }
-    } catch {
-      // Try next path
-    }
-  }
-  return null
-}
-
 function pruneOrphanedWsSessions(): void {
   if (!config.pruneWsSessions) {
     return
@@ -541,7 +523,7 @@ logger.info('terminal_mode_resolved', {
 })
 
 const app = new Hono()
-const db = initDatabase()
+const db = initDatabase({ exclusive: true })
 
 // Read mouse mode setting from DB (default: true)
 const TMUX_MOUSE_MODE_KEY = 'tmux_mouse_mode'
@@ -642,6 +624,30 @@ async function ensureBaseSessionForRefreshAsync(context: string): Promise<boolea
   }
 }
 const registry = new SessionRegistry()
+// Test adapters may implement SessionDatabase without a SQLite connection.
+function persistenceHostId(): string {
+  const existing = db.getAppSetting('persistence_host_id')
+  if (existing) return existing
+  const id = createConnectionId()
+  db.setAppSetting('persistence_host_id', id)
+  return id
+}
+const persistence = db.db
+  ? new PersistentSessions(db, sessionManager, persistenceHostId())
+  : null
+const persistenceRuntime = persistence
+  ? new PersistenceRuntime(persistence, db)
+  : null
+function createPersistentWindow(
+  projectPath: string,
+  name?: string,
+  command?: string,
+  options?: { excludeSessionId?: string; operationId?: string }
+) {
+  return persistence
+    ? persistence.launch(projectPath, name, command, options)
+    : sessionManager.createWindow(projectPath, name, command, options)
+}
 
 interface WSData {
   terminal: ITerminalProxy | null
@@ -908,10 +914,19 @@ const dormantPrScanner = createDormantPrScanner(() =>
   updateDormantAgentSessions()
 )
 
+/**
+ * Most recent History rows the sidebar shows. Older rows stay in the database
+ * and remain visible to the orphan rematcher, which queries uncapped.
+ */
+const SIDEBAR_HISTORY_LIMIT = 100
+
 function getDormantRecords() {
   return {
     hibernating: db.getHibernatingSessions(),
-    history: db.getHistorySessions({ maxAgeHours: runtimeHistoryMaxAgeHours }),
+    history: db.getHistorySessions({
+      maxAgeHours: runtimeHistoryMaxAgeHours,
+      limit: SIDEBAR_HISTORY_LIMIT,
+    }),
   }
 }
 
@@ -956,6 +971,9 @@ interface VerificationDecision {
 interface HydrateSessionsOptions {
   verifyAssociations?: boolean
   precomputedVerifications?: Map<string, VerificationDecision>
+  // tmux server pid reported by the window enumeration; 0 means the
+  // enumeration cannot vouch for window identity (skip catalog reconcile).
+  serverPid?: number
 }
 
 // Each verification captures a pane and runs rg over every log directory
@@ -1036,8 +1054,9 @@ async function verifyAllSessions(
 
 export function hydrateSessionsWithAgentSessions(
   sessions: Session[],
-  { verifyAssociations = false, precomputedVerifications }: HydrateSessionsOptions = {}
+  { verifyAssociations = false, precomputedVerifications, serverPid = 0 }: HydrateSessionsOptions = {}
 ): Session[] {
+  persistence?.beforeSnapshot(sessions, serverPid)
   const activeSessions = db.getActiveSessions()
   // Discovery can be stale or incomplete. Reconcile missing windows without
   // ever turning a background observation into a destructive tmux command.
@@ -1095,6 +1114,7 @@ export function hydrateSessionsWithAgentSessions(
         windowSetSize: windowSet.size,
         windowSetSample: Array.from(windowSet).slice(0, 5),
       })
+      // A missing or mismatched identity is not authorization to kill a pane.
       const orphanedSession = db.orphanSession(agentSession.sessionId)
       if (orphanedSession) {
         orphaned.push(toAgentSession(orphanedSession))
@@ -1209,6 +1229,7 @@ export function hydrateSessionsWithAgentSessions(
   } else {
     updateActiveAgentSessions()
   }
+  persistence?.observe(hydrated)
   return hydrated
 }
 
@@ -1279,7 +1300,7 @@ async function refreshSessionsAsync(): Promise<void> {
     for (let attempt = 0; attempt < 2; attempt++) {
       const gen = refreshGeneration
       try {
-        const sessions = await sessionRefreshWorker.refresh(
+        const { sessions, tmuxServerPid } = await sessionRefreshWorker.refresh(
           config.tmuxSession,
           config.discoverPrefixes,
           {
@@ -1294,7 +1315,7 @@ async function refreshSessionsAsync(): Promise<void> {
         if (gen !== refreshGeneration) continue
         const tHydrate = performance.now()
         recordSuccessfulRefreshWindowCount(countLocalSessions(sessions))
-        const hydrated = hydrateSessionsWithAgentSessions(sessions)
+        const hydrated = hydrateSessionsWithAgentSessions(sessions, { serverPid: tmuxServerPid })
         const withOverrides = applyForceWorkingOverrides(hydrated)
         registry.replaceSessions(mergeRemoteSessions(withOverrides))
         const hydrateMs = Math.round(performance.now() - tHydrate)
@@ -1321,7 +1342,9 @@ async function refreshSessionsAsync(): Promise<void> {
           return
         }
         recordSuccessfulRefreshWindowCount(countLocalSessions(sessions))
-        const hydrated = hydrateSessionsWithAgentSessions(sessions)
+        const hydrated = hydrateSessionsWithAgentSessions(sessions, {
+          serverPid: sessionManager.lastEnumeratedServerPid,
+        })
         const withOverrides = applyForceWorkingOverrides(hydrated)
         registry.replaceSessions(mergeRemoteSessions(withOverrides))
         return
@@ -1364,7 +1387,10 @@ function refreshSessionsSync({ verifyAssociations = false } = {}) {
     return
   }
   recordSuccessfulRefreshWindowCount(countLocalSessions(sessions))
-  const hydrated = hydrateSessionsWithAgentSessions(sessions, { verifyAssociations })
+  const hydrated = hydrateSessionsWithAgentSessions(sessions, {
+    verifyAssociations,
+    serverPid: sessionManager.lastEnumeratedServerPid,
+  })
   registry.replaceSessions(mergeRemoteSessions(hydrated))
 }
 
@@ -1764,10 +1790,18 @@ app.get('/api/directories', async (c) => {
   return c.json(response)
 })
 
-app.get('/api/server-info', (c) => {
+app.get('/api/server-info', async (c) => {
   // For 0.0.0.0, detect Tailscale IP for display (already listening on all interfaces).
   // For localhost, only report if we successfully bound to the Tailscale IP.
-  const tsIp = config.hostname === '0.0.0.0' ? getTailscaleIp() : boundTailscaleIp
+  // Wait for the startup lookup first: the client fetches this once per page
+  // load, so answering null while it is pending sticks until a reload.
+  let tsIp: string | null
+  if (config.hostname === '0.0.0.0') {
+    tsIp = await getTailscaleIp()
+  } else {
+    await tailscaleReady
+    tsIp = boundTailscaleIp
+  }
   return c.json({
     port: config.port,
     tailscaleIp: tsIp,
@@ -2209,6 +2243,59 @@ app.get('/api/clipboard-file-path', async (c) => {
   }
 })
 
+if (persistenceRuntime) {
+  persistenceRuntime.matchingFailure = () => logPoller.matchingError
+  const library = registerPersistenceRoutes(app, persistenceRuntime, {
+    commandFor: buildResumeCommand,
+    changed: () => {
+      updateDormantAgentSessions()
+      refreshSessions()
+      broadcast({ type: 'library-changed' })
+    },
+    activated: (session) => {
+      refreshGeneration++
+      const others = registry
+        .getAll()
+        .filter((s) => s.tmuxWindow !== session.tmuxWindow)
+      registry.replaceSessions([stampLocalSession(session), ...others])
+    },
+  })
+  persistenceRuntime.start()
+  if (persistenceRuntime.health().settings.autoResume) {
+    // Reconcile the new tmux lifetime before selecting interrupted sessions.
+    try {
+      const live = sessionManager.listWindows()
+      persistence!.beforeSnapshot(live, sessionManager.lastEnumeratedServerPid)
+      persistence!.observe(live)
+    } catch (error) {
+      logger.warn('auto_resume_reconcile_failed', { error: String(error) })
+    }
+    const interrupted: SavedSession[] = []
+    let cursor: string | undefined
+    do {
+      const page = persistence!.catalog.history({
+        state: 'interrupted',
+        limit: 100,
+        cursor,
+      })
+      interrupted.push(...page.sessions)
+      cursor = page.nextCursor || undefined
+    } while (cursor)
+    void (async () => {
+      for (const saved of interrupted) {
+        try {
+          await library.resume(saved.id)
+        } catch (error) {
+          logger.warn('auto_resume_failed', {
+            sessionId: saved.id,
+            error: String(error),
+          })
+        }
+      }
+    })()
+  }
+}
+
 const staticDir = process.env.AGENTBOARD_STATIC_DIR || './dist/client'
 app.use('/*', serveStatic({ root: staticDir }))
 
@@ -2296,41 +2383,51 @@ Bun.serve<WSData>({
   websocket: websocketHandlers,
 })
 
-// When bound to localhost, also listen on the Tailscale interface if available.
-// This allows remote access over Tailscale without exposing the LAN interface.
-let boundTailscaleIp: string | null = null
-if (config.hostname === '127.0.0.1') {
-  const detectedIp = getTailscaleIp()
-  if (detectedIp) {
-    try {
-      Bun.serve<WSData>({
-        port: config.port,
-        hostname: detectedIp,
-        ...tlsOptions,
-        fetch: serverFetch,
-        websocket: websocketHandlers,
-      })
-      boundTailscaleIp = detectedIp
-    } catch (error) {
-      logger.warn('tailscale_bind_failed', {
-        ip: detectedIp,
-        error: error instanceof Error ? error.message : String(error),
-      })
-    }
-  }
-}
-
 const protocol = tlsEnabled ? 'https' : 'http'
 const displayHost = config.hostname === '0.0.0.0' ? 'localhost' : config.hostname
 logger.info('server_started', {
   url: `${protocol}://${displayHost}:${config.port}`,
-  tailscaleUrl: (() => {
-    // For 0.0.0.0, detect Tailscale for display only (already listening on all interfaces).
-    // For localhost, only show if we successfully bound to the Tailscale IP.
-    const tsIp = boundTailscaleIp ?? (config.hostname === '0.0.0.0' ? getTailscaleIp() : null)
-    return tsIp ? `${protocol}://${tsIp}:${config.port}` : null
-  })(),
 })
+
+// When bound to localhost, also listen on the Tailscale interface if available.
+// This allows remote access over Tailscale without exposing the LAN interface.
+// The lookup (`tailscale ip`) runs after the main listener is up and
+// server_started is logged, so a slow tailscaled never delays startup; the
+// Tailscale listener and its URL log line arrive when it answers. Exported so
+// tests can wait for it.
+let boundTailscaleIp: string | null = null
+export const tailscaleReady = (async () => {
+  if (config.hostname !== '127.0.0.1' && config.hostname !== '0.0.0.0') return
+  let detectedIp: string | null
+  try {
+    detectedIp = await getTailscaleIp()
+  } catch {
+    detectedIp = null
+  }
+  if (!detectedIp) return
+  const tailscaleUrl = `${protocol}://${detectedIp}:${config.port}`
+  if (config.hostname === '0.0.0.0') {
+    // Already listening on all interfaces: the URL is for display only.
+    logger.info('tailscale_detected', { tailscaleUrl })
+    return
+  }
+  try {
+    Bun.serve<WSData>({
+      port: config.port,
+      hostname: detectedIp,
+      ...tlsOptions,
+      fetch: serverFetch,
+      websocket: websocketHandlers,
+    })
+    boundTailscaleIp = detectedIp
+    logger.info('tailscale_listener_started', { tailscaleUrl })
+  } catch (error) {
+    logger.warn('tailscale_bind_failed', {
+      ip: detectedIp,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
+})()
 
 // The initial window refresh runs after bind: listing windows issues a
 // synchronous capture-pane per window, which would otherwise keep the port
@@ -2374,6 +2471,7 @@ if (config.logPollIntervalMs > 0) {
 
 // Cleanup all terminals on server shutdown
 async function cleanupAllTerminals() {
+  persistenceRuntime?.stop()
   const disposePromises: Promise<void>[] = []
   for (const ws of sockets) {
     if (ws.data.terminal) {
@@ -2466,6 +2564,9 @@ async function readTmuxCapture(tmuxArgs: string[]): Promise<string | null> {
       stderr: 'ignore',
       timeout: config.tmuxTimeoutMs,
       killSignal: 'SIGKILL',
+      // Without env Bun reuses the process-start environ — the stale $TMUX
+      // would send this client to the live server on isolated instances.
+      env: sanitizedTmuxEnv(),
     })
     kill = () => {
       try {
@@ -2726,15 +2827,28 @@ function handleMessage(
         fireAndForget(handleRemoteCreate(message.host, message.projectPath, message.name, message.command, ws), 'handleRemoteCreate')
       } else {
         try {
-          const created = stampLocalSession(sessionManager.createWindow(
+          const { operationId } = message
+          if (
+            operationId !== undefined &&
+            (typeof operationId !== 'string' ||
+              operationId.length === 0 ||
+              operationId.length > 128)
+          ) {
+            throw new Error('Invalid operation ID')
+          }
+          const created = stampLocalSession(createPersistentWindow(
             message.projectPath,
             message.name,
-            message.command
+            message.command,
+            { operationId }
           ))
           // Add session to registry immediately so terminal can attach
           refreshGeneration++
           const currentSessions = registry.getAll()
-          registry.replaceSessions([created, ...currentSessions])
+          registry.replaceSessions([
+            created,
+            ...currentSessions.filter((s) => s.id !== created.id),
+          ])
           refreshSessions()
           send(ws, { type: 'session-created', session: created })
         } catch (error) {
@@ -3215,7 +3329,14 @@ async function handleKill(
   }
 
   try {
-    sessionManager.killWindow(session.tmuxWindow)
+    // Archive the catalog row only when it owns this window in the current
+    // tmux server; a stale row with a reused window id is left alone.
+    const owner = persistence?.ownerOfWindow(session.tmuxWindow) ?? null
+    if (owner) {
+      persistence!.stop(owner, 'archived')
+    } else {
+      sessionManager.killWindow(session.tmuxWindow)
+    }
   } catch (error) {
     restoreHibernatingState(previousHibernatingState)
     sendKillFailed(
@@ -3348,7 +3469,8 @@ async function handleRename(
   }
 
   try {
-    sessionManager.renameWindow(session.tmuxWindow, newName)
+    if (persistence) persistence.renameWindow(session.tmuxWindow, newName)
+    else sessionManager.renameWindow(session.tmuxWindow, newName)
     refreshSessions()
   } catch (error) {
     send(ws, {
@@ -3378,6 +3500,11 @@ function handleMoveToHistory(
     return
   }
 
+  const saved = persistence?.catalog.byProvider(sessionId)
+  if (saved) {
+    persistence?.catalog.pin(saved.id, false)
+    persistence?.catalog.transition(saved.id, 'archived')
+  }
   const updated = db.setHibernating(sessionId, false)
   if (!updated) {
     send(ws, { type: 'session-move-to-history-result', sessionId, ok: false, error: 'Failed to move session to History' })
@@ -3504,8 +3631,16 @@ function handleSessionHibernate(
     return
   }
 
+  let catalogOwner: SavedSession | null = null
   try {
-    sessionManager.killWindow(liveTmuxWindow)
+    // Only a catalog row that owns this window in the current tmux server is
+    // moved to hibernating; a stale row with a reused window id is left alone.
+    catalogOwner = persistence?.ownerOfWindow(liveTmuxWindow) ?? null
+    if (catalogOwner) {
+      persistence!.stop(catalogOwner, 'hibernating')
+    } else {
+      sessionManager.killWindow(liveTmuxWindow)
+    }
   } catch (error) {
     let targetStillExists = true
     try {
@@ -3522,6 +3657,18 @@ function handleSessionHibernate(
     }
 
     if (!targetStillExists) {
+      // The kill lost a race with the window exiting. Finish the catalog side
+      // too, or the next reconcile would mark the row interrupted.
+      if (catalogOwner) {
+        try {
+          persistence!.retire(catalogOwner, 'hibernating')
+        } catch (retireError) {
+          logger.warn('session_hibernate_catalog_retire_failed', {
+            sessionId,
+            error: retireError instanceof Error ? retireError.message : String(retireError),
+          })
+        }
+      }
       logger.info('session_hibernate_target_already_gone', {
         sessionId,
         agentType: record.agentType,
@@ -3837,6 +3984,12 @@ function tryRematchDormantSession(
   }
 }
 
+/** Kill a window a wake created but will not keep, retiring its catalog row. */
+function killWakeWindow(tmuxWindow: string) {
+  if (persistence) persistence.killWindow(tmuxWindow, 'hibernating')
+  else sessionManager.killWindow(tmuxWindow)
+}
+
 function handleSessionWake(
   message: Extract<ClientMessage, { type: 'session-wake' }>,
   ws: ServerWebSocket<WSData>
@@ -3972,7 +4125,7 @@ function handleSessionWake(
     // Name is driven by the stored displayName — createWindow will auto-suffix
     // on genuine collisions with other live sessions (excludeSessionId keeps
     // the session's own prior name from matching itself).
-    const created = stampLocalSession(sessionManager.createWindow(
+    const created = stampLocalSession(createPersistentWindow(
       projectPath,
       latest.displayName,
       command,
@@ -4056,7 +4209,14 @@ function handleSessionWake(
         return
       }
 
-      try { sessionManager.killWindow(created.tmuxWindow) } catch { /* may already be gone */ }
+      // Retire the wake's catalog row with its window. A bare kill would leave
+      // the row "running" on a dead window, and the next reconcile would then
+      // release the conversation claim the rematcher just gave another window.
+      try {
+        killWakeWindow(created.tmuxWindow)
+      } catch {
+        // may already be gone
+      }
       createdWindowToCleanup = null
       try {
         db.updateSession(sessionId, { wakeStartedAt: null })
@@ -4120,7 +4280,7 @@ function handleSessionWake(
   } catch (error) {
     if (createdWindowToCleanup) {
       try {
-        sessionManager.killWindow(createdWindowToCleanup)
+        killWakeWindow(createdWindowToCleanup)
       } catch (cleanupError) {
         logger.warn('session_wake_cleanup_failed', {
           sessionId,
@@ -4482,7 +4642,7 @@ async function attachTerminalPersistent(
   // Capture scrollback history BEFORE switching to avoid race with live output
   const history = session.remote && session.host
     ? await captureTmuxHistoryRemote(effectiveTarget, session.host)
-    : captureTmuxHistory(effectiveTarget)
+    : await captureTmuxHistory(effectiveTarget)
 
   const tCapture = performance.now()
 
@@ -4567,12 +4727,14 @@ async function attachTerminalPersistent(
   }
 }
 
-function captureTmuxHistory(target: string): string | null {
+async function captureTmuxHistory(target: string): Promise<string | null> {
   try {
     // Capture only the visible pane so initial attach paints the current view
-    // immediately instead of replaying the entire scrollback buffer.
+    // immediately instead of replaying the entire scrollback buffer. Runs off
+    // the event loop; the caller still awaits it before switching, so the
+    // history predates any live output of this attach.
     const colorArgs = config.terminalColorsEnabled ? ['-e'] : []
-    const result = timedSpawnSync(['tmux', ...withTmuxUtf8Flag([
+    const result = await timedSpawnAsync(['tmux', ...withTmuxUtf8Flag([
       'capture-pane',
       '-t',
       target,
@@ -4580,14 +4742,12 @@ function captureTmuxHistory(target: string): string | null {
       '-J',
       ...colorArgs,
     ])], {
-      stdout: 'pipe',
-      stderr: 'pipe',
       timeout: config.tmuxTimeoutMs,
     })
     if (result.exitCode !== 0) {
       return null
     }
-    const output = result.stdout.toString()
+    const output = result.stdout
     // Only return if there's actual content
     if (output.trim().length === 0) {
       return null

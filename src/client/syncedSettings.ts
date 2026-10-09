@@ -1,6 +1,6 @@
 /**
  * Two-way sync for client settings that describe the shared world (theme,
- * command presets, session list prefs) rather than the local device.
+ * command presets, session list prefs, sounds) rather than the local device.
  *
  * The server is canonical: `synced-settings` messages carry the full stored
  * state and are applied wholesale. Local changes to synced keys are pushed
@@ -8,12 +8,18 @@
  * against the last server-confirmed value per key, so applying a broadcast
  * never triggers a write of the same value.
  *
+ * A push is debounced, and the value is captured when it is scheduled, not
+ * when it flushes: a full-state broadcast from another browser can land in
+ * that window still carrying this key's old value, and applying it must not
+ * replace what the user just chose. Such a key keeps its local value and the
+ * scheduled push then makes the server agree.
+ *
  * Migration: a browser that already has persisted local state ("veteran")
  * seeds server-absent keys from its local values on sync. Fresh browsers
  * have nothing to seed and simply adopt the server values.
  */
 import { useSettingsStore } from './stores/settingsStore'
-import { useThemeStore } from './stores/themeStore'
+import { useThemeStore, type Theme } from './stores/themeStore'
 import { safeStorage } from './utils/storage'
 import { clientLog } from './utils/clientLog'
 import {
@@ -30,7 +36,15 @@ const PUSH_DEBOUNCE_MS = 200
 
 /** Last server-confirmed value per key, JSON-encoded for deep comparison. */
 const serverValues = new Map<string, string>()
-const pendingPush = new Set<SyncedSettingsKey>()
+/** Keys awaiting a push, with the JSON-encoded value captured on schedule. */
+const pendingPush = new Map<SyncedSettingsKey, string>()
+/** Keys whose PUT has been sent but not yet answered. */
+const inFlight = new Set<SyncedSettingsKey>()
+
+/** True while a local value for `key` is still on its way to the server. */
+function isLocallyOwned(key: SyncedSettingsKey): boolean {
+  return pendingPush.has(key) || inFlight.has(key)
+}
 let pushTimer: ReturnType<typeof setTimeout> | null = null
 let syncInitialized = false
 
@@ -48,13 +62,42 @@ function flushPush(): void {
   pushTimer = null
   if (pendingPush.size === 0) return
   const delta: Record<string, unknown> = {}
-  for (const key of pendingPush) {
-    const value = getLocalValue(key)
-    delta[key] = value
+  const sent = new Map<SyncedSettingsKey, string>()
+  const previous = new Map<SyncedSettingsKey, string | undefined>()
+  for (const [key, json] of pendingPush) {
+    delta[key] = JSON.parse(json)
+    sent.set(key, json)
+    previous.set(key, serverValues.get(key))
     // Optimistically mark as pushed so the broadcast echo is ignored.
-    serverValues.set(key, JSON.stringify(value))
+    serverValues.set(key, json)
+    inFlight.add(key)
   }
   pendingPush.clear()
+
+  // The server never took these values: forget the optimistic mark so the
+  // next local change (even back to this value) pushes again.
+  const rollback = () => {
+    for (const [key, json] of sent) {
+      if (serverValues.get(key) !== json) continue
+      const before = previous.get(key)
+      if (before === undefined) serverValues.delete(key)
+      else serverValues.set(key, before)
+    }
+  }
+  // Broadcasts for these keys were held back while the PUT was out; if the
+  // server moved on meanwhile (another browser wrote), adopt its value. A
+  // failed push keeps the local choice instead.
+  const settle = (ok: boolean) => {
+    for (const key of sent.keys()) {
+      inFlight.delete(key)
+      if (!ok || pendingPush.has(key)) continue
+      const server = serverValues.get(key)
+      if (server !== undefined && server !== JSON.stringify(getLocalValue(key))) {
+        writeLocal(key, JSON.parse(server))
+      }
+    }
+  }
+  let ok = false
   try {
     fetch('/api/settings/synced', {
       method: 'PUT',
@@ -62,24 +105,47 @@ function flushPush(): void {
       body: JSON.stringify({ settings: delta }),
     })
       .then((res) => {
+        ok = res.ok
         if (!res.ok) {
           clientLog('synced_settings_push_rejected', { status: res.status }, 'warn')
+          rollback()
         }
       })
       .catch((error) => {
         clientLog('synced_settings_push_failed', {
           message: error instanceof Error ? error.message : String(error),
         }, 'warn')
+        rollback()
       })
+      .finally(() => settle(ok))
   } catch (error) {
+    rollback()
+    settle(false)
     clientLog('synced_settings_push_failed', {
       message: error instanceof Error ? error.message : String(error),
     }, 'warn')
   }
 }
 
-function schedulePush(key: SyncedSettingsKey): void {
-  pendingPush.add(key)
+function writeLocal(key: SyncedSettingsKey, value: unknown): void {
+  if (key === 'theme') useThemeStore.setState({ theme: value as 'dark' | 'light' })
+  else useSettingsStore.setState({ [key]: value })
+}
+
+/**
+ * A local write. Changing back to the server's value inside the debounce
+ * window cancels the pending push instead of leaving the older value queued.
+ */
+function onLocalChange(key: SyncedSettingsKey, value: unknown): void {
+  if (serverValues.get(key) === JSON.stringify(value)) {
+    pendingPush.delete(key)
+    return
+  }
+  schedulePush(key, value)
+}
+
+function schedulePush(key: SyncedSettingsKey, value: unknown): void {
+  pendingPush.set(key, JSON.stringify(value))
   if (pushTimer) return
   pushTimer = setTimeout(flushPush, PUSH_DEBOUNCE_MS)
 }
@@ -97,13 +163,16 @@ export function applySyncedSettings(settings: SyncedSettings): void {
   }
 
   const settingsPatch: Record<string, unknown> = {}
-  let theme: 'dark' | 'light' | undefined
+  let theme: Theme | undefined
 
   for (const [key, value] of Object.entries(settings)) {
     if (!isSyncedSettingsKey(key) || !isValidSyncedSetting(key, value)) continue
     serverValues.set(key, JSON.stringify(value))
+    // A local change is on its way to the server; keep it rather than
+    // flashing the stale broadcast value and then pushing the stale value.
+    if (isLocallyOwned(key)) continue
     if (key === 'theme') {
-      theme = value as 'dark' | 'light'
+      theme = value as Theme
     } else {
       settingsPatch[key] = value
     }
@@ -125,7 +194,7 @@ export function applySyncedSettings(settings: SyncedSettings): void {
     const local = getLocalValue(key)
     if (!isValidSyncedSetting(key, local)) continue
     if (serverValues.get(key) === JSON.stringify(local)) continue
-    schedulePush(key)
+    schedulePush(key, local)
   }
 }
 
@@ -142,22 +211,12 @@ export function initSyncedSettings(): () => void {
     const previous = prev as unknown as Record<string, unknown>
     for (const key of SYNCED_SETTINGS_KEYS) {
       if (key === 'theme') continue
-      if (
-        current[key] !== previous[key] &&
-        serverValues.get(key) !== JSON.stringify(current[key])
-      ) {
-        schedulePush(key)
-      }
+      if (current[key] !== previous[key]) onLocalChange(key, current[key])
     }
   })
 
   const unsubTheme = useThemeStore.subscribe((state, prev) => {
-    if (
-      state.theme !== prev.theme &&
-      serverValues.get('theme') !== JSON.stringify(state.theme)
-    ) {
-      schedulePush('theme')
-    }
+    if (state.theme !== prev.theme) onLocalChange('theme', state.theme)
   })
 
   return () => {
@@ -169,6 +228,7 @@ export function initSyncedSettings(): () => void {
       pushTimer = null
     }
     pendingPush.clear()
+    inFlight.clear()
     // Stale server values would suppress legit pushes after re-init; the next
     // synced-settings message repopulates them anyway.
     serverValues.clear()

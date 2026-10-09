@@ -29,6 +29,7 @@ import { getEffectiveModifier, getModifierDisplay } from '../utils/device'
 import { useCounterBump } from '../hooks/useCounterBump'
 import { useExitCleanup } from '../hooks/useExitCleanup'
 import { useScrollToSelection } from '../hooks/useScrollToSelection'
+import { useIsMobileLayout } from '../hooks/useMobileLayout'
 import { useBottomPinnedScroll } from '../hooks/useBottomPinnedScroll'
 import { useMenuViewportFit } from '../hooks/useMenuViewportFit'
 import AgentIcon from './AgentIcon'
@@ -68,6 +69,11 @@ interface SessionListProps {
   /** Global controls at the right end of the filter bar (desktop only;
    * the mobile drawer has its own header). */
   filterBarControls?: ReactNode
+  /** Optional banner (e.g. session recovery) that belongs to the list region.
+   * Top: directly under the filter bar, scrolling with the rows. Bottom: a
+   * pinned row at the top of the column, since the first row must sit flush
+   * on the filter bar. Never above the controls bar under Top. */
+  notice?: ReactNode
 }
 
 /** Status pill classes for the time/activity badge */
@@ -106,6 +112,7 @@ export default function SessionList({
   scrollSelectionActive = true,
   anchor = 'top',
   filterBarControls,
+  notice,
 }: SessionListProps) {
   const isBottom = anchor === 'bottom'
   useTimestampRefresh()
@@ -408,6 +415,12 @@ export default function SessionList({
     })
   )
 
+  // On coarse pointers the card body must keep native panning — with the
+  // dnd-kit listeners on the whole row, Safari claims the gesture for
+  // scrolling and pointercancel kills every touch drag. Rows instead get a
+  // dedicated touch-action:none handle that owns the activator listeners.
+  const coarsePointer = useIsMobileLayout('(pointer: coarse)')
+
   // While dragging, render in the snapshot order — never the live order.
   const displaySessions = useMemo(
     () => freezeListOrderDuringDrag(filteredSessions, dragOrderSnapshot),
@@ -654,6 +667,7 @@ export default function SessionList({
                       {...displayPrefs}
                       showHostInfo={showHostInfo}
                       dropIndicator={showDropIndicator}
+                      dragViaHandle={coarsePointer}
                       onSelect={() => onSelect(session.id)}
                       onStartEdit={canControl ? () => setEditingSessionId(session.id) : undefined}
                       onCancelEdit={() => setEditingSessionId(null)}
@@ -714,13 +728,15 @@ export default function SessionList({
         </div>
       )}
 
+      {isBottom && notice && <div className="shrink-0">{notice}</div>}
+
       {isBottom ? (
         // Mirrored: rows stack from the bottom edge (mt-auto spacer, not
         // justify-end, which would make overflow unreachable); scroll-pb-10
         // keeps selected rows clear of the sticky bottom filter bar.
         <div
           ref={listScrollRef}
-          className="flex min-h-0 flex-1 flex-col overflow-y-auto scroll-pb-10"
+          className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden overscroll-contain scroll-pb-10"
         >
           <div ref={listContentRef} className="mt-auto shrink-0">
             {historySection}
@@ -733,9 +749,10 @@ export default function SessionList({
         // scroll-pt-10 keeps rows scrolled past the sticky h-10 filter bar
         <div
           ref={listScrollRef}
-          className="min-h-0 flex-1 overflow-y-auto scroll-pt-10"
+          className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain scroll-pt-10"
         >
           {filterBar}
+          {notice}
           {activeSection}
           {hibernatingSection}
           {historySection}
@@ -778,6 +795,9 @@ interface SortableSessionItemProps {
   showLastUserMessage: boolean
   showHostInfo: boolean
   dropIndicator: 'above' | 'below' | null
+  /** Coarse pointers only: drag activates from the card's handle so the row
+   * body keeps native panning (dnd-kit listeners move onto the handle). */
+  dragViaHandle: boolean
   onSelect: () => void
   onStartEdit?: () => void
   onCancelEdit: () => void
@@ -800,6 +820,7 @@ const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>
   showLastUserMessage,
   showHostInfo,
   dropIndicator,
+  dragViaHandle,
   onSelect,
   onStartEdit,
   onCancelEdit,
@@ -820,7 +841,13 @@ const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>
     animateLayoutChanges: ({ isSorting, wasDragging }) => isSorting || wasDragging,
   })
 
-  const dndTransform = CSS.Transform.toString(transform)
+
+  // Pin the drag transform to the vertical axis: a horizontally-tracking card
+  // extends the scroller's scrollable overflow, which lets wheel flicks and
+  // dnd-kit's edge auto-scroll drag the whole list sideways off the panel.
+  const dndTransform = CSS.Transform.toString(
+    transform ? { ...transform, x: 0 } : transform
+  )
   const shouldApplyStyleTransform = Boolean(prefersReducedMotion && dndTransform)
   const style = {
     ...(shouldApplyStyleTransform ? { transform: dndTransform } : {}),
@@ -897,7 +924,7 @@ const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>
             }
       }
       {...attributes}
-      {...listeners}
+      {...(dragViaHandle ? {} : listeners)}
     >
       {/* Drop indicator line */}
       {dropIndicator === 'above' && (
@@ -912,6 +939,7 @@ const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>
         showLastUserMessage={showLastUserMessage}
         showHostInfo={showHostInfo}
         isDragging={isDragging}
+        dragHandleListeners={dragViaHandle ? listeners : undefined}
         onSelect={onSelect}
         onStartEdit={onStartEdit}
         onCancelEdit={onCancelEdit}
@@ -938,6 +966,9 @@ interface SessionRowProps {
   showLastUserMessage: boolean
   showHostInfo: boolean
   isDragging?: boolean
+  /** Present only on coarse pointers: the dnd-kit activator listeners move off
+   * the card body onto the drag handle so the row can still pan natively. */
+  dragHandleListeners?: NonNullable<ReturnType<typeof useSortable>['listeners']>
   onSelect: () => void
   onStartEdit?: () => void
   onCancelEdit: () => void
@@ -956,6 +987,7 @@ function SessionRow({
   showLastUserMessage,
   showHostInfo,
   isDragging = false,
+  dragHandleListeners,
   onSelect,
   onStartEdit,
   onCancelEdit,
@@ -1044,6 +1076,14 @@ function SessionRow({
 
   const handleTouchStart = (e: React.TouchEvent) => {
     if (isDragging) return
+    // A touch on the drag handle starts a dnd-kit drag — don't also arm the
+    // long-press context menu under the same gesture.
+    const touchTarget = e.target as HTMLElement | null
+    if (
+      typeof touchTarget?.closest === 'function' &&
+      touchTarget.closest('[data-testid="drag-handle"]')
+    )
+      return
     const touch = e.touches[0]
     touchStartPos.current = { x: touch.clientX, y: touch.clientY }
     longPressTimer.current = setTimeout(() => {
@@ -1116,11 +1156,31 @@ function SessionRow({
       <div className="flex flex-col gap-0.5 pl-0.5">
         {/* Line 1: Icon + Name + Time/Hand */}
         <div className="flex items-center gap-2">
-          <AgentIcon
-            agentType={session.agentType}
-            command={session.command}
-            className="h-3.5 w-3.5 shrink-0 text-muted"
-          />
+          {dragHandleListeners ? (
+            // On coarse pointers the icon doubles as the drag handle.
+            // touch-action:none keeps the browser from claiming the pan for
+            // scrolling, which would pointercancel the drag at activation;
+            // the padding widens the hit target without growing the icon.
+            <span
+              {...dragHandleListeners}
+              data-testid="drag-handle"
+              aria-label="Drag to reorder"
+              style={{ touchAction: 'none' }}
+              className="-my-1 -ml-1 flex items-center py-1 pl-1 cursor-grab"
+            >
+              <AgentIcon
+                agentType={session.agentType}
+                command={session.command}
+                className="h-3.5 w-3.5 shrink-0 text-muted"
+              />
+            </span>
+          ) : (
+            <AgentIcon
+              agentType={session.agentType}
+              command={session.command}
+              className="h-3.5 w-3.5 shrink-0 text-muted"
+            />
+          )}
           {isEditing ? (
             <input
               ref={inputRef}

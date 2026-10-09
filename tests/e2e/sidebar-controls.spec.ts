@@ -132,9 +132,23 @@ test('"+" opens the new-session modal and the gear opens Settings', async ({ pag
   await page.keyboard.press('Escape')
   await expect(newSession).toHaveCount(0)
 
-  await sidebar.getByRole('button', { name: 'Settings', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible()
-  await expect(page.getByText('Sidebar Anchor', { exact: true })).toBeVisible()
+  const gear = sidebar.getByRole('button', { name: 'Settings', exact: true })
+  await gear.click()
+  const settings = page.getByRole('dialog', { name: 'Settings' })
+  await expect(settings.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible()
+  await settings.getByRole('tab', { name: 'Session list', exact: true }).click()
+  await expect(settings.getByText('Sidebar anchor', { exact: true })).toBeVisible()
+  // Escape closes and focus goes to the terminal so the user can type; the
+  // gear only gets it back when no terminal is mounted.
+  await page.keyboard.press('Escape')
+  await expect(settings).toHaveCount(0)
+  const terminalInput = page.locator('.xterm-helper-textarea')
+  if (await terminalInput.count()) {
+    await expect(terminalInput).toBeFocused()
+    await expect(terminalInput).toBeEnabled()
+  } else {
+    await expect(gear).toBeFocused()
+  }
 })
 
 test('Tailscale popover: open, status and IP, copy URL, Escape, outside click', async ({
@@ -202,6 +216,36 @@ test('Tailscale popover: open, status and IP, copy URL, Escape, outside click', 
   const sidebarBox = await box(sidebar)
   await page.mouse.click(sidebarBox.right + 200, 300)
   await expect(popover(page)).toHaveCount(0)
+})
+
+test('copy works when navigator.clipboard is absent (insecure Tailscale origin)', async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  // http://<tailscale-ip> is not a secure context, so navigator.clipboard is
+  // absent — shadow the Navigator.prototype getter to reproduce that page.
+  // A handle on the real Clipboard object is kept to verify the write.
+  await page.addInitScript(() => {
+    const descriptor = Object.getOwnPropertyDescriptor(Navigator.prototype, 'clipboard')
+    Object.defineProperty(window.navigator, 'clipboard', {
+      configurable: true,
+      value: undefined,
+    })
+    ;(window as unknown as { __realClipboard: () => Clipboard }).__realClipboard = () =>
+      descriptor?.get?.call(window.navigator) as Clipboard
+  })
+  const { sidebar } = await openBoard(page, { anchor: 'top', tailscaleIp: IP })
+  expect(await page.evaluate(() => navigator.clipboard)).toBeUndefined()
+
+  await dotButton(sidebar).click()
+  await copyButton(page).click()
+  await expect(copyButton(page)).toHaveText('Copied!')
+  const port = new URL(page.url()).port
+  const clip = await page.evaluate(() =>
+    (window as unknown as { __realClipboard: () => Clipboard }).__realClipboard().readText()
+  )
+  expect(clip).toBe(`http://${IP}:${port}`)
 })
 
 test('Tailscale popover is operable by keyboard alone', async ({ page, context }) => {

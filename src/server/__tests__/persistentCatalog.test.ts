@@ -1,0 +1,466 @@
+import { afterEach, describe, expect, spyOn, test } from 'bun:test'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { initDatabase, type SessionDatabase } from '../db'
+import { logger } from '../logger'
+import { SessionCatalog } from '../persistence/catalog'
+import { PersistentSessions, identityChanged } from '../persistence/manager'
+import type { SessionManager } from '../SessionManager'
+import type { Session } from '../../shared/types'
+
+const databases: SessionDatabase[] = []
+function setup() {
+  const db = initDatabase({ path: ':memory:' })
+  databases.push(db)
+  return { db, catalog: new SessionCatalog(db.db, 'host-test') }
+}
+afterEach(() => {
+  for (const db of databases.splice(0)) db.close()
+})
+const input = {
+  name: 'A-Runtime',
+  projectPath: '/project',
+  command: 'sh',
+  lastActivityAt: '2020-01-01T00:00:00.000Z',
+}
+
+describe('durable catalog', () => {
+  test('saves a session before any provider log or process exists', () => {
+    const { db, catalog } = setup()
+    const created = catalog.create(input)
+    const reopened = new SessionCatalog(db.db, 'host-test')
+    expect(reopened.get(created.id)?.name).toBe('A-Runtime')
+    expect(reopened.get(created.id)?.providerId).toBeNull()
+    expect(reopened.history().sessions).toHaveLength(1)
+  })
+  test('keeps old names searchable and archives without deleting', () => {
+    const { catalog } = setup()
+    const saved = catalog.create(input)
+    catalog.rename(saved.id, 'A-Updated')
+    catalog.transition(saved.id, 'archived')
+    catalog.pin(saved.id, true)
+    expect(
+      catalog.history({ q: 'A-Runtime', pinned: true }).sessions[0]?.name
+    ).toBe('A-Updated')
+    expect(catalog.history({ hours: 24 }).sessions).toHaveLength(0)
+    expect(catalog.events(saved.id).map((e) => e.kind)).toContain('renamed')
+  })
+  test('launch requests are idempotent and concurrent requests cannot create two open runs', () => {
+    const { catalog } = setup()
+    const saved = catalog.create(input)
+    const run = catalog.beginRun(saved.id, 'request-1')
+    expect(catalog.beginRun(saved.id, 'request-1')).toEqual({
+      id: run.id,
+      reused: true,
+    })
+    expect(() => catalog.beginRun(saved.id, 'request-2')).toThrow(
+      'already running or starting'
+    )
+    catalog.bind(saved.id, run.id, 'ab:@1', 'epoch1')
+    catalog.transition(saved.id, 'interrupted')
+    const second = catalog.beginRun(saved.id, 'request-2')
+    expect(second.id).not.toBe(run.id)
+    expect(() => catalog.bind(saved.id, run.id, 'ab:@1', 'epoch1')).toThrow(
+      'no longer current'
+    )
+  })
+  test('history pages cover all equal-time records exactly once', () => {
+    const { catalog } = setup()
+    for (let n = 0; n < 7; n++) catalog.create({ ...input, name: `A-${n}` })
+    const ids: string[] = []
+    let cursor: string | undefined
+    do {
+      const page = catalog.history({ limit: 2, cursor })
+      ids.push(...page.sessions.map((s) => s.id))
+      cursor = page.nextCursor || undefined
+    } while (cursor)
+    expect(ids).toHaveLength(7)
+    expect(new Set(ids).size).toBe(7)
+    expect(() => catalog.history({ cursor: 'invalid' })).toThrow(
+      'Invalid history cursor'
+    )
+    expect(catalog.history({ q: '%' }).sessions).toHaveLength(0)
+  })
+  test('merges a discovery import into its managed session', () => {
+    const { catalog } = setup()
+    catalog.create({
+      ...input,
+      name: 'Imported',
+      providerId: 'provider',
+      origin: 'imported',
+      pinned: true,
+    })
+    const managed = catalog.create(input)
+    catalog.associate(managed.id, 'provider', 'codex')
+    expect(catalog.history().sessions).toHaveLength(1)
+    expect(catalog.get(managed.id)?.name).toBe('A-Runtime')
+    expect(catalog.get(managed.id)?.pinned).toBe(true)
+  })
+})
+
+function insertRecord(
+  db: SessionDatabase,
+  sessionId: string,
+  currentWindow: string | null
+) {
+  return db.insertSession({
+    sessionId,
+    logFilePath: `/logs/${sessionId}.jsonl`,
+    projectPath: '/project',
+    slug: null,
+    agentType: 'claude',
+    displayName: sessionId,
+    createdAt: '2020-01-01T00:00:00.000Z',
+    lastActivityAt: '2020-01-01T00:00:00.000Z',
+    lastUserMessage: null,
+    currentWindow,
+    isHibernating: false,
+    lastResumeError: null,
+    wakeStartedAt: null,
+    lastKnownLogSize: null,
+    isCodexExec: false,
+    launchCommand: 'claude',
+  })
+}
+
+describe('recovery reconciliation', () => {
+  function fixture() {
+    const { db } = setup()
+    // The injected identity feeds the mutation paths (launch/resume/stop);
+    // beforeSnapshot reads tags from the enumerated sessions instead.
+    let snapshot = {
+      epoch: 'epoch1',
+      windows: new Map<string, { boardId: string; runId: string }>(),
+    }
+    const calls: string[] = []
+    const created: string[] = []
+    const probes = new Map<string, 'present' | 'absent' | 'unknown'>()
+    const manager = {
+      ensureSession() {},
+      listWindows: () => [live],
+      setWindowOption() {},
+      renameWindow() {},
+      killWindow(w: string) {
+        calls.push(w)
+      },
+      probeWindow: (w: string) => probes.get(w) ?? 'unknown',
+      createWindow(projectPath: string) {
+        created.push(projectPath)
+        return { ...live, tmuxWindow: 'ab:@50', id: 'ab:@50' }
+      },
+    } as unknown as SessionManager
+    const persistence = new PersistentSessions(
+      db,
+      manager,
+      'host-test',
+      () => snapshot,
+      (pid) => `epoch${pid}`,
+      'ab'
+    )
+    const saved = persistence.catalog.create(input)
+    const run = persistence.catalog.beginRun(saved.id)
+    persistence.catalog.bind(saved.id, run.id, 'ab:@1', 'epoch1')
+    snapshot.windows.set('ab:@1', { boardId: saved.id, runId: run.id })
+    const live: Session = {
+      id: 'ab:@1',
+      name: input.name,
+      tmuxWindow: 'ab:@1',
+      projectPath: '/project',
+      status: 'unknown',
+      createdAt: '2020-01-01',
+      lastActivity: '2020-01-01',
+      source: 'managed',
+      agentboardTags: { boardId: saved.id, runId: run.id, serverPid: 1 },
+    }
+    return {
+      db,
+      persistence,
+      saved,
+      run,
+      live,
+      calls,
+      created,
+      probes,
+      setSnapshot: (value: typeof snapshot) => {
+        snapshot = value
+      },
+      setTags: (boardId: string, runId: string, serverPid = 1) => {
+        live.agentboardTags = { boardId, runId, serverPid }
+      },
+    }
+  }
+  test('a reliable empty replacement server interrupts sessions without killing windows', () => {
+    const { persistence, saved, calls } = fixture()
+    persistence.beforeSnapshot([], 2)
+    expect(persistence.catalog.get(saved.id)?.state).toBe('interrupted')
+    expect(calls).toEqual([])
+  })
+  test('an old launch request cannot return a later run of the same session', () => {
+    const { persistence, saved, setSnapshot } = fixture()
+    persistence.catalog.transition(saved.id, 'interrupted')
+    const old = persistence.catalog.beginRun(saved.id, 'old-request')
+    persistence.catalog.bind(saved.id, old.id, 'ab:@1', 'epoch1')
+    persistence.catalog.transition(saved.id, 'interrupted')
+    const current = persistence.catalog.beginRun(saved.id, 'new-request')
+    persistence.catalog.bind(saved.id, current.id, 'ab:@1', 'epoch1')
+    setSnapshot({
+      epoch: 'epoch1',
+      windows: new Map([['ab:@1', { boardId: saved.id, runId: current.id }]]),
+    })
+    expect(() =>
+      persistence.launch('/project', 'A', 'sh', {
+        boardId: saved.id,
+        operationId: 'old-request',
+      })
+    ).toThrow('already exists')
+    expect(persistence.catalog.get(saved.id)?.lastRunId).toBe(current.id)
+  })
+  test('an enumeration without a server pid does not reconcile a live session', () => {
+    const { persistence, saved } = fixture()
+    persistence.beforeSnapshot([])
+    expect(persistence.catalog.get(saved.id)?.state).toBe('running')
+  })
+  test('reused window IDs do not claim or kill another run', () => {
+    const { persistence, saved, live, calls, setTags } = fixture()
+    setTags('another', 'other', 2)
+    persistence.beforeSnapshot([live])
+    expect(persistence.catalog.get(saved.id)?.state).toBe('interrupted')
+    expect(calls).toEqual([])
+  })
+  test('an enumeration with empty identity tags keeps the claim', () => {
+    // The refresh worker's enumeration can predate the tag write (it took
+    // minutes under a slow tmux in the 0.25.1 upgrade incident).
+    const { db, persistence, saved, run, live, setTags } = fixture()
+    insertRecord(db, 'live-conv', 'ab:@1')
+    persistence.catalog.associate(saved.id, 'live-conv', 'claude')
+    setTags('', '', 1)
+    persistence.beforeSnapshot([live])
+    expect(persistence.catalog.get(saved.id)?.state).toBe('running')
+    expect(persistence.catalog.get(saved.id)?.lastRunId).toBe(run.id)
+    expect(db.getSessionById('live-conv')?.currentWindow).toBe('ab:@1')
+    expect(db.getSessionById('live-conv')?.isHibernating).toBe(false)
+  })
+  test('an enumeration that cannot read tags at all keeps the claim', () => {
+    const { persistence, saved, live } = fixture()
+    live.agentboardTags = undefined
+    persistence.beforeSnapshot([live], 1)
+    expect(persistence.catalog.get(saved.id)?.state).toBe('running')
+  })
+  test('identityChanged only reports a definite, different tag', () => {
+    const saved = { id: 'board', lastRunId: 'run' }
+    expect(identityChanged(undefined, saved)).toBe(false)
+    expect(identityChanged({ boardId: '', runId: '' }, saved)).toBe(false)
+    expect(identityChanged({ boardId: 'board', runId: '' }, saved)).toBe(false)
+    expect(identityChanged({ boardId: '', runId: 'other' }, saved)).toBe(false)
+    expect(identityChanged({ boardId: 'board', runId: 'run' }, saved)).toBe(false)
+    expect(identityChanged({ boardId: 'board', runId: 'other' }, saved)).toBe(true)
+    expect(identityChanged({ boardId: 'other', runId: 'run' }, saved)).toBe(true)
+  })
+  test('re-adopting an interrupted window re-claims its conversation', () => {
+    const { db, persistence, saved, run, live, setTags } = fixture()
+    insertRecord(db, 'conv', 'ab:@1')
+    persistence.catalog.associate(saved.id, 'conv', 'claude')
+    // A legitimate interruption released the claim (hibernate marker set).
+    persistence.catalog.transition(saved.id, 'interrupted', 'Window identity changed')
+    db.orphanSession('conv', { hibernate: true, expectedWindow: 'ab:@1' })
+    setTags(saved.id, run.id, 1)
+    persistence.beforeSnapshot([live])
+    persistence.observe([live])
+    const adopted = persistence.catalog.get(saved.id)!
+    expect(adopted.state).toBe('running')
+    expect(adopted.lastRunId).not.toBe(run.id)
+    expect(db.getSessionById('conv')?.currentWindow).toBe('ab:@1')
+    expect(db.getSessionById('conv')?.isHibernating).toBe(false)
+  })
+  test('startup self-heals a running row whose conversation lost its claim', () => {
+    const { db, persistence, saved, live } = fixture()
+    insertRecord(db, 'conv', 'ab:@1')
+    persistence.catalog.associate(saved.id, 'conv', 'claude')
+    // State left behind by 0.25.1: catalog running, claim released.
+    db.orphanSession('conv', { hibernate: true })
+    const booted = new PersistentSessions(
+      db,
+      persistence.manager,
+      'host-test',
+      () => ({ epoch: 'epoch1', windows: new Map() }),
+      (pid) => `epoch${pid}`,
+      'ab'
+    )
+    booted.beforeSnapshot([live])
+    expect(booted.catalog.get(saved.id)?.state).toBe('running')
+    expect(db.getSessionById('conv')?.currentWindow).toBe('ab:@1')
+    expect(db.getSessionById('conv')?.isHibernating).toBe(false)
+  })
+  test('self-heal never undoes a deliberate unclaim or steals a claimed window', () => {
+    const { db, persistence, saved, live } = fixture()
+    insertRecord(db, 'conv', 'ab:@1')
+    persistence.catalog.associate(saved.id, 'conv', 'claude')
+    // Log verification decided the window runs another conversation.
+    db.orphanSession('conv', { hibernate: false })
+    persistence.beforeSnapshot([live])
+    expect(db.getSessionById('conv')?.currentWindow).toBeNull()
+
+    // An interruption release while another conversation holds the window.
+    db.orphanSession('conv', { hibernate: true })
+    insertRecord(db, 'newer-conv', 'ab:@1')
+    persistence.beforeSnapshot([live])
+    expect(db.getSessionById('conv')?.currentWindow).toBeNull()
+    expect(db.getSessionById('newer-conv')?.currentWindow).toBe('ab:@1')
+  })
+  test('a claimed conversation that still carries the hibernate marker is not reclaimed', () => {
+    const info = spyOn(logger, 'info')
+    try {
+      const { db, persistence, saved, live } = fixture()
+      insertRecord(db, 'woken-conv', 'ab:@1')
+      // e.g. the hibernate handler sets the marker before killing the window,
+      // or a wake claimed the window without clearing it.
+      db.setHibernating('woken-conv', true)
+      persistence.catalog.associate(saved.id, 'woken-conv', 'claude')
+      persistence.beforeSnapshot([live])
+      expect(db.getSessionById('woken-conv')?.isHibernating).toBe(true)
+      expect(db.getSessionById('woken-conv')?.currentWindow).toBe('ab:@1')
+      expect(info.mock.calls.some((call: unknown[]) => call[0] === 'catalog_provider_reclaimed')).toBe(false)
+    } finally {
+      info.mockRestore()
+    }
+  })
+  test('hibernating an untagged window bound to its row kills it and retires the row', () => {
+    // A catalog launch whose tag write never landed: readTmuxIdentity reports
+    // empty tags for the window.
+    const { persistence, saved, calls, setSnapshot } = fixture()
+    setSnapshot({ epoch: 'epoch1', windows: new Map([['ab:@1', { boardId: '', runId: '' }]]) })
+    expect(persistence.ownerOfWindow('ab:@1')?.id).toBe(saved.id)
+    persistence.killWindow('ab:@1', 'hibernating')
+    expect(calls).toEqual(['ab:@1'])
+    expect(persistence.catalog.get(saved.id)?.state).toBe('hibernating')
+  })
+  test('a window definitely tagged for another run is not owned or killed by the row', () => {
+    const { persistence, saved, calls, setSnapshot } = fixture()
+    setSnapshot({ epoch: 'epoch1', windows: new Map([['ab:@1', { boardId: 'other', runId: 'other' }]]) })
+    expect(persistence.ownerOfWindow('ab:@1')).toBeNull()
+    persistence.stop(persistence.catalog.get(saved.id)!, 'hibernating')
+    expect(calls).toEqual([])
+  })
+  test('an untagged window in another tmux server is not killed by a stale row', () => {
+    const { persistence, saved, calls, setSnapshot } = fixture()
+    setSnapshot({ epoch: 'epoch2', windows: new Map([['ab:@1', { boardId: '', runId: '' }]]) })
+    expect(persistence.ownerOfWindow('ab:@1')).toBeNull()
+    persistence.stop(persistence.catalog.get(saved.id)!, 'hibernating')
+    expect(calls).toEqual([])
+  })
+  test('adopts a tagged pane created before the database binding was saved', () => {
+    const { persistence, saved, live, setTags } = fixture()
+    persistence.catalog.transition(saved.id, 'interrupted')
+    const run = persistence.catalog.beginRun(saved.id)
+    setTags(saved.id, run.id, 2)
+    persistence.beforeSnapshot([live])
+    expect(persistence.catalog.get(saved.id)?.state).toBe('running')
+    expect(persistence.catalog.get(saved.id)?.epoch).toBe('epoch2')
+  })
+  test('finishes a persisted hibernation intent after a backend crash', () => {
+    const { persistence, saved, live, calls } = fixture()
+    persistence.db.db
+      .query('UPDATE board_sessions SET requested_state=? WHERE id=?')
+      .run('hibernating', saved.id)
+    const sessions = [live]
+    persistence.beforeSnapshot(sessions)
+    expect(calls).toEqual(['ab:@1'])
+    expect(sessions).toHaveLength(0)
+    expect(persistence.catalog.get(saved.id)?.state).toBe('hibernating')
+  })
+  test('a conversation hosted in another tmux session imports as not recoverable and is never resumed twice', () => {
+    const { db, persistence, created, probes } = fixture()
+    insertRecord(db, 'external-conv', 'work:@3')
+    probes.set('work:@3', 'present')
+    // A fresh boot imports the legacy row.
+    const booted = new PersistentSessions(
+      db,
+      persistence.manager,
+      'host-test',
+      () => ({ epoch: 'epoch1', windows: new Map() }),
+      (pid) => `epoch${pid}`,
+      'ab'
+    )
+    const imported = booted.catalog.byProvider('external-conv')!
+    expect(imported.state).not.toBe('interrupted')
+    expect(booted.catalog.history({ state: 'interrupted' }).sessions).toHaveLength(0)
+
+    expect(() => booted.resume(imported.id, () => 'claude --resume x')).toThrow(
+      'another tmux window'
+    )
+    expect(created).toEqual([])
+    expect(db.getSessionById('external-conv')?.currentWindow).toBe('work:@3')
+    expect(booted.catalog.get(imported.id)?.state).toBe(imported.state)
+  })
+  test('reconcile does not release a conversation the rematcher moved to another window', () => {
+    // Wake race: the wake's row is bound to @1, the rematcher claimed the
+    // conversation for @9, and the wake killed @1.
+    const { db, persistence, saved } = fixture()
+    insertRecord(db, 'moved-conv', 'ab:@9')
+    persistence.catalog.associate(saved.id, 'moved-conv', 'claude')
+    persistence.beforeSnapshot([], 1)
+    expect(persistence.catalog.get(saved.id)?.state).toBe('interrupted')
+    expect(db.getSessionById('moved-conv')?.currentWindow).toBe('ab:@9')
+  })
+  test('reconcile still releases a conversation that stayed on the dead window', () => {
+    const { db, persistence, saved } = fixture()
+    insertRecord(db, 'stayed-conv', 'ab:@1')
+    persistence.catalog.associate(saved.id, 'stayed-conv', 'claude')
+    persistence.beforeSnapshot([], 1)
+    expect(db.getSessionById('stayed-conv')?.currentWindow).toBeNull()
+  })
+  test('killing a wake window through the catalog retires its row and keeps the moved claim', () => {
+    const { db, persistence, saved, calls } = fixture()
+    insertRecord(db, 'moved-conv', 'ab:@9')
+    persistence.catalog.associate(saved.id, 'moved-conv', 'claude')
+    persistence.killWindow('ab:@1', 'hibernating')
+    expect(calls).toEqual(['ab:@1'])
+    expect(persistence.catalog.get(saved.id)?.state).toBe('hibernating')
+    expect(db.getSessionById('moved-conv')?.currentWindow).toBe('ab:@9')
+    // Nothing left for the next reconcile to interrupt or release.
+    persistence.beforeSnapshot([], 1)
+    expect(persistence.catalog.get(saved.id)?.state).toBe('hibernating')
+    expect(db.getSessionById('moved-conv')?.currentWindow).toBe('ab:@9')
+  })
+})
+
+describe('catalog database files', () => {
+  function tempDbPath() {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ab-catalog-files-'))
+    return { dir, dbPath: path.join(dir, 'agentboard.db') }
+  }
+  const backups = (dir: string) =>
+    fs.readdirSync(dir).filter((f) => f.includes('before-catalog'))
+
+  test('a fresh install writes no backup', () => {
+    const { dir, dbPath } = tempDbPath()
+    const db = initDatabase({ path: dbPath })
+    new SessionCatalog(db.db, 'host-test')
+    db.close()
+    expect(backups(dir)).toEqual([])
+    fs.rmSync(dir, { recursive: true, force: true })
+  })
+
+  test('an upgrade with existing sessions is backed up exactly once', () => {
+    const { dir, dbPath } = tempDbPath()
+    const db = initDatabase({ path: dbPath })
+    insertRecord(db, 'existing', null)
+    new SessionCatalog(db.db, 'host-test')
+    new SessionCatalog(db.db, 'host-test')
+    db.close()
+    expect(backups(dir)).toEqual(['agentboard.db.before-catalog-schema'])
+    fs.rmSync(dir, { recursive: true, force: true })
+  })
+
+  test('the database and its WAL files are private to the user', () => {
+    const { dir, dbPath } = tempDbPath()
+    const db = initDatabase({ path: dbPath })
+    for (const file of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) {
+      if (fs.existsSync(file)) expect(fs.statSync(file).mode & 0o777).toBe(0o600)
+    }
+    expect(fs.existsSync(`${dbPath}-wal`)).toBe(true)
+    db.close()
+    fs.rmSync(dir, { recursive: true, force: true })
+  })
+})
