@@ -79,6 +79,13 @@ describe('sanitizedTmuxEnv', () => {
     expect(sanitizedTmuxEnv({ TMUX: 'x,1,0', TMUX_TMPDIR: '/tmp/y' }).TMUX).toBeUndefined()
   })
 
+  test('an empty or whitespace TMUX_TMPDIR does not strip TMUX', () => {
+    // decideNestedTmux treats blank TMUX_TMPDIR as absent — the sanitize rule
+    // must match or the 'allow'/'none' paths lose the inherited socket.
+    expect(sanitizedTmuxEnv({ TMUX: 'x,1,0', TMUX_TMPDIR: '' }).TMUX).toBe('x,1,0')
+    expect(sanitizedTmuxEnv({ TMUX: 'x,1,0', TMUX_TMPDIR: '  ' }).TMUX).toBe('x,1,0')
+  })
+
   test('defaults to process.env', () => {
     const env = sanitizedTmuxEnv()
     expect(env.NODE_ENV).toBeUndefined()

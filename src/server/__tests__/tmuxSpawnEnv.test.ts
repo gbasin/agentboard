@@ -14,6 +14,7 @@
 import { describe, expect, test } from 'bun:test'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { timedSpawnSync } from '../syncSpawnTiming'
 
 const SERVER_DIR = join(import.meta.dir, '..')
 
@@ -70,5 +71,67 @@ describe('tmux spawn env wiring', () => {
     }
     expect(covered).toBeGreaterThan(0)
     expect(violations).toEqual([])
+  })
+
+  test('timedSpawnSync spawns with a sanitized env by default', () => {
+    const bunAny = Bun as typeof Bun & { spawnSync: typeof Bun.spawnSync }
+    const original = bunAny.spawnSync
+    let seenEnv: Record<string, string | undefined> | undefined
+    bunAny.spawnSync = ((command: string[], options?: { env?: Record<string, string | undefined> }) => {
+      seenEnv = options?.env
+      return {
+        exitCode: 0,
+        signalCode: null,
+        stdout: Buffer.from(''),
+        stderr: Buffer.from(''),
+        success: true,
+        pid: 1,
+        resourceUsage: undefined,
+      }
+    }) as unknown as typeof Bun.spawnSync
+
+    const prevTmux = process.env.TMUX
+    const prevTmpDir = process.env.TMUX_TMPDIR
+    process.env.TMUX = '/private/tmp/tmux-501/default,1,0'
+    process.env.TMUX_TMPDIR = '/tmp/ab-unit-test'
+    try {
+      timedSpawnSync(['echo', 'hi'])
+    } finally {
+      bunAny.spawnSync = original
+      if (prevTmux === undefined) delete process.env.TMUX
+      else process.env.TMUX = prevTmux
+      if (prevTmpDir === undefined) delete process.env.TMUX_TMPDIR
+      else process.env.TMUX_TMPDIR = prevTmpDir
+    }
+
+    // The spawn must see an explicit env — and it must already be isolated:
+    // a stale inherited $TMUX (what Workers see) cannot leak through.
+    expect(seenEnv).toBeDefined()
+    expect(seenEnv!.TMUX).toBeUndefined()
+    expect(seenEnv!.TMUX_TMPDIR).toBe('/tmp/ab-unit-test')
+  })
+
+  test('timedSpawnSync honours an explicit env override', () => {
+    const bunAny = Bun as typeof Bun & { spawnSync: typeof Bun.spawnSync }
+    const original = bunAny.spawnSync
+    let seenEnv: Record<string, string | undefined> | undefined
+    bunAny.spawnSync = ((command: string[], options?: { env?: Record<string, string | undefined> }) => {
+      seenEnv = options?.env
+      return {
+        exitCode: 0,
+        signalCode: null,
+        stdout: Buffer.from(''),
+        stderr: Buffer.from(''),
+        success: true,
+        pid: 1,
+        resourceUsage: undefined,
+      }
+    }) as unknown as typeof Bun.spawnSync
+    try {
+      timedSpawnSync(['echo', 'hi'], { env: { TMUX: '/kept,1,0' } })
+    } finally {
+      bunAny.spawnSync = original
+    }
+    expect(seenEnv).toEqual({ TMUX: '/kept,1,0' })
   })
 })
