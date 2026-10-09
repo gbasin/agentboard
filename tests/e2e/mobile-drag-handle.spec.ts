@@ -6,7 +6,10 @@
 //
 // Touch drags go through CDP Input.dispatchTouchEvent — page.touchscreen only
 // exposes tap(). The iPhone UA + hasTouch emulation makes pointer:coarse
-// match, which is what moves the activator onto the handle.
+// match, which is what moves the activator onto the handle. Caveat: this runs
+// on Chromium — the fix relies on the standards-based touch-action +
+// pointercancel mechanism, and Safari/WebKit coverage would require a WebKit
+// project.
 import { test, expect, type CDPSession, type Page } from '@playwright/test'
 import {
   Windows,
@@ -95,30 +98,32 @@ test('a vertical pan starting on the card body scrolls — it must not drag', as
   const cardBox = await card.boundingBox()
   expect(cardBox).not.toBeNull()
 
+  const orderBefore = await namesTopToBottom(page.locator(drawer), prefix)
+  const from = { x: cardBox!.x + cardBox!.width / 2, y: cardBox!.y + cardBox!.height / 2 }
   const cdp = await page.context().newCDPSession(page)
   try {
-    await touchStart(cdp, {
-      x: cardBox!.x + cardBox!.width / 2,
-      y: cardBox!.y + cardBox!.height / 2,
-    })
-    await touchMoveTo(
-      cdp,
-      page,
-      { x: cardBox!.x + cardBox!.width / 2, y: cardBox!.y + cardBox!.height / 2 },
-      { x: cardBox!.x + cardBox!.width / 2, y: cardBox!.y + cardBox!.height / 2 - 260 }
+    await touchStart(cdp, from)
+    await touchMoveTo(cdp, page, from, { x: from.x, y: from.y - 260 })
+
+    // Observe mid-gesture: the pan must scroll the list while the finger is
+    // still down, and the row must not engage a drag — a cancelled drag's
+    // transform is gone by touchEnd, so checking then proves nothing.
+    await expect
+      .poll(() => scroller.evaluate((el) => el.scrollTop))
+      .toBeGreaterThan(40)
+    const midTransform = await card.evaluate(
+      (el) => el.parentElement?.style.transform ?? ''
     )
+    expect(midTransform === '' || /translate3d\(0px, 0px/.test(midTransform)).toBe(true)
+
     await touchEnd(cdp)
   } finally {
     await cdp.detach()
   }
 
-  // The gesture panned the list…
-  await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(40)
-  // …and the row never picked up a drag transform.
-  const transform = await card.evaluate(
-    (el) => el.parentElement?.style.transform ?? ''
-  )
-  expect(transform === '' || /translate3d\(0px, 0px/.test(transform)).toBe(true)
+  await expect
+    .poll(() => namesTopToBottom(page.locator(drawer), prefix))
+    .toEqual(orderBefore)
 })
 
 test('a pan starting on the drag handle drags and reorders the card', async ({
