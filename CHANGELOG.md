@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.26.2](https://github.com/gbasin/agentboard/compare/v0.26.1...v0.26.2) (2026-10-09)
+
+
+### Bug Fixes
+
+* keep session-card drags from scrolling the panel sideways ([#376](https://github.com/gbasin/agentboard/issues/376)) ([79b0ecb](https://github.com/gbasin/agentboard/commit/79b0ecb9e3635e7f86a8028655e89a724b084460))
+* keep spawned tmux clients on the isolated socket when nested ([#378](https://github.com/gbasin/agentboard/issues/378)) ([76ceb46](https://github.com/gbasin/agentboard/commit/76ceb46150420ae32928f2480025b060b98aab1e))
+* make recovery notice dismissable and clear it after recovery ([#374](https://github.com/gbasin/agentboard/issues/374)) ([d52c91b](https://github.com/gbasin/agentboard/commit/d52c91b5cfd4e49c0bd897d5c3b1661be5d0f4c0))
+* make touch drags work via a drag handle on coarse pointers ([#379](https://github.com/gbasin/agentboard/issues/379)) ([d0242a9](https://github.com/gbasin/agentboard/commit/d0242a97ed236a6b493af7b07061d850b21b80a2))
+
 ## [0.26.1](https://github.com/gbasin/agentboard/compare/v0.26.0...v0.26.1) (2026-10-06)
 
 
