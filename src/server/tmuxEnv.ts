@@ -32,5 +32,15 @@ export function sanitizedTmuxEnv(
     if (value === undefined || isLeakedLaunchEnvVar(key)) continue
     env[key] = value
   }
+  // A tmux *client* picks its server socket from $TMUX when set, ignoring
+  // TMUX_TMPDIR entirely — an env carrying both is contradictory, and
+  // TMUX_TMPDIR marks the instance as deliberately socket-isolated (see
+  // tmuxIsolation.ts). Dropping the pair here also covers realms that never
+  // saw the main thread's `delete process.env.TMUX`: Bun Workers keep the
+  // process-start environment, so their copy still holds the stale $TMUX.
+  if (env.TMUX_TMPDIR !== undefined) {
+    delete env.TMUX
+    delete env.TMUX_PANE
+  }
   return env
 }

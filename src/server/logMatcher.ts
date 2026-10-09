@@ -21,6 +21,7 @@ import {
 } from './terminal/tmuxText'
 import { logger } from './logger'
 import { timedSpawnSync } from './syncSpawnTiming'
+import { sanitizedTmuxEnv } from './tmuxEnv'
 import { withTmuxUtf8Flag } from './tmuxFormat'
 
 export type LogTextMode = 'all' | 'assistant' | 'user' | 'assistant-user'
@@ -115,6 +116,10 @@ async function runCommandAsync(
   const proc = Bun.spawn(args, {
     stdout: 'pipe',
     stderr: 'pipe',
+    // Explicit env: omitted, Bun hands the child the process-start environ —
+    // a stale $TMUX would send tmux calls (and Workers running this) to the
+    // live server instead of the isolated socket.
+    env: sanitizedTmuxEnv(),
     ...(options.timeoutMs && options.timeoutMs > 0
       ? { timeout: options.timeoutMs }
       : {}),

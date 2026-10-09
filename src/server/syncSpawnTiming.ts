@@ -7,6 +7,7 @@
 // a freeze instead of guessing from side effects (missed pongs, reconnects).
 
 import { logger } from './logger'
+import { sanitizedTmuxEnv } from './tmuxEnv'
 
 // Slower than this produces user-visible input lag while it runs.
 export const SLOW_SYNC_SPAWN_MS = 250
@@ -138,7 +139,14 @@ export function timedSpawnSync<
 ): Bun.SyncSubprocess<Out, Err> {
   const startedAt = performance.now()
   try {
-    return Bun.spawnSync(command, options)
+    // Explicit env: omitted entirely, Bun reuses the environment captured at
+    // process start — mutations like tmuxIsolation's `delete process.env.TMUX`
+    // never reach the child (and never reach Workers at all). An explicit
+    // `env` is read fresh at call time. Callers may still override.
+    return Bun.spawnSync(command, {
+      ...options,
+      env: options?.env ?? sanitizedTmuxEnv(),
+    })
   } finally {
     // Record timing even when spawnSync throws (e.g. ENOENT after a stall).
     logSlowSyncSpawn(
@@ -175,8 +183,10 @@ export async function timedSpawnAsync(
       stderr: 'pipe',
       timeout: options.timeout,
       // Explicit: without env, Bun resolves the program on the PATH from
-      // process start rather than the current process.env.
-      env: options.env ?? process.env,
+      // process start rather than the current process.env. Sanitized for the
+      // same reason as the sync path — and so Workers (whose process.env is
+      // the stale start-up copy) still get the post-isolation tmux env.
+      env: options.env ?? sanitizedTmuxEnv(),
     })
     const [stdout, stderr] = await Promise.all([
       new Response(proc.stdout).text(),

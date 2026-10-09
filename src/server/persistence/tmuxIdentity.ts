@@ -1,6 +1,7 @@
 /** Reliable tmux server/window identities; failure is distinct from an empty server. */
 import { randomUUID } from 'node:crypto'
 import { config } from '../config'
+import { sanitizedTmuxEnv } from '../tmuxEnv'
 
 export interface WindowIdentity {
   boardId: string
@@ -17,6 +18,7 @@ function runTmux(args: string[]): string {
     stdout: 'pipe',
     stderr: 'pipe',
     timeout: config.tmuxTimeoutMs || 3000,
+    env: sanitizedTmuxEnv(),
   })
   if (result.exitCode !== 0 || result.signalCode)
     throw new Error(
