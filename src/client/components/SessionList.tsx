@@ -415,6 +415,12 @@ export default function SessionList({
     })
   )
 
+  // On coarse pointers the card body must keep native panning — with the
+  // dnd-kit listeners on the whole row, Safari claims the gesture for
+  // scrolling and pointercancel kills every touch drag. Rows instead get a
+  // dedicated touch-action:none handle that owns the activator listeners.
+  const coarsePointer = useIsMobileLayout('(pointer: coarse)')
+
   // While dragging, render in the snapshot order — never the live order.
   const displaySessions = useMemo(
     () => freezeListOrderDuringDrag(filteredSessions, dragOrderSnapshot),
@@ -661,6 +667,7 @@ export default function SessionList({
                       {...displayPrefs}
                       showHostInfo={showHostInfo}
                       dropIndicator={showDropIndicator}
+                      dragViaHandle={coarsePointer}
                       onSelect={() => onSelect(session.id)}
                       onStartEdit={canControl ? () => setEditingSessionId(session.id) : undefined}
                       onCancelEdit={() => setEditingSessionId(null)}
@@ -788,6 +795,9 @@ interface SortableSessionItemProps {
   showLastUserMessage: boolean
   showHostInfo: boolean
   dropIndicator: 'above' | 'below' | null
+  /** Coarse pointers only: drag activates from the card's handle so the row
+   * body keeps native panning (dnd-kit listeners move onto the handle). */
+  dragViaHandle: boolean
   onSelect: () => void
   onStartEdit?: () => void
   onCancelEdit: () => void
@@ -810,6 +820,7 @@ const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>
   showLastUserMessage,
   showHostInfo,
   dropIndicator,
+  dragViaHandle,
   onSelect,
   onStartEdit,
   onCancelEdit,
@@ -830,11 +841,6 @@ const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>
     animateLayoutChanges: ({ isSorting, wasDragging }) => isSorting || wasDragging,
   })
 
-  // On coarse pointers the card body must keep native panning — with the
-  // dnd-kit listeners on the whole row, Safari claims the gesture for
-  // scrolling and pointercancel kills every touch drag. Move the activator
-  // to a small touch-action:none handle instead.
-  const coarsePointer = useIsMobileLayout('(pointer: coarse)')
 
   // Pin the drag transform to the vertical axis: a horizontally-tracking card
   // extends the scroller's scrollable overflow, which lets wheel flicks and
@@ -918,7 +924,7 @@ const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>
             }
       }
       {...attributes}
-      {...(coarsePointer ? {} : listeners)}
+      {...(dragViaHandle ? {} : listeners)}
     >
       {/* Drop indicator line */}
       {dropIndicator === 'above' && (
@@ -933,7 +939,7 @@ const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>
         showLastUserMessage={showLastUserMessage}
         showHostInfo={showHostInfo}
         isDragging={isDragging}
-        dragHandleListeners={coarsePointer ? listeners : undefined}
+        dragHandleListeners={dragViaHandle ? listeners : undefined}
         onSelect={onSelect}
         onStartEdit={onStartEdit}
         onCancelEdit={onCancelEdit}
