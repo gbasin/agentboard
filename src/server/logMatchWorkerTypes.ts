@@ -1,5 +1,9 @@
 import type { AgentType, Session } from '../shared/types'
-import type { ExactMatchProfiler } from './logMatcher'
+import type {
+  ExactMatchContext,
+  ExactMatchProfiler,
+  WindowLogVerificationResult,
+} from './logMatcher'
 import type { KnownSession, LogEntrySnapshot } from './logPollData'
 import type { SessionSnapshot } from './logMatchGate'
 
@@ -22,6 +26,23 @@ export interface LastMessageCandidate {
   logFilePath: string
   projectPath: string | null
   agentType: AgentType | null
+}
+
+/**
+ * One startup-verification job: does `tmuxWindow`'s scrollback still match
+ * `logFilePath`? Runs serially in the worker with shared rg passes.
+ */
+export interface VerifyWindowJob {
+  sessionId: string
+  tmuxWindow: string
+  logFilePath: string
+  context: ExactMatchContext
+  excludeLogPaths: string[]
+}
+
+export interface VerifyWindowResult {
+  sessionId: string
+  verification: WindowLogVerificationResult
 }
 
 export interface MatchWorkerRequest {
@@ -52,6 +73,12 @@ export interface MatchWorkerRequest {
    * full-tree scan + head-parse from the main thread.
    */
   buildCodexSubagentIndex?: boolean
+  /**
+   * Startup verification batch. When present, the worker runs only this —
+   * pane captures, shared rg passes, and tail validation all happen on the
+   * worker thread so restart-time matching can't stall the event loop.
+   */
+  verifyJobs?: VerifyWindowJob[]
 }
 
 /** Codex subagent linkage extracted from a rollout's session_meta. */
@@ -91,6 +118,9 @@ export interface MatchWorkerResponse {
   /** Present when buildCodexSubagentIndex was requested. */
   codexSubagents?: CodexSubagentLink[]
   codexIndexMs?: number
+  /** Present when verifyJobs was requested. */
+  verifyResults?: VerifyWindowResult[]
+  verifyMs?: number
   profile?: ExactMatchProfiler
   error?: string
   matchingError?: string

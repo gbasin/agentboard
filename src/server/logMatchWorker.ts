@@ -17,6 +17,7 @@ import {
   getLogTokenCount,
   isToolNotificationText,
   matchWindowsToLogsByExactRg,
+  verifyWindowsBatch,
 } from './logMatcher'
 import { getEntriesNeedingMatch, shouldSkipMatching } from './logMatchGate'
 import { scanCodexSubagentLinks } from './subagentLogs'
@@ -55,6 +56,46 @@ export function handleMatchWorkerRequest(
     const search = payload.search ?? {}
     const logDirs = payload.logDirs ?? getLogSearchDirs()
     const normalizedLogDirs = logDirs.map((logDir) => path.resolve(logDir))
+
+    // Startup verification is its own request — a dedicated batch that shares
+    // rg passes across windows. Skip the poll pipeline entirely.
+    if (payload.verifyJobs && payload.verifyJobs.length > 0) {
+      const verifyStart = performance.now()
+      const verifyProfile = search.profile
+        ? createExactMatchProfiler()
+        : undefined
+      const verifyMap = verifyWindowsBatch(
+        payload.verifyJobs.map((job) => ({
+          sessionId: job.sessionId,
+          tmuxWindow: job.tmuxWindow,
+          expectedLogPath: job.logFilePath,
+          context: job.context,
+          excludeLogPaths: job.excludeLogPaths,
+        })),
+        normalizedLogDirs,
+        payload.scrollbackLines ?? DEFAULT_SCROLLBACK_LINES,
+        {
+          rgThreads: search.rgThreads,
+          tailBytes: search.tailBytes,
+          profile: verifyProfile,
+        }
+      )
+      const verifyResults = payload.verifyJobs.map((job) => ({
+        sessionId: job.sessionId,
+        verification: verifyMap.get(job.sessionId) ?? {
+          status: 'inconclusive' as const,
+          bestMatch: null,
+          reason: 'no_match' as const,
+        },
+      }))
+      return {
+        id: payload.id,
+        type: 'result',
+        verifyResults,
+        verifyMs: performance.now() - verifyStart,
+        profile: verifyProfile,
+      }
+    }
     let entries: LogEntrySnapshot[]
     let scanMs = 0
     let sortMs = 0

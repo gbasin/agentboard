@@ -62,19 +62,26 @@ function findJsonlFiles(dir: string): string[] {
 }
 
 function runRg(args: string[]) {
-  const patternIndex = args.indexOf('-e')
-  const pattern = patternIndex >= 0 ? args[patternIndex + 1] ?? '' : ''
-  const regex = pattern ? new RegExp(pattern, 'm') : null
+  // Union semantics: a file/line matches when ANY -e pattern matches.
+  const patterns: string[] = []
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '-e' && args[i + 1] !== undefined) {
+      patterns.push(args[i + 1] as string)
+      i++
+    }
+  }
+  const regexes = patterns.map((p) => new RegExp(p, 'm'))
+  const matchesAny = (text: string) => regexes.some((r) => r.test(text))
 
   if (args.includes('--json')) {
     const filePath = args[args.length - 1] ?? ''
-    if (!filePath || !regex || !fsSync.existsSync(filePath)) {
+    if (!filePath || regexes.length === 0 || !fsSync.existsSync(filePath)) {
       return { exitCode: 1, stdout: Buffer.from(''), stderr: Buffer.from('') }
     }
     const lines = fsSync.readFileSync(filePath, 'utf8').split('\n')
     const output: string[] = []
     lines.forEach((line, index) => {
-      if (regex.test(line)) {
+      if (matchesAny(line)) {
         output.push(JSON.stringify({ type: 'match', data: { line_number: index + 1 } }))
       }
     })
@@ -87,19 +94,19 @@ function runRg(args: string[]) {
   }
 
   if (args.includes('-l')) {
-    if (!regex) {
+    if (regexes.length === 0) {
       return { exitCode: 1, stdout: Buffer.from(''), stderr: Buffer.from('') }
     }
     const targets: string[] = []
     let skipNext = false
-    for (let i = patternIndex + 2; i < args.length; i += 1) {
+    for (let i = 0; i < args.length; i += 1) {
       const arg = args[i] ?? ''
       if (skipNext) {
         skipNext = false
         continue
       }
       if (!arg) continue
-      if (arg === '--glob' || arg === '--threads') {
+      if (arg === '--glob' || arg === '--threads' || arg === '-e') {
         skipNext = true
         continue
       }
@@ -118,11 +125,36 @@ function runRg(args: string[]) {
     }
     const matches = files.filter((file) => {
       const content = fsSync.readFileSync(file, 'utf8')
-      return regex.test(content)
+      return matchesAny(content)
     })
     return {
       exitCode: matches.length > 0 ? 0 : 1,
       stdout: Buffer.from(matches.join('\n')),
+      stderr: Buffer.from(''),
+    }
+  }
+
+  // Plain content mode: rg -e <patterns...> <file> → the matched line, once per
+  // matching line (used by the batch scan's per-file attribution pass).
+  if (regexes.length > 0) {
+    const targets: string[] = []
+    let skip = false
+    for (const arg of args) {
+      if (skip) { skip = false; continue }
+      if (arg === '-e' || arg === '--threads' || arg === '--glob') { skip = true; continue }
+      if (arg.startsWith('-') || arg === 'rg') continue
+      targets.push(arg)
+    }
+    const output: string[] = []
+    for (const target of targets) {
+      if (!fsSync.existsSync(target) || !fsSync.statSync(target).isFile()) continue
+      for (const line of fsSync.readFileSync(target, 'utf8').split('\n')) {
+        if (matchesAny(line)) output.push(line)
+      }
+    }
+    return {
+      exitCode: output.length > 0 ? 0 : 1,
+      stdout: Buffer.from(output.join('\n')),
       stderr: Buffer.from(''),
     }
   }
@@ -397,5 +429,59 @@ describe('logMatchWorker', () => {
     )
     expect(entries).toContain(firstLogPath)
     expect(entries).toContain(secondLogPath)
+  })
+
+  test('verifyJobs returns per-session verdicts and skips the poll pipeline', async () => {
+    const logDir = path.join(tempRoot, 'logs')
+    await fs.mkdir(logDir, { recursive: true })
+    const logPath = path.join(logDir, 'session-verify.jsonl')
+    const message = 'verify this exact startup message'
+    await fs.writeFile(
+      logPath,
+      buildUserLogEntry(message, { sessionId: 's-verify', cwd: '/tmp/alpha' })
+    )
+    setTmuxOutput('agentboard:1', buildPromptScrollback([message]))
+    // agentboard:2 has no captured output — no extractable messages.
+
+    postRequest({
+      id: 'request-verify',
+      windows: [baseSession],
+      maxLogsPerPoll: 5,
+      sessions: [],
+      scrollbackLines: 25,
+      logDirs: [logDir],
+      verifyJobs: [
+        {
+          sessionId: 's-verify',
+          tmuxWindow: 'agentboard:1',
+          logFilePath: logPath,
+          context: {},
+          excludeLogPaths: [],
+        },
+        {
+          sessionId: 's-empty',
+          tmuxWindow: 'agentboard:2',
+          logFilePath: logPath,
+          context: {},
+          excludeLogPaths: [],
+        },
+      ],
+    })
+
+    expect(messages).toHaveLength(1)
+    const response = messages[0] as Record<string, unknown>
+    expect(response.type).toBe('result')
+    const results = response.verifyResults as Array<{
+      sessionId: string
+      verification: { status: string }
+    }>
+    expect(results).toHaveLength(2)
+    expect(results[0]?.sessionId).toBe('s-verify')
+    expect(results[0]?.verification.status).toBe('verified')
+    expect(results[1]?.sessionId).toBe('s-empty')
+    expect(results[1]?.verification.status).toBe('inconclusive')
+    // A verify request must not run the regular poll pipeline.
+    expect(response.entries).toBeUndefined()
+    expect(response.matchSkipped).toBeUndefined()
   })
 })

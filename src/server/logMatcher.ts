@@ -199,42 +199,119 @@ function matchesMessageWithPrefixLimit(text: string, pattern: RegExp): boolean {
   return index >= 0 && index <= MAX_MESSAGE_MATCH_PREFIX
 }
 
-function hasMessageInParsedJson(value: unknown, pattern: RegExp): boolean {
-  if (value === null || value === undefined) return false
+/**
+ * Compiled matchers for one user message. The fallback regexes reproduce the
+ * raw-line checks for lines that fail JSON.parse.
+ */
+interface MessageProbe {
+  baseRegex: RegExp
+  textFieldRegex: RegExp
+  contentFieldRegex: RegExp
+}
 
+function buildMessageProbe(userMessage: string): MessageProbe {
+  const basePattern = messageToFlexiblePattern(userMessage)
+  return {
+    baseRegex: new RegExp(basePattern, 'm'),
+    textFieldRegex: new RegExp(
+      `"(?:text|message)"\\s*:\\s*"[^"]{0,1000}?${basePattern}`,
+      'm'
+    ),
+    contentFieldRegex: new RegExp(
+      `"content"\\s*:\\s*"[^"]{0,1000}?${basePattern}`,
+      'm'
+    ),
+  }
+}
+
+/**
+ * Everything a log line can contribute to a valid-user-context match, computed
+ * once per line. Batch verification pays the JSON.parse cost once per file
+ * instead of once per file per message.
+ *
+ * - parsed lines: `userTexts`/`allTexts` are the strings a message may match —
+ *   the object-walk strings from hasMessageInParsedJson (role-agnostic, as in
+ *   the original) plus normalized event texts. `userTexts` additionally drops
+ *   non-user events (the `userOnly` filter).
+ * - unparseable lines: the raw line plus whether tool-result context blocks
+ *   the "content" fallback.
+ */
+type LogLineMatchSpace =
+  | { parsed: true; userTexts: string[]; allTexts: string[] }
+  | { parsed: false; raw: string; contentBlocked: boolean }
+
+function collectMessageValueStrings(value: unknown, out: string[]): void {
+  if (value === null || value === undefined) {
+    return
+  }
   if (Array.isArray(value)) {
     for (const item of value) {
-      if (hasMessageInParsedJson(item, pattern)) return true
+      collectMessageValueStrings(item, out)
     }
-    return false
+    return
   }
-
   if (typeof value !== 'object') {
-    return false
+    return
   }
-
   const record = value as Record<string, unknown>
   const typeValue = record.type
   if (typeof typeValue === 'string' && TOOL_RESULT_TYPES.has(typeValue)) {
-    return false
+    return
   }
-
   for (const [key, child] of Object.entries(record)) {
     if (TOOL_RESULT_KEYS.has(key)) continue
-
     if (MESSAGE_VALUE_KEYS.has(key) && typeof child === 'string') {
-      if (matchesMessageWithPrefixLimit(child, pattern)) {
-        return true
-      }
+      out.push(child)
       continue
     }
-
     if (child && typeof child === 'object') {
-      if (hasMessageInParsedJson(child, pattern)) return true
+      collectMessageValueStrings(child, out)
     }
   }
+}
 
-  return false
+function lineMatchSpace(line: string): LogLineMatchSpace | null {
+  const trimmed = line.trim()
+  if (!trimmed) return null
+  try {
+    const parsed = JSON.parse(trimmed)
+    const walkTexts: string[] = []
+    collectMessageValueStrings(parsed, walkTexts)
+    const userTexts = [...walkTexts]
+    const allTexts = [...walkTexts]
+    for (const event of normalizeAgentLogEntry(parsed)) {
+      if (event.kind === 'tool_result') continue
+      if (!event.text) continue
+      allTexts.push(event.text)
+      if (event.role === 'user') userTexts.push(event.text)
+    }
+    return { parsed: true, userTexts, allTexts }
+  } catch {
+    return {
+      parsed: false,
+      raw: line,
+      contentBlocked:
+        /"type"\s*:\s*"tool_result"/.test(line) ||
+        /"type"\s*:\s*"custom_tool_call_output"/.test(line) ||
+        /"toolUseResult"\s*:/.test(line),
+    }
+  }
+}
+
+function lineSpaceMatches(
+  space: LogLineMatchSpace,
+  probe: MessageProbe,
+  userOnly: boolean
+): boolean {
+  if (space.parsed) {
+    const pool = userOnly ? space.userTexts : space.allTexts
+    for (const text of pool) {
+      if (matchesMessageWithPrefixLimit(text, probe.baseRegex)) return true
+    }
+    return false
+  }
+  if (probe.textFieldRegex.test(space.raw)) return true
+  return !space.contentBlocked && probe.contentFieldRegex.test(space.raw)
 }
 
 /**
@@ -256,62 +333,13 @@ export function hasMessageInValidUserContext(
   userMessage: string,
   { userOnly = false }: { userOnly?: boolean } = {}
 ): boolean {
-  const basePattern = messageToFlexiblePattern(userMessage)
-  const baseRegex = new RegExp(basePattern, 'm')
-  const lines = logContent.split('\n')
-
-  for (const line of lines) {
-    const trimmed = line.trim()
-    if (!trimmed) continue
-
-    try {
-      const parsed = JSON.parse(trimmed)
-      const normalized = normalizeAgentLogEntry(parsed)
-      if (
-        normalized.some((event) => {
-          if (event.kind === 'tool_result') return false
-          if (userOnly && event.role !== 'user') return false
-          if (!event.text) return false
-          return matchesMessageWithPrefixLimit(event.text, baseRegex)
-        })
-      ) {
-        return true
-      }
-      if (hasMessageInParsedJson(parsed, baseRegex)) {
-        return true
-      }
-      continue
-    } catch {
-      // Fall back to regex matching for non-JSON lines.
-    }
-
-    // Check for "text" or "message" fields - always valid
-    const textMessagePattern = new RegExp(
-      `"(?:text|message)"\\s*:\\s*"[^"]{0,1000}?${basePattern}`,
-      'm'
-    )
-    if (textMessagePattern.test(line)) {
+  const probe = buildMessageProbe(userMessage)
+  for (const line of logContent.split('\n')) {
+    const space = lineMatchSpace(line)
+    if (space && lineSpaceMatches(space, probe, userOnly)) {
       return true
     }
-
-    const hasToolResultType = /"type"\s*:\s*"tool_result"/.test(line)
-    const hasCustomToolOutputType = /"type"\s*:\s*"custom_tool_call_output"/.test(
-      line
-    )
-    const hasToolUseResultKey = /"toolUseResult"\s*:/.test(line)
-
-    // Check for "content" field only when not in a tool-result context.
-    if (!hasToolResultType && !hasCustomToolOutputType && !hasToolUseResultKey) {
-      const contentPattern = new RegExp(
-        `"content"\\s*:\\s*"[^"]{0,1000}?${basePattern}`,
-        'm'
-      )
-      if (contentPattern.test(line)) {
-        return true
-      }
-    }
   }
-
   return false
 }
 
@@ -2450,28 +2478,66 @@ export function tryExactMatchWindowToLog(
     usingTraceFallback = true
   }
 
-  const hasDisambiguators = Boolean(context.agentType || context.projectPath)
+  return resolveExactMatch(
+    messages,
+    usingTraceFallback,
+    context,
+    search,
+    (message, userOnly) =>
+      findLogsWithExactMessage(message, logDirs, {
+        minLength:
+          message.length >= MIN_EXACT_MATCH_LENGTH ? MIN_EXACT_MATCH_LENGTH : 1,
+        logPaths: search.logPaths,
+        tailBytes: search.tailBytes,
+        rgThreads: search.rgThreads,
+        profile: search.profile,
+        userOnly,
+      })
+  )
+}
+
+/**
+ * The messages a window search may use: long ones preferred; short ones only
+ * when disambiguators or the trace fallback allow them. Shared by
+ * resolveExactMatch and the batch scan's query collection so both admit the
+ * same set.
+ */
+function selectSearchMessages(
+  messages: string[],
+  allowShortMessages: boolean
+): string[] {
   const longMessages = messages.filter(
     (message) => message.length >= MIN_EXACT_MATCH_LENGTH
   )
+  return longMessages.length > 0 ? longMessages : allowShortMessages ? messages : []
+}
+
+/**
+ * Narrow the candidate set for one window's extracted messages and score the
+ * survivors. Shared by the per-window paths (rg lookup per message) and the
+ * startup batch scan (precomputed match sets).
+ *
+ * `findMatches(message, userOnly)` must return exactly what
+ * findLogsWithExactMessage would: files containing the message in a valid
+ * user context.
+ */
+function resolveExactMatch(
+  messages: string[],
+  usingTraceFallback: boolean,
+  context: ExactMatchContext,
+  search: ExactMatchSearchOptions,
+  findMatches: (message: string, userOnly: boolean) => string[]
+): ExactMatchResult | null {
+  const hasDisambiguators = Boolean(context.agentType || context.projectPath)
   const allowShortMessages = hasDisambiguators || usingTraceFallback
-  const messagesToSearch =
-    longMessages.length > 0 ? longMessages : allowShortMessages ? messages : []
+  const messagesToSearch = selectSearchMessages(messages, allowShortMessages)
   if (messagesToSearch.length === 0) return null  // has messages, but too short — not booting
 
   const sortedMessages = messagesToSearch.toSorted((a, b) => b.length - a.length)
   let candidates: string[] = []
 
   for (const message of sortedMessages) {
-    const minLength = message.length >= MIN_EXACT_MATCH_LENGTH ? MIN_EXACT_MATCH_LENGTH : 1
-    const matches = findLogsWithExactMessage(message, logDirs, {
-      minLength,
-      logPaths: search.logPaths,
-      tailBytes: search.tailBytes,
-      rgThreads: search.rgThreads,
-      profile: search.profile,
-      userOnly: !usingTraceFallback,
-    })
+    const matches = findMatches(message, !usingTraceFallback)
     if (matches.length === 0) continue
     candidates = intersectCandidates(candidates, matches)
     if (candidates.length <= 1) break
@@ -2526,6 +2592,7 @@ export function tryExactMatchWindowToLog(
     return null
   }
 
+  const profile = search.profile
   if (candidates.length === 1) {
     const score = scoreOrderedMessageMatches(candidates[0], orderedMessages, search)
     if (score.matchedCount === 0) {
@@ -3145,4 +3212,335 @@ export async function verifyWindowLogAssociationDetailedAsync(
     })
     return { status: 'inconclusive', bestMatch: null, reason: 'error' }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Batch startup verification
+//
+// verifyAllSessions used to run tryExactMatchWindowToLog per window: each
+// window re-scanned every log directory with rg once per message, and each
+// match's tail validation re-read and re-parsed the same files. On a large
+// corpus (10+ GB per dir) that was minutes of full-corpus scans.
+//
+// The batch path shares the scan: one rg -l pass per directory per pattern
+// chunk over the union of all windows' messages, then per candidate file a
+// single rg pass recovers per-message attribution and a single tail read +
+// line index validates every query. Results are identical to per-window
+// findLogsWithExactMessage calls by construction: a file is a candidate for
+// a message iff some raw line matches its pattern (reproduced per line) and
+// the same user-context predicate holds in the last
+// MAX_PROGRESSIVE_TAIL_BYTES.
+
+export interface WindowVerifyJob {
+  sessionId: string
+  tmuxWindow: string
+  /** The log path this window is expected to map to */
+  expectedLogPath: string
+  context: ExactMatchContext
+  excludeLogPaths: string[]
+}
+
+interface SharedScanQuery {
+  key: string
+  message: string
+  userOnly: boolean
+  probe: MessageProbe
+}
+
+function sharedQueryKey(message: string, userOnly: boolean): string {
+  return `${userOnly ? 'u' : 'a'}:${message}`
+}
+
+// One rg pass carries many -e patterns; bound each pass so argv stays well
+// under ARG_MAX even with hundreds of long messages.
+const SHARED_RG_MAX_PATTERNS_PER_PASS = 128
+const SHARED_RG_MAX_PATTERN_BYTES = 96 * 1024
+// A union pass scans each directory once; give it more headroom than the
+// per-message scans (10s) since a timeout here degrades every window at once.
+const SHARED_RG_TIMEOUT_MS = 60000
+
+interface PreparedVerifyJob {
+  job: WindowVerifyJob
+  messages: string[]
+  usingTraceFallback: boolean
+}
+
+/**
+ * rg for a batch of messages, shared across windows. Returns, per
+ * (message, userOnly) query, the files where the message validates in a user
+ * context — identical to calling findLogsWithExactMessage per query.
+ *
+ * Two stages keep it exact:
+ * 1. `rg -l` once per directory per pattern chunk → union candidate files.
+ *    The union is a superset of every per-message hit set, so nothing a
+ *    per-message scan would find is missed.
+ * 2. Per union file, one `rg` returns every line matching any pattern. Testing
+ *    each raw line against each pattern reproduces rg's per-message hit
+ *    semantics exactly (a file is a hit for message m iff some raw line
+ *    matches m's pattern). Tail validation then checks the last
+ *    MAX_PROGRESSIVE_TAIL_BYTES once per file with a shared line index.
+ */
+export function findLogsWithExactMessagesBatch(
+  queries: Array<{ message: string; userOnly: boolean }>,
+  logDirs: string[],
+  search: ExactMatchSearchOptions = {}
+): Map<string, Set<string>> {
+  const profile = search.profile
+  const unique = new Map<string, SharedScanQuery>()
+  for (const { message, userOnly } of queries) {
+    const key = sharedQueryKey(message, userOnly)
+    if (!unique.has(key)) {
+      unique.set(key, {
+        key,
+        message,
+        userOnly,
+        probe: buildMessageProbe(message),
+      })
+    }
+  }
+  const matched = new Map<string, Set<string>>()
+  for (const key of unique.keys()) matched.set(key, new Set())
+  if (unique.size === 0) return matched
+
+  // rg pattern (filesystem scan) is userOnly-agnostic — the flag only affects
+  // tail validation. Dedupe the union patterns by message text.
+  const patternsByMessage = new Map<string, string>()
+  for (const query of unique.values()) {
+    if (!patternsByMessage.has(query.message)) {
+      patternsByMessage.set(
+        query.message,
+        messageToFlexiblePattern(query.message)
+      )
+    }
+  }
+  const unionPatterns = [...patternsByMessage.values()]
+
+  const candidateFiles = new Set<string>()
+  for (const logDir of logDirs) {
+    let chunk: string[] = []
+    let chunkBytes = 0
+    const flush = () => {
+      if (chunk.length === 0) return
+      const args = ['rg', '-l']
+      for (const pattern of chunk) args.push('-e', pattern)
+      if (search.rgThreads && search.rgThreads > 0) {
+        args.push('--threads', String(search.rgThreads))
+      }
+      args.push('--glob', '**/*.jsonl', logDir)
+      const start = performance.now()
+      const result = runCommandSync(args, { timeoutMs: SHARED_RG_TIMEOUT_MS })
+      if (profile) {
+        profile.rgListRuns += 1
+        profile.rgListMs += performance.now() - start
+      }
+      if (result.exitCode === 0) {
+        for (const line of result.stdout.trim().split('\n')) {
+          if (line) candidateFiles.add(line)
+        }
+      }
+      chunk = []
+      chunkBytes = 0
+    }
+    for (const pattern of unionPatterns) {
+      chunk.push(pattern)
+      chunkBytes += pattern.length
+      if (
+        chunk.length >= SHARED_RG_MAX_PATTERNS_PER_PASS ||
+        chunkBytes >= SHARED_RG_MAX_PATTERN_BYTES
+      ) {
+        flush()
+      }
+    }
+    flush()
+  }
+
+  const queryList = [...unique.values()]
+  for (const logPath of candidateFiles) {
+    if (isGrokTelemetryFile(logPath)) continue
+
+    // rg-hit attribution: which of the union patterns match this file at all.
+    // Per-window findLogsWithExactMessage requires a raw rg hit before the
+    // tail is even read, so a query with no raw-matching line is out.
+    const hitArgs = ['rg']
+    for (const pattern of unionPatterns) hitArgs.push('-e', pattern)
+    hitArgs.push(logPath)
+    const hitResult = runCommandSync(hitArgs, {
+      timeoutMs: SHARED_RG_TIMEOUT_MS,
+    })
+    const rgHit = new Set<number>()
+    if (hitResult.exitCode === 0) {
+      for (const rawLine of hitResult.stdout.split('\n')) {
+        if (!rawLine) continue
+        for (let qi = 0; qi < queryList.length; qi++) {
+          if (rgHit.has(qi)) continue
+          if (
+            (queryList[qi] as SharedScanQuery).probe.baseRegex.test(rawLine)
+          ) {
+            rgHit.add(qi)
+          }
+        }
+      }
+    }
+    if (rgHit.size === 0) continue
+
+    const start = performance.now()
+    const tail = readLogTail(logPath, MAX_PROGRESSIVE_TAIL_BYTES)
+    if (profile) {
+      profile.tailReads += 1
+      profile.tailReadMs += performance.now() - start
+    }
+    if (!tail) continue
+
+    // Tail validation: build each line's match space once, then test every
+    // pending query against it — same predicate as
+    // hasMessageInValidUserContext, shared across messages.
+    const pending = new Set(rgHit)
+    for (const line of tail.split('\n')) {
+      if (pending.size === 0) break
+      const space = lineMatchSpace(line)
+      if (!space) continue
+      for (const qi of pending) {
+        const query = queryList[qi] as SharedScanQuery
+        if (lineSpaceMatches(space, query.probe, query.userOnly)) {
+          ;(matched.get(query.key) as Set<string>).add(logPath)
+          pending.delete(qi)
+        }
+      }
+    }
+  }
+  return matched
+}
+
+/**
+ * Verify a batch of windows against their expected log paths. Equivalent to
+ * verifyWindowLogAssociationDetailed per job, but shares the rg directory
+ * scans and per-file tail reads across all jobs. Runs synchronously — meant
+ * for the log-match worker, not the main thread.
+ */
+export function verifyWindowsBatch(
+  jobs: WindowVerifyJob[],
+  logDirs: string[],
+  scrollbackLines = DEFAULT_SCROLLBACK_LINES,
+  search: ExactMatchSearchOptions = {}
+): Map<string, WindowLogVerificationResult> {
+  const results = new Map<string, WindowLogVerificationResult>()
+  const shared: PreparedVerifyJob[] = []
+
+  for (const job of jobs) {
+    try {
+      const captureResult = captureTerminalScrollback(
+        job.tmuxWindow,
+        scrollbackLines
+      )
+      const scrollback = captureResult.content
+      let messages = extractRecentUserMessagesFromTmux(scrollback)
+      if (messages.length === 0) {
+        const ansiScrollback = getTerminalScrollbackWithAnsi(
+          job.tmuxWindow,
+          scrollbackLines
+        )
+        messages = extractPiUserMessagesFromAnsi(ansiScrollback)
+      }
+
+      if (messages.length === 0) {
+        const askAnswers = extractAskUserQuestionAnswers(scrollback)
+        const traces = extractRecentTraceLinesFromTmux(scrollback)
+        if (askAnswers.length === 0 && traces.length === 0) {
+          results.set(job.sessionId, {
+            status: 'inconclusive',
+            bestMatch: null,
+            reason: 'no_match',
+          })
+          continue
+        }
+        if (askAnswers.length > 0) {
+          // The Q→A path is its own matching routine; keep the per-window call.
+          const verification = verifyWindowLogAssociationDetailed(
+            job.tmuxWindow,
+            job.expectedLogPath,
+            logDirs,
+            {
+              context: job.context,
+              scrollbackLines,
+              excludeLogPaths: job.excludeLogPaths,
+            }
+          )
+          results.set(job.sessionId, verification)
+          continue
+        }
+        shared.push({ job, messages: traces, usingTraceFallback: true })
+        continue
+      }
+      shared.push({ job, messages, usingTraceFallback: false })
+    } catch (error) {
+      logger.warn('verify_window_log_error', {
+        tmuxWindow: job.tmuxWindow,
+        logPath: job.expectedLogPath,
+        error: String(error),
+      })
+      results.set(job.sessionId, {
+        status: 'inconclusive',
+        bestMatch: null,
+        reason: 'error',
+      })
+    }
+  }
+
+  const queries: Array<{ message: string; userOnly: boolean }> = []
+  for (const prepared of shared) {
+    const { job, messages, usingTraceFallback } = prepared
+    const allowShort =
+      Boolean(job.context.agentType || job.context.projectPath) ||
+      usingTraceFallback
+    for (const message of selectSearchMessages(messages, allowShort)) {
+      queries.push({ message, userOnly: !usingTraceFallback })
+    }
+  }
+  const messageFiles = findLogsWithExactMessagesBatch(queries, logDirs, search)
+
+  for (const prepared of shared) {
+    const { job, messages, usingTraceFallback } = prepared
+    try {
+      const excludeSet = new Set(job.excludeLogPaths)
+      excludeSet.delete(job.expectedLogPath)
+      const jobSearch: ExactMatchSearchOptions = {
+        ...search,
+        excludeLogPaths: excludeSet.size > 0 ? [...excludeSet] : undefined,
+      }
+      const bestMatch = resolveExactMatch(
+        messages,
+        usingTraceFallback,
+        job.context,
+        jobSearch,
+        (message, userOnly) =>
+          Array.from(
+            messageFiles.get(sharedQueryKey(message, userOnly)) ?? []
+          )
+      )
+      if (bestMatch === null) {
+        results.set(job.sessionId, {
+          status: 'inconclusive',
+          bestMatch: null,
+          reason: 'no_match',
+        })
+      } else if (bestMatch.logPath === job.expectedLogPath) {
+        results.set(job.sessionId, { status: 'verified', bestMatch })
+      } else {
+        results.set(job.sessionId, { status: 'mismatch', bestMatch })
+      }
+    } catch (error) {
+      logger.warn('verify_window_log_error', {
+        tmuxWindow: job.tmuxWindow,
+        logPath: job.expectedLogPath,
+        error: String(error),
+      })
+      results.set(job.sessionId, {
+        status: 'inconclusive',
+        bestMatch: null,
+        reason: 'error',
+      })
+    }
+  }
+
+  return results
 }
