@@ -54,6 +54,13 @@ test('dragging a card sideways never scrolls the panel horizontally', async ({
     )
   }
 
+  // Prove the drag actually engaged — without this, containment asserts are
+  // vacuous. The transform lives on the sortable wrapper (the card's parent).
+  const midTransform = await card.evaluate(
+    (el) => el.parentElement?.style.transform ?? ''
+  )
+  expect(midTransform).toMatch(/translate3d\(0px, [1-9][\d.]*px, 0px\)/)
+
   // Mid-drag: the scroller must never gain horizontal scrollability.
   const mid = await scroller.evaluate((el) => ({
     scrollLeft: el.scrollLeft,
