@@ -74,6 +74,18 @@ export interface Harness {
   puts: Record<string, unknown>[]
   /** When true, new WebSocket connections are closed immediately. */
   refuseConnections: boolean
+  /**
+   * Synthetic sessions appended verbatim to every `sessions` frame (after the
+   * real windows' rewrite). Mutate in place, then call `pushSessions` to send
+   * the composed list immediately instead of waiting for a server poll.
+   */
+  extras: Record<string, unknown>[]
+  /**
+   * Send a `sessions` frame carrying the last-seen real sessions plus the
+   * current `extras` to every routed socket. Use after mutating `extras` to
+   * control add/remove timing precisely (e.g. mid exit-animation).
+   */
+  pushSessions: () => void
   /** Close every currently open (routed) socket. */
   closeSockets: () => Promise<void>
 }
@@ -104,10 +116,19 @@ export async function installHarness(
   options: HarnessOptions
 ): Promise<Harness> {
   const sockets = new Set<WebSocketRoute>()
+  let lastRealSessions: Record<string, unknown>[] = []
   const harness: Harness = {
     settings: { ...options.settings },
     puts: [],
     refuseConnections: false,
+    extras: [],
+    pushSessions: () => {
+      const frame = JSON.stringify({
+        type: 'sessions',
+        sessions: [...lastRealSessions, ...harness.extras],
+      })
+      for (const ws of sockets) ws.send(frame)
+    },
     closeSockets: async () => {
       const open = [...sockets]
       sockets.clear()
@@ -156,9 +177,10 @@ export async function installHarness(
       switch (parsed.type) {
         case 'sessions': {
           const sessions = Array.isArray(parsed.sessions) ? parsed.sessions : []
-          parsed.sessions = sessions
+          lastRealSessions = sessions
             .map((s: Record<string, unknown>) => rewriteSession(s, options))
-            .filter(Boolean)
+            .filter(Boolean) as Record<string, unknown>[]
+          parsed.sessions = [...lastRealSessions, ...harness.extras]
           break
         }
         case 'session-created':

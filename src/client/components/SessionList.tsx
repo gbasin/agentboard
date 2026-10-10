@@ -895,14 +895,20 @@ const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>
             ? { opacity: 0 }
             : { opacity: 0, scale: 0.97 }
       }
+      // height: 'auto' is load-bearing, not cosmetic. A session that re-enters
+      // mid exit-collapse (kill rollback, flaky snapshot) cancels the exit; the
+      // animate target then decides what happens to the half-collapsed inline
+      // height. Without a height target, motion settles it as a fixed px and
+      // overflow:hidden clips any later content growth (e.g. a last-user
+      // message arriving on the next poll) mid-glyph.
       animate={
         prefersReducedMotion
           ? { opacity: 1 }
           : isNew
             ? useSafariLayoutFallback
-              ? { opacity: 1 }
-              : { opacity: 1, scale: [1.02, 0.99, 1] }
-            : { opacity: 1, scale: 1 }
+              ? { opacity: 1, height: 'auto' }
+              : { opacity: 1, scale: [1.02, 0.99, 1], height: 'auto' }
+            : { opacity: 1, scale: 1, height: 'auto' }
       }
       exit={prefersReducedMotion
         ? { opacity: 0 }
