@@ -18,6 +18,13 @@ class WorkerInitError extends Error {
   }
 }
 
+export class WorkerTimeoutError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'WorkerTimeoutError'
+  }
+}
+
 export class LogMatchWorkerClient {
   private worker: Worker | null = null
   private disposed = false
@@ -73,7 +80,7 @@ export class LogMatchWorkerClient {
     return new Promise<MatchWorkerResponse>((resolve, reject) => {
       const timeoutId = setTimeout(() => {
         this.pending.delete(id)
-        reject(new Error('Log match worker timed out'))
+        reject(new WorkerTimeoutError('Log match worker timed out'))
         // A stalled worker keeps grinding its message queue and would swallow
         // every subsequent request too, so fail anything queued behind this
         // one and start fresh. The old worker is abandoned, not terminated —

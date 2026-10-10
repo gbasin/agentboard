@@ -30,7 +30,10 @@ import { createDormantPrScanner } from './dormantPrScan'
 import { setCodexSubagentIndexListener } from './subagentLogs'
 import { fetchPrChecks, fetchPrInfo, parsePrUrl } from './prInfo'
 import { getLogSearchDirs } from './logDiscovery'
-import { LogMatchWorkerClient } from './logMatchWorkerClient'
+import {
+  LogMatchWorkerClient,
+  WorkerTimeoutError,
+} from './logMatchWorkerClient'
 import { mapWithConcurrency } from './mapWithConcurrency'
 import {
   DEFAULT_SCROLLBACK_LINES,
@@ -1056,6 +1059,7 @@ async function verifyAllSessions(
   // and tail validation off the main thread, sharing one rg pass per log
   // directory across all windows.
   if (config.logMatchWorker && pending.length > 0) {
+    const verifyStart = performance.now()
     try {
       startupVerifyWorker ??= new LogMatchWorkerClient()
       logger.info('startup_verify_worker_begin', { jobs: pending.length })
@@ -1106,10 +1110,28 @@ async function verifyAllSessions(
       }
       pending = []
     } catch (error) {
-      logger.warn('startup_verify_worker_error', {
-        error: String(error),
-        fallback: 'inline',
-      })
+      if (error instanceof WorkerTimeoutError) {
+        // The worker timed out grinding the corpus — re-running the same
+        // scan inline would just stall the main thread, so degrade to
+        // inconclusive and let the name fallback keep real links.
+        logger.warn('startup_verify_worker_timeout', {
+          jobs: pending.length,
+          elapsedMs: Math.round(performance.now() - verifyStart),
+        })
+        for (const job of pending) {
+          recordDecision(job, {
+            status: 'inconclusive',
+            bestMatch: null,
+            reason: 'no_match',
+          })
+        }
+        pending = []
+      } else {
+        logger.warn('startup_verify_worker_error', {
+          error: String(error),
+          fallback: 'inline',
+        })
+      }
     }
   }
 
