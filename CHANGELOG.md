@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.26.4](https://github.com/gbasin/agentboard/compare/v0.26.3...v0.26.4) (2026-10-10)
+
+
+### Bug Fixes
+
+* **server:** degrade startup verify to inconclusive on worker timeout ([#387](https://github.com/gbasin/agentboard/issues/387)) ([8cb511d](https://github.com/gbasin/agentboard/commit/8cb511d5be8c1d962620501981ad24d3171a6859))
+* stop PR chips from `gh pr create` text inside command strings ([#385](https://github.com/gbasin/agentboard/issues/385)) ([68d7397](https://github.com/gbasin/agentboard/commit/68d739786bf1ffe638892c93958146823f8f5e28))
+
 ## [0.26.3](https://github.com/gbasin/agentboard/compare/v0.26.2...v0.26.3) (2026-10-10)
 
 
