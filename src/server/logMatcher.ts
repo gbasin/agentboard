@@ -3278,11 +3278,12 @@ interface PreparedVerifyJob {
  * 1. `rg -l` once per directory per pattern chunk → union candidate files.
  *    The union is a superset of every per-message hit set, so nothing a
  *    per-message scan would find is missed.
- * 2. Per union file, one `rg` returns every line matching any pattern. Testing
- *    each raw line against each pattern reproduces rg's per-message hit
- *    semantics exactly (a file is a hit for message m iff some raw line
- *    matches m's pattern). Tail validation then checks the last
- *    MAX_PROGRESSIVE_TAIL_BYTES once per file with a shared line index.
+ * 2. Per union file, one 2MB tail read validates every query through a
+ *    shared line index (most union files validate for nothing and are
+ *    skipped early). Files with a validating query get a bounded matched-
+ *    lines `rg` pass that reproduces rg's per-message raw-hit semantics
+ *    exactly; truncated or failed passes fall back to per-pattern `rg -l`
+ *    rechecks so errors never become silent negative evidence.
  */
 export function findLogsWithExactMessagesBatch(
   queries: Array<{ message: string; userOnly: boolean }>,
@@ -3376,12 +3377,41 @@ export function findLogsWithExactMessagesBatch(
   for (const logPath of candidateFiles) {
     if (isGrokTelemetryFile(logPath)) continue
 
-    // rg-hit attribution: which patterns match this file at all. Per-window
-    // findLogsWithExactMessage requires a raw rg hit before the tail is even
-    // read, so a query with no raw-matching line is out. Patterns are chunked
-    // like the directory pass to stay under ARG_MAX, and output is capped —
-    // queries left ambiguous by a truncated or failed pass get an exact
-    // per-pattern rg -l recheck instead of being silently dropped.
+    // Tail validation first: read the last MAX_PROGRESSIVE_TAIL_BYTES once
+    // and test every query against each line's match space — same predicate
+    // as hasMessageInValidUserContext, shared across messages. Most union
+    // files match some other window's pattern and validate for nothing;
+    // skipping them avoids a whole-file rg pass each.
+    const start = performance.now()
+    const tail = readLogTail(logPath, MAX_PROGRESSIVE_TAIL_BYTES)
+    if (profile) {
+      profile.tailReads += 1
+      profile.tailReadMs += performance.now() - start
+    }
+    if (!tail) continue
+
+    const validated = new Set<number>()
+    for (const line of tail.split('\n')) {
+      const space = lineMatchSpace(line)
+      if (!space) continue
+      for (let qi = 0; qi < queryList.length; qi++) {
+        if (validated.has(qi)) continue
+        const query = queryList[qi] as SharedScanQuery
+        if (lineSpaceMatches(space, query.probe, query.userOnly)) {
+          validated.add(qi)
+        }
+      }
+      if (validated.size === queryList.length) break
+    }
+    if (validated.size === 0) continue
+
+    // rg-hit attribution, only for validated queries: a candidate must also
+    // match its pattern in raw line bytes somewhere in the file (per-window
+    // findLogsWithExactMessage requires the rg -l hit before the tail is even
+    // read). Patterns are chunked like the directory pass to stay under
+    // ARG_MAX, and output is capped — queries left ambiguous by a truncated
+    // or failed pass get an exact per-pattern rg -l recheck instead of being
+    // silently dropped.
     const rgHit = new Set<number>()
     const ambiguous = new Set<number>()
     for (let ci = 0; ci < unionChunks.length; ci++) {
@@ -3395,7 +3425,7 @@ export function findLogsWithExactMessagesBatch(
       if (hitResult.exitCode === 0) {
         const hitLines = hitResult.stdout.split('\n').filter(Boolean)
         for (const rawLine of hitLines) {
-          for (let qi = 0; qi < queryList.length; qi++) {
+          for (const qi of validated) {
             if (rgHit.has(qi)) continue
             if (
               (queryList[qi] as SharedScanQuery).probe.baseRegex.test(rawLine)
@@ -3405,7 +3435,7 @@ export function findLogsWithExactMessagesBatch(
           }
         }
         if (hitLines.length >= SHARED_ATTRIBUTION_MAX_LINES) {
-          for (let qi = 0; qi < queryList.length; qi++) {
+          for (const qi of validated) {
             if (!rgHit.has(qi) && queryChunkIndex.get(qi) === ci) {
               ambiguous.add(qi)
             }
@@ -3415,7 +3445,7 @@ export function findLogsWithExactMessagesBatch(
         // Error/timeout — treat the chunk's queries as unknown rather than no
         // hit (mirroring the per-message path dropping that query's results
         // would change verdicts; a targeted recheck preserves them).
-        for (let qi = 0; qi < queryList.length; qi++) {
+        for (const qi of validated) {
           if (!rgHit.has(qi) && queryChunkIndex.get(qi) === ci) {
             ambiguous.add(qi)
           }
@@ -3430,31 +3460,10 @@ export function findLogsWithExactMessagesBatch(
       )
       if (result.exitCode === 0) rgHit.add(qi)
     }
-    if (rgHit.size === 0) continue
 
-    const start = performance.now()
-    const tail = readLogTail(logPath, MAX_PROGRESSIVE_TAIL_BYTES)
-    if (profile) {
-      profile.tailReads += 1
-      profile.tailReadMs += performance.now() - start
-    }
-    if (!tail) continue
-
-    // Tail validation: build each line's match space once, then test every
-    // pending query against it — same predicate as
-    // hasMessageInValidUserContext, shared across messages.
-    const pending = new Set(rgHit)
-    for (const line of tail.split('\n')) {
-      if (pending.size === 0) break
-      const space = lineMatchSpace(line)
-      if (!space) continue
-      for (const qi of pending) {
-        const query = queryList[qi] as SharedScanQuery
-        if (lineSpaceMatches(space, query.probe, query.userOnly)) {
-          ;(matched.get(query.key) as Set<string>).add(logPath)
-          pending.delete(qi)
-        }
-      }
+    for (const qi of rgHit) {
+      const key = (queryList[qi] as SharedScanQuery).key
+      ;(matched.get(key) as Set<string>).add(logPath)
     }
   }
   return matched

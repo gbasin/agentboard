@@ -1058,6 +1058,7 @@ async function verifyAllSessions(
   if (config.logMatchWorker && pending.length > 0) {
     try {
       startupVerifyWorker ??= new LogMatchWorkerClient()
+      logger.info('startup_verify_worker_begin', { jobs: pending.length })
       const response = await startupVerifyWorker.poll(
         {
           windows: sessions,
