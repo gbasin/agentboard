@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.26.3](https://github.com/gbasin/agentboard/compare/v0.26.2...v0.26.3) (2026-10-10)
+
+
+### Bug Fixes
+
+* **server:** harden batch startup verification edge cases ([#383](https://github.com/gbasin/agentboard/issues/383)) ([8e6f991](https://github.com/gbasin/agentboard/commit/8e6f9913c39f4e8a5ceae651a9a61d12756b7e94))
+* unpin session-row wrapper height after a cancelled exit ([#382](https://github.com/gbasin/agentboard/issues/382)) ([609f525](https://github.com/gbasin/agentboard/commit/609f525c81a7f0098c391032239168e14cd96840))
+
+
+### Performance Improvements
+
+* **server:** tail-validate batch candidates before attribution ([#384](https://github.com/gbasin/agentboard/issues/384)) ([0f6824f](https://github.com/gbasin/agentboard/commit/0f6824fdda4067378f326dbaf6009911234e2ae3))
+* **server:** verify startup windows in the match worker ([#359](https://github.com/gbasin/agentboard/issues/359)) ([d2c161b](https://github.com/gbasin/agentboard/commit/d2c161b9cc8fa83b21645e652fd05b1e20fa4f03))
+
 ## [0.26.2](https://github.com/gbasin/agentboard/compare/v0.26.1...v0.26.2) (2026-10-09)
 
 
