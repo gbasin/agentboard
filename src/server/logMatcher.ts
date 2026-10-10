@@ -635,7 +635,8 @@ function hasMessageInValidUserContextProgressive(
   let tailBytes = initialTailBytes
   while (tailBytes <= maxTailBytes) {
     const tail = readLogTail(logPath, tailBytes)
-    if (!tail) return false
+    // An empty tail can mean the window landed entirely inside one jumbo
+    // line — keep expanding rather than concluding there is no match.
     if (hasMessageInValidUserContext(tail, userMessage, { userOnly })) {
       return true
     }
@@ -3258,6 +3259,9 @@ const SHARED_RG_MAX_PATTERN_BYTES = 96 * 1024
 // A union pass scans each directory once; give it more headroom than the
 // per-message scans (10s) since a timeout here degrades every window at once.
 const SHARED_RG_TIMEOUT_MS = 60000
+// Cap matched-line output per attribution pass; files past this get a
+// per-pattern rg -l recheck for queries the pass did not resolve.
+const SHARED_ATTRIBUTION_MAX_LINES = 8192
 
 interface PreparedVerifyJob {
   job: WindowVerifyJob
@@ -3288,6 +3292,9 @@ export function findLogsWithExactMessagesBatch(
   const profile = search.profile
   const unique = new Map<string, SharedScanQuery>()
   for (const { message, userOnly } of queries) {
+    // Same floor as findLogsWithExactMessage — short messages return no
+    // matches there, so they must produce no set here either.
+    if (message.length < MIN_EXACT_MATCH_LENGTH) continue
     const key = sharedQueryKey(message, userOnly)
     if (!unique.has(key)) {
       unique.set(key, {
@@ -3313,14 +3320,33 @@ export function findLogsWithExactMessagesBatch(
       )
     }
   }
-  const unionPatterns = [...patternsByMessage.values()]
+  // Chunk the union patterns once — the same chunks serve the directory
+  // scans and the per-file attribution passes, and let each query be mapped
+  // back to the chunk that carries its pattern.
+  const unionChunks: string[][] = []
+  const chunkOfMessage = new Map<string, number>()
+  {
+    let chunk: string[] = []
+    let chunkBytes = 0
+    for (const [message, pattern] of patternsByMessage) {
+      chunk.push(pattern)
+      chunkOfMessage.set(message, unionChunks.length)
+      chunkBytes += pattern.length
+      if (
+        chunk.length >= SHARED_RG_MAX_PATTERNS_PER_PASS ||
+        chunkBytes >= SHARED_RG_MAX_PATTERN_BYTES
+      ) {
+        unionChunks.push(chunk)
+        chunk = []
+        chunkBytes = 0
+      }
+    }
+    if (chunk.length > 0) unionChunks.push(chunk)
+  }
 
   const candidateFiles = new Set<string>()
   for (const logDir of logDirs) {
-    let chunk: string[] = []
-    let chunkBytes = 0
-    const flush = () => {
-      if (chunk.length === 0) return
+    for (const chunk of unionChunks) {
       const args = ['rg', '-l']
       for (const pattern of chunk) args.push('-e', pattern)
       if (search.rgThreads && search.rgThreads > 0) {
@@ -3338,48 +3364,71 @@ export function findLogsWithExactMessagesBatch(
           if (line) candidateFiles.add(line)
         }
       }
-      chunk = []
-      chunkBytes = 0
     }
-    for (const pattern of unionPatterns) {
-      chunk.push(pattern)
-      chunkBytes += pattern.length
-      if (
-        chunk.length >= SHARED_RG_MAX_PATTERNS_PER_PASS ||
-        chunkBytes >= SHARED_RG_MAX_PATTERN_BYTES
-      ) {
-        flush()
-      }
-    }
-    flush()
   }
 
   const queryList = [...unique.values()]
+  const queryChunkIndex = new Map<number, number>()
+  for (let qi = 0; qi < queryList.length; qi++) {
+    const message = (queryList[qi] as SharedScanQuery).message
+    queryChunkIndex.set(qi, chunkOfMessage.get(message) ?? 0)
+  }
   for (const logPath of candidateFiles) {
     if (isGrokTelemetryFile(logPath)) continue
 
-    // rg-hit attribution: which of the union patterns match this file at all.
-    // Per-window findLogsWithExactMessage requires a raw rg hit before the
-    // tail is even read, so a query with no raw-matching line is out.
-    const hitArgs = ['rg']
-    for (const pattern of unionPatterns) hitArgs.push('-e', pattern)
-    hitArgs.push(logPath)
-    const hitResult = runCommandSync(hitArgs, {
-      timeoutMs: SHARED_RG_TIMEOUT_MS,
-    })
+    // rg-hit attribution: which patterns match this file at all. Per-window
+    // findLogsWithExactMessage requires a raw rg hit before the tail is even
+    // read, so a query with no raw-matching line is out. Patterns are chunked
+    // like the directory pass to stay under ARG_MAX, and output is capped —
+    // queries left ambiguous by a truncated or failed pass get an exact
+    // per-pattern rg -l recheck instead of being silently dropped.
     const rgHit = new Set<number>()
-    if (hitResult.exitCode === 0) {
-      for (const rawLine of hitResult.stdout.split('\n')) {
-        if (!rawLine) continue
+    const ambiguous = new Set<number>()
+    for (let ci = 0; ci < unionChunks.length; ci++) {
+      const chunk = unionChunks[ci] as string[]
+      const hitArgs = ['rg']
+      for (const pattern of chunk) hitArgs.push('-e', pattern)
+      hitArgs.push('-m', String(SHARED_ATTRIBUTION_MAX_LINES), logPath)
+      const hitResult = runCommandSync(hitArgs, {
+        timeoutMs: SHARED_RG_TIMEOUT_MS,
+      })
+      if (hitResult.exitCode === 0) {
+        const hitLines = hitResult.stdout.split('\n').filter(Boolean)
+        for (const rawLine of hitLines) {
+          for (let qi = 0; qi < queryList.length; qi++) {
+            if (rgHit.has(qi)) continue
+            if (
+              (queryList[qi] as SharedScanQuery).probe.baseRegex.test(rawLine)
+            ) {
+              rgHit.add(qi)
+            }
+          }
+        }
+        if (hitLines.length >= SHARED_ATTRIBUTION_MAX_LINES) {
+          for (let qi = 0; qi < queryList.length; qi++) {
+            if (!rgHit.has(qi) && queryChunkIndex.get(qi) === ci) {
+              ambiguous.add(qi)
+            }
+          }
+        }
+      } else if (hitResult.exitCode !== 1) {
+        // Error/timeout — treat the chunk's queries as unknown rather than no
+        // hit (mirroring the per-message path dropping that query's results
+        // would change verdicts; a targeted recheck preserves them).
         for (let qi = 0; qi < queryList.length; qi++) {
-          if (rgHit.has(qi)) continue
-          if (
-            (queryList[qi] as SharedScanQuery).probe.baseRegex.test(rawLine)
-          ) {
-            rgHit.add(qi)
+          if (!rgHit.has(qi) && queryChunkIndex.get(qi) === ci) {
+            ambiguous.add(qi)
           }
         }
       }
+    }
+    for (const qi of ambiguous) {
+      if (rgHit.has(qi)) continue
+      const result = runCommandSync(
+        ['rg', '-l', '-e', (queryList[qi] as SharedScanQuery).probe.baseRegex.source, logPath],
+        { timeoutMs: SHARED_RG_TIMEOUT_MS }
+      )
+      if (result.exitCode === 0) rgHit.add(qi)
     }
     if (rgHit.size === 0) continue
 

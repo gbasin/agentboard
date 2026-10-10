@@ -1204,6 +1204,51 @@ describe('logMatcher', () => {
     await fs.rm(tempDir, { recursive: true, force: true })
   })
 
+  test('verifyWindowsBatch matches per-window when a jumbo final line swallows the initial tail', async () => {
+    // The valid user entry sits before a >96KB single-line tool_result, so the
+    // progressive 96KB tail read lands entirely inside it and returns empty.
+    // Both paths must agree — the batch reads 2MB once; the per-window path
+    // expands past the empty window.
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-jumbo-tail-'))
+    const logPath = path.join(tempDir, 'session.jsonl')
+    const message = 'prompt before the jumbo trailer here'
+    const jumboToolResult = JSON.stringify({
+      type: 'user',
+      message: {
+        role: 'user',
+        content: [{ type: 'tool_result', content: 'x'.repeat(150 * 1024) }],
+      },
+    })
+    await fs.writeFile(
+      logPath,
+      [buildUserLogEntry(message), jumboToolResult].join('\n') + '\n'
+    )
+    setTmuxOutput('agentboard:1', buildPromptScrollback([message]))
+
+    const single = verifyWindowLogAssociationDetailed(
+      'agentboard:1',
+      logPath,
+      [tempDir],
+      {}
+    )
+    const batched = verifyWindowsBatch(
+      [
+        {
+          sessionId: 's1',
+          tmuxWindow: 'agentboard:1',
+          expectedLogPath: logPath,
+          context: {},
+          excludeLogPaths: [],
+        },
+      ],
+      [tempDir]
+    )
+    expect(single.status).toBe('verified')
+    expect(batched.get('s1')?.status).toBe(single.status)
+
+    await fs.rm(tempDir, { recursive: true, force: true })
+  })
+
   test('tryExactMatchWindowToLog matches messages with JSON-escaped quotes', async () => {
     // Regression test: terminal shows "working" but log has \"working\" (JSON-escaped)
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-quotes-'))
