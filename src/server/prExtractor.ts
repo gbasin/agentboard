@@ -36,17 +36,13 @@ const READ_CHUNK_BYTES = 128 * 1024
 // cap, evicted files get fully re-scanned every refresh.
 const MAX_CACHE_ENTRIES = 5000
 
-// Separators cover both `gh pr create` shell text and JSON-escaped argv
-// arrays like ["gh","pr","create"] (which appear as gh\",\"pr\",\"create).
-// Optional `-R owner/repo`/`--repo` may sit between gh and pr.
-const GH_PR_CREATE_RE =
-  /\bgh[\s"',\\]+(?:(?:-R|--repo)[\s"',\\]+\S+[\s"',\\]+)?pr[\s"',\\]+create\b/
-// Raw-line variant without the \b before gh: inside JSONL the command's
-// newlines are escaped, so `...\ngh pr create` arrives as the literal
-// characters "ngh" — \b fails between two word chars and the create is
-// missed entirely. The parsed-command check in extractToolCallIds still
-// applies the strict version, so the loose gate only widens which lines
-// get parsed.
+// Raw-line candidate gate: separators cover both `gh pr create` shell text
+// and JSON-escaped argv arrays like ["gh","pr","create"] (which appear as
+// gh\",\"pr\",\"create). Optional `-R owner/repo`/`--repo` may sit between
+// gh and pr. No \b before gh: inside JSONL the command's newlines are
+// escaped, so `...\ngh pr create` arrives as the literal characters "ngh"
+// and \b fails between two word chars. This gate only widens which lines
+// get parsed — the parsed-command check (invokesGhPrCreate) decides.
 const GH_PR_CREATE_LINE_RE =
   /gh[\s"',\\]+(?:(?:-R|--repo)[\s"',\\]+\S+[\s"',\\]+)?pr[\s"',\\]+create\b/
 // A `gh pr create` mention only counts when the line is a tool-call entry.
@@ -112,6 +108,339 @@ function newScanState(): ScanState {
   }
 }
 
+// --- `gh pr create` invocation check -------------------------------------
+//
+// The phrase must sit in command position: `gh` leading a command segment
+// (start of text or after an unquoted `;` `&` `|` `(` `)` `{` `}` `<` `>`
+// newline), past env assignments and prefixes like `sudo`. As another
+// command's argument — quoted or not — the phrase is inert: echo labels,
+// grep patterns, and prose pasted into a command produce a pending id that
+// vacuums up whatever PR URLs the command's output happens to contain
+// (e.g. grepping another session's log). Three wrappers run their argument
+// as shell text and are scanned recursively: `-c` strings to known shells,
+// `eval` arguments, and command substitutions (including inside double
+// quotes).
+
+// Prefixes that pass command position through to their own argument.
+const COMMAND_PREFIXES = new Set([
+  'sudo',
+  'doas',
+  'env',
+  'command',
+  'builtin',
+  'exec',
+  'nohup',
+  'nice',
+  'time',
+  'setsid',
+  'stdbuf',
+])
+// Shells whose `-c` (or bundled `-lc`/`-ec`) argument is itself shell text.
+const SHELL_COMMANDS = new Set([
+  'sh',
+  'bash',
+  'zsh',
+  'dash',
+  'ksh',
+  'mksh',
+  'ash',
+  'fish',
+  'pwsh',
+])
+const ASSIGNMENT_RE = /^[A-Za-z_][A-Za-z0-9_]*=/
+const DASH_C_FLAG_RE = /^-[A-Za-z]*c$/
+
+// Comparison text for a word: escapes resolved and quote characters
+// removed (`"pr"` compares as `pr`).
+function unquoteShellWord(word: string): string {
+  return word.replace(/\\(.)/g, '$1').replace(/["'`]/g, '')
+}
+
+// Inner text of a fully single/double-quoted word; unquoted words return
+// as-is so joining an unquoted `-c` argument still scans.
+function stripOuterQuotes(word: string): string {
+  const q = word[0]
+  return (q === "'" || q === '"') && word.length > 1 && word[word.length - 1] === q
+    ? word.slice(1, -1)
+    : word
+}
+
+// A `cmd:`/`"cmd":` string argument inside a unified-exec JS snippet —
+// the form `{cmd:"gh pr create ..."}` (template literals are caught by
+// the scanner's command-substitution path instead).
+const JS_CMD_STRING_RE = /["']?\bcmd["']?\s*:\s*(["'])((?:\\.|[^\\])*?)\1/g
+
+function jsSnippetInvokesGhPrCreate(input: unknown): boolean {
+  if (typeof input !== 'string') return false
+  JS_CMD_STRING_RE.lastIndex = 0
+  let m: RegExpExecArray | null
+  while ((m = JS_CMD_STRING_RE.exec(input)) !== null) {
+    if (invokesGhPrCreate(m[2].replace(/\\(.)/g, '$1'))) return true
+  }
+  return false
+}
+
+// Inner text and end index of the backtick command substitution starting
+// at cmd[open]. An unterminated backtick yields the rest of the string.
+function backtickInner(cmd: string, open: number): { text: string; end: number } {
+  let i = open + 1
+  while (i < cmd.length && cmd[i] !== '`') {
+    if (cmd[i] === '\\') i++
+    i++
+  }
+  return { text: cmd.slice(open + 1, i), end: Math.min(i + 1, cmd.length) }
+}
+
+interface HeredocDelim {
+  delim: string
+  stripTabs: boolean
+  /** Index right after the delimiter word (back on the command line). */
+  end: number
+}
+
+// Parses the `<<`/`<<-` operator whose first `<` sits at cmd[lt]. Returns
+// null when it isn't a heredoc (`<<<`, or no delimiter word follows).
+function parseHeredocOp(cmd: string, lt: number): HeredocDelim | null {
+  let i = lt + 2
+  let stripTabs = false
+  if (cmd[i] === '-') {
+    stripTabs = true
+    i++
+  }
+  while (cmd[i] === ' ' || cmd[i] === '\t') i++
+  const q = cmd[i]
+  if (q === "'" || q === '"') {
+    const close = cmd.indexOf(q, i + 1)
+    if (close === -1) return null
+    return { delim: cmd.slice(i + 1, close), stripTabs, end: close + 1 }
+  }
+  const m = /^[A-Za-z0-9_]+/.exec(cmd.slice(i, i + 64))
+  if (!m) return null
+  return { delim: m[0], stripTabs, end: i + m[0].length }
+}
+
+// From pos (just after the command line's newline), consume each queued
+// heredoc body: lines are literal until one is exactly the delimiter
+// (leading tabs stripped for `<<-`). Bodies aren't scanned — prose inside
+// (commit-message heredocs are full of apostrophes and parens) would
+// otherwise break quote tracking and hide or invent invocations.
+function skipHeredocBodies(
+  cmd: string,
+  pos: number,
+  queue: HeredocDelim[]
+): number {
+  for (const { delim, stripTabs } of queue) {
+    while (pos < cmd.length) {
+      let end = cmd.indexOf('\n', pos)
+      if (end === -1) end = cmd.length
+      let line = cmd.slice(pos, end)
+      if (stripTabs) line = line.replace(/^\t+/, '')
+      pos = end === cmd.length ? end : end + 1
+      if (line === delim) break
+    }
+  }
+  return pos
+}
+
+// Inner text and end index of the parenthesized group whose `(` sits at
+// cmd[open] (used for `$(` substitutions). Quoted spans and heredoc bodies
+// inside don't count toward the depth.
+function parenInner(cmd: string, open: number): { text: string; end: number } {
+  let depth = 0
+  const heredocs: HeredocDelim[] = []
+  for (let i = open; i < cmd.length; i++) {
+    const c = cmd[i]
+    if (c === '\\') {
+      i++
+      continue
+    }
+    if (c === "'" || c === '"') {
+      const q = c
+      i++
+      while (i < cmd.length && cmd[i] !== q) {
+        if (q === '"' && cmd[i] === '\\') i++
+        i++
+      }
+      continue
+    }
+    if (c === '<' && cmd[i + 1] === '<' && cmd[i + 2] !== '<') {
+      const op = parseHeredocOp(cmd, i)
+      if (op) {
+        heredocs.push(op)
+        i = op.end - 1
+        continue
+      }
+    }
+    if (c === '\n' && heredocs.length > 0) {
+      i = skipHeredocBodies(cmd, i + 1, heredocs) - 1
+      heredocs.length = 0
+      continue
+    }
+    if (c === '(') depth++
+    else if (c === ')') {
+      depth--
+      if (depth === 0) return { text: cmd.slice(open + 1, i), end: i + 1 }
+    }
+  }
+  return { text: cmd.slice(open + 1), end: cmd.length }
+}
+
+// Does one command segment (its raw words) invoke `gh pr create`?
+function segmentInvokesGhPrCreate(words: string[]): boolean {
+  let i = 0
+  for (; i < words.length; i++) {
+    const w = unquoteShellWord(words[i])
+    if (!ASSIGNMENT_RE.test(w) && !COMMAND_PREFIXES.has(w)) break
+  }
+  if (i >= words.length) return false
+  const cmd0 = unquoteShellWord(words[i])
+  const name = cmd0.slice(cmd0.lastIndexOf('/') + 1)
+  if (name === 'gh') {
+    for (let j = i + 1; j < words.length; j++) {
+      const w = unquoteShellWord(words[j])
+      if (w === '-R' || w === '--repo') {
+        j++
+        continue
+      }
+      if (w.startsWith('--repo=')) continue
+      return w === 'pr' && unquoteShellWord(words[j + 1] ?? '') === 'create'
+    }
+    return false
+  }
+  if (name === 'eval') {
+    return invokesGhPrCreate(
+      words.slice(i + 1).map(stripOuterQuotes).join(' ')
+    )
+  }
+  if (SHELL_COMMANDS.has(name)) {
+    for (let j = i + 1; j < words.length - 1; j++) {
+      if (DASH_C_FLAG_RE.test(unquoteShellWord(words[j]))) {
+        // The -c string is the next word; joining the rest also covers
+        // argv joined with spaces, where the command string arrives as
+        // several words (["/bin/zsh","-lc","gh pr create ..."]).
+        return invokesGhPrCreate(
+          words.slice(j + 1).map(stripOuterQuotes).join(' ')
+        )
+      }
+    }
+  }
+  return false
+}
+
+// True when `cmd` invokes `gh pr create` — see the block comment above.
+function invokesGhPrCreate(cmd: string): boolean {
+  let i = 0
+  const n = cmd.length
+  let words: string[] = []
+  let word = ''
+  const heredocs: HeredocDelim[] = []
+  const endWord = () => {
+    if (word !== '') {
+      words.push(word)
+      word = ''
+    }
+  }
+  const endSegment = (): boolean => {
+    endWord()
+    const hit = words.length > 0 && segmentInvokesGhPrCreate(words)
+    words = []
+    return hit
+  }
+  while (i < n) {
+    const c = cmd[i]
+    if (c === '\\') {
+      word += cmd.slice(i, i + 2)
+      i += 2
+      continue
+    }
+    if (c === "'" || c === '"') {
+      // Keep the quoted span attached to its word. Double quotes still let
+      // `$(...)` and backticks execute, so scan those recursively.
+      const q = c
+      const start = i++
+      while (i < n && cmd[i] !== q) {
+        if (q === '"' && cmd[i] === '\\') {
+          i += 2
+          continue
+        }
+        if (q === '"' && cmd[i] === '`') {
+          const inner = backtickInner(cmd, i)
+          if (invokesGhPrCreate(inner.text)) return true
+          i = inner.end
+          continue
+        }
+        if (q === '"' && cmd[i] === '$' && cmd[i + 1] === '(') {
+          const inner = parenInner(cmd, i + 1)
+          if (invokesGhPrCreate(inner.text)) return true
+          i = inner.end
+          continue
+        }
+        i++
+      }
+      word += cmd.slice(start, Math.min(i + 1, n))
+      i++
+      continue
+    }
+    if (c === '`') {
+      const inner = backtickInner(cmd, i)
+      if (invokesGhPrCreate(inner.text)) return true
+      word += cmd.slice(i, inner.end)
+      i = inner.end
+      continue
+    }
+    if (c === '$' && cmd[i + 1] === '(') {
+      const inner = parenInner(cmd, i + 1)
+      if (invokesGhPrCreate(inner.text)) return true
+      word += cmd.slice(i, inner.end)
+      i = inner.end
+      continue
+    }
+    if (c === '<' && cmd[i + 1] === '<' && cmd[i + 2] !== '<') {
+      const op = parseHeredocOp(cmd, i)
+      if (op) {
+        // The operator + delimiter word are redirect syntax, not argv;
+        // the body is skipped when the command line's newline arrives.
+        endWord()
+        heredocs.push(op)
+        i = op.end
+        continue
+      }
+    }
+    if (c === '\n') {
+      if (endSegment()) return true
+      i++
+      if (heredocs.length > 0) {
+        i = skipHeredocBodies(cmd, i, heredocs)
+        heredocs.length = 0
+      }
+      continue
+    }
+    if (
+      c === ';' ||
+      c === '&' ||
+      c === '|' ||
+      c === '(' ||
+      c === ')' ||
+      c === '{' ||
+      c === '}' ||
+      c === '<' ||
+      c === '>'
+    ) {
+      if (endSegment()) return true
+      i++
+      continue
+    }
+    if (/\s/.test(c)) {
+      endWord()
+      i++
+      continue
+    }
+    word += c
+    i++
+  }
+  return endSegment()
+}
+
 // Extract the shell-command text from a tool call's arguments. Only
 // command-bearing calls (exec/bash/shell) can run `gh pr create` — calls
 // like edit/write whose *content* mentions the command must not count.
@@ -126,10 +455,13 @@ function commandTextFromArgs(args: unknown): string | null {
       return args // raw command string
     }
   }
-  if (typeof args === 'object' && !Array.isArray(args)) {
+  // argv arrays (or the string form '["gh","pr","create"]' after the
+  // JSON.parse above) scan as space-joined words.
+  if (Array.isArray(args)) return args.join(' ')
+  if (typeof args === 'object') {
     const cmd = (args as Record<string, unknown>).command
     if (cmd == null) return null
-    return Array.isArray(cmd) ? cmd.join(' ') : String(cmd)
+    return commandTextFromArgs(cmd)
   }
   return String(args)
 }
@@ -160,7 +492,7 @@ function extractToolCallIds(line: string): string[] | null {
       if (!item || typeof item.id !== 'string') continue
       if (item.type === 'tool_use') {
         const cmd = commandTextFromArgs(item.input)
-        if (cmd !== null && GH_PR_CREATE_RE.test(cmd)) {
+        if (cmd !== null && invokesGhPrCreate(cmd)) {
           ids.push(item.id)
           continue
         }
@@ -169,7 +501,7 @@ function extractToolCallIds(line: string): string[] | null {
         const cmd =
           commandTextFromArgs(item.arguments) ??
           commandTextFromArgs(item.partialJson)
-        if (cmd !== null && GH_PR_CREATE_RE.test(cmd)) {
+        if (cmd !== null && invokesGhPrCreate(cmd)) {
           ids.push(item.id)
         }
       }
@@ -185,7 +517,7 @@ function extractToolCallIds(line: string): string[] | null {
     for (const call of toolCalls) {
       if (!call || typeof call.id !== 'string' || !call.id) continue
       const cmd = commandTextFromArgs(call.arguments)
-      if (cmd !== null && GH_PR_CREATE_RE.test(cmd)) {
+      if (cmd !== null && invokesGhPrCreate(cmd)) {
         ids.push(call.id)
       }
     }
@@ -202,14 +534,15 @@ function extractToolCallIds(line: string): string[] | null {
       const cmd = commandTextFromArgs(
         (call as Record<string, unknown>).arguments
       )
-      if (cmd !== null && GH_PR_CREATE_RE.test(cmd)) {
+      if (cmd !== null && invokesGhPrCreate(cmd)) {
         ids.push(call.id)
       }
     }
   }
 
   // Codex: payload.type === 'function_call' with command in arguments
-  // (custom_tool_call carries the raw command in input instead).
+  // (custom_tool_call carries the command in input instead — raw shell for
+  // older cli, a JS snippet for unified exec).
   const payload = entry.payload as Record<string, unknown> | undefined
   if (
     payload &&
@@ -218,8 +551,9 @@ function extractToolCallIds(line: string): string[] | null {
     recognized = true
     const cmd = commandTextFromArgs(payload.arguments ?? payload.input)
     if (
-      cmd !== null &&
-      (GH_PR_CREATE_RE.test(cmd) || GH_PR_CREATE_LINE_RE.test(cmd))
+      (cmd !== null && invokesGhPrCreate(cmd)) ||
+      (payload.type === 'custom_tool_call' &&
+        jsSnippetInvokesGhPrCreate(payload.input))
     ) {
       const id =
         typeof payload.call_id === 'string'
@@ -255,7 +589,7 @@ function collectCommandExecutionUrls(state: ScanState, line: string): void {
   const cmd = item.command
   const cmdText =
     typeof cmd === 'string' ? cmd : Array.isArray(cmd) ? cmd.join(' ') : null
-  if (cmdText === null || !GH_PR_CREATE_RE.test(cmdText)) return
+  if (cmdText === null || !invokesGhPrCreate(cmdText)) return
   for (const key of ['stdout', 'aggregated_output', 'formatted_output']) {
     const out = item[key]
     if (typeof out === 'string' && out) collectUrls(state, out)
