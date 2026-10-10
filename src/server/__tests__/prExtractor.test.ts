@@ -591,6 +591,133 @@ describe('extractPullRequests', () => {
     expect(extractPullRequests(content)).toEqual([])
   })
 
+  test('ignores gh pr create inside a quoted string in the command', () => {
+    // An echo label / grep pattern is not an invocation. Registering the
+    // call as a create used to attribute every PR URL its output happened
+    // to contain (e.g. URLs grepped out of another session's log).
+    const content = [
+      claudeBashToolUse(
+        'echo "== gh pr create mentions ==" && grep -o "pull/[0-9]*" other.jsonl',
+        'toolu_e1'
+      ),
+      claudeToolResult(
+        'https://github.com/a/b/pull/1\nhttps://github.com/c/d/pull/2',
+        'toolu_e1'
+      ),
+    ].join('\n')
+
+    expect(extractPullRequests(content)).toEqual([])
+  })
+
+  test('ignores gh pr create passed to grep and as unquoted arguments', () => {
+    const content = [
+      claudeBashToolUse("grep -c 'gh pr create' other.jsonl", 'toolu_g1'),
+      claudeToolResult('https://github.com/a/b/pull/3', 'toolu_g1'),
+      claudeBashToolUse('echo gh pr create', 'toolu_g2'),
+      claudeToolResult('https://github.com/a/b/pull/4', 'toolu_g2'),
+      claudeBashToolUse('printf "a; gh pr create\n"', 'toolu_g3'),
+      claudeToolResult('https://github.com/a/b/pull/5', 'toolu_g3'),
+    ].join('\n')
+
+    expect(extractPullRequests(content)).toEqual([])
+  })
+
+  test('detects gh pr create behind -c, eval, prefix, and substitution', () => {
+    const content = [
+      claudeBashToolUse('sh -c "gh pr create --fill"', 'toolu_w1'),
+      claudeToolResult('https://github.com/a/b/pull/5', 'toolu_w1'),
+      claudeBashToolUse("bash -lc 'gh pr create --fill'", 'toolu_w2'),
+      claudeToolResult('https://github.com/a/b/pull/6', 'toolu_w2'),
+      claudeBashToolUse('sudo env GH_TOKEN=x gh pr create', 'toolu_w3'),
+      claudeToolResult('https://github.com/c/d/pull/7', 'toolu_w3'),
+      claudeBashToolUse('eval "gh pr create"', 'toolu_w4'),
+      claudeToolResult('https://github.com/c/d/pull/8', 'toolu_w4'),
+      claudeBashToolUse('echo done $(gh pr create --fill)', 'toolu_w5'),
+      claudeToolResult('https://github.com/c/d/pull/9', 'toolu_w5'),
+    ].join('\n')
+
+    expect(extractPullRequests(content).map((p) => p.number)).toEqual([
+      5, 6, 7, 8, 9,
+    ])
+  })
+
+  test('detects gh pr create after a heredoc body full of prose', () => {
+    // Commit-message heredocs carry prose with unbalanced quotes and
+    // parens ("it's", "(really)"). The body is literal text — if it broke
+    // quote tracking it would swallow the `&& gh pr create` that follows.
+    const command =
+      'git commit -m "$(cat <<\'EOF\'\nfix: it\'s done (really)\n\n```\ngh pr create\n```\nEOF\n)" && gh pr create --fill'
+    const content = [
+      claudeBashToolUse(command, 'toolu_h1'),
+      claudeToolResult('https://github.com/a/b/pull/21', 'toolu_h1'),
+    ].join('\n')
+
+    expect(extractPullRequests(content).map((p) => p.number)).toEqual([21])
+  })
+
+  test('ignores gh pr create mention inside devin exec command strings', () => {
+    // Regression: a devin exec call whose command mentions `gh pr create`
+    // inside a quoted label used to register the call, so the result's PR
+    // URLs (grepped from another log) were all attributed to the session.
+    const content = [
+      JSON.stringify({
+        type: 'assistant',
+        agent: 'devin',
+        message: {
+          role: 'assistant',
+          content: 'Let me count gh pr create mentions.',
+          toolCalls: [
+            {
+              id: 'call_grep',
+              name: 'exec',
+              arguments: {
+                command:
+                  'echo "== gh pr create mentions ==" && grep -o "https://github.com/[^ ]*/pull/[0-9]*" other.jsonl',
+              },
+            },
+          ],
+        },
+      }),
+      JSON.stringify({
+        type: 'tool',
+        agent: 'devin',
+        message: {
+          role: 'tool',
+          toolCallId: 'call_grep',
+          content:
+            'https://github.com/a/b/pull/8\nhttps://github.com/c/d/pull/9',
+        },
+      }),
+    ].join('\n')
+
+    expect(extractPullRequests(content)).toEqual([])
+  })
+
+  test('ignores CommandExecution whose -c string only mentions gh pr create', () => {
+    const content = [
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'item_completed',
+          item: {
+            type: 'CommandExecution',
+            id: 'exec-9',
+            command: [
+              '/bin/zsh',
+              '-lc',
+              'echo "== gh pr create mentions =="; grep url other.jsonl',
+            ],
+            status: 'completed',
+            stdout: 'https://github.com/o/r/pull/13\n',
+            exit_code: 0,
+          },
+        },
+      }),
+    ].join('\n')
+
+    expect(extractPullRequests(content)).toEqual([])
+  })
+
   test('ignores PR URLs on non-result lines inside the fallback window', () => {
     const content = [
       'NOTJSON "tool_use" gh pr create',
