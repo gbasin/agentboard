@@ -13,7 +13,9 @@ const originalSpawnSync = bunAny.spawnSync
 const originalSetInterval = globalThis.setInterval
 const originalMatchWorker = process.env.AGENTBOARD_LOG_MATCH_WORKER
 const originalDbPath = process.env.AGENTBOARD_DB_PATH
+const originalDataDir = process.env.AGENTBOARD_DATA_DIR
 let tempDbPath: string | null = null
+let tempDataDir: string | null = null
 
 const serveCalls: Array<{ port: number }> = []
 let importCounter = 0
@@ -26,6 +28,10 @@ describe('server entrypoint', () => {
       .slice(2, 8)}`
     tempDbPath = path.join(os.tmpdir(), `agentboard-${suffix}.db`)
     process.env.AGENTBOARD_DB_PATH = tempDbPath
+    // Isolate the data dir too — the instance lock otherwise sees a live
+    // local agentboard holding ~/.agentboard and refuses to start.
+    tempDataDir = path.join(os.tmpdir(), `agentboard-data-${suffix}`)
+    process.env.AGENTBOARD_DATA_DIR = tempDataDir
   })
 
   beforeEach(() => {
@@ -95,6 +101,14 @@ afterAll(() => {
     delete process.env.AGENTBOARD_DB_PATH
   } else {
     process.env.AGENTBOARD_DB_PATH = originalDbPath
+  }
+  if (originalDataDir === undefined) {
+    delete process.env.AGENTBOARD_DATA_DIR
+  } else {
+    process.env.AGENTBOARD_DATA_DIR = originalDataDir
+  }
+  if (tempDataDir) {
+    fs.rm(tempDataDir, { recursive: true, force: true }).catch(() => {})
   }
   if (tempDbPath) {
     fs.rm(tempDbPath, { force: true }).catch(() => {})
