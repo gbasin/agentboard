@@ -152,11 +152,14 @@ test('a pan starting on the drag handle drags and reorders the card', async ({
     await touchStart(cdp, from)
     await touchMoveTo(cdp, page, from, { x: from.x, y: from.y + 96 })
 
-    const midTransform = await card.evaluate(
-      (el) => el.parentElement?.style.transform ?? ''
-    )
-    // Drag engaged and stayed engaged: nonzero y translate, x pinned.
-    expect(midTransform).toMatch(/translate3d\(0px, [1-9][\d.]*px, 0px\)/)
+    // Drag engaged and stayed engaged: nonzero y translate, x pinned. Poll —
+    // sensor activation and the first transform commit take a frame or two
+    // on a loaded runner.
+    await expect
+      .poll(async () =>
+        card.evaluate((el) => el.parentElement?.style.transform ?? '')
+      )
+      .toMatch(/translate3d\(0px, [1-9][\d.]*px, 0px\)/)
 
     await touchEnd(cdp)
   } finally {

@@ -51,7 +51,9 @@ function seedClaudePrLinkLog(): string {
 test('a claude session with only a pr-link record gets a PR chip in History', async ({
   page,
 }) => {
-  // Discovery is one 5s LogPoller cycle plus the dormant scan slices.
+  // Discovery is one 5s LogPoller cycle (e2e forces poll mode — in watch
+  // mode Linux fs.watch misses new subdirectories) plus the dormant scan
+  // slices.
   test.slow()
   seedClaudePrLinkLog()
 
