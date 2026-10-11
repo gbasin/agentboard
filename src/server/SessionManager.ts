@@ -406,6 +406,39 @@ export class SessionManager {
     return scrubbed
   }
 
+  // Async twin of scrubLeakedGlobalEnvironment — same behavior but each tmux
+  // call runs via Bun.spawn so the startup burst doesn't stack synchronous
+  // spawns on the event loop.
+  async scrubLeakedGlobalEnvironmentAsync(): Promise<string[]> {
+    let output: string
+    try {
+      output = await this.runTmuxAsync(withTmuxUtf8Flag(['show-environment', '-g']))
+    } catch {
+      return []
+    }
+    const leaked: string[] = []
+    let fingerprint = false
+    for (const line of splitTmuxLines(output)) {
+      if (!line || line.startsWith('-')) continue
+      const eq = line.indexOf('=')
+      if (eq <= 0) continue
+      const name = line.slice(0, eq)
+      if (name === 'AGENTBOARD_STATIC_DIR') fingerprint = true
+      if (isLeakedLaunchEnvVar(name)) leaked.push(name)
+    }
+    if (!fingerprint) return []
+    const scrubbed: string[] = []
+    for (const name of leaked) {
+      try {
+        await this.runTmuxAsync(withTmuxUtf8Flag(['set-environment', '-g', '-u', name]))
+        scrubbed.push(name)
+      } catch {
+        // Best-effort: a failed unset just leaves that var for next startup.
+      }
+    }
+    return scrubbed
+  }
+
   private findSessionInGroup(): GroupLookupResult {
     try {
       const output = this.runParsedTmux(['list-sessions', '-F', SESSION_GROUP_FORMAT])

@@ -165,6 +165,7 @@ let sessionManagerState: {
   ensureSession: () => { canPruneWsSessions: boolean }
   ensureSessionAsync: () => Promise<{ canPruneWsSessions: boolean }>
   scrubLeakedGlobalEnvironment: () => string[]
+  scrubLeakedGlobalEnvironmentAsync: () => Promise<string[]>
 }
 
 class SessionManagerMock {
@@ -211,6 +212,10 @@ class SessionManagerMock {
 
   scrubLeakedGlobalEnvironment() {
     return sessionManagerState.scrubLeakedGlobalEnvironment()
+  }
+
+  scrubLeakedGlobalEnvironmentAsync() {
+    return sessionManagerState.scrubLeakedGlobalEnvironmentAsync()
   }
 }
 
@@ -698,6 +703,10 @@ beforeEach(() => {
     // Delegates so tests that override ensureSession keep covering refresh.
     ensureSessionAsync: async () => sessionManagerState.ensureSession(),
     scrubLeakedGlobalEnvironment: () => [],
+    // Startup housekeeping uses the async twin; delegate so tests that
+    // override the sync version still exercise it.
+    scrubLeakedGlobalEnvironmentAsync: async () =>
+      sessionManagerState.scrubLeakedGlobalEnvironment(),
   }
 
   spawnSyncImpl = () =>
@@ -6167,6 +6176,56 @@ describe('server startup side effects', () => {
         data: { reason: 'session_group_lookup_unavailable' },
       })
     )
+  })
+
+  test('startup ws pruning skips sessions owned by live connections', async () => {
+    // Prune now runs after serve, so a client can connect (and own a grouped
+    // ws session) before the listing is taken — an unattached row for a live
+    // connection is not an orphan.
+    refreshWorkerDeferred = true
+    const calls: string[][] = []
+    spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
+      const command = Array.isArray(args[0]) ? args[0] : [String(args[0])]
+      calls.push(command as string[])
+      const tmuxArgs = getTmuxArgs(command as string[])
+      if (tmuxArgs[0] === 'list-sessions') {
+        return {
+          exitCode: 0,
+          stdout: Buffer.from(
+            tmuxOutput(
+              // live client's session — attach still in flight
+              ['agentboard-ws-ws-test', '0'],
+              // true orphan left by the previous server
+              ['agentboard-ws-dead', '0']
+            )
+          ),
+          stderr: Buffer.from(''),
+        } as ReturnType<typeof Bun.spawnSync>
+      }
+      return {
+        exitCode: 0,
+        stdout: Buffer.from(''),
+        stderr: Buffer.from(''),
+      } as ReturnType<typeof Bun.spawnSync>
+    }) as typeof Bun.spawnSync
+
+    importCounter += 1
+    const mod = await import(`../../index?test=${importCounter}`)
+    if (!serveOptions) throw new Error('Bun.serve was not called')
+    const { ws } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) throw new Error('WebSocket handlers not configured')
+    websocket.open?.(ws as never)
+
+    await waitFor(() => refreshWorkerResolve !== null)
+    refreshWorkerResolve!([baseSession])
+    await mod.startupReady
+
+    const killCalls = calls.filter(
+      (command) => getTmuxArgs(command)[0] === 'kill-session'
+    )
+    expect(killCalls).toHaveLength(1)
+    expect(killCalls[0]).toEqual(['tmux', 'kill-session', '-t', 'agentboard-ws-dead'])
   })
 
   test('ping message returns pong and echoes seq when provided', async () => {

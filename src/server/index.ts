@@ -394,7 +394,7 @@ async function readLogLineWindow(
   return selectLineWindow(lines, limit, beforeLine)
 }
 
-function pruneOrphanedWsSessions(): void {
+async function pruneOrphanedWsSessions(): Promise<void> {
   if (!config.pruneWsSessions) {
     return
   }
@@ -404,19 +404,15 @@ function pruneOrphanedWsSessions(): void {
     return
   }
 
-  let result: ReturnType<typeof Bun.spawnSync>
+  let result
   try {
-    result = timedSpawnSync(
+    result = await timedSpawnAsync(
       ['tmux', ...withTmuxUtf8Flag([
         'list-sessions',
         '-F',
         buildTmuxFormat(['#{session_name}', '#{session_attached}']),
       ])],
-      {
-        stdout: 'pipe',
-        stderr: 'pipe',
-        timeout: config.tmuxTimeoutMs,
-      }
+      { timeout: config.tmuxTimeoutMs }
     )
     if (result.signalCode === 'SIGTERM' || result.exitCode === null) {
       logger.warn('ws_session_prune_skipped', {
@@ -433,26 +429,34 @@ function pruneOrphanedWsSessions(): void {
     return
   }
 
-  const output = result.stdout?.toString() ?? ''
+  const output = result.stdout
   if (!output) {
     return
   }
   const lines = splitTmuxLines(output)
   let pruned = 0
 
+  // Pruning now runs after serve, so the unattached snapshot can include a
+  // live client's session whose grouped attach is still in flight. Only a
+  // session owned by no current connection is an orphan — skip anything
+  // named for a live connection id (covers -x- descendants too).
+  const liveIds = new Set([...sockets].map((ws) => ws.data.connectionId))
+  const isLiveSession = (name: string) =>
+    [...liveIds].some((id) => id && name.includes(id))
+
   for (const line of lines) {
     const parts = splitTmuxFields(line, 2)
     if (!parts) continue
     const [name, attachedRaw] = parts
     if (!name || !name.startsWith(prefix)) continue
+    if (isLiveSession(name)) continue
     const attached = Number.parseInt(attachedRaw ?? '', 10)
     if (Number.isNaN(attached) || attached > 0) continue
     try {
-      const killResult = timedSpawnSync(['tmux', 'kill-session', '-t', name], {
-        stdout: 'pipe',
-        stderr: 'pipe',
-        timeout: config.tmuxTimeoutMs,
-      })
+      const killResult = await timedSpawnAsync(
+        ['tmux', 'kill-session', '-t', name],
+        { timeout: config.tmuxTimeoutMs }
+      )
       if (killResult.signalCode === 'SIGTERM' || killResult.exitCode === null) {
         continue
       }
@@ -578,27 +582,48 @@ const sessionManager = new SessionManager(undefined, {
 })
 // Ensure the base tmux session exists so listing/orphan logic has a real
 // session to read from. SessionManager creates it with a placeholder window
-// (filtered out of listings) when missing.
+// (filtered out of listings) when missing. This stays a synchronous probe at
+// module load: ws attach paths and startup auto-resume both assume the base
+// exists once the server accepts connections, and its canPruneWsSessions
+// verdict is the authoritative decision for ws pruning below — re-probing
+// after the session exists would flip an "unreliable" lookup to "reliable"
+// and risk pruning sessions the lookup never recovered.
+let startupEnsureResult: { canPruneWsSessions: boolean }
 try {
-  const ensureResult = sessionManager.ensureSession()
-  // One-time: if an older agentboard booted the tmux daemon with leaked
-  // launch env (NODE_ENV=production etc.), scrub it so new windows are clean.
-  // Startup only — never per refresh tick (each unset is a tmux spawn).
-  const scrubbedEnvVars = sessionManager.scrubLeakedGlobalEnvironment()
-  if (scrubbedEnvVars.length > 0) {
-    logger.info('tmux_global_env_scrubbed', { vars: scrubbedEnvVars })
-  }
-  if (ensureResult.canPruneWsSessions) {
-    pruneOrphanedWsSessions()
-  } else {
-    logger.warn('ws_session_prune_skipped', {
-      reason: 'session_group_lookup_unavailable',
-    })
-  }
+  startupEnsureResult = sessionManager.ensureSession()
 } catch (error) {
+  startupEnsureResult = { canPruneWsSessions: false }
   logger.warn('startup_ensure_session_failed', {
     message: error instanceof Error ? error.message : String(error),
   })
+}
+
+// Startup housekeeping — scrub env vars leaked by older agentboard launches
+// and prune ws sessions left unattached by the previous server. Runs inside
+// startupReady (post-serve, post-refresh) with async spawns so none of it
+// stacks synchronous work on the boot event loop.
+async function startupHousekeeping(): Promise<void> {
+  try {
+    // One-time: if an older agentboard booted the tmux daemon with leaked
+    // launch env (NODE_ENV=production etc.), scrub it so new windows are
+    // clean. Startup only — never per refresh tick.
+    const scrubbedEnvVars =
+      await sessionManager.scrubLeakedGlobalEnvironmentAsync()
+    if (scrubbedEnvVars.length > 0) {
+      logger.info('tmux_global_env_scrubbed', { vars: scrubbedEnvVars })
+    }
+    if (startupEnsureResult.canPruneWsSessions) {
+      await pruneOrphanedWsSessions()
+    } else {
+      logger.warn('ws_session_prune_skipped', {
+        reason: 'session_group_lookup_unavailable',
+      })
+    }
+  } catch (error) {
+    logger.warn('startup_ensure_session_failed', {
+      message: error instanceof Error ? error.message : String(error),
+    })
+  }
 }
 
 function ensureBaseSessionForRefresh(context: string): boolean {
@@ -2588,6 +2613,13 @@ export const startupReady = (async () => {
       name: w.name,
     })),
   })
+  // Start the poller after the initial refresh rather than at module load —
+  // its first snapshot does synchronous sqlite work that otherwise races the
+  // worker-spawn burst during boot.
+  if (config.logPollIntervalMs > 0) {
+    logPoller.start(config.logPollIntervalMs, config.logWatchMode)
+  }
+  await startupHousekeeping()
   try {
     await completeStartupVerification()
   } catch (error) {
@@ -2596,10 +2628,6 @@ export const startupReady = (async () => {
     })
   }
 })()
-
-if (config.logPollIntervalMs > 0) {
-  logPoller.start(config.logPollIntervalMs, config.logWatchMode)
-}
 
 // Cleanup all terminals on server shutdown
 async function cleanupAllTerminals() {
