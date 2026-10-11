@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.27.0](https://github.com/gbasin/agentboard/compare/v0.26.3...v0.27.0) (2026-10-11)
+
+
+### Features
+
+* allow spaces and punctuation in session names ([#391](https://github.com/gbasin/agentboard/issues/391)) ([b0b2d35](https://github.com/gbasin/agentboard/commit/b0b2d35084893a1567caedaa1f5223404fe1a769))
+
+
+### Bug Fixes
+
+* **server:** degrade startup verify to inconclusive on worker timeout ([#387](https://github.com/gbasin/agentboard/issues/387)) ([8cb511d](https://github.com/gbasin/agentboard/commit/8cb511d5be8c1d962620501981ad24d3171a6859))
+* stop PR chips from `gh pr create` text inside command strings ([#385](https://github.com/gbasin/agentboard/issues/385)) ([68d7397](https://github.com/gbasin/agentboard/commit/68d739786bf1ffe638892c93958146823f8f5e28))
+
+
+### Performance Improvements
+
+* **server:** stagger boot housekeeping off the startup event loop ([#392](https://github.com/gbasin/agentboard/issues/392)) ([9d85a3f](https://github.com/gbasin/agentboard/commit/9d85a3f68c2e6f82bf4bd3a781dd0bce0d15fad9))
+
 ## [0.26.3](https://github.com/gbasin/agentboard/compare/v0.26.2...v0.26.3) (2026-10-10)
 
 
