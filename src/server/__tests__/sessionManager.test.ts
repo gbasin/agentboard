@@ -1079,6 +1079,13 @@ describe('SessionManager', () => {
       .filter((call) => call[0] === 'rename-window')
       .at(-1)
     expect(spaceRenameCall?.[3]).toBe('name with spaces')
+
+    // '#{...}' would be format-expanded by tmux; the arg is escaped to '##'
+    manager.renameWindow(`${sessionName}:1`, 'fmt #{version}')
+    const fmtRenameCall = runner.calls
+      .filter((call) => call[0] === 'rename-window')
+      .at(-1)
+    expect(fmtRenameCall?.[3]).toBe('fmt ##{version}')
   })
 
   test('renameWindow passes -- for names starting with a dash', () => {

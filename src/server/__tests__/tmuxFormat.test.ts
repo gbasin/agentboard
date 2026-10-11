@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   TMUX_FIELD_SEPARATOR,
   buildTmuxFormat,
+  escapeTmuxFormatArg,
   splitTmuxFields,
   splitTmuxLines,
   withTmuxUtf8Flag,
@@ -65,5 +66,12 @@ describe('tmuxFormat', () => {
       'list-windows',
       '-a',
     ])
+  })
+
+  test('escapeTmuxFormatArg doubles # so names survive format expansion', () => {
+    expect(escapeTmuxFormatArg('plain name')).toBe('plain name')
+    expect(escapeTmuxFormatArg('#{version}')).toBe('##{version}')
+    expect(escapeTmuxFormatArg('C# rocks')).toBe('C## rocks')
+    expect(escapeTmuxFormatArg('a##b')).toBe('a####b')
   })
 })

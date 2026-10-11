@@ -17,6 +17,7 @@ import {
   BOOTSTRAP_WINDOW_COMMAND,
   BOOTSTRAP_WINDOW_NAME,
   buildTmuxFormat,
+  escapeTmuxFormatArg,
   splitTmuxFields,
   splitTmuxLines,
   withTmuxUtf8Flag,
@@ -702,7 +703,7 @@ export class SessionManager {
     const identityCommands = (target: string): string[] => options?.runId && options.boardSessionId ? [
       ';', 'set-option', '-w', '-t', target, '@agentboard-run-id', options.runId,
       ';', 'set-option', '-w', '-t', target, '@agentboard-session-id', options.boardSessionId,
-      ';', 'rename-window', '-t', target, finalName,
+      ';', 'rename-window', '-t', target, escapeTmuxFormatArg(finalName),
     ] : []
 
     if (!sessionExisted) {
@@ -713,7 +714,7 @@ export class SessionManager {
         ...terminalColorEnv,
         ...identityEnv,
         '-s', this.sessionName,
-        '-n', launchName,
+        '-n', escapeTmuxFormatArg(launchName),
         '-c', resolvedPath,
         finalCommand,
         ...identityCommands(`${this.sessionName}:`),
@@ -727,7 +728,7 @@ export class SessionManager {
         ...terminalColorEnv,
         ...identityEnv,
         '-t', `${this.sessionName}:${nextIndex}`,
-        '-n', launchName,
+        '-n', escapeTmuxFormatArg(launchName),
         '-c', resolvedPath,
         finalCommand,
         ...identityCommands(`${this.sessionName}:${nextIndex}`),
@@ -912,7 +913,7 @@ export class SessionManager {
       '-t',
       tmuxWindow,
       ...(trimmed.startsWith('-') ? ['--'] : []),
-      trimmed,
+      escapeTmuxFormatArg(trimmed),
     ])
   }
 

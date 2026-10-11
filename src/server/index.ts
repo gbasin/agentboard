@@ -95,6 +95,7 @@ import { SshTerminalProxy } from './terminal/SshTerminalProxy'
 import { normalizeCapturedHistory } from './terminal/tmuxText'
 import {
   buildTmuxFormat,
+  escapeTmuxFormatArg,
   splitTmuxFields,
   splitTmuxLines,
   withTmuxUtf8Flag,
@@ -3129,7 +3130,7 @@ async function handleRemoteCreate(
         'new-window', '-P',
         ...noFlickerEnv,
         '-F', buildTmuxFormat(['#{window_index}', '#{window_id}']),
-        '-t', tmuxSession, '-n', windowName, '-c', trimmedPath, wrappedCommand,
+        '-t', tmuxSession, '-n', escapeTmuxFormatArg(windowName), '-c', trimmedPath, wrappedCommand,
       ])
     } else {
       // Session doesn't exist — create it with the desired window directly
@@ -3138,7 +3139,7 @@ async function handleRemoteCreate(
         'new-session', '-d', '-P',
         ...noFlickerEnv,
         '-F', buildTmuxFormat(['#{window_index}', '#{window_id}']),
-        '-s', tmuxSession, '-n', windowName, '-c', trimmedPath, wrappedCommand,
+        '-s', tmuxSession, '-n', escapeTmuxFormatArg(windowName), '-c', trimmedPath, wrappedCommand,
       ])
     }
     if (createResult.exitCode !== 0) {
@@ -3580,7 +3581,7 @@ async function handleRename(
         '-t',
         session.tmuxWindow,
         ...(trimmed.startsWith('-') ? ['--'] : []),
-        trimmed,
+        escapeTmuxFormatArg(trimmed),
       ])
       if (result.exitCode !== 0) {
         const stderr = result.stderr?.trim() ?? 'Unknown error'

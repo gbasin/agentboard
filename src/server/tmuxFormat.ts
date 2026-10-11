@@ -37,11 +37,19 @@ function splitTmuxLines(output: string): string[] {
     .filter((line) => line.length > 0)
 }
 
+// tmux format-expands `#{...}` in window-name arguments (new-session and
+// new-window -n, and the rename-window name). Doubling '#' yields a literal
+// '#', so arbitrary user-supplied names survive the expansion pass unchanged.
+function escapeTmuxFormatArg(value: string): string {
+  return value.replace(/#/g, '##')
+}
+
 export {
   BOOTSTRAP_WINDOW_COMMAND,
   BOOTSTRAP_WINDOW_NAME,
   TMUX_FIELD_SEPARATOR,
   buildTmuxFormat,
+  escapeTmuxFormatArg,
   splitTmuxFields,
   splitTmuxLines,
   withTmuxUtf8Flag,
