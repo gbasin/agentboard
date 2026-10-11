@@ -217,7 +217,8 @@ function createTmuxRunner(sessions: SessionState[], baseIndex = 0) {
 
     if (command === 'rename-window') {
       const target = normalizedArgs[2]
-      const newName = normalizedArgs[3]
+      // Last positional arg is the name (`--` may precede it)
+      const newName = normalizedArgs[normalizedArgs.length - 1]
       const [sessionName, windowId] = target.split(':')
       const windows = groupWindows(sessionName)
       const window = windows.find((item) => item.id === windowId)
@@ -934,7 +935,7 @@ describe('SessionManager', () => {
     ).toBe(true)
   })
 
-  test('createWindow normalizes name and picks next index', () => {
+  test('createWindow preserves spaces and dedupes name', () => {
     const sessionName = 'agentboard'
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentboard-'))
     const runner = createTmuxRunner(
@@ -945,7 +946,7 @@ describe('SessionManager', () => {
             {
               id: '1',
               index: 1,
-              name: 'My-Project',
+              name: 'My Project',
               path: tempDir,
               activity: 1700000000,
               command: 'claude',
@@ -963,13 +964,13 @@ describe('SessionManager', () => {
     })
 
     const created = manager.createWindow(tempDir, 'My Project', 'codex')
-    expect(created.name).toBe('My-Project-2')
+    expect(created.name).toBe('My Project-2')
     expect(created.tmuxWindow).toBe(`${sessionName}:2`)
     expect(created.command).toBe('codex')
 
     const newWindowCall = runner.calls.find((call) => call[0] === 'new-window')
     expect(newWindowCall).toBeTruthy()
-    expect(newWindowCall?.includes('My-Project-2')).toBe(true)
+    expect(newWindowCall?.includes('My Project-2')).toBe(true)
   })
 
   test('createWindow rejects missing or empty project paths', () => {
@@ -1072,6 +1073,44 @@ describe('SessionManager', () => {
     const renameCall = runner.calls.find((call) => call[0] === 'rename-window')
     expect(renameCall).toBeTruthy()
     expect(renameCall?.[3]).toBe('new_name')
+
+    manager.renameWindow(`${sessionName}:1`, 'name with spaces')
+    const spaceRenameCall = runner.calls
+      .filter((call) => call[0] === 'rename-window')
+      .at(-1)
+    expect(spaceRenameCall?.[3]).toBe('name with spaces')
+  })
+
+  test('renameWindow passes -- for names starting with a dash', () => {
+    const sessionName = 'agentboard-dash-rename'
+    const runner = createTmuxRunner(
+      [
+        {
+          name: sessionName,
+          windows: [
+            {
+              id: '1',
+              index: 1,
+              name: 'alpha',
+              path: '/tmp/alpha',
+              activity: 0,
+              command: '',
+            },
+          ],
+        },
+      ],
+      1
+    )
+
+    const manager = new SessionManager(sessionName, {
+      runTmux: runner.runTmux,
+      capturePaneContent: () => makePaneCapture(''),
+      now: () => 1700000000000,
+    })
+
+    manager.renameWindow(`${sessionName}:1`, '-draft')
+    const renameCall = runner.calls.find((call) => call[0] === 'rename-window')
+    expect(renameCall?.slice(3)).toEqual(['--', '-draft'])
   })
 
   test('renameWindow rejects invalid names', () => {
@@ -1101,9 +1140,12 @@ describe('SessionManager', () => {
       now: () => 1700000000000,
     })
 
-    expect(() => manager.renameWindow(`${sessionName}:1`, 'bad name')).toThrow(
-      /letters, numbers/
-    )
+    expect(() =>
+      manager.renameWindow(`${sessionName}:1`, 'bad\tname')
+    ).toThrow(/control characters/)
+    expect(() =>
+      manager.renameWindow(`${sessionName}:1`, 'x'.repeat(121))
+    ).toThrow(/120/)
     expect(() => manager.renameWindow(`${sessionName}:1`, '   ')).toThrow(
       /empty/
     )

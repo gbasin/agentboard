@@ -149,10 +149,10 @@ test('A/B/C survive backend crashes, tmux replacement, and repeated reopen', asy
   const invalid = await fetch(`${base}/api/library/${before[0].id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: 'invalid name' }),
+    body: JSON.stringify({ name: 'invalid\tname' }),
   })
   expect(invalid.status).toBe(400)
-  expect((await invalid.json()).error).toContain('Name must use')
+  expect((await invalid.json()).error).toContain('control characters')
   expect(before.map((s) => s.name).sort()).toEqual([
     'A-Saved',
     'B-Saved',

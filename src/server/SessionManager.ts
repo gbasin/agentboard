@@ -21,6 +21,7 @@ import {
   splitTmuxLines,
   withTmuxUtf8Flag,
 } from './tmuxFormat'
+import { windowNameError } from './windowName'
 import {
   inferCachedSessionStatus,
   detectsPermissionPrompt,
@@ -669,7 +670,10 @@ export class SessionManager {
 
     let baseName = name?.trim()
     if (baseName) {
-      baseName = baseName.replace(/\s+/g, '-')
+      const nameError = windowNameError(baseName)
+      if (nameError) {
+        throw new Error(nameError)
+      }
     } else {
       // Generate random name, retry if collision with tmux windows or DB
       do {
@@ -884,15 +888,9 @@ export class SessionManager {
 
   renameWindow(tmuxWindow: string, newName: string): void {
     const trimmed = newName.trim()
-    if (!trimmed) {
-      throw new Error('Name cannot be empty')
-    }
-
-    // Validate: alphanumeric, hyphens, underscores only
-    if (!/^[\w-]+$/.test(trimmed)) {
-      throw new Error(
-        'Name can only contain letters, numbers, hyphens, and underscores'
-      )
+    const nameError = windowNameError(trimmed)
+    if (nameError) {
+      throw new Error(nameError)
     }
     this.assertNotReservedWindowName(trimmed)
 
@@ -908,7 +906,14 @@ export class SessionManager {
       throw new Error(`A session named "${trimmed}" already exists`)
     }
 
-    this.runTmux(['rename-window', '-t', tmuxWindow, trimmed])
+    // `--` stops a leading '-' in the name from being parsed as a flag
+    this.runTmux([
+      'rename-window',
+      '-t',
+      tmuxWindow,
+      ...(trimmed.startsWith('-') ? ['--'] : []),
+      trimmed,
+    ])
   }
 
   private listExternalWindows(): Session[] {

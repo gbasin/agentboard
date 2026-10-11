@@ -17,6 +17,7 @@ import {
 } from './tmuxIdentity'
 import { config } from '../config'
 import { logger } from '../logger'
+import { windowNameError } from '../windowName'
 
 export class PersistentSessions {
   readonly catalog: SessionCatalog
@@ -244,13 +245,19 @@ export class PersistentSessions {
       if (record)
         saved = importConversation(this.catalog, record, this.isManagedWindow)
     }
-    if (!saved)
+    if (!saved) {
+      const requested = name?.trim()
+      if (requested) {
+        const nameError = windowNameError(requested)
+        if (nameError) throw new RequestError(nameError)
+      }
       saved = this.catalog.create({
-        name: name?.trim().replace(/\s+/g, '-') || generateSessionName(),
+        name: requested || generateSessionName(),
         projectPath,
         command: command || 'claude',
         agentType: inferAgentType(command || 'claude') ?? null,
       })
+    }
     const run = this.catalog.beginRun(saved.id, options.operationId)
     if (run.reused) {
       const current = this.catalog.get(saved.id)!

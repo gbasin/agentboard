@@ -9,6 +9,7 @@ import type {
 } from '../../shared/persistence'
 import { createCatalogSchema } from './schema'
 import { RequestError, notFound } from './errors'
+import { windowNameError } from '../windowName'
 import { queryHistory, readSession, sessionSelect } from './historyQuery'
 
 const LIFECYCLES = new Set<Lifecycle>([
@@ -20,13 +21,10 @@ const LIFECYCLES = new Set<Lifecycle>([
   'failed',
 ])
 
-const SESSION_NAME_PATTERN = /^[\w-]{1,120}$/
 export function assertSessionName(name: string): string {
   const value = name.trim()
-  if (!SESSION_NAME_PATTERN.test(value))
-    throw new RequestError(
-      'Name must use 1–120 letters, numbers, hyphens or underscores'
-    )
+  const error = windowNameError(value)
+  if (error) throw new RequestError(error)
   return value
 }
 
