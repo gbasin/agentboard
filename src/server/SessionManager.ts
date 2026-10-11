@@ -374,8 +374,8 @@ export class SessionManager {
   // AGENTBOARD_STATIC_DIR fingerprint — the daemon may be the user's own
   // shared server, and a NODE_ENV they set deliberately must survive; only a
   // daemon whose global env carries our launcher's fingerprint gets scrubbed.
-  // Call once at startup, not per refresh tick (each unset is a synchronous
-  // tmux spawn). Existing panes keep their env; only new windows benefit.
+  // Call once at startup, not per refresh tick (each unset is a tmux
+  // spawn). Existing panes keep their env; only new windows benefit.
   scrubLeakedGlobalEnvironment(): string[] {
     let output: string
     try {
@@ -383,19 +383,8 @@ export class SessionManager {
     } catch {
       return []
     }
-    const leaked: string[] = []
-    let fingerprint = false
-    for (const line of splitTmuxLines(output)) {
-      // Removed-var markers start with '-'; values containing '=' are split
-      // on the first one.
-      if (!line || line.startsWith('-')) continue
-      const eq = line.indexOf('=')
-      if (eq <= 0) continue
-      const name = line.slice(0, eq)
-      if (name === 'AGENTBOARD_STATIC_DIR') fingerprint = true
-      if (isLeakedLaunchEnvVar(name)) leaked.push(name)
-    }
-    if (!fingerprint) return []
+    const leaked = this.parseLeakedLaunchEnv(output)
+    if (!leaked) return []
     const scrubbed: string[] = []
     for (const name of leaked) {
       try {
@@ -418,17 +407,8 @@ export class SessionManager {
     } catch {
       return []
     }
-    const leaked: string[] = []
-    let fingerprint = false
-    for (const line of splitTmuxLines(output)) {
-      if (!line || line.startsWith('-')) continue
-      const eq = line.indexOf('=')
-      if (eq <= 0) continue
-      const name = line.slice(0, eq)
-      if (name === 'AGENTBOARD_STATIC_DIR') fingerprint = true
-      if (isLeakedLaunchEnvVar(name)) leaked.push(name)
-    }
-    if (!fingerprint) return []
+    const leaked = this.parseLeakedLaunchEnv(output)
+    if (!leaked) return []
     const scrubbed: string[] = []
     for (const name of leaked) {
       try {
@@ -439,6 +419,22 @@ export class SessionManager {
       }
     }
     return scrubbed
+  }
+
+  private parseLeakedLaunchEnv(output: string): string[] | null {
+    const leaked: string[] = []
+    let fingerprint = false
+    for (const line of splitTmuxLines(output)) {
+      // Removed-var markers start with '-'; values containing '=' are split
+      // on the first one.
+      if (!line || line.startsWith('-')) continue
+      const eq = line.indexOf('=')
+      if (eq <= 0) continue
+      const name = line.slice(0, eq)
+      if (name === 'AGENTBOARD_STATIC_DIR') fingerprint = true
+      if (isLeakedLaunchEnvVar(name)) leaked.push(name)
+    }
+    return fingerprint ? leaked : null
   }
 
   private findSessionInGroup(): GroupLookupResult {
