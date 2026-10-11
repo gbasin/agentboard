@@ -22,7 +22,7 @@ import {
   splitTmuxLines,
   withTmuxUtf8Flag,
 } from './tmuxFormat'
-import { windowNameError } from './windowName'
+import { MAX_WINDOW_NAME_LENGTH, windowNameError } from './windowName'
 import {
   inferCachedSessionStatus,
   detectsPermissionPrompt,
@@ -703,7 +703,9 @@ export class SessionManager {
     const identityCommands = (target: string): string[] => options?.runId && options.boardSessionId ? [
       ';', 'set-option', '-w', '-t', target, '@agentboard-run-id', options.runId,
       ';', 'set-option', '-w', '-t', target, '@agentboard-session-id', options.boardSessionId,
-      ';', 'rename-window', '-t', target, escapeTmuxFormatArg(finalName),
+      ';', 'rename-window', '-t', target,
+      ...(finalName.startsWith('-') ? ['--'] : []),
+      escapeTmuxFormatArg(finalName),
     ] : []
 
     if (!sessionExisted) {
@@ -1037,11 +1039,15 @@ export class SessionManager {
     const baseName = suffixMatch ? suffixMatch[1] : base
     let suffix = suffixMatch ? Number.parseInt(suffixMatch[2], 10) + 1 : 2
 
-    while (checkExists(`${baseName}-${suffix}`)) {
+    let candidate = ''
+    do {
+      // Reserve room for the suffix so dedup never exceeds the name cap
+      const room = Math.max(1, MAX_WINDOW_NAME_LENGTH - `-${suffix}`.length)
+      candidate = `${baseName.slice(0, room)}-${suffix}`
       suffix += 1
-    }
+    } while (checkExists(candidate))
 
-    return `${baseName}-${suffix}`
+    return candidate
   }
 
   private assertNotReservedWindowName(name: string): void {

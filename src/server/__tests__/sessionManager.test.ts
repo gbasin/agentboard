@@ -973,6 +973,72 @@ describe('SessionManager', () => {
     expect(newWindowCall?.includes('My Project-2')).toBe(true)
   })
 
+  test('createWindow keeps deduped names within the length cap', () => {
+    const sessionName = 'agentboard-longname'
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentboard-'))
+    const runner = createTmuxRunner(
+      [
+        {
+          name: sessionName,
+          windows: [
+            {
+              id: '1',
+              index: 1,
+              name: 'x'.repeat(120),
+              path: tempDir,
+              activity: 1700000000,
+              command: 'claude',
+            },
+          ],
+        },
+      ],
+      1
+    )
+
+    const manager = new SessionManager(sessionName, {
+      runTmux: runner.runTmux,
+      capturePaneContent: () => makePaneCapture(''),
+      now: () => 1700000000000,
+    })
+
+    const created = manager.createWindow(tempDir, 'x'.repeat(120), 'codex')
+    expect(created.name.length).toBeLessThanOrEqual(120)
+    expect(created.name).toMatch(/-\d+$/)
+  })
+
+  test('createWindow durable launch passes -- for leading-dash names', () => {
+    const sessionName = 'agentboard-durable-dash'
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentboard-'))
+    const runner = createTmuxRunner(
+      [{ name: sessionName, windows: [] }],
+      1
+    )
+
+    const manager = new SessionManager(sessionName, {
+      runTmux: runner.runTmux,
+      capturePaneContent: () => makePaneCapture(''),
+      now: () => 1700000000000,
+    })
+
+    manager.createWindow(tempDir, '-draft', 'sh', {
+      boardSessionId: '3e7b8c3a-9c1f-4a2e-8f1d-2c4b6a8e0f1a',
+      runId: '9f0e1d2c-3b4a-4c5d-8e7f-1a2b3c4d5e6f',
+    })
+
+    const createCall = runner.calls.find(
+      (call) => call[0] === 'new-session' || call[0] === 'new-window'
+    )
+    const renameIndex = createCall?.indexOf('rename-window') ?? -1
+    expect(renameIndex).toBeGreaterThan(-1)
+    expect(createCall?.slice(renameIndex)).toEqual([
+      'rename-window',
+      '-t',
+      `${sessionName}:1`,
+      '--',
+      '-draft',
+    ])
+  })
+
   test('createWindow rejects missing or empty project paths', () => {
     const sessionName = 'agentboard-invalid-path'
     const runner = createTmuxRunner(
@@ -1150,6 +1216,9 @@ describe('SessionManager', () => {
     expect(() =>
       manager.renameWindow(`${sessionName}:1`, 'bad\tname')
     ).toThrow(/control characters/)
+    expect(() =>
+      manager.renameWindow(`${sessionName}:1`, 'back\\name')
+    ).toThrow(/backslashes/)
     expect(() =>
       manager.renameWindow(`${sessionName}:1`, 'x'.repeat(121))
     ).toThrow(/120/)

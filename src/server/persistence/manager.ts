@@ -210,8 +210,14 @@ export class PersistentSessions {
         this.manager.renameWindow(live.tmuxWindow, saved.name)
       } catch {
         // tmux refused (e.g. a name collision) — follow reality instead of
-        // throwing on every refresh.
-        this.catalog.rename(saved.id, live.name)
+        // throwing on every refresh. The live name itself may not satisfy
+        // catalog validation (e.g. renamed to >120 chars outside agentboard);
+        // keep the stale record rather than failing the observe loop.
+        try {
+          this.catalog.rename(saved.id, live.name)
+        } catch {
+          /* un-storable external name */
+        }
       }
     }
     if (

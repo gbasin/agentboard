@@ -71,8 +71,10 @@ export function readTmuxIdentity(sessionName: string): TmuxIdentity {
   const windows = new Map<string, WindowIdentity>()
   for (const line of output.split('\n')) {
     if (!line) continue
-    const [window, boardId, runId, name] = line.split('|')
-    if (!/^@\d+$/.test(window) || name === undefined)
+    const [window, boardId, runId, ...nameParts] = line.split('|')
+    // Window names may contain '|'; it is the last field so rejoin it
+    const name = nameParts.join('|')
+    if (!/^@\d+$/.test(window) || nameParts.length === 0)
       throw new Error('Invalid tmux identity snapshot')
     if (name === '__agentboard_root__') continue
     const launch = provisionalTagFromName(name)
