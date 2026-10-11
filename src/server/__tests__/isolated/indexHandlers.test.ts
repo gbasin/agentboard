@@ -560,6 +560,31 @@ mock.module('../../sessionRefreshWorkerClient', () => ({
   SessionRefreshWorkerClient: SessionRefreshWorkerClientMock,
   SessionRefreshWorkerTimeoutError: SessionRefreshWorkerTimeoutErrorMock,
 }))
+
+// Controllable log-match worker mock.
+// poll() delegates to matchWorkerVerifyImpl for requests carrying verifyJobs
+// (assign a function to control the verify response); everything else
+// resolves with an empty result.
+class WorkerTimeoutErrorMock extends Error {
+  constructor(message = 'Log match worker timed out') {
+    super(message)
+    this.name = 'WorkerTimeoutError'
+  }
+}
+let matchWorkerVerifyImpl: (() => Promise<unknown>) | null = null
+class LogMatchWorkerClientMock {
+  async poll(request: { verifyJobs?: unknown[] }): Promise<unknown> {
+    if (request.verifyJobs && matchWorkerVerifyImpl) {
+      return matchWorkerVerifyImpl()
+    }
+    return { type: 'result', entries: [] }
+  }
+  dispose(): void {}
+}
+mock.module('../../logMatchWorkerClient', () => ({
+  LogMatchWorkerClient: LogMatchWorkerClientMock,
+  WorkerTimeoutError: WorkerTimeoutErrorMock,
+}))
 mock.module('../../SessionManager', () => ({
   SessionManager: SessionManagerMock,
 }))
@@ -689,6 +714,7 @@ beforeEach(() => {
   refreshWorkerExpectedWindowCounts = []
   lastUserMessageWorkerError = null
   lastUserMessageWorkerMessage = null
+  matchWorkerVerifyImpl = null
   SessionRegistryMock.instance = null
   resetDbState()
   Object.assign(configState, defaultConfig)
@@ -6442,6 +6468,106 @@ describe('server startup side effects', () => {
 
     expect(capturedTargets.size).toBe(windows.length)
     expect(maxConcurrentWindows).toBe(2)
+  })
+
+  test('worker verify timeout degrades to inconclusive without inline retry', async () => {
+    configState.logMatchWorker = true
+    seedRecord(
+      makeRecord({
+        sessionId: 'session-active',
+        displayName: baseSession.name,
+        currentWindow: baseSession.tmuxWindow,
+        logFilePath: path.join('/tmp', 'session-active.jsonl'),
+      })
+    )
+    sessionManagerState.listWindows = () => [baseSession]
+    refreshWorkerSessions = [baseSession]
+    matchWorkerVerifyImpl = async () => {
+      throw new WorkerTimeoutErrorMock()
+    }
+
+    const syncVerifyCalls: string[][] = []
+    spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
+      const command = Array.isArray(args[0]) ? args[0] : [String(args[0])]
+      const tmuxArgs = getTmuxArgs(command as string[])
+      // The inline fallback would re-capture panes and rg-scan on the main
+      // thread — any such spawn proves the degrade path was skipped.
+      if (tmuxArgs[0] === 'capture-pane' || command[0] === 'rg') {
+        syncVerifyCalls.push(command as string[])
+      }
+      return {
+        exitCode: 0,
+        stdout: Buffer.from(''),
+        stderr: Buffer.from(''),
+      } as ReturnType<typeof Bun.spawnSync>
+    }) as typeof Bun.spawnSync
+
+    const { registryInstance } = await loadIndex()
+
+    expect(logEntries).toContainEqual(
+      expect.objectContaining({
+        level: 'warn',
+        event: 'startup_verify_worker_timeout',
+      })
+    )
+    expect(
+      logEntries.some((entry) => entry.event === 'startup_verify_worker_error')
+    ).toBe(false)
+    // Inconclusive → name fallback keeps the real link instead of orphaning.
+    expect(logEntries).toContainEqual(
+      expect.objectContaining({
+        event: 'session_verification_name_fallback',
+      })
+    )
+    expect(registryInstance.get(baseSession.id)?.agentSessionId).toBe(
+      'session-active'
+    )
+    expect(syncVerifyCalls).toHaveLength(0)
+  })
+
+  test('non-timeout worker verify error falls back to inline verification', async () => {
+    configState.logMatchWorker = true
+    seedRecord(
+      makeRecord({
+        sessionId: 'session-active',
+        displayName: baseSession.name,
+        currentWindow: baseSession.tmuxWindow,
+        logFilePath: path.join('/tmp', 'session-active.jsonl'),
+      })
+    )
+    sessionManagerState.listWindows = () => [baseSession]
+    refreshWorkerSessions = [baseSession]
+    matchWorkerVerifyImpl = async () => {
+      throw new Error('worker exploded')
+    }
+
+    const captureCalls: string[][] = []
+    spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
+      const command = Array.isArray(args[0]) ? args[0] : [String(args[0])]
+      if (getTmuxArgs(command as string[])[0] === 'capture-pane') {
+        captureCalls.push(command as string[])
+      }
+      return {
+        exitCode: 0,
+        stdout: Buffer.from(''),
+        stderr: Buffer.from(''),
+      } as ReturnType<typeof Bun.spawnSync>
+    }) as typeof Bun.spawnSync
+
+    await loadIndex()
+
+    expect(logEntries).toContainEqual(
+      expect.objectContaining({
+        level: 'warn',
+        event: 'startup_verify_worker_error',
+      })
+    )
+    expect(
+      logEntries.some((entry) => entry.event === 'startup_verify_worker_timeout')
+    ).toBe(false)
+    // The worker never ran — verification falls back to the inline path,
+    // which captures panes on the main thread.
+    expect(captureCalls.length).toBeGreaterThan(0)
   })
 
   test('dormant PRs found by the background scan reach the hibernating list', async () => {
