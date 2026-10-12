@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.1](https://github.com/gbasin/agentboard/compare/v0.28.0...v0.28.1) (2026-10-12)
+
+
+### Bug Fixes
+
+* re-sort session list immediately on Enter input ([#398](https://github.com/gbasin/agentboard/issues/398)) ([e78c69d](https://github.com/gbasin/agentboard/commit/e78c69d376c7f72a7489f0b7c2992c83c51cc232))
+
 ## [0.28.0](https://github.com/gbasin/agentboard/compare/v0.27.0...v0.28.0) (2026-10-12)
 
 
