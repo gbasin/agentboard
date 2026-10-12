@@ -65,6 +65,13 @@ export interface HarnessOptions {
   history?: SyntheticAgentSession[]
   /** Added to every shown session (makes the row context menu taller). */
   logFilePath?: boolean
+  /**
+   * Per-ordinal field overrides applied to shown sessions, e.g.
+   * `{ 0: { status: 'permission' } }` forces `<prefix>00` to permission.
+   * Lets a spec pin status/lastActivity that real `tail -f` panes cannot
+   * produce deterministically.
+   */
+  sessionOverrides?: Record<number, Record<string, unknown>>
 }
 
 export interface Harness {
@@ -96,6 +103,7 @@ function rewriteSession(
     // Lower ordinal = newer = earlier in the created-desc default sort.
     createdAt: new Date(BASE_TIME - ordinal * 60_000).toISOString(),
     ...(options.logFilePath ? { logFilePath: `/nonexistent/${name}.jsonl` } : {}),
+    ...options.sessionOverrides?.[ordinal],
   }
 }
 
