@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.0](https://github.com/gbasin/agentboard/compare/v0.28.1...v0.29.0) (2026-10-12)
+
+
+### Features
+
+* add sidebar session sort menu ([#400](https://github.com/gbasin/agentboard/issues/400)) ([37494ce](https://github.com/gbasin/agentboard/commit/37494ce870d285e2fb601613ac9fd560110d34c7))
+
 ## [0.28.1](https://github.com/gbasin/agentboard/compare/v0.28.0...v0.28.1) (2026-10-12)
 
 
