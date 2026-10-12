@@ -48,6 +48,8 @@ function seedClaudePrLinkLog(): string {
   return sessionId
 }
 
+test.describe.configure({ timeout: 120_000 })
+
 test('a claude session with only a pr-link record gets a PR chip in History', async ({
   page,
 }) => {
@@ -60,12 +62,15 @@ test('a claude session with only a pr-link record gets a PR chip in History', as
   await page.goto('/')
 
   // History starts collapsed and renders nothing until the poll finds the
-  // seeded log; the toggle appearing means discovery ran.
+  // seeded log; the toggle appearing means discovery ran. The budget has to
+  // outlive a stalled poll cycle: a busy match worker can hold pollInFlight
+  // for up to its 45s RPC timeout on the shared server, and a fixed 20s
+  // wait (plus a retry's 20s) can sit entirely inside one stall.
   const historyToggle = page.getByRole('button', { name: /^History/ })
-  await expect(historyToggle).toBeVisible({ timeout: 20_000 })
+  await expect(historyToggle).toBeVisible({ timeout: 60_000 })
   await historyToggle.click()
 
   // The chip is the PR URL link itself — populated only after the dormant
   // scan reads the pr-link record.
-  await expect(page.locator(PR_LINK)).toBeVisible({ timeout: 20_000 })
+  await expect(page.locator(PR_LINK)).toBeVisible({ timeout: 30_000 })
 })
