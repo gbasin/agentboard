@@ -1473,6 +1473,47 @@ describe('server message handlers', () => {
     expect(replaceSessionsCalls.at(-1)).toEqual([refreshedSession])
   })
 
+  test('enter input marks session working and bumps lastActivity', async () => {
+    const staleSession: Session = {
+      ...baseSession,
+      status: 'waiting',
+      lastActivity: '2020-01-01T00:00:00.000Z',
+    }
+
+    const { serveOptions, registryInstance } = await loadIndex()
+    registryInstance.sessions = [staleSession]
+
+    const { ws } = createWs()
+    ws.data.currentSessionId = baseSession.id
+    ws.data.terminal = {
+      write: () => {},
+    } as never
+
+    const websocket = serveOptions.websocket
+    if (!websocket) throw new Error('WebSocket handlers not configured')
+
+    const baselineReplaceCalls = replaceSessionsCalls.length
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({
+        type: 'terminal-input',
+        sessionId: baseSession.id,
+        data: '\r',
+      })
+    )
+
+    const updated = registryInstance.get(baseSession.id)
+    expect(updated?.status).toBe('working')
+    expect(Date.parse(updated?.lastActivity ?? '')).toBeGreaterThan(
+      Date.parse(staleSession.lastActivity)
+    )
+
+    // Drain the debounced Enter refresh (~1s) inside this test — its worker
+    // call would otherwise leak into a later test's expectedWindowCounts.
+    await waitFor(() => replaceSessionsCalls.length !== baselineReplaceCalls)
+  })
+
   test('startup refresh timeout skips replacing sessions and leaves DB state intact', async () => {
     const activeRecord = makeRecord({
       sessionId: 'active-timeout',
