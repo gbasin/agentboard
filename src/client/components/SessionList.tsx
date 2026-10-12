@@ -67,6 +67,8 @@ interface SessionListProps {
    * render in reverse, the filter bar sticks to the bottom, and the list
    * stays pinned to its bottom edge. Sort order and indices are unchanged. */
   anchor?: SidebarAnchor
+  /** Expose the anchor preference in the desktop sort menu only. */
+  showAnchorControl?: boolean
   /** Global controls at the right end of the filter bar (desktop only;
    * the mobile drawer has its own header). */
   filterBarControls?: ReactNode
@@ -112,6 +114,7 @@ export default function SessionList({
   onNewSession,
   scrollSelectionActive = true,
   anchor = 'top',
+  showAnchorControl = false,
   filterBarControls,
   notice,
 }: SessionListProps) {
@@ -549,6 +552,7 @@ export default function SessionList({
 
   const filterBar = (
     <div
+      key="filter-bar"
       className={`sticky z-10 flex h-10 items-center gap-2 bg-elevated px-3 ${
         // shrink-0: under bottom the bar is a flex item of the scroll column
         isBottom ? 'bottom-0 shrink-0 border-t border-border' : 'top-0 border-b border-border'
@@ -570,6 +574,7 @@ export default function SessionList({
           placement={isBottom ? 'up' : 'down'}
         />
         <SessionSortButton
+          showAnchorControl={showAnchorControl}
           open={openListMenu === 'sort'}
           onOpenChange={(open) => setOpenListMenu(open ? 'sort' : null)}
           placement={isBottom ? 'up' : 'down'}

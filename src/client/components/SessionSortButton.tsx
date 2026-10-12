@@ -14,10 +14,16 @@ const options = [
 interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
+  showAnchorControl?: boolean
   placement?: 'down' | 'up'
 }
 
-export default function SessionSortButton({ open, onOpenChange, placement = 'down' }: Props) {
+export default function SessionSortButton({ open, onOpenChange, placement = 'down', showAnchorControl = false }: Props) {
+  const anchor = useSettingsStore((state) => state.sidebarAnchor)
+  const setAnchor = useSettingsStore((state) => state.setSidebarAnchor)
+  const anchorLabelId = useId()
+  const anchorFocusRef = useRef<number | null>(null)
+  const itemCount = options.length + (showAnchorControl ? 2 : 0)
   const mode = useSettingsStore((state) => state.sessionSortMode)
   const direction = useSettingsStore((state) => state.sessionSortDirection)
   const selected = mode === 'created' ? (direction === 'desc' ? 'newest' : 'oldest') : mode
@@ -26,6 +32,19 @@ export default function SessionSortButton({ open, onOpenChange, placement = 'dow
   const containerRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([])
+
+  const chooseAnchor = (value: 'top' | 'bottom') => {
+    const index = options.length + (value === 'top' ? 0 : 1)
+    anchorFocusRef.current = anchor === value ? null : index
+    setAnchor(value)
+    itemRefs.current[index]?.focus()
+  }
+
+  useEffect(() => {
+    if (anchorFocusRef.current === null) return
+    itemRefs.current[anchorFocusRef.current]?.focus()
+    anchorFocusRef.current = null
+  }, [placement])
 
   const close = (restoreFocus = false) => {
     onOpenChange(false)
@@ -87,8 +106,8 @@ export default function SessionSortButton({ open, onOpenChange, placement = 'dow
             } else if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
               event.preventDefault()
               const current = itemRefs.current.indexOf(document.activeElement as HTMLButtonElement)
-              const next = event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1
-                : (current + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length
+              const next = event.key === 'Home' ? 0 : event.key === 'End' ? itemCount - 1
+                : (current + (event.key === 'ArrowDown' ? 1 : -1) + itemCount) % itemCount
               itemRefs.current[next]?.focus()
             }
           }}
@@ -120,7 +139,36 @@ export default function SessionSortButton({ open, onOpenChange, placement = 'dow
               </span>
             </button>
           ))}
-          {placement === 'up' && <div className="px-2 py-1.5 text-[11px] text-secondary">First items sit nearest the bottom controls.</div>}
+          {showAnchorControl && (
+            <>
+              <div role="separator" className="my-1.5 border-t border-border" />
+              <div className="flex flex-wrap items-center justify-between gap-2 px-2 py-1">
+                <span id={anchorLabelId} className="text-[11px] text-secondary">List starts at</span>
+                <div role="group" aria-labelledby={anchorLabelId} className="flex border border-border bg-base p-[2px]">
+                  {(['top', 'bottom'] as const).map((value, index) => (
+                    <button
+                      key={value}
+                      ref={(node) => { itemRefs.current[options.length + index] = node }}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={anchor === value}
+                      tabIndex={-1}
+                      onClick={() => chooseAnchor(value)}
+                      onKeyDown={(event) => {
+                        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+                        event.preventDefault()
+                        event.stopPropagation()
+                        chooseAnchor(value === 'top' ? 'bottom' : 'top')
+                      }}
+                      className={`h-[26px] px-2 text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent [@media(pointer:coarse)]:min-h-[44px] [@media(pointer:coarse)]:min-w-[44px] ${anchor === value ? 'bg-hover text-primary shadow-[inset_0_0_0_1px_var(--border)]' : 'text-muted hover:text-primary'}`}
+                    >
+                      {value === 'top' ? 'Top' : 'Bottom'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

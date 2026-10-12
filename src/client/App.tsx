@@ -987,6 +987,7 @@ export default function App() {
           loading={!hasLoaded}
           error={connectionError || serverError}
           anchor={sidebarAnchor}
+          showAnchorControl
           notice={
             <RecoveryNotice
               onOpen={() => setIsHistoryOpen(true)}
