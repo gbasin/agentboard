@@ -1246,9 +1246,11 @@ function setForceWorking(sessionId: string) {
   const now = Date.now()
   setForceWorkingUntil(sessionId, now + config.workingGracePeriodMs)
   // Immediately update registry so UI shows "working" right away
+  const existing = registry.get(sessionId)
+  const activity = Math.max(now, Date.parse(existing?.lastActivity ?? '') || 0)
   registry.updateSession(sessionId, {
     status: 'working',
-    lastActivity: new Date(now).toISOString(),
+    lastActivity: new Date(activity).toISOString(),
   })
 }
 

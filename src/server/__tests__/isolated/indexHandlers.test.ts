@@ -1493,6 +1493,7 @@ describe('server message handlers', () => {
     if (!websocket) throw new Error('WebSocket handlers not configured')
 
     const baselineReplaceCalls = replaceSessionsCalls.length
+    const beforeInput = Date.now()
 
     websocket.message?.(
       ws as never,
@@ -1504,14 +1505,15 @@ describe('server message handlers', () => {
     )
 
     const updated = registryInstance.get(baseSession.id)
+    const stamped = Date.parse(updated?.lastActivity ?? '')
     expect(updated?.status).toBe('working')
-    expect(Date.parse(updated?.lastActivity ?? '')).toBeGreaterThan(
-      Date.parse(staleSession.lastActivity)
-    )
+    expect(stamped).toBeGreaterThanOrEqual(beforeInput)
+    expect(stamped).toBeLessThanOrEqual(Date.now())
 
-    // Drain the debounced Enter refresh (~1s) inside this test — its worker
-    // call would otherwise leak into a later test's expectedWindowCounts.
+    // Drain the Enter-triggered refresh inside this test — its worker call
+    // would otherwise leak into a later test's expectedWindowCounts.
     await waitFor(() => replaceSessionsCalls.length !== baselineReplaceCalls)
+    expect(replaceSessionsCalls.length).toBeGreaterThan(baselineReplaceCalls)
   })
 
   test('startup refresh timeout skips replacing sessions and leaves DB state intact', async () => {

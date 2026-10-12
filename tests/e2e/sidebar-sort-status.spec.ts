@@ -129,6 +129,21 @@ test('Status sort: pressing Enter moves the session to the top of the activity g
     },
   }
 
+  // The server confirms an attach with terminal-ready; only then does it
+  // accept terminal-input for that session.
+  const terminalReady = new Promise<void>((resolve) => {
+    page.on('websocket', (ws) =>
+      ws.on('framereceived', (frame) => {
+        try {
+          const msg = JSON.parse(String(frame.payload))
+          if (msg.type === 'terminal-ready') resolve()
+        } catch {
+          /* non-JSON frame */
+        }
+      })
+    )
+  })
+
   await installHarness(page, {
     prefix,
     settings: { sessionSortMode: 'status' },
@@ -142,13 +157,20 @@ test('Status sort: pressing Enter moves the session to the top of the activity g
     .poll(() => namesTopToBottom(sidebar, prefix))
     .toEqual([names[3], names[1], names[2], names[0], names[4]])
 
-  // Attach the terminal and submit — the server stamps status=working and
-  // lastActivity=now on the Enter keypress, so the row must move right away,
-  // not after a pane-content refresh.
+  // Attach, then prove the row is still last before submitting — a release
+  // before Enter (e.g. an attach-time session-update) must fail loudly here
+  // rather than satisfy the final assertion vacuously.
   await cardByName(sidebar, names[4]).click()
   await expect(page.locator('.xterm')).toBeVisible()
+  await terminalReady
   await page.locator('.xterm-helper-textarea').focus()
-  await page.waitForTimeout(1500) // let the attach settle so input is accepted
+  expect(await namesTopToBottom(sidebar, prefix)).toEqual([
+    names[3], names[1], names[2], names[0], names[4],
+  ])
+
+  // The server stamps status=working and lastActivity=now on the Enter
+  // keypress, so the row must move right away, not after a pane-content
+  // refresh.
   await page.keyboard.press('Enter')
 
   await expect
