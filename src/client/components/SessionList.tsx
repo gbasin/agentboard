@@ -39,6 +39,7 @@ import ProjectBadge from './ProjectBadge'
 import HostBadge from './HostBadge'
 import { PrChips } from './PrChips'
 import SessionFilterButton from './SessionFilterButton'
+import SessionSortButton from './SessionSortButton'
 import SessionPreviewModal from './SessionPreviewModal'
 import { HibernatingSection, HistorySection } from './DormantSessionSections'
 
@@ -115,6 +116,7 @@ export default function SessionList({
   notice,
 }: SessionListProps) {
   const isBottom = anchor === 'bottom'
+  const [openListMenu, setOpenListMenu] = useState<'filter' | 'sort' | null>(null)
   useTimestampRefresh()
   const isSafari = useMemo(() => {
     if (typeof navigator === 'undefined') return false
@@ -552,8 +554,10 @@ export default function SessionList({
         isBottom ? 'bottom-0 shrink-0 border-t border-border' : 'top-0 border-b border-border'
       }`}
     >
-      <div className="flex min-w-0 flex-1 items-center">
+      <div className="flex min-w-0 flex-1 items-center gap-1.5 [@media(pointer:coarse)]:gap-[22px]">
         <SessionFilterButton
+          open={openListMenu === 'filter'}
+          onOpenChange={(open) => setOpenListMenu(open ? 'filter' : null)}
           projects={uniqueProjects}
           selectedProjects={projectFilters}
           onSelectProjects={setProjectFilters}
@@ -563,6 +567,11 @@ export default function SessionList({
           hostStatuses={hostStatuses}
           showHosts={showHostInfo}
           hasHiddenPermissions={hiddenPermissionCount > 0}
+          placement={isBottom ? 'up' : 'down'}
+        />
+        <SessionSortButton
+          open={openListMenu === 'sort'}
+          onOpenChange={(open) => setOpenListMenu(open ? 'sort' : null)}
           placement={isBottom ? 'up' : 'down'}
         />
       </div>

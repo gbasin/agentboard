@@ -18,6 +18,8 @@ export { default as AlertTriangleIcon } from '@untitledui-icons/react/line/esm/A
 export { default as ArrowDownIcon } from '@untitledui-icons/react/line/esm/ArrowDownIcon'
 export { default as ChevronDownIcon } from '@untitledui-icons/react/line/esm/ChevronDownIcon'
 export { default as ChevronRightIcon } from '@untitledui-icons/react/line/esm/ChevronRightIcon'
+export { default as CheckIcon } from '@untitledui-icons/react/line/esm/CheckIcon'
+export { default as SwitchVertical01Icon } from '@untitledui-icons/react/line/esm/SwitchVertical01Icon'
 export { default as ClipboardIcon } from '@untitledui-icons/react/line/esm/ClipboardIcon'
 export { default as Copy01Icon } from '@untitledui-icons/react/line/esm/Copy01Icon'
 export { default as ClockRewindIcon } from '@untitledui-icons/react/line/esm/ClockRewindIcon'

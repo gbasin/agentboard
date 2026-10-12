@@ -66,6 +66,8 @@ interface SessionFilterButtonProps {
   hasHiddenPermissions: boolean
   /** 'up' opens the menu above the bar (bottom-anchored sidebar). */
   placement?: 'down' | 'up'
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }
 
 export default function SessionFilterButton({
@@ -79,8 +81,11 @@ export default function SessionFilterButton({
   showHosts,
   hasHiddenPermissions,
   placement = 'down',
+  open: controlledOpen,
+  onOpenChange,
 }: SessionFilterButtonProps) {
-  const [open, setOpenState] = useState(false)
+  const [localOpen, setOpenState] = useState(false)
+  const open = controlledOpen ?? localOpen
   const [query, setQuery] = useState('')
   const menuId = useId()
   const containerRef = useRef<HTMLDivElement>(null)
@@ -91,6 +96,7 @@ export default function SessionFilterButton({
   // Closing (or reopening) always starts from an empty search.
   const setOpen = (next: boolean) => {
     setOpenState(next)
+    onOpenChange?.(next)
     setQuery('')
   }
   const displayNames = useMemo(() => getDisambiguatedProjectNames(projects), [projects])
@@ -138,6 +144,7 @@ export default function SessionFilterButton({
     if (!document.addEventListener || !document.removeEventListener) return
     const close = () => {
       setOpenState(false)
+      onOpenChange?.(false)
       setQuery('')
     }
     const handlePointer = (event: MouseEvent | TouchEvent) => {
@@ -162,7 +169,7 @@ export default function SessionFilterButton({
       document.removeEventListener('touchstart', handlePointer)
       document.removeEventListener('keydown', handleKeyDown)
     }
-  }, [open])
+  }, [open, onOpenChange])
 
   // Desktop: typing goes straight to the search. Touch: no uninvited keyboard.
   useEffect(() => {

@@ -106,3 +106,42 @@ describe('SessionList project filters', () => {
     })
   })
 })
+
+test('sort menu shares settings, preserves manual order, and excludes the filter menu', () => {
+  useSettingsStore.setState({ manualSessionOrder: [baseSession.id] })
+  let renderer!: TestRenderer.ReactTestRenderer
+  act(() => {
+    renderer = TestRenderer.create(
+      <SessionList sessions={[baseSession]} historySessions={[]} selectedSessionId={null}
+        loading={false} error={null} onSelect={() => {}} onRename={() => {}} />
+    )
+  })
+  const filter = () => renderer.root.findByType(SessionFilterButton)
+  const sort = () => renderer.root.find((n) => n.type === 'button' && n.props['aria-label']?.startsWith('Sort:'))
+  const select = (label: string) => {
+    act(() => sort().props.onClick())
+    const row = renderer.root.find((n) => n.type === 'button' && n.props.role === 'menuitemradio'
+      && n.findAll((child) => child.type === 'span' && child.children.includes(label)).length > 0)
+    act(() => row.props.onClick())
+    expect(sort().props['aria-expanded']).toBe(false)
+  }
+  act(() => filter().props.onOpenChange(true))
+  act(() => sort().props.onClick())
+  expect(filter().props.open).toBe(false)
+  expect(sort().props['aria-expanded']).toBe(true)
+  act(() => filter().props.onOpenChange(true))
+  expect(sort().props['aria-expanded']).toBe(false)
+  select('Oldest first')
+  expect(useSettingsStore.getState().sessionSortMode).toBe('created')
+  expect(useSettingsStore.getState().sessionSortDirection).toBe('asc')
+  select('Needs attention')
+  expect(useSettingsStore.getState().sessionSortMode).toBe('status')
+  select('Manual order')
+  expect(useSettingsStore.getState().sessionSortMode).toBe('manual')
+  select('Newest first')
+  expect(useSettingsStore.getState().sessionSortDirection).toBe('desc')
+  expect(useSettingsStore.getState().manualSessionOrder).toEqual([baseSession.id])
+  act(() => { useSettingsStore.setState({ sessionSortMode: 'status' }) })
+  expect(sort().props.title).toBe('Sort: Needs attention')
+  act(() => renderer.unmount())
+})
