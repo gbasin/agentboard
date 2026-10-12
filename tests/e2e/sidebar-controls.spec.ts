@@ -253,8 +253,15 @@ test('Tailscale popover is operable by keyboard alone', async ({ page, context }
   const { sidebar } = await openBoard(page, { anchor: 'top', tailscaleIp: IP })
   const dot = dotButton(sidebar)
 
-  // Tab from the filter button reaches the dot, with a visible focus ring.
+  // Tab follows the toolbar order: filter, sort, then connection.
   await sidebar.getByRole('button', { name: 'Filter', exact: true }).focus()
+  await page.keyboard.press('Tab')
+  const sort = sidebar.getByRole('button', { name: /^Sort: / })
+  await expect(sort).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('menu', { name: 'Sort sessions' })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(sort).toBeFocused()
   await page.keyboard.press('Tab')
   await expect(dot).toBeFocused()
   expect(await dot.evaluate((el) => getComputedStyle(el).boxShadow)).not.toBe('none')
