@@ -69,9 +69,20 @@ export interface HarnessOptions {
    * Per-ordinal field overrides applied to shown sessions, e.g.
    * `{ 0: { status: 'permission' } }` forces `<prefix>00` to permission.
    * Lets a spec pin status/lastActivity that real `tail -f` panes cannot
-   * produce deterministically.
+   * produce deterministically. A function override receives the raw
+   * (pre-rewrite) session and the frame type per frame and returns the
+   * patch — use it when the override must react to server-side changes,
+   * e.g. pinning lastActivity until a targeted session-update stamps a
+   * new one.
    */
-  sessionOverrides?: Record<number, Record<string, unknown>>
+  sessionOverrides?: Record<
+    number,
+    | Record<string, unknown>
+    | ((
+        session: Record<string, unknown>,
+        frameType: 'sessions' | 'session-created' | 'session-update'
+      ) => Record<string, unknown>)
+  >
 }
 
 export interface Harness {
@@ -105,17 +116,19 @@ function ordinalOf(name: string, prefix: string): number {
 
 function rewriteSession(
   session: Record<string, unknown>,
-  options: HarnessOptions
+  options: HarnessOptions,
+  frameType: 'sessions' | 'session-created' | 'session-update'
 ): Record<string, unknown> | null {
   const name = typeof session.name === 'string' ? session.name : ''
   const ordinal = ordinalOf(name, options.prefix)
   if (Number.isNaN(ordinal)) return null
+  const override = options.sessionOverrides?.[ordinal]
   return {
     ...session,
     // Lower ordinal = newer = earlier in the created-desc default sort.
     createdAt: new Date(BASE_TIME - ordinal * 60_000).toISOString(),
     ...(options.logFilePath ? { logFilePath: `/nonexistent/${name}.jsonl` } : {}),
-    ...options.sessionOverrides?.[ordinal],
+    ...(typeof override === 'function' ? override(session, frameType) : override),
   }
 }
 
@@ -186,7 +199,10 @@ export async function installHarness(
         case 'sessions': {
           const sessions = Array.isArray(parsed.sessions) ? parsed.sessions : []
           lastRealSessions = sessions
-            .map((s: Record<string, unknown>) => rewriteSession(s, options))
+            .map(
+              (s: Record<string, unknown>) =>
+                rewriteSession(s, options, 'sessions')
+            )
             .filter(Boolean) as Record<string, unknown>[]
           parsed.sessions = [...lastRealSessions, ...harness.extras]
           break
@@ -195,7 +211,8 @@ export async function installHarness(
         case 'session-update': {
           const session = rewriteSession(
             parsed.session as Record<string, unknown>,
-            options
+            options,
+            parsed.type as 'session-created' | 'session-update'
           )
           if (!session) return
           parsed.session = session

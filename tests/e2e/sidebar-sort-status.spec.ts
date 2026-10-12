@@ -1,6 +1,8 @@
 // E2E: the "Sort order: Status" setting pins permission sessions first and
 // orders the rest by last activity — including under the Bottom anchor,
-// where the mirrored list puts the pinned row next to the prompt.
+// where the mirrored list puts the pinned row next to the prompt — and a
+// session the user just sent input to re-sorts immediately, not on the
+// next pane-content refresh.
 //
 // Real `tail -f` panes cannot produce permission/waiting statuses on demand
 // (status is derived from agent log events), so the harness injects
@@ -96,4 +98,60 @@ test('Status sort under Bottom: the permission row sits lowest, next to the filt
   const bar = await box(filterBar(sidebar))
   const pinned = await box(cardByName(sidebar, names[3]))
   expect(Math.abs(bar.top - pinned.bottom)).toBeLessThanOrEqual(1)
+})
+
+test('Status sort: pressing Enter moves the session to the top of the activity group', async ({
+  page,
+}) => {
+  const prefix = uniquePrefix('stm')
+  const names = windows.createMany(prefix, 5)
+
+  // The tail -f pane's real lastActivity is ~its discovery time — newer than
+  // every pinned value — so the row would start on top without a clamp, and
+  // attach-time pane resizes keep bumping it server-side. Pin it stale on
+  // every frame, and release only when a session-update reports activity
+  // NEWER than the freshest sessions snapshot: the Enter keypress stamps
+  // lastActivity=now inside the update itself, while a resize-bumped value
+  // merely rides along on it at snapshot age.
+  const STALE = '2020-01-01T00:00:00.000Z'
+  let released = false
+  let snapshotActivity = 0
+  const overrides = {
+    ...statusOverrides(),
+    4: (session: Record<string, unknown>, frameType: string) => {
+      const activity = Date.parse(String(session.lastActivity)) || 0
+      if (frameType === 'sessions') {
+        snapshotActivity = Math.max(snapshotActivity, activity)
+      } else if (frameType === 'session-update' && activity > snapshotActivity) {
+        released = true
+      }
+      return released ? {} : { lastActivity: STALE }
+    },
+  }
+
+  await installHarness(page, {
+    prefix,
+    settings: { sessionSortMode: 'status' },
+    sessionOverrides: overrides,
+  })
+  const sidebar = desktopSidebar(page)
+
+  await page.goto('/')
+  await expect(sidebar.getByTestId('session-card')).toHaveCount(5, DISCOVERY)
+  await expect
+    .poll(() => namesTopToBottom(sidebar, prefix))
+    .toEqual([names[3], names[1], names[2], names[0], names[4]])
+
+  // Attach the terminal and submit — the server stamps status=working and
+  // lastActivity=now on the Enter keypress, so the row must move right away,
+  // not after a pane-content refresh.
+  await cardByName(sidebar, names[4]).click()
+  await expect(page.locator('.xterm')).toBeVisible()
+  await page.locator('.xterm-helper-textarea').focus()
+  await page.waitForTimeout(1500) // let the attach settle so input is accepted
+  await page.keyboard.press('Enter')
+
+  await expect
+    .poll(() => namesTopToBottom(sidebar, prefix))
+    .toEqual([names[3], names[4], names[1], names[2], names[0]])
 })
