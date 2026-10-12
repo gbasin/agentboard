@@ -95,6 +95,32 @@ describe('sortSessions', () => {
     ])
   })
 
+  test('orders multiple permission sessions by activity and ignores direction', () => {
+    const sessions = [
+      makeSession({
+        id: 'permission-older',
+        status: 'permission',
+        lastActivity: new Date('2024-01-01T00:00:00.000Z').toISOString(),
+      }),
+      makeSession({
+        id: 'working',
+        status: 'working',
+        lastActivity: new Date('2024-01-03T00:00:00.000Z').toISOString(),
+      }),
+      makeSession({
+        id: 'permission-newer',
+        status: 'permission',
+        lastActivity: new Date('2024-01-02T00:00:00.000Z').toISOString(),
+      }),
+    ]
+
+    const expected = ['permission-newer', 'permission-older', 'working']
+    for (const direction of ['asc', 'desc'] as const) {
+      const sorted = sortSessions(sessions, { mode: 'status', direction })
+      expect(sorted.map((session) => session.id)).toEqual(expected)
+    }
+  })
+
   test('orders by createdAt descending when mode is created with desc', () => {
     const sessions = [
       makeSession({
