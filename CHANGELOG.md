@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.30.0](https://github.com/gbasin/agentboard/compare/v0.29.0...v0.30.0) (2026-10-12)
+
+
+### Features
+
+* add sidebar anchor toggle to sort menu ([#402](https://github.com/gbasin/agentboard/issues/402)) ([a1ce726](https://github.com/gbasin/agentboard/commit/a1ce7262e65157ec8ee05111e9016416932b96fa))
+
 ## [0.29.0](https://github.com/gbasin/agentboard/compare/v0.28.1...v0.29.0) (2026-10-12)
 
 
