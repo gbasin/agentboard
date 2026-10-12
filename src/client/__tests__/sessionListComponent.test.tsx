@@ -175,10 +175,10 @@ describe('SessionList component', () => {
 
     expect(cards.map((card) => card.props['data-session-id'])).toEqual([
       'permission',
-      'waiting-new',
-      'waiting-old',
-      'working',
       'unknown',
+      'waiting-new',
+      'working',
+      'waiting-old',
     ])
 
     act(() => {

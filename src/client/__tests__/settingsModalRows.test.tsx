@@ -31,7 +31,7 @@ describe('SettingsModal instant apply', () => {
     act(() => radio(renderer.root, 'Status').props.onClick())
     expect(useSettingsStore.getState().sessionSortMode).toBe('status')
     expect(renderer.root.findAll((node) => node.props['data-setting-row'] === 'sort-direction')).toHaveLength(0)
-    expect(textOf(row(renderer.root, 'sort-order'))).toContain('re-sort by status')
+    expect(textOf(row(renderer.root, 'sort-order'))).toContain('pin to the top')
     act(() => radio(renderer.root, 'Manual').props.onClick())
     expect(textOf(row(renderer.root, 'sort-order'))).toContain('Drag sessions')
     act(() => radio(renderer.root, 'Created').props.onClick())

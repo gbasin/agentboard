@@ -56,7 +56,7 @@ beforeEach(() => {
 })
 
 describe('sortSessions', () => {
-  test('orders by status then last activity when mode is status', () => {
+  test('pins permission first, then sorts by last activity when mode is status', () => {
     const sessions = [
       makeSession({
         id: 'working',
@@ -78,14 +78,20 @@ describe('sortSessions', () => {
         status: 'unknown',
         lastActivity: new Date('2024-01-04T00:00:00.000Z').toISOString(),
       }),
+      makeSession({
+        id: 'permission-stale',
+        status: 'permission',
+        lastActivity: new Date('2023-12-01T00:00:00.000Z').toISOString(),
+      }),
     ]
 
     const sorted = sortSessions(sessions, { mode: 'status', direction: 'desc' })
     expect(sorted.map((session) => session.id)).toEqual([
-      'waiting-newer',
-      'waiting-older',
-      'working',
+      'permission-stale',
       'unknown',
+      'waiting-newer',
+      'working',
+      'waiting-older',
     ])
   })
 

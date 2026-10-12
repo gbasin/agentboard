@@ -57,7 +57,7 @@ function SortModeControl({ ids }: RowControlProps) {
 
 function SortModeDescription() {
   const mode = useSettingsStore((state) => state.sessionSortMode)
-  if (mode === 'status') return <>Sessions re-sort by status: waiting, working, unknown.</>
+  if (mode === 'status') return <>Sessions needing permission pin to the top; the rest sort by last activity.</>
   if (mode === 'manual') return <>Drag sessions in the sidebar to reorder them.</>
   return <>Sessions stay in the order they were created.</>
 }

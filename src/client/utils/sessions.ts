@@ -7,8 +7,8 @@ import type {
 const SESSION_STATUS_ORDER: Record<Session['status'], number> = {
   permission: 0,
   waiting: 1,
-  working: 2,
-  unknown: 3,
+  working: 1,
+  unknown: 1,
 }
 
 export interface SortOptions {
@@ -51,7 +51,8 @@ export function sortSessions(
 
   return sessions.toSorted((a, b) => {
     if (mode === 'status') {
-      // Sort by status priority, then by lastActivity descending
+      // Permission sessions pin to the top; everything else sorts by
+      // lastActivity descending.
       const aOrder =
         SESSION_STATUS_ORDER[a.status] ?? SESSION_STATUS_ORDER.unknown
       const bOrder =
