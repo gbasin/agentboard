@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.0](https://github.com/gbasin/agentboard/compare/v0.27.0...v0.28.0) (2026-10-12)
+
+
+### Features
+
+* status sort pins permission, orders rest by last activity ([#395](https://github.com/gbasin/agentboard/issues/395)) ([15a423f](https://github.com/gbasin/agentboard/commit/15a423f7c39dccd4793814a79cc3b96bcf06f7e6))
+
 ## [0.27.0](https://github.com/gbasin/agentboard/compare/v0.26.3...v0.27.0) (2026-10-11)
 
 
