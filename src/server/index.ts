@@ -99,6 +99,7 @@ import {
   withTmuxUtf8Flag,
 } from './tmuxFormat'
 import { timedSpawnAsync, timedSpawnSync } from './syncSpawnTiming'
+import { StallWatchdog } from './stallWatchdog'
 import { getTailscaleIp } from './tailscale'
 import { windowNameError } from './windowName'
 
@@ -1322,11 +1323,30 @@ setInterval(refreshSessions, config.refreshIntervalMs) // Async periodic refresh
 // debug covers milder jitter when LOG_LEVEL=debug.
 const EL_CHECK_MS = 500
 const EL_WARN_LAG_MS = 1000
+
+// Stall watchdog — the lag monitor only reports a stall once it ends; this
+// worker-side sampler runs `sample <pid>` while the loop is still blocked so
+// the report names the synchronous call doing the blocking (spawnSync on a
+// wedged tmux server, sync SQLite, …). Its heartbeat rides this tick — beats
+// that arrive late are the stall it measures.
+const stallWatchdog = new StallWatchdog({
+  enabled: config.stallWatchdogEnabled,
+  pid: process.pid,
+  sampleDir: path.join(config.dataDir, 'stall-samples'),
+  thresholdMs: config.stallWatchdogThresholdMs,
+  sampleSeconds: 1,
+  cooldownMs: 60_000,
+  maxSamples: 20,
+  checkIntervalMs: 250,
+})
+stallWatchdog.start()
+
 let elLastTick = performance.now()
 setInterval(() => {
   const now = performance.now()
   const lagMs = Math.round(now - elLastTick - EL_CHECK_MS)
   elLastTick = now
+  stallWatchdog.beat()
   if (lagMs > 100) {
     const [load1, load5, load15] = os.loadavg()
     const payload = {
@@ -2314,6 +2334,7 @@ async function cleanupAllTerminals() {
     clearAttachDedup(ws)
   }
   await Promise.allSettled(disposePromises)
+  stallWatchdog.dispose()
   throwawayShellReaper.dispose()
   setCodexSubagentIndexListener(null)
   dormantPrScanner.stop()

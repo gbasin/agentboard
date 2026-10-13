@@ -178,6 +178,25 @@ const pasteImageMaxBytes = Number.isFinite(pasteImageMaxBytesRaw) && pasteImageM
   ? Math.floor(pasteImageMaxBytesRaw)
   : 40 * 1024 * 1024
 
+// Stall watchdog: a worker samples this process mid-event-loop-stall so the
+// blocked stack is captured while it happens (event_loop_lag only sees the
+// stall after it ends). Uses macOS `sample` — off on other platforms and
+// under `bun test` (NODE_ENV=test), unless AGENTBOARD_STALL_WATCHDOG=1 forces
+// it on.
+const stallWatchdogRaw = process.env.AGENTBOARD_STALL_WATCHDOG
+const stallWatchdogEnabled =
+  stallWatchdogRaw === '1' || stallWatchdogRaw === 'true'
+    ? true
+    : stallWatchdogRaw !== '0' &&
+      stallWatchdogRaw !== 'false' &&
+      process.platform === 'darwin' &&
+      process.env.NODE_ENV !== 'test'
+const stallWatchdogThresholdMsRaw = Number(process.env.AGENTBOARD_STALL_WATCHDOG_MS)
+const stallWatchdogThresholdMs =
+  Number.isFinite(stallWatchdogThresholdMsRaw) && stallWatchdogThresholdMsRaw >= 500
+    ? Math.floor(stallWatchdogThresholdMsRaw)
+    : 2000
+
 export const config = {
   port: Number(process.env.PORT) || 4040,
   hostname: resolveBindHostname(),
@@ -246,4 +265,6 @@ export const config = {
   tmuxMutationTimeoutMs,
   attachDedupMs,
   pasteImageMaxBytes,
+  stallWatchdogEnabled,
+  stallWatchdogThresholdMs,
 }
