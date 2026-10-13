@@ -35,66 +35,18 @@ export interface StallWatchdogConfig {
 }
 
 /**
- * Heartbeat-gap bookkeeping, kept free of Worker/fs so it is unit-testable.
- * The worker thread owns an instance; beat() and check() both run there.
- */
-export class StallGapTracker {
-  private lastBeatAt: number
-  private lastSampleAt = Number.NEGATIVE_INFINITY
-  private disabled = false
-
-  constructor(
-    private readonly opts: {
-      thresholdMs: number
-      cooldownMs: number
-      now?: () => number
-    }
-  ) {
-    this.lastBeatAt = this.now()
-  }
-
-  private now(): number {
-    return this.opts.now ? this.opts.now() : performance.now()
-  }
-
-  beat(): void {
-    this.lastBeatAt = this.now()
-  }
-
-  /**
-   * Returns the heartbeat gap in ms when a sample should be taken: the gap
-   * means the main thread is stalled *right now*. Cooldown starts at trigger
-   * time, so a failing or ignored `sample` cannot spam; null otherwise.
-   */
-  check(): number | null {
-    if (this.disabled) return null
-    const now = this.now()
-    const gap = now - this.lastBeatAt
-    if (gap < this.opts.thresholdMs || now - this.lastSampleAt < this.opts.cooldownMs) {
-      return null
-    }
-    this.lastSampleAt = now
-    return Math.round(gap)
-  }
-
-  /** Stop sampling permanently (e.g. the `sample` binary is missing). */
-  disable(): void {
-    this.disabled = true
-  }
-}
-
-/**
  * Main-thread side: spawns the worker, forwards heartbeats (called from the
  * event-loop monitor tick — no extra main-thread timer), logs the reports.
  */
 export class StallWatchdog {
   private worker: Worker | null = null
   private disposed = false
+  private failed = false
 
   constructor(private readonly opts: StallWatchdogConfig) {}
 
   start(): void {
-    if (this.disposed || this.worker || !this.opts.enabled) return
+    if (this.disposed || this.worker || this.failed || !this.opts.enabled) return
     // Compiled Bun binaries need string paths; dev mode needs URL resolution.
     const workerPath = import.meta.url.includes('$bunfs')
       ? './stallWatchdogWorker.ts'
@@ -103,6 +55,13 @@ export class StallWatchdog {
     worker.onmessage = (event) =>
       this.handleMessage(event.data as StallWatchdogWorkerResponse)
     worker.onerror = (event) => {
+      // Clear the reference so the object doesn't sit in a misleadingly
+      // active state; failed blocks restart here (a worker that dies at load
+      // would otherwise error-loop on every retry).
+      this.worker = null
+      this.failed = true
+      worker.onmessage = null
+      worker.onerror = null
       logger.warn('stall_watchdog_worker_error', {
         message: event instanceof ErrorEvent ? event.message : 'worker error',
       })
@@ -119,15 +78,14 @@ export class StallWatchdog {
     }
     worker.postMessage(init)
     this.worker = worker
-    logger.info('stall_watchdog_started', {
-      thresholdMs: this.opts.thresholdMs,
-      sampleDir: this.opts.sampleDir,
-    })
   }
 
   /** Heartbeat — called every event-loop monitor tick. */
   beat(): void {
-    this.worker?.postMessage({ kind: 'beat' } satisfies StallWatchdogWorkerRequest)
+    this.worker?.postMessage({
+      kind: 'beat',
+      sentAt: Date.now(),
+    } satisfies StallWatchdogWorkerRequest)
   }
 
   dispose(): void {
@@ -147,7 +105,12 @@ export class StallWatchdog {
   }
 
   private handleMessage(response: StallWatchdogWorkerResponse): void {
-    if (response.kind === 'sampled') {
+    if (response.kind === 'ready') {
+      logger.info('stall_watchdog_started', {
+        thresholdMs: this.opts.thresholdMs,
+        sampleDir: this.opts.sampleDir,
+      })
+    } else if (response.kind === 'sampled') {
       logger.warn('stall_watchdog_sampled', {
         path: response.path,
         gapMs: response.gapMs,

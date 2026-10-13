@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import { StallGapTracker } from '../stallGapTracker'
 import type { StallWatchdogWorkerRequest } from '../stallWatchdogWorker'
 
 class WorkerMock {
@@ -20,13 +21,11 @@ class WorkerMock {
 }
 
 const originalWorker = globalThis.Worker
-let StallGapTracker: typeof import('../stallWatchdog').StallGapTracker
 let StallWatchdog: typeof import('../stallWatchdog').StallWatchdog
 
 beforeAll(async () => {
   globalThis.Worker = WorkerMock as unknown as typeof Worker
   const mod = await import('../stallWatchdog')
-  StallGapTracker = mod.StallGapTracker
   StallWatchdog = mod.StallWatchdog
 })
 
@@ -58,19 +57,50 @@ describe('StallGapTracker', () => {
       cooldownMs: 60_000,
       now: () => now,
     })
+    tracker.beat(0)
     now = 1999
     expect(tracker.check()).toBeNull()
   })
 
-  test('returns the gap when the heartbeat is overdue past threshold', () => {
+  test('returns the gap when the newest sent timestamp is overdue', () => {
     let now = 0
     const tracker = new StallGapTracker({
       thresholdMs: 2000,
       cooldownMs: 60_000,
       now: () => now,
     })
+    tracker.beat(0)
     now = 2500
     expect(tracker.check()).toBe(2500)
+  })
+
+  test('a stale queued beat does not mask an in-progress stall', () => {
+    // The worker was starved and only now drains its queue: the beat it
+    // processes carries a send time from before the stall began, so the gap
+    // still measures the main thread's silence rather than delivery delay.
+    let now = 0
+    const tracker = new StallGapTracker({
+      thresholdMs: 2000,
+      cooldownMs: 60_000,
+      now: () => now,
+    })
+    tracker.beat(0)
+    now = 10_000
+    tracker.beat(500) // queued beat, sent 9.5s ago
+    expect(tracker.check()).toBe(9_500)
+  })
+
+  test('a fresh queued beat clears the gap even if processed late', () => {
+    let now = 0
+    const tracker = new StallGapTracker({
+      thresholdMs: 2000,
+      cooldownMs: 60_000,
+      now: () => now,
+    })
+    tracker.beat(0)
+    now = 10_000
+    tracker.beat(9_900) // sent 100ms ago; main is alive
+    expect(tracker.check()).toBeNull()
   })
 
   test('cooldown suppresses repeat triggers until it elapses', () => {
@@ -80,15 +110,16 @@ describe('StallGapTracker', () => {
       cooldownMs: 60_000,
       now: () => now,
     })
-    now = 5000
-    expect(tracker.check()).toBe(5000)
+    tracker.beat(0)
+    now = 5_000
+    expect(tracker.check()).toBe(5_000)
     // Stall ends and a new one starts inside the cooldown window.
-    tracker.beat()
+    tracker.beat(5_000)
     now = 10_000
     expect(tracker.check()).toBeNull()
     // Cooldown over: a fresh stall (4s gap since the last beat) triggers.
     now = 66_000
-    tracker.beat()
+    tracker.beat(66_000)
     now = 70_000
     expect(tracker.check()).toBe(4_000)
   })
@@ -124,18 +155,20 @@ describe('StallWatchdog', () => {
     watchdog.dispose()
   })
 
-  test('beat() forwards heartbeat messages to the worker', () => {
+  test('beat() forwards the send timestamp to the worker', () => {
     WorkerMock.instances = []
     const watchdog = new StallWatchdog(makeConfig())
     watchdog.start()
     watchdog.beat()
     watchdog.beat()
     const worker = WorkerMock.instances[0]
-    expect(
-      worker.messages.filter(
-        (m) => (m as StallWatchdogWorkerRequest).kind === 'beat'
-      )
-    ).toHaveLength(2)
+    const beats = worker.messages.filter(
+      (m): m is Extract<StallWatchdogWorkerRequest, { kind: 'beat' }> =>
+        (m as StallWatchdogWorkerRequest).kind === 'beat'
+    )
+    expect(beats).toHaveLength(2)
+    expect(typeof beats[0].sentAt).toBe('number')
+    expect(beats[1].sentAt).toBeGreaterThanOrEqual(beats[0].sentAt)
     watchdog.dispose()
   })
 
@@ -145,6 +178,21 @@ describe('StallWatchdog', () => {
     watchdog.start()
     watchdog.beat()
     expect(WorkerMock.instances).toHaveLength(0)
+    watchdog.dispose()
+  })
+
+  test('a worker error clears the reference and blocks restart', () => {
+    WorkerMock.instances = []
+    const watchdog = new StallWatchdog(makeConfig())
+    watchdog.start()
+    const worker = WorkerMock.instances[0]
+    worker.onerror?.(new ErrorEvent('error', { message: 'boom' }))
+    expect(worker.onmessage).toBeNull()
+    // Beats no longer reach a worker, and start() will not retry.
+    watchdog.beat()
+    expect(worker.messages.filter((m) => (m as { kind: string }).kind === 'beat')).toHaveLength(0)
+    watchdog.start()
+    expect(WorkerMock.instances).toHaveLength(1)
     watchdog.dispose()
   })
 

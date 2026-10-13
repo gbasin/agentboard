@@ -192,8 +192,10 @@ const stallWatchdogEnabled =
       process.platform === 'darwin' &&
       process.env.NODE_ENV !== 'test'
 const stallWatchdogThresholdMsRaw = Number(process.env.AGENTBOARD_STALL_WATCHDOG_MS)
+// The floor sits above the heartbeat cadence: a threshold under ~1s would
+// fire on ordinary timer jitter, not stalls.
 const stallWatchdogThresholdMs =
-  Number.isFinite(stallWatchdogThresholdMsRaw) && stallWatchdogThresholdMsRaw >= 500
+  Number.isFinite(stallWatchdogThresholdMsRaw) && stallWatchdogThresholdMsRaw >= 1000
     ? Math.floor(stallWatchdogThresholdMsRaw)
     : 2000
 

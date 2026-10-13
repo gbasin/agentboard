@@ -2,15 +2,16 @@
 /**
  * Worker half of the stall watchdog — see stallWatchdog.ts for the design.
  *
- * Receives `init` once, then a `beat` per event-loop monitor tick. Its own
- * interval measures heartbeat gaps: a gap past thresholdMs means the main
- * thread is stalled right now, so it runs `sample <pid>` via spawnSync —
- * blocking is safe here because this thread is not the loop being watched.
- * Results are posted back; the main thread logs them.
+ * Receives `init` once, then a `beat` per event-loop monitor tick carrying
+ * the main thread's send timestamp. Its own interval measures the gap to the
+ * newest sent timestamp: a gap past thresholdMs means the main thread is
+ * stalled right now, so it runs `sample <pid>` via spawnSync — blocking is
+ * safe here because this thread is not the loop being watched. Results are
+ * posted back; the main thread logs them.
  */
 import fs from 'node:fs'
 import path from 'node:path'
-import { StallGapTracker } from './stallWatchdog'
+import { StallGapTracker } from './stallGapTracker'
 
 export type StallWatchdogWorkerRequest =
   | {
@@ -23,10 +24,11 @@ export type StallWatchdogWorkerRequest =
       maxSamples: number
       checkIntervalMs: number
     }
-  | { kind: 'beat' }
+  | { kind: 'beat'; sentAt: number }
   | { kind: 'shutdown' }
 
 export type StallWatchdogWorkerResponse =
+  | { kind: 'ready' }
   | { kind: 'sampled'; path: string; gapMs: number; sampleMs: number }
   | { kind: 'sample_failed'; gapMs: number; error: string }
   | { kind: 'disabled'; reason: string }
@@ -86,7 +88,6 @@ function runSample(gapMs: number): void {
       post({ kind: 'sample_failed', gapMs, error })
       return
     }
-    pruneSamples()
     post({ kind: 'sampled', path: file, gapMs, sampleMs: Date.now() - startedAt })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
@@ -96,6 +97,10 @@ function runSample(gapMs: number): void {
       return
     }
     post({ kind: 'sample_failed', gapMs, error: message })
+  } finally {
+    // Prune on success and failure alike: a killed sample can leave a partial
+    // report that still counts against retention.
+    pruneSamples()
   }
 }
 
@@ -109,7 +114,7 @@ ctx.onmessage = (event: MessageEvent<StallWatchdogWorkerRequest>) => {
     return
   }
   if (payload.kind === 'beat') {
-    tracker?.beat()
+    tracker?.beat(payload.sentAt)
     return
   }
 
@@ -124,4 +129,5 @@ ctx.onmessage = (event: MessageEvent<StallWatchdogWorkerRequest>) => {
     const gapMs = tracker.check()
     if (gapMs !== null) runSample(gapMs)
   }, payload.checkIntervalMs)
+  post({ kind: 'ready' })
 }
