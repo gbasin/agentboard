@@ -206,6 +206,79 @@ describe('mediaExtractor', () => {
     expect(media).toHaveLength(1)
   })
 
+  test('non-base64 data urls and missing payloads are handled', () => {
+    // data: without ;base64 cannot be served by the endpoint — stays a url ref.
+    const raw = extractSessionMedia(
+      codexInputImage('data:image/png,notbase64stuff') + '\n'
+    )
+    expect(raw).toEqual([
+      expect.objectContaining({
+        kind: 'image',
+        url: 'data:image/png,notbase64stuff',
+      }),
+    ])
+    expect(raw[0].bytes).toBeUndefined()
+
+    // Image block with no source data produces nothing.
+    const empty = extractSessionMedia(
+      JSON.stringify({
+        type: 'user',
+        message: { role: 'user', content: [{ type: 'image', source: {} }] },
+      }) + '\n'
+    )
+    expect(empty).toHaveLength(0)
+  })
+
+  test('malformed lines and non-media lines produce nothing', () => {
+    expect(
+      extractSessionMedia('{broken json "image\n' + claudeUserImage('') + '\n')
+    ).toHaveLength(0)
+  })
+
+  test('caps media per file, dropping the oldest', () => {
+    // 2001 unique payloads spread over 9 lines (≤256 indexable per line).
+    let n = 0
+    const lines = Array.from({ length: 9 }, () =>
+      JSON.stringify({
+        type: 'user',
+        message: {
+          role: 'user',
+          content: Array.from({ length: 255 }, () => ({
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: 'image/png',
+              data: Buffer.from(`pad-${n++}`).toString('base64'),
+            },
+          })),
+        },
+      })
+    )
+    const media = extractSessionMedia(lines.join('\n') + '\n')
+    expect(media).toHaveLength(2000)
+    // The first line's payloads are evicted first.
+    expect(media[0].offset).toBeGreaterThan(0)
+  })
+
+  test('never emits indexes the endpoint cannot address', () => {
+    const line = JSON.stringify({
+      type: 'user',
+      message: {
+        role: 'user',
+        content: Array.from({ length: 300 }, (_, i) => ({
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: 'image/png',
+            data: Buffer.from(`p${i}`).toString('base64'),
+          },
+        })),
+      },
+    })
+    const media = extractSessionMedia(line + '\n')
+    expect(Math.max(...media.map((m) => m.index))).toBe(256)
+  })
+
   test('item index matches the endpoint extraction order', () => {
     const line = JSON.stringify({
       type: 'user',

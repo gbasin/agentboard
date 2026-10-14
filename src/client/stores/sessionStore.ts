@@ -1,12 +1,22 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
-import type { AgentSession, HostStatus, Session } from '@shared/types'
+import type { AgentSession, HostStatus, Session, SessionMedia } from '@shared/types'
 import { sortSessions } from '../utils/sessions'
 import { useSettingsStore } from './settingsStore'
 import { createTabStorage } from '../utils/storage'
 
 const SESSION_PERSIST_KEY = 'agentboard-session'
 const tabStorage = createTabStorage(SESSION_PERSIST_KEY)
+
+// Media descriptors are content-addressed by url (path+offset+index+bytes),
+// so a cheap url-by-url compare keeps both dedup and live updates correct.
+function mediaEqual(
+  a: SessionMedia[] | undefined,
+  b: SessionMedia[] | undefined
+): boolean {
+  if ((a?.length ?? 0) !== (b?.length ?? 0)) return false
+  return (a ?? []).every((m, i) => m.url === b![i].url)
+}
 
 function sessionsEqualById(a: Session, b: Session): boolean {
   return (
@@ -27,7 +37,8 @@ function sessionsEqualById(a: Session, b: Session): boolean {
     a.agentSessionName === b.agentSessionName &&
     a.logFilePath === b.logFilePath &&
     a.isHibernating === b.isHibernating &&
-    a.lastUserMessage === b.lastUserMessage
+    a.lastUserMessage === b.lastUserMessage &&
+    mediaEqual(a.media, b.media)
   )
 }
 

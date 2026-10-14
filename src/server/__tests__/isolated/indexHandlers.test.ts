@@ -6226,6 +6226,82 @@ describe('server fetch handlers', () => {
       expect(
         (await get(`/api/session-media/media-session?path=${encodeURIComponent(logPath)}&offset=${imageOffset}&index=9`))?.status
       ).toBe(404)
+
+      // Ref shape bounds: index over the extractor cap, negative offset,
+      // and missing params are all rejected before any file access.
+      const p = encodeURIComponent(logPath)
+      for (const q of [
+        `path=${p}&offset=${imageOffset}&index=257`,
+        `path=${p}&offset=-1&index=0`,
+        `path=${p}&offset=${imageOffset}`,
+        `offset=${imageOffset}&index=0`,
+      ]) {
+        expect(
+          (await get(`/api/session-media/media-session?${q}`))?.status
+        ).toBe(400)
+      }
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true })
+    }
+  })
+
+  test('serves document payloads and rejects unreadable lines', async () => {
+    const { serveOptions } = await loadIndex()
+    const fetchHandler = serveOptions.fetch
+    if (!fetchHandler) {
+      throw new Error('Fetch handler not configured')
+    }
+
+    const pdfB64 = Buffer.from('%PDF-1.4 fake e2e body').toString('base64')
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-doc-'))
+    const logPath = path.join(tempDir, 'session.jsonl')
+    const docLine = JSON.stringify({
+      type: 'user',
+      message: {
+        role: 'user',
+        content: [
+          {
+            type: 'document',
+            source: {
+              type: 'base64',
+              media_type: 'application/pdf',
+              data: pdfB64,
+            },
+          },
+        ],
+      },
+    })
+    const giantLine = `${'A'.repeat(66 * 1024 * 1024)}\n`
+    const docOffset = Buffer.byteLength(giantLine)
+    await fs.writeFile(logPath, `${giantLine}${docLine}\n`)
+
+    seedRecord(
+      makeRecord({ sessionId: 'doc-session', logFilePath: logPath })
+    )
+
+    const get = (url: string) =>
+      fetchHandler.call(
+        {} as Bun.Server<unknown>,
+        new Request(`http://localhost${url}`),
+        {} as Bun.Server<unknown>
+      )
+
+    try {
+      const p = encodeURIComponent(logPath)
+      const response = await get(
+        `/api/session-media/doc-session?path=${p}&offset=${docOffset}&index=0`
+      )
+      if (!response) throw new Error('Expected media response')
+      expect(response.status).toBe(200)
+      expect(response.headers.get('content-type')).toBe('application/pdf')
+      expect(
+        Buffer.from(await response.arrayBuffer()).toString()
+      ).toBe('%PDF-1.4 fake e2e body')
+
+      // A line past the 64 MiB read cap can't be parsed — treated as absent.
+      expect(
+        (await get(`/api/session-media/doc-session?path=${p}&offset=0&index=0`))?.status
+      ).toBe(404)
     } finally {
       await fs.rm(tempDir, { recursive: true, force: true })
     }

@@ -52,6 +52,9 @@ const READ_CHUNK_BYTES = 128 * 1024
 const MAX_CACHE_ENTRIES = 5000
 const MAX_PENDING_LABELS = 2000
 const MAX_MEDIA_PER_FILE = 2000
+// /api/session-media rejects index > 256; never emit descriptors that can't
+// be addressed.
+const MAX_MEDIA_INDEX = 256
 
 // Byte-level candidates. `"image` (no closing quote) over-matches on purpose:
 // it covers "type":"image", "input_image", "image_url", data:image URLs,
@@ -388,6 +391,7 @@ function processLine(state: ScanState, line: string, lineOffset: number): void {
   let index = 0
   for (const item of extractMediaItemsFromRecord(record)) {
     const current = index++
+    if (current > MAX_MEDIA_INDEX) continue
     const key = dedupeKey(item)
     if (state.seen.has(key)) continue
     state.seen.add(key)
