@@ -168,6 +168,9 @@ describe('db', () => {
       makeSession({ sessionId: 'hist-new', logFilePath: '/tmp/hn.jsonl', currentWindow: null, lastActivityAt: recent }),
       makeSession({ sessionId: 'hist-mid', logFilePath: '/tmp/hm.jsonl', currentWindow: null, lastActivityAt: mid }),
       makeSession({ sessionId: 'hist-old', logFilePath: '/tmp/ho.jsonl', currentWindow: null, lastActivityAt: old }),
+      // Timestamp ties exercise the session_id BINARY tiebreaker.
+      makeSession({ sessionId: 'tie-b', logFilePath: '/tmp/tb.jsonl', currentWindow: null, lastActivityAt: mid }),
+      makeSession({ sessionId: 'tie-a', logFilePath: '/tmp/ta.jsonl', currentWindow: null, lastActivityAt: mid }),
     ]
     for (const record of seed) db.insertSession(record)
 
@@ -177,7 +180,13 @@ describe('db', () => {
     expect(lists.history).toEqual(db.getHistorySessions())
     expect(lists.active.map((s) => s.sessionId)).toEqual(['a-active', 'b-active', 'c-active'])
     expect(lists.hibernating.map((s) => s.sessionId)).toEqual(['h-2', 'h-1'])
-    expect(lists.history.map((s) => s.sessionId)).toEqual(['hist-new', 'hist-mid', 'hist-old'])
+    expect(lists.history.map((s) => s.sessionId)).toEqual([
+      'hist-new',
+      'hist-mid',
+      'tie-a',
+      'tie-b',
+      'hist-old',
+    ])
 
     const capped = db.getSessionLists({ maxAgeHours: 24 * 365, limit: 1 })
     expect(capped.history.map((s) => s.sessionId)).toEqual(

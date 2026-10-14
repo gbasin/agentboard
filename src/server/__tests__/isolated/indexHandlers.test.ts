@@ -433,12 +433,25 @@ mock.module('../../db', () => ({
       if (options?.limit !== undefined && options.limit >= 0) {
         history = history.slice(0, options.limit)
       }
+      const byId = (a: { sessionId: string }, b: { sessionId: string }) =>
+        a.sessionId < b.sessionId ? -1 : a.sessionId > b.sessionId ? 1 : 0
+      const byActivityDesc = (
+        a: { lastActivityAt: string; sessionId: string },
+        b: { lastActivityAt: string; sessionId: string }
+      ) =>
+        a.lastActivityAt === b.lastActivityAt
+          ? byId(a, b)
+          : a.lastActivityAt < b.lastActivityAt
+            ? 1
+            : -1
       return {
-        active: records.filter((record) => record.currentWindow !== null),
-        hibernating: records.filter(
-          (record) => record.currentWindow === null && record.isHibernating
-        ),
-        history,
+        active: records
+          .filter((record) => record.currentWindow !== null)
+          .sort(byId),
+        hibernating: records
+          .filter((record) => record.currentWindow === null && record.isHibernating)
+          .sort(byActivityDesc),
+        history: history.sort(byActivityDesc),
       }
     },
     orphanSession: (sessionId: string, options?: { hibernate?: boolean }) => {

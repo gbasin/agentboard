@@ -323,7 +323,20 @@ function initializeConnection(
   const selectHistoryRecent = db.prepare(
     'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_hibernating = 0 AND last_activity_at > $cutoff ORDER BY last_activity_at DESC, session_id LIMIT $limit'
   )
-  const selectAllRows = db.prepare('SELECT * FROM agent_sessions')
+  // One statement covering all three lists, ordered so each bucket arrives
+  // pre-sorted: windowed rows first (session_id ASC via the final key),
+  // then dormant rows by last_activity_at DESC, session_id — exactly the
+  // ORDER BYs of the separate queries. The WHERE keeps unmatched rows (and
+  // their last_user_message payloads) out of the result entirely.
+  const selectSessionLists = db.prepare(
+    `SELECT * FROM agent_sessions
+     WHERE current_window IS NOT NULL
+        OR is_hibernating = 1
+        OR (is_hibernating = 0 AND ($cutoff IS NULL OR last_activity_at > $cutoff))
+     ORDER BY (current_window IS NULL),
+              CASE WHEN current_window IS NULL THEN last_activity_at END DESC,
+              session_id`
+  )
   const selectKnownSessionKeys = db.prepare(
     'SELECT session_id, log_file_path, project_path, slug, agent_type, is_codex_exec FROM agent_sessions'
   )
@@ -534,10 +547,13 @@ function initializeConnection(
       return rows.map(mapRow)
     },
     getSessionLists: (options) => {
-      const rows = selectAllRows.all() as Record<string, unknown>[]
+      if (options?.limit !== undefined && !Number.isInteger(options.limit)) {
+        throw new TypeError('getSessionLists: limit must be an integer')
+      }
       const cutoff = options?.maxAgeHours
         ? new Date(Date.now() - options.maxAgeHours * 60 * 60 * 1000).toISOString()
         : null
+      const rows = selectSessionLists.all({ $cutoff: cutoff }) as Record<string, unknown>[]
       const activeRows: Record<string, unknown>[] = []
       const hibernatingRows: Record<string, unknown>[] = []
       const historyRows: Record<string, unknown>[] = []
@@ -546,19 +562,12 @@ function initializeConnection(
           activeRows.push(row)
         } else if (row.is_hibernating === 1) {
           hibernatingRows.push(row)
-        } else if (
-          row.is_hibernating === 0 &&
-          (!cutoff || (row.last_activity_at as string) > cutoff)
-        ) {
+        } else if (row.is_hibernating === 0) {
           historyRows.push(row)
         }
       }
-      // Match the SQL: active ORDER BY +session_id (unary + keeps TEXT
-      // affinity — plain BINARY string order); dormant ORDER BY
-      // last_activity_at DESC, session_id.
-      activeRows.sort(bySessionIdAsc)
-      hibernatingRows.sort(byActivityDesc)
-      historyRows.sort(byActivityDesc)
+      // Buckets arrive pre-sorted from SQL; only the display cap is applied
+      // here (SQLite negative LIMIT = uncapped).
       const limit = options?.limit ?? -1
       const historyLimited = limit >= 0 ? historyRows.slice(0, limit) : historyRows
       return {
@@ -727,22 +736,6 @@ function mapRow(row: Record<string, unknown>): AgentSessionRecord {
   }
 }
 
-// getSessionLists comparators — must mirror the SQL ordering exactly.
-// BINARY collation on session_id is plain code-unit order in JS.
-function bySessionIdAsc(a: Record<string, unknown>, b: Record<string, unknown>): number {
-  const ai = a.session_id as string
-  const bi = b.session_id as string
-  return ai < bi ? -1 : ai > bi ? 1 : 0
-}
-
-// `ORDER BY last_activity_at DESC, session_id` — ISO text compares fine as
-// strings; session_id under BINARY collation is plain code-unit order.
-function byActivityDesc(a: Record<string, unknown>, b: Record<string, unknown>): number {
-  const at = a.last_activity_at as string
-  const bt = b.last_activity_at as string
-  if (at !== bt) return at < bt ? 1 : -1
-  return bySessionIdAsc(a, b)
-}
 
 function migrateDatabase(db: SQLiteDatabase) {
   const columns = getColumnNames(db, 'agent_sessions')
