@@ -333,6 +333,12 @@ class PtyTerminalProxy extends TerminalProxyBase {
     } catch {
       // Raw session may not have an explicit mouse override; ignore
     }
+    // Same headless-proxy reasoning as the ws grouped session: no status bar.
+    try {
+      this.runTmuxMutation(['set-option', '-t', `=${effSession}`, 'status', 'off'])
+    } catch {
+      // Non-fatal
+    }
   }
 
   // Grouped sessions go through createGroupedSession: tmux spawns (and at
@@ -551,6 +557,19 @@ class PtyTerminalProxy extends TerminalProxyBase {
           error: error instanceof Error ? error.message : String(error),
         })
       }
+    }
+
+    // The ws session's only client is our headless attach: its status bar is
+    // piped as terminal output and never rendered. The tmux server still
+    // redraws it every interval — sampled at ~30% of server CPU inside
+    // status_redraw -> format_expand_time — for a bar nobody sees.
+    try {
+      this.runTmuxMutation(['set-option', '-t', this.options.sessionName, 'status', 'off'])
+    } catch (error) {
+      this.logEvent('terminal_status_off_failed', {
+        sessionName: this.options.sessionName,
+        error: error instanceof Error ? error.message : String(error),
+      })
     }
 
     if (attemptId !== this.startAttemptId) {

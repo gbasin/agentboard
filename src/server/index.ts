@@ -100,6 +100,7 @@ import {
 } from './tmuxFormat'
 import { timedSpawnAsync, timedSpawnSync } from './syncSpawnTiming'
 import { StallWatchdog } from './stallWatchdog'
+import { installSyncIoTiming } from './syncIoTiming'
 import { getTailscaleIp } from './tailscale'
 import { windowNameError } from './windowName'
 
@@ -1346,6 +1347,11 @@ const stallWatchdog = new StallWatchdog({
   checkIntervalMs: 250,
 })
 stallWatchdog.start()
+
+// Instrument sync fs/sqlite calls: stall samples show the blocked main
+// thread dominated by pread() and JIT'd JS, and no call site is otherwise
+// named. Wrap early so slow calls during hydration are covered.
+installSyncIoTiming()
 
 let elLastTick = performance.now()
 setInterval(() => {

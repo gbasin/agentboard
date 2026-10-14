@@ -6,7 +6,7 @@
 // call over the threshold lets us see which command was actually slow during
 // a freeze instead of guessing from side effects (missed pongs, reconnects).
 
-import { logger } from './logger'
+import { logSlowOp, resetSlowOpState } from './slowOpLog'
 import { sanitizedTmuxEnv } from './tmuxEnv'
 
 // Slower than this produces user-visible input lag while it runs.
@@ -45,17 +45,8 @@ export const SLOW_SYNC_SPAWN_AGGREGATE_MS = 60_000
 // swallowed, leaving a 20.8s lag with no named cause.)
 export const SLOW_SYNC_SPAWN_OUTLIER_MS = 1000
 
-interface SlowSpawnWindow {
-  windowStart: number
-  count: number
-  maxMs: number
-  sumMs: number
-}
-
-const slowWindows = new Map<string, SlowSpawnWindow>()
-
 export function resetSlowSyncSpawnState(): void {
-  slowWindows.clear()
+  resetSlowOpState()
 }
 
 export interface SlowSyncSpawnContext {
@@ -91,42 +82,18 @@ function logSlowSpawn(
   command: string,
   durationMs: number,
   timeoutMs: number | undefined,
-  { isMainThread = Bun.isMainThread, now = performance.now() }: SlowSyncSpawnContext
+  { isMainThread, now }: SlowSyncSpawnContext
 ): void {
-  if (durationMs < SLOW_SYNC_SPAWN_MS) return
-  // Blocking only matters on the main thread; worker scans (logMatchWorker's
-  // rg) routinely exceed the threshold and would warn every cycle.
-  if (!isMainThread) {
-    logger.debug(event, { command, durationMs, timeoutMs, worker: true })
-    return
-  }
-
-  const key = `${event}\0${command}`
-  const window = slowWindows.get(key)
-  if (!window || (window.count === 0 && now - window.windowStart >= SLOW_SYNC_SPAWN_AGGREGATE_MS)) {
-    logger.warn(event, { command, durationMs, timeoutMs })
-    slowWindows.set(key, { windowStart: now, count: 0, maxMs: 0, sumMs: 0 })
-    return
-  }
-
-  window.count += 1
-  window.maxMs = Math.max(window.maxMs, durationMs)
-  window.sumMs += durationMs
-  if (durationMs >= SLOW_SYNC_SPAWN_OUTLIER_MS) {
-    logger.warn(event, { command, durationMs, timeoutMs, outlier: true })
-  }
-  const windowMs = now - window.windowStart
-  if (windowMs >= SLOW_SYNC_SPAWN_AGGREGATE_MS) {
-    logger.warn(`${event}_aggregate`, {
-      command,
-      count: window.count,
-      maxMs: window.maxMs,
-      sumMs: window.sumMs,
-      windowMs: Math.round(windowMs),
-      timeoutMs,
-    })
-    slowWindows.set(key, { windowStart: now, count: 0, maxMs: 0, sumMs: 0 })
-  }
+  logSlowOp({
+    event,
+    key: command,
+    durationMs,
+    thresholdMs: SLOW_SYNC_SPAWN_MS,
+    outlierMs: SLOW_SYNC_SPAWN_OUTLIER_MS,
+    aggregateMs: SLOW_SYNC_SPAWN_AGGREGATE_MS,
+    fields: { command, timeoutMs },
+    context: { isMainThread, now },
+  })
 }
 
 export function timedSpawnSync<
