@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.0](https://github.com/gbasin/agentboard/compare/v0.31.0...v0.32.0) (2026-10-14)
+
+
+### Features
+
+* install pinned macOS releases with checked upgrades ([#406](https://github.com/gbasin/agentboard/issues/406)) ([b6156ff](https://github.com/gbasin/agentboard/commit/b6156ffa5c1759b057953658d54357a31d55db14))
+
 ## [0.31.0](https://github.com/gbasin/agentboard/compare/v0.30.0...v0.31.0) (2026-10-14)
 
 
