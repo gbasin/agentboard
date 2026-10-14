@@ -4,9 +4,10 @@
  * the session's JSONL log. Renders nothing when the session has no media or
  * is remote (the log lives on another host).
  *
- * Collapsed: a small pill at bottom-right ("N media"). Expanded: a horizontal
- * thumbnail strip. Tapping a thumbnail opens a lightbox with the full image;
- * document and link items open their URL directly.
+ * Collapsed: a small pill at top-right ("N media") — top placement keeps it
+ * clear of the TUI's bottom input row. Expanded: a horizontal thumbnail strip.
+ * Tapping a thumbnail opens a lightbox with the full image; document and link
+ * items open their URL directly.
  */
 
 import { useEffect, useState } from 'react'
@@ -17,7 +18,7 @@ import {
   LinkExternal01Icon,
   XCloseIcon,
 } from './icons'
-import { ICON_SIZE } from './controlStyles'
+import { ICON_SIZE, TOUCH_TARGET_CLASS } from './controlStyles'
 // Payloads above this size render an "open" chip instead of an <img> so the
 // rail never pulls a multi-MB response just for a thumbnail.
 const MAX_INLINE_PREVIEW_BYTES = 12 * 1024 * 1024
@@ -132,7 +133,7 @@ export default function MediaRail({ session }: { session: Session }) {
       {expanded ? (
         <div
           data-testid="media-rail"
-          className="absolute bottom-3 right-3 z-40 w-[min(560px,calc(100%-1.5rem))] rounded-xl border border-border bg-elevated/95 shadow-xl backdrop-blur"
+          className="absolute top-2 right-2 z-40 w-[min(560px,calc(100%-1.5rem))] rounded-xl border border-border bg-elevated/95 shadow-xl backdrop-blur"
         >
           <div className="flex items-center justify-between border-b border-border/60 px-3 py-2">
             <span className="text-xs text-muted">
@@ -158,7 +159,7 @@ export default function MediaRail({ session }: { session: Session }) {
           type="button"
           data-testid="media-rail-pill"
           onClick={() => setExpanded(true)}
-          className="absolute bottom-3 right-3 z-40 flex items-center gap-1.5 rounded-full border border-border bg-elevated/90 px-3 py-1.5 text-xs text-secondary shadow-lg backdrop-blur transition-colors hover:text-primary"
+          className={`absolute top-2 right-2 z-40 flex items-center gap-1.5 rounded-full border border-border bg-elevated/90 px-3 py-1.5 text-xs text-secondary shadow-lg backdrop-blur transition-colors hover:text-primary ${TOUCH_TARGET_CLASS}`}
         >
           <Image01Icon width={ICON_SIZE.pill} height={ICON_SIZE.pill} />
           <span className="tabular-nums">{images}</span>
