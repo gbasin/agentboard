@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.33.0](https://github.com/gbasin/agentboard/compare/v0.32.0...v0.33.0) (2026-10-14)
+
+
+### Features
+
+* instrument sync fs/sqlite calls; turn off ws session status bars ([#408](https://github.com/gbasin/agentboard/issues/408)) ([9eaaac1](https://github.com/gbasin/agentboard/commit/9eaaac1d6bba82eeb48a945f9a24eb14b81b546f))
+
 ## [0.32.0](https://github.com/gbasin/agentboard/compare/v0.31.0...v0.32.0) (2026-10-14)
 
 
