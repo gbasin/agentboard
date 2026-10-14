@@ -58,6 +58,7 @@ export function createCatalogSchema(db: Database) {
     );
     CREATE INDEX IF NOT EXISTS board_history ON board_sessions(last_activity_at DESC, id DESC);
     CREATE INDEX IF NOT EXISTS board_provider ON board_sessions(provider_id);
+    CREATE INDEX IF NOT EXISTS board_active ON board_sessions(host_id, state);
     CREATE UNIQUE INDEX IF NOT EXISTS board_window ON board_sessions(host_id, epoch, current_window)
       WHERE current_window IS NOT NULL;
     CREATE TABLE IF NOT EXISTS session_runs (
