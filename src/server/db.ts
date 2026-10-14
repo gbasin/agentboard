@@ -105,6 +105,17 @@ export interface SessionDatabase {
   getActiveSessions: () => AgentSessionRecord[]
   getHibernatingSessions: () => AgentSessionRecord[]
   /**
+   * Active + hibernating + history from ONE full-table scan. The three
+   * getters are called together on every poll cycle; separate queries pay
+   * the read page-in cost three times under memory pressure. `options`
+   * applies to the history bucket exactly as in getHistorySessions.
+   */
+  getSessionLists: (options?: { maxAgeHours?: number; limit?: number }) => {
+    active: AgentSessionRecord[]
+    hibernating: AgentSessionRecord[]
+    history: AgentSessionRecord[]
+  }
+  /**
    * Dormant, non-hibernating rows, newest first. Uncapped unless `limit` is
    * given: the orphan rematcher and poll snapshots must see every row, while
    * the sidebar passes its display cap.
@@ -312,6 +323,7 @@ function initializeConnection(
   const selectHistoryRecent = db.prepare(
     'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_hibernating = 0 AND last_activity_at > $cutoff ORDER BY last_activity_at DESC, session_id LIMIT $limit'
   )
+  const selectAllRows = db.prepare('SELECT * FROM agent_sessions')
   const selectKnownSessionKeys = db.prepare(
     'SELECT session_id, log_file_path, project_path, slug, agent_type, is_codex_exec FROM agent_sessions'
   )
@@ -521,6 +533,40 @@ function initializeConnection(
       const rows = selectHibernating.all() as Record<string, unknown>[]
       return rows.map(mapRow)
     },
+    getSessionLists: (options) => {
+      const rows = selectAllRows.all() as Record<string, unknown>[]
+      const cutoff = options?.maxAgeHours
+        ? new Date(Date.now() - options.maxAgeHours * 60 * 60 * 1000).toISOString()
+        : null
+      const activeRows: Record<string, unknown>[] = []
+      const hibernatingRows: Record<string, unknown>[] = []
+      const historyRows: Record<string, unknown>[] = []
+      for (const row of rows) {
+        if (row.current_window != null) {
+          activeRows.push(row)
+        } else if (row.is_hibernating === 1) {
+          hibernatingRows.push(row)
+        } else if (
+          row.is_hibernating === 0 &&
+          (!cutoff || (row.last_activity_at as string) > cutoff)
+        ) {
+          historyRows.push(row)
+        }
+      }
+      // Match the SQL: active ORDER BY +session_id (unary + keeps TEXT
+      // affinity — plain BINARY string order); dormant ORDER BY
+      // last_activity_at DESC, session_id.
+      activeRows.sort(bySessionIdAsc)
+      hibernatingRows.sort(byActivityDesc)
+      historyRows.sort(byActivityDesc)
+      const limit = options?.limit ?? -1
+      const historyLimited = limit >= 0 ? historyRows.slice(0, limit) : historyRows
+      return {
+        active: activeRows.map(mapRow),
+        hibernating: hibernatingRows.map(mapRow),
+        history: historyLimited.map(mapRow),
+      }
+    },
     getHistorySessions: (options?: { maxAgeHours?: number; limit?: number }) => {
       // SQLite treats a negative LIMIT as no limit.
       const limit = options?.limit ?? -1
@@ -679,6 +725,23 @@ function mapRow(row: Record<string, unknown>): AgentSessionRecord {
         ? null
         : String(row.launch_command),
   }
+}
+
+// getSessionLists comparators — must mirror the SQL ordering exactly.
+// BINARY collation on session_id is plain code-unit order in JS.
+function bySessionIdAsc(a: Record<string, unknown>, b: Record<string, unknown>): number {
+  const ai = a.session_id as string
+  const bi = b.session_id as string
+  return ai < bi ? -1 : ai > bi ? 1 : 0
+}
+
+// `ORDER BY last_activity_at DESC, session_id` — ISO text compares fine as
+// strings; session_id under BINARY collation is plain code-unit order.
+function byActivityDesc(a: Record<string, unknown>, b: Record<string, unknown>): number {
+  const at = a.last_activity_at as string
+  const bt = b.last_activity_at as string
+  if (at !== bt) return at < bt ? 1 : -1
+  return bySessionIdAsc(a, b)
 }
 
 function migrateDatabase(db: SQLiteDatabase) {

@@ -419,6 +419,28 @@ mock.module('../../db', () => ({
       Array.from(dbState.records.values()).filter(
         (record) => record.currentWindow === null && record.isHibernating
       ),
+    getSessionLists: (options?: { maxAgeHours?: number; limit?: number }) => {
+      const records = Array.from(dbState.records.values())
+      let history = records.filter(
+        (record) => record.currentWindow === null && !record.isHibernating
+      )
+      if (options?.maxAgeHours) {
+        const cutoff = Date.now() - options.maxAgeHours * 60 * 60 * 1000
+        history = history.filter(
+          (record) => new Date(record.lastActivityAt).getTime() > cutoff
+        )
+      }
+      if (options?.limit !== undefined && options.limit >= 0) {
+        history = history.slice(0, options.limit)
+      }
+      return {
+        active: records.filter((record) => record.currentWindow !== null),
+        hibernating: records.filter(
+          (record) => record.currentWindow === null && record.isHibernating
+        ),
+        history,
+      }
+    },
     orphanSession: (sessionId: string, options?: { hibernate?: boolean }) => {
       const record = dbState.records.get(sessionId)
       if (!record) return null

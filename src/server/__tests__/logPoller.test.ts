@@ -559,6 +559,14 @@ describe('LogPoller', () => {
       })
     }
 
+    const listQueries: Array<{ maxAgeHours?: number } | undefined> = []
+    const getSessionLists = db.getSessionLists
+    db.getSessionLists = (options) => {
+      listQueries.push(options)
+      return getSessionLists(options)
+    }
+    // The consolidated getter must be the only scan — the separate history
+    // query staying silent is the regression being guarded.
     const historyQueries: Array<{ maxAgeHours?: number } | undefined> = []
     const getHistorySessions = db.getHistorySessions
     db.getHistorySessions = (options) => {
@@ -578,7 +586,8 @@ describe('LogPoller', () => {
     // One request is the normal startup poll. A second request would be the
     // expensive orphan rematch that previously loaded all 10,000 rows.
     expect(worker.requests).toHaveLength(1)
-    expect(historyQueries).toEqual([{ maxAgeHours: 72 }])
+    expect(listQueries).toEqual([{ maxAgeHours: 72 }])
+    expect(historyQueries).toEqual([])
 
     poller.stop()
     db.close()

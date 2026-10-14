@@ -398,10 +398,8 @@ export class LogPoller {
 
       const rematchStartedAt = Date.now()
       const selectionStartedAt = Date.now()
-      const dormantSessions = [
-        ...this.db.getHibernatingSessions(),
-        ...this.db.getHistorySessions(),
-      ]
+      const lists = this.db.getSessionLists()
+      const dormantSessions = [...lists.hibernating, ...lists.history]
       const logDirs = getLogSearchDirs()
       const excludedProjects = config.excludeProjects ?? []
 
@@ -732,13 +730,10 @@ export class LogPoller {
 
       const windows = this.registry.getAll()
       const logDirs = getLogSearchDirs()
-      const sessionRecords = [
-        ...this.db.getActiveSessions(),
-        ...this.db.getHibernatingSessions(),
-        ...this.db.getHistorySessions({
-          maxAgeHours: HISTORY_SNAPSHOT_MAX_AGE_HOURS,
-        }),
-      ]
+      const lists = this.db.getSessionLists({
+        maxAgeHours: HISTORY_SNAPSHOT_MAX_AGE_HOURS,
+      })
+      const sessionRecords = [...lists.active, ...lists.hibernating, ...lists.history]
       const sessions: SessionSnapshot[] = sessionRecords.map((session) => ({
         sessionId: session.sessionId,
         logFilePath: session.logFilePath,
@@ -1224,13 +1219,10 @@ export class LogPoller {
     try {
       const windows = this.registry.getAll()
       const logDirs = getLogSearchDirs()
-      const sessionRecords = [
-        ...this.db.getActiveSessions(),
-        ...this.db.getHibernatingSessions(),
-        ...this.db.getHistorySessions({
-          maxAgeHours: HISTORY_SNAPSHOT_MAX_AGE_HOURS,
-        }),
-      ]
+      const lists = this.db.getSessionLists({
+        maxAgeHours: HISTORY_SNAPSHOT_MAX_AGE_HOURS,
+      })
+      const sessionRecords = [...lists.active, ...lists.hibernating, ...lists.history]
       let shouldBackfillLastMessage = false
       if (this.startupLastMessageBackfillPending) {
         shouldBackfillLastMessage = sessionRecords.some(

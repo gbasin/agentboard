@@ -152,6 +152,43 @@ describe('db', () => {
     ])
   })
 
+  test('getSessionLists matches the three separate getters exactly', () => {
+    const old = '2020-01-01T00:00:00.000Z'
+    const mid = '2020-06-01T00:00:00.000Z'
+    const recent = new Date().toISOString()
+    const seed = [
+      // Active (window claimed) — active order is by session_id text.
+      makeSession({ sessionId: 'c-active', logFilePath: '/tmp/c.jsonl', currentWindow: 'agentboard:3' }),
+      makeSession({ sessionId: 'a-active', logFilePath: '/tmp/a.jsonl', currentWindow: 'agentboard:1' }),
+      makeSession({ sessionId: 'b-active', logFilePath: '/tmp/b.jsonl', currentWindow: 'agentboard:2' }),
+      // Dormant hibernating.
+      makeSession({ sessionId: 'h-1', logFilePath: '/tmp/h1.jsonl', currentWindow: null, isHibernating: true, lastActivityAt: mid }),
+      makeSession({ sessionId: 'h-2', logFilePath: '/tmp/h2.jsonl', currentWindow: null, isHibernating: true, lastActivityAt: recent }),
+      // Dormant history rows at varied ages.
+      makeSession({ sessionId: 'hist-new', logFilePath: '/tmp/hn.jsonl', currentWindow: null, lastActivityAt: recent }),
+      makeSession({ sessionId: 'hist-mid', logFilePath: '/tmp/hm.jsonl', currentWindow: null, lastActivityAt: mid }),
+      makeSession({ sessionId: 'hist-old', logFilePath: '/tmp/ho.jsonl', currentWindow: null, lastActivityAt: old }),
+    ]
+    for (const record of seed) db.insertSession(record)
+
+    const lists = db.getSessionLists()
+    expect(lists.active).toEqual(db.getActiveSessions())
+    expect(lists.hibernating).toEqual(db.getHibernatingSessions())
+    expect(lists.history).toEqual(db.getHistorySessions())
+    expect(lists.active.map((s) => s.sessionId)).toEqual(['a-active', 'b-active', 'c-active'])
+    expect(lists.hibernating.map((s) => s.sessionId)).toEqual(['h-2', 'h-1'])
+    expect(lists.history.map((s) => s.sessionId)).toEqual(['hist-new', 'hist-mid', 'hist-old'])
+
+    const capped = db.getSessionLists({ maxAgeHours: 24 * 365, limit: 1 })
+    expect(capped.history.map((s) => s.sessionId)).toEqual(
+      db.getHistorySessions({ maxAgeHours: 24 * 365, limit: 1 }).map((s) => s.sessionId)
+    )
+    expect(capped.history).toHaveLength(1)
+    expect(capped.history[0].sessionId).toBe('hist-new')
+    expect(capped.active).toEqual(db.getActiveSessions())
+    expect(capped.hibernating).toEqual(db.getHibernatingSessions())
+  })
+
   test('setHibernating updates hibernation marker flag', () => {
     const session = makeSession()
     db.insertSession(session)
