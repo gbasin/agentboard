@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.33.1](https://github.com/gbasin/agentboard/compare/v0.33.0...v0.33.1) (2026-10-14)
+
+
+### Performance Improvements
+
+* collapse per-poll session list reads into one agent_sessions scan ([#411](https://github.com/gbasin/agentboard/issues/411)) ([e3ae714](https://github.com/gbasin/agentboard/commit/e3ae7148553c4196283536c4ae28d0bf180ab5a5))
+
 ## [0.33.0](https://github.com/gbasin/agentboard/compare/v0.32.0...v0.33.0) (2026-10-14)
 
 
