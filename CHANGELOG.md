@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.31.0](https://github.com/gbasin/agentboard/compare/v0.30.0...v0.31.0) (2026-10-14)
+
+
+### Features
+
+* stall watchdog samples the process mid-event-loop-stall ([#404](https://github.com/gbasin/agentboard/issues/404)) ([dd763ff](https://github.com/gbasin/agentboard/commit/dd763ff9c488eb251039c5383ba5706e58ef24c4))
+
 ## [0.30.0](https://github.com/gbasin/agentboard/compare/v0.29.0...v0.30.0) (2026-10-12)
 
 
