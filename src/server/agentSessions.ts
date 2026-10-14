@@ -142,6 +142,22 @@ export function warmMediaScan(
   )
 }
 
+/**
+ * Scans the plan's logs for media and remembers the result under its key.
+ * Returns true when the media list changed from the last remembered scan.
+ * Shares the PR plan: both extractors read the same logs.
+ */
+export function rescanMedia(
+  record: AgentSessionRecord,
+  plan: PullRequestScanPlan = pullRequestScanPlan(record)
+): boolean {
+  return rememberMediaScan(
+    record,
+    plan.key,
+    scanMergedMedia(record, plan.paths)
+  )
+}
+
 function keyFor(record: AgentSessionRecord, subagents: string[]): string {
   let total = 0
   for (const logPath of subagents) {

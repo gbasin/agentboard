@@ -3,7 +3,9 @@ import {
   needsPullRequestScan,
   pullRequestScanPlan,
   type PullRequestScanPlan,
+  rescanMedia,
   rescanPullRequests,
+  warmMediaScan,
   warmPullRequestScan,
 } from './agentSessions'
 import { logger } from './logger'
@@ -78,14 +80,16 @@ export function createDormantPrScanner(
     let next = cursor?.sessionId === record.sessionId ? cursor.next : 0
     cursor = null
     while (next < paths.length) {
-      warmPullRequestScan(record, paths[next++])
+      warmPullRequestScan(record, paths[next])
+      warmMediaScan(record, paths[next++])
       if (next < paths.length && overBudget(start)) {
         cursor = { sessionId: record.sessionId, next }
         return false
       }
     }
-    // Every log is now in the extractor's cache; merging only stats them.
+    // Every log is now in the extractors' caches; merging only stats them.
     if (rescanPullRequests(record, plan)) changed = true
+    if (rescanMedia(record, plan)) changed = true
     return true
   }
 

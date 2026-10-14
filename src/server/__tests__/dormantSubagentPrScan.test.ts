@@ -177,9 +177,10 @@ describe('dormant PR scan of subagent logs', () => {
       scanner.stop()
     }
     const reads = events.join('').replace(/\|+/g, '|').split('|').map((slice) => slice.length / 'read'.length)
-    expect(reads.reduce((a, b) => a + b, 0)).toBe(4)
+    // Each log is opened once per extractor (PR + media): 4 logs, 8 reads.
+    expect(reads.reduce((a, b) => a + b, 0)).toBe(8)
     // Never more than one log per slice at a zero budget.
-    expect(Math.max(...reads)).toBe(1)
+    expect(Math.max(...reads)).toBe(2)
     expect(notified).toBe(1)
     expect(cachedUrls(parent)).toEqual([
       'https://github.com/a/b/pull/51',
