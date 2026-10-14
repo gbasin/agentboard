@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.34.0](https://github.com/gbasin/agentboard/compare/v0.33.1...v0.34.0) (2026-10-14)
+
+
+### Features
+
+* surface log media (images, docs, artifact links) in a session rail ([#410](https://github.com/gbasin/agentboard/issues/410)) ([46f7e04](https://github.com/gbasin/agentboard/commit/46f7e040d50c589c6f71c7f8e0febef75815c8a8))
+
 ## [0.33.1](https://github.com/gbasin/agentboard/compare/v0.33.0...v0.33.1) (2026-10-14)
 
 
