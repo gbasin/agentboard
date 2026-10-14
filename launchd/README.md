@@ -2,31 +2,112 @@
 
 Run agentboard as a persistent launchd user agent that starts at login and restarts on crash. Parallel to [`systemd/`](../systemd/) for Linux.
 
-## Prerequisites
+## Install a published release (default)
 
-- macOS
-- `bun` in PATH (`brew install oven-sh/bun/bun`)
-- `tmux` in PATH (`brew install tmux`)
-- Repository cloned locally (service runs `bun run start` from the repo directory)
-
-## Installation
+Requirements: macOS, tmux, and Node.js 20+ with npm. Node and npm are needed
+only for installation and upgrades. The running service uses the compiled binary.
+Keep this repository checkout to run future upgrades.
 
 ```bash
 ./launchd/install.sh
+# Or choose an exact release:
+./launchd/install.sh --release 0.31.0
 ```
 
-The install script will:
-1. Detect `bun` and `tmux` paths
-2. Generate a wrapper script and a log-rotate script in `~/.agentboard/bin/`
-3. Generate two plists in `~/Library/LaunchAgents/`
-4. Load them via `launchctl`
+The installer resolves the version once. It downloads the matching Mac platform
+package as a required dependency into a new directory under `~/.agentboard/releases/`.
+It checks the package identity, executable, HTML, and referenced JavaScript and CSS
+files before stopping the current service. If npm has not published the platform
+package yet, installation fails and the current service keeps running. npm policies,
+including a configured minimum release age, remain in effect. A policy rejection
+also leaves the current service running.
 
-Installs two agents:
+The generated plist points to that installed version. Service startup does not
+contact npm, resolve `latest`, or depend on this checkout. The installer also sets
+up hourly rotation for the application and launchd logs.
 
-- **`com.agentboard`** — supervises agentboard. `KeepAlive` respawns on crash or non-zero exit, `ThrottleInterval: 10` prevents tight restart loops.
-- **`com.agentboard.logrotate`** — hourly. Rotates `agentboard.log`, `launchd.out.log`, and `launchd.err.log` under `~/.agentboard/` at 50MB each using a copytruncate pattern (preserves pino's open file descriptor), keeps 5 gzipped archives per file.
+## Upgrade
 
-After install, agentboard listens on `http://localhost:4040`.
+```bash
+./launchd/upgrade.sh
+# Or select an exact version:
+./launchd/upgrade.sh 0.31.0
+```
+
+After preparing the release, the installer saves the previous plist, stops the
+service, and starts the candidate. It verifies that the launchd process owns the
+port and serves the health endpoint, HTML, and frontend assets. Two consecutive
+checks must pass with the same process. A failed check restores the previous plist
+and starts it again if it was loaded before the upgrade. The previous disabled override
+is also restored. If the previous service was already unhealthy or could not be
+verified, recovery reports that fact and clears the transaction so another repair
+can proceed. A previously healthy service must pass its recovery check. Existing tmux sessions
+are not stopped by the installer.
+
+For managed releases, rollback restores the pinned executable and service
+configuration. When migrating from a custom or source launcher, it restores that
+launcher, whose checkout or npm dependencies can still change independently.
+Rollback does **not** undo
+database migrations or other application writes. Check release compatibility before
+upgrading across incompatible database changes. Keep a data backup for those upgrades.
+Old release directories remain on disk; do not remove a directory referenced by a
+service plist or an unfinished recovery journal.
+
+## Configure the release service
+
+Put environment overrides in `~/.agentboard/service-env.json` before installation
+or an upgrade. Values must be strings. For example:
+
+```json
+{
+  "PORT": "4040",
+  "ALLOW_KILL_EXTERNAL": "true"
+}
+```
+
+The installer preserves environment variables from the existing plist and applies
+these overrides. It sets `HOME`, `NODE_ENV`, and `AGENTBOARD_STATIC_DIR` itself.
+The initial release installer supports HTTP on localhost, 127.0.0.1, or 0.0.0.0.
+Use source mode for custom TLS or other bind addresses.
+
+When replacing a custom launcher, copy its required environment settings into this
+file first. Shell-script exports, including `ALLOW_KILL_EXTERNAL`, cannot be recovered
+from the plist automatically. The previous launcher is kept intact for rollback.
+The standard label remains `com.agentboard`; source and release modes replace that
+same service rather than running two servers.
+
+## Recover an interrupted upgrade
+
+```bash
+./launchd/install.sh --release --recover
+```
+
+Recovery uses `~/.agentboard/release-pending.json` and does not contact npm.
+If the installer was killed or the computer restarted during an upgrade, its lock
+can remain at `~/.agentboard/release-install.lock`. Read the PID in that directory.
+Verify that the installer is no longer running before removing the lock directory.
+Then run recovery. A failed recovery keeps the journal and reports the failure.
+A reboot during activation can start the candidate from the new plist; run recovery
+to restore the saved configuration before attempting another upgrade.
+
+## Install from source
+
+Requirements: Bun, tmux, and a local checkout with dependencies and frontend assets.
+
+```bash
+bun install --frozen-lockfile
+bun run build
+./launchd/install.sh --source
+```
+
+Source mode runs `bun run start` from the checkout. Update and build the checkout
+before restarting the service. This mode retains the existing developer workflow;
+it does not provide the release upgrade transaction.
+
+Both modes install `com.agentboard` and `com.agentboard.logrotate` in
+`~/Library/LaunchAgents/`. launchd starts the service at login and restarts it after
+a crash or nonzero exit. The ten-second throttle spaces retries; it cannot repair
+a broken installation.
 
 ## Commands
 
@@ -159,7 +240,7 @@ Note: if you `tmux kill-session -t agentboard` while agentboard is loaded, the w
 ## Notes
 
 - The plist sets `LANG=en_US.UTF-8`. LaunchAgents start with a bare environment; without this, tmux renders non-ASCII characters as `?` or stripped bytes.
-- The wrapper script `cd`s into the repo directory before `bun run start`, matching the Linux systemd setup.
+- Source mode changes into the repo directory before `bun run start`. Release mode starts a pinned binary with an absolute frontend asset path.
 - Override the log path via the `LOG_FILE` env var (respected by agentboard and the rotate script).
 - Override the tmux session name via `TMUX_SESSION` (respected by agentboard and the watchdog).
 - Set a distinct `AGENTBOARD_TMUX_PID_FILE` for each Agentboard instance that uses a separate tmux socket.

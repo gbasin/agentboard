@@ -3,6 +3,17 @@
 
 set -e
 
+# Release mode never resolves packages at service startup.
+case "${1:---release}" in
+  --source) shift ;;
+  --release)
+    [ "$#" -eq 0 ] || shift
+    exec node "$(dirname "$0")/release.mjs" install "$@"
+    ;;
+  *) echo "Usage: $0 [--release [VERSION] | --source]" >&2; exit 2 ;;
+esac
+[ "$#" -eq 0 ] || { echo "Source mode takes no version argument" >&2; exit 2; }
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
 LAUNCH_AGENTS="$HOME/Library/LaunchAgents"
@@ -38,6 +49,13 @@ for var in HOME REPO_DIR BUN_PATH TMUX_PATH; do
 done
 
 mkdir -p "$LAUNCH_AGENTS" "$BIN_DIR"
+mkdir "$AGENTBOARD_DIR/release-install.lock" || { echo "Another installer may be running" >&2; exit 1; }
+echo "$$" > "$AGENTBOARD_DIR/release-install.lock/pid"
+trap 'rm -f "$AGENTBOARD_DIR/release-install.lock/pid"; rmdir "$AGENTBOARD_DIR/release-install.lock"' EXIT
+if [ -f "$AGENTBOARD_DIR/release-pending.json" ]; then
+    echo "Recover the interrupted release upgrade with install.sh --release --recover first" >&2
+    exit 1
+fi
 
 echo "Installing agentboard LaunchAgents with:"
 echo "  Repo:  $REPO_DIR"
@@ -62,42 +80,6 @@ cd "$REPO_DIR"
 exec "$BUN_PATH" run start
 EOF
 chmod +x "$BIN_DIR/agentboard-run.sh"
-
-# --- Logrotate script: copytruncate pattern so pino's open fd stays valid.
-# Rotates agentboard.log (pino output) plus the launchd stdout/stderr capture
-# files — without this, KeepAlive crash-loops can fill $HOME with the launchd
-# capture logs while pino's rotation only ever touched agentboard.log.
-cat > "$BIN_DIR/agentboard-log-rotate.sh" << 'EOF'
-#!/bin/bash
-set -euo pipefail
-export PATH="/usr/bin:/bin:/usr/sbin:/sbin"
-LOG_DIR="${LOG_DIR:-$HOME/.agentboard}"
-MAX_BYTES=$((50 * 1024 * 1024))
-KEEP=5
-
-rotate_if_large() {
-    local log="$1"
-    [ -f "$log" ] || return 0
-    local size
-    size=$(stat -f%z "$log" 2>/dev/null || echo 0)
-    [ "$size" -ge "$MAX_BYTES" ] || return 0
-
-    rm -f "$log.$KEEP.gz"
-    for i in $(seq $((KEEP - 1)) -1 1); do
-        [ -f "$log.$i.gz" ] && mv "$log.$i.gz" "$log.$((i+1)).gz"
-    done
-
-    cp "$log" "$log.1"
-    : > "$log"
-    gzip -f "$log.1"
-}
-
-# Rotate pino output and the launchd stdout/stderr captures.
-rotate_if_large "$LOG_DIR/agentboard.log"
-rotate_if_large "$LOG_DIR/launchd.out.log"
-rotate_if_large "$LOG_DIR/launchd.err.log"
-EOF
-chmod +x "$BIN_DIR/agentboard-log-rotate.sh"
 
 # --- Main service plist.
 cat > "$LAUNCH_AGENTS/com.agentboard.plist" << EOF
@@ -128,32 +110,13 @@ cat > "$LAUNCH_AGENTS/com.agentboard.plist" << EOF
 </plist>
 EOF
 
-# --- Logrotate plist.
-cat > "$LAUNCH_AGENTS/com.agentboard.logrotate.plist" << EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key><string>com.agentboard.logrotate</string>
-  <key>ProgramArguments</key>
-  <array><string>$BIN_DIR/agentboard-log-rotate.sh</string></array>
-  <key>StartInterval</key><integer>3600</integer>
-  <key>EnvironmentVariables</key>
-  <dict>
-    <key>HOME</key><string>$HOME</string>
-    <key>LOG_DIR</key><string>$AGENTBOARD_DIR</string>
-  </dict>
-  <key>StandardOutPath</key><string>/tmp/agentboard-logrotate.log</string>
-  <key>StandardErrorPath</key><string>/tmp/agentboard-logrotate.log</string>
-</dict>
-</plist>
-EOF
-
 # --- Load (idempotent: unload first if already loaded).
-for label in com.agentboard com.agentboard.logrotate; do
+for label in com.agentboard; do
     launchctl unload "$LAUNCH_AGENTS/$label.plist" 2>/dev/null || true
     launchctl load -w "$LAUNCH_AGENTS/$label.plist"
 done
+
+bash "$SCRIPT_DIR/install-logrotate.sh"
 
 echo "Agentboard LaunchAgents installed and loaded."
 echo ""

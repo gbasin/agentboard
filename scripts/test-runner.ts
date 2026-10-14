@@ -58,6 +58,8 @@ async function main() {
   }
 
   try {
+    await runCommand(['node', '--test', 'launchd/release.test.mjs'], env)
+
     // Tests that either mutate globals or are sensitive to global mutations
     // must run in a separate process so they don't race with other test files.
     // PipePaneTerminalProxy reads Bun.spawnSync at construction time — if another
