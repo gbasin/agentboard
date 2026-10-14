@@ -6152,6 +6152,84 @@ describe('server fetch handlers', () => {
     const payload = (await response.json()) as { error: string }
     expect(payload.error).toBe('Log file not found')
   })
+
+  test('serves a media payload by log offset and index', async () => {
+    const { serveOptions } = await loadIndex()
+    const fetchHandler = serveOptions.fetch
+    if (!fetchHandler) {
+      throw new Error('Fetch handler not configured')
+    }
+
+    const pngB64 =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhHGAfKmMIwAAAABJRU5ErkJggg=='
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-media-'))
+    const logPath = path.join(tempDir, 'session.jsonl')
+    const filler = JSON.stringify({
+      type: 'user',
+      message: { role: 'user', content: 'hello' },
+    })
+    const imageLine = JSON.stringify({
+      type: 'user',
+      message: {
+        role: 'user',
+        content: [
+          {
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: 'image/png',
+              data: pngB64,
+            },
+          },
+        ],
+      },
+    })
+    const imageOffset = Buffer.byteLength(filler) + 1
+    await fs.writeFile(logPath, `${filler}\n${imageLine}\n`)
+
+    seedRecord(
+      makeRecord({ sessionId: 'media-session', logFilePath: logPath })
+    )
+
+    const get = (url: string) =>
+      fetchHandler.call(
+        {} as Bun.Server<unknown>,
+        new Request(`http://localhost${url}`),
+        {} as Bun.Server<unknown>
+      )
+
+    try {
+      const response = await get(
+        `/api/session-media/media-session?path=${encodeURIComponent(logPath)}&offset=${imageOffset}&index=0`
+      )
+      if (!response) throw new Error('Expected media response')
+      expect(response.status).toBe(200)
+      expect(response.headers.get('content-type')).toBe('image/png')
+      const body = Buffer.from(await response.arrayBuffer())
+      expect(body.equals(Buffer.from(pngB64, 'base64'))).toBe(true)
+
+      // Integrity: a wrong bytes hint means a stale ref.
+      const stale = await get(
+        `/api/session-media/media-session?path=${encodeURIComponent(logPath)}&offset=${imageOffset}&index=0&bytes=999`
+      )
+      expect(stale?.status).toBe(409)
+
+      // Unknown session and unassociated path are rejected.
+      expect(
+        (await get(`/api/session-media/unknown-session?path=${encodeURIComponent(logPath)}&offset=0&index=0`))?.status
+      ).toBe(404)
+      expect(
+        (await get(`/api/session-media/media-session?path=/etc/hosts&offset=0&index=0`))?.status
+      ).toBe(400)
+
+      // Out-of-range index on a real line 404s.
+      expect(
+        (await get(`/api/session-media/media-session?path=${encodeURIComponent(logPath)}&offset=${imageOffset}&index=9`))?.status
+      ).toBe(404)
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('server startup side effects', () => {

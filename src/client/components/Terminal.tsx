@@ -23,6 +23,7 @@ import { getPathLeaf } from '../utils/sessionLabel'
 import { statusClass, statusText } from '../utils/sessionStatus'
 import SessionRail from './SessionRail'
 import TerminalControls from './TerminalControls'
+import MediaRail from './MediaRail'
 import PasteStatus from './PasteStatus'
 import { useBrowserPaste, type BrowserPaste } from '../hooks/useBrowserPaste'
 import { clipboardFiles } from '../utils/browserFiles'
@@ -1506,6 +1507,7 @@ export default function Terminal({
             </button>
           </div>
         )}
+        {session && <MediaRail session={session} />}
         {!session && (
           <div className="absolute inset-0 flex items-center justify-center text-sm text-muted">
             {hibernatingSession ? null : 'Select a session to view terminal'}

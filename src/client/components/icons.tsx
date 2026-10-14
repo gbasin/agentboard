@@ -28,6 +28,8 @@ export { default as DeleteIcon } from '@untitledui-icons/react/line/esm/DeleteIc
 export { default as DotsVerticalIcon } from '@untitledui-icons/react/line/esm/DotsVerticalIcon'
 export { default as Edit05Icon } from '@untitledui-icons/react/line/esm/Edit05Icon'
 export { default as File06Icon } from '@untitledui-icons/react/line/esm/File06Icon'
+export { default as Image01Icon } from '@untitledui-icons/react/line/esm/Image01Icon'
+export { default as LinkExternal01Icon } from '@untitledui-icons/react/line/esm/LinkExternal01Icon'
 export { default as FilterFunnel02Icon } from '@untitledui-icons/react/line/esm/FilterFunnel02Icon'
 export { default as FolderIcon } from '@untitledui-icons/react/line/esm/FolderIcon'
 export { default as GitMergeIcon } from '@untitledui-icons/react/line/esm/GitMergeIcon'

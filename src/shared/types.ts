@@ -10,6 +10,24 @@ export interface SessionPullRequest {
   number: number
 }
 
+/**
+ * One media payload discovered in a session's JSONL log — an image the agent
+ * pasted or read, a document, or a published artifact link. Descriptors only;
+ * the bytes stay in the log and are served by /api/session-media.
+ */
+export interface SessionMedia {
+  kind: 'image' | 'document' | 'link'
+  /** Fetch URL for extracted payloads; external href for links. */
+  url: string
+  mediaType?: string
+  /** Decoded payload size in bytes. */
+  bytes?: number
+  /** Caption, e.g. "Read · hero.png" or a frame's title. */
+  label?: string
+  width?: number
+  height?: number
+}
+
 export type SessionStatus = 'working' | 'waiting' | 'permission' | 'unknown'
 
 export type SessionSource = 'managed' | 'external'
@@ -53,6 +71,7 @@ export interface Session {
   lastUserMessage?: string
   isHibernating?: boolean
   prs?: SessionPullRequest[]
+  media?: SessionMedia[]
 }
 
 export interface AgentSession {
@@ -69,6 +88,7 @@ export interface AgentSession {
   isHibernating?: boolean
   lastResumeError?: string
   prs?: SessionPullRequest[]
+  media?: SessionMedia[]
 }
 
 export interface HostStatus {

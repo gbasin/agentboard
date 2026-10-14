@@ -25,9 +25,10 @@ import {
   type ClaimCurrentWindowPatch,
 } from './db'
 import { LogPoller } from './logPoller'
-import { toAgentSession, getMergedPullRequests } from './agentSessions'
+import { toAgentSession, getMergedPullRequests, getMergedMedia } from './agentSessions'
 import { createDormantPrScanner } from './dormantPrScan'
-import { setCodexSubagentIndexListener } from './subagentLogs'
+import { extractMediaItems } from './mediaExtractor'
+import { getSubagentLogPaths, setCodexSubagentIndexListener } from './subagentLogs'
 import { fetchPrChecks, fetchPrInfo, parsePrUrl } from './prInfo'
 import { getLogSearchDirs } from './logDiscovery'
 import {
@@ -351,6 +352,40 @@ async function readLogLineWindowFromEnd(
     lineKeys,
     startByte,
     endByte,
+  }
+}
+
+// Reads the single log line starting at `offset` — used by session-media to
+// re-extract one payload. Media lines run to MBs, so the cap is generous.
+const MAX_MEDIA_LINE_BYTES = 64 * 1024 * 1024
+
+async function readLogLineAtOffset(
+  logPath: string,
+  offset: number
+): Promise<string | null> {
+  const handle = await fs.open(logPath, 'r')
+  try {
+    const chunks: Buffer[] = []
+    let position = offset
+    let total = 0
+    for (;;) {
+      const remaining = MAX_MEDIA_LINE_BYTES - total
+      if (remaining <= 0) break
+      const buffer = Buffer.allocUnsafe(Math.min(256 * 1024, remaining))
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, position)
+      if (bytesRead <= 0) break
+      const newline = buffer.subarray(0, bytesRead).indexOf(0x0a)
+      if (newline !== -1) {
+        chunks.push(buffer.subarray(0, newline))
+        return Buffer.concat(chunks).toString('utf8')
+      }
+      chunks.push(buffer.subarray(0, bytesRead))
+      position += bytesRead
+      total += bytesRead
+    }
+    return chunks.length > 0 ? Buffer.concat(chunks).toString('utf8') : null
+  } finally {
+    await handle.close()
   }
 }
 
@@ -1059,6 +1094,7 @@ export function hydrateSessionsWithAgentSessions(
       logFilePath: agentSession.logFilePath,
       lastUserMessage: agentSession.lastUserMessage ?? session.lastUserMessage,
       prs: getMergedPullRequests(agentSession),
+      media: getMergedMedia(agentSession),
       // Use persisted log times (survives server restarts, works when tmux lacks creation time)
       lastActivity: agentSession.lastActivityAt,
       createdAt: agentSession.createdAt,
@@ -1492,6 +1528,84 @@ app.get('/api/session-preview/:sessionId', async (c) => {
       return c.json({ error: 'Log file not found' }, 404)
     }
     return c.json({ error: 'Unable to read log file' }, 500)
+  }
+})
+
+// Serves one media payload (image, document) referenced by a SessionMedia
+// descriptor. The descriptor's (path, offset, index) triple re-reads a single
+// log line and re-runs the same extraction the scanner used, so the index is
+// stable; `bytes` is an integrity check that rejects refs stale across a log
+// rewrite. `path` must be the session's own log or one of its subagent logs —
+// this is not a general file server.
+app.get('/api/session-media/:sessionId', async (c) => {
+  const sessionId = c.req.param('sessionId')
+  if (!isValidSessionId(sessionId)) {
+    return c.json({ error: 'Invalid session id' }, 400)
+  }
+  const record = db.getSessionById(sessionId)
+  if (!record?.logFilePath) {
+    return c.json({ error: 'Session not found' }, 404)
+  }
+
+  const mediaPath = c.req.query('path') ?? ''
+  const allowed =
+    mediaPath === record.logFilePath ||
+    getSubagentLogPaths(record.logFilePath, record.agentType, sessionId).includes(
+      mediaPath
+    )
+  if (!allowed) {
+    return c.json({ error: 'Invalid media path' }, 400)
+  }
+
+  const offset = Number(c.req.query('offset'))
+  const index = Number(c.req.query('index'))
+  if (
+    !Number.isSafeInteger(offset) ||
+    offset < 0 ||
+    !Number.isSafeInteger(index) ||
+    index < 0 ||
+    index > 256
+  ) {
+    return c.json({ error: 'Invalid media ref' }, 400)
+  }
+  const bytesParam = c.req.query('bytes')
+  const expectedBytes = bytesParam ? Number(bytesParam) : undefined
+
+  try {
+    const line = await readLogLineAtOffset(mediaPath, offset)
+    if (!line) {
+      return c.json({ error: 'Media not found' }, 404)
+    }
+    const item = extractMediaItems(line)[index]
+    if (!item?.data) {
+      // No payload at this ref — link/url kinds have no bytes to serve.
+      return c.json({ error: 'Media not found' }, 404)
+    }
+    const body = Buffer.from(item.data, 'base64')
+    if (
+      expectedBytes !== undefined &&
+      Number.isSafeInteger(expectedBytes) &&
+      body.length !== expectedBytes
+    ) {
+      // The line at this offset changed (log rewrite); the scan will publish
+      // fresh refs. Treat as gone rather than serve wrong bytes.
+      return c.json({ error: 'Stale media ref' }, 409)
+    }
+    return new Response(new Uint8Array(body), {
+      headers: {
+        'Content-Type': item.mediaType ?? 'application/octet-stream',
+        // Refs are content-addressed by (path, offset, index, bytes): a
+        // rewritten log produces different params, so immutable is safe.
+        'Cache-Control': 'private, max-age=31536000, immutable',
+        'X-Content-Type-Options': 'nosniff',
+      },
+    })
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException
+    if (err.code === 'ENOENT') {
+      return c.json({ error: 'Media not found' }, 404)
+    }
+    return c.json({ error: 'Unable to read media' }, 500)
   }
 })
 app.get('/api/directories', async (c) => {

@@ -1,9 +1,10 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import type { AgentSession, SessionPullRequest } from '../shared/types'
+import type { AgentSession, SessionMedia, SessionPullRequest } from '../shared/types'
 import { config } from './config'
 import type { AgentSessionRecord } from './db'
 import { getSessionPullRequests } from './prExtractor'
+import { getSessionMedia, type ScannedMedia } from './mediaExtractor'
 import { getSubagentLogPaths } from './subagentLogs'
 
 // PRs found by the last full scan per session, keyed with the log sizes the
@@ -14,6 +15,10 @@ let maxScannedEntries = DEFAULT_MAX_SCANNED_ENTRIES
 const scannedPrs = new Map<
   string,
   { key: string; prs: SessionPullRequest[] }
+>()
+const scannedMedia = new Map<
+  string,
+  { key: string; media: SessionMedia[] }
 >()
 
 /** Test hook: shrink the remembered-scan cap. Omit to restore the default. */
@@ -46,6 +51,94 @@ function subagentPaths(record: AgentSessionRecord): string[] {
     record.logFilePath,
     record.agentType,
     record.sessionId
+  )
+}
+
+// --- session media ---------------------------------------------------------
+//
+// Media mirrors the PR scan: one incremental pass per log file, merged over
+// the main log plus subagent logs, remembered under the same freshness key.
+// Payload bytes stay in the log — descriptors carry a /api/session-media URL
+// that resolves them by (path, offset, index).
+
+function toSessionMedia(
+  record: AgentSessionRecord,
+  logPath: string,
+  media: ScannedMedia
+): SessionMedia {
+  const url =
+    media.url ??
+    `/api/session-media/${encodeURIComponent(record.sessionId)}` +
+      `?path=${encodeURIComponent(logPath)}&offset=${media.offset}&index=${media.index}` +
+      (media.bytes != null ? `&bytes=${media.bytes}` : '')
+  return {
+    kind: media.kind,
+    url,
+    ...(media.mediaType ? { mediaType: media.mediaType } : {}),
+    ...(media.bytes != null ? { bytes: media.bytes } : {}),
+    ...(media.label ? { label: media.label } : {}),
+    ...(media.width ? { width: media.width, height: media.height } : {}),
+  }
+}
+
+function sameMedia(a: SessionMedia[], b: SessionMedia[]) {
+  return a.length === b.length && a.every((m, i) => m.url === b[i].url)
+}
+
+function rememberMediaScan(
+  record: AgentSessionRecord,
+  key: string,
+  media: SessionMedia[]
+): boolean {
+  const previous = scannedMedia.get(record.sessionId)?.media ?? []
+  scannedMedia.delete(record.sessionId)
+  if (scannedMedia.size >= maxScannedEntries) {
+    const oldest = scannedMedia.keys().next().value
+    if (oldest !== undefined) scannedMedia.delete(oldest)
+  }
+  scannedMedia.set(record.sessionId, { key, media })
+  return !sameMedia(previous, media)
+}
+
+function scanMergedMedia(
+  record: AgentSessionRecord,
+  paths: string[]
+): SessionMedia[] {
+  const media: SessionMedia[] = []
+  for (let i = 0; i < paths.length; i++) {
+    const found = getSessionMedia(
+      paths[i],
+      i === 0 ? record.lastKnownLogSize : undefined
+    )
+    for (const item of found) {
+      media.push(toSessionMedia(record, paths[i], item))
+    }
+  }
+  return media
+}
+
+/** Media found by the last scan of this session's logs. Never reads files. */
+export function getCachedMedia(record: AgentSessionRecord): SessionMedia[] {
+  return scannedMedia.get(record.sessionId)?.media ?? []
+}
+
+export function getMergedMedia(record: AgentSessionRecord): SessionMedia[] {
+  const subagents = subagentPaths(record)
+  // Key before reading: growth during the scan then shows up as a new key.
+  const key = keyFor(record, subagents)
+  const media = scanMergedMedia(record, [record.logFilePath, ...subagents])
+  rememberMediaScan(record, key, media)
+  return media
+}
+
+/** Reads one log's new bytes into the media extractor's per-file cache. */
+export function warmMediaScan(
+  record: AgentSessionRecord,
+  logPath: string
+): void {
+  getSessionMedia(
+    logPath,
+    logPath === record.logFilePath ? record.lastKnownLogSize : undefined
   )
 }
 
@@ -190,6 +283,9 @@ export function toAgentSession(
     prs: options?.cachedPrsOnly
       ? getCachedPullRequests(record)
       : getMergedPullRequests(record),
+    media: options?.cachedPrsOnly
+      ? getCachedMedia(record)
+      : getMergedMedia(record),
   }
 }
 
