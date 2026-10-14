@@ -1,6 +1,6 @@
 /** Additive catalog schema. Provider conversations remain in agent_sessions. */
 import type { Database } from 'bun:sqlite'
-import { existsSync } from 'node:fs'
+import fs from 'node:fs'
 
 const CATALOG_VERSION = 1
 
@@ -37,7 +37,7 @@ export function createCatalogSchema(db: Database) {
     if (file && hasExistingSessions(db)) {
       let backup = `${file}.before-catalog-schema`,
         suffix = 0
-      while (existsSync(backup)) backup = `${file}.before-catalog-schema.${++suffix}`
+      while (fs.existsSync(backup)) backup = `${file}.before-catalog-schema.${++suffix}`
       db.query('VACUUM INTO ?').run(backup)
     }
   }

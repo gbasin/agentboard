@@ -16,7 +16,7 @@
 // ignored when the directory is missing (tmux falls back to /tmp, i.e. the
 // live socket), so we create it.
 
-import { mkdirSync } from 'node:fs'
+import fs from 'node:fs'
 import { BOOTSTRAP_WINDOW_NAME } from './tmuxFormat'
 import { timedSpawnSync } from './syncSpawnTiming'
 
@@ -103,7 +103,7 @@ export function applyNestedTmuxDecision(
   const decision = decideNestedTmux(env, probe)
   const tmuxTmpDir = env.TMUX_TMPDIR?.trim()
   if (tmuxTmpDir) {
-    mkdirSync(tmuxTmpDir, { recursive: true, mode: 0o700 })
+    fs.mkdirSync(tmuxTmpDir, { recursive: true, mode: 0o700 })
   }
   if (decision.action === 'isolate') {
     // Unset rather than override: tmux ignores TMUX_TMPDIR while TMUX is set.

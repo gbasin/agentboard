@@ -2,7 +2,12 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { logger } from '../logger'
 import { resetSlowOpState } from '../slowOpLog'
-import { SLOW_SYNC_IO_MS, wrapDatabase, wrapFs } from '../syncIoTiming'
+import {
+  resetSyncIoAccumulators,
+  SLOW_SYNC_IO_MS,
+  wrapDatabase,
+  wrapFs,
+} from '../syncIoTiming'
 
 type LogCall = { level: 'warn' | 'debug'; event: string; data?: Record<string, unknown> }
 
@@ -21,6 +26,7 @@ function busyWait(ms: number): void {
 beforeEach(() => {
   calls = []
   resetSlowOpState()
+  resetSyncIoAccumulators()
   logger.warn = (event, data) => {
     if (isIoEvent(event)) calls.push({ level: 'warn', event, data })
   }
@@ -68,6 +74,34 @@ describe('wrapFs', () => {
     fakeFs.statSync()
     fakeFs.statSync()
     expect(calls.filter((c) => c.event === 'sync_fs_slow')).toHaveLength(1)
+  })
+
+  test('sub-threshold calls accumulate and report once over the threshold', () => {
+    const fakeFs = {
+      readFileSync: () => busyWait(60),
+    }
+    wrapFs(fakeFs as never)
+    fakeFs.readFileSync()
+    expect(calls).toHaveLength(0) // 60ms alone is below the bar
+    fakeFs.readFileSync()
+    const hit = calls.find((c) => c.event === 'sync_fs_slow')
+    expect(hit?.data?.accumulated).toBe(true)
+    expect(hit?.data?.calls).toBe(2)
+    expect(hit?.data?.durationMs as number).toBeGreaterThanOrEqual(SLOW_SYNC_IO_MS)
+  })
+
+  test('distinct paths get separate suppression windows', () => {
+    const fakeFs = {
+      readFileSync: (_path?: string) => busyWait(SLOW_SYNC_IO_MS + 20),
+    }
+    wrapFs(fakeFs as never)
+    fakeFs.readFileSync('/a.jsonl')
+    fakeFs.readFileSync('/b.jsonl')
+    // Per-path keys: a second file's first slow call warns rather than being
+    // absorbed by /a's window.
+    expect(calls.filter((c) => c.event === 'sync_fs_slow')).toHaveLength(2)
+    const paths = calls.map((c) => c.data?.path).sort()
+    expect(paths).toEqual(['/a.jsonl', '/b.jsonl'])
   })
 
   test('logging inside the warn hook does not recurse', () => {
@@ -157,6 +191,36 @@ describe('wrapDatabase', () => {
     txn.immediate()
     const hit = calls.find((c) => c.event === 'sync_db_slow')
     expect(hit?.data?.op).toBe('db.transaction.immediate')
+  })
+
+  test('transaction self-references (txn.default) point at the wrapper', () => {
+    class FakeDb {
+      transaction(fn: () => void) {
+        const txn = () => fn()
+        const txnObj = txn as { default?: unknown }
+        txnObj.default = txn
+        return txn
+      }
+    }
+    wrapDatabase(FakeDb as never)
+    const txn = new FakeDb().transaction(() => {}) as unknown as {
+      (): void
+      default: () => void
+    }
+    expect(txn.default).toBe(txn)
+  })
+
+  test('a failed prepare still gets timed', () => {
+    class FakeDb {
+      prepare(_sql: string) {
+        busyWait(SLOW_SYNC_IO_MS + 30)
+        throw new Error('syntax error')
+      }
+    }
+    wrapDatabase(FakeDb as never)
+    expect(() => new FakeDb().prepare('garbage')).toThrow('syntax error')
+    const hit = calls.find((c) => c.event === 'sync_db_slow')
+    expect(hit?.data?.op).toBe('db.prepare')
   })
 
   test('iterate times each step', () => {

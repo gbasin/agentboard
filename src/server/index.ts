@@ -429,6 +429,11 @@ function createConnectionId(): string {
   }
 }
 checkPortAvailable(config.port)
+// Instrument sync fs/sqlite calls: stall samples show the blocked main
+// thread dominated by pread() and JIT'd JS, and no call site is otherwise
+// named. Install before initDatabase — its cached prepared statements must
+// come through the patched prepare()/query() to be wrapped.
+installSyncIoTiming()
 // Refuse to share a data dir with a live agentboard server — the reconcile
 // loop would orphan that server's session claims (they're windows it can't
 // see). Isolated instances set AGENTBOARD_DATA_DIR and lock their own dir.
@@ -1347,11 +1352,6 @@ const stallWatchdog = new StallWatchdog({
   checkIntervalMs: 250,
 })
 stallWatchdog.start()
-
-// Instrument sync fs/sqlite calls: stall samples show the blocked main
-// thread dominated by pread() and JIT'd JS, and no call site is otherwise
-// named. Wrap early so slow calls during hydration are covered.
-installSyncIoTiming()
 
 let elLastTick = performance.now()
 setInterval(() => {
