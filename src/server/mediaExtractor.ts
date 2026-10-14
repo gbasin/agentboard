@@ -42,8 +42,6 @@ export interface ExtractedMediaItem {
   toolId?: string
   width?: number
   height?: number
-  /** Decoded size when the source record states it (Claude toolUseResult). */
-  bytes?: number
 }
 
 const READ_CHUNK_BYTES = 128 * 1024
@@ -333,19 +331,19 @@ function extractMediaItemsFromRecord(
   const out: ExtractedMediaItem[] = []
   walkMedia(record, undefined, out)
 
-  // Claude's toolUseResult twin carries decoded size + pixel dimensions; apply
-  // when the line produced exactly one image (the common 1:1 case).
+  // Claude's toolUseResult twin carries pixel dimensions; apply when the line
+  // produced exactly one image (the common 1:1 case). Note: its `originalSize`
+  // is the *source file's* size, which differs from the embedded payload when
+  // the agent resized before embedding — never use it as `bytes`, or the
+  // endpoint's integrity check will reject every such descriptor.
   const resultFile = asRecord(asRecord(record.toolUseResult)?.file)
   const dims = asRecord(resultFile?.dimensions)
   const width = typeof dims?.originalWidth === 'number' ? dims.originalWidth : undefined
   const height = typeof dims?.originalHeight === 'number' ? dims.originalHeight : undefined
-  const originalSize =
-    typeof resultFile?.originalSize === 'number' ? resultFile.originalSize : undefined
   const images = out.filter((item) => item.kind === 'image' && item.data)
   if (images.length === 1) {
     if (width) images[0].width = width
     if (height) images[0].height = height
-    if (originalSize) images[0].bytes = originalSize
   }
   return out
 }
@@ -405,7 +403,7 @@ function processLine(state: ScanState, line: string, lineOffset: number): void {
     if (item.url) entry.url = item.url
     const label = item.label ?? (item.toolId && state.pendingLabels.get(item.toolId))
     if (label) entry.label = label
-    if (item.data) entry.bytes = item.bytes ?? decodedLength(item.data)
+    if (item.data) entry.bytes = decodedLength(item.data)
     if (item.width) entry.width = item.width
     if (item.height) entry.height = item.height
 
@@ -463,22 +461,12 @@ export function extractSessionMedia(content: string): ScannedMedia[] {
 
 /**
  * Media descriptors for one agent log file. Incremental: re-reads only bytes
- * appended since the last call. Pass `knownSize` to skip the stat syscall
- * when the caller already knows the size is unchanged.
+ * appended since the last call. A single statSync per call keeps the mtime
+ * check authoritative — a same-size rewrite must rescan, so callers cannot
+ * skip it by asserting a size.
  */
-export function getSessionMedia(
-  logPath: string,
-  knownSize?: number | null
-): ScannedMedia[] {
+export function getSessionMedia(logPath: string): ScannedMedia[] {
   let state = scanCache.get(logPath)
-  if (
-    state &&
-    state.offset > 0 &&
-    knownSize != null &&
-    knownSize === state.offset
-  ) {
-    return state.media.length ? state.media.slice() : EMPTY_RESULT
-  }
 
   let stat: fs.Stats
   try {

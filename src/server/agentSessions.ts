@@ -105,13 +105,9 @@ function scanMergedMedia(
   paths: string[]
 ): SessionMedia[] {
   const media: SessionMedia[] = []
-  for (let i = 0; i < paths.length; i++) {
-    const found = getSessionMedia(
-      paths[i],
-      i === 0 ? record.lastKnownLogSize : undefined
-    )
-    for (const item of found) {
-      media.push(toSessionMedia(record, paths[i], item))
+  for (const p of paths) {
+    for (const item of getSessionMedia(p)) {
+      media.push(toSessionMedia(record, p, item))
     }
   }
   return media
@@ -133,13 +129,10 @@ export function getMergedMedia(record: AgentSessionRecord): SessionMedia[] {
 
 /** Reads one log's new bytes into the media extractor's per-file cache. */
 export function warmMediaScan(
-  record: AgentSessionRecord,
+  _record: AgentSessionRecord,
   logPath: string
 ): void {
-  getSessionMedia(
-    logPath,
-    logPath === record.logFilePath ? record.lastKnownLogSize : undefined
-  )
+  getSessionMedia(logPath)
 }
 
 /**
