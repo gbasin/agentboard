@@ -887,13 +887,12 @@ const dormantPrScanner = createDormantPrScanner(() =>
 const SIDEBAR_HISTORY_LIMIT = 100
 
 function getDormantRecords() {
-  const lists = db.getSessionLists({
-    maxAgeHours: runtimeHistoryMaxAgeHours,
-    limit: SIDEBAR_HISTORY_LIMIT,
-  })
   return {
-    hibernating: lists.hibernating,
-    history: lists.history,
+    hibernating: db.getHibernatingSessions(),
+    history: db.getHistorySessions({
+      maxAgeHours: runtimeHistoryMaxAgeHours,
+      limit: SIDEBAR_HISTORY_LIMIT,
+    }),
   }
 }
 

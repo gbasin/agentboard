@@ -188,14 +188,26 @@ describe('db', () => {
       'hist-old',
     ])
 
-    const capped = db.getSessionLists({ maxAgeHours: 24 * 365, limit: 1 })
-    expect(capped.history.map((s) => s.sessionId)).toEqual(
-      db.getHistorySessions({ maxAgeHours: 24 * 365, limit: 1 }).map((s) => s.sessionId)
+    const aged = db.getSessionLists({ maxAgeHours: 24 * 365 })
+    expect(aged.history.map((s) => s.sessionId)).toEqual(
+      db.getHistorySessions({ maxAgeHours: 24 * 365 }).map((s) => s.sessionId)
     )
-    expect(capped.history).toHaveLength(1)
-    expect(capped.history[0].sessionId).toBe('hist-new')
-    expect(capped.active).toEqual(db.getActiveSessions())
-    expect(capped.hibernating).toEqual(db.getHibernatingSessions())
+    expect(aged.active).toEqual(db.getActiveSessions())
+    expect(aged.hibernating).toEqual(db.getHibernatingSessions())
+  })
+
+  test('getSessionsByIds batch-returns the same records as getSessionById', () => {
+    for (const id of ['c', 'a', 'b']) {
+      db.insertSession(
+        makeSession({ sessionId: id, logFilePath: `/tmp/${id}.jsonl`, currentWindow: `agentboard:${id}` })
+      )
+    }
+    const batch = db.getSessionsByIds(['b', 'missing', 'a'])
+    expect(batch.map((s) => s.sessionId).sort()).toEqual(['a', 'b'])
+    expect(db.getSessionsByIds([])).toEqual([])
+    for (const record of batch) {
+      expect(record).toEqual(db.getSessionById(record.sessionId)!)
+    }
   })
 
   test('setHibernating updates hibernation marker flag', () => {

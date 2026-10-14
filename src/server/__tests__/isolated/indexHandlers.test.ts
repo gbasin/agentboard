@@ -391,6 +391,10 @@ mock.module('../../db', () => ({
   initDatabase: () => ({
     db: dbState.sqlite,
     getSessionById: (sessionId: string) => dbState.records.get(sessionId) ?? null,
+    getSessionsByIds: (sessionIds: string[]) =>
+      sessionIds
+        .map((sessionId) => dbState.records.get(sessionId))
+        .filter((record): record is NonNullable<typeof record> => record != null),
     getSessionByLogPath: (logFilePath: string) =>
       Array.from(dbState.records.values()).find(
         (record) => record.logFilePath === logFilePath
@@ -419,7 +423,7 @@ mock.module('../../db', () => ({
       Array.from(dbState.records.values()).filter(
         (record) => record.currentWindow === null && record.isHibernating
       ),
-    getSessionLists: (options?: { maxAgeHours?: number; limit?: number }) => {
+    getSessionLists: (options?: { maxAgeHours?: number }) => {
       const records = Array.from(dbState.records.values())
       let history = records.filter(
         (record) => record.currentWindow === null && !record.isHibernating
@@ -429,9 +433,6 @@ mock.module('../../db', () => ({
         history = history.filter(
           (record) => new Date(record.lastActivityAt).getTime() > cutoff
         )
-      }
-      if (options?.limit !== undefined && options.limit >= 0) {
-        history = history.slice(0, options.limit)
       }
       const byId = (a: { sessionId: string }, b: { sessionId: string }) =>
         a.sessionId < b.sessionId ? -1 : a.sessionId > b.sessionId ? 1 : 0
