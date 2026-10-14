@@ -100,17 +100,19 @@ export interface SessionDatabase {
     tmuxWindow: string
   ) => AgentSessionRecord | null
   getSessionById: (sessionId: string) => AgentSessionRecord | null
+  /** Batch lookup — one indexed query instead of N single-row probes. */
+  getSessionsByIds: (sessionIds: string[]) => AgentSessionRecord[]
   getSessionByLogPath: (logPath: string) => AgentSessionRecord | null
   getSessionByWindow: (tmuxWindow: string) => AgentSessionRecord | null
   getActiveSessions: () => AgentSessionRecord[]
   getHibernatingSessions: () => AgentSessionRecord[]
   /**
-   * Active + hibernating + history from ONE full-table scan. The three
-   * getters are called together on every poll cycle; separate queries pay
-   * the read page-in cost three times under memory pressure. `options`
-   * applies to the history bucket exactly as in getHistorySessions.
+   * Active + hibernating + history from ONE statement. The three getters
+   * are called together on every poll cycle; separate statements pay the
+   * read page-in cost repeatedly under memory pressure. `maxAgeHours`
+   * bounds the history bucket exactly as in getHistorySessions.
    */
-  getSessionLists: (options?: { maxAgeHours?: number; limit?: number }) => {
+  getSessionLists: (options?: { maxAgeHours?: number }) => {
     active: AgentSessionRecord[]
     hibernating: AgentSessionRecord[]
     history: AgentSessionRecord[]
@@ -196,6 +198,10 @@ CREATE INDEX IF NOT EXISTS idx_current_window
 CREATE UNIQUE INDEX IF NOT EXISTS idx_current_window_unique
   ON agent_sessions (current_window)
   WHERE current_window IS NOT NULL;
+-- Covering index for getKnownSessionKeys — an index-only scan of ~1MB
+-- instead of a full-table read that touches every last_user_message page.
+CREATE INDEX IF NOT EXISTS idx_session_keys
+  ON agent_sessions (session_id, log_file_path, project_path, slug, agent_type, is_codex_exec);
 `
 
 function readJournalMode(db: SQLiteDatabase): string {
@@ -526,6 +532,19 @@ function initializeConnection(
         | undefined
       return row ? mapRow(row) : null
     },
+    getSessionsByIds: (sessionIds) => {
+      if (sessionIds.length === 0) return []
+      const placeholders = sessionIds.map((_, i) => `$id${i}`).join(', ')
+      const params = Object.fromEntries(
+        sessionIds.map((id, i) => [`$id${i}`, id])
+      )
+      const rows = db
+        .query(
+          `SELECT * FROM agent_sessions WHERE session_id IN (${placeholders})`
+        )
+        .all(params as never) as Record<string, unknown>[]
+      return rows.map(mapRow)
+    },
     getSessionByLogPath: (logPath) => {
       const row = selectByLogPath.get({ $logFilePath: logPath }) as
         | Record<string, unknown>
@@ -547,9 +566,6 @@ function initializeConnection(
       return rows.map(mapRow)
     },
     getSessionLists: (options) => {
-      if (options?.limit !== undefined && !Number.isInteger(options.limit)) {
-        throw new TypeError('getSessionLists: limit must be an integer')
-      }
       const cutoff = options?.maxAgeHours
         ? new Date(Date.now() - options.maxAgeHours * 60 * 60 * 1000).toISOString()
         : null
@@ -566,14 +582,11 @@ function initializeConnection(
           historyRows.push(row)
         }
       }
-      // Buckets arrive pre-sorted from SQL; only the display cap is applied
-      // here (SQLite negative LIMIT = uncapped).
-      const limit = options?.limit ?? -1
-      const historyLimited = limit >= 0 ? historyRows.slice(0, limit) : historyRows
+      // Buckets arrive pre-sorted from the SQL ORDER BY; JS only partitions.
       return {
         active: activeRows.map(mapRow),
         hibernating: hibernatingRows.map(mapRow),
-        history: historyLimited.map(mapRow),
+        history: historyRows.map(mapRow),
       }
     },
     getHistorySessions: (options?: { maxAgeHours?: number; limit?: number }) => {

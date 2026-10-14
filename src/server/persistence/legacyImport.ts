@@ -16,8 +16,16 @@ export function importConversations(
     (SELECT 1 FROM session_conversations c WHERE c.provider_id=a.session_id) ORDER BY id LIMIT 100`
     )
     .all() as { id: string }[]
+  // One indexed batch fetch — the per-id getSessionById loop was an N+1
+  // (up to 100 probes per reconcile) surfaced as sync_db_slow outliers.
+  const records = new Map(
+    db.getSessionsByIds(ids.map((row) => row.id)).map((record) => [
+      record.sessionId,
+      record,
+    ])
+  )
   for (const { id } of ids) {
-    const record = db.getSessionById(id)
+    const record = records.get(id)
     if (!record || record.isCodexExec) continue
     const live = record.currentWindow
       ? catalog.byWindow(record.currentWindow)
