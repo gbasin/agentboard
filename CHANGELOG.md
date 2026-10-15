@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.34.1](https://github.com/gbasin/agentboard/compare/v0.34.0...v0.34.1) (2026-10-15)
+
+
+### Performance Improvements
+
+* index catalog hot paths, batch legacy import, restore SQL-capped history ([#414](https://github.com/gbasin/agentboard/issues/414)) ([74ed561](https://github.com/gbasin/agentboard/commit/74ed5612623cf36e4bdcd4210412eb78d632bf10))
+
 ## [0.34.0](https://github.com/gbasin/agentboard/compare/v0.33.1...v0.34.0) (2026-10-14)
 
 
