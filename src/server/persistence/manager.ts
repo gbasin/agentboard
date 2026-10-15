@@ -7,7 +7,8 @@ import { inferAgentType } from '../agentDetection'
 import { generateSessionName } from '../nameGenerator'
 import { SessionCatalog, assertSessionName } from './catalog'
 import { RequestError, notFound } from './errors'
-import { importConversations, importConversation } from './legacyImport'
+import type { SessionReader } from '../sessionReads'
+import { importConversations, importConversation, importConversationIds } from './legacyImport'
 import {
   provisionalTagFromName,
   readTmuxIdentity,
@@ -22,6 +23,8 @@ import { windowNameError } from '../windowName'
 export class PersistentSessions {
   readonly catalog: SessionCatalog
   private snapshot: TmuxIdentity | null = null
+  private importInFlight = false
+  private stopped = false
   error: string | null = null
   constructor(
     readonly db: SessionDatabase,
@@ -29,7 +32,8 @@ export class PersistentSessions {
     hostId: string,
     private readonly identity = () => readTmuxIdentity(config.tmuxSession),
     private readonly epochForPid = tmuxEpochForPid,
-    private readonly managedSession = config.tmuxSession
+    private readonly managedSession = config.tmuxSession,
+    private readonly reader?: SessionReader
   ) {
     this.catalog = new SessionCatalog(db.db, hostId)
     importConversations(this.catalog, db, this.isManagedWindow)
@@ -158,7 +162,25 @@ export class PersistentSessions {
         this.error = String(error)
       }
     }
-    importConversations(this.catalog, this.db, this.isManagedWindow)
+    this.importHistory()
+  }
+  dispose() {
+    this.stopped = true
+  }
+  private importHistory() {
+    if (this.stopped || this.importInFlight) return
+    if (!this.reader) {
+      importConversations(this.catalog, this.db, this.isManagedWindow)
+      return
+    }
+    this.importInFlight = true
+    void this.reader.importCandidates().then((ids) => {
+      if (!this.stopped) importConversationIds(this.catalog, this.db, this.isManagedWindow, ids)
+    }).catch((error) => {
+      if (!this.stopped) this.error = String(error)
+    }).finally(() => {
+      this.importInFlight = false
+    })
   }
   private observeOne(live: Session) {
     const snapshot = this.snapshot!

@@ -1,3 +1,4 @@
+import { SessionReadClient } from './sessionReadClient'
 import type { Server, ServerWebSocket } from 'bun'
 import { createReadStream } from 'node:fs'
 import os from 'node:os'
@@ -496,6 +497,9 @@ logger.info('terminal_mode_resolved', {
 
 const app = new Hono()
 const db = initDatabase({ exclusive: true })
+const sessionReader = db.db?.filename && db.db.filename !== ':memory:'
+  ? new SessionReadClient(db.db.filename)
+  : undefined
 
 // Read mouse mode setting from DB (default: true)
 const TMUX_MOUSE_MODE_KEY = 'tmux_mouse_mode'
@@ -599,7 +603,7 @@ function persistenceHostId(): string {
   return id
 }
 const persistence = db.db
-  ? new PersistentSessions(db, sessionManager, persistenceHostId())
+  ? new PersistentSessions(db, sessionManager, persistenceHostId(), undefined, undefined, undefined, sessionReader)
   : null
 const persistenceRuntime = persistence
   ? new PersistenceRuntime(persistence, db)
@@ -814,6 +818,7 @@ const lastUserMessageLocks = new Map<string, number>()
 const LAST_USER_MESSAGE_LOCK_MS = 60_000 // 60 seconds
 
 const logPoller = new LogPoller(db, registry, {
+  reader: sessionReader,
   onSessionOrphaned: (sessionId, supersededBy) => {
     // Scan first: the dormant lists read PRs from the cache this scan fills.
     const session = db.getSessionById(sessionId)
@@ -2465,6 +2470,8 @@ async function cleanupAllTerminals() {
   setCodexSubagentIndexListener(null)
   dormantPrScanner.stop()
   logPoller.stop()
+  persistence?.dispose()
+  sessionReader?.dispose()
   remotePoller?.stop()
   db.close()
 }
