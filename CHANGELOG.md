@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.34.3](https://github.com/gbasin/agentboard/compare/v0.34.2...v0.34.3) (2026-10-15)
+
+
+### Bug Fixes
+
+* keep terminal traffic flowing during copy-mode queries ([#418](https://github.com/gbasin/agentboard/issues/418)) ([9655ef3](https://github.com/gbasin/agentboard/commit/9655ef31ae0cb7fdb7b8afccc367c4a8dd9cf62a))
+
 ## [0.34.2](https://github.com/gbasin/agentboard/compare/v0.34.1...v0.34.2) (2026-10-15)
 
 
