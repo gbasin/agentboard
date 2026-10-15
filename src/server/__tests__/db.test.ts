@@ -1,6 +1,7 @@
 import { describe, expect, test, afterEach } from 'bun:test'
 import { Database as SQLiteDatabase } from 'bun:sqlite'
 import { ACTIVE_SESSIONS_SQL, initDatabase } from '../db'
+import { sessionListsSql } from '../sessionReads'
 import { logger } from '../logger'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -194,6 +195,15 @@ describe('db', () => {
     )
     expect(aged.active).toEqual(db.getActiveSessions())
     expect(aged.hibernating).toEqual(db.getHibernatingSessions())
+  })
+
+  test('bounded polling seeks each bucket without scanning archived payloads', () => {
+    const plan = db.db.query(`EXPLAIN QUERY PLAN ${sessionListsSql(true)}`)
+      .all({ $cutoff: now }) as { detail: string }[]
+    const details = plan.map((row) => row.detail).join('\n')
+    expect(details).toContain('idx_current_window_unique')
+    expect(details).toContain('idx_dormant_activity (is_hibernating=? AND last_activity_at>?)')
+    expect(details).not.toMatch(/SCAN agent_sessions/)
   })
 
   test('getSessionsByIds batch-returns the same records as getSessionById', () => {

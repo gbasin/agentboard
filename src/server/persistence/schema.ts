@@ -89,6 +89,7 @@ export function createCatalogSchema(db: Database) {
   // Idempotent indexes run on every init — the version gate above skips
   // schema work for databases already at CATALOG_VERSION.
   db.exec(
-    'CREATE INDEX IF NOT EXISTS board_active ON board_sessions(host_id, state)'
+    `CREATE INDEX IF NOT EXISTS board_active ON board_sessions(host_id, state);
+     CREATE INDEX IF NOT EXISTS board_state ON board_sessions(state, id)`
   )
 }
