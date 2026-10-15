@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.34.4](https://github.com/gbasin/agentboard/compare/v0.34.3...v0.34.4) (2026-10-15)
+
+
+### Performance Improvements
+
+* skip unchanged persistence epoch writes ([#420](https://github.com/gbasin/agentboard/issues/420)) ([543251d](https://github.com/gbasin/agentboard/commit/543251d75a89727b6c07fe1d6f9b01bfd5368507))
+
 ## [0.34.3](https://github.com/gbasin/agentboard/compare/v0.34.2...v0.34.3) (2026-10-15)
 
 
