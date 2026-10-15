@@ -17,6 +17,7 @@ import { SessionManager } from './SessionManager'
 import { ThrowawayShellReaper } from './throwawayShellReaper'
 import { SessionRegistry } from './SessionRegistry'
 import { PersistentSessions } from './persistence/manager'
+import { refreshDormantConversation } from './persistence/legacyImport'
 import type { SavedSession } from '../shared/persistence'
 import { PersistenceRuntime } from './persistence/runtime'
 import { registerPersistenceRoutes } from './persistence/routes'
@@ -819,6 +820,10 @@ const LAST_USER_MESSAGE_LOCK_MS = 60_000 // 60 seconds
 
 const logPoller = new LogPoller(db, registry, {
   reader: sessionReader,
+  onSessionUpdated: (record) => {
+    if (persistence) refreshDormantConversation(persistence.catalog, record)
+    if (!record.currentWindow) queueDormantRefresh()
+  },
   onSessionOrphaned: (sessionId, supersededBy) => {
     // Scan first: the dormant lists read PRs from the cache this scan fills.
     const session = db.getSessionById(sessionId)
@@ -914,6 +919,18 @@ setCodexSubagentIndexListener(() => {
     dormantPrScanner.queue([...hibernating, ...history])
   }, 0)
 })
+
+// A poll can update many dormant rows. Refresh the published sidebar snapshot
+// once after that batch, rather than retaining the import-time messages.
+let dormantRefreshQueued = false
+function queueDormantRefresh() {
+  if (dormantRefreshQueued) return
+  dormantRefreshQueued = true
+  queueMicrotask(() => {
+    dormantRefreshQueued = false
+    updateDormantAgentSessions()
+  })
+}
 
 // Dormant rows show the PRs found by the last scan; the scanner fills in the
 // rest in small slices and calls back here when it finds new ones.

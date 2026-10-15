@@ -77,3 +77,13 @@ export function importConversation(
     })
   )
 }
+
+/** Keep dormant catalog previews current without changing identity or stop intent. */
+export function refreshDormantConversation(catalog: SessionCatalog, record: AgentSessionRecord) {
+  const saved = catalog.byProvider(record.sessionId)
+  // A saved session can own older conversations too. Only its current provider
+  // may refresh the preview; live sessions get activity through observeOne.
+  if (!saved || saved.providerId !== record.sessionId ||
+    (saved.state !== 'archived' && saved.state !== 'hibernating')) return
+  catalog.updateActivity(saved.id, record.lastActivityAt, record.lastUserMessage ?? undefined)
+}

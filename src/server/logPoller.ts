@@ -1,6 +1,6 @@
 import { logger } from './logger'
 import { config } from './config'
-import type { SessionDatabase } from './db'
+import type { AgentSessionRecord, SessionDatabase } from './db'
 import type { PollSnapshot, SessionReader, SnapshotOptions } from './sessionReads'
 import { getLogSearchDirs, normalizeProjectPath } from './logDiscovery'
 import { agentFamily } from './agentDetection'
@@ -198,6 +198,7 @@ export class LogPoller {
   private db: SessionDatabase
   private registry: SessionRegistry
   private onSessionOrphaned?: (sessionId: string, supersededBy?: string) => void
+  private onSessionUpdated?: (record: AgentSessionRecord) => void
   private onSessionActivated?: (sessionId: string, window: string) => void
   private onOrphanSessionsDiscovered?: (stats: { newOrphans: number }) => void
   private isLastUserMessageLocked?: (tmuxWindow: string) => boolean
@@ -228,6 +229,7 @@ export class LogPoller {
     {
       onSessionOrphaned,
       onSessionActivated,
+      onSessionUpdated,
       onOrphanSessionsDiscovered,
       isLastUserMessageLocked,
       maxLogsPerPoll,
@@ -240,6 +242,7 @@ export class LogPoller {
       reader,
     }: {
       onSessionOrphaned?: (sessionId: string, supersededBy?: string) => void
+      onSessionUpdated?: (record: AgentSessionRecord) => void
       onSessionActivated?: (sessionId: string, window: string) => void
       onOrphanSessionsDiscovered?: (stats: { newOrphans: number }) => void
       isLastUserMessageLocked?: (tmuxWindow: string) => boolean
@@ -258,6 +261,7 @@ export class LogPoller {
     this.registry = registry
     this.onSessionOrphaned = onSessionOrphaned
     this.onSessionActivated = onSessionActivated
+    this.onSessionUpdated = onSessionUpdated
     this.onOrphanSessionsDiscovered = onOrphanSessionsDiscovered
     this.isLastUserMessageLocked = isLastUserMessageLocked
     const limit = maxLogsPerPoll ?? DEFAULT_MAX_LOGS
@@ -930,6 +934,9 @@ export class LogPoller {
           })
           if (update) {
             this.db.updateSession(existing.sessionId, update)
+            if (update.lastUserMessage !== undefined || update.lastActivityAt !== undefined) {
+              this.onSessionUpdated?.({ ...existing, ...update })
+            }
           }
           const shouldAttemptRematch =
             canAttemptDormantRematch(existing) &&
@@ -1024,6 +1031,9 @@ export class LogPoller {
           })
           if (updateById) {
             this.db.updateSession(sessionId, updateById)
+            if (updateById.lastUserMessage !== undefined || updateById.lastActivityAt !== undefined) {
+              this.onSessionUpdated?.({ ...existingById, ...updateById })
+            }
           }
 
           // Re-attempt matching for orphaned sessions (no currentWindow)

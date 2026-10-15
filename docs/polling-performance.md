@@ -83,6 +83,23 @@ and recovery notices. The first recovery-notice run needed a retry; three
 subsequent isolated runs passed without retries. That intermittent test result
 does not establish a production recovery defect or its cause.
 
+`tests/e2e/polling-lifecycle.spec.ts` adds automated functional regressions with
+real Claude/Codex JSONL fixtures created after server startup. It exercises the
+workers, database, recurring imports, HTTP/WebSocket delivery, and browser without
+mocked routes or database seeds. Checks cover unique catalog identity, preserved
+custom names, updated conversation summaries, full Unicode transcript previews
+before and after browser reload, and hibernation across multiple log updates.
+A matching private tmux window must remain unclaimed while the provider is
+hibernating, then reclaim it after hibernation is cleared.
+
+The tests exposed and now cover an existing stale-preview bug. Polling updated
+provider rows but did not refresh the published dormant sidebar snapshot or the
+associated dormant catalog preview. Message/activity commits now refresh the
+current dormant catalog identity and queue one sidebar refresh per batch. Older
+linked conversations cannot overwrite the current provider's preview, and no
+name, pin, association, or lifecycle state changes. Summary APIs retain their
+existing 250-character limit.
+
 This change removes the selected recurring reads from the event loop. It does
 not establish that all remaining production stalls are resolved. In particular,
 subagent `statSync` calls, catalog writes, and worker message serialization remain

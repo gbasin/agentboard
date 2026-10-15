@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from 'bun:test'
 import { initDatabase, type SessionDatabase } from '../db'
 import { PersistentSessions } from '../persistence/manager'
+import { refreshDormantConversation } from '../persistence/legacyImport'
 import type { SessionManager } from '../SessionManager'
 import type { SessionReader } from '../sessionReads'
 
@@ -70,4 +71,27 @@ test('failed import can retry; shutdown discards pending candidates', async () =
   f.resolve(['pending'])
   await settle()
   expect(f.manager.catalog.byProvider('pending')).toBeNull()
+})
+
+
+test('dormant activity refresh preserves identity, name, pin and stop intent and ignores older providers', () => {
+  const f = fixture()
+  insert(f.db, 'old')
+  insert(f.db, 'current')
+  const saved = f.manager.catalog.create({ name: 'custom name', projectPath: '/project', command: '',
+    providerId: 'old', state: 'hibernating', pinned: true, lastActivityAt: '2026-01-01' })
+  f.manager.catalog.associate(saved.id, 'current', 'claude', 'initial')
+  f.db.updateSession('current', { lastUserMessage: 'latest 🙂', lastActivityAt: '2026-02-01' })
+  refreshDormantConversation(f.manager.catalog, f.db.getSessionById('current')!)
+  expect(f.manager.catalog.get(saved.id)).toMatchObject({ id: saved.id, name: 'custom name',
+    state: 'hibernating', pinned: true, window: null, providerId: 'current',
+    preview: 'latest 🙂', lastActivityAt: '2026-02-01' })
+  f.db.updateSession('old', { lastUserMessage: 'stale provider', lastActivityAt: '2026-03-01' })
+  refreshDormantConversation(f.manager.catalog, f.db.getSessionById('old')!)
+  expect(f.manager.catalog.get(saved.id)?.preview).toBe('latest 🙂')
+  expect(f.manager.catalog.get(saved.id)?.lastActivityAt).toBe('2026-02-01')
+  // Same-timestamp message corrections must also refresh the preview.
+  f.db.updateSession('current', { lastUserMessage: 'corrected 🦊' })
+  refreshDormantConversation(f.manager.catalog, f.db.getSessionById('current')!)
+  expect(f.manager.catalog.get(saved.id)?.preview).toBe('corrected 🦊')
 })
