@@ -74,6 +74,20 @@ jobs:
       - name: Run e2e tests
         run: bunx playwright test
 
+      - name: Terminal contention regression
+        run: bunx playwright test --config playwright.contention.config.ts --reporter=line,html
+        env:
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-contention-report
+          PLAYWRIGHT_HTML_OPEN: never
+
+      - name: Upload contention results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: playwright-contention-report
+          path: playwright-contention-report/
+          retention-days: 7
+
       # The ci job skips real-tmux tests (no tmux there); this job has tmux.
       # Run the whole suite the way the release workflow's commit hook does
       # (Linux, tmux present), so a real-tmux test that only fails on Linux is

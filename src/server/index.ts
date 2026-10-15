@@ -1,3 +1,4 @@
+import { CopyModeQuery } from './copyModeQuery'
 import { SessionReadClient } from './sessionReadClient'
 import type { Server, ServerWebSocket } from 'bun'
 import { createReadStream } from 'node:fs'
@@ -629,6 +630,7 @@ interface WSData {
   userAgent: string | null
   terminalHost: string | null
   terminalAttachSeq: number
+  copyModeQuery: CopyModeQuery
   lastAttachKey: string | null
   lastAttachTs: number
   clipboardPollTimer: ReturnType<typeof setInterval> | null
@@ -2302,6 +2304,7 @@ function serverFetch(req: Request, server: Server<WSData>) {
           userAgent: req.headers.get('user-agent')?.slice(0, 200) ?? null,
           terminalHost: null,
           terminalAttachSeq: 0,
+          copyModeQuery: new CopyModeQuery(),
           lastAttachKey: null,
           lastAttachTs: 0,
           clipboardPollTimer: null,
@@ -3106,33 +3109,20 @@ async function handleCheckCopyMode(sessionId: string, ws: ServerWebSocket<WSData
   if (!session) return
   if (session.remote && !config.remoteAllowAttach) return
 
-  try {
-    const target = resolveCopyModeTarget(sessionId, ws, session)
-    // Query tmux for pane copy-mode status plus fullscreen-app detection:
-    //   pane_in_mode  -> tmux copy-mode active
-    //   alternate_on  -> pane on the alternate screen buffer
-    //   mouse_any_flag-> the in-pane app requested mouse tracking (owns the mouse)
-    const fmt = '#{pane_in_mode},#{alternate_on},#{mouse_any_flag}'
-    let output: string
+  const attachSeq = ws.data.terminalAttachSeq
+  const target = resolveCopyModeTarget(sessionId, ws, session)
+  const status = await ws.data.copyModeQuery.read(async () => {
+    // Copy mode, alternate screen, and application-owned mouse tracking.
+    const args = ['display-message', '-p', '-t', target,
+      '#{pane_in_mode},#{alternate_on},#{mouse_any_flag}']
     if (session.remote && session.host) {
-      const result = await runRemoteTmux(session.host, ['display-message', '-p', '-t', target, fmt])
-      output = result.stdout?.trim() ?? ''
-    } else {
-      const result = timedSpawnSync(
-        ['tmux', ...withTmuxUtf8Flag(['display-message', '-p', '-t', target, fmt])],
-        { stdout: 'pipe', stderr: 'pipe', timeout: 5000 }
-      )
-      output = result.stdout?.toString().trim() ?? ''
+      const result = await runRemoteTmux(session.host, args)
+      return result.stdout ?? ''
     }
-    const [inCopyModeField, altScreenField, appMouseField] = output.split(',')
-    const inCopyMode = inCopyModeField === '1'
-    const altScreen = altScreenField === '1'
-    const appMouse = appMouseField === '1'
-    send(ws, { type: 'tmux-copy-mode-status', sessionId, inCopyMode, altScreen, appMouse })
-  } catch {
-    // On error, assume not in copy mode and no fullscreen app
-    send(ws, { type: 'tmux-copy-mode-status', sessionId, inCopyMode: false, altScreen: false, appMouse: false })
-  }
+    const result = await timedSpawnAsync(['tmux', ...withTmuxUtf8Flag(args)], { timeout: 5000 })
+    return result.exitCode === 0 ? result.stdout : ''
+  }, () => ws.readyState === 1 && isTerminalAttachCurrent(ws, attachSeq))
+  if (status) send(ws, { type: 'tmux-copy-mode-status', sessionId, ...status })
 }
 
 function restoreHibernatingState(previousHibernatingState: Map<string, boolean>) {
