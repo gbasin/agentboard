@@ -387,6 +387,20 @@ mock.module('../../logger', () => ({
       logEntries.push({ level: 'error', event, data }),
   },
 }))
+const fakeBySessionId = (
+  a: { sessionId: string },
+  b: { sessionId: string }
+) => (a.sessionId < b.sessionId ? -1 : a.sessionId > b.sessionId ? 1 : 0)
+const fakeByActivityDesc = (
+  a: { lastActivityAt: string; sessionId: string },
+  b: { lastActivityAt: string; sessionId: string }
+) =>
+  a.lastActivityAt === b.lastActivityAt
+    ? fakeBySessionId(a, b)
+    : a.lastActivityAt < b.lastActivityAt
+      ? 1
+      : -1
+
 mock.module('../../db', () => ({
   initDatabase: () => ({
     db: dbState.sqlite,
@@ -407,22 +421,32 @@ mock.module('../../db', () => ({
       Array.from(dbState.records.values()).filter(
         (record) => record.currentWindow !== null
       ),
-    getHistorySessions: (options?: { maxAgeHours?: number }) => {
-      const history = Array.from(dbState.records.values()).filter(
-        (record) => record.currentWindow === null && !record.isHibernating
-      )
-      if (!options?.maxAgeHours) {
-        return history
+    getHistorySessions: (options?: {
+      maxAgeHours?: number
+      limit?: number
+    }) => {
+      let history = Array.from(dbState.records.values())
+        .filter(
+          (record) => record.currentWindow === null && !record.isHibernating
+        )
+        .sort(fakeByActivityDesc)
+      if (options?.maxAgeHours) {
+        const cutoff = Date.now() - options.maxAgeHours * 60 * 60 * 1000
+        history = history.filter(
+          (record) => new Date(record.lastActivityAt).getTime() > cutoff
+        )
       }
-      const cutoff = Date.now() - options.maxAgeHours * 60 * 60 * 1000
-      return history.filter(
-        (record) => new Date(record.lastActivityAt).getTime() > cutoff
-      )
+      if (options?.limit !== undefined && options.limit >= 0) {
+        history = history.slice(0, options.limit)
+      }
+      return history
     },
     getHibernatingSessions: () =>
-      Array.from(dbState.records.values()).filter(
-        (record) => record.currentWindow === null && record.isHibernating
-      ),
+      Array.from(dbState.records.values())
+        .filter(
+          (record) => record.currentWindow === null && record.isHibernating
+        )
+        .sort(fakeByActivityDesc),
     getSessionLists: (options?: { maxAgeHours?: number }) => {
       const records = Array.from(dbState.records.values())
       let history = records.filter(
@@ -434,25 +458,14 @@ mock.module('../../db', () => ({
           (record) => new Date(record.lastActivityAt).getTime() > cutoff
         )
       }
-      const byId = (a: { sessionId: string }, b: { sessionId: string }) =>
-        a.sessionId < b.sessionId ? -1 : a.sessionId > b.sessionId ? 1 : 0
-      const byActivityDesc = (
-        a: { lastActivityAt: string; sessionId: string },
-        b: { lastActivityAt: string; sessionId: string }
-      ) =>
-        a.lastActivityAt === b.lastActivityAt
-          ? byId(a, b)
-          : a.lastActivityAt < b.lastActivityAt
-            ? 1
-            : -1
       return {
         active: records
           .filter((record) => record.currentWindow !== null)
-          .sort(byId),
+          .sort(fakeBySessionId),
         hibernating: records
           .filter((record) => record.currentWindow === null && record.isHibernating)
-          .sort(byActivityDesc),
-        history: history.sort(byActivityDesc),
+          .sort(fakeByActivityDesc),
+        history: history.sort(fakeByActivityDesc),
       }
     },
     orphanSession: (sessionId: string, options?: { hibernate?: boolean }) => {

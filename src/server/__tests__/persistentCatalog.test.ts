@@ -26,6 +26,21 @@ const input = {
 }
 
 describe('durable catalog', () => {
+  test('existing v1 catalogs receive the board_active index on reopen', () => {
+    const { db } = setup()
+    // Simulate a catalog created before board_active existed: schema is at
+    // the current version, so the gated migration must be skipped — but the
+    // unconditional index creation still has to fire.
+    db.db.exec('DROP INDEX board_active')
+    new SessionCatalog(db.db, 'host-test')
+    expect(
+      db.db
+        .query(
+          "SELECT 1 FROM sqlite_master WHERE type='index' AND name='board_active'"
+        )
+        .get()
+    ).toBeTruthy()
+  })
   test('saves a session before any provider log or process exists', () => {
     const { db, catalog } = setup()
     const created = catalog.create(input)

@@ -15,9 +15,17 @@ const path = process.argv[2] ?? '/tmp/ab-perf-dev/data/agentboard.db'
 const db = new Database(path)
 db.exec('PRAGMA busy_timeout=100')
 
-const hostId = (
-  db.query('SELECT DISTINCT host_id FROM board_sessions LIMIT 1').get() as { host_id: string }
-).host_id
+const hostId =
+  (
+    db
+      .query('SELECT DISTINCT host_id FROM board_sessions LIMIT 1')
+      .get() as { host_id: string } | null
+  )?.host_id ?? null
+if (!hostId) {
+  console.error('no board_sessions rows in this db')
+  process.exit(1)
+}
+const cutoff72h = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString()
 
 const QUERIES: Record<string, { sql: string; args: unknown[] }> = {
   catalog_active: {
@@ -31,29 +39,49 @@ const QUERIES: Record<string, { sql: string; args: unknown[] }> = {
   session_lists: {
     sql: `SELECT * FROM agent_sessions
           WHERE current_window IS NOT NULL OR is_hibernating = 1
-             OR (is_hibernating = 0 AND last_activity_at > '2020-01-01T00:00:00.000Z')
+             OR (is_hibernating = 0 AND ($cutoff IS NULL OR last_activity_at > $cutoff))
           ORDER BY (current_window IS NULL),
                    CASE WHEN current_window IS NULL THEN last_activity_at END DESC,
                    session_id`,
-    args: [],
+    args: [cutoff72h],
   },
   import_candidates: {
     sql: `SELECT session_id AS id FROM agent_sessions a WHERE a.is_codex_exec=0 AND NOT EXISTS
           (SELECT 1 FROM session_conversations c WHERE c.provider_id=a.session_id) ORDER BY id LIMIT 100`,
     args: [],
   },
-  import_rows_joined: {
-    sql: `SELECT a.* FROM agent_sessions a WHERE a.is_codex_exec=0 AND NOT EXISTS
-          (SELECT 1 FROM session_conversations c WHERE c.provider_id=a.session_id) ORDER BY a.session_id LIMIT 100`,
-    args: [],
-  },
+}
+
+// The implemented path: candidate scan, then ONE indexed IN() fetch.
+function benchImport() {
+  const ids = (
+    db
+      .query(QUERIES.import_candidates.sql)
+      .all() as { id: string }[]
+  ).map((r) => r.id)
+  const sql = `SELECT * FROM agent_sessions WHERE session_id IN (${ids
+    .map(() => '?')
+    .join(',')})`
+  const stmt = db.query(sql)
+  const times: number[] = []
+  for (let i = 0; i < 25; i++) {
+    const t0 = performance.now()
+    stmt.all(...(ids as never[]))
+    times.push(performance.now() - t0)
+  }
+  times.sort((a, b) => a - b)
+  const med = times[Math.floor(times.length / 2)]
+  console.log(
+    `${'import_fetch_batch'.padEnd(22)} min=${times[0].toFixed(2)}ms med=${med.toFixed(2)}ms max=${times[times.length - 1].toFixed(2)}ms (${ids.length} rows)`
+  )
 }
 
 function bench(name: string, sql: string, args: unknown[]) {
   const stmt = db.query(sql)
-  const plan = db
-    .query(`EXPLAIN QUERY PLAN ${sql.replaceAll(/\$(\w+)|\?/g, 'NULL')}`)
-    .all() as { detail: string }[]
+  // EXPLAIN takes the real bound args — plan shape can depend on bindings.
+  const plan = db.query(`EXPLAIN QUERY PLAN ${sql}`).all(...(args as never[])) as {
+    detail: string
+  }[]
   const times: number[] = []
   for (let i = 0; i < 25; i++) {
     const t0 = performance.now()
@@ -70,3 +98,4 @@ function bench(name: string, sql: string, args: unknown[]) {
 }
 
 for (const [name, q] of Object.entries(QUERIES)) bench(name, q.sql, q.args)
+benchImport()
