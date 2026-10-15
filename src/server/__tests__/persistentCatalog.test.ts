@@ -209,6 +209,16 @@ describe('recovery reconciliation', () => {
       },
     }
   }
+  test('stable epochs preserve legacy associations and replacement epochs clear them', () => {
+    const { db, persistence } = fixture()
+    db.setAppSetting('persistence_tmux_epoch', 'epoch1')
+    insertRecord(db, 'legacy-epoch', 'ab:@9')
+    persistence.beforeSnapshot([], 1)
+    expect(db.getSessionById('legacy-epoch')?.currentWindow).toBe('ab:@9')
+    persistence.beforeSnapshot([], 2)
+    expect(db.getSessionById('legacy-epoch')?.currentWindow).toBeNull()
+    expect(db.getAppSetting('persistence_tmux_epoch')).toBe('epoch2')
+  })
   test('a reliable empty replacement server interrupts sessions without killing windows', () => {
     const { persistence, saved, calls } = fixture()
     persistence.beforeSnapshot([], 2)

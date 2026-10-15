@@ -142,7 +142,10 @@ export class PersistentSessions {
         for (const record of this.db.getActiveSessions())
           this.db.orphanSession(record.sessionId)
       }
-      this.db.setAppSetting('persistence_tmux_epoch', snapshot.epoch)
+      // An unchanged epoch needs no setting write or WAL/checkpoint work. Keep the
+      // database read authoritative across backend restarts and failed writes.
+      if (previousEpoch !== snapshot.epoch)
+        this.db.setAppSetting('persistence_tmux_epoch', snapshot.epoch)
       this.error = null
     } catch (error) {
       this.error = String(error)
