@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.34.2](https://github.com/gbasin/agentboard/compare/v0.34.1...v0.34.2) (2026-10-15)
+
+
+### Performance Improvements
+
+* move polling reads off the main thread and keep dormant previews current ([#416](https://github.com/gbasin/agentboard/issues/416)) ([8dccddc](https://github.com/gbasin/agentboard/commit/8dccddca8c3b4dfa6745bc4818c4e26e22e2d4db))
+
 ## [0.34.1](https://github.com/gbasin/agentboard/compare/v0.34.0...v0.34.1) (2026-10-15)
 
 
