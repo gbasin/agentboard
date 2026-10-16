@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, jest, test } from 'bun:test'
 import { createElement } from 'react'
 import TestRenderer, { act } from 'react-test-renderer'
 import type { Session, SessionMedia } from '@shared/types'
@@ -55,6 +55,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   globalAny.window = originalWindow
+  jest.useRealTimers()
 })
 
 describe('MediaRail', () => {
@@ -78,7 +79,7 @@ describe('MediaRail', () => {
       .findAllByType('span')
       .map((s) => (s.children as string[]).join(''))
       .join('')
-    expect(text).toBe('2+1')
+    expect(text).toBe('Media2+1')
   })
 
   test('expand shows thumbs and chips; collapse returns to pill', () => {
@@ -154,4 +155,79 @@ describe('MediaRail', () => {
     })
     expect(findByTestId(r, 'media-rail-pill')).toHaveLength(1)
   })
+
+  test('existing media is quiet; first live addition pulses and stays unread until opened', () => {
+    jest.useFakeTimers()
+    const existing = render(sessionWith([imageMedia()]))
+    expect(findByTestId(existing, 'media-rail-new-dot')).toHaveLength(0)
+    const r = render(sessionWith([]))
+    act(() => r.update(createElement(MediaRail, { session: sessionWith([imageMedia()]) })))
+    expect(findByTestId(r, 'media-rail-pill')[0].props.className).toContain('media-attention')
+    expect(findByTestId(r, 'media-rail-new-dot')).toHaveLength(1)
+    act(() => { jest.advanceTimersByTime(1600) })
+    expect(findByTestId(r, 'media-rail-pill')[0].props.className).not.toContain('media-attention')
+    expect(findByTestId(r, 'media-rail-new-dot')).toHaveLength(1)
+    act(() => findByTestId(r, 'media-rail-pill')[0].props.onClick())
+    act(() => r.root.findByProps({ 'aria-label': 'Collapse media rail' }).props.onClick())
+    expect(findByTestId(r, 'media-rail-new-dot')).toHaveLength(0)
+    act(() => r.unmount())
+    act(() => existing.unmount())
+  })
+
+  test('compares URL identities, groups additions during a pulse, and restarts for later batches', () => {
+    jest.useFakeTimers()
+    const r = render(sessionWith([imageMedia()]))
+    const update = (urls: string[]) => act(() => r.update(createElement(MediaRail, {
+      session: sessionWith(urls.map((url) => imageMedia({ url }))),
+    })))
+    // Same count, new URL is still a new addition.
+    update(['new'])
+    act(() => { jest.advanceTimersByTime(800) })
+    update(['new', 'another'])
+    act(() => { jest.advanceTimersByTime(800) })
+    expect(findByTestId(r, 'media-rail-pill')[0].props.className).not.toContain('media-attention')
+    update(['another', 'new']) // reorder does not restart the animation
+    expect(findByTestId(r, 'media-rail-pill')[0].props.className).not.toContain('media-attention')
+    update(['another']) // deletion does not restart it either
+    expect(findByTestId(r, 'media-rail-pill')[0].props.className).not.toContain('media-attention')
+    update(['another', 'new']) // a known URL reappearing is not new
+    expect(findByTestId(r, 'media-rail-pill')[0].props.className).not.toContain('media-attention')
+    update(['another', 'later'])
+    expect(findByTestId(r, 'media-rail-pill')[0].props.className).toContain('media-attention')
+    act(() => r.unmount())
+  })
+
+  test('session and transcript changes clear unread state and close previews without pulsing', () => {
+    jest.useFakeTimers()
+    const base = { ...sessionWith([]), id: 'one', agentSessionId: 'agent-one', logFilePath: '/one' }
+    const r = render(base)
+    const update = (session: Session) => act(() => r.update(createElement(MediaRail, { session })))
+    update({ ...base, media: [imageMedia()] })
+    expect(findByTestId(r, 'media-rail-new-dot')).toHaveLength(1)
+    let current = { ...base, id: 'two', media: [imageMedia()] }
+    update(current)
+    expect(findByTestId(r, 'media-rail-new-dot')).toHaveLength(0)
+    for (const change of [{ agentSessionId: 'agent-two' }, { logFilePath: '/two' }]) {
+      act(() => findByTestId(r, 'media-rail-pill')[0].props.onClick())
+      act(() => findByTestId(r, 'media-thumb')[0].props.onClick())
+      current = { ...current, ...change }
+      update(current)
+      expect(findByTestId(r, 'media-lightbox')).toHaveLength(0)
+      expect(findByTestId(r, 'media-rail')).toHaveLength(0)
+      expect(findByTestId(r, 'media-rail-new-dot')).toHaveLength(0)
+    }
+    act(() => r.unmount())
+  })
+
+  test('media arriving while expanded is already seen', () => {
+    const r = render(sessionWith([imageMedia()]))
+    act(() => findByTestId(r, 'media-rail-pill')[0].props.onClick())
+    act(() => r.update(createElement(MediaRail, {
+      session: sessionWith([imageMedia(), imageMedia({ url: 'new' })]),
+    })))
+    act(() => r.root.findByProps({ 'aria-label': 'Collapse media rail' }).props.onClick())
+    expect(findByTestId(r, 'media-rail-new-dot')).toHaveLength(0)
+    act(() => r.unmount())
+  })
+
 })
