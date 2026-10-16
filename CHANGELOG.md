@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.35.1](https://github.com/gbasin/agentboard/compare/v0.35.0...v0.35.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* normalize expanded media tile sizes ([#424](https://github.com/gbasin/agentboard/issues/424)) ([b313ec9](https://github.com/gbasin/agentboard/commit/b313ec97a6ced133c1b086a600548eceb9dec04a))
+
 ## [0.35.0](https://github.com/gbasin/agentboard/compare/v0.34.4...v0.35.0) (2026-10-16)
 
 
