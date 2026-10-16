@@ -101,7 +101,8 @@ test('active rows precede queued history, worker failure retains results, and st
   workers[0].onerror?.()
   expect(client.get(a)).toEqual(metadata(1))
   client.queue(a); await tick()
-  expect(workers).toHaveLength(2)
+  expect(workers).toHaveLength(1)
+  await until(() => workers.length === 2)
   const late = workers[1].onmessage!
   client.dispose()
   late({ data: { id: workers[1].scans()[0].id, metadata: metadata(3) } } as MessageEvent<MetadataResponse>)
@@ -248,4 +249,45 @@ test('real worker preserves image payload byte offsets and session-media URLs', 
   expect(url.searchParams.get('index')).toBe('0')
   expect(descriptor.mediaType).toBe('image/png')
   expect(descriptor.bytes).toBe(Buffer.from(data, 'base64').length)
+})
+
+test('HTTP reads wait beyond an older in-flight scan, including known growth and index updates', async () => {
+  const { client, workers } = fake()
+  const a = record()
+  client.queue(a); await tick()
+  let completed = false
+  const fresh = client.scan({ ...a, lastKnownLogSize: 999 }).then((value) => {
+    completed = true
+    return value
+  })
+  workers[0].reply(metadata(1)); await tick()
+  expect(completed).toBe(false)
+  workers[0].reply(metadata(2))
+  expect(await fresh).toEqual(metadata(2))
+  client.queue(a); await tick()
+  client.setIndex([{ ownId: 'child', parentId: a.sessionId, logPath: '/child' }])
+  completed = false
+  const indexed = client.scan(a).then((value) => { completed = true; return value })
+  workers[0].reply(metadata(3)); await tick()
+  expect(completed).toBe(false)
+  workers[0].reply(metadata(4))
+  expect(await indexed).toEqual(metadata(4))
+})
+
+test('worker recovery retries interrupted and pending dormant scans without another refresh', async () => {
+  const { client, workers } = fake()
+  const a = { ...record(), sessionId: 'first', currentWindow: null }
+  const b = { ...record(), sessionId: 'second', currentWindow: null }
+  client.queue(a); client.queue(b); await tick()
+  workers[0].onerror?.()
+  await tick()
+  expect(workers).toHaveLength(1)
+  await until(() => workers.length === 2)
+  const first = workers[1].scans()[0].record
+  workers[1].reply(metadata(1)); await tick()
+  const second = workers[1].scans()[1].record
+  workers[1].reply(metadata(2))
+  expect(new Set([first.sessionId, second.sessionId])).toEqual(new Set(['first', 'second']))
+  expect(client.get(a).prs).toHaveLength(1)
+  expect(client.get(b).prs).toHaveLength(1)
 })

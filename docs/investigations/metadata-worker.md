@@ -12,14 +12,14 @@
 2. `main={registry:B, metadata:empty}`, `worker={scan:A/path1}`. The user reassigns the window to B while the scan runs. Authoritative lifecycle updates remain synchronous on the main thread.
 3. `main={registry:B, metadata:A/path1}`, `worker={idle}`. A's result updates only existing views whose session ID, path and provider match. It cannot restore A's window, name, status or lifecycle fields.
 4. `main={registry:B/path2}`, `worker={scan:B/path1, queued:B/path2}`. A log-path change queues the latest request. The old result is rejected, then path2 is scanned. No old descriptors appear under the new identity.
-5. `main={registry:B, metadata:previous}`, `worker={failed}`. Existing descriptors remain visible; the next refresh retries in a fresh worker. There is no synchronous scan fallback.
+5. `main={registry:B, metadata:previous}`, `worker={failed}`. Existing descriptors and queued dormant work remain available; a bounded-backoff retry starts a fresh worker. There is no synchronous scan fallback.
 6. `main={stopped}`, `worker={closing}`. Shutdown clears queues and ignores late replies; the worker exits cooperatively.
 
 Metadata results contain only PR/media descriptors. They never carry registry snapshots or lifecycle mutations. Pending records are coalesced by session ID. Active work takes priority over queued dormant work, with one record in flight. Filesystem freshness checks and parsing remain in the worker, including same-size rewrites. Codex links are copied when the main-thread index changes.
 
 ## HTTP reads
 
-The library detail endpoint also used the synchronous extractors. It now awaits worker descriptors. While it waits, terminal traffic and mutations continue. After the await, it reads the current catalog and provider rows; a rename, hibernation, deletion or reassociation must not be replaced by a pre-scan snapshot. A changed log identity is scanned again. Explicit detail requests take priority over queued background scans.
+The library detail endpoint also used the synchronous extractors. It now awaits worker descriptors. While it waits, terminal traffic and mutations continue. After the await, it reads the current catalog and provider rows; a rename, hibernation, deletion or reassociation must not be replaced by a pre-scan snapshot. A changed log identity is scanned again. Explicit detail requests take priority over queued background scans and wait for a scan started after the request. Superseded scans retry against current identities. All conversation fields are materialized after the final descriptor await, including details with multiple linked conversations.
 
 ## Regression strategy
 

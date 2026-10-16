@@ -29,7 +29,7 @@ import {
 } from './db'
 import { LogPoller } from './logPoller'
 import { toAgentSession as buildAgentSession } from './agentSessions'
-import { SessionMetadataClient, metadataIdentity } from './sessionMetadataClient'
+import { SessionMetadataClient } from './sessionMetadataClient'
 import { publishSessionMetadata } from './sessionMetadataViews'
 import { extractMediaItems } from './mediaExtractor'
 import { getSubagentLogPaths, getCodexSubagentIndex, setCodexSubagentIndexListener } from './subagentLogs'
@@ -2234,21 +2234,7 @@ app.get('/api/clipboard-file-path', async (c) => {
 if (persistenceRuntime) {
   persistenceRuntime.matchingFailure = () => logPoller.matchingError
   const library = registerPersistenceRoutes(app, persistenceRuntime, {
-    agentSession: async (record) => {
-      // A detail read may overlap rename, deletion or a log reassociation.
-      // Await only descriptors, then build the response from current DB state.
-      let current: AgentSessionRecord | null = record
-      while (current) {
-        const metadata = await metadataClient.scan(current)
-        const latest = db.getSessionById(current.sessionId)
-        if (!latest) return null
-        if (metadataIdentity(latest) === metadataIdentity(current)) {
-          return { ...buildAgentSession(latest, { cachedPrsOnly: true }), ...metadata }
-        }
-        current = latest
-      }
-      return null
-    },
+    metadataFor: (record) => metadataClient.scan(record),
     commandFor: buildResumeCommand,
     changed: () => {
       updateDormantAgentSessions()

@@ -1,6 +1,6 @@
 /** Session library API: catalog history and recovery. */
 import { Hono } from 'hono'
-import type { AgentSession, Session } from '../../shared/types'
+import type { Session } from '../../shared/types'
 import type {
   HistoryQuery,
   Lifecycle,
@@ -12,12 +12,15 @@ import type { PersistenceRuntime } from './runtime'
 import { savePersistenceSettings } from './settings'
 import { RequestError, notFound } from './errors'
 import { logger } from '../logger'
+import { toAgentSession } from '../agentSessions'
+import { metadataIdentity, MetadataScanSupersededError } from '../sessionMetadataClient'
+import type { SessionMetadata } from '../sessionMetadataWorker'
 
 export function registerPersistenceRoutes(
   parent: Hono,
   runtime: PersistenceRuntime,
   options: {
-    agentSession: (record: AgentSessionRecord) => AgentSession | null | Promise<AgentSession | null>
+    metadataFor: (record: AgentSessionRecord) => SessionMetadata | Promise<SessionMetadata>
     commandFor: (r: AgentSessionRecord) => string
     changed: () => void
     activated: (s: Session) => void
@@ -83,33 +86,42 @@ export function registerPersistenceRoutes(
     )
   )
   app.get(`${api}/:id`, async (c) => {
-    const session = catalog.get(c.req.param('id'))
-    if (!session) return c.json({ error: 'Session not found' }, 404)
-    const linked = db.db.query(
+    const id = c.req.param('id')
+    const linkedRecords = () => (db.db.query(
       'SELECT provider_id AS id FROM session_conversations WHERE session_id=? ORDER BY linked_at DESC'
-    ).all(session.id) as { id: string }[]
-    const conversations = await Promise.all(linked.flatMap(({ id }) => {
+    ).all(id) as { id: string }[]).flatMap(({ id }) => {
       const record = db.getSessionById(id)
-      return record ? [options.agentSession(record)] : []
-    }))
-    // Metadata I/O can overlap catalog mutations. Do not return a captured
-    // name/lifecycle row after that asynchronous boundary.
-    const current = catalog.get(session.id)
-    if (!current) return c.json({ error: 'Session not found' }, 404)
-    const preview = db.db
-      .query(
+      return record ? [record] : []
+    })
+    // All authoritative fields are materialized after the final await, not
+    // independently as each conversation finishes scanning.
+    while (true) {
+      if (!catalog.get(id)) return c.json({ error: 'Session not found' }, 404)
+      const records = linkedRecords()
+      let metadata: SessionMetadata[]
+      try {
+        metadata = await Promise.all(records.map(options.metadataFor))
+      } catch (error) {
+        if (error instanceof MetadataScanSupersededError) continue
+        throw error
+      }
+      const session = catalog.get(id)
+      if (!session) return c.json({ error: 'Session not found' }, 404)
+      const current = linkedRecords()
+      if (current.length !== records.length || current.some((record, i) =>
+        metadataIdentity(record) !== metadataIdentity(records[i]))) continue
+      const preview = db.db.query(
         'SELECT terminal_preview AS terminalPreview, terminal_preview_at AS terminalPreviewAt FROM board_sessions WHERE id=?'
-      )
-      .get(session.id) as Pick<
-      HistoryDetail,
-      'terminalPreview' | 'terminalPreviewAt'
-    >
-    return c.json({
-      session: current,
-      conversations: conversations.filter((row): row is AgentSession => row !== null),
-      ...preview,
-      events: catalog.events(session.id),
-    } satisfies HistoryDetail)
+      ).get(id) as Pick<HistoryDetail, 'terminalPreview' | 'terminalPreviewAt'>
+      return c.json({
+        session,
+        conversations: current.map((record, i) => ({
+          ...toAgentSession(record, { cachedPrsOnly: true }), ...metadata[i],
+        })),
+        ...preview,
+        events: catalog.events(id),
+      } satisfies HistoryDetail)
+    }
   })
   app.post(`${api}/:id/resume`, async (c) => {
     const body: { operationId?: string } = await c.req

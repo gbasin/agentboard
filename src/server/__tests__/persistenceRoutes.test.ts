@@ -1,4 +1,3 @@
-import { toAgentSession } from '../agentSessions'
 /** Recovery API regressions using real storage and an inert terminal adapter. */
 import { afterEach, expect, test } from 'bun:test'
 import fs from 'node:fs'
@@ -8,6 +7,8 @@ import { Hono } from 'hono'
 import { initDatabase } from '../db'
 import { PersistentSessions } from '../persistence/manager'
 import { PersistenceRuntime } from '../persistence/runtime'
+import { SessionMetadataClient } from '../sessionMetadataClient'
+import type { MetadataRequest, MetadataResponse } from '../sessionMetadataWorker'
 import { registerPersistenceRoutes } from '../persistence/routes'
 import type { SessionManager } from '../SessionManager'
 import type { Session } from '../../shared/types'
@@ -18,7 +19,7 @@ afterEach(() => {
   for (const close of cleanup.splice(0)) close()
 })
 
-function setup() {
+function setup(metadataFor: Parameters<typeof registerPersistenceRoutes>[2]['metadataFor'] = () => ({ prs: [], media: [] })) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ab-routes-'))
   const db = initDatabase({ path: path.join(root, 'agentboard.db') })
   cleanup.push(() => {
@@ -35,7 +36,7 @@ function setup() {
   const runtime = new PersistenceRuntime(sessions, db)
   const app = new Hono()
   registerPersistenceRoutes(app, runtime, {
-    agentSession: toAgentSession,
+    metadataFor,
     commandFor: () => {
       throw new Error('Must not launch an agent')
     },
@@ -143,4 +144,83 @@ test('errors map to client and server statuses', async () => {
     method: 'POST',
   })
   expect(unexpected.status).toBe(500)
+})
+
+
+test('detail materializes all conversation names and lifecycle fields after the final scan', async () => {
+  let release!: () => void
+  let started!: () => void
+  const waiting = new Promise<void>((resolve) => { release = resolve })
+  const scanning = new Promise<void>((resolve) => { started = resolve })
+  const { app, saved, addConversation, runtime } = setup(async (record) => {
+    if (record.sessionId === 'older') { started(); await waiting }
+    return { prs: [], media: [] }
+  })
+  addConversation('older'); addConversation('current')
+  const pending = app.request(`/api/library/${saved.id}`)
+  await scanning
+  await app.request(`/api/library/${saved.id}`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'Renamed' }),
+  })
+  runtime.db.updateSession('current', { isHibernating: true, lastUserMessage: 'new message' })
+  release()
+  const detail = await (await pending).json() as HistoryDetail
+  expect(detail.session.name).toBe('Renamed')
+  const current = detail.conversations.find((row) => row.sessionId === 'current')!
+  expect(current.displayName).toBe('Renamed')
+  expect(current.isHibernating).toBe(true)
+  expect(current.lastUserMessage).toBe('new message')
+})
+
+test('detail revalidates linked conversations and changed log identities after scans', async () => {
+  let release!: () => void
+  let started!: () => void
+  const waiting = new Promise<void>((resolve) => { release = resolve })
+  const scanning = new Promise<void>((resolve) => { started = resolve })
+  const paths: string[] = []
+  const { app, saved, addConversation, runtime } = setup(async (record) => {
+    paths.push(record.logFilePath)
+    if (paths.length === 1) { started(); await waiting }
+    return { prs: [], media: [{ kind: 'link', url: record.logFilePath }] }
+  })
+  addConversation('first')
+  const pending = app.request(`/api/library/${saved.id}`)
+  await scanning
+  addConversation('newly-linked')
+  runtime.db.updateSession('first', { logFilePath: '/changed.jsonl' })
+  release()
+  const detail = await (await pending).json() as HistoryDetail
+  expect(detail.conversations).toHaveLength(2)
+  expect(detail.conversations.find((row) => row.sessionId === 'first')?.media?.[0].url).toBe('/changed.jsonl')
+  expect(paths).toContain('/changed.jsonl')
+})
+
+
+test('detail retries a real client cancellation when a pending HTTP scan is reassociated', async () => {
+  const sent: MetadataRequest[] = []
+  const worker = {
+    onmessage: null as ((event: MessageEvent<MetadataResponse>) => void) | null,
+    postMessage(message: MetadataRequest) { sent.push(message) },
+  }
+  const client = new SessionMetadataClient(() => {}, () => worker as unknown as Worker)
+  cleanup.push(() => client.dispose())
+  const { app, saved, addConversation, runtime } = setup((record) => client.scan(record))
+  const original = addConversation('current')
+  client.queue(original)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const pending = app.request(`/api/library/${saved.id}`)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  runtime.db.updateSession('current', { logFilePath: '/replacement.jsonl' })
+  client.queue(runtime.db.getSessionById('current')!)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const scans = () => sent.filter((message) => message.kind === 'scan')
+  worker.onmessage!(new MessageEvent<MetadataResponse>('message', { data: { id: scans()[0].id, metadata: { prs: [], media: [] } } }))
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(scans()[1].record.logFilePath).toBe('/replacement.jsonl')
+  worker.onmessage!(new MessageEvent<MetadataResponse>('message', { data: { id: scans()[1].id, metadata: { prs: [], media: [] } } }))
+  const response = await pending
+  expect(response.status).toBe(200)
+  const detail = await response.json() as HistoryDetail
+  expect(detail.conversations[0].logFilePath).toBe('/replacement.jsonl')
 })

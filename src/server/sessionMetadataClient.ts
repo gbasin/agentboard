@@ -7,6 +7,9 @@ import { logger } from './logger'
 export function metadataIdentity(record: Pick<AgentSessionRecord, 'sessionId' | 'logFilePath' | 'agentType'>): string {
   return JSON.stringify([record.sessionId, record.logFilePath, record.agentType])
 }
+export class MetadataScanSupersededError extends Error {
+  constructor() { super('Session log changed'); this.name = 'MetadataScanSupersededError' }
+}
 const EMPTY: SessionMetadata = { prs: [], media: [] }
 
 export class SessionMetadataClient {
@@ -14,11 +17,13 @@ export class SessionMetadataClient {
   private stopped = false
   private scheduled = false
   private serial = 0
+  private retryTimer: ReturnType<typeof setTimeout> | null = null
+  private retryDelayMs = 1000
   private pending = new Map<string, AgentSessionRecord>()
   private current: { id: number; record: AgentSessionRecord } | null = null
   private cache = new Map<string, { identity: string; metadata: SessionMetadata }>()
   private links: CodexSubagentLink[] = []
-  private waiters = new Map<string, { resolve: (value: SessionMetadata) => void; reject: (error: Error) => void }[]>()
+  private waiters = new Map<string, { minimumId: number; resolve: (value: SessionMetadata) => void; reject: (error: Error) => void }[]>()
 
   constructor(
     private readonly changed: (record: AgentSessionRecord, metadata: SessionMetadata) => void,
@@ -30,18 +35,20 @@ export class SessionMetadataClient {
     return entry?.identity === metadataIdentity(record) ? entry.metadata : EMPTY
   }
 
-  queue(record: AgentSessionRecord) {
+  queue(record: AgentSessionRecord) { this.enqueue(record, false) }
+
+  private enqueue(record: AgentSessionRecord, fresh: boolean) {
     if (this.stopped) return
     const running = this.current?.record
     // A repeated view read is not new work. Growth or reassociation is.
-    if (running?.sessionId === record.sessionId &&
+    if (!fresh && running?.sessionId === record.sessionId &&
         metadataIdentity(running) === metadataIdentity(record) &&
         running.lastKnownLogSize === record.lastKnownLogSize &&
         !this.pending.has(record.sessionId)) return
     const replaced = this.pending.get(record.sessionId)
     if (replaced && metadataIdentity(replaced) !== metadataIdentity(record)) {
       const identity = metadataIdentity(replaced)
-      for (const waiter of this.waiters.get(identity) ?? []) waiter.reject(new Error('Session log changed'))
+      for (const waiter of this.waiters.get(identity) ?? []) waiter.reject(new MetadataScanSupersededError())
       this.waiters.delete(identity)
     }
     this.pending.set(record.sessionId, { ...record })
@@ -54,9 +61,11 @@ export class SessionMetadataClient {
     return new Promise((resolve, reject) => {
       const identity = metadataIdentity(record)
       const waiting = this.waiters.get(identity) ?? []
-      waiting.push({ resolve, reject })
+      // A running scan may have captured the file before this HTTP request,
+      // even if the DB's size has not caught up. Wait for a subsequent scan.
+      waiting.push({ minimumId: this.serial + 1, resolve, reject })
       this.waiters.set(identity, waiting)
-      this.queue(record)
+      this.enqueue(record, true)
     })
   }
 
@@ -71,6 +80,8 @@ export class SessionMetadataClient {
 
   dispose() {
     this.stopped = true
+    if (this.retryTimer) clearTimeout(this.retryTimer)
+    this.retryTimer = null
     this.rejectWaiters(new Error('Metadata worker disposed'))
     this.pending.clear()
     this.cache.clear()
@@ -79,7 +90,7 @@ export class SessionMetadataClient {
   }
 
   private schedule() {
-    if (this.scheduled || this.current || this.stopped || !this.pending.size) return
+    if (this.retryTimer || this.scheduled || this.current || this.stopped || !this.pending.size) return
     this.scheduled = true
     queueMicrotask(() => {
       this.scheduled = false
@@ -88,7 +99,7 @@ export class SessionMetadataClient {
   }
 
   private pump() {
-    if (this.current || this.stopped) return
+    if (this.retryTimer || this.current || this.stopped) return
     const records = [...this.pending.values()]
     const record = records.find((r) => this.waiters.has(metadataIdentity(r))) ??
       records.find((r) => r.currentWindow !== null) ?? records[0]
@@ -113,10 +124,14 @@ export class SessionMetadataClient {
       const current = this.current
       if (!current || current.id !== response.id) return
       this.current = null
+      this.retryDelayMs = 1000
       const { record } = current
       const waiting = this.waiters.get(metadataIdentity(record)) ?? []
-      this.waiters.delete(metadataIdentity(record))
+      const later = waiting.filter((waiter) => waiter.minimumId > response.id)
+      if (later.length) this.waiters.set(metadataIdentity(record), later)
+      else this.waiters.delete(metadataIdentity(record))
       for (const waiter of waiting) {
+        if (waiter.minimumId > response.id) continue
         if ('error' in response) waiter.reject(new Error(response.error))
         else waiter.resolve(response.metadata)
       }
@@ -146,11 +161,23 @@ export class SessionMetadataClient {
 
   private failed(message: string) {
     logger.warn('session_metadata_worker_failed', { message })
+    const interrupted = this.current?.record
+    if (interrupted && !this.pending.has(interrupted.sessionId)) {
+      this.pending.set(interrupted.sessionId, interrupted)
+    }
     this.current = null
     this.rejectWaiters(new Error(message))
     this.retire()
-    // Retry on the next refresh, not an unbounded worker restart loop.
-    this.pending.clear()
+    // Dormant rows may never be queued again by polling. Retain their work
+    // and retry with bounded backoff; periodic active refreshes cannot bypass it.
+    if (!this.stopped && !this.retryTimer) {
+      this.retryTimer = setTimeout(() => {
+        this.retryTimer = null
+        this.schedule()
+      }, this.retryDelayMs)
+      this.retryTimer.unref?.()
+      this.retryDelayMs = Math.min(30000, this.retryDelayMs * 2)
+    }
   }
 
   private rejectWaiters(error: Error) {
