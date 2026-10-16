@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.35.0](https://github.com/gbasin/agentboard/compare/v0.34.4...v0.35.0) (2026-10-16)
+
+
+### Features
+
+* make media arrivals easier to notice ([#422](https://github.com/gbasin/agentboard/issues/422)) ([9be99fc](https://github.com/gbasin/agentboard/commit/9be99fc6134a8f2b86b46386905da0df6f9deee8))
+
 ## [0.34.4](https://github.com/gbasin/agentboard/compare/v0.34.3...v0.34.4) (2026-10-15)
 
 
