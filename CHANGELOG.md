@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.35.2](https://github.com/gbasin/agentboard/compare/v0.35.1...v0.35.2) (2026-10-16)
+
+
+### Performance Improvements
+
+* move session metadata scans off the main thread ([#426](https://github.com/gbasin/agentboard/issues/426)) ([882622d](https://github.com/gbasin/agentboard/commit/882622d2fbca6fdc31d0bcbe31556d805bb1d0f5))
+
 ## [0.35.1](https://github.com/gbasin/agentboard/compare/v0.35.0...v0.35.1) (2026-10-16)
 
 
