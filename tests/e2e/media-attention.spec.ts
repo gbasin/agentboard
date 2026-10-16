@@ -13,7 +13,7 @@ test.afterEach(() => windows.cleanup())
 const item = (id: string) => ({
   kind: 'link', url: `https://example.com/media/${id}`, label: `${id}.html`,
 })
-type Media = { kind: string; url: string; label: string }[]
+type Media = { kind: string; url: string; label: string; bytes?: number; mediaType?: string }[]
 
 async function board(page: Page, initial: Media = [], theme = 'dark') {
   const prefix = uniquePrefix('media')
@@ -167,6 +167,70 @@ for (const theme of ['light', 'dark']) {
         await page.screenshot({
           path: `test-results/media-attention-${theme}-${mobile ? 'mobile' : 'desktop'}.png`,
         })
+      })
+    })
+  }
+}
+
+// Mixed payloads use the same tile geometry even when their labels are long.
+const TILE_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNwnfwYAALcAbx8DLVyAAAAAElFTkSuQmCC'
+const LONG_LINK = 'Preview deployment with a deliberately long descriptive artifact title'
+
+for (const theme of ['light', 'dark']) {
+  for (const mobile of [false, true]) {
+    test.describe(`mixed media tiles ${theme} ${mobile ? 'mobile' : 'desktop'}`, () => {
+      test.use({ hasTouch: mobile })
+      test('equal tiles contain labels and scroll within the rail', async ({ page }) => {
+        const oversizedUrl = 'https://example.com/oversized-preview.png'
+        let oversizedRequests = 0
+        await page.route(oversizedUrl, async (route) => {
+          oversizedRequests++
+          await route.abort()
+        })
+        const { pill } = await board(page, [
+          { kind: 'image', url: TILE_PNG, label: 'Small image', mediaType: 'image/png' },
+          { kind: 'link', url: 'https://example.com/artifact', label: LONG_LINK },
+          { kind: 'document', url: 'https://example.com/requirements.pdf', label: 'Requirements and implementation notes.pdf', mediaType: 'application/pdf', bytes: 2048 },
+          { kind: 'image', url: oversizedUrl, label: 'Large screenshot.png', mediaType: 'image/png', bytes: 13 * 1024 * 1024 },
+          ...Array.from({ length: 5 }, (_, i) => item(`extra-${i}`)),
+        ], theme)
+        if (mobile) await page.setViewportSize({ width: 390, height: 844 })
+        await pill.click()
+        const rail = page.getByTestId('media-rail')
+        const tiles = rail.locator('[data-testid="media-thumb"], [data-testid="media-chip"], a')
+        await expect(tiles).toHaveCount(9)
+        for (const tile of await tiles.all()) {
+          const bounds = await tile.boundingBox()
+          expect(bounds!.width).toBe(56)
+          expect(bounds!.height).toBe(56)
+          const title = await tile.getAttribute('title')
+          expect(title).toBeTruthy()
+          await expect(tile).toHaveAccessibleName((await tile.getAttribute('aria-label')) ?? title!)
+        }
+        const link = rail.getByRole('link', { name: LONG_LINK, exact: true })
+        await expect(link).toHaveAttribute('title', `${LONG_LINK} · https://example.com/artifact`)
+        await expect(link).toHaveAttribute('href', 'https://example.com/artifact')
+        await expect(link).toHaveAttribute('target', '_blank')
+        await expect(link).toHaveAttribute('rel', /noopener/)
+        await expect(rail.getByRole('button', { name: 'Requirements and implementation notes.pdf · application/pdf · 2 KB', exact: true }))
+          .toHaveAttribute('title', 'Requirements and implementation notes.pdf · application/pdf · 2 KB')
+        await expect(rail.getByRole('button', { name: 'Large screenshot.png · image/png · 13.0 MB', exact: true }))
+          .toHaveAttribute('title', 'Large screenshot.png · image/png · 13.0 MB')
+        await expect.poll(() => rail.locator('img').evaluate((el: HTMLImageElement) => el.naturalWidth)).toBe(1)
+        expect(oversizedRequests).toBe(0)
+        const strip = tiles.first().locator('..')
+        const scroll = await strip.evaluate((el) => ({ client: el.clientWidth, total: el.scrollWidth }))
+        expect(scroll.total).toBeGreaterThan(scroll.client)
+        await strip.evaluate((el) => { el.scrollLeft = el.scrollWidth })
+        await expect.poll(() => strip.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0)
+        const railBounds = await rail.boundingBox()
+        expect(railBounds!.x).toBeGreaterThanOrEqual(0)
+        expect(railBounds!.x + railBounds!.width).toBeLessThanOrEqual(mobile ? 390 : 1280)
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+        await strip.evaluate((el) => { el.scrollLeft = 0 })
+        const stem = `test-results/media-tiles-${theme}-${mobile ? 'mobile' : 'desktop'}`
+        await rail.screenshot({ path: `${stem}-rail.png` })
+        await page.screenshot({ path: `${stem}.png` })
       })
     })
   }

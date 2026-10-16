@@ -5,7 +5,7 @@
  * is remote (the log lives on another host).
  *
  * Collapsed: a media pill at top-right — top placement keeps it
- * clear of the TUI's bottom input row. Expanded: a horizontal thumbnail strip.
+ * clear of the TUI's bottom input row. Expanded: a horizontal strip of uniformly sized media tiles.
  * Tapping a thumbnail opens a lightbox with the full image; document and link
  * items open their URL directly.
  */
@@ -22,6 +22,11 @@ import { ICON_SIZE, TOUCH_TARGET_CLASS } from './controlStyles'
 // Payloads above this size render an "open" chip instead of an <img> so the
 // rail never pulls a multi-MB response just for a thumbnail.
 const MAX_INLINE_PREVIEW_BYTES = 12 * 1024 * 1024
+
+// Explicit pixels avoid the app's 13px root shrinking rem-based thumbnails.
+const MEDIA_TILE_CLASS = 'h-[56px] w-[56px] shrink-0 overflow-hidden rounded-md border border-border bg-surface hover:border-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent'
+const MEDIA_FILE_TILE_CLASS = `${MEDIA_TILE_CLASS} flex flex-col items-center justify-center gap-[3px] p-[4px] text-center text-secondary hover:text-primary`
+const MEDIA_TILE_LABEL_CLASS = 'line-clamp-2 w-full break-words text-[10px] leading-[12px]'
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -50,11 +55,12 @@ function MediaChip({
         href={media.url}
         target="_blank"
         rel="noreferrer noopener"
-        title={caption || media.url}
-        className="flex h-14 shrink-0 items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 text-xs text-secondary hover:border-accent/50 hover:text-primary"
+        title={[caption, media.url].filter(Boolean).join(' · ')}
+        aria-label={media.label || media.url}
+        className={MEDIA_FILE_TILE_CLASS}
       >
-        <LinkExternal01Icon width={ICON_SIZE.primary} height={ICON_SIZE.primary} />
-        <span className="max-w-[10rem] truncate">{media.label ?? 'Link'}</span>
+        <LinkExternal01Icon width={ICON_SIZE.primary} height={ICON_SIZE.primary} className="shrink-0" />
+        <span className={MEDIA_TILE_LABEL_CLASS}>{media.label || 'Link'}</span>
       </a>
     )
   }
@@ -68,7 +74,7 @@ function MediaChip({
         data-testid="media-thumb"
         onClick={() => onOpen(media)}
         title={caption || 'Image'}
-        className="h-14 w-14 shrink-0 overflow-hidden rounded-md border border-border bg-surface hover:border-accent/50"
+        className={MEDIA_TILE_CLASS}
       >
         <img
           src={media.url}
@@ -87,19 +93,17 @@ function MediaChip({
       data-testid="media-chip"
       onClick={() => window.open(media.url, '_blank', 'noopener')}
       title={caption || media.kind}
-      className="flex h-14 shrink-0 items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 text-xs text-secondary hover:border-accent/50 hover:text-primary"
+      aria-label={caption || (isImage ? 'Image' : 'Document')}
+      className={MEDIA_FILE_TILE_CLASS}
     >
       {isImage ? (
-        <Image01Icon width={ICON_SIZE.primary} height={ICON_SIZE.primary} />
+        <Image01Icon width={ICON_SIZE.primary} height={ICON_SIZE.primary} className="shrink-0" />
       ) : (
-        <File06Icon width={ICON_SIZE.primary} height={ICON_SIZE.primary} />
+        <File06Icon width={ICON_SIZE.primary} height={ICON_SIZE.primary} className="shrink-0" />
       )}
-      <span className="max-w-[10rem] truncate">
+      <span className={MEDIA_TILE_LABEL_CLASS}>
         {media.label ?? (isImage ? 'Image' : 'Document')}
       </span>
-      {media.bytes != null && (
-        <span className="text-muted">{formatBytes(media.bytes)}</span>
-      )}
     </button>
   )
 }
