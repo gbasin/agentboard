@@ -386,3 +386,24 @@ describe('SessionRegistry', () => {
     expect(activeEvents).toHaveLength(1)
   })
 })
+
+test('media-only changes publish active and dormant views, including changed labels and removal', () => {
+  const registry = new SessionRegistry()
+  let sessions = 0, active = 0, dormant = 0
+  registry.on('sessions', () => sessions++)
+  registry.on('agent-sessions-active', () => active++)
+  registry.on('agent-sessions', () => dormant++)
+  for (const media of [
+    [],
+    [{ kind: 'link' as const, url: 'https://example.com/image', label: 'first' }],
+    [{ kind: 'link' as const, url: 'https://example.com/image', label: 'updated' }],
+    [],
+  ]) {
+    registry.replaceSessions([makeSession({ media })])
+    registry.setAgentSessions([makeAgentSession({ media })], [], [makeAgentSession({ media, isActive: false })])
+    // An identical refresh is silent.
+    registry.replaceSessions([makeSession({ media })])
+    registry.setAgentSessions([makeAgentSession({ media })], [], [makeAgentSession({ media, isActive: false })])
+  }
+  expect({ sessions, active, dormant }).toEqual({ sessions: 4, active: 4, dormant: 4 })
+})

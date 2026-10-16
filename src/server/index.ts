@@ -28,10 +28,11 @@ import {
   type ClaimCurrentWindowPatch,
 } from './db'
 import { LogPoller } from './logPoller'
-import { toAgentSession, getMergedPullRequests, getMergedMedia } from './agentSessions'
-import { createDormantPrScanner } from './dormantPrScan'
+import { toAgentSession as buildAgentSession } from './agentSessions'
+import { SessionMetadataClient, metadataIdentity } from './sessionMetadataClient'
+import { publishSessionMetadata } from './sessionMetadataViews'
 import { extractMediaItems } from './mediaExtractor'
-import { getSubagentLogPaths, setCodexSubagentIndexListener } from './subagentLogs'
+import { getSubagentLogPaths, getCodexSubagentIndex, setCodexSubagentIndexListener } from './subagentLogs'
 import { fetchPrChecks, fetchPrInfo, parsePrUrl } from './prInfo'
 import { getLogSearchDirs } from './logDiscovery'
 import {
@@ -596,6 +597,14 @@ async function ensureBaseSessionForRefreshAsync(context: string): Promise<boolea
   }
 }
 const registry = new SessionRegistry()
+const metadataClient = new SessionMetadataClient((record, metadata) => {
+  publishSessionMetadata(registry, record, metadata, config.hostLabel)
+})
+
+function toAgentSession(record: AgentSessionRecord): AgentSession {
+  metadataClient.queue(record)
+  return { ...buildAgentSession(record, { cachedPrsOnly: true }), ...metadataClient.get(record) }
+}
 // Test adapters may implement SessionDatabase without a SQLite connection.
 function persistenceHostId(): string {
   const existing = db.getAppSetting('persistence_host_id')
@@ -888,10 +897,6 @@ function updateActiveAgentSessions() {
   )
 }
 
-const dormantPrScanner = createDormantPrScanner(() =>
-  updateDormantAgentSessions()
-)
-
 /**
  * Most recent History rows the sidebar shows. Older rows stay in the database
  * and remain visible to the orphan rematcher, which queries uncapped.
@@ -910,15 +915,17 @@ function getDormantRecords() {
 
 // Codex subagent links arrive with the first full poll, after the startup PR
 // scan, and in bursts as live links register. Re-queue the dormant rows once
-// per burst; the scanner rescans only rows whose subagent logs changed.
+// per burst; the worker revalidates the logs without blocking this thread.
 let dormantRescanQueued = false
 setCodexSubagentIndexListener(() => {
   if (dormantRescanQueued) return
   dormantRescanQueued = true
   setTimeout(() => {
     dormantRescanQueued = false
+    metadataClient.setIndex(getCodexSubagentIndex())
+    for (const record of db.getActiveSessions()) metadataClient.queue(record)
     const { hibernating, history } = getDormantRecords()
-    dormantPrScanner.queue([...hibernating, ...history])
+    for (const record of [...hibernating, ...history]) metadataClient.queue(record)
   }, 0)
 })
 
@@ -934,23 +941,21 @@ function queueDormantRefresh() {
   })
 }
 
-// Dormant rows show the PRs found by the last scan; the scanner fills in the
-// rest in small slices and calls back here when it finds new ones.
+// All views use remembered descriptors. The worker publishes metadata changes
+// directly without rebuilding rows or replaying lifecycle state.
 function updateDormantAgentSessions() {
   const { hibernating: hibernatingRecords, history: historyRecords } =
     getDormantRecords()
-  const cachedOnly = { cachedPrsOnly: true }
   const hibernating = filterExcludedAgentSessions(
-    hibernatingRecords.map((record) => toAgentSession(record, cachedOnly))
+    hibernatingRecords.map((record) => toAgentSession(record))
   )
   const history = filterExcludedAgentSessions(
-    historyRecords.map((record) => toAgentSession(record, cachedOnly))
+    historyRecords.map((record) => toAgentSession(record))
   )
   const active = hasConfirmedLocalSessionSnapshot
     ? db.getActiveSessions().map((record) => toAgentSession(record))
     : []
   registry.setAgentSessions(active, hibernating, history)
-  dormantPrScanner.queue([...hibernatingRecords, ...historyRecords])
 }
 
 interface HydrateSessionsOptions {
@@ -1123,8 +1128,7 @@ export function hydrateSessionsWithAgentSessions(
       agentSessionName: agentSession.displayName,
       logFilePath: agentSession.logFilePath,
       lastUserMessage: agentSession.lastUserMessage ?? session.lastUserMessage,
-      prs: getMergedPullRequests(agentSession),
-      media: getMergedMedia(agentSession),
+      ...metadataClient.get(agentSession),
       // Use persisted log times (survives server restarts, works when tmux lacks creation time)
       lastActivity: agentSession.lastActivityAt,
       createdAt: agentSession.createdAt,
@@ -2230,6 +2234,21 @@ app.get('/api/clipboard-file-path', async (c) => {
 if (persistenceRuntime) {
   persistenceRuntime.matchingFailure = () => logPoller.matchingError
   const library = registerPersistenceRoutes(app, persistenceRuntime, {
+    agentSession: async (record) => {
+      // A detail read may overlap rename, deletion or a log reassociation.
+      // Await only descriptors, then build the response from current DB state.
+      let current: AgentSessionRecord | null = record
+      while (current) {
+        const metadata = await metadataClient.scan(current)
+        const latest = db.getSessionById(current.sessionId)
+        if (!latest) return null
+        if (metadataIdentity(latest) === metadataIdentity(current)) {
+          return { ...buildAgentSession(latest, { cachedPrsOnly: true }), ...metadata }
+        }
+        current = latest
+      }
+      return null
+    },
     commandFor: buildResumeCommand,
     changed: () => {
       updateDormantAgentSessions()
@@ -2488,7 +2507,7 @@ async function cleanupAllTerminals() {
   stallWatchdog.dispose()
   throwawayShellReaper.dispose()
   setCodexSubagentIndexListener(null)
-  dormantPrScanner.stop()
+  metadataClient.dispose()
   logPoller.stop()
   persistence?.dispose()
   sessionReader?.dispose()

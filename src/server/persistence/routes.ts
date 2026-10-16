@@ -1,6 +1,6 @@
 /** Session library API: catalog history and recovery. */
 import { Hono } from 'hono'
-import type { Session } from '../../shared/types'
+import type { AgentSession, Session } from '../../shared/types'
 import type {
   HistoryQuery,
   Lifecycle,
@@ -10,7 +10,6 @@ import type {
 import type { AgentSessionRecord } from '../db'
 import type { PersistenceRuntime } from './runtime'
 import { savePersistenceSettings } from './settings'
-import { toAgentSession } from '../agentSessions'
 import { RequestError, notFound } from './errors'
 import { logger } from '../logger'
 
@@ -18,6 +17,7 @@ export function registerPersistenceRoutes(
   parent: Hono,
   runtime: PersistenceRuntime,
   options: {
+    agentSession: (record: AgentSessionRecord) => AgentSession | null | Promise<AgentSession | null>
     commandFor: (r: AgentSessionRecord) => string
     changed: () => void
     activated: (s: Session) => void
@@ -82,9 +82,20 @@ export function registerPersistenceRoutes(
       )
     )
   )
-  app.get(`${api}/:id`, (c) => {
+  app.get(`${api}/:id`, async (c) => {
     const session = catalog.get(c.req.param('id'))
     if (!session) return c.json({ error: 'Session not found' }, 404)
+    const linked = db.db.query(
+      'SELECT provider_id AS id FROM session_conversations WHERE session_id=? ORDER BY linked_at DESC'
+    ).all(session.id) as { id: string }[]
+    const conversations = await Promise.all(linked.flatMap(({ id }) => {
+      const record = db.getSessionById(id)
+      return record ? [options.agentSession(record)] : []
+    }))
+    // Metadata I/O can overlap catalog mutations. Do not return a captured
+    // name/lifecycle row after that asynchronous boundary.
+    const current = catalog.get(session.id)
+    if (!current) return c.json({ error: 'Session not found' }, 404)
     const preview = db.db
       .query(
         'SELECT terminal_preview AS terminalPreview, terminal_preview_at AS terminalPreviewAt FROM board_sessions WHERE id=?'
@@ -94,17 +105,8 @@ export function registerPersistenceRoutes(
       'terminalPreview' | 'terminalPreviewAt'
     >
     return c.json({
-      session,
-      conversations: (
-        db.db
-          .query(
-            'SELECT provider_id AS id FROM session_conversations WHERE session_id=? ORDER BY linked_at DESC'
-          )
-          .all(session.id) as { id: string }[]
-      ).flatMap(({ id }) => {
-        const record = db.getSessionById(id)
-        return record ? [toAgentSession(record)] : []
-      }),
+      session: current,
+      conversations: conversations.filter((row): row is AgentSession => row !== null),
       ...preview,
       events: catalog.events(session.id),
     } satisfies HistoryDetail)

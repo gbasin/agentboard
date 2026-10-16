@@ -8,6 +8,10 @@ import base from './playwright.config'
 const root = process.env.E2E_TMUX_TMPDIR!
 const bin = join(root, 'shim')
 const gate = join(root, 'copy-mode-gate')
+const metadataGate = join(root, 'metadata-gate')
+mkdirSync(metadataGate, { recursive: true })
+process.env.AB_METADATA_GATE = metadataGate
+process.env.AGENTBOARD_SKIP_MATCHING_PATTERNS = ''
 const realTmux = process.env.AB_REAL_TMUX || spawnSync('which', ['tmux'], { encoding: 'utf8' }).stdout.trim()
 if (!realTmux.startsWith('/')) throw new Error('Expected an absolute tmux executable')
 mkdirSync(bin, { recursive: true })
@@ -45,7 +49,12 @@ process.env.LOG_LEVEL = 'debug'
 export default defineConfig({
   ...base,
   testDir: './tests/contention',
-  webServer: { ...base.webServer as object, reuseExistingServer: false },
+  webServer: {
+    ...base.webServer as object,
+    command: (base.webServer as { command: string }).command.replace(
+      'bun src/server/index.ts', 'bun --preload ./tests/contention/metadata-preload.ts src/server/index.ts'),
+    reuseExistingServer: false,
+  },
   workers: 1,
   retries: 0,
 })

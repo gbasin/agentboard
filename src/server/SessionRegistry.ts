@@ -170,6 +170,7 @@ function agentSessionsEqual(a: AgentSession, b: AgentSession): boolean {
     a.lastUserMessage === b.lastUserMessage &&
     a.isHibernating === b.isHibernating &&
     a.lastResumeError === b.lastResumeError &&
+    JSON.stringify(a.media ?? []) === JSON.stringify(b.media ?? []) &&
     prsEqual(a.prs, b.prs)
   )
 }
@@ -193,6 +194,7 @@ function sessionsEqual(a: Session, b: Session): boolean {
     a.isHibernating === b.isHibernating &&
     a.host === b.host &&
     a.remote === b.remote &&
+    JSON.stringify(a.media ?? []) === JSON.stringify(b.media ?? []) &&
     prsEqual(a.prs, b.prs)
   )
 }

@@ -1,3 +1,4 @@
+import { toAgentSession } from '../agentSessions'
 /** Recovery API regressions using real storage and an inert terminal adapter. */
 import { afterEach, expect, test } from 'bun:test'
 import fs from 'node:fs'
@@ -34,6 +35,7 @@ function setup() {
   const runtime = new PersistenceRuntime(sessions, db)
   const app = new Hono()
   registerPersistenceRoutes(app, runtime, {
+    agentSession: toAgentSession,
     commandFor: () => {
       throw new Error('Must not launch an agent')
     },
