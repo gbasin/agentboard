@@ -49,6 +49,8 @@ async function main() {
     AGENTBOARD_DATA_DIR: tempRoot,
     AGENTBOARD_TMUX_PID_FILE: path.join(tempRoot, 'tmux-server.pid'),
     AGENTBOARD_PERSISTENCE_MAINTENANCE_MS: '0',
+    // General server tests mock process inspection; config tests exercise the default explicitly.
+    AGENTBOARD_OWNERSHIP_MATCHING: 'false',
     // Default skipMatchingPatterns excludes /tmp/* and /var/folders/* — both
     // common locations for test working directories (worktrees, CI runners on
     // some platforms). Tests that exercise matching logic from those paths
