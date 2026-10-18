@@ -8,6 +8,9 @@ import { Hono, type Context } from 'hono'
 import { serveStatic } from 'hono/bun'
 import { config, isValidHostname } from './config'
 import { createPasteFileRoutes } from './routes/pasteFile'
+import { OwnershipObserver } from './ownership/observer'
+import { createLocalOwnershipIO } from './ownership/localIO'
+import { probeOwnership } from './ownership/probe'
 import { ensureTmux } from './prerequisites'
 import { applyNestedTmuxDecision } from './tmuxIsolation'
 import { sanitizedTmuxEnv } from './tmuxEnv'
@@ -846,6 +849,17 @@ const logPoller = new LogPoller(db, registry, {
 })
 const sessionRefreshWorker = new SessionRefreshWorkerClient()
 const lastUserMessageWorker = new SessionRefreshWorkerClient()
+const ownershipObserver = config.ownershipObserver ? (() => {
+  const io = createLocalOwnershipIO({ codexHome: config.codexHomeDir, claudeHome: config.claudeConfigDir })
+  return new OwnershipObserver({
+    windows: () => registry.getAll(),
+    probe: windows => probeOwnership(windows, io),
+    log: (event, data) => {
+      if (event === 'ownership_observation_summary') logger.debug(event, data)
+      else logger.info(event, data)
+    },
+  })
+})() : null
 
 // Active sessions update on every refresh — cheap (few rows).
 // History sessions query is expensive — only run on actual mutations.
@@ -2435,6 +2449,7 @@ export const startupReady = (async () => {
   if (config.logPollIntervalMs > 0) {
     logPoller.start(config.logPollIntervalMs, config.logWatchMode)
   }
+  ownershipObserver?.start()
   await startupLifecycle.startupHousekeeping()
   try {
     await startupLifecycle.completeStartupVerification()
@@ -2447,6 +2462,7 @@ export const startupReady = (async () => {
 
 // Cleanup all terminals on server shutdown
 async function cleanupAllTerminals() {
+  ownershipObserver?.stop()
   persistenceRuntime?.stop()
   const disposePromises: Promise<void>[] = []
   for (const ws of sockets) {
