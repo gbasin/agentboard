@@ -51,7 +51,11 @@ export class OwnershipMatcher {
     if (target.isHibernating || target.wakeStartedAt || current?.isHibernating || current?.wakeStartedAt) return
     const changed = db.db.transaction(() => {
       if (current) db.orphanSession(current.sessionId, { hibernate: false })
-      const claimed = db.claimCurrentWindow(target.sessionId, result.window, { lastResumeError: null })
+      const claimed = db.claimCurrentWindow(target.sessionId, result.window, {
+        lastResumeError: null,
+        ...(window.name ? { displayName: window.name } : {}),
+        ...(window.command && !target.launchCommand ? { launchCommand: window.command } : {}),
+      })
       if (!claimed) throw new Error('ownership claim changed during transaction')
       return claimed
     })()

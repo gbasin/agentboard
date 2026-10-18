@@ -141,3 +141,13 @@ test('startup verification accepts ownership with an unrelated window name and n
   await lifecycle.completeStartupVerification()
   expect(decisions?.get('new')).toEqual({ verification: { status: 'verified', bestMatch: null }, nameMatches: false })
 })
+
+
+test('ownership claims preserve launch metadata without replacing an existing resume command', () => {
+  for (const command of [null, 'codex --profile custom']) {
+    const f = fixture(); f.insert('new', { launchCommand: command })
+    f.windows[0].name = 'cool-key'; f.windows[0].command = 'codex'
+    f.matcher.accept(f.result, f.windows[0])
+    expect(f.db.getSessionById('new')).toMatchObject({ displayName: 'cool-key', launchCommand: command ?? 'codex' })
+  }
+})

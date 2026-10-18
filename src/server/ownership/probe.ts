@@ -5,6 +5,8 @@ import type { OpenFile, PaneIdentity, ProcessIdentity, TranscriptIdentity } from
 
 export interface OwnershipWindow {
   tmuxWindow: string
+  name?: string
+  command?: string
   agentType?: string
   agentSessionId?: string
   remote?: boolean
