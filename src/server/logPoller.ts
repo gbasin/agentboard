@@ -217,12 +217,14 @@ export class LogPoller {
   // Cache of empty logs: logPath -> size when checked (re-check if size changes)
   private emptyLogCache: Map<string, number> = new Map()
   // Cache of re-match attempts: sessionId -> timestamp of last attempt
+  private allowsMatch: (window: string, sessionId: string) => boolean
   private rematchAttemptCache: Map<string, number> = new Map()
 
   constructor(
     db: SessionDatabase,
     registry: SessionRegistry,
     {
+      allowsMatch,
       onSessionOrphaned,
       onSessionActivated,
       onOrphanSessionsDiscovered,
@@ -235,6 +237,7 @@ export class LogPoller {
       devinSyncClient,
       startupReconciliationDelayMs,
     }: {
+      allowsMatch?: (window: string, sessionId: string) => boolean
       onSessionOrphaned?: (sessionId: string, supersededBy?: string) => void
       onSessionActivated?: (sessionId: string, window: string) => void
       onOrphanSessionsDiscovered?: (stats: { newOrphans: number }) => void
@@ -248,6 +251,7 @@ export class LogPoller {
       startupReconciliationDelayMs?: number
     } = {}
   ) {
+    this.allowsMatch = allowsMatch ?? (() => true)
     this.db = db
     this.registry = registry
     this.onSessionOrphaned = onSessionOrphaned
@@ -497,7 +501,7 @@ export class LogPoller {
         if (!window) continue
 
         const existing = this.db.getSessionByLogPath(match.logPath)
-        if (existing && !existing.currentWindow) {
+        if (existing && !existing.currentWindow && this.allowsMatch(window.tmuxWindow, existing.sessionId)) {
           // Check if window is already claimed by another session
           if (claimedWindows.has(match.tmuxWindow)) {
             logger.info('orphan_rematch_skipped_window_claimed', {
@@ -559,7 +563,7 @@ export class LogPoller {
           if (!existing || existing.currentWindow) continue
 
           const window = unclaimedByName.get(existing.displayName)
-          if (window) {
+          if (window && this.allowsMatch(window.tmuxWindow, existing.sessionId)) {
             const claimed = this.db.claimCurrentWindow(
               existing.sessionId,
               window.tmuxWindow,
@@ -875,12 +879,11 @@ export class LogPoller {
       if (normalized) deferralCandidates.push({ projectPath: normalized, agentType: nmw.agentType })
     }
 
-    const matchForEntry = (entry: LogEntrySnapshot): Session | null =>
-      (entry.agentType === 'devin' && entry.sessionId
-        ? devinLockMatches.get(entry.sessionId)
-        : undefined) ??
-      exactWindowMatches.get(entry.logPath) ??
-      null
+    const matchForEntry = (entry: LogEntrySnapshot): Session | null => {
+      const candidate = (entry.agentType === 'devin' && entry.sessionId
+        ? devinLockMatches.get(entry.sessionId) : undefined) ?? exactWindowMatches.get(entry.logPath)
+      return candidate && entry.sessionId && this.allowsMatch(candidate.tmuxWindow, entry.sessionId) ? candidate : null
+    }
 
     const entriesToMatch = getEntriesNeedingMatch(response.entries ?? [], sessions, {
       minTokens: MIN_LOG_TOKENS_FOR_INSERT,
@@ -1079,7 +1082,8 @@ export class LogPoller {
             slug,
             projectPath
           )
-          if (slugMatch && slugMatch.sessionId !== sessionId) {
+          if (slugMatch && slugMatch.sessionId !== sessionId
+            && (!slugMatch.currentWindow || this.allowsMatch(slugMatch.currentWindow, sessionId))) {
             supersededWindow = slugMatch.currentWindow
             inheritHibernationMarker = slugMatch.isHibernating
             inheritDisplayName = slugMatch.displayName

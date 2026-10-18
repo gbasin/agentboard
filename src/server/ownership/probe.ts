@@ -11,7 +11,7 @@ export interface OwnershipWindow {
   agentboardTags?: { runId: string; serverPid: number }
 }
 export type Observation = { window: string; pane: string; agent: 'claude' | 'codex' } & (
-  | { status: 'resolved'; pid: number; started: string; sessionId: string }
+  | { status: 'resolved'; pid: number; started: string; sessionId: string; transcript?: string }
   | { status: 'unresolved'; reason: string }
 )
 export interface OwnershipIO {
@@ -68,6 +68,8 @@ export async function probeOwnership(windows: OwnershipWindow[], io: OwnershipIO
     const agent = local.find(window => window.tmuxWindow === pane.window)!.agentType as 'claude' | 'codex'
     const base = { window: pane.window, pane: pane.pane, agent }
     const unknown = (reason: string): Observation => ({ ...base, status: 'unresolved', reason })
+    const expectedServer = local.find(window => window.tmuxWindow === pane.window)?.agentboardTags?.serverPid
+    if (expectedServer !== undefined && expectedServer !== pane.serverPid) return unknown('tmux_server_changed')
     if (panes.filter(other => other.window === pane.window).length !== 1) return unknown('multiple_panes_in_window')
     if (!stable(pane.pid) || !finalPanes.some(other => other.pane === pane.pane && other.window === pane.window && other.pid === pane.pid && other.serverPid === pane.serverPid)) return unknown('pane_changed')
     const candidates = roots.get(pane.pane)!
@@ -84,7 +86,7 @@ export async function probeOwnership(windows: OwnershipWindow[], io: OwnershipIO
     if (fingerprint(process.pid, files) !== fingerprint(process.pid, finalFiles)) return unknown('codex_descriptors_changed')
     const result = codex.find(result => result.pane === pane.pane)
     return result?.status === 'resolved'
-      ? { ...base, status: 'resolved', pid: result.pid, started: process.started, sessionId: result.sessionId }
+      ? { ...base, status: 'resolved', pid: result.pid, started: process.started, sessionId: result.sessionId, transcript: result.transcript }
       : unknown(result?.reason ?? 'codex_unresolved')
   })
   return observations.map(result => result.status === 'resolved' && observations.some(other => other !== result

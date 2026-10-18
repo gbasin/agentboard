@@ -77,6 +77,7 @@ export interface StartupLifecycleDeps {
     getAll(): Session[]
     replaceSessions(sessions: Session[]): void
   }
+  hasOwnership?: (window: Session) => boolean
   /** Live websocket connections — ws sessions owned by one are not orphans. */
   sockets: ReadonlySet<{ data: { connectionId: string } }>
   /** The module-load ensureSession verdict — the authoritative pruning
@@ -230,6 +231,11 @@ export function createStartupLifecycle(deps: StartupLifecycleDeps) {
           },
           nameMatches: false,
         })
+        continue
+      }
+      const liveWindow = windowByTarget.get(currentWindow)!
+      if (deps.hasOwnership?.(liveWindow)) {
+        decisions.set(agentSession.sessionId, { verification: { status: 'verified', bestMatch: null }, nameMatches: false })
         continue
       }
       pending.push({

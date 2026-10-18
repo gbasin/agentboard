@@ -68,6 +68,11 @@ describe('ownership probe', () => {
     f.io.panes = async () => f.panes.map(pane => ({ ...pane, serverPid: ++reads < 3 ? 100 : 200 }))
     expect((await probeOwnership(f.windows, f.io)).every(result => result.status === 'unresolved')).toBe(true)
   })
+  test('stable new server cannot authorize a stale registry run', async () => {
+    const f = fixture(); f.windows[0].agentboardTags = { runId: 'old', serverPid: 99 }
+    f.io.panes = async () => f.panes.map(pane => ({ ...pane, serverPid: 100 }))
+    expect((await probeOwnership(f.windows, f.io))[0]).toMatchObject({ status: 'unresolved', reason: 'tmux_server_changed' })
+  })
   test('multiple panes cannot silently select one window owner', async () => {
     const f = fixture(); f.panes.push({ window: 'ab:@1', pane: '%3', pid: 30 })
     expect((await probeOwnership(f.windows, f.io)).filter(result => result.window === 'ab:@1').every(result => result.status === 'unresolved')).toBe(true)

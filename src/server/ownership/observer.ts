@@ -1,4 +1,4 @@
-// Observational rollout: this class only reads snapshots and emits diagnostics.
+// Collect stable snapshots and emit diagnostics; optional consumers receive validated results.
 import type { Observation, OwnershipWindow } from './probe'
 
 export class OwnershipObserver {
@@ -11,6 +11,7 @@ export class OwnershipObserver {
   constructor(private readonly dependencies: {
     windows: () => OwnershipWindow[]
     probe: (windows: OwnershipWindow[]) => Promise<Observation[]>
+    accept?: (result: Observation, window: OwnershipWindow) => void
     log: (event: string, data: Record<string, unknown>) => void
   }) {}
 
@@ -49,6 +50,7 @@ export class OwnershipObserver {
           counts.discarded++
           continue
         }
+        this.dependencies.accept?.(result, live)
         const comparison = result.status === 'unresolved' ? 'unresolved'
           : !live.agentSessionId ? 'unmatched'
           : live.agentSessionId === result.sessionId ? 'agree' : 'disagree'
