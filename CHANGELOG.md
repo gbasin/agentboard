@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.36.0](https://github.com/gbasin/agentboard/compare/v0.35.2...v0.36.0) (2026-10-18)
+
+
+### Features
+
+* enable ownership matching by default on macOS ([#432](https://github.com/gbasin/agentboard/issues/432)) ([1f31eae](https://github.com/gbasin/agentboard/commit/1f31eae8a55bbc1190e1107f381770a792ea3cd8))
+* match Claude and Codex sessions by process ownership ([#430](https://github.com/gbasin/agentboard/issues/430)) ([0cb43bc](https://github.com/gbasin/agentboard/commit/0cb43bc7efc90f942d4bb41b56a5b2fc87060ad2))
+
 ## [0.35.2](https://github.com/gbasin/agentboard/compare/v0.35.1...v0.35.2) (2026-10-16)
 
 
