@@ -39,11 +39,13 @@ delete process.env.TMUX
 const claudeDir = join(tmuxTmpDir, 'claude')
 const codexDir = join(tmuxTmpDir, 'codex')
 const piDir = join(tmuxTmpDir, 'pi')
+const ompDir = join(tmuxTmpDir, 'omp')
 const devinDir = join(tmuxTmpDir, 'devin')
 const grokDir = join(tmuxTmpDir, 'grok')
 mkdirSync(claudeDir, { recursive: true })
 mkdirSync(codexDir, { recursive: true })
 mkdirSync(piDir, { recursive: true })
+mkdirSync(ompDir, { recursive: true })
 mkdirSync(devinDir, { recursive: true })
 mkdirSync(grokDir, { recursive: true })
 // AGENTBOARD_DATA_DIR also moves the instance-lock file: without it the
@@ -56,6 +58,7 @@ process.env.AGENTBOARD_TMUX_PID_FILE = `${tmuxTmpDir}/tmux-server.pid`
 process.env.CLAUDE_CONFIG_DIR = claudeDir
 process.env.CODEX_HOME = codexDir
 process.env.PI_HOME = piDir
+process.env.PI_CODING_AGENT_DIR = ompDir
 // Devin and Grok history would likewise be imported from the real dirs,
 // landing in the catalog as interrupted sessions that surface the recovery
 // notice mid-test.

@@ -4,13 +4,13 @@
  * the session's JSONL log. Renders nothing when the session has no media or
  * is remote (the log lives on another host).
  *
- * Collapsed: a small pill at top-right ("N media") — top placement keeps it
- * clear of the TUI's bottom input row. Expanded: a horizontal thumbnail strip.
+ * Collapsed: a media pill at top-right — top placement keeps it
+ * clear of the TUI's bottom input row. Expanded: a horizontal strip of uniformly sized media tiles.
  * Tapping a thumbnail opens a lightbox with the full image; document and link
  * items open their URL directly.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Session, SessionMedia } from '@shared/types'
 import {
   File06Icon,
@@ -22,6 +22,11 @@ import { ICON_SIZE, TOUCH_TARGET_CLASS } from './controlStyles'
 // Payloads above this size render an "open" chip instead of an <img> so the
 // rail never pulls a multi-MB response just for a thumbnail.
 const MAX_INLINE_PREVIEW_BYTES = 12 * 1024 * 1024
+
+// Explicit pixels avoid the app's 13px root shrinking rem-based thumbnails.
+const MEDIA_TILE_CLASS = 'h-[56px] w-[56px] shrink-0 overflow-hidden rounded-md border border-border bg-surface hover:border-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent'
+const MEDIA_FILE_TILE_CLASS = `${MEDIA_TILE_CLASS} flex flex-col items-center justify-center gap-[3px] p-[4px] text-center text-secondary hover:text-primary`
+const MEDIA_TILE_LABEL_CLASS = 'line-clamp-2 w-full break-words text-[10px] leading-[12px]'
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -50,11 +55,12 @@ function MediaChip({
         href={media.url}
         target="_blank"
         rel="noreferrer noopener"
-        title={caption || media.url}
-        className="flex h-14 shrink-0 items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 text-xs text-secondary hover:border-accent/50 hover:text-primary"
+        title={[caption, media.url].filter(Boolean).join(' · ')}
+        aria-label={media.label || media.url}
+        className={MEDIA_FILE_TILE_CLASS}
       >
-        <LinkExternal01Icon width={ICON_SIZE.primary} height={ICON_SIZE.primary} />
-        <span className="max-w-[10rem] truncate">{media.label ?? 'Link'}</span>
+        <LinkExternal01Icon width={ICON_SIZE.primary} height={ICON_SIZE.primary} className="shrink-0" />
+        <span className={MEDIA_TILE_LABEL_CLASS}>{media.label || 'Link'}</span>
       </a>
     )
   }
@@ -68,7 +74,7 @@ function MediaChip({
         data-testid="media-thumb"
         onClick={() => onOpen(media)}
         title={caption || 'Image'}
-        className="h-14 w-14 shrink-0 overflow-hidden rounded-md border border-border bg-surface hover:border-accent/50"
+        className={MEDIA_TILE_CLASS}
       >
         <img
           src={media.url}
@@ -87,26 +93,49 @@ function MediaChip({
       data-testid="media-chip"
       onClick={() => window.open(media.url, '_blank', 'noopener')}
       title={caption || media.kind}
-      className="flex h-14 shrink-0 items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 text-xs text-secondary hover:border-accent/50 hover:text-primary"
+      aria-label={caption || (isImage ? 'Image' : 'Document')}
+      className={MEDIA_FILE_TILE_CLASS}
     >
       {isImage ? (
-        <Image01Icon width={ICON_SIZE.primary} height={ICON_SIZE.primary} />
+        <Image01Icon width={ICON_SIZE.primary} height={ICON_SIZE.primary} className="shrink-0" />
       ) : (
-        <File06Icon width={ICON_SIZE.primary} height={ICON_SIZE.primary} />
+        <File06Icon width={ICON_SIZE.primary} height={ICON_SIZE.primary} className="shrink-0" />
       )}
-      <span className="max-w-[10rem] truncate">
+      <span className={MEDIA_TILE_LABEL_CLASS}>
         {media.label ?? (isImage ? 'Image' : 'Document')}
       </span>
-      {media.bytes != null && (
-        <span className="text-muted">{formatBytes(media.bytes)}</span>
-      )}
     </button>
   )
 }
 
 export default function MediaRail({ session }: { session: Session }) {
+  // A new transcript starts with a clean baseline and closed previews.
+  const identity = JSON.stringify([
+    session.id, session.agentSessionId, session.logFilePath, session.remote,
+  ])
+  return <SessionMediaRail key={identity} session={session} />
+}
+
+function SessionMediaRail({ session }: { session: Session }) {
   const [expanded, setExpanded] = useState(false)
   const [lightbox, setLightbox] = useState<SessionMedia | null>(null)
+  const [attention, setAttention] = useState<'idle' | 'pulsing' | 'unread'>('idle')
+  const seenUrls = useRef(new Set(session.media?.map((item) => item.url)))
+
+  useEffect(() => {
+    const nextUrls = new Set(session.media?.map((item) => item.url))
+    const hasAddition = [...nextUrls].some((url) => !seenUrls.current.has(url))
+    for (const url of nextUrls) seenUrls.current.add(url)
+    if (nextUrls.size === 0) setAttention('idle')
+    else if (hasAddition && !expanded && !session.remote) setAttention('pulsing')
+  }, [session.media, session.remote, expanded])
+
+  useEffect(() => {
+    if (attention !== 'pulsing') return
+    // Additions during this batch share its deadline instead of extending it.
+    const timer = setTimeout(() => setAttention('unread'), 1600)
+    return () => clearTimeout(timer)
+  }, [attention])
 
   // Esc closes the lightbox before any other handler (stopPropagation keeps
   // it from falling through to terminal/app-level shortcuts).
@@ -158,13 +187,22 @@ export default function MediaRail({ session }: { session: Session }) {
         <button
           type="button"
           data-testid="media-rail-pill"
-          onClick={() => setExpanded(true)}
-          className={`absolute top-2 right-2 z-40 flex items-center gap-1.5 rounded-full border border-border bg-elevated/90 px-3 py-1.5 text-xs text-secondary shadow-lg backdrop-blur transition-colors hover:text-primary ${TOUCH_TARGET_CLASS}`}
+          aria-expanded={false}
+          onClick={() => {
+            setAttention('idle')
+            setExpanded(true)
+          }}
+          aria-label={`Open media: ${media.length} ${media.length === 1 ? 'item' : 'items'}${attention !== 'idle' ? ', new media' : ''}`}
+          className={`absolute top-2 right-2 z-40 flex items-center gap-1.5 rounded-full border border-border bg-elevated/90 px-3 py-1.5 text-xs text-secondary shadow-lg backdrop-blur transition-colors hover:text-primary md:min-h-[30px] md:gap-[6px] md:px-[12px] md:py-[5px] md:text-[12px] md:leading-[18px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${attention === 'pulsing' ? 'media-attention' : ''} ${TOUCH_TARGET_CLASS}`}
         >
-          <Image01Icon width={ICON_SIZE.pill} height={ICON_SIZE.pill} />
+          <Image01Icon width={ICON_SIZE.pill} height={ICON_SIZE.pill} className="md:h-[16px] md:w-[16px]" />
+          <span className="hidden md:inline">Media</span>
           <span className="tabular-nums">{images}</span>
           {others > 0 && (
             <span className="text-muted tabular-nums">+{others}</span>
+          )}
+          {attention !== 'idle' && (
+            <span data-testid="media-rail-new-dot" aria-hidden="true" className="h-[6px] w-[6px] shrink-0 rounded-full bg-accent" />
           )}
         </button>
       )}

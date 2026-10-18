@@ -1,5 +1,54 @@
 # Changelog
 
+## [0.35.2](https://github.com/gbasin/agentboard/compare/v0.35.1...v0.35.2) (2026-10-16)
+
+
+### Performance Improvements
+
+* move session metadata scans off the main thread ([#426](https://github.com/gbasin/agentboard/issues/426)) ([882622d](https://github.com/gbasin/agentboard/commit/882622d2fbca6fdc31d0bcbe31556d805bb1d0f5))
+
+## [0.35.1](https://github.com/gbasin/agentboard/compare/v0.35.0...v0.35.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* normalize expanded media tile sizes ([#424](https://github.com/gbasin/agentboard/issues/424)) ([b313ec9](https://github.com/gbasin/agentboard/commit/b313ec97a6ced133c1b086a600548eceb9dec04a))
+
+## [0.35.0](https://github.com/gbasin/agentboard/compare/v0.34.4...v0.35.0) (2026-10-16)
+
+
+### Features
+
+* make media arrivals easier to notice ([#422](https://github.com/gbasin/agentboard/issues/422)) ([9be99fc](https://github.com/gbasin/agentboard/commit/9be99fc6134a8f2b86b46386905da0df6f9deee8))
+
+## [0.34.4](https://github.com/gbasin/agentboard/compare/v0.34.3...v0.34.4) (2026-10-15)
+
+
+### Performance Improvements
+
+* skip unchanged persistence epoch writes ([#420](https://github.com/gbasin/agentboard/issues/420)) ([543251d](https://github.com/gbasin/agentboard/commit/543251d75a89727b6c07fe1d6f9b01bfd5368507))
+
+## [0.34.3](https://github.com/gbasin/agentboard/compare/v0.34.2...v0.34.3) (2026-10-15)
+
+
+### Bug Fixes
+
+* keep terminal traffic flowing during copy-mode queries ([#418](https://github.com/gbasin/agentboard/issues/418)) ([9655ef3](https://github.com/gbasin/agentboard/commit/9655ef31ae0cb7fdb7b8afccc367c4a8dd9cf62a))
+
+## [0.34.2](https://github.com/gbasin/agentboard/compare/v0.34.1...v0.34.2) (2026-10-15)
+
+
+### Performance Improvements
+
+* move polling reads off the main thread and keep dormant previews current ([#416](https://github.com/gbasin/agentboard/issues/416)) ([8dccddc](https://github.com/gbasin/agentboard/commit/8dccddca8c3b4dfa6745bc4818c4e26e22e2d4db))
+
+## [0.34.1](https://github.com/gbasin/agentboard/compare/v0.34.0...v0.34.1) (2026-10-15)
+
+
+### Performance Improvements
+
+* index catalog hot paths, batch legacy import, restore SQL-capped history ([#414](https://github.com/gbasin/agentboard/issues/414)) ([74ed561](https://github.com/gbasin/agentboard/commit/74ed5612623cf36e4bdcd4210412eb78d632bf10))
+
 ## [0.34.0](https://github.com/gbasin/agentboard/compare/v0.33.1...v0.34.0) (2026-10-14)
 
 

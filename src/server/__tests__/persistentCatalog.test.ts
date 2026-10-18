@@ -32,6 +32,7 @@ describe('durable catalog', () => {
     // the current version, so the gated migration must be skipped — but the
     // unconditional index creation still has to fire.
     db.db.exec('DROP INDEX board_active')
+    db.db.exec('DROP INDEX board_state')
     new SessionCatalog(db.db, 'host-test')
     expect(
       db.db
@@ -40,6 +41,9 @@ describe('durable catalog', () => {
         )
         .get()
     ).toBeTruthy()
+    const plan = db.db.query("EXPLAIN QUERY PLAN SELECT id FROM board_sessions WHERE state IN ('interrupted','failed')")
+      .all() as { detail: string }[]
+    expect(plan.map((row) => row.detail).join('\n')).toContain('COVERING INDEX board_state')
   })
   test('saves a session before any provider log or process exists', () => {
     const { db, catalog } = setup()
@@ -205,6 +209,16 @@ describe('recovery reconciliation', () => {
       },
     }
   }
+  test('stable epochs preserve legacy associations and replacement epochs clear them', () => {
+    const { db, persistence } = fixture()
+    db.setAppSetting('persistence_tmux_epoch', 'epoch1')
+    insertRecord(db, 'legacy-epoch', 'ab:@9')
+    persistence.beforeSnapshot([], 1)
+    expect(db.getSessionById('legacy-epoch')?.currentWindow).toBe('ab:@9')
+    persistence.beforeSnapshot([], 2)
+    expect(db.getSessionById('legacy-epoch')?.currentWindow).toBeNull()
+    expect(db.getAppSetting('persistence_tmux_epoch')).toBe('epoch2')
+  })
   test('a reliable empty replacement server interrupts sessions without killing windows', () => {
     const { persistence, saved, calls } = fixture()
     persistence.beforeSnapshot([], 2)

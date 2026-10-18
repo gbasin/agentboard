@@ -1,3 +1,5 @@
+import { CopyModeQuery } from './copyModeQuery'
+import { SessionReadClient } from './sessionReadClient'
 import type { Server, ServerWebSocket } from 'bun'
 import { createReadStream } from 'node:fs'
 import os from 'node:os'
@@ -20,6 +22,7 @@ import { SessionManager } from './SessionManager'
 import { ThrowawayShellReaper } from './throwawayShellReaper'
 import { SessionRegistry } from './SessionRegistry'
 import { PersistentSessions } from './persistence/manager'
+import { refreshDormantConversation } from './persistence/legacyImport'
 import type { SavedSession } from '../shared/persistence'
 import { PersistenceRuntime } from './persistence/runtime'
 import { registerPersistenceRoutes } from './persistence/routes'
@@ -29,10 +32,11 @@ import {
   type ClaimCurrentWindowPatch,
 } from './db'
 import { LogPoller } from './logPoller'
-import { toAgentSession, getMergedPullRequests, getMergedMedia } from './agentSessions'
-import { createDormantPrScanner } from './dormantPrScan'
+import { toAgentSession as buildAgentSession } from './agentSessions'
+import { SessionMetadataClient } from './sessionMetadataClient'
+import { publishSessionMetadata } from './sessionMetadataViews'
 import { extractMediaItems } from './mediaExtractor'
-import { getSubagentLogPaths, setCodexSubagentIndexListener } from './subagentLogs'
+import { getSubagentLogPaths, getCodexSubagentIndex, setCodexSubagentIndexListener } from './subagentLogs'
 import { fetchPrChecks, fetchPrInfo, parsePrUrl } from './prInfo'
 import { getLogSearchDirs } from './logDiscovery'
 import {
@@ -500,6 +504,9 @@ logger.info('terminal_mode_resolved', {
 
 const app = new Hono()
 const db = initDatabase({ exclusive: true })
+const sessionReader = db.db?.filename && db.db.filename !== ':memory:'
+  ? new SessionReadClient(db.db.filename)
+  : undefined
 
 // Read mouse mode setting from DB (default: true)
 const TMUX_MOUSE_MODE_KEY = 'tmux_mouse_mode'
@@ -594,6 +601,14 @@ async function ensureBaseSessionForRefreshAsync(context: string): Promise<boolea
   }
 }
 const registry = new SessionRegistry()
+const metadataClient = new SessionMetadataClient((record, metadata) => {
+  publishSessionMetadata(registry, record, metadata, config.hostLabel)
+})
+
+function toAgentSession(record: AgentSessionRecord): AgentSession {
+  metadataClient.queue(record)
+  return { ...buildAgentSession(record, { cachedPrsOnly: true }), ...metadataClient.get(record) }
+}
 // Test adapters may implement SessionDatabase without a SQLite connection.
 function persistenceHostId(): string {
   const existing = db.getAppSetting('persistence_host_id')
@@ -603,7 +618,7 @@ function persistenceHostId(): string {
   return id
 }
 const persistence = db.db
-  ? new PersistentSessions(db, sessionManager, persistenceHostId())
+  ? new PersistentSessions(db, sessionManager, persistenceHostId(), undefined, undefined, undefined, sessionReader)
   : null
 const persistenceRuntime = persistence
   ? new PersistenceRuntime(persistence, db)
@@ -628,6 +643,7 @@ interface WSData {
   userAgent: string | null
   terminalHost: string | null
   terminalAttachSeq: number
+  copyModeQuery: CopyModeQuery
   lastAttachKey: string | null
   lastAttachTs: number
   clipboardPollTimer: ReturnType<typeof setInterval> | null
@@ -818,6 +834,11 @@ const lastUserMessageLocks = new Map<string, number>()
 const LAST_USER_MESSAGE_LOCK_MS = 60_000 // 60 seconds
 
 const logPoller = new LogPoller(db, registry, {
+  reader: sessionReader,
+  onSessionUpdated: (record) => {
+    if (persistence) refreshDormantConversation(persistence.catalog, record)
+    if (!record.currentWindow) queueDormantRefresh()
+  },
   onSessionOrphaned: (sessionId, supersededBy) => {
     // Scan first: the dormant lists read PRs from the cache this scan fills.
     const session = db.getSessionById(sessionId)
@@ -919,10 +940,6 @@ function updateActiveAgentSessions() {
   )
 }
 
-const dormantPrScanner = createDormantPrScanner(() =>
-  updateDormantAgentSessions()
-)
-
 /**
  * Most recent History rows the sidebar shows. Older rows stay in the database
  * and remain visible to the orphan rematcher, which queries uncapped.
@@ -941,35 +958,47 @@ function getDormantRecords() {
 
 // Codex subagent links arrive with the first full poll, after the startup PR
 // scan, and in bursts as live links register. Re-queue the dormant rows once
-// per burst; the scanner rescans only rows whose subagent logs changed.
+// per burst; the worker revalidates the logs without blocking this thread.
 let dormantRescanQueued = false
 setCodexSubagentIndexListener(() => {
   if (dormantRescanQueued) return
   dormantRescanQueued = true
   setTimeout(() => {
     dormantRescanQueued = false
+    metadataClient.setIndex(getCodexSubagentIndex())
+    for (const record of db.getActiveSessions()) metadataClient.queue(record)
     const { hibernating, history } = getDormantRecords()
-    dormantPrScanner.queue([...hibernating, ...history])
+    for (const record of [...hibernating, ...history]) metadataClient.queue(record)
   }, 0)
 })
 
-// Dormant rows show the PRs found by the last scan; the scanner fills in the
-// rest in small slices and calls back here when it finds new ones.
+// A poll can update many dormant rows. Refresh the published sidebar snapshot
+// once after that batch, rather than retaining the import-time messages.
+let dormantRefreshQueued = false
+function queueDormantRefresh() {
+  if (dormantRefreshQueued) return
+  dormantRefreshQueued = true
+  queueMicrotask(() => {
+    dormantRefreshQueued = false
+    updateDormantAgentSessions()
+  })
+}
+
+// All views use remembered descriptors. The worker publishes metadata changes
+// directly without rebuilding rows or replaying lifecycle state.
 function updateDormantAgentSessions() {
   const { hibernating: hibernatingRecords, history: historyRecords } =
     getDormantRecords()
-  const cachedOnly = { cachedPrsOnly: true }
   const hibernating = filterExcludedAgentSessions(
-    hibernatingRecords.map((record) => toAgentSession(record, cachedOnly))
+    hibernatingRecords.map((record) => toAgentSession(record))
   )
   const history = filterExcludedAgentSessions(
-    historyRecords.map((record) => toAgentSession(record, cachedOnly))
+    historyRecords.map((record) => toAgentSession(record))
   )
   const active = hasConfirmedLocalSessionSnapshot
     ? db.getActiveSessions().map((record) => toAgentSession(record))
     : []
   registry.setAgentSessions(active, hibernating, history)
-  dormantPrScanner.queue([...hibernatingRecords, ...historyRecords])
 }
 
 interface HydrateSessionsOptions {
@@ -1149,8 +1178,7 @@ export function hydrateSessionsWithAgentSessions(
       agentSessionName: agentSession.displayName,
       logFilePath: agentSession.logFilePath,
       lastUserMessage: agentSession.lastUserMessage ?? session.lastUserMessage,
-      prs: getMergedPullRequests(agentSession),
-      media: getMergedMedia(agentSession),
+      ...metadataClient.get(agentSession),
       // Use persisted log times (survives server restarts, works when tmux lacks creation time)
       lastActivity: agentSession.lastActivityAt,
       createdAt: agentSession.createdAt,
@@ -2256,6 +2284,7 @@ app.get('/api/clipboard-file-path', async (c) => {
 if (persistenceRuntime) {
   persistenceRuntime.matchingFailure = () => logPoller.matchingError
   const library = registerPersistenceRoutes(app, persistenceRuntime, {
+    metadataFor: (record) => metadataClient.scan(record),
     commandFor: buildResumeCommand,
     changed: () => {
       updateDormantAgentSessions()
@@ -2330,6 +2359,7 @@ function serverFetch(req: Request, server: Server<WSData>) {
           userAgent: req.headers.get('user-agent')?.slice(0, 200) ?? null,
           terminalHost: null,
           terminalAttachSeq: 0,
+          copyModeQuery: new CopyModeQuery(),
           lastAttachKey: null,
           lastAttachTs: 0,
           clipboardPollTimer: null,
@@ -2517,8 +2547,10 @@ async function cleanupAllTerminals() {
   stallWatchdog.dispose()
   throwawayShellReaper.dispose()
   setCodexSubagentIndexListener(null)
-  dormantPrScanner.stop()
+  metadataClient.dispose()
   logPoller.stop()
+  persistence?.dispose()
+  sessionReader?.dispose()
   remotePoller?.stop()
   db.close()
 }
@@ -3136,33 +3168,20 @@ async function handleCheckCopyMode(sessionId: string, ws: ServerWebSocket<WSData
   if (!session) return
   if (session.remote && !config.remoteAllowAttach) return
 
-  try {
-    const target = resolveCopyModeTarget(sessionId, ws, session)
-    // Query tmux for pane copy-mode status plus fullscreen-app detection:
-    //   pane_in_mode  -> tmux copy-mode active
-    //   alternate_on  -> pane on the alternate screen buffer
-    //   mouse_any_flag-> the in-pane app requested mouse tracking (owns the mouse)
-    const fmt = '#{pane_in_mode},#{alternate_on},#{mouse_any_flag}'
-    let output: string
+  const attachSeq = ws.data.terminalAttachSeq
+  const target = resolveCopyModeTarget(sessionId, ws, session)
+  const status = await ws.data.copyModeQuery.read(async () => {
+    // Copy mode, alternate screen, and application-owned mouse tracking.
+    const args = ['display-message', '-p', '-t', target,
+      '#{pane_in_mode},#{alternate_on},#{mouse_any_flag}']
     if (session.remote && session.host) {
-      const result = await runRemoteTmux(session.host, ['display-message', '-p', '-t', target, fmt])
-      output = result.stdout?.trim() ?? ''
-    } else {
-      const result = timedSpawnSync(
-        ['tmux', ...withTmuxUtf8Flag(['display-message', '-p', '-t', target, fmt])],
-        { stdout: 'pipe', stderr: 'pipe', timeout: 5000 }
-      )
-      output = result.stdout?.toString().trim() ?? ''
+      const result = await runRemoteTmux(session.host, args)
+      return result.stdout ?? ''
     }
-    const [inCopyModeField, altScreenField, appMouseField] = output.split(',')
-    const inCopyMode = inCopyModeField === '1'
-    const altScreen = altScreenField === '1'
-    const appMouse = appMouseField === '1'
-    send(ws, { type: 'tmux-copy-mode-status', sessionId, inCopyMode, altScreen, appMouse })
-  } catch {
-    // On error, assume not in copy mode and no fullscreen app
-    send(ws, { type: 'tmux-copy-mode-status', sessionId, inCopyMode: false, altScreen: false, appMouse: false })
-  }
+    const result = await timedSpawnAsync(['tmux', ...withTmuxUtf8Flag(args)], { timeout: 5000 })
+    return result.exitCode === 0 ? result.stdout : ''
+  }, () => ws.readyState === 1 && isTerminalAttachCurrent(ws, attachSeq))
+  if (status) send(ws, { type: 'tmux-copy-mode-status', sessionId, ...status })
 }
 
 function restoreHibernatingState(previousHibernatingState: Map<string, boolean>) {
