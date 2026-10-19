@@ -195,6 +195,10 @@ CREATE INDEX IF NOT EXISTS idx_session_id
   ON agent_sessions (session_id);
 CREATE INDEX IF NOT EXISTS idx_log_file_path
   ON agent_sessions (log_file_path);
+-- Cover both name-existence queries without reading transcript-bearing rows.
+-- Non-unique: inherited names and legacy duplicates retain their existing semantics.
+CREATE INDEX IF NOT EXISTS idx_display_name_session_id
+  ON agent_sessions (display_name, session_id);
 CREATE INDEX IF NOT EXISTS idx_current_window
   ON agent_sessions (current_window);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_current_window_unique
