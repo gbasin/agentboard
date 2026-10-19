@@ -1,10 +1,29 @@
-import { test, expect } from '@playwright/test'
+import { test as base, expect } from '@playwright/test'
+import { spawnSync } from 'node:child_process'
+import path from 'node:path'
+
+const test = base.extend<{ target: string }>({
+  target: async ({}, use) => {
+    const root = process.env.E2E_TMUX_TMPDIR
+    const session = process.env.E2E_TMUX_SESSION
+    if (!root || !session) throw new Error('Private E2E tmux is required')
+    const env = { ...process.env }
+    delete env.TMUX
+    const socket = path.join(root, `tmux-${process.getuid?.() ?? 0}`, 'default')
+    const created = spawnSync('tmux', ['-S', socket, 'new-window', '-P', '-F', '#{window_id}', '-t', `=${session}`, '-c', root, '-n', 'ws-recovery-test', '/bin/sh'], { env, encoding: 'utf-8' })
+    expect(created.status, created.stderr).toBe(0)
+    const target = `${session}:${created.stdout.trim()}`
+    try { await use(target) } finally {
+      spawnSync('tmux', ['-S', socket, 'kill-window', '-t', target], { env })
+    }
+  },
+})
 
 test.use({ serviceWorkers: 'block' })
 
 // The actual app and server exchange frames. Only pong delivery is interrupted;
 // virtual browser time exercises heartbeat deadlines without a 90-second sleep.
-test('missing pongs reconnect and reattach without retaining closed sockets', async ({ page }) => {
+test('missing pongs reconnect and reattach without retaining closed sockets', async ({ page, target }) => {
   const logs: { event: string; data: Record<string, unknown> }[] = []
   const frames: { type: string; sessionId?: string }[] = []
   let connections = 0
@@ -26,7 +45,7 @@ test('missing pongs reconnect and reattach without retaining closed sockets', as
   })
   await page.clock.install()
   await page.goto('/')
-  const card = page.getByTestId('session-card').first()
+  const card = page.locator(`[data-testid="session-card"][data-session-id="${target}"]`)
   await expect(card).toBeVisible()
   const id = await card.getAttribute('data-session-id')
   await card.click()
