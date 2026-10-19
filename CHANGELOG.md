@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.2](https://github.com/gbasin/agentboard/compare/v0.36.1...v0.36.2) (2026-10-19)
+
+
+### Bug Fixes
+
+* release closed websocket references during recovery ([#435](https://github.com/gbasin/agentboard/issues/435)) ([aa8221f](https://github.com/gbasin/agentboard/commit/aa8221f9bc2cfc325f4105688982ec249e014e71))
+
 ## [0.36.1](https://github.com/gbasin/agentboard/compare/v0.36.0...v0.36.1) (2026-10-19)
 
 
