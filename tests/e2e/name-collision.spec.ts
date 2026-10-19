@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
+import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { desktopSidebar, cardByName } from './helpers/sidebarHarness'
@@ -16,6 +17,9 @@ test('archived names reject collisions and reserve names during window creation'
     throw new Error('Private E2E logs are required')
   }
   const tag = randomUUID()
+  const windowProject = path.join(root, `name-window-${tag}`)
+  fs.mkdirSync(windowProject, { recursive: true })
+  const reserved = `reserved-${tag}x`
   const ids = [randomUUID(), randomUUID()]
   const project = `/name-collision-${tag}`
   const dir = path.join(logs, 'projects', project.replaceAll('/', '-'))
@@ -32,7 +36,6 @@ test('archived names reject collisions and reserve names during window creation'
       return body.sessions.filter((s: { providerId: string }) => ids.includes(s.providerId)).length
     }, { timeout: 45_000 }).toBe(2)
     await page.goto('/')
-    const reserved = `reserved-${tag}x`
     // Keep one socket so the second rename is ordered after the first result.
     const result = await page.evaluate(async ({ ids, reserved }) => {
       return new Promise<string>((resolve, reject) => {
@@ -55,7 +58,7 @@ test('archived names reject collisions and reserve names during window creation'
     await desktopSidebar(page).locator('button[aria-label="New session"]').click()
     const dialog = page.locator('[aria-labelledby="new-session-title"]')
     await dialog.getByPlaceholder('Enter command...').fill('sh')
-    await dialog.locator('input.flex-1').fill('/tmp')
+    await dialog.locator('input.flex-1').fill(windowProject)
     await dialog.getByPlaceholder('auto-generated').fill(reserved)
     await dialog.getByRole('button', { name: 'Create', exact: true }).click()
     await expect(cardByName(desktopSidebar(page), `${reserved}-2`).first()).toBeVisible({ timeout: 20_000 })
@@ -63,6 +66,20 @@ test('archived names reject collisions and reserve names during window creation'
     expect(live.some((s: { name: string }) => s.name === reserved)).toBe(false)
     expect(live.some((s: { name: string }) => s.name === `${reserved}-2`)).toBe(true)
   } finally {
+    // An unclaimed shell in a shared parent such as /tmp can defer another
+    // test's transcript matching. Isolate its cwd and remove only our window.
+    const env = { ...process.env }
+    delete env.TMUX
+    const socket = path.join(root, `tmux-${process.getuid?.() ?? 0}`, 'default')
+    const listed = spawnSync('tmux', ['-S', socket, 'list-windows', '-a', '-F', '#{window_id}\t#{window_name}'], { env, encoding: 'utf-8' })
+    for (const row of listed.stdout?.trim().split('\n') ?? []) {
+      const [id, name] = row.split('\t')
+      if (name === `${reserved}-2`) {
+        spawnSync('tmux', ['-S', socket, 'kill-window', '-t', id], { env })
+        break
+      }
+    }
+    fs.rmSync(windowProject, { recursive: true, force: true })
     fs.rmSync(dir, { recursive: true, force: true })
   }
 })
