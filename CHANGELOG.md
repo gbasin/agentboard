@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.1](https://github.com/gbasin/agentboard/compare/v0.36.0...v0.36.1) (2026-10-19)
+
+
+### Performance Improvements
+
+* index session display-name collision checks ([#433](https://github.com/gbasin/agentboard/issues/433)) ([7bc9ec7](https://github.com/gbasin/agentboard/commit/7bc9ec76540360320db6a711ae7a2d5676b47629))
+
 ## [0.36.0](https://github.com/gbasin/agentboard/compare/v0.35.2...v0.36.0) (2026-10-18)
 
 
