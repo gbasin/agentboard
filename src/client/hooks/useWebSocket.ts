@@ -117,6 +117,9 @@ export class WebSocketManager {
   private pongTimer: number | null = null
   private lastForceReconnectTs = 0
   private lastConnectTs = 0
+  private readonly traceId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+  private lastMessageAt: number | null = null
+  private lastPongSeq: number | null = null
   private pingSeq = 0
   private connectionEpoch = 0
   /** Consecutive connect attempts that failed (timeout, error, close). */
@@ -126,9 +129,8 @@ export class WebSocketManager {
   /** Whether the current connect attempt is the first after a resume. */
   private isResumeAttempt = false
   /**
-   * Track all WebSocket instances ever created so we can force-close leaked
-   * zombies that Safari keeps alive at the TCP level even after ws.close().
-   * Prevents hitting the browser's per-origin connection limit.
+   * Track pending opens and retired sockets awaiting a close event.
+   * The diagnostic count measures retained JS references, not live TCP sockets.
    */
   private leakedSockets = new Set<WebSocket>()
   /** Pending verification timer — non-null while awaiting a verify pong. */
@@ -136,6 +138,12 @@ export class WebSocketManager {
 
   private wsSnap() {
     return {
+      traceId: this.traceId,
+      epoch: this.connectionEpoch,
+      pingSeq: this.pingSeq,
+      lastPongSeq: this.lastPongSeq,
+      lastMessageAgeMs: this.lastMessageAt === null ? null : Date.now() - this.lastMessageAt,
+      visibility: typeof document === 'undefined' ? undefined : document.visibilityState,
       status: this.status,
       ws: this.ws ? WS_STATES[this.ws.readyState] : null,
       attempt: this.reconnectAttempts,
@@ -182,6 +190,8 @@ export class WebSocketManager {
 
     const ws = new WebSocket(wsUrl)
     this.ws = ws
+    this.lastMessageAt = null
+    this.lastPongSeq = null
     this.lastConnectTs = Date.now()
     this.leakedSockets.add(ws)
 
@@ -231,6 +241,8 @@ export class WebSocketManager {
     }
 
     ws.onmessage = (event) => {
+      if (this.ws !== ws) return
+      this.lastMessageAt = Date.now()
       try {
         const raw = event.data as string
         const t0 = performance.now()
@@ -242,6 +254,7 @@ export class WebSocketManager {
         withDiag._rawLength = raw.length
         // Intercept pong — clear timeout only for the current seq.
         if (parsed.type === 'pong') {
+          this.lastPongSeq = parsed.seq ?? null
           if (parsed.seq === this.pingSeq) {
             this.clearPongTimer()
             // If we were waiting for a verification pong, the socket is
@@ -270,6 +283,7 @@ export class WebSocketManager {
     }
 
     ws.onclose = (e) => {
+      this.leakedSockets.delete(ws)
       // Guard: ignore close events from a socket that was already replaced.
       if (this.ws !== ws) {
         clientLog('ws_onclose_stale', { code: e.code, ...this.wsSnap() }, 'info')
@@ -686,24 +700,27 @@ export class WebSocketManager {
     ws.onopen = null
     ws.onmessage = null
     ws.onerror = null
-    ws.onclose = null
+    // Retired sockets must not reconnect or mutate the replacement socket.
+    // Keep only a close observer to release the reference when closure completes.
+    ws.onclose = () => {
+      this.leakedSockets.delete(ws)
+      ws.onclose = null
+    }
     try {
       ws.close()
     } catch {
       // Already closed / invalid state
     }
+    if (ws.readyState === WebSocket.CLOSED) {
+      this.leakedSockets.delete(ws)
+      ws.onclose = null
+    }
   }
 
   /**
-   * Force-close all previously created sockets that may still be lingering
-   * at the browser/TCP level.  On iOS Safari, ws.close() on a zombie socket
-   * may have no effect (confirmed by WebKit Bug #247943 and graphql-ws #289),
-   * so the browser retains the underlying TCP connection.  If enough zombies
-   * accumulate, they can exhaust Safari's per-origin connection limit and
-   * prevent new WebSocket connections from being established.
-   *
-   * This explains why force-closing the PWA fixes the loop instantly — iOS
-   * kills all TCP connections belonging to the process.
+   * Retry close and discard tracked references during forced recovery.
+   * The browser owns TCP teardown: close() is a no-op for CLOSING/CLOSED
+   * sockets, so this cannot guarantee that a stalled network connection ends.
    */
   private purgeLeakedSockets() {
     if (this.leakedSockets.size === 0) return

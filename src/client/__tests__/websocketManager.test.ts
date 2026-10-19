@@ -1629,8 +1629,8 @@ describe('stale socket guards', () => {
   })
 })
 
-describe('destroySocket re-tracks as leaked', () => {
-  test('healthy socket re-added to leakedSockets when destroyed', () => {
+describe('retired socket cleanup', () => {
+  test('completed close releases the retired socket reference', () => {
     const manager = new WebSocketManager()
     const leaked = () => (manager as unknown as { leakedSockets: Set<unknown> }).leakedSockets
 
@@ -1644,7 +1644,65 @@ describe('destroySocket re-tracks as leaked', () => {
     // Destroy the socket (e.g., via verify timeout → forceReconnect)
     manager.disconnect()
 
-    // Socket should be re-added to leakedSockets for potential purging
-    expect(leaked().has(ws)).toBe(true)
+    // Fake close completes synchronously: there is nothing left to track.
+    expect(leaked().has(ws)).toBe(false)
   })
+})
+
+
+test('late retired close cannot disconnect a replacement or retain closed sockets', () => {
+  const manager = new WebSocketManager()
+  const tracked = () => (manager as unknown as { leakedSockets: Set<unknown> }).leakedSockets
+  manager.connect()
+  const old = FakeWebSocket.instances[0]!
+  old.triggerOpen()
+  const staleMessage = old.onmessage!
+  old.close = () => { old.readyState = FakeWebSocket.CLOSING }
+  intervals.find((i) => i.interval === 20000)!.callback()
+  timers.find((t) => t.delay === 10000)!.callback()
+  expect(tracked().has(old)).toBe(true)
+  timers.find((t) => t.delay === 1000)!.callback()
+  const current = FakeWebSocket.instances[1]!
+  current.triggerOpen()
+  const delivered: ServerMessage[] = []
+  manager.subscribe((message) => delivered.push(message))
+  staleMessage({ data: JSON.stringify({ type: 'sessions', sessions: [] }) })
+  expect(delivered).toEqual([])
+  old.readyState = FakeWebSocket.CLOSED
+  old.onclose?.({ code: 1000, reason: '', wasClean: true } as CloseEvent)
+  expect(tracked().size).toBe(0)
+  expect(manager.getStatus()).toBe('connected')
+  current.triggerMessage(JSON.stringify({ type: 'sessions', sessions: [] }))
+  expect(delivered).toHaveLength(1)
+  manager.disconnect()
+})
+
+test('repeated missing pongs recover without accumulating completed socket references', () => {
+  const manager = new WebSocketManager()
+  const tracked = () => (manager as unknown as { leakedSockets: Set<unknown> }).leakedSockets
+  manager.connect()
+  for (let i = 0; i < 12; i++) {
+    const ws = FakeWebSocket.instances.at(-1)!
+    ws.triggerOpen()
+    intervals.find((entry) => entry.interval === 20000)!.callback()
+    const timeout = timers.find((entry) => entry.delay === 10000)!
+    timers = timers.filter((entry) => entry.id !== timeout.id)
+    timeout.callback()
+    expect(ws.readyState).toBe(FakeWebSocket.CLOSED)
+    expect(tracked().size).toBe(0)
+    const reconnect = timers.find((entry) => entry.delay === 1000)!
+    timers = timers.filter((entry) => entry.id !== reconnect.id)
+    reconnect.callback()
+  }
+  manager.disconnect()
+  expect(tracked().size).toBe(0)
+})
+
+test('failed opening releases its tracking reference on close', () => {
+  const manager = new WebSocketManager()
+  manager.connect()
+  FakeWebSocket.instances[0]!.close()
+  expect((manager as unknown as { leakedSockets: Set<unknown> }).leakedSockets.size).toBe(0)
+  expect(manager.getStatus()).toBe('reconnecting')
+  manager.disconnect()
 })
