@@ -65,6 +65,7 @@ abstract class TerminalProxyBase implements ITerminalProxy {
   protected startPromise: Promise<void> | null = null
   protected outputSuppressed = false
 
+  protected sizeParticipationSupported = false
   private sizeParticipationQueue: Promise<void> = Promise.resolve()
   private sizeParticipation: boolean
   private pasteSeq = 0
@@ -117,7 +118,7 @@ abstract class TerminalProxyBase implements ITerminalProxy {
 
   /** Serialize visibility changes so a slow hide cannot override a later show. */
   setSizeParticipation(participates: boolean): Promise<void> {
-    if (this.getMode() === 'pipe-pane') return Promise.resolve()
+    if (!this.sizeParticipationSupported || this.getMode() === 'pipe-pane') return Promise.resolve()
     const tty = this.getClientTty()
     if (!tty) return Promise.resolve()
     const operation = this.sizeParticipationQueue.then(async () => {

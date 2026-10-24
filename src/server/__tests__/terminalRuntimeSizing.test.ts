@@ -11,7 +11,11 @@ class Proxy extends TerminalProxyBase {
   flagHold: Promise<void> | null = null
   flags: string[] = []
   readonly startsIgnored: boolean
-  constructor(options: TerminalProxyOptions) { super(options); this.startsIgnored = options.initialSizeParticipation === false }
+  constructor(options: TerminalProxyOptions) {
+    super(options)
+    this.sizeParticipationSupported = true // This fixture models a modern tmux server.
+    this.startsIgnored = options.initialSizeParticipation === false
+  }
   protected async doStart() { await this.startHold; this.tty = '/dev/runtime-size'; this.state = TerminalState.READY }
   protected async doSwitch(_target: string, onReady?: () => void) { onReady?.(); return true }
   protected async runParsedTmuxNonBlocking(args: string[]) { this.flags.push(args.at(-1)!); await this.flagHold; return '' }

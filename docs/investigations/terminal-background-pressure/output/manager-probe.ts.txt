@@ -1,0 +1,35 @@
+import {mkdtempSync,rmSync} from 'node:fs';import {tmpdir} from 'node:os';import path from 'node:path';
+const wait=(ms:number)=>new Promise(r=>setTimeout(r,ms));
+const dir=mkdtempSync(path.join(tmpdir(),'ab-pressure-'));
+const env={...process.env,TMUX_TMPDIR:dir,TMUX_SESSION:'pressure',AGENTBOARD_DATA_DIR:dir,LOG_FILE:path.join(dir,'relay.log'),LOG_LEVEL:'error',NODE_ENV:'production',AGENTBOARD_TMUX_SET_CLIPBOARD:'0',AGENTBOARD_RELAY_GRACE_MS:'1500',AGENTBOARD_RELAY_PROGRESS_MS:'20000'};delete env.TMUX;delete env.TMUX_PANE;
+function tmux(...args:string[]){const r=Bun.spawnSync(['tmux',...args],{env,stdout:'pipe',stderr:'pipe'});if(r.exitCode)throw Error(r.stderr.toString());return r.stdout.toString().trim()}
+let child:any;let url='';const peers:any[]=[];let token='';let claim=0;
+class Peer{
+ ws:WebSocket;bytes=0;output='';closeReason:any;ready=false;lease=false;ackTimer:any;lastSeq=0;start=performance.now();
+ constructor(public ackMs:number){this.ws=new WebSocket(url);peers.push(this);this.ws.onopen=()=>this.ws.send(JSON.stringify({type:'terminal-resume',token:token||undefined,claim:++claim}));this.ws.onclose=e=>{this.closeReason={code:e.code,reason:e.reason,afterMs:Math.round(performance.now()-this.start)};clearInterval(this.ackTimer)};this.ws.onmessage=e=>{let m=JSON.parse(e.data as string);if(m.type==='terminal-lease'){token=m.token;this.lease=true;this.ws.send(JSON.stringify({type:'terminal-attach',sessionId:'pressure:@0',attachId:claim,cols:100,rows:30}))}if(m.type==='terminal-ready')this.ready=true;if(m.type==='terminal-output'){this.bytes+=Buffer.byteLength(e.data as string);this.output=(this.output+m.data).slice(-100000);this.lastSeq=m.outputSeq;if(ackMs===0)this.ack()}};if(ackMs>0)this.ackTimer=setInterval(()=>this.ack(),ackMs)}
+ ack(){if(this.lastSeq&&this.ws.readyState===1)this.ws.send(JSON.stringify({type:'terminal-ack',outputSeq:this.lastSeq}))}
+ async attached(){const end=Date.now()+5000;while(!this.ready&&Date.now()<end&&!this.closeReason)await wait(10);if(!this.ready)throw Error('attach failed '+JSON.stringify(this.closeReason))}
+}
+const summary:any={};
+try{
+ tmux('-f','/dev/null','new-session','-d','-s','pressure','stty -echo; exec python3 '+path.resolve('.poc-stress-test/output/producer.py'));
+ const sessions=[{id:'pressure:@0',tmuxWindow:'pressure:@0',name:'pressure',projectPath:dir,status:'unknown',lastActivity:new Date().toISOString(),createdAt:new Date().toISOString(),source:'managed'}];
+ child=Bun.spawn([process.execPath,'src/server/__tests__/fixtures/relayHost.ts'],{env:{...env,RELAY_TEST_SESSIONS:JSON.stringify(sessions)},stdout:'pipe',stderr:Bun.file(path.join(dir,'child.err'))});
+ const reader=child.stdout.getReader();let out='';while(!url){const n=await reader.read();if(n.done)throw Error('fixture exited');out+=new TextDecoder().decode(n.value);const line=out.split('\n').find(l=>l.startsWith('{"port":'));if(line)url=`ws://127.0.0.1:${JSON.parse(line).port}/ws`}
+ const p=new Peer(-1);await p.attached();tmux('send-keys','-t','pressure:@0','FLOOD','Enter');for(let i=0;i<1000&&!p.closeReason;i++)await wait(10);summary.noAck={bytes:p.bytes,close:p.closeReason};
+ tmux('send-keys','-t','pressure:@0','STOP','Enter');await wait(200);
+ const recovered=new Peer(0);await recovered.attached();recovered.ws.send(JSON.stringify({type:'terminal-input',sessionId:'pressure:@0',attachId:claim,data:'RECOVERED_ONCE\r'}));await wait(200);summary.recovery={ready:recovered.ready,echo:recovered.output.includes('RECOVERED_ONCE'),capture:tmux('capture-pane','-p','-t','pressure:@0').split('RECOVERED_ONCE').length-1};recovered.ws.close();await wait(100);
+ const slow=new Peer(500);await slow.attached();tmux('send-keys','-t','pressure:@0','FLOOD','Enter');await wait(5000);summary.slowAck={bytes:slow.bytes,close:slow.closeReason??null};slow.ws.close();await wait(100);
+ const NativeSocket=globalThis.WebSocket; const events:any[]=[];
+ Object.assign(globalThis,{window:{location:{protocol:'http:',host:new URL(url).host},setTimeout,clearTimeout,setInterval,clearInterval,addEventListener(){},removeEventListener(){}},document:{visibilityState:'visible',addEventListener(){},removeEventListener(){}}});
+ class TrackedSocket extends NativeSocket {constructor(address:string){super(address);this.addEventListener('open',()=>events.push({event:'open',at:Date.now()}));this.addEventListener('close',e=>events.push({event:'close',at:Date.now(),code:e.code}))}}
+ globalThis.WebSocket=TrackedSocket as typeof WebSocket;
+ const {WebSocketManager}=await import('../../src/client/hooks/useWebSocket');
+ const manager=new WebSocketManager();let received=0;
+ manager.subscribeStatus(status=>{if(status==='connected')manager.send({type:'terminal-attach',sessionId:'pressure:@0',cols:100,rows:30})});manager.subscribe(m=>{if(m.type==='terminal-output')received+=m.data.length});
+ manager.startLifecycleListeners();manager.connect();await wait(20000);manager.disconnect();manager.stopLifecycleListeners();
+ globalThis.WebSocket=NativeSocket;
+ summary.productionManager={events:events.map(e=>({...e,at:e.at-events[0].at})),bytes:received};
+ tmux('send-keys','-t','pressure:@0','STOP','Enter');await wait(200);const final=new Peer(0);await final.attached();final.ws.send(JSON.stringify({type:'terminal-input',sessionId:'pressure:@0',attachId:claim,data:'FINAL_RECOVERED_ONCE\r'}));await wait(200);summary.final={ready:final.ready,echo:final.output.includes('FINAL_RECOVERED_ONCE'),capture:tmux('capture-pane','-p','-t','pressure:@0').split('FINAL_RECOVERED_ONCE').length-1};
+ console.log(JSON.stringify(summary,null,2));
+}finally{for(const p of peers){clearInterval(p.ackTimer);p.ws.close()}if(child){child.kill();await child.exited}try{for(const s of tmux('list-sessions','-F','#{session_name}').split('\n'))tmux('kill-session','-t','='+s)}catch{}rmSync(dir,{recursive:true,force:true})}

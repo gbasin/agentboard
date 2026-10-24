@@ -1,0 +1,65 @@
+{
+  "noAck": {
+    "bytes": 1047756,
+    "close": {
+      "code": 1013,
+      "reason": "Terminal output needs resynchronization",
+      "afterMs": 2179
+    }
+  },
+  "recovery": {
+    "ready": true,
+    "echo": true,
+    "capture": 1
+  },
+  "slowAck": {
+    "bytes": 2325172,
+    "close": null
+  },
+  "productionManager": {
+    "events": [
+      {
+        "event": "open",
+        "at": 0
+      },
+      {
+        "event": "close",
+        "at": 2279,
+        "code": 1013
+      },
+      {
+        "event": "open",
+        "at": 3281
+      },
+      {
+        "event": "close",
+        "at": 5523,
+        "code": 1013
+      },
+      {
+        "event": "open",
+        "at": 7525
+      },
+      {
+        "event": "close",
+        "at": 9803,
+        "code": 1013
+      },
+      {
+        "event": "open",
+        "at": 13805
+      },
+      {
+        "event": "close",
+        "at": 16147,
+        "code": 1013
+      }
+    ],
+    "bytes": 3556712
+  },
+  "final": {
+    "ready": true,
+    "echo": true,
+    "capture": 1
+  }
+}

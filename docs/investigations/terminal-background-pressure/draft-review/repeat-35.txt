@@ -1,0 +1,604 @@
+(node:56103) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[1A[2K[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+
+[1A[2K[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0memitWarning[2m ([0m[0m[36munknown[0m[2m:[0m[33m1[0m[2m:[33m1[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0mwarnOnDeactivatedColors[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0mgetColorDepth[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0mshouldColorize[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0mrefresh[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0minternal:util/colors[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0manonymous[2m ([0m[0m[36munknown[0m[2m:[0m[33m1[0m[2m:[33m1[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0minternal:assert/assertion_error[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0manonymous[2m ([0m[0m[36munknown[0m[2m:[0m[33m1[0m[2m:[33m1[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0mloadAssertionError[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+
+[1A[2K[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+
+[1A[2K[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+
+[1A[2K[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+
+
+Running 35 tests using 1 worker
+
+[1A[2K(node:56487) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+[1A[2K(node:56487) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+
+[1A[2K(node:56487) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+[1A[2K[1/35] tests/e2e/browser-files.spec.ts:26:3 › desktop: files go directly into the existing prompt without submitting
+[1A[2Ktests/e2e/browser-files.spec.ts:26:3 › desktop: files go directly into the existing prompt without submitting
+WIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@2","tmuxTarget":"agentboard-e2e-1792873058945:@2","cols":168,"rows":50,"attachId":1}
+
+[1A[2K[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+
+[1A[2KWIRE GOT {"type":"terminal-ready","sessionId":"agentboard-e2e-1792873058945:@2","attachId":1}
+
+[1A[2K[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+
+[1A[2K[2/35] tests/e2e/browser-files.spec.ts:26:3 › mobile: files go directly into the existing prompt without submitting
+[1A[2Ktests/e2e/browser-files.spec.ts:26:3 › mobile: files go directly into the existing prompt without submitting
+WIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@2","tmuxTarget":"agentboard-e2e-1792873058945:@2","cols":53,"rows":39,"attachId":1}
+
+[1A[2K[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+
+[1A[2KWIRE GOT {"type":"terminal-error","sessionId":"agentboard-e2e-1792873058945:@2","code":"ERR_TMUX_SWITCH_FAILED","message":"can't find window: @2\n","retryable":true,"attachId":1}
+
+[1A[2KWIRE SENT {"type":"terminal-detach","sessionId":"agentboard-e2e-1792873058945:@2","attachId":1}
+
+[1A[2KWIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@4","tmuxTarget":"agentboard-e2e-1792873058945:@4","cols":53,"rows":39,"attachId":2}
+
+[1A[2KWIRE GOT {"type":"terminal-ready","sessionId":"agentboard-e2e-1792873058945:@4","attachId":2}
+
+[1A[2K[3/35] tests/e2e/browser-files.spec.ts:26:3 › drop: files go directly into the existing prompt without submitting
+[1A[2Ktests/e2e/browser-files.spec.ts:26:3 › drop: files go directly into the existing prompt without submitting
+WIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@6","tmuxTarget":"agentboard-e2e-1792873058945:@6","cols":168,"rows":50,"attachId":1}
+
+[1A[2K[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+
+[1A[2KWIRE GOT {"type":"terminal-ready","sessionId":"agentboard-e2e-1792873058945:@6","attachId":1}
+
+[1A[2K[4/35] tests/e2e/browser-files.spec.ts:26:3 › context-paste: files go directly into the existing prompt without submitting
+[1A[2Ktests/e2e/browser-files.spec.ts:26:3 › context-paste: files go directly into the existing prompt without submitting
+WIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@8","tmuxTarget":"agentboard-e2e-1792873058945:@8","cols":168,"rows":50,"attachId":1}
+
+[1A[2K[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+
+[1A[2KWIRE GOT {"type":"terminal-ready","sessionId":"agentboard-e2e-1792873058945:@8","attachId":1}
+
+[1A[2K[5/35] tests/e2e/manual-paste.spec.ts:121:3 › iOS PWA-sized manual paste fallback › opens the same dialog with clipboard access available
+[1A[2Ktests/e2e/manual-paste.spec.ts:121:3 › iOS PWA-sized manual paste fallback › opens the same dialog with clipboard access available
+WIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@8","tmuxTarget":"agentboard-e2e-1792873058945:@8","cols":59,"rows":44,"attachId":1}
+
+[1A[2K[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+
+[1A[2KWIRE GOT {"type":"terminal-error","sessionId":"agentboard-e2e-1792873058945:@8","code":"ERR_TMUX_SWITCH_FAILED","message":"can't find window: @8\n","retryable":true,"attachId":1}
+
+[1A[2KWIRE SENT {"type":"terminal-detach","sessionId":"agentboard-e2e-1792873058945:@8","attachId":1}
+
+[1A[2KWIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@10","tmuxTarget":"agentboard-e2e-1792873058945:@10","cols":59,"rows":44,"attachId":2}
+
+[1A[2KWIRE GOT {"type":"terminal-ready","sessionId":"agentboard-e2e-1792873058945:@10","attachId":2}
+
+[1A[2K[6/35] tests/e2e/manual-paste.spec.ts:126:3 › iOS PWA-sized manual paste fallback › preserves multiline text and stays within the viewport
+[1A[2Ktests/e2e/manual-paste.spec.ts:126:3 › iOS PWA-sized manual paste fallback › preserves multiline text and stays within the viewport
+WIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@10","tmuxTarget":"agentboard-e2e-1792873058945:@10","cols":59,"rows":44,"attachId":1}
+
+[1A[2K[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+
+[1A[2KWIRE GOT {"type":"terminal-error","sessionId":"agentboard-e2e-1792873058945:@10","code":"ERR_TMUX_SWITCH_FAILED","message":"can't find window: @10\n","retryable":true,"attachId":1}
+
+[1A[2KWIRE SENT {"type":"terminal-detach","sessionId":"agentboard-e2e-1792873058945:@10","attachId":1}
+
+[1A[2KWIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@12","tmuxTarget":"agentboard-e2e-1792873058945:@12","cols":59,"rows":44,"attachId":2}
+
+[1A[2KWIRE GOT {"type":"terminal-ready","sessionId":"agentboard-e2e-1792873058945:@12","attachId":2}
+
+[1A[2K[7/35] tests/e2e/paste.spec.ts:56:1 › multi-line text paste is held for editing, not auto-submitted
+[1A[2Ktests/e2e/paste.spec.ts:56:1 › multi-line text paste is held for editing, not auto-submitted
+WIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@14","tmuxTarget":"agentboard-e2e-1792873058945:@14","cols":168,"rows":50,"attachId":1}
+
+[1A[2K[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+
+[1A[2KWIRE GOT {"type":"terminal-ready","sessionId":"agentboard-e2e-1792873058945:@14","attachId":1}
+
+[1A[2K(node:59875) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+[1A[2K(node:59875) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+
+[1A[2K(node:59875) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+[1A[2K[8/35] tests/e2e/browser-files.spec.ts:26:3 › desktop: files go directly into the existing prompt without submitting
+[1A[2Ktests/e2e/browser-files.spec.ts:26:3 › desktop: files go directly into the existing prompt without submitting
+WIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@16","tmuxTarget":"agentboard-e2e-1792873058945:@16","cols":168,"rows":50,"attachId":1}
+
+[1A[2K[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+
+[1A[2KWIRE GOT {"type":"terminal-ready","sessionId":"agentboard-e2e-1792873058945:@16","attachId":1}
+
+[1A[2K[9/35] tests/e2e/browser-files.spec.ts:26:3 › mobile: files go directly into the existing prompt without submitting
+[1A[2Ktests/e2e/browser-files.spec.ts:26:3 › mobile: files go directly into the existing prompt without submitting
+WIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@16","tmuxTarget":"agentboard-e2e-1792873058945:@16","cols":53,"rows":39,"attachId":1}
+
+[1A[2K[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+
+[1A[2KWIRE GOT {"type":"terminal-error","sessionId":"agentboard-e2e-1792873058945:@16","code":"ERR_TMUX_SWITCH_FAILED","message":"can't find window: @16\n","retryable":true,"attachId":1}
+
+[1A[2KWIRE SENT {"type":"terminal-detach","sessionId":"agentboard-e2e-1792873058945:@16","attachId":1}
+
+[1A[2KWIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@18","tmuxTarget":"agentboard-e2e-1792873058945:@18","cols":53,"rows":39,"attachId":2}
+
+[1A[2KWIRE GOT {"type":"terminal-ready","sessionId":"agentboard-e2e-1792873058945:@18","attachId":2}
+
+[1A[2K[10/35] tests/e2e/browser-files.spec.ts:26:3 › drop: files go directly into the existing prompt without submitting
+[1A[2Ktests/e2e/browser-files.spec.ts:26:3 › drop: files go directly into the existing prompt without submitting
+WIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@20","tmuxTarget":"agentboard-e2e-1792873058945:@20","cols":168,"rows":50,"attachId":1}
+
+[1A[2K[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0memitWarning[2m ([0m[0m[36munknown[0m[2m:[0m[33m1[0m[2m:[33m1[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0mwarnOnDeactivatedColors[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0mgetColorDepth[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0mshouldColorize[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0mrefresh[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0minternal:util/colors[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0manonymous[2m ([0m[0m[36munknown[0m[2m:[0m[33m1[0m[2m:[33m1[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0minternal:assert/assertion_error[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0manonymous[2m ([0m[0m[36munknown[0m[2m:[0m[33m1[0m[2m:[33m1[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0mloadAssertionError[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+
+[1A[2KWIRE GOT {"type":"terminal-ready","sessionId":"agentboard-e2e-1792873058945:@20","attachId":1}
+
+[1A[2K[11/35] tests/e2e/browser-files.spec.ts:26:3 › context-paste: files go directly into the existing prompt without submitting
+[1A[2Ktests/e2e/browser-files.spec.ts:26:3 › context-paste: files go directly into the existing prompt without submitting
+WIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@22","tmuxTarget":"agentboard-e2e-1792873058945:@22","cols":168,"rows":50,"attachId":1}
+
+[1A[2K[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+
+[1A[2KWIRE GOT {"type":"terminal-ready","sessionId":"agentboard-e2e-1792873058945:@22","attachId":1}
+
+[1A[2K[12/35] tests/e2e/manual-paste.spec.ts:121:3 › iOS PWA-sized manual paste fallback › opens the same dialog with clipboard access available
+[1A[2Ktests/e2e/manual-paste.spec.ts:121:3 › iOS PWA-sized manual paste fallback › opens the same dialog with clipboard access available
+WIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@24","tmuxTarget":"agentboard-e2e-1792873058945:@24","cols":59,"rows":44,"attachId":1}
+
+[1A[2K[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+
+[1A[2KWIRE GOT {"type":"terminal-ready","sessionId":"agentboard-e2e-1792873058945:@24","attachId":1}
+
+[1A[2K[13/35] tests/e2e/manual-paste.spec.ts:126:3 › iOS PWA-sized manual paste fallback › preserves multiline text and stays within the viewport
+[1A[2Ktests/e2e/manual-paste.spec.ts:126:3 › iOS PWA-sized manual paste fallback › preserves multiline text and stays within the viewport
+WIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@26","tmuxTarget":"agentboard-e2e-1792873058945:@26","cols":59,"rows":44,"attachId":1}
+
+[1A[2K[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+
+[1A[2KWIRE GOT {"type":"terminal-ready","sessionId":"agentboard-e2e-1792873058945:@26","attachId":1}
+
+[1A[2K[14/35] tests/e2e/paste.spec.ts:56:1 › multi-line text paste is held for editing, not auto-submitted
+[1A[2Ktests/e2e/paste.spec.ts:56:1 › multi-line text paste is held for editing, not auto-submitted
+WIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@28","tmuxTarget":"agentboard-e2e-1792873058945:@28","cols":168,"rows":50,"attachId":1}
+
+[1A[2K[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+
+[1A[2KWIRE GOT {"type":"terminal-ready","sessionId":"agentboard-e2e-1792873058945:@28","attachId":1}
+
+[1A[2K(node:63019) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+[1A[2K(node:63019) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+
+[1A[2K(node:63019) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+[1A[2K[15/35] tests/e2e/browser-files.spec.ts:26:3 › desktop: files go directly into the existing prompt without submitting
+[1A[2K[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+
+[1A[2Ktests/e2e/browser-files.spec.ts:26:3 › desktop: files go directly into the existing prompt without submitting
+WIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@30","tmuxTarget":"agentboard-e2e-1792873058945:@30","cols":168,"rows":50,"attachId":1}
+
+[1A[2KWIRE GOT {"type":"terminal-ready","sessionId":"agentboard-e2e-1792873058945:@30","attachId":1}
+
+[1A[2K[16/35] tests/e2e/browser-files.spec.ts:26:3 › mobile: files go directly into the existing prompt without submitting
+[1A[2Ktests/e2e/browser-files.spec.ts:26:3 › mobile: files go directly into the existing prompt without submitting
+WIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@30","tmuxTarget":"agentboard-e2e-1792873058945:@30","cols":53,"rows":39,"attachId":1}
+
+[1A[2K[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+
+[1A[2KWIRE GOT {"type":"terminal-error","sessionId":"agentboard-e2e-1792873058945:@30","code":"ERR_TMUX_SWITCH_FAILED","message":"can't find window: @30\n","retryable":true,"attachId":1}
+
+[1A[2KWIRE SENT {"type":"terminal-detach","sessionId":"agentboard-e2e-1792873058945:@30","attachId":1}
+
+[1A[2KWIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@32","tmuxTarget":"agentboard-e2e-1792873058945:@32","cols":53,"rows":39,"attachId":2}
+
+[1A[2KWIRE GOT {"type":"terminal-ready","sessionId":"agentboard-e2e-1792873058945:@32","attachId":2}
+
+[1A[2K[17/35] tests/e2e/browser-files.spec.ts:26:3 › drop: files go directly into the existing prompt without submitting
+[1A[2Ktests/e2e/browser-files.spec.ts:26:3 › drop: files go directly into the existing prompt without submitting
+WIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@34","tmuxTarget":"agentboard-e2e-1792873058945:@34","cols":168,"rows":50,"attachId":1}
+
+[1A[2K[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+
+[1A[2KWIRE GOT {"type":"terminal-ready","sessionId":"agentboard-e2e-1792873058945:@34","attachId":1}
+
+[1A[2K[18/35] tests/e2e/browser-files.spec.ts:26:3 › context-paste: files go directly into the existing prompt without submitting
+[1A[2Ktests/e2e/browser-files.spec.ts:26:3 › context-paste: files go directly into the existing prompt without submitting
+WIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@36","tmuxTarget":"agentboard-e2e-1792873058945:@36","cols":168,"rows":50,"attachId":1}
+
+[1A[2K[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+
+[1A[2KWIRE GOT {"type":"terminal-ready","sessionId":"agentboard-e2e-1792873058945:@36","attachId":1}
+
+[1A[2K[19/35] tests/e2e/manual-paste.spec.ts:121:3 › iOS PWA-sized manual paste fallback › opens the same dialog with clipboard access available
+[1A[2Ktests/e2e/manual-paste.spec.ts:121:3 › iOS PWA-sized manual paste fallback › opens the same dialog with clipboard access available
+WIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@36","tmuxTarget":"agentboard-e2e-1792873058945:@36","cols":59,"rows":44,"attachId":1}
+
+[1A[2K[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0memitWarning[2m ([0m[0m[36munknown[0m[2m:[0m[33m1[0m[2m:[33m1[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0mwarnOnDeactivatedColors[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0mgetColorDepth[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0mshouldColorize[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0mrefresh[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0minternal:util/colors[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0manonymous[2m ([0m[0m[36munknown[0m[2m:[0m[33m1[0m[2m:[33m1[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0minternal:assert/assertion_error[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0manonymous[2m ([0m[0m[36munknown[0m[2m:[0m[33m1[0m[2m:[33m1[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0mloadAssertionError[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+
+[1A[2KWIRE GOT {"type":"terminal-error","sessionId":"agentboard-e2e-1792873058945:@36","code":"ERR_TMUX_SWITCH_FAILED","message":"can't find window: @36\n","retryable":true,"attachId":1}
+
+[1A[2KWIRE SENT {"type":"terminal-detach","sessionId":"agentboard-e2e-1792873058945:@36","attachId":1}
+
+[1A[2KWIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@38","tmuxTarget":"agentboard-e2e-1792873058945:@38","cols":59,"rows":44,"attachId":2}
+
+[1A[2KWIRE GOT {"type":"terminal-ready","sessionId":"agentboard-e2e-1792873058945:@38","attachId":2}
+
+[1A[2K[20/35] tests/e2e/manual-paste.spec.ts:126:3 › iOS PWA-sized manual paste fallback › preserves multiline text and stays within the viewport
+[1A[2Ktests/e2e/manual-paste.spec.ts:126:3 › iOS PWA-sized manual paste fallback › preserves multiline text and stays within the viewport
+WIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@38","tmuxTarget":"agentboard-e2e-1792873058945:@38","cols":59,"rows":44,"attachId":1}
+
+[1A[2KWIRE GOT {"type":"terminal-error","sessionId":"agentboard-e2e-1792873058945:@38","code":"ERR_TMUX_SWITCH_FAILED","message":"can't find window: @38\n","retryable":true,"attachId":1}
+
+[1A[2KWIRE SENT {"type":"terminal-detach","sessionId":"agentboard-e2e-1792873058945:@38","attachId":1}
+
+[1A[2KWIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@40","tmuxTarget":"agentboard-e2e-1792873058945:@40","cols":59,"rows":44,"attachId":2}
+
+[1A[2KWIRE GOT {"type":"terminal-ready","sessionId":"agentboard-e2e-1792873058945:@40","attachId":2}
+
+[1A[2K[21/35] tests/e2e/paste.spec.ts:56:1 › multi-line text paste is held for editing, not auto-submitted
+[1A[2Ktests/e2e/paste.spec.ts:56:1 › multi-line text paste is held for editing, not auto-submitted
+WIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@42","tmuxTarget":"agentboard-e2e-1792873058945:@42","cols":168,"rows":50,"attachId":1}
+
+[1A[2KWIRE GOT {"type":"terminal-ready","sessionId":"agentboard-e2e-1792873058945:@42","attachId":1}
+
+[1A[2K(node:67247) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+[1A[2K(node:67247) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+
+[1A[2K(node:67247) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+[1A[2K[22/35] tests/e2e/browser-files.spec.ts:26:3 › desktop: files go directly into the existing prompt without submitting
+[1A[2Ktests/e2e/browser-files.spec.ts:26:3 › desktop: files go directly into the existing prompt without submitting
+WIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@44","tmuxTarget":"agentboard-e2e-1792873058945:@44","cols":168,"rows":50,"attachId":1}
+
+[1A[2KWIRE GOT {"type":"terminal-ready","sessionId":"agentboard-e2e-1792873058945:@44","attachId":1}
+
+[1A[2K[23/35] tests/e2e/browser-files.spec.ts:26:3 › mobile: files go directly into the existing prompt without submitting
+[1A[2Ktests/e2e/browser-files.spec.ts:26:3 › mobile: files go directly into the existing prompt without submitting
+WIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@44","tmuxTarget":"agentboard-e2e-1792873058945:@44","cols":53,"rows":39,"attachId":1}
+
+[1A[2KWIRE GOT {"type":"terminal-error","sessionId":"agentboard-e2e-1792873058945:@44","code":"ERR_TMUX_SWITCH_FAILED","message":"can't find window: @44\n","retryable":true,"attachId":1}
+
+[1A[2KWIRE SENT {"type":"terminal-detach","sessionId":"agentboard-e2e-1792873058945:@44","attachId":1}
+
+[1A[2KWIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@46","tmuxTarget":"agentboard-e2e-1792873058945:@46","cols":53,"rows":39,"attachId":2}
+
+[1A[2KWIRE GOT {"type":"terminal-ready","sessionId":"agentboard-e2e-1792873058945:@46","attachId":2}
+
+[1A[2K[24/35] tests/e2e/browser-files.spec.ts:26:3 › drop: files go directly into the existing prompt without submitting
+[1A[2Ktests/e2e/browser-files.spec.ts:26:3 › drop: files go directly into the existing prompt without submitting
+WIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@48","tmuxTarget":"agentboard-e2e-1792873058945:@48","cols":168,"rows":50,"attachId":1}
+
+[1A[2KWIRE GOT {"type":"terminal-ready","sessionId":"agentboard-e2e-1792873058945:@48","attachId":1}
+
+[1A[2K[25/35] tests/e2e/browser-files.spec.ts:26:3 › context-paste: files go directly into the existing prompt without submitting
+[1A[2Ktests/e2e/browser-files.spec.ts:26:3 › context-paste: files go directly into the existing prompt without submitting
+WIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@50","tmuxTarget":"agentboard-e2e-1792873058945:@50","cols":168,"rows":50,"attachId":1}
+
+[1A[2KWIRE GOT {"type":"terminal-ready","sessionId":"agentboard-e2e-1792873058945:@50","attachId":1}
+
+[1A[2K[26/35] tests/e2e/manual-paste.spec.ts:121:3 › iOS PWA-sized manual paste fallback › opens the same dialog with clipboard access available
+[1A[2Ktests/e2e/manual-paste.spec.ts:121:3 › iOS PWA-sized manual paste fallback › opens the same dialog with clipboard access available
+WIRE SENT {"type":"terminal-detach","sessionId":"agentboard-e2e-1792873058945:@50","attachId":0}
+
+[1A[2KWIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@52","tmuxTarget":"agentboard-e2e-1792873058945:@52","cols":59,"rows":44,"attachId":1}
+
+[1A[2KWIRE GOT {"type":"terminal-ready","sessionId":"agentboard-e2e-1792873058945:@52","attachId":1}
+
+[1A[2K[27/35] tests/e2e/manual-paste.spec.ts:126:3 › iOS PWA-sized manual paste fallback › preserves multiline text and stays within the viewport
+[1A[2Ktests/e2e/manual-paste.spec.ts:126:3 › iOS PWA-sized manual paste fallback › preserves multiline text and stays within the viewport
+WIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@52","tmuxTarget":"agentboard-e2e-1792873058945:@52","cols":59,"rows":44,"attachId":1}
+
+[1A[2KWIRE GOT {"type":"terminal-error","sessionId":"agentboard-e2e-1792873058945:@52","code":"ERR_TMUX_SWITCH_FAILED","message":"can't find window: @52\n","retryable":true,"attachId":1}
+
+[1A[2KWIRE SENT {"type":"terminal-detach","sessionId":"agentboard-e2e-1792873058945:@52","attachId":1}
+
+[1A[2KWIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@54","tmuxTarget":"agentboard-e2e-1792873058945:@54","cols":59,"rows":44,"attachId":2}
+
+[1A[2KWIRE GOT {"type":"terminal-ready","sessionId":"agentboard-e2e-1792873058945:@54","attachId":2}
+
+[1A[2K[28/35] tests/e2e/paste.spec.ts:56:1 › multi-line text paste is held for editing, not auto-submitted
+[1A[2Ktests/e2e/paste.spec.ts:56:1 › multi-line text paste is held for editing, not auto-submitted
+WIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@56","tmuxTarget":"agentboard-e2e-1792873058945:@56","cols":168,"rows":50,"attachId":1}
+
+[1A[2KWIRE GOT {"type":"terminal-ready","sessionId":"agentboard-e2e-1792873058945:@56","attachId":1}
+
+[1A[2K(node:70117) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+[1A[2K(node:70117) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+
+[1A[2K(node:70117) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+[1A[2K[29/35] tests/e2e/browser-files.spec.ts:26:3 › desktop: files go directly into the existing prompt without submitting
+[1A[2Ktests/e2e/browser-files.spec.ts:26:3 › desktop: files go directly into the existing prompt without submitting
+WIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@58","tmuxTarget":"agentboard-e2e-1792873058945:@58","cols":168,"rows":50,"attachId":1}
+
+[1A[2KWIRE GOT {"type":"terminal-ready","sessionId":"agentboard-e2e-1792873058945:@58","attachId":1}
+
+[1A[2K[30/35] tests/e2e/browser-files.spec.ts:26:3 › mobile: files go directly into the existing prompt without submitting
+[1A[2Ktests/e2e/browser-files.spec.ts:26:3 › mobile: files go directly into the existing prompt without submitting
+WIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@58","tmuxTarget":"agentboard-e2e-1792873058945:@58","cols":53,"rows":39,"attachId":1}
+
+[1A[2KWIRE GOT {"type":"terminal-error","sessionId":"agentboard-e2e-1792873058945:@58","code":"ERR_TMUX_SWITCH_FAILED","message":"can't find window: @58\n","retryable":true,"attachId":1}
+
+[1A[2KWIRE SENT {"type":"terminal-detach","sessionId":"agentboard-e2e-1792873058945:@58","attachId":1}
+
+[1A[2KWIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@60","tmuxTarget":"agentboard-e2e-1792873058945:@60","cols":53,"rows":39,"attachId":2}
+
+[1A[2KWIRE GOT {"type":"terminal-ready","sessionId":"agentboard-e2e-1792873058945:@60","attachId":2}
+
+[1A[2K[31/35] tests/e2e/browser-files.spec.ts:26:3 › drop: files go directly into the existing prompt without submitting
+[1A[2Ktests/e2e/browser-files.spec.ts:26:3 › drop: files go directly into the existing prompt without submitting
+WIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@62","tmuxTarget":"agentboard-e2e-1792873058945:@62","cols":168,"rows":50,"attachId":1}
+
+[1A[2KWIRE GOT {"type":"terminal-ready","sessionId":"agentboard-e2e-1792873058945:@62","attachId":1}
+
+[1A[2K[32/35] tests/e2e/browser-files.spec.ts:26:3 › context-paste: files go directly into the existing prompt without submitting
+[1A[2Ktests/e2e/browser-files.spec.ts:26:3 › context-paste: files go directly into the existing prompt without submitting
+WIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@64","tmuxTarget":"agentboard-e2e-1792873058945:@64","cols":168,"rows":50,"attachId":1}
+
+[1A[2KWIRE GOT {"type":"terminal-ready","sessionId":"agentboard-e2e-1792873058945:@64","attachId":1}
+
+[1A[2K[33/35] tests/e2e/manual-paste.spec.ts:121:3 › iOS PWA-sized manual paste fallback › opens the same dialog with clipboard access available
+[1A[2Ktests/e2e/manual-paste.spec.ts:121:3 › iOS PWA-sized manual paste fallback › opens the same dialog with clipboard access available
+WIRE SENT {"type":"terminal-detach","sessionId":"agentboard-e2e-1792873058945:@64","attachId":0}
+
+[1A[2KWIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@66","tmuxTarget":"agentboard-e2e-1792873058945:@66","cols":59,"rows":44,"attachId":1}
+
+[1A[2KWIRE GOT {"type":"terminal-ready","sessionId":"agentboard-e2e-1792873058945:@66","attachId":1}
+
+[1A[2K[34/35] tests/e2e/manual-paste.spec.ts:126:3 › iOS PWA-sized manual paste fallback › preserves multiline text and stays within the viewport
+[1A[2Ktests/e2e/manual-paste.spec.ts:126:3 › iOS PWA-sized manual paste fallback › preserves multiline text and stays within the viewport
+WIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@66","tmuxTarget":"agentboard-e2e-1792873058945:@66","cols":59,"rows":44,"attachId":1}
+
+[1A[2K[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+
+[1A[2KWIRE SENT {"type":"terminal-detach","sessionId":"agentboard-e2e-1792873058945:@66","attachId":1}
+
+[1A[2KWIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@68","tmuxTarget":"agentboard-e2e-1792873058945:@68","cols":59,"rows":44,"attachId":2}
+
+[1A[2KWIRE GOT {"type":"terminal-ready","sessionId":"agentboard-e2e-1792873058945:@68","attachId":2}
+
+[1A[2K[35/35] tests/e2e/paste.spec.ts:56:1 › multi-line text paste is held for editing, not auto-submitted
+[1A[2Ktests/e2e/paste.spec.ts:56:1 › multi-line text paste is held for editing, not auto-submitted
+WIRE SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873058945:@70","tmuxTarget":"agentboard-e2e-1792873058945:@70","cols":168,"rows":50,"attachId":1}
+
+[1A[2KWIRE GOT {"type":"terminal-ready","sessionId":"agentboard-e2e-1792873058945:@70","attachId":1}
+
+[e2e teardown] killed 5 process(es) that outlived the tmux server
+[1A[2K  35 passed (2.0m)

@@ -233,18 +233,18 @@ class SshTerminalProxy extends TerminalProxyBase {
    * flag (>= 3.2; it aborts the attach on older versions). The version
    * normally arrives free with the session-create round-trip (`knownVersion`);
    * only the duplicate-session recovery path — where create fails before
-   * printing it — pays for a `tmux -V` probe. Both are plain remote commands
+   * printing it — queries the running server version. Both are plain remote commands
    * rather than shell logic so this works under any login shell.
    */
   private async clientFeatureArgs(
     knownVersion: string | null
   ): Promise<string[]> {
-    if (!syncFeatureEnabled()) {
-      return []
-    }
+    const sync = syncFeatureEnabled()
+    if (!sync && this.options.initialSizeParticipation !== false) return []
     try {
-      const version = knownVersion ?? (await this.runTmuxAsync(['-V']))
-      return tmuxSupportsClientFeatures(version) ? ['-T', 'sync'] : []
+      const version = knownVersion ?? (await this.runTmuxAsync(['display-message', '-p', '#{version}']))
+      this.sizeParticipationSupported = tmuxSupportsClientFeatures(version)
+      return sync && tmuxSupportsClientFeatures(version) ? ['-T', 'sync'] : []
     } catch {
       // runTmuxAsync already logs ssh_tmux_command_failed; degrade to no sync.
       return []
@@ -321,7 +321,7 @@ class SshTerminalProxy extends TerminalProxyBase {
         ...featureArgs,
         'new-session',
         '-A',
-        ...(this.options.initialSizeParticipation === false ? ['-f', 'ignore-size'] : []),
+        ...(this.sizeParticipationSupported && this.options.initialSizeParticipation === false ? ['-f', 'ignore-size'] : []),
         '-s',
       ]),
     ].join(' ') + ` ${shellQuote(this.options.sessionName)}`

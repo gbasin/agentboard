@@ -1,0 +1,7 @@
+import {appendFileSync} from 'node:fs'
+const filename=process.env.CHECKPOINT!
+const mark=(m:string)=>appendFileSync(filename,Date.now()+' '+m+'\n')
+process.on('SIGTERM',()=>{mark('SIGTERM');process.exit(0)})
+setInterval(()=>mark('tick'),1000)
+const workers=Array.from({length:6},()=>new Worker(new URL('./signal-worker.ts',import.meta.url).href,{smol:true}))
+mark('created '+workers.length)

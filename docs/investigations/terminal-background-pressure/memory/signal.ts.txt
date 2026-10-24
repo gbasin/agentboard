@@ -1,0 +1,18 @@
+import {dlopen, FFIType} from 'bun:ffi'
+const native=dlopen(process.cwd()+'/.poc-stress-test/memory/signals.dylib',{disposition:{args:[FFIType.i32],returns:FFIType.u64},blocked:{args:[FFIType.i32],returns:FFIType.i32},unblock:{args:[FFIType.i32],returns:FFIType.i32}}).symbols
+import {appendFileSync} from 'node:fs'
+const filename=process.env.CHECKPOINT!
+const mark=(m:string)=>appendFileSync(filename,Date.now()+' '+m+'\n')
+const handler=()=>{mark('SIGTERM');process.exit(0)}
+process.on('SIGTERM',handler)
+process.on('SIGINT',()=>{mark('SIGINT');process.exit(0)})
+setInterval(()=>mark('tick disposition '+native.disposition(15)+' blocked '+native.blocked(15)),1000)
+mark('initial disposition '+native.disposition(15)+' blocked '+native.blocked(15))
+if(process.env.UNBLOCK==='1')setTimeout(()=>mark('UNBLOCK '+native.unblock(15)),3000)
+const lock=new SharedArrayBuffer(4)
+const workers=[] as Worker[]
+for(let i=0;i<Number(process.env.WORKERS ?? 6);i++){if(process.env.STAGGER)await Bun.sleep(Number(process.env.STAGGER));workers.push(new Worker(import.meta.url.includes('$bunfs') ? '/$bunfs/root/.poc-stress-test/memory/signal-worker.js' : new URL('./signal-worker.ts',import.meta.url).href,{smol:true}));if(process.env.LOCK==='1')workers.at(-1)!.postMessage(lock);if(process.env.SERIAL==='1')await new Promise<void>(resolve=>{workers.at(-1)!.onmessage=e=>{mark('serial child '+e.data.pid);resolve()}})}
+for(const worker of workers)worker.onmessage=e=>{if(e.data.ready)worker.postMessage(lock);else mark(e.data.signal ? 'WORKER SIGNAL '+e.data.signal : 'child '+e.data.pid)}
+mark('created '+workers.length)
+if(process.env.PRETTY!=='0'){const {logger}=await import('../../src/server/logger');logger.info('signal_test')}
+if(process.env.RESET==='1')setTimeout(()=>{mark('RESET');process.removeListener('SIGTERM',handler);process.on('SIGTERM',handler)},3000)

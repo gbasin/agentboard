@@ -19,6 +19,7 @@ class Proxy extends TerminalProxyBase {
   constructor(initial = true) {
     super({ connectionId: 'size', sessionName: 'size-session', baseSession: 'size', onData() {}, initialSizeParticipation: initial })
     this.state = TerminalState.READY
+    this.sizeParticipationSupported = true
   }
   protected async doStart() {}
   protected async doSwitch() { return true }
@@ -92,7 +93,7 @@ test('pipe-pane has no PTY sizing flags', async () => {
 test('SSH sizing uses its asynchronous remote command path', async () => {
   class Remote extends SshTerminalProxy {
     calls: string[][] = []
-    constructor(options: TerminalProxyOptions) { super(options); this.state = TerminalState.READY }
+    constructor(options: TerminalProxyOptions) { super(options); this.state = TerminalState.READY; this.sizeParticipationSupported = true }
     getClientTty() { return '/dev/remote-tty' }
     protected async runTmuxAsync(args: string[]) { this.calls.push(args); return '' }
   }

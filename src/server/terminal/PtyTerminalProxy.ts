@@ -565,7 +565,12 @@ class PtyTerminalProxy extends TerminalProxyBase {
     // redraws it every interval — sampled at ~30% of server CPU inside
     // status_redraw -> format_expand_time — for a bar nobody sees.
     try {
-      this.runTmuxMutation(['set-option', '-t', this.options.sessionName, 'status', 'off'])
+      // Query the running server in the same command: its version may predate
+      // an upgraded client binary. Unknown versions preserve legacy sizing.
+      const sizingProbe = this.options.initialSizeParticipation === false
+        ? [';', 'display-message', '-p', '#{version}'] : []
+      const version = this.runTmuxMutation(['set-option', '-t', this.options.sessionName, 'status', 'off', ...sizingProbe])
+      this.sizeParticipationSupported = sizingProbe.length > 0 && tmuxSupportsClientFeatures(version)
     } catch (error) {
       this.logEvent('terminal_status_off_failed', {
         sessionName: this.options.sessionName,
@@ -588,7 +593,7 @@ class PtyTerminalProxy extends TerminalProxyBase {
           ...withTmuxUtf8Flag([
             ...this.clientFeatureArgs(),
             'attach',
-            ...(this.options.initialSizeParticipation === false ? ['-f', 'ignore-size'] : []),
+            ...(this.sizeParticipationSupported && this.options.initialSizeParticipation === false ? ['-f', 'ignore-size'] : []),
             '-t',
             this.options.sessionName,
           ]),
@@ -845,9 +850,7 @@ class PtyTerminalProxy extends TerminalProxyBase {
   }
 
   private clientFeatureArgs(): string[] {
-    if (!syncFeatureEnabled()) {
-      return []
-    }
+    if (!syncFeatureEnabled()) return []
     try {
       const version = cachedTmuxVersion ?? this.runTmux(['-V'])
       // Cache only a recognizable answer ("tmux 3.4", "tmux next-3.6",

@@ -1,0 +1,36 @@
+import {mkdirSync,readFileSync,writeFileSync} from 'node:fs'
+import path from 'node:path'
+const root=path.resolve('.poc-stress-test/memory')
+const fixture=path.join(root,'fixture');mkdirSync(fixture,{recursive:true})
+const env={...process.env,TMUX_TMPDIR:fixture,TMUX_SESSION:'memory-probe',AGENTBOARD_DATA_DIR:fixture,LOG_FILE:path.join(fixture,'server.log'),LOG_LEVEL:'error',NODE_ENV:'production',AGENTBOARD_TMUX_SET_CLIPBOARD:'0',AGENTBOARD_RELAY_GRACE_MS:'500',AGENTBOARD_RELAY_PROGRESS_MS:'90000'}
+delete env.TMUX;delete env.TMUX_PANE
+for(const key of ['CLAUDE_CONFIG_DIR','CODEX_HOME','DEVIN_CLI_DIR','GROK_HOME','PI_HOME','PI_CODING_AGENT_DIR'])env[key]=path.join(fixture,key.toLowerCase())
+const wait=(ms:number)=>new Promise(r=>setTimeout(r,ms))
+const tmux=(...args:string[])=>{const r=Bun.spawnSync(['tmux',...args],{env,stdout:'pipe',stderr:'pipe'});if(r.exitCode)throw Error(r.stderr.toString());return r.stdout.toString().trim()}
+let child:any;let base='';let sockets:WebSocket[]=[];const samples:any[]=[];const started=Date.now();let observations:any={}
+async function sample(phase:string){const m=await(await fetch(base)).json();const r=Bun.spawnSync(['ps','-o','rss=','-p',String(child.pid)],{env,stdout:'pipe'});const cs=tmux('list-clients','-F','#{client_tty}').split('\n').filter(Boolean);const ss=tmux('list-sessions','-F','#{session_name}').split('\n');const x={phase,seconds:(Date.now()-started)/1000,...m,psRssBytes:Number(r.stdout.toString().trim())*1024,clients:cs.length,observers:ss.filter(s=>s.startsWith('memory-probe-ws-')).length};samples.push(x);console.log(JSON.stringify(x));writeFileSync(path.join(root,'samples.json'),JSON.stringify({observations,samples},null,2))}
+async function connect(token?:string,claim=1){const ws=new WebSocket(base.replace('http:','ws:')+'/ws');sockets.push(ws);let lease='';let ready=false;const received:string[]=[];let closed:any=null;ws.onmessage=e=>{const m=JSON.parse(String(e.data));if(m.type==='sessions')ws.send(JSON.stringify({type:'terminal-resume',token,claim}));if(m.type==='terminal-lease'){lease=m.token;ws.send(JSON.stringify({type:'terminal-attach',sessionId:'memory-probe:@0',attachId:claim,cols:80,rows:24}))}if(m.type==='terminal-ready')ready=true;if(m.type==='terminal-output'){received.push(m.data);if(m.outputSeq)ws.send(JSON.stringify({type:'terminal-ack',outputSeq:m.outputSeq}))}};ws.onclose=e=>closed={code:e.code,reason:e.reason};const until=Date.now()+10000;while(!ready&&Date.now()<until&&!closed)await wait(5);if(!ready)throw Error('No ready '+JSON.stringify(closed));return {ws,token:lease,received}}
+try{
+ tmux('-f','/dev/null','new-session','-d','-s','memory-probe','stty -echo; exec /bin/cat')
+ const s={id:'memory-probe:@0',tmuxWindow:'memory-probe:@0',name:'memory',remote:false}
+ child=Bun.spawn([process.execPath,path.join(root,'host.ts')],{env:{...env,MEMORY_SESSIONS:JSON.stringify([s])},stdout:'pipe',stderr:Bun.file(path.join(root,'stderr.log'))})
+ const reader=child.stdout.getReader();let text='';while(!base){const p=await reader.read();if(p.done)throw Error('Host exited');text+=new TextDecoder().decode(p.value);const line=text.split('\n').find(x=>x.startsWith('{"port":'));if(line)base='http://127.0.0.1:'+JSON.parse(line).port}
+ await sample('baseline');await wait(5000);await sample('baseline-idle')
+ let peer=await connect();const tty=tmux('list-clients','-F','#{client_tty}');await sample('one-active')
+ for(let i=2;i<=21;i++){const old=peer;peer=await connect(old.token,i);old.ws.close();if(tmux('list-clients','-F','#{client_tty}')!==tty)throw Error('Retained tty changed');await wait(80)}
+ observations.retainedReconnects=20;await sample('twenty-retained-reconnects');peer.ws.close();await wait(1500);await sample('one-expired')
+ let batch=await Promise.all(Array.from({length:6},()=>connect()));await sample('six-active');batch.forEach(p=>p.ws.close());await wait(2000);await sample('six-expired');await wait(15000);await sample('warm-idle')
+ for(let i=1;i<=60;i++){const p=await connect();const marker='memory_'+i;p.ws.send(JSON.stringify({type:'terminal-input',sessionId:'memory-probe:@0',attachId:1,data:marker+'\r'}));const until=Date.now()+3000;while(!p.received.join('').includes(marker)&&Date.now()<until)await wait(5);if(!p.received.join('').includes(marker))throw Error('Missing echo '+i);p.ws.close();await wait(800);if(i%10===0)await sample('reuse-'+i)}
+ observations.reusedAttachments=60;await wait(2000);await sample('churn-finished')
+ for(let i=1;i<=6;i++){await wait(10000);await sample('final-idle-'+i)}
+ observations.agentSurvived=tmux('list-windows','-F','#{window_id}')==='@0';await sample('done')
+}finally{
+ for(const ws of sockets)ws.close();if(child){child.kill();
+  let exited=await Promise.race([child.exited.then(()=>true),wait(3000).then(()=>false)])
+  if(!exited){observations.signalTimeout=true;try{await fetch(base+'/shutdown')}catch{};exited=await Promise.race([child.exited.then(()=>true),wait(3000).then(()=>false)])}
+  if(!exited){observations.forcedKill=true;child.kill('SIGKILL')}
+  observations.exitCode=await child.exited;observations.signal=child.signalCode
+ }
+ try{for(const s of tmux('list-sessions','-F','#{session_name}').split('\n')){if(!s.startsWith('memory-probe'))throw Error('Unexpected session');tmux('kill-session','-t','='+s)}}catch{}
+ writeFileSync(path.join(root,'samples.json'),JSON.stringify({observations,samples},null,2));console.log(JSON.stringify({observations}))
+}
