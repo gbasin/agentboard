@@ -5081,10 +5081,11 @@ describe('terminal parser readiness', () => {
     h.close()
   })
 
-  test('a blocked paste gesture stays deferred across ready but is cancelled across reconnect', async () => {
+  test.each(['MacIntel', 'Linux x86_64', 'Win32'])('a blocked paste gesture on %s stays deferred across ready but is cancelled across reconnect', async (platform) => {
+    globalAny.navigator = { platform, userAgent: 'Chrome', maxTouchPoints: 0 } as Navigator
     const deferred: unknown[] = []
     const h = await mount(undefined, { onDeferredInput: (data, kind) => deferred.push({ data, kind }) })
-    const gesture = () => act(() => { h.terminal.emitKey({ type: 'keydown', key: 'v', metaKey: true } as KeyboardEvent) })
+    const gesture = () => act(() => { h.terminal.emitKey({ type: 'keydown', key: 'v', metaKey: platform === 'MacIntel', ctrlKey: platform !== 'MacIntel' } as KeyboardEvent) })
     const paste = () => h.dispatchEvent('paste', { preventDefault() {}, stopPropagation() {}, clipboardData: { getData: () => 'captured', files: [], items: [], types: ['text/plain'] } })
     gesture()
     h.message({ type: 'terminal-ready', sessionId: 'A' })
