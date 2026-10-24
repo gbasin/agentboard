@@ -420,6 +420,7 @@ class PtyTerminalProxy extends TerminalProxyBase {
     this.disposed = true
     this.state = TerminalState.DEAD
     this.outputSuppressed = false
+    await this.drainSizeParticipation()
 
     if (this.process) {
       try {
@@ -587,6 +588,7 @@ class PtyTerminalProxy extends TerminalProxyBase {
           ...withTmuxUtf8Flag([
             ...this.clientFeatureArgs(),
             'attach',
+            ...(this.options.initialSizeParticipation === false ? ['-f', 'ignore-size'] : []),
             '-t',
             this.options.sessionName,
           ]),

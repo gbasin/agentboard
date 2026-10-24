@@ -62,6 +62,8 @@ interface TerminalProxyOptions {
   onGroupedSessionCreated?: () => void
   now?: () => number
   wait?: WaitFn
+  // Relay observers start excluded from window sizing until verified attach.
+  initialSizeParticipation?: boolean
   monitorTargets?: boolean
   host?: string
   sshOptions?: string[]
@@ -79,6 +81,8 @@ interface ITerminalProxy {
   write(data: string): void
   paste(data: string): void
   resize(cols: number, rows: number): void
+  // PTY capability; non-PTY implementations need not own a tmux client.
+  setSizeParticipation?(participates: boolean): Promise<void>
   dispose(): Promise<void>
   isReady(): boolean
   getClientTty(): string | null

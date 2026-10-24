@@ -82,6 +82,9 @@ export class TerminalRuntime {
     peer.data.attachedIdentity = null
     this.clipboard.stop(peer)
     this.pendingCopyMode.delete(peer)
+    void peer.data.terminal?.setSizeParticipation?.(false).catch(error => {
+      logger.warn('terminal_background_size_failed', { connectionId: peer.data.connectionId, error: String(error) })
+    })
   }
 
   private trackCopyMode(peer: TerminalPeer, operation: Promise<void>): void {
@@ -137,6 +140,7 @@ export class TerminalRuntime {
       sessionName: `${config.tmuxSession}-ws-${peer.data.connectionId}`,
       baseSession: host ? '' : config.tmuxSession,
       monitorTargets: config.terminalMonitorTargets,
+      initialSizeParticipation: false,
       onGroupedSessionCreated: this.options.onGroupedSessionCreated,
       ...(host ? { host, sshOptions: terminalSshOptions(), commandTimeoutMs: config.remoteTimeoutMs } : {}),
       onData: data => {
@@ -202,6 +206,8 @@ export class TerminalRuntime {
     const terminal = await this.ensureProxy(peer, session, sequence)
     if (!terminal || !this.current(peer, sequence)) return
     if (this.dimensions(cols, rows)) terminal.resize(cols!, rows!)
+    await terminal.setSizeParticipation?.(true)
+    if (!this.current(peer, sequence)) return
     const effectiveTarget = terminal.ensureEffectiveTarget(target)
     const capture = this.options.capture ?? captureTerminalScreen
     const history = await capture(effectiveTarget, session.remote ? session.host : undefined)

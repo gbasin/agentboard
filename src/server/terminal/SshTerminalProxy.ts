@@ -5,6 +5,7 @@
 import { logger } from '../logger'
 import { shellQuote } from '../shellQuote'
 import { withTmuxUtf8Flag } from '../tmuxFormat'
+import { sanitizedTmuxEnv } from '../tmuxEnv'
 import {
   syncFeatureEnabled,
   TerminalProxyBase,
@@ -102,6 +103,7 @@ class SshTerminalProxy extends TerminalProxyBase {
     this.startAttemptId += 1
     this.state = TerminalState.DEAD
     this.outputSuppressed = false
+    await this.drainSizeParticipation()
 
     if (this.process) {
       try {
@@ -138,6 +140,7 @@ class SshTerminalProxy extends TerminalProxyBase {
     const proc = this.spawn([...this.sshArgs, remoteCmd], {
       stdout: 'pipe',
       stderr: 'pipe',
+      env: sanitizedTmuxEnv(),
       ...(input !== undefined ? { stdin: Buffer.from(input) } : {}),
     })
 
@@ -173,7 +176,7 @@ class SshTerminalProxy extends TerminalProxyBase {
     return stdoutText
   }
 
-  protected async runParsedTmuxAsync(args: string[]): Promise<string> {
+  protected async runParsedTmuxNonBlocking(args: string[]): Promise<string> {
     return this.runTmuxAsync(withTmuxUtf8Flag(args))
   }
 
@@ -318,6 +321,7 @@ class SshTerminalProxy extends TerminalProxyBase {
         ...featureArgs,
         'new-session',
         '-A',
+        ...(this.options.initialSizeParticipation === false ? ['-f', 'ignore-size'] : []),
         '-s',
       ]),
     ].join(' ') + ` ${shellQuote(this.options.sessionName)}`
@@ -513,7 +517,7 @@ class SshTerminalProxy extends TerminalProxyBase {
       }
       let output = ''
       try {
-        output = await this.runParsedTmuxAsync([
+        output = await this.runParsedTmuxNonBlocking([
           'list-clients',
           '-t',
           this.options.sessionName,
