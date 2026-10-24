@@ -1,7 +1,16 @@
-import { expect, test } from 'bun:test'
+import { afterEach, beforeEach, expect, test } from 'bun:test'
 import React from 'react'
 import TestRenderer, { act } from 'react-test-renderer'
 import { editDeferredText, MAX_RECOVERY_TEXT, useRecoveryDraft } from '../hooks/useRecoveryDraft'
+
+const originalStorage = globalThis.localStorage
+beforeEach(() => {
+  const values = new Map<string, string>()
+  globalThis.localStorage = { get length() { return values.size }, key: i => [...values.keys()][i] ?? null,
+    getItem: key => values.get(key) ?? null, setItem: (key, value) => { values.set(key, value) },
+    removeItem: key => { values.delete(key) }, clear: () => values.clear() }
+})
+afterEach(() => { globalThis.localStorage = originalStorage })
 
 test('draft editing preserves text/newlines, handles deletion, and excludes commands', () => {
   expect(editDeferredText('hello🙂', '\x7f', 'typing')).toBe('hello')
@@ -59,6 +68,24 @@ test('capacity rejection remains visible and requires review even when another t
   expect(draft.truncated).toBe(false)
   expect(draft.text).toBe('reviewed replacement')
   act(() => { draft.discard() })
+  expect(draft.pending).toBe(false)
+  act(() => { renderer.unmount() })
+})
+
+
+test('hook remount restores a review draft and explicit discard survives another remount', () => {
+  let draft!: ReturnType<typeof useRecoveryDraft>
+  const Harness = () => { draft = useRecoveryDraft('durable'); return null }
+  let renderer!: TestRenderer.ReactTestRenderer
+  act(() => { renderer = TestRenderer.create(<Harness />) })
+  act(() => { draft.capture('preserved', 'typing') })
+  expect(draft.persistence).toBe('saved')
+  act(() => { renderer.unmount() })
+  act(() => { renderer = TestRenderer.create(<Harness />) })
+  expect(draft.text).toBe('preserved')
+  expect(draft.pending).toBe(true)
+  act(() => { draft.discard(); renderer.unmount() })
+  act(() => { renderer = TestRenderer.create(<Harness />) })
   expect(draft.pending).toBe(false)
   act(() => { renderer.unmount() })
 })

@@ -24,40 +24,50 @@ test('dashboard loads and terminal attaches', async ({ page }) => {
 
 test('digit shortcut switches sessions while the terminal has focus', async ({ page }) => {
   const session = process.env.E2E_TMUX_SESSION
-  if (!session) throw new Error('E2E_TMUX_SESSION is not set')
-  const targetName = `shortcut-target-${process.pid}-${Date.now()}`
-
-  const created = spawnSync(
-    'tmux',
-    ['new-window', '-t', `=${session}`, '-n', targetName],
-    { encoding: 'utf-8' }
-  )
-  if (created.status !== 0) {
-    throw new Error(`Failed to create shortcut target: ${created.stderr}`)
+  const privateDir = process.env.E2E_TMUX_TMPDIR
+  if (!session || !privateDir) throw new Error('Private E2E tmux server is required')
+  const env = { ...process.env, TMUX_TMPDIR: privateDir }
+  delete env.TMUX
+  const tmux = (...args: string[]) => spawnSync('tmux', args, { env, encoding: 'utf-8' })
+  const created: string[] = []
+  const suffix = `${process.pid}-${Date.now()}`
+  function window(name: string) {
+    const result = tmux('new-window', '-P', '-F', '#{window_id}', '-t', `=${session}`, '-n', name)
+    if (result.status !== 0) throw new Error(`Failed to create shortcut fixture: ${result.stderr}`)
+    const id = `${session}:${result.stdout.trim()}`
+    created.push(id)
+    return id
   }
+  try {
+    // Own both targets: a previous test's removed window can remain in the
+    // discovery snapshot briefly and must not become this test's initial pane.
+    const initialId = window(`shortcut-initial-${suffix}`)
+    const targetId = window(`shortcut-target-${suffix}`)
+    await page.goto('/')
+    const cards = page.getByTestId('session-card')
+    const initialCard = page.locator(`[data-testid="session-card"][data-session-id="${initialId}"]`)
+    const target = page.locator(`[data-testid="session-card"][data-session-id="${targetId}"]`)
+    await expect(initialCard).toBeVisible({ timeout: 10000 })
+    await expect(target).toBeVisible({ timeout: 10000 })
+    await initialCard.click()
+    await expect(initialCard).toHaveClass(/selected/)
+    await expect(page.getByTestId('terminal-recovery-status')).toHaveCount(0)
 
-  await page.goto('/')
-  const cards = page.getByTestId('session-card')
-  const target = cards.filter({ hasText: targetName })
-  await expect(target).toBeVisible({ timeout: 10000 })
-
-  const cardTexts = await cards.allTextContents()
-  const targetIndex = cardTexts.findIndex((text) => text.includes(targetName))
-  if (targetIndex < 0 || targetIndex >= 9) {
-    throw new Error(`Shortcut target has unsupported visible index ${targetIndex}`)
+    const terminalInput = page.locator('.xterm-helper-textarea')
+    await terminalInput.focus()
+    await expect(terminalInput).toBeFocused()
+    const ids = await cards.evaluateAll(nodes => nodes.map(node => node.getAttribute('data-session-id')))
+    // AnimatePresence can retain a removed row while the live list has
+    // already advanced. Shortcuts follow live sessions, not exiting DOM rows.
+    const liveSessions: Array<{ id: string }> = await (await page.request.get('/api/sessions')).json()
+    const liveIds = new Set(liveSessions.map(item => item.id))
+    const targetIndex = ids.filter(id => id !== null && liveIds.has(id)).indexOf(targetId)
+    if (targetIndex < 0 || targetIndex >= 9) throw new Error(`Shortcut target has unsupported visible index ${targetIndex}`)
+    const isMac = await page.evaluate(() => /Mac|iPhone|iPad|iPod/.test(navigator.platform))
+    await page.keyboard.press(isMac ? `Control+Alt+${targetIndex + 1}` : `Control+Shift+${targetIndex + 1}`)
+    await expect(target).toHaveClass(/selected/)
+    await expect(initialCard).not.toHaveClass(/selected/)
+  } finally {
+    for (const id of created) tmux('kill-window', '-t', id)
   }
-  const initial = cards.nth(targetIndex === 0 ? 1 : 0)
-  await initial.click()
-  await expect(initial).toHaveClass(/selected/)
-
-  const terminalInput = page.locator('.xterm-helper-textarea')
-  await terminalInput.focus()
-  await expect(terminalInput).toBeFocused()
-
-  const isMac = await page.evaluate(() => /Mac|iPhone|iPad|iPod/.test(navigator.platform))
-  const digit = String(targetIndex + 1)
-  await page.keyboard.press(isMac ? `Control+Alt+${digit}` : `Control+Shift+${digit}`)
-
-  await expect(target).toHaveClass(/selected/)
-  await expect(initial).not.toHaveClass(/selected/)
 })

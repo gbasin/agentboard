@@ -27,6 +27,7 @@ import MediaRail from './MediaRail'
 import PasteStatus from './PasteStatus'
 import RecoveryDraft from './RecoveryDraft'
 import { useRecoveryDraft } from '../hooks/useRecoveryDraft'
+import { recoveryDraftIdentity } from '../utils/recoveryDraftIdentity'
 import { useBrowserPaste, type BrowserPaste } from '../hooks/useBrowserPaste'
 import { clipboardFiles } from '../utils/browserFiles'
 import SessionDrawer from './SessionDrawer'
@@ -185,7 +186,7 @@ export default function Terminal({
   }, [sessions, hibernatingSessions])
 
   const recoveryIdentity = session && !isReadOnly
-    ? JSON.stringify([session.id, session.tmuxWindow, session.host ?? null, session.remote === true]) : null
+    ? recoveryDraftIdentity(session) : null
   const recoveryDraft = useRecoveryDraft(recoveryIdentity)
 
   const {
@@ -1182,13 +1183,13 @@ export default function Terminal({
   pasteErrorRef.current = browserPaste.fail
 
   const sendRecoveryDraft = () => {
-    if (!session || isReadOnly || !isInputReady || !recoveryDraft.text) return
+    if (!session || isReadOnly || !isInputReady || !recoveryDraft.text || recoveryDraft.persistence === 'sent-remove-failed') return
     if (inTmuxCopyModeRef.current) {
       sendMessage({ type: 'tmux-cancel-copy-mode', sessionId: session.id })
       setTmuxCopyMode(false)
     }
     if (sendMessage({ type: 'terminal-paste', sessionId: session.id, data: recoveryDraft.text }) === false) return
-    recoveryDraft.discard()
+    recoveryDraft.sent()
     handleRefocus()
   }
 
@@ -1512,6 +1513,7 @@ export default function Terminal({
         {recoveryDraft.pending && session && !isReadOnly && (
           <RecoveryDraft key={recoveryIdentity} text={recoveryDraft.text} sessionName={session.name} ready={isInputReady}
             atLimit={recoveryDraft.atLimit} truncated={recoveryDraft.truncated}
+            persistence={recoveryDraft.persistence} onSave={recoveryDraft.save}
             onDiscardOthers={recoveryDraft.hasOtherDrafts ? recoveryDraft.discardOthers : undefined} onEdit={recoveryDraft.edit} onSend={sendRecoveryDraft}
             onDiscard={() => { recoveryDraft.discard(); handleRefocus() }} />
         )}

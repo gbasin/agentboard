@@ -3,6 +3,8 @@ import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 
 const test = base.extend<{ target: string }>({
+  // Playwright requires a destructured fixture signature.
+  // eslint-disable-next-line no-empty-pattern
   target: async ({}, use) => {
     const root = process.env.E2E_TMUX_TMPDIR
     const session = process.env.E2E_TMUX_SESSION

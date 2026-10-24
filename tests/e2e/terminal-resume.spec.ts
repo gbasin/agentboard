@@ -4,8 +4,9 @@
 import { test as base, expect, type Page, type WebSocketRoute } from '@playwright/test'
 import { spawnSync } from 'node:child_process'
 import path from 'node:path'
+import { shellQuote } from '../../src/server/shellQuote'
 
-type Frame = { type: string; sessionId?: string; data?: string; seq?: number; attachId?: number }
+type Frame = { type: string; sessionId?: string; data?: string; seq?: number; attachId?: number; cols?: number; rows?: number }
 type Pane = { id: string; capture: () => string }
 type Panes = { a: Pane; b: Pane }
 
@@ -43,20 +44,28 @@ class Wire {
   sent: Frame[] = []
   received: Frame[] = []
   connections = 0
+  holdAcks = false
+  openedAt: number[] = []
+  closed: Array<{ code: number; at: number }> = []
   holdPongs = false
   holdReadyFor: string | null = null
   private held: Array<{ ws: WebSocketRoute; message: string | Buffer }> = []
   private heldReady: Array<{ ws: WebSocketRoute; message: string | Buffer }> = []
   private currentSocket: WebSocketRoute | null = null
-
   async install(page: Page) {
     await page.routeWebSocket(/\/ws(?:\?|$)/, ws => {
       this.connections++
+      this.openedAt.push(Date.now())
       this.currentSocket = ws
       const server = ws.connectToServer()
       ws.onMessage(message => {
-        this.sent.push(JSON.parse(String(message)))
-        server.send(message)
+        const frame = JSON.parse(String(message)) as Frame
+        this.sent.push(frame)
+        if (frame.type !== 'terminal-ack' || !this.holdAcks) server.send(message)
+      })
+      server.onClose((code, reason) => {
+        this.closed.push({ code, at: Date.now() })
+        ws.close({ code, reason })
       })
       server.onMessage(message => {
         const frame = JSON.parse(String(message)) as Frame
@@ -67,7 +76,30 @@ class Wire {
       })
     })
   }
-
+  async installNativePressure(page: Page) {
+    await page.exposeFunction('__pressureClose', (code: number) => { this.closed.push({ code, at: Date.now() }) })
+    await page.addInitScript(() => {
+      const state = window as unknown as { __holdPressureAcks: boolean; __pressureClose(code: number): Promise<void> }
+      state.__holdPressureAcks = true
+      const NativeSocket = window.WebSocket
+      window.WebSocket = class extends NativeSocket {
+        constructor(url: string | URL, protocols?: string | string[]) {
+          super(url, protocols)
+          this.addEventListener('close', event => { void state.__pressureClose(event.code) })
+        }
+        send(data: string | ArrayBufferLike | Blob | ArrayBufferView) {
+          if (typeof data === 'string' && state.__holdPressureAcks && JSON.parse(data).type === 'terminal-ack') return
+          super.send(data)
+        }
+      }
+    })
+    page.on('websocket', socket => {
+      this.connections++
+      this.openedAt.push(Date.now())
+      socket.on('framesent', event => { this.sent.push(JSON.parse(String(event.payload))) })
+      socket.on('framereceived', event => { this.received.push(JSON.parse(String(event.payload))) })
+    })
+  }
   releasePongs() {
     this.holdPongs = false
     for (const { ws, message } of this.held.splice(0)) ws.send(message)
@@ -96,6 +128,7 @@ async function select(page: Page, pane: Pane, wire: Wire) {
   await card(page, pane).click()
   await expect.poll(() => wire.readyCount(pane.id)).toBeGreaterThan(before)
   await expect(card(page, pane)).toHaveClass(/selected/)
+  await expect(page.getByTestId('terminal-recovery-status')).toHaveCount(0)
 }
 
 async function write(page: Page, text: string) {
@@ -138,6 +171,8 @@ test('resume gates keyboard and paste until verified reattach, retaining a healt
   await visibility(page, 'hidden')
   await visibility(page, 'visible')
   await expect.poll(() => wire.sent.filter(f => f.type === 'ping').length).toBeGreaterThan(0)
+  await expect(page.getByTestId('terminal-recovery-status')).toContainText('Reconnecting')
+  await expect(page.getByTestId('terminal-recovery-status')).toContainText('Input paused')
   await write(page, 'BLOCKED_KEY')
   await paste(page, 'BLOCKED_PASTE')
   expect(wire.inputContaining('BLOCKED_')).toHaveLength(0)
@@ -145,6 +180,8 @@ test('resume gates keyboard and paste until verified reattach, retaining a healt
   expect(wire.connections).toBe(connections)
   wire.releasePongs()
   await expect.poll(() => wire.readyCount(panes.a.id)).toBeGreaterThan(before)
+  await expect(page.getByTestId('terminal-recovery-status')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Discard text', exact: true }).click()
   await write(page, 'after-resume')
   await expect.poll(panes.a.capture).toContain('after-resume')
   await expect.poll(() => wire.received.some(f => f.type === 'terminal-output' && f.data?.includes('after-resume'))).toBe(true)
@@ -190,6 +227,7 @@ test('missing resume pong replaces the socket without replaying blocked input', 
   // Do not release the old pong: replacement readiness must stand on its own.
   wire.holdPongs = false
   await expect.poll(() => wire.readyCount(panes.a.id)).toBeGreaterThan(before)
+  await page.getByRole('button', { name: 'Discard text', exact: true }).click()
   await write(page, 'fresh-connection')
   await expect.poll(panes.a.capture).toContain('fresh-connection')
   expect(wire.inputContaining('DO_NOT_REPLAY')).toHaveLength(0)
@@ -211,6 +249,7 @@ test('A-B-A selection during recovery accepts input only in final A', async ({ p
   expect(wire.inputContaining('BLOCKED_SWITCH')).toHaveLength(0)
   wire.releasePongs()
   await expect.poll(() => wire.readyCount(panes.a.id)).toBeGreaterThan(before)
+  await page.getByRole('button', { name: 'Discard text', exact: true }).click()
   await write(page, 'FINAL_A_ONLY')
   await expect.poll(panes.a.capture).toContain('FINAL_A_ONLY')
   expect(panes.b.capture()).not.toContain('FINAL_A_ONLY')
@@ -233,10 +272,11 @@ test('old A readiness cannot enable input during a later B-to-A attachment', asy
   await write(page, 'STALE_READY_INPUT')
   expect(wire.inputContaining('STALE_READY_INPUT')).toHaveLength(0)
   expect(panes.a.capture()).not.toContain('STALE_READY_INPUT')
-  const loading = page.getByTestId('terminal-panel').getByRole('status').filter({ hasText: 'Loading' })
+  const loading = page.getByTestId('terminal-recovery-status')
   await expect(loading).toBeVisible()
   wire.releaseReady()
   await expect(loading).toHaveCount(0)
+  await page.getByRole('button', { name: 'Discard text', exact: true }).click()
   await write(page, 'CURRENT_READY_INPUT')
   await expect.poll(panes.a.capture).toContain('CURRENT_READY_INPUT')
   expect(panes.b.capture()).not.toContain('CURRENT_READY_INPUT')
@@ -305,4 +345,154 @@ test('suspended Chromium renderer resumes after a real scheduling gap and reatta
   await write(page, 'after-real-freeze')
   await expect.poll(panes.a.capture).toContain('after-real-freeze')
   await session.detach()
+})
+
+for (const sizing of ['latest', 'smallest']) {
+  test(`background phone releases shared pane dimensions (${sizing})`, async ({ page, browser, panes }) => {
+    privateTmux('set-window-option', '-t', panes.a.id, 'window-size', sizing)
+    const desktop = new Wire()
+    await desktop.install(page)
+    await page.goto('/')
+    await select(page, panes.a, desktop)
+    const desktopCols = desktop.sent.findLast(f => f.type === 'terminal-attach')!.cols!
+    const width = () => Number(privateTmux('display-message', '-p', '-t', panes.a.id, '#{pane_width}'))
+    await expect.poll(width).toBe(desktopCols)
+    const phoneContext = await browser.newContext({ viewport: { width: 1440, height: 900 } })
+    try {
+      const phone = await phoneContext.newPage()
+      const mobile = new Wire()
+      await mobile.install(phone)
+      await phone.goto(new URL('/', page.url()).href)
+      await select(phone, panes.a, mobile)
+      await phone.setViewportSize({ width: 390, height: 844 })
+      await expect.poll(() => mobile.sent.some(f => f.type === 'terminal-resize' && f.cols! < desktopCols)).toBe(true)
+      const phoneCols = mobile.sent.findLast(f => f.type === 'terminal-resize')!.cols!
+      await expect.poll(width).toBe(phoneCols)
+      await visibility(phone, 'hidden')
+      // No desktop keystroke or resize may be needed to reclaim its width.
+      await expect.poll(width).toBe(desktopCols)
+      const ready = mobile.readyCount(panes.a.id)
+      await visibility(phone, 'visible')
+      await expect.poll(() => mobile.readyCount(panes.a.id)).toBeGreaterThan(ready)
+      await expect.poll(width).toBe(phoneCols)
+      await write(phone, 'PHONE_RETURNED_ONCE')
+      await expect.poll(() => panes.a.capture().split('PHONE_RETURNED_ONCE').length - 1).toBe(1)
+      await phoneContext.close()
+      await expect.poll(width).toBe(desktopCols)
+      await write(page, 'DESKTOP_STILL_READY')
+      await expect.poll(panes.a.capture).toContain('DESKTOP_STILL_READY')
+    } finally { await phoneContext.close() }
+  })
+}
+
+test('real output overload backs off and recovers once the producer stops', async ({ page, panes }, testInfo) => {
+  test.setTimeout(60_000)
+  const producer = path.resolve('tests/e2e/fixtures/terminalFlood.ts')
+  privateTmux('respawn-window', '-k', '-t', panes.a.id, `stty -echo; exec bun ${shellQuote(producer)}`)
+  const wire = new Wire()
+  await wire.installNativePressure(page)
+  await page.goto('/')
+  await select(page, panes.a, wire)
+  try {
+  await write(page, 'FLOOD')
+  await expect.poll(() => wire.received.filter(f => f.type === 'terminal-overload').length, { timeout: 35_000 }).toBeGreaterThanOrEqual(3)
+  // Stop while cooling down, before the next snapshot starts streaming.
+  privateTmux('send-keys', '-t', panes.a.id, 'STOP', 'Enter')
+  await page.evaluate(() => { (window as unknown as { __holdPressureAcks: boolean }).__holdPressureAcks = false })
+  await expect.poll(() => wire.connections, { timeout: 12_000 }).toBeGreaterThanOrEqual(4)
+  const closures = wire.closed
+  // Browser scheduling may add delay; it must not skip the retry floor.
+  for (let i = 0; i < 3; i++) expect(wire.openedAt[i + 1]! - closures[i]!.at).toBeGreaterThanOrEqual(900 * 2 ** i)
+  // Recovery uses the manager's own retry and retained lease, without a reload.
+  await expect.poll(() => wire.readyCount(panes.a.id), { timeout: 15_000 }).toBeGreaterThanOrEqual(4)
+  await expect(page.getByTestId('terminal-recovery-status')).toHaveCount(0)
+  await write(page, 'PRESSURE_RECOVERED_ONCE')
+  await expect.poll(() => panes.a.capture().split('PRESSURE_RECOVERED_ONCE').length - 1).toBe(1)
+  } finally {
+    console.log('pressure-summary', JSON.stringify({ openedAt: wire.openedAt, closed: wire.closed, inputs: wire.sent.filter(f => f.type === 'terminal-input'), ready: wire.readyCount(panes.a.id), outputs: wire.received.filter(f => f.type === 'terminal-output').length }))
+    await testInfo.attach('pressure-transport', { body: JSON.stringify({ openedAt: wire.openedAt, closed: wire.closed, inputs: wire.sent.filter(f => f.type === 'terminal-input'), ready: wire.readyCount(panes.a.id), outputs: wire.received.filter(f => f.type === 'terminal-output').length }), contentType: 'application/json' })
+  }
+})
+
+test('recovery text stays with its terminal until explicitly reviewed and sent', async ({ page, panes }) => {
+  const wire = new Wire()
+  await wire.install(page)
+  await page.goto('/')
+  await select(page, panes.a, wire)
+  wire.holdPongs = true
+  await visibility(page, 'hidden')
+  await visibility(page, 'visible')
+  await write(page, 'UNSENT_ORIGINAL')
+  await paste(page, 'PASTED_DRAFT')
+  const draft = page.getByRole('textbox', { name: /Unsent text for/ })
+  await expect(draft).toHaveValue('UNSENT_ORIGINAL\nPASTED_DRAFT')
+  await expect(page.getByRole('button', { name: 'Send text', exact: true })).toBeDisabled()
+  wire.releasePongs()
+  await expect(page.getByTestId('terminal-recovery-status')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Send text', exact: true })).toBeEnabled()
+  expect(wire.inputContaining('UNSENT_ORIGINAL')).toHaveLength(0)
+  await write(page, '_STILL_A_DRAFT')
+  await expect(draft).toHaveValue('UNSENT_ORIGINAL\nPASTED_DRAFT_STILL_A_DRAFT\n')
+  expect(wire.inputContaining('_STILL_A_DRAFT')).toHaveLength(0)
+  await select(page, panes.b, wire)
+  await expect(draft).toHaveCount(0)
+  await write(page, 'LIVE_B')
+  await expect.poll(panes.b.capture).toContain('LIVE_B')
+  await select(page, panes.a, wire)
+  await expect(draft).toHaveValue('UNSENT_ORIGINAL\nPASTED_DRAFT_STILL_A_DRAFT\n')
+  await draft.fill('REVIEWED_ONLY')
+  await page.getByRole('button', { name: 'Send text', exact: true }).click()
+  await expect(draft).toHaveCount(0)
+  expect(wire.sent.filter(f => f.type === 'terminal-paste' && f.data === 'REVIEWED_ONLY')).toHaveLength(1)
+  // Enter is a separate explicit gesture after reviewing/sending the text.
+  await write(page, '')
+  await expect.poll(() => panes.a.capture().split('REVIEWED_ONLY').length - 1).toBe(1)
+  expect(panes.b.capture()).not.toContain('REVIEWED_ONLY')
+  expect(panes.a.capture()).not.toContain('UNSENT_ORIGINAL')
+})
+
+test('locally saved recovery text survives reload and a new document until explicit discard', async ({ page, browser, panes }) => {
+  const wire = new Wire()
+  await wire.install(page)
+  await page.goto('/')
+  await select(page, panes.a, wire)
+  wire.holdPongs = true
+  await visibility(page, 'hidden')
+  await visibility(page, 'visible')
+  await write(page, 'PERSISTED_REVIEW_ONLY')
+  await expect(page.getByRole('textbox', { name: /Unsent text for/ })).toHaveValue('PERSISTED_REVIEW_ONLY\n')
+  const record = (await (await page.request.get('/api/sessions')).json()).find((item: { id: string }) => item.id === panes.a.id)
+  wire.inject({ type: 'session-update', session: { ...record, createdAt: new Date().toISOString() } } as Frame)
+  await expect(page.getByRole('textbox', { name: /Unsent text for/ })).toHaveValue('PERSISTED_REVIEW_ONLY\n')
+  wire.releasePongs()
+  await page.reload()
+  await expect(page.getByRole('textbox', { name: /Unsent text for/ })).toHaveValue('PERSISTED_REVIEW_ONLY\n')
+  await expect(page.getByRole('button', { name: 'Send text', exact: true })).toBeEnabled()
+  expect(wire.inputContaining('PERSISTED_REVIEW_ONLY')).toHaveLength(0)
+  expect(panes.a.capture()).not.toContain('PERSISTED_REVIEW_ONLY')
+  // A new browser document has no shared React or module memory. Restore only
+  // persisted browser storage, as after Safari discards and recreates a tab.
+  const fresh = await browser.newContext({ storageState: await page.context().storageState(), viewport: { width: 1440, height: 900 } })
+  try {
+    const restored = await fresh.newPage()
+    const newWire = new Wire()
+    await newWire.install(restored)
+    await restored.goto(page.url())
+    await expect(restored.getByRole('textbox', { name: /Unsent text for/ })).toHaveValue('PERSISTED_REVIEW_ONLY\n')
+    await expect(restored.getByRole('button', { name: 'Send text', exact: true })).toBeEnabled()
+    expect(newWire.inputContaining('PERSISTED_REVIEW_ONLY')).toHaveLength(0)
+    await restored.getByRole('button', { name: 'Discard text', exact: true }).click()
+    await restored.reload()
+    await expect(restored.getByTestId('terminal-recovery-status')).toHaveCount(0)
+    await expect(restored.getByRole('textbox', { name: /Unsent text for/ })).toHaveCount(0)
+    expect(panes.a.capture()).not.toContain('PERSISTED_REVIEW_ONLY')
+  } finally { await fresh.close() }
+  const sibling = await page.context().newPage()
+  await sibling.goto(page.url())
+  await expect(sibling.getByRole('textbox', { name: /Unsent text for/ })).toHaveValue('PERSISTED_REVIEW_ONLY\n')
+  await sibling.getByRole('button', { name: 'Discard text', exact: true }).click()
+  await expect(page.getByRole('textbox', { name: /Unsent text for/ })).toHaveCount(0)
+  await page.reload()
+  await expect(page.getByRole('textbox', { name: /Unsent text for/ })).toHaveCount(0)
+  await sibling.close()
 })
