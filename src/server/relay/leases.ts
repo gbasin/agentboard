@@ -1,5 +1,6 @@
 import { resolveWorkerPath } from '../workerPath'
 import { isValidSessionId, isValidTmuxTarget } from '../validators'
+import { logger } from '../logger'
 /** Bounded observers survive transport replacement; agent panes never belong to a lease. */
 import type { ServerWebSocket } from 'bun'
 import type { ClientMessage } from '../../shared/types'
@@ -231,9 +232,11 @@ export class TerminalLeases {
     if (!worker) return
     const task = new Promise<void>(resolve => {
       const timer = setTimeout(() => {
-        // Bun's compiled worker termination can crash the runtime. Fail the
-        // service rather than continue accepting work with an orphan observer.
-        this.notify({ type: 'fatal', error: 'Terminal worker did not finish disposal' })
+        // tmux cleanup may legitimately outlast this diagnostic deadline.
+        // Keep the realm in retiring (counted against capacity, never reused)
+        // until it acknowledges disposal; one stalled observer must not exit
+        // the service. Explicit server shutdown has its own outer deadline.
+        logger.warn('terminal_worker_disposal_delayed', { leaseId: lease.id })
       }, 5000)
       const previous = worker.onmessage
       worker.onmessage = event => {

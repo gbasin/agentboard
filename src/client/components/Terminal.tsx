@@ -1696,7 +1696,7 @@ export default function Terminal({
           onSendKey={handleSendKey}
           onPasteText={handlePasteText}
           onPasteImage={handlePasteImage}
-          disabled={connectionStatus !== 'connected' || isReadOnly || !isInputReady}
+          disabled={connectionStatus !== 'connected' || isReadOnly || !isInputReady || recoveryDraft.pending}
           keyboardDisabled={isReadOnly}
           sessions={sessions.map(s => ({ id: s.id, name: s.name, status: s.status }))}
           currentSessionId={session.id}

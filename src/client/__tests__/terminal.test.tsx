@@ -1188,12 +1188,15 @@ for (const gesture of ['key', 'paste'] as const) {
     act(() => send().props.onClick())
     expect(renderer.root.findByProps({ id: 'recovery-draft' }).props.value).toBe('retained')
     reject = false
+    expect(controls().props.disabled).toBe(true)
+    expect(controls().props.keyboardDisabled).toBe(false)
     // Upload results must never be added to a text draft or sent past it.
     act(() => controls().props.onPasteImage('image-path'))
     expect(renderer.root.findByProps({ id: 'recovery-draft' }).props.value).toBe('retained')
     expect(accepted.filter((m: any) => m.type === 'terminal-paste' || m.type === 'terminal-input')).toHaveLength(0)
     act(() => send().props.onClick())
     expect(renderer.root.findAllByProps({ id: 'recovery-draft' })).toHaveLength(0)
+    expect(controls().props.disabled).toBe(false)
     expect(accepted.filter((m: any) => m.type === 'terminal-paste')).toEqual([
       { type: 'terminal-paste', sessionId: baseSession.id, data: 'retained' },
     ])

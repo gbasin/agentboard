@@ -24,6 +24,7 @@ export default function RecoveryDraft({ text, sessionName, ready, atLimit, trunc
       <p id="recovery-draft-hint" className="mt-1 text-xs text-secondary">
         {truncated ? 'Some text could not be saved: the draft limit was reached. Review before sending.' : atLimit ? 'Draft limit reached. Edit or discard text to make room.' : persistence === 'saved' ? 'Saved on this device until sent or discarded. Never sent automatically.' : 'Never sent automatically.'}
       </p>
+      <p className="mt-1 text-xs text-secondary">Terminal keys are paused until this draft is sent or discarded. You can keep editing here.</p>
       {persistence !== 'saved' && <p role="status" className="mt-1 text-xs text-primary">
         {persistence === 'sent-remove-failed' ? 'Text was sent, but its saved copy could not be removed. Discard the saved copy before continuing; it may return after reload.' : persistence === 'conflict' ? 'Another tab changed this draft. Your version is kept here; save it explicitly to replace the saved version.' :
           persistence === 'remove-failed' ? 'Could not remove the saved draft. It may return after reload; retry Discard text.' :

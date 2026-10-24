@@ -414,7 +414,7 @@ test('real output overload backs off and recovers once the producer stops', asyn
   }
 })
 
-test('recovery text stays with its terminal until explicitly reviewed and sent', async ({ page, panes }) => {
+test('recovery text stays with its terminal until explicitly reviewed and sent', async ({ page, panes }, testInfo) => {
   const wire = new Wire()
   await wire.install(page)
   await page.goto('/')
@@ -430,6 +430,14 @@ test('recovery text stays with its terminal until explicitly reviewed and sent',
   wire.releasePongs()
   await expect(page.getByTestId('terminal-recovery-status')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Send text', exact: true })).toBeEnabled()
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect(page.getByRole('button', { name: 'esc', exact: true })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Enter', exact: true })).toBeDisabled()
+  await expect(page.getByText('Terminal keys are paused until this draft is sent or discarded. You can keep editing here.')).toBeVisible()
+  const screenshot = testInfo.outputPath('draft-controls-paused.png')
+  await page.screenshot({ path: screenshot })
+  await testInfo.attach('draft controls visibly paused', { path: screenshot, contentType: 'image/png' })
+  await page.setViewportSize({ width: 1440, height: 900 })
   expect(wire.inputContaining('UNSENT_ORIGINAL')).toHaveLength(0)
   await write(page, '_STILL_A_DRAFT')
   await expect(draft).toHaveValue('UNSENT_ORIGINAL\nPASTED_DRAFT_STILL_A_DRAFT\n')

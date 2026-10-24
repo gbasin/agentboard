@@ -30,10 +30,12 @@ const token = (peer: ReturnType<typeof socket>) => JSON.parse(peer.frames.find(f
 describe('terminal lease ownership and resource bounds', () => {
   const original = globalThis.Worker
   let leases: TerminalLeases
+  let notifications: Array<{ type: string }>
   beforeEach(() => {
     FakeWorker.instances = []
     globalThis.Worker = FakeWorker as unknown as typeof Worker
-    leases = new TerminalLeases(() => {})
+    notifications = []
+    leases = new TerminalLeases(message => notifications.push(message))
     leases.update([{ id: 'agentboard:@1', tmuxWindow: 'agentboard:@1' }], true)
   })
   afterEach(async () => {
@@ -112,6 +114,29 @@ describe('terminal lease ownership and resource bounds', () => {
     expect(next.closes).toHaveLength(0)
     expect(FakeWorker.instances).toHaveLength(32)
   })
+
+  test('slow disposal stays bounded without exiting healthy connections, then reuses only after acknowledgment', async () => {
+    const delayed = socket(), healthy = socket()
+    leases.handle(asSocket(delayed), { type: 'terminal-attach', sessionId: 'agentboard:@1' })
+    leases.close(asSocket(delayed))
+    leases.handle(asSocket(healthy), { type: 'terminal-attach', sessionId: 'agentboard:@1' })
+    await Bun.sleep(5100)
+    expect(notifications.some(message => message.type === 'fatal')).toBe(false)
+    expect(healthy.closes).toHaveLength(0)
+    FakeWorker.instances[1].emit({ type: 'send', epoch: 1, sequence: 1, payload: JSON.stringify({ type: 'terminal-output', data: 'still live' }) })
+    expect(healthy.frames.some(frame => frame.includes('still live'))).toBe(true)
+    for (let index = 0; index < 30; index++) leases.handle(asSocket(socket()), { type: 'terminal-attach', sessionId: 'agentboard:@1' })
+    const blocked = socket()
+    leases.handle(asSocket(blocked), { type: 'terminal-resume', claim: 1 })
+    expect(blocked.closes).toContain(1013)
+    expect(FakeWorker.instances).toHaveLength(32)
+    FakeWorker.instances[0].emit({ type: 'stopped' })
+    await Promise.resolve()
+    const next = socket()
+    leases.handle(asSocket(next), { type: 'terminal-attach', sessionId: 'agentboard:@1' })
+    expect(next.closes).toHaveLength(0)
+    expect(FakeWorker.instances).toHaveLength(32)
+  }, 10_000)
 
   test('unacknowledged parser output closes instead of dropping part of an ANSI stream', () => {
     const peer = socket()
