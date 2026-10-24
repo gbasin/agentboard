@@ -1,3 +1,5 @@
+import { TerminalRelayClient } from './relay/client'
+import type { RelayToParent } from './relay/protocol'
 import { CopyModeQuery } from './copyModeQuery'
 import { SessionReadClient } from './sessionReadClient'
 import type { Server, ServerWebSocket } from 'bun'
@@ -635,6 +637,7 @@ function createPersistentWindow(
 }
 
 interface WSData {
+  relay?: boolean
   terminal: ITerminalProxy | null
   currentSessionId: string | null
   currentTmuxTarget: string | null
@@ -661,6 +664,11 @@ interface WSData {
 }
 
 const sockets = new Set<ServerWebSocket<WSData>>()
+// Unit handler tests retain the in-process adapter; real servers use the relay.
+const relayEnabled = (process.env.AGENTBOARD_TERMINAL_RELAY ?? (process.env.NODE_ENV === 'test' ? '0' : '1')) !== '0'
+let terminalRelay: TerminalRelayClient | null = null
+const relayPeers = new Map<string, ServerWebSocket<WSData>>()
+const relayLeaseIds = new Set<string>()
 const localHostLabel = config.hostLabel
 const CLIPBOARD_BUFFER_POLL_MS = 750
 const CLIPBOARD_BUFFER_MAX_BYTES = 512 * 1024
@@ -1948,6 +1956,7 @@ app.put('/api/settings/terminal-colors', async (c) => {
     return c.json({ error: 'Unable to persist terminal colors' }, 500)
   }
 
+  terminalRelay?.post({ type: 'sessions', sessions: registry.getAll(), terminalColorsEnabled: config.terminalColorsEnabled })
   return c.json({ enabled: body.enabled })
 })
 
@@ -2343,6 +2352,16 @@ const tlsOptions = tlsEnabled
   ? { tls: { cert: Bun.file(config.tlsCert), key: Bun.file(config.tlsKey) } }
   : {}
 
+function createSocketData(connectionId: string, remoteAddress: string | null, userAgent: string | null): WSData {
+  return {
+    terminal: null, currentSessionId: null, currentTmuxTarget: null,
+    connectionId, remoteAddress, userAgent, terminalHost: null, terminalAttachSeq: 0,
+    copyModeQuery: new CopyModeQuery(), lastAttachKey: null, lastAttachTs: 0,
+    clipboardPollTimer: null, clipboardPollInFlight: false, lastClipboardBufferKey: null,
+    clipboardBufferArmedUntil: 0, clipboardArmedAtSec: 0, clipboardWatchGen: 0,
+  }
+}
+
 function serverFetch(req: Request, server: Server<WSData>) {
   const url = new URL(req.url)
   if (url.pathname === '/ws') {
@@ -2350,25 +2369,7 @@ function serverFetch(req: Request, server: Server<WSData>) {
       typeof server.requestIP === 'function' ? server.requestIP(req) : null
     if (
       server.upgrade(req, {
-        data: {
-          terminal: null,
-          currentSessionId: null,
-          currentTmuxTarget: null,
-          connectionId: createConnectionId(),
-          remoteAddress: requestIp?.address ?? null,
-          userAgent: req.headers.get('user-agent')?.slice(0, 200) ?? null,
-          terminalHost: null,
-          terminalAttachSeq: 0,
-          copyModeQuery: new CopyModeQuery(),
-          lastAttachKey: null,
-          lastAttachTs: 0,
-          clipboardPollTimer: null,
-          clipboardPollInFlight: false,
-          lastClipboardBufferKey: null,
-          clipboardBufferArmedUntil: 0,
-          clipboardArmedAtSec: 0,
-          clipboardWatchGen: 0,
-        },
+        data: createSocketData(createConnectionId(), requestIp?.address ?? null, req.headers.get('user-agent')?.slice(0, 200) ?? null),
       })
     ) {
       return
@@ -2403,7 +2404,7 @@ const websocketHandlers = {
       hibernating: agentSessions.hibernating,
       history: agentSessions.history,
     })
-    initializePersistentTerminal(ws)
+    if (!ws.data.relay) initializePersistentTerminal(ws)
   },
   message(ws: ServerWebSocket<WSData>, message: string | BufferSource) {
     handleMessage(ws, message)
@@ -2415,13 +2416,50 @@ const websocketHandlers = {
   },
 }
 
-Bun.serve<WSData>({
-  port: config.port,
-  hostname: config.hostname,
-  ...tlsOptions,
+const httpServer = Bun.serve<WSData>({
+  port: relayEnabled ? 0 : config.port,
+  hostname: relayEnabled ? '127.0.0.1' : config.hostname,
+  ...(relayEnabled ? {} : tlsOptions),
   fetch: serverFetch,
   websocket: websocketHandlers,
 })
+
+function relayMessage(message: RelayToParent): void {
+  if (message.type === 'open') {
+    const data = { ...createSocketData(message.id, message.remoteAddress, message.userAgent), relay: true }
+    const peer = {
+      data, readyState: 1,
+      send: (payload: string) => { terminalRelay?.post({ type: 'send', id: message.id, payload }); return payload.length },
+    } as unknown as ServerWebSocket<WSData>
+    relayPeers.set(message.id, peer)
+    websocketHandlers.open(peer)
+  } else if (message.type === 'message') {
+    const peer = relayPeers.get(message.id)
+    if (peer) handleMessage(peer, message.payload)
+  } else if (message.type === 'close') {
+    const peer = relayPeers.get(message.id)
+    if (peer) websocketHandlers.close(peer)
+    relayPeers.delete(message.id)
+  } else if (message.type === 'group-created') noteGroupedSessionCreated()
+  else if (message.type === 'submit') {
+    setForceWorking(message.sessionId)
+    scheduleEnterRefresh()
+    scheduleLastUserMessageCapture(message.sessionId)
+  } else if (message.type === 'lease-created') relayLeaseIds.add(message.id)
+  else if (message.type === 'lease-removed') relayLeaseIds.delete(message.id)
+  else if (message.type === 'fatal') {
+    logger.error('terminal_relay_failed', { error: message.error })
+    process.exit(1)
+  } else if (message.type === 'bind-error') logger.error('terminal_relay_bind_failed', { hostname: message.hostname, error: message.error })
+}
+
+if (relayEnabled) {
+  terminalRelay = new TerminalRelayClient({
+    port: config.port, hostname: config.hostname, upstreamPort: httpServer.port!,
+    tlsCert: config.tlsCert, tlsKey: config.tlsKey, terminalColorsEnabled: config.terminalColorsEnabled,
+  }, registry.getAll(), relayMessage)
+  void terminalRelay.ready.catch(error => { logger.error('terminal_relay_start_failed', { error: String(error) }); process.exit(1) })
+}
 
 const protocol = tlsEnabled ? 'https' : 'http'
 const displayHost = config.hostname === '0.0.0.0' ? 'localhost' : config.hostname
@@ -2452,7 +2490,9 @@ export const tailscaleReady = (async () => {
     return
   }
   try {
-    Bun.serve<WSData>({
+    if (terminalRelay) {
+      await terminalRelay.bind(detectedIp)
+    } else Bun.serve<WSData>({
       port: config.port,
       hostname: detectedIp,
       ...tlsOptions,
@@ -2480,6 +2520,7 @@ const startupLifecycle = createStartupLifecycle({
   sessionManager,
   registry,
   sockets,
+  liveTerminalIds: () => relayLeaseIds,
   canPruneWsSessions: startupEnsureResult.canPruneWsSessions,
   hasOwnership: window => Boolean(ownershipMatcher?.get(window)),
   hydrateSessionsWithAgentSessions,
@@ -2530,6 +2571,7 @@ export const startupReady = (async () => {
 
 // Cleanup all terminals on server shutdown
 async function cleanupAllTerminals() {
+  await terminalRelay?.shutdown()
   ownershipObserver?.stop()
   persistenceRuntime?.stop()
   const disposePromises: Promise<void>[] = []
@@ -2842,6 +2884,9 @@ function cleanupTerminals(ws: ServerWebSocket<WSData>) {
 }
 
 function broadcast(message: ServerMessage) {
+  if (message.type === 'sessions' || message.type === 'session-update' || message.type === 'session-removed') {
+    terminalRelay?.post({ type: 'sessions', sessions: registry.getAll(), terminalColorsEnabled: config.terminalColorsEnabled })
+  }
   const payload = JSON.stringify(message)
   for (const socket of sockets) {
     socket.send(payload)

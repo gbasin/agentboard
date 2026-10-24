@@ -116,7 +116,8 @@ export interface DirectoryErrorResponse {
   message: string
 }
 
-export type ServerMessage =
+export type ServerMessage = (
+  | { type: 'terminal-lease'; token: string }
   | { type: 'library-changed' }
   | { type: 'sessions'; sessions: Session[] }
   | { type: 'session-update'; session: Session }
@@ -168,13 +169,16 @@ export type ServerMessage =
   | { type: 'pong'; seq?: number }
   | { type: 'error'; message: string }
   | { type: 'kill-failed'; sessionId: string; message: string }
+) & { attachId?: number; outputSeq?: number }
 
 export interface WakeError {
   code: 'NOT_FOUND' | 'ALREADY_ACTIVE' | 'WAKE_FAILED' | 'WAKE_IN_PROGRESS'
   message: string
 }
 
-export type ClientMessage =
+export type ClientMessage = (
+  | { type: 'terminal-resume'; token?: string; claim: number }
+  | { type: 'terminal-ack'; outputSeq: number; connectionEpoch?: number }
   | {
       type: 'terminal-attach'
       sessionId: string
@@ -198,11 +202,13 @@ export type ClientMessage =
   | { type: 'session-hibernate'; sessionId: string }
   | { type: 'session-move-to-history'; sessionId: string }
   | { type: 'ping'; seq?: number }
+) & { attachId?: number }
 
 /** Diagnostic metadata attached to parsed ServerMessages by useWebSocket. */
 export interface DiagnosticMeta {
   _parseMs: number
   _rawLength: number
+  _connectionEpoch?: number
 }
 
 /** A ServerMessage with diagnostic timing metadata from the WebSocket layer. */
