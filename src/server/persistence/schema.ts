@@ -92,4 +92,10 @@ export function createCatalogSchema(db: Database) {
     `CREATE INDEX IF NOT EXISTS board_active ON board_sessions(host_id, state);
      CREATE INDEX IF NOT EXISTS board_state ON board_sessions(state, id)`
   )
+  // board_window puts epoch between host and window. Lookups without an
+  // epoch need a direct path too; keep the existing uniqueness constraint.
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS board_window_lookup ON board_sessions(host_id, current_window)
+     WHERE current_window IS NOT NULL`
+  )
 }
