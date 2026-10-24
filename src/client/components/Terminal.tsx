@@ -25,6 +25,8 @@ import SessionRail from './SessionRail'
 import TerminalControls from './TerminalControls'
 import MediaRail from './MediaRail'
 import PasteStatus from './PasteStatus'
+import RecoveryDraft from './RecoveryDraft'
+import { useRecoveryDraft } from '../hooks/useRecoveryDraft'
 import { useBrowserPaste, type BrowserPaste } from '../hooks/useBrowserPaste'
 import { clipboardFiles } from '../utils/browserFiles'
 import SessionDrawer from './SessionDrawer'
@@ -182,6 +184,10 @@ export default function Terminal({
     return hosts.size > 1
   }, [sessions, hibernatingSessions])
 
+  const recoveryIdentity = session && !isReadOnly
+    ? JSON.stringify([session.id, session.tmuxWindow, session.host ?? null, session.remote === true]) : null
+  const recoveryDraft = useRecoveryDraft(recoveryIdentity)
+
   const {
     containerRef,
     terminalRef,
@@ -201,6 +207,8 @@ export default function Terminal({
     onPasteFiles: (input) => pasteFilesRef.current(input),
     onPasteError: (message) => pasteErrorRef.current(message),
     allowAttach: !isReadOnly,
+    deferInput: recoveryDraft.pending,
+    onDeferredInput: recoveryDraft.capture,
     connectionStatus,
     connectionEpoch,
     sendMessage,
@@ -1119,36 +1127,42 @@ export default function Terminal({
 
   const handleSendKey = useCallback(
     (key: string) => {
-      if (!session || isReadOnly || !isInputReady) return
-      sendMessage({ type: 'terminal-input', sessionId: session.id, data: key })
+      if (!session || isReadOnly) return
+      if (recoveryDraft.pending || !isInputReady) { recoveryDraft.capture(key, 'typing'); return }
+      if (sendMessage({ type: 'terminal-input', sessionId: session.id, data: key }) === false) {
+        recoveryDraft.capture(key, 'typing')
+      }
     },
-    [session, isReadOnly, isInputReady, sendMessage]
+    [session, isReadOnly, isInputReady, sendMessage, recoveryDraft]
   )
 
   // Deliver pasted text as a single bracketed paste (server routes it through
   // tmux paste-buffer -p) so multi-line content isn't auto-submitted line-by-line.
   const handlePasteText = useCallback(
     (text: string) => {
-      if (!session || isReadOnly || !isInputReady) return
+      if (!session || isReadOnly) return
+      if (recoveryDraft.pending || !isInputReady) { recoveryDraft.capture(text, 'paste'); return }
       // Exit tmux copy-mode first: a paste-buffer into a pane still in copy-mode
       // is swallowed by the copy-mode key table instead of reaching the program.
       if (inTmuxCopyModeRef.current) {
         sendMessage({ type: 'tmux-cancel-copy-mode', sessionId: session.id })
         setTmuxCopyMode(false)
       }
-      sendMessage({ type: 'terminal-paste', sessionId: session.id, data: text })
+      if (sendMessage({ type: 'terminal-paste', sessionId: session.id, data: text }) === false) {
+        recoveryDraft.capture(text, 'paste')
+      }
     },
-    [session, isReadOnly, isInputReady, sendMessage, inTmuxCopyModeRef, setTmuxCopyMode]
+    [session, isReadOnly, isInputReady, sendMessage, inTmuxCopyModeRef, setTmuxCopyMode, recoveryDraft]
   )
 
   const handlePasteImage = useCallback((data: string) => {
-    if (!session || isReadOnly || !isInputReady) return
+    if (!session || isReadOnly || !isInputReady || recoveryDraft.pending) return
     if (inTmuxCopyModeRef.current) {
       sendMessage({ type: 'tmux-cancel-copy-mode', sessionId: session.id })
       setTmuxCopyMode(false)
     }
-    handleSendKey(data)
-  }, [session, isReadOnly, isInputReady, sendMessage, inTmuxCopyModeRef, setTmuxCopyMode, handleSendKey])
+    sendMessage({ type: 'terminal-input', sessionId: session.id, data })
+  }, [session, isReadOnly, isInputReady, sendMessage, inTmuxCopyModeRef, setTmuxCopyMode, recoveryDraft.pending])
 
   const handleRefocus = useCallback(() => {
     const container = containerRef.current
@@ -1161,16 +1175,27 @@ export default function Terminal({
   }, [containerRef])
 
   const browserPaste = useBrowserPaste({ sessionId: session?.id ?? null,
-    disabled: connectionStatus !== 'connected' || isReadOnly || !isInputReady,
+    disabled: connectionStatus !== 'connected' || isReadOnly || !isInputReady || recoveryDraft.pending,
     fileUploadsAllowed: !isRemoteSession, agentType: session?.agentType,
     onPasteText: handlePasteText, onPasteImage: handlePasteImage, onRefocus: handleRefocus })
   pasteFilesRef.current = browserPaste.paste
   pasteErrorRef.current = browserPaste.fail
 
+  const sendRecoveryDraft = () => {
+    if (!session || isReadOnly || !isInputReady || !recoveryDraft.text) return
+    if (inTmuxCopyModeRef.current) {
+      sendMessage({ type: 'tmux-cancel-copy-mode', sessionId: session.id })
+      setTmuxCopyMode(false)
+    }
+    if (sendMessage({ type: 'terminal-paste', sessionId: session.id, data: recoveryDraft.text }) === false) return
+    recoveryDraft.discard()
+    handleRefocus()
+  }
+
   // Enter text mode: exit copy-mode and focus input (for keyboard button)
   const handleEnterTextMode = useCallback(() => {
-    if (!session || isReadOnly || !isInputReady) return
-    if (inTmuxCopyModeRef.current) {
+    if (!session || isReadOnly) return
+    if (isInputReady && inTmuxCopyModeRef.current) {
       sendMessage({ type: 'tmux-cancel-copy-mode', sessionId: session.id })
       setTmuxCopyMode(false)
     }
@@ -1471,15 +1496,24 @@ export default function Terminal({
           className="absolute inset-0"
           style={{ backgroundColor: terminalTheme.background }}
         />
-        {isSwitching && session && (
+        {session && !isReadOnly && !isInputReady && (
           <div
             role="status"
             aria-live="polite"
+            data-testid="terminal-recovery-status"
             className="absolute top-2 left-2 z-50 flex items-center gap-1.5 rounded-lg bg-black/60 px-2.5 py-1.5 text-xs text-white/90 shadow-lg backdrop-blur-md"
           >
-            <SpinnerIcon width={ICON_SIZE.pill} height={ICON_SIZE.pill} className="animate-spin" />
-            Loading
+            <SpinnerIcon width={ICON_SIZE.pill} height={ICON_SIZE.pill} className={isSwitching || connectionStatus !== 'connected' ? 'animate-spin' : ''} />
+            {connectionStatus === 'connected' ? (isSwitching ? 'Restoring terminal' : 'Terminal unavailable') :
+              connectionStatus === 'disconnected' ? 'Disconnected' : 'Reconnecting'}
+            <span className="text-white/70">· Input paused</span>
           </div>
+        )}
+        {recoveryDraft.pending && session && !isReadOnly && (
+          <RecoveryDraft key={recoveryIdentity} text={recoveryDraft.text} sessionName={session.name} ready={isInputReady}
+            atLimit={recoveryDraft.atLimit} truncated={recoveryDraft.truncated}
+            onDiscardOthers={recoveryDraft.hasOtherDrafts ? recoveryDraft.discardOthers : undefined} onEdit={recoveryDraft.edit} onSend={sendRecoveryDraft}
+            onDiscard={() => { recoveryDraft.discard(); handleRefocus() }} />
         )}
         {pendingClipboardOffer && session && (
           <div className={`absolute ${showScrollButton && !isSelectingText ? 'bottom-20' : 'bottom-8'} left-1/2 z-30 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-2 rounded-lg border border-border bg-elevated/95 px-2 py-2 shadow-lg backdrop-blur-sm md:hidden`}>
@@ -1661,6 +1695,7 @@ export default function Terminal({
           onPasteText={handlePasteText}
           onPasteImage={handlePasteImage}
           disabled={connectionStatus !== 'connected' || isReadOnly || !isInputReady}
+          keyboardDisabled={isReadOnly}
           sessions={sessions.map(s => ({ id: s.id, name: s.name, status: s.status }))}
           currentSessionId={session.id}
           agentType={session.agentType}

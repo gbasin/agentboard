@@ -333,6 +333,10 @@ interface UseTerminalOptions {
   useWebGL: boolean
   onPasteFiles?: (payload: { text: string; files: File[] }) => void
   onPasteError?: (message: string) => void
+  /** Text for explicit user review only; never queued for terminal delivery. */
+  onDeferredInput?: (data: string, kind: 'typing' | 'paste') => void
+  /** Keep new text in an existing review draft even after transport recovery. */
+  deferInput?: boolean
   onScrollChange?: (isAtBottom: boolean) => void
 }
 
@@ -354,11 +358,19 @@ export function useTerminal({
   onScrollChange,
   onPasteFiles,
   onPasteError,
+  onDeferredInput,
+  deferInput = false,
 }: UseTerminalOptions) {
   const onPasteFilesRef = useRef(onPasteFiles)
   onPasteFilesRef.current = onPasteFiles
   const onPasteErrorRef = useRef(onPasteError)
   onPasteErrorRef.current = onPasteError
+  const onDeferredInputRef = useRef(onDeferredInput)
+  onDeferredInputRef.current = onDeferredInput
+  const deferInputRef = useRef(deferInput)
+  deferInputRef.current = deferInput
+  const deferredInputEnabledRef = useRef(false)
+  deferredInputEnabledRef.current = !!sessionId && allowAttach
   const canReadHostClipboard = () => !onPasteFilesRef.current || (typeof location !== 'undefined' && ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname))
   const isiOS = isIOSDevice()
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -865,8 +877,20 @@ export function useTerminal({
     // and avoids double-paste without depending on the async Clipboard API.
     let pasteResolver: ((payload: PastePayload) => void) | null = null
     let pasteTimeoutId: ReturnType<typeof setTimeout> | null = null
+    let deferredPaste: { generation: number; epoch: number } | null = null
 
     const pasteModifier = getIsMac() ? 'metaKey' : 'ctrlKey' as const
+
+    const captureDeferredInput = (data: string, kind: 'typing' | 'paste') => {
+      if (!data || !deferredInputEnabledRef.current || !onDeferredInputRef.current) return
+      // Reject an entire terminal command sequence, never retain its printable
+      // suffix. Typing permits only text, newline, and backspace editing.
+      // Plain pasted text additionally permits tab indentation.
+      // eslint-disable-next-line no-control-regex
+      const controls = kind === 'typing' ? /[\x00-\x07\x09\x0b\x0c\x0e-\x1f\x80-\x9f]/ : /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/
+      if (controls.test(data)) return
+      onDeferredInputRef.current(kind === 'paste' ? data.replace(/\r\n?/g, '\n') : data, kind)
+    }
 
     // Session IDs can repeat after A→B→A or reconnect. Fence each async
     // paste to the exact attachment generation that accepted the gesture.
@@ -874,7 +898,7 @@ export function useTerminal({
       sessionId, generation: parserGenerationRef.current, epoch: currentConnectionEpochRef.current,
     })
     const isPasteAttachmentCurrent = (attachment: ReturnType<typeof capturePasteAttachment>) =>
-      attachment.generation === parserGenerationRef.current &&
+      !deferInputRef.current && attachment.generation === parserGenerationRef.current &&
       attachment.epoch === currentConnectionEpochRef.current &&
       attachedSessionRef.current === attachment.sessionId &&
       readySessionRef.current === attachment.sessionId
@@ -891,6 +915,7 @@ export function useTerminal({
     }
 
     terminal.attachCustomKeyEventHandler((event) => {
+      if (event.type === 'keydown' && !(event[pasteModifier] && event.key.toLowerCase() === 'v')) deferredPaste = null
       // Let Agentboard's window-level handlers receive the configured
       // modifier + 1..9 (direct navigation) and + comma (settings) before
       // xterm translates or cancels them. Read the store synchronously so
@@ -925,7 +950,7 @@ export function useTerminal({
       // Excluded on iOS: no Finder/osascript, and Ctrl+V with hardware keyboard
       // should not trigger desktop image paste behavior.
       if (getIsMac() && !isiOS && event.ctrlKey && !event.metaKey && event.key.toLowerCase() === 'v' && event.type === 'keydown') {
-        const attached = readySessionRef.current
+        const attached = deferInputRef.current ? null : readySessionRef.current
         if (attached) {
           if (!canReadHostClipboard()) {
             onPasteErrorRef.current?.('Use browser paste or choose a file from this device.')
@@ -950,6 +975,14 @@ export function useTerminal({
       // clipboardData synchronously and suppress ClipboardAddon, avoiding
       // double-paste without any Clipboard API permission dependency.
       if (event[pasteModifier] && event.key.toLowerCase() === 'v' && event.type === 'keydown') {
+        if ((!readySessionRef.current || deferInputRef.current) && deferredInputEnabledRef.current && onDeferredInputRef.current) {
+          // Remember gesture ownership until the native paste event. Readiness
+          // becoming true before that event must not turn it into a live paste.
+          deferredPaste = { generation: parserGenerationRef.current, epoch: currentConnectionEpochRef.current }
+          return pasteModifier === 'metaKey'
+        }
+        deferredPaste = null
+
         // Create a per-request promise so the capture-phase paste listener
         // can deliver clipboardData text directly to this paste attempt.
         // Timeout ensures we don't hang if the paste event never fires.
@@ -1063,7 +1096,8 @@ export function useTerminal({
                   sendMessageRef.current({ type: 'tmux-cancel-copy-mode', sessionId: attached })
                   setTmuxCopyMode(false)
                 }
-                sendMessageRef.current({ type: 'terminal-paste', sessionId: attached, data: text })
+                const sent = sendMessageRef.current({ type: 'terminal-paste', sessionId: attached, data: text })
+                if (sent === false && !payload?.hasFiles && !payload?.hasImage) captureDeferredInput(text, 'paste')
               }
               return
             }
@@ -1089,7 +1123,7 @@ export function useTerminal({
 
       // Ctrl+Backspace: delete word backward (browser eats this otherwise)
       if (event.ctrlKey && event.key === 'Backspace' && event.type === 'keydown') {
-        const attached = readySessionRef.current
+        const attached = deferInputRef.current ? null : readySessionRef.current
         if (attached) {
           sendMessageRef.current({ type: 'terminal-input', sessionId: attached, data: '\x17' })
         }
@@ -1104,6 +1138,19 @@ export function useTerminal({
     // (no permissions needed) and suppress the event so ClipboardAddon doesn't
     // also paste (preventing double-paste).
     const handlePaste = (e: ClipboardEvent) => {
+      const deferred = deferredPaste
+      deferredPaste = null
+      if (deferred || (!pasteResolver && (!readySessionRef.current || deferInputRef.current) && onDeferredInputRef.current && deferredInputEnabledRef.current)) {
+        e.preventDefault()
+        e.stopPropagation()
+        if (deferred && (deferred.generation !== parserGenerationRef.current || deferred.epoch !== currentConnectionEpochRef.current)) return
+        const clipboard = e.clipboardData
+        const hasFiles = (clipboard?.files?.length ?? 0) > 0 ||
+          Array.from(clipboard?.items ?? []).some(item => item.kind === 'file') ||
+          Array.from(clipboard?.types ?? []).includes('Files')
+        if (!hasFiles && !clipboardHasImage(clipboard)) captureDeferredInput(clipboard?.getData('text/plain') ?? '', 'paste')
+        return
+      }
       if (!pasteResolver) {
         const files = clipboardFiles(e.clipboardData)
         const text = e.clipboardData?.getData('text/plain') ?? ''
@@ -1132,7 +1179,7 @@ export function useTerminal({
 
     // Handle input - only send to attached session
     terminal.onData((data) => {
-      const attached = readySessionRef.current
+      const attached = deferInputRef.current ? null : readySessionRef.current
       if (attached) {
         // When in copy-mode, filter out mouse sequences so clicks don't exit copy-mode
         // This prevents accidental copy-mode exit when clicking in scrollback (Safari desktop)
@@ -1151,8 +1198,9 @@ export function useTerminal({
           sendMessageRef.current({ type: 'tmux-cancel-copy-mode', sessionId: attached })
           setTmuxCopyMode(false)
         }
-        sendMessageRef.current({ type: 'terminal-input', sessionId: attached, data })
-      }
+        const sent = sendMessageRef.current({ type: 'terminal-input', sessionId: attached, data })
+        if (sent === false) captureDeferredInput(data, 'typing')
+      } else captureDeferredInput(data, 'typing')
     })
 
     // Forward wheel events to tmux for scrollback (like Blink terminal)

@@ -216,5 +216,5 @@ export interface DiagnosticMeta {
 export type ServerMessageWithDiagnostics = ServerMessage & DiagnosticMeta
 
 // Typed function signatures for client-side messaging
-export type SendClientMessage = (message: ClientMessage) => void
+export type SendClientMessage = (message: ClientMessage) => boolean | void
 export type SubscribeServerMessage = (listener: (message: ServerMessage) => void) => () => void

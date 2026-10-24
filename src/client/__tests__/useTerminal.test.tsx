@@ -378,6 +378,8 @@ function TerminalHarness(props: {
   onScrollChange?: (isAtBottom: boolean) => void
   onPasteFiles?: (draft: { text: string; files: File[] }) => void
   onPasteError?: (message: string) => void
+  onDeferredInput?: (data: string, kind: 'typing' | 'paste') => void
+  deferInput?: boolean
 }) {
   const { containerRef, isTmuxCopyMode } = useTerminal({
     ...props,
@@ -614,7 +616,7 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={(listener) => {
             listeners.push(listener)
             return () => {}
@@ -689,7 +691,7 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={(listener) => {
             listeners.push(listener)
             return () => {}
@@ -848,7 +850,7 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={(listener) => {
             listeners.push(listener)
             return () => {}
@@ -880,7 +882,7 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-2"
           tmuxTarget="agentboard:@2"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={(listener) => {
             listeners.push(listener)
             return () => {}
@@ -1038,7 +1040,7 @@ describe('useTerminal', () => {
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
           connectionStatus="connected"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={() => () => {}}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -1056,7 +1058,7 @@ describe('useTerminal', () => {
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
           connectionStatus="reconnecting"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={() => () => {}}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -1071,7 +1073,7 @@ describe('useTerminal', () => {
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
           connectionStatus="connected"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={() => () => {}}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -1111,7 +1113,7 @@ describe('useTerminal', () => {
           tmuxTarget="agentboard:@1"
           connectionStatus="connected"
           connectionEpoch={1}
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={() => () => {}}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -1130,7 +1132,7 @@ describe('useTerminal', () => {
           tmuxTarget="agentboard:@1"
           connectionStatus="connected"
           connectionEpoch={2}
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={() => () => {}}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -1188,7 +1190,7 @@ describe('useTerminal', () => {
           tmuxTarget="agentboard:@1"
           connectionStatus="connected"
           connectionEpoch={1}
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={() => () => {}}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -1218,7 +1220,7 @@ describe('useTerminal', () => {
           tmuxTarget="agentboard:@1"
           connectionStatus="connected"
           connectionEpoch={2}
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={() => () => {}}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -1234,7 +1236,7 @@ describe('useTerminal', () => {
           tmuxTarget="agentboard:@1"
           connectionStatus="connected"
           connectionEpoch={3}
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={() => () => {}}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -1304,7 +1306,7 @@ describe('useTerminal', () => {
           tmuxTarget="agentboard:@1"
           connectionStatus="connected"
           connectionEpoch={1}
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={(listener) => {
             listeners.push(listener)
             return () => {}
@@ -1486,7 +1488,7 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={subscribeReadyTerminal}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -1576,7 +1578,7 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={subscribeReadyTerminal}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -1649,7 +1651,7 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={subscribeReadyTerminal}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -1708,7 +1710,7 @@ describe('useTerminal', () => {
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
           agentType="codex"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={subscribeReadyTerminal}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -1776,7 +1778,7 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={(listener) => {
             listeners.push(listener); listener({ type: 'terminal-ready', sessionId: 'session-1' })
             return () => {}
@@ -1856,7 +1858,7 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={(listener) => {
             listeners.push(listener); listener({ type: 'terminal-ready', sessionId: 'session-1' })
             return () => {}
@@ -1928,7 +1930,7 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={(listener) => {
             listeners.push(listener); listener({ type: 'terminal-ready', sessionId: 'session-1' })
             return () => {}
@@ -2003,7 +2005,7 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={(listener) => {
             listeners.push(listener); listener({ type: 'terminal-ready', sessionId: 'session-1' })
             return () => {}
@@ -2130,7 +2132,7 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={subscribe}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -2176,7 +2178,7 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-2"
           tmuxTarget="agentboard:@2"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={subscribe}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -2383,7 +2385,7 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={(listener) => {
             listeners.push(listener); listener({ type: 'terminal-ready', sessionId: 'session-1' })
             return () => {}
@@ -2445,7 +2447,7 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={(listener) => {
             listeners.push(listener); listener({ type: 'terminal-ready', sessionId: 'session-1' })
             return () => {}
@@ -2521,7 +2523,7 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={() => () => {}}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -2581,7 +2583,7 @@ describe('useTerminal', () => {
           session={terminalSession}
           sessions={[terminalSession]}
           connectionStatus="connected"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={(listener) => {
             listeners.push(listener)
             return () => {}
@@ -2668,7 +2670,7 @@ describe('useTerminal', () => {
           session={terminalSession}
           sessions={[terminalSession]}
           connectionStatus="connected"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={(listener) => {
             listeners.push(listener)
             return () => {}
@@ -2775,7 +2777,7 @@ describe('useTerminal', () => {
           session={terminalSession}
           sessions={[terminalSession]}
           connectionStatus="connected"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={(listener) => {
             listeners.push(listener)
             return () => {}
@@ -2973,7 +2975,7 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={subscribeReadyTerminal}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -3037,7 +3039,7 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={subscribeReadyTerminal}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -3109,7 +3111,7 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={subscribeReadyTerminal}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -3198,7 +3200,7 @@ describe('useTerminal', () => {
           agentType={agentType}
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={(listener) => { listeners.push(listener); listener({ type: 'terminal-ready', sessionId: 'session-1' }); return () => {} }}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -3287,7 +3289,7 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={subscribeReadyTerminal}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -3363,7 +3365,7 @@ describe('useTerminal', () => {
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
           agentType="codex"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={subscribeReadyTerminal}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -3438,7 +3440,7 @@ describe('useTerminal', () => {
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
           agentType="claude"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={(listener) => {
             listeners.push(listener)
             return () => {}
@@ -3457,7 +3459,7 @@ describe('useTerminal', () => {
           sessionId="session-2"
           tmuxTarget="agentboard:@2"
           agentType="codex"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={(listener) => {
             listeners.push(listener)
             return () => {}
@@ -3537,7 +3539,7 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={subscribeReadyTerminal}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -3607,7 +3609,7 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={subscribeReadyTerminal}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -3684,7 +3686,7 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={subscribeReadyTerminal}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -3760,7 +3762,7 @@ describe('useTerminal', () => {
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
           agentType="codex"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={subscribeReadyTerminal}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -3824,7 +3826,7 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={subscribeReadyTerminal}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -4838,7 +4840,7 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={() => () => {}}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -4857,7 +4859,7 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-2"
           tmuxTarget="agentboard:@2"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={() => () => {}}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -4878,7 +4880,7 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={() => () => {}}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -4975,16 +4977,19 @@ describe('useTerminal', () => {
 })
 
 describe('terminal parser readiness', () => {
-  async function mount(onPasteFiles?: (payload: { text: string; files: File[] }) => void) {
+  async function mount(onPasteFiles?: (payload: { text: string; files: File[] }) => void, options: { onDeferredInput?: (data: string, kind: 'typing' | 'paste') => void; deferInput?: boolean; rejectInput?: boolean } = {}) {
     clearSnapshotCache()
     const { container, dispatchEvent } = createContainerMock()
     const sent: Array<Record<string, unknown>> = []
     let listener: (message: ServerMessage) => void = () => {}
     const subscribe = (next: (message: ServerMessage) => void) => { listener = next; return () => {} }
-    const sendMessage = (message: any) => sent.push(message)
+    const sendMessage = (message: any) => {
+      if (options.rejectInput && (message.type === 'terminal-input' || message.type === 'terminal-paste')) return false
+      sent.push(message)
+    }
     const props = (sessionId: string, connectionEpoch: number) => ({
       sessionId, tmuxTarget: `agentboard:${sessionId}`, connectionEpoch,
-      sendMessage, subscribe, onPasteFiles, theme: {}, fontSize: 12,
+      sendMessage, subscribe, onPasteFiles, onDeferredInput: options.onDeferredInput, deferInput: options.deferInput, theme: {}, fontSize: 12,
     })
     let renderer!: TestRenderer.ReactTestRenderer
     await act(async () => {
@@ -5002,6 +5007,97 @@ describe('terminal parser readiness', () => {
       close() { act(() => renderer.unmount()) },
     }
   }
+
+  test('recovery text is captured for review without replaying on readiness', async () => {
+    const deferred: unknown[] = []
+    const h = await mount(undefined, { onDeferredInput: (data, kind) => deferred.push({ data, kind }) })
+    h.input('hello 🦊')
+    h.input('\r\n\x08\x7f')
+    for (const command of ['\x03', '\t', '\x1b[A', '\x1b[<0;1;1M', 'prefix\x1b[200~text', '\x85']) h.input(command)
+    expect(deferred).toEqual([{ data: 'hello 🦊', kind: 'typing' }, { data: '\r\n\x08\x7f', kind: 'typing' }])
+    h.message({ type: 'terminal-ready', sessionId: 'A' })
+    h.drain()
+    expect(h.sent.some(m => m.type === 'terminal-input' || m.type === 'terminal-paste')).toBe(false)
+    h.input('live')
+    expect(deferred).toHaveLength(2) // Legacy void send callbacks still mean accepted.
+    expect(h.sent).toContainEqual({ type: 'terminal-input', sessionId: 'A', data: 'live' })
+    h.close()
+  })
+
+  test('transport rejection captures text even before React observes recovery', async () => {
+    const deferred: unknown[] = []
+    const h = await mount(undefined, { rejectInput: true, onDeferredInput: (data, kind) => deferred.push({ data, kind }) })
+    h.message({ type: 'terminal-ready', sessionId: 'A' })
+    h.drain()
+    h.input('resume gap')
+    h.input('\x03')
+    expect(deferred).toEqual([{ data: 'resume gap', kind: 'typing' }])
+    expect(h.sent.some(m => m.type === 'terminal-input')).toBe(false)
+    h.close()
+  })
+
+  test('transport rejection preserves current plain clipboard text without replay', async () => {
+    jest.useFakeTimers()
+    globalAny.navigator = { userAgent: 'Chrome', platform: 'MacIntel', maxTouchPoints: 0 } as Navigator
+    const deferred: unknown[] = []
+    const h = await mount(undefined, { rejectInput: true, onDeferredInput: (data, kind) => deferred.push({ data, kind }) })
+    h.message({ type: 'terminal-ready', sessionId: 'A' })
+    h.drain()
+    act(() => { h.terminal.emitKey({ type: 'keydown', key: 'v', metaKey: true } as KeyboardEvent) })
+    await act(async () => {
+      h.dispatchEvent('paste', { preventDefault() {}, stopPropagation() {}, clipboardData: { getData: () => 'plain\r\n\ttext', files: [], items: [], types: ['text/plain'] } })
+    })
+    expect(deferred).toEqual([{ data: 'plain\n\ttext', kind: 'paste' }])
+    expect(h.sent.some(m => m.type === 'terminal-input' || m.type === 'terminal-paste')).toBe(false)
+    h.close()
+  })
+
+  test('an existing review draft keeps ready typing and native paste out of the terminal', async () => {
+    const deferred: unknown[] = []
+    const h = await mount(undefined, { deferInput: true, onDeferredInput: (data, kind) => deferred.push({ data, kind }) })
+    h.message({ type: 'terminal-ready', sessionId: 'A' })
+    h.drain()
+    h.input('continued')
+    h.dispatchEvent('paste', { preventDefault() {}, stopPropagation() {}, clipboardData: { getData: () => 'paste', files: [], items: [], types: ['text/plain'] } })
+    expect(deferred).toEqual([{ data: 'continued', kind: 'typing' }, { data: 'paste', kind: 'paste' }])
+    expect(h.sent.some(m => m.type === 'terminal-input' || m.type === 'terminal-paste')).toBe(false)
+    h.close()
+  })
+
+  test('recovery paste captures only plain text synchronously, including indentation', async () => {
+    const deferred: unknown[] = []
+    let fileCalls = 0
+    const h = await mount(() => { fileCalls++ }, { onDeferredInput: (data, kind) => deferred.push({ data, kind }) })
+    const paste = (text: string, files: File[] = []) => h.dispatchEvent('paste', {
+      preventDefault() {}, stopPropagation() {},
+      clipboardData: { getData: () => text, files, items: [], types: ['text/plain'] },
+    })
+    paste('one\r\n\ttwo\rthree')
+    for (const text of ['bad\x03', '\x1b[200~paste', 'back\x08', 'delete\x7f', '\x85']) paste(text)
+    paste('file fallback', [new File(['image'], 'image.png', { type: 'image/png' })])
+    expect(deferred).toEqual([{ data: 'one\n\ttwo\nthree', kind: 'paste' }])
+    expect(fileCalls).toBe(0)
+    expect(h.sent.some(m => m.type === 'terminal-input' || m.type === 'terminal-paste')).toBe(false)
+    h.close()
+  })
+
+  test('a blocked paste gesture stays deferred across ready but is cancelled across reconnect', async () => {
+    const deferred: unknown[] = []
+    const h = await mount(undefined, { onDeferredInput: (data, kind) => deferred.push({ data, kind }) })
+    const gesture = () => act(() => { h.terminal.emitKey({ type: 'keydown', key: 'v', metaKey: true } as KeyboardEvent) })
+    const paste = () => h.dispatchEvent('paste', { preventDefault() {}, stopPropagation() {}, clipboardData: { getData: () => 'captured', files: [], items: [], types: ['text/plain'] } })
+    gesture()
+    h.message({ type: 'terminal-ready', sessionId: 'A' })
+    h.drain()
+    paste()
+    expect(deferred).toEqual([{ data: 'captured', kind: 'paste' }])
+    await h.select('A', 2)
+    gesture()
+    await h.select('A', 3)
+    paste()
+    expect(deferred).toHaveLength(1)
+    h.close()
+  })
 
   test('initial input waits for screen parse and ready barrier; ACK follows parser progress', async () => {
     const h = await mount()
@@ -5121,7 +5217,8 @@ describe('terminal parser readiness', () => {
       userAgent: 'Chrome', platform: 'MacIntel', maxTouchPoints: 0,
       clipboard: { readText: () => new Promise<string>(resolve => { finishRead = resolve }), writeText: async () => {} },
     } as unknown as Navigator
-    const h = await mount()
+    const deferred: unknown[] = []
+    const h = await mount(undefined, { onDeferredInput: (data, kind) => deferred.push({ data, kind }) })
     h.message({ type: 'terminal-ready', sessionId: 'A' })
     act(() => { h.terminal.emitKey({ type: 'keydown', key: 'v', metaKey: true } as KeyboardEvent) })
     await act(async () => { jest.advanceTimersByTime(100) })
@@ -5133,6 +5230,7 @@ describe('terminal parser readiness', () => {
     expect(h.sent.some(m => m.type === 'terminal-input' || m.type === 'terminal-paste')).toBe(false)
     h.input('fresh')
     expect(h.sent).toContainEqual({ type: 'terminal-input', sessionId: 'A', data: 'fresh' })
+    expect(deferred).toEqual([])
     h.close()
   })
 
