@@ -56,7 +56,7 @@ class TerminalMock {
     return true
   }
 
-  write() {}
+  write(_data: string, callback?: () => void) { callback?.() }
 
   scrollToBottom() {
     this.scrollCalls += 1
@@ -378,6 +378,7 @@ describe('Terminal', () => {
     let renderer!: TestRenderer.ReactTestRenderer
 
     const sentMessages: unknown[] = []
+    let terminalListener: ((message: ServerMessage) => void) | undefined
     act(() => {
       renderer = TestRenderer.create(
         <Terminal
@@ -385,7 +386,7 @@ describe('Terminal', () => {
           sessions={[baseSession]}
           connectionStatus="connected"
           sendMessage={(msg) => { sentMessages.push(msg) }}
-          subscribe={() => () => {}}
+          subscribe={(listener) => { terminalListener = listener; return () => {} }}
           onClose={() => {}}
           onSelectSession={() => {}}
           onNewSession={() => {}}
@@ -401,6 +402,8 @@ describe('Terminal', () => {
         }
       )
     })
+
+    act(() => { terminalListener?.({ type: 'terminal-ready', sessionId: baseSession.id }) })
 
     const terminalInstance = TerminalMock.instances[0]
     if (!terminalInstance) {
@@ -677,6 +680,7 @@ describe('Terminal', () => {
 
   test('keyboard button exits copy-mode when active', () => {
     const sentMessages: unknown[] = []
+    let terminalListener: ((message: ServerMessage) => void) | undefined
 
     const { createNodeMock } = createContainerMock()
     let renderer!: TestRenderer.ReactTestRenderer
@@ -688,7 +692,7 @@ describe('Terminal', () => {
           sessions={[baseSession]}
           connectionStatus="connected"
           sendMessage={(msg) => { sentMessages.push(msg) }}
-          subscribe={() => () => {}}
+          subscribe={(listener) => { terminalListener = listener; return () => {} }}
           onClose={() => {}}
           onSelectSession={() => {}}
           onNewSession={() => {}}
@@ -702,6 +706,8 @@ describe('Terminal', () => {
         }
       )
     })
+
+    act(() => { terminalListener?.({ type: 'terminal-ready', sessionId: baseSession.id }) })
 
     const terminalInstance = TerminalMock.instances[0]
     if (!terminalInstance) {

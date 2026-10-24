@@ -307,6 +307,15 @@ export function forceTextPresentation(data: string): string {
   return data
 }
 
+interface TerminalParserOperation {
+  terminal: Terminal
+  generation: number
+  data: string
+  reset: boolean
+  done?: () => void
+  discarded?: () => void
+}
+
 interface UseTerminalOptions {
   sessionId: string | null
   tmuxTarget: string | null
@@ -403,12 +412,14 @@ export function useTerminal({
 
   // Track the currently attached session to prevent race conditions
   const attachedSessionRef = useRef<string | null>(null)
-  // During a session transition, input is allowed only after the server
-  // acknowledges the same attachment. Initial mount retains the existing
-  // startup behavior; every later selection/reconnect revokes readiness first.
-  const readySessionRef = useRef<string | null>(
-    sessionId && allowAttach && connectionStatus === 'connected' ? sessionId : null
-  )
+  // A server acknowledgment is necessary but not sufficient: its preceding
+  // screen data must finish parsing before this attachment accepts input.
+  const readySessionRef = useRef<string | null>(null)
+  const parserGenerationRef = useRef(0)
+  const currentConnectionEpochRef = useRef(connectionEpoch)
+  currentConnectionEpochRef.current = connectionEpoch
+  const parserActiveRef = useRef<TerminalParserOperation | null>(null)
+  const parserQueueRef = useRef<TerminalParserOperation[]>([])
   const attachedTargetRef = useRef<string | null>(null)
   const attachedConnectionEpochRef = useRef<number>(-1)
   const focusAfterAttachSessionRef = useRef<string | null>(null)
@@ -419,7 +430,7 @@ export function useTerminal({
   const useWebGLRef = useRef(useWebGL)
 
   // Output buffering with idle-based flushing
-  const outputBufferRef = useRef<string[]>([])
+  const outputBufferRef = useRef<Array<{ data: string; outputSeq?: number; epoch: number }>>([])
   const idleTimerRef = useRef<number | null>(null)
   const maxTimerRef = useRef<number | null>(null)
   // Aggregates dropped-output diagnostics — bursts used to emit one clientLog
@@ -526,6 +537,49 @@ export function useTerminal({
     onScrollChangeRef.current(isAtBottom)
   }, [])
 
+  // Serialize resets with parser callbacks. terminal.reset() is synchronous,
+  // while write() queues parsing: resetting ahead of old writes lets old pane
+  // data paint over the new screen. Queued operations from obsolete attachments
+  // can be discarded; an operation already parsing must finish before a reset.
+  const drainParserQueue = useCallback(function drain() {
+    if (parserActiveRef.current) return
+    let operation = parserQueueRef.current.shift()
+    while (operation && (operation.generation !== parserGenerationRef.current ||
+      operation.terminal !== terminalRef.current)) {
+      operation.discarded?.()
+      operation = parserQueueRef.current.shift()
+    }
+    if (!operation) return
+    const current = operation
+    parserActiveRef.current = current
+    if (current.reset) current.terminal.reset()
+    current.terminal.write(current.data, () => {
+      if (parserActiveRef.current !== current) return
+      parserActiveRef.current = null
+      if (current.generation === parserGenerationRef.current &&
+        current.terminal === terminalRef.current) current.done?.()
+      else current.discarded?.()
+      drain()
+    })
+  }, [])
+
+  const writeTerminal = useCallback((data: string, reset = false, done?: () => void, discarded?: () => void) => {
+    const terminal = terminalRef.current
+    if (!terminal) { discarded?.(); return }
+    parserQueueRef.current.push({ terminal, generation: parserGenerationRef.current, data, reset, done, discarded })
+    drainParserQueue()
+  }, [drainParserQueue])
+
+  const acknowledgeOutput = useCallback((chunks: Array<{ outputSeq?: number; epoch: number }>) => {
+    let outputSeq: number | undefined
+    for (const chunk of chunks) {
+      if (chunk.epoch === currentConnectionEpochRef.current && chunk.outputSeq !== undefined) {
+        outputSeq = Math.max(outputSeq ?? 0, chunk.outputSeq)
+      }
+    }
+    if (outputSeq !== undefined) sendMessageRef.current({ type: 'terminal-ack', outputSeq, connectionEpoch: currentConnectionEpochRef.current })
+  }, [])
+
   const setTmuxCopyMode = useCallback((nextValue: boolean) => {
     if (inTmuxCopyModeRef.current === nextValue) return
     inTmuxCopyModeRef.current = nextValue
@@ -537,11 +591,11 @@ export function useTerminal({
     const terminal = terminalRef.current
     if (terminal && nextValue) {
       // Disable all mouse tracking modes (1000=X10, 1002=button-event, 1003=any-event, 1006=SGR)
-      terminal.write(DISABLE_MOUSE_TRACKING)
+      writeTerminal(DISABLE_MOUSE_TRACKING)
     }
 
     checkScrollPosition()
-  }, [checkScrollPosition])
+  }, [checkScrollPosition, writeTerminal])
 
   // Request tmux copy-mode status from server (debounced)
   const requestCopyModeCheck = useCallback(() => {
@@ -814,16 +868,20 @@ export function useTerminal({
 
     const pasteModifier = getIsMac() ? 'metaKey' : 'ctrlKey' as const
 
-    // Paste delivery often resolves after async work (clipboard read, image
-    // upload). Only forward input if the session captured when the paste began
-    // is still the attached one, so a mid-paste session switch can't deliver to
-    // the wrong (or a no-longer-viewed) session.
-    const sendInputIfStillAttached = (expected: string, data: string | null) => {
-      if (
-        data &&
-        attachedSessionRef.current === expected &&
-        readySessionRef.current === expected
-      ) {
+    // Session IDs can repeat after A→B→A or reconnect. Fence each async
+    // paste to the exact attachment generation that accepted the gesture.
+    const capturePasteAttachment = (sessionId: string) => ({
+      sessionId, generation: parserGenerationRef.current, epoch: currentConnectionEpochRef.current,
+    })
+    const isPasteAttachmentCurrent = (attachment: ReturnType<typeof capturePasteAttachment>) =>
+      attachment.generation === parserGenerationRef.current &&
+      attachment.epoch === currentConnectionEpochRef.current &&
+      attachedSessionRef.current === attachment.sessionId &&
+      readySessionRef.current === attachment.sessionId
+
+    const sendInputIfStillAttached = (attachment: ReturnType<typeof capturePasteAttachment>, data: string | null) => {
+      if (data && isPasteAttachmentCurrent(attachment)) {
+        const expected = attachment.sessionId
         if (inTmuxCopyModeRef.current) {
           sendMessageRef.current({ type: 'tmux-cancel-copy-mode', sessionId: expected })
           setTmuxCopyMode(false)
@@ -877,9 +935,10 @@ export function useTerminal({
             sendMessageRef.current({ type: 'tmux-cancel-copy-mode', sessionId: attached })
             setTmuxCopyMode(false)
           }
+          const attachment = capturePasteAttachment(attached)
           void (async () => {
             const data = await resolveImagePasteData(agentTypeRef.current, {})
-            sendInputIfStillAttached(attached, data)
+            sendInputIfStillAttached(attachment, data)
           })()
         }
         return !attached // Only swallow when attached
@@ -918,10 +977,12 @@ export function useTerminal({
           try {
             const attached = readySessionRef.current
             if (!attached) return
+            const attachment = capturePasteAttachment(attached)
 
             // Wait for the paste event to deliver text (up to 100ms timeout).
             // Falls back to clipboard API if paste event didn't fire.
             const payload = await pastePromise
+            if (!isPasteAttachmentCurrent(attachment)) return
             // With browser uploads enabled, native paste owns clipboard access.
             // Do not issue a second asynchronous read if the browser is slow.
             if (!payload && onPasteFilesRef.current) return
@@ -930,8 +991,9 @@ export function useTerminal({
               try { text = await navigator.clipboard.readText() } catch { text = '' }
             }
 
+            if (!isPasteAttachmentCurrent(attachment)) return
             if (payload?.files.length && onPasteFilesRef.current) {
-              if (attachedSessionRef.current === attached && readySessionRef.current === attached) {
+              if (isPasteAttachmentCurrent(attachment)) {
                 // File copies can also expose just their names as text. Do not
                 // insert those names alongside their uploaded paths.
                 const names = payload.files.map((file) => file.name).join('\n')
@@ -951,7 +1013,7 @@ export function useTerminal({
               // Upload the clipboard image and deliver its path as a bracketed
               // paste so Claude attaches it natively (works in both renderers).
               const data = await resolveImagePasteData(agentTypeRef.current, { blob: payload.imageBlob })
-              sendInputIfStillAttached(attached, data)
+              sendInputIfStillAttached(attachment, data)
               return
             }
 
@@ -970,14 +1032,14 @@ export function useTerminal({
                     if (isImage) {
                       // Deliver the resolved image path as a bracketed paste.
                       const data = await resolveImagePasteData(agentTypeRef.current, { path })
-                      sendInputIfStillAttached(attached, data)
+                      sendInputIfStillAttached(attachment, data)
                       return
                     }
                     // Send as raw input (no bracket paste) so Claude Code
                     // doesn't detect a paste and read the system clipboard.
                     // Trailing space matches the browser file-upload path
                     // (useBrowserPaste) so consecutive paths don't merge.
-                    sendInputIfStillAttached(attached, sanitizeImagePath(path) + ' ')
+                    sendInputIfStillAttached(attachment, sanitizeImagePath(path) + ' ')
                     return
                   }
                 }
@@ -993,10 +1055,7 @@ export function useTerminal({
               // pastes to auto-submit on the first newline. Guard on the live
               // ref (like sendInputIfStillAttached) so a session switch during
               // the async clipboard read doesn't paste into the wrong session.
-              if (
-                attachedSessionRef.current === attached &&
-                readySessionRef.current === attached
-              ) {
+              if (isPasteAttachmentCurrent(attachment)) {
                 // Exit tmux copy-mode first (as onData does for typed input):
                 // paste-buffer into a pane still in copy-mode is swallowed by
                 // the copy-mode key table instead of reaching the program.
@@ -1015,7 +1074,7 @@ export function useTerminal({
             // (falling back to the empty-bracket signal) so the CLI can attach it.
             if (getIsMac() && !isiOS && canReadHostClipboard()) {
               const data = await resolveImagePasteData(agentTypeRef.current, {})
-              sendInputIfStillAttached(attached, data)
+              sendInputIfStillAttached(attachment, data)
             }
           } finally {
             pasteResolver = null
@@ -1191,6 +1250,10 @@ export function useTerminal({
         }
         webglAddonRef.current = null
       }
+      parserGenerationRef.current += 1
+      parserActiveRef.current?.discarded?.()
+      parserActiveRef.current = null
+      for (const operation of parserQueueRef.current.splice(0)) operation.discarded?.()
       try {
         terminal.dispose()
       } catch {
@@ -1289,19 +1352,13 @@ export function useTerminal({
   // passive effect, but this layout effect closes the old-pane input window
   // before the browser can deliver another user event.
   useLayoutEffect(() => {
-    if (
-      readySessionRef.current !== sessionId ||
-      !allowAttach ||
-      connectionStatus !== 'connected' ||
-      (attachedConnectionEpochRef.current >= 0 &&
-        attachedConnectionEpochRef.current !== connectionEpoch)
-    ) {
-      readySessionRef.current = null
-      if (sessionId && allowAttach && connectionStatus === 'connected') {
-        setIsSwitching(true)
-      }
-    }
-  }, [sessionId, allowAttach, connectionStatus, connectionEpoch])
+    parserGenerationRef.current += 1
+    readySessionRef.current = null
+    acknowledgeOutput(outputBufferRef.current)
+    outputBufferRef.current = []
+    if (sessionId && allowAttach && connectionStatus === 'connected') setIsSwitching(true)
+    return () => { parserGenerationRef.current += 1 }
+  }, [sessionId, tmuxTarget, allowAttach, connectionStatus, connectionEpoch, acknowledgeOutput])
 
   // Handle session changes and websocket reconnects - attach/detach.
   useEffect(() => {
@@ -1325,7 +1382,7 @@ export function useTerminal({
         focusAfterAttachSessionRef.current = null
         setTmuxCopyMode(false)
       }
-      terminal.reset()
+      writeTerminal('', true)
       needsResetRef.current = false
       setIsSwitching(false)
       return
@@ -1417,8 +1474,7 @@ export function useTerminal({
       // Instantly show cached snapshot for the target session (if available)
       const cached = snapshotCache.get(sessionId)
       if (cached) {
-        terminal.reset()
-        terminal.write(stripMouseModeSequences(cached, mouseModeTailRef))
+        writeTerminal(stripMouseModeSequences(cached, mouseModeTailRef), true)
         // needsResetRef stays true — live history will replace the snapshot
       }
 
@@ -1526,7 +1582,7 @@ export function useTerminal({
         attachDebounceRef.current = null
       }
     }
-  }, [sessionId, tmuxTarget, allowAttach, connectionStatus, connectionEpoch, checkScrollPosition, setTmuxCopyMode])
+  }, [sessionId, tmuxTarget, allowAttach, connectionStatus, connectionEpoch, checkScrollPosition, setTmuxCopyMode, writeTerminal])
 
   useEffect(() => {
     if (copyModePollIntervalRef.current !== null) {
@@ -1567,18 +1623,16 @@ export function useTerminal({
       if (!terminal || chunks.length === 0) return
 
       outputBufferRef.current = []
-      const data = chunks.join('')
+      const data = chunks.map(chunk => chunk.data).join('')
 
-      // Atomically swap: reset + write in same JS task = one rAF frame, no blank
-      if (needsResetRef.current) {
-        terminal.reset()
-        needsResetRef.current = false
-      }
+      const reset = needsResetRef.current
+      needsResetRef.current = false
 
       const writeStart = performance.now()
       const dataLen = data.length
 
-      terminal.write(stripMouseModeSequences(data, mouseModeTailRef), () => {
+      writeTerminal(stripMouseModeSequences(data, mouseModeTailRef), reset, () => {
+        acknowledgeOutput(chunks)
         const writeMs = Math.round(performance.now() - writeStart)
         // Log slow writes (>50ms) to catch render bottlenecks
         if (writeMs > 50) {
@@ -1596,7 +1650,7 @@ export function useTerminal({
           })
         }
         checkScrollPosition()
-      })
+      }, () => acknowledgeOutput(chunks))
     }
 
     const scheduleFlush = () => {
@@ -1668,9 +1722,11 @@ export function useTerminal({
           switchStartRef.current = null
         }
 
-        outputBufferRef.current.push(
-          isiOS ? forceTextPresentation(message.data) : message.data
-        )
+        outputBufferRef.current.push({
+          data: isiOS ? forceTextPresentation(message.data) : message.data,
+          outputSeq: message.outputSeq,
+          epoch: (message as ServerMessageWithDiagnostics)._connectionEpoch ?? currentConnectionEpochRef.current,
+        })
         scheduleFlush()
       }
 
@@ -1679,44 +1735,44 @@ export function useTerminal({
         attachedSession &&
         message.sessionId === attachedSession
       ) {
-        readySessionRef.current = message.sessionId
-        // If output is buffered but unflushed, flush now so reset+write
-        // stay atomic (avoids blank flash from resetting before flush fires).
-        // If no output arrived at all (empty pane or server dedup), reset
-        // to clear stale content from the previous session.
-        if (needsResetRef.current && outputBufferRef.current.length > 0) {
-          flush()
-        } else if (needsResetRef.current) {
-          terminalRef.current?.reset()
-          needsResetRef.current = false
-        }
-        setIsSwitching(false)
+        readySessionRef.current = null
+        flush()
+        const reset = needsResetRef.current
+        needsResetRef.current = false
+        const readySession = message.sessionId
+        // Even an empty write is queued by xterm, so this callback follows all
+        // preceding screen data. The operation's generation guards A→B→A and
+        // a reconnect to the same session while parsing is still outstanding.
+        writeTerminal('', reset, () => {
+          if (attachedSessionRef.current !== readySession) return
+          readySessionRef.current = readySession
+          setIsSwitching(false)
 
-        const readySwitchStart = switchStartRef.current
-        // switchStartRef may already be cleared by terminal-output above; only log if still set
-        if (readySwitchStart) {
-          clientLog('switch_ready', {
-            sessionId: message.sessionId,
-            totalMs: Math.round(performance.now() - readySwitchStart),
-          })
-          switchStartRef.current = null
-        }
+          const readySwitchStart = switchStartRef.current
+          // switchStartRef may already be cleared by terminal-output above; only log if still set
+          if (readySwitchStart) {
+            clientLog('switch_ready', {
+              sessionId: message.sessionId,
+              totalMs: Math.round(performance.now() - readySwitchStart),
+            })
+            switchStartRef.current = null
+          }
 
-        if (focusAfterAttachSessionRef.current === message.sessionId) {
-          terminalRef.current?.focus()
-          focusAfterAttachSessionRef.current = null
-        }
+          if (focusAfterAttachSessionRef.current === message.sessionId) {
+            terminalRef.current?.focus()
+            focusAfterAttachSessionRef.current = null
+          }
 
-        // Force iOS compositor repaint after reconnect data delivery.
-        // The visibilitychange repaint fires early and may only show stale
-        // content; this second repaint catches the fresh data from reconnect.
-        // Flush pending output first so the repaint captures fresh data.
-        // Uses shared scheduleIosRepaint so it coalesces with any pending
-        // visibility-triggered repaint (no double-flicker).
-        if (isiOS) {
-          flush()
-          scheduleIosRepaint(50, 'terminal-ready')
-        }
+          // Force iOS compositor repaint after reconnect data delivery.
+          // The visibilitychange repaint fires early and may only show stale
+          // content; this second repaint catches the fresh data from reconnect.
+          // Flush pending output first so the repaint captures fresh data.
+          // Uses shared scheduleIosRepaint so it coalesces with any pending
+          // visibility-triggered repaint (no double-flicker).
+          if (isiOS) {
+            scheduleIosRepaint(50, 'terminal-ready')
+          }
+        })
       }
 
       // Clear switching state on terminal-error so spinner doesn't get stuck
@@ -1725,7 +1781,10 @@ export function useTerminal({
         attachedSession &&
         (!message.sessionId || message.sessionId === attachedSession)
       ) {
+        parserGenerationRef.current += 1
         readySessionRef.current = null
+        acknowledgeOutput(outputBufferRef.current)
+        outputBufferRef.current = []
         needsResetRef.current = false
         setIsSwitching(false)
       }
@@ -1787,7 +1846,7 @@ export function useTerminal({
         if (terminal) {
           const mode = terminal.modes.mouseTrackingMode
           if (nextAppMouse ? mode !== 'drag' : mode !== 'none') {
-            terminal.write(nextAppMouse ? ENABLE_MOUSE_TRACKING : DISABLE_MOUSE_TRACKING)
+            writeTerminal(nextAppMouse ? ENABLE_MOUSE_TRACKING : DISABLE_MOUSE_TRACKING)
           }
         }
 
@@ -1806,7 +1865,7 @@ export function useTerminal({
       }
       emitDropLog()
     }
-  }, [subscribe, checkScrollPosition, setTmuxCopyMode, offerClipboardCopy])
+  }, [subscribe, checkScrollPosition, setTmuxCopyMode, offerClipboardCopy, writeTerminal, acknowledgeOutput])
 
   // Handle resize - with longer debounce to prevent flickering
   useEffect(() => {

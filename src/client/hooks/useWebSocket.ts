@@ -1,33 +1,16 @@
 /**
- * useWebSocket.ts — WebSocket connection manager with iOS Safari PWA support.
+ * WebSocket recovery and terminal transport ownership.
  *
- * Resume strategy (visibilitychange → visible):
+ * Visibility, pageshow, and elapsed-time gaps trigger a verification ping.
+ * A healthy socket stays open; a failed probe falls back to reconnect after
+ * the existing network-settle delay. Neither path permits terminal input
+ * until a fresh attachment is acknowledged and its screen has been parsed.
  *
- *   Industry consensus (Socket.IO, graphql-ws, tRPC, ActionCable) is to
- *   force-reconnect on every resume.  We intentionally deviate from this
- *   because on iOS Safari PWA, destroying a healthy socket and creating a
- *   new WebSocket during the visibility transition frequently fails — the
- *   new connection hangs or is rejected, causing an unrecoverable reconnect
- *   loop.  Force-closing the app clears all TCP connections at the OS level
- *   and "fixes" it, but that's not a real solution.
- *
- *   Instead, we verify the existing socket with a quick ping before
- *   destroying it.  For the common case (short background, healthy socket),
- *   the pong arrives in <100 ms and we avoid creating any new connections.
- *   For zombie sockets (iOS reports readyState OPEN but the socket is dead),
- *   the verify times out after 1.5 s and we fall back to force-reconnect.
- *   Because force-reconnect only runs when truly needed (not every resume),
- *   zombie TCP connections don't accumulate and the reconnect is more likely
- *   to succeed.
- *
- * Other reconnection triggers:
- * - pageshow (bfcache restore — always forces reconnect)
- * - Time-jump detector (fallback for deep PWA suspension — always forces)
- * - Connection timeout (prevents zombie sockets from blocking reconnect)
- * - Application-level ping/pong heartbeat (detects dead sockets in foreground)
- * - Debounce on forceReconnect (prevents double reconnect from overlapping triggers)
- * - Leaked socket tracking (force-closes all prior sockets to avoid browser limits)
- * - Resume delay (waits for iOS to restore network before first connect attempt)
+ * Resume capabilities live only in this document. Connection epochs fence
+ * parser acknowledgments; attachment IDs fence terminal frames across
+ * selection changes, including A-B-A. Hidden pages stop timers and detach
+ * output. Server lease expiry bounds resources when lifecycle events never
+ * arrive. Input dispatch independently checks for missed suspension.
  */
 import { useEffect, useMemo } from 'react'
 import type { ClientMessage, SendClientMessage, ServerMessage, ServerMessageWithDiagnostics } from '@shared/types'
@@ -57,7 +40,7 @@ const RESUME_CONNECT_TIMEOUT_MS = 8_000
 
 /**
  * If the interval timer detects a time jump larger than this, the device
- * likely slept or the PWA was suspended. Force a fresh reconnect.
+ * likely slept or the PWA was suspended. Verify the transport before input.
  */
 const WAKE_JUMP_MS = 15_000
 
@@ -135,6 +118,13 @@ export class WebSocketManager {
   private leakedSockets = new Set<WebSocket>()
   /** Pending verification timer — non-null while awaiting a verify pong. */
   private verifyTimer: number | null = null
+  private pageSuspended = false
+  private resumeToken: string | undefined
+  private resumeClaim = 0
+  private attachId = 0
+  private attachedSessionId: string | null = null
+  private readyAttachId: number | null = null
+  private lastResumeAt = 0
 
   private wsSnap() {
     return {
@@ -157,6 +147,7 @@ export class WebSocketManager {
   }
 
   connect() {
+    if (this.isHidden()) return
     // Clean up any zombie socket that never opened / already closed
     if (this.ws) {
       const isOpen = this.ws.readyState === WebSocket.OPEN
@@ -236,6 +227,14 @@ export class WebSocketManager {
       this.connectionEpoch += 1
       // Socket opened successfully — remove from leaked tracking
       this.leakedSockets.delete(ws)
+      // One capability per document, never shared through localStorage or
+      // sessionStorage (duplicated tabs must not steal each other's lease).
+      this.send({ type: 'terminal-resume', token: this.resumeToken, claim: ++this.resumeClaim })
+      if (this.isHidden()) {
+        this.setStatus('reconnecting')
+        return
+      }
+      this.lastTick = Date.now()
       this.setStatus('connected')
       this.startHeartbeat()
     }
@@ -252,6 +251,11 @@ export class WebSocketManager {
         const withDiag = parsed as ServerMessageWithDiagnostics
         withDiag._parseMs = Math.round(parseMs)
         withDiag._rawLength = raw.length
+        withDiag._connectionEpoch = this.connectionEpoch
+        if (parsed.type === 'terminal-lease') {
+          this.resumeToken = parsed.token
+          return
+        }
         // Intercept pong — clear timeout only for the current seq.
         if (parsed.type === 'pong') {
           this.lastPongSeq = parsed.seq ?? null
@@ -263,10 +267,31 @@ export class WebSocketManager {
             if (this.verifyTimer !== null) {
               this.cancelVerify()
               clientLog('ws_verify_ok', this.wsSnap(), 'info')
+              if (this.isHidden()) return
+              // Even a surviving socket needs a new verified attachment:
+              // tmux focus or the target may have changed during suspension.
+              this.connectionEpoch += 1
+              this.setStatus('connected')
               this.startHeartbeat(EARLY_HEARTBEAT_MS)
             }
           }
           return
+        }
+        if (parsed.type === 'terminal-output' || parsed.type === 'terminal-ready' ||
+            parsed.type === 'tmux-copy-mode-status' || parsed.type === 'clipboard-offer' ||
+            parsed.type === 'terminal-error') {
+          const current = this.status === 'connected' && !this.isHidden() &&
+            (!parsed.sessionId || parsed.sessionId === this.attachedSessionId) &&
+            (parsed.attachId === this.attachId || (parsed.attachId === undefined && !this.resumeToken))
+          if (!current) {
+            // Discarded output is never replayed into a new attachment. Free
+            // its transport budget; recovery will request a fresh snapshot.
+            if (parsed.type === 'terminal-output' && parsed.outputSeq !== undefined) {
+              this.send({ type: 'terminal-ack', outputSeq: parsed.outputSeq })
+            }
+            return
+          }
+          if (parsed.type === 'terminal-ready') this.readyAttachId = this.attachId
         }
         this.listeners.forEach((listener) => listener(parsed))
       } catch {
@@ -326,6 +351,7 @@ export class WebSocketManager {
     this.lifecycleStarted = true
     document.addEventListener('visibilitychange', this.onVisibilityChange)
     window.addEventListener('pageshow', this.onPageShow)
+    window.addEventListener('pagehide', this.onPageHide)
 
     // Time-jump detector catches cases where visibility events don't fire
     // (e.g. iOS PWA suspended for a long period)
@@ -342,7 +368,7 @@ export class WebSocketManager {
       }
       if (gap > WAKE_JUMP_MS) {
         clientLog('ws_time_jump', { gapMs: gap, ...this.wsSnap() }, 'info')
-        this.forceReconnect('time_jump', true)
+        this.resumeConnection('time_jump')
       }
       this.lastTick = now
     }, WAKE_CHECK_INTERVAL_MS)
@@ -354,6 +380,7 @@ export class WebSocketManager {
     this.lifecycleStarted = false
     document.removeEventListener('visibilitychange', this.onVisibilityChange)
     window.removeEventListener('pageshow', this.onPageShow)
+    window.removeEventListener('pagehide', this.onPageHide)
     if (this.wakeCheckInterval !== null) {
       window.clearInterval(this.wakeCheckInterval)
       this.wakeCheckInterval = null
@@ -362,6 +389,34 @@ export class WebSocketManager {
 
   send(message: ClientMessage): boolean {
     if (this.ws?.readyState !== WebSocket.OPEN) return false
+    if (message.type === 'terminal-ack' && message.connectionEpoch !== undefined) {
+      if (message.connectionEpoch !== this.connectionEpoch) return false
+      message = { type: 'terminal-ack', outputSeq: message.outputSeq }
+    }
+
+    const terminalCommand = message.type.startsWith('terminal-') || message.type.startsWith('tmux-')
+    const lifecycleCommand = message.type === 'terminal-resume' || message.type === 'terminal-ack'
+    if (terminalCommand && !lifecycleCommand) {
+      if (message.type !== 'terminal-detach') {
+        if (this.isHidden()) return false
+        if (Date.now() - this.lastTick > WAKE_JUMP_MS) {
+          this.resumeConnection('input_time_jump')
+          return false
+        }
+        if (this.status !== 'connected') return false
+      }
+      if (message.type === 'terminal-attach') {
+        this.attachId += 1
+        this.attachedSessionId = message.sessionId
+        this.readyAttachId = null
+      } else if (message.type === 'terminal-input' || message.type === 'terminal-paste') {
+        if (this.readyAttachId !== this.attachId || message.sessionId !== this.attachedSessionId) return false
+      } else if (message.type === 'terminal-detach') {
+        this.readyAttachId = null
+        this.attachedSessionId = null
+      }
+      message = { ...message, attachId: this.attachId } as ClientMessage
+    }
 
     try {
       this.ws.send(JSON.stringify(message))
@@ -402,47 +457,56 @@ export class WebSocketManager {
   private onVisibilityChange = () => {
     clientLog('ws_visibility', { state: document.visibilityState, ...this.wsSnap() }, 'info')
     if (document.visibilityState === 'visible') {
-      const now = Date.now()
-      const gap = now - this.lastTick
-      // Reset lastTick before reconnect to prevent the wake-check interval
-      // from seeing a stale gap and firing a second forceReconnect.
-      this.lastTick = now
-
-      clientLog('ws_resume', { gapMs: gap, ...this.wsSnap() }, 'info')
-
-      // If the socket still reports OPEN, verify it with a quick ping before
-      // tearing it down.  On short backgrounds the socket is almost always
-      // healthy — destroying it and creating a new WebSocket during the iOS
-      // resume transition is what causes the unrecoverable reconnect loop.
-      // See file-level comment for the full rationale.
-      if (this.ws?.readyState === WebSocket.OPEN) {
-        this.verifyConnection()
-      } else {
-        // Socket already closed/closing/connecting — go straight to reconnect
-        this.forceReconnect('visibilitychange', true)
-      }
+      this.pageSuspended = false
+      this.resumeConnection('visibilitychange')
     } else {
-      // Pause heartbeat when hidden — iOS freezes timers anyway,
-      // and pong timeout would false-positive on wake.
-      this.stopHeartbeat()
-      this.cancelVerify()
-      // Cancel pending reconnect — it would fire in the background
-      // otherwise (timer was set before the tab was hidden).
-      // forceReconnect() handles reconnection when visible again.
-      if (this.reconnectTimer) {
-        window.clearTimeout(this.reconnectTimer)
-        this.reconnectTimer = null
-      }
+      this.suspendConnection()
     }
   }
 
   private onPageShow = (e: PageTransitionEvent) => {
     clientLog('ws_pageshow', { persisted: e.persisted, ...this.wsSnap() }, 'info')
     if (e.persisted) {
-      // Reset lastTick to prevent wake-check double reconnect after bfcache restore
-      this.lastTick = Date.now()
-      this.forceReconnect('pageshow', true)
+      this.pageSuspended = false
+      this.resumeConnection('pageshow')
     }
+  }
+
+  private onPageHide = () => {
+    this.pageSuspended = true
+    this.suspendConnection()
+  }
+
+  private suspendConnection() {
+    // Best-effort only: iOS may suspend without delivering this event. Stop
+    // rendering traffic when it does arrive; the relay retains the observer
+    // and a foreground attach reconstructs the current screen.
+    if (this.attachedSessionId) {
+      this.send({ type: 'terminal-detach', sessionId: this.attachedSessionId, attachId: this.attachId })
+    }
+    this.stopHeartbeat()
+    this.cancelVerify()
+    this.clearConnectTimer()
+    if (this.reconnectTimer !== null) window.clearTimeout(this.reconnectTimer)
+    this.reconnectTimer = null
+    if (!this.manualClose) this.setStatus('reconnecting')
+  }
+
+  private resumeConnection(trigger: string) {
+    if (this.manualClose || this.isHidden()) return
+    const gap = Date.now() - this.lastTick
+    this.lastTick = Date.now()
+    clientLog('ws_resume', { trigger, gapMs: gap, ...this.wsSnap() }, 'info')
+    // Reuse one pending probe/connect across visibility, pageshow and timer
+    // callbacks; none may tear down a replacement started by another signal.
+    if (this.verifyTimer !== null) return
+    if (Date.now() - this.lastResumeAt < 200 && this.reconnectTimer !== null) return
+    if (this.ws?.readyState === WebSocket.CONNECTING && this.connectTimer !== null && gap < WAKE_JUMP_MS) return
+    this.lastResumeAt = Date.now()
+    if (this.reconnectTimer !== null) window.clearTimeout(this.reconnectTimer)
+    this.reconnectTimer = null
+    if (this.ws?.readyState === WebSocket.OPEN) this.verifyConnection()
+    else this.forceReconnect(trigger, true)
   }
 
   /**
@@ -461,6 +525,7 @@ export class WebSocketManager {
     // Both use pingSeq — advancing it here would orphan any pending heartbeat
     // pong, causing pongTimer to fire and kill a healthy socket.
     this.stopHeartbeat()
+    this.setStatus('reconnecting')
     this.pingSeq += 1
     const seq = this.pingSeq
     const ws = this.ws
@@ -576,8 +641,10 @@ export class WebSocketManager {
    */
   private startHeartbeat(firstDelayMs?: number) {
     this.stopHeartbeat()
+    if (this.isHidden()) return
 
     const sendPing = () => {
+      if (this.isHidden()) return
       if (this.ws?.readyState !== WebSocket.OPEN) return
       this.pingSeq += 1
       if (!this.send({ type: 'ping', seq: this.pingSeq })) return
@@ -621,6 +688,7 @@ export class WebSocketManager {
   }
 
   private setStatus(status: ConnectionStatus, error: string | null = null) {
+    if (status !== 'connected') this.readyAttachId = null
     this.status = status
     this.error = error
     this.statusListeners.forEach((listener) => listener(status, error, this.connectionEpoch))
@@ -675,7 +743,7 @@ export class WebSocketManager {
   }
 
   private isHidden(): boolean {
-    return typeof document !== 'undefined' && document.visibilityState === 'hidden'
+    return this.pageSuspended || (typeof document !== 'undefined' && document.visibilityState === 'hidden')
   }
 
   private clearConnectTimer() {
