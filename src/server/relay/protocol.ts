@@ -30,7 +30,7 @@ export type RelayToParent =
   | { type: 'stopped' }
   | { type: 'fatal'; error: string }
 export type RelayToTerminal =
-  | { type: 'init'; id: string; sessions: TerminalSession[]; terminalColorsEnabled: boolean }
+  | { type: 'init'; id: string; ptySpawnLock: SharedArrayBuffer; sessions: TerminalSession[]; terminalColorsEnabled: boolean }
   | { type: 'sessions'; sessions: TerminalSession[]; terminalColorsEnabled: boolean }
   | { type: 'message'; epoch: number; message: ClientMessage }
   | { type: 'resume'; epoch: number }
@@ -39,7 +39,7 @@ export type RelayToTerminal =
   | { type: 'shutdown' }
 export type TerminalToRelay =
   | { type: 'send'; epoch: number; sequence: number; payload: string }
-  | { type: 'overflow' }
+  | { type: 'overflow'; epoch: number }
   | { type: 'group-created' }
   | { type: 'submit'; sessionId: string }
   | { type: 'stopped' }

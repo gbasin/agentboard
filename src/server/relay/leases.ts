@@ -1,4 +1,5 @@
 import { resolveWorkerPath } from '../workerPath'
+import { isValidSessionId, isValidTmuxTarget } from '../validators'
 /** Bounded observers survive transport replacement; agent panes never belong to a lease. */
 import type { ServerWebSocket } from 'bun'
 import type { ClientMessage } from '../../shared/types'
@@ -15,7 +16,7 @@ type Socket = ServerWebSocket<RelaySocketData>
 interface Lease {
   id: string
   token: string
-  worker: Worker
+  worker: Worker | null
   owner: Socket | null
   epoch: number
   claim: number
@@ -35,8 +36,10 @@ const TERMINAL_TYPES = new Set(['terminal-attach', 'terminal-detach', 'terminal-
 
 export class TerminalLeases {
   private leases = new Map<string, Lease>()
+  private overloaded = new WeakSet<Socket>()
   private sessions: TerminalSession[] = []
   private colors = true
+  private readonly ptySpawnLock = new SharedArrayBuffer(4)
   private timer = setInterval(() => this.sweep(), Math.min(1000, GRACE_MS, PROGRESS_MS))
   private retiring = new Set<Promise<void>>()
   // PTY worker realm teardown SIGTRAPs in Bun 1.3.14 on macOS. Reuse only
@@ -52,6 +55,7 @@ export class TerminalLeases {
   }
 
   handle(ws: Socket, message: ClientMessage): boolean {
+    if (this.overloaded.has(ws)) return true
     if (message.type === 'terminal-resume') {
       this.resume(ws, message.token, message.claim)
       return true
@@ -71,11 +75,22 @@ export class TerminalLeases {
     if (message.attachId !== undefined && (!Number.isSafeInteger(message.attachId) || message.attachId <= 0)) return true
     let lease = ws.data.lease
     if (!lease) {
+      if (message.type !== 'terminal-attach') return true
       // Old clients do not negotiate retention or output acknowledgments.
       lease = this.create(ws, 0, false)
       if (!lease) return true
     }
     if (lease.owner !== ws) return true
+    if (!lease.worker) {
+      if (message.type !== 'terminal-attach') return true
+      const session = this.sessions.find(session => session.id === message.sessionId)
+      const target = message.tmuxTarget ?? session?.tmuxWindow
+      if (typeof message.sessionId !== 'string' || !isValidSessionId(message.sessionId) || !session || typeof target !== 'string' || !isValidTmuxTarget(target) || target !== session.tmuxWindow) {
+        this.send(ws, JSON.stringify({ type: 'terminal-error', sessionId: message.sessionId, attachId: message.attachId, code: 'ERR_INVALID_WINDOW', message: 'Invalid terminal attachment', retryable: false }))
+        return true
+      }
+      this.startWorker(lease)
+    }
     lease.progressAt = performance.now()
     this.post(lease, { type: 'message', epoch: lease.epoch, message })
     return true
@@ -129,15 +144,22 @@ export class TerminalLeases {
       const idle = [...this.leases.values()].find(lease => !lease.owner)
       if (idle) this.retire(idle)
     }
-    if (this.leases.size + this.retiring.size >= MAX_LEASES) { ws.close(1013, 'Terminal capacity reached'); return null }
+    if (this.leases.size + this.retiring.size >= MAX_LEASES) { this.overload(ws, 'Terminal capacity reached'); return null }
     const token = crypto.randomUUID()
     const id = crypto.randomUUID()
-    const workerPath = resolveWorkerPath('terminalSessionWorker')
-    const worker = this.idleWorkers.pop() ?? new Worker(workerPath, { type: 'module', env: workerEnvironment(), smol: true })
-    const lease: Lease = { id, token, worker, owner: ws, epoch: 1, claim, retained, progressAt: performance.now(), detachedAt: null }
+    const lease: Lease = { id, token, worker: null, owner: ws, epoch: 1, claim, retained, progressAt: performance.now(), detachedAt: null }
     this.leases.set(token, lease)
     this.notify({ type: 'lease-created', id })
     ws.data.lease = lease
+    return lease
+  }
+
+  private startWorker(lease: Lease): void {
+    // Negotiating a resume token does not imply a terminal is visible. Keep
+    // dashboard-only documents lightweight; only a valid attach needs a realm.
+    const workerPath = resolveWorkerPath('terminalSessionWorker')
+    const worker = this.idleWorkers.pop() ?? new Worker(workerPath, { type: 'module', env: workerEnvironment(), smol: true })
+    lease.worker = worker
     worker.onmessage = (event: MessageEvent<TerminalToRelay>) => {
       const message = event.data
       if (message.type === 'send') {
@@ -145,16 +167,15 @@ export class TerminalLeases {
         if (owner && message.epoch === lease.epoch) this.sendTerminal(owner, message.payload)
         this.post(lease, { type: 'credit', sequence: message.sequence })
       } else if (message.type === 'overflow') {
-        lease.owner?.close(1013, 'Terminal output needs resynchronization')
+        if (lease.owner && message.epoch === lease.epoch) this.overload(lease.owner, 'Terminal output needs resynchronization')
       } else if (message.type === 'submit' || message.type === 'group-created') this.notify(message)
     }
     worker.onerror = () => {
       lease.owner?.close(1011, 'Terminal worker stopped')
       this.notify({ type: 'fatal', error: 'Terminal worker failed' })
     }
-    this.post(lease, { type: 'init', id, sessions: this.sessions, terminalColorsEnabled: this.colors })
+    this.post(lease, { type: 'init', id: lease.id, ptySpawnLock: this.ptySpawnLock, sessions: this.sessions, terminalColorsEnabled: this.colors })
     this.post(lease, { type: 'resume', epoch: lease.epoch })
-    return lease
   }
 
   private sendTerminal(ws: Socket, raw: string) {
@@ -164,7 +185,7 @@ export class TerminalLeases {
       const payload = JSON.stringify({ ...message, outputSeq })
       const bytes = Buffer.byteLength(payload)
       if (ws.data.outstandingBytes + bytes > MAX_OUTPUT_BYTES) {
-        ws.close(1013, 'Terminal output needs resynchronization')
+        this.overload(ws, 'Terminal output needs resynchronization')
         return
       }
       ws.data.outstanding.set(outputSeq, bytes)
@@ -174,12 +195,23 @@ export class TerminalLeases {
   }
 
   send(ws: Socket, payload: string) {
-    if (ws.readyState !== 1) return
+    if (ws.readyState !== 1 || this.overloaded.has(ws)) return
     // Never drop arbitrary ANSI output and then continue the same stream.
-    if (Buffer.byteLength(payload) + ws.getBufferedAmount() > 16 * MAX_OUTPUT_BYTES || ws.send(payload) === 0) ws.close(1013, 'Connection needs resynchronization')
+    if (Buffer.byteLength(payload) + ws.getBufferedAmount() > 16 * MAX_OUTPUT_BYTES || ws.send(payload) === 0) this.overload(ws, 'Connection needs resynchronization')
   }
 
-  private post(lease: Lease, message: RelayToTerminal) { lease.worker.postMessage(message) }
+  private overload(ws: Socket, reason: string): void {
+    if (ws.readyState !== 1 || this.overloaded.has(ws)) return
+    this.overloaded.add(ws)
+    // WebKit may expose the following 1013 close as 1005. Signal overload in
+    // the ordered application stream first. Bypass the payload cap exactly
+    // once for this small control frame; calling send() here would recurse.
+    try { ws.send(JSON.stringify({ type: 'terminal-overload' })) } catch { /* Closing anyway. */ }
+    this.close(ws)
+    ws.close(1013, reason)
+  }
+
+  private post(lease: Lease, message: RelayToTerminal) { lease.worker?.postMessage(message) }
 
   private sweep() {
     const now = performance.now()
@@ -195,21 +227,23 @@ export class TerminalLeases {
     if (!this.leases.delete(lease.token)) return
     this.notify({ type: 'lease-removed', id: lease.id })
     lease.owner = null
+    const worker = lease.worker
+    if (!worker) return
     const task = new Promise<void>(resolve => {
       const timer = setTimeout(() => {
         // Bun's compiled worker termination can crash the runtime. Fail the
         // service rather than continue accepting work with an orphan observer.
         this.notify({ type: 'fatal', error: 'Terminal worker did not finish disposal' })
       }, 5000)
-      const previous = lease.worker.onmessage
-      lease.worker.onmessage = event => {
+      const previous = worker.onmessage
+      worker.onmessage = event => {
         if ((event.data as TerminalToRelay).type === 'stopped') {
           clearTimeout(timer)
-          lease.worker.onmessage = null
-          this.idleWorkers.push(lease.worker)
+          worker.onmessage = null
+          this.idleWorkers.push(worker)
           resolve()
         }
-        else previous?.call(lease.worker, event)
+        else previous?.call(worker, event)
       }
       this.post(lease, { type: 'shutdown' })
     })

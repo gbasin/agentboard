@@ -91,9 +91,18 @@ try {
   second.ws.close()
   await wait(1100)
   if (tmux('list-sessions', '-F', '#{session_name}') !== env.TMUX_SESSION) throw new Error('Observer not reclaimed')
+  // Source-mode Bun can lose signal delivery after concurrent worker PTYs.
+  // Exercise the actual release artifact with a warm, multi-worker idle pool.
+  const concurrent = await Promise.all(Array.from({ length: 6 }, () => connect(window)))
+  await Promise.all(concurrent.map(peer => peer.attach(1)))
+  if (tmux('list-clients', '-F', '#{client_tty}').split('\n').filter(Boolean).length !== 6) throw new Error('Concurrent observers were not attached')
+  for (const peer of concurrent) peer.ws.close()
+  await wait(2000)
+  if (tmux('list-sessions', '-F', '#{session_name}') !== env.TMUX_SESSION) throw new Error('Concurrent observers were not reclaimed')
+  await wait(10_000)
   const log = await Bun.file(env.LOG_FILE!).text()
   if (/ModuleNotFound|worker_error|worker_failed/.test(log)) throw new Error('Compiled worker failed; inspect diagnostics')
-  console.log('PASS: compiled HTTP, real terminal attach, retained reconnect, echo, expiry, agent survival')
+  console.log('PASS: compiled HTTP, real terminal attach, retained reconnect, echo, six-worker expiry and idle pool, agent survival')
 } catch (error) {
   console.error(error)
   for (const filename of ['err', 'server.log']) {
@@ -105,7 +114,18 @@ try {
   for (const ws of peers) ws.close()
   if (child) {
     child.kill()
-    const code = await child.exited
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    const graceful = await Promise.race([
+      child.exited.then(code => ({ code })),
+      new Promise<null>(resolve => { timeout = setTimeout(() => resolve(null), 10_000) }),
+    ])
+    clearTimeout(timeout)
+    if (!graceful) {
+      console.error('Compiled shutdown did not finish within 10 seconds')
+      process.exitCode = 1
+      child.kill('SIGKILL')
+    }
+    const code = graceful?.code ?? await child.exited
     console.log('Compiled shutdown:', code, child.signalCode)
     if (code !== 0 || child.signalCode) process.exitCode = 1
   }

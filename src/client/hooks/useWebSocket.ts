@@ -50,6 +50,9 @@ const WAKE_CHECK_INTERVAL_MS = 5_000
 /** How often to send an application-level ping to detect dead sockets. */
 const HEARTBEAT_INTERVAL_MS = 20_000
 
+/** Reset overload retries only after an attached terminal stays usable. */
+const OVERLOAD_STABLE_MS = 30_000
+
 /** How long to wait for a pong before declaring the socket dead. */
 const PONG_TIMEOUT_MS = 10_000
 
@@ -90,6 +93,9 @@ export class WebSocketManager {
   private status: ConnectionStatus = 'connecting'
   private error: string | null = null
   private reconnectAttempts = 0
+  private overloadFailures = 0
+  private overloadRetryAt = 0
+  private overloadProgressSince: number | null = null
   private reconnectTimer: number | null = null
   private connectTimer: number | null = null
   private manualClose = false
@@ -139,6 +145,8 @@ export class WebSocketManager {
       attempt: this.reconnectAttempts,
       failures: this.consecutiveFailures,
       stalls: this.stallCount,
+      overloads: this.overloadFailures,
+      overloadDelayMs: Math.max(0, this.overloadRetryAt - Date.now()),
       leaked: this.leakedSockets.size,
       online: typeof navigator !== 'undefined' ? navigator.onLine : undefined,
       verifying: this.verifyTimer !== null,
@@ -147,7 +155,7 @@ export class WebSocketManager {
   }
 
   connect() {
-    if (this.isHidden()) return
+    if (this.isHidden() || this.waitForOverloadCooldown()) return
     // Clean up any zombie socket that never opened / already closed
     if (this.ws) {
       const isOpen = this.ws.readyState === WebSocket.OPEN
@@ -180,6 +188,7 @@ export class WebSocketManager {
     clientLog('ws_connect', { url: wsUrl, resume: this.isResumeAttempt, ...this.wsSnap() }, 'info')
 
     const ws = new WebSocket(wsUrl)
+    let overloaded = false
     this.ws = ws
     this.lastMessageAt = null
     this.lastPongSeq = null
@@ -256,6 +265,16 @@ export class WebSocketManager {
           this.resumeToken = parsed.token
           return
         }
+        if (parsed.type === 'terminal-overload') {
+          overloaded = true
+          this.stopHeartbeat()
+          this.cancelVerify()
+          this.setStatus('reconnecting')
+          // Application signaling survives browsers that strip the close code.
+          // Revoke input now; onclose records this socket's failure only once.
+          ws.close()
+          return
+        }
         // Intercept pong — clear timeout only for the current seq.
         if (parsed.type === 'pong') {
           this.lastPongSeq = parsed.seq ?? null
@@ -274,6 +293,7 @@ export class WebSocketManager {
               this.setStatus('connected')
               this.startHeartbeat(EARLY_HEARTBEAT_MS)
             }
+            this.recordOverloadRecovery()
           }
           return
         }
@@ -291,7 +311,10 @@ export class WebSocketManager {
             }
             return
           }
-          if (parsed.type === 'terminal-ready') this.readyAttachId = this.attachId
+          if (parsed.type === 'terminal-ready') {
+            this.readyAttachId = this.attachId
+            this.recordOverloadRecovery()
+          }
         }
         this.listeners.forEach((listener) => listener(parsed))
       } catch {
@@ -318,6 +341,11 @@ export class WebSocketManager {
       this.clearConnectTimer()
       this.cancelVerify()
       this.consecutiveFailures += 1
+      this.overloadProgressSince = null
+      if (overloaded || e.code === 1013) {
+        this.overloadFailures = Math.min(this.overloadFailures + 1, 6)
+        this.overloadRetryAt = Date.now() + Math.min(1000 * 2 ** (this.overloadFailures - 1), 30_000)
+      }
       this.ws = null
       if (!this.manualClose) {
         this.scheduleReconnect()
@@ -328,6 +356,9 @@ export class WebSocketManager {
   }
 
   disconnect() {
+    this.overloadFailures = 0
+    this.overloadRetryAt = 0
+    this.overloadProgressSince = null
     this.manualClose = true
     this.clearConnectTimer()
     this.cancelVerify()
@@ -420,6 +451,7 @@ export class WebSocketManager {
 
     try {
       this.ws.send(JSON.stringify(message))
+      if (message.type === 'terminal-ack') this.recordOverloadRecovery()
       return true
     } catch (error) {
       clientLog('ws_send_error', {
@@ -497,6 +529,7 @@ export class WebSocketManager {
     const gap = Date.now() - this.lastTick
     this.lastTick = Date.now()
     clientLog('ws_resume', { trigger, gapMs: gap, ...this.wsSnap() }, 'info')
+    if (this.waitForOverloadCooldown()) return
     // Reuse one pending probe/connect across visibility, pageshow and timer
     // callbacks; none may tear down a replacement started by another signal.
     if (this.verifyTimer !== null) return
@@ -569,6 +602,8 @@ export class WebSocketManager {
       clientLog('ws_force_skip', { trigger, reason: 'manual_close' })
       return
     }
+
+    if (this.waitForOverloadCooldown()) return
 
     // Debounce rapid-fire triggers (e.g. visibilitychange + time-jump
     // both firing on resume). Prevents double reconnection.
@@ -688,10 +723,44 @@ export class WebSocketManager {
   }
 
   private setStatus(status: ConnectionStatus, error: string | null = null) {
-    if (status !== 'connected') this.readyAttachId = null
+    if (status !== 'connected') {
+      this.readyAttachId = null
+      this.overloadProgressSince = null
+    }
     this.status = status
     this.error = error
     this.statusListeners.forEach((listener) => listener(status, error, this.connectionEpoch))
+  }
+
+  private recordOverloadRecovery() {
+    if (this.overloadFailures === 0 || this.status !== 'connected' || this.isHidden() ||
+        this.readyAttachId !== this.attachId) return
+    const now = Date.now()
+    if (now - this.lastTick > WAKE_JUMP_MS) this.overloadProgressSince = null
+    // Readiness starts the interval; a later ACK or matching heartbeat pong
+    // confirms recovery even when a healthy terminal has no new output.
+    this.overloadProgressSince ??= now
+    if (now - this.overloadProgressSince >= OVERLOAD_STABLE_MS) {
+      this.overloadFailures = 0
+      this.overloadRetryAt = 0
+      this.overloadProgressSince = null
+    }
+  }
+
+  /** Preserve the deadline across hide/show; lifecycle churn cannot skip it. */
+  private waitForOverloadCooldown(): boolean {
+    const remaining = this.overloadRetryAt - Date.now()
+    if (remaining <= 0) return false
+    if (this.reconnectTimer !== null) window.clearTimeout(this.reconnectTimer)
+    this.reconnectTimer = null
+    this.setStatus('reconnecting')
+    if (!this.isHidden()) {
+      this.reconnectTimer = window.setTimeout(() => {
+        this.reconnectTimer = null
+        this.connect()
+      }, remaining)
+    }
+    return true
   }
 
   private scheduleReconnect() {
@@ -703,6 +772,8 @@ export class WebSocketManager {
       this.setStatus('reconnecting')
       return
     }
+
+    if (this.waitForOverloadCooldown()) return
 
     // If we've hit the stall threshold, aggressively clean up and add extra
     // cooldown time.  Leaked zombie sockets at the browser level may be
@@ -834,7 +905,7 @@ export function useWebSocket() {
   }, [setConnectionState])
 
   const sendMessage = useMemo<SendClientMessage>(
-    () => (message) => { void manager.send(message) },
+    () => (message) => manager.send(message),
     []
   )
   const subscribe = useMemo(() => manager.subscribe.bind(manager), [])

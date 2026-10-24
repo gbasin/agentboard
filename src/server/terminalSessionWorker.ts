@@ -1,5 +1,7 @@
 /// <reference lib="webworker" />
 /** One terminal per realm: slow tmux setup/paste/disposal cannot stop sibling clients. */
+import { createTerminalProxy, SshTerminalProxy } from './terminal'
+import { serializedPtySpawn } from './relay/ptySpawnLock'
 import { config } from './config'
 import { TerminalRuntime, createTerminalPeerData, type TerminalPeer } from './relay/terminalRuntime'
 import type { TerminalSession } from './relay/protocol'
@@ -7,6 +9,7 @@ import type { RelayToTerminal, TerminalToRelay } from './relay/protocol'
 
 const ctx = self as DedicatedWorkerGlobalScope
 const sessions = new Map<string, TerminalSession>()
+let ptySpawnLock: Int32Array | null = null
 let epoch = 0
 let serial = 0
 let pendingBytes = 0
@@ -16,6 +19,11 @@ let readyState = 1
 const post = (message: TerminalToRelay) => ctx.postMessage(message)
 const runtime = new TerminalRuntime({
   getSession: id => sessions.get(id),
+  createProxy: options => {
+    if (!ptySpawnLock) throw new Error('Terminal worker has no PTY spawn lock')
+    const spawnOptions = { ...options, spawn: serializedPtySpawn(ptySpawnLock) }
+    return options.host ? new SshTerminalProxy(spawnOptions) : createTerminalProxy(spawnOptions)
+  },
   onGroupedSessionCreated: () => post({ type: 'group-created' }),
   onSubmit: sessionId => post({ type: 'submit', sessionId }),
 })
@@ -27,6 +35,7 @@ ctx.onmessage = async (event: MessageEvent<RelayToTerminal>) => {
     for (const session of message.sessions) sessions.set(session.id, session)
     config.terminalColorsEnabled = message.terminalColorsEnabled
     if (message.type === 'init') {
+      ptySpawnLock = new Int32Array(message.ptySpawnLock)
       const nextPeer: TerminalPeer = {
         data: createTerminalPeerData(message.id), get readyState() { return peer === nextPeer ? readyState : 3 },
         send(payload) {
@@ -35,7 +44,7 @@ ctx.onmessage = async (event: MessageEvent<RelayToTerminal>) => {
           if (pendingBytes + bytes > 2 * 1024 * 1024) {
             runtime.suspend(peer)
             readyState = 3
-            post({ type: 'overflow' })
+            post({ type: 'overflow', epoch })
             return
           }
           const sequence = ++serial

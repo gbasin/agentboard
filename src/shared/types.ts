@@ -118,6 +118,7 @@ export interface DirectoryErrorResponse {
 
 export type ServerMessage = (
   | { type: 'terminal-lease'; token: string }
+  | { type: 'terminal-overload' }
   | { type: 'library-changed' }
   | { type: 'sessions'; sessions: Session[] }
   | { type: 'session-update'; session: Session }

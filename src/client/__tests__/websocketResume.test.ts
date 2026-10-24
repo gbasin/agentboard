@@ -17,7 +17,7 @@ class Socket {
   constructor(_url: string) { Socket.instances.push(this) }
   send(raw: string) { this.sent.push(JSON.parse(raw)) }
   open() { this.readyState = 1; this.onopen?.() }
-  close() { this.readyState = 3; this.onclose?.({ code: 1000, wasClean: true, reason: '' }) }
+  close(code = 1000) { this.readyState = 3; this.onclose?.({ code, wasClean: true, reason: '' }) }
   receive(message: object) { this.onmessage?.({ data: JSON.stringify(message) }) }
   pong() { const ping = this.sent.findLast(m => m.type === 'ping')!; this.receive({ type: 'pong', seq: ping.seq }) }
 }
@@ -147,4 +147,153 @@ test('late parser ACK cannot release a replacement connection output budget', ()
   expect(ws.sent).toHaveLength(before)
   expect(manager.send({ type: 'terminal-ack', outputSeq: 1, connectionEpoch: currentEpoch })).toBe(true)
   expect(ws.sent.at(-1)).toEqual({ type: 'terminal-ack', outputSeq: 1 })
+})
+
+
+test('overload retries survive successful OPEN and increase to a bounded delay', () => {
+  const originalNow = Date.now
+  let now = 1_000_000
+  Date.now = () => now
+  try {
+    let ws = openReady()
+    for (const delay of [1000, 2000, 4000, 8000, 16000, 30000, 30000]) {
+      ws.close(1013)
+      const retry = [...timers.entries()].find(([, timer]) => timer.ms === delay)
+      expect(retry).toBeDefined()
+      timers.delete(retry![0]); now += delay; retry![1].fn()
+      ws = Socket.instances.at(-1)!
+      ws.open(); ws.receive({ type: 'terminal-lease', token: 'document-capability' })
+      ws.receive(attach(ws))
+      // A prompt parser ACK is useful, but cannot reset the overload streak.
+      manager.send({ type: 'terminal-ack', outputSeq: 1 })
+    }
+  } finally { Date.now = originalNow }
+})
+
+test('pagehide/pageshow preserves the overload deadline instead of retrying early', () => {
+  const originalNow = Date.now
+  let now = 1_000_000
+  Date.now = () => now
+  try {
+    const ws = openReady()
+    ws.close(1013)
+    const count = Socket.instances.length
+    emit('pagehide'); now += 250; emit('pageshow', { persisted: true })
+    expect([...timers.values()].some(timer => timer.ms === 750)).toBe(true)
+    emit('pagehide'); now += 250; emit('pageshow', { persisted: true })
+    const retry = [...timers.entries()].find(([, timer]) => timer.ms === 500)
+    expect(retry).toBeDefined()
+    manager.connect()
+    expect(Socket.instances).toHaveLength(count)
+    now += 500
+    const finalRetry = [...timers.values()].find(timer => timer.ms === 500)!
+    finalRetry.fn()
+    expect(Socket.instances).toHaveLength(count + 1)
+  } finally { Date.now = originalNow }
+})
+
+test('stable terminal progress clears overload history, ordinary closes retain normal retry', () => {
+  const originalNow = Date.now
+  let now = 1_000_000
+  Date.now = () => now
+  try {
+    let ws = openReady(); ws.close(1013)
+    let retry = [...timers.entries()].find(([, timer]) => timer.ms === 1000)!
+    timers.delete(retry[0]); now += 1000; retry[1].fn()
+    ws = Socket.instances.at(-1)!; ws.open(); ws.receive({ type: 'terminal-lease', token: 'document-capability' }); ws.receive(attach(ws))
+    manager.send({ type: 'terminal-ack', outputSeq: 1 })
+    now += 30_000
+    ;(manager as unknown as { lastTick: number }).lastTick = now
+    manager.send({ type: 'terminal-ack', outputSeq: 2 })
+    ws.close(1013)
+    expect([...timers.values()].some(timer => timer.ms === 1000)).toBe(true)
+    expect([...timers.values()].some(timer => timer.ms === 2000)).toBe(false)
+    retry = [...timers.entries()].find(([, timer]) => timer.ms === 1000)!
+    timers.delete(retry[0]); now += 1000; retry[1].fn()
+    ws = Socket.instances.at(-1)!; ws.open(); ws.close(1006)
+    expect([...timers.values()].some(timer => timer.ms === 1000)).toBe(true)
+  } finally { Date.now = originalNow }
+})
+
+
+test('a silent suspension and initial ACK cannot count as stable parser recovery', () => {
+  const originalNow = Date.now
+  let now = 1_000_000
+  Date.now = () => now
+  try {
+    let ws = openReady(); ws.close(1013)
+    const retry = [...timers.entries()].find(([, timer]) => timer.ms === 1000)!
+    timers.delete(retry[0]); now += 1000; retry[1].fn()
+    ws = Socket.instances.at(-1)!; ws.open(); ws.receive({ type: 'terminal-lease', token: 'document-capability' }); ws.receive(attach(ws))
+    manager.send({ type: 'terminal-ack', outputSeq: 1 })
+    now += 60_000
+    manager.send({ type: 'terminal-ack', outputSeq: 2 })
+    ws.close(1013)
+    expect([...timers.values()].some(timer => timer.ms === 2000)).toBe(true)
+  } finally { Date.now = originalNow }
+})
+
+
+test('a quiet ready terminal clears overload history after a stable heartbeat interval', () => {
+  const originalNow = Date.now
+  let now = 1_000_000
+  Date.now = () => now
+  try {
+    let ws = openReady(); ws.close(1013)
+    const retry = [...timers.entries()].find(([, timer]) => timer.ms === 1000)!
+    timers.delete(retry[0]); now += 1000; retry[1].fn()
+    ws = Socket.instances.at(-1)!; ws.open(); ws.receive({ type: 'terminal-lease', token: 'document-capability' }); ws.receive(attach(ws))
+    now += 30_000
+    ;(manager as unknown as { lastTick: number }).lastTick = now
+    const heartbeat = [...timers.values()].find(timer => timer.ms === 20_000)!
+    heartbeat.fn(); ws.pong()
+    ws.close(1013)
+    expect([...timers.values()].some(timer => timer.ms === 1000)).toBe(true)
+    expect([...timers.values()].some(timer => timer.ms === 2000)).toBe(false)
+  } finally { Date.now = originalNow }
+})
+
+
+test('explicit overload survives WebKit1005 closes and duplicate notices count once', () => {
+  const originalNow = Date.now
+  let now = 1_000_000
+  Date.now = () => now
+  try {
+    let ws = openReady()
+    for (const delay of [1000, 2000]) {
+      // The browser may delay its close event and strip the server close code.
+      ws.close = () => {}
+      ws.receive({ type: 'terminal-overload' })
+      ws.receive({ type: 'terminal-overload' })
+      expect(manager.send({ type: 'terminal-input', sessionId: 'A', data: 'blocked' })).toBe(false)
+      const closeEvent = ws.onclose!
+      ws.readyState = Socket.CLOSED
+      closeEvent({ code: 1005, wasClean: true, reason: '' })
+      closeEvent({ code: 1005, wasClean: true, reason: '' })
+      const retry = [...timers.entries()].find(([, timer]) => timer.ms === delay)!
+      expect(retry).toBeDefined()
+      timers.delete(retry[0]); now += delay; retry[1].fn()
+      ws = Socket.instances.at(-1)!; ws.open(); ws.receive({ type: 'terminal-lease', token: 'document-capability' }); ws.receive(attach(ws))
+    }
+  } finally { Date.now = originalNow }
+})
+
+test('an obsolete socket overload notice cannot revoke or delay its replacement', () => {
+  const originalNow = Date.now
+  let now = 1_000_000
+  Date.now = () => now
+  try {
+    const old = openReady()
+    const staleMessage = old.onmessage!
+    old.close()
+    const retry = [...timers.entries()].find(([, timer]) => timer.ms === 1000)!
+    timers.delete(retry[0]); now += 1000; retry[1].fn()
+    const current = Socket.instances.at(-1)!; current.open(); current.receive({ type: 'terminal-lease', token: 'document-capability' }); current.receive(attach(current))
+    staleMessage({ data: JSON.stringify({ type: 'terminal-overload' }) })
+    expect(manager.getStatus()).toBe('connected')
+    expect(manager.send({ type: 'terminal-input', sessionId: 'A', data: 'current' })).toBe(true)
+    current.close(1005)
+    expect([...timers.values()].some(timer => timer.ms === 1000)).toBe(true)
+    expect([...timers.values()].some(timer => timer.ms === 2000)).toBe(false)
+  } finally { Date.now = originalNow }
 })
