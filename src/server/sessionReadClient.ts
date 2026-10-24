@@ -1,3 +1,4 @@
+import { resolveWorkerPath } from './workerPath'
 /** One lazily opened read connection shared by polling and catalog import. */
 import type { SessionReader, SnapshotOptions } from './sessionReads'
 import type { ReadOperation, ReadRequest, ReadResponse, ReadResult } from './sessionReadWorker'
@@ -58,9 +59,7 @@ export class SessionReadClient implements SessionReader {
   }
 
   private spawnWorker() {
-    const workerPath = import.meta.url.includes('$bunfs')
-      ? './sessionReadWorker.ts'
-      : new URL('./sessionReadWorker.ts', import.meta.url).href
+    const workerPath = resolveWorkerPath('sessionReadWorker')
     const worker = new Worker(workerPath, { type: 'module' })
     this.worker = worker
     worker.onmessage = (event: MessageEvent<ReadResponse>) => {

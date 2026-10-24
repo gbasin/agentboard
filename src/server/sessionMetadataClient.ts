@@ -1,3 +1,4 @@
+import { resolveWorkerPath } from './workerPath'
 /** Coalesced background scans; cached values contain no authoritative session state. */
 import type { AgentSessionRecord } from './db'
 import type { CodexSubagentLink } from './logMatchWorkerTypes'
@@ -113,9 +114,7 @@ export class SessionMetadataClient {
   }
 
   private spawn() {
-    const workerPath = import.meta.url.includes('$bunfs')
-      ? './sessionMetadataWorker.ts'
-      : new URL('./sessionMetadataWorker.ts', import.meta.url).href
+    const workerPath = resolveWorkerPath('sessionMetadataWorker')
     const worker = this.createWorker(workerPath)
     this.worker = worker
     worker.onmessage = (event: MessageEvent<MetadataResponse>) => {
