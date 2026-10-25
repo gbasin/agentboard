@@ -49,40 +49,36 @@ afterEach(async () => {
   globalAny.window = originals.window; globalAny.document = originals.document; globalThis.fetch = originals.fetch
 })
 
-test('large images copy cached previews without original download until explicit consent', async () => {
+test('opening a large image loads its original while retaining the cached preview', async () => {
   await mount({ previewSrc: 'blob:tile-cache' })
   expect(calls.map(call => call.url)).toEqual(['blob:tile-cache'])
   expect(find('media-lightbox-preview')).toHaveLength(1)
-  expect(find('media-lightbox-original')).toHaveLength(0)
-  await flush(() => button('Load full image').props.onClick())
   expect(find('media-lightbox-original')[0].props.src).toBe(props.media.url)
   await flush(() => find('media-lightbox-original')[0].props.onLoad())
   expect(find('media-lightbox-preview')).toHaveLength(0)
 })
 
-test('small local images retain direct lightbox loading, external images never auto-fetch', async () => {
+test('local and external images load only the selected original', async () => {
   await mount({ media: media({ bytes: 1000, width: 96, height: 48 }) })
   expect(find('media-lightbox-original')[0].props.src).toBe(props.media.url)
   expect(calls).toHaveLength(0)
   await update({ media: media({ url: 'https://example.com/image.png', bytes: 100 }) })
   expect(calls).toHaveLength(0)
-  expect(find('media-lightbox-original')).toHaveLength(0)
-  expect(button('Load full image')).toBeDefined()
+  expect(find('media-lightbox-original')).toHaveLength(1)
+  expect(find('media-lightbox-original')[0].props.src).toBe(props.media.url)
 })
 
-test('full-image consent does not transfer to the next image or survive recovery', async () => {
+test('originals unmount while backgrounded and stale loads cannot complete a resumed selection', async () => {
   await mount()
-  await flush(() => button('Load full image').props.onClick())
   const staleLoad = find('media-lightbox-original')[0].props.onLoad
   await update({ enabled: false })
   expect(find('media-lightbox-original')).toHaveLength(0)
   await update({ enabled: true })
   await flush(staleLoad)
-  expect(find('media-lightbox-original')).toHaveLength(0)
-  await flush(() => button('Load full image').props.onClick())
+  expect(find('media-lightbox-original')[0].props.className).toContain('invisible')
   await update({ media: media({ url: '/api/session-media/session?offset=2&digest=def' }) })
-  expect(find('media-lightbox-original')).toHaveLength(0)
-  expect(button('Load full image')).toBeDefined()
+  expect(find('media-lightbox-original')).toHaveLength(1)
+  expect(find('media-lightbox-original')[0].props.src).toBe(props.media.url)
 })
 
 test('previous/next buttons and arrow keys respect boundaries, loading and readiness', async () => {
@@ -115,27 +111,26 @@ test('typing is stopped at the dialog boundary and navigation errors offer manua
 test('backgrounding aborts optional thumbnails and ignores late responses', async () => {
   let complete!: (response: Response) => void
   respond = () => new Promise(resolve => { complete = resolve })
-  await mount()
+  await mount({ previewSrc: 'blob:tile-cache' })
   expect(calls).toHaveLength(1)
   await update({ enabled: false })
   expect(calls[0].signal.aborted).toBe(true)
   await flush(() => complete(png()))
-  expect(find('media-lightbox-preview')).toHaveLength(0)
+  expect(find('media-lightbox-preview')[0].props.src).toBe('blob:tile-cache')
   respond = async () => png()
   await update({ enabled: true })
   expect(calls).toHaveLength(2)
   expect(find('media-lightbox-preview')).toHaveLength(1)
 })
 
-test('a failed preview leaves explicit full-image and original access, without retry loops', async () => {
+test('a failed preview does not block originals; failed originals offer explicit retry', async () => {
   respond = async () => new Response('', { status: 422 })
-  await mount()
+  await mount({ previewSrc: 'blob:tile-cache' })
   expect(find('media-lightbox-preview')).toHaveLength(0)
-  expect(button('Load full image')).toBeDefined()
+  expect(find('media-lightbox-original')).toHaveLength(1)
   expect(renderer!.root.findByType('a').props.href).toBe(props.media.url)
   await update({ enabled: false }); await update({ enabled: true })
-  expect(calls).toHaveLength(1)
-  await flush(() => button('Load full image').props.onClick())
+  expect(calls).toHaveLength(2)
   await flush(() => find('media-lightbox-original')[0].props.onError())
   expect(button('Retry full image')).toBeDefined()
 })

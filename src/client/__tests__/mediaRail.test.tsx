@@ -241,10 +241,10 @@ describe('scroll-driven MediaRail', () => {
     await flush(() => find(r, 'media-chip')[0].props.onClick({ currentTarget: { focus() {} } }))
     expect(opened).toEqual([])
     expect(find(r, 'media-lightbox')).toHaveLength(1)
-    expect(button(r, 'Load full image')).toBeDefined()
+    expect(find(r, 'media-lightbox-original')).toHaveLength(1)
   })
 
-  test('all local images open the viewer, with explicit full-size loading for large originals', async () => {
+  test('all local images load the selected full-size original when opened', async () => {
     const data = [imageMedia({ url: '/api/session-media/s?index=0', bytes: 65537 }),
       imageMedia({ url: '/api/session-media/s?index=1', bytes: undefined }),
       imageMedia({ url: '/api/session-media/s?index=2', width: 10000, height: 10000 })]
@@ -255,8 +255,7 @@ describe('scroll-driven MediaRail', () => {
       expect(tile.props['aria-label']).toContain('Open image')
       await flush(() => tile.props.onClick({ currentTarget: { focus() {} } }))
       expect(find(r, 'media-lightbox')).toHaveLength(1)
-      expect(button(r, 'Load full image')).toBeDefined()
-      expect(find(r, 'media-lightbox-original')).toHaveLength(0)
+      expect(find(r, 'media-lightbox-original')).toHaveLength(1)
       await flush(() => button(r, 'Close image viewer').props.onClick())
     }
     expect(opened).toEqual([])

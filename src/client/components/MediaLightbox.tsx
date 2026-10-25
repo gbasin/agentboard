@@ -1,8 +1,8 @@
-/** Image browsing keeps previews cheap; full-size consent belongs to one image/view. */
+/** Viewport-sized image browsing loads only the selected original while the viewer is active. */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { SessionMedia } from '@shared/types'
-import { MEDIA_INLINE_BYTES } from '@shared/media'
+import './MediaLightbox.css'
 import { fetchMediaThumbnail } from '../hooks/useMediaThumbnail'
 import { ChevronRightIcon, Image01Icon, XCloseIcon } from './icons'
 import { ICON_SIZE } from './controlStyles'
@@ -25,10 +25,6 @@ export interface MediaLightboxProps {
 }
 const buttonClass = 'flex min-h-[44px] min-w-[44px] items-center justify-center gap-1 rounded-md px-3 text-sm text-white hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-35'
 const isLocal = (media: SessionMedia) => media.url.startsWith('/api/session-media/')
-export function canLoadOriginalInline(media: SessionMedia): boolean {
-  return isLocal(media) && media.bytes != null && media.bytes >= 0 && media.bytes <= MEDIA_INLINE_BYTES &&
-    (media.width == null || media.height == null || media.width * media.height <= 4_000_000)
-}
 
 export default function MediaLightbox(props: MediaLightboxProps) {
   const { media, enabled, onClose, canPrevious, canNext, navigating, navigationError, onRetryNavigation, label } = props
@@ -79,7 +75,7 @@ export default function MediaLightbox(props: MediaLightboxProps) {
     return () => window.removeEventListener('keydown', handle, true)
   }, [])
 
-  const dialog = <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/80 p-3 sm:p-6"
+  const dialog = <div className="media-lightbox-backdrop fixed inset-0 z-[80] flex items-center justify-center bg-black/80"
     onClick={event => { event.stopPropagation(); if (event.target === event.currentTarget) onClose() }}
     onPointerDown={event => event.stopPropagation()}>
     <div ref={panel} data-testid="media-lightbox" role="dialog" aria-modal="true" aria-label="Media preview"
@@ -93,7 +89,7 @@ export default function MediaLightbox(props: MediaLightboxProps) {
           if (target) { event.preventDefault(); target.focus() }
         }
       }}
-      className="flex max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-3rem)] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-white/15 bg-neutral-950 text-white shadow-2xl outline-none">
+      className="media-lightbox-panel flex flex-col overflow-hidden border border-white/15 bg-neutral-950 text-white shadow-2xl outline-none">
       <header className="flex shrink-0 items-center gap-2 border-b border-white/10 px-3">
         <span className="min-w-0 flex-1 truncate text-sm" title={media.label}>{media.label || 'Image'}</span>
         {label && <span className="shrink-0 text-xs text-white/60">{label}</span>}
@@ -123,9 +119,8 @@ export default function MediaLightbox(props: MediaLightboxProps) {
 
 type Preview = { status: 'idle' | 'loading' | 'error' } | { status: 'ready'; src: string }
 function ImageView({ media, previewSrc, enabled }: Pick<MediaLightboxProps, 'media' | 'previewSrc' | 'enabled'>) {
-  const automatic = canLoadOriginalInline(media)
   const [preview, setPreview] = useState<Preview>(previewSrc ? { status: 'ready', src: previewSrc } : { status: 'idle' })
-  const [full, setFull] = useState<'idle' | 'loading' | 'ready' | 'error'>(automatic && enabled ? 'loading' : 'idle')
+  const [full, setFull] = useState<'idle' | 'loading' | 'ready' | 'error'>(enabled ? 'loading' : 'idle')
   const previewRef = useRef(preview)
   previewRef.current = preview
   const owned = useRef<string | null>(null)
@@ -136,10 +131,10 @@ function ImageView({ media, previewSrc, enabled }: Pick<MediaLightboxProps, 'med
 
   useEffect(() => () => { if (owned.current) URL.revokeObjectURL(owned.current) }, [])
   useEffect(() => {
-    setFull(automatic && enabled ? 'loading' : 'idle')
-  }, [automatic, enabled])
+    setFull(enabled ? 'loading' : 'idle')
+  }, [enabled])
   useEffect(() => {
-    if (!enabled || !isLocal(media) || owned.current || (automatic && !source.current) || previewRef.current.status === 'error') return
+    if (!enabled || !isLocal(media) || owned.current || !source.current || previewRef.current.status === 'error') return
     const controller = new AbortController()
     let active = true
     const timeout = setTimeout(() => controller.abort(), 15_000)
@@ -157,32 +152,32 @@ function ImageView({ media, previewSrc, enabled }: Pick<MediaLightboxProps, 'med
       setPreview({ status: 'ready', src: owned.current })
     })().catch(() => { if (active) setPreview({ status: 'error' }) }).finally(() => clearTimeout(timeout))
     return () => { active = false; clearTimeout(timeout); controller.abort() }
-  }, [media.url, automatic, enabled])
+  }, [media.url, enabled])
 
   const token = generation.current
   const loadingOriginal = enabled && (full === 'loading' || full === 'ready')
   return <>
-    <div className="grid min-h-0 min-w-0 flex-1 place-items-center overflow-auto p-2 sm:p-4">
-      <div className="grid max-w-full place-items-center">
+    <div data-testid="media-lightbox-stage" className="media-lightbox-stage">
+      <div className="media-lightbox-canvas">
         {preview.status === 'ready' && full !== 'ready' && <img data-testid="media-lightbox-preview" src={preview.src}
-          alt={`${media.label || 'Image'} preview`} className="col-start-1 row-start-1 max-h-[55dvh] max-w-full rounded object-contain"
+          alt={`${media.label || 'Image'} preview`} className="media-lightbox-image"
           onError={() => { source.current = undefined; setPreview({ status: 'error' }) }} />}
         {loadingOriginal && <img key={token} data-testid="media-lightbox-original" src={media.url} alt={media.label || 'Image'}
-          className={`col-start-1 row-start-1 max-h-[65dvh] max-w-full rounded object-contain ${full === 'ready' ? '' : 'invisible'}`}
+          className={`media-lightbox-image ${full === 'ready' ? '' : 'invisible'}`}
           onLoad={() => { if (visible.current && generation.current === token) setFull('ready') }}
           onError={() => { if (visible.current && generation.current === token) setFull('error') }} />}
-        {preview.status !== 'ready' && full !== 'ready' && <div className="flex flex-col items-center gap-2 text-sm text-white/60">
+        {preview.status !== 'ready' && full !== 'ready' && <div className="col-start-1 row-start-1 flex flex-col items-center justify-center gap-2 text-sm text-white/60">
           <Image01Icon width={ICON_SIZE.primary} height={ICON_SIZE.primary} aria-hidden="true" />
-          <span role="status">{preview.status === 'loading' ? 'Loading preview…' : 'Preview unavailable'}</span>
+          <span role="status">{full === 'loading' ? 'Loading image…' : preview.status === 'loading' ? 'Loading preview…' : 'Preview unavailable'}</span>
         </div>}
       </div>
     </div>
-    <div className="flex shrink-0 flex-wrap items-center justify-center gap-x-4 gap-y-1 px-4 pb-3 text-sm">
+    <div className="flex shrink-0 flex-wrap items-center justify-center gap-x-4 gap-y-1 px-3 text-sm">
       {full === 'loading' && enabled && <span role="status" className="text-white/60">Loading full image…</span>}
       {full === 'error' && <span role="alert" className="text-white/60">Could not load the full image.</span>}
-      {(full === 'idle' || full === 'error') && <button type="button" className={`${buttonClass} border border-white/20`}
+      {full === 'error' && <button type="button" className={`${buttonClass} border border-white/20`}
         disabled={!enabled} onClick={() => { generation.current++; setFull('loading') }}>
-        {full === 'error' ? 'Retry full image' : 'Load full image'}
+        Retry full image
       </button>}
       <a href={media.url} target="_blank" rel="noreferrer noopener" aria-disabled={!enabled} tabIndex={enabled ? 0 : -1}
         onClick={event => { if (!enabled) event.preventDefault() }}

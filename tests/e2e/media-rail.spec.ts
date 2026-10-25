@@ -94,8 +94,8 @@ test('a delayed page cannot populate a different selected session', async ({ pag
   const gate = new Promise<void>(resolve => { release = resolve })
   let intercepted = false
   await page.route(`**/api/session-media/${first.sessionId}/items*`, async route => {
-    intercepted = true
     const response = await route.fetch()
+    intercepted = true
     await gate
     await route.fulfill({ response }).catch(() => {})
   })
@@ -109,7 +109,11 @@ test('a delayed page cannot populate a different selected session', async ({ pag
     const links = page.getByTestId('media-rail').getByRole('link')
     await expect(links).toHaveCount(2)
     for (const link of await links.all()) await expect(link).toHaveAttribute('href', new RegExp(second.sessionId))
-  } finally { release!(); first.cleanup(); second.cleanup() }
+  } finally {
+    release!()
+    await page.unrouteAll({ behavior: 'wait' })
+    first.cleanup(); second.cleanup()
+  }
 })
 
 test('backgrounding cancels optional page work; a closed rail does not refetch on return', async ({ page, request }) => {

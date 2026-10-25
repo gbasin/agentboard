@@ -23,7 +23,7 @@ function appendImages(logPath: string, sessionId: string, count: number, data = 
   }
 }
 
-test('only nearby thumbnails load; originals wait for explicit open', async ({ page, request }) => {
+test('nearby thumbnails stay lazy; selected originals fill the mobile viewer', async ({ page, request }) => {
   const fixture = await mediaFixture(request, 0)
   const thumbnails = new Set<string>(), originals: string[] = []
   page.context().on('request', req => {
@@ -33,7 +33,7 @@ test('only nearby thumbnails load; originals wait for explicit open', async ({ p
     else originals.push(req.url())
   })
   try {
-    const large = new PNG({ width: 512, height: 256 })
+    const large = new PNG({ width: 256, height: 512 })
     // Deterministic noise resists PNG compression and exceeds the old 64KiB budget.
     let random = 7
     for (let i = 0; i < large.data.length; i++) {
@@ -54,7 +54,7 @@ test('only nearby thumbnails load; originals wait for explicit open', async ({ p
     await page.getByTestId('media-rail-pill').click()
     const images = page.getByTestId('media-rail').locator('img')
     await expect(images.first()).toBeVisible()
-    await expect.poll(() => images.first().evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(128)
+    await expect.poll(() => images.first().evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(64)
     await page.waitForTimeout(500)
     const first = thumbnails.size
     expect(first).toBeGreaterThan(0)
@@ -68,12 +68,38 @@ test('only nearby thumbnails load; originals wait for explicit open', async ({ p
     await images.first().click()
     const lightbox = page.getByTestId('media-lightbox')
     await expect(lightbox).toBeVisible()
-    await expect(lightbox.getByRole('button', { name: 'Load full image', exact: true })).toBeVisible()
-    expect(originals).toHaveLength(0)
+    await expect.poll(() => originals.length).toBe(1)
+    await expect(lightbox.getByTestId('media-lightbox-original')).toBeVisible()
+    const portrait = await lightbox.boundingBox()
+    expect(portrait!.x).toBeCloseTo(0, 0)
+    expect(portrait!.y).toBeCloseTo(0, 0)
+    expect(portrait!.width).toBeCloseTo(390, 0)
+    expect(portrait!.height).toBeCloseTo(844, 0)
+    const stage = await lightbox.getByTestId('media-lightbox-stage').boundingBox()
+    expect(stage!.width).toBe(390)
+    const painted = await lightbox.getByTestId('media-lightbox-original').evaluate((img: HTMLImageElement) => {
+      const box = img.getBoundingClientRect()
+      const scale = Math.min(box.width / img.naturalWidth, box.height / img.naturalHeight)
+      return { width: img.naturalWidth * scale, height: img.naturalHeight * scale,
+        naturalWidth: img.naturalWidth, fit: getComputedStyle(img).objectFit }
+    })
+    expect(painted.naturalWidth).toBe(256)
+    expect(painted.fit).toBe('contain')
+    expect(painted.height).toBeGreaterThan(600)
+    expect(painted.width).toBeGreaterThan(300)
+    expect(painted.height).toBeGreaterThanOrEqual(stage!.height - 5)
+    for (const name of ['Close image viewer', 'Previous image', 'Next image']) {
+      const box = (await lightbox.getByRole('button', { name, exact: true }).boundingBox())!
+      expect(box.x).toBeGreaterThanOrEqual(0)
+      expect(box.x + box.width).toBeLessThanOrEqual(390)
+      expect(box.y).toBeGreaterThanOrEqual(0)
+      expect(box.y + box.height).toBeLessThanOrEqual(844)
+    }
+    await page.screenshot({ path: test.info().outputPath(`lightbox-portrait-${test.info().project.name}.png`) })
     await page.setViewportSize({ width: 844, height: 320 })
     const bounds = await lightbox.boundingBox()
     expect(bounds).not.toBeNull()
-    for (const name of ['Close image viewer', 'Load full image', 'Previous image', 'Next image']) {
+    for (const name of ['Close image viewer', 'Previous image', 'Next image']) {
       const box = await lightbox.getByRole('button', { name, exact: true }).boundingBox()
       expect(box).not.toBeNull()
       expect(box!.y).toBeGreaterThanOrEqual(bounds!.y)
@@ -81,17 +107,16 @@ test('only nearby thumbnails load; originals wait for explicit open', async ({ p
       expect(box!.y + box!.height).toBeLessThanOrEqual(320)
     }
     await page.screenshot({ path: test.info().outputPath(`lightbox-landscape-${test.info().project.name}.png`) })
-    await lightbox.getByRole('button', { name: 'Load full image', exact: true }).click()
     await page.setViewportSize({ width: 390, height: 844 })
     await expect.poll(() => originals.length).toBe(1)
     await lightbox.getByRole('button', { name: 'Next image', exact: true }).click()
-    await expect(lightbox.getByRole('button', { name: 'Load full image', exact: true })).toBeVisible()
-    expect(originals).toHaveLength(1)
-    await lightbox.getByRole('button', { name: 'Next image', exact: true }).click()
     await expect.poll(() => originals.length).toBe(2)
+    await lightbox.getByRole('button', { name: 'Next image', exact: true }).click()
+    await expect.poll(() => originals.length).toBe(3)
     await lightbox.getByRole('button', { name: 'Previous image', exact: true }).click()
-    await expect(lightbox.getByRole('button', { name: 'Load full image', exact: true })).toBeVisible()
-    expect(originals).toHaveLength(2)
+    await expect(lightbox.getByTestId('media-lightbox-original')).toBeVisible()
+    // The selected original may be served from browser cache on a return visit.
+    expect(new Set(originals).size).toBe(3)
     await page.keyboard.press('Escape')
     await page.screenshot({ path: test.info().outputPath(`thumbnails-mobile-${test.info().project.name}.png`) })
   } finally { fixture.cleanup() }
