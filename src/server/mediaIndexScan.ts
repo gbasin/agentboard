@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import { createMediaLineScanner, type ScannedMedia } from './mediaExtractor'
 
 export interface MediaFileState {
+  version?: number
   path: string
   offset: number
   size: number
@@ -38,7 +39,7 @@ export function scanMediaFile(
   }
   try {
     const stat = fs.fstatSync(fd)
-    if (previous && previous.orderTime === undefined) { reset(); previous = undefined }
+    if (previous && (previous.orderTime === undefined || previous.version !== 2)) { reset(); previous = undefined }
     if (previous && stat.size === previous.size && stat.mtimeMs === previous.mtime && stat.ino === previous.inode) return previous
     if (previous && (stat.ino !== previous.inode || stat.size < previous.size ||
         (stat.size === previous.size && stat.mtimeMs !== previous.mtime) ||
@@ -89,7 +90,7 @@ export function scanMediaFile(
       position += count
     }
     // Incomplete trailing records are retried from their start after the next append.
-    return { path: filePath, offset, size: stat.size, mtime: stat.mtimeMs, inode: stat.ino,
+    return { version: 2, path: filePath, offset, size: stat.size, mtime: stat.mtimeMs, inode: stat.ino,
       boundary: boundary(fd, offset), labels: JSON.stringify(scanner.labels()), discarding, omittedRecords, orderTime }
   } finally { fs.closeSync(fd) }
 }

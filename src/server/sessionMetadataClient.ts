@@ -2,7 +2,7 @@ import { resolveWorkerPath } from './workerPath'
 import path from 'node:path'
 import { config } from './config'
 import { sanitizedTmuxEnv } from './tmuxEnv'
-import type { MediaPage } from '../shared/media'
+import type { MediaPage, MediaQuery } from '../shared/media'
 /** Coalesced background scans; cached values contain no authoritative session state. */
 import type { AgentSessionRecord } from './db'
 import type { CodexSubagentLink } from './logMatchWorkerTypes'
@@ -101,13 +101,13 @@ export class SessionMetadataClient {
   }
 
   /** Pages are explicit user requests; no background detail collection is retained. */
-  page(record: AgentSessionRecord, cursor?: string): Promise<MediaPage> {
+  page(record: AgentSessionRecord, cursor?: string, query?: MediaQuery): Promise<MediaPage> {
     if (this.stopped) return Promise.reject(new Error('Metadata worker disposed'))
     if (this.pages.size + this.waitingForRepair >= 32) return Promise.reject(new Error('Too many pending media requests'))
     if (this.forced.has(metadataIdentity(record))) {
       this.waitingForRepair++
       return this.scan(record).then(
-        () => { this.waitingForRepair--; return this.page(record, cursor) },
+        () => { this.waitingForRepair--; return this.page(record, cursor, query) },
         error => { this.waitingForRepair--; throw error },
       )
     }
@@ -123,7 +123,7 @@ export class SessionMetadataClient {
       this.pages.set(id, { record, resolve, reject, timer, timedOut: false })
       try {
         if (!this.worker) this.spawn()
-        this.worker!.postMessage({ kind: 'page', id, record: { ...record }, cursor } satisfies MetadataRequest)
+        this.worker!.postMessage({ kind: 'page', id, record: { ...record }, cursor, query } satisfies MetadataRequest)
       } catch (error) { this.failed(String(error)) }
     })
   }

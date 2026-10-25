@@ -87,3 +87,15 @@ test('digest-backed payloads can address media beyond the legacy 257-block cutof
   expect(response.status).toBe(200)
   expect(await response.text()).toBe('image-257')
 })
+
+test('link filters and bounded search are validated before worker dispatch', async () => {
+  const f = fixture()
+  expect((await f.app.request('/session-12345678-abcdef/items?kind=invalid')).status).toBe(400)
+  expect((await f.app.request('/session-12345678-abcdef/items?search=' + 'x'.repeat(201))).status).toBe(400)
+  let received: unknown
+  const app = createMediaRoutes({ getRecord: () => f.record, page: async (_record, cursor, query) => {
+    received = { cursor, query }; return { identity: 'a', revision: '1', total: 0, items: [], nextCursor: null }
+  } })
+  expect((await app.request('/session-12345678-abcdef/items?kind=links&search=report%20%23')).status).toBe(200)
+  expect(received).toEqual({ cursor: undefined, query: { kind: 'links', search: 'report #' } })
+})
