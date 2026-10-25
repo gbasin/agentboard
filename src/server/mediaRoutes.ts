@@ -4,15 +4,17 @@ import { createHash } from 'node:crypto'
 import { readMediaLine } from './mediaLine'
 import type { MediaThumbnailClient } from './mediaThumbnailClient'
 import type { AgentSessionRecord } from './db'
-import type { MediaPage } from '../shared/media'
+import type { MediaPage, MediaNeighbors } from '../shared/media'
 import { extractMediaItems } from './mediaExtractor'
 import { getSubagentLogPaths } from './subagentLogs'
 import { metadataIdentity } from './sessionMetadataClient'
 import { isValidSessionId } from './validators'
+import { parseMediaAnchor } from './mediaAnchor'
 
 interface Dependencies {
   getRecord(id: string): AgentSessionRecord | null | undefined
   page(record: AgentSessionRecord, cursor?: string): Promise<MediaPage>
+  neighbors?(record: AgentSessionRecord, anchor: string): Promise<MediaNeighbors>
   thumbnail?: Pick<MediaThumbnailClient, 'get'>
   invalidate?(record: AgentSessionRecord): void
 }
@@ -41,6 +43,34 @@ export function createMediaRoutes(deps: Dependencies) {
       if (code === 'STALE_CURSOR') return c.json({ error: 'Media changed; refresh to continue', code }, 409)
       if (code === 'INVALID_CURSOR') return c.json({ error: 'Invalid media cursor', code }, 400)
       return c.json({ error: 'Media is temporarily unavailable' }, 503)
+    }
+  })
+
+  app.get('/:sessionId/neighbors', async (c) => {
+    c.header('Cache-Control', 'no-store')
+    const id = c.req.param('sessionId')
+    if (!isValidSessionId(id)) return c.json({ error: 'Invalid session id' }, 400)
+    const record = deps.getRecord(id)
+    if (!record?.logFilePath) return c.json({ error: 'Session not found' }, 404)
+    const anchor = c.req.query('anchor') ?? ''
+    try { parseMediaAnchor(id, anchor) }
+    catch { return c.json({ error: 'Invalid image anchor', code: 'INVALID_ANCHOR' }, 400) }
+    if (!deps.neighbors) return c.json({ error: 'Image navigation unavailable' }, 503)
+    try {
+      const neighbors = await deps.neighbors(record, anchor)
+      const current = deps.getRecord(id)
+      if (!current) return c.json({ error: 'Session not found' }, 404)
+      if (metadataIdentity(current) !== metadataIdentity(record)) {
+        return c.json({ error: 'Session changed; refresh media', code: 'STALE_ANCHOR' }, 409)
+      }
+      return c.json(neighbors)
+    } catch (error) {
+      const code = (error as { code?: string })?.code
+      if (code === 'STALE_ANCHOR' || code === 'STALE_CURSOR') {
+        return c.json({ error: 'Image changed; refresh media', code: 'STALE_ANCHOR' }, 409)
+      }
+      if (code === 'INVALID_ANCHOR') return c.json({ error: 'Invalid image anchor', code }, 400)
+      return c.json({ error: 'Image navigation is temporarily unavailable' }, 503)
     }
   })
 

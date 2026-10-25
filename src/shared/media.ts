@@ -22,6 +22,15 @@ export interface MediaPage {
   nextCursor: string | null
 }
 
+/** Constant-sized image navigation, independent of retained rail pages. */
+export interface MediaNeighbors {
+  identity: string
+  revision: string
+  current: SessionMedia
+  previous: SessionMedia | null
+  next: SessionMedia | null
+}
+
 export const MEDIA_PAGE_ITEMS = 40
 export const MEDIA_PAGE_BYTES = 64 * 1024
 /** Inline original previews are bounded; larger assets require explicit opening. */

@@ -384,3 +384,57 @@ test('timed-out page requests retain admission slots until the worker responds',
   client.dispose()
   expect(await next).toBeInstanceOf(Error)
 })
+
+test('neighbor RPC shares page admission and rejects mismatched result forms', async () => {
+  const worker = new FakeWorker()
+  const client = new SessionMetadataClient(() => {}, () => worker as unknown as Worker, ':memory:', 10)
+  clients.push(client)
+  const jobs = Array.from({ length: 32 }, (_, i) => (i % 2 ? client.page(record()) : client.neighbors(record(), 'anchor')).catch(e => e))
+  await Promise.all(jobs)
+  expect(worker.requests.filter(r => r.kind === 'page' || r.kind === 'neighbors')).toHaveLength(32)
+  expect(await client.neighbors(record(), 'anchor').catch(e => e.message)).toBe('Too many pending media requests')
+  const first = worker.requests.find(r => r.kind === 'neighbors')!
+  if (first.kind !== 'neighbors') throw Error('Missing neighbors')
+  worker.onmessage?.(new MessageEvent<MetadataResponse>('message', { data: { id: first.id, error: 'Done late' } }))
+  const next = client.neighbors(record(), 'anchor').catch(e => e.message)
+  const request = worker.requests.at(-1)!
+  if (request.kind !== 'neighbors') throw Error('Missing neighbors')
+  worker.onmessage?.(new MessageEvent<MetadataResponse>('message', { data: { id: request.id, metadata: metadata(1), page: {
+    identity: 'a', revision: 'r', total: 0, items: [], nextCursor: null,
+  } } }))
+  expect(await next).toBe('Missing media detail')
+})
+
+test('real metadata worker navigates neighboring images after append and rejects stale anchors', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'metadata-neighbors-')); roots.push(root)
+  const a = record(path.join(root, 'images.jsonl'))
+  const image = (i: number) => JSON.stringify({ type: 'user', message: { content: [
+    { type: 'image', source: { type: 'base64', media_type: 'image/png', data: Buffer.from(`image-${i}`).toString('base64') } },
+  ] } }) + '\n'
+  fs.writeFileSync(a.logFilePath, image(0))
+  const client = new SessionMetadataClient(() => {}, undefined, path.join(root, 'media.sqlite')); clients.push(client)
+  const first = (await client.page(a)).items[0]
+  const initial = await client.neighbors(a, first.url)
+  expect(initial.current).toEqual(first); expect(initial.previous).toBeNull(); expect(initial.next).toBeNull()
+  fs.appendFileSync(a.logFilePath, image(1))
+  const appended = await client.neighbors(a, first.url)
+  expect(appended.next).not.toBeNull()
+  expect((await client.neighbors(a, appended.next!.url)).previous).toEqual(first)
+  fs.writeFileSync(a.logFilePath, image(2))
+  const stale = await client.neighbors(a, first.url).catch(error => error)
+  expect(stale.code).toBe('STALE_ANCHOR')
+})
+
+test('neighbor responses cannot publish or resolve after session reassociation', async () => {
+  const { client, workers, changes } = fake()
+  const original = record('/old')
+  const result = client.neighbors(original, 'anchor').catch(error => error)
+  const request = workers[0].requests.find(r => r.kind === 'neighbors')!
+  if (request.kind !== 'neighbors') throw Error('Missing neighbors')
+  client.queue(record('/new'))
+  workers[0].onmessage?.(new MessageEvent<MetadataResponse>('message', { data: { id: request.id, metadata: metadata(1), neighbors: {
+    identity: 'old', revision: 'r', current: { kind: 'image', url: 'anchor' }, previous: null, next: null,
+  } } }))
+  expect((await result).code).toBe('STALE_CURSOR')
+  expect(changes).toHaveLength(0)
+})

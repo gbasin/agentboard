@@ -5,8 +5,9 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { AgentSessionRecord } from './db'
 import type { SessionMedia } from '../shared/types'
-import { MEDIA_PAGE_BYTES, MEDIA_PAGE_ITEMS, type MediaPage, type MediaSummary } from '../shared/media'
+import { MEDIA_PAGE_BYTES, MEDIA_PAGE_ITEMS, type MediaPage, type MediaSummary, type MediaNeighbors } from '../shared/media'
 import { scanMediaFile } from './mediaIndexScan'
+import { parseMediaAnchor, MediaNeighborError } from './mediaAnchor'
 
 export class MediaCursorError extends Error {
   constructor(readonly code: 'INVALID_CURSOR' | 'STALE_CURSOR') {
@@ -42,6 +43,8 @@ export class MediaIndex {
         offset INTEGER NOT NULL, item INTEGER NOT NULL, time INTEGER NOT NULL, content_key TEXT NOT NULL,
         kind TEXT NOT NULL, descriptor TEXT NOT NULL, UNIQUE(identity,path,content_key));
       CREATE INDEX IF NOT EXISTS media_order ON media_items(identity,time,path,offset,item);
+      CREATE INDEX IF NOT EXISTS media_image_order ON media_items(identity,kind,time,path,offset,item);
+      CREATE INDEX IF NOT EXISTS media_anchor ON media_items(identity,path,offset,item);
       CREATE TABLE IF NOT EXISTS media_seen (identity TEXT NOT NULL, path TEXT NOT NULL, content_key TEXT NOT NULL,
         PRIMARY KEY(identity,path,content_key));`)
     if (!(this.db.query('PRAGMA table_info(media_sessions)').all() as { name: string }[]).some(row => row.name === 'omittedRecords')) {
@@ -126,6 +129,33 @@ export class MediaIndex {
     return { identity, revision: `${this.incarnation}:${row.version}`, total: row.total, images: row.images,
       documents: row.documents, links: row.links, additions: row.additions,
       ...(row.omittedRecords ? { omittedRecords: row.omittedRecords } : {}) }
+  }
+
+  /** Two indexed seeks skip any number of nonimages without loading intervening pages. */
+  neighbors(record: AgentSessionRecord, anchor: string): MediaNeighbors {
+    const ref = parseMediaAnchor(record.sessionId, anchor)
+    const identity = mediaIdentity(record)
+    const current = this.db.query(`SELECT id,time,path,offset,item,descriptor FROM media_items
+      WHERE identity=? AND path=? AND offset=? AND item=? LIMIT 1`)
+      .get(identity, ref.path, ref.offset, ref.index) as ItemRow | null
+    if (!current) throw new MediaNeighborError('STALE_ANCHOR')
+    const descriptor = JSON.parse(current.descriptor) as SessionMedia
+    if (descriptor.url !== anchor) throw new MediaNeighborError('STALE_ANCHOR')
+    if (descriptor.kind !== 'image') throw new MediaNeighborError('INVALID_ANCHOR')
+    const adjacent = (direction: 'previous' | 'next'): SessionMedia | null => {
+      const operator = direction === 'previous' ? '<' : '>'
+      const order = direction === 'previous' ? 'DESC' : 'ASC'
+      const row = this.db.query(`SELECT descriptor FROM media_items
+        WHERE identity=? AND kind='image' AND (time,path,offset,item)${operator}(?,?,?,?)
+        ORDER BY time ${order},path ${order},offset ${order},item ${order} LIMIT 1`)
+        .get(identity, current.time, current.path, current.offset, current.item) as { descriptor: string } | null
+      return row ? JSON.parse(row.descriptor) as SessionMedia : null
+    }
+    const summary = this.summary(identity)
+    const result: MediaNeighbors = { identity, revision: summary.revision, current: descriptor,
+      previous: adjacent('previous'), next: adjacent('next') }
+    if (Buffer.byteLength(JSON.stringify(result)) > MEDIA_PAGE_BYTES) throw Error('Image navigation exceeded byte budget')
+    return result
   }
 
   page(record: AgentSessionRecord, rawCursor?: string): MediaPage {

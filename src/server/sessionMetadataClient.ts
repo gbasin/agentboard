@@ -2,7 +2,7 @@ import { resolveWorkerPath } from './workerPath'
 import path from 'node:path'
 import { config } from './config'
 import { sanitizedTmuxEnv } from './tmuxEnv'
-import type { MediaPage } from '../shared/media'
+import type { MediaPage, MediaNeighbors } from '../shared/media'
 /** Coalesced background scans; cached values contain no authoritative session state. */
 import type { AgentSessionRecord } from './db'
 import type { CodexSubagentLink } from './logMatchWorkerTypes'
@@ -13,6 +13,7 @@ export function metadataIdentity(record: Pick<AgentSessionRecord, 'sessionId' | 
   return JSON.stringify([record.sessionId, record.logFilePath, record.agentType])
 }
 export class MetadataScanSupersededError extends Error {
+  readonly code = 'STALE_CURSOR'
   constructor() { super('Session log changed'); this.name = 'MetadataScanSupersededError' }
 }
 const EMPTY: SessionMetadata = { prs: [] }
@@ -31,7 +32,7 @@ export class SessionMetadataClient {
   private forced = new Set<string>()
   private waitingForRepair = 0
   private lastInvalidations = new Map<string, number>()
-  private pages = new Map<number, { record: AgentSessionRecord; resolve: (page: MediaPage) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout>; timedOut: boolean }>()
+  private details = new Map<number, { kind: 'page' | 'neighbors'; record: AgentSessionRecord; resolve: (value: MediaPage | MediaNeighbors) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout>; timedOut: boolean }>()
   private waiters = new Map<string, { minimumId: number; resolve: (value: SessionMetadata) => void; reject: (error: Error) => void }[]>()
 
   constructor(
@@ -102,12 +103,21 @@ export class SessionMetadataClient {
 
   /** Pages are explicit user requests; no background detail collection is retained. */
   page(record: AgentSessionRecord, cursor?: string): Promise<MediaPage> {
+    return this.detail(record, 'page', cursor) as Promise<MediaPage>
+  }
+
+  neighbors(record: AgentSessionRecord, anchor: string): Promise<MediaNeighbors> {
+    return this.detail(record, 'neighbors', anchor) as Promise<MediaNeighbors>
+  }
+
+  /** Both bounded detail forms share admission, repair fencing and timeout accounting. */
+  private detail(record: AgentSessionRecord, kind: 'page' | 'neighbors', argument?: string): Promise<MediaPage | MediaNeighbors> {
     if (this.stopped) return Promise.reject(new Error('Metadata worker disposed'))
-    if (this.pages.size + this.waitingForRepair >= 32) return Promise.reject(new Error('Too many pending media requests'))
+    if (this.details.size + this.waitingForRepair >= 32) return Promise.reject(new Error('Too many pending media requests'))
     if (this.forced.has(metadataIdentity(record))) {
       this.waitingForRepair++
       return this.scan(record).then(
-        () => { this.waitingForRepair--; return this.page(record, cursor) },
+        () => { this.waitingForRepair--; return this.detail(record, kind, argument) },
         error => { this.waitingForRepair--; throw error },
       )
     }
@@ -116,14 +126,16 @@ export class SessionMetadataClient {
       const timer = setTimeout(() => {
         // A timed-out caller does not cancel already-dispatched worker work. Keep
         // its admission slot until a response or worker retirement settles it.
-        const request = this.pages.get(id)
+        const request = this.details.get(id)
         if (request) request.timedOut = true
         reject(new Error('Media request timed out'))
       }, this.pageTimeoutMs)
-      this.pages.set(id, { record, resolve, reject, timer, timedOut: false })
+      this.details.set(id, { kind, record, resolve, reject, timer, timedOut: false })
       try {
         if (!this.worker) this.spawn()
-        this.worker!.postMessage({ kind: 'page', id, record: { ...record }, cursor } satisfies MetadataRequest)
+        this.worker!.postMessage(kind === 'page'
+          ? { kind, id, record: { ...record }, cursor: argument } satisfies MetadataRequest
+          : { kind, id, record: { ...record }, anchor: argument! } satisfies MetadataRequest)
       } catch (error) { this.failed(String(error)) }
     })
   }
@@ -180,25 +192,25 @@ export class SessionMetadataClient {
     worker.onmessage = (event: MessageEvent<MetadataResponse>) => {
       if (this.worker !== worker || this.stopped) return
       const response = event.data
-      const pageRequest = this.pages.get(response.id)
-      if (pageRequest) {
-        clearTimeout(pageRequest.timer)
-        this.pages.delete(response.id)
-        if (pageRequest.timedOut) return
+      const detailRequest = this.details.get(response.id)
+      if (detailRequest) {
+        clearTimeout(detailRequest.timer)
+        this.details.delete(response.id)
+        if (detailRequest.timedOut) return
         if ('error' in response) {
-          pageRequest.reject(Object.assign(new Error(response.error), { code: response.code }))
-        } else if (response.page) {
-          const record = pageRequest.record
+          detailRequest.reject(Object.assign(new Error(response.error), { code: response.code }))
+        } else if (detailRequest.kind === 'page' ? response.page : response.neighbors) {
+          const record = detailRequest.record
           const next = this.pending.get(record.sessionId) ?? this.current?.record
           const cached = this.cache.get(record.sessionId)
           if ((next?.sessionId === record.sessionId && metadataIdentity(next) !== metadataIdentity(record)) ||
               (cached && cached.identity !== metadataIdentity(record))) {
-            pageRequest.reject(new MetadataScanSupersededError())
+            detailRequest.reject(new MetadataScanSupersededError())
           } else {
             this.publish(record, response.metadata)
-            pageRequest.resolve(response.page)
+            detailRequest.resolve(detailRequest.kind === 'page' ? response.page! : response.neighbors!)
           }
-        } else pageRequest.reject(new Error('Missing media page'))
+        } else detailRequest.reject(new Error('Missing media detail'))
         return
       }
       const current = this.current
@@ -267,8 +279,8 @@ export class SessionMetadataClient {
   }
 
   private rejectWaiters(error: Error) {
-    for (const request of this.pages.values()) { clearTimeout(request.timer); request.reject(error) }
-    this.pages.clear()
+    for (const request of this.details.values()) { clearTimeout(request.timer); request.reject(error) }
+    this.details.clear()
     for (const waiting of this.waiters.values()) {
       for (const waiter of waiting) waiter.reject(error)
     }
