@@ -1,0 +1,1608 @@
+{
+  "summary": {
+    "build": "pr",
+    "profile": "rate128",
+    "emulateIOS": true,
+    "phoneSettings": true,
+    "connections": 3,
+    "pings": [
+      1,
+      2,
+      3
+    ],
+    "pongs": [
+      3
+    ],
+    "timeouts": 2,
+    "connectTimeouts": 0,
+    "ready": 3,
+    "finalInput": true,
+    "error": null,
+    "network": {
+      "connections": 3,
+      "upBytes": 15408,
+      "downBytes": 13101263,
+      "maxQueuedBytes": 1113912,
+      "segments": 3484,
+      "serverFrames": [
+        {
+          "t": 4342,
+          "type": "sessions",
+          "bytes": 1367751
+        },
+        {
+          "t": 4342,
+          "type": "host-status",
+          "bytes": 114
+        },
+        {
+          "t": 4342,
+          "type": "server-config",
+          "bytes": 160
+        },
+        {
+          "t": 4342,
+          "type": "synced-settings",
+          "bytes": 40
+        },
+        {
+          "t": 13344,
+          "type": "agent-sessions",
+          "bytes": 1350695
+        },
+        {
+          "t": 13344,
+          "type": "terminal-lease",
+          "bytes": 72
+        },
+        {
+          "t": 13344,
+          "type": "synced-settings",
+          "bytes": 980
+        },
+        {
+          "t": 13344,
+          "type": "terminal-ready",
+          "bytes": 67
+        },
+        {
+          "t": 23669,
+          "type": "agent-sessions-active",
+          "bytes": 1350680
+        },
+        {
+          "t": 36158,
+          "type": "sessions",
+          "bytes": 1367767
+        },
+        {
+          "t": 36158,
+          "type": "host-status",
+          "bytes": 114
+        },
+        {
+          "t": 36158,
+          "type": "server-config",
+          "bytes": 160
+        },
+        {
+          "t": 36158,
+          "type": "synced-settings",
+          "bytes": 980
+        },
+        {
+          "t": 45164,
+          "type": "agent-sessions",
+          "bytes": 1350703
+        },
+        {
+          "t": 45164,
+          "type": "terminal-lease",
+          "bytes": 72
+        },
+        {
+          "t": 45164,
+          "type": "terminal-ready",
+          "bytes": 67
+        },
+        {
+          "t": 58658,
+          "type": "agent-sessions-active",
+          "bytes": 1350680
+        },
+        {
+          "t": 67475,
+          "type": "sessions",
+          "bytes": 1367767
+        },
+        {
+          "t": 67475,
+          "type": "host-status",
+          "bytes": 114
+        },
+        {
+          "t": 67475,
+          "type": "server-config",
+          "bytes": 160
+        },
+        {
+          "t": 67475,
+          "type": "synced-settings",
+          "bytes": 980
+        },
+        {
+          "t": 76477,
+          "type": "agent-sessions",
+          "bytes": 1350703
+        },
+        {
+          "t": 76477,
+          "type": "terminal-lease",
+          "bytes": 72
+        },
+        {
+          "t": 76477,
+          "type": "terminal-ready",
+          "bytes": 67
+        },
+        {
+          "t": 83105,
+          "type": "pong",
+          "seq": 3,
+          "bytes": 23
+        },
+        {
+          "t": 101089,
+          "type": "session-update",
+          "bytes": 928805
+        }
+      ]
+    },
+    "bursts": 6
+  },
+  "events": [
+    {
+      "t": 501,
+      "kind": "client-log",
+      "event": "ws_connect",
+      "url": "ws://127.0.0.1:54180/ws",
+      "resume": false,
+      "traceId": "mvnwz5n5-4vx2ydoae7d",
+      "epoch": 0,
+      "pingSeq": 0,
+      "lastPongSeq": null,
+      "lastMessageAgeMs": null,
+      "visibility": "visible",
+      "status": "connecting",
+      "ws": null,
+      "attempt": 0,
+      "failures": 0,
+      "stalls": 0,
+      "overloads": 0,
+      "overloadDelayMs": 0,
+      "leaked": 0,
+      "online": true,
+      "verifying": false
+    },
+    {
+      "t": 509,
+      "kind": "client-log",
+      "event": "ws_pageshow",
+      "persisted": false,
+      "traceId": "mvnwz5n5-4vx2ydoae7d",
+      "epoch": 0,
+      "pingSeq": 0,
+      "lastPongSeq": null,
+      "lastMessageAgeMs": null,
+      "visibility": "visible",
+      "status": "connecting",
+      "ws": "CONNECTING",
+      "attempt": 0,
+      "failures": 0,
+      "stalls": 0,
+      "overloads": 0,
+      "overloadDelayMs": 0,
+      "leaked": 1,
+      "online": true,
+      "verifying": false,
+      "buffered": 0
+    },
+    {
+      "t": 560,
+      "kind": "socket",
+      "number": 1
+    },
+    {
+      "t": 813,
+      "kind": "client-log",
+      "event": "ws_onopen",
+      "traceId": "mvnwz5n5-4vx2ydoae7d",
+      "epoch": 0,
+      "pingSeq": 0,
+      "lastPongSeq": null,
+      "lastMessageAgeMs": null,
+      "visibility": "visible",
+      "status": "connecting",
+      "ws": "OPEN",
+      "attempt": 0,
+      "failures": 0,
+      "stalls": 0,
+      "overloads": 0,
+      "overloadDelayMs": 0,
+      "leaked": 1,
+      "online": true,
+      "verifying": false,
+      "buffered": 0
+    },
+    {
+      "t": 11308,
+      "kind": "metadata",
+      "type": "sessions",
+      "bytes": 1367751
+    },
+    {
+      "t": 11402,
+      "kind": "metadata",
+      "type": "host-status",
+      "bytes": 114
+    },
+    {
+      "t": 11406,
+      "kind": "metadata",
+      "type": "server-config",
+      "bytes": 160
+    },
+    {
+      "t": 11412,
+      "kind": "metadata",
+      "type": "synced-settings",
+      "bytes": 40
+    },
+    {
+      "t": 11478,
+      "kind": "device",
+      "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1",
+      "platform": "iPhone",
+      "maxTouchPoints": 5
+    },
+    {
+      "t": 15178,
+      "kind": "burst-request",
+      "burstCount": 1
+    },
+    {
+      "t": 20028,
+      "kind": "burst-request",
+      "burstCount": 2
+    },
+    {
+      "t": 20817,
+      "kind": "ping",
+      "seq": 1
+    },
+    {
+      "t": 21597,
+      "kind": "metadata",
+      "type": "agent-sessions",
+      "bytes": 1350695
+    },
+    {
+      "t": 21598,
+      "kind": "metadata",
+      "type": "terminal-lease",
+      "bytes": 72
+    },
+    {
+      "t": 21598,
+      "kind": "metadata",
+      "type": "synced-settings",
+      "bytes": 980
+    },
+    {
+      "t": 21602,
+      "kind": "output",
+      "bytes": 1187
+    },
+    {
+      "t": 21602,
+      "kind": "output",
+      "bytes": 1024
+    },
+    {
+      "t": 21602,
+      "kind": "output",
+      "bytes": 222
+    },
+    {
+      "t": 21602,
+      "kind": "terminal-ready"
+    },
+    {
+      "t": 21672,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 21672,
+      "kind": "output",
+      "bytes": 126
+    },
+    {
+      "t": 21672,
+      "kind": "output",
+      "bytes": 1024
+    },
+    {
+      "t": 21672,
+      "kind": "output",
+      "bytes": 712
+    },
+    {
+      "t": 21672,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 21673,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 21673,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 21673,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 21673,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 21673,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 21673,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 21673,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 21673,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 21673,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 21673,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 21673,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 21673,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 21673,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 25028,
+      "kind": "burst-request",
+      "burstCount": 3
+    },
+    {
+      "t": 30029,
+      "kind": "burst-request",
+      "burstCount": 4
+    },
+    {
+      "t": 30819,
+      "kind": "client-log",
+      "event": "ws_pong_timeout",
+      "traceId": "mvnwz5n5-4vx2ydoae7d",
+      "epoch": 1,
+      "pingSeq": 1,
+      "lastPongSeq": null,
+      "lastMessageAgeMs": 9145,
+      "visibility": "visible",
+      "status": "connected",
+      "ws": "OPEN",
+      "attempt": 0,
+      "failures": 0,
+      "stalls": 0,
+      "overloads": 0,
+      "overloadDelayMs": 0,
+      "leaked": 0,
+      "online": true,
+      "verifying": false,
+      "buffered": 0
+    },
+    {
+      "t": 30858,
+      "kind": "socket-error",
+      "error": "The operation couldn’t be completed. Socket is not connected"
+    },
+    {
+      "t": 30858,
+      "kind": "close"
+    },
+    {
+      "t": 31820,
+      "kind": "client-log",
+      "event": "ws_connect",
+      "url": "ws://127.0.0.1:54180/ws",
+      "resume": false,
+      "traceId": "mvnwz5n5-4vx2ydoae7d",
+      "epoch": 1,
+      "pingSeq": 1,
+      "lastPongSeq": null,
+      "lastMessageAgeMs": 10147,
+      "visibility": "visible",
+      "status": "connecting",
+      "ws": null,
+      "attempt": 1,
+      "failures": 0,
+      "stalls": 0,
+      "overloads": 0,
+      "overloadDelayMs": 0,
+      "leaked": 0,
+      "online": true,
+      "verifying": false
+    },
+    {
+      "t": 31825,
+      "kind": "socket",
+      "number": 2
+    },
+    {
+      "t": 32132,
+      "kind": "client-log",
+      "event": "ws_onopen",
+      "traceId": "mvnwz5n5-4vx2ydoae7d",
+      "epoch": 1,
+      "pingSeq": 1,
+      "lastPongSeq": null,
+      "lastMessageAgeMs": null,
+      "visibility": "visible",
+      "status": "connecting",
+      "ws": "OPEN",
+      "attempt": 1,
+      "failures": 0,
+      "stalls": 0,
+      "overloads": 0,
+      "overloadDelayMs": 0,
+      "leaked": 1,
+      "online": true,
+      "verifying": false,
+      "buffered": 0
+    },
+    {
+      "t": 35030,
+      "kind": "burst-request",
+      "burstCount": 5
+    },
+    {
+      "t": 40031,
+      "kind": "burst-request",
+      "burstCount": 6
+    },
+    {
+      "t": 42640,
+      "kind": "metadata",
+      "type": "sessions",
+      "bytes": 1367767
+    },
+    {
+      "t": 42647,
+      "kind": "metadata",
+      "type": "host-status",
+      "bytes": 114
+    },
+    {
+      "t": 42657,
+      "kind": "metadata",
+      "type": "server-config",
+      "bytes": 160
+    },
+    {
+      "t": 42657,
+      "kind": "metadata",
+      "type": "synced-settings",
+      "bytes": 980
+    },
+    {
+      "t": 52133,
+      "kind": "ping",
+      "seq": 2
+    },
+    {
+      "t": 52946,
+      "kind": "metadata",
+      "type": "agent-sessions",
+      "bytes": 1350703
+    },
+    {
+      "t": 52947,
+      "kind": "metadata",
+      "type": "terminal-lease",
+      "bytes": 72
+    },
+    {
+      "t": 52947,
+      "kind": "output",
+      "bytes": 1668
+    },
+    {
+      "t": 52947,
+      "kind": "output",
+      "bytes": 1024
+    },
+    {
+      "t": 52947,
+      "kind": "output",
+      "bytes": 712
+    },
+    {
+      "t": 52947,
+      "kind": "terminal-ready"
+    },
+    {
+      "t": 52955,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 52955,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 52955,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 52955,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 52955,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 52955,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 52955,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 52955,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 52956,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 52956,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 52956,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 62134,
+      "kind": "client-log",
+      "event": "ws_pong_timeout",
+      "traceId": "mvnwz5n5-4vx2ydoae7d",
+      "epoch": 2,
+      "pingSeq": 2,
+      "lastPongSeq": null,
+      "lastMessageAgeMs": 9177,
+      "visibility": "visible",
+      "status": "connected",
+      "ws": "OPEN",
+      "attempt": 0,
+      "failures": 0,
+      "stalls": 0,
+      "overloads": 0,
+      "overloadDelayMs": 0,
+      "leaked": 0,
+      "online": true,
+      "verifying": false,
+      "buffered": 0
+    },
+    {
+      "t": 62209,
+      "kind": "socket-error",
+      "error": "The operation couldn’t be completed. Socket is not connected"
+    },
+    {
+      "t": 62209,
+      "kind": "close"
+    },
+    {
+      "t": 63135,
+      "kind": "client-log",
+      "event": "ws_connect",
+      "url": "ws://127.0.0.1:54180/ws",
+      "resume": false,
+      "traceId": "mvnwz5n5-4vx2ydoae7d",
+      "epoch": 2,
+      "pingSeq": 2,
+      "lastPongSeq": null,
+      "lastMessageAgeMs": 10179,
+      "visibility": "visible",
+      "status": "connecting",
+      "ws": null,
+      "attempt": 1,
+      "failures": 0,
+      "stalls": 0,
+      "overloads": 0,
+      "overloadDelayMs": 0,
+      "leaked": 0,
+      "online": true,
+      "verifying": false
+    },
+    {
+      "t": 63142,
+      "kind": "socket",
+      "number": 3
+    },
+    {
+      "t": 63446,
+      "kind": "client-log",
+      "event": "ws_onopen",
+      "traceId": "mvnwz5n5-4vx2ydoae7d",
+      "epoch": 2,
+      "pingSeq": 2,
+      "lastPongSeq": null,
+      "lastMessageAgeMs": null,
+      "visibility": "visible",
+      "status": "connecting",
+      "ws": "OPEN",
+      "attempt": 1,
+      "failures": 0,
+      "stalls": 0,
+      "overloads": 0,
+      "overloadDelayMs": 0,
+      "leaked": 1,
+      "online": true,
+      "verifying": false,
+      "buffered": 0
+    },
+    {
+      "t": 73949,
+      "kind": "metadata",
+      "type": "sessions",
+      "bytes": 1367767
+    },
+    {
+      "t": 73949,
+      "kind": "metadata",
+      "type": "host-status",
+      "bytes": 114
+    },
+    {
+      "t": 73949,
+      "kind": "metadata",
+      "type": "server-config",
+      "bytes": 160
+    },
+    {
+      "t": 73949,
+      "kind": "metadata",
+      "type": "synced-settings",
+      "bytes": 980
+    },
+    {
+      "t": 83449,
+      "kind": "ping",
+      "seq": 3
+    },
+    {
+      "t": 84263,
+      "kind": "metadata",
+      "type": "agent-sessions",
+      "bytes": 1350703
+    },
+    {
+      "t": 84263,
+      "kind": "metadata",
+      "type": "terminal-lease",
+      "bytes": 72
+    },
+    {
+      "t": 84264,
+      "kind": "output",
+      "bytes": 1668
+    },
+    {
+      "t": 84264,
+      "kind": "output",
+      "bytes": 1024
+    },
+    {
+      "t": 84265,
+      "kind": "output",
+      "bytes": 712
+    },
+    {
+      "t": 84265,
+      "kind": "terminal-ready"
+    },
+    {
+      "t": 84265,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 84265,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 84265,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 84265,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 84265,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 84265,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 84265,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 84265,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 84265,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 84265,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 84265,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 84267,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 84267,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 84267,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 84287,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 84287,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 84287,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 84287,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 84287,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 84287,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 84287,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 84287,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 84287,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 84287,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 84287,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 84288,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 84288,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 84288,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 84288,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 84288,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 84318,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 84318,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 84318,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 84318,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 84318,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 84318,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 84318,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 84318,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 84318,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 84318,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 84318,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 84318,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 84318,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 84318,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 84318,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 84318,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 84318,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 84319,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 84321,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 84325,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 84325,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 84327,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 84330,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 84330,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 84333,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 84337,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 84337,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 84340,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 84341,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 84344,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 84346,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 84352,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 84352,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 84352,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 84355,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 84356,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 84360,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 84360,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 84361,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 84365,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 84365,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 84365,
+      "kind": "pong",
+      "seq": 3
+    },
+    {
+      "t": 84366,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 84369,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 84649,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 84810,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 85173,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 85566,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 85731,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 85731,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 86282,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 86316,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 86850,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 86850,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 87068,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 87420,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 87420,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 87824,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 87999,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 88574,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 88574,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 88582,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 89146,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 89146,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 89326,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 89670,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 90077,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 90240,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 90807,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 90809,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 90828,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 91368,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 91581,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 91942,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 91942,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 92332,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 92515,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 93087,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 93087,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 93694,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 93851,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 94205,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 94624,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 94773,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 94773,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 95332,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 95340,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 95895,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 96096,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 96411,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 96845,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 96982,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 97515,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 97596,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 98040,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 98350,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 98616,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 99101,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 99134,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 99708,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 99853,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 100255,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 100605,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 100826,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 100828,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 101369,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 101392,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 101407,
+      "kind": "input-state",
+      "disabled": false,
+      "focused": true
+    },
+    {
+      "t": 101410,
+      "kind": "sent-input",
+      "data": "P"
+    },
+    {
+      "t": 101412,
+      "kind": "sent-input",
+      "data": "R"
+    },
+    {
+      "t": 101414,
+      "kind": "sent-input",
+      "data": "O"
+    },
+    {
+      "t": 101415,
+      "kind": "sent-input",
+      "data": "B"
+    },
+    {
+      "t": 101416,
+      "kind": "sent-input",
+      "data": "E"
+    },
+    {
+      "t": 101418,
+      "kind": "sent-input",
+      "data": "_"
+    },
+    {
+      "t": 101420,
+      "kind": "sent-input",
+      "data": "p"
+    },
+    {
+      "t": 101421,
+      "kind": "sent-input",
+      "data": "r"
+    },
+    {
+      "t": 101422,
+      "kind": "sent-input",
+      "data": "_"
+    },
+    {
+      "t": 101424,
+      "kind": "sent-input",
+      "data": "r"
+    },
+    {
+      "t": 101425,
+      "kind": "sent-input",
+      "data": "a"
+    },
+    {
+      "t": 101426,
+      "kind": "sent-input",
+      "data": "t"
+    },
+    {
+      "t": 101427,
+      "kind": "sent-input",
+      "data": "e"
+    },
+    {
+      "t": 101429,
+      "kind": "sent-input",
+      "data": "1"
+    },
+    {
+      "t": 101430,
+      "kind": "sent-input",
+      "data": "2"
+    },
+    {
+      "t": 101432,
+      "kind": "sent-input",
+      "data": "8"
+    },
+    {
+      "t": 101433,
+      "kind": "sent-input",
+      "data": "\r"
+    },
+    {
+      "t": 101640,
+      "kind": "input-check",
+      "delivered": true
+    }
+  ]
+}
