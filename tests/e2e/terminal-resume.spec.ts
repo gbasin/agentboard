@@ -128,7 +128,7 @@ test('native browser heartbeats keep an attached terminal connected across three
   let connections = 0, closes = 0
   // Observe native frames; do not route, replace, or synthesize WebSocket traffic.
   page.on('websocket', socket => {
-    if (!socket.url().endsWith('/ws')) return
+    if (new URL(socket.url()).pathname !== '/ws') return
     connections++
     socket.on('framesent', ({ payload }) => { sent.push(JSON.parse(String(payload))) })
     socket.on('framereceived', ({ payload }) => { received.push(JSON.parse(String(payload))) })

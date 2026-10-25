@@ -16,7 +16,7 @@ class Socket {
   onerror: (() => void) | null = null
   constructor(_url: string) { Socket.instances.push(this) }
   send(raw: string) { this.sent.push(JSON.parse(raw)) }
-  open() { this.readyState = 1; this.onopen?.() }
+  open() { this.readyState = 1; this.onopen?.(); this.onmessage?.({ data: JSON.stringify({ type: 'server-config', catalogVersion: 2 }) }) }
   close(code = 1000) { this.readyState = 3; this.onclose?.({ code, wasClean: true, reason: '' }) }
   receive(message: object) { this.onmessage?.({ data: JSON.stringify(message) }) }
   pong() { const ping = this.sent.findLast(m => m.type === 'ping')!; this.receive({ type: 'pong', seq: ping.seq }) }

@@ -26,7 +26,7 @@ type WireSession = { name?: string; [k: string]: unknown }
 // strip) under the pointer. Exercises the real client render path (portal
 // positioning, hover intent, nested cards) without faking log matching.
 async function routeSessionsWithPrs(page: import('@playwright/test').Page) {
-  await page.routeWebSocket(/\/ws$/, (ws) => {
+  await page.routeWebSocket(/\/ws(?:\?.*)?$/, (ws) => {
     const server = ws.connectToServer()
     ws.onMessage((message) => server.send(message))
     server.onMessage((message) => {

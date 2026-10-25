@@ -38,7 +38,7 @@ function tmux(...args: string[]) {
 }
 
 async function connect(window: string, token?: string, claim = 1) {
-  const ws = new WebSocket(`${base.replace('http:', 'ws:')}/ws`)
+  const ws = new WebSocket(`${base.replace('http:', 'ws:')}/ws?catalog=2`)
   peers.push(ws)
   const frames: ServerMessage[] = []
   ws.onmessage = event => {

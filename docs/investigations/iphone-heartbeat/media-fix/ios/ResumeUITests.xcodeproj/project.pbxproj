@@ -1,0 +1,16 @@
+// !$*UTF8*$!
+{ archiveVersion = 1; classes = {}; objectVersion = 56; objects = {
+ A10000000000000000000001 = { isa = PBXProject; attributes = { LastUpgradeCheck = 2600; }; buildConfigurationList = A10000000000000000000002; compatibilityVersion = "Xcode 14.0"; developmentRegion = en; knownRegions = (en,Base); mainGroup = A10000000000000000000003; productRefGroup = A10000000000000000000004; projectDirPath = ""; projectRoot = ""; targets = (A10000000000000000000005); };
+ A10000000000000000000002 = { isa = XCConfigurationList; buildConfigurations = (A10000000000000000000006); defaultConfigurationIsVisible = 0; defaultConfigurationName = Debug; };
+ A10000000000000000000003 = { isa = PBXGroup; children = (A10000000000000000000007,A10000000000000000000004); sourceTree = "<group>"; };
+ A10000000000000000000004 = { isa = PBXGroup; children = (A10000000000000000000008); name = Products; sourceTree = "<group>"; };
+ A10000000000000000000005 = { isa = PBXNativeTarget; buildConfigurationList = A10000000000000000000009; buildPhases = (A1000000000000000000000A,A1000000000000000000000B); buildRules = (); dependencies = (); name = ResumeUITests; productName = ResumeUITests; productReference = A10000000000000000000008; productType = "com.apple.product-type.bundle.ui-testing"; };
+ A10000000000000000000006 = { isa = XCBuildConfiguration; buildSettings = { SDKROOT = iphonesimulator; IPHONEOS_DEPLOYMENT_TARGET = 18.0; }; name = Debug; };
+ A10000000000000000000007 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResumeUITests.swift; sourceTree = "<group>"; };
+ A10000000000000000000008 = { isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ResumeUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+ A10000000000000000000009 = { isa = XCConfigurationList; buildConfigurations = (A1000000000000000000000C); defaultConfigurationIsVisible = 0; defaultConfigurationName = Debug; };
+ A1000000000000000000000A = { isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A1000000000000000000000D); runOnlyForDeploymentPostprocessing = 0; };
+ A1000000000000000000000B = { isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+ A1000000000000000000000C = { isa = XCBuildConfiguration; buildSettings = { CODE_SIGNING_ALLOWED = NO; GENERATE_INFOPLIST_FILE = YES; PRODUCT_BUNDLE_IDENTIFIER = "com.agentboard.test.ResumeUITests"; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = iphonesimulator; SUPPORTED_PLATFORMS = iphonesimulator; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; IPHONEOS_DEPLOYMENT_TARGET = 18.0; }; name = Debug; };
+ A1000000000000000000000D = { isa = PBXBuildFile; fileRef = A10000000000000000000007; };
+}; rootObject = A10000000000000000000001; }

@@ -14,7 +14,7 @@ const record = (logFilePath = '/private/test.jsonl'): AgentSessionRecord => ({
   isCodexExec: false, launchCommand: null,
 })
 const metadata = (number: number): SessionMetadata => ({
-  prs: [{ url: `https://github.com/a/b/pull/${number}`, repo: 'a/b', number }], media: [],
+  prs: [{ url: `https://github.com/a/b/pull/${number}`, repo: 'a/b', number }],
 })
 class FakeWorker {
   onmessage: ((event: MessageEvent<MetadataResponse>) => void) | null = null
@@ -127,7 +127,7 @@ test('real worker preserves append, same-size rewrite, truncation, new/deleted c
   const log = path.join(root, 'parent.jsonl')
   const a = record(log)
   fs.writeFileSync(log, pr(1))
-  const client = new SessionMetadataClient(() => {})
+  const client = new SessionMetadataClient(() => {}, undefined, path.join(root, 'media.sqlite'))
   clients.push(client)
   client.queue(a)
   await until(() => client.get(a).prs[0]?.number === 1)
@@ -139,7 +139,7 @@ test('real worker preserves append, same-size rewrite, truncation, new/deleted c
   await until(() => client.get(a).prs[0]?.number === 2)
   fs.appendFileSync(log, frame('media'))
   client.queue(a)
-  await until(() => client.get(a).media[0]?.url === 'https://example.com/media')
+  await until(() => client.get(a).mediaSummary?.total === 1)
   const children = path.join(root, 'parent', 'subagents')
   fs.mkdirSync(children, { recursive: true })
   const child = path.join(children, 'agent-1.jsonl')
@@ -149,7 +149,7 @@ test('real worker preserves append, same-size rewrite, truncation, new/deleted c
   fs.rmSync(child)
   fs.writeFileSync(log, pr(4))
   client.queue(a)
-  await until(() => client.get(a).prs.length === 1 && client.get(a).prs[0].number === 4 && client.get(a).media.length === 0)
+  await until(() => client.get(a).prs.length === 1 && client.get(a).prs[0].number === 4 && client.get(a).mediaSummary?.total === 0)
   fs.rmSync(log)
   client.queue(a)
   await until(() => client.get(a).prs.length === 0)
@@ -162,7 +162,7 @@ test('real worker receives late and transitive Codex child links', async () => {
   fs.writeFileSync(a.logFilePath, pr(1))
   const child = path.join(root, 'child.jsonl')
   fs.writeFileSync(child, pr(2))
-  const client = new SessionMetadataClient(() => {})
+  const client = new SessionMetadataClient(() => {}, undefined, path.join(root, 'media.sqlite'))
   clients.push(client)
   client.queue(a)
   await until(() => client.get(a).prs.length === 1)
@@ -236,17 +236,20 @@ test('real worker preserves image payload byte offsets and session-media URLs', 
   fs.writeFileSync(a.logFilePath, prefix + JSON.stringify({ type: 'user', message: {
     role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data } }],
   } }) + '\n')
-  const client = new SessionMetadataClient(() => {})
+  const client = new SessionMetadataClient(() => {}, undefined, path.join(root, 'media.sqlite'))
   clients.push(client)
   const result = await client.scan(a)
   expect(result.prs).toEqual(metadata(1).prs)
-  expect(result.media).toHaveLength(1)
-  const descriptor = result.media[0]
+  expect(result.mediaSummary?.total).toBe(1)
+  expect('media' in result).toBe(false)
+  const page = await client.page(a)
+  const descriptor = page.items[0]
   const url = new URL(descriptor.url, 'http://localhost')
   expect(url.pathname).toBe(`/api/session-media/${a.sessionId}`)
   expect(url.searchParams.get('path')).toBe(a.logFilePath)
   expect(url.searchParams.get('offset')).toBe(String(Buffer.byteLength(prefix)))
   expect(url.searchParams.get('index')).toBe('0')
+  expect(url.searchParams.get('digest')).toMatch(/^[0-9a-f]{64}$/)
   expect(descriptor.mediaType).toBe('image/png')
   expect(descriptor.bytes).toBe(Buffer.from(data, 'base64').length)
 })
@@ -290,4 +293,94 @@ test('worker recovery retries interrupted and pending dormant scans without anot
   expect(new Set([first.sessionId, second.sessionId])).toEqual(new Set(['first', 'second']))
   expect(client.get(a).prs).toHaveLength(1)
   expect(client.get(b).prs).toHaveLength(1)
+})
+
+test('page RPC propagates stale cursor errors and rejects pending requests on worker failure/dispose', async () => {
+  const { client, workers } = fake()
+  const a = record()
+  const first = client.page(a, 'expired').catch((error: Error & { code?: string }) => error)
+  const page = workers[0].requests.find(r => r.kind === 'page')!
+  expect(page.kind).toBe('page')
+  if (page.kind !== 'page') throw Error('Missing page')
+  workers[0].onmessage?.({ data: { id: page.id, error: 'Refresh media', code: 'STALE_CURSOR' } } as MessageEvent<MetadataResponse>)
+  expect(await first).toMatchObject({ code: 'STALE_CURSOR' })
+  const second = client.page(a).catch((error: Error) => error)
+  workers[0].onerror?.()
+  expect(await second).toBeInstanceOf(Error)
+  const third = client.page(a).catch((error: Error) => error)
+  client.dispose()
+  expect(await third).toBeInstanceOf(Error)
+})
+
+test('page response for a replaced identity cannot publish its summary or resolve as current data', async () => {
+  const { client, workers, changes } = fake()
+  const a = record('/old'), b = record('/new')
+  const pending = client.page(a).catch((error: Error) => error)
+  const page = workers[0].requests.find(r => r.kind === 'page')!
+  if (page.kind !== 'page') throw Error('Missing page')
+  client.queue(b)
+  workers[0].onmessage?.(new MessageEvent<MetadataResponse>('message', { data: { id: page.id, metadata: metadata(1), page: {
+    identity: 'old', revision: 'v1', items: [], total: 0, nextCursor: null,
+  } } }))
+  expect(await pending).toBeInstanceOf(Error)
+  expect(changes).toHaveLength(0)
+})
+
+test('payload repair coalesces storms, rejects obsolete identities, and survives worker failure', async () => {
+  const { client, workers } = fake()
+  const a = record('/old'), b = record('/new')
+  client.queue(a); await tick()
+  workers[0].reply(metadata(1))
+  for (let i = 0; i < 1000; i++) client.invalidate(a)
+  await tick()
+  expect(workers[0].scans()).toHaveLength(2)
+  expect(workers[0].scans()[1].force).toBe(true)
+  workers[0].onerror?.()
+  await until(() => workers.length === 2)
+  expect(workers[1].scans()[0].force).toBe(true)
+  workers[1].reply(metadata(2))
+  client.invalidate(a); await tick()
+  expect(workers[1].scans()).toHaveLength(1)
+  client.queue(b); await tick()
+  workers[1].reply(metadata(3))
+  client.invalidate(a); await tick()
+  expect(workers[1].scans()).toHaveLength(2)
+})
+
+test('a page waits for a queued repair before reading the index', async () => {
+  const { client, workers } = fake()
+  const a = record()
+  client.invalidate(a)
+  const page = client.page(a)
+  await tick()
+  expect(workers[0].scans()[0].force).toBe(true)
+  expect(workers[0].requests.filter(r => r.kind === 'page')).toHaveLength(0)
+  workers[0].reply(metadata(1))
+  await tick()
+  const request = workers[0].requests.find(r => r.kind === 'page')!
+  if (request.kind !== 'page') throw Error('Missing page')
+  workers[0].onmessage?.(new MessageEvent<MetadataResponse>('message', { data: { id: request.id, metadata: metadata(1), page: {
+    identity: 'a', revision: 'new', items: [], total: 0, nextCursor: null,
+  } } }))
+  expect((await page).revision).toBe('new')
+})
+
+test('timed-out page requests retain admission slots until the worker responds', async () => {
+  const worker = new FakeWorker()
+  const client = new SessionMetadataClient(() => {}, () => worker as unknown as Worker, ':memory:', 10)
+  clients.push(client)
+  const requests = Array.from({ length: 32 }, () => client.page(record()).catch((error: Error) => error))
+  await Promise.all(requests)
+  expect(worker.requests.filter(r => r.kind === 'page')).toHaveLength(32)
+  for (let i = 0; i < 32; i++) {
+    expect(await client.page(record()).catch((error: Error) => error)).toEqual(new Error('Too many pending media requests'))
+  }
+  expect(worker.requests.filter(r => r.kind === 'page')).toHaveLength(32)
+  const first = worker.requests.find(r => r.kind === 'page')!
+  if (first.kind !== 'page') throw Error('Missing page')
+  worker.onmessage?.(new MessageEvent<MetadataResponse>('message', { data: { id: first.id, error: 'Finished late' } }))
+  const next = client.page(record()).catch((error: Error) => error)
+  expect(worker.requests.filter(r => r.kind === 'page')).toHaveLength(33)
+  client.dispose()
+  expect(await next).toBeInstanceOf(Error)
 })

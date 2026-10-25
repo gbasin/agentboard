@@ -1,0 +1,165 @@
+[
+  {
+    "build": "pr",
+    "profile": "rate128",
+    "emulateIOS": true,
+    "phoneSettings": true,
+    "connections": 1,
+    "pings": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "pongs": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "timeouts": 0,
+    "connectTimeouts": 0,
+    "ready": 1,
+    "finalInput": true,
+    "error": null,
+    "network": {
+      "connections": 9,
+      "upBytes": 98276,
+      "downBytes": 1942311,
+      "maxQueuedBytes": 1080976,
+      "segments": 1271,
+      "serverFrames": [
+        {
+          "t": 12077,
+          "type": "server-config",
+          "bytes": 179
+        },
+        {
+          "t": 12077,
+          "type": "sessions",
+          "bytes": 27063
+        },
+        {
+          "t": 12077,
+          "type": "host-status",
+          "bytes": 114
+        },
+        {
+          "t": 12077,
+          "type": "synced-settings",
+          "bytes": 40
+        },
+        {
+          "t": 12077,
+          "type": "agent-sessions",
+          "bytes": 17857
+        },
+        {
+          "t": 12454,
+          "type": "terminal-lease",
+          "bytes": 72
+        },
+        {
+          "t": 12896,
+          "type": "synced-settings",
+          "bytes": 984
+        },
+        {
+          "t": 12937,
+          "type": "terminal-ready",
+          "bytes": 67
+        },
+        {
+          "t": 15392,
+          "type": "agent-sessions-active",
+          "bytes": 17842
+        },
+        {
+          "t": 15392,
+          "type": "sessions",
+          "bytes": 27079
+        },
+        {
+          "t": 20370,
+          "type": "agent-sessions-active",
+          "bytes": 17842
+        },
+        {
+          "t": 20371,
+          "type": "sessions",
+          "bytes": 27079
+        },
+        {
+          "t": 25398,
+          "type": "agent-sessions-active",
+          "bytes": 17842
+        },
+        {
+          "t": 25399,
+          "type": "sessions",
+          "bytes": 27079
+        },
+        {
+          "t": 30397,
+          "type": "agent-sessions-active",
+          "bytes": 17842
+        },
+        {
+          "t": 30397,
+          "type": "sessions",
+          "bytes": 27079
+        },
+        {
+          "t": 32454,
+          "type": "pong",
+          "seq": 1,
+          "bytes": 23
+        },
+        {
+          "t": 35426,
+          "type": "agent-sessions-active",
+          "bytes": 17842
+        },
+        {
+          "t": 35430,
+          "type": "sessions",
+          "bytes": 27079
+        },
+        {
+          "t": 40417,
+          "type": "agent-sessions-active",
+          "bytes": 17842
+        },
+        {
+          "t": 40418,
+          "type": "sessions",
+          "bytes": 27079
+        },
+        {
+          "t": 52453,
+          "type": "pong",
+          "seq": 2,
+          "bytes": 23
+        },
+        {
+          "t": 72452,
+          "type": "pong",
+          "seq": 3,
+          "bytes": 23
+        },
+        {
+          "t": 92452,
+          "type": "pong",
+          "seq": 4,
+          "bytes": 23
+        },
+        {
+          "t": 100822,
+          "type": "session-update",
+          "bytes": 1453
+        }
+      ]
+    },
+    "bursts": 6
+  }
+]

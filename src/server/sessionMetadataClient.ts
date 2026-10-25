@@ -1,4 +1,8 @@
 import { resolveWorkerPath } from './workerPath'
+import path from 'node:path'
+import { config } from './config'
+import { sanitizedTmuxEnv } from './tmuxEnv'
+import type { MediaPage } from '../shared/media'
 /** Coalesced background scans; cached values contain no authoritative session state. */
 import type { AgentSessionRecord } from './db'
 import type { CodexSubagentLink } from './logMatchWorkerTypes'
@@ -11,7 +15,7 @@ export function metadataIdentity(record: Pick<AgentSessionRecord, 'sessionId' | 
 export class MetadataScanSupersededError extends Error {
   constructor() { super('Session log changed'); this.name = 'MetadataScanSupersededError' }
 }
-const EMPTY: SessionMetadata = { prs: [], media: [] }
+const EMPTY: SessionMetadata = { prs: [] }
 
 export class SessionMetadataClient {
   private worker: Worker | null = null
@@ -21,14 +25,20 @@ export class SessionMetadataClient {
   private retryTimer: ReturnType<typeof setTimeout> | null = null
   private retryDelayMs = 1000
   private pending = new Map<string, AgentSessionRecord>()
-  private current: { id: number; record: AgentSessionRecord } | null = null
+  private current: { id: number; record: AgentSessionRecord; force?: boolean } | null = null
   private cache = new Map<string, { identity: string; metadata: SessionMetadata }>()
   private links: CodexSubagentLink[] = []
+  private forced = new Set<string>()
+  private waitingForRepair = 0
+  private lastInvalidations = new Map<string, number>()
+  private pages = new Map<number, { record: AgentSessionRecord; resolve: (page: MediaPage) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout>; timedOut: boolean }>()
   private waiters = new Map<string, { minimumId: number; resolve: (value: SessionMetadata) => void; reject: (error: Error) => void }[]>()
 
   constructor(
     private readonly changed: (record: AgentSessionRecord, metadata: SessionMetadata) => void,
-    private readonly createWorker = (url: string) => new Worker(url, { type: 'module' }),
+    private readonly createWorker = (url: string) => new Worker(url, { type: 'module', env: sanitizedTmuxEnv() }),
+    private readonly indexPath = path.join(config.dataDir, 'media-index.sqlite'),
+    private readonly pageTimeoutMs = 30_000,
   ) {}
 
   get(record: AgentSessionRecord): SessionMetadata {
@@ -37,6 +47,25 @@ export class SessionMetadataClient {
   }
 
   queue(record: AgentSessionRecord) { this.enqueue(record, false) }
+
+  /** Coalesce stale-payload repairs and never invalidate a newer association. */
+  invalidate(record: AgentSessionRecord): void {
+    if (this.stopped) return
+    const identity = metadataIdentity(record)
+    const pending = this.pending.get(record.sessionId)
+    const current = this.current?.record
+    const cached = this.cache.get(record.sessionId)
+    if ((pending && metadataIdentity(pending) !== identity) ||
+        (current?.sessionId === record.sessionId && metadataIdentity(current) !== identity) ||
+        (cached && cached.identity !== identity)) return
+    const now = performance.now()
+    if (this.forced.has(identity) || now - (this.lastInvalidations.get(identity) ?? -Infinity) < 5000) return
+    this.lastInvalidations.delete(identity)
+    this.lastInvalidations.set(identity, now)
+    if (this.lastInvalidations.size > 5000) this.lastInvalidations.delete(this.lastInvalidations.keys().next().value!)
+    this.forced.add(identity)
+    this.enqueue(record, true)
+  }
 
   private enqueue(record: AgentSessionRecord, fresh: boolean) {
     if (this.stopped) return
@@ -51,6 +80,7 @@ export class SessionMetadataClient {
       const identity = metadataIdentity(replaced)
       for (const waiter of this.waiters.get(identity) ?? []) waiter.reject(new MetadataScanSupersededError())
       this.waiters.delete(identity)
+      this.forced.delete(identity)
     }
     this.pending.set(record.sessionId, { ...record })
     this.schedule()
@@ -70,6 +100,34 @@ export class SessionMetadataClient {
     })
   }
 
+  /** Pages are explicit user requests; no background detail collection is retained. */
+  page(record: AgentSessionRecord, cursor?: string): Promise<MediaPage> {
+    if (this.stopped) return Promise.reject(new Error('Metadata worker disposed'))
+    if (this.pages.size + this.waitingForRepair >= 32) return Promise.reject(new Error('Too many pending media requests'))
+    if (this.forced.has(metadataIdentity(record))) {
+      this.waitingForRepair++
+      return this.scan(record).then(
+        () => { this.waitingForRepair--; return this.page(record, cursor) },
+        error => { this.waitingForRepair--; throw error },
+      )
+    }
+    return new Promise((resolve, reject) => {
+      const id = ++this.serial
+      const timer = setTimeout(() => {
+        // A timed-out caller does not cancel already-dispatched worker work. Keep
+        // its admission slot until a response or worker retirement settles it.
+        const request = this.pages.get(id)
+        if (request) request.timedOut = true
+        reject(new Error('Media request timed out'))
+      }, this.pageTimeoutMs)
+      this.pages.set(id, { record, resolve, reject, timer, timedOut: false })
+      try {
+        if (!this.worker) this.spawn()
+        this.worker!.postMessage({ kind: 'page', id, record: { ...record }, cursor } satisfies MetadataRequest)
+      } catch (error) { this.failed(String(error)) }
+    })
+  }
+
   setIndex(links: CodexSubagentLink[]) {
     this.links = links
     this.worker?.postMessage({ kind: 'index', links } satisfies MetadataRequest)
@@ -86,6 +144,8 @@ export class SessionMetadataClient {
     this.rejectWaiters(new Error('Metadata worker disposed'))
     this.pending.clear()
     this.cache.clear()
+    this.forced.clear()
+    this.lastInvalidations.clear()
     this.current = null
     this.retire()
   }
@@ -106,7 +166,7 @@ export class SessionMetadataClient {
       records.find((r) => r.currentWindow !== null) ?? records[0]
     if (!record) return
     this.pending.delete(record.sessionId)
-    this.current = { id: ++this.serial, record }
+    this.current = { id: ++this.serial, record, ...(this.forced.has(metadataIdentity(record)) ? { force: true } : {}) }
     try {
       if (!this.worker) this.spawn()
       this.worker!.postMessage({ kind: 'scan', ...this.current } satisfies MetadataRequest)
@@ -120,11 +180,33 @@ export class SessionMetadataClient {
     worker.onmessage = (event: MessageEvent<MetadataResponse>) => {
       if (this.worker !== worker || this.stopped) return
       const response = event.data
+      const pageRequest = this.pages.get(response.id)
+      if (pageRequest) {
+        clearTimeout(pageRequest.timer)
+        this.pages.delete(response.id)
+        if (pageRequest.timedOut) return
+        if ('error' in response) {
+          pageRequest.reject(Object.assign(new Error(response.error), { code: response.code }))
+        } else if (response.page) {
+          const record = pageRequest.record
+          const next = this.pending.get(record.sessionId) ?? this.current?.record
+          const cached = this.cache.get(record.sessionId)
+          if ((next?.sessionId === record.sessionId && metadataIdentity(next) !== metadataIdentity(record)) ||
+              (cached && cached.identity !== metadataIdentity(record))) {
+            pageRequest.reject(new MetadataScanSupersededError())
+          } else {
+            this.publish(record, response.metadata)
+            pageRequest.resolve(response.page)
+          }
+        } else pageRequest.reject(new Error('Missing media page'))
+        return
+      }
       const current = this.current
       if (!current || current.id !== response.id) return
       this.current = null
       this.retryDelayMs = 1000
       const { record } = current
+      if (current.force && !('error' in response)) this.forced.delete(metadataIdentity(record))
       const waiting = this.waiters.get(metadataIdentity(record)) ?? []
       const later = waiting.filter((waiter) => waiter.minimumId > response.id)
       if (later.length) this.waiters.set(metadataIdentity(record), later)
@@ -138,14 +220,7 @@ export class SessionMetadataClient {
       if ('error' in response) {
         logger.warn('session_metadata_scan_failed', { message: response.error })
       } else if (!next || metadataIdentity(next) === metadataIdentity(record)) {
-        const previous = this.get(record)
-        this.cache.delete(record.sessionId)
-        this.cache.set(record.sessionId, { identity: metadataIdentity(record), metadata: response.metadata })
-        if (this.cache.size > 5000) this.cache.delete(this.cache.keys().next().value!)
-        if (JSON.stringify(previous) !== JSON.stringify(response.metadata)) {
-          try { this.changed(record, response.metadata) }
-          catch (error) { logger.warn('session_metadata_publish_failed', { message: String(error) }) }
-        }
+        this.publish(record, response.metadata)
       }
       this.schedule()
     }
@@ -155,7 +230,19 @@ export class SessionMetadataClient {
     worker.onmessageerror = () => {
       if (this.worker === worker) this.failed('Metadata worker message error')
     }
+    worker.postMessage({ kind: 'storage', path: this.indexPath } satisfies MetadataRequest)
     worker.postMessage({ kind: 'index', links: this.links } satisfies MetadataRequest)
+  }
+
+  private publish(record: AgentSessionRecord, metadata: SessionMetadata) {
+    const previous = this.get(record)
+    this.cache.delete(record.sessionId)
+    this.cache.set(record.sessionId, { identity: metadataIdentity(record), metadata })
+    if (this.cache.size > 5000) this.cache.delete(this.cache.keys().next().value!)
+    if (JSON.stringify(previous) !== JSON.stringify(metadata)) {
+      try { this.changed(record, metadata) }
+      catch (error) { logger.warn('session_metadata_publish_failed', { message: String(error) }) }
+    }
   }
 
   private failed(message: string) {
@@ -180,6 +267,8 @@ export class SessionMetadataClient {
   }
 
   private rejectWaiters(error: Error) {
+    for (const request of this.pages.values()) { clearTimeout(request.timer); request.reject(error) }
+    this.pages.clear()
     for (const waiting of this.waiters.values()) {
       for (const waiter of waiting) waiter.reject(error)
     }

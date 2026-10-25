@@ -5,6 +5,7 @@ import type { ClientMessage } from '../shared/types'
 import { TerminalLeases, type RelaySocketData } from './relay/leases'
 import type { ParentToRelay, RelayOptions, RelayToParent } from './relay/protocol'
 import { logger } from './logger'
+import { CATALOG_VERSION, catalogVersionFromUrl } from '../shared/catalogProtocol'
 
 const ctx = self as DedicatedWorkerGlobalScope
 const sockets = new Map<string, ServerWebSocket<RelaySocketData>>()
@@ -22,8 +23,9 @@ function bind(hostname: string) {
         const url = new URL(req.url)
         if (url.pathname === '/ws') {
           const id = crypto.randomUUID()
-          if (server.upgrade(req, { data: { id, lease: null, outputSerial: 0, outstanding: new Map(), outstandingBytes: 0 } })) {
-            post({ type: 'open', id, remoteAddress: server.requestIP(req)?.address ?? null, userAgent: req.headers.get('user-agent')?.slice(0, 200) ?? null })
+          const catalogVersion = catalogVersionFromUrl(url)
+          if (server.upgrade(req, { data: { id, catalogVersion, lease: null, outputSerial: 0, outstanding: new Map(), outstandingBytes: 0 } })) {
+            post({ type: 'open', id, catalogVersion, remoteAddress: server.requestIP(req)?.address ?? null, userAgent: req.headers.get('user-agent')?.slice(0, 200) ?? null })
             return
           }
           return new Response('WebSocket upgrade failed', { status: 400 })
@@ -50,7 +52,7 @@ function bind(hostname: string) {
             const accepted = leases.send(ws, JSON.stringify({ type: 'pong', ...(message.seq !== undefined ? { seq: message.seq } : {}) }))
             logger.debug('terminal_relay_heartbeat', { connectionId: ws.data.id, seq: message.seq, accepted,
               bufferedBefore, bufferedAfter: ws.getBufferedAmount() })
-          } else if (!leases.handle(ws, message)) post({ type: 'message', id: ws.data.id, payload })
+          } else if (ws.data.catalogVersion === CATALOG_VERSION && !leases.handle(ws, message)) post({ type: 'message', id: ws.data.id, payload })
         },
         close(ws) {
           leases.close(ws)

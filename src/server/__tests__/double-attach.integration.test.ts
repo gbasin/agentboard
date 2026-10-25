@@ -185,7 +185,7 @@ if (!tmuxAvailable || !localhostBindable) {
         // the terminalAttachSeq mechanism cancels the first one (only the
         // latest seq wins).  This results in ONE terminal-ready and ONE
         // scrollback from the surviving (second) attach.
-        const ws = new WebSocket(`ws://${testHost}:${port}/ws`)
+        const ws = new WebSocket(`ws://${testHost}:${port}/ws?catalog=2`)
         await waitForOpen(ws)
 
         const messages: Array<{
@@ -287,7 +287,7 @@ if (!tmuxAvailable || !localhostBindable) {
         // We let the first attach complete fully, then send a second one
         // inside the (test-widened) dedup window.  The server should skip
         // scrollback capture for the second and only send terminal-ready.
-        const ws = new WebSocket(`ws://${testHost}:${port}/ws`)
+        const ws = new WebSocket(`ws://${testHost}:${port}/ws?catalog=2`)
         await waitForOpen(ws)
 
         const messages: Array<{
@@ -517,7 +517,7 @@ if (!tmuxAvailable || !localhostBindable) {
         // A single session-refresh message can be dropped if a prior refresh is
         // already in flight, so poll the server's current session snapshot
         // instead of assuming a single websocket broadcast arrives in time.
-        const refreshWs = new WebSocket(`ws://${testHost}:${port}/ws`)
+        const refreshWs = new WebSocket(`ws://${testHost}:${port}/ws?catalog=2`)
         await waitForOpen(refreshWs)
         const secondSession = await waitForDiscoveredSession(
           port,
@@ -531,7 +531,7 @@ if (!tmuxAvailable || !localhostBindable) {
         refreshWs.close()
 
         // Now connect a new WebSocket and attach to two DIFFERENT sessions rapidly
-        const ws = new WebSocket(`ws://${testHost}:${port}/ws`)
+        const ws = new WebSocket(`ws://${testHost}:${port}/ws?catalog=2`)
         await waitForOpen(ws)
 
         const messages: Array<{

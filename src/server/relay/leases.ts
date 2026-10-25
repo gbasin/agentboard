@@ -7,6 +7,7 @@ import type { ClientMessage } from '../../shared/types'
 import { workerEnvironment, type TerminalSession, type RelayToTerminal, type TerminalToRelay } from './protocol'
 
 export interface RelaySocketData {
+  catalogVersion?: number | null
   id: string
   lease: Lease | null
   outputSerial: number

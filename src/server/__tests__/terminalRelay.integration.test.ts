@@ -79,7 +79,7 @@ describe('isolated terminal relay with real tmux', () => {
       if (part.done) throw new Error('Relay fixture exited')
       text += new TextDecoder().decode(part.value)
       const line = text.split('\n').find(line => line.startsWith('{"port":'))
-      if (line) url = `ws://127.0.0.1:${JSON.parse(line).port}/ws`
+      if (line) url = `ws://127.0.0.1:${JSON.parse(line).port}/ws?catalog=2`
     }
   }, 15000)
   afterAll(async () => {
@@ -89,6 +89,21 @@ describe('isolated terminal relay with real tmux', () => {
       try { for (const session of tmux('list-sessions', '-F', '#{session_name}').split('\n')) tmux('kill-session', '-t', `=${session}`) } catch {}
     }
     if (dir) rmSync(dir, { recursive: true, force: true })
+  })
+
+
+  test('old catalog clients receive reload guidance and pongs without allocating a terminal', async () => {
+    const peer = new Peer(url.replace('?catalog=2', '')); peers.push(peer)
+    const notice = await peer.receive('error')
+    expect(notice.message).toContain('Reload this tab')
+    peer.send({ type: 'terminal-resume', claim: 1 })
+    peer.send({ type: 'terminal-attach', sessionId: sessions[0].id, cols: 80, rows: 24 })
+    peer.send({ type: 'ping', seq: 87 })
+    expect((await peer.receive('pong')).seq).toBe(87)
+    await wait(50)
+    expect(peer.closed).toBe(false)
+    expect(peer.frames.some(frame => ['sessions', 'terminal-lease', 'terminal-ready', 'terminal-output'].includes(frame.type))).toBe(false)
+    peer.ws.close()
   })
 
   test('dashboard stall does not block ping or PTY echo', async () => {
@@ -126,7 +141,7 @@ describe('isolated terminal relay with real tmux', () => {
     second.ws.close()
   })
 
-  test('legacy clients and repeated disposal reuse preserve live agent panes', async () => {
+  test('non-retained terminal clients and repeated disposal reuse preserve live agent panes', async () => {
     await wait(1100)
     for (let cycle = 0; cycle < 8; cycle++) {
       const peer = new Peer(url); peers.push(peer)

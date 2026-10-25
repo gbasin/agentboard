@@ -1543,7 +1543,7 @@ export default function Terminal({
             </button>
           </div>
         )}
-        {session && <MediaRail session={session} />}
+        {session && <MediaRail session={session} ready={connectionStatus === 'connected' && isInputReady} />}
         {!session && (
           <div className="absolute inset-0 flex items-center justify-center text-sm text-muted">
             {hibernatingSession ? null : 'Select a session to view terminal'}

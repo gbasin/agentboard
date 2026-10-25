@@ -17,6 +17,7 @@ import type { ClientMessage, SendClientMessage, ServerMessage, ServerMessageWith
 import type { ConnectionStatus } from '../stores/sessionStore'
 import { useSessionStore } from '../stores/sessionStore'
 import { clientLog } from '../utils/clientLog'
+import { CATALOG_VERSION, CATALOG_RELOAD_MESSAGE } from '@shared/catalogProtocol'
 
 type MessageListener = (message: ServerMessage) => void
 
@@ -30,6 +31,8 @@ const WS_STATES = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'] as const
 
 /** How long to wait for a WebSocket to reach OPEN before giving up. */
 const CONNECT_TIMEOUT_MS = 3_000
+/** An OPEN old server may place a large legacy snapshot before its config. */
+const CATALOG_NEGOTIATION_TIMEOUT_MS = 30_000
 
 /**
  * Longer timeout for the first connect attempt after a resume — Tailscale /
@@ -99,6 +102,8 @@ export class WebSocketManager {
   private reconnectTimer: number | null = null
   private connectTimer: number | null = null
   private manualClose = false
+  private protocolMismatch = false
+  private protocolReady = false
   private lastTick = Date.now()
   private wakeCheckInterval: number | null = null
   private lifecycleStarted = false
@@ -161,7 +166,7 @@ export class WebSocketManager {
   }
 
   connect() {
-    if (this.isHidden() || this.waitForOverloadCooldown()) return
+    if (this.protocolMismatch || this.isHidden() || this.waitForOverloadCooldown()) return
     // Clean up any zombie socket that never opened / already closed
     if (this.ws) {
       const isOpen = this.ws.readyState === WebSocket.OPEN
@@ -190,12 +195,13 @@ export class WebSocketManager {
     this.setStatus('connecting')
 
     const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws'
-    const wsUrl = `${scheme}://${window.location.host}/ws`
+    const wsUrl = `${scheme}://${window.location.host}/ws?catalog=${CATALOG_VERSION}`
     clientLog('ws_connect', { url: wsUrl, resume: this.isResumeAttempt, ...this.wsSnap() }, 'info')
 
     const ws = new WebSocket(wsUrl)
     let overloaded = false
     this.ws = ws
+    this.protocolReady = false
     this.lastMessageAt = null
     this.lastPongSeq = null
     this.lastPingAt = null
@@ -237,23 +243,24 @@ export class WebSocketManager {
         return
       }
       clientLog('ws_onopen', this.wsSnap(), 'info')
-      this.clearConnectTimer()
       this.reconnectAttempts = 0
       this.consecutiveFailures = 0
       this.stallCount = 0
       this.connectionEpoch += 1
       // Socket opened successfully — remove from leaked tracking
       this.leakedSockets.delete(ws)
-      // One capability per document, never shared through localStorage or
-      // sessionStorage (duplicated tabs must not steal each other's lease).
-      this.send({ type: 'terminal-resume', token: this.resumeToken, claim: ++this.resumeClaim })
-      if (this.isHidden()) {
-        this.setStatus('reconnecting')
-        return
-      }
-      this.lastTick = Date.now()
-      this.setStatus('connected')
-      this.startHeartbeat()
+      // Keep input unavailable until the server confirms the negotiated catalog.
+      // OPEN does not prove protocol compatibility. Do not repeatedly download
+      // an old server's snapshot when its config is behind that large frame.
+      this.clearConnectTimer()
+      this.connectTimer = window.setTimeout(() => {
+        if (this.ws !== ws || this.protocolReady) return
+        this.connectTimer = null
+        this.consecutiveFailures += 1
+        this.destroySocket()
+        this.scheduleReconnect()
+        this.setStatus('reconnecting', 'Server handshake timed out. Retrying…')
+      }, CATALOG_NEGOTIATION_TIMEOUT_MS)
     }
 
     ws.onmessage = (event) => {
@@ -265,6 +272,25 @@ export class WebSocketManager {
         const t0 = performance.now()
         const parsed = JSON.parse(raw) as ServerMessage
         this.lastMessageType = parsed.type
+        if (!this.protocolReady && parsed.type !== 'server-config') {
+          this.requireCatalogReload()
+          return
+        }
+        if (parsed.type === 'server-config') {
+          if (parsed.catalogVersion !== CATALOG_VERSION) {
+            this.requireCatalogReload()
+            return
+          }
+          if (!this.protocolReady) {
+            this.protocolReady = true
+            this.clearConnectTimer()
+            // One lease per document, never shared through storage.
+            if (!this.send({ type: 'terminal-resume', token: this.resumeToken, claim: ++this.resumeClaim })) return
+            this.lastTick = Date.now()
+            this.setStatus(this.isHidden() ? 'reconnecting' : 'connected')
+            if (!this.isHidden()) this.startHeartbeat()
+          }
+        }
         const parseMs = performance.now() - t0
         // Attach timing metadata for switch diagnostics (read by useTerminal)
         const withDiag = parsed as ServerMessageWithDiagnostics
@@ -366,6 +392,13 @@ export class WebSocketManager {
     }
   }
 
+  private requireCatalogReload() {
+    this.protocolMismatch = true
+    this.disconnect()
+    this.setStatus('disconnected', CATALOG_RELOAD_MESSAGE)
+    this.listeners.forEach(listener => listener({ type: 'error', message: CATALOG_RELOAD_MESSAGE }))
+  }
+
   disconnect() {
     this.overloadFailures = 0
     this.overloadRetryAt = 0
@@ -430,6 +463,7 @@ export class WebSocketManager {
   }
 
   send(message: ClientMessage): boolean {
+    if (this.protocolMismatch || !this.protocolReady) return false
     if (this.ws?.readyState !== WebSocket.OPEN) return false
     if (message.type === 'terminal-ack' && message.connectionEpoch !== undefined) {
       if (message.connectionEpoch !== this.connectionEpoch) return false
@@ -613,6 +647,7 @@ export class WebSocketManager {
    *   3. Use a longer connect timeout for the first attempt
    */
   private forceReconnect(trigger: string = 'unknown', force = false) {
+    if (this.protocolMismatch) return
     if (this.manualClose) {
       clientLog('ws_force_skip', { trigger, reason: 'manual_close' })
       return
@@ -738,6 +773,7 @@ export class WebSocketManager {
   }
 
   private setStatus(status: ConnectionStatus, error: string | null = null) {
+    if (this.protocolMismatch) { status = 'disconnected'; error = CATALOG_RELOAD_MESSAGE }
     if (status !== 'connected') {
       this.readyAttachId = null
       this.overloadProgressSince = null
@@ -779,6 +815,7 @@ export class WebSocketManager {
   }
 
   private scheduleReconnect() {
+    if (this.protocolMismatch) return
     this.stopHeartbeat()
     if (this.isHidden()) {
       clientLog('ws_schedule_skip', { reason: 'hidden', ...this.wsSnap() })

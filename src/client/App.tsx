@@ -421,6 +421,8 @@ export default function App() {
             ...existing,
             agentSessionId: message.session.sessionId,
             agentSessionName: message.session.displayName,
+            mediaSummary: message.session.mediaSummary,
+            media: undefined,
             logFilePath: message.session.logFilePath,
             isHibernating: message.session.isHibernating,
             lastUserMessage: message.session.lastUserMessage ?? existing.lastUserMessage,

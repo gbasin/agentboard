@@ -37,8 +37,11 @@ import { LogPoller } from './logPoller'
 import { toAgentSession as buildAgentSession } from './agentSessions'
 import { SessionMetadataClient } from './sessionMetadataClient'
 import { publishSessionMetadata } from './sessionMetadataViews'
-import { extractMediaItems } from './mediaExtractor'
-import { getSubagentLogPaths, getCodexSubagentIndex, setCodexSubagentIndexListener } from './subagentLogs'
+import { createMediaRoutes } from './mediaRoutes'
+import { catalogMessage, sessionSummary } from './catalogMessages'
+import { CATALOG_VERSION, catalogVersionFromUrl } from '../shared/catalogProtocol'
+import { startCatalogUpgradeNotice } from './catalogUpgrade'
+import { getCodexSubagentIndex, setCodexSubagentIndexListener } from './subagentLogs'
 import { fetchPrChecks, fetchPrInfo, parsePrUrl } from './prInfo'
 import { getLogSearchDirs } from './logDiscovery'
 import {
@@ -366,40 +369,6 @@ async function readLogLineWindowFromEnd(
   }
 }
 
-// Reads the single log line starting at `offset` — used by session-media to
-// re-extract one payload. Media lines run to MBs, so the cap is generous.
-const MAX_MEDIA_LINE_BYTES = 64 * 1024 * 1024
-
-async function readLogLineAtOffset(
-  logPath: string,
-  offset: number
-): Promise<string | null> {
-  const handle = await fs.open(logPath, 'r')
-  try {
-    const chunks: Buffer[] = []
-    let position = offset
-    let total = 0
-    for (;;) {
-      const remaining = MAX_MEDIA_LINE_BYTES - total
-      if (remaining <= 0) break
-      const buffer = Buffer.allocUnsafe(Math.min(256 * 1024, remaining))
-      const { bytesRead } = await handle.read(buffer, 0, buffer.length, position)
-      if (bytesRead <= 0) break
-      const newline = buffer.subarray(0, bytesRead).indexOf(0x0a)
-      if (newline !== -1) {
-        chunks.push(buffer.subarray(0, newline))
-        return Buffer.concat(chunks).toString('utf8')
-      }
-      chunks.push(buffer.subarray(0, bytesRead))
-      position += bytesRead
-      total += bytesRead
-    }
-    return chunks.length > 0 ? Buffer.concat(chunks).toString('utf8') : null
-  } finally {
-    await handle.close()
-  }
-}
-
 async function readLogLineWindow(
   logPath: string,
   stats: { size: number; mtimeMs: number },
@@ -637,6 +606,8 @@ function createPersistentWindow(
 }
 
 interface WSData {
+  catalogVersion: number | null
+  stopUpgradeNotice?: () => void
   relay?: boolean
   terminal: ITerminalProxy | null
   currentSessionId: string | null
@@ -1531,7 +1502,7 @@ app.post('/api/client-log', async (c) => {
 })
 
 app.get('/api/health', (c) => c.json({ ok: true }))
-app.get('/api/sessions', (c) => c.json(registry.getAll()))
+app.get('/api/sessions', (c) => c.json(registry.getAll().map(sessionSummary)))
 
 // Eager tier for PR chips: state/title/author, batched + 60s cached.
 app.post('/api/pr-info', async (c) => {
@@ -1623,83 +1594,11 @@ app.get('/api/session-preview/:sessionId', async (c) => {
   }
 })
 
-// Serves one media payload (image, document) referenced by a SessionMedia
-// descriptor. The descriptor's (path, offset, index) triple re-reads a single
-// log line and re-runs the same extraction the scanner used, so the index is
-// stable; `bytes` is an integrity check that rejects refs stale across a log
-// rewrite. `path` must be the session's own log or one of its subagent logs —
-// this is not a general file server.
-app.get('/api/session-media/:sessionId', async (c) => {
-  const sessionId = c.req.param('sessionId')
-  if (!isValidSessionId(sessionId)) {
-    return c.json({ error: 'Invalid session id' }, 400)
-  }
-  const record = db.getSessionById(sessionId)
-  if (!record?.logFilePath) {
-    return c.json({ error: 'Session not found' }, 404)
-  }
-
-  const mediaPath = c.req.query('path') ?? ''
-  const allowed =
-    mediaPath === record.logFilePath ||
-    getSubagentLogPaths(record.logFilePath, record.agentType, sessionId).includes(
-      mediaPath
-    )
-  if (!allowed) {
-    return c.json({ error: 'Invalid media path' }, 400)
-  }
-
-  const offset = Number(c.req.query('offset'))
-  const index = Number(c.req.query('index'))
-  if (
-    !Number.isSafeInteger(offset) ||
-    offset < 0 ||
-    !Number.isSafeInteger(index) ||
-    index < 0 ||
-    index > 256
-  ) {
-    return c.json({ error: 'Invalid media ref' }, 400)
-  }
-  const bytesParam = c.req.query('bytes')
-  const expectedBytes = bytesParam ? Number(bytesParam) : undefined
-
-  try {
-    const line = await readLogLineAtOffset(mediaPath, offset)
-    if (!line) {
-      return c.json({ error: 'Media not found' }, 404)
-    }
-    const item = extractMediaItems(line)[index]
-    if (!item?.data) {
-      // No payload at this ref — link/url kinds have no bytes to serve.
-      return c.json({ error: 'Media not found' }, 404)
-    }
-    const body = Buffer.from(item.data, 'base64')
-    if (
-      expectedBytes !== undefined &&
-      Number.isSafeInteger(expectedBytes) &&
-      body.length !== expectedBytes
-    ) {
-      // The line at this offset changed (log rewrite); the scan will publish
-      // fresh refs. Treat as gone rather than serve wrong bytes.
-      return c.json({ error: 'Stale media ref' }, 409)
-    }
-    return new Response(new Uint8Array(body), {
-      headers: {
-        'Content-Type': item.mediaType ?? 'application/octet-stream',
-        // Refs are content-addressed by (path, offset, index, bytes): a
-        // rewritten log produces different params, so immutable is safe.
-        'Cache-Control': 'private, max-age=31536000, immutable',
-        'X-Content-Type-Options': 'nosniff',
-      },
-    })
-  } catch (error) {
-    const err = error as NodeJS.ErrnoException
-    if (err.code === 'ENOENT') {
-      return c.json({ error: 'Media not found' }, 404)
-    }
-    return c.json({ error: 'Unable to read media' }, 500)
-  }
-})
+app.route('/api/session-media', createMediaRoutes({
+  getRecord: (id) => db.getSessionById(id),
+  page: (record, cursor) => metadataClient.page(record, cursor),
+  invalidate: (record) => metadataClient.invalidate(record),
+}))
 app.get('/api/directories', async (c) => {
   const requestedPath = c.req.query('path') ?? '~'
 
@@ -1993,6 +1892,7 @@ app.put('/api/settings/prefer-window-name', async (c) => {
   // message (mobile tab labels read it); rebroadcast so they all converge.
   broadcast({
     type: 'server-config',
+    catalogVersion: CATALOG_VERSION,
     remoteAllowControl: config.remoteAllowControl,
     remoteAllowAttach: config.remoteAllowAttach,
     hostLabel: config.hostLabel,
@@ -2352,9 +2252,9 @@ const tlsOptions = tlsEnabled
   ? { tls: { cert: Bun.file(config.tlsCert), key: Bun.file(config.tlsKey) } }
   : {}
 
-function createSocketData(connectionId: string, remoteAddress: string | null, userAgent: string | null): WSData {
+function createSocketData(connectionId: string, remoteAddress: string | null, userAgent: string | null, catalogVersion: number | null): WSData {
   return {
-    terminal: null, currentSessionId: null, currentTmuxTarget: null,
+    catalogVersion, terminal: null, currentSessionId: null, currentTmuxTarget: null,
     connectionId, remoteAddress, userAgent, terminalHost: null, terminalAttachSeq: 0,
     copyModeQuery: new CopyModeQuery(), lastAttachKey: null, lastAttachTs: 0,
     clipboardPollTimer: null, clipboardPollInFlight: false, lastClipboardBufferKey: null,
@@ -2369,7 +2269,7 @@ function serverFetch(req: Request, server: Server<WSData>) {
       typeof server.requestIP === 'function' ? server.requestIP(req) : null
     if (
       server.upgrade(req, {
-        data: createSocketData(createConnectionId(), requestIp?.address ?? null, req.headers.get('user-agent')?.slice(0, 200) ?? null),
+        data: createSocketData(createConnectionId(), requestIp?.address ?? null, req.headers.get('user-agent')?.slice(0, 200) ?? null, catalogVersionFromUrl(url)),
       })
     ) {
       return
@@ -2385,17 +2285,22 @@ const websocketHandlers = {
   sendPings: true,
   perMessageDeflate: true,
   open(ws: ServerWebSocket<WSData>) {
+    if (ws.data.catalogVersion !== CATALOG_VERSION) {
+      ws.data.stopUpgradeNotice = startCatalogUpgradeNotice(ws)
+      return
+    }
     sockets.add(ws)
-    send(ws, { type: 'sessions', sessions: registry.getAll() })
-    send(ws, { type: 'host-status', hosts: hostStatuses })
     send(ws, {
       type: 'server-config',
+    catalogVersion: CATALOG_VERSION,
       remoteAllowControl: config.remoteAllowControl,
       remoteAllowAttach: config.remoteAllowAttach,
       hostLabel: config.hostLabel,
       preferWindowName: config.preferWindowName,
       clientLogLevel: logLevel,
     })
+    send(ws, { type: 'sessions', sessions: registry.getAll() })
+    send(ws, { type: 'host-status', hosts: hostStatuses })
     send(ws, { type: 'synced-settings', settings: readSyncedSettings() })
     const agentSessions = registry.getAgentSessions()
     send(ws, {
@@ -2410,6 +2315,7 @@ const websocketHandlers = {
     handleMessage(ws, message)
   },
   close(ws: ServerWebSocket<WSData>) {
+    ws.data.stopUpgradeNotice?.()
     killRateLimiter.forget(ws.data.connectionId)
     cleanupTerminals(ws)
     sockets.delete(ws)
@@ -2426,7 +2332,7 @@ const httpServer = Bun.serve<WSData>({
 
 function relayMessage(message: RelayToParent): void {
   if (message.type === 'open') {
-    const data = { ...createSocketData(message.id, message.remoteAddress, message.userAgent), relay: true }
+    const data = { ...createSocketData(message.id, message.remoteAddress, message.userAgent, message.catalogVersion), relay: true }
     const peer = {
       data, readyState: 1,
       send: (payload: string) => { terminalRelay?.post({ type: 'send', id: message.id, payload }); return payload.length },
@@ -2887,14 +2793,14 @@ function broadcast(message: ServerMessage) {
   if (message.type === 'sessions' || message.type === 'session-update' || message.type === 'session-removed') {
     terminalRelay?.post({ type: 'sessions', sessions: registry.getAll(), terminalColorsEnabled: config.terminalColorsEnabled })
   }
-  const payload = JSON.stringify(message)
+  const payload = JSON.stringify(catalogMessage(message))
   for (const socket of sockets) {
     socket.send(payload)
   }
 }
 
 function send(ws: ServerWebSocket<WSData>, message: ServerMessage) {
-  ws.send(JSON.stringify(message))
+  ws.send(JSON.stringify(catalogMessage(message)))
 }
 
 function fireAndForget(promise: Promise<unknown>, context: string): void {
@@ -2922,6 +2828,8 @@ function handleMessage(
     send(ws, { type: 'error', message: 'Invalid message payload' })
     return
   }
+
+  if (ws.data.catalogVersion !== CATALOG_VERSION && message.type !== 'ping') return
 
   switch (message.type) {
     case 'ping':

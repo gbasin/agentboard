@@ -695,6 +695,8 @@ function createWs() {
       currentSessionId: null as string | null,
       currentTmuxTarget: null as string | null,
       connectionId: 'ws-test',
+      catalogVersion: 2,
+      stopCatalogNotice: null as (() => void) | null,
       remoteAddress: '127.0.0.1',
       userAgent: 'test-agent',
       terminalHost: null as string | null,

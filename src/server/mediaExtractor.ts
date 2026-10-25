@@ -7,8 +7,10 @@
 // polling only reads appended bytes.
 
 import fs from 'node:fs'
+import { createHash } from 'node:crypto'
 import { logger } from './logger'
 import { asRecord, asString } from '../shared/json'
+import { MediaLabelMap, mediaLabelKey } from './mediaIndexLabels'
 
 export type SessionMediaKind = 'image' | 'document' | 'link'
 
@@ -78,6 +80,7 @@ interface ScanState {
   pendingLabels: Map<string, string>
   seen: Set<string>
   media: ScannedMedia[]
+  emit?: (entry: ScannedMedia, key: string, digest: string, time: number) => void
 }
 
 // One read buffer shared by every scan; scans are synchronous.
@@ -93,7 +96,7 @@ function newScanState(): ScanState {
     mtimeMs: 0,
     partial: [],
     partialCandidate: false,
-    pendingLabels: new Map(),
+    pendingLabels: new MediaLabelMap(),
     seen: new Set(),
     media: [],
   }
@@ -168,11 +171,12 @@ function collectToolLabels(
 ): void {
   const register = (id: unknown, label: string) => {
     if (typeof id !== 'string' || !id) return
-    if (!pending.has(id) && pending.size >= MAX_PENDING_LABELS) {
+    const key = mediaLabelKey(id)
+    if (!pending.has(key) && pending.size >= MAX_PENDING_LABELS) {
       const oldest = pending.keys().next().value
       if (oldest !== undefined) pending.delete(oldest)
     }
-    pending.set(id, label)
+    pending.set(key, label.slice(0, 512))
   }
 
   const content = asRecord(record.message)?.content
@@ -387,12 +391,13 @@ function processLine(state: ScanState, line: string, lineOffset: number): void {
   if (!hasMedia) return
 
   let index = 0
+  let lineDigest: string | undefined
   for (const item of extractMediaItemsFromRecord(record)) {
     const current = index++
-    if (current > MAX_MEDIA_INDEX) continue
+    if (!state.emit && current > MAX_MEDIA_INDEX) continue
     const key = dedupeKey(item)
-    if (state.seen.has(key)) continue
-    state.seen.add(key)
+    if (!state.emit && state.seen.has(key)) continue
+    if (!state.emit) state.seen.add(key)
 
     const entry: ScannedMedia = {
       offset: lineOffset,
@@ -401,12 +406,20 @@ function processLine(state: ScanState, line: string, lineOffset: number): void {
     }
     if (item.mediaType) entry.mediaType = item.mediaType
     if (item.url) entry.url = item.url
-    const label = item.label ?? (item.toolId && state.pendingLabels.get(item.toolId))
+    const label = item.label ?? (item.toolId && state.pendingLabels.get(mediaLabelKey(item.toolId)))
     if (label) entry.label = label
     if (item.data) entry.bytes = decodedLength(item.data)
     if (item.width) entry.width = item.width
     if (item.height) entry.height = item.height
 
+    if (state.emit) {
+      const contentKey = createHash('sha256').update(item.url ?? `${item.kind}:${item.mediaType}:${item.data ?? ''}`).digest('hex')
+      lineDigest ??= createHash('sha256').update(line).digest('hex')
+      const stamp = record.timestamp ?? record.time
+      const time = typeof stamp === 'string' ? Date.parse(stamp) : NaN
+      state.emit(entry, contentKey, lineDigest, Number.isFinite(time) ? time : 0)
+      continue
+    }
     if (state.media.length >= MAX_MEDIA_PER_FILE) {
       state.media.shift()
     }
@@ -528,4 +541,18 @@ export function getSessionMedia(logPath: string): ScannedMedia[] {
 /** Test helper: drop cached scan state. */
 export function clearMediaScanCache(): void {
   scanCache.clear()
+}
+
+/** Streaming index adapter: deduplication and retention live on disk, not in RAM. */
+export function createMediaLineScanner(
+  emit: (entry: ScannedMedia, key: string, digest: string, time: number) => void,
+  labels: [string, string][] = [],
+) {
+  const state = newScanState()
+  state.emit = emit
+  state.pendingLabels = new MediaLabelMap(labels)
+  return {
+    line: (line: string, offset: number) => processLine(state, line, offset),
+    labels: () => [...state.pendingLabels].map(([id, label]) => [id.slice(0, 256), label.slice(0, 512)] as [string, string]),
+  }
 }

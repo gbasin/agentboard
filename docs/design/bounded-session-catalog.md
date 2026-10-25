@@ -1,8 +1,9 @@
 # Bounded session catalog and on-demand media
 
-Status: design exploration. Based on PR #439 at f3aef0d. No runtime change or
-production deployment is part of this document. User decisions are recorded
-below; unresolved decisions must not be silently converted into requirements.
+Status: implemented and validated in the follow-up to PR #439; not deployed to
+production. See the [implementation report](../investigations/iphone-heartbeat/media-fix/README.md)
+for final contracts, measurements, and explicit deviations from this proposal.
+The retained design below records the reasoning and validation requirements.
 
 ## Problem and evidence
 

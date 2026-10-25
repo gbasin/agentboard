@@ -10,7 +10,9 @@
  * items open their URL directly.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { MEDIA_INLINE_BYTES } from '@shared/media'
+import { useMediaPages } from '../hooks/useMediaPages'
 import type { Session, SessionMedia } from '@shared/types'
 import {
   File06Icon,
@@ -19,9 +21,7 @@ import {
   XCloseIcon,
 } from './icons'
 import { ICON_SIZE, TOUCH_TARGET_CLASS } from './controlStyles'
-// Payloads above this size render an "open" chip instead of an <img> so the
-// rail never pulls a multi-MB response just for a thumbnail.
-const MAX_INLINE_PREVIEW_BYTES = 12 * 1024 * 1024
+// Originals larger than the explicit preview budget require a user gesture.
 
 // Explicit pixels avoid the app's 13px root shrinking rem-based thumbnails.
 const MEDIA_TILE_CLASS = 'h-[56px] w-[56px] shrink-0 overflow-hidden rounded-md border border-border bg-surface hover:border-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent'
@@ -43,9 +43,11 @@ function mediaCaption(m: SessionMedia): string {
 function MediaChip({
   media,
   onOpen,
+  previewEnabled,
 }: {
   media: SessionMedia
   onOpen: (m: SessionMedia) => void
+  previewEnabled: boolean
 }) {
   const caption = mediaCaption(media)
 
@@ -66,8 +68,10 @@ function MediaChip({
   }
 
   const isImage = media.kind === 'image'
-  const tooLarge = media.bytes != null && media.bytes > MAX_INLINE_PREVIEW_BYTES
-  if (isImage && !tooLarge) {
+  const local = media.url.startsWith('/api/session-media/') && !media.url.startsWith('//')
+  const bounded = media.bytes != null && media.bytes >= 0 && media.bytes <= MEDIA_INLINE_BYTES &&
+    (media.width == null || media.height == null || media.width * media.height <= 4_000_000)
+  if (isImage && local && bounded && previewEnabled) {
     return (
       <button
         type="button"
@@ -108,27 +112,46 @@ function MediaChip({
   )
 }
 
-export default function MediaRail({ session }: { session: Session }) {
+export default function MediaRail({ session, ready = false }: { session: Session; ready?: boolean }) {
   // A new transcript starts with a clean baseline and closed previews.
   const identity = JSON.stringify([
-    session.id, session.agentSessionId, session.logFilePath, session.remote,
+    session.id, session.agentSessionId, session.logFilePath, session.remote, session.mediaSummary?.identity,
   ])
-  return <SessionMediaRail key={identity} session={session} />
+  return <SessionMediaRail key={identity} session={session} ready={ready} />
 }
 
-function SessionMediaRail({ session }: { session: Session }) {
+function SessionMediaRail({ session, ready }: { session: Session; ready: boolean }) {
   const [expanded, setExpanded] = useState(false)
   const [lightbox, setLightbox] = useState<SessionMedia | null>(null)
   const [attention, setAttention] = useState<'idle' | 'pulsing' | 'unread'>('idle')
-  const seenUrls = useRef(new Set(session.media?.map((item) => item.url)))
+  const summary = session.mediaSummary
+  const seenAdditions = useRef(summary?.additions)
+  const pages = useMediaPages(session.agentSessionId, summary, expanded, ready)
+  const scroll = useRef<HTMLDivElement>(null)
+  const previousShift = useRef(0)
+  const previousScroll = useRef(0)
+
+  useLayoutEffect(() => {
+    if (scroll.current) scroll.current.scrollLeft += (pages.scrollShift - previousShift.current) * 64
+    previousShift.current = pages.scrollShift
+  }, [pages.scrollShift])
 
   useEffect(() => {
-    const nextUrls = new Set(session.media?.map((item) => item.url))
-    const hasAddition = [...nextUrls].some((url) => !seenUrls.current.has(url))
-    for (const url of nextUrls) seenUrls.current.add(url)
-    if (nextUrls.size === 0) setAttention('idle')
-    else if (hasAddition && !expanded && !session.remote) setAttention('pulsing')
-  }, [session.media, session.remote, expanded])
+    if (!summary) return
+    const before = seenAdditions.current
+    seenAdditions.current = summary.additions
+    if (summary.total === 0) setAttention('idle')
+    else if (before !== undefined && summary.additions > before && !session.remote) setAttention(expanded ? 'unread' : 'pulsing')
+  }, [summary, session.remote, expanded])
+
+  const refresh = () => {
+    if (scroll.current) scroll.current.scrollLeft = 0
+    previousScroll.current = 0
+    previousShift.current = 0
+    setLightbox(null)
+    setAttention('idle')
+    void pages.refresh()
+  }
 
   useEffect(() => {
     if (attention !== 'pulsing') return
@@ -151,11 +174,10 @@ function SessionMediaRail({ session }: { session: Session }) {
     return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [lightbox])
 
-  const media = session.media
-  if (session.remote || !media?.length) return null
+  if (session.remote || !summary || (summary.total === 0 && !summary.omittedRecords) || !session.agentSessionId) return null
 
-  const images = media.filter((m) => m.kind === 'image').length
-  const others = media.length - images
+  const images = summary.images
+  const others = summary.total - images
 
   return (
     <>
@@ -166,22 +188,55 @@ function SessionMediaRail({ session }: { session: Session }) {
         >
           <div className="flex items-center justify-between border-b border-border/60 px-3 py-2">
             <span className="text-xs text-muted">
-              Media · {media.length}
+              Media · {summary.total}
             </span>
             <button
               type="button"
               aria-label="Collapse media rail"
-              onClick={() => setExpanded(false)}
+              onClick={() => { setLightbox(null); setExpanded(false) }}
               className="text-muted hover:text-primary"
             >
               <XCloseIcon width={ICON_SIZE.default} height={ICON_SIZE.default} />
             </button>
           </div>
-          <div className="scrollbar-none flex gap-2 overflow-x-auto px-3 py-2">
-            {media.map((m, i) => (
-              <MediaChip key={`${m.url}:${i}`} media={m} onOpen={setLightbox} />
+          {!!summary.omittedRecords && (
+            <p data-testid="media-incomplete" className="px-3 py-2 text-xs text-muted">
+              Some media may be unavailable: {summary.omittedRecords} oversized transcript {summary.omittedRecords === 1 ? 'entry was' : 'entries were'} skipped.
+            </p>
+          )}
+          {pages.changed && (
+            <button type="button" onClick={refresh} disabled={!ready || pages.status === 'loading'}
+              className="px-3 py-2 text-xs text-accent" aria-label="Refresh media">Media changed · Refresh</button>
+          )}
+          {pages.hasEarlier && (
+            <button type="button" onClick={() => { if (pages.canLoadEarlier) void pages.loadPrevious(); else refresh() }}
+              disabled={!ready || pages.status === 'loading'} className="px-3 py-1 text-xs text-accent">
+              {pages.canLoadEarlier ? 'Earlier media' : 'Back to oldest media'}
+            </button>
+          )}
+          <div ref={scroll} data-testid="media-scroll" tabIndex={0} role="region" aria-label="Session media, oldest first"
+            onScroll={(event) => {
+              const el = event.currentTarget
+              const forward = el.scrollLeft > previousScroll.current
+              previousScroll.current = el.scrollLeft
+              if (forward && el.clientWidth > 0 && el.scrollWidth - el.clientWidth - el.scrollLeft < 128 &&
+                  pages.hasNext && pages.status === 'idle' && !pages.changed) void pages.loadNext()
+            }}
+            className="scrollbar-none flex gap-2 overflow-x-auto px-3 py-2">
+            {pages.items.map((m, i) => (
+              <MediaChip key={`${m.url}:${i}`} media={m} onOpen={setLightbox} previewEnabled={pages.visible && ready} />
             ))}
           </div>
+          {!ready && <p role="status" className="px-3 pb-2 text-xs text-muted">Waiting for terminal recovery…</p>}
+          {pages.status === 'loading' && <p role="status" className="px-3 pb-2 text-xs text-muted">Loading media…</p>}
+          {pages.error && <div role="alert" className="px-3 pb-2 text-xs text-muted">
+            {pages.error} <button type="button" onClick={refresh} disabled={!ready} className="text-accent" aria-label="Refresh media">Refresh</button>
+          </div>}
+          {pages.hasNext && !pages.changed && !pages.error && (
+            <button type="button" onClick={() => void pages.loadNext()} disabled={!ready || pages.status === 'loading'}
+              className="px-3 pb-2 text-xs text-accent">Load newer media</button>
+          )}
+
         </div>
       ) : (
         <button
@@ -192,7 +247,7 @@ function SessionMediaRail({ session }: { session: Session }) {
             setAttention('idle')
             setExpanded(true)
           }}
-          aria-label={`Open media: ${media.length} ${media.length === 1 ? 'item' : 'items'}${attention !== 'idle' ? ', new media' : ''}`}
+          aria-label={`Open media: ${summary.total} ${summary.total === 1 ? 'item' : 'items'}${attention !== 'idle' ? ', new media' : ''}`}
           className={`absolute top-2 right-2 z-40 flex items-center gap-1.5 rounded-full border border-border bg-elevated/90 px-3 py-1.5 text-xs text-secondary shadow-lg backdrop-blur transition-colors hover:text-primary md:min-h-[30px] md:gap-[6px] md:px-[12px] md:py-[5px] md:text-[12px] md:leading-[18px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${attention === 'pulsing' ? 'media-attention' : ''} ${TOUCH_TARGET_CLASS}`}
         >
           <Image01Icon width={ICON_SIZE.pill} height={ICON_SIZE.pill} className="md:h-[16px] md:w-[16px]" />
@@ -207,7 +262,7 @@ function SessionMediaRail({ session }: { session: Session }) {
         </button>
       )}
 
-      {lightbox && (
+      {lightbox && pages.visible && ready && (
         <div
           data-testid="media-lightbox"
           role="dialog"

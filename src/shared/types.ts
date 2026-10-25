@@ -1,5 +1,6 @@
 // History sessions lookback limits (in hours)
 import type { SyncedSettings } from './syncedSettings'
+import type { MediaSummary } from './media'
 
 export const HISTORY_MAX_AGE_MIN_HOURS = 1
 export const HISTORY_MAX_AGE_MAX_HOURS = 168 // 7 days
@@ -71,6 +72,8 @@ export interface Session {
   lastUserMessage?: string
   isHibernating?: boolean
   prs?: SessionPullRequest[]
+  mediaSummary?: MediaSummary
+  /** Legacy input only. Never included in catalog or lifecycle wire messages. */
   media?: SessionMedia[]
 }
 
@@ -88,6 +91,8 @@ export interface AgentSession {
   isHibernating?: boolean
   lastResumeError?: string
   prs?: SessionPullRequest[]
+  mediaSummary?: MediaSummary
+  /** Legacy input only. Never included in catalog or lifecycle wire messages. */
   media?: SessionMedia[]
 }
 
@@ -165,7 +170,7 @@ export type ServerMessage = (
       altScreen?: boolean
       appMouse?: boolean
     }
-  | { type: 'server-config'; remoteAllowControl: boolean; remoteAllowAttach: boolean; hostLabel: string; preferWindowName: boolean; clientLogLevel?: string }
+  | { type: 'server-config'; remoteAllowControl: boolean; remoteAllowAttach: boolean; hostLabel: string; preferWindowName: boolean; clientLogLevel?: string; catalogVersion?: number }
   | { type: 'synced-settings'; settings: SyncedSettings }
   | { type: 'pong'; seq?: number }
   | { type: 'error'; message: string }

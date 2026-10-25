@@ -20,7 +20,7 @@ export type ParentToRelay =
 export type RelayToParent =
   | { type: 'listening'; hostname: string; port: number }
   | { type: 'bind-error'; hostname: string; error: string }
-  | { type: 'open'; id: string; remoteAddress: string | null; userAgent: string | null }
+  | { type: 'open'; id: string; catalogVersion: number | null; remoteAddress: string | null; userAgent: string | null }
   | { type: 'message'; id: string; payload: string }
   | { type: 'close'; id: string }
   | { type: 'group-created' }

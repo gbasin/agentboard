@@ -1,5 +1,6 @@
 /** Media arrival attention: live WS updates, finite motion, and acknowledgement. */
 import { test, expect, type Locator, type Page } from '@playwright/test'
+import type { MediaSummary } from '../../src/shared/media'
 import {
   Windows, installHarness, uniquePrefix, desktopSidebar, cardByName,
 } from './helpers/sidebarHarness'
@@ -13,18 +14,30 @@ test.afterEach(() => windows.cleanup())
 const item = (id: string) => ({
   kind: 'link', url: `https://example.com/media/${id}`, label: `${id}.html`,
 })
-type Media = { kind: string; url: string; label: string; bytes?: number; mediaType?: string }[]
+type Media = { kind: string; url: string; label: string; bytes?: number; mediaType?: string; width?: number; height?: number }[]
 
 async function board(page: Page, initial: Media = [], theme = 'dark') {
   const prefix = uniquePrefix('media')
   const names = windows.createMany(prefix, 2)
   const media: Media[] = [initial, [item('other-session')]]
+  const ids = [crypto.randomUUID(), crypto.randomUUID()]
+  const revisions = [0, 0], additions = [initial.length, 1]
+  const summary = (i: number): MediaSummary => ({ identity: ids[i], revision: `${ids[i]}:${revisions[i]}`,
+    total: media[i].length, images: media[i].filter(m => m.kind === 'image').length,
+    documents: media[i].filter(m => m.kind === 'document').length,
+    links: media[i].filter(m => m.kind === 'link').length, additions: additions[i] })
+  const summaries = [summary(0), summary(1)]
+  for (let i = 0; i < ids.length; i++) {
+    await page.route(`**/api/session-media/${ids[i]}/items*`, route => route.fulfill({ json: {
+      identity: ids[i], revision: summary(i).revision, total: media[i].length, items: media[i], nextCursor: null,
+    } }))
+  }
   const harness = await installHarness(page, {
     prefix,
     settings: { theme },
     sessionOverrides: {
-      0: () => ({ media: media[0] }),
-      1: () => ({ media: media[1] }),
+      0: () => ({ agentSessionId: ids[0], mediaSummary: summaries[0] }),
+      1: () => ({ agentSessionId: ids[1], mediaSummary: summaries[1] }),
     },
   })
   await page.setViewportSize({ width: 1280, height: 900 })
@@ -38,7 +51,11 @@ async function board(page: Page, initial: Media = [], theme = 'dark') {
   return {
     select,
     update(next: Media) {
+      const seen = new Set(media[0].map(m => m.url))
+      additions[0] += next.filter(m => !seen.has(m.url)).length
+      if (JSON.stringify(next) !== JSON.stringify(media[0])) revisions[0]++
       media[0].splice(0, media[0].length, ...next)
+      Object.assign(summaries[0], summary(0))
       harness.pushSessions()
     },
     pill: page.getByTestId('media-rail-pill'),
@@ -83,6 +100,8 @@ test('new batches pulse finitely, persist unread, and acknowledge on opening', a
   const rail = page.getByTestId('media-rail')
   await expect(rail).toBeVisible()
   update([item('first'), item('while-open')])
+  await expect(rail.getByRole('link')).toHaveCount(1)
+  await page.getByRole('button', { name: 'Refresh media', exact: true }).click()
   await expect(rail.getByRole('link')).toHaveCount(2)
   await rail.getByLabel('Collapse media rail').click()
   await expect(dot).toHaveCount(0)
@@ -165,7 +184,7 @@ for (const theme of ['light', 'dark']) {
         expect(bounds!.x).toBeGreaterThanOrEqual(0)
         expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(mobile ? 390 : 1280)
         await page.screenshot({
-          path: `test-results/media-attention-${theme}-${mobile ? 'mobile' : 'desktop'}.png`,
+          path: test.info().outputPath(`media-attention-${theme}-${mobile ? 'mobile' : 'desktop'}.png`),
         })
       })
     })
@@ -173,7 +192,7 @@ for (const theme of ['light', 'dark']) {
 }
 
 // Mixed payloads use the same tile geometry even when their labels are long.
-const TILE_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNwnfwYAALcAbx8DLVyAAAAAElFTkSuQmCC'
+const TILE_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNwnfwYAALcAbx8DLVyAAAAAElFTkSuQmCC'
 const LONG_LINK = 'Preview deployment with a deliberately long descriptive artifact title'
 
 for (const theme of ['light', 'dark']) {
@@ -187,8 +206,10 @@ for (const theme of ['light', 'dark']) {
           oversizedRequests++
           await route.abort()
         })
+        const smallUrl = '/api/session-media/preview-fixture'
+        await page.route(`**${smallUrl}`, route => route.fulfill({ contentType: 'image/png', body: Buffer.from(TILE_PNG_BASE64, 'base64') }))
         const { pill } = await board(page, [
-          { kind: 'image', url: TILE_PNG, label: 'Small image', mediaType: 'image/png' },
+          { kind: 'image', url: smallUrl, label: 'Small image', mediaType: 'image/png', bytes: Buffer.from(TILE_PNG_BASE64, 'base64').length, width: 1, height: 1 },
           { kind: 'link', url: 'https://example.com/artifact', label: LONG_LINK },
           { kind: 'document', url: 'https://example.com/requirements.pdf', label: 'Requirements and implementation notes.pdf', mediaType: 'application/pdf', bytes: 2048 },
           { kind: 'image', url: oversizedUrl, label: 'Large screenshot.png', mediaType: 'image/png', bytes: 13 * 1024 * 1024 },
@@ -228,7 +249,7 @@ for (const theme of ['light', 'dark']) {
         expect(railBounds!.x + railBounds!.width).toBeLessThanOrEqual(mobile ? 390 : 1280)
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
         await strip.evaluate((el) => { el.scrollLeft = 0 })
-        const stem = `test-results/media-tiles-${theme}-${mobile ? 'mobile' : 'desktop'}`
+        const stem = test.info().outputPath(`media-tiles-${theme}-${mobile ? 'mobile' : 'desktop'}`)
         await rail.screenshot({ path: `${stem}-rail.png` })
         await page.screenshot({ path: `${stem}.png` })
       })
