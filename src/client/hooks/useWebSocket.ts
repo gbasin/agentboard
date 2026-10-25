@@ -109,6 +109,8 @@ export class WebSocketManager {
   private readonly traceId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
   private lastMessageAt: number | null = null
   private lastPongSeq: number | null = null
+  private lastPingAt: number | null = null
+  private lastMessageType: string | null = null
   private pingSeq = 0
   private connectionEpoch = 0
   /** Consecutive connect attempts that failed (timeout, error, close). */
@@ -135,9 +137,13 @@ export class WebSocketManager {
   private wsSnap() {
     return {
       traceId: this.traceId,
+      clientTimeMs: Date.now(),
+      clientUptimeMs: Math.round(performance.now()),
       epoch: this.connectionEpoch,
       pingSeq: this.pingSeq,
       lastPongSeq: this.lastPongSeq,
+      lastPingAgeMs: this.lastPingAt === null ? null : Date.now() - this.lastPingAt,
+      lastMessageType: this.lastMessageType,
       lastMessageAgeMs: this.lastMessageAt === null ? null : Date.now() - this.lastMessageAt,
       visibility: typeof document === 'undefined' ? undefined : document.visibilityState,
       status: this.status,
@@ -192,6 +198,8 @@ export class WebSocketManager {
     this.ws = ws
     this.lastMessageAt = null
     this.lastPongSeq = null
+    this.lastPingAt = null
+    this.lastMessageType = null
     this.lastConnectTs = Date.now()
     this.leakedSockets.add(ws)
 
@@ -251,10 +259,12 @@ export class WebSocketManager {
     ws.onmessage = (event) => {
       if (this.ws !== ws) return
       this.lastMessageAt = Date.now()
+      this.lastMessageType = 'unparsed'
       try {
         const raw = event.data as string
         const t0 = performance.now()
         const parsed = JSON.parse(raw) as ServerMessage
+        this.lastMessageType = parsed.type
         const parseMs = performance.now() - t0
         // Attach timing metadata for switch diagnostics (read by useTerminal)
         const withDiag = parsed as ServerMessageWithDiagnostics
@@ -278,6 +288,7 @@ export class WebSocketManager {
         // Intercept pong — clear timeout only for the current seq.
         if (parsed.type === 'pong') {
           this.lastPongSeq = parsed.seq ?? null
+          clientLog('ws_pong_received', { receivedSeq: parsed.seq, matchesPendingPing: parsed.seq === this.pingSeq, ...this.wsSnap() })
           if (parsed.seq === this.pingSeq) {
             this.clearPongTimer()
             // If we were waiting for a verification pong, the socket is
@@ -451,6 +462,10 @@ export class WebSocketManager {
 
     try {
       this.ws.send(JSON.stringify(message))
+      if (message.type === 'ping') {
+        this.lastPingAt = Date.now()
+        clientLog('ws_ping_sent', this.wsSnap())
+      }
       if (message.type === 'terminal-ack') this.recordOverloadRecovery()
       return true
     } catch (error) {

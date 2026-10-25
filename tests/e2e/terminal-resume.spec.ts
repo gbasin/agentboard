@@ -122,6 +122,35 @@ class Wire {
 
 const card = (page: Page, pane: Pane) => page.locator(`[data-testid="session-card"][data-session-id="${pane.id}"]`).first()
 
+test('native browser heartbeats keep an attached terminal connected across three intervals', async ({ page, panes }, testInfo) => {
+  test.setTimeout(90_000)
+  const sent: Frame[] = [], received: Frame[] = []
+  let connections = 0, closes = 0
+  // Observe native frames; do not route, replace, or synthesize WebSocket traffic.
+  page.on('websocket', socket => {
+    if (!socket.url().endsWith('/ws')) return
+    connections++
+    socket.on('framesent', ({ payload }) => { sent.push(JSON.parse(String(payload))) })
+    socket.on('framereceived', ({ payload }) => { received.push(JSON.parse(String(payload))) })
+    socket.on('close', () => { closes++ })
+  })
+  await page.goto('/')
+  await expect(card(page, panes.a)).toBeVisible({ timeout: 15_000 })
+  await card(page, panes.a).click()
+  await expect.poll(() => received.some(frame => frame.type === 'terminal-ready' && frame.sessionId === panes.a.id)).toBe(true)
+  await expect.poll(() => received.filter(frame => frame.type === 'pong').length, { timeout: 70_000 }).toBeGreaterThanOrEqual(3)
+  const pings = sent.filter(frame => frame.type === 'ping')
+  const pongs = received.filter(frame => frame.type === 'pong')
+  expect(pings.length).toBeGreaterThanOrEqual(3)
+  expect(pongs.map(frame => frame.seq)).toEqual(pings.map(frame => frame.seq))
+  expect(connections).toBe(1)
+  expect(closes).toBe(0)
+  await expect(page.getByTestId('terminal-recovery-status')).toHaveCount(0)
+  await write(page, 'HEARTBEAT_TERMINAL_STILL_LIVE')
+  await expect.poll(panes.a.capture).toContain('HEARTBEAT_TERMINAL_STILL_LIVE')
+  await testInfo.attach('native heartbeat sequences', { body: JSON.stringify({ pings, pongs, connections, closes }), contentType: 'application/json' })
+})
+
 async function select(page: Page, pane: Pane, wire: Wire) {
   const before = wire.readyCount(pane.id)
   await expect(card(page, pane)).toBeVisible({ timeout: 15_000 })

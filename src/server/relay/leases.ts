@@ -195,10 +195,14 @@ export class TerminalLeases {
     } else this.send(ws, raw)
   }
 
-  send(ws: Socket, payload: string) {
-    if (ws.readyState !== 1 || this.overloaded.has(ws)) return
+  send(ws: Socket, payload: string): boolean {
+    if (ws.readyState !== 1 || this.overloaded.has(ws)) return false
     // Never drop arbitrary ANSI output and then continue the same stream.
-    if (Buffer.byteLength(payload) + ws.getBufferedAmount() > 16 * MAX_OUTPUT_BYTES || ws.send(payload) === 0) this.overload(ws, 'Connection needs resynchronization')
+    if (Buffer.byteLength(payload) + ws.getBufferedAmount() > 16 * MAX_OUTPUT_BYTES || ws.send(payload) === 0) {
+      this.overload(ws, 'Connection needs resynchronization')
+      return false
+    }
+    return true
   }
 
   private overload(ws: Socket, reason: string): void {

@@ -4,6 +4,7 @@ import type { Server, ServerWebSocket } from 'bun'
 import type { ClientMessage } from '../shared/types'
 import { TerminalLeases, type RelaySocketData } from './relay/leases'
 import type { ParentToRelay, RelayOptions, RelayToParent } from './relay/protocol'
+import { logger } from './logger'
 
 const ctx = self as DedicatedWorkerGlobalScope
 const sockets = new Map<string, ServerWebSocket<RelaySocketData>>()
@@ -45,7 +46,10 @@ function bind(hostname: string) {
           if (!message || typeof message !== 'object' || typeof message.type !== 'string') return
           leases.progress(ws)
           if (message.type === 'ping') {
-            leases.send(ws, JSON.stringify({ type: 'pong', ...(message.seq !== undefined ? { seq: message.seq } : {}) }))
+            const bufferedBefore = ws.getBufferedAmount()
+            const accepted = leases.send(ws, JSON.stringify({ type: 'pong', ...(message.seq !== undefined ? { seq: message.seq } : {}) }))
+            logger.debug('terminal_relay_heartbeat', { connectionId: ws.data.id, seq: message.seq, accepted,
+              bufferedBefore, bufferedAfter: ws.getBufferedAmount() })
           } else if (!leases.handle(ws, message)) post({ type: 'message', id: ws.data.id, payload })
         },
         close(ws) {
