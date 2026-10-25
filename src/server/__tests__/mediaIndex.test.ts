@@ -293,3 +293,16 @@ test('incremental reply links survive reopen, partial lines, and rebuild from ol
   expect(reopened.scan(record, [log]).total).toBe(2)
   expect(reopened.page(record, undefined, { kind: 'links', search: 'new' }).items[0].label).toBe('Résumé')
 })
+
+test('a reply link is not swallowed by an external image with the same URL', () => {
+  const { index, log, record } = fixture()
+  const url = 'https://example.com/preview.png'
+  fs.writeFileSync(log, [
+    { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_image', image_url: url }] } },
+    { type: 'assistant', content: `[Full preview](${url})` },
+  ].map(entry => JSON.stringify(entry) + '\n').join(''))
+  const summary = index.scan(record, [log])
+  expect(summary.images).toBe(1)
+  expect(summary.links).toBe(1)
+  expect(index.page(record, undefined, { kind: 'links' }).items[0].label).toBe('Full preview')
+})

@@ -28,9 +28,13 @@ async function board(page: Page, initial: Media = [], theme = 'dark') {
     links: media[i].filter(m => m.kind === 'link').length, additions: additions[i] })
   const summaries = [summary(0), summary(1)]
   for (let i = 0; i < ids.length; i++) {
-    await page.route(`**/api/session-media/${ids[i]}/items*`, route => route.fulfill({ json: {
-      identity: ids[i], revision: summary(i).revision, total: media[i].length, items: media[i], nextCursor: null,
-    } }))
+    await page.route(`**/api/session-media/${ids[i]}/items*`, route => {
+      const kind = new URL(route.request().url()).searchParams.get('kind')
+      const items = media[i].filter(item => kind === 'links' ? item.kind === 'link' : kind === 'media' ? item.kind !== 'link' : true)
+      return route.fulfill({ json: {
+        identity: ids[i], revision: summary(i).revision, total: items.length, items, nextCursor: null,
+      } })
+    })
   }
   const harness = await installHarness(page, {
     prefix,
@@ -213,13 +217,13 @@ for (const theme of ['light', 'dark']) {
           { kind: 'link', url: 'https://example.com/artifact', label: LONG_LINK },
           { kind: 'document', url: 'https://example.com/requirements.pdf', label: 'Requirements and implementation notes.pdf', mediaType: 'application/pdf', bytes: 2048 },
           { kind: 'image', url: oversizedUrl, label: 'Large screenshot.png', mediaType: 'image/png', bytes: 13 * 1024 * 1024 },
-          ...Array.from({ length: 5 }, (_, i) => item(`extra-${i}`)),
+          ...Array.from({ length: 5 }, (_, i) => ({ kind: 'document', url: `https://example.com/doc-${i}.pdf`, label: `Document ${i}` })),
         ], theme)
         if (mobile) await page.setViewportSize({ width: 390, height: 844 })
         await pill.click()
         const rail = page.getByTestId('media-rail')
         const tiles = rail.locator('[data-testid="media-thumb"], [data-testid="media-chip"], a')
-        await expect(tiles).toHaveCount(9)
+        await expect(tiles).toHaveCount(8)
         for (const tile of await tiles.all()) {
           const bounds = await tile.boundingBox()
           expect(bounds!.width).toBe(56)
@@ -228,11 +232,6 @@ for (const theme of ['light', 'dark']) {
           expect(title).toBeTruthy()
           await expect(tile).toHaveAccessibleName((await tile.getAttribute('aria-label')) ?? title!)
         }
-        const link = rail.getByRole('link', { name: LONG_LINK, exact: true })
-        await expect(link).toHaveAttribute('title', `${LONG_LINK} · https://example.com/artifact`)
-        await expect(link).toHaveAttribute('href', 'https://example.com/artifact')
-        await expect(link).toHaveAttribute('target', '_blank')
-        await expect(link).toHaveAttribute('rel', /noopener/)
         await expect(rail.getByRole('button', { name: 'Requirements and implementation notes.pdf · application/pdf · 2 KB', exact: true }))
           .toHaveAttribute('title', 'Requirements and implementation notes.pdf · application/pdf · 2 KB')
         await expect(rail.getByRole('button', { name: 'Large screenshot.png · image/png · 13.0 MB', exact: true }))
@@ -252,6 +251,12 @@ for (const theme of ['light', 'dark']) {
         const stem = test.info().outputPath(`media-tiles-${theme}-${mobile ? 'mobile' : 'desktop'}`)
         await rail.screenshot({ path: `${stem}-rail.png` })
         await page.screenshot({ path: `${stem}.png` })
+        await rail.getByRole('button', { name: 'Links 1', exact: true }).click()
+        const link = rail.getByRole('link', { name: LONG_LINK, exact: true })
+        await expect(link).toHaveAttribute('href', 'https://example.com/artifact')
+        await expect(link).toHaveAttribute('target', '_blank')
+        await expect(link).toHaveAttribute('rel', /noopener/)
+        await expect(rail.getByTestId('media-thumb')).toHaveCount(0)
       })
     })
   }
