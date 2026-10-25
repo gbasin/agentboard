@@ -6,13 +6,14 @@
  *
  * Collapsed: a media pill at top-right — top placement keeps it
  * clear of the TUI's bottom input row. Expanded: a horizontal strip of uniformly sized media tiles.
- * Tapping a thumbnail opens a lightbox with the full image; document and link
+ * Tapping an image opens a navigable lightbox; large originals load on request; document and link
  * items open their URL directly.
  */
 
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { useMediaThumbnail } from '../hooks/useMediaThumbnail'
-import { MEDIA_INLINE_BYTES } from '@shared/media'
+import MediaLightbox from './MediaLightbox'
+import { useMediaLightboxNavigation } from '../hooks/useMediaLightboxNavigation'
 import { useMediaPages } from '../hooks/useMediaPages'
 import type { Session, SessionMedia } from '@shared/types'
 import {
@@ -48,7 +49,7 @@ function MediaChip({
   scrollRoot,
 }: {
   media: SessionMedia
-  onOpen: (m: SessionMedia) => void
+  onOpen: (m: SessionMedia, previewSrc?: string) => void
   previewEnabled: boolean
   scrollRoot: RefObject<HTMLDivElement>
 }) {
@@ -81,7 +82,12 @@ function MediaChip({
     <button
       type="button"
       data-testid="media-chip"
-      onClick={() => window.open(media.url, '_blank', 'noopener')}
+      onClick={(event) => {
+        if (isImage) {
+          event.currentTarget.focus({ preventScroll: true })
+          onOpen(media)
+        } else window.open(media.url, '_blank', 'noopener')
+      }}
       title={caption || media.kind}
       aria-label={caption || (isImage ? 'Image' : 'Document')}
       className={MEDIA_FILE_TILE_CLASS}
@@ -99,17 +105,18 @@ function MediaChip({
 }
 
 function ImageThumbnail({ media, caption, enabled, root, onOpen }: {
-  media: SessionMedia; caption: string; enabled: boolean; root: RefObject<HTMLDivElement>; onOpen: (m: SessionMedia) => void
+  media: SessionMedia; caption: string; enabled: boolean; root: RefObject<HTMLDivElement>; onOpen: (m: SessionMedia, previewSrc?: string) => void
 }) {
   const { target, preview, fail } = useMediaThumbnail(media.url, enabled, root)
   const label = preview.status === 'error' ? 'No preview' : preview.status === 'loading' ? 'Loading…' : 'Open image'
-  // Keep large original decoding out of the terminal tab, even when its thumbnail is small.
-  const inlineOriginal = media.bytes != null && media.bytes >= 0 && media.bytes <= MEDIA_INLINE_BYTES &&
-    (media.width == null || media.height == null || media.width * media.height <= 4_000_000)
   return (
     <button ref={target} type="button" data-testid="media-thumb" data-preview-state={preview.status}
-      onClick={() => inlineOriginal ? onOpen(media) : window.open(media.url, '_blank', 'noopener')} title={caption || 'Image'}
-      aria-label={`${caption || 'Image'} · ${preview.status === 'error' ? 'Preview unavailable. ' : ''}Open original${inlineOriginal ? '' : ' in new tab'}`}
+      onClick={(event) => {
+        // Safari does not focus buttons on pointer clicks; retain a concrete opener.
+        event.currentTarget.focus({ preventScroll: true })
+        onOpen(media, preview.status === 'ready' ? preview.src : undefined)
+      }} title={caption || 'Image'}
+      aria-label={`${caption || 'Image'} · ${preview.status === 'error' ? 'Preview unavailable. ' : ''}Open image`}
       aria-busy={preview.status === 'loading'} className={preview.status === 'ready' ? MEDIA_TILE_CLASS : MEDIA_FILE_TILE_CLASS}>
       {preview.status === 'ready' ? (
         <img data-testid="media-thumbnail" src={preview.src} alt={caption || 'session image'} onError={fail} className="h-full w-full object-cover" />
@@ -131,14 +138,16 @@ export default function MediaRail({ session, ready = false }: { session: Session
 
 function SessionMediaRail({ session, ready }: { session: Session; ready: boolean }) {
   const [expanded, setExpanded] = useState(false)
-  const [lightbox, setLightbox] = useState<SessionMedia | null>(null)
   const [attention, setAttention] = useState<'idle' | 'pulsing' | 'unread'>('idle')
   const summary = session.mediaSummary
   const seenAdditions = useRef(summary?.additions)
   const pages = useMediaPages(session.agentSessionId, summary, expanded, ready)
+  const lightbox = useMediaLightboxNavigation(session.agentSessionId, summary?.identity, pages.visible && ready)
   const scroll = useRef<HTMLDivElement>(null)
   const previousShift = useRef(0)
   const previousScroll = useRef(0)
+
+  useEffect(() => { if (!summary?.images) lightbox.close() }, [summary?.images, lightbox.close])
 
   useLayoutEffect(() => {
     if (scroll.current) scroll.current.scrollLeft += (pages.scrollShift - previousShift.current) * 64
@@ -157,7 +166,7 @@ function SessionMediaRail({ session, ready }: { session: Session; ready: boolean
     if (scroll.current) scroll.current.scrollLeft = 0
     previousScroll.current = 0
     previousShift.current = 0
-    setLightbox(null)
+    lightbox.close()
     setAttention('idle')
     void pages.refresh()
   }
@@ -168,20 +177,6 @@ function SessionMediaRail({ session, ready }: { session: Session; ready: boolean
     const timer = setTimeout(() => setAttention('unread'), 1600)
     return () => clearTimeout(timer)
   }, [attention])
-
-  // Esc closes the lightbox before any other handler (stopPropagation keeps
-  // it from falling through to terminal/app-level shortcuts).
-  useEffect(() => {
-    if (!lightbox) return
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation()
-        setLightbox(null)
-      }
-    }
-    window.addEventListener('keydown', onKeyDown, true)
-    return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [lightbox])
 
   if (session.remote || !summary || (summary.total === 0 && !summary.omittedRecords) || !session.agentSessionId) return null
 
@@ -202,7 +197,7 @@ function SessionMediaRail({ session, ready }: { session: Session; ready: boolean
             <button
               type="button"
               aria-label="Collapse media rail"
-              onClick={() => { setLightbox(null); setExpanded(false) }}
+              onClick={() => { lightbox.close(); setExpanded(false) }}
               className="text-muted hover:text-primary"
             >
               <XCloseIcon width={ICON_SIZE.default} height={ICON_SIZE.default} />
@@ -233,7 +228,7 @@ function SessionMediaRail({ session, ready }: { session: Session; ready: boolean
             }}
             className="scrollbar-none flex gap-2 overflow-x-auto px-3 py-2">
             {pages.items.map((m, i) => (
-              <MediaChip key={`${m.url}:${i}`} media={m} onOpen={setLightbox} previewEnabled={pages.visible && ready} scrollRoot={scroll} />
+              <MediaChip key={`${m.url}:${i}`} media={m} onOpen={lightbox.open} previewEnabled={pages.visible && ready} scrollRoot={scroll} />
             ))}
           </div>
           {!ready && <p role="status" className="px-3 pb-2 text-xs text-muted">Waiting for terminal recovery…</p>}
@@ -271,42 +266,13 @@ function SessionMediaRail({ session, ready }: { session: Session; ready: boolean
         </button>
       )}
 
-      {lightbox && pages.visible && ready && (
-        <div
-          data-testid="media-lightbox"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Media preview"
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm"
-          onClick={() => setLightbox(null)}
-        >
-          <figure
-            className="flex max-w-[90vw] flex-col items-center gap-2"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <img
-              src={lightbox.url}
-              alt={mediaCaption(lightbox) || 'session media'}
-              className="max-h-[80vh] max-w-full rounded-lg object-contain shadow-2xl"
-            />
-            <figcaption className="flex items-center gap-3 text-xs text-white/80">
-              <span>{mediaCaption(lightbox) || 'Image'}</span>
-              {lightbox.width != null && lightbox.height != null && (
-                <span>
-                  {lightbox.width}×{lightbox.height}
-                </span>
-              )}
-              <a
-                href={lightbox.url}
-                target="_blank"
-                rel="noreferrer noopener"
-                className="text-accent underline underline-offset-2"
-              >
-                Open original
-              </a>
-            </figcaption>
-          </figure>
-        </div>
+      {lightbox.selection && (
+        <MediaLightbox media={lightbox.selection.media} previewSrc={lightbox.selection.previewSrc}
+          enabled={pages.visible && ready} onClose={lightbox.close}
+          onPrevious={lightbox.previous} onNext={lightbox.next}
+          canPrevious={lightbox.canPrevious} canNext={lightbox.canNext}
+          navigating={lightbox.navigating} navigationError={lightbox.navigationError}
+          onRetryNavigation={lightbox.retry} />
       )}
     </>
   )

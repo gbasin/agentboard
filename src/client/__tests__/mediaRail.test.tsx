@@ -238,11 +238,13 @@ describe('scroll-driven MediaRail', () => {
     expect(find(r, 'media-thumb')).toHaveLength(4)
     expect(find(r, 'media-chip')).toHaveLength(1)
     expect(r.root.findAllByType('img')).toHaveLength(0)
-    await flush(() => find(r, 'media-chip')[0].props.onClick())
-    expect(opened).toEqual([data[3].url])
+    await flush(() => find(r, 'media-chip')[0].props.onClick({ currentTarget: { focus() {} } }))
+    expect(opened).toEqual([])
+    expect(find(r, 'media-lightbox')).toHaveLength(1)
+    expect(button(r, 'Load full image')).toBeDefined()
   })
 
-  test('large, unknown-size, and oversized-pixel originals open in a separate tab despite having thumbnail tiles', async () => {
+  test('all local images open the viewer, with explicit full-size loading for large originals', async () => {
     const data = [imageMedia({ url: '/api/session-media/s?index=0', bytes: 65537 }),
       imageMedia({ url: '/api/session-media/s?index=1', bytes: undefined }),
       imageMedia({ url: '/api/session-media/s?index=2', width: 10000, height: 10000 })]
@@ -250,20 +252,33 @@ describe('scroll-driven MediaRail', () => {
     const r = render(); await open(r)
     expect(find(r, 'media-thumb')).toHaveLength(3)
     for (const tile of find(r, 'media-thumb')) {
-      expect(tile.props['aria-label']).toContain('in new tab')
-      await flush(() => tile.props.onClick())
-      expect(find(r, 'media-lightbox')).toHaveLength(0)
+      expect(tile.props['aria-label']).toContain('Open image')
+      await flush(() => tile.props.onClick({ currentTarget: { focus() {} } }))
+      expect(find(r, 'media-lightbox')).toHaveLength(1)
+      expect(button(r, 'Load full image')).toBeDefined()
+      expect(find(r, 'media-lightbox-original')).toHaveLength(0)
+      await flush(() => button(r, 'Close image viewer').props.onClick())
     }
-    expect(opened).toEqual(data.map(item => item.url))
+    expect(opened).toEqual([])
     expect(r.root.findAllByType('img')).toHaveLength(0)
   })
 
   test('lightbox opens only by gesture and Escape closes before terminal handling', async () => {
     const r = render(); await open(r)
     expect(find(r, 'media-lightbox')).toHaveLength(0)
-    await flush(() => find(r, 'media-thumb')[0].props.onClick())
+    await flush(() => find(r, 'media-thumb')[0].props.onClick({ currentTarget: { focus() {} } }))
     expect(find(r, 'media-lightbox')).toHaveLength(1)
     await flush(() => { const event = new Event('keydown'); Object.assign(event, { key: 'Escape' }); win.dispatchEvent(event) })
+    expect(find(r, 'media-lightbox')).toHaveLength(0)
+  })
+
+  test('removing all images closes the viewer and later additions do not reopen it', async () => {
+    const r = render(); await open(r)
+    await flush(() => find(r, 'media-thumb')[0].props.onClick({ currentTarget: { focus() {} } }))
+    expect(find(r, 'media-lightbox')).toHaveLength(1)
+    await update(r, session({ mediaSummary: summary({ total: 0, images: 0, revision: 'r2' }) }))
+    expect(find(r, 'media-lightbox')).toHaveLength(0)
+    await update(r, session({ mediaSummary: summary({ revision: 'r3', additions: 2 }) }))
     expect(find(r, 'media-lightbox')).toHaveLength(0)
   })
 
