@@ -1,6 +1,7 @@
 /** Bounded PNG/JPEG preview decoding. Call only from the thumbnail worker. */
 import jpeg from 'jpeg-js'
 import { PNG } from 'pngjs'
+import { crc32 } from 'node:zlib'
 
 export const THUMBNAIL_VERSION = 'png-jpeg-v1'
 export const THUMBNAIL_MAX_SOURCE_BYTES = 16 * 1024 * 1024
@@ -14,7 +15,7 @@ function checkDimensions(width: number, height: number): void {
   }
 }
 
-function checkPng(bytes: Buffer): void {
+function checkPng(bytes: Buffer): number {
   // pngjs bounds noninterlaced inflate using IHDR. Reject duplicate headers and
   // interlacing (whose pngjs inflate path has no output limit) before decoding.
   if (bytes.length < 33 || bytes.readUInt32BE(8) !== 13 || bytes.toString('ascii', 12, 16) !== 'IHDR') {
@@ -23,19 +24,56 @@ function checkPng(bytes: Buffer): void {
   checkDimensions(bytes.readUInt32BE(16), bytes.readUInt32BE(20))
   if (bytes[24] !== 8 || bytes[28] !== 0) throw new Error('Unsupported PNG preview format')
   let ended = false
+  let rotation = 1
+  let seenExif = false
   for (let offset = 8; offset < bytes.length;) {
     if (offset + 12 > bytes.length) throw new Error('Truncated PNG chunk')
     const length = bytes.readUInt32BE(offset)
     const end = offset + 12 + length
     if (end > bytes.length) throw new Error('Truncated PNG data')
     const type = bytes.toString('ascii', offset + 4, offset + 8)
-    if ((type === 'IHDR' && offset !== 8) || type === 'acTL' || type === 'eXIf') {
+    if ((type === 'IHDR' && offset !== 8) || type === 'acTL') {
       throw new Error('Unsupported PNG preview metadata')
+    }
+    if (type === 'eXIf') {
+      if (seenExif) throw new Error('Duplicate PNG EXIF')
+      seenExif = true
+      // pngjs skips unknown ancillary chunks, including their CRC. Validate
+      // metadata we interpret ourselves before reading the bounded TIFF IFD.
+      if (crc32(bytes.subarray(offset + 4, end - 4)) !== bytes.readUInt32BE(end - 4)) {
+        throw new Error('Invalid PNG EXIF checksum')
+      }
+      rotation = exifOrientation(bytes.subarray(offset + 8, end - 4))
     }
     if (type === 'IEND') { ended = true; break }
     offset = end
   }
   if (!ended) throw new Error('Missing PNG end')
+  return rotation
+}
+
+/** PNG eXIf is raw TIFF; JPEG APP1 strips its Exif prefix before reuse. */
+function exifOrientation(tiff: Buffer): number {
+  if (tiff.length < 8) throw new Error('Invalid EXIF')
+  const little = tiff.toString('ascii', 0, 2) === 'II'
+  if (!little && tiff.toString('ascii', 0, 2) !== 'MM') throw new Error('Invalid EXIF endian')
+  const u16 = (at: number) => little ? tiff.readUInt16LE(at) : tiff.readUInt16BE(at)
+  const u32 = (at: number) => little ? tiff.readUInt32LE(at) : tiff.readUInt32BE(at)
+  if (u16(2) !== 42) throw new Error('Invalid EXIF header')
+  const ifd = u32(4)
+  if (ifd < 8 || ifd + 2 > tiff.length) throw new Error('Invalid EXIF directory')
+  const count = u16(ifd)
+  if (ifd + 2 + count * 12 > tiff.length) throw new Error('Invalid EXIF entries')
+  for (let i = 0; i < count; i++) {
+    const at = ifd + 2 + i * 12
+    if (u16(at) === 0x112) {
+      if (u16(at + 2) !== 3 || u32(at + 4) !== 1) throw new Error('Invalid EXIF orientation')
+      const value = u16(at + 8)
+      if (value < 1 || value > 8) throw new Error('Invalid EXIF orientation value')
+      return value
+    }
+  }
+  return 1
 }
 
 /** Read only EXIF orientation; metadata stays out of generated previews. */
@@ -52,25 +90,7 @@ function orientation(bytes: Buffer): number {
     const segment = bytes.subarray(offset + 2, offset + length)
     if (marker === 0xe1 && segment.subarray(0, 6).equals(Buffer.from('Exif\0\0'))) {
       const tiff = segment.subarray(6)
-      if (tiff.length < 8) throw new Error('Invalid EXIF')
-      const little = tiff.toString('ascii', 0, 2) === 'II'
-      if (!little && tiff.toString('ascii', 0, 2) !== 'MM') throw new Error('Invalid EXIF endian')
-      const u16 = (at: number) => little ? tiff.readUInt16LE(at) : tiff.readUInt16BE(at)
-      const u32 = (at: number) => little ? tiff.readUInt32LE(at) : tiff.readUInt32BE(at)
-      if (u16(2) !== 42) throw new Error('Invalid EXIF header')
-      const ifd = u32(4)
-      if (ifd + 2 > tiff.length) throw new Error('Invalid EXIF directory')
-      const count = u16(ifd)
-      if (ifd + 2 + count * 12 > tiff.length) throw new Error('Invalid EXIF entries')
-      for (let i = 0; i < count; i++) {
-        const at = ifd + 2 + i * 12
-        if (u16(at) === 0x112) {
-          if (u16(at + 2) !== 3 || u32(at + 4) !== 1) throw new Error('Invalid EXIF orientation')
-          const value = u16(at + 8)
-          if (value < 1 || value > 8) throw new Error('Invalid EXIF orientation value')
-          return value
-        }
-      }
+      return exifOrientation(tiff)
     }
     offset += length
   }
@@ -83,7 +103,7 @@ export function decodeThumbnail(input: Uint8Array): Uint8Array {
   let decoded: { width: number; height: number; data: Uint8Array }
   let rotation = 1
   if (bytes.subarray(0, 8).equals(PNG_SIGNATURE)) {
-    checkPng(bytes)
+    rotation = checkPng(bytes)
     decoded = PNG.sync.read(bytes, { checkCRC: true })
   } else if (bytes[0] === 0xff && bytes[1] === 0xd8) {
     rotation = orientation(bytes)

@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import jpeg from 'jpeg-js'
 import { PNG } from 'pngjs'
+import { exifTiff, pngChunk, withPngExif } from '../../../tests/fixtures/pngExif'
 import { decodeThumbnail, THUMBNAIL_MAX_SOURCE_BYTES } from '../mediaThumbnailDecoder'
 
 function png(width = 320, height = 160) {
@@ -74,4 +75,48 @@ test('JPEG resolution cap rejects oversized SOF before pixel allocation', () => 
   source.writeUInt16BE(5000, sof + 5)
   source.writeUInt16BE(5000, sof + 7)
   expect(() => decodeThumbnail(source)).toThrow('maxResolutionInMP')
+})
+
+// Metadata-bearing screenshots were missing from the initial thumbnail fixtures.
+// Use synthetic pixels and TIFF data rather than committing personal screenshots.
+test('PNG EXIF normal, rotated and mirrored orientations preserve pixel placement in both byte orders', () => {
+  const source = new PNG({ width: 3, height: 2 })
+  for (let i = 0; i < 6; i++) source.data.set([i + 1, 0, 0, 255], i * 4)
+  const pixels = PNG.sync.write(source)
+  const expected = [
+    [1, 2, 3, 4, 5, 6], [3, 2, 1, 6, 5, 4], [6, 5, 4, 3, 2, 1], [4, 5, 6, 1, 2, 3],
+    [1, 4, 2, 5, 3, 6], [4, 1, 5, 2, 6, 3], [6, 3, 5, 2, 4, 1], [3, 6, 2, 5, 1, 4],
+  ]
+  for (const littleEndian of [true, false]) for (let value = 1; value <= 8; value++) {
+    const encoded = decodeThumbnail(withPngExif(pixels, exifTiff(value, littleEndian)))
+    const result = PNG.sync.read(Buffer.from(encoded))
+    expect([result.width, result.height]).toEqual(value >= 5 ? [2, 3] : [3, 2])
+    expect([...result.data].filter((_, i) => i % 4 === 0)).toEqual(expected[value - 1])
+    expect(Buffer.from(encoded).includes(Buffer.from('eXIf'))).toBe(false)
+  }
+})
+
+test('PNG EXIF with no orientation leaves screenshot pixels unchanged, even after IDAT', () => {
+  const source = png(3, 2)
+  const metadata = exifTiff(); metadata.writeUInt16LE(0, 8)
+  const late = Buffer.concat([source.subarray(0, -12), pngChunk('eXIf', metadata), source.subarray(-12)])
+  const result = PNG.sync.read(Buffer.from(decodeThumbnail(late)))
+  expect([result.width, result.height]).toEqual([3, 2])
+  expect(result.data).toEqual(PNG.sync.read(source).data)
+})
+
+test('PNG EXIF validates CRC, duplicate chunks, TIFF bounds and orientation values', () => {
+  const source = png(1, 1)
+  const badCrc = withPngExif(source); badCrc[45] ^= 1
+  expect(() => decodeThumbnail(badCrc)).toThrow('checksum')
+  expect(() => decodeThumbnail(withPngExif(withPngExif(source)))).toThrow('Duplicate')
+  for (const metadata of [Buffer.alloc(0), exifTiff(0), exifTiff(9), exifTiff().subarray(0, 15)]) {
+    expect(() => decodeThumbnail(withPngExif(source, metadata))).toThrow('EXIF')
+  }
+  const outside = exifTiff(); outside.writeUInt32LE(0xffffffff, 4)
+  expect(() => decodeThumbnail(withPngExif(source, outside))).toThrow('directory')
+  const insideHeader = exifTiff(); insideHeader.writeUInt32LE(0, 4)
+  expect(() => decodeThumbnail(withPngExif(source, insideHeader))).toThrow('directory')
+  const badCount = exifTiff(); badCount.writeUInt32LE(0xffffffff, 14)
+  expect(() => decodeThumbnail(withPngExif(source, badCount))).toThrow('orientation')
 })

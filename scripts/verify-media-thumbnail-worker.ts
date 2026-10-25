@@ -5,6 +5,7 @@ import path from 'node:path'
 import { createHash } from 'node:crypto'
 import assert from 'node:assert/strict'
 import { PNG } from 'pngjs'
+import { withPngExif } from '../tests/fixtures/pngExif'
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ab-thumbnail-compiled-'))
 // Set before importing config/logger; this probe never uses the user's data or log.
@@ -15,7 +16,7 @@ const { createMediaRoutes } = await import('../src/server/mediaRoutes')
 const { sanitizedTmuxEnv } = await import('../src/server/tmuxEnv')
 const file = path.join(root, 'log.jsonl')
 const png = new PNG({ width: 256, height: 128 }); png.data.fill(255)
-const content = [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: PNG.sync.write(png).toString('base64') } }]
+const content = [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: withPngExif(PNG.sync.write(png)).toString('base64') } }]
 const line = JSON.stringify({ type: 'user', message: { content } })
 fs.writeFileSync(file, line + '\n')
 const ref = { path: file, offset: 0, index: 0, digest: createHash('sha256').update(line).digest('hex') }

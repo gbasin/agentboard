@@ -3,6 +3,7 @@ import { test, expect } from '@playwright/test'
 import fs from 'node:fs'
 import { PNG } from 'pngjs'
 import { mediaFixture, TINY_PNG } from './helpers/mediaFixture'
+import { exifTiff, withPngExif } from '../fixtures/pngExif'
 
 test.use({ serviceWorkers: 'block', viewport: { width: 1280, height: 900 } })
 test.describe.configure({ timeout: 180_000 })
@@ -136,4 +137,56 @@ test('backgrounding aborts pending thumbnail and resumes only when visible', asy
     await expect(page.getByTestId('media-rail').locator('img')).toBeVisible()
     await expect.poll(() => requests).toBe(2)
   } finally { release(); fixture.cleanup() }
+})
+
+
+test('PNG screenshots with EXIF metadata render correctly oriented previews without originals', async ({ page, request }) => {
+  const fixture = await mediaFixture(request, 0)
+  const thumbnailResponses: number[] = []
+  let originals = 0
+  page.on('request', req => {
+    const url = new URL(req.url())
+    if (url.pathname === `/api/session-media/${fixture.sessionId}` && !url.searchParams.has('thumbnail')) originals++
+  })
+  page.on('response', response => {
+    const url = new URL(response.url())
+    if (url.pathname === `/api/session-media/${fixture.sessionId}` && url.searchParams.get('thumbnail') === '1') {
+      thumbnailResponses.push(response.status())
+    }
+  })
+  try {
+    const source = new PNG({ width: 320, height: 160 })
+    // Two distinct halves make orientation observable as well as width/height.
+    for (let y = 0; y < source.height; y++) for (let x = 0; x < source.width; x++) {
+      const at = (y * source.width + x) * 4
+      source.data[at] = x < source.width / 2 ? 240 : 20
+      source.data[at + 1] = 30
+      source.data[at + 2] = x < source.width / 2 ? 20 : 240
+      source.data[at + 3] = 255
+    }
+    const image = PNG.sync.write(source)
+    appendImages(fixture.logPath, fixture.sessionId, 1, withPngExif(image, exifTiff(1)).toString('base64'))
+    appendImages(fixture.logPath, fixture.sessionId, 1, withPngExif(image, exifTiff(6, false)).toString('base64'))
+    await expect.poll(async () => (await fixture.find())?.mediaSummary?.total, { timeout: 30_000 }).toBe(2)
+    await page.goto('/'); await fixture.select(page)
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.getByTestId('media-rail-pill').click()
+    const previews = page.getByTestId('media-rail').getByTestId('media-thumbnail')
+    await expect(previews).toHaveCount(2)
+    await expect.poll(() => previews.evaluateAll(images => images.map(image => {
+      const img = image as HTMLImageElement
+      return [img.naturalWidth, img.naturalHeight]
+    }))).toEqual([[128, 64], [64, 128]])
+    expect(thumbnailResponses).toEqual([200, 200])
+    expect(originals).toBe(0)
+    const pixels = await previews.nth(1).evaluate(image => {
+      const canvas = document.createElement('canvas'), img = image as HTMLImageElement
+      canvas.width = img.naturalWidth; canvas.height = img.naturalHeight
+      const context = canvas.getContext('2d')!
+      context.drawImage(img, 0, 0)
+      return [Array.from(context.getImageData(32, 10, 1, 1).data), Array.from(context.getImageData(32, 118, 1, 1).data)]
+    })
+    expect(pixels).toEqual([[240, 30, 20, 255], [20, 30, 240, 255]])
+    await page.screenshot({ path: test.info().outputPath(`png-exif-${test.info().project.name}.png`) })
+  } finally { fixture.cleanup() }
 })
