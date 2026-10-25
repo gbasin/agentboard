@@ -59,21 +59,37 @@ test('real worker roundtrip returns a PNG and rejects a remote media item withou
   expect(error).toHaveProperty('code', 'UNSUPPORTED')
 })
 
-test('deadline retires a real blocked worker and the next request decodes successfully', async () => {
+test('deadline keeps a real busy worker occupied until it completes and then reuses it', async () => {
   const { PNG } = await import('pngjs')
   const png = new PNG({ width: 2, height: 2 }); png.data.fill(255)
   const f = fixture(PNG.sync.write(png))
   const blockedPath = path.join(path.dirname(f.file), 'blocked.ts')
-  // Atomics.wait emulates a synchronous decoder that never returns without burning CPU.
-  fs.writeFileSync(blockedPath, 'self.onmessage = () => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0) }')
+  const engineUrl = new URL('../mediaThumbnails.ts', import.meta.url).href
+  fs.writeFileSync(blockedPath, `import { MediaThumbnails } from ${JSON.stringify(engineUrl)};
+    const engine = new MediaThumbnails(); let first = true;
+    self.onmessage = ({data}) => {
+      if (data.kind === 'shutdown') { self.close(); return }
+      void handle(data);
+    };
+    async function handle(data) {
+      if (first) { first = false; Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250) }
+      self.postMessage({id:data.id, body:await engine.get(data.ref)});
+    };`)
   let starts = 0
-  const client = new MediaThumbnailClient((url) => new Worker(++starts === 1 ? blockedPath : url, {
+  const client = new MediaThumbnailClient(() => { starts++; return new Worker(blockedPath, {
     type: 'module', env: {},
-  }), 500)
+  }) }, 100)
   clients.push(client)
   const first = client.get(f.ref).catch(error => error.code)
-  const second = client.get(f.ref)
-  expect(await first).toBe('BUSY')
-  expect((await second).byteLength).toBeGreaterThan(0)
-  expect(starts).toBe(2)
+  const queued = client.get(f.ref).catch(error => error.code)
+  expect(await first).toBe('BUSY'); expect(await queued).toBe('BUSY')
+  expect(await client.get(f.ref).catch(error => error.code)).toBe('BUSY')
+  let result: Uint8Array | string = 'BUSY'
+  const deadline = Date.now() + 2000
+  while (typeof result === 'string' && Date.now() < deadline) {
+    await Bun.sleep(25)
+    result = await client.get(f.ref).catch(error => error.code)
+  }
+  expect(result).toBeInstanceOf(Uint8Array)
+  expect(starts).toBe(1)
 })

@@ -10,7 +10,8 @@
  * items open their URL directly.
  */
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
+import { useMediaThumbnail } from '../hooks/useMediaThumbnail'
 import { MEDIA_INLINE_BYTES } from '@shared/media'
 import { useMediaPages } from '../hooks/useMediaPages'
 import type { Session, SessionMedia } from '@shared/types'
@@ -21,7 +22,7 @@ import {
   XCloseIcon,
 } from './icons'
 import { ICON_SIZE, TOUCH_TARGET_CLASS } from './controlStyles'
-// Originals larger than the explicit preview budget require a user gesture.
+// Full originals load only after an explicit user gesture.
 
 // Explicit pixels avoid the app's 13px root shrinking rem-based thumbnails.
 const MEDIA_TILE_CLASS = 'h-[56px] w-[56px] shrink-0 overflow-hidden rounded-md border border-border bg-surface hover:border-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent'
@@ -44,10 +45,12 @@ function MediaChip({
   media,
   onOpen,
   previewEnabled,
+  scrollRoot,
 }: {
   media: SessionMedia
   onOpen: (m: SessionMedia) => void
   previewEnabled: boolean
+  scrollRoot: RefObject<HTMLDivElement>
 }) {
   const caption = mediaCaption(media)
 
@@ -69,28 +72,11 @@ function MediaChip({
 
   const isImage = media.kind === 'image'
   const local = media.url.startsWith('/api/session-media/') && !media.url.startsWith('//')
-  const bounded = media.bytes != null && media.bytes >= 0 && media.bytes <= MEDIA_INLINE_BYTES &&
-    (media.width == null || media.height == null || media.width * media.height <= 4_000_000)
-  if (isImage && local && bounded && previewEnabled) {
-    return (
-      <button
-        type="button"
-        data-testid="media-thumb"
-        onClick={() => onOpen(media)}
-        title={caption || 'Image'}
-        className={MEDIA_TILE_CLASS}
-      >
-        <img
-          src={media.url}
-          alt={caption || 'session image'}
-          loading="lazy"
-          className="h-full w-full object-cover"
-        />
-      </button>
-    )
+  if (isImage && local) {
+    return <ImageThumbnail media={media} caption={caption} enabled={previewEnabled} root={scrollRoot} onOpen={onOpen} />
   }
 
-  // Documents and oversized images open in a new tab rather than lightbox.
+  // Documents and external images open only by explicit gesture.
   return (
     <button
       type="button"
@@ -108,6 +94,29 @@ function MediaChip({
       <span className={MEDIA_TILE_LABEL_CLASS}>
         {media.label ?? (isImage ? 'Image' : 'Document')}
       </span>
+    </button>
+  )
+}
+
+function ImageThumbnail({ media, caption, enabled, root, onOpen }: {
+  media: SessionMedia; caption: string; enabled: boolean; root: RefObject<HTMLDivElement>; onOpen: (m: SessionMedia) => void
+}) {
+  const { target, preview, fail } = useMediaThumbnail(media.url, enabled, root)
+  const label = preview.status === 'error' ? 'No preview' : preview.status === 'loading' ? 'Loading…' : 'Open image'
+  // Keep large original decoding out of the terminal tab, even when its thumbnail is small.
+  const inlineOriginal = media.bytes != null && media.bytes >= 0 && media.bytes <= MEDIA_INLINE_BYTES &&
+    (media.width == null || media.height == null || media.width * media.height <= 4_000_000)
+  return (
+    <button ref={target} type="button" data-testid="media-thumb" data-preview-state={preview.status}
+      onClick={() => inlineOriginal ? onOpen(media) : window.open(media.url, '_blank', 'noopener')} title={caption || 'Image'}
+      aria-label={`${caption || 'Image'} · ${preview.status === 'error' ? 'Preview unavailable. ' : ''}Open original${inlineOriginal ? '' : ' in new tab'}`}
+      aria-busy={preview.status === 'loading'} className={preview.status === 'ready' ? MEDIA_TILE_CLASS : MEDIA_FILE_TILE_CLASS}>
+      {preview.status === 'ready' ? (
+        <img data-testid="media-thumbnail" src={preview.src} alt={caption || 'session image'} onError={fail} className="h-full w-full object-cover" />
+      ) : <>
+        <Image01Icon width={ICON_SIZE.primary} height={ICON_SIZE.primary} className="shrink-0" />
+        <span className={MEDIA_TILE_LABEL_CLASS}>{label}</span>
+      </>}
     </button>
   )
 }
@@ -224,7 +233,7 @@ function SessionMediaRail({ session, ready }: { session: Session; ready: boolean
             }}
             className="scrollbar-none flex gap-2 overflow-x-auto px-3 py-2">
             {pages.items.map((m, i) => (
-              <MediaChip key={`${m.url}:${i}`} media={m} onOpen={setLightbox} previewEnabled={pages.visible && ready} />
+              <MediaChip key={`${m.url}:${i}`} media={m} onOpen={setLightbox} previewEnabled={pages.visible && ready} scrollRoot={scroll} />
             ))}
           </div>
           {!ready && <p role="status" className="px-3 pb-2 text-xs text-muted">Waiting for terminal recovery…</p>}

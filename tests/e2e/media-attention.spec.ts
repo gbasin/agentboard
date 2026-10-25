@@ -207,7 +207,7 @@ for (const theme of ['light', 'dark']) {
           await route.abort()
         })
         const smallUrl = '/api/session-media/preview-fixture'
-        await page.route(`**${smallUrl}`, route => route.fulfill({ contentType: 'image/png', body: Buffer.from(TILE_PNG_BASE64, 'base64') }))
+        await page.route(`**${smallUrl}?thumbnail=1`, route => route.fulfill({ contentType: 'image/png', body: Buffer.from(TILE_PNG_BASE64, 'base64') }))
         const { pill } = await board(page, [
           { kind: 'image', url: smallUrl, label: 'Small image', mediaType: 'image/png', bytes: Buffer.from(TILE_PNG_BASE64, 'base64').length, width: 1, height: 1 },
           { kind: 'link', url: 'https://example.com/artifact', label: LONG_LINK },

@@ -1,0 +1,27 @@
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { createHash } from 'node:crypto'
+import { PNG } from 'pngjs'
+import { MediaThumbnailClient } from '../../src/server/mediaThumbnailClient'
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'thumbnail-dispose-'))
+const file = path.join(root, 'log.jsonl')
+const png = new PNG({ width: 256, height: 256 }); png.data.fill(255)
+const line = JSON.stringify({ type: 'user', message: { content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: PNG.sync.write(png).toString('base64') } }], padding: 'x'.repeat(32 * 1024 * 1024) } })
+fs.writeFileSync(file, line + '\n')
+const ref = { path: file, offset: 0, index: 0, digest: createHash('sha256').update(line).digest('hex') }
+const server = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: () => new Response('alive') })
+let stopped = 0
+try {
+  for (const delay of [0, 0, 0, 1, 1, 1, 25, 25, 50, 50]) {
+    const client = new MediaThumbnailClient()
+    const request = client.get(ref).catch(error => error.code)
+    if (delay) await Bun.sleep(delay)
+    client.dispose()
+    if (await request !== 'STOPPED') throw new Error('Request unexpectedly completed before disposal')
+    stopped++
+    await Bun.sleep(75)
+    if (await (await fetch(`http://127.0.0.1:${server.port}/health`)).text() !== 'alive') throw new Error('HTTP died')
+  }
+  console.log(JSON.stringify({ compiled: import.meta.url.includes('$bunfs'), activeDisposals: stopped, health: 'alive' }))
+} finally { server.stop(true); fs.rmSync(root, { recursive: true, force: true }) }

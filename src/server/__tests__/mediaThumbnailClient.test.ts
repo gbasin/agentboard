@@ -16,8 +16,8 @@ function fixture(timeout = 1000, capacity = 3) {
 function mockWorker() {
   return { onmessage: null as ((event: { data: unknown }) => void) | null,
     onerror: null as (() => void) | null, onmessageerror: null,
-    sent: [] as { id: number }[], terminated: false,
-    postMessage(message: { id: number }) { this.sent.push(message) },
+    sent: [] as { id: number }[], terminated: false, shutdown: false,
+    postMessage(message: { id: number; kind?: string }) { if (message.kind === 'shutdown') this.shutdown = true; else this.sent.push(message) },
     terminate() { this.terminated = true },
     reply() { this.onmessage?.({ data: { id: this.sent.at(-1)!.id, body: new Uint8Array([1]) } }) },
   }
@@ -50,17 +50,19 @@ test('aborted active work retains admission; queued cancellation frees its slot'
   workers[0].reply(); await c
 })
 
-test('deadline terminates stuck worker before dispatching queued work; late reply is ignored', async () => {
+test('deadline rejects callers but retains the worker slot until its late response', async () => {
   const { client, workers } = fixture(20)
   const a = client.get(ref).catch(e => e.code)
-  const stale = workers[0].onmessage!
-  const b = client.get(ref)
-  expect(await a).toBe('BUSY')
-  expect(workers[0].terminated).toBe(true)
-  expect(workers).toHaveLength(2)
-  stale({ data: { id: 1, body: new Uint8Array([9]) } })
-  workers[1].reply()
-  expect(await b).toEqual(new Uint8Array([1]))
+  const b = client.get(ref).catch(e => e.code)
+  expect(await a).toBe('BUSY'); expect(await b).toBe('BUSY')
+  expect(workers[0].terminated).toBe(false)
+  expect(workers).toHaveLength(1)
+  await expect(client.get(ref)).rejects.toHaveProperty('code', 'BUSY')
+  workers[0].reply()
+  const next = client.get(ref)
+  workers[0].reply()
+  expect(await next).toEqual(new Uint8Array([1]))
+  expect(workers).toHaveLength(1)
 })
 
 test('dispose rejects active and queued work and prohibits respawn', async () => {
@@ -68,6 +70,19 @@ test('dispose rejects active and queued work and prohibits respawn', async () =>
   const a = client.get(ref).catch(e => e.code), b = client.get(ref).catch(e => e.code)
   client.dispose()
   expect(await a).toBe('STOPPED'); expect(await b).toBe('STOPPED')
-  expect(workers[0].terminated).toBe(true)
+  expect(workers[0].shutdown).toBe(true)
+  expect(workers[0].terminated).toBe(false)
   await expect(client.get(ref)).rejects.toHaveProperty('code', 'BUSY')
+})
+
+test('worker failure disables previews without spawning replacement workers', async () => {
+  const { client, workers } = fixture()
+  const first = client.get(ref).catch(error => error.code)
+  const queued = client.get(ref).catch(error => error.code)
+  workers[0].onerror!()
+  expect(await first).toBe('STOPPED'); expect(await queued).toBe('STOPPED')
+  await expect(client.get(ref)).rejects.toHaveProperty('code', 'BUSY')
+  expect(workers).toHaveLength(1)
+  expect(workers[0].terminated).toBe(false)
+  expect(workers[0].shutdown).toBe(true)
 })

@@ -1,0 +1,8 @@
+Running 6 tests using 1 worker
+  ✓  1 [chromium] › tests/e2e/media-thumbnail.spec.ts:42:1 › only nearby thumbnails load; originals wait for explicit open (12.0s)
+  ✓  2 [chromium] › tests/e2e/media-thumbnail.spec.ts:120:1 › corrupt images show an explicit fallback without fetching originals or retrying (12.3s)
+  ✓  3 [chromium] › tests/e2e/media-thumbnail.spec.ts:163:1 › backgrounding aborts pending thumbnail and resumes only when visible (10.9s)
+  ✓  4 [webkit] › tests/e2e/media-thumbnail.spec.ts:42:1 › only nearby thumbnails load; originals wait for explicit open (14.8s)
+  ✓  5 [webkit] › tests/e2e/media-thumbnail.spec.ts:120:1 › corrupt images show an explicit fallback without fetching originals or retrying (12.3s)
+  ✓  6 [webkit] › tests/e2e/media-thumbnail.spec.ts:163:1 › backgrounding aborts pending thumbnail and resumes only when visible (10.7s)
+  6 passed (1.3m)

@@ -1,6 +1,6 @@
 /** Real parser/index/HTTP/UI media regression coverage; no fake media frames. */
 import { test, expect } from '@playwright/test'
-import { mediaFixture, TINY_PNG } from './helpers/mediaFixture'
+import { mediaFixture } from './helpers/mediaFixture'
 
 test.use({ serviceWorkers: 'block', viewport: { width: 1280, height: 900 } })
 test.describe.configure({ timeout: 180_000 })
@@ -21,10 +21,12 @@ test('closed rail downloads no pages; opening serves real bounded image bytes', 
     await expect.poll(() => image.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBe(96)
     expect(itemRequests).toHaveLength(1)
     const url = await image.getAttribute('src')
-    expect(url).toContain(`/api/session-media/${fixture.sessionId}`)
-    const response = await request.get(url!)
+    expect(url).toMatch(/^blob:/)
+    const items = await fixture.items()
+    const response = await request.get(items.items[0].url + '&thumbnail=1')
     expect(response.status()).toBe(200)
-    expect(await response.body()).toEqual(Buffer.from(TINY_PNG, 'base64'))
+    expect(response.headers()['content-type']).toBe('image/png')
+    expect((await response.body()).length).toBeLessThan(128 * 1024)
     await image.click()
     await expect(page.getByTestId('media-lightbox')).toBeVisible()
     await page.keyboard.press('Escape')

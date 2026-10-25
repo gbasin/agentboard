@@ -40,3 +40,26 @@ test('thumbnail errors distinguish fallback, busy, missing and stale repair', as
   }
   expect(f.counts().invalidations).toBe(1)
 })
+
+test('real HTTP disconnect aborts the thumbnail dependency signal', async () => {
+  let entered!: () => void, observed!: (aborted: boolean) => void
+  const started = new Promise<void>(resolve => { entered = resolve })
+  const cancelled = new Promise<boolean>(resolve => { observed = resolve })
+  const app = createMediaRoutes({ getRecord: () => record,
+    page: async () => { throw new Error('unused') },
+    thumbnail: { get: (_ref, signal) => new Promise((_resolve, reject) => {
+      entered()
+      signal?.addEventListener('abort', () => { observed(true); reject(new Error('aborted')) }, { once: true })
+    }) },
+  })
+  const server = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: request => app.fetch(request) })
+  const controller = new AbortController()
+  const timeout = setTimeout(() => observed(false), 2000)
+  try {
+    const request = fetch(`http://127.0.0.1:${server.port}${url}`, { signal: controller.signal }).catch(() => null)
+    await started
+    controller.abort()
+    await request
+    expect(await cancelled).toBe(true)
+  } finally { clearTimeout(timeout); server.stop(true) }
+})

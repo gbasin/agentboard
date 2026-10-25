@@ -2,8 +2,12 @@
 import { MediaThumbnails } from './mediaThumbnails'
 import type { ThumbnailRef, ThumbnailResponse } from './mediaThumbnailTypes'
 const thumbnails = new MediaThumbnails()
-self.onmessage = async (event: MessageEvent<{ id: number; ref: ThumbnailRef }>) => {
-  const { id, ref } = event.data
+self.onmessage = (event: MessageEvent<{ id: number; ref: ThumbnailRef; kind?: never } | { kind: 'shutdown' }>) => {
+  if (event.data.kind === 'shutdown') { self.close(); return }
+  void handle(event.data)
+}
+
+async function handle({ id, ref }: { id: number; ref: ThumbnailRef }) {
   try {
     const body = await thumbnails.get(ref)
     self.postMessage({ id, body } satisfies ThumbnailResponse)

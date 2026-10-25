@@ -206,8 +206,8 @@ describe('scroll-driven MediaRail', () => {
     await flush(() => win.dispatchEvent(new Event('pagehide')))
     expect(requests[1].signal?.aborted).toBe(true)
     await flush(() => complete(Response.json(page({ revision: 'r2', items: many(2, 2) }))))
-    expect(find(r, 'media-thumb')).toHaveLength(0)
-    expect(find(r, 'media-chip')).toHaveLength(1)
+    expect(find(r, 'media-thumb')).toHaveLength(1)
+    expect(find(r, 'media-thumb')[0].props['data-preview-state']).toBe('idle')
     await flush(() => win.dispatchEvent(new Event('pageshow')))
     expect(find(r, 'media-thumb')).toHaveLength(1)
     expect(requests).toHaveLength(2)
@@ -230,15 +230,32 @@ describe('scroll-driven MediaRail', () => {
     expect(find(r, 'media-thumb')).toHaveLength(1)
   })
 
-  test('only bounded known local images automatically render thumbnails', async () => {
+  test('local images use thumbnail tiles regardless of original size; external images require a gesture', async () => {
     const data = [imageMedia(), imageMedia({ bytes: 65537 }), imageMedia({ bytes: undefined }),
       imageMedia({ url: 'https://example.com/image.png' }), imageMedia({ width: 10000, height: 10000 })]
     respond = () => response(page({ items: data, total: data.length }))
     const r = render(); await open(r)
-    expect(find(r, 'media-thumb')).toHaveLength(1)
-    expect(find(r, 'media-chip')).toHaveLength(4)
+    expect(find(r, 'media-thumb')).toHaveLength(4)
+    expect(find(r, 'media-chip')).toHaveLength(1)
+    expect(r.root.findAllByType('img')).toHaveLength(0)
     await flush(() => find(r, 'media-chip')[0].props.onClick())
-    expect(opened).toEqual([data[1].url])
+    expect(opened).toEqual([data[3].url])
+  })
+
+  test('large, unknown-size, and oversized-pixel originals open in a separate tab despite having thumbnail tiles', async () => {
+    const data = [imageMedia({ url: '/api/session-media/s?index=0', bytes: 65537 }),
+      imageMedia({ url: '/api/session-media/s?index=1', bytes: undefined }),
+      imageMedia({ url: '/api/session-media/s?index=2', width: 10000, height: 10000 })]
+    respond = () => response(page({ items: data, total: data.length }))
+    const r = render(); await open(r)
+    expect(find(r, 'media-thumb')).toHaveLength(3)
+    for (const tile of find(r, 'media-thumb')) {
+      expect(tile.props['aria-label']).toContain('in new tab')
+      await flush(() => tile.props.onClick())
+      expect(find(r, 'media-lightbox')).toHaveLength(0)
+    }
+    expect(opened).toEqual(data.map(item => item.url))
+    expect(r.root.findAllByType('img')).toHaveLength(0)
   })
 
   test('lightbox opens only by gesture and Escape closes before terminal handling', async () => {
