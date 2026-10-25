@@ -1,12 +1,13 @@
 // Discovers media payloads in an agent JSONL log: images the agent pasted or
 // read (Claude `image` blocks, Codex `input_image`/`image_generation_call`),
-// pasted documents, and Claude `frame-link` artifact links. Emits descriptors
+// pasted documents, structured artifacts, and web URLs in assistant replies. Emits descriptors
 // (byte offset + block index + metadata), never the payload itself — the
 // /api/session-media endpoint re-reads one line and serves the bytes on
 // demand. Scans incrementally like prExtractor: cached per file offset so
 // polling only reads appended bytes.
 
 import fs from 'node:fs'
+import { extractReplyLinks } from './replyLinks'
 import { createHash } from 'node:crypto'
 import { logger } from './logger'
 import { asRecord, asString } from '../shared/json'
@@ -28,6 +29,7 @@ export interface ScannedMedia {
   label?: string
   /** External URL — frame-link hrefs and non-data: image sources. */
   url?: string
+  sourceText?: string
   width?: number
   height?: number
 }
@@ -42,6 +44,7 @@ export interface ExtractedMediaItem {
   label?: string
   /** Result-id context (tool_use_id / call_id) seen while walking to it. */
   toolId?: string
+  sourceText?: string
   width?: number
   height?: number
 }
@@ -64,6 +67,8 @@ const MARKER_BYTES = [
   Buffer.from('"image'),
   Buffer.from('"document"'),
   Buffer.from('frame-link'),
+  Buffer.from('http'),
+  Buffer.from('HTTP'),
   // Label carriers: tool calls with a path argument give tool_result images
   // their "Read · foo.png" captions.
   Buffer.from('"file_path"'),
@@ -334,6 +339,8 @@ function extractMediaItemsFromRecord(
   if (!record || typeof record !== 'object') return []
   const out: ExtractedMediaItem[] = []
   walkMedia(record, undefined, out)
+  // Append: existing image/document indices must remain stable.
+  out.push(...extractReplyLinks(record))
 
   // Claude's toolUseResult twin carries pixel dimensions; apply when the line
   // produced exactly one image (the common 1:1 case). Note: its `originalSize`
@@ -360,7 +367,7 @@ function decodedLength(b64: string): number {
 // Dedupe: codex logs each turn twice (event_msg + response_item) with the
 // same payload bytes; endpoints+span are a cheap stand-in for hashing MBs.
 function dedupeKey(item: ExtractedMediaItem): string {
-  if (item.url) return `u:${item.url}`
+  if (item.url) return `u:${item.kind}:${item.url}`
   const data = item.data ?? ''
   return `d:${item.kind}:${item.mediaType}:${data.length}:${data.slice(0, 48)}:${data.slice(-16)}`
 }
@@ -369,7 +376,7 @@ function processLine(state: ScanState, line: string, lineOffset: number): void {
   const hasMedia =
     line.includes('"image') ||
     line.includes('"document"') ||
-    line.includes('frame-link')
+    line.includes('frame-link') || /https?:/i.test(line)
   const hasLabel =
     line.includes('"file_path"') &&
     (line.includes('"tool_use"') ||
@@ -406,6 +413,7 @@ function processLine(state: ScanState, line: string, lineOffset: number): void {
     }
     if (item.mediaType) entry.mediaType = item.mediaType
     if (item.url) entry.url = item.url
+    if (item.sourceText) entry.sourceText = item.sourceText
     const label = item.label ?? (item.toolId && state.pendingLabels.get(mediaLabelKey(item.toolId)))
     if (label) entry.label = label
     if (item.data) entry.bytes = decodedLength(item.data)
@@ -413,7 +421,7 @@ function processLine(state: ScanState, line: string, lineOffset: number): void {
     if (item.height) entry.height = item.height
 
     if (state.emit) {
-      const contentKey = createHash('sha256').update(item.url ?? `${item.kind}:${item.mediaType}:${item.data ?? ''}`).digest('hex')
+      const contentKey = createHash('sha256').update(item.url ? `${item.kind}:${item.url}` : `${item.kind}:${item.mediaType}:${item.data ?? ''}`).digest('hex')
       lineDigest ??= createHash('sha256').update(line).digest('hex')
       const stamp = record.timestamp ?? record.time
       const time = typeof stamp === 'string' ? Date.parse(stamp) : NaN

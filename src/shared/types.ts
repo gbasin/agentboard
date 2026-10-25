@@ -20,6 +20,10 @@ export interface SessionMedia {
   kind: 'image' | 'document' | 'link'
   /** Fetch URL for extracted payloads; external href for links. */
   url: string
+  /** Bounded external destination for display/search; open through url. */
+  externalUrl?: string
+  /** Plain-text excerpt from the assistant reply, never rendered as HTML. */
+  sourceText?: string
   mediaType?: string
   /** Decoded payload size in bytes. */
   bytes?: number

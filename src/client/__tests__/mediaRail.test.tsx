@@ -84,10 +84,10 @@ describe('scroll-driven MediaRail', () => {
   test('summary counts render without downloading descriptors; only opening fetches', async () => {
     const r = render(session({ mediaSummary: summary({ total: 3, images: 2, links: 1 }) }))
     const text = find(r, 'media-rail-pill')[0].findAllByType('span').map(s => s.children.join('')).join('')
-    expect(text).toBe('Media2+1')
+    expect(text).toBe('Media21')
     expect(requests).toHaveLength(0)
     await open(r)
-    expect(requests.map(r => r.url)).toEqual(['/api/session-media/s/items'])
+    expect(requests.map(r => r.url)).toEqual(['/api/session-media/s/items?kind=media'])
     expect(find(r, 'media-thumb')).toHaveLength(1)
     await flush(() => button(r, 'Collapse media rail').props.onClick())
     await open(r)

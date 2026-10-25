@@ -1599,7 +1599,7 @@ app.get('/api/session-preview/:sessionId', async (c) => {
 app.route('/api/session-media', createMediaRoutes({
   thumbnail: thumbnailClient,
   getRecord: (id) => db.getSessionById(id),
-  page: (record, cursor) => metadataClient.page(record, cursor),
+  page: (record, cursor, query) => metadataClient.page(record, cursor, query),
   neighbors: (record, anchor) => metadataClient.neighbors(record, anchor),
   invalidate: (record) => metadataClient.invalidate(record),
 }))

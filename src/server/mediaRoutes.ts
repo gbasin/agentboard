@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import { readMediaLine } from './mediaLine'
 import type { MediaThumbnailClient } from './mediaThumbnailClient'
 import type { AgentSessionRecord } from './db'
-import type { MediaPage, MediaNeighbors } from '../shared/media'
+import type { MediaPage, MediaNeighbors, MediaQuery } from '../shared/media'
 import { extractMediaItems } from './mediaExtractor'
 import { getSubagentLogPaths } from './subagentLogs'
 import { metadataIdentity } from './sessionMetadataClient'
@@ -13,7 +13,7 @@ import { parseMediaAnchor } from './mediaAnchor'
 
 interface Dependencies {
   getRecord(id: string): AgentSessionRecord | null | undefined
-  page(record: AgentSessionRecord, cursor?: string): Promise<MediaPage>
+  page(record: AgentSessionRecord, cursor?: string, query?: MediaQuery): Promise<MediaPage>
   neighbors?(record: AgentSessionRecord, anchor: string): Promise<MediaNeighbors>
   thumbnail?: Pick<MediaThumbnailClient, 'get'>
   invalidate?(record: AgentSessionRecord): void
@@ -29,8 +29,11 @@ export function createMediaRoutes(deps: Dependencies) {
     if (!record?.logFilePath) return c.json({ error: 'Session not found' }, 404)
     const cursor = c.req.query('cursor')
     if (cursor && cursor.length > 8192) return c.json({ error: 'Invalid cursor' }, 400)
+    const kind = c.req.query('kind'), search = c.req.query('search')
+    if (kind !== undefined && kind !== 'media' && kind !== 'links') return c.json({ error: 'Invalid media kind' }, 400)
+    if (search && search.length > 200) return c.json({ error: 'Search too long' }, 400)
     try {
-      const page = await deps.page(record, cursor)
+      const page = await deps.page(record, cursor, { kind, search })
       const current = deps.getRecord(id)
       if (!current) return c.json({ error: 'Session not found' }, 404)
       if (metadataIdentity(current) !== metadataIdentity(record)) {

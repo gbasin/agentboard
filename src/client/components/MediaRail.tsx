@@ -5,12 +5,14 @@
  * is remote (the log lives on another host).
  *
  * Collapsed: a media pill at top-right — top placement keeps it
- * clear of the TUI's bottom input row. Expanded: a horizontal strip of uniformly sized media tiles.
- * Tapping an image opens a navigable lightbox; large originals load on request; document and link
+ * clear of the TUI's bottom input row. Expanded: icon-labeled Media/Links
+ * views, with a bounded link list and an independent image thumbnail strip.
+ * Tapping a thumbnail opens a lightbox with the full image; document and link
  * items open their URL directly.
  */
 
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
+import SessionLinks from './SessionLinks'
 import { useMediaThumbnail } from '../hooks/useMediaThumbnail'
 import MediaLightbox from './MediaLightbox'
 import { useMediaLightboxNavigation } from '../hooks/useMediaLightboxNavigation'
@@ -21,6 +23,7 @@ import {
   Image01Icon,
   LinkExternal01Icon,
   XCloseIcon,
+  SearchSmIcon,
 } from './icons'
 import { ICON_SIZE, TOUCH_TARGET_CLASS } from './controlStyles'
 // Full originals load only after an explicit user gesture.
@@ -140,9 +143,27 @@ function SessionMediaRail({ session, ready }: { session: Session; ready: boolean
   const [expanded, setExpanded] = useState(false)
   const [attention, setAttention] = useState<'idle' | 'pulsing' | 'unread'>('idle')
   const summary = session.mediaSummary
-  const seenAdditions = useRef(summary?.additions)
-  const pages = useMediaPages(session.agentSessionId, summary, expanded, ready)
+  const [tab, setTab] = useState<'media' | 'links'>(() => summary && summary.images + summary.documents === 0 ? 'links' : 'media')
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const [query, setQuery] = useState('')
+  const pages = useMediaPages(session.agentSessionId, summary, expanded && tab === 'media', ready, { kind: 'media' })
   const lightbox = useMediaLightboxNavigation(session.agentSessionId, summary?.identity, pages.visible && ready)
+  const panel = useRef<HTMLDivElement>(null)
+  const searchInput = useRef<HTMLInputElement>(null)
+  const pill = useRef<HTMLButtonElement>(null)
+  const close = () => { lightbox.close(); setExpanded(false); queueMicrotask(() => pill.current?.focus()) }
+  useEffect(() => { const timer = setTimeout(() => setQuery(search.trim()), 200); return () => clearTimeout(timer) }, [search])
+  useEffect(() => { if (searchOpen) searchInput.current?.focus() }, [searchOpen])
+  useEffect(() => {
+    if (!expanded || lightbox.selection) return
+    const outside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !panel.current?.contains(event.target)) setExpanded(false)
+    }
+    document.addEventListener('pointerdown', outside)
+    return () => document.removeEventListener('pointerdown', outside)
+  }, [expanded, lightbox.selection])
+  const seenAdditions = useRef(summary?.additions)
   const scroll = useRef<HTMLDivElement>(null)
   const previousShift = useRef(0)
   const previousScroll = useRef(0)
@@ -178,36 +199,56 @@ function SessionMediaRail({ session, ready }: { session: Session; ready: boolean
     return () => clearTimeout(timer)
   }, [attention])
 
+  useEffect(() => {
+    if (!expanded || lightbox.selection) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { event.stopPropagation(); close() }
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [expanded, lightbox.selection])
+
   if (session.remote || !summary || (summary.total === 0 && !summary.omittedRecords) || !session.agentSessionId) return null
 
-  const images = summary.images
-  const others = summary.total - images
+  const mediaCount = summary.images + summary.documents
 
   return (
     <>
       {expanded ? (
         <div
+          ref={panel}
           data-testid="media-rail"
-          className="absolute top-2 right-2 z-40 w-[min(560px,calc(100%-1.5rem))] rounded-xl border border-border bg-elevated/95 shadow-xl backdrop-blur"
+          onKeyDown={event => event.stopPropagation()}
+          className="absolute top-2 right-2 z-40 flex max-h-[min(280px,65%)] w-[calc(100%-16px)] flex-col overflow-hidden rounded-xl border border-border bg-elevated shadow-xl md:max-h-[320px] md:w-[400px]"
         >
-          <div className="flex items-center justify-between border-b border-border/60 px-3 py-2">
-            <span className="text-xs text-muted">
-              Media · {summary.total}
-            </span>
-            <button
-              type="button"
-              aria-label="Collapse media rail"
-              onClick={() => { lightbox.close(); setExpanded(false) }}
-              className="text-muted hover:text-primary"
-            >
-              <XCloseIcon width={ICON_SIZE.default} height={ICON_SIZE.default} />
+          <div className="flex shrink-0 items-center gap-[10px] border-b border-border/60 px-3">
+            {(['media', 'links'] as const).map(value => {
+              const Icon = value === 'media' ? Image01Icon : LinkExternal01Icon
+              return <button key={value} type="button" aria-pressed={tab === value} onClick={() => { setTab(value); lightbox.close() }}
+                className={`flex h-[44px] items-center gap-[6px] whitespace-nowrap text-[12px] ${tab === value ? 'text-primary shadow-[inset_0_-2px_var(--accent)]' : 'text-secondary hover:text-primary'} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent`}>
+                <Icon width={ICON_SIZE.primary} height={ICON_SIZE.primary} />{value === 'media' ? `Media ${mediaCount}` : `Links ${summary.links}`}
+              </button>
+            })}
+            {tab === 'links' && <button type="button" aria-label="Search links" aria-expanded={searchOpen}
+              onClick={() => setSearchOpen(value => !value)} className="ml-auto flex h-[44px] w-[36px] shrink-0 items-center justify-center rounded text-secondary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+              <SearchSmIcon width={ICON_SIZE.primary} height={ICON_SIZE.primary} />
+            </button>}
+            <button type="button" aria-label="Collapse media rail" onClick={close}
+              className="ml-auto flex h-[44px] w-[36px] shrink-0 items-center justify-center rounded text-secondary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+              <XCloseIcon width={ICON_SIZE.primary} height={ICON_SIZE.primary} />
             </button>
           </div>
+          {tab === 'links' && searchOpen && <div className="shrink-0 border-b border-border/60 px-3 py-2">
+            <input ref={searchInput} type="search" aria-label="Find link" placeholder="Find a link…" value={search} maxLength={200}
+              onChange={event => setSearch(event.target.value)}
+              className="w-full rounded border border-border bg-surface px-2 py-1.5 text-[16px] text-primary placeholder:text-secondary focus:outline-none focus:ring-2 focus:ring-accent md:text-[12px]" />
+          </div>}
           {!!summary.omittedRecords && (
             <p data-testid="media-incomplete" className="px-3 py-2 text-xs text-muted">
               Some media may be unavailable: {summary.omittedRecords} oversized transcript {summary.omittedRecords === 1 ? 'entry was' : 'entries were'} skipped.
             </p>
           )}
+          {tab === 'links' ? <SessionLinks key={query} session={session} ready={ready} search={query} onRefresh={() => setAttention('idle')} /> : <>
           {pages.changed && (
             <button type="button" onClick={refresh} disabled={!ready || pages.status === 'loading'}
               className="px-3 py-2 text-xs text-accent" aria-label="Refresh media">Media changed · Refresh</button>
@@ -240,11 +281,12 @@ function SessionMediaRail({ session, ready }: { session: Session; ready: boolean
             <button type="button" onClick={() => void pages.loadNext()} disabled={!ready || pages.status === 'loading'}
               className="px-3 pb-2 text-xs text-accent">Load newer media</button>
           )}
-
+          </>}
         </div>
       ) : (
         <button
           type="button"
+          ref={pill}
           data-testid="media-rail-pill"
           aria-expanded={false}
           onClick={() => {
@@ -256,10 +298,11 @@ function SessionMediaRail({ session, ready }: { session: Session; ready: boolean
         >
           <Image01Icon width={ICON_SIZE.pill} height={ICON_SIZE.pill} className="md:h-[16px] md:w-[16px]" />
           <span className="hidden md:inline">Media</span>
-          <span className="tabular-nums">{images}</span>
-          {others > 0 && (
-            <span className="text-muted tabular-nums">+{others}</span>
-          )}
+          <span className="tabular-nums">{mediaCount}</span>
+          {summary.links > 0 && <>
+            <LinkExternal01Icon width={ICON_SIZE.pill} height={ICON_SIZE.pill} />
+            <span className="tabular-nums">{summary.links}</span>
+          </>}
           {attention !== 'idle' && (
             <span data-testid="media-rail-new-dot" aria-hidden="true" className="h-[6px] w-[6px] shrink-0 rounded-full bg-accent" />
           )}

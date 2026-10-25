@@ -256,3 +256,53 @@ test('disk indexing retains more than 257 media items inside a single valid reco
   expect(items.at(-1)?.label).toBe('block 257')
   expect(new URL(items.at(-1)!.url, 'http://localhost').searchParams.get('index')).toBe('257')
 })
+
+test('reply links are searchable across all pages, filtered from media, and cursors bind to the search', () => {
+  const { index, log, record } = fixture()
+  const replies = Array.from({ length: 95 }, (_, i) => JSON.stringify({ type: 'assistant',
+    message: { role: 'assistant', content: `Deliverable [Report ${i}](https://example.com/${i}?v=2#result).` } }) + '\n').join('')
+  const image = JSON.stringify({ type: 'user', message: { content: [{ type: 'image', source: { data: 'aGk=', media_type: 'image/png' } }] } }) + '\n'
+  fs.writeFileSync(log, replies + replies + image)
+  expect(index.scan(record, [log]).total).toBe(96)
+  const filtered = index.page(record, undefined, { kind: 'links', search: 'Report 94' })
+  expect(filtered.total).toBe(1)
+  expect(filtered.items[0].externalUrl).toBe('https://example.com/94?v=2#result')
+  expect(filtered.items[0].sourceText).toContain('Deliverable')
+  expect(index.page(record, undefined, { kind: 'media' }).items.map(i => i.kind)).toEqual(['image'])
+  const first = index.page(record, undefined, { kind: 'links' })
+  expect(first.items).toHaveLength(40)
+  expect(() => index.page(record, first.nextCursor!, { kind: 'links', search: 'Report 94' })).toThrow('Invalid media cursor')
+  expect(index.page(record, first.nextCursor!, { kind: 'links' }).items).toHaveLength(40)
+  expect(index.page(record, undefined, { kind: 'links', search: 'missing' }).items).toEqual([])
+})
+
+test('incremental reply links survive reopen, partial lines, and rebuild from older extractor versions', () => {
+  const { index, log, record, dbPath } = fixture()
+  const reply = JSON.stringify({ type: 'assistant', content: '[Résumé](https://example.com/new)' })
+  fs.writeFileSync(log, line(0) + reply.slice(0, -5))
+  expect(index.scan(record, [log]).total).toBe(1)
+  fs.appendFileSync(log, reply.slice(-5) + '\n')
+  expect(index.scan(record, [log]).total).toBe(2)
+  // Simulate a previous installation's checkpoint over this unchanged file.
+  const db = new (require('bun:sqlite').Database)(dbPath)
+  db.query("UPDATE media_files SET state=json_remove(state,'$.version')").run()
+  db.query("DELETE FROM media_items WHERE json_extract(descriptor,'$.sourceText') IS NOT NULL").run()
+  db.close()
+  const reopened = new MediaIndex(dbPath)
+  cleanup.push(() => reopened.close())
+  expect(reopened.scan(record, [log]).total).toBe(2)
+  expect(reopened.page(record, undefined, { kind: 'links', search: 'new' }).items[0].label).toBe('Résumé')
+})
+
+test('a reply link is not swallowed by an external image with the same URL', () => {
+  const { index, log, record } = fixture()
+  const url = 'https://example.com/preview.png'
+  fs.writeFileSync(log, [
+    { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_image', image_url: url }] } },
+    { type: 'assistant', content: `[Full preview](${url})` },
+  ].map(entry => JSON.stringify(entry) + '\n').join(''))
+  const summary = index.scan(record, [log])
+  expect(summary.images).toBe(1)
+  expect(summary.links).toBe(1)
+  expect(index.page(record, undefined, { kind: 'links' }).items[0].label).toBe('Full preview')
+})

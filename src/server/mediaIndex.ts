@@ -5,7 +5,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { AgentSessionRecord } from './db'
 import type { SessionMedia } from '../shared/types'
-import { MEDIA_PAGE_BYTES, MEDIA_PAGE_ITEMS, type MediaPage, type MediaSummary, type MediaNeighbors } from '../shared/media'
+import { MEDIA_PAGE_BYTES, MEDIA_PAGE_ITEMS, type MediaPage, type MediaSummary, type MediaNeighbors, type MediaQuery } from '../shared/media'
 import { scanMediaFile } from './mediaIndexScan'
 import { parseMediaAnchor, MediaNeighborError } from './mediaAnchor'
 
@@ -18,7 +18,7 @@ export class MediaCursorError extends Error {
 
 type SessionRow = MediaSummary & { generation: string; version: number; omittedRecords: number }
 type ItemRow = { id: number; time: number; path: string; offset: number; item: number; descriptor: string }
-type Cursor = { identity: string; generation: string; watermark: number; revision: string; total: number; after: [number, string, number, number] }
+type Cursor = { query?: string; identity: string; generation: string; watermark: number; revision: string; total: number; after: [number, string, number, number] }
 const hash = (value: string) => createHash('sha256').update(value).digest('hex')
 export const mediaIdentity = (record: Pick<AgentSessionRecord, 'sessionId' | 'logFilePath' | 'agentType'>) =>
   hash(JSON.stringify([record.sessionId, record.logFilePath, record.agentType]))
@@ -86,6 +86,8 @@ export class MediaIndex {
           (entry, key, digest, time) => {
             const descriptor: SessionMedia = {
               kind: entry.kind,
+              ...(entry.url ? { externalUrl: entry.url.slice(0, 2048) } : {}),
+              ...(entry.sourceText ? { sourceText: entry.sourceText } : {}),
               url: `/api/session-media/${encodeURIComponent(record.sessionId)}?path=${encodeURIComponent(file)}&offset=${entry.offset}&index=${entry.index}&digest=${digest}`,
               ...(entry.mediaType ? { mediaType: entry.mediaType.slice(0, 128) } : {}),
               ...(entry.bytes !== undefined ? { bytes: entry.bytes } : {}),
@@ -158,7 +160,12 @@ export class MediaIndex {
     return result
   }
 
-  page(record: AgentSessionRecord, rawCursor?: string): MediaPage {
+  page(record: AgentSessionRecord, rawCursor?: string, query: MediaQuery = {}): MediaPage {
+    const queryKey = JSON.stringify([query.kind ?? '', query.search ?? ''])
+    const filter = query.kind === 'links' ? " AND kind='link'" : query.kind === 'media' ? " AND kind!='link'" : ''
+    const search = (query.search ?? '').toLowerCase()
+    const where = filter + " AND (?='' OR instr(lower(coalesce(json_extract(descriptor,'$.label'),'') || ' ' || coalesce(json_extract(descriptor,'$.externalUrl'),'') || ' ' || coalesce(json_extract(descriptor,'$.sourceText'),'')),?)>0)"
+
     const identity = mediaIdentity(record)
     const row = this.row(identity)
     const summary = this.summary(identity)
@@ -173,16 +180,19 @@ export class MediaIndex {
             !Number.isFinite(cursor.after[0]) || typeof cursor.after[1] !== 'string' || cursor.after[1].length > 4096 ||
             !Number.isSafeInteger(cursor.after[2]) || !Number.isSafeInteger(cursor.after[3])) throw Error()
       } catch { throw new MediaCursorError('INVALID_CURSOR') }
+      if ((cursor.query ?? JSON.stringify(['', ''])) !== queryKey) throw new MediaCursorError('INVALID_CURSOR')
       if (cursor.identity !== identity || cursor.generation !== row.generation ||
           !cursor.revision.startsWith(this.incarnation + ':')) throw new MediaCursorError('STALE_CURSOR')
     } else {
       const watermark = (this.db.query('SELECT coalesce(max(id),0) AS id FROM media_items WHERE identity=?').get(identity) as { id: number }).id
-      cursor = { identity, generation: row.generation, watermark, revision: summary.revision, total: summary.total,
+      const total = (this.db.query(`SELECT count(*) AS total FROM media_items WHERE identity=? AND id<=? ${where}`)
+        .get(identity, watermark, search, search) as { total: number }).total
+      cursor = { query: queryKey, identity, generation: row.generation, watermark, revision: summary.revision, total,
         after: [-Number.MAX_SAFE_INTEGER, '', -1, -1] }
     }
     const rows = this.db.query(`SELECT id,time,path,offset,item,descriptor FROM media_items
-      WHERE identity=? AND id<=? AND (time,path,offset,item)>(?,?,?,?)
-      ORDER BY time,path,offset,item LIMIT ?`).all(identity, cursor.watermark, ...cursor.after, MEDIA_PAGE_ITEMS + 1) as ItemRow[]
+      WHERE identity=? AND id<=? AND (time,path,offset,item)>(?,?,?,?) ${where}
+      ORDER BY time,path,offset,item LIMIT ?`).all(identity, cursor.watermark, ...cursor.after, search, search, MEDIA_PAGE_ITEMS + 1) as ItemRow[]
     const result: MediaPage = { identity, revision: cursor.revision, total: cursor.total, items: [], nextCursor: null }
     const encode = (after: Cursor['after']) => Buffer.from(JSON.stringify({ ...cursor, after })).toString('base64url')
     for (let i = 0; i < rows.length && i < MEDIA_PAGE_ITEMS; i++) {

@@ -43,26 +43,26 @@ test('closed rail downloads no pages; opening serves real bounded image bytes', 
   } finally { fixture.cleanup() }
 })
 
-test('scroll loads the next oldest-first page; live additions do not fetch or move the view', async ({ page, request }) => {
+test('link pagination loads the next oldest-first page; live additions do not fetch or move the view', async ({ page, request }) => {
   const fixture = await mediaFixture(request, 85)
   let requests = 0
   page.on('request', r => { if (r.url().includes(`/session-media/${fixture.sessionId}/items`)) requests++ })
   try {
     await page.goto('/'); await fixture.select(page)
     await page.getByTestId('media-rail-pill').click()
-    const rail = page.getByTestId('media-rail'), strip = page.getByTestId('media-scroll')
+    const rail = page.getByTestId('media-rail'), strip = page.getByTestId('links-scroll')
     await expect(rail.getByRole('link')).toHaveCount(40)
     expect(requests).toBe(1)
     await expect(rail.getByRole('link').first()).toHaveAttribute('aria-label', /^Item 00000 /)
-    await strip.evaluate(el => { el.scrollLeft = el.scrollWidth; el.dispatchEvent(new Event('scroll')) })
+    await page.getByRole('button', { name: 'Newer links', exact: true }).click()
     await expect.poll(() => requests).toBe(2)
     await expect(rail.getByRole('link').last()).toHaveAttribute('aria-label', /^Item 00079 /)
-    const position = await strip.evaluate(el => el.scrollLeft)
+    const position = await strip.evaluate(el => el.scrollTop)
     fixture.append(85)
     await expect.poll(async () => (await fixture.find())?.mediaSummary?.total, { timeout: 30_000 }).toBe(86)
     await expect(page.getByRole('button', { name: 'Refresh media', exact: true })).toBeVisible()
     expect(requests).toBe(2)
-    expect(await strip.evaluate(el => el.scrollLeft)).toBe(position)
+    expect(await strip.evaluate(el => el.scrollTop)).toBe(position)
     await expect(rail.getByRole('link').last()).toHaveAttribute('aria-label', /^Item 00079 /)
   } finally { fixture.cleanup() }
 })
@@ -93,7 +93,7 @@ test('a delayed page cannot populate a different selected session', async ({ pag
   let release: (() => void) | undefined
   const gate = new Promise<void>(resolve => { release = resolve })
   let intercepted = false
-  await page.route(`**/api/session-media/${first.sessionId}/items`, async route => {
+  await page.route(`**/api/session-media/${first.sessionId}/items*`, async route => {
     intercepted = true
     const response = await route.fetch()
     await gate

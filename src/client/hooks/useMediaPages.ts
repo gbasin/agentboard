@@ -1,6 +1,6 @@
 /** Scroll-requested media pages. No polling; every response is fenced to its view. */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { MediaPage, MediaSummary } from '@shared/media'
+import type { MediaPage, MediaSummary, MediaQuery } from '@shared/media'
 import { MEDIA_PAGE_BYTES, MEDIA_PAGE_ITEMS } from '@shared/media'
 
 type CachedPage = { number: number; cursor: string | null; page: MediaPage }
@@ -28,7 +28,7 @@ function validPage(value: unknown, identity: string): value is MediaPage {
       item && ['image', 'document', 'link'].includes(item.kind) && typeof item.url === 'string')
 }
 
-export function useMediaPages(sessionId: string | undefined, summary: MediaSummary | undefined, expanded: boolean, ready: boolean) {
+export function useMediaPages(sessionId: string | undefined, summary: MediaSummary | undefined, expanded: boolean, ready: boolean, query: MediaQuery = {}) {
   const [state, setState] = useState<State>(initial)
   const [visible, setVisible] = useState(() => typeof document === 'undefined' || document.visibilityState !== 'hidden')
   const stateRef = useRef(state)
@@ -39,6 +39,10 @@ export function useMediaPages(sessionId: string | undefined, summary: MediaSumma
   const serial = useRef(0)
   const cursors = useRef(new Map<number, string | null>())
   const identity = summary?.identity
+  const kind = query.kind, search = query.search
+  const queryKey = JSON.stringify([kind, search])
+  const queryRef = useRef(queryKey)
+  queryRef.current = queryKey
 
   const cancel = useCallback(() => {
     serial.current++
@@ -64,7 +68,7 @@ export function useMediaPages(sessionId: string | undefined, summary: MediaSumma
     cancel()
     cursors.current.clear()
     setState(initial())
-  }, [identity, sessionId, cancel])
+  }, [identity, sessionId, queryKey, cancel])
 
   useEffect(() => {
     if (expanded && ready && visible) return
@@ -84,7 +88,11 @@ export function useMediaPages(sessionId: string | undefined, summary: MediaSumma
     current.current = { controller, token }
     setState(s => ({ ...s, status: 'loading', error: null }))
     try {
-      const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''
+      const params = new URLSearchParams()
+      if (cursor) params.set('cursor', cursor)
+      if (kind) params.set('kind', kind)
+      if (search) params.set('search', search)
+      const query = params.size ? `?${params}` : ''
       const response = await fetch(`/api/session-media/${encodeURIComponent(sessionId)}/items${query}`, { signal: controller.signal, cache: 'no-store' })
       if (!response.ok) throw new Error(response.status === 409 ? 'Media changed. Refresh to continue.' : 'Could not load media. Try again.')
       // Read bytes with a hard limit rather than trusting a Content-Length header.
@@ -104,7 +112,7 @@ export function useMediaPages(sessionId: string | undefined, summary: MediaSumma
       } finally { await reader.cancel().catch(() => {}); reader.releaseLock() }
       const page: unknown = JSON.parse(chunks.join(''))
       if (!validPage(page, latest.identity)) throw new Error('Media identity changed. Refresh to continue.')
-      if (current.current?.token !== token || serial.current !== token || summaryRef.current?.identity !== latest.identity) return
+      if (current.current?.token !== token || serial.current !== token || summaryRef.current?.identity !== latest.identity || queryRef.current !== queryKey) return
       if (direction !== 'first' && page.revision !== first?.page.revision) throw new Error('Media changed. Refresh to continue.')
       cursors.current.set(number, cursor ?? null)
       if (page.nextCursor) cursors.current.set(number + 1, page.nextCursor)
@@ -129,7 +137,7 @@ export function useMediaPages(sessionId: string | undefined, summary: MediaSumma
     } finally {
       if (current.current?.token === token) current.current = null
     }
-  }, [expanded, ready, visible, sessionId])
+  }, [expanded, ready, visible, sessionId, kind, search, queryKey])
 
   useEffect(() => {
     if (expanded && ready && visible && (summary?.total ?? 0) > 0 && !state.pages.length && state.status === 'idle') void load('first')

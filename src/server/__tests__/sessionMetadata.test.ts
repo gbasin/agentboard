@@ -347,11 +347,12 @@ test('payload repair coalesces storms, rejects obsolete identities, and survives
   expect(workers[1].scans()).toHaveLength(2)
 })
 
-test('a page waits for a queued repair before reading the index', async () => {
+test('a filtered page waits for a queued repair without losing its query', async () => {
   const { client, workers } = fake()
   const a = record()
   client.invalidate(a)
-  const page = client.page(a)
+  const query = { kind: 'links' as const, search: 'report' }
+  const page = client.page(a, undefined, query)
   await tick()
   expect(workers[0].scans()[0].force).toBe(true)
   expect(workers[0].requests.filter(r => r.kind === 'page')).toHaveLength(0)
@@ -359,6 +360,7 @@ test('a page waits for a queued repair before reading the index', async () => {
   await tick()
   const request = workers[0].requests.find(r => r.kind === 'page')!
   if (request.kind !== 'page') throw Error('Missing page')
+  expect(request.query).toEqual(query)
   workers[0].onmessage?.(new MessageEvent<MetadataResponse>('message', { data: { id: request.id, metadata: metadata(1), page: {
     identity: 'a', revision: 'new', items: [], total: 0, nextCursor: null,
   } } }))
@@ -437,4 +439,32 @@ test('neighbor responses cannot publish or resolve after session reassociation',
   } } }))
   expect((await result).code).toBe('STALE_CURSOR')
   expect(changes).toHaveLength(0)
+})
+
+
+test('real worker keeps link search and image neighbors independent in the shared detail pipeline', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'metadata-links-neighbors-')); roots.push(root)
+  const a = record(path.join(root, 'mixed.jsonl'))
+  const image = (i: number) => ({ type: 'user', message: { content: [
+    { type: 'image', source: { type: 'base64', media_type: 'image/png', data: Buffer.from(`image-${i}`).toString('base64') } },
+  ] } })
+  fs.writeFileSync(a.logFilePath, [image(0),
+    { type: 'assistant', message: { role: 'assistant', content: 'Finished [Review report](https://example.com/report).' } },
+    image(1),
+  ].map(value => JSON.stringify(value) + '\n').join(''))
+  const client = new SessionMetadataClient(() => {}, undefined, path.join(root, 'media.sqlite')); clients.push(client)
+  const media = await client.page(a, undefined, { kind: 'media' })
+  expect(media.total).toBe(2)
+  expect(media.items.map(item => item.kind)).toEqual(['image', 'image'])
+  const [links, neighbors] = await Promise.all([
+    client.page(a, undefined, { kind: 'links', search: 'review report' }),
+    client.neighbors(a, media.items[0].url),
+  ])
+  expect(links.total).toBe(1)
+  expect(links.items[0].externalUrl).toBe('https://example.com/report')
+  expect(neighbors.current).toEqual(media.items[0])
+  expect(neighbors.previous).toBeNull()
+  expect(neighbors.next).toEqual(media.items[1])
+  expect((await client.neighbors(a, media.items[1].url)).previous).toEqual(media.items[0])
+  expect((await client.page(a, undefined, { kind: 'links', search: 'missing' })).total).toBe(0)
 })

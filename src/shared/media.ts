@@ -43,3 +43,6 @@ export function mediaSummariesEqual(a: MediaSummary | undefined, b: MediaSummary
     a.links === b.links && a.additions === b.additions &&
     (a.omittedRecords ?? 0) === (b.omittedRecords ?? 0)
 }
+
+/** Filtered pages keep search off the live websocket and out of browser memory. */
+export interface MediaQuery { kind?: 'media' | 'links'; search?: string }

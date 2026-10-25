@@ -2,7 +2,7 @@ import { resolveWorkerPath } from './workerPath'
 import path from 'node:path'
 import { config } from './config'
 import { sanitizedTmuxEnv } from './tmuxEnv'
-import type { MediaPage, MediaNeighbors } from '../shared/media'
+import type { MediaPage, MediaNeighbors, MediaQuery } from '../shared/media'
 /** Coalesced background scans; cached values contain no authoritative session state. */
 import type { AgentSessionRecord } from './db'
 import type { CodexSubagentLink } from './logMatchWorkerTypes'
@@ -102,8 +102,8 @@ export class SessionMetadataClient {
   }
 
   /** Pages are explicit user requests; no background detail collection is retained. */
-  page(record: AgentSessionRecord, cursor?: string): Promise<MediaPage> {
-    return this.detail(record, 'page', cursor) as Promise<MediaPage>
+  page(record: AgentSessionRecord, cursor?: string, query?: MediaQuery): Promise<MediaPage> {
+    return this.detail(record, 'page', cursor, query) as Promise<MediaPage>
   }
 
   neighbors(record: AgentSessionRecord, anchor: string): Promise<MediaNeighbors> {
@@ -111,13 +111,13 @@ export class SessionMetadataClient {
   }
 
   /** Both bounded detail forms share admission, repair fencing and timeout accounting. */
-  private detail(record: AgentSessionRecord, kind: 'page' | 'neighbors', argument?: string): Promise<MediaPage | MediaNeighbors> {
+  private detail(record: AgentSessionRecord, kind: 'page' | 'neighbors', argument?: string, query?: MediaQuery): Promise<MediaPage | MediaNeighbors> {
     if (this.stopped) return Promise.reject(new Error('Metadata worker disposed'))
     if (this.details.size + this.waitingForRepair >= 32) return Promise.reject(new Error('Too many pending media requests'))
     if (this.forced.has(metadataIdentity(record))) {
       this.waitingForRepair++
       return this.scan(record).then(
-        () => { this.waitingForRepair--; return this.detail(record, kind, argument) },
+        () => { this.waitingForRepair--; return this.detail(record, kind, argument, query) },
         error => { this.waitingForRepair--; throw error },
       )
     }
@@ -134,7 +134,7 @@ export class SessionMetadataClient {
       try {
         if (!this.worker) this.spawn()
         this.worker!.postMessage(kind === 'page'
-          ? { kind, id, record: { ...record }, cursor: argument } satisfies MetadataRequest
+          ? { kind, id, record: { ...record }, cursor: argument, query } satisfies MetadataRequest
           : { kind, id, record: { ...record }, anchor: argument! } satisfies MetadataRequest)
       } catch (error) { this.failed(String(error)) }
     })

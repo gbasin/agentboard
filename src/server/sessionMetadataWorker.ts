@@ -2,7 +2,7 @@
 /** Transcript filesystem/index work stays here; only summaries and requested bounded details cross realms. */
 import type { AgentSessionRecord } from './db'
 import type { SessionPullRequest } from '../shared/types'
-import type { MediaPage, MediaSummary, MediaNeighbors } from '../shared/media'
+import type { MediaPage, MediaSummary, MediaNeighbors, MediaQuery } from '../shared/media'
 import type { CodexSubagentLink } from './logMatchWorkerTypes'
 import { pullRequestScanPlan, rescanPullRequests, getCachedPullRequests } from './agentSessions'
 import { setCodexSubagentIndex } from './subagentLogs'
@@ -16,7 +16,7 @@ export interface SessionMetadata {
 export type MetadataRequest =
   | { kind: 'storage'; path: string }
   | { kind: 'scan'; id: number; record: AgentSessionRecord; force?: boolean }
-  | { kind: 'page'; id: number; record: AgentSessionRecord; cursor?: string }
+  | { kind: 'page'; id: number; record: AgentSessionRecord; cursor?: string; query?: MediaQuery }
   | { kind: 'neighbors'; id: number; record: AgentSessionRecord; anchor: string }
   | { kind: 'index'; links: CodexSubagentLink[] }
   | { kind: 'shutdown' }
@@ -41,7 +41,7 @@ ctx.onmessage = (event: MessageEvent<MetadataRequest>) => {
     if (request.kind === 'scan' && request.force) index.invalidate(record)
     const mediaSummary = index.scan(record, plan.paths)
     const metadata = { prs: getCachedPullRequests(record), mediaSummary }
-    const page = request.kind === 'page' ? index.page(record, request.cursor) : undefined
+    const page = request.kind === 'page' ? index.page(record, request.cursor, request.query) : undefined
     const neighbors = request.kind === 'neighbors' ? index.neighbors(record, request.anchor) : undefined
     ctx.postMessage({ id: request.id, metadata, ...(page ? { page } : {}), ...(neighbors ? { neighbors } : {}) } satisfies MetadataResponse)
   } catch (error) {
