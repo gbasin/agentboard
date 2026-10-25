@@ -37,6 +37,7 @@ import { LogPoller } from './logPoller'
 import { toAgentSession as buildAgentSession } from './agentSessions'
 import { SessionMetadataClient } from './sessionMetadataClient'
 import { publishSessionMetadata } from './sessionMetadataViews'
+import { MediaThumbnailClient } from './mediaThumbnailClient'
 import { createMediaRoutes } from './mediaRoutes'
 import { catalogMessage, sessionSummary } from './catalogMessages'
 import { CATALOG_VERSION, catalogVersionFromUrl } from '../shared/catalogProtocol'
@@ -572,6 +573,7 @@ async function ensureBaseSessionForRefreshAsync(context: string): Promise<boolea
   }
 }
 const registry = new SessionRegistry()
+const thumbnailClient = new MediaThumbnailClient()
 const metadataClient = new SessionMetadataClient((record, metadata) => {
   publishSessionMetadata(registry, record, metadata, config.hostLabel)
 })
@@ -1595,6 +1597,7 @@ app.get('/api/session-preview/:sessionId', async (c) => {
 })
 
 app.route('/api/session-media', createMediaRoutes({
+  thumbnail: thumbnailClient,
   getRecord: (id) => db.getSessionById(id),
   page: (record, cursor) => metadataClient.page(record, cursor),
   invalidate: (record) => metadataClient.invalidate(record),
@@ -2496,6 +2499,7 @@ async function cleanupAllTerminals() {
   throwawayShellReaper.dispose()
   setCodexSubagentIndexListener(null)
   metadataClient.dispose()
+  thumbnailClient.dispose()
   logPoller.stop()
   persistence?.dispose()
   sessionReader?.dispose()

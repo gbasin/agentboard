@@ -1,7 +1,8 @@
 /** Bounded media listings and content-validated payloads; never part of live catalogs. */
 import { Hono } from 'hono'
 import { createHash } from 'node:crypto'
-import fs from 'node:fs/promises'
+import { readMediaLine } from './mediaLine'
+import type { MediaThumbnailClient } from './mediaThumbnailClient'
 import type { AgentSessionRecord } from './db'
 import type { MediaPage } from '../shared/media'
 import { extractMediaItems } from './mediaExtractor'
@@ -12,30 +13,10 @@ import { isValidSessionId } from './validators'
 interface Dependencies {
   getRecord(id: string): AgentSessionRecord | null | undefined
   page(record: AgentSessionRecord, cursor?: string): Promise<MediaPage>
+  thumbnail?: Pick<MediaThumbnailClient, 'get'>
   invalidate?(record: AgentSessionRecord): void
 }
 
-async function readLine(logPath: string, offset: number): Promise<string | null> {
-  const handle = await fs.open(logPath, 'r')
-  try {
-    const chunks: Buffer[] = []
-    let total = 0
-    while (total < 64 * 1024 * 1024) {
-      const buffer = Buffer.allocUnsafe(Math.min(256 * 1024, 64 * 1024 * 1024 - total))
-      const { bytesRead } = await handle.read(buffer, 0, buffer.length, offset + total)
-      if (!bytesRead) return chunks.length ? Buffer.concat(chunks).toString('utf8') : null
-      const newline = buffer.subarray(0, bytesRead).indexOf(0x0a)
-      if (newline >= 0) {
-        chunks.push(buffer.subarray(0, newline))
-        return Buffer.concat(chunks).toString('utf8')
-      }
-      chunks.push(buffer.subarray(0, bytesRead))
-      total += bytesRead
-    }
-    // A truncated JSONL record is never a valid payload.
-    return null
-  } finally { await handle.close() }
-}
 
 export function createMediaRoutes(deps: Dependencies) {
   const app = new Hono()
@@ -79,7 +60,32 @@ export function createMediaRoutes(deps: Dependencies) {
     }
     if (digest !== undefined && !/^[a-f0-9]{64}$/.test(digest)) return c.json({ error: 'Invalid media digest' }, 400)
     try {
-      const line = await readLine(mediaPath, offset)
+      if (c.req.query('thumbnail') === '1') {
+        if (!digest) return c.json({ error: 'Thumbnail requires a content digest' }, 400)
+        if (!deps.thumbnail) return c.json({ error: 'Thumbnails unavailable' }, 503)
+        const expectedBytes = c.req.query('bytes')
+        if (expectedBytes !== undefined && (!Number.isSafeInteger(Number(expectedBytes)) || Number(expectedBytes) < 0)) {
+          return c.json({ error: 'Invalid byte count' }, 400)
+        }
+        try {
+          const body = await deps.thumbnail.get({ path: mediaPath, offset, index, digest,
+            ...(expectedBytes === undefined ? {} : { expectedBytes: Number(expectedBytes) }),
+          }, c.req.raw.signal)
+          const current = deps.getRecord(id)
+          if (!current || metadataIdentity(current) !== metadataIdentity(record)) return c.json({ error: 'Session changed' }, 409)
+          return new Response(new Uint8Array(body), { headers: {
+            'Content-Type': 'image/png', 'Cache-Control': 'private, max-age=31536000, immutable',
+            'X-Content-Type-Options': 'nosniff',
+          } })
+        } catch (error) {
+          const code = (error as { code?: string }).code
+          if (code === 'STALE') { deps.invalidate?.(record); return c.json({ error: 'Stale media ref' }, 409) }
+          if (code === 'NOT_FOUND') return c.json({ error: 'Media not found' }, 404)
+          if (code === 'UNSUPPORTED') return c.json({ error: 'Preview unavailable; open original' }, 422)
+          return c.json({ error: 'Preview temporarily unavailable' }, 503)
+        }
+      }
+      const line = await readMediaLine(mediaPath, offset)
       if (!line) return c.json({ error: 'Media not found' }, 404)
       const current = deps.getRecord(id)
       if (!current || metadataIdentity(current) !== metadataIdentity(record)) return c.json({ error: 'Session changed' }, 409)
