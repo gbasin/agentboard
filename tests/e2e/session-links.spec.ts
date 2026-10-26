@@ -202,3 +202,42 @@ test('copy uses the complete long destination with confirmed feedback and HTTP f
     await page.screenshot({ path: test.info().outputPath(`copy-link-${test.info().project.name}.png`) })
   } finally { fixture.cleanup() }
 })
+
+for (const width of [390, 1280]) {
+  test(`link rows avoid repeated URLs and expose destination differences at ${width}px`, async ({ page, request }) => {
+    const fixture = await mediaFixture(request, 0)
+    const base = 'https://pr-2857-mockup.geteichler.com/ike-arrival'
+    const urls = [base, base + '?rev=2', base + '#arrival', 'http://' + base.slice(8),
+      'https://github.com/geteichler/eichler/pull/2857#issuecomment-123',
+      'https://github.com/geteichler/eichler/pull/2857#issuecomment-456']
+    try {
+      fs.appendFileSync(fixture.logPath, [...urls, base, base].map(url => JSON.stringify({ type: 'assistant',
+        message: { role: 'assistant', content: [{ type: 'text', text: url }] } }) + '\n').join(''))
+      await expect.poll(async () => (await fixture.find())?.mediaSummary?.links, { timeout: 60_000 }).toBe(6)
+      await page.goto('/'); await fixture.select(page)
+      await page.setViewportSize({ width, height: 844 })
+      await page.getByTestId('media-rail-pill').click()
+      const rail = page.getByTestId('media-rail')
+      await expect(rail.getByRole('link')).toHaveCount(6)
+      const bare = rail.getByRole('link').filter({ hasText: /^pr-2857-mockup.geteichler.com\/ike-arrival$/ })
+      await expect(bare).toHaveCount(1)
+      await expect(bare.locator('span')).toHaveCount(1)
+      await expect(rail.getByText('?rev=2', { exact: true })).toBeAttached()
+      await expect(rail.getByText('#arrival', { exact: true })).toBeAttached()
+      await expect(rail.getByText('Comment #123', { exact: true })).toBeVisible()
+      await expect(rail.getByText('Comment #456', { exact: true })).toBeVisible()
+      for (const link of await rail.getByRole('link').all()) {
+        const full = (await link.getAttribute('title'))!
+        const response = await request.get((await link.getAttribute('href'))!, { maxRedirects: 0 })
+        expect(response.headers().location).toBe(full)
+        expect(urls).toContain(full)
+      }
+      expect(await rail.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true)
+      await page.screenshot({ path: test.info().outputPath(`link-clarity-${width}.png`) })
+      await bare.scrollIntoViewIfNeeded()
+      await expect(rail.getByText('?rev=2', { exact: true })).toBeVisible()
+      await expect(rail.getByText('#arrival', { exact: true })).toBeVisible()
+      await page.screenshot({ path: test.info().outputPath(`link-clarity-bare-${width}.png`) })
+    } finally { fixture.cleanup() }
+  })
+}

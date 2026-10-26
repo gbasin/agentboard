@@ -6,23 +6,19 @@ import { useMediaPages } from '../hooks/useMediaPages'
 import { ICON_SIZE } from './controlStyles'
 import { ChevronRightIcon } from './icons'
 import { CopyLinkButton } from './CopyLinkButton'
+import { linkPresentation } from '../lib/linkPresentation'
 
 function LinkRow({ item }: { item: SessionMedia }) {
   const [showSource, setShowSource] = useState(false)
   const destination = item.externalUrl ?? item.url
-  let title = item.label
-  if (!title) {
-    try { const url = new URL(destination); title = url.hostname + (url.pathname === '/' ? '' : url.pathname) }
-    catch { title = destination }
-  }
+  const { title, subtitle, detail } = linkPresentation(destination, item.label)
   return <div className="border-b border-border/60">
     <div className="flex min-h-[60px] items-center gap-2 px-3 py-2">
-      <a href={item.url} target="_blank" rel="noopener noreferrer" aria-label={title}
+      <a href={item.url} target="_blank" rel="noopener noreferrer" aria-label={title} aria-description={destination} title={destination}
         className="min-w-0 flex-1 rounded text-[12px] leading-[18px] text-primary hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
-        <span className="block truncate">{title}</span>
-        <span className="mt-0.5 block truncate text-[11px] leading-[16px] text-secondary" title={destination}>
-          {destination.replace(/^https?:\/\//i, '')}
-        </span>
+        <span className="line-clamp-2 break-words [overflow-wrap:anywhere]">{title}</span>
+        {subtitle && <span className="mt-0.5 line-clamp-2 break-words text-[11px] leading-[16px] text-secondary [overflow-wrap:anywhere]">{subtitle}</span>}
+        {detail && <span className="mt-0.5 line-clamp-2 break-all text-[11px] leading-[16px] text-secondary">{detail}</span>}
       </a>
       {item.externalUrl && <CopyLinkButton url={item.externalUrl} label={title} />}
       {item.sourceText && <button type="button" aria-label={`Source for ${title}`} aria-expanded={showSource}
