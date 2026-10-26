@@ -71,6 +71,9 @@ jobs:
       - name: Build
         run: bun run build
 
+      - name: PR metadata HTTP contention (Chromium and WebKit)
+        run: bun scripts/verify-pr-request-priority.ts
+
       - name: Run e2e tests
         # Specs mutate one shared application, catalog, and tmux fixture.
         run: bunx playwright test --workers=1
