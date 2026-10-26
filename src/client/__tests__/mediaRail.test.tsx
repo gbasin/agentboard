@@ -62,19 +62,20 @@ afterEach(() => {
 describe('scroll-driven MediaRail', () => {
   test('closed, empty, remote, and legacy embedded media never fetch', () => {
     render()
-    expect(render(session({ mediaSummary: undefined, media: [imageMedia()] })).toJSON()).toBeNull()
-    expect(render(session({ mediaSummary: summary({ total: 0 }) })).toJSON()).toBeNull()
+    expect(find(render(session({ mediaSummary: undefined, media: [imageMedia()] })), 'media-rail-pill')).toHaveLength(1)
+    expect(find(render(session({ mediaSummary: summary({ total: 0 }) })), 'media-rail-pill')).toHaveLength(1)
     expect(render(session({ remote: true })).toJSON()).toBeNull()
     expect(requests).toHaveLength(0)
   })
 
-  test('reports skipped transcript records from the summary without counting them as media or fetching', async () => {
+  test('reports skipped transcript records while allowing discovery on open', async () => {
     const incomplete = summary({ total: 0, images: 0, additions: 0, omittedRecords: 2 })
     const r = render(session({ mediaSummary: incomplete }))
     expect(find(r, 'media-incomplete')).toHaveLength(0)
+    respond = () => response(page({ total: 0, items: [] }))
     await open(r)
     expect(find(r, 'media-incomplete')[0].children.join('')).toContain('2 oversized transcript entries were skipped')
-    expect(requests).toHaveLength(0)
+    expect(requests).toHaveLength(1)
     expect(find(r, 'media-thumb')).toHaveLength(0)
     const complete = render()
     await open(complete)
@@ -87,7 +88,7 @@ describe('scroll-driven MediaRail', () => {
     expect(text).toBe('Media21')
     expect(requests).toHaveLength(0)
     await open(r)
-    expect(requests.map(r => r.url)).toEqual(['/api/session-media/s/items?kind=media'])
+    expect(requests.map(r => r.url)).toEqual(['/api/session-media/s/items?stream=1&kind=media'])
     expect(find(r, 'media-thumb')).toHaveLength(1)
     await flush(() => button(r, 'Collapse media rail').props.onClick())
     await open(r)
@@ -306,4 +307,119 @@ describe('scroll-driven MediaRail', () => {
     expect(requests).toHaveLength(2)
     expect(find(r, 'media-thumb')).toHaveLength(0)
   })
+})
+
+function discoveryStream() {
+  let controller!: ReadableStreamDefaultController<Uint8Array>
+  const body = new ReadableStream<Uint8Array>({ start(c) { controller = c } })
+  return {
+    response: new Response(body, { headers: { 'Content-Type': 'application/x-ndjson' } }),
+    send(value: unknown) { controller.enqueue(new TextEncoder().encode(JSON.stringify(value) + '\n')) },
+    end() { controller.enqueue(new TextEncoder().encode('{"type":"done"}\n')); controller.close() },
+  }
+}
+const indexing = { status: 'indexing' as const, bytesRead: 10, bytesTotal: 100, filesDone: 0, filesTotal: 2 }
+const snapshot = (over: Partial<MediaPage> = {}) => ({ type: 'snapshot', page: page({ discovery: indexing, ...over }) })
+const progress = (over: Partial<MediaSummary> = {}) => ({ type: 'progress', summary: summary({ discovery: indexing, ...over }) })
+
+describe('progressive discovery', () => {
+  test('unknown opens, partial empty becomes visible, hydration preserves the panel and first nonempty page freezes', async () => {
+    const stream = discoveryStream(); respond = async () => stream.response
+    const r = render(session({ mediaSummary: undefined }))
+    await open(r)
+    expect(requests).toHaveLength(1)
+    await flush(() => stream.send(snapshot({ total: 0, items: [] })))
+    expect(JSON.stringify(r.toJSON())).toContain('Finding ')
+    expect(JSON.stringify(r.toJSON())).not.toContain('No media in this session')
+    await flush(() => stream.send(snapshot()))
+    expect(find(r, 'media-thumb')).toHaveLength(1)
+    await update(r, session({ mediaSummary: summary({ discovery: indexing }) }))
+    expect(find(r, 'media-rail')).toHaveLength(1)
+    expect(requests).toHaveLength(1)
+    await flush(() => stream.send(progress({ revision: 'r2', total: 2, images: 2, additions: 2 })))
+    await flush(() => stream.send(snapshot({ revision: 'r2', items: many(10, 2) })))
+    expect(find(r, 'media-thumb')).toHaveLength(1)
+    expect(button(r, 'Refresh media')).toBeDefined()
+    await flush(() => { stream.send(progress({ revision: 'r2', discovery: { status: 'ready' } })); stream.end() })
+    expect(JSON.stringify(r.toJSON())).not.toContain('Finding ')
+    expect(find(r, 'media-thumb')).toHaveLength(1)
+  })
+
+  test('failed discovery preserves visible items and permits explicit retry', async () => {
+    const stream = discoveryStream(); respond = async () => stream.response
+    const r = render(); await open(r)
+    await flush(() => stream.send(snapshot()))
+    await flush(() => stream.send({ type: 'error', message: 'Index unavailable. Retry.' }))
+    expect(find(r, 'media-thumb')).toHaveLength(1)
+    expect(JSON.stringify(r.toJSON())).toContain('Index unavailable')
+    respond = () => response(page({ items: many(2, 2) }))
+    await flush(() => button(r, 'Refresh media').props.onClick())
+    expect(find(r, 'media-thumb')).toHaveLength(2)
+  })
+
+  test('closing aborts discovery and late frames cannot replace cached rows', async () => {
+    const stream = discoveryStream(); respond = async () => stream.response
+    const r = render(); await open(r)
+    await flush(() => stream.send(snapshot()))
+    await flush(() => button(r, 'Collapse media rail').props.onClick())
+    expect(requests[0].signal?.aborted).toBe(true)
+    await flush(() => { stream.send(snapshot({ items: many(4, 2) })); stream.end() })
+    expect(find(r, 'media-rail')).toHaveLength(0)
+    expect(requests).toHaveLength(1)
+  })
+
+  test('completed empty is distinct from partial empty and remains accessible', async () => {
+    respond = () => response(page({ total: 0, items: [] }))
+    const r = render(session({ mediaSummary: summary({ total: 0, images: 0 }) }))
+    await open(r)
+    expect(JSON.stringify(r.toJSON())).toContain('No media in this session yet.')
+    await flush(() => button(r, 'Collapse media rail').props.onClick())
+    expect(find(r, 'media-rail-pill')).toHaveLength(1)
+  })
+})
+
+test('foreground resumes partial discovery after terminal readiness without replacing visible rows', async () => {
+  const first = discoveryStream(), second = discoveryStream()
+  respond = async () => first.response
+  const r = render(); await open(r)
+  await flush(() => first.send(snapshot()))
+  await flush(() => { doc.visibilityState = 'hidden'; doc.dispatchEvent(new Event('visibilitychange')) })
+  expect(requests[0].signal?.aborted).toBe(true)
+  await update(r, session(), false)
+  respond = async () => second.response
+  await flush(() => { doc.visibilityState = 'visible'; doc.dispatchEvent(new Event('visibilitychange')) })
+  expect(requests).toHaveLength(1)
+  await update(r, session(), true)
+  expect(requests).toHaveLength(2)
+  await flush(() => second.send(snapshot({ revision: 'r2', items: many(4, 2) })))
+  expect(find(r, 'media-thumb')).toHaveLength(1)
+  await flush(() => {
+    second.send(progress({ revision: 'r2', discovery: { status: 'ready' } }))
+    second.end(); first.end()
+  })
+  expect(button(r, 'Refresh media')).toBeDefined()
+  expect(find(r, 'media-thumb')).toHaveLength(1)
+})
+
+test('catalog hydration preserves the image selection discovered through an unknown summary', async () => {
+  const stream = discoveryStream()
+  respond = async url => url.includes('/neighbors?')
+    ? Response.json({ identity: 'identity-s', revision: 'r1', current: imageMedia(), previous: null, next: null })
+    : stream.response
+  const r = render(session({ mediaSummary: undefined })); await open(r)
+  await flush(() => stream.send(snapshot()))
+  await flush(() => find(r, 'media-thumb')[0].props.onClick({ currentTarget: { focus() {} } }))
+  expect(find(r, 'media-lightbox')).toHaveLength(1)
+  await update(r, session({ mediaSummary: summary({ discovery: indexing }) }))
+  expect(find(r, 'media-lightbox')).toHaveLength(1)
+  await flush(() => { stream.send(progress({ discovery: { status: 'ready' } })); stream.end() })
+})
+
+test('finite incomplete discovery offers retry without dropping the first page', async () => {
+  const stream = discoveryStream(); respond = async () => stream.response
+  const r = render(); await open(r)
+  await flush(() => { stream.send(snapshot()); stream.end() })
+  expect(find(r, 'media-thumb')).toHaveLength(1)
+  expect(JSON.stringify(r.toJSON())).toContain('Discovery paused. Retry to continue.')
+  expect(button(r, 'Refresh media')).toBeDefined()
 })

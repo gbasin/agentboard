@@ -1,8 +1,8 @@
 /**
  * MediaRail — floating rail over the terminal surface showing media payloads
  * (pasted/read images, documents, artifact links) the server extracted from
- * the session's JSONL log. Renders nothing when the session has no media or
- * is remote (the log lives on another host).
+ * the session's JSONL log. Unknown and empty local transcripts remain accessible;
+ * remote transcripts live on another host and are not offered here.
  *
  * Collapsed: a media pill at top-right — top placement keeps it
  * clear of the TUI's bottom input row. Expanded: icon-labeled Media/Links
@@ -11,6 +11,7 @@
  * items open their URL directly.
  */
 
+import MediaDiscoveryStatus from './MediaDiscoveryStatus'
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import SessionLinks from './SessionLinks'
 import { useMediaThumbnail } from '../hooks/useMediaThumbnail'
@@ -134,7 +135,7 @@ function ImageThumbnail({ media, caption, enabled, root, onOpen }: {
 export default function MediaRail({ session, ready = false }: { session: Session; ready?: boolean }) {
   // A new transcript starts with a clean baseline and closed previews.
   const identity = JSON.stringify([
-    session.id, session.agentSessionId, session.logFilePath, session.remote, session.mediaSummary?.identity,
+    session.id, session.agentSessionId, session.logFilePath, session.remote, session.agentType,
   ])
   return <SessionMediaRail key={identity} session={session} ready={ready} />
 }
@@ -143,12 +144,12 @@ function SessionMediaRail({ session, ready }: { session: Session; ready: boolean
   const [expanded, setExpanded] = useState(false)
   const [attention, setAttention] = useState<'idle' | 'pulsing' | 'unread'>('idle')
   const summary = session.mediaSummary
-  const [tab, setTab] = useState<'media' | 'links'>(() => summary && summary.images + summary.documents === 0 ? 'links' : 'media')
+  const [tab, setTab] = useState<'media' | 'links'>(() => summary && summary.links > 0 && summary.images + summary.documents === 0 ? 'links' : 'media')
   const [searchOpen, setSearchOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [query, setQuery] = useState('')
   const pages = useMediaPages(session.agentSessionId, summary, expanded && tab === 'media', ready, { kind: 'media' })
-  const lightbox = useMediaLightboxNavigation(session.agentSessionId, summary?.identity, pages.visible && ready)
+  const lightbox = useMediaLightboxNavigation(session.agentSessionId, pages.identity, pages.visible && ready)
   const panel = useRef<HTMLDivElement>(null)
   const searchInput = useRef<HTMLInputElement>(null)
   const pill = useRef<HTMLButtonElement>(null)
@@ -168,7 +169,7 @@ function SessionMediaRail({ session, ready }: { session: Session; ready: boolean
   const previousShift = useRef(0)
   const previousScroll = useRef(0)
 
-  useEffect(() => { if (!summary?.images) lightbox.close() }, [summary?.images, lightbox.close])
+  useEffect(() => { if (summary?.images === 0 && (!summary.discovery || summary.discovery.status === 'ready')) lightbox.close() }, [summary?.images, summary?.discovery?.status, lightbox.close])
 
   useLayoutEffect(() => {
     if (scroll.current) scroll.current.scrollLeft += (pages.scrollShift - previousShift.current) * 64
@@ -208,9 +209,10 @@ function SessionMediaRail({ session, ready }: { session: Session; ready: boolean
     return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [expanded, lightbox.selection])
 
-  if (session.remote || !summary || (summary.total === 0 && !summary.omittedRecords) || !session.agentSessionId) return null
+  if (session.remote || !session.agentSessionId) return null
 
-  const mediaCount = summary.images + summary.documents
+  const counts = pages.latestSummary ?? summary
+  const mediaCount = counts ? counts.images + counts.documents : undefined
 
   return (
     <>
@@ -226,7 +228,7 @@ function SessionMediaRail({ session, ready }: { session: Session; ready: boolean
               const Icon = value === 'media' ? Image01Icon : LinkExternal01Icon
               return <button key={value} type="button" aria-pressed={tab === value} onClick={() => { setTab(value); lightbox.close() }}
                 className={`flex h-[44px] items-center gap-[6px] whitespace-nowrap text-[12px] ${tab === value ? 'text-primary shadow-[inset_0_-2px_var(--accent)]' : 'text-secondary hover:text-primary'} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent`}>
-                <Icon width={ICON_SIZE.primary} height={ICON_SIZE.primary} />{value === 'media' ? `Media ${mediaCount}` : `Links ${summary.links}`}
+                <Icon width={ICON_SIZE.primary} height={ICON_SIZE.primary} />{value === 'media' ? `Media${mediaCount === undefined ? '' : ` ${mediaCount}`}` : `Links${counts ? ` ${counts.links}` : ''}`}
               </button>
             })}
             {tab === 'links' && <button type="button" aria-label="Search links" aria-expanded={searchOpen}
@@ -243,11 +245,14 @@ function SessionMediaRail({ session, ready }: { session: Session; ready: boolean
               onChange={event => setSearch(event.target.value)}
               className="w-full rounded border border-border bg-surface px-2 py-1.5 text-[16px] text-primary placeholder:text-secondary focus:outline-none focus:ring-2 focus:ring-accent md:text-[12px]" />
           </div>}
-          {!!summary.omittedRecords && (
+          {!!counts?.omittedRecords && (
             <p data-testid="media-incomplete" className="px-3 py-2 text-xs text-muted">
-              Some media may be unavailable: {summary.omittedRecords} oversized transcript {summary.omittedRecords === 1 ? 'entry was' : 'entries were'} skipped.
+              Some media may be unavailable: {counts?.omittedRecords} oversized transcript {counts?.omittedRecords === 1 ? 'entry was' : 'entries were'} skipped.
             </p>
           )}
+          {Boolean(counts?.omittedItems || pages.pages[0]?.page.omittedItems) && <p data-testid="media-omitted-items" className="px-3 py-2 text-xs text-muted">
+            Some items could not be listed because their details are too large ({Math.max(counts?.omittedItems ?? 0, pages.pages[0]?.page.omittedItems ?? 0)}).
+          </p>}
           {tab === 'links' ? <SessionLinks key={query} session={session} ready={ready} search={query} onRefresh={() => setAttention('idle')} /> : <>
           {pages.changed && (
             <button type="button" onClick={refresh} disabled={!ready || pages.status === 'loading'}
@@ -265,7 +270,7 @@ function SessionMediaRail({ session, ready }: { session: Session; ready: boolean
               const forward = el.scrollLeft > previousScroll.current
               previousScroll.current = el.scrollLeft
               if (forward && el.clientWidth > 0 && el.scrollWidth - el.clientWidth - el.scrollLeft < 128 &&
-                  pages.hasNext && pages.status === 'idle' && !pages.changed) void pages.loadNext()
+                  pages.hasNext && (pages.status === 'idle' || pages.status === 'streaming')) void pages.loadNext()
             }}
             className="scrollbar-none flex gap-2 overflow-x-auto px-3 py-2">
             {pages.items.map((m, i) => (
@@ -273,11 +278,13 @@ function SessionMediaRail({ session, ready }: { session: Session; ready: boolean
             ))}
           </div>
           {!ready && <p role="status" className="px-3 pb-2 text-xs text-muted">Waiting for terminal recovery…</p>}
-          {pages.status === 'loading' && <p role="status" className="px-3 pb-2 text-xs text-muted">Loading media…</p>}
+          {!pages.error && <MediaDiscoveryStatus discovery={pages.discovery} kind="media" hasItems={pages.items.length > 0} />}
+          {pages.status === 'loading' && pages.discovery.status === 'ready' && <p role="status" className="px-3 pb-2 text-xs text-muted">Loading media…</p>}
+          {pages.pages.length > 0 && !pages.items.length && pages.discovery.status === 'ready' && <p className="px-3 py-2 text-xs text-secondary">No media in this session yet.</p>}
           {pages.error && <div role="alert" className="px-3 pb-2 text-xs text-muted">
             {pages.error} <button type="button" onClick={refresh} disabled={!ready} className="text-accent" aria-label="Refresh media">Refresh</button>
           </div>}
-          {pages.hasNext && !pages.changed && !pages.error && (
+          {pages.hasNext && !pages.error && (
             <button type="button" onClick={() => void pages.loadNext()} disabled={!ready || pages.status === 'loading'}
               className="px-3 pb-2 text-xs text-accent">Load older media</button>
           )}
@@ -293,15 +300,15 @@ function SessionMediaRail({ session, ready }: { session: Session; ready: boolean
             setAttention('idle')
             setExpanded(true)
           }}
-          aria-label={`Open media: ${summary.total} ${summary.total === 1 ? 'item' : 'items'}${attention !== 'idle' ? ', new media' : ''}`}
+          aria-label={`Open media${counts ? `: ${counts.total} ${counts.total === 1 ? 'item' : 'items'}` : ''}${attention !== 'idle' ? ', new media' : ''}`}
           className={`absolute top-2 right-2 z-40 flex items-center gap-1.5 rounded-full border border-border bg-elevated/90 px-3 py-1.5 text-xs text-secondary shadow-lg backdrop-blur transition-colors hover:text-primary md:min-h-[30px] md:gap-[6px] md:px-[12px] md:py-[5px] md:text-[12px] md:leading-[18px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${attention === 'pulsing' ? 'media-attention' : ''} ${TOUCH_TARGET_CLASS}`}
         >
           <Image01Icon width={ICON_SIZE.pill} height={ICON_SIZE.pill} className="md:h-[16px] md:w-[16px]" />
           <span className="hidden md:inline">Media</span>
-          <span className="tabular-nums">{mediaCount}</span>
-          {summary.links > 0 && <>
+          <span className="tabular-nums">{mediaCount ?? '…'}</span>
+          {!!counts?.links && <>
             <LinkExternal01Icon width={ICON_SIZE.pill} height={ICON_SIZE.pill} />
-            <span className="tabular-nums">{summary.links}</span>
+            <span className="tabular-nums">{counts?.links}</span>
           </>}
           {attention !== 'idle' && (
             <span data-testid="media-rail-new-dot" aria-hidden="true" className="h-[6px] w-[6px] shrink-0 rounded-full bg-accent" />

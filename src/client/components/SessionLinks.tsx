@@ -1,9 +1,11 @@
 /** On-demand session web links. Search and source excerpts stay out of the terminal. */
+import MediaDiscoveryStatus from './MediaDiscoveryStatus'
 import { useEffect, useRef, useState } from 'react'
 import type { Session, SessionMedia } from '@shared/types'
 import { useMediaPages } from '../hooks/useMediaPages'
 import { ICON_SIZE } from './controlStyles'
 import { ChevronRightIcon } from './icons'
+import { CopyLinkButton } from './CopyLinkButton'
 
 function LinkRow({ item }: { item: SessionMedia }) {
   const [showSource, setShowSource] = useState(false)
@@ -22,6 +24,7 @@ function LinkRow({ item }: { item: SessionMedia }) {
           {destination.replace(/^https?:\/\//i, '')}
         </span>
       </a>
+      {item.externalUrl && <CopyLinkButton url={item.externalUrl} label={title} />}
       {item.sourceText && <button type="button" aria-label={`Source for ${title}`} aria-expanded={showSource}
         onClick={() => setShowSource(value => !value)}
         className="flex h-[44px] w-[36px] shrink-0 items-center justify-center rounded text-secondary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
@@ -48,13 +51,17 @@ export default function SessionLinks({ session, ready, search, onRefresh }: { se
       aria-label="Refresh media" className="shrink-0 px-3 py-2 text-left text-xs text-accent">Links changed · Refresh</button>}
     <div ref={scroll} data-testid="links-scroll" role="region" aria-label="Session links, newest first"
       className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+      {!!current?.page.omittedItems && !session.mediaSummary?.omittedItems && <p className="px-3 py-2 text-xs text-secondary">
+        Some items could not be listed because their details are too large ({current.page.omittedItems}).
+      </p>}
       {current?.page.items.map(item => <LinkRow key={item.url} item={item} />)}
-      {current && !current.page.items.length && <p className="px-3 py-4 text-xs text-secondary">
+      {current && !current.page.items.length && pages.discovery.status === 'ready' && <p className="px-3 py-4 text-xs text-secondary">
         {search ? 'No matching links.' : 'No web links in this session yet.'}
       </p>}
       {pages.error && <p role="alert" className="px-3 py-2 text-xs text-secondary">{pages.error} <button type="button"
         onClick={() => { setPageNumber(0); onRefresh(); void pages.refresh() }} className="text-accent">Retry</button></p>}
-      {pages.status === 'loading' && <p role="status" className="px-3 py-2 text-xs text-secondary">Loading links…</p>}
+      {!pages.error && <MediaDiscoveryStatus discovery={pages.discovery} kind="links" hasItems={Boolean(current?.page.items.length)} />}
+      {pages.status === 'loading' && pages.discovery.status === 'ready' && <p role="status" className="px-3 py-2 text-xs text-secondary">Loading links…</p>}
       {!ready && <p role="status" className="px-3 py-2 text-xs text-secondary">Waiting for terminal recovery…</p>}
       <div className="flex justify-between gap-2 px-3 text-xs text-accent">
         {current && current.number > 0 && <button type="button" disabled={pages.status === 'loading' || !ready}
@@ -63,7 +70,7 @@ export default function SessionLinks({ session, ready, search, onRefresh }: { se
             else if (pages.canLoadEarlier) { setPageNumber(current.number - 1); void pages.loadPrevious() }
             else { setPageNumber(0); void pages.refresh() }
           }}>Newer links</button>}
-        {current?.page.nextCursor && !pages.changed && <button type="button" disabled={pages.status === 'loading' || !ready}
+        {current?.page.nextCursor && <button type="button" disabled={pages.status === 'loading' || !ready}
           className="ml-auto min-h-[44px]" onClick={() => {
             setPageNumber(current.number + 1)
             if (!pages.pages.some(p => p.number === current.number + 1)) void pages.loadNext()
