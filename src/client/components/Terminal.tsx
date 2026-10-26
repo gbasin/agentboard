@@ -1286,7 +1286,7 @@ export default function Terminal({
 
   return (
     <section
-      className={`flex flex-1 flex-col bg-base terminal-mobile-overlay md:relative md:inset-auto ${isiOS ? 'ios-native-term-selection' : ''}`}
+      className={`flex min-w-0 flex-1 flex-col bg-base terminal-mobile-overlay md:relative md:inset-auto ${isiOS ? 'ios-native-term-selection' : ''}`}
       data-testid="terminal-panel"
       onDragOver={(event) => {
         if (!Array.from(event.dataTransfer.types).includes('Files')) return
@@ -1491,10 +1491,12 @@ export default function Terminal({
       <div className="relative flex-1">
         {/* Theme background on the container so the .xterm padding ring
             matches the terminal — xterm.js 6.0 no longer paints the viewport
-            with the theme background (black-border regression on mobile). */}
+            with the theme background (black-border regression on mobile).
+            Clip stale canvas/helper-textarea bounds during resize so browser
+            focus cannot scroll the board sideways to the old cursor position. */}
         <div
           ref={containerRef}
-          className="absolute inset-0"
+          className="absolute inset-0 overflow-clip"
           style={{ backgroundColor: terminalTheme.background }}
         />
         {session && !isReadOnly && !isInputReady && (
