@@ -415,11 +415,35 @@ test('catalog hydration preserves the image selection discovered through an unkn
   await flush(() => { stream.send(progress({ discovery: { status: 'ready' } })); stream.end() })
 })
 
-test('finite incomplete discovery offers retry without dropping the first page', async () => {
-  const stream = discoveryStream(); respond = async () => stream.response
+test('finite incomplete discovery continues three times retaining rows, then offers retry without looping', async () => {
+  jest.useFakeTimers()
+  const streams = Array.from({ length: 4 }, () => discoveryStream())
+  let index = 0
+  respond = async () => streams[index++].response
   const r = render(); await open(r)
-  await flush(() => { stream.send(snapshot()); stream.end() })
-  expect(find(r, 'media-thumb')).toHaveLength(1)
-  expect(JSON.stringify(r.toJSON())).toContain('Discovery paused. Retry to continue.')
+  await flush(() => { streams[0].send(snapshot()); streams[0].end() })
+  for (let i = 1; i <= 3; i++) {
+    expect(requests).toHaveLength(i)
+    await flush(() => jest.advanceTimersByTime(250 * i))
+    expect(requests).toHaveLength(i + 1)
+    await flush(() => { streams[i].send(snapshot({ items: many(i, 2) })); streams[i].end() })
+    expect(find(r, 'media-thumb')).toHaveLength(1)
+  }
+  expect(JSON.stringify(r.toJSON())).toContain('Discovery is still incomplete. Retry to continue.')
+  await flush(() => jest.advanceTimersByTime(10_000))
+  expect(requests).toHaveLength(4)
   expect(button(r, 'Refresh media')).toBeDefined()
+})
+
+test('synthetic pending zero counts show an unknown count and remain open through hydration', async () => {
+  const stream = discoveryStream(); respond = async () => stream.response
+  const r = render(session({ mediaSummary: summary({ total: 0, images: 0, additions: 0, discovery: { status: 'pending' } }) }))
+  const pill = find(r, 'media-rail-pill')[0]
+  expect(pill.props['aria-label']).toBe('Open media')
+  expect(pill.findAllByType('span').map(s => s.children.join('')).join('')).toContain('…')
+  await open(r)
+  await flush(() => { stream.send(snapshot()); stream.send(progress({ discovery: { status: 'ready' } })); stream.end() })
+  await update(r, session())
+  expect(find(r, 'media-rail')).toHaveLength(1)
+  expect(find(r, 'media-thumb')).toHaveLength(1)
 })

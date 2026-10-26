@@ -212,6 +212,7 @@ function SessionMediaRail({ session, ready }: { session: Session; ready: boolean
   if (session.remote || !session.agentSessionId) return null
 
   const counts = pages.latestSummary ?? summary
+  const pendingEmpty = !counts || (counts.total === 0 && (pages.discovery.status === 'pending' || pages.discovery.status === 'indexing'))
   const mediaCount = counts ? counts.images + counts.documents : undefined
 
   return (
@@ -300,12 +301,12 @@ function SessionMediaRail({ session, ready }: { session: Session; ready: boolean
             setAttention('idle')
             setExpanded(true)
           }}
-          aria-label={`Open media${counts ? `: ${counts.total} ${counts.total === 1 ? 'item' : 'items'}` : ''}${attention !== 'idle' ? ', new media' : ''}`}
+          aria-label={`Open media${counts && !pendingEmpty ? `: ${counts.total} ${counts.total === 1 ? 'item' : 'items'}` : ''}${attention !== 'idle' ? ', new media' : ''}`}
           className={`absolute top-2 right-2 z-40 flex items-center gap-1.5 rounded-full border border-border bg-elevated/90 px-3 py-1.5 text-xs text-secondary shadow-lg backdrop-blur transition-colors hover:text-primary md:min-h-[30px] md:gap-[6px] md:px-[12px] md:py-[5px] md:text-[12px] md:leading-[18px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${attention === 'pulsing' ? 'media-attention' : ''} ${TOUCH_TARGET_CLASS}`}
         >
           <Image01Icon width={ICON_SIZE.pill} height={ICON_SIZE.pill} className="md:h-[16px] md:w-[16px]" />
           <span className="hidden md:inline">Media</span>
-          <span className="tabular-nums">{mediaCount ?? '…'}</span>
+          <span className="tabular-nums">{pendingEmpty ? '…' : mediaCount ?? '…'}</span>
           {!!counts?.links && <>
             <LinkExternal01Icon width={ICON_SIZE.pill} height={ICON_SIZE.pill} />
             <span className="tabular-nums">{counts?.links}</span>

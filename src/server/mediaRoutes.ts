@@ -4,16 +4,18 @@ import { createHash } from 'node:crypto'
 import { readMediaLine } from './mediaLine'
 import type { MediaThumbnailClient } from './mediaThumbnailClient'
 import type { AgentSessionRecord } from './db'
-import type { MediaPage, MediaNeighbors, MediaQuery } from '../shared/media'
+import type { MediaPage, MediaNeighbors, MediaQuery, MediaStreamEvent } from '../shared/media'
 import { extractMediaItems } from './mediaExtractor'
 import { getSubagentLogPaths } from './subagentLogs'
 import { metadataIdentity } from './sessionMetadataClient'
 import { isValidSessionId } from './validators'
 import { parseMediaAnchor } from './mediaAnchor'
+import { mediaStreamResponse } from './mediaStreamResponse'
 
 interface Dependencies {
   getRecord(id: string): AgentSessionRecord | null | undefined
   page(record: AgentSessionRecord, cursor?: string, query?: MediaQuery): Promise<MediaPage>
+  watch?(record: AgentSessionRecord, cursor?: string, query?: MediaQuery, signal?: AbortSignal): AsyncIterable<MediaStreamEvent>
   neighbors?(record: AgentSessionRecord, anchor: string): Promise<MediaNeighbors>
   thumbnail?: Pick<MediaThumbnailClient, 'get'>
   invalidate?(record: AgentSessionRecord): void
@@ -32,6 +34,17 @@ export function createMediaRoutes(deps: Dependencies) {
     const kind = c.req.query('kind'), search = c.req.query('search')
     if (kind !== undefined && kind !== 'media' && kind !== 'links') return c.json({ error: 'Invalid media kind' }, 400)
     if (search && search.length > 200) return c.json({ error: 'Search too long' }, 400)
+    if (c.req.query('stream') === '1') {
+      if (!deps.watch) return c.json({ error: 'Media discovery is temporarily unavailable' }, 503)
+      return mediaStreamResponse({
+        watch: signal => deps.watch!(record, cursor, { kind, search }, signal),
+        isCurrent: () => {
+          const current = deps.getRecord(id)
+          return !!current && metadataIdentity(current) === metadataIdentity(record)
+        },
+        signal: c.req.raw.signal,
+      })
+    }
     try {
       const page = await deps.page(record, cursor, { kind, search })
       const current = deps.getRecord(id)

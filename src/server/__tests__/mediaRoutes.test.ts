@@ -99,3 +99,37 @@ test('link filters and bounded search are validated before worker dispatch', asy
   expect((await app.request('/session-12345678-abcdef/items?kind=links&search=report%20%23')).status).toBe(200)
   expect(received).toEqual({ cursor: undefined, query: { kind: 'links', search: 'report #' } })
 })
+
+test('stream=1 selects discovery without calling the blocking JSON page path', async () => {
+  const f = fixture()
+  let received: unknown
+  let pageCalls = 0
+  const app = createMediaRoutes({ getRecord: () => f.record,
+    page: async () => { pageCalls++; return { identity: 'a', revision: '1', total: 0, items: [], nextCursor: null } },
+    watch: async function* (record, cursor, query, signal) {
+      received = { record: record.sessionId, cursor, query, signal: !!signal }
+      yield { type: 'snapshot', page: { identity: 'a', revision: '1', total: 0, items: [], nextCursor: null, discovery: { status: 'pending' } } }
+      yield { type: 'done' }
+    },
+  })
+  const response = await app.request('/session-12345678-abcdef/items?stream=1&kind=links&search=report&cursor=next')
+  expect(response.headers.get('Content-Type')).toContain('application/x-ndjson')
+  expect((await response.text()).trim().split('\n').map(line => JSON.parse(line).type)).toEqual(['snapshot', 'done'])
+  expect(received).toEqual({ record: f.record!.sessionId, cursor: 'next', query: { kind: 'links', search: 'report' }, signal: true })
+  expect(pageCalls).toBe(0)
+  const json = await app.request('/session-12345678-abcdef/items')
+  expect(json.headers.get('Content-Type')).toContain('application/json')
+  expect(pageCalls).toBe(1)
+})
+
+test('stream inputs are validated before watch dispatch and unavailable discovery fails explicitly', async () => {
+  const f = fixture()
+  expect((await f.app.request('/session-12345678-abcdef/items?stream=1')).status).toBe(503)
+  let watched = false
+  const app = createMediaRoutes({ getRecord: () => f.record, page: async () => { throw Error() },
+    watch: async function* () { watched = true; yield { type: 'done' } },
+  })
+  expect((await app.request('/session-12345678-abcdef/items?stream=1&kind=bad')).status).toBe(400)
+  expect((await app.request('/session-12345678-abcdef/items?stream=1&cursor=' + 'x'.repeat(8193))).status).toBe(400)
+  expect(watched).toBe(false)
+})

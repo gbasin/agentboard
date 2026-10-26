@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { SessionMetadataClient } from '../sessionMetadataClient'
+import { FakeMediaDiscovery, pendingMedia } from './fixtures/fakeMediaDiscovery'
 import type { AgentSessionRecord } from '../db'
 import type { MetadataRequest, MetadataResponse, SessionMetadata } from '../sessionMetadataWorker'
 
@@ -14,6 +15,7 @@ const record = (logFilePath = '/private/test.jsonl'): AgentSessionRecord => ({
   isCodexExec: false, launchCommand: null,
 })
 const metadata = (number: number): SessionMetadata => ({
+  mediaSummary: pendingMedia,
   prs: [{ url: `https://github.com/a/b/pull/${number}`, repo: 'a/b', number }],
 })
 class FakeWorker {
@@ -37,14 +39,15 @@ const tick = () => new Promise<void>((resolve) => queueMicrotask(resolve))
 
 function fake() {
   const workers: FakeWorker[] = []
+  const media = new FakeMediaDiscovery()
   const changes: { record: AgentSessionRecord; metadata: SessionMetadata }[] = []
   const client = new SessionMetadataClient((record, metadata) => changes.push({ record, metadata }), () => {
     const worker = new FakeWorker()
     workers.push(worker)
     return worker as unknown as Worker
-  })
+  }, ':memory:', 30_000, changed => { media.changed = changed; return media })
   clients.push(client)
-  return { client, workers, changes }
+  return { client, workers, changes, media }
 }
 
 test('two views share one scan; a completed unchanged refresh does not republish', async () => {
@@ -139,6 +142,7 @@ test('real worker preserves append, same-size rewrite, truncation, new/deleted c
   await until(() => client.get(a).prs[0]?.number === 2)
   fs.appendFileSync(log, frame('media'))
   client.queue(a)
+  await discover(client, a) // Explicit discovery bypasses the unchanged-size background cooldown.
   await until(() => client.get(a).mediaSummary?.total === 1)
   const children = path.join(root, 'parent', 'subagents')
   fs.mkdirSync(children, { recursive: true })
@@ -149,6 +153,7 @@ test('real worker preserves append, same-size rewrite, truncation, new/deleted c
   fs.rmSync(child)
   fs.writeFileSync(log, pr(4))
   client.queue(a)
+  await discover(client, a)
   await until(() => client.get(a).prs.length === 1 && client.get(a).prs[0].number === 4 && client.get(a).mediaSummary?.total === 0)
   fs.rmSync(log)
   client.queue(a)
@@ -240,7 +245,8 @@ test('real worker preserves image payload byte offsets and session-media URLs', 
   clients.push(client)
   const result = await client.scan(a)
   expect(result.prs).toEqual(metadata(1).prs)
-  expect(result.mediaSummary?.total).toBe(1)
+  await discover(client, a)
+  expect(client.get(a).mediaSummary?.total).toBe(1)
   expect('media' in result).toBe(false)
   const page = await client.page(a)
   const descriptor = page.items[0]
@@ -295,118 +301,6 @@ test('worker recovery retries interrupted and pending dormant scans without anot
   expect(client.get(b).prs).toHaveLength(1)
 })
 
-test('page RPC propagates stale cursor errors and rejects pending requests on worker failure/dispose', async () => {
-  const { client, workers } = fake()
-  const a = record()
-  const first = client.page(a, 'expired').catch((error: Error & { code?: string }) => error)
-  const page = workers[0].requests.find(r => r.kind === 'page')!
-  expect(page.kind).toBe('page')
-  if (page.kind !== 'page') throw Error('Missing page')
-  workers[0].onmessage?.({ data: { id: page.id, error: 'Refresh media', code: 'STALE_CURSOR' } } as MessageEvent<MetadataResponse>)
-  expect(await first).toMatchObject({ code: 'STALE_CURSOR' })
-  const second = client.page(a).catch((error: Error) => error)
-  workers[0].onerror?.()
-  expect(await second).toBeInstanceOf(Error)
-  const third = client.page(a).catch((error: Error) => error)
-  client.dispose()
-  expect(await third).toBeInstanceOf(Error)
-})
-
-test('page response for a replaced identity cannot publish its summary or resolve as current data', async () => {
-  const { client, workers, changes } = fake()
-  const a = record('/old'), b = record('/new')
-  const pending = client.page(a).catch((error: Error) => error)
-  const page = workers[0].requests.find(r => r.kind === 'page')!
-  if (page.kind !== 'page') throw Error('Missing page')
-  client.queue(b)
-  workers[0].onmessage?.(new MessageEvent<MetadataResponse>('message', { data: { id: page.id, metadata: metadata(1), page: {
-    identity: 'old', revision: 'v1', items: [], total: 0, nextCursor: null,
-  } } }))
-  expect(await pending).toBeInstanceOf(Error)
-  expect(changes).toHaveLength(0)
-})
-
-test('payload repair coalesces storms, rejects obsolete identities, and survives worker failure', async () => {
-  const { client, workers } = fake()
-  const a = record('/old'), b = record('/new')
-  client.queue(a); await tick()
-  workers[0].reply(metadata(1))
-  for (let i = 0; i < 1000; i++) client.invalidate(a)
-  await tick()
-  expect(workers[0].scans()).toHaveLength(2)
-  expect(workers[0].scans()[1].force).toBe(true)
-  workers[0].onerror?.()
-  await until(() => workers.length === 2)
-  expect(workers[1].scans()[0].force).toBe(true)
-  workers[1].reply(metadata(2))
-  client.invalidate(a); await tick()
-  expect(workers[1].scans()).toHaveLength(1)
-  client.queue(b); await tick()
-  workers[1].reply(metadata(3))
-  client.invalidate(a); await tick()
-  expect(workers[1].scans()).toHaveLength(2)
-})
-
-test('a filtered page waits for a queued repair without losing its query', async () => {
-  const { client, workers } = fake()
-  const a = record()
-  client.invalidate(a)
-  const query = { kind: 'links' as const, search: 'report' }
-  const page = client.page(a, undefined, query)
-  await tick()
-  expect(workers[0].scans()[0].force).toBe(true)
-  expect(workers[0].requests.filter(r => r.kind === 'page')).toHaveLength(0)
-  workers[0].reply(metadata(1))
-  await tick()
-  const request = workers[0].requests.find(r => r.kind === 'page')!
-  if (request.kind !== 'page') throw Error('Missing page')
-  expect(request.query).toEqual(query)
-  workers[0].onmessage?.(new MessageEvent<MetadataResponse>('message', { data: { id: request.id, metadata: metadata(1), page: {
-    identity: 'a', revision: 'new', items: [], total: 0, nextCursor: null,
-  } } }))
-  expect((await page).revision).toBe('new')
-})
-
-test('timed-out page requests retain admission slots until the worker responds', async () => {
-  const worker = new FakeWorker()
-  const client = new SessionMetadataClient(() => {}, () => worker as unknown as Worker, ':memory:', 10)
-  clients.push(client)
-  const requests = Array.from({ length: 32 }, () => client.page(record()).catch((error: Error) => error))
-  await Promise.all(requests)
-  expect(worker.requests.filter(r => r.kind === 'page')).toHaveLength(32)
-  for (let i = 0; i < 32; i++) {
-    expect(await client.page(record()).catch((error: Error) => error)).toEqual(new Error('Too many pending media requests'))
-  }
-  expect(worker.requests.filter(r => r.kind === 'page')).toHaveLength(32)
-  const first = worker.requests.find(r => r.kind === 'page')!
-  if (first.kind !== 'page') throw Error('Missing page')
-  worker.onmessage?.(new MessageEvent<MetadataResponse>('message', { data: { id: first.id, error: 'Finished late' } }))
-  const next = client.page(record()).catch((error: Error) => error)
-  expect(worker.requests.filter(r => r.kind === 'page')).toHaveLength(33)
-  client.dispose()
-  expect(await next).toBeInstanceOf(Error)
-})
-
-test('neighbor RPC shares page admission and rejects mismatched result forms', async () => {
-  const worker = new FakeWorker()
-  const client = new SessionMetadataClient(() => {}, () => worker as unknown as Worker, ':memory:', 10)
-  clients.push(client)
-  const jobs = Array.from({ length: 32 }, (_, i) => (i % 2 ? client.page(record()) : client.neighbors(record(), 'anchor')).catch(e => e))
-  await Promise.all(jobs)
-  expect(worker.requests.filter(r => r.kind === 'page' || r.kind === 'neighbors')).toHaveLength(32)
-  expect(await client.neighbors(record(), 'anchor').catch(e => e.message)).toBe('Too many pending media requests')
-  const first = worker.requests.find(r => r.kind === 'neighbors')!
-  if (first.kind !== 'neighbors') throw Error('Missing neighbors')
-  worker.onmessage?.(new MessageEvent<MetadataResponse>('message', { data: { id: first.id, error: 'Done late' } }))
-  const next = client.neighbors(record(), 'anchor').catch(e => e.message)
-  const request = worker.requests.at(-1)!
-  if (request.kind !== 'neighbors') throw Error('Missing neighbors')
-  worker.onmessage?.(new MessageEvent<MetadataResponse>('message', { data: { id: request.id, metadata: metadata(1), page: {
-    identity: 'a', revision: 'r', total: 0, items: [], nextCursor: null,
-  } } }))
-  expect(await next).toBe('Missing media detail')
-})
-
 test('real metadata worker navigates neighboring images after append and rejects stale anchors', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'metadata-neighbors-')); roots.push(root)
   const a = record(path.join(root, 'images.jsonl'))
@@ -415,32 +309,20 @@ test('real metadata worker navigates neighboring images after append and rejects
   ] } }) + '\n'
   fs.writeFileSync(a.logFilePath, image(0))
   const client = new SessionMetadataClient(() => {}, undefined, path.join(root, 'media.sqlite')); clients.push(client)
+  await discover(client, a)
   const first = (await client.page(a)).items[0]
   const initial = await client.neighbors(a, first.url)
   expect(initial.current).toEqual(first); expect(initial.previous).toBeNull(); expect(initial.next).toBeNull()
   fs.appendFileSync(a.logFilePath, image(1))
+  await discover(client, a)
   const appended = await client.neighbors(a, first.url)
   expect(appended.previous).not.toBeNull()
   expect((await client.neighbors(a, appended.previous!.url)).next).toEqual(first)
   fs.writeFileSync(a.logFilePath, image(2))
+  await discover(client, a)
   const stale = await client.neighbors(a, first.url).catch(error => error)
   expect(stale.code).toBe('STALE_ANCHOR')
 })
-
-test('neighbor responses cannot publish or resolve after session reassociation', async () => {
-  const { client, workers, changes } = fake()
-  const original = record('/old')
-  const result = client.neighbors(original, 'anchor').catch(error => error)
-  const request = workers[0].requests.find(r => r.kind === 'neighbors')!
-  if (request.kind !== 'neighbors') throw Error('Missing neighbors')
-  client.queue(record('/new'))
-  workers[0].onmessage?.(new MessageEvent<MetadataResponse>('message', { data: { id: request.id, metadata: metadata(1), neighbors: {
-    identity: 'old', revision: 'r', current: { kind: 'image', url: 'anchor' }, previous: null, next: null,
-  } } }))
-  expect((await result).code).toBe('STALE_CURSOR')
-  expect(changes).toHaveLength(0)
-})
-
 
 test('real worker keeps link search and image neighbors independent in the shared detail pipeline', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'metadata-links-neighbors-')); roots.push(root)
@@ -453,6 +335,7 @@ test('real worker keeps link search and image neighbors independent in the share
     image(1),
   ].map(value => JSON.stringify(value) + '\n').join(''))
   const client = new SessionMetadataClient(() => {}, undefined, path.join(root, 'media.sqlite')); clients.push(client)
+  await discover(client, a)
   const media = await client.page(a, undefined, { kind: 'media' })
   expect(media.total).toBe(2)
   expect(media.items.map(item => item.kind)).toEqual(['image', 'image'])
@@ -467,4 +350,67 @@ test('real worker keeps link search and image neighbors independent in the share
   expect(neighbors.next).toEqual(media.items[1])
   expect((await client.neighbors(a, media.items[1].url)).previous).toEqual(media.items[0])
   expect((await client.page(a, undefined, { kind: 'links', search: 'missing' })).total).toBe(0)
+})
+
+async function discover(client: SessionMetadataClient, record: AgentSessionRecord) {
+  for await (const event of client.watch(record)) {
+    if (event.type === 'error') throw new Error(event.message)
+  }
+}
+
+test('PR persistence resolves while media discovery is still pending, without media RPCs on the PR worker', async () => {
+  const { client, workers, media, changes } = fake()
+  const a = record()
+  const result = client.scan(a)
+  await tick()
+  workers[0].reply(metadata(1))
+  expect((await result).mediaSummary?.discovery?.status).toBe('pending')
+  expect(media.queued).toHaveLength(1)
+  expect(workers[0].requests.map(r => r.kind)).toEqual(['index', 'scan'])
+  media.publish(a, { ...pendingMedia, revision: 'partial', total: 4, discovery: { status: 'indexing', bytesRead: 10, bytesTotal: 20, filesDone: 0, filesTotal: 1 } })
+  expect(changes.at(-1)?.metadata.prs).toEqual(metadata(1).prs)
+  client.queue(a); await tick()
+  workers[0].reply(metadata(2))
+  expect(changes.at(-1)?.metadata.mediaSummary?.total).toBe(4)
+  expect(client.get(a).prs).toEqual(metadata(2).prs)
+})
+
+test('media reads, navigation, stream cancellation and failures do not depend on PR completion', async () => {
+  const { client, workers, media } = fake()
+  const a = record(), query = { kind: 'links' as const, search: 'report' }
+  client.queue(a); await tick() // Leave PR scan deliberately unresolved.
+  expect((await client.page(a, 'cursor', query)).revision).toBe('indexed')
+  expect((await client.neighbors(a, 'anchor')).current.url).toBe('anchor')
+  const controller = new AbortController()
+  for await (const _event of client.watch(a, 'cursor', query, controller.signal)) { /* finite stream */ }
+  expect(media.calls).toEqual([['page', a, 'cursor', query], ['neighbors', a, 'anchor'], ['watch', a, 'cursor', query, controller.signal]])
+  expect(workers[0].requests.map(r => r.kind)).toEqual(['index', 'scan'])
+  media.failure = Object.assign(new Error('old page'), { code: 'STALE_CURSOR' })
+  expect(await client.page(a).catch(error => error.code)).toBe('STALE_CURSOR')
+  workers[0].reply(metadata(3))
+  workers[0].onerror?.()
+  media.failure = null
+  expect((await client.page(a)).revision).toBe('indexed')
+  expect(client.get(a).prs).toEqual(metadata(3).prs)
+})
+
+test('late media publication cannot cross identities or survive disposal; repair and linkage delegate', async () => {
+  const { client, media, changes } = fake()
+  const old = record('/old'), current = record('/new')
+  client.queue(old); client.queue(current)
+  media.publish(old, { ...pendingMedia, total: 99 })
+  expect(changes).toHaveLength(0)
+  client.invalidate(old)
+  client.invalidate(current)
+  expect(media.invalidated).toEqual([current])
+  const links = [{ ownId: 'child', parentId: current.sessionId, logPath: '/child' }]
+  client.setIndex(links)
+  expect(media.links).toEqual(links)
+  media.publish(current, pendingMedia)
+  expect(changes).toHaveLength(1)
+  client.dispose()
+  expect(media.disposed).toBe(true)
+  media.publish(current, { ...pendingMedia, total: 12 })
+  expect(changes).toHaveLength(1)
+  expect(await client.page(current).catch(error => error.message)).toBe('Metadata worker disposed')
 })

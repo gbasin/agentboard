@@ -148,8 +148,9 @@ jobs:
         timeout-minutes: 5
         run: |
           bun run build
-          bun build src/server/index.ts src/server/sessionRefreshWorker.ts src/server/logMatchWorker.ts src/server/devinSyncWorker.ts src/server/stallWatchdogWorker.ts src/server/sessionReadWorker.ts src/server/sessionMetadataWorker.ts src/server/mediaThumbnailWorker.ts src/server/terminalRelayWorker.ts src/server/terminalSessionWorker.ts --compile --outfile "$RUNNER_TEMP/agentboard-relay-smoke"
+          bun build src/server/index.ts src/server/sessionRefreshWorker.ts src/server/logMatchWorker.ts src/server/devinSyncWorker.ts src/server/stallWatchdogWorker.ts src/server/sessionReadWorker.ts src/server/sessionMetadataWorker.ts src/server/mediaDiscoveryReaderWorker.ts src/server/mediaDiscoveryWriterWorker.ts src/server/mediaThumbnailWorker.ts src/server/terminalRelayWorker.ts src/server/terminalSessionWorker.ts --compile --outfile "$RUNNER_TEMP/agentboard-relay-smoke"
           bun scripts/verify-terminal-relay-binary.ts "$RUNNER_TEMP/agentboard-relay-smoke"
+          bun scripts/verify-media-discovery-binary.ts "$RUNNER_TEMP/agentboard-relay-smoke"
 
       - name: Compiled thumbnail worker recovery and shutdown regression
         timeout-minutes: 2

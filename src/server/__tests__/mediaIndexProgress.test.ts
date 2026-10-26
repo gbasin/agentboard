@@ -190,3 +190,25 @@ test('bounded pages reserve space for the stream snapshot envelope', () => {
   }
   expect(items).toBe(10)
 })
+
+test('warm freshness checks do not rewrite unchanged checkpoints; appends still persist progress', () => {
+  const { index, record, log, filename } = fixture()
+  fs.writeFileSync(log, line(0))
+  const summary = index.scan(record, [log])
+  const db = new Database(filename)
+  try {
+    db.exec(`CREATE TABLE checkpoint_writes (count INTEGER NOT NULL);
+      INSERT INTO checkpoint_writes VALUES(0);
+      CREATE TRIGGER observe_checkpoint_insert AFTER INSERT ON media_files BEGIN
+        UPDATE checkpoint_writes SET count=count+1;
+      END;
+      CREATE TRIGGER observe_checkpoint_update AFTER UPDATE ON media_files BEGIN
+        UPDATE checkpoint_writes SET count=count+1;
+      END;`)
+    expect(index.scan(record, [log])).toEqual(summary)
+    expect(db.query('SELECT count FROM checkpoint_writes').get()).toEqual({ count: 0 })
+    fs.appendFileSync(log, line(1))
+    expect(index.scan(record, [log]).total).toBe(2)
+    expect(db.query('SELECT count FROM checkpoint_writes').get()).toEqual({ count: 1 })
+  } finally { db.close() }
+})

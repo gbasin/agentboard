@@ -36,7 +36,7 @@ import {
 import { LogPoller } from './logPoller'
 import { toAgentSession as buildAgentSession } from './agentSessions'
 import { SessionMetadataClient } from './sessionMetadataClient'
-import { publishSessionMetadata } from './sessionMetadataViews'
+import { SessionMetadataPublisher } from './sessionMetadataViews'
 import { MediaThumbnailClient } from './mediaThumbnailClient'
 import { createMediaRoutes } from './mediaRoutes'
 import { catalogMessage, sessionSummary } from './catalogMessages'
@@ -574,8 +574,9 @@ async function ensureBaseSessionForRefreshAsync(context: string): Promise<boolea
 }
 const registry = new SessionRegistry()
 const thumbnailClient = new MediaThumbnailClient()
+const metadataPublisher = new SessionMetadataPublisher(registry, config.hostLabel)
 const metadataClient = new SessionMetadataClient((record, metadata) => {
-  publishSessionMetadata(registry, record, metadata, config.hostLabel)
+  metadataPublisher.queue(record, metadata)
 })
 
 function toAgentSession(record: AgentSessionRecord): AgentSession {
@@ -1600,6 +1601,7 @@ app.route('/api/session-media', createMediaRoutes({
   thumbnail: thumbnailClient,
   getRecord: (id) => db.getSessionById(id),
   page: (record, cursor, query) => metadataClient.page(record, cursor, query),
+  watch: (record, cursor, query, signal) => metadataClient.watch(record, cursor, query, signal),
   neighbors: (record, anchor) => metadataClient.neighbors(record, anchor),
   invalidate: (record) => metadataClient.invalidate(record),
 }))
@@ -2481,6 +2483,7 @@ export const startupReady = (async () => {
 
 // Cleanup all terminals on server shutdown
 async function cleanupAllTerminals() {
+  metadataPublisher.dispose()
   await terminalRelay?.shutdown()
   ownershipObserver?.stop()
   persistenceRuntime?.stop()

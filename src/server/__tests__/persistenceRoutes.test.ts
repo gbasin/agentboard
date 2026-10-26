@@ -8,6 +8,7 @@ import { initDatabase } from '../db'
 import { PersistentSessions } from '../persistence/manager'
 import { PersistenceRuntime } from '../persistence/runtime'
 import { SessionMetadataClient } from '../sessionMetadataClient'
+import { FakeMediaDiscovery } from './fixtures/fakeMediaDiscovery'
 import type { MetadataRequest, MetadataResponse } from '../sessionMetadataWorker'
 import { registerPersistenceRoutes } from '../persistence/routes'
 import type { SessionManager } from '../SessionManager'
@@ -203,7 +204,7 @@ test('detail retries a real client cancellation when a pending HTTP scan is reas
     onmessage: null as ((event: MessageEvent<MetadataResponse>) => void) | null,
     postMessage(message: MetadataRequest) { sent.push(message) },
   }
-  const client = new SessionMetadataClient(() => {}, () => worker as unknown as Worker)
+  const client = new SessionMetadataClient(() => {}, () => worker as unknown as Worker, ':memory:', 30_000, () => new FakeMediaDiscovery())
   cleanup.push(() => client.dispose())
   const { app, saved, addConversation, runtime } = setup((record) => client.scan(record))
   const original = addConversation('current')

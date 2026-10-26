@@ -48,6 +48,7 @@ export function useMediaPages(sessionId: string | undefined, summary: MediaSumma
   summaryRef.current = summary
   const current = useRef<{ token: number; controller: AbortController } | null>(null)
   const serial = useRef(0)
+  const continuations = useRef(0)
   const cursors = useRef(new Map<number, string | null>())
   const identity = summary?.identity
   const kind = query.kind, search = query.search
@@ -78,6 +79,7 @@ export function useMediaPages(sessionId: string | undefined, summary: MediaSumma
   useEffect(() => {
     cancel()
     cursors.current.clear()
+    continuations.current = 0
     setState(initial())
   }, [sessionId, queryKey, cancel])
 
@@ -89,6 +91,7 @@ export function useMediaPages(sessionId: string | undefined, summary: MediaSumma
   }, [identity, cancel])
 
   useEffect(() => {
+    if (!expanded) continuations.current = 0
     if (expanded && ready && visible) return
     cancel()
     setState(s => (s.status === 'loading' || s.status === 'streaming') ? { ...s, status: 'idle' } : s)
@@ -165,7 +168,14 @@ export function useMediaPages(sessionId: string | undefined, summary: MediaSumma
       if (!active()) return
       if (!received) throw new Error('Empty media response.')
       if (discovery?.status === 'failed') throw new Error(discovery.message)
-      if (discovery?.status !== 'ready') throw new Error('Discovery paused. Retry to continue.')
+      if (discovery?.status !== 'ready') {
+        if (continuations.current >= 3) throw new Error('Discovery is still incomplete. Retry to continue.')
+        // Finite subscriptions may expire before a long scan finishes. Continue
+        // at most three times, retaining the visible watermark and rows.
+        continuations.current++
+        await new Promise(resolve => setTimeout(resolve, 250 * continuations.current))
+        if (!active()) return
+      }
       setState(s => ({ ...s, status: 'idle' }))
     } catch (error) {
       if (current.current?.token !== token || serial.current !== token) return
@@ -181,7 +191,8 @@ export function useMediaPages(sessionId: string | undefined, summary: MediaSumma
   }, [expanded, ready, visible, state.pages.length, state.status, state.discovery?.status, load])
 
   const pageRevision = state.pages[0]?.page.revision
-  const latestSummary = state.latestSummary ?? summary
+  const latestSummary = (state.status === 'idle' || state.status === 'error') && summary && summary.revision !== state.requestedRevision
+    ? summary : state.latestSummary ?? summary
   const changed = Boolean(pageRevision && [state.latestSummary, summary].some(value => value && value.revision !== pageRevision && value.revision !== state.requestedRevision))
   const discovery = state.discovery ?? latestSummary?.discovery ?? (summary ? { status: 'ready' as const } : { status: 'pending' as const })
   return {
@@ -193,6 +204,6 @@ export function useMediaPages(sessionId: string | undefined, summary: MediaSumma
     canLoadEarlier: cursors.current.has((state.pages[0]?.number ?? 0) - 1),
     firstItem: state.pages[0]?.number ?? 0,
     loadNext: () => load('next'), loadPrevious: () => load('previous'),
-    refresh: () => { cancel(); cursors.current.clear(); return load('first') },
+    refresh: () => { cancel(); continuations.current = 0; cursors.current.clear(); return load('first') },
   }
 }

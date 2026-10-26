@@ -97,7 +97,9 @@ export class MediaIndexWriter {
           }
         }, { maxBytes: maxBytes - read, maxMs: Math.max(1, maxMs - (performance.now() - started)) })
         read += result.bytesRead
-        if (result.state) {
+        // An unchanged completed checkpoint is returned by reference. Avoid
+        // rewriting every source row during a warm freshness probe.
+        if (result.state && result.state !== previous) {
           result.state.omittedItems = (result.state.omittedItems ?? 0) + omitted
           if (omitted || (result.state.omittedRecords ?? 0) !== (previous?.omittedRecords ?? 0)) changed = true
           this.db.query('INSERT OR REPLACE INTO media_files VALUES(?,?,?)').run(job.identity, source.path, JSON.stringify(result.state))
