@@ -1,5 +1,5 @@
 /** Payload access remains correct after moving descriptors out of the catalog. */
-import { test, expect } from '@playwright/test'
+import { test, expect, type APIRequestContext } from '@playwright/test'
 import fs from 'node:fs'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -7,6 +7,15 @@ import type { MediaPage } from '../../src/shared/media'
 import { mediaFixture, TINY_PNG } from './helpers/mediaFixture'
 
 test.describe.configure({ timeout: 180_000 })
+
+async function discover(request: APIRequestContext, id: string) {
+  // Snapshot reads deliberately do not scan. Explicit discovery owns freshness.
+  const response = await request.get(`/api/session-media/${id}/items?stream=1`, { timeout: 75_000 })
+  expect(response.status()).toBe(200)
+  const frames = (await response.text()).trim().split('\n').map(line => JSON.parse(line))
+  expect(frames.some(frame => frame.type === 'error')).toBe(false)
+  expect(frames.at(-1)?.type).toBe('done')
+}
 
 test('real Codex images and Claude documents retain their payloads and path restrictions', async ({ request }) => {
   const root = process.env.E2E_TMUX_TMPDIR, codex = process.env.CODEX_HOME, claude = process.env.CLAUDE_CONFIG_DIR
@@ -26,6 +35,7 @@ test('real Codex images and Claude documents retain their payloads and path rest
     for (const [id, mime, bytes] of [[imageId, 'image/png', Buffer.from(TINY_PNG, 'base64')], [documentId, 'application/pdf', pdf]] as const) {
       const endpoint = `/api/session-media/${id}/items`
       await expect.poll(async () => (await request.get(endpoint)).status(), { timeout: 60_000, intervals: [1000, 2000] }).toBe(200)
+      await discover(request, id)
       const data = await (await request.get(endpoint)).json() as MediaPage
       expect(data.items).toHaveLength(1)
       const response = await request.get(data.items[0].url)
@@ -50,6 +60,7 @@ test('same-size transcript rewrites invalidate old cursors and immutable payload
     const replacement = body.replace('Item 00079 ', 'Item 99999 ')
     expect(Buffer.byteLength(replacement)).toBe(Buffer.byteLength(body))
     fs.writeFileSync(fixture.logPath, replacement)
+    await discover(request, fixture.sessionId)
     const second = await fixture.items()
     expect(second.revision).not.toBe(first.revision)
     expect(second.items[0].label).toMatch(/^Item 99999 /)

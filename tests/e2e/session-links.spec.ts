@@ -133,3 +133,72 @@ test('bounded link page navigation reaches the end and can return through evicte
     await expect(rail.getByRole('button', { name: 'Newer links', exact: true })).toHaveCount(0)
   } finally { fixture.cleanup() }
 })
+
+test('copy uses the complete long destination with confirmed feedback and HTTP fallback focus isolation', async ({ page, request, context, browserName }) => {
+  const fixture = await mediaFixture(request, 0)
+  const destination = `https://example.com/report?detail=${'ab'.repeat(1600)}#complete`
+  fs.appendFileSync(fixture.logPath, JSON.stringify({ type: 'assistant', sessionId: fixture.sessionId,
+    timestamp: new Date().toISOString(), message: { role: 'assistant', content: [{ type: 'text', text: `[Long report](${destination})` }] } }) + '\n')
+  let externalRequests = 0
+  page.on('request', req => { if (req.url().startsWith('https://example.com')) externalRequests++ })
+  try {
+    await expect.poll(async () => (await fixture.find())?.mediaSummary?.links, { timeout: 30_000 }).toBe(1)
+    await page.goto('/'); await fixture.select(page)
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.getByTestId('media-rail-pill').click()
+    const copy = page.getByRole('button', { name: 'Copy link for Long report', exact: true })
+    await expect(copy).toBeVisible()
+    const before = fixture.capture()
+    const icon = await copy.locator('svg').innerHTML()
+    await page.evaluate(() => {
+      const native = document.execCommand.bind(document)
+      ;(window as any).copyProbe = { succeed: true, native, value: '', selection: 0 }
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined })
+      document.execCommand = command => {
+        const input = document.activeElement as HTMLTextAreaElement
+        Object.assign((window as any).copyProbe, { value: input.value, selection: input.selectionEnd - input.selectionStart, readonly: input.readOnly })
+        return command === 'copy' && (window as any).copyProbe.succeed
+      }
+    })
+    await copy.click()
+    await expect(copy).toHaveAttribute('data-copy-state', 'copied')
+    expect(await copy.locator('svg').innerHTML()).not.toBe(icon)
+    expect(await page.evaluate(() => ({ value: (window as any).copyProbe.value, selection: (window as any).copyProbe.selection, readonly: (window as any).copyProbe.readonly })))
+      .toEqual({ value: destination, selection: destination.length, readonly: true })
+    await expect(copy).toBeFocused()
+    await page.screenshot({ path: test.info().outputPath(`copy-link-success-${test.info().project.name}.png`) })
+    expect(context.pages()).toHaveLength(1)
+    expect(externalRequests).toBe(0)
+    expect(fixture.capture()).toBe(before)
+    await expect(copy).toHaveAttribute('data-copy-state', 'idle')
+    expect(await copy.locator('svg').innerHTML()).toBe(icon)
+    await page.evaluate(() => { (window as any).copyProbe.succeed = false })
+    await copy.click()
+    await expect(copy).toHaveAttribute('data-copy-state', 'failed')
+    await expect(page.getByTestId('media-rail')).toContainText('Could not copy')
+    await expect(copy).toBeFocused()
+    expect(fixture.capture()).toBe(before)
+    // Exercise native clipboard separately where Playwright supports permissions.
+    // Deterministic fallback assertions above do not claim a physical OS paste.
+    if (browserName === 'chromium') {
+      await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+      await page.evaluate(() => {
+        delete (navigator as any).clipboard
+        document.execCommand = (window as any).copyProbe.native
+      })
+      await copy.click()
+      await expect(copy).toHaveAttribute('data-copy-state', 'copied')
+      expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(destination)
+      await page.evaluate(() => { const input = document.createElement('textarea'); input.id = 'native-paste-probe'; document.body.append(input); input.focus() })
+      const pasteKey = await page.evaluate(() => navigator.platform.toUpperCase().includes('MAC') ? 'Meta+V' : 'Control+V')
+      await page.keyboard.press(pasteKey)
+      await page.waitForTimeout(100)
+      const pasted = await page.locator('#native-paste-probe').inputValue()
+      if (pasted) expect(pasted).toBe(destination)
+      else test.info().annotations.push({ type: 'clipboard', description: 'Native clipboard read verified; headless keyboard paste unavailable.' })
+      await page.locator('#native-paste-probe').evaluate(el => el.remove())
+      await copy.focus()
+    }
+    await page.screenshot({ path: test.info().outputPath(`copy-link-${test.info().project.name}.png`) })
+  } finally { fixture.cleanup() }
+})

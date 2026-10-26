@@ -22,7 +22,7 @@ function tmux(...args: string[]) {
   if (result.status !== 0) throw new Error(result.stderr)
   return result.stdout.trim()
 }
-export async function mediaFixture(request: APIRequestContext, count: number, image = false) {
+export async function mediaFixture(request: APIRequestContext, count: number, image = false, options: { waitForSummary?: boolean; textBytes?: number } = {}) {
   const root = process.env.E2E_TMUX_TMPDIR, claude = process.env.CLAUDE_CONFIG_DIR
   if (!root || !claude) throw new Error('Private E2E transcript directories required')
   const sessionId = randomUUID(), name = `media-${sessionId.slice(0, 8)}`
@@ -45,12 +45,13 @@ export async function mediaFixture(request: APIRequestContext, count: number, im
       message: { role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: TINY_PNG } }] },
       toolUseResult: { file: { dimensions: { originalWidth: 96, originalHeight: 48 } } } }) + '\n'
     for (let i = 0; i < count; i++) body += link(i)
+    if (options.textBytes) body += JSON.stringify({ type: 'assistant', sessionId, timestamp: new Date().toISOString(), message: { role: 'assistant', content: [{ type: 'text', text: 'x'.repeat(options.textBytes) }] } }) + '\n'
     fs.writeFileSync(logPath, body)
     await expect.poll(async () => {
       const found = await find()
       if (found?.agentSessionId !== sessionId) fs.appendFileSync(logPath, prompt())
-      return found?.agentSessionId === sessionId ? found.mediaSummary?.total : undefined
-    }, { timeout: 120_000, intervals: [1000, 2000, 4000] }).toBe(count + (image ? 1 : 0))
+      return found?.agentSessionId === sessionId ? options.waitForSummary === false ? true : found.mediaSummary?.total : undefined
+    }, { timeout: 120_000, intervals: [1000, 2000, 4000] }).toBe(options.waitForSummary === false ? true : count + (image ? 1 : 0))
   } catch (error) {
     try { tmux('kill-window', '-t', windowId) } finally {
       fs.rmSync(logDir, { recursive: true, force: true }); fs.rmSync(project, { recursive: true, force: true })

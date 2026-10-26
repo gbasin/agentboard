@@ -89,7 +89,7 @@ async function expectFinitePulse(pill: Locator) {
 
 test('new batches pulse finitely, persist unread, and acknowledge on opening', async ({ page }) => {
   const { pill, dot, update } = await board(page)
-  await expect(pill).toHaveCount(0)
+  await expect(pill).toBeVisible()
   update([item('first')])
   await expect(pill).toBeVisible()
   await expect(pill).toHaveAccessibleName(/1 item.*new media/)
@@ -103,6 +103,7 @@ test('new batches pulse finitely, persist unread, and acknowledge on opening', a
   await pill.click()
   const rail = page.getByTestId('media-rail')
   await expect(rail).toBeVisible()
+  await rail.getByRole('button', { name: 'Links 1', exact: true }).click()
   update([item('first'), item('while-open')])
   await expect(rail.getByRole('link')).toHaveCount(1)
   await page.getByRole('button', { name: 'Refresh media', exact: true }).click()
