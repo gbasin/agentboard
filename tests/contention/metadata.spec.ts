@@ -30,7 +30,7 @@ test('metadata stalls leave terminal input responsive and publish fresh PR/media
     `printf '❯ ${marker}\\n⏺ ack\\n'; exec /bin/sh`])}`
   const rows = async () => (await (await request.get('/api/sessions')).json()) as Array<{
     id: string; name: string; agentSessionId?: string; boardSessionId?: string; lastUserMessage?: string;
-    prs?: { number: number }[]; media?: { url: string }[];
+    prs?: { number: number }[]; media?: unknown; mediaSummary?: { total: number; links: number; revision: string };
   }>
   const current = async () => (await rows()).find((row) => row.id === window)
   const pr = (number: number) => JSON.stringify({ type: 'pr-link', sessionId: id, prUrl: `https://github.com/agentboard-regression/fixture/pull/${number}`, prRepository: 'agentboard-regression/fixture', prNumber: number }) + '\n'
@@ -52,7 +52,7 @@ test('metadata stalls leave terminal input responsive and publish fresh PR/media
     await expect(card).toBeVisible()
     await card.click()
     await expect(page.locator('.xterm-rows')).toContainText('ack')
-    await expect(page.getByTestId('media-rail-pill')).toHaveCount(0)
+    await expect(page.getByTestId('media-rail-pill')).toBeVisible()
 
     for (const file of ['arm', 'held', 'started', 'release']) fs.rmSync(path.join(gate, file), { force: true })
     fs.writeFileSync(path.join(gate, 'arm'), log)
@@ -90,9 +90,13 @@ test('metadata stalls leave terminal input responsive and publish fresh PR/media
     expect(detailResult.session.name).toBe(`${marker}-renamed`)
     const conversation = detailResult.conversations.find((row: { sessionId: string }) => row.sessionId === id)
     expect(conversation.displayName).toBe(`${marker}-renamed`)
-    expect(conversation.media[0].url).toBe('https://example.com/metadata-first')
+    expect(conversation).not.toHaveProperty('media')
+    await expect.poll(async () => (await current())?.mediaSummary?.links).toBe(1)
+    const items = await request.get(`/api/session-media/${id}/items?kind=links`).then(r => r.json())
+    expect(items.items[0].externalUrl).toBe('https://example.com/metadata-first')
     await expect(page.getByTestId('media-rail-pill')).toBeVisible()
     await page.getByTestId('media-rail-pill').click()
+    await page.getByTestId('media-rail').getByRole('button', { name: 'Links 1', exact: true }).click()
     await expect(page.getByTestId('media-rail').getByRole('link', { name: /metadata first/ })).toBeVisible()
     await expect.poll(async () => (await current())?.name).toBe(`${marker}-renamed`)
     expect((await current())?.agentSessionId).toBe(id)
@@ -102,6 +106,7 @@ test('metadata stalls leave terminal input responsive and publish fresh PR/media
     const rewritten = fs.readFileSync(log, 'utf8').replace('pull/11', 'pull/22').replace('"prNumber":11', '"prNumber":22').replace('metadata-first', 'metadata-other').replace('metadata first', 'metadata other')
     fs.writeFileSync(log, rewritten)
     await expect.poll(async () => (await current())?.prs?.map((pr) => pr.number), { timeout: 10_000 }).toEqual([22])
+    await page.getByTestId('media-rail').getByRole('button', { name: 'Refresh media', exact: true }).click()
     await expect(page.getByTestId('media-rail').getByRole('link', { name: /metadata other/ })).toBeVisible()
     await expect(page.getByTestId('media-rail').getByRole('link', { name: /metadata first/ })).toHaveCount(0)
 
@@ -111,8 +116,10 @@ test('metadata stalls leave terminal input responsive and publish fresh PR/media
     await expect.poll(async () => (await current())?.prs?.map((pr) => pr.number), { timeout: 10_000 }).toEqual([22, 33])
     fs.rmSync(children, { recursive: true })
     fs.writeFileSync(log, user())
-    await expect.poll(async () => ({ prs: (await current())?.prs, media: (await current())?.media }), { timeout: 10_000 }).toEqual({ prs: [], media: [] })
-    await expect(page.getByTestId('media-rail-pill')).toHaveCount(0)
+    await expect.poll(async () => ({ prs: (await current())?.prs, total: (await current())?.mediaSummary?.total }), { timeout: 10_000 }).toEqual({ prs: [], total: 0 })
+    expect(await current()).not.toHaveProperty('media')
+    await page.getByTestId('media-rail').getByRole('button', { name: 'Refresh media', exact: true }).click()
+    await expect(page.getByTestId('media-rail')).toContainText('No web links in this session yet.')
     expect((await current())?.lastUserMessage).toBe(marker)
     await testInfo.attach('metadata-terminal-timeline', { body: JSON.stringify({ started, renderedAt, healthAt }), contentType: 'application/json' })
     await testInfo.attach('metadata-correctness', { body: await page.screenshot(), contentType: 'image/png' })

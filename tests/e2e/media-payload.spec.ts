@@ -14,6 +14,7 @@ async function discover(request: APIRequestContext, id: string) {
   expect(response.status()).toBe(200)
   const frames = (await response.text()).trim().split('\n').map(line => JSON.parse(line))
   expect(frames.some(frame => frame.type === 'error')).toBe(false)
+  expect(frames.some(frame => frame.type === 'progress' && frame.summary?.discovery?.status === 'ready')).toBe(true)
   expect(frames.at(-1)?.type).toBe('done')
 }
 
@@ -54,6 +55,9 @@ test('real Codex images and Claude documents retain their payloads and path rest
 test('same-size transcript rewrites invalidate old cursors and immutable payload references', async ({ request }) => {
   const fixture = await mediaFixture(request, 80)
   try {
+    // Matching can append a prompt after the first media-count publication.
+    // Commit that tail before testing a same-size rewrite of the indexed file.
+    await discover(request, fixture.sessionId)
     const first = await fixture.items()
     expect(first.nextCursor).not.toBeNull()
     const body = fs.readFileSync(fixture.logPath, 'utf8')

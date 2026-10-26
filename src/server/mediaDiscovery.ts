@@ -269,6 +269,9 @@ export class MediaDiscoveryClient {
         if (!dirty) continue
         dirty = false
         const summary = this.get(record)
+        // Late persisted hydration can still announce an older ready state.
+        // Only a settled job can establish completion for this view.
+        if (summary.discovery?.status === 'ready' && this.jobs.has(key)) continue
         if (!visible) {
           page = await this.page(record, cursor, query)
           if (this.stopped || signal?.aborted) break
