@@ -1,0 +1,11 @@
+import { appendFileSync } from 'node:fs'
+const checkpoint=(name:string)=>appendFileSync(process.env.MEMORY_CHECKPOINT!, JSON.stringify({time:Date.now(),name})+'\n')
+const exit=process.exit.bind(process)
+process.exit=((code?: number)=>{checkpoint('process.exit '+code);return exit(code)}) as typeof process.exit
+process.on('exit',code=>checkpoint('exit event '+code))
+process.on('SIGTERM',()=>checkpoint('SIGTERM received'))
+await import('../../src/server/index')
+checkpoint('index imported')
+
+setInterval(()=>checkpoint('listeners '+process.listenerCount('SIGTERM')),1000).unref()
+if(process.env.DIAG_EMIT==='1')setTimeout(()=>{checkpoint('EMITTING SIGTERM');process.emit('SIGTERM')},12000)

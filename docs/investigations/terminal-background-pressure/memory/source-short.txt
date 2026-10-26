@@ -1,0 +1,18 @@
+{"phase":"baseline","rssBytes":155123712,"clients":0,"observers":0}
+{"phase":"six-active","rssBytes":250511360,"clients":6,"observers":6}
+{"phase":"expired","rssBytes":208961536,"clients":0,"observers":0}
+{"phase":"idle-0","rssBytes":192987136,"clients":0,"observers":0}
+{"phase":"idle-1","rssBytes":193822720,"clients":0,"observers":0}
+SIGNAL_AT 1792871972939 81558
+HEALTH_BEFORE {"ok":true}
+BUN_KILL_RESULT undefined
+SIGTERM_TIMEOUT
+SIGNAL_MASKS  PENDING  BLOCKED
+       0        0
+
+OS_TERM 0
+HEALTH_AFTER {"ok":true}
+PS_AFTER   PID STAT  %CPU    RSS COMMAND
+81558 S      1.2 107344 /Users/garybasin/.bun/bin/bun .poc-stress-test/memory/source-wrapper.ts
+
+Compiled shutdown: 137 SIGKILL

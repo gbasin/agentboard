@@ -13,6 +13,7 @@ import { createPortal } from 'react-dom'
 import { GitMergeIcon, GitPullRequestIcon, Pencil02Icon, XCloseIcon } from './icons'
 import { ICON_SIZE, PR_STATE_MARK_SIZE } from './controlStyles'
 import type { SessionPullRequest } from '../../shared/types'
+import { createInfoBatcher, schedulePrMetadata } from '../lib/prMetadataRequests'
 
 interface PrInfo {
   url: string
@@ -39,8 +40,7 @@ interface PrCheckInfo extends PrInfo {
 const INFO_TTL_MS = 60_000
 const infoCache = new Map<string, { at: number; info: PrInfo }>()
 const checksCache = new Map<string, { at: number; checks: PrCheckInfo }>()
-const infoInflight = new Map<string, Promise<unknown>>()
-const checksInflight = new Set<string>()
+const checksInflight = new Map<string, Promise<PrCheckInfo | null>>()
 
 // Chips read infoCache straight through useSyncExternalStore — no per-chip
 // copies. A cache write from any fetch (any row's interval, the rail, a
@@ -172,31 +172,39 @@ function checkIcon(c: {
 // Callers await the shared in-flight promise so a chip that mounts while a
 // request is already running still receives its result — returning early
 // here would leave the late chip gray forever.
-async function fetchInfoBatch(urls: string[]): Promise<PrInfo[]> {
-  const missing = urls.filter((u) => !cachedInfo(u) && !infoInflight.has(u))
-  if (missing.length > 0) {
-    const p: Promise<unknown> = fetch('/api/pr-info', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ urls: missing }),
-    })
-      .then((r) => r.json() as Promise<PrInfo[]>)
-      .then((arr) => {
-        for (const info of arr) {
-          if (!info.error) infoCache.set(info.url, { at: Date.now(), info })
-        }
-        infoListeners.forEach((l) => l())
-      })
-      .catch(() => {
-        // leave uncached; next mount/hover retries
-      })
-      .finally(() => {
-        missing.forEach((u) => infoInflight.delete(u))
-      })
-    missing.forEach((u) => infoInflight.set(u, p))
+const requestInfo = createInfoBatcher<PrInfo>(urls => schedulePrMetadata('info', async signal => {
+  const response = await fetch('/api/pr-info', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ urls }), signal,
+  })
+  if (!response.ok) throw new Error('PR metadata request failed')
+  const arr = await response.json() as PrInfo[]
+  for (const info of arr) {
+    if (!info.error) infoCache.set(info.url, { at: Date.now(), info })
   }
-  await Promise.all(urls.map((u) => infoInflight.get(u)))
-  return urls.map((u) => cachedInfo(u)!).filter(Boolean)
+  infoListeners.forEach(listener => listener())
+  return arr
+}), info => info.url)
+
+async function fetchInfoBatch(urls: string[]): Promise<PrInfo[]> {
+  await Promise.all(urls.filter(url => !cachedInfo(url)).map(url => requestInfo(url).catch(() => undefined)))
+  return urls.map(url => cachedInfo(url)!).filter(Boolean)
+}
+
+function fetchChecks(url: string): Promise<PrCheckInfo | null> {
+  const cached = cachedChecks(url)
+  if (cached) return Promise.resolve(cached)
+  const existing = checksInflight.get(url)
+  if (existing) return existing
+  const promise = schedulePrMetadata('checks', async signal => {
+    const response = await fetch(`/api/pr-checks?url=${encodeURIComponent(url)}`, { signal })
+    if (!response.ok) return null
+    const checks = await response.json() as PrCheckInfo
+    if (!checks.error) checksCache.set(url, { at: Date.now(), checks })
+    return checks
+  }).finally(() => checksInflight.delete(url))
+  checksInflight.set(url, promise)
+  return promise
 }
 
 // Hover intent: the card opens only after the pointer rests on the chip,
@@ -456,16 +464,12 @@ function PrChip({
 
   // Lazy: CI detail only on hover.
   useEffect(() => {
-    if (!open || cachedChecks(pr.url) || checksInflight.has(pr.url)) return
-    checksInflight.add(pr.url)
-    fetch(`/api/pr-checks?url=${encodeURIComponent(pr.url)}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((c: PrCheckInfo | null) => {
-        if (c) checksCache.set(pr.url, { at: Date.now(), checks: c })
-        if (mounted.current && c) setChecks(c)
-      })
-      .catch(() => {})
-      .finally(() => checksInflight.delete(pr.url))
+    if (!open) return
+    let active = true
+    void fetchChecks(pr.url).then(checks => {
+      if (active && mounted.current && checks) setChecks(checks)
+    }).catch(() => {})
+    return () => { active = false }
   }, [open, pr.url])
 
   // info is the TTL'd source of truth for state — checks is permanent until

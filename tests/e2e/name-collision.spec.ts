@@ -39,7 +39,7 @@ test('archived names reject collisions and reserve names during window creation'
     // Keep one socket so the second rename is ordered after the first result.
     const result = await page.evaluate(async ({ ids, reserved }) => {
       return new Promise<string>((resolve, reject) => {
-        const ws = new WebSocket(`${location.origin.replace(/^http/, 'ws')}/ws`)
+        const ws = new WebSocket(`${location.origin.replace(/^http/, 'ws')}/ws?catalog=2`)
         let stage = 0
         const timer = setTimeout(() => { ws.close(); reject(new Error('rename timeout')) }, 15_000)
         ws.onopen = () => ws.send(JSON.stringify({ type: 'session-rename', sessionId: ids[0], newName: reserved }))

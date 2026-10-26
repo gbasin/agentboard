@@ -34,6 +34,8 @@ interface TerminalControlsProps {
   onPasteText?: (text: string) => void
   onPasteImage?: (text: string) => void
   disabled?: boolean
+  /** Keyboard focus can remain available for local drafts during recovery. */
+  keyboardDisabled?: boolean
   sessions: SessionInfo[]
   currentSessionId: string | null
   /** Agent type of the attached session — controls image-paste delivery. */
@@ -115,6 +117,7 @@ export default function TerminalControls({
   onPasteText,
   onPasteImage,
   disabled = false,
+  keyboardDisabled = disabled,
   sessions,
   currentSessionId,
   agentType,
@@ -200,7 +203,7 @@ export default function TerminalControls({
   }
 
   const handleKeyboardPress = () => {
-    if (disabled) return
+    if (keyboardDisabled) return
     triggerHaptic()
     // Toggle: if keyboard visible, hide it; otherwise show it
     if (isKeyboardVisible?.()) {
@@ -216,8 +219,8 @@ export default function TerminalControls({
   // Only show session row if there are multiple sessions and not hidden
   const showSessionRow = sessions.length > 1 && !hideSessionSwitcher
 
-  const handleTouchAction = (handler: () => void) => (e: ReactTouchEvent) => {
-    if (disabled) return
+  const handleTouchAction = (handler: () => void, unavailable = disabled) => (e: ReactTouchEvent) => {
+    if (unavailable) return
     const start = touchStartRef.current
     const end = e.changedTouches[0]
     if (!start || !end || Math.hypot(end.clientX - start.x, end.clientY - start.y) > 10) return
@@ -227,8 +230,8 @@ export default function TerminalControls({
     handler()
   }
 
-  const handleClickAction = (handler: () => void) => () => {
-    if (disabled) return
+  const handleClickAction = (handler: () => void, unavailable = disabled) => () => {
+    if (unavailable) return
     if (Date.now() - lastTouchTimeRef.current < 700) {
       return
     }
@@ -394,12 +397,12 @@ export default function TerminalControls({
             transition-transform duration-75
             select-none touch-manipulation
             text-secondary
-            ${disabled ? 'opacity-50' : ''}
+            ${keyboardDisabled ? 'opacity-50' : ''}
           `}
           onMouseDown={(e) => e.preventDefault()}
-          onTouchEnd={handleTouchAction(handleKeyboardPress)}
-          onClick={handleClickAction(handleKeyboardPress)}
-          disabled={disabled}
+          onTouchEnd={handleTouchAction(handleKeyboardPress, keyboardDisabled)}
+          onClick={handleClickAction(handleKeyboardPress, keyboardDisabled)}
+          disabled={keyboardDisabled}
         >
           {KeyboardIcon}
         </button>

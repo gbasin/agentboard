@@ -1,0 +1,9 @@
+{"phase":"baseline","rssBytes":152027136,"clients":0,"observers":0}
+{"phase":"six-active","rssBytes":246644736,"clients":6,"observers":6}
+{"phase":"expired","rssBytes":208633856,"clients":0,"observers":0}
+{"phase":"idle-0","rssBytes":198328320,"clients":0,"observers":0}
+{"phase":"idle-1","rssBytes":182992896,"clients":0,"observers":0}
+SIGNAL_AT 1792872812693 32904
+HEALTH_BEFORE {"ok":true}
+BUN_KILL_RESULT undefined
+Compiled shutdown: 0 null

@@ -387,23 +387,23 @@ describe('SessionRegistry', () => {
   })
 })
 
-test('media-only changes publish active and dormant views, including changed labels and removal', () => {
+test('media revision changes publish views without comparing descriptor arrays', () => {
   const registry = new SessionRegistry()
   let sessions = 0, active = 0, dormant = 0
   registry.on('sessions', () => sessions++)
   registry.on('agent-sessions-active', () => active++)
   registry.on('agent-sessions', () => dormant++)
-  for (const media of [
-    [],
-    [{ kind: 'link' as const, url: 'https://example.com/image', label: 'first' }],
-    [{ kind: 'link' as const, url: 'https://example.com/image', label: 'updated' }],
-    [],
-  ]) {
-    registry.replaceSessions([makeSession({ media })])
-    registry.setAgentSessions([makeAgentSession({ media })], [], [makeAgentSession({ media, isActive: false })])
-    // An identical refresh is silent.
-    registry.replaceSessions([makeSession({ media })])
-    registry.setAgentSessions([makeAgentSession({ media })], [], [makeAgentSession({ media, isActive: false })])
+  for (let revision = 0; revision < 4; revision++) {
+    const mediaSummary = { identity: 'transcript', revision: String(revision),
+      total: revision === 3 ? 0 : 1, images: 0, documents: 0,
+      links: revision === 3 ? 0 : 1, additions: 1 }
+    const live = [makeSession({ mediaSummary })]
+    const agents = [makeAgentSession({ mediaSummary })]
+    const history = [makeAgentSession({ mediaSummary, isActive: false })]
+    registry.replaceSessions(live)
+    registry.setAgentSessions(agents, [], history)
+    registry.replaceSessions(live)
+    registry.setAgentSessions(agents, [], history)
   }
   expect({ sessions, active, dormant }).toEqual({ sessions: 4, active: 4, dormant: 4 })
 })

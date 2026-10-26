@@ -67,6 +67,8 @@ process.env.GROK_HOME = grokDir
 
 export default defineConfig({
   testDir: 'tests/e2e',
+  // Relay-specific recovery runs in its dedicated Chromium/WebKit config.
+  testIgnore: 'terminal-resume.spec.ts',
   timeout: 30000,
   retries: process.env.CI ? 1 : 0,
   expect: {

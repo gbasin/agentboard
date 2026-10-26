@@ -1,0 +1,309 @@
+[
+  {
+    "build": "release",
+    "profile": "rate128",
+    "emulateIOS": true,
+    "phoneSettings": true,
+    "connections": 3,
+    "pings": [
+      1,
+      2,
+      3
+    ],
+    "pongs": [
+      3
+    ],
+    "timeouts": 2,
+    "connectTimeouts": 0,
+    "ready": 3,
+    "finalInput": true,
+    "error": null,
+    "network": {
+      "connections": 3,
+      "upBytes": 12519,
+      "downBytes": 13294731,
+      "maxQueuedBytes": 1114112,
+      "segments": 3486,
+      "serverFrames": [
+        {
+          "t": 4844,
+          "type": "sessions",
+          "bytes": 1368211
+        },
+        {
+          "t": 4844,
+          "type": "host-status",
+          "bytes": 114
+        },
+        {
+          "t": 4844,
+          "type": "server-config",
+          "bytes": 160
+        },
+        {
+          "t": 4844,
+          "type": "synced-settings",
+          "bytes": 40
+        },
+        {
+          "t": 13854,
+          "type": "agent-sessions",
+          "bytes": 1350925
+        },
+        {
+          "t": 13854,
+          "type": "synced-settings",
+          "bytes": 980
+        },
+        {
+          "t": 13854,
+          "type": "terminal-ready",
+          "bytes": 59
+        },
+        {
+          "t": 24253,
+          "type": "agent-sessions-active",
+          "bytes": 1350910
+        },
+        {
+          "t": 36197,
+          "type": "sessions",
+          "bytes": 1368227
+        },
+        {
+          "t": 36197,
+          "type": "host-status",
+          "bytes": 114
+        },
+        {
+          "t": 36197,
+          "type": "server-config",
+          "bytes": 160
+        },
+        {
+          "t": 36197,
+          "type": "synced-settings",
+          "bytes": 980
+        },
+        {
+          "t": 45198,
+          "type": "agent-sessions",
+          "bytes": 1350933
+        },
+        {
+          "t": 45198,
+          "type": "terminal-ready",
+          "bytes": 59
+        },
+        {
+          "t": 58702,
+          "type": "agent-sessions-active",
+          "bytes": 1350910
+        },
+        {
+          "t": 67551,
+          "type": "sessions",
+          "bytes": 1368227
+        },
+        {
+          "t": 67551,
+          "type": "host-status",
+          "bytes": 114
+        },
+        {
+          "t": 67551,
+          "type": "server-config",
+          "bytes": 160
+        },
+        {
+          "t": 67551,
+          "type": "synced-settings",
+          "bytes": 980
+        },
+        {
+          "t": 76549,
+          "type": "agent-sessions",
+          "bytes": 1350933
+        },
+        {
+          "t": 76549,
+          "type": "terminal-ready",
+          "bytes": 59
+        },
+        {
+          "t": 83209,
+          "type": "pong",
+          "seq": 3,
+          "bytes": 23
+        },
+        {
+          "t": 100941,
+          "type": "session-update",
+          "bytes": 928825
+        }
+      ]
+    },
+    "bursts": 6
+  },
+  {
+    "build": "pr",
+    "profile": "rate128",
+    "emulateIOS": true,
+    "phoneSettings": true,
+    "connections": 3,
+    "pings": [
+      1,
+      2,
+      3
+    ],
+    "pongs": [
+      3
+    ],
+    "timeouts": 2,
+    "connectTimeouts": 0,
+    "ready": 3,
+    "finalInput": true,
+    "error": null,
+    "network": {
+      "connections": 3,
+      "upBytes": 15408,
+      "downBytes": 13101263,
+      "maxQueuedBytes": 1113912,
+      "segments": 3484,
+      "serverFrames": [
+        {
+          "t": 4342,
+          "type": "sessions",
+          "bytes": 1367751
+        },
+        {
+          "t": 4342,
+          "type": "host-status",
+          "bytes": 114
+        },
+        {
+          "t": 4342,
+          "type": "server-config",
+          "bytes": 160
+        },
+        {
+          "t": 4342,
+          "type": "synced-settings",
+          "bytes": 40
+        },
+        {
+          "t": 13344,
+          "type": "agent-sessions",
+          "bytes": 1350695
+        },
+        {
+          "t": 13344,
+          "type": "terminal-lease",
+          "bytes": 72
+        },
+        {
+          "t": 13344,
+          "type": "synced-settings",
+          "bytes": 980
+        },
+        {
+          "t": 13344,
+          "type": "terminal-ready",
+          "bytes": 67
+        },
+        {
+          "t": 23669,
+          "type": "agent-sessions-active",
+          "bytes": 1350680
+        },
+        {
+          "t": 36158,
+          "type": "sessions",
+          "bytes": 1367767
+        },
+        {
+          "t": 36158,
+          "type": "host-status",
+          "bytes": 114
+        },
+        {
+          "t": 36158,
+          "type": "server-config",
+          "bytes": 160
+        },
+        {
+          "t": 36158,
+          "type": "synced-settings",
+          "bytes": 980
+        },
+        {
+          "t": 45164,
+          "type": "agent-sessions",
+          "bytes": 1350703
+        },
+        {
+          "t": 45164,
+          "type": "terminal-lease",
+          "bytes": 72
+        },
+        {
+          "t": 45164,
+          "type": "terminal-ready",
+          "bytes": 67
+        },
+        {
+          "t": 58658,
+          "type": "agent-sessions-active",
+          "bytes": 1350680
+        },
+        {
+          "t": 67475,
+          "type": "sessions",
+          "bytes": 1367767
+        },
+        {
+          "t": 67475,
+          "type": "host-status",
+          "bytes": 114
+        },
+        {
+          "t": 67475,
+          "type": "server-config",
+          "bytes": 160
+        },
+        {
+          "t": 67475,
+          "type": "synced-settings",
+          "bytes": 980
+        },
+        {
+          "t": 76477,
+          "type": "agent-sessions",
+          "bytes": 1350703
+        },
+        {
+          "t": 76477,
+          "type": "terminal-lease",
+          "bytes": 72
+        },
+        {
+          "t": 76477,
+          "type": "terminal-ready",
+          "bytes": 67
+        },
+        {
+          "t": 83105,
+          "type": "pong",
+          "seq": 3,
+          "bytes": 23
+        },
+        {
+          "t": 101089,
+          "type": "session-update",
+          "bytes": 928805
+        }
+      ]
+    },
+    "bursts": 6
+  }
+]

@@ -5,6 +5,7 @@
 import { logger } from '../logger'
 import { shellQuote } from '../shellQuote'
 import { withTmuxUtf8Flag } from '../tmuxFormat'
+import { sanitizedTmuxEnv } from '../tmuxEnv'
 import {
   syncFeatureEnabled,
   TerminalProxyBase,
@@ -102,6 +103,7 @@ class SshTerminalProxy extends TerminalProxyBase {
     this.startAttemptId += 1
     this.state = TerminalState.DEAD
     this.outputSuppressed = false
+    await this.drainSizeParticipation()
 
     if (this.process) {
       try {
@@ -138,6 +140,7 @@ class SshTerminalProxy extends TerminalProxyBase {
     const proc = this.spawn([...this.sshArgs, remoteCmd], {
       stdout: 'pipe',
       stderr: 'pipe',
+      env: sanitizedTmuxEnv(),
       ...(input !== undefined ? { stdin: Buffer.from(input) } : {}),
     })
 
@@ -173,7 +176,7 @@ class SshTerminalProxy extends TerminalProxyBase {
     return stdoutText
   }
 
-  protected async runParsedTmuxAsync(args: string[]): Promise<string> {
+  protected async runParsedTmuxNonBlocking(args: string[]): Promise<string> {
     return this.runTmuxAsync(withTmuxUtf8Flag(args))
   }
 
@@ -230,18 +233,18 @@ class SshTerminalProxy extends TerminalProxyBase {
    * flag (>= 3.2; it aborts the attach on older versions). The version
    * normally arrives free with the session-create round-trip (`knownVersion`);
    * only the duplicate-session recovery path — where create fails before
-   * printing it — pays for a `tmux -V` probe. Both are plain remote commands
+   * printing it — queries the running server version. Both are plain remote commands
    * rather than shell logic so this works under any login shell.
    */
   private async clientFeatureArgs(
     knownVersion: string | null
   ): Promise<string[]> {
-    if (!syncFeatureEnabled()) {
-      return []
-    }
+    const sync = syncFeatureEnabled()
+    if (!sync && this.options.initialSizeParticipation !== false) return []
     try {
-      const version = knownVersion ?? (await this.runTmuxAsync(['-V']))
-      return tmuxSupportsClientFeatures(version) ? ['-T', 'sync'] : []
+      const version = knownVersion ?? (await this.runTmuxAsync(['display-message', '-p', '#{version}']))
+      this.sizeParticipationSupported = tmuxSupportsClientFeatures(version)
+      return sync && tmuxSupportsClientFeatures(version) ? ['-T', 'sync'] : []
     } catch {
       // runTmuxAsync already logs ssh_tmux_command_failed; degrade to no sync.
       return []
@@ -318,6 +321,7 @@ class SshTerminalProxy extends TerminalProxyBase {
         ...featureArgs,
         'new-session',
         '-A',
+        ...(this.sizeParticipationSupported && this.options.initialSizeParticipation === false ? ['-f', 'ignore-size'] : []),
         '-s',
       ]),
     ].join(' ') + ` ${shellQuote(this.options.sessionName)}`
@@ -513,7 +517,7 @@ class SshTerminalProxy extends TerminalProxyBase {
       }
       let output = ''
       try {
-        output = await this.runParsedTmuxAsync([
+        output = await this.runParsedTmuxNonBlocking([
           'list-clients',
           '-t',
           this.options.sessionName,

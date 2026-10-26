@@ -65,6 +65,9 @@ abstract class TerminalProxyBase implements ITerminalProxy {
   protected startPromise: Promise<void> | null = null
   protected outputSuppressed = false
 
+  protected sizeParticipationSupported = false
+  private sizeParticipationQueue: Promise<void> = Promise.resolve()
+  private sizeParticipation: boolean
   private pasteSeq = 0
   private switchQueue: Promise<void> = Promise.resolve()
   private pendingTarget: string | null = null
@@ -76,6 +79,7 @@ abstract class TerminalProxyBase implements ITerminalProxy {
 
   constructor(options: TerminalProxyOptions) {
     this.options = options
+    this.sizeParticipation = options.initialSizeParticipation !== false
     this.spawn = options.spawn ?? Bun.spawn
     this.spawnSync = options.spawnSync ?? Bun.spawnSync
     this.spawnAsync =
@@ -110,6 +114,29 @@ abstract class TerminalProxyBase implements ITerminalProxy {
       this.pendingResolvers.push({ resolve, reject })
       this.switchQueue = this.switchQueue.then(() => this.flushSwitchQueue())
     })
+  }
+
+  /** Serialize visibility changes so a slow hide cannot override a later show. */
+  setSizeParticipation(participates: boolean): Promise<void> {
+    if (!this.sizeParticipationSupported || this.getMode() === 'pipe-pane') return Promise.resolve()
+    const tty = this.getClientTty()
+    if (!tty) return Promise.resolve()
+    const operation = this.sizeParticipationQueue.then(async () => {
+      if (this.state === TerminalState.DEAD || this.getClientTty() !== tty) return
+      if (this.sizeParticipation === participates) return
+      await this.runParsedTmuxNonBlocking([
+        'refresh-client', '-t', tty, '-f', participates ? '!ignore-size' : 'ignore-size',
+      ])
+      this.sizeParticipation = participates
+    })
+    // Preserve failures for the caller, but let a later recovery retry.
+    this.sizeParticipationQueue = operation.catch(() => {})
+    return operation
+  }
+
+  /** Disposal marks DEAD first, then waits before releasing this client's tty. */
+  protected drainSizeParticipation(): Promise<void> {
+    return this.sizeParticipationQueue
   }
 
   isReady(): boolean {

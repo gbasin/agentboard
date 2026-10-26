@@ -292,9 +292,6 @@ export function toAgentSession(
     prs: options?.cachedPrsOnly
       ? getCachedPullRequests(record)
       : getMergedPullRequests(record),
-    media: options?.cachedPrsOnly
-      ? getCachedMedia(record)
-      : getMergedMedia(record),
   }
 }
 

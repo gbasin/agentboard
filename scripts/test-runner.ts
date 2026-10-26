@@ -70,6 +70,7 @@ async function main() {
     // Bun.serve / setInterval mock; isolation keeps that mock window from
     // overlapping with any other test that captures globals at module load.
     const ISOLATED_FILES = new Set([
+      'terminalLeases.test.ts',
       'persistenceOwnership.test.ts',
       'persistenceRoutes.test.ts',
       // Entry-point tests patch Bun.serve/Bun.spawnSync/process.exit while
@@ -108,6 +109,7 @@ async function main() {
       'persistence.integration.test.ts',
       'integration.test.ts',
       'throttled-reconnect.integration.test.ts',
+      'terminalRelay.integration.test.ts',
     ])
 
     // Client tests that install top-level mock.module(...) hooks must run in a

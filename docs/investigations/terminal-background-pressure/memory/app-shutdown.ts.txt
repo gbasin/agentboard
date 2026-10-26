@@ -1,0 +1,134 @@
+/** Run after the release build: bun scripts/verify-terminal-relay-binary.ts /path/to/agentboard */
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, copyFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import type { ServerMessage } from '../../src/shared/types'
+
+const binary = process.argv[2]
+if (!binary) throw new Error('Pass the compiled Agentboard executable path')
+const outputRoot = path.resolve('.poc-stress-test/memory')
+const mode = binary === 'source' ? 'source' : 'compiled'
+const dir = path.join(outputRoot, mode === 'source' ? 's' : 'c')
+mkdirSync(dir, { recursive: true })
+const samples: unknown[] = []
+const env: Record<string, string | undefined> = {
+  ...process.env, TMUX_TMPDIR: dir, TMUX_SESSION: 'relay-compiled',
+  AGENTBOARD_DATA_DIR: dir, AGENTBOARD_DB_PATH: path.join(dir, 'db'),
+  MEMORY_CHECKPOINT: path.join(outputRoot, mode+'-checkpoints.jsonl'), LOG_FILE: path.join(dir, 'server.log'), CLAUDE_CONFIG_DIR: path.join(dir, 'claude'),
+  CODEX_HOME: path.join(dir, 'codex'), PI_HOME: path.join(dir, 'pi'),
+  PI_CODING_AGENT_DIR: path.join(dir, 'omp'), DEVIN_CLI_DIR: path.join(dir, 'devin'),
+  GROK_HOME: path.join(dir, 'grok'), AGENTBOARD_TMUX_PID_FILE: path.join(dir, 'tmux-server.pid'),
+  AGENTBOARD_TERMINAL_RELAY: '1', HOSTNAME: '127.0.0.1', AGENTBOARD_REMOTE_HOSTS: '',
+  AGENTBOARD_OWNERSHIP_MATCHING: 'false', AGENTBOARD_TMUX_SET_CLIPBOARD: '0',
+  AGENTBOARD_RELAY_GRACE_MS: '500', NODE_ENV: 'production',
+}
+delete env.TMUX
+// Bun subprocesses receive this exact environment; the user's tmux is never used.
+delete env.TMUX_PANE
+for (const key of ['CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'PI_HOME', 'PI_CODING_AGENT_DIR', 'DEVIN_CLI_DIR', 'GROK_HOME']) mkdirSync(env[key]!, { recursive: true })
+const reservation = Bun.serve({ hostname: env.HOSTNAME, port: 0, fetch: () => new Response('') })
+const port = reservation.port!
+reservation.stop(true)
+env.PORT = String(port)
+const base = `http://${env.HOSTNAME}:${port}`
+const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+const peers: WebSocket[] = []
+let child: ReturnType<typeof Bun.spawn> | undefined
+
+function tmux(...args: string[]) {
+  const result = Bun.spawnSync(['tmux', ...args], { env, stdout: 'pipe', stderr: 'pipe' })
+  if (result.exitCode) throw new Error(result.stderr.toString())
+  return result.stdout.toString().trim()
+}
+
+async function connect(window: string, token?: string, claim = 1) {
+  const ws = new WebSocket(`${base.replace('http:', 'ws:')}/ws`)
+  peers.push(ws)
+  const frames: ServerMessage[] = []
+  ws.onmessage = event => {
+    const frame: ServerMessage = JSON.parse(String(event.data))
+    frames.push(frame)
+    if (frame.type === 'terminal-output' && frame.outputSeq) {
+      ws.send(JSON.stringify({ type: 'terminal-ack', outputSeq: frame.outputSeq }))
+    }
+  }
+  async function receive<T extends ServerMessage['type']>(type: T, predicate: (frame: Extract<ServerMessage, { type: T }>) => boolean = () => true): Promise<Extract<ServerMessage, { type: T }>> {
+    const end = performance.now() + 15_000
+    while (performance.now() < end) {
+      const index = frames.findIndex(frame => frame.type === type && predicate(frame as Extract<ServerMessage, { type: T }>))
+      if (index >= 0) return frames.splice(index, 1)[0] as Extract<ServerMessage, { type: T }>
+      await wait(10)
+    }
+    throw new Error(`Timed out waiting for ${type}`)
+  }
+  const initial = await receive('sessions', frame => frame.sessions.some(session => session.tmuxWindow.endsWith(window)))
+  const session = initial.sessions.find(session => session.tmuxWindow.endsWith(window))!
+  ws.send(JSON.stringify({ type: 'terminal-resume', token, claim }))
+  const lease = await receive('terminal-lease')
+  async function attach(attachId: number) {
+    ws.send(JSON.stringify({ type: 'terminal-attach', sessionId: session.id, tmuxTarget: session.tmuxWindow, cols: 80, rows: 24, attachId }))
+    const ready = await receive('terminal-ready')
+    if (ready.attachId !== attachId) throw new Error('Ready frame lost attachment identity')
+  }
+  return { ws, receive, session, token: lease.token, attach }
+}
+
+try {
+  const window = tmux('-f', '/dev/null', 'new-session', '-d', '-s', env.TMUX_SESSION!, '-P', '-F', '#{window_id}', 'stty -echo; exec /bin/cat')
+  child = Bun.spawn(binary === 'source' ? [process.execPath, '.poc-stress-test/memory/source-wrapper.ts'] : [path.resolve(binary)], { env, stdout: Bun.file(path.join(dir, 'out')), stderr: Bun.file(path.join(dir, 'err')) })
+  let listening = false
+  for (let attempt = 0; attempt < 100; attempt++) {
+    try { if ((await fetch(`${base}/api/server-info`)).ok) { listening = true; break } } catch {}
+    await wait(100)
+  }
+  if (!listening) throw new Error('Compiled server unavailable')
+  async function sample(phase: string) {
+    const rss = Bun.spawnSync(['ps','-o','rss=','-p',String(child!.pid)], {env,stdout:'pipe'}).stdout.toString().trim()
+    const clients = tmux('list-clients','-F','#{client_tty}').split('\n').filter(Boolean).length
+    const observers = tmux('list-sessions','-F','#{session_name}').split('\n').filter(n=>n.includes('-ws-')).length
+    const record={phase,rssBytes:Number(rss)*1024,clients,observers};samples.push(record);console.log(JSON.stringify(record))
+  }
+  await sample('baseline')
+  const six = await Promise.all(Array.from({length:Number(process.env.COUNT ?? 6)},()=>connect(window)))
+  await Promise.all(six.map(p=>p.attach(1)))
+  await sample('six-active')
+  six.forEach(p=>p.ws.close())
+  await wait(1500)
+  await sample('expired')
+  for(let i=0;i<(process.env.SHORT ? 2 : 6);i++){await wait(process.env.SHORT ? 1000 : 10000);await sample('idle-'+i)}
+  if(tmux('list-sessions','-F','#{session_name}') !== env.TMUX_SESSION) throw Error('Observers remained')
+
+} catch (error) {
+  console.error(error)
+  for (const filename of ['err', 'server.log']) {
+    const file = Bun.file(path.join(dir, filename))
+    if (await file.exists()) console.error(filename, (await file.text()).slice(-7000))
+  }
+  process.exitCode = 1
+} finally {
+  for (const ws of peers) ws.close()
+  if (child) {
+    console.log('SIGNAL_AT',Date.now(),child.pid)
+    try{console.log('HEALTH_BEFORE',await(await fetch(base+'/api/health',{signal:AbortSignal.timeout(1500)})).text())}catch(e){console.log('HEALTH_BEFORE_ERROR',String(e))}
+    console.log('BUN_KILL_RESULT',child.kill())
+    const clean = await Promise.race([child.exited.then(()=>true),wait(10000).then(()=>false)])
+    if(!clean){console.error('SIGTERM_TIMEOUT');
+      console.log('SIGNAL_MASKS',Bun.spawnSync(['ps','-o','sig,sigmask','-p',String(child.pid)],{env,stdout:'pipe'}).stdout.toString())
+      console.log('OS_TERM',Bun.spawnSync(['/bin/kill','-TERM',String(child.pid)],{env,stdout:'pipe'}).exitCode)
+      await wait(1500)
+      try{console.log('HEALTH_AFTER',await(await fetch(base+'/api/health',{signal:AbortSignal.timeout(1500)})).text())}catch(e){console.log('HEALTH_AFTER_ERROR',String(e))}
+      console.log('PS_AFTER',Bun.spawnSync(['ps','-o','pid,state,%cpu,rss,command','-p',String(child.pid)],{env,stdout:'pipe'}).stdout.toString())
+      Bun.spawnSync(['sample',String(child.pid),'1','-file',path.join(outputRoot,mode+'-hung.sample')],{env,stdout:'ignore',stderr:'ignore',timeout:5000})
+      child.kill('SIGKILL')
+    }
+    const code = await child.exited
+    console.log('Compiled shutdown:', code, child.signalCode)
+    if (code !== 0 || child.signalCode) process.exitCode = 1
+  }
+  try {
+    for (const session of tmux('list-sessions', '-F', '#{session_name}').split('\n')) tmux('kill-session', '-t', `=${session}`)
+  } catch {}
+  for(const filename of ['err','server.log']) {try{copyFileSync(path.join(dir,filename),path.join(outputRoot,mode+'-'+filename))}catch{}}
+  writeFileSync(path.join(outputRoot,mode+'-shutdown-samples.json'),JSON.stringify(samples,null,2))
+  rmSync(dir, { recursive: true, force: true })
+}

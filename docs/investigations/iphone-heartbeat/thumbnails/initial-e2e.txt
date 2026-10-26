@@ -1,0 +1,27 @@
+Running 46 tests using 1 worker
+  ✓   1 [chromium] › tests/e2e/media-attention.spec.ts:108:1 › new batches pulse finitely, persist unread, and acknowledge on opening (8.7s)
+  ✓   2 [chromium] › tests/e2e/media-attention.spec.ts:151:1 › initial history and switching sessions establish a quiet baseline (1.7s)
+  ✓   3 [chromium] › tests/e2e/media-attention.spec.ts:174:1 › reduced motion retains the static unread indicator without animation (2.3s)
+  ✓   4 [chromium] › tests/e2e/media-attention.spec.ts:198:7 › light desktop › media attention appearance (4.0s)
+  ✓   5 [chromium] › tests/e2e/media-attention.spec.ts:198:7 › light mobile › media attention appearance (3.5s)
+  ✓   6 [chromium] › tests/e2e/media-attention.spec.ts:198:7 › dark desktop › media attention appearance (4.1s)
+  ✓   7 [chromium] › tests/e2e/media-attention.spec.ts:198:7 › dark mobile › media attention appearance (4.1s)
+  ✓   8 [chromium] › tests/e2e/media-attention.spec.ts:263:7 › mixed media tiles light desktop › equal tiles contain labels and scroll within the rail (2.8s)
+  ✓   9 [chromium] › tests/e2e/media-attention.spec.ts:263:7 › mixed media tiles light mobile › equal tiles contain labels and scroll within the rail (1.7s)
+  ✓  10 [chromium] › tests/e2e/media-attention.spec.ts:263:7 › mixed media tiles dark desktop › equal tiles contain labels and scroll within the rail (1.8s)
+  ✓  11 [chromium] › tests/e2e/media-attention.spec.ts:263:7 › mixed media tiles dark mobile › equal tiles contain labels and scroll within the rail (1.9s)
+  ✓  12 [chromium] › tests/e2e/media-payload.spec.ts:10:1 › real Codex images and Claude documents retain their payloads and path restrictions (1.4s)
+  ✓  13 [chromium] › tests/e2e/media-payload.spec.ts:102:1 › same-size transcript rewrites invalidate old cursors and immutable payload references (9.0s)
+  ✓  14 [chromium] › tests/e2e/media-payload.spec.ts:131:1 › all 258 payloads in one transcript record remain addressable beyond the legacy index cap (8.8s)
+  ✓  15 [chromium] › tests/e2e/media-rail.spec.ts:14:1 › closed rail downloads no pages; opening serves real bounded image bytes (10.8s)
+  ✓  16 [chromium] › tests/e2e/media-rail.spec.ts:66:1 › scroll loads the next oldest-first page; live additions do not fetch or move the view (7.6s)
+  ✓  17 [chromium] › tests/e2e/media-rail.spec.ts:109:1 › all 2,366 items remain reachable with bounded pages and a small summary (9.3s)
+  ✓  18 [chromium] › tests/e2e/media-rail.spec.ts:139:1 › a delayed page cannot populate a different selected session (20.0s)
+  ✓  19 [chromium] › tests/e2e/media-rail.spec.ts:175:1 › backgrounding cancels optional page work; a closed rail does not refetch on return (10.9s)
+  ✓  20 [chromium] › tests/e2e/media-rail.spec.ts:232:1 › large media catalogs stay off the socket across reconnect and live updates (51.6s)
+  ✘  21 [chromium] › tests/e2e/media-thumbnail.spec.ts:34:1 › only nearby thumbnails load; originals wait for explicit open (33.6s)
+  ✘  22 [chromium] › tests/e2e/media-thumbnail.spec.ts:102:1 › corrupt images show an explicit fallback without fetching originals or retrying (2.2m)
+  1 failed
+  1 interrupted
+  24 did not run
+  20 passed (5.6m)

@@ -1,0 +1,29 @@
+bun test v1.3.14 (0d9b296a)
+
+src/server/__tests__/terminalSizeParticipation.test.ts:
+(pass) hide then show serialize flag changes; repeated requests do not spawn extra commands [1.37ms]
+(pass) dispose waits for an in-flight mutation and skips queued foreground work before releasing tty [0.13ms]
+(pass) natural exit or replaced tty cancels a queued sizing mutation [0.10ms]
+(pass) relay observers start ignored and foreground command failures propagate for retry [0.09ms]
+(pass) pipe-pane has no PTY sizing flags [0.03ms]
+227 |     })
+228 |     if (result.signalCode === 'SIGTERM' || result.exitCode === null) {
+229 |       throw new TmuxTimeoutError(args.join(' '), timeoutMs)
+230 |     }
+231 |     if (result.exitCode !== 0) {
+232 |       throw new Error(result.stderr || 'tmux command failed')
+                      ^
+error: can't find client: /dev/remote-tty
+
+      at runTmuxNonBlocking (/Users/garybasin/Code/agentboard-background-pressure/src/server/terminal/TerminalProxyBase.ts:232:17)
+      at async <anonymous> (/Users/garybasin/Code/agentboard-background-pressure/src/server/terminal/TerminalProxyBase.ts:126:18)
+(fail) SSH sizing uses its asynchronous remote command path [6.98ms]
+
+src/server/__tests__/terminalRuntimeSizing.test.ts:
+(pass) hide during startup never enables a late observer; next verified attach enables it [7.09ms]
+(pass) readiness waits for sizing restoration and rapid hide/show cannot finish ignored [2.45ms]
+
+ 7 pass
+ 1 fail
+ 19 expect() calls
+Ran 8 tests across 2 files. [84.00ms]

@@ -1,0 +1,17 @@
+async function run(){
+let lock:Int32Array|undefined
+if(process.env.LOCK==='1'){lock=await new Promise<Int32Array>(resolve=>{self.onmessage=e=>resolve(new Int32Array(e.data));self.postMessage({ready:true})});while(Atomics.compareExchange(lock,0,0,1)!==0)Atomics.wait(lock,0,1)}
+if(process.env.EARLY==='1'){self.postMessage({pid:'ready-before-pty'});await Bun.sleep(500)}
+if(process.env.WORKER_SIGNALS==='1'){for(const signal of ['SIGTERM','SIGINT'])process.on(signal,()=>self.postMessage({signal}))}
+const env={...process.env};delete env.TMUX;delete env.TMUX_PANE
+const mode=process.env.PTY_MODE ?? 'kill'
+const p=Bun.spawn(['/bin/sleep',mode==='natural'?'1':'5'],{env,terminal:{cols:80,rows:24,data(){}}})
+if(lock){Atomics.store(lock,0,0);Atomics.notify(lock,0)}
+self.postMessage({pid:p.pid})
+if(mode==='kill')setTimeout(()=>p.kill(),100)
+if(mode==='close')setTimeout(()=>p.terminal?.close(),100)
+void p.exited.then(()=>{if(process.env.CLOSE_PTY!=='0')p.terminal?.close()})
+setInterval(()=>{},1000)
+
+}
+void run()

@@ -1,0 +1,48 @@
+{
+  "before": {
+    "requests": 7,
+    "originals": 0,
+    "states": [
+      "ready",
+      "error",
+      "ready",
+      "ready",
+      "ready",
+      "ready",
+      "ready",
+      "idle",
+      "idle",
+      "idle",
+      "idle",
+      "idle",
+      "idle",
+      "idle",
+      "idle",
+      "idle",
+      "idle"
+    ]
+  },
+  "after": {
+    "requests": 14,
+    "originals": 0,
+    "states": [
+      "ready",
+      "error",
+      "ready",
+      "ready",
+      "ready",
+      "ready",
+      "ready",
+      "idle",
+      "idle",
+      "idle",
+      "ready",
+      "ready",
+      "ready",
+      "ready",
+      "ready",
+      "ready",
+      "ready"
+    ]
+  }
+}

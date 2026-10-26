@@ -1,0 +1,14 @@
+{
+  "node": "v26.5.0",
+  "playwright": "1.57.0",
+  "artifacts": {
+    "release": {
+      "path": "/Users/garybasin/.agentboard/releases/0.36.3-TTSxXb/node_modules/@gbasin/agentboard-darwin-arm64/bin/agentboard",
+      "sha256": "b7de9607500a802da8d76bb989c1235c336c9afaad5007a88d4555a6f0879e85"
+    },
+    "pr": {
+      "path": "/Users/garybasin/.agentboard/releases/local-pr439-cf7a630/bin/agentboard",
+      "sha256": "548655716ab50fa5b3087aa2b84f4f7c8a1b86d7512021a4254607e6983424d7"
+    }
+  }
+}

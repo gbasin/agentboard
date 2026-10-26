@@ -1,0 +1,11 @@
+import {writeFileSync} from 'node:fs'
+const env={...process.env,NODE_ENV:'production',AGENTBOARD_DATA_DIR:process.cwd()+'/.poc-stress-test/memory/sigdata',CHECKPOINT:process.cwd()+'/.poc-stress-test/memory/signal-checkpoint-'+(process.env.CASE ?? 'default')+'.log'};delete env.TMUX
+writeFileSync(env.CHECKPOINT,'')
+const child=Bun.spawn(process.env.PROGRAM ? [process.env.PROGRAM] : [process.execPath,'.poc-stress-test/memory/signal.ts'],{env,stdout:'ignore',stderr:'inherit'})
+await Bun.sleep(4000)
+console.log('pid',child.pid,Bun.spawnSync(['ps','-o','sig,sigmask','-p',String(child.pid)],{env,stdout:'pipe'}).stdout.toString())
+console.log('signal',child.kill((process.env.SIGNAL ?? 'SIGTERM') as any))
+const done=await Promise.race([child.exited.then(()=>true),Bun.sleep(3000).then(()=>false)])
+console.log('done',done)
+if(!done)child.kill('SIGKILL')
+console.log('exit',await child.exited)

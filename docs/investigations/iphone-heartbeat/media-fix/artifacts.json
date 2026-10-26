@@ -1,0 +1,11 @@
+{
+  "candidate": {
+    "path": ".poc-stress-test/agentboard-final",
+    "sha256": "c3624363b1456015ae4159010036e4aeea08af650ecaead183eb666130ac7054"
+  },
+  "release": {
+    "path": "/Users/garybasin/.agentboard/releases/0.36.3-TTSxXb/node_modules/@gbasin/agentboard-darwin-arm64/bin/agentboard",
+    "sha256": "b7de9607500a802da8d76bb989c1235c336c9afaad5007a88d4555a6f0879e85"
+  },
+  "sourceBase": "db039c4"
+}

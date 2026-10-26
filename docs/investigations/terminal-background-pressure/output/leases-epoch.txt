@@ -1,0 +1,18 @@
+bun test v1.3.14 (0d9b296a)
+
+src/server/__tests__/terminalLeases.test.ts:
+(pass) terminal lease ownership and resource bounds > dashboard-only handshakes and replacement claims allocate no workers [9.93ms]
+(pass) terminal lease ownership and resource bounds > first valid attachment initializes one worker at the current claim epoch [1.27ms]
+(pass) terminal lease ownership and resource bounds > legacy input and detach without an attachment allocate no worker [0.10ms]
+(pass) terminal lease ownership and resource bounds > queued obsolete-owner handshake cannot retire the replacement owner [0.22ms]
+(pass) terminal lease ownership and resource bounds > retiring workers consume capacity until disposal acknowledgment, then reuse [1.18ms]
+(pass) terminal lease ownership and resource bounds > unacknowledged parser output closes instead of dropping part of an ANSI stream [1.37ms]
+(pass) terminal lease ownership and resource bounds > relay catalog excludes transcript data and skips unchanged identities [0.28ms]
+(pass) terminal lease ownership and resource bounds > single oversized dashboard frame is rejected before queueing [8.78ms]
+(pass) terminal lease ownership and resource bounds > IPC overload signals before closing and stops input without waiting for close delivery [0.37ms]
+(pass) terminal lease ownership and resource bounds > queued old-epoch IPC overload cannot close a resumed owner [0.18ms]
+
+ 10 pass
+ 0 fail
+ 37 expect() calls
+Ran 10 tests across 1 file. [921.00ms]

@@ -1,3 +1,4 @@
+import { resolveWorkerPath } from './workerPath'
 /**
  * Client for the devin sync worker.
  * Keeps sessions.db mirroring off the main thread; see devinSyncWorker.ts.
@@ -91,9 +92,7 @@ export class DevinSyncWorkerClient {
   private spawnWorker(): void {
     if (this.disposed) return
     // Compiled Bun binaries need string paths; dev mode needs URL resolution
-    const workerPath = import.meta.url.includes('$bunfs')
-      ? './devinSyncWorker.ts'
-      : new URL('./devinSyncWorker.ts', import.meta.url).href
+    const workerPath = resolveWorkerPath('devinSyncWorker')
     const worker = new Worker(workerPath, {
       type: 'module',
     })

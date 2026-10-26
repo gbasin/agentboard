@@ -15,6 +15,7 @@ import { logger } from '../logger'
 import { toAgentSession } from '../agentSessions'
 import { metadataIdentity, MetadataScanSupersededError } from '../sessionMetadataClient'
 import type { SessionMetadata } from '../sessionMetadataWorker'
+import { sessionSummary } from '../catalogMessages'
 
 export function registerPersistenceRoutes(
   parent: Hono,
@@ -115,7 +116,7 @@ export function registerPersistenceRoutes(
       ).get(id) as Pick<HistoryDetail, 'terminalPreview' | 'terminalPreviewAt'>
       return c.json({
         session,
-        conversations: current.map((record, i) => ({
+        conversations: current.map((record, i) => sessionSummary({
           ...toAgentSession(record, { cachedPrsOnly: true }), ...metadata[i],
         })),
         ...preview,

@@ -1,0 +1,111 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import net from 'node:net';
+import {spawn,spawnSync} from 'node:child_process';
+import {webkit,devices} from '@playwright/test';
+const root=path.resolve(process.env.PROBE_OUTPUT_DIR||'.poc-stress-test/cellular');
+const emulateIOS=process.env.PROBE_IOS==='1';
+const phoneSettings=process.env.PROBE_PHONE_SETTINGS==='1';
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const duration=Number(process.env.PROBE_DURATION_MS||75000);
+const profiles=process.env.PROBE_PROFILES?.split(',')||['baseline','rate128','rate256'];
+const definitions=[
+ {name:'release',binary:'/Users/garybasin/.agentboard/releases/0.36.3-TTSxXb/node_modules/@gbasin/agentboard-darwin-arm64/bin/agentboard',assets:'/Users/garybasin/.agentboard/releases/0.36.3-TTSxXb/node_modules/@gbasin/agentboard-darwin-arm64/dist/client'},
+ {name:'pr',binary:'/Users/garybasin/.agentboard/releases/local-pr439-cf7a630/bin/agentboard',assets:'/Users/garybasin/.agentboard/releases/local-pr439-cf7a630/dist/client'},
+];
+const running=[],proxies=[],results=[];
+let inputTail=Promise.resolve();
+function serialInput(fn){const result=inputTail.then(fn);inputTail=result.catch(()=>{});return result}
+let browser;
+async function port(){const s=net.createServer();await new Promise(r=>s.listen(0,'127.0.0.1',r));const p=s.address().port;await new Promise(r=>s.close(r));return p}
+function tmux(server,...args){const r=spawnSync('tmux',['-S',server.socket,...args],{env:server.env,encoding:'utf8'});if(r.status!==0)throw Error(r.stderr);return r.stdout.trim()}
+async function setup(def){
+ const dir=path.join(root,def.name);fs.mkdirSync(dir,{recursive:true});const link=`/tmp/abcell-${process.pid}-${def.name}`;fs.symlinkSync(dir,link);
+ const env={...process.env};delete env.TMUX;delete env.TMUX_PANE;
+ const p=await port();const session=`cellular-${def.name}`;
+ Object.assign(env,{PORT:String(p),HOSTNAME:'127.0.0.1',TMUX_TMPDIR:link,TMUX_SESSION:session,AGENTBOARD_DATA_DIR:dir,AGENTBOARD_DB_PATH:path.join(dir,'db'),LOG_FILE:path.join(dir,'server.jsonl'),LOG_LEVEL:'info',NODE_ENV:'production',AGENTBOARD_STATIC_DIR:def.assets,AGENTBOARD_REMOTE_HOSTS:'',AGENTBOARD_TMUX_SET_CLIPBOARD:'0',AGENTBOARD_TMUX_PID_FILE:path.join(dir,'tmux-server.pid'),AGENTBOARD_OWNERSHIP_MATCHING:'false'});
+ // The old release keeps its default transport; the PR keeps its shipped default relay.
+ delete env.AGENTBOARD_TERMINAL_RELAY;
+ for(const key of ['CLAUDE_CONFIG_DIR','CODEX_HOME','PI_HOME','PI_CODING_AGENT_DIR','DEVIN_CLI_DIR','GROK_HOME']){env[key]=path.join(dir,key);fs.mkdirSync(env[key],{recursive:true})}
+ const s={...def,dir,link,env,port:p,session,socket:path.join(link,`tmux-${process.getuid()}`,'default'),windows:{}};running.push(s);fs.mkdirSync(path.dirname(s.socket),{recursive:true,mode:0o700});
+ const fixture=path.join(dir,'fixture.py');fs.writeFileSync(fixture,`import sys,time,threading\ndef output():\n n=0\n while True:\n  print('STREAM %06d '%n+'x'*160,flush=True);n+=1;time.sleep(.5)\nthreading.Thread(target=output,daemon=True).start()\nfor line in sys.stdin: print('INPUT '+line.strip(),flush=True)\n`);
+ const command=`stty -echo; exec python3 -u '${fixture}'`;
+ const names=Array.from({length:23},(_,i)=>profiles[i]||`idle-${i}`);
+ for(const [i,profile] of names.entries()){
+  s.windows[profile]=tmux(s,...(i===0?['-f','/dev/null','new-session','-d','-s',session]:['new-window','-t',`=${session}`]),'-P','-F','#{window_id}','-n',profile,command);
+ }
+ const manifest=path.join(dir,'seed-manifest.json');fs.writeFileSync(manifest,JSON.stringify({dir,claudeDir:env.CLAUDE_CONFIG_DIR,dbPath:env.AGENTBOARD_DB_PATH,windows:Object.entries(s.windows).map(([name,id])=>({name,tmuxWindow:`${session}:${id}`}))}));
+ const seeded=spawnSync('bun',[path.resolve('.poc-stress-test/seed/seed.ts'),manifest],{env,encoding:'utf8'});if(seeded.status!==0)throw Error(seeded.stderr);
+ s.child=spawn(def.binary,[],{env,cwd:dir,stdio:['ignore',fs.openSync(path.join(dir,'stdout.log'),'w'),fs.openSync(path.join(dir,'stderr.log'),'w')]});
+ for(let i=0;i<600;i++){try{const r=await fetch(`http://127.0.0.1:${p}/api/sessions`);const sessions=await r.json();if(sessions.length===23 && sessions.some(s=>s.media?.length===(process.env.PROBE_SMALL==='1'?1:2366)) && sessions.every(s=>s.media?.length>=(process.env.PROBE_SMALL==='1'?1:48))){s.sessions=sessions;fs.writeFileSync(path.join(dir,'payload-summary.json'),JSON.stringify({bytes:Buffer.byteLength(JSON.stringify(sessions)),sessions:sessions.map(s=>({id:s.id,media:s.media?.length,bytes:Buffer.byteLength(JSON.stringify(s))}))},null,2));console.log(def.name+' hydrated '+Buffer.byteLength(JSON.stringify(sessions))+' bytes');return s}}catch{}await sleep(100)}
+ throw Error(`${def.name} startup failed`);
+}
+async function proxy(server,profile){
+ const sockets=new Set();let origin=null;
+ const metrics={connections:0,upBytes:0,downBytes:0,maxQueuedBytes:0,segments:0,serverFrames:[]};
+ function elapsed(){return origin===null?0:performance.now()-origin}
+ function transport(source,destination,direction){
+  const queue=[];let timer=null,queued=0,lastDue=0;let stopped=false,ended=false,waitingDrain=false;
+  const stalled=()=>{const t=elapsed();return(profile==='duplex-stall'||profile===`${direction==='up'?'uplink':'downlink'}-stall`)&&t>=18000&&t<34000};
+  const clear=()=>{stopped=true;if(timer)clearTimeout(timer);queue.length=0;queued=0};source.once('close',()=>{if(!source.readableEnded)clear()});destination.once('close',clear);source.once('end',()=>{ended=true;if(!queue.length)destination.end()});
+  function pump(){timer=null;if(stopped||waitingDrain)return;if(!queue.length){if(ended)destination.end();return}const item=queue[0];const delay=Math.max(item.due-performance.now(),stalled()?origin+34000-performance.now():0);if(delay>0){timer=setTimeout(pump,delay);return}queue.shift();queued-=item.data.length;if(queued<524288&&source.isPaused())source.resume();const ok=destination.write(item.data);if(ok)pump();else{waitingDrain=true;destination.once('drain',()=>{waitingDrain=false;pump()})}}
+  let observed=Buffer.alloc(0),handshake=false;
+  function observe(data){
+   if(direction!=='down')return;
+   observed=Buffer.concat([observed,data]);
+   if(!handshake){const end=observed.indexOf('\r\n\r\n');if(end<0)return;observed=observed.subarray(end+4);handshake=true}
+   while(observed.length>=2){let n=observed[1]&127,h=2;if(n===126){if(observed.length<4)return;n=observed.readUInt16BE(2);h=4}else if(n===127){if(observed.length<10)return;n=Number(observed.readBigUInt64BE(2));h=10}if(observed[1]&128)h+=4;if(observed.length<h+n)return;
+    const op=observed[0]&15,compressed=Boolean(observed[0]&64);if(op===1&&!compressed){try{const m=JSON.parse(observed.subarray(h,h+n).toString());if(m.type!=='terminal-output'&&m.type!=='tmux-copy-mode-status')metrics.serverFrames.push({t:Math.round(elapsed()),type:m.type,seq:m.seq,bytes:n})}catch{}}
+    observed=observed.subarray(h+n);
+   }
+  }
+  source.on('data',data=>{observe(data);
+   const t=elapsed();const shaped=profile!=='baseline';
+   // Fixed time-bucket jitter, independent of the builds' TCP chunk boundaries.
+   const jitter=profile==='jitter'?Math.round((1+Math.sin(Math.floor(t/250)*1.73+(direction==='up'?0:1)))*175):0;
+   const latency=shaped?150+jitter:0;const rate=profile==='rate128'?131072:profile==='rate256'?262144:1e9;
+   const paused=(profile==='duplex-stall'||profile===`${direction==='up'?'uplink':'downlink'}-stall`)&&t>=18000&&t<34000;
+   for(let offset=0;offset<data.length;offset+=4096){const chunk=data.subarray(offset,offset+4096);let due=Math.max(lastDue,performance.now()+latency,paused?origin+34000:0)+chunk.length/rate*1000;lastDue=due;queue.push({data:chunk,due});queued+=chunk.length;metrics[direction==='up'?'upBytes':'downBytes']+=chunk.length;metrics.segments++;metrics.maxQueuedBytes=Math.max(metrics.maxQueuedBytes,queued)}
+   if(queued>1048576)source.pause();
+   if(!timer)pump();
+  });
+ }
+ const listener=net.createServer(client=>{if(origin===null)origin=performance.now();metrics.connections++;const upstream=net.connect(server.port,'127.0.0.1');sockets.add(client);sockets.add(upstream);for(const s of [client,upstream]){s.setNoDelay(true);s.on('error',()=>{client.destroy();upstream.destroy()});s.on('close',()=>sockets.delete(s))}transport(client,upstream,'up');transport(upstream,client,'down')});
+ await new Promise(r=>listener.listen(0,'127.0.0.1',r));const result={port:listener.address().port,metrics,close(){for(const s of sockets)s.destroy();listener.close()}};proxies.push(result);return result;
+}
+async function run(server,profile){
+ const relay=await proxy(server,profile);const context=await browser.newContext({...emulateIOS?devices['iPhone 13']:{viewport:{width:390,height:844}},serviceWorkers:'block'});const page=await context.newPage();const events=[];const start=performance.now();let wsCount=0;
+ const event=(kind,data={})=>events.push({t:Math.round(performance.now()-start),kind,...data});
+ await page.addInitScript(({proxyPort,phoneSettings})=>{if(phoneSettings){localStorage.setItem('agentboard-settings',JSON.stringify({state:{useWebGL:false},version:0}));Object.defineProperty(navigator,'platform',{get:()=> 'iPhone'});Object.defineProperty(navigator,'maxTouchPoints',{get:()=>5})}const Native=window.WebSocket;window.WebSocket=class extends Native{constructor(url,protocols){const target=new URL(url,location.href);if(target.pathname==='/ws')target.host=`127.0.0.1:${proxyPort}`;super(target.href,protocols)}}},{proxyPort:relay.port,phoneSettings});
+ page.on('request',r=>{if(r.url().endsWith('/api/client-log')){try{const m=r.postDataJSON();if(m.event.startsWith('ws_'))event('client-log',{event:m.event,...m.data})}catch{}}});
+ page.on('websocket',ws=>{wsCount++;event('socket',{number:wsCount});ws.on('framesent',({payload})=>{try{const m=JSON.parse(String(payload));if(m.type==='ping')event('ping',{seq:m.seq});else if(m.type==='terminal-input'||m.type==='terminal-paste')event('sent-input',{data:m.data})}catch{}});ws.on('framereceived',({payload})=>{try{const m=JSON.parse(String(payload));if(['pong','terminal-ready','terminal-error','terminal-overload'].includes(m.type))event(m.type,{seq:m.seq,code:m.code});else if(m.type==='terminal-output')event('output',{bytes:m.data.length});else event('metadata',{type:m.type,bytes:Buffer.byteLength(String(payload))})}catch{}});ws.on('close',()=>event('close'));ws.on('socketerror',error=>event('socket-error',{error}))});
+ let control=null,burstTimer=null,burstCount=0;
+ if(process.env.PROBE_BURST==='1'){
+  control=new WebSocket(`ws://127.0.0.1:${server.port}/ws`);
+  await new Promise((resolve,reject)=>{control.onopen=resolve;control.onerror=reject});
+  burstTimer=setInterval(()=>{const t=performance.now()-start;if(t>=15000&&t<45000){burstCount++;control.send(JSON.stringify({type:'session-rename',sessionId:`${server.session}:${server.windows[profiles[0]]}`,newName:`payload-burst-${burstCount}`}));event('burst-request',{burstCount})}},5000);
+ }
+ let error=null;
+ try{
+  await page.goto(`http://127.0.0.1:${server.port}`,{waitUntil:'domcontentloaded'});await page.locator('[data-testid="session-card"]').first().waitFor({state:'attached',timeout:60000});
+  // Desktop sidebar selection, then the mobile viewport for the actual observation.
+  if(!emulateIOS)await page.setViewportSize({width:1440,height:900});else await page.getByRole('button',{name:'Open session menu',exact:true}).click();event('device',await page.evaluate(()=>({userAgent:navigator.userAgent,platform:navigator.platform,maxTouchPoints:navigator.maxTouchPoints})));const id=`${server.session}:${server.windows[profiles[0]]}`;const card=page.locator(`[data-testid="session-card"][data-session-id="${id}"]:visible`).first();await card.waitFor({timeout:60000});await card.click();await page.setViewportSize({width:390,height:844});
+  while(performance.now()-start<duration)await sleep(1000);
+  const marker=`PROBE_${server.name}_${profile.replaceAll('-','_')}`;
+  await serialInput(async()=>{await page.bringToFront();await sleep(100);if(await page.getByTestId('terminal-recovery-status').count()===0){const input=page.locator('.xterm-helper-textarea');if(await input.evaluate(el=>el.disabled)){const keyboard=page.getByRole('button',{name:'Show keyboard',exact:true});if(emulateIOS)await keyboard.dispatchEvent('click');else{await keyboard.scrollIntoViewIfNeeded();await keyboard.click()}}await input.evaluate(el=>el.focus());event('input-state',{disabled:await input.evaluate(el=>el.disabled),focused:await input.evaluate(el=>document.activeElement===el)});if(emulateIOS)await page.keyboard.type(marker);else await page.keyboard.insertText(marker);await page.keyboard.press('Enter');let delivered=false;for(let i=0;i<40;i++){await sleep(200);if(tmux(server,'capture-pane','-p','-t',id,'-S','-200').includes(marker)){delivered=true;break}}event('input-check',{delivered})}})
+  await page.screenshot({path:path.join(root,`${server.name}-${profile}.png`)});
+ }catch(e){error=String(e);event('harness-error',{error});await page.screenshot({path:path.join(root,`${server.name}-${profile}-error.png`)})}
+ const summary={build:server.name,profile,emulateIOS,phoneSettings,connections:wsCount,pings:events.filter(e=>e.kind==='ping').map(e=>e.seq),pongs:events.filter(e=>e.kind==='pong').map(e=>e.seq),timeouts:events.filter(e=>e.event==='ws_pong_timeout').length,connectTimeouts:events.filter(e=>e.event==='ws_connect_timeout').length,ready:events.filter(e=>e.kind==='terminal-ready').length,finalInput:events.findLast(e=>e.kind==='input-check')?.delivered??false,error,network:relay.metrics};
+ if(burstTimer)clearInterval(burstTimer);if(control)control.close();summary.bursts=burstCount;results.push(summary);fs.writeFileSync(path.join(root,`${server.name}-${profile}.json`),JSON.stringify({summary,events},null,2));console.log(JSON.stringify(summary));await context.close();relay.close();
+}
+try{
+ const servers=await Promise.all(definitions.map(setup));browser=await webkit.launch({headless:true});
+ await Promise.all(profiles.flatMap(profile=>servers.map(server=>run(server,profile))));
+ fs.writeFileSync(path.join(root,'summary.json'),JSON.stringify(results,null,2));
+}finally{
+ if(browser)await browser.close();for(const p of proxies)p.close();
+ for(const s of running){if(s.child&&s.child.exitCode===null){s.child.kill('SIGTERM');for(let i=0;i<50&&s.child.exitCode===null;i++)await sleep(100);if(s.child.exitCode===null)s.child.kill('SIGKILL')}
+  try{for(const name of tmux(s,'list-sessions','-F','#{session_name}').split('\n'))tmux(s,'kill-session','-t',`=${name}`)}catch{}
+  fs.unlinkSync(s.link);
+ }
+}

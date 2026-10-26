@@ -3,6 +3,8 @@ import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 
 const test = base.extend<{ target: string }>({
+  // Playwright requires a destructured fixture signature.
+  // eslint-disable-next-line no-empty-pattern
   target: async ({}, use) => {
     const root = process.env.E2E_TMUX_TMPDIR
     const session = process.env.E2E_TMUX_SESSION
@@ -32,7 +34,7 @@ test('missing pongs reconnect and reattach without retaining closed sockets', as
   page.on('request', (request) => {
     if (request.url().endsWith('/api/client-log') && request.method() === 'POST') logs.push(request.postDataJSON())
   })
-  await page.routeWebSocket(/\/ws$/, (ws) => {
+  await page.routeWebSocket(/\/ws(?:\?.*)?$/, (ws) => {
     connections++
     const server = ws.connectToServer()
     ws.onMessage((message) => server.send(message))

@@ -1,0 +1,27 @@
+[
+  {
+    "stage": "closed",
+    "itemsRequests": 0,
+    "time": "2026-10-25T16:24:19.537Z"
+  },
+  {
+    "stage": "first-page",
+    "itemsRequests": 1,
+    "time": "2026-10-25T16:24:24.167Z"
+  },
+  {
+    "stage": "scrolled",
+    "itemsRequests": 2,
+    "time": "2026-10-25T16:24:40.941Z"
+  },
+  {
+    "stage": "backgrounded",
+    "itemsRequests": 2,
+    "time": "2026-10-25T16:24:51.562Z"
+  },
+  {
+    "stage": "resumed",
+    "itemsRequests": 2,
+    "time": "2026-10-25T16:24:59.743Z"
+  }
+]

@@ -86,13 +86,13 @@ describe('session media', () => {
     fs.rmSync(dir, { recursive: true, force: true })
   })
 
-  test('toAgentSession stamps media descriptors with endpoint urls', () => {
+  test('session summaries omit media while explicit detail extraction retains URLs', () => {
     const logPath = path.join(dir, 'session.jsonl')
     fs.writeFileSync(logPath, imageLine() + '\n')
 
     const session = toAgentSession(recordFor(logPath))
-    expect(session.media).toHaveLength(1)
-    const m = session.media![0]
+    expect(session.media).toBeUndefined()
+    const m = getMergedMedia(recordFor(logPath))[0]
     expect(m.kind).toBe('image')
     expect(m.mediaType).toBe('image/png')
     expect(m.url).toContain('/api/session-media/session-12345678-abcdef')
@@ -126,10 +126,10 @@ describe('session media', () => {
 
     rescanMedia(record)
     expect(getCachedMedia(record)).toHaveLength(1)
-    expect(toAgentSession(record, { cachedPrsOnly: true }).media).toHaveLength(1)
+    expect(toAgentSession(record, { cachedPrsOnly: true }).media).toBeUndefined()
 
     // Deleting the log can't drop a dormant session's cached media.
     fs.rmSync(logPath)
-    expect(toAgentSession(record, { cachedPrsOnly: true }).media).toHaveLength(1)
+    expect(toAgentSession(record, { cachedPrsOnly: true }).media).toBeUndefined()
   })
 })

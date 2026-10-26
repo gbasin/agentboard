@@ -1,0 +1,56 @@
+bun test v1.3.14 (0d9b296a)
+
+src/client/__tests__/websocketResume.test.ts:
+(pass) lease handshake precedes attach and replacement claims are per document [1.68ms]
+(pass) hidden, verification and unacknowledged reattach reject typing and paste [0.35ms]
+(pass) first input after silent suspension verifies before timers have run [0.11ms]
+(pass) pagehide and pageshow work even when document visibility does not change [0.11ms]
+(pass) a socket opening after hide does not start heartbeat or enable input [0.12ms]
+(pass) stale A readiness and output cannot activate a later A attachment [0.13ms]
+(pass) late parser ACK cannot release a replacement connection output budget [0.14ms]
+157 |   try {
+158 |     let ws = openReady()
+159 |     for (const delay of [1000, 2000, 4000, 8000, 16000, 30000, 30000]) {
+160 |       ws.close(1013)
+161 |       const retry = [...timers.entries()].find(([, timer]) => timer.ms === delay)
+162 |       expect(retry).toBeDefined()
+                          ^
+error: expect(received).toBeDefined()
+
+Received: undefined
+
+      at <anonymous> (/Users/garybasin/Code/agentboard-background-pressure/.poc-stress-test/output/negative/src/client/__tests__/websocketResume.test.ts:162:21)
+(fail) overload retries survive successful OPEN and increase to a bounded delay [1.56ms]
+180 |     const count = Socket.instances.length
+181 |     emit('pagehide'); now += 250; emit('pageshow', { persisted: true })
+182 |     expect([...timers.values()].some(timer => timer.ms === 750)).toBe(true)
+183 |     emit('pagehide'); now += 250; emit('pageshow', { persisted: true })
+184 |     const retry = [...timers.entries()].find(([, timer]) => timer.ms === 500)
+185 |     expect(retry).toBeDefined()
+                        ^
+error: expect(received).toBeDefined()
+
+Received: undefined
+
+      at <anonymous> (/Users/garybasin/Code/agentboard-background-pressure/.poc-stress-test/output/negative/src/client/__tests__/websocketResume.test.ts:185:19)
+(fail) pagehide/pageshow preserves the overload deadline instead of retrying early [0.48ms]
+(pass) only stable parser progress clears overload history, ordinary closes retain normal retry [0.20ms]
+227 |     ws = Socket.instances.at(-1)!; ws.open(); ws.receive({ type: 'terminal-lease', token: 'document-capability' }); ws.receive(attach(ws))
+228 |     manager.send({ type: 'terminal-ack', outputSeq: 1 })
+229 |     now += 60_000
+230 |     manager.send({ type: 'terminal-ack', outputSeq: 2 })
+231 |     ws.close(1013)
+232 |     expect([...timers.values()].some(timer => timer.ms === 2000)).toBe(true)
+                                                                        ^
+error: expect(received).toBe(expected)
+
+Expected: true
+Received: false
+
+      at <anonymous> (/Users/garybasin/Code/agentboard-background-pressure/.poc-stress-test/output/negative/src/client/__tests__/websocketResume.test.ts:232:67)
+(fail) a silent suspension and initial ACK cannot count as stable parser recovery [1.14ms]
+
+ 8 pass
+ 3 fail
+ 38 expect() calls
+Ran 11 tests across 1 file. [35.00ms]

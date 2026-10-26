@@ -1,0 +1,1006 @@
+Command line invocation:
+    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild test -project ResumeUITests.xcodeproj -scheme ResumeUITests -derivedDataPath /tmp/ab-discovery-ios-41507/DerivedFinal -destination "platform=iOS Simulator,id=217B5453-C8DB-454C-B907-B1446BC6CC7D" -resultBundlePath discovery-accepted.xcresult
+
+Writing result bundle at path:
+	/private/tmp/ab-discovery-ios-41507/discovery-accepted.xcresult
+
+ComputePackagePrebuildTargetDependencyGraph
+
+Prepare packages
+
+CreateBuildRequest
+
+SendProjectDescription
+
+CreateBuildOperation
+
+ComputeTargetDependencyGraph
+note: Building targets in dependency order
+note: Target dependency graph (1 target)
+    Target 'ResumeUITests' in project 'ResumeUITests' (no dependencies)
+
+GatherProvisioningInputs
+
+CreateBuildDescription
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -v -E -dM -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.4.sdk -x c -c /dev/null
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc --version
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ld -version_details
+
+Build description signature: 0ed736cd7681ea55331dbec71f159109
+Build description path: /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/XCBuildData/0ed736cd7681ea55331dbec71f159109.xcbuilddata
+CreateBuildDirectory /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex
+    cd /tmp/ab-discovery-ios-41507/ResumeUITests.xcodeproj
+    builtin-create-build-directory /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex
+
+CreateBuildDirectory /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products
+    cd /tmp/ab-discovery-ios-41507/ResumeUITests.xcodeproj
+    builtin-create-build-directory /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products
+
+ClangStatCache /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.4.sdk /tmp/ab-discovery-ios-41507/DerivedFinal/SDKStatCaches.noindex/iphonesimulator26.4-23E237-686eebb5dc1d8ecb277353a59184f4aa.sdkstatcache
+    cd /tmp/ab-discovery-ios-41507/ResumeUITests.xcodeproj
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.4.sdk -o /tmp/ab-discovery-ios-41507/DerivedFinal/SDKStatCaches.noindex/iphonesimulator26.4-23E237-686eebb5dc1d8ecb277353a59184f4aa.sdkstatcache
+
+CreateBuildDirectory /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ExplicitPrecompiledModules
+    cd /tmp/ab-discovery-ios-41507/ResumeUITests.xcodeproj
+    builtin-create-build-directory /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ExplicitPrecompiledModules
+
+CreateBuildDirectory /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules
+    cd /tmp/ab-discovery-ios-41507/ResumeUITests.xcodeproj
+    builtin-create-build-directory /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules
+
+CreateBuildDirectory /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator
+    cd /tmp/ab-discovery-ios-41507/ResumeUITests.xcodeproj
+    builtin-create-build-directory /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator
+
+CreateBuildDirectory /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/EagerLinkingTBDs/Debug-iphonesimulator
+    cd /tmp/ab-discovery-ios-41507/ResumeUITests.xcodeproj
+    builtin-create-build-directory /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/EagerLinkingTBDs/Debug-iphonesimulator
+
+WriteAuxiliaryFile /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests-716d6d6931992fd1399735ae452cbe01-VFS-iphonesimulator/all-product-headers.yaml
+    cd /tmp/ab-discovery-ios-41507/ResumeUITests.xcodeproj
+    write-file /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests-716d6d6931992fd1399735ae452cbe01-VFS-iphonesimulator/all-product-headers.yaml
+
+WriteAuxiliaryFile /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests.hmap (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    write-file /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests.hmap
+
+WriteAuxiliaryFile /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/empty-ResumeUITests.plist (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    write-file /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/empty-ResumeUITests.plist
+
+WriteAuxiliaryFile /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests-project-headers.hmap (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    write-file /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests-project-headers.hmap
+
+WriteAuxiliaryFile /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests-own-target-headers.hmap (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    write-file /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests-own-target-headers.hmap
+
+WriteAuxiliaryFile /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests-generated-files.hmap (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    write-file /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests-generated-files.hmap
+
+WriteAuxiliaryFile /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests-all-target-headers.hmap (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    write-file /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests-all-target-headers.hmap
+
+WriteAuxiliaryFile /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests-all-non-framework-target-headers.hmap (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    write-file /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests-all-non-framework-target-headers.hmap
+
+WriteAuxiliaryFile /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ProductTypeInfoPlistAdditions.plist (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    write-file /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ProductTypeInfoPlistAdditions.plist
+
+WriteAuxiliaryFile /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests.DependencyStaticMetadataFileList (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    write-file /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests.DependencyStaticMetadataFileList
+
+WriteAuxiliaryFile /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests.SwiftFileList (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    write-file /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests.SwiftFileList
+
+WriteAuxiliaryFile /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests-OutputFileMap.json (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    write-file /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests-OutputFileMap.json
+
+WriteAuxiliaryFile /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests_const_extract_protocols.json (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    write-file /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests_const_extract_protocols.json
+
+WriteAuxiliaryFile /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests_const_extract_protocols.json (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    write-file /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests_const_extract_protocols.json
+
+WriteAuxiliaryFile /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests.LinkFileList (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    write-file /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests.LinkFileList
+
+WriteAuxiliaryFile /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests.SwiftConstValuesFileList (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    write-file /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests.SwiftConstValuesFileList
+
+WriteAuxiliaryFile /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests-OutputFileMap.json (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    write-file /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests-OutputFileMap.json
+
+WriteAuxiliaryFile /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests.LinkFileList (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    write-file /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests.LinkFileList
+
+WriteAuxiliaryFile /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests.SwiftFileList (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    write-file /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests.SwiftFileList
+
+WriteAuxiliaryFile /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests.SwiftConstValuesFileList (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    write-file /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests.SwiftConstValuesFileList
+
+WriteAuxiliaryFile /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests.DependencyMetadataFileList (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    write-file /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests.DependencyMetadataFileList
+
+MkDir /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/PlugIns/ResumeUITests.xctest (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    /bin/mkdir -p /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/PlugIns/ResumeUITests.xctest
+
+ProcessInfoPlistFile /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/PlugIns/ResumeUITests.xctest/Info.plist /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/empty-ResumeUITests.plist (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    builtin-infoPlistUtility /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/empty-ResumeUITests.plist -producttype com.apple.product-type.bundle.ui-testing -expandbuildsettings -format binary -platform iphonesimulator -additionalcontentfile /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ProductTypeInfoPlistAdditions.plist -o /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/PlugIns/ResumeUITests.xctest/Info.plist
+
+SwiftDriver ResumeUITests normal arm64 com.apple.xcode.tools.swift.compiler (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    builtin-SwiftDriver -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name ResumeUITests -O @/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests.SwiftFileList -module-alias Testing\=_Testing_Unavailable -plugin-path /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing -enable-bare-slash-regex -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.4.sdk -target arm64-apple-ios18.0-simulator -g -module-cache-path /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex -Xfrontend -serialize-debugging-options -swift-version 5 -I /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator -Isystem /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib -F /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.4.sdk/Developer/Library/Frameworks -parse-as-library -c -j18 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /tmp/ab-discovery-ios-41507/DerivedFinal/SDKStatCaches.noindex/iphonesimulator26.4-23E237-686eebb5dc1d8ecb277353a59184f4aa.sdkstatcache -output-file-map /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests-OutputFileMap.json -use-frontend-parseable-output -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex -sdk-module-cache-path /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex -serialize-diagnostics -emit-dependencies -emit-module -emit-module-path /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests.swiftmodule -validate-clang-modules-once -clang-build-session-file /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/Session.modulevalidation -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/swift-overrides.hmap -emit-const-values -Xfrontend -const-gather-protocols-file -Xfrontend /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests_const_extract_protocols.json -Xcc -iquote -Xcc /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests-generated-files.hmap -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests-own-target-headers.hmap -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests-all-target-headers.hmap -Xcc -iquote -Xcc /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests-project-headers.hmap -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/include -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/DerivedSources-normal/arm64 -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/DerivedSources/arm64 -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/DerivedSources -emit-objc-header -emit-objc-header-path /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests-Swift.h -working-directory /tmp/ab-discovery-ios-41507 -experimental-emit-module-separately -disable-cmo
+
+SwiftDriver ResumeUITests normal x86_64 com.apple.xcode.tools.swift.compiler (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    builtin-SwiftDriver -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name ResumeUITests -O @/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests.SwiftFileList -module-alias Testing\=_Testing_Unavailable -plugin-path /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing -enable-bare-slash-regex -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.4.sdk -target x86_64-apple-ios18.0-simulator -g -module-cache-path /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex -Xfrontend -serialize-debugging-options -swift-version 5 -I /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator -Isystem /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib -F /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.4.sdk/Developer/Library/Frameworks -parse-as-library -c -j18 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /tmp/ab-discovery-ios-41507/DerivedFinal/SDKStatCaches.noindex/iphonesimulator26.4-23E237-686eebb5dc1d8ecb277353a59184f4aa.sdkstatcache -output-file-map /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests-OutputFileMap.json -use-frontend-parseable-output -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex -sdk-module-cache-path /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex -serialize-diagnostics -emit-dependencies -emit-module -emit-module-path /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests.swiftmodule -validate-clang-modules-once -clang-build-session-file /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/Session.modulevalidation -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/swift-overrides.hmap -emit-const-values -Xfrontend -const-gather-protocols-file -Xfrontend /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests_const_extract_protocols.json -Xcc -iquote -Xcc /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests-generated-files.hmap -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests-own-target-headers.hmap -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests-all-target-headers.hmap -Xcc -iquote -Xcc /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests-project-headers.hmap -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/include -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/DerivedSources-normal/x86_64 -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/DerivedSources/x86_64 -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/DerivedSources -emit-objc-header -emit-objc-header-path /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests-Swift.h -working-directory /tmp/ab-discovery-ios-41507 -experimental-emit-module-separately -disable-cmo
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/_AvailabilityInternal-6R3E1UARV8B1T6YBHAVIOKXJX.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/_Builtin_float-9OPY4NNPIQTI4XDUG6A4BYKR1.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/SwiftShims-8IBFXO67TVUN8OOO1GZK4VJHM.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/ptrcheck-1JF55A0IBZYWQP0GEOUB26FDZ.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/_Builtin_stdarg-BLYRIFVIP9VA4ESJHSW18UGV0.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/_Builtin_stddef-B6NDU8E8C1JP2WRRGVWQ1HAAR.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/_Builtin_stdbool-A9J9630Q0XIDT60VVAMUHDB22.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/_SwiftConcurrencyShims-8342AKG9E21EVQXE99LYLLW3C.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/DeveloperToolsSupport-8ZI17MIPBL4EX0TVERJHU457F.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/ptrauth-F1B8YUWO7YW6BSB1IHQJNOMXG.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/_Builtin_float-7IC8U0667UQZ2QIJ81SDN6MRO.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/ptrcheck-5325IM65GNUDB4Y5NW4G09V9E.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/SwiftShims-14M5WPRHRJRKTSK40JYJEG80U.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/_Builtin_stdarg-1FVMXI874DPP7YDWGF6QOLNB4.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/DeveloperToolsSupport-4PA68LDYZJC3JVBGQX9685XYN.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/ptrauth-24665A4BL7XF8XNJWE04VJ82J.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/_Builtin_stdbool-EGFF5C2UAOC7WFQM3Q21QN4PL.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/_AvailabilityInternal-E55D5N1BDK62LXZ13JJZUVU2U.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/_Builtin_stddef-5K8C6652AE49338LADE1B9OBL.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/_SwiftConcurrencyShims-4JBIBE5286VL8UR6C0P82CHE.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/_DarwinFoundation1-D15TORFSDQJS9LWS9962IHVJQ.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/_DarwinFoundation1-3GHYE20DURSL2RHGJS1FQGVRR.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/_Builtin_limits-62MRPCDJ9HM7MA466VIWWPZV9.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/_DarwinFoundation2-5KW2F042QGOURM03JBVPY73EQ.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/_DarwinFoundation2-A119QLG9CIU9HV20KRGOD7JFW.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/_Builtin_limits-7ZFPK8W9NJIUSZ99HWV4RB4XP.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/sys_types-15QZFTF9D7KBGNX3AAD7UD0KJ.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/_Builtin_tgmath-2024LC4EUISKA9501OO0B9SCF.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/_Builtin_stdint-3BFTI39S29UUU4VWZ2C5EEZKU.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/_Builtin_tgmath-8CJYFT3DJ42IMYSGUXFRIZR6P.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/sys_types-DGM0KKFG3ZIY6BQCCMMHGOLEF.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/_Builtin_stdint-5A9H6TWTFJDBUIH8NJVJYSA7J.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/_Builtin_stdatomic-1FWYF8R7ZTJ20CXBYQUJTQIMX.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/_DarwinFoundation3-1Z9GJDOKCOKP599449CCR8G7Q.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/_DarwinFoundation3-APLYBL0UL0NX0RA5OG1H86F64.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/_Builtin_intrinsics-5HKVOCKJQITR3CVPU504PVNC7.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/_Builtin_stdatomic-9XI7R48447JOKNM06T9C5IRQ2.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/_Builtin_intrinsics-E7FGC9E3YZ8BLX1CR6WWD87A5.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/_Builtin_inttypes-5GO1JESS9OP32JJGIGC9UFQFR.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/_Builtin_inttypes-B2KPES0ROU1LI0ZED3025WTWZ.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/Darwin-C0QWQIPBSL0ZCY6AMHDYI6QRH.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/Darwin-EJGPQIAESM70DQK3MG7LZJUG6.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/simd-1MC0TOPKRCLAVXQHNDQ9K7MKL.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/MachO-AC65NPGLQLO8QON1IX21INTLM.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/ObjectiveC-623QVD0PCDJR8NLOEUBIRCOO4.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/simd-60DAVKN1C1K0SMRIFOUEGMS7B.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/ObjectiveC-206QU65YAJHWM35SWBTPUX71E.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/MachO-79M8SLINSJNOU16CTJ52QA8A6.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/os_object-CXH8GC0U5L92VIA32QZ07RY7S.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/os_object-OEXPSBAPHZ4S9USJDQAPNTW4.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/os_workgroup-58DXSVHVWOFHUES487IMOCXC4.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/os_workgroup-BFPGN9LA7V37BCTSFZONK3TMB.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/Spatial-827OEBRG3AWYDIDYNP44WIHB1.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/Dispatch-2FAMHDK23YMCGV6A7QQWY2OQH.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/Dispatch-DK1BAZ4CAB1C2HYZTTM31SA78.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/XPC-CW8335TTDE6LFMIUUFG5ZJAIM.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/CoreFoundation-2VG34RW2WBLTCLM7NB9EL6M86.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/XPC-A8R3KS6Z4O0ES8T1YGFDKRCH6.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/CoreFoundation-5INKBZ21YNA3HIEVGBSVKQNKF.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/os-85XMPFCXZG1GJCPE9NM7T5J9C.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/Spatial-9NUEBSI2JK0QR8MKH3WIETHSI.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/os-6HFAC4JGFWL0VSO62NNI9O8NG.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/CoreGraphics-2BBRRHY31XWMHEQHTXWKSSTFX.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/CFNetwork-9JFDXZA5OKYIA5KZWY0GQNB5U.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/Security-4IYI18EIG393Q5D23WFREWDYK.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/CoreGraphics-C9ZGJ3SH06IPMKRFOFTPY0HT0.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/Security-9HV78AMRRTIUTFP3AG4RDLK5N.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/CFNetwork-A0ODCXOAZCFEHJT87UG8VDCZG.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/Foundation-C3IIZQR96T558A2YZABSKOULO.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/ImageIO-2UZJL2HCPO30TWCWZXKRBBNED.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/CoreText-5DC8OGTCV9NM2HXSO4NNRHRX6.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/Foundation-1ZD4UKVQMI8K1TUGX7SX5IT1J.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/ImageIO-2UTAB4N2V9X0VKT343YRGVGFG.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/CoreText-2XPNTMN1RQ5EONC7O60561N4Q.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/Accessibility-449ANBE0RUP0XK6F85T9O8WSW.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/IOSurface-8CL2ASVRCW6UB33CTGQGBEXB.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/UserNotifications-3F55IF7CTUJ0PBX1TEIZXDYTT.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/FileProvider-HNA9AT9QK5YVV07XK2AL6LX3.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/UIUtilities-ETRGTF0SZED0BR51HZC4IAF2K.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/Symbols-4KUSL8UZM9SEPGF1Q8B6SQ48S.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/UniformTypeIdentifiers-9UQ1APXH51VEXDV9Q6N28FCBS.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/OSLog-CZGVLCK9FUBOT4BHYMMY7TLU7.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/OpenGLES-POERLXWX71H89W9NT984XPDW.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/CoreTransferable-812OBHO7D97542FF7KNVIB7UP.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/DataDetection-86MRABC5DD7TGRF4RV0XGLAJO.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/Symbols-9M16MZQOFQAPT1DV2SLQ1074N.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/OSLog-B2D0CQ81A95Y1X6NN35OG9IZA.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/DataDetection-VG29H0J6YHJA5GR0OMSGWA2N.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/CoreTransferable-B0GOTISQAPQYU6GT5729AVHXE.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/UserNotifications-2R269P83P3MUOQJDVUIUP54IR.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/FileProvider-D1IMQGZY63M6QGUVUBU5R86DR.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/UniformTypeIdentifiers-7ZD01WQ9YFLHO3UIEVNG3GKHF.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/UIUtilities-BL32RLK2WG9BKIBA8DRZE0COG.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/OpenGLES-E1LU029YPA935Q49N2BJQ314P.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/IOSurface-BBPC1SHB7BXO7JYYS8NTQ6WYA.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/Accessibility-99OBL0AE5FKN83VRVPNHAG6G.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/Metal-69S9823RFUY174GA6B4WF4KXX.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/Metal-8AR3GN5F9206VDHDRIMGLH7NX.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/CoreVideo-EWXDLX727SQOAPP2AHKYFM6U5.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/CoreVideo-6LY1SQ1ARSEWSHKBMNTLWKLSF.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/QuartzCore-1JH8BCBEVF1MFR9LGKKAZDKJQ.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/CoreImage-C0VUNO040WOPA91J8WRH9FB1A.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/QuartzCore-100UPKRZGPA9P194SBX9PZIC7.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/CoreImage-B0745NJE2OI003V0WKF0BG6MG.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/SwiftUICore-1DUSOJQ7150N005KH0FK23M.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/UIKit-8W2NO4U9T3ENTX144IBTY7H92.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/SwiftUICore-F30L9LAXY6J3YTN3T8N3NIQ3R.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/UIKit-EOH6MLYIY3BW9226PLXURDR9V.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules/XCUIAutomation-5SKG308VCPA825MEGSXC3JA4F.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules/XCUIAutomation-7JA1397ER3GE8FFB8LHN3Z9GS.pcm
+
+SwiftExplicitDependencyCompileModuleFromInterface x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules/XCUIAutomation-DG3S3H6XHSOL.swiftmodule
+
+SwiftExplicitDependencyGeneratePcm x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules/XCTest-4PMZMT5Z4IBU3DIWFLQTOBS1N.pcm
+
+SwiftExplicitDependencyCompileModuleFromInterface arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules/XCUIAutomation-3QGK8KNL7WPA8.swiftmodule
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules/XCTest-7YL4RMMT4TTWB632REIVEBVKW.pcm
+
+SwiftExplicitDependencyCompileModuleFromInterface x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules/XCTest-19CC07G3ZXZMZ.swiftmodule
+
+SwiftExplicitDependencyCompileModuleFromInterface arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules/XCTest-38VTYDVSR18LT.swiftmodule
+
+SwiftEmitModule normal x86_64 Emitting\ module\ for\ ResumeUITests (in target 'ResumeUITests' from project 'ResumeUITests')
+SwiftCompile normal x86_64 /tmp/ab-discovery-ios-41507/ResumeUITests.swift (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+
+
+SwiftCompile normal x86_64 Compiling\ ResumeUITests.swift /tmp/ab-discovery-ios-41507/ResumeUITests.swift (in target 'ResumeUITests' from project 'ResumeUITests')
+SwiftCompile normal x86_64 /tmp/ab-discovery-ios-41507/ResumeUITests.swift (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+
+
+SwiftCompile normal arm64 Compiling\ ResumeUITests.swift /tmp/ab-discovery-ios-41507/ResumeUITests.swift (in target 'ResumeUITests' from project 'ResumeUITests')
+SwiftCompile normal arm64 /tmp/ab-discovery-ios-41507/ResumeUITests.swift (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+
+
+SwiftEmitModule normal arm64 Emitting\ module\ for\ ResumeUITests (in target 'ResumeUITests' from project 'ResumeUITests')
+
+SwiftCompile normal arm64 /tmp/ab-discovery-ios-41507/ResumeUITests.swift (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+
+
+SwiftDriverJobDiscovery normal x86_64 Emitting module for ResumeUITests (in target 'ResumeUITests' from project 'ResumeUITests')
+
+SwiftDriver\ Compilation\ Requirements ResumeUITests normal x86_64 com.apple.xcode.tools.swift.compiler (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    builtin-Swift-Compilation-Requirements -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name ResumeUITests -O @/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests.SwiftFileList -module-alias Testing\=_Testing_Unavailable -plugin-path /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing -enable-bare-slash-regex -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.4.sdk -target x86_64-apple-ios18.0-simulator -g -module-cache-path /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex -Xfrontend -serialize-debugging-options -swift-version 5 -I /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator -Isystem /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib -F /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.4.sdk/Developer/Library/Frameworks -parse-as-library -c -j18 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /tmp/ab-discovery-ios-41507/DerivedFinal/SDKStatCaches.noindex/iphonesimulator26.4-23E237-686eebb5dc1d8ecb277353a59184f4aa.sdkstatcache -output-file-map /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests-OutputFileMap.json -use-frontend-parseable-output -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex -sdk-module-cache-path /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex -serialize-diagnostics -emit-dependencies -emit-module -emit-module-path /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests.swiftmodule -validate-clang-modules-once -clang-build-session-file /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/Session.modulevalidation -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/swift-overrides.hmap -emit-const-values -Xfrontend -const-gather-protocols-file -Xfrontend /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests_const_extract_protocols.json -Xcc -iquote -Xcc /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests-generated-files.hmap -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests-own-target-headers.hmap -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests-all-target-headers.hmap -Xcc -iquote -Xcc /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests-project-headers.hmap -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/include -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/DerivedSources-normal/x86_64 -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/DerivedSources/x86_64 -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/DerivedSources -emit-objc-header -emit-objc-header-path /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests-Swift.h -working-directory /tmp/ab-discovery-ios-41507 -experimental-emit-module-separately -disable-cmo
+
+Copy /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests.swiftmodule/x86_64-apple-ios-simulator.abi.json /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests.abi.json (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -strip-unsigned-binaries -strip-deterministic -strip-tool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/strip -resolve-src-symlinks -rename /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests.abi.json /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests.swiftmodule/x86_64-apple-ios-simulator.abi.json
+
+Copy /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests.swiftmodule/x86_64-apple-ios-simulator.swiftdoc /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests.swiftdoc (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -strip-unsigned-binaries -strip-deterministic -strip-tool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/strip -resolve-src-symlinks -rename /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests.swiftdoc /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests.swiftmodule/x86_64-apple-ios-simulator.swiftdoc
+
+Copy /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests.swiftmodule/x86_64-apple-ios-simulator.swiftmodule /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests.swiftmodule (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -strip-unsigned-binaries -strip-deterministic -strip-tool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/strip -resolve-src-symlinks -rename /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests.swiftmodule /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests.swiftmodule/x86_64-apple-ios-simulator.swiftmodule
+
+Copy /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests.swiftmodule/Project/x86_64-apple-ios-simulator.swiftsourceinfo /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests.swiftsourceinfo (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -strip-unsigned-binaries -strip-deterministic -strip-tool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/strip -resolve-src-symlinks -rename /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests.swiftsourceinfo /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests.swiftmodule/Project/x86_64-apple-ios-simulator.swiftsourceinfo
+
+SwiftDriverJobDiscovery normal arm64 Emitting module for ResumeUITests (in target 'ResumeUITests' from project 'ResumeUITests')
+
+SwiftDriver\ Compilation\ Requirements ResumeUITests normal arm64 com.apple.xcode.tools.swift.compiler (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    builtin-Swift-Compilation-Requirements -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name ResumeUITests -O @/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests.SwiftFileList -module-alias Testing\=_Testing_Unavailable -plugin-path /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing -enable-bare-slash-regex -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.4.sdk -target arm64-apple-ios18.0-simulator -g -module-cache-path /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex -Xfrontend -serialize-debugging-options -swift-version 5 -I /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator -Isystem /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib -F /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.4.sdk/Developer/Library/Frameworks -parse-as-library -c -j18 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /tmp/ab-discovery-ios-41507/DerivedFinal/SDKStatCaches.noindex/iphonesimulator26.4-23E237-686eebb5dc1d8ecb277353a59184f4aa.sdkstatcache -output-file-map /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests-OutputFileMap.json -use-frontend-parseable-output -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex -sdk-module-cache-path /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex -serialize-diagnostics -emit-dependencies -emit-module -emit-module-path /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests.swiftmodule -validate-clang-modules-once -clang-build-session-file /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/Session.modulevalidation -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/swift-overrides.hmap -emit-const-values -Xfrontend -const-gather-protocols-file -Xfrontend /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests_const_extract_protocols.json -Xcc -iquote -Xcc /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests-generated-files.hmap -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests-own-target-headers.hmap -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests-all-target-headers.hmap -Xcc -iquote -Xcc /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests-project-headers.hmap -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/include -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/DerivedSources-normal/arm64 -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/DerivedSources/arm64 -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/DerivedSources -emit-objc-header -emit-objc-header-path /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests-Swift.h -working-directory /tmp/ab-discovery-ios-41507 -experimental-emit-module-separately -disable-cmo
+
+Copy /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests.swiftmodule/arm64-apple-ios-simulator.abi.json /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests.abi.json (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -strip-unsigned-binaries -strip-deterministic -strip-tool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/strip -resolve-src-symlinks -rename /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests.abi.json /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests.swiftmodule/arm64-apple-ios-simulator.abi.json
+
+Copy /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests.swiftmodule/arm64-apple-ios-simulator.swiftdoc /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests.swiftdoc (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -strip-unsigned-binaries -strip-deterministic -strip-tool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/strip -resolve-src-symlinks -rename /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests.swiftdoc /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests.swiftmodule/arm64-apple-ios-simulator.swiftdoc
+
+Copy /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests.swiftmodule/arm64-apple-ios-simulator.swiftmodule /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests.swiftmodule (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -strip-unsigned-binaries -strip-deterministic -strip-tool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/strip -resolve-src-symlinks -rename /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests.swiftmodule /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests.swiftmodule/arm64-apple-ios-simulator.swiftmodule
+
+Copy /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests.swiftmodule/Project/arm64-apple-ios-simulator.swiftsourceinfo /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests.swiftsourceinfo (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -strip-unsigned-binaries -strip-deterministic -strip-tool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/strip -resolve-src-symlinks -rename /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests.swiftsourceinfo /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests.swiftmodule/Project/arm64-apple-ios-simulator.swiftsourceinfo
+
+SwiftMergeGeneratedHeaders /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/DerivedSources/ResumeUITests-Swift.h /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests-Swift.h /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests-Swift.h (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    builtin-swiftHeaderTool -arch arm64 /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests-Swift.h -arch x86_64 /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests-Swift.h -o /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/DerivedSources/ResumeUITests-Swift.h
+
+SwiftDriverJobDiscovery normal x86_64 Compiling ResumeUITests.swift (in target 'ResumeUITests' from project 'ResumeUITests')
+
+SwiftDriver\ Compilation ResumeUITests normal x86_64 com.apple.xcode.tools.swift.compiler (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    builtin-Swift-Compilation -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name ResumeUITests -O @/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests.SwiftFileList -module-alias Testing\=_Testing_Unavailable -plugin-path /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing -enable-bare-slash-regex -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.4.sdk -target x86_64-apple-ios18.0-simulator -g -module-cache-path /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex -Xfrontend -serialize-debugging-options -swift-version 5 -I /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator -Isystem /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib -F /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.4.sdk/Developer/Library/Frameworks -parse-as-library -c -j18 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /tmp/ab-discovery-ios-41507/DerivedFinal/SDKStatCaches.noindex/iphonesimulator26.4-23E237-686eebb5dc1d8ecb277353a59184f4aa.sdkstatcache -output-file-map /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests-OutputFileMap.json -use-frontend-parseable-output -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex -sdk-module-cache-path /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex -serialize-diagnostics -emit-dependencies -emit-module -emit-module-path /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests.swiftmodule -validate-clang-modules-once -clang-build-session-file /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/Session.modulevalidation -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/swift-overrides.hmap -emit-const-values -Xfrontend -const-gather-protocols-file -Xfrontend /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests_const_extract_protocols.json -Xcc -iquote -Xcc /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests-generated-files.hmap -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests-own-target-headers.hmap -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests-all-target-headers.hmap -Xcc -iquote -Xcc /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests-project-headers.hmap -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/include -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/DerivedSources-normal/x86_64 -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/DerivedSources/x86_64 -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/DerivedSources -emit-objc-header -emit-objc-header-path /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests-Swift.h -working-directory /tmp/ab-discovery-ios-41507 -experimental-emit-module-separately -disable-cmo
+
+Ld /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/Binary/ResumeUITests normal x86_64 (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target x86_64-apple-ios18.0-simulator -bundle -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.4.sdk -Os -L/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/EagerLinkingTBDs/Debug-iphonesimulator -L/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator -L/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib -F/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/EagerLinkingTBDs/Debug-iphonesimulator -F/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator -iframework /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks -iframework /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.4.sdk/Developer/Library/Frameworks -filelist /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests.LinkFileList -Xlinker -rpath -Xlinker /usr/lib/swift -Xlinker -rpath -Xlinker @loader_path/Frameworks -Xlinker -dead_strip -Xlinker -object_path_lto -Xlinker /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests_lto.o -Xlinker -objc_abi_version -Xlinker 2 -Xlinker -dependency_info -Xlinker /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests_dependency_info.dat -fobjc-link-runtime -L/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/iphonesimulator -L/usr/lib/swift -Xlinker -add_ast_path -Xlinker /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests.swiftmodule @/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests-linker-args.resp -Xlinker -needed_framework -Xlinker XCTest -framework XCTest -Xlinker -needed-lXCTestSwiftSupport -lXCTestSwiftSupport -o /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/Binary/ResumeUITests
+
+SwiftDriverJobDiscovery normal arm64 Compiling ResumeUITests.swift (in target 'ResumeUITests' from project 'ResumeUITests')
+
+SwiftDriver\ Compilation ResumeUITests normal arm64 com.apple.xcode.tools.swift.compiler (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    builtin-Swift-Compilation -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name ResumeUITests -O @/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests.SwiftFileList -module-alias Testing\=_Testing_Unavailable -plugin-path /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing -enable-bare-slash-regex -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.4.sdk -target arm64-apple-ios18.0-simulator -g -module-cache-path /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex -Xfrontend -serialize-debugging-options -swift-version 5 -I /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator -Isystem /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib -F /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.4.sdk/Developer/Library/Frameworks -parse-as-library -c -j18 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /tmp/ab-discovery-ios-41507/DerivedFinal/SDKStatCaches.noindex/iphonesimulator26.4-23E237-686eebb5dc1d8ecb277353a59184f4aa.sdkstatcache -output-file-map /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests-OutputFileMap.json -use-frontend-parseable-output -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex -sdk-module-cache-path /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex -serialize-diagnostics -emit-dependencies -emit-module -emit-module-path /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests.swiftmodule -validate-clang-modules-once -clang-build-session-file /tmp/ab-discovery-ios-41507/DerivedFinal/ModuleCache.noindex/Session.modulevalidation -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/swift-overrides.hmap -emit-const-values -Xfrontend -const-gather-protocols-file -Xfrontend /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests_const_extract_protocols.json -Xcc -iquote -Xcc /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests-generated-files.hmap -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests-own-target-headers.hmap -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests-all-target-headers.hmap -Xcc -iquote -Xcc /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests-project-headers.hmap -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/include -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/DerivedSources-normal/arm64 -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/DerivedSources/arm64 -Xcc -I/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/DerivedSources -emit-objc-header -emit-objc-header-path /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests-Swift.h -working-directory /tmp/ab-discovery-ios-41507 -experimental-emit-module-separately -disable-cmo
+
+Ld /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/Binary/ResumeUITests normal arm64 (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-ios18.0-simulator -bundle -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.4.sdk -Os -L/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/EagerLinkingTBDs/Debug-iphonesimulator -L/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator -L/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib -F/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/EagerLinkingTBDs/Debug-iphonesimulator -F/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator -iframework /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks -iframework /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.4.sdk/Developer/Library/Frameworks -filelist /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests.LinkFileList -Xlinker -rpath -Xlinker /usr/lib/swift -Xlinker -rpath -Xlinker @loader_path/Frameworks -Xlinker -dead_strip -Xlinker -object_path_lto -Xlinker /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests_lto.o -Xlinker -objc_abi_version -Xlinker 2 -Xlinker -dependency_info -Xlinker /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests_dependency_info.dat -fobjc-link-runtime -L/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/iphonesimulator -L/usr/lib/swift -Xlinker -add_ast_path -Xlinker /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests.swiftmodule @/tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests-linker-args.resp -Xlinker -needed_framework -Xlinker XCTest -framework XCTest -Xlinker -needed-lXCTestSwiftSupport -lXCTestSwiftSupport -o /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/Binary/ResumeUITests
+
+CreateUniversalBinary /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/PlugIns/ResumeUITests.xctest/ResumeUITests normal arm64\ x86_64 (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/lipo -create /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/Binary/ResumeUITests /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/Binary/ResumeUITests -output /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/PlugIns/ResumeUITests.xctest/ResumeUITests
+
+CopySwiftLibs /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/PlugIns/ResumeUITests.xctest (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    builtin-swiftStdLibTool --copy --verbose --scan-executable /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/PlugIns/ResumeUITests.xctest/ResumeUITests --scan-folder /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/PlugIns/ResumeUITests.xctest/Frameworks --scan-folder /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/PlugIns/ResumeUITests.xctest/PlugIns --scan-folder /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/PlugIns/ResumeUITests.xctest/SystemExtensions --scan-folder /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/PlugIns/ResumeUITests.xctest/Extensions --platform iphonesimulator --toolchain /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --destination /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/PlugIns/ResumeUITests.xctest/Frameworks --strip-bitcode --scan-executable /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib/libXCTestSwiftSupport.dylib --strip-bitcode-tool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/bitcode_strip --emit-dependency-info /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/SwiftStdLibToolInputDependencies.dep --filter-for-swift-os
+Ignoring --strip-bitcode because --sign was not passed
+
+ExtractAppIntentsMetadata (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/appintentsmetadataprocessor --toolchain-dir /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --module-name ResumeUITests --sdk-root /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.4.sdk --xcode-version 17E192 --platform-family iOS --deployment-target 18.0 --bundle-identifier com.agentboard.test.ResumeUITests --output /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/PlugIns/ResumeUITests.xctest --target-triple arm64-apple-ios18.0-simulator --target-triple x86_64-apple-ios18.0-simulator --binary-file /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/PlugIns/ResumeUITests.xctest/ResumeUITests --dependency-file /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests_dependency_info.dat --dependency-file /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests_dependency_info.dat --stringsdata-file /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ExtractedAppShortcutsMetadata.stringsdata --stringsdata-file /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ExtractedAppShortcutsMetadata.stringsdata --source-file-list /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests.SwiftFileList --source-file-list /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests.SwiftFileList --metadata-file-list /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests.DependencyMetadataFileList --static-metadata-file-list /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests.DependencyStaticMetadataFileList --swift-const-vals-list /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/arm64/ResumeUITests.SwiftConstValuesFileList --swift-const-vals-list /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/Objects-normal/x86_64/ResumeUITests.SwiftConstValuesFileList --compile-time-extraction --deployment-aware-processing --validate-assistant-intents --no-app-shortcuts-localization
+2026-10-26 11:01:43.883 appintentsmetadataprocessor[40012:93089001] Starting appintentsmetadataprocessor export
+2026-10-26 11:01:43.887 appintentsmetadataprocessor[40012:93089001] warning: Metadata extraction skipped. No AppIntents.framework dependency found.
+
+GenerateDSYMFile /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/PlugIns/ResumeUITests.xctest.dSYM /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/PlugIns/ResumeUITests.xctest/ResumeUITests (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/dsymutil /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/PlugIns/ResumeUITests.xctest/ResumeUITests -o /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/PlugIns/ResumeUITests.xctest.dSYM
+
+AppIntentsSSUTraining (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/appintentsnltrainingprocessor --infoplist-path /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/PlugIns/ResumeUITests.xctest/Info.plist --temp-dir-path /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ssu --bundle-id com.agentboard.test.ResumeUITests --product-path /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/PlugIns/ResumeUITests.xctest --extracted-metadata-path /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/PlugIns/ResumeUITests.xctest/Metadata.appintents --metadata-file-list /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Intermediates.noindex/ResumeUITests.build/Debug-iphonesimulator/ResumeUITests.build/ResumeUITests.DependencyMetadataFileList --source-file /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/PlugIns/ResumeUITests.xctest/Info.plist --archive-ssu-assets
+2026-10-26 11:01:43.903 appintentsnltrainingprocessor[40014:93089003] Parsing options for appintentsnltrainingprocessor
+2026-10-26 11:01:43.903 appintentsnltrainingprocessor[40014:93089003] Starting AppIntents SSU YAML Generation
+2026-10-26 11:01:43.904 appintentsnltrainingprocessor[40014:93089003] No AppShortcuts found - Skipping.
+
+Copy /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/PkgInfo /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Xcode/Agents/XCTRunner.app/PkgInfo (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -strip-unsigned-binaries -strip-deterministic -strip-tool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/strip -resolve-src-symlinks /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Xcode/Agents/XCTRunner.app/PkgInfo /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app
+
+CopyAndPreserveArchs /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/ResumeUITests-Runner (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/lipo /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Xcode/Agents/XCTRunner.app/XCTRunner -output /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/ResumeUITests-Runner -extract arm64 -extract x86_64
+
+CopyPlistFile /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/Info.plist /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Xcode/Agents/XCTRunner.app/Info.plist (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    builtin-copyPlist --validate --convert xml1 --macro-expansion WRAPPEDPRODUCTNAME ResumeUITests-Runner --macro-expansion WRAPPEDPRODUCTBUNDLEIDENTIFIER com.agentboard.test.ResumeUITests.xctrunner --macro-expansion TESTPRODUCTNAME ResumeUITests --macro-expansion TESTPRODUCTBUNDLEIDENTIFIER com.agentboard.test.ResumeUITests --copy-value UIDeviceFamily /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/PlugIns/ResumeUITests.xctest/Info.plist --outdir /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app -- /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Xcode/Agents/XCTRunner.app/Info.plist
+
+MkDir /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    /bin/mkdir -p /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app
+
+Copy /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/Frameworks/libXCTestSwiftSupport.dylib /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib/libXCTestSwiftSupport.dylib (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -exclude Headers -exclude PrivateHeaders -exclude Modules -exclude \*.tbd -strip-unsigned-binaries -strip-deterministic -strip-tool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/strip -resolve-src-symlinks /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib/libXCTestSwiftSupport.dylib /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/Frameworks
+warning: not stripping binary because it is signed: /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib/libXCTestSwiftSupport.dylib (in target 'ResumeUITests' from project 'ResumeUITests')
+
+Copy /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/Frameworks/XCUnit.framework /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/PrivateFrameworks/XCUnit.framework (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -exclude Headers -exclude PrivateHeaders -exclude Modules -exclude \*.tbd -strip-unsigned-binaries -strip-deterministic -strip-tool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/strip -resolve-src-symlinks /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/PrivateFrameworks/XCUnit.framework /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/Frameworks
+warning: not stripping binary because it is signed: /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/PrivateFrameworks/XCUnit.framework/XCUnit (in target 'ResumeUITests' from project 'ResumeUITests')
+
+Copy /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/Frameworks/XCUIAutomation.framework /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks/XCUIAutomation.framework (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -exclude Headers -exclude PrivateHeaders -exclude Modules -exclude \*.tbd -strip-unsigned-binaries -strip-deterministic -strip-tool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/strip -resolve-src-symlinks /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks/XCUIAutomation.framework /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/Frameworks
+warning: not stripping binary because it is signed: /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks/XCUIAutomation.framework/XCUIAutomation (in target 'ResumeUITests' from project 'ResumeUITests')
+
+Copy /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/Frameworks/XCTestCore.framework /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/PrivateFrameworks/XCTestCore.framework (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -exclude Headers -exclude PrivateHeaders -exclude Modules -exclude \*.tbd -strip-unsigned-binaries -strip-deterministic -strip-tool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/strip -resolve-src-symlinks /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/PrivateFrameworks/XCTestCore.framework /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/Frameworks
+warning: not stripping binary because it is signed: /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/PrivateFrameworks/XCTestCore.framework/XCTestCore (in target 'ResumeUITests' from project 'ResumeUITests')
+
+Copy /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/Frameworks/XCTest.framework /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks/XCTest.framework (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -exclude Headers -exclude PrivateHeaders -exclude Modules -exclude \*.tbd -strip-unsigned-binaries -strip-deterministic -strip-tool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/strip -resolve-src-symlinks /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks/XCTest.framework /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/Frameworks
+warning: not stripping binary because it is signed: /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks/XCTest.framework/XCTest (in target 'ResumeUITests' from project 'ResumeUITests')
+
+Copy /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/Frameworks/XCTestSupport.framework /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/PrivateFrameworks/XCTestSupport.framework (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -exclude Headers -exclude PrivateHeaders -exclude Modules -exclude \*.tbd -strip-unsigned-binaries -strip-deterministic -strip-tool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/strip -resolve-src-symlinks /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/PrivateFrameworks/XCTestSupport.framework /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/Frameworks
+warning: not stripping binary because it is signed: /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/PrivateFrameworks/XCTestSupport.framework/XCTestSupport (in target 'ResumeUITests' from project 'ResumeUITests')
+
+Copy /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/Frameworks/Testing.framework /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks/Testing.framework (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -exclude Headers -exclude PrivateHeaders -exclude Modules -exclude \*.tbd -strip-unsigned-binaries -strip-deterministic -strip-tool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/strip -resolve-src-symlinks /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks/Testing.framework /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/Frameworks
+warning: not stripping binary because it is signed: /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks/Testing.framework/Testing (in target 'ResumeUITests' from project 'ResumeUITests')
+
+Copy /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/Frameworks/XCTAutomationSupport.framework /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/PrivateFrameworks/XCTAutomationSupport.framework (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -exclude Headers -exclude PrivateHeaders -exclude Modules -exclude \*.tbd -strip-unsigned-binaries -strip-deterministic -strip-tool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/strip -resolve-src-symlinks /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/PrivateFrameworks/XCTAutomationSupport.framework /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/Frameworks
+warning: not stripping binary because it is signed: /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/PrivateFrameworks/XCTAutomationSupport.framework/XCTAutomationSupport (in target 'ResumeUITests' from project 'ResumeUITests')
+
+RegisterExecutionPolicyException /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/PlugIns/ResumeUITests.xctest (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    builtin-RegisterExecutionPolicyException /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/PlugIns/ResumeUITests.xctest
+
+Touch /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/PlugIns/ResumeUITests.xctest (in target 'ResumeUITests' from project 'ResumeUITests')
+    cd /tmp/ab-discovery-ios-41507
+    /usr/bin/touch -c /tmp/ab-discovery-ios-41507/DerivedFinal/Build/Products/Debug-iphonesimulator/ResumeUITests-Runner.app/PlugIns/ResumeUITests.xctest
+
+warning: Traditional headermap style is no longer supported; please migrate to using separate headermaps and set 'ALWAYS_SEARCH_USER_PATHS' to NO. (in target 'ResumeUITests' from project 'ResumeUITests')
+2026-10-26 11:01:45.013767-0400 ResumeUITests-Runner[40018:93089245] [Default] Running tests...
+2026-10-26 11:01:45.051688-0400 ResumeUITests-Runner[40018:93089295] [General] Failed to send CA Event for app launch measurements for ca_event_type: 0 event_name: com.apple.app_launch_measurement.FirstFramePresentationMetric
+    t =      nans Interface orientation changed to Portrait
+Test Suite 'All tests' started at 2026-10-26 11:01:45.454.
+Test Suite 'ResumeUITests.xctest' started at 2026-10-26 11:01:45.455.
+Test Suite 'ResumeUITests' started at 2026-10-26 11:01:45.455.
+Test Case '-[ResumeUITests.ResumeUITests testNativeDiscoveryLinksCopyAndResume]' started.
+    t =     0.00s Start Test at 2026-10-26 11:01:45.455
+    t =     0.01s Set Up
+    t =     0.02s Open com.apple.mobilesafari
+    t =     0.02s     Launch com.apple.mobilesafari
+    t =     0.02s         Terminate com.apple.mobilesafari:39782
+2026-10-26 11:01:45.495919-0400 ResumeUITests-Runner[40018:93089291] [General] Failed to send CA Event for app launch measurements for ca_event_type: 1 event_name: com.apple.app_launch_measurement.ExtendedLaunchMetrics
+objc[40018]: Class UIAccessibilityLoaderWebShared is implemented in both /Library/Developer/CoreSimulator/Volumes/iOS_23E244/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 26.4.simruntime/Contents/Resources/RuntimeRoot/System/Library/AccessibilityBundles/WebCore.axbundle/WebCore (0x108fcc310) and /Library/Developer/CoreSimulator/Volumes/iOS_23E244/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 26.4.simruntime/Contents/Resources/RuntimeRoot/System/Library/AccessibilityBundles/WebKit.axbundle/WebKit (0x108f2c398). This may cause spurious casting failures and mysterious crashes. One of the duplicates must be removed or renamed.
+    t =     1.14s         Setting up automation session
+    t =     1.49s         Wait for com.apple.mobilesafari to idle
+    t =     3.12s Checking existence of `Keyboard (First Match)`
+    t =     3.28s Waiting 20.0s for "Address" TextField to exist
+    t =     4.31s     Checking `Expect predicate `existsNoRetry == 1` for object "Address" TextField`
+    t =     4.31s         Checking existence of `"Address" TextField`
+    t =     4.38s Tap "Address" TextField
+    t =     4.38s     Wait for com.apple.mobilesafari to idle
+    t =     4.38s     Find the "Address" TextField
+    t =     4.41s     Check for interrupting elements affecting "TabBarItemTitle" TextField
+    t =     4.43s     Synthesize event
+    t =     4.72s     Wait for com.apple.mobilesafari to idle
+    t =     5.91s Type 'http://100.82.11.2...' into Application 'com.apple.mobilesafari'
+    t =     5.91s     Wait for com.apple.mobilesafari to idle
+    t =     5.91s     Find the Application 'com.apple.mobilesafari'
+    t =     5.94s     Check for interrupting elements affecting "Safari" Application
+    t =     5.97s     Synthesize event
+    t =     5.99s         Get number of matches for: Elements containing elements matching predicate 'hasKeyboardFocus == 1'
+    t =     6.66s     Wait for com.apple.mobilesafari to idle
+    t =     7.70s Waiting 30.0s for Button (First Match) to exist
+    t =     8.74s     Checking `Expect predicate `existsNoRetry == 1` for object Button (First Match)`
+    t =     8.74s         Checking existence of `Button (First Match)`
+    t =     8.84s Find the Application 'com.apple.mobilesafari'
+    t =     8.93s Added attachment named 'discovery-entrypoint'
+    t =     8.93s Requesting snapshot of accessibility hierarchy for app with pid 40026
+    t =     9.03s Requesting snapshot of accessibility hierarchy for app with pid 40026
+    t =     9.08s Requesting snapshot of accessibility hierarchy for app with pid 40026
+    t =     9.12s Find: Descendants matching type Button
+    t =     9.13s Find: Elements matching predicate 'label BEGINSWITH "Open media"'
+    t =     9.13s Requesting snapshot of accessibility hierarchy for app with pid 40026
+    t =     9.17s Find: Descendants matching type Button
+    t =     9.17s Requesting snapshot of accessibility hierarchy for app with pid 40026
+PILL Attributes: Button, 0x10a2f7200, {{311.0, 120.0}, {85.0, 26.0}}, label: 'Open media: 121 items', Focused
+Element subtree:
+ →Button, 0x10a2f7200, {{311.0, 120.0}, {85.0, 26.0}}, label: 'Open media: 121 items', Focused
+Path to element:
+ →Application, 0x10a32df40, pid: 40026, label: 'Safari'
+  ↳Window (Main), 0x10a32e080, {{0.0, 0.0}, {402.0, 874.0}}
+   ↳Other, 0x10a32e1c0, {{0.0, 0.0}, {402.0, 874.0}}
+    ↳Other, 0x10a32e300, {{0.0, 0.0}, {402.0, 874.0}}
+     ↳Other, 0x10a32e440, {{0.0, 0.0}, {402.0, 874.0}}
+      ↳Other, 0x10a32e580, {{0.0, 0.0}, {402.0, 874.0}}
+       ↳Other, 0x10a32e6c0, {{0.0, 0.0}, {402.0, 874.0}}
+        ↳Other, 0x10a32e800, {{0.0, 0.0}, {402.0, 874.0}}
+         ↳Other, 0x10a32e940, {{0.0, 0.0}, {402.0, 874.0}}
+          ↳Other, 0x10a32ea80, {{0.0, 0.0}, {402.0, 874.0}}
+           ↳Other, 0x10a32ebc0, {{0.0, 0.0}, {402.0, 874.0}}, identifier: 'SafariWindow?View=Narrow&BarsKeptMinimized=false&UUID=F7E80C7B-8E82-4B4D-B351-EC20D94D8231&UsingLoweredBar=true&IsSecure=false&IsTabBarAvailable=false'
+            ↳Other, 0x10a32ed00, {{0.0, 0.0}, {402.0, 874.0}}
+             ↳Other, 0x10a32ee40, {{0.0, 0.0}, {402.0, 874.0}}
+              ↳ScrollView, 0x10a32f480, {{0.0, 0.0}, {402.0, 874.0}}
+               ↳Other, 0x10a32f5c0, {{0.0, 0.0}, {402.0, 874.0}}, identifier: 'TabDocument?IsLoadedUsingDesktopUserAgent=false&InReaderMode=false&UUID=06872FE4-9AD2-48E3-9D81-D226AD9508CA&IsPrivate=false&IsPageLoaded=true&WebViewProcessID=40031'
+                ↳WebView, 0x10a32f700, {{0.0, 0.0}, {402.0, 874.0}}, identifier: 'WebView'
+                 ↳WebView, 0x10a32f840, {{0.0, 0.0}, {402.0, 874.0}}
+                  ↳WebView, 0x10a32fc00, {{0.0, 0.0}, {402.0, 874.0}}
+                   ↳Other, 0x10a32fd40, {{0.0, 0.0}, {402.0, 874.0}}
+                    ↳Other, 0x10a32fe80, {{0.0, 0.0}, {402.0, 874.0}}
+                     ↳Other, 0x10a329f40, {{0.0, 62.0}, {402.0, 874.0}}
+                      ↳Other, 0x10a2f8dc0, {{0.0, 62.0}, {402.0, 714.0}}, label: 'Agentboard', Focused
+                       ↳Other, 0x10a2f8500, {{0.0, 114.0}, {402.0, 605.0}}, Focused
+                        ↳Button, 0x10a2f7200, {{311.0, 120.0}, {85.0, 26.0}}, label: 'Open media: 121 items', Focused
+Query chain:
+ →Find: Application 'com.apple.mobilesafari'
+  Output: {
+    Application, 0x115ebb340, pid: 40026, label: 'Safari'
+  }
+  ↪︎Find: Descendants matching type Button
+    Output: {
+      Button, 0x115eb9b80, {{34.0, 792.0}, {48.0, 48.0}}, identifier: 'BackButton', label: 'Back'
+      Button, 0x115eba940, {{320.0, 792.0}, {48.0, 48.0}}, identifier: 'MoreMenuButton', label: 'More'
+      Button, 0x115eba1c0, {{94.0, 796.0}, {40.0, 40.0}}, identifier: 'PageFormatMenuButton', label: 'Page Menu'
+      Button, 0x115eba580, {{281.3, 805.7}, {17.7, 21.0}}, identifier: 'ReloadButton', label: 'refresh'
+      Button, 0x115e7fe80, {{6.0, 65.0}, {44.0, 45.0}}, label: 'Open session menu', Focused
+      Button, 0x115ea0280, {{208.0, 65.0}, {44.0, 45.0}}, label: 'New session', Focused
+      Button, 0x115ea03c0, {{256.0, 65.0}, {44.0, 45.0}}, label: 'Kill session', Focused
+      Button, 0x115ea0500, {{304.0, 65.0}, {44.0, 45.0}}, label: 'Hibernate session', Focused
+      Button, 0x115ea0640, {{352.0, 65.0}, {44.0, 45.0}}, label: 'More options', Focused
+      Button, 0x115eae300, {{6.0, 726.0}, {44.0, 44.0}}, label: 'Enter', Focused
+      Button, 0x115eae440, {{54.0, 726.0}, {44.0, 44.0}}, label: 'esc', Focused
+      Button, 0x115eae6c0, {{150.0, 726.0}, {44.0, 44.0}}, label: 'Paste', Focused
+      Button, 0x115eae800, {{198.0, 726.0}, {44.0, 44.0}}, label: 'Delete word', Focused
+      Button, 0x115eae940, {{246.0, 726.0}, {44.0, 44.0}}, label: '123', Focused
+      Button, 0x115eaea80, {{294.0, 726.0}, {44.0, 44.0}}, label: 'tab', Focused
+      Button, 0x115eaebc0, {{342.0, 726.0}, {44.0, 44.0}}, label: 'ctrl', Focused
+      Button, 0x115eaed00, {{390.0, 726.0}, {44.0, 44.0}}, label: 'Show keyboard', Focused
+      Button, 0x115eae1c0, {{311.0, 120.0}, {85.0, 26.0}}, label: 'Open media: 121 items', Focused
+      Button, 0x115eaf480, {{0.0, 120.0}, {298.0, 61.0}}, label: 'Drag to reorder Native Media 1m
+agentboard-media-discovery
+"Native discovery fixture"', Focused
+      Button, 0x115eaf700, {{0.0, 725.0}, {237.0, 45.0}}, label: 'New Session', Focused
+      Button, 0x115eaf840, {{0.0, 725.0}, {45.0, 45.0}}, label: 'Session recovery', Focused
+    }
+    ↪︎Find: Elements matching predicate 'label BEGINSWITH "Open media"'
+      Output: {
+        Button, 0x115e70a00, {{311.0, 120.0}, {85.0, 26.0}}, label: 'Open media: 121 items', Focused
+      }
+      ↪︎Find: First Match
+        Output: {
+          Button, 0x10a29ca00, {{311.0, 120.0}, {85.0, 26.0}}, label: 'Open media: 121 items', Focused
+        }
+
+    t =    11.28s Tap "Open media: 121 items" Button[0.50, 0.50]
+    t =    11.28s     Wait for com.apple.mobilesafari to idle
+    t =    11.28s     Find the "Open media: 121 items" Button
+    t =    11.32s     Check for interrupting elements affecting "Open media: 121 items" Button
+    t =    11.34s     Synthesize event
+    t =    11.35s         Find the "Open media: 121 items" Button
+    t =    11.38s         Find the "Open media: 121 items" Button
+    t =    11.42s         Find the "Open media: 121 items" Button
+    t =    11.73s     Wait for com.apple.mobilesafari to idle
+    t =    11.73s Waiting 15.0s for "Collapse media rail" Button to exist
+    t =    12.77s     Checking `Expect predicate `existsNoRetry == 1` for object "Collapse media rail" Button`
+    t =    12.77s         Checking existence of `"Collapse media rail" Button`
+    t =    12.81s Checking existence of `Any (First Match)`
+    t =    15.85s Find the Application 'com.apple.mobilesafari'
+    t =    15.95s Added attachment named 'discovery-media'
+    t =    15.95s Checking existence of `Any (First Match)`
+    t =    15.98s Tap Any (First Match)
+    t =    15.98s     Wait for com.apple.mobilesafari to idle
+    t =    15.98s     Find the Any (First Match)
+    t =    16.02s     Check for interrupting elements affecting "Links 120" Switch
+    t =    16.05s     Synthesize event
+    t =    16.35s     Wait for com.apple.mobilesafari to idle
+    t =    16.35s Waiting 30.0s for "Copy link for Native complete URL" Button to exist
+    t =    17.39s     Checking `Expect predicate `existsNoRetry == 1` for object "Copy link for Native complete URL" Button`
+    t =    17.39s         Checking existence of `"Copy link for Native complete URL" Button`
+    t =    17.47s Tap "Copy link for Native complete URL" Button
+    t =    17.47s     Wait for com.apple.mobilesafari to idle
+    t =    17.47s     Find the "Copy link for Native complete URL" Button
+    t =    17.53s     Check for interrupting elements affecting "Copy link for Native complete URL" Button
+    t =    17.56s     Synthesize event
+    t =    17.85s     Wait for com.apple.mobilesafari to idle
+    t =    17.85s Waiting 3.0s for "Link copied" StaticText to exist
+    t =    18.89s     Checking `Expect predicate `existsNoRetry == 1` for object "Link copied" StaticText`
+    t =    18.89s         Checking existence of `"Link copied" StaticText`
+    t =    18.97s Checking existence of `Keyboard (First Match)`
+    t =    19.01s Find the Application 'com.apple.mobilesafari'
+    t =    19.09s Added attachment named 'links-copy-feedback'
+    t =    19.76s Pressing Home button
+    t =    30.32s Open com.apple.mobilesafari
+    t =    30.32s     Activate com.apple.mobilesafari
+    t =    30.33s         Wait for com.apple.mobilesafari to idle
+    t =    38.34s Checking existence of `"Collapse media rail" Button`
+    t =    38.41s Checking existence of `"Copy link for Native complete URL" Button`
+    t =    38.47s Find the Application 'com.apple.mobilesafari'
+    t =    38.56s Added attachment named 'links-resumed'
+    t =    38.66s Tap "Collapse media rail" Button
+    t =    38.66s     Wait for com.apple.mobilesafari to idle
+    t =    38.66s     Find the "Collapse media rail" Button
+    t =    38.72s     Check for interrupting elements affecting "Collapse media rail" Button
+    t =    38.76s     Synthesize event
+    t =    39.05s     Wait for com.apple.mobilesafari to idle
+    t =    39.05s Checking existence of `"Show keyboard" Button`
+    t =    39.08s Tap "Show keyboard" Button
+    t =    39.08s     Wait for com.apple.mobilesafari to idle
+    t =    39.08s     Find the "Show keyboard" Button
+    t =    39.12s     Check for interrupting elements affecting "Show keyboard" Button
+    t =    39.14s     Synthesize event
+    t =    39.43s     Wait for com.apple.mobilesafari to idle
+    t =    39.73s Waiting 10.0s for "Terminal input" TextView to exist
+    t =    40.76s     Checking `Expect predicate `existsNoRetry == 1` for object "Terminal input" TextView`
+    t =    40.76s         Checking existence of `"Terminal input" TextView`
+    t =    40.81s Tap "Terminal input" TextView
+    t =    40.81s     Wait for com.apple.mobilesafari to idle
+    t =    40.81s     Find the "Terminal input" TextView
+    t =    40.84s     Check for interrupting elements affecting "Terminal input" TextView
+    t =    40.87s     Synthesize event
+    t =    41.16s     Wait for com.apple.mobilesafari to idle
+    t =    41.16s Waiting 5.0s for Keyboard (First Match) to exist
+    t =    42.19s     Checking `Expect predicate `existsNoRetry == 1` for object Keyboard (First Match)`
+    t =    42.19s         Checking existence of `Keyboard (First Match)`
+    t =    42.20s Type 'IOS_DISCOVERY_FINA...' into Application 'com.apple.mobilesafari'
+    t =    42.20s     Wait for com.apple.mobilesafari to idle
+    t =    42.20s     Find the Application 'com.apple.mobilesafari'
+    t =    42.23s     Check for interrupting elements affecting "Safari" Application
+    t =    42.25s     Synthesize event
+    t =    42.85s     Wait for com.apple.mobilesafari to idle
+    t =    44.86s Find the Application 'com.apple.mobilesafari'
+    t =    44.95s Added attachment named 'discovery-terminal-input'
+    t =    45.03s Checking existence of `Keyboard (First Match)`
+    t =    45.03s Checking existence of `"Done" Button`
+    t =    45.07s Tap "Done" Button
+    t =    45.07s     Wait for com.apple.mobilesafari to idle
+    t =    45.07s     Find the "Done" Button
+    t =    45.10s     Check for interrupting elements affecting "Done" Button
+    t =    45.12s     Synthesize event
+    t =    45.41s     Wait for com.apple.mobilesafari to idle
+    t =    45.65s Waiting 20.0s for "Address" TextField to exist
+    t =    46.67s     Checking `Expect predicate `existsNoRetry == 1` for object "Address" TextField`
+    t =    46.67s         Checking existence of `"Address" TextField`
+    t =    46.71s Tap "Address" TextField
+    t =    46.71s     Wait for com.apple.mobilesafari to idle
+    t =    46.71s     Find the "Address" TextField
+    t =    46.74s     Check for interrupting elements affecting "TabBarItemTitle" TextField
+    t =    46.77s     Synthesize event
+    t =    47.06s     Wait for com.apple.mobilesafari to idle
+    t =    48.19s Type 'http://100.82.11.2...' into Application 'com.apple.mobilesafari'
+    t =    48.19s     Wait for com.apple.mobilesafari to idle
+    t =    48.20s     Find the Application 'com.apple.mobilesafari'
+    t =    48.22s     Check for interrupting elements affecting "Safari" Application
+    t =    48.25s     Synthesize event
+    t =    48.28s         Get number of matches for: Elements containing elements matching predicate 'hasKeyboardFocus == 1'
+    t =    49.17s     Wait for com.apple.mobilesafari to idle
+    t =    50.61s Waiting 10.0s for "Clipboard verification" TextView to exist
+    t =    51.64s     Checking `Expect predicate `existsNoRetry == 1` for object "Clipboard verification" TextView`
+    t =    51.64s         Checking existence of `"Clipboard verification" TextView`
+    t =    51.66s Tap "Clipboard verification" TextView
+    t =    51.66s     Wait for com.apple.mobilesafari to idle
+    t =    51.66s     Find the "Clipboard verification" TextView
+    t =    51.67s     Check for interrupting elements affecting "Clipboard verification" TextView
+    t =    51.69s     Synthesize event
+    t =    51.97s     Wait for com.apple.mobilesafari to idle
+    t =    52.24s Press "Clipboard verification" TextView for 1.2 seconds
+    t =    52.24s     Wait for com.apple.mobilesafari to idle
+    t =    52.26s     Find the "Clipboard verification" TextView
+    t =    52.28s     Check for interrupting elements affecting "Clipboard verification" TextView
+    t =    52.30s     Synthesize event
+    t =    53.72s     Wait for com.apple.mobilesafari to idle
+    t =    54.25s Waiting 3.0s for "Paste" MenuItem to exist
+    t =    55.29s     Checking `Expect predicate `existsNoRetry == 1` for object "Paste" MenuItem`
+    t =    55.29s         Checking existence of `"Paste" MenuItem`
+    t =    55.32s Tap "Paste" MenuItem
+    t =    55.32s     Wait for com.apple.mobilesafari to idle
+    t =    55.32s     Find the "Paste" MenuItem
+    t =    55.34s     Check for interrupting elements affecting "Paste" MenuItem
+    t =    55.37s     Synthesize event
+    t =    55.66s     Wait for com.apple.mobilesafari to idle
+    t =    56.98s Find the "Clipboard verification" TextView
+    t =    57.00s Find the Application 'com.apple.mobilesafari'
+    t =    57.07s Added attachment named 'full-url-pasted'
+NATIVE_FULL_URL_LENGTH=3360
+    t =    57.07s Requesting snapshot of accessibility hierarchy for app with pid 40026
+    t =    57.22s Requesting snapshot of accessibility hierarchy for app with pid 40026
+NATIVE_DISCOVERY_FINISHED
+Attributes: Application, 0x1163ec780, pid: 40026, label: 'Safari'
+Element subtree:
+ →Application, 0x1163ec780, pid: 40026, label: 'Safari'
+    Window (Main), 0x1163eee40, {{0.0, 0.0}, {402.0, 874.0}}
+      Other, 0x1163eef80, {{0.0, 0.0}, {402.0, 874.0}}
+        Other, 0x1163eebc0, {{0.0, 0.0}, {402.0, 874.0}}
+          Other, 0x1163eed00, {{0.0, 0.0}, {402.0, 874.0}}
+            Other, 0x1163ee940, {{0.0, 0.0}, {402.0, 874.0}}
+              Other, 0x1163eea80, {{0.0, 0.0}, {402.0, 874.0}}
+                Other, 0x1163ee6c0, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x1163ee800, {{0.0, 0.0}, {402.0, 874.0}}
+                    Other, 0x1163ee440, {{0.0, 0.0}, {402.0, 874.0}}
+                      Other, 0x1163ee580, {{0.0, 0.0}, {402.0, 874.0}}, identifier: 'SafariWindow?View=Narrow&BarsKeptMinimized=false&UUID=F7E80C7B-8E82-4B4D-B351-EC20D94D8231&UsingLoweredBar=true&IsSecure=false&IsTabBarAvailable=false'
+                        Other, 0x1163ee1c0, {{0.0, 0.0}, {402.0, 874.0}}
+                          Other, 0x1163ee300, {{0.0, 0.0}, {402.0, 874.0}}
+                            Other, 0x1163edcc0, {{0.0, 0.0}, {402.0, 49.0}}
+                              Other, 0x1163ecc80, {{0.0, 0.0}, {402.0, 49.0}}
+                              Other, 0x1163ecdc0, {{0.0, 0.0}, {402.0, 49.0}}
+                            Other, 0x1163ecf00, {{0.0, 0.0}, {402.0, 62.0}}
+                            ScrollView, 0x1163ed040, {{0.0, 0.0}, {402.0, 874.0}}
+                              Other, 0x1163ec000, {{0.0, 0.0}, {402.0, 874.0}}, identifier: 'TabDocument?IsLoadedUsingDesktopUserAgent=false&InReaderMode=false&UUID=06872FE4-9AD2-48E3-9D81-D226AD9508CA&IsPrivate=false&IsPageLoaded=true&WebViewProcessID=40031'
+                                WebView, 0x1163ec140, {{0.0, 0.0}, {402.0, 874.0}}, identifier: 'WebView'
+                                  WebView, 0x1163edb80, {{0.0, 0.0}, {402.0, 874.0}}
+                                    Other, 0x1163ef5c0, {{0.0, 0.0}, {402.0, 874.0}}
+                                    WebView, 0x1163ec3c0, {{0.0, 0.0}, {402.0, 874.0}}
+                                      Other, 0x1163ec500, {{0.0, 0.0}, {402.0, 874.0}}
+                                        Other, 0x1163ec640, {{0.0, 0.0}, {402.0, 874.0}}
+                                          Other, 0x1163ed180, {{0.0, 62.0}, {402.0, 874.0}}
+                                            Other, 0x1163ed2c0, {{0.0, 62.0}, {402.0, 714.0}}, label: 'Native clipboard verification'
+                                              Other, 0x1163ed400, {{8.0, 70.0}, {386.0, 270.0}}
+                                                StaticText, 0x1163ed540, {{8.0, 70.0}, {142.0, 19.0}}, label: 'Clipboard verification', value: Clipboard verifica...
+                                                TextView, 0x1163edf40, {{8.0, 90.0}, {348.0, 250.0}}, label: 'Clipboard verification', value: https://example.co..., Keyboard Focused, Focused
+                                                  Other, 0x1163efd40, {{18.0, -2011.0}, {328.0, 2346.0}}, Focused
+                                                    StaticText, 0x1163ee080, {{18.0, -2011.0}, {283.0, 2346.0}}, label: 'https://example.com/native-report?value=long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-complete-destination', value: https://example.co..., Focused
+                                                  StaticText, 0x1163f3480, {{18.0, -2011.0}, {283.0, 2346.0}}, label: 'https://example.com/native-report?value=long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-long-value-complete-destination', value: https://example.co..., Focused
+                                    Other, 0x1163f2300, {{0.0, 0.0}, {402.0, 874.0}}
+                                    Other, 0x1163f17c0, {{369.0, 62.0}, {30.0, 377.0}}, label: 'Vertical scroll bar, 1 page', value: 0%
+                                      Other, 0x1163f21c0, {{396.0, 65.0}, {3.0, 247.7}}
+                                    Other, 0x1163f2080, {{62.0, 406.0}, {278.0, 30.0}}, label: 'Horizontal scroll bar, 1 page', value: 0%
+                                      Other, 0x1163f1f40, {{65.0, 433.0}, {272.0, 3.0}}
+                                    Other, 0x1163f1e00, {{369.0, 62.0}, {30.0, 377.0}}, label: 'Vertical scroll bar, 1 page', value: 0%
+                                      Other, 0x1163f1cc0, {{396.0, 65.0}, {3.0, 247.7}}
+                                    Other, 0x1163f1b80, {{62.0, 406.0}, {278.0, 30.0}}, label: 'Horizontal scroll bar, 1 page', value: 0%
+                                      Other, 0x1163f1a40, {{65.0, 433.0}, {272.0, 3.0}}
+                              Other, 0x1163f1900, {{62.0, 841.0}, {278.0, 30.0}}, label: 'Horizontal scroll bar, 1 page', value: 0%
+                                Other, 0x1163f1680, {{65.0, 868.0}, {272.0, 3.0}}
+                              Other, 0x1163f1540, {{62.0, 841.0}, {278.0, 30.0}}, label: 'Horizontal scroll bar, 1 page', value: 0%
+                                Other, 0x1163f1400, {{65.0, 868.0}, {272.0, 3.0}}
+                        Other, 0x1163f12c0, {{0.0, 0.0}, {402.0, 874.0}}, identifier: 'CapsuleViewController'
+                          Other, 0x1163f1180, {{0.0, 439.0}, {402.0, 435.0}}
+                            Other, 0x1163f1040, {{0.0, 439.0}, {402.0, 435.0}}
+                              Other, 0x1163f0f00, {{0.0, 439.0}, {402.0, 435.0}}
+                                Other, 0x1163f0dc0, {{0.0, 439.0}, {402.0, 435.0}}
+                                  Other, 0x1163f0c80, {{0.0, 439.0}, {402.0, 435.0}}
+                                    Other, 0x1163f0b40, {{0.0, 439.0}, {402.0, 435.0}}
+                                      Other, 0x1163f0a00, {{0.0, 439.0}, {402.0, 98.0}}
+                                  Other, 0x1163f0780, {{0.0, 439.0}, {402.0, 435.0}}
+                                    Other, 0x1163f08c0, {{0.0, 439.0}, {402.0, 98.0}}
+                            Other, 0x1163f0640, {{105.3, 439.0}, {191.7, 32.0}}
+                              Other, 0x1163f03c0, {{105.3, 439.0}, {191.7, 32.0}}
+                                Other, 0x1163f0500, {{105.3, 439.0}, {191.7, 32.0}}
+                                  Other, 0x1163f0140, {{105.3, 439.0}, {191.7, 32.0}}, identifier: 'CapsuleNavigationBar?isSelected=true&isDistractionControlOverlayUp=false', Selected
+                                    Other, 0x1163f0280, {{123.3, 448.0}, {155.7, 14.3}}, identifier: 'TabBarItemTitle', label: 'Address', value: not secure, ‎100.8...
+                  Other, 0x1163f0000, {{0.0, 0.0}, {402.0, 874.0}}
+                    Other, 0x117004140, {{0.0, 0.0}, {402.0, 874.0}}
+            Other, 0x117004640, {{0.0, 0.0}, {402.0, 874.0}}
+              Other, 0x117004a00, {{0.0, 0.0}, {402.0, 874.0}}
+    Window, 0x117004b40, {{0.0, 0.0}, {402.0, 874.0}}
+      Other, 0x117004780, {{0.0, 0.0}, {402.0, 874.0}}
+        Other, 0x1170048c0, {{0.0, 0.0}, {402.0, 874.0}}
+        Other, 0x117004000, {{0.0, 439.0}, {402.0, 435.0}}
+          Other, 0x117004280, {{0.0, 439.0}, {402.0, 100.0}}
+            Other, 0x117004500, {{0.0, 471.0}, {402.0, 68.0}}
+              Other, 0x1170043c0, {{0.0, 471.0}, {402.0, 68.0}}
+                Toolbar, 0x117004dc0, {{0.0, 481.0}, {402.0, 48.0}}, identifier: 'Toolbar', label: 'Toolbar'
+                  Other, 0x1163a6800, {{0.0, 481.0}, {402.0, 48.0}}
+                    Other, 0x1163a6940, {{16.0, 481.0}, {370.0, 48.0}}
+                      Other, 0x1163a6a80, {{16.0, 481.0}, {370.0, 48.0}}
+                        Other, 0x1163a70c0, {{16.0, 481.0}, {0.0, 0.0}}
+                          Other, 0x1163a6580, {{16.0, 481.0}, {370.0, 48.0}}
+                            Other, 0x1163a7d40, {{16.0, 481.0}, {50.0, 48.0}}
+                              Other, 0x1163a7c00, {{21.0, 486.0}, {40.0, 38.0}}
+                                Other, 0x1163a6f80, {{21.0, 486.0}, {40.0, 38.0}}
+                                  Button, 0x1163a6e40, {{21.0, 486.0}, {40.0, 38.0}}, label: 'Previous', Disabled
+                            Other, 0x1163a6d00, {{70.0, 481.0}, {50.0, 48.0}}
+                              Other, 0x1163a6bc0, {{75.0, 486.0}, {40.0, 38.0}}
+                                Other, 0x1163a5cc0, {{75.0, 486.0}, {40.0, 38.0}}
+                                  Button, 0x1163a66c0, {{75.0, 486.0}, {40.0, 38.0}}, label: 'Next', Disabled
+                            Other, 0x1163a6440, {{336.0, 481.0}, {50.0, 48.0}}
+                              Other, 0x1163a5b80, {{341.0, 486.0}, {40.0, 38.0}}
+                                Other, 0x1163a7980, {{341.0, 486.0}, {40.0, 38.0}}
+                                  Button, 0x1163a7840, {{341.0, 486.0}, {40.0, 38.0}}, label: 'Done'
+          Other, 0x1163a7200, {{0.0, 539.0}, {402.0, 335.0}}, identifier: 'inputView'
+    Window, 0x1163a7e80, {{0.0, 0.0}, {402.0, 874.0}}
+      Other, 0x1163a7700, {{0.0, 0.0}, {402.0, 874.0}}
+        Other, 0x1163a75c0, {{0.0, 439.0}, {402.0, 435.0}}
+          Other, 0x1163a7ac0, {{0.0, 439.0}, {402.0, 100.0}}
+          Other, 0x1163a6300, {{0.0, 539.0}, {402.0, 44.0}}, identifier: 'SystemInputAssistantView'
+            Other, 0x1163a61c0, {{0.0, 539.0}, {402.0, 44.0}}
+              Other, 0x1163a6080, {{0.0, 539.0}, {402.0, 44.0}}, identifier: 'CenterPageView'
+                Other, 0x1163a5f40, {{0.0, -61.0}, {402.0, 1244.0}}
+                  ScrollView, 0x1163a5e00, {{0.0, 539.0}, {402.0, 44.0}}
+                Other, 0x1163a7480, {{0.0, 539.0}, {402.0, 44.0}}
+                  Other, 0x1163a7340, {{0.0, 539.0}, {402.0, 44.0}}, label: 'Typing Predictions'
+                    Other, 0x116256a80, {{0.0, 539.0}, {402.0, 44.0}}
+                      Other, 0x11638a580, {{0.0, 539.0}, {402.0, 44.0}}
+                        Other, 0x11638aa80, {{0.0, 539.0}, {134.0, 44.0}}, label: 'I'
+                        Other, 0x11638b840, {{134.0, 539.0}, {134.0, 44.0}}, label: 'The'
+                        Other, 0x11638ad00, {{268.0, 539.0}, {134.0, 44.0}}, label: 'I’m'
+          Other, 0x11638ae40, {{0.0, 539.0}, {402.0, 335.0}}
+            Other, 0x11638af80, {{0.0, 539.0}, {402.0, 335.0}}
+              Other, 0x11638b0c0, {{0.0, 539.0}, {402.0, 335.0}}
+          Other, 0x11638bc00, {{0.0, 583.0}, {402.0, 233.0}}
+            Keyboard, 0x11638bd40, {{0.0, 583.0}, {402.0, 233.0}}
+              Other, 0x11638be80, {{0.0, 583.0}, {402.0, 233.0}}
+                Other, 0x11638b980, {{0.0, 583.0}, {402.0, 233.0}}, identifier: 'UIKeyboardLayoutStar Preview'
+                  Key, 0x11638b700, {{0.0, 583.0}, {0.0, 0.0}}, label: 'Padding-Left'
+                  Key, 0x11638a300, {{0.0, 583.0}, {0.0, 0.0}}, label: 'Padding-Right'
+                  Key, 0x11638a080, {{0.0, 583.0}, {0.0, 0.0}}, label: 'Padding-Left'
+                  Key, 0x11638a1c0, {{0.0, 583.0}, {0.0, 0.0}}, label: 'Padding-Right'
+                  Key, 0x116389540, {{0.0, 583.0}, {0.0, 0.0}}, label: 'Padding-Left'
+                  Key, 0x116389680, {{0.0, 583.0}, {0.0, 0.0}}, label: 'Padding-Right'
+                  Key, 0x11638b200, {{4.7, 590.0}, {39.3, 54.0}}, label: 'Q'
+                  Key, 0x116389900, {{44.0, 590.0}, {39.7, 54.0}}, label: 'W'
+                  Key, 0x11638b5c0, {{83.7, 590.0}, {39.3, 54.0}}, label: 'E'
+                  Key, 0x11638b480, {{123.0, 590.0}, {39.7, 54.0}}, label: 'R'
+                  Key, 0x11638bac0, {{162.7, 590.0}, {39.3, 54.0}}, label: 'T'
+                  Key, 0x11638b340, {{202.0, 590.0}, {39.7, 54.0}}, label: 'Y'
+                  Key, 0x11638a940, {{241.7, 590.0}, {39.3, 54.0}}, label: 'U'
+                  Key, 0x11638a800, {{281.0, 590.0}, {39.7, 54.0}}, label: 'I'
+                  Key, 0x11638a6c0, {{320.7, 590.0}, {39.3, 54.0}}, label: 'O'
+                  Key, 0x1163897c0, {{360.0, 590.0}, {39.7, 54.0}}, label: 'P'
+                  Key, 0x116389b80, {{24.3, 644.0}, {39.3, 54.0}}, label: 'A'
+                  Key, 0x116389a40, {{63.7, 644.0}, {39.7, 54.0}}, label: 'S'
+                  Key, 0x116389e00, {{103.3, 644.0}, {39.3, 54.0}}, label: 'D'
+                  Key, 0x116389f40, {{142.7, 644.0}, {39.7, 54.0}}, label: 'F'
+                  Key, 0x116389cc0, {{182.3, 644.0}, {39.3, 54.0}}, label: 'G'
+                  Key, 0x11638a440, {{221.7, 644.0}, {39.7, 54.0}}, label: 'H'
+                  Key, 0x1163e8000, {{261.3, 644.0}, {39.3, 54.0}}, label: 'J'
+                  Key, 0x1163e8140, {{300.7, 644.0}, {39.7, 54.0}}, label: 'K'
+                  Key, 0x1163e8280, {{340.3, 644.0}, {39.3, 54.0}}, label: 'L'
+                  Button, 0x1163e83c0, {{4.7, 698.0}, {51.3, 54.0}}, identifier: 'shift', label: 'shift', Selected
+                  Key, 0x1163e8500, {{63.7, 698.0}, {39.7, 54.0}}, label: 'Z'
+                  Key, 0x1163e8640, {{103.3, 698.0}, {39.3, 54.0}}, label: 'X'
+                  Key, 0x1163e8780, {{142.7, 698.0}, {39.7, 54.0}}, label: 'C'
+                  Key, 0x1163e88c0, {{182.3, 698.0}, {39.3, 54.0}}, label: 'V'
+                  Key, 0x1163e8a00, {{221.7, 698.0}, {39.7, 54.0}}, label: 'B'
+                  Key, 0x1163e8b40, {{261.3, 698.0}, {39.3, 54.0}}, label: 'N'
+                  Key, 0x1163e8c80, {{300.7, 698.0}, {39.7, 54.0}}, label: 'M'
+                  Key, 0x1163e8dc0, {{348.0, 698.0}, {51.7, 54.0}}, identifier: 'delete', label: 'delete'
+                  Key, 0x1163e8f00, {{4.7, 752.0}, {98.7, 54.0}}, identifier: 'more', label: 'numbers'
+                  Key, 0x1163e9040, {{103.3, 752.0}, {197.3, 54.0}}, identifier: 'space', label: ' '
+                  Button, 0x1163e9180, {{300.7, 752.0}, {99.0, 54.0}}, identifier: 'Return', label: 'return'
+          Other, 0x1163e92c0, {{0.0, 583.0}, {402.0, 291.0}}
+            Button, 0x1163e9400, {{8.5, 805.7}, {68.1, 68.7}}, label: 'Emoji'
+              StaticText, 0x1163e9540, {{8.5, 805.7}, {0.0, 0.0}}
+            Button, 0x1163e9680, {{325.4, 805.4}, {68.1, 68.7}}, identifier: 'dictation', label: 'Dictate'
+              StaticText, 0x1163e97c0, {{325.4, 805.4}, {0.0, 0.0}}
+            Button, 0x1163e9900, {{325.4, 805.4}, {68.1, 68.7}}, identifier: 'dictation', label: 'Dictate'
+              StaticText, 0x1163e9a40, {{325.4, 805.4}, {0.0, 0.0}}
+Path to element:
+ →Application, 0x1163ec780, pid: 40026, label: 'Safari'
+Query chain:
+ →Find: Application 'com.apple.mobilesafari'
+  Output: {
+    Application, 0x1163e9b80, pid: 40026, label: 'Safari'
+  }
+
+    t =    57.26s Tear Down
+Test Case '-[ResumeUITests.ResumeUITests testNativeDiscoveryLinksCopyAndResume]' passed (57.502 seconds).
+Test Suite 'ResumeUITests' passed at 2026-10-26 11:02:42.958.
+	 Executed 1 test, with 0 failures (0 unexpected) in 57.502 (57.504) seconds
+Test Suite 'ResumeUITests.xctest' passed at 2026-10-26 11:02:42.960.
+	 Executed 1 test, with 0 failures (0 unexpected) in 57.502 (57.505) seconds
+Test Suite 'All tests' passed at 2026-10-26 11:02:42.962.
+	 Executed 1 test, with 0 failures (0 unexpected) in 57.502 (57.508) seconds
+2026-10-26 11:02:43.271 xcodebuild[39874:93088342] [MT] IDETestOperationsObserverDebug: 59.297 elapsed -- Testing started completed.
+2026-10-26 11:02:43.271 xcodebuild[39874:93088342] [MT] IDETestOperationsObserverDebug: 0.000 sec, +0.000 sec -- start
+2026-10-26 11:02:43.271 xcodebuild[39874:93088342] [MT] IDETestOperationsObserverDebug: 59.297 sec, +59.297 sec -- end
+
+Test session results, code coverage, and logs:
+	/tmp/ab-discovery-ios-41507/discovery-accepted.xcresult
+
+** TEST SUCCEEDED **
+
+Testing started

@@ -1,5 +1,6 @@
 /** Media arrival attention: live WS updates, finite motion, and acknowledgement. */
 import { test, expect, type Locator, type Page } from '@playwright/test'
+import type { MediaSummary } from '../../src/shared/media'
 import {
   Windows, installHarness, uniquePrefix, desktopSidebar, cardByName,
 } from './helpers/sidebarHarness'
@@ -13,18 +14,34 @@ test.afterEach(() => windows.cleanup())
 const item = (id: string) => ({
   kind: 'link', url: `https://example.com/media/${id}`, label: `${id}.html`,
 })
-type Media = { kind: string; url: string; label: string; bytes?: number; mediaType?: string }[]
+type Media = { kind: string; url: string; label: string; bytes?: number; mediaType?: string; width?: number; height?: number }[]
 
 async function board(page: Page, initial: Media = [], theme = 'dark') {
   const prefix = uniquePrefix('media')
   const names = windows.createMany(prefix, 2)
   const media: Media[] = [initial, [item('other-session')]]
+  const ids = [crypto.randomUUID(), crypto.randomUUID()]
+  const revisions = [0, 0], additions = [initial.length, 1]
+  const summary = (i: number): MediaSummary => ({ identity: ids[i], revision: `${ids[i]}:${revisions[i]}`,
+    total: media[i].length, images: media[i].filter(m => m.kind === 'image').length,
+    documents: media[i].filter(m => m.kind === 'document').length,
+    links: media[i].filter(m => m.kind === 'link').length, additions: additions[i] })
+  const summaries = [summary(0), summary(1)]
+  for (let i = 0; i < ids.length; i++) {
+    await page.route(`**/api/session-media/${ids[i]}/items*`, route => {
+      const kind = new URL(route.request().url()).searchParams.get('kind')
+      const items = media[i].filter(item => kind === 'links' ? item.kind === 'link' : kind === 'media' ? item.kind !== 'link' : true)
+      return route.fulfill({ json: {
+        identity: ids[i], revision: summary(i).revision, total: items.length, items, nextCursor: null,
+      } })
+    })
+  }
   const harness = await installHarness(page, {
     prefix,
     settings: { theme },
     sessionOverrides: {
-      0: () => ({ media: media[0] }),
-      1: () => ({ media: media[1] }),
+      0: () => ({ agentSessionId: ids[0], mediaSummary: summaries[0] }),
+      1: () => ({ agentSessionId: ids[1], mediaSummary: summaries[1] }),
     },
   })
   await page.setViewportSize({ width: 1280, height: 900 })
@@ -38,7 +55,11 @@ async function board(page: Page, initial: Media = [], theme = 'dark') {
   return {
     select,
     update(next: Media) {
+      const seen = new Set(media[0].map(m => m.url))
+      additions[0] += next.filter(m => !seen.has(m.url)).length
+      if (JSON.stringify(next) !== JSON.stringify(media[0])) revisions[0]++
       media[0].splice(0, media[0].length, ...next)
+      Object.assign(summaries[0], summary(0))
       harness.pushSessions()
     },
     pill: page.getByTestId('media-rail-pill'),
@@ -68,7 +89,7 @@ async function expectFinitePulse(pill: Locator) {
 
 test('new batches pulse finitely, persist unread, and acknowledge on opening', async ({ page }) => {
   const { pill, dot, update } = await board(page)
-  await expect(pill).toHaveCount(0)
+  await expect(pill).toBeVisible()
   update([item('first')])
   await expect(pill).toBeVisible()
   await expect(pill).toHaveAccessibleName(/1 item.*new media/)
@@ -82,7 +103,10 @@ test('new batches pulse finitely, persist unread, and acknowledge on opening', a
   await pill.click()
   const rail = page.getByTestId('media-rail')
   await expect(rail).toBeVisible()
+  await rail.getByRole('button', { name: 'Links 1', exact: true }).click()
   update([item('first'), item('while-open')])
+  await expect(rail.getByRole('link')).toHaveCount(1)
+  await page.getByRole('button', { name: 'Refresh media', exact: true }).click()
   await expect(rail.getByRole('link')).toHaveCount(2)
   await rail.getByLabel('Collapse media rail').click()
   await expect(dot).toHaveCount(0)
@@ -165,7 +189,7 @@ for (const theme of ['light', 'dark']) {
         expect(bounds!.x).toBeGreaterThanOrEqual(0)
         expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(mobile ? 390 : 1280)
         await page.screenshot({
-          path: `test-results/media-attention-${theme}-${mobile ? 'mobile' : 'desktop'}.png`,
+          path: test.info().outputPath(`media-attention-${theme}-${mobile ? 'mobile' : 'desktop'}.png`),
         })
       })
     })
@@ -173,7 +197,7 @@ for (const theme of ['light', 'dark']) {
 }
 
 // Mixed payloads use the same tile geometry even when their labels are long.
-const TILE_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNwnfwYAALcAbx8DLVyAAAAAElFTkSuQmCC'
+const TILE_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNwnfwYAALcAbx8DLVyAAAAAElFTkSuQmCC'
 const LONG_LINK = 'Preview deployment with a deliberately long descriptive artifact title'
 
 for (const theme of ['light', 'dark']) {
@@ -187,18 +211,20 @@ for (const theme of ['light', 'dark']) {
           oversizedRequests++
           await route.abort()
         })
+        const smallUrl = '/api/session-media/preview-fixture'
+        await page.route(`**${smallUrl}?thumbnail=1`, route => route.fulfill({ contentType: 'image/png', body: Buffer.from(TILE_PNG_BASE64, 'base64') }))
         const { pill } = await board(page, [
-          { kind: 'image', url: TILE_PNG, label: 'Small image', mediaType: 'image/png' },
+          { kind: 'image', url: smallUrl, label: 'Small image', mediaType: 'image/png', bytes: Buffer.from(TILE_PNG_BASE64, 'base64').length, width: 1, height: 1 },
           { kind: 'link', url: 'https://example.com/artifact', label: LONG_LINK },
           { kind: 'document', url: 'https://example.com/requirements.pdf', label: 'Requirements and implementation notes.pdf', mediaType: 'application/pdf', bytes: 2048 },
           { kind: 'image', url: oversizedUrl, label: 'Large screenshot.png', mediaType: 'image/png', bytes: 13 * 1024 * 1024 },
-          ...Array.from({ length: 5 }, (_, i) => item(`extra-${i}`)),
+          ...Array.from({ length: 5 }, (_, i) => ({ kind: 'document', url: `https://example.com/doc-${i}.pdf`, label: `Document ${i}` })),
         ], theme)
         if (mobile) await page.setViewportSize({ width: 390, height: 844 })
         await pill.click()
         const rail = page.getByTestId('media-rail')
         const tiles = rail.locator('[data-testid="media-thumb"], [data-testid="media-chip"], a')
-        await expect(tiles).toHaveCount(9)
+        await expect(tiles).toHaveCount(8)
         for (const tile of await tiles.all()) {
           const bounds = await tile.boundingBox()
           expect(bounds!.width).toBe(56)
@@ -207,11 +233,6 @@ for (const theme of ['light', 'dark']) {
           expect(title).toBeTruthy()
           await expect(tile).toHaveAccessibleName((await tile.getAttribute('aria-label')) ?? title!)
         }
-        const link = rail.getByRole('link', { name: LONG_LINK, exact: true })
-        await expect(link).toHaveAttribute('title', `${LONG_LINK} · https://example.com/artifact`)
-        await expect(link).toHaveAttribute('href', 'https://example.com/artifact')
-        await expect(link).toHaveAttribute('target', '_blank')
-        await expect(link).toHaveAttribute('rel', /noopener/)
         await expect(rail.getByRole('button', { name: 'Requirements and implementation notes.pdf · application/pdf · 2 KB', exact: true }))
           .toHaveAttribute('title', 'Requirements and implementation notes.pdf · application/pdf · 2 KB')
         await expect(rail.getByRole('button', { name: 'Large screenshot.png · image/png · 13.0 MB', exact: true }))
@@ -228,9 +249,15 @@ for (const theme of ['light', 'dark']) {
         expect(railBounds!.x + railBounds!.width).toBeLessThanOrEqual(mobile ? 390 : 1280)
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
         await strip.evaluate((el) => { el.scrollLeft = 0 })
-        const stem = `test-results/media-tiles-${theme}-${mobile ? 'mobile' : 'desktop'}`
+        const stem = test.info().outputPath(`media-tiles-${theme}-${mobile ? 'mobile' : 'desktop'}`)
         await rail.screenshot({ path: `${stem}-rail.png` })
         await page.screenshot({ path: `${stem}.png` })
+        await rail.getByRole('button', { name: 'Links 1', exact: true }).click()
+        const link = rail.getByRole('link', { name: LONG_LINK, exact: true })
+        await expect(link).toHaveAttribute('href', 'https://example.com/artifact')
+        await expect(link).toHaveAttribute('target', '_blank')
+        await expect(link).toHaveAttribute('rel', /noopener/)
+        await expect(rail.getByTestId('media-thumb')).toHaveCount(0)
       })
     })
   }

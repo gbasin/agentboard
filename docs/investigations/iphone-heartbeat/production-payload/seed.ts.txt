@@ -1,0 +1,99 @@
+// Private compiled-server payload fixture. Run with Bun before starting server.
+import fs from 'node:fs'
+import path from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { deflateSync } from 'node:zlib'
+import { initDatabase } from '../../src/server/db'
+import { getMergedMedia } from '../../src/server/agentSessions'
+import { extractSessionMedia } from '../../src/server/mediaExtractor'
+
+type Window = { name: string; tmuxWindow: string; projectPath?: string }
+type Manifest = { dir: string; claudeDir: string; dbPath: string; windows: Window[] }
+const manifest: Manifest = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'))
+const root = path.resolve(manifest.dir)
+if (!root.includes('/.poc-stress-test/')) throw Error('Fixture root must be under .poc-stress-test')
+for (const p of [manifest.claudeDir, manifest.dbPath]) {
+  if (!path.resolve(p).startsWith(root + '/')) throw Error('All writes must stay in fixture root')
+}
+if (fs.existsSync(manifest.dbPath)) throw Error('Refusing to overwrite existing database')
+if (manifest.windows.length !== 23) throw Error('Expected exactly 23 private windows')
+const stamp = new Date().toISOString()
+function chunk(type: string, data: Buffer) {
+  const body = Buffer.concat([Buffer.from(type), data])
+  let crc = 0xffffffff
+  for (const b of body) {
+    crc ^= b
+    for (let k = 0; k < 8; k++) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1))
+  }
+  const result = Buffer.alloc(body.length + 8)
+  result.writeUInt32BE(data.length, 0)
+  body.copy(result, 4)
+  result.writeUInt32BE((crc ^ 0xffffffff) >>> 0, result.length - 4)
+  return result
+}
+function image(i: number) {
+  // Different real image widths make the extractor's prefix dedupe key unique.
+  const ihdr = Buffer.alloc(13)
+  ihdr.writeUInt32BE(i + 1, 0); ihdr.writeUInt32BE(1, 4)
+  ihdr[8] = 8; ihdr[9] = 6
+  const pixels = Buffer.alloc(1 + 4 * (i + 1), 255); pixels[0] = 0
+  return Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]), chunk('IHDR', ihdr),
+    chunk('IDAT', deflateSync(pixels)), chunk('IEND', Buffer.alloc(0))]).toString('base64')
+}
+const db = initDatabase({ path: manifest.dbPath })
+const output: unknown[] = []
+try {
+  for (const [ordinal, win] of manifest.windows.entries()) {
+    const sessionId = randomUUID()
+    const projectPath = win.projectPath || root
+    const dir = path.join(manifest.claudeDir, 'projects', 'p')
+    fs.mkdirSync(dir, { recursive: true })
+    const logFilePath = path.join(dir, `${sessionId}.jsonl`)
+    const count = process.env.PROBE_SMALL === "1" ? 1 : ordinal === 0 ? 2366 : 48
+    const target = process.env.PROBE_SMALL === "1" ? 500 : ordinal === 0 ? 919628 : 19000
+    const files = [logFilePath, path.join(dir, sessionId, 'subagents', 'agent-seed.jsonl')]
+    const labels = Array.from({ length: count }, (_, i) => `Read · fixture-${String(i).padStart(4, '0')}.png`)
+    const render = () => {
+      const lines: string[][] = [[], []]
+      lines[0].push(JSON.stringify({ type: 'user', sessionId, cwd: projectPath, timestamp: stamp,
+        message: { role: 'user', content: ordinal === 0 ? 'Synthetic fixture '.padEnd(8192, 'x') : `Synthetic window ${ordinal}` } }))
+      for (let i = 0; i < count; i++) {
+        // image_generation_call carries its revised prompt as the media label.
+        lines[i < 1800 ? 0 : 1].push(JSON.stringify({ type: 'assistant', sessionId, cwd: projectPath, timestamp: stamp,
+          message: { role: 'assistant', content: [{ type: 'image_generation_call', revised_prompt: labels[i], result: image(i) }] },
+          toolUseResult: { file: { dimensions: { originalWidth: i + 1, originalHeight: 1 } } } }))
+      }
+      return lines.map(a => a.length ? a.join('\n') + '\n' : '')
+    }
+    const descriptors = (bodies: string[]) => bodies.flatMap((body, f) => extractSessionMedia(body).map(m => ({
+      kind: m.kind,
+      url: `/api/session-media/${sessionId}?path=${encodeURIComponent(files[f])}&offset=${m.offset}&index=${m.index}&bytes=${m.bytes}`,
+      mediaType: m.mediaType, bytes: m.bytes, label: m.label, width: m.width, height: m.height,
+    })))
+    // Match descriptor byte budget; offsets may add a handful of bytes on first pass.
+    for (let pass = 0; pass < 5; pass++) {
+      const delta = target - Buffer.byteLength(JSON.stringify(descriptors(render())))
+      if (delta === 0) break
+      const per = Math.floor(Math.abs(delta) / count), remainder = Math.abs(delta) % count
+      for (let i = 0; i < count; i++) {
+        const change = per + (i < remainder ? 1 : 0)
+        labels[i] = delta > 0 ? labels[i] + 'x'.repeat(change) : labels[i].slice(0, Math.max(1, labels[i].length - change))
+      }
+    }
+    const bodies = render()
+    for (let f = 0; f < bodies.length; f++) if (bodies[f]) {
+      fs.mkdirSync(path.dirname(files[f]), { recursive: true })
+      fs.writeFileSync(files[f], bodies[f])
+    }
+    const record = db.insertSession({ sessionId, logFilePath, projectPath, slug: null, agentType: 'claude',
+      displayName: win.name, createdAt: stamp, lastActivityAt: stamp, lastUserMessage: ordinal === 0 ? 'Synthetic fixture '.padEnd(8192, 'x') : `Synthetic window ${ordinal}`,
+      currentWindow: win.tmuxWindow, isHibernating: false, lastResumeError: null,
+      lastKnownLogSize: Buffer.byteLength(bodies[0]), isCodexExec: false, launchCommand: null })
+    const media = getMergedMedia(record)
+    if (media.length !== count) throw Error(`Expected ${count} media, got ${media.length}`)
+    output.push({ sessionId, logFilePath, name: win.name, tmuxWindow: win.tmuxWindow, mediaCount: media.length,
+      mediaBytes: Buffer.byteLength(JSON.stringify(media)), targetMediaBytes: target })
+  }
+} finally { db.close() }
+fs.writeFileSync(path.join(root, 'seed-result.json'), JSON.stringify(output, null, 2))
+console.log(JSON.stringify(output))

@@ -69,12 +69,13 @@ test('a delayed copy-mode query does not block another terminal or the selected 
     await select(other, a)
     await ready(other, a)
     for (const file of ['started', 'held', 'release', 'arm']) fs.rmSync(path.join(gate, file), { force: true })
-    // resolveCopyModeTarget uses the raw requested window while attach is pending.
+    // Match the physical window across the relay observer's derived session.
     fs.writeFileSync(path.join(gate, 'arm'), b)
     const switchAt = Date.now()
     await select(other, b)
     await expect.poll(() => fs.existsSync(path.join(gate, 'started')), { timeout: 10_000 }).toBe(true)
     const heldAt = Date.now()
+    tmux(['send-keys', '-t', b, "printf 'DURING-GATE\\n'", 'Enter'])
     let profile: Promise<void> | undefined
     if (process.env.AB_PROFILE_SAMPLE && process.platform === 'darwin') {
       const root = process.env.E2E_TMUX_TMPDIR!
@@ -98,7 +99,7 @@ test('a delayed copy-mode query does not block another terminal or the selected 
     await page.keyboard.press('Enter')
     await expect(page.locator('.xterm-rows')).toContainText(`DONE${token}`, { timeout: 10_000 })
     const renderedAt = Date.now()
-    await expect(other.locator('.xterm-rows')).toContainText('TARGET-B')
+    await expect(other.locator('.xterm-rows')).toContainText('DURING-GATE')
     const switchedAt = Date.now()
     await ready(other, b)
     const healthAt = await health

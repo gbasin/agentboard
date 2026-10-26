@@ -1,0 +1,49 @@
+{
+  "noAck": {
+    "bytes": 1048537,
+    "close": {
+      "code": 1013,
+      "reason": "Terminal output needs resynchronization",
+      "afterMs": 2598
+    }
+  },
+  "recovery": {
+    "ready": true,
+    "echo": true,
+    "capture": 1
+  },
+  "slowAck": {
+    "bytes": 2632989,
+    "close": null
+  },
+  "continuousNoAck": {
+    "bytes": 4191636,
+    "closes": [
+      {
+        "code": 1013,
+        "reason": "Terminal output needs resynchronization",
+        "afterMs": 2109
+      },
+      {
+        "code": 1013,
+        "reason": "Terminal output needs resynchronization",
+        "afterMs": 2131
+      },
+      {
+        "code": 1013,
+        "reason": "Terminal output needs resynchronization",
+        "afterMs": 2320
+      },
+      {
+        "code": 1013,
+        "reason": "Terminal output needs resynchronization",
+        "afterMs": 2080
+      }
+    ]
+  },
+  "final": {
+    "ready": true,
+    "echo": true,
+    "capture": 1
+  }
+}

@@ -1,0 +1,10 @@
+import { decodeThumbnail } from '../src/server/mediaThumbnailDecoder'
+import { PNG } from 'pngjs'
+import jpeg from 'jpeg-js'
+const data = Buffer.alloc(1600 * 1200 * 4, 255)
+for (const format of ['png','jpeg']) {
+  const input = format === 'png' ? PNG.sync.write({width:1600,height:1200,data}) : jpeg.encode({width:1600,height:1200,data},80).data
+  const start=performance.now(),result=decodeThumbnail(input)
+  const decoded=PNG.sync.read(Buffer.from(result))
+  console.log(JSON.stringify({format,width:decoded.width,height:decoded.height,bytes:result.length,elapsedMs:performance.now()-start}))
+}

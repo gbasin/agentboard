@@ -1,0 +1,62 @@
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { createHash } from 'node:crypto'
+import { PNG } from 'pngjs'
+import { MediaThumbnailClient } from '../../src/server/mediaThumbnailClient'
+import { createMediaRoutes } from '../../src/server/mediaRoutes'
+import type { AgentSessionRecord } from '../../src/server/db'
+import { sanitizedTmuxEnv } from '../../src/server/tmuxEnv'
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'thumbnail-runtime-'))
+const file = path.join(root, 'log.jsonl')
+const png = new PNG({ width: 256, height: 128 }); png.data.fill(255)
+const line = JSON.stringify({ type: 'user', message: { content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: PNG.sync.write(png).toString('base64') } }] } })
+fs.writeFileSync(file, line + '\n')
+const ref = { path: file, offset: 0, index: 0, digest: createHash('sha256').update(line).digest('hex') }
+const compiled = import.meta.url.includes('$bunfs')
+const blockedUrl = compiled ? '/$bunfs/root/.poc-stress-test/thumbnail-runtime/blocked.js' : new URL('./blocked.ts', import.meta.url).href
+let starts = 0
+const dispatched: number[] = []
+const client = new MediaThumbnailClient((url) => {
+  const worker = new Worker(++starts === 1 ? blockedUrl : url, { type: 'module', env: sanitizedTmuxEnv() })
+  const send = worker.postMessage.bind(worker)
+  worker.postMessage = ((message: { ref: { expectedBytes?: number } }) => { if (message.ref) dispatched.push(message.ref.expectedBytes ?? 0); send(message) }) as typeof worker.postMessage
+  return worker
+}, 1000)
+let abortObserved = false, entered = false, heartbeats = 0
+const heartbeat = setInterval(() => { heartbeats++ }, 10)
+const record = { sessionId: 'session-12345678-abcdef', logFilePath: file, agentType: 'claude' } as AgentSessionRecord
+const app = createMediaRoutes({ getRecord: () => record, page: async () => { throw new Error('unused') }, thumbnail: {
+  get: (ref, signal) => {
+    if (ref.expectedBytes === 123) {
+      entered = true
+      signal?.addEventListener('abort', () => { abortObserved = true }, { once: true })
+    }
+    return client.get(ref, signal)
+  },
+} })
+const server = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: request => {
+  if (new URL(request.url).pathname === '/health') return new Response('alive')
+  return app.fetch(request)
+} })
+try {
+  const first = client.get(ref).catch(error => error.code)
+  const controller = new AbortController()
+  const request = fetch(`http://127.0.0.1:${server.port}/${record.sessionId}?path=${encodeURIComponent(file)}&offset=0&index=0&digest=${ref.digest}&thumbnail=1&bytes=123`, { signal: controller.signal }).catch(error => error.name)
+  const deadline = Date.now() + 3000
+  while (!entered && Date.now() < deadline) await Bun.sleep(10)
+  if (!entered) throw new Error('HTTP request did not enter handler')
+  controller.abort()
+  await request
+  await Bun.sleep(50)
+  if (await first !== 'BUSY') throw new Error('Expected deadline')
+  if (await client.get(ref).catch(error => error.code) !== 'BUSY') throw new Error('Expired worker admitted work')
+  await Bun.sleep(1000)
+  const image = PNG.sync.read(Buffer.from(await client.get(ref)))
+  if (image.width !== 128) throw new Error('Next image failed')
+  if (!abortObserved || dispatched.includes(123)) throw new Error(`Abort failed ${JSON.stringify({ abortObserved, dispatched })}`)
+  client.dispose()
+  await Bun.sleep(50)
+  if (await (await fetch(`http://127.0.0.1:${server.port}/health`)).text() !== 'alive') throw new Error('HTTP died')
+  console.log(JSON.stringify({ compiled, starts, abortObserved, dispatched, width: image.width, heartbeats, health: 'alive' }))
+} finally { clearInterval(heartbeat); client.dispose(); server.stop(true); fs.rmSync(root, { recursive: true, force: true }) }

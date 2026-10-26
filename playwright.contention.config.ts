@@ -30,7 +30,10 @@ for arg in "$@"; do
   prev="$arg"
 done
 gate="$AB_COPY_MODE_GATE"
-if [ "$mode" = 1 ] && [ -f "$gate/arm" ] && [ "$(cat "$gate/arm")" = "$target" ]; then
+wanted=''
+[ -f "$gate/arm" ] && wanted="$(cat "$gate/arm")"
+# Relay observers use a derived session name; the tmux window ID is stable.
+if [ "$mode" = 1 ] && [ -n "$wanted" ] && [ "\${wanted##*:}" = "\${target##*:}" ]; then
   if mv "$gate/arm" "$gate/held" 2>/dev/null; then
     echo "$$" > "$gate/started"
     n=0

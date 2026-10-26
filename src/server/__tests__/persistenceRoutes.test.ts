@@ -8,6 +8,7 @@ import { initDatabase } from '../db'
 import { PersistentSessions } from '../persistence/manager'
 import { PersistenceRuntime } from '../persistence/runtime'
 import { SessionMetadataClient } from '../sessionMetadataClient'
+import { FakeMediaDiscovery } from './fixtures/fakeMediaDiscovery'
 import type { MetadataRequest, MetadataResponse } from '../sessionMetadataWorker'
 import { registerPersistenceRoutes } from '../persistence/routes'
 import type { SessionManager } from '../SessionManager'
@@ -19,7 +20,7 @@ afterEach(() => {
   for (const close of cleanup.splice(0)) close()
 })
 
-function setup(metadataFor: Parameters<typeof registerPersistenceRoutes>[2]['metadataFor'] = () => ({ prs: [], media: [] })) {
+function setup(metadataFor: Parameters<typeof registerPersistenceRoutes>[2]['metadataFor'] = () => ({ prs: [] })) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ab-routes-'))
   const db = initDatabase({ path: path.join(root, 'agentboard.db') })
   cleanup.push(() => {
@@ -154,7 +155,7 @@ test('detail materializes all conversation names and lifecycle fields after the 
   const scanning = new Promise<void>((resolve) => { started = resolve })
   const { app, saved, addConversation, runtime } = setup(async (record) => {
     if (record.sessionId === 'older') { started(); await waiting }
-    return { prs: [], media: [] }
+    return { prs: [] }
   })
   addConversation('older'); addConversation('current')
   const pending = app.request(`/api/library/${saved.id}`)
@@ -182,7 +183,7 @@ test('detail revalidates linked conversations and changed log identities after s
   const { app, saved, addConversation, runtime } = setup(async (record) => {
     paths.push(record.logFilePath)
     if (paths.length === 1) { started(); await waiting }
-    return { prs: [], media: [{ kind: 'link', url: record.logFilePath }] }
+    return { prs: [], mediaSummary: { identity: record.logFilePath, revision: '1', total: 1, images: 0, documents: 0, links: 1, additions: 1 } }
   })
   addConversation('first')
   const pending = app.request(`/api/library/${saved.id}`)
@@ -192,7 +193,7 @@ test('detail revalidates linked conversations and changed log identities after s
   release()
   const detail = await (await pending).json() as HistoryDetail
   expect(detail.conversations).toHaveLength(2)
-  expect(detail.conversations.find((row) => row.sessionId === 'first')?.media?.[0].url).toBe('/changed.jsonl')
+  expect(detail.conversations.find((row) => row.sessionId === 'first')?.mediaSummary?.identity).toBe('/changed.jsonl')
   expect(paths).toContain('/changed.jsonl')
 })
 
@@ -203,7 +204,7 @@ test('detail retries a real client cancellation when a pending HTTP scan is reas
     onmessage: null as ((event: MessageEvent<MetadataResponse>) => void) | null,
     postMessage(message: MetadataRequest) { sent.push(message) },
   }
-  const client = new SessionMetadataClient(() => {}, () => worker as unknown as Worker)
+  const client = new SessionMetadataClient(() => {}, () => worker as unknown as Worker, ':memory:', 30_000, () => new FakeMediaDiscovery())
   cleanup.push(() => client.dispose())
   const { app, saved, addConversation, runtime } = setup((record) => client.scan(record))
   const original = addConversation('current')
@@ -215,10 +216,10 @@ test('detail retries a real client cancellation when a pending HTTP scan is reas
   client.queue(runtime.db.getSessionById('current')!)
   await new Promise((resolve) => setTimeout(resolve, 0))
   const scans = () => sent.filter((message) => message.kind === 'scan')
-  worker.onmessage!(new MessageEvent<MetadataResponse>('message', { data: { id: scans()[0].id, metadata: { prs: [], media: [] } } }))
+  worker.onmessage!(new MessageEvent<MetadataResponse>('message', { data: { id: scans()[0].id, metadata: { prs: [] } } }))
   await new Promise((resolve) => setTimeout(resolve, 0))
   expect(scans()[1].record.logFilePath).toBe('/replacement.jsonl')
-  worker.onmessage!(new MessageEvent<MetadataResponse>('message', { data: { id: scans()[1].id, metadata: { prs: [], media: [] } } }))
+  worker.onmessage!(new MessageEvent<MetadataResponse>('message', { data: { id: scans()[1].id, metadata: { prs: [] } } }))
   const response = await pending
   expect(response.status).toBe(200)
   const detail = await response.json() as HistoryDetail

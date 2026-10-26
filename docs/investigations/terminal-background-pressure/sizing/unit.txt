@@ -1,0 +1,489 @@
+bun test v1.3.14 (0d9b296a)
+
+src/server/__tests__/terminalSizeParticipation.test.ts:
+(pass) hide then show serialize flag changes; repeated requests do not spawn extra commands [1.29ms]
+(pass) dispose waits for an in-flight mutation and skips queued foreground work before releasing tty [0.15ms]
+(pass) natural exit or replaced tty cancels a queued sizing mutation [0.14ms]
+(pass) relay observers start ignored and foreground command failures propagate for retry [0.11ms]
+(pass) pipe-pane has no PTY sizing flags [0.04ms]
+227 |     })
+228 |     if (result.signalCode === 'SIGTERM' || result.exitCode === null) {
+229 |       throw new TmuxTimeoutError(args.join(' '), timeoutMs)
+230 |     }
+231 |     if (result.exitCode !== 0) {
+232 |       throw new Error(result.stderr || 'tmux command failed')
+                      ^
+error: can't find client: /dev/remote-tty
+
+      at runTmuxNonBlocking (/Users/garybasin/Code/agentboard-background-pressure/src/server/terminal/TerminalProxyBase.ts:232:17)
+      at async <anonymous> (/Users/garybasin/Code/agentboard-background-pressure/src/server/terminal/TerminalProxyBase.ts:126:18)
+(fail) SSH sizing uses its asynchronous remote command path [6.86ms]
+
+src/server/__tests__/terminalRuntime.test.ts:
+(pass) ready follows snapshot and verified redraw; early and stale input are rejected [2.24ms]
+(pass) retained observer is reverified after replacement interrupts physical switch [3.69ms]
+(pass) rapid A-B-A cannot publish an earlier A as the current attachment [1.31ms]
+(pass) disposal fences pending output and destroys only the observer [1.29ms]
+(pass) paste preserves multiline text without triggering submit; resize and stale commands are gated [1.35ms]
+(pass) catalog target override and deleted target cannot become input-ready [1.45ms]
+(pass) copy-mode cancellation precedes queued typing; a disconnect drops that queued input [3.68ms]
+(pass) remote attach restrictions apply before proxy construction [0.06ms]
+(pass) local to remote switch replaces the observer and preserves SSH input policy [2.49ms]
+(pass) a proxy that declines a switch cannot publish ready [1.32ms]
+(pass) clipboard summary ordering retains automatic-buffer creation semantics [0.26ms]
+[2026-10-24 19:51:57.892 +0000] [32mINFO[39m:
+    [35msessionId[39m: "A"
+    [35mtarget[39m: "board:@0"
+    [35meffectiveTarget[39m: "board:@0"
+    [35mtotalMs[39m: 0
+    [35mconnectionId[39m: "test"
+    [35mrelay[39m: true
+    [35mevent[39m: "terminal_attach_profile"
+[2026-10-24 19:51:57.893 +0000] [32mINFO[39m:
+    [35msessionId[39m: "A"
+    [35mtarget[39m: "board:@0"
+    [35meffectiveTarget[39m: "board:@0"
+    [35mtotalMs[39m: 0
+    [35mconnectionId[39m: "test"
+    [35mrelay[39m: true
+    [35mevent[39m: "terminal_attach_profile"
+[2026-10-24 19:51:57.895 +0000] [32mINFO[39m:
+    [35msessionId[39m: "A"
+    [35mtarget[39m: "board:@0"
+    [35meffectiveTarget[39m: "board:@0"
+    [35mtotalMs[39m: 0
+    [35mconnectionId[39m: "test"
+    [35mrelay[39m: true
+    [35mevent[39m: "terminal_attach_profile"
+[2026-10-24 19:51:57.897 +0000] [32mINFO[39m:
+    [35msessionId[39m: "A"
+    [35mtarget[39m: "board:@0"
+    [35meffectiveTarget[39m: "board:@0"
+    [35mtotalMs[39m: 0
+    [35mconnectionId[39m: "test"
+    [35mrelay[39m: true
+    [35mevent[39m: "terminal_attach_profile"
+[2026-10-24 19:51:57.898 +0000] [32mINFO[39m:
+    [35msessionId[39m: "A"
+    [35mtarget[39m: "board:@0"
+    [35meffectiveTarget[39m: "board:@0"
+    [35mtotalMs[39m: 0
+    [35mconnectionId[39m: "test"
+    [35mrelay[39m: true
+    [35mevent[39m: "terminal_attach_profile"
+[2026-10-24 19:51:57.899 +0000] [32mINFO[39m:
+    [35msessionId[39m: "A"
+    [35mtarget[39m: "board:@0"
+    [35meffectiveTarget[39m: "board:@0"
+    [35mtotalMs[39m: 0
+    [35mconnectionId[39m: "test"
+    [35mrelay[39m: true
+    [35mevent[39m: "terminal_attach_profile"
+[2026-10-24 19:51:57.902 +0000] [32mINFO[39m:
+    [35msessionId[39m: "A"
+    [35mtarget[39m: "board:@0"
+    [35meffectiveTarget[39m: "board:@0"
+    [35mtotalMs[39m: 0
+    [35mconnectionId[39m: "test"
+    [35mrelay[39m: true
+    [35mevent[39m: "terminal_attach_profile"
+[2026-10-24 19:51:57.905 +0000] [32mINFO[39m:
+    [35msessionId[39m: "B"
+    [35mtarget[39m: "board:@1"
+    [35meffectiveTarget[39m: "board:@1"
+    [35mtotalMs[39m: 0
+    [35mconnectionId[39m: "test"
+    [35mrelay[39m: true
+    [35mevent[39m: "terminal_attach_profile"
+[2026-10-24 19:51:57.906 +0000] [32mINFO[39m:
+    [35msessionId[39m: "A"
+    [35mtarget[39m: "board:@0"
+    [35meffectiveTarget[39m: "board:@0"
+    [35mtotalMs[39m: 0
+    [35mconnectionId[39m: "test"
+    [35mrelay[39m: true
+    [35mevent[39m: "terminal_attach_profile"
+[2026-10-24 19:51:57.907 +0000] [32mINFO[39m:
+    [35msessionId[39m: "B"
+    [35mtarget[39m: "board:@1"
+    [35meffectiveTarget[39m: "board:@1"
+    [35mtotalMs[39m: 0
+    [35mconnectionId[39m: "test"
+    [35mrelay[39m: true
+    [35mevent[39m: "terminal_attach_profile"
+[2026-10-24 19:51:57.910 +0000] [32mINFO[39m:
+    [35msessionId[39m: "A"
+    [35mtarget[39m: "board:@0"
+    [35meffectiveTarget[39m: "board:@0"
+    [35mtotalMs[39m: 0
+    [35mconnectionId[39m: "test"
+    [35mrelay[39m: true
+    [35mevent[39m: "terminal_attach_profile"
+[2026-10-24 19:51:57.911 +0000] [32mINFO[39m:
+    [35msessionId[39m: "A"
+    [35mtarget[39m: "board:@0"
+    [35meffectiveTarget[39m: "board:@0"
+    [35mtotalMs[39m: 0
+    [35mconnectionId[39m: "test"
+    [35mrelay[39m: true
+    [35mevent[39m: "terminal_attach_profile"
+[2026-10-24 19:51:57.913 +0000] [32mINFO[39m:
+    [35msessionId[39m: "A"
+    [35mtarget[39m: "board:@0"
+    [35meffectiveTarget[39m: "board:@0"
+    [35mtotalMs[39m: 0
+    [35mconnectionId[39m: "test"
+    [35mrelay[39m: true
+    [35mevent[39m: "terminal_attach_profile"
+[2026-10-24 19:51:57.914 +0000] [32mINFO[39m:
+    [35msessionId[39m: "A"
+    [35mtarget[39m: "board:@0"
+    [35meffectiveTarget[39m: "board:@0"
+    [35mtotalMs[39m: 0
+    [35mconnectionId[39m: "test"
+    [35mrelay[39m: true
+    [35mevent[39m: "terminal_attach_profile"
+[2026-10-24 19:51:57.915 +0000] [32mINFO[39m:
+    [35msessionId[39m: "A"
+    [35mtarget[39m: "board:@0"
+    [35meffectiveTarget[39m: "board:@0"
+    [35mtotalMs[39m: 0
+    [35mconnectionId[39m: "test"
+    [35mrelay[39m: true
+    [35mevent[39m: "terminal_attach_profile"
+[2026-10-24 19:51:57.916 +0000] [32mINFO[39m:
+    [35msessionId[39m: "A"
+    [35mtarget[39m: "board:@0"
+    [35meffectiveTarget[39m: "board:@0"
+    [35mtotalMs[39m: 0
+    [35mconnectionId[39m: "test"
+    [35mrelay[39m: true
+    [35mevent[39m: "terminal_attach_profile"
+[2026-10-24 19:51:57.917 +0000] [32mINFO[39m:
+    [35msessionId[39m: "A"
+    [35mtarget[39m: "board:@0"
+    [35meffectiveTarget[39m: "board:@0"
+    [35mtotalMs[39m: 0
+    [35mconnectionId[39m: "test"
+    [35mrelay[39m: true
+    [35mevent[39m: "terminal_attach_profile"
+[2026-10-24 19:51:57.919 +0000] [32mINFO[39m:
+    [35msessionId[39m: "A"
+    [35mtarget[39m: "board:@0"
+    [35meffectiveTarget[39m: "board:@0"
+    [35mtotalMs[39m: 0
+    [35mconnectionId[39m: "test"
+    [35mrelay[39m: true
+    [35mevent[39m: "terminal_attach_profile"
+[2026-10-24 19:51:57.920 +0000] [32mINFO[39m:
+    [35msessionId[39m: "A"
+    [35mtarget[39m: "board:@0"
+    [35meffectiveTarget[39m: "board:@0"
+    [35mtotalMs[39m: 0
+    [35mconnectionId[39m: "test"
+    [35mrelay[39m: true
+    [35mevent[39m: "terminal_attach_profile"
+[2026-10-24 19:51:57.922 +0000] [32mINFO[39m:
+    [35msessionId[39m: "A"
+    [35mtarget[39m: "board:@0"
+    [35meffectiveTarget[39m: "board:@0"
+    [35mtotalMs[39m: 0
+    [35mconnectionId[39m: "test"
+    [35mrelay[39m: true
+    [35mevent[39m: "terminal_attach_profile"
+[2026-10-24 19:51:57.923 +0000] [32mINFO[39m:
+    [35msessionId[39m: "A"
+    [35mtarget[39m: "board:@0"
+    [35meffectiveTarget[39m: "board:@0"
+    [35mtotalMs[39m: 0
+    [35mconnectionId[39m: "test"
+    [35mrelay[39m: true
+    [35mevent[39m: "terminal_attach_profile"
+[2026-10-24 19:51:57.924 +0000] [32mINFO[39m:
+    [35msessionId[39m: "A"
+    [35mtarget[39m: "board:@0"
+    [35meffectiveTarget[39m: "board:@0"
+    [35mtotalMs[39m: 0
+    [35mconnectionId[39m: "test"
+    [35mrelay[39m: true
+    [35mevent[39m: "terminal_attach_profile"
+[2026-10-24 19:51:57.925 +0000] [32mINFO[39m:
+    [35msessionId[39m: "A"
+    [35mtarget[39m: "board:@0"
+    [35meffectiveTarget[39m: "board:@0"
+    [35mtotalMs[39m: 0
+    [35mconnectionId[39m: "test"
+    [35mrelay[39m: true
+    [35mevent[39m: "terminal_attach_profile"
+[2026-10-24 19:51:57.926 +0000] [32mINFO[39m:
+    [35msessionId[39m: "A"
+    [35mtarget[39m: "board:@0"
+    [35meffectiveTarget[39m: "board:@0"
+    [35mtotalMs[39m: 0
+    [35mconnectionId[39m: "test"
+    [35mrelay[39m: true
+    [35mevent[39m: "terminal_attach_profile"
+[2026-10-24 19:51:57.928 +0000] [32mINFO[39m:
+    [35msessionId[39m: "A"
+    [35mtarget[39m: "board:@0"
+    [35meffectiveTarget[39m: "board:@0"
+    [35mtotalMs[39m: 0
+    [35mconnectionId[39m: "test"
+    [35mrelay[39m: true
+    [35mevent[39m: "terminal_attach_profile"
+[2026-10-24 19:51:57.929 +0000] [32mINFO[39m:
+    [35msessionId[39m: "A"
+    [35mtarget[39m: "board:@0"
+    [35meffectiveTarget[39m: "board:@0"
+    [35mtotalMs[39m: 0
+    [35mconnectionId[39m: "test"
+    [35mrelay[39m: true
+    [35mevent[39m: "terminal_attach_profile"
+[2026-10-24 19:51:57.930 +0000] [32mINFO[39m:
+    [35msessionId[39m: "A"
+    [35mtarget[39m: "board:@0"
+    [35meffectiveTarget[39m: "board:@0"
+    [35mtotalMs[39m: 0
+    [35mconnectionId[39m: "test"
+    [35mrelay[39m: true
+    [35mevent[39m: "terminal_attach_profile"
+[2026-10-24 19:51:57.931 +0000] [32mINFO[39m:
+    [35msessionId[39m: "A"
+    [35mtarget[39m: "board:@0"
+    [35meffectiveTarget[39m: "board:@0"
+    [35mtotalMs[39m: 0
+    [35mconnectionId[39m: "test"
+    [35mrelay[39m: true
+    [35mevent[39m: "terminal_attach_profile"
+(pass) catalog remap after ready fences every scoped operation against attached identity [22.34ms]
+[2026-10-24 19:51:57.932 +0000] [32mINFO[39m:
+    [35msessionId[39m: "A"
+    [35mtarget[39m: "board:@0"
+    [35meffectiveTarget[39m: "board:@0"
+    [35mtotalMs[39m: 0
+    [35mconnectionId[39m: "test"
+    [35mrelay[39m: true
+    [35mevent[39m: "terminal_attach_profile"
+(pass) pending input and copy cancellation cannot act after a catalog remap [3.68ms]
+(pass) in-place catalog mutation during capture cannot redefine the captured identity [1.32ms]
+
+src/server/__tests__/sshTerminalProxy.test.ts:
+(pass) SshTerminalProxy > start succeeds when TTY is discovered [2.07ms]
+[2026-10-24 19:51:57.940 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-proxy-session"
+    [35mhost[39m: "remote-host"
+    [35mevent[39m: "ssh_session_created"
+[2026-10-24 19:51:57.941 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-proxy-session"
+    [35mspawnArgs[39m: "ssh -tt remote-host tmux -u new-session -A -s test-proxy-session"
+    [35mevent[39m: "ssh_attach_spawn"
+[2026-10-24 19:51:57.941 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-proxy-session"
+    [35mclientTty[39m: "/dev/pts/42"
+    [35mdurationMs[39m: 1
+    [35mmode[39m: "ssh"
+    [35mevent[39m: "ssh_proxy_ready"
+[2026-10-24 19:51:57.942 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-timeout-session"
+    [35mhost[39m: "unreachable-host"
+    [35mevent[39m: "ssh_session_created"
+[2026-10-24 19:51:57.942 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-timeout-session"
+    [35mspawnArgs[39m: "ssh -tt unreachable-host tmux -u new-session -A -s test-timeout-session"
+    [35mevent[39m: "ssh_attach_spawn"
+(pass) SshTerminalProxy > doStart rejects with ERR_START_TIMEOUT when SSH hangs [201.89ms]
+[2026-10-24 19:51:58.143 +0000] [31mERROR[39m:
+    [35msessionName[39m: "test-timeout-session"
+    [35mhost[39m: "unreachable-host"
+    [35mtimeoutMs[39m: 200
+    [35mevent[39m: "ssh_start_timeout"
+[2026-10-24 19:51:58.144 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-kill-session"
+    [35mhost[39m: "slow-host"
+    [35mevent[39m: "ssh_session_created"
+[2026-10-24 19:51:58.144 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-kill-session"
+    [35mspawnArgs[39m: "ssh -tt slow-host tmux -u new-session -A -s test-kill-session"
+    [35mevent[39m: "ssh_attach_spawn"
+(pass) SshTerminalProxy > startup timeout kills the spawned SSH process [151.71ms]
+[2026-10-24 19:51:58.295 +0000] [31mERROR[39m:
+    [35msessionName[39m: "test-kill-session"
+    [35mhost[39m: "slow-host"
+    [35mtimeoutMs[39m: 150
+    [35mevent[39m: "ssh_start_timeout"
+[2026-10-24 19:51:58.296 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-stop-poll-session"
+    [35mhost[39m: "slow-host"
+    [35mevent[39m: "ssh_session_created"
+[2026-10-24 19:51:58.296 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-stop-poll-session"
+    [35mspawnArgs[39m: "ssh -tt slow-host tmux -u new-session -A -s test-stop-poll-session"
+    [35mevent[39m: "ssh_attach_spawn"
+[2026-10-24 19:51:58.416 +0000] [31mERROR[39m:
+    [35msessionName[39m: "test-stop-poll-session"
+    [35mhost[39m: "slow-host"
+    [35mtimeoutMs[39m: 120
+    [35mevent[39m: "ssh_start_timeout"
+(pass) SshTerminalProxy > startup timeout stops TTY polling and cleans up promptly [923.39ms]
+[2026-10-24 19:51:59.219 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-late-tty-session"
+    [35mhost[39m: "slow-host"
+    [35mevent[39m: "ssh_session_created"
+[2026-10-24 19:51:59.219 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-late-tty-session"
+    [35mspawnArgs[39m: "ssh -tt slow-host tmux -u new-session -A -s test-late-tty-session"
+    [35mevent[39m: "ssh_attach_spawn"
+[2026-10-24 19:51:59.240 +0000] [31mERROR[39m:
+    [35msessionName[39m: "test-late-tty-session"
+    [35mhost[39m: "slow-host"
+    [35mtimeoutMs[39m: 20
+    [35mevent[39m: "ssh_start_timeout"
+(pass) SshTerminalProxy > startup timeout does not allow a late READY transition if TTY appears after timeout [172.90ms]
+(pass) SshTerminalProxy > runTmuxAsync routes commands through SSH with pipe mode [0.81ms]
+(pass) SshTerminalProxy > dispose kills process and cleans up remote session [0.29ms]
+(pass) SshTerminalProxy > start is idempotent when already started [0.19ms]
+(pass) SshTerminalProxy > doStart rejects with ERR_SESSION_CREATE_FAILED on SSH failure [0.27ms]
+[2026-10-24 19:51:59.392 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-pipe-verify"
+    [35mhost[39m: "remote-host"
+    [35mevent[39m: "ssh_session_created"
+[2026-10-24 19:51:59.392 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-pipe-verify"
+    [35mspawnArgs[39m: "ssh -tt remote-host tmux -u new-session -A -s test-pipe-verify"
+    [35mevent[39m: "ssh_attach_spawn"
+[2026-10-24 19:51:59.392 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-pipe-verify"
+    [35mclientTty[39m: "/dev/pts/42"
+    [35mdurationMs[39m: 0
+    [35mmode[39m: "ssh"
+    [35mevent[39m: "ssh_proxy_ready"
+[2026-10-24 19:51:59.392 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-dispose-session"
+    [35mhost[39m: "remote-host"
+    [35mevent[39m: "ssh_session_created"
+[2026-10-24 19:51:59.392 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-dispose-session"
+    [35mspawnArgs[39m: "ssh -tt remote-host tmux -u new-session -A -s test-dispose-session"
+    [35mevent[39m: "ssh_attach_spawn"
+[2026-10-24 19:51:59.393 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-dispose-session"
+    [35mclientTty[39m: "/dev/pts/42"
+    [35mdurationMs[39m: 1
+    [35mmode[39m: "ssh"
+    [35mevent[39m: "ssh_proxy_ready"
+[2026-10-24 19:51:59.393 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-idem-session"
+    [35mhost[39m: "remote-host"
+    [35mevent[39m: "ssh_session_created"
+[2026-10-24 19:51:59.393 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-idem-session"
+    [35mspawnArgs[39m: "ssh -tt remote-host tmux -u new-session -A -s test-idem-session"
+    [35mevent[39m: "ssh_attach_spawn"
+[2026-10-24 19:51:59.393 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-idem-session"
+    [35mclientTty[39m: "/dev/pts/42"
+    [35mdurationMs[39m: 0
+    [35mmode[39m: "ssh"
+    [35mevent[39m: "ssh_proxy_ready"
+[2026-10-24 19:51:59.393 +0000] [33mWARN[39m:
+    [35mremoteCmd[39m: "tmux new-session -d -s test-fail-session -P -F '#{version}'"
+    [35mexitCode[39m: 255
+    [35mstderr[39m: "ssh: connect to host bad-host: Connection refused"
+    [35msessionName[39m: "test-fail-session"
+    [35mconnectionId[39m: "conn-fail"
+    [35mevent[39m: "ssh_tmux_command_failed"
+[2026-10-24 19:51:59.393 +0000] [31mERROR[39m:
+    [35msessionName[39m: "test-fail-session"
+    [35mhost[39m: "bad-host"
+    [35mevent[39m: "ssh_session_create_failed"
+    error: "ssh: connect to host bad-host: Connection refused"
+[2026-10-24 19:51:59.393 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-paste-session"
+    [35mhost[39m: "remote-host"
+    [35mevent[39m: "ssh_session_created"
+[2026-10-24 19:51:59.393 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-paste-session"
+    [35mspawnArgs[39m: "ssh -tt remote-host tmux -u new-session -A -s test-paste-session"
+    [35mevent[39m: "ssh_attach_spawn"
+[2026-10-24 19:51:59.393 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-paste-session"
+    [35mclientTty[39m: "/dev/pts/42"
+    [35mdurationMs[39m: 0
+    [35mmode[39m: "ssh"
+    [35mevent[39m: "ssh_proxy_ready"
+(pass) SshTerminalProxy > paste stages via load-buffer stdin and replays with paste-buffer [7.88ms]
+[2026-10-24 19:51:59.401 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-paste-fail"
+    [35mhost[39m: "remote-host"
+    [35mevent[39m: "ssh_session_created"
+[2026-10-24 19:51:59.401 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-paste-fail"
+    [35mspawnArgs[39m: "ssh -tt remote-host tmux -u new-session -A -s test-paste-fail"
+    [35mevent[39m: "ssh_attach_spawn"
+[2026-10-24 19:51:59.401 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-paste-fail"
+    [35mclientTty[39m: "/dev/pts/42"
+    [35mdurationMs[39m: 0
+    [35mmode[39m: "ssh"
+    [35mevent[39m: "ssh_proxy_ready"
+[2026-10-24 19:51:59.402 +0000] [33mWARN[39m:
+    [35mremoteCmd[39m: "tmux load-buffer -b agentboard-paste-conn-paste-fail-1 -"
+    [35mexitCode[39m: 1
+    [35mstderr[39m: "tmux gone"
+    [35msessionName[39m: "test-paste-fail"
+    [35mconnectionId[39m: "conn-paste-fail"
+    [35mevent[39m: "ssh_tmux_command_failed"
+[2026-10-24 19:51:59.402 +0000] [33mWARN[39m:
+    [35mconnectionId[39m: "conn-paste-fail"
+    [35msessionName[39m: "test-paste-fail"
+    [35mtarget[39m: "test-paste-fail"
+    [35mstage[39m: "load-buffer"
+    [35mbytes[39m: 3
+    [35mmode[39m: "ssh"
+    [35mevent[39m: "terminal_paste_failed"
+    error: "tmux gone"
+(pass) SshTerminalProxy > paste load-buffer failure drops the paste without a raw pty write [7.55ms]
+[2026-10-24 19:51:59.409 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-paste-clean"
+    [35mhost[39m: "remote-host"
+    [35mevent[39m: "ssh_session_created"
+[2026-10-24 19:51:59.409 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-paste-clean"
+    [35mspawnArgs[39m: "ssh -tt remote-host tmux -u new-session -A -s test-paste-clean"
+    [35mevent[39m: "ssh_attach_spawn"
+[2026-10-24 19:51:59.409 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-paste-clean"
+    [35mclientTty[39m: "/dev/pts/42"
+    [35mdurationMs[39m: 0
+    [35mmode[39m: "ssh"
+    [35mevent[39m: "ssh_proxy_ready"
+[2026-10-24 19:51:59.409 +0000] [33mWARN[39m:
+    [35mremoteCmd[39m: "tmux paste-buffer -d -p -b agentboard-paste-conn-paste-clean-1 -t test-paste-clean"
+    [35mexitCode[39m: 1
+    [35mstderr[39m: "no such target"
+    [35msessionName[39m: "test-paste-clean"
+    [35mconnectionId[39m: "conn-paste-clean"
+    [35mevent[39m: "ssh_tmux_command_failed"
+[2026-10-24 19:51:59.409 +0000] [33mWARN[39m:
+    [35mconnectionId[39m: "conn-paste-clean"
+    [35msessionName[39m: "test-paste-clean"
+    [35mtarget[39m: "test-paste-clean"
+    [35mstage[39m: "paste-buffer"
+    [35mbytes[39m: 3
+    [35mmode[39m: "ssh"
+    [35mevent[39m: "terminal_paste_failed"
+    error: "no such target"
+(pass) SshTerminalProxy > paste-buffer failure cleans up the staged buffer [7.25ms]
+(pass) SshTerminalProxy sync terminal feature > adds -T sync using the version returned by session create (no extra probe) [0.42ms]
+(pass) SshTerminalProxy sync terminal feature > omits -T sync when the remote tmux predates client feature flags [0.26ms]
+(pass) SshTerminalProxy sync terminal feature > falls back to a tmux -V probe when create hits a duplicate session [0.62ms]
+(pass) SshTerminalProxy sync terminal feature > degrades to a plain attach when the fallback probe fails [0.36ms]
+(pass) SshTerminalProxy sync terminal feature > AGENTBOARD_TMUX_SYNC=0 disables the sync feature [0.30ms]
+
+1 tests failed:
+(fail) SSH sizing uses its asynchronous remote command path [6.86ms]
+
+ 36 pass
+ 1 fail
+ 236 expect() calls
+Ran 37 tests across 3 files. [1.59s]

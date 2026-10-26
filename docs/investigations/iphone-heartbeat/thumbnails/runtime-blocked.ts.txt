@@ -1,0 +1,11 @@
+import { MediaThumbnails } from '../../src/server/mediaThumbnails'
+const thumbnails = new MediaThumbnails()
+let first = true
+self.onmessage = ({ data }) => {
+  if (data.kind === 'shutdown') { self.close(); return }
+  void handle(data)
+}
+async function handle(data) {
+  if (first) { first = false; Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1500) }
+  self.postMessage({ id: data.id, body: await thumbnails.get(data.ref) })
+}

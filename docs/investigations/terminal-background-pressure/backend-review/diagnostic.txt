@@ -1,0 +1,327 @@
+(node:92798) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0memitWarning[2m ([0m[0m[36munknown[0m[2m:[0m[33m1[0m[2m:[33m1[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0mwarnOnDeactivatedColors[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0mgetColorDepth[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0mshouldColorize[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0mrefresh[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0minternal:util/colors[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0manonymous[2m ([0m[0m[36munknown[0m[2m:[0m[33m1[0m[2m:[33m1[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0minternal:assert/assertion_error[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0manonymous[2m ([0m[0m[36munknown[0m[2m:[0m[33m1[0m[2m:[33m1[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0mloadAssertionError[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+
+Running 4 tests using 1 worker
+
+(node:93231) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:93231) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(node:93231) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+SENT {"type":"terminal-resume","claim":1}
+RECV {"type":"terminal-lease","token":"e9bdc0e9-fb72-4edf-96d5-0d66c76dea9d"}
+SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873321659:@2","tmuxTarget":"agentboard-e2e-1792873321659:@2","cols":168,"rows":50,"attachId":1}
+SENT {"type":"tmux-check-copy-mode","sessionId":"agentboard-e2e-1792873321659:@2","attachId":1}
+[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+SENT {"type":"terminal-ack","outputSeq":1}
+RECV {"type":"terminal-ready","sessionId":"agentboard-e2e-1792873321659:@2","attachId":1}
+SENT {"type":"terminal-ack","outputSeq":2}
+SENT {"type":"terminal-input","sessionId":"agentboard-e2e-1792873321659:@2","data":"C","attachId":1}
+SENT {"type":"terminal-input","sessionId":"agentboard-e2e-1792873321659:@2","data":"o","attachId":1}
+SENT {"type":"terminal-input","sessionId":"agentboard-e2e-1792873321659:@2","data":"m","attachId":1}
+SENT {"type":"terminal-input","sessionId":"agentboard-e2e-1792873321659:@2","data":"p","attachId":1}
+SENT {"type":"terminal-input","sessionId":"agentboard-e2e-1792873321659:@2","data":"a","attachId":1}
+SENT {"type":"terminal-input","sessionId":"agentboard-e2e-1792873321659:@2","data":"r","attachId":1}
+SENT {"type":"terminal-input","sessionId":"agentboard-e2e-1792873321659:@2","data":"e","attachId":1}
+SENT {"type":"terminal-input","sessionId":"agentboard-e2e-1792873321659:@2","data":":","attachId":1}
+SENT {"type":"terminal-input","sessionId":"agentboard-e2e-1792873321659:@2","data":" ","attachId":1}
+SENT {"type":"tmux-check-copy-mode","sessionId":"agentboard-e2e-1792873321659:@2","attachId":1}
+SENT {"type":"tmux-check-copy-mode","sessionId":"agentboard-e2e-1792873321659:@2","attachId":1}
+SENT {"type":"tmux-check-copy-mode","sessionId":"agentboard-e2e-1792873321659:@2","attachId":1}
+[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+SENT {"type":"tmux-check-copy-mode","sessionId":"agentboard-e2e-1792873321659:@2","attachId":1}
+SENT {"type":"tmux-check-copy-mode","sessionId":"agentboard-e2e-1792873321659:@2","attachId":1}
+SENT {"type":"tmux-check-copy-mode","sessionId":"agentboard-e2e-1792873321659:@2","attachId":1}
+SENT {"type":"terminal-ack","outputSeq":4}
+SENT {"type":"tmux-check-copy-mode","sessionId":"agentboard-e2e-1792873321659:@2","attachId":1}
+SENT {"type":"terminal-ack","outputSeq":5}
+  ✘  1 tests/e2e/diagnostic-backend.spec.ts:12:3 › desktop: files go directly into the existing prompt without submitting (6.6s)
+(node:93778) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:93778) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(node:93778) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+SENT {"type":"terminal-resume","claim":1}
+RECV {"type":"terminal-lease","token":"9329b8b1-5be1-4cab-b9f2-3bf937a53c54"}
+SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873321659:@1","tmuxTarget":"agentboard-e2e-1792873321659:@1","cols":53,"rows":42,"attachId":1}
+SENT {"type":"tmux-check-copy-mode","sessionId":"agentboard-e2e-1792873321659:@1","attachId":1}
+[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+SENT {"type":"terminal-resize","sessionId":"agentboard-e2e-1792873321659:@1","cols":53,"rows":42,"attachId":1}
+RECV {"type":"terminal-ready","sessionId":"agentboard-e2e-1792873321659:@1","attachId":1}
+SENT {"type":"terminal-ack","outputSeq":2}
+SENT {"type":"tmux-check-copy-mode","sessionId":"agentboard-e2e-1792873321659:@1","attachId":1}
+SENT {"type":"terminal-ack","outputSeq":3}
+SENT {"type":"terminal-ack","outputSeq":4}
+SENT {"type":"terminal-resize","sessionId":"agentboard-e2e-1792873321659:@1","cols":53,"rows":39,"attachId":1}
+SENT {"type":"terminal-ack","outputSeq":7}
+SENT {"type":"terminal-detach","sessionId":"agentboard-e2e-1792873321659:@1","attachId":1}
+SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873321659:@4","tmuxTarget":"agentboard-e2e-1792873321659:@4","cols":53,"rows":39,"attachId":2}
+SENT {"type":"tmux-check-copy-mode","sessionId":"agentboard-e2e-1792873321659:@4","attachId":2}
+SENT {"type":"terminal-ack","outputSeq":8}
+RECV {"type":"terminal-ready","sessionId":"agentboard-e2e-1792873321659:@4","attachId":2}
+SENT {"type":"terminal-ack","outputSeq":9}
+SENT {"type":"terminal-input","sessionId":"agentboard-e2e-1792873321659:@4","data":"C","attachId":2}
+SENT {"type":"terminal-input","sessionId":"agentboard-e2e-1792873321659:@4","data":"o","attachId":2}
+SENT {"type":"terminal-input","sessionId":"agentboard-e2e-1792873321659:@4","data":"m","attachId":2}
+SENT {"type":"terminal-input","sessionId":"agentboard-e2e-1792873321659:@4","data":"p","attachId":2}
+SENT {"type":"terminal-input","sessionId":"agentboard-e2e-1792873321659:@4","data":"a","attachId":2}
+SENT {"type":"terminal-input","sessionId":"agentboard-e2e-1792873321659:@4","data":"r","attachId":2}
+SENT {"type":"terminal-input","sessionId":"agentboard-e2e-1792873321659:@4","data":"e","attachId":2}
+SENT {"type":"terminal-input","sessionId":"agentboard-e2e-1792873321659:@4","data":":","attachId":2}
+SENT {"type":"terminal-input","sessionId":"agentboard-e2e-1792873321659:@4","data":" ","attachId":2}
+SENT {"type":"tmux-check-copy-mode","sessionId":"agentboard-e2e-1792873321659:@4","attachId":2}
+SENT {"type":"tmux-check-copy-mode","sessionId":"agentboard-e2e-1792873321659:@4","attachId":2}
+SENT {"type":"tmux-check-copy-mode","sessionId":"agentboard-e2e-1792873321659:@4","attachId":2}
+SENT {"type":"tmux-check-copy-mode","sessionId":"agentboard-e2e-1792873321659:@4","attachId":2}
+SENT {"type":"tmux-check-copy-mode","sessionId":"agentboard-e2e-1792873321659:@4","attachId":2}
+SENT {"type":"terminal-ack","outputSeq":11}
+SENT {"type":"tmux-check-copy-mode","sessionId":"agentboard-e2e-1792873321659:@4","attachId":2}
+SENT {"type":"terminal-ack","outputSeq":12}
+  ✘  2 tests/e2e/diagnostic-backend.spec.ts:12:3 › mobile: files go directly into the existing prompt without submitting (6.7s)
+(node:94848) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:94848) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(node:94848) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+SENT {"type":"terminal-resume","claim":1}
+RECV {"type":"terminal-lease","token":"657b5714-db72-49fe-969f-312faedc6efb"}
+SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873321659:@6","tmuxTarget":"agentboard-e2e-1792873321659:@6","cols":168,"rows":50,"attachId":1}
+SENT {"type":"tmux-check-copy-mode","sessionId":"agentboard-e2e-1792873321659:@6","attachId":1}
+[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+SENT {"type":"terminal-ack","outputSeq":1}
+RECV {"type":"terminal-ready","sessionId":"agentboard-e2e-1792873321659:@6","attachId":1}
+SENT {"type":"terminal-ack","outputSeq":2}
+SENT {"type":"terminal-input","sessionId":"agentboard-e2e-1792873321659:@6","data":"C","attachId":1}
+SENT {"type":"terminal-input","sessionId":"agentboard-e2e-1792873321659:@6","data":"o","attachId":1}
+SENT {"type":"terminal-input","sessionId":"agentboard-e2e-1792873321659:@6","data":"m","attachId":1}
+SENT {"type":"terminal-input","sessionId":"agentboard-e2e-1792873321659:@6","data":"p","attachId":1}
+SENT {"type":"terminal-input","sessionId":"agentboard-e2e-1792873321659:@6","data":"a","attachId":1}
+SENT {"type":"terminal-input","sessionId":"agentboard-e2e-1792873321659:@6","data":"r","attachId":1}
+SENT {"type":"terminal-input","sessionId":"agentboard-e2e-1792873321659:@6","data":"e","attachId":1}
+SENT {"type":"terminal-input","sessionId":"agentboard-e2e-1792873321659:@6","data":":","attachId":1}
+SENT {"type":"terminal-input","sessionId":"agentboard-e2e-1792873321659:@6","data":" ","attachId":1}
+SENT {"type":"tmux-check-copy-mode","sessionId":"agentboard-e2e-1792873321659:@6","attachId":1}
+SENT {"type":"tmux-check-copy-mode","sessionId":"agentboard-e2e-1792873321659:@6","attachId":1}
+SENT {"type":"tmux-check-copy-mode","sessionId":"agentboard-e2e-1792873321659:@6","attachId":1}
+SENT {"type":"tmux-check-copy-mode","sessionId":"agentboard-e2e-1792873321659:@6","attachId":1}
+SENT {"type":"tmux-check-copy-mode","sessionId":"agentboard-e2e-1792873321659:@6","attachId":1}
+SENT {"type":"tmux-check-copy-mode","sessionId":"agentboard-e2e-1792873321659:@6","attachId":1}
+SENT {"type":"tmux-check-copy-mode","sessionId":"agentboard-e2e-1792873321659:@6","attachId":1}
+SENT {"type":"terminal-ack","outputSeq":4}
+SENT {"type":"terminal-ack","outputSeq":5}
+  ✘  3 tests/e2e/diagnostic-backend.spec.ts:12:3 › drop: files go directly into the existing prompt without submitting (7.9s)
+(node:95572) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:95572) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(node:95572) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+SENT {"type":"terminal-resume","claim":1}
+RECV {"type":"terminal-lease","token":"70775b7c-e87c-4549-9e3a-df6ac2bdb88b"}
+SENT {"type":"terminal-attach","sessionId":"agentboard-e2e-1792873321659:@8","tmuxTarget":"agentboard-e2e-1792873321659:@8","cols":168,"rows":50,"attachId":1}
+SENT {"type":"tmux-check-copy-mode","sessionId":"agentboard-e2e-1792873321659:@8","attachId":1}
+[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+RECV {"type":"terminal-ready","sessionId":"agentboard-e2e-1792873321659:@8","attachId":1}
+SENT {"type":"terminal-ack","outputSeq":2}
+SENT {"type":"terminal-input","sessionId":"agentboard-e2e-1792873321659:@8","data":"C","attachId":1}
+SENT {"type":"terminal-input","sessionId":"agentboard-e2e-1792873321659:@8","data":"o","attachId":1}
+SENT {"type":"terminal-input","sessionId":"agentboard-e2e-1792873321659:@8","data":"m","attachId":1}
+SENT {"type":"terminal-input","sessionId":"agentboard-e2e-1792873321659:@8","data":"p","attachId":1}
+SENT {"type":"terminal-input","sessionId":"agentboard-e2e-1792873321659:@8","data":"a","attachId":1}
+SENT {"type":"terminal-input","sessionId":"agentboard-e2e-1792873321659:@8","data":"r","attachId":1}
+SENT {"type":"terminal-input","sessionId":"agentboard-e2e-1792873321659:@8","data":"e","attachId":1}
+SENT {"type":"terminal-input","sessionId":"agentboard-e2e-1792873321659:@8","data":":","attachId":1}
+SENT {"type":"terminal-input","sessionId":"agentboard-e2e-1792873321659:@8","data":" ","attachId":1}
+SENT {"type":"tmux-check-copy-mode","sessionId":"agentboard-e2e-1792873321659:@8","attachId":1}
+SENT {"type":"tmux-check-copy-mode","sessionId":"agentboard-e2e-1792873321659:@8","attachId":1}
+SENT {"type":"tmux-check-copy-mode","sessionId":"agentboard-e2e-1792873321659:@8","attachId":1}
+SENT {"type":"tmux-check-copy-mode","sessionId":"agentboard-e2e-1792873321659:@8","attachId":1}
+SENT {"type":"tmux-check-copy-mode","sessionId":"agentboard-e2e-1792873321659:@8","attachId":1}
+SENT {"type":"tmux-check-copy-mode","sessionId":"agentboard-e2e-1792873321659:@8","attachId":1}
+SENT {"type":"terminal-ack","outputSeq":4}
+SENT {"type":"tmux-check-copy-mode","sessionId":"agentboard-e2e-1792873321659:@8","attachId":1}
+SENT {"type":"terminal-ack","outputSeq":5}
+  ✘  4 tests/e2e/diagnostic-backend.spec.ts:12:3 › context-paste: files go directly into the existing prompt without submitting (7.8s)
+[e2e teardown] killed 1 process(es) that outlived the tmux server
+
+
+  1) tests/e2e/diagnostic-backend.spec.ts:12:3 › desktop: files go directly into the existing prompt without submitting
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoContain[2m([22m[32mexpected[39m[2m) // indexOf[22m
+
+    Expected substring: [32m"Compare: "[39m
+    Received string:    [31m"PASTE-REPL READY·················································[39m
+    [31m"[39m
+
+    Call Log:
+    - Timeout 5000ms exceeded while waiting on the predicate
+
+      35 |       await expect(page.locator('.xterm-helper-textarea')).toBeEnabled()
+      36 |       await page.locator('.xterm-helper-textarea').pressSequentially('Compare: ')
+    > 37 |       await expect.poll(() => tmux(['capture-pane', '-t', target, '-p', '-J']).stdout).toContain('Compare: ')
+         |       ^
+      38 |       const uploaded = page.waitForResponse(response => response.url().endsWith('/api/paste-file') && response.ok())
+      39 |       if (mode === 'mobile') {
+      40 |         await expect(page.getByRole('button', { name: 'Choose files', exact: true })).toHaveCount(0)
+        at /Users/garybasin/Code/agentboard-background-pressure/tests/e2e/diagnostic-backend.spec.ts:37:7
+
+    Error Context: .poc-stress-test/backend/results/diagnostic-backend-desktop-ddf55-g-prompt-without-submitting/error-context.md
+
+  2) tests/e2e/diagnostic-backend.spec.ts:12:3 › mobile: files go directly into the existing prompt without submitting
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoContain[2m([22m[32mexpected[39m[2m) // indexOf[22m
+
+    Expected substring: [32m"Compare: "[39m
+    Received string:    [31m"PASTE-REPL READY······································[39m
+    [31m"[39m
+
+    Call Log:
+    - Timeout 5000ms exceeded while waiting on the predicate
+
+      35 |       await expect(page.locator('.xterm-helper-textarea')).toBeEnabled()
+      36 |       await page.locator('.xterm-helper-textarea').pressSequentially('Compare: ')
+    > 37 |       await expect.poll(() => tmux(['capture-pane', '-t', target, '-p', '-J']).stdout).toContain('Compare: ')
+         |       ^
+      38 |       const uploaded = page.waitForResponse(response => response.url().endsWith('/api/paste-file') && response.ok())
+      39 |       if (mode === 'mobile') {
+      40 |         await expect(page.getByRole('button', { name: 'Choose files', exact: true })).toHaveCount(0)
+        at /Users/garybasin/Code/agentboard-background-pressure/tests/e2e/diagnostic-backend.spec.ts:37:7
+
+    Error Context: .poc-stress-test/backend/results/diagnostic-backend-mobile--6ca4b-g-prompt-without-submitting/error-context.md
+
+  3) tests/e2e/diagnostic-backend.spec.ts:12:3 › drop: files go directly into the existing prompt without submitting
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoContain[2m([22m[32mexpected[39m[2m) // indexOf[22m
+
+    Expected substring: [32m"Compare: "[39m
+    Received string:    [31m"PASTE-REPL READY·················································[39m
+    [31m"[39m
+
+    Call Log:
+    - Timeout 5000ms exceeded while waiting on the predicate
+
+      35 |       await expect(page.locator('.xterm-helper-textarea')).toBeEnabled()
+      36 |       await page.locator('.xterm-helper-textarea').pressSequentially('Compare: ')
+    > 37 |       await expect.poll(() => tmux(['capture-pane', '-t', target, '-p', '-J']).stdout).toContain('Compare: ')
+         |       ^
+      38 |       const uploaded = page.waitForResponse(response => response.url().endsWith('/api/paste-file') && response.ok())
+      39 |       if (mode === 'mobile') {
+      40 |         await expect(page.getByRole('button', { name: 'Choose files', exact: true })).toHaveCount(0)
+        at /Users/garybasin/Code/agentboard-background-pressure/tests/e2e/diagnostic-backend.spec.ts:37:7
+
+    Error Context: .poc-stress-test/backend/results/diagnostic-backend-drop-fi-ab54e-g-prompt-without-submitting/error-context.md
+
+  4) tests/e2e/diagnostic-backend.spec.ts:12:3 › context-paste: files go directly into the existing prompt without submitting
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoContain[2m([22m[32mexpected[39m[2m) // indexOf[22m
+
+    Expected substring: [32m"Compare: "[39m
+    Received string:    [31m"PASTE-REPL READY·················································[39m
+    [31m"[39m
+
+    Call Log:
+    - Timeout 5000ms exceeded while waiting on the predicate
+
+      35 |       await expect(page.locator('.xterm-helper-textarea')).toBeEnabled()
+      36 |       await page.locator('.xterm-helper-textarea').pressSequentially('Compare: ')
+    > 37 |       const uploaded = page.waitForResponse(response => response.url().endsWith('/api/paste-file') && response.ok())
+         |       ^
+      38 |       if (mode === 'mobile') {
+      39 |         await expect(page.getByRole('button', { name: 'Choose files', exact: true })).toHaveCount(0)
+      40 |         await page.getByRole('button', { name: 'Paste', exact: true }).click()
+        at /Users/garybasin/Code/agentboard-background-pressure/tests/e2e/diagnostic-backend.spec.ts:37:7
+
+    Error Context: .poc-stress-test/backend/results/diagnostic-backend-context-4ea37-g-prompt-without-submitting/error-context.md
+
+  4 failed
+    tests/e2e/diagnostic-backend.spec.ts:12:3 › desktop: files go directly into the existing prompt without submitting
+    tests/e2e/diagnostic-backend.spec.ts:12:3 › mobile: files go directly into the existing prompt without submitting
+    tests/e2e/diagnostic-backend.spec.ts:12:3 › drop: files go directly into the existing prompt without submitting
+    tests/e2e/diagnostic-backend.spec.ts:12:3 › context-paste: files go directly into the existing prompt without submitting

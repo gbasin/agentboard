@@ -1,0 +1,13 @@
+bun test v1.3.14 (0d9b296a)
+
+src/server/__tests__/terminalRelay.integration.test.ts:
+(pass) isolated terminal relay with real tmux > dashboard stall does not block ping or PTY echo [1203.83ms]
+(pass) isolated terminal relay with real tmux > slow new tmux observer cannot stall a different terminal [1188.10ms]
+(pass) isolated terminal relay with real tmux > resume retains observer, revalidates target, and fences old attach IDs [298.28ms]
+(pass) isolated terminal relay with real tmux > legacy clients and repeated disposal reuse preserve live agent panes [3846.15ms]
+(pass) isolated terminal relay with real tmux > server reclaims silent OPEN and disconnected leases without killing agents [4085.12ms]
+
+ 5 pass
+ 0 fail
+ 34 expect() calls
+Ran 5 tests across 1 file. [10.73s]

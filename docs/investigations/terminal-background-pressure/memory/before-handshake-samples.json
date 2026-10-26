@@ -1,0 +1,56 @@
+{
+  "observations": {
+    "exitCode": 0,
+    "signal": null
+  },
+  "samples": [
+    {
+      "phase": "baseline",
+      "seconds": 0.075,
+      "rss": 31064064,
+      "active": 0,
+      "retiring": 0,
+      "idle": 0,
+      "total": 0,
+      "psRssBytes": 31408128,
+      "clients": 0,
+      "observers": 0
+    },
+    {
+      "phase": "six-handshake-only",
+      "seconds": 2.599,
+      "rss": 120864768,
+      "active": 6,
+      "retiring": 0,
+      "idle": 0,
+      "total": 6,
+      "psRssBytes": 120864768,
+      "clients": 0,
+      "observers": 0
+    },
+    {
+      "phase": "six-handshake-expired",
+      "seconds": 4.613,
+      "rss": 120979456,
+      "active": 0,
+      "retiring": 0,
+      "idle": 6,
+      "total": 6,
+      "psRssBytes": 120979456,
+      "clients": 0,
+      "observers": 0
+    },
+    {
+      "phase": "handshake-final-idle",
+      "seconds": 14.648,
+      "rss": 95158272,
+      "active": 0,
+      "retiring": 0,
+      "idle": 6,
+      "total": 6,
+      "psRssBytes": 95158272,
+      "clients": 0,
+      "observers": 0
+    }
+  ]
+}

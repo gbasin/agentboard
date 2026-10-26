@@ -1,0 +1,23 @@
+import { TerminalLeases } from '../../src/server/relay/leases'
+const leases = new TerminalLeases(message => {
+ if (message.type === 'fatal') { console.error(message.error); process.exit(1) }
+})
+const sessions = JSON.parse(process.env.MEMORY_SESSIONS!)
+leases.update(sessions, true)
+const server = Bun.serve({hostname:'127.0.0.1', port:0,
+ fetch(req, server) {
+  const path = new URL(req.url).pathname
+  if(path === '/shutdown') { setTimeout(shutdown, 10); return new Response('stopping') }
+  if(path === '/ws') {
+   if(server.upgrade(req,{data:{id:crypto.randomUUID(),lease:null,outputSerial:0,outstanding:new Map(),outstandingBytes:0}})) return
+  }
+  const pool=leases as any
+  return Response.json({rss:process.memoryUsage().rss,leases:pool.leases.size,active:[...pool.leases.values()].filter(x=>x.worker).length,retiring:pool.retiring.size,idle:pool.idleWorkers.length,total:[...pool.leases.values()].filter(x=>x.worker).length+pool.retiring.size+pool.idleWorkers.length})
+ },websocket:{
+ open(ws){ws.send(JSON.stringify({type:'sessions',sessions}))},
+ message(ws,raw){const m=JSON.parse(String(raw));leases.progress(ws as any);if(m.type==='ping')ws.send(JSON.stringify({type:'pong',seq:m.seq}));else leases.handle(ws as any,m)},
+ close(ws){leases.close(ws as any)}
+ }})
+console.log(JSON.stringify({port:server.port}))
+function shutdown() { console.error('shutdown entered'); server.stop(true); void leases.shutdown().then(()=>{ console.error('shutdown exiting'); process.exit(0) }) }
+process.on('SIGTERM',shutdown)

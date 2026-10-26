@@ -4,7 +4,7 @@ on:
   push:
     branches: [master, main]
   pull_request:
-    branches: [master, main]
+  workflow_dispatch:
 
 jobs:
   ci:
@@ -71,13 +71,34 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y tmux
 
       - name: Install Playwright browsers
-        run: bunx playwright install --with-deps chromium
+        run: bunx playwright install --with-deps chromium webkit
 
       - name: Build
         run: bun run build
 
+      - name: PR metadata HTTP contention (Chromium and WebKit)
+        run: bun scripts/verify-pr-request-priority.ts
+
       - name: Run e2e tests
-        run: bunx playwright test
+        # Specs mutate one shared application, catalog, and tmux fixture.
+        run: bunx playwright test --workers=1
+
+      - name: Media and Links regression (WebKit)
+        run: bunx playwright test --config playwright.links.config.ts --project webkit
+
+      - name: Terminal resume regression (Chromium and WebKit)
+        run: bunx playwright test --config playwright.resume.config.ts --reporter=line,html
+        env:
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-resume-report
+          PLAYWRIGHT_HTML_OPEN: never
+
+      - name: Upload resume results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: playwright-resume-report
+          path: playwright-resume-report/
+          retention-days: 7
 
       - name: Terminal contention regression
         run: bunx playwright test --config playwright.contention.config.ts --reporter=line,html
@@ -130,3 +151,20 @@ jobs:
         run: |
           bun test src/server/__tests__/groupedSessionLeak.integration.test.ts
           bun test src/server/__tests__/e2eTmuxReap.integration.test.ts
+
+      - name: Terminal relay lifecycle regression (real tmux)
+        run: bun test src/server/__tests__/terminalRelay.integration.test.ts
+
+      - name: Build and smoke-test compiled terminal relay
+        timeout-minutes: 5
+        run: |
+          bun run build
+          bun build src/server/index.ts src/server/sessionRefreshWorker.ts src/server/logMatchWorker.ts src/server/devinSyncWorker.ts src/server/stallWatchdogWorker.ts src/server/sessionReadWorker.ts src/server/sessionMetadataWorker.ts src/server/mediaDiscoveryReaderWorker.ts src/server/mediaDiscoveryWriterWorker.ts src/server/mediaThumbnailWorker.ts src/server/terminalRelayWorker.ts src/server/terminalSessionWorker.ts --compile --outfile "$RUNNER_TEMP/agentboard-relay-smoke"
+          bun scripts/verify-terminal-relay-binary.ts "$RUNNER_TEMP/agentboard-relay-smoke"
+          bun scripts/verify-media-discovery-binary.ts "$RUNNER_TEMP/agentboard-relay-smoke"
+
+      - name: Compiled thumbnail worker recovery and shutdown regression
+        timeout-minutes: 2
+        run: |
+          bun build scripts/verify-media-thumbnail-worker.ts scripts/fixtures/mediaThumbnailDelayedWorker.ts src/server/mediaThumbnailWorker.ts --compile --outfile "$RUNNER_TEMP/agentboard-thumbnail-smoke"
+          "$RUNNER_TEMP/agentboard-thumbnail-smoke"

@@ -1,3 +1,4 @@
+import { resolveWorkerPath } from './workerPath'
 import type { MatchWorkerRequest, MatchWorkerResponse } from './logMatchWorkerTypes'
 
 export type { MatchWorkerRequest, MatchWorkerResponse } from './logMatchWorkerTypes'
@@ -136,9 +137,7 @@ export class LogMatchWorkerClient {
     this.readyPromise.catch(() => {})
 
     // Compiled Bun binaries need string paths; dev mode needs URL resolution
-    const workerPath = import.meta.url.includes('$bunfs')
-      ? './logMatchWorker.ts'
-      : new URL('./logMatchWorker.ts', import.meta.url).href
+    const workerPath = resolveWorkerPath('logMatchWorker')
     const worker = new Worker(workerPath, {
       type: 'module',
     })

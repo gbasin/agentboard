@@ -1,0 +1,39 @@
+import { mkdtempSync, mkdirSync, rmSync } from 'node:fs'
+import path from 'node:path'
+import { tmpdir } from 'node:os'
+const dir = mkdtempSync(path.join(tmpdir(),'ab-size-'))
+const env = {...process.env, TMUX_TMPDIR:dir, TMUX_SESSION:'size-test', AGENTBOARD_DATA_DIR:dir, LOG_FILE:path.join(dir,'relay.log'), LOG_LEVEL:'error', NODE_ENV:'production', AGENTBOARD_TMUX_SET_CLIPBOARD:'0', AGENTBOARD_RELAY_GRACE_MS:'800', AGENTBOARD_RELAY_PROGRESS_MS:'15000'}
+delete env.TMUX; delete env.TMUX_PANE
+const wait=(ms:number)=>new Promise(r=>setTimeout(r,ms))
+const tmux=(...args:string[])=>{const r=Bun.spawnSync(['tmux',...args],{env,stdout:'pipe',stderr:'pipe'});if(r.exitCode)throw Error(r.stderr.toString());return r.stdout.toString().trim()}
+const sockets:WebSocket[]=[];let child:ReturnType<typeof Bun.spawn>|undefined
+const rows:unknown[]=[]
+try {
+ const window=tmux('-f','/dev/null','new-session','-d','-s','size-test','-P','-F','#{window_id}','stty -echo; exec /bin/cat')
+ const id=`size-test:${window}`
+ const session={id,tmuxWindow:id,name:'sizing',projectPath:dir,status:'unknown',lastActivity:new Date().toISOString(),createdAt:new Date().toISOString(),source:'managed'}
+ child=Bun.spawn([process.execPath,'src/server/__tests__/fixtures/relayHost.ts'],{env:{...env,RELAY_TEST_SESSIONS:JSON.stringify([session])},stdout:'pipe',stderr:Bun.file(path.join(dir,'child.err'))})
+ const reader=(child.stdout as ReadableStream<Uint8Array>).getReader();let output='';let url=''
+ while(!url){const p=await reader.read();if(p.done)throw Error('fixture exited');output+=new TextDecoder().decode(p.value);const line=output.split('\n').find(x=>x.startsWith('{"port":'));if(line)url=`ws://127.0.0.1:${JSON.parse(line).port}/ws`}
+ async function peer(cols:number,rows:number,token?:string,claim=1){const ws=new WebSocket(url);sockets.push(ws);const frames:any[]=[];ws.onmessage=e=>{const m=JSON.parse(String(e.data));frames.push(m);if(m.type==='terminal-output'&&m.outputSeq)ws.send(JSON.stringify({type:'terminal-ack',outputSeq:m.outputSeq}))};async function receive(type:string){const end=Date.now()+5000;while(Date.now()<end){const i=frames.findIndex(m=>m.type===type);if(i>=0)return frames.splice(i,1)[0];await wait(10)}throw Error('timeout '+type)};await receive('sessions');const send=(m:object)=>ws.send(JSON.stringify(m));send({type:'terminal-resume',token,claim});const lease=await receive('terminal-lease');async function attach(attachId=1){send({type:'terminal-attach',sessionId:id,tmuxTarget:id,cols,rows,attachId});await receive('terminal-ready');await wait(150)};await attach();return {ws,send,attach,token:lease.token}}
+ function snap(label:string){const result={label,window:tmux('display-message','-p','-t',id,'#{window_width}x#{window_height}:#{pane_width}x#{pane_height}'),windowSize:tmux('show-options','-wAv','-t',id,'window-size'),clients:tmux('list-clients','-F','#{client_tty}|#{client_session}|#{client_width}x#{client_height}|#{client_flags}')};rows.push(result);console.log(JSON.stringify(result))}
+ const desktop=await peer(160,50);snap('desktop only')
+ const before=tmux('list-clients','-F','#{client_tty}').split('\n')
+ const phone=await peer(40,20);const tty=tmux('list-clients','-F','#{client_tty}').split('\n').find(t=>!before.includes(t))!;snap('phone foreground default')
+ phone.send({type:'terminal-input',sessionId:id,attachId:1,data:'phone\r'});await wait(150);snap('phone latest activity')
+ phone.send({type:'terminal-detach',sessionId:id,attachId:1});await wait(150);snap('phone background retained'); tmux('refresh-client','-t',tty,'-f','ignore-size'); await wait(150); snap('manual ignore-size while latest phone background'); tmux('refresh-client','-t',tty,'-f','!ignore-size'); await wait(150)
+ desktop.send({type:'terminal-input',sessionId:id,attachId:1,data:'desktop\r'});await wait(150);snap('desktop input after phone background')
+ tmux('set-window-option','-t',id,'window-size','smallest');await wait(100);snap('smallest while phone background')
+ tmux('refresh-client','-t',tty,'-f','ignore-size');await wait(150);snap('manual ignore-size on retained phone')
+ tmux('refresh-client','-t',tty,'-f','!ignore-size');await phone.attach(2);snap('phone foreground again smallest')
+ phone.ws.close();await wait(100);snap('phone disconnected retained')
+ await wait(2500);snap('phone disconnected expired')
+ const resumed=await peer(40,20,phone.token,2);snap('phone returns after expiry'); console.log(JSON.stringify({sameToken:resumed.token===phone.token}))
+ resumed.ws.close()
+ await Bun.write('.poc-stress-test/sizing/results.json',JSON.stringify({tmuxVersion:tmux('-V'),rows},null,2))
+} finally {
+ for(const ws of sockets)ws.close()
+ if(child){child.kill();console.log('child exit',await child.exited,child.signalCode)}
+ try{for(const name of tmux('list-sessions','-F','#{session_name}').split('\n'))tmux('kill-session','-t',`=${name}`)}catch{}
+ rmSync(dir,{recursive:true,force:true})
+}

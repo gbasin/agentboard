@@ -10,7 +10,10 @@ class FakeWebSocket {
   static instances: FakeWebSocket[] = []
 
   readyState = FakeWebSocket.CONNECTING
-  sent: string[] = []
+  allSent: string[] = []
+  // Existing heartbeat tests inspect application traffic separately from the
+  // lease handshake, which has dedicated assertions below.
+  get sent() { return this.allSent.filter(raw => JSON.parse(raw).type !== 'terminal-resume') }
   bufferedAmount = 0
   onopen: (() => void) | null = null
   onmessage: ((event: { data: string }) => void) | null = null
@@ -26,7 +29,7 @@ class FakeWebSocket {
     if (this.throwOnSend) {
       throw new Error('send failed')
     }
-    this.sent.push(data)
+    this.allSent.push(data)
   }
 
   close() {
@@ -37,6 +40,7 @@ class FakeWebSocket {
   triggerOpen() {
     this.readyState = FakeWebSocket.OPEN
     this.onopen?.()
+    this.onmessage?.({ data: JSON.stringify({ type: 'server-config', catalogVersion: 2 }) })
   }
 
   triggerMessage(payload: string) {
@@ -191,6 +195,8 @@ describe('WebSocketManager', () => {
 
     manager.connect()
     const ws = FakeWebSocket.instances[0]
+    ws?.triggerOpen()
+    messages.length = 0
     ws?.triggerMessage(JSON.stringify({ type: 'sessions', sessions: [] }))
     ws?.triggerMessage('{bad-json}')
 
@@ -618,22 +624,20 @@ describe('forceReconnect via visibilitychange', () => {
 })
 
 describe('forceReconnect via pageshow', () => {
-  test('reconnects on bfcache restore (persisted=true) even with healthy socket', () => {
+  test('verifies a surviving socket on bfcache restore', () => {
     const manager = new WebSocketManager()
     manager.connect()
     FakeWebSocket.instances[0]!.triggerOpen()
     manager.startLifecycleListeners()
 
-    // bfcache restore always forces reconnect — socket is stale
     firePageShow(true)
-
-    // Old socket should be torn down immediately
-    expect(FakeWebSocket.instances[0]!.onopen).toBeNull()
-
-    // Fire settle timer to trigger connect
-    fireSettleTimer()
-
-    expect(FakeWebSocket.instances).toHaveLength(2)
+    const ws = FakeWebSocket.instances[0]!
+    expect(manager.getStatus()).toBe('reconnecting')
+    expect(ws.onopen).not.toBeNull()
+    respondWithPong(ws)
+    expect(manager.getStatus()).toBe('connected')
+    expect(manager.getConnectionEpoch()).toBe(2)
+    expect(FakeWebSocket.instances).toHaveLength(1)
   })
 
   test('does not reconnect on normal navigation (persisted=false)', () => {
@@ -795,7 +799,6 @@ describe('zombie OPEN socket detection', () => {
 
 describe('scheduleReconnect while hidden', () => {
   test('does not schedule timer when page is hidden', () => {
-    mockVisibilityState = 'hidden'
     const manager = new WebSocketManager()
     const statuses: string[] = []
     manager.subscribeStatus((status) => statuses.push(status))
@@ -805,6 +808,7 @@ describe('scheduleReconnect while hidden', () => {
     ws.triggerOpen()
 
     // Close while hidden
+    mockVisibilityState = 'hidden'
     ws.close()
 
     // Status should be reconnecting but no timer scheduled
@@ -1007,7 +1011,7 @@ describe('heartbeat ping/pong', () => {
 })
 
 describe('forceReconnect debounce', () => {
-  test('pageshow(persisted=true) force-reconnects even during active verification', () => {
+  test('pageshow coalesces with an active visibility verification', () => {
     const manager = new WebSocketManager()
     manager.connect()
     FakeWebSocket.instances[0]!.triggerOpen()
@@ -1018,15 +1022,12 @@ describe('forceReconnect debounce', () => {
     const ws = FakeWebSocket.instances[0]!
     expect(ws.sent).toHaveLength(1) // verify ping sent
 
-    // Immediately fire pageshow(persisted=true) — always force-reconnects
     firePageShow(true)
-
-    // Socket destroyed by forceReconnect (cancels in-progress verify)
-    expect(ws.onopen).toBeNull()
-
-    // Fire settle timer → new socket
-    fireSettleTimer()
-    expect(FakeWebSocket.instances).toHaveLength(2)
+    expect(ws.onopen).not.toBeNull()
+    expect(ws.sent).toHaveLength(1)
+    respondWithPong(ws)
+    expect(FakeWebSocket.instances).toHaveLength(1)
+    expect(manager.getStatus()).toBe('connected')
   })
 })
 
@@ -1223,7 +1224,8 @@ describe('leaked socket tracking', () => {
 
     manager.startLifecycleListeners()
 
-    // Force reconnect via visibility change
+    // A background transition cancels the pending connection timeout.
+    fireVisibilityChange('hidden')
     fireVisibilityChange('visible')
 
     // After forceReconnect(force=true), leaked sockets should be purged
@@ -1247,6 +1249,7 @@ describe('leaked socket tracking', () => {
     expect(leaked().size).toBe(2)
 
     manager.startLifecycleListeners()
+    fireVisibilityChange('hidden')
     fireVisibilityChange('visible')
 
     // Both sockets should be force-closed (readyState = CLOSED)
@@ -1503,7 +1506,7 @@ describe('verification ping on resume', () => {
     expect(FakeWebSocket.instances).toHaveLength(1)
   })
 
-  test('second verify supersedes first (idempotent)', () => {
+  test('repeated resume reuses the same verification', () => {
     const manager = new WebSocketManager()
     manager.connect()
     const ws = FakeWebSocket.instances[0]!
@@ -1515,19 +1518,16 @@ describe('verification ping on resume', () => {
     const firstVerify = timers.find((t) => t.delay === 1500)
     expect(firstVerify).toBeDefined()
 
-    // Second verify — should cancel first and create new
+    // A repeated signal must not invalidate the in-flight pong.
     fireVisibilityChange('visible')
 
     // Only one verify timer active
     const verifyTimers = timers.filter((t) => t.delay === 1500)
     expect(verifyTimers).toHaveLength(1)
-    expect(verifyTimers[0]!.id).not.toBe(firstVerify!.id)
-
-    // Two pings sent (one per verify)
-    expect(ws.sent).toHaveLength(2)
-    const ping1 = JSON.parse(ws.sent[0]!)
-    const ping2 = JSON.parse(ws.sent[1]!)
-    expect(ping2.seq).toBe(ping1.seq + 1)
+    expect(verifyTimers[0]!.id).toBe(firstVerify!.id)
+    expect(ws.sent).toHaveLength(1)
+    respondWithPong(ws)
+    expect(manager.getStatus()).toBe('connected')
   })
 
   test('early heartbeat fires at 5s then switches to normal 20s interval', () => {
@@ -1704,5 +1704,88 @@ test('failed opening releases its tracking reference on close', () => {
   FakeWebSocket.instances[0]!.close()
   expect((manager as unknown as { leakedSockets: Set<unknown> }).leakedSockets.size).toBe(0)
   expect(manager.getStatus()).toBe('reconnecting')
+  manager.disconnect()
+})
+
+
+describe('catalog protocol negotiation', () => {
+  test('withholds terminal handshake and input until the server confirms version 2', () => {
+    const manager = new WebSocketManager()
+    manager.connect()
+    const ws = FakeWebSocket.instances[0]!
+    expect(ws.url).toEndWith('/ws?catalog=2')
+    ws.readyState = FakeWebSocket.OPEN
+    ws.onopen?.()
+    expect(manager.getStatus()).toBe('connecting')
+    expect(ws.allSent).toHaveLength(0)
+    expect(manager.send({ type: 'terminal-input', sessionId: 'a', data: 'unsafe' })).toBe(false)
+    ws.triggerMessage(JSON.stringify({ type: 'server-config', catalogVersion: 2 }))
+    expect(manager.getStatus()).toBe('connected')
+    expect(ws.allSent.map(raw => JSON.parse(raw).type)).toEqual(['terminal-resume'])
+    manager.disconnect()
+  })
+
+  test('an old server requires reload without retries, including hide/show and explicit connect', () => {
+    const manager = new WebSocketManager()
+    const errors: Array<string | null> = []
+    manager.subscribeStatus((_status, error) => errors.push(error))
+    manager.startLifecycleListeners()
+    manager.connect()
+    const ws = FakeWebSocket.instances[0]!
+    ws.readyState = FakeWebSocket.OPEN
+    ws.onopen?.()
+    ws.triggerMessage(JSON.stringify({ type: 'server-config' }))
+    expect(manager.getStatus()).toBe('disconnected')
+    expect(errors.at(-1)).toContain('Reload this tab')
+    expect(ws.allSent).toHaveLength(0)
+    expect(manager.send({ type: 'session-refresh' })).toBe(false)
+    fireVisibilityChange('hidden')
+    fireVisibilityChange('visible')
+    firePageShow(true)
+    fireAllIntervals()
+    for (const timer of timers.slice()) timer.callback()
+    manager.connect()
+    expect(FakeWebSocket.instances).toHaveLength(1)
+    expect(manager.getStatus()).toBe('disconnected')
+    expect(errors.at(-1)).toContain('Reload this tab')
+    manager.stopLifecycleListeners()
+  })
+})
+
+test('a legacy snapshot arriving before config requires reload without applying its contents', () => {
+  const manager = new WebSocketManager()
+  const messages: ServerMessage[] = []
+  manager.subscribe(message => messages.push(message))
+  manager.connect()
+  const ws = FakeWebSocket.instances[0]!
+  ws.readyState = FakeWebSocket.OPEN
+  ws.onopen?.()
+  ws.triggerMessage(JSON.stringify({ type: 'sessions', sessions: [{ id: 'legacy' }] }))
+  expect(messages.map(message => message.type)).toEqual(['error'])
+  expect(manager.getStatus()).toBe('disconnected')
+  manager.connect()
+  expect(FakeWebSocket.instances).toHaveLength(1)
+})
+
+test('silence during negotiation uses network retry instead of claiming version incompatibility', () => {
+  const manager = new WebSocketManager()
+  const errors: Array<string | null> = []
+  manager.subscribeStatus((_status, error) => errors.push(error))
+  manager.connect()
+  const ws = FakeWebSocket.instances[0]!
+  ws.readyState = FakeWebSocket.OPEN
+  ws.onopen?.()
+  expect(timers.some(timer => timer.delay === 3000)).toBe(false)
+  const negotiation = timers.find(timer => timer.delay === 30_000)!
+  expect(negotiation).toBeDefined()
+  negotiation.callback()
+  expect(manager.getStatus()).toBe('reconnecting')
+  expect(errors.at(-1)).toContain('handshake timed out')
+  const retry = timers.find(timer => timer.delay === 1000)!
+  expect(retry).toBeDefined()
+  retry.callback()
+  expect(FakeWebSocket.instances).toHaveLength(2)
+  FakeWebSocket.instances[1]!.triggerOpen()
+  expect(manager.getStatus()).toBe('connected')
   manager.disconnect()
 })

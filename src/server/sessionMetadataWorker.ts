@@ -1,21 +1,22 @@
 /// <reference lib="webworker" />
-/** Transcript filesystem access stays here, never in session-view construction. */
+/** Pull-request extraction has its own queue; media reads and discovery run elsewhere. */
 import type { AgentSessionRecord } from './db'
-import type { SessionMedia, SessionPullRequest } from '../shared/types'
+import type { SessionPullRequest } from '../shared/types'
+import type { MediaSummary } from '../shared/media'
 import type { CodexSubagentLink } from './logMatchWorkerTypes'
-import { pullRequestScanPlan, rescanMedia, rescanPullRequests, getCachedMedia, getCachedPullRequests } from './agentSessions'
+import { pullRequestScanPlan, rescanPullRequests, getCachedPullRequests } from './agentSessions'
 import { setCodexSubagentIndex } from './subagentLogs'
 
 export interface SessionMetadata {
   prs: SessionPullRequest[]
-  media: SessionMedia[]
+  mediaSummary?: MediaSummary
 }
 export type MetadataRequest =
   | { kind: 'scan'; id: number; record: AgentSessionRecord }
   | { kind: 'index'; links: CodexSubagentLink[] }
   | { kind: 'shutdown' }
 export type MetadataResponse = { id: number } & (
-  | { metadata: SessionMetadata }
+  | { metadata: Pick<SessionMetadata, 'prs'> }
   | { error: string }
 )
 
@@ -25,13 +26,10 @@ ctx.onmessage = (event: MessageEvent<MetadataRequest>) => {
   if (request.kind === 'shutdown') { ctx.close(); return }
   if (request.kind === 'index') { setCodexSubagentIndex(request.links); return }
   try {
-    // The DB size can lag the file, and cannot detect a same-size rewrite.
+    // DB size can lag the file and does not detect same-size rewrites.
     const record = { ...request.record, lastKnownLogSize: null }
-    const plan = pullRequestScanPlan(record)
-    rescanPullRequests(record, plan)
-    rescanMedia(record, plan)
-    const metadata = { prs: getCachedPullRequests(record), media: getCachedMedia(record) }
-    ctx.postMessage({ id: request.id, metadata } satisfies MetadataResponse)
+    rescanPullRequests(record, pullRequestScanPlan(record))
+    ctx.postMessage({ id: request.id, metadata: { prs: getCachedPullRequests(record) } } satisfies MetadataResponse)
   } catch (error) {
     ctx.postMessage({ id: request.id, error: String(error) } satisfies MetadataResponse)
   }

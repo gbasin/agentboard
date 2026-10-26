@@ -1,0 +1,130 @@
+[
+  {
+    "build": "release",
+    "profile": "rate128",
+    "emulateIOS": true,
+    "phoneSettings": true,
+    "connections": 1,
+    "pings": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "pongs": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "timeouts": 0,
+    "connectTimeouts": 0,
+    "ready": 1,
+    "finalInput": true,
+    "error": null,
+    "network": {
+      "connections": 1,
+      "upBytes": 9444,
+      "downBytes": 3714660,
+      "maxQueuedBytes": 1114112,
+      "segments": 1238
+    },
+    "bursts": 0
+  },
+  {
+    "build": "pr",
+    "profile": "rate128",
+    "emulateIOS": true,
+    "phoneSettings": true,
+    "connections": 1,
+    "pings": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "pongs": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "timeouts": 0,
+    "connectTimeouts": 0,
+    "ready": 1,
+    "finalInput": true,
+    "error": null,
+    "network": {
+      "connections": 1,
+      "upBytes": 14754,
+      "downBytes": 3723255,
+      "maxQueuedBytes": 1110016,
+      "segments": 1353
+    },
+    "bursts": 0
+  },
+  {
+    "build": "release",
+    "profile": "rate256",
+    "emulateIOS": true,
+    "phoneSettings": true,
+    "connections": 1,
+    "pings": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "pongs": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "timeouts": 0,
+    "connectTimeouts": 0,
+    "ready": 1,
+    "finalInput": true,
+    "error": null,
+    "network": {
+      "connections": 1,
+      "upBytes": 10012,
+      "downBytes": 4136200,
+      "maxQueuedBytes": 1114112,
+      "segments": 1384
+    },
+    "bursts": 0
+  },
+  {
+    "build": "pr",
+    "profile": "rate256",
+    "emulateIOS": true,
+    "phoneSettings": true,
+    "connections": 1,
+    "pings": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "pongs": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "timeouts": 0,
+    "connectTimeouts": 0,
+    "ready": 1,
+    "finalInput": true,
+    "error": null,
+    "network": {
+      "connections": 1,
+      "upBytes": 16702,
+      "downBytes": 4068691,
+      "maxQueuedBytes": 1110016,
+      "segments": 1501
+    },
+    "bursts": 0
+  }
+]
