@@ -53,19 +53,19 @@ test('opening a large image loads its original while retaining the cached previe
   await mount({ previewSrc: 'blob:tile-cache' })
   expect(calls.map(call => call.url)).toEqual(['blob:tile-cache'])
   expect(find('media-lightbox-preview')).toHaveLength(1)
-  expect(find('media-lightbox-original')[0].props.src).toBe(props.media.url)
+  expect(find('media-lightbox-original')[0].props.src).toBe(props.media.url + '&delivery=2')
   await flush(() => find('media-lightbox-original')[0].props.onLoad())
   expect(find('media-lightbox-preview')).toHaveLength(0)
 })
 
 test('local and external images load only the selected original', async () => {
   await mount({ media: media({ bytes: 1000, width: 96, height: 48 }) })
-  expect(find('media-lightbox-original')[0].props.src).toBe(props.media.url)
+  expect(find('media-lightbox-original')[0].props.src).toBe(props.media.url + '&delivery=2')
   expect(calls).toHaveLength(0)
   await update({ media: media({ url: 'https://example.com/image.png', bytes: 100 }) })
   expect(calls).toHaveLength(0)
   expect(find('media-lightbox-original')).toHaveLength(1)
-  expect(find('media-lightbox-original')[0].props.src).toBe(props.media.url)
+  expect(find('media-lightbox-original')[0].props.src).toBe('https://example.com/image.png')
 })
 
 test('originals unmount while backgrounded and stale loads cannot complete a resumed selection', async () => {
@@ -78,7 +78,7 @@ test('originals unmount while backgrounded and stale loads cannot complete a res
   expect(find('media-lightbox-original')[0].props.className).toContain('invisible')
   await update({ media: media({ url: '/api/session-media/session?offset=2&digest=def' }) })
   expect(find('media-lightbox-original')).toHaveLength(1)
-  expect(find('media-lightbox-original')[0].props.src).toBe(props.media.url)
+  expect(find('media-lightbox-original')[0].props.src).toBe(props.media.url + '&delivery=2')
 })
 
 test('previous/next buttons and arrow keys respect boundaries, loading and readiness', async () => {
@@ -128,7 +128,7 @@ test('a failed preview does not block originals; failed originals offer explicit
   await mount({ previewSrc: 'blob:tile-cache' })
   expect(find('media-lightbox-preview')).toHaveLength(0)
   expect(find('media-lightbox-original')).toHaveLength(1)
-  expect(renderer!.root.findByType('a').props.href).toBe(props.media.url)
+  expect(renderer!.root.findByType('a').props.href).toBe(props.media.url + '&delivery=2')
   await update({ enabled: false }); await update({ enabled: true })
   expect(calls).toHaveLength(2)
   await flush(() => find('media-lightbox-original')[0].props.onError())

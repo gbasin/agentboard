@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { SessionMedia } from '@shared/types'
 import './MediaLightbox.css'
+import { mediaPayloadUrl } from '../utils/mediaPayloadUrl'
 import { fetchMediaThumbnail } from '../hooks/useMediaThumbnail'
 import { ChevronRightIcon, Image01Icon, XCloseIcon } from './icons'
 import { ICON_SIZE } from './controlStyles'
@@ -162,7 +163,7 @@ function ImageView({ media, previewSrc, enabled }: Pick<MediaLightboxProps, 'med
         {preview.status === 'ready' && full !== 'ready' && <img data-testid="media-lightbox-preview" src={preview.src}
           alt={`${media.label || 'Image'} preview`} className="media-lightbox-image"
           onError={() => { source.current = undefined; setPreview({ status: 'error' }) }} />}
-        {loadingOriginal && <img key={token} data-testid="media-lightbox-original" src={media.url} alt={media.label || 'Image'}
+        {loadingOriginal && <img key={token} data-testid="media-lightbox-original" src={mediaPayloadUrl(media.url)} alt={media.label || 'Image'}
           className={`media-lightbox-image ${full === 'ready' ? '' : 'invisible'}`}
           onLoad={() => { if (visible.current && generation.current === token) setFull('ready') }}
           onError={() => { if (visible.current && generation.current === token) setFull('error') }} />}
@@ -179,7 +180,7 @@ function ImageView({ media, previewSrc, enabled }: Pick<MediaLightboxProps, 'med
         disabled={!enabled} onClick={() => { generation.current++; setFull('loading') }}>
         Retry full image
       </button>}
-      <a href={media.url} target="_blank" rel="noreferrer noopener" aria-disabled={!enabled} tabIndex={enabled ? 0 : -1}
+      <a href={mediaPayloadUrl(media.url)} target="_blank" rel="noreferrer noopener" aria-disabled={!enabled} tabIndex={enabled ? 0 : -1}
         onClick={event => { if (!enabled) event.preventDefault() }}
         className={`flex min-h-[44px] items-center text-accent underline underline-offset-2 ${enabled ? '' : 'opacity-35'}`}>Open original</a>
     </div>

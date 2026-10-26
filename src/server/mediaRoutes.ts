@@ -11,6 +11,7 @@ import { metadataIdentity } from './sessionMetadataClient'
 import { isValidSessionId } from './validators'
 import { parseMediaAnchor } from './mediaAnchor'
 import { mediaStreamResponse } from './mediaStreamResponse'
+import { mediaPayloadHeaders } from './mediaPayloadHeaders'
 
 interface Dependencies {
   getRecord(id: string): AgentSessionRecord | null | undefined
@@ -153,11 +154,7 @@ export function createMediaRoutes(deps: Dependencies) {
       if (expected !== undefined && (!Number.isSafeInteger(Number(expected)) || Number(expected) !== body.length)) {
         return c.json({ error: 'Stale media ref' }, 409)
       }
-      return new Response(new Uint8Array(body), { headers: {
-        'Content-Type': item.mediaType ?? 'application/octet-stream',
-        'Cache-Control': digest ? 'private, max-age=31536000, immutable' : 'no-store',
-        'X-Content-Type-Options': 'nosniff',
-      } })
+      return new Response(new Uint8Array(body), { headers: mediaPayloadHeaders(item.mediaType, Boolean(digest)) })
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return c.json({ error: 'Media not found' }, 404)
       return c.json({ error: 'Unable to read media' }, 500)

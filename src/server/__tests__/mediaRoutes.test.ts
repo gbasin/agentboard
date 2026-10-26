@@ -133,3 +133,32 @@ test('stream inputs are validated before watch dispatch and unavailable discover
   expect((await app.request('/session-12345678-abcdef/items?stream=1&cursor=' + 'x'.repeat(8193))).status).toBe(400)
   expect(watched).toBe(false)
 })
+
+test('transcript MIME types cannot serve active documents inline, including legacy references', async () => {
+  const f = fixture()
+  for (const type of ['text/html', 'image/svg+xml', 'application/xhtml+xml', 'application/javascript', 'unknown/type']) {
+    const line = f.image('<script>document.title="unsafe"</script>').replace('image/png', type)
+    fs.writeFileSync(f.log, line + '\n')
+    for (const url of [f.url(line), f.url(line).replace(/&digest=[^&]+/, '')]) {
+      const response = await f.app.request(url)
+      expect(response.status).toBe(200)
+      expect(response.headers.get('Content-Type')).toBe('application/octet-stream')
+      expect(response.headers.get('Content-Disposition')).toBe('attachment')
+      expect(response.headers.get('Content-Security-Policy')).toContain('sandbox')
+      expect(response.headers.get('Cache-Control')).toBe('no-store')
+    }
+  }
+})
+
+test('safe images, PDFs, and plain text preserve their exact bytes with sandboxed inline delivery', async () => {
+  const f = fixture()
+  for (const type of ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif', 'application/pdf', 'text/plain']) {
+    const line = f.image('payload').replace('image/png', type)
+    fs.writeFileSync(f.log, line + '\n')
+    const response = await f.app.request(f.url(line, '&delivery=2'))
+    expect(response.headers.get('Content-Type')).toBe(type)
+    expect(response.headers.get('Content-Disposition')).toBe('inline')
+    expect(response.headers.get('Content-Security-Policy')).toContain("default-src 'none'")
+    expect(await response.text()).toBe('payload')
+  }
+})

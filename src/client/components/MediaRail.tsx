@@ -14,6 +14,7 @@
 import MediaDiscoveryStatus from './MediaDiscoveryStatus'
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import SessionLinks from './SessionLinks'
+import { mediaPayloadUrl } from '../utils/mediaPayloadUrl'
 import { useMediaThumbnail } from '../hooks/useMediaThumbnail'
 import MediaLightbox from './MediaLightbox'
 import { useMediaLightboxNavigation } from '../hooks/useMediaLightboxNavigation'
@@ -90,7 +91,7 @@ function MediaChip({
         if (isImage) {
           event.currentTarget.focus({ preventScroll: true })
           onOpen(media)
-        } else window.open(media.url, '_blank', 'noopener')
+        } else window.open(mediaPayloadUrl(media.url), '_blank', 'noopener')
       }}
       title={caption || media.kind}
       aria-label={caption || (isImage ? 'Image' : 'Document')}
