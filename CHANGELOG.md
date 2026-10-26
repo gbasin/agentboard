@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.37.1](https://github.com/gbasin/agentboard/compare/v0.37.0...v0.37.1) (2026-10-26)
+
+
+### Bug Fixes
+
+* prevent terminal focus from scrolling the board sideways ([#451](https://github.com/gbasin/agentboard/issues/451)) ([fce73ab](https://github.com/gbasin/agentboard/commit/fce73ab5a9eb7abdcfa7b86df6fc085c3ec62d89))
+
 ## [0.37.0](https://github.com/gbasin/agentboard/compare/v0.36.3...v0.37.0) (2026-10-26)
 
 
