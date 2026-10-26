@@ -46,7 +46,7 @@ export default function SessionLinks({ session, ready, search, onRefresh }: { se
   return <>
     {pages.changed && <button type="button" onClick={() => { setPageNumber(0); onRefresh(); void pages.refresh() }} disabled={!ready}
       aria-label="Refresh media" className="shrink-0 px-3 py-2 text-left text-xs text-accent">Links changed · Refresh</button>}
-    <div ref={scroll} data-testid="links-scroll" role="region" aria-label="Session links, oldest first"
+    <div ref={scroll} data-testid="links-scroll" role="region" aria-label="Session links, newest first"
       className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
       {current?.page.items.map(item => <LinkRow key={item.url} item={item} />)}
       {current && !current.page.items.length && <p className="px-3 py-4 text-xs text-secondary">
@@ -62,16 +62,16 @@ export default function SessionLinks({ session, ready, search, onRefresh }: { se
             if (pages.pages.some(p => p.number === current.number - 1)) setPageNumber(current.number - 1)
             else if (pages.canLoadEarlier) { setPageNumber(current.number - 1); void pages.loadPrevious() }
             else { setPageNumber(0); void pages.refresh() }
-          }}>Earlier links</button>}
+          }}>Newer links</button>}
         {current?.page.nextCursor && !pages.changed && <button type="button" disabled={pages.status === 'loading' || !ready}
           className="ml-auto min-h-[44px]" onClick={() => {
             setPageNumber(current.number + 1)
             if (!pages.pages.some(p => p.number === current.number + 1)) void pages.loadNext()
-          }}>Newer links</button>}
+          }}>Older links</button>}
       </div>
     </div>
     <div className="flex shrink-0 justify-between border-t border-border/60 px-3 py-1.5 text-[11px] text-secondary">
-      <span>This session</span><span>Oldest first</span>
+      <span>This session</span><span>Newest first</span>
     </div>
   </>
 }

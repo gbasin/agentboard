@@ -23,7 +23,7 @@ test('closed rail downloads no pages; opening serves real bounded image bytes', 
     const url = await image.getAttribute('src')
     expect(url).toMatch(/^blob:/)
     const items = await fixture.items()
-    const response = await request.get(items.items[0].url + '&thumbnail=1')
+    const response = await request.get(items.items.find(item => item.kind === 'image')!.url + '&thumbnail=1')
     expect(response.status()).toBe(200)
     expect(response.headers()['content-type']).toBe('image/png')
     expect((await response.body()).length).toBeLessThan(128 * 1024)
@@ -43,7 +43,7 @@ test('closed rail downloads no pages; opening serves real bounded image bytes', 
   } finally { fixture.cleanup() }
 })
 
-test('link pagination loads the next oldest-first page; live additions do not fetch or move the view', async ({ page, request }) => {
+test('link pagination loads the next newest-first page; live additions do not fetch or move the view', async ({ page, request }) => {
   const fixture = await mediaFixture(request, 85)
   let requests = 0
   page.on('request', r => { if (r.url().includes(`/session-media/${fixture.sessionId}/items`)) requests++ })
@@ -53,17 +53,19 @@ test('link pagination loads the next oldest-first page; live additions do not fe
     const rail = page.getByTestId('media-rail'), strip = page.getByTestId('links-scroll')
     await expect(rail.getByRole('link')).toHaveCount(40)
     expect(requests).toBe(1)
-    await expect(rail.getByRole('link').first()).toHaveAttribute('aria-label', /^Item 00000 /)
-    await page.getByRole('button', { name: 'Newer links', exact: true }).click()
+    await expect(rail.getByRole('link').first()).toHaveAttribute('aria-label', /^Item 00084 /)
+    await page.getByRole('button', { name: 'Older links', exact: true }).click()
     await expect.poll(() => requests).toBe(2)
-    await expect(rail.getByRole('link').last()).toHaveAttribute('aria-label', /^Item 00079 /)
+    await expect(rail.getByRole('link').last()).toHaveAttribute('aria-label', /^Item 00005 /)
     const position = await strip.evaluate(el => el.scrollTop)
     fixture.append(85)
     await expect.poll(async () => (await fixture.find())?.mediaSummary?.total, { timeout: 30_000 }).toBe(86)
     await expect(page.getByRole('button', { name: 'Refresh media', exact: true })).toBeVisible()
     expect(requests).toBe(2)
     expect(await strip.evaluate(el => el.scrollTop)).toBe(position)
-    await expect(rail.getByRole('link').last()).toHaveAttribute('aria-label', /^Item 00079 /)
+    await expect(rail.getByRole('link').last()).toHaveAttribute('aria-label', /^Item 00005 /)
+    await page.getByRole('button', { name: 'Refresh media', exact: true }).click()
+    await expect(rail.getByRole('link').first()).toHaveAttribute('aria-label', /^Item 00085 /)
   } finally { fixture.cleanup() }
 })
 
@@ -83,8 +85,8 @@ test('all 2,366 items remain reachable with bounded pages and a small summary', 
     } while (cursor)
     expect(urls).toHaveLength(2366)
     expect(new Set(urls).size).toBe(2366)
-    expect(labels[0]).toMatch(/^Item 00000 /)
-    expect(labels.at(-1)).toMatch(/^Item 02365 /)
+    expect(labels[0]).toMatch(/^Item 02365 /)
+    expect(labels.at(-1)).toMatch(/^Item 00000 /)
   } finally { fixture.cleanup() }
 })
 

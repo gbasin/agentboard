@@ -35,6 +35,11 @@ for (const mobile of [false, true]) {
       await expect(rail.getByRole('link')).toHaveCount(40)
       await expect(rail.getByRole('button', { name: 'Links 85', exact: true }).locator('svg')).toHaveCount(1)
       await expect(rail.getByRole('button', { name: 'Media 1', exact: true }).locator('svg')).toHaveCount(1)
+      await expect(rail.getByRole('link').first()).toHaveAccessibleName('Report 83')
+      const capture = fixture.capture()
+      await rail.getByRole('button', { name: 'Search links', exact: true }).click()
+      await page.getByRole('searchbox', { name: 'Find link' }).fill('Review report')
+      await expect(rail.getByRole('link')).toHaveCount(1)
       await rail.getByRole('button', { name: 'Source for Review report', exact: true }).click()
       await expect(page.getByTestId('link-source')).toContainText('<img src=x onerror=alert(1)>')
       await expect(rail.locator('img')).toHaveCount(0)
@@ -43,11 +48,9 @@ for (const mobile of [false, true]) {
       expect(redirect.status()).toBe(302)
       expect(redirect.headers().location).toBe(destination)
       expect(externalRequests).toBe(0)
-      const capture = fixture.capture()
-      await rail.getByRole('button', { name: 'Search links', exact: true }).click()
-      await page.getByRole('searchbox', { name: 'Find link' }).fill('Report 83')
+      await page.getByRole('searchbox', { name: 'Find link' }).fill('Report 0')
       await expect(rail.getByRole('link')).toHaveCount(1)
-      await expect(rail.getByRole('link')).toHaveAccessibleName('Report 83')
+      await expect(rail.getByRole('link')).toHaveAccessibleName('Report 0')
       expect(fixture.capture()).toBe(capture) // search never types into the terminal
       await page.getByRole('searchbox').fill('no-such-link')
       await expect(rail).toContainText('No matching links.')
@@ -106,16 +109,16 @@ test('bounded link page navigation reaches the end and can return through evicte
     await page.goto('/'); await fixture.select(page)
     await page.getByTestId('media-rail-pill').click()
     const rail = page.getByTestId('media-rail')
-    for (const first of [40, 80, 120, 160]) {
-      await rail.getByRole('button', { name: 'Newer links', exact: true }).click()
+    for (const first of [129, 89, 49, 9]) {
+      await rail.getByRole('button', { name: 'Older links', exact: true }).click()
       await expect(rail.getByRole('link').first()).toHaveAccessibleName(new RegExp(`^Item ${String(first).padStart(5, '0')} `))
       expect(await rail.getByRole('link').count()).toBeLessThanOrEqual(40)
     }
     await expect(rail.getByRole('link')).toHaveCount(10)
-    for (const first of [120, 80, 40, 0]) {
-      await rail.getByRole('button', { name: 'Earlier links', exact: true }).click()
+    for (const first of [49, 89, 129, 169]) {
+      await rail.getByRole('button', { name: 'Newer links', exact: true }).click()
       await expect(rail.getByRole('link').first()).toHaveAccessibleName(new RegExp(`^Item ${String(first).padStart(5, '0')} `))
     }
-    await expect(rail.getByRole('button', { name: 'Earlier links', exact: true })).toHaveCount(0)
+    await expect(rail.getByRole('button', { name: 'Newer links', exact: true })).toHaveCount(0)
   } finally { fixture.cleanup() }
 })

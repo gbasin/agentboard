@@ -47,7 +47,7 @@ test('same-size transcript rewrites invalidate old cursors and immutable payload
     const first = await fixture.items()
     expect(first.nextCursor).not.toBeNull()
     const body = fs.readFileSync(fixture.logPath, 'utf8')
-    const replacement = body.replace('Item 00000 ', 'Item 99999 ')
+    const replacement = body.replace('Item 00079 ', 'Item 99999 ')
     expect(Buffer.byteLength(replacement)).toBe(Buffer.byteLength(body))
     fs.writeFileSync(fixture.logPath, replacement)
     const second = await fixture.items()
@@ -59,7 +59,7 @@ test('same-size transcript rewrites invalidate old cursors and immutable payload
     expect(staleBytes.status()).toBe(409)
     const freshBytes = await request.get(second.items[0].url, { maxRedirects: 0 })
     expect(freshBytes.status()).toBe(302)
-    expect(freshBytes.headers().location).toContain(`/00000`)
+    expect(freshBytes.headers().location).toContain(`/00079`)
   } finally { fixture.cleanup() }
 })
 
@@ -83,7 +83,9 @@ test('all 258 payloads in one transcript record remain addressable beyond the le
       cursor = page.nextCursor ?? undefined
     } while (cursor)
     expect(items).toHaveLength(258)
-    const last = items.at(-1)!
+    expect(items.map(item => Number(new URL(item.url, 'http://localhost').searchParams.get('index'))))
+      .toEqual(Array.from({ length: 258 }, (_, n) => 257 - n))
+    const last = items[0]
     const reference = new URL(last.url, 'http://localhost')
     expect(reference.searchParams.get('index')).toBe('257')
     expect(reference.searchParams.get('digest')).toMatch(/^[a-f0-9]{64}$/)

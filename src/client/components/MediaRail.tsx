@@ -253,10 +253,10 @@ function SessionMediaRail({ session, ready }: { session: Session; ready: boolean
           {pages.hasEarlier && (
             <button type="button" onClick={() => { if (pages.canLoadEarlier) void pages.loadPrevious(); else refresh() }}
               disabled={!ready || pages.status === 'loading'} className="px-3 py-1 text-xs text-accent">
-              {pages.canLoadEarlier ? 'Earlier media' : 'Back to oldest media'}
+              {pages.canLoadEarlier ? 'Newer media' : 'Back to newest media'}
             </button>
           )}
-          <div ref={scroll} data-testid="media-scroll" tabIndex={0} role="region" aria-label="Session media, oldest first"
+          <div ref={scroll} data-testid="media-scroll" tabIndex={0} role="region" aria-label="Session media, newest first"
             onScroll={(event) => {
               const el = event.currentTarget
               const forward = el.scrollLeft > previousScroll.current
@@ -276,7 +276,7 @@ function SessionMediaRail({ session, ready }: { session: Session; ready: boolean
           </div>}
           {pages.hasNext && !pages.changed && !pages.error && (
             <button type="button" onClick={() => void pages.loadNext()} disabled={!ready || pages.status === 'loading'}
-              className="px-3 pb-2 text-xs text-accent">Load newer media</button>
+              className="px-3 pb-2 text-xs text-accent">Load older media</button>
           )}
           </>}
         </div>
