@@ -27,7 +27,7 @@ export function mediaStreamResponse(options: Options): Response {
   let iterator: AsyncIterator<MediaStreamEvent> | undefined
   let controller: ReadableStreamDefaultController<Uint8Array>
   let timer: ReturnType<typeof setTimeout> | undefined
-  let stopped = false, sentBytes = 0
+  let stopped = false, sentBytes = 0, hasSnapshot = false
   // Wakes a pending iterator.next race even when a misbehaving producer ignores abort.
   let wakeAbort!: () => void
   const aborted = new Promise<null>(resolve => { wakeAbort = () => resolve(null) })
@@ -65,7 +65,12 @@ export function mediaStreamResponse(options: Options): Response {
       controller = streamController
       if (options.signal.aborted) { onRequestAbort(); return }
       options.signal.addEventListener('abort', onRequestAbort, { once: true })
-      timer = setTimeout(() => finish({ type: 'error', message: 'Media discovery timed out. Retry to continue.' }),
+      // A finite subscription can renew after its first snapshot. A producer
+      // that never yielded a page still gets an explicit timeout error.
+      timer = setTimeout(() => {
+        if (!options.isCurrent()) finish(safeError({ code: 'STALE_CURSOR' }))
+        else finish(hasSnapshot ? undefined : { type: 'error', message: 'Media discovery timed out. Retry to continue.' })
+      },
         Math.min(options.lifetimeMs ?? MEDIA_STREAM_MS, MEDIA_STREAM_MS))
       timer.unref?.()
     },
@@ -85,6 +90,7 @@ export function mediaStreamResponse(options: Options): Response {
         }
         if (sentBytes + frame.byteLength + TERMINAL_RESERVE > byteLimit) { finish(); return }
         controller.enqueue(frame)
+        if (event.type === 'snapshot') hasSnapshot = true
         sentBytes += frame.byteLength
         if (event.type === 'error') finish()
       } catch (error) {

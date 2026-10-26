@@ -117,3 +117,24 @@ test('worker failure and error frames cannot expose paths or arbitrary exception
     expect(decode(body).map(event => event.type)).toEqual(['error', 'done'])
   }
 })
+
+test('subscription expiry after a snapshot completes cleanly so the client can renew', async () => {
+  let aborted = false
+  const response = mediaStreamResponse({ signal: signal(), isCurrent: () => true, lifetimeMs: 5,
+    watch: async function* (abort) {
+      abort.addEventListener('abort', () => { aborted = true })
+      yield { type: 'snapshot', page: { ...page, discovery: { status: 'pending' } } }
+      await new Promise(() => {})
+    },
+  })
+  expect(decode(await response.text()).map(event => event.type)).toEqual(['snapshot', 'done'])
+  expect(aborted).toBe(true)
+})
+
+test('subscription expiry does not renew an obsolete session identity', async () => {
+  let current = true
+  const response = mediaStreamResponse({ signal: signal(), isCurrent: () => current, lifetimeMs: 5,
+    watch: async function* () { yield snapshot(); current = false; await new Promise(() => {}) },
+  })
+  expect(decode(await response.text())[1]).toMatchObject({ type: 'error', code: 'STALE_CURSOR' })
+})

@@ -447,3 +447,28 @@ test('synthetic pending zero counts show an unknown count and remain open throug
   expect(find(r, 'media-rail')).toHaveLength(1)
   expect(find(r, 'media-thumb')).toHaveLength(1)
 })
+
+test('real route lifetime renews an indexing view and retains its rows until completion', async () => {
+  const { mediaStreamResponse } = await import('../../server/mediaStreamResponse')
+  jest.useFakeTimers()
+  let attempt = 0
+  respond = async (_url, init) => mediaStreamResponse({
+    signal: init!.signal!, isCurrent: () => true, lifetimeMs: 100,
+    watch: async function* (abort) {
+      const current = ++attempt
+      yield { type: 'snapshot', page: { ...page({ items: many(current, 1) }), discovery: indexing } }
+      if (current === 1) await new Promise<void>(resolve => abort.addEventListener('abort', () => resolve(), { once: true }))
+      else yield { type: 'progress', summary: { ...summary(), discovery: { status: 'ready' } } }
+      yield { type: 'done' }
+    },
+  })
+  const r = render(); await open(r)
+  expect(find(r, 'media-thumb')).toHaveLength(1)
+  await flush(() => jest.advanceTimersByTime(100))
+  await flush(() => jest.advanceTimersByTime(250))
+  expect(attempt).toBe(2)
+  expect(find(r, 'media-thumb')).toHaveLength(1)
+  expect(find(r, 'media-thumb')[0].props.title).toBe('item-1 · image/png · 268 B')
+  expect(JSON.stringify(r.toJSON())).not.toContain('timed out')
+  expect(JSON.stringify(r.toJSON())).not.toContain('Finding ')
+})

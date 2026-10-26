@@ -253,6 +253,11 @@ export class MediaDiscoveryClient {
       if (signal?.aborted) return
       bytes += Buffer.byteLength(JSON.stringify(snapshot)); yield snapshot
       if (signal?.aborted) return
+      // Notifications received while reading/yielding the cached snapshot belong
+      // to earlier work. An explicit view must observe a fresh filesystem check.
+      dirty = false
+      const existing = this.jobs.get(key)
+      if (existing?.started) existing.again = true
       this.enqueue(record)
       while (!this.stopped && !signal?.aborted && performance.now() < deadline) {
         if (!dirty) await new Promise<void>(resolve => {
