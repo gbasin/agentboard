@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.37.0](https://github.com/gbasin/agentboard/compare/v0.36.3...v0.37.0) (2026-10-26)
+
+
+### Features
+
+* improve terminal recovery and progressive media browsing ([6ea2698](https://github.com/gbasin/agentboard/commit/6ea26981d3fb10ba6c5f70a387094dc83550b0d0))
+
 ## [0.36.3](https://github.com/gbasin/agentboard/compare/v0.36.2...v0.36.3) (2026-10-24)
 
 
