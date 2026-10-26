@@ -13,7 +13,7 @@ for (const mobile of [false, true]) {
     const reply = (text: string) => JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text }] } }) + '\n'
     let externalRequests = 0, pageRequests = 0
     page.on('request', r => {
-      if (r.url().startsWith('https://example.com')) externalRequests++
+      if (new URL(r.url()).origin === 'https://example.com') externalRequests++
       if (r.url().includes(`/session-media/${fixture.sessionId}/items`)) pageRequests++
     })
     try {
@@ -140,7 +140,7 @@ test('copy uses the complete long destination with confirmed feedback and HTTP f
   fs.appendFileSync(fixture.logPath, JSON.stringify({ type: 'assistant', sessionId: fixture.sessionId,
     timestamp: new Date().toISOString(), message: { role: 'assistant', content: [{ type: 'text', text: `[Long report](${destination})` }] } }) + '\n')
   let externalRequests = 0
-  page.on('request', req => { if (req.url().startsWith('https://example.com')) externalRequests++ })
+  page.on('request', req => { if (new URL(req.url()).origin === 'https://example.com') externalRequests++ })
   try {
     await expect.poll(async () => (await fixture.find())?.mediaSummary?.links, { timeout: 30_000 }).toBe(1)
     await page.goto('/'); await fixture.select(page)
@@ -219,7 +219,7 @@ for (const width of [390, 1280]) {
       await page.getByTestId('media-rail-pill').click()
       const rail = page.getByTestId('media-rail')
       await expect(rail.getByRole('link')).toHaveCount(6)
-      const bare = rail.getByRole('link').filter({ hasText: /^pr-2857-mockup.geteichler.com\/ike-arrival$/ })
+      const bare = rail.getByRole('link').filter({ hasText: /^pr-2857-mockup\.geteichler\.com\/ike-arrival$/ })
       await expect(bare).toHaveCount(1)
       await expect(bare.locator('span')).toHaveCount(1)
       await expect(rail.getByText('?rev=2', { exact: true })).toBeAttached()
