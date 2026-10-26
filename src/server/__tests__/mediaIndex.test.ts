@@ -100,14 +100,15 @@ test('late/deleted subagents participate in global timestamp order and invalidat
   expect(() => index.page(record, current.nextCursor!)).toThrow(MediaCursorError)
 })
 
-test('page URLs stay bounded for oversized external URLs and labels; source digest resolves exact content', () => {
+test('long external URLs stay complete and labels bounded; source digest resolves exact content', () => {
   const { index, log, record } = fixture()
-  const source = JSON.stringify({ type: 'frame-link', frameUrl: 'https://example.com/' + 'x'.repeat(100_000), title: 'z'.repeat(100_000) })
+  const source = JSON.stringify({ type: 'frame-link', frameUrl: 'https://example.com/' + 'x'.repeat(3000), title: 'z'.repeat(100_000) })
   fs.writeFileSync(log, source + '\n')
   index.scan(record, [log])
   const page = index.page(record)
   expect(Buffer.byteLength(JSON.stringify(page))).toBeLessThan(MEDIA_PAGE_BYTES)
   expect(page.items[0].label).toHaveLength(512)
+  expect(page.items[0].externalUrl).toBe('https://example.com/' + 'x'.repeat(3000))
   const url = new URL(page.items[0].url, 'http://localhost')
   expect(url.pathname).toBe('/api/session-media/index-fixture')
   expect(url.searchParams.get('digest')).toBe(createHash('sha256').update(source).digest('hex'))
