@@ -12,7 +12,7 @@ jobs:
     # Bun spawns under `bun test --coverage`: the server boot via Bun.spawn in
     # integration tests never becomes healthy regardless of timeout (verified
     # at 60s+ wrappers). Investigating root cause separately; the e2e job
-    # below stays on 24.04 because Playwright's own webServer launch
+    # below stays on ubuntu-24.04 because Playwright's own webServer launch
     # is unaffected.
     runs-on: ubuntu-22.04
     steps:
@@ -51,8 +51,7 @@ jobs:
         run: bun run build
 
   e2e:
-    # ubuntu-latest moved to 26.04, whose image lacks the node-gyp command
-    # required by node-pty's install script. Keep the known browser image.
+    # Playwright 1.57 does not support the ubuntu-26.04 image behind latest.
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -60,6 +59,10 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6  # v2.2.0
         with:
           bun-version-file: .bun-version
+
+      # Linux node-pty has no bundled prebuild; do not rely on runner-global tools.
+      - name: Install native build tooling
+        run: npm install --global node-gyp@11.5.0
 
       - name: Install dependencies
         run: bun install --frozen-lockfile

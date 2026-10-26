@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.3](https://github.com/gbasin/agentboard/compare/v0.36.2...v0.36.3) (2026-10-24)
+
+
+### Performance Improvements
+
+* index catalog lookups by host and window ([#437](https://github.com/gbasin/agentboard/issues/437)) ([b00bed4](https://github.com/gbasin/agentboard/commit/b00bed4c84b14a85a8f00bc06491de3169415bbe))
+
 ## [0.36.2](https://github.com/gbasin/agentboard/compare/v0.36.1...v0.36.2) (2026-10-19)
 
 
