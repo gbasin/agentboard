@@ -283,6 +283,8 @@
 
     "@fontsource-variable/jetbrains-mono": ["@fontsource-variable/jetbrains-mono@5.2.8", "", {}, "sha512-WBA9elru6Jdp5df2mES55wuOO0WIrn3kpXnI4+W2ek5u3ZgLS9XS4gmIlcQhiZOWEKl95meYdvK7xI+ETLCq/Q=="],
 
+    "@gbasin/agentboard-darwin-arm64": ["@gbasin/agentboard-darwin-arm64@0.37.0", "", { "os": "darwin", "cpu": "arm64" }, "sha512-/+BbvfcB/zqkQ8W1NK/oCfvKS7OFUDx4tuqFv2V3K+bUSKxe52V5T788OGTrwp9EWyDHgXus43/wevUCHH69zg=="],
+
     "@gbasin/agentboard-darwin-x64": ["@gbasin/agentboard-darwin-x64@0.37.0", "", { "os": "darwin", "cpu": "x64" }, "sha512-oOcrHZzzC69XI0Iu75Ht22R0iBUzzSMz2pB/MMxCx5ZqOuZm3huzPMcUKuDT/VZhA0yfotvqcjj80gNKAgl1Hw=="],
 
     "@gbasin/agentboard-linux-arm64": ["@gbasin/agentboard-linux-arm64@0.37.0", "", { "os": "linux", "cpu": "arm64" }, "sha512-cChZj4iRhh/WzYFVPo3Xq0v7KZHHxd6BCYmOwxg+eiDcGpiOcKYl1xz7uKda9JLCPsR0qJhrILwN7ebLlLNETg=="],
