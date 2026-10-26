@@ -52,3 +52,5 @@ Residual scanner contract: incremental append detection checks source identity, 
 Claude's second review (`20261026-131301-claude-15528bbe`) agreed on the two coordinator interleavings, independently identified the hydration path (now tested and guarded), and recommended requiring ready progress in the E2E helper (implemented). Its caution about attributing the original E2E failure to the coordinator race was correct; the scanner trace established the fixture issue above.
 
 After correcting the baseline, the same-size rewrite E2E passed ten consecutive runs (five Chromium, five WebKit). Final code also passed the required lint/typecheck/unit/integration commit hook with 2,295 tests and zero failures.
+
+GitHub run `40368129244` verified that stacked-base checks now trigger. Its macOS job passed; E2E stopped before tests because the newly migrated Ubuntu 26 image lacked `node-gyp` during `node-pty` installation. The E2E job is pinned to Ubuntu 24.04 to retain the prior browser/dependency environment.

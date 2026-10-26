@@ -12,7 +12,7 @@ jobs:
     # Bun spawns under `bun test --coverage`: the server boot via Bun.spawn in
     # integration tests never becomes healthy regardless of timeout (verified
     # at 60s+ wrappers). Investigating root cause separately; the e2e job
-    # below stays on ubuntu-latest because Playwright's own webServer launch
+    # below stays on 24.04 because Playwright's own webServer launch
     # is unaffected.
     runs-on: ubuntu-22.04
     steps:
@@ -51,7 +51,9 @@ jobs:
         run: bun run build
 
   e2e:
-    runs-on: ubuntu-latest
+    # ubuntu-latest moved to 26.04, whose image lacks the node-gyp command
+    # required by node-pty's install script. Keep the known browser image.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
