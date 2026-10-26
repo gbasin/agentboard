@@ -42,11 +42,15 @@ test('nearby thumbnails stay lazy; selected originals fill the mobile viewer', a
     }
     const source = PNG.sync.write(large)
     expect(source.length).toBeGreaterThan(64 * 1024)
+    // Newest-first: the two newest entries are large originals, followed by small images.
+    appendImages(fixture.logPath, fixture.sessionId, 38)
     appendImages(fixture.logPath, fixture.sessionId, 1, source.toString('base64'))
     large.data[0] ^= 255
     appendImages(fixture.logPath, fixture.sessionId, 1, PNG.sync.write(large).toString('base64'))
-    appendImages(fixture.logPath, fixture.sessionId, 38)
     await expect.poll(async () => (await fixture.find())?.mediaSummary?.total, { timeout: 30_000 }).toBe(40)
+    const indexed = await fixture.items()
+    const offsets = indexed.items.map(item => Number(new URL(item.url, 'http://localhost').searchParams.get('offset')))
+    expect(offsets).toEqual([...offsets].sort((a, b) => b - a))
     await page.goto('/'); await fixture.select(page)
     await page.setViewportSize({ width: 390, height: 844 })
     await page.waitForTimeout(300)
@@ -221,10 +225,10 @@ test('PNG screenshots with EXIF metadata render correctly oriented previews with
     await expect.poll(() => previews.evaluateAll(images => images.map(image => {
       const img = image as HTMLImageElement
       return [img.naturalWidth, img.naturalHeight]
-    }))).toEqual([[128, 64], [64, 128]])
+    }))).toEqual([[64, 128], [128, 64]])
     expect(thumbnailResponses).toEqual([200, 200])
     expect(originals).toBe(0)
-    const pixels = await previews.nth(1).evaluate(image => {
+    const pixels = await previews.first().evaluate(image => {
       const canvas = document.createElement('canvas'), img = image as HTMLImageElement
       canvas.width = img.naturalWidth; canvas.height = img.naturalHeight
       const context = canvas.getContext('2d')!

@@ -1,5 +1,7 @@
 # Navigable image lightbox
 
+Media and Links use newest-first order. In the viewer, Next moves to an older image and Previous moves toward newer images, matching the gallery order.
+
 Every image tile opens the same viewer. Documents and links keep their existing open behavior. The viewer provides Previous/Next buttons, Left/Right arrows, Escape, a close button, focus trapping, and terminal input suspension.
 
 Opening or navigating to an image loads that selected original automatically, including large, unknown-size, and external images. A cached thumbnail remains visible while it loads. The rail still fetches thumbnails only, and adjacent originals are never prefetched. The viewer also offers **Open original** in another tab. One original is mounted at a time; it unmounts during background/recovery and reloads the current selection on return. Removing an image element is not a guarantee that every browser immediately cancels its network request or frees decoded pixels.

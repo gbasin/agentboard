@@ -1,4 +1,4 @@
-/** Real image navigation across bounded media pages and lifecycle transitions. */
+/** Newest-first image navigation across bounded media pages and lifecycle transitions. */
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test'
 import fs from 'node:fs'
 import { PNG } from 'pngjs'
@@ -37,6 +37,9 @@ async function gallery(request: APIRequestContext) {
     cursor = page.nextCursor ?? undefined
   } while (cursor)
   expect(images).toHaveLength(4)
+  // Independently pin chronology: /items and /neighbors must agree on newest first.
+  const offsets = images.map(image => Number(new URL(image.url, 'http://localhost').searchParams.get('offset')))
+  expect(offsets).toEqual([...offsets].sort((a, b) => b - a))
   return { ...fixture, images }
 }
 
@@ -48,7 +51,7 @@ async function visibility(page: Page, visible: boolean) {
   }, visible)
 }
 
-test('image navigation skips long non-image gaps without loading intervening rail pages', async ({ page, request }) => {
+test('newest-first image navigation skips long non-image gaps without loading intervening rail pages', async ({ page, request }) => {
   const fixture = await gallery(request)
   let pageRequests = 0, neighborRequests = 0
   const terminalInput: string[] = []

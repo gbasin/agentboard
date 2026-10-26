@@ -133,7 +133,7 @@ export class MediaIndex {
       ...(row.omittedRecords ? { omittedRecords: row.omittedRecords } : {}) }
   }
 
-  /** Two indexed seeks skip any number of nonimages without loading intervening pages. */
+  /** Follow newest-first gallery order with two indexed seeks over nonimage gaps. */
   neighbors(record: AgentSessionRecord, anchor: string): MediaNeighbors {
     const ref = parseMediaAnchor(record.sessionId, anchor)
     const identity = mediaIdentity(record)
@@ -145,8 +145,8 @@ export class MediaIndex {
     if (descriptor.url !== anchor) throw new MediaNeighborError('STALE_ANCHOR')
     if (descriptor.kind !== 'image') throw new MediaNeighborError('INVALID_ANCHOR')
     const adjacent = (direction: 'previous' | 'next'): SessionMedia | null => {
-      const operator = direction === 'previous' ? '<' : '>'
-      const order = direction === 'previous' ? 'DESC' : 'ASC'
+      const operator = direction === 'previous' ? '>' : '<'
+      const order = direction === 'previous' ? 'ASC' : 'DESC'
       const row = this.db.query(`SELECT descriptor FROM media_items
         WHERE identity=? AND kind='image' AND (time,path,offset,item)${operator}(?,?,?,?)
         ORDER BY time ${order},path ${order},offset ${order},item ${order} LIMIT 1`)
@@ -161,7 +161,7 @@ export class MediaIndex {
   }
 
   page(record: AgentSessionRecord, rawCursor?: string, query: MediaQuery = {}): MediaPage {
-    const queryKey = JSON.stringify([query.kind ?? '', query.search ?? ''])
+    const queryKey = JSON.stringify(['newest', query.kind ?? '', query.search ?? ''])
     const filter = query.kind === 'links' ? " AND kind='link'" : query.kind === 'media' ? " AND kind!='link'" : ''
     const search = (query.search ?? '').toLowerCase()
     const where = filter + " AND (?='' OR instr(lower(coalesce(json_extract(descriptor,'$.label'),'') || ' ' || coalesce(json_extract(descriptor,'$.externalUrl'),'') || ' ' || coalesce(json_extract(descriptor,'$.sourceText'),'')),?)>0)"
@@ -180,7 +180,7 @@ export class MediaIndex {
             !Number.isFinite(cursor.after[0]) || typeof cursor.after[1] !== 'string' || cursor.after[1].length > 4096 ||
             !Number.isSafeInteger(cursor.after[2]) || !Number.isSafeInteger(cursor.after[3])) throw Error()
       } catch { throw new MediaCursorError('INVALID_CURSOR') }
-      if ((cursor.query ?? JSON.stringify(['', ''])) !== queryKey) throw new MediaCursorError('INVALID_CURSOR')
+      if (cursor.query !== queryKey) throw new MediaCursorError('INVALID_CURSOR')
       if (cursor.identity !== identity || cursor.generation !== row.generation ||
           !cursor.revision.startsWith(this.incarnation + ':')) throw new MediaCursorError('STALE_CURSOR')
     } else {
@@ -188,11 +188,11 @@ export class MediaIndex {
       const total = (this.db.query(`SELECT count(*) AS total FROM media_items WHERE identity=? AND id<=? ${where}`)
         .get(identity, watermark, search, search) as { total: number }).total
       cursor = { query: queryKey, identity, generation: row.generation, watermark, revision: summary.revision, total,
-        after: [-Number.MAX_SAFE_INTEGER, '', -1, -1] }
+        after: [Number.MAX_SAFE_INTEGER, '', -1, -1] }
     }
     const rows = this.db.query(`SELECT id,time,path,offset,item,descriptor FROM media_items
-      WHERE identity=? AND id<=? AND (time,path,offset,item)>(?,?,?,?) ${where}
-      ORDER BY time,path,offset,item LIMIT ?`).all(identity, cursor.watermark, ...cursor.after, search, search, MEDIA_PAGE_ITEMS + 1) as ItemRow[]
+      WHERE identity=? AND id<=? AND (time,path,offset,item)<(?,?,?,?) ${where}
+      ORDER BY time DESC,path DESC,offset DESC,item DESC LIMIT ?`).all(identity, cursor.watermark, ...cursor.after, search, search, MEDIA_PAGE_ITEMS + 1) as ItemRow[]
     const result: MediaPage = { identity, revision: cursor.revision, total: cursor.total, items: [], nextCursor: null }
     const encode = (after: Cursor['after']) => Buffer.from(JSON.stringify({ ...cursor, after })).toString('base64url')
     for (let i = 0; i < rows.length && i < MEDIA_PAGE_ITEMS; i++) {

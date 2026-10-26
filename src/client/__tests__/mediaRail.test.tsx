@@ -121,10 +121,10 @@ describe('scroll-driven MediaRail', () => {
     }
     const r = render(session({ mediaSummary: summary({ total: 240, images: 240 }) }))
     await open(r)
-    for (let i = 0; i < 4; i++) await flush(() => button(r, 'Load newer media').props.onClick())
+    for (let i = 0; i < 4; i++) await flush(() => button(r, 'Load older media').props.onClick())
     expect(find(r, 'media-thumb')).toHaveLength(120)
     expect(find(r, 'media-thumb')[0].props.title).toContain('item-80')
-    await flush(() => button(r, 'Earlier media').props.onClick())
+    await flush(() => button(r, 'Newer media').props.onClick())
     expect(find(r, 'media-thumb')).toHaveLength(120)
     expect(find(r, 'media-thumb')[0].props.title).toContain('item-40')
   })

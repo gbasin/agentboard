@@ -54,7 +54,7 @@ test('navigation sees appended images but rejects rewritten, deleted and cross-s
   const first = index.page(record).items[0]
   expect(index.neighbors(record, first.url).next).toBeNull()
   fs.appendFileSync(log, image(1)); index.scan(record, [log])
-  expect(index.neighbors(record, first.url).next).not.toBeNull()
+  expect(index.neighbors(record, first.url).previous).not.toBeNull()
   expect(() => index.neighbors({ ...record, sessionId: 'another-session' }, first.url)).toThrow('Invalid image anchor')
   fs.writeFileSync(log, image(2)); index.scan(record, [log])
   expect(() => index.neighbors(record, first.url)).toThrow('Image changed')
@@ -69,12 +69,12 @@ test('image neighbors share global subagent order and reject document/link ancho
   fs.writeFileSync(log, image(0) + link(1) + image(4)); fs.writeFileSync(child, image(2))
   index.scan(record, [log, child])
   const items = index.page(record).items
-  expect(index.neighbors(record, items[0].url).next).toEqual(items[2])
-  expect(index.neighbors(record, items[2].url).previous).toEqual(items[0])
-  expect(index.neighbors(record, items[2].url).next).toEqual(items[3])
-  expect(() => index.neighbors(record, items[1].url)).toThrow('Invalid image anchor')
+  expect(index.neighbors(record, items[0].url).next).toEqual(items[1])
+  expect(index.neighbors(record, items[1].url).previous).toEqual(items[0])
+  expect(index.neighbors(record, items[1].url).next).toEqual(items[3])
+  expect(() => index.neighbors(record, items[2].url)).toThrow('Invalid image anchor')
   index.scan(record, [log])
-  expect(() => index.neighbors(record, items[2].url)).toThrow('Image changed')
+  expect(() => index.neighbors(record, items[1].url)).toThrow('Image changed')
 })
 
 test('anchor validation rejects noncanonical and unbounded input without touching files', () => {

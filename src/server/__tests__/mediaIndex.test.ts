@@ -35,7 +35,7 @@ function all(index: MediaIndex, record: AgentSessionRecord) {
   }
 }
 
-test('retains all 2,366+ records on disk, oldest first, with bounded pages and summary-only metadata', () => {
+test('retains all 2,366+ records on disk, newest first, with bounded pages and summary-only metadata', () => {
   const { index, log, record } = fixture()
   fs.writeFileSync(log, Array.from({ length: 2366 }, (_, n) => line(n)).join(''))
   const summary = index.scan(record, [log])
@@ -44,8 +44,8 @@ test('retains all 2,366+ records on disk, oldest first, with bounded pages and s
   expect(Buffer.byteLength(JSON.stringify(summary))).toBeLessThan(400)
   const items = all(index, record)
   expect(items).toHaveLength(2366)
-  expect(items[0].label).toBe('item 0')
-  expect(items.at(-1)?.label).toBe('item 2365')
+  expect(items[0].label).toBe('item 2365')
+  expect(items.at(-1)?.label).toBe('item 0')
   expect(index.scan(record, [log])).toEqual(summary)
 })
 
@@ -61,7 +61,8 @@ test('append retains cursor snapshot; new first page sees latest additions witho
   expect(continuation.revision).toBe(first.revision)
   expect(continuation.items).toHaveLength(20)
   expect(continuation.nextCursor).toBeNull()
-  expect(all(index, record).at(-1)?.label).toBe('new late-discovered old record')
+  expect(continuation.items.map(item => item.label)).toEqual(Array.from({ length: 20 }, (_, n) => `item ${19 - n}`))
+  expect(all(index, record)[0].label).toBe('new late-discovered old record')
 })
 
 test('same-size rewrite, truncation, and deleted source reject old cursors and change immutable URL digest', () => {
@@ -71,7 +72,7 @@ test('same-size rewrite, truncation, and deleted source reject old cursors and c
   index.scan(record, [log])
   const first = index.page(record)
   const oldUrl = first.items[0].url
-  fs.writeFileSync(log, body.replace('item 0', 'ITEM 0'))
+  fs.writeFileSync(log, body.replace('item 59', 'ITEM 59'))
   const future = new Date(Date.now() + 1000)
   fs.utimesSync(log, future, future)
   const updated = index.scan(record, [log])
@@ -92,7 +93,7 @@ test('late/deleted subagents participate in global timestamp order and invalidat
   const before = index.page(record)
   fs.writeFileSync(child, line(1000, 'child first', 0))
   index.scan(record, [log, child])
-  expect(index.page(record).items[0].label).toBe('child first')
+  expect(all(index, record).at(-1)?.label).toBe('child first')
   expect(index.page(record, before.nextCursor!).items).toHaveLength(10)
   const current = index.page(record)
   index.scan(record, [log])
@@ -134,6 +135,9 @@ test('malformed and cross-session cursors fail instead of reading another collec
   index.scan(record, [log])
   expect(() => index.page(record, 'garbage')).toThrow('Invalid media cursor')
   const cursor = index.page(record).nextCursor!
+  const legacy = JSON.parse(Buffer.from(cursor, 'base64url').toString())
+  legacy.query = JSON.stringify(['', ''])
+  expect(() => index.page(record, Buffer.from(JSON.stringify(legacy)).toString('base64url'))).toThrow('Invalid media cursor')
   const other = { ...record, sessionId: 'other' }
   index.scan(other, [log])
   expect(() => index.page(other, cursor)).toThrow('Media changed')
@@ -199,16 +203,16 @@ test('explicit payload-mismatch invalidation repairs a deep prefix edit hidden b
   fs.writeFileSync(log, body)
   index.scan(record, [log])
   const before = index.page(record)
-  const previousUrl = before.items[25].url
-  fs.writeFileSync(log, body.replace('item 25', 'ITEM 25') + line(100))
+  const previousUrl = before.items.find(item => item.label === 'item 44')!.url
+  fs.writeFileSync(log, body.replace('item 44', 'ITEM 44') + line(100))
   // Cheap incremental append checks cannot see a changed byte deep in the old prefix.
   index.scan(record, [log])
-  expect(index.page(record).items[25].url).toBe(previousUrl)
+  expect(index.page(record).items[26].url).toBe(previousUrl)
   // The byte route rejects the old source digest, then queues this repair off-thread.
   index.invalidate(record)
   index.scan(record, [log])
-  expect(index.page(record).items[25].label).toBe('ITEM 25')
-  expect(index.page(record).items[25].url).not.toBe(previousUrl)
+  expect(index.page(record).items[26].label).toBe('ITEM 44')
+  expect(index.page(record).items[26].url).not.toBe(previousUrl)
   expect(index.page(record).total).toBe(71)
   expect(() => index.page(record, before.nextCursor!)).toThrow(MediaCursorError)
 })
@@ -218,12 +222,12 @@ test('missing and backward timestamps retain per-file order across appends', () 
   const missing = JSON.stringify({ type: 'frame-link', frameUrl: 'https://example.com/missing', title: 'missing' }) + '\n'
   fs.writeFileSync(log, line(0, 'first', 100) + missing + line(1, 'backward', 50))
   index.scan(record, [log])
-  expect(all(index, record).map(item => item.label)).toEqual(['first', 'missing', 'backward'])
+  expect(all(index, record).map(item => item.label)).toEqual(['backward', 'missing', 'first'])
   const another = JSON.stringify({ type: 'frame-link', frameUrl: 'https://example.com/append', title: 'append missing' }) + '\n'
   fs.appendFileSync(log, another + line(2, 'append backward', 10) + line(3, 'append future', 200))
   index.scan(record, [log])
   expect(all(index, record).map(item => item.label)).toEqual([
-    'first', 'missing', 'backward', 'append missing', 'append backward', 'append future',
+    'append future', 'append backward', 'append missing', 'backward', 'missing', 'first',
   ])
 })
 
@@ -253,8 +257,8 @@ test('disk indexing retains more than 257 media items inside a single valid reco
   expect(index.scan(record, [log]).total).toBe(258)
   const items = all(index, record)
   expect(items).toHaveLength(258)
-  expect(items.at(-1)?.label).toBe('block 257')
-  expect(new URL(items.at(-1)!.url, 'http://localhost').searchParams.get('index')).toBe('257')
+  expect(items[0].label).toBe('block 257')
+  expect(new URL(items[0].url, 'http://localhost').searchParams.get('index')).toBe('257')
 })
 
 test('reply links are searchable across all pages, filtered from media, and cursors bind to the search', () => {
