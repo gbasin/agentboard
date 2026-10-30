@@ -146,8 +146,7 @@ function insertRecord(
 describe('recovery reconciliation', () => {
   function fixture() {
     const { db } = setup()
-    // The injected identity feeds the mutation paths (launch/resume/stop);
-    // beforeSnapshot reads tags from the enumerated sessions instead.
+    // Independent identity read used to confirm suspicious enumerations.
     let snapshot = {
       epoch: 'epoch1',
       windows: new Map<string, { boardId: string; runId: string }>(),
@@ -210,17 +209,19 @@ describe('recovery reconciliation', () => {
     }
   }
   test('stable epochs preserve legacy associations and replacement epochs clear them', () => {
-    const { db, persistence } = fixture()
+    const { db, persistence, setSnapshot } = fixture()
     db.setAppSetting('persistence_tmux_epoch', 'epoch1')
     insertRecord(db, 'legacy-epoch', 'ab:@9')
     persistence.beforeSnapshot([], 1)
     expect(db.getSessionById('legacy-epoch')?.currentWindow).toBe('ab:@9')
+    setSnapshot({ epoch: 'epoch2', windows: new Map() })
     persistence.beforeSnapshot([], 2)
     expect(db.getSessionById('legacy-epoch')?.currentWindow).toBeNull()
     expect(db.getAppSetting('persistence_tmux_epoch')).toBe('epoch2')
   })
   test('a reliable empty replacement server interrupts sessions without killing windows', () => {
-    const { persistence, saved, calls } = fixture()
+    const { persistence, saved, calls, setSnapshot } = fixture()
+    setSnapshot({ epoch: 'epoch2', windows: new Map() })
     persistence.beforeSnapshot([], 2)
     expect(persistence.catalog.get(saved.id)?.state).toBe('interrupted')
     expect(calls).toEqual([])
@@ -251,8 +252,9 @@ describe('recovery reconciliation', () => {
     expect(persistence.catalog.get(saved.id)?.state).toBe('running')
   })
   test('reused window IDs do not claim or kill another run', () => {
-    const { persistence, saved, live, calls, setTags } = fixture()
+    const { persistence, saved, live, calls, setTags, setSnapshot } = fixture()
     setTags('another', 'other', 2)
+    setSnapshot({ epoch: 'epoch2', windows: new Map([['ab:@1', { boardId: 'another', runId: 'other' }]]) })
     persistence.beforeSnapshot([live])
     expect(persistence.catalog.get(saved.id)?.state).toBe('interrupted')
     expect(calls).toEqual([])
@@ -425,7 +427,8 @@ describe('recovery reconciliation', () => {
   test('reconcile does not release a conversation the rematcher moved to another window', () => {
     // Wake race: the wake's row is bound to @1, the rematcher claimed the
     // conversation for @9, and the wake killed @1.
-    const { db, persistence, saved } = fixture()
+    const { db, persistence, saved, setSnapshot } = fixture()
+    setSnapshot({ epoch: 'epoch1', windows: new Map() })
     insertRecord(db, 'moved-conv', 'ab:@9')
     persistence.catalog.associate(saved.id, 'moved-conv', 'claude')
     persistence.beforeSnapshot([], 1)
@@ -433,7 +436,8 @@ describe('recovery reconciliation', () => {
     expect(db.getSessionById('moved-conv')?.currentWindow).toBe('ab:@9')
   })
   test('reconcile still releases a conversation that stayed on the dead window', () => {
-    const { db, persistence, saved } = fixture()
+    const { db, persistence, saved, setSnapshot } = fixture()
+    setSnapshot({ epoch: 'epoch1', windows: new Map() })
     insertRecord(db, 'stayed-conv', 'ab:@1')
     persistence.catalog.associate(saved.id, 'stayed-conv', 'claude')
     persistence.beforeSnapshot([], 1)
