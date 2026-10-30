@@ -10,6 +10,7 @@ test.skip(process.env.ACTIVITY_E2E_MATRIX !== '1', 'Lifecycle fixtures run in th
 for (const kind of ['claude', 'codex'] as const) {
   test(`${kind}: independent child completion, resume, main activity and mobile popover`, async ({ page, request }, info) => {
     const fixture = seedActivity(kind)
+    const associationPath = info.outputPath('fixture-association.json')
     const errors: string[] = []
     page.on('pageerror', error => errors.push(error.message))
     const observed: { at: string; type: string; running: number; phase: string }[] = []
@@ -28,7 +29,12 @@ for (const kind of ['claude', 'codex'] as const) {
       await expect(card).toBeVisible({ timeout: 30_000 })
       await expect.poll(async () => {
         const sessions = await (await request.get('/api/sessions')).json()
-        return sessions.find((s: { name: string }) => s.name === fixture.name)?.activity?.running
+        const session = sessions.find((s: { name: string }) => s.name === fixture.name)
+        fs.writeFileSync(associationPath, JSON.stringify({ session, terminal: fixture.capture(),
+          parentLog: fs.readFileSync(fixture.log, 'utf8'), childLog: fs.readFileSync(fixture.child, 'utf8'),
+        }, null, 2))
+        if (session?.agentSessionId !== fixture.sessionId) fixture.refreshPrompt()
+        return session?.activity?.running
       }, { timeout: 60_000 }).toBe(1)
       const trigger = card.getByTestId('session-activity-counter')
       await expect(trigger).toHaveText('1')
@@ -78,6 +84,12 @@ for (const kind of ['claude', 'codex'] as const) {
       expect(observed.some(s => s.running === 0)).toBe(true)
       expect(observed.some(s => s.running === 1)).toBe(true)
       await info.attach('activity-lifecycle-observations', { body: JSON.stringify({ kind, windowSize: fixture.windowSize, parentUnchangedDuringCompletion: true, observed, errors }, null, 2), contentType: 'application/json' })
+    } catch (error) {
+      // Preserve the association evidence before private tmux/data teardown.
+      try {
+        await info.attach('fixture-association', { path: associationPath, contentType: 'application/json' })
+      } catch { /* retain the original assertion failure */ }
+      throw error
     } finally { fixture.stop() }
   })
 }
