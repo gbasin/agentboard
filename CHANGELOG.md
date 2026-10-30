@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.38.0](https://github.com/gbasin/agentboard/compare/v0.37.1...v0.38.0) (2026-10-30)
+
+
+### Features
+
+* show Claude and Codex activity in compact session popovers ([#453](https://github.com/gbasin/agentboard/issues/453)) ([a7ca12e](https://github.com/gbasin/agentboard/commit/a7ca12ebff14dd3cf31f3f370fafbc02e8c36b87))
+
+
+### Bug Fixes
+
+* confirm catalog identity changes before releasing log links ([#454](https://github.com/gbasin/agentboard/issues/454)) ([9c36bc8](https://github.com/gbasin/agentboard/commit/9c36bc8bc49100a64fb95097c380825d7d230128))
+
 ## [0.37.1](https://github.com/gbasin/agentboard/compare/v0.37.0...v0.37.1) (2026-10-26)
 
 
