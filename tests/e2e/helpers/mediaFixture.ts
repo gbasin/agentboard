@@ -67,7 +67,8 @@ export async function mediaFixture(request: APIRequestContext, count: number, im
       await expect(page.getByTestId('media-rail-pill')).toBeVisible()
     },
     append(i: number) { fs.appendFileSync(logPath, link(i)) },
-    capture() { return tmux('capture-pane', '-p', '-t', windowId, '-S', '-100') },
+    // Join soft wraps: a viewport resize must not look like terminal input.
+    capture() { return tmux('capture-pane', '-p', '-J', '-t', windowId, '-S', '-100') },
     async items(cursor?: string): Promise<MediaPage> {
       const response = await request.get(`/api/session-media/${sessionId}/items${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`)
       expect(response.status()).toBe(200)

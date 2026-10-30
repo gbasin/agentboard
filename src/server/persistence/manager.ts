@@ -19,6 +19,8 @@ import {
 import { config } from '../config'
 import { logger } from '../logger'
 import { windowNameError } from '../windowName'
+import { confirmSnapshot, identityChanged } from './confirmSnapshot'
+export { identityChanged } from './confirmSnapshot'
 
 export class PersistentSessions {
   readonly catalog: SessionCatalog
@@ -44,7 +46,8 @@ export class PersistentSessions {
   /**
    * Reconcile catalog state against the window list the refresh pipeline
    * already enumerated — the identity tags ride that enumeration, so this
-   * snapshot and `sessions` are one consistent read with no extra tmux calls.
+   * snapshot and `sessions` are one consistent read. Destructive observations
+   * require an independent identity read before releasing a conversation.
    * The server pid identifies the tmux incarnation; an enumeration that
    * cannot report it cannot vouch for window identity either, so pid 0
    * skips reconciliation rather than guessing at stale tags.
@@ -72,10 +75,11 @@ export class PersistentSessions {
         this.snapshot = null
         return
       }
-      const snapshot: TmuxIdentity = {
+      const active = this.catalog.active()
+      const snapshot = confirmSnapshot({
         epoch: this.epochForPid(serverPid),
         windows,
-      }
+      }, active, this.identity)
       this.snapshot = snapshot
       const runs = new Map(
         [...snapshot.windows].map(([window, tag]) => [
@@ -83,7 +87,7 @@ export class PersistentSessions {
           { window, boardId: tag.boardId },
         ])
       )
-      for (const saved of this.catalog.active()) {
+      for (const saved of active) {
         const match = saved.lastRunId ? runs.get(saved.lastRunId) : undefined
         const window = match && match.boardId === saved.id ? match.window : undefined
         if (saved.requestedState) {
@@ -552,19 +556,4 @@ export class PersistentSessions {
       expectedWindow: saved.window,
     })
   }
-}
-
-/**
- * True only when tmux definitely reports a different run on the window. An
- * empty tag is unknown, not changed: the enumeration can predate the tag
- * write (the refresh worker's snapshot can be minutes old when tmux is slow)
- * or come from a format that cannot read tags. Window ids are not reused
- * within one tmux server, and the epoch check above covers restarts.
- */
-export function identityChanged(
-  tag: WindowIdentity | undefined,
-  saved: Pick<SavedSession, 'id' | 'lastRunId'>
-): boolean {
-  if (!tag?.boardId || !tag.runId) return false
-  return tag.boardId !== saved.id || tag.runId !== saved.lastRunId
 }
