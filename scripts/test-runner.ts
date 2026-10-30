@@ -125,6 +125,13 @@ async function main() {
       // (prChips.test.tsx once saw XCloseIcon lose forwarded props).
       'agentIcon.test.tsx',
       'app.test.tsx',
+      // These fixtures replace document and schedule delayed focus returns.
+      // A preceding dialog's callback can focus the next file's fake textarea
+      // on Linux file order. Keep the strict focus assertions in their own
+      // processes instead of letting unrelated fake documents share timers.
+      'settingsModal.test.tsx',
+      'settingsModalRows.test.tsx',
+      'settingsHooks.test.tsx',
       // Files that render motion/react (framer-motion) components. The
       // library keeps module-level projection state (a root node per
       // document) and schedules async frame callbacks on the global rAF;
