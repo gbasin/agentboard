@@ -195,6 +195,7 @@ function sessionsEqual(a: Session, b: Session): boolean {
     a.isHibernating === b.isHibernating &&
     a.host === b.host &&
     a.remote === b.remote &&
+    JSON.stringify(a.activity) === JSON.stringify(b.activity) &&
     mediaSummariesEqual(a.mediaSummary, b.mediaSummary) &&
     prsEqual(a.prs, b.prs)
   )

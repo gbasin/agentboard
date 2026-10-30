@@ -42,7 +42,8 @@
     "coverage:all": "bun scripts/coverage-all.ts",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
-    "prepare": "git config core.hooksPath .githooks"
+    "prepare": "git config core.hooksPath .githooks",
+    "test:activity:coverage": "bun test --coverage --coverage-reporter=lcov --coverage-dir=coverage/activity src/server/__tests__/sessionActivity.test.ts src/server/__tests__/sessionActivityClient.test.ts && bun scripts/check-activity-coverage.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.2.0",

@@ -1,5 +1,4 @@
 /** Real HTTP contention regression. No intercepted browser requests or external GitHub calls. */
-import { chromium, webkit } from '@playwright/test'
 import path from 'node:path'
 
 const entry = path.resolve(import.meta.dir, '../tests/fixtures/pr-request-priority/App.tsx')
@@ -11,13 +10,15 @@ const snapshot = { type: 'snapshot', page: { identity: 'fixture', revision: 'r1'
   items: [{ kind: 'image', url: 'https://example.com/fixture.png', label: 'Indexed image' }], nextCursor: null } }
 const html = '<!doctype html><meta charset="utf-8"><title>PR contention regression</title><style>.invisible{visibility:hidden}.absolute{position:absolute}.fixed{position:fixed}.hidden{display:none}svg{max-width:24px}</style><div id="root"></div><script src="/app.js"></script>'
 
-for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]] as const) {
+for (const name of ['chromium', 'webkit'] as const) {
   let infoRequests = 0, checkRequests = 0, mediaRequests = 0
   const batches: number[] = []
   const gate = Promise.withResolvers<void>()
   const server = Bun.serve({ hostname: '127.0.0.1', port: 0,
     async fetch(request, server) {
       const url = new URL(request.url)
+      if (url.pathname === '/_verification/state') return Response.json({ infoRequests, checkRequests, mediaRequests, batches })
+      if (url.pathname === '/_verification/release' && request.method === 'POST') { gate.resolve(); return new Response('released') }
       if (url.pathname === '/ws') {
         if (server.upgrade(request)) return
         return new Response('WebSocket upgrade failed', { status: 400 })
@@ -44,27 +45,10 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]] as con
     },
     websocket: { message(socket, message) { socket.send(message) } },
   })
-  const browser = await engine.launch({ headless: true })
   try {
-    const page = await browser.newPage()
-    await page.goto(`http://127.0.0.1:${server.port}`, { waitUntil: 'domcontentloaded' })
-    await page.locator('a[href="https://github.com/example/test/pull/1"]').hover()
-    const deadline = Date.now() + 5_000
-    while ((!infoRequests || !checkRequests) && Date.now() < deadline) await Bun.sleep(10)
-    if (infoRequests !== 1 || checkRequests !== 1) throw Error(`Unbounded PR admission: ${infoRequests} info, ${checkRequests} checks`)
-    const started = performance.now()
-    await page.getByTestId('media-rail-pill').click()
-    // The gate remains CLOSED until after the tile and WebSocket assertions.
-    await page.getByTestId('media-chip').waitFor({ timeout: 5_000 })
-    const firstTileMs = performance.now() - started
-    await Bun.sleep(250)
-    const pongs = await page.evaluate(() => (window as unknown as { pongs: number }).pongs)
-    if (mediaRequests !== 1 || infoRequests !== 1 || checkRequests !== 1 || pongs !== 1 || batches.some(size => size > 8)) {
-      throw Error('Media or WebSocket was blocked by optional metadata')
-    }
-    console.log(JSON.stringify({ engine: name, firstTileMs, heldInfo: infoRequests, heldChecks: checkRequests, mediaRequests, pongs }))
-    gate.resolve()
-    await page.getByRole('link', { name: 'example/test#18 Open', exact: true }).waitFor({ timeout: 5_000 })
-    if (batches.join(',') !== '8,8,2') throw Error(`Unexpected batches: ${batches}`)
-  } finally { gate.resolve(); await browser.close(); server.stop(true) }
+    const child = Bun.spawn(['node', path.join(import.meta.dir, 'fixtures/prRequestPriorityBrowser.mjs'), name, `http://127.0.0.1:${server.port}`], {
+      env: { ...process.env }, stdout: 'inherit', stderr: 'inherit',
+    })
+    if (await child.exited !== 0) throw Error(`${name} contention verification failed`)
+  } finally { gate.resolve(); server.stop(true) }
 }

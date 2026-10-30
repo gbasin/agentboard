@@ -1,3 +1,5 @@
+import { SessionActivityClient } from './sessionActivityClient'
+import { activityKey } from './sessionActivityProtocol'
 import { TerminalRelayClient } from './relay/client'
 import type { RelayToParent } from './relay/protocol'
 import { CopyModeQuery } from './copyModeQuery'
@@ -948,6 +950,7 @@ setCodexSubagentIndexListener(() => {
   setTimeout(() => {
     dormantRescanQueued = false
     metadataClient.setIndex(getCodexSubagentIndex())
+    activityClient.setIndex(getCodexSubagentIndex())
     for (const record of db.getActiveSessions()) metadataClient.queue(record)
     const { hibernating, history } = getDormantRecords()
     for (const record of [...hibernating, ...history]) metadataClient.queue(record)
@@ -1180,6 +1183,13 @@ export function hydrateSessionsWithAgentSessions(
   return hydrated
 }
 
+const activityClient = new SessionActivityClient(patches => {
+  const byKey = new Map(patches.map(patch => [patch.key, patch]))
+  for (const session of registry.getAll()) {
+    const patch = byKey.get(activityKey(session))
+    if (patch && !session.remote) registry.updateSession(session.id, { activity: patch.activity })
+  }
+})
 let refreshInFlight = false
 // Bumped on optimistic registry mutations (kill, create, resume) so
 // in-flight refreshes that started before the mutation discard their stale
@@ -1263,7 +1273,9 @@ async function refreshSessionsAsync(): Promise<void> {
         const tHydrate = performance.now()
         recordSuccessfulRefreshWindowCount(countLocalSessions(sessions))
         const hydrated = hydrateSessionsWithAgentSessions(sessions, { serverPid: tmuxServerPid })
-        const withOverrides = applyForceWorkingOverrides(hydrated)
+        const observed = activityClient.enrich(hydrated)
+        if (gen !== refreshGeneration) continue
+        const withOverrides = applyForceWorkingOverrides(observed)
         registry.replaceSessions(mergeRemoteSessions(withOverrides))
         const hydrateMs = Math.round(performance.now() - tHydrate)
         if (hydrateMs > 50) {
@@ -1292,7 +1304,9 @@ async function refreshSessionsAsync(): Promise<void> {
         const hydrated = hydrateSessionsWithAgentSessions(sessions, {
           serverPid: sessionManager.lastEnumeratedServerPid,
         })
-        const withOverrides = applyForceWorkingOverrides(hydrated)
+        const observed = activityClient.enrich(hydrated)
+        if (gen !== refreshGeneration) continue
+        const withOverrides = applyForceWorkingOverrides(observed)
         registry.replaceSessions(mergeRemoteSessions(withOverrides))
         return
       }
@@ -2503,6 +2517,7 @@ async function cleanupAllTerminals() {
   throwawayShellReaper.dispose()
   setCodexSubagentIndexListener(null)
   metadataClient.dispose()
+  activityClient.dispose()
   thumbnailClient.dispose()
   logPoller.stop()
   persistence?.dispose()

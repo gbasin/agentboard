@@ -590,3 +590,18 @@ body {
     animation: none;
   }
 }
+
+/* Expand the counter hit area without increasing session-row height. Keep the
+   horizontal inset inside the existing gaps beside the name and status pill. */
+@media (pointer: coarse) {
+  .activity-counter::after,
+  .activity-status::after {
+    content: '';
+    position: absolute;
+    left: -3px;
+    right: -3px;
+    top: 50%;
+    height: 44px;
+    transform: translateY(-50%);
+  }
+}

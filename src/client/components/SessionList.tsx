@@ -33,6 +33,7 @@ import { useIsMobileLayout } from '../hooks/useMobileLayout'
 import { useBottomPinnedScroll } from '../hooks/useBottomPinnedScroll'
 import { useMenuViewportFit } from '../hooks/useMenuViewportFit'
 import AgentIcon from './AgentIcon'
+import SessionActivity from './SessionActivity'
 import { Copy01Icon, Edit05Icon, File06Icon, HandIcon, Moon01Icon, PlusIcon, XCloseIcon } from './icons'
 import { ICON_SIZE, MOBILE_ROW_TARGET_CLASS } from './controlStyles'
 import ProjectBadge from './ProjectBadge'
@@ -1228,21 +1229,16 @@ function SessionRow({
               {sessionIdPrefix}
             </span>
           )}
-          {needsInput ? (
-            <span
-              className={`ml-1 flex shrink-0 items-center justify-center rounded-full px-1.5 py-0.5 ${statusPillClass[session.status]} pulse-approval`}
-              onAnimationEnd={handlePulseAnimationEnd}
-            >
-              <HandIcon width={ICON_SIZE.pill} height={ICON_SIZE.pill} aria-label="Needs input" />
-            </span>
-          ) : (
-            <span
-              className={`ml-1 shrink-0 rounded-full px-1.5 py-0.5 text-right text-xs tabular-nums ${statusPillClass[session.status]}${isPulsingComplete ? ' pulse-complete' : ''}`}
-              onAnimationEnd={handlePulseAnimationEnd}
-            >
-              {lastActivity}
-            </span>
-          )}
+          <SessionActivity
+            session={session}
+            statusClassName={needsInput
+              ? `ml-1 flex shrink-0 items-center justify-center rounded-full px-1.5 py-0.5 ${statusPillClass[session.status]} pulse-approval`
+              : `ml-1 shrink-0 rounded-full px-1.5 py-0.5 text-right text-xs tabular-nums ${statusPillClass[session.status]}${isPulsingComplete ? ' pulse-complete' : ''}`}
+            onAnimationEnd={handlePulseAnimationEnd}
+            statusContent={needsInput
+              ? <HandIcon width={ICON_SIZE.pill} height={ICON_SIZE.pill} aria-label="Needs input" />
+              : lastActivity}
+          />
         </div>
 
         {/* Line 2: Project badge + last user message (up to 2 lines total) */}
@@ -1261,6 +1257,7 @@ function SessionRow({
             )}
           </div>
         )}
+
 
         {/* Line 3: PR chips */}
         {session.prs && session.prs.length > 0 && (
