@@ -63,4 +63,4 @@ export function SpinnerIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
-export { default as Dataflow03Icon } from '@untitledui-icons/react/line/esm/Dataflow03Icon'
+export { default as Users01Icon } from '@untitledui-icons/react/line/esm/Users01Icon'

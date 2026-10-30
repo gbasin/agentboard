@@ -4,7 +4,7 @@ import { Popover } from '@base-ui/react/popover'
 import type { Session } from '@shared/types'
 import type { AgentActivity } from '@shared/activity'
 import { formatRelativeTime } from '../utils/time'
-import { Dataflow03Icon, XCloseIcon } from './icons'
+import { Users01Icon, XCloseIcon } from './icons'
 import { ICON_SIZE } from './controlStyles'
 
 function ActivityLine({ name, activity }: { name: string; activity: AgentActivity }) {
@@ -57,7 +57,7 @@ export default function SessionActivity({ session, statusClassName, statusConten
           className="activity-counter relative inline-flex shrink-0 items-center gap-1 rounded px-1 py-0.5 text-xs tabular-nums text-secondary hover:bg-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
           onPointerDown={stop} onTouchStart={stop} onTouchEnd={stop} onClick={event => { event.stopPropagation(); lastTrigger.current = event.currentTarget }}
         >
-          <Dataflow03Icon aria-hidden width={ICON_SIZE.pill} height={ICON_SIZE.pill} />
+          <Users01Icon aria-hidden width={ICON_SIZE.pill} height={ICON_SIZE.pill} />
           <span>{data.running}</span>
           {data.blocked > 0 && <span aria-hidden data-testid="activity-attention" className="h-1 w-1 rounded-full bg-amber-500" />}
           {data.unknown > 0 && <span aria-hidden className="text-muted">?</span>}
