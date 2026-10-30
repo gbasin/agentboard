@@ -70,8 +70,13 @@ class TerminalMock {
     return true
   }
 
-  write(data: string) {
-    this.writes.push(data)
+  holdWrites = false
+  pendingWrites: Array<() => void> = []
+
+  finishWrite() { this.pendingWrites.shift()?.() }
+
+  write(data: string, callback?: () => void) {
+    if (data) this.writes.push(data)
     if (data.includes('\x1b[?1002h')) this.mouseTrackingMode = 'drag'
     else if (data.includes('\x1b[?1003h')) this.mouseTrackingMode = 'any'
     else if (data.includes('\x1b[?1000h')) this.mouseTrackingMode = 'vt200'
@@ -81,6 +86,10 @@ class TerminalMock {
       data.includes('\x1b[?1003l')
     ) {
       this.mouseTrackingMode = 'none'
+    }
+    if (callback) {
+      if (this.holdWrites) this.pendingWrites.push(callback)
+      else callback()
     }
   }
 
@@ -346,6 +355,12 @@ function createContainerMock() {
   return { container, textarea, listeners, listenerEntries, dispatchEvent, displayLog }
 }
 
+// Input/clipboard fixtures model the server's initial attachment acknowledgment.
+function subscribeReadyTerminal(listener: (message: ServerMessage) => void) {
+  listener({ type: 'terminal-ready', sessionId: 'session-1' })
+  return () => {}
+}
+
 function TerminalHarness(props: {
   sessionId: string | null
   tmuxTarget?: string | null
@@ -363,6 +378,8 @@ function TerminalHarness(props: {
   onScrollChange?: (isAtBottom: boolean) => void
   onPasteFiles?: (draft: { text: string; files: File[] }) => void
   onPasteError?: (message: string) => void
+  onDeferredInput?: (data: string, kind: 'typing' | 'paste') => void
+  deferInput?: boolean
 }) {
   const { containerRef, isTmuxCopyMode } = useTerminal({
     ...props,
@@ -599,7 +616,7 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={(listener) => {
             listeners.push(listener)
             return () => {}
@@ -674,7 +691,7 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={(listener) => {
             listeners.push(listener)
             return () => {}
@@ -833,7 +850,7 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={(listener) => {
             listeners.push(listener)
             return () => {}
@@ -865,7 +882,7 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-2"
           tmuxTarget="agentboard:@2"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={(listener) => {
             listeners.push(listener)
             return () => {}
@@ -1023,7 +1040,7 @@ describe('useTerminal', () => {
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
           connectionStatus="connected"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={() => () => {}}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -1041,7 +1058,7 @@ describe('useTerminal', () => {
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
           connectionStatus="reconnecting"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={() => () => {}}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -1056,7 +1073,7 @@ describe('useTerminal', () => {
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
           connectionStatus="connected"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={() => () => {}}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -1096,7 +1113,7 @@ describe('useTerminal', () => {
           tmuxTarget="agentboard:@1"
           connectionStatus="connected"
           connectionEpoch={1}
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={() => () => {}}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -1115,7 +1132,7 @@ describe('useTerminal', () => {
           tmuxTarget="agentboard:@1"
           connectionStatus="connected"
           connectionEpoch={2}
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={() => () => {}}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -1173,7 +1190,7 @@ describe('useTerminal', () => {
           tmuxTarget="agentboard:@1"
           connectionStatus="connected"
           connectionEpoch={1}
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={() => () => {}}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -1203,7 +1220,7 @@ describe('useTerminal', () => {
           tmuxTarget="agentboard:@1"
           connectionStatus="connected"
           connectionEpoch={2}
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={() => () => {}}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -1219,7 +1236,7 @@ describe('useTerminal', () => {
           tmuxTarget="agentboard:@1"
           connectionStatus="connected"
           connectionEpoch={3}
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={() => () => {}}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -1289,7 +1306,7 @@ describe('useTerminal', () => {
           tmuxTarget="agentboard:@1"
           connectionStatus="connected"
           connectionEpoch={1}
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={(listener) => {
             listeners.push(listener)
             return () => {}
@@ -1411,7 +1428,7 @@ describe('useTerminal', () => {
     try {
       await act(async () => { renderer = TestRenderer.create(
         <TerminalHarness sessionId="session-1" tmuxTarget="agentboard:@1" theme={{}} fontSize={12}
-          sendMessage={(message) => sent.push(message)} subscribe={() => () => {}}
+          sendMessage={(message) => sent.push(message)} subscribe={subscribeReadyTerminal}
           onPasteFiles={(draft) => drafts.push(draft)} onPasteError={message => errors.push(message)} />,
         {createNodeMock: () => container},
       ) })
@@ -1471,8 +1488,8 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
-          subscribe={() => () => {}}
+          sendMessage={(message) => { sendCalls.push(message) }}
+          subscribe={subscribeReadyTerminal}
           theme={{ background: '#000' }}
           fontSize={12}
         />,
@@ -1561,8 +1578,8 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
-          subscribe={() => () => {}}
+          sendMessage={(message) => { sendCalls.push(message) }}
+          subscribe={subscribeReadyTerminal}
           theme={{ background: '#000' }}
           fontSize={12}
         />,
@@ -1634,8 +1651,8 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
-          subscribe={() => () => {}}
+          sendMessage={(message) => { sendCalls.push(message) }}
+          subscribe={subscribeReadyTerminal}
           theme={{ background: '#000' }}
           fontSize={12}
         />,
@@ -1693,8 +1710,8 @@ describe('useTerminal', () => {
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
           agentType="codex"
-          sendMessage={(message) => sendCalls.push(message)}
-          subscribe={() => () => {}}
+          sendMessage={(message) => { sendCalls.push(message) }}
+          subscribe={subscribeReadyTerminal}
           theme={{ background: '#000' }}
           fontSize={12}
         />,
@@ -1761,9 +1778,9 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={(listener) => {
-            listeners.push(listener)
+            listeners.push(listener); listener({ type: 'terminal-ready', sessionId: 'session-1' })
             return () => {}
           }}
           theme={{ background: '#000' }}
@@ -1841,9 +1858,9 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={(listener) => {
-            listeners.push(listener)
+            listeners.push(listener); listener({ type: 'terminal-ready', sessionId: 'session-1' })
             return () => {}
           }}
           theme={{ background: '#000' }}
@@ -1913,9 +1930,9 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={(listener) => {
-            listeners.push(listener)
+            listeners.push(listener); listener({ type: 'terminal-ready', sessionId: 'session-1' })
             return () => {}
           }}
           theme={{ background: '#000' }}
@@ -1988,9 +2005,9 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={(listener) => {
-            listeners.push(listener)
+            listeners.push(listener); listener({ type: 'terminal-ready', sessionId: 'session-1' })
             return () => {}
           }}
           theme={{ background: '#000' }}
@@ -2115,7 +2132,7 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={subscribe}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -2161,7 +2178,7 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-2"
           tmuxTarget="agentboard:@2"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={subscribe}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -2368,9 +2385,9 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={(listener) => {
-            listeners.push(listener)
+            listeners.push(listener); listener({ type: 'terminal-ready', sessionId: 'session-1' })
             return () => {}
           }}
           theme={{ background: '#000' }}
@@ -2430,9 +2447,9 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={(listener) => {
-            listeners.push(listener)
+            listeners.push(listener); listener({ type: 'terminal-ready', sessionId: 'session-1' })
             return () => {}
           }}
           theme={{ background: '#000' }}
@@ -2506,7 +2523,7 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={() => () => {}}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -2566,7 +2583,7 @@ describe('useTerminal', () => {
           session={terminalSession}
           sessions={[terminalSession]}
           connectionStatus="connected"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={(listener) => {
             listeners.push(listener)
             return () => {}
@@ -2653,7 +2670,7 @@ describe('useTerminal', () => {
           session={terminalSession}
           sessions={[terminalSession]}
           connectionStatus="connected"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={(listener) => {
             listeners.push(listener)
             return () => {}
@@ -2760,7 +2777,7 @@ describe('useTerminal', () => {
           session={terminalSession}
           sessions={[terminalSession]}
           connectionStatus="connected"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={(listener) => {
             listeners.push(listener)
             return () => {}
@@ -2958,8 +2975,8 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
-          subscribe={() => () => {}}
+          sendMessage={(message) => { sendCalls.push(message) }}
+          subscribe={subscribeReadyTerminal}
           theme={{ background: '#000' }}
           fontSize={12}
         />,
@@ -3022,8 +3039,8 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
-          subscribe={() => () => {}}
+          sendMessage={(message) => { sendCalls.push(message) }}
+          subscribe={subscribeReadyTerminal}
           theme={{ background: '#000' }}
           fontSize={12}
         />,
@@ -3094,8 +3111,8 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
-          subscribe={() => () => {}}
+          sendMessage={(message) => { sendCalls.push(message) }}
+          subscribe={subscribeReadyTerminal}
           theme={{ background: '#000' }}
           fontSize={12}
         />,
@@ -3183,8 +3200,8 @@ describe('useTerminal', () => {
           agentType={agentType}
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
-          subscribe={(listener) => { listeners.push(listener); return () => {} }}
+          sendMessage={(message) => { sendCalls.push(message) }}
+          subscribe={(listener) => { listeners.push(listener); listener({ type: 'terminal-ready', sessionId: 'session-1' }); return () => {} }}
           theme={{ background: '#000' }}
           fontSize={12}
         />,
@@ -3272,8 +3289,8 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
-          subscribe={() => () => {}}
+          sendMessage={(message) => { sendCalls.push(message) }}
+          subscribe={subscribeReadyTerminal}
           theme={{ background: '#000' }}
           fontSize={12}
         />,
@@ -3348,8 +3365,8 @@ describe('useTerminal', () => {
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
           agentType="codex"
-          sendMessage={(message) => sendCalls.push(message)}
-          subscribe={() => () => {}}
+          sendMessage={(message) => { sendCalls.push(message) }}
+          subscribe={subscribeReadyTerminal}
           theme={{ background: '#000' }}
           fontSize={12}
         />,
@@ -3423,7 +3440,7 @@ describe('useTerminal', () => {
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
           agentType="claude"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={(listener) => {
             listeners.push(listener)
             return () => {}
@@ -3442,7 +3459,7 @@ describe('useTerminal', () => {
           sessionId="session-2"
           tmuxTarget="agentboard:@2"
           agentType="codex"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={(listener) => {
             listeners.push(listener)
             return () => {}
@@ -3522,8 +3539,8 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
-          subscribe={() => () => {}}
+          sendMessage={(message) => { sendCalls.push(message) }}
+          subscribe={subscribeReadyTerminal}
           theme={{ background: '#000' }}
           fontSize={12}
         />,
@@ -3592,8 +3609,8 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
-          subscribe={() => () => {}}
+          sendMessage={(message) => { sendCalls.push(message) }}
+          subscribe={subscribeReadyTerminal}
           theme={{ background: '#000' }}
           fontSize={12}
         />,
@@ -3669,8 +3686,8 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
-          subscribe={() => () => {}}
+          sendMessage={(message) => { sendCalls.push(message) }}
+          subscribe={subscribeReadyTerminal}
           theme={{ background: '#000' }}
           fontSize={12}
         />,
@@ -3745,8 +3762,8 @@ describe('useTerminal', () => {
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
           agentType="codex"
-          sendMessage={(message) => sendCalls.push(message)}
-          subscribe={() => () => {}}
+          sendMessage={(message) => { sendCalls.push(message) }}
+          subscribe={subscribeReadyTerminal}
           theme={{ background: '#000' }}
           fontSize={12}
         />,
@@ -3809,8 +3826,8 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
-          subscribe={() => () => {}}
+          sendMessage={(message) => { sendCalls.push(message) }}
+          subscribe={subscribeReadyTerminal}
           theme={{ background: '#000' }}
           fontSize={12}
         />,
@@ -4823,7 +4840,7 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={() => () => {}}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -4842,7 +4859,7 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-2"
           tmuxTarget="agentboard:@2"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={() => () => {}}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -4863,7 +4880,7 @@ describe('useTerminal', () => {
         <TerminalHarness
           sessionId="session-1"
           tmuxTarget="agentboard:@1"
-          sendMessage={(message) => sendCalls.push(message)}
+          sendMessage={(message) => { sendCalls.push(message) }}
           subscribe={() => () => {}}
           theme={{ background: '#000' }}
           fontSize={12}
@@ -4957,4 +4974,317 @@ describe('useTerminal', () => {
       renderer.unmount()
     })
   })
+})
+
+describe('terminal parser readiness', () => {
+  async function mount(onPasteFiles?: (payload: { text: string; files: File[] }) => void, options: { onDeferredInput?: (data: string, kind: 'typing' | 'paste') => void; deferInput?: boolean; rejectInput?: boolean } = {}) {
+    clearSnapshotCache()
+    const { container, dispatchEvent } = createContainerMock()
+    const sent: Array<Record<string, unknown>> = []
+    let listener: (message: ServerMessage) => void = () => {}
+    const subscribe = (next: (message: ServerMessage) => void) => { listener = next; return () => {} }
+    const sendMessage = (message: any) => {
+      if (options.rejectInput && (message.type === 'terminal-input' || message.type === 'terminal-paste')) return false
+      sent.push(message)
+    }
+    const props = (sessionId: string, connectionEpoch: number) => ({
+      sessionId, tmuxTarget: `agentboard:${sessionId}`, connectionEpoch,
+      sendMessage, subscribe, onPasteFiles, onDeferredInput: options.onDeferredInput, deferInput: options.deferInput, theme: {}, fontSize: 12,
+    })
+    let renderer!: TestRenderer.ReactTestRenderer
+    await act(async () => {
+      renderer = TestRenderer.create(<TerminalHarness {...props('A', 1)} />, { createNodeMock: () => container })
+    })
+    const terminal = TerminalMock.instances[0]!
+    return {
+      terminal, sent, dispatchEvent,
+      message(message: ServerMessage & { _connectionEpoch?: number }) { act(() => listener(message)) },
+      input(data: string) { act(() => terminal.emitData(data)) },
+      async select(sessionId: string, epoch = 1) {
+        await act(async () => renderer.update(<TerminalHarness {...props(sessionId, epoch)} />))
+      },
+      drain() { act(() => { while (terminal.pendingWrites.length) terminal.finishWrite() }) },
+      close() { act(() => renderer.unmount()) },
+    }
+  }
+
+  test('recovery text is captured for review without replaying on readiness', async () => {
+    const deferred: unknown[] = []
+    const h = await mount(undefined, { onDeferredInput: (data, kind) => deferred.push({ data, kind }) })
+    h.input('hello 🦊')
+    h.input('\r\n\x08\x7f')
+    for (const command of ['\x03', '\t', '\x1b[A', '\x1b[<0;1;1M', 'prefix\x1b[200~text', '\x85']) h.input(command)
+    expect(deferred).toEqual([{ data: 'hello 🦊', kind: 'typing' }, { data: '\r\n\x08\x7f', kind: 'typing' }])
+    h.message({ type: 'terminal-ready', sessionId: 'A' })
+    h.drain()
+    expect(h.sent.some(m => m.type === 'terminal-input' || m.type === 'terminal-paste')).toBe(false)
+    h.input('live')
+    expect(deferred).toHaveLength(2) // Legacy void send callbacks still mean accepted.
+    expect(h.sent).toContainEqual({ type: 'terminal-input', sessionId: 'A', data: 'live' })
+    h.close()
+  })
+
+  test('transport rejection captures text even before React observes recovery', async () => {
+    const deferred: unknown[] = []
+    const h = await mount(undefined, { rejectInput: true, onDeferredInput: (data, kind) => deferred.push({ data, kind }) })
+    h.message({ type: 'terminal-ready', sessionId: 'A' })
+    h.drain()
+    h.input('resume gap')
+    h.input('\x03')
+    expect(deferred).toEqual([{ data: 'resume gap', kind: 'typing' }])
+    expect(h.sent.some(m => m.type === 'terminal-input')).toBe(false)
+    h.close()
+  })
+
+  test('transport rejection preserves current plain clipboard text without replay', async () => {
+    jest.useFakeTimers()
+    globalAny.navigator = { userAgent: 'Chrome', platform: 'MacIntel', maxTouchPoints: 0 } as Navigator
+    const deferred: unknown[] = []
+    const h = await mount(undefined, { rejectInput: true, onDeferredInput: (data, kind) => deferred.push({ data, kind }) })
+    h.message({ type: 'terminal-ready', sessionId: 'A' })
+    h.drain()
+    act(() => { h.terminal.emitKey({ type: 'keydown', key: 'v', metaKey: true } as KeyboardEvent) })
+    await act(async () => {
+      h.dispatchEvent('paste', { preventDefault() {}, stopPropagation() {}, clipboardData: { getData: () => 'plain\r\n\ttext', files: [], items: [], types: ['text/plain'] } })
+    })
+    expect(deferred).toEqual([{ data: 'plain\n\ttext', kind: 'paste' }])
+    expect(h.sent.some(m => m.type === 'terminal-input' || m.type === 'terminal-paste')).toBe(false)
+    h.close()
+  })
+
+  test('an existing review draft keeps ready typing and native paste out of the terminal', async () => {
+    const deferred: unknown[] = []
+    const h = await mount(undefined, { deferInput: true, onDeferredInput: (data, kind) => deferred.push({ data, kind }) })
+    h.message({ type: 'terminal-ready', sessionId: 'A' })
+    h.drain()
+    h.input('continued')
+    h.dispatchEvent('paste', { preventDefault() {}, stopPropagation() {}, clipboardData: { getData: () => 'paste', files: [], items: [], types: ['text/plain'] } })
+    expect(deferred).toEqual([{ data: 'continued', kind: 'typing' }, { data: 'paste', kind: 'paste' }])
+    expect(h.sent.some(m => m.type === 'terminal-input' || m.type === 'terminal-paste')).toBe(false)
+    h.close()
+  })
+
+  test('recovery paste captures only plain text synchronously, including indentation', async () => {
+    const deferred: unknown[] = []
+    let fileCalls = 0
+    const h = await mount(() => { fileCalls++ }, { onDeferredInput: (data, kind) => deferred.push({ data, kind }) })
+    const paste = (text: string, files: File[] = []) => h.dispatchEvent('paste', {
+      preventDefault() {}, stopPropagation() {},
+      clipboardData: { getData: () => text, files, items: [], types: ['text/plain'] },
+    })
+    paste('one\r\n\ttwo\rthree')
+    for (const text of ['bad\x03', '\x1b[200~paste', 'back\x08', 'delete\x7f', '\x85']) paste(text)
+    paste('file fallback', [new File(['image'], 'image.png', { type: 'image/png' })])
+    expect(deferred).toEqual([{ data: 'one\n\ttwo\nthree', kind: 'paste' }])
+    expect(fileCalls).toBe(0)
+    expect(h.sent.some(m => m.type === 'terminal-input' || m.type === 'terminal-paste')).toBe(false)
+    h.close()
+  })
+
+  test.each(['MacIntel', 'Linux x86_64', 'Win32'])('a blocked paste gesture on %s stays deferred across ready but is cancelled across reconnect', async (platform) => {
+    globalAny.navigator = { platform, userAgent: 'Chrome', maxTouchPoints: 0 } as Navigator
+    const deferred: unknown[] = []
+    const h = await mount(undefined, { onDeferredInput: (data, kind) => deferred.push({ data, kind }) })
+    const gesture = () => act(() => { h.terminal.emitKey({ type: 'keydown', key: 'v', metaKey: platform === 'MacIntel', ctrlKey: platform !== 'MacIntel' } as KeyboardEvent) })
+    const paste = () => h.dispatchEvent('paste', { preventDefault() {}, stopPropagation() {}, clipboardData: { getData: () => 'captured', files: [], items: [], types: ['text/plain'] } })
+    gesture()
+    h.message({ type: 'terminal-ready', sessionId: 'A' })
+    h.drain()
+    paste()
+    expect(deferred).toEqual([{ data: 'captured', kind: 'paste' }])
+    await h.select('A', 2)
+    gesture()
+    await h.select('A', 3)
+    paste()
+    expect(deferred).toHaveLength(1)
+    h.close()
+  })
+
+  test('initial input waits for screen parse and ready barrier; ACK follows parser progress', async () => {
+    const h = await mount()
+    h.input('before-ready')
+    expect(h.sent.some(m => m.type === 'terminal-input')).toBe(false)
+    h.terminal.holdWrites = true
+    h.message({ type: 'terminal-output', sessionId: 'A', data: 'screen', outputSeq: 7 })
+    h.message({ type: 'terminal-ready', sessionId: 'A' })
+    h.input('before-parse')
+    expect(h.sent.some(m => m.type === 'terminal-input' || m.type === 'terminal-ack')).toBe(false)
+    act(() => h.terminal.finishWrite())
+    expect(h.sent).toContainEqual({ type: 'terminal-ack', outputSeq: 7, connectionEpoch: 1 })
+    h.input('before-barrier')
+    expect(h.sent.some(m => m.type === 'terminal-input')).toBe(false)
+    h.drain()
+    h.input('after-parse')
+    expect(h.sent.filter(m => m.type === 'terminal-input')).toEqual([
+      { type: 'terminal-input', sessionId: 'A', data: 'after-parse' },
+    ])
+    h.close()
+  })
+
+  test('old A ready callback cannot enable a new A after A-B-A switching', async () => {
+    const h = await mount()
+    h.terminal.holdWrites = true
+    h.message({ type: 'terminal-ready', sessionId: 'A' })
+    expect(h.terminal.pendingWrites).toHaveLength(1)
+    await h.select('B')
+    await h.select('A')
+    h.drain()
+    h.input('stale-ready')
+    expect(h.sent.some(m => m.type === 'terminal-input')).toBe(false)
+    h.message({ type: 'terminal-ready', sessionId: 'A' })
+    h.input('current-not-parsed')
+    expect(h.sent.some(m => m.type === 'terminal-input')).toBe(false)
+    h.drain()
+    h.input('current-ready')
+    expect(h.sent.filter(m => m.type === 'terminal-input')).toEqual([
+      { type: 'terminal-input', sessionId: 'A', data: 'current-ready' },
+    ])
+    h.close()
+  })
+
+  test('same-session reconnect rejects old parser readiness and ACKs only current socket output', async () => {
+    const h = await mount()
+    h.terminal.holdWrites = true
+    h.message({ type: 'terminal-output', sessionId: 'A', data: 'old', outputSeq: 90 })
+    h.message({ type: 'terminal-ready', sessionId: 'A' })
+    await h.select('A', 2)
+    h.drain()
+    h.input('stale-epoch')
+    expect(h.sent.some(m => m.type === 'terminal-input' || m.type === 'terminal-ack')).toBe(false)
+    h.message({ type: 'terminal-output', sessionId: 'A', data: 'new', outputSeq: 1 })
+    h.message({ type: 'terminal-ready', sessionId: 'A' })
+    h.drain()
+    expect(h.sent.filter(m => m.type === 'terminal-ack')).toEqual([{ type: 'terminal-ack', outputSeq: 1, connectionEpoch: 2 }])
+    h.input('new-epoch')
+    expect(h.sent.filter(m => m.type === 'terminal-input')).toEqual([
+      { type: 'terminal-input', sessionId: 'A', data: 'new-epoch' },
+    ])
+    h.close()
+  })
+
+  test('output arriving before React sees a new socket retains its diagnostic epoch', async () => {
+    const h = await mount()
+    h.terminal.holdWrites = true
+    // The manager has advanced to epoch 2, but React still exposes epoch 1.
+    h.message({ type: 'terminal-output', sessionId: 'A', data: 'new-socket', outputSeq: 1, _connectionEpoch: 2 })
+    h.message({ type: 'terminal-ready', sessionId: 'A' })
+    await h.select('A', 2)
+    h.drain()
+    expect(h.sent.filter(m => m.type === 'terminal-ack')).toEqual([
+      { type: 'terminal-ack', outputSeq: 1, connectionEpoch: 2 },
+    ])
+    h.input('old-ready')
+    expect(h.sent.some(m => m.type === 'terminal-input')).toBe(false)
+    // Late output from the old socket cannot acknowledge a sequence on socket 2.
+    h.message({ type: 'terminal-output', sessionId: 'A', data: 'old-socket', outputSeq: 99, _connectionEpoch: 1 })
+    h.message({ type: 'terminal-ready', sessionId: 'A' })
+    h.drain()
+    expect(h.sent.filter(m => m.type === 'terminal-ack')).toEqual([
+      { type: 'terminal-ack', outputSeq: 1, connectionEpoch: 2 },
+    ])
+    h.close()
+  })
+
+  test('a new screen reset waits for old parsing instead of painting ahead of it', async () => {
+    const h = await mount()
+    h.message({ type: 'terminal-ready', sessionId: 'A' })
+    h.terminal.holdWrites = true
+    h.message({ type: 'terminal-output', sessionId: 'A', data: 'old-screen', outputSeq: 3 })
+    const resets = h.terminal.resetCalls
+    await h.select('B')
+    h.message({ type: 'terminal-output', sessionId: 'B', data: 'new-screen', outputSeq: 4 })
+    h.message({ type: 'terminal-ready', sessionId: 'B' })
+    expect(h.terminal.resetCalls).toBe(resets)
+    expect(h.terminal.writes).not.toContain('new-screen')
+    h.input('too-early')
+    expect(h.sent.some(m => m.type === 'terminal-input')).toBe(false)
+    h.drain()
+    expect(h.terminal.resetCalls).toBe(resets + 1)
+    expect(h.terminal.writes.at(-1)).toBe('new-screen')
+    expect(h.sent.filter(m => m.type === 'terminal-ack')).toEqual([
+      { type: 'terminal-ack', outputSeq: 3, connectionEpoch: 1 }, { type: 'terminal-ack', outputSeq: 4, connectionEpoch: 1 },
+    ])
+    h.input('B-ready')
+    expect(h.sent.filter(m => m.type === 'terminal-input')).toEqual([
+      { type: 'terminal-input', sessionId: 'B', data: 'B-ready' },
+    ])
+    h.close()
+  })
+
+  test.each(['switch', 'reconnect'] as const)('async clipboard text cannot replay after %s', async (transition) => {
+    jest.useFakeTimers()
+    let finishRead!: (text: string) => void
+    globalAny.navigator = {
+      userAgent: 'Chrome', platform: 'MacIntel', maxTouchPoints: 0,
+      clipboard: { readText: () => new Promise<string>(resolve => { finishRead = resolve }), writeText: async () => {} },
+    } as unknown as Navigator
+    const deferred: unknown[] = []
+    const h = await mount(undefined, { onDeferredInput: (data, kind) => deferred.push({ data, kind }) })
+    h.message({ type: 'terminal-ready', sessionId: 'A' })
+    act(() => { h.terminal.emitKey({ type: 'keydown', key: 'v', metaKey: true } as KeyboardEvent) })
+    await act(async () => { jest.advanceTimersByTime(100) })
+    expect(typeof finishRead).toBe('function')
+    if (transition === 'switch') { await h.select('B'); await h.select('A') }
+    else await h.select('A', 2)
+    h.message({ type: 'terminal-ready', sessionId: 'A' })
+    await act(async () => { finishRead('stale text') })
+    expect(h.sent.some(m => m.type === 'terminal-input' || m.type === 'terminal-paste')).toBe(false)
+    h.input('fresh')
+    expect(h.sent).toContainEqual({ type: 'terminal-input', sessionId: 'A', data: 'fresh' })
+    expect(deferred).toEqual([])
+    h.close()
+  })
+
+  test.each(['switch', 'reconnect'] as const)('async image resolution cannot replay after %s', async (transition) => {
+    globalAny.navigator = { userAgent: 'Chrome', platform: 'MacIntel', maxTouchPoints: 0 } as Navigator
+    const originalFetch = globalThis.fetch
+    let finishImage!: (response: Response) => void
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      if (String(input) === '/api/clipboard-file-path') return new Promise<Response>(resolve => { finishImage = resolve })
+      return new Response('{}')
+    }) as typeof fetch
+    const h = await mount()
+    try {
+      h.message({ type: 'terminal-ready', sessionId: 'A' })
+      act(() => { h.terminal.emitKey({ type: 'keydown', key: 'v', ctrlKey: true } as KeyboardEvent) })
+      expect(typeof finishImage).toBe('function')
+      if (transition === 'switch') { await h.select('B'); await h.select('A') }
+      else await h.select('A', 2)
+      h.message({ type: 'terminal-ready', sessionId: 'A' })
+      await act(async () => { finishImage({ ok: true, json: async () => ({ path: '/tmp/stale.png', isImage: true }) } as Response) })
+      expect(h.sent.some(m => m.type === 'terminal-input' || m.type === 'terminal-paste')).toBe(false)
+      h.input('fresh')
+      expect(h.sent).toContainEqual({ type: 'terminal-input', sessionId: 'A', data: 'fresh' })
+    } finally { h.close(); globalThis.fetch = originalFetch }
+  })
+
+  test('pending native file paste cannot start an upload after reconnect', async () => {
+    globalAny.navigator = { userAgent: 'Chrome', platform: 'MacIntel', maxTouchPoints: 0 } as Navigator
+    const uploads: unknown[] = []
+    const h = await mount(payload => uploads.push(payload))
+    h.message({ type: 'terminal-ready', sessionId: 'A' })
+    act(() => { h.terminal.emitKey({ type: 'keydown', key: 'v', metaKey: true } as KeyboardEvent) })
+    // Resolve the native event, then change the attachment before its promise runs.
+    h.dispatchEvent('paste', {
+      preventDefault() {}, stopPropagation() {},
+      clipboardData: { getData: () => '', files: [new File(['data'], 'file.txt')], items: [], types: ['Files'] },
+    })
+    await h.select('A', 2)
+    h.message({ type: 'terminal-ready', sessionId: 'A' })
+    await act(async () => {})
+    expect(uploads).toEqual([])
+    h.close()
+  })
+
+  test('terminal error revokes pending parser readiness', async () => {
+    const h = await mount()
+    h.terminal.holdWrites = true
+    h.message({ type: 'terminal-ready', sessionId: 'A' })
+    h.message({ type: 'terminal-error', sessionId: 'A', code: 'ERR_TMUX_ATTACH_FAILED', message: 'gone', retryable: true })
+    h.drain()
+    h.input('after-error')
+    expect(h.sent.some(m => m.type === 'terminal-input')).toBe(false)
+    h.close()
+  })
+
 })

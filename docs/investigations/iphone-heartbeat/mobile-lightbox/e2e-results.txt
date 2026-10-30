@@ -1,0 +1,18 @@
+Full combined matrix:57 passed,3 failed (10.1m).
+Failures: one initial terminal attach error; two old thumbnail width expectations128 vs64.
+Corrected sizing first rerun:1 passed,1 failed (WebKit subpixel height843.984375 vs844).
+Sizing with subpixel tolerance:2 passed (21.8s).
+Session switch repeat-each3:5 passed,1 test teardown route.fetch/context-close error.
+After awaiting response interception and draining route callbacks:6 passed (2.0m).
+
+Final follow-up output:
+  ✓  1 [chromium] › tests/e2e/media-thumbnail.spec.ts:43:1 › nearby thumbnails stay lazy; selected originals fill the mobile viewer (8.4s)
+  ✓  2 [webkit] › tests/e2e/media-thumbnail.spec.ts:43:1 › nearby thumbnails stay lazy; selected originals fill the mobile viewer (8.5s)
+  2 passed (21.8s)
+  ✓  1 [chromium] › tests/e2e/media-rail.spec.ts:139:1 › a delayed page cannot populate a different selected session (18.1s)
+  ✓  2 [chromium] › tests/e2e/media-rail.spec.ts:139:1 › a delayed page cannot populate a different selected session (18.4s)
+  ✓  3 [chromium] › tests/e2e/media-rail.spec.ts:139:1 › a delayed page cannot populate a different selected session (17.3s)
+  ✓  4 [webkit] › tests/e2e/media-rail.spec.ts:139:1 › a delayed page cannot populate a different selected session (19.9s)
+  ✓  5 [webkit] › tests/e2e/media-rail.spec.ts:139:1 › a delayed page cannot populate a different selected session (18.7s)
+  ✓  6 [webkit] › tests/e2e/media-rail.spec.ts:139:1 › a delayed page cannot populate a different selected session (18.5s)
+  6 passed (2.0m)

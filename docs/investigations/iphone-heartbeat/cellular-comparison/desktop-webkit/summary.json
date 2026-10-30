@@ -1,0 +1,266 @@
+[
+  {
+    "build": "release",
+    "profile": "jitter",
+    "connections": 1,
+    "pings": [
+      1,
+      2,
+      3
+    ],
+    "pongs": [
+      1,
+      2,
+      3
+    ],
+    "timeouts": 0,
+    "connectTimeouts": 0,
+    "ready": 1,
+    "finalInput": true,
+    "error": null,
+    "network": {
+      "connections": 1,
+      "upBytes": 8028,
+      "downBytes": 217478,
+      "maxQueuedBytes": 11197,
+      "segments": 412
+    }
+  },
+  {
+    "build": "pr",
+    "profile": "jitter",
+    "connections": 1,
+    "pings": [
+      1,
+      2,
+      3
+    ],
+    "pongs": [
+      1,
+      2,
+      3
+    ],
+    "timeouts": 0,
+    "connectTimeouts": 0,
+    "ready": 1,
+    "finalInput": true,
+    "error": null,
+    "network": {
+      "connections": 1,
+      "upBytes": 15008,
+      "downBytes": 198493,
+      "maxQueuedBytes": 7950,
+      "segments": 543
+    }
+  },
+  {
+    "build": "release",
+    "profile": "downlink-stall",
+    "connections": 2,
+    "pings": [
+      1,
+      2,
+      3
+    ],
+    "pongs": [
+      2,
+      3
+    ],
+    "timeouts": 1,
+    "connectTimeouts": 0,
+    "ready": 2,
+    "finalInput": true,
+    "error": null,
+    "network": {
+      "connections": 2,
+      "upBytes": 8561,
+      "downBytes": 212413,
+      "maxQueuedBytes": 32825,
+      "segments": 402
+    }
+  },
+  {
+    "build": "release",
+    "profile": "baseline",
+    "connections": 1,
+    "pings": [
+      1,
+      2,
+      3
+    ],
+    "pongs": [
+      1,
+      2,
+      3
+    ],
+    "timeouts": 0,
+    "connectTimeouts": 0,
+    "ready": 1,
+    "finalInput": true,
+    "error": null,
+    "network": {
+      "connections": 1,
+      "upBytes": 8242,
+      "downBytes": 520957,
+      "maxQueuedBytes": 18631,
+      "segments": 564
+    }
+  },
+  {
+    "build": "pr",
+    "profile": "baseline",
+    "connections": 1,
+    "pings": [
+      1,
+      2,
+      3
+    ],
+    "pongs": [
+      1,
+      2,
+      3
+    ],
+    "timeouts": 0,
+    "connectTimeouts": 0,
+    "ready": 1,
+    "finalInput": true,
+    "error": null,
+    "network": {
+      "connections": 1,
+      "upBytes": 15336,
+      "downBytes": 211111,
+      "maxQueuedBytes": 3977,
+      "segments": 559
+    }
+  },
+  {
+    "build": "pr",
+    "profile": "duplex-stall",
+    "connections": 2,
+    "pings": [
+      1,
+      2,
+      3
+    ],
+    "pongs": [
+      2,
+      3
+    ],
+    "timeouts": 1,
+    "connectTimeouts": 0,
+    "ready": 2,
+    "finalInput": true,
+    "error": null,
+    "network": {
+      "connections": 2,
+      "upBytes": 14796,
+      "downBytes": 217619,
+      "maxQueuedBytes": 27268,
+      "segments": 527
+    }
+  },
+  {
+    "build": "pr",
+    "profile": "downlink-stall",
+    "connections": 2,
+    "pings": [
+      1,
+      2,
+      3
+    ],
+    "pongs": [
+      2,
+      3
+    ],
+    "timeouts": 1,
+    "connectTimeouts": 0,
+    "ready": 2,
+    "finalInput": true,
+    "error": null,
+    "network": {
+      "connections": 2,
+      "upBytes": 14711,
+      "downBytes": 214519,
+      "maxQueuedBytes": 29799,
+      "segments": 534
+    }
+  },
+  {
+    "build": "pr",
+    "profile": "uplink-stall",
+    "connections": 2,
+    "pings": [
+      1,
+      2,
+      3
+    ],
+    "pongs": [
+      2,
+      3
+    ],
+    "timeouts": 1,
+    "connectTimeouts": 0,
+    "ready": 2,
+    "finalInput": true,
+    "error": null,
+    "network": {
+      "connections": 2,
+      "upBytes": 15888,
+      "downBytes": 221194,
+      "maxQueuedBytes": 10754,
+      "segments": 565
+    }
+  },
+  {
+    "build": "release",
+    "profile": "duplex-stall",
+    "connections": 2,
+    "pings": [
+      1,
+      2,
+      3
+    ],
+    "pongs": [
+      2,
+      3
+    ],
+    "timeouts": 1,
+    "connectTimeouts": 0,
+    "ready": 2,
+    "finalInput": true,
+    "error": null,
+    "network": {
+      "connections": 2,
+      "upBytes": 8772,
+      "downBytes": 228822,
+      "maxQueuedBytes": 27080,
+      "segments": 413
+    }
+  },
+  {
+    "build": "release",
+    "profile": "uplink-stall",
+    "connections": 2,
+    "pings": [
+      1,
+      2,
+      3
+    ],
+    "pongs": [
+      2,
+      3
+    ],
+    "timeouts": 1,
+    "connectTimeouts": 0,
+    "ready": 2,
+    "finalInput": true,
+    "error": null,
+    "network": {
+      "connections": 2,
+      "upBytes": 8773,
+      "downBytes": 229623,
+      "maxQueuedBytes": 12386,
+      "segments": 412
+    }
+  }
+]

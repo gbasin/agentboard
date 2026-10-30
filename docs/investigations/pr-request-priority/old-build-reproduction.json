@@ -1,0 +1,66 @@
+[
+  {
+    "version": "old",
+    "engine": "chromium",
+    "held": {
+      "prHits": 18,
+      "mediaHits": 0,
+      "pongs": 1,
+      "loading": 1,
+      "tiles": 0
+    },
+    "afterReleaseMs": 24428.136874999997,
+    "requests": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ]
+  },
+  {
+    "version": "old",
+    "engine": "webkit",
+    "held": {
+      "prHits": 18,
+      "mediaHits": 0,
+      "pongs": 1,
+      "loading": 1,
+      "tiles": 0
+    },
+    "afterReleaseMs": 24034.798458,
+    "requests": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ]
+  }
+]

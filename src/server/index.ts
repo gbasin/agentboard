@@ -1,4 +1,9 @@
-import { SessionActivityTracker } from './sessionActivity'
+import { SessionActivityClient } from './sessionActivityClient'
+import { activityKey } from './sessionActivityProtocol'
+import { TerminalRelayClient } from './relay/client'
+import type { RelayToParent } from './relay/protocol'
+import { CopyModeQuery } from './copyModeQuery'
+import { SessionReadClient } from './sessionReadClient'
 import type { Server, ServerWebSocket } from 'bun'
 import { createReadStream } from 'node:fs'
 import os from 'node:os'
@@ -9,6 +14,10 @@ import { Hono, type Context } from 'hono'
 import { serveStatic } from 'hono/bun'
 import { config, isValidHostname } from './config'
 import { createPasteFileRoutes } from './routes/pasteFile'
+import { OwnershipObserver } from './ownership/observer'
+import { OwnershipMatcher } from './ownership/matcher'
+import { createLocalOwnershipIO } from './ownership/localIO'
+import { probeOwnership } from './ownership/probe'
 import { ensureTmux } from './prerequisites'
 import { applyNestedTmuxDecision } from './tmuxIsolation'
 import { sanitizedTmuxEnv } from './tmuxEnv'
@@ -17,6 +26,7 @@ import { SessionManager } from './SessionManager'
 import { ThrowawayShellReaper } from './throwawayShellReaper'
 import { SessionRegistry } from './SessionRegistry'
 import { PersistentSessions } from './persistence/manager'
+import { refreshDormantConversation } from './persistence/legacyImport'
 import type { SavedSession } from '../shared/persistence'
 import { PersistenceRuntime } from './persistence/runtime'
 import { registerPersistenceRoutes } from './persistence/routes'
@@ -26,10 +36,15 @@ import {
   type ClaimCurrentWindowPatch,
 } from './db'
 import { LogPoller } from './logPoller'
-import { toAgentSession, getMergedPullRequests, getMergedMedia } from './agentSessions'
-import { createDormantPrScanner } from './dormantPrScan'
-import { extractMediaItems } from './mediaExtractor'
-import { getSubagentLogPaths, setCodexSubagentIndexListener } from './subagentLogs'
+import { toAgentSession as buildAgentSession } from './agentSessions'
+import { SessionMetadataClient } from './sessionMetadataClient'
+import { SessionMetadataPublisher } from './sessionMetadataViews'
+import { MediaThumbnailClient } from './mediaThumbnailClient'
+import { createMediaRoutes } from './mediaRoutes'
+import { catalogMessage, sessionSummary } from './catalogMessages'
+import { CATALOG_VERSION, catalogVersionFromUrl } from '../shared/catalogProtocol'
+import { startCatalogUpgradeNotice } from './catalogUpgrade'
+import { getCodexSubagentIndex, setCodexSubagentIndexListener } from './subagentLogs'
 import { fetchPrChecks, fetchPrInfo, parsePrUrl } from './prInfo'
 import { getLogSearchDirs } from './logDiscovery'
 import {
@@ -357,40 +372,6 @@ async function readLogLineWindowFromEnd(
   }
 }
 
-// Reads the single log line starting at `offset` — used by session-media to
-// re-extract one payload. Media lines run to MBs, so the cap is generous.
-const MAX_MEDIA_LINE_BYTES = 64 * 1024 * 1024
-
-async function readLogLineAtOffset(
-  logPath: string,
-  offset: number
-): Promise<string | null> {
-  const handle = await fs.open(logPath, 'r')
-  try {
-    const chunks: Buffer[] = []
-    let position = offset
-    let total = 0
-    for (;;) {
-      const remaining = MAX_MEDIA_LINE_BYTES - total
-      if (remaining <= 0) break
-      const buffer = Buffer.allocUnsafe(Math.min(256 * 1024, remaining))
-      const { bytesRead } = await handle.read(buffer, 0, buffer.length, position)
-      if (bytesRead <= 0) break
-      const newline = buffer.subarray(0, bytesRead).indexOf(0x0a)
-      if (newline !== -1) {
-        chunks.push(buffer.subarray(0, newline))
-        return Buffer.concat(chunks).toString('utf8')
-      }
-      chunks.push(buffer.subarray(0, bytesRead))
-      position += bytesRead
-      total += bytesRead
-    }
-    return chunks.length > 0 ? Buffer.concat(chunks).toString('utf8') : null
-  } finally {
-    await handle.close()
-  }
-}
-
 async function readLogLineWindow(
   logPath: string,
   stats: { size: number; mtimeMs: number },
@@ -497,6 +478,9 @@ logger.info('terminal_mode_resolved', {
 
 const app = new Hono()
 const db = initDatabase({ exclusive: true })
+const sessionReader = db.db?.filename && db.db.filename !== ':memory:'
+  ? new SessionReadClient(db.db.filename)
+  : undefined
 
 // Read mouse mode setting from DB (default: true)
 const TMUX_MOUSE_MODE_KEY = 'tmux_mouse_mode'
@@ -591,6 +575,16 @@ async function ensureBaseSessionForRefreshAsync(context: string): Promise<boolea
   }
 }
 const registry = new SessionRegistry()
+const thumbnailClient = new MediaThumbnailClient()
+const metadataPublisher = new SessionMetadataPublisher(registry, config.hostLabel)
+const metadataClient = new SessionMetadataClient((record, metadata) => {
+  metadataPublisher.queue(record, metadata)
+})
+
+function toAgentSession(record: AgentSessionRecord): AgentSession {
+  metadataClient.queue(record)
+  return { ...buildAgentSession(record, { cachedPrsOnly: true }), ...metadataClient.get(record) }
+}
 // Test adapters may implement SessionDatabase without a SQLite connection.
 function persistenceHostId(): string {
   const existing = db.getAppSetting('persistence_host_id')
@@ -600,7 +594,7 @@ function persistenceHostId(): string {
   return id
 }
 const persistence = db.db
-  ? new PersistentSessions(db, sessionManager, persistenceHostId())
+  ? new PersistentSessions(db, sessionManager, persistenceHostId(), undefined, undefined, undefined, sessionReader)
   : null
 const persistenceRuntime = persistence
   ? new PersistenceRuntime(persistence, db)
@@ -617,6 +611,9 @@ function createPersistentWindow(
 }
 
 interface WSData {
+  catalogVersion: number | null
+  stopUpgradeNotice?: () => void
+  relay?: boolean
   terminal: ITerminalProxy | null
   currentSessionId: string | null
   currentTmuxTarget: string | null
@@ -625,6 +622,7 @@ interface WSData {
   userAgent: string | null
   terminalHost: string | null
   terminalAttachSeq: number
+  copyModeQuery: CopyModeQuery
   lastAttachKey: string | null
   lastAttachTs: number
   clipboardPollTimer: ReturnType<typeof setInterval> | null
@@ -642,6 +640,11 @@ interface WSData {
 }
 
 const sockets = new Set<ServerWebSocket<WSData>>()
+// Unit handler tests retain the in-process adapter; real servers use the relay.
+const relayEnabled = (process.env.AGENTBOARD_TERMINAL_RELAY ?? (process.env.NODE_ENV === 'test' ? '0' : '1')) !== '0'
+let terminalRelay: TerminalRelayClient | null = null
+const relayPeers = new Map<string, ServerWebSocket<WSData>>()
+const relayLeaseIds = new Set<string>()
 const localHostLabel = config.hostLabel
 const CLIPBOARD_BUFFER_POLL_MS = 750
 const CLIPBOARD_BUFFER_MAX_BYTES = 512 * 1024
@@ -815,6 +818,11 @@ const lastUserMessageLocks = new Map<string, number>()
 const LAST_USER_MESSAGE_LOCK_MS = 60_000 // 60 seconds
 
 const logPoller = new LogPoller(db, registry, {
+  reader: sessionReader,
+  onSessionUpdated: (record) => {
+    if (persistence) refreshDormantConversation(persistence.catalog, record)
+    if (!record.currentWindow) queueDormantRefresh()
+  },
   onSessionOrphaned: (sessionId, supersededBy) => {
     // Scan first: the dormant lists read PRs from the cache this scan fills.
     const session = db.getSessionById(sessionId)
@@ -824,6 +832,7 @@ const logPoller = new LogPoller(db, registry, {
       broadcast({ type: 'session-orphaned', session: orphaned, supersededBy })
     }
   },
+  allowsMatch: (window, sessionId) => ownershipMatcher?.allows(window, sessionId) ?? true,
   onSessionActivated: (sessionId, window) => {
     updateDormantAgentSessions()
     const session = db.getSessionById(sessionId)
@@ -847,6 +856,44 @@ const logPoller = new LogPoller(db, registry, {
 })
 const sessionRefreshWorker = new SessionRefreshWorkerClient()
 const lastUserMessageWorker = new SessionRefreshWorkerClient()
+const ownershipMatcher = config.ownershipMatching ? new OwnershipMatcher({
+  db,
+  windows: () => registry.getAll(),
+  missing: result => {
+    // Queue exact Codex paths through the existing enrichment worker. Claude
+    // transcripts enter through normal discovery; their registry has no path.
+    if (result.transcript) void logPoller.pollChanged([result.transcript])
+  },
+  changed: (sessionId, window, previous) => {
+    refreshGeneration++
+    logger.info('session_matched_by_ownership', { sessionId, window, previous })
+    if (previous) {
+      const old = db.getSessionById(previous)
+      if (old) broadcast({ type: 'session-orphaned', session: toAgentSession(old), supersededBy: sessionId })
+    }
+    const record = db.getSessionById(sessionId)!
+    const live = registry.getAll().find(session => session.tmuxWindow === window && !session.remote)
+    if (live) registry.updateSession(live.id, {
+      agentSessionId: sessionId, agentSessionName: record.displayName,
+      logFilePath: record.logFilePath, lastUserMessage: record.lastUserMessage ?? undefined,
+    })
+    broadcast({ type: 'session-activated', session: toAgentSession(record), window })
+    updateDormantAgentSessions()
+    refreshSessions()
+  },
+}) : null
+const ownershipObserver = config.ownershipObserver || ownershipMatcher ? (() => {
+  const io = createLocalOwnershipIO({ codexHome: config.codexHomeDir, claudeHome: config.claudeConfigDir })
+  return new OwnershipObserver({
+    windows: () => registry.getAll(),
+    probe: windows => probeOwnership(windows, io),
+    accept: (result, window) => ownershipMatcher?.accept(result, window),
+    log: (event, data) => {
+      if (event === 'ownership_observation_summary') logger.debug(event, data)
+      else logger.info(event, data)
+    },
+  })
+})() : null
 
 // Active sessions update on every refresh — cheap (few rows).
 // History sessions query is expensive — only run on actual mutations.
@@ -877,10 +924,6 @@ function updateActiveAgentSessions() {
   )
 }
 
-const dormantPrScanner = createDormantPrScanner(() =>
-  updateDormantAgentSessions()
-)
-
 /**
  * Most recent History rows the sidebar shows. Older rows stay in the database
  * and remain visible to the orphan rematcher, which queries uncapped.
@@ -899,35 +942,48 @@ function getDormantRecords() {
 
 // Codex subagent links arrive with the first full poll, after the startup PR
 // scan, and in bursts as live links register. Re-queue the dormant rows once
-// per burst; the scanner rescans only rows whose subagent logs changed.
+// per burst; the worker revalidates the logs without blocking this thread.
 let dormantRescanQueued = false
 setCodexSubagentIndexListener(() => {
   if (dormantRescanQueued) return
   dormantRescanQueued = true
   setTimeout(() => {
     dormantRescanQueued = false
+    metadataClient.setIndex(getCodexSubagentIndex())
+    activityClient.setIndex(getCodexSubagentIndex())
+    for (const record of db.getActiveSessions()) metadataClient.queue(record)
     const { hibernating, history } = getDormantRecords()
-    dormantPrScanner.queue([...hibernating, ...history])
+    for (const record of [...hibernating, ...history]) metadataClient.queue(record)
   }, 0)
 })
 
-// Dormant rows show the PRs found by the last scan; the scanner fills in the
-// rest in small slices and calls back here when it finds new ones.
+// A poll can update many dormant rows. Refresh the published sidebar snapshot
+// once after that batch, rather than retaining the import-time messages.
+let dormantRefreshQueued = false
+function queueDormantRefresh() {
+  if (dormantRefreshQueued) return
+  dormantRefreshQueued = true
+  queueMicrotask(() => {
+    dormantRefreshQueued = false
+    updateDormantAgentSessions()
+  })
+}
+
+// All views use remembered descriptors. The worker publishes metadata changes
+// directly without rebuilding rows or replaying lifecycle state.
 function updateDormantAgentSessions() {
   const { hibernating: hibernatingRecords, history: historyRecords } =
     getDormantRecords()
-  const cachedOnly = { cachedPrsOnly: true }
   const hibernating = filterExcludedAgentSessions(
-    hibernatingRecords.map((record) => toAgentSession(record, cachedOnly))
+    hibernatingRecords.map((record) => toAgentSession(record))
   )
   const history = filterExcludedAgentSessions(
-    historyRecords.map((record) => toAgentSession(record, cachedOnly))
+    historyRecords.map((record) => toAgentSession(record))
   )
   const active = hasConfirmedLocalSessionSnapshot
     ? db.getActiveSessions().map((record) => toAgentSession(record))
     : []
   registry.setAgentSessions(active, hibernating, history)
-  dormantPrScanner.queue([...hibernatingRecords, ...historyRecords])
 }
 
 interface HydrateSessionsOptions {
@@ -1012,7 +1068,14 @@ export function hydrateSessionsWithAgentSessions(
     let verification: WindowLogVerificationResult | null = null
     let nameMatches = false
 
-    if (precomputed) {
+    const liveWindow = sessions.find(session => session.tmuxWindow === currentWindow)
+    // Positive process evidence outranks text, including stale startup worker
+    // results. Keep the old claim while a new owned transcript is discovered.
+    if (liveWindow && ownershipMatcher?.get({ ...liveWindow,
+      agentType: liveWindow.agentType ?? agentSession.agentType, agentSessionId: agentSession.sessionId,
+    })) {
+      verification = { status: 'verified', bestMatch: null }
+    } else if (precomputed) {
       verification = precomputed.verification
       nameMatches = precomputed.nameMatches
     } else if (verifyAssociations) {
@@ -1100,8 +1163,7 @@ export function hydrateSessionsWithAgentSessions(
       agentSessionName: agentSession.displayName,
       logFilePath: agentSession.logFilePath,
       lastUserMessage: agentSession.lastUserMessage ?? session.lastUserMessage,
-      prs: getMergedPullRequests(agentSession),
-      media: getMergedMedia(agentSession),
+      ...metadataClient.get(agentSession),
       // Use persisted log times (survives server restarts, works when tmux lacks creation time)
       lastActivity: agentSession.lastActivityAt,
       createdAt: agentSession.createdAt,
@@ -1121,7 +1183,13 @@ export function hydrateSessionsWithAgentSessions(
   return hydrated
 }
 
-const activityTracker = new SessionActivityTracker()
+const activityClient = new SessionActivityClient(patches => {
+  const byKey = new Map(patches.map(patch => [patch.key, patch]))
+  for (const session of registry.getAll()) {
+    const patch = byKey.get(activityKey(session))
+    if (patch && !session.remote) registry.updateSession(session.id, { activity: patch.activity })
+  }
+})
 let refreshInFlight = false
 // Bumped on optimistic registry mutations (kill, create, resume) so
 // in-flight refreshes that started before the mutation discard their stale
@@ -1205,7 +1273,7 @@ async function refreshSessionsAsync(): Promise<void> {
         const tHydrate = performance.now()
         recordSuccessfulRefreshWindowCount(countLocalSessions(sessions))
         const hydrated = hydrateSessionsWithAgentSessions(sessions, { serverPid: tmuxServerPid })
-        const observed = await activityTracker.enrich(hydrated)
+        const observed = activityClient.enrich(hydrated)
         if (gen !== refreshGeneration) continue
         const withOverrides = applyForceWorkingOverrides(observed)
         registry.replaceSessions(mergeRemoteSessions(withOverrides))
@@ -1236,7 +1304,7 @@ async function refreshSessionsAsync(): Promise<void> {
         const hydrated = hydrateSessionsWithAgentSessions(sessions, {
           serverPid: sessionManager.lastEnumeratedServerPid,
         })
-        const observed = await activityTracker.enrich(hydrated)
+        const observed = activityClient.enrich(hydrated)
         if (gen !== refreshGeneration) continue
         const withOverrides = applyForceWorkingOverrides(observed)
         registry.replaceSessions(mergeRemoteSessions(withOverrides))
@@ -1451,7 +1519,7 @@ app.post('/api/client-log', async (c) => {
 })
 
 app.get('/api/health', (c) => c.json({ ok: true }))
-app.get('/api/sessions', (c) => c.json(registry.getAll()))
+app.get('/api/sessions', (c) => c.json(registry.getAll().map(sessionSummary)))
 
 // Eager tier for PR chips: state/title/author, batched + 60s cached.
 app.post('/api/pr-info', async (c) => {
@@ -1543,83 +1611,14 @@ app.get('/api/session-preview/:sessionId', async (c) => {
   }
 })
 
-// Serves one media payload (image, document) referenced by a SessionMedia
-// descriptor. The descriptor's (path, offset, index) triple re-reads a single
-// log line and re-runs the same extraction the scanner used, so the index is
-// stable; `bytes` is an integrity check that rejects refs stale across a log
-// rewrite. `path` must be the session's own log or one of its subagent logs —
-// this is not a general file server.
-app.get('/api/session-media/:sessionId', async (c) => {
-  const sessionId = c.req.param('sessionId')
-  if (!isValidSessionId(sessionId)) {
-    return c.json({ error: 'Invalid session id' }, 400)
-  }
-  const record = db.getSessionById(sessionId)
-  if (!record?.logFilePath) {
-    return c.json({ error: 'Session not found' }, 404)
-  }
-
-  const mediaPath = c.req.query('path') ?? ''
-  const allowed =
-    mediaPath === record.logFilePath ||
-    getSubagentLogPaths(record.logFilePath, record.agentType, sessionId).includes(
-      mediaPath
-    )
-  if (!allowed) {
-    return c.json({ error: 'Invalid media path' }, 400)
-  }
-
-  const offset = Number(c.req.query('offset'))
-  const index = Number(c.req.query('index'))
-  if (
-    !Number.isSafeInteger(offset) ||
-    offset < 0 ||
-    !Number.isSafeInteger(index) ||
-    index < 0 ||
-    index > 256
-  ) {
-    return c.json({ error: 'Invalid media ref' }, 400)
-  }
-  const bytesParam = c.req.query('bytes')
-  const expectedBytes = bytesParam ? Number(bytesParam) : undefined
-
-  try {
-    const line = await readLogLineAtOffset(mediaPath, offset)
-    if (!line) {
-      return c.json({ error: 'Media not found' }, 404)
-    }
-    const item = extractMediaItems(line)[index]
-    if (!item?.data) {
-      // No payload at this ref — link/url kinds have no bytes to serve.
-      return c.json({ error: 'Media not found' }, 404)
-    }
-    const body = Buffer.from(item.data, 'base64')
-    if (
-      expectedBytes !== undefined &&
-      Number.isSafeInteger(expectedBytes) &&
-      body.length !== expectedBytes
-    ) {
-      // The line at this offset changed (log rewrite); the scan will publish
-      // fresh refs. Treat as gone rather than serve wrong bytes.
-      return c.json({ error: 'Stale media ref' }, 409)
-    }
-    return new Response(new Uint8Array(body), {
-      headers: {
-        'Content-Type': item.mediaType ?? 'application/octet-stream',
-        // Refs are content-addressed by (path, offset, index, bytes): a
-        // rewritten log produces different params, so immutable is safe.
-        'Cache-Control': 'private, max-age=31536000, immutable',
-        'X-Content-Type-Options': 'nosniff',
-      },
-    })
-  } catch (error) {
-    const err = error as NodeJS.ErrnoException
-    if (err.code === 'ENOENT') {
-      return c.json({ error: 'Media not found' }, 404)
-    }
-    return c.json({ error: 'Unable to read media' }, 500)
-  }
-})
+app.route('/api/session-media', createMediaRoutes({
+  thumbnail: thumbnailClient,
+  getRecord: (id) => db.getSessionById(id),
+  page: (record, cursor, query) => metadataClient.page(record, cursor, query),
+  watch: (record, cursor, query, signal) => metadataClient.watch(record, cursor, query, signal),
+  neighbors: (record, anchor) => metadataClient.neighbors(record, anchor),
+  invalidate: (record) => metadataClient.invalidate(record),
+}))
 app.get('/api/directories', async (c) => {
   const requestedPath = c.req.query('path') ?? '~'
 
@@ -1876,6 +1875,7 @@ app.put('/api/settings/terminal-colors', async (c) => {
     return c.json({ error: 'Unable to persist terminal colors' }, 500)
   }
 
+  terminalRelay?.post({ type: 'sessions', sessions: registry.getAll(), terminalColorsEnabled: config.terminalColorsEnabled })
   return c.json({ enabled: body.enabled })
 })
 
@@ -1912,6 +1912,7 @@ app.put('/api/settings/prefer-window-name', async (c) => {
   // message (mobile tab labels read it); rebroadcast so they all converge.
   broadcast({
     type: 'server-config',
+    catalogVersion: CATALOG_VERSION,
     remoteAllowControl: config.remoteAllowControl,
     remoteAllowAttach: config.remoteAllowAttach,
     hostLabel: config.hostLabel,
@@ -2212,6 +2213,7 @@ app.get('/api/clipboard-file-path', async (c) => {
 if (persistenceRuntime) {
   persistenceRuntime.matchingFailure = () => logPoller.matchingError
   const library = registerPersistenceRoutes(app, persistenceRuntime, {
+    metadataFor: (record) => metadataClient.scan(record),
     commandFor: buildResumeCommand,
     changed: () => {
       updateDormantAgentSessions()
@@ -2270,6 +2272,16 @@ const tlsOptions = tlsEnabled
   ? { tls: { cert: Bun.file(config.tlsCert), key: Bun.file(config.tlsKey) } }
   : {}
 
+function createSocketData(connectionId: string, remoteAddress: string | null, userAgent: string | null, catalogVersion: number | null): WSData {
+  return {
+    catalogVersion, terminal: null, currentSessionId: null, currentTmuxTarget: null,
+    connectionId, remoteAddress, userAgent, terminalHost: null, terminalAttachSeq: 0,
+    copyModeQuery: new CopyModeQuery(), lastAttachKey: null, lastAttachTs: 0,
+    clipboardPollTimer: null, clipboardPollInFlight: false, lastClipboardBufferKey: null,
+    clipboardBufferArmedUntil: 0, clipboardArmedAtSec: 0, clipboardWatchGen: 0,
+  }
+}
+
 function serverFetch(req: Request, server: Server<WSData>) {
   const url = new URL(req.url)
   if (url.pathname === '/ws') {
@@ -2277,24 +2289,7 @@ function serverFetch(req: Request, server: Server<WSData>) {
       typeof server.requestIP === 'function' ? server.requestIP(req) : null
     if (
       server.upgrade(req, {
-        data: {
-          terminal: null,
-          currentSessionId: null,
-          currentTmuxTarget: null,
-          connectionId: createConnectionId(),
-          remoteAddress: requestIp?.address ?? null,
-          userAgent: req.headers.get('user-agent')?.slice(0, 200) ?? null,
-          terminalHost: null,
-          terminalAttachSeq: 0,
-          lastAttachKey: null,
-          lastAttachTs: 0,
-          clipboardPollTimer: null,
-          clipboardPollInFlight: false,
-          lastClipboardBufferKey: null,
-          clipboardBufferArmedUntil: 0,
-          clipboardArmedAtSec: 0,
-          clipboardWatchGen: 0,
-        },
+        data: createSocketData(createConnectionId(), requestIp?.address ?? null, req.headers.get('user-agent')?.slice(0, 200) ?? null, catalogVersionFromUrl(url)),
       })
     ) {
       return
@@ -2310,17 +2305,22 @@ const websocketHandlers = {
   sendPings: true,
   perMessageDeflate: true,
   open(ws: ServerWebSocket<WSData>) {
+    if (ws.data.catalogVersion !== CATALOG_VERSION) {
+      ws.data.stopUpgradeNotice = startCatalogUpgradeNotice(ws)
+      return
+    }
     sockets.add(ws)
-    send(ws, { type: 'sessions', sessions: registry.getAll() })
-    send(ws, { type: 'host-status', hosts: hostStatuses })
     send(ws, {
       type: 'server-config',
+    catalogVersion: CATALOG_VERSION,
       remoteAllowControl: config.remoteAllowControl,
       remoteAllowAttach: config.remoteAllowAttach,
       hostLabel: config.hostLabel,
       preferWindowName: config.preferWindowName,
       clientLogLevel: logLevel,
     })
+    send(ws, { type: 'sessions', sessions: registry.getAll() })
+    send(ws, { type: 'host-status', hosts: hostStatuses })
     send(ws, { type: 'synced-settings', settings: readSyncedSettings() })
     const agentSessions = registry.getAgentSessions()
     send(ws, {
@@ -2329,25 +2329,63 @@ const websocketHandlers = {
       hibernating: agentSessions.hibernating,
       history: agentSessions.history,
     })
-    initializePersistentTerminal(ws)
+    if (!ws.data.relay) initializePersistentTerminal(ws)
   },
   message(ws: ServerWebSocket<WSData>, message: string | BufferSource) {
     handleMessage(ws, message)
   },
   close(ws: ServerWebSocket<WSData>) {
+    ws.data.stopUpgradeNotice?.()
     killRateLimiter.forget(ws.data.connectionId)
     cleanupTerminals(ws)
     sockets.delete(ws)
   },
 }
 
-Bun.serve<WSData>({
-  port: config.port,
-  hostname: config.hostname,
-  ...tlsOptions,
+const httpServer = Bun.serve<WSData>({
+  port: relayEnabled ? 0 : config.port,
+  hostname: relayEnabled ? '127.0.0.1' : config.hostname,
+  ...(relayEnabled ? {} : tlsOptions),
   fetch: serverFetch,
   websocket: websocketHandlers,
 })
+
+function relayMessage(message: RelayToParent): void {
+  if (message.type === 'open') {
+    const data = { ...createSocketData(message.id, message.remoteAddress, message.userAgent, message.catalogVersion), relay: true }
+    const peer = {
+      data, readyState: 1,
+      send: (payload: string) => { terminalRelay?.post({ type: 'send', id: message.id, payload }); return payload.length },
+    } as unknown as ServerWebSocket<WSData>
+    relayPeers.set(message.id, peer)
+    websocketHandlers.open(peer)
+  } else if (message.type === 'message') {
+    const peer = relayPeers.get(message.id)
+    if (peer) handleMessage(peer, message.payload)
+  } else if (message.type === 'close') {
+    const peer = relayPeers.get(message.id)
+    if (peer) websocketHandlers.close(peer)
+    relayPeers.delete(message.id)
+  } else if (message.type === 'group-created') noteGroupedSessionCreated()
+  else if (message.type === 'submit') {
+    setForceWorking(message.sessionId)
+    scheduleEnterRefresh()
+    scheduleLastUserMessageCapture(message.sessionId)
+  } else if (message.type === 'lease-created') relayLeaseIds.add(message.id)
+  else if (message.type === 'lease-removed') relayLeaseIds.delete(message.id)
+  else if (message.type === 'fatal') {
+    logger.error('terminal_relay_failed', { error: message.error })
+    process.exit(1)
+  } else if (message.type === 'bind-error') logger.error('terminal_relay_bind_failed', { hostname: message.hostname, error: message.error })
+}
+
+if (relayEnabled) {
+  terminalRelay = new TerminalRelayClient({
+    port: config.port, hostname: config.hostname, upstreamPort: httpServer.port!,
+    tlsCert: config.tlsCert, tlsKey: config.tlsKey, terminalColorsEnabled: config.terminalColorsEnabled,
+  }, registry.getAll(), relayMessage)
+  void terminalRelay.ready.catch(error => { logger.error('terminal_relay_start_failed', { error: String(error) }); process.exit(1) })
+}
 
 const protocol = tlsEnabled ? 'https' : 'http'
 const displayHost = config.hostname === '0.0.0.0' ? 'localhost' : config.hostname
@@ -2378,7 +2416,9 @@ export const tailscaleReady = (async () => {
     return
   }
   try {
-    Bun.serve<WSData>({
+    if (terminalRelay) {
+      await terminalRelay.bind(detectedIp)
+    } else Bun.serve<WSData>({
       port: config.port,
       hostname: detectedIp,
       ...tlsOptions,
@@ -2406,7 +2446,9 @@ const startupLifecycle = createStartupLifecycle({
   sessionManager,
   registry,
   sockets,
+  liveTerminalIds: () => relayLeaseIds,
   canPruneWsSessions: startupEnsureResult.canPruneWsSessions,
+  hasOwnership: window => Boolean(ownershipMatcher?.get(window)),
   hydrateSessionsWithAgentSessions,
   applyForceWorkingOverrides,
   mergeRemoteSessions,
@@ -2438,9 +2480,11 @@ export const startupReady = (async () => {
   // Start the poller after the initial refresh rather than at module load —
   // its first snapshot does synchronous sqlite work that otherwise races the
   // worker-spawn burst during boot.
+  await ownershipObserver?.observe()
   if (config.logPollIntervalMs > 0) {
     logPoller.start(config.logPollIntervalMs, config.logWatchMode)
   }
+  ownershipObserver?.start()
   await startupLifecycle.startupHousekeeping()
   try {
     await startupLifecycle.completeStartupVerification()
@@ -2453,6 +2497,9 @@ export const startupReady = (async () => {
 
 // Cleanup all terminals on server shutdown
 async function cleanupAllTerminals() {
+  metadataPublisher.dispose()
+  await terminalRelay?.shutdown()
+  ownershipObserver?.stop()
   persistenceRuntime?.stop()
   const disposePromises: Promise<void>[] = []
   for (const ws of sockets) {
@@ -2469,8 +2516,12 @@ async function cleanupAllTerminals() {
   stallWatchdog.dispose()
   throwawayShellReaper.dispose()
   setCodexSubagentIndexListener(null)
-  dormantPrScanner.stop()
+  metadataClient.dispose()
+  activityClient.dispose()
+  thumbnailClient.dispose()
   logPoller.stop()
+  persistence?.dispose()
+  sessionReader?.dispose()
   remotePoller?.stop()
   db.close()
 }
@@ -2762,14 +2813,17 @@ function cleanupTerminals(ws: ServerWebSocket<WSData>) {
 }
 
 function broadcast(message: ServerMessage) {
-  const payload = JSON.stringify(message)
+  if (message.type === 'sessions' || message.type === 'session-update' || message.type === 'session-removed') {
+    terminalRelay?.post({ type: 'sessions', sessions: registry.getAll(), terminalColorsEnabled: config.terminalColorsEnabled })
+  }
+  const payload = JSON.stringify(catalogMessage(message))
   for (const socket of sockets) {
     socket.send(payload)
   }
 }
 
 function send(ws: ServerWebSocket<WSData>, message: ServerMessage) {
-  ws.send(JSON.stringify(message))
+  ws.send(JSON.stringify(catalogMessage(message)))
 }
 
 function fireAndForget(promise: Promise<unknown>, context: string): void {
@@ -2797,6 +2851,8 @@ function handleMessage(
     send(ws, { type: 'error', message: 'Invalid message payload' })
     return
   }
+
+  if (ws.data.catalogVersion !== CATALOG_VERSION && message.type !== 'ping') return
 
   switch (message.type) {
     case 'ping':
@@ -3088,33 +3144,20 @@ async function handleCheckCopyMode(sessionId: string, ws: ServerWebSocket<WSData
   if (!session) return
   if (session.remote && !config.remoteAllowAttach) return
 
-  try {
-    const target = resolveCopyModeTarget(sessionId, ws, session)
-    // Query tmux for pane copy-mode status plus fullscreen-app detection:
-    //   pane_in_mode  -> tmux copy-mode active
-    //   alternate_on  -> pane on the alternate screen buffer
-    //   mouse_any_flag-> the in-pane app requested mouse tracking (owns the mouse)
-    const fmt = '#{pane_in_mode},#{alternate_on},#{mouse_any_flag}'
-    let output: string
+  const attachSeq = ws.data.terminalAttachSeq
+  const target = resolveCopyModeTarget(sessionId, ws, session)
+  const status = await ws.data.copyModeQuery.read(async () => {
+    // Copy mode, alternate screen, and application-owned mouse tracking.
+    const args = ['display-message', '-p', '-t', target,
+      '#{pane_in_mode},#{alternate_on},#{mouse_any_flag}']
     if (session.remote && session.host) {
-      const result = await runRemoteTmux(session.host, ['display-message', '-p', '-t', target, fmt])
-      output = result.stdout?.trim() ?? ''
-    } else {
-      const result = timedSpawnSync(
-        ['tmux', ...withTmuxUtf8Flag(['display-message', '-p', '-t', target, fmt])],
-        { stdout: 'pipe', stderr: 'pipe', timeout: 5000 }
-      )
-      output = result.stdout?.toString().trim() ?? ''
+      const result = await runRemoteTmux(session.host, args)
+      return result.stdout ?? ''
     }
-    const [inCopyModeField, altScreenField, appMouseField] = output.split(',')
-    const inCopyMode = inCopyModeField === '1'
-    const altScreen = altScreenField === '1'
-    const appMouse = appMouseField === '1'
-    send(ws, { type: 'tmux-copy-mode-status', sessionId, inCopyMode, altScreen, appMouse })
-  } catch {
-    // On error, assume not in copy mode and no fullscreen app
-    send(ws, { type: 'tmux-copy-mode-status', sessionId, inCopyMode: false, altScreen: false, appMouse: false })
-  }
+    const result = await timedSpawnAsync(['tmux', ...withTmuxUtf8Flag(args)], { timeout: 5000 })
+    return result.exitCode === 0 ? result.stdout : ''
+  }, () => ws.readyState === 1 && isTerminalAttachCurrent(ws, attachSeq))
+  if (status) send(ws, { type: 'tmux-copy-mode-status', sessionId, ...status })
 }
 
 function restoreHibernatingState(previousHibernatingState: Map<string, boolean>) {

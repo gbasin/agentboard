@@ -322,6 +322,17 @@ body {
   animation: pulse-complete 5s ease-out;
 }
 
+/* New media gets two brief accent pulses; its unread dot stays until opened. */
+@keyframes media-attention {
+  0%, 100% { box-shadow: 0 0 0 0 transparent; }
+  50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 30%, transparent); }
+}
+
+.media-attention {
+  border-color: var(--accent);
+  animation: media-attention 0.8s ease-in-out 2;
+}
+
 /* Terminal styles */
 .xterm {
   font-family: "JetBrains Mono Variable", "JetBrains Mono", "SF Mono", "Fira Code", ui-monospace, monospace;
@@ -574,7 +585,23 @@ body {
   }
 
   .pulse-approval,
-  .pulse-complete {
+  .pulse-complete,
+  .media-attention {
     animation: none;
+  }
+}
+
+/* Expand the counter hit area without increasing session-row height. Keep the
+   horizontal inset inside the existing gaps beside the name and status pill. */
+@media (pointer: coarse) {
+  .activity-counter::after,
+  .activity-status::after {
+    content: '';
+    position: absolute;
+    left: -3px;
+    right: -3px;
+    top: 50%;
+    height: 44px;
+    transform: translateY(-50%);
   }
 }

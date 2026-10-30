@@ -43,6 +43,10 @@ jobs:
         with:
           bun-version-file: .bun-version
 
+      - name: Install native build tooling
+        if: runner.os == 'Linux'
+        run: npm install --global node-gyp@11.5.0
+
       - name: Install dependencies
         run: bun install
 
@@ -50,7 +54,7 @@ jobs:
         run: bun run build
 
       - name: Build server binary
-        run: bun build src/server/index.ts src/server/sessionRefreshWorker.ts src/server/logMatchWorker.ts src/server/devinSyncWorker.ts src/server/stallWatchdogWorker.ts --compile --target ${{ matrix.target }} --outfile ${{ matrix.artifact }}
+        run: bun build src/server/index.ts src/server/sessionRefreshWorker.ts src/server/logMatchWorker.ts src/server/devinSyncWorker.ts src/server/stallWatchdogWorker.ts src/server/sessionReadWorker.ts src/server/sessionMetadataWorker.ts src/server/sessionActivityWorker.ts src/server/mediaDiscoveryReaderWorker.ts src/server/mediaDiscoveryWriterWorker.ts src/server/mediaThumbnailWorker.ts src/server/terminalRelayWorker.ts src/server/terminalSessionWorker.ts --compile --target ${{ matrix.target }} --outfile ${{ matrix.artifact }}
 
       - name: Package binary and frontend
         run: |
@@ -223,8 +227,10 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Formula/agentboard.rb
-          git commit -m "agentboard ${VERSION}"
-          git push
+          if ! git diff --cached --quiet; then
+            git commit -m "agentboard ${VERSION}"
+            git push
+          fi
 
       # release-please deliberately does NOT bump package.json
       # optionalDependencies in the release PR (see release-please-config.json):
@@ -236,6 +242,9 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6  # v2.2.0
         with:
           bun-version-file: .bun-version
+
+      - name: Install native build tooling
+        run: npm install --global node-gyp@11.5.0
 
       - name: Sync optionalDeps and bun.lock on master
         run: |
@@ -253,12 +262,18 @@ jobs:
             sleep 15
           done
 
+          if [ "$missing" -ne 0 ]; then
+            echo "Platform packages are not all visible on npm; retry after propagation." >&2
+            exit 1
+          fi
+
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git fetch origin master
           git checkout --detach FETCH_HEAD
           node scripts/update-optional-deps.js "$VERSION"
           bun install
+          node scripts/verify-platform-lock.js "$VERSION"
           if git diff --quiet; then
             echo "optionalDeps and bun.lock already in sync"
             exit 0

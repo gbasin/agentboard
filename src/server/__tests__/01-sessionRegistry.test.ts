@@ -386,3 +386,24 @@ describe('SessionRegistry', () => {
     expect(activeEvents).toHaveLength(1)
   })
 })
+
+test('media revision changes publish views without comparing descriptor arrays', () => {
+  const registry = new SessionRegistry()
+  let sessions = 0, active = 0, dormant = 0
+  registry.on('sessions', () => sessions++)
+  registry.on('agent-sessions-active', () => active++)
+  registry.on('agent-sessions', () => dormant++)
+  for (let revision = 0; revision < 4; revision++) {
+    const mediaSummary = { identity: 'transcript', revision: String(revision),
+      total: revision === 3 ? 0 : 1, images: 0, documents: 0,
+      links: revision === 3 ? 0 : 1, additions: 1 }
+    const live = [makeSession({ mediaSummary })]
+    const agents = [makeAgentSession({ mediaSummary })]
+    const history = [makeAgentSession({ mediaSummary, isActive: false })]
+    registry.replaceSessions(live)
+    registry.setAgentSessions(agents, [], history)
+    registry.replaceSessions(live)
+    registry.setAgentSessions(agents, [], history)
+  }
+  expect({ sessions, active, dormant }).toEqual({ sessions: 4, active: 4, dormant: 4 })
+})

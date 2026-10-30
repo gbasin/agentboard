@@ -31,6 +31,7 @@ class FakeWebSocket {
   triggerOpen() {
     this.readyState = FakeWebSocket.OPEN
     this.onopen?.()
+    this.onmessage?.({ data: JSON.stringify({ type: 'server-config', catalogVersion: 2 }) })
   }
 
   triggerMessage(payload: string) {
@@ -137,6 +138,8 @@ describe('useWebSocket', () => {
       throw new Error('Expected WebSocket instance')
     }
 
+    act(() => ws.triggerOpen())
+    ws.sent = []
     const received: ServerMessage[] = []
     const unsubscribe = hookResult?.subscribe((message: ServerMessage) =>
       received.push(message)

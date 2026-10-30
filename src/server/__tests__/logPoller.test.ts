@@ -10,6 +10,7 @@ import { SessionRegistry } from '../SessionRegistry'
 import type { Session } from '../../shared/types'
 import { encodeProjectPath } from '../logDiscovery'
 import { handleMatchWorkerRequest } from '../logMatchWorker'
+import type { PollSnapshot, SessionReader } from '../sessionReads'
 import type {
   MatchWorkerRequest,
   MatchWorkerResponse,
@@ -279,6 +280,100 @@ afterEach(async () => {
 })
 
 describe('LogPoller', () => {
+  test('background snapshot failures surface as matching errors without an unhandled rejection', async () => {
+    const db = initDatabase({ path: ':memory:' })
+    const worker = new RecordingMatchWorkerClient()
+    const poller = new LogPoller(db, new SessionRegistry(), {
+      reader: {
+        snapshot: async () => { throw new Error('read connection unavailable') },
+        importCandidates: async () => [],
+      },
+      matchWorkerClient: worker, devinSyncClient: null,
+    })
+    try {
+      poller.start()
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      expect(poller.matchingError).toContain('read connection unavailable')
+      expect(worker.requests).toHaveLength(0)
+    } finally {
+      poller.stop()
+      db.close()
+    }
+  })
+
+  test('a hibernate committed during the snapshot read prevents orphan fallback from reclaiming it', async () => {
+    const db = initDatabase({ path: ':memory:' })
+    const registry = new SessionRegistry()
+    registry.replaceSessions([baseSession])
+    db.insertSession({
+      sessionId: 'race', logFilePath: path.join(tempRoot, 'race.jsonl'),
+      projectPath: baseSession.projectPath, slug: null, agentType: 'claude',
+      displayName: baseSession.name, createdAt: '2020-01-01', lastActivityAt: '2020-01-01',
+      lastUserMessage: 'hello', currentWindow: null, isHibernating: false,
+      lastResumeError: null, lastKnownLogSize: 0, isCodexExec: false, launchCommand: null,
+    })
+    const worker = new RecordingMatchWorkerClient()
+    const poller = new LogPoller(db, registry, {
+      reader: {
+        snapshot: async (options) => {
+          const lists = db.getSessionLists(options)
+          if (!options.maxAgeHours) db.updateSession('race', { isHibernating: true })
+          return { lists, knownSessions: [] }
+        },
+        importCandidates: async () => [],
+      },
+      matchWorkerClient: worker, devinSyncClient: null,
+    })
+    try {
+      poller.start()
+      await waitForRequestCount(worker, 2)
+      await poller.waitForOrphanRematch()
+      expect(worker.requests[1].orphanCandidates?.map((c) => c.sessionId)).toContain('race')
+      expect(db.getSessionById('race')?.isHibernating).toBe(true)
+      expect(db.getSessionById('race')?.currentWindow).toBeNull()
+    } finally {
+      poller.stop()
+      db.close()
+    }
+  })
+
+  test('async snapshot waits coalesce polls and stop discards the late read', async () => {
+    const db = initDatabase({ path: ':memory:' })
+    const worker = new RecordingMatchWorkerClient()
+    let release!: (snapshot: PollSnapshot) => void
+    let reads = 0
+    const reader: SessionReader = {
+      snapshot: () => {
+        reads++
+        return new Promise((resolve) => { release = resolve })
+      },
+      importCandidates: async () => [],
+    }
+    db.getSessionLists = () => { throw new Error('must not read snapshots on main') }
+    db.getKnownSessionKeys = () => { throw new Error('must not read keys on main') }
+    const poller = new LogPoller(db, new SessionRegistry(), {
+      reader, matchWorkerClient: worker, devinSyncClient: null,
+    })
+    try {
+      const first = poller.pollOnce()
+      expect((await poller.pollOnce()).completed).toBe(false)
+      expect(reads).toBe(1)
+      expect(worker.requests).toHaveLength(0)
+      release({ lists: { active: [], hibernating: [], history: [] }, knownSessions: [] })
+      expect((await first).completed).toBe(true)
+      expect(worker.requests).toHaveLength(1)
+
+      const second = poller.pollOnce()
+      poller.stop()
+      release({ lists: { active: [], hibernating: [], history: [] }, knownSessions: [] })
+      await expect(second).rejects.toThrow('stopped')
+      expect(worker.requests).toHaveLength(1)
+    } finally {
+      poller.stop()
+      db.close()
+    }
+  })
+
   test('watch-mode startup refreshes only persisted active log paths', async () => {
     const db = initDatabase({ path: ':memory:' })
     const registry = new SessionRegistry()
@@ -879,6 +974,75 @@ describe('LogPoller', () => {
     // Session B should claim the window via slug supersede
     const newRecord = db.getSessionById('claude-session-b')
     expect(newRecord?.currentWindow).toBe(baseSession.tmuxWindow)
+
+    db.close()
+  })
+
+  test('ownership veto prevents text and slug from replacing the confirmed session)', async () => {
+    const db = initDatabase({ path: ':memory:' })
+    const registry = new SessionRegistry()
+    registry.replaceSessions([baseSession])
+
+    const tokensA = Array.from({ length: 60 }, (_, i) => `token${i}`).join(' ')
+    setTmuxOutput(baseSession.tmuxWindow, buildLastExchangeOutput(tokensA))
+
+    const projectPath = baseSession.projectPath
+    const encoded = encodeProjectPath(projectPath)
+    const logDir = path.join(
+      process.env.CLAUDE_CONFIG_DIR ?? '',
+      'projects',
+      encoded
+    )
+    await fs.mkdir(logDir, { recursive: true })
+
+    // Session A: planning session with slug
+    const logPathA = path.join(logDir, 'session-a.jsonl')
+    const lineA = buildUserLogEntry(tokensA, {
+      sessionId: 'claude-session-a',
+      cwd: projectPath,
+      slug: 'starry-leaping-orbit',
+    })
+    const assistantLineA = JSON.stringify({
+      type: 'assistant',
+      message: { content: [{ type: 'text', text: tokensA }] },
+    })
+    await fs.writeFile(logPathA, `${lineA}\n${assistantLineA}\n`)
+
+    const poller = new LogPoller(db, registry, {
+      matchWorkerClient: new InlineMatchWorkerClient(),
+      allowsMatch: (_window, sessionId) => sessionId === 'claude-session-a',
+    })
+    await poller.pollOnce()
+
+    // Session A now has the window
+    const recordA = db.getSessionById('claude-session-a')
+    expect(recordA?.currentWindow).toBe(baseSession.tmuxWindow)
+
+    // Session B: execution session with SAME slug (plan→execute transition)
+    const tokensB = Array.from({ length: 60 }, (_, i) => `next${i}`).join(' ')
+    setTmuxOutput(baseSession.tmuxWindow, buildLastExchangeOutput(tokensB))
+
+    const logPathB = path.join(logDir, 'session-b.jsonl')
+    const lineB = buildUserLogEntry(tokensB, {
+      sessionId: 'claude-session-b',
+      cwd: projectPath,
+      slug: 'starry-leaping-orbit',
+    })
+    const assistantLineB = JSON.stringify({
+      type: 'assistant',
+      message: { content: [{ type: 'text', text: tokensB }] },
+    })
+    await fs.writeFile(logPathB, `${lineB}\n${assistantLineB}\n`)
+
+    await poller.pollOnce()
+
+    // Confirmed ownership overrides the slug and matching terminal text.
+    const oldRecord = db.getSessionById('claude-session-a')
+    expect(oldRecord?.currentWindow).toBe(baseSession.tmuxWindow)
+
+    // Discovery still records the competing transcript.
+    const newRecord = db.getSessionById('claude-session-b')
+    expect(newRecord?.currentWindow).toBeNull()
 
     db.close()
   })

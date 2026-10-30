@@ -233,6 +233,22 @@ All persistent data is stored in `~/.agentboard/`: session database (`agentboard
 
 `AGENTBOARD_LOG_WATCH_MODE` selects the log detection strategy: `watch` (default) uses `fs.watch` for instant file-change detection, `poll` falls back to periodic directory scanning. Use `poll` if you experience issues with filesystem notifications (e.g., on network-mounted home directories). On Linux, watch mode automatically includes a 15-second fallback poll since `fs.watch({ recursive: true })` has known platform bugs.
 
+`AGENTBOARD_OWNERSHIP_OBSERVER=true` enables read-only ownership diagnostics for local Claude and Codex sessions. It checks at startup and every 30 seconds. The diagnostics flag defaults to off. For read-only observation on macOS, also set `AGENTBOARD_OWNERSHIP_MATCHING=false`. Changed results appear as `ownership_observation` log events with `agree`, `unmatched`, `disagree`, or `unresolved` comparisons. Set `LOG_LEVEL=debug` to include per-cycle counts and duration.
+
+Ownership-based matching is enabled by default on macOS. Set `AGENTBOARD_OWNERSHIP_MATCHING=false` to opt out. Matching also enables the observer. Confirmed ownership takes precedence over scrollback, name, and slug matching. It can match idle sessions and switch a window to a different known conversation atomically. It never steals a conversation from another window or changes a session with a pending stop/wake. Inspection failures preserve existing associations. Other agents keep the existing matching behavior.
+
+A conversation must first enter the log database. Missing Codex transcripts are queued directly for discovery; Claude uses the normal transcript discovery pipeline. A later ownership check binds the discovered conversation (checks run every 30 seconds). The flag has no effect on Linux until live validation is complete. Set `AGENTBOARD_OWNERSHIP_MATCHING=false` and restart to return to the existing matcher; already matched sessions remain in the database. No agent configuration changes are required.
+
+Claude identity comes from its local PID registry, checked against the running process. Codex identity comes from writable root transcripts and open writer-lock descriptors. Shared-daemon Codex sessions, ambiguous roots, and unsupported registry formats remain unresolved. These readers use internal agent formats. Live validation currently covers macOS; Linux needs live validation before enabling ownership writes.
+
+To compare a running instance once from a source checkout, supply its socket and API address:
+
+```bash
+bun scripts/observe-session-ownership.ts --socket /private/tmp/tmux-501/default --api http://127.0.0.1:4040
+```
+
+Replace the socket path with the instance's actual tmux socket. This command reads process metadata and session headers. It sends no terminal input and makes no API writes. Use `--claude-home` or `--codex-home` for nondefault agent directories. The observer requires `ps`, `tmux`, and, for Codex, `lsof`.
+
 Paste text or files directly into the terminal prompt. Desktop clipboard paste and file drops upload device files and insert their paths without pressing Enter. On mobile, **Paste** opens a dialog with a field for native clipboard paste and **Choose files** for selecting one or more files. File uploads accept any extension, up to 40 MB per file. Files are stored temporarily on the Agentboard host; uploads are unavailable for SSH sessions.
 
 The mobile dialog works the same over HTTP and HTTPS. Touch and hold in the field to paste, or select **Choose files**. Either action inserts directly into the existing terminal prompt without submitting it. Automatic clipboard reads elsewhere depend on browser support and permission and require HTTPS or localhost.

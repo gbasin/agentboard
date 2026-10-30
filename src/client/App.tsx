@@ -421,6 +421,8 @@ export default function App() {
             ...existing,
             agentSessionId: message.session.sessionId,
             agentSessionName: message.session.displayName,
+            mediaSummary: message.session.mediaSummary,
+            media: undefined,
             logFilePath: message.session.logFilePath,
             isHibernating: message.session.isHibernating,
             lastUserMessage: message.session.lastUserMessage ?? existing.lastUserMessage,
@@ -963,7 +965,8 @@ export default function App() {
   }, [hostStatuses, hostLabel])
 
   return (
-    <div className="flex h-full overflow-hidden">
+    // Unlike overflow-hidden, clip cannot scroll when a descendant receives focus.
+    <div className="flex h-full overflow-clip">
       {/* Left column: sidebar - always hidden on mobile (drawer handles it) */}
       <div
         className="hidden h-full flex-col md:flex md:shrink-0"

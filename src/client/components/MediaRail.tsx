@@ -1,27 +1,39 @@
 /**
  * MediaRail — floating rail over the terminal surface showing media payloads
  * (pasted/read images, documents, artifact links) the server extracted from
- * the session's JSONL log. Renders nothing when the session has no media or
- * is remote (the log lives on another host).
+ * the session's JSONL log. Unknown and empty local transcripts remain accessible;
+ * remote transcripts live on another host and are not offered here.
  *
- * Collapsed: a small pill at top-right ("N media") — top placement keeps it
- * clear of the TUI's bottom input row. Expanded: a horizontal thumbnail strip.
+ * Collapsed: a media pill at top-right — top placement keeps it
+ * clear of the TUI's bottom input row. Expanded: icon-labeled Media/Links
+ * views, with a bounded link list and an independent image thumbnail strip.
  * Tapping a thumbnail opens a lightbox with the full image; document and link
  * items open their URL directly.
  */
 
-import { useEffect, useState } from 'react'
+import MediaDiscoveryStatus from './MediaDiscoveryStatus'
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
+import SessionLinks from './SessionLinks'
+import { mediaPayloadUrl } from '../utils/mediaPayloadUrl'
+import { useMediaThumbnail } from '../hooks/useMediaThumbnail'
+import MediaLightbox from './MediaLightbox'
+import { useMediaLightboxNavigation } from '../hooks/useMediaLightboxNavigation'
+import { useMediaPages } from '../hooks/useMediaPages'
 import type { Session, SessionMedia } from '@shared/types'
 import {
   File06Icon,
   Image01Icon,
   LinkExternal01Icon,
   XCloseIcon,
+  SearchSmIcon,
 } from './icons'
 import { ICON_SIZE, TOUCH_TARGET_CLASS } from './controlStyles'
-// Payloads above this size render an "open" chip instead of an <img> so the
-// rail never pulls a multi-MB response just for a thumbnail.
-const MAX_INLINE_PREVIEW_BYTES = 12 * 1024 * 1024
+// Full originals load only after an explicit user gesture.
+
+// Explicit pixels avoid the app's 13px root shrinking rem-based thumbnails.
+const MEDIA_TILE_CLASS = 'h-[56px] w-[56px] shrink-0 overflow-hidden rounded-md border border-border bg-surface hover:border-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent'
+const MEDIA_FILE_TILE_CLASS = `${MEDIA_TILE_CLASS} flex flex-col items-center justify-center gap-[3px] p-[4px] text-center text-secondary hover:text-primary`
+const MEDIA_TILE_LABEL_CLASS = 'line-clamp-2 w-full break-words text-[10px] leading-[12px]'
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -38,9 +50,13 @@ function mediaCaption(m: SessionMedia): string {
 function MediaChip({
   media,
   onOpen,
+  previewEnabled,
+  scrollRoot,
 }: {
   media: SessionMedia
-  onOpen: (m: SessionMedia) => void
+  onOpen: (m: SessionMedia, previewSrc?: string) => void
+  previewEnabled: boolean
+  scrollRoot: RefObject<HTMLDivElement>
 }) {
   const caption = mediaCaption(media)
 
@@ -50,161 +66,265 @@ function MediaChip({
         href={media.url}
         target="_blank"
         rel="noreferrer noopener"
-        title={caption || media.url}
-        className="flex h-14 shrink-0 items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 text-xs text-secondary hover:border-accent/50 hover:text-primary"
+        title={[caption, media.url].filter(Boolean).join(' · ')}
+        aria-label={media.label || media.url}
+        className={MEDIA_FILE_TILE_CLASS}
       >
-        <LinkExternal01Icon width={ICON_SIZE.primary} height={ICON_SIZE.primary} />
-        <span className="max-w-[10rem] truncate">{media.label ?? 'Link'}</span>
+        <LinkExternal01Icon width={ICON_SIZE.primary} height={ICON_SIZE.primary} className="shrink-0" />
+        <span className={MEDIA_TILE_LABEL_CLASS}>{media.label || 'Link'}</span>
       </a>
     )
   }
 
   const isImage = media.kind === 'image'
-  const tooLarge = media.bytes != null && media.bytes > MAX_INLINE_PREVIEW_BYTES
-  if (isImage && !tooLarge) {
-    return (
-      <button
-        type="button"
-        data-testid="media-thumb"
-        onClick={() => onOpen(media)}
-        title={caption || 'Image'}
-        className="h-14 w-14 shrink-0 overflow-hidden rounded-md border border-border bg-surface hover:border-accent/50"
-      >
-        <img
-          src={media.url}
-          alt={caption || 'session image'}
-          loading="lazy"
-          className="h-full w-full object-cover"
-        />
-      </button>
-    )
+  const local = media.url.startsWith('/api/session-media/') && !media.url.startsWith('//')
+  if (isImage && local) {
+    return <ImageThumbnail media={media} caption={caption} enabled={previewEnabled} root={scrollRoot} onOpen={onOpen} />
   }
 
-  // Documents and oversized images open in a new tab rather than lightbox.
+  // Documents and external images open only by explicit gesture.
   return (
     <button
       type="button"
       data-testid="media-chip"
-      onClick={() => window.open(media.url, '_blank', 'noopener')}
+      onClick={(event) => {
+        if (isImage) {
+          event.currentTarget.focus({ preventScroll: true })
+          onOpen(media)
+        } else window.open(mediaPayloadUrl(media.url), '_blank', 'noopener')
+      }}
       title={caption || media.kind}
-      className="flex h-14 shrink-0 items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 text-xs text-secondary hover:border-accent/50 hover:text-primary"
+      aria-label={caption || (isImage ? 'Image' : 'Document')}
+      className={MEDIA_FILE_TILE_CLASS}
     >
       {isImage ? (
-        <Image01Icon width={ICON_SIZE.primary} height={ICON_SIZE.primary} />
+        <Image01Icon width={ICON_SIZE.primary} height={ICON_SIZE.primary} className="shrink-0" />
       ) : (
-        <File06Icon width={ICON_SIZE.primary} height={ICON_SIZE.primary} />
+        <File06Icon width={ICON_SIZE.primary} height={ICON_SIZE.primary} className="shrink-0" />
       )}
-      <span className="max-w-[10rem] truncate">
+      <span className={MEDIA_TILE_LABEL_CLASS}>
         {media.label ?? (isImage ? 'Image' : 'Document')}
       </span>
-      {media.bytes != null && (
-        <span className="text-muted">{formatBytes(media.bytes)}</span>
-      )}
     </button>
   )
 }
 
-export default function MediaRail({ session }: { session: Session }) {
-  const [expanded, setExpanded] = useState(false)
-  const [lightbox, setLightbox] = useState<SessionMedia | null>(null)
+function ImageThumbnail({ media, caption, enabled, root, onOpen }: {
+  media: SessionMedia; caption: string; enabled: boolean; root: RefObject<HTMLDivElement>; onOpen: (m: SessionMedia, previewSrc?: string) => void
+}) {
+  const { target, preview, fail } = useMediaThumbnail(media.url, enabled, root)
+  const label = preview.status === 'error' ? 'No preview' : preview.status === 'loading' ? 'Loading…' : 'Open image'
+  return (
+    <button ref={target} type="button" data-testid="media-thumb" data-preview-state={preview.status}
+      onClick={(event) => {
+        // Safari does not focus buttons on pointer clicks; retain a concrete opener.
+        event.currentTarget.focus({ preventScroll: true })
+        onOpen(media, preview.status === 'ready' ? preview.src : undefined)
+      }} title={caption || 'Image'}
+      aria-label={`${caption || 'Image'} · ${preview.status === 'error' ? 'Preview unavailable. ' : ''}Open image`}
+      aria-busy={preview.status === 'loading'} className={preview.status === 'ready' ? MEDIA_TILE_CLASS : MEDIA_FILE_TILE_CLASS}>
+      {preview.status === 'ready' ? (
+        <img data-testid="media-thumbnail" src={preview.src} alt={caption || 'session image'} onError={fail} className="h-full w-full object-cover" />
+      ) : <>
+        <Image01Icon width={ICON_SIZE.primary} height={ICON_SIZE.primary} className="shrink-0" />
+        <span className={MEDIA_TILE_LABEL_CLASS}>{label}</span>
+      </>}
+    </button>
+  )
+}
 
-  // Esc closes the lightbox before any other handler (stopPropagation keeps
-  // it from falling through to terminal/app-level shortcuts).
+export default function MediaRail({ session, ready = false }: { session: Session; ready?: boolean }) {
+  // A new transcript starts with a clean baseline and closed previews.
+  const identity = JSON.stringify([
+    session.id, session.agentSessionId, session.logFilePath, session.remote, session.agentType,
+  ])
+  return <SessionMediaRail key={identity} session={session} ready={ready} />
+}
+
+function SessionMediaRail({ session, ready }: { session: Session; ready: boolean }) {
+  const [expanded, setExpanded] = useState(false)
+  const [attention, setAttention] = useState<'idle' | 'pulsing' | 'unread'>('idle')
+  const summary = session.mediaSummary
+  const [tab, setTab] = useState<'media' | 'links'>(() => summary && summary.links > 0 && summary.images + summary.documents === 0 ? 'links' : 'media')
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const [query, setQuery] = useState('')
+  const pages = useMediaPages(session.agentSessionId, summary, expanded && tab === 'media', ready, { kind: 'media' })
+  const lightbox = useMediaLightboxNavigation(session.agentSessionId, pages.identity, pages.visible && ready)
+  const panel = useRef<HTMLDivElement>(null)
+  const searchInput = useRef<HTMLInputElement>(null)
+  const pill = useRef<HTMLButtonElement>(null)
+  const close = () => { lightbox.close(); setExpanded(false); queueMicrotask(() => pill.current?.focus()) }
+  useEffect(() => { const timer = setTimeout(() => setQuery(search.trim()), 200); return () => clearTimeout(timer) }, [search])
+  useEffect(() => { if (searchOpen) searchInput.current?.focus() }, [searchOpen])
   useEffect(() => {
-    if (!lightbox) return
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation()
-        setLightbox(null)
-      }
+    if (!expanded || lightbox.selection) return
+    const outside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !panel.current?.contains(event.target)) setExpanded(false)
+    }
+    document.addEventListener('pointerdown', outside)
+    return () => document.removeEventListener('pointerdown', outside)
+  }, [expanded, lightbox.selection])
+  const seenAdditions = useRef(summary?.additions)
+  const scroll = useRef<HTMLDivElement>(null)
+  const previousShift = useRef(0)
+  const previousScroll = useRef(0)
+
+  useEffect(() => { if (summary?.images === 0 && (!summary.discovery || summary.discovery.status === 'ready')) lightbox.close() }, [summary?.images, summary?.discovery?.status, lightbox.close])
+
+  useLayoutEffect(() => {
+    if (scroll.current) scroll.current.scrollLeft += (pages.scrollShift - previousShift.current) * 64
+    previousShift.current = pages.scrollShift
+  }, [pages.scrollShift])
+
+  useEffect(() => {
+    if (!summary) return
+    const before = seenAdditions.current
+    seenAdditions.current = summary.additions
+    if (summary.total === 0) setAttention('idle')
+    else if (before !== undefined && summary.additions > before && !session.remote) setAttention(expanded ? 'unread' : 'pulsing')
+  }, [summary, session.remote, expanded])
+
+  const refresh = () => {
+    if (scroll.current) scroll.current.scrollLeft = 0
+    previousScroll.current = 0
+    previousShift.current = 0
+    lightbox.close()
+    setAttention('idle')
+    void pages.refresh()
+  }
+
+  useEffect(() => {
+    if (attention !== 'pulsing') return
+    // Additions during this batch share its deadline instead of extending it.
+    const timer = setTimeout(() => setAttention('unread'), 1600)
+    return () => clearTimeout(timer)
+  }, [attention])
+
+  useEffect(() => {
+    if (!expanded || lightbox.selection) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { event.stopPropagation(); close() }
     }
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [lightbox])
+  }, [expanded, lightbox.selection])
 
-  const media = session.media
-  if (session.remote || !media?.length) return null
+  if (session.remote || !session.agentSessionId) return null
 
-  const images = media.filter((m) => m.kind === 'image').length
-  const others = media.length - images
+  const counts = pages.latestSummary ?? summary
+  const pendingEmpty = !counts || (counts.total === 0 && (pages.discovery.status === 'pending' || pages.discovery.status === 'indexing'))
+  const mediaCount = counts ? counts.images + counts.documents : undefined
 
   return (
     <>
       {expanded ? (
         <div
+          ref={panel}
           data-testid="media-rail"
-          className="absolute top-2 right-2 z-40 w-[min(560px,calc(100%-1.5rem))] rounded-xl border border-border bg-elevated/95 shadow-xl backdrop-blur"
+          onKeyDown={event => event.stopPropagation()}
+          className="absolute top-2 right-2 z-40 flex max-h-[min(280px,65%)] w-[calc(100%-16px)] flex-col overflow-hidden rounded-xl border border-border bg-elevated shadow-xl md:max-h-[320px] md:w-[400px]"
         >
-          <div className="flex items-center justify-between border-b border-border/60 px-3 py-2">
-            <span className="text-xs text-muted">
-              Media · {media.length}
-            </span>
-            <button
-              type="button"
-              aria-label="Collapse media rail"
-              onClick={() => setExpanded(false)}
-              className="text-muted hover:text-primary"
-            >
-              <XCloseIcon width={ICON_SIZE.default} height={ICON_SIZE.default} />
+          <div className="flex shrink-0 items-center gap-[10px] border-b border-border/60 px-3">
+            {(['media', 'links'] as const).map(value => {
+              const Icon = value === 'media' ? Image01Icon : LinkExternal01Icon
+              return <button key={value} type="button" aria-pressed={tab === value} onClick={() => { setTab(value); lightbox.close() }}
+                className={`flex h-[44px] items-center gap-[6px] whitespace-nowrap text-[12px] ${tab === value ? 'text-primary shadow-[inset_0_-2px_var(--accent)]' : 'text-secondary hover:text-primary'} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent`}>
+                <Icon width={ICON_SIZE.primary} height={ICON_SIZE.primary} />{value === 'media' ? `Media${mediaCount === undefined ? '' : ` ${mediaCount}`}` : `Links${counts ? ` ${counts.links}` : ''}`}
+              </button>
+            })}
+            {tab === 'links' && <button type="button" aria-label="Search links" aria-expanded={searchOpen}
+              onClick={() => setSearchOpen(value => !value)} className="ml-auto flex h-[44px] w-[36px] shrink-0 items-center justify-center rounded text-secondary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+              <SearchSmIcon width={ICON_SIZE.primary} height={ICON_SIZE.primary} />
+            </button>}
+            <button type="button" aria-label="Collapse media rail" onClick={close}
+              className="ml-auto flex h-[44px] w-[36px] shrink-0 items-center justify-center rounded text-secondary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+              <XCloseIcon width={ICON_SIZE.primary} height={ICON_SIZE.primary} />
             </button>
           </div>
-          <div className="scrollbar-none flex gap-2 overflow-x-auto px-3 py-2">
-            {media.map((m, i) => (
-              <MediaChip key={`${m.url}:${i}`} media={m} onOpen={setLightbox} />
+          {tab === 'links' && searchOpen && <div className="shrink-0 border-b border-border/60 px-3 py-2">
+            <input ref={searchInput} type="search" aria-label="Find link" placeholder="Find a link…" value={search} maxLength={200}
+              onChange={event => setSearch(event.target.value)}
+              className="w-full rounded border border-border bg-surface px-2 py-1.5 text-[16px] text-primary placeholder:text-secondary focus:outline-none focus:ring-2 focus:ring-accent md:text-[12px]" />
+          </div>}
+          {!!counts?.omittedRecords && (
+            <p data-testid="media-incomplete" className="px-3 py-2 text-xs text-muted">
+              Some media may be unavailable: {counts?.omittedRecords} oversized transcript {counts?.omittedRecords === 1 ? 'entry was' : 'entries were'} skipped.
+            </p>
+          )}
+          {Boolean(counts?.omittedItems || pages.pages[0]?.page.omittedItems) && <p data-testid="media-omitted-items" className="px-3 py-2 text-xs text-muted">
+            Some items could not be listed because their details are too large ({Math.max(counts?.omittedItems ?? 0, pages.pages[0]?.page.omittedItems ?? 0)}).
+          </p>}
+          {tab === 'links' ? <SessionLinks key={query} session={session} ready={ready} search={query} onRefresh={() => setAttention('idle')} /> : <>
+          {pages.changed && (
+            <button type="button" onClick={refresh} disabled={!ready || pages.status === 'loading'}
+              className="px-3 py-2 text-xs text-accent" aria-label="Refresh media">Media changed · Refresh</button>
+          )}
+          {pages.hasEarlier && (
+            <button type="button" onClick={() => { if (pages.canLoadEarlier) void pages.loadPrevious(); else refresh() }}
+              disabled={!ready || pages.status === 'loading'} className="px-3 py-1 text-xs text-accent">
+              {pages.canLoadEarlier ? 'Newer media' : 'Back to newest media'}
+            </button>
+          )}
+          <div ref={scroll} data-testid="media-scroll" tabIndex={0} role="region" aria-label="Session media, newest first"
+            onScroll={(event) => {
+              const el = event.currentTarget
+              const forward = el.scrollLeft > previousScroll.current
+              previousScroll.current = el.scrollLeft
+              if (forward && el.clientWidth > 0 && el.scrollWidth - el.clientWidth - el.scrollLeft < 128 &&
+                  pages.hasNext && (pages.status === 'idle' || pages.status === 'streaming')) void pages.loadNext()
+            }}
+            className="scrollbar-none flex gap-2 overflow-x-auto px-3 py-2">
+            {pages.items.map((m, i) => (
+              <MediaChip key={`${m.url}:${i}`} media={m} onOpen={lightbox.open} previewEnabled={pages.visible && ready} scrollRoot={scroll} />
             ))}
           </div>
+          {!ready && <p role="status" className="px-3 pb-2 text-xs text-muted">Waiting for terminal recovery…</p>}
+          {!pages.error && <MediaDiscoveryStatus discovery={pages.discovery} kind="media" hasItems={pages.items.length > 0} />}
+          {pages.status === 'loading' && pages.discovery.status === 'ready' && <p role="status" className="px-3 pb-2 text-xs text-muted">Loading media…</p>}
+          {pages.pages.length > 0 && !pages.items.length && pages.discovery.status === 'ready' && <p className="px-3 py-2 text-xs text-secondary">No media in this session yet.</p>}
+          {pages.error && <div role="alert" className="px-3 pb-2 text-xs text-muted">
+            {pages.error} <button type="button" onClick={refresh} disabled={!ready} className="text-accent" aria-label="Refresh media">Refresh</button>
+          </div>}
+          {pages.hasNext && !pages.error && (
+            <button type="button" onClick={() => void pages.loadNext()} disabled={!ready || pages.status === 'loading'}
+              className="px-3 pb-2 text-xs text-accent">Load older media</button>
+          )}
+          </>}
         </div>
       ) : (
         <button
           type="button"
+          ref={pill}
           data-testid="media-rail-pill"
-          onClick={() => setExpanded(true)}
-          className={`absolute top-2 right-2 z-40 flex items-center gap-1.5 rounded-full border border-border bg-elevated/90 px-3 py-1.5 text-xs text-secondary shadow-lg backdrop-blur transition-colors hover:text-primary ${TOUCH_TARGET_CLASS}`}
+          aria-expanded={false}
+          onClick={() => {
+            setAttention('idle')
+            setExpanded(true)
+          }}
+          aria-label={`Open media${counts && !pendingEmpty ? `: ${counts.total} ${counts.total === 1 ? 'item' : 'items'}` : ''}${attention !== 'idle' ? ', new media' : ''}`}
+          className={`absolute top-2 right-2 z-40 flex items-center gap-1.5 rounded-full border border-border bg-elevated/90 px-3 py-1.5 text-xs text-secondary shadow-lg backdrop-blur transition-colors hover:text-primary md:min-h-[30px] md:gap-[6px] md:px-[12px] md:py-[5px] md:text-[12px] md:leading-[18px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${attention === 'pulsing' ? 'media-attention' : ''} ${TOUCH_TARGET_CLASS}`}
         >
-          <Image01Icon width={ICON_SIZE.pill} height={ICON_SIZE.pill} />
-          <span className="tabular-nums">{images}</span>
-          {others > 0 && (
-            <span className="text-muted tabular-nums">+{others}</span>
+          <Image01Icon width={ICON_SIZE.pill} height={ICON_SIZE.pill} className="md:h-[16px] md:w-[16px]" />
+          <span className="hidden md:inline">Media</span>
+          <span className="tabular-nums">{pendingEmpty ? '…' : mediaCount ?? '…'}</span>
+          {!!counts?.links && <>
+            <LinkExternal01Icon width={ICON_SIZE.pill} height={ICON_SIZE.pill} />
+            <span className="tabular-nums">{counts?.links}</span>
+          </>}
+          {attention !== 'idle' && (
+            <span data-testid="media-rail-new-dot" aria-hidden="true" className="h-[6px] w-[6px] shrink-0 rounded-full bg-accent" />
           )}
         </button>
       )}
 
-      {lightbox && (
-        <div
-          data-testid="media-lightbox"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Media preview"
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm"
-          onClick={() => setLightbox(null)}
-        >
-          <figure
-            className="flex max-w-[90vw] flex-col items-center gap-2"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <img
-              src={lightbox.url}
-              alt={mediaCaption(lightbox) || 'session media'}
-              className="max-h-[80vh] max-w-full rounded-lg object-contain shadow-2xl"
-            />
-            <figcaption className="flex items-center gap-3 text-xs text-white/80">
-              <span>{mediaCaption(lightbox) || 'Image'}</span>
-              {lightbox.width != null && lightbox.height != null && (
-                <span>
-                  {lightbox.width}×{lightbox.height}
-                </span>
-              )}
-              <a
-                href={lightbox.url}
-                target="_blank"
-                rel="noreferrer noopener"
-                className="text-accent underline underline-offset-2"
-              >
-                Open original
-              </a>
-            </figcaption>
-          </figure>
-        </div>
+      {lightbox.selection && (
+        <MediaLightbox media={lightbox.selection.media} previewSrc={lightbox.selection.previewSrc}
+          enabled={pages.visible && ready} onClose={lightbox.close}
+          onPrevious={lightbox.previous} onNext={lightbox.next}
+          canPrevious={lightbox.canPrevious} canNext={lightbox.canNext}
+          navigating={lightbox.navigating} navigationError={lightbox.navigationError}
+          onRetryNavigation={lightbox.retry} />
       )}
     </>
   )

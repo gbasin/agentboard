@@ -1,0 +1,14 @@
+Initial integrated matrix: 24 passed (5.7m), Chromium + WebKit.
+Final focused matrix before Safari opener fix: 11 passed, 1 failed (2.2m).
+Failure: WebKit Escape restored media-scroll rather than media-thumb.
+All thumbnail, landscape bounds, full-image consent, background cancellation, and native Enter cases passed.
+
+Final rebuild after explicit Safari tile-focus fix:
+E2E_PORT=4195 bunx playwright test --config=playwright.media.config.ts media-lightbox.spec.ts
+  ✓  1 [chromium] › tests/e2e/media-lightbox.spec.ts:98:1 › image navigation skips long non-image gaps without loading intervening rail pages (8.3s)
+  ✓  2 [chromium] › tests/e2e/media-lightbox.spec.ts:207:1 › backgrounding a pending navigation cancels it and does not replay the move on return (12.5s)
+  ✓  3 [webkit] › tests/e2e/media-lightbox.spec.ts:98:1 › image navigation skips long non-image gaps without loading intervening rail pages (12.8s)
+  ✓  4 [webkit] › tests/e2e/media-lightbox.spec.ts:207:1 › backgrounding a pending navigation cancels it and does not replay the move on return (11.0s)
+  4 passed (49.2s)
+
+Both private fixture servers (4195 and 4196) stopped; no listeners remain.

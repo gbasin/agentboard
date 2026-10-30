@@ -37,7 +37,8 @@ export function reduceActivity(state: ActivityState, value: unknown, kind: 'clau
       // Forked history may precede the child's own metadata.
       const spawn = record(record(record(p.source).subagent).thread_spawn)
       const name = spawn.agent_path ?? spawn.agent_nickname ?? p.agent_nickname
-      if (typeof name === 'string') state.name = name.slice(0, 120)
+      state.name = typeof name === 'string' ? name.slice(0, 120) : undefined
+      state.updatedAt = undefined
       state.phase = 'unknown'
       state.tools.clear()
       state.turnId = undefined
@@ -70,6 +71,13 @@ export function reduceActivity(state: ActivityState, value: unknown, kind: 'clau
   } else {
     if (e.type === 'api-request') {
       state.phase = state.tools.size ? 'tool' : 'model'
+      relevant = true
+    }
+    if (e.type === 'user' && e.isMeta !== true && (
+      typeof m.content === 'string' || (Array.isArray(m.content) && m.content.some(c => record(c).type === 'text'))
+    )) {
+      state.phase = 'model'
+      state.tools.clear()
       relevant = true
     }
     if (e.type === 'assistant' || e.type === 'user') {
@@ -107,9 +115,9 @@ export function activitySnapshot(state: ActivityState): AgentActivity {
     ? tools.some(t => /^(AskUserQuestion|request_user_input|request_user_input_async)$/.test(t))
       ? 'Waiting for input'
       : tools.some(t => /^(wait_agent|wait)$/.test(t)) ? 'Waiting on tool or agents'
-      : `Tool pending: ${tools.join(', ')}`
+      : `Tool pending: ${tools.slice(0, 3).join(', ')}${tools.length > 3 ? ` +${tools.length - 3} more` : ''}`
     : state.phase === 'model' ? 'Model turn active'
     : state.phase === 'idle' ? 'Turn finished' : 'Activity unknown'
   const phase = state.phase === 'tool' && tools.length === 1 && /^(AskUserQuestion|request_user_input|request_user_input_async)$/.test(tools[0]) ? 'blocked' : state.phase
-  return { phase, label, updatedAt: state.updatedAt, tools }
+  return { phase, label, updatedAt: state.updatedAt, tools: tools.slice(0, 8) }
 }

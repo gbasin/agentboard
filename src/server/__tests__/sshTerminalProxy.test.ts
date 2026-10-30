@@ -541,7 +541,7 @@ describe('SshTerminalProxy sync terminal feature', () => {
           ? { exitCode: 1, stdout: '', stderr: 'duplicate session: s' }
           : { exitCode: 0, stdout: `${opts.createVersion ?? '3.4'}\n`, stderr: '' }
       }
-      if (cmd.includes('-V')) {
+      if (cmd.includes('display-message') && cmd.includes('#{version}')) {
         return opts.probeFails
           ? { exitCode: 1, stdout: '', stderr: 'probe failed' }
           : { exitCode: 0, stdout: `tmux ${opts.probeVersion ?? '3.4'}\n`, stderr: '' }
@@ -553,8 +553,9 @@ describe('SshTerminalProxy sync terminal feature', () => {
     }
   }
 
-  async function startAndGetAttachCmd(harness: ReturnType<typeof createSshHarness>) {
+  async function startAndGetAttachCmd(harness: ReturnType<typeof createSshHarness>, sizing = false) {
     const proxy = new SshTerminalProxy({
+      initialSizeParticipation: !sizing,
       connectionId: 'conn-sync',
       sessionName: 'test-sync-session',
       baseSession: 'agentboard',
@@ -564,6 +565,7 @@ describe('SshTerminalProxy sync terminal feature', () => {
       spawnSync: harness.spawnSync,
     })
     await proxy.start()
+    if (sizing) { await proxy.setSizeParticipation(true); await proxy.setSizeParticipation(false) }
     const attachCalls = harness.spawnCalls.filter((c) => c.mode === 'terminal')
     expect(attachCalls.length).toBe(1)
     const attachCmd = attachCalls[0].args[attachCalls[0].args.length - 1]
@@ -579,7 +581,7 @@ describe('SshTerminalProxy sync terminal feature', () => {
     expect(attachCmd).toContain('tmux -u -T sync new-session -A')
     // The create round-trip supplied the version; no separate -V probe.
     const probeCalls = harness.spawnCalls.filter(
-      (c) => c.mode === 'pipe' && (c.args[c.args.length - 1] ?? '') === 'tmux -V'
+      (c) => c.mode === 'pipe' && (c.args[c.args.length - 1] ?? '').includes('display-message')
     )
     expect(probeCalls.length).toBe(0)
   })
@@ -593,12 +595,21 @@ describe('SshTerminalProxy sync terminal feature', () => {
     expect(attachCmd).not.toContain('-T sync')
   })
 
-  test('falls back to a tmux -V probe when create hits a duplicate session', async () => {
+  test('falls back to a running-server version probe when create hits a duplicate session', async () => {
     const harness = createSshHarness({
       spawnPipeOverride: versionAnswers({ createDuplicate: true, probeVersion: '3.4' }),
     })
     const attachCmd = await startAndGetAttachCmd(harness)
     expect(attachCmd).toContain('tmux -u -T sync new-session -A')
+  })
+
+  test('duplicate-session fallback keeps old remote servers free of size flags', async () => {
+    const harness = createSshHarness({ spawnPipeOverride: versionAnswers({ createDuplicate: true, probeVersion: '3.1c' }) })
+    const command = await startAndGetAttachCmd(harness, true)
+    expect(command).not.toContain('-f ignore-size')
+    expect(harness.spawnCalls.some(c => c.args.at(-1)?.includes('refresh-client') && c.args.at(-1)?.includes('-f'))).toBe(false)
+    expect(harness.spawnCalls.some(c => c.args.at(-1)?.includes('display-message'))).toBe(true)
+    expect(harness.spawnCalls.some(c => c.args.at(-1) === 'tmux -V')).toBe(false)
   })
 
   test('degrades to a plain attach when the fallback probe fails', async () => {
@@ -609,6 +620,25 @@ describe('SshTerminalProxy sync terminal feature', () => {
     expect(attachCmd).toContain('tmux -u new-session -A')
     expect(attachCmd).not.toContain('-T sync')
   })
+
+  for (const [version, supported] of [['3.1c', false], ['3.2', true], ['', false]] as const) {
+    test(`remote background sizing respects ${version || 'unknown version'} with sync disabled`, async () => {
+      const saved = process.env.AGENTBOARD_TMUX_SYNC
+      process.env.AGENTBOARD_TMUX_SYNC = '0'
+      try {
+        const harness = createSshHarness({ spawnPipeOverride: versionAnswers({ createVersion: version }) })
+        const command = await startAndGetAttachCmd(harness, true)
+        expect(command.includes('-T sync')).toBe(false)
+        expect(command.includes('-f ignore-size')).toBe(supported)
+        const sizing = harness.spawnCalls.filter(c => c.mode === 'pipe' && c.args.at(-1)?.includes('refresh-client') && c.args.at(-1)?.includes('-f'))
+        expect(sizing).toHaveLength(supported ? 2 : 0)
+        expect(harness.spawnCalls.some(c => c.args.at(-1)?.includes('display-message'))).toBe(false)
+      } finally {
+        if (saved === undefined) delete process.env.AGENTBOARD_TMUX_SYNC
+        else process.env.AGENTBOARD_TMUX_SYNC = saved
+      }
+    })
+  }
 
   test('AGENTBOARD_TMUX_SYNC=0 disables the sync feature', async () => {
     const saved = process.env.AGENTBOARD_TMUX_SYNC

@@ -21,3 +21,12 @@ systemd/agentboard.service
 # FAD parity fixtures: generated artifacts
 /tools/fad-dump/target/
 tests/fixtures/fad/home/.local/share/devin/cli/sessions.db
+
+# Focused media matrix can run alongside the recovery matrix.
+.test-results-media
+
+# Session activity and broad regression evidence are uploaded by CI.
+playwright-activity-report
+.test-results-regression
+
+.test-results-compiled-activity

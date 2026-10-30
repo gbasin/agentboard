@@ -1,0 +1,20 @@
+1792872700954 initial disposition 4378053344 blocked 0
+1792872700956 serial child ready-before-pty
+1792872700959 serial child ready-before-pty
+1792872700961 serial child ready-before-pty
+1792872700964 serial child ready-before-pty
+1792872700967 serial child ready-before-pty
+1792872700970 serial child ready-before-pty
+1792872700970 created 6
+1792872701483 child 23198
+1792872701493 child 23199
+1792872701503 child 23200
+1792872701515 child 23201
+1792872701524 child 23202
+1792872701534 child 23203
+1792872701955 tick disposition 4378053344 blocked 1
+1792872702956 tick disposition 4378053344 blocked 1
+1792872703957 tick disposition 4378053344 blocked 1
+1792872704958 tick disposition 4378053344 blocked 1
+1792872705959 tick disposition 4378053344 blocked 1
+1792872706960 tick disposition 4378053344 blocked 1

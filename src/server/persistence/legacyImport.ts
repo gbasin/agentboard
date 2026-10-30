@@ -1,6 +1,7 @@
 /** Enrich the stable catalog from provider records without replacing custom names. */
 import type { SessionDatabase, AgentSessionRecord } from '../db'
 import type { SessionCatalog } from './catalog'
+import { readImportCandidates } from '../sessionReads'
 
 /** True when `window` (`session:@id`) lives in the board's own tmux session. */
 export type ManagedWindowTest = (window: string) => boolean
@@ -10,27 +11,32 @@ export function importConversations(
   db: SessionDatabase,
   isManagedWindow: ManagedWindowTest
 ) {
-  const ids = db.db
-    .query(
-      `SELECT session_id AS id FROM agent_sessions a WHERE a.is_codex_exec=0 AND NOT EXISTS
-    (SELECT 1 FROM session_conversations c WHERE c.provider_id=a.session_id) ORDER BY id LIMIT 100`
-    )
-    .all() as { id: string }[]
+  importConversationIds(catalog, db, isManagedWindow, readImportCandidates(db.db))
+}
+
+/** Re-read current rows after an asynchronous scan before applying any writes. */
+export function importConversationIds(
+  catalog: SessionCatalog,
+  db: SessionDatabase,
+  isManagedWindow: ManagedWindowTest,
+  ids: string[]
+) {
   // One indexed batch fetch — the per-id getSessionById loop was an N+1
   // (up to 100 probes per reconcile) surfaced as sync_db_slow outliers.
   const records = new Map(
-    db.getSessionsByIds(ids.map((row) => row.id)).map((record) => [
+    db.getSessionsByIds(ids).map((record) => [
       record.sessionId,
       record,
     ])
   )
-  for (const { id } of ids) {
+  for (const id of ids) {
     const record = records.get(id)
     if (!record || record.isCodexExec) continue
     const live = record.currentWindow
       ? catalog.byWindow(record.currentWindow)
       : null
     if (live && !live.providerId) {
+      if (catalog.byProvider(id)) continue
       catalog.associate(live.id, id, record.agentType, record.lastUserMessage)
       continue
     }
@@ -70,4 +76,14 @@ export function importConversation(
       origin: 'imported',
     })
   )
+}
+
+/** Keep dormant catalog previews current without changing identity or stop intent. */
+export function refreshDormantConversation(catalog: SessionCatalog, record: AgentSessionRecord) {
+  const saved = catalog.byProvider(record.sessionId)
+  // A saved session can own older conversations too. Only its current provider
+  // may refresh the preview; live sessions get activity through observeOne.
+  if (!saved || saved.providerId !== record.sessionId ||
+    (saved.state !== 'archived' && saved.state !== 'hibernating')) return
+  catalog.updateActivity(saved.id, record.lastActivityAt, record.lastUserMessage ?? undefined)
 }

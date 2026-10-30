@@ -1,0 +1,1695 @@
+{
+  "summary": {
+    "build": "pr",
+    "profile": "rate128",
+    "emulateIOS": true,
+    "phoneSettings": true,
+    "connections": 1,
+    "pings": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "pongs": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "timeouts": 0,
+    "connectTimeouts": 0,
+    "ready": 1,
+    "finalInput": true,
+    "error": null,
+    "network": {
+      "connections": 1,
+      "upBytes": 14754,
+      "downBytes": 3723255,
+      "maxQueuedBytes": 1110016,
+      "segments": 1353
+    },
+    "bursts": 0
+  },
+  "events": [
+    {
+      "t": 576,
+      "kind": "client-log",
+      "event": "ws_connect",
+      "url": "ws://127.0.0.1:53764/ws",
+      "resume": false,
+      "traceId": "mvnwvu79-hj1mhwwfet",
+      "epoch": 0,
+      "pingSeq": 0,
+      "lastPongSeq": null,
+      "lastMessageAgeMs": null,
+      "visibility": "visible",
+      "status": "connecting",
+      "ws": null,
+      "attempt": 0,
+      "failures": 0,
+      "stalls": 0,
+      "overloads": 0,
+      "overloadDelayMs": 0,
+      "leaked": 0,
+      "online": true,
+      "verifying": false
+    },
+    {
+      "t": 615,
+      "kind": "socket",
+      "number": 1
+    },
+    {
+      "t": 850,
+      "kind": "client-log",
+      "event": "ws_onopen",
+      "traceId": "mvnwvu79-hj1mhwwfet",
+      "epoch": 0,
+      "pingSeq": 0,
+      "lastPongSeq": null,
+      "lastMessageAgeMs": null,
+      "visibility": "visible",
+      "status": "connecting",
+      "ws": "OPEN",
+      "attempt": 0,
+      "failures": 0,
+      "stalls": 0,
+      "overloads": 0,
+      "overloadDelayMs": 0,
+      "leaked": 1,
+      "online": true,
+      "verifying": false,
+      "buffered": 0
+    },
+    {
+      "t": 11364,
+      "kind": "metadata",
+      "type": "sessions",
+      "bytes": 1367615
+    },
+    {
+      "t": 11439,
+      "kind": "metadata",
+      "type": "host-status",
+      "bytes": 114
+    },
+    {
+      "t": 11444,
+      "kind": "metadata",
+      "type": "server-config",
+      "bytes": 160
+    },
+    {
+      "t": 11448,
+      "kind": "metadata",
+      "type": "synced-settings",
+      "bytes": 40
+    },
+    {
+      "t": 11603,
+      "kind": "device",
+      "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1",
+      "platform": "iPhone",
+      "maxTouchPoints": 5
+    },
+    {
+      "t": 20921,
+      "kind": "ping",
+      "seq": 1
+    },
+    {
+      "t": 21745,
+      "kind": "metadata",
+      "type": "agent-sessions",
+      "bytes": 1350558
+    },
+    {
+      "t": 21765,
+      "kind": "metadata",
+      "type": "terminal-lease",
+      "bytes": 72
+    },
+    {
+      "t": 21766,
+      "kind": "metadata",
+      "type": "synced-settings",
+      "bytes": 980
+    },
+    {
+      "t": 21766,
+      "kind": "metadata",
+      "type": "synced-settings",
+      "bytes": 980
+    },
+    {
+      "t": 21766,
+      "kind": "output",
+      "bytes": 1187
+    },
+    {
+      "t": 21766,
+      "kind": "output",
+      "bytes": 1024
+    },
+    {
+      "t": 21766,
+      "kind": "output",
+      "bytes": 222
+    },
+    {
+      "t": 21766,
+      "kind": "terminal-ready"
+    },
+    {
+      "t": 21794,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 21794,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 21794,
+      "kind": "output",
+      "bytes": 126
+    },
+    {
+      "t": 21795,
+      "kind": "output",
+      "bytes": 1024
+    },
+    {
+      "t": 21795,
+      "kind": "output",
+      "bytes": 712
+    },
+    {
+      "t": 21795,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 21795,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 21795,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 21795,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 21795,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 21795,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 21795,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 21795,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 21795,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 21795,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 21796,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 21796,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 21796,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 21796,
+      "kind": "output",
+      "bytes": 134
+    },
+    {
+      "t": 21796,
+      "kind": "output",
+      "bytes": 1024
+    },
+    {
+      "t": 21796,
+      "kind": "output",
+      "bytes": 712
+    },
+    {
+      "t": 21796,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 21796,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 21796,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 21796,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 21796,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 21796,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 21796,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 21796,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 21796,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 21796,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 21796,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 21796,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 21796,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 21796,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 21796,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 21796,
+      "kind": "pong",
+      "seq": 1
+    },
+    {
+      "t": 21796,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 21796,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 22259,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 22310,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 22310,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 22843,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 23012,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 23417,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 23763,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 23985,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 24515,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 24548,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 25118,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 25271,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 25685,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 26022,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 26254,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 26254,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 26775,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 26810,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 26810,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 27382,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 27382,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 27522,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 27955,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 28275,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 28525,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 29027,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 29089,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 29089,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 29655,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 29656,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 29777,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 30184,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 30184,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 30554,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 30744,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 31282,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 31321,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 31882,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 31883,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 32037,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 32450,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 32450,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 32788,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 33022,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 33540,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 33556,
+      "kind": "output",
+      "bytes": 214
+    },
+    {
+      "t": 33556,
+      "kind": "output",
+      "bytes": 26
+    },
+    {
+      "t": 34114,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 34289,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 34688,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 35044,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 35250,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 35250,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 35796,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 35815,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 35815,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 36377,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 36549,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 36905,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 37298,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 37448,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 38002,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 38051,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 38522,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 38803,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 39091,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 39554,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 39665,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 39665,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 40218,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 40307,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 40725,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 40918,
+      "kind": "ping",
+      "seq": 2
+    },
+    {
+      "t": 41058,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 41221,
+      "kind": "pong",
+      "seq": 2
+    },
+    {
+      "t": 41299,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 41823,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 41868,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 42404,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 42562,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 42976,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 43316,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 43514,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 44043,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 44068,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 44619,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 44619,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 44819,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 45189,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 45572,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 45753,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 45753,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 46312,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 46321,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 46886,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 47074,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 47436,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 47436,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 47827,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 48006,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 48582,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 48582,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 49098,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 49331,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 49667,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 49667,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 50083,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 50214,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 50773,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 50836,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 51328,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 51585,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 51902,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 52339,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 52477,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 52478,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 53047,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 53049,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 53089,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 53588,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 53842,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 54160,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 54594,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 54735,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 55298,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 55347,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 55872,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 55872,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 56102,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 56434,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 56434,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 56850,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 57005,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 57576,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 57576,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 57602,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 58147,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 58356,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 58712,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 59107,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 59285,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 59850,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 59858,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 60368,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 60369,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 60620,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 60918,
+      "kind": "ping",
+      "seq": 3
+    },
+    {
+      "t": 60936,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 60937,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 61220,
+      "kind": "pong",
+      "seq": 3
+    },
+    {
+      "t": 61364,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 61495,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 61495,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 62050,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 62122,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 62615,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 62870,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 63190,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 63620,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 63763,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 64329,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 64371,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 64894,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 65127,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 65470,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 65470,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 65874,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 66043,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 66616,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 66629,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 67186,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 67186,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 67378,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 67760,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 68130,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 68333,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 68885,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 68902,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 69476,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 69635,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 70045,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 70392,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 70598,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 71139,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 71167,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 71739,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 71893,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 72280,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 72643,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 72844,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 73397,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 73407,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 73407,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 73944,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 73944,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 74150,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 74478,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 74903,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 74987,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 75567,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 75661,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 76103,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 76404,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 76656,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 77155,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 77225,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 78027,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 78293,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 78293,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 78334,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 78863,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 79085,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 79397,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 79835,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 79968,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 80507,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 80586,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 80921,
+      "kind": "ping",
+      "seq": 4
+    },
+    {
+      "t": 81106,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 81361,
+      "kind": "pong",
+      "seq": 4
+    },
+    {
+      "t": 81361,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 82119,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 82119,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 82273,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 82273,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 82434,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 82549,
+      "kind": "input-state",
+      "disabled": false,
+      "focused": true
+    },
+    {
+      "t": 82552,
+      "kind": "sent-input",
+      "data": "P"
+    },
+    {
+      "t": 82554,
+      "kind": "sent-input",
+      "data": "R"
+    },
+    {
+      "t": 82556,
+      "kind": "sent-input",
+      "data": "O"
+    },
+    {
+      "t": 82557,
+      "kind": "sent-input",
+      "data": "B"
+    },
+    {
+      "t": 82559,
+      "kind": "sent-input",
+      "data": "E"
+    },
+    {
+      "t": 82560,
+      "kind": "sent-input",
+      "data": "_"
+    },
+    {
+      "t": 82562,
+      "kind": "sent-input",
+      "data": "p"
+    },
+    {
+      "t": 82564,
+      "kind": "sent-input",
+      "data": "r"
+    },
+    {
+      "t": 82566,
+      "kind": "sent-input",
+      "data": "_"
+    },
+    {
+      "t": 82567,
+      "kind": "sent-input",
+      "data": "r"
+    },
+    {
+      "t": 82569,
+      "kind": "sent-input",
+      "data": "a"
+    },
+    {
+      "t": 82570,
+      "kind": "sent-input",
+      "data": "t"
+    },
+    {
+      "t": 82572,
+      "kind": "sent-input",
+      "data": "e"
+    },
+    {
+      "t": 82574,
+      "kind": "sent-input",
+      "data": "1"
+    },
+    {
+      "t": 82575,
+      "kind": "sent-input",
+      "data": "2"
+    },
+    {
+      "t": 82577,
+      "kind": "sent-input",
+      "data": "8"
+    },
+    {
+      "t": 82579,
+      "kind": "sent-input",
+      "data": "\r"
+    },
+    {
+      "t": 82726,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 82785,
+      "kind": "input-check",
+      "delivered": true
+    },
+    {
+      "t": 82885,
+      "kind": "metadata",
+      "type": "tmux-copy-mode-status",
+      "bytes": 128
+    },
+    {
+      "t": 82890,
+      "kind": "output",
+      "bytes": 81
+    }
+  ]
+}

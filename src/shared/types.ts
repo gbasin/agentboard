@@ -1,6 +1,7 @@
 // History sessions lookback limits (in hours)
 import type { SyncedSettings } from './syncedSettings'
 import type { SessionActivity } from './activity'
+import type { MediaSummary } from './media'
 
 export const HISTORY_MAX_AGE_MIN_HOURS = 1
 export const HISTORY_MAX_AGE_MAX_HOURS = 168 // 7 days
@@ -20,6 +21,10 @@ export interface SessionMedia {
   kind: 'image' | 'document' | 'link'
   /** Fetch URL for extracted payloads; external href for links. */
   url: string
+  /** Bounded external destination for display/search; open through url. */
+  externalUrl?: string
+  /** Plain-text excerpt from the assistant reply, never rendered as HTML. */
+  sourceText?: string
   mediaType?: string
   /** Decoded payload size in bytes. */
   bytes?: number
@@ -72,6 +77,8 @@ export interface Session {
   lastUserMessage?: string
   isHibernating?: boolean
   prs?: SessionPullRequest[]
+  mediaSummary?: MediaSummary
+  /** Legacy input only. Never included in catalog or lifecycle wire messages. */
   media?: SessionMedia[]
   activity?: SessionActivity
 }
@@ -90,6 +97,8 @@ export interface AgentSession {
   isHibernating?: boolean
   lastResumeError?: string
   prs?: SessionPullRequest[]
+  mediaSummary?: MediaSummary
+  /** Legacy input only. Never included in catalog or lifecycle wire messages. */
   media?: SessionMedia[]
 }
 
@@ -118,7 +127,9 @@ export interface DirectoryErrorResponse {
   message: string
 }
 
-export type ServerMessage =
+export type ServerMessage = (
+  | { type: 'terminal-lease'; token: string }
+  | { type: 'terminal-overload' }
   | { type: 'library-changed' }
   | { type: 'sessions'; sessions: Session[] }
   | { type: 'session-update'; session: Session }
@@ -165,18 +176,21 @@ export type ServerMessage =
       altScreen?: boolean
       appMouse?: boolean
     }
-  | { type: 'server-config'; remoteAllowControl: boolean; remoteAllowAttach: boolean; hostLabel: string; preferWindowName: boolean; clientLogLevel?: string }
+  | { type: 'server-config'; remoteAllowControl: boolean; remoteAllowAttach: boolean; hostLabel: string; preferWindowName: boolean; clientLogLevel?: string; catalogVersion?: number }
   | { type: 'synced-settings'; settings: SyncedSettings }
   | { type: 'pong'; seq?: number }
   | { type: 'error'; message: string }
   | { type: 'kill-failed'; sessionId: string; message: string }
+) & { attachId?: number; outputSeq?: number }
 
 export interface WakeError {
   code: 'NOT_FOUND' | 'ALREADY_ACTIVE' | 'WAKE_FAILED' | 'WAKE_IN_PROGRESS'
   message: string
 }
 
-export type ClientMessage =
+export type ClientMessage = (
+  | { type: 'terminal-resume'; token?: string; claim: number }
+  | { type: 'terminal-ack'; outputSeq: number; connectionEpoch?: number }
   | {
       type: 'terminal-attach'
       sessionId: string
@@ -200,16 +214,18 @@ export type ClientMessage =
   | { type: 'session-hibernate'; sessionId: string }
   | { type: 'session-move-to-history'; sessionId: string }
   | { type: 'ping'; seq?: number }
+) & { attachId?: number }
 
 /** Diagnostic metadata attached to parsed ServerMessages by useWebSocket. */
 export interface DiagnosticMeta {
   _parseMs: number
   _rawLength: number
+  _connectionEpoch?: number
 }
 
 /** A ServerMessage with diagnostic timing metadata from the WebSocket layer. */
 export type ServerMessageWithDiagnostics = ServerMessage & DiagnosticMeta
 
 // Typed function signatures for client-side messaging
-export type SendClientMessage = (message: ClientMessage) => void
+export type SendClientMessage = (message: ClientMessage) => boolean | void
 export type SubscribeServerMessage = (listener: (message: ServerMessage) => void) => () => void

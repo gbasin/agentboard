@@ -4,6 +4,7 @@
 //   LOG_FILE: path to log file (optional, enables file logging)
 
 import path from 'node:path'
+import { isMainThread } from 'node:worker_threads'
 import pino from 'pino'
 import { config } from './config'
 
@@ -53,7 +54,9 @@ function createLogger(): pino.Logger {
   const logLevel = getLogLevel()
   const logFile = getLogFile()
   const isDev = process.env.NODE_ENV !== 'production'
-  const canPretty = hasPinoPretty()
+  // Nested transport workers can crash Bun during worker shutdown. Worker
+  // diagnostics use synchronous JSON destinations instead.
+  const canPretty = isMainThread && !import.meta.url.includes('$bunfs') && hasPinoPretty()
 
   // Dev mode: use pino-pretty for console, optionally also log to file
   // Requires pino transports (worker_threads) — unavailable in compiled Bun binaries

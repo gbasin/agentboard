@@ -1,6 +1,7 @@
 import { describe, expect, test, afterEach } from 'bun:test'
 import { Database as SQLiteDatabase } from 'bun:sqlite'
 import { ACTIVE_SESSIONS_SQL, initDatabase } from '../db'
+import { sessionListsSql } from '../sessionReads'
 import { logger } from '../logger'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -196,6 +197,15 @@ describe('db', () => {
     expect(aged.hibernating).toEqual(db.getHibernatingSessions())
   })
 
+  test('bounded polling seeks each bucket without scanning archived payloads', () => {
+    const plan = db.db.query(`EXPLAIN QUERY PLAN ${sessionListsSql(true)}`)
+      .all({ $cutoff: now }) as { detail: string }[]
+    const details = plan.map((row) => row.detail).join('\n')
+    expect(details).toContain('idx_current_window_unique')
+    expect(details).toContain('idx_dormant_activity (is_hibernating=? AND last_activity_at>?)')
+    expect(details).not.toMatch(/SCAN agent_sessions/)
+  })
+
   test('getSessionsByIds batch-returns the same records as getSessionById', () => {
     for (const id of ['c', 'a', 'b']) {
       db.insertSession(
@@ -366,6 +376,53 @@ describe('db', () => {
 
     expect(db.displayNameExists(uniqueName)).toBe(true)
     expect(db.displayNameExists('definitely-nonexistent-xyz123')).toBe(false)
+  })
+
+  test('name checks use a covering search, including self-exclusion', () => {
+    for (const suffix of ['', ' AND session_id != $excludeSessionId']) {
+      const plan = db.db.query(`EXPLAIN QUERY PLAN SELECT 1 FROM agent_sessions
+        WHERE display_name = $displayName${suffix} LIMIT 1`).all(
+        suffix ? { $displayName: 'missing', $excludeSessionId: 'self' } : { $displayName: 'missing' }
+      ) as { detail: string }[]
+      expect(plan.some(({ detail }) => detail.includes('SEARCH agent_sessions USING COVERING INDEX idx_display_name_session_id'))).toBe(true)
+      expect(plan.some(({ detail }) => detail.startsWith('SCAN'))).toBe(false)
+    }
+  })
+
+  test('name checks preserve exact matching, self-exclusion, duplicates, and updates', () => {
+    db.insertSession(makeSession({ sessionId: 'a', displayName: 'Name 🙂', currentWindow: null }))
+    expect(db.displayNameExists('Name 🙂')).toBe(true)
+    expect(db.displayNameExists('Name 🙂', 'a')).toBe(false)
+    expect(db.displayNameExists('name 🙂')).toBe(false)
+    expect(db.displayNameExists('Name 🙂 ')).toBe(false)
+    db.insertSession(makeSession({ sessionId: 'b', logFilePath: '/tmp/b.jsonl', displayName: 'Name 🙂', currentWindow: null }))
+    expect(db.displayNameExists('Name 🙂', 'a')).toBe(true)
+    db.updateSession('b', { displayName: 'new name' })
+    expect(db.displayNameExists('Name 🙂', 'a')).toBe(false)
+    expect(db.displayNameExists('new name')).toBe(true)
+    db.db.exec("DELETE FROM agent_sessions WHERE session_id='b'")
+    expect(db.displayNameExists('new name')).toBe(false)
+  })
+
+  test('adds the name index to an existing database and preserves records on reopen', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ab-name-index-'))
+    const filename = path.join(dir, 'agentboard.db')
+    try {
+      const original = initDatabase({ path: filename })
+      original.insertSession(makeSession())
+      original.db.exec('DROP INDEX IF EXISTS idx_display_name_session_id')
+      const before = original.getSessionById('session-abc')
+      original.db.close()
+      for (let i = 0; i < 2; i++) {
+        const reopened = initDatabase({ path: filename })
+        try {
+          expect(reopened.getSessionById('session-abc')).toEqual(before)
+          expect(reopened.displayNameExists('alpha')).toBe(true)
+          expect(reopened.displayNameExists('alpha', 'session-abc')).toBe(false)
+          expect(reopened.db.query("SELECT name FROM sqlite_master WHERE name='idx_display_name_session_id'").get()).not.toBeNull()
+        } finally { reopened.db.close() }
+      }
+    } finally { fs.rmSync(dir, { recursive: true, force: true }) }
   })
 
   test('migrates legacy schema without session_source', () => {

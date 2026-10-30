@@ -4,7 +4,7 @@ on:
   push:
     branches: [master, main]
   pull_request:
-    branches: [master, main]
+  workflow_dispatch:
 
 jobs:
   ci:
@@ -12,7 +12,7 @@ jobs:
     # Bun spawns under `bun test --coverage`: the server boot via Bun.spawn in
     # integration tests never becomes healthy regardless of timeout (verified
     # at 60s+ wrappers). Investigating root cause separately; the e2e job
-    # below stays on ubuntu-latest because Playwright's own webServer launch
+    # below stays on ubuntu-24.04 because Playwright's own webServer launch
     # is unaffected.
     runs-on: ubuntu-22.04
     steps:
@@ -40,6 +40,16 @@ jobs:
       - name: Test (coverage)
         run: bun run test:coverage
 
+      - name: Activity backend coverage (100 percent line threshold)
+        run: bun run test:activity:coverage
+
+      - name: Upload activity coverage
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: activity-coverage
+          path: coverage/activity/
+
       - name: Upload coverage artifact
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
@@ -51,13 +61,18 @@ jobs:
         run: bun run build
 
   e2e:
-    runs-on: ubuntu-latest
+    # Playwright 1.57 does not support the ubuntu-26.04 image behind latest.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6  # v2.2.0
         with:
           bun-version-file: .bun-version
+
+      # Linux node-pty has no bundled prebuild; do not rely on runner-global tools.
+      - name: Install native build tooling
+        run: npm install --global node-gyp@11.5.0
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -66,13 +81,64 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y tmux
 
       - name: Install Playwright browsers
-        run: bunx playwright install --with-deps chromium
+        run: bunx playwright install --with-deps chromium webkit
 
       - name: Build
         run: bun run build
 
+      - name: PR metadata HTTP contention (Chromium and WebKit)
+        run: bun scripts/verify-pr-request-priority.ts
+
       - name: Run e2e tests
-        run: bunx playwright test
+        # Specs mutate one shared application, catalog, and tmux fixture.
+        run: bunx playwright test --workers=1
+
+      - name: Session activity matrix (desktop and touch Chromium/WebKit)
+        run: bunx playwright test --config playwright.activity.config.ts --reporter=line,html
+        env:
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-activity-report
+          PLAYWRIGHT_HTML_OPEN: never
+
+      - name: Upload activity traces and report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: playwright-activity-report
+          path: |
+            playwright-activity-report/
+            test-results/
+          retention-days: 14
+
+      - name: Media and Links regression (WebKit)
+        run: bunx playwright test --config playwright.links.config.ts --project webkit
+
+      - name: Terminal resume regression (Chromium and WebKit)
+        run: bunx playwright test --config playwright.resume.config.ts --reporter=line,html
+        env:
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-resume-report
+          PLAYWRIGHT_HTML_OPEN: never
+
+      - name: Upload resume results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: playwright-resume-report
+          path: playwright-resume-report/
+          retention-days: 7
+
+      - name: Terminal contention regression
+        run: bunx playwright test --config playwright.contention.config.ts --reporter=line,html
+        env:
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-contention-report
+          PLAYWRIGHT_HTML_OPEN: never
+
+      - name: Upload contention results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: playwright-contention-report
+          path: playwright-contention-report/
+          retention-days: 7
 
       # The ci job skips real-tmux tests (no tmux there); this job has tmux.
       # Run the whole suite the way the release workflow's commit hook does
@@ -111,3 +177,20 @@ jobs:
         run: |
           bun test src/server/__tests__/groupedSessionLeak.integration.test.ts
           bun test src/server/__tests__/e2eTmuxReap.integration.test.ts
+
+      - name: Terminal relay lifecycle regression (real tmux)
+        run: bun test src/server/__tests__/terminalRelay.integration.test.ts
+
+      - name: Build and smoke-test compiled terminal relay
+        timeout-minutes: 5
+        run: |
+          bun run build
+          bun build src/server/index.ts src/server/sessionRefreshWorker.ts src/server/logMatchWorker.ts src/server/devinSyncWorker.ts src/server/stallWatchdogWorker.ts src/server/sessionReadWorker.ts src/server/sessionMetadataWorker.ts src/server/sessionActivityWorker.ts src/server/mediaDiscoveryReaderWorker.ts src/server/mediaDiscoveryWriterWorker.ts src/server/mediaThumbnailWorker.ts src/server/terminalRelayWorker.ts src/server/terminalSessionWorker.ts --compile --outfile "$RUNNER_TEMP/agentboard-relay-smoke"
+          bun scripts/verify-terminal-relay-binary.ts "$RUNNER_TEMP/agentboard-relay-smoke"
+          bun scripts/verify-media-discovery-binary.ts "$RUNNER_TEMP/agentboard-relay-smoke"
+
+      - name: Compiled thumbnail worker recovery and shutdown regression
+        timeout-minutes: 2
+        run: |
+          bun build scripts/verify-media-thumbnail-worker.ts scripts/fixtures/mediaThumbnailDelayedWorker.ts src/server/mediaThumbnailWorker.ts --compile --outfile "$RUNNER_TEMP/agentboard-thumbnail-smoke"
+          "$RUNNER_TEMP/agentboard-thumbnail-smoke"

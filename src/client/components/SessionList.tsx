@@ -1229,21 +1229,16 @@ function SessionRow({
               {sessionIdPrefix}
             </span>
           )}
-          {needsInput ? (
-            <span
-              className={`ml-1 flex shrink-0 items-center justify-center rounded-full px-1.5 py-0.5 ${statusPillClass[session.status]} pulse-approval`}
-              onAnimationEnd={handlePulseAnimationEnd}
-            >
-              <HandIcon width={ICON_SIZE.pill} height={ICON_SIZE.pill} aria-label="Needs input" />
-            </span>
-          ) : (
-            <span
-              className={`ml-1 shrink-0 rounded-full px-1.5 py-0.5 text-right text-xs tabular-nums ${statusPillClass[session.status]}${isPulsingComplete ? ' pulse-complete' : ''}`}
-              onAnimationEnd={handlePulseAnimationEnd}
-            >
-              {lastActivity}
-            </span>
-          )}
+          <SessionActivity
+            session={session}
+            statusClassName={needsInput
+              ? `ml-1 flex shrink-0 items-center justify-center rounded-full px-1.5 py-0.5 ${statusPillClass[session.status]} pulse-approval`
+              : `ml-1 shrink-0 rounded-full px-1.5 py-0.5 text-right text-xs tabular-nums ${statusPillClass[session.status]}${isPulsingComplete ? ' pulse-complete' : ''}`}
+            onAnimationEnd={handlePulseAnimationEnd}
+            statusContent={needsInput
+              ? <HandIcon width={ICON_SIZE.pill} height={ICON_SIZE.pill} aria-label="Needs input" />
+              : lastActivity}
+          />
         </div>
 
         {/* Line 2: Project badge + last user message (up to 2 lines total) */}
@@ -1263,7 +1258,6 @@ function SessionRow({
           </div>
         )}
 
-        <SessionActivity session={session} />
 
         {/* Line 3: PR chips */}
         {session.prs && session.prs.length > 0 && (

@@ -1,0 +1,1167 @@
+{
+  "summary": {
+    "build": "release",
+    "profile": "baseline",
+    "emulateIOS": true,
+    "phoneSettings": true,
+    "connections": 1,
+    "pings": [
+      1,
+      2,
+      3
+    ],
+    "pongs": [
+      1,
+      2,
+      3
+    ],
+    "timeouts": 0,
+    "connectTimeouts": 0,
+    "ready": 1,
+    "finalInput": true,
+    "error": null,
+    "network": {
+      "connections": 1,
+      "upBytes": 9930,
+      "downBytes": 227931,
+      "maxQueuedBytes": 3827,
+      "segments": 438
+    }
+  },
+  "events": [
+    {
+      "t": 712,
+      "kind": "client-log",
+      "event": "ws_connect",
+      "url": "ws://127.0.0.1:51262/ws",
+      "resume": false,
+      "traceId": "mvnw395v-wg4vk07zrm",
+      "epoch": 0,
+      "pingSeq": 0,
+      "lastPongSeq": null,
+      "lastMessageAgeMs": null,
+      "visibility": "visible",
+      "status": "connecting",
+      "ws": null,
+      "attempt": 0,
+      "failures": 0,
+      "stalls": 0,
+      "leaked": 0,
+      "online": true,
+      "verifying": false
+    },
+    {
+      "t": 712,
+      "kind": "client-log",
+      "event": "ws_pageshow",
+      "persisted": false,
+      "traceId": "mvnw395v-wg4vk07zrm",
+      "epoch": 0,
+      "pingSeq": 0,
+      "lastPongSeq": null,
+      "lastMessageAgeMs": null,
+      "visibility": "visible",
+      "status": "connecting",
+      "ws": "CONNECTING",
+      "attempt": 0,
+      "failures": 0,
+      "stalls": 0,
+      "leaked": 1,
+      "online": true,
+      "verifying": false,
+      "buffered": 0
+    },
+    {
+      "t": 712,
+      "kind": "socket",
+      "number": 1
+    },
+    {
+      "t": 933,
+      "kind": "client-log",
+      "event": "ws_onopen",
+      "traceId": "mvnw395v-wg4vk07zrm",
+      "epoch": 0,
+      "pingSeq": 0,
+      "lastPongSeq": null,
+      "lastMessageAgeMs": null,
+      "visibility": "visible",
+      "status": "connecting",
+      "ws": "OPEN",
+      "attempt": 0,
+      "failures": 0,
+      "stalls": 0,
+      "leaked": 1,
+      "online": true,
+      "verifying": false,
+      "buffered": 0
+    },
+    {
+      "t": 1055,
+      "kind": "device",
+      "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1",
+      "platform": "iPhone",
+      "maxTouchPoints": 5
+    },
+    {
+      "t": 1672,
+      "kind": "output",
+      "bytes": 1064
+    },
+    {
+      "t": 1737,
+      "kind": "output",
+      "bytes": 1024
+    },
+    {
+      "t": 1737,
+      "kind": "output",
+      "bytes": 109
+    },
+    {
+      "t": 1757,
+      "kind": "output",
+      "bytes": 22
+    },
+    {
+      "t": 1757,
+      "kind": "output",
+      "bytes": 1024
+    },
+    {
+      "t": 1757,
+      "kind": "output",
+      "bytes": 222
+    },
+    {
+      "t": 1766,
+      "kind": "output",
+      "bytes": 1024
+    },
+    {
+      "t": 1768,
+      "kind": "terminal-ready"
+    },
+    {
+      "t": 1786,
+      "kind": "output",
+      "bytes": 1024
+    },
+    {
+      "t": 1786,
+      "kind": "output",
+      "bytes": 444
+    },
+    {
+      "t": 2350,
+      "kind": "output",
+      "bytes": 1024
+    },
+    {
+      "t": 2350,
+      "kind": "output",
+      "bytes": 222
+    },
+    {
+      "t": 2350,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 2388,
+      "kind": "output",
+      "bytes": 1707
+    },
+    {
+      "t": 2849,
+      "kind": "output",
+      "bytes": 176
+    },
+    {
+      "t": 3341,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 3906,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 4473,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 5043,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 5609,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 5956,
+      "kind": "output",
+      "bytes": 134
+    },
+    {
+      "t": 5956,
+      "kind": "output",
+      "bytes": 1024
+    },
+    {
+      "t": 5956,
+      "kind": "output",
+      "bytes": 712
+    },
+    {
+      "t": 6182,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 6182,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 6751,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 7299,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 7861,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 8416,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 8957,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 9532,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 10106,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 10674,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 11246,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 11815,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 12391,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 12933,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 13452,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 14025,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 14590,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 15138,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 15712,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 16279,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 16844,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 17420,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 17949,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 18523,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 19086,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 19645,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 19645,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 20214,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 20717,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 20929,
+      "kind": "ping",
+      "seq": 1
+    },
+    {
+      "t": 20929,
+      "kind": "pong",
+      "seq": 1
+    },
+    {
+      "t": 21263,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 21837,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 22389,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 22957,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 23524,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 24098,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 24660,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 25214,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 25769,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 26335,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 26887,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 27454,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 27995,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 28566,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 29081,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 29643,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 30191,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 30761,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 31331,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 31899,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 32399,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 32507,
+      "kind": "output",
+      "bytes": 1024
+    },
+    {
+      "t": 32507,
+      "kind": "output",
+      "bytes": 712
+    },
+    {
+      "t": 32507,
+      "kind": "output",
+      "bytes": 1024
+    },
+    {
+      "t": 32507,
+      "kind": "output",
+      "bytes": 712
+    },
+    {
+      "t": 32508,
+      "kind": "output",
+      "bytes": 529
+    },
+    {
+      "t": 32509,
+      "kind": "output",
+      "bytes": 767
+    },
+    {
+      "t": 32509,
+      "kind": "output",
+      "bytes": 418
+    },
+    {
+      "t": 32961,
+      "kind": "output",
+      "bytes": 16
+    },
+    {
+      "t": 32961,
+      "kind": "output",
+      "bytes": 897
+    },
+    {
+      "t": 33532,
+      "kind": "output",
+      "bytes": 16
+    },
+    {
+      "t": 33532,
+      "kind": "output",
+      "bytes": 897
+    },
+    {
+      "t": 34060,
+      "kind": "output",
+      "bytes": 16
+    },
+    {
+      "t": 34061,
+      "kind": "output",
+      "bytes": 897
+    },
+    {
+      "t": 34637,
+      "kind": "output",
+      "bytes": 16
+    },
+    {
+      "t": 34637,
+      "kind": "output",
+      "bytes": 897
+    },
+    {
+      "t": 34994,
+      "kind": "output",
+      "bytes": 528
+    },
+    {
+      "t": 34994,
+      "kind": "output",
+      "bytes": 768
+    },
+    {
+      "t": 34994,
+      "kind": "output",
+      "bytes": 415
+    },
+    {
+      "t": 35001,
+      "kind": "output",
+      "bytes": 528
+    },
+    {
+      "t": 35001,
+      "kind": "output",
+      "bytes": 768
+    },
+    {
+      "t": 35001,
+      "kind": "output",
+      "bytes": 415
+    },
+    {
+      "t": 35014,
+      "kind": "output",
+      "bytes": 1024
+    },
+    {
+      "t": 35014,
+      "kind": "output",
+      "bytes": 712
+    },
+    {
+      "t": 35210,
+      "kind": "output",
+      "bytes": 20
+    },
+    {
+      "t": 35210,
+      "kind": "output",
+      "bytes": 1024
+    },
+    {
+      "t": 35210,
+      "kind": "output",
+      "bytes": 712
+    },
+    {
+      "t": 35365,
+      "kind": "output",
+      "bytes": 1024
+    },
+    {
+      "t": 35365,
+      "kind": "output",
+      "bytes": 712
+    },
+    {
+      "t": 35475,
+      "kind": "output",
+      "bytes": 1024
+    },
+    {
+      "t": 35475,
+      "kind": "output",
+      "bytes": 712
+    },
+    {
+      "t": 35742,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 36301,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 36867,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 37442,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 38015,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 38585,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 38585,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 39158,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 39693,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 40240,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 40812,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 40928,
+      "kind": "ping",
+      "seq": 2
+    },
+    {
+      "t": 40928,
+      "kind": "pong",
+      "seq": 2
+    },
+    {
+      "t": 41382,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 41954,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 42529,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 43081,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 43653,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 44223,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 44790,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 45298,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 45865,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 46439,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 46967,
+      "kind": "output",
+      "bytes": 256
+    },
+    {
+      "t": 47540,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 48065,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 48573,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 49125,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 49673,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 50190,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 50705,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 51228,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 51774,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 52347,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 52919,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 53462,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 53462,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 54022,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 54594,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 55169,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 55702,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 56257,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 56829,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 57386,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 57961,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 58529,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 59073,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 59074,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 59646,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 60184,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 60754,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 60929,
+      "kind": "ping",
+      "seq": 3
+    },
+    {
+      "t": 60929,
+      "kind": "pong",
+      "seq": 3
+    },
+    {
+      "t": 61323,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 61881,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 62453,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 63023,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 63593,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 64115,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 64687,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 65223,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 65798,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 66352,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 66898,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 67464,
+      "kind": "output",
+      "bytes": 206
+    },
+    {
+      "t": 67464,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 68030,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 68593,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 69143,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 69652,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 70223,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 70794,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 71312,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 71871,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 72444,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 73011,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 73536,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 74086,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 74620,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 75330,
+      "kind": "output",
+      "bytes": 240
+    },
+    {
+      "t": 75344,
+      "kind": "input-state",
+      "disabled": false,
+      "focused": true
+    },
+    {
+      "t": 75362,
+      "kind": "sent-input",
+      "data": "P"
+    },
+    {
+      "t": 75375,
+      "kind": "sent-input",
+      "data": "R"
+    },
+    {
+      "t": 75376,
+      "kind": "sent-input",
+      "data": "O"
+    },
+    {
+      "t": 75378,
+      "kind": "sent-input",
+      "data": "B"
+    },
+    {
+      "t": 75379,
+      "kind": "sent-input",
+      "data": "E"
+    },
+    {
+      "t": 75380,
+      "kind": "sent-input",
+      "data": "_"
+    },
+    {
+      "t": 75381,
+      "kind": "sent-input",
+      "data": "r"
+    },
+    {
+      "t": 75382,
+      "kind": "sent-input",
+      "data": "e"
+    },
+    {
+      "t": 75384,
+      "kind": "sent-input",
+      "data": "l"
+    },
+    {
+      "t": 75385,
+      "kind": "sent-input",
+      "data": "e"
+    },
+    {
+      "t": 75386,
+      "kind": "sent-input",
+      "data": "a"
+    },
+    {
+      "t": 75388,
+      "kind": "sent-input",
+      "data": "s"
+    },
+    {
+      "t": 75389,
+      "kind": "sent-input",
+      "data": "e"
+    },
+    {
+      "t": 75389,
+      "kind": "sent-input",
+      "data": "_"
+    },
+    {
+      "t": 75390,
+      "kind": "sent-input",
+      "data": "b"
+    },
+    {
+      "t": 75391,
+      "kind": "sent-input",
+      "data": "a"
+    },
+    {
+      "t": 75392,
+      "kind": "sent-input",
+      "data": "s"
+    },
+    {
+      "t": 75393,
+      "kind": "sent-input",
+      "data": "e"
+    },
+    {
+      "t": 75394,
+      "kind": "sent-input",
+      "data": "l"
+    },
+    {
+      "t": 75395,
+      "kind": "sent-input",
+      "data": "i"
+    },
+    {
+      "t": 75397,
+      "kind": "sent-input",
+      "data": "n"
+    },
+    {
+      "t": 75398,
+      "kind": "sent-input",
+      "data": "e"
+    },
+    {
+      "t": 75399,
+      "kind": "sent-input",
+      "data": "\r"
+    },
+    {
+      "t": 75406,
+      "kind": "output",
+      "bytes": 53
+    },
+    {
+      "t": 75406,
+      "kind": "output",
+      "bytes": 34
+    },
+    {
+      "t": 75606,
+      "kind": "input-check",
+      "delivered": true
+    }
+  ]
+}

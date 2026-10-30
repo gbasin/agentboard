@@ -77,8 +77,10 @@ export interface StartupLifecycleDeps {
     getAll(): Session[]
     replaceSessions(sessions: Session[]): void
   }
+  hasOwnership?: (window: Session) => boolean
   /** Live websocket connections — ws sessions owned by one are not orphans. */
   sockets: ReadonlySet<{ data: { connectionId: string } }>
+  liveTerminalIds?: () => Iterable<string>
   /** The module-load ensureSession verdict — the authoritative pruning
    *  decision. Re-probing after the session exists could flip an unreliable
    *  group lookup to reliable and risk killing unrecovered sessions. */
@@ -146,6 +148,7 @@ export function createStartupLifecycle(deps: StartupLifecycleDeps) {
     // session owned by no current connection is an orphan — skip anything
     // named for a live connection id (covers -x- descendants too).
     const liveIds = new Set([...sockets].map((ws) => ws.data.connectionId))
+    for (const id of deps.liveTerminalIds?.() ?? []) liveIds.add(id)
     const isLiveSession = (name: string) =>
       [...liveIds].some((id) => id && name.includes(id))
 
@@ -230,6 +233,11 @@ export function createStartupLifecycle(deps: StartupLifecycleDeps) {
           },
           nameMatches: false,
         })
+        continue
+      }
+      const liveWindow = windowByTarget.get(currentWindow)!
+      if (deps.hasOwnership?.(liveWindow)) {
+        decisions.set(agentSession.sessionId, { verification: { status: 'verified', bestMatch: null }, nameMatches: false })
         continue
       }
       pending.push({

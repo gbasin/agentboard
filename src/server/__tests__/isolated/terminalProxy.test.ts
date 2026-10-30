@@ -16,7 +16,7 @@ function getTmuxCommand(args: string[]): string {
   return tmuxArgs[0] === '-u' ? tmuxArgs[1] ?? '' : tmuxArgs[0] ?? ''
 }
 
-function createSpawnHarness({ tmuxVersion = 'tmux 3.4' } = {}) {
+function createSpawnHarness({ tmuxVersion = 'tmux 3.4', serverVersion = tmuxVersion }: { tmuxVersion?: string; serverVersion?: string } = {}) {
   const spawnCalls: Array<{
     args: string[]
     options: Parameters<typeof Bun.spawn>[1]
@@ -82,6 +82,9 @@ function createSpawnHarness({ tmuxVersion = 'tmux 3.4' } = {}) {
   const spawnSync = (args: string[], _options?: Parameters<typeof Bun.spawnSync>[1]) => {
     spawnSyncCalls.push({ args, options: _options })
     const command = getTmuxCommand(args)
+    if (command === 'set-option' && args.includes('#{version}')) {
+      return { exitCode: 0, stdout: Buffer.from(serverVersion), stderr: Buffer.from('') } as ReturnType<typeof Bun.spawnSync>
+    }
     if (command === '-V') {
       return {
         exitCode: 0,
@@ -432,6 +435,33 @@ describe('TerminalProxy', () => {
       'agentboard-ws-abc',
     ])
   })
+
+  for (const [tmuxVersion, supported] of [['tmux 3.1c', false], ['tmux 3.2', true], ['', false]] as const) {
+    test(`background sizing respects ${tmuxVersion || 'unknown version'} with sync disabled`, async () => {
+      const saved = process.env.AGENTBOARD_TMUX_SYNC
+      process.env.AGENTBOARD_TMUX_SYNC = '0'
+      const harness = createSpawnHarness({ tmuxVersion: 'tmux 3.7', serverVersion: tmuxVersion })
+      const proxy = new TerminalProxy({
+        connectionId: 'sizing', sessionName: 'sizing-session', baseSession: 'agentboard',
+        initialSizeParticipation: false, onData() {}, spawn: harness.spawn,
+        spawnSync: harness.spawnSync, wait: async () => {},
+      })
+      try {
+        await proxy.start()
+        expect(harness.spawnCalls[0]!.args.includes('-T')).toBe(false)
+        expect(harness.spawnSyncCalls.some(c => c.args.includes('-V'))).toBe(false)
+        expect(harness.spawnCalls[0]!.args.includes('ignore-size')).toBe(supported)
+        await proxy.setSizeParticipation(true)
+        await proxy.setSizeParticipation(false)
+        const flags = harness.spawnSyncCalls.filter(c => c.args.includes('refresh-client') && c.args.includes('-f'))
+        expect(flags.map(c => c.args.at(-1))).toEqual(supported ? ['!ignore-size', 'ignore-size'] : [])
+      } finally {
+        await proxy.dispose()
+        if (saved === undefined) delete process.env.AGENTBOARD_TMUX_SYNC
+        else process.env.AGENTBOARD_TMUX_SYNC = saved
+      }
+    })
+  }
 
   test('probes tmux -V once per process, not once per connection', async () => {
     const versionProbes = () =>

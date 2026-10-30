@@ -92,7 +92,7 @@ async function api<T>(
 }
 async function create(name: string): Promise<Session> {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(base.replace('http', 'ws') + '/ws')
+    const ws = new WebSocket(base.replace('http', 'ws') + '/ws?catalog=2')
     const timer = setTimeout(() => {
       ws.close()
       reject(new Error('Create timed out'))

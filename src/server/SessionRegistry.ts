@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events'
+import { mediaSummariesEqual } from '../shared/media'
 import type { AgentSession, Session } from '../shared/types'
 
 export interface RegistryEvents {
@@ -170,6 +171,7 @@ function agentSessionsEqual(a: AgentSession, b: AgentSession): boolean {
     a.lastUserMessage === b.lastUserMessage &&
     a.isHibernating === b.isHibernating &&
     a.lastResumeError === b.lastResumeError &&
+    mediaSummariesEqual(a.mediaSummary, b.mediaSummary) &&
     prsEqual(a.prs, b.prs)
   )
 }
@@ -194,6 +196,7 @@ function sessionsEqual(a: Session, b: Session): boolean {
     a.host === b.host &&
     a.remote === b.remote &&
     JSON.stringify(a.activity) === JSON.stringify(b.activity) &&
+    mediaSummariesEqual(a.mediaSummary, b.mediaSummary) &&
     prsEqual(a.prs, b.prs)
   )
 }

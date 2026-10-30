@@ -49,6 +49,8 @@ async function main() {
     AGENTBOARD_DATA_DIR: tempRoot,
     AGENTBOARD_TMUX_PID_FILE: path.join(tempRoot, 'tmux-server.pid'),
     AGENTBOARD_PERSISTENCE_MAINTENANCE_MS: '0',
+    // General server tests mock process inspection; config tests exercise the default explicitly.
+    AGENTBOARD_OWNERSHIP_MATCHING: 'false',
     // Default skipMatchingPatterns excludes /tmp/* and /var/folders/* — both
     // common locations for test working directories (worktrees, CI runners on
     // some platforms). Tests that exercise matching logic from those paths
@@ -59,6 +61,7 @@ async function main() {
 
   try {
     await runCommand(['node', '--test', 'launchd/release.test.mjs'], env)
+    await runCommand(['bun', 'test', './scripts/verify-platform-lock.test.ts'], env)
 
     // Tests that either mutate globals or are sensitive to global mutations
     // must run in a separate process so they don't race with other test files.
@@ -68,6 +71,7 @@ async function main() {
     // Bun.serve / setInterval mock; isolation keeps that mock window from
     // overlapping with any other test that captures globals at module load.
     const ISOLATED_FILES = new Set([
+      'terminalLeases.test.ts',
       'persistenceOwnership.test.ts',
       'persistenceRoutes.test.ts',
       // Entry-point tests patch Bun.serve/Bun.spawnSync/process.exit while
@@ -106,6 +110,7 @@ async function main() {
       'persistence.integration.test.ts',
       'integration.test.ts',
       'throttled-reconnect.integration.test.ts',
+      'terminalRelay.integration.test.ts',
     ])
 
     // Client tests that install top-level mock.module(...) hooks must run in a

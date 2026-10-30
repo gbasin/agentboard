@@ -1,0 +1,14 @@
+import { PNG } from 'pngjs';
+import jpeg from 'jpeg-js';
+const width=1600,height=1200,data=Buffer.alloc(width*height*4);
+for(let i=0;i<data.length;i+=4){data[i]=(i/4)%255;data[i+1]=123;data[i+2]=210;data[i+3]=255;}
+const worker = new Worker(import.meta.url.includes('$bunfs')?'/$bunfs/root/worker.js':new URL('./worker.ts',import.meta.url));
+let maxLag=0,last=performance.now();
+const timer=setInterval(()=>{const now=performance.now();maxLag=Math.max(maxLag,now-last-5);last=now},5);
+for(const format of ['png','jpeg']){
+ const bytes=format==='png'?PNG.sync.write({width,height,data}):jpeg.encode({width,height,data},70).data;
+ last=performance.now();maxLag=0;
+ const result=await new Promise(resolve=>{worker.onmessage=e=>resolve(e.data);worker.postMessage({format,bytes})});
+ console.log(JSON.stringify({format,...result,maxMainThreadLagMs:maxLag}));
+}
+clearInterval(timer);worker.terminate();

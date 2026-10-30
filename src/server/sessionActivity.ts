@@ -2,13 +2,14 @@
 // tail, then consume append-only bytes. Never executes harness commands.
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import type { Session } from '../shared/types'
+import { supportsActivity, type ActivitySession } from './sessionActivityProtocol'
 import type { AgentActivity, SessionActivity, SubagentActivity } from '../shared/activity'
 import { activitySnapshot, newActivityState, reduceActivity, type ActivityState } from './activityReducer'
 import { getSubagentLogPaths } from './subagentLogs'
 
 const READ_LIMIT = 256 * 1024
 const CACHE_LIMIT = 2048
+const SUMMARY_LIMIT = 20_000
 const DETAIL_LIMIT = 40
 const CHILD_READ_LIMIT = 256
 const STALE_MS = 15 * 60 * 1000
@@ -21,10 +22,31 @@ interface Cursor {
   mtime: number
 }
 
+interface Summary {
+  ino: number
+  size: number
+  mtime: number
+  name?: string
+  activity: AgentActivity
+}
+interface ClaudeMetadata {
+  ino: number
+  size: number
+  mtime: number
+  name?: string
+  finished: boolean
+}
+
 const unknown = (): AgentActivity => ({ phase: 'unknown', label: 'Activity unknown', tools: [] })
 
 export class SessionActivityTracker {
   private cursors = new Map<string, Cursor>()
+  // Completed, unchanged transcripts need no cold-tail replay after a cursor
+  // eviction. These records retain no partial lines or pending-call maps.
+  private summaries = new Map<string, Summary>()
+  private metadata = new Map<string, ClaudeMetadata>()
+
+  constructor(private readonly progress?: () => void) {}
 
   private async read(logPath: string, kind: 'claude' | 'codex'): Promise<AgentActivity> {
     let file
@@ -32,6 +54,10 @@ export class SessionActivityTracker {
       file = await fs.open(logPath, 'r')
       const stat = await file.stat()
       let cursor = this.cursors.get(logPath)
+      const cached = this.summaries.get(logPath)
+      if (!cursor && cached && cached.ino === stat.ino && cached.size === stat.size && cached.mtime === stat.mtimeMs) {
+        return observed(cached.activity)
+      }
       if (!cursor || cursor.ino !== stat.ino || stat.size < cursor.offset ||
         (stat.size === cursor.offset && stat.mtimeMs !== cursor.mtime)) {
         cursor = { state: newActivityState(), offset: Math.max(0, stat.size - READ_LIMIT), remainder: Buffer.alloc(0), discardLine: false, ino: stat.ino, mtime: stat.mtimeMs }
@@ -68,37 +94,43 @@ export class SessionActivityTracker {
       this.cursors.set(logPath, cursor)
       while (this.cursors.size > CACHE_LIMIT) this.cursors.delete(this.cursors.keys().next().value!)
       const activity = activitySnapshot(cursor.state)
-      // Missing completion after a crash must not become a permanent count.
-      // Silence is uncertainty, never proof that the agent finished.
-      if ((activity.phase === 'model' || activity.phase === 'tool' || activity.phase === 'blocked') &&
-        activity.updatedAt && Date.now() - Date.parse(activity.updatedAt) > STALE_MS) {
-        return { ...activity, phase: 'unknown', label: 'No lifecycle signal for 15m', tools: [] }
-      }
-      return activity
+      this.summaries.delete(logPath)
+      this.summaries.set(logPath, { ino: stat.ino, size: stat.size, mtime: stat.mtimeMs, name: cursor.state.name, activity })
+      if (this.summaries.size > SUMMARY_LIMIT) this.summaries.delete(this.summaries.keys().next().value!)
+      return observed(activity)
     } catch {
       this.cursors.delete(logPath)
+      this.summaries.delete(logPath)
       return unknown()
     } finally {
       await file?.close()
+      this.progress?.()
     }
   }
 
   private async child(logPath: string, kind: 'claude' | 'codex'): Promise<SubagentActivity> {
     const id = path.basename(logPath, '.jsonl').replace(/^agent-/, '')
     let activity = await this.read(logPath, kind)
-    let name = this.cursors.get(logPath)?.state.name ?? id
+    let name = this.cursors.get(logPath)?.state.name ?? this.summaries.get(logPath)?.name ?? id
     if (kind === 'claude') {
       try {
         const metaPath = logPath.replace(/\.jsonl$/, '.meta.json')
         const stat = await fs.stat(metaPath)
         if (stat.size <= 16 * 1024) {
-          const meta = JSON.parse(await fs.readFile(metaPath, 'utf8'))
-          if (typeof meta.description === 'string') name = meta.description.slice(0, 120)
-          else if (typeof meta.agentType === 'string') name = meta.agentType.slice(0, 120)
-          // finished is observed in current local versions, not a stable API.
-          // Only use it when metadata is at least as fresh as the transcript.
-          const transcript = this.cursors.get(logPath)
-          if (meta.finished === true && transcript && stat.mtimeMs >= transcript.mtime) {
+          let meta = this.metadata.get(metaPath)
+          if (!meta || meta.ino !== stat.ino || meta.size !== stat.size || meta.mtime !== stat.mtimeMs) {
+            const raw = JSON.parse(await fs.readFile(metaPath, 'utf8'))
+            const name = typeof raw.description === 'string' ? raw.description : typeof raw.agentType === 'string' ? raw.agentType : undefined
+            meta = { ino: stat.ino, size: stat.size, mtime: stat.mtimeMs, name: name?.slice(0, 120), finished: raw.finished === true }
+            this.metadata.delete(metaPath)
+            this.metadata.set(metaPath, meta)
+            if (this.metadata.size > SUMMARY_LIMIT) this.metadata.delete(this.metadata.keys().next().value!)
+          }
+          name = meta.name ?? name
+          // This private sidecar signal is only trusted when strictly newer
+          // than the transcript, so tied timestamps cannot hide a resume.
+          const transcript = this.summaries.get(logPath)
+          if (meta.finished && transcript && stat.mtimeMs > transcript.mtime) {
             activity = { ...activity, phase: 'idle', label: 'Turn finished', tools: [] }
           }
         }
@@ -107,17 +139,16 @@ export class SessionActivityTracker {
     return { id, name, activity }
   }
 
-  async enrich(sessions: Session[]): Promise<Session[]> {
-    const result: Session[] = []
+  async enrich<T extends ActivitySession>(sessions: T[]): Promise<(T & { activity?: SessionActivity })[]> {
+    const result: (T & { activity?: SessionActivity })[] = []
     for (const session of sessions) {
-      if (session.remote || session.source !== 'managed' || !session.logFilePath || !session.agentSessionId ||
-        (session.agentType !== 'claude' && session.agentType !== 'codex')) {
+      if (!supportsActivity(session)) {
         result.push(session)
         continue
       }
-      const kind = session.agentType
-      const main = await this.read(session.logFilePath, kind)
-      const paths = [...new Set(getSubagentLogPaths(session.logFilePath, kind, session.agentSessionId))].filter(p => p !== session.logFilePath)
+      const kind = session.agentType as 'claude' | 'codex'
+      const main = await this.read(session.logFilePath!, kind)
+      const paths = [...new Set(getSubagentLogPaths(session.logFilePath!, kind, session.agentSessionId!))].filter(p => p !== session.logFilePath)
       const children: SubagentActivity[] = []
       // Sequential async reads keep filesystem fanout bounded.
       for (const logPath of paths.slice(0, CHILD_READ_LIMIT)) children.push(await this.child(logPath, kind))
@@ -136,5 +167,14 @@ export class SessionActivityTracker {
 }
 
 function priority(activity: AgentActivity): number {
-  return activity.phase === 'idle' ? 2 : activity.phase === 'unknown' ? 1 : 0
+  return activity.phase === 'blocked' ? 0 : activity.phase === 'idle' ? 3 : activity.phase === 'unknown' ? 2 : 1
+}
+
+function observed(activity: AgentActivity): AgentActivity {
+  // Silence is uncertainty, never proof of completion.
+  if ((activity.phase === 'model' || activity.phase === 'tool' || activity.phase === 'blocked') &&
+    activity.updatedAt && Date.now() - Date.parse(activity.updatedAt) > STALE_MS) {
+    return { ...activity, phase: 'unknown', label: 'No lifecycle signal for 15m', tools: [] }
+  }
+  return activity
 }

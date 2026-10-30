@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test, spyOn } from 'bun:test'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
@@ -158,4 +158,90 @@ test('input blockers are separate from running children, detail limit preserves 
   const [s] = await new SessionActivityTracker().enrich([session('codex', log)])
   expect(s.activity).toMatchObject({ running: 41, blocked: 1, total: 42, truncated: true })
   expect(s.activity?.subagents).toHaveLength(40)
+})
+
+test('fork metadata resets inherited activity, tool names stay bounded, and Claude turn duration closes work', () => {
+  const s = newActivityState()
+  reduceActivity(s, { ...event('task_started'), timestamp: new Date().toISOString() }, 'codex')
+  reduceActivity(s, item('function_call', 'inherited', 'Bash'), 'codex')
+  reduceActivity(s, { type: 'session_meta', payload: { source: { subagent: { thread_spawn: { agent_path: '/root/reviewer' } } } } }, 'codex')
+  expect(activitySnapshot(s).phase).toBe('unknown')
+  expect(s.tools.size).toBe(0)
+  expect(s.updatedAt).toBeUndefined()
+  expect(s.name).toBe('/root/reviewer')
+  reduceActivity(s, { type: 'session_meta', payload: {} }, 'codex')
+  expect(s.name).toBeUndefined()
+  reduceActivity(s, null, 'codex'); reduceActivity(s, { type: 'response_item', payload: null }, 'codex')
+  reduceActivity(s, item('function_call', 'wait', 'wait_agent'), 'codex')
+  expect(activitySnapshot(s).label).toBe('Waiting on tool or agents')
+  for (let i = 0; i < 140; i++) reduceActivity(s, item('function_call', String(i), 'x'.repeat(200)), 'codex')
+  expect(s.tools.size).toBe(128)
+  expect(activitySnapshot(s).tools[0]).toHaveLength(80)
+  reduceActivity(s, { type: 'system', subtype: 'turn_duration' }, 'claude')
+  expect(activitySnapshot(s).phase).toBe('idle')
+})
+
+test('equal-time finished metadata cannot hide a resumed Claude turn; blockers precede capped details', async () => {
+  const log = path.join(dir, 'parent.jsonl'), childDir = path.join(dir, 'parent/subagents')
+  await fs.mkdir(childDir, { recursive: true }); await fs.writeFile(log, line({ type: 'api-request' }))
+  for (let i = 0; i < 42; i++) await fs.writeFile(path.join(childDir, `agent-${String(i).padStart(2, '0')}.jsonl`), line(claudeTool('x', 'Bash')))
+  const blocked = path.join(childDir, 'agent-zz-blocked.jsonl')
+  await fs.writeFile(blocked, line(claudeTool('question', 'AskUserQuestion')))
+  const meta = blocked.replace('.jsonl', '.meta.json')
+  await fs.writeFile(meta, JSON.stringify({ finished: true }))
+  const stamp = new Date()
+  await fs.utimes(blocked, stamp, stamp); await fs.utimes(meta, stamp, stamp)
+  const [s] = await new SessionActivityTracker().enrich([session('claude', log)])
+  expect(s.activity?.blocked).toBe(1)
+  expect(s.activity?.subagents[0].id).toBe('zz-blocked')
+  expect(s.activity?.running).toBe(42)
+})
+
+test('Claude text prompts start a new turn; metadata and result content do not impersonate a prompt', () => {
+  const s = newActivityState()
+  reduceActivity(s, { type: 'assistant', message: { stop_reason: 'end_turn' } }, 'claude')
+  reduceActivity(s, { type: 'user', isMeta: true, message: { content: 'notification' } }, 'claude')
+  expect(s.phase).toBe('idle')
+  reduceActivity(s, { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'unknown', content: 'quoted user text' }] } }, 'claude')
+  expect(s.phase).toBe('idle')
+  reduceActivity(s, { type: 'user', timestamp: new Date().toISOString(), message: { content: [{ type: 'text', text: 'Actual new prompt' }] } }, 'claude')
+  expect(s.phase).toBe('model')
+  reduceActivity(s, { type: 'assistant', message: { stop_reason: 'end_turn' } }, 'claude')
+  reduceActivity(s, { type: 'user', message: { content: 'Another prompt' } }, 'claude')
+  expect(s.phase).toBe('model')
+  for (let i = 0; i < 128; i++) reduceActivity(s, item('function_call', String(i), `tool_${i}_${'x'.repeat(80)}`), 'codex')
+  const snapshot = activitySnapshot(s)
+  expect(snapshot.tools).toHaveLength(8)
+  expect(snapshot.label.length).toBeLessThan(300)
+  expect(snapshot.label).toContain('more')
+})
+
+test('cursor eviction retains compact summaries and avoids replaying unchanged historical logs', async () => {
+  const log = path.join(dir, 'parent.jsonl')
+  await fs.writeFile(log, line(event('task_complete')))
+  const p = session('codex', log)
+  const sessions: Session[] = []
+  // Real independent associations exercise the global cursor LRU above 2048.
+  for (let i = 0; i < 2050; i++) {
+    const file = path.join(dir, `${i}.jsonl`)
+    await fs.writeFile(file, line(event('task_complete')))
+    sessions.push({ ...p, id: String(i), agentSessionId: String(i), logFilePath: file })
+  }
+  let progress = 0
+  const observer = new SessionActivityTracker(() => { progress++ })
+  const initial = await observer.enrich(sessions)
+  expect(initial.every(s => s.activity?.main.phase === 'idle')).toBe(true)
+  expect(progress).toBe(2050)
+  const handle = await fs.open(log)
+  const fileHandlePrototype = Object.getPrototypeOf(handle)
+  await handle.close()
+  const reads = spyOn(fileHandlePrototype, 'read')
+  try {
+    const repeated = await observer.enrich(sessions)
+    expect(repeated.every(s => s.activity?.main.phase === 'idle')).toBe(true)
+    expect(reads).not.toHaveBeenCalled()
+    await fs.appendFile(sessions[0].logFilePath!, line(event('task_started')))
+    expect((await observer.enrich([sessions[0]]))[0].activity?.main.phase).toBe('model')
+    expect(reads).toHaveBeenCalledTimes(1)
+  } finally { reads.mockRestore() }
 })

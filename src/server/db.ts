@@ -1,3 +1,5 @@
+import { mapRow } from './sessionRecord'
+import { readSessionLists } from './sessionReads'
 import fs from 'node:fs'
 import path from 'node:path'
 import { Database as SQLiteDatabase } from 'bun:sqlite'
@@ -193,11 +195,19 @@ CREATE INDEX IF NOT EXISTS idx_session_id
   ON agent_sessions (session_id);
 CREATE INDEX IF NOT EXISTS idx_log_file_path
   ON agent_sessions (log_file_path);
+-- Cover both name-existence queries without reading transcript-bearing rows.
+-- Non-unique: inherited names and legacy duplicates retain their existing semantics.
+CREATE INDEX IF NOT EXISTS idx_display_name_session_id
+  ON agent_sessions (display_name, session_id);
 CREATE INDEX IF NOT EXISTS idx_current_window
   ON agent_sessions (current_window);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_current_window_unique
   ON agent_sessions (current_window)
   WHERE current_window IS NOT NULL;
+-- Seek dormant buckets and recent history without visiting old payloads.
+CREATE INDEX IF NOT EXISTS idx_dormant_activity
+  ON agent_sessions (is_hibernating, last_activity_at DESC, session_id)
+  WHERE current_window IS NULL;
 -- Covering index for getKnownSessionKeys — an index-only scan of ~1MB
 -- instead of a full-table read that touches every last_user_message page.
 CREATE INDEX IF NOT EXISTS idx_session_keys
@@ -328,20 +338,6 @@ function initializeConnection(
   )
   const selectHistoryRecent = db.prepare(
     'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_hibernating = 0 AND last_activity_at > $cutoff ORDER BY last_activity_at DESC, session_id LIMIT $limit'
-  )
-  // One statement covering all three lists, ordered so each bucket arrives
-  // pre-sorted: windowed rows first (session_id ASC via the final key),
-  // then dormant rows by last_activity_at DESC, session_id — exactly the
-  // ORDER BYs of the separate queries. The WHERE keeps unmatched rows (and
-  // their last_user_message payloads) out of the result entirely.
-  const selectSessionLists = db.prepare(
-    `SELECT * FROM agent_sessions
-     WHERE current_window IS NOT NULL
-        OR is_hibernating = 1
-        OR (is_hibernating = 0 AND ($cutoff IS NULL OR last_activity_at > $cutoff))
-     ORDER BY (current_window IS NULL),
-              CASE WHEN current_window IS NULL THEN last_activity_at END DESC,
-              session_id`
   )
   const selectKnownSessionKeys = db.prepare(
     'SELECT session_id, log_file_path, project_path, slug, agent_type, is_codex_exec FROM agent_sessions'
@@ -565,30 +561,7 @@ function initializeConnection(
       const rows = selectHibernating.all() as Record<string, unknown>[]
       return rows.map(mapRow)
     },
-    getSessionLists: (options) => {
-      const cutoff = options?.maxAgeHours
-        ? new Date(Date.now() - options.maxAgeHours * 60 * 60 * 1000).toISOString()
-        : null
-      const rows = selectSessionLists.all({ $cutoff: cutoff }) as Record<string, unknown>[]
-      const activeRows: Record<string, unknown>[] = []
-      const hibernatingRows: Record<string, unknown>[] = []
-      const historyRows: Record<string, unknown>[] = []
-      for (const row of rows) {
-        if (row.current_window != null) {
-          activeRows.push(row)
-        } else if (row.is_hibernating === 1) {
-          hibernatingRows.push(row)
-        } else if (row.is_hibernating === 0) {
-          historyRows.push(row)
-        }
-      }
-      // Buckets arrive pre-sorted from the SQL ORDER BY; JS only partitions.
-      return {
-        active: activeRows.map(mapRow),
-        hibernating: hibernatingRows.map(mapRow),
-        history: historyRows.map(mapRow),
-      }
-    },
+    getSessionLists: (options) => readSessionLists(db, options),
     getHistorySessions: (options?: { maxAgeHours?: number; limit?: number }) => {
       // SQLite treats a negative LIMIT as no limit.
       const limit = options?.limit ?? -1
@@ -703,52 +676,6 @@ function ensureDataDir(dbPath: string) {
     // Ignore chmod failures
   }
 }
-
-function mapRow(row: Record<string, unknown>): AgentSessionRecord {
-  return {
-    id: Number(row.id),
-    sessionId: String(row.session_id ?? ''),
-    logFilePath: String(row.log_file_path ?? ''),
-    projectPath: String(row.project_path ?? ''),
-    slug:
-      row.slug === null || row.slug === undefined
-        ? null
-        : String(row.slug),
-    agentType: row.agent_type as AgentType,
-    displayName: String(row.display_name ?? ''),
-    createdAt: String(row.created_at ?? ''),
-    lastActivityAt: String(row.last_activity_at ?? ''),
-    lastUserMessage:
-      row.last_user_message === null || row.last_user_message === undefined
-        ? null
-        : String(row.last_user_message),
-    currentWindow:
-      row.current_window === null || row.current_window === undefined
-        ? null
-        : String(row.current_window),
-    isHibernating: Number(row.is_hibernating) === 1,
-    lastResumeError:
-      row.last_resume_error === null || row.last_resume_error === undefined
-        ? null
-        : String(row.last_resume_error),
-    wakeStartedAt:
-      row.wake_started_at === null || row.wake_started_at === undefined
-        ? null
-        : String(row.wake_started_at),
-    // Note: null lastKnownLogSize is treated as "unknown", triggering a match check
-    // on first poll after upgrade. This is intentional (one-time cost).
-    lastKnownLogSize:
-      row.last_known_log_size === null || row.last_known_log_size === undefined
-        ? null
-        : Number(row.last_known_log_size),
-    isCodexExec: Number(row.is_codex_exec) === 1,
-    launchCommand:
-      row.launch_command === null || row.launch_command === undefined
-        ? null
-        : String(row.launch_command),
-  }
-}
-
 
 function migrateDatabase(db: SQLiteDatabase) {
   const columns = getColumnNames(db, 'agent_sessions')

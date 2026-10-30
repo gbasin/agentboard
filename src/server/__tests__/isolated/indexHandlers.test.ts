@@ -1,3 +1,4 @@
+import { CopyModeQuery } from '../../copyModeQuery'
 import { afterAll, afterEach, beforeEach, describe, expect, test, mock } from 'bun:test'
 import fs from 'node:fs/promises'
 import os from 'node:os'
@@ -688,15 +689,19 @@ function tmuxOutput(...rows: string[][]): string {
 function createWs() {
   const sent: ServerMessage[] = []
   const ws = {
+    readyState: 1,
     data: {
       terminal: null as TerminalProxyMock | null,
       currentSessionId: null as string | null,
       currentTmuxTarget: null as string | null,
       connectionId: 'ws-test',
+      catalogVersion: 2,
+      stopCatalogNotice: null as (() => void) | null,
       remoteAddress: '127.0.0.1',
       userAgent: 'test-agent',
       terminalHost: null as string | null,
       terminalAttachSeq: 0,
+      copyModeQuery: new CopyModeQuery(),
       lastAttachKey: null as string | null,
       lastAttachTs: 0,
       clipboardPollTimer: null as ReturnType<typeof setInterval> | null,
@@ -3157,6 +3162,7 @@ describe('server message handlers', () => {
       ws as never,
       JSON.stringify({ type: 'tmux-check-copy-mode', sessionId: baseSession.id })
     )
+    await waitFor(() => sent.some((message) => message.type === 'tmux-copy-mode-status'))
     expect(copyModeTarget).toBe(groupedTarget)
 
     // The fullscreen flags from tmux propagate to the client (appMouse drives the
@@ -3374,6 +3380,7 @@ describe('server message handlers', () => {
       JSON.stringify({ type: 'tmux-check-copy-mode', sessionId: baseSession.id })
     )
 
+    await waitFor(() => sent.some((message) => message.type === 'tmux-copy-mode-status'))
     expect(sendKeysTarget).toBe('agentboard:1.1')
     expect(displayTarget).toBe('agentboard:1.1')
 
@@ -3387,6 +3394,41 @@ describe('server message handlers', () => {
       altScreen: false,
       appMouse: false,
     })
+  })
+
+  test('a pending mode read is asynchronous and discarded after detach', async () => {
+    const { serveOptions, registryInstance } = await loadIndex()
+    registryInstance.sessions = [baseSession]
+    const { ws, sent } = createWs()
+    const websocket = serveOptions.websocket!
+    let complete!: () => void
+    let started = false
+    const mockedSpawn = bunAny.spawn
+    bunAny.spawn = ((...args: Parameters<typeof Bun.spawn>) => {
+      const cmd = (Array.isArray(args[0]) ? args[0] : [String(args[0])]) as string[]
+      if (!cmd.includes('#{pane_in_mode},#{alternate_on},#{mouse_any_flag}')) return mockedSpawn(...args)
+      started = true
+      let finish!: (code: number) => void
+      const exited = new Promise<number>((resolve) => { finish = resolve })
+      return {
+        exited, exitCode: 0, signalCode: null,
+        stdout: new ReadableStream({ start(controller) {
+          complete = () => {
+            controller.enqueue(new TextEncoder().encode('1,1,1'))
+            controller.close()
+            finish(0)
+          }
+        } }),
+        stderr: new ReadableStream({ start: (controller) => controller.close() }),
+      } as unknown as ReturnType<typeof Bun.spawn>
+    }) as typeof Bun.spawn
+    websocket.message?.(ws as never, JSON.stringify({ type: 'tmux-check-copy-mode', sessionId: baseSession.id }))
+    expect(started).toBe(true)
+    expect(sent.some((m) => m.type === 'tmux-copy-mode-status')).toBe(false)
+    websocket.message?.(ws as never, JSON.stringify({ type: 'terminal-detach', sessionId: baseSession.id }))
+    complete()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(sent.some((m) => m.type === 'tmux-copy-mode-status')).toBe(false)
   })
 
   test('moves hibernating sessions to history and rejects active sessions', async () => {

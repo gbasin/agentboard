@@ -234,6 +234,9 @@ export const config = {
   tlsCert: process.env.TLS_CERT || '',
   tlsKey: process.env.TLS_KEY || '',
   logPollIntervalMs,
+  // Opt-in observation only: never changes matching or session ownership.
+  ownershipObserver: process.env.AGENTBOARD_OWNERSHIP_OBSERVER === 'true',
+  ownershipMatching: process.platform === 'darwin' && process.env.AGENTBOARD_OWNERSHIP_MATCHING !== 'false',
   logPollMax,
   rgThreads,
   logMatchWorker,

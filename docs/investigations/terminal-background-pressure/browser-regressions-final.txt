@@ -1,0 +1,371 @@
+(node:42286) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0memitWarning[2m ([0m[0m[36munknown[0m[2m:[0m[33m1[0m[2m:[33m1[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0mwarnOnDeactivatedColors[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0mgetColorDepth[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0mshouldColorize[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0mrefresh[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0minternal:util/colors[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0manonymous[2m ([0m[0m[36munknown[0m[2m:[0m[33m1[0m[2m:[33m1[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0minternal:assert/assertion_error[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0manonymous[2m ([0m[0m[36munknown[0m[2m:[0m[33m1[0m[2m:[33m1[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0mloadAssertionError[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+
+Running 98 tests using 1 worker
+
+(node:42449) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:42449) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(node:42449) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0memitWarning[2m ([0m[0m[36munknown[0m[2m:[0m[33m1[0m[2m:[33m1[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0mwarnOnDeactivatedColors[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0mgetColorDepth[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0mshouldColorize[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0mrefresh[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0minternal:util/colors[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0manonymous[2m ([0m[0m[36munknown[0m[2m:[0m[33m1[0m[2m:[33m1[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0minternal:assert/assertion_error[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0manonymous[2m ([0m[0m[36munknown[0m[2m:[0m[33m1[0m[2m:[33m1[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0mloadAssertionError[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+  ✓   1 tests/e2e/app-mouse.spec.ts:81:1 › mouse input is forwarded to both panes across a session switch (6.5s)
+[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+  ✓   2 tests/e2e/app-mouse.spec.ts:126:1 › forced local selection survives the appMouse status poll (9.2s)
+  ✓   3 tests/e2e/app.spec.ts:4:1 › dashboard loads and terminal attaches (623ms)
+[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+  ✓   4 tests/e2e/app.spec.ts:26:1 › digit shortcut switches sessions while the terminal has focus (1.5s)
+[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+  ✓   5 tests/e2e/arrow-keys.spec.ts:96:1 › arrow cluster: tap sends, hold repeats, deck never reflows (5.5s)
+[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+  ✓   6 tests/e2e/browser-files.spec.ts:12:3 › desktop: files go directly into the existing prompt without submitting (1.4s)
+[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+  ✓   7 tests/e2e/browser-files.spec.ts:12:3 › mobile: files go directly into the existing prompt without submitting (2.6s)
+[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+  ✓   8 tests/e2e/browser-files.spec.ts:12:3 › drop: files go directly into the existing prompt without submitting (2.5s)
+[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0memitWarning[2m ([0m[0m[36munknown[0m[2m:[0m[33m1[0m[2m:[33m1[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0mwarnOnDeactivatedColors[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0mgetColorDepth[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0mshouldColorize[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0mrefresh[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0minternal:util/colors[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0manonymous[2m ([0m[0m[36munknown[0m[2m:[0m[33m1[0m[2m:[33m1[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0minternal:assert/assertion_error[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0manonymous[2m ([0m[0m[36munknown[0m[2m:[0m[33m1[0m[2m:[33m1[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0mloadAssertionError[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+  ✓   9 tests/e2e/browser-files.spec.ts:12:3 › context-paste: files go directly into the existing prompt without submitting (2.2s)
+[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+  ✓  10 tests/e2e/drawer-scroll.spec.ts:30:1 › drawer opens pre-positioned on the selected row — no mid-open snap (5.1s)
+[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+  ✓  11 tests/e2e/drawer-scroll.spec.ts:229:1 › body scroll is locked while the drawer is open (769ms)
+  ✓  12 tests/e2e/grok-preset.spec.ts:2:1 › Grok preset submits the grok launch command (746ms)
+[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+  ✓  13 tests/e2e/ios-selection.spec.ts:18:1 › accessibility rows survive identical repaints without breaking updates (1.7s)
+[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+  ✓  14 tests/e2e/manual-paste.spec.ts:112:3 › iOS PWA-sized manual paste fallback › opens the same dialog with clipboard access available (3.4s)
+[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+  ✓  15 tests/e2e/manual-paste.spec.ts:117:3 › iOS PWA-sized manual paste fallback › preserves multiline text and stays within the viewport (1.4s)
+[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+  ✓  16 tests/e2e/media-attention.spec.ts:78:1 › new batches pulse finitely, persist unread, and acknowledge on opening (8.2s)
+[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+  ✓  17 tests/e2e/media-attention.spec.ts:116:1 › initial history and switching sessions establish a quiet baseline (1.6s)
+[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+  ✓  18 tests/e2e/media-attention.spec.ts:139:1 › reduced motion retains the static unread indicator without animation (2.4s)
+[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+  ✓  19 tests/e2e/media-attention.spec.ts:163:7 › light desktop › media attention appearance (3.4s)
+[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+  ✓  20 tests/e2e/media-attention.spec.ts:163:7 › light mobile › media attention appearance (4.2s)
+  ✓  21 tests/e2e/media-attention.spec.ts:163:7 › dark desktop › media attention appearance (4.2s)
+[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+  ✓  22 tests/e2e/media-attention.spec.ts:163:7 › dark mobile › media attention appearance (4.4s)
+[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+  ✓  23 tests/e2e/media-attention.spec.ts:228:7 › mixed media tiles light desktop › equal tiles contain labels and scroll within the rail (1.7s)
+  ✓  24 tests/e2e/media-attention.spec.ts:228:7 › mixed media tiles light mobile › equal tiles contain labels and scroll within the rail (2.0s)
+  ✓  25 tests/e2e/media-attention.spec.ts:228:7 › mixed media tiles dark desktop › equal tiles contain labels and scroll within the rail (1.8s)
+[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+  ✓  26 tests/e2e/media-attention.spec.ts:228:7 › mixed media tiles dark mobile › equal tiles contain labels and scroll within the rail (2.6s)
+[2m[WebServer] [22m[0m[33mWarning[0m[2m:[0m [1mThe 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mwarnOnDeactivatedColors[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m33[0m[2m:[33m24[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mgetColorDepth[0m[2m ([0m[0m[36minternal:tty[0m[2m:[0m[33m42[0m[2m:[33m39[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mshouldColorize[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m14[0m[2m:[33m109[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mrefresh[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m18[0m[2m:[33m31[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:util/colors[0m[2m ([0m[0m[36minternal:util/colors[0m[2m:[0m[33m24[0m[2m:[33m16[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3minternal:assert/assertion_error[0m[2m ([0m[0m[36minternal:assert/assertion_error[0m[2m:[0m[33m2[0m[2m:[33m187[0m[2m)[0m
+[2m[WebServer] [22m[0m      [2mat [0m[0m[1m[3mloadAssertionError[0m[2m ([0m[0m[36mnode:assert[0m[2m:[0m[33m28[0m[2m:[33m96[0m[2m)[0m
+[2m[WebServer] [22m
+  ✓  27 tests/e2e/media-rail.spec.ts:254:1 › session-media endpoint serves seeded claude and codex payloads (3.4s)
+  ✓  28 tests/e2e/media-rail.spec.ts:323:1 › document payloads become chips that open the served bytes (3.8s)
+  ✓  29 tests/e2e/media-rail.spec.ts:368:1 › media appended to a live log gets served at the new offset (8.3s)
+  ✓  30 tests/e2e/media-rail.spec.ts:406:1 › media arriving mid-session surfaces the rail without a reload (9.8s)
+  ✓  31 tests/e2e/media-rail.spec.ts:491:1 › a real window matched to a seeded claude log gets the rail (9.7s)
+  ✓  32 tests/e2e/media-rail.spec.ts:559:1 › media rail expands to thumbnails and opens a lightbox (3.7s)
+  ✓  33 tests/e2e/mobile-controls.spec.ts:42:1 › keyboard Shift modifies touch quick keys sent to the pane (4.8s)
+  ✓  34 tests/e2e/mobile-drag-handle.spec.ts:72:1 › a vertical pan starting on the card body scrolls — it must not drag (2.0s)
+  ✓  35 tests/e2e/mobile-drag-handle.spec.ts:119:1 › a pan starting on the drag handle drags and reorders the card (1.6s)
+  ✓  36 tests/e2e/name-collision.spec.ts:13:1 › archived names reject collisions and reserve names during window creation (6.4s)
+  ✓  37 tests/e2e/paste.spec.ts:42:1 › multi-line text paste is held for editing, not auto-submitted (2.3s)
+  ✓  38 tests/e2e/permission-status.spec.ts:14:1 › a window parked on a tall AskUserQuestion card reports Needs Input (590ms)
+  ✓  39 tests/e2e/polling-lifecycle.spec.ts:113:3 › claude: discover after startup, import once, preserve rename, and refresh full messages (11.5s)
+  ✓  40 tests/e2e/polling-lifecycle.spec.ts:113:3 › codex: discover after startup, import once, preserve rename, and refresh full messages (9.5s)
+  ✓  41 tests/e2e/polling-lifecycle.spec.ts:200:1 › hibernation survives new log activity and a matching unclaimed window (21.1s)
+  ✓  42 tests/e2e/pr-chips.spec.ts:59:1 › hovering +N spills hidden PRs as a bare chip strip (907ms)
+  ✓  43 tests/e2e/pr-chips.spec.ts:95:1 › strip stays open while a spilled chip detail card is hovered (2.1s)
+  ✓  44 tests/e2e/pr-chips.spec.ts:125:1 › sweeping across spilled chips swaps detail cards without closing the strip (2.0s)
+  ✓  45 tests/e2e/pr-chips.spec.ts:155:1 › Enter opens the strip into its first chip; Escape returns focus to +N (268ms)
+  ✓  46 tests/e2e/pr-chips.spec.ts:181:1 › Shift+Tab on the first chip returns focus to +N and closes (609ms)
+  ✓  47 tests/e2e/pr-chips.spec.ts:199:1 › footer rail +N spills chips above the bar (1.5s)
+  ✓  48 tests/e2e/pr-link.spec.ts:51:1 › a claude session with only a pr-link record gets a PR chip in History (602ms)
+  ✓  49 tests/e2e/recovery-notice.spec.ts:71:1 › recovery notice dismisses, persists, and clears on library-changed (519ms)
+  ✓  50 tests/e2e/session-names.spec.ts:24:1 › create and rename sessions with spaces and punctuation (1.5s)
+  ✓  51 tests/e2e/session-row-collapse.spec.ts:34:1 › card re-added mid exit-collapse does not clip a late-arriving message (1.0s)
+  ✓  52 tests/e2e/settings.spec.ts:50:1 › Discard with the cursor still in the command field throws the preset away (1.6s)
+  ✓  53 tests/e2e/settings.spec.ts:84:1 › a text field still being typed in commits when the dialog closes by shortcut (2.7s)
+  ✓  54 tests/e2e/settings.spec.ts:107:1 › search filters rows across pages and shows an empty state (683ms)
+  ✓  55 tests/e2e/settings.spec.ts:144:3 › phone › settings is a page list that drills into pages with no horizontal overflow (2.3s)
+  ✓  56 tests/e2e/sidebar-anchor.spec.ts:52:1 › Settings switches the anchor to Bottom and it persists across reload and devices (3.1s)
+  ✓  57 tests/e2e/sidebar-anchor.spec.ts:118:1 › Bottom: first row lowest, rows above the filter bar, bars stacked at the bottom, gap on top (617ms)
+  ✓  58 tests/e2e/sidebar-anchor.spec.ts:175:1 › Bottom: an overflowing list opens at the bottom and stays pinned when a session is added (4.1s)
+  ✓  59 tests/e2e/sidebar-anchor.spec.ts:221:1 › Bottom: the filter menu opens upward inside the viewport (2.2s)
+  ✓  60 tests/e2e/sidebar-anchor.spec.ts:261:1 › mod+1 selects the lowest row; [ ] track screen direction in both anchors (2.5s)
+  ✓  61 tests/e2e/sidebar-anchor.spec.ts:315:1 › Bottom: drag-reorder lands rows where they are dropped and survives reload (1.9s)
+  ✓  62 tests/e2e/sidebar-anchor.spec.ts:362:1 › Bottom: a row context menu near the bottom edge flips up to stay in the viewport (2.2s)
+  ✓  63 tests/e2e/sidebar-anchor.spec.ts:414:1 › Top (default) keeps the original order and stacking (1.2s)
+  ✓  64 tests/e2e/sidebar-anchor.spec.ts:463:3 › mobile › the drawer ignores the Bottom anchor (2.4s)
+  ✓  65 tests/e2e/sidebar-anchor.spec.ts:487:3 › mobile › [ ] keep sort order under Bottom, where nothing is mirrored (2.2s)
+  ✓  66 tests/e2e/sidebar-controls.spec.ts:92:3 › top: no wordmark or header row; the filter bar holds the controls (2.1s)
+  ✓  67 tests/e2e/sidebar-controls.spec.ts:92:3 › bottom: no wordmark or header row; the filter bar holds the controls (1.1s)
+  ✓  68 tests/e2e/sidebar-controls.spec.ts:133:1 › "+" opens the new-session modal and the gear opens Settings (2.6s)
+  ✓  69 tests/e2e/sidebar-controls.spec.ts:183:1 › Tailscale popover: open, status and IP, copy URL, Escape, outside click (4.1s)
+  ✓  70 tests/e2e/sidebar-controls.spec.ts:257:1 › copy works when navigator.clipboard is absent (insecure Tailscale origin) (2.2s)
+  ✓  71 tests/e2e/sidebar-controls.spec.ts:290:1 › Tailscale popover is operable by keyboard alone (1.1s)
+  ✓  72 tests/e2e/sidebar-controls.spec.ts:335:5 › top @240px: popover opens below the bar, inside sidebar and viewport (2.2s)
+  ✓  73 tests/e2e/sidebar-controls.spec.ts:335:5 › top @180px: popover opens below the bar, inside sidebar and viewport (2.2s)
+  ✓  74 tests/e2e/sidebar-controls.spec.ts:335:5 › bottom @240px: popover opens above the bar, inside sidebar and viewport (2.1s)
+  ✓  75 tests/e2e/sidebar-controls.spec.ts:335:5 › bottom @180px: popover opens above the bar, inside sidebar and viewport (2.2s)
+  ✓  76 tests/e2e/sidebar-controls.spec.ts:377:1 › without a Tailscale IP the dot is a plain indicator with no popover (2.1s)
+  ✓  77 tests/e2e/sidebar-controls.spec.ts:395:1 › losing the WebSocket shows on the dot, and reconnecting restores it (4.0s)
+  ✓  78 tests/e2e/sidebar-controls.spec.ts:439:3 › top @180px: the right-hand controls neither wrap nor clip (2.2s)
+  ✓  79 tests/e2e/sidebar-controls.spec.ts:439:3 › bottom @180px: the right-hand controls neither wrap nor clip (1.1s)
+  ✓  80 tests/e2e/sidebar-controls.spec.ts:488:1 › sort menu changes the desktop anchor without changing sort or losing focus (2.2s)
+  ✓  81 tests/e2e/sidebar-controls.spec.ts:545:1 › mobile sort menu does not offer the desktop anchor preference (600ms)
+  ✓  82 tests/e2e/sidebar-drag-scroll.spec.ts:25:1 › dragging a card sideways never scrolls the panel horizontally (2.6s)
+  ✓  83 tests/e2e/sidebar-filter.spec.ts:134:5 › top @240px: the menu opens down, inside sidebar and viewport (2.2s)
+  ✓  84 tests/e2e/sidebar-filter.spec.ts:134:5 › top @180px: the menu opens down, inside sidebar and viewport (429ms)
+  ✓  85 tests/e2e/sidebar-filter.spec.ts:134:5 › bottom @240px: the menu opens up, inside sidebar and viewport (2.2s)
+  ✓  86 tests/e2e/sidebar-filter.spec.ts:134:5 › bottom @180px: the menu opens up, inside sidebar and viewport (2.2s)
+  ✓  87 tests/e2e/sidebar-filter.spec.ts:193:1 › filtering by project hides other sessions; badge counts; Clear appears and restores (3.0s)
+  ✓  88 tests/e2e/sidebar-filter.spec.ts:326:5 › top @240px: 30 projects scroll inside the menu; search narrows; header stays visible (2.3s)
+  ✓  89 tests/e2e/sidebar-filter.spec.ts:326:5 › top @180px: 30 projects scroll inside the menu; search narrows; header stays visible (4.1s)
+  ✓  90 tests/e2e/sidebar-filter.spec.ts:326:5 › bottom @240px: 30 projects scroll inside the menu; search narrows; header stays visible (4.2s)
+  ✓  91 tests/e2e/sidebar-filter.spec.ts:326:5 › bottom @180px: 30 projects scroll inside the menu; search narrows; header stays visible (4.1s)
+  ✓  92 tests/e2e/sidebar-filter.spec.ts:397:1 › typed text is matched literally, not as a pattern (2.5s)
+  ✓  93 tests/e2e/sidebar-filter.spec.ts:458:3 › mobile drawer › the funnel works by touch in the drawer and has a 44px target (2.8s)
+  ✓  94 tests/e2e/sidebar-filter.spec.ts:536:3 › mobile drawer › 30 projects: the drawer menu scrolls, searches without popping the keyboard, and clears (2.3s)
+  ✓  95 tests/e2e/sidebar-sort-status.spec.ts:65:1 › Status sort: permission pins first, the rest order by last activity (400ms)
+  ✓  96 tests/e2e/sidebar-sort-status.spec.ts:82:1 › Status sort under Bottom: the permission row sits lowest, next to the filter bar (2.1s)
+  ✓  97 tests/e2e/sidebar-sort-status.spec.ts:107:1 › Status sort: pressing Enter moves the session to the top of the activity group (2.5s)
+  ✓  98 tests/e2e/websocket-recovery.spec.ts:38:1 › missing pongs reconnect and reattach without retaining closed sockets (7.6s)
+
+  98 passed (5.1m)

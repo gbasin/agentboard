@@ -1,0 +1,70 @@
+[
+  {
+    "build": "release",
+    "profile": "rate128",
+    "emulateIOS": true,
+    "phoneSettings": true,
+    "connections": 1,
+    "pings": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "pongs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "timeouts": 0,
+    "connectTimeouts": 0,
+    "ready": 1,
+    "finalInput": true,
+    "error": null,
+    "network": {
+      "connections": 1,
+      "upBytes": 12087,
+      "downBytes": 874827,
+      "maxQueuedBytes": 69251,
+      "segments": 707
+    },
+    "bursts": 6
+  },
+  {
+    "build": "pr",
+    "profile": "rate128",
+    "emulateIOS": true,
+    "phoneSettings": true,
+    "connections": 1,
+    "pings": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "pongs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "timeouts": 0,
+    "connectTimeouts": 0,
+    "ready": 1,
+    "finalInput": true,
+    "error": null,
+    "network": {
+      "connections": 1,
+      "upBytes": 21360,
+      "downBytes": 577992,
+      "maxQueuedBytes": 66880,
+      "segments": 825
+    },
+    "bursts": 6
+  }
+]

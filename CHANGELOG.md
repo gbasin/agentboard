@@ -1,5 +1,97 @@
 # Changelog
 
+## [0.37.1](https://github.com/gbasin/agentboard/compare/v0.37.0...v0.37.1) (2026-10-26)
+
+
+### Bug Fixes
+
+* prevent terminal focus from scrolling the board sideways ([#451](https://github.com/gbasin/agentboard/issues/451)) ([fce73ab](https://github.com/gbasin/agentboard/commit/fce73ab5a9eb7abdcfa7b86df6fc085c3ec62d89))
+
+## [0.37.0](https://github.com/gbasin/agentboard/compare/v0.36.3...v0.37.0) (2026-10-26)
+
+
+### Features
+
+* improve terminal recovery and progressive media browsing ([6ea2698](https://github.com/gbasin/agentboard/commit/6ea26981d3fb10ba6c5f70a387094dc83550b0d0))
+
+## [0.36.3](https://github.com/gbasin/agentboard/compare/v0.36.2...v0.36.3) (2026-10-24)
+
+
+### Performance Improvements
+
+* index catalog lookups by host and window ([#437](https://github.com/gbasin/agentboard/issues/437)) ([b00bed4](https://github.com/gbasin/agentboard/commit/b00bed4c84b14a85a8f00bc06491de3169415bbe))
+
+## [0.36.2](https://github.com/gbasin/agentboard/compare/v0.36.1...v0.36.2) (2026-10-19)
+
+
+### Bug Fixes
+
+* release closed websocket references during recovery ([#435](https://github.com/gbasin/agentboard/issues/435)) ([aa8221f](https://github.com/gbasin/agentboard/commit/aa8221f9bc2cfc325f4105688982ec249e014e71))
+
+## [0.36.1](https://github.com/gbasin/agentboard/compare/v0.36.0...v0.36.1) (2026-10-19)
+
+
+### Performance Improvements
+
+* index session display-name collision checks ([#433](https://github.com/gbasin/agentboard/issues/433)) ([7bc9ec7](https://github.com/gbasin/agentboard/commit/7bc9ec76540360320db6a711ae7a2d5676b47629))
+
+## [0.36.0](https://github.com/gbasin/agentboard/compare/v0.35.2...v0.36.0) (2026-10-18)
+
+
+### Features
+
+* enable ownership matching by default on macOS ([#432](https://github.com/gbasin/agentboard/issues/432)) ([1f31eae](https://github.com/gbasin/agentboard/commit/1f31eae8a55bbc1190e1107f381770a792ea3cd8))
+* match Claude and Codex sessions by process ownership ([#430](https://github.com/gbasin/agentboard/issues/430)) ([0cb43bc](https://github.com/gbasin/agentboard/commit/0cb43bc7efc90f942d4bb41b56a5b2fc87060ad2))
+
+## [0.35.2](https://github.com/gbasin/agentboard/compare/v0.35.1...v0.35.2) (2026-10-16)
+
+
+### Performance Improvements
+
+* move session metadata scans off the main thread ([#426](https://github.com/gbasin/agentboard/issues/426)) ([882622d](https://github.com/gbasin/agentboard/commit/882622d2fbca6fdc31d0bcbe31556d805bb1d0f5))
+
+## [0.35.1](https://github.com/gbasin/agentboard/compare/v0.35.0...v0.35.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* normalize expanded media tile sizes ([#424](https://github.com/gbasin/agentboard/issues/424)) ([b313ec9](https://github.com/gbasin/agentboard/commit/b313ec97a6ced133c1b086a600548eceb9dec04a))
+
+## [0.35.0](https://github.com/gbasin/agentboard/compare/v0.34.4...v0.35.0) (2026-10-16)
+
+
+### Features
+
+* make media arrivals easier to notice ([#422](https://github.com/gbasin/agentboard/issues/422)) ([9be99fc](https://github.com/gbasin/agentboard/commit/9be99fc6134a8f2b86b46386905da0df6f9deee8))
+
+## [0.34.4](https://github.com/gbasin/agentboard/compare/v0.34.3...v0.34.4) (2026-10-15)
+
+
+### Performance Improvements
+
+* skip unchanged persistence epoch writes ([#420](https://github.com/gbasin/agentboard/issues/420)) ([543251d](https://github.com/gbasin/agentboard/commit/543251d75a89727b6c07fe1d6f9b01bfd5368507))
+
+## [0.34.3](https://github.com/gbasin/agentboard/compare/v0.34.2...v0.34.3) (2026-10-15)
+
+
+### Bug Fixes
+
+* keep terminal traffic flowing during copy-mode queries ([#418](https://github.com/gbasin/agentboard/issues/418)) ([9655ef3](https://github.com/gbasin/agentboard/commit/9655ef31ae0cb7fdb7b8afccc367c4a8dd9cf62a))
+
+## [0.34.2](https://github.com/gbasin/agentboard/compare/v0.34.1...v0.34.2) (2026-10-15)
+
+
+### Performance Improvements
+
+* move polling reads off the main thread and keep dormant previews current ([#416](https://github.com/gbasin/agentboard/issues/416)) ([8dccddc](https://github.com/gbasin/agentboard/commit/8dccddca8c3b4dfa6745bc4818c4e26e22e2d4db))
+
+## [0.34.1](https://github.com/gbasin/agentboard/compare/v0.34.0...v0.34.1) (2026-10-15)
+
+
+### Performance Improvements
+
+* index catalog hot paths, batch legacy import, restore SQL-capped history ([#414](https://github.com/gbasin/agentboard/issues/414)) ([74ed561](https://github.com/gbasin/agentboard/commit/74ed5612623cf36e4bdcd4210412eb78d632bf10))
+
 ## [0.34.0](https://github.com/gbasin/agentboard/compare/v0.33.1...v0.34.0) (2026-10-14)
 
 

@@ -1,0 +1,282 @@
+bun test v1.3.14 (0d9b296a)
+
+src/server/__tests__/terminalSizeParticipation.test.ts:
+(pass) hide then show serialize flag changes; repeated requests do not spawn extra commands [1.54ms]
+(pass) dispose waits for an in-flight mutation and skips queued foreground work before releasing tty [0.14ms]
+(pass) natural exit or replaced tty cancels a queued sizing mutation [0.10ms]
+(pass) relay observers start ignored and foreground command failures propagate for retry [0.09ms]
+(pass) pipe-pane has no PTY sizing flags [0.03ms]
+(pass) SSH sizing uses its asynchronous remote command path [0.17ms]
+
+src/server/__tests__/sshTerminalProxy.test.ts:
+(pass) SshTerminalProxy > start succeeds when TTY is discovered [4.00ms]
+[2026-10-24 20:41:37.925 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-proxy-session"
+    [35mhost[39m: "remote-host"
+    [35mevent[39m: "ssh_session_created"
+[2026-10-24 20:41:37.926 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-proxy-session"
+    [35mspawnArgs[39m: "ssh -tt remote-host tmux -u new-session -A -s test-proxy-session"
+    [35mevent[39m: "ssh_attach_spawn"
+[2026-10-24 20:41:37.926 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-proxy-session"
+    [35mclientTty[39m: "/dev/pts/42"
+    [35mdurationMs[39m: 3
+    [35mmode[39m: "ssh"
+    [35mevent[39m: "ssh_proxy_ready"
+[2026-10-24 20:41:37.927 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-timeout-session"
+    [35mhost[39m: "unreachable-host"
+    [35mevent[39m: "ssh_session_created"
+[2026-10-24 20:41:37.927 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-timeout-session"
+    [35mspawnArgs[39m: "ssh -tt unreachable-host tmux -u new-session -A -s test-timeout-session"
+    [35mevent[39m: "ssh_attach_spawn"
+(pass) SshTerminalProxy > doStart rejects with ERR_START_TIMEOUT when SSH hangs [202.15ms]
+[2026-10-24 20:41:38.128 +0000] [31mERROR[39m:
+    [35msessionName[39m: "test-timeout-session"
+    [35mhost[39m: "unreachable-host"
+    [35mtimeoutMs[39m: 200
+    [35mevent[39m: "ssh_start_timeout"
+[2026-10-24 20:41:38.129 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-kill-session"
+    [35mhost[39m: "slow-host"
+    [35mevent[39m: "ssh_session_created"
+[2026-10-24 20:41:38.129 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-kill-session"
+    [35mspawnArgs[39m: "ssh -tt slow-host tmux -u new-session -A -s test-kill-session"
+    [35mevent[39m: "ssh_attach_spawn"
+(pass) SshTerminalProxy > startup timeout kills the spawned SSH process [151.80ms]
+[2026-10-24 20:41:38.280 +0000] [31mERROR[39m:
+    [35msessionName[39m: "test-kill-session"
+    [35mhost[39m: "slow-host"
+    [35mtimeoutMs[39m: 150
+    [35mevent[39m: "ssh_start_timeout"
+[2026-10-24 20:41:38.281 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-stop-poll-session"
+    [35mhost[39m: "slow-host"
+    [35mevent[39m: "ssh_session_created"
+[2026-10-24 20:41:38.281 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-stop-poll-session"
+    [35mspawnArgs[39m: "ssh -tt slow-host tmux -u new-session -A -s test-stop-poll-session"
+    [35mevent[39m: "ssh_attach_spawn"
+[2026-10-24 20:41:38.401 +0000] [31mERROR[39m:
+    [35msessionName[39m: "test-stop-poll-session"
+    [35mhost[39m: "slow-host"
+    [35mtimeoutMs[39m: 120
+    [35mevent[39m: "ssh_start_timeout"
+(pass) SshTerminalProxy > startup timeout stops TTY polling and cleans up promptly [942.32ms]
+[2026-10-24 20:41:39.228 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-late-tty-session"
+    [35mhost[39m: "slow-host"
+    [35mevent[39m: "ssh_session_created"
+[2026-10-24 20:41:39.228 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-late-tty-session"
+    [35mspawnArgs[39m: "ssh -tt slow-host tmux -u new-session -A -s test-late-tty-session"
+    [35mevent[39m: "ssh_attach_spawn"
+[2026-10-24 20:41:39.253 +0000] [31mERROR[39m:
+    [35msessionName[39m: "test-late-tty-session"
+    [35mhost[39m: "slow-host"
+    [35mtimeoutMs[39m: 20
+    [35mevent[39m: "ssh_start_timeout"
+(pass) SshTerminalProxy > startup timeout does not allow a late READY transition if TTY appears after timeout [182.49ms]
+(pass) SshTerminalProxy > runTmuxAsync routes commands through SSH with pipe mode [1.12ms]
+(pass) SshTerminalProxy > dispose kills process and cleans up remote session [0.27ms]
+(pass) SshTerminalProxy > start is idempotent when already started [0.23ms]
+(pass) SshTerminalProxy > doStart rejects with ERR_SESSION_CREATE_FAILED on SSH failure [0.32ms]
+[2026-10-24 20:41:39.408 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-pipe-verify"
+    [35mhost[39m: "remote-host"
+    [35mevent[39m: "ssh_session_created"
+[2026-10-24 20:41:39.408 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-pipe-verify"
+    [35mspawnArgs[39m: "ssh -tt remote-host tmux -u new-session -A -s test-pipe-verify"
+    [35mevent[39m: "ssh_attach_spawn"
+[2026-10-24 20:41:39.408 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-pipe-verify"
+    [35mclientTty[39m: "/dev/pts/42"
+    [35mdurationMs[39m: 0
+    [35mmode[39m: "ssh"
+    [35mevent[39m: "ssh_proxy_ready"
+[2026-10-24 20:41:39.409 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-dispose-session"
+    [35mhost[39m: "remote-host"
+    [35mevent[39m: "ssh_session_created"
+[2026-10-24 20:41:39.409 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-dispose-session"
+    [35mspawnArgs[39m: "ssh -tt remote-host tmux -u new-session -A -s test-dispose-session"
+    [35mevent[39m: "ssh_attach_spawn"
+[2026-10-24 20:41:39.409 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-dispose-session"
+    [35mclientTty[39m: "/dev/pts/42"
+    [35mdurationMs[39m: 0
+    [35mmode[39m: "ssh"
+    [35mevent[39m: "ssh_proxy_ready"
+[2026-10-24 20:41:39.409 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-idem-session"
+    [35mhost[39m: "remote-host"
+    [35mevent[39m: "ssh_session_created"
+[2026-10-24 20:41:39.409 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-idem-session"
+    [35mspawnArgs[39m: "ssh -tt remote-host tmux -u new-session -A -s test-idem-session"
+    [35mevent[39m: "ssh_attach_spawn"
+[2026-10-24 20:41:39.409 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-idem-session"
+    [35mclientTty[39m: "/dev/pts/42"
+    [35mdurationMs[39m: 0
+    [35mmode[39m: "ssh"
+    [35mevent[39m: "ssh_proxy_ready"
+[2026-10-24 20:41:39.409 +0000] [33mWARN[39m:
+    [35mremoteCmd[39m: "tmux new-session -d -s test-fail-session -P -F '#{version}'"
+    [35mexitCode[39m: 255
+    [35mstderr[39m: "ssh: connect to host bad-host: Connection refused"
+    [35msessionName[39m: "test-fail-session"
+    [35mconnectionId[39m: "conn-fail"
+    [35mevent[39m: "ssh_tmux_command_failed"
+[2026-10-24 20:41:39.409 +0000] [31mERROR[39m:
+    [35msessionName[39m: "test-fail-session"
+    [35mhost[39m: "bad-host"
+    [35mevent[39m: "ssh_session_create_failed"
+    error: "ssh: connect to host bad-host: Connection refused"
+[2026-10-24 20:41:39.410 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-paste-session"
+    [35mhost[39m: "remote-host"
+    [35mevent[39m: "ssh_session_created"
+[2026-10-24 20:41:39.410 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-paste-session"
+    [35mspawnArgs[39m: "ssh -tt remote-host tmux -u new-session -A -s test-paste-session"
+    [35mevent[39m: "ssh_attach_spawn"
+[2026-10-24 20:41:39.410 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-paste-session"
+    [35mclientTty[39m: "/dev/pts/42"
+    [35mdurationMs[39m: 0
+    [35mmode[39m: "ssh"
+    [35mevent[39m: "ssh_proxy_ready"
+(pass) SshTerminalProxy > paste stages via load-buffer stdin and replays with paste-buffer [7.49ms]
+[2026-10-24 20:41:39.417 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-paste-fail"
+    [35mhost[39m: "remote-host"
+    [35mevent[39m: "ssh_session_created"
+[2026-10-24 20:41:39.417 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-paste-fail"
+    [35mspawnArgs[39m: "ssh -tt remote-host tmux -u new-session -A -s test-paste-fail"
+    [35mevent[39m: "ssh_attach_spawn"
+[2026-10-24 20:41:39.417 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-paste-fail"
+    [35mclientTty[39m: "/dev/pts/42"
+    [35mdurationMs[39m: 0
+    [35mmode[39m: "ssh"
+    [35mevent[39m: "ssh_proxy_ready"
+[2026-10-24 20:41:39.417 +0000] [33mWARN[39m:
+    [35mremoteCmd[39m: "tmux load-buffer -b agentboard-paste-conn-paste-fail-1 -"
+    [35mexitCode[39m: 1
+    [35mstderr[39m: "tmux gone"
+    [35msessionName[39m: "test-paste-fail"
+    [35mconnectionId[39m: "conn-paste-fail"
+    [35mevent[39m: "ssh_tmux_command_failed"
+[2026-10-24 20:41:39.417 +0000] [33mWARN[39m:
+    [35mconnectionId[39m: "conn-paste-fail"
+    [35msessionName[39m: "test-paste-fail"
+    [35mtarget[39m: "test-paste-fail"
+    [35mstage[39m: "load-buffer"
+    [35mbytes[39m: 3
+    [35mmode[39m: "ssh"
+    [35mevent[39m: "terminal_paste_failed"
+    error: "tmux gone"
+(pass) SshTerminalProxy > paste load-buffer failure drops the paste without a raw pty write [7.21ms]
+[2026-10-24 20:41:39.424 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-paste-clean"
+    [35mhost[39m: "remote-host"
+    [35mevent[39m: "ssh_session_created"
+[2026-10-24 20:41:39.424 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-paste-clean"
+    [35mspawnArgs[39m: "ssh -tt remote-host tmux -u new-session -A -s test-paste-clean"
+    [35mevent[39m: "ssh_attach_spawn"
+[2026-10-24 20:41:39.424 +0000] [32mINFO[39m:
+    [35msessionName[39m: "test-paste-clean"
+    [35mclientTty[39m: "/dev/pts/42"
+    [35mdurationMs[39m: 0
+    [35mmode[39m: "ssh"
+    [35mevent[39m: "ssh_proxy_ready"
+[2026-10-24 20:41:39.424 +0000] [33mWARN[39m:
+    [35mremoteCmd[39m: "tmux paste-buffer -d -p -b agentboard-paste-conn-paste-clean-1 -t test-paste-clean"
+    [35mexitCode[39m: 1
+    [35mstderr[39m: "no such target"
+    [35msessionName[39m: "test-paste-clean"
+    [35mconnectionId[39m: "conn-paste-clean"
+    [35mevent[39m: "ssh_tmux_command_failed"
+[2026-10-24 20:41:39.425 +0000] [33mWARN[39m:
+    [35mconnectionId[39m: "conn-paste-clean"
+    [35msessionName[39m: "test-paste-clean"
+    [35mtarget[39m: "test-paste-clean"
+    [35mstage[39m: "paste-buffer"
+    [35mbytes[39m: 3
+    [35mmode[39m: "ssh"
+    [35mevent[39m: "terminal_paste_failed"
+    error: "no such target"
+(pass) SshTerminalProxy > paste-buffer failure cleans up the staged buffer [7.83ms]
+(pass) SshTerminalProxy sync terminal feature > adds -T sync using the version returned by session create (no extra probe) [0.76ms]
+(pass) SshTerminalProxy sync terminal feature > omits -T sync when the remote tmux predates client feature flags [0.18ms]
+(pass) SshTerminalProxy sync terminal feature > falls back to a running-server version probe when create hits a duplicate session [0.26ms]
+(pass) SshTerminalProxy sync terminal feature > duplicate-session fallback keeps old remote servers free of size flags [0.27ms]
+(pass) SshTerminalProxy sync terminal feature > degrades to a plain attach when the fallback probe fails [0.28ms]
+(pass) SshTerminalProxy sync terminal feature > remote background sizing respects 3.1c with sync disabled [0.26ms]
+(pass) SshTerminalProxy sync terminal feature > remote background sizing respects 3.2 with sync disabled [0.19ms]
+(pass) SshTerminalProxy sync terminal feature > remote background sizing respects unknown version with sync disabled [0.12ms]
+(pass) SshTerminalProxy sync terminal feature > AGENTBOARD_TMUX_SYNC=0 disables the sync feature [0.38ms]
+
+ 27 pass
+ 0 fail
+ 91 expect() calls
+Ran 27 tests across 2 files. [1.57s]
+bun test v1.3.14 (0d9b296a)
+
+src/server/__tests__/isolated/terminalProxy.test.ts:
+(pass) TerminalProxy > starts tmux client and discovers tty [1.82ms]
+(pass) TerminalProxy > grouped-session creation is one new-session and only arms the reaper [0.38ms]
+(pass) TerminalProxy > AGENTBOARD_TMUX_SYNC=0 disables the sync feature [0.26ms]
+(pass) TerminalProxy > omits -T sync when tmux predates client feature flags [0.17ms]
+(pass) TerminalProxy > background sizing respects tmux 3.1c with sync disabled [0.48ms]
+(pass) TerminalProxy > background sizing respects tmux 3.2 with sync disabled [0.33ms]
+(pass) TerminalProxy > background sizing respects unknown version with sync disabled [0.11ms]
+(pass) TerminalProxy > probes tmux -V once per process, not once per connection [0.41ms]
+(pass) TerminalProxy > a failed tmux -V probe is not cached [0.32ms]
+(pass) TerminalProxy > an unrecognizable tmux -V answer on exit 0 is not cached [0.24ms]
+(pass) TerminalProxy > switchTo issues switch and refresh commands [1.51ms]
+(pass) TerminalProxy > switch tmux calls run off the event loop; history precedes live output [4.83ms]
+(pass) TerminalProxy > dispose() during a switch stops it: no further tmux calls, no onReady, stays DEAD [0.58ms]
+(pass) TerminalProxy > dispose() during refresh-client leaves the proxy DEAD [0.25ms]
+(pass) TerminalProxy > a switch superseded mid-flight stops before onReady; only the newer target is shown [1.59ms]
+(pass) TerminalProxy > a failing switch-client on the non-blocking path still rejects with ERR_TMUX_SWITCH_FAILED [0.35ms]
+(pass) TerminalProxy > switchTo verifies against our own client when another client is more recently active [0.30ms]
+(pass) TerminalProxy > paste stages via load-buffer stdin and replays into the grouped session [0.38ms]
+(pass) TerminalProxy > paste targets the external session after a verified switch [0.40ms]
+(pass) TerminalProxy > paste falls back to the grouped session when the external one is gone [0.52ms]
+(pass) TerminalProxy > switchTo rewrites base-session targets to grouped session targets [0.33ms]
+(pass) TerminalProxy > switchTo rewrites session-only base-session targets to grouped session [0.24ms]
+(pass) TerminalProxy > copies mouse setting from base session to grouped session [0.17ms]
+(pass) TerminalProxy > enables set-clipboard so copies land in a tmux paste buffer [0.12ms]
+(pass) TerminalProxy > copies mouse=off setting from base session to grouped session [0.13ms]
+(pass) TerminalProxy > does not set grouped mouse option when base mouse setting is empty [0.14ms]
+(pass) TerminalProxy > continues when reading base mouse setting fails [0.25ms]
+(pass) TerminalProxy > continues when applying grouped mouse setting fails [0.16ms]
+(pass) TerminalProxy > disposes tmux client and session [0.23ms]
+(pass) TerminalProxy > writes terminal input as explicit UTF-8 bytes [0.39ms]
+(pass) TerminalProxy > disposes the grouped session when tmux attach spawn fails [0.30ms]
+(pass) TerminalProxy > ensureEffectiveTarget creates a derived grouped session for an external target [0.66ms]
+(pass) TerminalProxy > ensureEffectiveTarget short-circuits on the warm path without re-issuing has-session [0.40ms]
+(pass) TerminalProxy > recovers from a stale derived session bound to a killed-and-recreated raw session [0.31ms]
+(pass) TerminalProxy > evacuates the client before killing a stale derived session it is attached to [0.29ms]
+(pass) TerminalProxy > gives up and falls back to the raw target when recreation still lands in a stale group [0.37ms]
+(pass) TerminalProxy > bare-session targets also give up on a stale group after recreation, instead of trusting it blindly [0.30ms]
+(pass) TerminalProxy > falls back to the raw target when the raw session no longer exists [0.21ms]
+(pass) TerminalProxy > bare-session targets validate via session-group membership, not window-set [0.25ms]
+(pass) TerminalProxy > releaseUnusedExternalGroupedSessions kills derived sessions the client already switched away from [0.36ms]
+(pass) TerminalProxy > dispose kills every tracked external grouped session [0.27ms]
+(pass) TerminalProxy > disposed proxy does not resurrect a derived session on ensureEffectiveTarget [0.13ms]
+(pass) TerminalProxy > a dispose() that lands mid-switchTo still blocks a later resurrection (the case the disposed flag exists for) [0.45ms]
+
+ 43 pass
+ 0 fail
+ 131 expect() calls
+Ran 43 tests across 1 file. [87.00ms]

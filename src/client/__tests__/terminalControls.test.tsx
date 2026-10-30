@@ -557,3 +557,26 @@ test('selected files survive resetting the native picker and wait with the draft
   expect(sent).toEqual(["Read this\nplease\n'/tmp/notes.txt' "])
   renderer.unmount()
 })
+
+
+test('recovery permits keyboard touch without enabling command or paste buttons', () => {
+  let focuses = 0
+  let sends = 0
+  let renderer!: TestRenderer.ReactTestRenderer
+  act(() => { renderer = TestRenderer.create(<TerminalControls disabled keyboardDisabled={false}
+    onSendKey={() => { sends++ }} sessions={[]} currentSessionId="recovery"
+    onSelectSession={() => {}} onEnterTextMode={() => { focuses++ }} />) })
+  const keyboard = renderer.root.findByProps({ 'aria-label': 'Show keyboard' })
+  expect(keyboard.props.disabled).toBe(false)
+  expect(renderer.root.findByProps({ 'aria-label': 'Paste' }).props.disabled).toBe(true)
+  expect(renderer.root.findByProps({ 'aria-label': 'Enter' }).props.disabled).toBe(true)
+  const deck = renderer.root.findAllByType('div').find(node => typeof node.props.onTouchStartCapture === 'function')!
+  act(() => {
+    deck.props.onTouchStartCapture({ touches: [{ clientX: 10, clientY: 10 }] })
+    keyboard.props.onTouchEnd({ changedTouches: [{ clientX: 10, clientY: 10 }], preventDefault() {}, stopPropagation() {} })
+    keyboard.props.onClick() // iOS synthetic click must not toggle twice.
+  })
+  expect(focuses).toBe(1)
+  expect(sends).toBe(0)
+  act(() => renderer.unmount())
+})

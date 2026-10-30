@@ -1,0 +1,25 @@
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { createHash } from 'node:crypto'
+import { PNG } from 'pngjs'
+import { MediaThumbnailClient } from '../../src/server/mediaThumbnailClient'
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'thumbnail-compiled-'))
+const file = path.join(root, 'log.jsonl')
+const png = new PNG({ width: 1920, height: 1080 }); png.data.fill(255)
+const line = JSON.stringify({ type: 'user', message: { content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: PNG.sync.write(png).toString('base64') } }] } })
+fs.writeFileSync(file, line + '\n')
+const ref = { path: file, offset: 0, index: 0, digest: createHash('sha256').update(line).digest('hex') }
+const client = new MediaThumbnailClient()
+try {
+  const timings = []
+  for (let i = 0; i < 3; i++) {
+    if (i === 2) fs.appendFileSync(file, '{"append":true}\n')
+    const start = performance.now()
+    const bytes = await client.get(ref)
+    timings.push(Math.round((performance.now() - start) * 100) / 100)
+    const image = PNG.sync.read(Buffer.from(bytes))
+    if (image.width !== 128 || image.height !== 72) throw new Error('Bad dimensions')
+  }
+  console.log(JSON.stringify({ compiled: import.meta.url.includes('$bunfs'), width: 128, height: 72, timingsMs: timings }))
+} finally { client.dispose(); fs.rmSync(root, { recursive: true, force: true }) }
