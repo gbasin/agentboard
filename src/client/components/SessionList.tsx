@@ -33,6 +33,7 @@ import { useIsMobileLayout } from '../hooks/useMobileLayout'
 import { useBottomPinnedScroll } from '../hooks/useBottomPinnedScroll'
 import { useMenuViewportFit } from '../hooks/useMenuViewportFit'
 import AgentIcon from './AgentIcon'
+import SessionActivity from './SessionActivity'
 import { Copy01Icon, Edit05Icon, File06Icon, HandIcon, Moon01Icon, PlusIcon, XCloseIcon } from './icons'
 import { ICON_SIZE, MOBILE_ROW_TARGET_CLASS } from './controlStyles'
 import ProjectBadge from './ProjectBadge'
@@ -1261,6 +1262,8 @@ function SessionRow({
             )}
           </div>
         )}
+
+        <SessionActivity session={session} />
 
         {/* Line 3: PR chips */}
         {session.prs && session.prs.length > 0 && (
