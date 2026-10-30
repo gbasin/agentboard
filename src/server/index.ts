@@ -1,3 +1,4 @@
+import { SessionActivityTracker } from './sessionActivity'
 import type { Server, ServerWebSocket } from 'bun'
 import { createReadStream } from 'node:fs'
 import os from 'node:os'
@@ -1120,6 +1121,7 @@ export function hydrateSessionsWithAgentSessions(
   return hydrated
 }
 
+const activityTracker = new SessionActivityTracker()
 let refreshInFlight = false
 // Bumped on optimistic registry mutations (kill, create, resume) so
 // in-flight refreshes that started before the mutation discard their stale
@@ -1203,7 +1205,9 @@ async function refreshSessionsAsync(): Promise<void> {
         const tHydrate = performance.now()
         recordSuccessfulRefreshWindowCount(countLocalSessions(sessions))
         const hydrated = hydrateSessionsWithAgentSessions(sessions, { serverPid: tmuxServerPid })
-        const withOverrides = applyForceWorkingOverrides(hydrated)
+        const observed = await activityTracker.enrich(hydrated)
+        if (gen !== refreshGeneration) continue
+        const withOverrides = applyForceWorkingOverrides(observed)
         registry.replaceSessions(mergeRemoteSessions(withOverrides))
         const hydrateMs = Math.round(performance.now() - tHydrate)
         if (hydrateMs > 50) {
@@ -1232,7 +1236,9 @@ async function refreshSessionsAsync(): Promise<void> {
         const hydrated = hydrateSessionsWithAgentSessions(sessions, {
           serverPid: sessionManager.lastEnumeratedServerPid,
         })
-        const withOverrides = applyForceWorkingOverrides(hydrated)
+        const observed = await activityTracker.enrich(hydrated)
+        if (gen !== refreshGeneration) continue
+        const withOverrides = applyForceWorkingOverrides(observed)
         registry.replaceSessions(mergeRemoteSessions(withOverrides))
         return
       }

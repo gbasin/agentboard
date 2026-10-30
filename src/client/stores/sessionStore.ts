@@ -38,6 +38,7 @@ function sessionsEqualById(a: Session, b: Session): boolean {
     a.logFilePath === b.logFilePath &&
     a.isHibernating === b.isHibernating &&
     a.lastUserMessage === b.lastUserMessage &&
+    JSON.stringify(a.activity) === JSON.stringify(b.activity) &&
     mediaEqual(a.media, b.media)
   )
 }

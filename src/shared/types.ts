@@ -1,5 +1,6 @@
 // History sessions lookback limits (in hours)
 import type { SyncedSettings } from './syncedSettings'
+import type { SessionActivity } from './activity'
 
 export const HISTORY_MAX_AGE_MIN_HOURS = 1
 export const HISTORY_MAX_AGE_MAX_HOURS = 168 // 7 days
@@ -72,6 +73,7 @@ export interface Session {
   isHibernating?: boolean
   prs?: SessionPullRequest[]
   media?: SessionMedia[]
+  activity?: SessionActivity
 }
 
 export interface AgentSession {
