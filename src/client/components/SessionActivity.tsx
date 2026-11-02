@@ -7,12 +7,25 @@ import { formatRelativeTime } from '../utils/time'
 import { Users01Icon, XCloseIcon } from './icons'
 import { ICON_SIZE } from './controlStyles'
 
+const activityDot: Record<AgentActivity['phase'], string> = {
+  model: 'bg-working',
+  tool: 'bg-working',
+  blocked: 'bg-approval',
+  idle: 'bg-secondary',
+  unknown: 'border border-secondary',
+}
+
 function ActivityLine({ name, activity }: { name: string; activity: AgentActivity }) {
   return (
-    <li className="border-t border-border py-2 first:border-0">
-      <span className="block break-words text-[12px] font-medium text-primary">{name}</span>
-      <span className={`block break-words text-[12px] ${activity.phase === 'blocked' ? 'text-amber-600' : 'text-secondary'}`}>{activity.label}</span>
-      {activity.updatedAt && <span className="block text-[11px] text-secondary">Last signal {formatRelativeTime(activity.updatedAt)}</span>}
+    <li className="flex gap-3 py-3">
+      <span aria-hidden className={`mt-[5px] size-[6px] shrink-0 rounded-full ${activityDot[activity.phase]}`} />
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+          <span className="min-w-0 break-words text-[13px] font-medium text-primary [overflow-wrap:anywhere]">{name}</span>
+          {activity.updatedAt && <span title="Last activity signal" className="shrink-0 text-[11px] tabular-nums text-secondary"><span className="sr-only">Last signal </span>{formatRelativeTime(activity.updatedAt)}</span>}
+        </div>
+        <span className="mt-1 block break-words text-[12px] leading-relaxed text-secondary [overflow-wrap:anywhere]">{activity.label}</span>
+      </div>
     </li>
   )
 }
@@ -60,7 +73,6 @@ export default function SessionActivity({ session, statusClassName, statusConten
           <Users01Icon aria-hidden width={ICON_SIZE.pill} height={ICON_SIZE.pill} />
           <span>{data.running}</span>
           {data.blocked > 0 && <span aria-hidden data-testid="activity-attention" className="h-1 w-1 rounded-full bg-amber-500" />}
-          {data.unknown > 0 && <span aria-hidden className="text-muted">?</span>}
         </Popover.Trigger>
       )}
       <Popover.Trigger
@@ -68,7 +80,7 @@ export default function SessionActivity({ session, statusClassName, statusConten
         data-testid="session-activity-status"
         aria-label={`Activity: ${summary}`}
         title={summary}
-        className={`activity-status relative ${statusClassName}`}
+        className={`activity-status relative focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${statusClassName}`}
         onAnimationEnd={onAnimationEnd}
         onPointerDown={stop} onTouchStart={stop} onTouchEnd={stop} onClick={event => { event.stopPropagation(); lastTrigger.current = event.currentTarget }}
       >{statusContent}</Popover.Trigger>
@@ -78,24 +90,42 @@ export default function SessionActivity({ session, statusClassName, statusConten
             data-testid="session-activity-popover"
             initialFocus
             finalFocus={() => restoreFocus.current ? (lastTrigger.current?.isConnected ? lastTrigger.current : statusRef.current) : false}
-            className="w-[320px] max-w-[calc(100vw-16px)] max-h-[min(420px,var(--available-height))] overflow-y-auto overscroll-contain rounded-md border border-border bg-elevated p-3 text-primary outline-none"
+            className="w-[360px] max-w-[calc(100vw-16px)] max-h-[min(480px,var(--available-height))] overflow-y-auto overscroll-contain rounded-xl border border-border bg-elevated p-4 text-primary outline-none"
             onClick={stop} onPointerDown={stop} onTouchStart={stop}
             onContextMenu={event => { event.preventDefault(); event.stopPropagation() }}
             onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); event.preventDefault(); restoreFocus.current = true; setOpen(false) } }}
           >
             <div className="flex items-center justify-between gap-3">
               <Popover.Title className="text-sm font-medium">Agent activity</Popover.Title>
-              <Popover.Close aria-label="Close activity" className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded text-secondary hover:bg-hover sm:min-h-6 sm:min-w-6">
+              <Popover.Close aria-label="Close activity" className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded text-secondary hover:bg-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent sm:min-h-6 sm:min-w-6">
                 <XCloseIcon aria-hidden width={ICON_SIZE.default} height={ICON_SIZE.default} />
               </Popover.Close>
             </div>
-            <Popover.Description className="text-[12px] text-secondary">{counts} · {data.total} total</Popover.Description>
-            <ul aria-label="Agent activity" className="mt-2">
-              <ActivityLine name="Main session" activity={{ ...data.main, label: summary }} />
-              {data.subagents.map(child => <ActivityLine key={child.id} name={child.name} activity={child.activity} />)}
+            <Popover.Description className="sr-only">Activity for the main session and its subagents.</Popover.Description>
+            <ul aria-label="Main session" className="mt-1">
+              <ActivityLine name="Main session" activity={{ ...data.main, phase: session.status === 'permission' ? 'blocked' : data.main.phase, label: summary }} />
             </ul>
-            {data.truncated && <p className="mt-2 text-[12px] text-secondary">Showing {data.subagents.length} of {data.total} subagents. Uninspected activity is unknown.</p>}
-            <p className="mt-2 border-t border-border pt-2 text-[11px] text-secondary">From logs. Pending tools may await approval. Silence for 15 minutes means unknown.</p>
+            {data.total > 0 && (
+              <section aria-label="Subagents" className="mt-1 border-t border-border pt-3">
+                <div className="flex items-baseline justify-between gap-3">
+                  <h3 className="text-[12px] font-medium">Subagents <span className="ml-1 tabular-nums text-secondary">{data.total}</span></h3>
+                  <span className="text-[11px] tabular-nums text-secondary">{data.running} running</span>
+                </div>
+                {(data.blocked > 0 || data.unknown > 0) && (
+                  <p className="mt-1 text-[11px] text-secondary">
+                    {[data.blocked > 0 ? `${data.blocked} awaiting input` : '', data.unknown > 0 ? `${data.unknown} unknown` : ''].filter(Boolean).join(' · ')}
+                  </p>
+                )}
+                <ul aria-label="Subagent activity" className="mt-1">
+                  {data.subagents.map(child => <ActivityLine key={child.id} name={child.name} activity={child.activity} />)}
+                </ul>
+                {data.truncated && <p className="pb-3 text-[12px] leading-relaxed text-secondary">Showing {data.subagents.length} of {data.total} subagents. Uninspected activity is unknown.</p>}
+              </section>
+            )}
+            <details className="mt-1 border-t border-border pt-3 text-[11px] leading-relaxed text-secondary">
+              <summary className="cursor-pointer rounded hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">How activity is detected</summary>
+              <p className="mt-2">From logs. Pending tools may await approval. Silence for 15 minutes means unknown.</p>
+            </details>
           </Popover.Popup>
         </Popover.Positioner>
       </Popover.Portal>
