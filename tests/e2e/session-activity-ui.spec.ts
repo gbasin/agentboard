@@ -53,7 +53,7 @@ test('counter adds no height; click/tap opens details without selection or row m
   const before = (await card.boundingBox())!, nextBefore = (await other.boundingBox())!
   expect(before.height).toBeCloseTo(nextBefore.height, 2)
   const trigger = card.getByTestId('session-activity-counter')
-  await expect(trigger).toHaveText('2?')
+  await expect(trigger).toHaveText('2')
   await expect(trigger.getByTestId('activity-attention')).toBeVisible()
   await expect(trigger).toHaveAttribute('aria-label', /2 running, 1 awaiting input, 1 unknown/)
   await expect(trigger).toHaveAttribute('aria-expanded', 'false')
@@ -69,6 +69,13 @@ test('counter adds no height; click/tap opens details without selection or row m
   expect(box.y + box.height).toBeLessThanOrEqual(page.viewportSize()!.height)
   await expect(popup(page)).toContainText('Waiting for input')
   await expect(popup(page)).toContainText('No lifecycle signal for 15m')
+  await expect(popup(page).getByRole('list', { name: 'Main session', exact: true })).toBeVisible()
+  await expect(popup(page).getByRole('list', { name: 'Subagent activity', exact: true })).toBeVisible()
+  const explanation = popup(page).getByText('From logs. Pending tools may await approval.', { exact: false })
+  await expect(explanation).toBeHidden()
+  await activate(page, popup(page).locator('summary'))
+  await expect(explanation).toBeVisible()
+  await activate(page, popup(page).locator('summary'))
   await info.attach('layout-and-selection', { body: JSON.stringify({ before, after: await card.boundingBox(), nextBefore, nextAfter: await other.boundingBox(), popup: box, wasSelected, stillSelected: (await card.getAttribute('class'))!.split(' ').includes('selected') }, null, 2), contentType: 'application/json' })
   await page.screenshot({ path: info.outputPath('counter-popover.png') })
   if (test.info().project.use.hasTouch) {
