@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.38.1](https://github.com/gbasin/agentboard/compare/v0.38.0...v0.38.1) (2026-11-02)
+
+
+### Bug Fixes
+
+* clarify subagent activity panel ([#456](https://github.com/gbasin/agentboard/issues/456)) ([a377335](https://github.com/gbasin/agentboard/commit/a377335a65ee117afaadca612ec1b1cfdcd59c53))
+
 ## [0.38.0](https://github.com/gbasin/agentboard/compare/v0.37.1...v0.38.0) (2026-10-30)
 
 
