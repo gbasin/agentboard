@@ -1,16 +1,8 @@
-// The Codex chat driver (codex-chat-sessions design D2/D5/D7, tasks §5):
-// one `codex app-server` child per chat, one persisted thread per session.
-// The first spawn starts the thread (`ephemeral: false`) and reports its id
-// and rollout path; every later spawn resumes it with the same sandbox,
-// policy, and instructions. Kawai owns turn ids: a send or delivery opens a
-// Kawai turn and calls `turn/start` (a send during a turn steers it, as the
-// app-server adds the input to the active turn), `turn/started` binds the
-// Codex turn id — or opens an agent-started turn — and `turn/completed`
-// closes it. Approvals and questions go through codexRequests, the item
-// mapping through codexEvents, the outbound audit through codexAudit.
-// Status is derived like the Claude driver's: permission, else working,
-// else waiting. A process exit marks the driver dead; the next send or
-// start respawns and resumes the thread.
+// Codex chat lifecycle: one app-server child and persisted thread per session.
+// Kawai owns turn ids; text/tool events, approvals, activity, and audit map
+// through the Codex adapters. A send during a turn steers it; process death
+// permits respawn/resume. CodexCommandDiscovery owns detached skill discovery
+// and its loading/ready/unavailable command catalog (autocomplete D1/D2).
 import type {
   ChatApprovalDecision,
   ChatApprovalPolicy,
@@ -37,6 +29,8 @@ import type { DynamicToolCallParams } from './protocol/v2/DynamicToolCallParams'
 import type { DynamicToolSpec } from './protocol/v2/DynamicToolSpec'
 import { mapCodexNotification, turnCompletedDrafts, turnUsageBetween, type CodexEventDraft, type CodexOutput } from './codexEvents'
 import { CodexRequests } from './codexRequests'
+import { CodexCommandDiscovery } from './CodexCommandDiscovery'
+import type { CodexSkillInput } from './codexCommands'
 import { answerAsyncQuestion, CLIENT_INFO, codexContextUsage, codexEffort, reportCompaction, reportSpawn, threadParams, type CodexClient, type CodexSessionDriverOptions } from './codexThread'
 import { codexRetryLimitSignal, codexTurnLimitSignal } from './codexLimits'
 import { normalizeRateLimitSnapshot, snapshotOfRateLimitsRead } from './codexUsage'
@@ -46,8 +40,6 @@ import type { TokenUsageBreakdown } from './protocol/v2/TokenUsageBreakdown'
 import type { Turn } from './protocol/v2/Turn'
 
 export { codexEffort, type CodexSessionDriverOptions } from './codexThread'
-
-const UNAVAILABLE_COMMANDS: ChatCommandState = { status: 'unavailable', commands: [] }
 
 export class CodexSessionDriver implements ChatAgentDriver {
   private client: CodexClient | null = null
@@ -76,10 +68,12 @@ export class CodexSessionDriver implements ChatAgentDriver {
   private latestRateLimits: RateLimitSnapshot | null = null
   private lastModel: string | null = null
   private readonly requests: CodexRequests
+  private readonly commands: CodexCommandDiscovery
 
   constructor(private readonly options: CodexSessionDriverOptions) {
     this.threadId = options.resumeThreadId ?? null
     this.projectPath = options.projectPath
+    this.commands = new CodexCommandDiscovery(state => this.options.onCommandState?.(state))
     this.requests = new CodexRequests({
       emit: draft => this.emit(draft),
       refreshStatus: () => this.refreshStatus(),
@@ -95,7 +89,7 @@ export class CodexSessionDriver implements ChatAgentDriver {
   }
 
   getCommandState(): ChatCommandState {
-    return UNAVAILABLE_COMMANDS
+    return this.commands.snapshot()
   }
 
   start(): void {
@@ -105,14 +99,16 @@ export class CodexSessionDriver implements ChatAgentDriver {
 
   setProjectPath(path: string): void {
     this.projectPath = path
+    this.commands.changeDirectory(path)
   }
 
   send(text: string): void {
     if (this.killed) return
+    const skills = this.commands.inputs(text)
     this.ensureClient()
     const turnId = this.activeTurnId ?? this.startTurn()
     this.emit({ type: 'user_message', turnId, text })
-    this.startCodexTurn(text)
+    this.startCodexTurn(text, undefined, skills)
     this.refreshStatus()
   }
 
@@ -213,6 +209,7 @@ export class CodexSessionDriver implements ChatAgentDriver {
   // ---------------------------------------------------------------- internals
 
   private stop(): void {
+    this.commands.stop()
     this.requests.cancelAll()
     if (this.activeTurnId) {
       const turnId = this.activeTurnId
@@ -245,6 +242,7 @@ export class CodexSessionDriver implements ChatAgentDriver {
     }
     const client = (this.options.createClient ?? (o => new AppServerClient(o)))(clientOptions)
     this.client = client
+    this.commands.start(client, this.projectPath)
     client.start()
     this.ready = this.boot(client, env)
   }
@@ -276,6 +274,7 @@ export class CodexSessionDriver implements ChatAgentDriver {
       if (typeof result.model === 'string') this.reportModel(result.model)
       reportSpawn(this.options, { cwd: this.projectPath, instructions, effort, env, resumed })
       this.fillRateLimits(client)
+      this.commands.ready()
       return true
     } catch (error) {
       if (this.client !== client) return false
@@ -283,6 +282,7 @@ export class CodexSessionDriver implements ChatAgentDriver {
       logger.warn('codex_thread_start_failed', { sessionId: this.options.sessionId, error: message })
       this.emit({ type: 'error', message: `Codex could not ${resumed ? 'resume' : 'start'} the thread: ${message}` })
       this.endActiveTurn()
+      this.commands.stop()
       client.end()
       return false
     }
@@ -293,7 +293,7 @@ export class CodexSessionDriver implements ChatAgentDriver {
    * passes its message id as clientUserMessageId (D8, for debugging only:
    * receipt still comes from the rollout file).
    */
-  private startCodexTurn(text: string, clientUserMessageId = `kawai-${crypto.randomUUID()}`): void {
+  private startCodexTurn(text: string, clientUserMessageId = `kawai-${crypto.randomUUID()}`, skills: CodexSkillInput[] = []): void {
     const client = this.client
     if (!client) return
     const effort = codexEffort(this.options.getEffort?.())
@@ -301,7 +301,7 @@ export class CodexSessionDriver implements ChatAgentDriver {
       if (!ok || this.client !== client || !this.threadId) return
       const result = await client.request('turn/start', {
         threadId: this.threadId,
-        input: [{ type: 'text', text, text_elements: [] }],
+        input: [{ type: 'text', text, text_elements: [] }, ...skills],
         clientUserMessageId,
         ...(effort ? { effort } : {}),
       }) as { turn?: { id?: unknown } }
@@ -320,6 +320,7 @@ export class CodexSessionDriver implements ChatAgentDriver {
   }
 
   private onNotification(method: string, params: Record<string, unknown>): void {
+    if (method === 'skills/changed') { this.commands.changed(); return }
     const frameTurn = typeof params.turnId === 'string' ? params.turnId : undefined
     if (frameTurn && this.interrupted.has(frameTurn)) return
     const turnId = this.activeTurnId ?? ''
@@ -442,6 +443,7 @@ export class CodexSessionDriver implements ChatAgentDriver {
   private onExit(client: CodexClient, exit: AppServerExit): void {
     if (this.client !== client) return
     this.client = null
+    this.commands.stop()
     this.dead = true
     this.ready = Promise.resolve(false)
     auditSpawnEnd(this.options.outbound, this.spawnId)
