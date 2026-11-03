@@ -25,18 +25,32 @@ export interface LineSplitter {
  * Split a byte stream into lines on `\n`. Multi-byte UTF-8 characters split
  * across chunks are reassembled; line content (including any `\r`) is kept
  * verbatim so a recorded line is exactly what was exchanged.
+ *
+ * Linear in the stream's size: each chunk is scanned once, and the pieces of
+ * an unfinished line are held apart and joined only when its newline
+ * arrives. (Re-scanning one growing buffer was quadratic: a resumed Codex
+ * thread's single-line reply of hundreds of MB pinned the server for hours.)
  */
 export function createLineSplitter(onLine: (line: string) => void): LineSplitter {
   const decoder = new StringDecoder('utf8')
-  let buffered = ''
+  let pending: string[] = []
   const drain = (text: string) => {
-    buffered += text
-    let newline = buffered.indexOf('\n')
+    let start = 0
+    let newline = text.indexOf('\n')
     while (newline !== -1) {
-      onLine(buffered.slice(0, newline))
-      buffered = buffered.slice(newline + 1)
-      newline = buffered.indexOf('\n')
+      const tail = text.slice(start, newline)
+      if (pending.length === 0) {
+        onLine(tail)
+      } else {
+        pending.push(tail)
+        const line = pending.join('')
+        pending = []
+        onLine(line)
+      }
+      start = newline + 1
+      newline = text.indexOf('\n', start)
     }
+    if (start < text.length) pending.push(text.slice(start))
   }
   let ended = false
   return {
@@ -48,8 +62,8 @@ export function createLineSplitter(onLine: (line: string) => void): LineSplitter
       if (ended) return
       ended = true
       drain(decoder.end())
-      if (buffered) onLine(buffered)
-      buffered = ''
+      if (pending.length > 0) onLine(pending.join(''))
+      pending = []
     },
   }
 }
