@@ -112,6 +112,19 @@ describe('PlanExecutionSection', () => {
   })
 })
 
+describe('PlanExecutionSection after an execution', () => {
+  test('a stopped execution offers Start again for the approved revision; a running one does not', () => {
+    const stopped = { ...baseExecution([changeRow()]), state: 'finished' as const, outcome: 'stopped' as const, stopReason: 'superseded' }
+    render(createElement(PlanExecutionSection, { teamPath: '/repo', plan: planSummary, detail: detailOf([stopped]), connected: true, onSend: () => undefined }))
+    expect(renderer!.root.findByProps({ 'data-testid': 'plan-execution-start-button' })).toBeTruthy()
+    expect(renderer!.root.findAllByProps({ 'data-testid': 'plan-execution-stop-open' })).toHaveLength(0)
+    act(() => renderer!.unmount())
+    renderer = null
+    render(section([changeRow()]))
+    expect(renderer!.root.findAllByProps({ 'data-testid': 'plan-execution-start-button' })).toHaveLength(0)
+  })
+})
+
 describe('PlanExecutionStartDialog', () => {
   test('opening asks the server for the standing; the reply disables or arms Start (15.4)', () => {
     useTeamPlanStore.getState().open('/repo')
