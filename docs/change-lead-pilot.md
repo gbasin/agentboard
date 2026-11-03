@@ -128,7 +128,11 @@ Reporting: routine reports → direct mail to the coordinator, no task_id
 ```
 
 Material direction changes go through `task_amend` and recipients acknowledge
-the new revision before dependent work continues. Decisions live in revisions
+the new revision before dependent work continues. Only a class-3 contract
+question (`docs/agent-collaboration.md`, "Classify implementation questions
+before escalating") is material: an answered question needs a citation, a
+local one the writer's journal note, and neither an amendment nor an
+acknowledgement gate. Decisions live in revisions
 and journals, not in conflicting mailbox instructions. The Change Lead may
 settle an artifact clarification inside the approved scope itself; scope or
 cross-change contract amendments return to the Team Lead (reconciliation) and,
@@ -164,7 +168,8 @@ identically in the three developer roles and `reviewers.md`:
 > reconciliation instead of reading the message as reassignment. Every task
 > without that delegation keeps the ordinary rule: report to `lead`. Under
 > the pilot, only the unavailable-coordinator escalation goes to `lead`.
-> Scope and contract questions go to the Change Lead, which escalates them.
+> Contract questions (class 3, `docs/agent-collaboration.md`) go to the
+> Change Lead, which escalates them; local ones stay with the writer.
 
 The Team Lead receives milestones, unresolved boundary questions, named
 blockers requiring its action, and the final assembled evidence. It does not
