@@ -12,7 +12,7 @@ Implementation branch: `feat/codex-chat-autocomplete`; worktree: `.worktrees/cod
 - `bun run build` passed. Browser screenshots are generated under ignored `test-results/chat-codex-autocomplete-Co-4115c-okes-the-exact-native-skill/` (`codex-autocomplete-menu.png`, `codex-autocomplete-invoked.png`).
 - Installed Codex 0.166.0 smoke on 2026-11-02: a temporary project and Codex home with an existing login discovered `autocomplete-smoke` before any model turn. Text plus `{type: 'skill', name, path}` completed successfully with `AUTOCOMPLETE_SMOKE_OK`. Replaying the actual rollout after the fix yielded exactly one user message, `/autocomplete-smoke Please follow the attached skill.`, and that assistant answer. Temporary credentials were removed. The sanitized observed format is preserved in `src/server/__tests__/fixtures/codex/skill-invocation.jsonl`.
 - Mutation verification detected 31 deliberate behavioral regressions. Source was restored after every trial. A separate removal of discovery's cleanup publication was unobservable through the manager's archived-session fallback; that redundant-path trial is excluded from the killed set below. The direct stopped-invalidation mutant was detected after adding an explicit stopped-state assertion.
-- Full repository check is recorded by the final clean-tree check certificate; no push or merge is part of this change.
+- `bun run check` passed on the clean committed implementation: lint, typecheck, 8,624 main-suite tests, and every serial tmux suite, with zero failures (505.7 seconds for tests). The final task-metadata commit is re-certified before handoff. No push or merge is part of this change.
 
 ## Reproduction
 
