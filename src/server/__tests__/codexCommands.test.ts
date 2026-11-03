@@ -53,10 +53,10 @@ const cases: Array<[string, unknown, string[] | null]> = [
   ['C8', { data: [entry([skill(), skill('explore', { path: '/other/SKILL.md' }), skill('explore')])] }, []],
   ['C9', { data: [entry([skill()], '/project', [{ message: 'failed sibling' }])] }, ['explore']],
 ]
-for (const [id, response, expected] of cases) {
+for (const [caseIndex, [id, response, expected]] of cases.entries()) {
   // @covers: codex-chat-sessions › Codex skills populate the chat command list › Skills excluded from the list
   // @covers: codex-chat-sessions › Codex skills populate the chat command list › No skills installed
-  test(`${id}: ${catalogOracles.find(row => row[0] === id)![1]} ${JSON.stringify(response)}`, () => {
+  test(`${id}: ${catalogOracles.find(row => row[0] === id)![1]} [case ${caseIndex}]`, () => {
     expect(names(response)).toEqual(expected)
     const catalog = codexCommandCatalog(response, '/project')
     if (id === 'C7') expect(catalog?.commands[0]?.description).toBe('Use explore')

@@ -55,7 +55,7 @@ interface Record {
  * the run until a path exists. The run splitter and the id correlator skip
  * them.
  */
-type FakeRecord = { fake: 'append'; file: string; line?: string } | { fake: 'gate'; path: string }
+type FakeRecord = { fake: 'append'; file: string; line?: string } | { fake: 'gate'; path: string } | { fake: 'assertInput'; input: unknown[] }
 type AnyRecord = Record | FakeRecord
 const isFake = (record: AnyRecord): record is FakeRecord => 'fake' in record
 interface Message {
@@ -158,6 +158,12 @@ let responseOrdinal = 0
     else if (step.fake?.fake === 'gate') {
       const gate = step.fake.path
       while (!existsSync(gate)) await Bun.sleep(10)
+    } else if (step.fake?.fake === 'assertInput') {
+      const input = (lastTurnInput as { input?: unknown[] } | null)?.input
+      if (JSON.stringify(input) !== JSON.stringify(step.fake.input)) {
+        console.error('fake-codex-app-server: native turn input did not match the expected text/skill identities')
+        process.exit(2)
+      }
     }
     if (step.dir !== 'in') continue
     const message = step.message

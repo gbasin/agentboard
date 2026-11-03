@@ -5,6 +5,8 @@ import { codexCommandCatalog, codexSkillInputs } from '../chat/codex/codexComman
 import { Script, startHarness, tempDirs, until, type Harness } from './codexDriverHarness'
 import { formatEnvelope } from '../team/envelope'
 import type { ChatPeerMessage } from '../../shared/chat'
+import { CodexSessionDriver } from '../chat/codex/CodexSessionDriver'
+import type { AppServerClientOptions } from '../chat/codex/appServerClient'
 
 // Table S verbatim: [Id, Origin / catalog / text, Observable Codex input].
 export const submissionOracles = [
@@ -83,16 +85,40 @@ test('S1/S7: peer text never attaches skills; active-turn human inputs keep thei
   expect(harness.sent.filter(message => message.method === 'turn/start')[2]!.params!.input).toEqual([textInput('/review')])
 })
 
-test('P2: 1000 seeded messages preserve text and attach only exact accepted identities', () => {
+test('P2: 1000 seeded messages preserve text and attach only exact accepted identities', async () => {
   let state = 0xC0DE02
   const random = () => { state = (Math.imul(state, 1664525) + 1013904223) >>> 0; return state }
   const catalog = codexCommandCatalog(response('/project'), '/project')!
   const words = ['/explore', '/review', '/off', '/missing', '/explore,', 'x/explore', '/Explore', '/explore/more']
-  for (let i = 0; i < 1000; i++) {
-    const message = Array.from({ length: 1 + random() % 12 }, () => words[random() % words.length]!).join(i % 2 ? '\n' : ' ')
-    const expected = [...new Set(message.split(/\s+/).filter(word => word === '/explore' || word === '/review'))].map(word => native(word.slice(1)))
-    expect(codexSkillInputs(message, catalog)).toEqual(expected)
-    expect(codexSkillInputs(message, null)).toEqual([])
-    expect([textInput(message), ...codexSkillInputs(message, catalog)][0]).toEqual(textInput(message))
-  }
+  let callbacks!: AppServerClientOptions
+  const requests: Array<Record<string, unknown>> = []
+  const driver = new CodexSessionDriver({
+    sessionId: 'property', projectPath: '/tmp', executable: 'unused', codexHome: '/tmp/unused', network: true,
+    withheldCredentials: () => new Set(), wire: { record() {} }, onEvent() {}, onStatus() {},
+    createClient: options => {
+      callbacks = options
+      return { start() {}, end() {}, initialize: async () => ({}), request: async (method, params) => {
+        if (method === 'skills/list') return response('/tmp')
+        if (method === 'turn/start') { requests.push(params!); return { turn: { id: `t-${requests.length}` } } }
+        return { thread: { id: 'thread' } }
+      } }
+    },
+  })
+  driver.start(); await until(() => driver.getCommandState().status === 'ready')
+  try {
+    for (let i = 0; i < 1000; i++) {
+      const message = Array.from({ length: 1 + random() % 12 }, () => words[random() % words.length]!).join(i % 2 ? '\n' : ' ')
+      const expected = [...new Set(message.split(/\s+/).filter(word => word === '/explore' || word === '/review'))].map(word => native(word.slice(1)))
+      expect(codexSkillInputs(message, catalog)).toEqual(expected)
+      expect(codexSkillInputs(message, null)).toEqual([])
+      const peer: ChatPeerMessage = { messageId: `mail-${i}`, senderSession: 'sender', senderGroup: null,
+        priority: 'normal', possibleDuplicate: false, originPath: '/project', threadId: 'peer-thread', tags: [], body: message }
+      const isPeer = i % 3 === 0
+      if (isPeer) driver.deliver(peer)
+      else driver.send(message)
+      for (let microtask = 0; microtask < 8; microtask++) await Promise.resolve()
+      expect(requests.at(-1)!.input).toEqual([textInput(isPeer ? formatEnvelope(peer) : message), ...(isPeer ? [] : expected)])
+      callbacks.onNotification('turn/completed', { turn: { id: `t-${requests.length}`, status: 'completed', items: [], error: null } })
+    }
+  } finally { driver.kill() }
 })

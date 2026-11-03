@@ -382,10 +382,7 @@ export class CodexSessionDriver implements ChatAgentDriver {
     auditItem(phase, item, { sink: this.options.outbound, spawnId: this.spawnId, cwd: this.projectPath })
   }
 
-  /**
-   * Fill a home holding no report with one read (PR E 7.1): the manager
-   * claims it once per home, so a later spawn never re-reads.
-   */
+  /** Fill once per home without a report (PR E 7.1), claimed by the manager. */
   private fillRateLimits(client: CodexClient): void {
     if (!this.options.claimRateLimitsRead?.()) return
     client.request('account/rateLimits/read', {}).then((result) => {

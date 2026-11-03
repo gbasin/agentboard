@@ -73,6 +73,7 @@ test('L5-L7/L9: failure, stopped invalidation, and late process replies cannot r
   discovery.start(old.client, '/a'); discovery.ready(); await flush()
   discovery.stop(); discovery.changed(); discovery.changeDirectory('/b'); await flush()
   expect(old.calls).toHaveLength(1)
+  expect(discovery.snapshot()).toEqual({ status: 'unavailable', commands: [] })
   discovery.start(fresh.client, '/b'); discovery.ready(); await flush()
   old.calls[0]!.reply.resolve(response('/a', 'stale')); await flush()
   expect(discovery.snapshot().status).toBe('loading')
@@ -125,10 +126,21 @@ test('L5: a real RPC timeout leaves ordinary turns working without awaiting disc
   const gate = path.join(dirs.dir, 'release')
   const script = new Script().boot().request('skills/list', response(dirs.project)).turn('ct-1').completed('ct-1')
   script.lines.splice(5, 0, { fake: 'gate', path: gate })
-  harness = startHarness(script, { createClient: options => new AppServerClient({ ...options, requestTimeoutMs: 500 }) }, dirs)
+  harness = startHarness(script, { createClient: options => {
+    const bounded = { ...options, requestTimeoutMs: 30_000 }
+    const client = new AppServerClient(bounded)
+    return {
+      start: () => client.start(), end: () => client.end(), initialize: info => client.initialize(info),
+      request: (method, params) => {
+        // Only discovery has a short test deadline. Cold child startup and
+        // ordinary turns retain the production bound under suite contention.
+        bounded.requestTimeoutMs = method === 'skills/list' ? 500 : 30_000
+        return client.request(method, params)
+      },
+    }
+  } }, dirs)
   harness.driver.start()
   await until(() => harness!.sent.some(message => message.method === 'skills/list'))
-  await Bun.sleep(200)
   harness.driver.send('hello')
   await until(() => harness!.sent.some(message => message.method === 'turn/start'))
   expect(harness.driver.getCommandState().status).toBe('loading')
