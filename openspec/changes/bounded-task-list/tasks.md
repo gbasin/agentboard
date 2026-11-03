@@ -63,7 +63,7 @@
 
 ## 4. Integration check
 
-- [ ] 4.1 Run `bun run check` on the clean committed tree. Then, on a copy of
+- [x] 4.1 Run `bun run check` on the clean committed tree. Then, on a copy of
   a database with real data (copied to `/tmp`, never the live file), call the
   handler with no arguments and with `status: 'all'`, and record each
   serialized size in the result. Verify the default call is under 30 KB.
