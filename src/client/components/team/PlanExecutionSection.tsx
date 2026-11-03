@@ -68,6 +68,10 @@ export default function PlanExecutionSection({ teamPath, plan, detail, connected
           </Fragment>)}
         </ul>
         {running && <div className="mt-2"><PlanExecutionStopDialog teamPath={teamPath} execution={newest} connected={connected} onSend={onSend} /></div>}
+        {!running && approved !== null && <div className="mt-2" data-testid="plan-execution-restart">
+          <p className="text-chat-meta text-secondary">Start runs the approved revision again; changes an earlier execution of this plan provisioned keep their worktrees and branches.</p>
+          <PlanExecutionStartDialog teamPath={teamPath} planId={plan.id} revision={approved.revision} contentHash={approved.contentHash} connected={connected} onSend={onSend} />
+        </div>}
       </div>}
     <PlanIntegrationPanel teamPath={teamPath} planId={plan.id} views={integration} executionRunning={running} connected={connected} onSend={onSend} />
   </section>
