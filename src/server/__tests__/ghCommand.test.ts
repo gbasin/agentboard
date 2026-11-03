@@ -75,6 +75,47 @@ describe('runGh', () => {
     expect(typeof result.spawnError).toBe('string')
   })
 
+  test('a small maxOutputBytes bounds the real spawn diagnostic to exactly that limit', async () => {
+    fs.mkdirSync(stubDir, { recursive: true })
+    const bounded = await runGh(['auth', 'status'], { env: { PATH: stubDir }, maxOutputBytes: 24 })
+    const full = await runGh(['auth', 'status'], { env: { PATH: stubDir } })
+    expect(bounded.ok).toBe(false)
+    expect(full.ok).toBe(false)
+    expect(typeof bounded.spawnError).toBe('string')
+    expect(typeof full.spawnError).toBe('string')
+    // The bound cuts the same actual diagnostic the unbounded call carries:
+    // the expected remainder derives from that diagnostic, never from a
+    // Bun-version-specific error string.
+    expect(full.spawnError!.length).toBeGreaterThan(24)
+    expect(bounded.spawnError).toBe(full.spawnError!.slice(0, 24))
+    expect(bounded.spawnError!.length).toBe(24)
+  })
+
+  test('the spawn catch redacts tokens before bounding, through the real catch', async () => {
+    const originalSpawn = Bun.spawn
+    // Synthetic token-shaped text and padding, thrown from the spawn seam
+    // the real catch reads: redaction must run before the byte bound, or a
+    // token run cut mid-way would survive un-redacted.
+    const token = `ghp_${'A'.repeat(24)}`
+    const message = `started: ${token} ${'y'.repeat(4000)}`
+    let bounded: Awaited<ReturnType<typeof runGh>> | null = null
+    let full: Awaited<ReturnType<typeof runGh>> | null = null
+    ;(Bun as unknown as { spawn: unknown }).spawn = (() => { throw new Error(message) }) as typeof Bun.spawn
+    try {
+      bounded = await runGh(['auth', 'status'], { env: { PATH: stubDir }, maxOutputBytes: 20 })
+      full = await runGh(['auth', 'status'], { env: { PATH: stubDir } })
+    } finally {
+      ;(Bun as unknown as { spawn: unknown }).spawn = originalSpawn
+    }
+    expect(bounded!.ok).toBe(false)
+    expect(full!.ok).toBe(false)
+    // Exact redaction over the whole diagnostic, then the exact bound — the
+    // pairing pins the order: slice-first would leave `ghp_` visible.
+    expect(full!.spawnError).toBe(redactTokens(message))
+    expect(bounded!.spawnError).toBe(redactTokens(message).slice(0, 20))
+    expect(bounded!.spawnError).not.toContain('ghp_')
+  })
+
   test('output is capped at maxOutputBytes', async () => {
     stubGh('yes a | head -c 100000')
     const result = await runGh(['api', 'big'], { env, maxOutputBytes: 1000 })
