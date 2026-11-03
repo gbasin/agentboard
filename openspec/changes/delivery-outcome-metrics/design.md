@@ -295,7 +295,8 @@ That change has no `full` flag: every drill entry is reachable by paging.
 
 This change extends the projection, and nothing else about the compact reads:
 - `compactMetrics` also keeps `unavailable` and its reason, `evidence`, and the whole `delivery` header, including the projected live header of a live return. The new delivery metric ids are valid `metrics` values and drill cursors.
-- The reader key gains G's identity on top of `end` (D4 task 2.3), so a live drill cursor's pages are computed over the generation and end of the read that issued it.
+- The reader key gains G's identity on top of `end` (task 2.3). A live drill cursor also carries the identity of the G it was issued under, as an optional `src.generation` (the `v: 1` format allows added fields). `DeliveryFactsCache` holds at most one accepted G per team, so an old generation cannot be re-read. A page is served only while the accepted G still has the cursor's identity. After a new G is accepted, `team_metrics_drill` refuses with `Expired cursor: the delivery facts generation changed; read team_metrics again`. A cursor issued while no generation was accepted carries `generation: null`, and it expires as soon as one is accepted. Report cursors are unaffected: they page a frozen snapshot.
+- *Alternative considered:* keeping superseded generations so that their cursors stay readable. Rejected: each G holds a repository graph and archives. Retaining them would add memory and recovery-matrix rows for a paging convenience, and the agent loses only a re-read.
 - Stored snapshots are never rewritten and never re-projected: a frozen report keeps the header and evidence it was submitted with.
 - Readers treat a missing metric id, or a missing `delivery` or `evidence` field, in an old snapshot as absent.
 
@@ -596,6 +597,10 @@ The compact-read rows themselves (compact default, unknown ids, slices, listing 
 | T1 | `team_metrics {window:'7d'}` with the delivery family, on the seeded 300-task fixture | compact, < 32 KB; delivery values equal the tab's; the projected `delivery` header present |
 | T2 | `{window:'7d', metrics:['tasks_per_landed_change']}` | that metric carries ≤ 50 drill entries sorted by id, their total, and a cursor; `team_metrics_drill` pages it over the issuing read's G and end |
 | T7 | compact read of a metric that is partial, approximate, unavailable, or has incomplete evidence | the flag, the `unavailable` reason, and `evidence` present |
+| T8 | a live drill cursor issued under G = A; a new G = B is accepted; the next page is asked | refused `Expired cursor: the delivery facts generation changed; read team_metrics again`, in the tool-error envelope |
+| T9 | the same walk with no generation change, across a 30 s cache expiry (fake clock) | served; pages equal the read at the cursor's end under A |
+| T10 | a cursor issued with no accepted G (`generation: null`), then A accepted | refused as expired |
+| T11 | a report cursor while G changes | served from the frozen snapshot |
 
 **Table TR: trends surface.** Same envelope rule as Table T.
 

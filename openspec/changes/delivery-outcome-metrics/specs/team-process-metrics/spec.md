@@ -77,6 +77,21 @@ The Metrics tab SHALL offer a Trends view with a range choice of 4, 8, or 12 wee
 - **WHEN** a keyboard user reaches a chart
 - **THEN** its table alternative lists each point's end date, value, `n`, and fired rules
 
+### Requirement: Live drill cursors expire with their facts generation
+A live drill cursor SHALL carry the identity of the delivery facts generation it was issued under. `team_metrics_drill` SHALL serve it only while that generation is still the accepted one, and otherwise SHALL refuse it as expired, telling the agent to read `team_metrics` again. Report cursors SHALL NOT expire with a generation.
+
+#### Scenario: Generation changes between pages
+- **WHEN** an agent reads a live drill page, a new facts generation is accepted, and the agent asks for the next page
+- **THEN** the call is refused as an expired cursor naming the generation change, through either tool runtime
+
+#### Scenario: Unchanged generation
+- **WHEN** no new generation is accepted during the walk
+- **THEN** every page is served for the issuing read's end and generation
+
+#### Scenario: Report cursor during a generation change
+- **WHEN** a new generation is accepted while an agent pages a report's drill list
+- **THEN** the pages are still served from the frozen snapshot
+
 ## MODIFIED Requirements
 
 ### Requirement: Guard metrics are paired and shown together

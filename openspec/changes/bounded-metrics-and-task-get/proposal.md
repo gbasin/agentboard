@@ -52,13 +52,20 @@ adds per-metric paging, and bounds the sections of `task_get` that
   byte metadata, as journal entries are. A new `messages_before` argument pages
   through messages. A new `full_messages` argument (default `false`) returns
   every body in the window whole.
-- **BREAKING:** `revisions` become rows without text. The current direction
-  stays whole in `task`. A new `revision` argument returns one revision's
-  full text.
-- **BREAKING:** only the outstanding result is returned whole. Superseded
-  results become rows. A new `result_id` argument returns one result whole.
-  Both whole forms go through the existing blind-first seal. Each result's
-  `diff` becomes a preview of at most 8,192 bytes with byte metadata.
+- **BREAKING:** `revisions` become a newest-50 window of rows without text,
+  with rationale previews, paged by a new `revisions_before` argument. The
+  current direction stays whole in `task`. A new `revision` argument returns
+  one revision's full text.
+- **BREAKING:** only the outstanding result is returned whole. Other results
+  become a newest-50 window of rows, with summary previews, paged by a new
+  `results_before` argument. A new `result_id` argument returns one result
+  whole. Both whole forms go through the existing blind-first seal. Each
+  whole result's `diff` becomes a preview of at most 8,192 bytes with byte
+  metadata.
+- New read-only tool `task_result_diff_read` returns any result's diff
+  losslessly in 8,192-byte chunks, as `task_journal_read` does for journal
+  entries. A result may carry a diff without a commit, so the diff can be
+  the only record of the change.
 - **BREAKING:** assignment history rows drop the verbatim `instruction`,
   which the current assignment keeps in `task`. Assignments, publications,
   and acknowledgements become newest-50 windows, each with its total.
@@ -85,8 +92,9 @@ None.
   whose drill lists are paged.
 - `team-tasks`: the bounded `task_get` gains compact subtask, revision,
   result, assignment, and message sections, more windows, and paging and
-  single-record arguments. This replaces the "Results and revisions stay
-  whole" scenario.
+  single-record arguments, plus a lossless diff reader. It rewrites the
+  "Results and revisions stay whole" scenario: results and revisions become
+  windows reached by anchors.
 
 ## Impact
 
@@ -98,7 +106,8 @@ None.
   paths are unchanged.
 - `src/server/team/taskJournalWindow.ts`, `taskTools.ts`, `taskStore.ts`, and
   `src/shared/teamTasks.ts`: the new `task_get` sections and arguments, with
-  the seal applied as before.
+  the seal applied as before, and the `task_result_diff_read` reader beside
+  `task_journal_read`.
 - `src/server/team/teamPrompt.ts`, `docs/architecture/` (the task tools and
   process-metrics bullets).
 - Tests: `metricsTools.test.ts`, the report tool tests, the `task_get` tests,
