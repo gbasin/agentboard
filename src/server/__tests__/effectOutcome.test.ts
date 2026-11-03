@@ -1,8 +1,9 @@
 // The D14 failure classification as a table over both adapters' error
-// shapes: a timeout (null exit) is transient; git network wording is
-// transient while a rejected push is permanent; 5xx, 429, and rate-limit
-// 403s are transient while a refused merge's 403, a 422, and a plain 4xx
-// are permanent.
+// shapes: a null exit without the typed marker (a timeout, a killed
+// process) is transient; a typed gh spawn failure is permanent with its
+// diagnostic retained; git network wording is transient while a rejected
+// push is permanent; 5xx, 429, and rate-limit 403s are transient while a
+// refused merge's 403, a 422, and a plain 4xx are permanent.
 import { describe, expect, test } from 'bun:test'
 import { classifyEffectFailure } from '../plans/landing/effectOutcome'
 import type { GithubError } from '../plans/landing/github'
@@ -12,9 +13,18 @@ const git = (stderr: string, exitCode: number | null = 128): GitRemoteError => (
 const gh = (message: string, httpStatus: number | null = null, exitCode: number | null = 1): GithubError => ({ argv: ['gh', 'api', 'x'], exitCode, httpStatus, message })
 
 describe('classifyEffectFailure', () => {
-  test('timeouts and spawn failures are transient for both adapters', () => {
+  test('a null exit without the typed marker is transient for both adapters', () => {
     expect(classifyEffectFailure(git('', null))).toBe('transient')
     expect(classifyEffectFailure(gh('', null, null))).toBe('transient')
+    // No inference from wording: spawn-sounding text on an unknown null
+    // exit stays the timeout shape (D14's null-exit row).
+    expect(classifyEffectFailure(gh('Executable not found in $PATH: "gh"', null, null))).toBe('transient')
+  })
+
+  test('a typed gh spawn failure is permanent, whatever the exit code', () => {
+    const spawn: GithubError = { argv: ['gh', 'auth', 'status'], exitCode: null, httpStatus: null, message: 'gh could not be started: Executable not found in $PATH: "gh"', spawnFailure: true }
+    expect(classifyEffectFailure(spawn)).toBe('permanent')
+    expect(classifyEffectFailure(git('', null))).toBe('transient')
   })
 
   test('git network wording is transient; refusals are permanent', () => {

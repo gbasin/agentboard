@@ -17,6 +17,8 @@ export interface GithubError {
   exitCode: number | null
   httpStatus: number | null
   message: string
+  /** True only when gh itself could not be started (a `runGh` spawn failure); the message carries the redacted cause. */
+  spawnFailure?: true
 }
 
 export type GithubOutcome<T> = { ok: true; data: T } | { ok: false; error: GithubError }
@@ -39,6 +41,15 @@ type Call = { ok: true; stdout: string } | { ok: false; error: GithubError }
 async function call(args: string[], options: GhCommandOptions = {}): Promise<Call> {
   const result = await runGh(args, options)
   if (result.ok) return { ok: true, stdout: result.stdout }
+  // gh never ran: keep the spawn error as the message (D14's gh-spawn row),
+  // typed so the classifier can call it permanent without guessing from an
+  // unknown null exit, which stays the timeout shape below.
+  if (result.spawnError !== undefined) {
+    return {
+      ok: false,
+      error: { argv: ['gh', ...args], exitCode: null, httpStatus: null, message: `gh could not be started: ${result.spawnError}`, spawnFailure: true },
+    }
+  }
   const stderr = result.stderr.trim()
   const found = HTTP_IN_STDERR.exec(stderr)
   return {

@@ -11,6 +11,7 @@ import { Database } from 'bun:sqlite'
 import { schemaDb } from './schemaDb'
 import { ExecutionStore } from '../plans/execution/executionStore'
 import { EffectRunner, type EffectAdapter, type EffectCallResult } from '../plans/execution/effects'
+import { landingAdapters, updateBranchAdapter } from '../plans/execution/executionLanding'
 import type { EffectRow } from '../plans/execution/executionRows'
 
 const FLOOR = { lint: ['ci'], typecheck: ['ci'], 'unit-tests': ['ci'], 'ci-e2e': ['e2e'] }
@@ -171,5 +172,35 @@ describe('EffectRunner', () => {
     const effect = insert()
     await new EffectRunner({ store, adapter: fake, timeoutMs: 5, backoffsMs: [1, 1, 1], now: () => new Date(clock) }).runOne(effect)
     expect(store.effect(effect.id)).toMatchObject({ state: 'pending', tries: 1 })
+  })
+
+  test('a real gh spawn failure through the landing adapter fails at once, with no backoff (D14 gh-spawn row)', async () => {
+    // The production composition: the direct mechanism's update-branch
+    // adapter over the real landing adapters (ghUpdateBranch → runGh), with
+    // a PATH holding no gh — the adapter itself derives the spawn failure.
+    const noGh = path.join(dir, 'no-gh-bin')
+    fs.mkdirSync(noGh, { recursive: true })
+    const effect = store.insertEffect({
+      executionId, change: 'api', roundId: 'round-1', kind: 'update-branch',
+      effectKey: 'exec:1:api:update-branch:1:0', command: { repo: 'owner/repo', pr: 7, head: 'aaa' },
+    })
+    const failures: Array<{ effectKey: string; message: string; transient: boolean }> = []
+    const runner = new EffectRunner({
+      store,
+      adapter: updateBranchAdapter(landingAdapters, { env: { PATH: noGh } }),
+      backoffsMs: [30_000, 120_000, 600_000],
+      now: () => new Date(clock),
+      onFailed: (row, error) => failures.push({ effectKey: row.effectKey, message: error.message, transient: error.transient }),
+    })
+    expect(await runner.runOne(effect)).toBe(true)
+    const settled = store.effect(effect.id)!
+    expect(settled.state).toBe('failed')
+    expect(settled.tries).toBe(0)
+    expect(settled.nextAt).toBeNull()
+    expect(settled.error).toContain('gh could not be started')
+    expect(failures).toHaveLength(1)
+    expect(failures[0]!.effectKey).toBe(effect.effectKey)
+    expect(failures[0]!.transient).toBe(false)
+    expect(failures[0]!.message).toContain('gh could not be started')
   })
 })
