@@ -160,4 +160,18 @@ describe('github over the stub gh', () => {
       expect(refused.error.message).toContain('human review')
     }
   })
+
+  test('a PATH without gh yields the typed spawn failure with the cannot-start message', async () => {
+    const emptyBin = path.join(dir, 'empty-bin')
+    fs.mkdirSync(emptyBin, { recursive: true })
+    const result = await ghUpdateBranch('owner/repo', 7, 'aaa', { env: { PATH: emptyBin } })
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error.spawnFailure).toBe(true)
+      expect(result.error.exitCode).toBeNull()
+      expect(result.error.httpStatus).toBeNull()
+      expect(result.error.message).toContain('gh could not be started: ')
+      expect(result.error.argv.slice(0, 2)).toEqual(['gh', 'api'])
+    }
+  })
 })

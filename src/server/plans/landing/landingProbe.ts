@@ -86,7 +86,11 @@ export async function probeLanding(input: ProbeInput, options: GhCommandOptions 
   let defaultBranch: string | null = null
   if (repo !== null) {
     const auth = await ghAuthStatus(options)
-    if (!auth.ok) findings.push({ code: 'gh-auth', message: 'gh is not authenticated; run gh auth status on the host.' })
+    if (!auth.ok && auth.error.spawnFailure === true) {
+      // gh itself is missing or cannot be started (D14's gh-spawn row): say
+      // that, with the actionable redacted cause — never the auth refusal.
+      findings.push({ code: 'gh-auth', message: `gh is missing or cannot be started: ${auth.error.message}` })
+    } else if (!auth.ok) findings.push({ code: 'gh-auth', message: 'gh is not authenticated; run gh auth status on the host.' })
     else {
       const repository = await ghRepo(repo, options)
       if (!repository.ok) findings.push({ code: 'gh-auth', message: `gh could not read ${repo}: ${repository.error.message}` })

@@ -36,13 +36,22 @@ export interface GhCommandResult {
   /** Redacted and bounded, the form an effect row records. */
   stdout: string
   stderr: string
+  /**
+   * Set only when `gh` itself could not be started (missing or
+   * non-executable on the PATH, an invalid cwd or env): the redacted,
+   * bounded spawn error. Absent on every other outcome — a null exitCode
+   * without it stays the timeout/killed shape.
+   */
+  spawnError?: string
 }
 
 /**
  * Run `gh` asynchronously with a timeout, an output bound, and redaction.
  * The executor's only subprocess shape: a timeout kills the process and the
  * killed exit resolves as a non-success with exitCode null (a transient
- * outcome the caller classifies, never a crash).
+ * outcome the caller classifies, never a crash). A spawn failure is its own
+ * non-success shape — `spawnError` set — so the caller can tell "gh never
+ * ran" from "gh was killed".
  */
 export async function runGh(args: string[], options: GhCommandOptions = {}): Promise<GhCommandResult> {
   const { cwd, timeoutMs = GH_TIMEOUT_MS, maxOutputBytes = GH_MAX_OUTPUT_BYTES, env } = options
@@ -55,9 +64,13 @@ export async function runGh(args: string[], options: GhCommandOptions = {}): Pro
       stdout: 'pipe',
       stderr: 'pipe',
     })
-  } catch {
-    // gh not installed, missing cwd, or a spawn failure — a non-success.
-    return { ok: false, exitCode: null, stdout: '', stderr: '' }
+  } catch (error) {
+    // gh could not be started: not on the PATH, not executable, or an
+    // invalid spawn context (cwd, env). A distinct non-success carrying the
+    // original error, so a caller never reads it as a timeout or as gh's
+    // own verdict (D14's gh-spawn row) — redacted and bounded like output.
+    const message = redactTokens(error instanceof Error ? error.message : String(error))
+    return { ok: false, exitCode: null, stdout: '', stderr: '', spawnError: message.slice(0, maxOutputBytes) }
   }
   let timedOut = false
   const timer = setTimeout(() => { timedOut = true; proc.kill() }, timeoutMs)
