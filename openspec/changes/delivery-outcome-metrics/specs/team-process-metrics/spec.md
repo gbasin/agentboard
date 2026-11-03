@@ -21,17 +21,6 @@ Kawai SHALL report `landed_result_share`: of the tasks first done in the window 
 - **WHEN** one of 10 results names a 7-digit commit prefix
 - **THEN** `landed_result_share` has `n` 9, and its coverage note counts one unresolvable commit
 
-### Requirement: The agent tool offers drill-down for named metrics
-A `team_metrics` call naming one or more metric ids SHALL return those metrics with their drill lists and breakdowns, plus slice rows when a slice is asked. Each drill list SHALL be capped at 50 entries and state its total. An unknown metric id SHALL be refused, naming the known ids.
-
-#### Scenario: Drill one metric
-- **WHEN** the lead calls `team_metrics` with window `7d` and metrics `["tasks_per_landed_change"]`
-- **THEN** that metric carries at most 50 drill entries with their total, and the other metrics stay compact
-
-#### Scenario: Unknown metric id
-- **WHEN** an agent names metric `velocity`
-- **THEN** the call is refused naming the known metric ids
-
 ### Requirement: Trends are series of 7d reads
 Kawai SHALL compute trends for a team over a range of 4, 8, or 12 weeks: one point per week for every metric, ending at the read time and stepping back 7 days. Each point SHALL equal the 7d read ending at that point's end over the same records and delivery facts, with its value, `n`, baseline, flags, and markers, and SHALL carry the rules that fired at it. Points are recomputed from current records and facts, not what was known then. Trends SHALL NOT be stored.
 
@@ -108,7 +97,7 @@ No surface or tool SHALL change a metric's definition or its guard.
 - **THEN** its guard is the landed-result share, and the accepted-result share appears among the coverage metrics
 
 ### Requirement: Agents read metrics through a read-only tool
-The `kawai-team` server SHALL offer `team_metrics`, taking a window, an optional slice, and optional metric ids, and returning the caller's team metrics with the values the Metrics tab computes. Each metric SHALL be compact by default: id, label, family, value, `n`, baseline, every flag, guard, and markers, without drill lists or breakdowns; slice rows appear only when a slice is asked. An unsliced compact read SHALL stay under 32 KB. It SHALL be allowed without approval cards and SHALL change nothing. No agent tool SHALL change a metric definition, guard pairing, or sample threshold.
+The `kawai-team` server SHALL offer `team_metrics`, taking a window, an optional slice, and optional metric ids, and returning the caller's team metrics with the values the Metrics tab computes. By default every metric SHALL be compact: its value, `n`, baseline, flags, `unavailable` reason, evidence, and the projected delivery header, without drill lists or breakdowns. An unsliced compact read SHALL stay under 32 KB. It SHALL change nothing, and no agent tool SHALL change a metric definition, guard pairing, or sample threshold.
 
 #### Scenario: Lead reads its team
 - **WHEN** the lead calls `team_metrics` with window `7d`
@@ -116,11 +105,15 @@ The `kawai-team` server SHALL offer `team_metrics`, taking a window, an optional
 
 #### Scenario: Same values as the tab
 - **WHEN** the Metrics tab and a compact `team_metrics` call read the 7d window at the same moment over the same delivery facts
-- **THEN** every value, `n`, and baseline is identical
+- **THEN** every value, `n`, baseline, and flag is identical
 
 #### Scenario: Flags survive compaction
-- **WHEN** a metric is partial, approximate, unavailable, or has incomplete evidence
+- **WHEN** a metric is insufficient, partial, approximate, not sliceable, unavailable, or has incomplete evidence
 - **THEN** the compact read carries the same flag, reason, evidence, and projected delivery state
+
+#### Scenario: Sliced compact read
+- **WHEN** an agent calls `team_metrics` with window `7d` and slice `{kind: "group"}`
+- **THEN** the metrics carry their slice rows, without drill lists
 
 #### Scenario: Unknown window
 - **WHEN** an agent calls `team_metrics` with window `30d`

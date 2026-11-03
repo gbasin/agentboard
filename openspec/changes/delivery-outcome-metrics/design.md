@@ -284,17 +284,18 @@ The thresholds are constants. Moving one is a reviewed code change, never config
 
 Alternative considered: store fired episodes for one toast per episode. The item identity `process-degradation:<rule>` already gives one toast per client session while the rule holds. Storing episodes would add a table and recovery-matrix rows for little gain, so it was rejected.
 
-### D5 — Compact reads are projections of the same computation
+### D5 — Compact reads extend `bounded-metrics-and-task-get`'s projection
 
-`compactMetrics(metrics, { ids?, drillCap = 50 })` (`src/shared/processMetrics.ts`, pure) projects a `ProcessMetrics` value:
-- It drops `drill` and `breakdown` from every metric not in `ids`.
-- It keeps `slices` only when a slice was asked.
-- For the named metrics, it caps each drill list and adds `drillTotal: { tasks, messages }`.
-- It keeps every value, `n`, baseline, flag (`insufficient`, `partial`, `approximate`, `unavailable`, the guard), `evidence`, and the whole `delivery` header, including the projected live header of a live return.
+The compact agent reads moved to the change `bounded-metrics-and-task-get` (its D1–D4), which lands first:
+- `compactMetrics`, the `metrics` argument of `team_metrics`, `process_reports_list` without snapshots, compact `process_report_get` and `process_report_submit`;
+- drill lists capped at 50, sorted by id, with totals and cursors paged by `team_metrics_drill`;
+- the end-keyed `MetricsReader.readAt`.
 
-`team_metrics` gains `metrics?: string[]`. An unknown id throws, like an unknown window, so the refusal has the same tool-error shape. The tool reads the full value from `MetricsReader` and projects it, so the numbers cannot diverge from the tab. Its default becomes compact. Metric ids, values, and their meanings are unchanged, and the full form stays available per metric through `metrics`.
+That change has no `full` flag: every drill entry is reachable by paging.
 
-`process_reports_list` maps each report to its record without `snapshot`. `process_report_get` gains `full?: boolean`; without it, the stored snapshot passes through `compactMetrics`.
+This change extends the projection, and nothing else about the compact reads:
+- `compactMetrics` also keeps `unavailable` and its reason, `evidence`, and the whole `delivery` header, including the projected live header of a live return. The new delivery metric ids are valid `metrics` values and drill cursors.
+- The reader key gains G's identity on top of `end` (D4 task 2.3), so a live drill cursor's pages are computed over the generation and end of the read that issued it.
 - Stored snapshots are never rewritten and never re-projected: a frozen report keeps the header and evidence it was submitted with.
 - Readers treat a missing metric id, or a missing `delivery` or `evidence` field, in an old snapshot as absent.
 
@@ -588,15 +589,13 @@ Property: for every generated chain and every pair of adjacent intervals, no eve
 
 **Table T: tool surface.** Every refusal uses the tool-error envelope that the existing unknown-window refusal uses (oracle hazard "refusals missing the success envelope").
 
+The compact-read rows themselves (compact default, unknown ids, slices, listing without snapshots, paging) are `bounded-metrics-and-task-get`'s Table T. The rows here cover only this change's extension of that projection.
+
 | id | call | → result |
 |----|------|----------|
-| T1 | `team_metrics {window:'7d'}` | compact, < 32 KB on the seeded 300-task fixture, values equal to the tab's |
-| T2 | `{window:'7d', metrics:['tasks_per_landed_change']}` | that metric carries ≤ 50 drill entries and `drillTotal`; the others are compact |
-| T3 | `{window:'7d', metrics:['velocity']}` | refused, naming the known ids |
-| T4 | `{window:'7d', slice:{kind:'group'}}` | slice rows present, no drill lists |
-| T5 | `process_reports_list` | no `snapshot` key on any report |
-| T6 | `process_report_get {full:true}` | snapshot byte-equal to the stored one |
-| T7 | compact read of a metric that is partial, approximate, or unavailable | the flag and `unavailable` reason present |
+| T1 | `team_metrics {window:'7d'}` with the delivery family, on the seeded 300-task fixture | compact, < 32 KB; delivery values equal the tab's; the projected `delivery` header present |
+| T2 | `{window:'7d', metrics:['tasks_per_landed_change']}` | that metric carries ≤ 50 drill entries sorted by id, their total, and a cursor; `team_metrics_drill` pages it over the issuing read's G and end |
+| T7 | compact read of a metric that is partial, approximate, unavailable, or has incomplete evidence | the flag, the `unavailable` reason, and `evidence` present |
 
 **Table TR: trends surface.** Same envelope rule as Table T.
 
@@ -669,7 +668,7 @@ Property: for every generated chain and every pair of adjacent intervals, no eve
   - Seed 0xDE11, 500 cases.
 - **P2, the compact form is a projection.**
   - Generator: random `MetricsInputs` built over the existing `metricsSeed.ts` helpers.
-  - Property: for every metric, `compactMetrics(m)` keeps `value`, `n`, `baseline`, every flag, `unavailable`, and `evidence` equal to `m`'s.
+  - Property: for every metric, `compactMetrics(m)` keeps `value`, `n`, `baseline`, every flag, `unavailable`, and `evidence` equal to `m`'s, and the `delivery` header equal to `m`'s. This extends `bounded-metrics-and-task-get`'s P2 with the fields this change adds.
   - Seed 0xC0DE, 300 cases.
 - **P3, the rules are monotone in delivery.**
   - Holding the token and integration figures and the input conditions fixed, lowering the current changes landed never turns `delivery-drop` from `fires` to `holds-not`.
