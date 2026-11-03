@@ -261,7 +261,9 @@ export class CodexSessionDriver implements ChatAgentDriver {
         resumed ? 'thread/resume' : 'thread/start',
         // The team tools register at thread start; a resume serves the set
         // the thread stored (spike: thread/resume takes no dynamicTools).
-        resumed ? { ...params, threadId: this.threadId } : { ...params, ephemeral: false, ...this.dynamicTools() },
+        // excludeTurns: only the thread's id, path, and model are read, and
+        // a long thread's full history arrives as one line of hundreds of MB.
+        resumed ? { ...params, threadId: this.threadId, excludeTurns: true } : { ...params, ephemeral: false, ...this.dynamicTools() },
       ) as { thread?: { id?: unknown; path?: unknown }; model?: unknown }
       if (this.client !== client) return false
       const thread = result?.thread

@@ -64,6 +64,31 @@ describe('createLineSplitter', () => {
     splitter.write('\n\nx\n')
     expect(lines).toEqual(['', '', 'x'])
   })
+
+  test('a line spanning many chunks, then more lines in its closing chunk, splits exactly', () => {
+    const lines: string[] = []
+    const splitter = createLineSplitter(line => lines.push(line))
+    splitter.write('ab')
+    splitter.write('cd')
+    splitter.write(Buffer.from('ef'))
+    splitter.write('g\nh\n\ni')
+    splitter.write('j\n')
+    expect(lines).toEqual(['abcdefg', 'h', '', 'ij'])
+  })
+
+  // A resumed Codex thread answers with its whole history on one line; the
+  // old splitter re-scanned the growing buffer per chunk (64 MB took ~3.5 s,
+  // hundreds of MB pinned the server). Linear splitting takes ~30 ms here.
+  test('a 64 MB line in 64 KB chunks splits in linear time', () => {
+    let length = -1
+    const splitter = createLineSplitter((line) => { length = line.length })
+    const chunk = Buffer.alloc(64 * 1024, 'a'.charCodeAt(0))
+    const started = performance.now()
+    for (let index = 0; index < 1024; index += 1) splitter.write(chunk)
+    splitter.write('\n')
+    expect(performance.now() - started).toBeLessThan(1500)
+    expect(length).toBe(64 * 1024 * 1024)
+  })
 })
 
 describe('createWireTappedSpawn', () => {

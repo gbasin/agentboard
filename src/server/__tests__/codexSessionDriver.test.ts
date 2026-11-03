@@ -40,6 +40,8 @@ test('a stored thread is resumed, never restarted, and its id is not re-reported
   await until(() => harness!.transcriptPaths.length === 1)
   const params = sentRequest(harness, 'thread/resume')!
   expect(params.threadId).toBe(THREAD_ID)
+  // The history is never read; a long thread's would arrive as one huge line.
+  expect(params.excludeTurns).toBe(true)
   expect(params.approvalsReviewer).toBe('user')
   expect(params.ephemeral).toBeUndefined()
   expect(sentRequest(harness, 'thread/start')).toBeUndefined()
