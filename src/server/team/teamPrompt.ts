@@ -169,7 +169,7 @@ function taskNote({ group }: TeamPromptInput): string {
     'Task tools:',
     `- \`${tool('task_get')}\`: the task — direction, every revision, and results whole; the journal, subtasks, and messages as bounded windows of the newest entries with their totals, each journal entry a byte-bounded preview. Page older entries with \`journal_before\` (the returned \`nextBefore\`) and \`journal_limit\` (1–200).`,
     `- \`${tool('task_journal_read')}\`: read any journal entry whole, in byte chunks from \`offset_bytes\` (a preview's \`resumeOffsetBytes\` continues it).`,
-    `- \`${tool('task_list')}\`: the team's tasks, optionally by status.`,
+    `- \`${tool('task_list')}\`: the team's tasks as compact rows, newest first — no direction or acceptance, so read a task's direction with \`${tool('task_get')}\`. Without \`status\` it lists only open, active, and blocked tasks; pass one status or \`status: "all"\` for done and cancelled work. At most \`limit\` rows (1–200, default 50); page older with \`before\` (the returned \`bounds.nextBefore\`).`,
     `- \`${tool('task_note')}\`: append a journal note. Record decisions, findings, and handoff state here; notes are permanent and every participant sees them.`,
     `- \`${tool('task_update_status')}\`: set \`active\` or \`blocked\` (anyone); \`done\` or \`cancelled\` (the creator only).`,
     `- \`${tool('task_amend')}\`: publish a new revision of direction or acceptance criteria (the creator only), with an optional \`rationale\` saying why; \`notify: true\` also sends the assignment's claimed agent a revision notice.`,

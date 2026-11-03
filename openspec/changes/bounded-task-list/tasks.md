@@ -2,9 +2,9 @@
 
 ## 1. Shared derivation and compact row
 
-- [ ] 1.1 Add `AgentTaskRow` and `AgentTaskList` to `src/shared/teamTasks.ts`
+- [x] 1.1 Add `AgentTaskRow` and `AgentTaskList` to `src/shared/teamTasks.ts`
   (design D1); verify `bun run typecheck` passes.
-- [ ] 1.2 Extract the outstanding-assignment and outstanding-result derivation from
+- [x] 1.2 Extract the outstanding-assignment and outstanding-result derivation from
   `TaskStore.summary` into one private helper used by `summary` and by a new
   compact projection (D1). Verify that the existing `teamTaskStore.test.ts` and
   `teamTaskParticipants.test.ts` pass unchanged, and add the R2 table test
@@ -15,25 +15,25 @@
 
 ## 2. Bounded store and service read
 
-- [ ] 2.1 Add the store's agent list read (D3): an anchor check, a window
+- [x] 2.1 Add the store's agent list read (D3): an anchor check, a window
   `ORDER BY created_at DESC, rowid DESC LIMIT n + 1` with the status `IN`
   predicate and no revision join, and a `COUNT(*)`, all in one synchronous
   read transaction. Verify with the W1–W4 table test. W2 kills the mutant
   `LIMIT n` (truncation never reported). W3 kills the mutant that drops the
   `rowid` tie-break (`created_at < a` only).
-- [ ] 2.2 Add `TaskService.agentList(caller, { status?, limit?, before? })` with the
+- [x] 2.2 Add `TaskService.agentList(caller, { status?, limit?, before? })` with the
   D2 status mapping (omitted → open/active/blocked, `all` → all five) and the
   `Unknown task for this team: <id>` refusal. Remove `TaskService.list` once
   `grep -rn "\.list(caller" src` shows no remaining caller. Verify with
   the S1–S3 and W5 rows. S1 kills the mutant whose default applies no
   filter. W5 kills the mutant whose anchor check drops `team_id`.
-- [ ] 2.3 Add the P1 and P2 property tests (seed `0x7a5c`, 200 cases, 5 distinct
+- [x] 2.3 Add the P1 and P2 property tests (seed `0x7a5c`, 200 cases, 5 distinct
   creation times) through the production handler; verify both pass and P1
   kills the 2.1 tie-break mutant.
 
 ## 3. Tool registration and agent-facing text
 
-- [ ] 3.1 In `taskTools.ts`, change the `task_list` schema to `status`
+- [x] 3.1 In `taskTools.ts`, change the `task_list` schema to `status`
   (five statuses or `all`, with one message naming them), `limit` (1–200, with
   one message naming the range), and `before`. Point the handler at
   `agentList` and replace the description with the D4 text. Verify with the S4
@@ -41,22 +41,22 @@
   (`codexTeamPath.integration.test.ts`), each asserting the same refusal
   envelope as the existing `task_get` refusals. S4 kills the mutant that
   accepts any string; W6 kills the mutant `max(1000)`.
-- [ ] 3.2 Add the R1 test: seed unique 4,000+-character markers into the
+- [x] 3.2 Add the R1 test: seed unique 4,000+-character markers into the
   direction, acceptance, and assignment instruction, call
   `task_list({ status: 'all' })`, and assert no marker appears in the
   serialized result and that every `AgentTaskRow` key is present. Verify:
   R1 kills the mutant that spreads the full `TeamTask` into the row.
-- [ ] 3.3 Update the `task_list` line in the team prompt's task note
+- [x] 3.3 Update the `task_list` line in the team prompt's task note
   (`teamPrompt.ts`) per D4. Extend `teamPrompt.test.ts` with the "Prompt names
   the default and the paging" scenario. Verify: the test kills the mutant that
   restores the old line.
-- [ ] 3.4 Update the existing `task_list` assertions in `teamTaskService.test.ts`
+- [x] 3.4 Update the existing `task_list` assertions in `teamTaskService.test.ts`
   to the `AgentTaskList` envelope. Verify the file passes.
-- [ ] 3.5 Update the `task_list` part of the task tools bullet in
+- [x] 3.5 Update the `task_list` part of the task tools bullet in
   `docs/architecture/tasks.md`: compact rows, the open default and `all`,
   `limit`/`before`, newest first, and the Codex catalogue caveat. Verify that
   it names the same arguments as the schema.
-- [ ] 3.6 Annotate each scenario test with
+- [x] 3.6 Annotate each scenario test with
   `// @covers: team-tasks › <requirement> › <scenario>`, covering all four
   ADDED requirements' scenarios. Verify `scripts/__tests__/specCoverageGuard.test.ts`
   passes.

@@ -16,7 +16,8 @@ import path from 'node:path'
 import type { ChatSessionRecord } from '../db'
 import type { ActingParty } from '../../shared/team'
 import { SYSTEM_ACTOR } from '../../shared/team'
-import type { TaskActor, TaskDraft, TaskStatus, TeamTask, TeamTaskDetail, TeamTaskSummary } from '../../shared/teamTasks'
+import type { AgentTaskList, TaskActor, TaskDraft, TaskStatus, TeamTask, TeamTaskDetail } from '../../shared/teamTasks'
+import type { TaskListRequest } from './taskListWindow'
 import { TASK_STATUSES } from '../../shared/teamTasks'
 import { StaleTaskStatus, type PreparedTaskStatus } from './taskStatusPrepared'
 import { loadTeamGroups } from './teamGroups'
@@ -199,10 +200,11 @@ export class TaskService {
     return this.store.detail(taskId)!
   }
 
-  async list(caller: TaskCaller, status?: TaskStatus): Promise<TeamTaskSummary[]> {
+  /** The agent's `task_list` (bounded-task-list D3): compact rows, the open set by default, bounded and paged. */
+  async agentList(caller: TaskCaller, request: TaskListRequest = {}): Promise<AgentTaskList> {
     refuseSystem(caller, 'read')
     const { team } = await this.context(caller)
-    return this.store.list(team.teamId).filter(task => !status || task.status === status)
+    return this.store.listWindow.agentList(team.teamId, request)
   }
 
   /** The agent tool's path (D7): publish immediately, with optional rationale and notify. */
