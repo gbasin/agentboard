@@ -65,14 +65,23 @@ export async function ghPrList(repo: string, input: { head: string; base: string
   return { ok: true, data: parsed.data }
 }
 
-/** Open the change's one pull request, naming the plan, revision, change, and task (plan-landing). */
+/**
+ * Open the change's one pull request, naming the plan, revision, change, and
+ * task (plan-landing): `gh api -X POST repos/{repo}/pulls` — `gh pr create`
+ * has no `--json` and exits 1 on it. The fields go as literal `-f` values,
+ * never `-F`, whose `@<path>` form would read the body from a file, and the
+ * REST response's `html_url` is the returned link (its `url` field is the
+ * API URL, not the pull request page).
+ */
 export async function ghPrCreate(repo: string, input: { head: string; base: string; title: string; body: string }, options: GhCommandOptions = {}): Promise<GithubOutcome<{ number: number; url: string }>> {
-  const args = ['pr', 'create', '-R', repo, '--head', input.head, '--base', input.base, '--title', input.title, '--body', input.body, '--json', 'number,url']
+  const args = ['api', '-X', 'POST', `repos/${repo}/pulls`, '-f', `head=${input.head}`, '-f', `base=${input.base}`, '-f', `title=${input.title}`, '-f', `body=${input.body}`]
   const result = await call(args, options)
   if (!result.ok) return result
-  const parsed = json<{ number: number; url: string }>(result.stdout)
-  if (!parsed.ok) return { ok: false, error: { argv: ['gh', ...args], exitCode: 0, httpStatus: null, message: parsed.error } }
-  return { ok: true, data: parsed.data }
+  const parsed = json<{ number?: unknown; html_url?: unknown }>(result.stdout)
+  if (!parsed.ok || typeof parsed.data.number !== 'number' || typeof parsed.data.html_url !== 'string' || parsed.data.html_url === '') {
+    return { ok: false, error: { argv: ['gh', ...args], exitCode: 0, httpStatus: null, message: parsed.ok ? 'the create response carries no pull request number or html_url' : parsed.error } }
+  }
+  return { ok: true, data: { number: parsed.data.number, url: parsed.data.html_url } }
 }
 
 /** `gh pr view`: state, head, and the merge commit once merged (D13/D14). */
