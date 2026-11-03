@@ -33,6 +33,7 @@ import { TaskResultStore } from './taskResultStore'
 import { ResultCheckStore } from '../verification/resultCheckStore'
 import { createPayloadDiff, publishPayloadDiff } from './taskPayloadDiff'
 import { TaskJournalWindow } from './taskJournalWindow'
+import { TaskListWindow } from './taskListWindow'
 
 const CREATE_TABLES_SQL = `
 CREATE TABLE IF NOT EXISTS team_tasks (
@@ -156,6 +157,8 @@ export class TaskStore {
   readonly checks: ResultCheckStore
   /** The agent's bounded detail and lossless entry reads (bounded-log-reads D4–D6); no tool calls them yet. */
   readonly journalWindow: TaskJournalWindow
+  /** The agent's bounded, compact task list (bounded-task-list D3). */
+  readonly listWindow: TaskListWindow
 
   constructor(private readonly db: Database, private readonly mail?: MailboxStore, private readonly assignments?: AssignmentStore) {
     // A claim or release of a task's instruction mail changes what the task
@@ -170,6 +173,7 @@ export class TaskStore {
     this.results = new TaskResultStore(db)
     this.checks = new ResultCheckStore(db)
     this.journalWindow = new TaskJournalWindow(db, this, mail)
+    this.listWindow = new TaskListWindow(db, this)
   }
 
   /** Every committed change, with the task as it is now. */
@@ -438,10 +442,18 @@ export class TaskStore {
       UNION SELECT author_session FROM team_task_journal WHERE task_id = $id AND author_session IS NOT NULL`)
       .all({ $id: task.id }) as Array<{ id: string }>
     for (const row of rows) ids.add(row.id)
-    const result = this.results.outstanding(task.id)
+    return { ...task, participants: [...ids], ...this.derived(task.id) }
+  }
+
+  /**
+   * A task's outstanding assignment and result: the one derivation behind
+   * `summary` and the agent's compact `task_list` rows (bounded-task-list D1).
+   */
+  derived(taskId: string): Pick<TeamTaskSummary, 'assignment' | 'outstandingResult'> {
+    const result = this.results.outstanding(taskId)
     const findings = result ? this.results.findingsFor(result.id) : []
     return {
-      ...task, participants: [...ids], assignment: this.assignments ? outstandingOf(this.assignments.listByTask(task.id)) : null,
+      assignment: this.assignments ? outstandingOf(this.assignments.listByTask(taskId)) : null,
       outstandingResult: result ? {
         id: result.id, needsReevaluation: result.needsReevaluation, accepted: result.acceptedAt !== null,
         reviewVerdict: findings.at(-1)?.verdict ?? null,

@@ -292,6 +292,28 @@ test('human dispatch assigns a task and returns its assignment; snapshots carry 
   expect(mail.forTask(task.id)).toHaveLength(1)
 })
 
+// @covers: team-tasks › task_list returns compact rows › Human views stay whole
+test('the human\'s list and detail keep direction, acceptance, assignment, and participants (bounded-task-list D1)', async () => {
+  const task = await tasks.create(human(), { title: 'Export', direction: 'CSV for every account', acceptance: 'A file downloads' })
+  await send({ type: 'team-tasks-open', teamPath: '/repo' })
+  await send({
+    type: 'team-task-assign', teamPath: '/repo', requestId: 'a1', taskId: task.id,
+    target: { kind: 'group', id: 'devs' }, instruction: 'Please build the export', requestKey: 'intent-whole',
+  })
+  db.db.prepare("UPDATE team_messages SET state = 'claimed', claimed_by = 'dev' WHERE task_id = ?").run(task.id)
+  await tasks.note(human(), task.id, 'refresh the views')
+  const listed = last('team-tasks-snapshot')!.tasks.find(row => row.id === task.id)!
+  expect(listed).toMatchObject({
+    direction: 'CSV for every account', acceptance: 'A file downloads',
+    assignment: { instruction: 'Please build the export', targetId: 'devs' }, participants: ['dev'],
+  })
+  await send({ type: 'team-task-open', teamPath: '/repo', taskId: task.id })
+  expect(last('team-task-detail')!.detail.task).toMatchObject({
+    direction: 'CSV for every account', acceptance: 'A file downloads',
+    assignment: { instruction: 'Please build the export' }, participants: ['dev'],
+  })
+})
+
 test('dispatch refusals answer inline and create nothing', async () => {
   const task = await tasks.create(human(), { title: 'Export', direction: 'CSV' })
   for (const [requestId, message, error] of [

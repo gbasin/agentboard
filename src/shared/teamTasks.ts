@@ -141,6 +141,48 @@ export interface TaskJournalEntry {
   createdAt: string
 }
 
+/**
+ * One row of the agent's `task_list` (bounded-task-list D1): identifiers,
+ * status, and a compact assignee and result — never the direction,
+ * acceptance, assignment instruction, or participants (`task_get` has them).
+ */
+export interface AgentTaskRow {
+  id: string
+  title: string
+  status: TaskStatus
+  creator: TaskCreator
+  parentId: string | null
+  worktree: string | null
+  openspecChange: string | null
+  planId: string | null
+  planChange: string | null
+  revision: number
+  createdAt: string
+  updatedAt: string
+  /** The outstanding assignment, projected; null when unassigned. */
+  assignee: {
+    targetKind: TeamTaskAssignment['targetKind']
+    targetId: string
+    role: string | null
+    claimedBy: string | null
+    state: TeamTaskAssignment['state']
+  } | null
+  /** The outstanding result, as `TeamTaskSummary.outstandingResult`; null when none. */
+  result: { id: string; reviewVerdict: 'pass' | 'fail' | null; accepted: boolean; needsReevaluation: boolean } | null
+}
+
+/** The `task_list` status argument (D2): one task status, or every status. */
+export type TaskListStatus = TaskStatus | 'all'
+
+/** The agent's bounded task list (D3): newest first by creation, with the filter it applied. */
+export interface AgentTaskList {
+  tasks: AgentTaskRow[]
+  /** The statuses the filter applied. */
+  statuses: TaskStatus[]
+  /** `total` counts every match of the filter, whatever the anchor. */
+  bounds: { total: number; returned: number; truncated: boolean; nextBefore: string | null }
+}
+
 /** A task as listed: the record plus everyone who has worked under it. */
 export interface TeamTaskSummary extends TeamTask {
   /** Agent session ids: creator, associated sessions, mail senders/receivers, journal authors. */

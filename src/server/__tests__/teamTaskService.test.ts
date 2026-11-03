@@ -88,7 +88,7 @@ describe('creation rights', () => {
   test('the default (no canCreateTasks) and group-less sessions are refused; nothing is written', async () => {
     await expect(service.create(agent('dev'), { title: 'x', direction: 'y' })).rejects.toThrow('cannot create tasks')
     await expect(service.create(agent('solo'), { title: 'x', direction: 'y' })).rejects.toThrow('cannot create tasks')
-    expect(await service.list(human())).toEqual([])
+    expect((await service.agentList(human(), { status: 'all' })).tasks).toEqual([])
   })
 
   test('the setting is read fresh from the group file on every call', async () => {
@@ -118,7 +118,8 @@ describe('references', () => {
     await expect(service.create(agent('lead'), { title: 'x', direction: 'y', parent_id: foreign.id })).rejects.toThrow('Parent task not found')
     await expect(service.get(agent('lead'), foreign.id)).rejects.toThrow('not found in this team')
     await expect(service.note(agent('dev'), foreign.id, 'hi')).rejects.toThrow('not found in this team')
-    expect((await service.list(agent('lead'))).map(task => task.title)).toEqual(['parent', 'child'])
+    // Newest first (bounded-task-list D3); the foreign team's task is not listed.
+    expect((await service.agentList(agent('lead'))).tasks.map(task => task.title)).toEqual(['child', 'parent'])
   })
 
   test('worktree targets normalize to their root; other paths are refused by name', async () => {
@@ -242,8 +243,8 @@ describe('task tools', () => {
     expect(full.task).toMatchObject({ status: 'active', revision: 2, acceptance: 'A file downloads' })
     expect(full.journal).toMatchObject([{ text: 'started', author: { kind: 'agent', sessionId: 'dev' } }])
     expect(new Set(full.task.participants)).toEqual(new Set(['lead', 'dev']))
-    expect((await dev.task_list({})).map(row => row.id)).toEqual([task.id])
-    expect(await dev.task_list({ status: 'done' })).toEqual([])
+    expect((await dev.task_list({})).tasks.map(row => row.id)).toEqual([task.id])
+    expect((await dev.task_list({ status: 'done' })).tasks).toEqual([])
     await expect(dev.task_update_status({ task_id: task.id, status: 'finished' })).rejects.toThrow()
   })
 })
