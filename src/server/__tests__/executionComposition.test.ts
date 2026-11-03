@@ -89,7 +89,7 @@ case "$*" in
   *"/status"*) printf '%s' '{"statuses":[]}' ;;
   *"git/trees/"*) cat "${treeFile}" ;;
   *"git/commits/"*) printf '%s' '{"tree":{"sha":"ttt-0000"}}' ;;
-  *"pr create"*) printf '%s' '{"number":7,"url":"https://example.internal/pr/7"}' ;;
+  *"POST repos/acme/app/pulls "*) printf '%s' '{"number":7,"url":"https://api.example.internal/repos/acme/app/pulls/7","html_url":"https://example.internal/pr/7"}' ;;
   *"pr list"*) printf '%s' '[]' ;;
   *"repos/acme/app"*) printf '%s' '{"default_branch":"master","permissions":{"push":true}}' ;;
   *) echo "gh: unexpected call: $*" >&2; exit 1 ;;

@@ -82,10 +82,10 @@ case "$*" in
   *"/status"*) printf '%s' '{"statuses":[]}' ;;
   *"git/trees/"*) cat "${treeFile}" ;;
   *"git/commits/"*) printf '%s' '{"tree":{"sha":"ttt-0000"}}' ;;
-  *"pr create"*)
+  *"POST repos/acme/app/pulls "*)
     n=$(( $(cat "$STATE/count" 2>/dev/null || echo 6) + 1 )); echo "$n" > "$STATE/count"
-    after --head "$@" > "$STATE/pr-$n"; after --base "$@" > "$STATE/base-$n"
-    printf '{"number":%s,"url":"https://example.internal/pr/%s"}' "$n" "$n" ;;
+    field head "$@" > "$STATE/pr-$n"; field base "$@" > "$STATE/base-$n"
+    printf '{"number":%s,"url":"https://api.example.internal/repos/acme/app/pulls/%s","html_url":"https://example.internal/pr/%s"}' "$n" "$n" "$n" ;;
   *"pr view"*)
     n="$3"; h=$(head_of "$n")
     if [ -f "$STATE/closed-$n" ]; then printf '{"number":%s,"url":"https://example.internal/pr/%s","state":"CLOSED","headRefOid":"%s","mergeCommit":null}' "$n" "$n" "$h"
