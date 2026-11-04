@@ -125,6 +125,36 @@ describe('PlanExecutionSection after an execution', () => {
   })
 })
 
+describe('PlanExecutionChangeRow Retry', () => {
+  const stoppedRow = changeRow({ state: 'stopped', stopReason: 'task-closed' })
+  const running = (rows: PlanExecutionView['changes'], onSend: (message: unknown) => void) =>
+    createElement(PlanExecutionSection, { teamPath: '/repo', plan: planSummary, detail: detailOf([baseExecution(rows)]), connected: true, onSend })
+
+  test('a stopped change sends the retry command naming the execution and change; success retires the dialog', () => {
+    useTeamPlanStore.getState().open('/repo')
+    const sent: Array<{ type: string; requestId: string; executionId: string; change: string; commandId: string }> = []
+    act(() => render(running([stoppedRow], message => sent.push(message as (typeof sent)[number]))))
+    act(() => renderer!.root.findByProps({ 'data-testid': 'plan-execution-retry-command' }).props.onClick())
+    expect(sent).toHaveLength(0)
+    act(() => renderer!.root.findByProps({ 'data-testid': 'plan-execution-retry-command-confirm' }).props.onClick())
+    expect(sent).toHaveLength(1)
+    expect(sent[0]).toMatchObject({ type: 'team-plan-execution-retry', teamPath: '/repo', executionId: 'exec-1', change: 'api' })
+    expect(sent[0]!.commandId).not.toBe('')
+    act(() => useTeamPlanStore.getState().applyResult({ type: 'team-plan-result', teamPath: '/repo', requestId: sent[0]!.requestId, replayed: false } as never))
+    expect(renderer!.root.findAllByProps({ 'data-testid': 'plan-execution-retry-command-dialog' })).toHaveLength(0)
+  })
+
+  test('a change that is not stopped, or a finished execution, offers no Retry', () => {
+    useTeamPlanStore.getState().open('/repo')
+    act(() => render(running([changeRow()], () => undefined)))
+    expect(renderer!.root.findAllByProps({ 'data-testid': 'plan-execution-retry' })).toHaveLength(0)
+    act(() => renderer!.unmount())
+    const finished = { ...baseExecution([stoppedRow]), state: 'finished' as const, outcome: 'stopped' as const, stopReason: 'superseded' }
+    act(() => render(createElement(PlanExecutionSection, { teamPath: '/repo', plan: planSummary, detail: detailOf([finished]), connected: true, onSend: () => undefined })))
+    expect(renderer!.root.findAllByProps({ 'data-testid': 'plan-execution-retry' })).toHaveLength(0)
+  })
+})
+
 describe('PlanExecutionStartDialog', () => {
   test('opening asks the server for the standing; the reply disables or arms Start (15.4)', () => {
     useTeamPlanStore.getState().open('/repo')

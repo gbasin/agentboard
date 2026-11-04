@@ -59,7 +59,7 @@ export default function PlanExecutionSection({ teamPath, plan, detail, connected
         </p>
         <ul className="mt-1">
           {newest.changes.map(row => <Fragment key={row.change}>
-            <PlanExecutionChangeRow row={row} execution={newest} promoted={promoted.has(row.change)} onOpenTask={openTask}
+            <PlanExecutionChangeRow teamPath={teamPath} connected={connected} onSend={onSend} row={row} execution={newest} promoted={promoted.has(row.change)} onOpenTask={openTask}
               revealed={revealAnchor === `plan-change-${row.change}`} />
             {decisions.filter(entry => entry.card.change === row.change).map(cardView =>
               <PlanDecisionCard key={cardView.card.id} teamPath={teamPath} planId={plan.id} cardView={cardView} sessions={sessions}
