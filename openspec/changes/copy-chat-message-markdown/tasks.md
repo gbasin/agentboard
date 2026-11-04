@@ -22,7 +22,7 @@
 ## 4. Browser verification
 
 - [x] 4.1 Add `tests/e2e/chat-message-copy.spec.ts`, a fixture spec (`AGENTBOARD_CHAT_FIXTURE=1`) that grants `clipboard-read` and `clipboard-write`. It sends `markdown`, hovers the assistant row, clicks **Copy message**, and asserts that the clipboard text contains the fixture's raw Markdown (`#`, code fences, `|` table rows) and that the row shows `Copied`. It asserts the control is hidden before hover and the row's bounding box is unchanged after hover. A second test removes `navigator.clipboard` with `addInitScript` to force the D3 fallback, then asserts that the same text is copied. A third test checks keyboard focus visibility. Add the spec to the fixture `playwright test` list in `.github/workflows/ci.yml`, then parse ci.yml with `Bun.YAML.parse`. Verify: run `bun run build`, then run the spec on a spare `E2E_PORT` and confirm it passes.
-- [ ] 4.2 Run `bun run check` on the clean committed tree and confirm it passes. Run `openspec validate copy-chat-message-markdown --strict` and confirm it passes.
+- [x] 4.2 Run `bun run check` on the clean committed tree and confirm it passes. Run `openspec validate copy-chat-message-markdown --strict` and confirm it passes.
 
 ## Workflow follow-up
 
