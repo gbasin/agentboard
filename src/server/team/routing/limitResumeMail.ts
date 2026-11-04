@@ -33,6 +33,8 @@ export interface LimitResumeTurnEnd {
   event: LimitResumeEvent
   /** The session holds work that is not a limit-resume (read before any park). */
   held: boolean
+  /** The worker lines of the delivered limit-resume this turn ran, carried into the next one across restarts (D5). */
+  carried?: readonly string[]
 }
 
 export class LimitResumeMail {
@@ -61,7 +63,7 @@ export class LimitResumeMail {
     const lost = this.lost.get(sessionId) ?? []
     if (decision.kind === 'none' && decision.warn) logger.warn('limit_resume_team_unresolved', { sessionId })
     if (decision.kind === 'cancel' && pending) store.cancel(pending.id, SYSTEM, 'the human continued the session')
-    if (decision.kind === 'schedule') this.enqueue(sessionId, record, decision.at, decision.attempt, mergeWorkerLines([], lost))
+    if (decision.kind === 'schedule') this.enqueue(sessionId, record, decision.at, decision.attempt, mergeWorkerLines(end.carried ?? [], lost))
     if (decision.kind === 'supersede' && pending) {
       this.replace(sessionId, record, pending, decision.at, mergeWorkerLines(workerLinesOf(pending.body), lost))
     }

@@ -236,6 +236,20 @@ describe('a delivered limit-resume', () => {
     expect(pending()).toMatchObject({ deliverAt: iso(now + HOUR), tags: ['limit-resume', 'limit-resume-attempt:2'] })
   })
 
+  test('O8: after a restart, the next attempt still names the workers of the delivered resume', async () => {
+    await turn('me', 'human', { limitInMs: HOUR })
+    outcomes.workersChanged('me', [failedWorker('a1b9e4ba4fc743796', 'Budget task_get and task_text_read', LIMIT_SUMMARY)])
+    const first = pending()!
+    // A fresh process: the lost list in memory is gone; the delivered body carries it.
+    outcomes = new LimitOutcomes(db, {
+      store, limits, rules: { rule: () => undefined }, getRecord: id => records.get(id), teamOf: () => 'team',
+      groupOf: () => undefined, taskTitle: () => null, onError: error => { throw error }, now: () => now,
+    })
+    now += HOUR
+    await deliverTurn('me', first, { limitInMs: HOUR })
+    expect(pending()?.body).toContain('- "Budget task_get and task_text_read" (task a1b9e4ba4fc743796)')
+  })
+
   // @covers: profile-limit-handling › Limit-resumes are bounded and never re-routed › Cap reached
   test('O9, O5: after the third limited resume none is scheduled, not even by an agent-started turn', async () => {
     await turn('me', 'human', { limitInMs: HOUR })

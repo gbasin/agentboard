@@ -41,7 +41,7 @@ import { providerOf } from '../../chat/profileCatalog'
 import { catalogCtx } from '../cooldowns'
 import { MAX_PARKS, resolveLimit, type LimitResolution } from './limitPolicy'
 import type { RuleRegistry } from './ruleLoader'
-import { isLimitResume, limitResumeAttempt, type LimitResumeEvent, type LimitResumeTurn } from './limitResume'
+import { isLimitResume, limitResumeAttempt, workerLinesOf, type LimitResumeEvent, type LimitResumeTurn } from './limitResume'
 import { LimitResumeMail } from './limitResumeMail'
 
 const CREATE_TABLE_SQL = `
@@ -183,7 +183,7 @@ export class LimitOutcomes {
     const limit: LimitResumeEvent = !event ? { kind: 'none' }
       : event.window === CREDIT_LIMIT_WINDOW ? { kind: 'credit' }
         : { kind: 'final', resetsAt: Date.parse(this.resetTime(event)) }
-    this.limitResumes.turnEnded(sessionId, { turn, success, event: limit, held })
+    this.limitResumes.turnEnded(sessionId, { turn, success, event: limit, held, carried: limitResume ? workerLinesOf(limitResume.body) : [] })
   }
 
   /** The session's worker roster changed: limit-failed workers reach its limit-resume (limit-resume D5). */

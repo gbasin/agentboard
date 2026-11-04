@@ -119,13 +119,16 @@ ahead (row O15b).
 
 `isLimitFailure(summary)` matches `error type (rate_limit|billing_error|overloaded)`,
 or `HTTP 429`, in a worker's summary. It reuses `LIMIT_ERROR_CLASSES` from
-`limitSignals.ts`. When Kawai schedules a resume, the body lists each failed
-worker from `getWorkers(sessionId)` that passes `isLimitFailure` and that no
-earlier delivered limit-resume of the current run has named. On each
-`onWorkers` push while a resume is pending, a newly limit-failed worker whose
-task id does not already appear in the body is appended through D4's
-supersede path, with the same time and attempt. Deduplicating by task id in
-the body keeps this idempotent across restarts and repeated roster pushes.
+`limitSignals.ts`. The roster arrives by push (`handleDriverWorkers` ->
+`workersChanged`); each worker newly seen failing on a limit joins the
+session's in-memory lost list, which empties after a successful human or
+limit-resume turn. When Kawai schedules a resume, the body lists the lost
+workers, plus the worker lines of the delivered limit-resume whose turn hit
+the limit again (row O8; read from its body, so a restart between the two
+keeps them). On each push while a resume is pending, a newly limit-failed
+worker whose task id does not already appear in the body is appended through
+D4's supersede path, with the same time and attempt. Deduplicating by task id
+in the body keeps this idempotent across restarts and repeated roster pushes.
 
 Body, with one line per lost worker:
 
@@ -196,7 +199,7 @@ attempt, body) and the states of held messages.
 | O5 | H | no | ahead | agent | none | yes | * | yes | none scheduled |
 | O6 | H | no, or yes with kind human | ahead | human/agent | P < reset | * | * | yes | one pending at reset; attempt and worker lines kept; the old one is cancelled and never delivered |
 | O7 | H | no, or yes with kind human | ahead | human/agent | P >= reset | * | * | yes | the pending one is unchanged |
-| O8 | H | * | ahead | lr(n), n<3 | none | * | * | yes | one pending, attempt n+1, at reset; the delivered lr is not parked, released, or forwarded; held messages unchanged |
+| O8 | H | * | ahead | lr(n), n<3 | none | * | * | yes | one pending, attempt n+1, at reset, naming the delivered lr's workers; the delivered lr is not parked, released, or forwarded; held messages unchanged |
 | O9 | H | * | ahead | lr(3) | none | * | * | yes | none scheduled; capped set; the delivered lr is not parked, released, or forwarded |
 | O10 | H | * | credit | * | * | * | * | * | nothing scheduled or cancelled |
 | O11 | H | * | passed | * | * | * | * | * | nothing scheduled |
