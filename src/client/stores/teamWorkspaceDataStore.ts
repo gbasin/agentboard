@@ -38,8 +38,10 @@ interface TeamWorkspaceDataState {
   beginApprovalSave: (teamKey: string) => void
   /** The server's answer: clears the wait, keeps a refusal to show inline. */
   applyApprovalResult: (message: ApprovalResultMessage) => void
-  /** The connection dropped: an in-flight save will never answer. */
-  cancelApprovalSave: (teamKey: string) => void
+  /** The connection dropped: no in-flight save, of any team, will ever answer.
+   *  Called by the app-wide disconnect handler, so it holds whether or not the
+   *  Members tab is mounted. A shown refusal stays. */
+  dropPendingApprovalSaves: () => void
   /** Identities already toasted or seen at baseline, for the client session. */
   seen: Set<string>
   /** Create the team's slot; an existing one keeps its last read. */
@@ -61,8 +63,8 @@ export const useTeamWorkspaceDataStore = create<TeamWorkspaceDataState>((set, ge
   applyApprovalResult: message => set(state => ({
     approvalSaves: { ...state.approvalSaves, [message.teamPath]: { pending: false, error: message.ok ? null : message.error } },
   })),
-  cancelApprovalSave: teamKey => set(state => state.approvalSaves[teamKey]?.pending
-    ? { approvalSaves: { ...state.approvalSaves, [teamKey]: { pending: false, error: state.approvalSaves[teamKey]!.error } } }
+  dropPendingApprovalSaves: () => set(state => Object.values(state.approvalSaves).some(save => save.pending)
+    ? { approvalSaves: Object.fromEntries(Object.entries(state.approvalSaves).map(([key, save]) => [key, { ...save, pending: false }])) }
     : state),
   open: teamKey => set(state => state.views[teamKey]
     ? state

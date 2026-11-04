@@ -4,10 +4,11 @@
 // record, never a group file or a running agent; later spawns read it on the
 // server, so it applies with no browser connected. The shown value is the
 // server's snapshot; a save shows the server's refusal inline, and the
-// control is disabled while disconnected (the last known value stays).
+// control is disabled while disconnected (the last known value stays). A
+// save in flight when the connection drops is released by the app-wide
+// disconnect handler (`connectionWaits.ts`), mounted or not.
 // Each button saves on click, so they are toggle buttons, not a radio group
 // whose arrow keys would save on every step.
-import { useEffect } from 'react'
 import type { ChatApprovalPolicy } from '@shared/chat'
 import type { SendClientMessage } from '@shared/types'
 import { useTeamWorkspaceDataStore } from '../../stores/teamWorkspaceDataStore'
@@ -26,10 +27,7 @@ export default function TeamApprovalDefaultControl({ teamPath, value, connected,
 }) {
   const save = useTeamWorkspaceDataStore(state => state.approvalSaves[teamPath])
   const begin = useTeamWorkspaceDataStore(state => state.beginApprovalSave)
-  const cancel = useTeamWorkspaceDataStore(state => state.cancelApprovalSave)
   const pending = save?.pending === true
-  // A save in flight when the connection drops never answers: drop the wait.
-  useEffect(() => { if (!connected) cancel(teamPath) }, [connected, teamPath, cancel])
 
   const choose = (policy: ChatApprovalPolicy) => {
     if (!connected || pending || policy === value) return

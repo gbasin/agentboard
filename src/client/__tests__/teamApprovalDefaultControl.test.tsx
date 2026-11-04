@@ -12,6 +12,7 @@ import TeamMembersPanel from '../components/team/TeamMembersPanel'
 import { TaskPreviewView } from '../components/team/taskAssignFields'
 import { useTeamWorkspaceDataStore } from '../stores/teamWorkspaceDataStore'
 import { handleTeamApprovalDefaultResult } from '../protocol/teamWorkspaceMessages'
+import { releaseStrandedWaits } from '../protocol/connectionWaits'
 
 const textOf = (node: TestRenderer.ReactTestInstance | string): string =>
   typeof node === 'string' ? node : node.children.map(textOf).join('')
@@ -67,12 +68,32 @@ test('while disconnected the control is disabled, the last value stays, and a sa
   act(() => { renderer = TestRenderer.create(render(true)) })
   act(() => button(renderer, 'manual').props.onClick())
   expect(useTeamWorkspaceDataStore.getState().approvalSaves['/repo']?.pending).toBe(true)
-  act(() => renderer.update(render(false)))
+  // The app-wide status handler runs on the drop, then the view re-renders.
+  act(() => { releaseStrandedWaits('reconnecting'); renderer.update(render(false)) })
   expect(useTeamWorkspaceDataStore.getState().approvalSaves['/repo']?.pending).toBe(false)
   expect([button(renderer, 'manual').props.disabled, button(renderer, 'auto').props.disabled]).toEqual([true, true])
   expect(textOf(byId(renderer, 'team-approval-default-value')[0]!)).toBe('Set to auto-approve.')
   act(() => button(renderer, 'manual').props.onClick())
   expect(sent).toHaveLength(1)
+})
+
+test('a save stranded while the Members tab was closed does not disable the control after the reconnect', () => {
+  let renderer!: TestRenderer.ReactTestRenderer
+  const render = () => <TeamApprovalDefaultControl teamPath="/repo" value="auto" connected sendMessage={message => sent.push(message)} />
+  act(() => { renderer = TestRenderer.create(render()) })
+  act(() => button(renderer, 'manual').props.onClick())
+  // Leave Members, then lose the connection before the result arrives.
+  act(() => renderer.unmount())
+  act(() => releaseStrandedWaits('disconnected'))
+  // Back on Members after the reconnect: both buttons work again.
+  act(() => { renderer = TestRenderer.create(render()) })
+  expect([button(renderer, 'manual').props.disabled, button(renderer, 'auto').props.disabled]).toEqual([false, false])
+  // A connected status releases nothing; other teams' refusals stay shown.
+  useTeamWorkspaceDataStore.setState({ approvalSaves: { '/repo': { pending: true, error: null }, '/other': { pending: false, error: 'Unknown team: /other' } } })
+  releaseStrandedWaits('connected')
+  expect(useTeamWorkspaceDataStore.getState().approvalSaves['/repo']?.pending).toBe(true)
+  releaseStrandedWaits('reconnecting')
+  expect(useTeamWorkspaceDataStore.getState().approvalSaves).toEqual({ '/repo': { pending: false, error: null }, '/other': { pending: false, error: 'Unknown team: /other' } })
 })
 
 const row = (extra: Partial<TeamMemberRow>): TeamMemberRow => ({

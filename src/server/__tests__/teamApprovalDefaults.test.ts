@@ -3,6 +3,7 @@
 // boundary A1: only the human's Team page action reaches the write, and no
 // `kawai-team` tool is named for it or calls it.
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { Database } from 'bun:sqlite'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -22,6 +23,16 @@ beforeEach(() => {
 afterEach(() => { db.close(); fs.rmSync(dir, { recursive: true, force: true }) })
 
 describe('TeamApprovalDefaults', () => {
+  test('the table is numbered migration 22, recorded at startup; the store never creates it', () => {
+    expect(db.db.prepare("SELECT version FROM schema_migrations WHERE name = 'team-approval-defaults'").get()).toEqual({ version: 22 })
+    expect(db.db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'team_approval_defaults'").get()).toEqual({ name: 'team_approval_defaults' })
+    const bare = new Database(':memory:')
+    try {
+      new TeamApprovalDefaults(bare)
+      expect(bare.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name = 'team_approval_defaults'").get()).toEqual({ n: 0 })
+    } finally { bare.close() }
+  })
+
   // @covers: team-worktree-staffing › A team has a default approval policy for spawned members › A new install has no team default
   test('no row reads as not set; set round-trips and upserts', () => {
     const store = new TeamApprovalDefaults(db.db, () => Date.parse('2026-11-04T10:00:00.000Z'))
