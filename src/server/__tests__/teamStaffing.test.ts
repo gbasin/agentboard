@@ -237,6 +237,13 @@ describe('G1: spawn, preview, and Members agree on the policy (team-approval-def
   const KEYS = [null, 'manual', 'auto'] as const
 
   test('200 seeded cases: every reader equals resolveSpawnApproval', async () => {
+    // The design's seam: an in-memory database, so 400 writes do not wait on
+    // file syncs (the case's file database is replaced and closed by afterEach).
+    db.close()
+    db = initDatabase({ path: ':memory:' })
+    store = new MailboxStore(db.db)
+    tasks = new TaskStore(db.db, store)
+    staffing = makeStaffing()
     const random = mulberry32(0x7a11)
     const seen = new Set<string>()
     // One parsed catalog per group-key variant, read through the real loader.
@@ -275,7 +282,7 @@ describe('G1: spawn, preview, and Members agree on the policy (team-approval-def
     }
     // The seed reaches every row of the table.
     expect(seen.size).toBe(9)
-  }, 60_000)
+  })
 })
 
 describe('caps', () => {
