@@ -327,6 +327,16 @@ export class MailboxStore {
     return this.select(`state = 'parked' AND resume_message_id = $resume`, { $resume: resumeMessageId })[0] ?? null
   }
 
+  /**
+   * The session's pending limit-resume (limit-resume-unheld-sessions D4):
+   * still queued, so neither claimed nor delivered. At most one exists.
+   */
+  pendingLimitResume(sessionId: string): TeamMessage | null {
+    return this.select(`to_kind = 'session' AND to_id = $sessionId AND state = 'queued' AND tags LIKE '%"limit-resume"%'`, {
+      $sessionId: sessionId,
+    }).at(-1) ?? null
+  }
+
   /** Boolean form of {@link cancelResult}: whether the message was cancelled. */
   cancel(id: string, actor: StoreActor, reason?: string): boolean {
     return this.cancelResult(id, actor, reason).ok

@@ -130,6 +130,7 @@ import { supervisionRuntime } from '../plans/supervision/supervisionRuntime'
 import { pauseHolderFacts } from '../plans/revisionControl/pauseTick'
 import type { HandoffTarget } from '../team/routing/limitOutcomes'
 import type { RuleLoadReport, TeamRoutingState } from '../../shared/routing'
+import { isLimitResume } from '../team/routing/limitResume'
 import { SessionMailbox, type ClaimRef } from '../team/sessionMailbox'
 import type { TaskService } from '../team/TaskService'
 import type { AssignmentService } from '../team/AssignmentService'
@@ -1409,6 +1410,8 @@ export class ChatSessionManager {
       if (!message) return
       const holders = new Set<string>()
       if (message.claimedBy) holders.add(message.claimedBy)
+      // A limit-resume pauses its recipient before anyone claims it (limit-resume-unheld-sessions D9).
+      if (message.toKind === 'session' && message.toId && isLimitResume(message.tags)) holders.add(message.toId)
       for (const [sessionId, parked] of this.parkedShown) if (parked.messageId === message.id) holders.add(sessionId)
       for (const sessionId of holders) this.refreshParked(sessionId)
     })
@@ -1576,10 +1579,13 @@ export class ChatSessionManager {
   private readonly parkedShown = new Map<string, SessionParkedState>()
 
   private parkedState(sessionId: string): SessionParkedState | null {
-    const parked = this.mailbox.store.parkedBy(sessionId)[0]
-    if (!parked) return null
     const profileId = this.records.get(sessionId)?.claudeProfileId ?? 'default'
-    return { messageId: parked.id, until: parked.parkedUntil, profileId, reason: `Provider limit on ${profileId}` }
+    const parked = this.mailbox.store.parkedBy(sessionId)[0]
+    if (parked) return { messageId: parked.id, until: parked.parkedUntil, profileId, reason: `Provider limit on ${profileId}` }
+    // A pending limit-resume pauses the session too (limit-resume-unheld-sessions D9).
+    const resume = this.mailbox.store.pendingLimitResume(sessionId)
+    if (resume) return { messageId: resume.id, until: resume.deliverAt, profileId, reason: `Provider limit on ${profileId}` }
+    return null
   }
 
   private refreshParked(sessionId: string): void {
@@ -2112,6 +2118,9 @@ export class ChatSessionManager {
     // Archived by any path: a pending release is settled by the archive
     // itself (member-release D1); a later restore starts clean.
     this.teamMail.cancelPendingRelease(sessionId)
+    // A pending limit-resume would restore the archived session at the reset
+    // (limit-resume-unheld-sessions D6): the human's archive wins.
+    this.mailGuard.guard('chat_mail_limit_resume_cancel_failed', () => this.teamMail.cancelLimitResume(sessionId), { sessionId })
     // Every release path lands here (member release included), so one wake
     // covers them: an archived member frees what its execution waits on (D5).
     // Fired only once the archive succeeded (N2).
@@ -3715,6 +3724,8 @@ export class ChatSessionManager {
     if (!this.records.has(sessionId)) return
     this.workerRows.set(sessionId, workers)
     this.options.onWorkers?.(sessionId, workers)
+    // Workers lost to a limit are named in the session's limit-resume (limit-resume-unheld-sessions D5).
+    this.mailGuard.guard('chat_mail_workers_changed_failed', () => this.teamMail.workersChanged(sessionId, workers), { sessionId })
     this.rosterChanged(sessionId)
     const store = this.options.workerStore
     if (store) {

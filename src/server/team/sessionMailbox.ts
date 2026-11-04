@@ -41,7 +41,7 @@ import { ContextExhaustion, type ExhaustionOutcome } from './contextExhaustion'
 import { ExhaustionNotes } from './exhaustionNotes'
 import { ReasonLedger, startingAgentReason, toReason } from './waitingReasons'
 import { loadTeamGroups } from './teamGroups'
-import type { ChatUsageReport } from '../../shared/chat'
+import type { ChatUsageReport, ChatWorker } from '../../shared/chat'
 import type { RouteDecisionLogEntry } from '../../shared/routing'
 import type { Database } from 'bun:sqlite'
 import { decisionReplyGuardOver } from '../plans/decisions/decisionReplyGuard'
@@ -476,6 +476,12 @@ export class SessionMailbox {
   toolCall(sessionId: string, tool: string, input: unknown) {
     this.outcomes.toolCall(sessionId, tool, input)
   }
+
+  /** A session's worker roster changed: limit-failed workers reach its limit-resume (limit-resume-unheld-sessions D5). */
+  workersChanged(sessionId: string, workers: readonly ChatWorker[]) { this.outcomes.workersChanged(sessionId, workers) }
+
+  /** A session was archived: its pending limit-resume is cancelled, never restoring it (limit-resume-unheld-sessions D6). */
+  cancelLimitResume(sessionId: string) { this.outcomes.cancelLimitResume(sessionId) }
 
   /** A session's turn opened; `agentStarted` when the agent started it itself. */
   turnStarted(sessionId: string, agentStarted: boolean) { this.outcomes.turnStarted(sessionId, agentStarted) }
