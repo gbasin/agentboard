@@ -467,6 +467,53 @@ details[open] > .chat-summary::before {
   margin-top: 0.4em;
 }
 
+/* Message copy control (copy-chat-message-markdown D2): shares the time's line
+   in the metadata slot (so a gutter row grows no taller) and always takes its
+   space, so revealing it never shifts the row; visible while the row is
+   hovered or holds focus, always on touch. */
+.chat-row-stamp {
+  display: inline-flex;
+  align-items: center;
+  column-gap: 0.35em;
+}
+
+.chat-row-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.15em;
+  border: 0;
+  border-radius: 0.25em;
+  background: transparent;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.chat-row:hover .chat-row-copy,
+.chat-row:focus-within .chat-row-copy,
+.chat-row-copy[data-copy-state='copied'],
+.chat-row-copy[data-copy-state='failed'] {
+  opacity: 1;
+}
+
+.chat-row-copy:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+@media (hover: none) {
+  .chat-row-copy {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-row-copy {
+    transition: none;
+  }
+}
+
 .chat-day {
   display: flex;
   align-items: center;
