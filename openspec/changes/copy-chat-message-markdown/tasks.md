@@ -17,7 +17,7 @@
 
 ## 3. Documentation
 
-- [ ] 3.1 Extend the chat transcript bullet in `docs/architecture/chat.md`. Cover the per-row copy control, which copies the event's source text (not the DOM), its placement in the metadata slot, and the `copyText` fallback for insecure contexts. Verify: `bun run lint` passes and the readsGuard and specCoverageGuard tests pass.
+- [x] 3.1 Extend the chat transcript bullet in `docs/architecture/chat.md`. Cover the per-row copy control, which copies the event's source text (not the DOM), its placement in the metadata slot, and the `copyText` fallback for insecure contexts. Verify: `bun run lint` passes and the readsGuard and specCoverageGuard tests pass.
 
 ## 4. Browser verification
 
