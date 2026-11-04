@@ -142,6 +142,8 @@ beforeEach(() => {
 afterEach(() => db.close())
 
 describe('spawning', () => {
+  // @covers: team-worktree-staffing › A member is spawned when none is available › Spawn for an unstaffed worktree
+  // @covers: team-worktree-staffing › A member is spawned when none is available › Group settings applied
   test('an unstaffed worktree gets a member with the group settings and the message reserved for it', async () => {
     const t = task(featX)
     const m = mail(t.id)

@@ -23,12 +23,12 @@
 
 - [x] 4.1 Add the "Default approval for spawned members" control and its hint to the head of `TeamMembersPanel.tsx`. It sends the action, shows a refusal inline, is disabled while disconnected, and follows the snapshot (D7). Add source labels to the group rows and to `taskAssignFields.tsx`. Verify with component tests for these scenarios: setting the default updates the group rows, the control is disabled while disconnected, and the approval source is shown. Kill the mutant that renders the stored default instead of the row's resolved policy.
 - [x] 4.2 Reword the Approval Policy hint in `ChatSettings.tsx`. Verify with a component test of the scenario "Settings names where spawned members get their policy", and confirm that `NewSessionModal` still seeds from the browser setting (the existing tests pass).
-- [ ] 4.3 After `bun run build`, add a Playwright spec that sets the default on one tab's Members tab and sees the change on a second tab. Verify with `bun run test:e2e` on that spec (scenario: another open view follows the change).
+- [x] 4.3 After `bun run build`, add a Playwright spec that sets the default on one tab's Members tab and sees the change on a second tab. Verify with `bun run test:e2e` on that spec (scenario: another open view follows the change).
 
 ## 5. Docs and coverage
 
-- [ ] 5.1 Update the staffing and Team page Members bullets in `docs/architecture/` (find them with `grep -rn '^- ' docs/architecture/ | grep -i -E 'staffing|Members tab'`) with the resolution order, the table, and the human-only write. Verify by reading the result back, and confirm that `bun run lint` is clean.
-- [ ] 5.2 Put a `// @covers:` annotation above each test from groups 1–4 for every ADDED or MODIFIED scenario in this change's delta specs. Verify that `scripts/__tests__/specCoverageGuard.test.ts` passes.
+- [x] 5.1 Update the staffing and Team page Members bullets in `docs/architecture/` (find them with `grep -rn '^- ' docs/architecture/ | grep -i -E 'staffing|Members tab'`) with the resolution order, the table, and the human-only write. Verify by reading the result back, and confirm that `bun run lint` is clean.
+- [x] 5.2 Put a `// @covers:` annotation above each test from groups 1–4 for every ADDED or MODIFIED scenario in this change's delta specs. Verify that `scripts/__tests__/specCoverageGuard.test.ts` passes.
 - [ ] 5.3 Run `bun run check` on the clean committed tree. Verify it records a pass, and map each oracle id (O1–O9, P1–P4, W1–W5, L1–L3, A1, G1) to its test title and the mutant it killed in the result.
 
 ## Workflow follow-up

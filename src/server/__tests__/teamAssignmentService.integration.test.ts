@@ -387,6 +387,7 @@ describe('reassignment', () => {
 })
 
 describe('preview', () => {
+  // @covers: task-assignment › Dispatch can be previewed before sending › Group preview shows staffing availability
   test('a group preview for a worktree task names idle matching members and the spawn profile', async () => {
     const task = await service.create(human(), { title: 'Export', direction: 'CSV', worktree: feature })
     const preview = await dispatcher.preview(human(), { taskId: task.id, target: { kind: 'group', id: 'devs' } })
@@ -425,6 +426,8 @@ describe('preview', () => {
     expect(preview.spawn.profile).toBe('kimi')
   })
 
+  // @covers: task-assignment › Dispatch can be previewed before sending › Session preview shows profile and policy
+  // @covers: task-assignment › Dispatch can be previewed before sending › Worktree mismatch is warned, not blocked
   test('a session preview shows its worktree, profile, and approval, and warns on mismatch without blocking', async () => {
     records.set('glmer', row('glmer', 'devs', repo, { claudeProfileId: 'glm', approvalPolicy: 'auto' }))
     const task = await service.create(human(), { title: 'Export', direction: 'CSV', worktree: feature })
