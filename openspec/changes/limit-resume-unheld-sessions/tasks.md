@@ -22,7 +22,7 @@
 - [x] 4.1 Add a manager-level test (`src/server/__tests__/limitResume.integration.test.ts`) through `ChatSessionManager` with the driver fixture replaying the incident's frames: a worker 429 `task_notification`, a synthetic `rate_limit` assistant error, a `result` with `is_error`, a second worker failure, then the reset. Verify: O3, O15a, O20 (one delivered limit-resume naming both workers, starting a turn), and O12 and O18 in sibling tests (oracle-hazards M1).
 - [x] 4.2 Add the seeded model test for P1–P4 (`src/server/__tests__/limitResume.model.test.ts`: seed `0x11a7`, 500 cases of 30 commands, a crash injected at the cancel or the enqueue of the D4 replacement, then a restart). Verify: it passes, and fails under the 2.1 and 2.2 mutants. It found that a restart dropped the delivered resume's worker lines from the next attempt; D5 now carries them from the delivered body (O8 test).
 - [x] 4.3 Add the recovery-matrix row in `docs/recovery-matrix.md`: fault "human-created session limited, never resumed", mechanism "scheduled direct limit-resume at the reset", owning change `limit-resume-unheld-sessions`, and the 4.1 and 4.2 test citations. Update the Limits bullet in `docs/architecture/routing.md`. Verify: `src/server/__tests__/recoveryMatrix.test.ts` passes.
-- [ ] 4.4 Run `bun run check` on the clean committed tree. Map each oracle id (O1–O20, P1–P4) to its test title and killed mutant in the result. Verify: the check records a pass, and the map has no unmapped id.
+- [x] 4.4 Run `bun run check` on the clean committed tree. Map each oracle id (O1–O20, P1–P4) to its test title and killed mutant in the result. Verify: the check records a pass, and the map has no unmapped id.
 
 ## Workflow follow-up
 
