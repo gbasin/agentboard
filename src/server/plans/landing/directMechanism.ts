@@ -1,7 +1,7 @@
 // directMechanism.ts - The direct landing mechanism (plan-execution D13),
 // wrapping its shipped functions unchanged: the probe is `probeLanding`, a
-// change starts from the commit the provision records (the execution's newest
-// landing, else its Start-time base commit), a passed change
+// change starts from the commit the provision records (its dependencies' newest
+// landing in the execution, else its Start-time base commit), a passed change
 // lands through `applyLanding`, and the update-branch and merge effects are
 // its own.
 import { applyLanding, applyLandingOutcome, mergeAdapter, updateBranchAdapter } from '../execution/executionLanding'

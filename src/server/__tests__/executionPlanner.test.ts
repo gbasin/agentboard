@@ -87,7 +87,7 @@ describe('planSteps scheduling (§11.2)', () => {
       executionId: 'e1', change: 'api', kind: 'provision', effectKey: 'e1:api:provision:2:2',
       command: {
         repo: '/repo', path: '/repo/.worktrees/api', branch: 'api',
-        base: 'base', baseBranch: 'master', planId: 'p1',
+        base: 'base', baseBranch: 'master', planId: 'p1', dependsOn: [],
       },
     }])
     // A standing effect under the same key means none is due.
