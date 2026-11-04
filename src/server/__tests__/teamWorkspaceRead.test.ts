@@ -585,7 +585,7 @@ describe('WorkspaceRead.snapshot acceptance ownership (attention-acceptance-owne
     limitations: null, taskRevision: 1, submittedBy: { kind: 'agent', sessionId: 'chat-dev' } as const,
     supersedesResultId: null, supersededBy: null, acceptedBy: null, acceptedAt: null, needsReevaluation: false, reviewVerdict,
   })
-  const snapshotFor = (creator: TeamTaskSummary['creator'], records: ChatSessionRecord[], verdict: 'pass' | 'fail' | null = null) => {
+  const snapshotFor = (creator: TeamTaskSummary['creator'], records: ChatSessionRecord[], verdict: 'pass' | 'fail' | null = null, owned = false) => {
     const task = summary({
       id: 'task-1', teamId: 'team', title: 'Export', status: 'active', creator,
       outstandingResult: { id: 'r-1', needsReevaluation: false, accepted: false, reviewVerdict: verdict },
@@ -605,11 +605,27 @@ describe('WorkspaceRead.snapshot acceptance ownership (attention-acceptance-owne
       groupProfileCounts: () => ({}),
       teamApprovalDefault: () => null,
       turnEnds: { finishedForTeam: () => [] }, exhaustionEpisodes: () => [], outboundAudit: { violationGroups: () => [], windowCounts: () => ({ allowed: 0, unknown: 0, violations: 0 }) },
+      results: { ownedByExecution: () => owned },
     }
     return new WorkspaceRead(manager as never).snapshot({ teamId: 'team' } as never)
   }
   const lead = { kind: 'agent', sessionId: 'chat-lead' } as const
   const dev = record({ sessionId: 'chat-dev', name: 'Dev' })
+
+  // @covers: team-workspace › The attention queue lists what needs a human or is waiting on an agent › A running execution's task asks nothing of the human
+  test('a task a running execution owns asks nothing of the human, even with no live creator', () => {
+    const { attention, tasks } = snapshotFor({ kind: 'system', sessionId: null }, [dev], null, true)
+    expect(attention.filter(item => item.kind === 'pending-acceptance')).toEqual([])
+    expect(tasks[0]).toMatchObject({ requiresHuman: false, nextAction: 'Wait for Kawai' })
+  })
+
+  test('failing findings on an owned task still wait for fixes', () => {
+    const { attention, tasks } = snapshotFor({ kind: 'system', sessionId: null }, [dev], 'fail', true)
+    expect(attention.filter(item => item.kind === 'pending-acceptance')).toEqual([])
+    expect(attention.filter(item => item.kind === 'fixes-requested').map(item => ({ owner: item.owner.id, requiresHuman: item.requiresHuman })))
+      .toEqual([{ owner: 'chat-dev', requiresHuman: false }])
+    expect(tasks[0]).toMatchObject({ nextAction: 'Wait for fixes' })
+  })
 
   test('a human-created task stays human-required', () => {
     const { attention, tasks } = snapshotFor({ kind: 'human', sessionId: null }, [dev])

@@ -117,10 +117,11 @@ function acknowledgementBadge(
 }
 
 /** D11's next action for a row, derived from the assignment and result it already read. */
-function taskNextAction(summary: TeamTaskSummary): string {
+function taskNextAction(summary: TeamTaskSummary, ownedByExecution: boolean): string {
   const assignment = summary.assignment
   if (summary.outstandingResult && !summary.outstandingResult.accepted && summary.status !== 'done' && summary.status !== 'cancelled') {
-    return summary.outstandingResult.reviewVerdict === 'fail' ? 'Wait for fixes' : 'Accept result'
+    if (summary.outstandingResult.reviewVerdict === 'fail') return 'Wait for fixes'
+    return ownedByExecution ? 'Wait for Kawai' : 'Accept result'
   }
   if (!assignment) return 'Assign a dev'
   switch (assignment.state) {
@@ -145,8 +146,10 @@ export function taskRows(input: {
   nameOf: (sessionId: string) => string
   /** A claimant's delivered and acknowledged revisions of a task (task-revision-publication D5). */
   revisionsOf: (taskId: string, sessionId: string) => { delivered: number | null; acknowledged: number | null }
+  /** A running execution owns the task, so Kawai, not the human, accepts its result. */
+  ownedByExecution?: (taskId: string) => boolean
 }): TeamTaskRow[] {
-  const { summaries, waiting, attention, nameOf, revisionsOf } = input
+  const { summaries, waiting, attention, nameOf, revisionsOf, ownedByExecution } = input
   const humanBlocked = new Set(
     attention.filter(item => item.requiresHuman && item.impact.taskId).map(item => item.impact.taskId!)
   )
@@ -169,7 +172,7 @@ export function taskRows(input: {
       waitingReason: assignment?.messageId ? waiting[assignment.messageId] ?? null : null,
       needsReevaluation: result?.needsReevaluation === true,
       acknowledgement: acknowledgementBadge(summary, revisionsOf),
-      nextAction: taskNextAction(summary),
+      nextAction: taskNextAction(summary, ownedByExecution?.(summary.id) === true),
       requiresHuman: humanBlocked.has(summary.id),
     }
   })
@@ -319,9 +322,14 @@ export class WorkspaceRead {
     const sessions = records
       .filter(record => record.archivedAt == null)
       .map(record => ({ record, requests: manager.getPendingRequests(record.sessionId) }))
+    // Kawai accepts an execution-owned task when its change lands. A human
+    // accept would stop the change as task-closed, so it is never asked for;
+    // failing findings still list their agent-owned wait for fixes.
+    const ownedByExecution = (taskId: string) => manager.results?.ownedByExecution(taskId) === true
     const pendingAcceptance: PendingAcceptance[] = summaries.flatMap(summary => {
       const result = summary.outstandingResult
       if (!result || result.accepted || summary.status === 'done' || summary.status === 'cancelled') return []
+      if (result.reviewVerdict !== 'fail' && ownedByExecution(summary.id)) return []
       const submittedBy = store.results.get(result.id)?.submittedBy
       const creatorId = summary.creator.sessionId
       const creator = creatorId ? records.find(record => record.sessionId === creatorId && record.archivedAt == null) : undefined
@@ -358,7 +366,7 @@ export class WorkspaceRead {
       acknowledged: store.acknowledgements.highest(taskId, sessionId),
     })
     return {
-      tasks: taskRows({ summaries, waiting, attention, nameOf, revisionsOf }),
+      tasks: taskRows({ summaries, waiting, attention, nameOf, revisionsOf, ownedByExecution }),
       attention,
       members: memberRows(manager.teams.catalogForTeam(team), records, groupId =>
         manager.groupProfileCounts(teamId, groupId), approvalDefault),

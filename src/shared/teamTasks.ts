@@ -459,6 +459,8 @@ export interface HumanTaskDetail extends TeamTaskDetail {
   draft?: TaskDraft | null
   /** What **Release worktree and hand off** would do now (task-results-handoffs D7). */
   release?: TaskReleasePreview
+  /** A running execution owns the task (plan-execution D7): the view offers neither Accept result nor Mark done. */
+  executionOwned?: boolean
 }
 
 /**

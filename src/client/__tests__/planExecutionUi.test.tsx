@@ -245,7 +245,7 @@ describe('PlanExecutionStopDialog', () => {
   })
 })
 
-describe('the task Accept note', () => {
+describe('the task Accept control', () => {
   const result = {
     id: 'res-1', taskId: 'task-1', summary: 'done', commit: 'c', diff: null, worktree: null, tests: [], limitations: null,
     taskRevision: 1, submittedBy: { kind: 'agent' as const, sessionId: 'dev' }, submittedAt: '', supersedesResultId: null,
@@ -263,12 +263,11 @@ describe('the task Accept note', () => {
     outstandingResult: result, results: [result],
   } as unknown as HumanTaskDetail)
 
-  const resultsSection = (planId: string | null, planChange: string | null) => createElement(TaskResultsSection, {
-    detail: taskDetail(planId, planChange),
+  const resultsSection = (planId: string | null, planChange: string | null, executionOwned = false) => createElement(TaskResultsSection, {
+    detail: { ...taskDetail(planId, planChange), ...(executionOwned ? { executionOwned } : {}) },
     groups: [], sessions: [], connected: true, disabled: false, host: { teamPath: '/repo', sendMessage: () => {} },
     act: (kind: string) => {
-      // The Accept confirm button calls act('accept'); the note is what is
-      // under test, so the act itself is a no-op here.
+      // The control's presence is what is under test, so the act is a no-op here.
       void kind
     },
   })
@@ -278,21 +277,18 @@ describe('the task Accept note', () => {
     useTeamPlanStore.getState().select('/repo', 'plan-1')
   })
 
-  test('appears for a task an execution owns, and not otherwise', () => {
-    useTeamPlanStore.getState().applyDetail({ type: 'team-plan-detail', teamPath: '/repo', teamId: 't', detail: detailOf([baseExecution([changeRow({ taskId: 'task-1' })])]) })
-    render(resultsSection('plan-1', 'api'))
-    // The note rides the Accept confirmation, which the Accept button opens.
-    act(() => renderer!.root.findByProps({ 'data-testid': 'task-accept' }).props.onClick())
-    let tree = text()
-    expect(tree).toContain('A running execution owns this change')
-    expect(tree).toContain('merges nothing')
+  // @covers: plan-execution › Closing an execution task by hand stops its change › The task view does not offer closing as done
+  test('is gone for a task an execution owns, whatever the plan store has loaded', () => {
+    render(resultsSection('plan-1', 'api', true))
+    // The count, not the nodes: printing test-renderer instances on a failure takes many GiB.
+    expect(renderer!.root.findAllByProps({ 'data-testid': 'task-accept' }).length).toBe(0)
+    expect(text()).toContain('Kawai accepts this task when the change lands')
+  })
 
-    useTeamPlanStore.getState().applyDetail({ type: 'team-plan-detail', teamPath: '/repo', teamId: 't', detail: detailOf([]) })
-    act(() => renderer?.unmount())
-    renderer = null
+  test('stays for a task no execution owns, with no execution note', () => {
     render(resultsSection('plan-1', 'api'))
     act(() => renderer!.root.findByProps({ 'data-testid': 'task-accept' }).props.onClick())
-    tree = text()
+    const tree = text()
     expect(tree).toContain('task-accept-confirm')
     expect(tree).not.toContain('A running execution owns this change')
   })

@@ -2,8 +2,9 @@
 // (attention-acceptance-ownership). Who has to act depends on two facts the
 // stores already hold: whether the newest findings on the result fail (the
 // work goes back to its submitter), and who closes the task (the human, or the
-// live agent session that created it). Acceptance rights themselves never
-// change — the human can still **Accept result** from the task either way.
+// live agent session that created it). A task a running execution owns is a
+// source only for failing findings: WorkspaceRead leaves its acceptance out,
+// because Kawai accepts it on landing.
 import { attentionItemId } from '../../shared/teamWorkspace'
 import type { AttentionInput, AttentionSource } from './workspaceRead'
 

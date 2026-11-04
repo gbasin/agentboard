@@ -176,6 +176,21 @@ test('detail shows direction, retained revisions, journal, subtasks, messages; c
   act(() => renderer.unmount())
 })
 
+test('a task a running execution owns offers no Mark done, and still offers Mark cancelled', () => {
+  const task = summary('t1', { status: 'active' })
+  const statusButtons = (executionOwned: boolean) => {
+    const view: TaskView = { ...openView(), loading: false, tasks: [task], selectedTaskId: 't1', detail: { ...detail(task), ...(executionOwned ? { executionOwned } : {}) } }
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => { renderer = TestRenderer.create(<TeamTasksPanel teamPath="dev" projectPath="/repo" view={view} sendMessage={() => {}} connected />) })
+    const labels = renderer.root.findAll(node => node.type === 'button').map(node => node.children.join(''))
+    act(() => renderer.unmount())
+    return labels
+  }
+  expect(statusButtons(false)).toContain('Mark done')
+  expect(statusButtons(true)).not.toContain('Mark done')
+  expect(statusButtons(true)).toContain('Mark cancelled')
+})
+
 test('peer rows show task context, live and after replay', () => {
   const peer: ChatEvent = { type: 'peer_message', id: 'p1', sequence: 1, at: 'now', turnId: 't', messageId: 'mail', senderSession: 'lead',
     senderGroup: 'leads', priority: 'normal', originPath: '/repo', tags: [], threadId: 'mail', body: 'Please build', possibleDuplicate: false,
