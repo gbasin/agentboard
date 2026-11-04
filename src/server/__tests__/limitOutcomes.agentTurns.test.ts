@@ -43,7 +43,9 @@ beforeEach(() => {
   limits = new LimitEventStore(db, () => now)
   records = new Map([['dev', {
     sessionId: 'dev', name: 'dev', projectPath: '/repo', sdkSessionId: null, status: 'waiting', createdAt: '', lastActivityAt: '',
-    groupId: 'devs', claudeProfileId: 'glm',
+    // A staffing dev: human-created sessions get a limit-resume instead
+    // (limit-resume-unheld-sessions), covered in limitOutcomes.limitResume.test.ts.
+    groupId: 'devs', claudeProfileId: 'glm', spawned: true,
   }]])
   const parsed = parseGroupFile('devs', '---\nonLimit: { parkIfResetWithin: 3h, otherwise: forward }\n---\nWork.')
   if (!parsed.ok) throw new Error(parsed.error)
