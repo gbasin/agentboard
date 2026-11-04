@@ -167,7 +167,7 @@ function checkInvariants(world: World, trace: string[]) {
 }
 
 describe('limit-resume model (design P1–P4)', () => {
-  test(`seeded command sequences keep P1–P4 (seed ${SEED.toString(16)}, ${CASES} cases)`, async () => {
+  test('seeded command sequences keep P1–P4 (seed 11a7, 500 cases)', async () => {
     const r = rng(SEED)
     let crashes = 0
     let maxRun = 0
