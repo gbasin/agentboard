@@ -33,7 +33,7 @@ import { useEffect, useMemo } from 'react'
 import type { ClientMessage, SendClientMessage, ServerMessage, ServerMessageWithDiagnostics } from '@shared/types'
 import type { ConnectionStatus } from '../stores/sessionStore'
 import { useSessionStore } from '../stores/sessionStore'
-import { useChatStore } from '../stores/chatStore'
+import { releaseStrandedWaits } from '../protocol/connectionWaits'
 import { clientLog } from '../utils/clientLog'
 
 type MessageListener = (message: ServerMessage) => void
@@ -729,9 +729,8 @@ export function useWebSocket() {
       // Previously connectionEpoch was in React useState while connectionStatus
       // was in Zustand, causing two renders and a double terminal-attach.
       setConnectionState(nextStatus, error, nextConnectionEpoch)
-      // A dropped socket strands any in-flight history page (chat-history-
-      // window D3): the reconnect's fresh attach reloads the window anyway.
-      if (nextStatus !== 'connected') useChatStore.getState().clearHistoryLoading()
+      // A dropped socket strands in-flight waits; release them app-wide.
+      releaseStrandedWaits(nextStatus)
     })
 
     return () => {

@@ -27,6 +27,7 @@ import { runTasksEntrySelection } from './tasksEntrySelection'
 import TeamMailboxView from './TeamMailboxView'
 import TeamMessagesView from './TeamMessagesView'
 import TeamMembersPanel from './TeamMembersPanel'
+import TeamApprovalDefaultControl from './TeamApprovalDefaultControl'
 import TeamPlansView from './TeamPlansView'
 import TeamAuditView from './TeamAuditView'
 import TeamTasksView from './TeamTasksView'
@@ -290,7 +291,9 @@ export default function TeamWorkspaceView({ teamKey, location, sendMessage, subs
       />}
       {currentLocation.tab === 'members' && !unknown && <TeamMembersPanel
         members={workspaceData?.snapshot?.members ?? []} loaded={workspaceData?.snapshot != null}
-        onOpenSession={openParticipantChat} />}
+        onOpenSession={openParticipantChat}
+        teamControl={workspaceData?.snapshot != null && <TeamApprovalDefaultControl
+          teamPath={teamKey} value={workspaceData.snapshot.approvalDefault ?? null} connected={connected} sendMessage={sendMessage} />} />}
       {tasksOpen && tasks && <TeamTasksView
         teamPath={teamKey} projectPath={teamKey} view={tasks} rows={workspaceData?.snapshot?.tasks} sendMessage={sendMessage} connected={connected}
         connectionEpoch={connectionEpoch}

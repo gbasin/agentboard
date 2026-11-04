@@ -906,6 +906,7 @@ describe('server message handlers', () => {
       else process.env.CLAUDE_CODE_OAUTH_TOKEN = previousToken
     }
   })
+  // @covers: chat-sessions › Users configure the default approval policy for new chat sessions › Unspecified policy creates a manual session
   test('chat creation applies the requested approval policy and defaults to manual', async () => {
     const previousToken = process.env.CLAUDE_CODE_OAUTH_TOKEN
     process.env.CLAUDE_CODE_OAUTH_TOKEN = 'test-oauth-token'

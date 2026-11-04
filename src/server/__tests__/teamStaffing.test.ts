@@ -19,6 +19,9 @@ import { TaskStore } from '../team/taskStore'
 import { TeamCaps, teamCapsFile } from '../team/teamCaps'
 import { clearTeamCache, resolveTeam, type TeamIdentity } from '../team/teamIdentity'
 import { TeamWorktrees, worktreeRootOf } from '../team/worktreeRoots'
+import { previewGroupDispatch } from '../team/groupDispatchPreview'
+import { memberRows } from '../team/workspaceRead'
+import { resolveSpawnApproval } from '../../shared/spawnApproval'
 
 function git(args: string[], cwd?: string): string {
   const result = spawnSync('git', args, { cwd, encoding: 'utf8', env: cleanGitEnv() })
@@ -139,6 +142,8 @@ beforeEach(() => {
 afterEach(() => db.close())
 
 describe('spawning', () => {
+  // @covers: team-worktree-staffing › A member is spawned when none is available › Spawn for an unstaffed worktree
+  // @covers: team-worktree-staffing › A member is spawned when none is available › Group settings applied
   test('an unstaffed worktree gets a member with the group settings and the message reserved for it', async () => {
     const t = task(featX)
     const m = mail(t.id)
@@ -169,6 +174,114 @@ describe('spawning', () => {
     mail(task(featX).id, { toKind: 'session', toId: 'lead' })
     expect(await pass()).toEqual([])
     expect(spawned).toEqual([])
+  })
+})
+
+describe('spawn approval resolution (team-approval-default O1–O9, L2)', () => {
+  type Row = [id: string, groupKey: 'manual' | 'auto' | null, teamDefault: 'manual' | 'auto' | null, policy: 'manual' | 'auto']
+  // | id | group key | team default | policy |
+  const TABLE: Row[] = [
+    ['O1', null, null, 'manual'],
+    ['O2', null, 'manual', 'manual'],
+    ['O3', null, 'auto', 'auto'],
+    ['O4', 'manual', null, 'manual'],
+    ['O5', 'manual', 'manual', 'manual'],
+    ['O6', 'manual', 'auto', 'manual'],
+    ['O7', 'auto', null, 'auto'],
+    ['O8', 'auto', 'manual', 'auto'],
+    ['O9', 'auto', 'auto', 'auto'],
+  ]
+  for (const [id, groupKey, teamDefault, policy] of TABLE) {
+    // @covers: team-worktree-staffing › A member is spawned when none is available › Neither set keeps manual
+    // @covers: team-worktree-staffing › A member is spawned when none is available › Team default applies to a group without the key
+    // @covers: team-worktree-staffing › A member is spawned when none is available › Explicit manual beats an auto default
+    // @covers: team-worktree-staffing › A member is spawned when none is available › Explicit auto beats a manual default
+    test(`${id}: group ${groupKey ?? 'absent'} × team ${teamDefault ?? 'none'} spawns ${policy}`, async () => {
+      writeGroup('devs', groupKey === null ? 'max: 1' : `max: 1\napproval: ${groupKey}`)
+      if (teamDefault !== null) staffing.approvalDefaults.set(team.teamId, teamDefault)
+      mail(task(featX).id)
+      await pass()
+      expect(spawned).toHaveLength(1)
+      expect(spawned[0]!.approvalPolicy).toBe(policy)
+    })
+  }
+
+  // @covers: team-worktree-staffing › A team has a default approval policy for spawned members › Defaults are per team
+  test('L2: another team’s default never reaches this team’s spawn', async () => {
+    writeGroup('devs', 'max: 1')
+    staffing.approvalDefaults.set('/elsewhere/.git', 'auto')
+    mail(task(featX).id)
+    await pass()
+    expect(spawned[0]!.approvalPolicy).toBe('manual')
+  })
+
+  test('the default is read at each spawn: a change reaches the next spawn only', async () => {
+    writeGroup('devs', 'max: 3')
+    mail(task(featX).id)
+    await pass()
+    staffing.approvalDefaults.set(team.teamId, 'auto')
+    mail(task(featY).id)
+    await pass()
+    expect(spawned.map(request => request.approvalPolicy)).toEqual(['manual', 'auto'])
+  })
+})
+
+describe('G1: spawn, preview, and Members agree on the policy (team-approval-default)', () => {
+  /** mulberry32: a fixed-seed generator, no dependency. */
+  const mulberry32 = (seed: number) => () => {
+    seed = (seed + 0x6d2b79f5) | 0
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+  const KEYS = [null, 'manual', 'auto'] as const
+
+  test('200 seeded cases: every reader equals resolveSpawnApproval', async () => {
+    // The design's seam: an in-memory database, so 400 writes do not wait on
+    // file syncs (the case's file database is replaced and closed by afterEach).
+    db.close()
+    db = initDatabase({ path: ':memory:' })
+    store = new MailboxStore(db.db)
+    tasks = new TaskStore(db.db, store)
+    staffing = makeStaffing()
+    const random = mulberry32(0x7a11)
+    const seen = new Set<string>()
+    // One parsed catalog per group-key variant, read through the real loader.
+    const catalogs = new Map<string, Awaited<ReturnType<typeof loadTeamGroups>>['catalog']>()
+    for (const key of KEYS) {
+      writeGroup('devs', key === null ? 'max: 1' : `max: 1\napproval: ${key}`)
+      catalogs.set(String(key), (await loadTeamGroups(repo, home)).catalog)
+    }
+    // One task carries every case's message: task writes are not what G1 tests.
+    const shared = task(featX)
+    for (let i = 0; i < 200; i++) {
+      const groupKey = KEYS[Math.floor(random() * 3)]!
+      const teamDefault = KEYS[Math.floor(random() * 3)]!
+      seen.add(`${groupKey}/${teamDefault}`)
+      db.db.prepare('DELETE FROM team_approval_defaults').run()
+      if (teamDefault !== null) staffing.approvalDefaults.set(team.teamId, teamDefault)
+      // Each case starts unstaffed, so the spawn's caps never decide the outcome.
+      for (const id of records.keys()) if (id !== 'lead') records.delete(id)
+      spawned = []
+      const catalog = catalogs.get(String(groupKey))!
+      const group = catalog.groups.get('devs')!.group
+      const expected = resolveSpawnApproval(group.approval, teamDefault)
+      const message = mail(shared.id)
+      expect(await staffing.spawnFor(store.get(message.id)!, featX, group, 'default')).not.toBeNull()
+      const preview = previewGroupDispatch({
+        worktree: featX, target: { kind: 'group', id: 'devs' }, group, members: [], recipient: () => undefined,
+        facts: { liveOnProfile: {}, pendingProfiles: [], groupMembers: 0, teamSpawned: 0, worktreeWriters: 0 },
+        teamCap: 5, providerOf: id => id, cooldownUntil: () => null, workerChoice: null,
+        teamDefault: staffing.approvalDefaults.get(team.teamId), now: clock,
+      })
+      const row = memberRows(catalog, [], () => ({}), staffing.approvalDefaults.get(team.teamId)).find(entry => entry.id === 'devs')!
+      const label = `case ${i}: group ${groupKey ?? 'absent'} × team ${teamDefault ?? 'none'}`
+      expect({ label, spawn: spawned[0]!.approvalPolicy }).toEqual({ label, spawn: expected.policy })
+      expect({ label, approval: preview.approval, source: preview.approvalSource }).toEqual({ label, approval: expected.policy, source: expected.source })
+      expect({ label, approval: row.approval, source: row.approvalSource }).toEqual({ label, approval: expected.policy, source: expected.source })
+    }
+    // The seed reaches every row of the table.
+    expect(seen.size).toBe(9)
   })
 })
 

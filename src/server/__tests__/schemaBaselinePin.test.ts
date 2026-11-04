@@ -510,9 +510,15 @@ const migration11And21: SchemaShape['tables'] = {
   },
 }
 
+// Migration 22's delta (team-approval-default D3): one default approval row
+// per team; its TEXT primary key's autoindex is skipped by the shape.
+const migration22: SchemaShape['tables'] = {
+  team_approval_defaults: { columns: [column('team_id', 0, 1), column('policy'), column('updated_at')], indexes: [] },
+}
+
 test('a fresh database opened by this build has the same shape plus each migration\'s delta and schema_migrations', () => {
   const session = initDatabase({ path: ':memory:' })
-  const added = { ...migration2, ...migration3, ...migration4, ...migration5, ...migration6, ...migration7, ...migration8, ...migration9, ...migration10, ...migration11And21, ...migration13, ...migration16, ...migration17, ...migration19, ...migration20 }
+  const added = { ...migration2, ...migration3, ...migration4, ...migration5, ...migration6, ...migration7, ...migration8, ...migration9, ...migration10, ...migration11And21, ...migration13, ...migration16, ...migration17, ...migration19, ...migration20, ...migration22 }
   expect(Object.keys(added).filter(table => table in expected.tables)).toEqual([])
   // Migration 20's: the submitter's nullable coverage map (independent-
   // verification D4), appended after the baseline columns.

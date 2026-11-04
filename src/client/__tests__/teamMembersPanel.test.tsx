@@ -11,7 +11,7 @@ const row = (extra: Partial<TeamMemberRow> = {}): TeamMemberRow => ({
     { profileId: 'claude', providerId: 'claude', providerLabel: 'Claude', cap: 2, live: 1 },
     { profileId: 'glm', providerId: 'zai', providerLabel: 'Z.AI', live: 0 },
   ],
-  approval: 'manual', strategy: 'first-available',
+  approval: 'manual', approvalSource: 'built-in', strategy: 'first-available',
   onLimit: { parkIfResetWithinMs: 3 * 3_600_000, otherwise: 'forward', forwardTo: 'lead' },
   warnings: [], sources: [{ file: '/home/u/.kawai/groups/devs.md', layer: 'user', inEffect: true }],
   members: [{ sessionId: 'chat-1', name: 'dev one', spawned: true, profile: 'claude', status: 'working', taskId: 't-1' }],
@@ -27,6 +27,8 @@ const mount = (members: TeamMemberRow[], opened: string[] = [], loaded = true) =
 }
 const byId = (renderer: TestRenderer.ReactTestRenderer, id: string) => renderer.root.findAll(node => node.props['data-testid'] === id)
 
+// @covers: team-workspace › Members is a read-only inspection of group settings › Caps show live counts
+// @covers: team-workspace › Members is a read-only inspection of group settings › Workers are grouped by provider
 test('caps show live counts and the live member is named', () => {
   const renderer = mount([row()])
   // Workers are grouped under their provider (design D13).
@@ -48,6 +50,7 @@ test('a single-layer group names one file; both layers name both with the winner
   expect(textOf(items[1]!)).toContain('/home/u/.kawai/groups/devs.md · user file · overridden')
 })
 
+// @covers: team-workspace › Members is a read-only inspection of group settings › Per-profile effort is shown beside the group effort
 test('the Effort row shows the group level, then per-profile levels: listed in group order, unlisted alphabetically', () => {
   const effort = (extra: Partial<TeamMemberRow>) => textOf(byId(mount([row(extra)]), 'member-effort')[0]!)
   expect(effort({})).toBe('Claude Code settings decide')
@@ -58,11 +61,13 @@ test('the Effort row shows the group level, then per-profile levels: listed in g
   expect(effort({ profileEffort: { haiku: 'xhigh' } })).toBe('Claude Code settings decide · haiku: xhigh')
 })
 
+// @covers: team-workspace › Members is a read-only inspection of group settings › A warning names what fell back
 test('warnings are shown beside the settings that took effect', () => {
   const renderer = mount([row({ warnings: ['profile "nope" is not defined; dropped'] })])
   expect(textOf(byId(renderer, 'member-warnings')[0]!)).toContain('profile "nope" is not defined; dropped')
 })
 
+// @covers: team-workspace › Members is a read-only inspection of group settings › Members cannot be edited
 test('the panel is read-only: no inputs, and the only buttons open a member’s chat; the prompt caveat is stated', () => {
   const opened: string[] = []
   const renderer = mount([row()], opened)

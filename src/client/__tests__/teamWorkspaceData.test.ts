@@ -18,7 +18,7 @@ const item = (id: string, requiresHuman = true): AttentionItem => ({
 
 const bucket = { items: [] }
 const snapshot = (attention: AttentionItem[]): TeamWorkspaceSnapshot => ({
-  tasks: [], attention, members: [], directory: [],
+  tasks: [], attention, members: [], approvalDefault: null, directory: [],
   summary: { since: '2026-10-14T00:00:00.000Z', completedResults: bucket, capacityWaits: bucket, approvals: bucket,
     uncertainDeliveries: bucket, finishedTurnsWithoutResult: bucket, outbound: bucket,
     landings: bucket, stops: bucket, stallAlerts: bucket, decisions: bucket, overrides: bucket },

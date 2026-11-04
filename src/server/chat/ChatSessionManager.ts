@@ -1488,6 +1488,19 @@ export class ChatSessionManager {
   }
 
   /** Live (non-archived) members of a team's group per profile, for cap warnings. */
+  /** The team's stored default approval policy for spawned members; null = not set (team-approval-default D3). */
+  teamApprovalDefault(teamId: string): ChatApprovalPolicy | null {
+    return this.teamMail.staffing.approvalDefaults.get(teamId)
+  }
+
+  /**
+   * Store the team's default (the human's Team page action only — no agent
+   * tool calls this). Later spawns read it; no existing session changes.
+   */
+  setTeamApprovalDefault(teamId: string, policy: ChatApprovalPolicy): void {
+    this.teamMail.staffing.approvalDefaults.set(teamId, policy)
+  }
+
   groupProfileCounts(teamId: string, groupId: string): Record<string, number> {
     const counts: Record<string, number> = {}
     for (const record of this.records.values()) {

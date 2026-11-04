@@ -5,6 +5,7 @@
 // worker choice and its models (dispatch-worker-choice 4.2).
 import type { Session } from '@shared/types'
 import type { TaskDispatchPreview } from '@shared/teamTasks'
+import { spawnApprovalSourceLabel } from '@shared/spawnApproval'
 import type { TeamGroupOption } from '../chat/useTeamGroups'
 import { sessionLabel } from './teamTaskLabels'
 
@@ -52,7 +53,7 @@ export function TaskPreviewView({ preview }: { preview: TaskDispatchPreview }) {
       Worker: {preview.worker.selector} ({preview.worker.profiles.join(', ') || 'no model of the group'})
       {preview.worker.cooldownUntil ? ` · cooling until ${new Date(preview.worker.cooldownUntil).toLocaleString()}` : ''}</p>}
     <p>Effective profile: {preview.profile ?? 'none available'}</p>
-    <p>Approval: {preview.approval}</p>
+    <p data-testid="task-preview-approval">Approval: {preview.approval}{preview.approvalSource ? ` · ${spawnApprovalSourceLabel(preview.approvalSource)}` : ''}</p>
     {preview.target.kind === 'group' && <p data-testid="task-preview-idle">
       Idle matching members: {preview.idleMembers.length > 0 ? preview.idleMembers.join(', ') : 'none'}</p>}
     {preview.target.kind === 'group' && <p data-testid="task-preview-staffing">{staffing}</p>}

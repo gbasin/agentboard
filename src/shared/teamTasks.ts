@@ -514,6 +514,8 @@ export interface TaskDispatchPreview {
   profile: string | null
   /** Approval policy of the spawned member (group target) or the session. */
   approval: 'manual' | 'auto'
+  /** Where a group target's policy came from (team-approval-default D6); absent for a session target. */
+  approvalSource?: 'group' | 'team' | 'built-in'
   /** A session target's resolved worktree; null for a group target. */
   sessionWorktree: string | null
   /** Idle members matching the target worktree (group targets); empty otherwise. */

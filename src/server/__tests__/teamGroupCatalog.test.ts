@@ -45,7 +45,7 @@ describe('loadGroupCatalog', () => {
     write(repo, 'devs.md', 'Project prompt.')
     const devs = loadGroupCatalog({ groupsRoot: repo, homeDir: home }).groups.get('devs')?.group
     expect(devs).toEqual({
-      id: 'devs', label: 'devs', description: '', canCreateTasks: false, canCreatePlans: false, canManageMailbox: false, releaseOnTaskClose: true, worktreeScoped: true, canReleaseMembers: true, canReportProcess: false, max: 1, approval: 'manual', prompt: 'Project prompt.',
+      id: 'devs', label: 'devs', description: '', canCreateTasks: false, canCreatePlans: false, canManageMailbox: false, releaseOnTaskClose: true, worktreeScoped: true, canReleaseMembers: true, canReportProcess: false, max: 1, prompt: 'Project prompt.',
       profiles: [], strategy: 'first-available', warnings: [],
       onLimit: { parkIfResetWithinMs: DEFAULT_PARK_IF_RESET_WITHIN_MS, otherwise: 'forward' },
     })
@@ -55,7 +55,9 @@ describe('loadGroupCatalog', () => {
     write(home, 'leads.md', '---\ncanCreateTasks: true\nmax: 4\nprofile: glm\napproval: auto\n---\nHome.')
     write(repo, 'leads.md', '---\nmax: 2\n---\nProject.')
     const leads = loadGroupCatalog({ groupsRoot: repo, homeDir: home }).groups.get('leads')?.group
-    expect(leads).toMatchObject({ canCreateTasks: false, max: 2, approval: 'manual', prompt: 'Project.' })
+    expect(leads).toMatchObject({ canCreateTasks: false, max: 2, prompt: 'Project.' })
+    // The user-level `approval: auto` does not leak through: the project file sets no key.
+    expect(leads?.approval).toBeUndefined()
     expect(leads?.profiles).toEqual([])
   })
 

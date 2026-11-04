@@ -243,7 +243,10 @@ export interface TeamMemberRow {
   max: number
   /** Effective profiles with caps and live counts. */
   profiles: TeamMemberProfile[]
+  /** The policy a spawned member gets, resolved with the team default (team-approval-default D2). */
   approval: 'manual' | 'auto'
+  /** Where `approval` came from: the group file, the team default, or built-in manual. */
+  approvalSource: 'group' | 'team' | 'built-in'
   strategy: string
   onLimit: { parkIfResetWithinMs: number; otherwise: 'forward' | 'release'; forwardTo?: string }
   /** Unset = Claude Code settings decide (group effort). */
@@ -315,6 +318,8 @@ export interface TeamWorkspaceSnapshot {
   tasks: TeamTaskRow[]
   attention: AttentionItem[]
   members: TeamMemberRow[]
+  /** The team's default approval policy for spawned members; null = not set (team-approval-default D4). */
+  approvalDefault: 'manual' | 'auto' | null
   summary: MorningSummary
   /** Last known identity of killed sessions named by rows and items. */
   directory: SessionDirectoryEntry[]

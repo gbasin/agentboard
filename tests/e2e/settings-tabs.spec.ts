@@ -112,3 +112,31 @@ test('the approval default commits on Save and seeds the New Session checkbox', 
 
   await killChat(page)
 })
+
+// @covers: chat-sessions › Users configure the default approval policy for new chat sessions › The default does not touch existing sessions
+test('changing the approval default leaves an existing chat on its own policy', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'New session', exact: true }).first().click()
+  const dialog = page.getByRole('dialog', { name: 'New Session' })
+  await expect(dialog.getByLabel('Auto-approve tools')).not.toBeChecked()
+  await dialog.getByLabel('Project Path').fill(process.cwd())
+  await dialog.getByPlaceholder('auto-generated').fill('Kept manual')
+  await dialog.getByRole('button', { name: 'Create', exact: true }).click()
+  await expect(page.getByTestId('chat-view')).toContainText('Kept manual')
+  await expect(page.getByTestId('chat-approval-policy')).toHaveAttribute('aria-checked', 'false')
+
+  await openSettings(page)
+  await page.getByRole('tab', { name: 'Chat' }).click()
+  await panel(page, 'Chat').getByRole('radio', { name: 'Auto-approve', exact: true }).click()
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
+
+  // The existing chat keeps manual: its next tool use still asks.
+  await page.locator('[data-session-id^="chat-"]').filter({ hasText: 'Kept manual' }).first().click()
+  await expect(page.getByTestId('chat-view')).toContainText('Kept manual')
+  await expect(page.getByTestId('chat-approval-policy')).toHaveAttribute('aria-checked', 'false')
+  await page.getByLabel('Message Claude').fill('approval')
+  await page.getByRole('button', { name: 'Send', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Allow', exact: true })).toBeVisible()
+
+  await killChat(page)
+})

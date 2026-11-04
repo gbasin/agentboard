@@ -107,6 +107,7 @@ describe('the read model gathers each episode\'s facts', () => {
       getPendingRequests: () => [],
       teams: { catalogForTeam: () => ({ groups: new Map() }) },
       groupProfileCounts: () => ({}),
+      teamApprovalDefault: () => null,
       turnEnds: { finishedForTeam: () => [] },
       outboundAudit: { violationGroups: () => [], windowCounts: () => ({ allowed: 0, unknown: 0, violations: 0 }) },
       exhaustionEpisodes: () => [episode()],

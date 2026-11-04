@@ -1,0 +1,7 @@
+{"timestamp":"2026-11-02T17:59:03.000Z","type":"session_meta","payload":{"id":"autocomplete-smoke","cwd":"/project"}}
+{"timestamp":"2026-11-02T17:59:04.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"smoke"}}
+{"timestamp":"2026-11-02T17:59:04.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<environment_context>\n  <cwd>/project</cwd>\n</environment_context>"}]}}
+{"timestamp":"2026-11-02T17:59:04.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"/autocomplete-smoke Please follow the attached skill."}]}}
+{"timestamp":"2026-11-02T17:59:04.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<skill>\n<name>autocomplete-smoke</name>\n<path>/project/.agents/skills/autocomplete-smoke/SKILL.md</path>\n---\nname: autocomplete-smoke\ndescription: Benign autocomplete invocation smoke.\n---\nReply with exactly AUTOCOMPLETE_SMOKE_OK. Do not run tools or modify files.\n</skill>"}]}}
+{"timestamp":"2026-11-02T17:59:06.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"AUTOCOMPLETE_SMOKE_OK"}]}}
+{"timestamp":"2026-11-02T17:59:06.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"smoke","last_agent_message":"AUTOCOMPLETE_SMOKE_OK"}}

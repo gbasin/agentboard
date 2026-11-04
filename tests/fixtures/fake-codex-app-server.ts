@@ -55,7 +55,7 @@ interface Record {
  * the run until a path exists. The run splitter and the id correlator skip
  * them.
  */
-type FakeRecord = { fake: 'append'; file: string; line?: string } | { fake: 'gate'; path: string }
+type FakeRecord = { fake: 'append'; file: string; line?: string } | { fake: 'gate'; path: string } | { fake: 'assertInput'; input: unknown[] }
 type AnyRecord = Record | FakeRecord
 const isFake = (record: AnyRecord): record is FakeRecord => 'fake' in record
 interface Message {
@@ -95,6 +95,11 @@ const expectedOut = steps
   .map(step => String(step.message.method))
 /** The client's request ids in arrival order, to correlate responses (N6). */
 const sentIds: unknown[] = []
+// Older recordings predate optional skill discovery. Answer an unscripted
+// skills/list as unsupported, tracking its id offset without weakening the
+// recorded-id check for any scripted request (including scripted discovery).
+const skippedBefore: number[] = []
+let skippedDiscovery = 0
 const replies = new Map<unknown, unknown>()
 const waiters: Array<{ ready: () => boolean; resume: () => void }> = []
 const checkWaiters = () => {
@@ -124,6 +129,11 @@ const onClientLine = (line: string) => {
   if (!line.trim()) return
   const message = JSON.parse(line) as Message
   if (message.method !== undefined) {
+    if (message.method === 'skills/list' && expectedOut[0] !== 'skills/list') {
+      skippedDiscovery++
+      emit({ id: message.id, error: { code: -32601, message: 'Skill discovery not scripted' } })
+      return
+    }
     const expected = expectedOut.shift()
     if (expected !== message.method) {
       console.error(`fake-codex-app-server: expected client ${expected ?? '<end of run>'}, got ${String(message.method)}`)
@@ -131,6 +141,7 @@ const onClientLine = (line: string) => {
     }
     if (message.id !== undefined) {
       sentIds.push(message.id)
+      skippedBefore.push(skippedDiscovery)
     }
     if (message.method === 'turn/start') lastTurnInput = message.params
   } else if (message.id !== undefined) {
@@ -147,6 +158,12 @@ let responseOrdinal = 0
     else if (step.fake?.fake === 'gate') {
       const gate = step.fake.path
       while (!existsSync(gate)) await Bun.sleep(10)
+    } else if (step.fake?.fake === 'assertInput') {
+      const input = (lastTurnInput as { input?: unknown[] } | null)?.input
+      if (JSON.stringify(input) !== JSON.stringify(step.fake.input)) {
+        console.error('fake-codex-app-server: native turn input did not match the expected text/skill identities')
+        process.exit(2)
+      }
     }
     if (step.dir !== 'in') continue
     const message = step.message
@@ -161,11 +178,12 @@ let responseOrdinal = 0
       // mismatches the same way (R2-3) instead of waiting on `undefined`.
       const ordinal = responseOrdinal++
       await waitFor(() => sentIds.length > ordinal)
-      if (sentIds[ordinal] !== message.id) {
+      const expectedId = typeof message.id === 'number' ? message.id + skippedBefore[ordinal]! : message.id
+      if (sentIds[ordinal] !== expectedId) {
         console.error(`fake-codex-app-server: recorded response id ${String(message.id)} but the client's request #${ordinal} carried ${String(sentIds[ordinal])}`)
         process.exit(2)
       }
-      emit(message)
+      emit({ ...message, id: sentIds[ordinal] })
     }
   }
   if (process.env.FAKE_EXIT_AFTER_REPLAY === '1') process.exit(0)

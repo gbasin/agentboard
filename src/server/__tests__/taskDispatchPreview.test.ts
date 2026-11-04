@@ -28,6 +28,7 @@ let tasks: TaskService
 let assignments: AssignmentService
 let records: Map<string, ChatSessionRecord>
 let cooldowns: Map<string, string>
+let staffing: WorktreeStaffing
 const team = () => ({ teamId: 'team', groupsRoot: dir })
 const human = () => ({ kind: 'human' as const, team: team() })
 const FUTURE = '2099-01-01T00:00:00.000Z'
@@ -44,6 +45,7 @@ beforeEach(() => {
   fs.writeFileSync(path.join(groups, 'devs.md'), '---\nprofiles: [sonnet, glm-flash]\nmax: 4\n---\nBuild features')
   fs.writeFileSync(path.join(groups, 'capped.md'), '---\nprofiles: { sonnet: 1, glm-flash: 1 }\n---\nCapped')
   fs.writeFileSync(path.join(groups, 'pair.md'), '---\nprofiles: { sonnet: 2, glm-flash: 1 }\n---\nPaired')
+  fs.writeFileSync(path.join(groups, 'strict.md'), '---\nprofiles: [sonnet]\napproval: manual\n---\nStrict')
   fs.writeFileSync(path.join(groups, 'solo.md'), '---\nprofiles: { sonnet: 1 }\nmax: 3\n---\nSolo')
   db = initDatabase({ path: path.join(dir, 'db.sqlite') })
   mail = new MailboxStore(db.db)
@@ -54,7 +56,7 @@ beforeEach(() => {
   tasks = new TaskService(taskStore, { getSession: id => records.get(id) })
   const worktrees = new TeamWorktrees()
   const teamOf = (id: string) => records.has(id) ? team() : undefined
-  const staffing = new WorktreeStaffing(db.db, mail, {
+  staffing = new WorktreeStaffing(db.db, mail, {
     records: () => records.values(), teamOf, caps: new TeamCaps({}), worktrees,
     spawn: () => Promise.resolve({ ok: false, error: 'no spawn in tests' }),
   })
@@ -85,38 +87,38 @@ const pendingSpawn = (group: string, profileId: string) => db.db.prepare(`INSERT
 describe('without a worker the preview is unchanged', () => {
   test('a spawnable worktree task names the first allowed profile', async () => {
     const task = await worktreeTask()
-    expect(JSON.stringify(await preview(task.id, 'devs'))).toBe(`{"worktree":"${worktree}","target":{"kind":"group","id":"devs"},"role":"devs","profile":"sonnet","approval":"manual","sessionWorktree":null,"idleMembers":[],"spawn":{"allowed":true,"profile":"sonnet","blockedBy":null},"warning":null}`)
+    expect(JSON.stringify(await preview(task.id, 'devs'))).toBe(`{"worktree":"${worktree}","target":{"kind":"group","id":"devs"},"role":"devs","profile":"sonnet","approval":"manual","approvalSource":"built-in","sessionWorktree":null,"idleMembers":[],"spawn":{"allowed":true,"profile":"sonnet","blockedBy":null},"warning":null}`)
   })
 
   test('an occupied worktree blocks the spawn but still names the profile', async () => {
     const task = await worktreeTask()
     member('dev', { spawned: true, status: 'working' })
-    expect(JSON.stringify(await preview(task.id, 'devs'))).toBe(`{"worktree":"${worktree}","target":{"kind":"group","id":"devs"},"role":"devs","profile":"sonnet","approval":"manual","sessionWorktree":null,"idleMembers":[],"spawn":{"allowed":false,"profile":"sonnet","blockedBy":"a spawned member already works in ${worktree}"},"warning":null}`)
+    expect(JSON.stringify(await preview(task.id, 'devs'))).toBe(`{"worktree":"${worktree}","target":{"kind":"group","id":"devs"},"role":"devs","profile":"sonnet","approval":"manual","approvalSource":"built-in","sessionWorktree":null,"idleMembers":[],"spawn":{"allowed":false,"profile":"sonnet","blockedBy":"a spawned member already works in ${worktree}"},"warning":null}`)
   })
 
   test('every allowed profile cooling reads as before', async () => {
     const task = await worktreeTask()
     cooldowns.set('sonnet', FUTURE).set('glm-flash', FUTURE)
-    expect(JSON.stringify(await preview(task.id, 'devs'))).toBe(`{"worktree":"${worktree}","target":{"kind":"group","id":"devs"},"role":"devs","profile":null,"approval":"manual","sessionWorktree":null,"idleMembers":[],"spawn":{"allowed":false,"profile":null,"blockedBy":"every allowed profile is at its cap or cooling down"},"warning":null}`)
+    expect(JSON.stringify(await preview(task.id, 'devs'))).toBe(`{"worktree":"${worktree}","target":{"kind":"group","id":"devs"},"role":"devs","profile":null,"approval":"manual","approvalSource":"built-in","sessionWorktree":null,"idleMembers":[],"spawn":{"allowed":false,"profile":null,"blockedBy":"every allowed profile is at its cap or cooling down"},"warning":null}`)
   })
 
   test('a cooling first profile skips to the next, as before', async () => {
     const task = await worktreeTask()
     cooldowns.set('sonnet', FUTURE)
-    expect(JSON.stringify(await preview(task.id, 'devs'))).toBe(`{"worktree":"${worktree}","target":{"kind":"group","id":"devs"},"role":"devs","profile":"glm-flash","approval":"manual","sessionWorktree":null,"idleMembers":[],"spawn":{"allowed":true,"profile":"glm-flash","blockedBy":null},"warning":null}`)
+    expect(JSON.stringify(await preview(task.id, 'devs'))).toBe(`{"worktree":"${worktree}","target":{"kind":"group","id":"devs"},"role":"devs","profile":"glm-flash","approval":"manual","approvalSource":"built-in","sessionWorktree":null,"idleMembers":[],"spawn":{"allowed":true,"profile":"glm-flash","blockedBy":null},"warning":null}`)
   })
 
   test('a task without a worktree reads as before', async () => {
     const task = await tasks.create(human(), { title: 'Export', direction: 'v1' })
     member('idle', { projectPath: path.join(dir, 'elsewhere') })
-    expect(JSON.stringify(await preview(task.id, 'devs'))).toBe(`{"worktree":null,"target":{"kind":"group","id":"devs"},"role":"devs","profile":"sonnet","approval":"manual","sessionWorktree":null,"idleMembers":["idle"],"spawn":{"allowed":false,"profile":"sonnet","blockedBy":"the task has no target worktree"},"warning":null}`)
+    expect(JSON.stringify(await preview(task.id, 'devs'))).toBe(`{"worktree":null,"target":{"kind":"group","id":"devs"},"role":"devs","profile":"sonnet","approval":"manual","approvalSource":"built-in","sessionWorktree":null,"idleMembers":["idle"],"spawn":{"allowed":false,"profile":"sonnet","blockedBy":"the task has no target worktree"},"warning":null}`)
   })
 
   test('the group cap reads as before', async () => {
     const task = await worktreeTask()
     member('a', { groupId: 'capped', projectPath: path.join(dir, 'a') })
     member('b', { groupId: 'capped', claudeProfileId: 'glm-flash', projectPath: path.join(dir, 'b') })
-    expect(JSON.stringify(await preview(task.id, 'capped'))).toBe(`{"worktree":"${worktree}","target":{"kind":"group","id":"capped"},"role":"capped","profile":null,"approval":"manual","sessionWorktree":null,"idleMembers":[],"spawn":{"allowed":false,"profile":null,"blockedBy":"group capped is at its max of 2 live members"},"warning":null}`)
+    expect(JSON.stringify(await preview(task.id, 'capped'))).toBe(`{"worktree":"${worktree}","target":{"kind":"group","id":"capped"},"role":"capped","profile":null,"approval":"manual","approvalSource":"built-in","sessionWorktree":null,"idleMembers":[],"spawn":{"allowed":false,"profile":null,"blockedBy":"group capped is at its max of 2 live members"},"warning":null}`)
   })
 })
 
@@ -195,5 +197,21 @@ describe('with a worker the preview applies the choice through the eligibility c
     member('dev')
     await expect(assignments.preview(human(), { taskId: task.id, target: { kind: 'session', id: 'dev' }, worker: 'claude' }))
       .rejects.toThrow(WORKER_GROUP_TARGET_ONLY)
+  })
+})
+
+describe('the group preview shows the policy a spawn gets (team-approval-default O3, O6)', () => {
+  // @covers: task-assignment › Dispatch can be previewed before sending › Group preview shows the resolved policy and its source
+  test('O3: no group key under an auto team default previews auto from the team default', async () => {
+    staffing.approvalDefaults.set('team', 'auto')
+    const shown = await preview((await worktreeTask()).id, 'devs')
+    expect({ approval: shown.approval, approvalSource: shown.approvalSource }).toEqual({ approval: 'auto', approvalSource: 'team' })
+  })
+
+  // @covers: task-assignment › Dispatch can be previewed before sending › Group preview names a group key over the default
+  test('O6: an explicit manual group key wins over an auto team default', async () => {
+    staffing.approvalDefaults.set('team', 'auto')
+    const shown = await preview((await worktreeTask()).id, 'strict')
+    expect({ approval: shown.approval, approvalSource: shown.approvalSource }).toEqual({ approval: 'manual', approvalSource: 'group' })
   })
 })
