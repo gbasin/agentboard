@@ -118,11 +118,7 @@ this feature SHALL behave as manual.
 - **THEN** the session's approval policy is manual
 
 ### Requirement: Users configure the default approval policy for new chat sessions
-The system SHALL let the user choose the approval policy new chat sessions
-start with, from Settings, and SHALL apply it at creation unless the user
-overrides it in the New Session dialog. A chat created by `/clear`, `/reset`,
-or `/new` instead carries over the previous chat's policy. The stored default
-SHALL NOT change the policy of any existing session.
+The system SHALL let the user choose, from Settings, the approval policy that chat sessions they create start with, and SHALL apply it at creation unless they override it in the New Session dialog. A chat created by `/clear`, `/reset`, or `/new` carries over the previous chat's policy. Settings SHALL say that spawned team members follow their group's `approval:` key and the team default instead. The stored default SHALL NOT change any existing session's policy.
 
 #### Scenario: Settings default seeds new chats
 - **WHEN** the user sets the default approval policy to auto and then creates a chat session
@@ -139,6 +135,10 @@ SHALL NOT change the policy of any existing session.
 #### Scenario: Unspecified policy creates a manual session
 - **WHEN** a client creates a chat session without naming an approval policy
 - **THEN** the session starts with the manual policy regardless of the stored default
+
+#### Scenario: Settings names where spawned members get their policy
+- **WHEN** the user opens the Approval Policy setting
+- **THEN** its description says it covers chats the user creates, and that spawned team members use their group's `approval:` key, then the team default set on the Team page
 
 ### Requirement: Auto policy grants tool approvals without a card
 While a chat session's policy is auto, the system SHALL grant each tool

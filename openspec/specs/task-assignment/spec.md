@@ -62,11 +62,19 @@ When task creation succeeds and dispatch fails, the error SHALL be shown inline,
 - **THEN** the error names the worktree and every entered form field, including the assignment target and instruction, remains as entered
 
 ### Requirement: Dispatch can be previewed before sending
-Before dispatch, the UI SHALL show a preview with the target worktree, the requested role, the effective profile, the approval policy, and whether staffing is available for the target. For a session target the preview SHALL show that session's resolved worktree, profile, and approval policy, and SHALL warn when its resolved worktree differs from the task's target worktree without blocking dispatch. The preview SHALL be informational: every constraint SHALL be revalidated at dispatch.
+Before dispatch, the UI SHALL show a preview with the target worktree, the requested role, the effective profile, the approval policy, and whether staffing is available for the target. A group preview's policy SHALL be the one a spawn would get, with its source. For a session target the preview SHALL show that session's resolved worktree, profile, and policy, and SHALL warn, not block, when that worktree differs from the task's. Every constraint SHALL be revalidated at dispatch.
 
 #### Scenario: Group preview shows staffing availability
 - **WHEN** the human previews an assignment to a group for a task targeting a worktree with no idle matching member
-- **THEN** the preview names the worktree, the group's role, the profile a spawned member would use, the group's approval policy, and whether staffing can add a member
+- **THEN** the preview names the worktree, the group's role, the profile a spawned member would use, the approval policy a spawned member would get, and whether staffing can add a member
+
+#### Scenario: Group preview shows the resolved policy and its source
+- **WHEN** the team default is auto and the human previews an assignment to a group with no `approval:` key
+- **THEN** the preview shows auto from the team default, the policy a member spawned by that dispatch starts with
+
+#### Scenario: Group preview names a group key over the default
+- **WHEN** the team default is auto and the group sets `approval: manual`
+- **THEN** the preview shows manual from the group file
 
 #### Scenario: Session preview shows profile and policy
 - **WHEN** the human previews an assignment to a specific session
