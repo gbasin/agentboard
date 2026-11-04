@@ -4,6 +4,8 @@
 // - direct.startBase returns the execution's Start-time base commit, the
 //   value the planner records in the provision command, exactly as before;
 // - the provision starts the worktree from the mechanism's resolved base;
+// - under direct, a change provisioned after a landing of its execution starts
+//   from the newest such landing, and never from another execution's;
 // - direct owns only the update-branch and merge effects;
 // - the registry carries only the registered modes, and an unregistered
 //   mode is a programming error naming it.
@@ -50,7 +52,8 @@ beforeAll(() => {
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }))
 
 const execution = (baseCommit: string) => ({ id: 'exec-1', planId: 'plan-1', landingMode: 'direct', baseBranch: 'master', baseCommit }) as unknown as ExecutionRow
-const fakeStore = (row: ExecutionRow) => ({ execution: () => row, doneProvisions: () => [] }) as unknown as ExecutionStore
+const fakeStore = (row: ExecutionRow, landings: Array<{ executionId: string; mergeSha: string }> = []) =>
+  ({ execution: () => row, doneProvisions: () => [], landings: () => landings }) as unknown as ExecutionStore
 const provisionEffect = (change: string, base: string) => ({
   id: `effect-${change}`, executionId: 'exec-1', change, roundId: null, kind: 'provision', effectKey: `exec-1:${change}:provision:1:0`,
   command: { repo: main, path: path.join(main, '.worktrees', change), branch: change, base, baseBranch: 'master', planId: 'plan-1' },
@@ -74,6 +77,19 @@ describe('the direct landing mechanism', () => {
     const result = await provisionAdapter(fakeStore(execution(first)), undefined, new Map([['direct', resolving]])).call(provisionEffect('beta', first))
     expect(result).toMatchObject({ ok: true, outcome: { baseline: second } })
     expect(git(['rev-parse', 'HEAD'], path.join(main, '.worktrees', 'beta'))).toBe(second)
+  })
+
+  test("a change provisioned after its execution's landings starts from the newest one", async () => {
+    const landings = [{ executionId: 'exec-1', mergeSha: first }, { executionId: 'exec-1', mergeSha: second }]
+    const result = await provisionAdapter(fakeStore(execution(first), landings)).call(provisionEffect('gamma', first))
+    expect(result).toMatchObject({ ok: true, outcome: { baseline: second } })
+    expect(git(['rev-parse', 'HEAD'], path.join(main, '.worktrees', 'gamma'))).toBe(second)
+  })
+
+  test("another execution's landing does not move the start commit", async () => {
+    const result = await provisionAdapter(fakeStore(execution(first), [{ executionId: 'exec-0', mergeSha: second }])).call(provisionEffect('delta', first))
+    expect(result).toMatchObject({ ok: true, outcome: { baseline: first } })
+    expect(git(['rev-parse', 'HEAD'], path.join(main, '.worktrees', 'delta'))).toBe(first)
   })
 
   test('direct owns the update-branch and merge effects only', () => {

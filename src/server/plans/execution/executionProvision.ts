@@ -3,7 +3,8 @@
 // a name that exists is accepted only when a done provision of an execution
 // of the same plan created it — then add the worktree from the main
 // checkout at the base sha the execution's landing mechanism resolves
-// (direct: the Start-time base commit), never with --force, reusing the worktree
+// (direct: the execution's newest landing, else the Start-time base commit, so a
+// change gets what landed before it), never with --force, reusing the worktree
 // or branch an earlier execution of the plan left behind. The main
 // checkout's HEAD, index, and files are never touched; fetching updates
 // only remote-tracking refs. Git comes in as the gitRemote functions, so
@@ -51,8 +52,12 @@ export function provisionAdapter(store: ExecutionStore, git: ProvisionGit = { fe
         if (!fetched.ok) return { ok: false, error: fetched.error }
         // The start commit, resolved now by the execution's mechanism (integration-candidates D1).
         const execution = store.execution(effect.executionId)
+        // A landing's merge is on the base branch fetched above and contains the
+        // execution's earlier landings, so a dependent change starts with them.
+        const landed = execution === null ? undefined
+          : store.landings(execution.planId).filter(landing => landing.executionId === execution.id).at(-1)
         const started = execution === null ? { ok: true as const, sha: recorded }
-          : await mechanismFor(mechanisms, execution.landingMode).startBase({ execution, recorded, repo, lsRemoteHead: git.lsRemoteHead })
+          : await mechanismFor(mechanisms, execution.landingMode).startBase({ execution, recorded: landed?.mergeSha ?? recorded, repo, lsRemoteHead: git.lsRemoteHead })
         if (!started.ok) return { ok: false, error: started.error }
         const base = started.sha
 
