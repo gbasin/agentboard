@@ -323,12 +323,13 @@ export class WorkspaceRead {
       .filter(record => record.archivedAt == null)
       .map(record => ({ record, requests: manager.getPendingRequests(record.sessionId) }))
     // Kawai accepts an execution-owned task when its change lands. A human
-    // accept would stop the change as task-closed, so it is never asked for.
+    // accept would stop the change as task-closed, so it is never asked for;
+    // failing findings still list their agent-owned wait for fixes.
     const ownedByExecution = (taskId: string) => manager.results?.ownedByExecution(taskId) === true
     const pendingAcceptance: PendingAcceptance[] = summaries.flatMap(summary => {
       const result = summary.outstandingResult
       if (!result || result.accepted || summary.status === 'done' || summary.status === 'cancelled') return []
-      if (ownedByExecution(summary.id)) return []
+      if (result.reviewVerdict !== 'fail' && ownedByExecution(summary.id)) return []
       const submittedBy = store.results.get(result.id)?.submittedBy
       const creatorId = summary.creator.sessionId
       const creator = creatorId ? records.find(record => record.sessionId === creatorId && record.archivedAt == null) : undefined

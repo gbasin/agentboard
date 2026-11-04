@@ -620,7 +620,10 @@ describe('WorkspaceRead.snapshot acceptance ownership (attention-acceptance-owne
   })
 
   test('failing findings on an owned task still wait for fixes', () => {
-    const { tasks } = snapshotFor({ kind: 'system', sessionId: null }, [dev], 'fail', true)
+    const { attention, tasks } = snapshotFor({ kind: 'system', sessionId: null }, [dev], 'fail', true)
+    expect(attention.filter(item => item.kind === 'pending-acceptance')).toEqual([])
+    expect(attention.filter(item => item.kind === 'fixes-requested').map(item => ({ owner: item.owner.id, requiresHuman: item.requiresHuman })))
+      .toEqual([{ owner: 'chat-dev', requiresHuman: false }])
     expect(tasks[0]).toMatchObject({ nextAction: 'Wait for fixes' })
   })
 
