@@ -10,6 +10,8 @@
 // one shared body alignment; every other row is an AsideRow in the body
 // column. transcriptLayout decides turn and author breaks and day separators;
 // nested worker transcripts reuse this component and reflow on their own width.
+// Each message row carries its event's original string as `copyText`
+// (copy-chat-message-markdown D1): user and assistant `text`, peer `body`.
 import type { ChatEvent } from '@shared/chat'
 import { workspaceContextLabel } from '@shared/planWorkspace'
 import { snippetLabel } from '@shared/sessionSearch'
@@ -80,10 +82,10 @@ function ChatMessagesView({ events, projectPath, sessionId, sendMessage, connect
   const hasVisibleRows = useMemo(() => entries.some(isVisibleEntry), [entries])
 
   /** A message row's author, body, and body surface; null for aside rows. */
-  const message = (event: ChatEvent): { author: ReactNode; role: 'user' | 'assistant' | 'peer'; body: ReactNode; bodyClassName?: string } | null => {
+  const message = (event: ChatEvent): { author: ReactNode; role: 'user' | 'assistant' | 'peer'; body: ReactNode; bodyClassName?: string; copyText: string } | null => {
     switch (event.type) {
       case 'user_message':
-        return { author: 'You', role: 'user', bodyClassName: 'border border-border bg-elevated px-3 py-2',
+        return { author: 'You', role: 'user', copyText: event.text, bodyClassName: 'border border-border bg-elevated px-3 py-2',
           body: <>
             {/* The attachment the server validated for this exact message
                 (§6.3): the stored snapshot, never the current selection. */}
@@ -92,9 +94,9 @@ function ChatMessagesView({ events, projectPath, sessionId, sendMessage, connect
             <p className="whitespace-pre-wrap break-words text-chat-body">{event.text}</p>
           </> }
       case 'assistant_text':
-        return { author: agentLabel, role: 'assistant', body: <Markdown content={event.text} /> }
+        return { author: agentLabel, role: 'assistant', copyText: event.text, body: <Markdown content={event.text} /> }
       case 'peer_message':
-        return { author: <>Peer · {names(event.senderSession, event.senderKind)}</>, role: 'peer',
+        return { author: <>Peer · {names(event.senderSession, event.senderKind)}</>, role: 'peer', copyText: event.body,
           bodyClassName: 'border-l-2 border-primary bg-elevated px-3 py-2', body: <>
             <div className="mb-1 flex flex-wrap gap-2 text-chat-meta text-secondary">
               <span>{event.senderGroup ?? 'No group'}</span><span>{event.priority}</span>
@@ -157,7 +159,7 @@ function ChatMessagesView({ events, projectPath, sessionId, sendMessage, connect
       if (row) {
         return <Fragment key={key}>{day}
           <MessageRow author={row.author} showAuthor={layout.authorStart} at={event.at} spacing={day ? '' : spacing}
-            role={row.role} anchorId={event.id} bodyClassName={row.bodyClassName}>{row.body}</MessageRow>
+            role={row.role} anchorId={event.id} bodyClassName={row.bodyClassName} copyText={row.copyText}>{row.body}</MessageRow>
         </Fragment>
       }
       const node = aside(event, result)
