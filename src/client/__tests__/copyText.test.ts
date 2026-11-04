@@ -55,7 +55,7 @@ function install(asyncAvailable: boolean, asyncResult: Async, fallback: Fallback
         clipboardData: { setData: (type: string, value: string) => { if (type === 'text/plain') data = value } },
         preventDefault: () => { harness.clipboard = data },
       } as unknown as ClipboardEvent
-      for (const listener of [...listeners]) listener(event)
+      for (const listener of listeners) listener(event)
       return true
     },
   })

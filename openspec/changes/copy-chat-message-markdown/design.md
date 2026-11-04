@@ -45,9 +45,11 @@ it would also pick up workspace-context lines and peer metadata.
 
 ### D2 — The control lives in the metadata slot
 
-`MessageCopyButton` renders inside `.chat-row-meta`, after `ChatTime`. In
-gutter layout it sits under the author and time. In stacked layout it sits
-beside the time. Either way it never overlaps body text, which an absolutely
+`MessageCopyButton` renders inside `.chat-row-meta`, after `ChatTime`, and
+both are wrapped in an inline `.chat-row-stamp` so the button shares the
+time's line in both layouts. A gutter row therefore grows no taller than
+before; a button under the time would add a line to every one-line
+continuation. It never overlaps body text, which an absolutely
 positioned overlay in the body's top-right corner would do on short or
 wide-code rows. Space for the button is always reserved: it is hidden with
 `opacity: 0`, not `display: none`, so showing it causes no layout shift. It
