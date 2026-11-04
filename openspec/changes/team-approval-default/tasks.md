@@ -21,8 +21,8 @@
 
 ## 4. Client
 
-- [ ] 4.1 Add the "Default approval for spawned members" control and its hint to the head of `TeamMembersPanel.tsx`. It sends the action, shows a refusal inline, is disabled while disconnected, and follows the snapshot (D7). Add source labels to the group rows and to `taskAssignFields.tsx`. Verify with component tests for these scenarios: setting the default updates the group rows, the control is disabled while disconnected, and the approval source is shown. Kill the mutant that renders the stored default instead of the row's resolved policy.
-- [ ] 4.2 Reword the Approval Policy hint in `ChatSettings.tsx`. Verify with a component test of the scenario "Settings names where spawned members get their policy", and confirm that `NewSessionModal` still seeds from the browser setting (the existing tests pass).
+- [x] 4.1 Add the "Default approval for spawned members" control and its hint to the head of `TeamMembersPanel.tsx`. It sends the action, shows a refusal inline, is disabled while disconnected, and follows the snapshot (D7). Add source labels to the group rows and to `taskAssignFields.tsx`. Verify with component tests for these scenarios: setting the default updates the group rows, the control is disabled while disconnected, and the approval source is shown. Kill the mutant that renders the stored default instead of the row's resolved policy.
+- [x] 4.2 Reword the Approval Policy hint in `ChatSettings.tsx`. Verify with a component test of the scenario "Settings names where spawned members get their policy", and confirm that `NewSessionModal` still seeds from the browser setting (the existing tests pass).
 - [ ] 4.3 After `bun run build`, add a Playwright spec that sets the default on one tab's Members tab and sees the change on a second tab. Verify with `bun run test:e2e` on that spec (scenario: another open view follows the change).
 
 ## 5. Docs and coverage

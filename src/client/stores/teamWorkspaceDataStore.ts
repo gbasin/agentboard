@@ -8,6 +8,9 @@
 // replayed snapshot raises nothing and an item that resolves and returns
 // never re-toasts. The first snapshot of a team is its baseline: items
 // already waiting when the page opens are visible in the queue, not news.
+// The team default approval save (team-approval-default D4) keeps only its
+// in-flight flag and the server's last refusal per team key; the value
+// itself is the snapshot's `approvalDefault`, so every view follows a push.
 import { create } from 'zustand'
 import type { AttentionItem, TeamWorkspaceSnapshot } from '@shared/teamWorkspace'
 
@@ -20,8 +23,23 @@ export interface TeamWorkspaceData {
   snapshot: TeamWorkspaceSnapshot | null
 }
 
+/** A team default approval save: waiting for its result, and the last refusal. */
+export interface ApprovalSave {
+  pending: boolean
+  error: string | null
+}
+
+type ApprovalResultMessage = { teamPath: string } & ({ ok: true } | { ok: false; error: string })
+
 interface TeamWorkspaceDataState {
   views: Record<string, TeamWorkspaceData>
+  /** Per team key; absent = no save attempted this page lifetime. */
+  approvalSaves: Record<string, ApprovalSave>
+  beginApprovalSave: (teamKey: string) => void
+  /** The server's answer: clears the wait, keeps a refusal to show inline. */
+  applyApprovalResult: (message: ApprovalResultMessage) => void
+  /** The connection dropped: an in-flight save will never answer. */
+  cancelApprovalSave: (teamKey: string) => void
   /** Identities already toasted or seen at baseline, for the client session. */
   seen: Set<string>
   /** Create the team's slot; an existing one keeps its last read. */
@@ -38,6 +56,14 @@ interface TeamWorkspaceDataState {
 export const useTeamWorkspaceDataStore = create<TeamWorkspaceDataState>((set, get) => ({
   views: {},
   seen: new Set(),
+  approvalSaves: {},
+  beginApprovalSave: teamKey => set(state => ({ approvalSaves: { ...state.approvalSaves, [teamKey]: { pending: true, error: null } } })),
+  applyApprovalResult: message => set(state => ({
+    approvalSaves: { ...state.approvalSaves, [message.teamPath]: { pending: false, error: message.ok ? null : message.error } },
+  })),
+  cancelApprovalSave: teamKey => set(state => state.approvalSaves[teamKey]?.pending
+    ? { approvalSaves: { ...state.approvalSaves, [teamKey]: { pending: false, error: state.approvalSaves[teamKey]!.error } } }
+    : state),
   open: teamKey => set(state => state.views[teamKey]
     ? state
     : { views: { ...state.views, [teamKey]: { teamId: null, snapshot: null } } }),
