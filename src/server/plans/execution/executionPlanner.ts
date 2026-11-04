@@ -141,6 +141,8 @@ export function planSteps(snapshot: ExecutionSnapshot, _now: string): PlanSteps 
             base: execution.row.baseCommit,
             baseBranch: execution.row.baseBranch,
             planId: execution.row.planId,
+            // The provision starts from this execution's newest landing among these.
+            dependsOn: change.dependsOn,
           },
         })
         continue
