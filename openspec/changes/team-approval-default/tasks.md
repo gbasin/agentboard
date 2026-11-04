@@ -29,7 +29,7 @@
 
 - [x] 5.1 Update the staffing and Team page Members bullets in `docs/architecture/` (find them with `grep -rn '^- ' docs/architecture/ | grep -i -E 'staffing|Members tab'`) with the resolution order, the table, and the human-only write. Verify by reading the result back, and confirm that `bun run lint` is clean.
 - [x] 5.2 Put a `// @covers:` annotation above each test from groups 1–4 for every ADDED or MODIFIED scenario in this change's delta specs. Verify that `scripts/__tests__/specCoverageGuard.test.ts` passes.
-- [ ] 5.3 Run `bun run check` on the clean committed tree. Verify it records a pass, and map each oracle id (O1–O9, P1–P4, W1–W5, L1–L3, A1, G1) to its test title and the mutant it killed in the result.
+- [x] 5.3 Run `bun run check` on the clean committed tree. Verify it records a pass, and map each oracle id (O1–O9, P1–P4, W1–W5, L1–L3, A1, G1) to its test title and the mutant it killed in the result.
 
 ## Workflow follow-up
 
