@@ -2,8 +2,8 @@
 
 ## 1. Decision function and limit classification
 
-- [ ] 1.1 Add `src/server/team/routing/limitResume.ts` with the pure `limitResumeDecision` (design D2) and `isLimitFailure(summary)` (D5, reusing `LIMIT_ERROR_CLASSES`). Commit the turn-end decision table O1–O17 (with O2a) verbatim as a table-driven test in `src/server/team/routing/__tests__/limitResume.test.ts`, plus the completeness test, which enumerates the axes and asserts that exactly one row or unreachable claim matches each combination. Verify: the test passes. The table kills the mutant "drop the `spawned` check" (O1), "attempt n instead of n+1" (O8), "cap at 4" (O9), "schedule on credit" (O10), and "use `>=` for reset ahead" (O11).
-- [ ] 1.2 Pin `isLimitFailure` against the captured incident summary (`Agent terminated early due to an API error: … (error type rate_limit, HTTP 429, …)`), a billing error, an overloaded error, and a non-limit failure. Verify: O15a and O15d rows. Kills "match any `error type`" and "match `HTTP 4\d\d`".
+- [x] 1.1 Add `src/server/team/routing/limitResume.ts` with the pure `limitResumeDecision` (design D2) and `isLimitFailure(summary)` (D5, reusing `LIMIT_ERROR_CLASSES`). Commit the turn-end decision table O1–O17 (with O2a) verbatim as a table-driven test in `src/server/__tests__/limitResume.test.ts`, plus the completeness test, which enumerates the axes and asserts that exactly one row or unreachable claim matches each combination. Verify: the test passes. The table kills the mutant "drop the `spawned` check" (O1), "attempt n instead of n+1" (O8), "cap at 4" (O9), "schedule on credit" (O10), and "use `>=` for reset ahead" (O11).
+- [x] 1.2 Pin `isLimitFailure` against the captured incident summary (`Agent terminated early due to an API error: … (error type rate_limit, HTTP 429, …)`), a billing error, an overloaded error, and a non-limit failure. Verify: O15a and O15d rows. Kills "match any `error type`" and "match `HTTP 4\d\d`".
 
 ## 2. Mailbox and limit-outcome wiring
 

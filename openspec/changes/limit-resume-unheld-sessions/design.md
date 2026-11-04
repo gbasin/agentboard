@@ -186,26 +186,25 @@ Inputs:
 Observable outputs: the limit-resume rows of the session (pending count, time,
 attempt, body) and the states of held messages.
 
-| id | spawned | held | event | kind | pending | capped | success | result |
-|---|---|---|---|---|---|---|---|---|
-| O1 | S | * | ahead | * | none | * | * | no limit-resume; existing path unchanged |
-| O2 | H | yes | ahead | agent | * | * | * | held work parked as today (`parkCurrent`); no new limit-resume; any pending one unchanged |
-| O2a | H | yes | ahead | human | none | * | * | one pending limit-resume, attempt 1, at reset; held messages unchanged (no human-turn parking, as today) |
-| O3 | H | no | ahead | human | none | * | * | one pending limit-resume, attempt 1, at reset; capped cleared |
-| O4 | H | no | ahead | agent | none | no | * | one pending, attempt 1, at reset |
-| O5 | H | no | ahead | agent | none | yes | * | none scheduled |
-| O6 | H | no, or yes with kind human | ahead | human/agent | at P < reset | * | * | one pending at reset; attempt and worker lines kept; the old one is cancelled and never delivered |
-| O7 | H | no, or yes with kind human | ahead | human/agent | at P >= reset | * | * | the pending one is unchanged |
-| O8 | H | no | ahead | lr(n), n<3 | none | * | * | one pending, attempt n+1, at reset; the delivered lr is not parked, released, or forwarded |
-| O9 | H | no | ahead | lr(3) | none | * | * | none scheduled; capped set; the delivered lr is not parked, released, or forwarded |
-| O10 | H | * | credit | * | * | * | * | nothing scheduled or cancelled; no held work parked |
-| O11 | H | no | passed | * | * | * | * | nothing scheduled |
-| O12 | H | * | none | human | P | * | yes | pending cancelled, never delivered; capped cleared; paused display cleared |
-| O13 | H | * | none | lr(n) | none | * | yes | capped cleared; nothing scheduled |
-| O14 | H | * | none | agent | P | * | yes | pending unchanged and delivered at P |
-| O15 | H | * | none | human | P | * | no (non-limit failure) | pending unchanged |
-| O16 | H | yes | ahead | lr(n) | none | * | * | as O8/O9 by n; held messages unchanged (a limit-resume turn is treated like the human turn it continues) |
-| O17 | H | no | ahead | * | * | * | * | with the team unresolved: nothing scheduled; warning `limit_resume_team_unresolved` logged |
+| id | spawned | held | event | kind | pending | capped | success | team | result |
+|---|---|---|---|---|---|---|---|---|---|
+| O1 | S | * | * | * | * | * | * | * | no limit-resume change; existing path unchanged |
+| O2 | H | yes | ahead | agent | * | * | * | yes | held work parked as today (`parkCurrent`); no new limit-resume; any pending one unchanged |
+| O2a | H | yes | ahead | human | none | * | * | yes | one pending limit-resume, attempt 1, at reset; capped cleared; held messages unchanged (no human-turn parking, as today) |
+| O3 | H | no | ahead | human | none | * | * | yes | one pending limit-resume, attempt 1, at reset; capped cleared |
+| O4 | H | no | ahead | agent | none | no | * | yes | one pending, attempt 1, at reset |
+| O5 | H | no | ahead | agent | none | yes | * | yes | none scheduled |
+| O6 | H | no, or yes with kind human | ahead | human/agent | P < reset | * | * | yes | one pending at reset; attempt and worker lines kept; the old one is cancelled and never delivered |
+| O7 | H | no, or yes with kind human | ahead | human/agent | P >= reset | * | * | yes | the pending one is unchanged |
+| O8 | H | * | ahead | lr(n), n<3 | none | * | * | yes | one pending, attempt n+1, at reset; the delivered lr is not parked, released, or forwarded; held messages unchanged |
+| O9 | H | * | ahead | lr(3) | none | * | * | yes | none scheduled; capped set; the delivered lr is not parked, released, or forwarded |
+| O10 | H | * | credit | * | * | * | * | * | nothing scheduled or cancelled |
+| O11 | H | * | passed | * | * | * | * | * | nothing scheduled |
+| O12 | H | * | none | human | * | * | yes | * | a pending one is cancelled, never delivered; capped cleared; paused display cleared |
+| O13 | H | * | none | lr(n) | none | * | yes | * | capped cleared; nothing scheduled |
+| O14 | H | * | none | agent | * | * | yes | * | nothing changes; a pending one is delivered at P |
+| O15 | H | * | none | * | * | * | no | * | nothing changes |
+| O17 | H | * | ahead | * | * | * | * | no | nothing scheduled; warning `limit_resume_team_unresolved` logged |
 
 Events outside turn ends:
 
@@ -218,6 +217,7 @@ Events outside turn ends:
 | O18 | session archived or killed | pending P | cancelled; the session stays archived at P |
 | O19 | turn interrupted after a final event, then a human turn succeeds | none | nothing scheduled; parked work unparked as for any successful human turn |
 | O20 | dispatcher delivers the pending resume at P | pending P | the session starts a turn without human input; paused display cleared |
+| O16 | a limit-resume turn of a session holding delivered mail ends after a final limit | none | the held mail stays delivered (never parked by that turn); the next limit-resume is scheduled per O8/O9 |
 
 Unreachable combinations:
 
@@ -228,11 +228,12 @@ Unreachable combinations:
 - `spawned = S` with `kind = lr(n)`: no limit-resume is ever scheduled for a
   spawned session (O1).
 
-**Completeness claim.** Every combination of the axes (spawned × held × event
-× kind × pending × capped × success, with the team resolved) matches exactly
-one row of O1–O16 (with O2a), or one of the unreachable claims above. O17 covers the
-unresolved team. The table test enumerates the product and asserts exactly one
-match per combination.
+**Completeness claim.** Every combination of the axes (spawned × held ×
+event × kind × pending × capped × success × team, with `kind` over human,
+agent, and lr(1..3)) matches exactly one row of O1–O17, or one of the
+unreachable claims above. The table test enumerates the product, skips the
+unreachable combinations, and asserts exactly one matching row for each
+remaining one.
 
 ### Properties
 
