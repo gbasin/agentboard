@@ -66,6 +66,8 @@ const readClipboard = (page: Page) => page.evaluate(() => navigator.clipboard.re
 
 const grantClipboard = (page: Page) => page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
 
+// @covers: chat-sessions › Message copy control is accessible and unobtrusive › Pointer hover
+// @covers: chat-sessions › Transcript messages can be copied as their original text › Assistant Markdown is copied as source
 test('Copy message puts the Markdown source on the clipboard and reveals only on hover', async ({ page }, info) => {
   await grantClipboard(page)
   await createChat(page, 'Copy chat')
@@ -96,6 +98,7 @@ test('Copy message puts the Markdown source on the clipboard and reveals only on
   await killChat(page)
 })
 
+// @covers: chat-sessions › Message copy control is accessible and unobtrusive › Keyboard user
 test('the control shows while it holds keyboard focus', async ({ page }) => {
   await grantClipboard(page)
   await createChat(page, 'Copy focus chat')
@@ -112,6 +115,7 @@ test('the control shows while it holds keyboard focus', async ({ page }) => {
   await killChat(page)
 })
 
+// @covers: chat-sessions › Message copy reports its outcome › Insecure context
 test('outside a secure context the copy-event fallback copies the same text', async ({ page }) => {
   await grantClipboard(page)
   await page.addInitScript(() => {
@@ -139,6 +143,7 @@ test('outside a secure context the copy-event fallback copies the same text', as
 test.describe('touch device', () => {
   test.use({ hasTouch: true, isMobile: true, viewport: { width: 1280, height: 800 } })
 
+  // @covers: chat-sessions › Message copy control is accessible and unobtrusive › Touch device
   test('on a touch device the control is visible without hover', async ({ page }) => {
     expect(await page.evaluate(() => matchMedia('(hover: none)').matches)).toBe(true)
     await createChat(page, 'Copy touch chat')
