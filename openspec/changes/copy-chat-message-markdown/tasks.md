@@ -2,9 +2,9 @@
 
 ## 1. Clipboard helper
 
-- [ ] 1.1 Add `src/client/utils/copyText.ts` (D3). It uses the async API when `window.isSecureContext` and `navigator.clipboard?.writeText` are present. Otherwise, or after a rejection, it uses the one-shot capturing `copy`-listener plus `document.execCommand('copy')` fallback, removing the listener in `finally`. It returns `Promise<boolean>`. Include a header comment.
-- [ ] 1.2 Add `src/client/__tests__/copyText.test.ts` with design table C1–C5 committed verbatim as table-driven rows (inputs, outcome, async called, fallback called). Restore every global stub after each test. Verify: `bun run test src/client/__tests__/copyText.test.ts` passes. C1 kills the mutant "always use the fallback". C2 kills "return false after an async rejection". C3 kills "trust execCommand's return without checking that the listener ran". C4 kills "skip the `isSecureContext` check". C5 kills "return true when the fallback throws".
-- [ ] 1.3 In the same file, add property P1 (seeded LCG, seed `0x5eed`, 200 cases, covering the C1 and C4 paths). Verify: it passes, and it kills the mutant that writes `text.replace(/\r\n/g, '\n')` on the fallback path.
+- [x] 1.1 Add `copyTextExact` to the existing `src/client/utils/copyText.ts` (D3), leaving `copyText` and its callers unchanged. It uses the async API when `window.isSecureContext` and `navigator.clipboard?.writeText` are present. Otherwise, or after a rejection, it uses the one-shot capturing `copy`-listener plus `document.execCommand('copy')` fallback, removing the listener in `finally`. It returns `Promise<boolean>`. Update the module's header comment to describe both exports.
+- [x] 1.2 Add `src/client/__tests__/copyText.test.ts`, testing `copyTextExact`, with design table C1–C5 committed verbatim as table-driven rows (inputs, outcome, async called, fallback called). Restore every global stub after each test. Verify: `bun run test src/client/__tests__/copyText.test.ts` passes. C1 kills the mutant "always use the fallback". C2 kills "return false after an async rejection". C3 kills "trust execCommand's return without checking that the listener ran". C4 kills "skip the `isSecureContext` check". C5 kills "return true when the fallback throws".
+- [x] 1.3 In the same file, add property P1 (seeded LCG, seed `0x5eed`, 200 cases, covering the C1 and C4 paths). Verify: it passes, and it kills the mutant that writes `text.replace(/\r\n/g, '\n')` on the fallback path.
 
 ## 2. Copy control in message rows
 

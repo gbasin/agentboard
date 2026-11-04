@@ -57,8 +57,11 @@ focusing it triggers `:focus-within`, so keyboard users always see it.
 
 ### D3 — Clipboard helper with an event-based fallback
 
-`src/client/utils/copyText.ts` exports
-`copyText(text): Promise<boolean>`:
+`src/client/utils/copyText.ts` already exports `copyText(text): void`, a
+textarea select-and-copy with an async-API fallback whose result is discarded,
+used by seven call sites (debug panel, mailbox, session rows, terminal clipboard
+offer). It stays unchanged; migrating those callers is out of scope. The same
+module gains `copyTextExact(text): Promise<boolean>`:
 
 1. If `window.isSecureContext` and `navigator.clipboard?.writeText` exist,
    await `writeText(text)`. On success, return true.
@@ -96,7 +99,7 @@ a string prop.
 
 Oracle tests run through the production composition (`ChatMessages`
 rendering real events, then clicking the real button), per hazard M1 in
-docs/oracle-hazards.md. Only C1–C5 may also be tested on `copyText` directly.
+docs/oracle-hazards.md. Only C1–C5 may also be tested on `copyTextExact` directly.
 
 **Copy source (per row kind):**
 
@@ -130,7 +133,7 @@ called, so that column is a don't-care in C4 and C5.
 | F4 | failure, then +2000 ms | idle |
 | F5 | success, then unmount before 2000 ms | no timer fires and no state update after unmount |
 
-**Property P1 — byte-for-byte round trip.** For any string, the clipboard
+**Property P1 — byte-for-byte round trip** (on `copyTextExact`). For any string, the clipboard
 text equals the event string on both the C1 and C4 paths. Generator: a seeded
 LCG (seed `0x5eed`, 200 cases) that builds strings from a pool of Markdown
 syntax (`#`, `- `, ```` ``` ````, `|`, `[a](b)`, `~~`), `\r\n`, `\n`, `\t`,
