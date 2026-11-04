@@ -11,7 +11,7 @@ const row = (extra: Partial<TeamMemberRow> = {}): TeamMemberRow => ({
     { profileId: 'claude', providerId: 'claude', providerLabel: 'Claude', cap: 2, live: 1 },
     { profileId: 'glm', providerId: 'zai', providerLabel: 'Z.AI', live: 0 },
   ],
-  approval: 'manual', strategy: 'first-available',
+  approval: 'manual', approvalSource: 'built-in', strategy: 'first-available',
   onLimit: { parkIfResetWithinMs: 3 * 3_600_000, otherwise: 'forward', forwardTo: 'lead' },
   warnings: [], sources: [{ file: '/home/u/.kawai/groups/devs.md', layer: 'user', inEffect: true }],
   members: [{ sessionId: 'chat-1', name: 'dev one', spawned: true, profile: 'claude', status: 'working', taskId: 't-1' }],

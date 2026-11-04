@@ -118,6 +118,33 @@ export class WorkspaceConnections {
   }
 
   /**
+   * The human's team default approval save (team-approval-default D4): the
+   * path resolves to its team (a worktree path keys the same row), the policy
+   * is checked, the row upserts, and every open view of the team follows on
+   * the publish. Existing chats are never touched; only later spawns read it.
+   */
+  private async setApprovalDefault(
+    connection: ChatConnection,
+    message: Extract<WorkspaceClientMessage, { type: 'team-workspace-approval-default-set' }>,
+  ) {
+    const { teamPath } = message
+    const policy: unknown = message.policy
+    const refuse = (error: string) => connection.send({ type: 'team-workspace-approval-default-result', teamPath, ok: false, error })
+    if (policy !== 'manual' && policy !== 'auto') {
+      refuse(`The default approval policy must be manual or auto, got ${JSON.stringify(policy)}`)
+      return
+    }
+    const team = await this.manager.teamScopes.resolve(teamPath)
+    if (!team) {
+      refuse(unknownTeamError(teamPath))
+      return
+    }
+    this.manager.setTeamApprovalDefault(team.teamId, policy)
+    connection.send({ type: 'team-workspace-approval-default-result', teamPath, ok: true, policy })
+    this.publish(team.teamId)
+  }
+
+  /**
    * The diff key: the payload with read-time-derived fields blanked. The
    * summary's window edge (`since`) moves with every read at millisecond
    * precision; comparing it would push a full snapshot on every trigger, so
@@ -128,6 +155,7 @@ export class WorkspaceConnections {
   }
 
   async handle(connection: ChatConnection, message: WorkspaceClientMessage) {
+    if (message.type === 'team-workspace-approval-default-set') return this.setApprovalDefault(connection, message)
     const { teamPath } = message
     if (message.type === 'team-workspace-close') {
       this.pendingOpen.get(connection)?.delete(teamPath)

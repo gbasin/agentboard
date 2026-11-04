@@ -5,7 +5,8 @@
 // workspace owns no tables; every function here is a pure projection, so the
 // connection layer can recompute on the same triggers the mailbox and task
 // views already use and diff before pushing.
-import type { ChatPendingRequest } from '../../shared/chat'
+import type { ChatApprovalPolicy, ChatPendingRequest } from '../../shared/chat'
+import { resolveSpawnApproval } from '../../shared/spawnApproval'
 import type {
   AttentionItem,
   TeamMemberRow,
@@ -51,9 +52,12 @@ export function memberRows(
   catalog: GroupCatalog,
   records: ChatSessionRecord[],
   countsOf: (groupId: string) => Record<string, number>,
+  teamDefault: ChatApprovalPolicy | null = null,
 ): TeamMemberRow[] {
   return [...catalog.groups.values()].map(({ group, sources }) => {
     const live = countsOf(group.id)
+    // The spawn's own resolution (team-approval-default D2), never a copy of the group key.
+    const approval = resolveSpawnApproval(group.approval, teamDefault)
     const members: TeamMemberSession[] = records
       .filter(record => record.archivedAt == null && record.groupId === group.id)
       .map(record => ({
@@ -80,7 +84,8 @@ export function memberRows(
           ...(entry.cap !== undefined ? { cap: entry.cap } : {}),
         }
       }),
-      approval: group.approval,
+      approval: approval.policy,
+      approvalSource: approval.source,
       strategy: group.strategy,
       onLimit: group.onLimit.forwardTo !== undefined
         ? { parkIfResetWithinMs: group.onLimit.parkIfResetWithinMs, otherwise: group.onLimit.otherwise, forwardTo: group.onLimit.forwardTo }
@@ -303,6 +308,7 @@ export class WorkspaceRead {
     const waiting = manager.waitingFor(teamId)
     const records = manager.teamRecords(teamId)
     const directory = manager.directory.list(teamId)
+    const approvalDefault = manager.teamApprovalDefault(teamId)
     const nameOf = (sessionId: string) =>
       records.find(record => record.sessionId === sessionId)?.name
       ?? directory.find(entry => entry.sessionId === sessionId)?.name
@@ -355,7 +361,8 @@ export class WorkspaceRead {
       tasks: taskRows({ summaries, waiting, attention, nameOf, revisionsOf }),
       attention,
       members: memberRows(manager.teams.catalogForTeam(team), records, groupId =>
-        manager.groupProfileCounts(teamId, groupId)),
+        manager.groupProfileCounts(teamId, groupId), approvalDefault),
+      approvalDefault,
       summary: morningSummary({
         now,
         sessions,

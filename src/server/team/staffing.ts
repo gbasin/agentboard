@@ -16,6 +16,8 @@
 // no longer exists is dead-lettered.
 import type { Database } from 'bun:sqlite'
 import type { ChatApprovalPolicy } from '../../shared/chat'
+import { resolveSpawnApproval, type SpawnApproval } from '../../shared/spawnApproval'
+import { TeamApprovalDefaults } from './teamApprovalDefaults'
 import type { TeamWorktreeOccupancy } from '../../shared/team'
 import type { ChatSessionRecord } from '../db'
 import type { SpawnAssignment } from './dispatcher'
@@ -113,6 +115,8 @@ const RETRY_AFTER_MS = 30_000
 
 export class WorktreeStaffing {
   private readonly failedAt = new Map<string, number>()
+  /** Per-team default approval policy (team-approval-default D3); read uncached. */
+  readonly approvalDefaults: TeamApprovalDefaults
   /** Last-read team spawn caps (team-waiting-reasons D3): sync reads for reasons. */
   private readonly teamCapCache = new Map<string, number>()
 
@@ -130,7 +134,18 @@ export class WorktreeStaffing {
     now?: () => number
     /** Failure backoff; overridable so tests can watch a retry happen. */
     retryAfterMs?: number
-  }) {}
+  }) {
+    this.approvalDefaults = new TeamApprovalDefaults(db, options.now)
+  }
+
+  /**
+   * The policy a member of `group` spawned for `teamId` gets, with its source
+   * (team-approval-default D2/D5): the one resolution the spawn, the dispatch
+   * preview, and the Members row share.
+   */
+  approvalFor(teamId: string, group: GroupDefinition): SpawnApproval {
+    return resolveSpawnApproval(group.approval, this.approvalDefaults.get(teamId))
+  }
 
   /** The failure backoff duration (D5); tests may shorten it to observe retries. */
   private get retryAfterMs(): number { return this.options.retryAfterMs ?? RETRY_AFTER_MS }
@@ -227,7 +242,7 @@ export class WorktreeStaffing {
     let result: SpawnResult
     try {
       result = await this.options.spawn({
-        projectPath: worktree, groupId: group.id, approvalPolicy: group.approval, taskId: message.taskId,
+        projectPath: worktree, groupId: group.id, approvalPolicy: this.approvalFor(message.teamId, group).policy, taskId: message.taskId,
         // The default profile is the absence of a choice, as for user-created chats.
         ...(profileId !== 'default' ? { profileId } : {}),
       })

@@ -39,7 +39,7 @@ const summary = (extra: Partial<MorningSummary> = {}): MorningSummary => ({
   ...extra,
 })
 const snapshotOf = (attention: AttentionItem[], extra: Partial<MorningSummary> = {}): TeamWorkspaceSnapshot =>
-  ({ tasks: [], attention, members: [], directory: [], summary: summary(extra) })
+  ({ tasks: [], attention, members: [], approvalDefault: null, directory: [], summary: summary(extra) })
 
 beforeEach(() => {
   useTeamWorkspaceStore.setState({ views: {} })

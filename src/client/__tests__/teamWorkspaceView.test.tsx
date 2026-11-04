@@ -131,7 +131,7 @@ test('a pushed approval appears in the attention queue on every tab without a re
   const empty = { items: [] }
   const push = (attention: TeamWorkspaceSnapshot['attention']) => act(() => {
     useTeamWorkspaceDataStore.getState().apply({
-      teamPath: '/repo', teamId: 'team', tasks: [], attention, members: [], directory: [],
+      teamPath: '/repo', teamId: 'team', tasks: [], attention, members: [], approvalDefault: null, directory: [],
       summary: { since: '2026-10-14T00:00:00.000Z', completedResults: empty, capacityWaits: empty, approvals: empty,
         uncertainDeliveries: empty, finishedTurnsWithoutResult: empty, outbound: empty,
         landings: empty, stops: empty, stallAlerts: empty, decisions: empty, overrides: empty },

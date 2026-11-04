@@ -17,6 +17,7 @@ import { AssignmentStore } from '../team/assignmentStore'
 import { loadGroupCatalog, type GroupCatalog } from '../team/groupCatalog'
 import { WorkspaceConnections } from '../team/workspaceConnections'
 import { WorkspaceRead } from '../team/workspaceRead'
+import { TeamApprovalDefaults } from '../team/teamApprovalDefaults'
 import type { TeamIdentity } from '../team/teamIdentity'
 import type { TeamTaskRow, TeamWorkspaceSnapshot } from '../../shared/teamWorkspace'
 import type { ClientMessage, ServerMessage } from '../../shared/types'
@@ -39,6 +40,7 @@ let catalog: GroupCatalog
 // The plan-side facts the manager seam exposes (plan-supervision D13).
 let planFacts: PlanAttentionFact[]
 let planRows: PlanSummaryRows
+let approvalDefaults: TeamApprovalDefaults
 
 beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kawai-workspace-connections-'))
@@ -52,6 +54,7 @@ beforeEach(() => {
   // homeDir pins the user-level layer to the temp dir: the operator's real
   // ~/.kawai/groups must never reach a fixture's member list.
   catalog = loadGroupCatalog({ groupsRoot: dir, homeDir: dir })
+  approvalDefaults = new TeamApprovalDefaults(db.db)
   records = []
   pendingRequests = new Map()
   turnEndRows = []
@@ -76,6 +79,8 @@ beforeEach(() => {
     directory: { list: () => [] },
     getPendingRequests: (sessionId: string) => pendingRequests.get(sessionId) ?? [],
     groupProfileCounts: () => ({}),
+    teamApprovalDefault: (teamId: string) => approvalDefaults.get(teamId),
+    setTeamApprovalDefault: (teamId: string, policy: 'manual' | 'auto') => approvalDefaults.set(teamId, policy),
     turnEnds: {
       // Team scoping is the store's SQL join in production; the fake honors it.
       finishedForTeam: (teamId: string) => (teamId === 'team' ? turnEndRows.filter(row => row.sessionId === 'our-dev') : []),
@@ -310,9 +315,56 @@ class CountingRead extends WorkspaceRead {
   }
 }
 
+describe('team default approval action (team-approval-default W1–W5)', () => {
+  type Row = [id: string, teamPath: string, policy: unknown, ok: boolean, stored: 'manual' | 'auto' | null, publishes: boolean]
+  // | id | caller / input                 | result                 | stored | publish |
+  const TABLE: Row[] = [
+    ['W1', '/repo', 'auto', true, 'auto', true],
+    ['W2', '/repo', 'auto', true, 'auto', true],
+    ['W3', '/nope', 'auto', false, null, false],
+    ['W4', '/repo', 'always', false, null, false],
+    ['W5', '/repo/.worktrees/feat-x', 'auto', true, 'auto', true],
+  ]
+  for (const [id, teamPath, policy, ok, stored, publishes] of TABLE) {
+    // @covers: team-workspace › The Members tab sets the team's default approval policy › Another open view follows the change
+    test(`${id}: ${teamPath} ${String(policy)} → ${ok ? 'ok' : 'refused'}, stored ${stored ?? 'none'}`, async () => {
+      // W2 replays the same value over an existing row: the publish runs, and the diff keeps the unchanged read quiet.
+      if (id === 'W2') approvalDefaults.set('team', 'auto')
+      const other = { send: (message: ServerMessage) => watched.push(message) }
+      const watched: ServerMessage[] = []
+      await connections.handle(other, { type: 'team-workspace-open', teamPath: '/repo' })
+      await send({ type: 'team-workspace-approval-default-set', teamPath, policy: policy as 'auto' })
+      await connections.flushWorkspace()
+      const result = last('team-workspace-approval-default-result')!
+      // Every row carries the envelope's teamPath, refusals included.
+      expect(result.teamPath).toBe(teamPath)
+      expect(result.ok).toBe(ok)
+      if (result.ok) expect(result.policy).toBe(policy as 'auto')
+      else expect(result.error).toContain(id === 'W3' ? '/nope' : '"always"')
+      expect(approvalDefaults.get('team')).toBe(stored)
+      expect(approvalDefaults.get('/repo/.worktrees/feat-x')).toBeNull()
+      const pushed = watched.filter(message => message.type === 'team-workspace')
+      expect(pushed.length > 0).toBe(publishes && id !== 'W2')
+      if (publishes && id !== 'W2') {
+        const push = pushed.at(-1) as Extract<ServerMessage, { type: 'team-workspace' }>
+        expect(push.approvalDefault).toBe('auto')
+        expect(push.members.find(member => member.id === 'devs')).toMatchObject({ approval: 'auto', approvalSource: 'team' })
+      }
+    })
+  }
+
+  test('the other team never sees the default', async () => {
+    await send({ type: 'team-workspace-approval-default-set', teamPath: '/repo', policy: 'auto' })
+    await send({ type: 'team-workspace-open', teamPath: '/other' })
+    const snapshot = last('team-workspace-snapshot')!
+    expect(snapshot.approvalDefault).toBeNull()
+    expect(snapshot.members.find(member => member.id === 'devs')).toMatchObject({ approval: 'manual', approvalSource: 'built-in' })
+  })
+})
+
 describe('publishes coalesce and share one read per team', () => {
   const emptySnapshot = (): TeamWorkspaceSnapshot => ({
-    tasks: [], attention: [], members: [], directory: [],
+    tasks: [], attention: [], members: [], approvalDefault: null, directory: [],
     summary: {
       since: '2026-10-13T00:00:00Z', completedResults: { items: [] }, capacityWaits: { items: [] },
       approvals: { items: [] }, uncertainDeliveries: { items: [] }, finishedTurnsWithoutResult: { items: [] }, outbound: { items: [] },

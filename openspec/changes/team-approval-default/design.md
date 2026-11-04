@@ -92,8 +92,8 @@ options.
 
 ### D4 — Write path: one human WebSocket action
 
-The client sends `team-approval-default-set { teamPath, policy }`. The server
-answers with `team-approval-default-result { teamPath, ok, policy?, error? }`.
+The client sends `team-workspace-approval-default-set { teamPath, policy }`. The server
+answers with `team-workspace-approval-default-result { teamPath, ok, policy?, error? }`.
 Both types are added to `CHAT_CONNECTION_TYPES`.
 
 The server resolves `teamPath` the way workspace open does, refuses an unknown
@@ -174,7 +174,7 @@ resolution, which `teamGroupFile.test.ts` already covers.
 | P3  | `approval: auto`   | `'auto'`                |
 | P4  | `approval: yes`    | file refused, as today  |
 
-**Write action table.** Every row answers `team-approval-default-result`
+**Write action table.** Every row answers `team-workspace-approval-default-result`
 carrying `teamPath`, which is the hazard of refusals missing the success
 envelope.
 

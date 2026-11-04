@@ -17,6 +17,14 @@ import type { GroupMemberRecord } from './routing/router'
 import { evaluateEligibility, groupPathEligible, spawnCandidateId, type EligibilityReason } from './routing/workerEligibility'
 import { workerChoiceState } from './routing/workerSelector'
 import type { StaffingPreview } from './staffing'
+import type { ChatApprovalPolicy } from '../../shared/chat'
+import { resolveSpawnApproval } from '../../shared/spawnApproval'
+
+/** The shared resolution, as the preview's `approval` and `approvalSource`. */
+function approvalOf(groupApproval: ChatApprovalPolicy | undefined, teamDefault: ChatApprovalPolicy | null) {
+  const { policy, source } = resolveSpawnApproval(groupApproval, teamDefault)
+  return { approval: policy, approvalSource: source }
+}
 
 export interface GroupPreviewInput {
   worktree: string | null
@@ -32,6 +40,8 @@ export interface GroupPreviewInput {
   cooldownUntil: (profileId: string) => string | null
   /** The canonical worker choice, or null. */
   workerChoice: string | null
+  /** The team's stored default approval policy, or null (team-approval-default D5). */
+  teamDefault: ChatApprovalPolicy | null
   now: number
 }
 
@@ -93,7 +103,7 @@ export function previewGroupDispatch(input: GroupPreviewInput): TaskDispatchPrev
         : `every profile of worker ${choice.selector} (${choice.profiles.join(', ')}) is at its cap`
   }
   return {
-    worktree, target, role: group.label, profile, approval: group.approval,
+    worktree, target, role: group.label, profile, ...approvalOf(group.approval, input.teamDefault),
     sessionWorktree: null, idleMembers: members.map(candidate => candidate.sessionId!),
     spawn: { allowed: blockedBy === null, profile, blockedBy },
     warning: choiceCooling !== null ? `Worker ${choice!.selector} is cooling until ${choiceCooling}; the instruction waits until then` : null,

@@ -85,6 +85,7 @@ export const CHAT_CONNECTION_TYPES = [
   'strategy-impact-request',
   'team-workspace-open',
   'team-workspace-close',
+  'team-workspace-approval-default-set',
   'team-plans-open',
   'team-plans-close',
   'team-plan-open',

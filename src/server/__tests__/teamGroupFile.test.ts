@@ -41,7 +41,6 @@ describe('parseGroupFile', () => {
         worktreeScoped: true,
         canReleaseMembers: true, canReportProcess: false,
         max: 1,
-        approval: 'manual',
         ...ROUTING_DEFAULTS,
         prompt: 'You review designs.\n\nKeep answers short.',
       },
@@ -51,7 +50,7 @@ describe('parseGroupFile', () => {
   test('a body-only file defaults the label to the id', () => {
     expect(parseGroupFile('qa', 'Test everything.\n')).toEqual({
       ok: true,
-      group: { id: 'qa', label: 'qa', description: '', canCreateTasks: false, releaseOnTaskClose: true, worktreeScoped: true, canReleaseMembers: true, canReportProcess: false, max: 1, approval: 'manual', ...ROUTING_DEFAULTS, prompt: 'Test everything.' },
+      group: { id: 'qa', label: 'qa', description: '', canCreateTasks: false, releaseOnTaskClose: true, worktreeScoped: true, canReleaseMembers: true, canReportProcess: false, max: 1, ...ROUTING_DEFAULTS, prompt: 'Test everything.' },
     })
   })
 
@@ -105,12 +104,34 @@ describe('parseGroupFile', () => {
     expect(parsed.ok && parsed.group).toMatchObject({ canCreateTasks: true, max: 3, profiles: [{ profileId: 'glm' }], approval: 'auto' })
   })
 
-  test('task settings default to no creation right, one member, default profile, manual approval', () => {
+  test('task settings default to no creation right, one member, default profile, unset approval', () => {
     const parsed = parseGroupFile('devs', '---\ncanCreateTasks: false\n---\nBuild.')
     expect(parsed.ok && parsed.group).toEqual({
-      id: 'devs', label: 'devs', description: '', canCreateTasks: false, releaseOnTaskClose: true, worktreeScoped: true, canReleaseMembers: true, canReportProcess: false, max: 1, approval: 'manual', ...ROUTING_DEFAULTS, prompt: 'Build.',
+      id: 'devs', label: 'devs', description: '', canCreateTasks: false, releaseOnTaskClose: true, worktreeScoped: true, canReleaseMembers: true, canReportProcess: false, max: 1, ...ROUTING_DEFAULTS, prompt: 'Build.',
     })
   })
+
+  // team-approval-default design table P1–P4, verbatim.
+  // | id | frontmatter        | parsed `approval`      |
+  const APPROVAL_TABLE: Array<[id: string, frontmatter: string, expected: 'manual' | 'auto' | undefined | 'refused']> = [
+    ['P1', '', undefined],
+    ['P2', 'approval: manual', 'manual'],
+    ['P3', 'approval: auto', 'auto'],
+    ['P4', 'approval: yes', 'refused'],
+  ]
+  for (const [id, frontmatter, expected] of APPROVAL_TABLE) {
+    test(`${id}: ${frontmatter || 'no approval key'} parses as ${expected ?? 'unset'}`, () => {
+      const parsed = parseGroupFile('devs', `---\nlabel: Developers\n${frontmatter}\n---\nBuild.`)
+      if (expected === 'refused') {
+        expect(parsed).toEqual({ ok: false, error: 'approval must be manual or auto, got "yes"' })
+        return
+      }
+      expect(parsed.ok).toBe(true)
+      const group = parsed.ok ? parsed.group : null
+      expect(group?.approval).toBe(expected)
+      expect(group !== null && 'approval' in group).toBe(expected !== undefined)
+    })
+  }
 
   test('release settings read explicit opt-outs', () => {
     const parsed = parseGroupFile('qa', '---\nreleaseOnTaskClose: false\nworktreeScoped: false\ncanReleaseMembers: false\n---\nCheck.')
