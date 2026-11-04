@@ -95,6 +95,10 @@ The attention queue SHALL consolidate pending approvals and questions, uncertain
 - **WHEN** the agent session that created the task is archived or killed and the task's result awaits acceptance
 - **THEN** the queue lists that pending acceptance as human-required
 
+#### Scenario: A running execution's task asks nothing of the human
+- **WHEN** a submitted result of a task a running execution owns has not been accepted, and its newest findings, if any, pass
+- **THEN** the queue lists no pending acceptance for it, and its task row's next action is Wait for Kawai
+
 #### Scenario: Failing findings are a wait for fixes
 - **WHEN** the newest findings bound to a task's unaccepted outstanding result have the verdict fail
 - **THEN** the queue lists one agent-owned fixes-requested item with the result's submitter as owner, Wait for fixes as its next action, the task as impact scope, and a link to the task

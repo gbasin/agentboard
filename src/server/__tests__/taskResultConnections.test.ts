@@ -151,6 +151,16 @@ async function developed() {
 const release = (taskId: string, requestId: string) => send({ type: 'team-task-release', teamPath: '/repo', requestId, taskId,
   target: 'reviewers', instructions: 'Review the export', requestKey: 'release-1' })
 
+test('the detail says when a running execution owns the task', async () => {
+  const { task } = await developed()
+  await send({ type: 'team-task-open', teamPath: '/repo', taskId: task.id })
+  expect(last('team-task-detail')!.detail.executionOwned).toBeUndefined()
+  results.ownedByExecution = () => true
+  await send({ type: 'team-task-close', teamPath: '/repo', taskId: task.id })
+  await send({ type: 'team-task-open', teamPath: '/repo', taskId: task.id })
+  expect(last('team-task-detail')!.detail.executionOwned).toBe(true)
+})
+
 test('the detail carries the release dialog\'s data; a busy developer refuses inline; then one release and one review handoff', async () => {
   const { task, result } = await developed()
   await send({ type: 'team-task-open', teamPath: '/repo', taskId: task.id })

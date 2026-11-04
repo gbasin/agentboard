@@ -242,7 +242,7 @@ export default function TeamTaskDetail({ teamPath, projectPath, view, sendMessag
 
     <Section teamPath={teamPath} name="Status">
       <div className="mt-1 flex flex-wrap gap-2">
-        {TASK_STATUSES.filter(status => status !== task.status).map(status =>
+        {TASK_STATUSES.filter(status => status !== task.status && !(status === 'done' && detail.executionOwned === true)).map(status =>
           <button key={status} className="btn text-chat-meta" disabled={disabled} onClick={() => act('status', { type: 'team-task-status', status })}>{statusLabel(status)}</button>)}
       </div>
     </Section>

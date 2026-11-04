@@ -128,6 +128,11 @@ export class TaskResultService {
 
   private get store() { return this.tasks.store }
 
+  /** Whether a running execution owns the task (plan-execution D7): Kawai accepts it when the change lands. */
+  ownedByExecution(taskId: string): boolean {
+    return (this.options.ownership ?? NULL_OWNERSHIP).ownerOfTask(taskId) !== null
+  }
+
   /**
    * Submit a result (D2): any agent of the task's team. The server pins the
    * task's current revision and worktree (the task's, else the submitter's
@@ -327,6 +332,7 @@ export class TaskResultService {
     // plan-execution D7/D19: ownership guards dispatch, handoff, and release,
     // never acceptance. A human accept of an owned task closes it like any
     // close: the executor stops the change as task-closed and merges nothing.
+    // The task view does not offer it for an owned task, so this is not a prompt to accept.
     const result = this.store.results.get(resultId)
     if (!result || result.taskId !== taskId) throw new Error(`Result ${resultId} is not a result of task ${taskId}`)
     const openChildren = this.store.list(team.teamId).filter(child =>
