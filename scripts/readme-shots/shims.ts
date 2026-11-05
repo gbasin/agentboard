@@ -6,8 +6,10 @@
 // - gh: answers `gh pr view N --repo R --json fields` from the scenes' PR
 //   data. Agentboard's real PR pipeline (prInfo.ts) calls it unchanged.
 // - ssh: stands in for the transport to the "build-box" remote host. It runs
-//   the remote command locally against a second private tmux server, so the
-//   real remote-polling code (remoteSessions.ts) sees real tmux output.
+//   the remote command locally against a second private tmux server (via the
+//   tmux wrapper and AB_TMUX_SOCKET), so the real remote-polling code
+//   (remoteSessions.ts) sees real tmux output.
+// The Bun shims run with --no-env-file so no .env file can add variables.
 
 import { chmodSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -39,7 +41,7 @@ function ghRecord(pr: PullRequest): Record<string, unknown> {
 export function writeShims(): void {
   const tui = join(REPO, 'scripts', 'readme-shots', 'agent-tui.ts')
   for (const agent of ['claude', 'codex']) {
-    executable(agent, `#!/bin/sh\nexec "${process.execPath}" "${tui}" ${agent} "$1" "${paths.state}"\n`)
+    executable(agent, `#!/bin/sh\nexec "${process.execPath}" --no-env-file "${tui}" ${agent} "$1" "${paths.state}"\n`)
   }
 
   const prs: Record<string, Record<string, unknown>> = {}
@@ -48,7 +50,7 @@ export function writeShims(): void {
   }
   const prFile = join(paths.state, 'prs.json')
   writeFileSync(prFile, JSON.stringify(prs, null, 2))
-  executable('gh', `#!${process.execPath}
+  executable('gh', `#!${process.execPath} --no-env-file
 // Fake gh: only \`gh pr view <n> --repo <owner/name> --json <fields>\`.
 const args = process.argv.slice(2)
 const prs = JSON.parse(require('node:fs').readFileSync(${JSON.stringify(prFile)}, 'utf-8'))
@@ -70,6 +72,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 shift
-exec env -u TMUX -u TMUX_PANE TMUX_TMPDIR="${paths.remoteTmux}" /bin/sh -c "$*"
+# AB_TMUX_SOCKET makes the tmux wrapper (first on PATH) use the remote socket.
+exec env -u TMUX -u TMUX_PANE TMUX_TMPDIR="${paths.remoteTmux}" AB_TMUX_SOCKET="${paths.remoteSocket}" /bin/sh -c "$*"
 `)
 }

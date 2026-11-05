@@ -12,6 +12,7 @@ import { spawnSync } from 'node:child_process'
 import { readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { FEATURE, HERO, LOOP, PHONE, type Box, type Crops, type Metrics } from './capture'
+import { LAUNCH } from './instance'
 
 const WIDE = 880
 const FEATURE_WIDTH = 520
@@ -136,7 +137,7 @@ export interface ComposeInput {
 
 export async function compose(opts: ComposeInput): Promise<void> {
   const { raw, out, crops } = opts
-  const browser = await chromium.launch()
+  const browser = await chromium.launch(LAUNCH)
   const p = await browser.newPage({ deviceScaleFactor: 2 })
   const still = async (name: string, html: string, width: number, quality = 90) => {
     const png = join(raw, `${name}.composite.png`)

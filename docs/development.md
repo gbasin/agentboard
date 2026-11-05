@@ -51,8 +51,15 @@ Run `bun run lint && bun run typecheck && bun run test` before you commit. The p
 
 ## README images
 
-`bun run readme:shots` boots a private Agentboard (own tmux sockets, data directory, HOME and port 4199 under `/private/tmp/ab-shots`), seeds invented sessions from `scripts/readme-shots/scenes.ts`, captures the real UI with Playwright, and writes the composited images to `assets/readme/`.
-It needs the Playwright Chromium and WebKit browsers, `ffmpeg` and `cwebp`, takes about 1.5 minutes, and removes everything it started when it finishes.
+`bun run readme:shots` rebuilds the client, boots a private Agentboard (own tmux sockets, data directory, HOME and port 4199 under `/private/tmp/ab-shots`), seeds invented sessions from `scripts/readme-shots/scenes.ts`, captures the UI with Playwright, and writes the composited images to `assets/readme/`.
+It needs the Playwright Chromium and WebKit browsers, `tmux`, `ffmpeg` and `cwebp`, and takes about 1.5 minutes. A lock file (`/private/tmp/ab-shots.lock`) allows one run at a time. On success or Ctrl+C it stops what it started and removes its temp directory; if compositing fails, it keeps the raw captures in `/private/tmp/ab-shots-raw` for `--composite-only`.
+
+What is staged rather than plain product rendering:
+
+- Session ages in the sidebar are set in the session frames during capture, because a fresh server dates every session "now".
+- CSS animations are frozen for the stills.
+- The terminal uses the DOM renderer instead of WebGL.
+- The window frame and the phone bezel are drawn in the compositing step.
 
 ## Dependency risk scanner
 
