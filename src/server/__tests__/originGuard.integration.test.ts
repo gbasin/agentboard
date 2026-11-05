@@ -22,23 +22,26 @@ const host = '127.0.0.1'
 const runnable = isTmuxAvailable() && canBindLocalhost()
 const hasOpenssl = Bun.spawnSync(['openssl', 'version'], { stdout: 'ignore', stderr: 'ignore' }).exitCode === 0
 
-/** Writes a throwaway self-signed certificate; clients here do not verify it. */
-function writeSelfSignedCert(dir: string): { cert: string; key: string } {
+/**
+ * Writes a throwaway self-signed certificate for the test host. Clients here
+ * trust exactly this certificate (`ca`), so TLS verification stays on.
+ */
+function writeSelfSignedCert(dir: string): { cert: string; key: string; pem: string } {
   const cert = path.join(dir, 'cert.pem')
   const key = path.join(dir, 'key.pem')
   const result = Bun.spawnSync(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '2',
-    '-subj', `/CN=${host}`, '-keyout', key, '-out', cert], { stdout: 'ignore', stderr: 'pipe' })
+    '-subj', `/CN=${host}`, '-addext', `subjectAltName=IP:${host}`, '-keyout', key, '-out', cert], { stdout: 'ignore', stderr: 'pipe' })
   if (result.exitCode !== 0) throw new Error(`openssl failed: ${result.stderr.toString()}`)
-  return { cert, key }
+  return { cert, key, pem: fs.readFileSync(cert, 'utf-8') }
 }
 
 /** Sends a raw WebSocket handshake and returns the HTTP status code. */
-function handshake(port: number, secure: boolean, origin?: string): Promise<number> {
+function handshake(port: number, ca: string | null, origin?: string): Promise<number> {
   return new Promise((resolve, reject) => {
-    const socket: net.Socket = secure ? tls.connect({ port, host, rejectUnauthorized: false }) : net.connect(port, host)
+    const socket: net.Socket = ca ? tls.connect({ port, host, ca }) : net.connect(port, host)
     let buffer = ''
     const timer = setTimeout(() => { socket.destroy(); reject(new Error('handshake timed out')) }, 5000)
-    socket.on(secure ? 'secureConnect' : 'connect', () => {
+    socket.on(ca ? 'secureConnect' : 'connect', () => {
       socket.write([
         'GET /ws?catalog=2 HTTP/1.1', `Host: ${host}:${port}`, 'Connection: Upgrade', 'Upgrade: websocket',
         'Sec-WebSocket-Version: 13', 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==',
@@ -88,14 +91,17 @@ for (const { relay, secure } of [
     /** The board's own origin, and the same host and port under the other scheme. */
     const ownOrigin = () => `${scheme}://${host}:${port}`
     const otherSchemeOrigin = () => `${secure ? 'http' : 'https'}://${host}:${port}`
+    /** The test certificate, trusted by this suite's clients; null on the plain listener. */
+    let ca: string | null = null
     const request = (pathname: string, init: RequestInit = {}) =>
-      fetch(`${ownOrigin()}${pathname}`, { ...init, tls: { rejectUnauthorized: false } })
+      fetch(`${ownOrigin()}${pathname}`, { ...init, ...(ca ? { tls: { ca } } : {}) })
 
     beforeAll(async () => {
       tmuxTmpDir = createTmuxTmpDir('ab-origin-')
       port = await freePort()
       const dataDir = path.join(tmuxTmpDir, 'data')
       const certificate = secure ? writeSelfSignedCert(tmuxTmpDir) : null
+      ca = certificate?.pem ?? null
       child = Bun.spawn(['bun', 'src/server/index.ts'], {
         cwd: process.cwd(),
         env: {
@@ -129,12 +135,12 @@ for (const { relay, secure } of [
     })
 
     test('WebSocket handshake: foreign Origin rejected; same, allowlisted, or no Origin accepted', async () => {
-      expect(await handshake(port, secure, `${scheme}://evil.example`)).toBe(403)
-      expect(await handshake(port, secure, 'null')).toBe(403)
-      expect(await handshake(port, secure, `${scheme}://localhost:${port}`)).toBe(403)
-      expect(await handshake(port, secure, ownOrigin())).toBe(101)
-      expect(await handshake(port, secure, 'https://board.example.com')).toBe(101)
-      expect(await handshake(port, secure)).toBe(101)
+      expect(await handshake(port, ca, `${scheme}://evil.example`)).toBe(403)
+      expect(await handshake(port, ca, 'null')).toBe(403)
+      expect(await handshake(port, ca, `${scheme}://localhost:${port}`)).toBe(403)
+      expect(await handshake(port, ca, ownOrigin())).toBe(101)
+      expect(await handshake(port, ca, 'https://board.example.com')).toBe(101)
+      expect(await handshake(port, ca)).toBe(101)
     })
 
     test(secure
@@ -145,7 +151,7 @@ for (const { relay, secure } of [
         headers: { 'content-type': 'application/json', origin: otherSchemeOrigin() },
         body: JSON.stringify({ enabled: false }),
       })
-      expect(await handshake(port, secure, otherSchemeOrigin())).toBe(secure ? 403 : 101)
+      expect(await handshake(port, ca, otherSchemeOrigin())).toBe(secure ? 403 : 101)
       expect((await put()).status).toBe(secure ? 403 : 200)
     })
 
