@@ -118,9 +118,26 @@ To start Agentboard at login and keep it running:
 - macOS: [launchd/README.md](launchd/README.md)
 - Linux: [systemd/README.md](systemd/README.md)
 
+Both installers run from a git checkout of this repository, not from a Homebrew or npm install. The launchd release installer downloads its own copy of Agentboard from npm into `~/.agentboard/releases/`. The launchd source installer and the systemd installer run the checkout with Bun.
+
 ### Upgrade
 
 Run `brew upgrade agentboard` or `npm install -g @gbasin/agentboard@latest`, then restart Agentboard. Your tmux sessions keep running across the restart, and your data stays in `~/.agentboard`.
+
+These commands do not upgrade a service installed with the launchd or systemd installer. Upgrade a service as its guide describes.
+
+### Uninstall
+
+1. Stop Agentboard. If you installed a service, remove it first: see the uninstall section of [launchd/README.md](launchd/README.md#uninstall) or [systemd/README.md](systemd/README.md#uninstall).
+2. Remove the package.
+   - Homebrew: `brew uninstall agentboard`. To also remove the tap, run `brew untap gbasin/tap`.
+   - npm: `npm uninstall -g @gbasin/agentboard`.
+
+Uninstalling leaves these in place:
+
+- `~/.agentboard`, which holds the database, the log, and other data. To delete it, run `rm -rf ~/.agentboard`.
+- Your tmux sessions and the programs in them. They keep running.
+- Files uploaded through the board, in `/tmp` and in the system temporary directory.
 
 ### From source
 
