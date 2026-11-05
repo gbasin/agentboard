@@ -70,19 +70,17 @@ try {
   step('waiting for log matching')
   await settle(seeded)
   step('capturing desktop')
-  const crops = await captureDesktop(browser, RAW)
+  const { crops, metrics } = await captureDesktop(browser, RAW)
   step('capturing status loop')
-  // Fixed order for the loop: status sort would move the card on every flip.
-  await putSettings({ sessionSortMode: 'created' })
-  const frames = await captureLoop(browser, RAW, (mode) => setMode('orders-migration', mode))
-  await putSettings({ sessionSortMode: 'status' })
+  const loop = await captureLoop(browser, RAW, (mode) => setMode('orders-migration', mode))
   step('capturing phone')
-  await capturePhones(phoneBrowser, RAW, (id, mode) => setMode(id, mode))
+  Object.assign(crops, await capturePhones(phoneBrowser, RAW, (id, mode) => setMode(id, mode)))
   step('stopping instance')
   await stop()
-  writeFileSync(join(RAW, 'meta.json'), JSON.stringify({ crops, frames }))
+  const meta = { crops, metrics, frames: loop.frames, loopCrop: loop.crop }
+  writeFileSync(join(RAW, 'meta.json'), JSON.stringify(meta))
   step('compositing')
-  await compose({ raw: RAW, out: OUT, crops, frames })
+  await compose({ raw: RAW, out: OUT, ...meta })
   step(`done: ${OUT}`)
 } catch (error) {
   failed = true

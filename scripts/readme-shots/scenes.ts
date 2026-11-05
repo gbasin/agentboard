@@ -57,13 +57,16 @@ export const ROUTER: Scene = {
   activity: 'Migrating route handlers',
   elapsed: 94,
   startedMinutesAgo: 38,
+  media: true,
   prs: [{
     repo: 'acme/api', number: 482, title: 'Typed route params for the v2 router', state: 'OPEN',
     checks: [['build', 'SUCCESS'], ['unit tests', 'SUCCESS'], ['integration', 'SUCCESS'], ['lint', 'SUCCESS']],
   }],
   blocks: [
     { t: 'user', text: 'the router still uses the legacy middleware chain, can you look at what depends on it?' },
-    { t: 'say', text: 'Three handlers read `req.params` through the legacy chain: users, orgs and invoices. Everything else already goes through `createRouter`.' },
+    { t: 'tool', name: 'Read', arg: 'docs/route-map.png', out: ['Read image (900×900)'] },
+    { t: 'tool', name: 'Read', arg: 'docs/legacy-callers.png', out: ['Read image (900×900)'] },
+    { t: 'say', text: 'Three handlers read `req.params` through the legacy chain: users, orgs and invoices. Everything else already goes through `createRouter`, as the RFC at https://wiki.example.com/rfc/typed-routes proposed.' },
     { t: 'user', text: 'refactor the router to typed route params and drop the legacy middleware chain' },
     { t: 'say', text: "I'll move each handler onto `createRouter` with a typed params schema, then delete `legacyChain` once nothing imports it." },
     { t: 'todo', items: [[true, 'Add a params schema to createRouter'], [true, 'Migrate users handlers'], [false, 'Migrate orgs and invoices handlers'], [false, 'Delete src/middleware/legacyChain.ts'], [false, 'Run the router test suite']] },
@@ -176,6 +179,10 @@ export const REVIEW: Scene = {
   host: 'local',
   mode: 'waiting',
   startedMinutesAgo: 95,
+  prs: [{
+    repo: 'acme/storefront', number: 1187, title: 'Stackable coupons and promo codes', state: 'MERGED',
+    checks: [['build', 'SUCCESS'], ['unit', 'SUCCESS'], ['e2e (chromium)', 'SUCCESS']],
+  }],
   blocks: [
     { t: 'user', text: 'review PR #1187 and flag anything risky before I merge it' },
     { t: 'tool', name: 'Bash', arg: 'gh pr diff 1187', out: ['+312 −88 across 11 files'] },
@@ -197,11 +204,12 @@ export const LATENCY: Scene = {
     { t: 'say', text: 'Only `GET /search` moved noticeably; everything else is within 5% of the week before.' },
     { t: 'user', text: 'chart p95 latency per endpoint for last week and write up what regressed' },
     { t: 'tool', name: 'Bash', arg: 'bun run report:latency --since 7d --out charts/', out: ['wrote charts/p95-by-endpoint.png, charts/p95-trend.png'] },
-    { t: 'tool', name: 'Read', arg: 'charts/p95-by-endpoint.png', out: ['Read image (1200×720)'] },
-    { t: 'tool', name: 'Read', arg: 'charts/p95-trend.png', out: ['Read image (1200×720)'] },
+    { t: 'tool', name: 'Read', arg: 'charts/p95-by-endpoint.png', out: ['Read image (900×900)'] },
+    { t: 'tool', name: 'Read', arg: 'charts/p95-trend.png', out: ['Read image (900×900)'] },
     { t: 'say', text: 'The jump starts Tuesday at 14:05, which matches the ranking v3 deploy. Profiling a `/search` request to see where the time goes.' },
     { t: 'tool', name: 'Bash', arg: 'bun run profile:search --duration 30s --out charts/search-profile.png', out: ['1,204 samples · 72% in rankResults → loadVectors'] },
-    { t: 'tool', name: 'Read', arg: 'charts/search-profile.png', out: ['Read image (1200×720)'] },
+    { t: 'tool', name: 'Read', arg: 'charts/search-profile.png', out: ['Read image (900×900)'] },
+    { t: 'tool', name: 'Read', arg: 'screenshots/search-results.png', out: ['Read image (900×900)'] },
     { t: 'tool', name: 'Read', arg: 'reports/latency-week-44.pdf', out: ['Read PDF (2 pages)'] },
     { t: 'say', text: '`GET /search` regressed from 180 ms to 410 ms p95 because ranking v3 parses every candidate vector from JSON on each request. Caching the decoded vectors per index version should bring it back. The write-up is in reports/latency-week-44.pdf and the dashboard is at https://grafana.example.com/d/api-latency.' },
   ],
@@ -237,6 +245,19 @@ export const BENCH: Scene = {
   ],
 }
 
+/**
+ * Minutes since each waiting session's pane last changed, as the sidebar's
+ * age badge shows it. The server only knows when it saw a pane change, which
+ * is always "now" in a fresh instance, so capture.ts sets these on the
+ * session frames (working and permission sessions are left alone).
+ */
+export const AGES: Record<string, number> = {
+  'review-pr-1187': 4,
+  'resize-worker-bench': 9,
+  'flaky-checkout-test': 18,
+  'latency-report': 52,
+}
+
 /** Live sessions, in creation order (oldest first). */
 export const ACTIVE: Scene[] = [LATENCY, REVIEW, CHECKOUT, ROUTER, MIGRATION]
 export const REMOTE: Scene[] = [BENCH, NIGHTLY]
@@ -267,19 +288,19 @@ export const DORMANT: Dormant[] = [
     reply: 'Focus now moves plan by plan and the toggle is reachable with Tab.',
   },
   {
-    id: 'react-19', agent: 'claude', project: 'admin', minutesAgo: 60 * 7, hibernate: false,
+    id: 'react-19', agent: 'claude', project: 'admin-react-19', minutesAgo: 60 * 7, hibernate: false,
     earlier: [['which dependencies block a React 19 upgrade in the admin app?', 'Only `react-table` v7, which still reads `defaultProps`. Everything else already supports 19.']],
     prompt: 'upgrade the admin app to React 19 and fix the type errors',
     reply: 'The upgrade is done. I replaced the three `forwardRef` wrappers and removed `defaultProps` from the table components. Type check and tests pass.',
   },
   {
-    id: 'queue-leak', agent: 'codex', project: 'acme-api', minutesAgo: 60 * 15, hibernate: false,
+    id: 'queue-leak', agent: 'codex', project: 'api-queue-leak', minutesAgo: 60 * 15, hibernate: false,
     earlier: [['the queue worker restarts every few hours with OOM, can you reproduce it?', 'Yes: RSS grows by about 2 MB per 100 retried jobs and never drops back.']],
     prompt: 'find the memory leak in the queue worker',
     reply: 'Each retry added a listener to the shared emitter and never removed it. The worker now holds steady at 140 MB over 10,000 jobs.',
   },
   {
-    id: 'rate-limit', agent: 'claude', project: 'acme-api', minutesAgo: 60 * 21, hibernate: false,
+    id: 'rate-limit', agent: 'claude', project: 'api-rate-limit', minutesAgo: 60 * 21, hibernate: false,
     earlier: [['what do we do today when one API key floods us?', 'Nothing per key: the only limit is the global nginx connection cap.']],
     prompt: 'add rate limiting to the public API',
     reply: 'Requests are limited per API key with a sliding window in Redis: 600 per minute by default, configurable per plan.',
