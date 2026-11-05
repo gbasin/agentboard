@@ -5,7 +5,7 @@ import type { ClientMessage } from '../shared/types'
 import { TerminalLeases, type RelaySocketData } from './relay/leases'
 import type { ParentToRelay, RelayOptions, RelayToParent } from './relay/protocol'
 import { logger } from './logger'
-import { crossOriginRejection } from './requestOrigin'
+import { crossOriginRejection, originPolicy } from './requestOrigin'
 import { CATALOG_VERSION, catalogVersionFromUrl } from '../shared/catalogProtocol'
 
 const ctx = self as DedicatedWorkerGlobalScope
@@ -23,7 +23,7 @@ function bind(hostname: string) {
       async fetch(req, server) {
         const url = new URL(req.url)
         if (url.pathname === '/ws') {
-          const rejected = crossOriginRejection(req, url.pathname, options.allowedOrigins, logger.warn)
+          const rejected = crossOriginRejection(req, url.pathname, originPolicy(options.allowedOrigins, options.tlsCert, options.tlsKey), logger.warn)
           if (rejected) return rejected
           const id = crypto.randomUUID()
           const catalogVersion = catalogVersionFromUrl(url)

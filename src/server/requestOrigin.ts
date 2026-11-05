@@ -7,13 +7,29 @@
  *   1. No Origin header: allow. Browsers always send Origin on WebSocket
  *      handshakes and cross-site non-GET requests; curl, scripts and tests don't.
  *   2. Origin host:port equals the request Host (case-insensitive, omitted port
- *      = the Origin scheme's default): allow.
+ *      = the Origin scheme's default): allow. When this server serves TLS
+ *      itself, the Origin must also be https: the page on http://<same host and
+ *      port> is not ours, and a network attacker can serve it. A plain-HTTP
+ *      server accepts both schemes, because a TLS-terminating proxy (Tailscale
+ *      Serve) forwards an https Origin over HTTP.
  *   3. Origin is listed in AGENTBOARD_ALLOWED_ORIGINS: allow (reverse proxies
  *      that rewrite Host).
  *   4. Anything else, including `Origin: null` or a malformed value: reject.
  * Import-free: config.ts parses the allowlist with it, and the relay worker
- * receives that list through RelayOptions instead of reading the environment.
+ * receives the policy through RelayOptions instead of reading the environment.
  */
+export interface OriginPolicy {
+  /** Normalized AGENTBOARD_ALLOWED_ORIGINS. Entries match exactly, scheme included. */
+  allowedOrigins: readonly string[]
+  /** True when this server terminates TLS itself (TLS_CERT and TLS_KEY set). */
+  servesTls: boolean
+}
+
+/** The one definition of "this server serves TLS", shared by both listeners. */
+export function originPolicy(allowedOrigins: readonly string[], tlsCert: string, tlsKey: string): OriginPolicy {
+  return { allowedOrigins, servesTls: Boolean(tlsCert && tlsKey) }
+}
+
 type WarnLog = (event: string, data: Record<string, unknown>) => void
 
 const HOST_HEADER = /^[A-Za-z0-9._~-]+(?::\d+)?$|^\[[0-9A-Fa-f:.]+\](?::\d+)?$/
@@ -45,22 +61,23 @@ export function parseAllowedOrigins(raw: string | undefined): string[] {
 export function isOriginAllowed(
   origin: string | null,
   host: string | null,
-  allowedOrigins: readonly string[]
+  policy: OriginPolicy
 ): boolean {
   if (origin === null) return true
   const normalized = normalizeOrigin(origin)
   if (!normalized) return false
-  if (host && HOST_HEADER.test(host)) {
-    // Resolve Host under the Origin's scheme so `Host: x` and `Host: x:80`
-    // both compare equal to `http://x`.
-    const scheme = normalized.slice(0, normalized.indexOf('//'))
+  // Resolve Host under the Origin's scheme so `Host: x` and `Host: x:80`
+  // both compare equal to `http://x`.
+  const scheme = normalized.slice(0, normalized.indexOf('//'))
+  const schemeMatchesServer = !policy.servesTls || scheme === 'https:'
+  if (schemeMatchesServer && host && HOST_HEADER.test(host)) {
     try {
       if (new URL(`${scheme}//${host}`).origin === normalized) return true
     } catch {
       // Unparseable Host falls through to the allowlist.
     }
   }
-  return allowedOrigins.includes(normalized)
+  return policy.allowedOrigins.includes(normalized)
 }
 
 /** True for methods a cross-site form or fetch can use to change state. */
@@ -89,12 +106,12 @@ export function needsOriginCheck(req: Request, pathname: string): boolean {
 export function crossOriginRejection(
   req: Request,
   pathname: string,
-  allowedOrigins: readonly string[],
+  policy: OriginPolicy,
   warn: WarnLog
 ): Promise<Response> | null {
   const origin = req.headers.get('origin')
   const host = req.headers.get('host') ?? new URL(req.url).host
-  if (isOriginAllowed(origin, host, allowedOrigins)) return null
+  if (isOriginAllowed(origin, host, policy)) return null
   warn('cross_origin_request_rejected', {
     origin: origin?.slice(0, 200),
     host: host.slice(0, 200),

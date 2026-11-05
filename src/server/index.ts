@@ -30,7 +30,7 @@ import { refreshDormantConversation } from './persistence/legacyImport'
 import type { SavedSession } from '../shared/persistence'
 import { PersistenceRuntime } from './persistence/runtime'
 import { registerPersistenceRoutes } from './persistence/routes'
-import { crossOriginRejection, needsOriginCheck } from './requestOrigin'
+import { crossOriginRejection, needsOriginCheck, originPolicy } from './requestOrigin'
 import {
   initDatabase,
   type AgentSessionRecord,
@@ -2269,6 +2269,9 @@ const staticDir = process.env.AGENTBOARD_STATIC_DIR || './dist/client'
 app.use('/*', serveStatic({ root: staticDir }))
 
 const tlsEnabled = config.tlsCert && config.tlsKey
+// Also applies to the loopback dashboard listener behind the relay, which is
+// plain HTTP: the relay forwards the browser's https Origin and Host to it.
+const requestOriginPolicy = originPolicy(config.allowedOrigins, config.tlsCert, config.tlsKey)
 const tlsOptions = tlsEnabled
   ? { tls: { cert: Bun.file(config.tlsCert), key: Bun.file(config.tlsKey) } }
   : {}
@@ -2286,7 +2289,7 @@ function createSocketData(connectionId: string, remoteAddress: string | null, us
 function serverFetch(req: Request, server: Server<WSData>) {
   const url = new URL(req.url)
   if (needsOriginCheck(req, url.pathname)) {
-    const rejected = crossOriginRejection(req, url.pathname, config.allowedOrigins, logger.warn)
+    const rejected = crossOriginRejection(req, url.pathname, requestOriginPolicy, logger.warn)
     if (rejected) return rejected
   }
   if (url.pathname === '/ws') {
