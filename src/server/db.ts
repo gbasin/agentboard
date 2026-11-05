@@ -42,6 +42,8 @@ export interface KnownSessionKey {
   slug: string | null
   agentType: AgentType | null
   isCodexExec: boolean
+  lastKnownLogSize?: number | null
+  lastKnownLogRevision?: string | null
 }
 
 // last_user_message is a UI preview; unbounded values (giant pastes, tool
@@ -211,10 +213,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_current_window_unique
 CREATE INDEX IF NOT EXISTS idx_dormant_activity
   ON agent_sessions (is_hibernating, last_activity_at DESC, session_id)
   WHERE current_window IS NULL;
--- Covering index for getKnownSessionKeys — an index-only scan of ~1MB
--- instead of a full-table read that touches every last_user_message page.
-CREATE INDEX IF NOT EXISTS idx_session_keys
-  ON agent_sessions (session_id, log_file_path, project_path, slug, agent_type, is_codex_exec);
+-- Covering index for small identity/revision fields, so full known-key scans
+-- never visit the large last_user_message pages.
+CREATE INDEX IF NOT EXISTS idx_session_keys_revision
+  ON agent_sessions (session_id, log_file_path, project_path, slug, agent_type, is_codex_exec, last_known_log_size, last_known_log_revision);
+DROP INDEX IF EXISTS idx_session_keys;
 `
 
 function readJournalMode(db: SQLiteDatabase): string {
@@ -346,7 +349,7 @@ function initializeConnection(
     'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_hibernating = 0 AND last_activity_at > $cutoff ORDER BY last_activity_at DESC, session_id LIMIT $limit'
   )
   const selectKnownSessionKeys = db.prepare(
-    'SELECT session_id, log_file_path, project_path, slug, agent_type, is_codex_exec FROM agent_sessions'
+    'SELECT session_id, log_file_path, project_path, slug, agent_type, is_codex_exec, last_known_log_size, last_known_log_revision FROM agent_sessions'
   )
   const selectByDisplayName = db.prepare(
     'SELECT 1 FROM agent_sessions WHERE display_name = $displayName LIMIT 1'
@@ -603,6 +606,8 @@ function initializeConnection(
         slug: (row.slug as string | null) ?? null,
         agentType: (row.agent_type as AgentType | null) ?? null,
         isCodexExec: Boolean(row.is_codex_exec),
+        lastKnownLogSize: row.last_known_log_size == null ? null : Number(row.last_known_log_size),
+        lastKnownLogRevision: (row.last_known_log_revision as string | null) ?? null,
       }))
     },
     orphanSession: (sessionId, options) => {

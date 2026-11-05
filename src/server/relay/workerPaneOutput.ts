@@ -2,7 +2,7 @@ import type { PaneOutputLease, subscribePaneOutput } from '../terminal/PaneOutpu
 import type { PaneOutputRequest, PaneOutputResponse } from './paneOutputProtocol'
 
 /** Lease workers own callbacks; the shared broker owns all pipe/tail resources. */
-export function createWorkerPaneOutput(post: (message: PaneOutputRequest) => void) {
+export function createWorkerPaneOutput(post: (message: PaneOutputRequest) => void, overflow: () => void) {
   const subscriptions = new Map<string, {
     subscriber: Parameters<typeof subscribePaneOutput>[3]
     resolve: () => void; reject: (error: Error) => void
@@ -39,6 +39,14 @@ export function createWorkerPaneOutput(post: (message: PaneOutputRequest) => voi
     }
     else if (message.type === 'pane-exit') {
       try { if (!entry.closed) entry.subscriber.onExit() } catch { /* Viewer callback. */ }
+    }
+    else if (message.type === 'pane-overflow') {
+      const active = !entry.closed
+      entry.closed = true
+      entry.reject(new Error('Pane output needs resynchronization'))
+      entry.release?.()
+      subscriptions.delete(message.id)
+      if (active) overflow()
     }
     else if (message.type === 'pane-error') {
       entry.reject(new Error(message.error))

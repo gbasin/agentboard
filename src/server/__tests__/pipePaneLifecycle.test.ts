@@ -53,3 +53,49 @@ describe('pipe-pane cancellation at filesystem boundaries', () => {
     })
   }
 })
+
+test('disposal waits for a pending file writer before removing its root', async () => {
+  const reached = deferred()
+  const resume = deferred()
+  const originalWrite = fs.writeFile.bind(fs)
+  const originalRm = fs.rm.bind(fs)
+  let root = ''
+  let writing = true
+  let removedDuringWrite = false
+  const write = spyOn(fs, 'writeFile').mockImplementation((async (...args: Parameters<typeof fs.writeFile>) => {
+    root = path.dirname(String(args[0]))
+    reached.resolve()
+    await resume.promise
+    try { await originalWrite(...args) } finally { writing = false }
+  }) as typeof fs.writeFile)
+  const rm = spyOn(fs, 'rm').mockImplementation((async (...args: Parameters<typeof fs.rm>) => {
+    if (String(args[0]) === root && writing) {
+      removedDuringWrite = true
+      throw Object.assign(new Error('writer recreated a directory entry during removal'), { code: 'ENOTEMPTY' })
+    }
+    return originalRm(...args)
+  }) as typeof fs.rm)
+  const proxy = new PipePaneTerminalProxy({
+    connectionId: 'rm-write-race', sessionName: 'rm-write-race', baseSession: 'rm-write-race', monitorTargets: false,
+    onData: () => {}, spawn: (() => { throw new Error('Canceled startup spawned a tail') }) as never,
+    spawnSync: (() => ({ exitCode: 0, stdout: Buffer.from(''), stderr: Buffer.from('') })) as never,
+  })
+  const switching = proxy.switchTo('rm-write-race:@1')
+  try {
+    await reached.promise
+    const disposing = proxy.dispose()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(removedDuringWrite).toBe(false)
+    resume.resolve()
+    await Promise.all([disposing, switching])
+    await expect(fs.access(root)).rejects.toBeDefined()
+    expect(proxy.isReady()).toBe(false)
+  } finally {
+    resume.resolve()
+    await switching.catch(() => {})
+    write.mockRestore(); rm.mockRestore()
+    await proxy.dispose()
+    if (root) await originalRm(root, { recursive: true, force: true })
+  }
+})

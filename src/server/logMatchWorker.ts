@@ -139,6 +139,13 @@ export function handleMatchWorkerRequest(
         .filter((session) => session.logFilePath)
         .map((session) => [session.logFilePath, session] as const)
     )
+    // Revision-aware matching must see the current identity, including for old
+    // known sessions omitted from the bounded full-record snapshot.
+    const messageAttachedPaths = new Set<string>()
+    for (const entry of entries) {
+      attachLastUserMessage(entry, sessionByLogPath)
+      messageAttachedPaths.add(entry.logPath)
+    }
     const windowsByTmux = new Map(
       payload.windows.map((w) => [w.tmuxWindow, w] as const)
     )
@@ -242,7 +249,7 @@ export function handleMatchWorkerRequest(
     }
 
     for (const entry of entries) {
-      attachLastUserMessage(entry, sessionByLogPath)
+      if (!messageAttachedPaths.has(entry.logPath)) attachLastUserMessage(entry, sessionByLogPath)
     }
     for (const entry of orphanEntries) {
       attachLastUserMessage(entry, sessionByLogPath)
@@ -448,8 +455,9 @@ export function attachLastUserMessage(
     return
   }
   const snapshot = sessionByLogPath.get(entry.logPath)
-  if (snapshot?.lastKnownLogRevision === revision &&
-      snapshot.lastUserMessage && !isToolNotificationText(snapshot.lastUserMessage)) {
+  if ((snapshot?.lastKnownLogRevision === revision &&
+      snapshot.lastUserMessage && !isToolNotificationText(snapshot.lastUserMessage)) ||
+      (!snapshot && entry.previousRevision === revision)) {
     entry.revision = revision
     return
   }

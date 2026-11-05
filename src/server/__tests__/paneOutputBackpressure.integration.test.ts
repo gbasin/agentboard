@@ -10,6 +10,7 @@ test('shared broker bounds a slow subscriber while a credited subscriber continu
   expect(exit).toBe(0)
   const result = JSON.parse(stdout.trim())
   expect(result.slowFailed).toBe(true)
+  expect(result.terminalError).toBe(false)
   expect(result.fastFailed).toBe(false)
   expect(result.fastBytes).toBeGreaterThan(2 * 1024 * 1024)
 }, 20000)

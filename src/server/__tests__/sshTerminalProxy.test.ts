@@ -487,6 +487,47 @@ describe('SshTerminalProxy', () => {
     await proxy.dispose()
   })
 
+  test('a failed second paste lookup cannot release a switch past an earlier pending lookup', async () => {
+    let releaseFirst!: () => void
+    const firstLookup = new Promise<void>(resolve => { releaseFirst = resolve })
+    let lookupCount = 0
+    const harness = createSshHarness({ spawnPipeOverride: args => {
+      const cmd = args.at(-1)!
+      if (cmd.includes('#{pane_id}')) {
+        lookupCount += 1
+        return lookupCount === 1
+          ? { exitCode: 0, stdout: '/dev/pts/42\t%23', stderr: '', wait: firstLookup }
+          : { exitCode: 1, stdout: '', stderr: 'second lookup failed' }
+      }
+      return { exitCode: 0, stdout: cmd.includes('list-clients') ? '/dev/pts/42' : '', stderr: '' }
+    } })
+    const proxy = new SshTerminalProxy({ connectionId: 'overlapping-paste', sessionName: 'bootstrap', baseSession: '', host: 'host', onData: () => {}, spawn: harness.spawn })
+    await proxy.start()
+    await proxy.switchTo('original:@1')
+    proxy.paste('first accepted')
+    proxy.paste('second fails')
+    const switching = proxy.switchTo('later:@2')
+    try {
+      await flushAsync()
+      expect(lookupCount).toBe(2)
+      expect(harness.spawnCalls.some(call => call.args.at(-1)?.includes('later'))).toBe(false)
+      expect(harness.spawnCalls.some(call => call.args.at(-1)?.includes('load-buffer'))).toBe(false)
+      releaseFirst()
+      expect(await switching).toBe(true)
+      await flushAsync()
+      const uploads = harness.spawnCalls.filter(call => call.args.at(-1)?.includes('load-buffer'))
+      expect(uploads.map(call => call.stdin)).toEqual(['first accepted'])
+      const pastes = harness.spawnCalls.filter(call => call.args.at(-1)?.includes('paste-buffer'))
+      expect(pastes).toHaveLength(1)
+      expect(pastes[0].args.at(-1)).toContain("'%23'")
+    } finally {
+      releaseFirst()
+      await switching.catch(() => {})
+      await flushAsync()
+      await proxy.dispose()
+    }
+  })
+
   for (const pane of ['', 'unrelated-session', '%1\t%2', 'lookup-error', 'missing-client']) {
     test(`invalid recipient lookup ${JSON.stringify(pane)} drops paste without staging`, async () => {
       const harness = createSshHarness({ spawnPipeOverride: args => {

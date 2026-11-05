@@ -52,7 +52,7 @@ ctx.onmessage = async (event: MessageEvent<PaneBrokerRequest>) => {
         if (!entry) return
         const bytes = Buffer.byteLength(data)
         if (entry.pendingBytes + bytes > MAX_PENDING_BYTES) {
-          void release(message.id).then(() => post({ type: 'pane-error', id: message.id, error: 'Pane output needs resynchronization' }))
+          void release(message.id).then(() => post({ type: 'pane-overflow', id: message.id }))
           return
         }
         entry.pendingBytes += bytes

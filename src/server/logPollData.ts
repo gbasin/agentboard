@@ -34,6 +34,9 @@ export interface LogEntrySnapshot {
   codexParentId?: string | null
   logTokenCount: number
   revision?: string
+  /** Persisted identity carried even when history is outside the full snapshot. */
+  previousRevision?: string | null
+  previousSize?: number | null
   lastUserMessage?: string | null
 }
 
@@ -51,6 +54,8 @@ export interface KnownSession {
   slug: string | null
   agentType: AgentType | null
   isCodexExec: boolean
+  lastKnownLogSize?: number | null
+  lastKnownLogRevision?: string | null
 }
 
 export interface CollectLogEntryBatchOptions {
@@ -91,6 +96,8 @@ export function enrichLogEntry(
       isCodexExec: codexExec,
       isPiSubagent: false,
       logTokenCount: -1,
+      previousRevision: known.lastKnownLogRevision,
+      previousSize: known.lastKnownLogSize,
     } satisfies LogEntrySnapshot
   }
 

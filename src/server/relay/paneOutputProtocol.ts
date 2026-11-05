@@ -4,7 +4,7 @@ export type PaneOutputRequest =
   | { type: 'pane-release'; id: string }
   | { type: 'pane-credit'; id: string; bytes: number }
 export type PaneOutputResponse =
-  | { type: 'pane-ready' | 'pane-exit' | 'pane-released'; id: string }
+  | { type: 'pane-ready' | 'pane-exit' | 'pane-released' | 'pane-overflow'; id: string }
   | { type: 'pane-data'; id: string; data: string }
   | { type: 'pane-error'; id: string; error: string }
 

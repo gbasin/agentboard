@@ -50,7 +50,7 @@ export class PaneOutputRouter {
       if (message.type === 'pane-stopped') { this.stopped?.(); return }
       const worker = this.subscriptions.get(message.id)
       try { worker?.postMessage(message) } catch { /* Lease worker already stopped. */ }
-      if (message.type === 'pane-released' || message.type === 'pane-error') this.subscriptions.delete(message.id)
+      if (message.type === 'pane-released' || message.type === 'pane-error' || message.type === 'pane-overflow') this.subscriptions.delete(message.id)
     }
     broker.onerror = () => { void this.fail() }
     return broker

@@ -32,6 +32,7 @@ class PaneOutputFeed {
   private installed = false
   private starting: Promise<void> | null = null
   private cleanup: Promise<void> | null = null
+  private preparingFile: Promise<void> | null = null
 
   constructor(private key: string, private target: string, private transport: Transport) {}
 
@@ -64,9 +65,12 @@ class PaneOutputFeed {
       this.transport.onResource?.({ root, closed: true })
       return
     }
-    const file = path.join(this.root, 'output')
-    await fs.writeFile(file, '', { mode: 0o600 })
-    if (this.closed) { await this.removeRoot(); return }
+    const root = this.root
+    const file = path.join(root, 'output')
+    this.preparingFile = fs.writeFile(file, '', { mode: 0o600 })
+    await this.preparingFile
+    // close() waits for this writer before removing the directory.
+    if (this.closed) return
     // Quote the generated path: OS temporary directory names may contain spaces.
     const quoted = `'${file.replaceAll("'", "'\\''")}'`
     if (!this.pipePane(`cat >> ${quoted}`)) throw new Error('Tmux server changed during pipe startup')
@@ -125,7 +129,10 @@ class PaneOutputFeed {
     try { proc?.kill() } catch { /* Already exited. */ }
     this.process = null
     const root = this.root
-    this.cleanup = Promise.all([this.removeRoot(), proc?.exited.catch(() => {})]).then(() => {
+    this.cleanup = Promise.all([
+      this.preparingFile?.catch(() => {}).then(() => this.removeRoot()) ?? this.removeRoot(),
+      proc?.exited.catch(() => {}),
+    ]).then(() => {
       if (root) this.transport.onResource?.({ root, closed: true })
     })
     return this.cleanup

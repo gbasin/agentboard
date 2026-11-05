@@ -18,7 +18,13 @@ const pending = new Map<number, number>()
 let peer: TerminalPeer | null = null
 let readyState = 1
 const post = (message: TerminalToRelay) => ctx.postMessage(message)
-const paneOutput = createWorkerPaneOutput(post)
+const overflow = () => {
+  if (!peer || readyState !== 1) return
+  runtime.suspend(peer)
+  readyState = 3
+  post({ type: 'overflow', epoch })
+}
+const paneOutput = createWorkerPaneOutput(post, overflow)
 const runtime = new TerminalRuntime({
   getSession: id => sessions.get(id),
   createProxy: options => {
@@ -45,9 +51,7 @@ ctx.onmessage = async (event: MessageEvent<RelayToTerminal>) => {
           if (peer !== nextPeer || readyState !== 1) return
           const bytes = Buffer.byteLength(payload)
           if (pendingBytes + bytes > 2 * 1024 * 1024) {
-            runtime.suspend(peer)
-            readyState = 3
-            post({ type: 'overflow', epoch })
+            overflow()
             return
           }
           const sequence = ++serial

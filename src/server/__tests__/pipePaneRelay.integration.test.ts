@@ -30,8 +30,17 @@ test('relay lease workers share pane output across close, switch and reconnect',
       tmux(['new-window', '-d', '-t', 'pipe-relay-test', '-P', '-F', '#{window_id}', 'stty -echo; exec cat'])]
     const sessions = windows.map((window, i) => ({ id: `pipe-relay-test:${window}`, tmuxWindow: `pipe-relay-test:${window}`,
       name: `Pane ${i}`, projectPath: root, status: 'unknown', source: 'managed', createdAt: new Date().toISOString(), lastActivity: new Date().toISOString() }))
+    // Block only the subscriber that writes this marker. Its worker cannot
+    // consume broker messages/credits; the other lease remains responsive.
+    const bin = path.join(root, 'bin')
+    await fs.mkdir(bin)
+    const realTmux = Bun.which('tmux')!
+    await fs.writeFile(path.join(bin, 'tmux'), `#!/bin/sh
+case "$*" in *PIPE_TEST_STALL*) sleep 8;; esac
+exec '${realTmux.replaceAll("'", "'\\''")}' "$@"
+`, { mode: 0o755 })
     child = Bun.spawn([process.execPath, 'src/server/__tests__/fixtures/relayHost.ts'], {
-      env: { ...env, RELAY_TEST_SESSIONS: JSON.stringify(sessions) }, stdout: 'pipe', stderr: Bun.file(path.join(root, 'child.err')),
+      env: { ...env, PATH: `${bin}:${process.env.PATH ?? ''}`, AGENTBOARD_TMUX_TIMEOUT_MS: '10000', RELAY_TEST_SESSIONS: JSON.stringify(sessions) }, stdout: 'pipe', stderr: Bun.file(path.join(root, 'child.err')),
     })
     const reader = (child.stdout as ReadableStream<Uint8Array>).getReader()
     const first = await reader.read()
@@ -72,6 +81,20 @@ test('relay lease workers share pane output across close, switch and reconnect',
     input(b, 0, 1, 'survives-other-worker-switch')
     await until(() => c.output().includes('different-worker-pane') && b.output().includes('survives-other-worker-switch'))
     expect(tmux(['display-message', '-t', sessions[0].tmuxWindow, '-p', '#{pane_pipe}'])).toBe('1')
+    const slow = await connect()
+    input(slow, 0, 1, 'PIPE_TEST_STALL')
+    await Bun.sleep(100)
+    tmux(['respawn-pane', '-k', '-t', sessions[0].tmuxWindow, "i=0; while [ $i -lt 80 ]; do head -c 40960 /dev/zero | tr '\\000' x; sleep 0.02; i=$((i+1)); done; printf '\\nRELAY-BURST-END\\n'; exec cat"])
+    await until(() => b.output().includes('RELAY-BURST-END'), 'healthy subscriber receives burst')
+    await until(() => slow.frames.some(frame => frame.type === 'terminal-overload' || frame.type === 'terminal-error'), 'overflow recovery signal')
+    expect(slow.frames.some(frame => frame.type === 'terminal-overload')).toBe(true)
+    await until(() => slow.ws.readyState === WebSocket.CLOSED, 'overflow closes slow transport for resynchronization')
+    expect(slow.frames.some(frame => frame.type === 'terminal-error')).toBe(false)
+    expect(b.ws.readyState).toBe(WebSocket.OPEN)
+    const recovered = await connect()
+    input(recovered, 0, 1, 'after-overflow-reconnect')
+    await until(() => recovered.output().includes('after-overflow-reconnect') && b.output().includes('after-overflow-reconnect'), 'fresh subscription resumes output')
+    recovered.ws.close()
     b.ws.close(); c.ws.close()
     await until(() => windows.every(window => tmux(['display-message', '-t', `pipe-relay-test:${window}`, '-p', '#{pane_pipe}']) === '0'), 'final subscribers release pipes')
   } finally {

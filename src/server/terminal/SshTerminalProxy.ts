@@ -81,7 +81,8 @@ class SshTerminalProxy extends TerminalProxyBase {
       }
       throw new Error('Terminal client not found')
     })
-    this.pasteTargetResolution = Promise.all([this.pasteTargetResolution, recipient]).then(() => {}, () => {})
+    // A failed later lookup must still wait for earlier pending recipients.
+    this.pasteTargetResolution = Promise.allSettled([this.pasteTargetResolution, recipient]).then(() => {})
     void (async () => {
       let target: string
       try {
