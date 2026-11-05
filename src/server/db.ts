@@ -23,6 +23,7 @@ export interface AgentSessionRecord {
   isHibernating: boolean
   lastResumeError: string | null
   wakeStartedAt: string | null
+  lastKnownLogRevision?: string | null
   lastKnownLogSize: number | null
   isCodexExec: boolean
   launchCommand: string | null
@@ -41,6 +42,8 @@ export interface KnownSessionKey {
   slug: string | null
   agentType: AgentType | null
   isCodexExec: boolean
+  lastKnownLogSize?: number | null
+  lastKnownLogRevision?: string | null
 }
 
 // last_user_message is a UI preview; unbounded values (giant pastes, tool
@@ -71,6 +74,8 @@ export const ACTIVE_SESSIONS_SQL =
 export interface SessionDatabase {
   db: SQLiteDatabase
   insertSession: (session: NewAgentSessionRecord) => AgentSessionRecord
+  /** Release the observed predecessor and insert its successor in one transaction. */
+  supersedeSession: (expectedPredecessor: AgentSessionRecord, successor: NewAgentSessionRecord) => AgentSessionRecord
   updateSession: (
     sessionId: string,
     patch: Partial<Omit<AgentSessionRecord, 'id' | 'sessionId'>>
@@ -208,10 +213,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_current_window_unique
 CREATE INDEX IF NOT EXISTS idx_dormant_activity
   ON agent_sessions (is_hibernating, last_activity_at DESC, session_id)
   WHERE current_window IS NULL;
--- Covering index for getKnownSessionKeys — an index-only scan of ~1MB
--- instead of a full-table read that touches every last_user_message page.
-CREATE INDEX IF NOT EXISTS idx_session_keys
-  ON agent_sessions (session_id, log_file_path, project_path, slug, agent_type, is_codex_exec);
+-- Covering index for small identity/revision fields, so full known-key scans
+-- never visit the large last_user_message pages.
+CREATE INDEX IF NOT EXISTS idx_session_keys_revision
+  ON agent_sessions (session_id, log_file_path, project_path, slug, agent_type, is_codex_exec, last_known_log_size, last_known_log_revision);
+DROP INDEX IF EXISTS idx_session_keys;
 `
 
 function readJournalMode(db: SQLiteDatabase): string {
@@ -312,12 +318,15 @@ function initializeConnection(
   migrateLaunchCommandColumn(db)
   migrateWakeStartedAtColumn(db)
   migrateDeduplicateCurrentWindows(db)
+  if (!(db.query("PRAGMA table_info(agent_sessions)").all() as { name: string }[]).some(c => c.name === "last_known_log_revision")) {
+    db.exec("ALTER TABLE agent_sessions ADD COLUMN last_known_log_revision TEXT")
+  }
   db.exec(CREATE_INDEXES_SQL)
 
   const insertStmt = db.prepare(
     `INSERT INTO agent_sessions
-      (session_id, log_file_path, project_path, slug, agent_type, display_name, created_at, last_activity_at, last_user_message, current_window, is_hibernating, last_resume_error, wake_started_at, last_known_log_size, is_codex_exec, launch_command)
-     VALUES ($sessionId, $logFilePath, $projectPath, $slug, $agentType, $displayName, $createdAt, $lastActivityAt, $lastUserMessage, $currentWindow, $isHibernating, $lastResumeError, $wakeStartedAt, $lastKnownLogSize, $isCodexExec, $launchCommand)`
+      (session_id, log_file_path, project_path, slug, agent_type, display_name, created_at, last_activity_at, last_user_message, current_window, is_hibernating, last_resume_error, wake_started_at, last_known_log_size, is_codex_exec, launch_command, last_known_log_revision)
+     VALUES ($sessionId, $logFilePath, $projectPath, $slug, $agentType, $displayName, $createdAt, $lastActivityAt, $lastUserMessage, $currentWindow, $isHibernating, $lastResumeError, $wakeStartedAt, $lastKnownLogSize, $isCodexExec, $launchCommand, $lastKnownLogRevision)`
   )
 
   const selectBySessionId = db.prepare(
@@ -340,7 +349,7 @@ function initializeConnection(
     'SELECT * FROM agent_sessions WHERE current_window IS NULL AND is_hibernating = 0 AND last_activity_at > $cutoff ORDER BY last_activity_at DESC, session_id LIMIT $limit'
   )
   const selectKnownSessionKeys = db.prepare(
-    'SELECT session_id, log_file_path, project_path, slug, agent_type, is_codex_exec FROM agent_sessions'
+    'SELECT session_id, log_file_path, project_path, slug, agent_type, is_codex_exec, last_known_log_size, last_known_log_revision FROM agent_sessions'
   )
   const selectByDisplayName = db.prepare(
     'SELECT 1 FROM agent_sessions WHERE display_name = $displayName LIMIT 1'
@@ -398,8 +407,21 @@ function initializeConnection(
     'INSERT OR REPLACE INTO app_settings (key, value) VALUES ($key, $value)'
   )
 
-  return {
+  const api: SessionDatabase = {
     db,
+    supersedeSession: (expectedPredecessor, successor) => db.transaction(() => {
+      const predecessorId = expectedPredecessor.sessionId
+      const predecessor = api.getSessionById(predecessorId)
+      if (!predecessor || predecessor.currentWindow !== expectedPredecessor.currentWindow ||
+          predecessor.isHibernating !== expectedPredecessor.isHibernating ||
+          predecessor.displayName !== expectedPredecessor.displayName ||
+          predecessor.slug !== expectedPredecessor.slug ||
+          predecessor.projectPath !== expectedPredecessor.projectPath) {
+        throw new Error("Slug predecessor changed before supersession")
+      }
+      api.updateSession(predecessorId, { currentWindow: null, isHibernating: false })
+      return api.insertSession(successor)
+    })(),
     insertSession: (session) => {
       insertStmt.run({
         $sessionId: session.sessionId,
@@ -416,6 +438,7 @@ function initializeConnection(
         $lastResumeError: session.lastResumeError,
         $wakeStartedAt: session.wakeStartedAt ?? null,
         $lastKnownLogSize: session.lastKnownLogSize,
+        $lastKnownLogRevision: session.lastKnownLogRevision ?? null,
         $isCodexExec: session.isCodexExec ? 1 : 0,
         $launchCommand: session.launchCommand ?? null,
       })
@@ -451,6 +474,7 @@ function initializeConnection(
         lastResumeError: 'last_resume_error',
         wakeStartedAt: 'wake_started_at',
         lastKnownLogSize: 'last_known_log_size',
+        lastKnownLogRevision: 'last_known_log_revision',
         isCodexExec: 'is_codex_exec',
         launchCommand: 'launch_command',
       }
@@ -582,6 +606,8 @@ function initializeConnection(
         slug: (row.slug as string | null) ?? null,
         agentType: (row.agent_type as AgentType | null) ?? null,
         isCodexExec: Boolean(row.is_codex_exec),
+        lastKnownLogSize: row.last_known_log_size == null ? null : Number(row.last_known_log_size),
+        lastKnownLogRevision: (row.last_known_log_revision as string | null) ?? null,
       }))
     },
     orphanSession: (sessionId, options) => {
@@ -654,6 +680,7 @@ function initializeConnection(
       }
     },
   }
+  return api
 }
 
 function ensureDataDir(dbPath: string) {

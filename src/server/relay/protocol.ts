@@ -1,4 +1,5 @@
 /** Internal relay messages never carry transcript/catalog payloads to terminal workers. */
+import type { PaneOutputRequest, PaneOutputResponse } from './paneOutputProtocol'
 import type { ClientMessage, Session } from '../../shared/types'
 
 export type TerminalSession = Pick<Session, 'id' | 'tmuxWindow' | 'host' | 'remote'>
@@ -30,6 +31,7 @@ export type RelayToParent =
   | { type: 'stopped' }
   | { type: 'fatal'; error: string }
 export type RelayToTerminal =
+  | PaneOutputResponse
   | { type: 'init'; id: string; ptySpawnLock: SharedArrayBuffer; sessions: TerminalSession[]; terminalColorsEnabled: boolean }
   | { type: 'sessions'; sessions: TerminalSession[]; terminalColorsEnabled: boolean }
   | { type: 'message'; epoch: number; message: ClientMessage }
@@ -38,6 +40,7 @@ export type RelayToTerminal =
   | { type: 'credit'; sequence: number }
   | { type: 'shutdown' }
 export type TerminalToRelay =
+  | PaneOutputRequest
   | { type: 'send'; epoch: number; sequence: number; payload: string }
   | { type: 'overflow'; epoch: number }
   | { type: 'group-created' }

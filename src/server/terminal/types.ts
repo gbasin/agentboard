@@ -1,3 +1,4 @@
+import type { subscribePaneOutput } from './PaneOutputFeed'
 import type { TerminalErrorCode } from '../../shared/types'
 
 type SpawnFn = (
@@ -52,6 +53,7 @@ interface TerminalProxyOptions {
   baseSession: string
   onData: (data: string) => void
   onExit?: () => void
+  paneOutput?: typeof subscribePaneOutput
   spawn?: SpawnFn
   spawnSync?: SpawnSyncFn
   // Defaults to Bun.spawn, or to spawnSync when only that is injected (tests

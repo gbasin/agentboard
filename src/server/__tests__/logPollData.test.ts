@@ -54,6 +54,23 @@ afterEach(async () => {
 })
 
 describe('collectLogEntryBatch', () => {
+  test('reconciles all 30 unchanged logs across bounded batches', async () => {
+    for (let index = 0; index < 30; index++) {
+      const logPath = path.join(claudeDir, 'projects', 'fair', `s${index}.jsonl`)
+      await writeJsonl(logPath, [JSON.stringify({ type: 'user', sessionId: `s${index}`, cwd: '/fair', content: 'hello world' })])
+      await fs.utimes(logPath, new Date(), new Date(Date.now() - index * 1000))
+    }
+    const seen = new Map<string, import('../logPollData').KnownSession>()
+    for (let cycle = 0; cycle < 4; cycle++) {
+      const batch = collectLogEntryBatch(25, { knownSessions: [...seen.values()] })
+      expect(batch.entries).toHaveLength(25)
+      for (const entry of batch.entries) {
+        seen.set(entry.logPath, { logFilePath: entry.logPath, sessionId: entry.sessionId!, projectPath: entry.projectPath, slug: entry.slug, agentType: entry.agentType, isCodexExec: entry.isCodexExec })
+      }
+    }
+    expect(seen.size).toBe(30)
+  })
+
   test('sorts logs and enriches snapshots', async () => {
     const claudeLog = path.join(
       claudeDir,
