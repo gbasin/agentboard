@@ -103,6 +103,7 @@ async function main() {
     // isolation from global Bun.* mocks, but running them under coverage on
     // Linux CI can stall PTY attach readiness.
     const ISOLATED_REAL_TMUX_FILES = new Set([
+      'sshPaste.integration.test.ts',
       'double-attach.integration.test.ts',
       'pipePaneShared.integration.test.ts',
       'e2eTmuxReap.integration.test.ts',

@@ -26,6 +26,7 @@ class SshTerminalProxy extends TerminalProxyBase {
   private sshArgs: string[]
   private sshCommandTimeoutMs: number
   private startAttemptId = 0
+  private pasteTargetResolution: Promise<void> = Promise.resolve()
 
   constructor(options: ConstructorParameters<typeof TerminalProxyBase>[0]) {
     super(options)
@@ -53,27 +54,44 @@ class SshTerminalProxy extends TerminalProxyBase {
     if (!data || this.state === TerminalState.DEAD) {
       return
     }
-    // Stage via load-buffer stdin (no argv size limit) into a unique buffer
-    // (fire-and-forget async delivery means two rapid pastes must not share a
-    // buffer), then paste-buffer -p. tmux gates bracketing on the real pane.
-    // Remote tmux runs over SSH (async) so this is fire-and-forget; the caller
-    // is a synchronous WebSocket handler that must not block on the round-trip.
-    // NOTE: because typed input (write) goes straight to the interactive pty
-    // while paste takes this side-channel, a paste immediately followed by
-    // Enter can, on a slow SSH link, submit before the paste lands — a
-    // remote-only ordering caveat inherent to the side-channel.
+    const tty = this.clientTty
+    // No selected recipient during startup or a switch. An empty client
+    // selector lets tmux choose another client, so fail closed instead.
+    if (!tty || !this.currentWindow || this.state !== TerminalState.READY) {
+      this.logPasteFailure(this.currentWindow ?? '', 'resolve-pane', data.length, new Error('Terminal recipient not ready'))
+      return
+    }
+    // Typed input still uses the interactive PTY: Enter can overtake this
+    // asynchronous side channel on a slow link, as before.
+    const attemptId = this.startAttemptId
     const bufferName = this.nextPasteBufferName()
     const normalized = this.normalizePasteData(data)
-    const target = this.options.sessionName
+    // Start resolving at acceptance. Later switches wait only for this lookup,
+    // while slow buffer uploads can finish after the client changes sessions.
+    const recipient = this.runTmuxAsync(['display-message', '-p', '-c', tty, '#{pane_id}'])
+      .then(output => {
+        const pane = output.trim()
+        if (!/^%[0-9]+$/.test(pane)) throw new Error('Invalid terminal pane')
+        return pane
+      })
+    this.pasteTargetResolution = Promise.all([this.pasteTargetResolution, recipient]).then(() => {}, () => {})
     void (async () => {
+      let target: string
+      try {
+        target = await recipient
+      } catch (error) {
+        this.logPasteFailure(tty, 'resolve-pane', normalized.length, error)
+        return
+      }
+      if (this.state === TerminalState.DEAD) return
       try {
         await this.runTmuxAsync(['load-buffer', '-b', bufferName, '-'], normalized)
       } catch (error) {
-        // Never fall back to write(): raw multi-line delivery auto-submits.
         this.logPasteFailure(target, 'load-buffer', normalized.length, error)
         return
       }
       try {
+        if (!this.isStartAttemptCurrent(attemptId)) throw new Error('Terminal disposed')
         await this.runTmuxAsync(['paste-buffer', '-d', '-p', '-b', bufferName, '-t', target])
       } catch (error) {
         this.logPasteFailure(target, 'paste-buffer', normalized.length, error)
@@ -348,7 +366,7 @@ class SshTerminalProxy extends TerminalProxyBase {
         spawnArgs,
         {
           env: {
-            ...process.env,
+            ...sanitizedTmuxEnv(),
             TERM: 'xterm-256color',
           },
           terminal: {
@@ -445,7 +463,10 @@ class SshTerminalProxy extends TerminalProxyBase {
       )
     }
 
+    const attemptId = this.startAttemptId
     this.state = TerminalState.SWITCHING
+    await this.pasteTargetResolution
+    if (!this.isStartAttemptCurrent(attemptId) || !this.clientTty) return false
     this.outputSuppressed = true
     const startedAt = this.now()
 
@@ -458,6 +479,7 @@ class SshTerminalProxy extends TerminalProxyBase {
 
     try {
       await this.runTmuxAsync(['switch-client', '-c', this.clientTty, '-t', target])
+      if (!this.isStartAttemptCurrent(attemptId)) return false
       if (onReady) {
         try {
           onReady()
@@ -472,6 +494,7 @@ class SshTerminalProxy extends TerminalProxyBase {
       } catch {
         // Ignore refresh failures
       }
+      if (!this.isStartAttemptCurrent(attemptId)) return false
       const durationMs = this.now() - startedAt
       this.logEvent('terminal_switch_success', {
         sessionName: this.options.sessionName,
@@ -483,6 +506,7 @@ class SshTerminalProxy extends TerminalProxyBase {
       this.state = TerminalState.READY
       return true
     } catch (error) {
+      if (!this.isStartAttemptCurrent(attemptId)) return false
       this.outputSuppressed = false
       this.state = TerminalState.READY
       this.logEvent('terminal_switch_failure', {

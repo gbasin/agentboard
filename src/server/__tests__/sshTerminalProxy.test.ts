@@ -7,6 +7,7 @@ function createSshHarness(options?: {
     exitCode: number
     stdout: string
     stderr: string
+    wait?: Promise<void>
   }
 }) {
   const { ttyAvailable = true, spawnPipeOverride } = options ?? {}
@@ -77,19 +78,21 @@ function createSshHarness(options?: {
     }
 
     // Pipe mode — used by runTmuxAsync for command-channel SSH calls
-    let result = { exitCode: 0, stdout: '', stderr: '' }
+    let result: { exitCode: number; stdout: string; stderr: string; wait?: Promise<void> } = { exitCode: 0, stdout: '', stderr: '' }
 
     if (spawnPipeOverride) {
       result = spawnPipeOverride(args)
     } else {
       const cmd = args.join(' ')
-      if (cmd.includes('list-clients') && ttyAvailable) {
+      if (cmd.includes('#{pane_id}')) {
+        result = { exitCode: 0, stdout: '%42\n', stderr: '' }
+      } else if (cmd.includes('list-clients') && ttyAvailable) {
         result = { exitCode: 0, stdout: '/dev/pts/42\n', stderr: '' }
       }
     }
 
     return {
-      exited: Promise.resolve(result.exitCode),
+      exited: result.wait ? result.wait.then(() => result.exitCode) : Promise.resolve(result.exitCode),
       stdout: new ReadableStream({
         start(controller) {
           controller.enqueue(new TextEncoder().encode(result.stdout))
@@ -407,6 +410,64 @@ describe('SshTerminalProxy', () => {
     })
   })
 
+  test('paste recipient lookup precedes later switches, delivery stays pinned after switch', async () => {
+    let resolveLookup!: () => void
+    let resolveUpload!: () => void
+    let resolveSwitch!: () => void
+    const lookup = new Promise<void>(resolve => { resolveLookup = resolve })
+    const upload = new Promise<void>(resolve => { resolveUpload = resolve })
+    const switching = new Promise<void>(resolve => { resolveSwitch = resolve })
+    const harness = createSshHarness({ spawnPipeOverride: args => {
+      const cmd = args.at(-1)!
+      if (cmd.includes('list-clients')) return { exitCode: 0, stdout: '/dev/pts/42', stderr: '' }
+      if (cmd.includes('#{pane_id}')) return { exitCode: 0, stdout: '%23', stderr: '', wait: lookup }
+      if (cmd.includes('load-buffer')) return { exitCode: 0, stdout: '', stderr: '', wait: upload }
+      if (cmd.includes('switch-client') && cmd.includes('later')) return { exitCode: 0, stdout: '', stderr: '', wait: switching }
+      return { exitCode: 0, stdout: '', stderr: '' }
+    } })
+    const proxy = new SshTerminalProxy({ connectionId: 'ordering', sessionName: 'bootstrap', baseSession: '', host: 'host', onData: () => {}, spawn: harness.spawn })
+    await proxy.start()
+    await proxy.switchTo('original:@1')
+    proxy.paste('accepted')
+    const next = proxy.switchTo('later:@2')
+    await flushAsync()
+    expect(harness.spawnCalls.some(c => c.args.at(-1)?.includes('later'))).toBe(false)
+    proxy.paste('while-switch-waits-for-lookup')
+    await flushAsync()
+    expect(harness.spawnCalls.filter(c => c.args.at(-1)?.includes('#{pane_id}'))).toHaveLength(1)
+    resolveLookup()
+    await flushAsync()
+    expect(harness.spawnCalls.some(c => c.args.at(-1)?.includes('later'))).toBe(true)
+    const lookups = harness.spawnCalls.filter(c => c.args.at(-1)?.includes('#{pane_id}')).length
+    proxy.paste('during-switch')
+    await flushAsync()
+    expect(harness.spawnCalls.filter(c => c.args.at(-1)?.includes('#{pane_id}'))).toHaveLength(lookups)
+    resolveSwitch()
+    await next
+    resolveUpload()
+    await flushAsync()
+    const pastes = harness.spawnCalls.filter(c => c.args.at(-1)?.includes('paste-buffer'))
+    expect(pastes).toHaveLength(1)
+    expect(pastes[0].args.at(-1)).toContain("'%23'")
+    await proxy.dispose()
+  })
+
+  for (const pane of ['', 'unrelated-session', '%1\n%2']) {
+    test(`invalid recipient lookup ${JSON.stringify(pane)} drops paste without staging`, async () => {
+      const harness = createSshHarness({ spawnPipeOverride: args => ({ exitCode: 0, stdout: args.at(-1)!.includes('list-clients') ? '/dev/pts/42' : pane, stderr: '' }) })
+      const proxy = new SshTerminalProxy({ connectionId: 'invalid', sessionName: 'bootstrap', baseSession: '', host: 'host', onData: () => {}, spawn: harness.spawn })
+      proxy.paste('before-start')
+      await proxy.start()
+      proxy.paste('before-selection')
+      await proxy.switchTo('original:@1')
+      proxy.paste('invalid-target')
+      await flushAsync()
+      expect(harness.spawnCalls.some(c => c.args.at(-1)?.includes('load-buffer'))).toBe(false)
+      expect(harness.terminalWrites).toEqual([])
+      await proxy.dispose()
+    })
+  }
+
   test('paste stages via load-buffer stdin and replays with paste-buffer', async () => {
     const harness = createSshHarness({ ttyAvailable: true })
     const proxy = new SshTerminalProxy({
@@ -420,6 +481,7 @@ describe('SshTerminalProxy', () => {
     })
 
     await proxy.start()
+    await proxy.switchTo('real-session:@7')
     proxy.paste('line1\r\nline2\nline3')
     await flushAsync()
 
@@ -442,7 +504,8 @@ describe('SshTerminalProxy', () => {
     expect(pasteCmd).toContain('-d')
     expect(pasteCmd).toContain('-p')
     expect(pasteCmd).toContain('agentboard-paste-conn-paste-1')
-    expect(pasteCmd).toContain('test-paste-session')
+    expect(pasteCmd).toContain("'%42'")
+    expect(pasteCmd).not.toContain('test-paste-session')
 
     // Paste must never reach the raw interactive pty (auto-submit risk).
     expect(harness.terminalWrites).toEqual([])
@@ -457,6 +520,7 @@ describe('SshTerminalProxy', () => {
         if (cmd.includes('list-clients')) {
           return { exitCode: 0, stdout: '/dev/pts/42\n', stderr: '' }
         }
+        if (cmd.includes('#{pane_id}')) return { exitCode: 0, stdout: '%42\n', stderr: '' }
         if (cmd.includes('load-buffer')) {
           return { exitCode: 1, stdout: '', stderr: 'tmux gone' }
         }
@@ -474,6 +538,7 @@ describe('SshTerminalProxy', () => {
     })
 
     await proxy.start()
+    await proxy.switchTo('real-session:@7')
     proxy.paste('a\nb')
     await flushAsync()
 
@@ -496,6 +561,7 @@ describe('SshTerminalProxy', () => {
         if (cmd.includes('list-clients')) {
           return { exitCode: 0, stdout: '/dev/pts/42\n', stderr: '' }
         }
+        if (cmd.includes('#{pane_id}')) return { exitCode: 0, stdout: '%42\n', stderr: '' }
         if (cmd.includes('paste-buffer')) {
           return { exitCode: 1, stdout: '', stderr: 'no such target' }
         }
@@ -513,6 +579,7 @@ describe('SshTerminalProxy', () => {
     })
 
     await proxy.start()
+    await proxy.switchTo('real-session:@7')
     proxy.paste('a\nb')
     await flushAsync()
 
