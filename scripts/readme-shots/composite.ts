@@ -9,8 +9,8 @@
 
 import { chromium, type Page } from '@playwright/test'
 import { spawnSync } from 'node:child_process'
-import { readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { rmSync, statSync, writeFileSync } from 'node:fs'
+import { dirname as dirnameOf, join } from 'node:path'
 import { FEATURE, HERO, LOOP, PHONE, type Box, type Crops, type Metrics } from './capture'
 import { LAUNCH } from './instance'
 
@@ -21,7 +21,15 @@ const BORDER = '#d0d7de'
 
 type Fade = 'left' | 'right' | 'bottom'
 
-const dataUrl = (file: string) => `data:image/png;base64,${readFileSync(file).toString('base64')}`
+/** Images load from disk: the layout page itself is a file in the raw dir. */
+const dataUrl = (file: string) => `file://${file}`
+let pageCounter = 0
+/** Loads layout HTML from a file next to the captures (data URLs of MB-sized PNGs stall setContent). */
+async function load(p: Page, html: string, dir: string): Promise<void> {
+  const file = join(dir, `layout-${pageCounter++}.html`)
+  writeFileSync(file, html)
+  await p.goto(`file://${file}`)
+}
 
 const page = (body: string, width: number) => `<!doctype html><html><head><style>
   html, body { margin: 0; background: transparent; }
@@ -57,7 +65,7 @@ function phoneHtml(src: string, width: number): string {
 
 async function render(p: Page, html: string, width: number, file: string): Promise<void> {
   await p.setViewportSize({ width, height: 400 })
-  await p.setContent(html)
+  await load(p, html, dirnameOf(file))
   await p.evaluate(() => Promise.all([...document.images].map((img) => img.decode())))
   const body = await p.locator('body').boundingBox()
   await p.setViewportSize({ width, height: Math.ceil(body!.height) })
@@ -109,7 +117,7 @@ async function gif(p: Page, frames: { file: string; ms: number }[], crop: Box, o
   for (const [i, frame] of frames.entries()) {
     const png = join(tmp, `gif-${String(i).padStart(3, '0')}.png`)
     await p.setViewportSize({ width: FEATURE_WIDTH, height: 400 })
-    await p.setContent(page(cropHtml(dataUrl(frame.file), LOOP, crop, FEATURE_WIDTH, ['right'], 0), FEATURE_WIDTH))
+    await load(p, page(cropHtml(dataUrl(frame.file), LOOP, crop, FEATURE_WIDTH, ['right'], 0), FEATURE_WIDTH), tmp)
     await p.evaluate(() => Promise.all([...document.images].map((img) => img.decode())))
     const body = await p.locator('body').boundingBox()
     await p.setViewportSize({ width: FEATURE_WIDTH, height: Math.ceil(body!.height) })
@@ -138,10 +146,23 @@ export interface ComposeInput {
 export async function compose(opts: ComposeInput): Promise<void> {
   const { raw, out, crops } = opts
   const browser = await chromium.launch(LAUNCH)
-  const p = await browser.newPage({ deviceScaleFactor: 2 })
   const still = async (name: string, html: string, width: number, quality = 90) => {
     const png = join(raw, `${name}.composite.png`)
-    await render(p, html, width, png)
+    // A fresh page per image, and one retry: an occasional headless page
+    // never fires its load event right after the capture browsers exit.
+    for (let attempt = 1; ; attempt++) {
+      const p = await browser.newPage({ deviceScaleFactor: 2 })
+      p.setDefaultTimeout(20_000)
+      try {
+        await render(p, html, width, png)
+        break
+      } catch (error) {
+        if (attempt >= 3) throw error
+        console.warn(`  ${name}: render attempt ${attempt} failed, retrying`)
+      } finally {
+        await p.close().catch(() => {})
+      }
+    }
     webp(png, join(out, `${name}.webp`), quality)
   }
   const scales: Record<string, number> = {}
@@ -154,6 +175,7 @@ export async function compose(opts: ComposeInput): Promise<void> {
   await still('phone', phones(raw), WIDE)
   await feature('pull-requests', crops['pull-requests']!)
   await feature('hosts', crops.hosts!)
+  await feature('subagents', crops.subagents!, [], 'phone-subagents', PHONE)
   await feature('media-rail', crops['media-rail']!, ['bottom'], 'phone-media', PHONE)
   await feature('history', crops.history!)
 
@@ -169,7 +191,7 @@ export async function compose(opts: ComposeInput): Promise<void> {
   for (const [name, s] of Object.entries(scales)) {
     console.log(`  ${name} ${s.toFixed(2)}x: session name ${(m.sessionName * s).toFixed(1)}px, prompt ${(m.lastPrompt * s).toFixed(1)}px, terminal ${(m.terminal * s).toFixed(1)}px`)
   }
-  for (const name of ['hero.webp', 'phone.webp', 'pull-requests.webp', 'media-rail.webp', 'history.webp', 'hosts.webp', 'status-loop.gif']) {
+  for (const name of ['hero.webp', 'phone.webp', 'subagents.webp', 'pull-requests.webp', 'media-rail.webp', 'history.webp', 'hosts.webp', 'status-loop.gif']) {
     console.log(`  ${name.padEnd(20)} ${(statSync(join(out, name)).size / 1024).toFixed(0)} KB`)
   }
 }

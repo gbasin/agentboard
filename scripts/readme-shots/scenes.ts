@@ -25,6 +25,17 @@ export interface PullRequest {
   checks: [name: string, conclusion: 'SUCCESS' | 'FAILURE' | 'PENDING' | 'SKIPPED'][]
 }
 
+/** A Claude subagent: its transcript's last lifecycle record decides its state. */
+export interface Subagent {
+  /** Sorts the panel within a state group (the app orders by file id). */
+  id: string
+  task: string
+  state: 'tool' | 'model' | 'idle'
+  tool?: string
+  /** Seconds since its last lifecycle record. */
+  secondsAgo: number
+}
+
 export interface Scene {
   /** tmux window name, shown as the session name. */
   id: string
@@ -44,6 +55,8 @@ export interface Scene {
   prs?: PullRequest[]
   /** Generated attachments (media rail). */
   media?: boolean
+  /** Subagent transcripts next to the session's own (Claude layout). */
+  subagents?: Subagent[]
   /** Minutes ago of the transcript's first and last entries. */
   startedMinutesAgo: number
 }
@@ -58,6 +71,12 @@ export const ROUTER: Scene = {
   elapsed: 94,
   startedMinutesAgo: 38,
   media: true,
+  subagents: [
+    { id: 'a1c4e09b', task: 'Migrate billing routes', state: 'tool', tool: 'Edit', secondsAgo: 20 },
+    { id: 'a2d7f13c', task: 'Migrate invoice routes', state: 'model', secondsAgo: 70 },
+    { id: 'a3b95e2d', task: 'Run e2e suite', state: 'tool', tool: 'Bash', secondsAgo: 45 },
+    { id: 'a4e21c7f', task: 'Audit auth middleware', state: 'idle', secondsAgo: 6 * 60 },
+  ],
   prs: [{
     repo: 'acme/api', number: 482, title: 'Typed route params for the v2 router', state: 'OPEN',
     checks: [['build', 'SUCCESS'], ['unit tests', 'SUCCESS'], ['integration', 'SUCCESS'], ['lint', 'SUCCESS']],
@@ -89,7 +108,7 @@ export const ROUTER: Scene = {
       ],
     },
     { t: 'tool', name: 'Bash', arg: 'bun test src/router/users', out: ['14 pass, 0 fail  ·  412ms'] },
-    { t: 'say', text: 'Users is done and its tests pass. Moving on to orgs and invoices, which share the `withOrg` loader.' },
+    { t: 'say', text: 'Users is done and its tests pass. I handed billing, invoices, the auth audit and the e2e run to four subagents; I am taking orgs myself.' },
     {
       t: 'diff', file: 'src/router/orgs.ts', summary: 'Updated src/router/orgs.ts with 6 additions and 5 removals',
       lines: [

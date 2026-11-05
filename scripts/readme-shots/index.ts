@@ -21,7 +21,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { join } from 'node:path'
 import { captureDesktop, captureLoop, capturePhones } from './capture'
 import { compose } from './composite'
-import { acquireLock, checkTools, LAUNCH, paths, PORT, portInUse, recordTmuxServer, releaseLock, REPO, reset, startServer, startTmux, teardown } from './instance'
+import { acquireLock, checkTools, LAUNCH, paths, PORT, portInUse, recordTmuxServer, releaseLock, REPO, reset, startServer, startTmux, teardown, tmux } from './instance'
 import { putSettings, seedFiles, setMode, settle } from './seed'
 import { writeShims } from './shims'
 
@@ -96,6 +96,7 @@ try {
   startTmux()
   const seeded = await seedFiles(browser)
   recordTmuxServer(paths.remoteSocket)
+  tmux(['set-option', '-g', 'status', 'off'], paths.remoteSocket)
   step('starting agentboard')
   await startServer()
   await putSettings({ theme: 'light', showLastUserMessage: true, showProjectName: true, sessionSortMode: 'status' })
@@ -112,7 +113,10 @@ try {
   const meta = { crops, metrics, frames: loop.frames, loopCrop: loop.crop }
   writeFileSync(join(RAW, 'meta.json'), JSON.stringify(meta))
   step('compositing')
-  await compose({ raw: RAW, out: OUT, ...meta })
+  // In a fresh process: a Chromium launched here, after the capture
+  // browsers, intermittently never loaded the layout pages.
+  const composed = spawnSync(process.execPath, ['--no-env-file', import.meta.path, '--composite-only'], { cwd: REPO, stdio: 'inherit' })
+  if (composed.status !== 0) throw new Error('compositing failed')
   step(`done: ${OUT}`)
 } catch (error) {
   failed = true

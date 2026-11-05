@@ -213,6 +213,8 @@ exec "${TMUX_BIN}" -S "$AB_TMUX_SOCKET" "$@"
  */
 export function startTmux(): void {
   tmux(['new-session', '-d', '-s', TMUX_SESSION, '-n', '__agentboard_root__', '-c', paths.home, 'tail -f /dev/null'])
+  // No status line: its default right side shows the machine's real hostname.
+  tmux(['set-option', '-g', 'status', 'off'])
   recordTmuxServer(paths.socket)
 }
 

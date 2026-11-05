@@ -11,7 +11,7 @@ import { mkdirSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { paths, projectDir } from './instance'
 import type { MediaSet } from './media'
-import { DORMANT, fixtureScene, type Block, type Scene } from './scenes'
+import { DORMANT, fixtureScene, type Block, type Scene, type Subagent } from './scenes'
 
 export interface WrittenLog {
   sceneId: string
@@ -100,6 +100,34 @@ function codexEntries(scene: Scene, sessionId: string, cwd: string): Entry[] {
   return entries
 }
 
+/**
+ * Claude keeps subagent transcripts in <session>/subagents/agent-<id>.jsonl
+ * with a .meta.json naming the task. The activity reader takes each one's
+ * state from its last lifecycle record: a pending tool_use, a user turn
+ * (model working), or an assistant end_turn (finished).
+ */
+function writeSubagents(logPath: string, sessionId: string, cwd: string, subagents: Subagent[]): void {
+  const dir = join(logPath.slice(0, -'.jsonl'.length), 'subagents')
+  mkdirSync(dir, { recursive: true })
+  for (const agent of subagents) {
+    const at = (seconds: number) => new Date(NOW - seconds * 1000).toISOString()
+    const base = { sessionId, agentId: agent.id, isSidechain: true, cwd }
+    const entries: Entry[] = [{ type: 'user', ...base, timestamp: at(agent.secondsAgo + 240), message: { role: 'user', content: agent.task } }]
+    const toolId = `toolu_${agent.id}`
+    if (agent.state === 'tool') {
+      entries.push({ type: 'assistant', ...base, timestamp: at(agent.secondsAgo), message: { role: 'assistant', content: [{ type: 'tool_use', id: toolId, name: agent.tool, input: {} }] } })
+    } else if (agent.state === 'model') {
+      entries.push({ type: 'assistant', ...base, timestamp: at(agent.secondsAgo + 30), message: { role: 'assistant', content: [{ type: 'tool_use', id: toolId, name: 'Read', input: {} }] } })
+      entries.push({ type: 'user', ...base, timestamp: at(agent.secondsAgo), message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolId, content: 'ok' }] } })
+    } else {
+      entries.push({ type: 'assistant', ...base, timestamp: at(agent.secondsAgo), message: { role: 'assistant', stop_reason: 'end_turn', content: [{ type: 'text', text: 'Done.' }] } })
+    }
+    const file = join(dir, `agent-${agent.id}.jsonl`)
+    writeFileSync(file, entries.map((e) => JSON.stringify(e)).join('\n') + '\n')
+    writeFileSync(file.replace(/\.jsonl$/, '.meta.json'), JSON.stringify({ description: agent.task }))
+  }
+}
+
 function writeJsonl(file: string, entries: Entry[], minutesAgo: number): void {
   writeFileSync(file, entries.map((e) => JSON.stringify(e)).join('\n') + '\n')
   const when = new Date(NOW - minutesAgo * 60_000)
@@ -116,6 +144,7 @@ function writeScene(scene: Scene, endMinutesAgo: number, media?: MediaSet): Writ
     mkdirSync(dir, { recursive: true })
     logPath = join(dir, `${sessionId}.jsonl`)
     writeJsonl(logPath, claudeEntries(scene, sessionId, cwd, media), endMinutesAgo)
+    if (scene.subagents) writeSubagents(logPath, sessionId, cwd, scene.subagents)
   } else {
     const start = new Date(NOW - scene.startedMinutesAgo * 60_000)
     const day = start.toISOString().slice(0, 10).split('-')

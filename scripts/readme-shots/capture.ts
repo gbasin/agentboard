@@ -242,6 +242,7 @@ export async function capturePhones(webkit: Browser, raw: string, setMode: (id: 
   const { viewport: _, ...iphone } = devices['iPhone 15 Pro']
   const context = await newContext(webkit, PHONE, 300, { ...iphone, deviceScaleFactor: 3 }, 15)
   const page = await open(context)
+  const crops: Crops = {}
   const pick = async (name: string) => {
     await page.getByRole('button', { name: 'Open session menu' }).click()
     const drawer = page.getByRole('dialog', { name: 'Session list' })
@@ -261,6 +262,19 @@ export async function capturePhones(webkit: Browser, raw: string, setMode: (id: 
   })
   await page.waitForTimeout(600)
   await shot('phone-drawer')
+
+  // Subagents: the router session's activity panel, opened from its counter.
+  const drawerRow = page.getByRole('dialog', { name: 'Session list' }).getByTestId('session-card').filter({ hasText: 'router-refactor' })
+  await drawerRow.getByTestId('session-activity-counter').click()
+  await page.getByTestId('session-activity-popover').waitFor()
+  await page.waitForTimeout(1500)
+  await shot('phone-subagents')
+  const row = (await drawerRow.boundingBox())!
+  const pop = await box(page, '[data-testid="session-activity-popover"]')
+  const area = union(row, pop)
+  crops.subagents = { x: 0, y: area.y - 8, width: PHONE.width, height: area.height + 16 }
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(600)
   await page.mouse.click(PHONE.width - 20, PHONE.height / 2)
   await page.waitForTimeout(800)
 
@@ -292,5 +306,6 @@ export async function capturePhones(webkit: Browser, raw: string, setMode: (id: 
   const bottom = pdfLine ? pdfLine.y + pdfLine.height + 10 : rail.y + rail.height + 300
 
   await context.close()
-  return { 'media-rail': { x: 0, y: rail.y - 8, width: PHONE.width, height: bottom - (rail.y - 8) } }
+  crops['media-rail'] = { x: 0, y: rail.y - 8, width: PHONE.width, height: bottom - (rail.y - 8) }
+  return crops
 }
