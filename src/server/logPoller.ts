@@ -1107,6 +1107,7 @@ export class LogPoller {
         // Slug-based supersede: if this session shares a slug with an active session
         // in the same project, it's a plan→execute transition. Supersede the old session.
         const slug = entry.slug ?? null
+        let predecessor: AgentSessionRecord | null = null
         let supersededWindow: string | null = null
         let inheritHibernationMarker = false
         let inheritDisplayName: string | null = null
@@ -1120,18 +1121,7 @@ export class LogPoller {
             supersededWindow = slugMatch.currentWindow
             inheritHibernationMarker = slugMatch.isHibernating
             inheritDisplayName = slugMatch.displayName
-            this.db.updateSession(slugMatch.sessionId, {
-              currentWindow: null,
-              isHibernating: false,
-            })
-            this.onSessionOrphaned?.(slugMatch.sessionId, sessionId)
-            logger.info('session_superseded_by_slug', {
-              oldSessionId: slugMatch.sessionId,
-              newSessionId: sessionId,
-              slug,
-              window: supersededWindow,
-              hibernationMarkerTransferred: inheritHibernationMarker,
-            })
+            predecessor = slugMatch
           }
         }
 
@@ -1139,7 +1129,7 @@ export class LogPoller {
         let currentWindow: string | null = supersededWindow ?? matchedWindow?.tmuxWindow ?? null
         if (currentWindow) {
           const existingForWindow = this.db.getSessionByWindow(currentWindow)
-          if (existingForWindow && existingForWindow.sessionId !== sessionId) {
+          if (existingForWindow && existingForWindow.sessionId !== sessionId && existingForWindow.sessionId !== predecessor?.sessionId) {
             // Window already claimed by another session - don't steal it
             // The new session will be created as orphaned and can match later
             // if/when the existing session releases the window
@@ -1191,7 +1181,7 @@ export class LogPoller {
           )
         }
 
-        this.db.insertSession({
+        const successor = {
           sessionId,
           logFilePath: entry.logPath,
           projectPath,
@@ -1208,7 +1198,17 @@ export class LogPoller {
           lastKnownLogRevision: entry.revision,
           isCodexExec: entry.isCodexExec,
           launchCommand: matchedWindow?.command ?? null,
-        })
+        }
+        if (predecessor) {
+          this.db.supersedeSession(predecessor, successor)
+          this.onSessionOrphaned?.(predecessor.sessionId, sessionId)
+          logger.info("session_superseded_by_slug", {
+            oldSessionId: predecessor.sessionId, newSessionId: sessionId, slug,
+            window: currentWindow, hibernationMarkerTransferred: inheritHibernationMarker,
+          })
+        } else {
+          this.db.insertSession(successor)
+        }
         newSessions += 1
         if (currentWindow) {
           this.onSessionActivated?.(sessionId, currentWindow)

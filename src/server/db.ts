@@ -72,6 +72,8 @@ export const ACTIVE_SESSIONS_SQL =
 export interface SessionDatabase {
   db: SQLiteDatabase
   insertSession: (session: NewAgentSessionRecord) => AgentSessionRecord
+  /** Release the observed predecessor and insert its successor in one transaction. */
+  supersedeSession: (expectedPredecessor: AgentSessionRecord, successor: NewAgentSessionRecord) => AgentSessionRecord
   updateSession: (
     sessionId: string,
     patch: Partial<Omit<AgentSessionRecord, 'id' | 'sessionId'>>
@@ -402,8 +404,21 @@ function initializeConnection(
     'INSERT OR REPLACE INTO app_settings (key, value) VALUES ($key, $value)'
   )
 
-  return {
+  const api: SessionDatabase = {
     db,
+    supersedeSession: (expectedPredecessor, successor) => db.transaction(() => {
+      const predecessorId = expectedPredecessor.sessionId
+      const predecessor = api.getSessionById(predecessorId)
+      if (!predecessor || predecessor.currentWindow !== expectedPredecessor.currentWindow ||
+          predecessor.isHibernating !== expectedPredecessor.isHibernating ||
+          predecessor.displayName !== expectedPredecessor.displayName ||
+          predecessor.slug !== expectedPredecessor.slug ||
+          predecessor.projectPath !== expectedPredecessor.projectPath) {
+        throw new Error("Slug predecessor changed before supersession")
+      }
+      api.updateSession(predecessorId, { currentWindow: null, isHibernating: false })
+      return api.insertSession(successor)
+    })(),
     insertSession: (session) => {
       insertStmt.run({
         $sessionId: session.sessionId,
@@ -660,6 +675,7 @@ function initializeConnection(
       }
     },
   }
+  return api
 }
 
 function ensureDataDir(dbPath: string) {
