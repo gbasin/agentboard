@@ -152,7 +152,7 @@ Use this option to keep Agentboard on HTTP, for example with the launchd release
 
 To stop forwarding, run `"$TS" serve reset`.
 
-Serve forwards the browser's original `Host` header to Agentboard. Agentboard still listens on `http://<tailscale-ip>:4040` as well. That address works for the board, but not for an install.
+Serve forwards the browser's original `Host` header to Agentboard. The origin check therefore accepts it, and you do not need `AGENTBOARD_ALLOWED_ORIGINS`. Agentboard still listens on `http://<tailscale-ip>:4040` as well. That address works for the board, but not for an install.
 
 ## Option C: Chrome flag, no HTTPS
 

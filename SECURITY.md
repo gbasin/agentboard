@@ -86,14 +86,24 @@ Limits on these messages:
 | Status | `GET /api/health`, `GET /api/sessions`, `GET /api/server-info` | Read the session list, the port, the Tailscale address, and the protocol. |
 | Client log | `POST /api/client-log` | Write an event to the server log. |
 
-### Requests from web pages
+### Browser protections and their limits
 
-Browsers add their own limits, but the server enforces little in this version.
+The server checks the `Origin` header to stop other web sites from using the board through your browser.
 
-- **WebSocket.** The server does not check the `Origin` header on `/ws`. A web page on any site, open in a browser that can reach the server, can open the WebSocket and send any message above, including `session-create` with a command.
-- **Session library writes.** Non-GET requests under `/api/library` with an `Origin` that does not match the request host get 403.
-- **Other writes.** The other `POST` routes accept cross-site requests. `PUT` and `PATCH` from another site need a CORS preflight, and the server does not answer one, so browsers do not send them.
-- **Reading responses.** The server sends no CORS headers, so a page on another site cannot read HTTP responses.
+**The rule.** The check applies to the `/ws` WebSocket handshake and to every request whose method is not `GET`, `HEAD`, or `OPTIONS`, on every path. On those requests:
+
+1. A request without an `Origin` header is accepted. Browsers send `Origin` on WebSocket handshakes and on cross-site writes. curl, scripts, and other non-browser clients usually do not.
+2. A request is accepted if the host and port in `Origin` equal the `Host` header. A missing port means the default port of the `Origin` scheme.
+3. A request is accepted if its origin is listed in `AGENTBOARD_ALLOWED_ORIGINS`. Use this when a reverse proxy rewrites `Host`.
+4. Every other request gets 403. This includes `Origin: null` and a malformed `Origin`.
+
+The check applies to the main listener, the Tailscale listener, and the internal loopback listener.
+
+**This is not authentication.** A client that sends no `Origin`, or sends a matching one, passes. Every program that can reach a listener still has full access.
+
+**Gap 1: DNS rebinding.** A hostile page can load from a name that the attacker controls, then make that name resolve to `127.0.0.1` or to your Tailscale address. The browser then sends `Origin` and `Host` with the same attacker name, so the rule accepts the request. The page can then open `/ws`, send writes, and read responses as a same-origin page. The server does not check the `Host` header against a list of names that it expects.
+
+**Gap 2: cross-site GET requests.** `GET` requests are not checked. A page on another site can make the browser send them, for example with an image or a link. The server sends no CORS headers, so that page cannot read the responses. Side effects still happen. On macOS, `GET /api/clipboard-file-path` reads the host clipboard and can write a copied image to a temporary file. `GET /api/pr-checks` runs `gh` with your credentials.
 
 ### Server-wide side effects
 

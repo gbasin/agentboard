@@ -36,6 +36,7 @@ Settings that you change in the **Settings** dialog are separate. Agentboard sto
 | `HOSTNAME` | `127.0.0.1` | Address to bind. |
 | `TLS_CERT` | unset | Path to a TLS certificate file. |
 | `TLS_KEY` | unset | Path to the TLS private key file. |
+| `AGENTBOARD_ALLOWED_ORIGINS` | unset | Comma-separated origins, such as `https://board.example.com`, that may use the board in addition to the server's own origin. |
 
 `HOSTNAME` controls which interfaces the server binds to. The default, `127.0.0.1`, accepts connections from the same machine only. Set `0.0.0.0` to listen on all interfaces.
 
@@ -45,7 +46,9 @@ A `HOSTNAME` that equals the machine hostname is treated as auto-exported by the
 
 Set both `TLS_CERT` and `TLS_KEY` to serve HTTPS. Use absolute paths. To install the board as a PWA, the browser needs HTTPS or `localhost`; see [pwa-install.md](pwa-install.md).
 
-> **Security note:** Agentboard has no built-in authentication. Anyone who can reach the server has full access to your terminal sessions, including the ability to run commands as your user. The default localhost binding is safe. Tailscale provides network-level auth for remote access. Avoid setting `HOSTNAME=0.0.0.0` on untrusted networks (public WiFi, shared LANs) without an additional access control layer.
+**Allowed origins.** The server rejects a WebSocket handshake or a write request (any method except `GET`, `HEAD`, and `OPTIONS`) with 403 when the browser's `Origin` does not match the request's `Host` header. Requests without an `Origin` header, such as curl and scripts, are not affected. If a reverse proxy rewrites `Host`, for example to `127.0.0.1:4040`, list the public origin in `AGENTBOARD_ALLOWED_ORIGINS`. A proxy that forwards the original `Host`, such as Tailscale Serve, needs no entry. See [SECURITY.md](../SECURITY.md#browser-protections-and-their-limits) for what this check does not cover.
+
+> **Security note:** Agentboard has no built-in authentication. Anyone who can reach the server has full access to your terminal sessions, including the ability to run commands as your user. The default binding accepts connections only from this machine and, when Tailscale answers at startup, from the tailnet devices that your Tailscale access rules allow. It does not stop other programs and users on this machine, and the browser checks do not cover DNS rebinding or cross-site `GET` requests; see [SECURITY.md](../SECURITY.md#browser-protections-and-their-limits). Avoid setting `HOSTNAME=0.0.0.0` on untrusted networks (public WiFi, shared LANs) without an additional access control layer.
 
 ## tmux sessions and discovery
 

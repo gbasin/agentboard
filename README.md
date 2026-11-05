@@ -168,7 +168,7 @@ See [Configuration](docs/configuration.md) for every setting.
 
 Appearance, notification sounds, command presets, session list options, and terminal options are in the **Settings** dialog in the UI.
 
-> **Security note:** Agentboard has no built-in authentication. Anyone who can reach the server has full access to your terminal sessions, including the ability to run commands as your user. The default localhost binding is safe. Tailscale provides network-level auth for remote access. Avoid setting `HOSTNAME=0.0.0.0` on untrusted networks (public WiFi, shared LANs) without an additional access control layer.
+> **Security note:** Agentboard has no built-in authentication. Anyone who can reach the server has full access to your terminal sessions, including the ability to run commands as your user. The default binding accepts connections only from this machine and, when Tailscale answers at startup, from the tailnet devices that your Tailscale access rules allow. It does not stop other programs and users on this machine, and the browser checks do not cover DNS rebinding or cross-site `GET` requests; see [SECURITY.md](SECURITY.md#browser-protections-and-their-limits). Avoid setting `HOSTNAME=0.0.0.0` on untrusted networks (public WiFi, shared LANs) without an additional access control layer.
 
 ## Keyboard shortcuts
 
