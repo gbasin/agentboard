@@ -2,7 +2,7 @@
 
 Agentboard saves each session it starts before it starts the terminal. The session's ID, name, project, command, and state stay available after a crash or a reboot, even when the agent has not written a transcript yet. Renames and stop requests are saved at once. When you reopen a session, Agentboard resumes the saved conversation where one exists. It cannot recreate the state of a shell process after a reboot.
 
-Recovery adds to the sidebar; it does not replace it. The **Hibernating** and **History** sections work as before.
+Session recovery is separate from the **Hibernating** and **History** sections of the sidebar.
 
 How the catalog works internally is in [architecture.md](architecture.md#session-recovery-catalog).
 

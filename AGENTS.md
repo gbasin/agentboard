@@ -54,9 +54,9 @@ Read [docs/architecture.md](docs/architecture.md) before changing the server. Th
 
 ## Structure
 
-- `src/server/` — Bun backend. `index.ts` is the entry point.
-- `src/client/` — React app. `App.tsx` is the root.
-- `src/shared/` — types and protocol constants used by both.
+- `src/server/`: Bun backend. `index.ts` is the entry point.
+- `src/client/`: React app. `App.tsx` is the root.
+- `src/shared/`: types and protocol constants used by both.
 - `docs/architecture.md` maps processes, tmux, terminal I/O, the log pipeline, storage, and the API.
 
 ## Documentation
