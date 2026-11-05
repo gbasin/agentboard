@@ -47,7 +47,8 @@ export const roundAdapters: RoundAdapters = {
  */
 export interface ReleaseSeam {
   readiness: (sessionId: string) => { ready: boolean; reason: string | null }
-  release: (sessionId: string) => { ok: true } | { ok: false; error: string }
+  /** `detail` finishes the release's journal line; without it the line names the review handoff. */
+  release: (sessionId: string, detail?: string) => { ok: true } | { ok: false; error: string }
   /** The team's in-flight spawn reservations (staffing's `team_spawns`), each with its worktree root. */
   pendingSpawns: (teamId: string) => Array<{ groupId: string; worktree: string }>
 }
@@ -319,6 +320,37 @@ async function dispatchReview(deps: RoundDeps, changeRow: { executionId: string;
     tags: authorProfileTags(profilesOfRecords(deps), authors),
   }))
   store.setRoundReview(round.id, outcome.assignment.id)
+}
+
+/**
+ * D11's other direction: a change back with its implementer needs the
+ * worktree the review had, and one member per worktree means a finished
+ * reviewer left live keeps the implementer's mail queued. Each tick releases
+ * the review group's ready spawned members in the worktree; one still busy
+ * waits for a later tick. Human-created sessions and unscoped groups are left
+ * alone, as in the release before the review.
+ */
+export function releaseFinishedReviewers(
+  deps: Pick<RoundDeps, 'team' | 'executions' | 'plans' | 'records' | 'releases' | 'groupScoped'>,
+  changeRow: { executionId: string; change: string; worktree: string | null },
+): void {
+  const worktree = changeRow.worktree
+  if (worktree === null) return
+  const execution = deps.executions.execution(changeRow.executionId)
+  if (execution === null) return
+  const revision = deps.plans.revision(execution.planId, execution.revision)
+  const entry = revision?.content.changes.find(candidate => candidate.change === changeRow.change) ?? null
+  const reviewGroup = entry?.reviewGroup ?? revision?.content.reviewGroup ?? null
+  if (reviewGroup === null || reviewGroup === entry?.group || !deps.groupScoped(deps.team.teamId, reviewGroup)) return
+  // A snapshot: a release archives the member it names.
+  const members = [...deps.records()].filter(member =>
+    member.archivedAt == null && member.spawned === true && member.groupId === reviewGroup
+    && (member.projectPath === worktree || member.projectPath.startsWith(`${worktree}${path.sep}`)))
+  for (const member of members) {
+    if (deps.releases.readiness(member.sessionId).ready) {
+      deps.releases.release(member.sessionId, ' after its review: the change is back with its implementer (plan-execution D11)')
+    }
+  }
 }
 
 /** The result authors' profile tags, deduped — a review handoff routes away from the author's model (D5's tag grammar). */

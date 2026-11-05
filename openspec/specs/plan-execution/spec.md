@@ -249,6 +249,10 @@ Only a `pass` verdict on the round's result from the review handoff's claimant S
 ### Requirement: A worktree-scoped review group gets the worktree
 When the change's review group is worktree-scoped, Kawai SHALL release the worktree's live spawned members before dispatching the review handoff. It SHALL use member release's readiness rules, never killing anyone, and SHALL wait while a member is not ready. Human-created sessions SHALL never be released, and an unscoped review group SHALL leave the implementer in place.
 
+#### Scenario: A finished reviewer gives the worktree back
+- **WHEN** a change is back with its implementer after a review, and a spawned member of its worktree-scoped review group is live in the worktree
+- **THEN** that member is released once it is ready, so the implementer's instruction is not left waiting for the worktree, and nobody is killed
+
 #### Scenario: Unscoped reviewers leave the implementer working
 - **WHEN** a round's CI passes and the review group sets `worktreeScoped: false`
 - **THEN** the review handoff is dispatched and the implementer stays live in its worktree
