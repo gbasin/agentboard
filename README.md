@@ -47,7 +47,7 @@ For local Claude Code and Codex sessions, a counter on the session shows how man
 
 ### Pull requests with CI state
 
-Pull requests that a session created with `gh pr create` appear as chips on the session, colored by state: open, draft, merged, or closed. Claude Code sessions also show the pull requests that Claude Code links to them, such as one the session pushed to. Hover a chip to see its title and CI checks.
+Pull requests that a session created with `gh pr create` appear as chips on the session, colored by state: open, draft, merged, or closed. Claude Code sessions also show pull requests that Claude Code linked to the session, such as one it pushed to. Hover a chip to see its title and CI checks.
 
 </td>
 <td width="60%">
@@ -69,7 +69,7 @@ A media rail collects the images, documents, and links from a session's transcri
 <tr>
 <td width="40%" valign="top">
 
-### History, Hibernate and Wake
+### History, Hibernate, and Wake
 
 **Hibernate** closes an agent session's tmux window and keeps its conversation in the sidebar. It works for local sessions in the tmux session that Agentboard manages. **History** lists recent conversations: open one to preview its transcript, then **Wake** it to resume.
 
