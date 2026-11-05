@@ -18,7 +18,7 @@ Start with the [project README](../README.md) for an overview and installation.
 
 | Page | Contents |
 | --- | --- |
-| [Development](development.md) | Run from source, commands, dependency scanner. |
 | [Architecture](architecture.md) | Processes, tmux model, terminal I/O, log pipeline, storage, and API surface. Read before changing the server. |
-| [AGENTS.md](../AGENTS.md) | Conventions, commands, tmux safety rules, release process. |
+| [Development](development.md) | Run from source, commands, dependency scanner. |
+| [AGENTS.md](../AGENTS.md) | Conventions, structure, tmux safety rules, release process. |
 | [SECURITY.md](../SECURITY.md) | How to report a vulnerability. |
