@@ -19,16 +19,23 @@ xml_escape() {
 }
 
 mkdir -p "$BIN_DIR" "$LAUNCH_AGENTS"
-install -m 755 "$SCRIPT_DIR/tmux-watchdog.sh" "$BIN_DIR/tmux-agentboard-watchdog.sh"
+SCRIPT="$BIN_DIR/tmux-agentboard-watchdog.sh"
 
-cat > "$PLIST" << EOF
+# Stage both files, check the plist, then move them into place. A failure
+# before the moves leaves an existing installation untouched.
+STAGED_SCRIPT="$(mktemp "$SCRIPT.XXXXXX")"
+STAGED_PLIST="$(mktemp "$PLIST.XXXXXX")"
+trap 'rm -f "$STAGED_SCRIPT" "$STAGED_PLIST"' EXIT
+install -m 755 "$SCRIPT_DIR/tmux-watchdog.sh" "$STAGED_SCRIPT"
+
+cat > "$STAGED_PLIST" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
   <key>Label</key><string>com.agentboard.tmux-watchdog</string>
   <key>ProgramArguments</key>
-  <array><string>$(xml_escape "$BIN_DIR/tmux-agentboard-watchdog.sh")</string></array>
+  <array><string>$(xml_escape "$SCRIPT")</string></array>
   <key>StartInterval</key><integer>30</integer>
   <key>RunAtLoad</key><true/>
   <key>EnvironmentVariables</key>
@@ -41,7 +48,20 @@ cat > "$PLIST" << EOF
 </dict>
 </plist>
 EOF
+chmod 644 "$STAGED_PLIST"
+if ! plutil -lint "$STAGED_PLIST" >/dev/null; then
+    echo "Error: the generated plist is not valid. Nothing was installed or changed." >&2
+    exit 1
+fi
+
+mv -f "$STAGED_SCRIPT" "$SCRIPT"
+mv -f "$STAGED_PLIST" "$PLIST"
 
 launchctl unload "$PLIST" 2>/dev/null || true
-launchctl load -w "$PLIST"
+if ! launchctl load -w "$PLIST"; then
+    echo "Error: launchctl could not load $PLIST." >&2
+    echo "The watchdog script and plist are installed, but the job is not loaded." >&2
+    echo "Correct the problem, then run: launchctl load -w \"$PLIST\"" >&2
+    exit 1
+fi
 echo "Installed com.agentboard.tmux-watchdog (tmux: $TMUX_PATH)."

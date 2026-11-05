@@ -10,7 +10,15 @@ mkdir -p "$BIN_DIR" "$LAUNCH_AGENTS"
 # Rotates the server log at the path the service uses (LOG_FILE /
 # AGENTBOARD_DATA_DIR from the service plist) plus the launchd stdout/stderr
 # capture files; KeepAlive crash-loops can otherwise fill $HOME with them.
-install -m 755 "$SCRIPT_DIR/agentboard-log-rotate.sh" "$BIN_DIR/agentboard-log-rotate.sh"
+SCRIPT="$BIN_DIR/agentboard-log-rotate.sh"
+PLIST="$LAUNCH_AGENTS/com.agentboard.logrotate.plist"
+
+# Stage both files, check the plist, then move them into place. A failure
+# before the moves leaves an existing installation untouched.
+STAGED_SCRIPT="$(mktemp "$SCRIPT.XXXXXX")"
+STAGED_PLIST="$(mktemp "$PLIST.XXXXXX")"
+trap 'rm -f "$STAGED_SCRIPT" "$STAGED_PLIST"' EXIT
+install -m 755 "$SCRIPT_DIR/agentboard-log-rotate.sh" "$STAGED_SCRIPT"
 
 # Encode paths for plist XML (shell paths above remain unchanged).
 xml_escape() {
@@ -20,7 +28,7 @@ XML_BIN_DIR="$(xml_escape "$BIN_DIR")"
 XML_HOME="$(xml_escape "$HOME")"
 
 # --- Logrotate plist.
-cat > "$LAUNCH_AGENTS/com.agentboard.logrotate.plist" << EOF
+cat > "$STAGED_PLIST" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -38,6 +46,19 @@ cat > "$LAUNCH_AGENTS/com.agentboard.logrotate.plist" << EOF
 </dict>
 </plist>
 EOF
+chmod 644 "$STAGED_PLIST"
+if ! plutil -lint "$STAGED_PLIST" >/dev/null; then
+    echo "Error: the generated log rotation plist is not valid. Nothing was installed or changed." >&2
+    exit 1
+fi
 
-launchctl unload "$LAUNCH_AGENTS/com.agentboard.logrotate.plist" 2>/dev/null || true
-launchctl load -w "$LAUNCH_AGENTS/com.agentboard.logrotate.plist"
+mv -f "$STAGED_SCRIPT" "$SCRIPT"
+mv -f "$STAGED_PLIST" "$PLIST"
+
+launchctl unload "$PLIST" 2>/dev/null || true
+if ! launchctl load -w "$PLIST"; then
+    echo "Error: launchctl could not load $PLIST." >&2
+    echo "The log rotation script and plist are installed, but the job is not loaded." >&2
+    echo "Correct the problem, then run: launchctl load -w \"$PLIST\"" >&2
+    exit 1
+fi
