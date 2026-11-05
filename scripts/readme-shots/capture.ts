@@ -76,6 +76,9 @@ async function newContext(browser: Browser, viewport: { width: number; height: n
     viewport, deviceScaleFactor: 2, colorScheme: 'light', serviceWorkers: 'block', ...extra,
   })
   await context.addInitScript(seedStorage(sidebar, fontSize))
+  // The fixture needs nothing beyond the instance itself. Abort any request
+  // to another host, so a regression that adds one shows up as a failure.
+  await context.route((url) => /^https?:$/.test(url.protocol) && url.hostname !== new URL(baseUrl).hostname, (route) => route.abort())
   await installAges(context)
   return context
 }

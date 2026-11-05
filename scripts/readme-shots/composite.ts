@@ -12,7 +12,7 @@ import { spawnSync } from 'node:child_process'
 import { rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname as dirnameOf, join } from 'node:path'
 import { FEATURE, HERO, LOOP, PHONE, type Box, type Crops, type Metrics } from './capture'
-import { LAUNCH } from './instance'
+import { browserLaunch, isolatedEnv } from './instance'
 
 const WIDE = 880
 const FEATURE_WIDTH = 520
@@ -73,7 +73,7 @@ async function render(p: Page, html: string, width: number, file: string): Promi
 }
 
 function webp(png: string, out: string, quality: number): void {
-  const result = spawnSync('cwebp', ['-quiet', '-q', String(quality), '-alpha_q', '100', '-m', '6', '-sharp_yuv', png, '-o', out])
+  const result = spawnSync('cwebp', ['-quiet', '-q', String(quality), '-alpha_q', '100', '-m', '6', '-sharp_yuv', png, '-o', out], { env: isolatedEnv() })
   if (result.status !== 0) throw new Error(`cwebp failed: ${result.stderr}`)
   rmSync(png)
 }
@@ -130,7 +130,7 @@ async function gif(p: Page, frames: { file: string; ms: number }[], crop: Box, o
   writeFileSync(concat, list.join('\n') + '\n')
   const ff = spawnSync('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', concat,
     '-vf', 'fps=8,split[a][b];[a]palettegen=max_colors=128:stats_mode=diff[p];[b][p]paletteuse=dither=none:diff_mode=rectangle',
-    '-loop', '0', out])
+    '-loop', '0', out], { env: isolatedEnv() })
   if (ff.status !== 0) throw new Error(`ffmpeg failed: ${ff.stderr}`)
 }
 
@@ -145,7 +145,7 @@ export interface ComposeInput {
 
 export async function compose(opts: ComposeInput): Promise<void> {
   const { raw, out, crops } = opts
-  const browser = await chromium.launch(LAUNCH)
+  const browser = await chromium.launch(browserLaunch())
   const still = async (name: string, html: string, width: number, quality = 90) => {
     const png = join(raw, `${name}.composite.png`)
     // A fresh page per image, and one retry: an occasional headless page

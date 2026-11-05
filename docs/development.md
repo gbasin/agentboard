@@ -52,7 +52,9 @@ Run `bun run lint && bun run typecheck && bun run test` before you commit. The p
 ## README images
 
 `bun run readme:shots` rebuilds the client, boots a private Agentboard (own tmux sockets, data directory, HOME and port 4199 under `/private/tmp/ab-shots`), seeds invented sessions from `scripts/readme-shots/scenes.ts`, captures the UI with Playwright, and writes the composited images to `assets/readme/`.
-It needs the Playwright Chromium and WebKit browsers, `tmux`, `ffmpeg` and `cwebp`, and takes about 1.5 minutes. A lock file (`/private/tmp/ab-shots.lock`) allows one run at a time. On success or Ctrl+C it stops what it started and removes its temp directory; if compositing fails, it keeps the raw captures in `/private/tmp/ab-shots-raw` for `--composite-only`.
+It needs the Playwright Chromium and WebKit browsers, `tmux`, `ffmpeg`, and `cwebp`, and takes about 1.5 minutes.
+
+One run at a time: the script holds loopback port 4198 as a lock from start to exit, and a second run (or `--composite-only`) refuses while it is held. The lock cannot go stale, because the port is free again as soon as the process ends. On success, Ctrl+C, or SIGTERM the script stops what it started and removes its temp directory. A run that was killed outright (SIGKILL) leaves its processes and directory behind; the next run removes them before it starts. If compositing fails, the script keeps the raw captures in `/private/tmp/ab-shots-raw` for `--composite-only`.
 
 What is staged rather than plain product rendering:
 

@@ -12,18 +12,24 @@
 // calls the real tmux with an explicit -S. The server and the shims call
 // `tmux` by name, which resolves to a wrapper in the private bin directory
 // that execs the real binary with -S "$AB_TMUX_SOCKET"; -S fails instead of
-// falling back. A run lock (outside ROOT) keeps a second run from deleting
-// the directory under a running instance.
+// falling back.
+//
+// One run at a time: the run lock is a listening socket on a loopback port,
+// so the kernel grants it to one process and frees it when that process dies.
+// Leftovers of a run that died are recognised by command line, never by a
+// remembered pid.
 
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
-import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync, writeSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { reapPrivateTmuxServer, socketPath } from '../../tests/e2e/tmuxReap'
 
 /** Literal and short: tmux falls back to the live socket if TMUX_TMPDIR is missing. */
 export const ROOT = '/private/tmp/ab-shots'
-export const LOCK = '/private/tmp/ab-shots.lock'
 export const PORT = 4199
+/** Loopback port whose listener is the run lock (see acquireLock). */
+export const LOCK_PORT = 4198
 /** Not `agentboard`, so it can never be mistaken for the live session. */
 export const TMUX_SESSION = 'ab-shots'
 export const LOCAL_HOST = 'studio'
@@ -31,8 +37,8 @@ export const REMOTE_HOST = 'build-box'
 export const REPO = join(import.meta.dir, '..', '..')
 const HOST = 'localhost'
 export const baseUrl = `http://${HOST}:${PORT}`
-/** Playwright must not install its own signal handlers: they exit before teardown. */
-export const LAUNCH = { handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false }
+/** Argument that marks the fixture server's command line as ours; the server ignores arguments. */
+const SERVER_MARKER = `--readme-shots=${ROOT}`
 
 export const paths = {
   root: ROOT,
@@ -55,20 +61,30 @@ function dirnameOf(p: string): string {
   return p.slice(0, p.lastIndexOf('/'))
 }
 
-/** The real tmux binary, resolved once from the caller's PATH. */
+/** Real binaries, resolved once from the caller's PATH. */
 const TMUX_BIN = Bun.which('tmux')
+const TOOLS: Record<string, string | null> = { tmux: TMUX_BIN, cwebp: Bun.which('cwebp'), ffmpeg: Bun.which('ffmpeg') }
 
 /** Fail early, naming the tool, instead of halfway through a run. */
 export function checkTools(): void {
-  const missing = [['tmux', TMUX_BIN], ['cwebp', Bun.which('cwebp')], ['ffmpeg', Bun.which('ffmpeg')]]
-    .filter(([, found]) => !found).map(([name]) => name)
+  const missing = Object.entries(TOOLS).filter(([, found]) => !found).map(([name]) => name)
   if (missing.length) throw new Error(`missing required tool(s): ${missing.join(', ')}`)
 }
 
-/** The only environment any process we start ever sees. */
+/** The private bin directory first, then Bun, the tools found above, and the system directories. */
+function isolatedPath(): string {
+  const toolDirs = Object.values(TOOLS).filter((tool): tool is string => tool !== null).map(dirnameOf)
+  return [...new Set([paths.bin, dirnameOf(process.execPath), ...toolDirs,
+    '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin'])].join(':')
+}
+
+/**
+ * The only environment any process we start ever sees: the server, tmux, the
+ * client build, the browsers, the compositor and its encoders.
+ */
 export function isolatedEnv(extra: Record<string, string> = {}): Record<string, string> {
   return {
-    PATH: `${paths.bin}:${dirnameOf(process.execPath)}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin`,
+    PATH: isolatedPath(),
     HOME: paths.home,
     USER: 'dev',
     LOGNAME: 'dev',
@@ -87,6 +103,27 @@ export function isolatedEnv(extra: Record<string, string> = {}): Record<string, 
   }
 }
 
+/**
+ * Playwright launch options. The browser process gets the isolated
+ * environment. Playwright must not install its own signal handlers: they exit
+ * before teardown.
+ */
+export function browserLaunch() {
+  return { handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false, env: isolatedEnv() }
+}
+
+/**
+ * Environment for a child that itself runs Playwright (the compositor). The
+ * one addition is PLAYWRIGHT_BROWSERS_PATH: Playwright finds its browsers
+ * under the home directory, and HOME here points into ROOT.
+ */
+export function playwrightChildEnv(): Record<string, string> {
+  const cache = process.platform === 'darwin'
+    ? join(homedir(), 'Library', 'Caches')
+    : process.env.XDG_CACHE_HOME ?? join(homedir(), '.cache')
+  return isolatedEnv({ PLAYWRIGHT_BROWSERS_PATH: process.env.PLAYWRIGHT_BROWSERS_PATH ?? join(cache, 'ms-playwright') })
+}
+
 /** tmux on a private socket (local board, or the fake remote host). */
 export function tmux(args: string[], socket = paths.socket): string {
   const result = spawnSync(TMUX_BIN!, ['-S', socket, ...args], {
@@ -100,63 +137,76 @@ export function tmux(args: string[], socket = paths.socket): string {
   return result.stdout.trim()
 }
 
-function isAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch {
-    return false
-  }
-}
-
-/**
- * One run at a time. The lock lives outside ROOT and is taken before anything
- * is deleted; a lock whose pid is gone is stale and replaced.
- */
-export function acquireLock(): void {
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const fd = openSync(LOCK, 'wx')
-      writeSync(fd, String(process.pid))
-      closeSync(fd)
-      return
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
-      const holder = Number.parseInt(readFileSync(LOCK, 'utf-8'), 10)
-      if (Number.isInteger(holder) && holder > 0 && isAlive(holder)) {
-        throw new Error(`another readme:shots run (pid ${holder}) holds ${LOCK}; refusing to start`)
-      }
-      rmSync(LOCK, { force: true })
-    }
-  }
-  throw new Error(`could not take ${LOCK}`)
-}
-
-export function releaseLock(): void {
-  try {
-    if (Number.parseInt(readFileSync(LOCK, 'utf-8'), 10) === process.pid) rmSync(LOCK)
-  } catch {
-    // not ours or already gone
-  }
+/** Pids listening on a loopback TCP port. */
+function listeners(port: number): number[] {
+  const result = spawnSync('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-Fp'], { encoding: 'utf-8', env: isolatedEnv() })
+  return (result.stdout ?? '').split('\n').filter((line) => line.startsWith('p')).map((line) => Number(line.slice(1)))
 }
 
 export function portInUse(port = PORT): boolean {
-  const result = spawnSync('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN'], { encoding: 'utf-8' })
-  return result.stdout.trim().length > 0
+  return listeners(port).length > 0
 }
 
-/** Private tmux server pids, recorded so teardown can reap them without a socket. */
-const tmuxServers = new Set<number>()
+/** Keeps the lock socket referenced for the life of the process; never closed explicitly. */
+const held: unknown[] = []
 
-export function recordTmuxServer(socket: string): void {
-  const pid = Number.parseInt(tmux(['display-message', '-p', '#{pid}'], socket), 10)
-  if (Number.isInteger(pid) && pid > 0) tmuxServers.add(pid)
+/**
+ * One run at a time on this machine, across checkouts. The lock is a
+ * listening socket on a fixed loopback port. The kernel gives the port to one
+ * process and frees it when that process exits, however it exits, so there is
+ * no stale lock to detect and no race in breaking one. Child processes do not
+ * inherit the socket. Take it before anything is deleted.
+ */
+export function acquireLock(): void {
+  try {
+    held.push(Bun.listen({ hostname: '127.0.0.1', port: LOCK_PORT, socket: { data() {}, open(socket) { socket.end() } } }))
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw error
+    const holder = listeners(LOCK_PORT)[0]
+    throw new Error(`the run lock (loopback port ${LOCK_PORT}) is held${holder ? ` by pid ${holder}` : ''}: another readme:shots run is active, or another program uses that port; refusing to start (nothing was changed)`)
+  }
 }
 
-function childPids(parent: number): number[] {
-  const out = spawnSync('ps', ['-axo', 'pid=,ppid='], { encoding: 'utf-8' }).stdout ?? ''
-  return out.split('\n').map((l) => l.trim().split(/\s+/).map(Number))
-    .filter(([pid, ppid]) => ppid === parent && pid! > 0).map(([pid]) => pid!)
+/** Flag for the compositor child: its parent holds the lock for it. */
+export const PARENT_LOCK_FLAG = '--lock-held-by-parent'
+
+/** The flag is a claim; check it against the kernel. */
+export function assertParentHoldsLock(): void {
+  if (!listeners(LOCK_PORT).includes(process.ppid)) {
+    throw new Error(`${PARENT_LOCK_FLAG} was passed, but the parent process does not hold the run lock (loopback port ${LOCK_PORT})`)
+  }
+}
+
+interface Proc { pid: number; ppid: number; command: string }
+
+function processes(): Proc[] {
+  const out = spawnSync('ps', ['-axo', 'pid=,ppid=,command='], { encoding: 'utf-8', env: isolatedEnv() }).stdout ?? ''
+  return out.split('\n').flatMap((line) => {
+    const match = /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(line)
+    return match ? [{ pid: Number(match[1]), ppid: Number(match[2]), command: match[3]! }] : []
+  })
+}
+
+/**
+ * True when the command's program (its first word) is named `name`. Anchored
+ * there so a shell or a grep that merely mentions our paths never matches.
+ */
+function runs(command: string, name: string): boolean {
+  const program = command.split(' ', 1)[0]!
+  return program === name || program.endsWith(`/${name}`)
+}
+
+/** A tmux server or client started with -S on one of the two private sockets. */
+function isOurTmux(command: string): boolean {
+  const [, flag, socket] = command.split(' ')
+  return runs(command, 'tmux') && flag === '-S' && (socket === paths.socket || socket === paths.remoteSocket)
+}
+
+/** A fixture agent TUI (its last argument is the state directory) or the fixture server. */
+function isOurProcess(command: string): boolean {
+  if (!runs(command, 'bun')) return false
+  return (command.includes('scripts/readme-shots/agent-tui.ts ') && command.endsWith(` ${paths.state}`))
+    || command.endsWith(` src/server/index.ts ${SERVER_MARKER}`)
 }
 
 function kill(pid: number, signal: NodeJS.Signals): void {
@@ -167,20 +217,56 @@ function kill(pid: number, signal: NodeJS.Signals): void {
   }
 }
 
-/** Remove leftovers of an earlier run (only things under ROOT). Lock held. */
-export function reset(): void {
+/**
+ * Stop every process of this or an earlier run. First the two private tmux
+ * servers through their sockets (tmuxReap.ts always passes -S, so it cannot
+ * reach another server). Then whatever is left, including a server whose
+ * socket file is gone. Those are found by command line in a fresh process
+ * list, not by a pid recorded earlier, which the system may have reused.
+ * Call it with the run lock held: no other run's processes can exist then.
+ */
+export function reapLeftovers(): void {
   for (const socket of [paths.socket, paths.remoteSocket]) reapPrivateTmuxServer(socket)
-  rmSync(ROOT, { recursive: true, force: true })
-  for (const dir of [paths.home, paths.bin, paths.data, paths.state, paths.media, paths.remoteTmux,
-    paths.claude, paths.codex, join(ROOT, 'tmp'), join(paths.home, '.pi'), join(paths.home, '.omp'),
-    join(paths.home, '.grok'), join(paths.home, '.devin'), join(paths.home, '.local', 'share'), join(paths.home, '.config')]) {
-    mkdirSync(dir, { recursive: true })
+  const all = processes()
+  for (const proc of all) {
+    if (proc.pid === process.pid) continue
+    if (isOurTmux(proc.command)) {
+      // Pane processes lead their own process groups.
+      const panes = all.filter((child) => child.ppid === proc.pid)
+      kill(proc.pid, 'SIGKILL')
+      for (const pane of panes) {
+        kill(-pane.pid, 'SIGKILL')
+        kill(pane.pid, 'SIGKILL')
+      }
+    } else if (isOurProcess(proc.command)) {
+      kill(proc.pid, 'SIGKILL')
+    }
   }
+}
+
+const ROOT_DIRS = () => [paths.home, paths.bin, paths.data, paths.state, paths.media, paths.remoteTmux,
+  paths.claude, paths.codex, join(ROOT, 'tmp'), join(paths.home, '.pi'), join(paths.home, '.omp'),
+  join(paths.home, '.grok'), join(paths.home, '.devin'), join(paths.home, '.local', 'share'), join(paths.home, '.config')]
+
+/** Remove leftovers of an earlier run and recreate ROOT. Lock held. */
+export function reset(): void {
+  reapLeftovers()
+  rmSync(ROOT, { recursive: true, force: true })
+  for (const dir of ROOT_DIRS()) mkdirSync(dir, { recursive: true })
   // tmux -S does not create the socket's parent directory.
   for (const socket of [paths.socket, paths.remoteSocket]) {
     mkdirSync(dirnameOf(socket), { recursive: true, mode: 0o700 })
   }
   writeTmuxWrapper()
+}
+
+/** HOME and TMPDIR for a browser when no instance is set up (--composite-only). Lock held. */
+export function prepareScratch(): void {
+  for (const dir of [paths.home, join(ROOT, 'tmp')]) mkdirSync(dir, { recursive: true })
+}
+
+export function removeRoot(): void {
+  rmSync(ROOT, { recursive: true, force: true })
 }
 
 /**
@@ -215,7 +301,6 @@ export function startTmux(): void {
   tmux(['new-session', '-d', '-s', TMUX_SESSION, '-n', '__agentboard_root__', '-c', paths.home, 'tail -f /dev/null'])
   // No status line: its default right side shows the machine's real hostname.
   tmux(['set-option', '-g', 'status', 'off'])
-  recordTmuxServer(paths.socket)
 }
 
 let server: ChildProcess | null = null
@@ -254,18 +339,19 @@ export async function startServer(): Promise<void> {
     AGENTBOARD_REMOTE_ALLOW_ATTACH: 'true',
   })
   // --no-env-file: Bun would otherwise load .env* from the repo into the server.
-  server = spawn(process.execPath, ['--no-env-file', 'src/server/index.ts'], {
+  const child = spawn(process.execPath, ['--no-env-file', 'src/server/index.ts', SERVER_MARKER], {
     cwd: REPO,
     env,
     stdio: ['ignore', 'ignore', 'pipe'],
   })
-  server.stderr?.on('data', (chunk: Buffer) => {
+  server = child
+  child.stderr?.on('data', (chunk: Buffer) => {
     serverStderr = (serverStderr + chunk.toString()).slice(-8000)
   })
   const deadline = Date.now() + 60_000
   while (Date.now() < deadline) {
-    if (server.exitCode !== null || server.signalCode !== null) {
-      throw new Error(`agentboard server exited early (${server.exitCode ?? server.signalCode}):\n${serverLogTail()}`)
+    if (child.exitCode !== null || child.signalCode !== null) {
+      throw new Error(`agentboard server exited early (${child.exitCode ?? child.signalCode}):\n${serverLogTail()}`)
     }
     try {
       const res = await fetch(`${baseUrl}/api/sessions`)
@@ -278,31 +364,20 @@ export async function startServer(): Promise<void> {
   throw new Error(`agentboard server did not come up within 60s:\n${serverLogTail()}`)
 }
 
-/** Stop only what this script started, remove ROOT, release the lock. */
-export async function teardown(): Promise<void> {
-  if (server && server.exitCode === null && server.signalCode === null) {
-    server.kill('SIGTERM')
+/**
+ * Stop the fixture server and both private tmux servers. Safe to call again:
+ * a later call also stops what was started in between. ROOT stays.
+ */
+export async function stopInstance(): Promise<void> {
+  const child = server
+  server = null
+  if (child && child.exitCode === null && child.signalCode === null) {
+    child.kill('SIGTERM')
     const exited = await Promise.race([
-      new Promise<boolean>((resolve) => server!.once('exit', () => resolve(true))),
+      new Promise<boolean>((resolve) => child.once('exit', () => resolve(true))),
       Bun.sleep(5000).then(() => false),
     ])
-    if (!exited) server.kill('SIGKILL')
+    if (!exited) child.kill('SIGKILL')
   }
-  server = null
-  for (const socket of [paths.socket, paths.remoteSocket]) reapPrivateTmuxServer(socket)
-  // A server whose socket file is already gone: kill it and its panes by pid.
-  for (const pid of tmuxServers) {
-    if (!isAlive(pid)) continue
-    const children = childPids(pid)
-    kill(pid, 'SIGTERM')
-    await Bun.sleep(500)
-    for (const child of children) {
-      kill(-child, 'SIGKILL')
-      kill(child, 'SIGKILL')
-    }
-    kill(pid, 'SIGKILL')
-  }
-  tmuxServers.clear()
-  rmSync(ROOT, { recursive: true, force: true })
-  releaseLock()
+  reapLeftovers()
 }
