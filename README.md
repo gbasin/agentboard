@@ -10,46 +10,95 @@ Agentboard is a web UI for `tmux`, built for running coding agents such as Claud
 
 Every session lives in tmux, so your agents keep running when you close the tab, and the same sessions are available from every device.
 
-### Desktop
-| Terminal | Sessions |
-| :---: | :---: |
-| <img src="assets/desktop.png" alt="Terminal" height="400"/> | <img src="assets/sessions.png" alt="Sessions" height="400"/> |
-
-### Mobile
-| Terminal | Controls |
-| :---: | :---: |
-| <img src="assets/mobile.jpeg" alt="Terminal" height="400"/> | <img src="assets/mobile-controls.jpeg" alt="Controls" height="400"/> |
+<p align="center">
+  <img src="assets/readme/hero.webp" width="880" alt="Agentboard in a desktop browser window, with a phone in front of it. The desktop sidebar lists seven agent sessions with their status, last prompt and pull request chips; one session waits for permission. The terminal on the right shows a Claude Code session refactoring a router. The phone shows the same session's terminal with a quick-keys toolbar.">
+</p>
+<p align="center"><sub>The same tmux sessions on a laptop and a phone. Screenshots are generated with <code>bun run readme:shots</code> from invented sessions.</sub></p>
 
 ## Features
 
-**See what every agent is doing**
+<table>
+<tr>
+<td width="40%" valign="top">
 
-- Live status for each session: *working*, *waiting for input*, or *needs permission*.
-- The last prompt you sent to each session, so you remember what it is working on.
-- Pull requests that a session opened, with their state and CI checks.
-- Subagent activity for Claude Code and Codex sessions.
-- Optional sounds when a session needs permission or goes idle.
+### Status and last prompt for every session
 
-**Work in any session**
+Each session shows whether its agent is *working*, *waiting for input*, or *needs permission*, and the last prompt you sent to it. Optional sounds tell you when a session needs permission or goes idle.
+
+</td>
+<td width="60%">
+<img src="assets/readme/status-loop.gif" width="520" alt="Animation: a Claude Code session named orders-migration asks for permission to run a database migration. Its sidebar entry and status bar change to Needs Input while the permission prompt is open, then return to Working after it is approved.">
+</td>
+</tr>
+<tr>
+<td width="40%" valign="top">
+
+### Pull requests with CI state
+
+Pull requests that a session opened or pushed to appear as chips on the session, colored by state: open, draft, merged or closed. Hover a chip to see its title and CI checks.
+
+</td>
+<td width="60%">
+<img src="assets/readme/pull-requests.webp" width="520" alt="The sidebar with pull request chips under three sessions. A hover card for pull request 1193 shows its title and four CI checks, one of them failing.">
+</td>
+</tr>
+<tr>
+<td width="40%" valign="top">
+
+### Media from the transcript
+
+A media rail collects the images, documents and links from a session's transcript. Open any image in a viewer and step through the rest.
+
+</td>
+<td width="60%">
+<img src="assets/readme/media-rail.webp" width="520" alt="The media viewer showing a bar chart of p95 latency by endpoint that an agent read during the session, with Previous and Next buttons.">
+</td>
+</tr>
+<tr>
+<td width="40%" valign="top">
+
+### History, Hibernate and Wake
+
+**Hibernate** a session to close its tmux window and keep it in the sidebar. **History** lists recent conversations: open one to preview its transcript, then **Wake** it to resume the conversation.
+
+</td>
+<td width="60%">
+<img src="assets/readme/history.webp" width="520" alt="A transcript preview of a past Claude Code conversation about upgrading an app to React 19, with Cancel and Wake buttons.">
+</td>
+</tr>
+<tr>
+<td colspan="2">
+
+### On your phone
+
+A touch layout for iOS Safari with a session drawer, a quick-keys toolbar (Esc, Tab, Ctrl, arrows, number pad), and a paste dialog. It also has touch scrolling, tap-to-click and long-press selection, and installs to the home screen as a PWA.
+
+<img src="assets/readme/phone.webp" width="880" alt="Three phone screens. Left: the session drawer listing sessions with status, last prompt and pull request chips. Middle: a session waiting on a permission prompt, with a row of numbered session tiles at the top and the quick-keys toolbar at the bottom. Right: the paste dialog with three lines of text ready to submit.">
+
+</td>
+</tr>
+<tr>
+<td width="40%" valign="top">
+
+### Sessions from other machines
+
+Sessions from other machines appear on the same board over SSH, with a host badge on each one. Filter the board by host or by project. See [Remote hosts](docs/remote-hosts.md).
+
+</td>
+<td width="60%">
+<img src="assets/readme/hosts.webp" width="520" alt="The sidebar mixing sessions from the local host, studio, and a remote host, build-box. A Codex session running on build-box is selected and its terminal is shown on the right.">
+</td>
+</tr>
+</table>
+
+### Also
 
 - A full terminal in the browser, with mouse scrolling, selection, and clipboard support for Claude Code's fullscreen renderer.
 - Paste or drop text, images, and files into the prompt.
-- A media rail that collects the images, documents, and links from a session's transcript.
+- Subagent activity for Claude Code and Codex sessions.
 - Keyboard shortcuts to switch, create, and close sessions.
-
-**Use it from your phone**
-
-- A touch layout for iOS Safari with a session drawer, a quick-keys toolbar (Esc, Tab, Ctrl, arrows, number pad), and a paste dialog.
-- Touch scrolling, tap-to-click, and long-press selection in the terminal.
-- Installs to the home screen as a PWA.
-
-**Keep sessions organized**
-
 - Sort by age or by what needs attention, filter by project or host, or drag sessions into your own order.
-- **Hibernate** a session to close its tmux window and keep it in the sidebar. **Wake** it later to resume the conversation.
-- **History** lists recent conversations. Open one to preview its transcript, then wake it.
 - Session recovery reopens sessions after a crash or reboot. See [Session recovery](docs/session-recovery.md).
-- Sessions from other machines appear on the same board over SSH. See [Remote hosts](docs/remote-hosts.md).
 
 ## Supported agents
 
