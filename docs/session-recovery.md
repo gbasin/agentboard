@@ -49,7 +49,7 @@ curl -X PUT http://localhost:4040/api/library/settings \
 
 Build the frontend and restart Agentboard with your normal installation method. The first start after the upgrade does these steps:
 
-1. Saves a copy of the existing database as `agentboard.db.before-catalog-schema` in the data directory.
+1. Saves a copy of the existing database as `agentboard.db.before-catalog-schema` beside the database file. The database is in the data directory unless `AGENTBOARD_DB_PATH` moves it.
 2. Imports the existing conversations.
 3. Adopts the running windows of the managed tmux session.
 

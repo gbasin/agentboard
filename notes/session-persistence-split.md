@@ -98,7 +98,8 @@ Decisions:
 Frontend fixes folded in:
 - Gate `Mod+N`/`Mod+X` on `isHistoryOpen` (currently kills sessions behind the
   dialog). *Still open: `App.tsx` checks only the new-session modal and
-  Settings, so `Mod+X` acts while the Session recovery panel is open.*
+  Settings, so `Mod+N` and `Mod+X` both act while the Session recovery panel
+  is open.*
 - `Escape` in rename input needs `preventDefault` (currently closes dialog).
   *The panel handles Escape with `preventDefault`; there is no rename input.*
 - `RecoveryNotice` must be visible on mobile (currently inside `hidden md:flex`

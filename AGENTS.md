@@ -11,7 +11,7 @@ bun run lint           # oxlint
 bun run typecheck      # tsc --noEmit
 bun run test           # unit and integration tests (scripts/test-runner.ts)
 bun run test:e2e       # Playwright end-to-end tests, isolated tmux socket and data dir
-bun run test:coverage  # tests with lcov coverage
+bun run test:coverage  # lcov coverage; skips the isolated/ and real-tmux suites
 bun run deps:risk      # dependency security and maintenance scanner
 ```
 
@@ -20,7 +20,8 @@ pre-commit hook (`.githooks/pre-commit`) runs the same three commands.
 
 `bun run test` is not the same as bare `bun test`. `scripts/test-runner.ts`
 points the Claude and Codex roots, the database, the data dir, and the log file
-at a temp directory and sets `NODE_ENV=test`. It runs each file named on its
+at a temp directory. It sets `NODE_ENV=test` when `NODE_ENV` is unset or
+`production`, and keeps any other value. It runs each file named on its
 isolation lists (`ISOLATED_FILES`, `ISOLATED_REAL_TMUX_FILES`,
 `ISOLATED_CLIENT_FILES`) and each file in `src/server/__tests__/isolated/` in
 its own process. Bare `bun test` runs everything in one process against your
