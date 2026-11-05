@@ -16,10 +16,16 @@ The sidebar hibernating/history rails are unchanged. The catalog is additive met
 
 | Behavior | Default |
 | --- | --- |
-| Automatic reopening of interrupted sessions | Off |
-| Terminal previews | Off; optional last 80 lines, capped at 32 KB, timestamped |
+| Automatic reopening of interrupted sessions (`autoResume`) | Off. When on, it runs once at server startup. |
+| Terminal previews (`capturePreviews`) | Off. When on, each preview keeps the visible screen plus 80 lines of scrollback, capped at 32,768 characters and timestamped. |
 
-Both are stored under `persistence_settings` and can be changed through `PUT /api/library/settings`.
+Both are stored under `persistence_settings`. The Settings dialog has no control for them. Change them through the API:
+
+```bash
+curl -X PUT http://localhost:4040/api/library/settings \
+  -H 'Content-Type: application/json' \
+  -d '{"autoResume": true}'
+```
 
 ## Durability and implementation
 
