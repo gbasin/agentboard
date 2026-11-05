@@ -3,7 +3,9 @@
 // review group releases the spawned implementer before the review handoff —
 // and holds the step, with its reason, while the member is not ready or a
 // spawn is still starting in the worktree, releasing it and dispatching the
-// review on the next tick once it can be released.
+// review on the next tick once it can be released. The return to the
+// implementer also releases ready reviewers, retrying refused archives and
+// rebuilding the cleanup from stored state after an executor restart.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import path from 'node:path'
 import type { ActiveHold } from '../../shared/planRevisionControl'
@@ -29,7 +31,8 @@ describe('a finished reviewer gives the worktree back', () => {
     const released: Array<{ id: string; detail: string | undefined }> = []
     const holding = { ready: true, reason: null as string | null }
     const hold = { on: false }
-    const recording = new ExecutionExecutor({
+    const archive = { refused: false }
+    const createExecutor = () => new ExecutionExecutor({
       ...neutralExecutorSeams, plansService: bench.service,
       store: executions, plans: bench.plans, tasks, assignments, results, mailbox: mail,
       records: () => bench.records.values(),
@@ -40,6 +43,7 @@ describe('a finished reviewer gives the worktree back', () => {
         readiness: id => (id === 'rev1' ? holding : { ready: true, reason: null }),
         release: (id, detail) => {
           released.push({ id, detail })
+          if (archive.refused) return { ok: false as const, error: 'archive refused' }
           // The real release archives, so a later pass finds no live member.
           bench.records.set(id, { ...bench.records.get(id)!, archivedAt: '2026-11-05T00:00:00.000Z' })
           return { ok: true as const }
@@ -52,6 +56,7 @@ describe('a finished reviewer gives the worktree back', () => {
         openTargets: () => [],
       },
     })
+    const recording = createExecutor()
     ghStub.pulls = '[]'
     passCi()
     recording.wake(world.team.teamId)
@@ -62,7 +67,7 @@ describe('a finished reviewer gives the worktree back', () => {
     bench.records.set('rev1', { ...bench.records.get('rev1')!, projectPath: worktree, spawned: reviewer.spawned, taskId: change.taskId, archivedAt: null })
     deliverToReviewer(assignment.messageId!, 'rev1')
     released.length = 0
-    return { executionId, change, round, released, holding, hold, recording }
+    return { executionId, change, round, released, holding, hold, archive, recording, createExecutor }
   }
   const fail = (change: { taskId: string | null }, round: { resultId: string }) =>
     results.submitFindings(bench.agent('rev1'), change.taskId!, { resultId: round.resultId, kind: 'review', verdict: 'fail', findings: 'a real defect' })
@@ -89,6 +94,38 @@ describe('a finished reviewer gives the worktree back', () => {
       expect(executions.change(executionId, 'give-a')!.state).toBe('implementing')
     } finally {
       recording.close()
+    }
+  })
+
+  test('a refused reviewer archive is retried after an executor restart', async () => {
+    const { executionId, change, round, released, archive, recording, createExecutor } = await failedReview('give-restart', { spawned: true })
+    let restarted: ExecutionExecutor | undefined
+    try {
+      archive.refused = true
+      await fail(change, round)
+      recording.wake(world.team.teamId)
+      await recording.idle()
+      expect(executions.change(executionId, 'give-restart')!.state).toBe('implementing')
+      expect(released.length).toBeGreaterThan(0)
+      expect(bench.records.get('rev1')!.archivedAt).toBeNull()
+      recording.close()
+
+      // No release debt lives in the old executor: a new one reads the rows.
+      released.length = 0
+      archive.refused = false
+      restarted = createExecutor()
+      await restarted.startup()
+      restarted.wake(world.team.teamId)
+      await restarted.idle()
+      expect(released.map(row => row.id)).toEqual(['rev1'])
+      expect(bench.records.get('rev1')!.archivedAt).not.toBeNull()
+
+      restarted.wake(world.team.teamId)
+      await restarted.idle()
+      expect(released.map(row => row.id)).toEqual(['rev1'])
+    } finally {
+      recording.close()
+      restarted?.close()
     }
   })
 
