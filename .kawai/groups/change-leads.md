@@ -21,10 +21,15 @@ spawns a member).
 
 ## What you own
 
-- Interpretation and local decisions inside the approved scope: settle
-  implementation clarifications, record them in journals and revisions, and
-  amend your children with `task_amend` when direction changes — dependents
-  wait for the new revision's acknowledgment.
+- Interpretation and local decisions inside the approved scope, classified
+  by `docs/agent-collaboration.md`, "Classify implementation questions before
+  escalating". A question the approved artifacts answer gets the citation; a
+  local one is the writer's to decide and journal, so do not take it over,
+  dispatch it, or amend for it. Only a contract question changes direction:
+  settle it inside scope or escalate it, and amend your children with
+  `task_amend` — dependents wait for the new revision's acknowledgment. A
+  suspected flaw in shared code a child calls but does not own becomes a
+  follow-up proposal to `lead`, not a gate on the child.
 - Implementation children: create them with `parent_id`, the linked change, a
   real worktree, covered requirement groups, dependencies, and acceptance
   naming the checks that decide; each direction carries the coordination

@@ -95,6 +95,10 @@ The attention queue SHALL consolidate pending approvals and questions, uncertain
 - **WHEN** the agent session that created the task is archived or killed and the task's result awaits acceptance
 - **THEN** the queue lists that pending acceptance as human-required
 
+#### Scenario: A running execution's task asks nothing of the human
+- **WHEN** a submitted result of a task a running execution owns has not been accepted, and its newest findings, if any, pass
+- **THEN** the queue lists no pending acceptance for it, and its task row's next action is Wait for Kawai
+
 #### Scenario: Failing findings are a wait for fixes
 - **WHEN** the newest findings bound to a task's unaccepted outstanding result have the verdict fail
 - **THEN** the queue lists one agent-owned fixes-requested item with the result's submitter as owner, Wait for fixes as its next action, the task as impact scope, and a link to the task
@@ -121,7 +125,7 @@ On open and on reconnect the workspace SHALL replace its attention items and cou
 - **THEN** no toast is raised for those items
 
 ### Requirement: Members is a read-only inspection of group settings
-The Members tab SHALL list each of the team's groups with its role description, live membership, task-creation right, effective workers grouped by provider with caps and live counts, effective approval policy, member cap, routing strategy and limit policy, effort with any per-model effort, and routing warnings. No control SHALL edit a group. A prompt change SHALL affect future agent starts only and SHALL NOT elevate runtime permissions.
+The Members tab SHALL list each of the team's groups with its role description, live membership, task-creation right, effective workers grouped by provider with caps and live counts, effective approval policy with its source (group file, team default, or built-in), member cap, routing strategy and limit policy, effort with any per-model effort, and routing warnings. No control SHALL edit a group. A prompt change SHALL affect future agent starts only and SHALL NOT elevate runtime permissions.
 
 #### Scenario: Caps show live counts
 - **WHEN** a group allows two members on a model and one is live
@@ -142,6 +146,10 @@ The Members tab SHALL list each of the team's groups with its role description, 
 #### Scenario: Per-profile effort is shown beside the group effort
 - **WHEN** a group sets `effort: low` and `modelEffort: { haiku: xhigh }`
 - **THEN** the group's row shows effort `low` together with `xhigh` for the `haiku` model
+
+#### Scenario: Approval source is shown
+- **WHEN** the team has no default and a group has no `approval:` key
+- **THEN** the group's row shows manual as the built-in policy
 
 ### Requirement: Members names the source file of every setting
 Each group row SHALL name the file that defines it and, when both layers define it, both paths with the one in effect marked. The row SHALL state that prompt changes apply to future agent starts only.
@@ -379,3 +387,18 @@ The attention queue SHALL list each context-exhaustion item with its cause (the 
 #### Scenario: Item without mail
 - **WHEN** a human-created session is flagged during a human-typed turn
 - **THEN** the item is under needs you and its action opens the chat
+
+### Requirement: The Members tab sets the team's default approval policy
+The Members tab SHALL show the team's default approval policy for spawned members (not set, manual, or auto) and SHALL let the human set it to manual or auto. It SHALL say that the default covers spawned members of groups without an `approval:` key, and changes only later spawns. A save SHALL show the server's refusal inline, and the control SHALL be disabled while disconnected. After a save, every open view of that team SHALL show the new default and the resolved group policies.
+
+#### Scenario: Setting the default updates the group rows
+- **WHEN** the human sets the team default to auto on the Members tab
+- **THEN** every group without an `approval:` key shows auto from the team default, and groups with the key keep their own policy
+
+#### Scenario: Another open view follows the change
+- **WHEN** two browser tabs show the same team's Members tab and one sets the default to auto
+- **THEN** the other tab shows auto without reloading
+
+#### Scenario: The control is disabled while disconnected
+- **WHEN** the Team page loses its server connection
+- **THEN** the default approval control is disabled and the last known value stays shown

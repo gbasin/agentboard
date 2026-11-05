@@ -25,7 +25,16 @@ beforeEach(() => {
 echo "$@" >> "$GH_STUB_LOG"
 case "$*" in
   *"pr list"*) printf '%s' '[{"number":7,"url":"https://example.internal/pr/7","state":"OPEN","headRefOid":"aaa"},{"number":3,"url":"https://example.internal/pr/3","state":"MERGED","headRefOid":"bbb"}]' ;;
-  *"pr create"*) printf '%s' '{"number":9,"url":"https://example.internal/pr/9"}' ;;
+  *"POST repos/owner/repo/pulls "*)
+    for field in "-f head=" "-f base=" "-f title=" "-f body="; do
+      case "$*" in
+        *"$field"*) ;;
+        *) echo "gh: create is missing $field" >&2; exit 1 ;;
+      esac
+    done
+    if [ "$GH_STUB_CREATE" = "422" ]; then echo "gh: Validation Failed (HTTP 422)" >&2; exit 1; fi
+    if [ "$GH_STUB_CREATE" = "no-html-url" ]; then printf '%s' '{"number":9,"url":"https://api.example.internal/repos/owner/repo/pulls/9"}'; exit 0; fi
+    printf '%s' '{"number":9,"url":"https://api.example.internal/repos/owner/repo/pulls/9","html_url":"https://example.internal/pr/9"}' ;;
   *"pr view"*) printf '%s' '{"number":7,"url":"https://example.internal/pr/7","state":"MERGED","headRefOid":"aaa","mergeCommit":{"oid":"mmm"}}' ;;
   *"check-runs"*) printf '%s' '[{"total_count":2,"check_runs":[{"name":"ci","conclusion":"success","status":"completed","html_url":"https://example.internal/runs/11/at","details_url":"https://example.internal/runs/11/at","app":{"slug":"github-actions"}},{"name":"lint-external","conclusion":null,"status":"in_progress","html_url":null,"details_url":null,"app":{"slug":"other-app"}}]}]' ;;
   *"commits/sha1/status"*) printf '%s' '{"state":"failure","statuses":[{"state":"success","context":"deploy","target_url":"https://example.internal/deploy"},{"state":"error","context":"audit"},{"state":"pending","context":"scan","target_url":null}]}' ;;
@@ -40,7 +49,7 @@ case "$*" in
   *) echo "gh: unexpected call: $*" >&2; exit 1 ;;
 esac
 `, { mode: 0o755 })
-  env = { PATH: `${bin}${path.delimiter}${process.env.PATH ?? ''}`, GH_STUB_LOG: log, GH_STUB_UPDATE: '', GH_STUB_MERGE: '' }
+  env = { PATH: `${bin}${path.delimiter}${process.env.PATH ?? ''}`, GH_STUB_LOG: log, GH_STUB_CREATE: '', GH_STUB_UPDATE: '', GH_STUB_MERGE: '' }
 })
 afterEach(() => fs.rmSync(dir, { recursive: true, force: true }))
 
@@ -59,10 +68,30 @@ describe('github over the stub gh', () => {
     expect(invoked()[0]).toContain('--head kawai/api --base master --state all')
   })
 
-  test('pr create returns the number and url, and never a second while one is open is the caller rule', async () => {
-    const result = await ghPrCreate('owner/repo', { head: 'kawai/api', base: 'master', title: 'Plan R1 api', body: 'task: t' }, { env })
+  test('pr create posts the fields literally through the API and returns the html url', async () => {
+    const result = await ghPrCreate('owner/repo', { head: 'kawai/api', base: 'master', title: 'Plan R1 api', body: '@plan-body --json number,url' }, { env })
+    // The stub response carries both shapes: `url` is the API URL, `html_url`
+    // the pull request page — the adapter must return the page.
     expect(result).toEqual({ ok: true, data: { number: 9, url: 'https://example.internal/pr/9' } })
-    expect(invoked()[0]).toContain('--title Plan R1 api')
+    const argv = invoked()[0] ?? ''
+    expect(argv).toContain('api -X POST repos/owner/repo/pulls')
+    expect(argv).toContain('-f head=kawai/api -f base=master -f title=Plan R1 api')
+    expect(argv).toContain('-f body=@plan-body --json number,url')
+    expect(argv).not.toContain('-F ')
+    expect(argv).not.toContain('--head ')
+    const validation = await ghPrCreate('owner/repo', { head: 'kawai/api', base: 'master', title: 't', body: 'b' }, { env: { ...env, GH_STUB_CREATE: '422' } })
+    expect(validation.ok).toBe(false)
+    if (!validation.ok) {
+      expect(validation.error.httpStatus).toBe(422)
+      expect(validation.error.message).toContain('Validation Failed')
+      expect(validation.error.argv.slice(0, 5)).toEqual(['gh', 'api', '-X', 'POST', 'repos/owner/repo/pulls'])
+    }
+    const noUrl = await ghPrCreate('owner/repo', { head: 'kawai/api', base: 'master', title: 't', body: 'b' }, { env: { ...env, GH_STUB_CREATE: 'no-html-url' } })
+    expect(noUrl.ok).toBe(false)
+    if (!noUrl.ok) {
+      expect(noUrl.error.httpStatus).toBeNull()
+      expect(noUrl.error.message).toContain('no pull request number or html_url')
+    }
   })
 
   test('pr view reads the merge commit oid', async () => {
@@ -129,6 +158,20 @@ describe('github over the stub gh', () => {
     if (!refused.ok) {
       expect(refused.error.httpStatus).toBe(403)
       expect(refused.error.message).toContain('human review')
+    }
+  })
+
+  test('a PATH without gh yields the typed spawn failure with the cannot-start message', async () => {
+    const emptyBin = path.join(dir, 'empty-bin')
+    fs.mkdirSync(emptyBin, { recursive: true })
+    const result = await ghUpdateBranch('owner/repo', 7, 'aaa', { env: { PATH: emptyBin } })
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error.spawnFailure).toBe(true)
+      expect(result.error.exitCode).toBeNull()
+      expect(result.error.httpStatus).toBeNull()
+      expect(result.error.message).toContain('gh could not be started: ')
+      expect(result.error.argv.slice(0, 2)).toEqual(['gh', 'api'])
     }
   })
 })

@@ -112,6 +112,49 @@ describe('PlanExecutionSection', () => {
   })
 })
 
+describe('PlanExecutionSection after an execution', () => {
+  test('a stopped execution offers Start again for the approved revision; a running one does not', () => {
+    const stopped = { ...baseExecution([changeRow()]), state: 'finished' as const, outcome: 'stopped' as const, stopReason: 'superseded' }
+    render(createElement(PlanExecutionSection, { teamPath: '/repo', plan: planSummary, detail: detailOf([stopped]), connected: true, onSend: () => undefined }))
+    expect(renderer!.root.findByProps({ 'data-testid': 'plan-execution-start-button' })).toBeTruthy()
+    expect(renderer!.root.findAllByProps({ 'data-testid': 'plan-execution-stop-open' })).toHaveLength(0)
+    act(() => renderer!.unmount())
+    renderer = null
+    render(section([changeRow()]))
+    expect(renderer!.root.findAllByProps({ 'data-testid': 'plan-execution-start-button' })).toHaveLength(0)
+  })
+})
+
+describe('PlanExecutionChangeRow Retry', () => {
+  const stoppedRow = changeRow({ state: 'stopped', stopReason: 'task-closed' })
+  const running = (rows: PlanExecutionView['changes'], onSend: (message: unknown) => void) =>
+    createElement(PlanExecutionSection, { teamPath: '/repo', plan: planSummary, detail: detailOf([baseExecution(rows)]), connected: true, onSend })
+
+  test('a stopped change sends the retry command naming the execution and change; success retires the dialog', () => {
+    useTeamPlanStore.getState().open('/repo')
+    const sent: Array<{ type: string; requestId: string; executionId: string; change: string; commandId: string }> = []
+    act(() => render(running([stoppedRow], message => sent.push(message as (typeof sent)[number]))))
+    act(() => renderer!.root.findByProps({ 'data-testid': 'plan-execution-retry-command' }).props.onClick())
+    expect(sent).toHaveLength(0)
+    act(() => renderer!.root.findByProps({ 'data-testid': 'plan-execution-retry-command-confirm' }).props.onClick())
+    expect(sent).toHaveLength(1)
+    expect(sent[0]).toMatchObject({ type: 'team-plan-execution-retry', teamPath: '/repo', executionId: 'exec-1', change: 'api' })
+    expect(sent[0]!.commandId).not.toBe('')
+    act(() => useTeamPlanStore.getState().applyResult({ type: 'team-plan-result', teamPath: '/repo', requestId: sent[0]!.requestId, replayed: false } as never))
+    expect(renderer!.root.findAllByProps({ 'data-testid': 'plan-execution-retry-command-dialog' })).toHaveLength(0)
+  })
+
+  test('a change that is not stopped, or a finished execution, offers no Retry', () => {
+    useTeamPlanStore.getState().open('/repo')
+    act(() => render(running([changeRow()], () => undefined)))
+    expect(renderer!.root.findAllByProps({ 'data-testid': 'plan-execution-retry' })).toHaveLength(0)
+    act(() => renderer!.unmount())
+    const finished = { ...baseExecution([stoppedRow]), state: 'finished' as const, outcome: 'stopped' as const, stopReason: 'superseded' }
+    act(() => render(createElement(PlanExecutionSection, { teamPath: '/repo', plan: planSummary, detail: detailOf([finished]), connected: true, onSend: () => undefined })))
+    expect(renderer!.root.findAllByProps({ 'data-testid': 'plan-execution-retry' })).toHaveLength(0)
+  })
+})
+
 describe('PlanExecutionStartDialog', () => {
   test('opening asks the server for the standing; the reply disables or arms Start (15.4)', () => {
     useTeamPlanStore.getState().open('/repo')
@@ -202,7 +245,7 @@ describe('PlanExecutionStopDialog', () => {
   })
 })
 
-describe('the task Accept note', () => {
+describe('the task Accept control', () => {
   const result = {
     id: 'res-1', taskId: 'task-1', summary: 'done', commit: 'c', diff: null, worktree: null, tests: [], limitations: null,
     taskRevision: 1, submittedBy: { kind: 'agent' as const, sessionId: 'dev' }, submittedAt: '', supersedesResultId: null,
@@ -220,12 +263,11 @@ describe('the task Accept note', () => {
     outstandingResult: result, results: [result],
   } as unknown as HumanTaskDetail)
 
-  const resultsSection = (planId: string | null, planChange: string | null) => createElement(TaskResultsSection, {
-    detail: taskDetail(planId, planChange),
+  const resultsSection = (planId: string | null, planChange: string | null, executionOwned = false) => createElement(TaskResultsSection, {
+    detail: { ...taskDetail(planId, planChange), ...(executionOwned ? { executionOwned } : {}) },
     groups: [], sessions: [], connected: true, disabled: false, host: { teamPath: '/repo', sendMessage: () => {} },
     act: (kind: string) => {
-      // The Accept confirm button calls act('accept'); the note is what is
-      // under test, so the act itself is a no-op here.
+      // The control's presence is what is under test, so the act is a no-op here.
       void kind
     },
   })
@@ -235,21 +277,18 @@ describe('the task Accept note', () => {
     useTeamPlanStore.getState().select('/repo', 'plan-1')
   })
 
-  test('appears for a task an execution owns, and not otherwise', () => {
-    useTeamPlanStore.getState().applyDetail({ type: 'team-plan-detail', teamPath: '/repo', teamId: 't', detail: detailOf([baseExecution([changeRow({ taskId: 'task-1' })])]) })
-    render(resultsSection('plan-1', 'api'))
-    // The note rides the Accept confirmation, which the Accept button opens.
-    act(() => renderer!.root.findByProps({ 'data-testid': 'task-accept' }).props.onClick())
-    let tree = text()
-    expect(tree).toContain('A running execution owns this change')
-    expect(tree).toContain('merges nothing')
+  // @covers: plan-execution › Closing an execution task by hand stops its change › The task view does not offer closing as done
+  test('is gone for a task an execution owns, whatever the plan store has loaded', () => {
+    render(resultsSection('plan-1', 'api', true))
+    // The count, not the nodes: printing test-renderer instances on a failure takes many GiB.
+    expect(renderer!.root.findAllByProps({ 'data-testid': 'task-accept' }).length).toBe(0)
+    expect(text()).toContain('Kawai accepts this task when the change lands')
+  })
 
-    useTeamPlanStore.getState().applyDetail({ type: 'team-plan-detail', teamPath: '/repo', teamId: 't', detail: detailOf([]) })
-    act(() => renderer?.unmount())
-    renderer = null
+  test('stays for a task no execution owns, with no execution note', () => {
     render(resultsSection('plan-1', 'api'))
     act(() => renderer!.root.findByProps({ 'data-testid': 'task-accept' }).props.onClick())
-    tree = text()
+    const tree = text()
     expect(tree).toContain('task-accept-confirm')
     expect(tree).not.toContain('A running execution owns this change')
   })

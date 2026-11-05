@@ -307,6 +307,7 @@ export class AssignmentService {
       teamCap: await this.options.caps.maxSpawnedSessions(team.teamId),
       providerOf: ambientProviderOf(this.options.homeDir),
       cooldownUntil: profileId => this.options.cooldownUntil?.(profileId) ?? null,
+      teamDefault: this.options.staffing.approvalDefaults.get(team.teamId),
       now: Date.now(),
     })
   }

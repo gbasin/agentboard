@@ -230,6 +230,7 @@ describe('WorkspaceRead.snapshot carries the plan facts (B3, 9.2/9.3 wiring)', (
       getPendingRequests: () => [],
       teams: { catalogForTeam: () => ({ groups: new Map() }) },
       groupProfileCounts: () => ({}),
+      teamApprovalDefault: () => null,
       turnEnds: { finishedForTeam: () => [] }, exhaustionEpisodes: () => [],
       outboundAudit: { violationGroups: () => [], windowCounts: () => ({ allowed: 0, unknown: 0, violations: 0 }) },
       planAttentionFacts: (teamId: string) => (teamId === 'team' ? planFacts : []),

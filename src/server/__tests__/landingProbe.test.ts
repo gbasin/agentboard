@@ -104,7 +104,24 @@ describe('probeLanding', () => {
   test('an unauthenticated gh is a finding, and the base is not read', async () => {
     const result = await probe({}, { GH_STUB_AUTH: 'fail' })
     expect(codes(result)).toEqual(['gh-auth'])
+    expect(result.findings[0]!.message).toContain('not authenticated')
     expect(result.base).toBeNull()
+  })
+
+  test('a gh that cannot start is a cannot-start finding, never the auth refusal', async () => {
+    // A PATH with git (a symlink to the real one) and no gh: the probe's git
+    // reads still run while every gh call fails to spawn.
+    const noGhBin = path.join(root, 'no-gh-bin')
+    fs.mkdirSync(noGhBin, { recursive: true })
+    const gitPath = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim()
+    fs.symlinkSync(gitPath, path.join(noGhBin, 'git'))
+    const result = await probeLanding({ main, floorChecks: FLOOR, changes: [], provisioned: new Set() }, { env: { PATH: noGhBin } })
+    expect(codes(result)).toEqual(['gh-auth'])
+    const finding = result.findings[0]!
+    expect(finding.message).toContain('cannot be started')
+    expect(finding.message).not.toContain('not authenticated')
+    expect(result.base).toBeNull()
+    fs.rmSync(noGhBin, { recursive: true, force: true })
   })
 
   test('a viewer without push permission is a finding; the base still reads', async () => {

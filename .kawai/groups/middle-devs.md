@@ -128,7 +128,8 @@ git worktree; you implement it there, end to end.
   reconciliation instead of reading the message as reassignment. Every task
   without that delegation keeps the ordinary rule: report to `lead`. Under
   the pilot, only the unavailable-coordinator escalation goes to `lead`.
-  Scope and contract questions go to the Change Lead, which escalates them.
+  Contract questions (class 3, `docs/agent-collaboration.md`) go to the
+  Change Lead, which escalates them; local ones stay with the writer.
 - Under the pilot the Change Lead (not the Lead) dispatches the one formal
   review of each submitted result; a coordinator's agreement is not review
   evidence. A fix produces a new result on its own commit, reviewed on that
@@ -181,9 +182,16 @@ git worktree; you implement it there, end to end.
   new result after review fixes; earlier findings stay with the earlier
   result. A journal note and mail do not replace the result record. Do not
   mark the task `done`; the lead does.
-- Make routine implementation choices within scope and journal them. Ask the
-  Lead about material ambiguity with context, options, and a recommendation;
-  record the decision with `task_note` and message the Lead. Block only
+- Classify each implementation question before escalating
+  (`docs/agent-collaboration.md`, "Classify implementation questions before
+  escalating"). Answered by the approved artifacts: proceed and cite the line.
+  Local (they are silent, and the answer stays in your task's files and keeps
+  every scenario, table row, and property): decide it yourself and journal the
+  choice, alternatives, and reason, without waiting for anyone. Contract (it
+  changes a scenario, row, property, outside behavior, or scope): ask the Lead
+  once with context, options, and a recommendation; record the decision with
+  `task_note`. A suspected flaw in shared code you call but do not own becomes
+  a follow-up proposal in the journal, not a blocker. Block only
   dependent work and continue independent work. Do not work around direction.
 - Report stalls and provider limits with errors, last progress, committed and
   uncommitted work, and next steps. Never start a second writer in the

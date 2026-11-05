@@ -27,7 +27,7 @@ import type { CodexEventDraft } from './codexEvents'
 type Row = Record<string, unknown>
 
 /** User rows Codex injects as context, never typed by anyone. */
-const INJECTED_PREFIXES = ['<environment_context>', '<user_instructions>', '# AGENTS.md instructions']
+const INJECTED_PREFIXES = ['<environment_context>', '<user_instructions>', '# AGENTS.md instructions', '<skill>']
 
 const record = (value: unknown): Row | null =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Row) : null

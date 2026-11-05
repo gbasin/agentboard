@@ -1564,6 +1564,7 @@ describe('NewSessionModal auto-approve tools', () => {
     })
   })
 
+  // @covers: chat-sessions › Users configure the default approval policy for new chat sessions › Settings default seeds new chats
   test('a default of auto pre-checks the box and submits auto', async () => {
     useSettingsStore.setState({ defaultApprovalPolicy: 'auto' })
     const dialog = await chatDialog()
@@ -1577,6 +1578,7 @@ describe('NewSessionModal auto-approve tools', () => {
     })
   })
 
+  // @covers: chat-sessions › Users configure the default approval policy for new chat sessions › Creation dialog overrides the default
   test('unchecking an auto default creates a manual session', async () => {
     useSettingsStore.setState({ defaultApprovalPolicy: 'auto' })
     const dialog = await chatDialog()

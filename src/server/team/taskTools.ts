@@ -5,10 +5,11 @@
 // (bounded-log-reads-and-task-get D4–D6): bounded windows and byte-bounded
 // previews, and any entry whole, behind task_get's caller and team rules.
 import { z } from 'zod'
-import { TASK_STATUSES, type TaskStatus } from '../../shared/teamTasks'
+import { TASK_STATUSES, type TaskListStatus, type TaskStatus } from '../../shared/teamTasks'
 import type { TaskService } from './TaskService'
 import type { TaskResultService } from './TaskResultService'
 import { JOURNAL_LIMIT_MAX, TaskJournalReads } from './taskJournalWindow'
+import { TASK_LIST_LIMIT_MAX, TASK_LIST_STATUSES } from './taskListWindow'
 
 export const TASK_TOOL_NAMES = ['task_create', 'task_get', 'task_journal_read', 'task_note', 'task_update_status', 'task_amend', 'task_list', 'task_acknowledge',
   'task_submit_result', 'task_submit_coverage', 'task_submit_findings', 'task_handoff', 'task_check_result'] as const
@@ -17,6 +18,9 @@ const status = z.enum(TASK_STATUSES as [TaskStatus, ...TaskStatus[]])
 const taskId = { task_id: z.string().min(1) }
 // One message for every failure, so both runtimes' refusals name the range (D5).
 const journalLimit = `journal_limit must be an integer from 1 to ${JOURNAL_LIMIT_MAX}`
+// The same for task_list (bounded-task-list D2/D3): one message per argument.
+const listStatus = `status must be one of ${TASK_LIST_STATUSES.join(', ')}`
+const listLimit = `limit must be an integer from 1 to ${TASK_LIST_LIMIT_MAX}`
 const offsetBytes = 'offset_bytes must be a safe non-negative integer'
 export const taskSchemas = {
   task_create: z.object({
@@ -40,7 +44,12 @@ export const taskSchemas = {
     ...taskId, direction: z.string().optional(), acceptance: z.string().optional(),
     rationale: z.string().optional(), notify: z.boolean().optional(),
   }),
-  task_list: z.object({ status: status.optional() }),
+  task_list: z.object({
+    status: z.enum(TASK_LIST_STATUSES as [TaskListStatus, ...TaskListStatus[]], { error: listStatus }).optional(),
+    limit: z.number({ error: listLimit }).int({ error: listLimit }).min(1, { error: listLimit })
+      .max(TASK_LIST_LIMIT_MAX, { error: listLimit }).optional(),
+    before: z.string().min(1).optional(),
+  }),
   task_acknowledge: z.object({ ...taskId, revision: z.number().int().min(1) }),
   task_submit_result: z.object({
     ...taskId, summary: z.string().min(1), commit: z.string().optional(), diff: z.string().optional(),
@@ -75,7 +84,7 @@ export const taskDescriptions: Record<(typeof TASK_TOOL_NAMES)[number], string> 
   task_note: "Append a note to a task's journal (decisions, findings, progress). Notes are permanent.",
   task_update_status: 'Set a task to active or blocked (any member); done or cancelled (its creator only). Optional note is journaled.',
   task_amend: "Publish a new revision of a task's direction or acceptance criteria (its creator only). Optional rationale says why; notify: true also sends the assignment's claimed agent a revision notice.",
-  task_list: "List this team's tasks, optionally by status.",
+  task_list: `List this team's tasks as compact rows (no direction or acceptance — use task_get), newest first. Without status, only open, active, and blocked tasks; status takes one status or "all". At most limit rows (1–${TASK_LIST_LIMIT_MAX}, default 50); page older with before set to bounds.nextBefore. bounds.total counts every match; statuses names the filter applied.`,
   task_acknowledge: 'State the published task revision you are now working from (the revision in the task header). Call it when you start or take over work on a task, and after a revision notice.',
   task_submit_result: 'Submit a result for a task: a summary, a commit and/or diff reference (at least one), the tests you ran with their outcomes, and known limitations. Your test outcomes are shown as claimed, not verified. Supersedes the task\'s previous result; does not close the task.',
   task_submit_coverage: 'Record your own coverage map for a result (result_id from task_get): the same clause/citation map a submission carries. While you hold a task\'s outstanding review handoff and have recorded no map for its result, the submitter\'s maps stay withheld from you — recording yours unseals them. Maps are append-only; your newest map for a result counts.',
@@ -145,6 +154,6 @@ export function taskHandlers(tasks: TaskService, sessionId: string, results?: Ta
         return results.recheck(caller, task_id, result_id)
       },
     } : {}),
-    task_list: async (input: unknown) => tasks.list(caller, taskSchemas.task_list.parse(input).status),
+    task_list: async (input: unknown) => tasks.agentList(caller, taskSchemas.task_list.parse(input)),
   }
 }

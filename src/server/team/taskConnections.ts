@@ -58,7 +58,8 @@ export class TaskConnections {
       // and the release confirmation's data (task-results-handoffs D7).
       const human = store.humanDetail(taskId)
       const release = human ? this.manager.results?.release?.preview(taskId) : undefined
-      const detail = human && release ? { ...human, release } : human
+      const executionOwned = this.manager.results?.ownedByExecution(taskId) === true
+      const detail = human && { ...human, ...(release ? { release } : {}), ...(executionOwned ? { executionOwned } : {}) }
       if (detail) connection.send({
         type: 'team-task-detail', teamPath, teamId: subscription.teamId, detail,
         // Its messages name participants; the directory keeps a killed one's.

@@ -2,9 +2,14 @@
 // groups. Each row shows the role description (never the prompt body), live
 // membership, and the settings in effect, and names the file that defines the
 // group — both layers, the one in effect marked, when both define it. There is
-// no control that writes a group file or changes a running agent: the only
-// buttons open a member's chat. Prompt edits reach future agent starts only.
+// no control that writes a group file or changes a running agent: the row
+// buttons only open a member's chat, and the one team-level control above the
+// rows (`teamControl`, team-approval-default D7) writes the team's default
+// approval for later spawns. Each row's approval names its source. Prompt
+// edits reach future agent starts only.
+import type { ReactNode } from 'react'
 import type { TeamMemberRow, TeamMemberSession, TeamMemberProfile } from '@shared/teamWorkspace'
+import { spawnApprovalSourceLabel } from '@shared/spawnApproval'
 
 const PROMPT_NOTE = 'Prompt changes apply to future agent starts only and never raise a running agent’s permissions.'
 
@@ -69,7 +74,7 @@ function Group({ row, onOpenSession }: { row: TeamMemberRow; onOpenSession: (ses
     <p className="mt-1 text-chat-meta text-secondary" data-testid="member-prompt-note">{PROMPT_NOTE}</p>
     <dl className="mt-2 grid grid-cols-[max-content_1fr] gap-x-3 text-chat-meta" data-testid="member-settings">
       <dt className="text-secondary">Can create tasks</dt><dd>{row.canCreateTasks ? 'yes' : 'no'}</dd>
-      <dt className="text-secondary">Approval</dt><dd>{row.approval}</dd>
+      <dt className="text-secondary">Approval</dt><dd data-testid="member-approval">{row.approval} · {spawnApprovalSourceLabel(row.approvalSource)}</dd>
       <dt className="text-secondary">Member cap</dt><dd>{row.max}</dd>
       <dt className="text-secondary">Workers</dt>
       <dd data-testid="member-profiles">{row.profiles.length === 0 ? 'default profile' : workersLabel(row)}</dd>
@@ -88,13 +93,16 @@ function Group({ row, onOpenSession }: { row: TeamMemberRow; onOpenSession: (ses
   </article>
 }
 
-export default function TeamMembersPanel({ members, loaded, onOpenSession }: {
+export default function TeamMembersPanel({ members, loaded, onOpenSession, teamControl }: {
   members: readonly TeamMemberRow[]
   /** False until the first workspace snapshot arrives. */
   loaded: boolean
   onOpenSession: (sessionId: string) => void
+  /** The team-level default approval control (team-approval-default D7); it edits no group. */
+  teamControl?: ReactNode
 }) {
   return <div className="min-h-0 flex-1 space-y-2 overflow-auto p-3" data-testid="team-members">
+    {teamControl}
     <p className="text-chat-meta text-secondary" data-testid="members-note">
       Read-only. Edit a group by changing the file named on its row.
     </p>

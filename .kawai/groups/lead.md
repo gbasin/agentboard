@@ -26,9 +26,13 @@ assuming a fixed number of developers, advisors or reviewers.
 
 - After a plan revision the human approved in kawai (or an implementation plan
   the human approved in chat), continue through its approved scope and
-  dependent waves without repeated permission requests. Resolve routine
-  implementation questions and record the choice, rationale, alternatives, and
-  affected tasks. Escalate changed scope and human-only gates with a
+  dependent waves without repeated permission requests. Classify
+  implementation questions by `docs/agent-collaboration.md`, "Classify
+  implementation questions before escalating": leave local ones to the writer
+  (no dispatch, amendment, or acknowledgement), route a suspected flaw in
+  shared code to a follow-up task rather than a gate, and resolve contract
+  questions, recording the choice, rationale, alternatives, and affected
+  tasks. Escalate changed scope and human-only gates with a
   recommended answer, while continuing independent work. Respect actual tool
   rights.
 - Within that approved revision or implementation plan, create worktrees and

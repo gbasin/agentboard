@@ -6,11 +6,11 @@
 // same). **Request review**, **Request QA**, and **Return for fixes** act on
 // the outstanding result through a role request whose key is armed per
 // payload. Inputs survive a refusal; every control disables while
-// disconnected.
+// disconnected. A task a running execution owns has no **Accept result**:
+// Kawai accepts it when the change lands, and a human accept would stop it.
 import { useEffect, useState } from 'react'
 import type { Session } from '@shared/types'
 import type { HumanTaskDetail, TaskHandoffKind, TaskResult } from '@shared/teamTasks'
-import { useTeamPlanStore } from '../../stores/teamPlanStore'
 import { TASK_HANDOFF_KINDS } from '@shared/teamTasks'
 import type { TaskActFn } from './TaskDirectionEditor'
 import TaskResultCard from './TaskResultCard'
@@ -41,25 +41,11 @@ export default function TaskResultsSection({ detail, groups, sessions, connected
   useEffect(() => { if (landed) setHandoff(null) }, [landed])
   const roleFor = (kind: TaskHandoffKind) => groups.some(group => group.id === HANDOFF_ROLE_HINT[kind]) ? HANDOFF_ROLE_HINT[kind] : ''
 
-  /** An execution owns this task while one of its change rows carries the task id (plan-execution D17). */
-  const ownedByExecution = useTeamPlanStore(state => {
-    if (task.planId === null || task.planChange === null) return false
-    for (const view of Object.values(state.views)) {
-      const executions = view?.detailExecutions ?? []
-      for (const execution of executions) {
-        if (execution.planId !== task.planId) continue
-        if (execution.changes.some(row => row.taskId === task.id)) return true
-      }
-    }
-    return false
-  })
+  const ownedByExecution = detail.executionOwned === true
   const acceptConfirm = (result: TaskResult) => {
     const needsReason = result.needsReevaluation || openChildren.length > 0
     return <div className="mt-2 border border-border p-2" data-testid="task-accept-confirm">
       <p className="font-medium">Accept this result and close the task as done?</p>
-      {ownedByExecution && <p className="text-chat-meta text-approval" data-testid="task-accept-owned-note">
-        A running execution owns this change: accepting stops it as task-closed and merges nothing.
-      </p>}
       <p className="text-chat-meta text-secondary">Acceptance criteria</p>
       <p className="whitespace-pre-wrap text-chat-body" data-testid="accept-criteria">{task.acceptance ?? 'No acceptance criteria were set.'}</p>
       {openChildren.length > 0 && <div className="text-chat-meta" data-testid="accept-open-children">
@@ -95,11 +81,14 @@ export default function TaskResultsSection({ detail, groups, sessions, connected
   return <div data-testid="task-results">
     <h5 className="font-medium">Results</h5>
     {results.length === 0 && <p className="text-chat-meta text-secondary">No result submitted yet</p>}
+    {ownedByExecution && <p className="text-chat-meta text-secondary" data-testid="task-execution-owned-note">
+      A running execution owns this change: Kawai accepts this task when the change lands. To stop the change, use the Plans view.
+    </p>}
     {results.map(result => <TaskResultCard key={result.id} result={result} sessions={sessions}>
       <div className="mt-2 flex flex-wrap gap-2">
-        <button type="button" className="btn text-chat-meta" data-testid="task-accept" disabled={disabled || result.acceptedAt !== null}
+        {!ownedByExecution && <button type="button" className="btn text-chat-meta" data-testid="task-accept" disabled={disabled || result.acceptedAt !== null}
           title={!connected ? 'Reconnect to accept' : result.acceptedAt !== null ? 'Already accepted' : undefined}
-          onClick={() => { setAccepting(result.id); setReason('') }}>Accept result</button>
+          onClick={() => { setAccepting(result.id); setReason('') }}>Accept result</button>}
         {/* Recheck (independent-verification D4): asks Kawai to check again; idempotent
             while a check is pending, so no request key is armed. */}
         <button type="button" className="btn text-chat-meta" data-testid="task-recheck" disabled={disabled}
@@ -110,7 +99,7 @@ export default function TaskResultsSection({ detail, groups, sessions, connected
           onClick={() => setHandoff(current => current?.kind === kind ? current
             : { kind, request: emptyRoleRequest(roleFor(kind)), openedOver: task.assignment?.id ?? null })}>{HANDOFF_ACTIONS[kind]}</button>)}
       </div>
-      {accepting === result.id && result.acceptedAt === null && acceptConfirm(result)}
+      {!ownedByExecution && accepting === result.id && result.acceptedAt === null && acceptConfirm(result)}
       {result.supersededBy === null && handoff && handoffForm(result, handoff.kind, handoff.request)}
     </TaskResultCard>)}
   </div>

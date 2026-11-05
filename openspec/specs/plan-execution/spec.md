@@ -338,8 +338,12 @@ When the human closes a task that an execution created, the execution SHALL stop
 - **THEN** that change shows as stopped because its task was closed, and the execution's other changes continue
 
 #### Scenario: Accepting by hand closes without landing
-- **WHEN** the human accepts a change's result from the task view before its review passed
+- **WHEN** a human accept of a change's result reaches the server before its review passed
 - **THEN** the task is done, the change stops as `task-closed`, and nothing is merged
+
+#### Scenario: The task view does not offer closing as done
+- **WHEN** the human views a task a running execution owns
+- **THEN** the view offers neither Accept result nor Mark done, says Kawai accepts the task when the change lands, and still offers Mark cancelled
 
 #### Scenario: A hand close while the merge runs
 - **WHEN** the human accepts or cancels a change's task while its merge runs

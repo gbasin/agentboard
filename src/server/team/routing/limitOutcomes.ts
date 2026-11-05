@@ -20,9 +20,14 @@
 // it: that instruction may already be complete. A credit limit (a 402,
 // openrouter-provider D8) never parks: delivered work takes `otherwise`, and
 // an agent-started turn's work is left where it is.
+// A human-created session's limited turn that parks nothing schedules one
+// direct limit-resume at the reset (limit-resume-unheld-sessions, decision in
+// limitResume.ts); a delivered limit-resume is never parked, released, or
+// forwarded, and never counts as held work.
 import type { Database } from 'bun:sqlite'
 import type { ChatSessionRecord } from '../../db'
 import type { ChatHandoffPackage } from '../../../shared/team'
+import type { ChatWorker } from '../../../shared/chat'
 import type { LimitEvent, LimitOutcome, LimitOutcomeContext } from '../../../shared/routing'
 import { runGitAsync } from '../../git/gitCommand'
 import { logger } from '../../logger'
@@ -36,6 +41,8 @@ import { providerOf } from '../../chat/profileCatalog'
 import { catalogCtx } from '../cooldowns'
 import { MAX_PARKS, resolveLimit, type LimitResolution } from './limitPolicy'
 import type { RuleRegistry } from './ruleLoader'
+import { isLimitResume, limitResumeAttempt, workerLinesOf, type LimitResumeEvent, type LimitResumeTurn } from './limitResume'
+import { LimitResumeMail } from './limitResumeMail'
 
 const CREATE_TABLE_SQL = `
 CREATE TABLE IF NOT EXISTS team_handoff_notes (
@@ -88,8 +95,13 @@ export class LimitOutcomes {
   private readonly agentTurns = new Set<string>()
   /** Session → the work it was last delivered, resumed on, or parked with (D2). */
   private readonly lastWork = new Map<string, string>()
+  /** Limit-resumes of human-created sessions (limit-resume-unheld-sessions). */
+  private readonly limitResumes: LimitResumeMail
 
   constructor(private readonly db: Database, private readonly options: LimitOutcomesOptions) {
+    this.limitResumes = new LimitResumeMail(db, {
+      store: options.store, getRecord: options.getRecord, teamOf: options.teamOf, now: () => this.now(),
+    })
     options.limits.subscribe(event => { if (event.final) this.pending.set(event.sessionId, event) })
   }
 
@@ -129,6 +141,9 @@ export class LimitOutcomes {
    */
   turnStarted(sessionId: string, agentStarted: boolean): void {
     this.active.delete(sessionId)
+    // A final limit of an interrupted turn (which never reached turnEnded)
+    // must not decide this one (limit-resume D8).
+    this.pending.delete(sessionId)
     if (agentStarted) this.agentTurns.add(sessionId)
     else this.agentTurns.delete(sessionId)
   }
@@ -140,23 +155,45 @@ export class LimitOutcomes {
     const workId = this.active.get(sessionId)
     this.active.delete(sessionId)
     const agentTurn = this.agentTurns.delete(sessionId)
-    if (event && workId) {
+    const work = workId ? this.options.store.get(workId) : null
+    // A delivered limit-resume is never resolved as work (limit-resume D3).
+    const limitResume = work && isLimitResume(work.tags) ? work : null
+    if (limitResume) this.digests.delete(limitResume.id)
+    if (event && workId && !limitResume) {
       await this.resolve(workId, sessionId, event)
       return
     }
+    // Held work decides the limit-resume's O2 row; read before any park.
+    const held = this.currentWork(sessionId) !== null
     // The result subtype is ignored: the CLI has reported success after a
     // final limit, so the recorded event decides (D3).
     if (event && agentTurn) {
       this.parkCurrent(sessionId, event)
-      return
-    }
-    // A successful agent-started turn leaves parked work and its resume (D4).
-    if (success && !event && !(agentTurn && !workId)) {
+    } else if (success && !event && !(agentTurn && !workId)) {
+      // A successful agent-started turn leaves parked work and its resume (D4).
       // Only a human turn or this work's own resume can complete parked work.
       for (const parked of this.options.store.parkedBy(sessionId)) {
         if (!workId || workId === parked.id) this.unpark(parked)
       }
     }
+    if (workId && !limitResume) return
+    const turn: LimitResumeTurn = limitResume
+      ? { kind: 'limit-resume', attempt: limitResumeAttempt(limitResume.tags) }
+      : { kind: agentTurn ? 'agent' : 'human' }
+    const limit: LimitResumeEvent = !event ? { kind: 'none' }
+      : event.window === CREDIT_LIMIT_WINDOW ? { kind: 'credit' }
+        : { kind: 'final', resetsAt: Date.parse(this.resetTime(event)) }
+    this.limitResumes.turnEnded(sessionId, { turn, success, event: limit, held, carried: limitResume ? workerLinesOf(limitResume.body) : [] })
+  }
+
+  /** The session's worker roster changed: limit-failed workers reach its limit-resume (limit-resume D5). */
+  workersChanged(sessionId: string, workers: readonly ChatWorker[]): void {
+    this.limitResumes.workersChanged(sessionId, workers)
+  }
+
+  /** The session was archived: its pending limit-resume must not restore it (limit-resume D6). */
+  cancelLimitResume(sessionId: string): void {
+    this.limitResumes.cancel(sessionId)
   }
 
   /**
@@ -184,7 +221,8 @@ export class LimitOutcomes {
    * held delivered message that is not a resume (a resume points at work).
    */
   private currentWork(sessionId: string): TeamMessage | null {
-    const held = this.options.store.heldBy(sessionId)
+    // A delivered limit-resume is never work (limit-resume D3).
+    const held = this.options.store.heldBy(sessionId).filter(message => !isLimitResume(message.tags))
     const last = this.lastWork.get(sessionId)
     const remembered = last ? held.find(message => message.id === last) : undefined
     if (remembered) return remembered

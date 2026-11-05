@@ -150,6 +150,26 @@ const catalog = (): GroupCatalog => ({
 })
 
 describe('memberRows (2.2)', () => {
+  /** The fixture's devs group with the `approval:` key removed, or set. */
+  const withApproval = (approval: 'manual' | 'auto' | undefined): GroupCatalog => {
+    const cat = catalog()
+    const entry = cat.groups.get('devs')!
+    const { approval: _drop, ...rest } = entry.group
+    cat.groups.set('devs', { ...entry, group: approval === undefined ? rest : { ...rest, approval } })
+    return cat
+  }
+
+  // @covers: team-workspace › Members is a read-only inspection of group settings › Approval source is shown
+  test('O1: no key and no team default shows built-in manual', () => {
+    expect(memberRows(withApproval(undefined), [], () => ({}))[0]).toMatchObject({ approval: 'manual', approvalSource: 'built-in' })
+  })
+
+  // @covers: team-workspace › The Members tab sets the team's default approval policy › Setting the default updates the group rows
+  test('O3 and O6: the team default fills a group without the key; an explicit manual key keeps its own', () => {
+    expect(memberRows(withApproval(undefined), [], () => ({}), 'auto')[0]).toMatchObject({ approval: 'auto', approvalSource: 'team' })
+    expect(memberRows(withApproval('manual'), [], () => ({}), 'auto')[0]).toMatchObject({ approval: 'manual', approvalSource: 'group' })
+  })
+
   test('a group row carries its settings, caps with live counts, warning, and both source files', () => {
     const rows = memberRows(catalog(), [record({ groupId: 'devs', claudeProfileId: 'glm' })], () => ({ glm: 1 }))
     expect(rows).toHaveLength(1)
@@ -160,7 +180,7 @@ describe('memberRows (2.2)', () => {
         { profileId: 'glm', providerId: 'zai', providerLabel: 'Z.AI', cap: 2, live: 1 },
         { profileId: 'default', providerId: 'claude', providerLabel: 'Claude', cap: 1, live: 0 },
       ],
-      approval: 'manual', strategy: 'first-available',
+      approval: 'manual', approvalSource: 'group', strategy: 'first-available',
       onLimit: { parkIfResetWithinMs: 10_800_000, otherwise: 'forward', forwardTo: 'seniors' },
       warnings: ['profile "nope" is not defined; ignored'],
       sources: [
@@ -545,6 +565,7 @@ describe('WorkspaceRead.snapshot labelling (bc0a329 follow-up)', () => {
       getPendingRequests: () => [],
       teams: { catalogForTeam: () => ({ groups: new Map() }) },
       groupProfileCounts: () => ({}),
+      teamApprovalDefault: () => null,
       turnEnds: { finishedForTeam: () => [] }, exhaustionEpisodes: () => [], outboundAudit: { violationGroups: () => [], windowCounts: () => ({ allowed: 0, unknown: 0, violations: 0 }) },
     }
     const snapshot = new WorkspaceRead(manager as never).snapshot({ teamId: 'team' } as never)
@@ -564,7 +585,7 @@ describe('WorkspaceRead.snapshot acceptance ownership (attention-acceptance-owne
     limitations: null, taskRevision: 1, submittedBy: { kind: 'agent', sessionId: 'chat-dev' } as const,
     supersedesResultId: null, supersededBy: null, acceptedBy: null, acceptedAt: null, needsReevaluation: false, reviewVerdict,
   })
-  const snapshotFor = (creator: TeamTaskSummary['creator'], records: ChatSessionRecord[], verdict: 'pass' | 'fail' | null = null) => {
+  const snapshotFor = (creator: TeamTaskSummary['creator'], records: ChatSessionRecord[], verdict: 'pass' | 'fail' | null = null, owned = false) => {
     const task = summary({
       id: 'task-1', teamId: 'team', title: 'Export', status: 'active', creator,
       outstandingResult: { id: 'r-1', needsReevaluation: false, accepted: false, reviewVerdict: verdict },
@@ -582,12 +603,29 @@ describe('WorkspaceRead.snapshot acceptance ownership (attention-acceptance-owne
       getPendingRequests: () => [],
       teams: { catalogForTeam: () => ({ groups: new Map() }) },
       groupProfileCounts: () => ({}),
+      teamApprovalDefault: () => null,
       turnEnds: { finishedForTeam: () => [] }, exhaustionEpisodes: () => [], outboundAudit: { violationGroups: () => [], windowCounts: () => ({ allowed: 0, unknown: 0, violations: 0 }) },
+      results: { ownedByExecution: () => owned },
     }
     return new WorkspaceRead(manager as never).snapshot({ teamId: 'team' } as never)
   }
   const lead = { kind: 'agent', sessionId: 'chat-lead' } as const
   const dev = record({ sessionId: 'chat-dev', name: 'Dev' })
+
+  // @covers: team-workspace › The attention queue lists what needs a human or is waiting on an agent › A running execution's task asks nothing of the human
+  test('a task a running execution owns asks nothing of the human, even with no live creator', () => {
+    const { attention, tasks } = snapshotFor({ kind: 'system', sessionId: null }, [dev], null, true)
+    expect(attention.filter(item => item.kind === 'pending-acceptance')).toEqual([])
+    expect(tasks[0]).toMatchObject({ requiresHuman: false, nextAction: 'Wait for Kawai' })
+  })
+
+  test('failing findings on an owned task still wait for fixes', () => {
+    const { attention, tasks } = snapshotFor({ kind: 'system', sessionId: null }, [dev], 'fail', true)
+    expect(attention.filter(item => item.kind === 'pending-acceptance')).toEqual([])
+    expect(attention.filter(item => item.kind === 'fixes-requested').map(item => ({ owner: item.owner.id, requiresHuman: item.requiresHuman })))
+      .toEqual([{ owner: 'chat-dev', requiresHuman: false }])
+    expect(tasks[0]).toMatchObject({ nextAction: 'Wait for fixes' })
+  })
 
   test('a human-created task stays human-required', () => {
     const { attention, tasks } = snapshotFor({ kind: 'human', sessionId: null }, [dev])

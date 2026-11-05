@@ -47,7 +47,7 @@ function call(overrides: Partial<OutboundCallInsert> = {}): OutboundCallInsert {
 describe('the outbound-audit migration (3.3)', () => {
   test('a fresh database records every version through outbound-audit and creates the tables, twice over', () => {
     expect(MIGRATIONS.find(migration => migration.name === 'outbound-audit')).toMatchObject({ version: 9 })
-    expect(MIGRATIONS.at(-1)).toMatchObject({ name: 'compact-observation-detail' })
+    expect(MIGRATIONS.at(-1)).toMatchObject({ name: 'team-approval-defaults' })
     for (let i = 0; i < 2; i++) {
       const db = initDatabase({ path: dbPath })
       expect(readSchemaVersion(db.db)).toBe(MIGRATIONS.at(-1)!.version)

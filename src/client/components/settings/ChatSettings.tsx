@@ -47,8 +47,9 @@ export default function ChatSettings({
         <div className="flex items-center justify-between">
           <div>
             <div className="text-sm text-primary">Approval Policy</div>
-            <div className="text-[10px] text-muted">
-              Default for new chat sessions. Auto-approve lets tools run without asking.
+            <div className="text-[10px] text-muted" data-testid="default-approval-policy-hint">
+              Default for chats you create. Auto-approve lets tools run without asking.
+              Spawned team members use their group&apos;s <code>approval:</code> key, then the team default on the Team page.
             </div>
           </div>
           <div

@@ -5,10 +5,14 @@
 // verified (and marked promoted once a merged promotion carried it into the
 // target), and the change's effects, expandable. Its id is where a `plan`
 // attention link with that change scrolls to and focuses (plan-supervision
-// D15).
+// D15). A stopped change of a running execution offers the owner's Retry
+// (plan-execution D12).
 import { useEffect, useRef, useState } from 'react'
+import type { SendClientMessage } from '@shared/types'
 import type { ExecutionChangeView, PlanExecutionView } from '@shared/planExecution'
 import { CHANGE_STATE_LABELS, CHANGE_STEP_LABELS } from '@shared/planExecutionProgress'
+import { useTeamPlanStore } from '../../stores/teamPlanStore'
+import PlanCommandDialog, { sendPlanCommand } from './PlanCommandDialog'
 
 const waitingLabel = (row: ExecutionChangeView): string | null => {
   const waiting = row.waiting
@@ -27,7 +31,10 @@ const waitingLabel = (row: ExecutionChangeView): string | null => {
   }
 }
 
-export default function PlanExecutionChangeRow({ row, execution, promoted = false, onOpenTask, revealed = false }: {
+export default function PlanExecutionChangeRow({ teamPath, connected, onSend, row, execution, promoted = false, onOpenTask, revealed = false }: {
+  teamPath: string
+  connected: boolean
+  onSend: SendClientMessage
   row: ExecutionChangeView
   execution: PlanExecutionView
   /** A merged promotion carried this change's landing into the target (D11). */
@@ -38,6 +45,7 @@ export default function PlanExecutionChangeRow({ row, execution, promoted = fals
 }) {
   const [effectsOpen, setEffectsOpen] = useState(false)
   const rowRef = useRef<HTMLLIElement | null>(null)
+  const retryBusy = useTeamPlanStore(state => Object.values(state.views[teamPath]?.pending ?? {}).includes('retry'))
   useEffect(() => {
     if (!revealed) return
     rowRef.current?.scrollIntoView({ block: 'center' })
@@ -45,6 +53,7 @@ export default function PlanExecutionChangeRow({ row, execution, promoted = fals
   }, [revealed])
   const waiting = waitingLabel(row)
   const round = row.latestRound
+  const retrySlot = `retry:${execution.id}:${row.change}:${row.generation}`
   return <li ref={rowRef} id={`plan-change-${row.change}`} tabIndex={-1} className="border border-border p-2" data-testid="plan-execution-change">
     <p className="text-chat-body">
       <span className="font-medium">{row.change}</span>
@@ -85,7 +94,14 @@ export default function PlanExecutionChangeRow({ row, execution, promoted = fals
         {row.effects.map(effect => <li key={effect.id}>{effect.kind} · {effect.state}{effect.error !== null ? ` · ${effect.error}` : ''}</li>)}
       </ul>}
     </div>}
-    {execution.state === 'running' && row.state === 'stopped' && row.stopReason !== null && row.taskId !== null
-      && <p className="text-chat-meta text-secondary">Retry re-runs this stage; the Plans view offers it.</p>}
+    {execution.state === 'running' && row.state === 'stopped' && <div className="mt-1" data-testid="plan-execution-retry">
+      <PlanCommandDialog teamPath={teamPath} slot={retrySlot} openLabel="Retry…" confirmLabel="Retry"
+        testId="plan-execution-retry-command" connected={connected} busy={retryBusy}
+        onConfirm={() => sendPlanCommand(teamPath, onSend, 'retry', retrySlot,
+          { executionId: execution.id, change: row.change },
+          ids => ({ type: 'team-plan-execution-retry', teamPath, executionId: execution.id, change: row.change, ...ids }))}>
+        <p className="text-chat-meta">Retry re-runs this stage of {row.change}. If its task is closed, reopen the task first.</p>
+      </PlanCommandDialog>
+    </div>}
   </li>
 }

@@ -74,9 +74,9 @@ test('a database at version 16 with execution rows backfills seq 1, twice, keepi
   for (const [table, rows] of Object.entries(before)) {
     if (table !== 'process_observation_teams') expect(after[table]).toEqual(rows)
   }
-  // Later migrations (19 plan-workspace, 20 result-checks) also land in this upgrade.
+  // Later migrations (19 plan-workspace, 20 result-checks, 22 team-approval-defaults) also land in this upgrade.
   expect(Object.keys(after).filter(table => !(table in before)).sort())
-    .toEqual([...REVISION_CONTROL_TABLES, ...PLAN_WORKSPACE_TABLES, ...VERIFICATION_TABLES].sort())
+    .toEqual([...REVISION_CONTROL_TABLES, ...PLAN_WORKSPACE_TABLES, ...VERIFICATION_TABLES, 'team_approval_defaults'].sort())
   expect(versions(dbPath).filter(row => row.version === 17)).toHaveLength(1)
   // The backfill: each execution's row, once, as seq 1.
   expect(after.plan_execution_revisions).toEqual([

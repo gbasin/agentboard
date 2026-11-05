@@ -12,7 +12,7 @@ export const THREAD_ID = 'thread-0001'
 // The observed nested layout (spike, 0.163.0): sessions/YYYY/MM/DD/rollout-<ts>-<thread>.jsonl.
 export const ROLLOUT = '/codex-home/sessions/2026/10/18/rollout-2026-10-18T17-46-05-thread-0001.jsonl'
 
-export type Line = { dir: 'out' | 'in'; line: string } | { fake: 'append'; file: string; line?: string } | { fake: 'gate'; path: string }
+export type Line = { dir: 'out' | 'in'; line: string } | { fake: 'append'; file: string; line?: string } | { fake: 'gate'; path: string } | { fake: 'assertInput'; input: unknown[] }
 
 /** A transcript under construction; request ids follow the client's (1, 2, …). */
 export class Script {
@@ -71,6 +71,12 @@ export class Script {
   /** The fake holds the run here until `gatePath` exists. */
   gate(gatePath: string): this {
     this.lines.push({ fake: 'gate', path: gatePath })
+    return this
+  }
+
+  /** Assert the native input of the preceding turn, before replying to it. */
+  assertInput(input: unknown[]): this {
+    this.lines.push({ fake: 'assertInput', input })
     return this
   }
 

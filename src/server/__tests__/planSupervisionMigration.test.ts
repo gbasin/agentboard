@@ -74,10 +74,10 @@ test('a database at version 15 with plan rows upgrades, twice, keeping every row
   for (const [table, rows] of Object.entries(before)) {
     if (table !== 'process_observation_teams') expect(after[table]).toEqual(rows)
   }
-  // Later migrations (17 revision-control, 19 plan-workspace, 20 result-checks)
-  // also land in this upgrade.
+  // Later migrations (17 revision-control, 19 plan-workspace, 20 result-checks,
+  // 22 team-approval-defaults) also land in this upgrade.
   expect(Object.keys(after).filter(table => !(table in before)).sort())
-    .toEqual([...SUPERVISION_TABLES, ...REVISION_CONTROL_TABLES, ...PLAN_WORKSPACE_TABLES, ...VERIFICATION_TABLES].sort())
+    .toEqual([...SUPERVISION_TABLES, ...REVISION_CONTROL_TABLES, ...PLAN_WORKSPACE_TABLES, ...VERIFICATION_TABLES, 'team_approval_defaults'].sort())
   expect(versions(dbPath).filter(row => row.version === 16)).toHaveLength(1)
 })
 

@@ -137,6 +137,7 @@ describe('the outbound window against the real store (findings-8134cc45 PC1)', (
       getPendingRequests: () => [],
       teams: { catalogForTeam: () => ({ groups: new Map() }) },
       groupProfileCounts: () => ({}),
+      teamApprovalDefault: () => null,
       turnEnds: { finishedForTeam: () => [] },
       outboundAudit: audit,
       exhaustionEpisodes: () => [],

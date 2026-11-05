@@ -46,7 +46,8 @@ describe('chat components', () => {
     const start = TestRenderer.create(<ChatMessages events={message} connected
       historyHasOlder={false} historyLoading={false} onLoadEarlier={() => {}} />)
     expect(start.root.findByProps({ 'data-testid': 'chat-history-start' }).children).toEqual(['Beginning of conversation'])
-    expect(start.root.findAllByType('button')).toHaveLength(0)
+    // The only button left is the message row's own copy control.
+    expect(start.root.findAllByType('button').map(button => button.props['data-testid'])).toEqual(['chat-message-copy'])
     start.unmount()
     // No history at all: neither control nor marker.
     const empty = TestRenderer.create(<ChatMessages events={[]} connected

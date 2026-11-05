@@ -59,7 +59,7 @@ export default function PlanExecutionSection({ teamPath, plan, detail, connected
         </p>
         <ul className="mt-1">
           {newest.changes.map(row => <Fragment key={row.change}>
-            <PlanExecutionChangeRow row={row} execution={newest} promoted={promoted.has(row.change)} onOpenTask={openTask}
+            <PlanExecutionChangeRow teamPath={teamPath} connected={connected} onSend={onSend} row={row} execution={newest} promoted={promoted.has(row.change)} onOpenTask={openTask}
               revealed={revealAnchor === `plan-change-${row.change}`} />
             {decisions.filter(entry => entry.card.change === row.change).map(cardView =>
               <PlanDecisionCard key={cardView.card.id} teamPath={teamPath} planId={plan.id} cardView={cardView} sessions={sessions}
@@ -68,6 +68,10 @@ export default function PlanExecutionSection({ teamPath, plan, detail, connected
           </Fragment>)}
         </ul>
         {running && <div className="mt-2"><PlanExecutionStopDialog teamPath={teamPath} execution={newest} connected={connected} onSend={onSend} /></div>}
+        {!running && approved !== null && <div className="mt-2" data-testid="plan-execution-restart">
+          <p className="text-chat-meta text-secondary">Start runs the approved revision again; changes an earlier execution of this plan provisioned keep their worktrees and branches.</p>
+          <PlanExecutionStartDialog teamPath={teamPath} planId={plan.id} revision={approved.revision} contentHash={approved.contentHash} connected={connected} onSend={onSend} />
+        </div>}
       </div>}
     <PlanIntegrationPanel teamPath={teamPath} planId={plan.id} views={integration} executionRunning={running} connected={connected} onSend={onSend} />
   </section>

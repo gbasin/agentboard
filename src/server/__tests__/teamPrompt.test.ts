@@ -84,6 +84,23 @@ describe('buildTeamPrompt', () => {
     }
   })
 
+  // @covers: team-tasks › Agents are told task_list is compact and paged › Prompt names the default and the paging
+  test('every agent is told task_list is compact, open by default, and paged (bounded-task-list D4)', () => {
+    for (const prompt of [
+      buildTeamPrompt({ outbound, sessionId: 'chat-7', group: devs, groups: [devs] }),
+      buildTeamPrompt({ outbound, sessionId: 'chat-8', groups: [devs] }),
+    ]) {
+      const line = prompt.split('\n').find(entry => entry.startsWith('- `mcp__kawai-team__task_list`'))!
+      expect(line).toContain('compact rows, newest first')
+      expect(line).toContain('read a task\'s direction with `mcp__kawai-team__task_get`')
+      expect(line).toContain('Without `status` it lists only open, active, and blocked tasks')
+      expect(line).toContain('`status: "all"`')
+      expect(line).toContain('`limit` rows (1–200, default 50)')
+      expect(line).toContain('page older with `before` (the returned `bounds.nextBefore`)')
+      expect(line).not.toContain('optionally by status')
+    }
+  })
+
   // @covers: team-tasks › Agents without the journal reader are told to stop › Prompt tells every agent how to read without the reader
   test('every agent, whatever its rights, is told the journal is bounded and to stop without the reader rather than bypass it', () => {
     const creator: GroupDefinition = { ...devs, id: 'leads', canCreateTasks: true, canManageMailbox: true }

@@ -71,9 +71,9 @@ test('a database at version 18 with plan and session rows upgrades, twice, keepi
   for (const [table, rows] of Object.entries(before)) {
     if (table !== 'process_observation_teams') expect(after[table]).toEqual(rows)
   }
-  // Migration 20 (result-checks) also lands in this upgrade.
+  // Migrations 20 (result-checks) and 22 (team-approval-defaults) also land in this upgrade.
   expect(Object.keys(after).filter(table => !(table in before)).sort())
-    .toEqual([...PLAN_WORKSPACE_TABLES, ...VERIFICATION_TABLES].sort())
+    .toEqual([...PLAN_WORKSPACE_TABLES, ...VERIFICATION_TABLES, 'team_approval_defaults'].sort())
   expect(versions(dbPath).filter(row => row.version === 19)).toHaveLength(1)
 })
 

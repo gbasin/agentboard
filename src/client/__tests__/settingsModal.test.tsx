@@ -551,6 +551,21 @@ describe('SettingsModal', () => {
     await act(async () => { renderer.unmount() })
   })
 
+  // @covers: chat-sessions › Users configure the default approval policy for new chat sessions › Settings names where spawned members get their policy
+  test('the approval policy hint scopes it to chats the user creates and names where spawned members get theirs', async () => {
+    let renderer!: TestRenderer.ReactTestRenderer
+    await act(async () => {
+      renderer = TestRenderer.create(<SettingsModal isOpen onClose={() => {}} />)
+    })
+    const textOf = (node: TestRenderer.ReactTestInstance | string): string =>
+      typeof node === 'string' ? node : node.children.map(textOf).join('')
+    const hint = textOf(renderer.root.findByProps({ 'data-testid': 'default-approval-policy-hint' }))
+    expect(hint).toContain('Default for chats you create.')
+    expect(hint).toContain("Spawned team members use their group's approval: key, then the team default on the Team page.")
+    expect(hint).not.toContain('Default for new chat sessions')
+    await act(async () => { renderer.unmount() })
+  })
+
   test('approval policy radiogroup exposes checked state and arrow-key selection', async () => {
     useSettingsStore.setState({ defaultApprovalPolicy: 'manual' })
     let renderer!: TestRenderer.ReactTestRenderer

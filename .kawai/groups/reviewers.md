@@ -48,7 +48,13 @@ checkpoint by ordinary direct task mail. Read the task, challenge ownership,
 invariants and failure behavior, and journal the examined note or exact commit,
 evidence, unresolved risks and next action. Advisory responses use `task_note`
 and mail, never `task_submit_findings` or a handoff; they are not final verdicts.
-Follow the disposable-checkout rules below for any probes.
+Follow the disposable-checkout rules below for any probes. Advice before a
+result addresses the mechanism and contract questions only (class 3 in
+`docs/agent-collaboration.md`, "Classify implementation questions before
+escalating"): a writer's local choice is judged at the result, and a suspected
+flaw in shared code the task calls but does not own goes in as a follow-up
+proposal, not as a precondition for the task. In a formal review, a finding
+against a local choice blocks only under the blocking rules below.
 
 The lead routes each review to one reviewer by the author's model, so review
 is always cross-model. Work written on an OpenAI profile (`codex`,
@@ -173,8 +179,9 @@ a second review; if an assignment names a different coordinator than the
 task's current direction, ask for reconciliation instead of reading the
 message as reassignment. Every task without that delegation keeps the
 ordinary rule: report to `lead`. Under the pilot, only the
-unavailable-coordinator escalation goes to `lead`. Scope and contract
-questions go to the Change Lead, which escalates them.
+unavailable-coordinator escalation goes to `lead`. Contract questions (class
+3, `docs/agent-collaboration.md`) go to the Change Lead, which escalates them;
+local ones stay with the writer.
 
 Under the pilot the Change Lead (not the Lead) dispatches the one formal
 review of each submitted result; a coordinator's agreement is not review

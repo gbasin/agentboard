@@ -571,6 +571,10 @@ export type ServerMessage =
   // tables (design D1); every set is recomputed from the stores it reads.
   | ({ type: 'team-workspace-snapshot'; teamPath: string; teamId: string } & TeamWorkspaceSnapshot)
   | ({ type: 'team-workspace'; teamPath: string; teamId: string } & TeamWorkspaceSnapshot)
+  // The answer to a team default approval save (team-approval-default D4):
+  // every outcome carries `teamPath`, a refusal names what was refused.
+  | { type: 'team-workspace-approval-default-result'; teamPath: string; ok: true; policy: ChatApprovalPolicy }
+  | { type: 'team-workspace-approval-default-result'; teamPath: string; ok: false; error: string }
   | { type: 'chat-workers'; sessionId: string; workers: ChatWorker[] }
   // Full background-task roster of a chat session (background tasks D2): a
   // level signal like chat-workers — the whole set on every change, additive
@@ -904,6 +908,10 @@ export type ClientMessage =
   // Team workspace (team-workspace 5.1): the repository-level read model
   // subscription, addressed like every human team view by `teamPath`.
   | { type: 'team-workspace-open' | 'team-workspace-close'; teamPath: string }
+  // The human sets the team's default approval policy for spawned members
+  // (team-approval-default D4); no agent tool reaches it. `policy` is checked
+  // on the server, so a bad wire value is refused, never stored.
+  | { type: 'team-workspace-approval-default-set'; teamPath: string; policy: ChatApprovalPolicy }
   | {
       type: 'strategy-save-draft'
       teamPath: string

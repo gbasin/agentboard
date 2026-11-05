@@ -80,8 +80,11 @@ export interface GroupDefinition {
   strategy: RoutingStrategy
   /** Built-in limit outcome policy. */
   onLimit: GroupLimitPolicy
-  /** Approval policy for spawned members; default manual. */
-  approval: ChatApprovalPolicy
+  /**
+   * The `approval:` key, unset when the file has none (team-approval-default
+   * D1): spawns resolve it with the team default via `resolveSpawnApproval`.
+   */
+  approval?: ChatApprovalPolicy
   /** Effort every member's agent launches with; unset = Claude Code settings decide. */
   effort?: GroupEffort
   /** Per-profile effort overriding `effort` for members on that profile; valid entries only. */
@@ -151,7 +154,7 @@ function parseTaskSettings(
   const settings: TaskSettings = {
     canCreateTasks: false, canCreatePlans: false, canManageMailbox: false, releaseOnTaskClose: true, worktreeScoped: true, canReleaseMembers: true,
     canReportProcess: false, max: 1, profiles: [], strategy: 'first-available',
-    onLimit: parseOnLimit(fields.get('onLimit'), warnings), approval: 'manual', warnings,
+    onLimit: parseOnLimit(fields.get('onLimit'), warnings), warnings,
   }
   const canCreate = fields.get('canCreateTasks')?.trim()
   if (canCreate !== undefined) {

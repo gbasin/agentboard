@@ -53,6 +53,42 @@ approval. The Lead may explicitly defer or narrow a checkpoint with a reason
 within authorized scope; a required acceptance check cannot be waived by mail.
 Continue independent work while the decision is pending.
 
+## Classify implementation questions before escalating
+
+A standing team rule for every role. Before raising a question raised during
+implementation, classify it against the task revision and the linked change's
+approved proposal, design, delta specs, and tasks:
+
+1. **Answered.** Those artifacts already answer it. Proceed and cite the line
+   in the next note; it is not a question.
+2. **Local.** The artifacts are silent, and every candidate answer stays
+   inside the files the task owns and keeps every spec scenario, decision-table
+   row, and stated property true. The writer decides and journals one note:
+   the choice, the alternatives, and why. The formal review judges it at the
+   result. It needs no dispatch, direction amendment, acknowledgement, or
+   advisory round, and the writer does not wait on one.
+3. **Contract.** An answer contradicts the artifacts, changes a spec scenario,
+   table row, or property, changes behavior outside the task's files, or
+   changes scope. Pause only the dependent work, escalate once with context,
+   options, and a recommendation to the coordinator (the Change Lead under
+   that pilot, else the Lead), and continue independent work. Only this class
+   produces a direction amendment and its acknowledgement gate.
+
+**Shared code is not a gate.** A suspected flaw in code the task calls but does
+not own (a shared runner, store, or helper) becomes a follow-up task or change
+proposal with its evidence, recorded in the journal. The task uses that code as
+the approved design says. The flaw blocks the task only when the task would
+make it worse, or would rely on behavior the code does not have in a way the
+design did not already rely on; that case is class 3.
+
+When unsure between 2 and 3, it is 3 only if you can name the scenario, row,
+property, or outside behavior that would change; otherwise it is 2. A reviewer
+or advisor who disagrees with a class-2 choice reports it at the result, as a
+finding under the role's blocking rules; it does not reopen the question before
+the result exists. Misclassifying a class-3 question as class 2 is a finding
+the review catches; the cost of that is one fix round, which is smaller than
+gating every local choice.
+
 ## Challenge the mechanism before substantial coding
 
 The developer posts a compact `task_note` covering:
@@ -71,6 +107,9 @@ The advisor reads surrounding code and contracts, looks for counterexamples
 and journals the assessment and unresolved risks. The Lead records proceed,
 revise or defer and any required direction amendment. The developer does not
 treat silence or an advisory opinion as permission to change task scope.
+The challenge examines the mechanism and class-3 questions; it does not turn
+class-2 choices or shared-code concerns into gates (see "Classify
+implementation questions before escalating").
 
 ## Review one real production path before expanding it
 
@@ -115,6 +154,8 @@ boundary so normal mail can deliver. Do not busy-poll, send acknowledgement
 loops or use urgent interruption for routine clarification. If one exchange
 does not resolve a disputed mechanism or criterion, send the evidence and
 options to the Lead for a decision rather than continuing an open-ended debate.
+Clarification about a class-2 choice never holds the writer: the writer
+decides, journals it, and the exchange continues at the result if needed.
 
 The Lead need not relay each question. The Lead still owns direction and
 assignment decisions within its rights; creator/human acceptance and amendment
