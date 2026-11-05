@@ -22,7 +22,7 @@ Instead, please report them via:
 
 ## Supported Versions
 
-Security fixes go into the next release. All release channels below are built from the same tag.
+Security fixes go into the next release. The npm, Homebrew, and GitHub release channels are built from the same tag.
 
 | Version | Supported |
 |---------|-----------|
@@ -45,10 +45,11 @@ Agentboard has no login, no tokens, and no user accounts. The server does not ch
 | Listener | When it exists | Protocol |
 | --- | --- | --- |
 | `HOSTNAME`:`PORT` | Always. The default is `127.0.0.1:4040`. | HTTPS if `TLS_CERT` and `TLS_KEY` are set, else HTTP. |
-| Tailscale IPv4 address:`PORT` | `HOSTNAME` is exactly `127.0.0.1`, and `tailscale ip -4` returns an address at startup (5-second timeout). | Same as the main listener. |
+| Tailscale IPv4 address:`PORT` | `HOSTNAME` is exactly `127.0.0.1`, and `tailscale ip -4` returns an address at startup (5-second timeout for each location it tries). | Same as the main listener. |
 | `127.0.0.1`:random port | The terminal relay is on (the default; `AGENTBOARD_TERMINAL_RELAY=0` turns it off). | Always HTTP. |
 
 - **`HOSTNAME`.** The server binds to the address in `HOSTNAME`. `0.0.0.0` listens on all interfaces, including your LAN. A `HOSTNAME` that equals the machine hostname is ignored, because containers and some CI images export it automatically. The server then binds `127.0.0.1`.
+- **`.env` files.** Bun, the runtime, loads `.env`, `.env.<NODE_ENV>`, `.env.local`, and `.env.<NODE_ENV>.local` from the directory where Agentboard starts. This includes the Homebrew and npm binaries. A `HOSTNAME`, `PORT`, or `ALLOW_KILL_EXTERNAL` in such a file applies without any message. If you start `agentboard` in a project whose `.env` sets `HOSTNAME=0.0.0.0`, the board listens on all interfaces. The launchd release service starts in your home directory, so `~/.env` and `~/.env.local` apply to it, and the installer's checks on `HOSTNAME` and TLS do not see them.
 - **Tailscale.** The server runs `tailscale` from `PATH`, then `/Applications/Tailscale.app/Contents/MacOS/Tailscale`. It looks once, at startup. It does not add this listener for any other `HOSTNAME`, including `localhost`. With `0.0.0.0`, the main listener already covers the Tailscale interface. Every device that your tailnet access rules let reach this machine can use the board.
 - **Internal listener.** With the relay on, the public listener runs in a worker, and the main process serves HTTP on a random loopback port. That port accepts the full HTTP API and `/ws`, with no TLS. Any local user or process on the machine can reach it, as it can reach the main listener on `127.0.0.1`.
 - **Development server.** `bun run dev` starts Vite with `--host`, so it listens on all interfaces on port 5173. Vite forwards `/api` and `/ws` to the backend. This exposes the backend to your network whatever `HOSTNAME` says.
@@ -61,25 +62,25 @@ TLS is opt-in. Set both `TLS_CERT` and `TLS_KEY` to serve HTTPS on the main and 
 
 **WebSocket (`/ws`).** The server accepts these client message types.
 
-- **Terminal I/O:** `terminal-attach`, `terminal-detach`, `terminal-input`, `terminal-paste`, `terminal-resize`, `terminal-resume`, `terminal-ack`, `tmux-cancel-copy-mode`, `tmux-check-copy-mode`. A client can read the screen of any session on the board and type into it.
+- **Terminal I/O:** `terminal-attach`, `terminal-detach`, `terminal-input`, `terminal-paste`, `terminal-resize`, `terminal-resume`, `terminal-ack`, `tmux-cancel-copy-mode`, `tmux-check-copy-mode`. A client can read and type into any window on your tmux server, not only the sessions that the board lists: `terminal-attach` accepts a tmux target from the client and checks only its syntax. `DISCOVER_PREFIXES` filters the list. It is not an access control.
 - **Session control:** `session-create` (any project directory and any command, run as your user), `session-kill`, `session-rename`, `session-refresh`, `session-wake` (runs the agent's resume command), `session-hibernate`, `session-move-to-history`.
 - **Keepalive:** `ping`.
 
 Limits on these messages:
 
-- **Discovered sessions.** Windows from your other tmux sessions appear on the board. A client can attach to them and type into them. It can kill them only when `ALLOW_KILL_EXTERNAL=true`.
-- **Remote hosts.** For sessions on [remote hosts](docs/remote-hosts.md), `AGENTBOARD_REMOTE_ALLOW_ATTACH=true` allows attach and input. `AGENTBOARD_REMOTE_ALLOW_CONTROL=true` allows create and kill, and it also turns on attach unless `AGENTBOARD_REMOTE_ALLOW_ATTACH` is set. Both default to `false`. Remote create accepts only hosts listed in `AGENTBOARD_REMOTE_HOSTS`. Remote kill applies only to sessions that Agentboard created.
-- **Kill rate limit.** Each connection can kill a limited number of sessions in a row.
+- **Discovered sessions.** Windows from your other tmux sessions appear on the board. A client can attach to them, type into them, and rename them. It can kill them only when `ALLOW_KILL_EXTERNAL=true`.
+- **Remote hosts.** For sessions on [remote hosts](docs/remote-hosts.md), `AGENTBOARD_REMOTE_ALLOW_ATTACH=true` allows attach and input. `AGENTBOARD_REMOTE_ALLOW_CONTROL=true` allows create, kill, and rename, and it also turns on attach unless `AGENTBOARD_REMOTE_ALLOW_ATTACH` is set. Both default to `false`. Remote create accepts only hosts listed in `AGENTBOARD_REMOTE_HOSTS`. Remote kill and rename apply only to windows in the remote tmux session named `TMUX_SESSION`, whoever created them.
+- **Kill rate limit.** `session-kill` is limited to 3 kills in 5 seconds for each connection. This stops an accidental cascade from a held shortcut. It is not a security control: a new connection resets it, and `session-hibernate` and a library archive also stop sessions, with no limit.
 
 **HTTP.** The server has these API routes, plus the static frontend files.
 
 | Group | Routes | What they allow |
 | --- | --- | --- |
 | Uploads | `POST /api/paste-file`, `POST /api/paste-image` | Write a file to the host. `paste-file` accepts any type up to 40 MB and writes it to a new `agentboard-upload-*` directory (mode 0700) in the system temporary directory, with file mode 0600. `paste-image` accepts PNG, JPEG, GIF, and WebP up to `AGENTBOARD_PASTE_IMAGE_MAX_BYTES` (default 40 MB) and writes `/tmp/paste-<time>-<random>.<ext>` with the default file mode, which is world-readable under the usual umask. Agentboard does not delete uploaded files. |
-| Directory browsing | `GET /api/directories` | List the subdirectory names of any directory that your user can read. Up to 200 entries per request. File names are not listed. |
-| Transcripts | `GET /api/session-preview/:id`, `GET /api/session-media/:id`, `.../items`, `.../neighbors` | Read up to 500 lines of a session's agent transcript, and images, documents, and links from it. Media reads are limited to the session's own transcript and its subagent transcripts. |
+| Directory browsing | `GET /api/directories` | List the subdirectory names of any directory that your user can read. Up to 200 entries per request. File names are not listed, but the response shows whether a given path exists, is a file, or is not readable. |
+| Transcripts | `GET /api/session-preview/:id`, `GET /api/session-media/:id`, `.../items`, `.../neighbors` | Read any session's agent transcript, including History sessions, 500 lines per request with paging through the whole file, and images, documents, and links from it. Media reads are limited to the session's own transcript and its subagent transcripts. |
 | Host clipboard (macOS) | `GET /api/clipboard-file-path` | Read the host clipboard. Returns a copied file's path, or writes a copied image to a temporary PNG and returns its path. |
-| Session library | `GET /api/library`, `GET /api/library/:id`, `GET /api/library/health`, `PUT /api/library/settings`, `POST /api/library/:id/resume`, `PATCH /api/library/:id` | Search saved sessions, resume one (runs its resume command), rename, pin, or archive. |
+| Session library | `GET /api/library`, `GET /api/library/:id`, `GET /api/library/health`, `PUT /api/library/settings`, `POST /api/library/:id/resume`, `PATCH /api/library/:id` | Search saved sessions, resume one (runs its resume command), rename, pin, archive, or hibernate one. Archive and hibernate stop the session's tmux window. |
 | Settings | `GET` and `PUT` for `/api/settings/tmux-mouse-mode`, `terminal-colors`, `prefer-window-name`, `synced`, `history-max-age-hours`, `inactive-max-age-hours` | Change server-wide settings. `tmux-mouse-mode` sets the tmux `mouse` option on the managed session and its grouped sessions. |
 | GitHub | `POST /api/pr-info`, `GET /api/pr-checks` | Run `gh` with your credentials to read the state, title, author, and checks of up to 50 pull request URLs per request, including private ones that you can see. |
 | Status | `GET /api/health`, `GET /api/sessions`, `GET /api/server-info` | Read the session list, the port, the Tailscale address, and the protocol. |
@@ -96,7 +97,7 @@ Browsers add their own limits, but the server enforces little in this version.
 
 ### Server-wide side effects
 
-- **tmux `set-clipboard`.** In `pty` terminal mode, Agentboard sets the server option `set-clipboard on` for your whole tmux server. It does not restore the old value. Set `AGENTBOARD_TMUX_SET_CLIPBOARD=0` to prevent this.
+- **tmux `set-clipboard`.** In `pty` terminal mode, which is the default, Agentboard sets the server option `set-clipboard on` for your whole tmux server. It does not restore the old value. Set `AGENTBOARD_TMUX_SET_CLIPBOARD=0` to prevent this.
 - **tmux server identity.** Agentboard sets the global user option `@agentboard-server-id` once per tmux server.
 - **Grouped sessions.** Browser connections create `<TMUX_SESSION>-ws-*` sessions in your tmux server. They are removed on disconnect and pruned at startup.
 
@@ -104,18 +105,18 @@ Browsers add their own limits, but the server enforces little in this version.
 
 | Data | Location | Mode |
 | --- | --- | --- |
-| Data directory | `~/.agentboard` (`AGENTBOARD_DATA_DIR`) | 0700. Set on the directory that holds the database. |
+| Data directory | `~/.agentboard` (`AGENTBOARD_DATA_DIR`) | 0700. Agentboard sets this on the directory that holds the database. If `AGENTBOARD_DB_PATH` points elsewhere, the data directory keeps the mode it was created with. |
 | Database, with `-wal` and `-shm` files | `agentboard.db` | 0600 |
 | Log file | `agentboard.log` (`LOG_FILE`) | Your umask. Usually 0644. |
 | Other files (lock, mirrors, recovery data) | In the data directory | Varies. Protected by the directory mode. |
 
-The database holds session names, project paths, transcript paths, last prompts, pull request links, settings, and terminal previews when preview capture is on. The log holds event metadata: session names, project paths, tmux targets, errors, and events that browsers post to `/api/client-log`. Kill requests are logged with the client's IP address and user agent. A `LOG_FILE` outside the data directory is not protected by the directory mode.
+The database holds session names, project paths, launch commands, transcript paths, last prompts, pull request links, session events and errors, settings, and terminal previews when preview capture is on. A launch command can contain a secret if you put one on the command line. The log holds event metadata: session names, project paths, tmux targets, and errors. It also holds the full command line of a remote session that failed to start, and any event name and data that a browser posts to `/api/client-log`. Terminal input and pasted content are not logged. Kill requests are logged with the client's IP address and user agent. A `LOG_FILE` outside the data directory is not protected by the directory mode.
 
 ### Supply chain
 
 - **npm.** The release workflow ([release.yml](.github/workflows/release.yml)) publishes the main package and the four platform packages with `npm publish --provenance`. It authenticates with GitHub OIDC trusted publishing, not a stored npm token.
-- **Binaries and Homebrew.** The same workflow builds the binaries, attaches them to the GitHub release, and writes the Homebrew formula with the SHA-256 of each tarball. The binaries are not signed and have no provenance attestation.
-- **Actions.** The build and release workflows pin third-party actions to commit SHAs. The release-please workflow uses a version tag.
+- **Binaries and Homebrew.** The same workflow builds the binaries, attaches them to the GitHub release, and writes the Homebrew formula with the SHA-256 of each tarball. The GitHub release assets have no signature or attestation, and the macOS binaries are not signed with a Developer ID or notarized. The npm platform packages contain the same binaries and have npm provenance.
+- **Actions.** `ci.yml` and `release.yml` pin third-party actions to commit SHAs. `release-please.yml` pins its token action to a commit SHA and uses a version tag for `googleapis/release-please-action`.
 - **Dependency scanner.** `bun run deps:risk` runs [scripts/dependency-risk.ts](scripts/dependency-risk.ts). It combines `bun audit` advisories with `bun outdated` version lag. It fails at `high` severity by default. CI runs it with `--threshold critical`, so CI fails only on critical advisories.
 
 ---

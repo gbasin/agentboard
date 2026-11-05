@@ -138,6 +138,10 @@ Uninstalling leaves these in place:
 - `~/.agentboard`, which holds the database, the log, and other data. To delete it, run `rm -rf ~/.agentboard`.
 - Your tmux sessions and the programs in them. They keep running.
 - Files uploaded through the board, in `/tmp` and in the system temporary directory.
+- The tmux server options that Agentboard set (`set-clipboard on`, `@agentboard-server-id`). They last until the tmux server stops.
+- A `tailscale serve` configuration or a systemd drop-in (`~/.config/systemd/user/agentboard.service.d/`), if you created one.
+
+Homebrew removes dependencies that nothing else needs. If Agentboard was the only formula that needed tmux, `brew uninstall agentboard` also removes tmux, and you can no longer attach to the sessions that are still running. To keep tmux, run `HOMEBREW_NO_AUTOREMOVE=1 brew uninstall agentboard`, or run `brew install tmux` afterward.
 
 ### From source
 

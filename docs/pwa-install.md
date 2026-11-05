@@ -5,10 +5,10 @@ You can install Agentboard as a Progressive Web App (PWA). The installed app ope
 ## Requirements
 
 - **A production server.** Use an installed release (Homebrew, npm, or a release binary) or a built source checkout (`bun run build`, then `bun run start`). The development server (`bun run dev`) never registers the service worker, so it cannot produce an install.
-- **A secure origin.** The browser registers the service worker only on HTTPS, or on `localhost` on the same machine. For another device, this means HTTPS.
+- **A secure origin.** The browser registers the service worker only on HTTPS, or on `localhost` or `127.0.0.1` on the same machine. For another device, this means HTTPS.
 - **A certificate that the device trusts.** If the certificate is self-signed and not trusted, the page can load after you accept the warning, but the service worker does not register. A Tailscale certificate is trusted by all common browsers.
 
-Agentboard serves HTTPS only when you set both `TLS_CERT` and `TLS_KEY`. It does not look for certificate files on its own.
+Agentboard serves HTTPS only when you set both `TLS_CERT` and `TLS_KEY`. The production server does not look for certificate files on its own.
 
 ## Option A: Agentboard serves HTTPS with a Tailscale certificate
 
@@ -134,7 +134,7 @@ Tailscale certificates expire after 90 days. `tailscale cert` does not renew the
    systemctl --user restart agentboard
    ```
 
-The systemd service also runs `bun run start` in the checkout, so a `.env.local` file there works as well.
+The systemd service also starts Bun in the checkout, so a `.env.local` file there works as well.
 
 ## Option B: Tailscale Serve terminates HTTPS
 

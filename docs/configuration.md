@@ -2,7 +2,7 @@
 
 Agentboard reads its configuration from environment variables when it starts. It has no configuration file of its own and no command-line flags: an argument such as `--port` is ignored. Restart the server after you change a variable.
 
-Bun, the runtime that Agentboard uses, loads `.env` and `.env.local` files from the directory where the server starts. Variables in those files apply to Agentboard too.
+Bun, the runtime that Agentboard uses, loads `.env`, `.env.<NODE_ENV>`, `.env.local`, and `.env.<NODE_ENV>.local` from the directory where the server starts. This includes the Homebrew and npm binaries. Variables in those files apply to Agentboard without any message, so check for a `.env` file that sets `PORT` or `HOSTNAME` before you start Agentboard inside a project directory. With `bun run`, Bun reads the files from the checkout.
 
 Settings that you change in the **Settings** dialog are separate. Agentboard stores them in its database or in your browser, and they do not need a restart.
 
