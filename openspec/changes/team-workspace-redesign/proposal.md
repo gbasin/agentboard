@@ -113,15 +113,16 @@ desktop and phone screens). This change turns it into an implementable plan.
   `ConversationsView`; Members, Metrics, Audit, Strategy, Plans, and Tasks
   views are restyled and partly recomposed. `utils/teamLocation.ts` gains the
   area grammar and legacy mapping.
-- Shared: `TeamTaskRow` gains `stageSince` and `reworkRounds`; new pure
+- Shared: `TeamTaskRow` gains `stageSince`, `reworkRounds`, `planId`, and
+  `reworkStuck`; new pure
   `flowStrip` model; new attention kind `rework-stuck`; new team setting
   `reworkAlertRounds`.
-- Server: `workspaceRead.ts` projects the two row fields and the new
-  attention kind; a `team_settings` row (or an extension of
-  `team_approval_defaults`) stores the threshold with a human-only set
-  message. One schema migration.
+- Server: `workspaceRead.ts` projects the row fields and the new
+  attention kind; a `team_settings` row stores the threshold with a human-only set
+  message. The same migration adds the append-only `rework_acks` command ledger;
+  acknowledgements retain replay responses. One schema migration.
 - No change to chat sessions, mail delivery, plan execution, or the outbound
-  observer. Every Today action calls an existing command.
+  observer. Existing Today actions reuse their commands; only the rework threshold and acknowledgement add human-only commands.
 - Tests: unit tests for the location grammar, flow strip, and stuck rule
   (oracle tables in `design.md`); component tests for Today's inline
   actions; Playwright e2e for the mode switch, legacy redirects, and the

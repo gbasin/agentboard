@@ -118,10 +118,10 @@ that already owns its action, never a new one:
 | `question` | question form | `chat-answer` | new `item.detail.question` |
 | `decision-question` | answer + options | `team-plan-decide` | plan detail (open on expand) |
 | `pending-acceptance` | result summary + Accept / Request fixes | `team-task-accept-result`; Request fixes = `team-task-handoff` back to the builder, as the task view does | task detail (`team-task-open` on expand) |
-| `uncertain-delivery` | Retry / Discard / Hand off | the Mailbox's existing commands (`team-mailbox-hand-off`, `team-mailbox-dead-letter`, …) | mailbox row (open on expand) |
+| `uncertain-delivery` | Retry / Discard / Hand off | the Mailbox's existing commands (`team-mailbox-retry`, `team-mailbox-discard`, `team-mailbox-hand-off`) | mailbox row (open on expand) |
 | `plan-stop`, `plan-promotion` | Retry / Stop / Promote again | `team-plan-execution-retry`, `team-plan-execution-stop`, `team-plan-promote` | plan detail (open on expand) |
 | `plan-condition`, `plan-fix`, `plan-stall` | summary + **Open plan** | none (navigates) | snapshot |
-| `rework-stuck` (D5) | decision note + Send / Take over in chat / Let it continue | `team-message-send` to the task's thread; `rework-ack` (D5) | snapshot |
+| `rework-stuck` (D5) | decision note + Send / Take over in chat / Let it continue | `team-message-send` to the task's thread; `team-workspace-rework-ack` (D5) | snapshot |
 | `outbound-violation` | **Open audit** | none (navigates) | snapshot |
 | unknown kind | raw kind + **Open** | none (navigates) | snapshot |
 
@@ -157,22 +157,34 @@ Each stage reports `count`, `oldestSince` (min `stageSince`), and for Accept
 Planning…QA (Accept is never a bottleneck; it is flagged as "You" instead):
 the stage with the highest count among those with `count ≥ 2`; ties go to
 the older `oldestSince`, then the earlier stage. No stage qualifies → no
-bottleneck. The strip also reports `rework`: open rows with
-`0 < reworkRounds < threshold` (shown neutrally) and `stuck`: rows with
-`reworkRounds ≥ threshold` (shown red, linking to the task).
+bottleneck. The strip also reports `stuck`: rows with a currently raised `rework-stuck`
+attention item, using D5's stage and acknowledgement rules (shown red,
+linking to the task). `rework` is every other open row with
+`reworkRounds > 0` (shown neutrally). Acceptance, QA, and acknowledged tasks
+therefore never remain marked stuck after their attention item clears.
 
 - `TeamTaskRow` gains `stageSince: string` (ISO time the row entered its
   current projected stage, from the status/handoff event that produced it)
-  and `reworkRounds: number` (D5). Both are projected in `workspaceRead.ts`;
-  nothing new is stored.
+  and `reworkRounds: number` (D5). It also gains `planId: string | null`
+  (from the task's existing plan link) for the plan picker and
+  `reworkStuck: boolean` from D5's attention predicate. All are projected in `workspaceRead.ts`;
+  nothing new is stored. `stageSince` is the start of the current contiguous
+  run of the projected stage, replaying task status, assignment/mail state,
+  result, findings, and handoff events through the existing `teamTaskStage`
+  precedence. A comment, new findings, or assignment update that leaves the
+  stage unchanged must not reset the clock. Creation is the initial boundary;
+  closed rows use their closing event time and are excluded from the strip.
 - On Tasks, each stage is a filter (`aria-pressed`); on Today, a link to
   Tasks with that filter. A plan picker narrows rows to one plan's tasks.
 
 ### D5 — Stuck in rework
 
-- `reworkRounds(task)` = the number of the task's results whose newest
-  findings include a failing verdict. Projected at read time from the
-  result and finding stores.
+- `reworkRounds(task)` = the number of the task's results whose single newest
+  findings record has verdict `fail`, across review and QA together, using
+  the store's `(created_at, rowid)` order (the same rule as `reviewVerdict`).
+  No findings means no round; repeated failures on one result count once.
+  Projected at read time from result and finding stores, including superseded
+  results; a later pass on the same result can reduce the count.
 - Team setting `reworkAlertRounds`: integer 2–10, default 3, stored per team
   beside the approval default (schema migration: `team_settings` table
   keyed by team id, holding `rework_alert_rounds`; the approval default may
@@ -189,8 +201,18 @@ bottleneck. The strip also reports `rework`: open rows with
   `team-workspace-rework-ack` (human-only, command id, replay returns the
   prior ack, a different payload under the same id is refused naming the
   field). An ack covers the item while the
-  task's `reworkRounds` equals the acked rounds; the next send-back raises
-  it again.
+  task's `reworkRounds` is at most the highest acknowledged count; the item
+  returns only when the count exceeds it. A later passing re-review must not
+  resurface an acknowledgement by reducing the count.
+- `rework_acks` is an append-only command ledger keyed by `(team_id, command_id)`;
+  each row retains the original task id, rounds, optional note, timestamp, and
+  response. Replays return that response even after later acknowledgements;
+  payload comparisons include the task id. The handler checks team ownership,
+  a currently raised item, and that the submitted rounds still match the
+  projected count before recording a new ack. Stale submissions refuse and
+  refresh the view. Both commands publish a fresh workspace snapshot to all
+  subscribers. The threshold setter is an absolute set, matching the existing
+  approval-default command; only acknowledgement uses a replay ledger.
 
 ### D6 — Conversations composes Messages and Mailbox
 
@@ -245,8 +267,14 @@ naming the plans paused on the human, then **Unblocks a plan** (decisions,
 stuck rework, stopped changes), then **Quick yes or no** (approvals,
 acceptances, deliveries). Decisions open as a full-screen answer view with
 **Send** pinned at the bottom and a 10-second **Undo** after sending (the
-send is delayed client-side for those 10 seconds; leaving the view sends at
-once). Every action target is at least 44 px.
+send is delayed client-side for those 10 seconds). The pending answer lives
+outside the mounted view in a per-browser-tab store; navigating to another
+area or chat keeps the deadline and a visible Undo control. At the deadline,
+revalidate connection and card state, then send once with the original command
+id; a resolved card or disconnected transport cancels the pending send and
+keeps the draft with a notice. Closing or reloading the browser tab cancels an
+unsent answer; the UI states this while Undo is available. Every action target
+is at least 44 by 44 px.
 
 ## Acceptance oracles
 
@@ -289,6 +317,9 @@ Rows are written `stage×count (oldest age)`; threshold 3 unless stated.
 | F9 | in-review×1, reworkRounds 3 | none | 0 | 0 / 1 |
 | F10 | in-review×1, reworkRounds 3, threshold 4 | none | 0 | 1 / 0 |
 | F11 | a closed row (stage null) | not counted anywhere | 0 | 0 / 0 |
+| F12 | awaiting-acceptance×1, reworkRounds 3 | none | rows' requiresHuman | 1 / 0 |
+| F13 | in-review×1, reworkRounds 3, ack 3 | none | 0 | 1 / 0 |
+| F14 | ready-for-qa×1, reworkRounds 3 | none | 0 | 1 / 0 |
 
 ### S — stuck rework (`reworkStuckItems`)
 
@@ -303,6 +334,7 @@ Rows are written `stage×count (oldest age)`; threshold 3 unless stated.
 | S7 | yes | `implementing` | 4 | 3 | 3 | raised (new round) |
 | S8 | yes | `unstarted` | 3 | 3 | — | none |
 | S9 | yes | `ready-for-qa` | 3 | 3 | — | none |
+| S10 | yes | `in-review` | 2 | 2 | 3 | none (count fell after ack) |
 
 `reworkRounds` counting:
 
@@ -313,6 +345,8 @@ Rows are written `stage×count (oldest age)`; threshold 3 unless stated.
 | R3 | r1 fail, r2 fail, r3 pass | 2 |
 | R4 | r1 fail then pass (re-review of r1) | 0 (newest findings pass) |
 | R5 | r1 no findings, r2 fail | 1 |
+| R6 | r1 review fail then QA pass | 0 (single newest record wins) |
+| R7 | r1 fail then fail | 1 (one result, one round) |
 
 ### M — mode switch (`TeamShell` / `SessionsShell`)
 

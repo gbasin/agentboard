@@ -9,7 +9,7 @@ The header SHALL offer one **Team** button that switches to Team mode for the ch
 - **WHEN** the user chooses Team in a chat of repository `kawai` after last leaving that team on Conversations
 - **THEN** Team mode for `kawai`'s team opens on Conversations and the chat stays the selected chat
 
-#### Scenario: First open lands on Today
+#### Scenario: First open lands on Tasks
 - **WHEN** the user chooses Team for a team not yet opened in this browser tab
 - **THEN** Team mode opens on Today
 

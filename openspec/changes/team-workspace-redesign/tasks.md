@@ -3,7 +3,9 @@
 Each phase ships on its own: the build, `bun run check`, and the e2e suite
 pass at the end of every phase. Oracle rows from `design.md` are committed
 verbatim as table-driven tests next to the code they cover, with
-`// @covers:` annotations for the spec scenarios they prove.
+`// @covers:` annotations for the spec scenarios they prove. Historical scenario titles retained in the deltas
+(e.g. "First open lands on Tasks") keep existing coverage references valid;
+the scenario body defines the new Today behavior.
 
 ## 1. Shell and location (D1, D2, D8)
 
@@ -18,7 +20,7 @@ verbatim as table-driven tests next to the code they cover, with
 - [ ] 1.5 Add `TeamRail` (areas grouped Work / Direction / Team, per-area counts from existing stores, the strategy revision-in-review badge, the unacknowledged-violation badge) and route areas to today's views (`TeamWorkspaceView` becomes the area router; Today temporarily renders the existing bands).
   - Verify: each rail link sets `aria-current` on its area; Playwright: from a chat, Team opens Today; every rail area renders its view; `#/team/<key>/mailbox` lands on Conversations › Delivery with the Mailbox sections.
 - [ ] 1.6 Team-mode tokens (`--team-*`) on the `TeamShell` root and Tailwind `team-*` colors; contrast check of every text/surface pair in a unit test over the token table.
-  - Verify: the contrast test fails when `--team-text-3` is lowered below 4.5:1 on `--team-panel`.
+  - Verify: the contrast test fails when `--team-text-2` is lowered below 4.5:1 on `--team-panel`.
 - [ ] 1.7 Mode switch markers: Team count from the last team's snapshot (kept subscribed in Sessions mode); Sessions dot from non-team chats with a pending approval or question. Both have text for screen readers.
   - Verify: a store test with one team-member approval and one non-member question yields Team count 1 and the Sessions dot; the member approval alone yields no dot.
 - [ ] 1.8 **Back to Team**: `openParticipantChat` from Team sets `returnTo`; the Sessions header shows the pill; selecting a chat any other way clears it.
@@ -41,16 +43,16 @@ verbatim as table-driven tests next to the code they cover, with
 
 ## 3. Flow strip and stuck rework (D4, D5)
 
-- [ ] 3.1 Project `stageSince` and `reworkRounds` on `TeamTaskRow` in `workspaceRead.ts`.
-  - Verify: table R rows R1–R5; `stageSince` equals the time of the event that produced the current stage in three fixtures (unstarted, handoff to review, failing findings).
+- [ ] 3.1 Project `stageSince`, `reworkRounds`, `planId`, and `reworkStuck` on `TeamTaskRow` in `workspaceRead.ts`.
+  - Verify: table R rows R1–R7; `stageSince` equals the time of the event that produced the current stage in three fixtures (unstarted, handoff to review, failing findings); events that leave the stage unchanged preserve its clock; plan filtering uses the existing plan id.
 - [ ] 3.2 Pure `flowStrip` in `src/shared/flowStrip.ts`.
-  - Verify: table F rows F1–F11; property P2 (seed `0xf10e`, 400 cases). F4 kills "tie broken by stage order before age"; F6 kills "Accept can be the bottleneck"; F7 kills "fixes-requested counted apart from Writing".
-- [ ] 3.3 Schema migration: `team_settings` (`team_id`, `rework_alert_rounds`, `updated_at`) and `rework_acks` (`task_id`, `rounds`, `command_id`, `note`, `created_at`). Add the recovery-matrix row if the migration introduces a startup reconciliation (it should not; absent rows are defaults).
+  - Verify: table F rows F1–F14; property P2 (seed `0xf10e`, 400 cases). F4 kills "tie broken by stage order before age"; F6 kills "Accept can be the bottleneck"; F7 kills "fixes-requested counted apart from Writing".
+- [ ] 3.3 Schema migration: `team_settings` (`team_id`, `rework_alert_rounds`, `updated_at`) and `rework_acks` (append-only, primary key `team_id` + `command_id`, retaining `task_id`, `rounds`, `note`, `created_at`, original response). Add the recovery-matrix row if the migration introduces a startup reconciliation (it should not; absent rows are defaults).
   - Verify: the migration test creates both tables from the previous schema; `database.md` lists the migration.
 - [ ] 3.4 `team-workspace-rework-threshold-set` (human-only, 2–10, refusal inline, every open view follows) and `team-workspace-rework-ack` (command id, replay returns the prior ack, a different payload is refused naming the field).
-  - Verify: set 1 and 11 are refused; set 4 updates a second subscribed client; ack replay and conflicting payload behave as stated.
+  - Verify: set 1 and 11 are refused; set 4 updates a second subscribed client; ack replay after a later ack returns the original response; conflicting payload, cross-team task, and stale round count are refused.
 - [ ] 3.5 Attention kind `rework-stuck` raised by `reworkStuckItems` in `src/server/team/`, wired into the attention sources.
-  - Verify: table S rows S1–S9. S4 kills "converged task stays stuck"; S6/S7 kill "ack hides forever".
+  - Verify: table S rows S1–S10. S4 kills "converged task stays stuck"; S6/S7 kill "ack hides forever".
 - [ ] 3.6 `FlowStrip` component on Today (links) and Tasks (filters, plan picker, **Flag at N+ rounds** control); the stuck row and the Today inline control for `rework-stuck` (D3).
   - Verify: Playwright: a stuck task shows on the strip and in Needs you; **Let it continue** removes it until the next failing findings.
 
@@ -74,7 +76,7 @@ verbatim as table-driven tests next to the code they cover, with
 ## 5. Narrow viewports (D9)
 
 - [ ] 5.1 Below 768 px: bottom bar, compact header, phone Today (banner, Unblocks a plan, Quick yes or no), full-screen decision view with pinned Send and 10-second Undo.
-  - Verify: Playwright at 390×844: every action target is at least 44×44 px; a decision answered on the phone sends `team-plan-decide` once after 10 s, and not at all when Undo is pressed; leaving the view sends at once.
+  - Verify: Playwright at 390×844: every action target is at least 44×44 px; a decision answered on the phone sends `team-plan-decide` once after 10 s, and not at all when Undo is pressed; navigating away keeps Undo visible and does not shorten the deadline; disconnect or another client resolving the card cancels the pending send; closing/reloading the tab cancels unsent answers as disclosed.
 - [ ] 5.2 Keyboard and screen-reader pass over every new control (visible focus, names, state text).
   - Verify: Playwright, keyboard only, completes the M flows and one D3 inline action per kind, asserting visible focus on each step; every interactive element on Today, Tasks, and the phone views has an accessible name (`getByRole` with a name finds each). No new dependency.
 

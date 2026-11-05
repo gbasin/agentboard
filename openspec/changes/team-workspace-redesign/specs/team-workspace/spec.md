@@ -3,7 +3,11 @@
 ## ADDED Requirements
 
 ### Requirement: Team mode has its own shell
-The Team page SHALL be shown as Team mode: a shell of its own with a top bar (a **Sessions | Team** switch, a team switcher, a command palette, and connection state) and a rail of areas grouped as **Today**; Work: **Plans**, **Tasks**, **Conversations**; Direction: **Strategy**; Team: **Agents**, **Insights**, **Outbound audit**. Team mode SHALL NOT mount the session navigator or the session header. Team mode SHALL be exactly the state in which the URL names a team location; switching to Sessions SHALL leave the team route and SHALL NOT change the selected chat. The mode SHALL toggle with ⌘. except while focus is in a text field.
+The Team page SHALL render in its own shell exactly when the URL names a team location, without mounting the session navigator or session header. Its top bar SHALL offer Sessions | Team, a team switcher, a command palette, and connection state. Switching to Sessions SHALL leave the team route without changing the selected chat. The mode SHALL toggle with ⌘. except while focus is in a text field.
+
+#### Scenario: Areas are grouped by work
+- **WHEN** Team mode renders its rail
+- **THEN** it shows Today; Work: Plans, Tasks, Conversations; Direction: Strategy; Team: Agents, Insights, Outbound audit
 
 #### Scenario: Team mode hides the session navigator
 - **WHEN** the human switches to Team from a chat
@@ -44,7 +48,15 @@ Opening a chat from Team mode SHALL switch to Sessions with a **Back to Team** c
 - **THEN** no **Back to Team** control is shown
 
 ### Requirement: Today lists what needs the human and acts in place
-Team mode SHALL open on **Today** by default. Today SHALL list human-required attention items under **Needs you** and agent-owned waits under a folded **Waiting on agents**. Expanding a Needs you item SHALL show the control that already owns its action and SHALL send that control's existing command: approve or deny a command, answer a question, answer a decision card, accept a result or request fixes, retry or discard an uncertain delivery, retry or stop a stopped change, and promote again. An item kind with no inline control SHALL show its link. Today SHALL also show the task flow, plans in flight, live agents, and the last 24 hours. Controls SHALL be disabled while disconnected and refusals SHALL render inline.
+Team mode SHALL open on Today by default. Today SHALL group human-required attention under Needs you and agent waits under folded Waiting on agents. Expanding an item SHALL reuse its owning control and existing command, or show its source link when no inline control exists. Controls SHALL disable while disconnected and refusals SHALL render inline.
+
+#### Scenario: Today keeps each owning action available
+- **WHEN** the corresponding attention items appear on Today
+- **THEN** their controls offer approve or deny, answer a question or decision card, accept or request fixes, retry or discard delivery, retry or stop execution, and promote again, using the existing commands
+
+#### Scenario: Today shows the work overview
+- **WHEN** Today opens
+- **THEN** it shows task flow, plans in flight, live agents, and the last 24 hours alongside the inbox
 
 #### Scenario: Approve from Today
 - **WHEN** an agent waits on approval of a command and the human expands the item on Today and chooses **Approve once**
@@ -63,7 +75,15 @@ Team mode SHALL open on **Today** by default. Today SHALL list human-required at
 - **THEN** Today lists it with its raw kind and a link to its source
 
 ### Requirement: The task flow strip shows where work piles up
-Today and Tasks SHALL show a task flow strip of open tasks by stage: Planning (unstarted), Writing (implementing and fixes requested), Review, QA, and Accept, each with its count and how long its oldest task has waited in that stage. The stage among Planning to QA with the most tasks, counting only stages with at least two, SHALL be named as the bottleneck in words; ties SHALL go to the older wait, then the earlier stage. Accept SHALL never be the bottleneck and SHALL show how many results wait on the human. On Tasks each stage SHALL filter the board; on Today each stage SHALL open Tasks with that filter. A plan choice SHALL narrow the strip to one plan's tasks.
+Today and Tasks SHALL show open task counts and oldest stage waits for Planning, Writing, Review, QA, and Accept. Planning through QA SHALL qualify as bottleneck with at least two tasks; the greatest count wins, then oldest wait, then earlier stage. Accept SHALL never be the bottleneck and SHALL count results waiting on the human. Stages SHALL filter Tasks; a plan choice SHALL narrow the strip to that plan.
+
+#### Scenario: Stages map to workflow
+- **WHEN** open rows have unstarted, implementing, fixes-requested, in-review, ready-for-qa, or awaiting-acceptance stages
+- **THEN** they count under Planning, Writing, Writing, Review, QA, or Accept respectively, and closed rows count nowhere
+
+#### Scenario: Today opens a stage filter
+- **WHEN** the human activates a stage on Today
+- **THEN** Tasks opens with that stage filter
 
 #### Scenario: Writing is the bottleneck
 - **WHEN** three tasks are implementing, the oldest for six hours, and one is in review
@@ -78,18 +98,30 @@ Today and Tasks SHALL show a task flow strip of open tasks by stage: Planning (u
 - **THEN** the board shows only tasks in review and Review is marked pressed
 
 ### Requirement: Task rows report time in stage and rework rounds
-Each task row SHALL carry the time it entered its current stage and the number of its results whose newest findings include a failing verdict (rework rounds). Neither SHALL be stored; both SHALL be projected when the workspace is read.
+Each task row SHALL carry the time it entered its current stage and the number of its results whose single newest review-or-QA findings record has verdict `fail`, ordered by creation time then rowid (rework rounds). Neither SHALL be stored; both SHALL be projected when the workspace is read.
 
 #### Scenario: Re-review that passes does not count
 - **WHEN** a result's first findings failed and a later review of the same result passed
 - **THEN** that result does not add to the task's rework rounds
+
+#### Scenario: Unchanged stage keeps its oldest wait
+- **WHEN** a task receives a comment or another event that leaves its projected stage unchanged
+- **THEN** its time in stage still starts at the last transition into that stage
 
 #### Scenario: Two failed results and a passing one
 - **WHEN** a task has three results whose newest findings are fail, fail, and pass
 - **THEN** its rework rounds are 2
 
 ### Requirement: A task stuck in rework needs the human
-Kawai SHALL raise a human-required **Stuck in rework** attention item for an open task in implementing, fixes requested, or review whose rework rounds reach the team's threshold. The item SHALL name the task, offer **Make the call** (a message to the task's thread), **Take over in chat**, and **Let it continue**. **Let it continue** SHALL record the current rework rounds for that task under a command id, and the item SHALL stay hidden until the rounds grow. The item SHALL clear when the task closes or its result awaits acceptance. The strip SHALL show rework below the threshold without alarm and stuck tasks as stuck.
+Kawai SHALL raise human-required Stuck in rework for open implementing, fixes-requested, or review tasks at the team threshold, unless acknowledged. Let it continue SHALL record the current rounds under a command id and suppress the item until rounds exceed the highest acknowledgement. The strip SHALL mark only tasks with a raised item as stuck; other rework SHALL remain neutral. Closed tasks and tasks awaiting acceptance or QA SHALL have no stuck item.
+
+#### Scenario: Stuck actions address the task
+- **WHEN** a stuck item is expanded
+- **THEN** it names the task and offers Make the call (message its thread), Take over in chat, and Let it continue
+
+#### Scenario: Acknowledgement commands retain their response
+- **WHEN** the human replays an acknowledgement after a later acknowledgement
+- **THEN** the original response is returned; conflicting payloads, stale rounds, and tasks outside the addressed team are refused
 
 #### Scenario: Third send-back raises the item
 - **WHEN** the threshold is 3 and review sends a task back for the third time
@@ -107,6 +139,14 @@ Kawai SHALL raise a human-required **Stuck in rework** attention item for an ope
 - **WHEN** a stuck task's newest result passes review and awaits acceptance
 - **THEN** the stuck item is no longer listed
 
+#### Scenario: Only the human acknowledges rework
+- **WHEN** an agent attempts either rework command
+- **THEN** the command is refused without changing the threshold or acknowledgement
+
+#### Scenario: Rework acknowledgement survives a lower count
+- **WHEN** a task was acknowledged at 3 rounds and a passing re-review reduces it to 2 while the threshold is 2
+- **THEN** no stuck item is raised until its rounds exceed 3
+
 ### Requirement: The rework threshold is a team setting
 The team SHALL have a rework threshold from 2 to 10, defaulting to 3, set only by the human from Agents or from the task flow strip. A value outside the range SHALL be refused inline, the control SHALL be disabled while disconnected, and every open view of the team SHALL follow a change without reloading.
 
@@ -119,7 +159,11 @@ The team SHALL have a rework threshold from 2 to 10, defaulting to 3, set only b
 - **THEN** the change is refused inline and the threshold is unchanged
 
 ### Requirement: Conversations holds threads and delivery operations
-The **Conversations** area SHALL have a **Threads** view and a **Delivery** view. Threads SHALL be the team's mail grouped by thread, with search, compose, and reply as the Messages view had them, and SHALL show each message's delivery state as text. An unsettled message SHALL offer the delivery actions that apply to it, sending the same commands the Delivery view sends. A **Delivery issues** filter SHALL keep threads holding a held, dead-lettered, or uncertain message. Delivery SHALL list every unsettled message by section with its waiting reason and the Cancel, Retry, Discard, Hand off, and Reload routing rules actions; Held for review, Dead letters, and Parked SHALL come first and start expanded, the other sections collapsed with their counts, and routing state SHALL be its own collapsible section.
+Conversations SHALL compose Threads (mail grouped by thread, with existing search, compose, reply, and textual delivery state) and Delivery (all unsettled messages and their waiting reasons). Unsettled messages in Threads SHALL offer applicable Delivery actions using the same commands. Delivery issues SHALL filter threads holding held, dead-lettered, or uncertain messages.
+
+#### Scenario: Delivery retains all operations and routing
+- **WHEN** Delivery opens
+- **THEN** it offers applicable Cancel, Retry, Discard, Hand off, and Reload routing rules actions; Held for review, Dead letters, and Parked lead and start expanded, other sections start collapsed with counts, and routing has its own collapsible section
 
 #### Scenario: Retry from the thread
 - **WHEN** a message in a thread is held as an uncertain delivery and the human chooses Retry on it
@@ -161,6 +205,10 @@ The system SHALL open Team mode for a repository's team from its navigator **Tea
 - **WHEN** the chat session whose connection carries Team mode's requests is killed while Team mode is open
 - **THEN** Team mode stays open on its team, because it is addressed by the team's directory and not by any chat, and shows a disconnected state only when no connection is left
 
+#### Scenario: No placeholder Plans
+- **WHEN** no Plans view is registered and Team mode renders its rail
+- **THEN** no Plans content or placeholder is shown; Plans remains a documented extension point until its view registers
+
 ### Requirement: The morning summary groups the interval's outcomes
 Today's **Last 24 hours** section SHALL list completed results, capacity waits, approvals, uncertain deliveries, and finished turns without a result over the last 24 hours, each bucket counting its items and linking to them. A finished turn with no submitted result SHALL NOT be counted as a completed result.
 
@@ -191,7 +239,7 @@ The URL SHALL identify the team, the area, the Strategy or Conversations sub-vie
 - **WHEN** the human reloads while viewing task `t_12` on Tasks of `kawai`
 - **THEN** Tasks reopens with `t_12` selected
 
-#### Scenario: Back returns to the previous area
+#### Scenario: Back returns to the previous tab
 - **WHEN** the human moves from Tasks to Conversations and presses the browser's Back
 - **THEN** Tasks is shown again
 
@@ -204,7 +252,7 @@ The URL SHALL identify the team, the area, the Strategy or Conversations sub-vie
 - **THEN** Conversations opens on Delivery, and Back leaves the page instead of returning to the old link
 
 ### Requirement: The workspace supports one-handed list and detail navigation
-Below a 768 px viewport width Team mode SHALL replace the rail with a bottom bar (Needs you, Plans, Task flow, Messages) and show Today as a phone inbox: the plans paused on the human first, then items that unblock a plan, then quick yes-or-no items, each with its actions as full-width targets of at least 44 by 44 px. A decision SHALL open as a full-screen answer view with its send action pinned at the bottom and an **Undo** for 10 seconds after sending. Lists and details SHALL use an explicit **Back** action. Opening a chat SHALL preserve the selection and filters, and unsubmitted drafts and the current selection SHALL survive navigation within Team mode.
+Below a 768 px viewport width Team mode SHALL replace the rail with a bottom bar (Needs you, Plans, Task flow, Messages) and show Today as a phone inbox: the plans paused on the human first, then items that unblock a plan, then quick yes-or-no items, each with its actions as full-width targets of at least 44 by 44 px. A decision SHALL open as a full-screen answer view with its send action pinned at the bottom and an **Undo** for 10 seconds before transmission. Navigation within the tab SHALL preserve the deadline and a visible Undo; disconnect or resolution elsewhere SHALL cancel the pending send and retain the draft with a notice. Closing or reloading the tab SHALL cancel an unsent answer, as disclosed in the pending view. Lists and details SHALL use an explicit **Back** action. Opening a chat SHALL preserve the selection and filters, and unsubmitted drafts and the current selection SHALL survive navigation within Team mode.
 
 #### Scenario: Back returns to the preserved list (E14)
 - **WHEN** the human filters tasks, opens one on a narrow viewport, then uses **Back**
@@ -217,6 +265,10 @@ Below a 768 px viewport width Team mode SHALL replace the rail with a bottom bar
 #### Scenario: Answer a decision on a phone
 - **WHEN** on a 390 px wide viewport the human opens a decision from Needs you, picks an option, and sends
 - **THEN** the answer is sent once after the 10-second undo window, and the view offers the next item that blocks a plan
+
+#### Scenario: Navigation preserves the undo window
+- **WHEN** the human schedules a decision answer on a phone and opens a chat after two seconds
+- **THEN** Undo remains available for the remaining eight seconds and no answer is sent early
 
 #### Scenario: Undo stops the send
 - **WHEN** the human sends a decision on a phone and presses **Undo** within 10 seconds
