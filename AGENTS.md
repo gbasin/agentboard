@@ -63,6 +63,7 @@ Read [docs/architecture.md](docs/architecture.md) before changing the server. Th
 
 - `docs/` describes current behaviour only.
 - Investigation evidence, measurements, rollout records, and design proposals belong in the pull request (description or attachments), not in the tree.
+- When a rule in `docs/` rests on a measurement or an experiment, state the rule in the present tense and link the pull request that holds the evidence.
 - When a change makes a statement in a doc false, fix the doc in the same pull request.
 
 ## tmux Safety
