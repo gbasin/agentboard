@@ -41,7 +41,7 @@ import type { PlanStore } from '../planStore'
 import { dispatchFix, dispatchImplementAttempt, dispatchOwedAttempt, ensureFixAttempt, redispatchStage, type DispatchDeps } from './executionDispatch'
 import { StepRefusal } from './stepRefusal'
 import { fixRoundOutcome } from '../../../shared/planExecutionProgress'
-import { applyRoundStage, type ReleaseSeam, roundAdapters } from './executionRounds'
+import { applyRoundStage, releaseFinishedReviewers, type ReleaseSeam, roundAdapters } from './executionRounds'
 import { dispatchDeps as dispatchDepsOf, effectRunner, landingDeps as landingDepsOf, outcomeDeps as outcomeDepsOf, roundDeps as roundDepsOf } from './executorDeps'
 import { runPauseTick } from '../revisionControl/pauseTick'
 
@@ -204,6 +204,15 @@ export class ExecutionExecutor {
         planId => this.deps.holds?.active(teamId, planId) ?? [],
         planId => this.deps.holds?.openTargets(teamId, planId) ?? [])
       if (snapshot.executions.length === 0) return
+      // Not a planned step: it writes no execution state, and a reviewer still
+      // busy now is retried by a later tick. A held change keeps its members.
+      for (const change of this.deps.store.ownedChanges(teamId)) {
+        if (change.state !== 'implementing' || this.gateOf(snapshot, change.executionId)(change.change)) continue
+        releaseFinishedReviewers({
+          team, executions: this.deps.store, plans: this.deps.plans, records: this.deps.records,
+          releases: this.deps.releases, groupScoped: this.deps.groupScoped,
+        }, change)
+      }
       const steps = planSteps(snapshot, this.deps.now?.().toISOString() ?? new Date().toISOString())
       if (steps.transitions.length === 0 && steps.effects.length === 0 && steps.dispatches.length === 0 && steps.stages.length === 0 && steps.fixes.length === 0) {
         // Nothing new is due, but an effect left pending (a restart, a

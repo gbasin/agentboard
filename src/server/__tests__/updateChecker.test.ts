@@ -87,11 +87,19 @@ describe('updateChecker', () => {
   })
 
   test('the periodic timer drives checks without an explicit check() call', async () => {
-    const { feed, calls } = fakeFeed([release('v1.2.0-7')])
+    let calls = 0
+    let checkedThreeTimes!: () => void
+    const threeChecks = new Promise<void>(resolve => { checkedThreeTimes = resolve })
+    const feed: ReleaseFeed = {
+      latest: async () => {
+        if (++calls === 3) checkedThreeTimes()
+        return release('v1.2.0-7')
+      },
+    }
     checker = startUpdateChecker({ feed, currentVersion: '1.1.0-3', intervalMs: 10 })
-    // Startup fired one check; the timer must fire at least two more.
-    await new Promise(resolve => setTimeout(resolve, 60))
-    expect(calls()).toBeGreaterThanOrEqual(3)
+    // Await startup plus two timer checks; a loaded worker may delay timers.
+    await threeChecks
+    expect(calls).toBeGreaterThanOrEqual(3)
     expect(checker.getState().target?.tag).toBe('v1.2.0-7')
   })
 

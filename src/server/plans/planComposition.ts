@@ -418,7 +418,7 @@ export function composePlanServices(options: PlanServicesOptions): {
           const readiness = team.releases.readiness(sessionId)
           return readiness.ready ? { ready: true, reason: null } : { ready: false, reason: readiness.reason }
         },
-        release: sessionId => team.releases.releaseNow(sessionId, ' before the review handoff (plan-execution D11)'),
+        release: (sessionId, detail) => team.releases.releaseNow(sessionId, detail ?? ' before the review handoff (plan-execution D11)'),
         pendingSpawns: team.pendingSpawns,
       },
       conditionsOf,
