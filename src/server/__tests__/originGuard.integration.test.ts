@@ -129,5 +129,25 @@ for (const relay of [true, false]) {
       })
       expect(post.status).toBe(403)
     })
+
+    test('percent-encoded and non-/api paths cannot bypass the guard', async () => {
+      // The router decodes /%61pi/... to /api/...; the guard must not depend on the raw path.
+      const foreignPost = (path: string) => fetch(`http://${host}:${port}${path}`, {
+        method: 'POST', headers: { origin: 'http://evil.example' }, body: new FormData(),
+      })
+      for (const path of ['/%61pi/paste-image', '/a%70i/paste-file', '/%61pi/client-log', '/not-an-api-path'])
+        expect({ path, status: (await foreignPost(path)).status }).toEqual({ path, status: 403 })
+      // The encoded route does reach the handler for a same-origin request, so
+      // the 403 above comes from the guard and not from a routing miss.
+      const sameOrigin = await fetch(`http://${host}:${port}/%61pi/client-log`, {
+        method: 'POST',
+        headers: { origin: `http://${host}:${port}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ level: 'info', event: 'origin_guard_probe' }),
+      })
+      expect(sameOrigin.status).not.toBe(403)
+      expect(sameOrigin.status).not.toBe(404)
+      // A rejected write must not poison the next request on the shared relay connection.
+      expect((await fetch(`http://${host}:${port}/api/health`)).status).toBe(200)
+    })
   })
 }

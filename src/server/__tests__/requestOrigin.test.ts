@@ -96,14 +96,19 @@ describe('normalizeOrigin', () => {
 
 describe('needsOriginCheck', () => {
   const req = (method: string) => new Request('http://localhost/', { method })
-  test('covers /ws and /api mutations only', () => {
+  test('covers /ws and every state-changing method on any path', () => {
     expect(needsOriginCheck(req('GET'), '/ws')).toBe(true)
     for (const method of ['POST', 'PUT', 'PATCH', 'DELETE'])
       expect(needsOriginCheck(req(method), '/api/settings/synced')).toBe(true)
     for (const method of ['GET', 'HEAD', 'OPTIONS'])
       expect(needsOriginCheck(req(method), '/api/settings/synced')).toBe(false)
-    expect(needsOriginCheck(req('POST'), '/apiary')).toBe(false)
-    expect(needsOriginCheck(req('POST'), '/')).toBe(false)
+    expect(needsOriginCheck(req('GET'), '/')).toBe(false)
+  })
+
+  test('does not depend on the path, which the router decodes differently', () => {
+    // Hono routes /%61pi/x as /api/x; URL.pathname leaves it encoded.
+    for (const path of ['/%61pi/paste-image', '/a%70i/library/x/resume', '/apiary', '/'])
+      expect(needsOriginCheck(req('POST'), path)).toBe(true)
   })
 })
 

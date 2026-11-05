@@ -2,7 +2,7 @@
  * Cross-origin guard for browser-reachable endpoints.
  *
  * Agentboard has no authentication, so a page on another site must not be
- * able to open /ws or send state-changing /api requests through the user's
+ * able to open /ws or send state-changing requests through the user's
  * browser. The rule (used by the relay worker and the dashboard listener):
  *   1. No Origin header: allow. Browsers always send Origin on WebSocket
  *      handshakes and cross-site non-GET requests; curl, scripts and tests don't.
@@ -68,10 +68,15 @@ export function isStateChangingMethod(method: string): boolean {
   return !['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase())
 }
 
-/** Requests the guard covers: WebSocket upgrades and /api mutations. */
+/**
+ * Requests the guard covers: WebSocket upgrades and every state-changing
+ * request, whatever its path. The path is deliberately not matched against
+ * /api: the router percent-decodes paths (`/%61pi/x` routes as `/api/x`) while
+ * `URL.pathname` does not, so a prefix test here could be bypassed. No
+ * legitimate client sends a cross-origin write to any path.
+ */
 export function needsOriginCheck(req: Request, pathname: string): boolean {
-  if (pathname === '/ws') return true
-  return (pathname === '/api' || pathname.startsWith('/api/')) && isStateChangingMethod(req.method)
+  return pathname === '/ws' || isStateChangingMethod(req.method)
 }
 
 /**
