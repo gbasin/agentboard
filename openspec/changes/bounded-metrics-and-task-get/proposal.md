@@ -37,7 +37,9 @@ adds per-metric paging, and bounds the sections of `task_get` that
 - New read-only tool `team_metrics_drill`. Given a cursor, it returns the next
   page (1–200 entries, default 100) of one drill list. A cursor from a live
   read pages over that read's fixed window end; a cursor from a report pages
-  over the frozen snapshot. Every entry is reached exactly once.
+  over the frozen snapshot. Every entry is reached exactly once while the
+  source records are unchanged; live pages recompute from current retained
+  records at the fixed end, whereas report pages are frozen.
 - **BREAKING:** `process_reports_list` returns reports without their frozen
   snapshots. `process_report_get` and `process_report_submit` return the
   snapshot in the same compact form, with the same `metrics` argument on

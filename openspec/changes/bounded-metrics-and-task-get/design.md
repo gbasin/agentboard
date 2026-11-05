@@ -41,7 +41,7 @@ subtask is a full `TeamTaskSummary` (`store.summary`). The rest is whole:
 (`TaskResultService.applySeal`) to `results`.
 
 **Neighbours.**
-- `bounded-task-list` (PR #358, unmerged) adds `AgentTaskRow` and its
+- `bounded-task-list` (PR #358, merged as `01361118`) adds `AgentTaskRow` and its
   projection (`src/server/team/taskListWindow.ts`). This change depends on it.
 - `delivery-outcome-metrics` specified `compactMetrics` (its D5) and task
   group 3. Both move here (D10).
@@ -78,6 +78,9 @@ subtask is a full `TeamTaskSummary` (`store.summary`). The rest is whole:
 lives in `src/shared/processMetrics.ts`. For every metric it keeps `id`,
 `value`, `n`, `insufficient`, `baseline`, `approximate`, `partial`,
 `notSliceable`, and `slices` (present only when a slice was asked).
+
+All other top-level `ProcessMetrics` fields (including period metadata,
+`minSample`, and both caveats) stay unchanged.
 
 Metrics not in `expand` lose `drill` and `breakdown`. Each expanded metric
 keeps `breakdown` and gets this in place of `drill`:
@@ -153,11 +156,17 @@ exactly-once paging over an unchanged team (property P1).
 
 ### D3 — Reads at a fixed end are cached by end
 
-`MetricsReader` gains `readAt(team, window, slice, end)`. Its cache key is
-`[team, window, slice, end]`, with the same 30 s expiry. `read()` keeps its
-key and becomes `readAt(…, now)` with `end` reported as `periodEnd`. A
-paged walk therefore shares one computation while it runs. A page requested
-after the entry expires recomputes at the same end over the same records.
+`MetricsReader` gains `readAt(team, window, slice, end)`, cached by
+`[team, window, slice, end]` for 30 s. `read()` keeps its separate
+`[team, window, slice]` latest-read cache: on a miss it delegates to
+`readAt(…, now)` and caches that value; on a hit it returns that value with
+its original `periodEnd`. Preserve `read()`'s `fresh` option for report
+submission: it bypasses both caches. Both caches evict expired entries.
+A paged walk shares a computation for 30 s, then recomputes at the same end
+over current retained records. A fixed end is not a frozen snapshot:
+backfills, mutable task history, or retention can change a live list.
+Exactly-once paging assumes unchanged source records; use a report for a
+frozen walk. T10 holds its records fixed while advancing the clock.
 
 The live cursor's `end` is the issuing read's `periodEnd`. `team_metrics`
 returns the value `read()` served, so its cursors name that value's end,
@@ -282,7 +291,10 @@ tests, and maps are whole.
 
 In every whole result, `diff` becomes an 8,192-byte preview with
 `diffBytes`, `diffCut`, and `diffResumeOffsetBytes` (0 when the preview is
-not exact UTF-8), using the journal preview's exact-UTF-8 trim. A result may
+not exact UTF-8), using a preview helper parameterized by the byte cap (2,000 for
+journal/message/rationale/summary previews, 8,192 for diffs). The current
+`journalPreview` hard-codes 2,000; do not reuse its cut calculation for diffs.
+Preserve its exact-UTF-8 trim and zero resume offset for null text. A result may
 carry a diff and no commit (`TaskResultService.ts:147` refuses only a result
 with neither), so the diff can be the only record of the change. D8a makes
 every byte of it readable.
@@ -397,6 +409,7 @@ metric whose list has 2,595 messages.
 | T6 | `process_reports_list {limit:10}` | no `snapshot` key on any report; ids, summaries, and proposals equal the human list's |
 | T7 | `process_report_get {report_id}` on a 7d report | compact snapshot; values equal the stored snapshot's |
 | T8 | `process_report_submit` (7d) | returned snapshot compact; stored row whole, with 6,998 message refs |
+| T9a | two default reads 1 s apart; then a `fresh` read (fake clock) | default reads share the original `periodEnd`; fresh read bypasses both caches and uses now |
 | T9 | two `team_metrics` reads 31 s apart (fake clock) | cursors name different `end`s; each page uses its own end |
 | T10 | a page read 1 h after its first cursor (fake clock) | page equals the read at the cursor's `end`, not at now |
 | T11 | `team_metrics_drill` with `limit` 0, 201, 1.5 | refused, naming 1–200 |
@@ -434,6 +447,7 @@ acknowledgements.
 | G11 | sealed reviewer: default, and `result_id` = the handoff result | submitter coverage withheld in both; own maps only |
 | G12 | `result_id` of another task's result, an unknown id | refused `Unknown result of this task: <id>` |
 | G13 | a 300 KB diff | `diff` 8,192 bytes or fewer, whole characters, `diffCut` true, `diffBytes` 307,200 |
+| G13g | diffs of 2,001 and 8,192 ASCII bytes | whole preview, `diffCut` false; resume offset equals total |
 | G13a | `task_result_diff_read` walked from offset 0 on a diff-only result with a 300 KB diff | concatenated `dataBase64` bytes equal the stored diff; last `nextOffsetBytes` null |
 | G13b | read from the whole result's `diffResumeOffsetBytes` | first chunk starts at the byte after the preview |
 | G13c | `offset_bytes` −1, 1.5, total + 1 | refused, naming the offset |
@@ -463,13 +477,17 @@ acknowledgements.
   of each windowed section (subtasks, messages, superseded results, and
   revisions), with clustered `created_at` values (ties included) where the
   order uses them, and random anchors. Property: walking each section's
-  `nextBefore` covers every row once, newest first. The outstanding result
+  `nextBefore` covers every row once. Pages progress toward older rows;
+  subtasks, messages, and revisions are oldest first within each page,
+  while result rows are newest first (D5–D8). The outstanding result
   appears whole on every page and never in a window. Seed 0x5AB7, 200 cases.
 - **P5, the diff reader is lossless.** Generator: random byte strings of
   0–40,000 bytes (valid UTF-8, multibyte text near chunk edges, and invalid
   sequences), stored as diffs. Property: concatenating every chunk's
   `dataBase64` from offset 0 equals the stored bytes, and every non-null
   `text` re-encodes to its chunk's bytes. Seed 0xD1FF, 300 cases.
-- **P4, stored records are unchanged.** For every row of Tables T and G, a
-  hash of the stored snapshot, task, revision, result, and message rows
-  taken before and after the call is equal.
+- **P4, stored records are unchanged by reads.** For every read-only row of
+  Tables T and G, a hash of the stored snapshot, task, revision, result, and
+  message rows taken before and after the call is equal. For T8 (submission),
+  assert the new report exists with the whole snapshot and existing records
+  are unchanged; submission is a write, so a whole-store hash cannot match.

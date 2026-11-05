@@ -104,8 +104,12 @@ Each message in `task_get` SHALL carry a body of at most its first 2,000 UTF-8 b
 - **THEN** the submitter's coverage map is withheld exactly as in the default read
 
 #### Scenario: Large diff
-- **WHEN** a result's diff is 300 KB
+- **WHEN** a result's diff is 300 KB of ASCII text
 - **THEN** its diff is the first 8,192 bytes, marked cut, with total 307,200
+
+#### Scenario: Diff fits the preview
+- **WHEN** a result's diff is 2,001 or 8,192 bytes of ASCII text
+- **THEN** its diff is whole, not cut, and its resume offset equals its total bytes
 
 #### Scenario: Result of another task
 - **WHEN** `result_id` names a result of another task or no result
@@ -148,7 +152,7 @@ The `kawai-team` server SHALL offer a read-only `task_result_diff_read` tool, ta
 ## MODIFIED Requirements
 
 ### Requirement: task_get bounds its growing lists
-The agent `task_get` tool SHALL return the newest 50 journal entries (or `journal_limit`), the newest 100 subtasks, and the newest 50 messages, oldest first, each list with its total and truncation, applying those limits in SQL before rows reach JavaScript. Apart from the current direction, acceptance, instruction, whole results apart from their diffs, and bodies asked for with `full_messages`, every section SHALL be bounded. The human's task detail SHALL NOT be bounded.
+The agent `task_get` tool SHALL return the newest 50 journal entries (or `journal_limit`), the newest 100 subtasks, and the newest 50 messages, oldest first, each list with its total and truncation, applying those limits in SQL before rows reach JavaScript. Apart from the current direction, acceptance, instruction, whole results apart from their diffs, revision text requested with `revision`, and bodies asked for with `full_messages`, every section SHALL be bounded. The human's task detail SHALL NOT be bounded.
 
 #### Scenario: Long-running task read by an agent
 - **WHEN** an agent calls `task_get` on a task with 1,198 journal entries, 149 subtasks, and 60 messages

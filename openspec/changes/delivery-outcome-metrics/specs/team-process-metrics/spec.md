@@ -112,7 +112,7 @@ No surface or tool SHALL change a metric's definition or its guard.
 - **THEN** its guard is the landed-result share, and the accepted-result share appears among the coverage metrics
 
 ### Requirement: Agents read metrics through a read-only tool
-The `kawai-team` server SHALL offer `team_metrics`, taking a window, an optional slice, and optional metric ids, and returning the caller's team metrics with the values the Metrics tab computes. By default every metric SHALL be compact: its value, `n`, baseline, flags, `unavailable` reason, evidence, and the projected delivery header, without drill lists or breakdowns. An unsliced compact read SHALL stay under 32 KB. It SHALL change nothing, and no agent tool SHALL change a metric definition, guard pairing, or sample threshold.
+The `kawai-team` server SHALL offer `team_metrics`, taking a window, an optional slice, and optional metric ids, and returning the caller's team metrics with the values the Metrics tab computes. By default every metric SHALL be compact: its value, `n`, baseline, flags, `unavailable` reason, evidence, and the projected delivery header, without drill lists or breakdowns, with slice rows only when a slice is asked. An unsliced compact read SHALL stay under 32 KB. It SHALL be allowed without approval cards and SHALL change nothing, and no agent tool SHALL change a metric definition, guard pairing, or sample threshold.
 
 #### Scenario: Lead reads its team
 - **WHEN** the lead calls `team_metrics` with window `7d`

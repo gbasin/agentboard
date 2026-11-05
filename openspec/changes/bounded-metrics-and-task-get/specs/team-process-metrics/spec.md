@@ -19,18 +19,18 @@ A `team_metrics` call naming metric ids SHALL return those metrics with their br
 - **THEN** the call is refused naming the known metric ids, through either tool runtime
 
 ### Requirement: Drill lists are paged by cursor
-The `kawai-team` server SHALL offer a read-only `team_metrics_drill` tool. It takes a cursor and an optional `limit` (an integer from 1 to 200, default 100) and returns the next entries of one drill list in id order, the list's total, and the next cursor. A cursor from a live read SHALL page over that read's window end. A malformed cursor, a limit out of range, or a report outside the caller's team SHALL be refused.
+`team_metrics_drill` SHALL page one drill list in id order, with its total and next cursor. It takes a cursor and optional integer `limit` (1–200, default 100). Live cursors SHALL keep the issuing read's window end over current retained records; report cursors SHALL use the frozen snapshot. Malformed cursors, invalid limits, and reports outside the caller's team SHALL be refused.
 
 #### Scenario: Paging to the end
 - **WHEN** an agent pages a list of 2,595 refs from its first cursor with limit 200 until the cursor is null
 - **THEN** every ref of the unchanged team is returned exactly once, in id order, and each page states total 2,595
 
 #### Scenario: Live pages keep their window end
-- **WHEN** an agent reads page 2 an hour after the read that gave the first cursor
+- **WHEN** an agent reads page 2 an hour after the read that gave the first cursor, with source records unchanged
 - **THEN** the page is computed for the first read's window end, not for now
 
 #### Scenario: Malformed cursor
-- **WHEN** the cursor is not one this server issued
+- **WHEN** the cursor has malformed base64url JSON, missing or unknown fields, or invalid field values
 - **THEN** the call is refused saying the cursor is invalid, through either tool runtime
 
 #### Scenario: Limit out of range
@@ -51,7 +51,7 @@ The Metrics tab's reads SHALL NOT be compacted or capped. Every drill entry and 
 ## MODIFIED Requirements
 
 ### Requirement: Agents read metrics through a read-only tool
-The `kawai-team` server SHALL offer `team_metrics`, taking a window, an optional slice, and optional metric ids, and returning the caller's team metrics with the values the Metrics tab computes. By default every metric SHALL be compact: its value, `n`, baseline, and flags, without drill lists or breakdowns, with slice rows only when a slice is asked. An unsliced compact read SHALL stay under 32 KB. It SHALL change nothing, and no agent tool SHALL change a metric definition, guard pairing, or sample threshold.
+The `kawai-team` server SHALL offer `team_metrics`, taking a window, an optional slice, and optional metric ids, and returning the caller's team metrics with the values the Metrics tab computes. By default every metric SHALL be compact: its value, `n`, baseline, and flags, without drill lists or breakdowns, with slice rows only when a slice is asked. An unsliced compact read SHALL stay under 32 KB. It SHALL be allowed without approval cards and SHALL change nothing, and no agent tool SHALL change a metric definition, guard pairing, or sample threshold.
 
 #### Scenario: Lead reads its team
 - **WHEN** the lead calls `team_metrics` with window `7d`
