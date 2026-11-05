@@ -31,6 +31,21 @@ if [ ! -f "$REPO_DIR/dist/client/index.html" ]; then
     exit 1
 fi
 
+# The unit embeds these paths. systemd expands % specifiers everywhere and $
+# variables in ExecStart, and " or \ would end the quoting. Reject them up
+# front instead of trying to escape each context correctly.
+for var in HOME REPO_DIR BUN_PATH TMUX_PATH; do
+    case "${!var}" in
+        *[%\$\"\\]* | *$'\n'*)
+            echo "Error: \$$var contains a character that is unsafe in a systemd unit (% \$ \" \\ or newline): ${!var}" >&2
+            exit 1 ;;
+    esac
+done
+
+# Was the service already running (from a previous install)?
+WAS_ACTIVE=0
+if systemctl --user is-active --quiet "$SERVICE_NAME" 2>/dev/null; then WAS_ACTIVE=1; fi
+
 # Generate the service file.
 #
 # KillMode=process: when no tmux server is running, Agentboard starts one
@@ -77,7 +92,14 @@ systemctl --user enable "$SERVICE_NAME"
 systemctl --user start "$SERVICE_NAME"
 
 echo ""
-echo "Agentboard service installed and started!"
+if [ "$WAS_ACTIVE" = 1 ]; then
+    # `start` does nothing for a running service, so the old process keeps
+    # running under the previous unit until it is restarted.
+    echo "Agentboard service updated. It is still running the previous unit."
+    echo "Apply the new unit: systemctl --user restart agentboard"
+else
+    echo "Agentboard service installed and started!"
+fi
 echo ""
 echo "Useful commands:"
 echo "  systemctl --user status agentboard   # Check status"

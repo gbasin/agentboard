@@ -47,6 +47,26 @@ unit stopped. This is expected.
 The tmux sessions still end when the whole user manager stops, for example at
 shutdown, or at logout without lingering.
 
+### Upgrade from an earlier unit
+
+Earlier versions of the unit had no `KillMode` setting and started the server
+through `bun run start`. To move to the current unit:
+
+1. Run `./systemd/install.sh` again. The service keeps running under the
+   previous unit.
+2. Run `systemctl --user restart agentboard`. The restart stops the old
+   server and starts the new unit. The tmux sessions keep running.
+
+If the service then fails to start with a `port_in_use` or instance-lock
+error, the old server is still running. This can happen when the old server
+does not stop within the stop timeout. Find the process that holds the port
+and stop it. The service starts on its next retry.
+
+```bash
+ss -ltnp 'sport = :4040'   # shows the PID that holds the port
+kill <pid>
+```
+
 To verify on your machine:
 
 ```bash

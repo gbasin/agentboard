@@ -77,6 +77,11 @@ test('log rotation follows LOG_FILE, then AGENTBOARD_DATA_DIR, from the service 
 
   servicePlist(s.home, { env: { AGENTBOARD_DATA_DIR: '  ' } })
   assert.equal(paths(s)[0], `${s.home}/.agentboard/agentboard.log`)
+
+  // The server expands ~/ in LOG_FILE but not in AGENTBOARD_DATA_DIR, where
+  // "~/data" is a relative path under the service's working directory.
+  servicePlist(s.home, { env: { AGENTBOARD_DATA_DIR: '~/data' }, extra: '<key>WorkingDirectory</key><string>/repo</string>' })
+  assert.equal(paths(s)[0], '/repo/~/data/agentboard.log')
 })
 
 test('an empty LOG_FILE leaves only the launchd capture logs', darwinOnly, t => {
@@ -150,13 +155,29 @@ test('watchdog restarts Agentboard when only the base session is missing', t => 
 test('watchdog reads TMUX_SESSION, data dir and TMUX_TMPDIR from the service plist', darwinOnly, t => {
   const s = sandbox(t)
   const data = path.join(s.root, 'data')
-  servicePlist(s.home, { env: { TMUX_SESSION: 'board', AGENTBOARD_DATA_DIR: data, TMUX_TMPDIR: '/tmp/ab-sock' } })
+  const sock = path.join(s.root, 'sock')
+  servicePlist(s.home, { env: { TMUX_SESSION: 'board', AGENTBOARD_DATA_DIR: data, TMUX_TMPDIR: sock } })
   s.stub(s.stubs, 'tmux', 'echo "TMUX_TMPDIR=$TMUX_TMPDIR TMUX=${TMUX:-}" >> "$HOME/env.log"; [ "$1" = display-message ] && echo 77; exit 0')
   const result = s.run(watchdog, [], { TMUX: '/live/socket,1,0' })
   assert.equal(result.status, 0, result.stderr)
   assert.ok(result.calls.includes('tmux has-session -t =board'))
   assert.equal(fs.readFileSync(path.join(data, 'tmux-server.pid'), 'utf8'), '77\n')
-  assert.match(fs.readFileSync(path.join(s.home, 'env.log'), 'utf8'), /^TMUX_TMPDIR=\/tmp\/ab-sock TMUX=$/m)
+  assert.ok(fs.readFileSync(path.join(s.home, 'env.log'), 'utf8').split('\n').includes(`TMUX_TMPDIR=${sock} TMUX=`))
+  // tmux falls back to the default socket (another server) when TMUX_TMPDIR
+  // is missing, so the watchdog must create it before the first probe.
+  assert.ok(fs.statSync(sock).isDirectory())
+})
+
+test('watchdog refuses to probe when it cannot create TMUX_TMPDIR', darwinOnly, t => {
+  const s = sandbox(t)
+  const blocker = path.join(s.root, 'blocker')
+  fs.writeFileSync(blocker, '')
+  servicePlist(s.home, { env: { TMUX_TMPDIR: path.join(blocker, 'sock') } })
+  s.stub(s.stubs, 'tmux', 'exit 0')
+  const result = s.run(watchdog, [])
+  assert.equal(result.status, 1)
+  assert.match(result.stderr, /Cannot create TMUX_TMPDIR/)
+  assert.deepEqual(result.calls.filter(c => c.startsWith('tmux') || c.startsWith('launchctl')), [])
 })
 
 test('install-watchdog records the tmux directory in the job PATH', darwinOnly, t => {

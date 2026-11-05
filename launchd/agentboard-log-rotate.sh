@@ -23,14 +23,21 @@ plist_value() {
     plutil -extract "$1" raw -o - "$SERVICE_PLIST" 2>/dev/null
 }
 
-# Resolve a path the way the server does: expand a leading ~/ and make a
-# relative path relative to the service's working directory.
-resolve_path() {
-    local value="$1" cwd
+# Expand a leading ~/ the way the logger does for LOG_FILE. The server does
+# not expand ~ in AGENTBOARD_DATA_DIR, so that value must not pass through here.
+expand_home() {
+    local value="$1"
     # shellcheck disable=SC2088 # Matching a literal "~/", as the logger does.
     case "$value" in
         "~/"*) value="$HOME/${value#"~/"}" ;;
     esac
+    printf '%s\n' "$value"
+}
+
+# Make a relative path relative to the service's working directory, which is
+# where the server resolves it.
+resolve_path() {
+    local value="$1" cwd
     case "$value" in
         /*) ;;
         *) cwd="$(plist_value WorkingDirectory || printf '%s' "$HOME")"
@@ -43,7 +50,7 @@ app_log() {
     local value data_dir
     if value="$(plist_value EnvironmentVariables.LOG_FILE)"; then
         [ -n "$value" ] || return 0 # Empty LOG_FILE: file logging is off.
-        resolve_path "$value"
+        resolve_path "$(expand_home "$value")"
         return 0
     fi
     data_dir="$(plist_value EnvironmentVariables.AGENTBOARD_DATA_DIR || true)"

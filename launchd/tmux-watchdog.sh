@@ -20,7 +20,10 @@ SERVICE_PLIST="${AGENTBOARD_SERVICE_PLIST:-$HOME/Library/LaunchAgents/$LABEL.pli
 # tmux. install-watchdog.sh puts the detected tmux directory first; the
 # Homebrew prefixes (Apple Silicon, then Intel) are a fallback (overridable
 # so tests can keep a real tmux out of reach).
-export PATH="${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}:${AGENTBOARD_TMUX_FALLBACK_PATH-/opt/homebrew/bin:/usr/local/bin}"
+export PATH="${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}"
+TMUX_FALLBACK_PATH="${AGENTBOARD_TMUX_FALLBACK_PATH-/opt/homebrew/bin:/usr/local/bin}"
+# An empty fallback must not leave a trailing ":" (the current directory) on PATH.
+if [ -n "$TMUX_FALLBACK_PATH" ]; then PATH="$PATH:$TMUX_FALLBACK_PATH"; fi
 # A TMUX value from a calling pane would override TMUX_TMPDIR.
 unset TMUX TMUX_PANE
 
@@ -53,7 +56,18 @@ DATA_DIR="${DATA_DIR:-$HOME/.agentboard}"
 PID_FILE="$(setting AGENTBOARD_TMUX_PID_FILE)"
 PID_FILE="${PID_FILE:-$DATA_DIR/tmux-server.pid}"
 TMUX_TMPDIR_VALUE="$(setting TMUX_TMPDIR)"
-if [ -n "$TMUX_TMPDIR_VALUE" ]; then export TMUX_TMPDIR="$TMUX_TMPDIR_VALUE"; fi
+if [ -n "$TMUX_TMPDIR_VALUE" ]; then
+  # tmux ignores a TMUX_TMPDIR that does not exist and falls back to the
+  # default socket, which is a different tmux server. The directory can be
+  # missing after a reboot clears /tmp, before the service recreates it.
+  # Create it, as the server does, so every probe targets the right socket.
+  # shellcheck disable=SC2174 # Mode on the leaf only is intended, as in the server.
+  if ! mkdir -p -m 700 "$TMUX_TMPDIR_VALUE"; then
+    echo "Cannot create TMUX_TMPDIR $TMUX_TMPDIR_VALUE; not probing another tmux server" >&2
+    exit 1
+  fi
+  export TMUX_TMPDIR="$TMUX_TMPDIR_VALUE"
+fi
 
 restart_agentboard() {
   launchctl kickstart -k "gui/$(id -u)/$LABEL"

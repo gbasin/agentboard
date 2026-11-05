@@ -12,10 +12,10 @@ import { fileURLToPath } from 'node:url'
 const source = path.join(path.dirname(fileURLToPath(import.meta.url)), 'install.sh')
 const TOOLS = ['bash', 'sh', 'dirname', 'cat', 'mkdir', 'ln']
 
-function checkout(t, { bun = true, tmux = true, built = true } = {}) {
+function checkout(t, { bun = true, tmux = true, built = true, active = false, repoName = 'repo' } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ab-systemd-install-'))
   t.after(() => fs.rmSync(root, { recursive: true, force: true }))
-  const repo = path.join(root, 'repo')
+  const repo = path.join(root, repoName)
   const home = path.join(root, 'home')
   const sys = path.join(root, 'sys')
   const stubs = path.join(root, 'stubs')
@@ -30,8 +30,9 @@ function checkout(t, { bun = true, tmux = true, built = true } = {}) {
     const found = ['/bin', '/usr/bin'].map(d => path.join(d, tool)).find(p => fs.existsSync(p))
     if (found) fs.symlinkSync(found, path.join(sys, tool))
   }
-  const stub = name => fs.writeFileSync(path.join(stubs, name), `#!/bin/sh\necho "${name} $*" >> '${calls}'\n`, { mode: 0o755 })
-  stub('systemctl')
+  const stub = (name, body = '') => fs.writeFileSync(path.join(stubs, name), `#!/bin/sh\necho "${name} $*" >> '${calls}'\n${body}\n`, { mode: 0o755 })
+  // `is-active` exits 3 for a unit that is not running.
+  stub('systemctl', `case "$*" in *is-active*) exit ${active ? 0 : 3} ;; esac`)
   if (bun) stub('bun')
   if (tmux) stub('tmux')
   const result = spawnSync(path.join(sys, 'bash'), [path.join(repo, 'systemd/install.sh')], {
@@ -79,8 +80,28 @@ test('generates a unit that leaves tmux alive on restart and stop', t => {
   const link = path.join(r.home, '.config/systemd/user/agentboard.service')
   assert.equal(fs.readlinkSync(link), path.join(r.repo, 'systemd/agentboard.service'))
   assert.deepEqual(r.calls, [
+    'systemctl --user is-active --quiet agentboard.service',
     'systemctl --user daemon-reload',
     'systemctl --user enable agentboard.service',
     'systemctl --user start agentboard.service',
   ])
+  assert.match(r.stdout, /installed and started/)
+})
+
+test('tells the user to restart when the service was already running', t => {
+  const r = checkout(t, { active: true })
+  assert.equal(r.status, 0, r.stderr)
+  assert.match(r.stdout, /still running the previous unit/)
+  assert.match(r.stdout, /systemctl --user restart agentboard/)
+  assert.doesNotMatch(r.stdout, /installed and started/)
+})
+
+test('rejects a checkout path that systemd would interpret', t => {
+  for (const repoName of ['re%po', 're$po', 're"po']) {
+    const r = checkout(t, { repoName })
+    assert.equal(r.status, 1, repoName)
+    assert.match(r.stderr, /unsafe in a systemd unit/)
+    assert.equal(r.unit, null)
+    assert.deepEqual(r.calls, [])
+  }
 })
