@@ -13,7 +13,7 @@ Every session lives in tmux, so your agents keep running when you close the tab,
 <p align="center">
   <img src="assets/readme/hero.webp" width="880" alt="Agentboard in a desktop browser window, with a phone in front of it. The desktop sidebar lists agent sessions with their status, age, last prompt and pull request chips; one session waits for permission. The terminal shows a Claude Code session refactoring a router, with a Media 2 pill in its corner. The phone shows the same session's terminal with a quick-keys toolbar.">
 </p>
-<p align="center"><sub>The same tmux sessions on a laptop and a phone. Screenshots are generated with <code>bun run readme:shots</code> from invented sessions.</sub></p>
+<p align="center"><sub>The same tmux sessions on a laptop and a phone.</sub></p>
 
 ## Features
 
@@ -23,7 +23,7 @@ Every session lives in tmux, so your agents keep running when you close the tab,
 
 ### Status and last prompt for every session
 
-Each session shows whether its agent is *working*, *waiting for input*, or *needs permission*, and the last prompt you sent to it. Optional sounds tell you when a session needs permission or goes idle.
+Each session shows a status inferred from its terminal output: *working*, *waiting for input*, or *needs permission*. Sessions matched to an agent transcript also show the last prompt you sent. Optional sounds tell you when a session needs permission or goes idle.
 
 </td>
 <td width="60%">
@@ -47,7 +47,7 @@ For local Claude Code and Codex sessions, a counter on the session shows how man
 
 ### Pull requests with CI state
 
-Pull requests that a session opened or pushed to appear as chips on the session, colored by state: open, draft, merged or closed. Hover a chip to see its title and CI checks.
+Pull requests that a session created with `gh pr create` appear as chips on the session, colored by state: open, draft, merged, or closed. Claude Code sessions also show the pull requests that Claude Code links to them, such as one the session pushed to. Hover a chip to see its title and CI checks.
 
 </td>
 <td width="60%">
@@ -59,7 +59,7 @@ Pull requests that a session opened or pushed to appear as chips on the session,
 
 ### Media from the transcript
 
-A media rail collects the images, documents and links from a session's transcript. Open any image in a viewer and step through the rest.
+A media rail collects the images, documents, and links from a session's transcript. Open any image in a viewer and step through the rest.
 
 </td>
 <td width="60%">
@@ -71,7 +71,7 @@ A media rail collects the images, documents and links from a session's transcrip
 
 ### History, Hibernate and Wake
 
-**Hibernate** a session to close its tmux window and keep it in the sidebar. **History** lists recent conversations: open one to preview its transcript, then **Wake** it to resume the conversation.
+**Hibernate** closes an agent session's tmux window and keeps its conversation in the sidebar. It works for local sessions in the tmux session that Agentboard manages. **History** lists recent conversations: open one to preview its transcript, then **Wake** it to resume.
 
 </td>
 <td width="60%">
@@ -83,7 +83,7 @@ A media rail collects the images, documents and links from a session's transcrip
 
 ### On your phone
 
-A touch layout for small screens, tuned for iOS Safari, with a session drawer, a quick-keys toolbar (Esc, Tab, Ctrl, a tap-to-open arrow key cluster, number pad), and a paste dialog. It also has touch scrolling, tap-to-click and long-press selection, shows a copy prompt when the browser needs a tap to write to the clipboard, and installs to the home screen as a PWA.
+On a small screen the board switches to a touch layout: a session drawer, a quick-keys toolbar (Esc, Tab, Ctrl, arrow keys, numbers), and a paste dialog. Touch scrolling, tap-to-click, and long-press selection work in the terminal. Add the board to your home screen as a PWA.
 
 <img src="assets/readme/phone.webp" width="880" alt="Three phone screens. Left: the session drawer listing sessions with status, last prompt and pull request chips. Middle: a session waiting on a permission prompt, with a row of numbered session tiles at the top and the quick-keys toolbar at the bottom. Right: the paste dialog with three lines of text ready to submit.">
 
@@ -105,7 +105,7 @@ Sessions from other machines appear on the same board over SSH, with a host badg
 
 ### Also
 
-- A full terminal in the browser, with mouse scrolling, selection, and clipboard support for Claude Code's fullscreen renderer.
+- A full terminal in the browser. Mouse scrolling, selection, and the clipboard work with Claude Code's fullscreen renderer.
 - Paste or drop text, images, and files into the prompt.
 - Keyboard shortcuts to switch, create, and close sessions.
 - Sort by age or by what needs attention, filter by project or host, or drag sessions into your own order.

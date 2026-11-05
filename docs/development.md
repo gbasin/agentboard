@@ -6,6 +6,7 @@ This page covers running Agentboard from a source checkout. For conventions, arc
 
 - Bun 1.3.14 or later.
 - tmux 3.2 or later.
+- [ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`). The server uses it to match agent transcripts to tmux windows.
 - Node.js, for the tests. `bun run test` runs part of the suite with `node --test`.
 
 ## Run from source
@@ -56,7 +57,7 @@ It needs the Playwright Chromium and WebKit browsers, `tmux`, `ffmpeg`, and `cwe
 
 One run at a time: the script holds loopback port 4198 as a lock from start to exit, and a second run (or `--composite-only`) refuses while it is held. The lock cannot go stale, because the port is free again as soon as the process ends. On success, Ctrl+C, or SIGTERM the script stops what it started and removes its temp directory. A run that was killed outright (SIGKILL) leaves its processes and directory behind; the next run removes them before it starts. If compositing fails, the script keeps the raw captures in `/private/tmp/ab-shots-raw` for `--composite-only`.
 
-What is staged rather than plain product rendering:
+What the script stages:
 
 - Session ages in the sidebar are set in the session frames during capture, because a fresh server dates every session "now".
 - CSS animations are frozen for the stills.
