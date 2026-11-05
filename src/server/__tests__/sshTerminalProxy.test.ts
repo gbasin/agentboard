@@ -410,6 +410,41 @@ describe('SshTerminalProxy', () => {
     })
   })
 
+  for (const end of ['dispose', 'process-exit']) {
+    test(`${end} during TTY discovery cannot publish late readiness`, async () => {
+      let release!: () => void
+      const gate = new Promise<void>(resolve => { release = resolve })
+      const harness = createSshHarness({ spawnPipeOverride: args => ({ exitCode: 0, stdout: args.at(-1)!.includes('list-clients') ? '/dev/pts/42' : '', stderr: '', ...(args.at(-1)!.includes('list-clients') ? { wait: gate } : {}) }) })
+      const proxy = new SshTerminalProxy({ connectionId: 'startup-end', sessionName: 'bootstrap', baseSession: '', host: 'host', onData: () => {}, spawn: harness.spawn })
+      const starting = proxy.start()
+      await flushAsync()
+      if (end === 'dispose') await proxy.dispose()
+      else harness.resolveExit()
+      await flushAsync()
+      release()
+      await starting
+      expect(proxy.isReady()).toBe(false)
+      expect(proxy.getClientTty()).toBeNull()
+      await proxy.dispose()
+    })
+  }
+
+  test('dispose during an in-flight switch cannot restore readiness or invoke callback', async () => {
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const harness = createSshHarness({ spawnPipeOverride: args => ({ exitCode: 0, stdout: args.at(-1)!.includes('list-clients') ? '/dev/pts/42' : '', stderr: '', ...(args.at(-1)!.includes('switch-client') ? { wait: gate } : {}) }) })
+    const proxy = new SshTerminalProxy({ connectionId: 'switch-end', sessionName: 'bootstrap', baseSession: '', host: 'host', onData: () => {}, spawn: harness.spawn })
+    await proxy.start()
+    let ready = false
+    const switching = proxy.switchTo('original:@1', () => { ready = true })
+    await flushAsync()
+    await proxy.dispose()
+    release()
+    expect(await switching).toBe(false)
+    expect(ready).toBe(false)
+    expect(proxy.isReady()).toBe(false)
+  })
+
   test('paste recipient lookup precedes later switches, delivery stays pinned after switch', async () => {
     let resolveLookup!: () => void
     let resolveUpload!: () => void
@@ -452,9 +487,9 @@ describe('SshTerminalProxy', () => {
     await proxy.dispose()
   })
 
-  for (const pane of ['', 'unrelated-session', '%1\n%2']) {
+  for (const pane of ['', 'unrelated-session', '%1\n%2', 'lookup-error']) {
     test(`invalid recipient lookup ${JSON.stringify(pane)} drops paste without staging`, async () => {
-      const harness = createSshHarness({ spawnPipeOverride: args => ({ exitCode: 0, stdout: args.at(-1)!.includes('list-clients') ? '/dev/pts/42' : pane, stderr: '' }) })
+      const harness = createSshHarness({ spawnPipeOverride: args => ({ exitCode: pane === 'lookup-error' && args.at(-1)!.includes('#{pane_id}') ? 1 : 0, stdout: args.at(-1)!.includes('list-clients') ? '/dev/pts/42' : pane, stderr: '' }) })
       const proxy = new SshTerminalProxy({ connectionId: 'invalid', sessionName: 'bootstrap', baseSession: '', host: 'host', onData: () => {}, spawn: harness.spawn })
       proxy.paste('before-start')
       await proxy.start()

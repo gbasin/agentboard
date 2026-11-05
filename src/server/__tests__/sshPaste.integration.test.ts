@@ -80,3 +80,53 @@ for (const removeRecipient of [false, true]) {
     }
   }, 10_000)
 }
+
+test.skipIf(!available)('host A to B to A keeps newer bootstrap alive after old startup cleanup', async () => {
+  const { sshTerminalSessionName } = await import('../terminal/startOwnedTerminal')
+  const dir = mkdtempSync(join(tmpdir(), 'ab-ssh-owner-'))
+  const env = { ...privateTmuxEnv(dir), TERM: 'xterm-256color', AGENTBOARD_DATA_DIR: join(dir, 'data') }
+  const sockets = { A: join(dir, 'a.sock'), B: join(dir, 'b.sock') }
+  let release!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  let oldCreated!: () => void
+  const created = new Promise<void>(resolve => { oldCreated = resolve })
+  const make = (host: 'A' | 'B', sequence: number) => new SshTerminalProxy({
+    connectionId: 'same-connection', sessionName: sshTerminalSessionName('board', 'same-connection', sequence), baseSession: '', host, onData: () => {},
+    spawn: (args, options) => {
+      const command = args.at(-1)!.replace(/^tmux /, `tmux -f /dev/null -S ${shellQuote(sockets[host])} `)
+      const child = Bun.spawn(['sh', '-c', command], { ...options, env })
+      if (sequence === 1 && !args.includes('-tt') && command.includes('new-session')) {
+        return new Proxy(child, { get(target, key) {
+          if (key === 'exited') return target.exited.then(async code => { oldCreated(); await gate; return code })
+          const value = Reflect.get(target, key)
+          return typeof value === 'function' ? value.bind(target) : value
+        } })
+      }
+      return child
+    },
+  })
+  const oldA = make('A', 1), hostB = make('B', 2), newA = make('A', 3)
+  const oldStart = oldA.start()
+  try {
+    await created
+    // Keep host A's server alive while its first proxy is replaced.
+    Bun.spawnSync(['tmux', '-S', sockets.A, 'new-session', '-d', '-s', 'sentinel'], { env, stdout: 'ignore', stderr: 'ignore' })
+    await oldA.dispose()
+    await hostB.start()
+    await hostB.dispose()
+    await newA.start()
+    release()
+    await oldStart
+    expect(newA.isReady()).toBe(true)
+    const alive = Bun.spawnSync(['tmux', '-S', sockets.A, 'has-session', '-t', newA.getSessionName()], { env, stdout: 'ignore', stderr: 'ignore' })
+    expect(alive.exitCode).toBe(0)
+    const gone = Bun.spawnSync(['tmux', '-S', sockets.A, 'has-session', '-t', oldA.getSessionName()], { env, stdout: 'ignore', stderr: 'ignore' })
+    expect(gone.exitCode).not.toBe(0)
+  } finally {
+    release()
+    await oldStart.catch(() => {})
+    await Promise.all([oldA.dispose(), hostB.dispose(), newA.dispose()])
+    Bun.spawnSync(['tmux', '-S', sockets.A, 'kill-session', '-t', 'sentinel'], { env, stdout: 'ignore', stderr: 'ignore' })
+    rmSync(dir, { recursive: true, force: true })
+  }
+}, 10_000)

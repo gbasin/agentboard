@@ -418,6 +418,7 @@ class SshTerminalProxy extends TerminalProxyBase {
     proc.exited.then((exitCode) => {
       if (this.process !== proc) return
       this.process = null
+      this.startAttemptId += 1
       this.state = TerminalState.DEAD
       logger.warn('ssh_proxy_exited', {
         sessionName: this.options.sessionName,
