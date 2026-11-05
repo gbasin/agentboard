@@ -85,7 +85,7 @@ function createSshHarness(options?: {
     } else {
       const cmd = args.join(' ')
       if (cmd.includes('#{pane_id}')) {
-        result = { exitCode: 0, stdout: '%42\n', stderr: '' }
+        result = { exitCode: 0, stdout: '/dev/pts/other\t%99\n/dev/pts/42\t%42\n', stderr: '' }
       } else if (cmd.includes('list-clients') && ttyAvailable) {
         result = { exitCode: 0, stdout: '/dev/pts/42\n', stderr: '' }
       }
@@ -274,7 +274,7 @@ describe('SshTerminalProxy', () => {
       ttyAvailable: false,
       spawnPipeOverride: (args) => {
         const cmd = args.join(' ')
-        if (cmd.includes('list-clients')) {
+        if (cmd.includes('list-clients') && !cmd.includes('#{pane_id}')) {
           listClientsCalls += 1
           // Simulate a slow TTY discovery: empty first, then present.
           if (listClientsCalls >= 2) {
@@ -454,8 +454,8 @@ describe('SshTerminalProxy', () => {
     const switching = new Promise<void>(resolve => { resolveSwitch = resolve })
     const harness = createSshHarness({ spawnPipeOverride: args => {
       const cmd = args.at(-1)!
-      if (cmd.includes('list-clients')) return { exitCode: 0, stdout: '/dev/pts/42', stderr: '' }
-      if (cmd.includes('#{pane_id}')) return { exitCode: 0, stdout: '%23', stderr: '', wait: lookup }
+      if (cmd.includes('list-clients') && !cmd.includes('#{pane_id}')) return { exitCode: 0, stdout: '/dev/pts/42', stderr: '' }
+      if (cmd.includes('#{pane_id}')) return { exitCode: 0, stdout: '/dev/pts/other\t%99\n/dev/pts/42\t%23', stderr: '', wait: lookup }
       if (cmd.includes('load-buffer')) return { exitCode: 0, stdout: '', stderr: '', wait: upload }
       if (cmd.includes('switch-client') && cmd.includes('later')) return { exitCode: 0, stdout: '', stderr: '', wait: switching }
       return { exitCode: 0, stdout: '', stderr: '' }
@@ -487,9 +487,19 @@ describe('SshTerminalProxy', () => {
     await proxy.dispose()
   })
 
-  for (const pane of ['', 'unrelated-session', '%1\n%2', 'lookup-error']) {
+  for (const pane of ['', 'unrelated-session', '%1\t%2', 'lookup-error', 'missing-client']) {
     test(`invalid recipient lookup ${JSON.stringify(pane)} drops paste without staging`, async () => {
-      const harness = createSshHarness({ spawnPipeOverride: args => ({ exitCode: pane === 'lookup-error' && args.at(-1)!.includes('#{pane_id}') ? 1 : 0, stdout: args.at(-1)!.includes('list-clients') ? '/dev/pts/42' : pane, stderr: '' }) })
+      const harness = createSshHarness({ spawnPipeOverride: args => {
+        const cmd = args.at(-1)!
+        if (cmd.includes('#{pane_id}')) {
+          return {
+            exitCode: pane === 'lookup-error' ? 1 : 0,
+            stdout: pane === 'missing-client' ? '/dev/pts/other\t%99' : `/dev/pts/other\t%99\n/dev/pts/42\t${pane}`,
+            stderr: '',
+          }
+        }
+        return { exitCode: 0, stdout: cmd.includes('list-clients') ? '/dev/pts/42' : '', stderr: '' }
+      } })
       const proxy = new SshTerminalProxy({ connectionId: 'invalid', sessionName: 'bootstrap', baseSession: '', host: 'host', onData: () => {}, spawn: harness.spawn })
       proxy.paste('before-start')
       await proxy.start()
@@ -552,10 +562,10 @@ describe('SshTerminalProxy', () => {
     const harness = createSshHarness({
       spawnPipeOverride: (args) => {
         const cmd = args.join(' ')
-        if (cmd.includes('list-clients')) {
+        if (cmd.includes('list-clients') && !cmd.includes('#{pane_id}')) {
           return { exitCode: 0, stdout: '/dev/pts/42\n', stderr: '' }
         }
-        if (cmd.includes('#{pane_id}')) return { exitCode: 0, stdout: '%42\n', stderr: '' }
+        if (cmd.includes('#{pane_id}')) return { exitCode: 0, stdout: '/dev/pts/other\t%99\n/dev/pts/42\t%42\n', stderr: '' }
         if (cmd.includes('load-buffer')) {
           return { exitCode: 1, stdout: '', stderr: 'tmux gone' }
         }
@@ -593,10 +603,10 @@ describe('SshTerminalProxy', () => {
     const harness = createSshHarness({
       spawnPipeOverride: (args) => {
         const cmd = args.join(' ')
-        if (cmd.includes('list-clients')) {
+        if (cmd.includes('list-clients') && !cmd.includes('#{pane_id}')) {
           return { exitCode: 0, stdout: '/dev/pts/42\n', stderr: '' }
         }
-        if (cmd.includes('#{pane_id}')) return { exitCode: 0, stdout: '%42\n', stderr: '' }
+        if (cmd.includes('#{pane_id}')) return { exitCode: 0, stdout: '/dev/pts/other\t%99\n/dev/pts/42\t%42\n', stderr: '' }
         if (cmd.includes('paste-buffer')) {
           return { exitCode: 1, stdout: '', stderr: 'no such target' }
         }
@@ -648,7 +658,7 @@ describe('SshTerminalProxy sync terminal feature', () => {
           ? { exitCode: 1, stdout: '', stderr: 'probe failed' }
           : { exitCode: 0, stdout: `tmux ${opts.probeVersion ?? '3.4'}\n`, stderr: '' }
       }
-      if (cmd.includes('list-clients')) {
+      if (cmd.includes('list-clients') && !cmd.includes('#{pane_id}')) {
         return { exitCode: 0, stdout: '/dev/pts/42\n', stderr: '' }
       }
       return { exitCode: 0, stdout: '', stderr: '' }

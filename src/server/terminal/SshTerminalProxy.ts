@@ -4,7 +4,7 @@
 
 import { logger } from '../logger'
 import { shellQuote } from '../shellQuote'
-import { withTmuxUtf8Flag } from '../tmuxFormat'
+import { buildTmuxFormat, splitTmuxFields, splitTmuxLines, withTmuxUtf8Flag } from '../tmuxFormat'
 import { sanitizedTmuxEnv } from '../tmuxEnv'
 import {
   syncFeatureEnabled,
@@ -68,12 +68,19 @@ class SshTerminalProxy extends TerminalProxyBase {
     const normalized = this.normalizePasteData(data)
     // Start resolving at acceptance. Later switches wait only for this lookup,
     // while slow buffer uploads can finish after the client changes sessions.
-    const recipient = this.runTmuxAsync(['display-message', '-p', '-c', tty, '#{pane_id}'])
-      .then(output => {
-        const pane = output.trim()
-        if (!/^%[0-9]+$/.test(pane)) throw new Error('Invalid terminal pane')
-        return pane
-      })
+    // display-message -c does not scope its pane format context to that
+    // client. list-clients expands per client; match the exact captured tty.
+    const recipient = this.runParsedTmuxNonBlocking([
+      'list-clients', '-F', buildTmuxFormat(['#{client_tty}', '#{pane_id}']),
+    ]).then(output => {
+      for (const line of splitTmuxLines(output)) {
+        const fields = splitTmuxFields(line, 2)
+        if (!fields || fields[0] !== tty) continue
+        if (!/^%[0-9]+$/.test(fields[1])) throw new Error('Invalid terminal pane')
+        return fields[1]
+      }
+      throw new Error('Terminal client not found')
+    })
     this.pasteTargetResolution = Promise.all([this.pasteTargetResolution, recipient]).then(() => {}, () => {})
     void (async () => {
       let target: string

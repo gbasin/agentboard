@@ -10,7 +10,7 @@ import { privateTmuxEnv, isTmuxAvailable } from './testEnvironment'
 const available = isTmuxAvailable()
 
 for (const removeRecipient of [false, true]) {
-  test.skipIf(!available)(`SSH paste pins the selected split pane${removeRecipient ? ' and fails closed if it disappears' : ' across a later session switch'}`, async () => {
+  test.skipIf(!available)(`SSH paste pins the selected split pane${removeRecipient ? ' and fails closed if it disappears' : ' across a later session switch with another active client'}`, async () => {
     const dir = mkdtempSync(join(tmpdir(), 'ab-ssh-paste-'))
     const socket = join(dir, 'tmux.sock')
     const env = { ...privateTmuxEnv(dir), TERM: 'xterm-256color', AGENTBOARD_DATA_DIR: join(dir, 'data') }
@@ -43,6 +43,7 @@ for (const removeRecipient of [false, true]) {
         return child
       },
     })
+    let otherClient: ReturnType<typeof Bun.spawn> | null = null
     try {
       tmux('new-session', '-d', '-s', 'recipient', '-x', '100', '-y', '30', 'cat')
       const pane = tmux('split-window', '-d', '-t', 'recipient', '-P', '-F', '#{pane_id}', 'cat')
@@ -50,6 +51,17 @@ for (const removeRecipient of [false, true]) {
       tmux('new-session', '-d', '-s', 'later', 'cat')
       await proxy.start()
       await proxy.switchTo('recipient:0')
+      // tmux's unscoped format context follows the most recently active
+      // session, even when display-message receives a different client's -c.
+      await Bun.sleep(1100)
+      otherClient = Bun.spawn(['tmux', '-S', socket, 'attach-session', '-t', 'later'], {
+        env, terminal: { name: 'xterm-256color', cols: 100, rows: 30, data: () => {} },
+      })
+      const clientsDeadline = Date.now() + 3000
+      while (tmux('list-clients', '-F', '#{client_tty}').split('\n').length < 2) {
+        if (Date.now() > clientsDeadline) throw new Error('Second client did not attach')
+        await Bun.sleep(10)
+      }
       const token = 'PINNED_PASTE_RECIPIENT'
       proxy.paste(token)
       await uploading
@@ -72,6 +84,9 @@ for (const removeRecipient of [false, true]) {
       expect(commands.find(command => command.includes('paste-buffer'))).toContain(shellQuote(pane))
     } finally {
       releaseUpload()
+      otherClient?.kill()
+      otherClient?.terminal?.close()
+      if (otherClient) await otherClient.exited
       await proxy.dispose()
       for (const session of ['recipient', 'later']) {
         Bun.spawnSync(['tmux', '-S', socket, 'kill-session', '-t', session], { env, stdout: 'ignore', stderr: 'ignore' })
