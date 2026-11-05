@@ -1,6 +1,8 @@
 # Configuration
 
-Agentboard reads its configuration from environment variables when it starts. It has no configuration file and no command-line flags: an argument such as `--port` is ignored. Restart the server after you change a variable.
+Agentboard reads its configuration from environment variables when it starts. It has no configuration file of its own and no command-line flags: an argument such as `--port` is ignored. Restart the server after you change a variable.
+
+Bun, the runtime that Agentboard uses, loads `.env` and `.env.local` files from the directory where the server starts. Variables in those files apply to Agentboard too.
 
 Settings that you change in the **Settings** dialog are separate. Agentboard stores them in its database or in your browser, and they do not need a restart.
 
@@ -10,8 +12,8 @@ Settings that you change in the **Settings** dialog are separate. Agentboard sto
 | --- | --- |
 | From a shell (`agentboard`, `npx`, `bun run start`) | In the shell: `PORT=8080 agentboard` |
 | launchd, release mode | `~/.agentboard/service-env.json` (string values), then run `./launchd/upgrade.sh`. The installer copies the values into the service; a restart alone does not apply them. Removing a key from the file does not remove it from the service. TLS and custom bind addresses are not accepted in this mode. See [launchd/README.md](../launchd/README.md#configure-the-release-service). |
-| launchd, source mode | No override file. The installer generates the service wrapper and overwrites manual changes when it runs again. |
-| systemd | A drop-in: `systemctl --user edit agentboard`, add `Environment=NAME=value` lines under `[Service]`, then run `systemctl --user restart agentboard`. A `PATH` entry in the drop-in replaces the unit's `PATH`. |
+| launchd, source mode | A `.env.local` file in the checkout, then restart the service. The installer generates the service wrapper and overwrites manual changes to it when it runs again. |
+| systemd | A drop-in: `systemctl --user edit agentboard`, add `Environment=NAME=value` lines under `[Service]`, then run `systemctl --user restart agentboard`. A `PATH` entry in the drop-in replaces the unit's `PATH`. A `.env.local` file in the checkout also works. |
 
 ## Most-used settings
 

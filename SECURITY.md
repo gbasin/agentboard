@@ -59,7 +59,7 @@ TLS is opt-in. Set both `TLS_CERT` and `TLS_KEY` to serve HTTPS on the main and 
 
 ### What a connected client can do
 
-**WebSocket (`/ws`).** The server accepts 16 client message types.
+**WebSocket (`/ws`).** The server accepts these client message types.
 
 - **Terminal I/O:** `terminal-attach`, `terminal-detach`, `terminal-input`, `terminal-paste`, `terminal-resize`, `terminal-resume`, `terminal-ack`, `tmux-cancel-copy-mode`, `tmux-check-copy-mode`. A client can read the screen of any session on the board and type into it.
 - **Session control:** `session-create` (any project directory and any command, run as your user), `session-kill`, `session-rename`, `session-refresh`, `session-wake` (runs the agent's resume command), `session-hibernate`, `session-move-to-history`.
@@ -71,7 +71,7 @@ Limits on these messages:
 - **Remote hosts.** For sessions on [remote hosts](docs/remote-hosts.md), `AGENTBOARD_REMOTE_ALLOW_ATTACH=true` allows attach and input. `AGENTBOARD_REMOTE_ALLOW_CONTROL=true` allows create and kill, and it also turns on attach unless `AGENTBOARD_REMOTE_ALLOW_ATTACH` is set. Both default to `false`. Remote create accepts only hosts listed in `AGENTBOARD_REMOTE_HOSTS`. Remote kill applies only to sessions that Agentboard created.
 - **Kill rate limit.** Each connection can kill a limited number of sessions in a row.
 
-**HTTP.** The server has 32 API routes, plus the static frontend files.
+**HTTP.** The server has these API routes, plus the static frontend files.
 
 | Group | Routes | What they allow |
 | --- | --- | --- |
