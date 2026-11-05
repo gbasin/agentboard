@@ -29,12 +29,12 @@ dev-only `tools/fad-dump` shim). The shim is never a runtime dependency.
 
 ## How It Works
 
-- Single managed tmux session (default: `agentboard`) with one window per agent session. Windows in other tmux sessions are discovered as external (`DISCOVER_PREFIXES`). Each browser connection attaches through its own grouped session (`<TMUX_SESSION>-ws-<connection>`).
+- Single managed tmux session (default: `agentboard`) with one window per agent session. Windows in all other tmux sessions are discovered as external; set `DISCOVER_PREFIXES` to limit discovery to sessions whose names start with those prefixes. Each browser connection attaches through its own grouped session (`<TMUX_SESSION>-ws-<connection>`).
 - Backend discovers windows, streams terminal output via WebSocket
-- Parses Claude/Codex/Pi/oh-my-pi JSONL logs from `~/.claude/projects/`, `~/.codex/sessions/`, `~/.pi/agent/sessions/`, `~/.omp/agent/sessions/`. `src/server/logDiscovery.ts` owns the roots and their env overrides (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `PI_HOME`, `GROK_HOME`, `PI_CODING_AGENT_DIR`).
+- Parses Claude/Codex/Pi/oh-my-pi JSONL logs from `~/.claude/projects/`, `~/.codex/sessions/`, `~/.pi/agent/sessions/`, `~/.omp/agent/sessions/` (or `$XDG_DATA_HOME/omp/sessions` when that directory exists). `src/server/logDiscovery.ts` owns the roots and their env overrides (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `PI_HOME`, `GROK_HOME`, `PI_CODING_AGENT_DIR`, `PI_CONFIG_DIR`).
 - Devin CLI stores history in SQLite (`~/.local/share/devin/cli/sessions.db`); `src/server/devinSync.ts` mirrors it into `~/.agentboard/devin-sessions/*.jsonl` so the same pipeline applies. `src/server/devinLockMatch.ts` matches devin sessions to windows via `session_locks/<id>.lock` PIDs.
 - Grok CLI writes transcripts at `~/.grok/sessions/<encoded-cwd>/<session-id>/chat_history.jsonl`; sessionId and projectPath are derived from the directory names. Sibling telemetry files (events.jsonl, updates.jsonl) are excluded from matching.
-- Status is one of `working`, `waiting`, `permission`, `unknown`. It is inferred from tmux pane content, not from logs: `src/server/statusInference.ts` diffs pane captures (changed output means working) and matches permission-prompt patterns. Logs drive session-to-window matching, the last user prompt, PR chips, and media.
+- Status is one of `working`, `waiting`, `permission`, `unknown`. It is inferred from tmux pane content, not from logs: `src/server/statusInference.ts` diffs pane captures (changed output means working) and matches permission-prompt patterns. After Enter is sent to a terminal, `src/server/forceWorkingStatus.ts` holds the status at `working` for a short grace period. Logs drive session-to-window matching, the last user prompt, PR chips, and media.
 
 ## Structure
 
@@ -51,7 +51,7 @@ dev-only `tools/fad-dump` shim). The shim is never a runtime dependency.
   - `src/client/hooks/useTerminal.ts` - xterm.js instance, input, paste, links
 - src/shared/     Shared types
 
-- Data directory: `~/.agentboard/` (override with `AGENTBOARD_DATA_DIR`) contains `agentboard.db` (session data), `agentboard.log`, `server.lock` (single-instance lock), `tmux-server.pid`, `devin-sessions/`, and `stall-samples/`
+- Data directory: `~/.agentboard/` (override with `AGENTBOARD_DATA_DIR`) holds `agentboard.db` (session data), `media-index.sqlite`, and `server.lock` (single-instance lock). Depending on configuration it also holds `agentboard.log` (when file logging is on), `tmux-server.pid` (unless `AGENTBOARD_TMUX_PID_FILE` moves it), `devin-sessions/` (when Devin CLI history exists), and `stall-samples/` (macOS, after a stall).
 
 ## tmux Safety
 

@@ -232,7 +232,7 @@ All persistent data is stored in `~/.agentboard/`: session database (`agentboard
 
 `AGENTBOARD_REMOTE_ALLOW_CONTROL` enables destructive remote session management (create, kill, rename) via the UI. Setting this to `true` also enables attach, unless `AGENTBOARD_REMOTE_ALLOW_ATTACH` is set explicitly. Kill and rename are restricted to agentboard-managed sessions — externally-discovered remote sessions cannot be killed or renamed even with control enabled.
 
-`AGENTBOARD_LOG_WATCH_MODE` selects the log detection strategy: `watch` (default) uses `fs.watch` for instant file-change detection, `poll` falls back to periodic directory scanning. Use `poll` if you experience issues with filesystem notifications (e.g., on network-mounted home directories). Watch mode also runs a fallback poll: every 15 seconds on Linux, where `fs.watch({ recursive: true })` has known platform bugs, and every 60 seconds elsewhere.
+`AGENTBOARD_LOG_WATCH_MODE` selects the log detection strategy: `watch` (default) uses `fs.watch` for instant file-change detection, `poll` falls back to periodic directory scanning. Use `poll` if you experience issues with filesystem notifications (e.g., on network-mounted home directories). Watch mode also runs a fallback poll: at least every 15 seconds on Linux, where `fs.watch({ recursive: true })` has known platform bugs, and at least every 60 seconds elsewhere.
 
 `AGENTBOARD_OWNERSHIP_OBSERVER=true` enables read-only ownership diagnostics for local Claude and Codex sessions. It checks at startup and every 30 seconds. The diagnostics flag defaults to off. For read-only observation on macOS, also set `AGENTBOARD_OWNERSHIP_MATCHING=false`. Changed results appear as `ownership_observation` log events with `agree`, `unmatched`, `disagree`, or `unresolved` comparisons. Set `LOG_LEVEL=debug` to include per-cycle counts and duration.
 
@@ -271,12 +271,12 @@ Then create the sockets directory: `mkdir -p ~/.ssh/sockets && chmod 700 ~/.ssh/
 
 ```
 LOG_LEVEL=info                          # debug | info | warn | error (default: info)
-LOG_FILE=~/.agentboard/agentboard.log   # default for installed releases and `bun run dev`
+LOG_FILE=~/.agentboard/agentboard.log   # default path when file logging is on (see below)
 ```
 
 Installed releases (Homebrew, npm) write JSON to both the console and the log file. A source checkout pretty-prints the console. File output is always JSON.
 
-A source checkout started with `bun run start` writes the log file only when `NODE_ENV=production` or `LOG_FILE` is set. `bun run dev` sets `LOG_FILE` to the default path for you.
+A source checkout started with `bun run start` writes the log file only when `NODE_ENV=production` or `LOG_FILE` is set. The systemd and launchd installers set `NODE_ENV=production`. `bun run dev` sets `LOG_FILE` to the default path for you.
 
 Set `LOG_FILE=` (empty) to disable file logging. This does not apply to `bun run dev`, which replaces an empty value with the default path.
 
