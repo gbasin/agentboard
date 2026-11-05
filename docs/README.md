@@ -19,4 +19,4 @@ Start with the [project README](../README.md) for an overview and installation.
 | --- | --- |
 | [Development](development.md) | Run from source, commands, dependency scanner. |
 | [AGENTS.md](../AGENTS.md) | Conventions, structure, tmux safety rules, release process. |
-| [SECURITY.md](../SECURITY.md) | How to report a vulnerability. |
+| [SECURITY.md](../SECURITY.md) | Threat model, and how to report a vulnerability. |
