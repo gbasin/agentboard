@@ -80,6 +80,8 @@ same service rather than running two servers.
 
 ```bash
 ./launchd/install.sh --release --recover
+# Equivalent:
+./launchd/upgrade.sh --recover
 ```
 
 Recovery uses `~/.agentboard/release-pending.json` and does not contact npm.
@@ -137,13 +139,17 @@ launchctl load -w ~/Library/LaunchAgents/com.agentboard.plist
 ## Uninstall
 
 ```bash
-for label in com.agentboard com.agentboard.logrotate; do
+for label in com.agentboard.tmux-watchdog com.agentboard com.agentboard.logrotate; do
   launchctl unload ~/Library/LaunchAgents/$label.plist 2>/dev/null || true
   rm -f ~/Library/LaunchAgents/$label.plist
 done
 rm -rf ~/.agentboard/bin
+# Release mode: remove the installed release binaries.
+rm -rf ~/.agentboard/releases
 # To also remove data: rm -rf ~/.agentboard
 ```
+
+Uninstalling does not stop tmux or the agent sessions in it.
 
 ## Optional: tmux-crash watchdog
 
