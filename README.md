@@ -71,7 +71,7 @@ A media rail collects the images, documents and links from a session's transcrip
 
 ### On your phone
 
-A touch layout for iOS Safari with a session drawer, a quick-keys toolbar (Esc, Tab, Ctrl, arrows, number pad), and a paste dialog. It also has touch scrolling, tap-to-click and long-press selection, and installs to the home screen as a PWA.
+A touch layout for small screens, tuned for iOS Safari, with a session drawer, a quick-keys toolbar (Esc, Tab, Ctrl, a tap-to-open arrow key cluster, number pad), and a paste dialog. It also has touch scrolling, tap-to-click and long-press selection, shows a copy prompt when the browser needs a tap to write to the clipboard, and installs to the home screen as a PWA.
 
 <img src="assets/readme/phone.webp" width="880" alt="Three phone screens. Left: the session drawer listing sessions with status, last prompt and pull request chips. Middle: a session waiting on a permission prompt, with a row of numbered session tiles at the top and the quick-keys toolbar at the bottom. Right: the paste dialog with three lines of text ready to submit.">
 
@@ -95,10 +95,10 @@ Sessions from other machines appear on the same board over SSH, with a host badg
 
 - A full terminal in the browser, with mouse scrolling, selection, and clipboard support for Claude Code's fullscreen renderer.
 - Paste or drop text, images, and files into the prompt.
-- Subagent activity for Claude Code and Codex sessions.
+- Subagent activity for local Claude Code and Codex sessions.
 - Keyboard shortcuts to switch, create, and close sessions.
 - Sort by age or by what needs attention, filter by project or host, or drag sessions into your own order.
-- Session recovery reopens sessions after a crash or reboot. See [Session recovery](docs/session-recovery.md).
+- Session recovery lists the sessions that a crash or reboot interrupted, so you can reopen them. Automatic reopening is opt-in. See [Session recovery](docs/session-recovery.md).
 
 ## Supported agents
 
