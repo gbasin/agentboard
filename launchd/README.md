@@ -241,6 +241,6 @@ Note: if you `tmux kill-session -t agentboard` while agentboard is loaded, the w
 
 - The plist sets `LANG=en_US.UTF-8`. LaunchAgents start with a bare environment; without this, tmux renders non-ASCII characters as `?` or stripped bytes.
 - Source mode changes into the repo directory before `bun run start`. Release mode starts a pinned binary with an absolute frontend asset path.
-- Override the log path via the `LOG_FILE` env var. The rotate script does not read `LOG_FILE` or `AGENTBOARD_DATA_DIR`: it rotates `agentboard.log`, `launchd.out.log`, and `launchd.err.log` in `~/.agentboard`. A log file at any other path is not rotated.
+- Override the log path via the `LOG_FILE` env var in the service plist (release mode: `service-env.json`). The rotate script reads `LOG_FILE` and `AGENTBOARD_DATA_DIR` from the service plist on each run and rotates the same file as the server: `LOG_FILE`, else `$AGENTBOARD_DATA_DIR/agentboard.log`, else `~/.agentboard/agentboard.log`. An empty `LOG_FILE` disables file logging, so only the launchd capture logs rotate. Run `~/.agentboard/bin/agentboard-log-rotate.sh --print-paths` to list the files it rotates.
 - Override the tmux session name via `TMUX_SESSION` (respected by agentboard and the watchdog).
 - Set a distinct `AGENTBOARD_TMUX_PID_FILE` for each Agentboard instance that uses a separate tmux socket.
