@@ -215,7 +215,7 @@ class PipePaneTerminalProxy extends TerminalProxyBase {
       const identity = this.runParsedTmux(['display-message', '-t', target, '-p', '#{socket_path}:#{pid}:#{pane_id}']).trim()
       const key = identity || `${process.env.TMUX_TMPDIR ?? process.env.TMUX ?? 'default'}:${target}`
       const paneTarget = identity.match(/:(%\d+)$/)?.[1] ?? target
-      const lease = subscribePaneOutput(key, paneTarget, {
+      const lease = (this.options.paneOutput ?? subscribePaneOutput)(key, paneTarget, {
         runTmux: (args) => this.runTmux(args), spawn: this.spawn,
       }, {
         onData: (data) => { if (!this.disposed && !this.outputSuppressed) this.options.onData(data) },

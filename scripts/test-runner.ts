@@ -106,6 +106,8 @@ async function main() {
       'sshPaste.integration.test.ts',
       'double-attach.integration.test.ts',
       'pipePaneShared.integration.test.ts',
+      'pipePaneRelay.integration.test.ts',
+      'paneOutputBackpressure.integration.test.ts',
       'e2eTmuxReap.integration.test.ts',
       'groupedSessionLeak.integration.test.ts',
       'hibernation.integration.test.ts',

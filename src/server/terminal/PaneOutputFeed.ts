@@ -8,7 +8,10 @@ import { sanitizedTmuxEnv } from '../tmuxEnv'
 import type { SpawnFn } from './types'
 
 type Subscriber = { onData: (data: string) => void; onExit: () => void }
-type Transport = { runTmux: (args: string[]) => string; spawn: SpawnFn }
+type Transport = {
+  runTmux: (args: string[]) => string; spawn: SpawnFn
+  onResource?: (resource: { root: string; pid?: number; closed?: true }) => void
+}
 export type PaneOutputLease = { ready: Promise<void>; release: () => Promise<void> }
 const feeds = new Map<string, PaneOutputFeed>()
 
@@ -54,7 +57,13 @@ class PaneOutputFeed {
 
   private async start(): Promise<void> {
     this.root = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-pane-'))
-    if (this.closed) { await this.removeRoot(); return }
+    this.transport.onResource?.({ root: this.root })
+    if (this.closed) {
+      const root = this.root
+      await this.removeRoot()
+      this.transport.onResource?.({ root, closed: true })
+      return
+    }
     const file = path.join(this.root, 'output')
     await fs.writeFile(file, '', { mode: 0o600 })
     if (this.closed) { await this.removeRoot(); return }
@@ -66,6 +75,7 @@ class PaneOutputFeed {
       stdout: 'pipe', stderr: 'ignore', env: sanitizedTmuxEnv(),
     })
     this.process = proc
+    this.transport.onResource?.({ root: this.root!, pid: proc.pid })
     const stdout = proc.stdout
     if (stdout && typeof stdout !== 'number') void this.read(stdout)
     void proc.exited.then(() => {
@@ -114,7 +124,10 @@ class PaneOutputFeed {
     const proc = this.process
     try { proc?.kill() } catch { /* Already exited. */ }
     this.process = null
-    this.cleanup = Promise.all([this.removeRoot(), proc?.exited.catch(() => {})]).then(() => {})
+    const root = this.root
+    this.cleanup = Promise.all([this.removeRoot(), proc?.exited.catch(() => {})]).then(() => {
+      if (root) this.transport.onResource?.({ root, closed: true })
+    })
     return this.cleanup
   }
 
