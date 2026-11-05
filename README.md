@@ -33,6 +33,18 @@ Each session shows whether its agent is *working*, *waiting for input*, or *need
 <tr>
 <td width="40%" valign="top">
 
+### Subagent activity
+
+For local Claude Code and Codex sessions, a counter on the session shows how many subagents are running. Click it to see the main session and each subagent with its current state and the time of its last activity signal.
+
+</td>
+<td width="60%">
+<img src="assets/readme/subagents.webp" width="520" alt="The agent activity panel for the router-refactor session, opened from its subagent counter showing 3. The main session has an active model turn. Of four subagents, Migrate billing routes and Run e2e suite are waiting on Edit and Bash tool calls, Migrate invoice routes has an active model turn, and Audit auth middleware has finished.">
+</td>
+</tr>
+<tr>
+<td width="40%" valign="top">
+
 ### Pull requests with CI state
 
 Pull requests that a session opened or pushed to appear as chips on the session, colored by state: open, draft, merged or closed. Hover a chip to see its title and CI checks.
@@ -95,7 +107,6 @@ Sessions from other machines appear on the same board over SSH, with a host badg
 
 - A full terminal in the browser, with mouse scrolling, selection, and clipboard support for Claude Code's fullscreen renderer.
 - Paste or drop text, images, and files into the prompt.
-- Subagent activity for local Claude Code and Codex sessions.
 - Keyboard shortcuts to switch, create, and close sessions.
 - Sort by age or by what needs attention, filter by project or host, or drag sessions into your own order.
 - Session recovery lists the sessions that a crash or reboot interrupted, so you can reopen them. Automatic reopening is opt-in. See [Session recovery](docs/session-recovery.md).
