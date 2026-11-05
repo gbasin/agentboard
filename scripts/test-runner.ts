@@ -111,6 +111,7 @@ async function main() {
       'integration.test.ts',
       'throttled-reconnect.integration.test.ts',
       'terminalRelay.integration.test.ts',
+      'originGuard.integration.test.ts',
     ])
 
     // Client tests that install top-level mock.module(...) hooks must run in a

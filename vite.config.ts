@@ -96,8 +96,9 @@ export default defineConfig(({ mode }) => {
       proxy: {
         '/api': {
           target: `http://localhost:${backendPort}`,
-          // Preserve Vite string-shorthand behavior.
-          changeOrigin: true,
+          // Keep the browser's Host so the backend's same-origin check
+          // (src/server/requestOrigin.ts) sees the page's Vite origin.
+          changeOrigin: false,
           configure: (proxy) => {
             // Vite registers its own error handler after calling `configure()`.
             // Patch `proxy.on()` so that handler doesn't log ECONNREFUSED during backend restarts.
@@ -128,6 +129,7 @@ export default defineConfig(({ mode }) => {
         '/ws': {
           target: `ws://localhost:${backendPort}`,
           ws: true,
+          changeOrigin: false,
           configure: (proxy) => {
             const p = proxy as unknown as {
               on: (event: string, listener: (...args: any[]) => void) => unknown
