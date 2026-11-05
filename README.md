@@ -53,14 +53,16 @@ Every session lives in tmux, so your agents keep running when you close the tab,
 
 ## Supported agents
 
-| Agent | Matching, last prompt, Wake | Pull requests | Media rail, subagent activity |
-| --- | :---: | :---: | :---: |
-| Claude Code | Yes | Yes | Yes |
-| Codex | Yes | Yes | Yes |
-| Devin CLI | Yes | Yes | |
-| Pi | Yes | | |
-| oh-my-pi | Yes | | |
-| Grok CLI | Yes | | |
+| Agent | Matching, last prompt, Wake | Pull requests | Media rail | Subagent activity |
+| --- | :---: | :---: | :---: | :---: |
+| Claude Code | Yes | Yes | Yes | Yes |
+| Codex | Yes | Yes | Yes | Yes |
+| Pi | Yes | Yes | Links | |
+| oh-my-pi | Yes | Yes | Links | |
+| Devin CLI | Yes | Yes | Links | |
+| Grok CLI | Yes | Yes | Links | |
+
+The media rail shows images, documents, and links for Claude Code and Codex. For the other agents it shows links.
 
 Agentboard finds each agent's transcripts in its default location and matches them to tmux windows automatically. Any other program that runs in tmux also works as a plain terminal session, with status but no transcript features.
 
@@ -68,7 +70,7 @@ Agentboard finds each agent's transcripts in its default location and matches th
 
 - macOS (Apple Silicon or Intel) or Linux (x64 or arm64).
 - tmux 3.2 or later: `brew install tmux` or `apt install tmux`.
-- [ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`). Agentboard uses it to match agent transcripts to tmux windows.
+- [ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`): `brew install ripgrep` or `apt install ripgrep`. Agentboard uses it to match agent transcripts to tmux windows. The Homebrew and npm packages do not install it.
 - [Tailscale](https://tailscale.com/download) (recommended) or another network path to your machine, for access from other devices.
 
 Optional:
@@ -143,7 +145,7 @@ PORT=8080 TMUX_SESSION=work agentboard
 
 See [Configuration](docs/configuration.md) for every setting.
 
-Appearance, notification sounds, launch presets, and terminal options are in the **Settings** dialog in the UI.
+Appearance, notification sounds, command presets, session list options, and terminal options are in the **Settings** dialog in the UI.
 
 > **Security note:** Agentboard has no built-in authentication. Anyone who can reach the server has full access to your terminal sessions, including the ability to run commands as your user. The default localhost binding is safe. Tailscale provides network-level auth for remote access. Avoid setting `HOSTNAME=0.0.0.0` on untrusted networks (public WiFi, shared LANs) without an additional access control layer.
 
@@ -181,7 +183,7 @@ To use a different modifier, open **Settings** > **Terminal**.
 - **Status inference** — reads pane content to determine if each agent is *working*, *waiting for input*, or *asking for permission*.
 - **Log matching** — reads agent transcripts to match each session to its tmux window and to show its last prompt, pull requests, and media.
 - **Live terminal** — streams I/O through the server so you can interact with any session from any device.
-- **Hibernating and History sessions** — keeps dormant agent sessions in the sidebar and wakes them on demand. Startup does not wake dormant sessions.
+- **Hibernating and History sessions** — keeps dormant agent sessions in the sidebar and wakes them on demand. Startup does not wake hibernating or History sessions.
 
 ## Documentation
 

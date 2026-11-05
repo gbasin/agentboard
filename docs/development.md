@@ -6,6 +6,7 @@ This page covers running Agentboard from a source checkout. For conventions, arc
 
 - Bun 1.3.14 or later.
 - tmux 3.2 or later.
+- Node.js, for the tests. `bun run test` runs part of the suite with `node --test`.
 
 ## Run from source
 
@@ -42,7 +43,7 @@ Agentboard allows one server per data directory. It also refuses to start from a
 | `bun run typecheck` | `tsc --noEmit`. |
 | `bun run test` | Unit and integration tests. |
 | `bun run test:e2e` | Playwright end-to-end tests. They run on a private tmux socket and data directory. |
-| `bun run test:coverage` | Tests with coverage output. |
+| `bun run test:coverage` | Tests with coverage output. Skips the isolated and real-tmux suites. |
 | `bun run deps:risk` | Dependency risk report. |
 
 Run `bun run lint && bun run typecheck && bun run test` before you commit. The pre-commit hook runs the same three commands.
@@ -66,7 +67,7 @@ Policy:
 - Security risk comes from `bun audit --json` findings and is aggregated by severity (`low`, `moderate`, `high`, `critical`).
 - Maintenance risk comes from `bun outdated` and classifies version lag as `major`, `minor`, or `patch` behind latest.
 - The local default threshold is `high`: `high` and `critical` findings fail.
-- CI fails on `critical` only (`bun run deps:risk:ci`) while existing upstream `high` advisories are tracked. Maintenance findings are warnings.
+- CI fails on `critical` only (`bun run deps:risk:ci`). Maintenance findings are warnings.
 
 Override the security threshold with `--threshold` or `DEPENDENCY_RISK_FAIL_ON`:
 
