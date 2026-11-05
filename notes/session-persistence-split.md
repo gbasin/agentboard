@@ -12,9 +12,11 @@
 > - **PR B — partly shipped.** Server side shipped: `historyQuery.ts` and the
 >   `/api/library` list, detail, resume, and PATCH routes. Not shipped: the
 >   `SessionHistory` dialog (search, filters, pagination, detail) and
->   workspaces. The unseen-file backfill shipped differently: it runs from
->   `PersistentSessions.observe` through the session-read worker, not from
->   `logPoller.runComprehensiveReconciliation`.
+>   workspaces, and the unseen-file backfill (a sweep that creates rows for
+>   transcripts beyond the poller's newest-25 batch). What runs instead is a
+>   recurring import of existing `agent_sessions` rows into the catalog, from
+>   `PersistentSessions.observe` through the session-read worker. It does not
+>   discover transcript files.
 > - **PR C — not shipped**, except opt-in terminal previews and the ownership
 >   lock (which landed with PR A). No verified backups, rotation, scheduled
 >   restore, conversation archives, import/export CLI, or `StoragePanel`. The
@@ -92,8 +94,10 @@ Decisions:
   ensures rows exist for files beyond the horizon. No queue table, no
   re-indexing of known files (that duplicated the poller's job).
 
-*The unseen-file backfill shipped from `PersistentSessions.observe`
-(`importHistory` on the session-read worker), not from the poller.*
+*Not shipped. `PersistentSessions.observe` (`importHistory` on the
+session-read worker) imports `agent_sessions` rows that have no catalog link.
+It does not look for transcript files without a row, so a transcript that
+the poller never picks up still gets no row.*
 
 Frontend fixes folded in:
 - Gate `Mod+N`/`Mod+X` on `isHistoryOpen` (currently kills sessions behind the

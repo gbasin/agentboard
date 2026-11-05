@@ -40,17 +40,19 @@ curl -X PUT http://localhost:4040/api/library/settings \
 
 ## Limits
 
-- Recovery covers the sessions that this server manages in its own tmux session. Sessions from other tmux sessions and from remote hosts are not saved. Each remote Agentboard keeps its own catalog.
-- A conversation that ran in another tmux session when you upgraded is imported as archived, not interrupted.
+- Recovery reopens only the sessions that this server manages in its own tmux session. Windows in other tmux sessions are not saved or reopened. An agent conversation that runs in such a window can still appear in the catalog as an archived record, because Agentboard imports the conversations that it knows from transcripts.
+- Sessions on remote hosts are not saved by this server. An Agentboard that runs on the remote host keeps its own catalog.
 - Saving survives a killed server process. It has not been tested against a power loss. Your disk and filesystem must keep data that was already written.
 - Run one Agentboard server per database. A second server on the same database refuses to start.
 
 ## Upgrade
 
-Build the frontend and restart Agentboard with your normal installation method. The first start after the upgrade does these steps:
+Build the frontend and restart Agentboard with your normal installation method. The first start of a version that has session recovery, on a database from a version that did not, does these steps:
 
-1. Saves a copy of the existing database as `agentboard.db.before-catalog-schema` beside the database file. The database is in the data directory unless `AGENTBOARD_DB_PATH` moves it.
+1. Saves a copy of the database, if the database already holds sessions. The copy is `<database file>.before-catalog-schema`, beside the database file: `~/.agentboard/agentboard.db.before-catalog-schema` by default. If a file with that name exists, Agentboard adds `.1`, `.2`, and so on. A new installation has no copy.
 2. Imports the existing conversations.
 3. Adopts the running windows of the managed tmux session.
+
+Later starts skip step 1.
 
 A database from a newer Agentboard version is refused; it does not downgrade.
