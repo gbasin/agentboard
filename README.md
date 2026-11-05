@@ -163,9 +163,9 @@ Or run it without installing:
 npx @gbasin/agentboard
 ```
 
-Then open `http://localhost:4040`.
+### Open the board
 
-### Open it from another device
+Open `http://localhost:4040` on the same machine.
 
 If Tailscale is running, Agentboard also listens on your Tailscale address. Open `http://<your-machine>:4040` from any device on your tailnet. To install the board on your phone's home screen, see [PWA installation](docs/pwa-install.md).
 
@@ -239,11 +239,11 @@ To use a different modifier, open **Settings** > **Terminal**.
 └─────────────┘
 ```
 
-- **Session discovery** — polls local tmux windows and (optionally) remote hosts over SSH.
-- **Status inference** — reads pane content to determine if each agent is *working*, *waiting for input*, or *asking for permission*.
-- **Log matching** — reads agent transcripts to match each session to its tmux window and to show its last prompt, pull requests, and media.
-- **Live terminal** — streams I/O through the server so you can interact with any session from any device.
-- **Hibernating and History sessions** — keeps dormant agent sessions in the sidebar and wakes them on demand. Startup does not wake hibernating or History sessions.
+- **Session discovery:** The server polls local tmux windows and, if you configure them, remote hosts over SSH.
+- **Status inference:** The server reads pane content to tell if each agent is *working*, *waiting for input*, or *asking for permission*.
+- **Log matching:** The server reads agent transcripts to match each session to its tmux window and to show its last prompt, pull requests, and media.
+- **Live terminal:** The server streams terminal I/O to the browser, so you can use any session from any device.
+- **Hibernating and History sessions:** The sidebar keeps dormant agent sessions, and you wake one when you need it. Startup does not wake hibernating or History sessions.
 
 ## Documentation
 

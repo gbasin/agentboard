@@ -114,7 +114,20 @@ Agentboard finds each agent's transcripts in the agent's default location and re
 | Devin CLI | `~/.local/share/devin/cli/` | `DEVIN_CLI_DIR`, `XDG_DATA_HOME` | `devin --resume {sessionId}` | `DEVIN_RESUME_CMD` |
 | Grok CLI | `~/.grok/sessions/` | `GROK_HOME` | `grok --resume {sessionId}` | `GROK_RESUME_CMD` |
 
-Each location override replaces the agent's home directory, not the sessions directory inside it. For example, `CODEX_HOME=/data/codex` makes Agentboard read `/data/codex/sessions/`. `CLAUDE_CONFIG_DIR` and `CODEX_HOME` are the agents' own variables, so Agentboard follows a home that you already moved.
+The overrides do not all name the same level of the path:
+
+| Variable | Example | Agentboard reads |
+| --- | --- | --- |
+| `CLAUDE_CONFIG_DIR` | `/data/claude` | `/data/claude/projects/` |
+| `CODEX_HOME` | `/data/codex` | `/data/codex/sessions/` |
+| `PI_HOME` | `/data/pi` | `/data/pi/agent/sessions/` |
+| `PI_CODING_AGENT_DIR` | `/data/omp-agent` | `/data/omp-agent/sessions/` |
+| `PI_CONFIG_DIR` | `.custom-omp` | `~/.custom-omp/agent/sessions/`. The value is a directory name in your home directory. |
+| `DEVIN_CLI_DIR` | `/data/devin-cli` | `/data/devin-cli/sessions.db` |
+| `XDG_DATA_HOME` | `/data` | `/data/devin/cli/sessions.db`. See the note below for oh-my-pi. |
+| `GROK_HOME` | `/data/grok` | `/data/grok/sessions/` |
+
+These are the agents' own variables, so Agentboard follows a directory that you already moved. `PI_CODING_AGENT_DIR` takes precedence over `PI_CONFIG_DIR`, and `DEVIN_CLI_DIR` takes precedence over `XDG_DATA_HOME`.
 
 A resume command is a template. Agentboard replaces `{sessionId}` with the agent's session ID and `{logFilePath}` with the transcript path. A template must contain one of the two placeholders, or **Wake** fails. Agentboard adds the flags that the session was first launched with.
 
@@ -140,31 +153,48 @@ Agentboard matches each agent transcript to the tmux window that runs it. The ma
 
 ### Ownership matching
 
-Ownership-based matching is enabled by default on macOS. Set `AGENTBOARD_OWNERSHIP_MATCHING=false` to opt out. Matching also enables the observer. Confirmed ownership takes precedence over scrollback, name, and slug matching. It can match idle sessions and switch a window to a different known conversation atomically. It never steals a conversation from another window or changes a session with a pending stop/wake. Inspection failures preserve existing associations. Other agents keep the existing matching behavior.
+Ownership matching identifies the conversation in a tmux window from the agent process that runs there. It covers local Claude Code and Codex sessions. The other agents keep the matching that is described above.
 
-A conversation must first enter the log database. Missing Codex transcripts are queued directly for discovery; Claude uses the normal transcript discovery pipeline. A later ownership check binds the discovered conversation (checks run every 30 seconds). The flag has no effect on Linux until live validation is complete. Set `AGENTBOARD_OWNERSHIP_MATCHING=false` and restart to return to the existing matcher; already matched sessions remain in the database. No agent configuration changes are required.
+It is on by default on macOS. To turn it off, set `AGENTBOARD_OWNERSHIP_MATCHING=false` and restart Agentboard. Sessions that are already matched stay matched. On Linux the variable has no effect, because ownership matching is not yet validated there. You do not need to change any agent configuration.
 
-Claude identity comes from its local PID registry, checked against the running process. Codex identity comes from writable root transcripts and open writer-lock descriptors. Shared-daemon Codex sessions, ambiguous roots, and unsupported registry formats remain unresolved. These readers use internal agent formats. Live validation currently covers macOS; Linux needs live validation before enabling ownership writes.
+How it identifies a conversation:
 
-`AGENTBOARD_OWNERSHIP_OBSERVER=true` enables read-only ownership diagnostics for local Claude and Codex sessions. It checks at startup and every 30 seconds. For read-only observation on macOS, also set `AGENTBOARD_OWNERSHIP_MATCHING=false`. Changed results appear as `ownership_observation` log events with `agree`, `unmatched`, `disagree`, or `unresolved` comparisons. Set `LOG_LEVEL=debug` to include per-cycle counts and duration.
+- **Claude Code.** It reads the session ID from Claude's local PID registry and checks the entry against the running process.
+- **Codex.** It finds the one Codex process in the pane, then the transcript that this process holds open for writing, together with the writer lock for that conversation.
 
-To compare a running instance once from a source checkout, supply its socket and API address:
+Both readers use internal file formats of the agents.
+
+When ownership is confirmed:
+
+- It takes precedence over scrollback, name, and slug matching.
+- It can match a session that is idle.
+- It can move a window to a different known conversation in one step.
+- It never takes a conversation from another window.
+- It never changes a session that has a stop or a wake in progress.
+
+When ownership is not confirmed, the existing match stays. This is the result for a Codex session that a shared daemon serves, for a pane with more than one candidate, for a registry format that Agentboard does not recognize, and for an inspection that fails.
+
+Ownership matching can bind only a conversation that is already in the Agentboard database. A Codex transcript that is not yet there is queued for discovery. A Claude transcript arrives through normal transcript discovery. A later ownership check then binds the conversation. Checks run at startup and every 30 seconds.
+
+**Diagnostics.** `AGENTBOARD_OWNERSHIP_OBSERVER=true` turns on the observer: a read-only check of the same evidence for local Claude and Codex sessions, at startup and every 30 seconds. The observer also runs whenever ownership matching is on. To observe on macOS without ownership matching, set `AGENTBOARD_OWNERSHIP_MATCHING=false` as well. A changed result appears in the log as an `ownership_observation` event with the comparison `agree`, `unmatched`, `disagree`, or `unresolved`. Set `LOG_LEVEL=debug` to add the counts and the duration of each cycle.
+
+To compare a running instance once from a source checkout, give the command the instance's tmux socket and API address:
 
 ```bash
 bun scripts/observe-session-ownership.ts --socket /private/tmp/tmux-501/default --api http://127.0.0.1:4040
 ```
 
-Replace the socket path with the instance's actual tmux socket. This command reads process metadata and session headers. It sends no terminal input and makes no API writes. Use `--claude-home` or `--codex-home` for nondefault agent directories. The observer requires `ps`, `tmux`, and, for Codex, `lsof`.
+Replace the socket path with the tmux socket of the instance. The command reads process metadata and session headers. It sends no terminal input and makes no API writes. Use `--claude-home` or `--codex-home` for agent directories that are not in the default location. The observer needs `ps`, `tmux`, and, for Codex, `lsof`.
 
 ## Paste and uploads
 
 | Variable | Default | Effect |
 | --- | --- | --- |
-| `AGENTBOARD_PASTE_IMAGE_MAX_BYTES` | `41943040` (40 MB) | Size limit for image uploads. |
+| `AGENTBOARD_PASTE_IMAGE_MAX_BYTES` | `41943040` (40 MiB) | Size limit for image uploads. |
 
 Paste text or files directly into the terminal prompt. Desktop clipboard paste and file drops upload device files and insert their paths without pressing Enter. On mobile, **Paste** opens a dialog with a text field and a **Choose files** control.
 
-File uploads accept any extension, up to 40 MB per file. That limit is fixed. Image files (PNG, JPEG, GIF, WebP) are also limited by `AGENTBOARD_PASTE_IMAGE_MAX_BYTES`, however they are added. Files are stored temporarily on the Agentboard host. Uploads are unavailable for SSH sessions.
+The browser accepts files of any extension, up to 40 MiB (41,943,040 bytes) for each file. That limit is fixed. The browser sends PNG, JPEG, GIF, and WebP files to the image endpoint (`POST /api/paste-image`), which also applies `AGENTBOARD_PASTE_IMAGE_MAX_BYTES`. A value below 40 MiB lowers the limit for images. A value above 40 MiB has no effect in the browser, because the fixed limit applies first. The browser sends every other file to the general endpoint (`POST /api/paste-file`), which applies only the fixed limit. Files are stored temporarily on the Agentboard host. Uploads are unavailable for SSH sessions.
 
 The mobile dialog works the same over HTTP and HTTPS. Type or paste into the field, or attach files with **Choose files**, then tap **Submit**. Agentboard inserts the text and the file paths into the existing terminal prompt without pressing Enter. Automatic clipboard reads elsewhere depend on browser support and permission and require HTTPS or localhost.
 
@@ -201,9 +231,9 @@ The defaults suit most installations. Change these only to investigate a problem
 | Variable | Default | Effect |
 | --- | --- | --- |
 | `AGENTBOARD_LOG_POLL_MS` | `5000` | Poll interval in `poll` mode (minimum `2000`), and the base for the fallback scan in `watch` mode. `0` turns off all transcript change detection, in both modes. |
-| `AGENTBOARD_LOG_POLL_MAX` | `25` | Maximum transcripts processed per poll. |
+| `AGENTBOARD_LOG_POLL_MAX` | `25` | Maximum transcripts processed per poll. The polls that fill in missing last prompts after startup process up to 100, or this value if it is larger. |
 | `AGENTBOARD_RG_THREADS` | `1` | Threads for each ripgrep search. |
-| `AGENTBOARD_LOG_MATCH_WORKER` | on | Set `0` or `false` to run transcript matching on the main thread. |
+| `AGENTBOARD_LOG_MATCH_WORKER` | on | Set `0` or `false` to turn off the transcript-matching worker. Matching then does not run at all: each cycle is skipped, and the log shows `log_match_worker_disabled` once. |
 | `AGENTBOARD_LOG_MATCH_PROFILE` | off | Logs matcher timing. |
 | `AGENTBOARD_ENTER_REFRESH_MS` | `1000` | Delay between Enter in a terminal and the next status refresh. |
 | `AGENTBOARD_WORKING_GRACE_MS` | `4000` | How long a session stays *working* after its output stops changing. |
@@ -212,9 +242,10 @@ The defaults suit most installations. Change these only to investigate a problem
 | `AGENTBOARD_PERSISTENCE_MAINTENANCE_MS` | `5000` | Interval for session-recovery maintenance. `0` disables it. |
 | `AGENTBOARD_STALL_WATCHDOG` | on (macOS) | Set `0` or `false` to turn off event-loop stall sampling, or `1` or `true` to force it on. |
 | `AGENTBOARD_STALL_WATCHDOG_MS` | `2000` | Stall threshold. A value below `1000` is ignored. |
-| `AGENTBOARD_TERMINAL_RELAY` | on | Set `0` to serve terminals from the main process instead of the relay worker. Only `0` turns it off. |
+| `AGENTBOARD_TERMINAL_RELAY` | on | Set `0` to serve terminals from the main process instead of the relay worker. Only `0` turns it off. The relay serves at most 32 terminal connections at a time, including ones that are still closing. A connection over that limit gets "Terminal capacity reached". The limit is fixed. |
 | `AGENTBOARD_RELAY_GRACE_MS` | `60000` | How long the relay keeps a disconnected terminal observer before it expires. |
 | `AGENTBOARD_RELAY_PROGRESS_MS` | `90000` | How long a terminal lease lasts without client traffic. |
+| `AGENTBOARD_ATTACH_DEDUP_MS` | `500` | Applies only with `AGENTBOARD_TERMINAL_RELAY=0`. A second attach to the same session and target inside this window is acknowledged without a new scrollback capture. The variable exists so that tests can widen the window. |
 | `AGENTBOARD_STATIC_DIR` | `./dist/client` | Directory of the built frontend, relative to the working directory. The npm launcher and the launchd release installer set it. |
 
 ## Development
