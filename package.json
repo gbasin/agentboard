@@ -42,6 +42,7 @@
     "coverage:all": "bun scripts/coverage-all.ts",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
+    "readme:shots": "bun scripts/readme-shots/index.ts",
     "prepare": "git config core.hooksPath .githooks",
     "test:activity:coverage": "bun test --coverage --coverage-reporter=lcov --coverage-dir=coverage/activity src/server/__tests__/sessionActivity.test.ts src/server/__tests__/sessionActivityClient.test.ts && bun scripts/check-activity-coverage.ts"
   },

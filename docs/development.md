@@ -45,8 +45,14 @@ Agentboard allows one server per data directory. It also refuses to start from a
 | `bun run test:e2e` | Playwright end-to-end tests. They run on a private tmux socket and data directory. |
 | `bun run test:coverage` | Tests with coverage output. Skips the isolated and real-tmux suites. |
 | `bun run deps:risk` | Dependency risk report. |
+| `bun run readme:shots` | Regenerates the README images in `assets/readme/`. |
 
 Run `bun run lint && bun run typecheck && bun run test` before you commit. The pre-commit hook runs the same three commands.
+
+## README images
+
+`bun run readme:shots` boots a private Agentboard (own tmux sockets, data directory, HOME and port 4199 under `/private/tmp/ab-shots`), seeds invented sessions from `scripts/readme-shots/scenes.ts`, captures the real UI with Playwright, and writes the composited images to `assets/readme/`.
+It needs the Playwright Chromium and WebKit browsers, `ffmpeg` and `cwebp`, takes about 1.5 minutes, and removes everything it started when it finishes.
 
 ## Dependency risk scanner
 
