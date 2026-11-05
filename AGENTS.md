@@ -1,18 +1,32 @@
 # AGENTS.md
 
-- Bun 1.x, TypeScript 5.x, React 18, Hono, xterm.js, Zustand, Tailwind.
+- Bun 1.3 (pinned in `.bun-version`), TypeScript 5, React 18, Hono 4, xterm.js 6 (`@xterm/xterm`), Zustand 5, Tailwind CSS 3. Vite 8 builds the client; the server runs from source with Bun, and release binaries come from `bun build --compile`.
 
 ## Commands
 
 ```
-bun run dev        # frontend + backend
-bun run build      # production build
-bun run lint       # oxlint
-bun run typecheck  # tsc --noEmit
-bun run test       # unit tests
+bun run dev            # backend (port 4040) + Vite dev server (port 5173)
+bun run build          # production client build into dist/client
+bun run lint           # oxlint
+bun run typecheck      # tsc --noEmit
+bun run test           # unit and integration tests (scripts/test-runner.ts)
+bun run test:e2e       # Playwright end-to-end tests, isolated tmux socket and data dir
+bun run test:coverage  # tests with lcov coverage
+bun run deps:risk      # dependency security and maintenance scanner
 ```
 
-Run `bun run lint && bun run typecheck && bun run test` after changes.
+Run `bun run lint && bun run typecheck && bun run test` after changes. The
+pre-commit hook (`.githooks/pre-commit`) runs the same three commands.
+
+`bun run test` is not the same as bare `bun test`. `scripts/test-runner.ts`
+points the Claude and Codex roots, the database, the data dir, and the log file
+at a temp directory and sets `NODE_ENV=test`. It runs each file named on its
+isolation lists (`ISOLATED_FILES`, `ISOLATED_REAL_TMUX_FILES`,
+`ISOLATED_CLIENT_FILES`) and each file in `src/server/__tests__/isolated/` in
+its own process. Bare `bun test` runs everything in one process against your
+real environment. A new test that mocks modules or globals, or that starts real
+tmux, must be registered there; see
+[docs/architecture.md](docs/architecture.md#when-you-add-x-also-change-y).
 
 ## FAD Parity Fixtures
 
@@ -29,29 +43,26 @@ dev-only `tools/fad-dump` shim). The shim is never a runtime dependency.
 
 ## How It Works
 
-- Single managed tmux session (default: `agentboard`) with one window per agent session. Windows in all other tmux sessions are discovered as external; set `DISCOVER_PREFIXES` to limit discovery to sessions whose names start with those prefixes. Each browser connection attaches through its own grouped session (`<TMUX_SESSION>-ws-<connection>`).
-- Backend discovers windows, streams terminal output via WebSocket
-- Parses Claude/Codex/Pi/oh-my-pi JSONL logs from `~/.claude/projects/`, `~/.codex/sessions/`, `~/.pi/agent/sessions/`, `~/.omp/agent/sessions/` (or `$XDG_DATA_HOME/omp/sessions` when that directory exists). `src/server/logDiscovery.ts` owns the roots and their env overrides (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `PI_HOME`, `GROK_HOME`, `PI_CODING_AGENT_DIR`, `PI_CONFIG_DIR`).
-- Devin CLI stores history in SQLite (`~/.local/share/devin/cli/sessions.db`); `src/server/devinSync.ts` mirrors it into `~/.agentboard/devin-sessions/*.jsonl` so the same pipeline applies. `src/server/devinLockMatch.ts` matches devin sessions to windows via `session_locks/<id>.lock` PIDs.
-- Grok CLI writes transcripts at `~/.grok/sessions/<encoded-cwd>/<session-id>/chat_history.jsonl`; sessionId and projectPath are derived from the directory names. Sibling telemetry files (events.jsonl, updates.jsonl) are excluded from matching.
-- Status is one of `working`, `waiting`, `permission`, `unknown`. It is inferred from tmux pane content, not from logs: `src/server/statusInference.ts` diffs pane captures (changed output means working) and matches permission-prompt patterns. After Enter is sent to a terminal, `src/server/forceWorkingStatus.ts` holds the status at `working` for a short grace period. Logs drive session-to-window matching, the last user prompt, PR chips, and media.
+Read [docs/architecture.md](docs/architecture.md) before changing the server. The essentials:
+
+- One managed tmux session (default `agentboard`) holds one window per agent session. Windows in other tmux sessions are discovered as external (`DISCOVER_PREFIXES` narrows that). Each browser terminal attaches through its own grouped session (`<TMUX_SESSION>-ws-<id>`).
+- With the terminal relay (the default), a relay Worker owns the public port and terminal I/O; the main thread serves HTTP on loopback and owns the database. Never call `worker.terminate()`: it segfaults compiled Bun.
+- Status (`working`, `waiting`, `permission`, `unknown`) is inferred from tmux pane content in `src/server/statusInference.ts`, not from logs.
+- Agent transcripts (Claude, Codex, Pi, oh-my-pi, Grok, and a mirror of Devin's SQLite history) are matched to windows in `src/server/logMatcher.ts` and `src/server/ownership/`. They drive the last prompt, PR chips, and media. `src/server/logDiscovery.ts` owns the roots.
+- Data lives in `~/.agentboard/` (`AGENTBOARD_DATA_DIR`): `agentboard.db` holds conversations and the session-recovery catalog.
 
 ## Structure
 
-- src/server/     Hono backend, WebSocket, tmux/pty management, log parsing
-  - `src/server/index.ts` - boot, Hono routes, WebSocket handling, refresh loop, session lifecycle handlers
-  - `src/server/SessionManager.ts` - tmux window discovery, create/kill/rename, window options
-  - `src/server/statusInference.ts` - status detection from pane content
-  - `src/server/logDiscovery.ts`, `logWatcher.ts`, `logPoller.ts`, `logMatcher.ts` - log roots, change detection, session-to-window matching
-  - `src/server/terminal/` - terminal proxies (pty, pipe-pane, ssh)
-  - `src/server/persistence/` - session recovery catalog
-- src/client/     React frontend, xterm.js terminal, Zustand stores
-  - `src/client/App.tsx` - main UI, keyboard shortcuts
-  - `src/client/components/Terminal.tsx` - terminal pane, controls, overlays
-  - `src/client/hooks/useTerminal.ts` - xterm.js instance, input, paste, links
-- src/shared/     Shared types
+- `src/server/` — Bun backend. `index.ts` is the entry point.
+- `src/client/` — React app. `App.tsx` is the root.
+- `src/shared/` — types and protocol constants used by both.
+- `docs/architecture.md` maps processes, tmux, terminal I/O, the log pipeline, storage, and the API.
 
-- Data directory: `~/.agentboard/` (override with `AGENTBOARD_DATA_DIR`) holds `agentboard.db` (session data), `media-index.sqlite`, and `server.lock` (single-instance lock). Depending on configuration it also holds `agentboard.log` (when file logging is on), `tmux-server.pid` (unless `AGENTBOARD_TMUX_PID_FILE` moves it), `devin-sessions/` (when Devin CLI history exists), and `stall-samples/` (macOS, after a stall).
+## Documentation
+
+- `docs/` describes current behaviour only.
+- Investigation evidence, measurements, rollout records, and design proposals belong in the pull request (description or attachments), not in the tree.
+- When a change makes a statement in a doc false, fix the doc in the same pull request.
 
 ## tmux Safety
 
