@@ -1,29 +1,25 @@
-import fs from 'node:fs/promises'
-import os from 'node:os'
-import path from 'node:path'
+import { subscribePaneOutput, type PaneOutputLease } from './PaneOutputFeed'
 import { TerminalProxyBase } from './TerminalProxyBase'
 import { TerminalProxyError, TerminalState } from './types'
 import type { TerminalProxyOptions } from './types'
 
 class PipePaneTerminalProxy extends TerminalProxyBase {
-  private tailProcess: ReturnType<typeof Bun.spawn> | null = null
-  private tailSequence = 0
+  private lease: PaneOutputLease | null = null
   private cols = 80
   private rows = 24
   private currentTarget: string | null = null
-  private pipeRoot: string
-  private disposing = false
+  private disposed = false
   private monitorInterval: ReturnType<typeof setInterval> | null = null
   private monitorEnabled: boolean
 
   constructor(options: TerminalProxyOptions) {
     super(options)
     this.monitorEnabled = options.monitorTargets ?? true
-    this.pipeRoot = path.join(
-      os.tmpdir(),
-      'agentboard-pipes',
-      sanitizeConnectionId(options.connectionId)
-    )
+  }
+
+  start(): Promise<void> {
+    if (this.disposed) return Promise.reject(new TerminalProxyError('ERR_NOT_READY', 'Terminal disposed', false))
+    return super.start()
   }
 
   getMode(): 'pipe-pane' {
@@ -154,28 +150,20 @@ class PipePaneTerminalProxy extends TerminalProxyBase {
   }
 
   async dispose(): Promise<void> {
+    this.disposed = true
     this.state = TerminalState.DEAD
-    this.outputSuppressed = false
-    this.disposing = true
-
+    this.outputSuppressed = true
     this.stopMonitor()
-    await this.stopPipe(this.currentTarget)
-    this.stopTail()
-
-    try {
-      await fs.rm(this.pipeRoot, { recursive: true, force: true })
-    } catch {
-      // Ignore cleanup failures
-    }
-
+    const lease = this.lease
+    this.lease = null
     this.currentTarget = null
     this.currentWindow = null
     this.readyAt = null
-    this.startPromise = null
-    this.disposing = false
+    await lease?.release()
   }
 
   protected async doStart(): Promise<void> {
+    if (this.disposed) throw new TerminalProxyError('ERR_NOT_READY', 'Terminal disposed', false)
     if (this.state === TerminalState.READY || this.state === TerminalState.SWITCHING) {
       return
     }
@@ -188,17 +176,6 @@ class PipePaneTerminalProxy extends TerminalProxyBase {
       baseSession: this.options.baseSession,
       mode: this.getMode(),
     })
-
-    try {
-      await this.ensurePipeRoot()
-    } catch (error) {
-      this.state = TerminalState.DEAD
-      throw new TerminalProxyError(
-        'ERR_TMUX_ATTACH_FAILED',
-        error instanceof Error ? error.message : 'Failed to prepare pipe directory',
-        true
-      )
-    }
 
     this.readyAt = this.now()
     this.state = TerminalState.READY
@@ -230,13 +207,31 @@ class PipePaneTerminalProxy extends TerminalProxyBase {
 
     try {
       this.stopMonitor()
-      await this.stopPipe(this.currentTarget)
-      this.stopTail()
-      this.clearPipePane(target)
-
-      const pipeFile = await this.preparePipeFile(target)
-      this.startPipePane(target, pipeFile)
-      this.startTail(pipeFile)
+      const previous = this.lease
+      this.lease = null
+      await previous?.release()
+      if (this.disposed) return false
+      // Resolve aliases/grouped sessions to the same physical pane and socket.
+      const identity = this.runParsedTmux(['display-message', '-t', target, '-p', '#{socket_path}:#{pid}:#{pane_id}']).trim()
+      const key = identity || `${process.env.TMUX_TMPDIR ?? process.env.TMUX ?? 'default'}:${target}`
+      const paneTarget = identity.match(/:(%\d+)$/)?.[1] ?? target
+      const lease = subscribePaneOutput(key, paneTarget, {
+        runTmux: (args) => this.runTmux(args), spawn: this.spawn,
+      }, {
+        onData: (data) => { if (!this.disposed && !this.outputSuppressed) this.options.onData(data) },
+        onExit: () => {
+          if (this.disposed) return
+          this.state = TerminalState.DEAD
+          this.stopMonitor()
+          this.options.onExit?.()
+        },
+      })
+      this.lease = lease
+      await lease.ready
+      if (this.disposed || (this.state as TerminalState) === TerminalState.DEAD) {
+        await lease.release()
+        return false
+      }
       this.resizeTarget(target, this.cols, this.rows)
 
       if (onReady) {
@@ -247,6 +242,7 @@ class PipePaneTerminalProxy extends TerminalProxyBase {
         }
       }
 
+      if (this.disposed) return false
       this.outputSuppressed = false
       this.currentTarget = target
       this.setCurrentWindow(target)
@@ -261,6 +257,9 @@ class PipePaneTerminalProxy extends TerminalProxyBase {
       this.state = TerminalState.READY
       return true
     } catch (error) {
+      await this.lease?.release()
+      this.lease = null
+      if (this.disposed) return false
       this.outputSuppressed = false
       this.state = TerminalState.READY
       this.logEvent('terminal_switch_failure', {
@@ -275,109 +274,6 @@ class PipePaneTerminalProxy extends TerminalProxyBase {
         true
       )
     }
-  }
-
-  private async ensurePipeRoot(): Promise<void> {
-    await fs.mkdir(this.pipeRoot, { recursive: true, mode: 0o700 })
-    try {
-      await fs.chmod(this.pipeRoot, 0o700)
-    } catch {
-      // Ignore chmod failures
-    }
-  }
-
-  private async preparePipeFile(target: string): Promise<string> {
-    const pipeFile = this.getPipeFile(target)
-    await fs.writeFile(pipeFile, '', { mode: 0o600 })
-    try {
-      await fs.chmod(pipeFile, 0o600)
-    } catch {
-      // Ignore chmod failures
-    }
-    return pipeFile
-  }
-
-  private startPipePane(target: string, pipeFile: string): void {
-    const command = `cat >> ${pipeFile}`
-    this.runTmux(['pipe-pane', '-t', target, command])
-  }
-
-  private startTail(pipeFile: string): void {
-    const sequence = ++this.tailSequence
-
-    let proc: ReturnType<typeof Bun.spawn>
-    try {
-      proc = this.spawn(['tail', '-n', '+1', '-F', pipeFile], {
-        stdout: 'pipe',
-        stderr: 'pipe',
-      })
-    } catch (error) {
-      throw new TerminalProxyError(
-        'ERR_TMUX_ATTACH_FAILED',
-        error instanceof Error ? error.message : 'Failed to start pipe tail',
-        true
-      )
-    }
-
-    this.tailProcess = proc
-
-    const stdout = proc.stdout
-    if (stdout && typeof stdout !== 'number') {
-      const reader = stdout.getReader()
-      const decoder = new TextDecoder()
-      const readLoop = async () => {
-        try {
-          while (true) {
-            const { value, done } = await reader.read()
-            if (done) break
-            if (!value || sequence !== this.tailSequence) {
-              continue
-            }
-            const text = decoder.decode(value, { stream: true })
-            if (text && !this.outputSuppressed) {
-              this.options.onData(text)
-            }
-          }
-          const tail = decoder.decode()
-          if (tail && sequence === this.tailSequence && !this.outputSuppressed) {
-            this.options.onData(tail)
-          }
-        } catch {
-          // Ignore tail read errors
-        }
-      }
-      void readLoop()
-    }
-
-    proc.exited.then(() => {
-      if (sequence !== this.tailSequence) {
-        return
-      }
-      this.tailProcess = null
-      if (this.state === TerminalState.DEAD || this.disposing) {
-        return
-      }
-      this.state = TerminalState.DEAD
-      this.logEvent('terminal_proxy_dead', {
-        sessionName: this.options.sessionName,
-        mode: this.getMode(),
-      })
-      this.options.onExit?.()
-    })
-  }
-
-  private stopTail(): void {
-    this.tailSequence += 1
-    if (!this.tailProcess) {
-      return
-    }
-
-    try {
-      this.tailProcess.kill()
-    } catch {
-      // Ignore kill failures
-    }
-    this.tailProcess = null
   }
 
   private startMonitor(target: string): void {
@@ -411,8 +307,8 @@ class PipePaneTerminalProxy extends TerminalProxyBase {
         tmuxWindow: monitorTarget,
         mode: this.getMode(),
       })
-      void this.stopPipe(monitorTarget)
-      this.stopTail()
+      void this.lease?.release()
+      this.lease = null
       this.currentTarget = null
       this.currentWindow = null
       this.outputSuppressed = false
@@ -427,26 +323,6 @@ class PipePaneTerminalProxy extends TerminalProxyBase {
     }
     clearInterval(this.monitorInterval)
     this.monitorInterval = null
-  }
-
-  private async stopPipe(target: string | null): Promise<void> {
-    if (!target) {
-      return
-    }
-
-    try {
-      this.runTmux(['pipe-pane', '-t', target])
-    } catch {
-      // Ignore pipe stop failures
-    }
-  }
-
-  private clearPipePane(target: string): void {
-    try {
-      this.runTmux(['pipe-pane', '-t', target])
-    } catch {
-      // Ignore pipe reset failures
-    }
   }
 
   private resizeTarget(target: string, cols: number, rows: number): void {
@@ -467,16 +343,6 @@ class PipePaneTerminalProxy extends TerminalProxyBase {
       // Ignore resize errors
     }
   }
-
-  private getPipeFile(target: string): string {
-    const token = Buffer.from(target).toString('hex')
-    return path.join(this.pipeRoot, `${token}.pipe`)
-  }
-}
-
-function sanitizeConnectionId(connectionId: string): string {
-  const sanitized = connectionId.replace(/[^A-Za-z0-9_-]/g, '')
-  return sanitized || 'connection'
 }
 
 export { PipePaneTerminalProxy }

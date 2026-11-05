@@ -82,6 +82,7 @@ async function main() {
       'slug-supersede.integration.test.ts',
       'sessionRefreshWorker.test.ts',
       'pipePaneTerminalProxy.test.ts',
+      'pipePaneLifecycle.test.ts',
       'hydrateSessionsEmptyGuard.test.ts',
       // terminalProxyFactory.test.ts installs a top-level
       // mock.module('../config', ...) whose replacement omits many real
@@ -103,6 +104,7 @@ async function main() {
     // Linux CI can stall PTY attach readiness.
     const ISOLATED_REAL_TMUX_FILES = new Set([
       'double-attach.integration.test.ts',
+      'pipePaneShared.integration.test.ts',
       'e2eTmuxReap.integration.test.ts',
       'groupedSessionLeak.integration.test.ts',
       'hibernation.integration.test.ts',
