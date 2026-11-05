@@ -6,12 +6,17 @@ import {
   extractCodexSubagentLink,
   extractSlug,
   getLogTimes,
+  getLogSearchDirs,
   inferAgentTypeFromPath,
   isCodexExec,
   isPiSubagent,
   scanAllLogDirs,
 } from './logDiscovery'
 import { getLogTokenCount } from './logMatcher'
+import { LogReconciliation } from './logReconciliation'
+
+// Module state lives in the persistent matching worker, not in poll requests.
+const reconciliation = new LogReconciliation()
 
 export interface LogEntrySnapshot {
   logPath: string
@@ -153,7 +158,11 @@ export function collectLogEntryBatch(
 
   const sortStart = performance.now()
   timeEntries.sort((a, b) => b.mtime - a.mtime)
-  const limited = timeEntries.slice(0, Math.max(1, maxLogs))
+  const limited = reconciliation.select(
+    timeEntries,
+    Math.max(1, Math.floor(maxLogs)),
+    JSON.stringify(getLogSearchDirs())
+  ).sort((a, b) => b.mtime - a.mtime)
   const sortMs = performance.now() - sortStart
 
   const entries = limited.map((entry) =>
