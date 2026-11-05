@@ -144,8 +144,9 @@ for (const relay of [true, false]) {
         headers: { origin: `http://${host}:${port}`, 'content-type': 'application/json' },
         body: JSON.stringify({ level: 'info', event: 'origin_guard_probe' }),
       })
-      expect(sameOrigin.status).not.toBe(403)
-      expect(sameOrigin.status).not.toBe(404)
+      // Exactly the handler's reply: a 500, or a 503 from the relay, must fail here.
+      expect(sameOrigin.status).toBe(200)
+      expect(await sameOrigin.json()).toEqual({ ok: true })
       // A rejected write must not poison the next request on the shared relay connection.
       expect((await fetch(`http://${host}:${port}/api/health`)).status).toBe(200)
     })
