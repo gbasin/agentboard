@@ -756,23 +756,14 @@ export function extractPullRequests(content: string): SessionPullRequest[] {
 
 /**
  * Return the PRs created in the given agent log file.
- * Incremental: re-reads only bytes appended since the last call. Pass
- * `knownSize` (e.g. the DB's last_known_log_size) to skip the stat syscall
- * when the caller already knows the size is unchanged.
+ * Incremental: re-reads only bytes appended since the last call. Always stat
+ * the file: a caller-provided size cannot identify equal-size rewrites.
  */
 export function getSessionPullRequests(
   logPath: string,
-  knownSize?: number | null
+  _knownSize?: number | null
 ): SessionPullRequest[] {
   let state = scanCache.get(logPath)
-  if (
-    state &&
-    state.offset > 0 &&
-    knownSize != null &&
-    knownSize === state.offset
-  ) {
-    return state.prs.length ? state.prs.slice() : EMPTY_RESULT
-  }
 
   let stat: fs.Stats
   try {

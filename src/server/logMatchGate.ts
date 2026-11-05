@@ -6,6 +6,7 @@ export interface SessionSnapshot {
   currentWindow: string | null
   lastActivityAt: string
   lastUserMessage?: string | null
+  lastKnownLogRevision?: string | null
   lastKnownLogSize?: number | null
 }
 

@@ -68,6 +68,7 @@ interface SessionRecord {
   isHibernating: boolean
   lastResumeError: string | null
   wakeStartedAt: string | null
+  lastKnownLogRevision?: string | null
   lastKnownLogSize: number | null
   isCodexExec: boolean
 }
@@ -85,6 +86,7 @@ type SessionUpdate = Pick<
   | 'lastActivityAt'
   | 'lastUserMessage'
   | 'lastKnownLogSize'
+  | 'lastKnownLogRevision'
   | 'isCodexExec'
   | 'slug'
 >
@@ -92,7 +94,7 @@ type SessionUpdate = Pick<
 /**
  * Computes the update object for an existing session record based on a log entry.
  * Shared logic between the "existing by logPath" and "existing by sessionId" branches.
- * Uses file size comparison to detect actual log growth (not just mtime changes from backups/syncs).
+ * Uses stat revisions to refresh derived metadata after appends and rewrites.
  */
 function applyLogEntryToExistingRecord(
   record: SessionRecord,
@@ -110,36 +112,38 @@ function applyLogEntryToExistingRecord(
     update.slug = entry.slug
   }
 
-  // Use file size to detect actual log changes (mtime can change from backups/syncs)
+  // Revision changes trigger parsing, while transcript timestamps establish activity.
   const lastKnownSize = record.lastKnownLogSize ?? 0
   const isFirstObservation = record.lastKnownLogSize === null
   const sizeChanged = entry.size !== lastKnownSize
+  const revisionChanged = entry.revision !== undefined && entry.revision !== record.lastKnownLogRevision
   const hasGrown = entry.size > lastKnownSize
 
   // Enter block on size change OR first observation (to initialize null -> actual size)
-  if (sizeChanged || isFirstObservation) {
+  if (sizeChanged || isFirstObservation || revisionChanged) {
     // Log size changed - could be growth or truncation/rotation
-    if (hasGrown) {
+    if (hasGrown || revisionChanged) {
       // Log grew - extract timestamp from the last entry
       const logTimestamp = extractLastEntryTimestamp(opts.logPath)
       if (logTimestamp) {
         update.lastActivityAt = logTimestamp
-      } else {
+      } else if (sizeChanged || (entry.lastUserMessage !== undefined && entry.lastUserMessage !== record.lastUserMessage)) {
         // Fallback to mtime if we can't parse a timestamp
         update.lastActivityAt = new Date(entry.mtime).toISOString()
       }
     }
     // Always update lastKnownLogSize on any size change (including truncation)
     update.lastKnownLogSize = entry.size
+    if (entry.revision !== undefined && !opts.isLastUserMessageLocked) update.lastKnownLogRevision = entry.revision
   }
 
-  if (entry.lastUserMessage && !isToolNotificationText(entry.lastUserMessage)) {
+  if (entry.lastUserMessage !== undefined && (!entry.lastUserMessage || !isToolNotificationText(entry.lastUserMessage))) {
     // Skip if Enter-key capture recently set a value (prevents stale log overwrites)
     if (!opts.isLastUserMessageLocked) {
       const shouldReplace =
         !record.lastUserMessage ||
         isToolNotificationText(record.lastUserMessage) ||
-        (sizeChanged && entry.lastUserMessage !== record.lastUserMessage)
+        ((sizeChanged || revisionChanged) && entry.lastUserMessage !== record.lastUserMessage)
       if (shouldReplace) {
         update.lastUserMessage = entry.lastUserMessage
       }
@@ -781,6 +785,7 @@ export class LogPoller {
         lastActivityAt: session.lastActivityAt,
         lastUserMessage: toSnapshotMessage(session.lastUserMessage),
         lastKnownLogSize: session.lastKnownLogSize,
+        lastKnownLogRevision: session.lastKnownLogRevision,
       }))
       const response = await this.matchWorker.poll({
         windows,
@@ -875,6 +880,7 @@ export class LogPoller {
         lastActivityAt: session.lastActivityAt,
         lastUserMessage: session.lastUserMessage,
         lastKnownLogSize: session.lastKnownLogSize,
+        lastKnownLogRevision: session.lastKnownLogRevision,
       }))
 
     const exactWindowMatches = new Map<string, Session>()
@@ -1199,6 +1205,7 @@ export class LogPoller {
           isHibernating: inheritHibernationMarker,
           lastResumeError: null,
           lastKnownLogSize: entry.size,
+          lastKnownLogRevision: entry.revision,
           isCodexExec: entry.isCodexExec,
           launchCommand: matchedWindow?.command ?? null,
         })
@@ -1272,6 +1279,7 @@ export class LogPoller {
         lastActivityAt: session.lastActivityAt,
         lastUserMessage: toSnapshotMessage(session.lastUserMessage),
         lastKnownLogSize: session.lastKnownLogSize,
+        lastKnownLogRevision: session.lastKnownLogRevision,
       }))
 
       const lastMessageCandidates: LastMessageCandidate[] = []

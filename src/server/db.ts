@@ -23,6 +23,7 @@ export interface AgentSessionRecord {
   isHibernating: boolean
   lastResumeError: string | null
   wakeStartedAt: string | null
+  lastKnownLogRevision?: string | null
   lastKnownLogSize: number | null
   isCodexExec: boolean
   launchCommand: string | null
@@ -312,12 +313,15 @@ function initializeConnection(
   migrateLaunchCommandColumn(db)
   migrateWakeStartedAtColumn(db)
   migrateDeduplicateCurrentWindows(db)
+  if (!(db.query("PRAGMA table_info(agent_sessions)").all() as { name: string }[]).some(c => c.name === "last_known_log_revision")) {
+    db.exec("ALTER TABLE agent_sessions ADD COLUMN last_known_log_revision TEXT")
+  }
   db.exec(CREATE_INDEXES_SQL)
 
   const insertStmt = db.prepare(
     `INSERT INTO agent_sessions
-      (session_id, log_file_path, project_path, slug, agent_type, display_name, created_at, last_activity_at, last_user_message, current_window, is_hibernating, last_resume_error, wake_started_at, last_known_log_size, is_codex_exec, launch_command)
-     VALUES ($sessionId, $logFilePath, $projectPath, $slug, $agentType, $displayName, $createdAt, $lastActivityAt, $lastUserMessage, $currentWindow, $isHibernating, $lastResumeError, $wakeStartedAt, $lastKnownLogSize, $isCodexExec, $launchCommand)`
+      (session_id, log_file_path, project_path, slug, agent_type, display_name, created_at, last_activity_at, last_user_message, current_window, is_hibernating, last_resume_error, wake_started_at, last_known_log_size, is_codex_exec, launch_command, last_known_log_revision)
+     VALUES ($sessionId, $logFilePath, $projectPath, $slug, $agentType, $displayName, $createdAt, $lastActivityAt, $lastUserMessage, $currentWindow, $isHibernating, $lastResumeError, $wakeStartedAt, $lastKnownLogSize, $isCodexExec, $launchCommand, $lastKnownLogRevision)`
   )
 
   const selectBySessionId = db.prepare(
@@ -416,6 +420,7 @@ function initializeConnection(
         $lastResumeError: session.lastResumeError,
         $wakeStartedAt: session.wakeStartedAt ?? null,
         $lastKnownLogSize: session.lastKnownLogSize,
+        $lastKnownLogRevision: session.lastKnownLogRevision ?? null,
         $isCodexExec: session.isCodexExec ? 1 : 0,
         $launchCommand: session.launchCommand ?? null,
       })
@@ -451,6 +456,7 @@ function initializeConnection(
         lastResumeError: 'last_resume_error',
         wakeStartedAt: 'wake_started_at',
         lastKnownLogSize: 'last_known_log_size',
+        lastKnownLogRevision: 'last_known_log_revision',
         isCodexExec: 'is_codex_exec',
         launchCommand: 'launch_command',
       }

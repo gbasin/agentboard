@@ -1,5 +1,6 @@
 /// <reference lib="webworker" />
 import os from 'node:os'
+import { statSync, accessSync, constants } from 'node:fs'
 import path from 'node:path'
 import { performance } from 'node:perf_hooks'
 import {
@@ -420,44 +421,47 @@ function buildLastMessageEntries(
   return nextEntries
 }
 
-function attachLastUserMessage(
+export function attachLastUserMessage(
   entry: LogEntrySnapshot,
-  sessionByLogPath: Map<
-    string,
-    {
-      lastActivityAt: string
-      logFilePath: string
-      currentWindow: string | null
-      lastUserMessage?: string | null
-      lastKnownLogSize?: number | null
-    }
-  >
+  sessionByLogPath: Map<string, {
+    lastActivityAt: string
+    logFilePath: string
+    currentWindow: string | null
+    lastUserMessage?: string | null
+    lastKnownLogSize?: number | null
+    lastKnownLogRevision?: string | null
+  }>
 ) {
+  // Stat revision detects replacement and in-place rewrites without reading the
+  // entire transcript on every append. Parsing remains bounded by the existing
+  // last-message byte limit. mtime alone is not evidence of new activity.
+  let revision: string
+  try {
+    const stat = statSync(entry.logPath, { bigint: true })
+    accessSync(entry.logPath, constants.R_OK)
+    entry.size = Number(stat.size)
+    entry.mtime = Number(stat.mtimeMs)
+    revision = `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`
+  } catch {
+    // Discovery races with transcript rotation. Leave metadata unacknowledged
+    // so a later poll retries, rather than clearing a prompt on a read failure.
+    return
+  }
   const snapshot = sessionByLogPath.get(entry.logPath)
-  if (snapshot) {
-    if (!snapshot.lastUserMessage || isToolNotificationText(snapshot.lastUserMessage)) {
-      const lastUserMessage = extractLastUserMessageFromLog(
-        entry.logPath,
-        LAST_USER_MESSAGE_READ_OPTIONS
-      )
-      if (lastUserMessage) {
-        entry.lastUserMessage = lastUserMessage
-      }
-      return
-    }
-    // Use file size to detect actual log growth (mtime is unreliable due to backups/syncs)
-    const knownSize = snapshot.lastKnownLogSize ?? 0
-    if (entry.size <= knownSize) {
-      return
-    }
+  if (snapshot?.lastKnownLogRevision === revision &&
+      snapshot.lastUserMessage && !isToolNotificationText(snapshot.lastUserMessage)) {
+    entry.revision = revision
+    return
   }
-  const lastUserMessage = extractLastUserMessageFromLog(
-    entry.logPath,
-    LAST_USER_MESSAGE_READ_OPTIONS
-  )
-  if (lastUserMessage) {
-    entry.lastUserMessage = lastUserMessage
-  }
+  const message = extractLastUserMessageFromLog(entry.logPath, LAST_USER_MESSAGE_READ_OPTIONS)
+  try {
+    const after = statSync(entry.logPath, { bigint: true })
+    if (`${after.dev}:${after.ino}:${after.size}:${after.mtimeNs}:${after.ctimeNs}` !== revision) return
+  } catch { return }
+  entry.revision = revision
+  // A bounded tail scan cannot prove absence in a larger transcript.
+  if (message) entry.lastUserMessage = message
+  else if (entry.size <= LAST_USER_MESSAGE_READ_OPTIONS.maxByteLimit) entry.lastUserMessage = null
 }
 
 if (ctx) {

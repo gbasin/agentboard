@@ -33,7 +33,8 @@ export interface LogEntrySnapshot {
   /** Codex subagent's parent thread id, when detectable. */
   codexParentId?: string | null
   logTokenCount: number
-  lastUserMessage?: string
+  revision?: string
+  lastUserMessage?: string | null
 }
 
 export interface LogEntryBatch {
