@@ -65,10 +65,13 @@ interface PendingCreate {
 
 interface ScanState {
   // Byte offset consumed so far. Log files are append-mostly; a smaller file
-  // size than offset, or same size with a changed mtime, means a rewrite and
-  // triggers a rescan.
+  // size than offset, changed inode, or same size with a changed stat
+  // revision means a rewrite and triggers a rescan.
   offset: number
   mtimeMs: number
+  ctimeMs: number
+  device: number
+  inode: number
   // Trailing partial line carried between reads, as copied raw byte pieces.
   // It is decoded once, whole, when its newline arrives: decoding per chunk
   // breaks multi-byte characters at chunk edges, and re-joining a growing
@@ -98,6 +101,9 @@ function newScanState(): ScanState {
   return {
     offset: 0,
     mtimeMs: 0,
+    ctimeMs: 0,
+    device: 0,
+    inode: 0,
     partial: [],
     partialHasCreate: false,
     partialHasLink: false,
@@ -772,13 +778,14 @@ export function getSessionPullRequests(
     return EMPTY_RESULT
   }
 
-  if (state && (stat.size < state.offset || stat.mtimeMs !== state.mtimeMs)) {
-    // Shrinkage is a rewrite; same size with a new mtime likely is too.
-    // Growth with a changed mtime is a normal append — only rescan when the
-    // file did not grow.
-    if (stat.size <= state.offset) {
-      state = undefined
-    }
+  if (state && (
+    stat.dev !== state.device || stat.ino !== state.inode ||
+    stat.size < state.offset ||
+    (stat.size === state.offset && (stat.mtimeMs !== state.mtimeMs || stat.ctimeMs !== state.ctimeMs))
+  )) {
+    // Replacement invalidates even a larger file with a preserved mtime.
+    // In-place growth remains incremental; ctime changes on every append.
+    state = undefined
   }
   if (!state) {
     if (scanCache.size >= MAX_CACHE_ENTRIES) {
@@ -791,17 +798,6 @@ export function getSessionPullRequests(
   }
   if (stat.size === state.offset && stat.mtimeMs === state.mtimeMs) {
     return state.prs.length ? state.prs.slice() : EMPTY_RESULT
-  }
-  if (stat.size === state.offset && stat.mtimeMs !== state.mtimeMs) {
-    // Same-size rewrite — rescan from scratch.
-    state.offset = 0
-    state.partial = []
-    state.partialHasCreate = false
-    state.partialHasLink = false
-    state.pending = []
-    state.windowRemaining = 0
-    state.seenUrls.clear()
-    state.prs = []
   }
 
   let fd: number | null = null
@@ -816,6 +812,9 @@ export function getSessionPullRequests(
       state.offset += read
     }
     state.mtimeMs = stat.mtimeMs
+    state.ctimeMs = stat.ctimeMs
+    state.device = stat.dev
+    state.inode = stat.ino
   } catch (error) {
     logger.warn('pr_extract_error', {
       logPath,
