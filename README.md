@@ -11,7 +11,7 @@ Agentboard is a web UI for `tmux`, built for running coding agents such as Claud
 Every session lives in tmux, so your agents keep running when you close the tab, and the same sessions are available from every device.
 
 <p align="center">
-  <img src="assets/readme/hero.webp" width="880" alt="Agentboard in a desktop browser window, with a phone in front of it. The desktop sidebar lists seven agent sessions with their status, last prompt and pull request chips; one session waits for permission. The terminal on the right shows a Claude Code session refactoring a router. The phone shows the same session's terminal with a quick-keys toolbar.">
+  <img src="assets/readme/hero.webp" width="880" alt="Agentboard in a desktop browser window, with a phone in front of it. The desktop sidebar lists agent sessions with their status, age, last prompt and pull request chips; one session waits for permission. The terminal shows a Claude Code session refactoring a router, with a Media 2 pill in its corner. The phone shows the same session's terminal with a quick-keys toolbar.">
 </p>
 <p align="center"><sub>The same tmux sessions on a laptop and a phone. Screenshots are generated with <code>bun run readme:shots</code> from invented sessions.</sub></p>
 
@@ -27,7 +27,7 @@ Each session shows whether its agent is *working*, *waiting for input*, or *need
 
 </td>
 <td width="60%">
-<img src="assets/readme/status-loop.gif" width="520" alt="Animation: a Claude Code session named orders-migration asks for permission to run a database migration. Its sidebar entry and status bar change to Needs Input while the permission prompt is open, then return to Working after it is approved.">
+<img src="assets/readme/status-loop.gif" width="520" alt="Animation: the sidebar lists sessions with their last prompts and ages. The selected session, orders-migration, shows a permission prompt to run a database migration; its status badge changes to a raised hand while the prompt is open, then back to now when the prompt is answered.">
 </td>
 </tr>
 <tr>
@@ -39,7 +39,7 @@ Pull requests that a session opened or pushed to appear as chips on the session,
 
 </td>
 <td width="60%">
-<img src="assets/readme/pull-requests.webp" width="520" alt="The sidebar with pull request chips under three sessions. A hover card for pull request 1193 shows its title and four CI checks, one of them failing.">
+<img src="assets/readme/pull-requests.webp" width="520" alt="Four sidebar sessions with pull request chips: a draft (489), two open (482 and 1193) and a merged one (1187). A hover card for pull request 1193 shows its title and four CI checks, one of them failing.">
 </td>
 </tr>
 <tr>
@@ -51,7 +51,7 @@ A media rail collects the images, documents and links from a session's transcrip
 
 </td>
 <td width="60%">
-<img src="assets/readme/media-rail.webp" width="520" alt="The media viewer showing a bar chart of p95 latency by endpoint that an agent read during the session, with Previous and Next buttons.">
+<img src="assets/readme/media-rail.webp" width="520" alt="The media rail open over a session's terminal: tabs for Media 5 and Links 1, then thumbnails for a PDF report, a search results screenshot, a CPU flame graph and two latency charts. Below it, the transcript lines where the agent read those files.">
 </td>
 </tr>
 <tr>
@@ -63,7 +63,7 @@ A media rail collects the images, documents and links from a session's transcrip
 
 </td>
 <td width="60%">
-<img src="assets/readme/history.webp" width="520" alt="A transcript preview of a past Claude Code conversation about upgrading an app to React 19, with Cancel and Wake buttons.">
+<img src="assets/readme/history.webp" width="520" alt="The transcript preview of a past Claude Code conversation, admin-react-19, about upgrading an app to React 19, with Cancel and Wake buttons.">
 </td>
 </tr>
 <tr>
@@ -86,7 +86,7 @@ Sessions from other machines appear on the same board over SSH, with a host badg
 
 </td>
 <td width="60%">
-<img src="assets/readme/hosts.webp" width="520" alt="The sidebar mixing sessions from the local host, studio, and a remote host, build-box. A Codex session running on build-box is selected and its terminal is shown on the right.">
+<img src="assets/readme/hosts.webp" width="520" alt="Five sidebar sessions from two machines: rows badged STUDIO run locally, rows badged BUILD-BOX run on a remote host. The remote Codex session nightly-e2e is selected.">
 </td>
 </tr>
 </table>
