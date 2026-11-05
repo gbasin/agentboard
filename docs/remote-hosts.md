@@ -22,7 +22,7 @@ Agentboard can show tmux sessions from other machines next to your local ones. I
    AGENTBOARD_REMOTE_HOSTS=mba,carbon agentboard
    ```
 
-Remote sessions appear in the session list with a host badge. They show live status (working, waiting, needs permission), which Agentboard reads from the pane content over SSH. Use the filter button to show or hide hosts.
+Remote sessions appear in the session list with a host badge. They show live status (working, waiting, needs permission), which Agentboard infers from the pane content over SSH. If Agentboard cannot read the pane content, the session stays in the list with an unknown status. Use the filter button to show or hide hosts.
 
 `AGENTBOARD_REMOTE_HOSTS` accepts plain hostnames only. A value such as `user@host` or `host:2222` is dropped with a warning. To set a user or port, define a host alias in `~/.ssh/config` and list the alias.
 
@@ -48,7 +48,7 @@ With control enabled, the **New Session** dialog has a host picker. Agentboard c
 | `AGENTBOARD_REMOTE_ALLOW_ATTACH` | follows `ALLOW_CONTROL` | Set `true` to allow terminal input, resize, and copy-mode on remote sessions. |
 | `AGENTBOARD_REMOTE_ALLOW_CONTROL` | `false` | Set `true` to allow create, kill, and rename on remote hosts. |
 | `AGENTBOARD_REMOTE_POLL_MS` | `2000` | Interval between polls of each host. |
-| `AGENTBOARD_REMOTE_TIMEOUT_MS` | `4000` | Timeout for each status poll. Create, kill, and rename use a fixed 10 seconds. |
+| `AGENTBOARD_REMOTE_TIMEOUT_MS` | `4000` | Timeout for each SSH command of a status poll, and for the tmux commands that an open remote terminal runs. A poll runs two commands, one to list windows and one to read pane content, so a poll can take up to twice this value. Create, kill, and rename use a fixed 10 seconds. |
 | `AGENTBOARD_REMOTE_STALE_MS` | 3 × poll interval, minimum `15000` | Time without a completed poll before a host is treated as stale. The sessions of a stale host are hidden. |
 | `AGENTBOARD_REMOTE_SSH_OPTS` | unset | Extra `ssh` options, space-separated. |
 | `AGENTBOARD_HOST` | machine hostname | Label for the local host. |
