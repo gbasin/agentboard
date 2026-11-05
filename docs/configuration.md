@@ -69,7 +69,7 @@ Set both `TLS_CERT` and `TLS_KEY` to serve HTTPS. Use absolute paths. To install
 
 **Grouped sessions.** When you open a discovered tmux session, Agentboard attaches through a per-connection session grouped with it (`<TMUX_SESSION>-ws-<connection>-x-<session>-<hash>`), so focus in the browser stays independent of your own tmux clients. Two side effects:
 
-- These derived sessions appear in `tmux ls` while a viewer is attached. They are removed on switch-away and disconnect, and pruned at startup.
+- These derived sessions appear in `tmux ls` while a viewer is attached. Agentboard removes the session for a discovered tmux session when you switch away from it, and the rest when it closes the terminal. After a disconnect, the relay keeps the terminal for up to 60 seconds (`AGENTBOARD_RELAY_GRACE_MS`) so that the browser can reconnect. Startup prunes the ones that an earlier server left behind.
 - Killing the raw session keeps its windows alive until the last grouped viewer switches away. tmux keeps a group's windows while any member session exists.
 
 **Nested tmux.** The server refuses to start from a pane of a tmux session that an Agentboard manages, because every tmux command would then target that live server. It also refuses when it cannot determine which session the pane belongs to. To run a second instance, give it a private socket with `TMUX_TMPDIR` and its own `AGENTBOARD_DATA_DIR`. With `TMUX_TMPDIR` set, Agentboard creates the directory and ignores the inherited `TMUX` value. `AGENTBOARD_ALLOW_NESTED_TMUX=true` removes the check and shares the socket on purpose.

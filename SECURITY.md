@@ -2,23 +2,24 @@
 
 ## Reporting Security Issues
 
-We take the security of Agentboard seriously. If you believe you have found a security vulnerability, please report it to us privately. **Please do not report security vulnerabilities through public GitHub issues, discussions, or pull requests.**
+Report a vulnerability privately through a [GitHub Security Advisory](https://github.com/gbasin/agentboard/security/advisories/new). Do not report it in a public GitHub issue, discussion, or pull request.
 
-Instead, please report them via:
-- [GitHub Security Advisory](https://github.com/gbasin/agentboard/security/advisories/new)
+Include these in the report:
 
-### Reporting Process
-1. **Submit Report**: Use the above channel to submit your report
-2. **Response Time**: We will acknowledge receipt of your report within 14 business days
-3. **Collaboration**: We will collaborate with you to understand and validate the issue
-4. **Resolution**: We will work on a fix and coordinate the release process
+- Detailed steps that reproduce the issue.
+- The version or commit hash where you found it.
+- Mitigations or workarounds, if you know any.
+
+What happens next:
+
+1. We acknowledge your report within 14 business days.
+2. We work with you to understand and confirm the issue.
+3. We fix the issue and coordinate the release with you.
 
 ### Disclosure Policy
-- Please provide detailed reports with reproducible steps
-- Include the version/commit hash where you discovered the vulnerability
-- Allow us a 90-day security fix window before any public disclosure
-- After a patch is released, allow 30 days for users to update before public disclosure (for a total of 120 days max)
-- Share any potential mitigations or workarounds if known
+
+- Allow 90 days for a fix before you disclose the issue publicly.
+- After a patch is released, allow 30 more days for users to update before you disclose it. The total is 120 days at most.
 
 ## Supported Versions
 
@@ -62,7 +63,11 @@ TLS is opt-in. Set both `TLS_CERT` and `TLS_KEY` to serve HTTPS on the main and 
 
 **WebSocket (`/ws`).** The server accepts these client message types.
 
-- **Terminal I/O:** `terminal-attach`, `terminal-detach`, `terminal-input`, `terminal-paste`, `terminal-resize`, `terminal-resume`, `terminal-ack`, `tmux-cancel-copy-mode`, `tmux-check-copy-mode`. A client can read and type into any window on your tmux server, not only the sessions that the board lists: `terminal-attach` accepts a tmux target from the client and checks only its syntax. `DISCOVER_PREFIXES` filters the list. It is not an access control.
+- **Terminal I/O:** `terminal-attach`, `terminal-detach`, `terminal-input`, `terminal-paste`, `terminal-resize`, `terminal-resume`, `terminal-ack`, `tmux-cancel-copy-mode`, `tmux-check-copy-mode`. A client can read and type into every session that the board lists. The other tmux windows that `terminal-attach` accepts depend on the listener:
+  - With the terminal relay on, which is the default, the main and Tailscale listeners accept only a listed session. A `tmuxTarget` in the message must equal the window that the board recorded for that session.
+  - The internal loopback listener, and the main listener when `AGENTBOARD_TERMINAL_RELAY=0`, accept the ID of a listed session together with any `tmuxTarget` that has valid syntax. A client there can attach to any window on your tmux server, including windows that `DISCOVER_PREFIXES` hides.
+
+  These checks are not an access control. A client can create a session that runs any command, including `tmux`, so it can reach every window on the server. `DISCOVER_PREFIXES` only filters the list.
 - **Session control:** `session-create` (any project directory and any command, run as your user), `session-kill`, `session-rename`, `session-refresh`, `session-wake` (runs the agent's resume command), `session-hibernate`, `session-move-to-history`.
 - **Keepalive:** `ping`.
 
@@ -109,7 +114,8 @@ The check applies to the main listener, the Tailscale listener, and the internal
 
 - **tmux `set-clipboard`.** In `pty` terminal mode, which is the default, Agentboard sets the server option `set-clipboard on` for your whole tmux server. It does not restore the old value. Set `AGENTBOARD_TMUX_SET_CLIPBOARD=0` to prevent this.
 - **tmux server identity.** Agentboard sets the global user option `@agentboard-server-id` once per tmux server.
-- **Grouped sessions.** Browser connections create `<TMUX_SESSION>-ws-*` sessions in your tmux server. They are removed on disconnect and pruned at startup.
+- **Grouped sessions.** Browser connections create `<TMUX_SESSION>-ws-*` sessions in your tmux server. Agentboard removes them when it closes the terminal. After a disconnect, the relay keeps the terminal for up to 60 seconds (`AGENTBOARD_RELAY_GRACE_MS`) so that the browser can reconnect. Startup prunes the ones that an earlier server left behind.
+- **tmux global environment.** At startup, if the global environment of your tmux server contains `AGENTBOARD_STATIC_DIR`, Agentboard removes that variable, `NODE_ENV`, and every `npm_*` variable from it. An older Agentboard version that started the tmux server could leave these behind. Panes that already run keep their environment. New windows, including ones that you create outside Agentboard, no longer inherit these variables.
 
 ### Data on disk
 
