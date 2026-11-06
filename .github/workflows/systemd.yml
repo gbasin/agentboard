@@ -3,15 +3,27 @@
 # systemd/README.md, so a README command that fails also fails this job.
 name: systemd
 
+# The paths cover the unit and its README, and the server code that the checks
+# depend on: the log file path, the tmux start, and the HTTP routes.
 on:
   pull_request:
     paths:
       - 'systemd/**'
+      - 'src/server/**'
+      - 'src/shared/**'
+      - 'package.json'
+      - 'bun.lock'
+      - '.bun-version'
       - '.github/workflows/systemd.yml'
   push:
     branches: [master, main]
     paths:
       - 'systemd/**'
+      - 'src/server/**'
+      - 'src/shared/**'
+      - 'package.json'
+      - 'bun.lock'
+      - '.bun-version'
       - '.github/workflows/systemd.yml'
   workflow_dispatch:
 
@@ -20,6 +32,8 @@ permissions:
 
 jobs:
   service:
+    # ubuntu-24.04, as for the e2e job. The 22.04 pin of the ci job is for a
+    # `bun test --coverage` problem, which this job does not run.
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -42,8 +56,13 @@ jobs:
           uid=$(id -u)
           echo "XDG_RUNTIME_DIR=/run/user/$uid" >> "$GITHUB_ENV"
           echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$uid/bus" >> "$GITHUB_ENV"
-          for i in $(seq 1 30); do [ -S "/run/user/$uid/bus" ] && break; sleep 1; done
+          export XDG_RUNTIME_DIR="/run/user/$uid"
+          export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus"
+          for _ in $(seq 1 30); do [ -S "/run/user/$uid/bus" ] && break; sleep 1; done
           test -S "/run/user/$uid/bus"
+          # The socket can exist before the manager accepts requests.
+          timeout 60 systemctl --user is-system-running --wait || true
+          systemctl --user show-environment > /dev/null
           systemctl --version | head -1
           tmux -V
 
@@ -76,17 +95,21 @@ jobs:
         run: |
           set -eux
           ./systemd/install.sh
-          for i in $(seq 1 60); do curl -sf http://127.0.0.1:4040/api/health && break; sleep 1; done
-          curl -sf http://127.0.0.1:4040/api/health
+          for _ in $(seq 1 60); do curl -sf --max-time 5 http://127.0.0.1:4040/api/health && break; sleep 1; done
+          curl -sf --max-time 5 http://127.0.0.1:4040/api/health
           test "$(systemctl --user show agentboard -p KillMode --value)" = process
           tmux has-session -t '=agentboard'
           # A pane process that must survive every later step.
-          tmux new-window -d -t '=agentboard' -n marker 'sleep 100000'
+          tmux new-window -d -t '=agentboard:' -n marker 'sleep 100000'
           sleep 1
           tmux_pid=$(tmux display-message -p '#{pid}')
           marker_pid=$(tmux list-panes -a -F '#{pane_pid} #{window_name}' | awk '$2=="marker"{print $1}')
           test -n "$tmux_pid"
           test -n "$marker_pid"
+          # The later checks mean something only if tmux is in the cgroup of
+          # the service. A tmux server outside the cgroup survives any KillMode.
+          cat "/proc/$tmux_pid/cgroup"
+          grep -q 'agentboard\.service' "/proc/$tmux_pid/cgroup"
           echo "TMUX_PID=$tmux_pid" >> "$GITHUB_ENV"
           echo "MARKER_PID=$marker_pid" >> "$GITHUB_ENV"
 
@@ -95,8 +118,8 @@ jobs:
           set -eux
           old_main=$(systemctl --user show agentboard -p MainPID --value)
           systemctl --user restart agentboard
-          for i in $(seq 1 60); do curl -sf http://127.0.0.1:4040/api/health && break; sleep 1; done
-          curl -sf http://127.0.0.1:4040/api/health
+          for _ in $(seq 1 60); do curl -sf --max-time 5 http://127.0.0.1:4040/api/health && break; sleep 1; done
+          curl -sf --max-time 5 http://127.0.0.1:4040/api/health
           new_main=$(systemctl --user show agentboard -p MainPID --value)
           test "$new_main" != "$old_main"
           test "$(systemctl --user show agentboard -p NRestarts --value)" = 0
@@ -104,40 +127,61 @@ jobs:
           kill -0 "$MARKER_PID"
           test "$(tmux display-message -p '#{pid}')" = "$TMUX_PID"
           tmux list-windows -t '=agentboard' -F '#{window_name}' | grep -qx marker
+          # The README says: "the restarted service reattaches to them".
+          has_marker() {
+            curl -sf --max-time 5 http://127.0.0.1:4040/api/sessions |
+              jq -e 'any(.[]; .name == "marker")' > /dev/null
+          }
+          for _ in $(seq 1 30); do has_marker && break; sleep 1; done
+          curl -sf --max-time 5 http://127.0.0.1:4040/api/sessions | jq -c 'map({name, tmuxWindow})'
+          has_marker
 
       - name: A second install.sh run leaves the service running
         run: |
           set -eux
           main=$(systemctl --user show agentboard -p MainPID --value)
           ./systemd/install.sh
-          curl -sf http://127.0.0.1:4040/api/health
+          curl -sf --max-time 5 http://127.0.0.1:4040/api/health
           test "$(systemctl --user show agentboard -p MainPID --value)" = "$main"
           kill -0 "$TMUX_PID"
 
       - name: Log rotation, with the commands from the README
         run: |
           set -eux
+          log="$HOME/.agentboard/agentboard.log"
+          main=$(systemctl --user show agentboard -p MainPID --value)
+          # The server must hold this file open. If it wrote its log to another
+          # path, the rotation below would pass without a test of the claim.
+          server_has_log_open() { readlink "/proc/$main"/fd/* 2>/dev/null | grep -qxF "$log"; }
+          test -s "$log"
+          server_has_log_open
+          inode=$(stat -c %i "$log")
+
           bash -eux "$RUNNER_TEMP/logrotate.sh"
           systemctl --user list-timers --all --no-pager | grep agentboard-logrotate
           # Make the log larger than the 50M limit, then run the rotation unit once.
-          head -c 55000000 /dev/zero | tr '\0' 'x' >> ~/.agentboard/agentboard.log
+          head -c 55000000 /dev/zero | tr '\0' 'x' >> "$log"
           systemctl --user start agentboard-logrotate.service
           ls -la ~/.agentboard
-          test -s ~/.agentboard/agentboard.log.1.gz
-          test "$(stat -c %s ~/.agentboard/agentboard.log)" -lt 55000000
-          # copytruncate: the server keeps the same file open and stays healthy.
-          curl -sf http://127.0.0.1:4040/api/health
+          test -s "$log.1.gz"
+          test "$(stat -c %s "$log")" -lt 55000000
+          # copytruncate: the file is the same one, the same server process
+          # still holds it open, and the server stays healthy.
+          test "$(stat -c %i "$log")" = "$inode"
+          test "$(systemctl --user show agentboard -p MainPID --value)" = "$main"
+          server_has_log_open
+          curl -sf --max-time 5 http://127.0.0.1:4040/api/health
 
       - name: Uninstall, with the commands from the README
         run: bash -eux "$RUNNER_TEMP/uninstall.sh"
 
-      - name: Nothing is left after the uninstall, and tmux still runs
+      - name: No unit, timer, or configuration is left, and tmux still runs
         run: |
           # Most checks here expect a command to fail, so do not stop on a failure.
           set +e
           set -ux
           fail=0
-          if curl -sf http://127.0.0.1:4040/api/health; then echo "FAIL: the server still answers"; fail=1; fi
+          if curl -sf --max-time 5 http://127.0.0.1:4040/api/health; then echo "FAIL: the server still answers"; fail=1; fi
           systemctl --user is-active agentboard && { echo "FAIL: the service is active"; fail=1; }
           systemctl --user list-unit-files --no-pager | grep -i agentboard && { echo "FAIL: unit files remain"; fail=1; }
           systemctl --user list-timers --all --no-pager | grep -i agentboard && { echo "FAIL: a timer remains"; fail=1; }
@@ -147,6 +191,8 @@ jobs:
           kill -0 "$TMUX_PID" || { echo "FAIL: tmux stopped"; fail=1; }
           kill -0 "$MARKER_PID" || { echo "FAIL: the pane process stopped"; fail=1; }
           tmux list-windows -t '=agentboard' -F '#{window_name}' | grep -qx marker || { echo "FAIL: the marker window is gone"; fail=1; }
+          # The README says that the data directory stays.
+          test -s ~/.agentboard/agentboard.db || { echo "FAIL: the database is gone"; fail=1; }
           exit $fail
 
       - name: Journal on failure

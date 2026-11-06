@@ -200,3 +200,6 @@ systemctl --user daemon-reload
 
 Stopping the service does not stop tmux. To end the agent sessions as well,
 close them in tmux.
+
+These commands do not remove the data directory `~/.agentboard`. It holds the
+database, the logs, and the logrotate state file.
