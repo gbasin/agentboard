@@ -30,11 +30,19 @@ describe('capturePaneSnapshot', () => {
     expect(snapshot).toEqual({ text: 'a\nb', historyLines: 40, scrollPosition: 0, altScreen: false })
   })
 
-  test('caps the history and clamps the copy-mode offset to it', async () => {
-    const { run, calls } = fakeTmux(`0,99999,1,99999`, 'x\n')
+  test('caps the history, drops the possibly partial first line, clamps the offset', async () => {
+    const { run, calls } = fakeTmux(`0,99999,1,99999`, 'r the lazy dog\nrow 2\nrow 3\n')
     const snapshot = await capturePaneSnapshot('t', run)
     expect(calls[1]).toContain(`-${SNAPSHOT_HISTORY_LINES}`)
+    expect(snapshot?.text).toBe('row 2\nrow 3')
     expect(snapshot?.scrollPosition).toBe(SNAPSHOT_HISTORY_LINES)
+  })
+
+  test('keeps the first line when the whole history fits', async () => {
+    const { run } = fakeTmux(`0,${SNAPSHOT_HISTORY_LINES},0,`, 'first\nsecond\n')
+    expect((await capturePaneSnapshot('t', run))?.text).toBe('first\nsecond')
+    const single = fakeTmux('0,99999,0,', 'only\n')
+    expect((await capturePaneSnapshot('t', single.run))?.text).toBe('only')
   })
 
   test('alternate screen captures only the visible screen', async () => {

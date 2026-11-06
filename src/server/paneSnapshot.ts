@@ -4,6 +4,8 @@
  * the scrollback plus the visible screen on the main screen, the visible
  * screen only on the alternate screen (there the history is the stale shell
  * output from before the fullscreen app started, not the app's content).
+ * When the history is longer than the cap, the first captured line may be
+ * the tail of a wrapped line, so it is dropped.
  */
 
 export const SNAPSHOT_HISTORY_LINES = 3000
@@ -53,7 +55,13 @@ export async function capturePaneSnapshot(
   if (capture.exitCode !== 0) return null
   // capture-pane ends every line with \n; drop the final one so the client
   // gets exactly one entry per captured line.
-  const text = capture.stdout.endsWith('\n') ? capture.stdout.slice(0, -1) : capture.stdout
+  let text = capture.stdout.endsWith('\n') ? capture.stdout.slice(0, -1) : capture.stdout
+  // A capped capture can start on the continuation row of a wrapped line;
+  // drop that first, possibly partial, line rather than show half of it.
+  if (state.historySize > historyLines && historyLines > 0) {
+    const firstBreak = text.indexOf('\n')
+    text = firstBreak === -1 ? text : text.slice(firstBreak + 1)
+  }
   return {
     text,
     historyLines,
