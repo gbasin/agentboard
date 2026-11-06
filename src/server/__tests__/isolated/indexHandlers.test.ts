@@ -281,6 +281,7 @@ class SessionRegistryMock {
 
 class TerminalProxyMock {
   static instances: TerminalProxyMock[] = []
+  static startupGate: Promise<void> | null = null
   options: {
     connectionId: string
     sessionName: string
@@ -312,7 +313,7 @@ class TerminalProxyMock {
       this.starts += 1
       this.started = true
     }
-    return Promise.resolve()
+    return TerminalProxyMock.startupGate ?? Promise.resolve()
   }
 
   switchTo(target: string, onReady?: () => void) {
@@ -651,6 +652,8 @@ class TerminalProxyErrorMock extends Error {
   }
 }
 
+mock.module('../../terminal/SshTerminalProxy', () => ({ SshTerminalProxy: TerminalProxyMock }))
+
 mock.module('../../terminal', () => ({
   createTerminalProxy: (options: ConstructorParameters<typeof TerminalProxyMock>[0]) =>
     new TerminalProxyMock(options),
@@ -759,6 +762,7 @@ beforeEach(() => {
   replaceSessionsCalls = []
   logEntries = []
   TerminalProxyMock.instances = []
+    TerminalProxyMock.startupGate = null
   SessionManagerMock.instance = null
   refreshWorkerDeferred = false
   refreshWorkerSessions = []
@@ -4890,6 +4894,88 @@ describe('server message handlers', () => {
       error: { code: 'WAKE_FAILED', message: 'resume artifact missing' },
     })
     expect(dbState.records.get(hibernatingId)?.isHibernating).toBe(true)
+  })
+
+  test('same-host SSH startup is owned by the connection after the creating attach is superseded', async () => {
+    const { serveOptions, registryInstance } = await loadIndex()
+    configState.remoteAllowAttach = true
+    registryInstance.sessions = [
+      { ...baseSession, id: 'remote-A', remote: true, host: 'remote-host', tmuxWindow: 'remote:@1' },
+      { ...baseSession, id: 'remote-B', remote: true, host: 'remote-host', tmuxWindow: 'remote:@2' },
+    ]
+    const { ws, sent } = createWs()
+    const websocket = serveOptions.websocket!
+    websocket.open?.(ws as never)
+    let release!: () => void
+    TerminalProxyMock.startupGate = new Promise<void>(resolve => { release = resolve })
+    websocket.message?.(ws as never, JSON.stringify({ type: 'terminal-attach', sessionId: 'remote-A' }))
+    await waitFor(() => ws.data.terminalHost === 'remote-host')
+    const shared = ws.data.terminal!
+    websocket.message?.(ws as never, JSON.stringify({ type: 'terminal-attach', sessionId: 'remote-B' }))
+    release()
+    await waitFor(() => sent.some(message => message.type === 'terminal-ready'))
+    expect(ws.data.terminal).toBe(shared)
+    expect(shared.disposed).toBe(false)
+    expect(shared.starts).toBe(1)
+    expect(shared.switchTargets).toEqual(['remote:@2'])
+    expect(sent.filter(message => message.type === 'terminal-ready').map(message => message.sessionId)).toEqual(['remote-B'])
+    websocket.close?.(ws as never, 1000, 'test')
+    expect(shared.disposed).toBe(true)
+  })
+
+  test('close during pending SSH startup invalidates the waiter before readiness or switch', async () => {
+    const { serveOptions, registryInstance } = await loadIndex()
+    configState.remoteAllowAttach = true
+    registryInstance.sessions = [{ ...baseSession, remote: true, host: 'remote-host' }]
+    const { ws, sent } = createWs()
+    const websocket = serveOptions.websocket!
+    websocket.open?.(ws as never)
+    let release!: () => void
+    TerminalProxyMock.startupGate = new Promise<void>(resolve => { release = resolve })
+    websocket.message?.(ws as never, JSON.stringify({ type: 'terminal-attach', sessionId: baseSession.id }))
+    await waitFor(() => ws.data.terminalHost === 'remote-host')
+    const terminal = ws.data.terminal!
+    const beforeClose = ws.data.terminalAttachSeq
+    websocket.close?.(ws as never, 1000, 'test')
+    release()
+    await new Promise(resolve => setTimeout(resolve, 5))
+    expect(ws.data.terminalAttachSeq).toBeGreaterThan(beforeClose)
+    expect(ws.data.terminal).toBeNull()
+    expect(terminal.disposed).toBe(true)
+    expect(terminal.switchTargets).toEqual([])
+    expect(sent.some(message => message.type === 'terminal-ready')).toBe(false)
+  })
+
+  test('close during pending history capture prevents a late terminal switch', async () => {
+    const { serveOptions, registryInstance } = await loadIndex()
+    registryInstance.sessions = [baseSession]
+    const { ws, sent } = createWs()
+    const websocket = serveOptions.websocket!
+    let release!: () => void
+    const gate = new Promise<number>(resolve => { release = () => resolve(0) })
+    let capturing = false
+    const previousSpawn = bunAny.spawn
+    bunAny.spawn = ((...args: Parameters<typeof Bun.spawn>) => {
+      const cmd = (Array.isArray(args[0]) ? args[0] : [String(args[0])]) as string[]
+      if (getTmuxArgs(cmd)[0] !== 'capture-pane') return previousSpawn(...args)
+      capturing = true
+      return {
+        exited: gate, exitCode: null, signalCode: null, pid: 12347,
+        stdout: new ReadableStream({ start: controller => controller.close() }),
+        stderr: new ReadableStream({ start: controller => controller.close() }),
+        kill: () => {},
+      } as unknown as ReturnType<typeof Bun.spawn>
+    }) as typeof Bun.spawn
+    websocket.open?.(ws as never)
+    websocket.message?.(ws as never, JSON.stringify({ type: 'terminal-attach', sessionId: baseSession.id }))
+    await waitFor(() => capturing)
+    const terminal = ws.data.terminal!
+    websocket.close?.(ws as never, 1000, 'test')
+    release()
+    await new Promise(resolve => setTimeout(resolve, 5))
+    expect(terminal.disposed).toBe(true)
+    expect(terminal.switchTargets).toEqual([])
+    expect(sent.some(message => message.type === 'terminal-ready')).toBe(false)
   })
 
   test('websocket close disposes all terminals', async () => {
