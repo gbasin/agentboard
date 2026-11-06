@@ -85,6 +85,10 @@ jobs:
     env:
       # The runner sets a UTF-8 locale; the image sets none. tmux needs one.
       LANG: C.UTF-8
+      # Docker exports HOSTNAME (the container id); the runner does not. The
+      # server reads HOSTNAME as its bind address, and prints a warning when
+      # it ignores the machine name. A test expects an empty stderr.
+      HOSTNAME: ''
     steps:
       # tmux for the tests, a compiler for node-pty (see below), unzip for
       # setup-bun, and the process tools that the server and the tests run.
