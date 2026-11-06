@@ -359,6 +359,16 @@ body {
   line-height: var(--xterm-cell-height, 18px);
 }
 
+/* The pane's app owns the mouse (fullscreen Claude Code, Codex): a long-press
+   drag goes to the app, which draws and copies its own selection. Keep iOS from
+   starting a second, native one over the same text. See utils/iosSelection.ts. */
+.ios-native-term-selection [data-app-mouse] .xterm .xterm-accessibility-tree,
+.ios-native-term-selection [data-app-mouse] .xterm .xterm-accessibility-tree * {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
 /* Position xterm helper textarea in visible area on iOS for paste menu */
 .ios-native-term-selection .xterm-helper-textarea {
   position: absolute !important;

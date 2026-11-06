@@ -18,6 +18,7 @@ import { useResolvedTheme, terminalThemes } from '../stores/themeStore'
 import { useSettingsStore, getFontFamily } from '../stores/settingsStore'
 import { isIOSDevice, getEffectiveModifier, getModifierDisplay } from '../utils/device'
 import { keepA11yRowsStable } from '../utils/a11yRowStability'
+import { MEASURE_PROBE_ATTR, watchSelectedRows } from '../utils/iosSelection'
 import { formatRelativeTime } from '../utils/time'
 import { getPathLeaf } from '../utils/sessionLabel'
 import { statusClass, statusText } from '../utils/sessionStatus'
@@ -353,8 +354,17 @@ export default function Terminal({
       })
     }
 
+    // Clears the native highlight once output rewrites a row it covers, so it
+    // never sits over text that was not selected. Lives as long as the selection.
+    let stopWatchingRows: (() => void) | null = null
+    const stopRowWatch = () => {
+      stopWatchingRows?.()
+      stopWatchingRows = null
+    }
+
     // Hard-clear iOS selection by removing ranges and forcing a11y repaint
     const clearIOSSelection = () => {
+      stopRowWatch()
       lastSelectionInsideRef.current = false
       const sel = window.getSelection()
       try { sel?.removeAllRanges() } catch {}
@@ -371,6 +381,7 @@ export default function Terminal({
         if (lastSelectionInsideRef.current) {
           clearIOSSelection()
         } else {
+          stopRowWatch()
           // Only update if currently true to avoid unnecessary re-renders
           setIsSelectingText((prev) => prev ? false : prev)
         }
@@ -384,6 +395,12 @@ export default function Terminal({
       }
 
       lastSelectionInsideRef.current = selectionInside
+      if (selectionInside && !stopWatchingRows) {
+        const a11yTree = container.querySelector('.xterm-accessibility-tree')
+        if (a11yTree) {
+          stopWatchingRows = watchSelectedRows(a11yTree, () => window.getSelection(), clearIOSSelection)
+        }
+      }
       const newValue = selectionInside
       // Only update if value changed
       setIsSelectingText((prev) => prev !== newValue ? newValue : prev)
@@ -474,6 +491,7 @@ export default function Terminal({
       document.removeEventListener('touchstart', onTouchStart)
       document.removeEventListener('touchmove', onTouchMove)
       document.removeEventListener('touchend', onTouchEnd)
+      stopRowWatch()
       clearIOSSelectionRef.current = null
       lastSelectionInsideRef.current = false
     }
@@ -525,6 +543,7 @@ export default function Terminal({
       const probe = document.createElement('span')
       probe.textContent = '0'.repeat(200)
       probe.style.cssText = 'position:absolute;visibility:hidden;white-space:pre;pointer-events:none;letter-spacing:0px'
+      probe.setAttribute(MEASURE_PROBE_ATTR, '')
       a11yTree.appendChild(probe)
       const domCharW = probe.getBoundingClientRect().width / 200
       probe.remove()
@@ -1093,6 +1112,15 @@ export default function Terminal({
       }
     }
 
+    // iOS cancels a touch when a system gesture takes it over. Without this the
+    // long-press timer could still fire, or the app would keep a held button
+    // from a remote selection and treat the next touch as a drag.
+    const handleTouchCancel = () => {
+      clearLongPressTimer()
+      if (remoteSelectionActive) endRemoteSelection(undefined)
+      resetTouchState()
+    }
+
     // Swallow synthetic mouse events after iOS selection dismissal to protect tmux
     const handleMouseDown = (e: MouseEvent) => {
       if (swallowNextMouseRef.current) {
@@ -1109,12 +1137,14 @@ export default function Terminal({
     container.addEventListener('touchstart', handleTouchStart, startOptions)
     container.addEventListener('touchmove', handleTouchMove, moveOptions)
     container.addEventListener('touchend', handleTouchEnd, endOptions)
+    container.addEventListener('touchcancel', handleTouchCancel, startOptions)
     container.addEventListener('mousedown', handleMouseDown, mouseOptions)
 
     return () => {
       container.removeEventListener('touchstart', handleTouchStart, startOptions)
       container.removeEventListener('touchmove', handleTouchMove, moveOptions)
       container.removeEventListener('touchend', handleTouchEnd, endOptions)
+      container.removeEventListener('touchcancel', handleTouchCancel, startOptions)
       container.removeEventListener('mousedown', handleMouseDown, mouseOptions)
       clearLongPressTimer()
       // Re-enable textarea on cleanup
