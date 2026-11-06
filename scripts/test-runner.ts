@@ -82,6 +82,7 @@ async function main() {
       'slug-supersede.integration.test.ts',
       'sessionRefreshWorker.test.ts',
       'pipePaneTerminalProxy.test.ts',
+      'pipePaneLifecycle.test.ts',
       'hydrateSessionsEmptyGuard.test.ts',
       // terminalProxyFactory.test.ts installs a top-level
       // mock.module('../config', ...) whose replacement omits many real
@@ -102,7 +103,11 @@ async function main() {
     // isolation from global Bun.* mocks, but running them under coverage on
     // Linux CI can stall PTY attach readiness.
     const ISOLATED_REAL_TMUX_FILES = new Set([
+      'sshPaste.integration.test.ts',
       'double-attach.integration.test.ts',
+      'pipePaneShared.integration.test.ts',
+      'pipePaneRelay.integration.test.ts',
+      'paneOutputBackpressure.integration.test.ts',
       'e2eTmuxReap.integration.test.ts',
       'groupedSessionLeak.integration.test.ts',
       'hibernation.integration.test.ts',
@@ -111,6 +116,7 @@ async function main() {
       'integration.test.ts',
       'throttled-reconnect.integration.test.ts',
       'terminalRelay.integration.test.ts',
+      'originGuard.integration.test.ts',
     ])
 
     // Client tests that install top-level mock.module(...) hooks must run in a

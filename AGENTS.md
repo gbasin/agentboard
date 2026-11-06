@@ -29,7 +29,7 @@ dev-only `tools/fad-dump` shim). The shim is never a runtime dependency.
 
 ## How It Works
 
-- Single managed tmux session (default: `agentboard`) with one window per agent session. Windows in all other tmux sessions are discovered as external; set `DISCOVER_PREFIXES` to limit discovery to sessions whose names start with those prefixes. Each browser connection attaches through its own grouped session (`<TMUX_SESSION>-ws-<connection>`).
+- Single managed tmux session (default: `agentboard`) with one window per agent session. Windows in all other tmux sessions are discovered as external; set `DISCOVER_PREFIXES` to limit discovery to sessions whose names start with those prefixes. In `pty` terminal mode (the default), each browser connection attaches to a local window through its own grouped session (`<TMUX_SESSION>-ws-<connection>`).
 - Backend discovers windows, streams terminal output via WebSocket
 - Parses Claude/Codex/Pi/oh-my-pi JSONL logs from `~/.claude/projects/`, `~/.codex/sessions/`, `~/.pi/agent/sessions/`, `~/.omp/agent/sessions/` (or `$XDG_DATA_HOME/omp/sessions` when that directory exists). `src/server/logDiscovery.ts` owns the roots and their env overrides (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `PI_HOME`, `GROK_HOME`, `PI_CODING_AGENT_DIR`, `PI_CONFIG_DIR`).
 - Devin CLI stores history in SQLite (`~/.local/share/devin/cli/sessions.db`); `src/server/devinSync.ts` mirrors it into `~/.agentboard/devin-sessions/*.jsonl` so the same pipeline applies. `src/server/devinLockMatch.ts` matches devin sessions to windows via `session_locks/<id>.lock` PIDs.

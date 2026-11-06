@@ -1,3 +1,4 @@
+import { startOwnedTerminal, sshTerminalSessionName } from '../terminal/startOwnedTerminal'
 import type { TerminalSession } from './protocol'
 /** Terminal operations run in the lease worker, outside dashboard and peers. */
 import { config } from '../config'
@@ -137,7 +138,9 @@ export class TerminalRuntime {
     const host = session.remote ? session.host : undefined
     const options: TerminalProxyOptions = {
       connectionId: peer.data.connectionId,
-      sessionName: `${config.tmuxSession}-ws-${peer.data.connectionId}`,
+      sessionName: host
+        ? sshTerminalSessionName(config.tmuxSession, peer.data.connectionId, peer.data.terminalAttachSeq)
+        : `${config.tmuxSession}-ws-${peer.data.connectionId}`,
       baseSession: host ? '' : config.tmuxSession,
       monitorTargets: config.terminalMonitorTargets,
       initialSizeParticipation: false,
@@ -176,17 +179,14 @@ export class TerminalRuntime {
       peer.data.terminalHost = host
     }
     const terminal = peer.data.terminal
-    try {
-      await terminal.start()
-    } catch (error) {
-      if (peer.data.terminal === terminal) {
+    return startOwnedTerminal(terminal, {
+      owns: () => peer.data.terminal === terminal,
+      current: () => this.current(peer, sequence),
+      release: () => {
         peer.data.terminal = null
         peer.data.terminalHost = null
-      }
-      await terminal.dispose().catch(() => {})
-      throw error
-    }
-    return this.current(peer, sequence) && peer.data.terminal === terminal ? terminal : null
+      },
+    })
   }
 
   private async attach(peer: TerminalPeer, message: Extract<ClientMessage, { type: 'terminal-attach' }>, sequence: number): Promise<void> {

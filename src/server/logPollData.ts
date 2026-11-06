@@ -6,12 +6,17 @@ import {
   extractCodexSubagentLink,
   extractSlug,
   getLogTimes,
+  getLogSearchDirs,
   inferAgentTypeFromPath,
   isCodexExec,
   isPiSubagent,
   scanAllLogDirs,
 } from './logDiscovery'
 import { getLogTokenCount } from './logMatcher'
+import { LogReconciliation } from './logReconciliation'
+
+// Module state lives in the persistent matching worker, not in poll requests.
+const reconciliation = new LogReconciliation()
 
 export interface LogEntrySnapshot {
   logPath: string
@@ -28,7 +33,11 @@ export interface LogEntrySnapshot {
   /** Codex subagent's parent thread id, when detectable. */
   codexParentId?: string | null
   logTokenCount: number
-  lastUserMessage?: string
+  revision?: string
+  /** Persisted identity carried even when history is outside the full snapshot. */
+  previousRevision?: string | null
+  previousSize?: number | null
+  lastUserMessage?: string | null
 }
 
 export interface LogEntryBatch {
@@ -45,6 +54,8 @@ export interface KnownSession {
   slug: string | null
   agentType: AgentType | null
   isCodexExec: boolean
+  lastKnownLogSize?: number | null
+  lastKnownLogRevision?: string | null
 }
 
 export interface CollectLogEntryBatchOptions {
@@ -85,6 +96,8 @@ export function enrichLogEntry(
       isCodexExec: codexExec,
       isPiSubagent: false,
       logTokenCount: -1,
+      previousRevision: known.lastKnownLogRevision,
+      previousSize: known.lastKnownLogSize,
     } satisfies LogEntrySnapshot
   }
 
@@ -153,7 +166,11 @@ export function collectLogEntryBatch(
 
   const sortStart = performance.now()
   timeEntries.sort((a, b) => b.mtime - a.mtime)
-  const limited = timeEntries.slice(0, Math.max(1, maxLogs))
+  const limited = reconciliation.select(
+    timeEntries,
+    Math.max(1, Math.floor(maxLogs)),
+    JSON.stringify(getLogSearchDirs())
+  ).sort((a, b) => b.mtime - a.mtime)
   const sortMs = performance.now() - sortStart
 
   const entries = limited.map((entry) =>

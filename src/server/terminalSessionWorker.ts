@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 /** One terminal per realm: slow tmux setup/paste/disposal cannot stop sibling clients. */
 import { createTerminalProxy, SshTerminalProxy } from './terminal'
+import { createWorkerPaneOutput } from './relay/workerPaneOutput'
 import { serializedPtySpawn } from './relay/ptySpawnLock'
 import { config } from './config'
 import { TerminalRuntime, createTerminalPeerData, type TerminalPeer } from './relay/terminalRuntime'
@@ -17,11 +18,18 @@ const pending = new Map<number, number>()
 let peer: TerminalPeer | null = null
 let readyState = 1
 const post = (message: TerminalToRelay) => ctx.postMessage(message)
+const overflow = () => {
+  if (!peer || readyState !== 1) return
+  runtime.suspend(peer)
+  readyState = 3
+  post({ type: 'overflow', epoch })
+}
+const paneOutput = createWorkerPaneOutput(post, overflow)
 const runtime = new TerminalRuntime({
   getSession: id => sessions.get(id),
   createProxy: options => {
     if (!ptySpawnLock) throw new Error('Terminal worker has no PTY spawn lock')
-    const spawnOptions = { ...options, spawn: serializedPtySpawn(ptySpawnLock) }
+    const spawnOptions = { ...options, spawn: serializedPtySpawn(ptySpawnLock), paneOutput: paneOutput.subscribe }
     return options.host ? new SshTerminalProxy(spawnOptions) : createTerminalProxy(spawnOptions)
   },
   onGroupedSessionCreated: () => post({ type: 'group-created' }),
@@ -30,6 +38,7 @@ const runtime = new TerminalRuntime({
 
 ctx.onmessage = async (event: MessageEvent<RelayToTerminal>) => {
   const message = event.data
+  if (message.type.startsWith('pane-')) { paneOutput.handle(message as import('./relay/paneOutputProtocol').PaneOutputResponse); return }
   if (message.type === 'sessions' || message.type === 'init') {
     sessions.clear()
     for (const session of message.sessions) sessions.set(session.id, session)
@@ -42,9 +51,7 @@ ctx.onmessage = async (event: MessageEvent<RelayToTerminal>) => {
           if (peer !== nextPeer || readyState !== 1) return
           const bytes = Buffer.byteLength(payload)
           if (pendingBytes + bytes > 2 * 1024 * 1024) {
-            runtime.suspend(peer)
-            readyState = 3
-            post({ type: 'overflow', epoch })
+            overflow()
             return
           }
           const sequence = ++serial
