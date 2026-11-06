@@ -150,11 +150,12 @@ describe('watchSelectedRows', () => {
     expect(stale()).toBe(0)
   })
 
-  test('ignores mutations when nothing is selected', () => {
-    const row = fakeNode('row')
-    const { observer, stale } = setup(fakeSelection({ collapsed: true, intersects: () => true }).selection)
-    observer.fire([record(row)])
-    expect(stale()).toBe(0)
+  test('reports a selection that a row rewrite collapsed (WebKit sends no selectionchange)', () => {
+    // The watcher only runs while a selection exists, so finding it collapsed
+    // means the mutation destroyed it; xterm still paints its mirrored copy.
+    const { observer, stale } = setup(fakeSelection({ collapsed: true }).selection)
+    observer.fire([record(fakeNode('row'))])
+    expect(stale()).toBe(1)
   })
 
   test('disconnects on stop', () => {

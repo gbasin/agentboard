@@ -16,9 +16,11 @@
  *   Claude renderer.
  *
  * - Native selection stays on, but a Selection is anchored to row nodes, not to
- *   the text they held. When output rewrites those rows the highlight stays
- *   where it was, over unrelated text. `watchSelectedRows` clears the selection
- *   as soon as a row it covers changes.
+ *   the text they held, and xterm mirrors it into a buffer selection that it
+ *   paints on the canvas. When output rewrites those rows the DOM selection
+ *   collapses silently but xterm's copy stays painted, over unrelated text.
+ *   `watchSelectedRows` reports this as soon as a row it covers changes, so the
+ *   caller can clear both.
  */
 
 export const APP_MOUSE_ATTR = 'data-app-mouse'
@@ -87,7 +89,14 @@ export function watchSelectedRows(
 ): () => void {
   const observer = new Observer((records) => {
     const selection = getSelection()
-    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return
+    // Replacing a row's Text node collapses a range anchored in it, and WebKit
+    // fires no selectionchange for that. The selection is gone, but xterm keeps
+    // the buffer selection it mirrored from it and keeps painting it on the
+    // canvas, so this still has to be reported.
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+      onStale()
+      return
+    }
     const range = selection.getRangeAt(0)
     for (const record of records) {
       if (record.target === tree) {
