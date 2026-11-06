@@ -585,14 +585,37 @@ test('Select text renders only with a handler and fires it on tap', () => {
   let opened = 0
   const renderer = TestRenderer.create(
     <TerminalControls onSendKey={() => {}} sessions={[]} currentSessionId="s" onSelectSession={() => {}}
-      onSelectText={() => { opened += 1 }} disabled />
+      onSelectText={() => { opened += 1 }} />
   )
   const button = renderer.root.findAllByType('button').find((b) => b.props['aria-label'] === 'Select text')
-  expect(button).toBeDefined()
+  expect(button?.props['aria-pressed']).toBe(false)
   act(() => button?.props.onClick())
   expect(opened).toBe(1)
   const without = TestRenderer.create(
     <TerminalControls onSendKey={() => {}} sessions={[]} currentSessionId="s" onSelectSession={() => {}} />
   )
-  expect(without.root.findAllByType('button').some((b) => b.props['aria-label'] === 'Select text')).toBe(false)
+  expect(without.root.findAllByType('button').some((b) => String(b.props['aria-label']).includes('text'))).toBe(false)
+})
+
+test('while the snapshot is open the deck is inert except the Select key, which closes it', () => {
+  const sent: string[] = []
+  let toggled = 0
+  const renderer = TestRenderer.create(
+    <TerminalControls onSendKey={(key) => { sent.push(key) }} sessions={[]} currentSessionId="s" onSelectSession={() => {}}
+      onSelectText={() => { toggled += 1 }} selectTextActive disabled keyboardDisabled />
+  )
+  const buttons = renderer.root.findAllByType('button')
+  const select = buttons.find((b) => b.props['aria-label'] === 'Close text selection')
+  expect(select?.props['aria-pressed']).toBe(true)
+  expect(select?.props.disabled).toBeFalsy()
+  const others = buttons.filter((b) => b !== select)
+  expect(others.length).toBeGreaterThan(5)
+  expect(others.every((b) => b.props.disabled === true)).toBe(true)
+  for (const button of others) {
+    act(() => button.props.onClick?.())
+    act(() => button.props.onTouchEnd?.({ changedTouches: [{ clientX: 0, clientY: 0 }], preventDefault() {}, stopPropagation() {} }))
+  }
+  expect(sent).toEqual([])
+  act(() => select?.props.onClick())
+  expect(toggled).toBe(1)
 })

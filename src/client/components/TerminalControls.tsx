@@ -46,8 +46,13 @@ interface TerminalControlsProps {
   onRefocus?: () => void
   isKeyboardVisible?: () => boolean
   onEnterTextMode?: () => void
-  /** Open the frozen "Select text" snapshot of the pane. Hidden when absent. */
+  /**
+   * Toggle the frozen "Select text" snapshot of the pane. Hidden when absent.
+   * Stays available while the rest of the deck is disabled.
+   */
   onSelectText?: () => void
+  /** The snapshot is open: the Select key shows as pressed and closes it. */
+  selectTextActive?: boolean
 }
 
 interface ControlKey {
@@ -131,6 +136,7 @@ export default function TerminalControls({
   isKeyboardVisible,
   onEnterTextMode,
   onSelectText,
+  selectTextActive = false,
 }: TerminalControlsProps) {
   const browserPaste = useBrowserPaste({ sessionId: currentSessionId, disabled, fileUploadsAllowed, agentType,
     onPasteText: onPasteText ?? onSendKey, onPasteImage: onPasteImage ?? onSendKey, onRefocus })
@@ -357,8 +363,11 @@ export default function TerminalControls({
         {onSelectText && (
           <button
             type="button"
-            aria-label="Select text"
-            className={`terminal-key flex items-center justify-center size-[44px] p-0 bg-surface border border-border rounded-md active:bg-hover active:scale-95 transition-transform duration-75 select-none touch-manipulation text-secondary`}
+            aria-label={selectTextActive ? 'Close text selection' : 'Select text'}
+            aria-pressed={selectTextActive}
+            className={`terminal-key flex items-center justify-center size-[44px] p-0 border rounded-md active:bg-hover active:scale-95 transition-transform duration-75 select-none touch-manipulation ${selectTextActive
+              ? 'bg-accent/20 text-accent border-accent/40'
+              : 'bg-surface border-border text-secondary'}`}
             onMouseDown={(e) => e.preventDefault()}
             onTouchEnd={handleTouchAction(onSelectText, false)}
             onClick={handleClickAction(onSelectText, false)}
