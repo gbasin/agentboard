@@ -72,7 +72,7 @@ function onlyMeasureProbes(record: MutationRecord): boolean {
   return nodes.length > 0 && nodes.every((node) => (node as Element).hasAttribute?.(MEASURE_PROBE_ATTR) === true)
 }
 
-type ObserverCtor =new (callback: MutationCallback) => Pick<MutationObserver, 'observe' | 'disconnect'>
+type ObserverCtor = new (callback: MutationCallback) => Pick<MutationObserver, 'observe' | 'disconnect'>
 
 /**
  * Call `onStale` when a row under the current selection changes.
