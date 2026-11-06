@@ -182,11 +182,14 @@ AGENTBOARD_REMOTE_ALLOW_ATTACH=false
 AGENTBOARD_REMOTE_ALLOW_CONTROL=false
 AGENTBOARD_LOG_WATCH_MODE=watch
 AGENTBOARD_PASTE_IMAGE_MAX_BYTES=41943040
+AGENTBOARD_ALLOWED_ORIGINS=https://board.example.com
 ```
 
 `HOSTNAME` controls which interfaces the server binds to (default `127.0.0.1` for localhost-only). With the default localhost binding, if Tailscale is detected the server also binds to your Tailscale IP automatically. Set to `0.0.0.0` to listen on all interfaces. A `HOSTNAME` that merely equals the machine hostname is treated as auto-exported by the environment (containers and some CI images do this) and ignored with a warning, keeping the localhost default.
 
 > **Security note:** Agentboard has no built-in authentication. Anyone who can reach the server has full access to your terminal sessions, including the ability to run commands as your user. The default localhost binding is safe. Tailscale provides network-level auth for remote access. Avoid setting `HOSTNAME=0.0.0.0` on untrusted networks (public WiFi, shared LANs) without an additional access control layer.
+
+The server checks the `Origin` header on WebSocket handshakes and on write requests (any method but GET, HEAD, OPTIONS). The host and port in `Origin` must equal the request's `Host` header, or the origin must be listed in `AGENTBOARD_ALLOWED_ORIGINS`. When Agentboard serves HTTPS itself (`TLS_CERT` and `TLS_KEY`), the `Host` match also requires an `https` origin. The server rejects other requests with 403. Requests without an `Origin` header, such as curl and scripts, pass. This check is not authentication. If you serve Agentboard behind a reverse proxy that rewrites `Host` (for example, to `127.0.0.1:4040`), list the public origin in `AGENTBOARD_ALLOWED_ORIGINS` (comma-separated full origins, such as `https://board.example.com`). Proxies that forward the original `Host` need no entry.
 
 `DISCOVER_PREFIXES` lets you discover and control windows from other tmux sessions. If unset, all sessions except the managed one are discovered. Windows named `__agentboard_root__` are always hidden — that name is reserved for the placeholder that keeps a base session alive.
 

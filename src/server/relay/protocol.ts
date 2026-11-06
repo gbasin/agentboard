@@ -11,6 +11,8 @@ export interface RelayOptions {
   tlsCert: string
   tlsKey: string
   terminalColorsEnabled: boolean
+  /** Normalized AGENTBOARD_ALLOWED_ORIGINS; see requestOrigin.ts. */
+  allowedOrigins: string[]
 }
 export type ParentToRelay =
   | { type: 'init'; options: RelayOptions; sessions: TerminalSession[] }
