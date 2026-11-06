@@ -66,8 +66,10 @@ jobs:
   # so the jobs do not share state. Inside a job the specs still run with one
   # worker, because they mutate one application, catalog, and tmux fixture.
   #
-  # Playwright puts whole spec files into shards, in file order, and the same
-  # file always goes to the same shard for a given shard count.
+  # Playwright divides the test groups of a suite between the shards, in
+  # order, by number of tests. A spec file is one group, or more than one when
+  # it changes browser options inside the file. A change to the number of
+  # tests can move a group to another shard.
   e2e:
     name: e2e (${{ matrix.name }})
     # Playwright 1.57 does not support the ubuntu-26.04 image behind latest.
@@ -172,12 +174,13 @@ jobs:
         run: ${{ matrix.run }}
 
       # Reports, traces, and screenshots. Most suites write them only when a
-      # test fails, so an empty upload is normal.
+      # test fails, so an empty upload is normal. The attempt number keeps the
+      # artifacts of a failed attempt when someone runs the job again.
       - name: Upload reports and traces
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          name: e2e-${{ matrix.id }}
+          name: e2e-${{ matrix.id }}-attempt-${{ github.run_attempt }}
           path: |
             playwright-report/
             playwright-*-report/
