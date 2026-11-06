@@ -15,6 +15,7 @@ import { copyText } from '../utils/copyText'
 import { getEffectiveModifier, matchesModifier } from '../utils/device'
 import { bracketedPaste, sanitizeImagePath } from '../utils/paste'
 import { clipboardFiles } from '../utils/browserFiles'
+import { setAppOwnsMouse } from '../utils/iosSelection'
 
 // Module-level snapshot cache: sessionId → serialized terminal content.
 // Survives component remounts and avoids stale-closure issues in effects.
@@ -1877,6 +1878,12 @@ export function useTerminal({
         const nextAppMouse = message.appMouse === true && !message.inCopyMode
         appMouseRef.current = nextAppMouse
         altScreenRef.current = message.altScreen === true
+        // While the app owns the mouse, a long-press drag goes to the app as
+        // its own selection; native iOS selection would start a second one.
+        if (isiOS) {
+          const selection = typeof window.getSelection === 'function' ? window.getSelection() : null
+          setAppOwnsMouse(containerRef.current, nextAppMouse, selection)
+        }
 
         // Client owns xterm's mouse mode: pane-output mode sequences are
         // stripped (see stripMouseModeSequences), so the mode is driven solely
