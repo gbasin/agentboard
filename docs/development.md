@@ -1,6 +1,6 @@
 # Development
 
-This page covers running Agentboard from a source checkout. For conventions, architecture notes, and the release process, see [AGENTS.md](../AGENTS.md).
+This page covers running Agentboard from a source checkout. For how the code is organised, see [architecture.md](architecture.md). For conventions and the release process, see [AGENTS.md](../AGENTS.md).
 
 ## Requirements
 
