@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.38.2](https://github.com/gbasin/agentboard/compare/v0.38.1...v0.38.2) (2026-11-06)
+
+
+### Bug Fixes
+
+* detect connector-created session pull requests ([#495](https://github.com/gbasin/agentboard/issues/495)) ([854379c](https://github.com/gbasin/agentboard/commit/854379cfd1264c2a9359a1eb15e840449258f77d))
+* harden terminal ownership and transcript ingestion ([#485](https://github.com/gbasin/agentboard/issues/485)) ([206444a](https://github.com/gbasin/agentboard/commit/206444a04a4fe56d2536ea751a2f591adac5b8e2))
+* keep tmux alive across systemd restarts; fix launchd rotation and watchdog ([#460](https://github.com/gbasin/agentboard/issues/460)) ([8deb54a](https://github.com/gbasin/agentboard/commit/8deb54aecfb5087cb2e1999a96c072c05483b418))
+
 ## [0.38.1](https://github.com/gbasin/agentboard/compare/v0.38.0...v0.38.1) (2026-11-02)
 
 
