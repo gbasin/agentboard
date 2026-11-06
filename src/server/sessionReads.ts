@@ -51,7 +51,8 @@ export function readSessionLists(db: Database, options?: { maxAgeHours?: number 
 }
 
 const KEY_COLUMNS = `session_id AS sessionId, log_file_path AS logFilePath,
-  project_path AS projectPath, slug, agent_type AS agentType, is_codex_exec AS isCodexExec`
+  project_path AS projectPath, slug, agent_type AS agentType, is_codex_exec AS isCodexExec,
+  last_known_log_size AS lastKnownLogSize, last_known_log_revision AS lastKnownLogRevision`
 
 export function readPollSnapshot(db: Database, options: SnapshotOptions): PollSnapshot {
   // End the read transaction before posting a response: never pin the WAL
