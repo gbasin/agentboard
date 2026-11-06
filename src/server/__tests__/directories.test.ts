@@ -164,7 +164,10 @@ describe('GET /api/directories', () => {
     expect(payload.error).toBe('not_found')
   })
 
-  test('returns 403 for permission denied', async () => {
+  // root can read a directory with mode 000, so the request succeeds. The e2e
+  // CI job runs as root in a container; the ci job runs this test as a
+  // normal user.
+  test.skipIf(process.getuid?.() === 0)('returns 403 for permission denied', async () => {
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-dir-'))
     const lockedPath = path.join(tempRoot, 'locked')
     await fs.mkdir(lockedPath)
