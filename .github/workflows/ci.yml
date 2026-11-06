@@ -63,8 +63,45 @@ jobs:
   e2e:
     # Playwright 1.57 does not support the ubuntu-26.04 image behind latest.
     runs-on: ubuntu-24.04
+    # The job normally takes about 27 minutes. Without a limit, a stuck step
+    # holds the runner for the 6-hour default.
+    timeout-minutes: 60
+    # The official Playwright image has Chromium, WebKit, and their system
+    # libraries. On the plain runner, `playwright install --with-deps` downloads
+    # more than 100 packages with apt from the runner's Ubuntu mirror; twice on
+    # 2026-11-06 a slow mirror kept that step running for 28 minutes. The tag
+    # must equal the Playwright version in bun.lock; a step below checks it.
+    # The job runs as root (the image default) because it must install tmux and
+    # a compiler. --ipc=host keeps Chromium off Docker's 64 MB /dev/shm, and
+    # --init reaps the child processes of the browsers.
+    container:
+      image: mcr.microsoft.com/playwright:v1.57.0-noble
+      options: --ipc=host --init
+    # The default shell of a container job is `sh -e`. Bash keeps the behavior
+    # of the runner, including pipefail.
+    defaults:
+      run:
+        shell: bash
+    env:
+      # The runner sets a UTF-8 locale; the image sets none. tmux needs one.
+      LANG: C.UTF-8
     steps:
+      # tmux for the tests, a compiler for node-pty (see below), unzip for
+      # setup-bun, and the process tools that the server and the tests run.
+      # This is the only apt step of the job, and it uses the mirror of the
+      # image (archive.ubuntu.com), not the mirror of the runner.
+      - name: Install tmux and build tools
+        timeout-minutes: 5
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            tmux g++ make python3 unzip procps lsof openssh-client
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      # The workspace belongs to the user of the runner, and the job runs as root.
+      - name: Let git use the workspace
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6  # v2.2.0
         with:
@@ -77,11 +114,19 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Install tmux
-        run: sudo apt-get update && sudo apt-get install -y tmux
-
-      - name: Install Playwright browsers
-        run: bunx playwright install --with-deps chromium webkit
+      - name: Check that the container has the resolved Playwright version
+        env:
+          # Keep equal to the tag of the container image above.
+          PLAYWRIGHT_IMAGE_VERSION: 1.57.0
+        run: |
+          resolved="$(bunx playwright --version | awk '{print $2}')"
+          echo "Resolved Playwright: $resolved; container: $PLAYWRIGHT_IMAGE_VERSION"
+          if [[ "$resolved" != "$PLAYWRIGHT_IMAGE_VERSION" ]]; then
+            echo "::error::Playwright is $resolved but the e2e container is $PLAYWRIGHT_IMAGE_VERSION. Update the image tag in ci.yml."
+            exit 1
+          fi
+          echo "PLAYWRIGHT_BROWSERS_PATH=${PLAYWRIGHT_BROWSERS_PATH:-}"; ls "${PLAYWRIGHT_BROWSERS_PATH:-/ms-playwright}"
+          id; node --version; tmux -V; locale
 
       - name: Build
         run: bun run build
