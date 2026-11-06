@@ -63,6 +63,9 @@ jobs:
   e2e:
     # Playwright 1.57 does not support the ubuntu-26.04 image behind latest.
     runs-on: ubuntu-24.04
+    # The job normally takes about 27 minutes. Without a limit, a stuck step
+    # holds the runner for the 6-hour default.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
@@ -77,10 +80,18 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      # The two steps below download packages with apt from the runner's Ubuntu
+      # mirror (azure.archive.ubuntu.com). They normally take 5 and 30 to 55
+      # seconds. Twice on 2026-11-06 a slow mirror kept the Playwright step
+      # running for 28 minutes, until someone cancelled the run. The limits make
+      # that case fail in minutes. Run the job again to get a new runner; a
+      # second attempt on the same runner would use the same mirror.
       - name: Install tmux
+        timeout-minutes: 3
         run: sudo apt-get update && sudo apt-get install -y tmux
 
       - name: Install Playwright browsers
+        timeout-minutes: 5
         run: bunx playwright install --with-deps chromium webkit
 
       - name: Build
