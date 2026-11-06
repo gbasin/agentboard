@@ -20,10 +20,11 @@ class Proxy implements ITerminalProxy {
   writes: Array<{ target: string; data: string }> = []
   pastes: string[] = []
   dimensions: number[][] = []
+  beforeStart: Promise<void> | null = null
   afterSwitch: Promise<void> | null = null
   queue = Promise.resolve(true)
   constructor(readonly options: TerminalProxyOptions) {}
-  async start() { if (!this.started) { this.started = true; this.starts++ } }
+  async start() { await this.beforeStart; if (!this.started) { this.started = true; this.starts++ } }
   switchTo(target: string, onReady?: () => void) {
     const hold = this.afterSwitch
     this.afterSwitch = null
@@ -62,12 +63,13 @@ function fixture() {
   const clipboard: string[] = []
   const copyChecks: string[] = []
   const copyCancels: string[] = []
+  let startupHold: Promise<void> | null = null
   let captureHold: Promise<void> | null = null
   let cancelHold: Promise<void> = Promise.resolve()
   const peer: TerminalPeer = { data: createTerminalPeerData('test'), readyState: 1, send: raw => messages.push(JSON.parse(raw)) }
   const runtime = new TerminalRuntime({
     getSession: id => sessions.get(id),
-    createProxy: options => { const proxy = new Proxy(options); proxies.push(proxy); return proxy },
+    createProxy: options => { const proxy = new Proxy(options); proxy.beforeStart = startupHold; proxies.push(proxy); return proxy },
     capture: async target => { await captureHold; return `snapshot:${target}` },
     cancelCopyMode: (_peer, session) => { copyCancels.push(session.id); return cancelHold },
     checkCopyMode: async (_peer, session) => { copyChecks.push(session.id) },
@@ -77,7 +79,7 @@ function fixture() {
   active.push({ runtime, peer })
   const attach = (id: string, attachId: number) => runtime.handle(peer, { type: 'terminal-attach', sessionId: id, attachId, cols: 80, rows: 24 })
   const input = (id: string, attachId: number, data = 'input') => runtime.handle(peer, { type: 'terminal-input', sessionId: id, attachId, data })
-  return { sessions, messages, proxies, submissions, clipboard, copyChecks, copyCancels, peer, runtime, attach, input, holdCapture: (hold: Promise<void> | null) => { captureHold = hold }, holdCancel: (hold: Promise<void>) => { cancelHold = hold } }
+  return { sessions, messages, proxies, submissions, clipboard, copyChecks, copyCancels, peer, runtime, attach, input, holdStart: (hold: Promise<void> | null) => { startupHold = hold }, holdCapture: (hold: Promise<void> | null) => { captureHold = hold }, holdCancel: (hold: Promise<void>) => { cancelHold = hold } }
 }
 
 async function until(predicate: () => boolean) {
@@ -304,4 +306,51 @@ test('in-place catalog mutation during capture cannot redefine the captured iden
   await until(() => f.messages.some(m => m.type === 'terminal-error'))
   expect(f.messages.some(m => m.type === 'terminal-ready' || m.type === 'terminal-output')).toBe(false)
   expect(f.peer.data.inputReady).toBe(false)
+})
+
+
+test('same-host SSH attaches share pending startup and only the latest becomes ready', async () => {
+  const allowed = config.remoteAllowAttach
+  config.remoteAllowAttach = true
+  const f = fixture(), start = deferred()
+  try {
+    for (const session of f.sessions.values()) { session.remote = true; session.host = 'same-host' }
+    f.holdStart(start.promise)
+    f.attach('A', 1)
+    f.attach('B', 2)
+    expect(f.proxies).toHaveLength(1)
+    start.resolve()
+    await until(() => f.peer.data.inputReady)
+    expect(f.proxies[0].disposed).toBe(false)
+    expect(f.proxies[0].switches).toEqual(['board:@1'])
+    expect(f.messages.filter(m => m.type === 'terminal-ready').map(m => m.sessionId)).toEqual(['B'])
+  } finally { start.resolve(); config.remoteAllowAttach = allowed }
+})
+
+test('close while history capture is pending never switches the disposed observer', async () => {
+  const f = fixture(), capture = deferred()
+  f.holdCapture(capture.promise)
+  f.attach('A', 1)
+  await until(() => f.proxies.length === 1 && f.proxies[0].started)
+  await f.runtime.dispose(f.peer)
+  capture.resolve()
+  await Bun.sleep(5)
+  expect(f.proxies[0].switches).toEqual([])
+  expect(f.messages.some(m => m.type === 'terminal-ready')).toBe(false)
+})
+
+test('SSH host A to B to A assigns replacement proxies distinct bootstrap sessions', async () => {
+  const allowed = config.remoteAllowAttach
+  config.remoteAllowAttach = true
+  const f = fixture()
+  try {
+    f.sessions.get('A')!.remote = true; f.sessions.get('A')!.host = 'host-A'
+    f.sessions.get('B')!.remote = true; f.sessions.get('B')!.host = 'host-B'
+    f.attach('A', 1); await until(() => f.peer.data.inputReady)
+    f.attach('B', 2); await until(() => f.peer.data.inputReady)
+    f.attach('A', 3); await until(() => f.peer.data.inputReady)
+    expect(f.proxies).toHaveLength(3)
+    expect(new Set(f.proxies.map(proxy => proxy.options.sessionName)).size).toBe(3)
+    expect(f.proxies.map(proxy => proxy.disposed)).toEqual([true, true, false])
+  } finally { config.remoteAllowAttach = allowed }
 })
