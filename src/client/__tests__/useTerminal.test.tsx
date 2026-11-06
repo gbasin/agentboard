@@ -279,9 +279,13 @@ function createContainerMock() {
     },
   }
 
+  const attributes = new Set<string>()
   const container = {
     innerHTML: 'existing',
     style: containerStyle,
+    hasAttribute: (name: string) => attributes.has(name),
+    setAttribute: (name: string) => { attributes.add(name) },
+    removeAttribute: (name: string) => { attributes.delete(name) },
     get offsetHeight() { return 100 },
     closest: () => null,
     contains: () => false,
@@ -352,7 +356,7 @@ function createContainerMock() {
     }
   }
 
-  return { container, textarea, listeners, listenerEntries, dispatchEvent, displayLog }
+  return { container, textarea, listeners, listenerEntries, dispatchEvent, displayLog, attributes }
 }
 
 // Input/clipboard fixtures model the server's initial attachment acknowledgment.
@@ -2741,6 +2745,145 @@ describe('useTerminal', () => {
     ])
     expect(preventDefaultCalls).toBe(2)
     expect(stopPropagationCalls).toBe(2)
+
+    act(() => {
+      renderer.unmount()
+    })
+  })
+
+  test('iOS: native selection is handed to the app while it owns the mouse', async () => {
+    globalAny.navigator = {
+      userAgent: 'iPhone',
+      platform: 'iPhone',
+      maxTouchPoints: 5,
+      clipboard: { writeText: () => Promise.resolve(), readText: () => Promise.resolve('') },
+      vibrate: () => true,
+    } as unknown as Navigator
+
+    const listeners: Array<(message: ServerMessage) => void> = []
+    const { container, attributes } = createContainerMock()
+    let renderer!: TestRenderer.ReactTestRenderer
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalHarness
+          sessionId="session-1"
+          sendMessage={() => {}}
+          subscribe={(listener) => {
+            listeners.push(listener)
+            listener({ type: 'terminal-ready', sessionId: 'session-1' })
+            return () => {}
+          }}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+        { createNodeMock: () => container },
+      )
+      await Promise.resolve()
+    })
+
+    const status = (appMouse: boolean, inCopyMode = false) => act(() => {
+      listeners[0]?.({ type: 'tmux-copy-mode-status', sessionId: 'session-1', inCopyMode, appMouse })
+    })
+
+    status(true)
+    expect(attributes.has('data-app-mouse')).toBe(true)
+    // tmux copy-mode takes the mouse back from the app: native selection returns.
+    status(true, true)
+    expect(attributes.has('data-app-mouse')).toBe(false)
+    status(true)
+    status(false)
+    expect(attributes.has('data-app-mouse')).toBe(false)
+
+    act(() => {
+      renderer.unmount()
+    })
+  })
+
+  test('iOS appMouse=true touchcancel releases a remote selection and disarms the long press', async () => {
+    jest.useFakeTimers()
+    globalAny.window = {
+      ...globalAny.window,
+      matchMedia: () => ({
+        matches: true,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        addListener: () => {},
+        removeListener: () => {},
+      }),
+    } as unknown as Window & typeof globalThis
+    globalAny.navigator = {
+      userAgent: 'iPhone',
+      platform: 'iPhone',
+      maxTouchPoints: 5,
+      clipboard: { writeText: () => Promise.resolve(), readText: () => Promise.resolve('') },
+      vibrate: () => true,
+    } as unknown as Navigator
+
+    const sendCalls: Array<Record<string, unknown>> = []
+    const listeners: Array<(message: ServerMessage) => void> = []
+    const { container, dispatchEvent } = createContainerMock()
+
+    let renderer!: TestRenderer.ReactTestRenderer
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalComponent
+          session={terminalSession}
+          sessions={[terminalSession]}
+          connectionStatus="connected"
+          sendMessage={(message) => { sendCalls.push(message) }}
+          subscribe={(listener) => {
+            listeners.push(listener)
+            return () => {}
+          }}
+          onClose={() => {}}
+          onSelectSession={() => {}}
+          onNewSession={() => {}}
+          onKillSession={() => {}}
+          onRenameSession={() => {}}
+          onResumeSession={() => {}}
+          onOpenSettings={() => {}}
+        />,
+        { createNodeMock: () => container },
+      )
+      await Promise.resolve()
+    })
+
+    act(() => {
+      listeners[0]?.({
+        type: 'tmux-copy-mode-status',
+        sessionId: 'session-1',
+        inCopyMode: false,
+        appMouse: true,
+      })
+    })
+    sendCalls.length = 0
+
+    const startTouch = { clientX: 25, clientY: 25 } as Touch
+    const dragTouch = { clientX: 45, clientY: 35 } as Touch
+    const noop = { preventDefault: () => {}, stopPropagation: () => {} }
+
+    // Cancelled mid-drag: the app gets a release so its button is not left held.
+    act(() => { dispatchEvent('touchstart', { touches: [startTouch] }) })
+    act(() => { jest.advanceTimersByTime(350) })
+    act(() => {
+      dispatchEvent('touchmove', { touches: [dragTouch], ...noop })
+      dispatchEvent('touchcancel', { changedTouches: [dragTouch], ...noop })
+    })
+    expect(sendCalls.filter((call) => call.type === 'terminal-input').map((call) => call.data)).toEqual([
+      '\x1b[<0;3;3M',
+      '\x1b[<32;5;4M',
+      '\x1b[<0;5;4m',
+    ])
+
+    // A later move is a scroll again, not a drag of the cancelled selection.
+    sendCalls.length = 0
+    act(() => {
+      dispatchEvent('touchstart', { touches: [startTouch] })
+      dispatchEvent('touchcancel', { changedTouches: [startTouch], ...noop })
+    })
+    // Cancelled before the long press fired: the timer must not start a selection.
+    act(() => { jest.advanceTimersByTime(1000) })
+    expect(sendCalls.filter((call) => call.type === 'terminal-input')).toEqual([])
 
     act(() => {
       renderer.unmount()

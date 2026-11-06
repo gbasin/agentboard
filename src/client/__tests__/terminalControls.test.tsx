@@ -580,3 +580,43 @@ test('recovery permits keyboard touch without enabling command or paste buttons'
   expect(sends).toBe(0)
   act(() => renderer.unmount())
 })
+
+test('Select text renders only with a handler and fires it on tap', () => {
+  let opened = 0
+  const renderer = TestRenderer.create(
+    <TerminalControls onSendKey={() => {}} sessions={[]} currentSessionId="s" onSelectSession={() => {}}
+      onSelectText={() => { opened += 1 }} />
+  )
+  const button = renderer.root.findAllByType('button').find((b) => b.props['aria-label'] === 'Select text')
+  act(() => button?.props.onClick())
+  expect(opened).toBe(1)
+  const without = TestRenderer.create(
+    <TerminalControls onSendKey={() => {}} sessions={[]} currentSessionId="s" onSelectSession={() => {}} />
+  )
+  expect(without.root.findAllByType('button').some((b) => String(b.props['aria-label']).includes('text'))).toBe(false)
+})
+
+test('while the snapshot is open the key row is replaced by Done then Refresh', () => {
+  const calls: string[] = []
+  const actions = { onDone: () => { calls.push('done') }, onRefresh: () => { calls.push('refresh') }, busy: false }
+  const renderer = TestRenderer.create(
+    <TerminalControls onSendKey={() => { calls.push('key') }} sessions={[]} currentSessionId="s" onSelectSession={() => {}}
+      onSelectText={() => { calls.push('select') }} snapshotActions={actions} />
+  )
+  const buttons = renderer.root.findAllByType('button')
+  expect(buttons.map((b) => b.props['aria-label'])).toEqual(['Done selecting text', 'Refresh text'])
+  for (const button of buttons) expect(String(button.props.className)).toContain('h-[44px]')
+  act(() => buttons[0].props.onClick())
+  act(() => buttons[1].props.onClick())
+  expect(calls).toEqual(['done', 'refresh'])
+
+  act(() => renderer.update(
+    <TerminalControls onSendKey={() => {}} sessions={[]} currentSessionId="s" onSelectSession={() => {}}
+      onSelectText={() => {}} snapshotActions={{ ...actions, busy: true }} />
+  ))
+  const refresh = renderer.root.findAllByType('button').find((b) => b.props['aria-label'] === 'Refresh text')
+  expect(refresh?.props.disabled).toBe(true)
+  expect(refresh?.props['aria-busy']).toBe(true)
+  const done = renderer.root.findAllByType('button').find((b) => b.props['aria-label'] === 'Done selecting text')
+  expect(done?.props.disabled).toBeFalsy()
+})

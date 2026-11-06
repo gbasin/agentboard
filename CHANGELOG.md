@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.39.0](https://github.com/gbasin/agentboard/compare/v0.38.2...v0.39.0) (2026-11-06)
+
+
+### Features
+
+* Select text key that freezes the pane as natively selectable text ([#499](https://github.com/gbasin/agentboard/issues/499)) ([8d5603a](https://github.com/gbasin/agentboard/commit/8d5603ac4426b23f9760ce73c04b9337ad5f2014))
+
+
+### Bug Fixes
+
+* stop double text selection in fullscreen TUIs on iOS ([#498](https://github.com/gbasin/agentboard/issues/498)) ([c523535](https://github.com/gbasin/agentboard/commit/c523535a1a5b141de43c07ccd254fce929682544))
+
 ## [0.38.2](https://github.com/gbasin/agentboard/compare/v0.38.1...v0.38.2) (2026-11-06)
 
 

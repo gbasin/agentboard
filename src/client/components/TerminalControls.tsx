@@ -9,7 +9,7 @@
 import { useState, useRef, useEffect } from 'react'
 import type { TouchEvent as ReactTouchEvent } from 'react'
 import type { AgentType, Session } from '@shared/types'
-import { ClipboardIcon, CornerDownLeftIcon, DeleteIcon, Keyboard01Icon } from './icons'
+import { ClipboardIcon, CornerDownLeftIcon, DeleteIcon, Keyboard01Icon, TextInputIcon } from './icons'
 import { ICON_SIZE, KEY_ICON_STROKE } from './controlStyles'
 import ArrowKeys from './ArrowKeys'
 import NumPad from './NumPad'
@@ -17,6 +17,7 @@ import { isIOSDevice } from '../utils/device'
 import PasteStatus from './PasteStatus'
 import { useBrowserPaste } from '../hooks/useBrowserPaste'
 import { useKeyboardShift } from '../hooks/useKeyboardShift'
+import SnapshotDeckActions, { type SnapshotActions } from './SnapshotDeckActions'
 
 interface SessionInfo {
   id: string
@@ -46,6 +47,13 @@ interface TerminalControlsProps {
   onRefocus?: () => void
   isKeyboardVisible?: () => boolean
   onEnterTextMode?: () => void
+  /**
+   * Open the frozen "Select text" snapshot of the pane. Hidden when absent.
+   * Stays available while the rest of the deck is disabled.
+   */
+  onSelectText?: () => void
+  /** The snapshot is open: the key row shows Done and Refresh instead. */
+  snapshotActions?: SnapshotActions
 }
 
 interface ControlKey {
@@ -58,6 +66,7 @@ interface ControlKey {
 // Key strip glyphs: library icons at the key size (18px on 44px keys).
 const BackspaceIcon = <DeleteIcon width={ICON_SIZE.key} height={ICON_SIZE.key} strokeWidth={KEY_ICON_STROKE} />
 const PasteIcon = <ClipboardIcon width={ICON_SIZE.key} height={ICON_SIZE.key} strokeWidth={KEY_ICON_STROKE} />
+const SelectTextIcon = <TextInputIcon width={ICON_SIZE.key} height={ICON_SIZE.key} strokeWidth={KEY_ICON_STROKE} />
 const KeyboardIcon = <Keyboard01Icon width={ICON_SIZE.key} height={ICON_SIZE.key} strokeWidth={KEY_ICON_STROKE} />
 
 // Color classes of a key without its own `className`. A key's className
@@ -127,6 +136,8 @@ export default function TerminalControls({
   onRefocus,
   isKeyboardVisible,
   onEnterTextMode,
+  onSelectText,
+  snapshotActions,
 }: TerminalControlsProps) {
   const browserPaste = useBrowserPaste({ sessionId: currentSessionId, disabled, fileUploadsAllowed, agentType,
     onPasteText: onPasteText ?? onSendKey, onPasteImage: onPasteImage ?? onSendKey, onRefocus })
@@ -304,8 +315,9 @@ export default function TerminalControls({
           </div>
         </div>
       )}
+      {snapshotActions && <SnapshotDeckActions {...snapshotActions} />}
       {/* Key row */}
-      <div className="grid grid-flow-col auto-cols-[44px] items-center gap-[4px] overflow-x-auto scrollbar-none"
+      {!snapshotActions && <div className="grid grid-flow-col auto-cols-[44px] items-center gap-[4px] overflow-x-auto scrollbar-none"
         onTouchStartCapture={(event) => {
           const touch = event.touches[0]
           touchStartRef.current = touch ? { x: touch.clientX, y: touch.clientY } : null
@@ -350,6 +362,18 @@ export default function TerminalControls({
         >
           {PasteIcon}
         </button>
+        {onSelectText && (
+          <button
+            type="button"
+            aria-label="Select text"
+            className="terminal-key flex items-center justify-center size-[44px] p-0 border rounded-md active:bg-hover active:scale-95 transition-transform duration-75 select-none touch-manipulation bg-surface border-border text-secondary"
+            onMouseDown={(e) => e.preventDefault()}
+            onTouchEnd={handleTouchAction(onSelectText, false)}
+            onClick={handleClickAction(onSelectText, false)}
+          >
+            {SelectTextIcon}
+          </button>
+        )}
         {renderControlKey(KEY_DELETE_WORD)}
         {/* NumPad for number input */}
         <NumPad
@@ -406,7 +430,7 @@ export default function TerminalControls({
         >
           {KeyboardIcon}
         </button>
-      </div>
+      </div>}
 
       <PasteStatus {...browserPaste} allowFiles={fileUploadsAllowed} />
     </div>
