@@ -60,7 +60,7 @@ async function main() {
   }
 
   try {
-    await runCommand(['node', '--test', 'launchd/release.test.mjs'], env)
+    await runCommand(['node', '--test', 'launchd/release.test.mjs', 'launchd/scripts.test.mjs', 'systemd/install.test.mjs'], env)
     await runCommand(['bun', 'test', './scripts/verify-platform-lock.test.ts'], env)
 
     // Tests that either mutate globals or are sensitive to global mutations
