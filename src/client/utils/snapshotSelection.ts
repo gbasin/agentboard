@@ -9,6 +9,7 @@
  */
 
 import { selectedSnapshotText, type SnapshotPoint } from './snapshotText'
+import type { RowJoin } from './snapshotRejoin'
 
 export const SNAPSHOT_LINE_ATTR = 'data-snapshot-line'
 
@@ -49,12 +50,15 @@ export function resolveSnapshotPoint(root: RootLike, node: unknown, offset: numb
   return { line, col: offset === 0 ? 0 : Infinity }
 }
 
-/** Normalised clipboard text for `range`, or null when it is not in the layer. */
-export function snapshotCopyText(root: RootLike, range: RangeLike, lines: string[]): string | null {
+/**
+ * Normalised clipboard text for `range`, or null when it is not in the layer.
+ * `joins` marks the rows the app wrapped itself (empty: copy rows as shown).
+ */
+export function snapshotCopyText(root: RootLike, range: RangeLike, lines: string[], joins: readonly RowJoin[] = []): string | null {
   const start = resolveSnapshotPoint(root, range.startContainer, range.startOffset, lines.length)
   const end = resolveSnapshotPoint(root, range.endContainer, range.endOffset, lines.length)
   if (!start || !end) return null
-  return selectedSnapshotText(lines, start, end)
+  return selectedSnapshotText(lines, start, end, joins)
 }
 
 interface CopyEventLike {
@@ -71,11 +75,37 @@ interface SelectionSource {
  * Copy handler body: when the selection lies in the layer, write the
  * normalised text and cancel the browser's own copy. Returns whether it did.
  */
-export function handleSnapshotCopy(event: CopyEventLike, selection: SelectionSource | null, root: RootLike, lines: string[]): boolean {
+export function handleSnapshotCopy(
+  event: CopyEventLike,
+  selection: SelectionSource | null,
+  root: RootLike,
+  lines: string[],
+  joins: readonly RowJoin[] = [],
+): boolean {
   if (!selection || selection.rangeCount === 0 || selection.isCollapsed || !event.clipboardData) return false
-  const text = snapshotCopyText(root, selection.getRangeAt(0), lines)
+  const text = snapshotCopyText(root, selection.getRangeAt(0), lines, joins)
   if (text === null) return false
   event.preventDefault()
   event.clipboardData.setData('text/plain', text)
+  return true
+}
+
+/**
+ * Copy handler for the layer: write the selection's text, then run
+ * `afterCopy` on a later task. Running it inside the handler would close the
+ * layer (unmounting the selection) while the browser still finishes the
+ * copy. Returns whether the copy was handled.
+ */
+export function copyThenAfter(
+  event: CopyEventLike,
+  selection: SelectionSource | null,
+  root: RootLike,
+  lines: string[],
+  joins: readonly RowJoin[],
+  afterCopy: () => void,
+  schedule: (task: () => void) => void = (task) => { setTimeout(task, 0) },
+): boolean {
+  if (!handleSnapshotCopy(event, selection, root, lines, joins)) return false
+  schedule(afterCopy)
   return true
 }

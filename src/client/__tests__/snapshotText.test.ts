@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  cleanSnapshotText,
   displaySnapshotText,
   normalizeSnapshotText,
   selectedSnapshotText,
 } from '../utils/snapshotText'
 import {
+  copyThenAfter,
   handleSnapshotCopy,
   resolveSnapshotPoint,
   snapshotCopyText,
@@ -89,18 +89,6 @@ describe('normalizeSnapshotText', () => {
   })
 })
 
-describe('cleanSnapshotText', () => {
-  test('Copy all keeps the gutter when an unindented line is in the capture', () => {
-    const text = cleanSnapshotText(CLAUDE.join('\n') + '\n\n')
-    expect(text.startsWith('  of the real one')).toBe(true)
-    expect(text.endsWith('✻ Churned for 8s · done 8:19 AM')).toBe(true)
-  })
-
-  test('Copy all of an indented-only capture drops the gutter', () => {
-    expect(cleanSnapshotText('  a\n    b\n')).toBe('a\n  b')
-  })
-})
-
 describe('selectedSnapshotText', () => {
   test('a code block selected from "def" to the end of "evens"', () => {
     const end = { line: 10, col: CLAUDE[10].length }
@@ -177,6 +165,27 @@ describe('snapshot selection mapping', () => {
     expect(handleSnapshotCopy(event, selection, root, lines)).toBe(true)
     expect(prevented).toBe(true)
     expect(written).toEqual([['text/plain', 'def f():\n    return 1']])
+  })
+
+  test('closes only after a handled copy, on a later task, with rejoined text', () => {
+    const rows = ['  total = add(*values)  # Python integers never', '  overflow, so no bounds check is needed']
+    const { root: layerRoot, elements: rowElements } = fakeLayer(rows)
+    const written: string[] = []
+    const scheduled: Array<() => void> = []
+    let closed = 0
+    const event = { clipboardData: { setData: (_type: string, data: string) => { written.push(data) } }, preventDefault: () => {} }
+    const range = { startContainer: rowElements[0].textNode, startOffset: 2, endContainer: layerRoot, endOffset: 2 }
+    const selection = { rangeCount: 1, isCollapsed: false, getRangeAt: () => range }
+    const handled = copyThenAfter(event, selection, layerRoot, rows, [' '], () => { closed += 1 }, (task) => { scheduled.push(task) })
+    expect(handled).toBe(true)
+    expect(written).toEqual(['total = add(*values)  # Python integers never overflow, so no bounds check is needed'])
+    expect(closed).toBe(0)
+    scheduled.forEach((task) => task())
+    expect(closed).toBe(1)
+
+    const outside = { rangeCount: 1, isCollapsed: false, getRangeAt: () => ({ startContainer: {}, startOffset: 0, endContainer: {}, endOffset: 0 }) }
+    expect(copyThenAfter(event, outside, layerRoot, rows, [], () => { closed += 1 }, (task) => { scheduled.push(task) })).toBe(false)
+    expect(scheduled).toHaveLength(1)
   })
 
   test('the copy handler leaves selections elsewhere and empty ones alone', () => {

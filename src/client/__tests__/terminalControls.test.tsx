@@ -588,7 +588,6 @@ test('Select text renders only with a handler and fires it on tap', () => {
       onSelectText={() => { opened += 1 }} />
   )
   const button = renderer.root.findAllByType('button').find((b) => b.props['aria-label'] === 'Select text')
-  expect(button?.props['aria-pressed']).toBe(false)
   act(() => button?.props.onClick())
   expect(opened).toBe(1)
   const without = TestRenderer.create(
@@ -597,25 +596,27 @@ test('Select text renders only with a handler and fires it on tap', () => {
   expect(without.root.findAllByType('button').some((b) => String(b.props['aria-label']).includes('text'))).toBe(false)
 })
 
-test('while the snapshot is open the deck is inert except the Select key, which closes it', () => {
-  const sent: string[] = []
-  let toggled = 0
+test('while the snapshot is open the key row is replaced by Done then Refresh', () => {
+  const calls: string[] = []
+  const actions = { onDone: () => { calls.push('done') }, onRefresh: () => { calls.push('refresh') }, busy: false }
   const renderer = TestRenderer.create(
-    <TerminalControls onSendKey={(key) => { sent.push(key) }} sessions={[]} currentSessionId="s" onSelectSession={() => {}}
-      onSelectText={() => { toggled += 1 }} selectTextActive disabled keyboardDisabled />
+    <TerminalControls onSendKey={() => { calls.push('key') }} sessions={[]} currentSessionId="s" onSelectSession={() => {}}
+      onSelectText={() => { calls.push('select') }} snapshotActions={actions} />
   )
   const buttons = renderer.root.findAllByType('button')
-  const select = buttons.find((b) => b.props['aria-label'] === 'Close text selection')
-  expect(select?.props['aria-pressed']).toBe(true)
-  expect(select?.props.disabled).toBeFalsy()
-  const others = buttons.filter((b) => b !== select)
-  expect(others.length).toBeGreaterThan(5)
-  expect(others.every((b) => b.props.disabled === true)).toBe(true)
-  for (const button of others) {
-    act(() => button.props.onClick?.())
-    act(() => button.props.onTouchEnd?.({ changedTouches: [{ clientX: 0, clientY: 0 }], preventDefault() {}, stopPropagation() {} }))
-  }
-  expect(sent).toEqual([])
-  act(() => select?.props.onClick())
-  expect(toggled).toBe(1)
+  expect(buttons.map((b) => b.props['aria-label'])).toEqual(['Done selecting text', 'Refresh text'])
+  for (const button of buttons) expect(String(button.props.className)).toContain('h-[44px]')
+  act(() => buttons[0].props.onClick())
+  act(() => buttons[1].props.onClick())
+  expect(calls).toEqual(['done', 'refresh'])
+
+  act(() => renderer.update(
+    <TerminalControls onSendKey={() => {}} sessions={[]} currentSessionId="s" onSelectSession={() => {}}
+      onSelectText={() => {}} snapshotActions={{ ...actions, busy: true }} />
+  ))
+  const refresh = renderer.root.findAllByType('button').find((b) => b.props['aria-label'] === 'Refresh text')
+  expect(refresh?.props.disabled).toBe(true)
+  expect(refresh?.props['aria-busy']).toBe(true)
+  const done = renderer.root.findAllByType('button').find((b) => b.props['aria-label'] === 'Done selecting text')
+  expect(done?.props.disabled).toBeFalsy()
 })

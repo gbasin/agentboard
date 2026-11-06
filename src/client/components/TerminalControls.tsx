@@ -17,6 +17,7 @@ import { isIOSDevice } from '../utils/device'
 import PasteStatus from './PasteStatus'
 import { useBrowserPaste } from '../hooks/useBrowserPaste'
 import { useKeyboardShift } from '../hooks/useKeyboardShift'
+import SnapshotDeckActions, { type SnapshotActions } from './SnapshotDeckActions'
 
 interface SessionInfo {
   id: string
@@ -47,12 +48,12 @@ interface TerminalControlsProps {
   isKeyboardVisible?: () => boolean
   onEnterTextMode?: () => void
   /**
-   * Toggle the frozen "Select text" snapshot of the pane. Hidden when absent.
+   * Open the frozen "Select text" snapshot of the pane. Hidden when absent.
    * Stays available while the rest of the deck is disabled.
    */
   onSelectText?: () => void
-  /** The snapshot is open: the Select key shows as pressed and closes it. */
-  selectTextActive?: boolean
+  /** The snapshot is open: the key row shows Done and Refresh instead. */
+  snapshotActions?: SnapshotActions
 }
 
 interface ControlKey {
@@ -136,7 +137,7 @@ export default function TerminalControls({
   isKeyboardVisible,
   onEnterTextMode,
   onSelectText,
-  selectTextActive = false,
+  snapshotActions,
 }: TerminalControlsProps) {
   const browserPaste = useBrowserPaste({ sessionId: currentSessionId, disabled, fileUploadsAllowed, agentType,
     onPasteText: onPasteText ?? onSendKey, onPasteImage: onPasteImage ?? onSendKey, onRefocus })
@@ -314,8 +315,9 @@ export default function TerminalControls({
           </div>
         </div>
       )}
+      {snapshotActions && <SnapshotDeckActions {...snapshotActions} />}
       {/* Key row */}
-      <div className="grid grid-flow-col auto-cols-[44px] items-center gap-[4px] overflow-x-auto scrollbar-none"
+      {!snapshotActions && <div className="grid grid-flow-col auto-cols-[44px] items-center gap-[4px] overflow-x-auto scrollbar-none"
         onTouchStartCapture={(event) => {
           const touch = event.touches[0]
           touchStartRef.current = touch ? { x: touch.clientX, y: touch.clientY } : null
@@ -363,11 +365,8 @@ export default function TerminalControls({
         {onSelectText && (
           <button
             type="button"
-            aria-label={selectTextActive ? 'Close text selection' : 'Select text'}
-            aria-pressed={selectTextActive}
-            className={`terminal-key flex items-center justify-center size-[44px] p-0 border rounded-md active:bg-hover active:scale-95 transition-transform duration-75 select-none touch-manipulation ${selectTextActive
-              ? 'bg-accent/20 text-accent border-accent/40'
-              : 'bg-surface border-border text-secondary'}`}
+            aria-label="Select text"
+            className="terminal-key flex items-center justify-center size-[44px] p-0 border rounded-md active:bg-hover active:scale-95 transition-transform duration-75 select-none touch-manipulation bg-surface border-border text-secondary"
             onMouseDown={(e) => e.preventDefault()}
             onTouchEnd={handleTouchAction(onSelectText, false)}
             onClick={handleClickAction(onSelectText, false)}
@@ -431,7 +430,7 @@ export default function TerminalControls({
         >
           {KeyboardIcon}
         </button>
-      </div>
+      </div>}
 
       <PasteStatus {...browserPaste} allowFiles={fileUploadsAllowed} />
     </div>

@@ -6,10 +6,10 @@
  * stays on screen. Switching sessions closes the snapshot. It subscribes
  * only while a request is in flight.
  *
- * useSelectTextToggle is the Select key's action: it closes an open snapshot,
- * or drops the keyboard and any a11y selection and opens one. When the
- * on-screen keyboard was up, the capture waits for the terminal to grow back
- * and the TUI to redraw, so the frozen text matches the screen it covers.
+ * useOpenSelectText is the Select key's action: it drops the keyboard and any
+ * a11y selection and opens a snapshot. When the on-screen keyboard was up,
+ * the capture waits for the terminal to grow back and the TUI to redraw, so
+ * the frozen text matches the screen it covers.
  */
 
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react'
@@ -25,6 +25,8 @@ export type TerminalSnapshotState =
       scrollPosition: number
       historyLines: number
       captureMs: number
+      /** The pane was on the alternate screen (a fullscreen TUI). */
+      altScreen: boolean
       /** A re-capture is in flight; the text shown is the previous one. */
       refreshing: boolean
     }
@@ -60,6 +62,7 @@ export function useTerminalSnapshot({ sessionId, sendMessage, subscribe }: Optio
       scrollPosition: message.scrollPosition ?? 0,
       historyLines: message.historyLines ?? 0,
       captureMs: message.captureMs ?? 0,
+      altScreen: message.altScreen ?? false,
       refreshing: false,
     })
   }) : undefined, [waiting, sessionId, subscribe])
@@ -102,21 +105,25 @@ export function useTerminalSnapshot({ sessionId, sendMessage, subscribe }: Optio
 /** How long the on-screen keyboard takes to hide and the TUI to redraw. */
 export const KEYBOARD_SETTLE_MS = 600
 
-export function useSelectTextToggle(
-  snapshot: { open: (delayMs?: number) => void; close: () => void },
-  isOpen: boolean,
+export function useOpenSelectText(
+  open: (delayMs?: number) => void,
   clearIOSSelectionRef: MutableRefObject<(() => void) | null>,
 ) {
-  const { open, close } = snapshot
   return useCallback(() => {
-    if (isOpen) {
-      close()
-      return
-    }
     const active = typeof document === 'undefined' ? null : document.activeElement
     const keyboardUp = !!active?.classList?.contains('xterm-helper-textarea')
     ;(active as HTMLElement | null)?.blur?.()
     clearIOSSelectionRef.current?.()
     open(keyboardUp ? KEYBOARD_SETTLE_MS : 0)
-  }, [isOpen, open, close, clearIOSSelectionRef])
+  }, [open, clearIOSSelectionRef])
+}
+
+/**
+ * Copy rejoins app-wrapped rows only where the app wraps itself: a pane on
+ * the alternate screen (fullscreen TUI) or a session whose agent is known
+ * (non-fullscreen Claude Code also hard-wraps). In a plain shell tmux's -J
+ * capture is already exact, so a heuristic could only do harm.
+ */
+export function shouldRejoinWrapped(state: TerminalSnapshotState, agentType: string | undefined | null): boolean {
+  return (state.status === 'ready' && state.altScreen) || !!agentType
 }

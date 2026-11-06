@@ -25,7 +25,7 @@ import { statusClass, statusText } from '../utils/sessionStatus'
 import SessionRail from './SessionRail'
 import TerminalControls from './TerminalControls'
 import TerminalSnapshotLayer from './TerminalSnapshotLayer'
-import { useSelectTextToggle, useTerminalSnapshot } from '../hooks/useTerminalSnapshot'
+import { shouldRejoinWrapped, useOpenSelectText, useTerminalSnapshot } from '../hooks/useTerminalSnapshot'
 import MediaRail from './MediaRail'
 import PasteStatus from './PasteStatus'
 import RecoveryDraft from './RecoveryDraft'
@@ -230,7 +230,8 @@ export default function Terminal({
 
   const snapshot = useTerminalSnapshot({ sessionId: session?.id ?? null, sendMessage, subscribe })
   const snapshotOpen = snapshot.state.status !== 'closed'
-  const handleSelectText = useSelectTextToggle(snapshot, snapshotOpen, clearIOSSelectionRef)
+  const handleSelectText = useOpenSelectText(snapshot.open, clearIOSSelectionRef)
+  const rejoinWrapped = shouldRejoinWrapped(snapshot.state, session?.agentType)
 
   const scrollToBottom = useCallback(() => {
     // Exit tmux copy-mode to return to live output (oracle recommendation)
@@ -1538,7 +1539,7 @@ export default function Terminal({
         {session && snapshot.state.status !== 'closed' && (
           <TerminalSnapshotLayer state={snapshot.state} containerRef={containerRef} terminalRef={terminalRef}
             background={terminalTheme.background ?? '#000'} foreground={terminalTheme.foreground ?? '#fff'}
-            onRefresh={snapshot.refresh} onClose={snapshot.close} />
+            rejoinWrapped={rejoinWrapped} onCopied={snapshot.close} />
         )}
         {session && !isReadOnly && !isInputReady && (
           <div
@@ -1739,8 +1740,8 @@ export default function Terminal({
           onSendKey={handleSendKey}
           onPasteText={handlePasteText}
           onPasteImage={handlePasteImage}
-          disabled={connectionStatus !== 'connected' || isReadOnly || !isInputReady || recoveryDraft.pending || snapshotOpen}
-          keyboardDisabled={isReadOnly || snapshotOpen}
+          disabled={connectionStatus !== 'connected' || isReadOnly || !isInputReady || recoveryDraft.pending}
+          keyboardDisabled={isReadOnly}
           sessions={sessions.map(s => ({ id: s.id, name: s.name, status: s.status }))}
           currentSessionId={session.id}
           agentType={session.agentType}
@@ -1751,7 +1752,11 @@ export default function Terminal({
           isKeyboardVisible={isKeyboardVisible}
           onEnterTextMode={handleEnterTextMode}
           onSelectText={isReadOnly ? undefined : handleSelectText}
-          selectTextActive={snapshotOpen}
+          snapshotActions={snapshotOpen ? {
+            onDone: snapshot.close,
+            onRefresh: snapshot.refresh,
+            busy: snapshot.state.status === 'loading' || (snapshot.state.status === 'ready' && snapshot.state.refreshing),
+          } : undefined}
         />
       )}
 
