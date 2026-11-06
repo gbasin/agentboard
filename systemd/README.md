@@ -111,6 +111,8 @@ systemctl --user stop agentboard
 systemctl --user disable agentboard
 ```
 
+<!-- CI (.github/workflows/systemd.yml) runs the bash blocks of the "Log rotation" and "Uninstall" sections on a real systemd user manager. Keep these two headings and the bash fences. -->
+
 ## Log rotation
 
 Standard output goes to the journal, which journald rotates. The server also

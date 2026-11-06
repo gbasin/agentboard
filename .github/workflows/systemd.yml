@@ -1,0 +1,156 @@
+# Runs the systemd user service end to end: install, restart, log rotation,
+# and uninstall. The log rotation and uninstall commands are read from
+# systemd/README.md, so a README command that fails also fails this job.
+name: systemd
+
+on:
+  pull_request:
+    paths:
+      - 'systemd/**'
+      - '.github/workflows/systemd.yml'
+  push:
+    branches: [master, main]
+    paths:
+      - 'systemd/**'
+      - '.github/workflows/systemd.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  service:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6  # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - name: Install tmux, ripgrep, and logrotate
+        run: sudo apt-get update && sudo apt-get install -y tmux ripgrep logrotate
+
+      - name: Build
+        run: bun install --frozen-lockfile && bun run build
+
+      - name: Start the user systemd manager
+        run: |
+          set -eux
+          sudo loginctl enable-linger "$USER"
+          uid=$(id -u)
+          echo "XDG_RUNTIME_DIR=/run/user/$uid" >> "$GITHUB_ENV"
+          echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$uid/bus" >> "$GITHUB_ENV"
+          for i in $(seq 1 30); do [ -S "/run/user/$uid/bus" ] && break; sleep 1; done
+          test -S "/run/user/$uid/bus"
+          systemctl --version | head -1
+          tmux -V
+
+      - name: Read the command blocks from systemd/README.md
+        run: |
+          set -eu
+          # Prints the bash blocks of one "## <heading>" section, without the
+          # indentation of a block inside a numbered list.
+          section() {
+            awk -v h="## $1" '
+              $0 == h { on = 1; next }
+              on && /^## / { on = 0 }
+              on && match($0, /^ *```bash$/) { inb = 1; ind = RLENGTH - 7; next }
+              on && inb && /^ *```$/ { inb = 0; next }
+              on && inb { print substr($0, ind + 1) }
+            ' systemd/README.md
+          }
+          section 'Log rotation' > "$RUNNER_TEMP/logrotate.sh"
+          section 'Uninstall' > "$RUNNER_TEMP/uninstall.sh"
+          for f in logrotate uninstall; do
+            echo "--- $f.sh"
+            cat "$RUNNER_TEMP/$f.sh"
+            bash -n "$RUNNER_TEMP/$f.sh"
+          done
+          # An empty file means that a heading or a fence changed in the README.
+          grep -q 'enable --now agentboard-logrotate.timer' "$RUNNER_TEMP/logrotate.sh"
+          grep -q 'systemctl --user disable agentboard' "$RUNNER_TEMP/uninstall.sh"
+
+      - name: Install the service
+        run: |
+          set -eux
+          ./systemd/install.sh
+          for i in $(seq 1 60); do curl -sf http://127.0.0.1:4040/api/health && break; sleep 1; done
+          curl -sf http://127.0.0.1:4040/api/health
+          test "$(systemctl --user show agentboard -p KillMode --value)" = process
+          tmux has-session -t '=agentboard'
+          # A pane process that must survive every later step.
+          tmux new-window -d -t '=agentboard' -n marker 'sleep 100000'
+          sleep 1
+          tmux_pid=$(tmux display-message -p '#{pid}')
+          marker_pid=$(tmux list-panes -a -F '#{pane_pid} #{window_name}' | awk '$2=="marker"{print $1}')
+          test -n "$tmux_pid"
+          test -n "$marker_pid"
+          echo "TMUX_PID=$tmux_pid" >> "$GITHUB_ENV"
+          echo "MARKER_PID=$marker_pid" >> "$GITHUB_ENV"
+
+      - name: A restart keeps tmux and its panes
+        run: |
+          set -eux
+          old_main=$(systemctl --user show agentboard -p MainPID --value)
+          systemctl --user restart agentboard
+          for i in $(seq 1 60); do curl -sf http://127.0.0.1:4040/api/health && break; sleep 1; done
+          curl -sf http://127.0.0.1:4040/api/health
+          new_main=$(systemctl --user show agentboard -p MainPID --value)
+          test "$new_main" != "$old_main"
+          test "$(systemctl --user show agentboard -p NRestarts --value)" = 0
+          kill -0 "$TMUX_PID"
+          kill -0 "$MARKER_PID"
+          test "$(tmux display-message -p '#{pid}')" = "$TMUX_PID"
+          tmux list-windows -t '=agentboard' -F '#{window_name}' | grep -qx marker
+
+      - name: A second install.sh run leaves the service running
+        run: |
+          set -eux
+          main=$(systemctl --user show agentboard -p MainPID --value)
+          ./systemd/install.sh
+          curl -sf http://127.0.0.1:4040/api/health
+          test "$(systemctl --user show agentboard -p MainPID --value)" = "$main"
+          kill -0 "$TMUX_PID"
+
+      - name: Log rotation, with the commands from the README
+        run: |
+          set -eux
+          bash -eux "$RUNNER_TEMP/logrotate.sh"
+          systemctl --user list-timers --all --no-pager | grep agentboard-logrotate
+          # Make the log larger than the 50M limit, then run the rotation unit once.
+          head -c 55000000 /dev/zero | tr '\0' 'x' >> ~/.agentboard/agentboard.log
+          systemctl --user start agentboard-logrotate.service
+          ls -la ~/.agentboard
+          test -s ~/.agentboard/agentboard.log.1.gz
+          test "$(stat -c %s ~/.agentboard/agentboard.log)" -lt 55000000
+          # copytruncate: the server keeps the same file open and stays healthy.
+          curl -sf http://127.0.0.1:4040/api/health
+
+      - name: Uninstall, with the commands from the README
+        run: bash -eux "$RUNNER_TEMP/uninstall.sh"
+
+      - name: Nothing is left after the uninstall, and tmux still runs
+        run: |
+          # Most checks here expect a command to fail, so do not stop on a failure.
+          set +e
+          set -ux
+          fail=0
+          if curl -sf http://127.0.0.1:4040/api/health; then echo "FAIL: the server still answers"; fail=1; fi
+          systemctl --user is-active agentboard && { echo "FAIL: the service is active"; fail=1; }
+          systemctl --user list-unit-files --no-pager | grep -i agentboard && { echo "FAIL: unit files remain"; fail=1; }
+          systemctl --user list-timers --all --no-pager | grep -i agentboard && { echo "FAIL: a timer remains"; fail=1; }
+          find ~/.config/systemd/user -iname '*agentboard*' -print | grep . && { echo "FAIL: files remain in the user unit directory"; fail=1; }
+          test -e ~/.config/agentboard/logrotate.conf && { echo "FAIL: logrotate.conf remains"; fail=1; }
+          # The README says: "Stopping the service does not stop tmux."
+          kill -0 "$TMUX_PID" || { echo "FAIL: tmux stopped"; fail=1; }
+          kill -0 "$MARKER_PID" || { echo "FAIL: the pane process stopped"; fail=1; }
+          tmux list-windows -t '=agentboard' -F '#{window_name}' | grep -qx marker || { echo "FAIL: the marker window is gone"; fail=1; }
+          exit $fail
+
+      - name: Journal on failure
+        if: failure()
+        run: |
+          journalctl --user -u agentboard --no-pager | tail -150
+          systemctl --user status agentboard --no-pager || true
