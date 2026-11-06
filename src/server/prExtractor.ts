@@ -1,17 +1,15 @@
 // Detects pull requests associated with a session by scanning its agent
-// JSONL log. Two signals: a `gh pr create` inside an actual tool call entry
-// (Claude tool_use, Codex function_call, devin toolCalls) — prose
-// mentioning the command is ignored — and Claude Code's self-contained
-// `{"type":"pr-link",...}` records, which link a session to a PR it did
-// not necessarily create. Resulting github.com/.../pull/N URLs are
-// captured from the tool result that references the call's id, with a
-// short line-count fallback window for formats without call ids.
+// JSONL log. Signals: `gh pr create` inside actual tool-call entries,
+// successful correlated GitHub connector creation results, and Claude Code's
+// self-contained `{"type":"pr-link",...}` records. CLI results supply PR URLs;
+// connector results supply structured PR metadata. Prose is not a signal.
 // Scans incrementally: results are cached per file offset so polling only
 // reads bytes appended since the previous scan.
 
 import fs from 'node:fs'
 import type { SessionPullRequest } from '../shared/types'
 import { logger } from './logger'
+import { connectorCreateIds, connectorResults } from './connectorPr'
 import {
   CREATE_BYTES,
   PR_LINK_BYTES,
@@ -83,6 +81,7 @@ interface ScanState {
   partialHasLink: boolean
   // Tool-call ids awaiting their result (id -> expiry in lines).
   pending: PendingCreate[]
+  connectorPending: Map<string, number>
   // Fallback lookahead (lines) for create commands that had no ids.
   windowRemaining: number
   seenUrls: Set<string>
@@ -108,6 +107,7 @@ function newScanState(): ScanState {
     partialHasCreate: false,
     partialHasLink: false,
     pending: [],
+    connectorPending: new Map(),
     windowRemaining: 0,
     seenUrls: new Set(),
     prs: [],
@@ -643,6 +643,29 @@ function collectUrls(state: ScanState, line: string): void {
 }
 
 function processLine(state: ScanState, line: string): void {
+  // Connector calls use exact parsed result IDs and structured MCP output;
+  // they never enter the CLI's URL/prose fallback path.
+  if (line.includes('github_create_pull_request') || state.connectorPending.size > 0) {
+    try {
+      const entry = JSON.parse(line)
+      if (entry && typeof entry === 'object') {
+        for (const id of connectorCreateIds(entry)) {
+          if (state.connectorPending.size < MAX_PENDING_IDS) {
+            state.connectorPending.set(id, PENDING_ID_TTL_LINES)
+          }
+        }
+        for (const result of connectorResults(entry)) {
+          if (!state.connectorPending.delete(result.id)) continue
+          for (const url of result.urls) collectUrls(state, url)
+        }
+      }
+    } catch { /* Ignore incomplete or malformed records. */ }
+  }
+  for (const [id, ttl] of state.connectorPending) {
+    if (ttl <= 1) state.connectorPending.delete(id)
+    else state.connectorPending.set(id, ttl - 1)
+  }
+
   // 0. Codex item_completed CommandExecution entries are self-contained
   //    (argv + stdout on one line); they bypass the id/window machinery.
   if (line.includes('"CommandExecution"') && GH_PR_CREATE_LINE_RE.test(line)) {
@@ -734,6 +757,7 @@ function consumeChunk(state: ScanState, bytes: Buffer): void {
   }
   if (
     state.pending.length > 0 ||
+    state.connectorPending.size > 0 ||
     state.windowRemaining > 0 ||
     state.partialHasCreate ||
     state.partialHasLink ||
