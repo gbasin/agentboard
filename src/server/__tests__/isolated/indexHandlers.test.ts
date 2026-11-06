@@ -81,6 +81,7 @@ const defaultConfig = {
   terminalColorsEnabled: true,
   tlsCert: '',
   tlsKey: '',
+  allowedOrigins: [] as string[],
   rgThreads: 1,
   logMatchWorker: false,
   logMatchProfile: false,
@@ -5594,6 +5595,69 @@ describe('server fetch handlers', () => {
     expect(upgradeCalls).toHaveLength(1)
     expect(response.status).toBe(400)
     expect(await response.text()).toBe('WebSocket upgrade failed')
+  })
+
+  test('rejects cross-origin websocket upgrades before upgrading', async () => {
+    const { serveOptions } = await loadIndex()
+    const fetchHandler = serveOptions.fetch
+    if (!fetchHandler) throw new Error('Fetch handler not configured')
+    let upgrades = 0
+    const server = {
+      upgrade: () => { upgrades += 1; return true },
+    } as unknown as Bun.Server<unknown>
+    const handshake = (origin?: string) => fetchHandler.call(server, new Request('http://127.0.0.1:4040/ws', {
+      headers: { host: '127.0.0.1:4040', ...(origin ? { origin } : {}) },
+    }), server)
+
+    const rejected = await handshake('http://evil.example')
+    expect(rejected?.status).toBe(403)
+    expect(upgrades).toBe(0)
+    expect(logEntries.filter(entry => entry.event === 'cross_origin_request_rejected')).toEqual([{
+      level: 'warn', event: 'cross_origin_request_rejected',
+      data: { origin: 'http://evil.example', host: '127.0.0.1:4040', method: 'GET', path: '/ws' },
+    }])
+    expect(await handshake('http://127.0.0.1:4040')).toBeUndefined()
+    expect(await handshake()).toBeUndefined()
+    expect(upgrades).toBe(2)
+  })
+
+  test('rejects cross-origin /api mutations and allows same-origin, unset, or allowlisted origins', async () => {
+    configState.allowedOrigins = ['https://board.example.com']
+    const { serveOptions } = await loadIndex()
+    const fetchHandler = serveOptions.fetch
+    if (!fetchHandler) throw new Error('Fetch handler not configured')
+    const put = async (origin?: string) => {
+      const response = await fetchHandler.call({} as Bun.Server<unknown>,
+        new Request('http://localhost:4040/api/settings/prefer-window-name', {
+          method: 'PUT',
+          headers: { host: 'localhost:4040', 'content-type': 'application/json', ...(origin ? { origin } : {}) },
+          body: JSON.stringify({ enabled: true }),
+        }), {} as Bun.Server<unknown>)
+      if (!response) throw new Error('Expected response')
+      return response
+    }
+
+    const rejected = await put('http://localhost:5173')
+    expect(rejected.status).toBe(403)
+    expect((configState as { preferWindowName?: boolean }).preferWindowName).not.toBe(true)
+    expect((await put('http://localhost:4040')).status).toBe(200)
+    expect((await put()).status).toBe(200)
+    expect((await put('https://board.example.com')).status).toBe(200)
+    expect((await put('null')).status).toBe(403)
+
+    // The library routes share the same rule.
+    const library = await fetchHandler.call({} as Bun.Server<unknown>,
+      new Request('http://localhost:4040/api/library/settings', {
+        method: 'PUT', headers: { host: 'localhost:4040', origin: 'http://evil.example' }, body: '{}',
+      }), {} as Bun.Server<unknown>)
+    expect(library?.status).toBe(403)
+
+    // Reads stay open to any origin.
+    const read = await fetchHandler.call({} as Bun.Server<unknown>,
+      new Request('http://localhost:4040/api/settings/prefer-window-name', {
+        headers: { host: 'localhost:4040', origin: 'http://evil.example' },
+      }), {} as Bun.Server<unknown>)
+    expect(read?.status).toBe(200)
   })
 
   test('returns macOS clipboard image file paths from AppKit pasteboard reader', async () => {

@@ -14,7 +14,7 @@ const upstream = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch(req) {
   return Response.json({ dashboard: true })
 } })
 const relay = new TerminalRelayClient({
-  port: 0, hostname: '127.0.0.1', upstreamPort: upstream.port!, tlsCert: '', tlsKey: '', terminalColorsEnabled: true,
+  port: 0, hostname: '127.0.0.1', upstreamPort: upstream.port!, tlsCert: '', tlsKey: '', terminalColorsEnabled: true, allowedOrigins: [],
 }, sessions, message => {
   if (message.type === 'listening') console.log(JSON.stringify({ port: message.port }))
   if (message.type === 'fatal') { console.error(message.error); process.exit(1) }

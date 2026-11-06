@@ -153,7 +153,7 @@ describe('terminal lease ownership and resource bounds', () => {
 
   test('relay catalog excludes transcript data and skips unchanged identities', () => {
     const sessions: Session[] = ['b', 'a'].map(id => ({ id, tmuxWindow: `agentboard:@${id}`, name: id, projectPath: '/tmp', status: 'unknown', createdAt: '', lastActivity: '', source: 'managed', lastUserMessage: 'private transcript' }))
-    const client = new TerminalRelayClient({ port: 0, hostname: '127.0.0.1', upstreamPort: 1, tlsCert: '', tlsKey: '', terminalColorsEnabled: true }, sessions, () => {})
+    const client = new TerminalRelayClient({ port: 0, hostname: '127.0.0.1', upstreamPort: 1, tlsCert: '', tlsKey: '', terminalColorsEnabled: true, allowedOrigins: [] }, sessions, () => {})
     const worker = FakeWorker.instances[0]
     const initial = worker.messages[0] as Extract<ParentToRelay, { type: 'init' }>
     expect(initial.sessions.map(session => session.id)).toEqual(['a', 'b'])

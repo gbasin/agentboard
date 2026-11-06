@@ -5,6 +5,7 @@ import type { ClientMessage } from '../shared/types'
 import { TerminalLeases, type RelaySocketData } from './relay/leases'
 import type { ParentToRelay, RelayOptions, RelayToParent } from './relay/protocol'
 import { logger } from './logger'
+import { crossOriginRejection, originPolicy } from './requestOrigin'
 import { CATALOG_VERSION, catalogVersionFromUrl } from '../shared/catalogProtocol'
 
 const ctx = self as DedicatedWorkerGlobalScope
@@ -22,6 +23,8 @@ function bind(hostname: string) {
       async fetch(req, server) {
         const url = new URL(req.url)
         if (url.pathname === '/ws') {
+          const rejected = crossOriginRejection(req, url.pathname, originPolicy(options.allowedOrigins, options.tlsCert, options.tlsKey), logger.warn)
+          if (rejected) return rejected
           const id = crypto.randomUUID()
           const catalogVersion = catalogVersionFromUrl(url)
           if (server.upgrade(req, { data: { id, catalogVersion, lease: null, outputSerial: 0, outstanding: new Map(), outstandingBytes: 0 } })) {
@@ -31,6 +34,7 @@ function bind(hostname: string) {
           return new Response('WebSocket upgrade failed', { status: 400 })
         }
         // HTTP may wait on dashboard work; terminal I/O uses neither this fetch nor its loop.
+        // Host and Origin survive this hop, so the dashboard applies the /api origin check.
         const upstream = new URL(url.pathname + url.search, `http://127.0.0.1:${options.upstreamPort}`)
         try {
           return await fetch(new Request(upstream, req), { redirect: 'manual' })
