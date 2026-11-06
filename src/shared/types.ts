@@ -181,6 +181,19 @@ export type ServerMessage = (
   | { type: 'pong'; seq?: number }
   | { type: 'error'; message: string }
   | { type: 'kill-failed'; sessionId: string; message: string }
+  // Reply to terminal-snapshot-request: plain joined pane text for the
+  // client's "Select text" layer (no ANSI). text is absent when ok is false.
+  | {
+      type: 'terminal-snapshot'
+      sessionId: string
+      requestId: number
+      ok: boolean
+      text?: string
+      historyLines?: number
+      scrollPosition?: number
+      altScreen?: boolean
+      captureMs?: number
+    }
 ) & { attachId?: number; outputSeq?: number }
 
 export interface WakeError {
@@ -210,6 +223,7 @@ export type ClientMessage = (
   | { type: 'session-refresh' }
   | { type: 'tmux-cancel-copy-mode'; sessionId: string }
   | { type: 'tmux-check-copy-mode'; sessionId: string }
+  | { type: 'terminal-snapshot-request'; sessionId: string; requestId: number }
   | { type: 'session-wake'; sessionId: string }
   | { type: 'session-hibernate'; sessionId: string }
   | { type: 'session-move-to-history'; sessionId: string }
