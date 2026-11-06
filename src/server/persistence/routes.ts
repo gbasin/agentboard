@@ -54,14 +54,7 @@ export function registerPersistenceRoutes(
     return live
   }
   const api = '/api/library'
-  app.use(`${api}/*`, async (c, next) => {
-    if (!['GET', 'HEAD'].includes(c.req.method)) {
-      const origin = c.req.header('origin')
-      if (origin && new URL(origin).host !== new URL(c.req.url).host)
-        return c.json({ error: 'Cross-origin mutation rejected' }, 403)
-    }
-    await next()
-  })
+  // Cross-origin mutations are rejected for all of /api in serverFetch (requestOrigin.ts).
   app.get(api, (c) => {
     const q = c.req.query()
     return c.json(

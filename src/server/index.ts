@@ -1,4 +1,5 @@
 import { SessionActivityClient } from './sessionActivityClient'
+import { startOwnedTerminal, sshTerminalSessionName } from './terminal/startOwnedTerminal'
 import { activityKey } from './sessionActivityProtocol'
 import { TerminalRelayClient } from './relay/client'
 import type { RelayToParent } from './relay/protocol'
@@ -30,6 +31,7 @@ import { refreshDormantConversation } from './persistence/legacyImport'
 import type { SavedSession } from '../shared/persistence'
 import { PersistenceRuntime } from './persistence/runtime'
 import { registerPersistenceRoutes } from './persistence/routes'
+import { crossOriginRejection, needsOriginCheck, originPolicy } from './requestOrigin'
 import {
   initDatabase,
   type AgentSessionRecord,
@@ -2268,6 +2270,9 @@ const staticDir = process.env.AGENTBOARD_STATIC_DIR || './dist/client'
 app.use('/*', serveStatic({ root: staticDir }))
 
 const tlsEnabled = config.tlsCert && config.tlsKey
+// Also applies to the loopback dashboard listener behind the relay, which is
+// plain HTTP: the relay forwards the browser's https Origin and Host to it.
+const requestOriginPolicy = originPolicy(config.allowedOrigins, config.tlsCert, config.tlsKey)
 const tlsOptions = tlsEnabled
   ? { tls: { cert: Bun.file(config.tlsCert), key: Bun.file(config.tlsKey) } }
   : {}
@@ -2284,6 +2289,10 @@ function createSocketData(connectionId: string, remoteAddress: string | null, us
 
 function serverFetch(req: Request, server: Server<WSData>) {
   const url = new URL(req.url)
+  if (needsOriginCheck(req, url.pathname)) {
+    const rejected = crossOriginRejection(req, url.pathname, requestOriginPolicy, logger.warn)
+    if (rejected) return rejected
+  }
   if (url.pathname === '/ws') {
     const requestIp =
       typeof server.requestIP === 'function' ? server.requestIP(req) : null
@@ -2383,6 +2392,7 @@ if (relayEnabled) {
   terminalRelay = new TerminalRelayClient({
     port: config.port, hostname: config.hostname, upstreamPort: httpServer.port!,
     tlsCert: config.tlsCert, tlsKey: config.tlsKey, terminalColorsEnabled: config.terminalColorsEnabled,
+    allowedOrigins: config.allowedOrigins,
   }, registry.getAll(), relayMessage)
   void terminalRelay.ready.catch(error => { logger.error('terminal_relay_start_failed', { error: String(error) }); process.exit(1) })
 }
@@ -2801,10 +2811,12 @@ function containsClipboardArmingMouseInput(data: string): boolean {
 }
 
 function cleanupTerminals(ws: ServerWebSocket<WSData>) {
+  ws.data.terminalAttachSeq += 1
   stopClipboardBufferWatch(ws)
   if (ws.data.terminal) {
-    void ws.data.terminal.dispose()
+    const terminal = ws.data.terminal
     ws.data.terminal = null
+    void terminal.dispose()
   }
   ws.data.currentSessionId = null
   ws.data.currentTmuxTarget = null
@@ -4347,7 +4359,9 @@ function initializePersistentTerminal(ws: ServerWebSocket<WSData>) {
   ws.data.terminal = terminal
 
   void terminal.start().catch((error) => {
+    if (ws.data.terminal !== terminal) return
     ws.data.terminal = null
+    void terminal.dispose()
     clearAttachDedup(ws)
     handleTerminalError(ws, null, error, 'ERR_TMUX_ATTACH_FAILED')
   })
@@ -4375,6 +4389,7 @@ function createPersistentTerminal(ws: ServerWebSocket<WSData>) {
       // Guard: skip if this proxy was already replaced (e.g. by SSH proxy)
       if (ws.data.terminal !== terminal) return
       const sessionId = ws.data.currentSessionId
+      ws.data.terminalAttachSeq += 1
       ws.data.currentSessionId = null
       ws.data.currentTmuxTarget = null
       ws.data.terminal = null
@@ -4417,20 +4432,21 @@ async function ensurePersistentTerminal(
     ws.data.terminal = created
   }
 
-  const terminal = ws.data.terminal
-  try {
-    await terminal.start()
-    if (!isTerminalAttachCurrent(ws, attachSeq)) {
-      return null
-    }
-    return terminal
-  } catch (error) {
-    if (ws.data.terminal === terminal) {
+  return startConnectionTerminal(ws, ws.data.terminal, attachSeq)
+}
+
+function startConnectionTerminal(
+  ws: ServerWebSocket<WSData>, terminal: ITerminalProxy, attachSeq: number
+): Promise<ITerminalProxy | null> {
+  return startOwnedTerminal(terminal, {
+    owns: () => ws.data.terminal === terminal,
+    current: () => isTerminalAttachCurrent(ws, attachSeq),
+    release: () => {
       ws.data.terminal = null
+      ws.data.terminalHost = null
       clearAttachDedup(ws)
-    }
-    throw error
-  }
+    },
+  })
 }
 
 async function ensureCorrectProxyType(
@@ -4451,21 +4467,7 @@ async function ensureCorrectProxyType(
   }
   if (needsSsh && currentHost === session.host) {
     if (ws.data.terminal) {
-      const terminal = ws.data.terminal
-      try {
-        await terminal.start()
-        if (!isTerminalAttachCurrent(ws, attachSeq)) {
-          return null
-        }
-        return terminal
-      } catch (error) {
-        if (ws.data.terminal === terminal) {
-          ws.data.terminal = null
-          ws.data.terminalHost = null
-          clearAttachDedup(ws)
-        }
-        throw error
-      }
+      return startConnectionTerminal(ws, ws.data.terminal, attachSeq)
     }
   }
 
@@ -4501,7 +4503,7 @@ async function createAndStartSshProxy(
   attachSeq: number
 ): Promise<ITerminalProxy | null> {
   const sshOptions = sshOptionsForHost()
-  const sessionName = `${config.tmuxSession}-ws-${ws.data.connectionId}`
+  const sessionName = sshTerminalSessionName(config.tmuxSession, ws.data.connectionId, attachSeq)
 
   const terminal = new SshTerminalProxy({
     connectionId: ws.data.connectionId,
@@ -4521,6 +4523,7 @@ async function createAndStartSshProxy(
       // Guard: skip if this proxy was already replaced
       if (ws.data.terminal !== terminal) return
       const sessionId = ws.data.currentSessionId
+      ws.data.terminalAttachSeq += 1
       logger.warn('ssh_proxy_onExit', {
         sessionName,
         sessionId,
@@ -4547,26 +4550,7 @@ async function createAndStartSshProxy(
   ws.data.terminal = terminal
   ws.data.terminalHost = host
 
-  try {
-    await terminal.start()
-    if (!isTerminalAttachCurrent(ws, attachSeq)) {
-      await terminal.dispose()
-      return null
-    }
-    if (ws.data.terminal !== terminal) {
-      // Another attach request replaced this proxy while it was starting.
-      await terminal.dispose()
-      return null
-    }
-    return terminal
-  } catch (error) {
-    if (ws.data.terminal === terminal) {
-      ws.data.terminal = null
-      ws.data.terminalHost = null
-      clearAttachDedup(ws)
-    }
-    throw error
-  }
+  return startConnectionTerminal(ws, terminal, attachSeq)
 }
 
 async function attachTerminalPersistent(

@@ -46,7 +46,7 @@ dev-only `tools/fad-dump` shim). The shim is never a runtime dependency.
 
 Read [docs/architecture.md](docs/architecture.md) before changing the server. The essentials:
 
-- One managed tmux session (default `agentboard`) holds one window per agent session. Windows in other tmux sessions are discovered as external (`DISCOVER_PREFIXES` narrows that). Each browser terminal attaches through its own grouped session (`<TMUX_SESSION>-ws-<id>`).
+- One managed tmux session (default `agentboard`) holds one window per agent session. Windows in other tmux sessions are discovered as external (`DISCOVER_PREFIXES` narrows that). In `pty` terminal mode (the default), each browser terminal attaches to a local window through its own grouped session (`<TMUX_SESSION>-ws-<id>`).
 - With the terminal relay (the default), a relay Worker owns the public port and terminal I/O; the main thread serves HTTP on loopback and owns the database. Never call `worker.terminate()`: it segfaults compiled Bun.
 - Status (`working`, `waiting`, `permission`, `unknown`) is inferred from tmux pane content in `src/server/statusInference.ts`, not from logs.
 - Agent transcripts (Claude, Codex, Pi, oh-my-pi, Grok, and a mirror of Devin's SQLite history) are matched to windows in `src/server/logMatcher.ts` and `src/server/ownership/`. They drive the last prompt, PR chips, and media. `src/server/logDiscovery.ts` owns the roots.
