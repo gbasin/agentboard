@@ -4,6 +4,7 @@ import { activityKey } from './sessionActivityProtocol'
 import { TerminalRelayClient } from './relay/client'
 import type { RelayToParent } from './relay/protocol'
 import { CopyModeQuery } from './copyModeQuery'
+import { capturePaneSnapshot } from './paneSnapshot'
 import { SessionReadClient } from './sessionReadClient'
 import type { Server, ServerWebSocket } from 'bun'
 import { createReadStream } from 'node:fs'
@@ -2945,6 +2946,9 @@ function handleMessage(
     case 'tmux-check-copy-mode':
       fireAndForget(handleCheckCopyMode(message.sessionId, ws), 'handleCheckCopyMode')
       return
+    case 'terminal-snapshot-request':
+      fireAndForget(handleSnapshotRequest(message.sessionId, message.requestId, ws), 'handleSnapshotRequest')
+      return
     case 'session-wake':
       handleSessionWake(message, ws)
       return
@@ -3170,6 +3174,24 @@ async function handleCheckCopyMode(sessionId: string, ws: ServerWebSocket<WSData
     return result.exitCode === 0 ? result.stdout : ''
   }, () => ws.readyState === 1 && isTerminalAttachCurrent(ws, attachSeq))
   if (status) send(ws, { type: 'tmux-copy-mode-status', sessionId, ...status })
+}
+
+async function handleSnapshotRequest(sessionId: string, requestId: number, ws: ServerWebSocket<WSData>) {
+  const session = registry.get(sessionId)
+  const fail = () => send(ws, { type: 'terminal-snapshot', sessionId, requestId, ok: false })
+  if (!session || !Number.isSafeInteger(requestId)) return fail()
+  if (session.remote && !config.remoteAllowAttach) return fail()
+
+  const target = resolveCopyModeTarget(sessionId, ws, session)
+  const startedAt = performance.now()
+  const snapshot = await capturePaneSnapshot(target, async (args) => {
+    if (session.remote && session.host) return runRemoteTmux(session.host, args)
+    return timedSpawnAsync(['tmux', ...withTmuxUtf8Flag(args)], { timeout: config.tmuxTimeoutMs })
+  }).catch(() => null)
+  if (ws.readyState !== 1) return
+  if (!snapshot) return fail()
+  const captureMs = Math.round(performance.now() - startedAt)
+  send(ws, { type: 'terminal-snapshot', sessionId, requestId, ok: true, captureMs, ...snapshot })
 }
 
 function restoreHibernatingState(previousHibernatingState: Map<string, boolean>) {

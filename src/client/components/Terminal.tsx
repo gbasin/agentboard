@@ -24,6 +24,8 @@ import { getPathLeaf } from '../utils/sessionLabel'
 import { statusClass, statusText } from '../utils/sessionStatus'
 import SessionRail from './SessionRail'
 import TerminalControls from './TerminalControls'
+import TerminalSnapshotLayer from './TerminalSnapshotLayer'
+import { shouldRejoinWrapped, useOpenSelectText, useTerminalSnapshot } from '../hooks/useTerminalSnapshot'
 import MediaRail from './MediaRail'
 import PasteStatus from './PasteStatus'
 import RecoveryDraft from './RecoveryDraft'
@@ -225,6 +227,11 @@ export default function Terminal({
       setShowScrollButton(!isAtBottom)
     },
   })
+
+  const snapshot = useTerminalSnapshot({ sessionId: session?.id ?? null, sendMessage, subscribe })
+  const snapshotOpen = snapshot.state.status !== 'closed'
+  const handleSelectText = useOpenSelectText(snapshot.open, clearIOSSelectionRef)
+  const rejoinWrapped = shouldRejoinWrapped(snapshot.state, session?.agentType)
 
   const scrollToBottom = useCallback(() => {
     // Exit tmux copy-mode to return to live output (oracle recommendation)
@@ -1529,6 +1536,11 @@ export default function Terminal({
           className="absolute inset-0 overflow-clip"
           style={{ backgroundColor: terminalTheme.background }}
         />
+        {session && snapshot.state.status !== 'closed' && (
+          <TerminalSnapshotLayer state={snapshot.state} containerRef={containerRef} terminalRef={terminalRef}
+            background={terminalTheme.background ?? '#000'} foreground={terminalTheme.foreground ?? '#fff'}
+            rejoinWrapped={rejoinWrapped} onCopied={snapshot.close} />
+        )}
         {session && !isReadOnly && !isInputReady && (
           <div
             role="status"
@@ -1739,6 +1751,12 @@ export default function Terminal({
           onRefocus={handleRefocus}
           isKeyboardVisible={isKeyboardVisible}
           onEnterTextMode={handleEnterTextMode}
+          onSelectText={isReadOnly ? undefined : handleSelectText}
+          snapshotActions={snapshotOpen ? {
+            onDone: snapshot.close,
+            onRefresh: snapshot.refresh,
+            busy: snapshot.state.status === 'loading' || (snapshot.state.status === 'ready' && snapshot.state.refreshing),
+          } : undefined}
         />
       )}
 
