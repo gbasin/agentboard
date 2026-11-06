@@ -580,3 +580,19 @@ test('recovery permits keyboard touch without enabling command or paste buttons'
   expect(sends).toBe(0)
   act(() => renderer.unmount())
 })
+
+test('Select text renders only with a handler and fires it on tap', () => {
+  let opened = 0
+  const renderer = TestRenderer.create(
+    <TerminalControls onSendKey={() => {}} sessions={[]} currentSessionId="s" onSelectSession={() => {}}
+      onSelectText={() => { opened += 1 }} disabled />
+  )
+  const button = renderer.root.findAllByType('button').find((b) => b.props['aria-label'] === 'Select text')
+  expect(button).toBeDefined()
+  act(() => button?.props.onClick())
+  expect(opened).toBe(1)
+  const without = TestRenderer.create(
+    <TerminalControls onSendKey={() => {}} sessions={[]} currentSessionId="s" onSelectSession={() => {}} />
+  )
+  expect(without.root.findAllByType('button').some((b) => b.props['aria-label'] === 'Select text')).toBe(false)
+})

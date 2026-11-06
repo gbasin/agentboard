@@ -9,7 +9,7 @@
 import { useState, useRef, useEffect } from 'react'
 import type { TouchEvent as ReactTouchEvent } from 'react'
 import type { AgentType, Session } from '@shared/types'
-import { ClipboardIcon, CornerDownLeftIcon, DeleteIcon, Keyboard01Icon } from './icons'
+import { ClipboardIcon, CornerDownLeftIcon, DeleteIcon, Keyboard01Icon, TextInputIcon } from './icons'
 import { ICON_SIZE, KEY_ICON_STROKE } from './controlStyles'
 import ArrowKeys from './ArrowKeys'
 import NumPad from './NumPad'
@@ -46,6 +46,8 @@ interface TerminalControlsProps {
   onRefocus?: () => void
   isKeyboardVisible?: () => boolean
   onEnterTextMode?: () => void
+  /** Open the frozen "Select text" snapshot of the pane. Hidden when absent. */
+  onSelectText?: () => void
 }
 
 interface ControlKey {
@@ -58,6 +60,7 @@ interface ControlKey {
 // Key strip glyphs: library icons at the key size (18px on 44px keys).
 const BackspaceIcon = <DeleteIcon width={ICON_SIZE.key} height={ICON_SIZE.key} strokeWidth={KEY_ICON_STROKE} />
 const PasteIcon = <ClipboardIcon width={ICON_SIZE.key} height={ICON_SIZE.key} strokeWidth={KEY_ICON_STROKE} />
+const SelectTextIcon = <TextInputIcon width={ICON_SIZE.key} height={ICON_SIZE.key} strokeWidth={KEY_ICON_STROKE} />
 const KeyboardIcon = <Keyboard01Icon width={ICON_SIZE.key} height={ICON_SIZE.key} strokeWidth={KEY_ICON_STROKE} />
 
 // Color classes of a key without its own `className`. A key's className
@@ -127,6 +130,7 @@ export default function TerminalControls({
   onRefocus,
   isKeyboardVisible,
   onEnterTextMode,
+  onSelectText,
 }: TerminalControlsProps) {
   const browserPaste = useBrowserPaste({ sessionId: currentSessionId, disabled, fileUploadsAllowed, agentType,
     onPasteText: onPasteText ?? onSendKey, onPasteImage: onPasteImage ?? onSendKey, onRefocus })
@@ -350,6 +354,18 @@ export default function TerminalControls({
         >
           {PasteIcon}
         </button>
+        {onSelectText && (
+          <button
+            type="button"
+            aria-label="Select text"
+            className={`terminal-key flex items-center justify-center size-[44px] p-0 bg-surface border border-border rounded-md active:bg-hover active:scale-95 transition-transform duration-75 select-none touch-manipulation text-secondary`}
+            onMouseDown={(e) => e.preventDefault()}
+            onTouchEnd={handleTouchAction(onSelectText, false)}
+            onClick={handleClickAction(onSelectText, false)}
+          >
+            {SelectTextIcon}
+          </button>
+        )}
         {renderControlKey(KEY_DELETE_WORD)}
         {/* NumPad for number input */}
         <NumPad

@@ -46,6 +46,7 @@ export { default as PlayIcon } from '@untitledui-icons/react/line/esm/PlayIcon'
 export { default as PlusIcon } from '@untitledui-icons/react/line/esm/PlusIcon'
 export { default as SearchSmIcon } from '@untitledui-icons/react/line/esm/SearchSmIcon'
 export { default as Settings02Icon } from '@untitledui-icons/react/line/esm/Settings02Icon'
+export { default as TextInputIcon } from '@untitledui-icons/react/line/esm/TextInputIcon'
 export { default as TerminalIcon } from '@untitledui-icons/react/line/esm/TerminalIcon'
 export { default as XCloseIcon } from '@untitledui-icons/react/line/esm/XCloseIcon'
 
