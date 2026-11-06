@@ -185,12 +185,16 @@ To run logrotate every hour as a user timer:
 ```bash
 systemctl --user stop agentboard
 systemctl --user disable agentboard
-rm ~/.config/systemd/user/agentboard.service
+rm -f ~/.config/systemd/user/agentboard.service
 # If you installed log rotation:
 systemctl --user disable --now agentboard-logrotate.timer
 rm -f ~/.config/systemd/user/agentboard-logrotate.{service,timer}
+rm -f ~/.config/agentboard/logrotate.conf
 systemctl --user daemon-reload
 ```
+
+`systemctl --user disable` usually removes the link to the unit, so the first
+`rm -f` then has nothing to remove.
 
 Stopping the service does not stop tmux. To end the agent sessions as well,
 close them in tmux.
