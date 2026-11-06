@@ -312,7 +312,7 @@ abstract class TerminalProxyBase implements ITerminalProxy {
 
   protected logPasteFailure(
     target: string,
-    stage: 'load-buffer' | 'paste-buffer',
+    stage: 'resolve-pane' | 'load-buffer' | 'paste-buffer',
     bytes: number,
     error: unknown
   ): void {

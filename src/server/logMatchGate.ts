@@ -6,6 +6,7 @@ export interface SessionSnapshot {
   currentWindow: string | null
   lastActivityAt: string
   lastUserMessage?: string | null
+  lastKnownLogRevision?: string | null
   lastKnownLogSize?: number | null
 }
 
@@ -81,18 +82,21 @@ export function getEntriesNeedingMatch(
     const session =
       sessionsByLogPath.get(entry.logPath) ??
       sessionsById.get(entry.sessionId)
-    if (!session) {
+    if (!session && entry.logTokenCount !== -1) {
       // New session - always attempt matching (give it one chance)
       needs.push(entry)
       continue
     }
-    if (!session.currentWindow) {
+    if (!session?.currentWindow) {
       // Orphan session - check if it should skip matching
       if (shouldSkipMatching(entry, skipMatchingPatterns)) {
         continue
       }
-      // Gate on size change - if size differs, content changed and we should re-match
-      if (entry.size !== session.lastKnownLogSize) {
+      // Full history snapshots are age-bounded; known entries carry the same
+      // small persisted revision fields without bringing old prompt text along.
+      const knownSize = session?.lastKnownLogSize ?? entry.previousSize
+      const knownRevision = session?.lastKnownLogRevision ?? entry.previousRevision
+      if (entry.size !== knownSize || (entry.revision !== undefined && entry.revision !== knownRevision)) {
         needs.push(entry)
       }
     }

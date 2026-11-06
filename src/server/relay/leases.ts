@@ -1,3 +1,4 @@
+import { PaneOutputRouter } from './paneOutputRouter'
 import { resolveWorkerPath } from '../workerPath'
 import { isValidSessionId, isValidTmuxTarget } from '../validators'
 import { logger } from '../logger'
@@ -37,6 +38,7 @@ const MAX_OUTPUT_BYTES = 1024 * 1024
 const TERMINAL_TYPES = new Set(['terminal-attach', 'terminal-detach', 'terminal-input', 'terminal-paste', 'terminal-resize', 'tmux-cancel-copy-mode', 'tmux-check-copy-mode'])
 
 export class TerminalLeases {
+  private paneOutput = new PaneOutputRouter(error => this.notify({ type: 'fatal', error }))
   private leases = new Map<string, Lease>()
   private overloaded = new WeakSet<Socket>()
   private sessions: TerminalSession[] = []
@@ -164,6 +166,7 @@ export class TerminalLeases {
     lease.worker = worker
     worker.onmessage = (event: MessageEvent<TerminalToRelay>) => {
       const message = event.data
+      if (message.type === 'pane-subscribe' || message.type === 'pane-release' || message.type === 'pane-credit') { this.paneOutput.handle(worker, message); return }
       if (message.type === 'send') {
         const owner = lease.owner
         if (owner && message.epoch === lease.epoch) this.sendTerminal(owner, message.payload)
@@ -173,6 +176,7 @@ export class TerminalLeases {
       } else if (message.type === 'submit' || message.type === 'group-created') this.notify(message)
     }
     worker.onerror = () => {
+      this.paneOutput.remove(worker)
       lease.owner?.close(1011, 'Terminal worker stopped')
       this.notify({ type: 'fatal', error: 'Terminal worker failed' })
     }
@@ -246,6 +250,7 @@ export class TerminalLeases {
       const previous = worker.onmessage
       worker.onmessage = event => {
         if ((event.data as TerminalToRelay).type === 'stopped') {
+          this.paneOutput.remove(worker)
           clearTimeout(timer)
           worker.onmessage = null
           this.idleWorkers.push(worker)
@@ -263,5 +268,6 @@ export class TerminalLeases {
     clearInterval(this.timer)
     for (const lease of this.leases.values()) this.retire(lease)
     await Promise.allSettled(this.retiring)
+    await this.paneOutput.shutdown()
   }
 }

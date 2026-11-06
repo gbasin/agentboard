@@ -39,6 +39,7 @@ export function mapRow(row: Record<string, unknown>): AgentSessionRecord {
       row.last_known_log_size === null || row.last_known_log_size === undefined
         ? null
         : Number(row.last_known_log_size),
+    lastKnownLogRevision: row.last_known_log_revision == null ? null : String(row.last_known_log_revision),
     isCodexExec: Number(row.is_codex_exec) === 1,
     launchCommand:
       row.launch_command === null || row.launch_command === undefined
