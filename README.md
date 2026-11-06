@@ -47,7 +47,7 @@ For local Claude Code and Codex sessions, a counter on the session shows how man
 
 ### Pull requests with CI state
 
-Pull requests that a session created with `gh pr create` appear as chips on the session, colored by state: open, draft, merged, or closed. Claude Code sessions also show pull requests that Claude Code linked to the session, such as one it pushed to. Hover a chip to see its title and CI checks.
+Pull requests that a session created with `gh pr create` or through the GitHub connector appear as chips on the session, colored by state: open, draft, merged, or closed. Claude Code sessions also show pull requests that Claude Code linked to the session, such as one it pushed to. Hover a chip to see its title and CI checks.
 
 </td>
 <td width="60%">
