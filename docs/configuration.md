@@ -1,6 +1,8 @@
 # Configuration
 
-Agentboard reads its configuration from environment variables when it starts. It has no configuration file and no command-line flags: an argument such as `--port` is ignored. Restart the server after you change a variable.
+Agentboard reads its configuration from environment variables when it starts. It has no configuration file of its own and no command-line flags: an argument such as `--port` is ignored. Restart the server after you change a variable.
+
+Bun, the runtime that Agentboard uses, loads `.env`, `.env.<NODE_ENV>`, `.env.local`, and `.env.<NODE_ENV>.local` from the directory where the server starts. This includes the Homebrew and npm binaries. Variables in those files apply to Agentboard without any message, so check for a `.env` file that sets `PORT` or `HOSTNAME` before you start Agentboard inside a project directory. With `bun run`, Bun reads the files from the checkout.
 
 Settings that you change in the **Settings** dialog are separate. Agentboard stores them in its database or in your browser, and they do not need a restart.
 
@@ -10,8 +12,8 @@ Settings that you change in the **Settings** dialog are separate. Agentboard sto
 | --- | --- |
 | From a shell (`agentboard`, `npx`, `bun run start`) | In the shell: `PORT=8080 agentboard` |
 | launchd, release mode | `~/.agentboard/service-env.json` (string values), then run `./launchd/upgrade.sh`. The installer copies the values into the service; a restart alone does not apply them. Removing a key from the file does not remove it from the service. TLS and custom bind addresses are not accepted in this mode. See [launchd/README.md](../launchd/README.md#configure-the-release-service). |
-| launchd, source mode | No override file. The installer generates the service wrapper and overwrites manual changes when it runs again. |
-| systemd | A drop-in: `systemctl --user edit agentboard`, add `Environment=NAME=value` lines under `[Service]`, then run `systemctl --user restart agentboard`. A `PATH` entry in the drop-in replaces the unit's `PATH`. |
+| launchd, source mode | A `.env.local` file in the checkout, then restart the service. The installer generates the service wrapper and overwrites manual changes to it when it runs again. |
+| systemd | A drop-in: `systemctl --user edit agentboard`, add `Environment=NAME=value` lines under `[Service]`, then run `systemctl --user restart agentboard`. A `PATH` entry in the drop-in replaces the unit's `PATH`. A `.env.local` file in the checkout also works. |
 
 ## Most-used settings
 
@@ -34,6 +36,7 @@ Settings that you change in the **Settings** dialog are separate. Agentboard sto
 | `HOSTNAME` | `127.0.0.1` | Address to bind. |
 | `TLS_CERT` | unset | Path to a TLS certificate file. |
 | `TLS_KEY` | unset | Path to the TLS private key file. |
+| `AGENTBOARD_ALLOWED_ORIGINS` | unset | Comma-separated origins, such as `https://board.example.com`, that may use the board in addition to the server's own origin. |
 
 `HOSTNAME` controls which interfaces the server binds to. The default, `127.0.0.1`, accepts connections from the same machine only. Set `0.0.0.0` to listen on all interfaces.
 
@@ -43,7 +46,11 @@ A `HOSTNAME` that equals the machine hostname is treated as auto-exported by the
 
 Set both `TLS_CERT` and `TLS_KEY` to serve HTTPS. Use absolute paths. To install the board as a PWA, the browser needs HTTPS or `localhost`; see [pwa-install.md](pwa-install.md).
 
-> **Security note:** Agentboard has no built-in authentication. Anyone who can reach the server has full access to your terminal sessions, including the ability to run commands as your user. The default localhost binding is safe. Tailscale provides network-level auth for remote access. Avoid setting `HOSTNAME=0.0.0.0` on untrusted networks (public WiFi, shared LANs) without an additional access control layer.
+**Allowed origins.** The server rejects a WebSocket handshake or a write request (any method except `GET`, `HEAD`, and `OPTIONS`) with 403 when the browser's `Origin` does not match the request's `Host` header. When Agentboard serves TLS itself (`TLS_CERT` and `TLS_KEY` are set), the `Origin` must also use `https`. Requests without an `Origin` header, such as curl and scripts, are not affected. If a reverse proxy rewrites `Host`, for example to `127.0.0.1:4040`, list the public origin in `AGENTBOARD_ALLOWED_ORIGINS`. A proxy that forwards the original `Host`, such as Tailscale Serve, needs no entry.
+
+Write each entry as a full origin: the scheme, the host, and the port if it is not the default for the scheme. Examples are `https://board.example.com` and `http://nuc:8080`. Separate entries with commas. An entry matches exactly, scheme included. Do not add a path, a query, or credentials. Wildcards do not work. Agentboard ignores an entry that it cannot parse and prints no message. See [SECURITY.md](../SECURITY.md#browser-protections-and-their-limits) for what this check does not cover.
+
+> **Security note:** Agentboard has no built-in authentication. Anyone who can reach the server has full access to your terminal sessions, including the ability to run commands as your user. The default binding accepts connections only from this machine and, when Tailscale answers at startup, from the tailnet devices that your Tailscale access rules allow. It does not stop other programs and users on this machine, and the browser checks do not cover DNS rebinding or cross-site `GET` requests; see [SECURITY.md](../SECURITY.md#browser-protections-and-their-limits). Avoid setting `HOSTNAME=0.0.0.0` on untrusted networks (public WiFi, shared LANs) without an additional access control layer.
 
 ## tmux sessions and discovery
 
@@ -64,7 +71,7 @@ Set both `TLS_CERT` and `TLS_KEY` to serve HTTPS. Use absolute paths. To install
 
 **Grouped sessions.** When you open a discovered tmux session, Agentboard attaches through a per-connection session grouped with it (`<TMUX_SESSION>-ws-<connection>-x-<session>-<hash>`), so focus in the browser stays independent of your own tmux clients. Two side effects:
 
-- These derived sessions appear in `tmux ls` while a viewer is attached. They are removed on switch-away and disconnect, and pruned at startup.
+- These derived sessions appear in `tmux ls` while a viewer is attached. Agentboard removes the session for a discovered tmux session when you switch away from it, and the rest when it closes the terminal. After a disconnect, the relay keeps the terminal for up to 60 seconds (`AGENTBOARD_RELAY_GRACE_MS`) so that the browser can reconnect. Startup prunes the ones that an earlier server left behind.
 - Killing the raw session keeps its windows alive until the last grouped viewer switches away. tmux keeps a group's windows while any member session exists.
 
 **Nested tmux.** The server refuses to start from a pane of a tmux session that an Agentboard manages, because every tmux command would then target that live server. It also refuses when it cannot determine which session the pane belongs to. To run a second instance, give it a private socket with `TMUX_TMPDIR` and its own `AGENTBOARD_DATA_DIR`. With `TMUX_TMPDIR` set, Agentboard creates the directory and ignores the inherited `TMUX` value. `AGENTBOARD_ALLOW_NESTED_TMUX=true` removes the check and shares the socket on purpose.

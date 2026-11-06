@@ -12,6 +12,7 @@ Start with the [project README](../README.md) for an overview and installation.
 | [PWA installation](pwa-install.md) | Add the board to your phone's home screen. |
 | [macOS service (launchd)](../launchd/README.md) | Run Agentboard at login and upgrade it. |
 | [Linux service (systemd)](../systemd/README.md) | Run Agentboard as a user service. |
+| [Uninstall](uninstall.md) | Remove Agentboard and see what stays behind. |
 
 ## Contributing
 
@@ -19,4 +20,4 @@ Start with the [project README](../README.md) for an overview and installation.
 | --- | --- |
 | [Development](development.md) | Run from source, commands, dependency scanner. |
 | [AGENTS.md](../AGENTS.md) | Conventions, structure, tmux safety rules, release process. |
-| [SECURITY.md](../SECURITY.md) | How to report a vulnerability. |
+| [SECURITY.md](../SECURITY.md) | Threat model, and how to report a vulnerability. |

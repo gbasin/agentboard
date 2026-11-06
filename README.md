@@ -118,9 +118,21 @@ To start Agentboard at login and keep it running:
 - macOS: [launchd/README.md](launchd/README.md)
 - Linux: [systemd/README.md](systemd/README.md)
 
+Both installers need a git checkout of this repository. They do not use a Homebrew or npm install.
+
 ### Upgrade
 
 Run `brew upgrade agentboard` or `npm install -g @gbasin/agentboard@latest`, then restart Agentboard. Your tmux sessions keep running across the restart, and your data stays in `~/.agentboard`.
+
+These commands do not upgrade a service installed with the launchd or systemd installer. Upgrade a service as its guide describes.
+
+### Uninstall
+
+Stop Agentboard, then run `brew uninstall agentboard` or `npm uninstall -g @gbasin/agentboard`.
+
+`brew uninstall` also removes tmux if no other formula needs it. To keep tmux, run `HOMEBREW_NO_AUTOREMOVE=1 brew uninstall agentboard`.
+
+If you installed a service, remove it first. For that, and for the data and settings that an uninstall leaves in place, see [Uninstall](docs/uninstall.md).
 
 ### From source
 
@@ -147,7 +159,7 @@ See [Configuration](docs/configuration.md) for every setting.
 
 Appearance, notification sounds, command presets, session list options, and terminal options are in the **Settings** dialog in the UI.
 
-> **Security note:** Agentboard has no built-in authentication. Anyone who can reach the server has full access to your terminal sessions, including the ability to run commands as your user. The default localhost binding is safe. Tailscale provides network-level auth for remote access. Avoid setting `HOSTNAME=0.0.0.0` on untrusted networks (public WiFi, shared LANs) without an additional access control layer.
+> **Security note:** Agentboard has no authentication. Anyone who can reach the server can run commands as your user. By default it accepts connections from this machine and, if Tailscale is running, from your tailnet. Do not set `HOSTNAME=0.0.0.0` on a network that you do not trust (public Wi-Fi, a shared LAN) without another access control layer. See [SECURITY.md](SECURITY.md#threat-model) for the full threat model.
 
 ## Keyboard shortcuts
 
@@ -191,6 +203,7 @@ To use a different modifier, open **Settings** > **Terminal**.
 - [Remote hosts](docs/remote-hosts.md): sessions from other machines over SSH.
 - [Session recovery](docs/session-recovery.md): reopen sessions after a crash or reboot.
 - [PWA installation](docs/pwa-install.md): add the board to your phone's home screen.
+- [Uninstall](docs/uninstall.md): remove Agentboard, and what stays behind.
 - [macOS service](launchd/README.md) and [Linux service](systemd/README.md).
 - [Development](docs/development.md): run from source and contribute.
 - [Security policy](SECURITY.md).
