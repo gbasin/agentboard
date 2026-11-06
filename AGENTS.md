@@ -29,24 +29,29 @@ dev-only `tools/fad-dump` shim). The shim is never a runtime dependency.
 
 ## How It Works
 
-- Single tmux session (default: `agentboard`) with one window per project
+- Single managed tmux session (default: `agentboard`) with one window per agent session. Windows in all other tmux sessions are discovered as external; set `DISCOVER_PREFIXES` to limit discovery to sessions whose names start with those prefixes. In `pty` terminal mode (the default), each browser connection attaches to a local window through its own grouped session (`<TMUX_SESSION>-ws-<connection>`).
 - Backend discovers windows, streams terminal output via WebSocket
-- Parses Claude/Codex/Pi JSONL logs from `~/.claude/projects/`, `~/.codex/sessions/`, `~/.pi/agent/sessions/`
+- Parses Claude/Codex/Pi/oh-my-pi JSONL logs from `~/.claude/projects/`, `~/.codex/sessions/`, `~/.pi/agent/sessions/`, `~/.omp/agent/sessions/` (or `$XDG_DATA_HOME/omp/sessions` when that directory exists). `src/server/logDiscovery.ts` owns the roots and their env overrides (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `PI_HOME`, `GROK_HOME`, `PI_CODING_AGENT_DIR`, `PI_CONFIG_DIR`).
 - Devin CLI stores history in SQLite (`~/.local/share/devin/cli/sessions.db`); `src/server/devinSync.ts` mirrors it into `~/.agentboard/devin-sessions/*.jsonl` so the same pipeline applies. `src/server/devinLockMatch.ts` matches devin sessions to windows via `session_locks/<id>.lock` PIDs.
 - Grok CLI writes transcripts at `~/.grok/sessions/<encoded-cwd>/<session-id>/chat_history.jsonl`; sessionId and projectPath are derived from the directory names. Sibling telemetry files (events.jsonl, updates.jsonl) are excluded from matching.
-- Status: unknown -> working -> waiting (derived from log events)
+- Status is one of `working`, `waiting`, `permission`, `unknown`. It is inferred from tmux pane content, not from logs: `src/server/statusInference.ts` diffs pane captures (changed output means working) and matches permission-prompt patterns. After Enter is sent to a terminal, `src/server/forceWorkingStatus.ts` holds the status at `working` for a short grace period. Logs drive session-to-window matching, the last user prompt, PR chips, and media.
 
 ## Structure
 
 - src/server/     Hono backend, WebSocket, tmux/pty management, log parsing
-  - `src/server/SessionManager.ts` - tmux window discovery, log parsing, status detection
-  - `src/server/index.ts` - Hono routes, WebSocket handling
+  - `src/server/index.ts` - boot, Hono routes, WebSocket handling, refresh loop, session lifecycle handlers
+  - `src/server/SessionManager.ts` - tmux window discovery, create/kill/rename, window options
+  - `src/server/statusInference.ts` - status detection from pane content
+  - `src/server/logDiscovery.ts`, `logWatcher.ts`, `logPoller.ts`, `logMatcher.ts` - log roots, change detection, session-to-window matching
+  - `src/server/terminal/` - terminal proxies (pty, pipe-pane, ssh)
+  - `src/server/persistence/` - session recovery catalog
 - src/client/     React frontend, xterm.js terminal, Zustand stores
   - `src/client/App.tsx` - main UI, keyboard shortcuts
-  - `src/client/components/Terminal.tsx` - xterm.js wrapper
+  - `src/client/components/Terminal.tsx` - terminal pane, controls, overlays
+  - `src/client/hooks/useTerminal.ts` - xterm.js instance, input, paste, links
 - src/shared/     Shared types
 
-- Data directory: `~/.agentboard/` contains `agentboard.db` (session data) and `agentboard.log`
+- Data directory: `~/.agentboard/` (override with `AGENTBOARD_DATA_DIR`) holds `agentboard.db` (session data), `media-index.sqlite`, and `server.lock` (single-instance lock). Depending on configuration it also holds `agentboard.log` (when file logging is on), `tmux-server.pid` (unless `AGENTBOARD_TMUX_PID_FILE` moves it), `devin-sessions/` (when Devin CLI history exists), and `stall-samples/` (macOS, after a stall).
 
 ## tmux Safety
 
@@ -63,13 +68,19 @@ dev-only `tools/fad-dump` shim). The shim is never a runtime dependency.
   socket and data dir instead:
 
   ```
-  TMUX_TMPDIR=/tmp/ab-dev-$$ AGENTBOARD_DATA_DIR=/tmp/ab-dev-$$/data \
+  TMUX_TMPDIR=/tmp/ab-dev-mytask AGENTBOARD_DATA_DIR=/tmp/ab-dev-mytask/data \
     PORT=4141 TMUX_SESSION=ab-dev bun run dev
   ```
 
-  `bun run test:e2e` already isolates itself. Stop what you started
-  (`env -u TMUX TMUX_TMPDIR=/tmp/ab-dev-$$ tmux kill-server`) and remove the
-  temp dir when done.
+  Use a literal directory name that is unique to your task. Do not use `$$`:
+  every new shell has a different PID, so a later command builds a different
+  path. tmux ignores a `TMUX_TMPDIR` that does not exist and falls back to the
+  default socket, which is the live server.
+
+  `bun run test:e2e` already isolates itself. Stop what you started by naming
+  the socket (`env -u TMUX tmux -S /tmp/ab-dev-mytask/tmux-$(id -u)/default kill-server`)
+  and remove the temp dir when done. `-S` fails with an error when the socket
+  is missing; it never falls back to the live server.
 - Every subprocess the server spawns must pass an explicit `env` —
   `Bun.spawn*`/`spawnSync` without `env` reuse the *process-start* environ,
   so they ignore `delete process.env.TMUX` from isolation setup (and Bun
@@ -90,9 +101,9 @@ dev-only `tools/fad-dump` shim). The shim is never a runtime dependency.
 
 - Managed by [release-please](.github/workflows/release-please.yml); it scans conventional commits on `master` and maintains a release PR that bumps `package.json` and `CHANGELOG.md`.
 - Do NOT bump `package.json` version or add `(vX.Y.Z)` suffixes in change PRs — the release PR owns versioning. `fix:`/`perf:` → patch, `feat:` → minor, `feat!:`/`BREAKING CHANGE:` → major.
-- Merge the release PR to ship: release-please creates the tag + GitHub release, and `release.yml` (dispatched from the same workflow run) builds binaries and publishes npm packages.
+- Merge the release PR to ship: release-please creates the tag + GitHub release, and `release.yml` builds binaries, publishes the npm packages, uploads release assets, and updates the Homebrew tap formula. The tag push triggers `release.yml` when the release GitHub App token minted the tag; with the `GITHUB_TOKEN` fallback, the Release Please workflow dispatches it instead.
 - `release-please` does NOT bump `optionalDependencies` (no `extra-files` in `release-please-config.json`) — the platform packages don't exist on npm until `release.yml` publishes them, so an early bump would leave master failing `bun install --frozen-lockfile`. `release.yml`'s last step syncs `optionalDependencies` + `bun.lock` together on master post-publish.
-- Overrides: `Release-As: x.y.z` in a merge commit body pins the next release to that version; a manual `git tag vX.Y.Z && git push` still runs the full pipeline (but skips the `package.json` bump); the Release Please workflow can be re-run manually via `workflow_dispatch`.
+- Overrides: `Release-As: x.y.z` in a merge commit body pins the next release to that version; a manual `git tag vX.Y.Z && git push` still runs the pipeline, but nothing bumps `package.json`, and the main package publishes the committed version — tag a commit whose `package.json` version already equals the tag; the Release Please workflow can be re-run manually via `workflow_dispatch`.
 
 ## Critical Thinking
 

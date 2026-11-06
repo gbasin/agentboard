@@ -14,10 +14,10 @@ Run your desktop/server, then connect from your phone or laptop over Tailscale/L
   - Paste support (including images)
   - Touch scrolling, tap-to-click, and long-press selection in fullscreen Claude Code sessions
   - Mobile-friendly copy prompts when browser clipboard writes need a user gesture
-  - Virtual arrow keys / d-pad
+  - Tap-to-open arrow key cluster
   - Quick keys toolbar (ctrl, esc, etc.)
 - Claude Code fullscreen renderer support by default, with mouse scrolling, click handling, in-app selection, and clipboard forwarding through the browser terminal
-- Out-of-the-box log tracking and matching for Claude, Codex, and Pi — auto-matches sessions to active tmux windows, with one-click Wake for Hibernating and History sessions.
+- Out-of-the-box log tracking and matching for Claude Code, Codex, Pi, oh-my-pi, Devin CLI, and Grok CLI — auto-matches sessions to active tmux windows, with one-click Wake for Hibernating and History sessions.
 - Shows the last user prompt for each session, so you can remember what each agent is working on
 - Hibernate sessions to close their tmux window while keeping them visible across restarts for manual Wake
 
@@ -39,14 +39,15 @@ Run your desktop/server, then connect from your phone or laptop over Tailscale/L
 ```
 
 - **Session discovery** — polls local tmux windows and (optionally) remote hosts over SSH
-- **Status inference** — reads pane content and Claude/Codex JSONL logs to determine if each agent is *working*, *waiting for input*, or *asking for permission*
+- **Status inference** — reads pane content to determine if each agent is *working*, *waiting for input*, or *asking for permission*
+- **Log matching** — reads agent transcripts to match each session to its tmux window and to show its last prompt, pull requests, and media
 - **Live terminal** — streams I/O through the server so you can interact with any session from any device
 - **Hibernating and History sessions** — keeps dormant agent sessions in the sidebar and wakes them on demand; startup does not auto-wake dormant sessions
 
 ### Desktop
-| Terminal | Sessions | Hibernating |
-| :---: | :---: | :---: |
-| <img src="assets/desktop.png" alt="Terminal" height="400"/> | <img src="assets/sessions.png" alt="Sessions" height="400"/> | <img src="assets/pins.png" alt="Hibernating" height="400"/> |
+| Terminal | Sessions |
+| :---: | :---: |
+| <img src="assets/desktop.png" alt="Terminal" height="400"/> | <img src="assets/sessions.png" alt="Sessions" height="400"/> |
 
 ### Mobile
 | Terminal | Controls |
@@ -157,7 +158,7 @@ Automatic reopening is off by default. A reboot stops the underlying processes; 
 PORT=4040
 HOSTNAME=127.0.0.1
 TMUX_SESSION=agentboard
-REFRESH_INTERVAL_MS=5000
+REFRESH_INTERVAL_MS=2000
 DISCOVER_PREFIXES=work,external
 ALLOW_KILL_EXTERNAL=false
 PRUNE_WS_SESSIONS=true
@@ -175,7 +176,7 @@ AGENTBOARD_HOST=blade
 AGENTBOARD_REMOTE_HOSTS=mba,carbon,worm
 AGENTBOARD_REMOTE_POLL_MS=2000
 AGENTBOARD_REMOTE_TIMEOUT_MS=4000
-AGENTBOARD_REMOTE_STALE_MS=45000
+AGENTBOARD_REMOTE_STALE_MS=15000
 AGENTBOARD_REMOTE_SSH_OPTS=-o BatchMode=yes -o ConnectTimeout=3
 AGENTBOARD_REMOTE_ALLOW_ATTACH=false
 AGENTBOARD_REMOTE_ALLOW_CONTROL=false
@@ -191,7 +192,7 @@ AGENTBOARD_PASTE_IMAGE_MAX_BYTES=41943040
 
 `ALLOW_KILL_EXTERNAL` (default `false`) controls whether externally-discovered sessions can be killed from the UI. Set to `true` to allow it.
 
-`PRUNE_WS_SESSIONS` removes orphaned `agentboard-ws-*` tmux sessions on startup (set to `false` to disable).
+`PRUNE_WS_SESSIONS` removes orphaned `<TMUX_SESSION>-ws-*` tmux sessions (`agentboard-ws-*` by default) on startup (set to `false` to disable).
 
 `AGENTBOARD_PREFER_WINDOW_NAME` (default `false`) controls how externally-discovered sessions are labeled. When `false`, the tmux session name is used (more meaningful than auto-renamed window names that follow the running process under tmux `automatic-rename on`). Set to `true` to use the tmux window name when it is non-empty and distinct from the session name — useful when you keep one shared session (e.g. `dev`) with one explicitly-named window per project (`myapp`, `infra`, ...).
 
@@ -211,7 +212,7 @@ When you open an externally-discovered tmux session, Agentboard attaches through
 
 `VITE_ALLOWED_HOSTS` allows access to the Vite dev server from other hostnames. Useful with Tailscale MagicDNS - add your machine name (e.g., `nuc`) to access the dev server at `http://nuc:5173` from other devices on your tailnet.
 
-All persistent data is stored in `~/.agentboard/`: session database (`agentboard.db`) and logs (`agentboard.log`). Override paths with `AGENTBOARD_DB_PATH` and `LOG_FILE`.
+All persistent data is stored in `~/.agentboard/`: session database (`agentboard.db`) and logs (`agentboard.log`). Set `AGENTBOARD_DATA_DIR` to move the whole directory (use an absolute path; `~` is not expanded). Override individual paths with `AGENTBOARD_DB_PATH` and `LOG_FILE`.
 
 `AGENTBOARD_INACTIVE_MAX_AGE_HOURS` controls the sidebar lookback (default: 24 hours, up to 100 recent entries). The env var name is kept for compatibility.
 
@@ -223,15 +224,15 @@ All persistent data is stored in `~/.agentboard/`: session database (`agentboard
 
 `AGENTBOARD_REMOTE_HOSTS` enables remote tmux polling over SSH. Provide a comma-separated list of hosts (e.g., `mba,carbon,worm`). Remote sessions show live status (working/waiting/permission) via pane content capture over SSH.
 
-`AGENTBOARD_REMOTE_POLL_MS`, `AGENTBOARD_REMOTE_TIMEOUT_MS`, and `AGENTBOARD_REMOTE_STALE_MS` control remote poll cadence, SSH timeout, and stale host cutoff.
+`AGENTBOARD_REMOTE_POLL_MS`, `AGENTBOARD_REMOTE_TIMEOUT_MS`, and `AGENTBOARD_REMOTE_STALE_MS` control remote poll cadence, SSH timeout, and stale host cutoff. The stale cutoff defaults to three poll intervals, with a minimum of 15 seconds.
 
 `AGENTBOARD_REMOTE_SSH_OPTS` appends extra SSH options (space-separated).
 
-`AGENTBOARD_REMOTE_ALLOW_ATTACH` enables interactive terminal attach to remote sessions (input, resize, copy-mode). When `false` (default), remote sessions are view-only.
+`AGENTBOARD_REMOTE_ALLOW_ATTACH` enables interactive terminal attach to remote sessions (input, resize, copy-mode). When `false`, remote sessions are view-only. When unset, it follows `AGENTBOARD_REMOTE_ALLOW_CONTROL`, which defaults to `false`.
 
-`AGENTBOARD_REMOTE_ALLOW_CONTROL` enables destructive remote session management (create, kill, rename) via the UI. Setting this to `true` implies `REMOTE_ALLOW_ATTACH=true`. Kill and rename are restricted to agentboard-managed sessions — externally-discovered remote sessions cannot be killed or renamed even with control enabled.
+`AGENTBOARD_REMOTE_ALLOW_CONTROL` enables destructive remote session management (create, kill, rename) via the UI. Setting this to `true` also enables attach, unless `AGENTBOARD_REMOTE_ALLOW_ATTACH` is set explicitly. Kill and rename are restricted to agentboard-managed sessions — externally-discovered remote sessions cannot be killed or renamed even with control enabled.
 
-`AGENTBOARD_LOG_WATCH_MODE` selects the log detection strategy: `watch` (default) uses `fs.watch` for instant file-change detection, `poll` falls back to periodic directory scanning. Use `poll` if you experience issues with filesystem notifications (e.g., on network-mounted home directories). On Linux, watch mode automatically includes a 15-second fallback poll since `fs.watch({ recursive: true })` has known platform bugs.
+`AGENTBOARD_LOG_WATCH_MODE` selects the log detection strategy: `watch` (default) uses `fs.watch` for instant file-change detection, `poll` falls back to periodic directory scanning. Use `poll` if you experience issues with filesystem notifications (e.g., on network-mounted home directories). Watch mode also runs a fallback poll: at least every 15 seconds on Linux, where `fs.watch({ recursive: true })` has known platform bugs, and at least every 60 seconds elsewhere.
 
 `AGENTBOARD_OWNERSHIP_OBSERVER=true` enables read-only ownership diagnostics for local Claude and Codex sessions. It checks at startup and every 30 seconds. The diagnostics flag defaults to off. For read-only observation on macOS, also set `AGENTBOARD_OWNERSHIP_MATCHING=false`. Changed results appear as `ownership_observation` log events with `agree`, `unmatched`, `disagree`, or `unresolved` comparisons. Set `LOG_LEVEL=debug` to include per-cycle counts and duration.
 
@@ -270,10 +271,14 @@ Then create the sockets directory: `mkdir -p ~/.ssh/sockets && chmod 700 ~/.ssh/
 
 ```
 LOG_LEVEL=info                          # debug | info | warn | error (default: info)
-LOG_FILE=~/.agentboard/agentboard.log   # default; set empty to disable file logging
+LOG_FILE=~/.agentboard/agentboard.log   # default path when file logging is on (see below)
 ```
 
-Console output is pretty-printed in development, JSON in production (`NODE_ENV=production`). File output is always JSON. Set `LOG_FILE=` (empty) to disable file logging.
+Installed releases (Homebrew, npm) write JSON to both the console and the log file. A source checkout pretty-prints the console. File output is always JSON.
+
+A source checkout started with `bun run start` writes the log file only when `NODE_ENV=production` or `LOG_FILE` is set. The systemd and launchd installers set `NODE_ENV=production`. `bun run dev` sets `LOG_FILE` to the default path for you.
+
+Set `LOG_FILE=` (empty) to disable file logging. This does not apply to `bun run dev`, which replaces an empty value with the default path.
 
 ## Troubleshooting
 
