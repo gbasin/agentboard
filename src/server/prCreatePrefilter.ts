@@ -1,9 +1,10 @@
 // Byte-level prefilter for the PR extractor. Decides from raw log bytes,
-// without decoding them, whether a span may hold a `gh pr create` or a
-// `pr-link` record. Every check over-matches and never under-matches: a
+// without decoding them, whether a span may hold `gh pr create`, a
+// GitHub connector create call, or a `pr-link` record. Every check over-matches and never under-matches: a
 // false positive only costs a decode, a false negative loses a PR.
 
 export const CREATE_BYTES = Buffer.from('create')
+const CONNECTOR_CREATE_BYTES = Buffer.from('github_create_pull_request')
 // Claude Code's `{"type":"pr-link",...}` session↔PR records. The bare word
 // over-matches ("pr-links", prose) — fine, that only costs a decode.
 export const PR_LINK_BYTES = Buffer.from('pr-link')
@@ -19,6 +20,7 @@ function isSeparatorByte(b: number): boolean {
 // True when the bytes hold a `pr<seps>create` candidate, or a `create` whose
 // context may start before the buffer. Over-matches, never under-matches.
 export function hasCreateCandidate(bytes: Buffer): boolean {
+  if (bytes.includes(CONNECTOR_CREATE_BYTES)) return true
   let at = bytes.indexOf(CREATE_BYTES)
   while (at !== -1) {
     if (at === 0) return true
@@ -57,7 +59,8 @@ function seamHasWord(partial: Buffer[], bytes: Buffer, word: Buffer): boolean {
 }
 
 export function seamHasCreate(partial: Buffer[], bytes: Buffer): boolean {
-  return seamHasWord(partial, bytes, CREATE_BYTES)
+  return seamHasWord(partial, bytes, CREATE_BYTES) ||
+    seamHasWord(partial, bytes, CONNECTOR_CREATE_BYTES)
 }
 
 export function seamHasPrLink(partial: Buffer[], bytes: Buffer): boolean {
