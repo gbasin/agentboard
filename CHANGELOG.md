@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.42.2](https://github.com/gbasin/agentboard/compare/v0.42.1...v0.42.2) (2026-11-07)
+
+
+### Bug Fixes
+
+* label and group media pill counts on desktop ([#525](https://github.com/gbasin/agentboard/issues/525)) ([1dd65f1](https://github.com/gbasin/agentboard/commit/1dd65f1da7401cbeb63440176f743e1ad1d521ac))
+
 ## [0.42.1](https://github.com/gbasin/agentboard/compare/v0.42.0...v0.42.1) (2026-11-07)
 
 
