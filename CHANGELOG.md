@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.40.0](https://github.com/gbasin/agentboard/compare/v0.39.0...v0.40.0) (2026-11-07)
+
+
+### Features
+
+* add opt-in iOS autocorrect in terminal settings ([#506](https://github.com/gbasin/agentboard/issues/506)) ([ce00fd4](https://github.com/gbasin/agentboard/commit/ce00fd48d88a3f4d37b837b1d82cc5a216a82916))
+* add optional mobile session status peek ([#507](https://github.com/gbasin/agentboard/issues/507)) ([fce20b8](https://github.com/gbasin/agentboard/commit/fce20b8910c5417ff730818a9327ca49ca6160aa))
+* add previews to the shared media and links panel ([#508](https://github.com/gbasin/agentboard/issues/508)) ([f7eca68](https://github.com/gbasin/agentboard/commit/f7eca68557d032d1ca4ce2bdd2784b65f5fb972f))
+
+
+### Bug Fixes
+
+* avoid duplicate iOS bottom safe-area padding ([#504](https://github.com/gbasin/agentboard/issues/504)) ([af05b49](https://github.com/gbasin/agentboard/commit/af05b49641d6ed9dd161ca33a7932680bee588e9))
+
 ## [0.39.0](https://github.com/gbasin/agentboard/compare/v0.38.2...v0.39.0) (2026-11-06)
 
 
