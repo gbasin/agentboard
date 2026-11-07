@@ -956,7 +956,7 @@ export default function Terminal({
         // Enable textarea on touch start so iOS long-press paste menu works
         enableTextarea()
 
-        if (isiOS && appMouseRef.current && !(import.meta.env.VITE_IOS_NATIVE_PASTE_PROTOTYPE === '1' && e.target === getTextarea())) {
+        if (isiOS && appMouseRef.current && !(import.meta.env.VITE_IOS_NATIVE_PASTE_PROTOTYPE !== '0' && e.target === getTextarea())) {
           const startPoint = { clientX: touch.clientX, clientY: touch.clientY }
           longPressTimer = setTimeout(() => {
             longPressTimer = null
@@ -1064,7 +1064,7 @@ export default function Terminal({
 
       if (!hasMoved) {
         // Let WebKit own taps and the edit callout on the experimental input target.
-        if (isiOS && import.meta.env.VITE_IOS_NATIVE_PASTE_PROTOTYPE === '1' && e.target === getTextarea()) return
+        if (isiOS && import.meta.env.VITE_IOS_NATIVE_PASTE_PROTOTYPE !== '0' && e.target === getTextarea()) return
         if (isiOS && touchDuration >= LONG_PRESS_MS) return
         if (appMouseRef.current) {
           const touch = e.changedTouches[0]
@@ -1314,7 +1314,7 @@ export default function Terminal({
 
   return (
     <section
-      className={`flex min-w-0 flex-1 flex-col bg-base terminal-mobile-overlay md:relative md:inset-auto ${isiOS ? 'ios-native-term-selection' : ''} ${isiOS && import.meta.env.VITE_IOS_NATIVE_PASTE_PROTOTYPE === '1' ? 'ios-native-paste-prototype' : ''}`}
+      className={`flex min-w-0 flex-1 flex-col bg-base terminal-mobile-overlay md:relative md:inset-auto ${isiOS ? 'ios-native-term-selection' : ''} ${isiOS && import.meta.env.VITE_IOS_NATIVE_PASTE_PROTOTYPE !== '0' ? 'ios-native-paste-prototype' : ''}`}
       data-testid="terminal-panel"
       data-compact-mobile-controls={compactMobileControls}
       onDragOver={(event) => {
