@@ -4,6 +4,20 @@ import UniformTypeIdentifiers
 
 /// Reads the real simulator pasteboard; no application launch backdoor or production session.
 final class NativeClipboardUITests: XCTestCase {
+    private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
+        for _ in 0..<10 {
+            if element.exists && element.isHittable { return }
+            (app.collectionViews.allElementsBoundByIndex.last(where: { $0.isHittable }) ?? app.collectionViews.firstMatch).swipeUp()
+        }
+        if !element.exists || !element.isHittable {
+            let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+            screenshot.name = "clipboard-unreachable-session"; screenshot.lifetime = .keepAlways; add(screenshot)
+            let tree = XCTAttachment(string: app.debugDescription)
+            tree.name = "clipboard-unreachable-session-hierarchy"; tree.lifetime = .keepAlways; add(tree)
+        }
+        XCTAssertTrue(element.exists, "Missing session after scrolling")
+        XCTAssertTrue(element.isHittable, "Session is not hittable after scrolling")
+    }
     func testMixedClipboardImageAndTextInsertsWithoutEnter() {
         continueAfterFailure = false
         executionTimeAllowance = 90
@@ -22,7 +36,8 @@ final class NativeClipboardUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Connected"].waitForExistence(timeout: 15))
         let search = app.searchFields["Find a session"]; search.tap(); search.typeText("native-live-one\n")
         let row = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "native-live-one")).firstMatch
-        XCTAssertTrue(row.waitForExistence(timeout: 10)); row.tap()
+        reveal(row, in: app)
+        XCTAssertTrue(row.waitForExistence(timeout: 10)); XCTAssertTrue(row.isHittable); row.tap()
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10))
         app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.6)).tap()
         app.buttons["Control"].tap(); app.typeText("u")

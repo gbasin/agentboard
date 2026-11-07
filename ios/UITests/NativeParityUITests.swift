@@ -24,7 +24,13 @@ final class NativeParityUITests: XCTestCase {
             if element.exists && element.isHittable { return }
             (app.collectionViews.allElementsBoundByIndex.last(where: { $0.isHittable }) ?? app.collectionViews.firstMatch).swipeUp()
         }
-        XCTAssertTrue(element.exists, "Missing \(element)")
+        if !element.exists || !element.isHittable {
+            capture("unreachable-control")
+            let tree = XCTAttachment(string: app.debugDescription)
+            tree.name = "unreachable-control-hierarchy"; tree.lifetime = .keepAlways; add(tree)
+        }
+        XCTAssertTrue(element.exists, "Missing \(element) after scrolling")
+        XCTAssertTrue(element.isHittable, "Unreachable \(element) after scrolling")
     }
     private func tap(_ title: String, in app: XCUIApplication) {
         let button = app.buttons[title]; reveal(button, in: app); button.tap()
@@ -36,7 +42,8 @@ final class NativeParityUITests: XCTestCase {
         let field = app.searchFields["Find a session"]
         replace(field, name); field.typeText("\n")
         let row = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", name)).firstMatch
-        XCTAssertTrue(row.waitForExistence(timeout: 10)); row.tap()
+        reveal(row, in: app)
+        XCTAssertTrue(row.waitForExistence(timeout: 10)); XCTAssertTrue(row.isHittable); row.tap()
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10))
     }
     func testDirectoryBrowserPresetAndDuplicate() {

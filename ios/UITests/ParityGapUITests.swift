@@ -5,6 +5,14 @@ import XCTest
 final class ParityGapUITests: XCTestCase {
     private let base = "http://127.0.0.1:4192"
     override func setUp() { continueAfterFailure = false; XCUIDevice.shared.orientation = .portrait }
+    override func tearDown() {
+        if (testRun?.failureCount ?? 0) > 0 {
+            capture("failure-" + name)
+            let tree = XCTAttachment(string: XCUIApplication().debugDescription)
+            tree.name = "gap-failure-accessibility"; tree.lifetime = .keepAlways; add(tree)
+        }
+        super.tearDown()
+    }
     private func fixture(_ path: String, body: [String: Any] = [:]) {
         var request = URLRequest(url: URL(string: base + "/__fixture/" + path)!)
         request.httpMethod = "POST"
@@ -33,9 +41,13 @@ final class ParityGapUITests: XCTestCase {
     private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
         for _ in 0..<12 {
             if element.exists && element.isHittable { return }
-            (app.collectionViews.allElementsBoundByIndex.last(where: { $0.isHittable }) ?? app.collectionViews.firstMatch).swipeUp()
+            let scroller = app.collectionViews.allElementsBoundByIndex.last(where: { $0.isHittable })
+                ?? app.tables.allElementsBoundByIndex.last(where: { $0.isHittable })
+                ?? app.scrollViews.allElementsBoundByIndex.last(where: { $0.isHittable })
+            guard let scroller else { XCTFail("No visible scroll container: " + app.debugDescription); return }
+            scroller.swipeUp()
         }
-        XCTAssertTrue(element.exists, "Missing expected UI element: \(element)")
+        XCTAssertTrue(element.exists && element.isHittable, "Expected reachable UI element: \(element)\n" + app.debugDescription)
     }
     private func tap(_ title: String, in app: XCUIApplication) {
         let element = app.buttons[title]; reveal(element, in: app); element.tap()
@@ -50,6 +62,7 @@ final class ParityGapUITests: XCTestCase {
         let search = app.searchFields["Find a session"]
         search.tap(); search.typeText(name + "\n")
         let row = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", name)).firstMatch
+        reveal(row, in: app)
         XCTAssertTrue(row.waitForExistence(timeout: 5)); row.tap()
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10))
     }
@@ -78,10 +91,11 @@ final class ParityGapUITests: XCTestCase {
         XCTAssertLessThan(first.frame.midY, second.frame.midY)
         app.buttons["Edit"].tap()
         let handles = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Reorder"))
-        XCTAssertTrue(handles.element(boundBy: 1).waitForExistence(timeout: 5))
         let destination = handles.element(boundBy: 0)
         let source = handles.element(boundBy: 1)
         reveal(source, in: app)
+        XCTAssertTrue(source.waitForExistence(timeout: 5))
+        XCTAssertTrue(destination.isHittable, "Both reorder handles must be reachable for this drag: " + app.debugDescription)
         source.press(forDuration: 1, thenDragTo: destination)
         app.buttons["Done"].tap()
         let moved = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
@@ -113,12 +127,14 @@ final class ParityGapUITests: XCTestCase {
         XCTAssertEqual(app.buttons["Filter and sort"].value as? String, "2 active filters")
         app.buttons["Library"].tap()
         tap("Conversation history (1)", in: app)
+        reveal(app.buttons["History Alpha remote"], in: app)
         XCTAssertTrue(app.buttons["History Alpha remote"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["History Alpha local"].exists)
         XCTAssertFalse(app.buttons["History Beta"].exists)
         capture("filtered-history")
         app.navigationBars.buttons.element(boundBy: 0).tap()
         tap("Hibernating conversations (1)", in: app)
+        reveal(app.buttons["Sleeping Alpha remote"], in: app)
         XCTAssertTrue(app.buttons["Sleeping Alpha remote"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["Sleeping Alpha local"].exists)
         XCTAssertFalse(app.buttons["Sleeping Beta"].exists)
@@ -132,6 +148,7 @@ final class ParityGapUITests: XCTestCase {
         XCTAssertFalse(app.buttons["session-beta-approval"].exists)
         capture("hidden-approval")
         notice.tap()
+        reveal(app.buttons["session-beta-approval"], in: app)
         XCTAssertTrue(app.buttons["session-beta-approval"].waitForExistence(timeout: 5))
         XCTAssertFalse(notice.exists)
         XCTAssertEqual(app.buttons["Filter and sort"].value as? String, "No active filters")
@@ -147,7 +164,9 @@ final class ParityGapUITests: XCTestCase {
         XCTAssertFalse(app.buttons["End session"].exists)
         XCTAssertFalse(app.buttons["Hibernate session"].exists)
         capture("remote-control-disabled")
-        app.buttons["Session actions"].tap()
+        // At maximum text size the open native menu covers its toolbar anchor.
+        // Dismiss through the visible terminal area below the menu.
+        app.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.75)).tap()
         fixture("control", body: ["allowed": true])
         app.buttons["Session actions"].tap()
         reveal(app.buttons["Rename session"], in: app)
@@ -174,6 +193,7 @@ final class ParityGapUITests: XCTestCase {
         let state = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "State, ")).firstMatch
         XCTAssertTrue(state.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertEqual(state.label, "State, Recovery", state.debugDescription)
+        reveal(app.buttons["saved-Recovered fixture"], in: app)
         XCTAssertTrue(app.buttons["saved-Recovered fixture"].waitForExistence(timeout: 5))
         app.buttons["Done"].tap()
         tap("Dismiss recovery notice", in: app)
