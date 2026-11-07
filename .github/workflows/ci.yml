@@ -127,7 +127,7 @@ jobs:
             id: links-2
             run: bunx playwright test --config playwright.links.config.ts --project webkit --shard=2/2
 
-          - name: iOS autocorrect
+          - name: mobile autocorrect
             id: autocorrect
             run: bunx playwright test --config playwright.autocorrect.config.ts
 

@@ -1,4 +1,4 @@
-/** Experimental native-input adapter. Enable only for append-at-cursor prompt entry. */
+/** Native mobile input adapter for append-at-cursor terminal prompt entry. */
 import { bracketedPaste } from './paste'
 import type { Terminal } from '@xterm/xterm'
 
@@ -14,7 +14,7 @@ export function correctionDelta(previous: string, next: string, explicitReplacem
   return '\x7f'.repeat(before.length - common) + (explicitReplacement && inserted ? bracketedPaste(inserted) : inserted)
 }
 
-export function installIosAutocorrect(terminal: Terminal, canInput: () => boolean = () => true): { reset: () => void; dispose: () => void } {
+export function installMobileAutocorrect(terminal: Terminal, canInput: () => boolean = () => true, platform: 'ios' | 'android' = 'ios'): { reset: () => void; dispose: () => void } {
   const textarea = terminal.textarea!
   const element = terminal.element!
   let sent = ''
@@ -32,7 +32,9 @@ export function installIosAutocorrect(terminal: Terminal, canInput: () => boolea
   const sync = (explicitReplacement: boolean) => {
     // WebKit inserts NBSP for keyboard spaces in its editing buffer.
     const next = textarea.value.replace(/\u00a0/g, ' ')
-    emit(correctionDelta(sent, next, explicitReplacement))
+    // Android corrections can replace composing text without insertReplacementText.
+    const replacesSuffix = platform === 'android' && !next.startsWith(sent)
+    emit(correctionDelta(sent, next, explicitReplacement || replacesSuffix))
     sent = next
   }
   const isTextKey = (event: KeyboardEvent) => !event.ctrlKey && !event.metaKey && !event.altKey
@@ -53,9 +55,21 @@ export function installIosAutocorrect(terminal: Terminal, canInput: () => boolea
   const beforeInput = (event: InputEvent) => {
     if (event.target !== textarea) return
     if (!canInput()) { event.preventDefault(); event.stopImmediatePropagation(); reset(); return }
-    if (event.inputType === 'insertLineBreak' || event.inputType === 'insertParagraph') {
+    // Android IMEs can delete an existing terminal draft after our local buffer
+    // was reset by a toolbar key, without emitting a Backspace keydown.
+    if (platform === 'android' && event.inputType === 'deleteContentBackward' && !sent && !textarea.value) {
       event.preventDefault()
       event.stopImmediatePropagation()
+      emit('\x7f')
+      return
+    }
+    const androidReturn = platform === 'android' && event.inputType === 'insertText' && event.data === '\n'
+    if (event.inputType === 'insertLineBreak' || event.inputType === 'insertParagraph' || androidReturn) {
+      // Non-cancelable edits must be consumed after the browser changes the field.
+      if (platform === 'android' && !event.cancelable) return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      sync(false)
       reset()
       emit('\r')
     }
@@ -64,7 +78,20 @@ export function installIosAutocorrect(terminal: Terminal, canInput: () => boolea
     if (event.target !== textarea) return
     event.stopImmediatePropagation()
     if (!canInput()) { reset(); return }
-    sync((event as InputEvent).inputType === 'insertReplacementText')
+    const inputEvent = event as InputEvent
+    const androidReturn = platform === 'android' && (
+      inputEvent.inputType === 'insertLineBreak' || inputEvent.inputType === 'insertParagraph'
+      || (inputEvent.inputType === 'insertText' && inputEvent.data === '\n')
+    )
+    if (androidReturn) {
+      // Some IMEs commit Return as text rather than a cancelable line-break edit.
+      textarea.value = textarea.value.replace(/\n$/, '')
+      sync(false)
+      reset()
+      emit('\r')
+      return
+    }
+    sync(inputEvent.inputType === 'insertReplacementText')
   }
   const composition = (event: Event) => {
     if (event.target === textarea) event.stopImmediatePropagation()

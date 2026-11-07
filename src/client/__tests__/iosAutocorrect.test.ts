@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { correctionDelta } from '../utils/iosAutocorrect'
+import { correctionDelta } from '../utils/mobileAutocorrect'
 
 describe('experimental autocorrect terminal delta', () => {
   test('replaces a misspelling without retyping the unchanged prefix', () => {

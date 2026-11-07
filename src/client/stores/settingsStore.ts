@@ -131,6 +131,8 @@ interface SettingsState {
   setManualSessionOrder: (order: string[]) => void
   sidebarAnchor: SidebarAnchor
   setSidebarAnchor: (anchor: SidebarAnchor) => void
+  androidAutocorrect: boolean
+  setAndroidAutocorrect: (enabled: boolean) => void
   iosAutocorrect: boolean
   setIosAutocorrect: (enabled: boolean) => void
   useWebGL: boolean
@@ -209,6 +211,8 @@ export const useSettingsStore = create<SettingsState>()(
       setManualSessionOrder: (order) => set({ manualSessionOrder: order }),
       sidebarAnchor: 'top',
       setSidebarAnchor: (anchor) => set({ sidebarAnchor: anchor }),
+      androidAutocorrect: true,
+      setAndroidAutocorrect: (enabled) => set({ androidAutocorrect: enabled }),
       iosAutocorrect: true,
       setIosAutocorrect: (enabled) => set({ iosAutocorrect: enabled }),
       useWebGL: DEFAULT_WEBGL,

@@ -1,5 +1,5 @@
 /**
- * Terminal page: renderer and iOS autocorrect (this device), tmux mouse mode and color handling
+ * Terminal page: renderer and mobile autocorrect (this device), tmux mouse mode and color handling
  * (server-wide), and the keyboard shortcut modifier (this device, desktop).
  * WebGL toggles live: useTerminal loads or disposes the addon when the
  * store value changes, so no reload or Save step is needed.
@@ -36,6 +36,21 @@ function WebGLControl({ ids }: RowControlProps) {
 function IosAutocorrectControl({ ids }: RowControlProps) {
   const checked = useSettingsStore((state) => state.iosAutocorrect)
   const set = useSettingsStore((state) => state.setIosAutocorrect)
+  return (
+    <Switch
+      className={SWITCH_TOUCH_TARGET}
+      id={ids.control}
+      checked={checked}
+      onCheckedChange={set}
+      ariaLabelledBy={ids.label}
+      ariaDescribedBy={ids.description}
+    />
+  )
+}
+
+function AndroidAutocorrectControl({ ids }: RowControlProps) {
+  const checked = useSettingsStore((state) => state.androidAutocorrect)
+  const set = useSettingsStore((state) => state.setAndroidAutocorrect)
   return (
     <Switch
       className={SWITCH_TOUCH_TARGET}
@@ -113,6 +128,15 @@ export const terminalRows: SettingsRowDef[] = [
     keywords: ['keyboard', 'spelling', 'predictive', 'typing'],
     tags: ['device'],
     Control: IosAutocorrectControl,
+  },
+  {
+    id: 'android-autocorrect',
+    page: 'terminal',
+    label: 'Android autocorrect',
+    description: 'Experimental keyboard correction for Android prompt typing. Turn off for complex text editing.',
+    keywords: ['keyboard', 'spelling', 'predictive', 'typing', 'gboard'],
+    tags: ['device'],
+    Control: AndroidAutocorrectControl,
   },
   {
     id: 'webgl',
