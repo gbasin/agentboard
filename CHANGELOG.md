@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.41.0](https://github.com/gbasin/agentboard/compare/v0.40.0...v0.41.0) (2026-11-07)
+
+
+### Features
+
+* add compact mobile controls and default iOS autocorrect on ([#516](https://github.com/gbasin/agentboard/issues/516)) ([6d38500](https://github.com/gbasin/agentboard/commit/6d38500beecd74d2877fc4bcfb01e886c3402c4b))
+* add first-open preview thumbnails and fix preview discovery ([#513](https://github.com/gbasin/agentboard/issues/513)) ([6c81887](https://github.com/gbasin/agentboard/commit/6c81887b7f37eccdf79eb375ce87afae136dbd23))
+* add mobile Shift quick key and numpad zero ([#514](https://github.com/gbasin/agentboard/issues/514)) ([1d00b55](https://github.com/gbasin/agentboard/commit/1d00b55e6cd8190cc22d089904a37a3c5e52c778))
+* make URLs clickable in text select mode ([#515](https://github.com/gbasin/agentboard/issues/515)) ([0b2304e](https://github.com/gbasin/agentboard/commit/0b2304e41ed377e8cbecd6482119f53174dbba62))
+* prototype native iOS long-press terminal paste ([#518](https://github.com/gbasin/agentboard/issues/518)) ([9879a1d](https://github.com/gbasin/agentboard/commit/9879a1d873c5e6ff4d4aece344ea1c702b1156fd))
+* support Android keyboard autocorrection ([#517](https://github.com/gbasin/agentboard/issues/517)) ([4ff5bb1](https://github.com/gbasin/agentboard/commit/4ff5bb143296b9ebc0f366d0e4559f28c19abb41))
+
+
+### Bug Fixes
+
+* keep agent message envelopes out of user previews ([#512](https://github.com/gbasin/agentboard/issues/512)) ([02796c3](https://github.com/gbasin/agentboard/commit/02796c3648564cbdc59a78564e575759ede92af2))
+* preview image attachments in paste dialog ([#510](https://github.com/gbasin/agentboard/issues/510)) ([f11ce92](https://github.com/gbasin/agentboard/commit/f11ce92d5e10f4d82ee87c815f8d3cb7cfdeb3b4))
+* support mobile Settings swipe-back ([#509](https://github.com/gbasin/agentboard/issues/509)) ([7d4876c](https://github.com/gbasin/agentboard/commit/7d4876c605d1e030692ac1c2332de2fdce6f9792))
+
 ## [0.40.0](https://github.com/gbasin/agentboard/compare/v0.39.0...v0.40.0) (2026-11-07)
 
 
