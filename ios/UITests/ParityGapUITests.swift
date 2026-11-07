@@ -41,16 +41,36 @@ final class ParityGapUITests: XCTestCase {
     private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
         for _ in 0..<12 {
             if element.exists && element.isHittable { return }
-            let scroller = app.collectionViews.allElementsBoundByIndex.last(where: { $0.isHittable })
-                ?? app.tables.allElementsBoundByIndex.last(where: { $0.isHittable })
-                ?? app.scrollViews.allElementsBoundByIndex.last(where: { $0.isHittable })
-            guard let scroller else { XCTFail("No visible scroll container: " + app.debugDescription); return }
+            let containers = app.collectionViews.allElementsBoundByIndex
+                + app.tables.allElementsBoundByIndex + app.scrollViews.allElementsBoundByIndex
+            // SwiftUI's full-screen List reports isHittable=false even while its
+            // cells and scrollbar are visible. Its native swipe still scrolls.
+            guard let scroller = containers.last(where: { $0.isHittable }) ?? containers.first else {
+                XCTFail("No scroll container: " + app.debugDescription); return
+            }
             scroller.swipeUp()
         }
         XCTAssertTrue(element.exists && element.isHittable, "Expected reachable UI element: \(element)\n" + app.debugDescription)
     }
     private func tap(_ title: String, in app: XCUIApplication) {
         let element = app.buttons[title]; reveal(element, in: app); element.tap()
+    }
+    private func openLibraryLink(_ title: String, destination: String, in app: XCUIApplication) {
+        let link = app.buttons[title]
+        for _ in 0..<12 {
+            let list = app.collectionViews.allElementsBoundByIndex.last!
+            let search = app.searchFields["Search saved sessions"]
+            let top = max(list.frame.minY, app.navigationBars["Library"].frame.maxY)
+            let bottom = search.exists ? min(list.frame.maxY, search.frame.minY) : list.frame.maxY
+            if link.exists && link.isHittable && link.frame.minY >= top && link.frame.maxY <= bottom {
+                link.tap()
+                XCTAssertTrue(app.navigationBars[destination].waitForExistence(timeout: 5), app.debugDescription)
+                return
+            }
+            if link.exists && link.frame.minY < top { list.swipeDown(velocity: .slow) }
+            else { list.swipeUp(velocity: .slow) }
+        }
+        XCTFail("Library link was not fully visible: " + app.debugDescription)
     }
     private func select(_ id: String, in app: XCUIApplication) {
         let toggle = app.switches[id]; reveal(toggle, in: app)
@@ -126,14 +146,14 @@ final class ParityGapUITests: XCTestCase {
         XCTAssertFalse(app.buttons["session-beta-approval"].exists)
         XCTAssertEqual(app.buttons["Filter and sort"].value as? String, "2 active filters")
         app.buttons["Library"].tap()
-        tap("Conversation history (1)", in: app)
+        openLibraryLink("Conversation history (1)", destination: "Conversations", in: app)
         reveal(app.buttons["History Alpha remote"], in: app)
         XCTAssertTrue(app.buttons["History Alpha remote"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["History Alpha local"].exists)
         XCTAssertFalse(app.buttons["History Beta"].exists)
         capture("filtered-history")
         app.navigationBars.buttons.element(boundBy: 0).tap()
-        tap("Hibernating conversations (1)", in: app)
+        openLibraryLink("Hibernating conversations (1)", destination: "Hibernating", in: app)
         reveal(app.buttons["Sleeping Alpha remote"], in: app)
         XCTAssertTrue(app.buttons["Sleeping Alpha remote"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["Sleeping Alpha local"].exists)
@@ -169,10 +189,14 @@ final class ParityGapUITests: XCTestCase {
         app.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.75)).tap()
         fixture("control", body: ["allowed": true])
         app.buttons["Session actions"].tap()
+        reveal(app.buttons["Duplicate session"], in: app)
+        XCTAssertTrue(app.buttons["Duplicate session"].isHittable)
         reveal(app.buttons["Rename session"], in: app)
-        XCTAssertTrue(app.buttons["Rename session"].exists)
-        XCTAssertTrue(app.buttons["Duplicate session"].exists)
+        XCTAssertTrue(app.buttons["Rename session"].isHittable)
         capture("remote-control-enabled")
+        reveal(app.buttons["End session"], in: app)
+        XCTAssertTrue(app.buttons["End session"].isHittable)
+        capture("remote-end-enabled")
         app.terminate(); app.launch()
         XCTAssertTrue(app.staticTexts["Connected"].waitForExistence(timeout: 10))
         open("External remote", in: app)
@@ -195,6 +219,7 @@ final class ParityGapUITests: XCTestCase {
         XCTAssertEqual(state.label, "State, Recovery", state.debugDescription)
         reveal(app.buttons["saved-Recovered fixture"], in: app)
         XCTAssertTrue(app.buttons["saved-Recovered fixture"].waitForExistence(timeout: 5))
+        capture("recovery-saved-row")
         app.buttons["Done"].tap()
         tap("Dismiss recovery notice", in: app)
         XCTAssertFalse(notice.exists)
