@@ -89,10 +89,63 @@ test('keyboard Shift modifies touch quick keys sent to the pane', async ({ page 
     await page.getByRole('button', { name: 'Enter', exact: true }).tap()
     await waitForPaneText(target, 'INPUT_HEX:1b5b313b3241')
 
+    // Touch Shift is one-shot, appears immediately after Tab, and preserves focus.
+    const shift = page.getByRole('button', { name: 'Shift', exact: true })
+    await expect(tab.locator('xpath=following-sibling::button[1]')).toHaveAttribute('aria-label', 'Shift')
+    await shift.tap()
+    await expect(shift).toHaveAttribute('aria-pressed', 'true')
+    await page.screenshot({ path: testInfo.outputPath('mobile-shift-active.png') })
+    await shift.tap()
+    await expect(shift).toHaveAttribute('aria-pressed', 'false')
+    for (const [label, hex] of [['tab', '1b5b5a'], ['Enter', '0a']]) {
+      // Prefix each submission so the check cannot match the keyboard-Shift results above.
+      await page.keyboard.type('s')
+      await shift.tap()
+      await page.getByRole('button', { name: label, exact: true }).tap()
+      await expect(shift).toHaveAttribute('aria-pressed', 'false')
+      await expect(input).toBeFocused()
+      await page.getByRole('button', { name: 'Enter', exact: true }).tap()
+      await waitForPaneText(target, `INPUT_HEX:73${hex}`)
+    }
+    await page.keyboard.type('s')
+    await shift.tap()
+    await page.getByRole('button', { name: 'Arrow keys', exact: true }).tap()
+    await expect(shift).toHaveAttribute('aria-pressed', 'true')
+    await page.getByRole('button', { name: 'Arrow up', exact: true }).tap()
+    await expect(shift).toHaveAttribute('aria-pressed', 'false')
+    await page.getByRole('button', { name: 'Arrow up', exact: true }).tap()
+    await page.getByRole('button', { name: 'Arrow keys', exact: true }).tap()
+    await page.getByRole('button', { name: 'Enter', exact: true }).tap()
+    await waitForPaneText(target, 'INPUT_HEX:731b5b313b32411b5b41')
+
+    // Hold 123, drag onto the actual rendered zero cell, and release.
+    const numbers = page.getByRole('button', { name: '123', exact: true })
+    await numbers.scrollIntoViewIfNeeded()
+    const numberBox = (await numbers.boundingBox())!
+    const numCdp = await page.context().newCDPSession(page)
+    await numCdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{
+      x: numberBox.x + numberBox.width / 2, y: numberBox.y + numberBox.height / 2,
+    }] })
+    const zero = page.locator('.terminal-controls').getByText('0', { exact: true })
+    await expect(zero).toBeVisible()
+    const zeroBox = (await zero.boundingBox())!
+    expect(zeroBox.y + zeroBox.height).toBeLessThan(numberBox.y)
+    await numCdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{
+      x: zeroBox.x + zeroBox.width / 2, y: zeroBox.y + zeroBox.height / 2,
+    }] })
+    await expect(page.getByText('Release to send "0"', { exact: true })).toBeVisible()
+    await page.screenshot({ path: testInfo.outputPath('mobile-numpad-zero.png') })
+    await numCdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+    await expect(zero).toHaveCount(0)
+    await expect(input).toBeFocused()
+    await page.getByRole('button', { name: 'Enter', exact: true }).tap()
+    await waitForPaneText(target, 'INPUT_HEX:30')
+    await numCdp.detach()
+
     // Exercise an actual browser pan, including intermediate touch moves.
     await expect(input).toBeFocused()
     const row = page.locator('.terminal-controls > .grid')
-    await row.evaluate(element => { element.scrollLeft = 0 })
+    await row.evaluate(element => { element.scrollLeft = 80 })
     const bounds = (await tab.boundingBox())!
     const x = bounds.x + bounds.width / 2
     const y = bounds.y + bounds.height / 2
@@ -102,7 +155,7 @@ test('keyboard Shift modifies touch quick keys sent to the pane', async ({ page 
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x - distance, y }] })
     }
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
-    await expect.poll(() => row.evaluate(element => element.scrollLeft)).toBeGreaterThan(0)
+    await expect.poll(() => row.evaluate(element => element.scrollLeft)).toBeGreaterThan(80)
     await expect(input).toBeFocused()
     await page.getByRole('button', { name: 'Enter' }).tap()
     // A swipe beginning on Tab must not insert a tab into the terminal.

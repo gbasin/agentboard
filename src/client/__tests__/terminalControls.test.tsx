@@ -60,7 +60,7 @@ describe('TerminalControls', () => {
     const keyButtons = renderer.root.findAllByType('button').filter((button) =>
       String(button.props.className ?? '').includes('terminal-key')
     )
-    expect(keyButtons).toHaveLength(9)
+    expect(keyButtons).toHaveLength(10)
     expect(keyButtons.some(button => button.props['aria-label'] === 'Shift+Tab')).toBe(false)
     expect(keyButtons.every((button) =>
       String(button.props.className).includes('size-[44px]')
@@ -619,4 +619,23 @@ test('while the snapshot is open the key row is replaced by Done then Refresh', 
   expect(refresh?.props['aria-busy']).toBe(true)
   const done = renderer.root.findAllByType('button').find((b) => b.props['aria-label'] === 'Done selecting text')
   expect(done?.props.disabled).toBeFalsy()
+})
+
+
+test('touch Shift clears when the session changes or controls become disabled', () => {
+  globalAny.navigator = {} as Navigator
+  const props = { onSendKey() {}, sessions: [], currentSessionId: 'one', onSelectSession() {} }
+  let renderer!: TestRenderer.ReactTestRenderer
+  act(() => { renderer = TestRenderer.create(<TerminalControls {...props} />) })
+  const shift = () => renderer.root.findByProps({ 'aria-label': 'Shift' })
+  act(() => { shift().props.onClick() })
+  expect(shift().props['aria-pressed']).toBe(true)
+  act(() => { renderer.update(<TerminalControls {...props} currentSessionId="two" />) })
+  expect(shift().props['aria-pressed']).toBe(false)
+  act(() => { shift().props.onClick() })
+  expect(shift().props['aria-pressed']).toBe(true)
+  act(() => { renderer.update(<TerminalControls {...props} currentSessionId="two" disabled />) })
+  expect(shift().props['aria-pressed']).toBe(false)
+  expect(shift().props.disabled).toBe(true)
+  act(() => { renderer.unmount() })
 })
