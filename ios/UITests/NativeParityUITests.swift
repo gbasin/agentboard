@@ -90,7 +90,7 @@ final class NativeParityUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5)); capture("settings")
         tap("Command presets", in: app); tap("Add preset", in: app)
         app.textFields["Label"].tap(); app.textFields["Label"].typeText("Parity preset")
-        app.textFields["Command"].tap(); app.textFields["Command"].typeText("/bin/zsh -f")
+        app.textFields["Command"].tap(); app.textFields["Command"].typeText("/bin/zsh -f"); capture("preset-editor")
         app.buttons["Save"].tap(); XCTAssertTrue(app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "Parity preset")).firstMatch.waitForExistence(timeout: 10))
         capture("presets")
         app.navigationBars.buttons.element(boundBy: 0).tap(); app.buttons["Done"].tap()
@@ -179,7 +179,7 @@ final class NativeParityUITests: XCTestCase {
     }
 
     func testCatalogSearchAndPreferencePersistence() {
-        let app = app()
+        let app = app(); capture("catalog")
         let search = app.searchFields["Find a session"]
         replace(search, "no-session-with-this-name"); search.typeText("\n")
         XCTAssertTrue(app.staticTexts["No matching sessions"].waitForExistence(timeout: 5))

@@ -2,6 +2,30 @@
 
 Captured on m5p with Xcode 26.4, iOS 26.4, iPhone 17 Pro simulator (94EEE322-8231-4D09-8904-5DE3EFAE934B). Images are screenshots of the built app, not generated mockups. Session names, summaries, and transcript copy are illustrative samples.
 
+## Native design polish
+
+This pass preserves the Apple-native controls, semantic colors, typography and terminal palette. Persistent primary captions identify populated create/duplicate, Settings and preset fields. Each native TextField keeps its original label; its duplicate visual caption is accessibility-hidden. Catalog rows combine project, agent and remote-host context in one caption and omit the repeated local hostname. Pull-request details omit empty metadata rows.
+
+The `design-light/` and `design-dark/` directories each contain six affected-screen Simulator captures: light at standard text size and dark at maximum accessibility text size. These use the isolated backend and illustrative fixtures; they are not generated mockups or shipping raster assets.
+
+- `parity-catalog.png`: combined session metadata.
+- `actions-create.png`: persistent labels in the populated create form.
+- `actions-error.png`: retained form context and server-error visibility.
+- `parity-settings.png`: labeled populated settings fields.
+- `parity-preset-editor.png`: populated preset label and command fields.
+- `parity-pull-request.png`: pull-request details without empty metadata.
+
+The product source is commit `9f67ee7`; the subsequent test-only changes add initial-catalog and populated-preset-editor captures.
+
+Validation for this scoped polish:
+
+- `design-light.xcresult`: three light/standard-text UI tests passed with no failures.
+- `design-light-captures.xcresult`: all three final light/standard-text UI tests passed, covering catalog/preferences, media/link/pull-request and settings/preset/terminal workflows.
+- `design-dark.xcresult`: all four dark/maximum-text UI tests passed with zero failures, covering the same three workflows plus session management (248.994 seconds).
+- Root lint and typecheck passed. All 1,859 Bun tests passed with zero failures.
+
+The fresh finish reviewer inspected all 12 captures and returned **ship this scoped polish**, with no blockers or required corrections. Direction fidelity and native platform craft passed. Optional future refinements are examples for empty fields and the existing single-line truncation of long default directories at maximum text size. This verdict does not certify full PWA parity, physical-device, VoiceOver, IME, SSH-host attachment or live GitHub behavior. The earlier parity results below describe their own source and validation scope.
+
 ## Native parity extension
 
 The current parity implementation preserves the existing native visual system. See [DESIGN.md](../DESIGN.md) for component patterns and [PARITY.md](../PARITY.md) for the capability and validation matrix.
