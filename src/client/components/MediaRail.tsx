@@ -234,14 +234,16 @@ function SessionMediaRail({ session, ready = false, onPreview, choosePreview = 0
           onKeyDown={event => event.stopPropagation()}
           className="absolute top-2 right-2 z-[60] flex max-h-[min(280px,65%)] w-[calc(100%-16px)] flex-col overflow-hidden rounded-xl border border-border bg-elevated shadow-xl md:max-h-[320px] md:w-[400px]"
         >
-          <div className="flex shrink-0 flex-wrap items-center gap-[6px] border-b border-border/60 px-3">
+          <div className="flex shrink-0 items-center gap-1 border-b border-border/60 px-2">
+            <div className="scrollbar-none flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
             {(['media', 'links', 'previews'] as const).map(value => {
               const Icon = value === 'media' ? Image01Icon : value === 'links' ? Link01Icon : BrowserIcon
               return <button key={value} type="button" aria-pressed={tab === value} onClick={() => { setTab(value); lightbox.close() }}
-                className={`flex h-[44px] items-center gap-[6px] whitespace-nowrap text-[12px] ${tab === value ? 'text-primary shadow-[inset_0_-2px_var(--accent)]' : 'text-secondary hover:text-primary'} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent`}>
+                className={`flex h-[44px] shrink-0 items-center gap-[6px] whitespace-nowrap px-2 text-[12px] ${tab === value ? 'text-primary shadow-[inset_0_-2px_var(--accent)]' : 'text-secondary hover:text-primary'} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent`}>
                 <Icon width={ICON_SIZE.primary} height={ICON_SIZE.primary} />{value === 'media' ? `Media${mediaCount === undefined ? '' : ` ${mediaCount}`}` : value === 'links' ? `Links${counts ? ` ${counts.links}` : ''}` : `Previews${counts ? ` ${counts.previews ?? 0}` : ''}`}
               </button>
             })}
+            </div>
             {tab === 'links' && <button type="button" aria-label="Search links" aria-expanded={searchOpen}
               onClick={() => setSearchOpen(value => !value)} className="ml-auto flex h-[44px] w-[36px] shrink-0 items-center justify-center rounded text-secondary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
               <SearchSmIcon width={ICON_SIZE.primary} height={ICON_SIZE.primary} />

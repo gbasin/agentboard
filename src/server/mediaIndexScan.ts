@@ -53,7 +53,7 @@ export function scanMediaFileStep(
       snapshot.size = stat.size; snapshot.mtime = stat.mtimeMs; snapshot.inode = stat.ino
     }
     const end = Math.min(snapshot.size, stat.size)
-    if (previous && (previous.orderTime === undefined || previous.version !== 4)) { reset(); previous = undefined }
+    if (previous && (previous.orderTime === undefined || previous.version !== 5)) { reset(); previous = undefined }
     if (previous && previous.complete !== false && end === previous.size && snapshot.mtime === previous.mtime && stat.ino === previous.inode) {
       return { state: previous, done: true, bytesRead: 0 }
     }
@@ -103,7 +103,7 @@ export function scanMediaFileStep(
       if (discarding && exhausted()) stopped = true
     }
     const done = position >= end
-    return { state: { version: 4, path: filePath, offset, size: end, mtime: snapshot.mtime, inode: stat.ino,
+    return { state: { version: 5, path: filePath, offset, size: end, mtime: snapshot.mtime, inode: stat.ino,
       boundary: boundary(fd, offset), labels: JSON.stringify(scanner.labels()), discarding, omittedRecords,
       omittedItems: previous?.omittedItems ?? 0, orderTime, complete: done }, done, bytesRead: position - startOffset }
   } finally { fs.closeSync(fd) }
