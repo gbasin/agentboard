@@ -9,11 +9,12 @@
 import fs from 'node:fs'
 import { extractReplyLinks } from './replyLinks'
 import { createHash } from 'node:crypto'
+import { extractOutputReferences } from './outputReferences'
 import { logger } from './logger'
 import { asRecord, asString } from '../shared/json'
 import { MediaLabelMap, mediaLabelKey } from './mediaIndexLabels'
 
-export type SessionMediaKind = 'image' | 'document' | 'link'
+export type SessionMediaKind = 'image' | 'document' | 'link' | 'html' | 'localhost' | 'visualization'
 
 /** What the scan emits per payload — safe to broadcast. */
 export interface ScannedMedia {
@@ -53,7 +54,6 @@ const READ_CHUNK_BYTES = 128 * 1024
 // See prExtractor: eviction above the number of scanned paths, else the
 // dormant sweep re-scans every file each cycle.
 const MAX_CACHE_ENTRIES = 5000
-const MAX_PENDING_LABELS = 2000
 const MAX_MEDIA_PER_FILE = 2000
 // /api/session-media rejects index > 256; never emit descriptors that can't
 // be addressed.
@@ -69,6 +69,11 @@ const MARKER_BYTES = [
   Buffer.from('frame-link'),
   Buffer.from('http'),
   Buffer.from('HTTP'),
+  Buffer.from('.htm'),
+  Buffer.from('visualize'),
+  Buffer.from('localhost:'),
+  Buffer.from('127.0.0.1:'),
+  Buffer.from('[::1]:'),
   // Label carriers: tool calls with a path argument give tool_result images
   // their "Read · foo.png" captions.
   Buffer.from('"file_path"'),
@@ -341,6 +346,9 @@ function extractMediaItemsFromRecord(
   walkMedia(record, undefined, out)
   // Append: existing image/document indices must remain stable.
   out.push(...extractReplyLinks(record))
+  for (const ref of extractOutputReferences(record)) {
+    out.push({ kind: ref.kind, url: ref.target, label: ref.label })
+  }
 
   // Claude's toolUseResult twin carries pixel dimensions; apply when the line
   // produced exactly one image (the common 1:1 case). Note: its `originalSize`
@@ -376,7 +384,7 @@ function processLine(state: ScanState, line: string, lineOffset: number): void {
   const hasMedia =
     line.includes('"image') ||
     line.includes('"document"') ||
-    line.includes('frame-link') || /https?:/i.test(line)
+    line.includes('frame-link') || /https?:|visualize|\.htm/i.test(line)
   const hasLabel =
     line.includes('"file_path"') &&
     (line.includes('"tool_use"') ||
@@ -403,7 +411,11 @@ function processLine(state: ScanState, line: string, lineOffset: number): void {
     const current = index++
     if (!state.emit && current > MAX_MEDIA_INDEX) continue
     const key = dedupeKey(item)
-    if (!state.emit && state.seen.has(key)) continue
+    if (!state.emit && state.seen.has(key)) {
+      const existing = item.url && state.media.find(entry => entry.url === item.url)
+      if (existing && item.label) existing.label = item.label
+      continue
+    }
     if (!state.emit) state.seen.add(key)
 
     const entry: ScannedMedia = {
