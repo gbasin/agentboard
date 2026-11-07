@@ -1,5 +1,5 @@
 /** Progress/errors and a device paste/file dialog; freeform text and attachments wait for Submit. */
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { clipboardFiles } from '../utils/browserFiles'
 import type { BrowserPaste, PasteState } from '../hooks/useBrowserPaste'
@@ -53,7 +53,8 @@ function PasteComposer({ cancel, paste, allowFiles }: {
             event.target.value = ''
           }} />
       </label>}
-      {files.length > 0 && <ul className="mt-2 text-sm">{files.map((file, index) => <li key={index} className="flex items-center gap-2">
+      {files.length > 0 && <ul className="mt-2 space-y-2 text-sm">{files.map((file, index) => <li key={index} className="flex items-center gap-2">
+        {file.type.startsWith('image/') && <ImageThumbnail file={file} />}
         <span className="min-w-0 flex-1 truncate">{file.name}</span>
         <button type="button" className="min-h-[44px] px-2" aria-label={`Remove ${file.name}`}
           onClick={() => setFiles(pending => pending.filter((_, i) => i !== index))}>Remove</button>
@@ -66,4 +67,20 @@ function PasteComposer({ cancel, paste, allowFiles }: {
     </form>
   </dialog>
   return typeof document === 'undefined' ? fallback : createPortal(fallback, document.body)
+}
+
+/** Keep preview URLs local to the attachment and release them when it changes or is removed. */
+function ImageThumbnail({ file }: { file: File }) {
+  const [preview, setPreview] = useState<{ file: File; url: string } | null>(null)
+  const [failed, setFailed] = useState(false)
+  useEffect(() => {
+    const url = URL.createObjectURL(file)
+    setPreview({ file, url })
+    setFailed(false)
+    return () => URL.revokeObjectURL(url)
+  }, [file])
+  if (!preview || preview.file !== file || failed) return null
+  return <img src={preview.url} alt={`Preview of ${file.name}`} width={64} height={64}
+    className="h-16 w-16 shrink-0 rounded border border-border bg-surface object-contain"
+    onError={() => setFailed(true)} />
 }
