@@ -131,6 +131,8 @@ interface SettingsState {
   setManualSessionOrder: (order: string[]) => void
   sidebarAnchor: SidebarAnchor
   setSidebarAnchor: (anchor: SidebarAnchor) => void
+  iosAutocorrect: boolean
+  setIosAutocorrect: (enabled: boolean) => void
   useWebGL: boolean
   setUseWebGL: (enabled: boolean) => void
   fontSize: number
@@ -203,6 +205,8 @@ export const useSettingsStore = create<SettingsState>()(
       setManualSessionOrder: (order) => set({ manualSessionOrder: order }),
       sidebarAnchor: 'top',
       setSidebarAnchor: (anchor) => set({ sidebarAnchor: anchor }),
+      iosAutocorrect: false,
+      setIosAutocorrect: (enabled) => set({ iosAutocorrect: enabled }),
       useWebGL: DEFAULT_WEBGL,
       setUseWebGL: (enabled) => set({ useWebGL: enabled }),
       fontSize: 13,

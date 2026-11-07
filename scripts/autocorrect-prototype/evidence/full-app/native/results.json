@@ -1,0 +1,55 @@
+[
+  {
+    "test": "installed PWA",
+    "standalone": true,
+    "protocol": "explicit-replacement"
+  },
+  {
+    "test": "claude-return",
+    "expected": "the",
+    "submitted": [
+      "the"
+    ],
+    "passed": true
+  },
+  {
+    "test": "claude-length-change",
+    "expected": "don’t",
+    "submitted": [
+      "don’t"
+    ],
+    "passed": true
+  },
+  {
+    "test": "claude-resume",
+    "expected": "the",
+    "submitted": [
+      "the"
+    ],
+    "passed": true
+  },
+  {
+    "test": "codex-return",
+    "expected": "the",
+    "submitted": [
+      "the"
+    ],
+    "passed": true
+  },
+  {
+    "test": "codex-length-change",
+    "expected": "don’t",
+    "submitted": [
+      "don’t"
+    ],
+    "passed": true
+  },
+  {
+    "test": "codex-resume",
+    "expected": "the",
+    "submitted": [
+      "the"
+    ],
+    "passed": true
+  }
+]

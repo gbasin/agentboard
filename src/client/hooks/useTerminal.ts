@@ -14,6 +14,7 @@ import { useSettingsStore } from '../stores/settingsStore'
 import { copyText } from '../utils/copyText'
 import { getEffectiveModifier, matchesModifier } from '../utils/device'
 import { bracketedPaste, sanitizeImagePath } from '../utils/paste'
+import { installIosAutocorrect } from '../utils/iosAutocorrect'
 import { clipboardFiles } from '../utils/browserFiles'
 import { setAppOwnsMouse } from '../utils/iosSelection'
 
@@ -376,6 +377,9 @@ export function useTerminal({
   const isiOS = isIOSDevice()
   const containerRef = useRef<HTMLDivElement | null>(null)
   const terminalRef = useRef<Terminal | null>(null)
+  const nativeInputRef = useRef<ReturnType<typeof installIosAutocorrect> | null>(null)
+  const updateNativeInputRef = useRef<() => void>(() => {})
+  const resetNativeInput = useCallback(() => nativeInputRef.current?.reset(), [])
   const hasLoggedInitRef = useRef(false)
   const fitAddonRef = useRef<FitAddon | null>(null)
   const webglAddonRef = useRef<WebglAddon | null>(null)
@@ -653,6 +657,7 @@ export function useTerminal({
 
     // Track if effect has been cleaned up (for async font loading)
     let cancelled = false
+    let unsubscribeAutocorrect: (() => void) | undefined
 
     // Clear container
     container.innerHTML = ''
@@ -730,6 +735,27 @@ export function useTerminal({
       }
 
       terminal.open(container)
+      const updateAutocorrect = () => {
+        // Recovery drafts use xterm's ordinary input path, not terminal correction sequences.
+        const enabled = isiOS && useSettingsStore.getState().iosAutocorrect
+          && !!readySessionRef.current && !deferInputRef.current
+        if (enabled === !!nativeInputRef.current) return
+        nativeInputRef.current?.dispose()
+        nativeInputRef.current = null
+        if (enabled) {
+          nativeInputRef.current = installIosAutocorrect(terminal, () => !!readySessionRef.current)
+          clientLog('ios_autocorrect_prototype', {
+            protocol: 'explicit-replacement',
+            standalone: (navigator as Navigator & { standalone?: boolean }).standalone === true,
+            displayMode: window.matchMedia('(display-mode: standalone)').matches ? 'standalone' : 'browser',
+          }, 'info')
+        }
+      }
+      updateNativeInputRef.current = updateAutocorrect
+      updateAutocorrect()
+      unsubscribeAutocorrect = useSettingsStore.subscribe((state, previous) => {
+        if (state.iosAutocorrect !== previous.iosAutocorrect) updateAutocorrect()
+      })
       fitAddon.fit()
 
       if (!hasLoggedInitRef.current) {
@@ -1264,6 +1290,10 @@ export function useTerminal({
     fitAddonRef.current = fitAddon
 
     return () => {
+      updateNativeInputRef.current = () => {}
+      unsubscribeAutocorrect?.()
+      nativeInputRef.current?.dispose()
+      nativeInputRef.current = null
       // Cancel any pending async operations (font loading)
       cancelled = true
       // Clean up link handling state
@@ -1401,6 +1431,7 @@ export function useTerminal({
   // passive effect, but this layout effect closes the old-pane input window
   // before the browser can deliver another user event.
   useLayoutEffect(() => {
+    nativeInputRef.current?.reset()
     parserGenerationRef.current += 1
     readySessionRef.current = null
     acknowledgeOutput(outputBufferRef.current)
@@ -1408,6 +1439,11 @@ export function useTerminal({
     if (sessionId && allowAttach && connectionStatus === 'connected') setIsSwitching(true)
     return () => { parserGenerationRef.current += 1 }
   }, [sessionId, tmuxTarget, allowAttach, connectionStatus, connectionEpoch, acknowledgeOutput])
+
+  // Pause correction while detached or collecting a recovery draft; resume after ready.
+  useLayoutEffect(() => {
+    updateNativeInputRef.current()
+  }, [isSwitching, deferInput, sessionId, tmuxTarget, allowAttach, connectionStatus, connectionEpoch])
 
   // Handle session changes and websocket reconnects - attach/detach.
   useEffect(() => {
@@ -2057,6 +2093,7 @@ export function useTerminal({
     readySessionRef.current === sessionId
 
   return {
+    resetNativeInput,
     containerRef,
     terminalRef,
     searchAddonRef,

@@ -111,7 +111,7 @@ export default function Terminal({
   historySessions = [],
   connectionStatus,
   connectionEpoch = 0,
-  sendMessage,
+  sendMessage: sendRawMessage,
   subscribe,
   onClose: _onClose,
   onSelectSession,
@@ -128,6 +128,11 @@ export default function Terminal({
   loading = false,
   error = null,
 }: TerminalProps) {
+  const resetNativeInputRef = useRef<(() => void) | undefined>(undefined)
+  const sendMessage = useCallback<SendClientMessage>((message) => {
+    if (message.type === 'terminal-input' || message.type === 'terminal-paste') resetNativeInputRef.current?.()
+    return sendRawMessage(message)
+  }, [sendRawMessage])
   void _onClose // Keep for interface compatibility
   const theme = useResolvedTheme()
   const terminalTheme = terminalThemes[theme]
@@ -193,6 +198,7 @@ export default function Terminal({
   const recoveryDraft = useRecoveryDraft(recoveryIdentity)
 
   const {
+    resetNativeInput,
     containerRef,
     terminalRef,
     inTmuxCopyModeRef,
@@ -228,6 +234,7 @@ export default function Terminal({
     },
   })
 
+  resetNativeInputRef.current = resetNativeInput
   const snapshot = useTerminalSnapshot({ sessionId: session?.id ?? null, sendMessage, subscribe })
   const snapshotOpen = snapshot.state.status !== 'closed'
   const handleSelectText = useOpenSelectText(snapshot.open, clearIOSSelectionRef)
