@@ -363,7 +363,7 @@ describe('component rendering', () => {
     expect(html).toContain('Select a session to view terminal')
   })
 
-  test('renders terminal mobile switcher for multiple sessions', () => {
+  test('renders terminal mobile status peek for multiple sessions', () => {
     const secondSession = {
       ...baseSession,
       id: 'session-2',
@@ -387,7 +387,8 @@ describe('component rendering', () => {
         onOpenSettings={() => {}}
       />
     )
-    expect(html).toContain('snap-x')
+    expect(html).toContain('session-peek')
+    expect(html).toContain('Open session overview')
     expect(html).toContain('"data-session-id":"session-2"')
   })
 

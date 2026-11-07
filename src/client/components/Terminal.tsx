@@ -12,7 +12,6 @@ import { useTerminal } from '../hooks/useTerminal'
 import { useIsMobileLayout } from '../hooks/useMobileLayout'
 import { useOnClickOutside } from '../hooks/useOnClickOutside'
 import { useEscapeToClose } from '../hooks/useEscapeToClose'
-import { useScrollToSelection } from '../hooks/useScrollToSelection'
 import { useEdgeSwipeToOpenDrawer } from '../hooks/useEdgeSwipeToOpenDrawer'
 import { useResolvedTheme, terminalThemes } from '../stores/themeStore'
 import { useSettingsStore, getFontFamily } from '../stores/settingsStore'
@@ -34,6 +33,7 @@ import { recoveryDraftIdentity } from '../utils/recoveryDraftIdentity'
 import { useBrowserPaste, type BrowserPaste } from '../hooks/useBrowserPaste'
 import { clipboardFiles } from '../utils/browserFiles'
 import SessionDrawer from './SessionDrawer'
+import MobileSessionPeek from './MobileSessionPeek'
 import SessionPreviewContent from './SessionPreviewContent'
 import {
   AlertTriangleIcon,
@@ -82,20 +82,6 @@ interface TerminalProps {
 
 type IOSResumeInputState = 'idle' | 'focused' | 'interrupted' | 'armed'
 
-const statusButtonBase: Record<Session['status'], string> = {
-  working: 'bg-green-500/35 text-white',
-  waiting: 'bg-blue-500/35 text-white',
-  permission: 'bg-amber-500/35 text-white',
-  unknown: 'bg-gray-500/35 text-white',
-}
-
-const statusButtonActive: Record<Session['status'], string> = {
-  working: 'bg-working text-white',
-  waiting: 'bg-waiting text-white',
-  permission: 'bg-approval text-white',
-  unknown: 'bg-muted text-white',
-}
-
 function triggerHaptic() {
   if ('vibrate' in navigator) {
     navigator.vibrate(10)
@@ -136,6 +122,7 @@ export default function Terminal({
   void _onClose // Keep for interface compatibility
   const theme = useResolvedTheme()
   const terminalTheme = terminalThemes[theme]
+  const showMobileSessionPeek = useSettingsStore((state) => state.showMobileSessionPeek)
   const useWebGL = useSettingsStore((state) => state.useWebGL)
   const fontSize = useSettingsStore((state) => state.fontSize)
   const lineHeight = useSettingsStore((state) => state.lineHeight)
@@ -157,8 +144,6 @@ export default function Terminal({
   const lastSelectionInsideRef = useRef(false)
   const clearIOSSelectionRef = useRef<(() => void) | null>(null)
   const moreMenuRef = useRef<HTMLDivElement>(null)
-  const mobileTabStripRef = useRef<HTMLDivElement>(null)
-  useScrollToSelection(mobileTabStripRef, session?.id ?? null)
   const renameInputRef = useRef<HTMLInputElement>(null)
   const endSessionButtonRef = useRef<HTMLButtonElement>(null)
   const pasteFilesRef = useRef<(input: BrowserPaste) => void>(() => {})
@@ -166,7 +151,6 @@ export default function Terminal({
   const isRemoteSession = session?.remote === true
   const remoteAllowControl = useSessionStore((s) => s.remoteAllowControl)
   const remoteAllowAttach = useSessionStore((s) => s.remoteAllowAttach)
-  const preferWindowName = useSessionStore((s) => s.preferWindowName)
   const isReadOnly = isRemoteSession && !remoteAllowAttach
   const canControl = !isRemoteSession || (remoteAllowControl && session?.source === 'managed')
   const hibernatingDisplayName = hibernatingSession
@@ -1318,15 +1302,7 @@ export default function Terminal({
     }
   }, [containerRef, hibernatingSession])
 
-  // Use session names as mobile tab labels only when AGENTBOARD_PREFER_WINDOW_NAME is
-  // enabled AND every session has a distinct, non-empty name. Otherwise tabs would
-  // repeat the same label and numeric indices remain the better signal.
-  const mobileTabsUseNames = useMemo(() => {
-    if (!preferWindowName) return false
-    if (sessions.length === 0) return false
-    const names = sessions.map((s) => s.name.trim()).filter(Boolean)
-    return names.length === sessions.length && new Set(names).size === sessions.length
-  }, [preferWindowName, sessions])
+  const showSessionPeek = showMobileSessionPeek && !!session && sessions.length > 1
 
   return (
     <section
@@ -1353,6 +1329,7 @@ export default function Terminal({
             onClick={() => setIsDrawerOpen(true)}
             className={mobileButtonClass('neutral')}
             aria-label="Open session menu"
+            aria-expanded={isDrawerOpen}
           >
             <Menu01Icon width={ICON_SIZE.primary} height={ICON_SIZE.primary} />
           </button>
@@ -1485,54 +1462,16 @@ export default function Terminal({
         </div>
       </div>
 
-      {/* Mobile session switcher - top of terminal */}
-      {session && sessions.length > 1 && (
-        <div className="relative overflow-hidden bg-elevated border-b border-border md:hidden">
-
-          {/* Right fade indicator */}
-          <div className="absolute right-0 top-0 bottom-0 w-4 bg-gradient-to-l from-elevated to-transparent z-10 pointer-events-none" />
-          {/* scroll-pe-4 keeps end tabs clear of the right fade overlay */}
-          <div
-            ref={mobileTabStripRef}
-            className="flex items-center gap-[6px] overflow-x-auto scroll-pe-4 px-[8px] py-[5px] scrollbar-none snap-x snap-mandatory"
-            style={{ WebkitOverflowScrolling: 'touch' }}
-          >
-            {sessions.map((s, index) => {
-              const isActive = s.id === session.id
-              // Use session name as the label when all sessions have a distinct,
-              // non-empty name (e.g. with AGENTBOARD_PREFER_WINDOW_NAME=true and
-              // user-named windows). Otherwise fall back to numeric index — names
-              // would just repeat (e.g. all `dev`) and add no signal.
-              const label = mobileTabsUseNames ? s.name.trim() : index + 1
-              return (
-                <button
-                  key={s.id}
-                  type="button"
-                  data-session-id={s.id}
-                  className={`
-                    flex items-center justify-center shrink-0 snap-start
-                    h-[44px] ${mobileTabsUseNames ? 'min-w-[44px] px-2.5 max-w-[8rem] truncate' : 'w-[44px]'}
-                    text-sm font-extrabold rounded-lg
-                    active:scale-95 transition-all duration-75
-                    select-none touch-manipulation
-                    ${isActive ? statusButtonActive[s.status] : statusButtonBase[s.status]}
-                  `}
-                  onClick={() => {
-                    triggerHaptic()
-                    onSelectSession(s.id)
-                  }}
-                  title={mobileTabsUseNames ? s.name : undefined}
-                >
-                  {label}
-                </button>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
       {/* Terminal content - always rendered so ref is attached */}
       <div className="relative flex-1">
+        {showSessionPeek && (
+          <MobileSessionPeek
+            sessions={sessions}
+            selectedId={session.id}
+            isOpen={isDrawerOpen}
+            onOpen={() => setIsDrawerOpen(true)}
+          />
+        )}
         {/* Theme background on the container so the .xterm padding ring
             matches the terminal — xterm.js 6.0 no longer paints the viewport
             with the theme background (black-border regression on mobile).
@@ -1540,7 +1479,7 @@ export default function Terminal({
             focus cannot scroll the board sideways to the old cursor position. */}
         <div
           ref={containerRef}
-          className="absolute inset-0 overflow-clip"
+          className={`absolute inset-0 overflow-clip ${showSessionPeek ? 'left-[8px] md:left-0' : ''}`}
           style={{ backgroundColor: terminalTheme.background }}
         />
         {session && snapshot.state.status !== 'closed' && (
