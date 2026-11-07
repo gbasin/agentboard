@@ -115,33 +115,38 @@ export function connectorCreateIds(entry: ObjectRecord): string[] {
   return ids
 }
 
+function structuredPrUrls(output: unknown, failed = false): string[] {
+  const urls: string[] = []
+  function visit(value: unknown, depth = 0): void {
+    if (failed || depth > 6) return
+    if (typeof value === 'string') {
+      try { visit(JSON.parse(value), depth + 1) } catch { /* Prose is not structured output. */ }
+      return
+    }
+    if (Array.isArray(value)) {
+      for (const part of value) {
+        const item = object(part)
+        if (item?.type === 'input_text' || item?.type === 'text') visit(item.text, depth + 1)
+      }
+      return
+    }
+    const item = object(value)
+    if (!item || item.isError === true || item.error) return
+    const pr = object(item.structuredContent)
+    if (!pr || pr.error || pr.isError === true || typeof pr.url !== 'string') return
+    const match = /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/(\d+)$/.exec(pr.url)
+    if (match && Number(match[1]) === pr.number && Number.isSafeInteger(pr.number) && Number(pr.number) > 0) urls.push(pr.url)
+  }
+  visit(output)
+  return urls
+}
+
 export interface ConnectorResult { id: string; urls: string[] }
 export function connectorResults(entry: ObjectRecord): ConnectorResult[] {
   const results: ConnectorResult[] = []
   function result(id: unknown, output: unknown, failed = false): void {
     if (typeof id !== 'string' || !id) return
-    const urls: string[] = []
-    function visit(value: unknown, depth = 0): void {
-      if (failed || depth > 6) return
-      if (typeof value === 'string') {
-        try { visit(JSON.parse(value), depth + 1) } catch { /* Prose is not structured output. */ }
-        return
-      }
-      if (Array.isArray(value)) {
-        for (const part of value) {
-          const item = object(part)
-          if (item?.type === 'input_text' || item?.type === 'text') visit(item.text, depth + 1)
-        }
-        return
-      }
-      const item = object(value)
-      if (!item || item.isError === true || item.error) return
-      const pr = object(item.structuredContent)
-      if (!pr || pr.error || pr.isError === true || typeof pr.url !== 'string') return
-      const match = /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/(\d+)$/.exec(pr.url)
-      if (match && Number(match[1]) === pr.number && Number.isSafeInteger(pr.number) && Number(pr.number) > 0) urls.push(pr.url)
-    }
-    visit(output)
+    const urls = structuredPrUrls(output, failed)
     results.push({ id, urls })
   }
   const payload = object(entry.payload) ?? entry
@@ -153,4 +158,16 @@ export function connectorResults(entry: ObjectRecord): ConnectorResult[] {
     if (item?.type === 'tool_result') result(item.tool_use_id, item.content, item.is_error === true)
   }
   return results
+}
+
+// Codex records each nested MCP operation independently, even when its exec
+// wrapper mixes tools or yields. This completed event needs no pending call.
+export function connectorCompletionUrls(entry: ObjectRecord): string[] {
+  if (entry.type !== 'event_msg') return []
+  const payload = object(entry.payload)
+  if (payload?.type !== 'item_completed') return []
+  const item = object(payload.item)
+  if (item?.type !== 'McpToolCall' || item.server !== 'codex_apps' ||
+    item.tool !== 'github.create_pull_request' || item.status !== 'completed') return []
+  return structuredPrUrls(item.result)
 }
