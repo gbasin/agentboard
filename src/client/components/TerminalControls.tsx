@@ -1,7 +1,7 @@
 /**
  * TerminalControls - On-screen control strip for mobile terminal interaction
  * Quick keys ordered most-used first (left): enter, esc, arrows, paste, delete
- * word, numbers, tab, ctrl, keyboard. The row scrolls horizontally
+ * word, numbers, tab, shift, ctrl, keyboard. The row scrolls horizontally
  * on narrow phones, so the rightmost keys are the ones that can afford a swipe.
  * Top row shows session switcher buttons to quickly jump between sessions
  */
@@ -86,6 +86,10 @@ const KEY_TAB: ControlKey = { label: 'tab', key: '\t' }
 const SHIFTED_KEYS: Record<string, string> = {
   [KEY_TAB.key]: '\x1b[Z',
   [KEY_ENTER.key]: '\n',
+  '\x1b[A': '\x1b[1;2A',
+  '\x1b[B': '\x1b[1;2B',
+  '\x1b[C': '\x1b[1;2C',
+  '\x1b[D': '\x1b[1;2D',
 }
 
 function triggerHaptic() {
@@ -142,9 +146,18 @@ export default function TerminalControls({
   const browserPaste = useBrowserPaste({ sessionId: currentSessionId, disabled, fileUploadsAllowed, agentType,
     onPasteText: onPasteText ?? onSendKey, onPasteImage: onPasteImage ?? onSendKey, onRefocus })
   const [ctrlActive, setCtrlActive] = useState(false)
+  const [shiftActive, setShiftActive] = useState(false)
   const shiftRef = useKeyboardShift(currentSessionId, disabled)
   const lastTouchTimeRef = useRef(0)
   const touchStartRef = useRef<{ x: number; y: number } | null>(null)
+
+  // A pending touch modifier must not follow the user to another pane.
+  useEffect(() => { setShiftActive(false) }, [currentSessionId, disabled])
+
+  const applyShift = (key: string) => {
+    if (shiftActive) setShiftActive(false)
+    return shiftActive || shiftRef.current ? SHIFTED_KEYS[key] ?? key : key
+  }
 
   // Intercept keyboard input when ctrl is active to send control characters
   useEffect(() => {
@@ -174,7 +187,7 @@ export default function TerminalControls({
     const wasKeyboardVisible = isKeyboardVisible?.() ?? false
     triggerHaptic()
 
-    const shiftedKey = shiftRef.current ? SHIFTED_KEYS[key] ?? key : key
+    const shiftedKey = applyShift(key)
     const { output, consumeCtrl } = applyCtrlModifier(shiftedKey, ctrlActive)
     if (consumeCtrl) {
       setCtrlActive(false)
@@ -193,9 +206,9 @@ export default function TerminalControls({
     setCtrlActive(!ctrlActive)
   }
 
-  // Wrapper for child components (NumPad, ArrowKeys) to apply Ctrl modifier
+  // Apply pending touch modifiers to child controls too.
   const handleSendKeyWithCtrl = (key: string) => {
-    const { output, consumeCtrl } = applyCtrlModifier(key, ctrlActive)
+    const { output, consumeCtrl } = applyCtrlModifier(applyShift(key), ctrlActive)
     if (consumeCtrl) {
       setCtrlActive(false)
     }
@@ -383,6 +396,20 @@ export default function TerminalControls({
           isKeyboardVisible={isKeyboardVisible}
         />
         {renderControlKey(KEY_TAB)}
+        <button
+          type="button"
+          aria-label="Shift"
+          aria-pressed={shiftActive}
+          className={`terminal-key flex items-center justify-center size-[44px] p-0 text-sm font-medium rounded-md active:scale-95 transition-transform duration-75 select-none touch-manipulation
+            ${shiftActive ? 'bg-accent/20 text-accent border border-accent/40' : 'bg-surface border border-border text-secondary'}
+            ${disabled ? 'opacity-50' : ''}`}
+          onMouseDown={(e) => e.preventDefault()}
+          onTouchEnd={handleTouchAction(() => { triggerHaptic(); setShiftActive(active => !active) })}
+          onClick={handleClickAction(() => { triggerHaptic(); setShiftActive(active => !active) })}
+          disabled={disabled}
+        >
+          shift
+        </button>
         {/* Ctrl toggle */}
         <button
           type="button"

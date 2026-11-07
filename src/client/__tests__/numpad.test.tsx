@@ -32,7 +32,7 @@ const BORDER = 2
 const INSET = BORDER + PADDING
 const INDICATOR_HEIGHT = 20 + GAP + 2
 const PAD_WIDTH = 3 * CELL_WIDTH + 2 * GAP + 2 * INSET
-const PAD_HEIGHT = 3 * CELL_HEIGHT + 2 * GAP + 2 * INSET + INDICATOR_HEIGHT
+const PAD_HEIGHT = 4 * CELL_HEIGHT + 3 * GAP + 2 * INSET + INDICATOR_HEIGHT
 
 describe('NumPad helpers', () => {
   test('maps points to numbers', () => {
@@ -55,6 +55,10 @@ describe('NumPad helpers', () => {
       padPosition
     )
     expect(one).toBe('1')
+    const bottomY = padTop + INSET + (CELL_HEIGHT + GAP) * 3 + 24
+    expect(getNumAtPoint(padLeft + INSET + CELL_WIDTH + GAP + 28, bottomY, padPosition)).toBe('0')
+    expect(getNumAtPoint(padLeft + INSET + 28, bottomY, padPosition)).toBeNull()
+    expect(getNumAtPoint(padLeft + INSET + 2 * (CELL_WIDTH + GAP) + 28, bottomY, padPosition)).toBeNull()
   })
 
   test('returns null for gaps and out of bounds', () => {
@@ -156,7 +160,7 @@ describe('NumPad component', () => {
       throw new Error('NumPad container with fixed width not found')
     }
     expect(container.props.style.left).toBe(clampedX - PAD_WIDTH / 2)
-    expect(container.props.style.top).toBe(816 - 120 - PAD_HEIGHT / 2)
+    expect(container.props.style.top).toBe(816 - PAD_HEIGHT - 18)
     expect(container.props.style.transform).toBeUndefined()
 
     act(() => {
