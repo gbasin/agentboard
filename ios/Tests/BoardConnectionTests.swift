@@ -156,4 +156,19 @@ final class BoardConnectionTests: XCTestCase {
         XCTAssertEqual(socket.types, ["terminal-attach", "terminal-resize", "terminal-detach"])
         XCTAssertTrue(board.sessions.isEmpty)
     }
+    func testClipboardIsScopedToCurrentAttachment() async {
+        var sockets: [Socket] = []
+        let board = BoardConnection { _ in let socket = Socket(); sockets.append(socket); return socket }
+        defer { board.suspend(); sockets.forEach { $0.finish() } }
+        board.configure("http://localhost:4040")
+        board.select("one", owner: UUID(), size: .init(cols: 40, rows: 20), output: { _ in }, reset: {}, status: { _ in })
+        sockets[0].emit(snapshot)
+        sockets[0].emit(#"{"type":"clipboard-offer","sessionId":"other","text":"wrong"}"#)
+        await settle(); XCTAssertNil(board.clipboardOffer)
+        sockets[0].emit(#"{"type":"clipboard-offer","sessionId":"one","text":"first session"}"#)
+        await settle(); XCTAssertEqual(board.clipboardOffer, "first session")
+        board.select("two", owner: UUID(), size: .init(cols: 40, rows: 20), output: { _ in }, reset: {}, status: { _ in })
+        XCTAssertNil(board.clipboardOffer)
+    }
+
 }

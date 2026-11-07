@@ -25,7 +25,7 @@ final class SessionActionUITests: XCTestCase {
         let end = app.buttons["End session"]
         for _ in 0..<8 {
             if end.exists && end.isHittable { break }
-            app.collectionViews.firstMatch.swipeUp()
+            (app.collectionViews.allElementsBoundByIndex.last(where: { $0.isHittable }) ?? app.collectionViews.firstMatch).swipeUp()
         }
         end.tap()
     }
@@ -35,11 +35,11 @@ final class SessionActionUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.staticTexts["Connected"].waitForExistence(timeout: 15))
         app.buttons["New session"].tap()
-        XCTAssertFalse(app.buttons["Create"].isEnabled)
+        XCTAssertTrue(app.buttons["Create"].isEnabled)
         let name = "ios-actions-" + String(UUID().uuidString.prefix(6))
         let project = app.textFields["session-project"]
-        project.tap(); project.typeText("/ab-missing")
-        app.textFields["session-command"].tap(); app.textFields["session-command"].typeText("/bin/zsh")
+        replace(project, with: "/ab-missing", in: app)
+        replace(app.textFields["session-command"], with: "/bin/zsh", in: app)
         app.textFields["session-name"].tap(); app.textFields["session-name"].typeText(name)
         capture("actions-create")
         app.buttons["Create"].tap()

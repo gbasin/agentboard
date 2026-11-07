@@ -54,7 +54,10 @@ final class SimulatorStateUITests: XCTestCase {
         let app = launch(server: "http://127.0.0.1:4151")
         XCTAssertTrue(app.staticTexts["Connected"].waitForExistence(timeout: 15))
         capture("sim-catalog")
-        app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "native-live-one")).firstMatch.tap()
+        let search = app.searchFields["Find a session"]
+        search.tap(); search.typeText("native-live-one\n")
+        let row = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "native-live-one")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5)); row.tap()
         let enter = app.buttons["Enter"]
         XCTAssertTrue(enter.waitForExistence(timeout: 10))
         expectation(for: NSPredicate(format: "enabled == true"), evaluatedWith: enter)

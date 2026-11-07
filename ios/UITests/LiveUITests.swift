@@ -20,6 +20,10 @@ final class LiveUITests: XCTestCase {
         return app
     }
     func open(_ name: String, app: XCUIApplication) {
+        let search = app.searchFields["Find a session"]
+        search.tap(); search.typeKey("a", modifierFlags: .command)
+        search.typeKey(XCUIKeyboardKey.delete.rawValue, modifierFlags: [])
+        search.typeText(name + "\n")
         let row = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", name)).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 10))
         row.tap()
@@ -84,4 +88,20 @@ final class LiveUITests: XCTestCase {
         XCTAssertFalse(app.buttons["Connect"].isEnabled)
         capture("live-invalid-address")
     }
+    func testMultilinePasteWaitsForExplicitEnter() {
+        let app = launch(); open("native-live-two", app: app)
+        let token = String(UUID().uuidString.prefix(8))
+        app.buttons["Paste text"].tap()
+        let editor = app.textViews["Text to paste"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 5)); editor.tap()
+        editor.typeText("printf 'MULTI_A_%s_OK\\n' \(token)\nprintf 'MULTI_B_%s_OK\\n' \(token)")
+        app.buttons["Insert"].tap()
+        XCTAssertFalse(output("MULTI_A_\(token)_OK", in: app).exists)
+        XCTAssertFalse(output("MULTI_B_\(token)_OK", in: app).exists)
+        app.buttons["Enter"].tap()
+        XCTAssertTrue(output("MULTI_A_\(token)_OK", in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(output("MULTI_B_\(token)_OK", in: app).waitForExistence(timeout: 5))
+        capture("live-multiline-paste")
+    }
+
 }
