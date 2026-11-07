@@ -1,0 +1,16 @@
+appId: com.apple.webapp
+---
+- tapOn:
+    point: "7%,16%"
+- tapOn:
+    point: "40%,45%"
+- tapOn: "d"
+- tapOn: "o"
+- tapOn: "n"
+- tapOn: "t"
+- tapOn:
+    id: space
+- tapOn:
+    id: delete
+- tapOn:
+    id: Return

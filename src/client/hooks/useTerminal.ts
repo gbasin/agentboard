@@ -14,6 +14,7 @@ import { useSettingsStore } from '../stores/settingsStore'
 import { copyText } from '../utils/copyText'
 import { getEffectiveModifier, matchesModifier } from '../utils/device'
 import { bracketedPaste, sanitizeImagePath } from '../utils/paste'
+import { installIosAutocorrect } from '../utils/iosAutocorrect'
 import { clipboardFiles } from '../utils/browserFiles'
 
 // Module-level snapshot cache: sessionId → serialized terminal content.
@@ -354,6 +355,8 @@ export function useTerminal({
   const isiOS = isIOSDevice()
   const containerRef = useRef<HTMLDivElement | null>(null)
   const terminalRef = useRef<Terminal | null>(null)
+  const nativeInputRef = useRef<ReturnType<typeof installIosAutocorrect> | null>(null)
+  const resetNativeInput = useCallback(() => nativeInputRef.current?.reset(), [])
   const hasLoggedInitRef = useRef(false)
   const fitAddonRef = useRef<FitAddon | null>(null)
   const webglAddonRef = useRef<WebglAddon | null>(null)
@@ -663,6 +666,15 @@ export function useTerminal({
       }
 
       terminal.open(container)
+      // Test-build opt-in keeps the experiment out of ordinary builds and persists across PWA launches.
+      if (isiOS && import.meta.env.VITE_IOS_AUTOCORRECT_PROTOTYPE === '1') {
+        nativeInputRef.current = installIosAutocorrect(terminal, () => !!readySessionRef.current)
+        clientLog('ios_autocorrect_prototype', {
+          protocol: 'explicit-replacement',
+          standalone: (navigator as Navigator & { standalone?: boolean }).standalone === true,
+          displayMode: window.matchMedia('(display-mode: standalone)').matches ? 'standalone' : 'browser',
+        }, 'info')
+      }
       fitAddon.fit()
 
       if (!hasLoggedInitRef.current) {
@@ -1156,6 +1168,8 @@ export function useTerminal({
     fitAddonRef.current = fitAddon
 
     return () => {
+      nativeInputRef.current?.dispose()
+      nativeInputRef.current = null
       // Cancel any pending async operations (font loading)
       cancelled = true
       // Clean up link handling state
@@ -1289,6 +1303,7 @@ export function useTerminal({
   // passive effect, but this layout effect closes the old-pane input window
   // before the browser can deliver another user event.
   useLayoutEffect(() => {
+    nativeInputRef.current?.reset()
     if (
       readySessionRef.current !== sessionId ||
       !allowAttach ||
@@ -1943,6 +1958,7 @@ export function useTerminal({
     readySessionRef.current === sessionId
 
   return {
+    resetNativeInput,
     containerRef,
     terminalRef,
     searchAddonRef,

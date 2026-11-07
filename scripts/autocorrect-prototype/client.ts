@@ -23,7 +23,8 @@ for (const name of ['keydown','keyup','beforeinput','input','compositionstart','
 terminal.onData(data => {
  log({name:'terminal-data', data})
  if (socket?.readyState === WebSocket.OPEN) socket.send(data)
- for (const char of data) {
+ // The echo model treats bracketed replacement text like a terminal paste.
+ for (const char of data.replaceAll('\x1b[200~', '').replaceAll('\x1b[201~', '')) {
    if (char === '\r') {log({name:'submit',line}); line = ''}
    else if (char === '\x7f') line = Array.from(line).slice(0,-1).join('')
    else line += char

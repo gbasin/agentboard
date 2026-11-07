@@ -14,6 +14,10 @@ describe('experimental autocorrect terminal delta', () => {
     expect(correctionDelta('the ', 'the')).toBe('\x7f')
     expect(correctionDelta('the', 'the')).toBe('')
   })
+  test('frames native replacements as explicit paste before an immediate Return', () => {
+    expect(correctionDelta('teh', 'the', true)).toBe('\x7f\x7f\x1b[200~he\x1b[201~')
+    expect(correctionDelta('abc', 'ab', true)).toBe('\x7f')
+  })
   test('does not split surrogate pairs', () => {
     expect(correctionDelta('hi 😀', 'hi 😃')).toBe('\x7f😃')
   })

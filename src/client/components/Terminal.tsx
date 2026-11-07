@@ -105,7 +105,7 @@ export default function Terminal({
   historySessions = [],
   connectionStatus,
   connectionEpoch = 0,
-  sendMessage,
+  sendMessage: sendRawMessage,
   subscribe,
   onClose: _onClose,
   onSelectSession,
@@ -122,6 +122,11 @@ export default function Terminal({
   loading = false,
   error = null,
 }: TerminalProps) {
+  const resetNativeInputRef = useRef<(() => void) | undefined>(undefined)
+  const sendMessage = useCallback<SendClientMessage>((message) => {
+    if (message.type === 'terminal-input' || message.type === 'terminal-paste') resetNativeInputRef.current?.()
+    sendRawMessage(message)
+  }, [sendRawMessage])
   void _onClose // Keep for interface compatibility
   const theme = useResolvedTheme()
   const terminalTheme = terminalThemes[theme]
@@ -183,6 +188,7 @@ export default function Terminal({
   }, [sessions, hibernatingSessions])
 
   const {
+    resetNativeInput,
     containerRef,
     terminalRef,
     inTmuxCopyModeRef,
@@ -215,6 +221,8 @@ export default function Terminal({
       setShowScrollButton(!isAtBottom)
     },
   })
+
+  resetNativeInputRef.current = resetNativeInput
 
   const scrollToBottom = useCallback(() => {
     // Exit tmux copy-mode to return to live output (oracle recommendation)
