@@ -216,7 +216,7 @@ test('large media catalogs stay off the socket across reconnect and live updates
     expect(itemRequests).toBe(0)
     expect(Math.max(...catalogBytes)).toBeLessThan(128 * 1024)
     const input = page.locator('.xterm-helper-textarea')
-    if (await input.isDisabled()) await page.getByRole('button', { name: 'Show keyboard', exact: true }).click()
+    await expect(input).toBeEnabled()
     await input.focus()
     const marker = `MEDIA_RECONNECT_INPUT_${fixture.sessionId}`
     await page.keyboard.type(marker); await page.keyboard.press('Enter')

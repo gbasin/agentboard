@@ -4,6 +4,7 @@ import { readFile, rm } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { test, expect } from '@playwright/test'
+test.use({ hasTouch: true })
 const repl = fileURLToPath(new URL('./fixtures/paste-repl.py', import.meta.url))
 const tmux = (args: string[]) => spawnSync('tmux', args, { encoding: 'utf8', env: { ...process.env } })
 for (const mode of ['desktop', 'mobile', 'drop', 'context-paste'] as const) {
@@ -38,7 +39,7 @@ for (const mode of ['desktop', 'mobile', 'drop', 'context-paste'] as const) {
       await expect(page.getByTestId('session-card').filter({ hasText: name }).first()).toHaveClass(/selected/)
       await expect(page.getByTestId('terminal-recovery-status')).toHaveCount(0)
       await expect(page.locator('button[aria-label="Paste"]')).toBeEnabled()
-      if (mode === 'mobile') await page.getByRole('button', { name: 'Show keyboard' }).click()
+      if (mode === 'mobile') await page.locator('.xterm').tap({ position: { x: 120, y: 100 } })
       await expect(page.locator('.xterm-helper-textarea')).toBeEnabled()
       await page.locator('.xterm-helper-textarea').pressSequentially('Compare: ')
       const uploaded = page.waitForResponse(response => response.url().endsWith('/api/paste-file') && response.ok())

@@ -60,14 +60,16 @@ describe('TerminalControls', () => {
     const keyButtons = renderer.root.findAllByType('button').filter((button) =>
       String(button.props.className ?? '').includes('terminal-key')
     )
-    expect(keyButtons).toHaveLength(10)
+    expect(keyButtons).toHaveLength(9)
+    expect(renderer.root.findAllByProps({ 'aria-label': 'Show keyboard' })).toHaveLength(0)
+    expect(renderer.root.findAllByProps({ 'aria-label': 'Dismiss keyboard' })).toHaveLength(0)
     expect(keyButtons.some(button => button.props['aria-label'] === 'Shift+Tab')).toBe(false)
     expect(keyButtons.every((button) =>
       String(button.props.className).includes('size-[44px]')
     )).toBe(true)
   })
 
-  test('the Enter key carries only its accent colors, not the default key colors', () => {
+  test('the Enter key uses the same neutral colors as the other command keys', () => {
     const renderer = TestRenderer.create(
       <TerminalControls
         onSendKey={() => {}}
@@ -82,13 +84,11 @@ describe('TerminalControls', () => {
         .find((b) => b.props['aria-label'] === label)
       return String(button?.props.className).split(/\s+/).filter(Boolean)
     }
-    // Same-specificity utilities: if both were present, bg-surface (emitted
-    // later) would hide the accent tint.
     const enter = classesOf('Enter')
-    expect(enter).toEqual(expect.arrayContaining(['bg-accent/20', 'border-accent/40', 'text-accent']))
-    expect(enter).not.toContain('bg-surface')
-    expect(enter).not.toContain('border-border')
-    expect(enter).not.toContain('text-secondary')
+    expect(enter).toEqual(expect.arrayContaining(['bg-surface', 'border-border', 'text-secondary']))
+    expect(enter).not.toContain('bg-accent/20')
+    expect(enter).not.toContain('border-accent/40')
+    expect(enter).not.toContain('text-accent')
     expect(classesOf('Delete word')).toEqual(
       expect.arrayContaining(['bg-surface', 'border-border', 'text-secondary', 'border'])
     )
@@ -559,25 +559,12 @@ test('selected files survive resetting the native picker and wait with the draft
 })
 
 
-test('recovery permits keyboard touch without enabling command or paste buttons', () => {
-  let focuses = 0
-  let sends = 0
-  let renderer!: TestRenderer.ReactTestRenderer
-  act(() => { renderer = TestRenderer.create(<TerminalControls disabled keyboardDisabled={false}
-    onSendKey={() => { sends++ }} sessions={[]} currentSessionId="recovery"
-    onSelectSession={() => {}} onEnterTextMode={() => { focuses++ }} />) })
-  const keyboard = renderer.root.findByProps({ 'aria-label': 'Show keyboard' })
-  expect(keyboard.props.disabled).toBe(false)
+test('recovery disables command and paste buttons without adding a keyboard control', () => {
+  const renderer = TestRenderer.create(<TerminalControls disabled onSendKey={() => {}}
+    sessions={[]} currentSessionId="recovery" onSelectSession={() => {}} />)
+  expect(renderer.root.findAllByProps({ 'aria-label': 'Show keyboard' })).toHaveLength(0)
   expect(renderer.root.findByProps({ 'aria-label': 'Paste' }).props.disabled).toBe(true)
   expect(renderer.root.findByProps({ 'aria-label': 'Enter' }).props.disabled).toBe(true)
-  const deck = renderer.root.findAllByType('div').find(node => typeof node.props.onTouchStartCapture === 'function')!
-  act(() => {
-    deck.props.onTouchStartCapture({ touches: [{ clientX: 10, clientY: 10 }] })
-    keyboard.props.onTouchEnd({ changedTouches: [{ clientX: 10, clientY: 10 }], preventDefault() {}, stopPropagation() {} })
-    keyboard.props.onClick() // iOS synthetic click must not toggle twice.
-  })
-  expect(focuses).toBe(1)
-  expect(sends).toBe(0)
   act(() => renderer.unmount())
 })
 

@@ -197,7 +197,7 @@ function createContainerMock() {
     return null
   }
 
-  return { container, createNodeMock, getFocusCalls: () => focusCalls }
+  return { container, createNodeMock, listeners, getFocusCalls: () => focusCalls }
 }
 
 beforeEach(() => {
@@ -670,7 +670,7 @@ describe('Terminal', () => {
     })
   })
 
-  test('keyboard button exits copy-mode when active', () => {
+  test('exit copy mode remains available without the keyboard toggle', () => {
     const sentMessages: unknown[] = []
     let terminalListener: ((message: ServerMessage) => void) | undefined
 
@@ -710,9 +710,9 @@ describe('Terminal', () => {
       terminalInstance.emitWheel({ deltaY: -60 } as WheelEvent)
     })
 
-    const keyboardButton = renderer.root.findByProps({ 'aria-label': 'Show keyboard' })
+    const exitButton = renderer.root.findAllByProps({ 'aria-label': 'Exit copy mode' })[0]
     act(() => {
-      keyboardButton.props.onClick()
+      exitButton.props.onClick()
     })
 
     expect(
@@ -1029,7 +1029,9 @@ describe('Terminal', () => {
 })
 
 
-test('recovery keyboard can focus locally while commands stay gated', () => {
+test('recovery terminal tap can focus locally while commands stay gated', () => {
+  globalAny.window!.getComputedStyle = (() => ({ getPropertyValue: () => '16px' })) as unknown as typeof window.getComputedStyle
+  globalAny.window!.matchMedia = (() => ({ matches: true, addEventListener() {}, removeEventListener() {} })) as unknown as typeof window.matchMedia
   const sent: unknown[] = []
   const nodes = createContainerMock()
   let renderer!: TestRenderer.ReactTestRenderer
@@ -1038,12 +1040,15 @@ test('recovery keyboard can focus locally while commands stay gated', () => {
     subscribe={() => () => {}} onClose={() => {}} onSelectSession={() => {}} onNewSession={() => {}}
     onKillSession={() => {}} onRenameSession={() => {}} onResumeSession={() => {}} onOpenSettings={() => {}} />,
     { createNodeMock: nodes.createNodeMock }) })
-  const controls = renderer.root.find(node => typeof node.props.onEnterTextMode === 'function')
+  const controls = renderer.root.find(node => typeof node.props.onPasteImage === 'function')
   expect(controls.props.disabled).toBe(true)
-  expect(controls.props.keyboardDisabled).toBe(false)
   const before = nodes.getFocusCalls()
   const sentBefore = sent.length
-  act(() => controls.props.onEnterTextMode())
+  const touch = { clientX: 120, clientY: 100 }
+  act(() => {
+    nodes.listeners.get('touchstart')!({ touches: [touch] } as unknown as Event)
+    nodes.listeners.get('touchend')!({ touches: [], changedTouches: [touch] } as unknown as Event)
+  })
   expect(nodes.getFocusCalls()).toBe(before + 1)
   expect(sent).toHaveLength(sentBefore)
   act(() => renderer.unmount())
@@ -1076,7 +1081,6 @@ for (const gesture of ['key', 'paste'] as const) {
     expect(renderer.root.findByProps({ id: 'recovery-draft' }).props.value).toBe('retained')
     reject = false
     expect(controls().props.disabled).toBe(true)
-    expect(controls().props.keyboardDisabled).toBe(false)
     // Upload results must never be added to a text draft or sent past it.
     act(() => controls().props.onPasteImage('image-path'))
     expect(renderer.root.findByProps({ id: 'recovery-draft' }).props.value).toBe('retained')

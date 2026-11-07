@@ -1229,22 +1229,6 @@ export default function Terminal({
     handleRefocus()
   }
 
-  // Enter text mode: exit copy-mode and focus input (for keyboard button)
-  const handleEnterTextMode = useCallback(() => {
-    if (!session || isReadOnly) return
-    if (isInputReady && inTmuxCopyModeRef.current) {
-      sendMessage({ type: 'tmux-cancel-copy-mode', sessionId: session.id })
-      setTmuxCopyMode(false)
-    }
-    const container = containerRef.current
-    if (!container) return
-    const textarea = container.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement | null
-    if (textarea) {
-      textarea.removeAttribute('disabled')
-      textarea.focus()
-    }
-  }, [session, isReadOnly, isInputReady, sendMessage, containerRef, inTmuxCopyModeRef, setTmuxCopyMode])
-
   const isKeyboardVisible = useCallback(() => {
     if (typeof document === 'undefined') return false
     const container = containerRef.current
@@ -1698,7 +1682,6 @@ export default function Terminal({
           onPasteText={handlePasteText}
           onPasteImage={handlePasteImage}
           disabled={connectionStatus !== 'connected' || isReadOnly || !isInputReady || recoveryDraft.pending}
-          keyboardDisabled={isReadOnly}
           sessions={sessions.map(s => ({ id: s.id, name: s.name, status: s.status }))}
           currentSessionId={session.id}
           agentType={session.agentType}
@@ -1707,7 +1690,6 @@ export default function Terminal({
           hideSessionSwitcher
           onRefocus={handleRefocus}
           isKeyboardVisible={isKeyboardVisible}
-          onEnterTextMode={handleEnterTextMode}
           onSelectText={isReadOnly ? undefined : handleSelectText}
           snapshotActions={snapshotOpen ? {
             onDone: snapshot.close,

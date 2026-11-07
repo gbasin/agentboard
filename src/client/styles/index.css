@@ -160,9 +160,10 @@ body {
   overflow: hidden;
 }
 
-/* Align app root to the visual viewport on iOS PWA to keep hit-testing accurate */
-@media (max-width: 767px) {
-  .ios #root {
+/* Follow the visible area on touch devices: Android Chrome also shrinks only
+   the visual viewport when its software keyboard opens. Keep the key row above it. */
+@media (max-width: 767px), (hover: none) and (pointer: coarse) {
+  #root {
     position: fixed;
     top: 0;
     left: 0;

@@ -1,7 +1,7 @@
 /**
  * TerminalControls - On-screen control strip for mobile terminal interaction
  * Quick keys ordered most-used first (left): enter, esc, arrows, paste, delete
- * word, numbers, tab, shift, ctrl, keyboard. The row scrolls horizontally
+ * word, numbers, tab, shift, ctrl. The row scrolls horizontally
  * on narrow phones, so the rightmost keys are the ones that can afford a swipe.
  * Top row shows session switcher buttons to quickly jump between sessions
  */
@@ -9,7 +9,7 @@
 import { useState, useRef, useEffect } from 'react'
 import type { TouchEvent as ReactTouchEvent } from 'react'
 import type { AgentType, Session } from '@shared/types'
-import { ClipboardIcon, CornerDownLeftIcon, DeleteIcon, Keyboard01Icon, TextInputIcon } from './icons'
+import { ClipboardIcon, CornerDownLeftIcon, DeleteIcon, TextInputIcon } from './icons'
 import { ICON_SIZE, KEY_ICON_STROKE } from './controlStyles'
 import ArrowKeys from './ArrowKeys'
 import NumPad from './NumPad'
@@ -35,8 +35,6 @@ interface TerminalControlsProps {
   onPasteText?: (text: string) => void
   onPasteImage?: (text: string) => void
   disabled?: boolean
-  /** Keyboard focus can remain available for local drafts during recovery. */
-  keyboardDisabled?: boolean
   sessions: SessionInfo[]
   currentSessionId: string | null
   /** Agent type of the attached session — controls image-paste delivery. */
@@ -46,7 +44,6 @@ interface TerminalControlsProps {
   hideSessionSwitcher?: boolean
   onRefocus?: () => void
   isKeyboardVisible?: () => boolean
-  onEnterTextMode?: () => void
   /**
    * Open the frozen "Select text" snapshot of the pane. Hidden when absent.
    * Stays available while the rest of the deck is disabled.
@@ -67,7 +64,6 @@ interface ControlKey {
 const BackspaceIcon = <DeleteIcon width={ICON_SIZE.key} height={ICON_SIZE.key} strokeWidth={KEY_ICON_STROKE} />
 const PasteIcon = <ClipboardIcon width={ICON_SIZE.key} height={ICON_SIZE.key} strokeWidth={KEY_ICON_STROKE} />
 const SelectTextIcon = <TextInputIcon width={ICON_SIZE.key} height={ICON_SIZE.key} strokeWidth={KEY_ICON_STROKE} />
-const KeyboardIcon = <Keyboard01Icon width={ICON_SIZE.key} height={ICON_SIZE.key} strokeWidth={KEY_ICON_STROKE} />
 
 // Color classes of a key without its own `className`. A key's className
 // replaces these rather than being appended: both sets are single-class
@@ -76,8 +72,8 @@ const KeyboardIcon = <Keyboard01Icon width={ICON_SIZE.key} height={ICON_SIZE.key
 const CONTROL_KEY_DEFAULT_CLASS = 'bg-surface border-border text-secondary'
 
 // Plain send-a-sequence keys. Their on-screen order lives in the JSX below,
-// interleaved with the stateful ctrl/paste/numpad/arrow/keyboard buttons.
-const KEY_ENTER: ControlKey = { label: <CornerDownLeftIcon width={ICON_SIZE.key} height={ICON_SIZE.key} strokeWidth={KEY_ICON_STROKE} />, key: '\r', className: 'bg-accent/20 text-accent border-accent/40', ariaLabel: 'Enter' }
+// interleaved with the stateful ctrl/paste/numpad/arrow buttons.
+const KEY_ENTER: ControlKey = { label: <CornerDownLeftIcon width={ICON_SIZE.key} height={ICON_SIZE.key} strokeWidth={KEY_ICON_STROKE} />, key: '\r', ariaLabel: 'Enter' }
 const KEY_ESC: ControlKey = { label: 'esc', key: '\x1b' }
 const KEY_DELETE_WORD: ControlKey = { label: BackspaceIcon, key: '\x17', ariaLabel: 'Delete word' } // Ctrl+W: delete word backward
 const KEY_TAB: ControlKey = { label: 'tab', key: '\t' }
@@ -130,7 +126,6 @@ export default function TerminalControls({
   onPasteText,
   onPasteImage,
   disabled = false,
-  keyboardDisabled = disabled,
   sessions,
   currentSessionId,
   agentType,
@@ -139,7 +134,6 @@ export default function TerminalControls({
   hideSessionSwitcher = false,
   onRefocus,
   isKeyboardVisible,
-  onEnterTextMode,
   onSelectText,
   snapshotActions,
 }: TerminalControlsProps) {
@@ -224,20 +218,6 @@ export default function TerminalControls({
   const handleSessionSelect = (sessionId: string) => {
     triggerHaptic()
     onSelectSession(sessionId)
-  }
-
-  const handleKeyboardPress = () => {
-    if (keyboardDisabled) return
-    triggerHaptic()
-    // Toggle: if keyboard visible, hide it; otherwise show it
-    if (isKeyboardVisible?.()) {
-      // Blur to hide keyboard
-      if (document.activeElement instanceof HTMLElement) {
-        document.activeElement.blur()
-      }
-    } else {
-      onEnterTextMode?.()
-    }
   }
 
   // Only show session row if there are multiple sessions and not hidden
@@ -433,29 +413,6 @@ export default function TerminalControls({
           disabled={disabled}
         >
           ctrl
-        </button>
-        {/* Keyboard button - enter text mode (exit copy-mode and show keyboard) */}
-        <button
-          type="button"
-          aria-label="Show keyboard"
-          className={`
-            terminal-key
-            flex items-center justify-center
-            size-[44px] p-0
-            text-sm font-medium
-            bg-surface border border-border rounded-md
-            active:bg-hover active:scale-95
-            transition-transform duration-75
-            select-none touch-manipulation
-            text-secondary
-            ${keyboardDisabled ? 'opacity-50' : ''}
-          `}
-          onMouseDown={(e) => e.preventDefault()}
-          onTouchEnd={handleTouchAction(handleKeyboardPress, keyboardDisabled)}
-          onClick={handleClickAction(handleKeyboardPress, keyboardDisabled)}
-          disabled={keyboardDisabled}
-        >
-          {KeyboardIcon}
         </button>
       </div>}
 
