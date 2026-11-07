@@ -20,6 +20,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, RefObject } from 'react'
 import type { Terminal } from '@xterm/xterm'
+import { snapshotLinks } from '../utils/snapshotLinks'
 import { SpinnerIcon } from './icons'
 import { ICON_SIZE } from './controlStyles'
 import { displaySnapshotText } from '../utils/snapshotText'
@@ -55,6 +56,9 @@ export default function TerminalSnapshotLayer({ state, containerRef, terminalRef
     () => (rejoinWrapped && cols > 0 ? findWrappedRows(lines, cols) : []),
     [lines, cols, rejoinWrapped],
   )
+  const links = useMemo(() => snapshotLinks(lines, joins), [lines, joins])
+  // Remember selection before pointerdown: the browser may collapse it before click.
+  const gesture = useRef({ selected: false, started: 0, x: 0, y: 0, moved: false })
   const copySourceRef = useRef({ lines, joins, onCopied })
   copySourceRef.current = { lines, joins, onCopied }
 
@@ -135,6 +139,19 @@ export default function TerminalSnapshotLayer({ state, containerRef, terminalRef
           style={{ left: geometry.left, top: geometry.top, width: geometry.width, height: geometry.height,
             overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}>
           <div ref={textRef} data-testid="terminal-snapshot-text"
+            onPointerDownCapture={(event) => {
+              gesture.current = { selected: window.getSelection()?.isCollapsed === false, started: Date.now(),
+                x: event.clientX, y: event.clientY, moved: false }
+            }}
+            onPointerMoveCapture={(event) => {
+              if (Math.hypot(event.clientX - gesture.current.x, event.clientY - gesture.current.y) > 8) gesture.current.moved = true
+            }}
+            onClickCapture={(event) => {
+              if (!(event.target instanceof Element) || !event.target.closest('a')) return
+              const previous = gesture.current
+              if (window.getSelection()?.isCollapsed === false || (event.detail !== 0 &&
+                (previous.selected || previous.moved || Date.now() - previous.started > 500))) event.preventDefault()
+            }}
             style={{
               // Half a cell of slack so sub-pixel rounding cannot wrap a
               // full-width row one column early.
@@ -153,7 +170,17 @@ export default function TerminalSnapshotLayer({ state, containerRef, terminalRef
               <div key={index} {...{ [SNAPSHOT_LINE_ATTR]: index }} style={[...line].length > geometry.cols
                 ? { whiteSpace: 'break-spaces', wordBreak: 'break-all', lineBreak: 'anywhere' }
                 : { whiteSpace: 'pre', overflow: 'hidden' }}>
-                {line === '' ? <br /> : line}
+                {line === '' ? <br /> : (() => {
+                  let offset = 0
+                  const parts = links[index].flatMap((link) => {
+                    const prefix = line.slice(offset, link.start)
+                    offset = link.end
+                    return [prefix, <a key={link.start} href={link.href} target="_blank" rel="noopener noreferrer"
+                      className="underline decoration-current underline-offset-2 hover:decoration-2 focus-visible:outline focus-visible:outline-2"
+                      style={{ color: 'inherit' }} draggable={false}>{line.slice(link.start, link.end)}</a>]
+                  })
+                  return [...parts, line.slice(offset)]
+                })()}
               </div>
             ))}
           </div>
