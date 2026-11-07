@@ -41,10 +41,10 @@ struct BoardEvent: Decodable {
         sessions = type == "sessions" ? try values.decode([RemoteSession].self, forKey: .sessions) : nil
         session = ["session-created", "session-update"].contains(type)
             ? try values.decode(RemoteSession.self, forKey: .session) : nil
-        sessionId = ["session-removed", "terminal-output", "terminal-ready", "terminal-error"].contains(type)
+        sessionId = ["session-removed", "terminal-output", "terminal-ready", "terminal-error", "kill-failed"].contains(type)
             ? try values.decodeIfPresent(String.self, forKey: .sessionId) : nil
         data = type == "terminal-output" ? try values.decode(String.self, forKey: .data) : nil
-        message = ["terminal-error", "error"].contains(type) ? try values.decodeIfPresent(String.self, forKey: .message) : nil
+        message = ["terminal-error", "error", "kill-failed"].contains(type) ? try values.decodeIfPresent(String.self, forKey: .message) : nil
         remoteAllowAttach = type == "server-config" ? try values.decodeIfPresent(Bool.self, forKey: .remoteAllowAttach) : nil
         retryable = type == "terminal-error" ? try values.decodeIfPresent(Bool.self, forKey: .retryable) : nil
         seq = type == "pong" ? try values.decodeIfPresent(Int.self, forKey: .seq) : nil
