@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.42.1](https://github.com/gbasin/agentboard/compare/v0.42.0...v0.42.1) (2026-11-07)
+
+
+### Bug Fixes
+
+* detect completed GitHub connector PR creation ([#523](https://github.com/gbasin/agentboard/issues/523)) ([0ebdef5](https://github.com/gbasin/agentboard/commit/0ebdef50f8f3f0da2b79a3be81178c63c4157771))
+* use native keyboard dismissal and keep Android controls visible ([#522](https://github.com/gbasin/agentboard/issues/522)) ([04cc856](https://github.com/gbasin/agentboard/commit/04cc85633af0a6f6ff0a6d5d0e1db33a857e3ef3))
+
 ## [0.42.0](https://github.com/gbasin/agentboard/compare/v0.41.0...v0.42.0) (2026-11-07)
 
 
