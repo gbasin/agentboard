@@ -797,7 +797,7 @@ export default function App() {
       // Bracket navigation: [mod]+[ / ]. [ always moves selection up the
       // screen and ] down: under the bottom-anchored sidebar index 0 sits at
       // the bottom, so the index delta flips sign. Only while that mirrored
-      // sidebar is on screen: below the md breakpoint the tab strip and the
+      // sidebar is on screen: below the md breakpoint the status peek and the
       // drawer keep the unmirrored order.
       // When only hibernating sessions are visible, fall back to navigating
       // within the hibernating bucket so the keyboard shortcut keeps working.

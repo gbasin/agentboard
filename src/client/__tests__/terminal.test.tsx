@@ -573,7 +573,6 @@ describe('Terminal', () => {
 
   test('mobile layout opens drawer and switches sessions', () => {
     let selectCalls: string[] = []
-    let vibrateCalls = 0
 
     globalAny.navigator = {
       userAgent: 'Chrome',
@@ -581,7 +580,6 @@ describe('Terminal', () => {
       maxTouchPoints: 0,
       clipboard: { writeText: () => Promise.resolve() },
       vibrate: () => {
-        vibrateCalls += 1
         return true
       },
     } as unknown as Navigator
@@ -657,22 +655,15 @@ describe('Terminal', () => {
     html = JSON.stringify(renderer.toJSON())
     expect(html).not.toContain('session-drawer open')
 
-    const switchButton = renderer.root.findAllByType('button').find((button) => {
-      const children = button.props.children
-      return children === 2 || (Array.isArray(children) && children.includes(2))
-    })
-
-    if (!switchButton) {
-      throw new Error('Expected session switcher button')
-    }
-    expect(String(switchButton.props.className)).toContain('h-[44px]')
-
-    act(() => {
-      switchButton.props.onClick()
-    })
-
+    const peek = renderer.root.findByProps({ 'data-testid': 'session-peek' })
+    act(() => { peek.props.onClick() })
+    expect(selectCalls).toEqual([])
+    expect(JSON.stringify(renderer.toJSON())).toContain('session-drawer open')
+    const row = renderer.root.findAllByProps({ 'data-testid': 'session-card' })
+      .find((node) => node.props['data-session-id'] === secondSession.id)!
+    act(() => { row.props.onClick() })
     expect(selectCalls).toEqual([secondSession.id])
-    expect(vibrateCalls).toBe(1)
+    expect(JSON.stringify(renderer.toJSON())).not.toContain('session-drawer open')
 
     act(() => {
       renderer.unmount()
@@ -944,110 +935,6 @@ describe('Terminal', () => {
     })
 
     expect(renamed).toEqual([])
-
-    act(() => {
-      renderer.unmount()
-    })
-  })
-
-  test('mobile session switcher shows numeric labels when preferWindowName is false even with distinct names', () => {
-    if (globalAny.window) {
-      globalAny.window.matchMedia = (() => ({
-        matches: true,
-        media: '',
-        onchange: null,
-        addEventListener: () => {},
-        removeEventListener: () => {},
-        addListener: () => {},
-        removeListener: () => {},
-        dispatchEvent: () => false,
-      })) as unknown as typeof window.matchMedia
-    }
-    useSessionStore.setState({ preferWindowName: false })
-
-    const { createNodeMock } = createContainerMock()
-    let renderer!: TestRenderer.ReactTestRenderer
-
-    act(() => {
-      renderer = TestRenderer.create(
-        <Terminal
-          session={baseSession}
-          sessions={[baseSession, secondSession]}
-          connectionStatus="connected"
-          sendMessage={() => {}}
-          subscribe={() => () => {}}
-          onClose={() => {}}
-          onSelectSession={() => {}}
-          onNewSession={() => {}}
-          onKillSession={() => {}}
-          onRenameSession={() => {}}
-          onResumeSession={() => {}}
-          onOpenSettings={() => {}}
-        />,
-        { createNodeMock }
-      )
-    })
-
-    const labels = renderer.root
-      .findAllByType('button')
-      .map((button) => button.props.children)
-      .filter((child) => child === 1 || child === 2 || child === 'alpha' || child === 'beta')
-
-    expect(labels).toContain(1)
-    expect(labels).toContain(2)
-    expect(labels).not.toContain('alpha')
-    expect(labels).not.toContain('beta')
-
-    act(() => {
-      renderer.unmount()
-    })
-  })
-
-  test('mobile session switcher shows name labels when preferWindowName is true and names are distinct', () => {
-    if (globalAny.window) {
-      globalAny.window.matchMedia = (() => ({
-        matches: true,
-        media: '',
-        onchange: null,
-        addEventListener: () => {},
-        removeEventListener: () => {},
-        addListener: () => {},
-        removeListener: () => {},
-        dispatchEvent: () => false,
-      })) as unknown as typeof window.matchMedia
-    }
-    useSessionStore.setState({ preferWindowName: true })
-
-    const { createNodeMock } = createContainerMock()
-    let renderer!: TestRenderer.ReactTestRenderer
-
-    act(() => {
-      renderer = TestRenderer.create(
-        <Terminal
-          session={baseSession}
-          sessions={[baseSession, secondSession]}
-          connectionStatus="connected"
-          sendMessage={() => {}}
-          subscribe={() => () => {}}
-          onClose={() => {}}
-          onSelectSession={() => {}}
-          onNewSession={() => {}}
-          onKillSession={() => {}}
-          onRenameSession={() => {}}
-          onResumeSession={() => {}}
-          onOpenSettings={() => {}}
-        />,
-        { createNodeMock }
-      )
-    })
-
-    const labels = renderer.root
-      .findAllByType('button')
-      .map((button) => button.props.children)
-      .filter((child) => child === 1 || child === 2 || child === 'alpha' || child === 'beta')
-
-    expect(labels).toContain('alpha')
-    expect(labels).toContain('beta')
 
     act(() => {
       renderer.unmount()

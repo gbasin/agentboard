@@ -27,7 +27,7 @@ describe('settings registry', () => {
   test('pages hold the specified rows in order', () => {
     expect(ids(rowsForPage('new-sessions'))).toEqual(['default-project-dir', 'command-presets'])
     expect(ids(rowsForPage('session-list'))).toEqual([
-      'sort-order', 'sort-direction', 'sidebar-anchor', 'show-project-name',
+      'sort-order', 'sort-direction', 'sidebar-anchor', 'mobile-session-peek', 'show-project-name',
       'show-last-user-message', 'show-session-id-prefix', 'history-lookback', 'prefer-window-name',
     ])
     expect(ids(rowsForPage('appearance'))).toEqual([
@@ -43,7 +43,7 @@ describe('settings registry', () => {
     expect(tagged('desktop')).toEqual(['shortcut-modifier', 'sidebar-anchor'])
     expect(tagged('device')).toEqual([
       'custom-font-family', 'font-family', 'font-size', 'ios-autocorrect', 'letter-spacing',
-      'line-height', 'shortcut-modifier', 'webgl',
+      'line-height', 'mobile-session-peek', 'shortcut-modifier', 'webgl',
     ])
   })
 
