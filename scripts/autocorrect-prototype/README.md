@@ -89,6 +89,9 @@ Run the browser-to-tmux suite:
 E2E_PORT=18501 bunx playwright test --config playwright.autocorrect.config.ts
 ```
 
+CI runs this dedicated suite with a UTF-8 tmux environment. The default suite
+skips these tests because its C locale cannot represent native corrections.
+
 Six tests cover enabling and disabling the setting, persistence across reload,
 default-off behavior, replacement-before-Return ordering, length-changing correction,
 backspace, subsequent prompts, toolbar Return, manual paste, reconnect, and
@@ -100,7 +103,7 @@ Check default-off behavior separately:
 
 ```sh
 bun run build
-E2E_PORT=18501 bunx playwright test tests/e2e/ios-autocorrect.spec.ts --grep 'ordinary build'
+E2E_PORT=18501 bunx playwright test --config playwright.autocorrect.config.ts --grep 'ordinary build'
 ```
 
 ### Installed PWA on m5p

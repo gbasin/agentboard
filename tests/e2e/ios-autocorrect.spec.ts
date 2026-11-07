@@ -2,6 +2,7 @@
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { expect, test, type Page } from '@playwright/test'
+test.skip(process.env.E2E_AUTOCORRECT_SUITE !== '1', 'Run with playwright.autocorrect.config.ts for UTF-8 tmux')
 const fixture = fileURLToPath(new URL('./fixtures/autocorrect-repl.py', import.meta.url))
 const session = process.env.E2E_TMUX_SESSION!
 const targets: string[] = []
@@ -60,7 +61,8 @@ test.beforeEach(async ({ page }) => {
     const NativeSocket = window.WebSocket
     window.WebSocket = class extends NativeSocket {
       constructor(url: string | URL, protocols?: string | string[]) {
-        super(url, protocols)
+        const blocked = (window as unknown as {acBlockReconnect?: boolean}).acBlockReconnect
+        super(blocked ? 'ws://127.0.0.1:1' : url, protocols)
         ;(window as unknown as {acSocket: WebSocket}).acSocket = this
         this.addEventListener('message', event => {
           if (typeof event.data !== 'string') return
@@ -179,14 +181,14 @@ test.describe('native autocorrect enabled', () => {
     await select(page, 'autocorrect-reconnect')
     await page.keyboard.type('prefix ')
     await expect.poll(() => pane('autocorrect-reconnect')).toContain('prompt> prefix')
-    await page.context().setOffline(true)
     await page.evaluate(() => {
-      const state = window as unknown as {acReady?: string; acSocket: WebSocket}
+      const state = window as unknown as {acReady?: string; acSocket: WebSocket; acBlockReconnect: boolean}
       state.acReady = undefined
+      state.acBlockReconnect = true
       state.acSocket.close()
     })
     await expect(page.locator('.xterm-helper-textarea')).toHaveAttribute('autocorrect', 'off')
-    await page.context().setOffline(false)
+    await page.evaluate(() => { (window as unknown as {acBlockReconnect: boolean}).acBlockReconnect = false })
     await select(page, 'autocorrect-reconnect')
     await expect(page.locator('.xterm-helper-textarea')).toHaveAttribute('autocorrect', 'on')
     await page.keyboard.type('teh')
