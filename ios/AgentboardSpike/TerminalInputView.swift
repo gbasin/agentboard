@@ -60,8 +60,17 @@ final class TerminalInputView: UITextView, UITextViewDelegate {
         }
     }
 
+    override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+        if action == #selector(paste(_:)) {
+            // UIKit's default text view excludes image-only/file-only clipboard items.
+            // Reading the item count checks availability without reading clipboard content.
+            return terminal != nil && UIPasteboard.general.numberOfItems > 0
+        }
+        return super.canPerformAction(action, withSender: sender)
+    }
+
     override func paste(_ sender: Any?) {
-        if let value = UIPasteboard.general.string { terminal?.paste(value) }
+        terminal?.clipboard.pasteClipboard()
     }
 
     override var keyCommands: [UIKeyCommand]? {

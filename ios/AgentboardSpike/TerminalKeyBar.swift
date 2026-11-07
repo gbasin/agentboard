@@ -10,6 +10,8 @@ struct TerminalKeyBar: View {
     @State private var restoreInput = false
 
     var body: some View {
+        VStack(spacing: 0) {
+        NativePasteStatus(controller: terminal.clipboard)
         HStack(spacing: 4) {
             key("Enter", symbol: "return", tint: true) { terminal.send("\r") }
             Button("esc") { terminal.send("\u{1b}") }.terminalKey().accessibilityLabel("Escape")
@@ -40,12 +42,17 @@ struct TerminalKeyBar: View {
         .padding(.horizontal, 8).padding(.vertical, 6)
         .background(.bar)
         .overlay(alignment: .top) { Divider() }
+        }
         .sheet(isPresented: $showPaste, onDismiss: {
             if restoreInput { terminal.focus() }
         }) {
             NavigationStack {
-                TextEditor(text: $pastedText).textInputAutocapitalization(.never).autocorrectionDisabled()
-                    .padding().accessibilityLabel("Text to paste")
+                VStack(alignment: .leading) {
+                    NativePasteControl(controller: terminal.clipboard) { showPaste = false }
+                        .frame(width: 180, height: 48).padding(.horizontal).padding(.top)
+                    TextEditor(text: $pastedText).textInputAutocapitalization(.never).autocorrectionDisabled()
+                        .padding().accessibilityLabel("Text to paste")
+                }
                     .navigationTitle("Paste into terminal").navigationBarTitleDisplayMode(.inline)
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) { Button("Cancel") { showPaste = false } }

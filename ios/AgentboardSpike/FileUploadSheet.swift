@@ -5,53 +5,64 @@ import UniformTypeIdentifiers
 struct FileUploadSheet: View {
     let server: String
     @ObservedObject var terminal: TerminalBridge
+    @ObservedObject private var upload: NativePasteController
     @State private var picker = false
-    @State private var photo: PhotosPickerItem?
-    @State private var uploadedPath: String?
-    @State private var error: String?
-    @State private var busy = false
+    @State private var photos: [PhotosPickerItem] = []
+    @State private var reading = false
+    @State private var readTask: Task<Void, Never>?
     @Environment(\.dismiss) private var dismiss
+    init(server: String, terminal: TerminalBridge) {
+        self.server = server; self.terminal = terminal; self.upload = terminal.clipboard
+    }
+    private var busy: Bool { reading || upload.busy }
     var body: some View {
         NavigationStack {
             Form {
-                if let error { ErrorRow(message: error) }
+                NativePasteStatus(controller: upload)
                 Button("Choose file", systemImage: "doc") { picker = true }.disabled(busy)
-                PhotosPicker(selection: $photo, matching: .images) { Label("Choose photo", systemImage: "photo") }.disabled(busy)
-                if busy { ProgressView("Uploading…") }
-                if let path = uploadedPath {
-                    Text(URL(fileURLWithPath: path).lastPathComponent)
-                    Button("Insert file path") { terminal.paste(BoardAPI.shellQuote(path)); dismiss() }.disabled(!terminal.ready)
+                PhotosPicker(selection: $photos, matching: .images) { Label("Choose photo", systemImage: "photo") }.disabled(busy)
+                if reading { ProgressView("Reading files…") }
+                if case .prepared(let paths) = upload.state {
+                    ForEach(Array(paths.enumerated()), id: \.offset) { _, path in Text(URL(fileURLWithPath: path).lastPathComponent) }
+                    Button("Insert file path") { upload.insert(); dismiss() }.disabled(!terminal.ready)
                 }
-                Text("Files upload to the connected server, up to 40 MB. Insert pastes a quoted path without pressing Enter.").font(.footnote)
+                Text("Files upload to the connected server, up to 40 MB each. Insert adds files or image attachments without pressing Enter.").font(.footnote)
             }.navigationTitle("Attach file").navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() }.disabled(busy) } }
-                .interactiveDismissDisabled(busy)
-                .fileImporter(isPresented: $picker, allowedContentTypes: [.item]) { result in
+                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
+                .fileImporter(isPresented: $picker, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
                     switch result {
-                    case .success(let url):
-                        Task {
-                            let access = url.startAccessingSecurityScopedResource(); defer { if access { url.stopAccessingSecurityScopedResource() } }
-                            do {
-                                if let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size > 40 * 1024 * 1024 { throw SessionActionError(message: "File exceeds the 40 MB limit.") }
-                                try await upload(Data(contentsOf: url), name: url.lastPathComponent)
-                            } catch { self.error = error.localizedDescription }
-                        }
-                    case .failure(let failure): error = failure.localizedDescription
+                    case .success(let urls): read {
+                        NativePastePayload(files: try urls.map { try NativePasteFile.read($0) })
+                    }
+                    case .failure(let failure): upload.fail(failure)
                     }
                 }
-                .onChange(of: photo) { _, item in
-                    Task { do {
-                        if let data = try await item?.loadTransferable(type: Data.self) {
-                            let ext = item?.supportedContentTypes.compactMap(\.preferredFilenameExtension).first ?? "jpg"
-                            try await upload(data, name: "photo.\(ext)")
+                .onChange(of: photos) { _, items in
+                    read {
+                        var files: [NativePasteFile] = []
+                        for item in items {
+                            try Task.checkCancellation()
+                            if let data = try await item.loadTransferable(type: Data.self) {
+                                let type = item.supportedContentTypes.first
+                                files.append(.init(data: data, name: "photo.\(type?.preferredFilenameExtension ?? "jpg")", mime: type?.preferredMIMEType ?? "image/jpeg"))
+                            }
                         }
-                    } catch { self.error = error.localizedDescription } }
+                        return NativePastePayload(files: files)
+                    }
                 }
+                .onDisappear { readTask?.cancel(); upload.cancel() }
         }
     }
-    private func upload(_ data: Data, name: String) async throws {
-        guard !busy else { return }; busy = true; error = nil; uploadedPath = nil; defer { busy = false }
-        uploadedPath = try await BoardAPI(server).upload(data, name: name)
+    private func read(_ operation: @escaping () async throws -> NativePastePayload) {
+        readTask?.cancel(); upload.cancel(); reading = true
+        readTask = Task { @MainActor in
+            defer { reading = false }
+            do {
+                let payload = try await operation()
+                try Task.checkCancellation()
+                upload.submit(payload, immediately: false)
+            } catch { if !Task.isCancelled { upload.fail(error) } }
+        }
     }
 }
 struct NumberKeys: View {

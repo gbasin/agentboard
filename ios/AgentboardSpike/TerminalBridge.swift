@@ -8,7 +8,8 @@ final class TerminalBridge: ObservableObject {
     @Published var control = false
     @Published var fontSize = 13
     @Published var inputFocused = false
-    @Published var ready = false
+    @Published var ready = false { didSet { if oldValue && !ready { clipboard.cancel() } } }
+    let clipboard = NativePasteController()
     @Published var liveSession: BoardSession?
     weak var inputView: TerminalInputView?
     weak var webView: WKWebView?
@@ -71,6 +72,7 @@ struct TerminalWebView: UIViewRepresentable {
 
     static func dismantleUIView(_ container: TerminalContainerView, coordinator: Coordinator) {
         coordinator.active = false
+        coordinator.bridge.clipboard.cancel()
         coordinator.live?.deselect(owner: coordinator.owner)
         coordinator.subscription?.cancel()
         container.input.resignFirstResponder()
@@ -93,6 +95,17 @@ struct TerminalWebView: UIViewRepresentable {
         init(bridge: TerminalBridge, session: BoardSession, endpoint: String, live: BoardConnection?) {
             self.bridge = bridge; self.session = session; self.endpoint = endpoint; self.live = live
             super.init()
+            bridge.clipboard.configure(agent: session.agent, currentAgent: { [weak bridge] in bridge?.liveSession?.agent ?? session.agent }, remote: session.remote,
+                available: { [weak self] in guard let self else { return false }; return self.active && (self.live == nil || self.bridge.ready) },
+                upload: { [weak self] file in
+                    guard let self, let live = self.live else { throw SessionActionError(message: "Connect to Agentboard to upload files.") }
+                    return try await BoardAPI(live.preferences.serverURL).upload(file.data, name: file.name, mime: file.mime)
+                }, deliver: { [weak self] message in
+                    guard let self, self.active else { return }
+                    if let live = self.live { live.input(message.value, owner: self.owner, paste: message.bracketed) }
+                    else if message.bracketed { self.bridge.paste(message.value) }
+                    else { self.bridge.send(message.value) }
+                })
             subscription = live?.$sessions.sink { [weak bridge] sessions in
                 bridge?.liveSession = sessions.first { $0.id == session.id }
             }

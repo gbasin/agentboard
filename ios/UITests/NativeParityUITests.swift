@@ -151,9 +151,12 @@ final class NativeParityUITests: XCTestCase {
         capture("photo-picker")
         let photo = app.images.matching(identifier: "PXGGridLayout-Info").firstMatch
         XCTAssertTrue(photo.waitForExistence(timeout: 5)); photo.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5)).tap()
+        let add = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@ OR label == %@", "Add", "Done")).firstMatch
+        XCTAssertTrue(add.waitForExistence(timeout: 3), app.debugDescription)
+        add.tap()
         XCTAssertTrue(app.buttons["Insert file path"].waitForExistence(timeout: 15)); capture("uploaded-photo")
         app.buttons["Insert file path"].tap()
-        XCTAssertTrue(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in app.webViews.staticTexts.allElementsBoundByIndex.map(\.label).joined().contains("photo.png") }, object: nil)], timeout: 10) == .completed)
+        XCTAssertTrue(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in app.webViews.staticTexts.allElementsBoundByIndex.map(\.label).joined().contains("/tmp/paste-") }, object: nil)], timeout: 10) == .completed)
         // Clear the unexecuted path; insertion must not execute a command.
         app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.65)).tap(); app.buttons["Control"].tap(); app.typeText("u")
     }
@@ -172,6 +175,8 @@ final class NativeParityUITests: XCTestCase {
         sleep(1)
         let file = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "parity-upload")).firstMatch
         XCTAssertTrue(file.waitForExistence(timeout: 5)); app.cells["parity-upload, txt"].images.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5)).tap()
+        let open = app.buttons["Open"]
+        if open.waitForExistence(timeout: 3) { open.tap() }
         XCTAssertTrue(app.buttons["Insert file path"].waitForExistence(timeout: 15)); capture("uploaded-file")
         app.buttons["Insert file path"].tap()
         XCTAssertTrue(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in app.webViews.staticTexts.allElementsBoundByIndex.map(\.label).joined().contains("parity-upload.txt") }, object: nil)], timeout: 10) == .completed)

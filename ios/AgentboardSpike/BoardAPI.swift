@@ -27,13 +27,15 @@ struct BoardAPI {
             throw SessionActionError(message: error?["message"] as? String ?? error?["error"] as? String ?? "Server request failed.")
         }
     }
-    func upload(_ data: Data, name: String) async throws -> String {
+    func upload(_ data: Data, name: String, mime: String = "application/octet-stream") async throws -> String {
         guard data.count <= 40 * 1024 * 1024 else { throw SessionActionError(message: "File exceeds the 40 MB limit.") }
+        let image = ["image/png", "image/jpeg", "image/gif", "image/webp"].contains(mime)
+        let field = image ? "image" : "file"
         let boundary = UUID().uuidString
         let safeName = name.filter { !$0.isNewline && $0 != "\"" && $0 != "\\" }
-        var body = Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"\(safeName)\"\r\nContent-Type: application/octet-stream\r\n\r\n".utf8)
+        var body = Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(field)\"; filename=\"\(safeName)\"\r\nContent-Type: \(mime)\r\n\r\n".utf8)
         body.append(data); body.append(Data("\r\n--\(boundary)--\r\n".utf8))
-        var request = URLRequest(url: url("api/paste-file")); request.httpMethod = "POST"; request.timeoutInterval = 60
+        var request = URLRequest(url: url(image ? "api/paste-image" : "api/paste-file")); request.httpMethod = "POST"; request.timeoutInterval = 60
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         let (responseData, response) = try await URLSession.shared.upload(for: request, from: body)
         try Self.check(responseData, response)
@@ -66,6 +68,7 @@ struct AgentLogSession: Decodable, Identifiable, Hashable {
     let sessionId: String; let displayName: String; let projectPath: String; let agentType: String
     let lastActivityAt: String; let lastUserMessage: String?; let isHibernating: Bool?; let lastResumeError: String?
     let prs: [PullRequestItem]?; let media: [MediaItem]?
+    var host: String? = nil
     var id: String { sessionId }
 }
 struct HostState: Decodable, Identifiable { let host: String; let ok: Bool; let error: String?; var id: String { host } }
@@ -79,6 +82,7 @@ struct HistoryDetail: Decodable {
     let session: SavedSession; let terminalPreview: String?; let events: [Event]; let conversations: [AgentLogSession]
 }
 struct LibraryHealth: Decodable {
+    var interruptedIds: [String]? = nil
     struct Settings: Decodable { let autoResume: Bool; let capturePreviews: Bool }
     let interrupted: Int; let error: String?; let matchingAvailable: Bool; let matchingError: String?; let settings: Settings
 }
