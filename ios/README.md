@@ -4,9 +4,11 @@ The app opens existing Agentboard sessions through native SwiftUI navigation. Th
 
 `BoardConnection` owns a URLSession WebSocket at `/ws?catalog=2`. The catalog query is required for the live v0.40 backend. A proxy path prefix is preserved. WKWebView renders bundled xterm.js output and bridges input; a public-API UIKit `TerminalInputView` owns the keyboard. The connection uses heartbeat checks and reconnect backoff. Backgrounding closes the socket. Returning reconnects and restores the selected session. Disconnected input is never replayed. Each selection opens a fresh socket to isolate stale responses, including repeat visits to the same session ID.
 
-The native client includes session creation, duplication, rename, end, hibernate and wake; directory browsing and recent paths; shared command presets; saved-session library and recovery; transcript messages/events; media and pull-request views; native file/photo uploads; and shared/server/device settings. Library leads to saved sessions and inactive agent conversations. Session actions are in the terminal menu and catalog context menu. File insertion pastes a quoted server path without Enter. Uploads are unavailable for SSH sessions, matching the PWA.
+The native client includes session creation, duplication, rename, end, hibernate and wake; directory browsing and recent paths; shared command presets; saved-session library and recovery; transcript messages/events; media and pull-request views; native file/photo uploads; and shared/server/device settings. Library leads to saved sessions and inactive agent conversations. Session actions are in the terminal menu and catalog context menu. Document insertion pastes a quoted server path without Enter. Clipboard images/files and multi-selection pickers use the shared native upload controller; supported images follow the PWA's agent-specific input format. Uploads are unavailable for SSH sessions, matching the PWA.
 
-Validation: the full light run passed 40 tests. The final light correction run passed two workflows. All 12 dark/max-text workflows are verified: 11 passed in the final broad run, and the remaining management flow passed after fixing its menu-scrolling test helper. Repository lint, typecheck and all 1,859 Bun tests passed. Exact result bundles, coverage and limits are in PARITY.md.
+The app targets PWA reference `74ed561`; complete functional parity is not certified. The source audit and current correction evidence are recorded in PARITY.md.
+
+Historical validation: the full light run passed 40 tests. The final light correction run passed two workflows. All 12 dark/max-text workflows are verified: 11 passed in the final broad run, and the remaining management flow passed after fixing its menu-scrolling test helper. Repository lint, typecheck and all 1,859 Bun tests passed. Exact result bundles, coverage and limits are in PARITY.md.
 
 See [PARITY.md](PARITY.md) for the acceptance and validation matrix. Explicit `-demo` and legacy `-spikeEndpoint` arguments retain the earlier sample and raw-shell fixtures.
 
@@ -127,13 +129,53 @@ Historical evidence in `evidence/`:
 
 ## Full parity regression command
 
-Prepare the private backend, seeded conversations, file/photo fixtures, port-4149 shell fixture and port-4190 PR proxy as described above. Run the full native matrix on the simulator host:
+Prepare the private backend, seeded conversations, file/photo fixtures, port-4149 shell fixture, port-4190 PR proxy and port-4192 parity-gap fixture as described above. Run the full native matrix on the simulator host:
 
 ```sh
 ./ios/scripts/test-e2e.sh YOUR_UDID
 ```
 
 The script runs native unit/integration and UI tests in light appearance at standard text size, then repeats native flows in dark appearance at the largest accessibility text size. It restores light appearance and standard text size on exit. Each run writes separate timestamped xcresult bundles. It does not install on a physical device or touch a production server.
+
+## Parity-gap fixture and targeted checks
+
+Run the deterministic protocol fixture in a separate terminal:
+
+```sh
+bun ios/scripts/parity-gap-fixture.ts
+```
+
+It binds to loopback port 4192. It does not start tmux or contact SSH, GitHub or production sessions. Keep the real isolated port-4151 backend running for clipboard upload and shell checks.
+
+After preparing the app and fixtures, run the targeted checks:
+
+```sh
+xcodebuild test -project ios/AgentboardSpike.xcodeproj -scheme AgentboardSpike \
+  -destination 'platform=iOS Simulator,id=YOUR_UDID' \
+  -derivedDataPath ios/.build \
+  -only-testing:AgentboardSpikeTests \
+  -only-testing:AgentboardSpikeUITests/ParityGapUITests \
+  -only-testing:AgentboardSpikeUITests/NativeClipboardUITests \
+  -only-testing:AgentboardSpikeUITests/NativeParityUITests/testPhotoUploadAndInsertIntoShell \
+  -only-testing:AgentboardSpikeUITests/NativeParityUITests/testFilePickerUploadAndInsert
+```
+
+`ParityGapUITests` exercises native project/host selection across active and dormant lists, hidden approval recovery, remote management capability changes, recovery notices and manual ordering. `NativeClipboardUITests` uses the Simulator's real pasteboard through public `UIPasteControl` and asynchronous item providers. The native edit-menu path retains operating-system paste behavior. Native picker regression tests include the system multi-selection Done/Add/Open step. The updated `test-e2e.sh` includes both new UI classes in its light and dark runs; the command above selects them for targeted regression work.
+
+Current acceptance: 43 native unit/integration tests passed. All eight affected UI workflows passed in both light/standard-text and dark/maximum-text appearances across separate result bundles. Earlier failures remain recorded in PARITY.md; this is not a clean consolidated run. Dark reruns corrected test navigation through visible native containers/rows and normal scrolling without product changes.
+
+Evidence includes 18 light captures and 20 dark captures from passing workflows. The light review found no new issues and resolved both contrast corrections. The reviewer inspected all 18 light and 20 dark captures and returned **ship this scoped parity-fix UI**, with no further correction required. Five diagnostic captures from the failed initial dark run remain separate in `evidence/gaps-dark-initial/`. Simulator light appearance and `large` text size were independently verified. Owned backend, protocol fixture and keep-awake processes were stopped; the private test tmux session was removed. No test runner or port-4151/4192 listeners remained. Proposal hosts were preserved.
+
+For subsequent validation:
+
+1. Confirm access to m5p and Simulator UUID `94EEE322-8231-4D09-8904-5DE3EFAE934B`.
+2. Inspect existing test and fixture processes before starting another run.
+3. Check the isolated real backend on port 4151 and deterministic fixture on port 4192. Confirm file/photo fixtures exist.
+4. Run the targeted command above in light appearance at `large` content size, then repeat the eight UI workflows in dark appearance at `accessibility-extra-extra-extra-large`. Use a new result bundle for each run.
+5. Export attachments with `xcrun xcresulttool export attachments`. Record capture provenance and review the affected views.
+6. Restore light appearance and `large` content size. Stop only test/fixture processes started for validation. Preserve the proposal host for the user's review.
+
+The independent design proposals are hosted at `http://100.82.11.20:8188/proposals/`. The original m5p mirror at `http://100.82.11.21:8088/proposals/` is optional. These browser studies are not native screenshots or approved app redesigns.
 
 ## Findings and limits
 

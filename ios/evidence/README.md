@@ -2,6 +2,48 @@
 
 Captured on m5p with Xcode 26.4, iOS 26.4, iPhone 17 Pro simulator (94EEE322-8231-4D09-8904-5DE3EFAE934B). Images are screenshots of the built app, not generated mockups. Session names, summaries, and transcript copy are illustrative samples.
 
+## Parity-gap corrections
+
+This pass corrects clipboard image/file delivery, shared history filters, hidden approval visibility, remote capability gating and proactive recovery. The earlier broad parity claim did not establish these behaviors. See [PARITY.md](../PARITY.md) for the implementation and validation boundaries.
+
+| Evidence | Result |
+|---|---|
+| `gaps-public-paste-light.xcresult` | 43 unit/integration passes and six of eight UI passes; all five gap workflows and file-picker upload passed |
+| `gaps-clipboard-photo-light.xcresult` | Corrected clipboard workflow passed; photo confirmation selector failed |
+| `gaps-finish-light.xcresult` | Photo upload, hidden approval and recovery passed, three of three |
+| `gaps-dark-max.xcresult` | Initial run exited 65; seven explicit control-location failures retrieved, eighth result unavailable |
+| `gaps-dark-max-scroll.xcresult` | Three of eight UI workflows passed: clipboard, file upload and photo upload; five catalog workflows failed on test navigation |
+| `gaps-dark-gap-navigation.xcresult` | Four of five passed: hidden approval, manual ordering, recovery and remote capabilities; filter navigation failed |
+| `gaps-dark-filter-visible.xcresult` | Filter/history workflow passed, one of one (32.084 seconds) |
+| `gaps-dark-recovery-row.xcresult` | Recovery-row capture test passed, one of one (19.992 seconds) |
+| Repository checks | Lint/typecheck and all 1,859 Bun tests passed |
+| Image bytes | The backend file matched the 319-byte input PNG: SHA-256 `16c379714e8987a93fbbb021d0acdc7df147d77a14ca6878dd962d47c109249f` |
+
+All eight affected workflows passed in light/standard-text and dark/maximum-text appearances across these runs. The table preserves failed tests; it does not claim a clean combined eight-test bundle. Test corrections join wrapped terminal accessibility rows, target the native PhotosUI confirmation, and navigate visible native containers/rows with normal scrolling. No product changes were needed for the dark reruns.
+
+### Local capture provenance
+
+`gaps-light/` contains **18 light/standard-text PNGs**:
+
+| Files | Source and scope |
+|---|---|
+| `gap-manual-reordered`, `gap-manual-order-restored` | Original public-paste run; native reorder and persistence |
+| `gap-selected-filters`, `gap-filtered-history`, `gap-filtered-hibernating` | Original run; shared project/host filtering |
+| `gap-hidden-approval`, `gap-approval-restored` | Final three-test light run after `eb071c4`; hidden approval and clearing filters |
+| `gap-remote-control-disabled`, `gap-remote-control-enabled`, `gap-remote-unmanaged` | Original run; capability/ownership gating |
+| `gap-recovery-notice`, `gap-recovery-library`, `gap-new-interruption` | Final three-test light run after `eb071c4`; recovery and per-interruption dismissal |
+| `parity-uploaded-file` | Original run; file-picker upload result |
+| `clipboard-final-state`, `clipboard-image-and-text` | Successful corrected clipboard run; mixed text/image insertion |
+| `parity-photo-picker`, `parity-uploaded-photo` | Final three-test light run; multi-photo confirmation and upload |
+
+Nine captures remain from the original public-paste run; seven come from `gaps-finish-light.xcresult`, including the refreshed hidden-approval and saved-session metadata contrast after `eb071c4`; two come from the successful clipboard rerun. The refreshed images replace the five affected original captures rather than claiming those old images showed the final contrast.
+
+`gaps-dark/` contains **20 PNGs from passing workflows**: five clipboard/file/photo captures from `gaps-dark-max-scroll.xcresult`, eleven hidden-approval/manual-order/recovery/remote-action captures from `gaps-dark-gap-navigation.xcresult`, and three filter captures from `gaps-dark-filter-visible.xcresult`. The twentieth capture, `gap-recovery-saved-row`, comes from `gaps-dark-recovery-row.xcresult`.
+
+Review of all 18 light captures found no new issues and scored both contrast corrections resolved. The reviewer has no outstanding source blocker. The reviewer inspected all 18 light and 20 dark captures and returned **ship this scoped parity-fix UI**, with no further correction required. Five diagnostic PNGs from the failed initial run remain in `gaps-dark-initial/`: `gap-recovery-notice`, `gap-recovery-library`, `gap-selected-filters`, `gap-hidden-approval` and `gap-remote-control-disabled`. These are not passing validation evidence. Simulator light appearance and `large` text size were independently verified. Owned backend, protocol fixture and keep-awake processes were stopped; the private test tmux session was removed. No test runner or port-4151/4192 listeners remained. Proposal hosts were preserved.
+
+Port 4192 supplies controlled filter, remote-capability and recovery data without contacting SSH or production sessions. Shell insertion and exact image-upload bytes do not prove that a real agent accepts an image attachment. Physical-device, VoiceOver, IME, live SSH/GitHub and actual share destinations remain outside this evidence.
+
 ## Native design polish
 
 This pass preserves the Apple-native controls, semantic colors, typography and terminal palette. Persistent primary captions identify populated create/duplicate, Settings and preset fields. Each native TextField keeps its original label; its duplicate visual caption is accessibility-hidden. Catalog rows combine project, agent and remote-host context in one caption and omit the repeated local hostname. Pull-request details omit empty metadata rows.
@@ -28,7 +70,7 @@ The fresh finish reviewer inspected all 12 captures and returned **ship this sco
 
 ## Native parity extension
 
-The current parity implementation preserves the existing native visual system. See [DESIGN.md](../DESIGN.md) for component patterns and [PARITY.md](../PARITY.md) for the capability and validation matrix.
+The earlier parity extension preserved the existing native visual system. See [DESIGN.md](../DESIGN.md) for component patterns and [PARITY.md](../PARITY.md) for the capability and validation matrix.
 
 - `parity-light/`: 51 light/standard-text captures, including final correction recaptures.
 - `parity-dark/`: 36 dark/maximum-accessibility-text captures, including final management and correction recaptures.
@@ -40,11 +82,11 @@ The current parity implementation preserves the existing native visual system. S
 
 These PNGs are Simulator test evidence, not generated shipping raster assets. No generated raster was introduced into the app by this extension.
 
-Final validation, as recorded in [PARITY.md](../PARITY.md):
+Historical validation, as recorded in [PARITY.md](../PARITY.md):
 
 - `e2e-parity-complete-2-light.xcresult`: 40 passed (20 unit/integration and 20 UI), with no failures or skips.
 - `parity-review-light.xcresult`: both post-fix UI tests passed, covering settings/presets/number keys and create/error/retry/rename/cancel/end.
-- `parity-review-dark.xcresult`: 11 of 12 passed. The management test stopped because the harness did not scroll to the offscreen Rename menu item. After correcting the helper, `parity-management-dark.xcresult` passed the remaining workflow. All 12 dark/maximum-text workflows are verified on the final product source across these two bundles; the 11/12 bundle is not a clean full-suite pass.
+- `parity-review-dark.xcresult`: 11 of 12 passed. The management test stopped because the harness did not scroll to the offscreen Rename menu item. After correcting the helper, `parity-management-dark.xcresult` passed the remaining workflow. All 12 dark/maximum-text workflows were verified on that pass's final product source across these two bundles; the 11/12 bundle is not a clean full-suite pass.
 - Root lint and typecheck passed. All 1,859 Bun tests passed with zero failures; the full repository test command exited successfully.
 
 Result bundles remain on the Simulator host under `ios/evidence/`.
