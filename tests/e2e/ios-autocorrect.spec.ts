@@ -3,7 +3,6 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { expect, test, type Page } from '@playwright/test'
 const fixture = fileURLToPath(new URL('./fixtures/autocorrect-repl.py', import.meta.url))
-const enabled = process.env.E2E_IOS_AUTOCORRECT === '1'
 const session = process.env.E2E_TMUX_SESSION!
 const targets: string[] = []
 const sent = new WeakMap<Page, string[]>()
@@ -78,15 +77,58 @@ test.afterEach(async ({ page }, info) => {
   for (const name of targets.splice(0)) tmux(['kill-window', '-t', `${session}:${name}`]) })
 
 test('ordinary build keeps the prototype disabled', async ({ page }) => {
-  test.skip(enabled)
   await create('autocorrect-off')
   await page.goto('/')
   const input = await select(page, 'autocorrect-off')
   await expect(input).toHaveAttribute('autocorrect', 'off')
 })
 
-test.describe('native autocorrect test build', () => {
-  test.skip(!enabled, 'Use playwright.autocorrect.config.ts to build the opt-in prototype')
+test('settings toggles autocorrect live and persists across reload', async ({ page }, info) => {
+  await create('autocorrect-setting')
+  await page.goto('/')
+  const input = await select(page, 'autocorrect-setting')
+  await expect(input).toHaveAttribute('autocorrect', 'off')
+  const openSettings = async () => {
+    await page.getByRole('button', { name: 'More options' }).click()
+    await page.getByRole('button', { name: 'Settings', exact: true }).locator('visible=true').click()
+    const settings = page.locator('[role="dialog"][data-suspends-terminal]')
+    if (await settings.getByRole('button', { name: 'Terminal', exact: true }).isVisible()) {
+      await settings.getByRole('button', { name: 'Terminal', exact: true }).click()
+    }
+    return settings.getByRole('switch', { name: 'iOS autocorrect', exact: true })
+  }
+  const toggle = await openSettings()
+  await expect(toggle).not.toBeChecked()
+  await toggle.click()
+  await expect(input).toHaveAttribute('autocorrect', 'on')
+  await info.attach('ios-autocorrect-settings.png', {body: await page.screenshot(), contentType:'image/png'})
+  await page.getByRole('button', { name: 'Close settings' }).click()
+  await page.reload()
+  await select(page, 'autocorrect-setting')
+  await expect(input).toHaveAttribute('autocorrect', 'on')
+  await page.keyboard.type('teh')
+  await replacement(page, 'the')
+  await page.keyboard.press('Enter')
+  await submitted('autocorrect-setting', 'the')
+  await (await openSettings()).click()
+  await expect(input).toHaveAttribute('autocorrect', 'off')
+  await page.getByRole('button', { name: 'Close settings' }).click()
+  await page.reload()
+  await select(page, 'autocorrect-setting')
+  await expect(input).toHaveAttribute('autocorrect', 'off')
+  await page.keyboard.type('raw')
+  await page.keyboard.press('Enter')
+  await submitted('autocorrect-setting', 'raw', 2)
+})
+
+test.describe('native autocorrect enabled', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      if (!localStorage.getItem('agentboard-settings')) {
+        localStorage.setItem('agentboard-settings', JSON.stringify({state:{iosAutocorrect:true},version:8}))
+      }
+    })
+  })
   test('replacement, native Return ordering, and following prompt submit exactly once', async ({ page }) => {
     await create('autocorrect-order')
     await page.goto('/')
@@ -137,12 +179,16 @@ test.describe('native autocorrect test build', () => {
     await select(page, 'autocorrect-reconnect')
     await page.keyboard.type('prefix ')
     await expect.poll(() => pane('autocorrect-reconnect')).toContain('prompt> prefix')
+    await page.context().setOffline(true)
     await page.evaluate(() => {
       const state = window as unknown as {acReady?: string; acSocket: WebSocket}
       state.acReady = undefined
       state.acSocket.close()
     })
+    await expect(page.locator('.xterm-helper-textarea')).toHaveAttribute('autocorrect', 'off')
+    await page.context().setOffline(false)
     await select(page, 'autocorrect-reconnect')
+    await expect(page.locator('.xterm-helper-textarea')).toHaveAttribute('autocorrect', 'on')
     await page.keyboard.type('teh')
     await replacement(page, 'the')
     await page.keyboard.press('Enter')

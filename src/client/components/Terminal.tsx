@@ -18,13 +18,19 @@ import { useResolvedTheme, terminalThemes } from '../stores/themeStore'
 import { useSettingsStore, getFontFamily } from '../stores/settingsStore'
 import { isIOSDevice, getEffectiveModifier, getModifierDisplay } from '../utils/device'
 import { keepA11yRowsStable } from '../utils/a11yRowStability'
+import { MEASURE_PROBE_ATTR, watchSelectedRows } from '../utils/iosSelection'
 import { formatRelativeTime } from '../utils/time'
 import { getPathLeaf } from '../utils/sessionLabel'
 import { statusClass, statusText } from '../utils/sessionStatus'
 import SessionRail from './SessionRail'
 import TerminalControls from './TerminalControls'
+import TerminalSnapshotLayer from './TerminalSnapshotLayer'
+import { shouldRejoinWrapped, useOpenSelectText, useTerminalSnapshot } from '../hooks/useTerminalSnapshot'
 import MediaRail from './MediaRail'
 import PasteStatus from './PasteStatus'
+import RecoveryDraft from './RecoveryDraft'
+import { useRecoveryDraft } from '../hooks/useRecoveryDraft'
+import { recoveryDraftIdentity } from '../utils/recoveryDraftIdentity'
 import { useBrowserPaste, type BrowserPaste } from '../hooks/useBrowserPaste'
 import { clipboardFiles } from '../utils/browserFiles'
 import SessionDrawer from './SessionDrawer'
@@ -125,7 +131,7 @@ export default function Terminal({
   const resetNativeInputRef = useRef<(() => void) | undefined>(undefined)
   const sendMessage = useCallback<SendClientMessage>((message) => {
     if (message.type === 'terminal-input' || message.type === 'terminal-paste') resetNativeInputRef.current?.()
-    sendRawMessage(message)
+    return sendRawMessage(message)
   }, [sendRawMessage])
   void _onClose // Keep for interface compatibility
   const theme = useResolvedTheme()
@@ -187,6 +193,10 @@ export default function Terminal({
     return hosts.size > 1
   }, [sessions, hibernatingSessions])
 
+  const recoveryIdentity = session && !isReadOnly
+    ? recoveryDraftIdentity(session) : null
+  const recoveryDraft = useRecoveryDraft(recoveryIdentity)
+
   const {
     resetNativeInput,
     containerRef,
@@ -207,6 +217,8 @@ export default function Terminal({
     onPasteFiles: (input) => pasteFilesRef.current(input),
     onPasteError: (message) => pasteErrorRef.current(message),
     allowAttach: !isReadOnly,
+    deferInput: recoveryDraft.pending,
+    onDeferredInput: recoveryDraft.capture,
     connectionStatus,
     connectionEpoch,
     sendMessage,
@@ -223,6 +235,10 @@ export default function Terminal({
   })
 
   resetNativeInputRef.current = resetNativeInput
+  const snapshot = useTerminalSnapshot({ sessionId: session?.id ?? null, sendMessage, subscribe })
+  const snapshotOpen = snapshot.state.status !== 'closed'
+  const handleSelectText = useOpenSelectText(snapshot.open, clearIOSSelectionRef)
+  const rejoinWrapped = shouldRejoinWrapped(snapshot.state, session?.agentType)
 
   const scrollToBottom = useCallback(() => {
     // Exit tmux copy-mode to return to live output (oracle recommendation)
@@ -352,8 +368,17 @@ export default function Terminal({
       })
     }
 
+    // Clears the native highlight once output rewrites a row it covers, so it
+    // never sits over text that was not selected. Lives as long as the selection.
+    let stopWatchingRows: (() => void) | null = null
+    const stopRowWatch = () => {
+      stopWatchingRows?.()
+      stopWatchingRows = null
+    }
+
     // Hard-clear iOS selection by removing ranges and forcing a11y repaint
     const clearIOSSelection = () => {
+      stopRowWatch()
       lastSelectionInsideRef.current = false
       const sel = window.getSelection()
       try { sel?.removeAllRanges() } catch {}
@@ -370,6 +395,7 @@ export default function Terminal({
         if (lastSelectionInsideRef.current) {
           clearIOSSelection()
         } else {
+          stopRowWatch()
           // Only update if currently true to avoid unnecessary re-renders
           setIsSelectingText((prev) => prev ? false : prev)
         }
@@ -383,6 +409,12 @@ export default function Terminal({
       }
 
       lastSelectionInsideRef.current = selectionInside
+      if (selectionInside && !stopWatchingRows) {
+        const a11yTree = container.querySelector('.xterm-accessibility-tree')
+        if (a11yTree) {
+          stopWatchingRows = watchSelectedRows(a11yTree, () => window.getSelection(), clearIOSSelection)
+        }
+      }
       const newValue = selectionInside
       // Only update if value changed
       setIsSelectingText((prev) => prev !== newValue ? newValue : prev)
@@ -473,6 +505,7 @@ export default function Terminal({
       document.removeEventListener('touchstart', onTouchStart)
       document.removeEventListener('touchmove', onTouchMove)
       document.removeEventListener('touchend', onTouchEnd)
+      stopRowWatch()
       clearIOSSelectionRef.current = null
       lastSelectionInsideRef.current = false
     }
@@ -524,6 +557,7 @@ export default function Terminal({
       const probe = document.createElement('span')
       probe.textContent = '0'.repeat(200)
       probe.style.cssText = 'position:absolute;visibility:hidden;white-space:pre;pointer-events:none;letter-spacing:0px'
+      probe.setAttribute(MEASURE_PROBE_ATTR, '')
       a11yTree.appendChild(probe)
       const domCharW = probe.getBoundingClientRect().width / 200
       probe.remove()
@@ -1092,6 +1126,15 @@ export default function Terminal({
       }
     }
 
+    // iOS cancels a touch when a system gesture takes it over. Without this the
+    // long-press timer could still fire, or the app would keep a held button
+    // from a remote selection and treat the next touch as a drag.
+    const handleTouchCancel = () => {
+      clearLongPressTimer()
+      if (remoteSelectionActive) endRemoteSelection(undefined)
+      resetTouchState()
+    }
+
     // Swallow synthetic mouse events after iOS selection dismissal to protect tmux
     const handleMouseDown = (e: MouseEvent) => {
       if (swallowNextMouseRef.current) {
@@ -1108,12 +1151,14 @@ export default function Terminal({
     container.addEventListener('touchstart', handleTouchStart, startOptions)
     container.addEventListener('touchmove', handleTouchMove, moveOptions)
     container.addEventListener('touchend', handleTouchEnd, endOptions)
+    container.addEventListener('touchcancel', handleTouchCancel, startOptions)
     container.addEventListener('mousedown', handleMouseDown, mouseOptions)
 
     return () => {
       container.removeEventListener('touchstart', handleTouchStart, startOptions)
       container.removeEventListener('touchmove', handleTouchMove, moveOptions)
       container.removeEventListener('touchend', handleTouchEnd, endOptions)
+      container.removeEventListener('touchcancel', handleTouchCancel, startOptions)
       container.removeEventListener('mousedown', handleMouseDown, mouseOptions)
       clearLongPressTimer()
       // Re-enable textarea on cleanup
@@ -1127,36 +1172,42 @@ export default function Terminal({
 
   const handleSendKey = useCallback(
     (key: string) => {
-      if (!session || isReadOnly || !isInputReady) return
-      sendMessage({ type: 'terminal-input', sessionId: session.id, data: key })
+      if (!session || isReadOnly) return
+      if (recoveryDraft.pending || !isInputReady) { recoveryDraft.capture(key, 'typing'); return }
+      if (sendMessage({ type: 'terminal-input', sessionId: session.id, data: key }) === false) {
+        recoveryDraft.capture(key, 'typing')
+      }
     },
-    [session, isReadOnly, isInputReady, sendMessage]
+    [session, isReadOnly, isInputReady, sendMessage, recoveryDraft]
   )
 
   // Deliver pasted text as a single bracketed paste (server routes it through
   // tmux paste-buffer -p) so multi-line content isn't auto-submitted line-by-line.
   const handlePasteText = useCallback(
     (text: string) => {
-      if (!session || isReadOnly || !isInputReady) return
+      if (!session || isReadOnly) return
+      if (recoveryDraft.pending || !isInputReady) { recoveryDraft.capture(text, 'paste'); return }
       // Exit tmux copy-mode first: a paste-buffer into a pane still in copy-mode
       // is swallowed by the copy-mode key table instead of reaching the program.
       if (inTmuxCopyModeRef.current) {
         sendMessage({ type: 'tmux-cancel-copy-mode', sessionId: session.id })
         setTmuxCopyMode(false)
       }
-      sendMessage({ type: 'terminal-paste', sessionId: session.id, data: text })
+      if (sendMessage({ type: 'terminal-paste', sessionId: session.id, data: text }) === false) {
+        recoveryDraft.capture(text, 'paste')
+      }
     },
-    [session, isReadOnly, isInputReady, sendMessage, inTmuxCopyModeRef, setTmuxCopyMode]
+    [session, isReadOnly, isInputReady, sendMessage, inTmuxCopyModeRef, setTmuxCopyMode, recoveryDraft]
   )
 
   const handlePasteImage = useCallback((data: string) => {
-    if (!session || isReadOnly || !isInputReady) return
+    if (!session || isReadOnly || !isInputReady || recoveryDraft.pending) return
     if (inTmuxCopyModeRef.current) {
       sendMessage({ type: 'tmux-cancel-copy-mode', sessionId: session.id })
       setTmuxCopyMode(false)
     }
-    handleSendKey(data)
-  }, [session, isReadOnly, isInputReady, sendMessage, inTmuxCopyModeRef, setTmuxCopyMode, handleSendKey])
+    sendMessage({ type: 'terminal-input', sessionId: session.id, data })
+  }, [session, isReadOnly, isInputReady, sendMessage, inTmuxCopyModeRef, setTmuxCopyMode, recoveryDraft.pending])
 
   const handleRefocus = useCallback(() => {
     const container = containerRef.current
@@ -1169,16 +1220,27 @@ export default function Terminal({
   }, [containerRef])
 
   const browserPaste = useBrowserPaste({ sessionId: session?.id ?? null,
-    disabled: connectionStatus !== 'connected' || isReadOnly || !isInputReady,
+    disabled: connectionStatus !== 'connected' || isReadOnly || !isInputReady || recoveryDraft.pending,
     fileUploadsAllowed: !isRemoteSession, agentType: session?.agentType,
     onPasteText: handlePasteText, onPasteImage: handlePasteImage, onRefocus: handleRefocus })
   pasteFilesRef.current = browserPaste.paste
   pasteErrorRef.current = browserPaste.fail
 
+  const sendRecoveryDraft = () => {
+    if (!session || isReadOnly || !isInputReady || !recoveryDraft.text || recoveryDraft.persistence === 'sent-remove-failed') return
+    if (inTmuxCopyModeRef.current) {
+      sendMessage({ type: 'tmux-cancel-copy-mode', sessionId: session.id })
+      setTmuxCopyMode(false)
+    }
+    if (sendMessage({ type: 'terminal-paste', sessionId: session.id, data: recoveryDraft.text }) === false) return
+    recoveryDraft.sent()
+    handleRefocus()
+  }
+
   // Enter text mode: exit copy-mode and focus input (for keyboard button)
   const handleEnterTextMode = useCallback(() => {
-    if (!session || isReadOnly || !isInputReady) return
-    if (inTmuxCopyModeRef.current) {
+    if (!session || isReadOnly) return
+    if (isInputReady && inTmuxCopyModeRef.current) {
       sendMessage({ type: 'tmux-cancel-copy-mode', sessionId: session.id })
       setTmuxCopyMode(false)
     }
@@ -1268,7 +1330,7 @@ export default function Terminal({
 
   return (
     <section
-      className={`flex flex-1 flex-col bg-base terminal-mobile-overlay md:relative md:inset-auto ${isiOS ? 'ios-native-term-selection' : ''}`}
+      className={`flex min-w-0 flex-1 flex-col bg-base terminal-mobile-overlay md:relative md:inset-auto ${isiOS ? 'ios-native-term-selection' : ''}`}
       data-testid="terminal-panel"
       onDragOver={(event) => {
         if (!Array.from(event.dataTransfer.types).includes('Files')) return
@@ -1473,21 +1535,38 @@ export default function Terminal({
       <div className="relative flex-1">
         {/* Theme background on the container so the .xterm padding ring
             matches the terminal — xterm.js 6.0 no longer paints the viewport
-            with the theme background (black-border regression on mobile). */}
+            with the theme background (black-border regression on mobile).
+            Clip stale canvas/helper-textarea bounds during resize so browser
+            focus cannot scroll the board sideways to the old cursor position. */}
         <div
           ref={containerRef}
-          className="absolute inset-0"
+          className="absolute inset-0 overflow-clip"
           style={{ backgroundColor: terminalTheme.background }}
         />
-        {isSwitching && session && (
+        {session && snapshot.state.status !== 'closed' && (
+          <TerminalSnapshotLayer state={snapshot.state} containerRef={containerRef} terminalRef={terminalRef}
+            background={terminalTheme.background ?? '#000'} foreground={terminalTheme.foreground ?? '#fff'}
+            rejoinWrapped={rejoinWrapped} onCopied={snapshot.close} />
+        )}
+        {session && !isReadOnly && !isInputReady && (
           <div
             role="status"
             aria-live="polite"
+            data-testid="terminal-recovery-status"
             className="absolute top-2 left-2 z-50 flex items-center gap-1.5 rounded-lg bg-black/60 px-2.5 py-1.5 text-xs text-white/90 shadow-lg backdrop-blur-md"
           >
-            <SpinnerIcon width={ICON_SIZE.pill} height={ICON_SIZE.pill} className="animate-spin" />
-            Loading
+            <SpinnerIcon width={ICON_SIZE.pill} height={ICON_SIZE.pill} className={isSwitching || connectionStatus !== 'connected' ? 'animate-spin' : ''} />
+            {connectionStatus === 'connected' ? (isSwitching ? 'Restoring terminal' : 'Terminal unavailable') :
+              connectionStatus === 'disconnected' ? 'Disconnected' : 'Reconnecting'}
+            <span className="text-white/70">· Input paused</span>
           </div>
+        )}
+        {recoveryDraft.pending && session && !isReadOnly && (
+          <RecoveryDraft key={recoveryIdentity} text={recoveryDraft.text} sessionName={session.name} ready={isInputReady}
+            atLimit={recoveryDraft.atLimit} truncated={recoveryDraft.truncated}
+            persistence={recoveryDraft.persistence} onSave={recoveryDraft.save}
+            onDiscardOthers={recoveryDraft.hasOtherDrafts ? recoveryDraft.discardOthers : undefined} onEdit={recoveryDraft.edit} onSend={sendRecoveryDraft}
+            onDiscard={() => { recoveryDraft.discard(); handleRefocus() }} />
         )}
         {pendingClipboardOffer && session && (
           <div className={`absolute ${showScrollButton && !isSelectingText ? 'bottom-20' : 'bottom-8'} left-1/2 z-30 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-2 rounded-lg border border-border bg-elevated/95 px-2 py-2 shadow-lg backdrop-blur-sm md:hidden`}>
@@ -1515,7 +1594,7 @@ export default function Terminal({
             </button>
           </div>
         )}
-        {session && <MediaRail session={session} />}
+        {session && <MediaRail session={session} ready={connectionStatus === 'connected' && isInputReady} />}
         {!session && (
           <div className="absolute inset-0 flex items-center justify-center text-sm text-muted">
             {hibernatingSession ? null : 'Select a session to view terminal'}
@@ -1668,7 +1747,8 @@ export default function Terminal({
           onSendKey={handleSendKey}
           onPasteText={handlePasteText}
           onPasteImage={handlePasteImage}
-          disabled={connectionStatus !== 'connected' || isReadOnly || !isInputReady}
+          disabled={connectionStatus !== 'connected' || isReadOnly || !isInputReady || recoveryDraft.pending}
+          keyboardDisabled={isReadOnly}
           sessions={sessions.map(s => ({ id: s.id, name: s.name, status: s.status }))}
           currentSessionId={session.id}
           agentType={session.agentType}
@@ -1678,6 +1758,12 @@ export default function Terminal({
           onRefocus={handleRefocus}
           isKeyboardVisible={isKeyboardVisible}
           onEnterTextMode={handleEnterTextMode}
+          onSelectText={isReadOnly ? undefined : handleSelectText}
+          snapshotActions={snapshotOpen ? {
+            onDone: snapshot.close,
+            onRefresh: snapshot.refresh,
+            busy: snapshot.state.status === 'loading' || (snapshot.state.status === 'ready' && snapshot.state.refreshing),
+          } : undefined}
         />
       )}
 

@@ -336,7 +336,7 @@ if (!tmuxAvailable || !localhostBindable) {
       ws: WebSocket
       messages: Array<{ type: string; sessionId?: string; data?: string }>
     }> {
-      const ws = new WebSocket(`ws://${testHost}:${proxyPort}/ws`)
+      const ws = new WebSocket(`ws://${testHost}:${proxyPort}/ws?catalog=2`)
       await waitForOpen(ws)
 
       const messages: Array<{

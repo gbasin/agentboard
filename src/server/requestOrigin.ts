@@ -1,0 +1,133 @@
+/**
+ * Cross-origin guard for browser-reachable endpoints.
+ *
+ * Agentboard has no authentication, so a page on another site must not be
+ * able to open /ws or send state-changing requests through the user's
+ * browser. The rule (used by the relay worker and the dashboard listener):
+ *   1. No Origin header: allow. Browsers always send Origin on WebSocket
+ *      handshakes and cross-site non-GET requests; curl, scripts and tests don't.
+ *   2. Origin host:port equals the request Host (case-insensitive, omitted port
+ *      = the Origin scheme's default): allow. When this server serves TLS
+ *      itself, the Origin must also be https: the page on http://<same host and
+ *      port> is not ours, and a network attacker can serve it. A plain-HTTP
+ *      server accepts both schemes, because a TLS-terminating proxy (Tailscale
+ *      Serve) forwards an https Origin over HTTP.
+ *   3. Origin is listed in AGENTBOARD_ALLOWED_ORIGINS: allow (reverse proxies
+ *      that rewrite Host).
+ *   4. Anything else, including `Origin: null` or a malformed value: reject.
+ * Import-free: config.ts parses the allowlist with it, and the relay worker
+ * receives the policy through RelayOptions instead of reading the environment.
+ */
+export interface OriginPolicy {
+  /** Normalized AGENTBOARD_ALLOWED_ORIGINS. Entries match exactly, scheme included. */
+  allowedOrigins: readonly string[]
+  /** True when this server terminates TLS itself (TLS_CERT and TLS_KEY set). */
+  servesTls: boolean
+}
+
+/** The one definition of "this server serves TLS", shared by both listeners. */
+export function originPolicy(allowedOrigins: readonly string[], tlsCert: string, tlsKey: string): OriginPolicy {
+  return { allowedOrigins, servesTls: Boolean(tlsCert && tlsKey) }
+}
+
+type WarnLog = (event: string, data: Record<string, unknown>) => void
+
+const HOST_HEADER = /^[A-Za-z0-9._~-]+(?::\d+)?$|^\[[0-9A-Fa-f:.]+\](?::\d+)?$/
+
+/** Canonical `scheme://host[:port]` for an http(s) origin, or null if malformed. */
+export function normalizeOrigin(value: string): string | null {
+  const trimmed = value.trim().replace(/\/+$/, '')
+  let url: URL
+  try {
+    url = new URL(trimmed)
+  } catch {
+    return null
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
+  if (url.username || url.password || url.pathname !== '/' || url.search || url.hash) return null
+  return url.origin
+}
+
+/** Parses a comma-separated origin list; malformed entries are dropped. */
+export function parseAllowedOrigins(raw: string | undefined): string[] {
+  const origins = new Set<string>()
+  for (const entry of (raw ?? '').split(',')) {
+    const origin = entry.trim() ? normalizeOrigin(entry) : null
+    if (origin) origins.add(origin)
+  }
+  return [...origins]
+}
+
+export function isOriginAllowed(
+  origin: string | null,
+  host: string | null,
+  policy: OriginPolicy
+): boolean {
+  if (origin === null) return true
+  const normalized = normalizeOrigin(origin)
+  if (!normalized) return false
+  // Resolve Host under the Origin's scheme so `Host: x` and `Host: x:80`
+  // both compare equal to `http://x`.
+  const scheme = normalized.slice(0, normalized.indexOf('//'))
+  const schemeMatchesServer = !policy.servesTls || scheme === 'https:'
+  if (schemeMatchesServer && host && HOST_HEADER.test(host)) {
+    try {
+      if (new URL(`${scheme}//${host}`).origin === normalized) return true
+    } catch {
+      // Unparseable Host falls through to the allowlist.
+    }
+  }
+  return policy.allowedOrigins.includes(normalized)
+}
+
+/** True for methods a cross-site form or fetch can use to change state. */
+export function isStateChangingMethod(method: string): boolean {
+  return !['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase())
+}
+
+/**
+ * Requests the guard covers: WebSocket upgrades and every state-changing
+ * request, whatever its path. The path is deliberately not matched against
+ * /api: the router percent-decodes paths (`/%61pi/x` routes as `/api/x`) while
+ * `URL.pathname` does not, so a prefix test here could be bypassed. No
+ * legitimate client sends a cross-origin write to any path.
+ */
+export function needsOriginCheck(req: Request, pathname: string): boolean {
+  return pathname === '/ws' || isStateChangingMethod(req.method)
+}
+
+/**
+ * Returns a 403 (and logs once) when the request's origin is rejected, or null.
+ * The 403 resolves only after the request body is drained: Bun's server parses
+ * body bytes that arrive after an early response as the next request on the
+ * keep-alive connection, and the relay shares that connection pool across
+ * clients, so one rejected upload would 400 another user's request.
+ */
+export function crossOriginRejection(
+  req: Request,
+  pathname: string,
+  policy: OriginPolicy,
+  warn: WarnLog
+): Promise<Response> | null {
+  const origin = req.headers.get('origin')
+  const host = req.headers.get('host') ?? new URL(req.url).host
+  if (isOriginAllowed(origin, host, policy)) return null
+  warn('cross_origin_request_rejected', {
+    origin: origin?.slice(0, 200),
+    host: host.slice(0, 200),
+    method: req.method,
+    path: pathname,
+  })
+  return drain(req.body).then(() =>
+    Response.json({ error: 'Cross-origin request rejected' }, { status: 403 }))
+}
+
+async function drain(body: ReadableStream<Uint8Array> | null): Promise<void> {
+  if (!body) return
+  const reader = body.getReader()
+  try {
+    while (!(await reader.read()).done) { /* discard */ }
+  } catch {
+    // A client that aborts its upload still gets the 403 (or nothing).
+  }
+}

@@ -1,5 +1,6 @@
 import os from 'node:os'
 import path from 'node:path'
+import { parseAllowedOrigins } from './requestOrigin'
 
 const terminalModeRaw = process.env.TERMINAL_MODE
 const terminalMode =
@@ -233,7 +234,13 @@ export const config = {
   // TLS config - set both to enable HTTPS
   tlsCert: process.env.TLS_CERT || '',
   tlsKey: process.env.TLS_KEY || '',
+  // Extra browser origins allowed to open /ws and send /api mutations, for
+  // reverse proxies that rewrite Host. Same-origin requests need no entry.
+  allowedOrigins: parseAllowedOrigins(process.env.AGENTBOARD_ALLOWED_ORIGINS),
   logPollIntervalMs,
+  // Opt-in observation only: never changes matching or session ownership.
+  ownershipObserver: process.env.AGENTBOARD_OWNERSHIP_OBSERVER === 'true',
+  ownershipMatching: process.platform === 'darwin' && process.env.AGENTBOARD_OWNERSHIP_MATCHING !== 'false',
   logPollMax,
   rgThreads,
   logMatchWorker,

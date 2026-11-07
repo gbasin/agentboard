@@ -84,6 +84,7 @@ test('recovery notice dismisses, persists, and clears on library-changed', async
   const notice = page.getByTestId('recovery-notice')
 
   await page.goto('/')
+  await expect(page.locator('[aria-label^="Connection: Connected"]')).toBeVisible()
   await expectNoticeConsistent(page, notice)
 
   // A new interruption surfaces the notice via library-changed, no reload.
@@ -98,6 +99,9 @@ test('recovery notice dismisses, persists, and clears on library-changed', async
   expect(await page.evaluate((k) => localStorage.getItem(k), DISMISSED_KEY))
     .toContain(idA)
   await page.reload()
+  // HTTP hydration can finish before the WebSocket subscription. Wait before
+  // broadcasting the next library change, which has no event replay contract.
+  await expect(page.locator('[aria-label^="Connection: Connected"]')).toBeVisible()
   await expectNoticeConsistent(page, notice)
 
   // A different interrupted session re-shows the notice without a reload.

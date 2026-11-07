@@ -101,6 +101,11 @@ let codexParentMapBuilds = 0
 // scans keyed on subagent logs can queue a rescan.
 let codexIndexListener: (() => void) | null = null
 
+/** Snapshot for the metadata worker; contains paths only, no filesystem reads. */
+export function getCodexSubagentIndex(): CodexSubagentLink[] {
+  return [...codexIndex.values()]
+}
+
 /** Register the single index-change listener (null to clear). */
 export function setCodexSubagentIndexListener(listener: (() => void) | null): void {
   codexIndexListener = listener

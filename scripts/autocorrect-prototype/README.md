@@ -2,8 +2,9 @@
 
 The prototype streams each native text edit through Agentboard's xterm.js 6.0.0.
 It preserves the hidden textarea as iOS's word context and translates edits into
-terminal DEL characters plus replacement text. It is available in the isolated test page and an opt-in full-app build.
-Ordinary Agentboard builds keep the adapter disabled.
+terminal DEL characters plus replacement text. It is available in the isolated test page and through **Settings → Terminal →
+iOS autocorrect**. The setting defaults to off, applies immediately, and is
+saved only on this device. No special build or environment variable is needed.
 
 ## Run
 
@@ -88,13 +89,14 @@ Run the browser-to-tmux suite:
 E2E_PORT=18501 bunx playwright test --config playwright.autocorrect.config.ts
 ```
 
-Four tests cover replacement-before-Return ordering, length-changing correction,
+Six tests cover enabling and disabling the setting, persistence across reload,
+default-off behavior, replacement-before-Return ordering, length-changing correction,
 backspace, subsequent prompts, toolbar Return, manual paste, reconnect, and
 session switching. They assert the real readline editor's submissions and save
 WebSocket input frames. Synthetic browser events test transport and lifecycle;
 they do not establish native iOS keyboard behavior.
 
-Check the disabled ordinary build separately:
+Check default-off behavior separately:
 
 ```sh
 bun run build
@@ -103,7 +105,7 @@ E2E_PORT=18501 bunx playwright test tests/e2e/ios-autocorrect.spec.ts --grep 'or
 
 ### Installed PWA on m5p
 
-The full app passed six native-keyboard checks in an installed Home Screen PWA
+Before the Settings toggle was added, the full app passed six native-keyboard checks in an installed Home Screen PWA
 on an iPhone 17 Pro simulator, iOS 26.4. Claude 2.1.319 and Codex 0.167.0 each
 received exactly one corrected prompt for:
 
@@ -125,13 +127,13 @@ toolbar input, programmatic paste, keyboard navigation, and blur.
 
 To repeat the native checks:
 
-1. Run `VITE_IOS_AUTOCORRECT_PROTOTYPE=1 bun run build`.
+1. Run `bun run build`.
 2. Run `bun scripts/autocorrect-prototype/serve-agentboard.ts`.
 3. Record the printed private run directory.
 4. Forward remote localhost port 18502 to the local server with SSH `-R`.
 5. Open `http://localhost:18502` in simulator Safari.
 6. Add Agentboard to the Home Screen with **Open as Web App** enabled.
-7. Open Agentboard from the Home Screen.
+7. Open Agentboard from the Home Screen. Enable **Settings → Terminal → iOS autocorrect**.
 8. Complete any first-run CLI prompts in the private test windows.
 9. Submit one seed prompt per agent and locate their JSONL transcripts.
 10. Run the checker with the SSH host, simulator UDID, run directory, and logs:
@@ -148,7 +150,8 @@ Stop the server with Ctrl-C. It stops only its private tmux sessions.
 
 ## Remaining limits
 
-The mode remains a build-time opt-in prototype, without a user-facing toggle.
+The mode is experimental and off by default. Use **Settings → Terminal → iOS
+autocorrect** to enable or disable it. It only changes input on iOS devices.
 Simulator testing does not replace testing on a physical iPhone.
 TUI-driven text changes and native cursor selection can invalidate its local
 suffix. Joined emoji, combining marks, CJK composition, dictation, and modifier
