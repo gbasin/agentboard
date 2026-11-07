@@ -9,7 +9,7 @@
 import fs from 'node:fs'
 import type { SessionPullRequest } from '../shared/types'
 import { logger } from './logger'
-import { connectorCreateIds, connectorResults } from './connectorPr'
+import { connectorCompletionUrls, connectorCreateIds, connectorResults } from './connectorPr'
 import {
   CREATE_BYTES,
   PR_LINK_BYTES,
@@ -645,10 +645,11 @@ function collectUrls(state: ScanState, line: string): void {
 function processLine(state: ScanState, line: string): void {
   // Connector calls use exact parsed result IDs and structured MCP output;
   // they never enter the CLI's URL/prose fallback path.
-  if (line.includes('github_create_pull_request') || state.connectorPending.size > 0) {
+  if (line.includes('github_create_pull_request') || line.includes('github.create_pull_request') || state.connectorPending.size > 0) {
     try {
       const entry = JSON.parse(line)
       if (entry && typeof entry === 'object') {
+        for (const url of connectorCompletionUrls(entry)) collectUrls(state, url)
         for (const id of connectorCreateIds(entry)) {
           if (state.connectorPending.size < MAX_PENDING_IDS) {
             state.connectorPending.set(id, PENDING_ID_TTL_LINES)
