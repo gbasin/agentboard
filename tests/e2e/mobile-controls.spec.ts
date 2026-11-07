@@ -38,7 +38,8 @@ async function waitForPaneText(target: string, needle: string, timeoutMs = 10000
   )
 }
 
-test('keyboard Shift modifies touch quick keys sent to the pane', async ({ page }, testInfo) => {
+for (const compact of [false, true]) {
+test(`touch quick keys send correct bytes (${compact ? 'compact' : 'comfortable'})`, async ({ page }, testInfo) => {
   const session = process.env.E2E_TMUX_SESSION
   test.skip(!session, 'E2E_TMUX_SESSION not set')
   const target = `${session}:${WINDOW_NAME}`
@@ -49,6 +50,9 @@ test('keyboard Shift modifies touch quick keys sent to the pane', async ({ page 
   try {
     await waitForPaneText(target, 'PASTE-REPL READY')
 
+    await page.addInitScript((compact) => {
+      localStorage.setItem('agentboard-settings', JSON.stringify({ version: 8, state: { compactMobileControls: compact } }))
+    }, compact)
     await page.goto('/')
     // On mobile the session list lives in a drawer: the card is in the DOM
     // but not visible, so select it with a DOM click.
@@ -62,8 +66,8 @@ test('keyboard Shift modifies touch quick keys sent to the pane', async ({ page 
     await expect(tab).toBeVisible()
     await expect(page.getByRole('button', { name: 'Shift+Tab' })).toHaveCount(0)
     const box = await tab.boundingBox()
-    expect(box?.width).toBeGreaterThanOrEqual(44)
-    expect(box?.height).toBeGreaterThanOrEqual(44)
+    expect(box?.width).toBe(compact ? 36 : 44)
+    expect(box?.height).toBe(compact ? 36 : 44)
     await page.screenshot({ path: testInfo.outputPath('mobile-key-deck.png') })
 
     const input = page.locator('.xterm-helper-textarea')
@@ -145,7 +149,8 @@ test('keyboard Shift modifies touch quick keys sent to the pane', async ({ page 
     // Exercise an actual browser pan, including intermediate touch moves.
     await expect(input).toBeFocused()
     const row = page.locator('.terminal-controls > .grid')
-    await row.evaluate(element => { element.scrollLeft = 80 })
+    const scrollStart = compact ? 0 : 80
+    await row.evaluate((element, offset) => { element.scrollLeft = offset }, scrollStart)
     const bounds = (await tab.boundingBox())!
     const x = bounds.x + bounds.width / 2
     const y = bounds.y + bounds.height / 2
@@ -155,7 +160,7 @@ test('keyboard Shift modifies touch quick keys sent to the pane', async ({ page 
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x - distance, y }] })
     }
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
-    await expect.poll(() => row.evaluate(element => element.scrollLeft)).toBeGreaterThan(80)
+    await expect.poll(() => row.evaluate(element => element.scrollLeft)).toBeGreaterThan(scrollStart)
     await expect(input).toBeFocused()
     await page.getByRole('button', { name: 'Enter' }).tap()
     // A swipe beginning on Tab must not insert a tab into the terminal.
@@ -166,3 +171,5 @@ test('keyboard Shift modifies touch quick keys sent to the pane', async ({ page 
     tmux(['kill-window', '-t', target])
   }
 })
+
+}

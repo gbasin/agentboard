@@ -1,0 +1,28 @@
+/* Compact phone density. Popup keys retain their own hit-test geometry.
+   Scope to the terminal panel so drawer and dialog controls keep their sizes. */
+@media (max-width: 767px) {
+  [data-compact-mobile-controls="true"] .mobile-terminal-header {
+    min-height: 44px;
+  }
+
+  [data-compact-mobile-controls="true"] .mobile-terminal-header .mobile-header-button,
+  [data-compact-mobile-controls="true"] .terminal-quick-key-row > .terminal-key {
+    width: 36px;
+    height: 36px;
+  }
+
+  [data-compact-mobile-controls="true"] .mobile-header-wake,
+  [data-compact-mobile-controls="true"] .terminal-session-switcher .terminal-key {
+    height: 36px;
+    min-width: 36px;
+  }
+
+  [data-compact-mobile-controls="true"] .terminal-controls {
+    padding: 4px;
+  }
+
+  [data-compact-mobile-controls="true"] .terminal-quick-key-row {
+    grid-auto-columns: 36px;
+    gap: 3px;
+  }
+}

@@ -47,6 +47,10 @@ class TerminalMock {
     this.element = container
   }
 
+  get textarea() {
+    return this.element?.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement | undefined
+  }
+
   get modes() {
     return { mouseTrackingMode: this.mouseTrackingMode }
   }
@@ -209,6 +213,7 @@ type MockTextarea = HTMLTextAreaElement & { focusCalls: number }
 function createContainerMock() {
   const textareaListeners = new Map<string, EventListener>()
   const textareaState = { focusCalls: 0 }
+  const textareaAttributes = new Map<string, string>()
   const textarea = {
     get focusCalls() { return textareaState.focusCalls },
     set focusCalls(value: number) { textareaState.focusCalls = value },
@@ -220,8 +225,9 @@ function createContainerMock() {
         textareaListeners.delete(event)
       }
     },
-    setAttribute: () => {},
-    removeAttribute: () => {},
+    getAttribute: (name: string) => textareaAttributes.get(name) ?? null,
+    setAttribute: (name: string, value: string) => { textareaAttributes.set(name, value) },
+    removeAttribute: (name: string) => { textareaAttributes.delete(name) },
     focus: () => {
       textareaState.focusCalls += 1
     },
@@ -4059,6 +4065,7 @@ describe('useTerminal', () => {
     const pendingTimers: Array<{ callback: () => void; delay: number; id: number }> = []
     let nextTimerId = 100
     globalAny.window = {
+      matchMedia: () => ({ matches: false }),
       setTimeout: ((cb: () => void, delay?: number) => {
         const id = nextTimerId++
         pendingTimers.push({ callback: cb, delay: delay ?? 0, id })
@@ -4293,6 +4300,7 @@ describe('useTerminal', () => {
     let nextTimerId = 100
     const clearedIds = new Set<number>()
     globalAny.window = {
+      matchMedia: () => ({ matches: false }),
       setTimeout: ((cb: () => void, delay?: number) => {
         const id = nextTimerId++
         pendingTimers.push({ callback: cb, delay: delay ?? 0, id })
@@ -4379,6 +4387,7 @@ describe('useTerminal', () => {
     let nextTimerId = 100
     const clearedIds = new Set<number>()
     globalAny.window = {
+      matchMedia: () => ({ matches: false }),
       setTimeout: ((cb: () => void, delay?: number) => {
         const id = nextTimerId++
         pendingTimers.push({ callback: cb, delay: delay ?? 0, id })
@@ -4468,6 +4477,7 @@ describe('useTerminal', () => {
     let nextTimerId = 100
     const winListeners = new Map<string, Set<EventListener>>()
     globalAny.window = {
+      matchMedia: () => ({ matches: false }),
       setTimeout: ((cb: () => void, delay?: number) => {
         const id = nextTimerId++
         pendingTimers.push({ callback: cb, delay: delay ?? 0, id })
@@ -4554,6 +4564,7 @@ describe('useTerminal', () => {
     let nextTimerId = 100
     const winListeners = new Map<string, Set<EventListener>>()
     globalAny.window = {
+      matchMedia: () => ({ matches: false }),
       setTimeout: ((cb: () => void, delay?: number) => {
         const id = nextTimerId++
         pendingTimers.push({ callback: cb, delay: delay ?? 0, id })
@@ -4700,6 +4711,7 @@ describe('useTerminal', () => {
     const canceledRafIds = new Set<number>()
 
     globalAny.window = {
+      matchMedia: () => ({ matches: false }),
       setTimeout: ((cb: () => void, delay?: number) => {
         const id = nextTimerId++
         pendingTimers.push({ callback: cb, delay: delay ?? 0, id })
@@ -4821,6 +4833,7 @@ describe('useTerminal', () => {
     const clearedTimerIds = new Set<number>()
 
     globalAny.window = {
+      matchMedia: () => ({ matches: false }),
       setTimeout: ((cb: () => void, delay?: number) => {
         const id = nextTimerId++
         pendingTimers.push({ callback: cb, delay: delay ?? 0, id })

@@ -300,7 +300,7 @@ export default function TerminalControls({
           {/* Right fade indicator */}
           <div className="absolute right-0 top-0 bottom-0 w-3 bg-gradient-to-l from-elevated to-transparent z-10 pointer-events-none" />
           <div
-            className="flex items-center gap-[6px] overflow-x-auto px-[6px] scrollbar-none scroll-smooth snap-x snap-mandatory"
+            className="terminal-session-switcher flex items-center gap-[6px] overflow-x-auto px-[6px] scrollbar-none scroll-smooth snap-x snap-mandatory"
             style={{ WebkitOverflowScrolling: 'touch' }}
           >
             {sessions.map((session, index) => {
@@ -330,7 +330,7 @@ export default function TerminalControls({
       )}
       {snapshotActions && <SnapshotDeckActions {...snapshotActions} />}
       {/* Key row */}
-      {!snapshotActions && <div className="grid grid-flow-col auto-cols-[44px] items-center gap-[4px] overflow-x-auto scrollbar-none"
+      {!snapshotActions && <div className="terminal-quick-key-row grid grid-flow-col auto-cols-[44px] items-center gap-[4px] overflow-x-auto scrollbar-none"
         onTouchStartCapture={(event) => {
           const touch = event.touches[0]
           touchStartRef.current = touch ? { x: touch.clientX, y: touch.clientY } : null
