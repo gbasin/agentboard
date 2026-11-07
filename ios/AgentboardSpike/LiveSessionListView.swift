@@ -1,7 +1,7 @@
 import SwiftUI
 import Inject
 
-/// Live catalog from the existing Agentboard WebSocket; no sample mutations.
+/// Live catalog and native management of server sessions.
 struct LiveSessionListView: View {
     @ObserveInjection var inject
     @StateObject private var board = BoardConnection()
@@ -9,6 +9,7 @@ struct LiveSessionListView: View {
     @State private var search = ""
     @State private var path: [BoardSession] = []
     @State private var showConnection = false
+    @State private var action: SessionActionRoute?
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -60,7 +61,7 @@ struct LiveSessionListView: View {
                                 .padding(.vertical, 24)
                         } else if board.state == .connected {
                             ContentUnavailableView("No active sessions", systemImage: "terminal",
-                                                   description: Text("Start a session in Agentboard, then pull to refresh."))
+                                                   description: Text("Tap New session to start a terminal on your server."))
                         } else {
                             ContentUnavailableView("Server unavailable", systemImage: "network",
                                                    description: Text("Check the server address and your Tailscale connection, then tap Retry."))
@@ -74,12 +75,27 @@ struct LiveSessionListView: View {
             .searchable(text: $search, prompt: "Find a session")
             .refreshable { board.refresh() }
             .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("New session", systemImage: "plus") { action = .create }
+                        .disabled(board.state != .connected)
+                }
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Connection", systemImage: "network") { showConnection = true }
                 }
             }
             .navigationDestination(for: BoardSession.self) { selected in
-                TerminalScreen(session: .constant(selected), endpoint: "", live: board, onEnd: {})
+                TerminalScreen(session: .constant(selected), endpoint: "", live: board, onEnd: {},
+                               onManage: { action = $0 })
+            }
+            .sheet(item: $action) { route in
+                SessionActionSheet(route: route, serverURL: serverURL) { result in
+                    board.refresh()
+                    switch route {
+                    case .create: if let result { search = ""; path = [result] }
+                    case .end: path.removeAll()
+                    case .rename: break
+                    }
+                }
             }
             .sheet(isPresented: $showConnection) {
                 ServerConnectionSheet(address: serverURL) { value in

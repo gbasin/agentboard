@@ -4,7 +4,7 @@ The app opens existing Agentboard sessions through native SwiftUI navigation. Th
 
 `BoardConnection` owns a URLSession WebSocket at `/ws?catalog=2`. The catalog query is required for the live v0.40 backend. A proxy path prefix is preserved. WKWebView renders bundled xterm.js output and bridges input; a public-API UIKit `TerminalInputView` owns the keyboard. The connection uses heartbeat checks and reconnect backoff. Backgrounding closes the socket. Returning reconnects and restores the selected session. Disconnected input is never replayed. Each selection opens a fresh socket to isolate stale responses, including repeat visits to the same session ID.
 
-This slice attaches to existing sessions only. Sleeping sessions and server-restricted remote sessions show a reason and cannot be opened. Live create, rename, end, history and media are not implemented. Sample management remains available with `-demo` or the legacy `-spikeEndpoint` launch argument.
+This slice opens existing sessions and supports native create, rename and end flows. New session accepts a server-side project directory, an explicit command, an optional name and an optional configured remote host. Rename and End session are in the terminal action menu. End requires confirmation. Sleeping sessions and server-restricted remote sessions show a reason and cannot be opened. History, media, directory browsing and synchronized command presets are not implemented. Sample management remains available with `-demo` or the legacy `-spikeEndpoint` launch argument.
 
 ## Build
 
@@ -128,3 +128,13 @@ SIMCTL_CHILD_INJECTION_PROJECT_ROOT="$PWD/ios" \
 The project enables interposable symbols and Inject view observation. The build script records actual compiler commands as a gzip log that InjectionNext can scan. This adapter was necessary because this machine's CLI activity logs omitted the frontend commands even with `EMIT_FRONTEND_COMMAND_LINES=YES`. Set `INJECTION_RESOURCES` only for Debug development; Release builds do not copy the injection bundle.
 
 Edit the Swift source on the simulator host, or sync your local edit there. Compatible view-body edits update the running app. Changes to stored properties and signatures still need rebuilding. Bundled HTML changes also require recopying/rebuilding; they do not use Swift injection.
+
+## Session action validation
+
+`SessionActions` opens a separate socket for one request and waits for the server's matching acknowledgement. Generic errors cannot be confused with terminal failures. Requests time out after 20 seconds and cancel on backgrounding. They are never replayed automatically. A lost acknowledgement reports an uncertain outcome and tells the user to check the list before trying again.
+
+Six `SessionActionsTests` cover create acknowledgement, rename identity/name matching, end acknowledgement and rejection, missing sessions, timeout and cancellation. Together with the existing connection tests, 12 native unit tests passed on m5p in `actions-accessibility.xcresult`. That bundle's UI test failed in XCTest's selection-menu interaction; it is not a passing full-suite result.
+
+`SessionActionUITests` creates a uniquely named disposable shell on the isolated port-4151 backend. It rejects an invalid directory, preserves and corrects the draft, creates and opens the shell, renames it, cancels ending it, then confirms end and verifies removal. The light-mode run passed in `actions-ui-fixed.xcresult`. The same flow passed at the largest accessibility text size in dark appearance in `actions-accessibility-settled.xcresult`. The test waits for native field scrolling before editing and scrolls the native menu to reach End session. A final light-mode regression run passed all three UI tests in `actions-regression.xcresult`: the management flow plus existing address validation and terminal typing/paste/background recovery/switching. Captures are in `evidence/session-actions/`. These results do not validate remote SSH mutations or physical iPhone behavior.
+
+Root lint, typecheck and the full test suite passed on m5p for this iteration with Bun 1.3.14 and `LOG_LEVEL` unset. Local commits use the previously documented per-command hook override after equivalent remote checks; the local PTY limitation remains. No permanent hook settings change.

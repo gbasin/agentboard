@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-07T18:59:21.180168+00:00",
+  "generatedAt": "2026-11-07T19:19:15.893897+00:00",
   "title": "Design System: Agentboard iPhone live-session slice",
   "extensions": {
     "platform": "iOS / SwiftUI with WKWebView xterm.js output and UIKit input",
@@ -15,7 +15,7 @@
       "workingSymbol": "Color.green",
       "waitingSymbol": "Color.orange",
       "sleepingSymbol": "Color.secondary",
-      "error": "Color.red for live validation symbol; Color.primary for live validation body text; legacy demo uses red validation text"
+      "error": "Color.red for live validation and session-action error symbols; Color.primary for their body text; legacy demo uses red validation text"
     },
     "nativeTypography": {
       "sessionName": "headline",
@@ -40,7 +40,7 @@
       {
         "name": "Session list",
         "source": "AgentboardSpike/LiveSessionListView.swift",
-        "implementation": "NavigationStack, List, project Sections, searchable, refreshable; connection state and native empty states; sleeping and restricted remote rows disabled with reasons"
+        "implementation": "NavigationStack, List, project Sections, searchable, refreshable; connection state and native empty states; sleeping and restricted remote rows disabled with reasons; New session toolbar action enabled while connected"
       },
       {
         "name": "Session status",
@@ -50,7 +50,7 @@
       {
         "name": "Terminal navigation",
         "source": "AgentboardSpike/TerminalScreen.swift",
-        "implementation": "Inline principal title, native back button, Menu with Interrupt, Delete word and Insert newline terminal actions"
+        "implementation": "Inline principal title, native back button, Menu with Interrupt, Delete word and Insert newline terminal actions; live Rename session and End session open native management forms"
       },
       {
         "name": "Terminal quick keys",
@@ -71,17 +71,23 @@
         "name": "Live terminal connection",
         "source": "AgentboardSpike/TerminalScreen.swift",
         "implementation": "Inline connection message and Reconnect above the disabled quick-key row until attachment is ready; BoardConnection owns native transport"
+      },
+      {
+        "name": "Session action form",
+        "source": "AgentboardSpike/SessionActionSheet.swift",
+        "implementation": "Native Form with inline title; required project directory and command plus optional name and configured remote host for create; prefilled required name for rename; named destructive end confirmation. Errors precede fields with primary text and a red symbol. Submission dismisses the keyboard; failures preserve the draft. Pending progress disables fields, confirmation, Cancel and swipe dismissal. Backgrounding or leaving cancels the request."
       }
     ],
     "previewPolicy": "Native component metadata is authoritative. HTML/CSS previews are omitted because they cannot reproduce SwiftUI controls and would imply an unapproved web design.",
-    "evidence": "ios/evidence; original spike and keyboard captures are historical. See ios/README.md for current validation scope.",
+    "evidence": "ios/evidence; original spike and keyboard captures are historical. See ios/README.md for current validation scope. Session actions: ten reviewed captures in ios/evidence/session-actions; six action tests and six connection tests pass; end-to-end checks pass in light appearance at standard text size and dark appearance at maximum Dynamic Type. Physical-device, remote-host and VoiceOver action behavior remain unverified.",
     "keyboardInput": "TerminalInputView owns input through public UIKit APIs. The SwiftUI quick-key strip is the sole accessory row; IME, VoiceOver, multiline paste and physical-device parity remain unverified.",
     "liveLifecycle": "Native URLSession socket at /ws?catalog=2; heartbeat and reconnect backoff; background suspension and foreground selected-session reattachment; no disconnected input replay; fresh socket per selection isolates same-ID stale responses.",
     "dynamicType": {
       "catalog": "Uncapped semantic text styles. At accessibility sizes, AnyLayout stacks session name/status and connection state/Retry vertically with 8-point spacing; standard sizes retain horizontal layout. Session names use intrinsic wrapped height at accessibility sizes.",
       "terminalQuickKeys": "Only accessory glyphs and text cap Dynamic Type at .xxxLarge and use one line. Minimum 44-by-44-point targets and the single non-scrolling row remain.",
-      "sheets": "Native connection and paste sheets retain uncapped Dynamic Type."
-    }
+      "sheets": "Native connection, paste and session-action sheets retain uncapped Dynamic Type."
+    },
+    "sessionActionLifecycle": "SessionActions uses a separate one-request socket with a timeout and no automatic replay. Unconfirmed sent requests direct the user to check the session list before retrying; pre-send failures ask the user to check the connection. Acknowledged create clears search and opens the session; rename refreshes the catalog; confirmed removal returns to the catalog."
   },
   "components": [],
   "narrative": {

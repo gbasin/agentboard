@@ -7,6 +7,7 @@ struct TerminalScreen: View {
     let endpoint: String
     var live: BoardConnection? = nil
     let onEnd: () -> Void
+    var onManage: ((SessionActionRoute) -> Void)? = nil
     @StateObject private var terminal = TerminalBridge()
     @State private var showEnd = false
     @State private var showRename = false
@@ -45,6 +46,11 @@ struct TerminalScreen: View {
                         Section {
                             Label(terminal.connection, systemImage: endpoint.isEmpty ? "doc.text" : "network")
                         }
+                        if live != nil {
+                            Button("Rename session", systemImage: "pencil") {
+                                onManage?(.rename(terminal.liveSession ?? session))
+                            }
+                        }
                         if live == nil {
                         Button("Rename sample", systemImage: "pencil") { name = session.name; showRename = true }
                         Button(session.status == .sleeping ? "Wake sample" : "Sleep sample", systemImage: "moon") {
@@ -68,6 +74,11 @@ struct TerminalScreen: View {
                             Text("System").tag("System")
                             Text("Light").tag("Light")
                             Text("Dark").tag("Dark")
+                        }
+                        if live != nil {
+                            Button("End session", systemImage: "xmark.circle", role: .destructive) {
+                                onManage?(.end(terminal.liveSession ?? session))
+                            }
                         }
                         if live == nil {
                             Button("End sample session", systemImage: "xmark.circle", role: .destructive) { showEnd = true }

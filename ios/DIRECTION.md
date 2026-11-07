@@ -17,3 +17,7 @@ The user approved a single integrated key row and clarified that tapping the ter
 ## Live-session slice
 
 Continue in SwiftUI, reusing the existing Agentboard protocol over the user's Tailscale connection. Replace the default sample catalog with live sessions grouped by project. Use the existing native connection sheet for the browser's base HTTP(S) URL. Show connecting, empty, retry, and terminal attachment errors in place. Preserve terminal density and the single keyboard row. The slice opens existing sessions only; sample management actions stay in explicit demo mode. Prove typing, paste, switching, background/resume and stale-socket suppression before expanding management features.
+
+## Session management extension
+
+Extend the existing native world with New session in the catalog toolbar and Rename session / End session in the terminal menu. Use native forms with preserved drafts, inline server errors and explicit destructive confirmation. Create opens the acknowledged session; end returns to the catalog after removal. Each request has its own socket and runs once; uncertain outcomes direct the user to check the catalog before retrying. This slice accepts a project directory, explicit command, optional name and optional configured remote host. Preset synchronization and directory browsing remain future parity work.
