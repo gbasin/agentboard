@@ -44,3 +44,8 @@ test('bare localhost URLs retain their port and visualization markers win over d
   expect(extractOutputReferences(codex('Open http://localhost:3000'))[0]).toEqual({ kind: 'localhost', target: 'http://localhost:3000/', label: 'App preview · port 3000' })
   expect(extractOutputReferences(codex('visualize{"path":"/tmp/report.html"} [Report](/tmp/report.html)'))).toEqual([{ kind: 'visualization', target: '/tmp/report.html', label: 'report' }])
 })
+
+ test('does not promote shell wildcard patterns to HTML previews', () => {
+  expect(extractOutputReferences(claude('`fm-*.html` [Variants](/tmp/{a,b}.html) `/tmp/page?.html`'))).toEqual([])
+  expect(extractOutputReferences(claude('`fm-final.html`'))[0].target).toBe('fm-final.html')
+})

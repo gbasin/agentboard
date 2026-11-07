@@ -44,7 +44,7 @@ export function extractOutputReferences(record: unknown): OutputReference[] {
         if (/^[a-z][a-z\d+.-]*:/i.test(target)) return
         try { target = decodeURIComponent(target) } catch { return }
       }
-      if (!/\.html?$/i.test(target) || target.includes('\0') || target.includes('\n')) return
+      if (!/\.html?$/i.test(target) || target.includes('\0') || target.includes('\n') || /[*?{}]/.test(target)) return
       if (result.get(target)?.kind === 'visualization') return
       result.set(target, { kind: 'html', target, label: label || path.basename(target) })
     }

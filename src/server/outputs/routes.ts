@@ -11,6 +11,7 @@ import { getSubagentLogPaths } from '../subagentLogs'
 import { metadataIdentity } from '../sessionMetadataClient'
 import { loopbackUrl } from '../outputReferences'
 import { PreviewServers } from './previewServers'
+import { OutputThumbnails } from './thumbnails'
 
 export function outputRoutes(options: {
   getSession: (id: string) => AgentSessionRecord | null | undefined
@@ -20,6 +21,7 @@ export function outputRoutes(options: {
   ready: () => Promise<unknown>
 }) {
   const app = new Hono()
+  const thumbnails = new OutputThumbnails(path.join(options.cacheRoot, 'output-thumbnails'))
   app.get('/:sessionId/open', async c => {
     const record = options.getSession(c.req.param('sessionId'))
     if (!record?.logFilePath) return c.json({ error: 'Session not found' }, 404)
@@ -47,10 +49,17 @@ export function outputRoutes(options: {
       return c.json({ error: 'This local address cannot be previewed' }, 400)
     }
     const file = ref.startsWith('~/') ? path.join(os.homedir(), ref.slice(2)) : path.resolve(record.projectPath, ref)
+    const thumbnailKey = JSON.stringify([record.sessionId, descriptor.kind, upstream?.href ?? file])
+    if (c.req.query('format') === 'thumbnail') {
+      const body = await thumbnails.read(thumbnailKey)
+      c.header('Cache-Control', 'no-store')
+      return body ? new Response(new Uint8Array(body), { headers: { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' } }) : c.body(null, 204)
+    }
     try {
       await options.ready()
       const resolvedFile = descriptor.kind === 'visualization' ? await visualizationFile(file, options.cacheRoot) : file
       const url = await options.previews.open(upstream ? { kind: 'localhost', url: upstream.href } : { kind: 'html', file: resolvedFile }, new URL(c.req.url))
+      void thumbnails.ensure(thumbnailKey, url)
       c.header('Cache-Control', 'no-store')
       c.header('Referrer-Policy', 'no-referrer')
       if (c.req.query('format') === 'json') return c.json({ url })
