@@ -76,5 +76,76 @@ experimental target is absent on desktop. The UI detector reported no findings.
   The raw fixture cannot establish copy behavior in every agent TUI.
 - Physical iPhones, landscape, cursor movement under an open menu, images,
   and interaction with the separate autocorrect prototype need further tests.
-- This experiment establishes native text paste in a terminal fixture. It does
-  not replace full Claude/Codex regression testing before shipping.
+- Native checks cover one portrait layout in each CLI, not every prompt layout.
+
+## Claude and Codex end-to-end verification
+
+The installed PWA passed native Paste with Claude Code 2.1.319 and Codex 0.167.0
+on the same m5p simulator. Both ran in their normal alternate screen with mouse
+reporting. Each received two lines through the iOS Paste menu. The transcript
+remained unchanged until Return, then contained exactly one new prompt with the
+original multiline text. No toolbar Paste button or synthetic paste event was
+used in these native checks.
+
+Native XCTest hold-and-drag gestures on output above the prompt opened the
+existing Copy selection offer in both CLIs. Tapping Copy put the selected
+`SELECTABLE_OUTPUT` substring in the simulator clipboard. See the
+[results](evidence/agents/paste-results.json),
+[Claude menu](evidence/agents/claude-menu.png),
+[Codex menu](evidence/agents/codex-menu.png),
+[Claude selection](evidence/agents/claude-selection.png), and
+[Codex selection](evidence/agents/codex-selection.png).
+
+### Repeat the native checks
+
+1. Build the opt-in prototype.
+2. Run `bun scripts/native-paste-prototype/serve-agentboard.ts --agents`.
+3. Open the isolated board in the installed PWA.
+4. In each CLI, submit `Generate test output: 20 numbered lines containing SELECTABLE_OUTPUT. Do not use tools.`
+5. Locate that CLI's transcript by its printed workspace path.
+6. Save the exact multiline clipboard text in a file without a trailing newline.
+7. Run `assert-agent-paste.ts before AGENT TRANSCRIPT SNAPSHOT` with Bun.
+8. Set the simulator clipboard with `xcrun simctl pbcopy UDID < TEXT_FILE`.
+9. Tap the prompt, long-press it, and tap the native Paste action.
+10. Run `assert-agent-paste.ts held AGENT TRANSCRIPT SNAPSHOT` with Bun.
+11. Tap the native Return key.
+12. Wait for the transcript to update.
+13. Run `assert-agent-paste.ts submitted AGENT TRANSCRIPT SNAPSHOT TEXT_FILE` with Bun.
+
+`AGENT` is `claude` or `codex`. The checker compares all typed prompts against
+the baseline. Keep transcripts out of version control; they contain session data.
+
+For native output selection, close the keyboard and run this on the simulator
+host from `native-gestures/`:
+
+```sh
+xcodebuild test -project NativeGestures.xcodeproj -scheme NativeGestures \
+  -destination "platform=iOS Simulator,id=UDID" \
+  -derivedDataPath /tmp/abnp-native-build -parallel-testing-enabled NO \
+  CODE_SIGNING_ALLOWED=NO
+```
+
+The tests assume Claude is tab 1, Codex is tab 2, and the seeded output is visible.
+They hold and drag within output, then assert and tap Copy selection. Screenshots
+are attached to the XCTest result. To verify clipboard contents separately, run
+one test at a time with `-only-testing:NativeGestures/NativeGestureTests/testClaudeOutputSelection`
+or `testCodexOutputSelection`, then run `xcrun simctl pbpaste UDID`.
+The drag starts away from the drawer's edge-swipe zone.
+
+### Browser regression coverage
+
+`tests/e2e/native-paste.spec.ts` checks opt-in gating, the 44-pixel input target,
+output hit-testing and DOM selection, suppression of remote mouse selection on
+the input, preservation of remote mouse selection on output, and multiline paste
+held until Enter without a keyboard shortcut. Chromium cannot test the iOS menu;
+the native checks above cover that behavior.
+
+```sh
+VITE_IOS_NATIVE_PASTE_PROTOTYPE=1 bun run build
+IOS_NATIVE_PASTE_E2E=1 E2E_PORT=18513 bunx playwright test tests/e2e/native-paste.spec.ts --workers=1
+bun run build
+IOS_NATIVE_PASTE_E2E=0 E2E_PORT=18513 bunx playwright test tests/e2e/native-paste.spec.ts --workers=1
+```
+
+Both build variants passed (two browser tests each). Lint, typecheck, and the full
+unit/integration suite also passed. No physical-device coverage is claimed.

@@ -13,7 +13,12 @@ function tmux(args: string[]) {
   return result.stdout.toString().trim()
 }
 // The test terminal records bytes; it never runs pasted text as commands.
-const commands = {
+const agents = process.argv.includes('--agents')
+const instruction = 'This is a terminal clipboard and text selection test. Do not use tools. When asked for test output, print exactly 20 numbered lines, each containing SELECTABLE_OUTPUT, then finish. Otherwise reply OK only.'
+const commands = agents ? {
+  claude: ['claude', '--tools', '', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--settings', '{"disableAllHooks":true}', '--append-system-prompt', instruction],
+  codex: ['codex', '--sandbox', 'read-only', '-c', `developer_instructions=${JSON.stringify(instruction)}`],
+} : {
   terminal: ['/usr/bin/python3', join(import.meta.dir, 'terminal.py'), join(root, 'input.jsonl')],
 }
 
