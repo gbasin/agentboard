@@ -889,6 +889,10 @@ export default function Terminal({
 
     const handleTouchStart = (e: TouchEvent) => {
       stopMomentum()
+      if (import.meta.env.VITE_IOS_NATIVE_PASTE_PROTOTYPE === '1') {
+        const textarea = getTextarea()
+        clientLog('ios_native_paste_touch', { target: (e.target as Element)?.className, textarea: textarea?.getBoundingClientRect().toJSON(), disabled: textarea?.disabled, standalone: window.matchMedia('(display-mode: standalone)').matches })
+      }
       maybeClearStaleSelection()
 
       // Skip if edge swiping (opening drawer) or drawer is open
@@ -924,7 +928,7 @@ export default function Terminal({
         // Enable textarea on touch start so iOS long-press paste menu works
         enableTextarea()
 
-        if (isiOS && appMouseRef.current) {
+        if (isiOS && appMouseRef.current && !(import.meta.env.VITE_IOS_NATIVE_PASTE_PROTOTYPE === '1' && e.target === getTextarea())) {
           const startPoint = { clientX: touch.clientX, clientY: touch.clientY }
           longPressTimer = setTimeout(() => {
             longPressTimer = null
@@ -1031,6 +1035,8 @@ export default function Terminal({
       }
 
       if (!hasMoved) {
+        // Let WebKit own taps and the edit callout on the experimental input target.
+        if (isiOS && import.meta.env.VITE_IOS_NATIVE_PASTE_PROTOTYPE === '1' && e.target === getTextarea()) return
         if (isiOS && touchDuration >= LONG_PRESS_MS) return
         if (appMouseRef.current) {
           const touch = e.changedTouches[0]
@@ -1260,7 +1266,7 @@ export default function Terminal({
 
   return (
     <section
-      className={`flex flex-1 flex-col bg-base terminal-mobile-overlay md:relative md:inset-auto ${isiOS ? 'ios-native-term-selection' : ''}`}
+      className={`flex flex-1 flex-col bg-base terminal-mobile-overlay md:relative md:inset-auto ${isiOS ? 'ios-native-term-selection' : ''} ${isiOS && import.meta.env.VITE_IOS_NATIVE_PASTE_PROTOTYPE === '1' ? 'ios-native-paste-prototype' : ''}`}
       data-testid="terminal-panel"
       onDragOver={(event) => {
         if (!Array.from(event.dataTransfer.types).includes('Files')) return

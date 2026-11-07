@@ -349,7 +349,7 @@ body {
 }
 
 /* Position xterm helper textarea in visible area on iOS for paste menu */
-.ios-native-term-selection .xterm-helper-textarea {
+.ios-native-term-selection:not(.ios-native-paste-prototype) .xterm-helper-textarea {
   position: absolute !important;
   left: 50% !important;
   top: 50% !important;
@@ -370,7 +370,7 @@ body {
     pointer-events: auto;
   }
 
-  .ios-native-term-selection .xterm-helper-textarea {
+  .ios-native-term-selection:not(.ios-native-paste-prototype) .xterm-helper-textarea {
     pointer-events: auto;
   }
 }
@@ -577,4 +577,29 @@ body {
   .pulse-complete {
     animation: none;
   }
+}
+
+/* Experimental native iOS paste target. xterm positions this at the cursor.
+   Keep output outside this target available to native selection and scrolling. */
+.ios-native-paste-prototype .xterm .xterm-helper-textarea {
+  transform: none;
+  opacity: 1;
+  background: transparent;
+  color: transparent;
+  caret-color: transparent;
+  left: 0 !important;
+  width: 100% !important;
+  outline: none;
+  min-height: 44px;
+  font-size: 16px;
+  z-index: 20 !important;
+  pointer-events: auto;
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
+.ios-native-paste-prototype .xterm .xterm-helpers {
+  width: 100%;
+  z-index: 11;
 }
