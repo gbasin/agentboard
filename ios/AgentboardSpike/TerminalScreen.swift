@@ -58,14 +58,18 @@ struct TerminalScreen: View {
                                     Button(item.name) { onSwitch?(item) }.disabled(!live.canOpen(item))
                                 }
                             }
-                            Button("Duplicate session", systemImage: "plus.square.on.square") { onManage?(.duplicate(terminal.liveSession ?? session)) }
-                            Button("Hibernate session", systemImage: "moon") { onManage?(.hibernate(terminal.liveSession ?? session)) }
+                            if SessionCapabilities.canControl(terminal.liveSession ?? session, remoteAllowed: live.remoteAllowControl) {
+                                Button("Duplicate session", systemImage: "plus.square.on.square") { onManage?(.duplicate(terminal.liveSession ?? session)) }
+                            }
+                            if SessionCapabilities.canHibernate(terminal.liveSession ?? session) {
+                                Button("Hibernate session", systemImage: "moon") { onManage?(.hibernate(terminal.liveSession ?? session)) }
+                            }
                             Button("Media and links", systemImage: "photo.on.rectangle") { terminal.hideKeyboard(); showContent = true }
                             Button("Transcript", systemImage: "text.bubble") { terminal.hideKeyboard(); showTranscript = true }
                                 .disabled((terminal.liveSession ?? session).agentSessionID == nil)
                             Button("Attach file", systemImage: "paperclip") { terminal.hideKeyboard(); showUpload = true }.disabled(!terminal.ready || session.remote)
-                            Button("Rename session", systemImage: "pencil") {
-                                onManage?(.rename(terminal.liveSession ?? session))
+                            if SessionCapabilities.canControl(terminal.liveSession ?? session, remoteAllowed: live.remoteAllowControl) {
+                                Button("Rename session", systemImage: "pencil") { onManage?(.rename(terminal.liveSession ?? session)) }
                             }
                         }
                         if live == nil {
@@ -108,7 +112,7 @@ struct TerminalScreen: View {
                                 Text("Dark").tag("Dark")
                             }
                         }
-                        if live != nil {
+                        if let live, SessionCapabilities.canControl(terminal.liveSession ?? session, remoteAllowed: live.remoteAllowControl) {
                             Button("End session", systemImage: "xmark.circle", role: .destructive) {
                                 onManage?(.end(terminal.liveSession ?? session))
                             }

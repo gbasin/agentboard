@@ -11,7 +11,13 @@ struct LiveSessionListView: View {
         _preferences = StateObject(wrappedValue: preferences)
         _board = StateObject(wrappedValue: BoardConnection(preferences: preferences))
     }
-    @State private var showLibrary = false
+    @StateObject private var recovery = RecoveryNoticeModel()
+    private enum LibraryRoute: String, Identifiable {
+        case all, recovery
+        var id: String { rawValue }
+        var initialState: String { self == .recovery ? "interrupted" : "all" }
+    }
+    @State private var libraryRoute: LibraryRoute?
     @State private var showSettings = false
     @State private var showFilters = false
     @State private var statusFilter = "All"
@@ -23,13 +29,16 @@ struct LiveSessionListView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
+    private var selection: CatalogSelection {
+        CatalogSelection(projects: preferences.strings("projectFilters"), hosts: preferences.strings("hostFilters"))
+    }
+    private var activeFilterCount: Int { selection.activeCount + (statusFilter == "All" ? 0 : 1) }
+    private var hiddenPermissionCount: Int { selection.hiddenPermissions(in: board.sessions) }
     private var filtered: [BoardSession] {
-        let projects = preferences.strings("projectFilters"), hosts = preferences.strings("hostFilters")
         let result = board.sessions.filter {
             (search.isEmpty || "\($0.name) \($0.project) \($0.summary)".localizedCaseInsensitiveContains(search)) &&
             (statusFilter == "All" || $0.status.rawValue == statusFilter) &&
-            (projects.isEmpty || projects.contains($0.project)) &&
-            (hosts.isEmpty || hosts.contains($0.host ?? ""))
+            selection.includes(project: $0.project, host: $0.host)
         }
         switch preferences.string("sessionSortMode", "created") {
         case "manual":
@@ -63,16 +72,32 @@ struct LiveSessionListView: View {
                 } footer: {
                     if let address = try? ServerAddress(serverURL) { Text(address.baseURL.absoluteString) }
                 }
+                RecoveryNoticeView(open: { libraryRoute = .recovery }, model: recovery)
+                if hiddenPermissionCount > 0 {
+                    Section {
+                        Button {
+                            preferences.set("projectFilters", .array([])); preferences.set("hostFilters", .array([]))
+                            search = ""; statusFilter = "All"
+                        } label: {
+                            Label("\(hiddenPermissionCount) hidden session\(hiddenPermissionCount == 1 ? "" : "s") need\(hiddenPermissionCount == 1 ? "s" : "") approval. Clear filters", systemImage: "exclamationmark.circle")
+                                .foregroundStyle(.primary)
+                        }.accessibilityIdentifier("hidden-permission-notice")
+                    }
+                }
                 Section {
                     ForEach(filtered) { session in
                         NavigationLink(value: session) { row(session) }
                             .disabled(!board.canOpen(session))
                             .accessibilityIdentifier("session-\(session.id)")
                             .contextMenu {
-                                Button("Rename session", systemImage: "pencil") { action = .rename(session) }
-                                Button("Duplicate session", systemImage: "plus.square.on.square") { action = .duplicate(session) }
-                                Button("Hibernate session", systemImage: "moon") { action = .hibernate(session) }
-                                Button("End session", systemImage: "xmark.circle", role: .destructive) { action = .end(session) }
+                                if SessionCapabilities.canControl(session, remoteAllowed: board.remoteAllowControl) {
+                                    Button("Rename session", systemImage: "pencil") { action = .rename(session) }
+                                    Button("Duplicate session", systemImage: "plus.square.on.square") { action = .duplicate(session) }
+                                    Button("End session", systemImage: "xmark.circle", role: .destructive) { action = .end(session) }
+                                }
+                                if SessionCapabilities.canHibernate(session) {
+                                    Button("Hibernate session", systemImage: "moon") { action = .hibernate(session) }
+                                }
                             }
                     }.onMove { indices, destination in
                         var ordered = filtered; ordered.move(fromOffsets: indices, toOffset: destination)
@@ -121,9 +146,16 @@ struct LiveSessionListView: View {
             .refreshable { board.refresh() }
             .toolbar {
                 ToolbarItemGroup(placement: .bottomBar) {
-                    Button("Library", systemImage: "clock") { showLibrary = true }
+                    Button("Library", systemImage: "clock") { libraryRoute = .all }
                     Spacer()
-                    Button("Filter and sort", systemImage: "line.3.horizontal.decrease") { showFilters = true }
+                    Button { showFilters = true } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "line.3.horizontal.decrease")
+                            if activeFilterCount > 0 { Text("\(activeFilterCount)").font(.caption).monospacedDigit() }
+                        }
+                    }
+                    .accessibilityLabel("Filter and sort")
+                    .accessibilityValue(activeFilterCount == 0 ? "No active filters" : "\(activeFilterCount) active filters")
                     Spacer()
                     EditButton()
                     Spacer()
@@ -151,11 +183,11 @@ struct LiveSessionListView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showLibrary) { LibraryView(server: serverURL, board: board) { session in
+            .sheet(item: $libraryRoute) { route in LibraryView(server: serverURL, board: board, preferences: preferences, initialState: route.initialState) { session in
                 board.refresh(); search = ""; path = [session]
             } }
             .sheet(isPresented: $showSettings) { NativeSettingsView(preferences: preferences) }
-            .sheet(isPresented: $showFilters) { CatalogFilters(preferences: preferences, sessions: board.sessions, status: $statusFilter) }
+            .sheet(isPresented: $showFilters) { CatalogFilters(preferences: preferences, sessions: board.sessions, conversations: board.sleeping + board.history, hosts: board.hosts, status: $statusFilter) }
             .sheet(isPresented: $showConnection) {
                 ServerConnectionSheet(address: serverURL) { value in
                     path.removeAll()
@@ -166,6 +198,18 @@ struct LiveSessionListView: View {
         }
         .preferredColorScheme(preferences.string("theme") == "dark" ? .dark : preferences.string("theme") == "light" ? .light : nil)
         .task { board.configure(serverURL) }
+        .task(id: serverURL + String(describing: scenePhase)) {
+            recovery.configure(serverURL)
+            guard scenePhase == .active else { return }
+            while !Task.isCancelled {
+                await recovery.refresh(serverURL)
+                do { try await Task.sleep(for: .seconds(60)) } catch { return }
+            }
+        }
+        .onChange(of: board.libraryVersion) { _, _ in
+            guard scenePhase == .active else { return }
+            Task { await recovery.refresh(serverURL) }
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background { board.suspend() }
             else if phase == .active { board.resume() }

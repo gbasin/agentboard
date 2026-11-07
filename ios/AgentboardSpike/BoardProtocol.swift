@@ -10,6 +10,7 @@ struct RemoteSession: Decodable {
     let lastUserMessage: String?
     let host: String?
     let remote: Bool?
+    let source: String?
     let isHibernating: Bool?
     let boardSessionId: String?
     let agentSessionId: String?
@@ -22,7 +23,7 @@ struct RemoteSession: Decodable {
     var boardSession: BoardSession {
         .init(id: id, name: name, project: projectPath, agent: agentType ?? "Shell",
               status: isHibernating == true ? .sleeping : BoardSession.Status(wireValue: status),
-              summary: lastUserMessage ?? "", host: host, remote: remote ?? false,
+              summary: lastUserMessage ?? "", host: host, remote: remote ?? false, source: source,
               boardID: boardSessionId, agentSessionID: agentSessionId, command: command,
               createdAt: createdAt ?? "", lastActivity: lastActivity ?? "", media: media ?? [], prs: prs ?? [])
     }

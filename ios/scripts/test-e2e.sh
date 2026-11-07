@@ -18,6 +18,8 @@ xcodebuild test -project ios/AgentboardSpike.xcodeproj -scheme AgentboardSpike \
   -resultBundlePath "ios/evidence/e2e-$run_id-light.xcresult" \
   -only-testing:AgentboardSpikeTests \
   -only-testing:AgentboardSpikeUITests/NativeParityUITests \
+  -only-testing:AgentboardSpikeUITests/ParityGapUITests \
+  -only-testing:AgentboardSpikeUITests/NativeClipboardUITests \
   -only-testing:AgentboardSpikeUITests/LiveUITests \
   -only-testing:AgentboardSpikeUITests/SessionActionUITests \
   -only-testing:AgentboardSpikeUITests/SimulatorStateUITests \
@@ -28,5 +30,7 @@ xcodebuild test -project ios/AgentboardSpike.xcodeproj -scheme AgentboardSpike \
   -destination "id=$udid" -derivedDataPath ios/.build \
   -resultBundlePath "ios/evidence/e2e-$run_id-dark-large.xcresult" \
   -only-testing:AgentboardSpikeUITests/NativeParityUITests \
+  -only-testing:AgentboardSpikeUITests/ParityGapUITests \
+  -only-testing:AgentboardSpikeUITests/NativeClipboardUITests \
   -only-testing:AgentboardSpikeUITests/SessionActionUITests \
   -only-testing:AgentboardSpikeUITests/SimulatorStateUITests

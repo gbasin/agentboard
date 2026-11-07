@@ -9,6 +9,7 @@ struct BoardSession: Identifiable, Hashable {
     let summary: String
     var host: String? = nil
     var remote = false
+    var source: String? = nil
     var boardID: String? = nil
     var agentSessionID: String? = nil
     var command: String? = nil

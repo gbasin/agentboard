@@ -3,6 +3,7 @@ import SwiftUI
 struct LibraryView: View {
     let server: String
     @ObservedObject var board: BoardConnection
+    @ObservedObject var preferences: NativePreferences
     let open: (BoardSession) -> Void
     @State private var sessions: [SavedSession] = []
     @State private var cursor: String?
@@ -13,6 +14,13 @@ struct LibraryView: View {
     @State private var failure: String?
     @State private var detail: SavedSession?
     @Environment(\.dismiss) private var dismiss
+    init(server: String, board: BoardConnection, preferences: NativePreferences, initialState: String = "all", open: @escaping (BoardSession) -> Void) {
+        self.server = server
+        self.board = board
+        self.preferences = preferences
+        self.open = open
+        _state = State(initialValue: initialState)
+    }
     var body: some View {
         NavigationStack {
             List {
@@ -25,11 +33,11 @@ struct LibraryView: View {
                     Toggle("Pinned only", isOn: $pinned)
                 }
                 if query.isEmpty { Section("Agent conversations") {
-                    NavigationLink("Hibernating conversations (\(board.sleeping.count))") {
-                        AgentHistoryView(server: server, sessions: board.sleeping, sleeping: true, open: finish)
+                    NavigationLink("Hibernating conversations (\(filteredSleeping.count))") {
+                        AgentHistoryView(server: server, sessions: board.sleeping, sleeping: true, preferences: preferences, open: finish)
                     }
-                    NavigationLink("Conversation history (\(board.history.count))") {
-                        AgentHistoryView(server: server, sessions: board.history, sleeping: false, open: finish)
+                    NavigationLink("Conversation history (\(filteredHistory.count))") {
+                        AgentHistoryView(server: server, sessions: board.history, sleeping: false, preferences: preferences, open: finish)
                     }
                 }
                 }
@@ -65,6 +73,9 @@ struct LibraryView: View {
             .sheet(item: $detail) { saved in SavedDetailView(server: server, saved: saved, open: finish) }
         }
     }
+    private var filteredSleeping: [AgentLogSession] { selection.conversations(board.sleeping) }
+    private var filteredHistory: [AgentLogSession] { selection.conversations(board.history) }
+    private var selection: CatalogSelection { CatalogSelection(projects: preferences.strings("projectFilters"), hosts: preferences.strings("hostFilters")) }
     private func finish(_ session: BoardSession) { dismiss(); open(session) }
     private func load(more: Bool = false) async {
         guard !loading else { return }; loading = true
@@ -160,6 +171,7 @@ struct AgentHistoryView: View {
     let server: String
     let sessions: [AgentLogSession]
     let sleeping: Bool
+    @ObservedObject var preferences: NativePreferences
     let open: (BoardSession) -> Void
     @State private var search = ""
     @State private var busy: String?
@@ -171,7 +183,7 @@ struct AgentHistoryView: View {
     var body: some View {
         List {
             if let error { ErrorRow(message: error) }
-            ForEach(sessions.filter { !archived.contains($0.id) && (search.isEmpty || "\($0.displayName) \($0.projectPath)".localizedCaseInsensitiveContains(search)) }) { session in
+            ForEach(filteredSessions.filter { !archived.contains($0.id) && (search.isEmpty || "\($0.displayName) \($0.projectPath)".localizedCaseInsensitiveContains(search)) }) { session in
                 Section {
                     NavigationLink(renamed[session.id] ?? session.displayName) { TranscriptView(server: server, sessionID: session.id, title: session.displayName) }
                     Text(session.projectPath).font(.caption)
@@ -186,6 +198,7 @@ struct AgentHistoryView: View {
             }
             if busy != nil { ProgressView("Waiting for server…") }
             if sessions.isEmpty { ContentUnavailableView("No conversations", systemImage: "text.bubble") }
+            else if filteredSessions.isEmpty { ContentUnavailableView("No matching conversations", systemImage: "text.bubble", description: Text("Change the project or host filters in Sessions.")) }
         }.navigationTitle(sleeping ? "Hibernating" : "Conversations").searchable(text: $search)
             .alert("Rename conversation", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
                 TextField("Name", text: $newName)
@@ -198,6 +211,9 @@ struct AgentHistoryView: View {
                     } catch { self.error = error.localizedDescription } }
                 }.disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
             }
+    }
+    private var filteredSessions: [AgentLogSession] {
+        CatalogSelection(projects: preferences.strings("projectFilters"), hosts: preferences.strings("hostFilters")).conversations(sessions)
     }
     private func action(_ type: String, _ session: AgentLogSession) {
         guard busy == nil else { return }; busy = session.id
