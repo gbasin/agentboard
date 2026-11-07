@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   getNavShortcutMod,
   isIOSDevice,
+  isAndroidDevice,
   isIOSPWA,
   isMacOS,
   isSafari,
@@ -127,4 +128,22 @@ describe('device helpers', () => {
       globalAny.navigator = originalNavigator
     }
   })
+})
+
+
+test('Android detection excludes desktop Linux and iOS', () => {
+  const originalNavigator = globalAny.navigator
+  try {
+    for (const [userAgent, expected] of [
+      ['Mozilla/5.0 (Linux; Android 16; Pixel 9) Chrome/140.0 Mobile Safari/537.36', true],
+      ['Mozilla/5.0 (Linux; Android 14; SM-S918B) SamsungBrowser/28.0', true],
+      ['Mozilla/5.0 (X11; Linux x86_64) Chrome/140.0', false],
+      ['Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X)', false],
+    ] as const) {
+      globalAny.navigator = { userAgent }
+      expect(isAndroidDevice()).toBe(expected)
+    }
+    globalAny.navigator = undefined
+    expect(isAndroidDevice()).toBe(false)
+  } finally { globalAny.navigator = originalNavigator }
 })

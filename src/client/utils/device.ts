@@ -8,6 +8,10 @@ export function isIOSDevice(): boolean {
   return iOS || iPadOS
 }
 
+export function isAndroidDevice(): boolean {
+  return typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent)
+}
+
 export function isIOSPWA(): boolean {
   if (typeof navigator === 'undefined') return false
   return isIOSDevice() && (navigator as { standalone?: boolean }).standalone === true

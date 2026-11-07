@@ -1,4 +1,5 @@
-/** Browser -> production WebSocket -> private tmux -> real readline, using captured iOS event shapes. */
+/** Browser -> production WebSocket -> private tmux -> real readline.
+ * iOS replacement replays plus Android Chromium IME and InputEvent coverage. */
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { expect, test, type Page } from '@playwright/test'
@@ -48,8 +49,12 @@ async function submitted(name: string, value: string, count = 1) {
   expect((pane(name).match(/SUBMITTED:/g) ?? []).length).toBe(count)
 }
 
+for (const platform of ['iOS', 'Android'] as const) {
+test.describe(platform, () => {
 test.use({ viewport: { width: 402, height: 874 }, isMobile: true, hasTouch: true,
-  userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 26_4 like Mac OS X) AppleWebKit/605.1.15 Version/26.4 Mobile/15E148 Safari/604.1' })
+  userAgent: platform === 'iOS'
+    ? 'Mozilla/5.0 (iPhone; CPU iPhone OS 26_4 like Mac OS X) AppleWebKit/605.1.15 Version/26.4 Mobile/15E148 Safari/604.1'
+    : 'Mozilla/5.0 (Linux; Android 16; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36' })
 test.beforeEach(async ({ page }) => {
   const frames: string[] = []
   sent.set(page, frames)
@@ -78,11 +83,28 @@ test.afterEach(async ({ page }, info) => {
   if (info.status !== info.expectedStatus) console.log('Terminal bytes', JSON.stringify(sent.get(page)))
   for (const name of targets.splice(0)) tmux(['kill-window', '-t', `${session}:${name}`]) })
 
-test('ordinary build enables iOS autocorrect by default', async ({ page }) => {
+test('ordinary build enables native autocorrect by default', async ({ page }) => {
   await create('autocorrect-off')
   await page.goto('/')
   const input = await select(page, 'autocorrect-off')
   await expect(input).toHaveAttribute('autocorrect', 'on')
+})
+
+test('upgrade preserves the current platform preference in one switch', async ({ page }) => {
+  await page.addInitScript(platform => {
+    localStorage.setItem('agentboard-settings', JSON.stringify({ version: 8, state: {
+      iosAutocorrect: platform !== 'iOS', androidAutocorrect: platform !== 'Android',
+    } }))
+  }, platform)
+  await create('autocorrect-migrate')
+  await page.goto('/')
+  const input = await select(page, 'autocorrect-migrate')
+  await expect(input).toHaveAttribute('autocorrect', 'off')
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('agentboard-settings')!))
+  expect(saved.version).toBe(9)
+  expect(saved.state.mobileAutocorrect).toBe(false)
+  expect(saved.state).not.toHaveProperty('iosAutocorrect')
+  expect(saved.state).not.toHaveProperty('androidAutocorrect')
 })
 
 test('settings toggles autocorrect live and persists across reload', async ({ page }, info) => {
@@ -97,7 +119,7 @@ test('settings toggles autocorrect live and persists across reload', async ({ pa
     if (await settings.getByRole('button', { name: 'Terminal', exact: true }).isVisible()) {
       await settings.getByRole('button', { name: 'Terminal', exact: true }).click()
     }
-    return settings.getByRole('switch', { name: 'iOS autocorrect', exact: true })
+    return settings.getByRole('switch', { name: 'Mobile autocorrect', exact: true })
   }
   const toggle = await openSettings()
   await expect(toggle).toBeChecked()
@@ -105,7 +127,7 @@ test('settings toggles autocorrect live and persists across reload', async ({ pa
   await expect(input).toHaveAttribute('autocorrect', 'off')
   await toggle.click()
   await expect(input).toHaveAttribute('autocorrect', 'on')
-  await info.attach('ios-autocorrect-settings.png', {body: await page.screenshot(), contentType:'image/png'})
+  await info.attach(`${platform.toLowerCase()}-autocorrect-settings.png`, {body: await page.screenshot({ path: info.outputPath(`${platform.toLowerCase()}-mobile-autocorrect.png`) }), contentType:'image/png'})
   await page.getByRole('button', { name: 'Close settings' }).click()
   await page.reload()
   await select(page, 'autocorrect-setting')
@@ -207,3 +229,49 @@ test.describe('native autocorrect enabled', () => {
     expect(pane('autocorrect-one')).not.toContain('SUBMITTED:')
   })
 })
+
+
+if (platform === 'Android') {
+  test('Chromium composition updates and commit deliver one corrected word', async ({ page }) => {
+    await create('android-composition')
+    await page.goto('/')
+    await select(page, 'android-composition')
+    const cdp = await page.context().newCDPSession(page)
+    for (const text of ['t', 'te', 'teh', 'the']) {
+      await cdp.send('Input.imeSetComposition', { text, selectionStart: text.length, selectionEnd: text.length })
+    }
+    await expect.poll(() => pane('android-composition')).toContain('prompt> the')
+    await cdp.send('Input.insertText', { text: 'the' })
+    await page.keyboard.press('Enter')
+    await submitted('android-composition', 'the')
+    await cdp.send('Input.insertText', { text: 'swipe' })
+    await page.keyboard.press('Enter')
+    await submitted('android-composition', 'swipe', 2)
+    await cdp.detach()
+  })
+
+  test('IME-only Backspace and newline submission work after local context resets', async ({ page }) => {
+    await create('android-input-events')
+    await page.goto('/')
+    const input = await select(page, 'android-input-events')
+    await page.keyboard.type('old')
+    // Moving the terminal cursor resets the adapter but preserves the terminal draft.
+    await page.keyboard.press('ArrowLeft')
+    await page.keyboard.press('ArrowRight')
+    await expect(input).toHaveValue('')
+    await input.evaluate(element => element.dispatchEvent(new InputEvent('beforeinput', { inputType: 'deleteContentBackward', bubbles: true, cancelable: true })))
+    await page.keyboard.type('d')
+    // Android can commit a newline as insertText without a cancelable beforeinput.
+    await input.evaluate(element => {
+      const field = element as HTMLTextAreaElement
+      field.value += '\n'
+      field.dispatchEvent(new InputEvent('input', { inputType: 'insertText', data: '\n', bubbles: true }))
+    })
+    await submitted('android-input-events', 'old')
+    await page.keyboard.type('next')
+    await input.evaluate(element => element.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: '\n', bubbles: true, cancelable: true })))
+    await submitted('android-input-events', 'next', 2)
+  })
+}
+})
+}

@@ -1,4 +1,4 @@
-/** Native autocorrect regression suite against an ordinary build, with UTF-8 tmux. */
+/** iOS and Android native autocorrect regression suite against an ordinary build, with UTF-8 tmux. */
 import { defineConfig } from '@playwright/test'
 import base from './playwright.config'
 process.env.E2E_AUTOCORRECT_SUITE = '1'
@@ -8,7 +8,7 @@ process.env.LANG = utf8Locale
 const server = base.webServer as { command: string }
 export default defineConfig({
   ...base,
-  testMatch: 'ios-autocorrect.spec.ts',
+  testMatch: 'mobile-autocorrect.spec.ts',
   workers: 1,
   webServer: {
     ...base.webServer,

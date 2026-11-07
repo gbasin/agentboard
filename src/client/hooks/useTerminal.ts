@@ -14,7 +14,7 @@ import { useSettingsStore } from '../stores/settingsStore'
 import { copyText } from '../utils/copyText'
 import { getEffectiveModifier, matchesModifier } from '../utils/device'
 import { bracketedPaste, sanitizeImagePath } from '../utils/paste'
-import { installIosAutocorrect } from '../utils/iosAutocorrect'
+import { installMobileAutocorrect } from '../utils/mobileAutocorrect'
 import { clipboardFiles } from '../utils/browserFiles'
 import { setAppOwnsMouse } from '../utils/iosSelection'
 
@@ -276,7 +276,7 @@ class SafeClipboardProvider implements IClipboardProvider {
   }
 }
 import type { ITheme } from '@xterm/xterm'
-import { isIOSDevice } from '../utils/device'
+import { isAndroidDevice, isIOSDevice } from '../utils/device'
 
 // Text presentation selector - forces text rendering instead of emoji
 const TEXT_VS = '\uFE0E'
@@ -375,9 +375,10 @@ export function useTerminal({
   deferredInputEnabledRef.current = !!sessionId && allowAttach
   const canReadHostClipboard = () => !onPasteFilesRef.current || (typeof location !== 'undefined' && ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname))
   const isiOS = isIOSDevice()
+  const isAndroid = isAndroidDevice()
   const containerRef = useRef<HTMLDivElement | null>(null)
   const terminalRef = useRef<Terminal | null>(null)
-  const nativeInputRef = useRef<ReturnType<typeof installIosAutocorrect> | null>(null)
+  const nativeInputRef = useRef<ReturnType<typeof installMobileAutocorrect> | null>(null)
   const updateNativeInputRef = useRef<() => void>(() => {})
   const resetNativeInput = useCallback(() => nativeInputRef.current?.reset(), [])
   const hasLoggedInitRef = useRef(false)
@@ -737,14 +738,16 @@ export function useTerminal({
       terminal.open(container)
       const updateAutocorrect = () => {
         // Recovery drafts use xterm's ordinary input path, not terminal correction sequences.
-        const enabled = isiOS && useSettingsStore.getState().iosAutocorrect
+        const settings = useSettingsStore.getState()
+        const enabled = (isiOS || isAndroid) && settings.mobileAutocorrect
           && !!readySessionRef.current && !deferInputRef.current
         if (enabled === !!nativeInputRef.current) return
         nativeInputRef.current?.dispose()
         nativeInputRef.current = null
         if (enabled) {
-          nativeInputRef.current = installIosAutocorrect(terminal, () => !!readySessionRef.current)
-          clientLog('ios_autocorrect_prototype', {
+          nativeInputRef.current = installMobileAutocorrect(terminal, () => !!readySessionRef.current, isAndroid ? 'android' : 'ios')
+          clientLog('mobile_autocorrect', {
+            platform: isAndroid ? 'android' : 'ios',
             protocol: 'explicit-replacement',
             standalone: (navigator as Navigator & { standalone?: boolean }).standalone === true,
             displayMode: window.matchMedia('(display-mode: standalone)').matches ? 'standalone' : 'browser',
@@ -754,7 +757,7 @@ export function useTerminal({
       updateNativeInputRef.current = updateAutocorrect
       updateAutocorrect()
       unsubscribeAutocorrect = useSettingsStore.subscribe((state, previous) => {
-        if (state.iosAutocorrect !== previous.iosAutocorrect) updateAutocorrect()
+        if (state.mobileAutocorrect !== previous.mobileAutocorrect) updateAutocorrect()
       })
       fitAddon.fit()
 
