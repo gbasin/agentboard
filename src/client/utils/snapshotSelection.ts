@@ -4,7 +4,7 @@
  * trusting WebKit's serialisation (which dropped leading spaces unpredictably).
  *
  * The layer renders one element per captured line, marked with
- * `data-snapshot-line="<index>"` and holding a single Text node (or a <br>
+ * `data-snapshot-line="<index>"` and holding text and optional link elements (or a <br>
  * for a blank line), so a range boundary resolves to a line and a column.
  */
 
@@ -16,6 +16,7 @@ export const SNAPSHOT_LINE_ATTR = 'data-snapshot-line'
 const TEXT_NODE = 3
 
 interface NodeLike {
+  ownerDocument?: Document
   nodeType: number
   parentElement: ElementLike | null
 }
@@ -46,6 +47,13 @@ export function resolveSnapshotPoint(root: RootLike, node: unknown, offset: numb
   if (!lineElement || !root.contains(lineElement)) return null
   const line = Number(lineElement.getAttribute(SNAPSHOT_LINE_ATTR))
   if (!Number.isInteger(line) || line < 0 || line >= lineCount) return null
+  // Count all preceding text, including sibling text nodes and nested links.
+  if (n.ownerDocument) {
+    const range = n.ownerDocument.createRange()
+    range.selectNodeContents(lineElement as unknown as Node)
+    range.setEnd(n as unknown as Node, offset)
+    return { line, col: range.toString().length }
+  }
   if (n.nodeType === TEXT_NODE) return { line, col: offset }
   return { line, col: offset === 0 ? 0 : Infinity }
 }
