@@ -110,7 +110,7 @@ test('search filters rows across pages and shows an empty state', async ({ page 
 test.describe('phone', () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })
 
-  test('settings is a page list that drills into pages with no horizontal overflow', async ({ page }) => {
+  test('settings supports edge-swipe Back without opening the drawer or intercepting other gestures', async ({ page }) => {
     const prefix = uniquePrefix('setm')
     const [name] = windows.createMany(prefix, 1)
     await installHarness(page, { prefix })
@@ -141,14 +141,56 @@ test.describe('phone', () => {
         )
       })
 
+    const touch = await page.context().newCDPSession(page)
+    const swipe = async (x = 10, dx = 130, dy = 0, cancel = false, multi = false) => {
+      await touch.send('Input.dispatchTouchEvent', {
+        type: 'touchStart', touchPoints: [{ x, y: 180, id: 1 }],
+      })
+      if (multi) await touch.send('Input.dispatchTouchEvent', {
+        type: 'touchStart', touchPoints: [{ x, y: 180, id: 1 }, { x: x + 20, y: 200, id: 2 }],
+      })
+      for (let step = 1; step <= 5; step++) {
+        await touch.send('Input.dispatchTouchEvent', {
+          type: 'touchMove', touchPoints: [{ x: x + dx * step / 5, y: 180 + dy * step / 5, id: 1 }],
+        })
+      }
+      await touch.send('Input.dispatchTouchEvent', { type: cancel ? 'touchCancel' : 'touchEnd', touchPoints: [] })
+    }
+    // Swiping the root settings screen must neither close it nor open a drawer behind it.
+    await swipe()
+    await expect(settings.getByRole('heading', { name: 'Settings' })).toBeVisible()
+    await expect(page.locator('.session-drawer')).not.toHaveClass(/open/)
+
     for (const pageName of ['New sessions', 'Session list', 'Appearance', 'Terminal', 'Notifications']) {
       await settings.getByRole('button', { name: pageName, exact: true }).click()
       await expect(settings.getByRole('heading', { name: pageName })).toBeVisible()
       const back = settings.getByRole('button', { name: 'Back to settings' })
       await expect(back).toBeVisible()
       expect(await noOverflow(), `${pageName} overflows horizontally`).toBe(true)
-      await back.click()
+      await swipe()
       await expect(settings.getByRole('heading', { name: 'Settings' })).toBeVisible()
+      await expect(settings.getByRole('button', { name: pageName, exact: true })).toBeFocused()
+      await expect(page.locator('.session-drawer')).not.toHaveClass(/open/)
     }
+
+    await settings.getByRole('button', { name: 'Appearance', exact: true }).click()
+    // Interior drags, short drags, vertical scrolls, cancellation and multi-touch are not Back.
+    await swipe(100)
+    await expect(settings.getByRole('heading', { name: 'Appearance' })).toBeVisible()
+    await swipe(10, 20)
+    await expect(settings.getByRole('heading', { name: 'Appearance' })).toBeVisible()
+    await swipe(10, 20, 100)
+    await expect(settings.getByRole('heading', { name: 'Appearance' })).toBeVisible()
+    await swipe(10, 130, 0, true)
+    await expect(settings.getByRole('heading', { name: 'Appearance' })).toBeVisible()
+    await swipe(10, 130, 0, false, true)
+    await expect(settings.getByRole('heading', { name: 'Appearance' })).toBeVisible()
+    await settings.getByRole('button', { name: 'Back to settings' }).click()
+    await expect(settings.getByRole('heading', { name: 'Settings' })).toBeVisible()
+    await page.screenshot({ path: 'test-results/mobile-swipe-back.png' })
+    await settings.getByRole('button', { name: 'Close settings' }).click()
+    // The terminal still owns edge swipes once the foreground dialog closes.
+    await swipe()
+    await expect(page.locator('.session-drawer')).toHaveClass(/open/)
   })
 })

@@ -9,6 +9,7 @@
  * into a page, with a back control in the header.
  */
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
+import { useEdgeSwipeBack } from '../hooks/useEdgeSwipeBack'
 import { useIsMobileLayout } from '../hooks/useMobileLayout'
 import { cn } from '../utils/cn'
 import { ICON_SIZE } from './controlStyles'
@@ -44,6 +45,12 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
   const backdropPressRef = useRef(false)
   // Phone: the page to refocus in the list after tapping back.
   const returnToRef = useRef<SettingsPageId | null>(null)
+
+  const goBack = () => {
+    returnToRef.current = page
+    setPage(null)
+  }
+  useEdgeSwipeBack({ enabled: isPhone && page !== null, targetRef: panelRef, onBack: goBack })
 
   useSuspendTerminalInput()
   useFocusTrap(panelRef, onClose)
@@ -109,10 +116,7 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
             <button
               ref={backRef}
               type="button"
-              onClick={() => {
-                returnToRef.current = page
-                setPage(null)
-              }}
+              onClick={goBack}
               aria-label="Back to settings"
               className={cn(HEADER_BUTTON, 'size-[44px]')}
             >

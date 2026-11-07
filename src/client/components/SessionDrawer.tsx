@@ -197,7 +197,7 @@ export default function SessionDrawer({
         className={`session-drawer ${isOpen ? 'open' : ''}`}
         style={transitionStyle}
         role="dialog"
-        aria-modal="true"
+        aria-modal={isOpen ? true : undefined}
         aria-label="Session list"
         tabIndex={-1}
       >
