@@ -1,4 +1,4 @@
-# iPhone UI spike
+# Agentboard iPhone direction
 Mode: Operate. User-approved direction: native Apple controls around the current PWA terminal, preserving density. Code-first, using the confirmed scope from the conversation.
 ## Current-state audit
 The PWA has a mobile header with session name/status and session actions, a session drawer, a full-height terminal, and a horizontal quick-key strip. The supplied screenshot shows these already exist. This spike changes their presentation, not their purpose. Large titles belong only on the session list; terminal detail stays compact. No duplicate dashboard or summary cards.
@@ -21,3 +21,7 @@ Continue in SwiftUI, reusing the existing Agentboard protocol over the user's Ta
 ## Session management extension
 
 Extend the existing native world with New session in the catalog toolbar and Rename session / End session in the terminal menu. Use native forms with preserved drafts, inline server errors and explicit destructive confirmation. Create opens the acknowledged session; end returns to the catalog after removal. Each request has its own socket and runs once; uncertain outcomes direct the user to check the catalog before retrying. This slice accepts a project directory, explicit command, optional name and optional configured remote host. Preset synchronization and directory browsing remain future parity work.
+
+## Full parity implementation
+
+The user superseded the slice-by-slice plan with full PWA capability parity. Preserve the Apple-native direction. Keep the terminal compact and give supplemental workflows native destinations: settings, filters, library, conversations, transcripts, media, pull requests and uploads. A flat session list supports manual reordering; project labels retain context without duplicating groups. Keep conversation navigation near the top of Library, ahead of paginated saved rows. Put older-transcript loading in the toolbar so a long transcript cannot bury it. Shared settings use the existing server contract; terminal typography and renderer settings stay on-device. Validate complete workflows against a private backend and inspect light, dark and accessibility text captures before declaring completion.

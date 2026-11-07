@@ -1,10 +1,14 @@
-# Agentboard iPhone live-session slice
+# Agentboard iPhone client
 
-The app opens existing Agentboard sessions through native SwiftUI navigation. The default list groups live sessions by project and supports search. Enter the same base HTTP(S) URL you open in Safari. Keep Tailscale connected for a tailnet address.
+The app opens existing Agentboard sessions through native SwiftUI navigation. The catalog supports search, project/host/status filters, sorting, shared manual order and configurable row details. Enter the same base HTTP(S) URL you open in Safari. Keep Tailscale connected for a tailnet address.
 
 `BoardConnection` owns a URLSession WebSocket at `/ws?catalog=2`. The catalog query is required for the live v0.40 backend. A proxy path prefix is preserved. WKWebView renders bundled xterm.js output and bridges input; a public-API UIKit `TerminalInputView` owns the keyboard. The connection uses heartbeat checks and reconnect backoff. Backgrounding closes the socket. Returning reconnects and restores the selected session. Disconnected input is never replayed. Each selection opens a fresh socket to isolate stale responses, including repeat visits to the same session ID.
 
-This slice opens existing sessions and supports native create, rename and end flows. New session accepts a server-side project directory, an explicit command, an optional name and an optional configured remote host. Rename and End session are in the terminal action menu. End requires confirmation. Sleeping sessions and server-restricted remote sessions show a reason and cannot be opened. History, media, directory browsing and synchronized command presets are not implemented. Sample management remains available with `-demo` or the legacy `-spikeEndpoint` launch argument.
+The native client includes session creation, duplication, rename, end, hibernate and wake; directory browsing and recent paths; shared command presets; saved-session library and recovery; transcript messages/events; media and pull-request views; native file/photo uploads; and shared/server/device settings. Library leads to saved sessions and inactive agent conversations. Session actions are in the terminal menu and catalog context menu. File insertion pastes a quoted server path without Enter. Uploads are unavailable for SSH sessions, matching the PWA.
+
+Validation: the full light run passed 40 tests. The final light correction run passed two workflows. All 12 dark/max-text workflows are verified: 11 passed in the final broad run, and the remaining management flow passed after fixing its menu-scrolling test helper. Repository lint, typecheck and all 1,859 Bun tests passed. Exact result bundles, coverage and limits are in PARITY.md.
+
+See [PARITY.md](PARITY.md) for the acceptance and validation matrix. Explicit `-demo` and legacy `-spikeEndpoint` arguments retain the earlier sample and raw-shell fixtures.
 
 ## Build
 
@@ -42,18 +46,35 @@ The first m5p device-build attempt stopped at Xcode's “No Accounts” error an
 Run the backend on the simulator host. Give it a dedicated socket directory and data directory. Remove inherited `TMUX`. Keep the backend running while the tests run.
 
 ```sh
-mkdir -p /tmp/ab-ios-live
-chmod 700 /tmp/ab-ios-live
-env -u TMUX TMUX_TMPDIR=/tmp/ab-ios-live \
-  AGENTBOARD_DATA_DIR=/tmp/ab-ios-live/data \
-  TMUX_SESSION=ab-ios-live PORT=4151 bun run start
+mkdir -p /tmp/ab-ios-parity
+chmod 700 /tmp/ab-ios-parity
+env -u TMUX TMUX_TMPDIR=/tmp/ab-ios-parity \
+  AGENTBOARD_DATA_DIR=/tmp/ab-ios-parity/data \
+  TMUX_SESSION=ab-ios-parity PORT=4151 \
+  CLAUDE_RESUME_CMD="/bin/zsh -f -c 'exec /bin/zsh -f' {sessionId}" \
+  bun run start
 ```
 
 In a second shell, seed two disposable shell sessions. The seed script connects only to loopback port 4151.
 
 ```sh
 bun ios/scripts/seed-live.ts
+bun ios/scripts/seed-parity.ts
+NATIVE_PARITY_SHELL_RESUME=1 bun ios/scripts/warm-parity.ts
+xcrun simctl addmedia YOUR_UDID /tmp/ab-ios-parity/photo.png
 ```
+
+The resume override is required: the synthetic Claude transcript resumes into a disposable shell. Do not run the lifecycle fixtures against a normal backend. `seed-parity.ts` writes only the fixed private data directory. Seed once before testing; rewriting a log while the backend caches it can intentionally trigger stale-media protection. Warm the fixture after seeding. Keep its transcript and saved-session names aligned because the server synchronizes renames.
+
+Run the PR-check fixture in a third shell while the UI suite runs:
+
+```sh
+bun ios/scripts/pr-fixture.ts
+```
+
+Port 4190 proxies the private backend and supplies deterministic passed, running and failed GitHub checks. This validates native rendering without requiring GitHub credentials. It does not verify live GitHub CI.
+
+For the file-picker test, install the app first. Get its simulator data directory with `xcrun simctl get_app_container YOUR_UDID dev.agentboard.ios-spike data`. Copy `/tmp/ab-ios-parity/upload.txt` to `Documents/parity-upload.txt` inside that directory. The app exposes its Documents folder in Files.
 
 The five legacy `SpikeUITests` also need the older raw PTY fixture on loopback port 4149. Run it in another shell:
 
@@ -104,11 +125,21 @@ Historical evidence in `evidence/`:
 - Original spike: root lint/typecheck passed. With `LOG_LEVEL` unset, 1,859 Bun tests and the Node installer checks passed. Inherited `LOG_LEVEL=debug` caused the existing logger default-level test to fail. These counts are historical, not the live slice's final validation result.
 - Earlier simulator checkout: `/Users/garybasin/code/agentboard-ios-keyboard-spike/ios`. Its results predate the live-session slice.
 
+## Full parity regression command
+
+Prepare the private backend, seeded conversations, file/photo fixtures, port-4149 shell fixture and port-4190 PR proxy as described above. Run the full native matrix on the simulator host:
+
+```sh
+./ios/scripts/test-e2e.sh YOUR_UDID
+```
+
+The script runs native unit/integration and UI tests in light appearance at standard text size, then repeats native flows in dark appearance at the largest accessibility text size. It restores light appearance and standard text size on exit. Each run writes separate timestamped xcresult bundles. It does not install on a physical device or touch a production server.
+
 ## Findings and limits
 
 The native hierarchy preserves terminal density. Status labels use primary text and colored symbols. The single non-scrolling quick-key row follows the software keyboard and has 44-point minimum targets. At accessibility Dynamic Type sizes, session name/status and connection state/Retry stack vertically, and session names wrap to their full height. Quick-key glyphs and text cap at `.xxxLarge` and stay on one line to preserve terminal space; catalog and sheet text retain full Dynamic Type. Tap the terminal to open the keyboard. Hide keyboard appears only while input has focus. Interrupt, Delete word and Insert newline remain in Session actions. No private class swizzling is used.
 
-Physical iPhone installation/signing, IME, VoiceOver, selection behavior, multiline paste parity and performance remain unverified. The app relies on an existing Tailscale connection; it does not provide Tailscale setup or authentication onboarding. SwiftUI is the implementation for this slice; this work does not establish full PWA feature parity.
+Physical iPhone installation/signing, IME, VoiceOver and real-device performance remain unverified. The app relies on an existing Tailscale connection; it does not provide Tailscale setup or authentication onboarding. SwiftUI is the native implementation. Current parity evidence and remaining validation limits are recorded in PARITY.md. Earlier slice results below are historical, not evidence for the new destinations.
 
 ## Hot reload
 
