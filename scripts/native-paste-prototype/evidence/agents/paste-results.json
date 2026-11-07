@@ -1,0 +1,21 @@
+{
+  "claude": {
+    "submittedOnce": true,
+    "text": "CLAUDE_PASTE_alpha\nCLAUDE_PASTE_beta",
+    "heldBeforeReturn": true,
+    "copiedOutput": "LECTABLE_OUTPUT"
+  },
+  "codex": {
+    "submittedOnce": true,
+    "text": "CODEX_PASTE_alpha\nCODEX_PASTE_beta",
+    "heldBeforeReturn": true,
+    "copiedOutput": "ELECTABLE_OUTPU"
+  },
+  "environment": {
+    "device": "iPhone 17 Pro simulator",
+    "ios": "26.4",
+    "host": "m5p",
+    "claude": "2.1.319",
+    "codex": "0.167.0"
+  }
+}

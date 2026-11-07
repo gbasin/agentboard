@@ -1,0 +1,142 @@
+[
+  {
+    "level": 30,
+    "time": 1794062785742,
+    "protocol": "explicit-replacement",
+    "standalone": true,
+    "displayMode": "standalone",
+    "event": "client_ios_autocorrect_prototype"
+  },
+  {
+    "level": 20,
+    "time": 1794062806176,
+    "target": "xterm-helper-textarea",
+    "textarea": {
+      "x": 16,
+      "y": 664,
+      "width": 376,
+      "height": 44,
+      "top": 664,
+      "right": 392,
+      "bottom": 708,
+      "left": 16
+    },
+    "disabled": true,
+    "standalone": true,
+    "event": "client_ios_native_paste_touch"
+  },
+  {
+    "level": 20,
+    "time": 1794062826454,
+    "target": "xterm-helper-textarea",
+    "textarea": {
+      "x": 16,
+      "y": 286,
+      "width": 376,
+      "height": 44,
+      "top": 286,
+      "right": 392,
+      "bottom": 330,
+      "left": 16
+    },
+    "disabled": false,
+    "standalone": true,
+    "event": "client_ios_native_paste_touch"
+  },
+  {
+    "level": 30,
+    "time": 1794062927993,
+    "protocol": "explicit-replacement",
+    "standalone": true,
+    "displayMode": "standalone",
+    "event": "client_ios_autocorrect_prototype"
+  },
+  {
+    "level": 20,
+    "time": 1794062942708,
+    "target": "xterm-helper-textarea",
+    "textarea": {
+      "x": 16,
+      "y": 646,
+      "width": 376,
+      "height": 44,
+      "top": 646,
+      "right": 392,
+      "bottom": 690,
+      "left": 16
+    },
+    "disabled": true,
+    "standalone": true,
+    "event": "client_ios_native_paste_touch"
+  },
+  {
+    "level": 20,
+    "time": 1794062961480,
+    "target": "xterm-helper-textarea",
+    "textarea": {
+      "x": 16,
+      "y": 268,
+      "width": 376,
+      "height": 44,
+      "top": 268,
+      "right": 392,
+      "bottom": 312,
+      "left": 16
+    },
+    "disabled": false,
+    "standalone": true,
+    "event": "client_ios_native_paste_touch"
+  },
+  {
+    "level": 30,
+    "time": 1794063009557,
+    "protocol": "explicit-replacement",
+    "standalone": true,
+    "displayMode": "standalone",
+    "event": "client_ios_autocorrect_prototype"
+  },
+  {
+    "level": 20,
+    "time": 1794063009745,
+    "target": "xterm-accessibility-tree",
+    "textarea": {
+      "x": 16,
+      "y": 664,
+      "width": 376,
+      "height": 44,
+      "top": 664,
+      "right": 392,
+      "bottom": 708,
+      "left": 16
+    },
+    "disabled": true,
+    "standalone": true,
+    "event": "client_ios_native_paste_touch"
+  },
+  {
+    "level": 30,
+    "time": 1794063014616,
+    "protocol": "explicit-replacement",
+    "standalone": true,
+    "displayMode": "standalone",
+    "event": "client_ios_autocorrect_prototype"
+  },
+  {
+    "level": 20,
+    "time": 1794063014777,
+    "target": "xterm-accessibility-tree",
+    "textarea": {
+      "x": 16,
+      "y": 646,
+      "width": 376,
+      "height": 44,
+      "top": 646,
+      "right": 392,
+      "bottom": 690,
+      "left": 16
+    },
+    "disabled": true,
+    "standalone": true,
+    "event": "client_ios_native_paste_touch"
+  }
+]

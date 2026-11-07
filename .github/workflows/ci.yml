@@ -127,6 +127,13 @@ jobs:
             id: links-2
             run: bunx playwright test --config playwright.links.config.ts --project webkit --shard=2/2
 
+          - name: native iOS paste prototype
+            id: native-paste
+            run: |
+              VITE_IOS_NATIVE_PASTE_PROTOTYPE=1 bun run build
+              IOS_NATIVE_PASTE_E2E=1 PLAYWRIGHT_HTML_OUTPUT_DIR=playwright-native-paste-report \
+                bunx playwright test tests/e2e/native-paste.spec.ts --workers=1 --reporter=line,html
+
           - name: iOS autocorrect
             id: autocorrect
             run: bunx playwright test --config playwright.autocorrect.config.ts
