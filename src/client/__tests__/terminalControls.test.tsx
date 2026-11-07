@@ -69,7 +69,7 @@ describe('TerminalControls', () => {
     )).toBe(true)
   })
 
-  test('the Enter key carries only its accent colors, not the default key colors', () => {
+  test('the Enter key uses the same neutral colors as the other command keys', () => {
     const renderer = TestRenderer.create(
       <TerminalControls
         onSendKey={() => {}}
@@ -84,13 +84,11 @@ describe('TerminalControls', () => {
         .find((b) => b.props['aria-label'] === label)
       return String(button?.props.className).split(/\s+/).filter(Boolean)
     }
-    // Same-specificity utilities: if both were present, bg-surface (emitted
-    // later) would hide the accent tint.
     const enter = classesOf('Enter')
-    expect(enter).toEqual(expect.arrayContaining(['bg-accent/20', 'border-accent/40', 'text-accent']))
-    expect(enter).not.toContain('bg-surface')
-    expect(enter).not.toContain('border-border')
-    expect(enter).not.toContain('text-secondary')
+    expect(enter).toEqual(expect.arrayContaining(['bg-surface', 'border-border', 'text-secondary']))
+    expect(enter).not.toContain('bg-accent/20')
+    expect(enter).not.toContain('border-accent/40')
+    expect(enter).not.toContain('text-accent')
     expect(classesOf('Delete word')).toEqual(
       expect.arrayContaining(['bg-surface', 'border-border', 'text-secondary', 'border'])
     )

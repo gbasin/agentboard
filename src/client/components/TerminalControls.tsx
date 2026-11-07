@@ -73,7 +73,7 @@ const CONTROL_KEY_DEFAULT_CLASS = 'bg-surface border-border text-secondary'
 
 // Plain send-a-sequence keys. Their on-screen order lives in the JSX below,
 // interleaved with the stateful ctrl/paste/numpad/arrow buttons.
-const KEY_ENTER: ControlKey = { label: <CornerDownLeftIcon width={ICON_SIZE.key} height={ICON_SIZE.key} strokeWidth={KEY_ICON_STROKE} />, key: '\r', className: 'bg-accent/20 text-accent border-accent/40', ariaLabel: 'Enter' }
+const KEY_ENTER: ControlKey = { label: <CornerDownLeftIcon width={ICON_SIZE.key} height={ICON_SIZE.key} strokeWidth={KEY_ICON_STROKE} />, key: '\r', ariaLabel: 'Enter' }
 const KEY_ESC: ControlKey = { label: 'esc', key: '\x1b' }
 const KEY_DELETE_WORD: ControlKey = { label: BackspaceIcon, key: '\x17', ariaLabel: 'Delete word' } // Ctrl+W: delete word backward
 const KEY_TAB: ControlKey = { label: 'tab', key: '\t' }
