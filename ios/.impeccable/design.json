@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-07T18:50:04.034474+00:00",
+  "generatedAt": "2026-11-07T18:59:21.180168+00:00",
   "title": "Design System: Agentboard iPhone live-session slice",
   "extensions": {
     "platform": "iOS / SwiftUI with WKWebView xterm.js output and UIKit input",
@@ -76,7 +76,12 @@
     "previewPolicy": "Native component metadata is authoritative. HTML/CSS previews are omitted because they cannot reproduce SwiftUI controls and would imply an unapproved web design.",
     "evidence": "ios/evidence; original spike and keyboard captures are historical. See ios/README.md for current validation scope.",
     "keyboardInput": "TerminalInputView owns input through public UIKit APIs. The SwiftUI quick-key strip is the sole accessory row; IME, VoiceOver, multiline paste and physical-device parity remain unverified.",
-    "liveLifecycle": "Native URLSession socket at /ws?catalog=2; heartbeat and reconnect backoff; background suspension and foreground selected-session reattachment; no disconnected input replay; fresh socket per selection isolates same-ID stale responses."
+    "liveLifecycle": "Native URLSession socket at /ws?catalog=2; heartbeat and reconnect backoff; background suspension and foreground selected-session reattachment; no disconnected input replay; fresh socket per selection isolates same-ID stale responses.",
+    "dynamicType": {
+      "catalog": "Uncapped semantic text styles. At accessibility sizes, AnyLayout stacks session name/status and connection state/Retry vertically with 8-point spacing; standard sizes retain horizontal layout. Session names use intrinsic wrapped height at accessibility sizes.",
+      "terminalQuickKeys": "Only accessory glyphs and text cap Dynamic Type at .xxxLarge and use one line. Minimum 44-by-44-point targets and the single non-scrolling row remain.",
+      "sheets": "Native connection and paste sheets retain uncapped Dynamic Type."
+    }
   },
   "components": [],
   "narrative": {

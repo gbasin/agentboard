@@ -23,7 +23,9 @@ Open Connection. Enter the browser's `http://` or `https://` base URL. Tap Conne
 
 The prepare script copies xterm and its licenses from the locked root dependencies. Generated vendor files and the Xcode project are ignored. Keep the bundled folder named `Web`: a top-level `Resources` folder makes macOS bundle discovery treat this iOS app as a different bundle layout and fail installation with “Missing bundle ID.”
 
-## Install on a paired iPhone
+## Install on a paired iPhone (deferred)
+
+The user deferred physical-device signing and installation. Current validation continues in Simulator only; no account or device action is needed now. These instructions remain for a future device pass.
 
 Sign in to your Apple developer account in Xcode → Settings → Accounts. Enable Developer Mode on the iPhone. Pair it with the build Mac and unlock it. Prepare the project locally, or sync the generated project and vendor files to the build Mac.
 
@@ -33,7 +35,7 @@ Sign in to your Apple developer account in Xcode → Settings → Accounts. Enab
 
 The script permits Xcode to create development signing assets and register the paired device. It installs and launches the debug app. The optional third argument sets the server address for that launch. Team and device identifiers are not stored in the project. Build logs remain in `ios/.build-device/cli-build.log`.
 
-The first m5p device-build attempt stopped at Xcode's “No Accounts” error and missing development provisioning profile. The paired iPhone was reachable with Developer Mode enabled. Installation is pending account sign-in; no physical-device validation is claimed.
+The first m5p device-build attempt stopped at Xcode's “No Accounts” error and missing development provisioning profile. The paired iPhone was reachable with Developer Mode enabled. The device pass is deferred; no physical-device validation is claimed.
 
 ## Isolated real-backend tests
 
@@ -71,6 +73,7 @@ xcodebuild -project ios/AgentboardSpike.xcodeproj -scheme AgentboardSpike \
 
 - Six `BoardConnectionTests` cover URL/protocol decoding, automatic reconnect, visible server rejection, readiness gating, stale socket/owner suppression, background recovery without input replay, and session removal.
 - Two `LiveUITests` cover real-backend typing, single-line paste awaiting Enter, background recovery, session switching and address validation. They send commands only to the two seeded fixture shells.
+- Three `SimulatorStateUITests` exercise the setup and connection sheet, unreachable-server recovery controls, and live terminal rotation with the software keyboard. They check that controls remain hittable and within the screen, bound accessory height, preserve terminal space, and send a command to the seeded shell. Run them in dark appearance at accessibility XXXL and again in light appearance at normal text size.
 - Five `SpikeUITests` retain sample navigation and keyboard regression coverage, including control bytes, backspace, Unicode input and repeated keyboard transitions.
 - Optional `TailnetSmokeTests` skips unless explicitly configured. It searches for and attaches to an existing session without typing into the terminal or changing session metadata.
 
@@ -90,7 +93,9 @@ A later contrast fix changed connection validation to primary body text with a r
 
 Root lint, typecheck and the full test suite passed on m5p with Bun 1.3.14, `LOG_LEVEL` unset and the normal `/usr/sbin` PATH. The local pre-commit hook encountered a PTY resource failure. Equivalent checks ran remotely before the local commit used a temporary `hooksPath` override; no permanent hook configuration changed.
 
-Screenshots from UI tests are XCTest attachments. Current live tests name captures `live-catalog`, `live-terminal-keyboard`, `live-resumed`, `live-second-session` and `live-invalid-address`.
+Screenshots from UI tests are XCTest attachments. Current live tests name captures `live-catalog`, `live-terminal-keyboard`, `live-resumed`, `live-second-session` and `live-invalid-address`. `SimulatorStateUITests` adds `sim-setup`, `sim-connection`, `sim-offline`, `sim-catalog`, `sim-terminal-portrait`, `sim-terminal-landscape` and `sim-terminal-landscape-reading`.
+
+Simulator layout validation on m5p passed in light appearance at standard text size (3/3, `sim-standard.xcresult`) and dark appearance at the largest accessibility text size (3/3, `sim-accessibility-fixed.xcresult`). After allowing session names to wrap fully, the catalog/keyboard/rotation test passed again (1/1, `sim-title-wrap.xcresult`). These tests cover setup, connection editing, unavailable-server recovery controls, keyboard geometry in both orientations, and command input after rotation. Exported captures use `-light-standard.png` and `-dark-accessibility.png`; dark catalog and terminal captures come from the final focused rerun. Root lint, typecheck, 1,859 Bun tests and Node installer checks also passed for this iteration on m5p.
 
 Historical evidence in `evidence/`:
 
@@ -101,7 +106,7 @@ Historical evidence in `evidence/`:
 
 ## Findings and limits
 
-The native hierarchy preserves terminal density. Status labels use primary text and colored symbols. The single non-scrolling quick-key row follows the software keyboard and has 44-point minimum targets. Tap the terminal to open the keyboard. Hide keyboard appears only while input has focus. Interrupt, Delete word and Insert newline remain in Session actions. No private class swizzling is used.
+The native hierarchy preserves terminal density. Status labels use primary text and colored symbols. The single non-scrolling quick-key row follows the software keyboard and has 44-point minimum targets. At accessibility Dynamic Type sizes, session name/status and connection state/Retry stack vertically, and session names wrap to their full height. Quick-key glyphs and text cap at `.xxxLarge` and stay on one line to preserve terminal space; catalog and sheet text retain full Dynamic Type. Tap the terminal to open the keyboard. Hide keyboard appears only while input has focus. Interrupt, Delete word and Insert newline remain in Session actions. No private class swizzling is used.
 
 Physical iPhone installation/signing, IME, VoiceOver, selection behavior, multiline paste parity and performance remain unverified. The app relies on an existing Tailscale connection; it does not provide Tailscale setup or authentication onboarding. SwiftUI is the implementation for this slice; this work does not establish full PWA feature parity.
 

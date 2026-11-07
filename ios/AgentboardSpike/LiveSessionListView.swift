@@ -10,6 +10,7 @@ struct LiveSessionListView: View {
     @State private var path: [BoardSession] = []
     @State private var showConnection = false
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var filtered: [BoardSession] {
         board.sessions.filter { search.isEmpty || "\($0.name) \($0.project) \($0.summary)".localizedCaseInsensitiveContains(search) }
@@ -20,10 +21,10 @@ struct LiveSessionListView: View {
         NavigationStack(path: $path) {
             List {
                 Section {
-                    HStack {
+                    adaptiveRow {
                         Label(board.state.label, systemImage: board.state == .connected ? "network" : "wifi.exclamationmark")
                             .font(.subheadline)
-                        Spacer()
+                        if !dynamicTypeSize.isAccessibilitySize { Spacer() }
                         if board.state != .connected && !serverURL.isEmpty {
                             Button("Retry") { board.reconnect() }.buttonStyle(.borderless)
                         }
@@ -96,11 +97,18 @@ struct LiveSessionListView: View {
         .enableInjection()
     }
 
+    private var adaptiveRow: AnyLayout {
+        dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+            : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 8))
+    }
+
     private func row(_ session: BoardSession) -> some View {
         VStack(alignment: .leading, spacing: 7) {
-            HStack(alignment: .firstTextBaseline) {
+            adaptiveRow {
                 Text(session.name).font(.headline)
-                Spacer(minLength: 8)
+                    .fixedSize(horizontal: false, vertical: dynamicTypeSize.isAccessibilitySize)
+                if !dynamicTypeSize.isAccessibilitySize { Spacer(minLength: 8) }
                 SessionStatus(status: session.status)
             }
             if !session.summary.isEmpty {

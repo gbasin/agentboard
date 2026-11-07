@@ -71,7 +71,10 @@ struct TerminalKeyBar: View {
 
 private extension View {
     func terminalKey(active: Bool = false) -> some View {
-        self.font(.callout.weight(.medium))
+        // Match the keyboard's compact accessory geometry at accessibility
+        // sizes; the surrounding catalog and sheets still scale without a cap.
+        self.dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+            .font(.callout.weight(.medium)).lineLimit(1)
             .frame(minWidth: 44, maxWidth: .infinity, minHeight: 44)
             .foregroundStyle(active ? Color.accentColor : Color.primary)
             .background(active ? Color.accentColor.opacity(0.12) : Color(uiColor: .tertiarySystemFill), in: RoundedRectangle(cornerRadius: 10))

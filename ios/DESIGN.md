@@ -49,13 +49,13 @@ The frontmatter records the explicit xterm light/dark palette only. It does not 
 
 ## Typography
 
-Native text uses system San Francisco with SwiftUI semantic styles and Dynamic Type. Session names use `.headline`, summaries `.subheadline`, agent and status labels `.caption`, and terminal keys `.callout.weight(.medium)`. Do not hard-code point sizes for these roles.
+Native text uses system San Francisco with SwiftUI semantic styles and Dynamic Type. Session names use `.headline`, summaries `.subheadline`, agent and status labels `.caption`, and terminal keys `.callout.weight(.medium)`. Do not hard-code point sizes for these roles. Quick-key glyphs and text alone stop scaling at `.xxxLarge` and stay on one line, preserving terminal space and 44-point minimum targets. The surrounding catalog and native sheets retain uncapped Dynamic Type.
 
 System large titles belong only on the session list. Terminal detail and sheet navigation titles are inline. The detail principal item combines a one-line headline and caption status with 2-point spacing. Monospaced text belongs inside xterm, using the frontmatter terminal role. Its explicit size controls range from 11 to 22 CSS pixels; terminal text does not inherit native Dynamic Type.
 
 ## Layout
 
-`NavigationStack` contains a system `List` with a connection-status section, project sections, native search and navigation links. Sleeping sessions stay in their project section. Empty, connecting, unavailable and no-search-result states use native progress and unavailable-content views. The explicit demo retains its separate Sleeping section. Native row insets remain system-owned. Each row uses a leading vertical stack with 7-point spacing and 5-point vertical padding; the title/status spacer has an 8-point minimum. Summaries wrap to two lines.
+`NavigationStack` contains a system `List` with a connection-status section, project sections, native search and navigation links. Sleeping sessions stay in their project section. Empty, connecting, unavailable and no-search-result states use native progress and unavailable-content views. The explicit demo retains its separate Sleeping section. Native row insets remain system-owned. Each row uses a leading vertical stack with 7-point spacing and 5-point vertical padding; the title/status spacer has an 8-point minimum. Summaries wrap to two lines. At accessibility Dynamic Type sizes, the live catalog stacks fully wrapped session name/status and connection state/Retry vertically with 8-point spacing; standard sizes retain their horizontal layout.
 
 The detail terminal fills available space with 8-point horizontal native padding and 8 CSS pixels of top inset inside the web view. A bottom `safeAreaInset` holds the horizontal quick-key strip, following the software keyboard. Keys have minimum 44-by-44-point targets, 4-point gaps, 8-point horizontal strip padding and 6-point vertical strip padding. The strip stays in one non-scrolling row. Keys share the available width; the dismissal key appears only while terminal input has focus.
 
