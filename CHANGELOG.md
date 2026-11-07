@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.42.0](https://github.com/gbasin/agentboard/compare/v0.41.0...v0.42.0) (2026-11-07)
+
+
+### Features
+
+* enable native iOS long-press paste by default ([#520](https://github.com/gbasin/agentboard/issues/520)) ([4cb83c8](https://github.com/gbasin/agentboard/commit/4cb83c86918c4d01784fe28e60d6a11599567099))
+
 ## [0.41.0](https://github.com/gbasin/agentboard/compare/v0.40.0...v0.41.0) (2026-11-07)
 
 
