@@ -58,7 +58,7 @@ export class MediaIndex {
     if (!(this.db.query('PRAGMA table_info(media_sessions)').all() as { name: string }[]).some(row => row.name === 'omittedRecords')) {
       this.db.exec('ALTER TABLE media_sessions ADD COLUMN omittedRecords INTEGER NOT NULL DEFAULT 0')
     }
-    for (const [column, type] of [['discovery', "TEXT NOT NULL DEFAULT '{\"status\":\"pending\"}'"], ['omittedItems', 'INTEGER NOT NULL DEFAULT 0']]) {
+    for (const [column, type] of [['previews', 'INTEGER NOT NULL DEFAULT 0'], ['discovery', "TEXT NOT NULL DEFAULT '{\"status\":\"pending\"}'"], ['omittedItems', 'INTEGER NOT NULL DEFAULT 0']]) {
       if (!(this.db.query('PRAGMA table_info(media_sessions)').all() as { name: string }[]).some(row => row.name === column)) {
         this.db.exec(`ALTER TABLE media_sessions ADD COLUMN ${column} ${type}`)
       }
@@ -124,7 +124,7 @@ export class MediaIndex {
   private summary(identity: string): MediaSummary {
     const row = this.row(identity)
     return { identity, revision: `${this.incarnation}:${row.version}`, total: row.total, images: row.images,
-      documents: row.documents, links: row.links, additions: row.additions,
+      documents: row.documents, links: row.links, ...(row.previews ? { previews: row.previews } : {}), additions: row.additions,
       discovery: JSON.parse(row.discovery),
       ...(row.omittedItems ? { omittedItems: row.omittedItems } : {}),
       ...(row.omittedRecords ? { omittedRecords: row.omittedRecords } : {}) }
@@ -165,7 +165,7 @@ export class MediaIndex {
   }
   private readPage(record: AgentSessionRecord, rawCursor?: string, query: MediaQuery = {}): MediaPage {
     const queryKey = JSON.stringify(['newest', query.kind ?? '', query.search ?? ''])
-    const filter = query.kind === 'links' ? " AND kind='link'" : query.kind === 'media' ? " AND kind!='link'" : ''
+    const filter = query.kind === 'links' ? " AND kind='link'" : query.kind === 'media' ? " AND kind IN ('image','document')" : query.kind === 'previews' ? " AND kind IN ('html','localhost','visualization')" : ''
     const search = (query.search ?? '').toLowerCase()
     const where = filter + " AND (?='' OR instr(lower(coalesce(json_extract(descriptor,'$.label'),'') || ' ' || coalesce(json_extract(descriptor,'$.externalUrl'),'') || ' ' || coalesce(json_extract(descriptor,'$.sourceText'),'')),?)>0)"
 

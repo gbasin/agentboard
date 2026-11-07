@@ -4,7 +4,11 @@ import os from 'node:os'
 import { visualizationFile, VisualizationError } from './visualization'
 import { Hono } from 'hono'
 import type { AgentSessionRecord } from '../db'
-import { getMergedMedia } from '../agentSessions'
+import { createHash } from 'node:crypto'
+import { readMediaLine } from '../mediaLine'
+import { extractMediaItems } from '../mediaExtractor'
+import { getSubagentLogPaths } from '../subagentLogs'
+import { metadataIdentity } from '../sessionMetadataClient'
 import { loopbackUrl } from '../outputReferences'
 import { PreviewServers } from './previewServers'
 
@@ -19,12 +23,25 @@ export function outputRoutes(options: {
   app.get('/:sessionId/open', async c => {
     const record = options.getSession(c.req.param('sessionId'))
     if (!record?.logFilePath) return c.json({ error: 'Session not found' }, 404)
-    const ref = c.req.query('ref') ?? ''
-    const descriptor = getMergedMedia(record).find(item => {
-      if (item.kind !== 'html' && item.kind !== 'localhost' && item.kind !== 'visualization') return false
-      return new URL(item.url, 'http://agentboard.local').searchParams.get('ref') === ref
-    })
-    if (!descriptor) return c.json({ error: 'Output is no longer shared by this session' }, 404)
+    const source = c.req.query('path') ?? ''
+    const offset = Number(c.req.query('offset')), index = Number(c.req.query('index'))
+    const digest = c.req.query('digest') ?? ''
+    if ((source !== record.logFilePath && !getSubagentLogPaths(record.logFilePath, record.agentType, record.sessionId).includes(source)) ||
+        !Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(index) || index < 0 || !/^[a-f0-9]{64}$/.test(digest)) {
+      return c.json({ error: 'Invalid output reference' }, 400)
+    }
+    // Re-read one bounded record, not the entire transcript on the main thread.
+    const line = await readMediaLine(source, offset).catch(() => null)
+    if (!line) return c.json({ error: 'Output is no longer shared by this session' }, 404)
+    const current = options.getSession(record.sessionId)
+    if (!current || metadataIdentity(current) !== metadataIdentity(record) || createHash('sha256').update(line).digest('hex') !== digest) {
+      return c.json({ error: 'Session output changed; refresh previews' }, 409)
+    }
+    const descriptor = extractMediaItems(line)[index]
+    if (!descriptor || !['html', 'localhost', 'visualization'].includes(descriptor.kind) || !descriptor.url) {
+      return c.json({ error: 'Output is no longer shared by this session' }, 404)
+    }
+    const ref = descriptor.url
     const upstream = descriptor.kind === 'localhost' ? loopbackUrl(ref) : null
     if (descriptor.kind === 'localhost' && (!upstream || Number(upstream.port) === options.boardPort || options.previews.isPreviewOrigin(upstream.origin))) {
       return c.json({ error: 'This local address cannot be previewed' }, 400)

@@ -311,3 +311,23 @@ test('a reply link is not swallowed by an external image with the same URL', () 
   expect(summary.links).toBe(1)
   expect(index.page(record, undefined, { kind: 'links' }).items[0].label).toBe('Full preview')
 })
+
+test('previews have bounded distinct pages and counts and existing checkpoints rediscover them', () => {
+  const { index, log, record, dbPath } = fixture()
+  const reply = (text: string) => JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text }] } }) + '\n'
+  fs.writeFileSync(log, line(1) + reply('[Report](/tmp/report.html) [App](http://localhost:3000) visualize{"path":"/tmp/viz.html"}'))
+  const summary = index.scan(record, [log])
+  expect(summary).toMatchObject({ total: 4, links: 1, previews: 3, images: 0, documents: 0 })
+  const previews = index.page(record, undefined, { kind: 'previews' })
+  expect(previews.total).toBe(3)
+  expect(previews.items.map(item => item.kind).sort()).toEqual(['html', 'localhost', 'visualization'])
+  expect(previews.items.every(item => item.url.startsWith('/api/session-output/') && item.url.includes('&digest='))).toBe(true)
+  expect(index.page(record, undefined, { kind: 'media' }).items).toHaveLength(0)
+  expect(index.page(record, undefined, { kind: 'links' }).items).toHaveLength(1)
+  // Upgrade an existing pre-preview checkpoint without requiring log growth.
+  const { Database } = require('bun:sqlite')
+  const db = new Database(dbPath)
+  db.query("UPDATE media_files SET state=json_set(state,'$.version',3)").run()
+  db.close()
+  expect(index.scan(record, [log]).previews).toBe(3)
+})

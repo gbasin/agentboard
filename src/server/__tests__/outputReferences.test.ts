@@ -38,3 +38,9 @@ test('Codex visualize markers retain their type and title without promoting deve
   expect(extractOutputReferences({ type: 'response_item', payload: { type: 'message', role: 'developer', content: [{ type: 'input_text', text }] } })).toEqual([])
   expect(extractOutputReferences(codex('visualizeinvalid'))).toEqual([])
 })
+
+
+test('bare localhost URLs retain their port and visualization markers win over duplicate file links', () => {
+  expect(extractOutputReferences(codex('Open http://localhost:3000'))[0]).toEqual({ kind: 'localhost', target: 'http://localhost:3000/', label: 'App preview · port 3000' })
+  expect(extractOutputReferences(codex('visualize{"path":"/tmp/report.html"} [Report](/tmp/report.html)'))).toEqual([{ kind: 'visualization', target: '/tmp/report.html', label: 'report' }])
+})

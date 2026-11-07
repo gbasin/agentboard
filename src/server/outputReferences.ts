@@ -31,12 +31,13 @@ export function extractOutputReferences(record: unknown): OutputReference[] {
       return ''
     })
     const add = (raw: string, label?: string) => {
-      let target = raw.replace(/^<|>$/g, '').replace(/[:#]L?\d+(?::\d+)?$/, '')
+      let target = raw.replace(/^<|>$/g, '')
       const url = loopbackUrl(target)
       if (url) {
         result.set(url.href, { kind: 'localhost', target: url.href, label: label || `App preview · port ${url.port}` })
         return
       }
+      target = target.replace(/[:#]L?\d+(?::\d+)?$/, '')
       if (target.startsWith('file://')) {
         try { target = fileURLToPath(target) } catch { return }
       } else {
@@ -44,6 +45,7 @@ export function extractOutputReferences(record: unknown): OutputReference[] {
         try { target = decodeURIComponent(target) } catch { return }
       }
       if (!/\.html?$/i.test(target) || target.includes('\0') || target.includes('\n')) return
+      if (result.get(target)?.kind === 'visualization') return
       result.set(target, { kind: 'html', target, label: label || path.basename(target) })
     }
     for (const m of text.matchAll(/\[([^\]\n]+)\]\((<[^>]+>|[^)\s]+)\)/g)) add(m[2], m[1])

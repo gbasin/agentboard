@@ -17,6 +17,7 @@ export interface MediaSummary {
   total: number
   images: number
   documents: number
+  previews?: number
   links: number
   /** Monotonic within an identity; removals and label edits are not additions. */
   additions: number
@@ -61,11 +62,11 @@ export function mediaSummariesEqual(a: MediaSummary | undefined, b: MediaSummary
   if (a === b) return true
   return !!a && !!b && a.identity === b.identity && a.revision === b.revision &&
     a.total === b.total && a.images === b.images && a.documents === b.documents &&
-    a.links === b.links && a.additions === b.additions &&
+    a.links === b.links && (a.previews ?? 0) === (b.previews ?? 0) && a.additions === b.additions &&
     (a.omittedRecords ?? 0) === (b.omittedRecords ?? 0) &&
     (a.omittedItems ?? 0) === (b.omittedItems ?? 0) &&
     JSON.stringify(a.discovery ?? { status: 'ready' }) === JSON.stringify(b.discovery ?? { status: 'ready' })
 }
 
 /** Filtered pages keep search off the live websocket and out of browser memory. */
-export interface MediaQuery { kind?: 'media' | 'links'; search?: string }
+export interface MediaQuery { kind?: 'media' | 'links' | 'previews'; search?: string }

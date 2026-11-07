@@ -1,6 +1,6 @@
-/** Tool-call labels for media discovered later in the transcript. */
+/** Bounded tool-call labels shared by incremental and indexed media scans. */
 import { asRecord, asString } from '../shared/json'
-
+import { mediaLabelKey } from './mediaIndexLabels'
 const MAX_PENDING_LABELS = 2000
 
 function pathLeaf(p: string): string {
@@ -40,11 +40,12 @@ export function collectToolLabels(
 ): void {
   const register = (id: unknown, label: string) => {
     if (typeof id !== 'string' || !id) return
-    if (!pending.has(id) && pending.size >= MAX_PENDING_LABELS) {
+    const key = mediaLabelKey(id)
+    if (!pending.has(key) && pending.size >= MAX_PENDING_LABELS) {
       const oldest = pending.keys().next().value
       if (oldest !== undefined) pending.delete(oldest)
     }
-    pending.set(id, label)
+    pending.set(key, label.slice(0, 512))
   }
 
   const content = asRecord(record.message)?.content
