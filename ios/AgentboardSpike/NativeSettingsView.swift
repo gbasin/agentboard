@@ -159,7 +159,7 @@ struct PresetSettingsView: View {
             }
             ForEach(preferences.presets) { preset in
                 Button { editing = preset } label: {
-                    VStack(alignment: .leading) { Text(preset.label).foregroundStyle(.primary); Text(preset.command).font(.caption).foregroundStyle(.secondary) }
+                    VStack(alignment: .leading) { Text(preset.label).foregroundStyle(Color.primary); Text(preset.command).font(.caption).foregroundStyle(Color.primary) }
                 }
             }.onDelete { indices in var presets = preferences.presets; presets.remove(atOffsets: indices); preferences.savePresets(presets) }
             Button("Add preset", systemImage: "plus") { editing = .init(id: UUID().uuidString, label: "", command: "", isBuiltIn: false) }.disabled(preferences.presets.count >= 50 || preferences.saving)

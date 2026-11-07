@@ -95,10 +95,18 @@ struct TerminalScreen: View {
                                 Button("Reconnect shell", systemImage: "arrow.clockwise") { terminal.call("reconnect") }
                             }
                         }
-                        Picker("Appearance", selection: $appearance) {
-                            Text("System").tag("System")
-                            Text("Light").tag("Light")
-                            Text("Dark").tag("Dark")
+                        if let live {
+                            Picker("Appearance", selection: live.preferences.selection("theme", fallback: "system")) {
+                                Text("System").tag("system")
+                                Text("Light").tag("light")
+                                Text("Dark").tag("dark")
+                            }
+                        } else {
+                            Picker("Appearance", selection: $appearance) {
+                                Text("System").tag("System")
+                                Text("Light").tag("Light")
+                                Text("Dark").tag("Dark")
+                            }
                         }
                         if live != nil {
                             Button("End session", systemImage: "xmark.circle", role: .destructive) {
@@ -124,7 +132,7 @@ struct TerminalScreen: View {
             } }
             .sheet(isPresented: $showUpload) { FileUploadSheet(server: serverURL, terminal: terminal) }
             .sheet(isPresented: $showNumbers) { NumberKeys(terminal: terminal) }
-            .preferredColorScheme(appearance == "System" ? nil : appearance == "Dark" ? .dark : .light)
+            .preferredColorScheme(live != nil || appearance == "System" ? nil : appearance == "Dark" ? .dark : .light)
             .confirmationDialog("End this sample session?", isPresented: $showEnd, titleVisibility: .visible) {
                 Button("End sample session", role: .destructive, action: onEnd)
             } message: { Text("This removes the sample from the list. No live agent is affected.") }

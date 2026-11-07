@@ -39,12 +39,13 @@ struct SessionActionSheet: View {
     }
     var body: some View {
         NavigationStack {
+            ScrollViewReader { scroll in
             Form {
                 if let failure {
                     Section {
                         Label { Text(failure).foregroundStyle(.primary) } icon: {
                             Image(systemName: "exclamationmark.circle").foregroundStyle(.red)
-                        }.accessibilityIdentifier("action-error")
+                        }.accessibilityIdentifier("action-error").id("action-error")
                     }
                 }
                 switch route {
@@ -99,6 +100,9 @@ struct SessionActionSheet: View {
                 if request != nil { ProgressView("Waiting for server…") }
 
             }
+            .onChange(of: failure) { _, message in
+                if message != nil { withAnimation { scroll.scrollTo("action-error", anchor: .top) } }
+            }
             .disabled(request != nil)
             .textInputAutocapitalization(.never).autocorrectionDisabled()
             .navigationTitle(route.title).navigationBarTitleDisplayMode(.inline)
@@ -129,6 +133,7 @@ struct SessionActionSheet: View {
                 }
             }
             .sheet(isPresented: $browse) { DirectoryBrowser(server: serverURL, initial: project) { project = $0 } }
+            }
         }
         .interactiveDismissDisabled(request != nil)
         .onChange(of: scenePhase) { _, phase in if phase == .background { request?.cancel() } }

@@ -114,8 +114,6 @@ struct LiveSessionListView: View {
                                                    description: Text("Check the server address and your Tailscale connection, then tap Retry."))
                         }
                     }
-                } else if filtered.isEmpty {
-                    ContentUnavailableView.search(text: search)
                 }
             }
             .navigationTitle("Sessions")

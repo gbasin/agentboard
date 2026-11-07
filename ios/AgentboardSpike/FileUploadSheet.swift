@@ -58,14 +58,23 @@ struct NumberKeys: View {
     @ObservedObject var terminal: TerminalBridge
     @Environment(\.dismiss) private var dismiss
     var body: some View {
-        NavigationStack { LazyVGrid(columns: Array(repeating: GridItem(.fixed(64)), count: 3)) {
-            ForEach(["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "-"] , id: \.self) { key in
-                Button(key) { terminal.send(key) }.frame(width: 64, height: 44).buttonStyle(.bordered)
-            }
-            Button("Delete", systemImage: "delete.left") { terminal.send("\u{7f}") }.labelStyle(.iconOnly).frame(minHeight: 44)
-            Button("Enter", systemImage: "return") { terminal.send("\r") }.labelStyle(.iconOnly).frame(minHeight: 44).accessibilityIdentifier("number-enter")
-        }.padding().navigationTitle("Number keys").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
-        }.presentationDetents([.medium])
+        NavigationStack {
+            ScrollView {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 64, maximum: 96), spacing: 12), count: 3), spacing: 12) {
+                    ForEach(["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "-"] , id: \.self) { key in
+                        Button { terminal.send(key) } label: {
+                            Text(key).frame(maxWidth: .infinity, minHeight: 44)
+                        }.buttonStyle(.bordered)
+                    }
+                    Button { terminal.send("\u{7f}") } label: {
+                        Label("Delete", systemImage: "delete.left").labelStyle(.iconOnly).frame(maxWidth: .infinity, minHeight: 44)
+                    }.buttonStyle(.bordered)
+                    Button { terminal.send("\r") } label: {
+                        Label("Enter", systemImage: "return").labelStyle(.iconOnly).frame(maxWidth: .infinity, minHeight: 44)
+                    }.buttonStyle(.bordered).accessibilityIdentifier("number-enter")
+                }.font(.title2).dynamicTypeSize(...DynamicTypeSize.xxxLarge).padding()
+            }.navigationTitle("Number keys").navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+        }.presentationDetents([.height(500), .large])
     }
 }
