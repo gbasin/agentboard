@@ -41,9 +41,10 @@ struct BoardSession: Identifiable, Hashable {
 struct SessionStatus: View {
     let status: BoardSession.Status
     var body: some View {
-        Label(status.rawValue, systemImage: status.symbol)
-            .labelStyle(.titleAndIcon)
-            .font(.caption)
-            .foregroundStyle(status.color)
+        Label { Text(status.rawValue).foregroundStyle(.primary) } icon: {
+            Image(systemName: status.symbol).foregroundStyle(status.color)
+        }
+        .labelStyle(.titleAndIcon)
+        .font(.caption)
     }
 }

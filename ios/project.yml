@@ -13,6 +13,7 @@ settings:
     Debug:
       OTHER_LDFLAGS: ["$(inherited)", "-Xlinker", "-interposable"]
       EMIT_FRONTEND_COMMAND_LINES: YES
+      OTHER_SWIFT_FLAGS: ["$(inherited)", "-v"]
       COMPILATION_CACHE_ENABLE_CACHING: NO
       ENABLE_DEBUG_DYLIB: NO
 packages:

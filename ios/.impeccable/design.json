@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-07T17:49:04.647786+00:00",
+  "title": "Design System: Agentboard iPhone spike",
+  "extensions": {
+    "platform": "iOS / SwiftUI with WKWebView xterm.js",
+    "nativeAuthority": "Preserve user-approved Apple-native defaults. Semantic colors and native controls are not translated into normative CSS or fabricated tonal ramps.",
+    "nativeColors": {
+      "action": "Color.accentColor",
+      "primaryText": "Color.primary",
+      "secondaryText": "Color.secondary",
+      "background": "UIColor.systemBackground",
+      "keyFill": "UIColor.tertiarySystemFill",
+      "keyBar": "Material.bar",
+      "workingSymbol": "Color.green",
+      "waitingSymbol": "Color.orange",
+      "sleepingSymbol": "Color.secondary",
+      "error": "Color.red"
+    },
+    "nativeTypography": {
+      "sessionName": "headline",
+      "summary": "subheadline",
+      "agentAndStatus": "caption",
+      "terminalKeys": "callout.weight(.medium)",
+      "listTitle": "system large title",
+      "detailAndSheetTitle": "inline"
+    },
+    "nativeSpacingPoints": {
+      "detailTitle": 2,
+      "keyGap": 4,
+      "rowVerticalPadding": 5,
+      "keyBarVerticalPadding": 6,
+      "rowStack": 7,
+      "terminalHorizontalPadding": 8,
+      "keyBarHorizontalPadding": 8,
+      "titleStatusMinimumGap": 8,
+      "keyMinimumTarget": 44
+    },
+    "nativeComponents": [
+      {
+        "name": "Session list",
+        "source": "AgentboardSpike/SessionListView.swift",
+        "implementation": "NavigationStack, List, Section, NavigationLink, searchable"
+      },
+      {
+        "name": "Session status",
+        "source": "AgentboardSpike/Session.swift",
+        "implementation": "Label with primary caption text and colored SF Symbol"
+      },
+      {
+        "name": "Terminal navigation",
+        "source": "AgentboardSpike/TerminalScreen.swift",
+        "implementation": "Inline principal title, native back button, Menu"
+      },
+      {
+        "name": "Terminal quick keys",
+        "source": "AgentboardSpike/TerminalScreen.swift",
+        "implementation": "Horizontal ScrollView in bottom safeAreaInset; native popover and paste sheet"
+      },
+      {
+        "name": "Connection form",
+        "source": "AgentboardSpike/SessionListView.swift",
+        "implementation": "Form, TextField, native sheet and toolbar actions"
+      }
+    ],
+    "previewPolicy": "Native component metadata is authoritative. HTML/CSS previews are omitted because they cannot reproduce SwiftUI controls and would imply an unapproved web design.",
+    "keyboardLimitation": "WKWebView retains its system previous/next/Done accessory, costing a second row above the software keyboard.",
+    "evidence": "ios/evidence; some older captures precede primary status text correction"
+  },
+  "components": [],
+  "narrative": {
+    "northStar": "A native iPhone window onto working agents",
+    "overview": "Use the user-approved Apple-native direction: San Francisco, semantic iOS surfaces, system blue actions, SF Symbols, native navigation and sheets. The terminal owns the detail screen. This documents the isolated SwiftUI visual spike, not a redesign of the web app or a final framework decision.",
+    "keyCharacteristics": [
+      "Native controls and system typography.",
+      "Dense terminal content with compact surrounding controls.",
+      "Adaptive light and dark appearance."
+    ],
+    "rules": [],
+    "dos": [
+      "Do preserve native semantic colors, typography and presentation.",
+      "Do keep status text primary and pair its colored symbol with a written label.",
+      "Do keep terminal controls reachable with minimum 44-point targets."
+    ],
+    "donts": [
+      "Don't introduce large titles on terminal detail or duplicate dashboard cards.",
+      "Don't treat terminal pixel sizes as native text-style tokens.",
+      "Don't remove keyboard accessories through private class swizzling."
+    ]
+  }
+}
