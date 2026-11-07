@@ -1,6 +1,6 @@
 # Native iOS terminal paste prototype
 
-The opt-in build gives xterm's input textarea a transparent 44-point target
+Ordinary builds give xterm's input textarea a transparent 44-point target
 across the current cursor row. Tap the prompt to focus it. Long-press that row
 and select the native iOS **Paste** action.
 
@@ -12,14 +12,14 @@ The toolbar Paste button remains available.
 
 ## Run
 
-1. Run `VITE_IOS_NATIVE_PASTE_PROTOTYPE=1 bun run build`.
+1. Run `bun run build`.
 2. Run `bun scripts/native-paste-prototype/serve-agentboard.ts`.
 3. Record the printed run directory.
 4. Open `http://localhost:18512`.
 
 The server creates a private tmux socket, database and byte-recording terminal.
 It does not attach to live sessions or execute pasted text. Stop it with Ctrl-C.
-Ordinary builds leave this prototype disabled.
+To disable the native target, build with `VITE_IOS_NATIVE_PASTE_PROTOTYPE=0`.
 
 For a remote simulator, forward port 18512 with SSH:
 
@@ -134,23 +134,23 @@ The drag starts away from the drawer's edge-swipe zone.
 
 ### Browser regression coverage
 
-`tests/e2e/native-paste.spec.ts` checks opt-in gating, the 44-pixel input target,
+`tests/e2e/native-paste.spec.ts` checks default-on behavior and build-time opt-out, the 44-pixel input target,
 output hit-testing and DOM selection, suppression of remote mouse selection on
 the input, preservation of remote mouse selection on output, and multiline paste
 held until Enter without a keyboard shortcut. Chromium cannot test the iOS menu;
 the native checks above cover that behavior.
 
 ```sh
-VITE_IOS_NATIVE_PASTE_PROTOTYPE=1 bun run build
-IOS_NATIVE_PASTE_E2E=1 E2E_PORT=18513 bunx playwright test tests/e2e/native-paste.spec.ts --workers=1
 bun run build
+IOS_NATIVE_PASTE_E2E=1 E2E_PORT=18513 bunx playwright test tests/e2e/native-paste.spec.ts --workers=1
+VITE_IOS_NATIVE_PASTE_PROTOTYPE=0 bun run build
 IOS_NATIVE_PASTE_E2E=0 E2E_PORT=18513 bunx playwright test tests/e2e/native-paste.spec.ts --workers=1
 ```
 
 Both build variants passed (two browser tests each). Lint, typecheck, and the full
 unit/integration suite also passed. No physical-device coverage is claimed.
 
-CI runs the ordinary build plus a separate opt-in build of this spec. The
+CI runs the ordinary build plus a separate opt-out build of this spec. The
 `e2e-native-paste-attempt-*` Actions artifact includes the HTML report and screenshots
 of the input target, held paste, and submitted paste. Native iOS callout evidence
 is recorded separately above; Chromium screenshots are not native callout proof.
