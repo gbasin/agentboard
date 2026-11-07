@@ -15,7 +15,6 @@ import { createInterface } from 'node:readline'
 import { Hono, type Context } from 'hono'
 import { serveStatic } from 'hono/bun'
 import { config, isValidHostname } from './config'
-import { isBoardOrigin } from './outputs/requestOrigin'
 import { PreviewServers } from './outputs/previewServers'
 import { outputRoutes } from './outputs/routes'
 import { createPasteFileRoutes } from './routes/pasteFile'
@@ -490,7 +489,9 @@ const app = new Hono()
 // Preview apps run on another port. Reject their requests before any board
 // route (including GET endpoints) and before terminal WebSocket upgrades.
 app.use('/api/*', async (c, next) => {
-  if (!isBoardOrigin(c.req.raw)) return c.json({ error: 'Preview cannot access Agentboard' }, 403)
+  const rejected = crossOriginRejection(c.req.raw, new URL(c.req.url).pathname,
+    originPolicy(config.allowedOrigins, config.tlsCert, config.tlsKey), logger.warn)
+  if (rejected) return await rejected
   await next()
 })
 app.route('/api/session-output', outputRoutes({
@@ -2312,7 +2313,6 @@ function serverFetch(req: Request, server: Server<WSData>) {
     if (rejected) return rejected
   }
   if (url.pathname === '/ws') {
-    if (!isBoardOrigin(req)) return new Response('Preview cannot access Agentboard', { status: 403 })
     const requestIp =
       typeof server.requestIP === 'function' ? server.requestIP(req) : null
     if (

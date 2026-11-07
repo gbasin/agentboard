@@ -62,6 +62,38 @@ export interface ProxySocket {
   upstream: WebSocket
   queue: (string | Uint8Array)[]
   queuedBytes: number
+  incoming?: (string | ArrayBuffer)[]
+}
+
+/** Complete upstream negotiation before accepting the browser's protocol. */
+export async function connectProxySocket(url: URL, headers: Headers, protocols: string[], signal: AbortSignal): Promise<ProxySocket> {
+  const Socket = WebSocket as unknown as { new(url: URL, options: Bun.WebSocketOptions): WebSocket }
+  const upstream = new Socket(url, { headers: Object.fromEntries(headers), protocols })
+  upstream.binaryType = 'arraybuffer'
+  const data: ProxySocket = { upstream, queue: [], queuedBytes: 0, incoming: [] }
+  let bytes = 0
+  // Preserve greetings sent immediately after the upstream handshake.
+  upstream.onmessage = event => {
+    bytes += typeof event.data === 'string' ? Buffer.byteLength(event.data) : event.data.byteLength
+    if (bytes > 1024 * 1024) { upstream.close(); return }
+    data.incoming!.push(event.data)
+  }
+  await new Promise<void>((resolve, reject) => {
+    const finish = (error?: Error) => {
+      clearTimeout(timer)
+      signal.removeEventListener('abort', abort)
+      if (error) { upstream.close(); reject(error) } else resolve()
+    }
+    const abort = () => finish(new Error('Preview request aborted'))
+    const timer = setTimeout(() => finish(new Error('Local WebSocket handshake timed out')), 10_000)
+    upstream.onopen = () => finish()
+    upstream.onerror = () => finish(new Error('Local WebSocket unavailable'))
+    upstream.onclose = () => finish(new Error('Local WebSocket closed'))
+    signal.addEventListener('abort', abort, { once: true })
+    if (signal.aborted) abort()
+  })
+  if (signal.aborted || upstream.readyState !== WebSocket.OPEN) { upstream.close(); throw new Error('Local WebSocket closed') }
+  return data
 }
 
 export const proxyWebsocket = {
@@ -77,6 +109,8 @@ export const proxyWebsocket = {
     remote.onopen = flush
     if (remote.readyState === WebSocket.OPEN) flush()
     remote.onmessage = event => ws.send(event.data)
+    for (const message of ws.data.incoming ?? []) ws.send(message)
+    ws.data.incoming = undefined
     remote.onclose = () => ws.close(1000, 'Local app disconnected')
     remote.onerror = () => ws.close(1011, 'Local app unavailable')
     if (remote.readyState >= WebSocket.CLOSING) ws.close(1011, 'Local app unavailable')

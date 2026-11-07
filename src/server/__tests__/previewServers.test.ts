@@ -34,6 +34,7 @@ describe('isolated preview origins', () => {
     const { cookie, entry } = await authorize(url)
     expect((await fetch(entry)).status).toBe(403)
     expect((await fetch(url.replace(/token=.*/, 'token=invalid'))).status).toBe(403)
+    expect((await fetch(url.replace(/token=.*/, 'token=' + encodeURIComponent('é'.repeat(36))))).status).toBe(403)
     expect((await fetch(entry, { headers: { cookie, Origin: 'http://127.0.0.1:49999' } })).status).toBe(403)
     expect(await (await fetch(entry, { headers: { cookie } })).text()).toBe('<h1>Hello</h1>')
     expect((await fetch(new URL('/style.css', entry), { headers: { cookie } })).status).toBe(200)
@@ -75,4 +76,27 @@ describe('isolated preview origins', () => {
     expect(headers.get('cookie')).toBe('app=value')
     expect(headers.get('origin')).toBe('http://localhost:3000')
   })
+})
+
+test('WebSocket negotiation preserves the selected protocol and immediate greeting', async () => {
+  const upstream = Bun.serve({ port: 0, hostname: '127.0.0.1',
+    fetch(req, server) {
+      if (server.upgrade(req, { headers: { 'Sec-WebSocket-Protocol': 'second' } })) return
+      return new Response('no', { status: 400 })
+    }, websocket: { open(ws) { ws.send('welcome') }, message(ws, message) { ws.send(message) } },
+  })
+  try {
+    const m = manager()
+    const { cookie, entry } = await authorize(await m.open({ kind: 'localhost', url: `http://127.0.0.1:${upstream.port}/` }, new URL('http://127.0.0.1:4040')))
+    const Socket = WebSocket as unknown as { new(url: string, options: Bun.WebSocketOptions): WebSocket }
+    const socket = new Socket(entry.replace('http:', 'ws:'), { headers: { cookie }, protocols: ['first', 'second'] })
+    const greeting = await new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(() => { socket.close(); reject(Error('Handshake timeout')) }, 3000)
+      socket.onerror = () => { clearTimeout(timer); reject(Error('Handshake failed')) }
+      socket.onmessage = event => { clearTimeout(timer); resolve(String(event.data)) }
+    })
+    expect(socket.protocol).toBe('second')
+    expect(greeting).toBe('welcome')
+    socket.close()
+  } finally { upstream.stop(true) }
 })

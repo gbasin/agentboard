@@ -5652,12 +5652,19 @@ describe('server fetch handlers', () => {
       }), {} as Bun.Server<unknown>)
     expect(library?.status).toBe(403)
 
-    // Reads stay open to any origin.
+    // Preview scripts must not read board APIs; explicit trusted origins still work.
     const read = await fetchHandler.call({} as Bun.Server<unknown>,
       new Request('http://localhost:4040/api/settings/prefer-window-name', {
         headers: { host: 'localhost:4040', origin: 'http://evil.example' },
       }), {} as Bun.Server<unknown>)
-    expect(read?.status).toBe(200)
+    expect(read?.status).toBe(403)
+    for (const origin of ['http://localhost:4040', 'https://board.example.com']) {
+      const allowed = await fetchHandler.call({} as Bun.Server<unknown>,
+        new Request('http://localhost:4040/api/settings/prefer-window-name', {
+          headers: { host: 'localhost:4040', origin },
+        }), {} as Bun.Server<unknown>)
+      expect(allowed?.status).toBe(200)
+    }
   })
 
   test('returns macOS clipboard image file paths from AppKit pasteboard reader', async () => {

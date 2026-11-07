@@ -4,11 +4,11 @@
  * Listeners bind to the same interfaces as Agentboard, never an extra interface.
  */
 import fs from 'node:fs/promises'
-import { isBoardOrigin } from './requestOrigin'
+import { crossOriginRejection } from '../requestOrigin'
 import path from 'node:path'
 import { timingSafeEqual } from 'node:crypto'
 import type { Server } from 'bun'
-import { proxyHttp, proxyWebsocket, upstreamHeaders, upstreamUrl, type ProxySocket } from './liveProxy'
+import { connectProxySocket, proxyHttp, proxyWebsocket, upstreamHeaders, upstreamUrl, type ProxySocket } from './liveProxy'
 
 export type PreviewTarget = { kind: 'html'; file: string } | { kind: 'localhost'; url: string }
 interface Preview {
@@ -28,7 +28,8 @@ interface Options {
 const ASSET_TYPES = new Set(['.html', '.htm', '.css', '.js', '.mjs', '.json', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.ico', '.avif', '.woff', '.woff2', '.ttf', '.otf', '.wasm', '.mp4', '.webm', '.mp3', '.wav', '.pdf', '.txt', '.csv'])
 
 function equalSecret(actual: string, expected: string) {
-  return actual.length === expected.length && timingSafeEqual(Buffer.from(actual), Buffer.from(expected))
+  const a = Buffer.from(actual), b = Buffer.from(expected)
+  return a.length === b.length && timingSafeEqual(a, b)
 }
 
 export async function servePreviewFile(request: Request, file: string): Promise<Response> {
@@ -113,7 +114,8 @@ export class PreviewServers {
         }
         const cookie = (request.headers.get('cookie') ?? '').split(';').map(p => p.trim()).find(p => p.startsWith(cookieName + '='))?.slice(cookieName.length + 1) ?? ''
         if (!equalSecret(cookie, current.secret)) return new Response('Open this output from Agentboard to access the preview.', { status: 403 })
-        if (!isBoardOrigin(request)) return new Response('Cross-origin preview request denied', { status: 403 })
+        const rejected = crossOriginRejection(request, url.pathname, { allowedOrigins: [], servesTls: Boolean(this.options.tls) }, () => {})
+        if (rejected) return await rejected
         current.lastUsed = Date.now()
         if (upstream && request.headers.get('upgrade')?.toLowerCase() === 'websocket') {
           const socketUrl = upstreamUrl(request, upstream)
@@ -121,11 +123,12 @@ export class PreviewServers {
           const headers = upstreamHeaders(request.headers, upstream)
           for (const name of ['sec-websocket-key', 'sec-websocket-version', 'sec-websocket-extensions', 'sec-websocket-protocol']) headers.delete(name)
           const protocols = request.headers.get('sec-websocket-protocol')?.split(',').map(p => p.trim()) ?? []
-          // DOM types hide Bun's documented options overload in this mixed TS project.
-          const Socket = WebSocket as unknown as { new(url: URL, options: Bun.WebSocketOptions): WebSocket }
-          const remote = new Socket(socketUrl, { headers: Object.fromEntries(headers), protocols })
-          if (server.upgrade(request, { data: { upstream: remote, queue: [], queuedBytes: 0 }, headers: protocols.length ? { 'Sec-WebSocket-Protocol': protocols[0] } : undefined })) return
-          remote.close()
+          let data: ProxySocket
+          try { data = await connectProxySocket(socketUrl, headers, protocols, request.signal) }
+          catch { return new Response('Local WebSocket unavailable', { status: 502 }) }
+          const protocol = data.upstream.protocol
+          if (server.upgrade(request, { data, headers: protocol ? { 'Sec-WebSocket-Protocol': protocol } : undefined })) return
+          data.upstream.close()
           return new Response('WebSocket upgrade failed', { status: 400 })
         }
         return upstream ? proxyHttp(request, upstream) : servePreviewFile(request, (target as { file: string }).file)
