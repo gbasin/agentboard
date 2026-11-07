@@ -66,7 +66,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y tmux
 
       - name: Install Playwright browsers
-        run: bunx playwright install --with-deps chromium
+        run: bunx playwright install --with-deps chromium webkit
 
       - name: Build
         run: bun run build

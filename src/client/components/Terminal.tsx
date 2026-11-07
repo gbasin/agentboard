@@ -1167,22 +1167,6 @@ export default function Terminal({
   pasteFilesRef.current = browserPaste.paste
   pasteErrorRef.current = browserPaste.fail
 
-  // Enter text mode: exit copy-mode and focus input (for keyboard button)
-  const handleEnterTextMode = useCallback(() => {
-    if (!session || isReadOnly || !isInputReady) return
-    if (inTmuxCopyModeRef.current) {
-      sendMessage({ type: 'tmux-cancel-copy-mode', sessionId: session.id })
-      setTmuxCopyMode(false)
-    }
-    const container = containerRef.current
-    if (!container) return
-    const textarea = container.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement | null
-    if (textarea) {
-      textarea.removeAttribute('disabled')
-      textarea.focus()
-    }
-  }, [session, isReadOnly, isInputReady, sendMessage, containerRef, inTmuxCopyModeRef, setTmuxCopyMode])
-
   const isKeyboardVisible = useCallback(() => {
     if (typeof document === 'undefined') return false
     const container = containerRef.current
@@ -1669,7 +1653,6 @@ export default function Terminal({
           hideSessionSwitcher
           onRefocus={handleRefocus}
           isKeyboardVisible={isKeyboardVisible}
-          onEnterTextMode={handleEnterTextMode}
         />
       )}
 

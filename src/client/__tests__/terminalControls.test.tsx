@@ -60,7 +60,9 @@ describe('TerminalControls', () => {
     const keyButtons = renderer.root.findAllByType('button').filter((button) =>
       String(button.props.className ?? '').includes('terminal-key')
     )
-    expect(keyButtons).toHaveLength(9)
+    expect(keyButtons).toHaveLength(8)
+    expect(renderer.root.findAllByProps({ 'aria-label': 'Show keyboard' })).toHaveLength(0)
+    expect(renderer.root.findAllByProps({ 'aria-label': 'Dismiss keyboard' })).toHaveLength(0)
     expect(keyButtons.some(button => button.props['aria-label'] === 'Shift+Tab')).toBe(false)
     expect(keyButtons.every((button) =>
       String(button.props.className).includes('size-[44px]')

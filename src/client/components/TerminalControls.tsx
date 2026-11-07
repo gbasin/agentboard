@@ -1,7 +1,7 @@
 /**
  * TerminalControls - On-screen control strip for mobile terminal interaction
  * Quick keys ordered most-used first (left): enter, esc, arrows, paste, delete
- * word, numbers, tab, ctrl, keyboard. The row scrolls horizontally
+ * word, numbers, tab, ctrl. The row scrolls horizontally
  * on narrow phones, so the rightmost keys are the ones that can afford a swipe.
  * Top row shows session switcher buttons to quickly jump between sessions
  */
@@ -9,7 +9,7 @@
 import { useState, useRef, useEffect } from 'react'
 import type { TouchEvent as ReactTouchEvent } from 'react'
 import type { AgentType, Session } from '@shared/types'
-import { ClipboardIcon, CornerDownLeftIcon, DeleteIcon, Keyboard01Icon } from './icons'
+import { ClipboardIcon, CornerDownLeftIcon, DeleteIcon } from './icons'
 import { ICON_SIZE, KEY_ICON_STROKE } from './controlStyles'
 import ArrowKeys from './ArrowKeys'
 import NumPad from './NumPad'
@@ -43,7 +43,6 @@ interface TerminalControlsProps {
   hideSessionSwitcher?: boolean
   onRefocus?: () => void
   isKeyboardVisible?: () => boolean
-  onEnterTextMode?: () => void
 }
 
 interface ControlKey {
@@ -56,7 +55,6 @@ interface ControlKey {
 // Key strip glyphs: library icons at the key size (18px on 44px keys).
 const BackspaceIcon = <DeleteIcon width={ICON_SIZE.key} height={ICON_SIZE.key} strokeWidth={KEY_ICON_STROKE} />
 const PasteIcon = <ClipboardIcon width={ICON_SIZE.key} height={ICON_SIZE.key} strokeWidth={KEY_ICON_STROKE} />
-const KeyboardIcon = <Keyboard01Icon width={ICON_SIZE.key} height={ICON_SIZE.key} strokeWidth={KEY_ICON_STROKE} />
 
 // Color classes of a key without its own `className`. A key's className
 // replaces these rather than being appended: both sets are single-class
@@ -65,7 +63,7 @@ const KeyboardIcon = <Keyboard01Icon width={ICON_SIZE.key} height={ICON_SIZE.key
 const CONTROL_KEY_DEFAULT_CLASS = 'bg-surface border-border text-secondary'
 
 // Plain send-a-sequence keys. Their on-screen order lives in the JSX below,
-// interleaved with the stateful ctrl/paste/numpad/arrow/keyboard buttons.
+// interleaved with the stateful ctrl/paste/numpad/arrow buttons.
 const KEY_ENTER: ControlKey = { label: <CornerDownLeftIcon width={ICON_SIZE.key} height={ICON_SIZE.key} strokeWidth={KEY_ICON_STROKE} />, key: '\r', className: 'bg-accent/20 text-accent border-accent/40', ariaLabel: 'Enter' }
 const KEY_ESC: ControlKey = { label: 'esc', key: '\x1b' }
 const KEY_DELETE_WORD: ControlKey = { label: BackspaceIcon, key: '\x17', ariaLabel: 'Delete word' } // Ctrl+W: delete word backward
@@ -123,7 +121,6 @@ export default function TerminalControls({
   hideSessionSwitcher = false,
   onRefocus,
   isKeyboardVisible,
-  onEnterTextMode,
 }: TerminalControlsProps) {
   const browserPaste = useBrowserPaste({ sessionId: currentSessionId, disabled, fileUploadsAllowed, agentType,
     onPasteText: onPasteText ?? onSendKey, onPasteImage: onPasteImage ?? onSendKey, onRefocus })
@@ -197,20 +194,6 @@ export default function TerminalControls({
   const handleSessionSelect = (sessionId: string) => {
     triggerHaptic()
     onSelectSession(sessionId)
-  }
-
-  const handleKeyboardPress = () => {
-    if (disabled) return
-    triggerHaptic()
-    // Toggle: if keyboard visible, hide it; otherwise show it
-    if (isKeyboardVisible?.()) {
-      // Blur to hide keyboard
-      if (document.activeElement instanceof HTMLElement) {
-        document.activeElement.blur()
-      }
-    } else {
-      onEnterTextMode?.()
-    }
   }
 
   // Only show session row if there are multiple sessions and not hidden
@@ -379,29 +362,6 @@ export default function TerminalControls({
           disabled={disabled}
         >
           ctrl
-        </button>
-        {/* Keyboard button - enter text mode (exit copy-mode and show keyboard) */}
-        <button
-          type="button"
-          aria-label="Show keyboard"
-          className={`
-            terminal-key
-            flex items-center justify-center
-            size-[44px] p-0
-            text-sm font-medium
-            bg-surface border border-border rounded-md
-            active:bg-hover active:scale-95
-            transition-transform duration-75
-            select-none touch-manipulation
-            text-secondary
-            ${disabled ? 'opacity-50' : ''}
-          `}
-          onMouseDown={(e) => e.preventDefault()}
-          onTouchEnd={handleTouchAction(handleKeyboardPress)}
-          onClick={handleClickAction(handleKeyboardPress)}
-          disabled={disabled}
-        >
-          {KeyboardIcon}
         </button>
       </div>
 

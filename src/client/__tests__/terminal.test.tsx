@@ -675,7 +675,7 @@ describe('Terminal', () => {
     })
   })
 
-  test('keyboard button exits copy-mode when active', () => {
+  test('exit copy mode remains available without the keyboard toggle', () => {
     const sentMessages: unknown[] = []
 
     const { createNodeMock } = createContainerMock()
@@ -712,9 +712,9 @@ describe('Terminal', () => {
       terminalInstance.emitWheel({ deltaY: -60 } as WheelEvent)
     })
 
-    const keyboardButton = renderer.root.findByProps({ 'aria-label': 'Show keyboard' })
+    const exitButton = renderer.root.findAllByProps({ 'aria-label': 'Exit copy mode' })[0]
     act(() => {
-      keyboardButton.props.onClick()
+      exitButton.props.onClick()
     })
 
     expect(
