@@ -1,4 +1,4 @@
-/* Opt-in phone density. Popup keys retain their own hit-test geometry.
+/* Compact phone density. Popup keys retain their own hit-test geometry.
    Scope to the terminal panel so drawer and dialog controls keep their sizes. */
 @media (max-width: 767px) {
   [data-compact-mobile-controls="true"] .mobile-terminal-header {

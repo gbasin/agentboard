@@ -39,7 +39,7 @@ async function waitForPaneText(target: string, needle: string, timeoutMs = 10000
 }
 
 for (const compact of [false, true]) {
-test(`touch quick keys send correct bytes (${compact ? 'compact' : 'default'})`, async ({ page }, testInfo) => {
+test(`touch quick keys send correct bytes (${compact ? 'compact' : 'comfortable'})`, async ({ page }, testInfo) => {
   const session = process.env.E2E_TMUX_SESSION
   test.skip(!session, 'E2E_TMUX_SESSION not set')
   const target = `${session}:${WINDOW_NAME}`
@@ -50,9 +50,9 @@ test(`touch quick keys send correct bytes (${compact ? 'compact' : 'default'})`,
   try {
     await waitForPaneText(target, 'PASTE-REPL READY')
 
-    if (compact) await page.addInitScript(() => {
-      localStorage.setItem('agentboard-settings', JSON.stringify({ version: 8, state: { compactMobileControls: true } }))
-    })
+    await page.addInitScript((compact) => {
+      localStorage.setItem('agentboard-settings', JSON.stringify({ version: 8, state: { compactMobileControls: compact } }))
+    }, compact)
     await page.goto('/')
     // On mobile the session list lives in a drawer: the card is in the DOM
     // but not visible, so select it with a DOM click.

@@ -20,7 +20,7 @@ for (const width of [320, 390, 430]) {
     const terminal = page.locator('.xterm')
     const height = () => terminal.evaluate(el => el.parentElement!.getBoundingClientRect().height)
     await expect(enter).toBeEnabled()
-    const defaultHeight = await height()
+    const compactHeight = await height()
     const assertSize = async (size: number) => {
       for (const control of [menu, enter, page.getByRole('button', { name: 'Shift', exact: true })]) {
         await expect.poll(async () => {
@@ -29,8 +29,8 @@ for (const width of [320, 390, 430]) {
         }).toEqual([size, size])
       }
     }
-    await assertSize(44)
-    await page.screenshot({ path: testInfo.outputPath(`default-${width}.png`) })
+    await assertSize(36)
+    await page.screenshot({ path: testInfo.outputPath(`compact-default-${width}.png`) })
     const openSettings = async () => {
       await page.getByLabel('More options', { exact: true }).tap()
       await page.getByRole('button', { name: 'Settings', exact: true }).filter({ visible: true }).tap()
@@ -40,21 +40,21 @@ for (const width of [320, 390, 430]) {
     }
     await openSettings()
     const toggle = page.getByRole('switch', { name: 'Compact mobile controls', exact: true })
-    await expect(toggle).not.toBeChecked()
-    await toggle.tap()
     await expect(toggle).toBeChecked()
-    await assertSize(36)
+    await toggle.tap()
+    await expect(toggle).not.toBeChecked()
+    await assertSize(44)
     await page.screenshot({ path: testInfo.outputPath(`setting-${width}.png`) })
     await page.keyboard.press('Escape')
-    await expect.poll(height).toBeGreaterThanOrEqual(defaultHeight + 20)
-    await page.screenshot({ path: testInfo.outputPath(`compact-${width}.png`) })
+    await expect.poll(height).toBe(compactHeight - 20)
+    await page.screenshot({ path: testInfo.outputPath(`comfortable-${width}.png`) })
     await page.reload()
     await expect(enter).toBeEnabled()
-    await assertSize(36)
+    await assertSize(44)
     expect(harness.puts.some(put => 'compactMobileControls' in put)).toBe(false)
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width)
 
-    // The header and quick row still open their menus after shrinking.
+    // The header and quick row still open their menus at either density.
     await menu.tap()
     await expect(page.locator('.session-drawer.open')).toBeVisible()
     await page.keyboard.press('Escape')
@@ -68,10 +68,10 @@ for (const width of [320, 390, 430]) {
     await expect(page.locator('.terminal-controls')).toBeHidden()
     await page.setViewportSize({ width, height: 844 })
     await openSettings()
-    await expect(toggle).toBeChecked()
+    await expect(toggle).not.toBeChecked()
     await toggle.tap()
     await page.keyboard.press('Escape')
-    await assertSize(44)
-    await expect.poll(height).toBe(defaultHeight)
+    await assertSize(36)
+    await expect.poll(height).toBe(compactHeight)
   })
 }

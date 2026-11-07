@@ -78,18 +78,18 @@ test.afterEach(async ({ page }, info) => {
   if (info.status !== info.expectedStatus) console.log('Terminal bytes', JSON.stringify(sent.get(page)))
   for (const name of targets.splice(0)) tmux(['kill-window', '-t', `${session}:${name}`]) })
 
-test('ordinary build keeps the prototype disabled', async ({ page }) => {
+test('ordinary build enables iOS autocorrect by default', async ({ page }) => {
   await create('autocorrect-off')
   await page.goto('/')
   const input = await select(page, 'autocorrect-off')
-  await expect(input).toHaveAttribute('autocorrect', 'off')
+  await expect(input).toHaveAttribute('autocorrect', 'on')
 })
 
 test('settings toggles autocorrect live and persists across reload', async ({ page }, info) => {
   await create('autocorrect-setting')
   await page.goto('/')
   const input = await select(page, 'autocorrect-setting')
-  await expect(input).toHaveAttribute('autocorrect', 'off')
+  await expect(input).toHaveAttribute('autocorrect', 'on')
   const openSettings = async () => {
     await page.getByRole('button', { name: 'More options' }).click()
     await page.getByRole('button', { name: 'Settings', exact: true }).locator('visible=true').click()
@@ -100,7 +100,9 @@ test('settings toggles autocorrect live and persists across reload', async ({ pa
     return settings.getByRole('switch', { name: 'iOS autocorrect', exact: true })
   }
   const toggle = await openSettings()
-  await expect(toggle).not.toBeChecked()
+  await expect(toggle).toBeChecked()
+  await toggle.click()
+  await expect(input).toHaveAttribute('autocorrect', 'off')
   await toggle.click()
   await expect(input).toHaveAttribute('autocorrect', 'on')
   await info.attach('ios-autocorrect-settings.png', {body: await page.screenshot(), contentType:'image/png'})
@@ -124,13 +126,6 @@ test('settings toggles autocorrect live and persists across reload', async ({ pa
 })
 
 test.describe('native autocorrect enabled', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.addInitScript(() => {
-      if (!localStorage.getItem('agentboard-settings')) {
-        localStorage.setItem('agentboard-settings', JSON.stringify({state:{iosAutocorrect:true},version:8}))
-      }
-    })
-  })
   test('replacement, native Return ordering, and following prompt submit exactly once', async ({ page }) => {
     await create('autocorrect-order')
     await page.goto('/')
