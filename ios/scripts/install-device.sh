@@ -23,7 +23,10 @@ if ! xcodebuild -quiet -project AgentboardSpike.xcodeproj -scheme AgentboardSpik
 fi
 xcrun devicectl device install app --device "$device_udid" \
   .build-device/Build/Products/Debug-iphoneos/AgentboardSpike.app
-launch_args=()
-if [ -n "${3:-}" ]; then launch_args=(-serverURL "$3"); fi
-xcrun devicectl device process launch --device "$device_udid" --terminate-existing \
-  -- dev.agentboard.ios-spike "${launch_args[@]}"
+if [ -n "${3:-}" ]; then
+  xcrun devicectl device process launch --device "$device_udid" --terminate-existing \
+    -- dev.agentboard.ios-spike -serverURL "$3"
+else
+  xcrun devicectl device process launch --device "$device_udid" --terminate-existing \
+    -- dev.agentboard.ios-spike
+fi
