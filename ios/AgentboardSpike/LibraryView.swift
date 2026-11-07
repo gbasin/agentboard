@@ -46,8 +46,8 @@ struct LibraryView: View {
                     Button { detail = saved } label: {
                         VStack(alignment: .leading, spacing: 6) {
                             Label(saved.name, systemImage: saved.pinned ? "pin.fill" : "terminal").foregroundStyle(.primary)
-                            Text("\(saved.state.capitalized) · \(saved.agentType ?? "Shell")").font(.caption)
-                            Text(saved.projectPath).font(.caption).foregroundStyle(.secondary)
+                            Text("\(saved.state.capitalized) · \(saved.agentType ?? "Shell")").font(.caption).foregroundStyle(Color.primary)
+                            Text(saved.projectPath).font(.caption).foregroundStyle(Color.primary)
                             if let error = saved.error { Text(error).font(.caption) }
                         }
                     }.accessibilityIdentifier("saved-\(saved.name)")

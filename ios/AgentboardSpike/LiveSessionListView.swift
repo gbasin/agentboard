@@ -79,8 +79,10 @@ struct LiveSessionListView: View {
                             preferences.set("projectFilters", .array([])); preferences.set("hostFilters", .array([]))
                             search = ""; statusFilter = "All"
                         } label: {
-                            Label("\(hiddenPermissionCount) hidden session\(hiddenPermissionCount == 1 ? "" : "s") need\(hiddenPermissionCount == 1 ? "s" : "") approval. Clear filters", systemImage: "exclamationmark.circle")
-                                .foregroundStyle(.primary)
+                            Label {
+                                Text("\(hiddenPermissionCount) hidden session\(hiddenPermissionCount == 1 ? "" : "s") need\(hiddenPermissionCount == 1 ? "s" : "") approval. Clear filters")
+                                    .foregroundStyle(Color.primary)
+                            } icon: { Image(systemName: "exclamationmark.circle").foregroundStyle(.orange) }
                         }.accessibilityIdentifier("hidden-permission-notice")
                     }
                 }
