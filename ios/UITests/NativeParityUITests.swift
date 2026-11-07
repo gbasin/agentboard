@@ -151,9 +151,10 @@ final class NativeParityUITests: XCTestCase {
         capture("photo-picker")
         let photo = app.images.matching(identifier: "PXGGridLayout-Info").firstMatch
         XCTAssertTrue(photo.waitForExistence(timeout: 5)); photo.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5)).tap()
-        let add = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@ OR label == %@", "Add", "Done")).firstMatch
-        XCTAssertTrue(add.waitForExistence(timeout: 3), app.debugDescription)
-        add.tap()
+        let confirmations = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@ OR label == %@", "Add", "Done"))
+        let add = confirmations.allElementsBoundByIndex.first { $0.isHittable }
+        XCTAssertNotNil(add, app.debugDescription)
+        add?.tap()
         XCTAssertTrue(app.buttons["Insert file path"].waitForExistence(timeout: 15)); capture("uploaded-photo")
         app.buttons["Insert file path"].tap()
         XCTAssertTrue(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in app.webViews.staticTexts.allElementsBoundByIndex.map(\.label).joined().contains("/tmp/paste-") }, object: nil)], timeout: 10) == .completed)
