@@ -3,7 +3,7 @@ import { privateTmuxEnv } from './testEnvironment'
 
 test('shared broker bounds a slow subscriber while a credited subscriber continues', async () => {
   const child = Bun.spawn([process.execPath, 'src/server/__tests__/fixtures/paneOutputBackpressure.ts'], {
-    env: privateTmuxEnv(null), stdout: 'pipe', stderr: 'pipe',
+    env: { ...privateTmuxEnv(null), LOG_LEVEL: 'error' }, stdout: 'pipe', stderr: 'pipe',
   })
   const [stdout, stderr, exit] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited])
   expect(stderr).toBe('')

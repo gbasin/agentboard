@@ -376,3 +376,11 @@ describe('mediaExtractor', () => {
     })
   })
 })
+
+
+test('republishing a hosted artifact updates its label without another card', () => {
+  const records = ['Initial title', 'Updated title'].map(title => JSON.stringify({ type: 'frame-link', frameUrl: 'https://claude.ai/artifact/report', title }))
+  const result = extractSessionMedia(records.join('\n'))
+  expect(result).toHaveLength(1)
+  expect(result[0].label).toBe('Updated title')
+})

@@ -18,7 +18,7 @@ export interface SessionPullRequest {
  * the bytes stay in the log and are served by /api/session-media.
  */
 export interface SessionMedia {
-  kind: 'image' | 'document' | 'link'
+  kind: 'image' | 'document' | 'link' | 'html' | 'localhost' | 'visualization'
   /** Fetch URL for extracted payloads; external href for links. */
   url: string
   /** Bounded external destination for display/search; open through url. */

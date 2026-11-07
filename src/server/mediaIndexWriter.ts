@@ -32,7 +32,7 @@ export class MediaIndexWriter {
       this.db.query('DELETE FROM media_files WHERE identity=?').run(identity)
       this.db.query('DELETE FROM media_items WHERE identity=?').run(identity)
       this.db.query(`UPDATE media_sessions SET generation=?,version=version+1,total=0,images=0,documents=0,
-        links=0,omittedRecords=0,omittedItems=0,discovery=? WHERE identity=?`)
+        links=0,previews=0,omittedRecords=0,omittedItems=0,discovery=? WHERE identity=?`)
         .run(randomUUID(), JSON.stringify({ status: 'pending' }), identity)
     })()
   }
@@ -78,7 +78,7 @@ export class MediaIndexWriter {
           const descriptor: SessionMedia = {
             kind: entry.kind, ...(entry.url ? { externalUrl: entry.url } : {}),
             ...(entry.sourceText ? { sourceText: entry.sourceText } : {}),
-            url: `/api/session-media/${encodeURIComponent(job.record.sessionId)}?path=${encodeURIComponent(source.path)}&offset=${entry.offset}&index=${entry.index}&digest=${digest}`,
+            url: `/api/${['html', 'localhost', 'visualization'].includes(entry.kind) ? 'session-output' : 'session-media'}/${encodeURIComponent(job.record.sessionId)}${['html', 'localhost', 'visualization'].includes(entry.kind) ? '/open' : ''}?path=${encodeURIComponent(source.path)}&offset=${entry.offset}&index=${entry.index}&digest=${digest}`,
             ...(entry.mediaType ? { mediaType: entry.mediaType.slice(0, 128) } : {}),
             ...(entry.bytes !== undefined ? { bytes: entry.bytes } : {}),
             ...(entry.label ? { label: entry.label.slice(0, 512) } : {}),
@@ -121,13 +121,14 @@ export class MediaIndexWriter {
   }
   private recount(identity: string, additions: number, destructive: boolean) {
     const counts = this.db.query(`SELECT count(*) AS total, coalesce(sum(kind='image'),0) AS images,
-      coalesce(sum(kind='document'),0) AS documents, coalesce(sum(kind='link'),0) AS links
-      FROM media_items WHERE identity=?`).get(identity) as { total: number; images: number; documents: number; links: number }
+      coalesce(sum(kind='document'),0) AS documents, coalesce(sum(kind='link'),0) AS links,
+      coalesce(sum(kind IN ('html','localhost','visualization')),0) AS previews
+      FROM media_items WHERE identity=?`).get(identity) as { total: number; images: number; documents: number; links: number; previews: number }
     const omissions = this.db.query(`SELECT coalesce(sum(json_extract(state,'$.omittedRecords')),0) AS records,
       coalesce(sum(json_extract(state,'$.omittedItems')),0) AS items FROM media_files WHERE identity=?`).get(identity) as { records: number; items: number }
-    this.db.query(`UPDATE media_sessions SET version=version+1,total=?,images=?,documents=?,links=?,
+    this.db.query(`UPDATE media_sessions SET version=version+1,total=?,images=?,documents=?,links=?,previews=?,
       additions=additions+?,omittedRecords=?,omittedItems=?,generation=CASE WHEN ? THEN ? ELSE generation END WHERE identity=?`)
-      .run(counts.total, counts.images, counts.documents, counts.links, additions, omissions.records, omissions.items, destructive ? 1 : 0, randomUUID(), identity)
+      .run(counts.total, counts.images, counts.documents, counts.links, counts.previews, additions, omissions.records, omissions.items, destructive ? 1 : 0, randomUUID(), identity)
   }
   private progress(job: MediaScanJob) {
     if (job.done) { this.setDiscovery(job.identity, { status: 'ready' }); return }

@@ -439,7 +439,7 @@ test('synthetic pending zero counts show an unknown count and remain open throug
   const stream = discoveryStream(); respond = async () => stream.response
   const r = render(session({ mediaSummary: summary({ total: 0, images: 0, additions: 0, discovery: { status: 'pending' } }) }))
   const pill = find(r, 'media-rail-pill')[0]
-  expect(pill.props['aria-label']).toBe('Open media')
+  expect(pill.props['aria-label']).toBe('Open media, links and previews')
   expect(pill.findAllByType('span').map(s => s.children.join('')).join('')).toContain('…')
   await open(r)
   await flush(() => { stream.send(snapshot()); stream.send(progress({ discovery: { status: 'ready' } })); stream.end() })

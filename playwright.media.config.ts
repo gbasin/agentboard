@@ -4,7 +4,7 @@ import base from './playwright.config'
 
 export default defineConfig({
   ...base,
-  testMatch: ['media-discovery.spec.ts', 'session-links.spec.ts', 'media-rail.spec.ts', 'media-payload.spec.ts', 'media-attention.spec.ts', 'media-thumbnail.spec.ts', 'media-lightbox.spec.ts'],
+  testMatch: ['output-previews.spec.ts', 'media-discovery.spec.ts', 'session-links.spec.ts', 'media-rail.spec.ts', 'media-payload.spec.ts', 'media-attention.spec.ts', 'media-thumbnail.spec.ts', 'media-lightbox.spec.ts'],
   workers: 1,
   outputDir: '.test-results-media',
   projects: [

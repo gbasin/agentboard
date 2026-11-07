@@ -67,7 +67,9 @@ function toSessionMedia(
   media: ScannedMedia
 ): SessionMedia {
   const url =
-    media.url ??
+    (media.kind === 'html' || media.kind === 'localhost' || media.kind === 'visualization'
+      ? `/api/session-output/${encodeURIComponent(record.sessionId)}/open?ref=${encodeURIComponent(media.url ?? '')}`
+      : media.url) ??
     `/api/session-media/${encodeURIComponent(record.sessionId)}` +
       `?path=${encodeURIComponent(logPath)}&offset=${media.offset}&index=${media.index}` +
       (media.bytes != null ? `&bytes=${media.bytes}` : '')
@@ -82,7 +84,7 @@ function toSessionMedia(
 }
 
 function sameMedia(a: SessionMedia[], b: SessionMedia[]) {
-  return a.length === b.length && a.every((m, i) => m.url === b[i].url)
+  return a.length === b.length && a.every((m, i) => m.url === b[i].url && m.label === b[i].label)
 }
 
 function rememberMediaScan(
@@ -110,7 +112,7 @@ function scanMergedMedia(
       media.push(toSessionMedia(record, p, item))
     }
   }
-  return media
+  return [...new Map(media.map(item => [item.url, item])).values()]
 }
 
 /** Media found by the last scan of this session's logs. Never reads files. */

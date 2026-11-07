@@ -33,7 +33,7 @@ export function createMediaRoutes(deps: Dependencies) {
     const cursor = c.req.query('cursor')
     if (cursor && cursor.length > 8192) return c.json({ error: 'Invalid cursor' }, 400)
     const kind = c.req.query('kind'), search = c.req.query('search')
-    if (kind !== undefined && kind !== 'media' && kind !== 'links') return c.json({ error: 'Invalid media kind' }, 400)
+    if (kind !== undefined && kind !== 'media' && kind !== 'links' && kind !== 'previews') return c.json({ error: 'Invalid media kind' }, 400)
     if (search && search.length > 200) return c.json({ error: 'Search too long' }, 400)
     if (c.req.query('stream') === '1') {
       if (!deps.watch) return c.json({ error: 'Media discovery is temporarily unavailable' }, 503)

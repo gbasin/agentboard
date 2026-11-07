@@ -15,6 +15,8 @@ import { createInterface } from 'node:readline'
 import { Hono, type Context } from 'hono'
 import { serveStatic } from 'hono/bun'
 import { config, isValidHostname } from './config'
+import { PreviewServers } from './outputs/previewServers'
+import { outputRoutes } from './outputs/routes'
 import { createPasteFileRoutes } from './routes/pasteFile'
 import { OwnershipObserver } from './ownership/observer'
 import { OwnershipMatcher } from './ownership/matcher'
@@ -479,7 +481,23 @@ logger.info('terminal_mode_resolved', {
   resolved: resolvedTerminalMode,
 })
 
+const previews = new PreviewServers({
+  hostname: config.hostname,
+  ...(config.tlsCert && config.tlsKey ? { tls: { cert: Bun.file(config.tlsCert), key: Bun.file(config.tlsKey) } } : {}),
+})
 const app = new Hono()
+// Preview apps run on another port. Reject their requests before any board
+// route (including GET endpoints) and before terminal WebSocket upgrades.
+app.use('/api/*', async (c, next) => {
+  const rejected = crossOriginRejection(c.req.raw, new URL(c.req.url).pathname,
+    originPolicy(config.allowedOrigins, config.tlsCert, config.tlsKey), logger.warn)
+  if (rejected) return await rejected
+  await next()
+})
+app.route('/api/session-output', outputRoutes({
+  getSession: id => db.getSessionById(id), previews, blockedPorts: () => [config.port, httpServer.port!], cacheRoot: process.env.AGENTBOARD_DATA_DIR || path.join(os.homedir(), '.agentboard'),
+  ready: () => tailscaleReady,
+}))
 const db = initDatabase({ exclusive: true })
 const sessionReader = db.db?.filename && db.db.filename !== ':memory:'
   ? new SessionReadClient(db.db.filename)
@@ -2437,6 +2455,7 @@ export const tailscaleReady = (async () => {
       websocket: websocketHandlers,
     })
     boundTailscaleIp = detectedIp
+    previews.addHost(detectedIp)
     logger.info('tailscale_listener_started', { tailscaleUrl })
   } catch (error) {
     logger.warn('tailscale_bind_failed', {
@@ -2524,6 +2543,7 @@ async function cleanupAllTerminals() {
     clearAttachDedup(ws)
   }
   await Promise.allSettled(disposePromises)
+  previews.dispose()
   stallWatchdog.dispose()
   throwawayShellReaper.dispose()
   setCodexSubagentIndexListener(null)
