@@ -44,7 +44,8 @@ for (const mobile of [false, true]) {
         expect((await preview.boundingBox())!.width).toBe(390)
         await expect(page.locator('.xterm-helper-textarea')).toBeDisabled()
       } else {
-        expect((await terminal.boundingBox())!.width).toBeLessThan(original!.width)
+        // xterm fits after the ResizeObserver debounce, independently of iframe load.
+        await expect.poll(async () => (await terminal.boundingBox())!.width).toBeLessThan(original!.width)
         const separator = page.getByRole('separator', { name: 'Resize output preview' })
         await separator.focus(); await page.keyboard.press('ArrowLeft')
         await expect(separator).toHaveAttribute('aria-valuenow', '50')
