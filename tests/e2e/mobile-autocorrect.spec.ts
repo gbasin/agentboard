@@ -90,6 +90,23 @@ test('ordinary build enables native autocorrect by default', async ({ page }) =>
   await expect(input).toHaveAttribute('autocorrect', 'on')
 })
 
+test('upgrade preserves the current platform preference in one switch', async ({ page }) => {
+  await page.addInitScript(platform => {
+    localStorage.setItem('agentboard-settings', JSON.stringify({ version: 8, state: {
+      iosAutocorrect: platform !== 'iOS', androidAutocorrect: platform !== 'Android',
+    } }))
+  }, platform)
+  await create('autocorrect-migrate')
+  await page.goto('/')
+  const input = await select(page, 'autocorrect-migrate')
+  await expect(input).toHaveAttribute('autocorrect', 'off')
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('agentboard-settings')!))
+  expect(saved.version).toBe(9)
+  expect(saved.state.mobileAutocorrect).toBe(false)
+  expect(saved.state).not.toHaveProperty('iosAutocorrect')
+  expect(saved.state).not.toHaveProperty('androidAutocorrect')
+})
+
 test('settings toggles autocorrect live and persists across reload', async ({ page }, info) => {
   await create('autocorrect-setting')
   await page.goto('/')
@@ -102,7 +119,7 @@ test('settings toggles autocorrect live and persists across reload', async ({ pa
     if (await settings.getByRole('button', { name: 'Terminal', exact: true }).isVisible()) {
       await settings.getByRole('button', { name: 'Terminal', exact: true }).click()
     }
-    return settings.getByRole('switch', { name: `${platform} autocorrect`, exact: true })
+    return settings.getByRole('switch', { name: 'Mobile autocorrect', exact: true })
   }
   const toggle = await openSettings()
   await expect(toggle).toBeChecked()
@@ -110,7 +127,7 @@ test('settings toggles autocorrect live and persists across reload', async ({ pa
   await expect(input).toHaveAttribute('autocorrect', 'off')
   await toggle.click()
   await expect(input).toHaveAttribute('autocorrect', 'on')
-  await info.attach(`${platform.toLowerCase()}-autocorrect-settings.png`, {body: await page.screenshot(), contentType:'image/png'})
+  await info.attach(`${platform.toLowerCase()}-autocorrect-settings.png`, {body: await page.screenshot({ path: info.outputPath(`${platform.toLowerCase()}-mobile-autocorrect.png`) }), contentType:'image/png'})
   await page.getByRole('button', { name: 'Close settings' }).click()
   await page.reload()
   await select(page, 'autocorrect-setting')

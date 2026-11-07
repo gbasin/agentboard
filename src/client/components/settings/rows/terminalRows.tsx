@@ -33,24 +33,9 @@ function WebGLControl({ ids }: RowControlProps) {
   )
 }
 
-function IosAutocorrectControl({ ids }: RowControlProps) {
-  const checked = useSettingsStore((state) => state.iosAutocorrect)
-  const set = useSettingsStore((state) => state.setIosAutocorrect)
-  return (
-    <Switch
-      className={SWITCH_TOUCH_TARGET}
-      id={ids.control}
-      checked={checked}
-      onCheckedChange={set}
-      ariaLabelledBy={ids.label}
-      ariaDescribedBy={ids.description}
-    />
-  )
-}
-
-function AndroidAutocorrectControl({ ids }: RowControlProps) {
-  const checked = useSettingsStore((state) => state.androidAutocorrect)
-  const set = useSettingsStore((state) => state.setAndroidAutocorrect)
+function MobileAutocorrectControl({ ids }: RowControlProps) {
+  const checked = useSettingsStore((state) => state.mobileAutocorrect)
+  const set = useSettingsStore((state) => state.setMobileAutocorrect)
   return (
     <Switch
       className={SWITCH_TOUCH_TARGET}
@@ -121,22 +106,13 @@ function ShortcutModifierDescription() {
 
 export const terminalRows: SettingsRowDef[] = [
   {
-    id: 'ios-autocorrect',
+    id: 'mobile-autocorrect',
     page: 'terminal',
-    label: 'iOS autocorrect',
-    description: 'Experimental correction for iPhone and iPad prompt typing. May change punctuation in commands. Turn off for complex text editing.',
-    keywords: ['keyboard', 'spelling', 'predictive', 'typing'],
+    label: 'Mobile autocorrect',
+    description: 'Keyboard suggestions and corrections on iOS and Android. Experimental; turn off for complex text editing.',
+    keywords: ['keyboard', 'spelling', 'predictive', 'typing', 'gboard', 'iphone', 'ipad'],
     tags: ['device'],
-    Control: IosAutocorrectControl,
-  },
-  {
-    id: 'android-autocorrect',
-    page: 'terminal',
-    label: 'Android autocorrect',
-    description: 'Experimental keyboard correction for Android prompt typing. Turn off for complex text editing.',
-    keywords: ['keyboard', 'spelling', 'predictive', 'typing', 'gboard'],
-    tags: ['device'],
-    Control: AndroidAutocorrectControl,
+    Control: MobileAutocorrectControl,
   },
   {
     id: 'webgl',

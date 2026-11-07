@@ -739,7 +739,7 @@ export function useTerminal({
       const updateAutocorrect = () => {
         // Recovery drafts use xterm's ordinary input path, not terminal correction sequences.
         const settings = useSettingsStore.getState()
-        const enabled = (isiOS ? settings.iosAutocorrect : isAndroid && settings.androidAutocorrect)
+        const enabled = (isiOS || isAndroid) && settings.mobileAutocorrect
           && !!readySessionRef.current && !deferInputRef.current
         if (enabled === !!nativeInputRef.current) return
         nativeInputRef.current?.dispose()
@@ -757,7 +757,7 @@ export function useTerminal({
       updateNativeInputRef.current = updateAutocorrect
       updateAutocorrect()
       unsubscribeAutocorrect = useSettingsStore.subscribe((state, previous) => {
-        if (state.iosAutocorrect !== previous.iosAutocorrect || state.androidAutocorrect !== previous.androidAutocorrect) updateAutocorrect()
+        if (state.mobileAutocorrect !== previous.mobileAutocorrect) updateAutocorrect()
       })
       fitAddon.fit()
 

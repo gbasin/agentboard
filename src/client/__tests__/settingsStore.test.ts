@@ -364,7 +364,7 @@ describe('preset migration', () => {
     ])
     expect(defaultPresetId).toBe(custom.id)
     const persisted = JSON.parse(storage.getItem('agentboard-settings')!)
-    expect(persisted.version).toBe(8)
+    expect(persisted.version).toBe(9)
     await useSettingsStore.persist.rehydrate()
     expect(useSettingsStore.getState().commandPresets).toEqual(commandPresets)
   })
@@ -419,7 +419,7 @@ describe('preset migration', () => {
 describe('settings persistence migration', () => {
   test('runs the hibernating/history expansion rename for v5 persisted state', async () => {
     const options = useSettingsStore.persist.getOptions()
-    expect(options.version).toBe(8)
+    expect(options.version).toBe(9)
     if (!options.migrate) {
       throw new Error('Expected settings migration to be configured')
     }
@@ -460,4 +460,33 @@ describe('manual session order persistence', () => {
 afterAll(() => {
   globalAny.window = originalWindow
   globalAny.localStorage = originalLocalStorage
+})
+
+
+describe('mobile autocorrect migration', () => {
+  for (const [userAgent, legacy, expected] of [
+    ['iPhone', { iosAutocorrect: false, androidAutocorrect: true }, false],
+    ['Android', { iosAutocorrect: false, androidAutocorrect: true }, true],
+    ['Android', { iosAutocorrect: true, androidAutocorrect: false }, false],
+    ['Android', { iosAutocorrect: false }, true],
+    ['iPhone', { mobileAutocorrect: false, iosAutocorrect: true }, false],
+  ] as const) {
+    test(`${userAgent} preserves ${JSON.stringify(legacy)}`, async () => {
+      const original = Object.getOwnPropertyDescriptor(globalThis, 'navigator')
+      Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { userAgent } })
+      try {
+        storage.setItem('agentboard-settings', JSON.stringify({ version: 8, state: legacy }))
+        await useSettingsStore.persist.rehydrate()
+        expect(useSettingsStore.getState().mobileAutocorrect).toBe(expected)
+        const saved = JSON.parse(storage.getItem('agentboard-settings')!)
+        expect(saved.version).toBe(9)
+        expect(saved.state.mobileAutocorrect).toBe(expected)
+        expect(saved.state).not.toHaveProperty('iosAutocorrect')
+        expect(saved.state).not.toHaveProperty('androidAutocorrect')
+      } finally {
+        if (original) Object.defineProperty(globalThis, 'navigator', original)
+        else Reflect.deleteProperty(globalThis, 'navigator')
+      }
+    })
+  }
 })
