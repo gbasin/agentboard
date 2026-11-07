@@ -84,8 +84,8 @@ describe('scroll-driven MediaRail', () => {
 
   test('summary counts render without downloading descriptors; only opening fetches', async () => {
     const r = render(session({ mediaSummary: summary({ total: 3, images: 2, links: 1 }) }))
-    const text = find(r, 'media-rail-pill')[0].findAllByType('span').map(s => s.children.join('')).join('')
-    expect(text).toBe('Media21')
+    const text = find(r, 'media-rail-pill')[0].findAllByType('span').filter(s => s.children.every(c => typeof c === 'string')).map(s => s.children.join('')).join('')
+    expect(text).toBe('Media2Links1')
     expect(requests).toHaveLength(0)
     await open(r)
     expect(requests.map(r => r.url)).toEqual(['/api/session-media/s/items?stream=1&kind=media'])
@@ -93,6 +93,20 @@ describe('scroll-driven MediaRail', () => {
     await flush(() => button(r, 'Collapse media rail').props.onClick())
     await open(r)
     expect(requests).toHaveLength(1)
+  })
+
+  test('pill groups mixed counts and omits absent categories without fetching', async () => {
+    const r = render(session({ mediaSummary: summary({ total: 379, images: 250, documents: 3, links: 121, previews: 5 }) }))
+    const groups = () => find(r, 'media-rail-pill')[0].findAllByType('span')
+      .filter(s => s.props.className === 'inline-flex items-center gap-[6px]')
+      .map(s => s.findAllByType('span').filter(child => child.children.every(c => typeof c === 'string')).map(child => child.children.join('')).join(''))
+    expect(groups()).toEqual(['Media253', 'Links121', 'Previews5'])
+    expect(find(r, 'media-rail-pill')[0].props['aria-label']).toBe('Open media, links and previews: 379 items')
+    await update(r, session({ mediaSummary: summary({ total: 1, images: 0, previews: 1 }) }))
+    expect(groups()).toEqual(['Media0', 'Previews1'])
+    await update(r, session({ mediaSummary: undefined }))
+    expect(groups()).toEqual(['Media…'])
+    expect(requests).toHaveLength(0)
   })
 
   test('waits for terminal readiness, then loads exactly one page', async () => {
@@ -440,7 +454,7 @@ test('synthetic pending zero counts show an unknown count and remain open throug
   const r = render(session({ mediaSummary: summary({ total: 0, images: 0, additions: 0, discovery: { status: 'pending' } }) }))
   const pill = find(r, 'media-rail-pill')[0]
   expect(pill.props['aria-label']).toBe('Open media, links and previews')
-  expect(pill.findAllByType('span').map(s => s.children.join('')).join('')).toContain('…')
+  expect(pill.findAllByType('span').filter(s => s.children.every(c => typeof c === 'string')).map(s => s.children.join('')).join('')).toContain('…')
   await open(r)
   await flush(() => { stream.send(snapshot()); stream.send(progress({ discovery: { status: 'ready' } })); stream.end() })
   await update(r, session())

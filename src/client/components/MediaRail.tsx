@@ -314,18 +314,23 @@ function SessionMediaRail({ session, ready = false, onPreview, choosePreview = 0
             setExpanded(true)
           }}
           aria-label={`Open media, links and previews${counts && !pendingEmpty ? `: ${counts.total} ${counts.total === 1 ? 'item' : 'items'}` : ''}${attention !== 'idle' ? ', new media' : ''}`}
-          className={`absolute top-2 right-2 z-40 flex items-center gap-1.5 rounded-full border border-border bg-elevated/90 px-3 py-1.5 text-xs text-secondary shadow-lg backdrop-blur transition-colors hover:text-primary md:min-h-[30px] md:gap-[6px] md:px-[12px] md:py-[5px] md:text-[12px] md:leading-[18px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${attention === 'pulsing' ? 'media-attention' : ''} ${TOUCH_TARGET_CLASS}`}
+          className={`absolute top-2 right-2 z-40 flex items-center gap-[12px] whitespace-nowrap rounded-full border border-border bg-elevated/90 px-3 py-1.5 text-xs text-secondary shadow-lg backdrop-blur transition-colors hover:text-primary md:min-h-[30px] md:gap-[16px] md:px-[12px] md:py-[5px] md:text-[12px] md:leading-[18px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${attention === 'pulsing' ? 'media-attention' : ''} ${TOUCH_TARGET_CLASS}`}
         >
-          <Image01Icon width={ICON_SIZE.pill} height={ICON_SIZE.pill} className="md:h-[16px] md:w-[16px]" />
-          <span className="hidden md:inline">Media</span>
-          <span className="tabular-nums">{pendingEmpty ? '…' : mediaCount ?? '…'}</span>
-          {!!counts?.links && <>
+          <span className="inline-flex items-center gap-[6px]">
+            <Image01Icon width={ICON_SIZE.pill} height={ICON_SIZE.pill} className="md:h-[16px] md:w-[16px]" />
+            <span className="hidden md:inline">Media</span>
+            <span className="tabular-nums">{pendingEmpty ? '…' : mediaCount ?? '…'}</span>
+          </span>
+          {!!counts?.links && <span className="inline-flex items-center gap-[6px]">
             <Link01Icon width={ICON_SIZE.pill} height={ICON_SIZE.pill} />
-            <span className="tabular-nums">{counts?.links}</span>
-          </>}
-          {!!counts?.previews && <>
-            <BrowserIcon width={ICON_SIZE.pill} height={ICON_SIZE.pill} /><span className="tabular-nums">{counts.previews}</span>
-          </>}
+            <span className="hidden md:inline">Links</span>
+            <span className="tabular-nums">{counts.links}</span>
+          </span>}
+          {!!counts?.previews && <span className="inline-flex items-center gap-[6px]">
+            <BrowserIcon width={ICON_SIZE.pill} height={ICON_SIZE.pill} />
+            <span className="hidden md:inline">Previews</span>
+            <span className="tabular-nums">{counts.previews}</span>
+          </span>}
           {attention !== 'idle' && (
             <span data-testid="media-rail-new-dot" aria-hidden="true" className="h-[6px] w-[6px] shrink-0 rounded-full bg-accent" />
           )}
