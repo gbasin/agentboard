@@ -39,7 +39,7 @@ struct NativeSettingsView: View {
     private var newSessionSettings: some View {
         Section {
             row("new sessions default project directory") {
-                TextField("Default project directory", text: $defaultPath).textInputAutocapitalization(.never).autocorrectionDisabled()
+                FormField("Default project directory") { TextField("Default project directory", text: $defaultPath).textInputAutocapitalization(.never).autocorrectionDisabled() }
                 Button("Save directory") { preferences.set("defaultProjectDir", .string(defaultPath)) }
             }
             row("new sessions command presets") { NavigationLink("Command presets") { PresetSettingsView(preferences: preferences) } }
@@ -52,7 +52,7 @@ struct NativeSettingsView: View {
                     Text("System").tag("system"); Text("Light").tag("light"); Text("Dark").tag("dark")
                 }
             }
-            row("appearance terminal custom font family") { TextField("Terminal font family", text: $font).textInputAutocapitalization(.never).autocorrectionDisabled() }
+            row("appearance terminal custom font family") { FormField("Terminal font family") { TextField("Terminal font family", text: $font).textInputAutocapitalization(.never).autocorrectionDisabled() } }
             row("appearance font size") { Stepper("Font size: \(fontSize)", value: $fontSize, in: 6...24) }
             row("appearance line height") { VStack(alignment: .leading) { Text("Line height: \(lineHeight, specifier: "%.1f")"); Slider(value: $lineHeight, in: 1...2, step: 0.1) } }
             row("appearance letter spacing") { VStack(alignment: .leading) { Text("Letter spacing: \(letterSpacing, specifier: "%.0f")"); Slider(value: $letterSpacing, in: -3...3, step: 1) } }
@@ -181,8 +181,8 @@ struct PresetEditor: View {
                 Text("Terminal").tag("")
                 ForEach(["claude", "codex", "pi", "devin", "grok", "omp"], id: \.self) { Text($0.capitalized).tag($0) }
             }
-            TextField("Label", text: $preset.label)
-            TextField("Command", text: $preset.command).textInputAutocapitalization(.never).autocorrectionDisabled()
+            FormField("Label") { TextField("Label", text: $preset.label) }
+            FormField("Command") { TextField("Command", text: $preset.command).textInputAutocapitalization(.never).autocorrectionDisabled() }
         }.navigationTitle("Command preset").navigationBarTitleDisplayMode(.inline).toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
             ToolbarItem(placement: .confirmationAction) { Button("Save") { preset.label = preset.label.trimmingCharacters(in: .whitespacesAndNewlines); preset.command = preset.command.trimmingCharacters(in: .whitespacesAndNewlines); save(preset); dismiss() }.disabled(preset.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || preset.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || preset.label.count > 64 || preset.command.count > 1024) }

@@ -187,13 +187,16 @@ struct LiveSessionListView: View {
                 if !dynamicTypeSize.isAccessibilitySize { Spacer(minLength: 8) }
                 SessionStatus(status: session.status)
             }
-            if preferences.bool("showProjectName", true) { Text(URL(fileURLWithPath: session.project).lastPathComponent).font(.caption).foregroundStyle(.secondary) }
+            let metadata = [
+                preferences.bool("showProjectName", true) ? URL(fileURLWithPath: session.project).lastPathComponent : nil,
+                session.agent,
+                session.remote ? session.host : nil
+            ].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+            if !metadata.isEmpty { Text(metadata).font(.caption).foregroundStyle(.secondary) }
             if preferences.bool("showSessionIdPrefix"), let id = session.agentSessionID { Text(String(id.prefix(5))).font(.caption.monospaced()) }
             if preferences.bool("showLastUserMessage", true) && !session.summary.isEmpty {
                 Text(session.summary).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
             }
-            Text([session.agent, session.host].compactMap { $0 }.joined(separator: " · "))
-                .font(.caption).foregroundStyle(.secondary)
             if !board.canOpen(session) {
                 Text(session.status == .sleeping ? "Wake in Agentboard to open" : "Remote attachment disabled by server")
                     .font(.caption).foregroundStyle(.secondary)

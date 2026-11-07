@@ -61,9 +61,9 @@ struct SessionActionSheet: View {
                         }
                     }
                     Section {
-                        TextField("Project directory", text: $project).accessibilityIdentifier("session-project").focused($focusedField, equals: "project")
-                        TextField("Command", text: $command).accessibilityIdentifier("session-command").focused($focusedField, equals: "command")
-                        TextField("Name (optional)", text: $name).accessibilityIdentifier("session-name").focused($focusedField, equals: "name")
+                        FormField("Project directory") { TextField("Project directory", text: $project).accessibilityIdentifier("session-project").focused($focusedField, equals: "project") }
+                        FormField("Command") { TextField("Command", text: $command).accessibilityIdentifier("session-command").focused($focusedField, equals: "command") }
+                        FormField("Name (optional)") { TextField("Name (optional)", text: $name).accessibilityIdentifier("session-name").focused($focusedField, equals: "name") }
                     } footer: { Text("The directory and command run on the Agentboard server. For example: /path/to/project and codex.") }
                     if permission.available {
                         Toggle("Skip permission prompts", isOn: Binding(get: { permission.enabled }, set: { command = CommandPermission.set(command, enabled: $0) }))
@@ -77,7 +77,7 @@ struct SessionActionSheet: View {
                                 ForEach(hosts) { Text($0.host + ($0.ok ? "" : " · unavailable")).tag($0.host) }
                             }
                         }
-                        TextField("Remote host (optional)", text: $host).accessibilityIdentifier("session-host").focused($focusedField, equals: "host")
+                        FormField("Remote host (optional)") { TextField("Remote host (optional)", text: $host).accessibilityIdentifier("session-host").focused($focusedField, equals: "host") }
                     } footer: { Text("Leave blank to use the connected server. A remote host must be configured in Agentboard.") }
                     if host.isEmpty {
                         Button("Browse directories", systemImage: "folder") { browse = true }

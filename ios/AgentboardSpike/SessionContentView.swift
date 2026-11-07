@@ -165,7 +165,8 @@ struct PullRequestView: View {
             if let info {
                 Section {
                     Text(info.title ?? "Pull request #\(item.number)").font(.headline)
-                    Text([info.state, info.isDraft == true ? "Draft" : nil, info.author].compactMap { $0 }.joined(separator: " · "))
+                    let metadata = [info.state, info.isDraft == true ? "Draft" : nil, info.author].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+                    if !metadata.isEmpty { Text(metadata).font(.subheadline).foregroundStyle(.secondary) }
                     if let error = info.error {
                         Text(error == "unavailable" ? "Pull request details are unavailable. Check GitHub access on the server." : error)
                         Button("Retry") { Task { await load() } }
