@@ -8,7 +8,8 @@ import tty
 saved = termios.tcgetattr(0)
 try:
     tty.setraw(0)
-    os.write(1, b'\x1b[2J\x1b[HNative paste test. Long-press the prompt below.\r\nOutput remains selectable.\r\n\x1b[?2004h\x1b[?1000h\x1b[?1006hprompt> ')
+    mouse = b'' if '--no-mouse' in sys.argv else b'\x1b[?1000h\x1b[?1006h'
+    os.write(1, b'\x1b[2J\x1b[HNative paste test. Long-press the prompt below.\r\nOutput remains selectable.\r\n\x1b[?2004h' + mouse + b'prompt> ')
     with open(sys.argv[1], 'ab', buffering=0) as log:
         while True:
             chunk = os.read(0, 4096)

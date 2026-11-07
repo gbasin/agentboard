@@ -4,7 +4,7 @@ on:
   push:
     branches: [master, main]
   pull_request:
-    branches: [master, main]
+  workflow_dispatch:
 
 jobs:
   ci:
@@ -12,7 +12,7 @@ jobs:
     # Bun spawns under `bun test --coverage`: the server boot via Bun.spawn in
     # integration tests never becomes healthy regardless of timeout (verified
     # at 60s+ wrappers). Investigating root cause separately; the e2e job
-    # below stays on ubuntu-latest because Playwright's own webServer launch
+    # below stays on ubuntu-24.04 because Playwright's own webServer launch
     # is unaffected.
     runs-on: ubuntu-22.04
     steps:
@@ -40,6 +40,16 @@ jobs:
       - name: Test (coverage)
         run: bun run test:coverage
 
+      - name: Activity backend coverage (100 percent line threshold)
+        run: bun run test:activity:coverage
+
+      - name: Upload activity coverage
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: activity-coverage
+          path: coverage/activity/
+
       - name: Upload coverage artifact
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
@@ -50,44 +60,174 @@ jobs:
       - name: Build
         run: bun run build
 
+  # The browser suites and the real-tmux unit tests, one suite or one shard
+  # per job. In one job they ran one after the other and took about 27
+  # minutes. Each suite starts its own server and its own private tmux server,
+  # so the jobs do not share state. Inside a job the specs still run with one
+  # worker, because they mutate one application, catalog, and tmux fixture.
+  #
+  # Playwright divides the test groups of a suite between the shards, in
+  # order, by number of tests. A spec file is one group, or more than one when
+  # it changes browser options inside the file. A change to the number of
+  # tests can move a group to another shard.
   e2e:
-    runs-on: ubuntu-latest
+    name: e2e (${{ matrix.name }})
+    # Playwright 1.57 does not support the ubuntu-26.04 image behind latest.
+    runs-on: ubuntu-24.04
+    # The slowest job normally takes about 6 minutes. Without a limit, a stuck
+    # step holds the runner for the 6-hour default.
+    timeout-minutes: 20
+    # The official Playwright image has Chromium, WebKit, and their system
+    # libraries. On the plain runner, `playwright install --with-deps` downloads
+    # more than 100 packages with apt from the runner's Ubuntu mirror
+    # (azure.archive.ubuntu.com) in each job. On 2026-11-06 a slow mirror kept
+    # that step running for 28 minutes twice, and made one of the eight
+    # browser installs of a sharded run fail at a 5-minute limit. The tag must
+    # equal the Playwright version in bun.lock; a step below checks it, so an
+    # upgrade of Playwright must change the tag and PLAYWRIGHT_IMAGE_VERSION.
+    # The jobs run as root (the image default) because they must install tmux
+    # and a compiler. --ipc=host keeps Chromium off Docker's 64 MB /dev/shm,
+    # and --init reaps the child processes of the browsers.
+    container:
+      image: mcr.microsoft.com/playwright:v1.57.0-noble
+      options: --ipc=host --init
+    # The default shell of a container job is `sh -e`. The version check below
+    # uses `[[`, which needs bash. `shell: bash` also turns on pipefail.
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      # A failure in one suite says nothing about the others; let them finish.
+      fail-fast: false
+      matrix:
+        include:
+          # The ci job skips real-tmux tests (no tmux there); this job has
+          # tmux. It runs the whole suite the way the release workflow's commit
+          # hook does (Linux, tmux present), so a real-tmux test that only
+          # fails on Linux is caught here instead of failing the release's
+          # master sync step.
+          - name: unit and real tmux
+            id: unit
+            run: bun run test
+
+          - name: main 1/3
+            id: main-1
+            run: bunx playwright test --workers=1 --shard=1/3
+          - name: main 2/3
+            id: main-2
+            run: bunx playwright test --workers=1 --shard=2/3
+          - name: main 3/3
+            id: main-3
+            run: bunx playwright test --workers=1 --shard=3/3
+
+          - name: media and links, WebKit 1/2
+            id: links-1
+            run: bunx playwright test --config playwright.links.config.ts --project webkit --shard=1/2
+          - name: media and links, WebKit 2/2
+            id: links-2
+            run: bunx playwright test --config playwright.links.config.ts --project webkit --shard=2/2
+
+          - name: native iOS paste prototype
+            id: native-paste
+            run: |
+              VITE_IOS_NATIVE_PASTE_PROTOTYPE=1 bun run build
+              IOS_NATIVE_PASTE_E2E=1 PLAYWRIGHT_HTML_OUTPUT_DIR=playwright-native-paste-report \
+                bunx playwright test tests/e2e/native-paste.spec.ts --workers=1 --reporter=line,html
+
+          - name: iOS autocorrect
+            id: autocorrect
+            run: bunx playwright test --config playwright.autocorrect.config.ts
+
+          - name: terminal resume
+            id: resume
+            run: >-
+              PLAYWRIGHT_HTML_OUTPUT_DIR=playwright-resume-report
+              bunx playwright test --config playwright.resume.config.ts --reporter=line,html
+
+          - name: session activity matrix
+            id: activity
+            retention: 14
+            run: >-
+              PLAYWRIGHT_HTML_OUTPUT_DIR=playwright-activity-report
+              bunx playwright test --config playwright.activity.config.ts --reporter=line,html
+
+          - name: contention
+            id: contention
+            run: |
+              bun scripts/verify-pr-request-priority.ts
+              PLAYWRIGHT_HTML_OUTPUT_DIR=playwright-contention-report \
+                bunx playwright test --config playwright.contention.config.ts --reporter=line,html
+    env:
+      PLAYWRIGHT_HTML_OPEN: never
+      # The runner sets a UTF-8 locale; the image sets none. tmux needs one.
+      LANG: C.UTF-8
+      # Docker exports HOSTNAME (the container id); the runner does not. The
+      # server reads HOSTNAME as its bind address, and prints a warning when
+      # it ignores the machine name. A test expects an empty stderr.
+      HOSTNAME: ''
     steps:
+      # tmux for the tests, a compiler for node-pty (see below), unzip for
+      # setup-bun, and the process tools that the server and the tests run.
+      # This is the only apt step of the job, and it normally takes 11 to 16
+      # seconds. It uses the mirror of the image (archive.ubuntu.com), not the
+      # mirror of the runner. The limit makes a slow mirror fail in minutes;
+      # run the job again to get a new runner.
+      - name: Install tmux and build tools
+        timeout-minutes: 5
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            tmux g++ make python3 unzip procps lsof openssh-client
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      # The workspace belongs to the user of the runner, and the job runs as root.
+      - name: Let git use the workspace
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6  # v2.2.0
         with:
           bun-version-file: .bun-version
 
+      # Linux node-pty has no bundled prebuild; do not rely on runner-global tools.
+      - name: Install native build tooling
+        run: npm install --global node-gyp@11.5.0
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Install tmux
-        run: sudo apt-get update && sudo apt-get install -y tmux
-
-      - name: Install Playwright browsers
-        run: bunx playwright install --with-deps chromium
+      - name: Check that the container has the resolved Playwright version
+        env:
+          # Keep equal to the tag of the container image above.
+          PLAYWRIGHT_IMAGE_VERSION: 1.57.0
+        run: |
+          resolved="$(bunx playwright --version | awk '{print $2}')"
+          echo "Resolved Playwright: $resolved; container: $PLAYWRIGHT_IMAGE_VERSION"
+          if [[ "$resolved" != "$PLAYWRIGHT_IMAGE_VERSION" ]]; then
+            echo "::error::Playwright is $resolved but the e2e container is $PLAYWRIGHT_IMAGE_VERSION. Update the image tag in ci.yml."
+            exit 1
+          fi
 
       - name: Build
         run: bun run build
 
-      - name: Run e2e tests
-        run: bunx playwright test
+      - name: Run ${{ matrix.name }}
+        run: ${{ matrix.run }}
 
-      # The ci job skips real-tmux tests (no tmux there); this job has tmux.
-      # Run the whole suite the way the release workflow's commit hook does
-      # (Linux, tmux present), so a real-tmux test that only fails on Linux is
-      # caught here instead of failing the release's master sync step.
-      - name: Unit and real-tmux tests (Linux with tmux)
-        run: bun run test
-
-      - name: Upload test results
+      # Reports, traces, and screenshots. Most suites write them only when a
+      # test fails, so an empty upload is normal. The attempt number keeps the
+      # artifacts of a failed attempt when someone runs the job again.
+      - name: Upload reports and traces
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          name: playwright-report
-          path: playwright-report/
-          retention-days: 7
+          name: e2e-${{ matrix.id }}-attempt-${{ github.run_attempt }}
+          path: |
+            playwright-report/
+            playwright-*-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: ${{ matrix.retention || 7 }}
 
   # The grouped-session PTY leak only exists on macOS: there a process keeps
   # its tty after the pty master closes, and the fix finds the discarded shell
@@ -111,3 +251,20 @@ jobs:
         run: |
           bun test src/server/__tests__/groupedSessionLeak.integration.test.ts
           bun test src/server/__tests__/e2eTmuxReap.integration.test.ts
+
+      - name: Terminal relay lifecycle regression (real tmux)
+        run: bun test src/server/__tests__/terminalRelay.integration.test.ts
+
+      - name: Build and smoke-test compiled terminal relay
+        timeout-minutes: 5
+        run: |
+          bun run build
+          bun build src/server/index.ts src/server/sessionRefreshWorker.ts src/server/logMatchWorker.ts src/server/devinSyncWorker.ts src/server/stallWatchdogWorker.ts src/server/sessionReadWorker.ts src/server/sessionMetadataWorker.ts src/server/sessionActivityWorker.ts src/server/mediaDiscoveryReaderWorker.ts src/server/mediaDiscoveryWriterWorker.ts src/server/mediaThumbnailWorker.ts src/server/terminalRelayWorker.ts src/server/terminalSessionWorker.ts src/server/paneOutputWorker.ts --compile --outfile "$RUNNER_TEMP/agentboard-relay-smoke"
+          bun scripts/verify-terminal-relay-binary.ts "$RUNNER_TEMP/agentboard-relay-smoke"
+          bun scripts/verify-media-discovery-binary.ts "$RUNNER_TEMP/agentboard-relay-smoke"
+
+      - name: Compiled thumbnail worker recovery and shutdown regression
+        timeout-minutes: 2
+        run: |
+          bun build scripts/verify-media-thumbnail-worker.ts scripts/fixtures/mediaThumbnailDelayedWorker.ts src/server/mediaThumbnailWorker.ts --compile --outfile "$RUNNER_TEMP/agentboard-thumbnail-smoke"
+          "$RUNNER_TEMP/agentboard-thumbnail-smoke"

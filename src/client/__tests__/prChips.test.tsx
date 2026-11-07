@@ -493,6 +493,50 @@ describe('PrChips info fetch resilience', () => {
     globalThis.fetch = originalFetch
   })
 
+  test('many mounted rows share bounded batches and a late hover shares checks', async () => {
+    const prs = Array.from({ length: 18 }, (_, i) => prFor(200 + i))
+    const batches: string[][] = []
+    const release: (() => void)[] = []
+    let checkCalls = 0
+    let releaseChecks!: () => void
+    globalThis.fetch = mock((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).startsWith('/api/pr-checks')) {
+        checkCalls++
+        return new Promise<Response>(resolve => { releaseChecks = () => resolve(new Response(JSON.stringify({ url: prs[0].url, checks: [{ name: 'shared-check', status: 'COMPLETED', conclusion: 'SUCCESS' }] }))) })
+      }
+      const { urls } = JSON.parse(String(init?.body)) as { urls: string[] }
+      batches.push(urls)
+      return new Promise<Response>(resolve => { release.push(() => resolve(new Response(JSON.stringify(urls.map(url => ({ url, state: 'OPEN' })))))) })
+    }) as unknown as typeof fetch
+    const renderers: TestRenderer.ReactTestRenderer[] = []
+    act(() => {
+      for (const pr of prs) renderers.push(TestRenderer.create(<PrChips prs={[pr]} />, { createNodeMock }))
+    })
+    await act(async () => {})
+    expect(batches).toHaveLength(1)
+    expect(batches[0]).toHaveLength(8)
+    openCard(renderers[0].root)
+    await act(async () => {})
+    expect(checkCalls).toBe(1)
+    // A second chip opens while the first hover's request is still pending.
+    let late!: TestRenderer.ReactTestRenderer
+    act(() => { late = TestRenderer.create(<PrChips prs={[prs[0]]} />, { createNodeMock }) })
+    openCard(late.root)
+    act(() => renderers[0].unmount())
+    releaseChecks()
+    await act(async () => {})
+    expect(checkCalls).toBe(1)
+    expect(JSON.stringify(late.toJSON())).toContain('shared-check')
+    for (let i = 0; i < 3; i++) {
+      release[i]()
+      await act(async () => {})
+    }
+    expect(batches.map(batch => batch.length)).toEqual([8, 8, 2])
+    expect(batches.flat()).toEqual(prs.map(pr => pr.url))
+    for (const renderer of renderers.slice(1)) act(() => renderer.unmount())
+    act(() => late.unmount())
+  })
+
   test('error results are not cached — remount retries and colors the icon', async () => {
     const pr = prFor(1)
     fetchImpl = async () =>
@@ -528,6 +572,7 @@ describe('PrChips info fetch resilience', () => {
     act(() => {
       r1 = TestRenderer.create(<PrChips prs={[pr]} />, { createNodeMock })
     })
+    await act(async () => {}) // Same-mount calls coalesce before dispatch.
     // First chip unmounts with the request still in flight; a fresh chip
     // must subscribe to the shared promise rather than stay gray forever.
     act(() => r1.unmount())

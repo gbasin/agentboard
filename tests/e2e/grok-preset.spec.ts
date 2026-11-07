@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 
 test('Grok preset submits the grok launch command', async ({ page }, testInfo) => {
   let submitted: unknown
-  await page.routeWebSocket('/ws', (socket) => {
+  await page.routeWebSocket(/\/ws(?:\?.*)?$/, (socket) => {
     const server = socket.connectToServer()
     socket.onMessage((data) => {
       const message = JSON.parse(data.toString())

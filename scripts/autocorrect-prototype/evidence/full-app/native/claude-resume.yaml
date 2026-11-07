@@ -1,0 +1,21 @@
+appId: com.apple.webapp
+---
+- pressKey: Home
+- runFlow:
+    when:
+      notVisible: Agentboard
+    commands:
+      - swipe:
+          direction: LEFT
+- tapOn: Agentboard
+- tapOn:
+    point: "7%,16%"
+- tapOn:
+    point: "40%,45%"
+- tapOn: "t"
+- tapOn: "e"
+- tapOn: "h"
+- tapOn:
+    id: space
+- tapOn:
+    id: Return

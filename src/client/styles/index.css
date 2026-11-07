@@ -322,6 +322,17 @@ body {
   animation: pulse-complete 5s ease-out;
 }
 
+/* New media gets two brief accent pulses; its unread dot stays until opened. */
+@keyframes media-attention {
+  0%, 100% { box-shadow: 0 0 0 0 transparent; }
+  50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 30%, transparent); }
+}
+
+.media-attention {
+  border-color: var(--accent);
+  animation: media-attention 0.8s ease-in-out 2;
+}
+
 /* Terminal styles */
 .xterm {
   font-family: "JetBrains Mono Variable", "JetBrains Mono", "SF Mono", "Fira Code", ui-monospace, monospace;
@@ -346,6 +357,16 @@ body {
 
 .ios-native-term-selection .xterm .xterm-accessibility-tree > div {
   line-height: var(--xterm-cell-height, 18px);
+}
+
+/* The pane's app owns the mouse (fullscreen Claude Code, Codex): a long-press
+   drag goes to the app, which draws and copies its own selection. Keep iOS from
+   starting a second, native one over the same text. See utils/iosSelection.ts. */
+.ios-native-term-selection [data-app-mouse] .xterm .xterm-accessibility-tree,
+.ios-native-term-selection [data-app-mouse] .xterm .xterm-accessibility-tree * {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 /* Position xterm helper textarea in visible area on iOS for paste menu */
@@ -525,7 +546,8 @@ body {
 
 /* iOS safe area padding for home indicator - only when keyboard is hidden */
 /* Uses 'keyboard-visible' class toggled by useVisualViewport hook */
-/* Applies to both PWA and regular Safari on iOS */
+/* Applies to both PWA and regular Safari on iOS. The root owns this inset;
+   the terminal panel sits inside it and must not add the same padding again. */
 .ios:not(.keyboard-visible) #root {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
@@ -536,10 +558,6 @@ body {
 
 .ios-pwa .terminal-mobile-overlay {
   height: 100%;
-}
-
-.ios:not(.keyboard-visible) .terminal-mobile-overlay {
-  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* Project badge - theme-aware colors using --badge-hue custom property */
@@ -574,7 +592,8 @@ body {
   }
 
   .pulse-approval,
-  .pulse-complete {
+  .pulse-complete,
+  .media-attention {
     animation: none;
   }
 }
@@ -602,4 +621,19 @@ body {
 .ios-native-paste-prototype .xterm .xterm-helpers {
   width: 100%;
   z-index: 11;
+}
+
+/* Expand the counter hit area without increasing session-row height. Keep the
+   horizontal inset inside the existing gaps beside the name and status pill. */
+@media (pointer: coarse) {
+  .activity-counter::after,
+  .activity-status::after {
+    content: '';
+    position: absolute;
+    left: -3px;
+    right: -3px;
+    top: 50%;
+    height: 44px;
+    transform: translateY(-50%);
+  }
 }

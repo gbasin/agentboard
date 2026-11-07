@@ -131,6 +131,8 @@ interface SettingsState {
   setManualSessionOrder: (order: string[]) => void
   sidebarAnchor: SidebarAnchor
   setSidebarAnchor: (anchor: SidebarAnchor) => void
+  iosAutocorrect: boolean
+  setIosAutocorrect: (enabled: boolean) => void
   useWebGL: boolean
   setUseWebGL: (enabled: boolean) => void
   fontSize: number
@@ -145,6 +147,10 @@ interface SettingsState {
   setCustomFontFamily: (family: string) => void
   shortcutModifier: ShortcutModifier | 'auto'
   setShortcutModifier: (modifier: ShortcutModifier | 'auto') => void
+  compactMobileControls: boolean
+  setCompactMobileControls: (enabled: boolean) => void
+  showMobileSessionPeek: boolean
+  setShowMobileSessionPeek: (enabled: boolean) => void
   showProjectName: boolean
   setShowProjectName: (enabled: boolean) => void
   showLastUserMessage: boolean
@@ -203,6 +209,8 @@ export const useSettingsStore = create<SettingsState>()(
       setManualSessionOrder: (order) => set({ manualSessionOrder: order }),
       sidebarAnchor: 'top',
       setSidebarAnchor: (anchor) => set({ sidebarAnchor: anchor }),
+      iosAutocorrect: true,
+      setIosAutocorrect: (enabled) => set({ iosAutocorrect: enabled }),
       useWebGL: DEFAULT_WEBGL,
       setUseWebGL: (enabled) => set({ useWebGL: enabled }),
       fontSize: 13,
@@ -217,6 +225,10 @@ export const useSettingsStore = create<SettingsState>()(
       setCustomFontFamily: (family) => set({ customFontFamily: family.slice(0, 256) }),
       shortcutModifier: 'auto',
       setShortcutModifier: (modifier) => set({ shortcutModifier: modifier }),
+      compactMobileControls: true,
+      setCompactMobileControls: (enabled) => set({ compactMobileControls: enabled }),
+      showMobileSessionPeek: true,
+      setShowMobileSessionPeek: (enabled) => set({ showMobileSessionPeek: enabled }),
       showProjectName: true,
       setShowProjectName: (enabled) => set({ showProjectName: enabled }),
       showLastUserMessage: true,

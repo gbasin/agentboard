@@ -26,7 +26,9 @@ function createPipeHarness() {
     const stderr = new ReadableStream<Uint8Array>({
       start() {},
     })
+    let resolveThisExit: (() => void) | null = null
     const exited = new Promise<void>((resolve) => {
+      resolveThisExit = resolve
       exitResolver = resolve
     })
 
@@ -36,6 +38,7 @@ function createPipeHarness() {
       exited,
       kill: () => {
         killed = true
+        resolveThisExit?.()
       },
     } as unknown as ReturnType<typeof Bun.spawn>
   }
@@ -752,6 +755,58 @@ describe('PipePaneTerminalProxy', () => {
     const cancelCalls = harness.tmuxCalls.filter((call) => call.includes('cancel'))
     expect(cancelCalls.length).toBe(0)
 
+    await proxy.dispose()
+  })
+})
+
+describe('shared pane output lifecycle', () => {
+  test('both viewers receive output; switching and closing one preserves the other', async () => {
+    const harness = createPipeHarness()
+    const receivedA: string[] = []
+    const receivedB: string[] = []
+    const create = (id: string, received: string[]) => new PipePaneTerminalProxy({
+      connectionId: id, sessionName: id, baseSession: 'shared-regression',
+      onData: (data) => received.push(data), monitorTargets: false,
+      spawn: harness.spawn, spawnSync: harness.spawnSync,
+    })
+    const a = create('shared-a', receivedA)
+    const b = create('shared-b', receivedB)
+    try {
+      await a.switchTo('shared-regression:@1')
+      await b.switchTo('shared-regression:@1')
+      expect(harness.spawnCalls).toHaveLength(1)
+      harness.emit('both')
+      await tick()
+      expect(receivedA).toEqual(['both'])
+      expect(receivedB).toEqual(['both'])
+      await a.dispose()
+      expect(harness.wasKilled()).toBe(false)
+      harness.emit('remaining')
+      await tick()
+      expect(receivedB).toEqual(['both', 'remaining'])
+      // A reconnect is a new instance; it joins the same owner.
+      const reconnect = create('shared-reconnect', [])
+      await reconnect.switchTo('shared-regression:@1')
+      expect(harness.spawnCalls).toHaveLength(1)
+      await reconnect.switchTo('shared-regression:@2')
+      expect(harness.spawnCalls).toHaveLength(2)
+      await reconnect.dispose()
+      const stops = harness.tmuxCalls.filter((args) => getTmuxCommand(args) === 'pipe-pane' && args.length === 4)
+      expect(stops.some((args) => args[3] === 'shared-regression:@1')).toBe(false)
+      await b.dispose()
+      expect(harness.wasKilled()).toBe(true)
+    } finally { await a.dispose(); await b.dispose() }
+  })
+
+  test('disposal is terminal, including disposal from the ready callback', async () => {
+    const harness = createPipeHarness()
+    const proxy = new PipePaneTerminalProxy({
+      connectionId: 'disposed-ready', sessionName: 'disposed-ready', baseSession: 'agentboard',
+      onData: () => {}, monitorTargets: false, spawn: harness.spawn, spawnSync: harness.spawnSync,
+    })
+    await proxy.switchTo('disposed-ready:@1', () => { void proxy.dispose() })
+    expect(proxy.isReady()).toBe(false)
+    await expect(proxy.start()).rejects.toMatchObject({ code: 'ERR_NOT_READY' })
     await proxy.dispose()
   })
 })

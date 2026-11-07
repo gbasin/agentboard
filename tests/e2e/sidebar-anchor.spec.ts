@@ -464,7 +464,7 @@ test.describe('mobile', () => {
     const chord = await shortcutChord(page)
 
     // A hardware keyboard on a narrow layout: ] steps to the next session
-    // (right in the tab strip, down in the drawer), [ back.
+    // (down in the status peek and drawer), [ back.
     await page.keyboard.press(`${chord}+Digit1`)
     await expect(selected).toContainText(names[0])
     await page.keyboard.press(`${chord}+BracketRight`)

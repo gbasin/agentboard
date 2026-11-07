@@ -4,18 +4,19 @@ import XCTest
 // lift the finger and cannot exercise the TUI's mouse-selection path.
 final class NativeGestureTests: XCTestCase {
     @MainActor
-    func testClaudeOutputSelection() { select(agentTab: 0.07, marker: "CLAUDE_PASTE_alpha") }
+    func testClaudeOutputSelection() { select(agentRow: 0.155, marker: "CLAUDE_PASTE_alpha") }
 
     @MainActor
-    func testCodexOutputSelection() { select(agentTab: 0.20, marker: "CODEX_PASTE_alpha") }
+    func testCodexOutputSelection() { select(agentRow: 0.205, marker: "CODEX_PASTE_alpha") }
 
     @MainActor
-    private func select(agentTab: CGFloat, marker: String) {
+    private func select(agentRow: CGFloat, marker: String) {
         let app = XCUIApplication(bundleIdentifier: "com.apple.webapp")
         app.activate()
         let window = app.windows.firstMatch
         XCTAssertTrue(window.waitForExistence(timeout: 10))
-        window.coordinate(withNormalizedOffset: CGVector(dx: agentTab, dy: 0.16)).tap()
+        app.buttons["Open session menu"].tap()
+        window.coordinate(withNormalizedOffset: CGVector(dx: 0.20, dy: agentRow)).tap()
         // Fixture output is above the prompt; avoid the left-edge drawer gesture.
         let start = window.coordinate(withNormalizedOffset: CGVector(dx: 0.16, dy: 0.28))
         let end = window.coordinate(withNormalizedOffset: CGVector(dx: 0.44, dy: 0.28))

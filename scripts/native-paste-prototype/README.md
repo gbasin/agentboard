@@ -125,7 +125,7 @@ xcodebuild test -project NativeGestures.xcodeproj -scheme NativeGestures \
   CODE_SIGNING_ALLOWED=NO
 ```
 
-The tests assume Claude is tab 1, Codex is tab 2, and the seeded output is visible.
+The tests assume Claude is the first drawer row, Codex is the second, and the seeded output is visible.
 They hold and drag within output, then assert and tap Copy selection. Screenshots
 are attached to the XCTest result. To verify clipboard contents separately, run
 one test at a time with `-only-testing:NativeGestures/NativeGestureTests/testClaudeOutputSelection`
@@ -149,3 +149,33 @@ IOS_NATIVE_PASTE_E2E=0 E2E_PORT=18513 bunx playwright test tests/e2e/native-past
 
 Both build variants passed (two browser tests each). Lint, typecheck, and the full
 unit/integration suite also passed. No physical-device coverage is claimed.
+
+CI runs the ordinary build plus a separate opt-in build of this spec. The
+`e2e-native-paste-attempt-*` Actions artifact includes the HTML report and screenshots
+of the input target, held paste, and submitted paste. Native iOS callout evidence
+is recorded separately above; Chromium screenshots are not native callout proof.
+
+## PR integration recheck
+
+Integrated `master` at `6d38500`, including default-on iOS autocorrect and
+fullscreen TUI selection handling. Repeated native multiline Paste in both CLIs
+with autocorrect enabled in the installed PWA. Server telemetry confirmed
+standalone mode and the autocorrect adapter. Both transcript assertions passed:
+no new prompt before Return, exactly one unchanged multiline prompt after Return.
+
+Current screenshots: [Claude menu](evidence/current/claude-menu.png),
+[Claude held draft](evidence/current/claude-held.png),
+[Codex menu](evidence/current/codex-menu.png),
+[Codex held draft](evidence/current/codex-held.png).
+The older screenshots above document the initial prototype, before this integration.
+
+The browser spec now has three tests. It verifies that fullscreen TUIs retain
+their mouse-selection path and suppress native DOM selection, while plain terminal
+output remains natively selectable. This matches the selection policy on master.
+
+Both native hold-and-drag selection tests passed after integration. Evidence:
+[Claude selection](evidence/current/claude-selection.png),
+[Codex selection](evidence/current/codex-selection.png),
+[assertion results](evidence/current/results.json), and
+[standalone/autocorrect telemetry](evidence/current/telemetry.json).
+Codex's copied output was also read back from the simulator clipboard.

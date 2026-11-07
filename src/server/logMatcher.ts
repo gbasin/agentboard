@@ -366,6 +366,8 @@ export interface ExactMessageSearchOptions extends ExactMatchSearchOptions {
 
 const TOOL_NOTIFICATION_MARKERS = [
   '<task-notification>',
+  '<system-reminder>',
+  '<send_user_message_question_reply>',
   '<task-id>',
   '<output-file>',
   '<status>',
@@ -404,7 +406,7 @@ export function isToolNotificationText(text: string): boolean {
     return true
   }
   // Filter Codex CLI tool-use warnings (e.g., "Warning: apply_patch was requested via exec_command")
-  if (CODEX_TOOL_WARNING_PATTERN.test(trimmed)) {
+  if (normalized === 'tool loaded.' || CODEX_TOOL_WARNING_PATTERN.test(trimmed)) {
     return true
   }
   return TOOL_NOTIFICATION_MARKERS.some((marker) => normalized.includes(marker))
@@ -1840,7 +1842,31 @@ function processUserMessageText(text: string): string | null {
   // Strip ANSI first so marker checks see clean text — guards against future
   // log entries that wrap markers in ANSI (e.g., `\x1b[2m<task-notification>...`).
   const cleaned = stripAnsi(text)
-  if (!cleaned.trim()) return null
+    .replace(/<system-reminder\b[^>]*>[\s\S]*?<\/system-reminder>/gi, ' ')
+    .trim()
+  if (!cleaned) return null
+  // Codex question replies contain genuine user input inside a JSON envelope.
+  // Skip malformed envelopes; the marker filter also catches truncated ones.
+  const reply = cleaned.match(/^<send_user_message_question_reply>\s*([\s\S]*?)\s*<\/send_user_message_question_reply>$/i)
+  if (reply) {
+    try {
+      const answers: unknown = JSON.parse(reply[1]!)
+      if (Array.isArray(answers)) {
+        const text = answers
+          .flatMap((item: unknown) =>
+            item && typeof item === 'object' && 'answer' in item && typeof item.answer === 'string'
+              ? [item.answer.trim()]
+              : []
+          )
+          .filter(Boolean)
+          .join(' · ')
+        if (text) return text
+      }
+    } catch {
+      // Ignore harness payloads that do not contain readable user answers.
+    }
+    return null
+  }
   // Slash-command invocations come through as user messages wrapped in
   // <command-message>/<command-name>/<command-args>. Extract a readable
   // "/cmd args" form before the generic marker filter would discard them.

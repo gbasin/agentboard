@@ -2,14 +2,17 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { clientLog, setClientLogLevel } from '../utils/clientLog'
 
 const fetchMock = mock(() => Promise.resolve())
+let originalFetch = globalThis.fetch
 
 beforeEach(() => {
+  originalFetch = globalThis.fetch
   globalThis.fetch = fetchMock as unknown as typeof fetch
   fetchMock.mockClear()
   setClientLogLevel('info') // reset to default
 })
 
 afterEach(() => {
+  globalThis.fetch = originalFetch
   setClientLogLevel('info')
 })
 

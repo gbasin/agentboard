@@ -382,6 +382,30 @@ describe('useSuspendTerminalInput', () => {
     expect(gear.focused).toBe(0)
   })
 
+  test('opener restoration reenables the terminal without focusing it or opening a keyboard', async () => {
+    function OpenerProbe() { useSuspendTerminalInput({ restoreFocus: 'opener' }); return null }
+    const tile = fakeElement('image tile')
+    doc.activeElement = tile
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => { renderer = TestRenderer.create(<OpenerProbe />) })
+    act(() => renderer.unmount())
+    await new Promise(resolve => setTimeout(resolve, 320))
+    expect(doc.textarea?.disabled).toBe(false)
+    expect(doc.textarea?.focused).toBe(0)
+    expect(tile.focused).toBe(1)
+  })
+
+  test('opener restoration does not refocus a terminal that retained focus during a Safari click', async () => {
+    function OpenerProbe() { useSuspendTerminalInput({ restoreFocus: 'opener' }); return null }
+    doc.activeElement = doc.textarea
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => { renderer = TestRenderer.create(<OpenerProbe />) })
+    act(() => renderer.unmount())
+    await new Promise(resolve => setTimeout(resolve, 320))
+    expect(doc.textarea?.disabled).toBe(false)
+    expect(doc.textarea?.focused).toBe(0)
+  })
+
   test('leaves the terminal alone when another dialog opened during the delay', async () => {
     doc.activeElement = fakeElement('gear')
     let renderer!: TestRenderer.ReactTestRenderer

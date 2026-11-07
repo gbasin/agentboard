@@ -33,7 +33,7 @@ async function touch(page: Page, selector: string, type: 'touchstart' | 'touchen
   }, type)
 }
 
-test('native paste target is opt-in and leaves output hit-testing and selection intact', async ({ page }) => {
+test('native paste target is opt-in and leaves output hit-testing and selection intact', async ({ page }, testInfo) => {
   const name = 'native-target'
   const target = `${process.env.E2E_TMUX_SESSION}:${name}`
   const dir = mkdtempSync('/tmp/abnp-browser-')
@@ -80,19 +80,20 @@ test('native paste target is opt-in and leaves output hit-testing and selection 
     })
     expect(result.inputHit).toBe(true)
     expect(result.outputHit).toBe(true)
-    expect(result.selected).toContain('Native paste test.')
+    // Fullscreen TUIs now own selection; native DOM selection is suppressed upstream.
+    expect(result.selected).toBe('')
     expect(result.height).toBeGreaterThanOrEqual(44)
     expect(result.left).toBeGreaterThanOrEqual(0)
     expect(result.right).toBeLessThanOrEqual(result.viewport)
     await page.evaluate(() => window.getSelection()?.removeAllRanges())
-    await page.screenshot({ path: 'test-results/native-paste-target.png' })
+    await testInfo.attach('native-paste-target', { body: await page.screenshot(), contentType: 'image/png' })
   } finally {
     tmux(['kill-window', '-t', target])
     rmSync(dir, { recursive: true })
   }
 })
 
-test('callout-style paste without a keyboard shortcut holds multiline text until Enter', async ({ page }) => {
+test('callout-style paste without a keyboard shortcut holds multiline text until Enter', async ({ page }, testInfo) => {
   const name = 'native-paste-repl'
   const target = `${process.env.E2E_TMUX_SESSION}:${name}`
   tmux(['new-window', '-t', process.env.E2E_TMUX_SESSION!, '-n', name,
@@ -111,10 +112,39 @@ test('callout-style paste without a keyboard shortcut holds multiline text until
     const capture = () => tmux(['capture-pane', '-pt', target])
     await expect.poll(capture).toContain('HELD:native_alpha|native_beta')
     expect(capture()).not.toContain('SUBMITTED:')
+    await testInfo.attach('multiline-paste-held', { body: await page.screenshot(), contentType: 'image/png' })
     await page.getByRole('button', { name: 'Enter', exact: true }).click()
     await expect.poll(capture).toContain('SUBMITTED:native_alpha|native_beta')
     expect(capture().match(/SUBMITTED:/g)).toHaveLength(1)
+    await testInfo.attach('multiline-paste-submitted', { body: await page.screenshot(), contentType: 'image/png' })
   } finally {
     tmux(['kill-window', '-t', target])
+  }
+})
+
+
+test('plain terminal output remains natively selectable', async ({ page }, testInfo) => {
+  const name = 'native-plain-output'
+  const target = `${process.env.E2E_TMUX_SESSION}:${name}`
+  const dir = mkdtempSync('/tmp/abnp-browser-')
+  tmux(['new-window', '-t', process.env.E2E_TMUX_SESSION!, '-n', name,
+    ['/usr/bin/python3', resolve('scripts/native-paste-prototype/terminal.py'), join(dir, 'input.jsonl'), '--no-mouse'].map(quote).join(' ')])
+  try {
+    await attach(page, name)
+    const row = page.locator('.xterm-accessibility-tree > div:first-child')
+    await expect(row).toContainText('Native paste test.', { timeout: 20000 })
+    const selected = await row.evaluate(element => {
+      const range = document.createRange()
+      range.selectNodeContents(element)
+      const selection = window.getSelection()!
+      selection.removeAllRanges()
+      selection.addRange(range)
+      return selection.toString()
+    })
+    expect(selected).toContain('Native paste test.')
+    await testInfo.attach('plain-output-selection', { body: await page.screenshot(), contentType: 'image/png' })
+  } finally {
+    tmux(['kill-window', '-t', target])
+    rmSync(dir, { recursive: true })
   }
 })

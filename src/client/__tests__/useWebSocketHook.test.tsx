@@ -31,6 +31,7 @@ class FakeWebSocket {
   triggerOpen() {
     this.readyState = FakeWebSocket.OPEN
     this.onopen?.()
+    this.onmessage?.({ data: JSON.stringify({ type: 'server-config', catalogVersion: 2 }) })
   }
 
   triggerMessage(payload: string) {
@@ -137,6 +138,8 @@ describe('useWebSocket', () => {
       throw new Error('Expected WebSocket instance')
     }
 
+    act(() => ws.triggerOpen())
+    ws.sent = []
     const received: ServerMessage[] = []
     const unsubscribe = hookResult?.subscribe((message: ServerMessage) =>
       received.push(message)
@@ -168,4 +171,25 @@ describe('useWebSocket', () => {
       renderer.unmount()
     })
   })
+})
+
+test('activity-only session frames update the client without a parent timestamp change', () => {
+  const previous = useSessionStore.getState()
+  try {
+    const stamp = new Date().toISOString()
+    const base: import('@shared/types').Session = {
+      id: 'activity-regression', name: 'activity', tmuxWindow: 'test:@1',
+      projectPath: '/tmp/activity', source: 'managed', status: 'waiting',
+      lastActivity: stamp, createdAt: stamp,
+      activity: {
+        main: { phase: 'idle', label: 'Turn finished', tools: [] },
+        running: 1, unknown: 0, blocked: 0, total: 1, truncated: false,
+        subagents: [{ id: 'child', name: 'Review', activity: { phase: 'model', label: 'Model turn active', tools: [] } }],
+      },
+    }
+    useSessionStore.getState().setSessions([base])
+    const next = { ...base, activity: { ...base.activity!, running: 0 } }
+    useSessionStore.getState().setSessions([next])
+    expect(useSessionStore.getState().sessions[0].activity?.running).toBe(0)
+  } finally { useSessionStore.setState(previous, true) }
 })

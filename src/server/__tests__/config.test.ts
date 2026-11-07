@@ -2,6 +2,7 @@ import { afterEach, describe, expect, spyOn, test } from 'bun:test'
 import os from 'node:os'
 
 const ORIGINAL_ENV = {
+  AGENTBOARD_OWNERSHIP_MATCHING: process.env.AGENTBOARD_OWNERSHIP_MATCHING,
   PORT: process.env.PORT,
   HOSTNAME: process.env.HOSTNAME,
   TMUX_SESSION: process.env.TMUX_SESSION,
@@ -52,6 +53,7 @@ async function loadConfig(tag: string) {
   const modulePath = `../config?${tag}`
   const module = await import(modulePath)
   return module.config as {
+    ownershipMatching: boolean
     port: number
     hostname: string
     tmuxSession: string
@@ -259,4 +261,14 @@ describe('config', () => {
     process.env.AGENTBOARD_PASTE_IMAGE_MAX_BYTES = '1024.9'
     expect((await loadConfig('paste-fractional')).pasteImageMaxBytes).toBe(1024)
   })
+})
+
+
+test('ownership matching defaults on only on macOS and supports an explicit opt-out', async () => {
+  delete process.env.AGENTBOARD_OWNERSHIP_MATCHING
+  expect((await loadConfig('ownership-default')).ownershipMatching).toBe(process.platform === 'darwin')
+  process.env.AGENTBOARD_OWNERSHIP_MATCHING = 'false'
+  expect((await loadConfig('ownership-disabled')).ownershipMatching).toBe(false)
+  process.env.AGENTBOARD_OWNERSHIP_MATCHING = 'true'
+  expect((await loadConfig('ownership-enabled')).ownershipMatching).toBe(process.platform === 'darwin')
 })
