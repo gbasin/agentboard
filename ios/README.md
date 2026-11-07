@@ -23,6 +23,18 @@ Open Connection. Enter the browser's `http://` or `https://` base URL. Tap Conne
 
 The prepare script copies xterm and its licenses from the locked root dependencies. Generated vendor files and the Xcode project are ignored. Keep the bundled folder named `Web`: a top-level `Resources` folder makes macOS bundle discovery treat this iOS app as a different bundle layout and fail installation with “Missing bundle ID.”
 
+## Install on a paired iPhone
+
+Sign in to your Apple developer account in Xcode → Settings → Accounts. Enable Developer Mode on the iPhone. Pair it with the build Mac and unlock it. Prepare the project locally, or sync the generated project and vendor files to the build Mac.
+
+```sh
+./ios/scripts/install-device.sh YOUR_TEAM_ID YOUR_DEVICE_UDID https://your-agentboard-host
+```
+
+The script permits Xcode to create development signing assets and register the paired device. It installs and launches the debug app. The optional third argument sets the server address for that launch. Team and device identifiers are not stored in the project. Build logs remain in `ios/.build-device/cli-build.log`.
+
+The first m5p device-build attempt stopped at Xcode's “No Accounts” error and missing development provisioning profile. The paired iPhone was reachable with Developer Mode enabled. Installation is pending account sign-in; no physical-device validation is claimed.
+
 ## Isolated real-backend tests
 
 Run the backend on the simulator host. Give it a dedicated socket directory and data directory. Remove inherited `TMUX`. Keep the backend running while the tests run.
