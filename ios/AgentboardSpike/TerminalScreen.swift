@@ -5,6 +5,7 @@ struct TerminalScreen: View {
     @ObserveInjection var inject
     @Binding var session: BoardSession
     let endpoint: String
+    var live: BoardConnection? = nil
     let onEnd: () -> Void
     @StateObject private var terminal = TerminalBridge()
     @State private var showEnd = false
@@ -14,18 +15,28 @@ struct TerminalScreen: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        TerminalWebView(bridge: terminal, session: session, endpoint: endpoint)
+        TerminalWebView(bridge: terminal, session: session, endpoint: endpoint, live: live)
             .padding(.horizontal, 8)
             .background(Color(uiColor: .systemBackground))
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                TerminalKeyBar(terminal: terminal)
+                VStack(spacing: 0) {
+                    if live != nil && !terminal.ready {
+                        HStack {
+                            Text(terminal.connection).font(.caption)
+                            Spacer()
+                            Button("Reconnect") { live?.reconnect() }.font(.caption)
+                        }.padding(.horizontal, 12).padding(.vertical, 8)
+                            .background(.bar).accessibilityIdentifier("terminal-connection")
+                    }
+                    TerminalKeyBar(terminal: terminal).disabled(live != nil && !terminal.ready)
+                }
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     VStack(spacing: 2) {
-                        Text(session.name).font(.headline).lineLimit(1)
-                        SessionStatus(status: session.status)
+                        Text(terminal.liveSession?.name ?? session.name).font(.headline).lineLimit(1)
+                        SessionStatus(status: terminal.liveSession?.status ?? session.status)
                     }
                     .accessibilityElement(children: .combine)
                 }
@@ -34,9 +45,11 @@ struct TerminalScreen: View {
                         Section {
                             Label(terminal.connection, systemImage: endpoint.isEmpty ? "doc.text" : "network")
                         }
+                        if live == nil {
                         Button("Rename sample", systemImage: "pencil") { name = session.name; showRename = true }
                         Button(session.status == .sleeping ? "Wake sample" : "Sleep sample", systemImage: "moon") {
                             session.status = session.status == .sleeping ? .waiting : .sleeping
+                        }
                         }
                         Section("Terminal") {
                             Button("Interrupt", systemImage: "stop") { terminal.send("\u{3}") }
@@ -45,7 +58,9 @@ struct TerminalScreen: View {
                             Button("Larger text", systemImage: "textformat.size.larger") { terminal.setFont(min(22, terminal.fontSize + 1)) }
                             Button("Smaller text", systemImage: "textformat.size.smaller") { terminal.setFont(max(11, terminal.fontSize - 1)) }
                             Button("Scroll to bottom", systemImage: "arrow.down.to.line") { terminal.call("bottom") }
-                            if !endpoint.isEmpty {
+                            if let live {
+                                Button("Reconnect", systemImage: "arrow.clockwise") { live.reconnect() }
+                            } else if !endpoint.isEmpty {
                                 Button("Reconnect shell", systemImage: "arrow.clockwise") { terminal.call("reconnect") }
                             }
                         }
@@ -54,7 +69,9 @@ struct TerminalScreen: View {
                             Text("Light").tag("Light")
                             Text("Dark").tag("Dark")
                         }
-                        Button("End sample session", systemImage: "xmark.circle", role: .destructive) { showEnd = true }
+                        if live == nil {
+                            Button("End sample session", systemImage: "xmark.circle", role: .destructive) { showEnd = true }
+                        }
                     } label: {
                         Image(systemName: "ellipsis").frame(minWidth: 44, minHeight: 44)
                     }
@@ -73,7 +90,7 @@ struct TerminalScreen: View {
             }
             .enableInjection()
             .onChange(of: scenePhase) { _, phase in
-                if phase == .active { terminal.call("resume") }
+                if phase == .active && live == nil { terminal.call("resume") }
             }
     }
 }

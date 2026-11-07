@@ -54,6 +54,16 @@ targets:
         INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads: YES
         INFOPLIST_KEY_NSLocalNetworkUsageDescription: Connect to your Agentboard development server.
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+  AgentboardSpikeTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [Tests]
+    dependencies:
+      - target: AgentboardSpike
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.agentboard.ios-spike.unit-tests
+        GENERATE_INFOPLIST_FILE: YES
   AgentboardSpikeUITests:
     type: bundle.ui-testing
     platform: iOS
@@ -70,4 +80,4 @@ schemes:
       targets:
         AgentboardSpike: all
     test:
-      targets: [AgentboardSpikeUITests]
+      targets: [AgentboardSpikeTests, AgentboardSpikeUITests]

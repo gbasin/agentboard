@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import Combine
 
 @MainActor
 final class TerminalBridge: ObservableObject {
@@ -7,6 +8,8 @@ final class TerminalBridge: ObservableObject {
     @Published var control = false
     @Published var fontSize = 13
     @Published var inputFocused = false
+    @Published var ready = false
+    @Published var liveSession: BoardSession?
     weak var inputView: TerminalInputView?
     weak var webView: WKWebView?
 
@@ -27,9 +30,10 @@ struct TerminalWebView: UIViewRepresentable {
     @ObservedObject var bridge: TerminalBridge
     let session: BoardSession
     let endpoint: String
+    var live: BoardConnection? = nil
     @Environment(\.colorScheme) private var colorScheme
 
-    func makeCoordinator() -> Coordinator { Coordinator(bridge: bridge, session: session, endpoint: endpoint) }
+    func makeCoordinator() -> Coordinator { Coordinator(bridge: bridge, session: session, endpoint: endpoint, live: live) }
 
     func makeUIView(context: Context) -> TerminalContainerView {
         let configuration = WKWebViewConfiguration()
@@ -60,6 +64,9 @@ struct TerminalWebView: UIViewRepresentable {
     }
 
     static func dismantleUIView(_ container: TerminalContainerView, coordinator: Coordinator) {
+        coordinator.active = false
+        coordinator.live?.deselect(owner: coordinator.owner)
+        coordinator.subscription?.cancel()
         container.input.resignFirstResponder()
         let view = container.webView
         view.evaluateJavaScript("window.agentboard?.dispose()", completionHandler: nil)
@@ -72,26 +79,53 @@ struct TerminalWebView: UIViewRepresentable {
         let session: BoardSession
         let endpoint: String
         var dark = false
-        init(bridge: TerminalBridge, session: BoardSession, endpoint: String) {
-            self.bridge = bridge; self.session = session; self.endpoint = endpoint
+        let live: BoardConnection?
+        let owner = UUID()
+        var active = true
+        var bound = false
+        var subscription: AnyCancellable?
+        init(bridge: TerminalBridge, session: BoardSession, endpoint: String, live: BoardConnection?) {
+            self.bridge = bridge; self.session = session; self.endpoint = endpoint; self.live = live
+            super.init()
+            subscription = live?.$sessions.sink { [weak bridge] sessions in
+                bridge?.liveSession = sessions.first { $0.id == session.id }
+            }
         }
         @objc func focusTerminal() {
             // WebKit takes first responder while finishing its tap. Hand off
             // only after its event has been processed, without a timed delay.
             bridge.webView?.evaluateJavaScript("window.agentboard.prepareInput()") { [weak self] result, _ in
-                if result as? Bool == true { self?.bridge.focus() }
+                if result as? Bool == true, let self, self.active, self.live == nil || self.bridge.ready { self.bridge.focus() }
             }
         }
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
                                shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool { true }
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            bridge.call("start", ["name": session.name, "endpoint": endpoint, "dark": dark])
+            bridge.call("start", ["name": session.name, "endpoint": endpoint, "dark": dark, "native": live != nil])
         }
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
             bridge.connection = "Terminal could not load"
         }
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
             guard let data = message.body as? [String: Any] else { return }
+            if let live, active, let type = data["type"] as? String {
+                if type == "viewport", let cols = data["cols"] as? Int, let rows = data["rows"] as? Int {
+                    let size = TerminalSize(cols: cols, rows: rows)
+                    if !bound {
+                        bound = true
+                        live.select(session.id, owner: owner, size: size,
+                                    output: { [weak bridge] value in bridge?.call("write", ["data": value]) },
+                                    reset: { [weak bridge] in bridge?.call("reset") },
+                                    status: { [weak bridge] state in
+                                        bridge?.connection = state.label
+                                        bridge?.ready = state == .ready
+                                        if state != .ready { bridge?.hideKeyboard() }
+                                    })
+                    } else { live.resize(size, owner: owner) }
+                } else if let value = data["data"] as? String, type == "input" || type == "paste" {
+                    live.input(value, owner: owner, paste: type == "paste")
+                }
+            }
             if let status = data["status"] as? String { bridge.connection = status }
             if let control = data["control"] as? Bool { bridge.control = control }
         }

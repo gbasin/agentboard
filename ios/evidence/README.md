@@ -32,3 +32,19 @@ The `feat/ios-keyboard-spike` iteration replaces terminal-light, terminal-keyboa
 - `terminal-scroll-keyboard.png`, `terminal-keyboard-repeat.png`: scrolling and repeated dismissal/reopening.
 
 All five XCTest UI tests passed on the simulator above. The result bundle is `keyboard-connected.xcresult` in the remote keyboard worktree's evidence directory. A fresh finish reviewer inspected the current captures and source and returned **ship this keyboard iteration as a visual/interaction spike**, with no required implementation fix. This does not certify physical devices, IME composition, VoiceOver, multiline paste, or every device size.
+
+## Live-session slice
+
+Current live captures come from `live-verified.xcresult` on the same m5p simulator: `live-catalog.png`, `live-terminal-keyboard.png`, `live-resumed.png`, and `live-second-session.png`. They use two disposable zsh windows on a real Agentboard backend with a private tmux socket and data directory. Repeated command markers are intentional test history. `live-invalid-address.png` comes from the later contrast correction in `live-contrast.xcresult`. No production session transcript is committed.
+
+Validation on m5p:
+
+- `live-final.xcresult`: 13 passed, 1 optional tailnet test skipped.
+- `live-tailnet.xcresult`: 6 passed, including the explicit read-only Tailscale attachment.
+- `live-verified.xcresult`: 8 passed after the event decoder was changed to ignore unrelated event payloads (6 unit, 2 live UI).
+- `live-contrast.xcresult`: 1 validation UI test passed after the contrast fix.
+- Root lint/typecheck and full tests passed with Bun 1.3.14 and `LOG_LEVEL` unset: 1,859 Bun tests plus Node installer checks. The remote PATH includes `/usr/sbin` for the reaper test's `lsof` query. Local pre-commit checks reached a macOS PTY resource failure, so the matching checks were completed remotely before committing with a one-command hook override. Repository hook settings were not changed.
+
+These results do not certify signing/installation on a physical iPhone, IME, VoiceOver, multiline paste, all orientations or live dark-mode/Dynamic-Type rendering.
+
+The finish reviewer requested primary validation text with a red symbol. After recapture, the reviewer scored that sole fix resolved and returned **ship**, at the scope of the contrast correction.

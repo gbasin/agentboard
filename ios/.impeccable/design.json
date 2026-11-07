@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-07T18:18:42.004112+00:00",
-  "title": "Design System: Agentboard iPhone spike",
+  "generatedAt": "2026-11-07T18:50:04.034474+00:00",
+  "title": "Design System: Agentboard iPhone live-session slice",
   "extensions": {
     "platform": "iOS / SwiftUI with WKWebView xterm.js output and UIKit input",
     "nativeAuthority": "Preserve user-approved Apple-native defaults. Semantic colors and native controls are not translated into normative CSS or fabricated tonal ramps.",
@@ -15,7 +15,7 @@
       "workingSymbol": "Color.green",
       "waitingSymbol": "Color.orange",
       "sleepingSymbol": "Color.secondary",
-      "error": "Color.red"
+      "error": "Color.red for live validation symbol; Color.primary for live validation body text; legacy demo uses red validation text"
     },
     "nativeTypography": {
       "sessionName": "headline",
@@ -39,8 +39,8 @@
     "nativeComponents": [
       {
         "name": "Session list",
-        "source": "AgentboardSpike/SessionListView.swift",
-        "implementation": "NavigationStack, List, Section, NavigationLink, searchable"
+        "source": "AgentboardSpike/LiveSessionListView.swift",
+        "implementation": "NavigationStack, List, project Sections, searchable, refreshable; connection state and native empty states; sleeping and restricted remote rows disabled with reasons"
       },
       {
         "name": "Session status",
@@ -59,23 +59,29 @@
       },
       {
         "name": "Connection form",
-        "source": "AgentboardSpike/SessionListView.swift",
-        "implementation": "Form, TextField, native sheet and toolbar actions"
+        "source": "AgentboardSpike/LiveSessionListView.swift",
+        "implementation": "ServerConnectionSheet: native Form, HTTP(S) base-URL TextField, medium/large sheet; invalid address disables Connect; validation uses primary body text and a red exclamationmark.circle symbol"
       },
       {
         "name": "Terminal input",
         "source": "AgentboardSpike/TerminalInputView.swift",
         "implementation": "Public-API UITextView proxy owns keyboard input; tapping xterm output focuses input; no show-keyboard button or WebKit previous/next/Done accessory"
+      },
+      {
+        "name": "Live terminal connection",
+        "source": "AgentboardSpike/TerminalScreen.swift",
+        "implementation": "Inline connection message and Reconnect above the disabled quick-key row until attachment is ready; BoardConnection owns native transport"
       }
     ],
     "previewPolicy": "Native component metadata is authoritative. HTML/CSS previews are omitted because they cannot reproduce SwiftUI controls and would imply an unapproved web design.",
-    "evidence": "ios/evidence; some older captures precede primary status text correction",
-    "keyboardInput": "TerminalInputView owns input through public UIKit APIs. The SwiftUI quick-key strip is the sole accessory row; IME, VoiceOver and physical-device parity remain unverified."
+    "evidence": "ios/evidence; original spike and keyboard captures are historical. See ios/README.md for current validation scope.",
+    "keyboardInput": "TerminalInputView owns input through public UIKit APIs. The SwiftUI quick-key strip is the sole accessory row; IME, VoiceOver, multiline paste and physical-device parity remain unverified.",
+    "liveLifecycle": "Native URLSession socket at /ws?catalog=2; heartbeat and reconnect backoff; background suspension and foreground selected-session reattachment; no disconnected input replay; fresh socket per selection isolates same-ID stale responses."
   },
   "components": [],
   "narrative": {
     "northStar": "A native iPhone window onto working agents",
-    "overview": "Use the user-approved Apple-native direction: San Francisco, semantic iOS surfaces, system blue actions, SF Symbols, native navigation and sheets. The terminal owns the detail screen. This documents the isolated SwiftUI visual spike, not a redesign of the web app or a final framework decision.",
+    "overview": "Use the user-approved Apple-native direction: San Francisco, semantic iOS surfaces, system blue actions, SF Symbols, native navigation and sheets. The terminal owns the detail screen. This documents the SwiftUI live-session slice, preserving the visual world established by the earlier spike.",
     "keyCharacteristics": [
       "Native controls and system typography.",
       "Dense terminal content with compact surrounding controls.",

@@ -7,14 +7,24 @@ struct BoardSession: Identifiable, Hashable {
     let agent: String
     var status: Status
     let summary: String
+    var host: String? = nil
+    var remote = false
 
     enum Status: String, CaseIterable {
-        case working = "Working", waiting = "Waiting", sleeping = "Sleeping"
+        case working = "Working", waiting = "Waiting", sleeping = "Sleeping", permission = "Permission", unknown = "Unknown"
+        init(wireValue: String) {
+            switch wireValue {
+            case "working": self = .working
+            case "waiting": self = .waiting
+            case "permission": self = .permission
+            default: self = .unknown
+            }
+        }
         var color: Color {
             switch self {
             case .working: .green
-            case .waiting: .orange
-            case .sleeping: .secondary
+            case .waiting, .permission: .orange
+            case .sleeping, .unknown: .secondary
             }
         }
         var symbol: String {
@@ -22,6 +32,8 @@ struct BoardSession: Identifiable, Hashable {
             case .working: "circle.fill"
             case .waiting: "hand.raised.fill"
             case .sleeping: "moon.fill"
+            case .permission: "lock.fill"
+            case .unknown: "questionmark.circle"
             }
         }
     }

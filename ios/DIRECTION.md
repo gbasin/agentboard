@@ -13,3 +13,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 ## Keyboard iteration
 
 The user approved a single integrated key row and clarified that tapping the terminal should open the keyboard. Remove the redundant show-keyboard button. Use only public APIs. Keep xterm output and scrolling; route keyboard input through a native UIKit text view. Show Enter, Escape, Tab, arrows, Control, paste, and (only while focused) dismissal without horizontal scrolling. Extra terminal actions remain in the session menu. Verify shell bytes, backspace, Unicode input, safe paste, and repeated keyboard transitions before judging the visual result.
+
+## Live-session slice
+
+Continue in SwiftUI, reusing the existing Agentboard protocol over the user's Tailscale connection. Replace the default sample catalog with live sessions grouped by project. Use the existing native connection sheet for the browser's base HTTP(S) URL. Show connecting, empty, retry, and terminal attachment errors in place. Preserve terminal density and the single keyboard row. The slice opens existing sessions only; sample management actions stay in explicit demo mode. Prove typing, paste, switching, background/resume and stale-socket suppression before expanding management features.
