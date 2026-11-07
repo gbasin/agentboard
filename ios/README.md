@@ -1,6 +1,6 @@
 # Agentboard iPhone UI spike
 
-SwiftUI navigation, session list, menus, connection sheet, and terminal keys around bundled xterm.js. Session data and management actions are local samples. The optional shell fixture provides a real PTY. It does not attach to tmux or live agents. This is a design experiment, not the production iOS client.
+SwiftUI navigation, session list, menus, connection sheet, and terminal keys around bundled xterm.js. A public-API UIKit `TerminalInputView` proxy owns keyboard input; WKWebView retains terminal output and scrolling. Session data and management actions are local samples. The optional shell fixture provides a real PTY. It does not attach to tmux or live agents. This is a design experiment, not the production iOS client.
 
 ## Build
 
@@ -45,28 +45,28 @@ xcodebuild -project ios/AgentboardSpike.xcodeproj -scheme AgentboardSpike \
   -derivedDataPath ios/.build test
 ```
 
-The UI tests cover session navigation, software keyboard opening, the arrow popover, and native Enter sending a command to the real shell. The shell assertion checks output that does not appear verbatim in the command. Screenshots are XCTest attachments.
+Five UI tests cover session navigation, tap-to-open keyboard, the arrow popover, native Enter, terminal control bytes and backspace, Unicode input, paste awaiting Enter, and repeated keyboard transitions. Shell assertions check output that does not appear verbatim in the command. Screenshots are XCTest attachments. All five passed on m5p with iOS 26.4. The result bundle is `evidence/keyboard-connected.xcresult` on the simulator host; exported screenshots are committed here.
 
-## Verified environment
+## Validation environment and history
 
 - m5p, Xcode 26.4, iPhone 17 Pro simulator on iOS 26.4.
 - Simulator ID: `94EEE322-8231-4D09-8904-5DE3EFAE934B`.
-- Remote build copy: `/Users/garybasin/code/agentboard-ios-ui-spike/ios`.
-- Light/dark terminal and XXXL Dynamic Type session list captured in `evidence/`.
-- Two XCTest UI tests passed. Real PTY input also verified through dev-browser.
-- Root lint/typecheck passed; the full test runner passed with `LOG_LEVEL` unset (1,859 Bun tests plus the Node installer checks). Inherited `LOG_LEVEL=debug` causes the existing logger default-level test to fail.
+- Remote build copy: `/Users/garybasin/code/agentboard-ios-keyboard-spike/ios`.
+- Original spike: light/dark terminal and XXXL Dynamic Type session list captured in `evidence/`.
+- Original spike: two XCTest UI tests passed. Real PTY input also verified through dev-browser. These results predate the native input proxy.
+- Original spike: root lint/typecheck passed; the full test runner passed with `LOG_LEVEL` unset (1,859 Bun tests plus the Node installer checks). Inherited `LOG_LEVEL=debug` causes the existing logger default-level test to fail.
 
 ## Findings and limits
 
 The native hierarchy fits the terminal workflow. Status labels use primary text and colored symbols for light-mode contrast. The quick-key strip follows the software keyboard and has 44-point minimum targets.
 
-WKWebView retains its system previous/next/Done accessory. This costs a second row above the keyboard. Evaluate a public-API native input proxy or another terminal implementation in the next spike; do not use private class swizzling. Show/hide keyboard controls can also be consolidated.
+The keyboard iteration replaces WebKit text input with a public-API UIKit proxy, removing the previous/next/Done row. The single non-scrolling quick row contains Enter, Escape, Tab, arrows, Control and Paste. Hide keyboard appears only while terminal input has focus. Tap the terminal to open the keyboard; there is no show-keyboard button. Interrupt, Delete word and Insert newline are in Session actions. No private class swizzling is used.
 
-This spike does not establish physical-device behavior, production reconnect correctness, selection/IME parity, media handling, or performance. Tailscale is the agreed v1 transport, not an implemented onboarding flow here. SwiftUI versus React Native remains open.
+This spike does not establish physical-device behavior, production reconnect correctness, selection/IME or VoiceOver parity, media handling, or performance. Tailscale is the agreed v1 transport, not an implemented onboarding flow here. SwiftUI versus React Native remains open.
 
 ## Hot reload
 
-Verified with Inject 1.6.0 and InjectionNext 2.0.1 on m5p. A `TerminalScreen` title edit compiled in 280 ms and rebound nine symbols. The app kept PID 37100 and its terminal contents. `evidence/hot-reloaded.png` records the temporary “· live” suffix; the source was restored afterward. This is one measured edit, not an all-changes timing guarantee.
+Historical result from the original UI spike, before the native keyboard iteration: verified with Inject 1.6.0 and InjectionNext 2.0.1 on m5p. A `TerminalScreen` title edit compiled in 280 ms and rebound nine symbols. The app kept PID 37100 and its terminal contents. `evidence/hot-reloaded.png` records the temporary “· live” suffix; the source was restored afterward. This is one measured edit, not an all-changes timing guarantee.
 
 Download InjectionNext from its [releases](https://github.com/johnno1962/InjectionNext/releases). Start the app on the simulator host. Use its file-watcher mode. Do not enable compiler interception. If restarting it, wait for the old process to exit before opening the next instance; overlapping restarts left its listener unusable during this spike.
 

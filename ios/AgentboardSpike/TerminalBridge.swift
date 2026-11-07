@@ -6,6 +6,8 @@ final class TerminalBridge: ObservableObject {
     @Published var connection = "Sample transcript"
     @Published var control = false
     @Published var fontSize = 13
+    @Published var inputFocused = false
+    weak var inputView: TerminalInputView?
     weak var webView: WKWebView?
 
     func call(_ method: String, _ arguments: [String: Any] = [:]) {
@@ -14,8 +16,8 @@ final class TerminalBridge: ObservableObject {
         webView?.evaluateJavaScript("window.agentboard?.\(method)(\(json))", completionHandler: nil)
     }
     func send(_ value: String) { call("send", ["data": value]) }
-    func focus() { call("focus") }
-    func hideKeyboard() { webView?.endEditing(true); call("blur") }
+    func focus() { inputView?.becomeFirstResponder() }
+    func hideKeyboard() { inputView?.resignFirstResponder() }
     func toggleControl() { control.toggle(); call("control", ["active": control]) }
     func paste(_ value: String) { call("paste", ["data": value]) }
     func setFont(_ size: Int) { fontSize = size; call("font", ["size": size]) }
@@ -29,7 +31,7 @@ struct TerminalWebView: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(bridge: bridge, session: session, endpoint: endpoint) }
 
-    func makeUIView(context: Context) -> WKWebView {
+    func makeUIView(context: Context) -> TerminalContainerView {
         let configuration = WKWebViewConfiguration()
         configuration.userContentController.add(context.coordinator, name: "terminal")
         let view = WKWebView(frame: .zero, configuration: configuration)
@@ -39,25 +41,33 @@ struct TerminalWebView: UIViewRepresentable {
         view.scrollView.isScrollEnabled = false
         view.scrollView.contentInsetAdjustmentBehavior = .never
         view.isInspectable = true
+        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.focusTerminal))
+        tap.cancelsTouchesInView = false
+        tap.delegate = context.coordinator
+        view.addGestureRecognizer(tap)
         bridge.webView = view
         if let url = Bundle.main.url(forResource: "terminal", withExtension: "html", subdirectory: "Web") {
             view.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
         }
-        return view
+        let input = TerminalInputView(terminal: bridge)
+        bridge.inputView = input
+        return TerminalContainerView(webView: view, input: input)
     }
 
-    func updateUIView(_ view: WKWebView, context: Context) {
+    func updateUIView(_ view: TerminalContainerView, context: Context) {
         context.coordinator.dark = colorScheme == .dark
         bridge.call("theme", ["dark": colorScheme == .dark])
     }
 
-    static func dismantleUIView(_ view: WKWebView, coordinator: Coordinator) {
+    static func dismantleUIView(_ container: TerminalContainerView, coordinator: Coordinator) {
+        container.input.resignFirstResponder()
+        let view = container.webView
         view.evaluateJavaScript("window.agentboard?.dispose()", completionHandler: nil)
         view.configuration.userContentController.removeScriptMessageHandler(forName: "terminal")
         view.navigationDelegate = nil
     }
 
-    final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
+    final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler, UIGestureRecognizerDelegate {
         let bridge: TerminalBridge
         let session: BoardSession
         let endpoint: String
@@ -65,6 +75,15 @@ struct TerminalWebView: UIViewRepresentable {
         init(bridge: TerminalBridge, session: BoardSession, endpoint: String) {
             self.bridge = bridge; self.session = session; self.endpoint = endpoint
         }
+        @objc func focusTerminal() {
+            // WebKit takes first responder while finishing its tap. Hand off
+            // only after its event has been processed, without a timed delay.
+            bridge.webView?.evaluateJavaScript("window.agentboard.prepareInput()") { [weak self] result, _ in
+                if result as? Bool == true { self?.bridge.focus() }
+            }
+        }
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                               shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool { true }
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             bridge.call("start", ["name": session.name, "endpoint": endpoint, "dark": dark])
         }

@@ -1,9 +1,9 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-07T17:49:04.647786+00:00",
+  "generatedAt": "2026-11-07T18:18:42.004112+00:00",
   "title": "Design System: Agentboard iPhone spike",
   "extensions": {
-    "platform": "iOS / SwiftUI with WKWebView xterm.js",
+    "platform": "iOS / SwiftUI with WKWebView xterm.js output and UIKit input",
     "nativeAuthority": "Preserve user-approved Apple-native defaults. Semantic colors and native controls are not translated into normative CSS or fabricated tonal ramps.",
     "nativeColors": {
       "action": "Color.accentColor",
@@ -50,22 +50,27 @@
       {
         "name": "Terminal navigation",
         "source": "AgentboardSpike/TerminalScreen.swift",
-        "implementation": "Inline principal title, native back button, Menu"
+        "implementation": "Inline principal title, native back button, Menu with Interrupt, Delete word and Insert newline terminal actions"
       },
       {
         "name": "Terminal quick keys",
-        "source": "AgentboardSpike/TerminalScreen.swift",
-        "implementation": "Horizontal ScrollView in bottom safeAreaInset; native popover and paste sheet"
+        "source": "AgentboardSpike/TerminalKeyBar.swift",
+        "implementation": "Non-scrolling HStack in bottom safeAreaInset: Enter, Escape, Tab, arrows popover, Control and Paste sheet; Hide keyboard only while input has focus"
       },
       {
         "name": "Connection form",
         "source": "AgentboardSpike/SessionListView.swift",
         "implementation": "Form, TextField, native sheet and toolbar actions"
+      },
+      {
+        "name": "Terminal input",
+        "source": "AgentboardSpike/TerminalInputView.swift",
+        "implementation": "Public-API UITextView proxy owns keyboard input; tapping xterm output focuses input; no show-keyboard button or WebKit previous/next/Done accessory"
       }
     ],
     "previewPolicy": "Native component metadata is authoritative. HTML/CSS previews are omitted because they cannot reproduce SwiftUI controls and would imply an unapproved web design.",
-    "keyboardLimitation": "WKWebView retains its system previous/next/Done accessory, costing a second row above the software keyboard.",
-    "evidence": "ios/evidence; some older captures precede primary status text correction"
+    "evidence": "ios/evidence; some older captures precede primary status text correction",
+    "keyboardInput": "TerminalInputView owns input through public UIKit APIs. The SwiftUI quick-key strip is the sole accessory row; IME, VoiceOver and physical-device parity remain unverified."
   },
   "components": [],
   "narrative": {

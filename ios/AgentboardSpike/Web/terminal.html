@@ -23,6 +23,15 @@ terminal.loadAddon(fit);
 terminal.open(document.getElementById('terminal'));
 let socket, endpoint = '', control = false, configured = false, disposed = false;
 const notify = value => window.webkit?.messageHandlers?.terminal?.postMessage(value);
+// Native UIKit owns text input. Leave xterm's touch scrolling and selection
+// intact, but never let its hidden textarea activate WebKit's form keyboard.
+if (window.webkit) {
+    terminal.options.disableStdin = true;
+    terminal.textarea.readOnly = true;
+    terminal.textarea.setAttribute('inputmode', 'none');
+    terminal.textarea.disabled = true;
+}
+
 const theme = dark => {
     document.body.style.background = dark ? '#000000' : '#ffffff';
     document.body.style.setProperty('--terminal-background', dark ? '#000000' : '#ffffff');
@@ -87,6 +96,7 @@ window.agentboard = {
     start(options) { if (configured) return; configured = true; theme(options.dark); fit.fit(); endpoint = options.endpoint; endpoint ? connect() : sample(options.name); },
     send: ({data}) => send(data),
     paste: ({data}) => { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({type:'paste', data})); },
+    prepareInput: () => { if (terminal.hasSelection()) return false; document.activeElement?.blur(); return true; },
     focus: () => terminal.focus(), blur: () => terminal.blur(),
     control: ({active}) => { control = active; },
     theme: ({dark}) => theme(dark), font: ({size}) => { terminal.options.fontSize = size; fit.fit(); },

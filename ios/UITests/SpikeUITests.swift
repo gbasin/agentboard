@@ -1,6 +1,15 @@
 import XCTest
 
 final class SpikeUITests: XCTestCase {
+    override func setUp() { continueAfterFailure = false }
+    func openKeyboard(_ app: XCUIApplication) {
+        app.webViews.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.65)).tap()
+    }
+
+    func output(_ value: String, in app: XCUIApplication) -> XCUIElement {
+        app.webViews.firstMatch.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", value)).firstMatch
+    }
+
     func capture(_ name: String) {
         let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         attachment.name = name
@@ -19,8 +28,13 @@ final class SpikeUITests: XCTestCase {
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 5))
         sleep(2)
         capture("terminal-light")
-        app.buttons["Keyboard"].tap()
+        openKeyboard(app)
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["Keyboard"].exists)
+        XCTAssertTrue(app.buttons["Tab"].isHittable)
+        XCTAssertTrue(app.buttons["Hide keyboard"].isHittable)
+        XCTAssertFalse(app.buttons["Next"].exists)
+        XCTAssertFalse(app.buttons["Previous"].exists)
         capture("terminal-keyboard")
         app.buttons["Hide keyboard"].tap()
         app.buttons["Arrow keys"].tap()
@@ -32,9 +46,9 @@ final class SpikeUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-terminal", "-spikeEndpoint", "ws://127.0.0.1:4149"]
         app.launch()
-        XCTAssertTrue(app.buttons["Keyboard"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10))
         sleep(2)
-        app.buttons["Keyboard"].tap()
+        openKeyboard(app)
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         app.typeText("printf 'NATIVE_%s_OK\\n' INPUT")
         app.buttons["Enter"].tap()
@@ -45,4 +59,73 @@ final class SpikeUITests: XCTestCase {
         app.buttons["Hide keyboard"].tap()
         capture("live-shell")
     }
+
+    func testNativeControlBytes() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-terminal", "-spikeEndpoint", "ws://127.0.0.1:4149"]
+        app.launch()
+        XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10))
+        sleep(2)
+        openKeyboard(app)
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        let command = "python3 -u -c \"import sys,tty,termios; old=termios.tcgetattr(0); tty.setraw(0); print('RAW_'+'READY',flush=True); data=sys.stdin.buffer.read(10); termios.tcsetattr(0,termios.TCSADRAIN,old); print('KEY_'+'BYTES:'+data.hex())\""
+        app.typeText(command)
+        app.buttons["Enter"].tap()
+        XCTAssertTrue(output("RAW_READY", in: app).waitForExistence(timeout: 8))
+        app.buttons["Control"].tap()
+        app.typeText("c")
+        app.buttons["Tab"].tap()
+        app.buttons["Escape"].tap()
+        app.buttons["Arrow keys"].tap()
+        app.buttons["Up"].tap()
+        app.webViews.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).tap()
+        app.typeText(XCUIKeyboardKey.delete.rawValue)
+        app.buttons["Enter"].tap()
+        app.typeText("é")
+        XCTAssertTrue(output("KEY_BYTES:03091b1b5b417f0dc3a9", in: app).waitForExistence(timeout: 8))
+        XCTAssertTrue(app.keyboards.firstMatch.exists)
+        capture("native-control-bytes")
+    }
+
+    func testPasteWaitsForEnterAndRestoresKeyboard() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-terminal", "-spikeEndpoint", "ws://127.0.0.1:4149"]
+        app.launch()
+        XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10))
+        sleep(2)
+        openKeyboard(app)
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        app.buttons["Paste text"].tap()
+        let editor = app.textViews["Text to paste"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        editor.tap()
+        editor.typeText("printf 'PASTE_%s_OK\\n' SAFE")
+        app.buttons["Insert"].tap()
+        XCTAssertTrue(app.buttons["Hide keyboard"].waitForExistence(timeout: 5))
+        XCTAssertFalse(output("PASTE_SAFE_OK", in: app).exists)
+        app.buttons["Enter"].tap()
+        XCTAssertTrue(output("PASTE_SAFE_OK", in: app).waitForExistence(timeout: 5))
+        capture("native-paste")
+    }
+    func testScrollAndKeyboardTransitions() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-terminal", "-spikeEndpoint", ""]
+        app.launch()
+        XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10))
+        sleep(2)
+        openKeyboard(app)
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        app.webViews.firstMatch.swipeDown()
+        XCTAssertTrue(app.keyboards.firstMatch.exists)
+        capture("terminal-scroll-keyboard")
+        for _ in 0..<2 {
+            app.buttons["Hide keyboard"].tap()
+            XCTAssertTrue(app.buttons["Tab"].isHittable)
+            XCTAssertFalse(app.buttons["Hide keyboard"].exists)
+            openKeyboard(app)
+            XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        }
+        capture("terminal-keyboard-repeat")
+    }
+
 }

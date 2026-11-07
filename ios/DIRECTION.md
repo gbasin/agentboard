@@ -9,3 +9,7 @@ STORY: Scan sessions, open one, read and type, switch sessions without losing co
 FIRST VIEWPORT: Inline session name/status between native back and action controls; edge-to-edge terminal; one 44-point touch-target key strip above the safe area or software keyboard.
 FORM: User-pinned Apple-native direction and supplied terminal composition; no randomized visual direction needed.
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
+
+## Keyboard iteration
+
+The user approved a single integrated key row and clarified that tapping the terminal should open the keyboard. Remove the redundant show-keyboard button. Use only public APIs. Keep xterm output and scrolling; route keyboard input through a native UIKit text view. Show Enter, Escape, Tab, arrows, Control, paste, and (only while focused) dismissal without horizontal scrolling. Extra terminal actions remain in the session menu. Verify shell bytes, backspace, Unicode input, safe paste, and repeated keyboard transitions before judging the visual result.

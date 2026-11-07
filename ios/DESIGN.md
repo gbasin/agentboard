@@ -57,7 +57,7 @@ System large titles belong only on the session list. Terminal detail and sheet n
 
 `NavigationStack` contains a system `List` with project and Sleeping sections, native search and navigation links. Native row insets remain system-owned. Each row uses a leading vertical stack with 7-point spacing and 5-point vertical padding; the title/status spacer has an 8-point minimum. Summaries wrap to two lines.
 
-The detail terminal fills available space with 8-point horizontal native padding and 8 CSS pixels of top inset inside the web view. A bottom `safeAreaInset` holds the horizontal quick-key strip, following the software keyboard. Keys have minimum 44-by-44-point targets, 4-point gaps, 8-point horizontal strip padding and 6-point vertical strip padding. The strip scrolls horizontally when necessary.
+The detail terminal fills available space with 8-point horizontal native padding and 8 CSS pixels of top inset inside the web view. A bottom `safeAreaInset` holds the horizontal quick-key strip, following the software keyboard. Keys have minimum 44-by-44-point targets, 4-point gaps, 8-point horizontal strip padding and 6-point vertical strip padding. The strip stays in one non-scrolling row. Keys share the available width; the dismissal key appears only while terminal input has focus.
 
 ## Elevation & Depth
 
@@ -71,12 +71,12 @@ Quick keys use a rounded rectangle with a 10-point radius. List groups, forms, s
 
 - **Session row:** native navigation link; name, status, two-line summary and agent label. Status text stays primary for contrast, with color confined to its symbol.
 - **Navigation:** Sessions uses system large-title behavior, search, Connection and New session actions. Detail uses native back navigation, a compact name/status title and a session-actions menu.
-- **Quick keys:** Enter, Escape, arrows, Paste, Control, keyboard show/hide, Tab, Delete word and Interrupt. Control highlights while armed and clears after a single-character input. Arrows open a native popover; keys retain accessible labels.
+- **Quick keys:** Enter, Escape, Tab, arrows, Control and Paste, with Hide keyboard only while terminal input has focus. Tapping the terminal opens the keyboard; there is no show-keyboard button. Control highlights while armed and clears after a single-character input. Arrows open a native popover; keys retain accessible labels. Interrupt, Delete word and Insert newline live in the session-actions menu.
 - **Connection:** native Form and URL keyboard within a medium/large sheet. Invalid URLs show text and disable Save.
 - **Paste:** native TextEditor in a medium/large sheet; Insert is disabled while empty. Rename/create use alerts; ending a sample uses a destructive confirmation dialog.
-- **Terminal:** WKWebView hosts xterm, follows appearance and refits to available space. Connection state lives in the actions menu.
+- **Terminal:** WKWebView hosts xterm output and scrolling, follows appearance and refits to available space. `TerminalInputView`, a public-API UIKit text-view proxy, owns keyboard input. Connection state lives in the actions menu.
 
-The spike intentionally retains WKWebView's system previous/next/Done accessory above the software keyboard, in addition to the custom quick-key strip. This costs a second row. A future input-proxy experiment may address it through public APIs; this design does not claim the limitation is resolved.
+Native input removes WebKit's previous/next/Done accessory, leaving the SwiftUI quick-key strip as the sole accessory row. IME, VoiceOver and physical-device parity remain unverified; the proxy's use of public APIs does not establish that parity.
 
 ## Do's and Don'ts
 
