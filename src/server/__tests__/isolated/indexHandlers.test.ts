@@ -1,3 +1,4 @@
+import { CopyModeQuery } from '../../copyModeQuery'
 import { afterAll, afterEach, beforeEach, describe, expect, test, mock } from 'bun:test'
 import fs from 'node:fs/promises'
 import os from 'node:os'
@@ -80,6 +81,7 @@ const defaultConfig = {
   terminalColorsEnabled: true,
   tlsCert: '',
   tlsKey: '',
+  allowedOrigins: [] as string[],
   rgThreads: 1,
   logMatchWorker: false,
   logMatchProfile: false,
@@ -280,6 +282,7 @@ class SessionRegistryMock {
 
 class TerminalProxyMock {
   static instances: TerminalProxyMock[] = []
+  static startupGate: Promise<void> | null = null
   options: {
     connectionId: string
     sessionName: string
@@ -311,7 +314,7 @@ class TerminalProxyMock {
       this.starts += 1
       this.started = true
     }
-    return Promise.resolve()
+    return TerminalProxyMock.startupGate ?? Promise.resolve()
   }
 
   switchTo(target: string, onReady?: () => void) {
@@ -650,6 +653,8 @@ class TerminalProxyErrorMock extends Error {
   }
 }
 
+mock.module('../../terminal/SshTerminalProxy', () => ({ SshTerminalProxy: TerminalProxyMock }))
+
 mock.module('../../terminal', () => ({
   createTerminalProxy: (options: ConstructorParameters<typeof TerminalProxyMock>[0]) =>
     new TerminalProxyMock(options),
@@ -688,15 +693,19 @@ function tmuxOutput(...rows: string[][]): string {
 function createWs() {
   const sent: ServerMessage[] = []
   const ws = {
+    readyState: 1,
     data: {
       terminal: null as TerminalProxyMock | null,
       currentSessionId: null as string | null,
       currentTmuxTarget: null as string | null,
       connectionId: 'ws-test',
+      catalogVersion: 2,
+      stopCatalogNotice: null as (() => void) | null,
       remoteAddress: '127.0.0.1',
       userAgent: 'test-agent',
       terminalHost: null as string | null,
       terminalAttachSeq: 0,
+      copyModeQuery: new CopyModeQuery(),
       lastAttachKey: null as string | null,
       lastAttachTs: 0,
       clipboardPollTimer: null as ReturnType<typeof setInterval> | null,
@@ -754,6 +763,7 @@ beforeEach(() => {
   replaceSessionsCalls = []
   logEntries = []
   TerminalProxyMock.instances = []
+    TerminalProxyMock.startupGate = null
   SessionManagerMock.instance = null
   refreshWorkerDeferred = false
   refreshWorkerSessions = []
@@ -3157,6 +3167,7 @@ describe('server message handlers', () => {
       ws as never,
       JSON.stringify({ type: 'tmux-check-copy-mode', sessionId: baseSession.id })
     )
+    await waitFor(() => sent.some((message) => message.type === 'tmux-copy-mode-status'))
     expect(copyModeTarget).toBe(groupedTarget)
 
     // The fullscreen flags from tmux propagate to the client (appMouse drives the
@@ -3374,6 +3385,7 @@ describe('server message handlers', () => {
       JSON.stringify({ type: 'tmux-check-copy-mode', sessionId: baseSession.id })
     )
 
+    await waitFor(() => sent.some((message) => message.type === 'tmux-copy-mode-status'))
     expect(sendKeysTarget).toBe('agentboard:1.1')
     expect(displayTarget).toBe('agentboard:1.1')
 
@@ -3387,6 +3399,41 @@ describe('server message handlers', () => {
       altScreen: false,
       appMouse: false,
     })
+  })
+
+  test('a pending mode read is asynchronous and discarded after detach', async () => {
+    const { serveOptions, registryInstance } = await loadIndex()
+    registryInstance.sessions = [baseSession]
+    const { ws, sent } = createWs()
+    const websocket = serveOptions.websocket!
+    let complete!: () => void
+    let started = false
+    const mockedSpawn = bunAny.spawn
+    bunAny.spawn = ((...args: Parameters<typeof Bun.spawn>) => {
+      const cmd = (Array.isArray(args[0]) ? args[0] : [String(args[0])]) as string[]
+      if (!cmd.includes('#{pane_in_mode},#{alternate_on},#{mouse_any_flag}')) return mockedSpawn(...args)
+      started = true
+      let finish!: (code: number) => void
+      const exited = new Promise<number>((resolve) => { finish = resolve })
+      return {
+        exited, exitCode: 0, signalCode: null,
+        stdout: new ReadableStream({ start(controller) {
+          complete = () => {
+            controller.enqueue(new TextEncoder().encode('1,1,1'))
+            controller.close()
+            finish(0)
+          }
+        } }),
+        stderr: new ReadableStream({ start: (controller) => controller.close() }),
+      } as unknown as ReturnType<typeof Bun.spawn>
+    }) as typeof Bun.spawn
+    websocket.message?.(ws as never, JSON.stringify({ type: 'tmux-check-copy-mode', sessionId: baseSession.id }))
+    expect(started).toBe(true)
+    expect(sent.some((m) => m.type === 'tmux-copy-mode-status')).toBe(false)
+    websocket.message?.(ws as never, JSON.stringify({ type: 'terminal-detach', sessionId: baseSession.id }))
+    complete()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(sent.some((m) => m.type === 'tmux-copy-mode-status')).toBe(false)
   })
 
   test('moves hibernating sessions to history and rejects active sessions', async () => {
@@ -4850,6 +4897,88 @@ describe('server message handlers', () => {
     expect(dbState.records.get(hibernatingId)?.isHibernating).toBe(true)
   })
 
+  test('same-host SSH startup is owned by the connection after the creating attach is superseded', async () => {
+    const { serveOptions, registryInstance } = await loadIndex()
+    configState.remoteAllowAttach = true
+    registryInstance.sessions = [
+      { ...baseSession, id: 'remote-A', remote: true, host: 'remote-host', tmuxWindow: 'remote:@1' },
+      { ...baseSession, id: 'remote-B', remote: true, host: 'remote-host', tmuxWindow: 'remote:@2' },
+    ]
+    const { ws, sent } = createWs()
+    const websocket = serveOptions.websocket!
+    websocket.open?.(ws as never)
+    let release!: () => void
+    TerminalProxyMock.startupGate = new Promise<void>(resolve => { release = resolve })
+    websocket.message?.(ws as never, JSON.stringify({ type: 'terminal-attach', sessionId: 'remote-A' }))
+    await waitFor(() => ws.data.terminalHost === 'remote-host')
+    const shared = ws.data.terminal!
+    websocket.message?.(ws as never, JSON.stringify({ type: 'terminal-attach', sessionId: 'remote-B' }))
+    release()
+    await waitFor(() => sent.some(message => message.type === 'terminal-ready'))
+    expect(ws.data.terminal).toBe(shared)
+    expect(shared.disposed).toBe(false)
+    expect(shared.starts).toBe(1)
+    expect(shared.switchTargets).toEqual(['remote:@2'])
+    expect(sent.filter(message => message.type === 'terminal-ready').map(message => message.sessionId)).toEqual(['remote-B'])
+    websocket.close?.(ws as never, 1000, 'test')
+    expect(shared.disposed).toBe(true)
+  })
+
+  test('close during pending SSH startup invalidates the waiter before readiness or switch', async () => {
+    const { serveOptions, registryInstance } = await loadIndex()
+    configState.remoteAllowAttach = true
+    registryInstance.sessions = [{ ...baseSession, remote: true, host: 'remote-host' }]
+    const { ws, sent } = createWs()
+    const websocket = serveOptions.websocket!
+    websocket.open?.(ws as never)
+    let release!: () => void
+    TerminalProxyMock.startupGate = new Promise<void>(resolve => { release = resolve })
+    websocket.message?.(ws as never, JSON.stringify({ type: 'terminal-attach', sessionId: baseSession.id }))
+    await waitFor(() => ws.data.terminalHost === 'remote-host')
+    const terminal = ws.data.terminal!
+    const beforeClose = ws.data.terminalAttachSeq
+    websocket.close?.(ws as never, 1000, 'test')
+    release()
+    await new Promise(resolve => setTimeout(resolve, 5))
+    expect(ws.data.terminalAttachSeq).toBeGreaterThan(beforeClose)
+    expect(ws.data.terminal).toBeNull()
+    expect(terminal.disposed).toBe(true)
+    expect(terminal.switchTargets).toEqual([])
+    expect(sent.some(message => message.type === 'terminal-ready')).toBe(false)
+  })
+
+  test('close during pending history capture prevents a late terminal switch', async () => {
+    const { serveOptions, registryInstance } = await loadIndex()
+    registryInstance.sessions = [baseSession]
+    const { ws, sent } = createWs()
+    const websocket = serveOptions.websocket!
+    let release!: () => void
+    const gate = new Promise<number>(resolve => { release = () => resolve(0) })
+    let capturing = false
+    const previousSpawn = bunAny.spawn
+    bunAny.spawn = ((...args: Parameters<typeof Bun.spawn>) => {
+      const cmd = (Array.isArray(args[0]) ? args[0] : [String(args[0])]) as string[]
+      if (getTmuxArgs(cmd)[0] !== 'capture-pane') return previousSpawn(...args)
+      capturing = true
+      return {
+        exited: gate, exitCode: null, signalCode: null, pid: 12347,
+        stdout: new ReadableStream({ start: controller => controller.close() }),
+        stderr: new ReadableStream({ start: controller => controller.close() }),
+        kill: () => {},
+      } as unknown as ReturnType<typeof Bun.spawn>
+    }) as typeof Bun.spawn
+    websocket.open?.(ws as never)
+    websocket.message?.(ws as never, JSON.stringify({ type: 'terminal-attach', sessionId: baseSession.id }))
+    await waitFor(() => capturing)
+    const terminal = ws.data.terminal!
+    websocket.close?.(ws as never, 1000, 'test')
+    release()
+    await new Promise(resolve => setTimeout(resolve, 5))
+    expect(terminal.disposed).toBe(true)
+    expect(terminal.switchTargets).toEqual([])
+    expect(sent.some(message => message.type === 'terminal-ready')).toBe(false)
+  })
+
   test('websocket close disposes all terminals', async () => {
     const { serveOptions } = await loadIndex()
     const websocket = serveOptions.websocket
@@ -5466,6 +5595,76 @@ describe('server fetch handlers', () => {
     expect(upgradeCalls).toHaveLength(1)
     expect(response.status).toBe(400)
     expect(await response.text()).toBe('WebSocket upgrade failed')
+  })
+
+  test('rejects cross-origin websocket upgrades before upgrading', async () => {
+    const { serveOptions } = await loadIndex()
+    const fetchHandler = serveOptions.fetch
+    if (!fetchHandler) throw new Error('Fetch handler not configured')
+    let upgrades = 0
+    const server = {
+      upgrade: () => { upgrades += 1; return true },
+    } as unknown as Bun.Server<unknown>
+    const handshake = (origin?: string) => fetchHandler.call(server, new Request('http://127.0.0.1:4040/ws', {
+      headers: { host: '127.0.0.1:4040', ...(origin ? { origin } : {}) },
+    }), server)
+
+    const rejected = await handshake('http://evil.example')
+    expect(rejected?.status).toBe(403)
+    expect(upgrades).toBe(0)
+    expect(logEntries.filter(entry => entry.event === 'cross_origin_request_rejected')).toEqual([{
+      level: 'warn', event: 'cross_origin_request_rejected',
+      data: { origin: 'http://evil.example', host: '127.0.0.1:4040', method: 'GET', path: '/ws' },
+    }])
+    expect(await handshake('http://127.0.0.1:4040')).toBeUndefined()
+    expect(await handshake()).toBeUndefined()
+    expect(upgrades).toBe(2)
+  })
+
+  test('rejects cross-origin /api mutations and allows same-origin, unset, or allowlisted origins', async () => {
+    configState.allowedOrigins = ['https://board.example.com']
+    const { serveOptions } = await loadIndex()
+    const fetchHandler = serveOptions.fetch
+    if (!fetchHandler) throw new Error('Fetch handler not configured')
+    const put = async (origin?: string) => {
+      const response = await fetchHandler.call({} as Bun.Server<unknown>,
+        new Request('http://localhost:4040/api/settings/prefer-window-name', {
+          method: 'PUT',
+          headers: { host: 'localhost:4040', 'content-type': 'application/json', ...(origin ? { origin } : {}) },
+          body: JSON.stringify({ enabled: true }),
+        }), {} as Bun.Server<unknown>)
+      if (!response) throw new Error('Expected response')
+      return response
+    }
+
+    const rejected = await put('http://localhost:5173')
+    expect(rejected.status).toBe(403)
+    expect((configState as { preferWindowName?: boolean }).preferWindowName).not.toBe(true)
+    expect((await put('http://localhost:4040')).status).toBe(200)
+    expect((await put()).status).toBe(200)
+    expect((await put('https://board.example.com')).status).toBe(200)
+    expect((await put('null')).status).toBe(403)
+
+    // The library routes share the same rule.
+    const library = await fetchHandler.call({} as Bun.Server<unknown>,
+      new Request('http://localhost:4040/api/library/settings', {
+        method: 'PUT', headers: { host: 'localhost:4040', origin: 'http://evil.example' }, body: '{}',
+      }), {} as Bun.Server<unknown>)
+    expect(library?.status).toBe(403)
+
+    // Preview scripts must not read board APIs; explicit trusted origins still work.
+    const read = await fetchHandler.call({} as Bun.Server<unknown>,
+      new Request('http://localhost:4040/api/settings/prefer-window-name', {
+        headers: { host: 'localhost:4040', origin: 'http://evil.example' },
+      }), {} as Bun.Server<unknown>)
+    expect(read?.status).toBe(403)
+    for (const origin of ['http://localhost:4040', 'https://board.example.com']) {
+      const allowed = await fetchHandler.call({} as Bun.Server<unknown>,
+        new Request('http://localhost:4040/api/settings/prefer-window-name', {
+          headers: { host: 'localhost:4040', origin },
+        }), {} as Bun.Server<unknown>)
+      expect(allowed?.status).toBe(200)
+    }
   })
 
   test('returns macOS clipboard image file paths from AppKit pasteboard reader', async () => {

@@ -6,9 +6,10 @@
 // Both are cached briefly so refreshes and hovers don't spam gh.
 
 import type { SessionPullRequest } from '../shared/types'
+import { GhRequestQueue } from './ghRequestQueue'
 
 const CACHE_TTL_MS = 60_000
-const GH_TIMEOUT_MS = 8_000
+const MAX_CACHE_ENTRIES = 5_000
 
 export interface PrInfo {
   url: string
@@ -36,27 +37,15 @@ export function parsePrUrl(url: string): SessionPullRequest | null {
   return m ? { url, repo: m[1], number: Number(m[2]) } : null
 }
 
-const infoCache = new Map<string, { at: number; info: PrInfo }>()
-const checksCache = new Map<string, { at: number; info: PrCheckInfo }>()
+const cache = new Map<string, { at: number; info: PrCheckInfo }>()
+const ghQueue = new GhRequestQueue()
+const ghPrView = (repo: string, number: number, fields: string) =>
+  ghQueue.request(repo, number, fields)
 
-async function ghPrView(repo: string, number: number, fields: string) {
-  const proc = Bun.spawn(
-    ['gh', 'pr', 'view', String(number), '--repo', repo, '--json', fields],
-    { stdout: 'pipe', stderr: 'pipe' }
-  )
-  const timeout = setTimeout(() => proc.kill(), GH_TIMEOUT_MS)
-  try {
-    const [out, code] = await Promise.all([
-      new Response(proc.stdout).text(),
-      proc.exited,
-    ])
-    if (code !== 0) return null
-    return JSON.parse(out) as Record<string, unknown>
-  } catch {
-    return null
-  } finally {
-    clearTimeout(timeout)
-  }
+function cacheInfo(key: string, info: PrCheckInfo): void {
+  cache.delete(key)
+  cache.set(key, { at: Date.now(), info })
+  if (cache.size > MAX_CACHE_ENTRIES) cache.delete(cache.keys().next().value!)
 }
 
 function baseInfo(url: string, raw: Record<string, unknown> | null): PrInfo {
@@ -71,12 +60,12 @@ function baseInfo(url: string, raw: Record<string, unknown> | null): PrInfo {
   }
 }
 
-/** Batched eager fetch: one gh call per PR, in parallel, cached 60s. */
+/** Batched eager fetch: bounded gh calls shared with checks, cached 60s. */
 export async function fetchPrInfo(urls: string[]): Promise<PrInfo[]> {
   const now = Date.now()
   return Promise.all(
     urls.map(async (url) => {
-      const cached = infoCache.get(url)
+      const cached = cache.get(`info:${url}`)
       if (cached && now - cached.at < CACHE_TTL_MS) return cached.info
       const parsed = parsePrUrl(url)
       const info = parsed
@@ -89,7 +78,7 @@ export async function fetchPrInfo(urls: string[]): Promise<PrInfo[]> {
             )
           )
         : { url, error: 'invalid url' }
-      infoCache.set(url, { at: now, info })
+      cacheInfo(`info:${url}`, info)
       return info
     })
   )
@@ -131,7 +120,7 @@ export function mapCheck(
 /** Lazy fetch for hover cards: includes CI check rollup. */
 export async function fetchPrChecks(url: string): Promise<PrCheckInfo> {
   const now = Date.now()
-  const cached = checksCache.get(url)
+  const cached = cache.get(`checks:${url}`)
   if (cached && now - cached.at < CACHE_TTL_MS) return cached.info
   const parsed = parsePrUrl(url)
   let info: PrCheckInfo = parsed
@@ -153,6 +142,6 @@ export async function fetchPrChecks(url: string): Promise<PrCheckInfo> {
       }
     }
   }
-  checksCache.set(url, { at: now, info })
+  cacheInfo(`checks:${url}`, info)
   return info
 }

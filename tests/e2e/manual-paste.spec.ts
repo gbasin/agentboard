@@ -61,9 +61,12 @@ async function exerciseManualPaste(page: Page, windowName: string, clipboardAvai
     await expect(card).toBeVisible({ timeout: 20000 })
     await card.click()
     await expect(page.locator('.xterm')).toBeVisible()
+    await expect(page.getByTestId('session-card').filter({ hasText: windowName }).first()).toHaveClass(/selected/)
+    await expect(page.getByTestId('terminal-recovery-status')).toHaveCount(0)
 
     const pasteButton = page.locator('button[aria-label="Paste"]')
     await expect(pasteButton).toBeVisible({ timeout: 20000 })
+    await expect(pasteButton).toBeEnabled()
     await pasteButton.click()
     const textarea = page.getByRole('textbox', { name: 'Paste here' })
     await expect(textarea).toBeVisible()

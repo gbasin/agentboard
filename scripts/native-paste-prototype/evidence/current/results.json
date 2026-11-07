@@ -1,0 +1,23 @@
+{
+  "baseCommit": "6d38500",
+  "device": "iPhone 17 Pro simulator",
+  "iOS": "26.4",
+  "host": "m5p",
+  "standalone": true,
+  "autocorrect": true,
+  "claude": {
+    "version": "2.1.319",
+    "paste": "CLAUDE_CURRENT_alpha\nCLAUDE_CURRENT_beta",
+    "heldBeforeReturn": true,
+    "submittedExactlyOnce": true,
+    "nativeSelectionOffer": true
+  },
+  "codex": {
+    "version": "0.167.0",
+    "paste": "CODEX_CURRENT_alpha\nCODEX_CURRENT_beta",
+    "heldBeforeReturn": true,
+    "submittedExactlyOnce": true,
+    "nativeSelectionOffer": true,
+    "clipboardAfterCopy": "ELECTABLE_OUTP"
+  }
+}

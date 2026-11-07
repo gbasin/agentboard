@@ -1283,7 +1283,7 @@ describe('App', () => {
 
 
   test('below the md breakpoint brackets keep sort order under the bottom anchor', () => {
-    // The mirrored sidebar is hidden there; the tab strip and drawer are not
+    // The mirrored sidebar is hidden there; the status peek and drawer are not
     // mirrored, so ] must step to the next session exactly as under Top.
     const sessionB: Session = { ...baseSession, id: 'session-2', name: 'beta', createdAt: '2024-01-02T00:00:00.000Z' }
     const sessionC: Session = { ...baseSession, id: 'session-3', name: 'gamma', createdAt: '2024-01-03T00:00:00.000Z' }

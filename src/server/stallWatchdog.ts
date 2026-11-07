@@ -1,3 +1,4 @@
+import { resolveWorkerPath } from './workerPath'
 // stallWatchdog.ts - Samples this process's main thread mid-event-loop-stall.
 //
 // event_loop_lag only sees a stall after it ends — by then the blocked stack
@@ -48,9 +49,7 @@ export class StallWatchdog {
   start(): void {
     if (this.disposed || this.worker || this.failed || !this.opts.enabled) return
     // Compiled Bun binaries need string paths; dev mode needs URL resolution.
-    const workerPath = import.meta.url.includes('$bunfs')
-      ? './stallWatchdogWorker.ts'
-      : new URL('./stallWatchdogWorker.ts', import.meta.url).href
+    const workerPath = resolveWorkerPath('stallWatchdogWorker')
     const worker = new Worker(workerPath, { type: 'module' })
     worker.onmessage = (event) =>
       this.handleMessage(event.data as StallWatchdogWorkerResponse)

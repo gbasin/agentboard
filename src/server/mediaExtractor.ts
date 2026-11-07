@@ -1,16 +1,21 @@
 // Discovers media payloads in an agent JSONL log: images the agent pasted or
 // read (Claude `image` blocks, Codex `input_image`/`image_generation_call`),
-// pasted documents, and Claude `frame-link` artifact links. Emits descriptors
+// pasted documents, structured artifacts, and web URLs in assistant replies. Emits descriptors
 // (byte offset + block index + metadata), never the payload itself — the
 // /api/session-media endpoint re-reads one line and serves the bytes on
 // demand. Scans incrementally like prExtractor: cached per file offset so
 // polling only reads appended bytes.
 
 import fs from 'node:fs'
+import { collectToolLabels } from './mediaLabels'
+import { extractReplyLinks } from './replyLinks'
+import { createHash } from 'node:crypto'
+import { extractOutputReferences, loopbackUrl } from './outputReferences'
 import { logger } from './logger'
 import { asRecord, asString } from '../shared/json'
+import { MediaLabelMap, mediaLabelKey } from './mediaIndexLabels'
 
-export type SessionMediaKind = 'image' | 'document' | 'link'
+export type SessionMediaKind = 'image' | 'document' | 'link' | 'html' | 'localhost' | 'visualization'
 
 /** What the scan emits per payload — safe to broadcast. */
 export interface ScannedMedia {
@@ -26,6 +31,7 @@ export interface ScannedMedia {
   label?: string
   /** External URL — frame-link hrefs and non-data: image sources. */
   url?: string
+  sourceText?: string
   width?: number
   height?: number
 }
@@ -40,6 +46,7 @@ export interface ExtractedMediaItem {
   label?: string
   /** Result-id context (tool_use_id / call_id) seen while walking to it. */
   toolId?: string
+  sourceText?: string
   width?: number
   height?: number
 }
@@ -48,7 +55,6 @@ const READ_CHUNK_BYTES = 128 * 1024
 // See prExtractor: eviction above the number of scanned paths, else the
 // dormant sweep re-scans every file each cycle.
 const MAX_CACHE_ENTRIES = 5000
-const MAX_PENDING_LABELS = 2000
 const MAX_MEDIA_PER_FILE = 2000
 // /api/session-media rejects index > 256; never emit descriptors that can't
 // be addressed.
@@ -62,6 +68,14 @@ const MARKER_BYTES = [
   Buffer.from('"image'),
   Buffer.from('"document"'),
   Buffer.from('frame-link'),
+  Buffer.from('http'),
+  Buffer.from('HTTP'),
+  Buffer.from('.htm'),
+  Buffer.from('.HTM'),
+  Buffer.from('visualize'),
+  Buffer.from('localhost:'),
+  Buffer.from('127.0.0.1:'),
+  Buffer.from('[::1]:'),
   // Label carriers: tool calls with a path argument give tool_result images
   // their "Read · foo.png" captions.
   Buffer.from('"file_path"'),
@@ -78,6 +92,7 @@ interface ScanState {
   pendingLabels: Map<string, string>
   seen: Set<string>
   media: ScannedMedia[]
+  emit?: (entry: ScannedMedia, key: string, digest: string, time: number) => void
 }
 
 // One read buffer shared by every scan; scans are synchronous.
@@ -93,7 +108,7 @@ function newScanState(): ScanState {
     mtimeMs: 0,
     partial: [],
     partialCandidate: false,
-    pendingLabels: new Map(),
+    pendingLabels: new MediaLabelMap(),
     seen: new Set(),
     media: [],
   }
@@ -130,90 +145,6 @@ function seamHasCandidate(partial: Buffer[], bytes: Buffer): boolean {
 }
 
 // --- label resolution -----------------------------------------------------
-
-function pathLeaf(p: string): string {
-  const clean = p.replace(/[?#].*$/, '').replace(/\/+$/, '')
-  const leaf = clean.slice(clean.lastIndexOf('/') + 1)
-  return leaf || p
-}
-
-/** "Read · hero.png" when the args carry a path, else just the tool name. */
-function toolLabel(name: string | null, args: unknown): string {
-  let parsed: unknown = args
-  if (typeof parsed === 'string') {
-    try {
-      parsed = JSON.parse(parsed)
-    } catch {
-      parsed = null
-    }
-  }
-  const record = asRecord(parsed)
-  const pathValue =
-    asString(record?.file_path) ??
-    asString(record?.filePath) ??
-    asString(record?.path) ??
-    asString(record?.filename)
-  if (pathValue) {
-    return `${name ?? 'tool'} · ${pathLeaf(pathValue)}`
-  }
-  return name ?? 'tool'
-}
-
-// Registers tool-call ids -> labels for lines carrying a path argument, so
-// tool_result payloads on later lines can be captioned. Covers Claude/Pi
-// content blocks, Codex payload calls, devin toolCalls, grok tool_calls.
-function collectToolLabels(
-  record: Record<string, unknown>,
-  pending: Map<string, string>
-): void {
-  const register = (id: unknown, label: string) => {
-    if (typeof id !== 'string' || !id) return
-    if (!pending.has(id) && pending.size >= MAX_PENDING_LABELS) {
-      const oldest = pending.keys().next().value
-      if (oldest !== undefined) pending.delete(oldest)
-    }
-    pending.set(id, label)
-  }
-
-  const content = asRecord(record.message)?.content
-  if (Array.isArray(content)) {
-    for (const item of content) {
-      const block = asRecord(item)
-      if (!block) continue
-      const type = asString(block.type)
-      if (type !== 'tool_use' && type !== 'toolCall') continue
-      register(
-        block.id,
-        toolLabel(
-          asString(block.name),
-          block.input ?? block.arguments ?? block.partialJson
-        )
-      )
-    }
-  }
-
-  const payload = asRecord(record.payload)
-  const payloadType = asString(payload?.type)
-  if (
-    payloadType === 'function_call' ||
-    payloadType === 'custom_tool_call' ||
-    payloadType === 'tool_call'
-  ) {
-    if (!payload) return
-    register(
-      asString(payload.call_id) ?? asString(payload.id),
-      toolLabel(asString(payload.name), payload.arguments ?? payload.input)
-    )
-  }
-
-  for (const calls of [asRecord(record.message)?.toolCalls, record.tool_calls]) {
-    if (!Array.isArray(calls)) continue
-    for (const call of calls) {
-      const c = asRecord(call)
-      register(c?.id, toolLabel(asString(c?.name), c?.arguments))
-    }
-  }
-}
 
 // --- media walk -----------------------------------------------------------
 
@@ -330,6 +261,11 @@ function extractMediaItemsFromRecord(
   if (!record || typeof record !== 'object') return []
   const out: ExtractedMediaItem[] = []
   walkMedia(record, undefined, out)
+  // Append: existing image/document indices must remain stable.
+  out.push(...extractReplyLinks(record).filter(item => !item.url || !loopbackUrl(item.url)))
+  for (const ref of extractOutputReferences(record)) {
+    out.push({ kind: ref.kind, url: ref.target, label: ref.label })
+  }
 
   // Claude's toolUseResult twin carries pixel dimensions; apply when the line
   // produced exactly one image (the common 1:1 case). Note: its `originalSize`
@@ -356,7 +292,7 @@ function decodedLength(b64: string): number {
 // Dedupe: codex logs each turn twice (event_msg + response_item) with the
 // same payload bytes; endpoints+span are a cheap stand-in for hashing MBs.
 function dedupeKey(item: ExtractedMediaItem): string {
-  if (item.url) return `u:${item.url}`
+  if (item.url) return `u:${item.kind}:${item.url}`
   const data = item.data ?? ''
   return `d:${item.kind}:${item.mediaType}:${data.length}:${data.slice(0, 48)}:${data.slice(-16)}`
 }
@@ -365,7 +301,7 @@ function processLine(state: ScanState, line: string, lineOffset: number): void {
   const hasMedia =
     line.includes('"image') ||
     line.includes('"document"') ||
-    line.includes('frame-link')
+    line.includes('frame-link') || /https?:|visualize|\.htm/i.test(line)
   const hasLabel =
     line.includes('"file_path"') &&
     (line.includes('"tool_use"') ||
@@ -387,12 +323,17 @@ function processLine(state: ScanState, line: string, lineOffset: number): void {
   if (!hasMedia) return
 
   let index = 0
+  let lineDigest: string | undefined
   for (const item of extractMediaItemsFromRecord(record)) {
     const current = index++
-    if (current > MAX_MEDIA_INDEX) continue
+    if (!state.emit && current > MAX_MEDIA_INDEX) continue
     const key = dedupeKey(item)
-    if (state.seen.has(key)) continue
-    state.seen.add(key)
+    if (!state.emit && state.seen.has(key)) {
+      const existing = item.url && state.media.find(entry => entry.url === item.url)
+      if (existing && item.label) existing.label = item.label
+      continue
+    }
+    if (!state.emit) state.seen.add(key)
 
     const entry: ScannedMedia = {
       offset: lineOffset,
@@ -401,12 +342,21 @@ function processLine(state: ScanState, line: string, lineOffset: number): void {
     }
     if (item.mediaType) entry.mediaType = item.mediaType
     if (item.url) entry.url = item.url
-    const label = item.label ?? (item.toolId && state.pendingLabels.get(item.toolId))
+    if (item.sourceText) entry.sourceText = item.sourceText
+    const label = item.label ?? (item.toolId && state.pendingLabels.get(mediaLabelKey(item.toolId)))
     if (label) entry.label = label
     if (item.data) entry.bytes = decodedLength(item.data)
     if (item.width) entry.width = item.width
     if (item.height) entry.height = item.height
 
+    if (state.emit) {
+      const contentKey = createHash('sha256').update(item.url ? `${item.kind}:${item.url}` : `${item.kind}:${item.mediaType}:${item.data ?? ''}`).digest('hex')
+      lineDigest ??= createHash('sha256').update(line).digest('hex')
+      const stamp = record.timestamp ?? record.time
+      const time = typeof stamp === 'string' ? Date.parse(stamp) : NaN
+      state.emit(entry, contentKey, lineDigest, Number.isFinite(time) ? time : 0)
+      continue
+    }
     if (state.media.length >= MAX_MEDIA_PER_FILE) {
       state.media.shift()
     }
@@ -528,4 +478,18 @@ export function getSessionMedia(logPath: string): ScannedMedia[] {
 /** Test helper: drop cached scan state. */
 export function clearMediaScanCache(): void {
   scanCache.clear()
+}
+
+/** Streaming index adapter: deduplication and retention live on disk, not in RAM. */
+export function createMediaLineScanner(
+  emit: (entry: ScannedMedia, key: string, digest: string, time: number) => void,
+  labels: [string, string][] = [],
+) {
+  const state = newScanState()
+  state.emit = emit
+  state.pendingLabels = new MediaLabelMap(labels)
+  return {
+    line: (line: string, offset: number) => processLine(state, line, offset),
+    labels: () => [...state.pendingLabels].map(([id, label]) => [id.slice(0, 256), label.slice(0, 512)] as [string, string]),
+  }
 }

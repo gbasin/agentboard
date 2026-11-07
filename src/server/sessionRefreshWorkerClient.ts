@@ -1,3 +1,4 @@
+import { resolveWorkerPath } from './workerPath'
 /**
  * Client for the session refresh worker.
  * Provides async interface for refreshing session list off the main thread.
@@ -178,9 +179,7 @@ export class SessionRefreshWorkerClient {
   private spawnWorker(): void {
     if (this.disposed) return
     // Compiled Bun binaries need string paths; dev mode needs URL resolution
-    const workerPath = import.meta.url.includes('$bunfs')
-      ? './sessionRefreshWorker.ts'
-      : new URL('./sessionRefreshWorker.ts', import.meta.url).href
+    const workerPath = resolveWorkerPath('sessionRefreshWorker')
     const worker = new Worker(workerPath, {
       type: 'module',
     })

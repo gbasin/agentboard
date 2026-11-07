@@ -56,7 +56,7 @@ class TerminalMock {
     return true
   }
 
-  write() {}
+  write(_data: string, callback?: () => void) { callback?.() }
 
   scrollToBottom() {
     this.scrollCalls += 1
@@ -166,12 +166,13 @@ function createContainerMock() {
     focus: () => {},
     select: () => {},
   } as unknown as HTMLInputElement
+  let focusCalls = 0
   const textarea = {
     addEventListener: (_event: string, _handler: EventListener) => {},
     removeEventListener: (_event: string, _handler: EventListener) => {},
     setAttribute: () => {},
     removeAttribute: () => {},
-    focus: () => {},
+    focus: () => { focusCalls++ },
   } as unknown as HTMLTextAreaElement
 
   const container = {
@@ -196,7 +197,7 @@ function createContainerMock() {
     return null
   }
 
-  return { container, createNodeMock }
+  return { container, createNodeMock, listeners, getFocusCalls: () => focusCalls }
 }
 
 beforeEach(() => {
@@ -272,7 +273,7 @@ describe('Terminal', () => {
           session={baseSession}
           sessions={[baseSession]}
           connectionStatus="connected"
-          sendMessage={(message) => sentMessages.push(message)}
+          sendMessage={(message) => { sentMessages.push(message) }}
           subscribe={(listener) => {
             listeners.push(listener)
             return () => {}
@@ -325,7 +326,7 @@ describe('Terminal', () => {
           session={baseSession}
           sessions={[baseSession]}
           connectionStatus="connected"
-          sendMessage={(message) => sentMessages.push(message)}
+          sendMessage={(message) => { sentMessages.push(message) }}
           subscribe={(listener) => {
             listeners.push(listener)
             return () => {}
@@ -378,6 +379,7 @@ describe('Terminal', () => {
     let renderer!: TestRenderer.ReactTestRenderer
 
     const sentMessages: unknown[] = []
+    let terminalListener: ((message: ServerMessage) => void) | undefined
     act(() => {
       renderer = TestRenderer.create(
         <Terminal
@@ -385,7 +387,7 @@ describe('Terminal', () => {
           sessions={[baseSession]}
           connectionStatus="connected"
           sendMessage={(msg) => { sentMessages.push(msg) }}
-          subscribe={() => () => {}}
+          subscribe={(listener) => { terminalListener = listener; return () => {} }}
           onClose={() => {}}
           onSelectSession={() => {}}
           onNewSession={() => {}}
@@ -401,6 +403,8 @@ describe('Terminal', () => {
         }
       )
     })
+
+    act(() => { terminalListener?.({ type: 'terminal-ready', sessionId: baseSession.id }) })
 
     const terminalInstance = TerminalMock.instances[0]
     if (!terminalInstance) {
@@ -569,7 +573,6 @@ describe('Terminal', () => {
 
   test('mobile layout opens drawer and switches sessions', () => {
     let selectCalls: string[] = []
-    let vibrateCalls = 0
 
     globalAny.navigator = {
       userAgent: 'Chrome',
@@ -577,7 +580,6 @@ describe('Terminal', () => {
       maxTouchPoints: 0,
       clipboard: { writeText: () => Promise.resolve() },
       vibrate: () => {
-        vibrateCalls += 1
         return true
       },
     } as unknown as Navigator
@@ -653,22 +655,15 @@ describe('Terminal', () => {
     html = JSON.stringify(renderer.toJSON())
     expect(html).not.toContain('session-drawer open')
 
-    const switchButton = renderer.root.findAllByType('button').find((button) => {
-      const children = button.props.children
-      return children === 2 || (Array.isArray(children) && children.includes(2))
-    })
-
-    if (!switchButton) {
-      throw new Error('Expected session switcher button')
-    }
-    expect(String(switchButton.props.className)).toContain('h-[44px]')
-
-    act(() => {
-      switchButton.props.onClick()
-    })
-
+    const peek = renderer.root.findByProps({ 'data-testid': 'session-peek' })
+    act(() => { peek.props.onClick() })
+    expect(selectCalls).toEqual([])
+    expect(JSON.stringify(renderer.toJSON())).toContain('session-drawer open')
+    const row = renderer.root.findAllByProps({ 'data-testid': 'session-card' })
+      .find((node) => node.props['data-session-id'] === secondSession.id)!
+    act(() => { row.props.onClick() })
     expect(selectCalls).toEqual([secondSession.id])
-    expect(vibrateCalls).toBe(1)
+    expect(JSON.stringify(renderer.toJSON())).not.toContain('session-drawer open')
 
     act(() => {
       renderer.unmount()
@@ -677,6 +672,7 @@ describe('Terminal', () => {
 
   test('exit copy mode remains available without the keyboard toggle', () => {
     const sentMessages: unknown[] = []
+    let terminalListener: ((message: ServerMessage) => void) | undefined
 
     const { createNodeMock } = createContainerMock()
     let renderer!: TestRenderer.ReactTestRenderer
@@ -688,7 +684,7 @@ describe('Terminal', () => {
           sessions={[baseSession]}
           connectionStatus="connected"
           sendMessage={(msg) => { sentMessages.push(msg) }}
-          subscribe={() => () => {}}
+          subscribe={(listener) => { terminalListener = listener; return () => {} }}
           onClose={() => {}}
           onSelectSession={() => {}}
           onNewSession={() => {}}
@@ -702,6 +698,8 @@ describe('Terminal', () => {
         }
       )
     })
+
+    act(() => { terminalListener?.({ type: 'terminal-ready', sessionId: baseSession.id }) })
 
     const terminalInstance = TerminalMock.instances[0]
     if (!terminalInstance) {
@@ -943,110 +941,6 @@ describe('Terminal', () => {
     })
   })
 
-  test('mobile session switcher shows numeric labels when preferWindowName is false even with distinct names', () => {
-    if (globalAny.window) {
-      globalAny.window.matchMedia = (() => ({
-        matches: true,
-        media: '',
-        onchange: null,
-        addEventListener: () => {},
-        removeEventListener: () => {},
-        addListener: () => {},
-        removeListener: () => {},
-        dispatchEvent: () => false,
-      })) as unknown as typeof window.matchMedia
-    }
-    useSessionStore.setState({ preferWindowName: false })
-
-    const { createNodeMock } = createContainerMock()
-    let renderer!: TestRenderer.ReactTestRenderer
-
-    act(() => {
-      renderer = TestRenderer.create(
-        <Terminal
-          session={baseSession}
-          sessions={[baseSession, secondSession]}
-          connectionStatus="connected"
-          sendMessage={() => {}}
-          subscribe={() => () => {}}
-          onClose={() => {}}
-          onSelectSession={() => {}}
-          onNewSession={() => {}}
-          onKillSession={() => {}}
-          onRenameSession={() => {}}
-          onResumeSession={() => {}}
-          onOpenSettings={() => {}}
-        />,
-        { createNodeMock }
-      )
-    })
-
-    const labels = renderer.root
-      .findAllByType('button')
-      .map((button) => button.props.children)
-      .filter((child) => child === 1 || child === 2 || child === 'alpha' || child === 'beta')
-
-    expect(labels).toContain(1)
-    expect(labels).toContain(2)
-    expect(labels).not.toContain('alpha')
-    expect(labels).not.toContain('beta')
-
-    act(() => {
-      renderer.unmount()
-    })
-  })
-
-  test('mobile session switcher shows name labels when preferWindowName is true and names are distinct', () => {
-    if (globalAny.window) {
-      globalAny.window.matchMedia = (() => ({
-        matches: true,
-        media: '',
-        onchange: null,
-        addEventListener: () => {},
-        removeEventListener: () => {},
-        addListener: () => {},
-        removeListener: () => {},
-        dispatchEvent: () => false,
-      })) as unknown as typeof window.matchMedia
-    }
-    useSessionStore.setState({ preferWindowName: true })
-
-    const { createNodeMock } = createContainerMock()
-    let renderer!: TestRenderer.ReactTestRenderer
-
-    act(() => {
-      renderer = TestRenderer.create(
-        <Terminal
-          session={baseSession}
-          sessions={[baseSession, secondSession]}
-          connectionStatus="connected"
-          sendMessage={() => {}}
-          subscribe={() => () => {}}
-          onClose={() => {}}
-          onSelectSession={() => {}}
-          onNewSession={() => {}}
-          onKillSession={() => {}}
-          onRenameSession={() => {}}
-          onResumeSession={() => {}}
-          onOpenSettings={() => {}}
-        />,
-        { createNodeMock }
-      )
-    })
-
-    const labels = renderer.root
-      .findAllByType('button')
-      .map((button) => button.props.children)
-      .filter((child) => child === 1 || child === 2 || child === 'alpha' || child === 'beta')
-
-    expect(labels).toContain('alpha')
-    expect(labels).toContain('beta')
-
-    act(() => {
-      renderer.unmount()
-    })
-  })
-
   test('renders hibernating placeholder and wakes without attaching terminal', async () => {
     const resumeCalls: string[] = []
     const sentMessages: unknown[] = []
@@ -1132,4 +1026,89 @@ describe('Terminal', () => {
       renderer.unmount()
     })
   })
+})
+
+
+test('recovery terminal tap can focus locally while commands stay gated', () => {
+  globalAny.window!.getComputedStyle = (() => ({ getPropertyValue: () => '16px' })) as unknown as typeof window.getComputedStyle
+  globalAny.window!.matchMedia = (() => ({ matches: true, addEventListener() {}, removeEventListener() {} })) as unknown as typeof window.matchMedia
+  const sent: unknown[] = []
+  const nodes = createContainerMock()
+  let renderer!: TestRenderer.ReactTestRenderer
+  act(() => { renderer = TestRenderer.create(<Terminal session={baseSession} sessions={[baseSession]}
+    connectionStatus="reconnecting" sendMessage={message => { sent.push(message); return false }}
+    subscribe={() => () => {}} onClose={() => {}} onSelectSession={() => {}} onNewSession={() => {}}
+    onKillSession={() => {}} onRenameSession={() => {}} onResumeSession={() => {}} onOpenSettings={() => {}} />,
+    { createNodeMock: nodes.createNodeMock }) })
+  const controls = renderer.root.find(node => typeof node.props.onPasteImage === 'function')
+  expect(controls.props.disabled).toBe(true)
+  const before = nodes.getFocusCalls()
+  const sentBefore = sent.length
+  const touch = { clientX: 120, clientY: 100 }
+  act(() => {
+    nodes.listeners.get('touchstart')!({ touches: [touch] } as unknown as Event)
+    nodes.listeners.get('touchend')!({ touches: [], changedTouches: [touch] } as unknown as Event)
+  })
+  expect(nodes.getFocusCalls()).toBe(before + 1)
+  expect(sent).toHaveLength(sentBefore)
+  act(() => renderer.unmount())
+})
+
+for (const gesture of ['key', 'paste'] as const) {
+  test(`rejected mobile ${gesture} stays for review and failed manual send retains it`, () => {
+    const listeners: Array<(message: ServerMessage) => void> = []
+    const accepted: unknown[] = []
+    let reject = true
+    const nodes = createContainerMock()
+    let renderer!: TestRenderer.ReactTestRenderer
+    act(() => { renderer = TestRenderer.create(<Terminal session={baseSession} sessions={[baseSession]}
+      connectionStatus="connected" sendMessage={message => {
+        if (reject && (message.type === 'terminal-input' || message.type === 'terminal-paste')) return false
+        accepted.push(message); return true
+      }} subscribe={listener => { listeners.push(listener); return () => {} }}
+      onClose={() => {}} onSelectSession={() => {}} onNewSession={() => {}} onKillSession={() => {}}
+      onRenameSession={() => {}} onResumeSession={() => {}} onOpenSettings={() => {}} />,
+      { createNodeMock: nodes.createNodeMock }) })
+    act(() => listeners[0]?.({ type: 'terminal-ready', sessionId: baseSession.id }))
+    const controls = () => renderer.root.find(node => typeof node.props.onPasteImage === 'function')
+    act(() => {
+      if (gesture === 'key') controls().props.onSendKey('retained')
+      else controls().props.onPasteText('retained')
+    })
+    expect(renderer.root.findByProps({ id: 'recovery-draft' }).props.value).toBe('retained')
+    const send = () => renderer.root.findAllByType('button').find(node => node.props.children === 'Send text')!
+    act(() => send().props.onClick())
+    expect(renderer.root.findByProps({ id: 'recovery-draft' }).props.value).toBe('retained')
+    reject = false
+    expect(controls().props.disabled).toBe(true)
+    // Upload results must never be added to a text draft or sent past it.
+    act(() => controls().props.onPasteImage('image-path'))
+    expect(renderer.root.findByProps({ id: 'recovery-draft' }).props.value).toBe('retained')
+    expect(accepted.filter((m: any) => m.type === 'terminal-paste' || m.type === 'terminal-input')).toHaveLength(0)
+    act(() => send().props.onClick())
+    expect(renderer.root.findAllByProps({ id: 'recovery-draft' })).toHaveLength(0)
+    expect(controls().props.disabled).toBe(false)
+    expect(accepted.filter((m: any) => m.type === 'terminal-paste')).toEqual([
+      { type: 'terminal-paste', sessionId: baseSession.id, data: 'retained' },
+    ])
+    act(() => renderer.unmount())
+  })
+}
+
+
+test('failed attachment shows unavailable input status instead of hiding it', () => {
+  let listener!: (message: ServerMessage) => void
+  const nodes = createContainerMock()
+  let renderer!: TestRenderer.ReactTestRenderer
+  act(() => { renderer = TestRenderer.create(<Terminal session={baseSession} sessions={[baseSession]}
+    connectionStatus="connected" sendMessage={() => true} subscribe={value => { listener = value; return () => {} }}
+    onClose={() => {}} onSelectSession={() => {}} onNewSession={() => {}} onKillSession={() => {}}
+    onRenameSession={() => {}} onResumeSession={() => {}} onOpenSettings={() => {}} />,
+    { createNodeMock: nodes.createNodeMock }) })
+  act(() => listener({ type: 'terminal-error', sessionId: baseSession.id,
+    code: 'ERR_TMUX_ATTACH_FAILED', message: 'Attachment failed', retryable: true }))
+  const status = renderer.root.findByProps({ 'data-testid': 'terminal-recovery-status' })
+  expect(status.props.children).toContain('Terminal unavailable')
+  expect(status.findByType('span').props.children).toContain('Input paused')
+  act(() => renderer.unmount())
 })

@@ -7,7 +7,8 @@ import { inferAgentType } from '../agentDetection'
 import { generateSessionName } from '../nameGenerator'
 import { SessionCatalog, assertSessionName } from './catalog'
 import { RequestError, notFound } from './errors'
-import { importConversations, importConversation } from './legacyImport'
+import type { SessionReader } from '../sessionReads'
+import { importConversations, importConversation, importConversationIds } from './legacyImport'
 import {
   provisionalTagFromName,
   readTmuxIdentity,
@@ -18,10 +19,14 @@ import {
 import { config } from '../config'
 import { logger } from '../logger'
 import { windowNameError } from '../windowName'
+import { confirmSnapshot, identityChanged } from './confirmSnapshot'
+export { identityChanged } from './confirmSnapshot'
 
 export class PersistentSessions {
   readonly catalog: SessionCatalog
   private snapshot: TmuxIdentity | null = null
+  private importInFlight = false
+  private stopped = false
   error: string | null = null
   constructor(
     readonly db: SessionDatabase,
@@ -29,7 +34,8 @@ export class PersistentSessions {
     hostId: string,
     private readonly identity = () => readTmuxIdentity(config.tmuxSession),
     private readonly epochForPid = tmuxEpochForPid,
-    private readonly managedSession = config.tmuxSession
+    private readonly managedSession = config.tmuxSession,
+    private readonly reader?: SessionReader
   ) {
     this.catalog = new SessionCatalog(db.db, hostId)
     importConversations(this.catalog, db, this.isManagedWindow)
@@ -40,7 +46,8 @@ export class PersistentSessions {
   /**
    * Reconcile catalog state against the window list the refresh pipeline
    * already enumerated — the identity tags ride that enumeration, so this
-   * snapshot and `sessions` are one consistent read with no extra tmux calls.
+   * snapshot and `sessions` are one consistent read. Destructive observations
+   * require an independent identity read before releasing a conversation.
    * The server pid identifies the tmux incarnation; an enumeration that
    * cannot report it cannot vouch for window identity either, so pid 0
    * skips reconciliation rather than guessing at stale tags.
@@ -68,10 +75,11 @@ export class PersistentSessions {
         this.snapshot = null
         return
       }
-      const snapshot: TmuxIdentity = {
+      const active = this.catalog.active()
+      const snapshot = confirmSnapshot({
         epoch: this.epochForPid(serverPid),
         windows,
-      }
+      }, active, this.identity)
       this.snapshot = snapshot
       const runs = new Map(
         [...snapshot.windows].map(([window, tag]) => [
@@ -79,7 +87,7 @@ export class PersistentSessions {
           { window, boardId: tag.boardId },
         ])
       )
-      for (const saved of this.catalog.active()) {
+      for (const saved of active) {
         const match = saved.lastRunId ? runs.get(saved.lastRunId) : undefined
         const window = match && match.boardId === saved.id ? match.window : undefined
         if (saved.requestedState) {
@@ -138,7 +146,10 @@ export class PersistentSessions {
         for (const record of this.db.getActiveSessions())
           this.db.orphanSession(record.sessionId)
       }
-      this.db.setAppSetting('persistence_tmux_epoch', snapshot.epoch)
+      // An unchanged epoch needs no setting write or WAL/checkpoint work. Keep the
+      // database read authoritative across backend restarts and failed writes.
+      if (previousEpoch !== snapshot.epoch)
+        this.db.setAppSetting('persistence_tmux_epoch', snapshot.epoch)
       this.error = null
     } catch (error) {
       this.error = String(error)
@@ -158,7 +169,25 @@ export class PersistentSessions {
         this.error = String(error)
       }
     }
-    importConversations(this.catalog, this.db, this.isManagedWindow)
+    this.importHistory()
+  }
+  dispose() {
+    this.stopped = true
+  }
+  private importHistory() {
+    if (this.stopped || this.importInFlight) return
+    if (!this.reader) {
+      importConversations(this.catalog, this.db, this.isManagedWindow)
+      return
+    }
+    this.importInFlight = true
+    void this.reader.importCandidates().then((ids) => {
+      if (!this.stopped) importConversationIds(this.catalog, this.db, this.isManagedWindow, ids)
+    }).catch((error) => {
+      if (!this.stopped) this.error = String(error)
+    }).finally(() => {
+      this.importInFlight = false
+    })
   }
   private observeOne(live: Session) {
     const snapshot = this.snapshot!
@@ -527,19 +556,4 @@ export class PersistentSessions {
       expectedWindow: saved.window,
     })
   }
-}
-
-/**
- * True only when tmux definitely reports a different run on the window. An
- * empty tag is unknown, not changed: the enumeration can predate the tag
- * write (the refresh worker's snapshot can be minutes old when tmux is slow)
- * or come from a format that cannot read tags. Window ids are not reused
- * within one tmux server, and the epoch check above covers restarts.
- */
-export function identityChanged(
-  tag: WindowIdentity | undefined,
-  saved: Pick<SavedSession, 'id' | 'lastRunId'>
-): boolean {
-  if (!tag?.boardId || !tag.runId) return false
-  return tag.boardId !== saved.id || tag.runId !== saved.lastRunId
 }

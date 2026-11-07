@@ -71,7 +71,7 @@ export const ICON_BUTTON_CLASS = iconButtonClass('neutral')
  */
 export function mobileButtonClass(tone: ButtonTone = 'neutral', display = 'flex'): string {
   const fill = tone === 'neutral' ? 'bg-surface ' : ''
-  return `${display} size-[44px] shrink-0 items-center justify-center rounded-md border transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 ${fill}${BUTTON_TONE[tone]}`
+  return `mobile-header-button ${display} size-[44px] shrink-0 items-center justify-center rounded-md border transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 ${fill}${BUTTON_TONE[tone]}`
 }
 
 /**

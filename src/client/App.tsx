@@ -421,6 +421,8 @@ export default function App() {
             ...existing,
             agentSessionId: message.session.sessionId,
             agentSessionName: message.session.displayName,
+            mediaSummary: message.session.mediaSummary,
+            media: undefined,
             logFilePath: message.session.logFilePath,
             isHibernating: message.session.isHibernating,
             lastUserMessage: message.session.lastUserMessage ?? existing.lastUserMessage,
@@ -795,7 +797,7 @@ export default function App() {
       // Bracket navigation: [mod]+[ / ]. [ always moves selection up the
       // screen and ] down: under the bottom-anchored sidebar index 0 sits at
       // the bottom, so the index delta flips sign. Only while that mirrored
-      // sidebar is on screen: below the md breakpoint the tab strip and the
+      // sidebar is on screen: below the md breakpoint the status peek and the
       // drawer keep the unmirrored order.
       // When only hibernating sessions are visible, fall back to navigating
       // within the hibernating bucket so the keyboard shortcut keeps working.
@@ -963,7 +965,8 @@ export default function App() {
   }, [hostStatuses, hostLabel])
 
   return (
-    <div className="flex h-full overflow-hidden">
+    // Unlike overflow-hidden, clip cannot scroll when a descendant receives focus.
+    <div className="flex h-full overflow-clip">
       {/* Left column: sidebar - always hidden on mobile (drawer handles it) */}
       <div
         className="hidden h-full flex-col md:flex md:shrink-0"

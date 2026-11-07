@@ -237,7 +237,7 @@ async function waitForWebSocketSessions(
   timeoutMs = 5000
 ): Promise<{ type: string; sessions: unknown[] }> {
   return await new Promise((resolve, reject) => {
-    const socket = new WebSocket(`ws://${testHost}:${port}/ws`)
+    const socket = new WebSocket(`ws://${testHost}:${port}/ws?catalog=2`)
     const timeout = setTimeout(() => {
       socket.close()
       reject(new Error('Timed out waiting for sessions message'))

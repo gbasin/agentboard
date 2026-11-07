@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import type { AgentType } from '@shared/types'
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
+import { isAndroidDevice } from '../utils/device'
 import { safeStorage } from '../utils/storage'
 
 const DEFAULT_PROJECT_DIR = '~/Documents/GitHub'
@@ -131,6 +132,8 @@ interface SettingsState {
   setManualSessionOrder: (order: string[]) => void
   sidebarAnchor: SidebarAnchor
   setSidebarAnchor: (anchor: SidebarAnchor) => void
+  mobileAutocorrect: boolean
+  setMobileAutocorrect: (enabled: boolean) => void
   useWebGL: boolean
   setUseWebGL: (enabled: boolean) => void
   fontSize: number
@@ -145,6 +148,10 @@ interface SettingsState {
   setCustomFontFamily: (family: string) => void
   shortcutModifier: ShortcutModifier | 'auto'
   setShortcutModifier: (modifier: ShortcutModifier | 'auto') => void
+  compactMobileControls: boolean
+  setCompactMobileControls: (enabled: boolean) => void
+  showMobileSessionPeek: boolean
+  setShowMobileSessionPeek: (enabled: boolean) => void
   showProjectName: boolean
   setShowProjectName: (enabled: boolean) => void
   showLastUserMessage: boolean
@@ -203,6 +210,8 @@ export const useSettingsStore = create<SettingsState>()(
       setManualSessionOrder: (order) => set({ manualSessionOrder: order }),
       sidebarAnchor: 'top',
       setSidebarAnchor: (anchor) => set({ sidebarAnchor: anchor }),
+      mobileAutocorrect: true,
+      setMobileAutocorrect: (enabled) => set({ mobileAutocorrect: enabled }),
       useWebGL: DEFAULT_WEBGL,
       setUseWebGL: (enabled) => set({ useWebGL: enabled }),
       fontSize: 13,
@@ -217,6 +226,10 @@ export const useSettingsStore = create<SettingsState>()(
       setCustomFontFamily: (family) => set({ customFontFamily: family.slice(0, 256) }),
       shortcutModifier: 'auto',
       setShortcutModifier: (modifier) => set({ shortcutModifier: modifier }),
+      compactMobileControls: true,
+      setCompactMobileControls: (enabled) => set({ compactMobileControls: enabled }),
+      showMobileSessionPeek: true,
+      setShowMobileSessionPeek: (enabled) => set({ showMobileSessionPeek: enabled }),
       showProjectName: true,
       setShowProjectName: (enabled) => set({ showProjectName: enabled }),
       showLastUserMessage: true,
@@ -285,9 +298,18 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: 'agentboard-settings',
       storage: createJSONStorage(() => safeStorage),
-      version: 8,
+      version: 9,
       migrate: (persistedState: unknown, version: number) => {
         const state = persistedState as Record<string, unknown>
+        // This preference is device-local: retain only this platform's old choice.
+        if (version < 9) {
+          const previous = isAndroidDevice() ? state.androidAutocorrect : state.iosAutocorrect
+          if (typeof state.mobileAutocorrect !== 'boolean') {
+            state.mobileAutocorrect = typeof previous === 'boolean' ? previous : true
+          }
+          delete state.iosAutocorrect
+          delete state.androidAutocorrect
+        }
         if (
           typeof state.historySessionsExpanded !== 'boolean' &&
           typeof state.inactiveSessionsExpanded === 'boolean'
@@ -376,8 +398,8 @@ export const useSettingsStore = create<SettingsState>()(
         const missingBuiltIns = DEFAULT_PRESETS.filter(p => p.isBuiltIn && !existingIds.has(p.id))
         const finalPresets = [...validPresets, ...missingBuiltIns]
 
-        if (version < 8) {
-          console.info(`[agentboard:settings] Migrated from v${version} to v8`)
+        if (version < 9) {
+          console.info(`[agentboard:settings] Migrated from v${version} to v9`)
         }
 
         return {

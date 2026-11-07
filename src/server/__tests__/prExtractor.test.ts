@@ -812,7 +812,7 @@ describe('getSessionPullRequests', () => {
     expect(second).not.toBe(first)
   })
 
-  test('skips rescanning when knownSize matches the consumed offset', async () => {
+  test('checks equal-size rewrites even when knownSize matches the consumed offset', async () => {
     const logPath = path.join(tempRoot, 's.jsonl')
     const content =
       [claudeBashToolUse('gh pr create'), claudeToolResult('https://github.com/a/b/pull/3')].join('\n') + '\n'
@@ -820,10 +820,12 @@ describe('getSessionPullRequests', () => {
 
     const first = getSessionPullRequests(logPath)
     expect(first).toHaveLength(1)
-    // knownSize equal to the file size should return cached results
-    // (even if the file were replaced between calls, the size check wins)
+    // A stale size hint cannot suppress replacement detection.
+    await fs.writeFile(logPath, content.replace('/pull/3', '/pull/4'))
+    const later = new Date(Date.now() + 2000)
+    await fs.utimes(logPath, later, later)
     const cached = getSessionPullRequests(logPath, content.length)
-    expect(cached.map((p) => p.number)).toEqual([3])
+    expect(cached.map((p) => p.number)).toEqual([4])
   })
 
   test('incrementally picks up PRs appended later', async () => {
@@ -867,6 +869,32 @@ describe('getSessionPullRequests', () => {
     await fs.utimes(logPath, future, future)
     expect(getSessionPullRequests(logPath).map((p) => p.number)).toEqual([43])
   })
+
+  test('rescans in-place equal-size rewrite with preserved mtime', async () => {
+    const logPath = path.join(tempRoot, 'in-place.jsonl')
+    const content = [claudeBashToolUse('gh pr create'), claudeToolResult('https://github.com/a/b/pull/41')].join('\n') + '\n'
+    await fs.writeFile(logPath, content)
+    expect(getSessionPullRequests(logPath).map(p => p.number)).toEqual([41])
+    const before = await fs.stat(logPath)
+    await fs.writeFile(logPath, content.replace('/pull/41', '/pull/43'))
+    await fs.utimes(logPath, before.atime, before.mtime)
+    expect(getSessionPullRequests(logPath, content.length).map(p => p.number)).toEqual([43])
+  })
+
+  for (const larger of [false, true]) {
+    test(`rescans ${larger ? 'larger' : 'equal-size'} atomic replacement with preserved mtime`, async () => {
+      const logPath = path.join(tempRoot, 'replaced.jsonl')
+      const content = [claudeBashToolUse('gh pr create'), claudeToolResult('https://github.com/a/b/pull/41')].join('\n') + '\n'
+      await fs.writeFile(logPath, content)
+      expect(getSessionPullRequests(logPath).map(p => p.number)).toEqual([41])
+      const before = await fs.stat(logPath)
+      const replacement = path.join(tempRoot, 'replacement.jsonl')
+      await fs.writeFile(replacement, content.replace('/pull/41', '/pull/43') + (larger ? '{}\n' : ''))
+      await fs.utimes(replacement, before.atime, before.mtime)
+      await fs.rename(replacement, logPath)
+      expect(getSessionPullRequests(logPath, content.length).map(p => p.number)).toEqual([43])
+    })
+  }
 
   test('handles a command line split across incremental reads', async () => {
     const logPath = path.join(tempRoot, 's.jsonl')

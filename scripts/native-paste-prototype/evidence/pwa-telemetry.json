@@ -1,0 +1,122 @@
+[
+  {
+    "level": 20,
+    "time": 1794059145253,
+    "pid": 68824,
+    "hostname": "macbook-m1p-3.local",
+    "target": "xterm-helper-textarea",
+    "textarea": {
+      "x": 8,
+      "y": 96,
+      "width": 383,
+      "height": 44,
+      "top": 96,
+      "right": 391,
+      "bottom": 140,
+      "left": 8
+    },
+    "disabled": true,
+    "standalone": true,
+    "event": "client_ios_native_paste_touch"
+  },
+  {
+    "level": 20,
+    "time": 1794059168548,
+    "pid": 68824,
+    "hostname": "macbook-m1p-3.local",
+    "target": "xterm-helper-textarea",
+    "textarea": {
+      "x": 8,
+      "y": 96,
+      "width": 383,
+      "height": 44,
+      "top": 96,
+      "right": 391,
+      "bottom": 140,
+      "left": 8
+    },
+    "disabled": false,
+    "standalone": true,
+    "event": "client_ios_native_paste_touch"
+  },
+  {
+    "level": 20,
+    "time": 1794059243357,
+    "pid": 68824,
+    "hostname": "macbook-m1p-3.local",
+    "target": "xterm-helper-textarea",
+    "textarea": {
+      "x": 8,
+      "y": 96,
+      "width": 383,
+      "height": 44,
+      "top": 96,
+      "right": 391,
+      "bottom": 140,
+      "left": 8
+    },
+    "disabled": false,
+    "standalone": true,
+    "event": "client_ios_native_paste_touch"
+  },
+  {
+    "level": 20,
+    "time": 1794059244116,
+    "pid": 68824,
+    "hostname": "macbook-m1p-3.local",
+    "target": "xterm-helper-textarea",
+    "textarea": {
+      "x": 8,
+      "y": 96,
+      "width": 383,
+      "height": 44,
+      "top": 96,
+      "right": 391,
+      "bottom": 140,
+      "left": 8
+    },
+    "disabled": false,
+    "standalone": true,
+    "event": "client_ios_native_paste_touch"
+  },
+  {
+    "level": 20,
+    "time": 1794059282953,
+    "pid": 68824,
+    "hostname": "macbook-m1p-3.local",
+    "target": "",
+    "textarea": {
+      "x": 8,
+      "y": 114,
+      "width": 383,
+      "height": 44,
+      "top": 114,
+      "right": 391,
+      "bottom": 158,
+      "left": 8
+    },
+    "disabled": false,
+    "standalone": true,
+    "event": "client_ios_native_paste_touch"
+  },
+  {
+    "level": 20,
+    "time": 1794059286453,
+    "pid": 68824,
+    "hostname": "macbook-m1p-3.local",
+    "target": "xterm-accessibility-tree",
+    "textarea": {
+      "x": 8,
+      "y": 114,
+      "width": 383,
+      "height": 44,
+      "top": 114,
+      "right": 391,
+      "bottom": 158,
+      "left": 8
+    },
+    "disabled": false,
+    "standalone": true,
+    "event": "client_ios_native_paste_touch"
+  }
+]

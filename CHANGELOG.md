@@ -1,5 +1,177 @@
 # Changelog
 
+## [0.42.0](https://github.com/gbasin/agentboard/compare/v0.41.0...v0.42.0) (2026-11-07)
+
+
+### Features
+
+* enable native iOS long-press paste by default ([#520](https://github.com/gbasin/agentboard/issues/520)) ([4cb83c8](https://github.com/gbasin/agentboard/commit/4cb83c86918c4d01784fe28e60d6a11599567099))
+
+## [0.41.0](https://github.com/gbasin/agentboard/compare/v0.40.0...v0.41.0) (2026-11-07)
+
+
+### Features
+
+* add compact mobile controls and default iOS autocorrect on ([#516](https://github.com/gbasin/agentboard/issues/516)) ([6d38500](https://github.com/gbasin/agentboard/commit/6d38500beecd74d2877fc4bcfb01e886c3402c4b))
+* add first-open preview thumbnails and fix preview discovery ([#513](https://github.com/gbasin/agentboard/issues/513)) ([6c81887](https://github.com/gbasin/agentboard/commit/6c81887b7f37eccdf79eb375ce87afae136dbd23))
+* add mobile Shift quick key and numpad zero ([#514](https://github.com/gbasin/agentboard/issues/514)) ([1d00b55](https://github.com/gbasin/agentboard/commit/1d00b55e6cd8190cc22d089904a37a3c5e52c778))
+* make URLs clickable in text select mode ([#515](https://github.com/gbasin/agentboard/issues/515)) ([0b2304e](https://github.com/gbasin/agentboard/commit/0b2304e41ed377e8cbecd6482119f53174dbba62))
+* prototype native iOS long-press terminal paste ([#518](https://github.com/gbasin/agentboard/issues/518)) ([9879a1d](https://github.com/gbasin/agentboard/commit/9879a1d873c5e6ff4d4aece344ea1c702b1156fd))
+* support Android keyboard autocorrection ([#517](https://github.com/gbasin/agentboard/issues/517)) ([4ff5bb1](https://github.com/gbasin/agentboard/commit/4ff5bb143296b9ebc0f366d0e4559f28c19abb41))
+
+
+### Bug Fixes
+
+* keep agent message envelopes out of user previews ([#512](https://github.com/gbasin/agentboard/issues/512)) ([02796c3](https://github.com/gbasin/agentboard/commit/02796c3648564cbdc59a78564e575759ede92af2))
+* preview image attachments in paste dialog ([#510](https://github.com/gbasin/agentboard/issues/510)) ([f11ce92](https://github.com/gbasin/agentboard/commit/f11ce92d5e10f4d82ee87c815f8d3cb7cfdeb3b4))
+* support mobile Settings swipe-back ([#509](https://github.com/gbasin/agentboard/issues/509)) ([7d4876c](https://github.com/gbasin/agentboard/commit/7d4876c605d1e030692ac1c2332de2fdce6f9792))
+
+## [0.40.0](https://github.com/gbasin/agentboard/compare/v0.39.0...v0.40.0) (2026-11-07)
+
+
+### Features
+
+* add opt-in iOS autocorrect in terminal settings ([#506](https://github.com/gbasin/agentboard/issues/506)) ([ce00fd4](https://github.com/gbasin/agentboard/commit/ce00fd48d88a3f4d37b837b1d82cc5a216a82916))
+* add optional mobile session status peek ([#507](https://github.com/gbasin/agentboard/issues/507)) ([fce20b8](https://github.com/gbasin/agentboard/commit/fce20b8910c5417ff730818a9327ca49ca6160aa))
+* add previews to the shared media and links panel ([#508](https://github.com/gbasin/agentboard/issues/508)) ([f7eca68](https://github.com/gbasin/agentboard/commit/f7eca68557d032d1ca4ce2bdd2784b65f5fb972f))
+
+
+### Bug Fixes
+
+* avoid duplicate iOS bottom safe-area padding ([#504](https://github.com/gbasin/agentboard/issues/504)) ([af05b49](https://github.com/gbasin/agentboard/commit/af05b49641d6ed9dd161ca33a7932680bee588e9))
+
+## [0.39.0](https://github.com/gbasin/agentboard/compare/v0.38.2...v0.39.0) (2026-11-06)
+
+
+### Features
+
+* Select text key that freezes the pane as natively selectable text ([#499](https://github.com/gbasin/agentboard/issues/499)) ([8d5603a](https://github.com/gbasin/agentboard/commit/8d5603ac4426b23f9760ce73c04b9337ad5f2014))
+
+
+### Bug Fixes
+
+* stop double text selection in fullscreen TUIs on iOS ([#498](https://github.com/gbasin/agentboard/issues/498)) ([c523535](https://github.com/gbasin/agentboard/commit/c523535a1a5b141de43c07ccd254fce929682544))
+
+## [0.38.2](https://github.com/gbasin/agentboard/compare/v0.38.1...v0.38.2) (2026-11-06)
+
+
+### Bug Fixes
+
+* detect connector-created session pull requests ([#495](https://github.com/gbasin/agentboard/issues/495)) ([854379c](https://github.com/gbasin/agentboard/commit/854379cfd1264c2a9359a1eb15e840449258f77d))
+* harden terminal ownership and transcript ingestion ([#485](https://github.com/gbasin/agentboard/issues/485)) ([206444a](https://github.com/gbasin/agentboard/commit/206444a04a4fe56d2536ea751a2f591adac5b8e2))
+* keep tmux alive across systemd restarts; fix launchd rotation and watchdog ([#460](https://github.com/gbasin/agentboard/issues/460)) ([8deb54a](https://github.com/gbasin/agentboard/commit/8deb54aecfb5087cb2e1999a96c072c05483b418))
+
+## [0.38.1](https://github.com/gbasin/agentboard/compare/v0.38.0...v0.38.1) (2026-11-02)
+
+
+### Bug Fixes
+
+* clarify subagent activity panel ([#456](https://github.com/gbasin/agentboard/issues/456)) ([a377335](https://github.com/gbasin/agentboard/commit/a377335a65ee117afaadca612ec1b1cfdcd59c53))
+
+## [0.38.0](https://github.com/gbasin/agentboard/compare/v0.37.1...v0.38.0) (2026-10-30)
+
+
+### Features
+
+* show Claude and Codex activity in compact session popovers ([#453](https://github.com/gbasin/agentboard/issues/453)) ([a7ca12e](https://github.com/gbasin/agentboard/commit/a7ca12ebff14dd3cf31f3f370fafbc02e8c36b87))
+
+
+### Bug Fixes
+
+* confirm catalog identity changes before releasing log links ([#454](https://github.com/gbasin/agentboard/issues/454)) ([9c36bc8](https://github.com/gbasin/agentboard/commit/9c36bc8bc49100a64fb95097c380825d7d230128))
+
+## [0.37.1](https://github.com/gbasin/agentboard/compare/v0.37.0...v0.37.1) (2026-10-26)
+
+
+### Bug Fixes
+
+* prevent terminal focus from scrolling the board sideways ([#451](https://github.com/gbasin/agentboard/issues/451)) ([fce73ab](https://github.com/gbasin/agentboard/commit/fce73ab5a9eb7abdcfa7b86df6fc085c3ec62d89))
+
+## [0.37.0](https://github.com/gbasin/agentboard/compare/v0.36.3...v0.37.0) (2026-10-26)
+
+
+### Features
+
+* improve terminal recovery and progressive media browsing ([6ea2698](https://github.com/gbasin/agentboard/commit/6ea26981d3fb10ba6c5f70a387094dc83550b0d0))
+
+## [0.36.3](https://github.com/gbasin/agentboard/compare/v0.36.2...v0.36.3) (2026-10-24)
+
+
+### Performance Improvements
+
+* index catalog lookups by host and window ([#437](https://github.com/gbasin/agentboard/issues/437)) ([b00bed4](https://github.com/gbasin/agentboard/commit/b00bed4c84b14a85a8f00bc06491de3169415bbe))
+
+## [0.36.2](https://github.com/gbasin/agentboard/compare/v0.36.1...v0.36.2) (2026-10-19)
+
+
+### Bug Fixes
+
+* release closed websocket references during recovery ([#435](https://github.com/gbasin/agentboard/issues/435)) ([aa8221f](https://github.com/gbasin/agentboard/commit/aa8221f9bc2cfc325f4105688982ec249e014e71))
+
+## [0.36.1](https://github.com/gbasin/agentboard/compare/v0.36.0...v0.36.1) (2026-10-19)
+
+
+### Performance Improvements
+
+* index session display-name collision checks ([#433](https://github.com/gbasin/agentboard/issues/433)) ([7bc9ec7](https://github.com/gbasin/agentboard/commit/7bc9ec76540360320db6a711ae7a2d5676b47629))
+
+## [0.36.0](https://github.com/gbasin/agentboard/compare/v0.35.2...v0.36.0) (2026-10-18)
+
+
+### Features
+
+* enable ownership matching by default on macOS ([#432](https://github.com/gbasin/agentboard/issues/432)) ([1f31eae](https://github.com/gbasin/agentboard/commit/1f31eae8a55bbc1190e1107f381770a792ea3cd8))
+* match Claude and Codex sessions by process ownership ([#430](https://github.com/gbasin/agentboard/issues/430)) ([0cb43bc](https://github.com/gbasin/agentboard/commit/0cb43bc7efc90f942d4bb41b56a5b2fc87060ad2))
+
+## [0.35.2](https://github.com/gbasin/agentboard/compare/v0.35.1...v0.35.2) (2026-10-16)
+
+
+### Performance Improvements
+
+* move session metadata scans off the main thread ([#426](https://github.com/gbasin/agentboard/issues/426)) ([882622d](https://github.com/gbasin/agentboard/commit/882622d2fbca6fdc31d0bcbe31556d805bb1d0f5))
+
+## [0.35.1](https://github.com/gbasin/agentboard/compare/v0.35.0...v0.35.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* normalize expanded media tile sizes ([#424](https://github.com/gbasin/agentboard/issues/424)) ([b313ec9](https://github.com/gbasin/agentboard/commit/b313ec97a6ced133c1b086a600548eceb9dec04a))
+
+## [0.35.0](https://github.com/gbasin/agentboard/compare/v0.34.4...v0.35.0) (2026-10-16)
+
+
+### Features
+
+* make media arrivals easier to notice ([#422](https://github.com/gbasin/agentboard/issues/422)) ([9be99fc](https://github.com/gbasin/agentboard/commit/9be99fc6134a8f2b86b46386905da0df6f9deee8))
+
+## [0.34.4](https://github.com/gbasin/agentboard/compare/v0.34.3...v0.34.4) (2026-10-15)
+
+
+### Performance Improvements
+
+* skip unchanged persistence epoch writes ([#420](https://github.com/gbasin/agentboard/issues/420)) ([543251d](https://github.com/gbasin/agentboard/commit/543251d75a89727b6c07fe1d6f9b01bfd5368507))
+
+## [0.34.3](https://github.com/gbasin/agentboard/compare/v0.34.2...v0.34.3) (2026-10-15)
+
+
+### Bug Fixes
+
+* keep terminal traffic flowing during copy-mode queries ([#418](https://github.com/gbasin/agentboard/issues/418)) ([9655ef3](https://github.com/gbasin/agentboard/commit/9655ef31ae0cb7fdb7b8afccc367c4a8dd9cf62a))
+
+## [0.34.2](https://github.com/gbasin/agentboard/compare/v0.34.1...v0.34.2) (2026-10-15)
+
+
+### Performance Improvements
+
+* move polling reads off the main thread and keep dormant previews current ([#416](https://github.com/gbasin/agentboard/issues/416)) ([8dccddc](https://github.com/gbasin/agentboard/commit/8dccddca8c3b4dfa6745bc4818c4e26e22e2d4db))
+
+## [0.34.1](https://github.com/gbasin/agentboard/compare/v0.34.0...v0.34.1) (2026-10-15)
+
+
+### Performance Improvements
+
+* index catalog hot paths, batch legacy import, restore SQL-capped history ([#414](https://github.com/gbasin/agentboard/issues/414)) ([74ed561](https://github.com/gbasin/agentboard/commit/74ed5612623cf36e4bdcd4210412eb78d632bf10))
+
 ## [0.34.0](https://github.com/gbasin/agentboard/compare/v0.33.1...v0.34.0) (2026-10-14)
 
 

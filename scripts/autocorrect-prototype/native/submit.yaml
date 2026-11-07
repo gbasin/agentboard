@@ -1,0 +1,4 @@
+appId: com.apple.webapp
+---
+- tapOn:
+    id: Return

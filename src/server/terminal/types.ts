@@ -1,3 +1,4 @@
+import type { subscribePaneOutput } from './PaneOutputFeed'
 import type { TerminalErrorCode } from '../../shared/types'
 
 type SpawnFn = (
@@ -52,6 +53,7 @@ interface TerminalProxyOptions {
   baseSession: string
   onData: (data: string) => void
   onExit?: () => void
+  paneOutput?: typeof subscribePaneOutput
   spawn?: SpawnFn
   spawnSync?: SpawnSyncFn
   // Defaults to Bun.spawn, or to spawnSync when only that is injected (tests
@@ -62,6 +64,8 @@ interface TerminalProxyOptions {
   onGroupedSessionCreated?: () => void
   now?: () => number
   wait?: WaitFn
+  // Relay observers start excluded from window sizing until verified attach.
+  initialSizeParticipation?: boolean
   monitorTargets?: boolean
   host?: string
   sshOptions?: string[]
@@ -79,6 +83,8 @@ interface ITerminalProxy {
   write(data: string): void
   paste(data: string): void
   resize(cols: number, rows: number): void
+  // PTY capability; non-PTY implementations need not own a tmux client.
+  setSizeParticipation?(participates: boolean): Promise<void>
   dispose(): Promise<void>
   isReady(): boolean
   getClientTty(): string | null

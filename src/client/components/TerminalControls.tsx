@@ -1,7 +1,7 @@
 /**
  * TerminalControls - On-screen control strip for mobile terminal interaction
  * Quick keys ordered most-used first (left): enter, esc, arrows, paste, delete
- * word, numbers, tab, ctrl. The row scrolls horizontally
+ * word, numbers, tab, shift, ctrl. The row scrolls horizontally
  * on narrow phones, so the rightmost keys are the ones that can afford a swipe.
  * Top row shows session switcher buttons to quickly jump between sessions
  */
@@ -9,7 +9,7 @@
 import { useState, useRef, useEffect } from 'react'
 import type { TouchEvent as ReactTouchEvent } from 'react'
 import type { AgentType, Session } from '@shared/types'
-import { ClipboardIcon, CornerDownLeftIcon, DeleteIcon } from './icons'
+import { ClipboardIcon, CornerDownLeftIcon, DeleteIcon, TextInputIcon } from './icons'
 import { ICON_SIZE, KEY_ICON_STROKE } from './controlStyles'
 import ArrowKeys from './ArrowKeys'
 import NumPad from './NumPad'
@@ -17,6 +17,7 @@ import { isIOSDevice } from '../utils/device'
 import PasteStatus from './PasteStatus'
 import { useBrowserPaste } from '../hooks/useBrowserPaste'
 import { useKeyboardShift } from '../hooks/useKeyboardShift'
+import SnapshotDeckActions, { type SnapshotActions } from './SnapshotDeckActions'
 
 interface SessionInfo {
   id: string
@@ -43,6 +44,13 @@ interface TerminalControlsProps {
   hideSessionSwitcher?: boolean
   onRefocus?: () => void
   isKeyboardVisible?: () => boolean
+  /**
+   * Open the frozen "Select text" snapshot of the pane. Hidden when absent.
+   * Stays available while the rest of the deck is disabled.
+   */
+  onSelectText?: () => void
+  /** The snapshot is open: the key row shows Done and Refresh instead. */
+  snapshotActions?: SnapshotActions
 }
 
 interface ControlKey {
@@ -55,6 +63,7 @@ interface ControlKey {
 // Key strip glyphs: library icons at the key size (18px on 44px keys).
 const BackspaceIcon = <DeleteIcon width={ICON_SIZE.key} height={ICON_SIZE.key} strokeWidth={KEY_ICON_STROKE} />
 const PasteIcon = <ClipboardIcon width={ICON_SIZE.key} height={ICON_SIZE.key} strokeWidth={KEY_ICON_STROKE} />
+const SelectTextIcon = <TextInputIcon width={ICON_SIZE.key} height={ICON_SIZE.key} strokeWidth={KEY_ICON_STROKE} />
 
 // Color classes of a key without its own `className`. A key's className
 // replaces these rather than being appended: both sets are single-class
@@ -73,6 +82,10 @@ const KEY_TAB: ControlKey = { label: 'tab', key: '\t' }
 const SHIFTED_KEYS: Record<string, string> = {
   [KEY_TAB.key]: '\x1b[Z',
   [KEY_ENTER.key]: '\n',
+  '\x1b[A': '\x1b[1;2A',
+  '\x1b[B': '\x1b[1;2B',
+  '\x1b[C': '\x1b[1;2C',
+  '\x1b[D': '\x1b[1;2D',
 }
 
 function triggerHaptic() {
@@ -121,13 +134,24 @@ export default function TerminalControls({
   hideSessionSwitcher = false,
   onRefocus,
   isKeyboardVisible,
+  onSelectText,
+  snapshotActions,
 }: TerminalControlsProps) {
   const browserPaste = useBrowserPaste({ sessionId: currentSessionId, disabled, fileUploadsAllowed, agentType,
     onPasteText: onPasteText ?? onSendKey, onPasteImage: onPasteImage ?? onSendKey, onRefocus })
   const [ctrlActive, setCtrlActive] = useState(false)
+  const [shiftActive, setShiftActive] = useState(false)
   const shiftRef = useKeyboardShift(currentSessionId, disabled)
   const lastTouchTimeRef = useRef(0)
   const touchStartRef = useRef<{ x: number; y: number } | null>(null)
+
+  // A pending touch modifier must not follow the user to another pane.
+  useEffect(() => { setShiftActive(false) }, [currentSessionId, disabled])
+
+  const applyShift = (key: string) => {
+    if (shiftActive) setShiftActive(false)
+    return shiftActive || shiftRef.current ? SHIFTED_KEYS[key] ?? key : key
+  }
 
   // Intercept keyboard input when ctrl is active to send control characters
   useEffect(() => {
@@ -157,7 +181,7 @@ export default function TerminalControls({
     const wasKeyboardVisible = isKeyboardVisible?.() ?? false
     triggerHaptic()
 
-    const shiftedKey = shiftRef.current ? SHIFTED_KEYS[key] ?? key : key
+    const shiftedKey = applyShift(key)
     const { output, consumeCtrl } = applyCtrlModifier(shiftedKey, ctrlActive)
     if (consumeCtrl) {
       setCtrlActive(false)
@@ -176,9 +200,9 @@ export default function TerminalControls({
     setCtrlActive(!ctrlActive)
   }
 
-  // Wrapper for child components (NumPad, ArrowKeys) to apply Ctrl modifier
+  // Apply pending touch modifiers to child controls too.
   const handleSendKeyWithCtrl = (key: string) => {
-    const { output, consumeCtrl } = applyCtrlModifier(key, ctrlActive)
+    const { output, consumeCtrl } = applyCtrlModifier(applyShift(key), ctrlActive)
     if (consumeCtrl) {
       setCtrlActive(false)
     }
@@ -199,8 +223,8 @@ export default function TerminalControls({
   // Only show session row if there are multiple sessions and not hidden
   const showSessionRow = sessions.length > 1 && !hideSessionSwitcher
 
-  const handleTouchAction = (handler: () => void) => (e: ReactTouchEvent) => {
-    if (disabled) return
+  const handleTouchAction = (handler: () => void, unavailable = disabled) => (e: ReactTouchEvent) => {
+    if (unavailable) return
     const start = touchStartRef.current
     const end = e.changedTouches[0]
     if (!start || !end || Math.hypot(end.clientX - start.x, end.clientY - start.y) > 10) return
@@ -210,8 +234,8 @@ export default function TerminalControls({
     handler()
   }
 
-  const handleClickAction = (handler: () => void) => () => {
-    if (disabled) return
+  const handleClickAction = (handler: () => void, unavailable = disabled) => () => {
+    if (unavailable) return
     if (Date.now() - lastTouchTimeRef.current < 700) {
       return
     }
@@ -256,7 +280,7 @@ export default function TerminalControls({
           {/* Right fade indicator */}
           <div className="absolute right-0 top-0 bottom-0 w-3 bg-gradient-to-l from-elevated to-transparent z-10 pointer-events-none" />
           <div
-            className="flex items-center gap-[6px] overflow-x-auto px-[6px] scrollbar-none scroll-smooth snap-x snap-mandatory"
+            className="terminal-session-switcher flex items-center gap-[6px] overflow-x-auto px-[6px] scrollbar-none scroll-smooth snap-x snap-mandatory"
             style={{ WebkitOverflowScrolling: 'touch' }}
           >
             {sessions.map((session, index) => {
@@ -284,8 +308,9 @@ export default function TerminalControls({
           </div>
         </div>
       )}
+      {snapshotActions && <SnapshotDeckActions {...snapshotActions} />}
       {/* Key row */}
-      <div className="grid grid-flow-col auto-cols-[44px] items-center gap-[4px] overflow-x-auto scrollbar-none"
+      {!snapshotActions && <div className="terminal-quick-key-row grid grid-flow-col auto-cols-[44px] items-center gap-[4px] overflow-x-auto scrollbar-none"
         onTouchStartCapture={(event) => {
           const touch = event.touches[0]
           touchStartRef.current = touch ? { x: touch.clientX, y: touch.clientY } : null
@@ -330,6 +355,18 @@ export default function TerminalControls({
         >
           {PasteIcon}
         </button>
+        {onSelectText && (
+          <button
+            type="button"
+            aria-label="Select text"
+            className="terminal-key flex items-center justify-center size-[44px] p-0 border rounded-md active:bg-hover active:scale-95 transition-transform duration-75 select-none touch-manipulation bg-surface border-border text-secondary"
+            onMouseDown={(e) => e.preventDefault()}
+            onTouchEnd={handleTouchAction(onSelectText, false)}
+            onClick={handleClickAction(onSelectText, false)}
+          >
+            {SelectTextIcon}
+          </button>
+        )}
         {renderControlKey(KEY_DELETE_WORD)}
         {/* NumPad for number input */}
         <NumPad
@@ -339,6 +376,20 @@ export default function TerminalControls({
           isKeyboardVisible={isKeyboardVisible}
         />
         {renderControlKey(KEY_TAB)}
+        <button
+          type="button"
+          aria-label="Shift"
+          aria-pressed={shiftActive}
+          className={`terminal-key flex items-center justify-center size-[44px] p-0 text-sm font-medium rounded-md active:scale-95 transition-transform duration-75 select-none touch-manipulation
+            ${shiftActive ? 'bg-accent/20 text-accent border border-accent/40' : 'bg-surface border border-border text-secondary'}
+            ${disabled ? 'opacity-50' : ''}`}
+          onMouseDown={(e) => e.preventDefault()}
+          onTouchEnd={handleTouchAction(() => { triggerHaptic(); setShiftActive(active => !active) })}
+          onClick={handleClickAction(() => { triggerHaptic(); setShiftActive(active => !active) })}
+          disabled={disabled}
+        >
+          shift
+        </button>
         {/* Ctrl toggle */}
         <button
           type="button"
@@ -363,7 +414,7 @@ export default function TerminalControls({
         >
           ctrl
         </button>
-      </div>
+      </div>}
 
       <PasteStatus {...browserPaste} allowFiles={fileUploadsAllowed} />
     </div>

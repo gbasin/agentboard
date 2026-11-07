@@ -1,0 +1,15 @@
+appId: com.apple.mobilesafari
+---
+- tapOn: Type in terminal
+- tapOn: t
+- tapOn: e
+- tapOn: h
+- tapOn:
+    id: space
+- tapOn:
+    id: Return
+- tapOn: t
+- tapOn: e
+- tapOn: h
+- tapOn:
+    id: Return
