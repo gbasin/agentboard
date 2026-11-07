@@ -546,7 +546,8 @@ body {
 
 /* iOS safe area padding for home indicator - only when keyboard is hidden */
 /* Uses 'keyboard-visible' class toggled by useVisualViewport hook */
-/* Applies to both PWA and regular Safari on iOS */
+/* Applies to both PWA and regular Safari on iOS. The root owns this inset;
+   the terminal panel sits inside it and must not add the same padding again. */
 .ios:not(.keyboard-visible) #root {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
@@ -557,10 +558,6 @@ body {
 
 .ios-pwa .terminal-mobile-overlay {
   height: 100%;
-}
-
-.ios:not(.keyboard-visible) .terminal-mobile-overlay {
-  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* Project badge - theme-aware colors using --badge-hue custom property */
