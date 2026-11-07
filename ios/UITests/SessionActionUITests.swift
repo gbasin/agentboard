@@ -19,10 +19,10 @@ final class SessionActionUITests: XCTestCase {
         field.typeText(value)
         XCTAssertEqual(field.value as? String, value)
     }
-    private func openEnd(in app: XCUIApplication) {
+    private func openAction(_ title: String, in app: XCUIApplication) {
         app.buttons["Session actions"].tap()
-        // Native menus scroll at accessibility sizes; End follows terminal tools.
-        let end = app.buttons["End session"]
+        // Native menus scroll at accessibility sizes; locate the requested action.
+        let end = app.buttons[title]
         for _ in 0..<8 {
             if end.exists && end.isHittable { break }
             (app.collectionViews.allElementsBoundByIndex.last(where: { $0.isHittable }) ?? app.collectionViews.firstMatch).swipeUp()
@@ -50,16 +50,16 @@ final class SessionActionUITests: XCTestCase {
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 15))
         expectation(for: NSPredicate(format: "enabled == true"), evaluatedWith: app.buttons["Enter"])
         waitForExpectations(timeout: 15)
-        app.buttons["Session actions"].tap(); app.buttons["Rename session"].tap()
+        openAction("Rename session", in: app)
         replace(app.textFields["session-name"], with: name + "-renamed", in: app)
         capture("actions-rename")
         app.buttons["Save"].tap()
         XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", name + "-renamed")).firstMatch.waitForExistence(timeout: 10))
-        openEnd(in: app)
+        openAction("End session", in: app)
         capture("actions-end")
         app.buttons["Cancel"].tap()
         XCTAssertTrue(app.webViews.firstMatch.exists)
-        openEnd(in: app)
+        openAction("End session", in: app)
         app.buttons["confirm-end-session"].tap()
         XCTAssertTrue(app.navigationBars["Sessions"].waitForExistence(timeout: 15))
         XCTAssertFalse(app.buttons.containing(NSPredicate(format: "label CONTAINS %@", name)).firstMatch.exists)
