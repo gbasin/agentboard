@@ -26,3 +26,20 @@ visualize skill's Python renderer. Set `AGENTBOARD_VISUALIZE_RENDERER` to use a
 renderer installed elsewhere. Local interactions work; ChatGPT-specific actions
 such as sending a follow-up message are unavailable. SSH-only remote session
 files are not transferred.
+
+## Saved thumbnails
+
+Opening a preview starts one background screenshot capture. The list shows the
+saved screenshot on a later visit. A saved screenshot does not prove that the
+source file or app is still available. It records the first open, not later edits.
+
+Capture uses Chrome or Chromium installed on the Agentboard host. Set
+`AGENTBOARD_PREVIEW_BROWSER` to the browser executable if automatic detection
+fails. Without a browser, previews retain their icons and still open normally.
+Each capture uses a fresh browser profile. It does not use your signed-in profile.
+
+The capture limit is one browser process at a time with a 15-second timeout.
+The cache holds up to 256 images or 32 MiB in `output-thumbnails` under the
+Agentboard data directory. Remove that directory to discard saved screenshots.
+Wildcard paths such as `fm-*.html` are excluded from discovery. A missing file
+must be restored or shared again at its current path before it can open.

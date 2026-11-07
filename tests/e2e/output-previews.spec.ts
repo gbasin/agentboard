@@ -50,9 +50,18 @@ for (const mobile of [false, true]) {
         await expect(separator).toHaveAttribute('aria-valuenow', '50')
       }
       await page.screenshot({ path: info.outputPath(`${mobile ? 'mobile' : 'desktop'}-preview.png`) })
+      // Local capture coverage is optional because packaged hosts need not have Chrome.
+      if (mobile && fs.existsSync('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome')) {
+        const output = (await fixture.items()).items.find(item => item.kind === 'html')!
+        await expect.poll(async () => (await request.get(output.url + '&format=thumbnail')).status(), { timeout: 20000 }).toBe(200)
+      }
       await preview.getByRole('button', { name: 'Previews', exact: true }).click()
       await expect(panel.getByRole('button', { name: 'Previews 1', exact: true })).toHaveAttribute('aria-pressed', 'true')
       await expect(panel.getByRole('button', { name: /Remote report/ })).toBeInViewport()
+      if (mobile && fs.existsSync('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome')) {
+        await expect(panel.getByRole('img', { name: 'Saved preview' })).toBeVisible()
+        await page.screenshot({ path: info.outputPath('mobile-saved-preview.png') })
+      }
       await panel.getByRole('button', { name: /Remote report/ }).click()
       await expect(frame.getByRole('button', { name: 'Count 1' })).toBeVisible()
       const popupPromise = page.waitForEvent('popup')
