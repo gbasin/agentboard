@@ -31,7 +31,7 @@ describe('settings registry', () => {
       'show-last-user-message', 'show-session-id-prefix', 'history-lookback', 'prefer-window-name',
     ])
     expect(ids(rowsForPage('appearance'))).toEqual([
-      'theme', 'font-family', 'custom-font-family', 'font-size', 'line-height', 'letter-spacing',
+      'theme', 'compact-mobile-controls', 'font-family', 'custom-font-family', 'font-size', 'line-height', 'letter-spacing',
     ])
     expect(ids(rowsForPage('terminal'))).toEqual(['ios-autocorrect', 'webgl', 'mouse-mode', 'terminal-colors', 'shortcut-modifier'])
     expect(ids(rowsForPage('notifications'))).toEqual(['sound-permission', 'sound-idle'])
@@ -42,7 +42,7 @@ describe('settings registry', () => {
       SETTINGS_ROWS.filter((row) => row.tags?.includes(tag)).map((row) => row.id).sort()
     expect(tagged('desktop')).toEqual(['shortcut-modifier', 'sidebar-anchor'])
     expect(tagged('device')).toEqual([
-      'custom-font-family', 'font-family', 'font-size', 'ios-autocorrect', 'letter-spacing',
+      'compact-mobile-controls', 'custom-font-family', 'font-family', 'font-size', 'ios-autocorrect', 'letter-spacing',
       'line-height', 'mobile-session-peek', 'shortcut-modifier', 'webgl',
     ])
   })

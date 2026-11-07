@@ -60,6 +60,10 @@ describe('SettingsModal instant apply', () => {
   test('appearance controls apply live', async () => {
     const renderer = await render()
     await openPage(renderer, 'Appearance')
+    act(() => rowSwitch(renderer.root, 'compact-mobile-controls').props.onCheckedChange(true))
+    expect(useSettingsStore.getState().compactMobileControls).toBe(true)
+    act(() => rowSwitch(renderer.root, 'compact-mobile-controls').props.onCheckedChange(false))
+    expect(useSettingsStore.getState().compactMobileControls).toBe(false)
     act(() => radio(renderer.root, 'System').props.onClick())
     expect(useThemeStore.getState().theme).toBe('system')
 

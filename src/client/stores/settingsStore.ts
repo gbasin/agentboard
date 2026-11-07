@@ -147,6 +147,8 @@ interface SettingsState {
   setCustomFontFamily: (family: string) => void
   shortcutModifier: ShortcutModifier | 'auto'
   setShortcutModifier: (modifier: ShortcutModifier | 'auto') => void
+  compactMobileControls: boolean
+  setCompactMobileControls: (enabled: boolean) => void
   showMobileSessionPeek: boolean
   setShowMobileSessionPeek: (enabled: boolean) => void
   showProjectName: boolean
@@ -223,6 +225,8 @@ export const useSettingsStore = create<SettingsState>()(
       setCustomFontFamily: (family) => set({ customFontFamily: family.slice(0, 256) }),
       shortcutModifier: 'auto',
       setShortcutModifier: (modifier) => set({ shortcutModifier: modifier }),
+      compactMobileControls: false,
+      setCompactMobileControls: (enabled) => set({ compactMobileControls: enabled }),
       showMobileSessionPeek: true,
       setShowMobileSessionPeek: (enabled) => set({ showMobileSessionPeek: enabled }),
       showProjectName: true,

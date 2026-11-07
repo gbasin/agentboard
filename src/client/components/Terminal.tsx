@@ -48,6 +48,7 @@ import {
   SpinnerIcon,
   XCloseIcon,
 } from './icons'
+import '../styles/compactMobileControls.css'
 import { ICON_SIZE, TOUCH_TARGET_CLASS, mobileButtonClass } from './controlStyles'
 
 interface TerminalProps {
@@ -122,6 +123,7 @@ export default function Terminal({
   void _onClose // Keep for interface compatibility
   const theme = useResolvedTheme()
   const terminalTheme = terminalThemes[theme]
+  const compactMobileControls = useSettingsStore((state) => state.compactMobileControls)
   const showMobileSessionPeek = useSettingsStore((state) => state.showMobileSessionPeek)
   const useWebGL = useSettingsStore((state) => state.useWebGL)
   const fontSize = useSettingsStore((state) => state.fontSize)
@@ -1308,6 +1310,7 @@ export default function Terminal({
     <section
       className={`flex min-w-0 flex-1 flex-col bg-base terminal-mobile-overlay md:relative md:inset-auto ${isiOS ? 'ios-native-term-selection' : ''}`}
       data-testid="terminal-panel"
+      data-compact-mobile-controls={compactMobileControls}
       onDragOver={(event) => {
         if (!Array.from(event.dataTransfer.types).includes('Files')) return
         event.preventDefault()
@@ -1323,7 +1326,7 @@ export default function Terminal({
       }}
     >
       {/* Mobile header - always show on mobile for drawer access */}
-      <div className="flex min-h-[52px] shrink-0 items-center justify-between border-b border-border bg-elevated px-[6px] md:hidden">
+      <div className="mobile-terminal-header flex min-h-[52px] shrink-0 items-center justify-between border-b border-border bg-elevated px-[6px] md:hidden">
         <div className="flex min-w-0 items-center gap-[7px]">
           <button
             onClick={() => setIsDrawerOpen(true)}
@@ -1407,7 +1410,7 @@ export default function Terminal({
           {hibernatingSession && (
             <button
               onClick={() => onResumeSession(hibernatingSession.sessionId)}
-              className="btn btn-primary h-[44px] px-3 text-xs"
+              className="mobile-header-wake btn btn-primary h-[44px] px-3 text-xs"
             >
               Wake
             </button>
