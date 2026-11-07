@@ -6,6 +6,8 @@ enum SessionAction {
     case create(project: String, name: String, command: String, host: String)
     case rename(id: String, name: String)
     case end(id: String)
+    case renameConversation(id: String, name: String)
+    case lifecycle(type: String, id: String)
 
     var payload: [String: Any] {
         switch self {
@@ -16,7 +18,9 @@ enum SessionAction {
             if !command.isEmpty { result["command"] = command }
             if !host.isEmpty { result["host"] = host }
             return result
+        case let .renameConversation(id, name): return ["type": "session-rename", "sessionId": id, "newName": name]
         case let .rename(id, name): return ["type": "session-rename", "sessionId": id, "newName": name]
+        case let .lifecycle(type, id): return ["type": type, "sessionId": id]
         case let .end(id): return ["type": "session-kill", "sessionId": id, "source": "terminal_confirm_modal"]
         }
     }
@@ -56,7 +60,7 @@ final class SessionActions {
                     if !sent {
                         guard event.type == "sessions", let sessions = event.sessions else { continue }
                         switch action {
-                        case .create: break
+                        case .create, .lifecycle, .renameConversation: break
                         case let .rename(id, name):
                             guard let session = sessions.first(where: { $0.id == id }) else {
                                 throw SessionActionError(message: "This session is no longer available.")
@@ -71,6 +75,16 @@ final class SessionActions {
                         continue
                     }
                     switch action {
+                    case let .renameConversation(id, name):
+                        if (event.hibernating ?? []).contains(where: { $0.id == id && $0.displayName == name }) || (event.history ?? []).contains(where: { $0.id == id && $0.displayName == name }) { return nil }
+                    case let .lifecycle(type, id):
+                        if event.type == type + "-result", event.sessionId == id {
+                            if event.ok == true { return event.session?.boardSession }
+                            let message: String
+                            if case .object(let fields) = event.actionError { message = fields["message"]?.string ?? "Action failed." }
+                            else { message = event.actionError?.string ?? "Action failed." }
+                            throw SessionActionError(message: message)
+                        }
                     case .create:
                         // session-created is a direct response on the requesting socket.
                         if event.type == "session-created", let item = event.session { return item.boardSession }

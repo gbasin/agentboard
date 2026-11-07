@@ -36,6 +36,8 @@ targets:
     info:
       path: AgentboardSpike/Info.plist
       properties:
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
     sources:

@@ -15,6 +15,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: transparent;
 <body><div id="terminal" aria-label="Session terminal"></div>
 <script src="vendor/xterm.js"></script>
 <script src="vendor/addon-fit.js"></script>
+<script src="vendor/addon-webgl.js"></script>
 <script>
 const terminal = new Terminal({ fontFamily: 'Menlo, monospace', fontSize: 13, lineHeight: 1.3,
     cursorBlink: true, scrollback: 5000, allowProposedApi: true, screenReaderMode: true });
@@ -50,6 +51,14 @@ function send(data) {
     else if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({type:'input', data}));
     else if (!endpoint) notify({status: 'Sample transcript · connect a shell to type'});
 }
+terminal.registerLinkProvider({provideLinks(y, callback) {
+    const text = terminal.buffer.active.getLine(y - 1)?.translateToString() || '';
+    callback([...text.matchAll(/https?:\/\/[^\s<>"']+/g)].map(match => ({
+        text: match[0], range: {start: {x: match.index + 1, y}, end: {x: match.index + match[0].length, y}},
+        activate: () => notify({type: 'link', url: match[0]})
+    })));
+}});
+let webgl;
 terminal.onData(send);
 terminal.onResize(({cols, rows}) => {
     if (native) notify({type:'viewport', cols, rows});
@@ -102,6 +111,17 @@ window.agentboard = {
         if (native) notify({type:'viewport', cols:terminal.cols, rows:terminal.rows});
         else endpoint ? connect() : sample(options.name);
     },
+    options: options => {
+        for (const key of ['fontFamily', 'fontSize', 'lineHeight', 'letterSpacing']) {
+            if (terminal.options[key] !== options[key]) terminal.options[key] = options[key];
+        }
+        if (options.webGL && !webgl) {
+            try { webgl = new WebglAddon.WebglAddon(); terminal.loadAddon(webgl); webgl.onContextLoss(() => { webgl?.dispose(); webgl = null; }); }
+            catch { webgl?.dispose(); webgl = null; }
+        } else if (!options.webGL && webgl) { webgl.dispose(); webgl = null; }
+        fit.fit();
+    },
+    copySelection: () => { const text = terminal.getSelection(); if (text) notify({type: 'copy', text}); },
     write: ({data}) => terminal.write(data),
     // Queue the reset behind pending writes, so buffered old output cannot
     // reappear after the next attachment's history.

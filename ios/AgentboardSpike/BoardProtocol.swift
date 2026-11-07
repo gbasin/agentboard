@@ -11,11 +11,20 @@ struct RemoteSession: Decodable {
     let host: String?
     let remote: Bool?
     let isHibernating: Bool?
+    let boardSessionId: String?
+    let agentSessionId: String?
+    let command: String?
+    let createdAt: String?
+    let lastActivity: String?
+    let media: [MediaItem]?
+    let prs: [PullRequestItem]?
 
     var boardSession: BoardSession {
         .init(id: id, name: name, project: projectPath, agent: agentType ?? "Shell",
               status: isHibernating == true ? .sleeping : BoardSession.Status(wireValue: status),
-              summary: lastUserMessage ?? "", host: host, remote: remote ?? false)
+              summary: lastUserMessage ?? "", host: host, remote: remote ?? false,
+              boardID: boardSessionId, agentSessionID: agentSessionId, command: command,
+              createdAt: createdAt ?? "", lastActivity: lastActivity ?? "", media: media ?? [], prs: prs ?? [])
     }
 }
 
@@ -29,9 +38,18 @@ struct BoardEvent: Decodable {
     let remoteAllowAttach: Bool?
     let retryable: Bool?
     let seq: Int?
+    let settings: [String: JSONValue]?
+    let hosts: [HostState]?
+    let hibernating: [AgentLogSession]?
+    let history: [AgentLogSession]?
+    let clipboard: String?
+    let inCopyMode: Bool?
+    let remoteAllowControl: Bool?
+    let ok: Bool?
+    let actionError: JSONValue?
 
     private enum CodingKeys: String, CodingKey {
-        case type, sessions, session, sessionId, data, message, remoteAllowAttach, retryable, seq
+        case type, sessions, session, sessionId, data, message, remoteAllowAttach, retryable, seq, settings, hosts, hibernating, history, text, inCopyMode, remoteAllowControl, ok, error
     }
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -39,14 +57,23 @@ struct BoardEvent: Decodable {
         // Other events reuse "session" for AgentSession, a different schema.
         // Decode only the payload for the event we actually consume.
         sessions = type == "sessions" ? try values.decode([RemoteSession].self, forKey: .sessions) : nil
-        session = ["session-created", "session-update"].contains(type)
-            ? try values.decode(RemoteSession.self, forKey: .session) : nil
-        sessionId = ["session-removed", "terminal-output", "terminal-ready", "terminal-error", "kill-failed"].contains(type)
+        session = ["session-created", "session-update", "session-wake-result"].contains(type)
+            ? try values.decodeIfPresent(RemoteSession.self, forKey: .session) : nil
+        sessionId = ["session-removed", "terminal-output", "terminal-ready", "terminal-error", "kill-failed", "session-wake-result", "session-hibernate-result", "session-move-to-history-result", "clipboard-offer", "tmux-copy-mode-status"].contains(type)
             ? try values.decodeIfPresent(String.self, forKey: .sessionId) : nil
         data = type == "terminal-output" ? try values.decode(String.self, forKey: .data) : nil
         message = ["terminal-error", "error", "kill-failed"].contains(type) ? try values.decodeIfPresent(String.self, forKey: .message) : nil
         remoteAllowAttach = type == "server-config" ? try values.decodeIfPresent(Bool.self, forKey: .remoteAllowAttach) : nil
         retryable = type == "terminal-error" ? try values.decodeIfPresent(Bool.self, forKey: .retryable) : nil
+        settings = type == "synced-settings" ? try values.decodeIfPresent([String: JSONValue].self, forKey: .settings) : nil
+        hosts = type == "host-status" ? try values.decodeIfPresent([HostState].self, forKey: .hosts) : nil
+        hibernating = type == "agent-sessions" ? try values.decodeIfPresent([AgentLogSession].self, forKey: .hibernating) : nil
+        history = type == "agent-sessions" ? try values.decodeIfPresent([AgentLogSession].self, forKey: .history) : nil
+        clipboard = type == "clipboard-offer" ? try values.decodeIfPresent(String.self, forKey: .text) : nil
+        inCopyMode = type == "tmux-copy-mode-status" ? try values.decodeIfPresent(Bool.self, forKey: .inCopyMode) : nil
+        remoteAllowControl = type == "server-config" ? try values.decodeIfPresent(Bool.self, forKey: .remoteAllowControl) : nil
+        ok = type.hasSuffix("-result") ? try values.decodeIfPresent(Bool.self, forKey: .ok) : nil
+        actionError = type.hasSuffix("-result") ? try values.decodeIfPresent(JSONValue.self, forKey: .error) : nil
         seq = type == "pong" ? try values.decodeIfPresent(Int.self, forKey: .seq) : nil
     }
 }

@@ -9,6 +9,18 @@ struct BoardSession: Identifiable, Hashable {
     let summary: String
     var host: String? = nil
     var remote = false
+    var boardID: String? = nil
+    var agentSessionID: String? = nil
+    var command: String? = nil
+    var createdAt: String = ""
+    var lastActivity: String = ""
+    var media: [MediaItem] = []
+    var prs: [PullRequestItem] = []
+
+    var orderKey: String {
+        let agentID = agentSessionID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return agentID.isEmpty ? id : agentID
+    }
 
     enum Status: String, CaseIterable {
         case working = "Working", waiting = "Waiting", sleeping = "Sleeping", permission = "Permission", unknown = "Unknown"

@@ -36,6 +36,14 @@ final class BoardConnection: ObservableObject {
         let reset: () -> Void
         let status: (TerminalState) -> Void
     }
+    let preferences: NativePreferences
+    @Published private(set) var hosts: [HostState] = []
+    @Published private(set) var sleeping: [AgentLogSession] = []
+    @Published private(set) var history: [AgentLogSession] = []
+    @Published private(set) var libraryVersion = 0
+    @Published var clipboardOffer: String?
+    @Published private(set) var inCopyMode = false
+    @Published private(set) var remoteAllowControl = false
     @Published private(set) var sessions: [BoardSession] = []
     @Published private(set) var state: State = .disconnected
     @Published private(set) var remoteAllowAttach = false
@@ -53,11 +61,14 @@ final class BoardConnection: ObservableObject {
     private var awaitingPong: Int?
     private let makeSocket: (URL) -> BoardSocket
 
-    init(makeSocket: @escaping (URL) -> BoardSocket = { URLBoardSocket(url: $0) }) {
+    init(preferences: NativePreferences? = nil, makeSocket: @escaping (URL) -> BoardSocket = { URLBoardSocket(url: $0) }) {
+        self.preferences = preferences ?? NativePreferences()
         self.makeSocket = makeSocket
     }
     func configure(_ value: String) {
         stopSocket()
+        preferences.serverURL = value; preferences.shared = [:]; preferences.error = nil
+        hosts = []; sleeping = []; history = []; clipboardOffer = nil; inCopyMode = false; remoteAllowControl = false
         sessions = []
         target = nil
         address = nil
@@ -93,6 +104,7 @@ final class BoardConnection: ObservableObject {
         if let old = target, state == .connected {
             enqueue(["type": "terminal-detach", "sessionId": old.sessionID])
         }
+        clipboardOffer = nil; inCopyMode = false
         target = Target(sessionID: id, owner: owner, size: size, output: output, reset: reset, status: status)
         setTerminalState(.waiting)
         // The protocol has no attachment ID. A fresh socket prevents late
@@ -104,6 +116,7 @@ final class BoardConnection: ObservableObject {
         guard let old = target, old.owner == owner else { return }
         if state == .connected { enqueue(["type": "terminal-detach", "sessionId": old.sessionID]) }
         target = nil
+        clipboardOffer = nil; inCopyMode = false
         terminalState = .waiting
     }
     func resize(_ size: TerminalSize, owner: UUID) {
@@ -117,6 +130,9 @@ final class BoardConnection: ObservableObject {
     func input(_ value: String, owner: UUID, paste: Bool = false) {
         guard state == .connected, terminalState == .ready, let current = target, current.owner == owner else { return }
         enqueue(["type": paste ? "terminal-paste" : "terminal-input", "sessionId": current.sessionID, "data": value])
+    }
+    func exitCopyMode() {
+        if let target, state == .connected { enqueue(["type": "tmux-cancel-copy-mode", "sessionId": target.sessionID]) }
     }
     private func setTerminalState(_ value: TerminalState) {
         terminalState = value
@@ -171,6 +187,12 @@ final class BoardConnection: ObservableObject {
     }
     private func handle(_ event: BoardEvent) {
         switch event.type {
+        case "synced-settings": if let settings = event.settings { preferences.shared = settings }
+        case "host-status": hosts = event.hosts ?? []
+        case "agent-sessions": sleeping = event.hibernating ?? []; history = event.history ?? []
+        case "library-changed": libraryVersion += 1
+        case "clipboard-offer": if event.sessionId == target?.sessionID { clipboardOffer = event.clipboard }
+        case "tmux-copy-mode-status": if event.sessionId == target?.sessionID { inCopyMode = event.inCopyMode ?? false }
         case "sessions":
             guard let items = event.sessions else { return }
             sessions = items.map(\.boardSession)
@@ -181,7 +203,12 @@ final class BoardConnection: ObservableObject {
             else { checkTargetExists() }
         case "session-update", "session-created":
             guard let item = event.session?.boardSession else { return }
-            if let index = sessions.firstIndex(where: { $0.id == item.id }) { sessions[index] = item }
+            if let index = sessions.firstIndex(where: { $0.id == item.id }) {
+                let previous = sessions[index].status
+                if item.status == .permission && previous != .permission && preferences.bool("soundOnPermission") { NativePreferences.sound(permission: true) }
+                if item.status == .waiting && previous == .working && preferences.bool("soundOnIdle") { NativePreferences.sound(permission: false) }
+                sessions[index] = item
+            }
             else { sessions.append(item) }
             checkTargetExists()
         case "session-removed":
@@ -189,6 +216,7 @@ final class BoardConnection: ObservableObject {
             checkTargetExists()
         case "server-config":
             remoteAllowAttach = event.remoteAllowAttach ?? false
+            remoteAllowControl = event.remoteAllowControl ?? false
             if terminalState != .ready && terminalState != .attaching && state == .connected { attach() }
         case "terminal-output":
             if event.sessionId == target?.sessionID, let data = event.data,

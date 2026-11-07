@@ -23,7 +23,7 @@ final class TerminalBridge: ObservableObject {
     func hideKeyboard() { inputView?.resignFirstResponder() }
     func toggleControl() { control.toggle(); call("control", ["active": control]) }
     func paste(_ value: String) { call("paste", ["data": value]) }
-    func setFont(_ size: Int) { fontSize = size; call("font", ["size": size]) }
+    func setFont(_ size: Int) { fontSize = size; UserDefaults.standard.set(size, forKey: "terminalFontSize"); call("font", ["size": size]) }
 }
 
 struct TerminalWebView: UIViewRepresentable {
@@ -32,6 +32,11 @@ struct TerminalWebView: UIViewRepresentable {
     let endpoint: String
     var live: BoardConnection? = nil
     @Environment(\.colorScheme) private var colorScheme
+    @AppStorage("terminalFont") private var font = "Menlo, monospace"
+    @AppStorage("terminalFontSize") private var size = 13
+    @AppStorage("terminalLineHeight") private var lineHeight = 1.3
+    @AppStorage("terminalLetterSpacing") private var letterSpacing = 0.0
+    @AppStorage("terminalWebGL") private var webGL = false
 
     func makeCoordinator() -> Coordinator { Coordinator(bridge: bridge, session: session, endpoint: endpoint, live: live) }
 
@@ -61,6 +66,7 @@ struct TerminalWebView: UIViewRepresentable {
     func updateUIView(_ view: TerminalContainerView, context: Context) {
         context.coordinator.dark = colorScheme == .dark
         bridge.call("theme", ["dark": colorScheme == .dark])
+        bridge.call("options", ["fontFamily": font, "fontSize": size, "lineHeight": lineHeight, "letterSpacing": letterSpacing, "webGL": webGL])
     }
 
     static func dismantleUIView(_ container: TerminalContainerView, coordinator: Coordinator) {
@@ -95,19 +101,26 @@ struct TerminalWebView: UIViewRepresentable {
             // WebKit takes first responder while finishing its tap. Hand off
             // only after its event has been processed, without a timed delay.
             bridge.webView?.evaluateJavaScript("window.agentboard.prepareInput()") { [weak self] result, _ in
-                if result as? Bool == true, let self, self.active, self.live == nil || self.bridge.ready { self.bridge.focus() }
+                if result as? Bool == true, let self, self.active, self.live == nil || self.bridge.ready { self.live?.exitCopyMode(); self.bridge.focus() }
             }
         }
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
                                shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool { true }
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             bridge.call("start", ["name": session.name, "endpoint": endpoint, "dark": dark, "native": live != nil])
+            let defaults = UserDefaults.standard
+            bridge.fontSize = defaults.object(forKey: "terminalFontSize") as? Int ?? 13
+            bridge.call("options", ["fontFamily": defaults.string(forKey: "terminalFont") ?? "Menlo, monospace",
+                                     "fontSize": bridge.fontSize, "lineHeight": defaults.object(forKey: "terminalLineHeight") as? Double ?? 1.3,
+                                     "letterSpacing": defaults.double(forKey: "terminalLetterSpacing"), "webGL": defaults.bool(forKey: "terminalWebGL")])
         }
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
             bridge.connection = "Terminal could not load"
         }
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
             guard let data = message.body as? [String: Any] else { return }
+            if data["type"] as? String == "copy", let text = data["text"] as? String { UIPasteboard.general.string = text }
+            if data["type"] as? String == "link", let value = data["url"] as? String, let url = URL(string: value), ["http", "https"].contains(url.scheme ?? "") { UIApplication.shared.open(url) }
             if let live, active, let type = data["type"] as? String {
                 if type == "viewport", let cols = data["cols"] as? Int, let rows = data["rows"] as? Int {
                     let size = TerminalSize(cols: cols, rows: rows)

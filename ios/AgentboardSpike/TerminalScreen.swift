@@ -6,10 +6,16 @@ struct TerminalScreen: View {
     @Binding var session: BoardSession
     let endpoint: String
     var live: BoardConnection? = nil
+    var serverURL: String = ""
     let onEnd: () -> Void
+    var onSwitch: ((BoardSession) -> Void)? = nil
     var onManage: ((SessionActionRoute) -> Void)? = nil
     @StateObject private var terminal = TerminalBridge()
     @State private var showEnd = false
+    @State private var showContent = false
+    @State private var showTranscript = false
+    @State private var showUpload = false
+    @State private var showNumbers = false
     @State private var showRename = false
     @State private var name = ""
     @State private var appearance = "System"
@@ -46,7 +52,18 @@ struct TerminalScreen: View {
                         Section {
                             Label(terminal.connection, systemImage: endpoint.isEmpty ? "doc.text" : "network")
                         }
-                        if live != nil {
+                        if let live {
+                            Menu("Switch session") {
+                                ForEach(live.sessions) { item in
+                                    Button(item.name) { onSwitch?(item) }.disabled(!live.canOpen(item))
+                                }
+                            }
+                            Button("Duplicate session", systemImage: "plus.square.on.square") { onManage?(.duplicate(terminal.liveSession ?? session)) }
+                            Button("Hibernate session", systemImage: "moon") { onManage?(.hibernate(terminal.liveSession ?? session)) }
+                            Button("Media and links", systemImage: "photo.on.rectangle") { terminal.hideKeyboard(); showContent = true }
+                            Button("Transcript", systemImage: "text.bubble") { terminal.hideKeyboard(); showTranscript = true }
+                                .disabled((terminal.liveSession ?? session).agentSessionID == nil)
+                            Button("Attach file", systemImage: "paperclip") { terminal.hideKeyboard(); showUpload = true }.disabled(!terminal.ready || session.remote)
                             Button("Rename session", systemImage: "pencil") {
                                 onManage?(.rename(terminal.liveSession ?? session))
                             }
@@ -58,11 +75,19 @@ struct TerminalScreen: View {
                         }
                         }
                         Section("Terminal") {
+                            Button("Number keys", systemImage: "number") { terminal.hideKeyboard(); showNumbers = true }
+                            Button("Copy selection", systemImage: "doc.on.doc") { terminal.call("copySelection") }
+                            if let live {
+                                Button("Copy server selection", systemImage: "clipboard") {
+                                    if let text = live.clipboardOffer { UIPasteboard.general.string = text }
+                                }.disabled(live.clipboardOffer == nil)
+                                Button("Exit copy mode", systemImage: "escape") { live.exitCopyMode() }
+                            }
                             Button("Interrupt", systemImage: "stop") { terminal.send("\u{3}") }
                             Button("Delete word", systemImage: "delete.left") { terminal.send("\u{17}") }
                             Button("Insert newline", systemImage: "arrow.turn.down.left") { terminal.send("\n") }
-                            Button("Larger text", systemImage: "textformat.size.larger") { terminal.setFont(min(22, terminal.fontSize + 1)) }
-                            Button("Smaller text", systemImage: "textformat.size.smaller") { terminal.setFont(max(11, terminal.fontSize - 1)) }
+                            Button("Larger text", systemImage: "textformat.size.larger") { terminal.setFont(min(24, terminal.fontSize + 1)) }
+                            Button("Smaller text", systemImage: "textformat.size.smaller") { terminal.setFont(max(6, terminal.fontSize - 1)) }
                             Button("Scroll to bottom", systemImage: "arrow.down.to.line") { terminal.call("bottom") }
                             if let live {
                                 Button("Reconnect", systemImage: "arrow.clockwise") { live.reconnect() }
@@ -89,6 +114,16 @@ struct TerminalScreen: View {
                     .accessibilityLabel("Session actions")
                 }
             }
+            .sheet(isPresented: $showContent) { NavigationStack {
+                SessionContentView(server: serverURL, media: (terminal.liveSession ?? session).media, prs: (terminal.liveSession ?? session).prs)
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showContent = false } } }
+            } }
+            .sheet(isPresented: $showTranscript) { NavigationStack {
+                TranscriptView(server: serverURL, sessionID: (terminal.liveSession ?? session).agentSessionID ?? "", title: session.name)
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showTranscript = false } } }
+            } }
+            .sheet(isPresented: $showUpload) { FileUploadSheet(server: serverURL, terminal: terminal) }
+            .sheet(isPresented: $showNumbers) { NumberKeys(terminal: terminal) }
             .preferredColorScheme(appearance == "System" ? nil : appearance == "Dark" ? .dark : .light)
             .confirmationDialog("End this sample session?", isPresented: $showEnd, titleVisibility: .visible) {
                 Button("End sample session", role: .destructive, action: onEnd)
