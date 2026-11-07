@@ -6,11 +6,12 @@
  *
  * Collapsed: a media pill at top-right — top placement keeps it
  * clear of the TUI's bottom input row. Expanded: icon-labeled Media/Links
- * views, with a bounded link list and an independent image thumbnail strip.
+ * / Previews views, with bounded lists and an independent image thumbnail strip.
  * Tapping a thumbnail opens a lightbox with the full image; document and link
- * items open their URL directly.
+ * items open their URL directly; previews open beside the terminal or fullscreen.
  */
 
+import { PreviewList } from './outputs/PreviewList'
 import MediaDiscoveryStatus from './MediaDiscoveryStatus'
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import SessionLinks from './SessionLinks'
@@ -24,6 +25,8 @@ import {
   File06Icon,
   Image01Icon,
   LinkExternal01Icon,
+  Link01Icon,
+  BrowserIcon,
   XCloseIcon,
   SearchSmIcon,
 } from './icons'
@@ -133,19 +136,25 @@ function ImageThumbnail({ media, caption, enabled, root, onOpen }: {
   )
 }
 
-export default function MediaRail({ session, ready = false }: { session: Session; ready?: boolean }) {
+interface RailProps { session: Session; ready?: boolean; onPreview?: (item: SessionMedia) => void; choosePreview?: number }
+export default function MediaRail({ session, ready = false, onPreview, choosePreview = 0 }: RailProps) {
   // A new transcript starts with a clean baseline and closed previews.
   const identity = JSON.stringify([
     session.id, session.agentSessionId, session.logFilePath, session.remote, session.agentType,
   ])
-  return <SessionMediaRail key={identity} session={session} ready={ready} />
+  return <SessionMediaRail key={identity} session={session} ready={ready} onPreview={onPreview} choosePreview={choosePreview} />
 }
 
-function SessionMediaRail({ session, ready }: { session: Session; ready: boolean }) {
+function SessionMediaRail({ session, ready = false, onPreview, choosePreview = 0 }: RailProps) {
   const [expanded, setExpanded] = useState(false)
   const [attention, setAttention] = useState<'idle' | 'pulsing' | 'unread'>('idle')
   const summary = session.mediaSummary
-  const [tab, setTab] = useState<'media' | 'links'>(() => summary && summary.links > 0 && summary.images + summary.documents === 0 ? 'links' : 'media')
+  const [tab, setTab] = useState<'media' | 'links' | 'previews'>(() => summary?.previews && summary.images + summary.documents + summary.links === 0 ? 'previews' : summary && summary.links > 0 && summary.images + summary.documents === 0 ? 'links' : 'media')
+  const previousChoose = useRef(choosePreview)
+  useEffect(() => {
+    if (choosePreview !== previousChoose.current) { setTab('previews'); setExpanded(true) }
+    previousChoose.current = choosePreview
+  }, [choosePreview])
   const [searchOpen, setSearchOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [query, setQuery] = useState('')
@@ -223,14 +232,14 @@ function SessionMediaRail({ session, ready }: { session: Session; ready: boolean
           ref={panel}
           data-testid="media-rail"
           onKeyDown={event => event.stopPropagation()}
-          className="absolute top-2 right-2 z-40 flex max-h-[min(280px,65%)] w-[calc(100%-16px)] flex-col overflow-hidden rounded-xl border border-border bg-elevated shadow-xl md:max-h-[320px] md:w-[400px]"
+          className="absolute top-2 right-2 z-[60] flex max-h-[min(280px,65%)] w-[calc(100%-16px)] flex-col overflow-hidden rounded-xl border border-border bg-elevated shadow-xl md:max-h-[320px] md:w-[400px]"
         >
-          <div className="flex shrink-0 items-center gap-[10px] border-b border-border/60 px-3">
-            {(['media', 'links'] as const).map(value => {
-              const Icon = value === 'media' ? Image01Icon : LinkExternal01Icon
+          <div className="flex shrink-0 flex-wrap items-center gap-[6px] border-b border-border/60 px-3">
+            {(['media', 'links', 'previews'] as const).map(value => {
+              const Icon = value === 'media' ? Image01Icon : value === 'links' ? Link01Icon : BrowserIcon
               return <button key={value} type="button" aria-pressed={tab === value} onClick={() => { setTab(value); lightbox.close() }}
                 className={`flex h-[44px] items-center gap-[6px] whitespace-nowrap text-[12px] ${tab === value ? 'text-primary shadow-[inset_0_-2px_var(--accent)]' : 'text-secondary hover:text-primary'} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent`}>
-                <Icon width={ICON_SIZE.primary} height={ICON_SIZE.primary} />{value === 'media' ? `Media${mediaCount === undefined ? '' : ` ${mediaCount}`}` : `Links${counts ? ` ${counts.links}` : ''}`}
+                <Icon width={ICON_SIZE.primary} height={ICON_SIZE.primary} />{value === 'media' ? `Media${mediaCount === undefined ? '' : ` ${mediaCount}`}` : value === 'links' ? `Links${counts ? ` ${counts.links}` : ''}` : `Previews${counts ? ` ${counts.previews ?? 0}` : ''}`}
               </button>
             })}
             {tab === 'links' && <button type="button" aria-label="Search links" aria-expanded={searchOpen}
@@ -255,7 +264,7 @@ function SessionMediaRail({ session, ready }: { session: Session; ready: boolean
           {Boolean(counts?.omittedItems || pages.pages[0]?.page.omittedItems) && <p data-testid="media-omitted-items" className="px-3 py-2 text-xs text-muted">
             Some items could not be listed because their details are too large ({Math.max(counts?.omittedItems ?? 0, pages.pages[0]?.page.omittedItems ?? 0)}).
           </p>}
-          {tab === 'links' ? <SessionLinks key={query} session={session} ready={ready} search={query} onRefresh={() => setAttention('idle')} /> : <>
+          {tab === 'previews' ? <PreviewList session={session} ready={ready} onSelect={item => { onPreview?.(item); setExpanded(false) }} /> : tab === 'links' ? <SessionLinks key={query} session={session} ready={ready} search={query} onRefresh={() => setAttention('idle')} /> : <>
           {pages.changed && (
             <button type="button" onClick={refresh} disabled={!ready || pages.status === 'loading'}
               className="px-3 py-2 text-xs text-accent" aria-label="Refresh media">Media changed · Refresh</button>
@@ -302,15 +311,18 @@ function SessionMediaRail({ session, ready }: { session: Session; ready: boolean
             setAttention('idle')
             setExpanded(true)
           }}
-          aria-label={`Open media${counts && !pendingEmpty ? `: ${counts.total} ${counts.total === 1 ? 'item' : 'items'}` : ''}${attention !== 'idle' ? ', new media' : ''}`}
+          aria-label={`Open media, links and previews${counts && !pendingEmpty ? `: ${counts.total} ${counts.total === 1 ? 'item' : 'items'}` : ''}${attention !== 'idle' ? ', new media' : ''}`}
           className={`absolute top-2 right-2 z-40 flex items-center gap-1.5 rounded-full border border-border bg-elevated/90 px-3 py-1.5 text-xs text-secondary shadow-lg backdrop-blur transition-colors hover:text-primary md:min-h-[30px] md:gap-[6px] md:px-[12px] md:py-[5px] md:text-[12px] md:leading-[18px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${attention === 'pulsing' ? 'media-attention' : ''} ${TOUCH_TARGET_CLASS}`}
         >
           <Image01Icon width={ICON_SIZE.pill} height={ICON_SIZE.pill} className="md:h-[16px] md:w-[16px]" />
           <span className="hidden md:inline">Media</span>
           <span className="tabular-nums">{pendingEmpty ? '…' : mediaCount ?? '…'}</span>
           {!!counts?.links && <>
-            <LinkExternal01Icon width={ICON_SIZE.pill} height={ICON_SIZE.pill} />
+            <Link01Icon width={ICON_SIZE.pill} height={ICON_SIZE.pill} />
             <span className="tabular-nums">{counts?.links}</span>
+          </>}
+          {!!counts?.previews && <>
+            <BrowserIcon width={ICON_SIZE.pill} height={ICON_SIZE.pill} /><span className="tabular-nums">{counts.previews}</span>
           </>}
           {attention !== 'idle' && (
             <span data-testid="media-rail-new-dot" aria-hidden="true" className="h-[6px] w-[6px] shrink-0 rounded-full bg-accent" />

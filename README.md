@@ -259,6 +259,8 @@ To use a different modifier, open **Settings** > **Terminal**.
 
 ## Documentation
 
+- [Session previews](docs/session-previews.md): HTML reports and live apps in the shared media panel.
+
 - [Configuration](docs/configuration.md): every environment variable.
 - [Remote hosts](docs/remote-hosts.md): sessions from other machines over SSH.
 - [Session recovery](docs/session-recovery.md): reopen sessions after a crash or reboot.

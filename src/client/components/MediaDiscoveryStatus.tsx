@@ -1,7 +1,7 @@
 /** Discovery is partial until the index reports completion; existing rows remain usable. */
 import type { MediaDiscovery } from '@shared/media'
 export default function MediaDiscoveryStatus({ discovery, kind, hasItems }: {
-  discovery: MediaDiscovery; kind: 'media' | 'links'; hasItems: boolean
+  discovery: MediaDiscovery; kind: 'media' | 'links' | 'previews'; hasItems: boolean
 }) {
   if (discovery.status !== 'pending' && discovery.status !== 'indexing') return null
   const percent = discovery.status === 'indexing' && discovery.bytesTotal > 0

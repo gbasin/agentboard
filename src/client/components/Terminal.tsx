@@ -25,7 +25,7 @@ import SessionRail from './SessionRail'
 import TerminalControls from './TerminalControls'
 import TerminalSnapshotLayer from './TerminalSnapshotLayer'
 import { shouldRejoinWrapped, useOpenSelectText, useTerminalSnapshot } from '../hooks/useTerminalSnapshot'
-import MediaRail from './MediaRail'
+import SessionOutputs from './outputs/SessionOutputs'
 import PasteStatus from './PasteStatus'
 import RecoveryDraft from './RecoveryDraft'
 import { useRecoveryDraft } from '../hooks/useRecoveryDraft'
@@ -1462,8 +1462,9 @@ export default function Terminal({
         </div>
       </div>
 
-      {/* Terminal content - always rendered so ref is attached */}
-      <div className="relative flex-1">
+      {/* Stable wrapper keeps xterm mounted while previews open beside it. */}
+      <SessionOutputs session={session} ready={connectionStatus === 'connected' && isInputReady}>
+      <div className="relative min-w-0 flex-1" data-testid="terminal-content">
         {showSessionPeek && (
           <MobileSessionPeek
             sessions={sessions}
@@ -1533,7 +1534,6 @@ export default function Terminal({
             </button>
           </div>
         )}
-        {session && <MediaRail session={session} ready={connectionStatus === 'connected' && isInputReady} />}
         {!session && (
           <div className="absolute inset-0 flex items-center justify-center text-sm text-muted">
             {hibernatingSession ? null : 'Select a session to view terminal'}
@@ -1638,6 +1638,8 @@ export default function Terminal({
         ) : null}
 
       </div>
+
+      </SessionOutputs>
 
       <PasteStatus {...browserPaste} />
 

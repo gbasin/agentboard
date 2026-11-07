@@ -36,7 +36,7 @@ function validPage(value: unknown, identity: string | undefined): value is Media
     Number.isSafeInteger(page.total) && page.total >= 0 &&
     (page.nextCursor === null || (typeof page.nextCursor === 'string' && page.nextCursor.length <= 8192)) &&
     Array.isArray(page.items) && page.items.length <= MEDIA_PAGE_ITEMS && page.items.every(item =>
-      item && ['image', 'document', 'link'].includes(item.kind) && typeof item.url === 'string')
+      item && ['image', 'document', 'link', 'html', 'localhost', 'visualization'].includes(item.kind) && typeof item.url === 'string')
 }
 
 export function useMediaPages(sessionId: string | undefined, summary: MediaSummary | undefined, expanded: boolean, ready: boolean, query: MediaQuery = {}) {
