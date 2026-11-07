@@ -98,6 +98,8 @@ export async function connectProxySocket(url: URL, headers: Headers, protocols: 
 
 export const proxyWebsocket = {
   maxPayloadLength: 8 * 1024 * 1024,
+  backpressureLimit: 1024 * 1024,
+  closeOnBackpressureLimit: true,
   open(ws: ServerWebSocket<ProxySocket>) {
     const remote = ws.data.upstream
     remote.binaryType = 'arraybuffer'
@@ -117,6 +119,7 @@ export const proxyWebsocket = {
   },
   message(ws: ServerWebSocket<ProxySocket>, message: string | Buffer) {
     const remote = ws.data.upstream
+    if (remote.bufferedAmount > 1024 * 1024) { ws.close(1013, 'Local app is too slow'); return }
     if (remote.readyState === WebSocket.OPEN) remote.send(message)
     else if (remote.readyState === WebSocket.CONNECTING) {
       ws.data.queuedBytes += typeof message === 'string' ? Buffer.byteLength(message) : message.length

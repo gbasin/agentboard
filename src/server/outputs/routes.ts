@@ -15,7 +15,7 @@ import { PreviewServers } from './previewServers'
 export function outputRoutes(options: {
   getSession: (id: string) => AgentSessionRecord | null | undefined
   previews: PreviewServers
-  boardPort: number
+  blockedPorts: () => number[]
   cacheRoot: string
   ready: () => Promise<unknown>
 }) {
@@ -43,7 +43,7 @@ export function outputRoutes(options: {
     }
     const ref = descriptor.url
     const upstream = descriptor.kind === 'localhost' ? loopbackUrl(ref) : null
-    if (descriptor.kind === 'localhost' && (!upstream || Number(upstream.port) === options.boardPort || options.previews.isPreviewOrigin(upstream.origin))) {
+    if (descriptor.kind === 'localhost' && (!upstream || options.blockedPorts().includes(Number(upstream.port)) || options.previews.isPreviewOrigin(upstream.origin))) {
       return c.json({ error: 'This local address cannot be previewed' }, 400)
     }
     const file = ref.startsWith('~/') ? path.join(os.homedir(), ref.slice(2)) : path.resolve(record.projectPath, ref)

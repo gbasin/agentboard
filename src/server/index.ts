@@ -495,7 +495,7 @@ app.use('/api/*', async (c, next) => {
   await next()
 })
 app.route('/api/session-output', outputRoutes({
-  getSession: id => db.getSessionById(id), previews, boardPort: config.port, cacheRoot: process.env.AGENTBOARD_DATA_DIR || path.join(os.homedir(), '.agentboard'),
+  getSession: id => db.getSessionById(id), previews, blockedPorts: () => [config.port, httpServer.port!], cacheRoot: process.env.AGENTBOARD_DATA_DIR || path.join(os.homedir(), '.agentboard'),
   ready: () => tailscaleReady,
 }))
 const db = initDatabase({ exclusive: true })
