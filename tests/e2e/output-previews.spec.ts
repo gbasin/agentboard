@@ -103,7 +103,7 @@ for (const mobile of [false, true]) {
   })
 }
 
-test('live app preview proxies assets, API calls and WebSockets', async ({ page, request }) => {
+test('live app preview proxies assets, API calls and WebSockets', async ({ page, request }, info) => {
   const fixture = await mediaFixture(request, 0)
   const app = spawn('bun', ['tests/e2e/fixtures/preview-app.ts'], { env: { ...process.env, TMUX: undefined }, stdio: ['ignore', 'pipe', 'pipe'] })
   try {
@@ -119,10 +119,23 @@ test('live app preview proxies assets, API calls and WebSockets', async ({ page,
     await page.getByRole('button', { name: 'Previews 1', exact: true }).click()
     await page.getByTestId('output-item').click()
     const frame = page.frameLocator('iframe[title="Live app"]')
-    await expect(frame.getByRole('heading')).toBeVisible()
+    await expect(frame.getByRole('heading')).toHaveCSS('color', 'rgb(12, 100, 40)')
+    if (process.env.E2E_PREVIEW_BIND_CONFLICT) {
+      const logs = fs.readFileSync(process.env.LOG_FILE!, 'utf8')
+      expect(logs).toContain('tailscale_bind_failed')
+      const src = new URL(await page.locator('iframe[title="Live app"]').getAttribute('src') as string)
+      expect(src.hostname).toBe('[::1]')
+      expect(src.port).not.toBe(new URL(page.url()).port)
+      // No capability: the preview remains protected on its separate origin.
+      expect((await request.get(new URL('/', src).href)).status()).toBe(403)
+    }
     await frame.getByRole('button', { name: 'Save setting' }).click()
     await expect(frame.locator('#api')).toHaveText('Saved remotely')
     await expect(frame.locator('#socket')).toHaveText('WebSocket connected')
+    await expect(page.getByTestId('output-preview').getByRole('status')).toBeHidden()
+    const screenshot = info.outputPath('live-preview-connected.png')
+    await page.screenshot({ path: screenshot })
+    await info.attach('Live preview: assets, POST and WebSocket connected', { path: screenshot, contentType: 'image/png' })
   } finally { app.kill(); fixture.cleanup() }
 })
 
