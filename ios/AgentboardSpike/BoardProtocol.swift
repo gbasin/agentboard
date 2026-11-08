@@ -11,7 +11,6 @@ struct RemoteSession: Decodable {
     let host: String?
     let remote: Bool?
     let source: String?
-    let isHibernating: Bool?
     let boardSessionId: String?
     let agentSessionId: String?
     let command: String?
@@ -22,9 +21,10 @@ struct RemoteSession: Decodable {
     let mediaSummary: MediaCatalogSummary?
     let activity: NativeSessionActivity?
 
+    // Live registry membership determines attachment; the stored hibernation marker can survive a wake.
     var boardSession: BoardSession {
         .init(id: id, name: name, project: projectPath, agent: agentType ?? "Shell",
-              status: isHibernating == true ? .sleeping : BoardSession.Status(wireValue: status),
+              status: BoardSession.Status(wireValue: status),
               summary: lastUserMessage ?? "", host: host, remote: remote ?? false, source: source,
               boardID: boardSessionId, agentSessionID: agentSessionId, command: command,
               createdAt: createdAt ?? "", lastActivity: lastActivity ?? "", media: media ?? [], prs: prs ?? [], activity: activity, mediaSummary: mediaSummary)

@@ -4,6 +4,8 @@ This is a running record, not an approved feature plan. Implementation follows t
 
 ## 1. Parity we may want to reconsider
 
+- **Lifecycle marker ambiguity:** a live session can retain `isHibernating=true` after Wake. The PWA uses live registry membership and wire status; native previously treated the marker as Sleeping and disabled entry. Fix native decoding, not the shared marker. A clearer API distinction between dormant state and persisted lifecycle intent would prevent this mistake.
+
 - **Frozen selection copy shaping:** the PWA heuristically rejoins agent-wrapped lines and removes shared indentation. It improves prose copying but can join an intentional line break. Preserve its documented behavior for parity; consider an explicit exact-text option for code/data.
 - **Autocorrect in a terminal:** helpful for natural-language agent prompts, risky for shell commands, paths and identifiers. Expose a device preference and preserve control-key/composition semantics; do not silently reinterpret committed command text.
 - **Status peek:** the PWA spends terminal width on a narrow colored strip. The native app already has a session switcher. A native status summary can expose the same information without copying that geometry.
@@ -22,6 +24,8 @@ This is a running record, not an approved feature plan. Implementation follows t
 - Keep error recovery actions visible at maximum Dynamic Type; lazy native rows require scrolling in tests, not smaller product text.
 
 ## 3. Possible gaps or additional features
+
+- Shipping identity: the Simulator home screen still shows a placeholder app icon, and the Xcode targets retain the Spike name. Plan a proper app icon and release identity before distribution; these do not affect PWA functionality.
 
 - Camera-photo formats: the shared image endpoint accepts PNG, JPEG, GIF and WebP. Verify HEIC photo selection on a physical iPhone and decide whether unsupported formats should remain files or offer explicit conversion.
 - Exact-copy versus readable-copy option for terminal snapshots.

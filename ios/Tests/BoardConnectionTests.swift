@@ -74,6 +74,19 @@ final class BoardConnectionTests: XCTestCase {
         XCTAssertNil(ignored.session)
     }
 
+    func testLiveStatusSurvivesPersistedHibernationMarker() throws {
+        let live = #"{"type":"sessions","sessions":[{"id":"live","name":"Resumed","projectPath":"/tmp/test","status":"waiting","isHibernating":true,"source":"managed"}]}"#
+        let event = try JSONDecoder().decode(BoardEvent.self, from: Data(live.utf8))
+        let session = try XCTUnwrap(event.sessions?.first?.boardSession)
+        XCTAssertEqual(session.status, .waiting)
+        XCTAssertEqual(session.id, "live")
+        // Dormant conversations arrive on a different event and remain available for Wake.
+        let dormant = #"{"type":"agent-sessions","hibernating":[{"sessionId":"log","displayName":"Sleeping","agentType":"claude","projectPath":"/tmp","createdAt":"","lastActivityAt":"","isHibernating":true}],"history":[]}"#
+        let sleeping = try JSONDecoder().decode(BoardEvent.self, from: Data(dormant.utf8))
+        XCTAssertNil(sleeping.sessions)
+        XCTAssertEqual(sleeping.hibernating?.first?.id, "log")
+    }
+
     func testFreshAttachmentGatesInputAndIgnoresOldSocket() async {
         var sockets: [Socket] = []
         let board = BoardConnection { _ in let socket = Socket(); sockets.append(socket); return socket }
