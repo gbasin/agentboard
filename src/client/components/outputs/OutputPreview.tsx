@@ -31,6 +31,21 @@ export function OutputPreview({ item, mobile, open, onClose, onChoose, status }:
     setLoad(null)
     setWaiting(true)
     setSlow(false)
+    if (item.kind === 'link') {
+      try {
+        const url = new URL(item.externalUrl ?? item.url, window.location.href)
+        if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.origin === window.location.origin) {
+          throw new Error('Open this link in a new tab to view it.')
+        }
+        if (window.location.protocol === 'https:' && url.protocol === 'http:') {
+          throw new Error('This HTTP page cannot be embedded in an HTTPS dashboard. Open the original to view it.')
+        }
+        setLoad({ url: url.href })
+      } catch (error) {
+        setLoad({ error: error instanceof Error ? error.message : 'Invalid preview address' })
+      }
+      return () => controller.abort()
+    }
     fetch(item.url + '&format=json', { signal: controller.signal })
       .then(async response => {
         const body = await response.json()
@@ -41,7 +56,7 @@ export function OutputPreview({ item, mobile, open, onClose, onChoose, status }:
         if (!controller.signal.aborted) setLoad({ error: error.message || 'Preview unavailable' })
       })
     return () => controller.abort()
-  }, [item.url, revision])
+  }, [item.url, item.externalUrl, item.kind, revision])
   useEffect(() => {
     if (!waiting) return
     const timer = setTimeout(() => setSlow(true), 12_000)
@@ -92,15 +107,16 @@ export function OutputPreview({ item, mobile, open, onClose, onChoose, status }:
         {mobile && <button type="button" onClick={onClose} className={control}>← Terminal</button>}
         <div className={`min-w-0 flex-1 px-1 ${mobile ? 'order-last basis-full py-1' : ''}`}>
           <div className="truncate text-[13px] font-medium text-primary">{item.label || 'Output preview'}</div>
-          <div className="text-[12px] text-muted">{item.kind === 'visualization' ? 'Codex visualization' : item.kind === 'html' ? 'HTML report' : 'Live app'}</div>
+          <div className="text-[12px] text-muted">{item.kind === 'link' ? 'Web page' : item.kind === 'visualization' ? 'Codex visualization' : item.kind === 'html' ? 'HTML report' : 'Live app'}</div>
         </div>
-        <button type="button" onClick={onChoose} className={control}>Previews</button>
+        <button type="button" onClick={onChoose} className={control}>{item.kind === 'link' ? 'Links' : 'Previews'}</button>
         <button type="button" onClick={() => setRevision(v => v + 1)} className={control}>Reload</button>
-        <a href={load && 'url' in load ? load.url : item.url} target="_blank" rel="noopener noreferrer" aria-label="Open output in new tab" className={control}>
-          <LinkExternal01Icon width={ICON_SIZE.primary} height={ICON_SIZE.primary} />
+        <a href={load && 'url' in load ? load.url : item.externalUrl ?? item.url} target="_blank" rel="noopener noreferrer" aria-label="Open output in new tab" className={control}>
+          <LinkExternal01Icon width={ICON_SIZE.primary} height={ICON_SIZE.primary} /><span className="ml-1">Open original</span>
         </a>
         {!mobile && <button type="button" onClick={onClose} aria-label="Close preview" className={control}><XCloseIcon width={ICON_SIZE.primary} height={ICON_SIZE.primary} /></button>}
       </div>
+      {item.kind === 'link' && <p className="shrink-0 border-b border-border px-3 py-2 text-[12px] text-muted">If this page stays blank or refuses to connect, use Open original.</p>}
       {load && 'error' in load ? (
         <div role="alert" className="p-5 text-[13px] text-secondary"><p>{load.error}</p><button type="button" onClick={() => setRevision(v => v + 1)} className="mt-3 rounded border border-border px-3 py-2">Try again</button></div>
       ) : (

@@ -7,8 +7,14 @@ bounded pages through the same worker-backed index as media and links.
 
 Desktop previews open in a resizable side pane. Mobile previews fill the screen
 and provide a **Terminal** back button. Closing and reopening the same preview
-preserves its page state. Use **Reload** to load file changes or **Open output in
-new tab** for a separate browser tab.
+preserves its page state. Use **Reload** to load changes or **Open original** for a separate browser tab.
+
+For assistant-shared web links, select **Links**, then **Preview** beside a link.
+The page loads directly from its host only when selected. Tailscale addresses
+require a Tailscale connection on the viewing device. Web links do not generate
+server-side thumbnails. If a site blocks embedding, use **Open original**. HTTP
+pages cannot be embedded in an HTTPS dashboard; the viewer offers the original
+link instead. Links to the dashboard itself also open separately.
 
 Previews use temporary ports on Agentboard's host, including its Tailscale
 interface. These ports must be reachable from the viewing device; exposing only

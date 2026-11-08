@@ -68,3 +68,17 @@ test('Markdown destinations, reference links, formatted labels, escapes, and ent
   expect(result[0].label).toBe('https://label.example')
   expect(result[1].label).toBe('Review report')
 })
+
+test('SJ mockup links in Codex final messages retain all three destinations and labels', () => {
+  const text = 'The **Steve Jobs audit mockups are hosted here**:\n\n' +
+    '- [Review hub: Today / Refine / Bold](http://100.82.11.20:8188/proposals/)\n' +
+    '- [Sessions, navigation, filters, and Library](http://100.82.11.20:8188/proposals/catalog.html)\n' +
+    '- [Create session, terminal actions, recovery, and Settings](http://100.82.11.20:8188/proposals/workflows.html)'
+  const record = { type: 'response_item', payload: { type: 'message', role: 'assistant', phase: 'final_answer', content: [{ type: 'output_text', text }] } }
+  const line = JSON.stringify(record)
+  expect(extractSessionMedia(line + '\n' + line + '\n').map(({ url, label }) => ({ url, label }))).toEqual([
+    { url: 'http://100.82.11.20:8188/proposals/', label: 'Review hub: Today / Refine / Bold' },
+    { url: 'http://100.82.11.20:8188/proposals/catalog.html', label: 'Sessions, navigation, filters, and Library' },
+    { url: 'http://100.82.11.20:8188/proposals/workflows.html', label: 'Create session, terminal actions, recovery, and Settings' },
+  ])
+})

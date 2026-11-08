@@ -8,7 +8,7 @@ import { ChevronRightIcon } from './icons'
 import { CopyLinkButton } from './CopyLinkButton'
 import { linkPresentation } from '../lib/linkPresentation'
 
-function LinkRow({ item }: { item: SessionMedia }) {
+function LinkRow({ item, onPreview }: { item: SessionMedia; onPreview?: (item: SessionMedia) => void }) {
   const [showSource, setShowSource] = useState(false)
   const destination = item.externalUrl ?? item.url
   const { title, subtitle, detail } = linkPresentation(destination, item.label)
@@ -20,6 +20,8 @@ function LinkRow({ item }: { item: SessionMedia }) {
         {subtitle && <span className="mt-0.5 line-clamp-2 break-words text-[11px] leading-[16px] text-secondary [overflow-wrap:anywhere]">{subtitle}</span>}
         {detail && <span className="mt-0.5 line-clamp-2 break-all text-[11px] leading-[16px] text-secondary">{detail}</span>}
       </a>
+      {onPreview && <button type="button" aria-label={`Preview ${title}`} onClick={() => onPreview(item)}
+        className="min-h-[44px] shrink-0 rounded px-2 text-[12px] text-secondary hover:bg-hover hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">Preview</button>}
       {item.externalUrl && <CopyLinkButton url={item.externalUrl} label={title} />}
       {item.sourceText && <button type="button" aria-label={`Source for ${title}`} aria-expanded={showSource}
         onClick={() => setShowSource(value => !value)}
@@ -33,7 +35,7 @@ function LinkRow({ item }: { item: SessionMedia }) {
   </div>
 }
 
-export default function SessionLinks({ session, ready, search, onRefresh }: { session: Session; ready: boolean; search: string; onRefresh: () => void }) {
+export default function SessionLinks({ session, ready, search, onRefresh, onPreview }: { session: Session; ready: boolean; search: string; onRefresh: () => void; onPreview?: (item: SessionMedia) => void }) {
   const pages = useMediaPages(session.agentSessionId, session.mediaSummary, true, ready, { kind: 'links', search })
   const scroll = useRef<HTMLDivElement>(null)
   // Paging replaces a bounded group of rows. Explicit navigation avoids scroll
@@ -50,7 +52,7 @@ export default function SessionLinks({ session, ready, search, onRefresh }: { se
       {!!current?.page.omittedItems && !session.mediaSummary?.omittedItems && <p className="px-3 py-2 text-xs text-secondary">
         Some items could not be listed because their details are too large ({current.page.omittedItems}).
       </p>}
-      {current?.page.items.map(item => <LinkRow key={item.url} item={item} />)}
+      {current?.page.items.map(item => <LinkRow key={item.url} item={item} onPreview={onPreview} />)}
       {current && !current.page.items.length && pages.discovery.status === 'ready' && <p className="px-3 py-4 text-xs text-secondary">
         {search ? 'No matching links.' : 'No web links in this session yet.'}
       </p>}
