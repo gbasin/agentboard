@@ -21,8 +21,12 @@ final class NativeParityUITests: XCTestCase {
     }
     private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
         for _ in 0..<10 {
-            if element.exists && element.isHittable { return }
-            (app.collectionViews.allElementsBoundByIndex.last(where: { $0.isHittable }) ?? app.collectionViews.firstMatch).swipeUp()
+            let top = app.navigationBars.allElementsBoundByIndex.last?.frame.maxY ?? app.frame.minY
+            var bottom = app.frame.maxY - 20
+            if let search = app.searchFields.allElementsBoundByIndex.last, search.frame.midY > app.frame.midY { bottom = min(bottom, search.frame.minY) }
+            if element.exists && element.isHittable && element.frame.minY >= top && element.frame.maxY < bottom { return }
+            let list = app.collectionViews.allElementsBoundByIndex.last(where: { $0.isHittable }) ?? app.collectionViews.firstMatch
+            if element.exists && element.frame.minY < top { list.swipeDown() } else { list.swipeUp() }
         }
         if !element.exists || !element.isHittable {
             capture("unreachable-control")
@@ -45,6 +49,8 @@ final class NativeParityUITests: XCTestCase {
         reveal(row, in: app)
         XCTAssertTrue(row.waitForExistence(timeout: 10)); XCTAssertTrue(row.isHittable); row.tap()
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10))
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: app.buttons["Enter"])
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 15), .completed, app.debugDescription)
     }
     func testDirectoryBrowserPresetAndDuplicate() {
         let app = app(); app.buttons["New session"].tap()
@@ -125,22 +131,26 @@ final class NativeParityUITests: XCTestCase {
     func testLoadedMediaDocumentAndLink() {
         let app = app(); app.buttons["Library"].tap()
         let history = app.buttons.containing(NSPredicate(format: "label BEGINSWITH %@", "Conversation history")).firstMatch
-        XCTAssertTrue(history.waitForExistence(timeout: 10)); history.tap()
+        XCTAssertTrue(history.waitForExistence(timeout: 10)); reveal(history, in: app); history.tap()
         let search = app.searchFields["Search"]
         XCTAssertTrue(search.waitForExistence(timeout: 5)); replace(search, "parity-saved-transcript"); search.typeText("\n")
         tap("Media and links", in: app)
         XCTAssertTrue(app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "image/png")).firstMatch.waitForExistence(timeout: 15))
-        capture("media-loaded")
-        app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "image/png")).firstMatch.tap()
+        let image = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "image/png")).firstMatch
+        reveal(image, in: app); capture("media-loaded"); image.tap()
         XCTAssertTrue(app.images["Session image"].waitForExistence(timeout: 10)); capture("media-image")
         app.images["Session image"].pinch(withScale: 2, velocity: 1)
         XCTAssertGreaterThan(app.images["Session image"].frame.width, app.windows.firstMatch.frame.width)
-        app.buttons["Next"].tap()
-        XCTAssertTrue(app.webViews.staticTexts["Native document fixture"].waitForExistence(timeout: 10)); capture("media-document")
-        app.buttons["Next"].tap()
+        app.navigationBars["Media"].buttons["Done"].tap()
+        let document = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "text/html")).firstMatch
+        reveal(document, in: app); document.tap()
+        XCTAssertTrue(app.buttons["Share document"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts["HTML source"].waitForExistence(timeout: 10))
+        capture("media-document")
+        app.navigationBars["Media"].buttons["Done"].tap()
+        tap("Native link fixture", in: app)
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 5)); capture("media-link")
-        app.buttons["Previous"].tap(); XCTAssertTrue(app.webViews.staticTexts["Native document fixture"].waitForExistence(timeout: 10))
-        app.buttons["Done"].tap()
+        app.navigationBars["Native link fixture"].buttons["Done"].tap()
         tap("gbasin/agentboard #1", in: app)
         XCTAssertTrue(app.navigationBars["Pull request"].waitForExistence(timeout: 5))
         capture("pull-request")
@@ -222,7 +232,7 @@ final class NativeParityUITests: XCTestCase {
         let app = app(server: "http://127.0.0.1:4190")
         app.buttons["Library"].tap()
         let history = app.buttons.containing(NSPredicate(format: "label BEGINSWITH %@", "Conversation history")).firstMatch
-        XCTAssertTrue(history.waitForExistence(timeout: 10)); history.tap()
+        XCTAssertTrue(history.waitForExistence(timeout: 10)); reveal(history, in: app); history.tap()
         let search = app.searchFields["Search"]
         XCTAssertTrue(search.waitForExistence(timeout: 5)); replace(search, "parity-saved-transcript"); search.typeText("\n")
         tap("Media and links", in: app); tap("gbasin/agentboard #1", in: app)

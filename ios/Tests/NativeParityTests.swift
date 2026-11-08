@@ -70,9 +70,16 @@ final class NativeParityTests: XCTestCase {
     }
     func testMediaBytesAndServerSettingsRoundTrip() async throws {
         let detail: HistoryDetail = try await api.request("api/library/parity-saved-transcript")
-        let media = try XCTUnwrap(detail.conversations.first?.media)
+        let conversation = try XCTUnwrap(detail.conversations.first)
+        var media = conversation.media ?? []
+        if let summary = conversation.mediaSummary {
+            let source = MediaCatalogSource(server: api.address.baseURL.absoluteString, sessionID: conversation.sessionId, identity: summary.identity)
+            try await MediaCatalogTransport.read(source: source, query: [:]) { event in
+                if let page = event.page { try page.validate(identity: source.identity); media = page.items }
+            }
+        }
         XCTAssertEqual(media.count, 3)
-        let image = try XCTUnwrap(media.first)
+        let image = try XCTUnwrap(media.first { $0.kind == "image" })
         let (data, response) = try await URLSession.shared.data(from: XCTUnwrap(resolved(image.url, server: api.address.baseURL.absoluteString)))
         try BoardAPI.check(data, response)
         XCTAssertEqual(UIImage(data: data)?.size.width, 32)

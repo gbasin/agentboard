@@ -13,10 +13,12 @@ restore() {
 }
 trap restore EXIT
 restore
-xcodebuild test -project ios/AgentboardSpike.xcodeproj -scheme AgentboardSpike \
+xcodebuild test -parallel-testing-enabled NO -project ios/AgentboardSpike.xcodeproj -scheme AgentboardSpike \
   -destination "id=$udid" -derivedDataPath ios/.build \
   -resultBundlePath "ios/evidence/e2e-$run_id-light.xcresult" \
   -only-testing:AgentboardSpikeTests \
+  -only-testing:AgentboardSpikeUITests/MediaActivityUITests \
+  -only-testing:AgentboardSpikeUITests/NativeGlassUITests \
   -only-testing:AgentboardSpikeUITests/NativeParityUITests \
   -only-testing:AgentboardSpikeUITests/ParityGapUITests \
   -only-testing:AgentboardSpikeUITests/NativeClipboardUITests \
@@ -26,9 +28,11 @@ xcodebuild test -project ios/AgentboardSpike.xcodeproj -scheme AgentboardSpike \
   -only-testing:AgentboardSpikeUITests/SpikeUITests
 xcrun simctl ui "$udid" appearance dark
 xcrun simctl ui "$udid" content_size accessibility-extra-extra-extra-large
-xcodebuild test -project ios/AgentboardSpike.xcodeproj -scheme AgentboardSpike \
+xcodebuild test -parallel-testing-enabled NO -project ios/AgentboardSpike.xcodeproj -scheme AgentboardSpike \
   -destination "id=$udid" -derivedDataPath ios/.build \
   -resultBundlePath "ios/evidence/e2e-$run_id-dark-large.xcresult" \
+  -only-testing:AgentboardSpikeUITests/MediaActivityUITests \
+  -only-testing:AgentboardSpikeUITests/NativeGlassUITests \
   -only-testing:AgentboardSpikeUITests/NativeParityUITests \
   -only-testing:AgentboardSpikeUITests/ParityGapUITests \
   -only-testing:AgentboardSpikeUITests/NativeClipboardUITests \
