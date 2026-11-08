@@ -78,7 +78,7 @@ struct LiveSessionListView: View {
                             Button("Retry") { board.reconnect() }.buttonStyle(.borderless)
                         }
                     }
-                    .accessibilityIdentifier("connection-status")
+                    .accessibilityIdentifier("connection-detail")
                 } footer: {
                     if let address = try? ServerAddress(serverURL) { Text(address.baseURL.absoluteString) }
                 }

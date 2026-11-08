@@ -18,7 +18,7 @@ final class SimulatorStateUITests: XCTestCase {
         shot.name = name; shot.lifetime = .keepAlways; add(shot)
     }
     private func assertVisible(_ element: XCUIElement, in app: XCUIApplication) {
-        XCTAssertTrue(element.isHittable)
+        XCTAssertTrue(element.isHittable, app.debugDescription)
         let screen = app.windows.firstMatch.frame
         XCTAssertGreaterThanOrEqual(element.frame.minX, screen.minX)
         XCTAssertLessThanOrEqual(element.frame.maxX, screen.maxX)
