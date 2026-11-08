@@ -1,18 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import {
   DEFAULT_TIMING,
-  findStuckShells,
-  parseEtime,
-  parseLsofFds,
-  parsePaneList,
-  parseProcessInfo,
   spawnWithTimeout,
   ThrowawayShellReaper,
   type CommandResult,
-  type ProcessInfo,
   type ReaperTiming,
-  type StuckShellEvidence,
 } from '../throwawayShellReaper'
+
+import { findStuckShells, parseEtime, parseLsofFds, parsePaneList, parseProcessInfo, type ProcessInfo, type StuckShellEvidence } from '../throwawayShellEvidence'
 
 const SERVER = 500
 const OLD = 3600
@@ -127,7 +122,7 @@ const PS_ROWS = [
 function standardResponder(overrides: Partial<Record<string, Responder>> = {}): Responder {
   let psCalls = 0
   return (argv) => {
-    const key = argv[0] === 'pgrep' && argv[2] !== String(SERVER) ? 'pgrep-candidates' : argv[0]!
+    const key = argv[0] === 'pgrep' && argv[2] !== `${SERVER},1` ? 'pgrep-candidates' : argv[0]!
     const override = overrides[key]
     if (override) return override(argv)
     switch (key) {
@@ -179,12 +174,15 @@ describe('reap run', () => {
     ])
     expect(logs).toEqual([['tmux_group_throwaway_reaped', { hupPids: [601], killedPids: [601] }]])
     expect(calls).toEqual([
-      ['pgrep', '-P', '500'],
+      ['pgrep', '-P', '500,1', '-u', String(process.getuid!())],
       ['ps', '-o', 'pid=,ppid=,etime=,stat=,tty=,comm=', '-p', '700', '-p', '601', '-p', '602', '-p', '603', '-p', '604'],
       ['tmux', 'list-panes', '-a', '-F', '#{pid} #{pane_pid}'],
       ['pgrep', '-P', '601'],
-      ['lsof', '-n', '-P', '-w', '-F', 'pf', '-p', '601'],
+      ['lsof', '-n', '-P', '-w', '-F', 'pfn', '-p', '601'],
       ['ps', '-o', 'pid=,ppid=,etime=,stat=,tty=,comm=', '-p', '601'],
+      ['tmux', 'list-panes', '-a', '-F', '#{pid} #{pane_pid}'],
+      ['pgrep', '-P', '601'],
+      ['lsof', '-n', '-P', '-w', '-F', 'pfn', '-p', '601'],
     ])
   })
 
@@ -334,7 +332,7 @@ function scheduledReaper(timing: Partial<ReaperTiming> = {}, respond: Responder 
     sleep: async () => {},
     log: () => {},
     runCommand: async (argv) => {
-      if (argv[0] === 'pgrep' && argv[2] === String(SERVER)) runStarts.push(clock.now())
+      if (argv[0] === 'pgrep' && argv[2] === `${SERVER},1`) runStarts.push(clock.now())
       return respond(argv)
     },
     timing,

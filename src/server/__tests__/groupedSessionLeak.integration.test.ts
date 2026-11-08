@@ -120,7 +120,10 @@ if (!isTmuxAvailable()) {
         // Pin every tmux call the reaper makes to the private socket.
         runCommand: (argv, timeoutMs) =>
           spawnWithTimeout(
-            argv[0] === 'tmux' ? ['env', '-u', 'TMUX', 'tmux', '-S', socket, ...argv.slice(1)] : argv,
+            argv[0] === 'tmux' ? ['env', '-u', 'TMUX', 'tmux', '-S', socket, ...argv.slice(1)]
+              : argv[0] === 'pgrep' && argv[2] === `${serverPid},1`
+                ? ['pgrep', '-P', String(serverPid)] // Never reap other tests' orphans.
+                : argv,
             timeoutMs
           ),
       })

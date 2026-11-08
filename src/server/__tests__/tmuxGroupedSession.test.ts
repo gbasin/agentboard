@@ -2,7 +2,7 @@
 // every WebSocket connection and must stay a single tmux call. Any process
 // listing, signal or extra spawn on this path fails these tests.
 import { afterEach, describe, expect, test } from 'bun:test'
-import { createGroupedSession } from '../tmuxGroupedSession'
+import { createGroupedSession, getThrowawayCwd } from '../tmuxGroupedSession'
 import { ThrowawayShellReaper } from '../throwawayShellReaper'
 
 const bunAny = Bun as typeof Bun & {
@@ -68,7 +68,7 @@ describe('createGroupedSession', () => {
     }
 
     expect(tmuxCalls).toHaveLength(200)
-    expect(tmuxCalls[0]).toEqual(['new-session', '-d', '-t', '=agentboard', '-s', 'agentboard-ws-0'])
+    expect(tmuxCalls[0]).toEqual(['new-session', '-d', '-t', '=agentboard', '-s', 'agentboard-ws-0', '-c', getThrowawayCwd()])
     expect(tmuxCalls.every((args) => args[0] === 'new-session')).toBe(true)
     expect(directSpawns).toEqual([])
     expect(signals).toEqual([])

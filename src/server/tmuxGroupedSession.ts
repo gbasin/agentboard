@@ -21,6 +21,29 @@
 // process listing or any other spawn to this path: onCreated only arms the
 // reaper's timer.
 
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+
+let throwawayCwd: string | undefined
+
+/** A private cwd identifies discarded shells even after their server exits.
+ * macOS SIP hides system-shell environments, so an env marker is insufficient.
+ * Only the temporary initial window uses this directory; grouped windows keep
+ * their existing processes and working directories.
+ */
+export function getThrowawayCwd(): string {
+  if (throwawayCwd) return throwawayCwd
+  const dir = path.join(os.tmpdir(), `agentboard-tmux-throwaway-${process.getuid!()}`)
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
+  const stat = fs.lstatSync(dir)
+  if (!stat.isDirectory() || stat.uid !== process.getuid!() || (stat.mode & 0o077) !== 0) {
+    throw new Error('Unsafe tmux throwaway directory')
+  }
+  throwawayCwd = fs.realpathSync(dir)
+  return throwawayCwd
+}
+
 export interface GroupedSessionDeps {
   /** Runs `tmux <args>` against the target server; throws on failure. */
   runTmux: (args: string[]) => string
@@ -34,6 +57,6 @@ export function createGroupedSession(
   groupTarget: string,
   sessionName: string
 ): void {
-  deps.runTmux(['new-session', '-d', '-t', groupTarget, '-s', sessionName])
+  deps.runTmux(['new-session', '-d', '-t', groupTarget, '-s', sessionName, '-c', getThrowawayCwd()])
   deps.onCreated?.()
 }

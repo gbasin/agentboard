@@ -543,6 +543,11 @@ const throwawayShellReaper = new ThrowawayShellReaper({
   getServerPid: () => sessionManager.getTmuxServerPid(),
 })
 const noteGroupedSessionCreated = () => throwawayShellReaper.noteGroupedSessionCreated()
+// Also sweep after startup and while idle: test/dev tmux servers can exit
+// without leaving this long-running server any new connections to observe.
+noteGroupedSessionCreated()
+const orphanShellSweepTimer = setInterval(noteGroupedSessionCreated, 120_000)
+orphanShellSweepTimer.unref?.()
 
 const sessionManager = new SessionManager(undefined, {
   onGroupedSessionCreated: noteGroupedSessionCreated,
@@ -2545,6 +2550,7 @@ async function cleanupAllTerminals() {
   await Promise.allSettled(disposePromises)
   previews.dispose()
   stallWatchdog.dispose()
+  clearInterval(orphanShellSweepTimer)
   throwawayShellReaper.dispose()
   setCodexSubagentIndexListener(null)
   metadataClient.dispose()

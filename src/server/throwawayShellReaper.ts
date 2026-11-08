@@ -10,7 +10,7 @@
 //
 // There is no before/after snapshot, so the candidate test alone must only
 // ever match a stuck throwaway shell. A candidate is all of:
-//   - a direct child of the tmux server (pgrep -P <server pid>)
+//   - a direct child of the tmux server, or a marked shell adopted by PID 1
 //   - not the pid of any pane (pane list taken after the child list)
 //   - holding a tty (macOS keeps it after the pty master closes; Linux
 //     drops it, which is why the job only runs on macOS)
@@ -27,6 +27,11 @@
 
 import { logger } from './logger'
 import { sanitizedTmuxEnv } from './tmuxEnv'
+import { getThrowawayCwd } from './tmuxGroupedSession'
+import {
+  findStuckShells, isValidPid, parsePidList, parseProcessInfo, parsePaneList,
+  parseLsofFds, parseLsofCwds, rowLooksStuck, pidArgs, PS_FORMAT, type ProcessInfo,
+} from './throwawayShellEvidence'
 
 export interface CommandResult {
   exitCode: number
@@ -68,15 +73,6 @@ export const DEFAULT_TIMING: ReaperTiming = {
   hupGraceMs: 1_000,
 }
 
-export interface ProcessInfo {
-  pid: number
-  ppid: number
-  ageSec: number
-  stat: string
-  tty: string
-  comm: string
-}
-
 export type ReapStep = 'server-pid' | 'children' | 'process-info' | 'panes' | 'grandchildren' | 'fds'
 
 export type ReapOutcome =
@@ -84,122 +80,6 @@ export type ReapOutcome =
   | { kind: 'nothing' }
   | { kind: 'abandoned'; step: ReapStep; reason: 'timeout' | 'failed' | 'server-changed' }
   | { kind: 'reaped'; hupPids: number[]; killedPids: number[] }
-
-const NO_TTY = new Set(['', '?', '??', '-'])
-const PS_FORMAT = 'pid=,ppid=,etime=,stat=,tty=,comm='
-
-export function isValidPid(pid: number): boolean {
-  return Number.isSafeInteger(pid) && pid > 1
-}
-
-/** `[[dd-]hh:]mm:ss` → seconds; NaN when malformed. */
-export function parseEtime(value: string): number {
-  const match = /^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/.exec(value)
-  if (!match) return Number.NaN
-  const [, days, hours, minutes, seconds] = match
-  return (
-    Number(days ?? 0) * 86_400 + Number(hours ?? 0) * 3_600 + Number(minutes) * 60 + Number(seconds)
-  )
-}
-
-export function parsePidList(output: string): number[] {
-  const pids: number[] = []
-  for (const line of output.split('\n')) {
-    const pid = Number(line.trim())
-    if (line.trim() !== '' && isValidPid(pid)) pids.push(pid)
-  }
-  return pids
-}
-
-export function parseProcessInfo(output: string): ProcessInfo[] {
-  const rows: ProcessInfo[] = []
-  for (const line of output.split('\n')) {
-    const match = /^\s*(\d+)\s+(\d+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(.+)$/.exec(line)
-    if (!match) continue
-    const ageSec = parseEtime(match[3] ?? '')
-    if (Number.isNaN(ageSec)) continue
-    rows.push({
-      pid: Number(match[1]),
-      ppid: Number(match[2]),
-      ageSec,
-      stat: match[4] ?? '',
-      tty: match[5] ?? '',
-      comm: (match[6] ?? '').trim(),
-    })
-  }
-  return rows
-}
-
-/** `#{pid} #{pane_pid}` lines → server pids seen and pane pids. */
-export function parsePaneList(output: string): { serverPids: Set<number>; panePids: Set<number> } {
-  const serverPids = new Set<number>()
-  const panePids = new Set<number>()
-  for (const line of output.split('\n')) {
-    const [server, pane] = line.trim().split(' ')
-    if (!server || !pane) continue
-    serverPids.add(Number(server))
-    panePids.add(Number(pane))
-  }
-  return { serverPids, panePids }
-}
-
-/** `lsof -F pf` output → numeric fds per pid (cwd, txt, … are dropped). */
-export function parseLsofFds(output: string): Map<number, Set<number>> {
-  const fds = new Map<number, Set<number>>()
-  let current: Set<number> | null = null
-  for (const line of output.split('\n')) {
-    if (line.startsWith('p')) {
-      current = new Set()
-      fds.set(Number(line.slice(1)), current)
-    } else if (line.startsWith('f') && current) {
-      const fd = line.slice(1)
-      if (/^\d+$/.test(fd)) current.add(Number(fd))
-    }
-  }
-  return fds
-}
-
-/** The checks one `ps` row can answer: child, live, tty, login argv0, age. */
-export function rowLooksStuck(row: ProcessInfo, serverPid: number, minAgeMs: number): boolean {
-  return (
-    row.ppid === serverPid &&
-    !row.stat.startsWith('Z') &&
-    !NO_TTY.has(row.tty) &&
-    row.comm.length > 1 &&
-    row.comm.startsWith('-') &&
-    row.ageSec * 1000 >= minAgeMs
-  )
-}
-
-export function hasOnlyStdioOpen(fds: ReadonlySet<number> | undefined): boolean {
-  return fds !== undefined && fds.size === 3 && fds.has(0) && fds.has(1) && fds.has(2)
-}
-
-export interface StuckShellEvidence {
-  rows: readonly ProcessInfo[]
-  serverPid: number
-  panePids: ReadonlySet<number>
-  parentsWithChildren: ReadonlySet<number>
-  fdsByPid: ReadonlyMap<number, ReadonlySet<number>>
-  minAgeMs: number
-}
-
-/** The full candidate test. Missing evidence for a pid never matches. */
-export function findStuckShells(evidence: StuckShellEvidence): number[] {
-  return evidence.rows
-    .filter(
-      (row) =>
-        rowLooksStuck(row, evidence.serverPid, evidence.minAgeMs) &&
-        !evidence.panePids.has(row.pid) &&
-        !evidence.parentsWithChildren.has(row.pid) &&
-        hasOnlyStdioOpen(evidence.fdsByPid.get(row.pid))
-    )
-    .map((row) => row.pid)
-}
-
-function pidArgs(flag: string, pids: readonly number[]): string[] {
-  return pids.filter(isValidPid).flatMap((pid) => [flag, String(pid)])
-}
 
 /** Bun.spawn with a timeout; the process is SIGKILLed when it expires. */
 export const spawnWithTimeout: RunCommand = async (argv, timeoutMs) => {
@@ -394,18 +274,36 @@ export class ThrowawayShellReaper {
     this.step = 'server-pid'
     const serverPid = this.deps.getServerPid()
     if (serverPid === null || !isValidPid(serverPid)) throw new Abandon('server-pid', 'failed')
-    const { minAgeMs } = this.timing
 
+    // Include our user's PID-1 children: a private tmux server may have exited
+    // before its delayed cleanup. Only marked orphans can pass findCandidates.
     // pgrep exits 1 when the server has no children.
     const children = parsePidList(
-      (await this.query('children', ['pgrep', '-P', String(serverPid)], [0, 1])).stdout
+      (await this.query('children', ['pgrep', '-P', `${serverPid},1`, '-u', String(process.getuid!())], [0, 1])).stdout
     )
     if (children.length === 0) return { kind: 'nothing' }
 
-    const rows = (await this.processInfo('process-info', children)).filter((row) =>
-      rowLooksStuck(row, serverPid, minAgeMs)
+    const stuck = await this.findCandidates(serverPid, children)
+    if (stuck.length === 0) return { kind: 'nothing' }
+    const hupPids = this.sendAll(stuck, 'SIGHUP')
+    if (hupPids.length === 0) return { kind: 'nothing' }
+    await this.deps.sleep(this.timing.hupGraceMs)
+    let survivors: number[] = []
+    try {
+      // Recheck ALL evidence: the shell may have started or acquired children.
+      survivors = await this.findCandidates(serverPid, hupPids)
+    } catch {
+      // Report the HUP and leave survivors for a later pass.
+    }
+    return { kind: 'reaped', hupPids, killedPids: this.sendAll(survivors, 'SIGKILL') }
+  }
+
+  private async findCandidates(serverPid: number, pids: number[]): Promise<number[]> {
+    const { minAgeMs } = this.timing
+    const rows = (await this.processInfo('process-info', pids)).filter((row) =>
+      rowLooksStuck(row, serverPid, minAgeMs) || rowLooksStuck(row, 1, minAgeMs)
     )
-    if (rows.length === 0) return { kind: 'nothing' }
+    if (rows.length === 0) return []
 
     // After the child list, so a pane created in between is still excluded.
     const panes = parsePaneList(
@@ -415,7 +313,7 @@ export class ThrowawayShellReaper {
       throw new Abandon('panes', 'server-changed')
     }
     const notPanes = rows.filter((row) => !panes.panePids.has(row.pid))
-    if (notPanes.length === 0) return { kind: 'nothing' }
+    if (notPanes.length === 0) return []
     const candidatePids = notPanes.map((row) => row.pid)
 
     const grandchildren = parsePidList(
@@ -429,37 +327,22 @@ export class ThrowawayShellReaper {
     }
 
     // lsof exits 1 when a pid vanished; the rest of its output still holds.
-    const fdsByPid = parseLsofFds(
-      (
-        await this.query('fds', ['lsof', '-n', '-P', '-w', '-F', 'pf', ...pidArgs('-p', candidatePids)], [0, 1])
-      ).stdout
-    )
+    const { stdout } = await this.query('fds',
+      ['lsof', '-n', '-P', '-w', '-F', 'pfn', ...pidArgs('-p', candidatePids)], [0, 1])
+    const fdsByPid = parseLsofFds(stdout)
+    const marker = getThrowawayCwd()
+    const markedOrphans = new Set([...parseLsofCwds(stdout)]
+      .filter(([, cwd]) => cwd === marker).map(([pid]) => pid))
 
-    const stuck = findStuckShells({
+    return findStuckShells({
       rows: notPanes,
+      markedOrphans,
       serverPid,
       panePids: panes.panePids,
       parentsWithChildren,
       fdsByPid,
       minAgeMs,
     })
-    if (stuck.length === 0) return { kind: 'nothing' }
-
-    const hupPids = this.sendAll(stuck, 'SIGHUP')
-    if (hupPids.length === 0) return { kind: 'nothing' }
-    await this.deps.sleep(this.timing.hupGraceMs)
-
-    // A pid that died and was reused cannot be an old, dashed, tty-holding
-    // child of the tmux server, so the same row test guards the SIGKILL.
-    let survivors: number[] = []
-    try {
-      survivors = (await this.processInfo('process-info', hupPids))
-        .filter((row) => rowLooksStuck(row, serverPid, minAgeMs))
-        .map((row) => row.pid)
-    } catch {
-      // The SIGHUP went out; report it and leave survivors to the next run.
-    }
-    return { kind: 'reaped', hupPids, killedPids: this.sendAll(survivors, 'SIGKILL') }
   }
 
   private sendAll(pids: readonly number[], signal: Signal): number[] {

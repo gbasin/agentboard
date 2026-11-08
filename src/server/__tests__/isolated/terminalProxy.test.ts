@@ -1,3 +1,4 @@
+import { getThrowawayCwd } from '../../tmuxGroupedSession'
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { PtyTerminalProxy as TerminalProxy } from '../../terminal'
 import { resetTmuxVersionCache } from '../../terminal/PtyTerminalProxy'
@@ -327,6 +328,8 @@ describe('TerminalProxy', () => {
             'agentboard',
             '-s',
             'agentboard-ws-abc',
+            '-c',
+            getThrowawayCwd(),
           ],
           options: expect.objectContaining({ timeout: 15000 }),
         },
@@ -1453,6 +1456,8 @@ describe('TerminalProxy', () => {
         'agentboard',
         '-s',
         'agentboard-ws-attach-fail',
+        '-c',
+        getThrowawayCwd(),
       ],
       options: expect.objectContaining({ timeout: 15000 }),
     })

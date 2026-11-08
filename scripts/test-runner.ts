@@ -110,6 +110,7 @@ async function main() {
       'paneOutputBackpressure.integration.test.ts',
       'e2eTmuxReap.integration.test.ts',
       'groupedSessionLeak.integration.test.ts',
+      'orphanShellReaper.integration.test.ts',
       'hibernation.integration.test.ts',
       'killWindowGroupedSession.integration.test.ts',
       'persistence.integration.test.ts',

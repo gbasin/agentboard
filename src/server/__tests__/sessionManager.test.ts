@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { getThrowawayCwd } from '../tmuxGroupedSession'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -2228,6 +2229,8 @@ describe('SessionManager', () => {
       `=${wsSession}`,
       '-s',
       sessionName,
+      '-c',
+      getThrowawayCwd(),
     ])
     expect(
       runner.calls.some(

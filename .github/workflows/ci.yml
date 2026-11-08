@@ -250,6 +250,7 @@ jobs:
       - name: PTY leak regression tests (real tmux)
         run: |
           bun test src/server/__tests__/groupedSessionLeak.integration.test.ts
+          bun test src/server/__tests__/orphanShellReaper.integration.test.ts
           bun test src/server/__tests__/e2eTmuxReap.integration.test.ts
 
       - name: Terminal relay lifecycle regression (real tmux)
