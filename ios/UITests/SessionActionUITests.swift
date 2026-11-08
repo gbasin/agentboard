@@ -11,11 +11,8 @@ final class SessionActionUITests: XCTestCase {
     private func replace(_ field: XCUIElement, with value: String, in app: XCUIApplication) {
         field.tap()
         sleep(1) // Wait for the native field to finish scrolling above the keyboard.
-        for _ in 0..<4 {
-            field.typeKey("a", modifierFlags: .command)
-            field.typeKey(XCUIKeyboardKey.delete.rawValue, modifierFlags: [])
-            if (field.value as? String ?? "") == "" || (field.value as? String) == field.placeholderValue { break }
-        }
+        // Triple-tap selects the paragraph in this single-line native field.
+        field.tap(withNumberOfTaps: 3, numberOfTouches: 1)
         field.typeText(value)
         XCTAssertEqual(field.value as? String, value)
     }

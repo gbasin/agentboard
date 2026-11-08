@@ -6,8 +6,16 @@ extension XCUIApplication {
         let deadline = Date().addingTimeInterval(60)
         while Date() < deadline {
             let button = self.buttons[title]
-            let menu = self.collectionViews.allElementsBoundByIndex.last ?? self.collectionViews.firstMatch
-            let menuFrame = menu.frame
+            // UIKit can show the menu's loading placeholder before exposing its
+            // collection. Reading a missing element's frame fails XCTest early.
+            let remaining = deadline.timeIntervalSinceNow
+            guard remaining > 0,
+                  self.collectionViews.firstMatch.waitForExistence(timeout: remaining),
+                  let menu = self.collectionViews.allElementsBoundByIndex.last,
+                  menu.exists else { break }
+            let snapshot: XCUIElementSnapshot
+            do { snapshot = try menu.snapshot() } catch { break }
+            let menuFrame = snapshot.frame
             // UIKit's collection frame exceeds the clipped popup; its enclosing
             // accessibility views expose the actual visible rectangle.
             let enclosing = self.otherElements.containing(NSPredicate(format: "elementType == %d", XCUIElement.ElementType.collectionView.rawValue))
@@ -25,15 +33,29 @@ extension XCUIApplication {
             }
             let above = button.exists && button.frame.midY < viewport.minY
             guard viewport.width > 0, viewport.height > 0 else { break }
-            // Drag in the upper quarter; the embedded Appearance picker can
-            // consume gestures that start in the lower part of the popup.
+            // Start on an enabled outer action. Fixed viewport fractions can
+            // land in the tall disabled connection row or the Appearance picker.
+            let pickerLabels: Set<String> = ["Appearance", "System", "Light", "Dark"]
+            // Read attributes from one public snapshot instead of requesting
+            // separate accessibility snapshots for every button attribute.
+            func actionCenters(_ element: XCUIElementSnapshot) -> [CGPoint] {
+                var centers: [CGPoint] = []
+                if element.elementType == .button && element.isEnabled && !pickerLabels.contains(element.label) {
+                    let center = CGPoint(x: element.frame.midX, y: element.frame.midY)
+                    if viewport.contains(center) { centers.append(center) }
+                }
+                for child in element.children { centers.append(contentsOf: actionCenters(child)) }
+                return centers
+            }
+            let centers = actionCenters(snapshot)
+            guard let start = centers.sorted(by: { above ? $0.y < $1.y : $0.y > $1.y }).first else { break }
             let origin = self.coordinate(withNormalizedOffset: .zero)
-            let upper = origin.withOffset(.init(dx: viewport.midX - self.frame.minX, dy: viewport.minY + viewport.height * 0.10 - self.frame.minY))
-            let lower = origin.withOffset(.init(dx: viewport.midX - self.frame.minX, dy: viewport.minY + viewport.height * 0.25 - self.frame.minY))
+            let from = origin.withOffset(.init(dx: start.x - self.frame.minX, dy: start.y - self.frame.minY))
+            let to = origin.withOffset(.init(dx: start.x - self.frame.minX, dy: (above ? viewport.maxY : viewport.minY) - self.frame.minY))
             // A single gesture can spend time waiting for UIKit to become idle.
             // Check elapsed time between gestures instead of multiplying that wait.
             guard Date() < deadline else { break }
-            (above ? upper : lower).press(forDuration: 0.05, thenDragTo: above ? lower : upper)
+            from.press(forDuration: 0.05, thenDragTo: to)
         }
         attachNavigationFailure("menu-" + title)
         XCTFail("Menu action is unreachable: \(title)", file: file, line: line)
