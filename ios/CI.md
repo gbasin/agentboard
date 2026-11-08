@@ -44,3 +44,5 @@ Use `all` as the final argument to select every workflow. Omit `IOS_TEST_PRODUCT
 ## Results
 
 Each shard uploads `.xcresult` bundles and fixture logs immediately after each appearance. A light failure can be inspected while dark tests continue. A failed shard keeps its results. A new push cancels an obsolete run for the same PR. Keep a failed result as a failure when reporting follow-up verification.
+
+The first shared-build run, [42521922736](https://github.com/gbasin/agentboard/actions/runs/42521922736), took 31m48s and failed four UI tests (76/76 native, 33/34 light UI, 23/26 dark UI passed). Shared compilation took 82 seconds. Cold Simulator startup and hosted runner load still dominated several slices; this result is not a green performance baseline.

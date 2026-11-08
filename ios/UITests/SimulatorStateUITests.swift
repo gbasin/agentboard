@@ -3,7 +3,15 @@ import XCTest
 /// Run in dark appearance and accessibility text sizes via simctl ui.
 final class SimulatorStateUITests: XCTestCase {
     override func setUp() { continueAfterFailure = false }
-    override func tearDown() { XCUIDevice.shared.orientation = .portrait }
+    override func tearDown() {
+        if (testRun?.failureCount ?? 0) > 0 {
+            capture("sim-failure")
+            let tree = XCTAttachment(string: XCUIApplication().debugDescription)
+            tree.lifetime = .keepAlways; add(tree)
+        }
+        XCUIDevice.shared.orientation = .portrait
+        super.tearDown()
+    }
 
     private func launch(server: String) -> XCUIApplication {
         XCUIDevice.shared.orientation = .portrait

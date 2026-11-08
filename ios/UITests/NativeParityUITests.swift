@@ -59,6 +59,15 @@ final class NativeParityUITests: XCTestCase {
         app.tapNativeMenuAction(title)
     }
 
+    private func dismissPreview(_ title: String, in app: XCUIApplication) {
+        let preview = app.navigationBars[title]
+        preview.buttons["Done"].tap()
+        // Quick Look can outlive the tap while its remote accessibility tree closes.
+        // Do not capture indexed navigation bars until the preview has disappeared.
+        let dismissed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: preview)
+        XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 15), .completed)
+    }
+
     private func search(_ value: String, in app: XCUIApplication) {
         let search = app.searchFields["Search saved sessions"]; XCTAssertTrue(search.waitForExistence(timeout: 5)); replace(search, value); search.typeText("\n")
     }
@@ -166,22 +175,22 @@ final class NativeParityUITests: XCTestCase {
         XCTAssertTrue(app.images["Session image"].waitForExistence(timeout: 10)); capture("media-image")
         app.images["Session image"].pinch(withScale: 2, velocity: 1)
         XCTAssertGreaterThan(app.images["Session image"].frame.width, app.windows.firstMatch.frame.width)
-        app.navigationBars["Media"].buttons["Done"].tap()
+        dismissPreview("Media", in: app)
         let document = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "text/html")).firstMatch
         reveal(document, in: app); document.tap()
         XCTAssertTrue(app.buttons["Share document"].waitForExistence(timeout: 15))
         XCTAssertTrue(app.staticTexts["HTML source"].waitForExistence(timeout: 10))
         capture("media-document")
-        app.navigationBars["Media"].buttons["Done"].tap()
+        dismissPreview("Media", in: app)
         let pdf = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "application/pdf")).firstMatch
         reveal(pdf, in: app); pdf.tap()
         XCTAssertTrue(app.buttons["Share document"].waitForExistence(timeout: 15))
         XCTAssertTrue(app.otherElements["document-preview"].waitForExistence(timeout: 10))
         capture("media-pdf")
-        app.navigationBars["Media"].buttons["Done"].tap()
+        dismissPreview("Media", in: app)
         tap("Native link fixture", in: app)
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 5)); capture("media-link")
-        app.navigationBars["Native link fixture"].buttons["Done"].tap()
+        dismissPreview("Native link fixture", in: app)
         tap("gbasin/agentboard #1", in: app, preferUp: true)
         XCTAssertTrue(app.navigationBars["Pull request"].waitForExistence(timeout: 5))
         capture("pull-request")
