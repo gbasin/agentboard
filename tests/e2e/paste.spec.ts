@@ -68,7 +68,9 @@ test('multi-line text paste is held for editing, not auto-submitted', async ({ p
     await expect(card).toBeVisible({ timeout: 20000 })
     await card.click()
     await expect(page.locator('.xterm')).toBeVisible()
-    await page.waitForTimeout(2000) // let the terminal attach settle
+    await expect(card).toHaveClass(/selected/)
+    await expect(page.getByTestId('terminal-recovery-status')).toHaveCount(0)
+    await expect(page.locator('button[aria-label="Paste"]')).toBeEnabled()
 
     // Synthesize a real paste: modifier+V keydown on the xterm helper
     // textarea, then a ClipboardEvent carrying multi-line text/plain (the

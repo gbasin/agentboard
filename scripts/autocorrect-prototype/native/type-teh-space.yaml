@@ -1,0 +1,9 @@
+appId: com.apple.webapp
+---
+- tapOn:
+    point: "40%,45%"
+- tapOn: t
+- tapOn: e
+- tapOn: h
+- tapOn:
+    id: space

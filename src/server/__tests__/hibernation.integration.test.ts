@@ -176,7 +176,7 @@ if (!tmuxAvailable || !localhostBindable) {
 
         await startServer()
 
-        const ws = new WebSocket(`ws://${testHost}:${port}/ws`)
+        const ws = new WebSocket(`ws://${testHost}:${port}/ws?catalog=2`)
         const payloadPromise = waitForAgentSessionsContaining(
           ws,
           'hibernating',
@@ -203,7 +203,7 @@ if (!tmuxAvailable || !localhostBindable) {
 
     test('move-to-history via websocket clears the hibernation marker', async () => {
       await ensureHarnessReady()
-      const ws = new WebSocket(`ws://${testHost}:${port}/ws`)
+      const ws = new WebSocket(`ws://${testHost}:${port}/ws?catalog=2`)
       await waitForOpen(ws)
 
       ws.send(

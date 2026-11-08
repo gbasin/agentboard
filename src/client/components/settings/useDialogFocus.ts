@@ -7,7 +7,8 @@
  * app the next thing the user does after closing settings is type, whatever
  * opened the dialog. Only when there is no terminal (no session selected)
  * does focus go back to the element that opened the dialog, or to the
- * button now carrying its label if a setting re-rendered it away.
+ * button now carrying its label if a setting re-rendered it away. Image browsing
+ * opts into opener restoration so closing it does not open a mobile keyboard.
  *
  * useFocusTrap: Escape closes (unless a control consumed it with
  * preventDefault), Tab wraps inside the panel, and focus that escapes the
@@ -43,7 +44,8 @@ function findOpener(opener: HTMLElement, label: string | null): HTMLElement | nu
   return document.querySelector<HTMLElement>(`button[aria-label="${escaped}"]`)
 }
 
-export function useSuspendTerminalInput(): void {
+export function useSuspendTerminalInput(options?: { restoreFocus?: 'terminal' | 'opener' }): void {
+  const restoreFocus = options?.restoreFocus ?? 'terminal'
   useEffect(() => {
     if (typeof document === 'undefined' || typeof document.querySelector !== 'function') return
     if (reenableTimer) {
@@ -73,14 +75,13 @@ export function useSuspendTerminalInput(): void {
         const current = document.querySelector<HTMLTextAreaElement>(TEXTAREA_SELECTOR)
         if (current) {
           current.removeAttribute('disabled')
-          current.focus()
-          return
+          if (restoreFocus === 'terminal') { current.focus(); return }
         }
         const fallback = opener && opener !== textarea ? findOpener(opener, openerLabel) : null
         fallback?.focus()
       }, REENABLE_DELAY_MS)
     }
-  }, [])
+  }, [restoreFocus])
 }
 
 export function useFocusTrap(panelRef: RefObject<HTMLElement | null>, onClose: () => void): void {

@@ -160,9 +160,10 @@ body {
   overflow: hidden;
 }
 
-/* Align app root to the visual viewport on iOS PWA to keep hit-testing accurate */
-@media (max-width: 767px) {
-  .ios #root {
+/* Follow the visible area on touch devices: Android Chrome also shrinks only
+   the visual viewport when its software keyboard opens. Keep the key row above it. */
+@media (max-width: 767px), (hover: none) and (pointer: coarse) {
+  #root {
     position: fixed;
     top: 0;
     left: 0;
@@ -322,6 +323,17 @@ body {
   animation: pulse-complete 5s ease-out;
 }
 
+/* New media gets two brief accent pulses; its unread dot stays until opened. */
+@keyframes media-attention {
+  0%, 100% { box-shadow: 0 0 0 0 transparent; }
+  50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 30%, transparent); }
+}
+
+.media-attention {
+  border-color: var(--accent);
+  animation: media-attention 0.8s ease-in-out 2;
+}
+
 /* Terminal styles */
 .xterm {
   font-family: "JetBrains Mono Variable", "JetBrains Mono", "SF Mono", "Fira Code", ui-monospace, monospace;
@@ -348,8 +360,18 @@ body {
   line-height: var(--xterm-cell-height, 18px);
 }
 
+/* The pane's app owns the mouse (fullscreen Claude Code, Codex): a long-press
+   drag goes to the app, which draws and copies its own selection. Keep iOS from
+   starting a second, native one over the same text. See utils/iosSelection.ts. */
+.ios-native-term-selection [data-app-mouse] .xterm .xterm-accessibility-tree,
+.ios-native-term-selection [data-app-mouse] .xterm .xterm-accessibility-tree * {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
 /* Position xterm helper textarea in visible area on iOS for paste menu */
-.ios-native-term-selection .xterm-helper-textarea {
+.ios-native-term-selection:not(.ios-native-paste-prototype) .xterm-helper-textarea {
   position: absolute !important;
   left: 50% !important;
   top: 50% !important;
@@ -370,7 +392,7 @@ body {
     pointer-events: auto;
   }
 
-  .ios-native-term-selection .xterm-helper-textarea {
+  .ios-native-term-selection:not(.ios-native-paste-prototype) .xterm-helper-textarea {
     pointer-events: auto;
   }
 }
@@ -525,7 +547,8 @@ body {
 
 /* iOS safe area padding for home indicator - only when keyboard is hidden */
 /* Uses 'keyboard-visible' class toggled by useVisualViewport hook */
-/* Applies to both PWA and regular Safari on iOS */
+/* Applies to both PWA and regular Safari on iOS. The root owns this inset;
+   the terminal panel sits inside it and must not add the same padding again. */
 .ios:not(.keyboard-visible) #root {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
@@ -536,10 +559,6 @@ body {
 
 .ios-pwa .terminal-mobile-overlay {
   height: 100%;
-}
-
-.ios:not(.keyboard-visible) .terminal-mobile-overlay {
-  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* Project badge - theme-aware colors using --badge-hue custom property */
@@ -574,7 +593,48 @@ body {
   }
 
   .pulse-approval,
-  .pulse-complete {
+  .pulse-complete,
+  .media-attention {
     animation: none;
+  }
+}
+
+/* Experimental native iOS paste target. xterm positions this at the cursor.
+   Keep output outside this target available to native selection and scrolling. */
+.ios-native-paste-prototype .xterm .xterm-helper-textarea {
+  transform: none;
+  opacity: 1;
+  background: transparent;
+  color: transparent;
+  caret-color: transparent;
+  left: 0 !important;
+  width: 100% !important;
+  outline: none;
+  min-height: 44px;
+  font-size: 16px;
+  z-index: 20 !important;
+  pointer-events: auto;
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
+.ios-native-paste-prototype .xterm .xterm-helpers {
+  width: 100%;
+  z-index: 11;
+}
+
+/* Expand the counter hit area without increasing session-row height. Keep the
+   horizontal inset inside the existing gaps beside the name and status pill. */
+@media (pointer: coarse) {
+  .activity-counter::after,
+  .activity-status::after {
+    content: '';
+    position: absolute;
+    left: -3px;
+    right: -3px;
+    top: 50%;
+    height: 44px;
+    transform: translateY(-50%);
   }
 }

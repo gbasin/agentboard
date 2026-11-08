@@ -12,22 +12,28 @@ import { useTerminal } from '../hooks/useTerminal'
 import { useIsMobileLayout } from '../hooks/useMobileLayout'
 import { useOnClickOutside } from '../hooks/useOnClickOutside'
 import { useEscapeToClose } from '../hooks/useEscapeToClose'
-import { useScrollToSelection } from '../hooks/useScrollToSelection'
 import { useEdgeSwipeToOpenDrawer } from '../hooks/useEdgeSwipeToOpenDrawer'
 import { useResolvedTheme, terminalThemes } from '../stores/themeStore'
 import { useSettingsStore, getFontFamily } from '../stores/settingsStore'
 import { isIOSDevice, getEffectiveModifier, getModifierDisplay } from '../utils/device'
 import { keepA11yRowsStable } from '../utils/a11yRowStability'
+import { MEASURE_PROBE_ATTR, watchSelectedRows } from '../utils/iosSelection'
 import { formatRelativeTime } from '../utils/time'
 import { getPathLeaf } from '../utils/sessionLabel'
 import { statusClass, statusText } from '../utils/sessionStatus'
 import SessionRail from './SessionRail'
 import TerminalControls from './TerminalControls'
-import MediaRail from './MediaRail'
+import TerminalSnapshotLayer from './TerminalSnapshotLayer'
+import { shouldRejoinWrapped, useOpenSelectText, useTerminalSnapshot } from '../hooks/useTerminalSnapshot'
+import SessionOutputs from './outputs/SessionOutputs'
 import PasteStatus from './PasteStatus'
+import RecoveryDraft from './RecoveryDraft'
+import { useRecoveryDraft } from '../hooks/useRecoveryDraft'
+import { recoveryDraftIdentity } from '../utils/recoveryDraftIdentity'
 import { useBrowserPaste, type BrowserPaste } from '../hooks/useBrowserPaste'
 import { clipboardFiles } from '../utils/browserFiles'
 import SessionDrawer from './SessionDrawer'
+import MobileSessionPeek from './MobileSessionPeek'
 import SessionPreviewContent from './SessionPreviewContent'
 import {
   AlertTriangleIcon,
@@ -42,6 +48,7 @@ import {
   SpinnerIcon,
   XCloseIcon,
 } from './icons'
+import '../styles/compactMobileControls.css'
 import { ICON_SIZE, TOUCH_TARGET_CLASS, mobileButtonClass } from './controlStyles'
 
 interface TerminalProps {
@@ -76,20 +83,6 @@ interface TerminalProps {
 
 type IOSResumeInputState = 'idle' | 'focused' | 'interrupted' | 'armed'
 
-const statusButtonBase: Record<Session['status'], string> = {
-  working: 'bg-green-500/35 text-white',
-  waiting: 'bg-blue-500/35 text-white',
-  permission: 'bg-amber-500/35 text-white',
-  unknown: 'bg-gray-500/35 text-white',
-}
-
-const statusButtonActive: Record<Session['status'], string> = {
-  working: 'bg-working text-white',
-  waiting: 'bg-waiting text-white',
-  permission: 'bg-approval text-white',
-  unknown: 'bg-muted text-white',
-}
-
 function triggerHaptic() {
   if ('vibrate' in navigator) {
     navigator.vibrate(10)
@@ -105,7 +98,7 @@ export default function Terminal({
   historySessions = [],
   connectionStatus,
   connectionEpoch = 0,
-  sendMessage,
+  sendMessage: sendRawMessage,
   subscribe,
   onClose: _onClose,
   onSelectSession,
@@ -122,9 +115,16 @@ export default function Terminal({
   loading = false,
   error = null,
 }: TerminalProps) {
+  const resetNativeInputRef = useRef<(() => void) | undefined>(undefined)
+  const sendMessage = useCallback<SendClientMessage>((message) => {
+    if (message.type === 'terminal-input' || message.type === 'terminal-paste') resetNativeInputRef.current?.()
+    return sendRawMessage(message)
+  }, [sendRawMessage])
   void _onClose // Keep for interface compatibility
   const theme = useResolvedTheme()
   const terminalTheme = terminalThemes[theme]
+  const compactMobileControls = useSettingsStore((state) => state.compactMobileControls)
+  const showMobileSessionPeek = useSettingsStore((state) => state.showMobileSessionPeek)
   const useWebGL = useSettingsStore((state) => state.useWebGL)
   const fontSize = useSettingsStore((state) => state.fontSize)
   const lineHeight = useSettingsStore((state) => state.lineHeight)
@@ -146,8 +146,6 @@ export default function Terminal({
   const lastSelectionInsideRef = useRef(false)
   const clearIOSSelectionRef = useRef<(() => void) | null>(null)
   const moreMenuRef = useRef<HTMLDivElement>(null)
-  const mobileTabStripRef = useRef<HTMLDivElement>(null)
-  useScrollToSelection(mobileTabStripRef, session?.id ?? null)
   const renameInputRef = useRef<HTMLInputElement>(null)
   const endSessionButtonRef = useRef<HTMLButtonElement>(null)
   const pasteFilesRef = useRef<(input: BrowserPaste) => void>(() => {})
@@ -155,7 +153,6 @@ export default function Terminal({
   const isRemoteSession = session?.remote === true
   const remoteAllowControl = useSessionStore((s) => s.remoteAllowControl)
   const remoteAllowAttach = useSessionStore((s) => s.remoteAllowAttach)
-  const preferWindowName = useSessionStore((s) => s.preferWindowName)
   const isReadOnly = isRemoteSession && !remoteAllowAttach
   const canControl = !isRemoteSession || (remoteAllowControl && session?.source === 'managed')
   const hibernatingDisplayName = hibernatingSession
@@ -182,7 +179,12 @@ export default function Terminal({
     return hosts.size > 1
   }, [sessions, hibernatingSessions])
 
+  const recoveryIdentity = session && !isReadOnly
+    ? recoveryDraftIdentity(session) : null
+  const recoveryDraft = useRecoveryDraft(recoveryIdentity)
+
   const {
+    resetNativeInput,
     containerRef,
     terminalRef,
     inTmuxCopyModeRef,
@@ -201,6 +203,8 @@ export default function Terminal({
     onPasteFiles: (input) => pasteFilesRef.current(input),
     onPasteError: (message) => pasteErrorRef.current(message),
     allowAttach: !isReadOnly,
+    deferInput: recoveryDraft.pending,
+    onDeferredInput: recoveryDraft.capture,
     connectionStatus,
     connectionEpoch,
     sendMessage,
@@ -215,6 +219,12 @@ export default function Terminal({
       setShowScrollButton(!isAtBottom)
     },
   })
+
+  resetNativeInputRef.current = resetNativeInput
+  const snapshot = useTerminalSnapshot({ sessionId: session?.id ?? null, sendMessage, subscribe })
+  const snapshotOpen = snapshot.state.status !== 'closed'
+  const handleSelectText = useOpenSelectText(snapshot.open, clearIOSSelectionRef)
+  const rejoinWrapped = shouldRejoinWrapped(snapshot.state, session?.agentType)
 
   const scrollToBottom = useCallback(() => {
     // Exit tmux copy-mode to return to live output (oracle recommendation)
@@ -344,8 +354,17 @@ export default function Terminal({
       })
     }
 
+    // Clears the native highlight once output rewrites a row it covers, so it
+    // never sits over text that was not selected. Lives as long as the selection.
+    let stopWatchingRows: (() => void) | null = null
+    const stopRowWatch = () => {
+      stopWatchingRows?.()
+      stopWatchingRows = null
+    }
+
     // Hard-clear iOS selection by removing ranges and forcing a11y repaint
     const clearIOSSelection = () => {
+      stopRowWatch()
       lastSelectionInsideRef.current = false
       const sel = window.getSelection()
       try { sel?.removeAllRanges() } catch {}
@@ -362,6 +381,7 @@ export default function Terminal({
         if (lastSelectionInsideRef.current) {
           clearIOSSelection()
         } else {
+          stopRowWatch()
           // Only update if currently true to avoid unnecessary re-renders
           setIsSelectingText((prev) => prev ? false : prev)
         }
@@ -375,6 +395,12 @@ export default function Terminal({
       }
 
       lastSelectionInsideRef.current = selectionInside
+      if (selectionInside && !stopWatchingRows) {
+        const a11yTree = container.querySelector('.xterm-accessibility-tree')
+        if (a11yTree) {
+          stopWatchingRows = watchSelectedRows(a11yTree, () => window.getSelection(), clearIOSSelection)
+        }
+      }
       const newValue = selectionInside
       // Only update if value changed
       setIsSelectingText((prev) => prev !== newValue ? newValue : prev)
@@ -465,6 +491,7 @@ export default function Terminal({
       document.removeEventListener('touchstart', onTouchStart)
       document.removeEventListener('touchmove', onTouchMove)
       document.removeEventListener('touchend', onTouchEnd)
+      stopRowWatch()
       clearIOSSelectionRef.current = null
       lastSelectionInsideRef.current = false
     }
@@ -516,6 +543,7 @@ export default function Terminal({
       const probe = document.createElement('span')
       probe.textContent = '0'.repeat(200)
       probe.style.cssText = 'position:absolute;visibility:hidden;white-space:pre;pointer-events:none;letter-spacing:0px'
+      probe.setAttribute(MEASURE_PROBE_ATTR, '')
       a11yTree.appendChild(probe)
       const domCharW = probe.getBoundingClientRect().width / 200
       probe.remove()
@@ -889,6 +917,10 @@ export default function Terminal({
 
     const handleTouchStart = (e: TouchEvent) => {
       stopMomentum()
+      if (import.meta.env.VITE_IOS_NATIVE_PASTE_PROTOTYPE === '1') {
+        const textarea = getTextarea()
+        clientLog('ios_native_paste_touch', { target: (e.target as Element)?.className, textarea: textarea?.getBoundingClientRect().toJSON(), disabled: textarea?.disabled, standalone: window.matchMedia('(display-mode: standalone)').matches })
+      }
       maybeClearStaleSelection()
 
       // Skip if edge swiping (opening drawer) or drawer is open
@@ -924,7 +956,7 @@ export default function Terminal({
         // Enable textarea on touch start so iOS long-press paste menu works
         enableTextarea()
 
-        if (isiOS && appMouseRef.current) {
+        if (isiOS && appMouseRef.current && !(import.meta.env.VITE_IOS_NATIVE_PASTE_PROTOTYPE !== '0' && e.target === getTextarea())) {
           const startPoint = { clientX: touch.clientX, clientY: touch.clientY }
           longPressTimer = setTimeout(() => {
             longPressTimer = null
@@ -1031,6 +1063,8 @@ export default function Terminal({
       }
 
       if (!hasMoved) {
+        // Let WebKit own taps and the edit callout on the experimental input target.
+        if (isiOS && import.meta.env.VITE_IOS_NATIVE_PASTE_PROTOTYPE !== '0' && e.target === getTextarea()) return
         if (isiOS && touchDuration >= LONG_PRESS_MS) return
         if (appMouseRef.current) {
           const touch = e.changedTouches[0]
@@ -1084,6 +1118,15 @@ export default function Terminal({
       }
     }
 
+    // iOS cancels a touch when a system gesture takes it over. Without this the
+    // long-press timer could still fire, or the app would keep a held button
+    // from a remote selection and treat the next touch as a drag.
+    const handleTouchCancel = () => {
+      clearLongPressTimer()
+      if (remoteSelectionActive) endRemoteSelection(undefined)
+      resetTouchState()
+    }
+
     // Swallow synthetic mouse events after iOS selection dismissal to protect tmux
     const handleMouseDown = (e: MouseEvent) => {
       if (swallowNextMouseRef.current) {
@@ -1100,12 +1143,14 @@ export default function Terminal({
     container.addEventListener('touchstart', handleTouchStart, startOptions)
     container.addEventListener('touchmove', handleTouchMove, moveOptions)
     container.addEventListener('touchend', handleTouchEnd, endOptions)
+    container.addEventListener('touchcancel', handleTouchCancel, startOptions)
     container.addEventListener('mousedown', handleMouseDown, mouseOptions)
 
     return () => {
       container.removeEventListener('touchstart', handleTouchStart, startOptions)
       container.removeEventListener('touchmove', handleTouchMove, moveOptions)
       container.removeEventListener('touchend', handleTouchEnd, endOptions)
+      container.removeEventListener('touchcancel', handleTouchCancel, startOptions)
       container.removeEventListener('mousedown', handleMouseDown, mouseOptions)
       clearLongPressTimer()
       // Re-enable textarea on cleanup
@@ -1119,36 +1164,42 @@ export default function Terminal({
 
   const handleSendKey = useCallback(
     (key: string) => {
-      if (!session || isReadOnly || !isInputReady) return
-      sendMessage({ type: 'terminal-input', sessionId: session.id, data: key })
+      if (!session || isReadOnly) return
+      if (recoveryDraft.pending || !isInputReady) { recoveryDraft.capture(key, 'typing'); return }
+      if (sendMessage({ type: 'terminal-input', sessionId: session.id, data: key }) === false) {
+        recoveryDraft.capture(key, 'typing')
+      }
     },
-    [session, isReadOnly, isInputReady, sendMessage]
+    [session, isReadOnly, isInputReady, sendMessage, recoveryDraft]
   )
 
   // Deliver pasted text as a single bracketed paste (server routes it through
   // tmux paste-buffer -p) so multi-line content isn't auto-submitted line-by-line.
   const handlePasteText = useCallback(
     (text: string) => {
-      if (!session || isReadOnly || !isInputReady) return
+      if (!session || isReadOnly) return
+      if (recoveryDraft.pending || !isInputReady) { recoveryDraft.capture(text, 'paste'); return }
       // Exit tmux copy-mode first: a paste-buffer into a pane still in copy-mode
       // is swallowed by the copy-mode key table instead of reaching the program.
       if (inTmuxCopyModeRef.current) {
         sendMessage({ type: 'tmux-cancel-copy-mode', sessionId: session.id })
         setTmuxCopyMode(false)
       }
-      sendMessage({ type: 'terminal-paste', sessionId: session.id, data: text })
+      if (sendMessage({ type: 'terminal-paste', sessionId: session.id, data: text }) === false) {
+        recoveryDraft.capture(text, 'paste')
+      }
     },
-    [session, isReadOnly, isInputReady, sendMessage, inTmuxCopyModeRef, setTmuxCopyMode]
+    [session, isReadOnly, isInputReady, sendMessage, inTmuxCopyModeRef, setTmuxCopyMode, recoveryDraft]
   )
 
   const handlePasteImage = useCallback((data: string) => {
-    if (!session || isReadOnly || !isInputReady) return
+    if (!session || isReadOnly || !isInputReady || recoveryDraft.pending) return
     if (inTmuxCopyModeRef.current) {
       sendMessage({ type: 'tmux-cancel-copy-mode', sessionId: session.id })
       setTmuxCopyMode(false)
     }
-    handleSendKey(data)
-  }, [session, isReadOnly, isInputReady, sendMessage, inTmuxCopyModeRef, setTmuxCopyMode, handleSendKey])
+    sendMessage({ type: 'terminal-input', sessionId: session.id, data })
+  }, [session, isReadOnly, isInputReady, sendMessage, inTmuxCopyModeRef, setTmuxCopyMode, recoveryDraft.pending])
 
   const handleRefocus = useCallback(() => {
     const container = containerRef.current
@@ -1161,27 +1212,22 @@ export default function Terminal({
   }, [containerRef])
 
   const browserPaste = useBrowserPaste({ sessionId: session?.id ?? null,
-    disabled: connectionStatus !== 'connected' || isReadOnly || !isInputReady,
+    disabled: connectionStatus !== 'connected' || isReadOnly || !isInputReady || recoveryDraft.pending,
     fileUploadsAllowed: !isRemoteSession, agentType: session?.agentType,
     onPasteText: handlePasteText, onPasteImage: handlePasteImage, onRefocus: handleRefocus })
   pasteFilesRef.current = browserPaste.paste
   pasteErrorRef.current = browserPaste.fail
 
-  // Enter text mode: exit copy-mode and focus input (for keyboard button)
-  const handleEnterTextMode = useCallback(() => {
-    if (!session || isReadOnly || !isInputReady) return
+  const sendRecoveryDraft = () => {
+    if (!session || isReadOnly || !isInputReady || !recoveryDraft.text || recoveryDraft.persistence === 'sent-remove-failed') return
     if (inTmuxCopyModeRef.current) {
       sendMessage({ type: 'tmux-cancel-copy-mode', sessionId: session.id })
       setTmuxCopyMode(false)
     }
-    const container = containerRef.current
-    if (!container) return
-    const textarea = container.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement | null
-    if (textarea) {
-      textarea.removeAttribute('disabled')
-      textarea.focus()
-    }
-  }, [session, isReadOnly, isInputReady, sendMessage, containerRef, inTmuxCopyModeRef, setTmuxCopyMode])
+    if (sendMessage({ type: 'terminal-paste', sessionId: session.id, data: recoveryDraft.text }) === false) return
+    recoveryDraft.sent()
+    handleRefocus()
+  }
 
   const isKeyboardVisible = useCallback(() => {
     if (typeof document === 'undefined') return false
@@ -1248,20 +1294,13 @@ export default function Terminal({
     }
   }, [containerRef, hibernatingSession])
 
-  // Use session names as mobile tab labels only when AGENTBOARD_PREFER_WINDOW_NAME is
-  // enabled AND every session has a distinct, non-empty name. Otherwise tabs would
-  // repeat the same label and numeric indices remain the better signal.
-  const mobileTabsUseNames = useMemo(() => {
-    if (!preferWindowName) return false
-    if (sessions.length === 0) return false
-    const names = sessions.map((s) => s.name.trim()).filter(Boolean)
-    return names.length === sessions.length && new Set(names).size === sessions.length
-  }, [preferWindowName, sessions])
+  const showSessionPeek = showMobileSessionPeek && !!session && sessions.length > 1
 
   return (
     <section
-      className={`flex flex-1 flex-col bg-base terminal-mobile-overlay md:relative md:inset-auto ${isiOS ? 'ios-native-term-selection' : ''}`}
+      className={`flex min-w-0 flex-1 flex-col bg-base terminal-mobile-overlay md:relative md:inset-auto ${isiOS ? 'ios-native-term-selection' : ''} ${isiOS && import.meta.env.VITE_IOS_NATIVE_PASTE_PROTOTYPE !== '0' ? 'ios-native-paste-prototype' : ''}`}
       data-testid="terminal-panel"
+      data-compact-mobile-controls={compactMobileControls}
       onDragOver={(event) => {
         if (!Array.from(event.dataTransfer.types).includes('Files')) return
         event.preventDefault()
@@ -1277,12 +1316,13 @@ export default function Terminal({
       }}
     >
       {/* Mobile header - always show on mobile for drawer access */}
-      <div className="flex min-h-[52px] shrink-0 items-center justify-between border-b border-border bg-elevated px-[6px] md:hidden">
+      <div className="mobile-terminal-header flex min-h-[52px] shrink-0 items-center justify-between border-b border-border bg-elevated px-[6px] md:hidden">
         <div className="flex min-w-0 items-center gap-[7px]">
           <button
             onClick={() => setIsDrawerOpen(true)}
             className={mobileButtonClass('neutral')}
             aria-label="Open session menu"
+            aria-expanded={isDrawerOpen}
           >
             <Menu01Icon width={ICON_SIZE.primary} height={ICON_SIZE.primary} />
           </button>
@@ -1360,7 +1400,7 @@ export default function Terminal({
           {hibernatingSession && (
             <button
               onClick={() => onResumeSession(hibernatingSession.sessionId)}
-              className="btn btn-primary h-[44px] px-3 text-xs"
+              className="mobile-header-wake btn btn-primary h-[44px] px-3 text-xs"
             >
               Wake
             </button>
@@ -1415,71 +1455,51 @@ export default function Terminal({
         </div>
       </div>
 
-      {/* Mobile session switcher - top of terminal */}
-      {session && sessions.length > 1 && (
-        <div className="relative overflow-hidden bg-elevated border-b border-border md:hidden">
-
-          {/* Right fade indicator */}
-          <div className="absolute right-0 top-0 bottom-0 w-4 bg-gradient-to-l from-elevated to-transparent z-10 pointer-events-none" />
-          {/* scroll-pe-4 keeps end tabs clear of the right fade overlay */}
-          <div
-            ref={mobileTabStripRef}
-            className="flex items-center gap-[6px] overflow-x-auto scroll-pe-4 px-[8px] py-[5px] scrollbar-none snap-x snap-mandatory"
-            style={{ WebkitOverflowScrolling: 'touch' }}
-          >
-            {sessions.map((s, index) => {
-              const isActive = s.id === session.id
-              // Use session name as the label when all sessions have a distinct,
-              // non-empty name (e.g. with AGENTBOARD_PREFER_WINDOW_NAME=true and
-              // user-named windows). Otherwise fall back to numeric index — names
-              // would just repeat (e.g. all `dev`) and add no signal.
-              const label = mobileTabsUseNames ? s.name.trim() : index + 1
-              return (
-                <button
-                  key={s.id}
-                  type="button"
-                  data-session-id={s.id}
-                  className={`
-                    flex items-center justify-center shrink-0 snap-start
-                    h-[44px] ${mobileTabsUseNames ? 'min-w-[44px] px-2.5 max-w-[8rem] truncate' : 'w-[44px]'}
-                    text-sm font-extrabold rounded-lg
-                    active:scale-95 transition-all duration-75
-                    select-none touch-manipulation
-                    ${isActive ? statusButtonActive[s.status] : statusButtonBase[s.status]}
-                  `}
-                  onClick={() => {
-                    triggerHaptic()
-                    onSelectSession(s.id)
-                  }}
-                  title={mobileTabsUseNames ? s.name : undefined}
-                >
-                  {label}
-                </button>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Terminal content - always rendered so ref is attached */}
-      <div className="relative flex-1">
+      {/* Stable wrapper keeps xterm mounted while previews open beside it. */}
+      <SessionOutputs session={session} ready={connectionStatus === 'connected' && isInputReady}>
+      <div className="relative min-w-0 flex-1" data-testid="terminal-content">
+        {showSessionPeek && (
+          <MobileSessionPeek
+            sessions={sessions}
+            selectedId={session.id}
+            isOpen={isDrawerOpen}
+            onOpen={() => setIsDrawerOpen(true)}
+          />
+        )}
         {/* Theme background on the container so the .xterm padding ring
             matches the terminal — xterm.js 6.0 no longer paints the viewport
-            with the theme background (black-border regression on mobile). */}
+            with the theme background (black-border regression on mobile).
+            Clip stale canvas/helper-textarea bounds during resize so browser
+            focus cannot scroll the board sideways to the old cursor position. */}
         <div
           ref={containerRef}
-          className="absolute inset-0"
+          className={`absolute inset-0 overflow-clip ${showSessionPeek ? 'left-[8px] md:left-0' : ''}`}
           style={{ backgroundColor: terminalTheme.background }}
         />
-        {isSwitching && session && (
+        {session && snapshot.state.status !== 'closed' && (
+          <TerminalSnapshotLayer state={snapshot.state} containerRef={containerRef} terminalRef={terminalRef}
+            background={terminalTheme.background ?? '#000'} foreground={terminalTheme.foreground ?? '#fff'}
+            rejoinWrapped={rejoinWrapped} onCopied={snapshot.close} />
+        )}
+        {session && !isReadOnly && !isInputReady && (
           <div
             role="status"
             aria-live="polite"
+            data-testid="terminal-recovery-status"
             className="absolute top-2 left-2 z-50 flex items-center gap-1.5 rounded-lg bg-black/60 px-2.5 py-1.5 text-xs text-white/90 shadow-lg backdrop-blur-md"
           >
-            <SpinnerIcon width={ICON_SIZE.pill} height={ICON_SIZE.pill} className="animate-spin" />
-            Loading
+            <SpinnerIcon width={ICON_SIZE.pill} height={ICON_SIZE.pill} className={isSwitching || connectionStatus !== 'connected' ? 'animate-spin' : ''} />
+            {connectionStatus === 'connected' ? (isSwitching ? 'Restoring terminal' : 'Terminal unavailable') :
+              connectionStatus === 'disconnected' ? 'Disconnected' : 'Reconnecting'}
+            <span className="text-white/70">· Input paused</span>
           </div>
+        )}
+        {recoveryDraft.pending && session && !isReadOnly && (
+          <RecoveryDraft key={recoveryIdentity} text={recoveryDraft.text} sessionName={session.name} ready={isInputReady}
+            atLimit={recoveryDraft.atLimit} truncated={recoveryDraft.truncated}
+            persistence={recoveryDraft.persistence} onSave={recoveryDraft.save}
+            onDiscardOthers={recoveryDraft.hasOtherDrafts ? recoveryDraft.discardOthers : undefined} onEdit={recoveryDraft.edit} onSend={sendRecoveryDraft}
+            onDiscard={() => { recoveryDraft.discard(); handleRefocus() }} />
         )}
         {pendingClipboardOffer && session && (
           <div className={`absolute ${showScrollButton && !isSelectingText ? 'bottom-20' : 'bottom-8'} left-1/2 z-30 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-2 rounded-lg border border-border bg-elevated/95 px-2 py-2 shadow-lg backdrop-blur-sm md:hidden`}>
@@ -1507,7 +1527,6 @@ export default function Terminal({
             </button>
           </div>
         )}
-        {session && <MediaRail session={session} />}
         {!session && (
           <div className="absolute inset-0 flex items-center justify-center text-sm text-muted">
             {hibernatingSession ? null : 'Select a session to view terminal'}
@@ -1613,6 +1632,8 @@ export default function Terminal({
 
       </div>
 
+      </SessionOutputs>
+
       <PasteStatus {...browserPaste} />
 
       {/* Desktop status rail (tmux-style status line) */}
@@ -1660,7 +1681,7 @@ export default function Terminal({
           onSendKey={handleSendKey}
           onPasteText={handlePasteText}
           onPasteImage={handlePasteImage}
-          disabled={connectionStatus !== 'connected' || isReadOnly || !isInputReady}
+          disabled={connectionStatus !== 'connected' || isReadOnly || !isInputReady || recoveryDraft.pending}
           sessions={sessions.map(s => ({ id: s.id, name: s.name, status: s.status }))}
           currentSessionId={session.id}
           agentType={session.agentType}
@@ -1669,7 +1690,12 @@ export default function Terminal({
           hideSessionSwitcher
           onRefocus={handleRefocus}
           isKeyboardVisible={isKeyboardVisible}
-          onEnterTextMode={handleEnterTextMode}
+          onSelectText={isReadOnly ? undefined : handleSelectText}
+          snapshotActions={snapshotOpen ? {
+            onDone: snapshot.close,
+            onRefresh: snapshot.refresh,
+            busy: snapshot.state.status === 'loading' || (snapshot.state.status === 'ready' && snapshot.state.refreshing),
+          } : undefined}
         />
       )}
 

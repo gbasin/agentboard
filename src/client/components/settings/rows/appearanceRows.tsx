@@ -12,7 +12,8 @@ import { useThemeStore, type Theme } from '../../../stores/themeStore'
 import { CommitInput } from '../controls/CommitInput'
 import { Slider, Stepper } from '../controls/NumericControls'
 import { SegmentedControl } from '../controls/SegmentedControl'
-import { CONTROL_INPUT } from '../styles'
+import { Switch } from '../../Switch'
+import { CONTROL_INPUT, SWITCH_TOUCH_TARGET } from '../styles'
 import type { RowControlProps, SettingsRowDef } from '../types'
 
 export const FONT_SIZE_MIN = 6
@@ -130,6 +131,13 @@ function LetterSpacingControl({ ids }: RowControlProps) {
   )
 }
 
+function CompactMobileControls({ ids }: RowControlProps) {
+  const checked = useSettingsStore((state) => state.compactMobileControls)
+  const set = useSettingsStore((state) => state.setCompactMobileControls)
+  return <Switch className={SWITCH_TOUCH_TARGET} id={ids.control} checked={checked}
+    onCheckedChange={set} ariaLabelledBy={ids.label} ariaDescribedBy={ids.description} />
+}
+
 export const appearanceRows: SettingsRowDef[] = [
   {
     id: 'theme',
@@ -138,6 +146,15 @@ export const appearanceRows: SettingsRowDef[] = [
     description: 'Light, dark, or follow the system setting.',
     keywords: ['dark mode', 'light mode', 'color', 'colour', 'system'],
     Control: ThemeControl,
+  },
+  {
+    id: 'compact-mobile-controls',
+    page: 'appearance',
+    label: 'Compact mobile controls',
+    description: 'Smaller header buttons and quick keys on phones. More terminal space, smaller tap targets.',
+    keywords: ['mobile', 'size', 'buttons', 'compact', 'toolbar', 'density'],
+    tags: ['device'],
+    Control: CompactMobileControls,
   },
   {
     id: 'font-family',

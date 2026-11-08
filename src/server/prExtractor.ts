@@ -1,17 +1,15 @@
 // Detects pull requests associated with a session by scanning its agent
-// JSONL log. Two signals: a `gh pr create` inside an actual tool call entry
-// (Claude tool_use, Codex function_call, devin toolCalls) — prose
-// mentioning the command is ignored — and Claude Code's self-contained
-// `{"type":"pr-link",...}` records, which link a session to a PR it did
-// not necessarily create. Resulting github.com/.../pull/N URLs are
-// captured from the tool result that references the call's id, with a
-// short line-count fallback window for formats without call ids.
+// JSONL log. Signals: `gh pr create` inside actual tool-call entries,
+// successful correlated GitHub connector creation results, and Claude Code's
+// self-contained `{"type":"pr-link",...}` records. CLI results supply PR URLs;
+// connector results supply structured PR metadata. Prose is not a signal.
 // Scans incrementally: results are cached per file offset so polling only
 // reads bytes appended since the previous scan.
 
 import fs from 'node:fs'
 import type { SessionPullRequest } from '../shared/types'
 import { logger } from './logger'
+import { connectorCompletionUrls, connectorCreateIds, connectorResults } from './connectorPr'
 import {
   CREATE_BYTES,
   PR_LINK_BYTES,
@@ -65,10 +63,13 @@ interface PendingCreate {
 
 interface ScanState {
   // Byte offset consumed so far. Log files are append-mostly; a smaller file
-  // size than offset, or same size with a changed mtime, means a rewrite and
-  // triggers a rescan.
+  // size than offset, changed inode, or same size with a changed stat
+  // revision means a rewrite and triggers a rescan.
   offset: number
   mtimeMs: number
+  ctimeMs: number
+  device: number
+  inode: number
   // Trailing partial line carried between reads, as copied raw byte pieces.
   // It is decoded once, whole, when its newline arrives: decoding per chunk
   // breaks multi-byte characters at chunk edges, and re-joining a growing
@@ -80,6 +81,7 @@ interface ScanState {
   partialHasLink: boolean
   // Tool-call ids awaiting their result (id -> expiry in lines).
   pending: PendingCreate[]
+  connectorPending: Map<string, number>
   // Fallback lookahead (lines) for create commands that had no ids.
   windowRemaining: number
   seenUrls: Set<string>
@@ -98,10 +100,14 @@ function newScanState(): ScanState {
   return {
     offset: 0,
     mtimeMs: 0,
+    ctimeMs: 0,
+    device: 0,
+    inode: 0,
     partial: [],
     partialHasCreate: false,
     partialHasLink: false,
     pending: [],
+    connectorPending: new Map(),
     windowRemaining: 0,
     seenUrls: new Set(),
     prs: [],
@@ -637,6 +643,30 @@ function collectUrls(state: ScanState, line: string): void {
 }
 
 function processLine(state: ScanState, line: string): void {
+  // Connector calls use exact parsed result IDs and structured MCP output;
+  // they never enter the CLI's URL/prose fallback path.
+  if (line.includes('github_create_pull_request') || line.includes('github.create_pull_request') || state.connectorPending.size > 0) {
+    try {
+      const entry = JSON.parse(line)
+      if (entry && typeof entry === 'object') {
+        for (const url of connectorCompletionUrls(entry)) collectUrls(state, url)
+        for (const id of connectorCreateIds(entry)) {
+          if (state.connectorPending.size < MAX_PENDING_IDS) {
+            state.connectorPending.set(id, PENDING_ID_TTL_LINES)
+          }
+        }
+        for (const result of connectorResults(entry)) {
+          if (!state.connectorPending.delete(result.id)) continue
+          for (const url of result.urls) collectUrls(state, url)
+        }
+      }
+    } catch { /* Ignore incomplete or malformed records. */ }
+  }
+  for (const [id, ttl] of state.connectorPending) {
+    if (ttl <= 1) state.connectorPending.delete(id)
+    else state.connectorPending.set(id, ttl - 1)
+  }
+
   // 0. Codex item_completed CommandExecution entries are self-contained
   //    (argv + stdout on one line); they bypass the id/window machinery.
   if (line.includes('"CommandExecution"') && GH_PR_CREATE_LINE_RE.test(line)) {
@@ -728,6 +758,7 @@ function consumeChunk(state: ScanState, bytes: Buffer): void {
   }
   if (
     state.pending.length > 0 ||
+    state.connectorPending.size > 0 ||
     state.windowRemaining > 0 ||
     state.partialHasCreate ||
     state.partialHasLink ||
@@ -756,23 +787,14 @@ export function extractPullRequests(content: string): SessionPullRequest[] {
 
 /**
  * Return the PRs created in the given agent log file.
- * Incremental: re-reads only bytes appended since the last call. Pass
- * `knownSize` (e.g. the DB's last_known_log_size) to skip the stat syscall
- * when the caller already knows the size is unchanged.
+ * Incremental: re-reads only bytes appended since the last call. Always stat
+ * the file: a caller-provided size cannot identify equal-size rewrites.
  */
 export function getSessionPullRequests(
   logPath: string,
-  knownSize?: number | null
+  _knownSize?: number | null
 ): SessionPullRequest[] {
   let state = scanCache.get(logPath)
-  if (
-    state &&
-    state.offset > 0 &&
-    knownSize != null &&
-    knownSize === state.offset
-  ) {
-    return state.prs.length ? state.prs.slice() : EMPTY_RESULT
-  }
 
   let stat: fs.Stats
   try {
@@ -781,13 +803,14 @@ export function getSessionPullRequests(
     return EMPTY_RESULT
   }
 
-  if (state && (stat.size < state.offset || stat.mtimeMs !== state.mtimeMs)) {
-    // Shrinkage is a rewrite; same size with a new mtime likely is too.
-    // Growth with a changed mtime is a normal append — only rescan when the
-    // file did not grow.
-    if (stat.size <= state.offset) {
-      state = undefined
-    }
+  if (state && (
+    stat.dev !== state.device || stat.ino !== state.inode ||
+    stat.size < state.offset ||
+    (stat.size === state.offset && (stat.mtimeMs !== state.mtimeMs || stat.ctimeMs !== state.ctimeMs))
+  )) {
+    // Replacement invalidates even a larger file with a preserved mtime.
+    // In-place growth remains incremental; ctime changes on every append.
+    state = undefined
   }
   if (!state) {
     if (scanCache.size >= MAX_CACHE_ENTRIES) {
@@ -800,17 +823,6 @@ export function getSessionPullRequests(
   }
   if (stat.size === state.offset && stat.mtimeMs === state.mtimeMs) {
     return state.prs.length ? state.prs.slice() : EMPTY_RESULT
-  }
-  if (stat.size === state.offset && stat.mtimeMs !== state.mtimeMs) {
-    // Same-size rewrite — rescan from scratch.
-    state.offset = 0
-    state.partial = []
-    state.partialHasCreate = false
-    state.partialHasLink = false
-    state.pending = []
-    state.windowRemaining = 0
-    state.seenUrls.clear()
-    state.prs = []
   }
 
   let fd: number | null = null
@@ -825,6 +837,9 @@ export function getSessionPullRequests(
       state.offset += read
     }
     state.mtimeMs = stat.mtimeMs
+    state.ctimeMs = stat.ctimeMs
+    state.device = stat.dev
+    state.inode = stat.ino
   } catch (error) {
     logger.warn('pr_extract_error', {
       logPath,

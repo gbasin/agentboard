@@ -1,0 +1,19 @@
+appId: com.apple.mobilesafari
+---
+- tapOn: d
+- tapOn: o
+- tapOn: n
+- tapOn: t
+- tapOn:
+    id: space
+- tapOn:
+    id: delete
+- tapOn:
+    id: Return
+- tapOn: a
+- tapOn: b
+- tapOn:
+    id: delete
+- tapOn: c
+- tapOn:
+    id: Return

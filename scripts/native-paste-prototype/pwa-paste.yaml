@@ -1,0 +1,12 @@
+# iPhone 17 Pro, iOS 26.4; full app with terminal.py at its initial prompt.
+# Seed simulator clipboard with PWA_native_alpha + newline + PWA_native_beta.
+appId: com.apple.webapp
+---
+- tapOn:
+    point: "35%,19%"
+- longPressOn:
+    point: "35%,19%"
+- takeScreenshot: pwa-native-menu
+- tapOn:
+    point: "14%,24%"
+- takeScreenshot: pwa-pasted

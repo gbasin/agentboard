@@ -1,6 +1,7 @@
 import { logger } from './logger'
 import { config } from './config'
-import type { SessionDatabase } from './db'
+import type { AgentSessionRecord, SessionDatabase } from './db'
+import type { PollSnapshot, SessionReader, SnapshotOptions } from './sessionReads'
 import { getLogSearchDirs, normalizeProjectPath } from './logDiscovery'
 import { agentFamily } from './agentDetection'
 import { DEFAULT_SCROLLBACK_LINES, extractLastEntryTimestamp, isSameOrChildPath, isToolNotificationText } from './logMatcher'
@@ -11,7 +12,7 @@ import type { SessionRegistry } from './SessionRegistry'
 import { LogMatchWorkerClient } from './logMatchWorkerClient'
 import { LogWatcher } from './logWatcher'
 import type { AgentType, Session } from '../shared/types'
-import type { KnownSession, LogEntrySnapshot } from './logPollData'
+import type { LogEntrySnapshot } from './logPollData'
 import {
   getEntriesNeedingMatch,
   type SessionSnapshot,
@@ -67,6 +68,7 @@ interface SessionRecord {
   isHibernating: boolean
   lastResumeError: string | null
   wakeStartedAt: string | null
+  lastKnownLogRevision?: string | null
   lastKnownLogSize: number | null
   isCodexExec: boolean
 }
@@ -84,6 +86,7 @@ type SessionUpdate = Pick<
   | 'lastActivityAt'
   | 'lastUserMessage'
   | 'lastKnownLogSize'
+  | 'lastKnownLogRevision'
   | 'isCodexExec'
   | 'slug'
 >
@@ -91,7 +94,7 @@ type SessionUpdate = Pick<
 /**
  * Computes the update object for an existing session record based on a log entry.
  * Shared logic between the "existing by logPath" and "existing by sessionId" branches.
- * Uses file size comparison to detect actual log growth (not just mtime changes from backups/syncs).
+ * Uses stat revisions to refresh derived metadata after appends and rewrites.
  */
 function applyLogEntryToExistingRecord(
   record: SessionRecord,
@@ -109,36 +112,38 @@ function applyLogEntryToExistingRecord(
     update.slug = entry.slug
   }
 
-  // Use file size to detect actual log changes (mtime can change from backups/syncs)
+  // Revision changes trigger parsing, while transcript timestamps establish activity.
   const lastKnownSize = record.lastKnownLogSize ?? 0
   const isFirstObservation = record.lastKnownLogSize === null
   const sizeChanged = entry.size !== lastKnownSize
+  const revisionChanged = entry.revision !== undefined && entry.revision !== record.lastKnownLogRevision
   const hasGrown = entry.size > lastKnownSize
 
   // Enter block on size change OR first observation (to initialize null -> actual size)
-  if (sizeChanged || isFirstObservation) {
+  if (sizeChanged || isFirstObservation || revisionChanged) {
     // Log size changed - could be growth or truncation/rotation
-    if (hasGrown) {
+    if (hasGrown || revisionChanged) {
       // Log grew - extract timestamp from the last entry
       const logTimestamp = extractLastEntryTimestamp(opts.logPath)
       if (logTimestamp) {
         update.lastActivityAt = logTimestamp
-      } else {
+      } else if (sizeChanged || (entry.lastUserMessage !== undefined && entry.lastUserMessage !== record.lastUserMessage)) {
         // Fallback to mtime if we can't parse a timestamp
         update.lastActivityAt = new Date(entry.mtime).toISOString()
       }
     }
     // Always update lastKnownLogSize on any size change (including truncation)
     update.lastKnownLogSize = entry.size
+    if (entry.revision !== undefined && !opts.isLastUserMessageLocked) update.lastKnownLogRevision = entry.revision
   }
 
-  if (entry.lastUserMessage && !isToolNotificationText(entry.lastUserMessage)) {
+  if (entry.lastUserMessage !== undefined && (!entry.lastUserMessage || !isToolNotificationText(entry.lastUserMessage))) {
     // Skip if Enter-key capture recently set a value (prevents stale log overwrites)
     if (!opts.isLastUserMessageLocked) {
       const shouldReplace =
         !record.lastUserMessage ||
         isToolNotificationText(record.lastUserMessage) ||
-        (sizeChanged && entry.lastUserMessage !== record.lastUserMessage)
+        ((sizeChanged || revisionChanged) && entry.lastUserMessage !== record.lastUserMessage)
       if (shouldReplace) {
         update.lastUserMessage = entry.lastUserMessage
       }
@@ -192,9 +197,12 @@ export class LogPoller {
   private startupReconciliationTimer: ReturnType<typeof setTimeout> | null = null
   private devinSyncInterval: ReturnType<typeof setInterval> | null = null
   private logWatcher: LogWatcher | null = null
+  private reader?: SessionReader
+  private stopped = false
   private db: SessionDatabase
   private registry: SessionRegistry
   private onSessionOrphaned?: (sessionId: string, supersededBy?: string) => void
+  private onSessionUpdated?: (record: AgentSessionRecord) => void
   private onSessionActivated?: (sessionId: string, window: string) => void
   private onOrphanSessionsDiscovered?: (stats: { newOrphans: number }) => void
   private isLastUserMessageLocked?: (tmuxWindow: string) => boolean
@@ -217,14 +225,17 @@ export class LogPoller {
   // Cache of empty logs: logPath -> size when checked (re-check if size changes)
   private emptyLogCache: Map<string, number> = new Map()
   // Cache of re-match attempts: sessionId -> timestamp of last attempt
+  private allowsMatch: (window: string, sessionId: string) => boolean
   private rematchAttemptCache: Map<string, number> = new Map()
 
   constructor(
     db: SessionDatabase,
     registry: SessionRegistry,
     {
+      allowsMatch,
       onSessionOrphaned,
       onSessionActivated,
+      onSessionUpdated,
       onOrphanSessionsDiscovered,
       isLastUserMessageLocked,
       maxLogsPerPoll,
@@ -234,8 +245,11 @@ export class LogPoller {
       matchWorkerClient,
       devinSyncClient,
       startupReconciliationDelayMs,
+      reader,
     }: {
+      allowsMatch?: (window: string, sessionId: string) => boolean
       onSessionOrphaned?: (sessionId: string, supersededBy?: string) => void
+      onSessionUpdated?: (record: AgentSessionRecord) => void
       onSessionActivated?: (sessionId: string, window: string) => void
       onOrphanSessionsDiscovered?: (stats: { newOrphans: number }) => void
       isLastUserMessageLocked?: (tmuxWindow: string) => boolean
@@ -246,12 +260,16 @@ export class LogPoller {
       matchWorkerClient?: MatchWorkerClient
       devinSyncClient?: DevinSyncClient | null
       startupReconciliationDelayMs?: number
+      reader?: SessionReader
     } = {}
   ) {
+    this.allowsMatch = allowsMatch ?? (() => true)
+    this.reader = reader
     this.db = db
     this.registry = registry
     this.onSessionOrphaned = onSessionOrphaned
     this.onSessionActivated = onSessionActivated
+    this.onSessionUpdated = onSessionUpdated
     this.onOrphanSessionsDiscovered = onOrphanSessionsDiscovered
     this.isLastUserMessageLocked = isLastUserMessageLocked
     const limit = maxLogsPerPoll ?? DEFAULT_MAX_LOGS
@@ -271,6 +289,23 @@ export class LogPoller {
       devinSyncClient === undefined
         ? new DevinSyncWorkerClient()
         : devinSyncClient
+  }
+
+  private async readSnapshot(options: SnapshotOptions): Promise<PollSnapshot> {
+    if (this.stopped) throw new Error('Log poller stopped')
+    const snapshot = this.reader
+      ? await this.reader.snapshot(options)
+      : {
+          lists: this.db.getSessionLists(options.maxAgeHours === undefined ? undefined : { maxAgeHours: options.maxAgeHours }),
+          knownSessions: options.paths === undefined
+            ? this.db.getKnownSessionKeys()
+            : options.paths.flatMap((logPath) => {
+                const record = this.db.getSessionByLogPath(logPath)
+                return record ? [record] : []
+              }),
+        }
+    if (this.stopped) throw new Error('Log poller stopped')
+    return snapshot
   }
 
   start(intervalMs = DEFAULT_INTERVAL_MS, mode: 'poll' | 'watch' = 'poll'): void {
@@ -344,10 +379,16 @@ export class LogPoller {
   }
 
   private async runComprehensiveReconciliation(): Promise<void> {
-    const stats = await this.pollOnce()
-    if (!stats.completed || stats.errors > 0) return
-    if (this.orphanRematchPending && !this.orphanRematchInProgress) {
-      this.orphanRematchPromise = this.runOrphanRematchInBackground()
+    try {
+      const stats = await this.pollOnce()
+      if (!stats.completed || stats.errors > 0 || this.stopped) return
+      if (this.orphanRematchPending && !this.orphanRematchInProgress) {
+        this.orphanRematchPromise = this.runOrphanRematchInBackground()
+      }
+    } catch (error) {
+      if (this.stopped) return
+      this.matchingError = String(error)
+      logger.warn('log_snapshot_error', { message: String(error) })
     }
   }
 
@@ -398,7 +439,7 @@ export class LogPoller {
 
       const rematchStartedAt = Date.now()
       const selectionStartedAt = Date.now()
-      const lists = this.db.getSessionLists()
+      const { lists } = await this.readSnapshot({ paths: [] })
       const dormantSessions = [...lists.hibernating, ...lists.history]
       const logDirs = getLogSearchDirs()
       const excludedProjects = config.excludeProjects ?? []
@@ -497,7 +538,8 @@ export class LogPoller {
         if (!window) continue
 
         const existing = this.db.getSessionByLogPath(match.logPath)
-        if (existing && !existing.currentWindow) {
+        if (existing && !existing.currentWindow && canAttemptDormantRematch(existing)
+          && this.allowsMatch(window.tmuxWindow, existing.sessionId)) {
           // Check if window is already claimed by another session
           if (claimedWindows.has(match.tmuxWindow)) {
             logger.info('orphan_rematch_skipped_window_claimed', {
@@ -556,10 +598,10 @@ export class LogPoller {
         // Match unmatched orphans by display name
         for (const orphan of unmatchedOrphans) {
           const existing = this.db.getSessionByLogPath(orphan.logFilePath)
-          if (!existing || existing.currentWindow) continue
+          if (!existing || existing.currentWindow || !canAttemptDormantRematch(existing)) continue
 
           const window = unclaimedByName.get(existing.displayName)
-          if (window) {
+          if (window && this.allowsMatch(window.tmuxWindow, existing.sessionId)) {
             const claimed = this.db.claimCurrentWindow(
               existing.sessionId,
               window.tmuxWindow,
@@ -596,7 +638,7 @@ export class LogPoller {
           const window = lockMatches.get(orphan.sessionId)
           if (!window || claimedWindows.has(window.tmuxWindow)) continue
           const existing = this.db.getSessionByLogPath(orphan.logFilePath)
-          if (!existing || existing.currentWindow) continue
+          if (!existing || existing.currentWindow || !canAttemptDormantRematch(existing)) continue
           this.db.updateSession(existing.sessionId, {
             currentWindow: window.tmuxWindow,
             displayName: window.name,
@@ -636,6 +678,7 @@ export class LogPoller {
    * if polling needs to resume.
    */
   stop(): void {
+    this.stopped = true
     if (this.interval) {
       clearInterval(this.interval)
     }
@@ -728,11 +771,12 @@ export class LogPoller {
     try {
       if (!this.matchWorker) return
 
-      const windows = this.registry.getAll()
       const logDirs = getLogSearchDirs()
-      const lists = this.db.getSessionLists({
+      const { lists, knownSessions } = await this.readSnapshot({
         maxAgeHours: HISTORY_SNAPSHOT_MAX_AGE_HOURS,
+        paths: pathsToPoll,
       })
+      const windows = this.registry.getAll()
       const sessionRecords = [...lists.active, ...lists.hibernating, ...lists.history]
       const sessions: SessionSnapshot[] = sessionRecords.map((session) => ({
         sessionId: session.sessionId,
@@ -741,22 +785,8 @@ export class LogPoller {
         lastActivityAt: session.lastActivityAt,
         lastUserMessage: toSnapshotMessage(session.lastUserMessage),
         lastKnownLogSize: session.lastKnownLogSize,
+        lastKnownLogRevision: session.lastKnownLogRevision,
       }))
-      // Watch batches are already path-scoped. Resolve metadata only for those
-      // paths instead of loading and cloning every historical session key.
-      const knownSessions: KnownSession[] = pathsToPoll.flatMap((logPath) => {
-        const session = this.db.getSessionByLogPath(logPath)
-        if (!session) return []
-        return [{
-          logFilePath: session.logFilePath,
-          sessionId: session.sessionId,
-          projectPath: session.projectPath,
-          slug: session.slug,
-          agentType: session.agentType,
-          isCodexExec: session.isCodexExec,
-        }]
-      })
-
       const response = await this.matchWorker.poll({
         windows,
         logDirs,
@@ -850,6 +880,7 @@ export class LogPoller {
         lastActivityAt: session.lastActivityAt,
         lastUserMessage: session.lastUserMessage,
         lastKnownLogSize: session.lastKnownLogSize,
+        lastKnownLogRevision: session.lastKnownLogRevision,
       }))
 
     const exactWindowMatches = new Map<string, Session>()
@@ -875,12 +906,11 @@ export class LogPoller {
       if (normalized) deferralCandidates.push({ projectPath: normalized, agentType: nmw.agentType })
     }
 
-    const matchForEntry = (entry: LogEntrySnapshot): Session | null =>
-      (entry.agentType === 'devin' && entry.sessionId
-        ? devinLockMatches.get(entry.sessionId)
-        : undefined) ??
-      exactWindowMatches.get(entry.logPath) ??
-      null
+    const matchForEntry = (entry: LogEntrySnapshot): Session | null => {
+      const candidate = (entry.agentType === 'devin' && entry.sessionId
+        ? devinLockMatches.get(entry.sessionId) : undefined) ?? exactWindowMatches.get(entry.logPath)
+      return candidate && entry.sessionId && this.allowsMatch(candidate.tmuxWindow, entry.sessionId) ? candidate : null
+    }
 
     const entriesToMatch = getEntriesNeedingMatch(response.entries ?? [], sessions, {
       minTokens: MIN_LOG_TOKENS_FOR_INSERT,
@@ -914,6 +944,9 @@ export class LogPoller {
           })
           if (update) {
             this.db.updateSession(existing.sessionId, update)
+            if (update.lastUserMessage !== undefined || update.lastActivityAt !== undefined) {
+              this.onSessionUpdated?.({ ...existing, ...update })
+            }
           }
           const shouldAttemptRematch =
             canAttemptDormantRematch(existing) &&
@@ -1008,6 +1041,9 @@ export class LogPoller {
           })
           if (updateById) {
             this.db.updateSession(sessionId, updateById)
+            if (updateById.lastUserMessage !== undefined || updateById.lastActivityAt !== undefined) {
+              this.onSessionUpdated?.({ ...existingById, ...updateById })
+            }
           }
 
           // Re-attempt matching for orphaned sessions (no currentWindow)
@@ -1071,6 +1107,7 @@ export class LogPoller {
         // Slug-based supersede: if this session shares a slug with an active session
         // in the same project, it's a plan→execute transition. Supersede the old session.
         const slug = entry.slug ?? null
+        let predecessor: AgentSessionRecord | null = null
         let supersededWindow: string | null = null
         let inheritHibernationMarker = false
         let inheritDisplayName: string | null = null
@@ -1079,22 +1116,12 @@ export class LogPoller {
             slug,
             projectPath
           )
-          if (slugMatch && slugMatch.sessionId !== sessionId) {
+          if (slugMatch && slugMatch.sessionId !== sessionId
+            && (!slugMatch.currentWindow || this.allowsMatch(slugMatch.currentWindow, sessionId))) {
             supersededWindow = slugMatch.currentWindow
             inheritHibernationMarker = slugMatch.isHibernating
             inheritDisplayName = slugMatch.displayName
-            this.db.updateSession(slugMatch.sessionId, {
-              currentWindow: null,
-              isHibernating: false,
-            })
-            this.onSessionOrphaned?.(slugMatch.sessionId, sessionId)
-            logger.info('session_superseded_by_slug', {
-              oldSessionId: slugMatch.sessionId,
-              newSessionId: sessionId,
-              slug,
-              window: supersededWindow,
-              hibernationMarkerTransferred: inheritHibernationMarker,
-            })
+            predecessor = slugMatch
           }
         }
 
@@ -1102,7 +1129,7 @@ export class LogPoller {
         let currentWindow: string | null = supersededWindow ?? matchedWindow?.tmuxWindow ?? null
         if (currentWindow) {
           const existingForWindow = this.db.getSessionByWindow(currentWindow)
-          if (existingForWindow && existingForWindow.sessionId !== sessionId) {
+          if (existingForWindow && existingForWindow.sessionId !== sessionId && existingForWindow.sessionId !== predecessor?.sessionId) {
             // Window already claimed by another session - don't steal it
             // The new session will be created as orphaned and can match later
             // if/when the existing session releases the window
@@ -1154,7 +1181,7 @@ export class LogPoller {
           )
         }
 
-        this.db.insertSession({
+        const successor = {
           sessionId,
           logFilePath: entry.logPath,
           projectPath,
@@ -1168,9 +1195,20 @@ export class LogPoller {
           isHibernating: inheritHibernationMarker,
           lastResumeError: null,
           lastKnownLogSize: entry.size,
+          lastKnownLogRevision: entry.revision,
           isCodexExec: entry.isCodexExec,
           launchCommand: matchedWindow?.command ?? null,
-        })
+        }
+        if (predecessor) {
+          this.db.supersedeSession(predecessor, successor)
+          this.onSessionOrphaned?.(predecessor.sessionId, sessionId)
+          logger.info("session_superseded_by_slug", {
+            oldSessionId: predecessor.sessionId, newSessionId: sessionId, slug,
+            window: currentWindow, hibernationMarkerTransferred: inheritHibernationMarker,
+          })
+        } else {
+          this.db.insertSession(successor)
+        }
         newSessions += 1
         if (currentWindow) {
           this.onSessionActivated?.(sessionId, currentWindow)
@@ -1217,11 +1255,11 @@ export class LogPoller {
     let processMs = 0
 
     try {
-      const windows = this.registry.getAll()
       const logDirs = getLogSearchDirs()
-      const lists = this.db.getSessionLists({
+      const { lists, knownSessions } = await this.readSnapshot({
         maxAgeHours: HISTORY_SNAPSHOT_MAX_AGE_HOURS,
       })
+      const windows = this.registry.getAll()
       const sessionRecords = [...lists.active, ...lists.hibernating, ...lists.history]
       let shouldBackfillLastMessage = false
       if (this.startupLastMessageBackfillPending) {
@@ -1241,8 +1279,8 @@ export class LogPoller {
         lastActivityAt: session.lastActivityAt,
         lastUserMessage: toSnapshotMessage(session.lastUserMessage),
         lastKnownLogSize: session.lastKnownLogSize,
+        lastKnownLogRevision: session.lastKnownLogRevision,
       }))
-      const knownSessions: KnownSession[] = this.db.getKnownSessionKeys()
 
       const lastMessageCandidates: LastMessageCandidate[] = []
       if (this.startupLastMessageBackfillPending) {

@@ -61,13 +61,15 @@ describe('TerminalControls', () => {
       String(button.props.className ?? '').includes('terminal-key')
     )
     expect(keyButtons).toHaveLength(9)
+    expect(renderer.root.findAllByProps({ 'aria-label': 'Show keyboard' })).toHaveLength(0)
+    expect(renderer.root.findAllByProps({ 'aria-label': 'Dismiss keyboard' })).toHaveLength(0)
     expect(keyButtons.some(button => button.props['aria-label'] === 'Shift+Tab')).toBe(false)
     expect(keyButtons.every((button) =>
       String(button.props.className).includes('size-[44px]')
     )).toBe(true)
   })
 
-  test('the Enter key carries only its accent colors, not the default key colors', () => {
+  test('the Enter key uses the same neutral colors as the other command keys', () => {
     const renderer = TestRenderer.create(
       <TerminalControls
         onSendKey={() => {}}
@@ -82,13 +84,11 @@ describe('TerminalControls', () => {
         .find((b) => b.props['aria-label'] === label)
       return String(button?.props.className).split(/\s+/).filter(Boolean)
     }
-    // Same-specificity utilities: if both were present, bg-surface (emitted
-    // later) would hide the accent tint.
     const enter = classesOf('Enter')
-    expect(enter).toEqual(expect.arrayContaining(['bg-accent/20', 'border-accent/40', 'text-accent']))
-    expect(enter).not.toContain('bg-surface')
-    expect(enter).not.toContain('border-border')
-    expect(enter).not.toContain('text-secondary')
+    expect(enter).toEqual(expect.arrayContaining(['bg-surface', 'border-border', 'text-secondary']))
+    expect(enter).not.toContain('bg-accent/20')
+    expect(enter).not.toContain('border-accent/40')
+    expect(enter).not.toContain('text-accent')
     expect(classesOf('Delete word')).toEqual(
       expect.arrayContaining(['bg-surface', 'border-border', 'text-secondary', 'border'])
     )
@@ -556,4 +556,73 @@ test('selected files survive resetting the native picker and wait with the draft
   await act(async () => { renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }) })
   expect(sent).toEqual(["Read this\nplease\n'/tmp/notes.txt' "])
   renderer.unmount()
+})
+
+
+test('recovery disables command and paste buttons without adding a keyboard control', () => {
+  const renderer = TestRenderer.create(<TerminalControls disabled onSendKey={() => {}}
+    sessions={[]} currentSessionId="recovery" onSelectSession={() => {}} />)
+  expect(renderer.root.findAllByProps({ 'aria-label': 'Show keyboard' })).toHaveLength(0)
+  expect(renderer.root.findByProps({ 'aria-label': 'Paste' }).props.disabled).toBe(true)
+  expect(renderer.root.findByProps({ 'aria-label': 'Enter' }).props.disabled).toBe(true)
+  act(() => renderer.unmount())
+})
+
+test('Select text renders only with a handler and fires it on tap', () => {
+  let opened = 0
+  const renderer = TestRenderer.create(
+    <TerminalControls onSendKey={() => {}} sessions={[]} currentSessionId="s" onSelectSession={() => {}}
+      onSelectText={() => { opened += 1 }} />
+  )
+  const button = renderer.root.findAllByType('button').find((b) => b.props['aria-label'] === 'Select text')
+  act(() => button?.props.onClick())
+  expect(opened).toBe(1)
+  const without = TestRenderer.create(
+    <TerminalControls onSendKey={() => {}} sessions={[]} currentSessionId="s" onSelectSession={() => {}} />
+  )
+  expect(without.root.findAllByType('button').some((b) => String(b.props['aria-label']).includes('text'))).toBe(false)
+})
+
+test('while the snapshot is open the key row is replaced by Done then Refresh', () => {
+  const calls: string[] = []
+  const actions = { onDone: () => { calls.push('done') }, onRefresh: () => { calls.push('refresh') }, busy: false }
+  const renderer = TestRenderer.create(
+    <TerminalControls onSendKey={() => { calls.push('key') }} sessions={[]} currentSessionId="s" onSelectSession={() => {}}
+      onSelectText={() => { calls.push('select') }} snapshotActions={actions} />
+  )
+  const buttons = renderer.root.findAllByType('button')
+  expect(buttons.map((b) => b.props['aria-label'])).toEqual(['Done selecting text', 'Refresh text'])
+  for (const button of buttons) expect(String(button.props.className)).toContain('h-[44px]')
+  act(() => buttons[0].props.onClick())
+  act(() => buttons[1].props.onClick())
+  expect(calls).toEqual(['done', 'refresh'])
+
+  act(() => renderer.update(
+    <TerminalControls onSendKey={() => {}} sessions={[]} currentSessionId="s" onSelectSession={() => {}}
+      onSelectText={() => {}} snapshotActions={{ ...actions, busy: true }} />
+  ))
+  const refresh = renderer.root.findAllByType('button').find((b) => b.props['aria-label'] === 'Refresh text')
+  expect(refresh?.props.disabled).toBe(true)
+  expect(refresh?.props['aria-busy']).toBe(true)
+  const done = renderer.root.findAllByType('button').find((b) => b.props['aria-label'] === 'Done selecting text')
+  expect(done?.props.disabled).toBeFalsy()
+})
+
+
+test('touch Shift clears when the session changes or controls become disabled', () => {
+  globalAny.navigator = {} as Navigator
+  const props = { onSendKey() {}, sessions: [], currentSessionId: 'one', onSelectSession() {} }
+  let renderer!: TestRenderer.ReactTestRenderer
+  act(() => { renderer = TestRenderer.create(<TerminalControls {...props} />) })
+  const shift = () => renderer.root.findByProps({ 'aria-label': 'Shift' })
+  act(() => { shift().props.onClick() })
+  expect(shift().props['aria-pressed']).toBe(true)
+  act(() => { renderer.update(<TerminalControls {...props} currentSessionId="two" />) })
+  expect(shift().props['aria-pressed']).toBe(false)
+  act(() => { shift().props.onClick() })
+  expect(shift().props['aria-pressed']).toBe(true)
+  act(() => { renderer.update(<TerminalControls {...props} currentSessionId="two" disabled />) })
+  expect(shift().props['aria-pressed']).toBe(false)
+  expect(shift().props.disabled).toBe(true)
+  act(() => { renderer.unmount() })
 })

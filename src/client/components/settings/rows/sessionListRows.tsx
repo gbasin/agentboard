@@ -16,8 +16,8 @@ import { SWITCH_TOUCH_TARGET } from '../styles'
 import type { RowControlProps, SettingsRowDef, SettingsState } from '../types'
 import { useServerSetting } from '../useServerSetting'
 
-type BooleanKey = 'showProjectName' | 'showLastUserMessage' | 'showSessionIdPrefix'
-type BooleanSetter = 'setShowProjectName' | 'setShowLastUserMessage' | 'setShowSessionIdPrefix'
+type BooleanKey = 'showMobileSessionPeek' | 'showProjectName' | 'showLastUserMessage' | 'showSessionIdPrefix'
+type BooleanSetter = 'setShowMobileSessionPeek' | 'setShowProjectName' | 'setShowLastUserMessage' | 'setShowSessionIdPrefix'
 
 /** A Switch row bound to one boolean settings-store key. */
 export function storeSwitch(key: BooleanKey, setter: BooleanSetter) {
@@ -179,6 +179,15 @@ export const sessionListRows: SettingsRowDef[] = [
     tags: ['desktop'],
     Description: SidebarAnchorDescription,
     Control: SidebarAnchorControl,
+  },
+  {
+    id: 'mobile-session-peek',
+    page: 'session-list',
+    label: 'Mobile session peek',
+    description: 'Show the colored status strip at the left edge of the mobile terminal. Turn off to use the full width.',
+    keywords: ['phone', 'sidebar', 'status', 'rail'],
+    tags: ['device'],
+    Control: storeSwitch('showMobileSessionPeek', 'setShowMobileSessionPeek'),
   },
   {
     id: 'show-project-name',

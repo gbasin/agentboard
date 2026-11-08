@@ -178,7 +178,7 @@ export async function installHarness(
     await route.fulfill({ json: { settings: harness.settings } })
   })
 
-  await page.routeWebSocket(/\/ws$/, (ws) => {
+  await page.routeWebSocket(/\/ws(?:\?.*)?$/, (ws) => {
     if (harness.refuseConnections) {
       void ws.close()
       return

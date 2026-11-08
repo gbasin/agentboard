@@ -1,18 +1,33 @@
 # AGENTS.md
 
-- Bun 1.x, TypeScript 5.x, React 18, Hono, xterm.js, Zustand, Tailwind.
+- Bun 1.3 (pinned in `.bun-version`), TypeScript 5, React 18, Hono 4, xterm.js 6 (`@xterm/xterm`), Zustand 5, Tailwind CSS 3. Vite 8 builds the client; the server runs from source with Bun, and release binaries come from `bun build --compile`.
 
 ## Commands
 
 ```
-bun run dev        # frontend + backend
-bun run build      # production build
-bun run lint       # oxlint
-bun run typecheck  # tsc --noEmit
-bun run test       # unit tests
+bun run dev            # backend (port 4040) + Vite dev server (port 5173)
+bun run build          # production client build into dist/client
+bun run lint           # oxlint
+bun run typecheck      # tsc --noEmit
+bun run test           # unit and integration tests (scripts/test-runner.ts)
+bun run test:e2e       # Playwright end-to-end tests, isolated tmux socket and data dir
+bun run test:coverage  # lcov coverage; skips the isolated/ and real-tmux suites
+bun run deps:risk      # dependency security and maintenance scanner
 ```
 
-Run `bun run lint && bun run typecheck && bun run test` after changes.
+Run `bun run lint && bun run typecheck && bun run test` after changes. The
+pre-commit hook (`.githooks/pre-commit`) runs the same three commands.
+
+`bun run test` is not the same as bare `bun test`. `scripts/test-runner.ts`
+points the Claude and Codex roots, the database, the data dir, and the log file
+at a temp directory. It sets `NODE_ENV=test` when `NODE_ENV` is unset or
+`production`, and keeps any other value. It runs each file named on its
+isolation lists (`ISOLATED_FILES`, `ISOLATED_REAL_TMUX_FILES`,
+`ISOLATED_CLIENT_FILES`) and each file in `src/server/__tests__/isolated/` in
+its own process. Bare `bun test` runs everything in one process against your
+real environment. A new test that mocks modules or globals, or that starts real
+tmux, must be registered there; see
+[docs/architecture.md](docs/architecture.md#when-you-add-x-also-change-y).
 
 ## FAD Parity Fixtures
 
@@ -29,24 +44,27 @@ dev-only `tools/fad-dump` shim). The shim is never a runtime dependency.
 
 ## How It Works
 
-- Single tmux session (default: `agentboard`) with one window per project
-- Backend discovers windows, streams terminal output via WebSocket
-- Parses Claude/Codex/Pi JSONL logs from `~/.claude/projects/`, `~/.codex/sessions/`, `~/.pi/agent/sessions/`
-- Devin CLI stores history in SQLite (`~/.local/share/devin/cli/sessions.db`); `src/server/devinSync.ts` mirrors it into `~/.agentboard/devin-sessions/*.jsonl` so the same pipeline applies. `src/server/devinLockMatch.ts` matches devin sessions to windows via `session_locks/<id>.lock` PIDs.
-- Grok CLI writes transcripts at `~/.grok/sessions/<encoded-cwd>/<session-id>/chat_history.jsonl`; sessionId and projectPath are derived from the directory names. Sibling telemetry files (events.jsonl, updates.jsonl) are excluded from matching.
-- Status: unknown -> working -> waiting (derived from log events)
+Read [docs/architecture.md](docs/architecture.md) before changing the server. The essentials:
+
+- One managed tmux session (default `agentboard`) holds one window per agent session. Windows in other tmux sessions are discovered as external (`DISCOVER_PREFIXES` narrows that). In `pty` terminal mode (the default), each browser terminal attaches to a local window through its own grouped session (`<TMUX_SESSION>-ws-<id>`).
+- With the terminal relay (the default), a relay Worker owns the public port and terminal I/O; the main thread serves HTTP on loopback and owns the database. Never call `worker.terminate()`: it segfaults compiled Bun.
+- Status (`working`, `waiting`, `permission`, `unknown`) is inferred from tmux pane content in `src/server/statusInference.ts`, not from logs.
+- Agent transcripts (Claude, Codex, Pi, oh-my-pi, Grok, and a mirror of Devin's SQLite history) are matched to windows in `src/server/logMatcher.ts` and `src/server/ownership/`. They drive the last prompt, PR chips, and media. `src/server/logDiscovery.ts` owns the roots.
+- Data lives in `~/.agentboard/` (`AGENTBOARD_DATA_DIR`): `agentboard.db` holds conversations and the session-recovery catalog.
 
 ## Structure
 
-- src/server/     Hono backend, WebSocket, tmux/pty management, log parsing
-  - `src/server/SessionManager.ts` - tmux window discovery, log parsing, status detection
-  - `src/server/index.ts` - Hono routes, WebSocket handling
-- src/client/     React frontend, xterm.js terminal, Zustand stores
-  - `src/client/App.tsx` - main UI, keyboard shortcuts
-  - `src/client/components/Terminal.tsx` - xterm.js wrapper
-- src/shared/     Shared types
+- `src/server/`: Bun backend. `index.ts` is the entry point.
+- `src/client/`: React app. `App.tsx` is the root.
+- `src/shared/`: types and protocol constants used by both.
+- `docs/architecture.md` maps processes, tmux, terminal I/O, the log pipeline, storage, and the API.
 
-- Data directory: `~/.agentboard/` contains `agentboard.db` (session data) and `agentboard.log`
+## Documentation
+
+- `docs/` describes current behaviour only.
+- Investigation evidence, measurements, rollout records, and design proposals belong in the pull request (description or attachments), not in the tree.
+- When a rule in `docs/` rests on a measurement or an experiment, state the rule in the present tense and link the pull request that holds the evidence.
+- When a change makes a statement in a doc false, fix the doc in the same pull request.
 
 ## tmux Safety
 
@@ -63,13 +81,19 @@ dev-only `tools/fad-dump` shim). The shim is never a runtime dependency.
   socket and data dir instead:
 
   ```
-  TMUX_TMPDIR=/tmp/ab-dev-$$ AGENTBOARD_DATA_DIR=/tmp/ab-dev-$$/data \
+  TMUX_TMPDIR=/tmp/ab-dev-mytask AGENTBOARD_DATA_DIR=/tmp/ab-dev-mytask/data \
     PORT=4141 TMUX_SESSION=ab-dev bun run dev
   ```
 
-  `bun run test:e2e` already isolates itself. Stop what you started
-  (`env -u TMUX TMUX_TMPDIR=/tmp/ab-dev-$$ tmux kill-server`) and remove the
-  temp dir when done.
+  Use a literal directory name that is unique to your task. Do not use `$$`:
+  every new shell has a different PID, so a later command builds a different
+  path. tmux ignores a `TMUX_TMPDIR` that does not exist and falls back to the
+  default socket, which is the live server.
+
+  `bun run test:e2e` already isolates itself. Stop what you started by naming
+  the socket (`env -u TMUX tmux -S /tmp/ab-dev-mytask/tmux-$(id -u)/default kill-server`)
+  and remove the temp dir when done. `-S` fails with an error when the socket
+  is missing; it never falls back to the live server.
 - Every subprocess the server spawns must pass an explicit `env` —
   `Bun.spawn*`/`spawnSync` without `env` reuse the *process-start* environ,
   so they ignore `delete process.env.TMUX` from isolation setup (and Bun
@@ -90,9 +114,9 @@ dev-only `tools/fad-dump` shim). The shim is never a runtime dependency.
 
 - Managed by [release-please](.github/workflows/release-please.yml); it scans conventional commits on `master` and maintains a release PR that bumps `package.json` and `CHANGELOG.md`.
 - Do NOT bump `package.json` version or add `(vX.Y.Z)` suffixes in change PRs — the release PR owns versioning. `fix:`/`perf:` → patch, `feat:` → minor, `feat!:`/`BREAKING CHANGE:` → major.
-- Merge the release PR to ship: release-please creates the tag + GitHub release, and `release.yml` (dispatched from the same workflow run) builds binaries and publishes npm packages.
+- Merge the release PR to ship: release-please creates the tag + GitHub release, and `release.yml` builds binaries, publishes the npm packages, uploads release assets, and updates the Homebrew tap formula. The tag push triggers `release.yml` when the release GitHub App token minted the tag; with the `GITHUB_TOKEN` fallback, the Release Please workflow dispatches it instead.
 - `release-please` does NOT bump `optionalDependencies` (no `extra-files` in `release-please-config.json`) — the platform packages don't exist on npm until `release.yml` publishes them, so an early bump would leave master failing `bun install --frozen-lockfile`. `release.yml`'s last step syncs `optionalDependencies` + `bun.lock` together on master post-publish.
-- Overrides: `Release-As: x.y.z` in a merge commit body pins the next release to that version; a manual `git tag vX.Y.Z && git push` still runs the full pipeline (but skips the `package.json` bump); the Release Please workflow can be re-run manually via `workflow_dispatch`.
+- Overrides: `Release-As: x.y.z` in a merge commit body pins the next release to that version; a manual `git tag vX.Y.Z && git push` still runs the pipeline, but nothing bumps `package.json`, and the main package publishes the committed version — tag a commit whose `package.json` version already equals the tag; the Release Please workflow can be re-run manually via `workflow_dispatch`.
 
 ## Critical Thinking
 

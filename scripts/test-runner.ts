@@ -49,6 +49,8 @@ async function main() {
     AGENTBOARD_DATA_DIR: tempRoot,
     AGENTBOARD_TMUX_PID_FILE: path.join(tempRoot, 'tmux-server.pid'),
     AGENTBOARD_PERSISTENCE_MAINTENANCE_MS: '0',
+    // General server tests mock process inspection; config tests exercise the default explicitly.
+    AGENTBOARD_OWNERSHIP_MATCHING: 'false',
     // Default skipMatchingPatterns excludes /tmp/* and /var/folders/* — both
     // common locations for test working directories (worktrees, CI runners on
     // some platforms). Tests that exercise matching logic from those paths
@@ -58,7 +60,8 @@ async function main() {
   }
 
   try {
-    await runCommand(['node', '--test', 'launchd/release.test.mjs'], env)
+    await runCommand(['node', '--test', 'launchd/release.test.mjs', 'launchd/scripts.test.mjs', 'systemd/install.test.mjs'], env)
+    await runCommand(['bun', 'test', './scripts/verify-platform-lock.test.ts'], env)
 
     // Tests that either mutate globals or are sensitive to global mutations
     // must run in a separate process so they don't race with other test files.
@@ -68,6 +71,7 @@ async function main() {
     // Bun.serve / setInterval mock; isolation keeps that mock window from
     // overlapping with any other test that captures globals at module load.
     const ISOLATED_FILES = new Set([
+      'terminalLeases.test.ts',
       'persistenceOwnership.test.ts',
       'persistenceRoutes.test.ts',
       // Entry-point tests patch Bun.serve/Bun.spawnSync/process.exit while
@@ -78,6 +82,7 @@ async function main() {
       'slug-supersede.integration.test.ts',
       'sessionRefreshWorker.test.ts',
       'pipePaneTerminalProxy.test.ts',
+      'pipePaneLifecycle.test.ts',
       'hydrateSessionsEmptyGuard.test.ts',
       // terminalProxyFactory.test.ts installs a top-level
       // mock.module('../config', ...) whose replacement omits many real
@@ -98,7 +103,11 @@ async function main() {
     // isolation from global Bun.* mocks, but running them under coverage on
     // Linux CI can stall PTY attach readiness.
     const ISOLATED_REAL_TMUX_FILES = new Set([
+      'sshPaste.integration.test.ts',
       'double-attach.integration.test.ts',
+      'pipePaneShared.integration.test.ts',
+      'pipePaneRelay.integration.test.ts',
+      'paneOutputBackpressure.integration.test.ts',
       'e2eTmuxReap.integration.test.ts',
       'groupedSessionLeak.integration.test.ts',
       'hibernation.integration.test.ts',
@@ -106,6 +115,8 @@ async function main() {
       'persistence.integration.test.ts',
       'integration.test.ts',
       'throttled-reconnect.integration.test.ts',
+      'terminalRelay.integration.test.ts',
+      'originGuard.integration.test.ts',
     ])
 
     // Client tests that install top-level mock.module(...) hooks must run in a
@@ -120,6 +131,13 @@ async function main() {
       // (prChips.test.tsx once saw XCloseIcon lose forwarded props).
       'agentIcon.test.tsx',
       'app.test.tsx',
+      // These fixtures replace document and schedule delayed focus returns.
+      // A preceding dialog's callback can focus the next file's fake textarea
+      // on Linux file order. Keep the strict focus assertions in their own
+      // processes instead of letting unrelated fake documents share timers.
+      'settingsModal.test.tsx',
+      'settingsModalRows.test.tsx',
+      'settingsHooks.test.tsx',
       // Files that render motion/react (framer-motion) components. The
       // library keeps module-level projection state (a root node per
       // document) and schedules async frame callbacks on the global rAF;
