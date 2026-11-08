@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.43.3](https://github.com/gbasin/agentboard/compare/v0.43.2...v0.43.3) (2026-11-08)
+
+
+### Bug Fixes
+
+* keep previews reachable when Tailscale Serve owns the dashboard port ([#535](https://github.com/gbasin/agentboard/issues/535)) ([8847c93](https://github.com/gbasin/agentboard/commit/8847c9372102b117ccec90fcf95f71f5649997e8))
+
 ## [0.43.2](https://github.com/gbasin/agentboard/compare/v0.43.1...v0.43.2) (2026-11-08)
 
 
