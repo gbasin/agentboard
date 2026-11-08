@@ -20,13 +20,24 @@ final class NativeParityUITests: XCTestCase {
         field.typeText(value)
     }
     private func reveal(_ element: XCUIElement, in app: XCUIApplication, preferUp: Bool = false) {
-        for _ in 0..<10 {
+        for _ in 0..<20 {
             let top = app.navigationBars.allElementsBoundByIndex.last?.frame.maxY ?? app.frame.minY
             var bottom = app.frame.maxY - 20
+            if app.keyboards.firstMatch.exists { bottom = min(bottom, app.keyboards.firstMatch.frame.minY) }
             if let search = app.searchFields.allElementsBoundByIndex.last, search.frame.midY > app.frame.midY { bottom = min(bottom, search.frame.minY) }
             if element.exists && element.isHittable && element.frame.minY >= top && element.frame.maxY < bottom { return }
-            let list = app.collectionViews.allElementsBoundByIndex.last(where: { $0.isHittable }) ?? app.collectionViews.firstMatch
-            if (element.exists && element.frame.minY < top) || (!element.exists && preferUp) { list.swipeDown() } else { list.swipeUp() }
+            // A sheet's collection center can be behind the keyboard, making the collection
+            // itself non-hittable even though its visible rows can scroll. Use the front list.
+            let list = app.collectionViews.allElementsBoundByIndex.last ?? app.collectionViews.firstMatch
+            let frame = list.frame
+            let visibleTop = max(top, frame.minY) + 12
+            let visibleBottom = min(bottom, frame.maxY) - 12
+            guard frame.height > 0, visibleBottom > visibleTop else { XCTFail("No visible scroll area"); return }
+            let lower = (visibleTop + (visibleBottom - visibleTop) * 0.75 - frame.minY) / frame.height
+            let upper = (visibleTop + (visibleBottom - visibleTop) * 0.25 - frame.minY) / frame.height
+            let down = (element.exists && element.frame.minY < top) || (!element.exists && preferUp)
+            list.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: down ? upper : lower))
+                .press(forDuration: 0.05, thenDragTo: list.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: down ? lower : upper)))
         }
         if !element.exists || !element.isHittable {
             capture("unreachable-control")
