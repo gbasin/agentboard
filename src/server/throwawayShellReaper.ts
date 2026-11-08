@@ -76,7 +76,7 @@ export const DEFAULT_TIMING: ReaperTiming = {
 export type ReapStep = 'server-pid' | 'children' | 'process-info' | 'panes' | 'grandchildren' | 'fds'
 
 export type ReapOutcome =
-  | { kind: 'skipped'; reason: 'platform' | 'in-flight' }
+  | { kind: 'skipped'; reason: 'platform' | 'in-flight' | 'disposed' }
   | { kind: 'nothing' }
   | { kind: 'abandoned'; step: ReapStep; reason: 'timeout' | 'failed' | 'server-changed' }
   | { kind: 'reaped'; hupPids: number[]; killedPids: number[] }
@@ -150,6 +150,7 @@ export class ThrowawayShellReaper {
   readonly timing: ReaperTiming
   private timer: TimerHandle | null = null
   private inFlight = false
+  private disposed = false
   private lastCreatedAt = 0
   private pendingSince: number | null = null
   private lastRunStartedAt = Number.NEGATIVE_INFINITY
@@ -173,7 +174,7 @@ export class ThrowawayShellReaper {
 
   /** The only work on the connection path: (re)arm one timer. */
   noteGroupedSessionCreated(): void {
-    if (this.deps.platform !== 'darwin') return
+    if (this.disposed || this.deps.platform !== 'darwin') return
     const now = this.deps.now()
     this.lastCreatedAt = now
     this.pendingSince ??= now
@@ -181,6 +182,7 @@ export class ThrowawayShellReaper {
   }
 
   dispose(): void {
+    this.disposed = true
     this.cancelTimer()
     this.pendingSince = null
   }
@@ -191,7 +193,7 @@ export class ThrowawayShellReaper {
   }
 
   private schedule(): void {
-    if (this.pendingSince === null) return
+    if (this.disposed || this.pendingSince === null) return
     const { settleMs, maxDelayMs, minIntervalMs } = this.timing
     const due = Math.max(
       Math.min(this.lastCreatedAt + settleMs, this.pendingSince + maxDelayMs),
@@ -227,6 +229,7 @@ export class ThrowawayShellReaper {
 
   /** One reap pass. Never overlaps another; never throws. */
   async runNow(): Promise<ReapOutcome> {
+    if (this.disposed) return { kind: 'skipped', reason: 'disposed' }
     if (this.deps.platform !== 'darwin') return { kind: 'skipped', reason: 'platform' }
     if (this.inFlight) return { kind: 'skipped', reason: 'in-flight' }
     this.inFlight = true
@@ -241,6 +244,7 @@ export class ThrowawayShellReaper {
       }
       return outcome
     } catch (error) {
+      if (this.disposed) return { kind: 'skipped', reason: 'disposed' }
       const outcome: ReapOutcome =
         error instanceof Abandon
           ? { kind: 'abandoned', step: error.step, reason: error.reason }
@@ -257,6 +261,7 @@ export class ThrowawayShellReaper {
     argv: string[],
     okExitCodes: readonly number[]
   ): Promise<CommandResult> {
+    if (this.disposed) throw new Abandon(step, 'failed')
     this.step = step
     const result = await this.deps.runCommand(argv, this.timing.stepTimeoutMs)
     if (result === null) throw new Abandon(step, 'timeout')
@@ -272,14 +277,14 @@ export class ThrowawayShellReaper {
 
   private async reap(): Promise<ReapOutcome> {
     this.step = 'server-pid'
-    const serverPid = this.deps.getServerPid()
-    if (serverPid === null || !isValidPid(serverPid)) throw new Abandon('server-pid', 'failed')
+    const observedPid = this.deps.getServerPid()
+    const serverPid = observedPid !== null && isValidPid(observedPid) ? observedPid : null
 
     // Include our user's PID-1 children: a private tmux server may have exited
     // before its delayed cleanup. Only marked orphans can pass findCandidates.
     // pgrep exits 1 when the server has no children.
     const children = parsePidList(
-      (await this.query('children', ['pgrep', '-P', `${serverPid},1`, '-u', String(process.getuid!())], [0, 1])).stdout
+      (await this.query('children', ['pgrep', '-P', serverPid === null ? '1' : `${serverPid},1`, '-u', String(process.getuid!())], [0, 1])).stdout
     )
     if (children.length === 0) return { kind: 'nothing' }
 
@@ -298,21 +303,27 @@ export class ThrowawayShellReaper {
     return { kind: 'reaped', hupPids, killedPids: this.sendAll(survivors, 'SIGKILL') }
   }
 
-  private async findCandidates(serverPid: number, pids: number[]): Promise<number[]> {
+  private async findCandidates(serverPid: number | null, pids: number[]): Promise<number[]> {
     const { minAgeMs } = this.timing
     const rows = (await this.processInfo('process-info', pids)).filter((row) =>
       rowLooksStuck(row, serverPid, minAgeMs) || rowLooksStuck(row, 1, minAgeMs)
     )
     if (rows.length === 0) return []
 
-    // After the child list, so a pane created in between is still excluded.
-    const panes = parsePaneList(
-      (await this.query('panes', ['tmux', 'list-panes', '-a', '-F', '#{pid} #{pane_pid}'], [0])).stdout
-    )
-    if ([...panes.serverPids].some((pid) => pid !== serverPid)) {
-      throw new Abandon('panes', 'server-changed')
+    // An orphan cannot be a live tmux pane. Do not query tmux for orphan-only
+    // runs: exhaustion may prevent any server from starting in the first place.
+    let panePids = new Set<number>()
+    if (rows.some((row) => row.ppid === serverPid)) {
+      // Read after the child list so concurrently created panes stay protected.
+      const panes = parsePaneList(
+        (await this.query('panes', ['tmux', 'list-panes', '-a', '-F', '#{pid} #{pane_pid}'], [0])).stdout
+      )
+      if ([...panes.serverPids].some((pid) => pid !== serverPid)) {
+        throw new Abandon('panes', 'server-changed')
+      }
+      panePids = panes.panePids
     }
-    const notPanes = rows.filter((row) => !panes.panePids.has(row.pid))
+    const notPanes = rows.filter((row) => !panePids.has(row.pid))
     if (notPanes.length === 0) return []
     const candidatePids = notPanes.map((row) => row.pid)
 
@@ -338,7 +349,7 @@ export class ThrowawayShellReaper {
       rows: notPanes,
       markedOrphans,
       serverPid,
-      panePids: panes.panePids,
+      panePids,
       parentsWithChildren,
       fdsByPid,
       minAgeMs,
@@ -347,6 +358,7 @@ export class ThrowawayShellReaper {
 
   private sendAll(pids: readonly number[], signal: Signal): number[] {
     const sent: number[] = []
+    if (this.disposed) return sent
     for (const pid of pids) {
       if (!isValidPid(pid)) continue
       try {

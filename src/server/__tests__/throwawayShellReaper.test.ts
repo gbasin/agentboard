@@ -246,10 +246,10 @@ describe('reap run', () => {
     expect(signals).toEqual([])
   })
 
-  test('an unknown server pid abandons before any spawn', async () => {
-    const { reaper, calls } = makeReaper(standardResponder(), { serverPid: null })
-    expect(await reaper.runNow()).toEqual({ kind: 'abandoned', step: 'server-pid', reason: 'failed' })
-    expect(calls).toEqual([])
+  test('an unknown server pid still searches for adopted shells', async () => {
+    const { reaper, calls } = makeReaper(() => ok('', 1), { serverPid: null })
+    expect(await reaper.runNow()).toEqual({ kind: 'nothing' })
+    expect(calls).toEqual([['pgrep', '-P', '1', '-u', String(process.getuid!())]])
   })
 
   test('never runs two passes at once', async () => {
@@ -266,6 +266,21 @@ describe('reap run', () => {
     expect(await reaper.runNow()).toEqual({ kind: 'skipped', reason: 'in-flight' })
     release!()
     expect(await first).toEqual({ kind: 'nothing' })
+  })
+
+  test('disposal during a process query prevents later queries and signals', async () => {
+    let release!: (result: CommandResult) => void
+    const { reaper, calls, signals } = makeReaper(standardResponder({
+      ps: () => new Promise((resolve) => { release = resolve }),
+    }))
+    const run = reaper.runNow()
+    await new Promise((resolve) => setImmediate(resolve))
+    reaper.dispose()
+    release(ok(PS_ROWS))
+    expect(await run).toEqual({ kind: 'skipped', reason: 'disposed' })
+    expect(calls.map((call) => call[0])).toEqual(['pgrep', 'ps'])
+    expect(signals).toEqual([])
+    expect(await reaper.runNow()).toEqual({ kind: 'skipped', reason: 'disposed' })
   })
 
   test('does nothing off macOS', async () => {
@@ -438,6 +453,19 @@ describe('scheduling', () => {
     expect(clock.pending()).toBe(0)
     reaper.noteGroupedSessionCreated()
     expect(clock.pending()).toBe(1)
+  })
+
+  test('disposal during a run cannot rearm a pending creation', async () => {
+    let release!: (result: CommandResult) => void
+    const { clock, reaper } = scheduledReaper({}, () => new Promise((resolve) => { release = resolve }))
+    reaper.noteGroupedSessionCreated()
+    await clock.advance(settleMs)
+    reaper.noteGroupedSessionCreated()
+    reaper.dispose()
+    release(ok('', 1))
+    await clock.advance(0)
+    reaper.noteGroupedSessionCreated()
+    expect(clock.pending()).toBe(0)
   })
 
   test('dispose cancels the pending run', async () => {

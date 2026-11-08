@@ -49,20 +49,17 @@ test.skipIf(!enabled)('reclaims only marked shells after their tmux server exits
     // Last session exits its private server; both survivors move to PID 1.
     tmux(['kill-session', '-t', '=base'])
     await waitFor(() => pids.every((pid) => ps(pid, 'ppid') === '1'))
-    tmux(['-f', '/dev/null', 'new-session', '-d', '-s', 'observer', 'sleep', '300'])
-    const serverPid = Number(tmux(['display-message', '-p', '#{pid}']))
     const reaper = new ThrowawayShellReaper({
-      getServerPid: () => serverPid,
+      getServerPid: () => null,
       timing: { minAgeMs: 0, hupGraceMs: 50 },
       log: () => {},
       runCommand: async (argv, timeout) => {
         // Limit discovery to this test's PIDs; all subsequent evidence is real.
-        if (argv[0] === 'pgrep' && argv[2] === `${serverPid},1`) {
+        if (argv[0] === 'pgrep' && argv[2] === '1') {
           return Promise.resolve({ exitCode: 0, stdout: pids.join('\n') })
         }
-        const result = await spawnWithTimeout(argv[0] === 'tmux'
-          ? ['env', '-u', 'TMUX', 'tmux', '-S', socket, ...argv.slice(1)] : argv, timeout)
-        return result
+        if (argv[0] === 'tmux') throw new Error('Orphan recovery must not need tmux')
+        return spawnWithTimeout(argv, timeout)
       },
     })
     expect(await reaper.runNow()).toEqual({ kind: 'reaped', hupPids: [pids[0]], killedPids: [pids[0]] })
@@ -74,7 +71,7 @@ test.skipIf(!enabled)('reclaims only marked shells after their tmux server exits
         try { process.kill(pid, 'SIGKILL') } catch { /* Already exited. */ }
       }
     }
-    for (const session of ['marked-group', 'base', 'observer']) {
+    for (const session of ['marked-group', 'base']) {
       try { tmux(['kill-session', '-t', `=${session}`]) } catch { /* Already exited. */ }
     }
     fs.rmSync(dir, { recursive: true, force: true })

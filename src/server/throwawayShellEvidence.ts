@@ -83,7 +83,7 @@ export function parseLsofFds(output: string): Map<number, Set<number>> {
 }
 
 /** The checks one `ps` row can answer: child, live, tty, login argv0, age. */
-export function rowLooksStuck(row: ProcessInfo, serverPid: number, minAgeMs: number): boolean {
+export function rowLooksStuck(row: ProcessInfo, serverPid: number | null, minAgeMs: number): boolean {
   return (
     row.ppid === serverPid &&
     !row.stat.startsWith('Z') &&
@@ -100,7 +100,7 @@ export function hasOnlyStdioOpen(fds: ReadonlySet<number> | undefined): boolean 
 
 export interface StuckShellEvidence {
   rows: readonly ProcessInfo[]
-  serverPid: number
+  serverPid: number | null
   panePids: ReadonlySet<number>
   parentsWithChildren: ReadonlySet<number>
   fdsByPid: ReadonlyMap<number, ReadonlySet<number>>
