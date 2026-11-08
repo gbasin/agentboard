@@ -7,6 +7,7 @@ struct NativeSettingsView: View {
     @AppStorage("terminalFontSize") private var fontSize = 13
     @AppStorage("terminalLineHeight") private var lineHeight = 1.3
     @AppStorage("terminalLetterSpacing") private var letterSpacing = 0.0
+    @AppStorage("terminalAutocorrect") private var autocorrect = true
     @AppStorage("terminalWebGL") private var webGL = false
     @State private var search = ""
     @State private var defaultPath = ""
@@ -87,13 +88,14 @@ struct NativeSettingsView: View {
     }
     private var terminalSettings: some View {
         Section {
+            row("terminal keyboard autocorrect") { Toggle("Keyboard autocorrect", isOn: $autocorrect) }
             row("terminal webgl acceleration") { Toggle("WebGL acceleration", isOn: $webGL) }
             row("terminal mouse mode") { serverToggle("Mouse mode", endpoint: "tmux-mouse-mode") }
             row("terminal colors") {
                 serverToggle("Terminal colors", endpoint: "terminal-colors")
                 Text("Hibernate and wake running agents after changing terminal colors.").font(.footnote).foregroundStyle(.secondary)
             }
-        } header: { if matches("terminal webgl acceleration mouse mode colors") { Text("Terminal") } }
+        } header: { if matches("terminal keyboard autocorrect webgl acceleration mouse mode colors") { Text("Terminal") } }
     }
     private var soundSettings: some View {
         Section {

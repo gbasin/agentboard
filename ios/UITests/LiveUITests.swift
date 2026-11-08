@@ -104,4 +104,30 @@ final class LiveUITests: XCTestCase {
         capture("live-multiline-paste")
     }
 
+    func testFrozenSnapshotRefreshCopyAndReturnToInput() {
+        let app = launch()
+        open("native-live-one", app: app)
+        let token = "SNAPSHOT_" + String(UUID().uuidString.prefix(8))
+        type("printf '%s\\n' " + token, app: app)
+        XCTAssertTrue(output(token, in: app).waitForExistence(timeout: 5))
+        app.buttons["Session actions"].tap()
+        let select = app.buttons["Select text"]
+        for _ in 0..<8 {
+            if select.exists && select.isHittable { break }
+            (app.collectionViews.allElementsBoundByIndex.last(where: { $0.isHittable }) ?? app.collectionViews.firstMatch).swipeUp()
+        }
+        select.tap()
+        let snapshot = app.textViews["terminal-snapshot-text"]
+        XCTAssertTrue(snapshot.waitForExistence(timeout: 10))
+        XCTAssertTrue((snapshot.value as? String ?? "").contains(token))
+        XCTAssertFalse(app.keyboards.firstMatch.exists)
+        capture("frozen-terminal-selection")
+        app.buttons["Refresh"].tap()
+        XCTAssertTrue(snapshot.waitForExistence(timeout: 10))
+        app.buttons["Copy all"].tap()
+        XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 5))
+        type("printf 'AFTER_%s\\n' " + token, app: app)
+        XCTAssertTrue(output("AFTER_" + token, in: app).waitForExistence(timeout: 5))
+    }
+
 }

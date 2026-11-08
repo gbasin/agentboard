@@ -36,6 +36,14 @@ final class BoardConnection: ObservableObject {
         let reset: () -> Void
         let status: (TerminalState) -> Void
     }
+    private let snapshotRequest = TerminalSnapshotRequest()
+    var terminalColumns: Int { target?.size.cols ?? 80 }
+    func captureSnapshot(sessionID: String) async throws -> TerminalSnapshotReply {
+        guard state == .connected, target?.sessionID == sessionID, terminalState == .ready else { throw SessionActionError(message: "Reconnect to the terminal before selecting text.") }
+        return try await snapshotRequest.capture(session: sessionID) { id in
+            enqueue(["type": "terminal-snapshot-request", "sessionId": sessionID, "requestId": id])
+        }
+    }
     let preferences: NativePreferences
     @Published private(set) var hosts: [HostState] = []
     @Published private(set) var sleeping: [AgentLogSession] = []
@@ -115,6 +123,7 @@ final class BoardConnection: ObservableObject {
     func deselect(owner: UUID) {
         guard let old = target, old.owner == owner else { return }
         if state == .connected { enqueue(["type": "terminal-detach", "sessionId": old.sessionID]) }
+        snapshotRequest.cancel()
         target = nil
         clipboardOffer = nil; inCopyMode = false
         terminalState = .waiting
@@ -187,6 +196,7 @@ final class BoardConnection: ObservableObject {
     }
     private func handle(_ event: BoardEvent) {
         switch event.type {
+        case "terminal-snapshot": if let reply = event.snapshot { snapshotRequest.receive(reply) }
         case "synced-settings": if let settings = event.settings { preferences.shared = settings }
         case "host-status": hosts = event.hosts ?? []
         case "agent-sessions": sleeping = event.hibernating ?? []; history = event.history ?? []
@@ -280,6 +290,7 @@ final class BoardConnection: ObservableObject {
         }
     }
     private func stopSocket() {
+        snapshotRequest.cancel()
         generation = UUID()
         receiver?.cancel(); receiver = nil
         heartbeat?.cancel(); heartbeat = nil

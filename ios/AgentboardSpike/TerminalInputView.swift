@@ -5,6 +5,7 @@ import WebKit
 /// this text view owns text input, so WebKit's form accessory never appears.
 final class TerminalInputView: UITextView, UITextViewDelegate {
     private let sentinel = "\u{200B}"
+    private var edits = TerminalEditBuffer()
     weak var terminal: TerminalBridge?
 
     init(terminal: TerminalBridge) {
@@ -33,23 +34,46 @@ final class TerminalInputView: UITextView, UITextViewDelegate {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
+    func resetContext() {
+        edits.reset()
+        resetBuffer()
+    }
+
+    func setAutocorrect(_ enabled: Bool) {
+        let value: UITextAutocorrectionType = enabled ? .yes : .no
+        guard autocorrectionType != value else { return }
+        resetContext()
+        autocorrectionType = value
+        spellCheckingType = enabled ? .yes : .no
+        if isFirstResponder { reloadInputViews() }
+    }
+
     private func resetBuffer() {
         text = sentinel
         selectedRange = NSRange(location: sentinel.utf16.count, length: 0)
     }
 
     func textViewDidBeginEditing(_ textView: UITextView) { terminal?.inputFocused = true }
-    func textViewDidEndEditing(_ textView: UITextView) { terminal?.inputFocused = false; terminal?.shift = false }
+    func textViewDidEndEditing(_ textView: UITextView) { terminal?.inputFocused = false; terminal?.shift = false; resetContext() }
 
     func textViewDidChange(_ textView: UITextView) {
         // Keep composition in UIKit until the input method commits it. Never
         // forward intermediate marked text or reset the IME's editing buffer.
         guard markedTextRange == nil else { return }
         let committed = text.hasPrefix(sentinel) ? String(text.dropFirst()) : text ?? ""
-        if !committed.isEmpty {
-            terminal?.send(committed.replacingOccurrences(of: "\n", with: "\r"))
+        guard terminal?.readingSnapshot != true else { resetContext(); return }
+        let modified = terminal?.control == true || terminal?.shift == true
+        let output = edits.replace(with: committed)
+        if !output.isEmpty { terminal?.send(output, typing: true) }
+        if modified || committed.contains("\n") || committed.contains("\r") || autocorrectionType == .no {
+            resetContext()
+        } else if committed.count > 256 {
+            let tail = String(committed.suffix(256))
+            edits.seed(tail)
+            text = sentinel + tail
+            selectedRange = NSRange(location: text.utf16.count, length: 0)
         }
-        resetBuffer()
+
     }
 
     override func deleteBackward() {

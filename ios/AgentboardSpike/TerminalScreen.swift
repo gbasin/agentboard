@@ -17,6 +17,7 @@ struct TerminalScreen: View {
     @State private var showUpload = false
     @State private var showNumbers = false
     @State private var showRename = false
+    @State private var showSelection = false
     @State private var name = ""
     @State private var appearance = "System"
     @Environment(\.scenePhase) private var scenePhase
@@ -94,6 +95,7 @@ struct TerminalScreen: View {
                         }
                         Section("Terminal") {
                             Button("Number keys", systemImage: "number") { terminal.hideKeyboard(); showNumbers = true }
+                            if live != nil { Button("Select text", systemImage: "text.cursor") { terminal.hideKeyboard(); terminal.readingSnapshot = true; showSelection = true }.disabled(!terminal.ready) }
                             Button("Copy selection", systemImage: "doc.on.doc") { terminal.call("copySelection") }
                             if let live {
                                 Button("Copy server selection", systemImage: "clipboard") {
@@ -148,6 +150,9 @@ struct TerminalScreen: View {
                 TranscriptView(server: serverURL, sessionID: (terminal.liveSession ?? session).agentSessionID ?? "", title: session.name)
                     .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showTranscript = false } } }
             } }
+            .sheet(isPresented: $showSelection, onDismiss: { terminal.readingSnapshot = false }) {
+                if let live { TerminalSelectionView(board: live, session: terminal.liveSession ?? session) }
+            }
             .sheet(isPresented: $showUpload) { FileUploadSheet(server: serverURL, terminal: terminal) }
             .sheet(isPresented: $showNumbers) { NumberKeys(terminal: terminal) }
             .preferredColorScheme(live != nil || appearance == "System" ? nil : appearance == "Dark" ? .dark : .light)

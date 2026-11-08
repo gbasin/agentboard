@@ -9,7 +9,8 @@ final class TerminalBridge: ObservableObject {
     @Published var shift = false
     @Published var fontSize = 13
     @Published var inputFocused = false
-    @Published var ready = false { didSet { if oldValue && !ready { clipboard.cancel() } } }
+    @Published var readingSnapshot = false { didSet { if readingSnapshot { clipboard.cancel(); inputView?.resetContext() } } }
+    @Published var ready = false { didSet { if oldValue && !ready { clipboard.cancel(); inputView?.resetContext() } } }
     let clipboard = NativePasteController()
     @Published var liveSession: BoardSession?
     weak var inputView: TerminalInputView?
@@ -20,16 +21,18 @@ final class TerminalBridge: ObservableObject {
               let json = String(data: data, encoding: .utf8) else { return }
         webView?.evaluateJavaScript("window.agentboard?.\(method)(\(json))", completionHandler: nil)
     }
-    func send(_ value: String) {
+    func send(_ value: String, typing: Bool = false) {
+        guard !readingSnapshot else { return }
+        if !typing { inputView?.resetContext() }
         let output = NativeTerminalModifiers.applyingShift(to: value, active: shift)
         if shift { shift = false }
         call("send", ["data": output])
     }
-    func focus() { inputView?.becomeFirstResponder() }
+    func focus() { if !readingSnapshot { inputView?.becomeFirstResponder() } }
     func hideKeyboard() { shift = false; inputView?.resignFirstResponder() }
     func toggleShift() { shift.toggle() }
-    func toggleControl() { control.toggle(); call("control", ["active": control]) }
-    func paste(_ value: String) { call("paste", ["data": value]) }
+    func toggleControl() { inputView?.resetContext(); control.toggle(); call("control", ["active": control]) }
+    func paste(_ value: String) { guard !readingSnapshot else { return }; inputView?.resetContext(); call("paste", ["data": value]) }
     func setFont(_ size: Int) { fontSize = size; UserDefaults.standard.set(size, forKey: "terminalFontSize"); call("font", ["size": size]) }
 }
 
@@ -43,6 +46,7 @@ struct TerminalWebView: UIViewRepresentable {
     @AppStorage("terminalFontSize") private var size = 13
     @AppStorage("terminalLineHeight") private var lineHeight = 1.3
     @AppStorage("terminalLetterSpacing") private var letterSpacing = 0.0
+    @AppStorage("terminalAutocorrect") private var autocorrect = true
     @AppStorage("terminalWebGL") private var webGL = false
 
     func makeCoordinator() -> Coordinator { Coordinator(bridge: bridge, session: session, endpoint: endpoint, live: live) }
@@ -71,6 +75,7 @@ struct TerminalWebView: UIViewRepresentable {
     }
 
     func updateUIView(_ view: TerminalContainerView, context: Context) {
+        view.input.setAutocorrect(autocorrect)
         context.coordinator.dark = colorScheme == .dark
         bridge.call("theme", ["dark": colorScheme == .dark])
         bridge.call("options", ["fontFamily": font, "fontSize": size, "lineHeight": lineHeight, "letterSpacing": letterSpacing, "webGL": webGL])
@@ -102,12 +107,14 @@ struct TerminalWebView: UIViewRepresentable {
             self.bridge = bridge; self.session = session; self.endpoint = endpoint; self.live = live
             super.init()
             bridge.clipboard.configure(agent: session.agent, currentAgent: { [weak bridge] in bridge?.liveSession?.agent ?? session.agent }, remote: session.remote,
-                available: { [weak self] in guard let self else { return false }; return self.active && (self.live == nil || self.bridge.ready) },
+                available: { [weak self] in guard let self else { return false }; return self.active && !self.bridge.readingSnapshot && (self.live == nil || self.bridge.ready) },
                 upload: { [weak self] file in
                     guard let self, let live = self.live else { throw SessionActionError(message: "Connect to Agentboard to upload files.") }
                     return try await BoardAPI(live.preferences.serverURL).upload(file.data, name: file.name, mime: file.mime)
                 }, deliver: { [weak self] message in
                     guard let self, self.active else { return }
+                    guard !self.bridge.readingSnapshot else { return }
+                    self.bridge.inputView?.resetContext()
                     if let live = self.live { live.input(message.value, owner: self.owner, paste: message.bracketed) }
                     else if message.bracketed { self.bridge.paste(message.value) }
                     else { self.bridge.send(message.value) }
@@ -117,6 +124,7 @@ struct TerminalWebView: UIViewRepresentable {
             }
         }
         @objc func focusTerminal() {
+            guard !bridge.readingSnapshot else { return }
             // WebKit takes first responder while finishing its tap. Hand off
             // only after its event has been processed, without a timed delay.
             bridge.webView?.evaluateJavaScript("window.agentboard.prepareInput()") { [weak self] result, _ in
@@ -155,7 +163,7 @@ struct TerminalWebView: UIViewRepresentable {
                                     })
                     } else { live.resize(size, owner: owner) }
                 } else if let value = data["data"] as? String, type == "input" || type == "paste" {
-                    live.input(value, owner: owner, paste: type == "paste")
+                    if !bridge.readingSnapshot { live.input(value, owner: owner, paste: type == "paste") }
                 }
             }
             if let status = data["status"] as? String { bridge.connection = status }
