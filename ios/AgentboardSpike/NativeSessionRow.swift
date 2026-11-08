@@ -91,7 +91,8 @@ struct NativeSessionRow: View {
         if let activity = session.activity {
             Button(action: onSubagents) {
                 HStack(spacing: 6) {
-                    Label("\(activity.running)", systemImage: "person.2").fixedSize(horizontal: true, vertical: false)
+                    Image(systemName: "person.2")
+                    Text("\(activity.running)").foregroundStyle(.primary).fixedSize()
                     if activity.blocked > 0 { Image(systemName: "hand.raised") }
                     if activity.unknown > 0 { Image(systemName: "questionmark.circle") }
                 }.font(.caption.monospacedDigit())

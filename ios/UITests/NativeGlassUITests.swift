@@ -47,6 +47,19 @@ final class NativeGlassUITests: XCTestCase {
             else { list.swipeUp(velocity: .slow) }
         }
     }
+    func testCatalogMetadataAtCurrentTextSize() {
+        _ = request("reset", reset: true)
+        let app = XCUIApplication()
+        app.launchArguments = ["-serverURL", base]
+        app.launch()
+        XCTAssertTrue(app.buttons["session-alpha-local"].waitForExistence(timeout: 15))
+        let prs = app.buttons["pull-requests-alpha-local"]
+        reveal(prs, app: app)
+        XCTAssertTrue(prs.isHittable)
+        XCTAssertTrue(app.buttons["activity-alpha-local"].isHittable)
+        capture("sessions-metadata")
+    }
+
     func testCatalogActivityMediaKeyboardAndRecovery() {
         _ = request("reset", reset: true)
         let app = XCUIApplication()
