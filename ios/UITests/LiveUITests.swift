@@ -76,7 +76,7 @@ final class LiveUITests: XCTestCase {
     }
     func testConnectionAddressValidation() {
         let app = launch()
-        app.buttons["Connection"].tap()
+        app.buttons["connection-status"].tap()
         let address = app.textFields["server-address"]
         XCTAssertTrue(address.waitForExistence(timeout: 5))
         address.tap()

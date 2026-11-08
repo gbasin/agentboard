@@ -30,9 +30,9 @@ final class SimulatorStateUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Set server address"].waitForExistence(timeout: 10))
         // Large accessibility text makes this section scroll; the navigation
         // connection action must stay reachable without finding its footer.
-        assertVisible(app.buttons["Connection"], in: app)
+        assertVisible(app.buttons["connection-status"], in: app)
         capture("sim-setup")
-        app.buttons["Connection"].tap()
+        app.buttons["connection-status"].tap()
         let address = app.textFields["server-address"]
         XCTAssertTrue(address.waitForExistence(timeout: 5))
         address.tap(); address.typeText("http://example.test:4040")
@@ -44,10 +44,10 @@ final class SimulatorStateUITests: XCTestCase {
     func testUnavailableServerCanBeChanged() {
         let app = launch(server: "http://127.0.0.1:49999")
         XCTAssertTrue(app.staticTexts["Server unavailable"].waitForExistence(timeout: 10))
-        assertVisible(app.buttons["Connection"], in: app)
+        assertVisible(app.buttons["connection-status"], in: app)
         assertVisible(app.buttons["Retry"], in: app)
         capture("sim-offline")
-        app.buttons["Connection"].tap()
+        app.buttons["connection-status"].tap()
         XCTAssertTrue(app.textFields["server-address"].waitForExistence(timeout: 5))
     }
     func testLiveTerminalRotatesWithKeyboard() {
