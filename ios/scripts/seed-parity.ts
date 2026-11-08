@@ -1,5 +1,6 @@
 /** Disposable native E2E fixtures. Refuses to write outside its private /tmp tree. */
 import { mkdir, writeFile } from 'node:fs/promises'
+import { nativePDFFixture } from './pdf-fixture'
 import { initDatabase } from '../../src/server/db'
 const root = '/tmp/ab-ios-parity'
 const db = initDatabase({path: `${root}/data/agentboard.db`})
@@ -13,6 +14,7 @@ lines.push(JSON.stringify({type:'user', timestamp:now, sessionId:id, message:{ro
 const document = Buffer.from('<!doctype html><html><body><h1>Native document fixture</h1><p>Loaded from the real session-media endpoint.</p></body></html>').toString('base64')
 lines.push(JSON.stringify({type:'user', timestamp:now, sessionId:id, message:{role:'user', content:[
  {type:'document', source:{type:'base64',media_type:'text/html',data:document}},
+ {type:'document', source:{type:'base64',media_type:'application/pdf',data:nativePDFFixture().toString('base64')}},
  {type:'frame-link',title:'Native link fixture',frameUrl:'http://127.0.0.1:4151/api/library/health'},
  {type:'text',text:'Review https://github.com/gbasin/agentboard/pull/1'}
 ]}}))

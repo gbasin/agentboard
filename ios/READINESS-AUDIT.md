@@ -26,6 +26,18 @@ The optional read-only smoke test was explicitly configured against the private 
 
 Live GitHub retrieval remains blocked on m5p: its existing `gh` login token is invalid, and the real backend returns `error: unavailable`. Fixture-backed PR rendering passes. Reauthentication is required before claiming successful live PR/CI retrieval.
 
+## Hosted CI follow-up and PDF validation
+
+Hosted run `42500942851` passed 71 native unit tests and failed two of 34 light UI workflows: creation-menu navigation during attachment startup and a terminal tap before readiness. The tests now wait for enabled terminal input, re-query menu targets and use short directional drags. Both workflows passed together in light; each passed in dark/maximum text after the menu correction. A longer drag attempt failed and was replaced, not counted as passing evidence.
+
+Light and dark now run as separate CI jobs with separate artifacts. Build plus light took approximately 53 minutes on the hosted runner; the previous 60-minute combined job did not leave enough room for the full matrix. Hosted success remains unproven until the new jobs finish.
+
+The failure recording also exposed a portrait count splitting digits. The detailed media summary now measures at its intrinsic width so ViewThatFits chooses the existing compact total when necessary. Light/dark portrait and landscape captures passed scoped independent visual review.
+
+A new real PDF fixture exercises the existing Quick Look path. Four media integration tests passed, including PDF download, preview eligibility and temporary-file cleanup. The complete Library HTML/PDF/link workflow passed in light and dark/maximum text, with visible PDF pages captured. The first attempt used a freshly rewritten fixture before its media index refreshed and failed on stale document entries; after verifying both document URLs returned their current bytes, the rerun passed. This does not establish external share completion, all Quick Look formats, or physical-device acceptance.
+
+Current follow-up captures: `evidence/ci-finish/`. The suite now contains 72 native tests; the 72-test set has not yet run as one bundle. Existing hosted evidence is 71/71 plus the four passing media integration tests after adding PDF coverage.
+
 ## Historical audit
 
 Reviewed native head `ef4383d` against the original PWA baseline `74ed561` and current PWA `35483b5`. Current media/activity integration uses backend `0e204cf`. A read-only merge-tree check against current master found no conflicts. The native branch changes only `ios/`; it does not change the production web client or backend.

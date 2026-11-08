@@ -34,7 +34,7 @@ struct NativeMediaSummaryButton: View {
                     Label("\(summary.images)", systemImage: "photo")
                     Label("\(summary.links)", systemImage: "link")
                     Label("\(summary.files)", systemImage: "doc")
-                }
+                }.fixedSize(horizontal: true, vertical: false)
                 Label("\(summary.total) \(summary.catalog == nil ? "available" : "items")", systemImage: "photo.on.rectangle")
             }
             .font(.caption.monospacedDigit()).foregroundStyle(.secondary)

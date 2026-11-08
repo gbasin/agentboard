@@ -57,8 +57,8 @@ final class NativeParityUITests: XCTestCase {
             if button.exists && button.isHittable { button.tap(); return }
             let menu = app.collectionViews.allElementsBoundByIndex.last ?? app.collectionViews.firstMatch
             let above = button.exists && button.frame.midY < menu.frame.minY + 20
-            menu.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: above ? 0.25 : 0.65))
-                .press(forDuration: 0.05, thenDragTo: menu.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: above ? 0.65 : 0.25)))
+            menu.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: above ? 0.10 : 0.25))
+                .press(forDuration: 0.05, thenDragTo: menu.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: above ? 0.25 : 0.10)))
         }
         XCTFail("Menu action is unreachable: \(title)")
     }
@@ -172,6 +172,12 @@ final class NativeParityUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Share document"].waitForExistence(timeout: 15))
         XCTAssertTrue(app.staticTexts["HTML source"].waitForExistence(timeout: 10))
         capture("media-document")
+        app.navigationBars["Media"].buttons["Done"].tap()
+        let pdf = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "application/pdf")).firstMatch
+        reveal(pdf, in: app); pdf.tap()
+        XCTAssertTrue(app.buttons["Share document"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.otherElements["document-preview"].waitForExistence(timeout: 10))
+        capture("media-pdf")
         app.navigationBars["Media"].buttons["Done"].tap()
         tap("Native link fixture", in: app)
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 5)); capture("media-link")

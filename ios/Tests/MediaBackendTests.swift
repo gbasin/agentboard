@@ -1,4 +1,5 @@
 import XCTest
+import QuickLook
 @testable import AgentboardSpike
 
 /// Requires media-activity-fixture.ts and the isolated current backend on port 4151.
@@ -38,13 +39,26 @@ import XCTest
         let id = "11111111-2222-4333-8444-555555555555"
         let api = try BoardAPI("http://127.0.0.1:4151")
         let page: MediaCatalogPage = try await api.request("api/session-media/\(id)/items")
-        let item = try XCTUnwrap(page.items.first { $0.kind == "document" })
+        let item = try XCTUnwrap(page.items.first { $0.kind == "document" && $0.mediaType == "text/html" })
         let url = try XCTUnwrap(resolved(item.url, server: "http://127.0.0.1:4151"))
         let file = try await DocumentDownload.load(url: url, mediaType: item.mediaType)
         defer { DocumentDownload.remove(file) }
         XCTAssertEqual(file.pathExtension, "html")
         XCTAssertTrue(try String(contentsOf: file, encoding: .utf8).contains("<h1>Native document fixture</h1>"))
         XCTAssertTrue(file.deletingLastPathComponent().lastPathComponent.hasPrefix("AgentboardDocument-"))
+    }
+    func testPDFDownloadsForQuickLookAndRemovesItsPrivateCopy() async throws {
+        let api = try BoardAPI("http://127.0.0.1:4151")
+        let page: MediaCatalogPage = try await api.request("api/session-media/11111111-2222-4333-8444-555555555555/items")
+        let item = try XCTUnwrap(page.items.first { $0.mediaType == "application/pdf" })
+        let url = try XCTUnwrap(resolved(item.url, server: "http://127.0.0.1:4151"))
+        let file = try await DocumentDownload.load(url: url, mediaType: item.mediaType)
+        defer { DocumentDownload.remove(file) }
+        XCTAssertEqual(file.pathExtension, "pdf")
+        XCTAssertTrue(try Data(contentsOf: file).starts(with: Data("%PDF-1.4".utf8)))
+        XCTAssertTrue(QLPreviewController.canPreview(file as NSURL))
+        DocumentDownload.remove(file)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.deletingLastPathComponent().path))
     }
     func testImageNeighborsCrossRetainedPageBoundaryAndThumbnailLoads() async throws {
         let source = try await source()

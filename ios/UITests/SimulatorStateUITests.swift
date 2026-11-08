@@ -102,6 +102,8 @@ final class SimulatorStateUITests: XCTestCase {
         let terminal = app.webViews.firstMatch
         XCTAssertTrue(terminal.waitForExistence(timeout: 10))
         XCTAssertTrue(app.waitForTerminalInput(timeout: 20))
+        assertVisible(app.buttons["available-media"], in: app)
+        capture("sim-portrait-media-controls")
         terminal.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.65)).tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         XCUIDevice.shared.orientation = .landscapeLeft
