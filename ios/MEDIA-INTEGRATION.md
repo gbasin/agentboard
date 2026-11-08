@@ -1,5 +1,7 @@
 # Native media and activity integration
 
+Latest audit and remote regression: [READINESS-AUDIT.md](READINESS-AUDIT.md). The results below describe earlier checkpoints.
+
 The native branch is based on `c120578`. Validation uses an independent current-backend checkout at `0e204cf`, with private data and tmux socket directories. The main checkout is unchanged.
 
 ## Implemented
