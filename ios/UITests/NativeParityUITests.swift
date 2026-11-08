@@ -19,14 +19,14 @@ final class NativeParityUITests: XCTestCase {
         }
         field.typeText(value)
     }
-    private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
+    private func reveal(_ element: XCUIElement, in app: XCUIApplication, preferUp: Bool = false) {
         for _ in 0..<10 {
             let top = app.navigationBars.allElementsBoundByIndex.last?.frame.maxY ?? app.frame.minY
             var bottom = app.frame.maxY - 20
             if let search = app.searchFields.allElementsBoundByIndex.last, search.frame.midY > app.frame.midY { bottom = min(bottom, search.frame.minY) }
             if element.exists && element.isHittable && element.frame.minY >= top && element.frame.maxY < bottom { return }
             let list = app.collectionViews.allElementsBoundByIndex.last(where: { $0.isHittable }) ?? app.collectionViews.firstMatch
-            if element.exists && element.frame.minY < top { list.swipeDown() } else { list.swipeUp() }
+            if (element.exists && element.frame.minY < top) || (!element.exists && preferUp) { list.swipeDown() } else { list.swipeUp() }
         }
         if !element.exists || !element.isHittable {
             capture("unreachable-control")
@@ -36,8 +36,8 @@ final class NativeParityUITests: XCTestCase {
         XCTAssertTrue(element.exists, "Missing \(element) after scrolling")
         XCTAssertTrue(element.isHittable, "Unreachable \(element) after scrolling")
     }
-    private func tap(_ title: String, in app: XCUIApplication) {
-        let button = app.buttons[title]; reveal(button, in: app); button.tap()
+    private func tap(_ title: String, in app: XCUIApplication, preferUp: Bool = false) {
+        let button = app.buttons[title]; reveal(button, in: app, preferUp: preferUp); button.tap()
     }
     private func search(_ value: String, in app: XCUIApplication) {
         let search = app.searchFields["Search saved sessions"]; XCTAssertTrue(search.waitForExistence(timeout: 5)); replace(search, value); search.typeText("\n")
@@ -152,7 +152,7 @@ final class NativeParityUITests: XCTestCase {
         tap("Native link fixture", in: app)
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 5)); capture("media-link")
         app.navigationBars["Native link fixture"].buttons["Done"].tap()
-        tap("gbasin/agentboard #1", in: app)
+        tap("gbasin/agentboard #1", in: app, preferUp: true)
         XCTAssertTrue(app.navigationBars["Pull request"].waitForExistence(timeout: 5))
         capture("pull-request")
         reveal(app.buttons["Open pull request"], in: app)
@@ -236,7 +236,7 @@ final class NativeParityUITests: XCTestCase {
         XCTAssertTrue(history.waitForExistence(timeout: 10)); reveal(history, in: app); history.tap()
         let search = app.searchFields["Search"]
         XCTAssertTrue(search.waitForExistence(timeout: 5)); replace(search, "parity-saved-transcript"); search.typeText("\n")
-        tap("Media and links", in: app); tap("gbasin/agentboard #1", in: app)
+        tap("Media and links", in: app); tap("gbasin/agentboard #1", in: app, preferUp: true)
         XCTAssertTrue(app.staticTexts["Parity pull request fixture"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["OPEN · Draft · fixture-author"].exists)
         capture("pull-request-checks")
