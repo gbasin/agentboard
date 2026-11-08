@@ -40,6 +40,8 @@ Current follow-up captures: `evidence/ci-finish/`. All 72 native unit/integratio
 
 Read-only native SSH attachment also passed through a separate cross-host backend and actual SSH transport, with remote commands constrained to the private fixture socket. The test confirmed remote session selection, terminal readiness, rendered output and Back navigation. See `evidence/ci-finish/ssh-attach.md`; this closes successful SSH attachment for the tested topology, while remote management and physical-device networking remain outside its scope.
 
+Live GitHub retrieval also passed through this Mac’s existing authenticated backend (`100.82.11.20:4040`). The optional native UI test opened PR #530 directly from the catalog PR control, asserted its real title and check name, and captured the actual statuses. It never opened a terminal or changed settings/credentials. This verifies the complete native catalog → PR → live checks read path; m5p’s invalid gh token remains host-specific. Result: `/tmp/ab-live-github-checks.xcresult`, one passing test in 12 seconds. The capture shows the previous native CI failure accurately, not a green CI claim.
+
 ## Historical audit
 
 Reviewed native head `ef4383d` against the original PWA baseline `74ed561` and current PWA `35483b5`. Current media/activity integration uses backend `0e204cf`. A read-only merge-tree check against current master found no conflicts. The native branch changes only `ios/`; it does not change the production web client or backend.

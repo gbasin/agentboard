@@ -35,7 +35,7 @@ This is a running record, not an approved feature plan. Implementation follows t
 - Exact-copy versus readable-copy option for terminal snapshots.
 - On-device VoiceOver, IME and hardware-keyboard acceptance matrix.
 - Physical-device share-destination and real-agent image acceptance checks.
-- Live GitHub checks on m5p are blocked by its existing invalid `gh` login token (confirmed with `gh auth status`); the native backend returns `error: unavailable`. Re-authenticate on that host before claiming successful live PR/CI retrieval. Deterministic PR rendering tests remain valid.
+- Live GitHub checks on m5p are blocked by its existing invalid `gh` login token (confirmed with `gh auth status`); the native backend returns `error: unavailable`. Re-authenticate on that host before using it for live PR/CI retrieval. Live native retrieval has now passed through this Mac’s already-authenticated backend; m5p’s credential state remains unchanged.
 - Slow progressive-media discovery fixture, including cancellation, reconnect and large logs.
 - Attachment review currently has separate Upload and Insert steps for file/photo pickers, while clipboard review inserts after upload. Consider a unified explicit “Insert attachments” flow after parity is established; do not change this during verification.
 
@@ -59,3 +59,5 @@ This is a running record, not an approved feature plan. Implementation follows t
 - 2026-11-08: A real read-only SSH-backed attachment passed over the cross-host Tailscale route: m5p Simulator → this Mac’s isolated backend → SSH to m5p’s private tmux socket. No terminal input or metadata changes. See `evidence/ci-finish/ssh-attach.md` for isolation and limits. Successful SSH attachment is now verified for this topology.
 
 - 2026-11-08: Final full native unit/integration run passed 72/72 after updating the older media-count assertion for the added PDF fixture. The PDF workflow passed both appearances, and the real SSH-backed read-only attach passed separately. Hosted native CI still needs a successful run.
+
+- 2026-11-08: Live native GitHub retrieval passed through `http://100.82.11.20:4040`: opened PR #530 directly from the selected session’s catalog PR control, asserted its real title and check name, and captured actual statuses. No terminal was opened and no metadata, settings or credentials changed. This closes live native GitHub retrieval for the authenticated backend; m5p’s invalid gh token remains a host-specific issue.
