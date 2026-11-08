@@ -39,13 +39,21 @@ final class MediaActivityUITests: XCTestCase {
             (app.collectionViews.allElementsBoundByIndex.last(where: { $0.isHittable }) ?? app.collectionViews.firstMatch).swipeUp(velocity: .slow)
         }
     }
+    private func fixtureCatalog() -> XCUIApplication {
+        let app = XCUIApplication(); app.launchArguments = ["-serverURL", "http://127.0.0.1:4151"]; app.launch()
+        XCTAssertTrue(app.waitForBoardConnection(timeout: 15))
+        let search = app.searchFields["Find a session"]
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        search.tap(); search.typeText("native-media-activity\n")
+        return app
+    }
     func testRealActivityUpdatesWhileSheetRemainsOpen() throws {
         _ = request("http://127.0.0.1:4193/activity/running", post: true)
         let sessions = try XCTUnwrap(request("http://127.0.0.1:4151/api/sessions") as? [[String: Any]])
         let id = try XCTUnwrap(sessions.first { $0["agentSessionId"] as? String == provider }?["id"] as? String)
-        let app = XCUIApplication(); app.launchArguments = ["-serverURL", "http://127.0.0.1:4151"]; app.launch()
+        let app = fixtureCatalog()
         let activity = app.buttons["activity-" + id]
-        XCTAssertTrue(activity.waitForExistence(timeout: 15)); reveal(activity, app: app); activity.tap()
+        reveal(activity, app: app); XCTAssertTrue(activity.waitForExistence(timeout: 15)); activity.tap()
         XCTAssertTrue(app.staticTexts["Native activity reviewer"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["Tool pending: Read"].waitForExistence(timeout: 10))
         capture("running")
@@ -58,7 +66,7 @@ final class MediaActivityUITests: XCTestCase {
     func testRealMediaSearchPagingAndImageNeighbors() throws {
         let sessions = try XCTUnwrap(request("http://127.0.0.1:4151/api/sessions") as? [[String: Any]])
         let id = try XCTUnwrap(sessions.first { $0["agentSessionId"] as? String == provider }?["id"] as? String)
-        let app = XCUIApplication(); app.launchArguments = ["-serverURL", "http://127.0.0.1:4151"]; app.launch()
+        let app = fixtureCatalog()
         let row = app.buttons["session-" + id]
         XCTAssertTrue(row.waitForExistence(timeout: 15)); row.tap()
         let media = app.buttons["available-media"]
