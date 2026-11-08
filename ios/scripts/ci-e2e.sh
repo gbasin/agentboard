@@ -6,6 +6,8 @@ mode=${IOS_E2E_MODE:-all}
 shard=${IOS_E2E_SHARD:-all}
 case "$mode" in all|light|dark) ;; *) echo "Invalid IOS_E2E_MODE" >&2; exit 2 ;; esac
 bun ios/scripts/e2e-selection.ts light "$shard" >/dev/null
+if [ -z "${IOS_TEST_PRODUCTS_DIR:-}" ]; then ./ios/scripts/build-for-testing.sh; fi
+export IOS_TEST_PRODUCTS_DIR=${IOS_TEST_PRODUCTS_DIR:-ios/.build/Build/Products}
 fixture_root=/tmp/ab-ios-parity
 fixture_archive="/tmp/ab-ios-fixture-logs/$mode-$shard-$$"
 mkdir "$fixture_root"
@@ -45,8 +47,6 @@ for attempt in {1..60}; do
   sleep 1
 done
 curl -fsS -X POST http://127.0.0.1:4193/activity/running >/dev/null
-if [ -z "${IOS_TEST_PRODUCTS_DIR:-}" ]; then ./ios/scripts/build-for-testing.sh; fi
-export IOS_TEST_PRODUCTS_DIR=${IOS_TEST_PRODUCTS_DIR:-ios/.build/Build/Products}
 udid=$(xcrun simctl list devices available -j | bun -e 'const data=await Bun.stdin.json(); const phone=Object.entries(data.devices).filter(([runtime])=>runtime.includes("iOS-26-4")).flatMap(([,devices])=>devices).find(d=>d.name.includes("iPhone") && d.isAvailable); if(!phone) throw Error("No available iPhone Simulator"); console.log(phone.udid)')
 udid=${IOS_SIMULATOR_UDID:-$udid}
 xcrun simctl boot "$udid" || true
@@ -58,4 +58,12 @@ xcrun simctl addmedia "$udid" "$fixture_root/photo.png"
 app_data=$(xcrun simctl get_app_container "$udid" dev.agentboard.ios-spike data)
 mkdir -p "$app_data/Documents"
 cp "$fixture_root/upload.txt" "$app_data/Documents/parity-upload.txt"
+# A fixture crash during Simulator startup must not become dozens of slow UI failures.
+for pid in "${pids[@]}"; do
+  if ! kill -0 "$pid" 2>/dev/null; then
+    echo "Fixture process $pid exited before tests; inspect archived fixture logs." >&2
+    exit 1
+  fi
+done
+curl --max-time 10 -fsS http://127.0.0.1:4151/api/library/health >/dev/null
 ./ios/scripts/test-e2e.sh "$udid" "$mode" "$shard"
