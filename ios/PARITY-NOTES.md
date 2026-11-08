@@ -21,6 +21,7 @@ This is a running record, not an approved feature plan. Implementation follows t
 - Run repository checks without inherited `LOG_LEVEL=debug`: the logger default test reads cached startup configuration, so that environment makes its default-info assertion fail. This is a test isolation issue, not a Swift behavior change.
 - Treat passing taps as insufficient visual evidence. The first maximum-text captures had broken button words and truncated filenames despite passing tests; accessibility layouts now stack actions and scroll previews instead of shrinking text.
 - Use one attachment review surface at a time. Rendering the same controller beneath a presented upload sheet exposed duplicate accessibility controls; hide the underlying review while the sheet owns it.
+- Landscape keyboard space is a hard constraint: a second status/media row reduced the terminal to 8 points. Move those same controls into native navigation in compact height; verify both media-rich and shell sessions with the keyboard open.
 - Keep error recovery actions visible at maximum Dynamic Type; lazy native rows require scrolling in tests, not smaller product text.
 
 ## 3. Possible gaps or additional features
@@ -31,6 +32,7 @@ This is a running record, not an approved feature plan. Implementation follows t
 - Exact-copy versus readable-copy option for terminal snapshots.
 - On-device VoiceOver, IME and hardware-keyboard acceptance matrix.
 - Physical-device share-destination and real-agent image acceptance checks.
+- Live GitHub checks on m5p are blocked by its existing invalid `gh` login token (confirmed with `gh auth status`); the native backend returns `error: unavailable`. Re-authenticate on that host before claiming successful live PR/CI retrieval. Deterministic PR rendering tests remain valid.
 - Slow progressive-media discovery fixture, including cancellation, reconnect and large logs.
 - Attachment review currently has separate Upload and Insert steps for file/photo pickers, while clipboard review inserts after upload. Consider a unified explicit “Insert attachments” flow after parity is established; do not change this during verification.
 
@@ -42,3 +44,5 @@ This is a running record, not an approved feature plan. Implementation follows t
 - 2026-11-08: All 2,581 Bun tests passed on m5p with lint and typecheck. Local checks hit the private relay timeout; the remote pre-commit run passed too. Commit `2500993` is pushed to the draft PR. Attachment review/removal and native status overview have passing light-mode workflows; all five new workflows also passed dark/large checks. Screenshot review found layout corrections now being revalidated; native CI execution remains pending.
 
 - 2026-11-08: Native unit/integration checks now pass 70/70. Review drafts survive frozen selection while insertion remains blocked; initial snapshot scrolling now uses a character target after layout. Settings search uses native Close to leave search before Done dismisses the sheet. Both settings checks and active-selection captures passed in light and maximum-text dark. The scoped independent finish review returned ship for these additions; the fresh full Simulator matrix is running.
+
+- 2026-11-08: The broad light run passed 71 native tests and 32 UI workflows, found the landscape-height regression, and skipped the opt-in tailnet test. The rotation fix and explicit read-only tailnet-address check passed targeted reruns. Both landscape workflows passed in light and dark/maximum text; the scoped visual review returned ship. The full dark matrix is running.

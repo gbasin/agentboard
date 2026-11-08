@@ -16,6 +16,16 @@ Current verification on m5p:
 
 The feature gaps below describe the earlier audit, not the current implementation. The physical-device and external-service verification boundaries still apply. A fresh full native/Simulator matrix is running; the completed evidence above remains targeted until that run finishes. Running observations and possible product changes are recorded in `PARITY-NOTES.md`; those ideas are not approved scope.
 
+## Broad-run corrections
+
+The current baseline is `35483b5`. Commit `32f5561` fixes a native mapping defect found by the broad run: a live session can retain the stored `isHibernating` marker after Wake. The native client now follows live wire status, as the PWA does, while dormant conversations remain in their separate collection. Eight connection tests and both real media/activity UI workflows passed the correction run.
+
+The broad light run then passed all 71 native unit/integration tests and 32 UI workflows. It exposed one landscape regression and skipped the opt-in tailnet smoke test. The new status/media inset left only 8 points of terminal height with the landscape keyboard open. Compact-height navigation now contains those same controls; portrait layout is unchanged. Both the rotation/typing workflow and an added media-rich landscape workflow passed in light and dark/maximum text. Back navigation after dismissing the keyboard also passed. A fresh scoped visual review returned **ship** for this correction.
+
+The optional read-only smoke test was explicitly configured against the private fixture's tailnet address and passed. This validates access using that address on the Simulator host; it is not a physical-device or cross-host network test. The light workflow set is covered across the broad and correction runs, not represented as one clean full bundle. The complete dark matrix and hosted native CI are still running at this checkpoint.
+
+Live GitHub retrieval remains blocked on m5p: its existing `gh` login token is invalid, and the real backend returns `error: unavailable`. Fixture-backed PR rendering passes. Reauthentication is required before claiming successful live PR/CI retrieval.
+
 ## Historical audit
 
 Reviewed native head `ef4383d` against the original PWA baseline `74ed561` and current PWA `35483b5`. Current media/activity integration uses backend `0e204cf`. A read-only merge-tree check against current master found no conflicts. The native branch changes only `ios/`; it does not change the production web client or backend.

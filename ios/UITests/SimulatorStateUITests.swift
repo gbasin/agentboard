@@ -84,6 +84,34 @@ final class SimulatorStateUITests: XCTestCase {
         XCTAssertTrue(output.waitForExistence(timeout: 5))
         capture("sim-terminal-landscape")
         app.buttons["Hide keyboard"].tap()
+        sleep(3)
+        assertVisible(app.buttons["Session actions"], in: app)
+        assertVisible(app.navigationBars.buttons.element(boundBy: 0), in: app)
         capture("sim-terminal-landscape-reading")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.searchFields["Find a session"].waitForExistence(timeout: 5))
+    }
+
+    func testLandscapeKeepsMediaAndOverviewReachable() {
+        let app = launch(server: "http://127.0.0.1:4151")
+        XCTAssertTrue(app.waitForBoardConnection(timeout: 15))
+        let search = app.searchFields["Find a session"]
+        search.tap(); search.typeText("native-media-activity\n")
+        let row = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "native-media-activity")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5)); row.tap()
+        let terminal = app.webViews.firstMatch
+        XCTAssertTrue(terminal.waitForExistence(timeout: 10))
+        terminal.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.65)).tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        XCUIDevice.shared.orientation = .landscapeLeft
+        sleep(1)
+        assertVisible(app.buttons["session-overview"], in: app)
+        assertVisible(app.buttons["available-media"], in: app)
+        XCTAssertGreaterThan(terminal.frame.height, 30)
+        capture("sim-landscape-media-controls")
+        app.buttons["available-media"].tap()
+        let first = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "media-item-")).firstMatch
+        XCTAssertTrue(first.waitForExistence(timeout: 10))
+        capture("sim-landscape-media-catalog")
     }
 }

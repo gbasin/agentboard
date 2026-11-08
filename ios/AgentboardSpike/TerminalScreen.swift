@@ -22,21 +22,24 @@ struct TerminalScreen: View {
     @State private var name = ""
     @State private var appearance = "System"
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+    private var currentSession: BoardSession { terminal.liveSession ?? session }
+    private var mediaSummary: NativeMediaSummary {
+        currentSession.mediaSummary.map(NativeMediaSummary.init(catalog:)) ?? NativeMediaSummary(items: currentSession.media)
+    }
 
     var body: some View {
         TerminalWebView(bridge: terminal, session: session, endpoint: endpoint, live: live)
             .padding(.horizontal, 8)
             .background(Color(uiColor: .systemBackground))
             .safeAreaInset(edge: .top, spacing: 0) {
-                let current = terminal.liveSession ?? session
-                let summary = current.mediaSummary.map(NativeMediaSummary.init(catalog:)) ?? NativeMediaSummary(items: current.media)
-                if let live, summary.canBrowse || showOverview {
+                if verticalSizeClass != .compact, let live, mediaSummary.canBrowse || showOverview {
                     HStack {
                         if showOverview, let onSwitch {
                             NativeSessionOverview(board: live, selectedID: session.id, select: onSwitch)
                         }
                         Spacer(minLength: 8)
-                        if summary.canBrowse { NativeMediaSummaryButton(summary: summary) { terminal.hideKeyboard(); showContent = true } }
+                        if mediaSummary.canBrowse { mediaButton }
                     }.padding(.horizontal, 12).padding(.vertical, 4)
                 }
             }
@@ -55,6 +58,15 @@ struct TerminalScreen: View {
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    if verticalSizeClass == .compact, let live {
+                        if showOverview, let onSwitch {
+                            NativeSessionOverview(board: live, selectedID: session.id, select: onSwitch)
+                                .labelStyle(.titleAndIcon)
+                        }
+                        if mediaSummary.canBrowse { mediaButton.labelStyle(.titleAndIcon) }
+                    }
+                }
                 ToolbarItem(placement: .principal) {
                     if let live, onSwitch != nil {
                         Menu {
@@ -174,6 +186,9 @@ struct TerminalScreen: View {
                 if phase == .active && live == nil { terminal.call("resume") }
                 if phase != .active { terminal.shift = false }
             }
+    }
+    private var mediaButton: some View {
+        NativeMediaSummaryButton(summary: mediaSummary) { terminal.hideKeyboard(); showContent = true }
     }
     private func sessionTitle(showDisclosure: Bool) -> some View {
         VStack(spacing: 2) {
