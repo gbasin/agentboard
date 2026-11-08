@@ -24,8 +24,18 @@ final class NativeParityUITests: XCTestCase {
         }
         field.typeText(value)
     }
-    private func reveal(_ element: XCUIElement, in app: XCUIApplication, preferUp: Bool = false) {
+    private func reveal(_ element: XCUIElement, in app: XCUIApplication, preferUp: Bool = false, refreshMedia: Bool = false) {
         for _ in 0..<20 {
+            // Discovery retains the visible snapshot. Follow the explicit refresh
+            // action before looking for newly discovered documents in that page.
+            let refresh = app.buttons["refresh-changed-media"]
+            if refreshMedia && refresh.exists {
+                reveal(refresh, in: app, preferUp: true)
+                refresh.tap()
+                let refreshed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: refresh)
+                XCTAssertEqual(XCTWaiter.wait(for: [refreshed], timeout: 15), .completed)
+                continue
+            }
             let top = app.navigationBars.allElementsBoundByIndex.last?.frame.maxY ?? app.frame.minY
             var bottom = app.frame.maxY - 20
             if app.keyboards.firstMatch.exists { bottom = min(bottom, app.keyboards.firstMatch.frame.minY) }
@@ -171,19 +181,19 @@ final class NativeParityUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Media and links"].waitForExistence(timeout: 15))
         // List rows below the viewport may not enter the accessibility tree until scrolled.
         let image = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "image/png")).firstMatch
-        reveal(image, in: app); capture("media-loaded"); image.tap()
+        reveal(image, in: app, refreshMedia: true); capture("media-loaded"); image.tap()
         XCTAssertTrue(app.images["Session image"].waitForExistence(timeout: 10)); capture("media-image")
         app.images["Session image"].pinch(withScale: 2, velocity: 1)
         XCTAssertGreaterThan(app.images["Session image"].frame.width, app.windows.firstMatch.frame.width)
         dismissPreview("Media", in: app)
         let document = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "text/html")).firstMatch
-        reveal(document, in: app); document.tap()
+        reveal(document, in: app, refreshMedia: true); document.tap()
         XCTAssertTrue(app.buttons["Share document"].waitForExistence(timeout: 15))
         XCTAssertTrue(app.staticTexts["HTML source"].waitForExistence(timeout: 10))
         capture("media-document")
         dismissPreview("Media", in: app)
         let pdf = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "application/pdf")).firstMatch
-        reveal(pdf, in: app); pdf.tap()
+        reveal(pdf, in: app, refreshMedia: true); pdf.tap()
         XCTAssertTrue(app.buttons["Share document"].waitForExistence(timeout: 15))
         XCTAssertTrue(app.otherElements["document-preview"].waitForExistence(timeout: 10))
         capture("media-pdf")
