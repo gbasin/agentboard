@@ -8,87 +8,152 @@ struct LibraryView: View {
     @State private var sessions: [SavedSession] = []
     @State private var cursor: String?
     @State private var query = ""
+    private enum Category: String, CaseIterable { case recovery = "Recovery", saved = "Saved", history = "History" }
+    @State private var category: Category
+    @State private var showFilters = false
+    @State private var resuming: String?
     @State private var state = "all"
     @State private var pinned = false
     @State private var loading = false
     @State private var failure: String?
     @State private var detail: SavedSession?
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     init(server: String, board: BoardConnection, preferences: NativePreferences, initialState: String = "all", open: @escaping (BoardSession) -> Void) {
         self.server = server
         self.board = board
         self.preferences = preferences
         self.open = open
         _state = State(initialValue: initialState)
+        _category = State(initialValue: initialState == "interrupted" ? .recovery : .saved)
     }
     var body: some View {
         NavigationStack {
             List {
-                Section {
-                    Picker("State", selection: $state) {
-                        Text("All").tag("all"); Text("Hibernating").tag("hibernating")
-                        Text("Recovery").tag("interrupted"); Text("Archived").tag("archived")
-                        Text("Failed").tag("failed"); Text("Running").tag("running")
+                if category == .history {
+                    Section("Agent conversations") {
+                        NavigationLink("Hibernating conversations (\(filteredSleeping.count))") {
+                            AgentHistoryView(server: server, sessions: filteredSleeping, sleeping: true, preferences: preferences, open: finish)
+                        }
+                        NavigationLink("Conversation history (\(filteredHistory.count))") {
+                            AgentHistoryView(server: server, sessions: filteredHistory, sleeping: false, preferences: preferences, open: finish)
+                        }
                     }
-                    Toggle("Pinned only", isOn: $pinned)
-                }
-                if query.isEmpty { Section("Agent conversations") {
-                    NavigationLink("Hibernating conversations (\(filteredSleeping.count))") {
-                        AgentHistoryView(server: server, sessions: board.sleeping, sleeping: true, preferences: preferences, open: finish)
-                    }
-                    NavigationLink("Conversation history (\(filteredHistory.count))") {
-                        AgentHistoryView(server: server, sessions: board.history, sleeping: false, preferences: preferences, open: finish)
-                    }
-                }
-                }
+                } else {
                 if let failure { ErrorRow(message: failure) { Task { await load() } } }
                 ForEach(sessions) { saved in
-                    Button { detail = saved } label: {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Label(saved.name, systemImage: saved.pinned ? "pin.fill" : "terminal").foregroundStyle(.primary)
-                            Text("\(saved.state.capitalized) · \(saved.agentType ?? "Shell")").font(.caption).foregroundStyle(Color.primary)
-                            Text(saved.projectPath).font(.caption).foregroundStyle(Color.primary)
-                            if let error = saved.error { Text(error).font(.caption) }
+                    VStack(alignment: .leading, spacing: 10) {
+                        Button { detail = saved } label: {
+                            VStack(alignment: .leading, spacing: 5) {
+                                Label(saved.name, systemImage: saved.pinned ? "pin.fill" : "terminal")
+                                    .font(.headline).foregroundStyle(.primary)
+                                Text("\(saved.state.capitalized) · \(saved.agentType ?? "Shell")")
+                                    .font(.caption).foregroundStyle(.secondary)
+                                Text(saved.projectPath).font(.caption).foregroundStyle(.secondary)
+                                    .lineLimit(2).truncationMode(.middle)
+                                if let error = saved.error { Text(error).font(.callout).foregroundStyle(.primary) }
+                            }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).contentShape(Rectangle())
+                        }.buttonStyle(.plain).disabled(resuming != nil).accessibilityIdentifier("saved-\(saved.name)")
+                        if category == .recovery {
+                            if dynamicTypeSize.isAccessibilitySize {
+                                VStack(alignment: .leading, spacing: 12) { recoveryActions(saved) }
+                            } else {
+                                HStack { recoveryActions(saved) }
+                            }
                         }
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                        .padding(14)
-                        .nativeGlassSurface(interactive: true)
-                    }.buttonStyle(.plain)
-                        .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
-                        .accessibilityIdentifier("saved-\(saved.name)")
+                    }
+                    .padding(14).nativeGlassSurface()
+                    .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+                    .listRowBackground(Color.clear).listRowSeparator(.hidden)
                 }
                 if loading { ProgressView("Loading library…") }
-                if sessions.isEmpty && !loading && failure == nil { ContentUnavailableView("No saved sessions", systemImage: "clock") }
+                if sessions.isEmpty && !loading && failure == nil { ContentUnavailableView(hasFilters ? "No matching sessions" : category == .recovery ? "Nothing to recover" : "No saved sessions", systemImage: "clock", description: Text(hasFilters ? "Change your search or clear Library filters." : category == .recovery ? "Interrupted sessions will appear here. Your other saved sessions are under Saved." : "Saved sessions will appear here.")) }
                 if cursor != nil { Button("Load more") { Task { await load(more: true) } }.disabled(loading) }
 
+                }
+            }
+            .safeAreaInset(edge: .top, spacing: 0) {
+                Picker("Library category", selection: $category) {
+                    ForEach(Category.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }.pickerStyle(.segmented).disabled(resuming != nil).padding(.horizontal, 16).padding(.vertical, 8)
+                    .background(.bar).accessibilityIdentifier("library-category")
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .background(Color(uiColor: .systemGroupedBackground))
-            .navigationTitle("Library")
-            .searchable(text: $query, prompt: "Search saved sessions")
+            .navigationTitle("Library").navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $query, prompt: category == .history ? "Search conversations" : "Search saved sessions")
             .onSubmit(of: .search) { Task { await load() } }
             .task(id: query) {
                 try? await Task.sleep(for: .milliseconds(300))
                 if !Task.isCancelled { await load() }
+            }
+            .onChange(of: category) { _, value in
+                sessions = []; cursor = nil; failure = nil
+                if value == .recovery { state = "interrupted" }
+                else if value == .saved { state = "all" }
+                Task { await load() }
             }
             .onChange(of: state) { _, _ in Task { await load() } }
             .onChange(of: pinned) { _, _ in Task { await load() } }
             .onChange(of: board.libraryVersion) { _, _ in Task { await load() } }
             .refreshable { await load() }
             .task { await load() }
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.disabled(resuming != nil) }
+                if category != .history {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("Library filters", systemImage: "line.3.horizontal.decrease") { showFilters = true }
+                    }
+                }
+            }
+            .interactiveDismissDisabled(resuming != nil)
+            .sheet(isPresented: $showFilters) {
+                NavigationStack {
+                    Form {
+                        if category == .saved {
+                            Picker("State", selection: $state) {
+                                Text("All").tag("all"); Text("Hibernating").tag("hibernating")
+                                Text("Recovery").tag("interrupted"); Text("Archived").tag("archived")
+                                Text("Failed").tag("failed"); Text("Running").tag("running")
+                            }
+                        }
+                        Toggle("Pinned only", isOn: $pinned)
+                    }.navigationTitle("Library filters").navigationBarTitleDisplayMode(.inline)
+                        .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showFilters = false } } }
+                }.presentationDetents([.medium, .large])
+            }
             .sheet(item: $detail) { saved in SavedDetailView(server: server, saved: saved, open: finish) }
         }
     }
-    private var filteredSleeping: [AgentLogSession] { selection.conversations(board.sleeping) }
-    private var filteredHistory: [AgentLogSession] { selection.conversations(board.history) }
+    private var hasFilters: Bool { !query.isEmpty || pinned || (category == .saved && state != "all") }
+    @ViewBuilder private func recoveryActions(_ saved: SavedSession) -> some View {
+        Button { resume(saved) } label: {
+            Text(resuming == saved.id ? "Resuming…" : "Resume session")
+                .fixedSize(horizontal: false, vertical: true)
+        }.buttonStyle(.borderedProminent).disabled(resuming != nil)
+        Button("Details") { detail = saved }.buttonStyle(.borderless).disabled(resuming != nil)
+    }
+    private func resume(_ saved: SavedSession) {
+        guard resuming == nil else { return }
+        resuming = saved.id
+        Task {
+            defer { resuming = nil }
+            do {
+                let session: RemoteSession = try await BoardAPI(server).request("api/library/\(saved.id)/resume", method: "POST", body: ["operationId": UUID().uuidString])
+                finish(session.boardSession)
+            } catch { failure = error.localizedDescription }
+        }
+    }
+    private var filteredSleeping: [AgentLogSession] { matchingConversations(board.sleeping) }
+    private var filteredHistory: [AgentLogSession] { matchingConversations(board.history) }
+    private func matchingConversations(_ values: [AgentLogSession]) -> [AgentLogSession] {
+        selection.conversations(values).filter { query.isEmpty || "\($0.displayName) \($0.projectPath)".localizedCaseInsensitiveContains(query) }
+    }
     private var selection: CatalogSelection { CatalogSelection(projects: preferences.strings("projectFilters"), hosts: preferences.strings("hostFilters")) }
     private func finish(_ session: BoardSession) { dismiss(); open(session) }
     private func load(more: Bool = false) async {
-        guard !loading else { return }; loading = true
+        guard category != .history, !loading else { return }; loading = true
         let requestedQuery = query, requestedState = state, requestedPin = pinned
         defer {
             loading = false
@@ -120,16 +185,24 @@ struct SavedDetailView: View {
         NavigationStack {
             List {
                 if let error { ErrorRow(message: error) { Task { await load() } } }
-                Section("Session") {
-                    TextField("Name", text: $name)
-                    Button("Save name") { update(["name": name]) }.disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || busy)
-                    Text(saved.projectPath).textSelection(.enabled)
-                    Text(detail?.session.state.capitalized ?? saved.state.capitalized)
-                    Button("Resume session", systemImage: "play") { resume() }.disabled(busy)
+                Section {
+                    Text(detail?.session.name ?? saved.name).font(.headline)
+                    Text(detail?.session.state.capitalized ?? saved.state.capitalized).font(.subheadline).foregroundStyle(.secondary)
+                    Button { resume() } label: {
+                        Text("Resume session").fixedSize(horizontal: false, vertical: true)
+                    }.buttonStyle(.borderedProminent).disabled(busy)
+                }
+                Section("Manage session") {
+                    DisclosureGroup("Rename session") {
+                        TextField("Name", text: $name)
+                        Button("Save name") { update(["name": name]) }.disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || busy)
+                    }
                     Button((detail?.session.pinned ?? saved.pinned) ? "Unpin" : "Pin", systemImage: "pin") {
                         update(["pinned": !(detail?.session.pinned ?? saved.pinned)])
                     }.disabled(busy)
-                    Button("Archive session", role: .destructive) { confirmArchive = true }.disabled(busy)
+                    if (detail?.session.state ?? saved.state) != "archived" {
+                        Button("Archive session", role: .destructive) { confirmArchive = true }.disabled(busy)
+                    }
                 }
                 if busy { ProgressView("Waiting for server…") }
                 if let preview = detail?.terminalPreview ?? saved.preview {
@@ -142,11 +215,14 @@ struct SavedDetailView: View {
                         }
                     }
                     }
-                    Section("Lifecycle events") {
+                    Section {
+                        DisclosureGroup("Details & lifecycle events") {
+                        Text(saved.projectPath).textSelection(.enabled)
                         ForEach(detail.events) { event in VStack(alignment: .leading) {
                             Text(event.kind); Text(event.createdAt).font(.caption).foregroundStyle(.secondary)
                             if let detail = event.detail { Text(detail).font(.caption).textSelection(.enabled) }
                         } }
+                        }
                     }
                 }
             }.navigationTitle("Saved session").navigationBarTitleDisplayMode(.inline)

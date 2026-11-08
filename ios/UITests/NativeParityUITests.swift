@@ -113,6 +113,9 @@ final class NativeParityUITests: XCTestCase {
     func testLibraryTranscriptEventsAndPin() {
         let app = app(); app.buttons["Library"].tap(); search("parity-saved-transcript", in: app)
         let row = app.buttons["saved-parity-saved-transcript"]; XCTAssertTrue(row.waitForExistence(timeout: 15)); row.tap()
+        XCTAssertTrue(app.buttons["Resume session"].waitForExistence(timeout: 5))
+        capture("saved-detail-top")
+        XCTAssertFalse(app.buttons["Archive session"].exists, "Archived sessions must not offer Archive again")
         tap("Pin", in: app)
         tap("Unpin", in: app)
         capture("saved-detail")
@@ -147,7 +150,7 @@ final class NativeParityUITests: XCTestCase {
         app.buttons["Choose file"].tap()
         XCTAssertTrue(app.navigationBars["FullDocumentManagerViewControllerNavigationBar"].waitForExistence(timeout: 30))
         XCTAssertTrue(app.buttons["Cancel"].waitForExistence(timeout: 5))
-        app.buttons["Cancel"].tap(); app.buttons["Done"].tap()
+        app.buttons["Cancel"].tap(); app.buttons["Cancel"].tap()
         app.buttons["Paste text"].tap()
         let editor = app.textViews["Text to paste"]; XCTAssertTrue(editor.waitForExistence(timeout: 5))
         editor.tap(); editor.typeText("printf 'NUM_%s_OK\\n' ")
@@ -163,6 +166,7 @@ final class NativeParityUITests: XCTestCase {
     }
     func testLoadedMediaDocumentAndLink() {
         let app = app(); app.buttons["Library"].tap()
+        app.segmentedControls["library-category"].buttons["History"].tap()
         let history = app.buttons.containing(NSPredicate(format: "label BEGINSWITH %@", "Conversation history")).firstMatch
         XCTAssertTrue(history.waitForExistence(timeout: 10)); reveal(history, in: app); history.tap()
         let search = app.searchFields["Search"]
@@ -201,7 +205,27 @@ final class NativeParityUITests: XCTestCase {
         openSession("native-live-one", in: app)
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10))
         app.buttons["Session actions"].tap(); tapMenu("Attach file", in: app)
-        app.buttons["Choose photo"].tap()
+        chooseFirstPhoto(in: app)
+        XCTAssertTrue(app.buttons["confirm-attachments"].waitForExistence(timeout: 10))
+        // A fresh picker selection must append only the explicit new selection,
+        // rather than re-appending the previous picker selection as well.
+        chooseFirstPhoto(in: app)
+        let second = app.buttons["remove-attachment-1"]
+        XCTAssertTrue(second.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["remove-attachment-2"].exists)
+        capture("two-photo-review")
+        second.tap()
+        XCTAssertTrue(app.buttons["confirm-attachments"].waitForExistence(timeout: 10))
+        capture("attachment-review")
+        app.buttons["confirm-attachments"].tap()
+        XCTAssertTrue(app.navigationBars["Attach to session"].waitForNonExistence(timeout: 15)); capture("inserted-photo")
+        XCTAssertTrue(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in app.webViews.staticTexts.allElementsBoundByIndex.map(\.label).joined().contains("/tmp/paste-") }, object: nil)], timeout: 10) == .completed)
+        // Clear the unexecuted path; insertion must not execute a command.
+        app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.65)).tap(); app.buttons["Control"].tap(); app.typeText("u")
+    }
+
+    private func chooseFirstPhoto(in app: XCUIApplication) {
+        tap("Choose photo", in: app)
         let notice = app.otherElements["PXGSingleViewContainerView_AX"].firstMatch
         let photo = app.images.matching(identifier: "PXGGridLayout-Info").firstMatch
         let loaded = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
@@ -216,14 +240,6 @@ final class NativeParityUITests: XCTestCase {
         let add = app.buttons["Add"]
         XCTAssertTrue(add.waitForExistence(timeout: 3), app.debugDescription)
         add.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5)).tap()
-        XCTAssertTrue(app.buttons["confirm-attachments"].waitForExistence(timeout: 10))
-        capture("attachment-review")
-        app.buttons["confirm-attachments"].tap()
-        XCTAssertTrue(app.buttons["Insert file path"].waitForExistence(timeout: 15)); capture("uploaded-photo")
-        app.buttons["Insert file path"].tap()
-        XCTAssertTrue(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in app.webViews.staticTexts.allElementsBoundByIndex.map(\.label).joined().contains("/tmp/paste-") }, object: nil)], timeout: 10) == .completed)
-        // Clear the unexecuted path; insertion must not execute a command.
-        app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.65)).tap(); app.buttons["Control"].tap(); app.typeText("u")
     }
 
     func testFilePickerUploadAndInsert() {
@@ -254,8 +270,7 @@ final class NativeParityUITests: XCTestCase {
         XCTAssertTrue(app.buttons["confirm-attachments"].waitForExistence(timeout: 10))
         capture("attachment-review")
         app.buttons["confirm-attachments"].tap()
-        XCTAssertTrue(app.buttons["Insert file path"].waitForExistence(timeout: 15)); capture("uploaded-file")
-        app.buttons["Insert file path"].tap()
+        XCTAssertTrue(app.navigationBars["Attach to session"].waitForNonExistence(timeout: 15)); capture("inserted-file")
         XCTAssertTrue(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in app.webViews.staticTexts.allElementsBoundByIndex.map(\.label).joined().contains("parity-upload.txt") }, object: nil)], timeout: 10) == .completed)
         app.webViews.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.65)).tap(); app.buttons["Control"].tap(); app.typeText("u")
     }
@@ -289,6 +304,7 @@ final class NativeParityUITests: XCTestCase {
     func testPullRequestCheckStatesWithGitHubFixture() {
         let app = app(server: "http://127.0.0.1:4190")
         app.buttons["Library"].tap()
+        app.segmentedControls["library-category"].buttons["History"].tap()
         let history = app.buttons.containing(NSPredicate(format: "label BEGINSWITH %@", "Conversation history")).firstMatch
         XCTAssertTrue(history.waitForExistence(timeout: 10)); reveal(history, in: app); history.tap()
         let search = app.searchFields["Search"]

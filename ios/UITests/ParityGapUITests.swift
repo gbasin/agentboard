@@ -56,10 +56,11 @@ final class ParityGapUITests: XCTestCase {
         let element = app.buttons[title]; reveal(element, in: app); element.tap()
     }
     private func openLibraryLink(_ title: String, destination: String, in app: XCUIApplication) {
+        app.segmentedControls["library-category"].buttons["History"].tap()
         let link = app.buttons[title]
         for _ in 0..<12 {
             let list = app.collectionViews.allElementsBoundByIndex.last!
-            let search = app.searchFields["Search saved sessions"]
+            let search = app.searchFields["Search conversations"]
             let top = max(list.frame.minY, app.navigationBars["Library"].frame.maxY)
             let bottom = search.exists && search.frame.midY > app.frame.midY ? min(list.frame.maxY, search.frame.minY) : list.frame.maxY
             if link.exists && link.isHittable && link.frame.minY >= top && link.frame.maxY <= bottom {
@@ -228,15 +229,23 @@ final class ParityGapUITests: XCTestCase {
         notice.tap()
         XCTAssertTrue(app.navigationBars["Library"].waitForExistence(timeout: 5))
         capture("recovery-library")
-        let state = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "State, ")).firstMatch
-        XCTAssertTrue(state.waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertEqual(state.label, "State, Recovery", state.debugDescription)
+        let recovery = app.segmentedControls["library-category"].buttons["Recovery"]
+        XCTAssertTrue(recovery.isSelected, recovery.debugDescription)
         reveal(app.buttons["saved-Recovered fixture"], in: app)
         XCTAssertTrue(app.buttons["saved-Recovered fixture"].waitForExistence(timeout: 5))
         capture("recovery-saved-row")
+        reveal(app.buttons["Resume session"].firstMatch, in: app)
+        capture("recovery-resume-action")
         app.buttons["Done"].tap()
         tap("Dismiss recovery notice", in: app)
         XCTAssertFalse(notice.exists)
+        app.terminate(); app.launch()
+        XCTAssertTrue(app.waitForBoardConnection(timeout: 10))
+        XCTAssertFalse(notice.exists, "Dismissal must survive relaunch")
+        app.buttons["Library"].tap()
+        app.segmentedControls["library-category"].buttons["Recovery"].tap()
+        XCTAssertTrue(app.buttons["saved-Recovered fixture"].waitForExistence(timeout: 5), "Dismissal must keep saved sessions available")
+        app.buttons["Done"].tap()
         fixture("interrupt")
         XCTAssertTrue(notice.waitForExistence(timeout: 10))
         XCTAssertTrue(notice.label.contains("1 interrupted session"))

@@ -4,10 +4,11 @@ import SwiftUI
 struct NativePasteStatus: View {
     @ObservedObject var controller: NativePasteController
     var onReview: (() -> Void)? = nil
+    var showsReviewCancel = true
     var body: some View {
         switch controller.state {
         case .reviewing:
-            NativeAttachmentReview(controller: controller).onAppear { onReview?() }
+            NativeAttachmentReview(controller: controller, showsCancel: showsReviewCancel).onAppear { onReview?() }
         case .reading:
             HStack { ProgressView("Reading clipboard…"); Spacer(); Button("Cancel") { controller.cancel() } }.padding(8)
         case .uploading:

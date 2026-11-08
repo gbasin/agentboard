@@ -26,6 +26,7 @@ final class ExternalAcceptanceUITests: XCTestCase {
     func testDocumentShareToFiles() {
         let app = XCUIApplication(); app.launchArguments = ["-serverURL", "http://127.0.0.1:4151"]; app.launch()
         XCTAssertTrue(app.waitForBoardConnection(timeout: 20)); app.buttons["Library"].tap()
+        app.segmentedControls["library-category"].buttons["History"].tap()
         let history = app.buttons.containing(NSPredicate(format: "label BEGINSWITH %@", "Conversation history")).firstMatch
         XCTAssertTrue(history.waitForExistence(timeout: 10)); reveal(history, app: app); history.tap()
         let search = app.searchFields["Search"]
@@ -81,6 +82,7 @@ final class ExternalAcceptanceUITests: XCTestCase {
     func testSlowMediaDiscoveryAndBackgroundRecovery() {
         let app = XCUIApplication(); app.launchArguments = ["-serverURL", "http://127.0.0.1:4151"]; app.launch()
         XCTAssertTrue(app.waitForBoardConnection(timeout: 20)); app.buttons["Library"].tap()
+        app.segmentedControls["library-category"].buttons["History"].tap()
         let history = app.buttons.containing(NSPredicate(format: "label BEGINSWITH %@", "Conversation history")).firstMatch
         XCTAssertTrue(history.waitForExistence(timeout: 10)); reveal(history, app: app); history.tap()
         let search = app.searchFields["Search"]

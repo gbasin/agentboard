@@ -19,7 +19,11 @@ extension XCUIApplication {
                 if viewport.contains(center) {
                     // Native menu accessibility can change Button → PopUpButton while XCTest
                     // auto-scrolls a tap. Tap its verified visible center without auto-scrolling.
-                    button.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5)).tap(); return
+                    // Anchor to the app: a button-relative coordinate re-queries the
+                    // disappearing menu element during touch synthesis on iOS 26.5.
+                    self.coordinate(withNormalizedOffset: .zero)
+                        .withOffset(CGVector(dx: center.x - self.frame.minX, dy: center.y - self.frame.minY)).tap()
+                    return
                 }
             }
             let above = button.exists && button.frame.midY < viewport.minY

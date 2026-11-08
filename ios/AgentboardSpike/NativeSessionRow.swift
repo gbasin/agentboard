@@ -44,7 +44,7 @@ struct NativeSessionRow: View {
     private var requestKey: String { preferences.serverURL + session.prs.map(\.url).joined(separator: "|") }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 3) {
             Button(action: onOpen) {
                 VStack(alignment: .leading, spacing: 5) {
                     rowLayout {
@@ -67,7 +67,7 @@ struct NativeSessionRow: View {
                     }
                     if preferences.bool("showLastUserMessage", true), !session.summary.isEmpty {
                         Text(session.summary).font(.subheadline).foregroundStyle(.secondary)
-                            .lineLimit(typeSize.isAccessibilitySize ? 4 : 2)
+                            .lineLimit(typeSize.isAccessibilitySize ? 4 : 1)
                     }
                     if !canOpen {
                         Text(session.status == .sleeping ? "Wake in Agentboard to open" : "Remote attachment disabled by server")
@@ -82,7 +82,7 @@ struct NativeSessionRow: View {
                 HStack(spacing: 12) { metadataActions }
 
             }
-        }.padding(.vertical, 6)
+        }.padding(.vertical, 2)
             .task(id: requestKey) { await refreshPRs() }
     }
 

@@ -9,6 +9,7 @@ struct FileUploadSheet: View {
     @State private var picker = false
     @State private var photos: [PhotosPickerItem] = []
     @State private var reading = false
+    @State private var readError: String?
     @State private var readTask: Task<Void, Never>?
     @Environment(\.dismiss) private var dismiss
     init(server: String, terminal: TerminalBridge) {
@@ -18,26 +19,24 @@ struct FileUploadSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                NativePasteStatus(controller: upload)
+                NativePasteStatus(controller: upload, showsReviewCancel: false).disabled(reading)
+                if let readError { ErrorRow(message: readError) }
                 Button("Choose file", systemImage: "doc") { picker = true }.disabled(busy)
                 PhotosPicker(selection: $photos, matching: .images) { Label("Choose photo", systemImage: "photo") }.disabled(busy)
                 if reading { ProgressView("Reading files…") }
-                if case .prepared(let paths) = upload.state {
-                    ForEach(Array(paths.enumerated()), id: \.offset) { _, path in Text(URL(fileURLWithPath: path).lastPathComponent) }
-                    Button("Insert file path") { upload.insert(); dismiss() }.disabled(!terminal.ready)
-                }
-                Text("Files upload to the connected server, up to 40 MB each. Insert adds files or image attachments without pressing Enter.").font(.footnote)
-            }.navigationTitle("Attach file").navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
+                Text("Insert attachments uploads to the connected server and adds to your draft. It does not send the prompt. Up to 40 MB per file.").font(.footnote)
+            }.navigationTitle("Attach to session").navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
                 .fileImporter(isPresented: $picker, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
                     switch result {
                     case .success(let urls): read {
                         NativePastePayload(files: try urls.map { try NativePasteFile.read($0) })
                     }
-                    case .failure(let failure): upload.fail(failure)
+                    case .failure(let failure): readError = failure.localizedDescription
                     }
                 }
                 .onChange(of: photos) { _, items in
+                    guard !items.isEmpty else { return }
                     read {
                         var files: [NativePasteFile] = []
                         for item in items {
@@ -50,18 +49,19 @@ struct FileUploadSheet: View {
                         return NativePastePayload(files: files)
                     }
                 }
+                .onChange(of: upload.insertionCount) { _, _ in dismiss() }
                 .onDisappear { readTask?.cancel(); upload.cancel() }
         }
     }
     private func read(_ operation: @escaping () async throws -> NativePastePayload) {
-        readTask?.cancel(); upload.cancel(); reading = true
+        readTask?.cancel(); reading = true; readError = nil
         readTask = Task { @MainActor in
-            defer { reading = false }
+            defer { reading = false; photos = [] }
             do {
                 let payload = try await operation()
                 try Task.checkCancellation()
-                upload.submit(payload, immediately: false)
-            } catch { if !Task.isCancelled { upload.fail(error) } }
+                try upload.addAttachments(payload)
+            } catch { if !Task.isCancelled { readError = error.localizedDescription } }
         }
     }
 }

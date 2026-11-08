@@ -7,6 +7,7 @@ import Combine
         case idle, reading, reviewing, uploading, prepared([String]), failed(String)
     }
     @Published private(set) var state: State = .idle
+    @Published private(set) var insertionCount = 0
     typealias Upload = (NativePasteFile) async throws -> String
     private var upload: Upload?
     private var deliver: ((NativePasteDelivery) -> Void)?
@@ -54,6 +55,26 @@ import Combine
     }
     func submit(itemProviders: [NSItemProvider]) { enqueue(.providers(itemProviders)) }
     func submit(_ payload: NativePastePayload, immediately: Bool) { enqueue(.paste(payload, immediately: immediately)) }
+    /// File/photo selections join an unsubmitted review; validation never discards its draft.
+    func addAttachments(_ payload: NativePastePayload) throws {
+        try payload.validate()
+        guard !remote || payload.files.isEmpty else {
+            throw SessionActionError(message: "File uploads are unavailable for SSH sessions.")
+        }
+        guard !payload.isEmpty else { return }
+        if state == .reviewing, var combined = pending {
+            combined.text += payload.text
+            combined.files += payload.files
+            try combined.validate()
+            objectWillChange.send()
+            pending = combined
+            immediate = true
+        } else if state == .idle {
+            submit(payload, immediately: true)
+        } else {
+            throw SessionActionError(message: "Finish or dismiss the current attachment before adding more files.")
+        }
+    }
     private func enqueue(_ request: Request) {
         if pending != nil || state != .idle { queued.append(request); return }
         begin(request)
@@ -124,6 +145,7 @@ import Combine
     func insert() {
         guard case .prepared = state, let pending, available() else { return }
         for message in NativePasteDelivery.make(pending, paths: paths, agent: agent()) { deliver?(message) }
+        insertionCount += 1
         advance()
     }
     private func advance() {

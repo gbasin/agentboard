@@ -103,9 +103,9 @@ struct LiveSessionListView: View {
                                          onOpen: { path.append(session) },
                                          onPullRequests: { detailRoute = .pullRequests(session) },
                                          onSubagents: { detailRoute = .activity(session) })
-                            .padding(14)
-                            .nativeGlassSurface()
-                            .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+                            .padding(.horizontal, 14).padding(.vertical, 8)
+                            .nativeGlassSurface(cornerRadius: 12)
+                            .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 2, trailing: 16))
                             .listRowBackground(Color.clear)
                             .listRowSeparator(.hidden)
                             .contextMenu {

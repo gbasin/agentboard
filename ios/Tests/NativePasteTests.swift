@@ -11,6 +11,23 @@ import CryptoKit
         for _ in 0..<100 { if predicate() { return }; try await Task.sleep(for: .milliseconds(10)) }
         XCTFail("Paste did not reach expected state")
     }
+    func testFileAndPhotoSelectionsJoinReviewAndInsertOnceWithoutEnter() async throws {
+        let controller = NativePasteController()
+        var deliveries: [NativePasteDelivery] = []
+        controller.configure(agent: "codex", remote: false, available: { true },
+                             upload: { "/tmp/" + $0.name }, deliver: { deliveries.append($0) })
+        try controller.addAttachments(.init(files: [document]))
+        try controller.addAttachments(.init(files: [image]))
+        XCTAssertEqual(controller.reviewFiles, [document, image])
+        XCTAssertEqual(controller.reviewAction, "Insert attachments")
+        XCTAssertTrue(deliveries.isEmpty)
+        XCTAssertThrowsError(try controller.addAttachments(.init(files: [.init(data: Data(), name: "bad.png", mime: "image/png")])))
+        XCTAssertEqual(controller.reviewFiles, [document, image], "Invalid additions preserve the draft")
+        controller.confirmReview()
+        try await settle { controller.state == .idle }
+        XCTAssertEqual(controller.insertionCount, 1)
+        XCTAssertEqual(deliveries, [.init(value: "'/tmp/note.txt' ", bracketed: true), .init(value: "/tmp/image.png ", bracketed: false)])
+    }
     func testMixedDeliveryMatchesPWAAndNeverAddsEnter() {
         let payload = NativePastePayload(text: "review", files: [image, document, image])
         let paths = ["/tmp/one.png", "/tmp/a'b\n.txt", "/tmp/two\u{1b}.png"]

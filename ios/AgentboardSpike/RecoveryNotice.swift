@@ -53,19 +53,24 @@ struct RecoveryNoticeView: View {
                     HStack(spacing: 8) {
                         Button(action: open) {
                             Label {
-                                Text(model.pendingCount > 0
-                                     ? "\(model.pendingCount) interrupted session\(model.pendingCount == 1 ? "" : "s") saved. Review and reopen."
-                                     : "Session recovery needs attention.")
-                                    .foregroundStyle(Color.primary)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(model.pendingCount > 0
+                                         ? "\(model.pendingCount) interrupted session\(model.pendingCount == 1 ? "" : "s") saved"
+                                         : "Session recovery needs attention")
+                                        .font(.subheadline.weight(.semibold))
+                                    Text("Review in Library").font(.caption).foregroundStyle(.secondary)
+                                }.foregroundStyle(Color.primary)
                             } icon: { Image(systemName: "exclamationmark.arrow.circlepath").foregroundStyle(.orange) }
                             .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                             .contentShape(Rectangle())
                         }.buttonStyle(.plain).accessibilityIdentifier("recovery-notice")
                         Button { model.dismiss() } label: {
-                            Image(systemName: "xmark").frame(width: 44, height: 44)
+                            Image(systemName: "xmark.circle.fill").font(.title3).foregroundStyle(.secondary)
+                                .frame(width: 44, height: 44).contentShape(Rectangle())
                         }.buttonStyle(.plain).accessibilityLabel("Dismiss recovery notice")
+                            .accessibilityHint("Hides this reminder. Saved sessions remain in Library.")
                     }
-                    .padding(12).nativeGlassSurface()
+                    .padding(.horizontal, 12).padding(.vertical, 6).nativeGlassSurface()
                     .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
                     .listRowBackground(Color.clear).listRowSeparator(.hidden)
                 }

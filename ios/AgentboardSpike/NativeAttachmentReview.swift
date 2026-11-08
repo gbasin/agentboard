@@ -5,6 +5,7 @@ import ImageIO
 struct NativeAttachmentReview: View {
     @Environment(\.dynamicTypeSize) private var dynamicType
     @ObservedObject var controller: NativePasteController
+    var showsCancel = true
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if !controller.reviewText.isEmpty {
@@ -32,11 +33,15 @@ struct NativeAttachmentReview: View {
             }.frame(height: dynamicType.isAccessibilitySize ? 220 : 130).accessibilityIdentifier("attachment-previews")
             let actions = dynamicType.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 8)) : AnyLayout(HStackLayout(spacing: 8))
             actions {
-                Button(controller.reviewAction) { controller.confirmReview() }
-                    .buttonStyle(.borderedProminent).accessibilityIdentifier("confirm-attachments")
-                    .fixedSize(horizontal: false, vertical: true)
+                Button { controller.confirmReview() } label: {
+                    Text(controller.reviewAction).fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: dynamicType.isAccessibilitySize ? .infinity : nil)
+                }
+                .buttonStyle(.borderedProminent)
+                .buttonBorderShape(dynamicType.isAccessibilitySize ? .roundedRectangle(radius: 16) : .automatic)
+                .accessibilityIdentifier("confirm-attachments")
                 if !dynamicType.isAccessibilitySize { Spacer() }
-                Button("Cancel") { controller.cancel() }.fixedSize(horizontal: false, vertical: true)
+                if showsCancel { Button("Cancel") { controller.cancel() }.fixedSize(horizontal: false, vertical: true) }
             }
         }.padding(8)
     }
