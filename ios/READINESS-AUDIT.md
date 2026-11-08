@@ -7,7 +7,7 @@ The integration now includes current PWA baseline `35483b5`. The four feature ga
 Current verification on m5p:
 
 - Root lint, typecheck and all 2,581 Bun tests passed, including the pre-commit runs. No hook bypass was used for these follow-up commits.
-- All 71 native unit/integration tests passed against the isolated current backend. They cover attachment review and cancellation, preserving a pending review during frozen selection, input replacement, and snapshot request fencing.
+- All 72 native unit/integration tests passed against the isolated current backend. They cover attachment review and cancellation, preserving a pending review during frozen selection, input replacement, and snapshot request fencing.
 - Five new/updated UI workflows passed in light and dark/maximum Dynamic Type: frozen selection/refresh/copy/return to input, session-overview switching, clipboard preview/removal/insertion, photo review/upload, and file review/upload.
 - Device preference toggles persisted after reopening Settings in light and dark/maximum text. Frozen selection now has captures with active native selection handles in both modes.
 - Visual review found and corrected maximum-text attachment action wrapping, filename truncation, duplicate review controls, and snapshot initial scroll positioning. A passing UI test alone did not expose these issues.
@@ -36,7 +36,9 @@ The failure recording also exposed a portrait count splitting digits. The detail
 
 A new real PDF fixture exercises the existing Quick Look path. Four media integration tests passed, including PDF download, preview eligibility and temporary-file cleanup. The complete Library HTML/PDF/link workflow passed in light and dark/maximum text, with visible PDF pages captured. The first attempt used a freshly rewritten fixture before its media index refreshed and failed on stale document entries; after verifying both document URLs returned their current bytes, the rerun passed. This does not establish external share completion, all Quick Look formats, or physical-device acceptance.
 
-Current follow-up captures: `evidence/ci-finish/`. The suite now contains 72 native tests; the 72-test set has not yet run as one bundle. Existing hosted evidence is 71/71 plus the four passing media integration tests after adding PDF coverage.
+Current follow-up captures: `evidence/ci-finish/`. All 72 native unit/integration tests passed together in `/tmp/ab-ci-native-72-final.xcresult`. An earlier run failed only the old three-item fixture count; the assertion now expects four items and explicitly checks PDF presence. Hosted evidence remains the earlier 71/71 until the next CI run.
+
+Read-only native SSH attachment also passed through a separate cross-host backend and actual SSH transport, with remote commands constrained to the private fixture socket. The test confirmed remote session selection, terminal readiness, rendered output and Back navigation. See `evidence/ci-finish/ssh-attach.md`; this closes successful SSH attachment for the tested topology, while remote management and physical-device networking remain outside its scope.
 
 ## Historical audit
 

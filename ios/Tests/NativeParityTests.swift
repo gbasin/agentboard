@@ -78,7 +78,8 @@ final class NativeParityTests: XCTestCase {
                 if let page = event.page { try page.validate(identity: source.identity); media = page.items }
             }
         }
-        XCTAssertEqual(media.count, 3)
+        XCTAssertEqual(media.count, 4)
+        XCTAssertTrue(media.contains { $0.mediaType == "application/pdf" })
         let image = try XCTUnwrap(media.first { $0.kind == "image" })
         let (data, response) = try await URLSession.shared.data(from: XCTUnwrap(resolved(image.url, server: api.address.baseURL.absoluteString)))
         try BoardAPI.check(data, response)
