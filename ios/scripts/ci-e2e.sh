@@ -2,7 +2,12 @@
 # Disposable CI host only. Never reuse an existing private fixture directory.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
+mode=${IOS_E2E_MODE:-all}
+shard=${IOS_E2E_SHARD:-all}
+case "$mode" in all|light|dark) ;; *) echo "Invalid IOS_E2E_MODE" >&2; exit 2 ;; esac
+bun ios/scripts/e2e-selection.ts light "$shard" >/dev/null
 fixture_root=/tmp/ab-ios-parity
+fixture_archive="/tmp/ab-ios-fixture-logs/$mode-$shard-$$"
 mkdir "$fixture_root"
 chmod 700 "$fixture_root"
 pids=()
@@ -11,7 +16,10 @@ cleanup() {
   local socket="$fixture_root/tmux-$(id -u)/default"
   env -u TMUX tmux -S "$socket" list-windows -a -F '#{window_id}' 2>/dev/null | sort -u | while read -r window; do
     env -u TMUX tmux -S "$socket" kill-window -t "$window" || true
-  done
+  done || true
+  for pid in "${pids[@]}"; do wait "$pid" 2>/dev/null || true; done
+  mkdir -p /tmp/ab-ios-fixture-logs
+  mv "$fixture_root" "$fixture_archive"
   return 0
 }
 trap cleanup EXIT
@@ -37,14 +45,17 @@ for attempt in {1..60}; do
   sleep 1
 done
 curl -fsS -X POST http://127.0.0.1:4193/activity/running >/dev/null
-./ios/scripts/prepare.sh
+if [ -z "${IOS_TEST_PRODUCTS_DIR:-}" ]; then ./ios/scripts/build-for-testing.sh; fi
+export IOS_TEST_PRODUCTS_DIR=${IOS_TEST_PRODUCTS_DIR:-ios/.build/Build/Products}
 udid=$(xcrun simctl list devices available -j | bun -e 'const data=await Bun.stdin.json(); const phone=Object.entries(data.devices).filter(([runtime])=>runtime.includes("iOS-26-4")).flatMap(([,devices])=>devices).find(d=>d.name.includes("iPhone") && d.isAvailable); if(!phone) throw Error("No available iPhone Simulator"); console.log(phone.udid)')
+udid=${IOS_SIMULATOR_UDID:-$udid}
 xcrun simctl boot "$udid" || true
 xcrun simctl bootstatus "$udid" -b
-xcodebuild build-for-testing -project ios/AgentboardSpike.xcodeproj -scheme AgentboardSpike -destination "id=$udid" -derivedDataPath ios/.build CODE_SIGNING_ALLOWED=NO
-xcrun simctl install "$udid" ios/.build/Build/Products/Debug-iphonesimulator/AgentboardSpike.app
+# Each appearance gets fresh app preferences and Documents as well as fresh backend data.
+xcrun simctl uninstall "$udid" dev.agentboard.ios-spike 2>/dev/null || true
+xcrun simctl install "$udid" "$IOS_TEST_PRODUCTS_DIR/Debug-iphonesimulator/AgentboardSpike.app"
 xcrun simctl addmedia "$udid" "$fixture_root/photo.png"
 app_data=$(xcrun simctl get_app_container "$udid" dev.agentboard.ios-spike data)
 mkdir -p "$app_data/Documents"
 cp "$fixture_root/upload.txt" "$app_data/Documents/parity-upload.txt"
-./ios/scripts/test-e2e.sh "$udid" "${IOS_E2E_MODE:-all}"
+./ios/scripts/test-e2e.sh "$udid" "$mode" "$shard"

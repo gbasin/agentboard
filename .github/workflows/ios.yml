@@ -5,32 +5,72 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: native-ios-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+env:
+  DEVELOPER_DIR: /Applications/Xcode_26.4.app/Contents/Developer
 jobs:
-  simulator:
-    strategy:
-      fail-fast: false
-      matrix:
-        appearance: [light, dark]
+  build:
     runs-on: macos-26
-    timeout-minutes: 60
-    env:
-      IOS_E2E_MODE: ${{ matrix.appearance }}
-      # Runner inventory: https://github.com/actions/runner-images/blob/main/images/macos/macos-26-arm64-Readme.md
-      DEVELOPER_DIR: /Applications/Xcode_26.4.app/Contents/Developer
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
           bun-version-file: .bun-version
-      - run: brew install xcodegen tmux
+      - run: brew install xcodegen
       - run: bun install --frozen-lockfile
-      - name: Build and exercise native workflows
-        run: ios/scripts/ci-e2e.sh
+      - name: Verify shard coverage
+        run: bun test ./ios/scripts/e2e-selection.test.ts
+      - name: Build test products once
+        run: ios/scripts/build-for-testing.sh
+      - name: Archive test products with executable permissions and symlinks
+        run: tar -czf ios-test-products.tar.gz -C ios/.build/Build Products
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: native-ios-test-products
+          path: ios-test-products.tar.gz
+          retention-days: 3
+  simulator:
+    needs: build
+    strategy:
+      fail-fast: false
+      # Five workers fit GitHub's standard macOS concurrency allowance.
+      # Each worker runs both appearances against fresh, isolated fixtures.
+      matrix:
+        shard: [terminal, catalog, lifecycle, media, settings]
+    runs-on: macos-26
+    timeout-minutes: 40
+    env:
+      IOS_E2E_SHARD: ${{ matrix.shard }}
+      IOS_TEST_PRODUCTS_DIR: ${{ github.workspace }}/ios/.build/Build/Products
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version-file: .bun-version
+      - run: brew install tmux
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: native-ios-test-products
+      - name: Restore shared test products
+        id: products
+        run: |
+          mkdir -p ios/.build/Build
+          tar -xzf ios-test-products.tar.gz -C ios/.build/Build
+      - name: Light workflows
+        run: IOS_E2E_MODE=light ios/scripts/ci-e2e.sh
+      - name: Dark and maximum-text workflows
+        if: ${{ !cancelled() && steps.products.outcome == 'success' }}
+        run: IOS_E2E_MODE=dark ios/scripts/ci-e2e.sh
       - name: Preserve Simulator results and fixture logs
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: native-ios-results-${{ matrix.appearance }}
+          name: native-ios-results-${{ matrix.shard }}
           path: |
             ios/evidence/*.xcresult
+            /tmp/ab-ios-fixture-logs/*/*.log
             /tmp/ab-ios-parity/*.log

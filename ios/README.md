@@ -129,6 +129,8 @@ Historical evidence in `evidence/`:
 
 ## Full parity regression command
 
+Hosted CI shares one build across five isolated shards. See [CI.md](CI.md) for shard coverage, artifacts and local commands.
+
 Prepare the private backend at `0e204cf` or a compatible newer revision, seeded conversations, file/photo fixtures, port-4149 shell fixture, port-4190 PR proxy, port-4192 parity-gap fixture and port-4193 media/activity fixture described below. The native parity branch now includes the current backend and its catalog endpoints. Run the full native matrix on the simulator host:
 
 ```sh
