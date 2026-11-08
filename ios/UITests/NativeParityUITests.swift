@@ -135,7 +135,8 @@ final class NativeParityUITests: XCTestCase {
         let search = app.searchFields["Search"]
         XCTAssertTrue(search.waitForExistence(timeout: 5)); replace(search, "parity-saved-transcript"); search.typeText("\n")
         tap("Media and links", in: app)
-        XCTAssertTrue(app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "image/png")).firstMatch.waitForExistence(timeout: 15))
+        XCTAssertTrue(app.navigationBars["Media and links"].waitForExistence(timeout: 15))
+        // List rows below the viewport may not enter the accessibility tree until scrolled.
         let image = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "image/png")).firstMatch
         reveal(image, in: app); capture("media-loaded"); image.tap()
         XCTAssertTrue(app.images["Session image"].waitForExistence(timeout: 10)); capture("media-image")
