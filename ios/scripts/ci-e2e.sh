@@ -8,6 +8,11 @@ case "$mode" in all|light|dark) ;; *) echo "Invalid IOS_E2E_MODE" >&2; exit 2 ;;
 bun ios/scripts/e2e-selection.ts light "$shard" >/dev/null
 if [ -z "${IOS_TEST_PRODUCTS_DIR:-}" ]; then ./ios/scripts/build-for-testing.sh; fi
 export IOS_TEST_PRODUCTS_DIR=${IOS_TEST_PRODUCTS_DIR:-ios/.build/Build/Products}
+# Finish cold Simulator boot before fixture services compete for CPU and process slots.
+udid=$(xcrun simctl list devices available -j | bun -e 'const data=await Bun.stdin.json(); const phone=Object.entries(data.devices).filter(([runtime])=>runtime.includes("iOS-26-4")).flatMap(([,devices])=>devices).find(d=>d.name.includes("iPhone") && d.isAvailable); if(!phone) throw Error("No available iPhone Simulator"); console.log(phone.udid)')
+udid=${IOS_SIMULATOR_UDID:-$udid}
+xcrun simctl boot "$udid" || true
+xcrun simctl bootstatus "$udid" -b
 fixture_root=/tmp/ab-ios-parity
 fixture_archive="/tmp/ab-ios-fixture-logs/$mode-$shard-$$"
 mkdir "$fixture_root"
@@ -47,10 +52,6 @@ for attempt in {1..60}; do
   sleep 1
 done
 curl -fsS -X POST http://127.0.0.1:4193/activity/running >/dev/null
-udid=$(xcrun simctl list devices available -j | bun -e 'const data=await Bun.stdin.json(); const phone=Object.entries(data.devices).filter(([runtime])=>runtime.includes("iOS-26-4")).flatMap(([,devices])=>devices).find(d=>d.name.includes("iPhone") && d.isAvailable); if(!phone) throw Error("No available iPhone Simulator"); console.log(phone.udid)')
-udid=${IOS_SIMULATOR_UDID:-$udid}
-xcrun simctl boot "$udid" || true
-xcrun simctl bootstatus "$udid" -b
 # Each appearance gets fresh app preferences and Documents as well as fresh backend data.
 xcrun simctl uninstall "$udid" dev.agentboard.ios-spike 2>/dev/null || true
 xcrun simctl install "$udid" "$IOS_TEST_PRODUCTS_DIR/Debug-iphonesimulator/AgentboardSpike.app"

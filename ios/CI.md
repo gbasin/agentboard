@@ -10,7 +10,7 @@ The workflow builds the app and test bundles once. It archives `Build/Products`,
 | media | Media/activity, document previews, clipboard, file and photo insertion |
 | settings | Settings, presets, device preferences, catalog preferences and PR checks |
 
-Each worker runs light/standard text and dark/maximum text. Each appearance starts a fresh private backend, app container and fixture data. Dark runs even if the light test step fails. Test execution stays serial inside each fixture host because workflows mutate shared sessions and settings. The wrapper checks every fixture process and backend health before starting tests. A dead fixture fails the job immediately.
+Each worker runs light/standard text and dark/maximum text. Simulator boot completes before fixture services start. Each appearance starts a fresh private backend, app container and fixture data. Dark runs even if the light test step fails. Test execution stays serial inside each fixture host because workflows mutate shared sessions and settings. The wrapper checks every fixture process and backend health before starting tests. A dead fixture fails the job immediately.
 
 `e2e-selection.test.ts` compares shard selections with the Swift test methods. It rejects duplicate, missing and empty selections. The existing light-only tests remain light-only. External-service acceptance tests remain opt-in. Unit tests run once in the light terminal shard.
 
