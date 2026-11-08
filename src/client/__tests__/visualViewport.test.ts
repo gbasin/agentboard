@@ -101,7 +101,7 @@ describe('visual viewport helpers', () => {
     expect(classList.has('keyboard-visible')).toBe(true)
   })
 
-  test('accounts for visual viewport offset in inset calculation', () => {
+  test('tracks viewport position without subtracting panning from keyboard height', () => {
     const style = {
       values: new Map<string, string>(),
       setProperty: (_key: string, val: string) => {
@@ -117,10 +117,56 @@ describe('visual viewport helpers', () => {
 
     const updated = updateKeyboardInset({ viewport, win, doc })
     expect(updated).toBe(true)
-    expect(style.values.get('--keyboard-inset')).toBe('200px')
+    expect(style.values.get('--keyboard-inset')).toBe('300px')
     expect(style.values.get('--viewport-offset-top')).toBe('100px')
     expect(style.values.get('--visual-viewport-height')).toBe('600px')
     expect(style.values.get('--viewport-offset-left')).toBe('20px')
     expect(style.values.get('--visual-viewport-width')).toBe('700px')
+  })
+
+  test('keeps the keyboard visible through the iOS 27.2 scroll trace and clears it on dismissal', () => {
+    const values = new Map<string, string>()
+    const classList = createMockClassList()
+    const doc = {
+      documentElement: {
+        clientHeight: 844,
+        style: { setProperty: (key: string, value: string) => values.set(key, value) },
+        classList,
+      },
+    } as unknown as Document
+    const viewport = { width: 420, height: 429, scale: 1, offsetTop: 0 } as VisualViewport
+    const win = { innerHeight: 844 } as Window
+
+    // Recorded on an iPhone Air simulator: keyboard stays open throughout.
+    for (const [innerHeight, offsetTop] of [[844, 0], [653, 191], [429, 415]]) {
+      Object.assign(win, { innerHeight })
+      Object.assign(viewport, { offsetTop })
+      updateKeyboardInset({ viewport, win, doc })
+      expect(values.get('--keyboard-inset')).toBe('415px')
+      expect(classList.has('keyboard-visible')).toBe(true)
+    }
+
+    Object.assign(win, { innerHeight: 844 })
+    Object.assign(viewport, { height: 844, offsetTop: 0 })
+    updateKeyboardInset({ viewport, win, doc })
+    expect(values.get('--keyboard-inset')).toBe('0px')
+    expect(classList.has('keyboard-visible')).toBe(false)
+
+    // Rotation/window resizing changes the current layout, without a stale baseline.
+    Object.assign(doc.documentElement, { clientHeight: 420 })
+    Object.assign(win, { innerHeight: 420 })
+    Object.assign(viewport, { height: 420, width: 844 })
+    updateKeyboardInset({ viewport, win, doc })
+    expect(classList.has('keyboard-visible')).toBe(false)
+
+    // Pinch zoom alone must not hide safe areas.
+    Object.assign(viewport, { height: 210, scale: 2, offsetTop: 100 })
+    updateKeyboardInset({ viewport, win, doc })
+    expect(values.get('--keyboard-inset')).toBe('0px')
+    expect(classList.has('keyboard-visible')).toBe(false)
+    Object.assign(viewport, { height: 110 })
+    updateKeyboardInset({ viewport, win, doc })
+    expect(values.get('--keyboard-inset')).toBe('200px')
+    expect(classList.has('keyboard-visible')).toBe(true)
   })
 })
