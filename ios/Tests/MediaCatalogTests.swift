@@ -97,4 +97,72 @@ import XCTest
         let longCursor = page(cursor: String(repeating: "x", count: 8193))
         XCTAssertThrowsError(try longCursor.validate(identity: "one-log"))
     }
+    func testFiniteDiscoveryRenewsAndRetainsVisiblePage() async throws {
+        var reads = 0
+        var pending = summary(); pending.discovery = .init(status: "pending")
+        let model = MediaCatalogModel { _, _, receive in
+            reads += 1
+            var snapshot = self.page(reads == 1 ? "r1" : "r2", label: reads == 1 ? "original" : "newer")
+            snapshot.discovery = .init(status: reads == 1 ? "indexing" : "ready")
+            try receive(.init(type: "snapshot", page: snapshot))
+            var progress = self.summary(reads == 1 ? "r1" : "r2"); progress.discovery = snapshot.discovery
+            try receive(.init(type: "progress", summary: progress))
+        }
+        model.configure(source: source, summary: pending, kind: "", search: "")
+        for _ in 0..<100 where model.loading { try await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertEqual(reads, 2); XCTAssertFalse(model.loading)
+        XCTAssertEqual(model.page?.items.first?.label, "original")
+        XCTAssertEqual(model.summary?.discovery?.status, "ready")
+        XCTAssertTrue(model.changed); XCTAssertFalse(model.canNext)
+    }
+    func testDiscoveryRenewalIsBoundedAndExplicitRetryResetsBudget() async throws {
+        var reads = 0, ready = false
+        var pending = summary(); pending.discovery = .init(status: "pending")
+        let model = MediaCatalogModel { _, _, receive in
+            reads += 1
+            var snapshot = self.page(); snapshot.discovery = .init(status: ready ? "ready" : "indexing")
+            try receive(.init(type: "snapshot", page: snapshot))
+        }
+        model.configure(source: source, summary: pending, kind: "", search: "")
+        for _ in 0..<150 where model.loading { try await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertEqual(reads, 4)
+        XCTAssertEqual(model.state, .failed("Discovery is still incomplete. Retry to continue."))
+        ready = true; model.refresh(); await settle(model)
+        XCTAssertEqual(reads, 5); XCTAssertEqual(model.state, .idle)
+    }
+    func testCancellationStopsRenewalAndForegroundResumesPartialDiscovery() async throws {
+        var reads = 0, ready = false
+        var pending = summary(); pending.discovery = .init(status: "pending")
+        let model = MediaCatalogModel { _, _, receive in
+            reads += 1
+            var snapshot = self.page(); snapshot.discovery = .init(status: ready ? "ready" : "indexing")
+            try receive(.init(type: "snapshot", page: snapshot))
+        }
+        model.configure(source: source, summary: pending, kind: "", search: "")
+        for _ in 0..<100 where model.page == nil { await Task.yield() }
+        XCTAssertNotNil(model.page); model.cancel()
+        try await Task.sleep(for: .milliseconds(350))
+        XCTAssertEqual(reads, 1); XCTAssertEqual(model.state, .idle)
+        ready = true; model.resume(); await settle(model)
+        XCTAssertEqual(reads, 2); XCTAssertEqual(model.summary?.discovery?.status, "ready")
+    }
+
+    func testLaggingCatalogCannotFinishAnIncompleteStream() async throws {
+        var reads = 0
+        var pending = summary(); pending.discovery = .init(status: "pending")
+        weak var observedModel: MediaCatalogModel?
+        let model = MediaCatalogModel { _, _, receive in
+            reads += 1
+            var snapshot = self.page(); snapshot.discovery = .init(status: reads == 1 ? "indexing" : "ready")
+            try receive(.init(type: "snapshot", page: snapshot))
+            var stale = self.summary(); stale.discovery = .init(status: reads == 1 ? "ready" : "indexing")
+            observedModel?.observe(stale)
+        }
+        observedModel = model
+        model.configure(source: source, summary: pending, kind: "", search: "")
+        for _ in 0..<100 where model.loading { try await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertEqual(reads, 2); XCTAssertEqual(model.state, .idle)
+        XCTAssertEqual(model.summary?.discovery?.status, "ready")
+    }
+
 }
