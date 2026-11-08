@@ -58,7 +58,7 @@ test('fixture plans cover the loopback endpoints referenced by every selected te
 test('setup keeps media dependencies on terminal and restricts simulator imports to media', async () => {
   const { e2eFixtures } = await import('./e2e-fixtures')
   expect(e2eFixtures('light', 'catalog')).toEqual(['parity-gap-fixture'])
-  expect(e2eFixtures('light', 'terminal')).toEqual(['backend', 'live', 'shell-server', 'media-activity-fixture'])
+  expect(e2eFixtures('light', 'terminal')).toEqual(['backend', 'live', 'parity', 'warm', 'shell-server', 'media-activity-fixture'])
   expect(e2eFixtures('dark', 'terminal')).toEqual(['backend', 'live', 'media-activity-fixture'])
   expect(e2eFixtures('all', 'lifecycle')).toEqual(['backend', 'parity', 'warm'])
   expect(e2eFixtures('all', 'media')).toEqual(['backend', 'live', 'parity', 'warm', 'media-activity-fixture', 'photos', 'files'])
@@ -66,4 +66,40 @@ test('setup keeps media dependencies on terminal and restricts simulator imports
   expect(e2eFixtures('all')).toEqual((await import('./e2e-fixtures')).fixtureNames as unknown as string[])
   expect(() => e2eFixtures('typo')).toThrow()
   expect(() => e2eFixtures('light', 'typo')).toThrow()
+})
+
+// Infer integration resources from Swift fixture identities, independently of
+// the setup map. Whole-target XCTest selectors must expand to their sources.
+// This catches native tests added beside pure unit tests, including references
+// that use a provider UUID rather than a human-readable fixture name.
+test('selected native test target provisions the fixture identities its Swift tests consume', async () => {
+  const { e2eFixtures } = await import('./e2e-fixtures')
+  const nativeDirectory = new URL('../Tests/', import.meta.url)
+  const nativeSources = readdirSync(nativeDirectory).filter(file => file.endsWith('.swift'))
+    .map(file => ({ file, source: readFileSync(new URL(file, nativeDirectory), 'utf8') }))
+  const resources = [
+    { fixture: 'backend', token: /127\.0\.0\.1:4151/ },
+    { fixture: 'parity', token: /11111111-2222-4333-8444-555555555555|parity-saved-transcript|\/tmp\/ab-ios-parity\/project/ },
+    // The warm step establishes the saved conversation's history association.
+    { fixture: 'warm', token: /api\/library\/parity-saved-transcript/ },
+    { fixture: 'media-activity-fixture', token: /22222222-3333-4444-8555-666666666666/ },
+    { fixture: 'live', token: /native-live-(?:one|two)/ },
+  ]
+  const consumed = new Set<string>()
+  let checkedSelections = 0
+  for (const appearance of ['light', 'dark']) for (const shard of [...shards, 'all']) {
+    if (!e2eSelection(appearance, shard).includes('AgentboardSpikeTests')) continue
+    checkedSelections++
+    const plan = e2eFixtures(appearance, shard)
+    for (const { file, source } of nativeSources) for (const { fixture, token } of resources) {
+      if (!token.test(source)) continue
+      consumed.add(`${file}:${fixture}`)
+      expect(plan, `${appearance}/${shard}: ${file} consumes ${fixture}`).toContain(fixture)
+    }
+  }
+  expect(checkedSelections).toBe(2)
+  // Ensure this source-derived regression actually observes both failed suites.
+  expect(consumed).toContain('NativeParityTests.swift:parity')
+  expect(consumed).toContain('MediaBackendTests.swift:parity')
+  expect(consumed).toContain('MediaBackendTests.swift:media-activity-fixture')
 })

@@ -4,6 +4,10 @@ import { e2eSelection } from './e2e-selection'
 export const fixtureNames = ['backend', 'live', 'parity', 'warm', 'shell-server', 'pr-fixture', 'parity-gap-fixture', 'media-activity-fixture', 'photos', 'files'] as const
 type Fixture = typeof fixtureNames[number]
 const dependencies: Record<string, Fixture[]> = {
+  // This target includes real-backend NativeParityTests, MediaBackendTests,
+  // and NativePasteTests alongside pure unit tests. Treat the whole target as
+  // an integration consumer; it runs only in the light terminal selection.
+  AgentboardSpikeTests: ['backend', 'parity', 'warm', 'media-activity-fixture'],
   LiveUITests: ['backend', 'live'],
   SimulatorStateUITests: ['backend', 'live', 'media-activity-fixture'],
   SpikeUITests: ['shell-server'],
@@ -27,7 +31,6 @@ export function e2eFixtures(mode: string, shard = 'all'): Fixture[] {
   const selected = (mode === 'all' ? ['light', 'dark'] : [mode]).flatMap(appearance => e2eSelection(appearance, shard))
   const needed = new Set<Fixture>()
   for (const selector of selected) {
-    if (selector === 'AgentboardSpikeTests') continue
     const test = selector.replace('AgentboardSpikeUITests/', '')
     const required = dependencies[test] ?? dependencies[test.split('/')[0]]
     if (!required) throw new Error(`Missing fixture dependencies: ${selector}`)
