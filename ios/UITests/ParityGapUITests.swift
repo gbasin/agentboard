@@ -31,7 +31,7 @@ final class ParityGapUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-serverURL", base]
         app.launch()
-        XCTAssertTrue(app.staticTexts["Connected"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.waitForBoardConnection(timeout: 10))
         return app
     }
     private func capture(_ name: String) {
@@ -61,7 +61,7 @@ final class ParityGapUITests: XCTestCase {
             let list = app.collectionViews.allElementsBoundByIndex.last!
             let search = app.searchFields["Search saved sessions"]
             let top = max(list.frame.minY, app.navigationBars["Library"].frame.maxY)
-            let bottom = search.exists ? min(list.frame.maxY, search.frame.minY) : list.frame.maxY
+            let bottom = search.exists && search.frame.midY > app.frame.midY ? min(list.frame.maxY, search.frame.minY) : list.frame.maxY
             if link.exists && link.isHittable && link.frame.minY >= top && link.frame.maxY <= bottom {
                 link.tap()
                 XCTAssertTrue(app.navigationBars[destination].waitForExistence(timeout: 5), app.debugDescription)
@@ -73,7 +73,16 @@ final class ParityGapUITests: XCTestCase {
         XCTFail("Library link was not fully visible: " + app.debugDescription)
     }
     private func select(_ id: String, in app: XCUIApplication) {
-        let toggle = app.switches[id]; reveal(toggle, in: app)
+        let toggle = app.switches[id]
+        let list = app.collectionViews.firstMatch
+        // A switch behind the bottom search field can report hittable on iOS 26.5.
+        // Scroll until the whole target is above that overlay before tapping.
+        for _ in 0..<12 {
+            let search = app.searchFields.firstMatch
+            let bottom = search.exists && search.frame.midY > app.frame.midY ? min(list.frame.maxY, search.frame.minY) : list.frame.maxY
+            if toggle.exists && toggle.isHittable && toggle.frame.maxY < bottom { break }
+            list.swipeUp(velocity: .slow)
+        }
         toggle.coordinate(withNormalizedOffset: .init(dx: 0.9, dy: 0.5)).tap()
         let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == '1'"), object: toggle)
         XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 5), .completed)
@@ -127,7 +136,7 @@ final class ParityGapUITests: XCTestCase {
         XCTAssertEqual(persisted["sessionSortMode"] as? String, "manual")
         XCTAssertEqual(persisted["manualSessionOrder"] as? [String], ["alpha-remote-agent", "alpha-local-agent"])
         app.terminate(); app.launch()
-        XCTAssertTrue(app.staticTexts["Connected"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.waitForBoardConnection(timeout: 10))
         XCTAssertTrue(second.waitForExistence(timeout: 5))
         reveal(first, in: app)
         XCTAssertLessThan(second.frame.midY, first.frame.midY)
@@ -198,7 +207,7 @@ final class ParityGapUITests: XCTestCase {
         XCTAssertTrue(app.buttons["End session"].isHittable)
         capture("remote-end-enabled")
         app.terminate(); app.launch()
-        XCTAssertTrue(app.staticTexts["Connected"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.waitForBoardConnection(timeout: 10))
         open("External remote", in: app)
         app.buttons["Session actions"].tap()
         XCTAssertFalse(app.buttons["Rename session"].exists)

@@ -33,7 +33,7 @@ final class NativeClipboardUITests: XCTestCase {
         UIPasteboard.general.items = [[UTType.utf8PlainText.identifier: marker], [UTType.png.identifier: png]]
         defer { UIPasteboard.general.items = [] }
         let app = XCUIApplication(); app.launchArguments = ["-serverURL", "http://127.0.0.1:4151"]; app.launch()
-        XCTAssertTrue(app.staticTexts["Connected"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.waitForBoardConnection(timeout: 15))
         let search = app.searchFields["Find a session"]; search.tap(); search.typeText("native-live-one\n")
         let row = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "native-live-one")).firstMatch
         reveal(row, in: app)

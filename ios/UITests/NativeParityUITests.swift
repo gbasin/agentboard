@@ -5,7 +5,7 @@ final class NativeParityUITests: XCTestCase {
     override func setUp() { continueAfterFailure = false; XCUIDevice.shared.orientation = .portrait }
     private func app(server: String = "http://127.0.0.1:4151") -> XCUIApplication {
         let app = XCUIApplication(); app.launchArguments = ["-serverURL", server]; app.launch()
-        XCTAssertTrue(app.staticTexts["Connected"].waitForExistence(timeout: 15)); return app
+        XCTAssertTrue(app.waitForBoardConnection(timeout: 15)); return app
     }
     private func capture(_ name: String) {
         sleep(1); let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
@@ -211,7 +211,7 @@ final class NativeParityUITests: XCTestCase {
         if app.buttons["Done"].exists { app.buttons["Done"].tap() }
         else { app.buttons["Close"].firstMatch.tap() }
         app.terminate(); app.launch()
-        XCTAssertTrue(app.staticTexts["Connected"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.waitForBoardConnection(timeout: 15))
         app.buttons["Settings"].tap()
         replace(app.searchFields["Find a setting"], "Session ID prefix"); app.searchFields["Find a setting"].typeText("\n")
         XCTAssertNotEqual(app.switches["Session ID prefix"].value as? String, before)

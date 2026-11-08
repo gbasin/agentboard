@@ -14,6 +14,7 @@ let allowControl = false
 let generation = crypto.randomUUID()
 let interruptedIds: string[] = []
 let settings: Settings = {}
+let input: string[] = []
 const time = '2026-11-07T12:00:00.000Z'
 const sessions = [
   { id: 'alpha-local', name: 'Alpha local', projectPath: '/work/alpha', host: 'laptop', remote: false, source: 'managed', status: 'working' },
@@ -21,6 +22,17 @@ const sessions = [
   { id: 'beta-approval', name: 'Beta approval', projectPath: '/work/beta', host: 'laptop', remote: false, source: 'managed', status: 'permission' },
   { id: 'remote-external', name: 'External remote', projectPath: '/work/external', host: 'remote', remote: true, source: 'external', status: 'waiting' },
 ].map((session, index) => ({ ...session, agentType: 'codex', agentSessionId: session.id + '-agent', boardSessionId: session.id + '-saved', command: 'codex', createdAt: new Date(Date.parse(time) - index * 60_000).toISOString(), lastActivity: time, lastUserMessage: '', media: [], prs: [] }))
+const glassSessions = sessions.slice(0, 3).map((session, index) => ({
+  ...session, lastActivity: new Date().toISOString(),
+  lastUserMessage: ['Review the native session switcher and keep every terminal action.', 'Test reconnects after the phone returns from background.', 'Waiting for approval to run the test suite.'][index],
+  prs: index === 0 ? [{ repo: 'agentboard', number: 525, url: 'https://github.com/example/agentboard/pull/525' }] : [],
+  media: index === 0 ? [{ kind: 'link', url: 'https://example.com', label: 'Implementation notes' }] : [],
+  activity: index === 0 ? {
+    main: { phase: 'model', label: 'Reviewing changes', tools: [] },
+    subagents: [{ id: 'reviewer', name: 'UI reviewer', activity: { phase: 'tool', label: 'Reading tests', tools: ['Read'] } }],
+    running: 1, unknown: 0, blocked: 0, total: 1, truncated: false,
+  } : undefined,
+}))
 const conversation = (id: string, name: string, projectPath: string, host: string, sleeping: boolean) => ({
   sessionId: id, displayName: name, projectPath, host, agentType: 'codex', lastActivityAt: time,
   lastUserMessage: '', isHibernating: sleeping, lastResumeError: null, media: [], prs: [],
@@ -39,11 +51,11 @@ function snapshot(socket: Socket) {
   send(socket, { type: 'synced-settings', settings })
   send(socket, { type: 'host-status', hosts: [{ host: 'laptop', ok: true }, { host: 'remote', ok: true }, { host: 'offline-host', ok: false, error: 'Host unreachable' }] })
   send(socket, { type: 'agent-sessions', hibernating: conversations(true), history: conversations(false) })
-  send(socket, { type: 'sessions', sessions: scenario === 'recovery' ? [] : scenario === 'reorder' ? sessions.slice(0, 2) : sessions })
+  send(socket, { type: 'sessions', sessions: scenario === 'recovery' ? [] : scenario === 'reorder' ? sessions.slice(0, 2) : scenario === 'glass' ? glassSessions : sessions })
 }
 function reset(next: string) {
-  scenario = next; allowControl = false; generation = crypto.randomUUID()
-  interruptedIds = next === 'recovery' ? [generation + '-first'] : []
+  input = []; scenario = next; allowControl = false; generation = crypto.randomUUID()
+  interruptedIds = (next === 'recovery' || next === 'glass') ? [generation + '-first'] : []
   settings = { projectFilters: next === 'hidden' ? ['/work/alpha'] : [], hostFilters: [], sessionSortMode: 'created', sessionSortDirection: 'desc', showProjectName: true, theme: 'system' }
   for (const socket of clients) snapshot(socket)
   broadcast({ type: 'library-changed' })
@@ -68,6 +80,8 @@ Bun.serve<Record<string, never>>({
     if (url.pathname === '/__fixture/interrupt' && request.method === 'POST') {
       interruptedIds.push(generation + '-' + crypto.randomUUID()); broadcast({ type: 'library-changed' }); return Response.json({ ok: true })
     }
+    if (url.pathname === '/__fixture/input') return Response.json({ input })
+    if (url.pathname === '/api/pr-info') return Response.json([{ url: glassSessions[0].prs[0].url, state: 'MERGED', isDraft: false }])
     if (url.pathname === '/api/settings/synced') {
       if (request.method === 'PUT') {
         const body = await request.json() as { settings: Settings }
@@ -87,7 +101,8 @@ Bun.serve<Record<string, never>>({
     open(socket) { clients.add(socket); snapshot(socket) },
     close(socket) { clients.delete(socket) },
     message(socket, raw) {
-      const message = JSON.parse(String(raw)) as { type: string; seq?: number; sessionId?: string }
+      const message = JSON.parse(String(raw)) as { type: string; seq?: number; sessionId?: string; data?: string }
+      if (message.type === 'terminal-input' && message.data) input.push(message.data)
       if (message.type === 'ping') send(socket, { type: 'pong', seq: message.seq })
       if (message.type === 'terminal-attach') {
         send(socket, { type: 'terminal-ready', sessionId: message.sessionId })

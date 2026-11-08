@@ -50,13 +50,23 @@ struct LibraryView: View {
                             Text(saved.projectPath).font(.caption).foregroundStyle(Color.primary)
                             if let error = saved.error { Text(error).font(.caption) }
                         }
-                    }.accessibilityIdentifier("saved-\(saved.name)")
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .padding(14)
+                        .nativeGlassSurface(interactive: true)
+                    }.buttonStyle(.plain)
+                        .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                        .accessibilityIdentifier("saved-\(saved.name)")
                 }
                 if loading { ProgressView("Loading library…") }
                 if sessions.isEmpty && !loading && failure == nil { ContentUnavailableView("No saved sessions", systemImage: "clock") }
                 if cursor != nil { Button("Load more") { Task { await load(more: true) } }.disabled(loading) }
 
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(Color(uiColor: .systemGroupedBackground))
             .navigationTitle("Library")
             .searchable(text: $query, prompt: "Search saved sessions")
             .onSubmit(of: .search) { Task { await load() } }

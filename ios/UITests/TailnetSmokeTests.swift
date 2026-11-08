@@ -13,7 +13,7 @@ final class TailnetSmokeTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-serverURL", url]
         app.launch()
-        XCTAssertTrue(app.staticTexts["Connected"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.waitForBoardConnection(timeout: 20))
         let search = app.searchFields.firstMatch
         search.tap(); search.typeText(name)
         let row = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", name)).firstMatch

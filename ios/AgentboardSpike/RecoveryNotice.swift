@@ -50,15 +50,24 @@ struct RecoveryNoticeView: View {
         Group {
             if model.visible {
                 Section {
-                    Button(action: open) {
-                        Label {
-                            Text(model.pendingCount > 0
-                                 ? "\(model.pendingCount) interrupted session\(model.pendingCount == 1 ? "" : "s") saved. Review and reopen."
-                                 : "Session recovery needs attention.")
-                                .foregroundStyle(Color.primary)
-                        } icon: { Image(systemName: "exclamationmark.arrow.circlepath").foregroundStyle(.orange) }
-                    }.accessibilityIdentifier("recovery-notice")
-                    Button("Dismiss recovery notice") { model.dismiss() }
+                    HStack(spacing: 8) {
+                        Button(action: open) {
+                            Label {
+                                Text(model.pendingCount > 0
+                                     ? "\(model.pendingCount) interrupted session\(model.pendingCount == 1 ? "" : "s") saved. Review and reopen."
+                                     : "Session recovery needs attention.")
+                                    .foregroundStyle(Color.primary)
+                            } icon: { Image(systemName: "exclamationmark.arrow.circlepath").foregroundStyle(.orange) }
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                            .contentShape(Rectangle())
+                        }.buttonStyle(.plain).accessibilityIdentifier("recovery-notice")
+                        Button { model.dismiss() } label: {
+                            Image(systemName: "xmark").frame(width: 44, height: 44)
+                        }.buttonStyle(.plain).accessibilityLabel("Dismiss recovery notice")
+                    }
+                    .padding(12).nativeGlassSurface()
+                    .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+                    .listRowBackground(Color.clear).listRowSeparator(.hidden)
                 }
             }
         }

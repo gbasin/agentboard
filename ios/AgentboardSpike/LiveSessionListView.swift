@@ -26,6 +26,16 @@ struct LiveSessionListView: View {
     @State private var path: [BoardSession] = []
     @State private var showConnection = false
     @State private var action: SessionActionRoute?
+    private enum DetailRoute: Identifiable {
+        case pullRequests(BoardSession), activity(BoardSession)
+        var session: BoardSession {
+            switch self { case .pullRequests(let session), .activity(let session): session }
+        }
+        var id: String {
+            switch self { case .pullRequests: "prs-" + session.id; case .activity: "activity-" + session.id }
+        }
+    }
+    @State private var detailRoute: DetailRoute?
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -59,7 +69,7 @@ struct LiveSessionListView: View {
     var body: some View {
         NavigationStack(path: $path) {
             List {
-                Section {
+                if board.state != .connected { Section {
                     adaptiveRow {
                         Label(board.state.label, systemImage: board.state == .connected ? "network" : "wifi.exclamationmark")
                             .font(.subheadline)
@@ -71,6 +81,7 @@ struct LiveSessionListView: View {
                     .accessibilityIdentifier("connection-status")
                 } footer: {
                     if let address = try? ServerAddress(serverURL) { Text(address.baseURL.absoluteString) }
+                }
                 }
                 RecoveryNoticeView(open: { libraryRoute = .recovery }, model: recovery)
                 if hiddenPermissionCount > 0 {
@@ -88,9 +99,15 @@ struct LiveSessionListView: View {
                 }
                 Section {
                     ForEach(filtered) { session in
-                        NavigationLink(value: session) { row(session) }
-                            .disabled(!board.canOpen(session))
-                            .accessibilityIdentifier("session-\(session.id)")
+                        NativeSessionRow(session: session, preferences: preferences, canOpen: board.canOpen(session),
+                                         onOpen: { path.append(session) },
+                                         onPullRequests: { detailRoute = .pullRequests(session) },
+                                         onSubagents: { detailRoute = .activity(session) })
+                            .padding(14)
+                            .nativeGlassSurface()
+                            .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
                             .contextMenu {
                                 if SessionCapabilities.canControl(session, remoteAllowed: board.remoteAllowControl) {
                                     Button("Rename session", systemImage: "pencil") { action = .rename(session) }
@@ -143,6 +160,9 @@ struct LiveSessionListView: View {
                     }
                 }
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(Color(uiColor: .systemGroupedBackground))
             .navigationTitle("Sessions")
             .searchable(text: $search, prompt: "Find a session")
             .refreshable { board.refresh() }
@@ -168,12 +188,32 @@ struct LiveSessionListView: View {
                         .disabled(board.state != .connected)
                 }
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Connection", systemImage: "network") { showConnection = true }
+                    Button { showConnection = true } label: {
+                        Label(board.state == .connected ? "Connected" : "Connection", systemImage: "network")
+                            .labelStyle(.titleAndIcon).font(.subheadline)
+                    }
+                    .accessibilityIdentifier("connection-status")
+                    .accessibilityLabel("Connection")
+                    .accessibilityValue(board.state.label)
+                    .accessibilityHint("Edit server address")
                 }
             }
             .navigationDestination(for: BoardSession.self) { selected in
                 TerminalScreen(session: .constant(selected), endpoint: "", live: board, serverURL: serverURL, onEnd: {},
                                onSwitch: { path = [$0] }, onManage: { action = $0 }).id(selected.id)
+            }
+            .sheet(item: $detailRoute) { route in
+                let current = board.sessions.first { $0.id == route.session.id } ?? route.session
+                switch route {
+                case .activity: NativeSubagentActivityView(session: current)
+                case .pullRequests:
+                    NavigationStack {
+                        SessionContentView(server: serverURL, media: [], prs: current.prs, showsMedia: false)
+                            .toolbar { ToolbarItem(placement: .confirmationAction) {
+                                Button("Done") { detailRoute = nil }
+                            } }
+                    }
+                }
             }
             .sheet(item: $action) { route in
                 SessionActionSheet(route: route, serverURL: serverURL, preferences: preferences, hosts: board.hosts) { result in
@@ -225,30 +265,6 @@ struct LiveSessionListView: View {
             : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 8))
     }
 
-    private func row(_ session: BoardSession) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
-            adaptiveRow {
-                Text(session.name).font(.headline)
-                    .fixedSize(horizontal: false, vertical: dynamicTypeSize.isAccessibilitySize)
-                if !dynamicTypeSize.isAccessibilitySize { Spacer(minLength: 8) }
-                SessionStatus(status: session.status)
-            }
-            let metadata = [
-                preferences.bool("showProjectName", true) ? URL(fileURLWithPath: session.project).lastPathComponent : nil,
-                session.agent,
-                session.remote ? session.host : nil
-            ].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
-            if !metadata.isEmpty { Text(metadata).font(.caption).foregroundStyle(.secondary) }
-            if preferences.bool("showSessionIdPrefix"), let id = session.agentSessionID { Text(String(id.prefix(5))).font(.caption.monospaced()) }
-            if preferences.bool("showLastUserMessage", true) && !session.summary.isEmpty {
-                Text(session.summary).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
-            }
-            if !board.canOpen(session) {
-                Text(session.status == .sleeping ? "Wake in Agentboard to open" : "Remote attachment disabled by server")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-        }.padding(.vertical, 5)
-    }
 }
 
 struct ServerConnectionSheet: View {

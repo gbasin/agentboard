@@ -16,7 +16,7 @@ final class LiveUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-serverURL", "http://127.0.0.1:4151"]
         app.launch()
-        XCTAssertTrue(app.staticTexts["Connected"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.waitForBoardConnection(timeout: 15))
         return app
     }
     func open(_ name: String, app: XCUIApplication) {

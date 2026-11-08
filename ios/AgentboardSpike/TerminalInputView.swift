@@ -39,7 +39,7 @@ final class TerminalInputView: UITextView, UITextViewDelegate {
     }
 
     func textViewDidBeginEditing(_ textView: UITextView) { terminal?.inputFocused = true }
-    func textViewDidEndEditing(_ textView: UITextView) { terminal?.inputFocused = false }
+    func textViewDidEndEditing(_ textView: UITextView) { terminal?.inputFocused = false; terminal?.shift = false }
 
     func textViewDidChange(_ textView: UITextView) {
         // Keep composition in UIKit until the input method commits it. Never
@@ -82,8 +82,8 @@ final class TerminalInputView: UITextView, UITextViewDelegate {
         let control = "abcdefghijklmnopqrstuvwxyz".map {
             UIKeyCommand(input: String($0), modifierFlags: .control, action: #selector(terminalKey(_:)))
         }
-        let shifted = UIKeyCommand(input: "\t", modifierFlags: .shift, action: #selector(terminalKey(_:)))
-        return (plain + control + [shifted]).map {
+        let shifted = ["\t", "\r"].map { UIKeyCommand(input: $0, modifierFlags: .shift, action: #selector(terminalKey(_:))) }
+        return (plain + control + shifted).map {
             $0.wantsPriorityOverSystemBehavior = true
             return $0
         }
@@ -98,7 +98,7 @@ final class TerminalInputView: UITextView, UITextViewDelegate {
         let sequences = [UIKeyCommand.inputUpArrow: "\u{1b}[A", UIKeyCommand.inputDownArrow: "\u{1b}[B",
                          UIKeyCommand.inputRightArrow: "\u{1b}[C", UIKeyCommand.inputLeftArrow: "\u{1b}[D",
                          UIKeyCommand.inputEscape: "\u{1b}"]
-        terminal?.send(command.modifierFlags.contains(.shift) && input == "\t" ? "\u{1b}[Z" : sequences[input] ?? input)
+        terminal?.send(NativeTerminalModifiers.applyingShift(to: sequences[input] ?? input, active: command.modifierFlags.contains(.shift)))
     }
 }
 

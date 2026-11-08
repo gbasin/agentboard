@@ -16,9 +16,15 @@ struct TerminalKeyBar: View {
             key("Enter", symbol: "return", tint: true) { terminal.send("\r") }
             Button("esc") { terminal.send("\u{1b}") }.terminalKey().accessibilityLabel("Escape")
             Button("tab") { terminal.send("\t") }.terminalKey().accessibilityLabel("Tab")
-            key("Arrow keys", symbol: "arrow.up.and.down.and.arrow.left.and.right") { showArrows.toggle() }
+            key("Arrow keys and Shift", symbol: terminal.shift ? "shift.fill" : "arrow.up.and.down.and.arrow.left.and.right", tint: terminal.shift) { showArrows.toggle() }
+                .accessibilityIdentifier("Arrow keys")
                 .popover(isPresented: $showArrows) {
                     VStack(spacing: 4) {
+                        Button { terminal.toggleShift(); showArrows = false } label: {
+                            Label(terminal.shift ? "Shift on" : "Shift", systemImage: "shift")
+                                .frame(minHeight: 44)
+                        }.accessibilityValue(terminal.shift ? "On, next key" : "Off")
+                        Divider()
                         arrow("Up", symbol: "arrow.up", sequence: "\u{1b}[A")
                         HStack(spacing: 4) {
                             arrow("Left", symbol: "arrow.left", sequence: "\u{1b}[D")
@@ -40,8 +46,8 @@ struct TerminalKeyBar: View {
             }
         }
         .padding(.horizontal, 8).padding(.vertical, 6)
-        .background(.bar)
-        .overlay(alignment: .top) { Divider() }
+        .nativeGlassSurface(cornerRadius: 18)
+        .padding(.horizontal, 4).padding(.bottom, 4)
         }
         .sheet(isPresented: $showPaste, onDismiss: {
             if restoreInput { terminal.focus() }
@@ -84,7 +90,7 @@ private extension View {
             .font(.callout.weight(.medium)).lineLimit(1)
             .frame(minWidth: 44, maxWidth: .infinity, minHeight: 44)
             .foregroundStyle(active ? Color.accentColor : Color.primary)
-            .background(active ? Color.accentColor.opacity(0.12) : Color(uiColor: .tertiarySystemFill), in: RoundedRectangle(cornerRadius: 10))
+            .background(active ? Color.accentColor.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 10))
             .buttonStyle(.plain)
     }
 }

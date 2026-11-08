@@ -6,6 +6,7 @@ struct SessionContentView: View {
     let server: String
     let media: [MediaItem]
     let prs: [PullRequestItem]
+    var showsMedia = true
     @State private var selected: MediaItem?
     var body: some View {
         List {
@@ -14,7 +15,7 @@ struct SessionContentView: View {
                     ForEach(prs) { pr in NavigationLink("\(pr.repo) #\(pr.number)") { PullRequestView(server: server, item: pr) } }
                 }
             }
-            Section("Media and links") {
+            if showsMedia { Section {
                 ForEach(media) { item in
                     Button { selected = item } label: {
                         HStack {
@@ -29,9 +30,11 @@ struct SessionContentView: View {
                         }
                     }
                 }
-                if media.isEmpty { Text("No media found in this session.").foregroundStyle(.secondary) }
-            }
-        }.navigationTitle("Media and links").navigationBarTitleDisplayMode(.inline)
+                if media.isEmpty { Text("No media available in this session snapshot.").foregroundStyle(.secondary) }
+            } header: { Text("Media and links") } footer: {
+                Text("Showing media available in the session snapshot. Older servers may limit this list.")
+            } }
+        }.navigationTitle(showsMedia ? "Media and links" : "Pull requests").navigationBarTitleDisplayMode(.inline)
             .sheet(item: $selected) { item in MediaDetailView(server: server, items: media, initial: item) }
     }
 }

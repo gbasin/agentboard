@@ -17,6 +17,29 @@ struct BoardSession: Identifiable, Hashable {
     var lastActivity: String = ""
     var media: [MediaItem] = []
     var prs: [PullRequestItem] = []
+    var activity: NativeSessionActivity? = nil
+
+    var shortAgentID: String? {
+        guard let value = agentSessionID?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return nil }
+        return value.count <= 6 ? value : "\(value.prefix(3))…\(value.suffix(3))"
+    }
+
+    static func activityDate(_ value: String) -> Date? {
+        let parser = ISO8601DateFormatter()
+        parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = parser.date(from: value) { return date }
+        parser.formatOptions = [.withInternetDateTime]
+        return parser.date(from: value)
+    }
+
+    static func relativeActivity(_ value: String, now: Date = .now) -> String {
+        guard let date = activityDate(value) else { return "" }
+        let minutes = max(0, Int(now.timeIntervalSince(date) / 60))
+        if minutes < 1 { return "now" }
+        if minutes < 60 { return "\(minutes)m" }
+        if minutes < 1_440 { return "\(minutes / 60)h" }
+        return "\(minutes / 1_440)d"
+    }
 
     var orderKey: String {
         let agentID = agentSessionID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

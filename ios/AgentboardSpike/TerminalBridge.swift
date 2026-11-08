@@ -6,6 +6,7 @@ import Combine
 final class TerminalBridge: ObservableObject {
     @Published var connection = "Sample transcript"
     @Published var control = false
+    @Published var shift = false
     @Published var fontSize = 13
     @Published var inputFocused = false
     @Published var ready = false { didSet { if oldValue && !ready { clipboard.cancel() } } }
@@ -19,9 +20,14 @@ final class TerminalBridge: ObservableObject {
               let json = String(data: data, encoding: .utf8) else { return }
         webView?.evaluateJavaScript("window.agentboard?.\(method)(\(json))", completionHandler: nil)
     }
-    func send(_ value: String) { call("send", ["data": value]) }
+    func send(_ value: String) {
+        let output = NativeTerminalModifiers.applyingShift(to: value, active: shift)
+        if shift { shift = false }
+        call("send", ["data": output])
+    }
     func focus() { inputView?.becomeFirstResponder() }
-    func hideKeyboard() { inputView?.resignFirstResponder() }
+    func hideKeyboard() { shift = false; inputView?.resignFirstResponder() }
+    func toggleShift() { shift.toggle() }
     func toggleControl() { control.toggle(); call("control", ["active": control]) }
     func paste(_ value: String) { call("paste", ["data": value]) }
     func setFont(_ size: Int) { fontSize = size; UserDefaults.standard.set(size, forKey: "terminalFontSize"); call("font", ["size": size]) }
@@ -154,6 +160,18 @@ struct TerminalWebView: UIViewRepresentable {
             }
             if let status = data["status"] as? String { bridge.connection = status }
             if let control = data["control"] as? Bool { bridge.control = control }
+        }
+    }
+}
+
+/// Matches the PWA touch controls. LF avoids tmux treating Shift-Return as submit.
+enum NativeTerminalModifiers {
+    static func applyingShift(to value: String, active: Bool) -> String {
+        guard active else { return value }
+        switch value {
+        case "\t": return "\u{1b}[Z"
+        case "\r": return "\n"
+        default: return value
         }
     }
 }

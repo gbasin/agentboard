@@ -25,6 +25,15 @@ struct TerminalScreen: View {
         TerminalWebView(bridge: terminal, session: session, endpoint: endpoint, live: live)
             .padding(.horizontal, 8)
             .background(Color(uiColor: .systemBackground))
+            .safeAreaInset(edge: .top, spacing: 0) {
+                let summary = NativeMediaSummary(items: (terminal.liveSession ?? session).media)
+                if live != nil && summary.total > 0 {
+                    HStack {
+                        Spacer()
+                        NativeMediaSummaryButton(summary: summary) { terminal.hideKeyboard(); showContent = true }
+                    }.padding(.horizontal, 12).padding(.vertical, 4)
+                }
+            }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 VStack(spacing: 0) {
                     if live != nil && !terminal.ready {
@@ -33,7 +42,7 @@ struct TerminalScreen: View {
                             Spacer()
                             Button("Reconnect") { live?.reconnect() }.font(.caption)
                         }.padding(.horizontal, 12).padding(.vertical, 8)
-                            .background(.bar).accessibilityIdentifier("terminal-connection")
+                            .nativeGlassSurface().padding(.horizontal, 4).accessibilityIdentifier("terminal-connection")
                     }
                     TerminalKeyBar(terminal: terminal).disabled(live != nil && !terminal.ready)
                 }
@@ -41,11 +50,15 @@ struct TerminalScreen: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    VStack(spacing: 2) {
-                        Text(terminal.liveSession?.name ?? session.name).font(.headline).lineLimit(1)
-                        SessionStatus(status: terminal.liveSession?.status ?? session.status)
-                    }
-                    .accessibilityElement(children: .combine)
+                    if let live, onSwitch != nil {
+                        Menu {
+                            ForEach(live.sessions) { item in
+                                Button(item.name) { onSwitch?(item) }.disabled(!live.canOpen(item))
+                            }
+                        } label: { sessionTitle(showDisclosure: true) }
+                        .accessibilityLabel("Switch session, \(terminal.liveSession?.name ?? session.name)")
+                        .accessibilityValue((terminal.liveSession ?? session).status.rawValue)
+                    } else { sessionTitle(showDisclosure: false) }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
@@ -149,6 +162,18 @@ struct TerminalScreen: View {
             .enableInjection()
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active && live == nil { terminal.call("resume") }
+                if phase != .active { terminal.shift = false }
             }
     }
+    private func sessionTitle(showDisclosure: Bool) -> some View {
+        VStack(spacing: 2) {
+            HStack(spacing: 4) {
+                Text(terminal.liveSession?.name ?? session.name).font(.headline).lineLimit(1)
+                if showDisclosure { Image(systemName: "chevron.down").font(.caption2.weight(.semibold)) }
+            }
+            SessionStatus(status: terminal.liveSession?.status ?? session.status)
+        }.frame(minHeight: 44).foregroundStyle(.primary)
+            .accessibilityElement(children: .combine)
+    }
+
 }

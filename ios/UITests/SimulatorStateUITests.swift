@@ -52,7 +52,7 @@ final class SimulatorStateUITests: XCTestCase {
     }
     func testLiveTerminalRotatesWithKeyboard() {
         let app = launch(server: "http://127.0.0.1:4151")
-        XCTAssertTrue(app.staticTexts["Connected"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.waitForBoardConnection(timeout: 15))
         capture("sim-catalog")
         let search = app.searchFields["Find a session"]
         search.tap(); search.typeText("native-live-one\n")
