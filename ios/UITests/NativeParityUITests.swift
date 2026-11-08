@@ -50,6 +50,17 @@ final class NativeParityUITests: XCTestCase {
     private func tap(_ title: String, in app: XCUIApplication, preferUp: Bool = false) {
         let button = app.buttons[title]; reveal(button, in: app, preferUp: preferUp); button.tap()
     }
+    private func tapMenu(_ title: String, in app: XCUIApplication) {
+        let button = app.buttons[title]
+        for _ in 0..<12 {
+            // Context menus can overlay the navigation bar; form viewport bounds do not apply.
+            if button.exists && button.isHittable { button.tap(); return }
+            let menu = app.collectionViews.allElementsBoundByIndex.last ?? app.collectionViews.firstMatch
+            menu.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.25))
+                .press(forDuration: 0.05, thenDragTo: menu.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.10)))
+        }
+        XCTFail("Menu action is unreachable: \(title)")
+    }
     private func search(_ value: String, in app: XCUIApplication) {
         let search = app.searchFields["Search saved sessions"]; XCTAssertTrue(search.waitForExistence(timeout: 5)); replace(search, value); search.typeText("\n")
     }
@@ -77,11 +88,11 @@ final class NativeParityUITests: XCTestCase {
         capture("create-presets")
         app.buttons["Create"].tap()
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 15))
-        app.buttons["Session actions"].tap(); tap("Duplicate session", in: app)
+        app.buttons["Session actions"].tap(); tapMenu("Duplicate session", in: app)
         XCTAssertTrue(app.textFields["session-command"].waitForExistence(timeout: 5))
         XCTAssertTrue((app.textFields["session-project"].value as? String ?? "").hasSuffix("/tmp/ab-ios-parity/project"))
         app.buttons["Cancel"].tap()
-        app.buttons["Session actions"].tap(); tap("Hibernate session", in: app)
+        app.buttons["Session actions"].tap(); tapMenu("Hibernate session", in: app)
         app.buttons["confirm-end-session"].tap()
         XCTAssertTrue(app.navigationBars["Sessions"].waitForExistence(timeout: 15))
         app.buttons["Library"].tap(); search(name, in: app)
@@ -121,16 +132,16 @@ final class NativeParityUITests: XCTestCase {
         app.buttons["Filter and sort"].tap(); XCTAssertTrue(app.navigationBars["Filter and sort"].waitForExistence(timeout: 5)); capture("filters")
         tap("Clear filters", in: app); app.buttons["Done"].tap()
         openSession("native-live-one", in: app)
-        app.buttons["Session actions"].tap(); tap("Media and links", in: app)
+        app.buttons["Session actions"].tap(); tapMenu("Media and links", in: app)
         XCTAssertTrue(app.navigationBars["Media and links"].waitForExistence(timeout: 5)); capture("media-empty"); app.buttons["Done"].tap()
-        app.buttons["Session actions"].tap(); tap("Attach file", in: app)
+        app.buttons["Session actions"].tap(); tapMenu("Attach file", in: app)
         XCTAssertTrue(app.buttons["Choose file"].waitForExistence(timeout: 5)); capture("attach-file")
         app.buttons["Choose file"].tap(); XCTAssertTrue(app.buttons["Cancel"].waitForExistence(timeout: 5)); app.buttons["Cancel"].tap(); app.buttons["Done"].tap()
         app.buttons["Paste text"].tap()
         let editor = app.textViews["Text to paste"]; XCTAssertTrue(editor.waitForExistence(timeout: 5))
         editor.tap(); editor.typeText("printf 'NUM_%s_OK\\n' ")
         app.buttons["Insert"].tap()
-        app.buttons["Session actions"].tap(); tap("Number keys", in: app)
+        app.buttons["Session actions"].tap(); tapMenu("Number keys", in: app)
         XCTAssertTrue(app.buttons["7"].waitForExistence(timeout: 5))
         let keyRows = ["1", "4", "7", ".", "Delete"].map { app.buttons[$0] }
         for key in keyRows { XCTAssertGreaterThanOrEqual(key.frame.height, 44); XCTAssertTrue(key.isHittable) }
@@ -172,7 +183,7 @@ final class NativeParityUITests: XCTestCase {
         let app = app()
         openSession("native-live-one", in: app)
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10))
-        app.buttons["Session actions"].tap(); tap("Attach file", in: app)
+        app.buttons["Session actions"].tap(); tapMenu("Attach file", in: app)
         app.buttons["Choose photo"].tap()
         sleep(2)
         let notice = app.otherElements["PXGSingleViewContainerView_AX"]
@@ -199,7 +210,7 @@ final class NativeParityUITests: XCTestCase {
         let app = app()
         openSession("native-live-one", in: app)
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10))
-        app.buttons["Session actions"].tap(); tap("Attach file", in: app)
+        app.buttons["Session actions"].tap(); tapMenu("Attach file", in: app)
         app.buttons["Choose file"].tap()
         XCTAssertTrue(app.buttons["Browse"].waitForExistence(timeout: 5)); app.buttons["Browse"].tap()
         if app.buttons["Browse"].exists { app.buttons["Browse"].tap() }
