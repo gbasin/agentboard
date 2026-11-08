@@ -7,9 +7,14 @@ permissions:
   contents: read
 jobs:
   simulator:
+    strategy:
+      fail-fast: false
+      matrix:
+        appearance: [light, dark]
     runs-on: macos-26
     timeout-minutes: 60
     env:
+      IOS_E2E_MODE: ${{ matrix.appearance }}
       # Runner inventory: https://github.com/actions/runner-images/blob/main/images/macos/macos-26-arm64-Readme.md
       DEVELOPER_DIR: /Applications/Xcode_26.4.app/Contents/Developer
     steps:
@@ -25,7 +30,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: native-ios-results
+          name: native-ios-results-${{ matrix.appearance }}
           path: |
             ios/evidence/*.xcresult
             /tmp/ab-ios-parity/*.log

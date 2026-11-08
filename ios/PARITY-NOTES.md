@@ -23,6 +23,7 @@ This is a running record, not an approved feature plan. Implementation follows t
 - Use one attachment review surface at a time. Rendering the same controller beneath a presented upload sheet exposed duplicate accessibility controls; hide the underlying review while the sheet owns it.
 - Landscape keyboard space is a hard constraint: a second status/media row reduced the terminal to 8 points. Move those same controls into native navigation in compact height; verify both media-rich and shell sessions with the keyboard open.
 - Long creation forms can retain the keyboard while scrolling at maximum text size. Consider a consistent Done/on-submit affordance after parity; do not add redundant keyboard controls without testing the existing dismissal behavior.
+- A hosted failure capture exposed a portrait media count wrapping “90” into two lines. The existing ViewThatFits summary must reject compressed detail layouts and use its compact total; preserve all counts in the accessibility label.
 - Keep error recovery actions visible at maximum Dynamic Type; lazy native rows require scrolling in tests, not smaller product text.
 
 ## 3. Possible gaps or additional features
@@ -49,3 +50,5 @@ This is a running record, not an approved feature plan. Implementation follows t
 - 2026-11-08: The broad light run passed 71 native tests and 32 UI workflows, found the landscape-height regression, and skipped the opt-in tailnet test. The rotation fix and explicit read-only tailnet-address check passed targeted reruns. Both landscape workflows passed in light and dark/maximum text; the scoped visual review returned ship. The full dark matrix is running.
 
 - 2026-11-08: The broad dark/maximum-text run passed 23/26 UI tests. Its three failures were test navigation: offscreen media rows and scrolling a form behind the keyboard. Both media workflows passed after catalog search; creation/duplicate/hibernate, settings/destinations, and file/photo insertion passed together after separating form scrolling from context-menu actions (4/4). Product behavior was unchanged by these harness corrections. All six affected light workflows also passed together: creation/duplicate/hibernate, settings/destinations, file/photo insertion, media search/paging and live activity. Hosted native CI remains pending.
+
+- 2026-11-08: Hosted native CI completed: 71 unit tests passed; light UI had two failures during terminal startup. WebView existence preceded terminal readiness, and the menu helper scrolled past its target during the startup update. Readiness waits and directional menu scrolling are being validated. Split light/dark into independent CI jobs because build plus light alone took approximately 53 minutes; a 60-minute combined job cannot reliably finish both.

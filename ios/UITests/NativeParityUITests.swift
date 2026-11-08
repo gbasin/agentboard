@@ -51,13 +51,14 @@ final class NativeParityUITests: XCTestCase {
         let button = app.buttons[title]; reveal(button, in: app, preferUp: preferUp); button.tap()
     }
     private func tapMenu(_ title: String, in app: XCUIApplication) {
-        let button = app.buttons[title]
         for _ in 0..<12 {
+            let button = app.buttons[title]
             // Context menus can overlay the navigation bar; form viewport bounds do not apply.
             if button.exists && button.isHittable { button.tap(); return }
             let menu = app.collectionViews.allElementsBoundByIndex.last ?? app.collectionViews.firstMatch
-            menu.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.25))
-                .press(forDuration: 0.05, thenDragTo: menu.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.10)))
+            let above = button.exists && button.frame.midY < menu.frame.minY + 20
+            menu.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: above ? 0.25 : 0.65))
+                .press(forDuration: 0.05, thenDragTo: menu.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: above ? 0.65 : 0.25)))
         }
         XCTFail("Menu action is unreachable: \(title)")
     }
@@ -88,6 +89,7 @@ final class NativeParityUITests: XCTestCase {
         capture("create-presets")
         app.buttons["Create"].tap()
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 15))
+        XCTAssertTrue(app.waitForTerminalInput(timeout: 20))
         app.buttons["Session actions"].tap(); tapMenu("Duplicate session", in: app)
         XCTAssertTrue(app.textFields["session-command"].waitForExistence(timeout: 5))
         XCTAssertTrue((app.textFields["session-project"].value as? String ?? "").hasSuffix("/tmp/ab-ios-parity/project"))

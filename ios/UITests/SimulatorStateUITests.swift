@@ -101,6 +101,7 @@ final class SimulatorStateUITests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 5)); row.tap()
         let terminal = app.webViews.firstMatch
         XCTAssertTrue(terminal.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.waitForTerminalInput(timeout: 20))
         terminal.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.65)).tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         XCUIDevice.shared.orientation = .landscapeLeft

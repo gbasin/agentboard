@@ -47,4 +47,4 @@ xcrun simctl addmedia "$udid" "$fixture_root/photo.png"
 app_data=$(xcrun simctl get_app_container "$udid" dev.agentboard.ios-spike data)
 mkdir -p "$app_data/Documents"
 cp "$fixture_root/upload.txt" "$app_data/Documents/parity-upload.txt"
-./ios/scripts/test-e2e.sh "$udid"
+./ios/scripts/test-e2e.sh "$udid" "${IOS_E2E_MODE:-all}"
