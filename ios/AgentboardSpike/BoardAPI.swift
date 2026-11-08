@@ -58,6 +58,8 @@ struct CommandPreset: Codable, Identifiable, Equatable {
 }
 struct MediaItem: Decodable, Hashable, Identifiable {
     let kind: String; let url: String; let mediaType: String?; let bytes: Int?; let label: String?
+    var externalUrl: String? = nil
+    var sourceText: String? = nil
     var id: String { url }
 }
 struct PullRequestItem: Decodable, Hashable, Identifiable {
@@ -68,6 +70,7 @@ struct AgentLogSession: Decodable, Identifiable, Hashable {
     let sessionId: String; let displayName: String; let projectPath: String; let agentType: String
     let lastActivityAt: String; let lastUserMessage: String?; let isHibernating: Bool?; let lastResumeError: String?
     let prs: [PullRequestItem]?; let media: [MediaItem]?
+    var mediaSummary: MediaCatalogSummary? = nil
     var host: String? = nil
     var id: String { sessionId }
 }

@@ -18,6 +18,7 @@ struct BoardSession: Identifiable, Hashable {
     var media: [MediaItem] = []
     var prs: [PullRequestItem] = []
     var activity: NativeSessionActivity? = nil
+    var mediaSummary: MediaCatalogSummary? = nil
 
     var shortAgentID: String? {
         guard let value = agentSessionID?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return nil }

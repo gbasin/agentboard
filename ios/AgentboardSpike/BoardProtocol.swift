@@ -19,6 +19,7 @@ struct RemoteSession: Decodable {
     let lastActivity: String?
     let media: [MediaItem]?
     let prs: [PullRequestItem]?
+    let mediaSummary: MediaCatalogSummary?
     let activity: NativeSessionActivity?
 
     var boardSession: BoardSession {
@@ -26,7 +27,7 @@ struct RemoteSession: Decodable {
               status: isHibernating == true ? .sleeping : BoardSession.Status(wireValue: status),
               summary: lastUserMessage ?? "", host: host, remote: remote ?? false, source: source,
               boardID: boardSessionId, agentSessionID: agentSessionId, command: command,
-              createdAt: createdAt ?? "", lastActivity: lastActivity ?? "", media: media ?? [], prs: prs ?? [], activity: activity)
+              createdAt: createdAt ?? "", lastActivity: lastActivity ?? "", media: media ?? [], prs: prs ?? [], activity: activity, mediaSummary: mediaSummary)
     }
 }
 

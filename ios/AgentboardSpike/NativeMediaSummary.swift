@@ -1,19 +1,25 @@
 import SwiftUI
 
-/// Counts the available catalog snapshot, which older servers may truncate.
-/// These are deliberately not advertised as authoritative transcript totals.
+/// Uses indexed totals when supplied; legacy snapshots remain explicitly labeled as available media.
 struct NativeMediaSummary: Equatable {
     let images: Int
     let links: Int
     let files: Int
+    var catalog: MediaCatalogSummary? = nil
     init(items: [MediaItem]) {
         images = items.filter { $0.kind == "image" }.count
         links = items.filter { $0.kind == "link" }.count
         files = items.filter { $0.kind != "image" && $0.kind != "link" }.count
     }
-    var total: Int { images + links + files }
+    init(catalog: MediaCatalogSummary) {
+        images = catalog.images; links = catalog.links
+        files = catalog.documents + (catalog.previews ?? 0); self.catalog = catalog
+    }
+    var total: Int { catalog?.total ?? images + links + files }
+    var caption: String { catalog?.discovery?.running == true ? "Discovering" : catalog == nil ? "Available" : "Media" }
+    var canBrowse: Bool { total > 0 || catalog != nil }
     var accessibilityDescription: String {
-        "Available media: \(images) images, \(links) links, \(files) files"
+        "\(catalog == nil ? "Available media" : "Media"): \(images) images, \(links) links, \(files) files"
     }
 }
 
@@ -24,12 +30,12 @@ struct NativeMediaSummaryButton: View {
         Button(action: action) {
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 12) {
-                    Text("Available")
+                    Text(summary.caption)
                     Label("\(summary.images)", systemImage: "photo")
                     Label("\(summary.links)", systemImage: "link")
                     Label("\(summary.files)", systemImage: "doc")
                 }
-                Label("\(summary.total) available", systemImage: "photo.on.rectangle")
+                Label("\(summary.total) \(summary.catalog == nil ? "available" : "items")", systemImage: "photo.on.rectangle")
             }
             .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
             .padding(.horizontal, 14).frame(minHeight: 44)

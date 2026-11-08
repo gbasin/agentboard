@@ -26,8 +26,9 @@ struct TerminalScreen: View {
             .padding(.horizontal, 8)
             .background(Color(uiColor: .systemBackground))
             .safeAreaInset(edge: .top, spacing: 0) {
-                let summary = NativeMediaSummary(items: (terminal.liveSession ?? session).media)
-                if live != nil && summary.total > 0 {
+                let current = terminal.liveSession ?? session
+                let summary = current.mediaSummary.map(NativeMediaSummary.init(catalog:)) ?? NativeMediaSummary(items: current.media)
+                if live != nil && summary.canBrowse {
                     HStack {
                         Spacer()
                         NativeMediaSummaryButton(summary: summary) { terminal.hideKeyboard(); showContent = true }
@@ -140,7 +141,7 @@ struct TerminalScreen: View {
                 }
             }
             .sheet(isPresented: $showContent) { NavigationStack {
-                SessionContentView(server: serverURL, media: (terminal.liveSession ?? session).media, prs: (terminal.liveSession ?? session).prs)
+                SessionContentView(server: serverURL, media: (terminal.liveSession ?? session).media, prs: (terminal.liveSession ?? session).prs, sessionID: (terminal.liveSession ?? session).agentSessionID, catalog: (terminal.liveSession ?? session).mediaSummary)
                     .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showContent = false } } }
             } }
             .sheet(isPresented: $showTranscript) { NavigationStack {

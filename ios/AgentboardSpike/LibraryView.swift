@@ -201,8 +201,8 @@ struct AgentHistoryView: View {
                     Button("Rename conversation") { newName = renamed[session.id] ?? session.displayName; renaming = session }.disabled(busy != nil)
                     Button(sleeping ? "Wake" : "Resume") { action("session-wake", session) }.disabled(busy != nil)
                     if sleeping { Button("Move to history") { action("session-move-to-history", session) }.disabled(busy != nil) }
-                    if !(session.media ?? []).isEmpty || !(session.prs ?? []).isEmpty {
-                        NavigationLink("Media and links") { SessionContentView(server: server, media: session.media ?? [], prs: session.prs ?? []) }
+                    if session.mediaSummary != nil || !(session.media ?? []).isEmpty || !(session.prs ?? []).isEmpty {
+                        NavigationLink("Media and links") { SessionContentView(server: server, media: session.media ?? [], prs: session.prs ?? [], sessionID: session.sessionId, catalog: session.mediaSummary) }
                     }
                 }
             }

@@ -7,7 +7,16 @@ struct SessionContentView: View {
     let media: [MediaItem]
     let prs: [PullRequestItem]
     var showsMedia = true
+    var sessionID: String? = nil
+    var catalog: MediaCatalogSummary? = nil
+    @StateObject private var pages = MediaCatalogModel()
     @State private var selected: MediaItem?
+    @State private var search = ""
+    @State private var kind = ""
+    @Environment(\.scenePhase) private var scenePhase
+    private var paginated: Bool { catalog != nil && sessionID != nil && showsMedia }
+    private var items: [MediaItem] { paginated ? pages.page?.items ?? [] : media }
+    private var requestKey: String { "\(server)|\(sessionID ?? "")|\(catalog?.identity ?? "")|\(kind)|\(search)" }
     var body: some View {
         List {
             if !prs.isEmpty {
@@ -15,27 +24,108 @@ struct SessionContentView: View {
                     ForEach(prs) { pr in NavigationLink("\(pr.repo) #\(pr.number)") { PullRequestView(server: server, item: pr) } }
                 }
             }
-            if showsMedia { Section {
-                ForEach(media) { item in
-                    Button { selected = item } label: {
-                        HStack {
-                            if item.kind == "image", let url = resolved(item.url, server: server) {
-                                AsyncImage(url: url) { image in image.resizable().scaledToFit() } placeholder: { Image(systemName: "photo") }
-                                    .frame(width: 64, height: 64)
-                            } else { Image(systemName: item.kind == "link" ? "link" : "doc").frame(width: 44, height: 44) }
-                            VStack(alignment: .leading) {
-                                Text(item.label ?? item.mediaType ?? item.kind.capitalized).foregroundStyle(.primary)
-                                if let bytes = item.bytes { Text(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)).font(.caption) }
-                            }
-                        }
+            if paginated {
+                Section {
+                    Picker("Show", selection: $kind) {
+                        Text("All").tag(""); Text("Images and files").tag("media")
+                        Text("Links").tag("links"); Text("Previews").tag("previews")
                     }
+                    if let discovery = pages.summary?.discovery, discovery.running {
+                        ProgressView("Discovering media…")
+                        if let read = discovery.bytesRead, let total = discovery.bytesTotal, total > 0 {
+                            ProgressView(value: Double(read), total: Double(total)).accessibilityLabel("Transcript indexing progress")
+                        }
+                        if !pages.loading { Button("Continue discovery") { pages.refresh() } }
+                    }
+                    if let discovery = pages.summary?.discovery, discovery.status == "failed" {
+                        Text(discovery.message ?? "Media discovery failed.")
+                        Button("Retry discovery") { pages.refresh() }
+                    }
+                    if pages.changed { Button("Media changed · Refresh") { selected = nil; pages.refresh() }.accessibilityIdentifier("refresh-changed-media") }
+                    if case .failed(let message) = pages.state {
+                        Text(message).foregroundStyle(.secondary)
+                        Button("Retry media") { pages.refresh() }
+                    }
+                    let omitted = (pages.summary?.omittedRecords ?? 0) + (pages.summary?.omittedItems ?? 0)
+                    if omitted > 0 { Text("Some transcript entries or media items could not be indexed (\(omitted)).").font(.footnote) }
                 }
-                if media.isEmpty { Text("No media available in this session snapshot.").foregroundStyle(.secondary) }
-            } header: { Text("Media and links") } footer: {
-                Text("Showing media available in the session snapshot. Older servers may limit this list.")
+            }
+            if showsMedia { Section {
+                ForEach(items) { item in
+                    Button { selected = item } label: { MediaCatalogRow(item: item, server: server) }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("media-item-\(item.id)")
+                }
+                if pages.loading { ProgressView("Loading media…") }
+                if items.isEmpty && !pages.loading {
+                    Text(paginated ? "No matching media found." : "No media available in this session snapshot.").foregroundStyle(.secondary)
+                }
+            } header: {
+                Text(paginated ? "Media and links · \(pages.page?.total ?? catalog?.total ?? 0)" : "Media and links")
+            } footer: {
+                if !paginated { Text("Showing media available in the session snapshot. Older servers may limit this list.") }
             } }
-        }.navigationTitle(showsMedia ? "Media and links" : "Pull requests").navigationBarTitleDisplayMode(.inline)
-            .sheet(item: $selected) { item in MediaDetailView(server: server, items: media, initial: item) }
+
+        }
+        .safeAreaInset(edge: .bottom) {
+            if paginated && pages.page != nil {
+                HStack {
+                    Button { selected = nil; pages.previous() } label: {
+                        Image(systemName: "chevron.left").frame(width: 44, height: 44).contentShape(Rectangle())
+                    }.accessibilityLabel("Previous page").disabled(!pages.canPrevious)
+                    Spacer()
+                    Menu {
+                        Button("Back to first page") { selected = nil; pages.refresh() }
+                    } label: { Text("Page \(pages.pageNumber + 1)").font(.callout).monospacedDigit().frame(minHeight: 44) }
+                        .disabled(pages.loading)
+                    Spacer()
+                    Button { selected = nil; pages.next() } label: {
+                        Image(systemName: "chevron.right").frame(width: 44, height: 44).contentShape(Rectangle())
+                    }.accessibilityLabel("Next page").disabled(!pages.canNext)
+                }.buttonStyle(.plain).padding(.horizontal, 12).nativeGlassSurface(cornerRadius: 24).padding(.horizontal)
+            }
+        }
+        .navigationTitle(showsMedia ? "Media and links" : "Pull requests").navigationBarTitleDisplayMode(.inline)
+        .modifier(MediaSearch(enabled: paginated, text: $search))
+        .task(id: requestKey) {
+            guard paginated, let catalog, let sessionID else { return }
+            pages.cancel(); selected = nil
+            do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
+            pages.configure(source: .init(server: server, sessionID: sessionID, identity: catalog.identity), summary: catalog, kind: kind, search: search)
+        }
+        .onChange(of: catalog) { _, value in if let value { pages.observe(value) } }
+        .onChange(of: scenePhase) { _, phase in if phase == .active { pages.resume() } else { pages.cancel() } }
+        .onDisappear { pages.cancel() }
+        .refreshable { if paginated { selected = nil; pages.refresh() } }
+        .sheet(item: $selected) { item in MediaDetailView(server: server, items: items, initial: item, source: pages.source) }
+    }
+}
+
+private struct MediaCatalogRow: View {
+    let item: MediaItem
+    let server: String
+    var body: some View {
+        HStack {
+            if item.kind == "image", let url = thumbnailURL {
+                AsyncImage(url: url) { image in image.resizable().scaledToFit() } placeholder: { Image(systemName: "photo") }
+                    .frame(width: 64, height: 64)
+            } else { Image(systemName: item.kind == "link" ? "link" : "doc").frame(width: 44, height: 44) }
+            VStack(alignment: .leading) {
+                Text(item.label ?? item.mediaType ?? item.kind.capitalized).foregroundStyle(.primary)
+                if let text = item.sourceText { Text(text).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
+                if let bytes = item.bytes { Text(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)).font(.caption) }
+            }
+        }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).contentShape(Rectangle())
+    }
+    private var thumbnailURL: URL? {
+        guard let url = resolved(item.url, server: server) else { return nil }
+        if item.url.hasPrefix("/api/session-media/"), var parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
+           parts.queryItems?.contains(where: { $0.name == "digest" }) == true {
+            parts.queryItems = (parts.queryItems ?? []) + [.init(name: "thumbnail", value: "1")]
+            return parts.url
+        }
+        guard let bytes = item.bytes, bytes >= 0, bytes <= 64 * 1024 else { return nil }
+        return url
     }
 }
 func resolved(_ value: String, server: String) -> URL? {
@@ -47,11 +137,15 @@ struct MediaDetailView: View {
     let server: String
     let items: [MediaItem]
     let initial: MediaItem
+    var source: MediaCatalogSource? = nil
+    @StateObject private var imageNavigation = MediaImageNavigation()
+    @State private var navigated: MediaItem?
     @State private var index = 0
     @State private var scale = 1.0
     @State private var gestureStartScale = 1.0
     @Environment(\.dismiss) private var dismiss
-    private var item: MediaItem { items.indices.contains(index) ? items[index] : initial }
+    private var item: MediaItem { navigated ?? (items.indices.contains(index) ? items[index] : initial) }
+    private var indexedImage: Bool { source != nil && item.kind == "image" && item.url.contains("digest=") }
     var body: some View {
         NavigationStack {
             Group {
@@ -64,22 +158,46 @@ struct MediaDetailView: View {
                                 else { ProgressView("Loading image…") }
                             }
                         }.simultaneousGesture(MagnifyGesture().onChanged { scale = min(5, max(1, gestureStartScale * $0.magnification)) }.onEnded { _ in gestureStartScale = scale })
-                    } else { DocumentWebView(url: url) }
+                    } else if item.kind == "document" { NativeDocumentPreview(url: url, mediaType: item.mediaType) }
+                    else { DocumentWebView(url: url) }
                 } else { ContentUnavailableView("Unsupported link", systemImage: "link") }
             }
             .navigationTitle(item.label ?? "Media").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
                 ToolbarItemGroup(placement: .bottomBar) {
-                    Button("Previous", systemImage: "chevron.left") { index -= 1; scale = 1; gestureStartScale = 1 }.disabled(index == 0)
-                    Text("\(index + 1)/\(items.count)").monospacedDigit().fixedSize().accessibilityLabel("\(index + 1) of \(items.count)")
-                    Button("Next", systemImage: "chevron.right") { index += 1; scale = 1; gestureStartScale = 1 }.disabled(index + 1 >= items.count)
-                    if let url = resolved(item.url, server: server) { ShareLink(item: url) { Image(systemName: "square.and.arrow.up") }.accessibilityLabel("Share media"); Link(destination: url) { Image(systemName: "safari") }.accessibilityLabel("Open in browser") }
+                    if indexedImage {
+                        Button("Previous", systemImage: "chevron.left") { navigate(imageNavigation.neighbors?.previous) }
+                            .disabled(imageNavigation.loading || imageNavigation.neighbors?.previous == nil)
+                        Button("Next", systemImage: "chevron.right") { navigate(imageNavigation.neighbors?.next) }
+                            .disabled(imageNavigation.loading || imageNavigation.neighbors?.next == nil)
+                    } else {
+                        Button("Previous", systemImage: "chevron.left") { index -= 1; scale = 1; gestureStartScale = 1 }.disabled(index == 0)
+                        Text("\(index + 1)/\(items.count)").monospacedDigit().fixedSize().accessibilityLabel("\(index + 1) of \(items.count)")
+                        Button("Next", systemImage: "chevron.right") { index += 1; scale = 1; gestureStartScale = 1 }.disabled(index + 1 >= items.count)
+                    }
+                    if let url = resolved(item.externalUrl ?? item.url, server: server) {
+                        if item.kind != "document" { ShareLink(item: url) { Image(systemName: "square.and.arrow.up") }.accessibilityLabel("Share media") }
+                        Link(destination: url) { Image(systemName: "safari") }.accessibilityLabel("Open in browser") }
                 }
             }
+            .safeAreaInset(edge: .bottom) {
+                if let error = imageNavigation.error {
+                    VStack { Text(error).font(.caption); Button("Retry image navigation") {
+                        Task { if let source { await imageNavigation.load(source: source, item: item) } }
+                    } }.padding().nativeGlassSurface()
+                }
+            }
+            .task(id: item.url) { if indexedImage, let source { await imageNavigation.load(source: source, item: item) } }
+            .onDisappear { imageNavigation.clear() }
             .onAppear { index = items.firstIndex(of: initial) ?? 0 }
         }
     }
+    private func navigate(_ target: MediaItem?) {
+        guard let target else { return }
+        imageNavigation.clear(); navigated = target; scale = 1; gestureStartScale = 1
+    }
+
 }
 /// Keeps navigation state separate from the original URL so redirects do not reload forever.
 struct DocumentWebView: View {
@@ -191,5 +309,14 @@ struct PullRequestView: View {
     private func load() async {
         do { info = try await BoardAPI(server).request("api/pr-checks", query: ["url": item.url]); error = nil }
         catch { self.error = error.localizedDescription }
+    }
+}
+
+private struct MediaSearch: ViewModifier {
+    let enabled: Bool
+    @Binding var text: String
+    @ViewBuilder func body(content: Content) -> some View {
+        if enabled { content.searchable(text: $text, prompt: "Search media and links") }
+        else { content }
     }
 }
