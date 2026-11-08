@@ -4,7 +4,7 @@ import Combine
 /// Uploads finish before any insertion. Generation checks prevent delivery to a replacement terminal.
 @MainActor final class NativePasteController: ObservableObject {
     enum State: Equatable {
-        case idle, reading, uploading, prepared([String]), failed(String)
+        case idle, reading, reviewing, uploading, prepared([String]), failed(String)
     }
     @Published private(set) var state: State = .idle
     typealias Upload = (NativePasteFile) async throws -> String
@@ -25,6 +25,16 @@ import Combine
     private var paths: [String] = []
     private var immediate = false
     private var recoverable = false
+    var reviewFiles: [NativePasteFile] { state == .reviewing ? pending?.files ?? [] : [] }
+    var reviewText: String { state == .reviewing ? pending?.text ?? "" : "" }
+    var reviewAction: String { immediate ? (reviewFiles.isEmpty ? "Insert text" : "Insert attachments") : "Upload files" }
+    func confirmReview() { guard state == .reviewing else { return }; run() }
+    func removeReviewFile(at index: Int) {
+        guard state == .reviewing, pending?.files.indices.contains(index) == true else { return }
+        objectWillChange.send()
+        pending?.files.remove(at: index)
+        if pending?.isEmpty == true { advance() }
+    }
     var busy: Bool { state == .reading || state == .uploading }
     var canRetry: Bool { pending != nil && recoverable }
 
@@ -50,7 +60,13 @@ import Combine
     }
     private func begin(_ request: Request) {
         switch request {
-        case .paste(let payload, let immediately): pending = payload; immediate = immediately; run()
+        case .paste(let payload, let immediately):
+            pending = payload; immediate = immediately
+            do {
+                try payload.validate()
+                if remote && !payload.files.isEmpty { throw SessionActionError(message: "File uploads are unavailable for SSH sessions.") }
+                if payload.files.isEmpty { run() } else { state = .reviewing }
+            } catch { state = .failed(error.localizedDescription) }
         case .readFailure(let message): state = .failed(message)
         case .providers(let providers):
             let epoch = generation

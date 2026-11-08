@@ -129,7 +129,7 @@ Historical evidence in `evidence/`:
 
 ## Full parity regression command
 
-Prepare the private backend at `0e204cf` or a compatible newer revision, seeded conversations, file/photo fixtures, port-4149 shell fixture, port-4190 PR proxy, port-4192 parity-gap fixture and port-4193 media/activity fixture described below. The older backend in the native branch does not implement the catalog endpoints required by the new integration tests. Run the full native matrix on the simulator host:
+Prepare the private backend at `0e204cf` or a compatible newer revision, seeded conversations, file/photo fixtures, port-4149 shell fixture, port-4190 PR proxy, port-4192 parity-gap fixture and port-4193 media/activity fixture described below. The native parity branch now includes the current backend and its catalog endpoints. Run the full native matrix on the simulator host:
 
 ```sh
 ./ios/scripts/test-e2e.sh YOUR_UDID
@@ -226,3 +226,15 @@ NATIVE_PARITY_SHELL_RESUME=1 bun ios/scripts/media-activity-fixture.ts
 It creates a reserved private transcript with 90 images and 90 links and wakes it into the configured disposable shell. Loopback port 4193 appends activity events to that fixture for UI testing. It does not simulate the backend's responses: the actual backend indexes the log and broadcasts activity changes. Do not run this fixture against production. Stop the fixture process and remove only its private tmux windows after testing.
 
 `MediaCatalogTests` exercises cancellation, query changes, cursor traversal, revisions and bounded responses. `MediaBackendTests` requires this fixture and checks all five pages, search, thumbnails and image neighbors outside the retained page. `MediaActivityUITests` drives the real backend in Simulator and checks updates while the activity sheet stays open, media paging and search. The full regression script includes these classes and the native glass flows, with parallel testing disabled to reduce local PTY demand.
+
+## Terminal selection and attachment review
+
+Open Session actions, then Select text. The app captures the visible screen and available scrollback after dismissing the keyboard. Select text with native iOS handles. Copy selection and Copy all use the PWA’s whitespace and wrapped-line rules. Refresh captures new output. Done returns to the live terminal. Terminal input is blocked while the selection sheet is open.
+
+Keyboard autocorrect is a device setting under Settings → Terminal. Control keys, paste, focus changes and reconnects clear the keyboard’s replacement context. Composition remains in UIKit until committed.
+
+Clipboard attachments and selected files appear for review before upload. Remove an item with its adjacent remove button. Confirm the remaining files to upload them. Clipboard review inserts after upload; file/photo pickers retain the separate Insert file path action. Neither action adds Enter.
+
+Session status overview is a device setting. Its native terminal-header control shows status counts and opens a switcher with each session’s name and status.
+
+The Native iOS workflow builds with Xcode 26.4 and runs the isolated light and dark/large Simulator matrix. `ios/scripts/ci-e2e.sh` requires an unused `/tmp/ab-ios-parity` directory and creates disposable fixtures. It refuses to reuse existing fixture data. Simulator results and fixture logs are CI artifacts. A workflow definition alone is not a passing CI result.

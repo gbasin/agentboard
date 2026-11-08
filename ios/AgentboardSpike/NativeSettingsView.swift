@@ -9,6 +9,7 @@ struct NativeSettingsView: View {
     @AppStorage("terminalLetterSpacing") private var letterSpacing = 0.0
     @AppStorage("terminalAutocorrect") private var autocorrect = true
     @AppStorage("terminalWebGL") private var webGL = false
+    @AppStorage("showMobileSessionPeek") private var showOverview = true
     @State private var search = ""
     @State private var defaultPath = ""
     @State private var health: LibraryHealth?
@@ -61,6 +62,7 @@ struct NativeSettingsView: View {
     }
     private var catalogSettings: some View {
         Section {
+            row("session list overview status peek") { Toggle("Session status overview", isOn: $showOverview) }
             row("session list sort order") {
                 Picker("Sort order", selection: preferences.selection("sessionSortMode", fallback: "created")) {
                     Text("Created").tag("created"); Text("Status").tag("status"); Text("Manual").tag("manual")
@@ -84,7 +86,7 @@ struct NativeSettingsView: View {
                 Stepper("History lookback: \(hours) hours", value: Binding(get: { hours }, set: { write("history-max-age-hours", field: "hours", value: $0) }), in: 1...168)
                     .disabled(busy || serverValues["history-max-age-hours"] == nil)
             }
-        } header: { if matches("session list sort order direction desktop sidebar anchor project name last user message session id prefix prefer window names history lookback hours") { Text("Session list") } }
+        } header: { if matches("session list overview status peek sort order direction desktop sidebar anchor project name last user message session id prefix prefer window names history lookback hours") { Text("Session list") } }
     }
     private var terminalSettings: some View {
         Section {

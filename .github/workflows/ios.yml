@@ -1,0 +1,31 @@
+name: Native iOS
+on:
+  pull_request:
+    paths: ['ios/**', 'src/**', 'bun.lock', 'package.json', '.bun-version', '.github/workflows/ios.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  simulator:
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      # Runner inventory: https://github.com/actions/runner-images/blob/main/images/macos/macos-26-arm64-Readme.md
+      DEVELOPER_DIR: /Applications/Xcode_26.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version-file: .bun-version
+      - run: brew install xcodegen tmux
+      - run: bun install --frozen-lockfile
+      - name: Build and exercise native workflows
+        run: ios/scripts/ci-e2e.sh
+      - name: Preserve Simulator results and fixture logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: native-ios-results
+          path: |
+            ios/evidence/*.xcresult
+            /tmp/ab-ios-parity/*.log

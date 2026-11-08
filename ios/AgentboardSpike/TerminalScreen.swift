@@ -11,6 +11,7 @@ struct TerminalScreen: View {
     var onSwitch: ((BoardSession) -> Void)? = nil
     var onManage: ((SessionActionRoute) -> Void)? = nil
     @StateObject private var terminal = TerminalBridge()
+    @AppStorage("showMobileSessionPeek") private var showOverview = true
     @State private var showEnd = false
     @State private var showContent = false
     @State private var showTranscript = false
@@ -29,10 +30,13 @@ struct TerminalScreen: View {
             .safeAreaInset(edge: .top, spacing: 0) {
                 let current = terminal.liveSession ?? session
                 let summary = current.mediaSummary.map(NativeMediaSummary.init(catalog:)) ?? NativeMediaSummary(items: current.media)
-                if live != nil && summary.canBrowse {
+                if let live, summary.canBrowse || showOverview {
                     HStack {
-                        Spacer()
-                        NativeMediaSummaryButton(summary: summary) { terminal.hideKeyboard(); showContent = true }
+                        if showOverview, let onSwitch {
+                            NativeSessionOverview(board: live, selectedID: session.id, select: onSwitch)
+                        }
+                        Spacer(minLength: 8)
+                        if summary.canBrowse { NativeMediaSummaryButton(summary: summary) { terminal.hideKeyboard(); showContent = true } }
                     }.padding(.horizontal, 12).padding(.vertical, 4)
                 }
             }
@@ -46,7 +50,7 @@ struct TerminalScreen: View {
                         }.padding(.horizontal, 12).padding(.vertical, 8)
                             .nativeGlassSurface().padding(.horizontal, 4).accessibilityIdentifier("terminal-connection")
                     }
-                    TerminalKeyBar(terminal: terminal).disabled(live != nil && !terminal.ready)
+                    TerminalKeyBar(terminal: terminal, showPasteStatus: !showUpload).disabled(live != nil && !terminal.ready)
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
@@ -95,7 +99,7 @@ struct TerminalScreen: View {
                         }
                         Section("Terminal") {
                             Button("Number keys", systemImage: "number") { terminal.hideKeyboard(); showNumbers = true }
-                            if live != nil { Button("Select text", systemImage: "text.cursor") { terminal.hideKeyboard(); terminal.readingSnapshot = true; showSelection = true }.disabled(!terminal.ready) }
+                            if live != nil { Button("Select text", systemImage: "text.cursor") { terminal.hideKeyboard(); terminal.readingSnapshot = true; showSelection = true }.accessibilityIdentifier("terminal-select-text").disabled(!terminal.ready) }
                             Button("Copy selection", systemImage: "doc.on.doc") { terminal.call("copySelection") }
                             if let live {
                                 Button("Copy server selection", systemImage: "clipboard") {

@@ -111,10 +111,12 @@ final class LiveUITests: XCTestCase {
         type("printf '%s\\n' " + token, app: app)
         XCTAssertTrue(output(token, in: app).waitForExistence(timeout: 5))
         app.buttons["Session actions"].tap()
-        let select = app.buttons["Select text"]
+        let select = app.buttons["terminal-select-text"]
         for _ in 0..<8 {
             if select.exists && select.isHittable { break }
-            (app.collectionViews.allElementsBoundByIndex.last(where: { $0.isHittable }) ?? app.collectionViews.firstMatch).swipeUp()
+            let menu = app.collectionViews.allElementsBoundByIndex.last(where: { $0.isHittable }) ?? app.collectionViews.firstMatch
+            menu.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.25))
+                .press(forDuration: 0.05, thenDragTo: menu.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.10)))
         }
         select.tap()
         let snapshot = app.textViews["terminal-snapshot-text"]
@@ -128,6 +130,20 @@ final class LiveUITests: XCTestCase {
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 5))
         type("printf 'AFTER_%s\\n' " + token, app: app)
         XCTAssertTrue(output("AFTER_" + token, in: app).waitForExistence(timeout: 5))
+    }
+
+    func testSessionOverviewSwitchesWithStatus() {
+        let app = launch()
+        open("native-live-one", app: app)
+        let overview = app.buttons["session-overview"]
+        XCTAssertTrue(overview.waitForExistence(timeout: 5))
+        XCTAssertFalse((overview.value as? String ?? "").isEmpty)
+        capture("terminal-session-overview")
+        overview.tap()
+        let other = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "native-live-two ·")).firstMatch
+        XCTAssertTrue(other.waitForExistence(timeout: 5))
+        other.tap()
+        XCTAssertTrue(app.buttons["Switch session, native-live-two"].waitForExistence(timeout: 10))
     }
 
 }

@@ -16,6 +16,8 @@ This is a running record, not an approved feature plan. Implementation follows t
 - Show thumbnails and individual removal before attachment insertion. Preserve original upload bytes and make the remaining selection obvious.
 - Add native build/tests to CI so green web/backend checks cannot be mistaken for a validated Swift build.
 - Run repository checks without inherited `LOG_LEVEL=debug`: the logger default test reads cached startup configuration, so that environment makes its default-info assertion fail. This is a test isolation issue, not a Swift behavior change.
+- Treat passing taps as insufficient visual evidence. The first maximum-text captures had broken button words and truncated filenames despite passing tests; accessibility layouts now stack actions and scroll previews instead of shrinking text.
+- Use one attachment review surface at a time. Rendering the same controller beneath a presented upload sheet exposed duplicate accessibility controls; hide the underlying review while the sheet owns it.
 - Keep error recovery actions visible at maximum Dynamic Type; lazy native rows require scrolling in tests, not smaller product text.
 
 ## 3. Possible gaps or additional features
@@ -25,7 +27,11 @@ This is a running record, not an approved feature plan. Implementation follows t
 - Physical-device share-destination and real-agent image acceptance checks.
 - Slow progressive-media discovery fixture, including cancellation, reconnect and large logs.
 
+- Attachment review currently has separate Upload and Insert steps for file/photo pickers, while clipboard review inserts after upload. Consider a unified explicit “Insert attachments” flow after parity is established; do not change this during verification.
+
 ## Decision log
 
 - 2026-11-08: User requested this running record while completing parity. No additional feature above has been independently approved merely by its inclusion here.
-- 2026-11-08: Frozen selection now has native selection, shared PWA copy shaping, Refresh and Done. Keyboard autocorrect is a device preference. Seven focused Swift tests and two light Simulator workflows passed; dark/large validation is in progress. This does not establish full app parity.
+- 2026-11-08: Frozen selection now has native selection, shared PWA copy shaping, Refresh and Done. Keyboard autocorrect is a device preference. Seven focused Swift tests and two light Simulator workflows passed; the initial dark/large selection workflow also passed. The combined final matrix remains in progress. This does not establish full app parity.
+
+- 2026-11-08: All 2,581 Bun tests passed on m5p with lint and typecheck. Local checks hit the private relay timeout; the remote pre-commit run passed too. Commit `2500993` is pushed to the draft PR. Attachment review/removal and native status overview have passing light-mode workflows; all five new workflows also passed dark/large checks. Screenshot review found layout corrections now being revalidated; native CI execution remains pending.

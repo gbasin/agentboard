@@ -62,6 +62,7 @@ import CryptoKit
             try await withCheckedThrowingContinuation { pending = $0 }
         }, deliver: { _ in deliveries += 1 })
         controller.submit(.init(files: [image]), immediately: true)
+        controller.confirmReview()
         try await settle { pending != nil }
         available = false
         pending?.resume(returning: "/tmp/image.png")
@@ -91,6 +92,7 @@ import CryptoKit
             return "/tmp/\(file.name)"
         }, deliver: { deliveries.append($0) })
         controller.submit(.init(text: "review", files: [image, document]), immediately: true)
+        controller.confirmReview()
         try await settle { if case .failed = controller.state { return true }; return false }
         XCTAssertTrue(deliveries.isEmpty)
         controller.retry()
@@ -108,6 +110,7 @@ import CryptoKit
             try await withCheckedThrowingContinuation { pending = $0 }
         }, deliver: { deliveries.append($0) })
         controller.submit(.init(files: [image]), immediately: true)
+        controller.confirmReview()
         try await settle { pending != nil }
         controller.cancel()
         pending?.resume(returning: "/tmp/stale.png")
@@ -121,10 +124,12 @@ import CryptoKit
         let upload: NativePasteController.Upload = { file in calls += 1; return "/tmp/\(file.name)" }
         controller.configure(agent: "codex", remote: true, available: { true }, upload: upload, deliver: { _ in deliveries += 1 })
         controller.submit(.init(files: [document]), immediately: true)
+        controller.confirmReview()
         guard case .failed = controller.state else { return XCTFail("Remote file upload must be blocked") }
         XCTAssertEqual(calls, 0)
         controller.configure(agent: "codex", remote: false, available: { true }, upload: upload, deliver: { _ in deliveries += 1 })
         controller.submit(.init(files: [document]), immediately: false)
+        controller.confirmReview()
         try await settle { if case .prepared = controller.state { return true }; return false }
         XCTAssertEqual(deliveries, 0)
         controller.insert()
@@ -147,6 +152,7 @@ import CryptoKit
             upload: { _ in "/tmp/image.png" },
             deliver: { board.input($0.value, owner: owner, paste: $0.bracketed) })
         controller.submit(.init(text: "review", files: [image]), immediately: true)
+        controller.confirmReview()
         try await settle { socket.sent.filter { ["terminal-input", "terminal-paste"].contains($0["type"] as? String ?? "") }.count == 2 }
         let messages = socket.sent.filter { ["terminal-input", "terminal-paste"].contains($0["type"] as? String ?? "") }
         XCTAssertEqual(messages.map { $0["sessionId"] as? String }, ["one", "one"])
@@ -164,11 +170,15 @@ import CryptoKit
             return "/tmp/second.png"
         }, deliver: { delivered.append($0) })
         controller.submit(.init(text: "first", files: [image]), immediately: true)
+        controller.confirmReview()
         controller.submit(.init(text: "second", files: [image]), immediately: true)
+        controller.confirmReview()
         try await settle { pending != nil }
         XCTAssertEqual(uploads.count, 1)
         currentAgent = "codex"
         pending?.resume(returning: "/tmp/first.png")
+        try await settle { controller.state == .reviewing }
+        controller.confirmReview()
         try await settle { delivered.count == 4 }
         XCTAssertEqual(delivered, [.init(value: "first ", bracketed: true), .init(value: "/tmp/first.png ", bracketed: false),
                                    .init(value: "second ", bracketed: true), .init(value: "/tmp/second.png ", bracketed: false)])
@@ -182,6 +192,7 @@ import CryptoKit
             return "/tmp/first.png"
         }, deliver: { delivered.append($0.value) })
         controller.submit(.init(files: [image]), immediately: true)
+        controller.confirmReview()
         controller.submit(.init(text: "second"), immediately: true)
         try await settle { if case .failed = controller.state { return true }; return false }
         XCTAssertTrue(delivered.isEmpty)
@@ -190,6 +201,7 @@ import CryptoKit
         XCTAssertEqual(delivered, ["/tmp/first.png ", "second"])
         failed = false; delivered = []
         controller.submit(.init(files: [image]), immediately: true)
+        controller.confirmReview()
         controller.submit(.init(text: "discarded"), immediately: true)
         try await settle { if case .failed = controller.state { return true }; return false }
         controller.cancel()
@@ -205,6 +217,7 @@ import CryptoKit
             try await withCheckedThrowingContinuation { pending = $0 }
         }, deliver: { delivered.append($0.value) })
         controller.submit(.init(files: [image]), immediately: true)
+        controller.confirmReview()
         try await settle { pending != nil }
         UIPasteboard.general.items = [["com.apple.DocumentManager.private": Data([1])]]
         defer { UIPasteboard.general.items = [] }
@@ -251,4 +264,23 @@ import CryptoKit
         XCTAssertTrue(path.hasPrefix("/tmp/paste-")); XCTAssertTrue(path.hasSuffix(".png"))
         print("NATIVE_IMAGE_UPLOAD_VERIFY path=\(path) sha256=\(SHA256.hash(data: png).map { String(format: "%02x", $0) }.joined()) bytes=\(png.count)")
     }
+    func testAttachmentReviewRemovesOnlyChosenFileBeforeUpload() async throws {
+        let controller = NativePasteController()
+        var uploaded: [NativePasteFile] = [], delivered: [NativePasteDelivery] = []
+        controller.configure(agent: "codex", remote: false, available: { true }, upload: { file in
+            uploaded.append(file); return "/tmp/" + file.name
+        }, deliver: { delivered.append($0) })
+        controller.submit(.init(text: "review", files: [image, document]), immediately: true)
+        XCTAssertEqual(controller.state, .reviewing)
+        XCTAssertTrue(uploaded.isEmpty)
+        XCTAssertTrue(delivered.isEmpty)
+        controller.removeReviewFile(at: 0)
+        XCTAssertEqual(controller.reviewFiles, [document])
+        XCTAssertEqual(controller.reviewText, "review")
+        controller.confirmReview()
+        try await settle { controller.state == .idle }
+        XCTAssertEqual(uploaded, [document])
+        XCTAssertEqual(delivered, [.init(value: "review\n'/tmp/note.txt' ", bracketed: true)])
+    }
+
 }

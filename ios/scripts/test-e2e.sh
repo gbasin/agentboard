@@ -36,5 +36,7 @@ xcodebuild test -parallel-testing-enabled NO -project ios/AgentboardSpike.xcodep
   -only-testing:AgentboardSpikeUITests/NativeParityUITests \
   -only-testing:AgentboardSpikeUITests/ParityGapUITests \
   -only-testing:AgentboardSpikeUITests/NativeClipboardUITests \
+  -only-testing:AgentboardSpikeUITests/LiveUITests/testFrozenSnapshotRefreshCopyAndReturnToInput \
+  -only-testing:AgentboardSpikeUITests/LiveUITests/testSessionOverviewSwitchesWithStatus \
   -only-testing:AgentboardSpikeUITests/SessionActionUITests \
   -only-testing:AgentboardSpikeUITests/SimulatorStateUITests

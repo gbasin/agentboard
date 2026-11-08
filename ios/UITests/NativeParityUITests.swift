@@ -174,6 +174,9 @@ final class NativeParityUITests: XCTestCase {
         let add = app.buttons["Add"]
         XCTAssertTrue(add.waitForExistence(timeout: 3), app.debugDescription)
         add.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(app.buttons["confirm-attachments"].waitForExistence(timeout: 10))
+        capture("attachment-review")
+        app.buttons["confirm-attachments"].tap()
         XCTAssertTrue(app.buttons["Insert file path"].waitForExistence(timeout: 15)); capture("uploaded-photo")
         app.buttons["Insert file path"].tap()
         XCTAssertTrue(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in app.webViews.staticTexts.allElementsBoundByIndex.map(\.label).joined().contains("/tmp/paste-") }, object: nil)], timeout: 10) == .completed)
@@ -197,6 +200,9 @@ final class NativeParityUITests: XCTestCase {
         XCTAssertTrue(file.waitForExistence(timeout: 5)); app.cells["parity-upload, txt"].images.firstMatch.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5)).tap()
         let open = app.buttons["Open"]
         if open.waitForExistence(timeout: 3) { open.tap() }
+        XCTAssertTrue(app.buttons["confirm-attachments"].waitForExistence(timeout: 10))
+        capture("attachment-review")
+        app.buttons["confirm-attachments"].tap()
         XCTAssertTrue(app.buttons["Insert file path"].waitForExistence(timeout: 15)); capture("uploaded-file")
         app.buttons["Insert file path"].tap()
         XCTAssertTrue(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in app.webViews.staticTexts.allElementsBoundByIndex.map(\.label).joined().contains("parity-upload.txt") }, object: nil)], timeout: 10) == .completed)

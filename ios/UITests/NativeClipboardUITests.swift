@@ -18,7 +18,7 @@ final class NativeClipboardUITests: XCTestCase {
         XCTAssertTrue(element.exists, "Missing session after scrolling")
         XCTAssertTrue(element.isHittable, "Session is not hittable after scrolling")
     }
-    func testMixedClipboardImageAndTextInsertsWithoutEnter() {
+    func testMixedClipboardReviewRemovesImageAndInsertsWithoutEnter() {
         continueAfterFailure = false
         executionTimeAllowance = 90
         let monitor = addUIInterruptionMonitor(withDescription: "Clipboard permission") { _ in
@@ -30,7 +30,7 @@ final class NativeClipboardUITests: XCTestCase {
         let marker = "CLIPBOARD_PARITY_" + String(UUID().uuidString.prefix(8))
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: 4, height: 4))
         let png = renderer.pngData { context in UIColor.blue.setFill(); context.fill(CGRect(x: 0, y: 0, width: 4, height: 4)) }
-        UIPasteboard.general.items = [[UTType.utf8PlainText.identifier: marker], [UTType.png.identifier: png]]
+        UIPasteboard.general.items = [[UTType.utf8PlainText.identifier: marker], [UTType.png.identifier: png], [UTType.png.identifier: png]]
         defer { UIPasteboard.general.items = [] }
         let app = XCUIApplication(); app.launchArguments = ["-serverURL", "http://127.0.0.1:4151"]; app.launch()
         XCTAssertTrue(app.waitForBoardConnection(timeout: 15))
@@ -53,6 +53,17 @@ final class NativeClipboardUITests: XCTestCase {
         }
         // xterm exposes each wrapped screen row separately. Join rows and ignore
         // wrapping whitespace, requiring this run's unique marker followed by its image path.
+        XCTAssertTrue(app.buttons["confirm-attachments"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["remove-attachment-1"].waitForExistence(timeout: 5))
+        let remove = app.buttons["remove-attachment-1"]
+        for _ in 0..<6 {
+            if remove.isHittable { break }
+            app.scrollViews["attachment-previews"].swipeUp()
+        }
+        remove.tap()
+        XCTAssertFalse(app.buttons["remove-attachment-1"].exists)
+        let review = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); review.name = "clipboard-attachment-review"; review.lifetime = .keepAlways; add(review)
+        app.buttons["confirm-attachments"].tap()
         let pair = marker + "/tmp/paste-"
         let inserted = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             let text = app.webViews.staticTexts.allElementsBoundByIndex.map(\.label).joined()

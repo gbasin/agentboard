@@ -3,8 +3,11 @@ import SwiftUI
 /// Visible only while upload work needs attention; the normal terminal retains one key row.
 struct NativePasteStatus: View {
     @ObservedObject var controller: NativePasteController
+    var onReview: (() -> Void)? = nil
     var body: some View {
         switch controller.state {
+        case .reviewing:
+            NativeAttachmentReview(controller: controller).onAppear { onReview?() }
         case .reading:
             HStack { ProgressView("Reading clipboard…"); Spacer(); Button("Cancel") { controller.cancel() } }.padding(8)
         case .uploading:

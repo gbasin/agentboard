@@ -4,6 +4,7 @@ import SwiftUI
 /// only dismissal needs a button, and only while input has focus.
 struct TerminalKeyBar: View {
     @ObservedObject var terminal: TerminalBridge
+    var showPasteStatus = true
     @State private var showArrows = false
     @State private var showPaste = false
     @State private var pastedText = ""
@@ -11,7 +12,7 @@ struct TerminalKeyBar: View {
 
     var body: some View {
         VStack(spacing: 0) {
-        NativePasteStatus(controller: terminal.clipboard)
+        if showPasteStatus { NativePasteStatus(controller: terminal.clipboard, onReview: { terminal.hideKeyboard() }) }
         HStack(spacing: 4) {
             key("Enter", symbol: "return", tint: true) { terminal.send("\r") }
             Button("esc") { terminal.send("\u{1b}") }.terminalKey().accessibilityLabel("Escape")
@@ -50,7 +51,7 @@ struct TerminalKeyBar: View {
         .padding(.horizontal, 4).padding(.bottom, 4)
         }
         .sheet(isPresented: $showPaste, onDismiss: {
-            if restoreInput { terminal.focus() }
+            if restoreInput && terminal.clipboard.state == .idle { terminal.focus() }
         }) {
             NavigationStack {
                 VStack(alignment: .leading) {

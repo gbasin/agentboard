@@ -68,7 +68,7 @@ struct TerminalSelectionView: View {
                 if let error { ErrorRow(message: error) { revision += 1 }.padding() }
                 if loading { ProgressView("Capturing terminal…").padding() }
                 if let snapshot {
-                    SnapshotSelectableText(text: text, scrollPosition: snapshot.scrollPosition ?? 0, selection: $selection) { range in copy(range) }
+                    SnapshotSelectableText(text: text, revision: snapshot.requestId, scrollPosition: snapshot.scrollPosition ?? 0, selection: $selection) { range in copy(range) }
                     Text(snapshot.altScreen == true ? "Frozen screen" : "Frozen screen and scrollback")
                         .accessibilityHint("Refresh to capture new terminal output")
                         .font(.caption).foregroundStyle(.secondary).padding(8)
@@ -105,6 +105,7 @@ struct TerminalSelectionView: View {
 
 private struct SnapshotSelectableText: UIViewRepresentable {
     let text: String
+    let revision: Int
     let scrollPosition: Int
     @Binding var selection: NSRange
     let copy: (NSRange) -> Void
@@ -121,14 +122,12 @@ private struct SnapshotSelectableText: UIViewRepresentable {
     }
     func updateUIView(_ view: SelectionTextView, context: Context) {
         context.coordinator.parent = self; view.copyText = copy
-        if view.text != text {
+        if view.text != text || view.revision != revision {
+            view.revision = revision
             view.text = text
-            DispatchQueue.main.async {
-                view.layoutIfNeeded()
-                view.layoutManager.ensureLayout(for: view.textContainer)
-                let offset = max(0, view.contentSize.height - view.bounds.height - CGFloat(scrollPosition) * (view.font?.lineHeight ?? 20))
-                view.setContentOffset(CGPoint(x: 0, y: offset), animated: false)
-            }
+            view.selectedRange = NSRange(location: 0, length: 0)
+            view.pendingScrollPosition = scrollPosition
+            view.setNeedsLayout()
         }
     }
     final class Coordinator: NSObject, UITextViewDelegate {
@@ -139,5 +138,16 @@ private struct SnapshotSelectableText: UIViewRepresentable {
 }
 private final class SelectionTextView: UITextView {
     var copyText: ((NSRange) -> Void)?
+    var revision: Int?
+    var pendingScrollPosition: Int?
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard bounds.width > 0, bounds.height > 0, let position = pendingScrollPosition else { return }
+        pendingScrollPosition = nil
+        layoutManager.ensureLayout(for: textContainer)
+        let bottom = contentSize.height - bounds.height + adjustedContentInset.bottom
+        let offset = max(-adjustedContentInset.top, bottom - CGFloat(position) * (font?.lineHeight ?? 20))
+        setContentOffset(CGPoint(x: 0, y: offset), animated: false)
+    }
     override func copy(_ sender: Any?) { copyText?(selectedRange) }
 }
