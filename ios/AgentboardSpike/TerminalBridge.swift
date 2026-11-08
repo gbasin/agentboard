@@ -9,7 +9,7 @@ final class TerminalBridge: ObservableObject {
     @Published var shift = false
     @Published var fontSize = 13
     @Published var inputFocused = false
-    @Published var readingSnapshot = false { didSet { if readingSnapshot { clipboard.cancel(); inputView?.resetContext() } } }
+    @Published var readingSnapshot = false { didSet { if readingSnapshot { inputView?.resetContext() } } }
     @Published var ready = false { didSet { if oldValue && !ready { clipboard.cancel(); inputView?.resetContext() } } }
     let clipboard = NativePasteController()
     @Published var liveSession: BoardSession?

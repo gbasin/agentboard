@@ -12,6 +12,7 @@ This is a running record, not an approved feature plan. Implementation follows t
 
 ## 2. Improvements to strengthen existing behavior
 
+- Preserve pending attachment review when entering read-only selection. Blocking terminal input should not discard an attachment draft; interrupted uploads remain retryable.
 - Keep snapshot requests tied to the selected session and connection generation; reject late replies and prevent hardware/software input from reaching the terminal while selection is open.
 - Show thumbnails and individual removal before attachment insertion. Preserve original upload bytes and make the remaining selection obvious.
 - Add native build/tests to CI so green web/backend checks cannot be mistaken for a validated Swift build.
@@ -22,11 +23,11 @@ This is a running record, not an approved feature plan. Implementation follows t
 
 ## 3. Possible gaps or additional features
 
+- Camera-photo formats: the shared image endpoint accepts PNG, JPEG, GIF and WebP. Verify HEIC photo selection on a physical iPhone and decide whether unsupported formats should remain files or offer explicit conversion.
 - Exact-copy versus readable-copy option for terminal snapshots.
 - On-device VoiceOver, IME and hardware-keyboard acceptance matrix.
 - Physical-device share-destination and real-agent image acceptance checks.
 - Slow progressive-media discovery fixture, including cancellation, reconnect and large logs.
-
 - Attachment review currently has separate Upload and Insert steps for file/photo pickers, while clipboard review inserts after upload. Consider a unified explicit “Insert attachments” flow after parity is established; do not change this during verification.
 
 ## Decision log
@@ -35,3 +36,5 @@ This is a running record, not an approved feature plan. Implementation follows t
 - 2026-11-08: Frozen selection now has native selection, shared PWA copy shaping, Refresh and Done. Keyboard autocorrect is a device preference. Seven focused Swift tests and two light Simulator workflows passed; the initial dark/large selection workflow also passed. The combined final matrix remains in progress. This does not establish full app parity.
 
 - 2026-11-08: All 2,581 Bun tests passed on m5p with lint and typecheck. Local checks hit the private relay timeout; the remote pre-commit run passed too. Commit `2500993` is pushed to the draft PR. Attachment review/removal and native status overview have passing light-mode workflows; all five new workflows also passed dark/large checks. Screenshot review found layout corrections now being revalidated; native CI execution remains pending.
+
+- 2026-11-08: Native unit/integration checks now pass 70/70. Review drafts survive frozen selection while insertion remains blocked; initial snapshot scrolling now uses a character target after layout. Settings search uses native Close to leave search before Done dismisses the sheet. Both settings checks and active-selection captures passed in light and maximum-text dark. The scoped independent finish review returned ship for these additions; the fresh full Simulator matrix is running.

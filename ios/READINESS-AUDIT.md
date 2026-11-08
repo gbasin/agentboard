@@ -1,5 +1,23 @@
 # Native readiness audit — November 8, 2026
 
+## Parity completion follow-up
+
+The integration now includes current PWA baseline `35483b5`. The four feature gaps in the historical audit below have implementations: frozen native text selection with shared copy normalization, configurable terminal autocorrect, attachment preview/removal, and an optional cross-session status overview. Their implementation commits are `2500993` and `dafe721`, with follow-up verification fixes on the same branch.
+
+Current verification on m5p:
+
+- Root lint, typecheck and all 2,581 Bun tests passed, including the pre-commit runs. No hook bypass was used for these follow-up commits.
+- All 70 native unit/integration tests passed against the isolated current backend. They cover attachment review and cancellation, preserving a pending review during frozen selection, input replacement, and snapshot request fencing.
+- Five new/updated UI workflows passed in light and dark/maximum Dynamic Type: frozen selection/refresh/copy/return to input, session-overview switching, clipboard preview/removal/insertion, photo review/upload, and file review/upload.
+- Device preference toggles persisted after reopening Settings in light and dark/maximum text. Frozen selection now has captures with active native selection handles in both modes.
+- Visual review found and corrected maximum-text attachment action wrapping, filename truncation, duplicate review controls, and snapshot initial scroll positioning. A passing UI test alone did not expose these issues.
+- A fresh independent finish review returned **ship** for the new selection, attachment review, overview and settings surfaces in light and dark/maximum text. This is a scoped visual verdict, not full-app certification.
+- A native macOS/Xcode CI workflow now runs the fixture-backed matrix and uploads result bundles. Hosted execution is pending; adding the workflow is not evidence that CI has passed.
+
+The feature gaps below describe the earlier audit, not the current implementation. The physical-device and external-service verification boundaries still apply. A fresh full native/Simulator matrix is running; the completed evidence above remains targeted until that run finishes. Running observations and possible product changes are recorded in `PARITY-NOTES.md`; those ideas are not approved scope.
+
+## Historical audit
+
 Reviewed native head `ef4383d` against the original PWA baseline `74ed561` and current PWA `35483b5`. Current media/activity integration uses backend `0e204cf`. A read-only merge-tree check against current master found no conflicts. The native branch changes only `ios/`; it does not change the production web client or backend.
 
 ## Findings

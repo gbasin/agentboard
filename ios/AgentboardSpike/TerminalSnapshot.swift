@@ -125,7 +125,7 @@ private struct SnapshotSelectableText: UIViewRepresentable {
         if view.text != text || view.revision != revision {
             view.revision = revision
             view.text = text
-            view.selectedRange = NSRange(location: 0, length: 0)
+            view.selectedRange = NSRange(location: (text as NSString).length, length: 0)
             view.pendingScrollPosition = scrollPosition
             view.setNeedsLayout()
         }
@@ -142,12 +142,17 @@ private final class SelectionTextView: UITextView {
     var pendingScrollPosition: Int?
     override func layoutSubviews() {
         super.layoutSubviews()
-        guard bounds.width > 0, bounds.height > 0, let position = pendingScrollPosition else { return }
+        guard window != nil, bounds.width > 0, bounds.height > 0, let position = pendingScrollPosition else { return }
         pendingScrollPosition = nil
-        layoutManager.ensureLayout(for: textContainer)
-        let bottom = contentSize.height - bounds.height + adjustedContentInset.bottom
-        let offset = max(-adjustedContentInset.top, bottom - CGFloat(position) * (font?.lineHeight ?? 20))
-        setContentOffset(CGPoint(x: 0, y: offset), animated: false)
+        let expectedRevision = revision
+        DispatchQueue.main.async { [weak self] in
+            guard let self, revision == expectedRevision else { return }
+            layoutIfNeeded()
+            let lines = (text ?? "").components(separatedBy: "\n")
+            let prefix = lines.prefix(max(1, lines.count - max(0, position))).joined(separator: "\n")
+            let length = (prefix as NSString).length
+            scrollRangeToVisible(NSRange(location: max(0, length - 1), length: min(1, length)))
+        }
     }
     override func copy(_ sender: Any?) { copyText?(selectedRange) }
 }

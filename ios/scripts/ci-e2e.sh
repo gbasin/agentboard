@@ -26,10 +26,17 @@ done
 curl -fsS http://127.0.0.1:4151/api/library/health >/dev/null
 bun ios/scripts/seed-live.ts
 bun ios/scripts/seed-parity.ts
-NATIVE_PARITY_SHELL_RESUME=1 bun ios/scripts/warm-parity.ts
+export NATIVE_PARITY_SHELL_RESUME=1
+bun ios/scripts/warm-parity.ts
 for fixture in shell-server pr-fixture parity-gap-fixture media-activity-fixture; do
   bun "ios/scripts/$fixture.ts" > "$fixture_root/$fixture.log" 2>&1 & pids+=("$!")
 done
+# The control endpoint starts only after the fixture session has been created.
+for attempt in {1..60}; do
+  if curl -fsS -X POST http://127.0.0.1:4193/activity/running >/dev/null; then break; fi
+  sleep 1
+done
+curl -fsS -X POST http://127.0.0.1:4193/activity/running >/dev/null
 ./ios/scripts/prepare.sh
 udid=$(xcrun simctl list devices available -j | bun -e 'const data=await Bun.stdin.json(); const phone=Object.entries(data.devices).filter(([runtime])=>runtime.includes("iOS-26-4")).flatMap(([,devices])=>devices).find(d=>d.name.includes("iPhone") && d.isAvailable); if(!phone) throw Error("No available iPhone Simulator"); console.log(phone.udid)')
 xcrun simctl boot "$udid" || true

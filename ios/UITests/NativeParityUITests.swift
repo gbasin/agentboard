@@ -253,4 +253,32 @@ final class NativeParityUITests: XCTestCase {
         capture("pull-request-checks-bottom")
     }
 
+    func testNativeDevicePreferencesPersist() {
+        let app = app()
+        for title in ["Keyboard autocorrect", "Session status overview"] {
+            app.buttons["Settings"].tap()
+            let search = app.searchFields["Find a setting"]
+            XCTAssertTrue(search.waitForExistence(timeout: 5))
+            replace(search, title); search.typeText("\n")
+            let setting = app.switches[title]
+            XCTAssertTrue(setting.waitForExistence(timeout: 5))
+            let before = setting.value as? String
+            setting.coordinate(withNormalizedOffset: .init(dx: 0.9, dy: 0.5)).tap()
+            XCTAssertNotEqual(setting.value as? String, before)
+            if app.buttons["Cancel"].exists { app.buttons["Cancel"].tap() }
+            if !app.buttons["Done"].exists { app.buttons["Close"].firstMatch.tap() }
+            if app.buttons["Done"].exists { app.buttons["Done"].tap() }
+            app.buttons["Settings"].tap()
+            XCTAssertTrue(search.waitForExistence(timeout: 5))
+            replace(search, title); search.typeText("\n")
+            XCTAssertNotEqual(setting.value as? String, before)
+            setting.coordinate(withNormalizedOffset: .init(dx: 0.9, dy: 0.5)).tap()
+            XCTAssertEqual(setting.value as? String, before)
+            capture(title == "Keyboard autocorrect" ? "autocorrect-setting" : "overview-setting")
+            if app.buttons["Cancel"].exists { app.buttons["Cancel"].tap() }
+            if !app.buttons["Done"].exists { app.buttons["Close"].firstMatch.tap() }
+            if app.buttons["Done"].exists { app.buttons["Done"].tap() }
+        }
+    }
+
 }

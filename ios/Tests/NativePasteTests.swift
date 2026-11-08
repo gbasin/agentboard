@@ -283,4 +283,22 @@ import CryptoKit
         XCTAssertEqual(delivered, [.init(value: "review\n'/tmp/note.txt' ", bracketed: true)])
     }
 
+    func testSnapshotModeKeepsAttachmentReviewButBlocksInsertion() async throws {
+        let terminal = TerminalBridge()
+        var delivered = 0
+        terminal.clipboard.configure(agent: "codex", remote: false, available: { !terminal.readingSnapshot },
+            upload: { _ in "/tmp/image.png" }, deliver: { _ in delivered += 1 })
+        terminal.clipboard.submit(.init(files: [image]), immediately: true)
+        terminal.readingSnapshot = true
+        XCTAssertEqual(terminal.clipboard.state, .reviewing)
+        XCTAssertEqual(terminal.clipboard.reviewFiles, [image])
+        terminal.clipboard.confirmReview()
+        guard case .failed = terminal.clipboard.state else { return XCTFail("Frozen terminal must block insertion") }
+        XCTAssertEqual(delivered, 0)
+        terminal.readingSnapshot = false
+        terminal.clipboard.retry()
+        try await settle { terminal.clipboard.state == .idle }
+        XCTAssertEqual(delivered, 1)
+    }
+
 }

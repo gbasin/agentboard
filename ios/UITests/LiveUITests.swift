@@ -124,6 +124,8 @@ final class LiveUITests: XCTestCase {
         XCTAssertTrue((snapshot.value as? String ?? "").contains(token))
         XCTAssertFalse(app.keyboards.firstMatch.exists)
         capture("frozen-terminal-selection")
+        snapshot.coordinate(withNormalizedOffset: .init(dx: 0.18, dy: 0.96)).press(forDuration: 1)
+        capture("frozen-terminal-selection-active")
         app.buttons["Refresh"].tap()
         XCTAssertTrue(snapshot.waitForExistence(timeout: 10))
         app.buttons["Copy all"].tap()
