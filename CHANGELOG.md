@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.43.4](https://github.com/gbasin/agentboard/compare/v0.43.3...v0.43.4) (2026-11-08)
+
+
+### Bug Fixes
+
+* keep iOS keyboard detection stable while scrolling ([#537](https://github.com/gbasin/agentboard/issues/537)) ([a297748](https://github.com/gbasin/agentboard/commit/a297748c472ec40dbf640b266c07881ca361b61e))
+
 ## [0.43.3](https://github.com/gbasin/agentboard/compare/v0.43.2...v0.43.3) (2026-11-08)
 
 
